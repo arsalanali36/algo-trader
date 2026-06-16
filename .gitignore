@@ -1,0 +1,15 @@
+# Secrets — kabhi commit mat karo
+data/config.json
+*.env
+
+# Logs aur results — local only
+*.log
+results/
+__pycache__/
+*.pyc
+*.pyo
+venv/
+
+# Config files (sensitive — VPS pe manually rakho)
+nifty_config.json
+rsi_config.json

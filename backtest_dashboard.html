@@ -1,0 +1,1306 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Backtest Lab — KHAZANA</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;padding:20px;min-height:100vh;font-size:13px}
+input,select,textarea,button{font-family:inherit}
+
+.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap}
+.hdr h1{font-size:17px;font-weight:700;color:#f0f6fc}
+.hdr .sub{font-size:11px;color:#8b949e;margin-top:2px}
+.hdr-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.btn{border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:.15s}
+.btn-green{background:#238636;color:#fff}.btn-green:hover{background:#2ea043}
+.btn-blue{background:#1f6feb;color:#fff}.btn-blue:hover{background:#388bfd}
+.btn-gray{background:#21262d;color:#e6edf3;border:1px solid #30363d}.btn-gray:hover{background:#30363d}
+.btn-purple{background:#6e40c9;color:#fff}.btn-purple:hover{background:#8250df}
+.btn-sm{padding:5px 9px;font-size:11px}
+
+/* STRATEGY TABS */
+#stratTabs{display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;align-items:center}
+.stab{display:flex;align-items:center;gap:6px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:7px 12px;font-size:12px;cursor:pointer;transition:.15s;user-select:none}
+.stab:hover{border-color:#58a6ff30;background:#1c2128}
+.stab.active{border-color:#58a6ff;background:#1c2128}
+.stab .dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.stab .sname{color:#c9d1d9;font-weight:600}
+.stab.active .sname{color:#58a6ff}
+.stab-count{font-size:10px;color:#8b949e;background:#21262d;border-radius:4px;padding:1px 5px}
+.inst-badge{font-size:9px;padding:1px 5px;border-radius:3px;background:#21262d;color:#8b949e;font-weight:600;text-transform:uppercase}
+
+/* VERSION CHIPS */
+#verChips{display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap;align-items:center;min-height:28px}
+.vchip{display:inline-flex;align-items:center;gap:5px;border-radius:20px;padding:4px 11px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid transparent;transition:.15s;user-select:none}
+.vchip.active-ver{border-color:currentColor;opacity:1}
+.vchip.toggled-off{opacity:.3;text-decoration:line-through}
+.ver-chips-hint{font-size:10px;color:#8b949e;margin-left:4px}
+
+/* STATS */
+.stats-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-bottom:14px}
+.scard{background:#161b22;border:1px solid #30363d;border-radius:9px;padding:14px 16px}
+.slabel{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:5px}
+.sval{font-size:20px;font-weight:700}
+.ssub{font-size:10px;color:#8b949e;margin-top:2px}
+.g{color:#3fb950}.r{color:#f85149}.b{color:#58a6ff}.y{color:#d29922}.p{color:#bc8cff}
+
+/* CHART STACK */
+.chart-stack{background:#161b22;border:1px solid #30363d;border-radius:9px;padding:16px;margin-bottom:14px}
+.chart-title{font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;justify-content:space-between}
+#equityChart{height:200px!important;max-height:200px}
+#mfemaeChart{height:90px!important;max-height:90px;margin-top:4px}
+.cdivider{border:none;border-top:1px solid #21262d;margin:10px 0}
+
+/* BOTTOM CHARTS */
+.bottom-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:14px}
+.bchart-wrap{background:#161b22;border:1px solid #30363d;border-radius:9px;padding:14px 16px}
+.monthly-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}
+.month-cell{background:#21262d;border-radius:7px;padding:10px;text-align:center}
+.month-nm{font-size:10px;color:#8b949e;margin-bottom:4px}
+.month-pnl{font-size:13px;font-weight:700}
+.month-t{font-size:10px;color:#8b949e;margin-top:2px}
+
+/* CARDS */
+.card{background:#161b22;border:1px solid #30363d;border-radius:9px;overflow:hidden;margin-bottom:14px}
+.card-hdr{padding:12px 16px;font-size:11px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid #21262d;display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card-body{padding:0}
+
+/* TABLES */
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead{background:#21262d}
+th{padding:9px 12px;text-align:left;font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;font-weight:600;white-space:nowrap}
+td{padding:8px 12px;border-bottom:1px solid #1c2128;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#1c2128}
+.diff-cell{border-left:2px solid #d29922}
+th.sortable{cursor:pointer;user-select:none}
+th.sortable:hover{color:#e6edf3}
+th.sort-asc::after{content:' ↑';color:#58a6ff}
+th.sort-desc::after{content:' ↓';color:#58a6ff}
+
+/* STRATEGY TABLE */
+#stratTable{margin-bottom:14px}
+.strat-table-tabs{display:flex;gap:0;border-bottom:1px solid #30363d;overflow-x:auto}
+.stt-tab{padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;color:#8b949e;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:6px;transition:.15s}
+.stt-tab:hover{color:#e6edf3}
+.stt-tab.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.stt-dot{width:8px;height:8px;border-radius:50%}
+.ver-row-active td{background:#1c2a3a!important}
+.ver-row-active td:first-child{border-left:2px solid #58a6ff}
+.ver-row{cursor:pointer}
+.ss-thumb{width:60px;height:40px;object-fit:cover;border-radius:4px;border:1px solid #30363d;cursor:pointer}
+.ss-thumb:hover{border-color:#58a6ff}
+.inline-edit{background:#0d1117;border:1px solid #21262d;border-radius:4px;color:#e6edf3;font-size:12px;padding:3px 6px;outline:none}
+.inline-edit:focus{border-color:#58a6ff}
+.bool-true{color:#3fb950;font-size:14px}
+.bool-false{color:#f85149;font-size:14px}
+.param-reason{font-size:10px;color:#8b949e;margin-top:2px;font-style:italic}
+
+/* VERTICAL TABLE */
+.vert-metric-label{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;font-weight:600;white-space:nowrap;padding:8px 12px;width:160px}
+
+/* TRADE LOG GROUPING */
+.tl-group-bar{display:flex;gap:6px;align-items:center;padding:10px 12px;border-bottom:1px solid #21262d}
+.tl-grp-btn{padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border:1px solid #30363d;background:#21262d;color:#8b949e;transition:.1s}
+.tl-grp-btn.active{background:#1f6feb;color:#fff;border-color:#1f6feb}
+.tl-group-hdr{background:#161b22;padding:8px 14px;font-size:11px;font-weight:700;color:#8b949e;border-top:2px solid #21262d;display:flex;justify-content:space-between;align-items:center;letter-spacing:.4px}
+.tl-group-hdr .ghpnl{font-size:13px;font-weight:700}
+/* TV style trades */
+.tv-trade-group{border-bottom:1px solid #1c2128}
+.tv-trade-group:last-child{border-bottom:none}
+.tv-trade-hdr{display:grid;grid-template-columns:56px 70px 1fr 100px 60px 110px 90px 110px;align-items:center;padding:8px 12px;cursor:pointer;font-size:12px;transition:.1s;gap:6px}
+.tv-trade-hdr:hover{background:#1c2128}
+.tv-trade-subrow{display:grid;grid-template-columns:56px 70px 1fr 100px 60px 110px 90px 110px;align-items:center;padding:4px 12px 4px 24px;font-size:11px;color:#8b949e;gap:6px;background:#0d1117}
+.tv-trade-no{font-weight:700;color:#e6edf3;font-size:12px}
+.tv-dir-badge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:8px;display:inline-block}
+.tv-dir-long{background:#3fb95020;color:#3fb950}
+.tv-dir-short{background:#f8514920;color:#f85149}
+.tv-col-row{display:grid;grid-template-columns:56px 70px 1fr 100px 60px 110px 90px 110px;padding:7px 12px;gap:6px;border-bottom:1px solid #21262d;background:#21262d}
+.tv-col-lbl{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.4px;font-weight:600}
+
+/* MANAGER MODAL */
+.modal-bg{position:fixed;inset:0;background:#000a;z-index:1000;display:none;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#161b22;border:1px solid #30363d;border-radius:12px;width:920px;max-width:96vw;max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-hdr{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid #30363d;flex-shrink:0}
+.modal-hdr h2{font-size:15px;font-weight:700}
+.modal-close{background:none;border:none;cursor:pointer;font-size:18px;color:#8b949e;line-height:1}
+.modal-close:hover{color:#e6edf3}
+.modal-body{display:flex;flex:1;overflow:hidden}
+
+/* Manager left */
+.mgr-left{width:240px;border-right:1px solid #30363d;display:flex;flex-direction:column;flex-shrink:0}
+.mgr-search{padding:10px;border-bottom:1px solid #21262d}
+.mgr-search input{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;color:#e6edf3;font-size:12px;outline:none}
+.mgr-search input:focus{border-color:#58a6ff}
+.mgr-tree{flex:1;overflow-y:auto;padding:8px 0}
+/* Instrument row */
+.mgr-inst-hdr{display:flex;align-items:center;gap:6px;padding:7px 14px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:#8b949e;cursor:pointer;user-select:none;transition:.1s}
+.mgr-inst-hdr:hover{background:#1c2128}
+.mgr-inst-hdr.sel{color:#d29922;background:#1c2128}
+.mgr-inst-dot{width:7px;height:7px;border-radius:50%;background:#d29922;flex-shrink:0}
+/* Strategy row under instrument */
+.mgr-strat-item{display:flex;align-items:center;gap:7px;padding:6px 14px 6px 28px;cursor:pointer;font-size:12px;font-weight:600;transition:.1s}
+.mgr-strat-item:hover{background:#1c2128}
+.mgr-strat-item.active{background:#1c2a3a;color:#58a6ff}
+.mgr-strat-item .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.mgr-add-row{display:flex;gap:6px;padding:10px;border-top:1px solid #21262d}
+
+/* Manager right */
+.mgr-right{flex:1;overflow-y:auto;padding:20px}
+.mgr-right-empty{display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:13px}
+.mgr-section{margin-bottom:20px}
+.mgr-section-title{font-size:10px;font-weight:600;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px}
+.mgr-name-row{display:flex;gap:8px;align-items:center;margin-bottom:14px}
+.mgr-name-inp{flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:7px 10px;color:#e6edf3;font-size:13px;font-weight:600;outline:none}
+.mgr-name-inp:focus{border-color:#58a6ff}
+.mgr-del-btn{background:none;border:1px solid #f8514940;border-radius:6px;padding:6px 10px;color:#f85149;font-size:11px;cursor:pointer}
+.mgr-del-btn:hover{background:#f8514915}
+
+/* Vars + versions same as before */
+.var-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px}
+.var-item{display:flex;align-items:center;gap:8px;background:#21262d;border-radius:6px;padding:7px 10px;font-size:12px}
+.var-item .vname{flex:1;font-weight:600}
+.var-item .vtype{font-size:10px;color:#8b949e;background:#0d1117;padding:2px 6px;border-radius:4px}
+.var-item .vdesc{flex:2;font-size:11px;color:#8b949e}
+.var-del{background:none;border:none;cursor:pointer;color:#f85149;font-size:14px;line-height:1}
+.add-var-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.add-var-row input,.add-var-row select{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:5px 8px;color:#e6edf3;font-size:12px;outline:none}
+.add-var-row input:focus,.add-var-row select:focus{border-color:#58a6ff}
+.ver-tabs-row{display:flex;border-bottom:1px solid #30363d;overflow-x:auto;flex-shrink:0}
+.vt-tab{padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;color:#8b949e;border-bottom:2px solid transparent;white-space:nowrap;display:flex;align-items:center;gap:5px;transition:.15s}
+.vt-tab:hover{color:#e6edf3}
+.vt-tab.active{color:#58a6ff;border-bottom-color:#58a6ff}
+.vt-dot{width:7px;height:7px;border-radius:50%}
+.vt-add{padding:8px 12px;color:#8b949e;cursor:pointer;font-size:18px;line-height:1;background:none;border:none}
+.vt-add:hover{color:#3fb950}
+.ver-panel{padding:16px 0}
+.ver-field-row{display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;flex-wrap:wrap}
+.ver-field-row label{font-size:11px;color:#8b949e;width:90px;flex-shrink:0;padding-top:7px}
+.ver-field-row input,.ver-field-row textarea{flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:6px 9px;color:#e6edf3;font-size:12px;outline:none;min-width:0}
+.ver-field-row input:focus,.ver-field-row textarea:focus{border-color:#58a6ff}
+.ver-color-pick{width:36px;height:28px;border:none;border-radius:5px;cursor:pointer;padding:1px 2px;background:#0d1117;border:1px solid #30363d}
+.csv-drop{border:1.5px dashed #30363d;border-radius:8px;padding:14px;text-align:center;cursor:pointer;transition:.15s;font-size:12px;color:#8b949e}
+.csv-drop:hover{border-color:#58a6ff;color:#58a6ff}
+.csv-drop.has-data{border-color:#3fb950;color:#3fb950}
+.ss-drop{border:1.5px dashed #30363d;border-radius:8px;padding:10px;cursor:pointer;transition:.15s;text-align:center;font-size:11px;color:#8b949e;position:relative}
+.ss-drop:hover{border-color:#58a6ff}
+.ss-drop img{max-width:100%;max-height:100px;border-radius:5px;display:block;margin:0 auto}
+.ss-drop .ss-clr{position:absolute;top:4px;right:6px;background:#0d1117;border:none;cursor:pointer;color:#f85149;font-size:12px;border-radius:3px;padding:1px 4px}
+.var-vals-grid{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+.var-val-row{display:flex;align-items:flex-start;gap:8px;background:#21262d;border-radius:6px;padding:8px 10px}
+.vvr-name{font-size:12px;font-weight:600;width:140px;flex-shrink:0;padding-top:3px}
+.vvr-val{display:flex;flex-direction:column;gap:4px;flex:1}
+.vvr-inp{background:#0d1117;border:1px solid #30363d;border-radius:5px;padding:4px 8px;color:#e6edf3;font-size:12px;outline:none;width:100%}
+.vvr-inp:focus{border-color:#58a6ff}
+.vvr-reason{background:#0d1117;border:1px solid #21262d;border-radius:5px;padding:3px 8px;color:#8b949e;font-size:11px;outline:none;width:100%;font-style:italic}
+.vvr-reason:focus{border-color:#58a6ff}
+.toggle-bool{display:flex;gap:8px}
+.toggle-bool label{display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;color:#8b949e}
+.toggle-bool input[type=radio]{accent-color:#58a6ff}
+.toggle-bool label.active-lbl{color:#e6edf3;font-weight:600}
+.ver-del-btn{background:none;border:1px solid #f8514930;border-radius:5px;padding:4px 8px;color:#f85149;font-size:11px;cursor:pointer}
+.ver-del-btn:hover{background:#f8514915}
+
+/* CSV IMPORT MODAL */
+.import-modal{background:#161b22;border:1px solid #30363d;border-radius:12px;width:480px;max-width:94vw;padding:24px}
+.import-modal h2{font-size:15px;font-weight:700;margin-bottom:16px}
+.imp-field{margin-bottom:14px}
+.imp-field label{font-size:11px;color:#8b949e;display:block;margin-bottom:5px}
+.imp-field select,.imp-field input{width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 10px;color:#e6edf3;font-size:13px;outline:none}
+.imp-field select:focus,.imp-field input:focus{border-color:#58a6ff}
+.imp-btns{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+
+/* LIGHTBOX */
+#lightbox{position:fixed;inset:0;background:#000c;z-index:2000;display:none;align-items:center;justify-content:center;cursor:zoom-out}
+#lightbox.open{display:flex}
+#lightbox img{max-width:90vw;max-height:90vh;border-radius:8px;object-fit:contain}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<div class="hdr">
+  <div>
+    <h1>⚗️ Backtest Lab — KHAZANA</h1>
+    <div class="sub" id="hdrSub">Instrument → Strategy → Version → Variable</div>
+  </div>
+  <div class="hdr-btns">
+    <button class="btn btn-purple" onclick="openImportCsvFlow()">📁 Import CSV</button>
+    <button class="btn btn-gray" onclick="openManager()">⚙ Manager</button>
+    <button class="btn btn-gray" onclick="exportJSON()">💾 Export JSON</button>
+    <button class="btn btn-gray" onclick="document.getElementById('importJSONFile').click()">📂 Import JSON</button>
+    <span id="autoSaveLabel" style="font-size:10px;color:#8b949e"></span>
+    <input type="file" id="importJSONFile" accept=".json" style="display:none" onchange="importJSON(this)">
+    <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="handleCsvFile(this)">
+  </div>
+</div>
+
+<!-- STRATEGY TABS -->
+<div id="stratTabs"></div>
+<!-- VERSION CHIPS -->
+<div id="verChips"></div>
+
+<!-- STATS -->
+<div class="stats-grid" id="statsGrid">
+  <div class="scard"><div class="slabel">Net P&amp;L</div><div class="sval" id="sNetPnl">—</div><div class="ssub" id="sPeriod">Load a CSV to start</div></div>
+  <div class="scard"><div class="slabel">Win Rate</div><div class="sval" id="sWR">—</div><div class="ssub" id="sWL">—</div></div>
+  <div class="scard"><div class="slabel">Avg Trade</div><div class="sval" id="sAvg">—</div><div class="ssub" id="sTrades">— trades</div></div>
+  <div class="scard"><div class="slabel">Max Drawdown</div><div class="sval r" id="sDD">—</div><div class="ssub" id="sDDpct">—</div></div>
+  <div class="scard"><div class="slabel">Profit Factor</div><div class="sval" id="sPF">—</div><div class="ssub" id="sBE">—</div></div>
+</div>
+
+<!-- EQUITY CHART -->
+<div class="chart-stack">
+  <div class="chart-title">
+    <span>Equity Curve</span>
+    <span id="eqLegend" style="display:flex;gap:12px;font-size:11px;flex-wrap:wrap"></span>
+  </div>
+  <canvas id="equityChart"></canvas>
+  <hr class="cdivider">
+  <div class="chart-title"><span>MFE / MAE per Trade (active version)</span></div>
+  <canvas id="mfemaeChart"></canvas>
+</div>
+
+<!-- BOTTOM CHARTS -->
+<div class="bottom-row">
+  <div class="bchart-wrap">
+    <div class="chart-title"><span>Monthly P&amp;L</span></div>
+    <div class="monthly-grid" id="monthlyGrid"></div>
+  </div>
+  <div class="bchart-wrap">
+    <div class="chart-title"><span>P&amp;L Distribution</span></div>
+    <canvas id="distChart" style="height:180px!important;max-height:180px"></canvas>
+  </div>
+</div>
+
+<!-- STRATEGY TABLE -->
+<div class="card" id="stratTable">
+  <div class="card-hdr">
+    Strategy Table
+    <div style="display:flex;align-items:center;gap:8px">
+      <span style="font-size:10px;color:#8b949e">Right-click → Manager · Click header → Sort</span>
+      <button class="btn btn-gray btn-sm" id="sttToggleBtn" onclick="toggleSttView()">⇄ Switch View</button>
+    </div>
+  </div>
+  <div class="strat-table-tabs" id="sttTabs"></div>
+  <div class="card-body" id="sttBody"></div>
+</div>
+
+<!-- TRADE LOG -->
+<div class="card">
+  <div class="card-hdr">
+    List of Trades <span id="tradeCount" style="font-weight:400;color:#8b949e"></span>
+    <div class="tl-group-bar" style="padding:0;border:none;gap:6px">
+      <span style="font-size:10px;color:#8b949e;margin-right:4px">Group:</span>
+      <button class="tl-grp-btn active" id="grpNone" onclick="setTlGroup('none')">None</button>
+      <button class="tl-grp-btn" id="grpDay"  onclick="setTlGroup('day')">Day</button>
+      <button class="tl-grp-btn" id="grpWeek" onclick="setTlGroup('week')">Week</button>
+      <button class="tl-grp-btn" id="grpMonth" onclick="setTlGroup('month')">Month</button>
+    </div>
+  </div>
+  <div class="card-body" id="tradeLogBody"></div>
+</div>
+
+<!-- MANAGER MODAL -->
+<div class="modal-bg" id="mgrModal">
+  <div class="modal">
+    <div class="modal-hdr">
+      <h2>⚙ Strategy Manager</h2>
+      <button class="modal-close" onclick="closeManager()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="mgr-left">
+        <div class="mgr-search">
+          <input type="text" placeholder="Search…" id="mgrSearch" oninput="renderMgrTree()">
+        </div>
+        <div class="mgr-tree" id="mgrTree"></div>
+        <div class="mgr-add-row">
+          <button class="btn btn-gray btn-sm" style="flex:1" onclick="addInstrument()">+ Instrument</button>
+          <button class="btn btn-green btn-sm" style="flex:1" onclick="addStrategyFromMgr()">+ Strategy</button>
+        </div>
+      </div>
+      <div class="mgr-right" id="mgrRight">
+        <div class="mgr-right-empty">← Select a strategy</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- CSV IMPORT MODAL -->
+<div class="modal-bg" id="importModal">
+  <div class="import-modal">
+    <h2>📁 Import CSV</h2>
+    <div class="imp-field">
+      <label>Instrument</label>
+      <select id="impInstSel" onchange="populateImpStratSel()">
+        <option value="">— Select instrument —</option>
+      </select>
+    </div>
+    <div class="imp-field">
+      <label>Strategy</label>
+      <select id="impStratSel" onchange="onImpStratChange()">
+        <option value="">— Select strategy —</option>
+      </select>
+    </div>
+    <div class="imp-field" id="impNewStratWrap" style="display:none">
+      <label>New Strategy Name</label>
+      <input type="text" id="impNewStratName" placeholder="e.g. ATR Breakout">
+    </div>
+    <div class="imp-field">
+      <label>Version Name</label>
+      <input type="text" id="impVerName" placeholder="e.g. Test 1 — No Filter">
+    </div>
+    <div class="imp-btns">
+      <button class="btn btn-gray" onclick="closeImportModal()">Cancel</button>
+      <button class="btn btn-green" onclick="confirmImport()">✓ Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" onclick="closeLightbox()">
+  <img id="lbImg" src="">
+</div>
+
+<script>
+// ═══════════════════════════════════════════════
+// DATA MODEL
+// ═══════════════════════════════════════════════
+const COLORS = ['#58a6ff','#3fb950','#d29922','#bc8cff','#ff7b72','#39d353','#f78166','#a371f7','#56d364','#ffa657'];
+let db = {
+  instruments: [{ id: 'all', name: 'ALL' }],
+  strategies: [],
+  activeStratIdx: 0
+};
+let mgrSelInstId = 'all';
+let mgrSelStratId = null;
+let mgrActiveVerIdx = 0;
+let pendingCsvData = null;
+let sttActiveStratIdx = 0;
+let sttViewMode = 'vertical';
+let sttSortKey = null;
+let sttSortAsc = false;
+let tlGroupMode = 'none'; // 'none'|'day'|'week'|'month'
+
+// ── Persist ──
+function saveDB() { try { localStorage.setItem('khazana_lab_v4', JSON.stringify(db)); } catch(e){} }
+function loadDB() {
+  try {
+    const s = localStorage.getItem('khazana_lab_v4');
+    if (!s) return;
+    db = JSON.parse(s);
+    if (!Array.isArray(db.instruments)) db.instruments = [{ id: 'all', name: 'ALL' }];
+    if (!db.instruments.find(i=>i.id==='all')) db.instruments.unshift({ id:'all', name:'ALL' });
+    if (!Array.isArray(db.strategies)) db.strategies = [];
+    if (db.activeStratIdx === undefined) db.activeStratIdx = 0;
+    db.strategies.forEach(st => {
+      if (!st.id) st.id = uid();
+      if (!st.instrumentId) st.instrumentId = 'all';
+      if (!Array.isArray(st.variables)) st.variables = [];
+      if (!Array.isArray(st.versions)) st.versions = [];
+      if (st.activeVerIdx === undefined) st.activeVerIdx = 0;
+      // Migrate old v3 format
+      if (Array.isArray(st.trades) && st.trades.length && !st.versions.length) {
+        st.versions.push({ id: uid(), name: 'V1', color: COLORS[0],
+          trades: st.trades, visible: true, screenshot: st.screenshot||null, varValues: {} });
+        delete st.trades; delete st.screenshot; delete st.params; delete st.notes;
+      }
+      st.versions.forEach(v => {
+        if (!v.id) v.id = uid();
+        if (!v.varValues) v.varValues = {};
+        if (v.visible === undefined) v.visible = true;
+      });
+    });
+  } catch(e) { console.error('loadDB', e); }
+}
+
+function uid() { return Math.random().toString(36).slice(2,10); }
+function getInst(id) { return db.instruments.find(i=>i.id===id); }
+function getStrat(id) { return db.strategies.find(s=>s.id===id); }
+function activeStrat() { return db.strategies[db.activeStratIdx]; }
+function activeVer() {
+  const s = activeStrat(); if (!s) return null;
+  return s.versions[s.activeVerIdx] || s.versions[0];
+}
+function stratsByInst(instId) {
+  return db.strategies.filter(s => instId==='all' ? true : s.instrumentId===instId || s.instrumentId==='all');
+}
+function nextColor(stratId) {
+  const s = getStrat(stratId);
+  return COLORS[s ? s.versions.length % COLORS.length : 0];
+}
+function instName(instId) { return getInst(instId)?.name || instId; }
+
+// ── CSV Parsing ──
+function parseCSV(text) {
+  const lines = text.trim().split('\n');
+  if (lines.length < 2) return null;
+  const header = lines[0].split(',').map(h=>h.trim().replace(/^"|"$/g,'').toLowerCase());
+  const idx = k => header.findIndex(h=>h.includes(k));
+  const iNo   = [idx('trade #'), idx('#')].find(x=>x>=0) ?? -1;
+  const iType = idx('type');
+  const iDate = idx('date');
+  const iSig  = idx('signal');
+  const iPrice= idx('price');
+  const iQty  = idx('contract');
+  const iCum  = idx('cum');
+  const iMfe  = [idx('run-up'),idx('runup'),idx('favorable'),idx('mfe')].find(x=>x>=0) ?? -1;
+  const iMae  = [idx('drawdown'),idx('adverse'),idx('mae')].find(x=>x>=0) ?? -1;
+  const num = s => parseFloat(String(s||'').replace(/[^-\d.]/g,'')) || 0;
+  const trades = []; let prevCum = 0;
+  for (let i=1;i<lines.length;i++) {
+    const cols = lines[i].split(',').map(c=>c.trim().replace(/^"|"$/g,''));
+    if (!cols[iType]) continue;
+    const type = cols[iType].toLowerCase();
+    if (!type.includes('exit')) continue;
+    const cum = num(cols[iCum]);
+    const pnl = trades.length===0 ? cum : cum - prevCum;
+    prevCum = cum;
+    trades.push({
+      no: parseInt(cols[iNo])||trades.length+1,
+      date: (cols[iDate]||'').split(' ')[0],
+      type: cols[iType]||'',
+      signal: iSig>=0?(cols[iSig]||''):'',
+      exit: num(cols[iPrice]),
+      qty: num(cols[iQty])||1,
+      pnl, cum,
+      mfe: iMfe>=0 ? Math.abs(num(cols[iMfe])) : 0,
+      mae: iMae>=0 ? Math.abs(num(cols[iMae])) : 0
+    });
+  }
+  return trades.length ? trades : null;
+}
+
+// ── Import flow ──
+function openImportCsvFlow() { document.getElementById('csvFileInput').click(); }
+function handleCsvFile(input) {
+  const f = input.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = e => {
+    const trades = parseCSV(e.target.result);
+    if (!trades) { alert('Could not parse CSV.'); return; }
+    pendingCsvData = trades;
+    openImportModal();
+  };
+  r.readAsText(f); input.value='';
+}
+
+function openImportModal() {
+  const iSel = document.getElementById('impInstSel');
+  iSel.innerHTML = '';
+  db.instruments.forEach(inst => {
+    const o = document.createElement('option');
+    o.value = inst.id; o.textContent = inst.name;
+    iSel.appendChild(o);
+  });
+  populateImpStratSel();
+  document.getElementById('impVerName').value = '';
+  document.getElementById('importModal').classList.add('open');
+}
+
+function populateImpStratSel() {
+  const instId = document.getElementById('impInstSel').value || 'all';
+  const sel = document.getElementById('impStratSel');
+  sel.innerHTML = '<option value="">— Select strategy —</option>';
+  stratsByInst(instId).forEach(s => {
+    const o = document.createElement('option');
+    o.value = s.id; o.textContent = s.name;
+    sel.appendChild(o);
+  });
+  const no = document.createElement('option');
+  no.value='__new__'; no.textContent='+ Create new strategy';
+  sel.appendChild(no);
+  document.getElementById('impNewStratWrap').style.display='none';
+}
+
+function onImpStratChange() {
+  document.getElementById('impNewStratWrap').style.display =
+    document.getElementById('impStratSel').value==='__new__' ? 'block':'none';
+}
+function closeImportModal() {
+  document.getElementById('importModal').classList.remove('open');
+  pendingCsvData=null;
+}
+function confirmImport() {
+  if (!pendingCsvData) return;
+  const instId = document.getElementById('impInstSel').value || 'all';
+  let stratId = document.getElementById('impStratSel').value;
+  const verName = document.getElementById('impVerName').value.trim() || 'Version 1';
+  if (stratId==='__new__'||!stratId) {
+    const nm = document.getElementById('impNewStratName').value.trim() || 'Strategy '+(db.strategies.length+1);
+    stratId = createStrategy(nm, instId).id;
+  }
+  const strat = getStrat(stratId);
+  const ver = { id:uid(), name:verName, color:nextColor(stratId),
+    trades:pendingCsvData, visible:true, screenshot:null, varValues:{} };
+  strat.versions.push(ver);
+  strat.activeVerIdx = strat.versions.length-1;
+  db.activeStratIdx = db.strategies.indexOf(strat);
+  saveDB(); closeImportModal(); renderAll();
+}
+
+// ── CRUD ──
+function createInstrument(name) {
+  const inst = { id:uid(), name };
+  db.instruments.push(inst);
+  saveDB(); return inst;
+}
+function deleteInstrument(id) {
+  if (id==='all') { alert('Cannot delete ALL'); return; }
+  if (!confirm('Delete instrument and re-assign its strategies to ALL?')) return;
+  db.strategies.forEach(s=>{ if(s.instrumentId===id) s.instrumentId='all'; });
+  db.instruments = db.instruments.filter(i=>i.id!==id);
+  if (mgrSelInstId===id) mgrSelInstId='all';
+  if (mgrSelStratId && getStrat(mgrSelStratId)?.instrumentId===id) mgrSelStratId=null;
+  saveDB(); renderMgrTree(); renderMgrRight(); renderAll();
+}
+function createStrategy(name, instrumentId='all') {
+  const s = { id:uid(), name, instrumentId, variables:[], versions:[], activeVerIdx:0 };
+  db.strategies.push(s); saveDB(); return s;
+}
+function deleteStrategy(id) {
+  if (!confirm('Delete strategy and all its versions?')) return;
+  db.strategies = db.strategies.filter(s=>s.id!==id);
+  if (db.activeStratIdx>=db.strategies.length) db.activeStratIdx=Math.max(0,db.strategies.length-1);
+  mgrSelStratId=null;
+  saveDB(); renderMgrTree(); renderMgrRight(); renderAll();
+}
+
+// ── MANAGER ──
+function openManager() {
+  if (!mgrSelStratId && db.strategies.length) mgrSelStratId=db.strategies[0].id;
+  if (mgrSelStratId) {
+    const s=getStrat(mgrSelStratId);
+    if(s) mgrSelInstId=s.instrumentId;
+  }
+  renderMgrTree(); renderMgrRight();
+  document.getElementById('mgrModal').classList.add('open');
+}
+function closeManager() { saveDB(); document.getElementById('mgrModal').classList.remove('open'); renderAll(); }
+function openManagerForVersion(stratId, verIdx) {
+  mgrSelStratId=stratId; mgrActiveVerIdx=verIdx;
+  const s=getStrat(stratId); if(s) mgrSelInstId=s.instrumentId;
+  renderMgrTree(); renderMgrRight();
+  document.getElementById('mgrModal').classList.add('open');
+}
+
+function addInstrument() {
+  const name = prompt('Instrument name (e.g. NIFTY, BANKNIFTY):');
+  if (!name?.trim()) return;
+  const inst = createInstrument(name.trim().toUpperCase());
+  mgrSelInstId = inst.id;
+  renderMgrTree(); renderMgrRight();
+}
+function addStrategyFromMgr() {
+  const instId = mgrSelInstId || 'all';
+  const s = createStrategy('Strategy '+(db.strategies.length+1), instId);
+  mgrSelStratId=s.id; mgrActiveVerIdx=0;
+  renderMgrTree(); renderMgrRight();
+}
+
+function renderMgrTree() {
+  const q = document.getElementById('mgrSearch').value.toLowerCase();
+  const el = document.getElementById('mgrTree'); el.innerHTML='';
+  db.instruments.forEach(inst => {
+    const strats = db.strategies.filter(s=>s.instrumentId===inst.id&&(s.name.toLowerCase().includes(q)||q===''));
+    if (q && !strats.length && !inst.name.toLowerCase().includes(q)) return;
+
+    // Instrument header
+    const instRow = document.createElement('div');
+    instRow.className = 'mgr-inst-hdr' + (mgrSelInstId===inst.id&&!mgrSelStratId?' sel':'');
+    instRow.innerHTML = `<span class="mgr-inst-dot" style="background:${inst.id==='all'?'#8b949e':'#d29922'}"></span>${inst.name} <span style="margin-left:auto;font-size:10px">${strats.length}</span>`;
+    instRow.onclick = () => { mgrSelInstId=inst.id; mgrSelStratId=null; renderMgrTree(); renderMgrRight(); };
+    el.appendChild(instRow);
+
+    // Strategy items under this instrument
+    strats.forEach(s => {
+      const row = document.createElement('div');
+      row.className = 'mgr-strat-item' + (s.id===mgrSelStratId?' active':'');
+      row.innerHTML = `<span class="dot" style="background:${s.versions[0]?.color||'#8b949e'}"></span>${s.name} <span style="margin-left:auto;font-size:10px;color:#8b949e">${s.versions.length}v</span>`;
+      row.onclick = () => { mgrSelStratId=s.id; mgrSelInstId=s.instrumentId; mgrActiveVerIdx=s.activeVerIdx||0; renderMgrTree(); renderMgrRight(); };
+      el.appendChild(row);
+    });
+  });
+}
+
+function renderMgrRight() {
+  const el = document.getElementById('mgrRight');
+  // If a strategy is selected, show strategy editor
+  if (mgrSelStratId) {
+    const s = getStrat(mgrSelStratId);
+    if (!s) { el.innerHTML='<div class="mgr-right-empty">Strategy not found</div>'; return; }
+    _renderStratEditor(el, s);
+    return;
+  }
+  // If only instrument selected
+  if (mgrSelInstId) {
+    const inst = getInst(mgrSelInstId);
+    if (!inst) { el.innerHTML='<div class="mgr-right-empty">← Select</div>'; return; }
+    _renderInstEditor(el, inst);
+    return;
+  }
+  el.innerHTML='<div class="mgr-right-empty">← Select an instrument or strategy</div>';
+}
+
+function _renderInstEditor(el, inst) {
+  el.innerHTML='';
+  const sec = document.createElement('div');
+  sec.className='mgr-section';
+  sec.innerHTML=`<div class="mgr-section-title">Instrument</div>`;
+  const nameRow = document.createElement('div');
+  nameRow.className='mgr-name-row';
+  nameRow.innerHTML=`<input class="mgr-name-inp" value="${escHtml(inst.name)}" placeholder="Instrument name"
+    oninput="getInst('${inst.id}').name=this.value;renderMgrTree();saveDB()">
+    ${inst.id!=='all'?`<button class="mgr-del-btn" onclick="deleteInstrument('${inst.id}')">🗑 Delete</button>`:''}`;
+  sec.appendChild(nameRow);
+  sec.innerHTML+=`<div style="color:#8b949e;font-size:12px;margin-top:8px">${db.strategies.filter(s=>s.instrumentId===inst.id).length} strategies assigned to this instrument.</div>`;
+  el.appendChild(sec);
+}
+
+function _renderStratEditor(el, s) {
+  el.innerHTML='';
+  // Name + instrument assign + delete
+  const nameRow = document.createElement('div');
+  nameRow.className='mgr-name-row';
+  const instOpts = db.instruments.map(i=>`<option value="${i.id}" ${i.id===s.instrumentId?'selected':''}>${i.name}</option>`).join('');
+  nameRow.innerHTML=`
+    <input class="mgr-name-inp" value="${escHtml(s.name)}" placeholder="Strategy name"
+      oninput="getStrat('${s.id}').name=this.value;renderMgrTree();saveDB()">
+    <select style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:5px 8px;color:#e6edf3;font-size:12px;outline:none"
+      onchange="getStrat('${s.id}').instrumentId=this.value;renderMgrTree();saveDB()">${instOpts}</select>
+    <button class="mgr-del-btn" onclick="deleteStrategy('${s.id}')">🗑</button>`;
+  el.appendChild(nameRow);
+
+  // Variables
+  const varSec = document.createElement('div');
+  varSec.className='mgr-section';
+  varSec.innerHTML=`<div class="mgr-section-title">Variables (all versions)</div>`;
+  const varList = document.createElement('div'); varList.className='var-list';
+  s.variables.forEach(v=>{
+    const item=document.createElement('div'); item.className='var-item';
+    item.innerHTML=`<span class="vname">${escHtml(v.name)}</span><span class="vtype">${v.type}</span><span class="vdesc">${escHtml(v.desc||'')}</span>
+    <button class="var-del" onclick="delVar('${s.id}','${v.id}')">✕</button>`;
+    varList.appendChild(item);
+  });
+  varSec.appendChild(varList);
+  const addRow=document.createElement('div'); addRow.className='add-var-row';
+  addRow.innerHTML=`<input id="nv_n_${s.id}" placeholder="Name" style="flex:2">
+  <select id="nv_t_${s.id}"><option value="bool">Bool</option><option value="number">Number</option><option value="text">Text</option></select>
+  <input id="nv_d_${s.id}" placeholder="Desc (opt)" style="flex:2">
+  <button class="btn btn-gray btn-sm" onclick="addVar('${s.id}')">+ Add</button>`;
+  varSec.appendChild(addRow);
+  el.appendChild(varSec);
+
+  // Version tabs
+  const verSec=document.createElement('div'); verSec.className='mgr-section';
+  verSec.innerHTML=`<div class="mgr-section-title">Versions</div>`;
+  const tabsRow=document.createElement('div'); tabsRow.className='ver-tabs-row';
+  s.versions.forEach((v,i)=>{
+    const tab=document.createElement('div');
+    tab.className='vt-tab'+(i===mgrActiveVerIdx?' active':'');
+    tab.innerHTML=`<span class="vt-dot" style="background:${v.color}"></span>${escHtml(v.name)}`;
+    tab.onclick=()=>{mgrActiveVerIdx=i;renderMgrRight();};
+    tabsRow.appendChild(tab);
+  });
+  const addVBtn=document.createElement('button'); addVBtn.className='vt-add'; addVBtn.textContent='+';
+  addVBtn.setAttribute('data-sid',s.id);
+  addVBtn.onclick=function(){addVersion(this.getAttribute('data-sid'));};
+  tabsRow.appendChild(addVBtn);
+  verSec.appendChild(tabsRow);
+
+  const ver = s.versions[mgrActiveVerIdx];
+  if (ver) {
+    const vp=document.createElement('div'); vp.className='ver-panel';
+    // Name + color + delete
+    vp.innerHTML=`<div class="ver-field-row"><label>Name</label>
+      <input value="${escHtml(ver.name)}" oninput="updateVerField('${s.id}',${mgrActiveVerIdx},'name',this.value)">
+      <input type="color" class="ver-color-pick" value="${ver.color}" oninput="updateVerField('${s.id}',${mgrActiveVerIdx},'color',this.value)">
+      <button class="ver-del-btn" onclick="deleteVersion('${s.id}',${mgrActiveVerIdx})">🗑 Delete</button></div>`;
+    // CSV
+    const csvDiv=document.createElement('div'); csvDiv.className='ver-field-row';
+    csvDiv.innerHTML='<label>CSV</label>';
+    const csvDrop=document.createElement('div');
+    csvDrop.className='csv-drop'+(ver.trades?.length?' has-data':''); csvDrop.style.flex='1';
+    csvDrop.textContent=ver.trades?.length?`✓ ${ver.trades.length} trades`:'Drop CSV or click';
+    csvDrop.onclick=()=>{
+      const inp=document.createElement('input'); inp.type='file'; inp.accept='.csv';
+      inp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();
+        r.onload=ev=>{const t=parseCSV(ev.target.result);if(!t){alert('Parse error');return;}
+          s.versions[mgrActiveVerIdx].trades=t;saveDB();renderMgrRight();};r.readAsText(f);};
+      inp.click();};
+    csvDiv.appendChild(csvDrop); vp.appendChild(csvDiv);
+    // Screenshot
+    const ssDiv=document.createElement('div'); ssDiv.className='ver-field-row';
+    ssDiv.innerHTML='<label>Screenshot</label>';
+    const ssDrop=document.createElement('div'); ssDrop.className='ss-drop'; ssDrop.style.flex='1';
+    if(ver.screenshot){
+      ssDrop.innerHTML=`<img src="${ver.screenshot}" onclick="openLightbox('${ver.screenshot}');event.stopPropagation()"><button class="ss-clr" onclick="clearSS('${s.id}',${mgrActiveVerIdx});event.stopPropagation()">✕</button>`;
+    }else{
+      ssDrop.textContent='📷 Click to upload';
+      ssDrop.onclick=()=>pickSS(s.id,mgrActiveVerIdx);
+      ssDrop.ondragover=e=>{e.preventDefault();ssDrop.style.borderColor='#58a6ff';};
+      ssDrop.ondragleave=()=>ssDrop.style.borderColor='';
+      ssDrop.ondrop=e=>{e.preventDefault();const f=e.dataTransfer.files[0];if(f)readSSFile(f,s.id,mgrActiveVerIdx);};
+    }
+    ssDiv.appendChild(ssDrop); vp.appendChild(ssDiv);
+    // Variable values
+    if(s.variables.length){
+      const vvSec=document.createElement('div');
+      vvSec.innerHTML='<div class="mgr-section-title" style="margin-top:14px">Variable Values</div>';
+      const grid=document.createElement('div'); grid.className='var-vals-grid';
+      s.variables.forEach(variable=>{
+        const stored=ver.varValues[variable.id]||{};
+        const row=document.createElement('div'); row.className='var-val-row';
+        row.innerHTML=`<div class="vvr-name">${escHtml(variable.name)}</div>`;
+        const valCol=document.createElement('div'); valCol.className='vvr-val';
+        if(variable.type==='bool'){
+          const bv=stored.value===true||stored.value==='true';
+          valCol.innerHTML=`<div class="toggle-bool">
+            <label class="${bv?'active-lbl':''}"><input type="radio" name="bv_${s.id}_${variable.id}" value="true" ${bv?'checked':''}
+              onchange="setVarVal('${s.id}',${mgrActiveVerIdx},'${variable.id}',true)"> ✓ Yes</label>
+            <label class="${!bv?'active-lbl':''}"><input type="radio" name="bv_${s.id}_${variable.id}" value="false" ${!bv?'checked':''}
+              onchange="setVarVal('${s.id}',${mgrActiveVerIdx},'${variable.id}',false)"> ✗ No</label></div>`;
+        }else{
+          valCol.innerHTML=`<input class="vvr-inp" type="${variable.type==='number'?'number':'text'}"
+            placeholder="Value…" value="${escHtml(String(stored.value??''))}"
+            onchange="setVarVal('${s.id}',${mgrActiveVerIdx},'${variable.id}',this.value)">`;
+        }
+        valCol.innerHTML+=`<input class="vvr-reason" placeholder="Reason / notes…" value="${escHtml(stored.reason||'')}"
+          oninput="setVarReason('${s.id}',${mgrActiveVerIdx},'${variable.id}',this.value)">`;
+        row.appendChild(valCol); grid.appendChild(row);
+      });
+      vvSec.appendChild(grid); vp.appendChild(vvSec);
+    }
+    verSec.appendChild(vp);
+  }else{
+    verSec.innerHTML+=`<div style="color:#8b949e;font-size:12px;padding:16px 0">No versions yet. Click + to add.</div>`;
+  }
+  el.appendChild(verSec);
+}
+
+function updateVerField(sid,vi,field,val){const s=getStrat(sid);if(s?.versions[vi]){s.versions[vi][field]=val;saveDB();}}
+function addVersion(stratId){
+  const s=getStrat(stratId); if(!s){alert('Strategy not found');return;}
+  s.versions=s.versions||[];
+  const ver={id:uid(),name:'Version '+(s.versions.length+1),color:COLORS[s.versions.length%COLORS.length],
+    trades:[],visible:true,screenshot:null,varValues:{}};
+  s.versions.push(ver); mgrActiveVerIdx=s.versions.length-1;
+  saveDB(); renderMgrRight();
+}
+function deleteVersion(sid,vi){
+  const s=getStrat(sid); if(s.versions.length<=1){alert('Cannot delete last version');return;}
+  if(!confirm('Delete this version?'))return;
+  s.versions.splice(vi,1);
+  if(mgrActiveVerIdx>=s.versions.length)mgrActiveVerIdx=s.versions.length-1;
+  saveDB(); renderMgrRight();
+}
+function addVar(sid){
+  const s=getStrat(sid);
+  const name=document.getElementById(`nv_n_${sid}`)?.value.trim();
+  const type=document.getElementById(`nv_t_${sid}`)?.value||'bool';
+  const desc=document.getElementById(`nv_d_${sid}`)?.value.trim()||'';
+  if(!name)return;
+  s.variables.push({id:uid(),name,type,desc}); saveDB(); renderMgrRight();
+}
+function delVar(sid,vid){
+  const s=getStrat(sid);
+  s.variables=s.variables.filter(v=>v.id!==vid);
+  s.versions.forEach(ver=>delete ver.varValues[vid]);
+  saveDB(); renderMgrRight();
+}
+function setVarVal(sid,vi,vid,val){const s=getStrat(sid);if(!s?.versions[vi])return;if(!s.versions[vi].varValues[vid])s.versions[vi].varValues[vid]={};s.versions[vi].varValues[vid].value=val;saveDB();}
+function setVarReason(sid,vi,vid,r){const s=getStrat(sid);if(!s?.versions[vi])return;if(!s.versions[vi].varValues[vid])s.versions[vi].varValues[vid]={};s.versions[vi].varValues[vid].reason=r;saveDB();}
+function pickSS(sid,vi){const inp=document.createElement('input');inp.type='file';inp.accept='image/*';inp.onchange=e=>{const f=e.target.files[0];if(f)readSSFile(f,sid,vi);};inp.click();}
+function readSSFile(f,sid,vi){const r=new FileReader();r.onload=e=>{const s=getStrat(sid);if(s?.versions[vi]){s.versions[vi].screenshot=e.target.result;saveDB();renderMgrRight();}};r.readAsDataURL(f);}
+function clearSS(sid,vi){const s=getStrat(sid);if(s?.versions[vi]){s.versions[vi].screenshot=null;saveDB();renderMgrRight();}}
+
+// ═══════════════════════════════════════════════
+// STATS CALC
+// ═══════════════════════════════════════════════
+function calcStats(trades){
+  if(!trades||!trades.length)return null;
+  const wins=trades.filter(t=>t.pnl>0),losses=trades.filter(t=>t.pnl<0);
+  const net=trades[trades.length-1].cum;
+  const grossW=wins.reduce((a,t)=>a+t.pnl,0);
+  const grossL=Math.abs(losses.reduce((a,t)=>a+t.pnl,0));
+  const pf=grossL?grossW/grossL:999;
+  let peak=0,dd=0;
+  trades.forEach(t=>{if(t.cum>peak)peak=t.cum;dd=Math.min(dd,t.cum-peak);});
+  const ddPct=peak?(dd/Math.abs(peak))*100:0;
+  const pnls=trades.map(t=>t.pnl);
+  const mean=pnls.reduce((a,b)=>a+b,0)/pnls.length;
+  const std=Math.sqrt(pnls.reduce((a,b)=>a+(b-mean)**2,0)/pnls.length)||1;
+  const sharpe=mean/std*Math.sqrt(pnls.length);
+  const mfeAvg=trades.reduce((a,t)=>a+(t.mfe||0),0)/trades.length;
+  const maeAvg=trades.reduce((a,t)=>a+(t.mae||0),0)/trades.length;
+  const tradingDays=new Set(trades.map(t=>t.date)).size;
+  return{net,wr:wins.length/trades.length*100,wins:wins.length,losses:losses.length,
+    total:trades.length,avg:mean,dd,ddPct,pf,sharpe,mfeAvg,maeAvg,tradingDays,
+    dates:{first:trades[0].date,last:trades[trades.length-1].date}};
+}
+
+// ═══════════════════════════════════════════════
+// RENDER ALL
+// ═══════════════════════════════════════════════
+let eqChart=null,mfemaeChart=null,distChart=null;
+function renderAll(){
+  renderStratTabs(); renderVerChips(); renderStats();
+  renderEquityChart(); renderMfeMae();
+  renderMonthly(); renderDist();
+  renderStratTable(); renderTradeLog();
+}
+
+function renderStratTabs(){
+  const el=document.getElementById('stratTabs'); el.innerHTML='';
+  if(!db.strategies.length){
+    el.innerHTML=`<span style="color:#8b949e;font-size:12px">No strategies — ⚙ Manager to create, or 📁 Import CSV.</span>`;
+    return;
+  }
+  db.strategies.forEach((s,i)=>{
+    const tab=document.createElement('div');
+    tab.className='stab'+(i===db.activeStratIdx?' active':'');
+    const inst=getInst(s.instrumentId);
+    tab.innerHTML=`<span class="dot" style="background:${s.versions[0]?.color||'#8b949e'}"></span>
+      ${inst&&inst.id!=='all'?`<span class="inst-badge">${escHtml(inst.name)}</span>`:''}
+      <span class="sname">${escHtml(s.name)}</span>
+      <span class="stab-count">${s.versions.length}v</span>`;
+    tab.onclick=()=>{db.activeStratIdx=i;saveDB();renderAll();};
+    el.appendChild(tab);
+  });
+}
+
+function renderVerChips(){
+  const el=document.getElementById('verChips'); el.innerHTML='';
+  const s=activeStrat(); if(!s||!s.versions.length)return;
+  const hint=document.createElement('span'); hint.className='ver-chips-hint'; hint.textContent='versions:';
+  el.appendChild(hint);
+  s.versions.forEach((v,i)=>{
+    const chip=document.createElement('div');
+    chip.className='vchip'+(i===s.activeVerIdx?' active-ver':'')+(v.visible?'':' toggled-off');
+    chip.style.color=v.color; chip.style.background=v.color+'18';
+    chip.innerHTML=`<span style="width:7px;height:7px;border-radius:50%;background:${v.color};flex-shrink:0;display:inline-block"></span>${escHtml(v.name)}`;
+    chip.title='Click=active · Right-click=toggle chart';
+    chip.onclick=()=>{s.activeVerIdx=i;saveDB();renderAll();};
+    chip.oncontextmenu=e=>{e.preventDefault();v.visible=!v.visible;saveDB();renderAll();};
+    el.appendChild(chip);
+  });
+  const hint2=document.createElement('span'); hint2.className='ver-chips-hint'; hint2.textContent='(right-click=toggle)';
+  el.appendChild(hint2);
+}
+
+function renderStats(){
+  const v=activeVer();
+  if(!v||!v.trades?.length){
+    ['sNetPnl','sWR','sAvg','sDD','sPF'].forEach(id=>document.getElementById(id).textContent='—');
+    ['sPeriod','sWL','sTrades','sDDpct','sBE'].forEach(id=>document.getElementById(id).textContent='—');
+    return;
+  }
+  const st=calcStats(v.trades);
+  const fmt=n=>(n>=0?'+':'')+n.toFixed(0);
+  document.getElementById('sNetPnl').textContent=fmt(st.net);
+  document.getElementById('sNetPnl').className='sval '+(st.net>=0?'g':'r');
+  document.getElementById('sPeriod').textContent=`${st.dates.first} → ${st.dates.last}`;
+  document.getElementById('sWR').textContent=st.wr.toFixed(1)+'%';
+  document.getElementById('sWR').className='sval '+(st.wr>=50?'g':'y');
+  document.getElementById('sWL').textContent=`${st.wins}W / ${st.losses}L`;
+  document.getElementById('sAvg').textContent=fmt(st.avg);
+  document.getElementById('sAvg').className='sval '+(st.avg>=0?'g':'r');
+  document.getElementById('sTrades').textContent=`${st.total} trades`;
+  document.getElementById('sDD').textContent=fmt(st.dd);
+  document.getElementById('sDDpct').textContent=st.ddPct.toFixed(1)+'% drawdown';
+  document.getElementById('sPF').textContent=Math.min(st.pf,99).toFixed(2);
+  document.getElementById('sPF').className='sval '+(st.pf>=1.5?'g':st.pf>=1?'y':'r');
+  document.getElementById('sBE').textContent='break-even at 50%';
+  const s=activeStrat(); const inst=getInst(s?.instrumentId);
+  document.getElementById('hdrSub').textContent=
+    `${inst&&inst.id!=='all'?inst.name+' › ':''}${s?.name||''} › ${v.name} · ${st.total} trades · ${st.dates.first} — ${st.dates.last}`;
+}
+
+function renderEquityChart(){
+  const s=activeStrat();
+  const ctx=document.getElementById('equityChart').getContext('2d');
+  if(eqChart){eqChart.destroy();eqChart=null;}
+  if(!s||!s.versions.length)return;
+  const datasets=[];
+  s.versions.forEach((v,i)=>{
+    if(!v.visible||!v.trades?.length)return;
+    datasets.push({label:v.name,data:v.trades.map(t=>t.cum),borderColor:v.color,
+      backgroundColor:'transparent',borderWidth:i===s.activeVerIdx?2:1.2,
+      tension:.35,pointRadius:0,borderDash:i===s.activeVerIdx?[]:[4,3]});
+  });
+  if(!datasets.length)return;
+  eqChart=new Chart(ctx,{type:'line',data:{labels:s.versions[s.activeVerIdx]?.trades?.map((_,i)=>i+1)||[],datasets},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${c.raw.toFixed(0)}`}}},
+      scales:{x:{display:false},y:{grid:{color:'#21262d'},ticks:{color:'#8b949e',font:{size:10}},border:{color:'#30363d'}}}}});
+  const leg=document.getElementById('eqLegend'); leg.innerHTML='';
+  datasets.forEach(d=>{const sp=document.createElement('span');
+    sp.style.cssText='display:flex;align-items:center;gap:4px';
+    sp.innerHTML=`<span style="width:12px;height:2px;background:${d.borderColor};display:inline-block;border-radius:1px"></span>${escHtml(d.label)}`;
+    leg.appendChild(sp);});
+}
+
+function renderMfeMae(){
+  const v=activeVer();
+  const ctx=document.getElementById('mfemaeChart').getContext('2d');
+  if(mfemaeChart){mfemaeChart.destroy();mfemaeChart=null;}
+  if(!v?.trades?.length)return;
+  mfemaeChart=new Chart(ctx,{type:'bar',
+    data:{labels:v.trades.map(t=>t.no),datasets:[
+      {label:'MFE',data:v.trades.map(t=>t.mfe||0),backgroundColor:'#3fb95060',borderWidth:0,barPercentage:.8},
+      {label:'MAE',data:v.trades.map(t=>-(t.mae||0)),backgroundColor:'#f8514960',borderWidth:0,barPercentage:.8}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false},tooltip:{callbacks:{label:c=>`${c.dataset.label}: ${Math.abs(c.raw).toFixed(0)}`}}},
+      scales:{x:{display:false},y:{grid:{color:'#21262d'},ticks:{color:'#8b949e',font:{size:9}},border:{color:'#30363d'}}}}});
+}
+
+function renderMonthly(){
+  const v=activeVer(); const el=document.getElementById('monthlyGrid'); el.innerHTML='';
+  if(!v?.trades?.length){el.innerHTML='<div style="color:#8b949e;font-size:12px;padding:10px">—</div>';return;}
+  const byMonth={};
+  v.trades.forEach(t=>{const m=t.date?.slice(0,7)||'?';if(!byMonth[m])byMonth[m]={pnl:0,n:0};byMonth[m].pnl+=t.pnl;byMonth[m].n++;});
+  const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  Object.keys(byMonth).sort().forEach(m=>{
+    const{pnl,n}=byMonth[m];const[y,mo]=m.split('-');
+    const cell=document.createElement('div'); cell.className='month-cell';
+    cell.innerHTML=`<div class="month-nm">${MN[parseInt(mo)-1]} ${y.slice(2)}</div>
+      <div class="month-pnl ${pnl>=0?'g':'r'}">${pnl>=0?'+':''}${pnl.toFixed(0)}</div>
+      <div class="month-t">${n} trades</div>`;
+    el.appendChild(cell);});
+}
+
+function renderDist(){
+  const v=activeVer();
+  const ctx=document.getElementById('distChart').getContext('2d');
+  if(distChart){distChart.destroy();distChart=null;}
+  if(!v?.trades?.length)return;
+  const pnls=v.trades.map(t=>t.pnl);
+  const mn=Math.min(...pnls),mx=Math.max(...pnls);
+  const bins=12;const bw=(mx-mn)/bins||1;
+  const labels=[],data=[],colors=[];
+  for(let i=0;i<bins;i++){
+    const lo=mn+i*bw,hi=lo+bw;
+    labels.push(lo.toFixed(0));
+    data.push(pnls.filter(p=>p>=lo&&(i===bins-1?p<=hi:p<hi)).length);
+    colors.push(lo>=0?'#3fb95080':'#f8514980');
+  }
+  distChart=new Chart(ctx,{type:'bar',data:{labels,datasets:[{data,backgroundColor:colors,borderWidth:0}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,plugins:{legend:{display:false}},
+      scales:{x:{ticks:{color:'#8b949e',font:{size:9}},grid:{display:false},border:{color:'#30363d'}},
+        y:{ticks:{color:'#8b949e',font:{size:9}},grid:{color:'#21262d'},border:{color:'#30363d'}}}}});
+}
+
+// ── STRATEGY TABLE ──
+function toggleSttView(){sttViewMode=sttViewMode==='horizontal'?'vertical':'horizontal';renderStratTable();}
+function sttSort(key){if(sttSortKey===key)sttSortAsc=!sttSortAsc;else{sttSortKey=key;sttSortAsc=false;}renderStratTable();}
+function sortedVerIdxs(vers){
+  const idxs=vers.map((_,i)=>i);
+  if(!sttSortKey)return idxs;
+  const sm={}; vers.forEach((v,i)=>{sm[i]=calcStats(v.trades);});
+  const val=i=>{const st=sm[i];if(!st)return sttSortAsc?Infinity:-Infinity;
+    return({net:st.net,wr:st.wr,pf:st.pf,sharpe:st.sharpe,avg:st.avg,dd:st.dd,trades:st.total,days:st.tradingDays})[sttSortKey]??0;};
+  return idxs.sort((a,b)=>sttSortAsc?val(a)-val(b):val(b)-val(a));
+}
+
+function renderStratTable(){
+  const tabsEl=document.getElementById('sttTabs'); const bodyEl=document.getElementById('sttBody');
+  tabsEl.innerHTML=''; bodyEl.innerHTML='';
+  if(!db.strategies.length)return;
+  if(sttActiveStratIdx>=db.strategies.length)sttActiveStratIdx=0;
+  db.strategies.forEach((s,i)=>{
+    const tab=document.createElement('div');
+    tab.className='stt-tab'+(i===sttActiveStratIdx?' active':'');
+    const inst=getInst(s.instrumentId);
+    tab.innerHTML=`<span class="stt-dot" style="background:${s.versions[0]?.color||'#8b949e'}"></span>
+      ${inst&&inst.id!=='all'?`<span style="font-size:9px;color:#d29922;margin-right:2px">[${escHtml(inst.name)}]</span>`:''}
+      ${escHtml(s.name)} <span style="font-size:10px;color:#8b949e;margin-left:4px">${s.versions.length}v</span>`;
+    tab.onclick=()=>{sttActiveStratIdx=i;renderStratTable();};
+    tabsEl.appendChild(tab);
+  });
+  const btn=document.getElementById('sttToggleBtn');
+  if(btn)btn.textContent=sttViewMode==='vertical'?'⇄ Horizontal':'⇄ Vertical';
+  const strat=db.strategies[sttActiveStratIdx]; if(!strat)return;
+  const vars=strat.variables; const vers=strat.versions;
+  const ordIdxs=sortedVerIdxs(vers);
+  if(!vers.length){bodyEl.innerHTML='<div style="text-align:center;color:#8b949e;padding:24px">No versions yet</div>';return;}
+
+  const g=n=>`<span class="${n>=0?'g':'r'}">${n>=0?'+':''}${n.toFixed(0)}</span>`;
+  const isAV=vi=>strat.id===activeStrat()?.id&&vi===strat.activeVerIdx;
+  const setAV=vi=>{db.activeStratIdx=db.strategies.indexOf(strat);strat.activeVerIdx=vi;saveDB();renderAll();};
+  const onRC=(e,vi)=>{e.preventDefault();openManagerForVersion(strat.id,vi);};
+  const sh=(lbl,key)=>{const ac=sttSortKey===key;const cl=ac?(sttSortAsc?'sortable sort-asc':'sortable sort-desc'):'sortable';return`<th class="${cl}" onclick="sttSort('${key}')">${lbl}</th>`;};
+
+  if(sttViewMode==='vertical'){
+    // ── VERTICAL: rows = metrics, cols = versions ──
+    const tbl=document.createElement('table');
+    const hdr=document.createElement('thead'); const hdrRow=document.createElement('tr');
+    const lTh=document.createElement('th'); lTh.style.width='155px'; lTh.textContent='Metric';
+    hdrRow.appendChild(lTh);
+    ordIdxs.forEach(vi=>{
+      const ver=vers[vi]; const th=document.createElement('th');
+      th.style.cursor='pointer';
+      th.style.borderBottom=isAV(vi)?'2px solid '+ver.color:'';
+      th.innerHTML=`<div style="display:flex;align-items:center;gap:5px">
+        <span style="width:8px;height:8px;border-radius:50%;background:${ver.color};display:inline-block;flex-shrink:0"></span>
+        <input class="inline-edit" value="${escHtml(ver.name)}" onclick="event.stopPropagation()"
+          oninput="strat.versions[${vi}].name=this.value;saveDB()" style="width:90px;font-weight:600"></div>`;
+      th.onclick=e=>{if(e.target.tagName!=='INPUT')setAV(vi);};
+      th.oncontextmenu=e=>onRC(e,vi);
+      hdrRow.appendChild(th);
+    });
+    hdr.appendChild(hdrRow); tbl.appendChild(hdr);
+    const tbody=document.createElement('tbody');
+
+    const addVRow=(label,cells,divider)=>{
+      const tr=document.createElement('tr');
+      if(divider)tr.style.borderTop='2px solid #30363d';
+      const td0=document.createElement('td');
+      td0.style.cssText='font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.4px;font-weight:600;white-space:nowrap';
+      td0.textContent=label; tr.appendChild(td0);
+      cells.forEach(cell=>{
+        const td=document.createElement('td');
+        if(cell.diff)td.style.borderLeft='2px solid #d29922';
+        if(cell.active)td.style.background='#1c2a3a';
+        td.innerHTML=cell.html||'';
+        if(cell.onclick){td.style.cursor='pointer';td.onclick=cell.onclick;}
+        tr.appendChild(td);
+      });
+      tbody.appendChild(tr);
+    };
+
+    addVRow('Screenshot',ordIdxs.map(vi=>{const ver=vers[vi];return{active:isAV(vi),onclick:()=>setAV(vi),
+      html:ver.screenshot?`<img class="ss-thumb" src="${ver.screenshot}" onclick="openLightbox('${ver.screenshot}');event.stopPropagation()" style="max-width:80px;max-height:54px">`:
+      `<span style="color:#8b949e;font-size:10px">—</span>`};}));
+    addVRow('Range',ordIdxs.map(vi=>{const st=calcStats(vers[vi].trades);
+      return{active:isAV(vi),onclick:()=>setAV(vi),
+        html:st?`<span style="font-size:11px;color:#8b949e">${st.dates.first} → ${st.dates.last}</span>`:'—'};}));
+    vars.forEach(variable=>{
+      const allVals=vers.map(v=>(v.varValues[variable.id]||{}).value);
+      const hasDiff=allVals.some(vv=>String(vv)!==String(allVals[0]));
+      addVRow(variable.name,ordIdxs.map(vi=>{
+        const ver=vers[vi]; const stored=ver.varValues[variable.id]||{};
+        let html='';
+        if(variable.type==='bool'){const bv=stored.value===true||stored.value==='true';
+          html=`<div class="${bv?'bool-true':'bool-false'}">${bv?'✓':'✗'}</div>${stored.reason?`<div class="param-reason">${escHtml(stored.reason)}</div>`:''}`;}
+        else{html=`<input class="inline-edit" value="${escHtml(String(stored.value??''))}" onclick="event.stopPropagation()"
+          onchange="setVarVal('${strat.id}',${vi},'${variable.id}',this.value);renderStratTable()" style="width:70px">
+          ${stored.reason?`<div class="param-reason">${escHtml(stored.reason)}</div>`:''}`;}
+        return{active:isAV(vi),diff:hasDiff,html,onclick:()=>setAV(vi)};}));
+    });
+    const statRows=[
+      {lbl:'Total P&L',    key:'net',    fn:st=>g(st.net)},
+      {lbl:'Win Rate',     key:'wr',     fn:st=>`<span class="${st.wr>=50?'g':'y'}">${st.wr.toFixed(1)}%</span>`},
+      {lbl:'W / L',        key:null,     fn:st=>`<span class="g">${st.wins}W</span> / <span class="r">${st.losses}L</span>`},
+      {lbl:'Avg Trade',    key:'avg',    fn:st=>g(st.avg)},
+      {lbl:'Max Drawdown', key:'dd',     fn:st=>`<span class="r">${st.dd.toFixed(0)} (${st.ddPct.toFixed(1)}%)</span>`},
+      {lbl:'Profit Factor',key:'pf',     fn:st=>`<span class="${st.pf>=1.5?'g':st.pf>=1?'y':'r'}">${Math.min(st.pf,99).toFixed(2)}</span>`},
+      {lbl:'Sharpe',       key:'sharpe', fn:st=>`<span class="${st.sharpe>=1?'g':st.sharpe>=0?'y':'r'}">${st.sharpe.toFixed(2)}</span>`},
+      {lbl:'MFE avg',      key:null,     fn:st=>`<span class="g">${st.mfeAvg.toFixed(0)}</span>`},
+      {lbl:'MAE avg',      key:null,     fn:st=>`<span class="r">${st.maeAvg.toFixed(0)}</span>`},
+      {lbl:'Total Trades', key:'trades', fn:st=>`<span class="b">${st.total}</span>`},
+      {lbl:'Trading Days', key:'days',   fn:st=>`<span class="b">${st.tradingDays}</span>`},
+    ];
+    statRows.forEach((def,ri)=>{
+      addVRow(def.lbl,ordIdxs.map(vi=>{const st=calcStats(vers[vi].trades);
+        return{active:isAV(vi),html:st?def.fn(st):'—',onclick:()=>setAV(vi)};}),ri===0);
+    });
+    tbl.appendChild(tbody); bodyEl.appendChild(tbl);
+
+  } else {
+    // ── HORIZONTAL: rows = versions, cols = metrics ──
+    const tbl=document.createElement('table');
+    const hdr=document.createElement('thead');
+    hdr.innerHTML=`<tr><th>Version</th><th>Screenshot</th><th>Range</th>
+      ${sh('Net P&L','net')}${sh('Trades','trades')}${sh('Win%','wr')}
+      <th>W/L</th>${sh('Avg','avg')}${sh('MDD','dd')}
+      ${sh('PF','pf')}${sh('Sharpe','sharpe')}<th>MFE</th><th>MAE</th>${sh('Days','days')}
+      ${vars.map(v=>`<th>${escHtml(v.name)}</th>`).join('')}</tr>`;
+    tbl.appendChild(hdr);
+    const tbody=document.createElement('tbody');
+    ordIdxs.forEach(vi=>{
+      const ver=vers[vi]; const st=calcStats(ver.trades);
+      const row=document.createElement('tr');
+      row.className='ver-row'+(isAV(vi)?' ver-row-active':'');
+      row.onclick=()=>setAV(vi); row.oncontextmenu=e=>onRC(e,vi);
+      const tdN=document.createElement('td');
+      tdN.innerHTML=`<div style="display:flex;align-items:center;gap:6px">
+        <span style="background:${ver.color};width:8px;height:8px;border-radius:50%;flex-shrink:0;display:inline-block"></span>
+        <input class="inline-edit" value="${escHtml(ver.name)}" onclick="event.stopPropagation()"
+          oninput="strat.versions[${vi}].name=this.value;saveDB()" style="width:100px"></div>`;
+      row.appendChild(tdN);
+      const tdSS=document.createElement('td');
+      tdSS.innerHTML=ver.screenshot?`<img class="ss-thumb" src="${ver.screenshot}" onclick="openLightbox('${ver.screenshot}');event.stopPropagation()">`:`<span style="color:#8b949e;font-size:10px">—</span>`;
+      row.appendChild(tdSS);
+      if(st){
+        [`<span style="font-size:11px;color:#8b949e;white-space:nowrap">${st.dates.first}<br>${st.dates.last}</span>`,
+         g(st.net),st.total,`<span class="${st.wr>=50?'g':'y'}">${st.wr.toFixed(1)}%</span>`,
+         `<span class="g">${st.wins}W</span>/<span class="r">${st.losses}L</span>`,g(st.avg),
+         `<span class="r">${st.dd.toFixed(0)}</span>`,
+         `<span class="${st.pf>=1.5?'g':st.pf>=1?'y':'r'}">${Math.min(st.pf,99).toFixed(2)}</span>`,
+         `<span class="${st.sharpe>=1?'g':st.sharpe>=0?'y':'r'}">${st.sharpe.toFixed(2)}</span>`,
+         `<span class="g">${st.mfeAvg.toFixed(0)}</span>`,`<span class="r">${st.maeAvg.toFixed(0)}</span>`,
+         `<span class="b">${st.tradingDays}</span>`
+        ].forEach(h=>{const td=document.createElement('td');td.innerHTML=h;row.appendChild(td);});
+      }else{for(let i=0;i<12;i++){const td=document.createElement('td');td.textContent='—';row.appendChild(td);}}
+      vars.forEach(variable=>{
+        const stored=ver.varValues[variable.id]||{};
+        const td=document.createElement('td');
+        const allVals=vers.map(v2=>(v2.varValues[variable.id]||{}).value);
+        if(allVals.some(vv=>String(vv)!==String(allVals[0])))td.className='diff-cell';
+        if(variable.type==='bool'){const bv=stored.value===true||stored.value==='true';
+          td.innerHTML=`<div class="${bv?'bool-true':'bool-false'}">${bv?'✓':'✗'}</div>${stored.reason?`<div class="param-reason">${escHtml(stored.reason)}</div>`:''}`;}
+        else{td.innerHTML=`<input class="inline-edit" value="${escHtml(String(stored.value??''))}" onclick="event.stopPropagation()"
+          onchange="setVarVal('${strat.id}',${vi},'${variable.id}',this.value);renderStratTable()" style="width:70px">
+          ${stored.reason?`<div class="param-reason">${escHtml(stored.reason)}</div>`:''}`;}
+        row.appendChild(td);
+      });
+      tbody.appendChild(row);
+    });
+    tbl.appendChild(tbody); bodyEl.appendChild(tbl);
+  }
+}
+
+// ── TRADE LOG ──
+function setTlGroup(mode){
+  tlGroupMode=mode;
+  ['none','day','week','month'].forEach(m=>document.getElementById('grp'+m.charAt(0).toUpperCase()+m.slice(1))?.classList.remove('active'));
+  const el=document.getElementById('grp'+mode.charAt(0).toUpperCase()+mode.slice(1));
+  if(el)el.classList.add('active');
+  renderTradeLog();
+}
+
+function tlGroupKey(date,mode){
+  if(mode==='none'||!date)return null;
+  if(mode==='day')return date;
+  if(mode==='month')return date.slice(0,7);
+  if(mode==='week'){
+    const d=new Date(date);
+    const day=d.getDay(); const diff=d.getDate()-(day===0?6:day-1);
+    const mon=new Date(d.setDate(diff));
+    return mon.toISOString().slice(0,10);
+  }
+  return null;
+}
+
+function renderTradeLog(){
+  const v=activeVer(); const wrap=document.getElementById('tradeLogBody'); wrap.innerHTML='';
+  document.getElementById('tradeCount').textContent=v?.trades?.length?`(${v.trades.length} trades)`:'';
+  if(!v?.trades?.length){wrap.innerHTML='<div style="text-align:center;color:#8b949e;padding:32px">No trades loaded</div>';return;}
+
+  const trades=[...v.trades].reverse();
+
+  if(tlGroupMode==='none'){
+    // TV style - no grouping
+    const colRow=document.createElement('div'); colRow.className='tv-col-row';
+    colRow.innerHTML=['#','Dir','Signal / Exit','Exit Price','Size','Net P&L','Favorable exc.','Adverse / Cum P&L']
+      .map(h=>`<div class="tv-col-lbl">${h}</div>`).join('');
+    wrap.appendChild(colRow);
+    trades.forEach(t=>{
+      const isWin=t.pnl>0; const dir=t.type.toLowerCase().includes('long')?'long':'short';
+      const acc=isWin?'#3fb950':'#f85149';
+      const group=document.createElement('div'); group.className='tv-trade-group';
+      const hRow=document.createElement('div'); hRow.className='tv-trade-hdr';
+      hRow.style.borderLeft=`3px solid ${acc}`;
+      hRow.innerHTML=`<div style="display:flex;align-items:center;gap:5px">
+          <span class="tv-trade-no">${t.no}</span>
+          <span class="tv-dir-badge tv-dir-${dir}">${dir}</span></div>
+        <div style="color:#8b949e;font-size:11px">${t.date}</div>
+        <div style="color:#8b949e;font-size:11px">${t.signal||t.type}</div>
+        <div style="color:#8b949e;font-size:11px">${t.exit||'—'}</div>
+        <div style="color:#8b949e;font-size:11px">${t.qty}</div>
+        <div class="${isWin?'g':'r'}" style="font-weight:700">${t.pnl>=0?'+':''}${t.pnl.toFixed(2)}</div>
+        <div class="g" style="font-size:11px">${t.mfe?'+'+t.mfe.toFixed(0):'—'}</div>
+        <div style="font-size:11px"><span class="r">${t.mae?'-'+t.mae.toFixed(0):'—'}</span>
+          <span style="color:#8b949e;margin-left:8px">${t.cum.toFixed(0)}</span></div>`;
+      const sRow=document.createElement('div'); sRow.className='tv-trade-subrow';
+      sRow.innerHTML=`<div></div><div style="color:#58a6ff;font-size:10px;font-weight:600">EXIT</div>
+        <div>${t.signal}</div><div>${t.exit||'—'}</div><div>${t.qty}</div><div></div>
+        <div class="g">${t.mfe?t.mfe.toFixed(1):'—'}</div><div class="r">${t.mae?t.mae.toFixed(1):'—'}</div>`;
+      group.appendChild(hRow); group.appendChild(sRow); wrap.appendChild(group);
+    });
+  } else {
+    // Grouped
+    const MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    const groups={}; const order=[];
+    trades.forEach(t=>{
+      const key=tlGroupKey(t.date,tlGroupMode)||t.date;
+      if(!groups[key]){groups[key]={trades:[],pnl:0,wins:0};order.push(key);}
+      groups[key].trades.push(t); groups[key].pnl+=t.pnl;
+      if(t.pnl>0)groups[key].wins++;
+    });
+    order.forEach(key=>{
+      const grp=groups[key];
+      let label=key;
+      if(tlGroupMode==='month'){const[y,m]=key.split('-');label=`${MN[parseInt(m)-1]} ${y}`;}
+      else if(tlGroupMode==='week')label=`Week of ${key}`;
+
+      const ghdr=document.createElement('div'); ghdr.className='tl-group-hdr';
+      const isGrpWin=grp.pnl>=0;
+      ghdr.innerHTML=`<span>${label} — <span style="color:#8b949e">${grp.trades.length} trades · ${grp.wins}W/${grp.trades.length-grp.wins}L</span></span>
+        <span class="ghpnl ${isGrpWin?'g':'r'}">${grp.pnl>=0?'+':''}${grp.pnl.toFixed(0)}</span>`;
+      wrap.appendChild(ghdr);
+
+      grp.trades.forEach(t=>{
+        const isWin=t.pnl>0; const dir=t.type.toLowerCase().includes('long')?'long':'short';
+        const acc=isWin?'#3fb950':'#f85149';
+        const row=document.createElement('div');
+        row.style.cssText=`display:grid;grid-template-columns:56px 70px 1fr 100px 60px 110px 90px 110px;align-items:center;padding:7px 12px;font-size:12px;gap:6px;border-bottom:1px solid #1c2128;border-left:3px solid ${acc};transition:.1s`;
+        row.onmouseover=()=>row.style.background='#1c2128';
+        row.onmouseout=()=>row.style.background='';
+        row.innerHTML=`<div style="display:flex;align-items:center;gap:5px">
+            <span class="tv-trade-no">${t.no}</span>
+            <span class="tv-dir-badge tv-dir-${dir}">${dir}</span></div>
+          <div style="color:#8b949e;font-size:11px">${t.date}</div>
+          <div style="color:#8b949e;font-size:11px">${t.signal||t.type}</div>
+          <div style="color:#8b949e;font-size:11px">${t.exit||'—'}</div>
+          <div style="color:#8b949e">${t.qty}</div>
+          <div class="${isWin?'g':'r'}" style="font-weight:700">${t.pnl>=0?'+':''}${t.pnl.toFixed(2)}</div>
+          <div class="g">${t.mfe?'+'+t.mfe.toFixed(0):'—'}</div>
+          <div><span class="r">${t.mae?'-'+t.mae.toFixed(0):'—'}</span><span style="color:#8b949e;margin-left:8px">${t.cum.toFixed(0)}</span></div>`;
+        wrap.appendChild(row);
+      });
+    });
+  }
+}
+
+// ── EXPORT / IMPORT ──
+function exportJSON(){
+  const blob=new Blob([JSON.stringify(db,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='backtest_lab_'+new Date().toISOString().slice(0,10)+'.json';a.click();
+}
+function importJSON(input){
+  const f=input.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=e=>{try{db=JSON.parse(e.target.result);
+    if(!db.strategies)db.strategies=[];if(!db.instruments)db.instruments=[{id:'all',name:'ALL'}];
+    saveDB();renderAll();}catch{alert('Invalid JSON');}};
+  r.readAsText(f);input.value='';
+}
+
+// ── LIGHTBOX ──
+function openLightbox(src){document.getElementById('lbImg').src=src;document.getElementById('lightbox').classList.add('open');}
+function closeLightbox(){document.getElementById('lightbox').classList.remove('open');}
+
+// ── UTILS ──
+function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+// ── AUTO BACKUP ──
+function autoBackup(){saveDB();const el=document.getElementById('autoSaveLabel');
+  if(el)el.textContent='💾 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
+setInterval(autoBackup,30000);
+
+// ── CLOSE ON BG CLICK / ESC ──
+document.getElementById('mgrModal').addEventListener('click',function(e){if(e.target===this)closeManager();});
+document.getElementById('importModal').addEventListener('click',function(e){if(e.target===this)closeImportModal();});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeManager();closeImportModal();closeLightbox();}});
+
+// ── INIT ──
+loadDB(); renderAll();
+</script>
+</body>
+</html>
