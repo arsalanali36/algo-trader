@@ -119,6 +119,7 @@ textarea{width:100%;height:70px;background:#0d1117;border:1px solid #d29922;colo
   <h1>Algo Trader</h1>
   <span id="hdr-badge" style="font-size:12px;color:#8b949e">—</span>
   <div class="hdr-right">
+    <a href="/backtest" target="_blank" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap">&#128200; Backtest Lab</a>
     <span id="clock"></span>
   </div>
 </div>
@@ -544,6 +545,11 @@ def parse_pnl(log_path, today, qty=1):
 @app.route('/')
 def index():
     return render_template_string(HTML)
+
+@app.route('/backtest')
+def backtest():
+    from flask import send_file
+    return send_file(BASE_DIR / 'backtest_dashboard.html')
 
 @app.route('/api/status')
 def api_status():
