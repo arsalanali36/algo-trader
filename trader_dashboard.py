@@ -653,6 +653,23 @@ def api_set_token():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+BACKTEST_DB_FILE = BASE_DIR / "backtest_db.json"
+
+@app.route('/api/backtest-db', methods=['GET'])
+def backtest_db_get():
+    try:
+        return jsonify(json.loads(BACKTEST_DB_FILE.read_text()))
+    except Exception:
+        return jsonify({})
+
+@app.route('/api/backtest-db', methods=['POST'])
+def backtest_db_set():
+    try:
+        BACKTEST_DB_FILE.write_text(json.dumps(request.get_json(), ensure_ascii=False))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
 @app.route('/api/save-summary', methods=['POST'])
 def api_save_summary():
     try:

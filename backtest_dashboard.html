@@ -386,36 +386,71 @@ let sttSortKey = null;
 let sttSortAsc = false;
 let tlGroupMode = 'none'; // 'none'|'day'|'week'|'month'
 
-// ── Persist ──
-function saveDB() { try { localStorage.setItem('khazana_lab_v4', JSON.stringify(db)); } catch(e){} }
-function loadDB() {
+// ── Persist — server-first, localStorage fallback ──
+let _saveTimer = null;
+function saveDB() {
+  // localStorage as instant cache
+  try { localStorage.setItem('khazana_lab_v4', JSON.stringify(db)); } catch(e){}
+  // Debounce server save (500ms) so rapid edits don't spam requests
+  clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    fetch('/api/backtest-db', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(db)
+    }).then(r => r.json()).then(d => {
+      const el = document.getElementById('autoSaveLabel');
+      if (el) el.textContent = d.ok ? '✅ ' + new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'}) : '⚠️ Save failed';
+    }).catch(() => {
+      const el = document.getElementById('autoSaveLabel');
+      if (el) el.textContent = '⚠️ Offline — saved locally';
+    });
+  }, 500);
+}
+
+async function loadDB() {
+  try {
+    // Try server first
+    const r = await fetch('/api/backtest-db');
+    if (r.ok) {
+      const serverData = await r.json();
+      if (serverData && Object.keys(serverData).length > 0) {
+        db = serverData;
+        _migrateDB(); return;
+      }
+    }
+  } catch(e) {}
+  // Fallback to localStorage
   try {
     const s = localStorage.getItem('khazana_lab_v4');
     if (!s) return;
     db = JSON.parse(s);
-    if (!Array.isArray(db.instruments)) db.instruments = [{ id: 'all', name: 'ALL' }];
-    if (!db.instruments.find(i=>i.id==='all')) db.instruments.unshift({ id:'all', name:'ALL' });
-    if (!Array.isArray(db.strategies)) db.strategies = [];
-    if (db.activeStratIdx === undefined) db.activeStratIdx = 0;
-    db.strategies.forEach(st => {
-      if (!st.id) st.id = uid();
-      if (!st.instrumentId) st.instrumentId = 'all';
-      if (!Array.isArray(st.variables)) st.variables = [];
-      if (!Array.isArray(st.versions)) st.versions = [];
-      if (st.activeVerIdx === undefined) st.activeVerIdx = 0;
-      // Migrate old v3 format
-      if (Array.isArray(st.trades) && st.trades.length && !st.versions.length) {
-        st.versions.push({ id: uid(), name: 'V1', color: COLORS[0],
-          trades: st.trades, visible: true, screenshot: st.screenshot||null, varValues: {} });
-        delete st.trades; delete st.screenshot; delete st.params; delete st.notes;
-      }
-      st.versions.forEach(v => {
-        if (!v.id) v.id = uid();
-        if (!v.varValues) v.varValues = {};
-        if (v.visible === undefined) v.visible = true;
-      });
-    });
+    _migrateDB();
   } catch(e) { console.error('loadDB', e); }
+}
+
+function _migrateDB() {
+  if (!Array.isArray(db.instruments)) db.instruments = [{ id: 'all', name: 'ALL' }];
+  if (!db.instruments.find(i=>i.id==='all')) db.instruments.unshift({ id:'all', name:'ALL' });
+  if (!Array.isArray(db.strategies)) db.strategies = [];
+  if (db.activeStratIdx === undefined) db.activeStratIdx = 0;
+  db.strategies.forEach(st => {
+    if (!st.id) st.id = uid();
+    if (!st.instrumentId) st.instrumentId = 'all';
+    if (!Array.isArray(st.variables)) st.variables = [];
+    if (!Array.isArray(st.versions)) st.versions = [];
+    if (st.activeVerIdx === undefined) st.activeVerIdx = 0;
+    if (Array.isArray(st.trades) && st.trades.length && !st.versions.length) {
+      st.versions.push({ id: uid(), name: 'V1', color: COLORS[0],
+        trades: st.trades, visible: true, screenshot: st.screenshot||null, varValues: {} });
+      delete st.trades; delete st.screenshot; delete st.params; delete st.notes;
+    }
+    st.versions.forEach(v => {
+      if (!v.id) v.id = uid();
+      if (!v.varValues) v.varValues = {};
+      if (v.visible === undefined) v.visible = true;
+    });
+  });
 }
 
 function uid() { return Math.random().toString(36).slice(2,10); }
@@ -1289,18 +1324,13 @@ function closeLightbox(){document.getElementById('lightbox').classList.remove('o
 // ── UTILS ──
 function escHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
 
-// ── AUTO BACKUP ──
-function autoBackup(){saveDB();const el=document.getElementById('autoSaveLabel');
-  if(el)el.textContent='💾 '+new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});}
-setInterval(autoBackup,30000);
-
 // ── CLOSE ON BG CLICK / ESC ──
 document.getElementById('mgrModal').addEventListener('click',function(e){if(e.target===this)closeManager();});
 document.getElementById('importModal').addEventListener('click',function(e){if(e.target===this)closeImportModal();});
 document.addEventListener('keydown',e=>{if(e.key==='Escape'){closeManager();closeImportModal();closeLightbox();}});
 
-// ── INIT ──
-loadDB(); renderAll();
+// ── INIT — async load then render ──
+(async () => { await loadDB(); renderAll(); })();
 </script>
 </body>
 </html>
