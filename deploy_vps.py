@@ -33,13 +33,22 @@ def run(cmd):
 
 print("\nDeploying to VPS...\n")
 
-# templates/ folder ensure karo
-run(SSH + [f"mkdir -p {REMOTE_DIR}/templates"])
+# folders ensure karo
+run(SSH + [f"mkdir -p {REMOTE_DIR}/templates {REMOTE_DIR}/brokers {REMOTE_DIR}/strategies"])
 
 for f in FILES:
     print(f"  uploading {f}...")
     run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
     print(f"  OK {f}")
+
+# package folders (brokers/, strategies/) — push all .py
+import glob as _glob
+for pkg in ("brokers", "strategies"):
+    for f in _glob.glob(f"{pkg}/*.py"):
+        f = f.replace("\\", "/")
+        print(f"  uploading {f}...")
+        run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
+        print(f"  OK {f}")
 
 # templates/index.html
 print("  uploading templates/index.html...")
