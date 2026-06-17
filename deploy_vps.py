@@ -30,7 +30,7 @@ def run(cmd):
         print(f"  ERROR: {r.stderr.strip()}")
         sys.exit(1)
 
-print("\n🚀 Deploying to VPS...\n")
+print("\nDeploying to VPS...\n")
 
 # templates/ folder ensure karo
 run(SSH + [f"mkdir -p {REMOTE_DIR}/templates"])
@@ -38,15 +38,15 @@ run(SSH + [f"mkdir -p {REMOTE_DIR}/templates"])
 for f in FILES:
     print(f"  uploading {f}...")
     run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
-    print(f"  ✅ {f}")
+    print(f"  OK {f}")
 
 # templates/index.html
 print("  uploading templates/index.html...")
 run(SCP + ["templates/index.html", f"{HOST}:{REMOTE_DIR}/templates/index.html"])
-print("  ✅ templates/index.html")
+print("  OK templates/index.html")
 
 print("\n  Restarting dashboard...")
 run(SSH + ["systemctl restart algo-dashboard"])
-print("  ✅ Dashboard restarted\n")
+print("  OK Dashboard restarted\n")
 
 print("Done! Open: http://72.61.173.32:5099\n")

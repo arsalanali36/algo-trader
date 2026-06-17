@@ -54,7 +54,6 @@ SYMBOLS = {
     "WIPRO":        "WIPRO.NS",
     "KOTAKBANK":    "KOTAKBANK.NS",
     "LT":           "LT.NS",
-    "TATAMOTORS":   "TATAMOTORS.BO",
     "MARUTI":       "MARUTI.NS",
     "HINDUNILVR":   "HINDUNILVR.NS",
     "ITC":          "ITC.NS",
@@ -69,15 +68,28 @@ SYMBOLS = {
 }
 
 DHAN_INFO = {
-    "RELIANCE":   ("2885",  "NSE_EQ"),
-    "TCS":        ("11536", "NSE_EQ"),
-    "INFY":       ("1594",  "NSE_EQ"),
-    "HDFCBANK":   ("1333",  "NSE_EQ"),
-    "ICICIBANK":  ("4963",  "NSE_EQ"),
-    "SBIN":       ("3045",  "NSE_EQ"),
-    "AXISBANK":   ("5900",  "NSE_EQ"),
-    "BAJFINANCE": ("317",   "NSE_EQ"),
-    "WIPRO":      ("3787",  "NSE_EQ"),
+    "RELIANCE":    ("2885",  "NSE_EQ"),
+    "TCS":         ("11536", "NSE_EQ"),
+    "INFY":        ("1594",  "NSE_EQ"),
+    "HDFCBANK":    ("1333",  "NSE_EQ"),
+    "ICICIBANK":   ("4963",  "NSE_EQ"),
+    "SBIN":        ("3045",  "NSE_EQ"),
+    "AXISBANK":    ("5900",  "NSE_EQ"),
+    "BAJFINANCE":  ("317",   "NSE_EQ"),
+    "WIPRO":       ("3787",  "NSE_EQ"),
+    "KOTAKBANK":   ("1922",  "NSE_EQ"),
+    "LT":          ("11483", "NSE_EQ"),
+    "MARUTI":      ("10999", "NSE_EQ"),
+    "HINDUNILVR":  ("1394",  "NSE_EQ"),
+    "ITC":         ("1660",  "NSE_EQ"),
+    "ADANIENT":    ("25",    "NSE_EQ"),
+    "SUNPHARMA":   ("3351",  "NSE_EQ"),
+    "TITAN":       ("3506",  "NSE_EQ"),
+    "ULTRACEMCO":  ("11532", "NSE_EQ"),
+    "NESTLEIND":   ("17963", "NSE_EQ"),
+    "POWERGRID":   ("14977", "NSE_EQ"),
+    "NTPC":        ("11630", "NSE_EQ"),
+    "ONGC":        ("2475",  "NSE_EQ"),
 }
 
 ORDERS_URL   = "https://api.dhan.co/v2/orders"
@@ -114,7 +126,7 @@ def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
     return cfg["jwt_token"], cfg["client_id"]
 
-def load_config():
+def load_config(strategy_id=None):
     default = {
         "active": True,
         "timeframe": "1m",
@@ -128,6 +140,15 @@ def load_config():
         "exit_fib": False,
         "symbols": list(SYMBOLS.keys())[:10]
     }
+    # Multi-variation: read from nifty_config.json[strategy_id]
+    if strategy_id:
+        tc_file = BASE_DIR / "nifty_config.json"
+        try:
+            all_cfg = json.loads(tc_file.read_text())
+            if strategy_id in all_cfg:
+                return {**default, **all_cfg[strategy_id]}
+        except Exception:
+            pass
     if not CFG_FILE.exists():
         CFG_FILE.write_text(json.dumps(default, indent=2))
         return default
@@ -387,6 +408,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
     signal       = None
     signal_price = None
     signal_reason= None
+    signal_bar   = -1
     trades_today = 0
     max_trades   = cfg.get("max_trades_per_symbol", 2)
 
@@ -501,6 +523,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
             signal       = "BUY"
             signal_price = c
             signal_reason= f"GREEN_ZONE close>{zone_upper:.1f}"
+            signal_bar   = i
             position     = "LONG"
             entry_price  = c
             atr_sl_long  = c - atr_val * atr_mult
@@ -515,12 +538,13 @@ def run_signal_engine(df_1m, key_levels, cfg):
             signal       = "SELL"
             signal_price = c
             signal_reason= f"RED_ZONE close<{zone_lower:.1f}"
+            signal_bar   = i
             position     = "SHORT"
             entry_price  = c
             atr_sl_short = c + atr_val * atr_mult
             trades_today += 1
 
-    return signal, signal_price, signal_reason
+    return signal, signal_price, signal_reason, signal_bar, n
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -551,7 +575,7 @@ def fetch_1m(symbol, tf="1m"):
 # DHAN ORDER
 # ─────────────────────────────────────────────────────────────────────────────
 
-def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None):
+def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -576,16 +600,18 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         "triggerPrice":    0,
     }
     if mode == "paper":
-        log.info(f"[PAPER] {side} {qty} {trad_sym}  correlationId=RANGE_{trad_sym}_{ts}")
+        log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
         return
     try:
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
         if r.status_code == 200:
             log.info(f"ORDER OK  {side} {qty} {trad_sym}  → {r.json()}")
         else:
-            log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:200]}")
-    except Exception as e:
+            log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
+            raise Exception(f"Dhan {r.status_code}: {r.text[:200]}")
+    except requests.exceptions.RequestException as e:
         log.error(f"ORDER ERR  {trad_sym}: {e}")
+        raise
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -640,14 +666,14 @@ def main(strategy_id="range"):
                     for sym, st in _state.items():
                         if st["position"] == "LONG":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NFO_OPT", st["opt_trad_sym"])
+                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                             else:
                                 place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode)
                             st["position"] = None
                             st["opt_sec_id"] = None
                         elif st["position"] == "SHORT":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NFO_OPT", st["opt_trad_sym"])
+                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                             else:
                                 place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode)
                             st["position"] = None
@@ -672,6 +698,21 @@ def main(strategy_id="range"):
             log.error(f"Creds load failed: {e} — sleeping 60s")
             time.sleep(60)
             continue
+
+        # ── Strategy summary (log once per loop so config always visible) ──────
+        tf         = cfg.get("timeframe", "1m")
+        instrument = cfg.get("instrument", "equity").upper()
+        qty        = cfg.get("qty", 1)
+        max_tr     = cfg.get("max_trades_per_symbol", 2)
+        fresh_only = cfg.get("use_fresh_zone_only", True)
+        exit_atr   = cfg.get("exit_atr", True)
+        exit_zone  = cfg.get("exit_zone", False)
+        log.info(
+            f"[CONFIG] TF={tf} | Instrument={instrument} | Qty={qty} | "
+            f"MaxTrades/sym={max_tr} | FreshZoneOnly={fresh_only} | "
+            f"Exit: ATR={'ON' if exit_atr else 'OFF'} Zone={'ON' if exit_zone else 'OFF'} | "
+            f"Entry: zone touch + bearish/bullish candle + close break + 2-candle confirm"
+        )
 
         symbols = cfg.get("symbols", list(SYMBOLS.keys()))
 
@@ -699,7 +740,13 @@ def main(strategy_id="range"):
             if df_1m is None or len(df_1m) < 20:
                 continue
 
-            signal, price, reason = run_signal_engine(df_1m, levels, cfg)
+            signal, price, reason, sig_bar, total_bars = run_signal_engine(df_1m, levels, cfg)
+
+            # Entry sirf tab valid hai jab signal CURRENT candle (last bar) se aaya ho
+            # Purana historical signal ignore karo — stale entry avoid karo
+            if signal in ("BUY", "SELL") and (total_bars - sig_bar) > 2:
+                log.debug(f"Skipping stale {signal} {symbol} — signal bar {sig_bar}, total {total_bars}")
+                signal = None
 
             if signal in ("BUY", "SELL") and signal != st["last_signal"]:
                 qty = cfg.get("qty", 1)
@@ -712,24 +759,27 @@ def main(strategy_id="range"):
                     opt_type = "PE" if signal == "BUY" else "CE"
                     sec_id, t_sym = dhan_master.get_option_contract(symbol, price, opt_type, offset)
                     if sec_id:
-                        place_order(symbol, "SELL", qty, token, cid, mode, sec_id, "NFO_OPT", t_sym)
+                        place_order(symbol, "SELL", qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
                         st["opt_sec_id"] = sec_id
                         st["opt_trad_sym"] = t_sym
                     else:
                         log.error(f"Option contract not found for {symbol} {opt_type}")
                 else:
-                    place_order(symbol, signal, qty, token, cid, mode)
-                    
+                    place_order(symbol, signal, qty, token, cid, mode, price=price)
+
                 st["trades_today"] += 1
                 st["last_signal"]   = signal
+                st["entry_price"]   = price
                 st["position"]      = "LONG" if signal == "BUY" else "SHORT" 
 
             elif signal in ("EXIT_LONG", "EXIT_SHORT"):
+                if st["position"] is None:
+                    continue  # no open position this session — skip stale startup EXIT
                 exit_side = "SELL" if signal == "EXIT_LONG" else "BUY"
                 log.info(f"EXIT {symbol} via {reason} @ {price:.2f}")
                 
                 if st.get("opt_sec_id"):
-                    place_order(symbol, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NFO_OPT", st["opt_trad_sym"])
+                    place_order(symbol, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                 else:
                     place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode)
                     
@@ -747,15 +797,21 @@ if __name__ == "__main__":
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument('--live', action='store_true')
+    parser.add_argument('--paper', action='store_true')
     parser.add_argument('--id', default='range')
     args = parser.parse_args()
     
-    # Update log file name to include variation ID
+    # Update log file to use variation ID, remove all existing handlers
     log_file = BASE_DIR / "logs" / f"{args.id}.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
+    root = logging.getLogger()
+    for h in root.handlers[:]:
+        root.removeHandler(h)
     for h in log.handlers[:]:
         log.removeHandler(h)
+    log.propagate = False
     fh = logging.FileHandler(log_file)
-    fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s: %(message)s'))
+    fh.setFormatter(logging.Formatter('%(asctime)s %(levelname)s  %(message)s'))
     log.addHandler(fh)
     
     sys.argv = [sys.argv[0]] + (["--live"] if args.live else []) # for compatibility inside main

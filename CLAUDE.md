@@ -95,3 +95,9 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-16 | Added Range Strategy, Auto-scheduler for 9:10 AM |
 | 2026-06-16 | **Options Trading** added via `dhan_master.py` (Dynamic Strike Offset PE/CE Selling) |
 | 2026-06-16 | **Multi-Instance (Variations)** added with dynamic Grid UI in Vanilla JS, separated logs and processes |
+| 2026-06-17 | Stale entry fix — `run_signal_engine` ab `signal_bar` + `total_bars` return karta hai; main loop skip karta hai agar `(total_bars - sig_bar) > 2` (purana historical signal) |
+| 2026-06-17 | TATAMOTORS removed from SYMBOLS (delisted/yfinance error) |
+| 2026-06-17 | Options branch mein `price=price` fix — paper log ab 0.00 nahi dikhata |
+| 2026-06-17 | Startup exit guard — `if st["position"] is None: continue` before EXIT handler (fake startup trades fix) |
+| 2026-06-17 | `[CONFIG]` log line har loop pe — TF, Instrument, Qty, MaxTrades, FreshZoneOnly, Exit mode, Entry rules |
+| 2026-06-17 | Log panel — Pause/Play scroll button added; config line 3 separate lines mein (Entry / Exit / Config) |

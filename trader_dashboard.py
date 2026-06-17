@@ -8,11 +8,18 @@ Open: http://72.61.173.32:5099
 import json
 import os
 import re
+import socket
 import subprocess
 import signal
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request
+
+# IPv4 force — Dhan rejects IPv6 (DH-905). Must be here, not just in range_trader.
+_orig_gai = socket.getaddrinfo
+def _v4(h, p, f=0, t=0, pr=0, fl=0):
+    return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
+socket.getaddrinfo = _v4
 
 BASE_DIR      = Path(__file__).resolve().parent
 TC_FILE       = BASE_DIR / "nifty_config.json"
@@ -43,8 +50,11 @@ STRATEGIES = {
     "range": {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
 }
 
+def _base(strategy):
+    return strategy.split('_')[0] if '_' in strategy else strategy
+
 def get_pid(strategy="ema"):
-    grep = STRATEGIES[strategy]["grep"]
+    grep = STRATEGIES[_base(strategy)]["grep"]
     try:
         out = subprocess.check_output(['pgrep', '-f', grep], text=True).strip()
         return int(out.split('\n')[0]) if out else None
@@ -52,7 +62,7 @@ def get_pid(strategy="ema"):
         return None
 
 def get_mode(strategy="ema"):
-    grep = STRATEGIES[strategy]["grep"]
+    grep = STRATEGIES[_base(strategy)]["grep"]
     try:
         out = subprocess.check_output(['ps', 'aux'], text=True)
         for line in out.splitlines():
@@ -62,33 +72,72 @@ def get_mode(strategy="ema"):
         pass
     return 'paper'
 
+def _ts(line):
+    """Extract HH:MM time from log line."""
+    m = re.match(r'\d{4}-\d{2}-\d{2}\s+(\d{2}:\d{2})', line)
+    return m.group(1) if m else ''
+
 def parse_pnl(log_path, today, qty=1):
     try:
-        lines = [l for l in Path(log_path).read_text().splitlines() if l.startswith(today)]
+        lines = [l for l in Path(log_path).read_text().splitlines() if today in l]
     except Exception:
         return {"trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "total_pnl": 0, "details": []}
 
-    signals = {}
-    for line in lines:
-        m = re.search(r'\[RSI\]\s+(\w+)\s+close=([\d.]+)\s+RSI=[\d.]+\s+signal=(BUY|SELL)', line)
-        if not m:
-            m = re.search(r'  (\w+)\s+close=([\d.]+)\s+signal=(BUY|SELL)', line)
-        if m:
-            sym, price, sig = m.group(1), float(m.group(2)), m.group(3)
-            signals.setdefault(sym, []).append((sig, price))
-
+    # open_positions[sym] = {side, price, time} — set only on [PAPER] entry
+    open_pos = {}
     details, total_pnl, wins, losses = [], 0, 0, 0
-    for sym, entries in sorted(signals.items()):
-        for i in range(len(entries) - 1):
-            a, b = entries[i], entries[i+1]
-            if   a[0]=='BUY'  and b[0]=='SELL': p = (b[1]-a[1])*qty
-            elif a[0]=='SELL' and b[0]=='BUY':  p = (a[1]-b[1])*qty
-            else: continue
-            total_pnl += p
-            wins   += 1 if p > 0 else 0
-            losses += 0 if p > 0 else 1
-            details.append({"sym": sym, "entry": a[0], "entry_price": a[1],
-                            "exit": b[0], "exit_price": b[1], "pnl": round(p, 2)})
+
+    last_signal_price = {}  # sym -> price from SIGNAL line
+
+    for line in lines:
+        # SIGNAL line has the price: SIGNAL BUY BAJFINANCE @ 956.75
+        ms = re.search(r'SIGNAL\s+(BUY|SELL)\s+(\w+)\s+@\s+([\d.]+)', line)
+        if ms:
+            last_signal_price[ms.group(2)] = float(ms.group(3))
+
+        # Entry: [PAPER] BUY/SELL 1 SYM @ price  (new format)
+        m = re.search(r'\[PAPER\]\s+(BUY|SELL)\s+\d+\s+(\w+)\s+@\s+([\d.]+)', line)
+        if m:
+            side, sym, price = m.group(1), m.group(2), float(m.group(3))
+            open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
+            continue
+
+        # Entry: [PAPER] BUY/SELL 1 SYM  (old format — use last SIGNAL price)
+        m = re.search(r'\[PAPER\]\s+(BUY|SELL)\s+\d+\s+(\w+)\s+correlationId', line)
+        if m:
+            side, sym = m.group(1), m.group(2)
+            price = last_signal_price.get(sym, 0.0)
+            open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
+            continue
+
+        # Exit: EXIT SYM via REASON @ price
+        m = re.search(r'EXIT\s+(\w+)\s+via\s+\S+\s+@\s+([\d.]+)', line)
+        if m:
+            sym, exit_price = m.group(1), float(m.group(2))
+            if sym not in open_pos:
+                continue  # stale state exit — no entry this session, skip
+            entry = open_pos.pop(sym)
+            if entry["side"] == "BUY":
+                pnl = (exit_price - entry["price"]) * qty
+            else:
+                pnl = (entry["price"] - exit_price) * qty
+            total_pnl += pnl
+            wins   += 1 if pnl > 0 else 0
+            losses += 0 if pnl > 0 else 1
+            details.append({
+                "sym": sym, "entry": entry["side"],
+                "entry_price": entry["price"], "entry_time": entry["time"],
+                "exit_price": exit_price, "exit_time": _ts(line),
+                "pnl": round(pnl, 2)
+            })
+            continue
+
+        # EMA/RSI fallback
+        m = re.search(r'(\w+)\s+close=([\d.]+)\s+signal=(BUY|SELL)', line)
+        if m:
+            sym, price, side = m.group(1), float(m.group(2)), m.group(3)
+            open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
+
     n = len(details)
     return {"trades": n, "wins": wins, "losses": losses,
             "win_rate": round(wins/n*100, 1) if n else 0,
@@ -119,7 +168,7 @@ def api_status():
 @app.route('/api/log')
 def api_log():
     s  = request.args.get('s', 'ema')
-    lf = STRATEGIES.get(s, STRATEGIES['ema'])['log']
+    lf = BASE_DIR / 'logs' / f"{s}.log"
     try:
         lines = Path(lf).read_text().splitlines()[-80:]
         return jsonify({"lines": lines})
@@ -150,6 +199,7 @@ def api_start():
         return jsonify({"msg": f"{s.upper()} already running (PID {pid})"})
     flag = '--live' if mode == 'live' else '--paper'
     log_file = BASE_DIR / 'logs' / f"{s}.log"
+    log_file.parent.mkdir(parents=True, exist_ok=True)
     lf   = open(log_file, 'a')
     subprocess.Popen([PYTHON, st['script'], flag, '--id', s],
                      stdout=lf, stderr=lf,
@@ -200,6 +250,131 @@ def api_set_token():
         return jsonify({"ok": True, "msg": "✅ Token saved!"})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+SCRIP_MASTER = BASE_DIR / "data" / "api-scrip-master.csv"
+
+@app.route('/api/lot-sizes')
+def api_lot_sizes():
+    result = {"NIFTY": 65, "BANKNIFTY": 30}  # fallback defaults
+    try:
+        import csv
+        with open(SCRIP_MASTER, newline='') as f:
+            reader = csv.DictReader(f)
+            found = set()
+            for row in reader:
+                ts  = row.get('SEM_TRADING_SYMBOL', '')
+                lot = row.get('SEM_LOT_UNITS', '')
+                if ts.startswith('NIFTY') and 'CE' in ts and 'NIFTY' not in found:
+                    result['NIFTY'] = int(float(lot))
+                    found.add('NIFTY')
+                elif ts.startswith('BANKNIFTY') and 'CE' in ts and 'BANKNIFTY' not in found:
+                    result['BANKNIFTY'] = int(float(lot))
+                    found.add('BANKNIFTY')
+                if len(found) == 2:
+                    break
+    except Exception as e:
+        pass  # return fallback defaults
+    return jsonify(result)
+
+@app.route('/api/manual-order', methods=['POST'])
+def api_manual_order():
+    data   = request.get_json()
+    symbol = data.get('symbol', 'NIFTY')
+    side   = data.get('side', 'BUY')
+    lots   = int(data.get('lots', 1))
+    offset = int(data.get('strike_offset', 0))
+    mode   = data.get('mode', 'paper')
+    try:
+        import dhan_master
+        import range_trader
+        import yfinance as yf
+
+        token, cid = range_trader.load_creds()
+        opt_type = 'PE' if side == 'BUY' else 'CE'
+
+        # ATM price from yfinance
+        ticker_map = {'NIFTY': '^NSEI', 'BANKNIFTY': '^NSEBANK'}
+        tk = yf.Ticker(ticker_map.get(symbol, '^NSEI'))
+        price = float(tk.fast_info['last_price'])
+
+        # Option contract lookup
+        sec_id, t_sym = dhan_master.get_option_contract(symbol, price, opt_type, offset)
+        if not sec_id:
+            return jsonify({'ok': False, 'msg': f'Contract not found: {symbol} {opt_type} offset={offset}'})
+
+        # Lot size from scrip master — Dhan needs actual shares, not lots
+        lot_size = 65  # fallback
+        try:
+            import csv
+            with open(SCRIP_MASTER, newline='') as f:
+                for row in csv.DictReader(f):
+                    ts_col = row.get('SEM_TRADING_SYMBOL', '')
+                    if ts_col.startswith(symbol) and 'CE' in ts_col:
+                        lot_size = int(float(row.get('SEM_LOT_UNITS', 65)))
+                        break
+        except Exception:
+            pass
+
+        qty_shares = lots * lot_size   # e.g. 1 lot × 65 = 65 shares
+
+        # Build body explicitly so we can log it
+        import requests as _req
+        import time as _time
+        ts = int(_time.time())
+        body = {
+            'dhanClientId':    cid,
+            'correlationId':   f'MANUAL_{symbol}_{ts}',
+            'transactionType': side,
+            'exchangeSegment': 'NSE_FNO',
+            'productType':     'INTRADAY',
+            'orderType':       'MARKET',
+            'validity':        'DAY',
+            'securityId':      sec_id,
+            'tradingSymbol':   t_sym,
+            'quantity':        qty_shares,
+            'price':           0,
+            'triggerPrice':    0,
+        }
+        print(f"[MANUAL ORDER] body={body}", flush=True)
+
+        if mode == 'paper':
+            print(f"[PAPER] {side} {qty_shares} {t_sym} @ {price:.2f}", flush=True)
+            return jsonify({'ok': True, 'msg': f'[PAPER] {side} {lots}L ({qty_shares} qty) {t_sym} @ {price:.0f}'})
+
+        hdrs_dict = range_trader.hdrs(token, cid)
+        r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs_dict, timeout=10)
+        print(f"[MANUAL ORDER] status={r.status_code} resp={r.text}", flush=True)
+        if r.status_code == 200:
+            return jsonify({'ok': True, 'msg': f'[LIVE] {side} {lots}L ({qty_shares} qty) {t_sym} @ {price:.0f}'})
+        else:
+            return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:300]}'})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)})
+
+@app.route('/api/debug-order')
+def api_debug_order():
+    """Test Dhan API call directly from Flask process — diagnose DH-905"""
+    try:
+        import range_trader, requests as req, yfinance as yf, socket as sk
+        # confirm IPv4 patch is active
+        ipv4_active = sk.getaddrinfo.__name__ == '_v4'
+        token, cid = range_trader.load_creds()
+        tk = yf.Ticker('^NSEI')
+        price = float(tk.fast_info['last_price'])
+        body = {
+            'dhanClientId': cid, 'correlationId': 'DEBUG_001',
+            'transactionType': 'SELL', 'exchangeSegment': 'NSE_FNO',
+            'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
+            'securityId': '56376', 'tradingSymbol': 'NIFTY-Jun2026-24100-CE',
+            'quantity': 65, 'price': 0, 'triggerPrice': 0,
+        }
+        hdrs = range_trader.hdrs(token, cid)
+        r = req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
+        return jsonify({'ipv4_patch': ipv4_active, 'status': r.status_code,
+                        'dhan_response': r.text, 'body_sent': body,
+                        'token_preview': token[-10:] if token else 'NONE'})
+    except Exception as e:
+        return jsonify({'error': str(e)})
 
 BACKTEST_DB_FILE = BASE_DIR / "backtest_db.json"
 
@@ -254,19 +429,19 @@ def auto_scheduler():
                 if not has_started_today:
                     print(f"[{now.strftime('%H:%M:%S')}] Auto-starting bots in PAPER mode...")
                     try:
-                        cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+                        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
                             if isinstance(cfg[key], dict) and cfg[key].get("active", True):
                                 requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode=paper", timeout=5)
                     except Exception as e:
                         pass
                     has_started_today = True
-            
+
             if t >= (15, 30):
                 if not has_stopped_today:
                     print(f"[{now.strftime('%H:%M:%S')}] Auto-stopping bots...")
                     try:
-                        cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+                        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
                             if isinstance(cfg[key], dict):
                                 requests.post(f"http://127.0.0.1:5099/api/stop?s={key}", timeout=5)

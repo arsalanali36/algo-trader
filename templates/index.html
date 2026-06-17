@@ -56,7 +56,14 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .strat-mode{font-size:12px;color:#8b949e;margin-bottom:14px}
 
 /* ── Log box ── */
-.log-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 12px;height:320px;overflow-y:auto;font-family:monospace;font-size:11.5px;line-height:1.65}
+.log-box{background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 12px;height:500px;overflow-y:auto;font-family:monospace;font-size:12.5px;line-height:1.7}
+.log-box div{padding:1px 4px;border-radius:3px;margin-bottom:1px}
+.lb-info{color:#e6edf3}
+.lb-err{color:#f85149;background:#2d0f0f}
+.lb-warn{color:#d29922}
+.lb-buy{color:#3fb950;font-weight:600}
+.lb-sell{color:#f85149;font-weight:600}
+.lb-dim{color:#484f58}
 .lb{color:#8b949e}
 .lb-buy{color:#3fb950}
 .lb-sell{color:#f85149}
@@ -135,7 +142,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
 <!-- LOG TAB -->
 <div class="tab-body" id="tab-log">
-  <div id="log-grid" class="grid"></div>
+  <div id="log-grid" class="grid" style="grid-template-columns:1fr"></div>
 </div>
 
 <!-- CONFIG TAB -->
@@ -203,6 +210,7 @@ async function loadAll() {
   renderPnlTab();
   renderLogTab();
   renderConfigTable();
+  loadTokenStatus();
   if(activeTab === 'pnl') updatePnl();
   if(activeTab === 'log') updateLogs();
 }
@@ -285,6 +293,7 @@ function renderPnlTab() {
 }
 
 // LOG TAB
+const _logPaused = {};
 function renderLogTab() {
   const container = document.getElementById('log-grid');
   let html = '';
@@ -293,12 +302,35 @@ function renderLogTab() {
     const color = getStratColor(type);
     html += `
       <div class="card" style="border-color:${color}">
-        <h2 style="color:${color}">${key.toUpperCase()} Log</h2>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+          <h2 style="color:${color};margin:0">${key.toUpperCase()} LOG</h2>
+          <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
+            style="padding:4px 12px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:12px;cursor:pointer">
+            ⏸ Pause
+          </button>
+        </div>
         <div class="log-box" id="${key}-log">Loading...</div>
       </div>
     `;
   });
   container.innerHTML = html;
+}
+
+function toggleLogPause(key) {
+  _logPaused[key] = !_logPaused[key];
+  const btn = document.getElementById(`${key}-pause-btn`);
+  if(_logPaused[key]) {
+    btn.textContent = '▶ Play';
+    btn.style.color = '#3fb950';
+    btn.style.borderColor = '#3fb950';
+  } else {
+    btn.textContent = '⏸ Pause';
+    btn.style.color = '#e6edf3';
+    btn.style.borderColor = '#30363d';
+    // scroll to bottom when resuming
+    const box = document.getElementById(`${key}-log`);
+    if(box) box.scrollTop = box.scrollHeight;
+  }
 }
 
 // ── CONFIG TAB DYNAMIC GRID ──
@@ -364,8 +396,8 @@ function renderConfigTable() {
   // Find variants of this type
   let variants = Object.keys(GLOBAL_CONFIG).filter(k => k.startsWith(type + '_'));
   if (variants.length === 0) {
-    GLOBAL_CONFIG[`${type}_v1`] = JSON.parse(JSON.stringify(DEFAULT_CONFIGS[type]));
-    variants = [`${type}_v1`];
+    container.innerHTML = `<div style="color:#8b949e;padding:24px;text-align:center">No ${type.toUpperCase()} variation yet. Click "+ Add" to create one.</div><div style="padding:8px"><button class="btn btn-gray" onclick="addVariant('${type}')">+ Add ${type.toUpperCase()} Variation</button></div>`;
+    return;
   }
 
   let html = `<div class="cfg-table-container"><table class="cfg-table">`;
@@ -537,57 +569,147 @@ async function updatePnl() {
     try {
       let r = await fetch(`/api/pnl?s=${key}`);
       let j = await r.json();
-      let e_tr = document.getElementById(`${key}-trades`);
-      if(e_tr) {
-        e_tr.innerText = j.trades;
-        document.getElementById(`${key}-wins`).innerText = j.wins;
-        document.getElementById(`${key}-losses`).innerText = j.losses;
-        
-        let pnlEl = document.getElementById(`${key}-pnl`);
-        pnlEl.innerText = j.pnl.toFixed(2);
-        pnlEl.className = j.pnl >= 0 ? "stat-value green" : "stat-value red";
-        
-        let tl = document.getElementById(`${key}-trades-list`);
-        let html = '<table><tr><th>Symbol</th><th>Side</th><th>Price</th><th>Time</th></tr>';
-        j.book.forEach(x => {
-          let sc = x.signal.includes('BUY') ? 'lb-buy' : 'lb-sell';
-          html += `<tr><td>${x.symbol}</td><td class="${sc}">${x.signal}</td><td>${x.price.toFixed(2)}</td><td style="color:#8b949e">${x.time}</td></tr>`;
+
+      const set = (id, val) => { let el = document.getElementById(id); if(el) el.innerText = val; };
+      set(`${key}-trades`, j.trades ?? 0);
+      set(`${key}-wins`,   j.wins   ?? 0);
+      set(`${key}-losses`, j.losses ?? 0);
+
+      let pnlEl = document.getElementById(`${key}-pnl`);
+      if(pnlEl) {
+        let pnl = j.total_pnl ?? 0;
+        pnlEl.innerText   = '₹' + pnl.toFixed(2);
+        pnlEl.className   = pnl >= 0 ? 'stat-value green' : 'stat-value red';
+      }
+
+      let tl = document.getElementById(`${key}-trades-list`);
+      if(tl) {
+        let details = j.details || [];
+        if(!details.length) { tl.innerHTML = '<div style="color:#484f58;padding:8px">Aaj koi completed trade nahi</div>'; continue; }
+        // Group by date
+        let byDate = {};
+        details.forEach(d => {
+          let dt = (d.entry_time || '').split(' ')[0] || 'Today';
+          if(!byDate[dt]) byDate[dt] = [];
+          byDate[dt].push(d);
         });
-        html += '</table>';
+        let html = '';
+        Object.keys(byDate).sort().reverse().forEach(dt => {
+          let dayPnl = byDate[dt].reduce((s,d)=>s+d.pnl,0);
+          let dayColor = dayPnl>=0?'#3fb950':'#f85149';
+          html += `<div style="margin-bottom:16px">
+            <div style="color:#8b949e;font-size:11px;padding:4px 8px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between">
+              <span>${dt||'Today'}</span>
+              <span style="color:${dayColor};font-weight:700">${dayPnl>=0?'+':''}₹${dayPnl.toFixed(2)}</span>
+            </div>
+            <table style="width:100%;border-collapse:collapse;font-size:12px">
+              <tr style="color:#484f58;font-size:11px">
+                <th style="text-align:left;padding:3px 8px">Symbol</th>
+                <th style="padding:3px 8px">Side</th>
+                <th style="padding:3px 8px">Entry Time</th>
+                <th style="padding:3px 8px">Entry ₹</th>
+                <th style="padding:3px 8px">Exit Time</th>
+                <th style="padding:3px 8px">Exit ₹</th>
+                <th style="padding:3px 8px">P&L</th>
+              </tr>`;
+          byDate[dt].forEach(d => {
+            let pnlColor = d.pnl >= 0 ? '#3fb950' : '#f85149';
+            let sideColor = d.entry === 'BUY' ? '#3fb950' : '#f85149';
+            html += `<tr style="border-bottom:1px solid #21262d">
+              <td style="padding:5px 8px;font-weight:600">${d.sym}</td>
+              <td style="padding:5px 8px;color:${sideColor};text-align:center;font-weight:700">${d.entry}</td>
+              <td style="padding:5px 8px;color:#8b949e;text-align:center">${d.entry_time||'—'}</td>
+              <td style="padding:5px 8px;text-align:right">₹${d.entry_price.toFixed(2)}</td>
+              <td style="padding:5px 8px;color:#8b949e;text-align:center">${d.exit_time||'—'}</td>
+              <td style="padding:5px 8px;text-align:right">₹${d.exit_price.toFixed(2)}</td>
+              <td style="padding:5px 8px;text-align:right;font-weight:700;color:${pnlColor}">${d.pnl>=0?'+':''}₹${d.pnl.toFixed(2)}</td>
+            </tr>`;
+          });
+          html += '</table></div>';
+        });
+        html = html || '<div style="color:#484f58;padding:8px">Aaj koi completed trade nahi</div>';
         tl.innerHTML = html;
       }
-    } catch(e){}
+    } catch(e){ console.error('updatePnl error', e); }
   }
+}
+
+function formatLogLine(L) {
+  L = L.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  // [CONFIG] line → split into 3 readable rows
+  if(L.includes('[CONFIG]')) {
+    const ts = L.match(/^[\d\-]+ [\d:,]+/)?.[0] || '';
+    const rest = L.replace(/^.*\[CONFIG\]\s*/, '');
+    const parts = rest.split(' | ');
+    // Group: line1 = TF/Instrument/Qty/MaxTrades, line2 = Entry, line3 = Exit
+    const cfg   = parts.filter(p => !p.startsWith('Entry') && !p.startsWith('Exit'));
+    const entry = parts.find(p => p.startsWith('Entry')) || '';
+    const exit_ = parts.find(p => p.startsWith('Exit'))  || '';
+    return `
+      <div class="lb-dim" style="border-top:1px solid #21262d;margin-top:4px;padding-top:4px">
+        <span style="color:#8b949e">${ts}</span>
+        <span style="color:#58a6ff;font-weight:bold"> [CONFIG]</span>
+        ${cfg.map(p=>`<span style="color:#d29922"> ${p}</span>`).join(' <span style="color:#30363d">|</span>')}
+      </div>
+      <div class="lb-dim" style="padding-left:16px">
+        <span style="color:#3fb950">&#x2192; ENTRY:</span>
+        <span style="color:#c9d1d9"> ${entry.replace('Entry: ','')}</span>
+      </div>
+      <div class="lb-dim" style="padding-left:16px;border-bottom:1px solid #21262d;padding-bottom:4px;margin-bottom:4px">
+        <span style="color:#f85149">&#x2192; EXIT:</span>
+        <span style="color:#c9d1d9"> ${exit_.replace('Exit: ','')}</span>
+      </div>`;
+  }
+
+  let cls = 'lb-info';
+  if(/ERROR|error|Traceback|ModuleNot|TypeError/.test(L)) cls = 'lb-err';
+  else if(/WARNING|warning|Skipping stale|Failed|fail/.test(L))  cls = 'lb-warn';
+  else if(/\[PAPER\].*BUY|SIGNAL.*BUY/.test(L))                  cls = 'lb-buy';
+  else if(/\[PAPER\].*SELL|SIGNAL.*SELL|EXIT/.test(L))           cls = 'lb-sell';
+  else if(/levels loaded|sleeping|Loop done/.test(L))             cls = 'lb-dim';
+  return `<div class="${cls}">${L}</div>`;
 }
 
 async function updateLogs() {
   if (activeTab !== 'log') return;
   for(let key of Object.keys(GLOBAL_CONFIG)) {
+    if(_logPaused[key]) continue;   // paused — don't update
     try {
       let r = await fetch(`/api/log?s=${key}`);
-      let txt = await r.text();
-      let lines = txt.split('\\n').filter(x => x.trim() !== '').slice(-100);
-      let html = '';
-      lines.forEach(L => {
-        L = L.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-        if(L.includes('BUY')) html += `<div class="lb-buy">${L}</div>`;
-        else if(L.includes('SELL') || L.includes('EXIT')) html += `<div class="lb-sell">${L}</div>`;
-        else if(L.includes('error') || L.includes('fail')) html += `<div class="lb-err">${L}</div>`;
-        else if(L.includes('Scanning') || L.includes('Fetching')) html += `<div class="lb-scan">${L}</div>`;
-        else html += `<div class="lb">${L}</div>`;
-      });
+      let j = await r.json();
+      let lines = (j.lines || []).slice(-120);
+      let html = lines.map(formatLogLine).join('');
       let box = document.getElementById(`${key}-log`);
-      if(box) box.innerHTML = html;
+      if(box){ box.innerHTML = html || '<div class="lb-dim">No logs yet.</div>'; box.scrollTop = box.scrollHeight; }
     } catch(e){}
   }
 }
 
 // Token
+async function loadTokenStatus(){
+  try {
+    let r = await fetch('/api/token');
+    let j = await r.json();
+    const msg = document.getElementById('token-msg');
+    if(j.has_token){
+      msg.style.color = '#3fb950';
+      msg.innerText = `Token saved (saved at: ${j.saved_at}) — ends with ...${j.preview}`;
+      document.getElementById('token-input').placeholder = 'Token already saved. Paste new one to update.';
+    } else {
+      msg.style.color = '#f85149';
+      msg.innerText = 'No token saved yet.';
+    }
+  } catch(e){}
+}
 async function saveToken(){
-  let t = document.getElementById('token-input').value;
+  let t = document.getElementById('token-input').value.trim();
+  if(!t){ flash('Token empty hai!'); return; }
   let r = await fetch('/api/token', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({token:t})});
   let j = await r.json();
   flash(j.msg);
+  document.getElementById('token-input').value = '';
+  loadTokenStatus();
 }
 async function checkToken(){
   let r = await fetch('/api/token_check');
@@ -611,6 +733,131 @@ setInterval(()=>{
 }, 4000);
 
 loadAll();
+
+// ── QUICK ORDER FLOATING PANEL ───────────────────────────────────────────────
+(function(){
+  const LOT_SIZES = {NIFTY: 65, BANKNIFTY: 30};  // fallback; overwritten by API
+  let qoSym = 'NIFTY', qoAtm = 0, qoMode = 'paper';
+
+  // fetch real lot sizes from scrip master
+  fetch('/api/lot-sizes').then(r=>r.json()).then(d=>{
+    LOT_SIZES.NIFTY = d.NIFTY || 65;
+    LOT_SIZES.BANKNIFTY = d.BANKNIFTY || 30;
+    updateQtyHint();
+  }).catch(()=>{});
+
+  const panel = document.createElement('div');
+  panel.id = 'qo-panel';
+  panel.innerHTML = `
+<div id="qo-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;cursor:grab">
+  <span style="color:#58a6ff;font-size:12px;font-weight:bold;letter-spacing:1px">QUICK ORDER</span>
+  <span id="qo-close" style="color:#8b949e;font-size:16px;cursor:pointer;line-height:1">&#x2715;</span>
+</div>
+<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:12px;gap:2px">
+  <button id="qo-paper" onclick="qoSetMode('paper')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#d29922;color:#0d1117">PAPER</button>
+  <button id="qo-live"  onclick="qoSetMode('live')"  style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">LIVE</button>
+</div>
+<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Symbol</div>
+<div style="display:flex;gap:6px;margin-bottom:10px">
+  <button id="qo-sym-NIFTY"     onclick="qoSetSym('NIFTY')"     style="flex:1;padding:6px 0;border:1px solid #1f6feb;border-radius:5px;background:#1f6feb22;color:#58a6ff;font-size:12px;font-weight:bold;cursor:pointer">NIFTY</button>
+  <button id="qo-sym-BANKNIFTY" onclick="qoSetSym('BANKNIFTY')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:12px;font-weight:bold;cursor:pointer">BANKNIFTY</button>
+</div>
+<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Strike offset (ATM)</div>
+<div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:10px">
+  ${[-3,-2,-1,0,1,2,3].map(v=>`<button onclick="qoSetAtm(${v})" data-atm="${v}" style="flex:1;padding:4px 0;border:1px solid ${v===0?'#1f6feb':'#30363d'};border-radius:4px;background:${v===0?'#1f6feb':'#21262d'};color:${v===0?'#fff':'#8b949e'};font-size:10px;cursor:pointer">${v===0?'ATM':v>0?'+'+v:v}</button>`).join('')}
+</div>
+<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
+<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+  <input id="qo-lots" type="number" value="1" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
+  <span style="font-size:11px;color:#8b949e">= <span id="qo-qty-num" style="color:#e6edf3;font-weight:bold">65</span> qty <span style="color:#444;font-size:10px">(1L=<span id="qo-ls">65</span>)</span></span>
+</div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+  <button onclick="qoOrder('BUY')"  style="padding:11px;background:#3fb950;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">BUY</button>
+  <button onclick="qoOrder('SELL')" style="padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">SELL</button>
+</div>
+<div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
+
+  Object.assign(panel.style, {
+    position:'fixed', bottom:'24px', right:'24px', width:'268px',
+    background:'#161b22', border:'1px solid #30363d', borderRadius:'10px',
+    padding:'14px', fontFamily:'monospace', zIndex:'9999',
+    boxShadow:'0 4px 24px rgba(0,0,0,0.6)', userSelect:'none'
+  });
+  document.body.appendChild(panel);
+
+  // drag
+  const hdr = document.getElementById('qo-header');
+  let dragging=false, dx=0, dy=0;
+  hdr.addEventListener('mousedown', e=>{
+    dragging=true;
+    const r=panel.getBoundingClientRect();
+    dx=e.clientX-r.left; dy=e.clientY-r.top;
+    panel.style.right='auto';
+    panel.style.bottom='auto';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    panel.style.left=(e.clientX-dx)+'px';
+    panel.style.top=(e.clientY-dy)+'px';
+  });
+  document.addEventListener('mouseup', ()=>dragging=false);
+  document.getElementById('qo-close').onclick = ()=>panel.remove();
+
+  window.qoSetMode = m=>{
+    qoMode=m;
+    document.getElementById('qo-paper').style.background = m==='paper'?'#d29922':'transparent';
+    document.getElementById('qo-paper').style.color      = m==='paper'?'#0d1117':'#8b949e';
+    document.getElementById('qo-live').style.background  = m==='live'?'#f85149':'transparent';
+    document.getElementById('qo-live').style.color       = m==='live'?'#fff':'#8b949e';
+    document.getElementById('qo-status').textContent = m==='live'?'Mode: LIVE — Real orders!':'Mode: PAPER';
+    document.getElementById('qo-status').style.color = m==='live'?'#f85149':'#8b949e';
+  };
+
+  window.qoSetSym = s=>{
+    qoSym=s;
+    ['NIFTY','BANKNIFTY'].forEach(sym=>{
+      const b=document.getElementById('qo-sym-'+sym);
+      const sel=sym===s;
+      b.style.borderColor = sel?'#1f6feb':'#30363d';
+      b.style.background  = sel?'#1f6feb22':'#21262d';
+      b.style.color       = sel?'#58a6ff':'#8b949e';
+    });
+    updateQtyHint();
+  };
+
+  window.qoSetAtm = v=>{
+    qoAtm=v;
+    document.querySelectorAll('#qo-atm-row button').forEach(b=>{
+      const bv=parseInt(b.dataset.atm);
+      b.style.background = bv===v?'#1f6feb':'#21262d';
+      b.style.borderColor= bv===v?'#1f6feb':'#30363d';
+      b.style.color      = bv===v?'#fff':'#8b949e';
+    });
+  };
+
+  window.updateQtyHint = ()=>{
+    const ls = LOT_SIZES[qoSym]||65;
+    const lots = parseInt(document.getElementById('qo-lots')?.value)||1;
+    const el = document.getElementById('qo-qty-num');
+    const ls2= document.getElementById('qo-ls');
+    if(el) el.textContent = lots*ls;
+    if(ls2) ls2.textContent = ls;
+  };
+
+  window.qoOrder = async side=>{
+    const lots = parseInt(document.getElementById('qo-lots').value)||1;
+    const st = document.getElementById('qo-status');
+    st.textContent = 'Placing order...'; st.style.color='#d29922';
+    try {
+      const r = await fetch('/api/manual-order',{method:'POST',headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({symbol:qoSym, side, lots, strike_offset:qoAtm, mode:qoMode})});
+      const j = await r.json();
+      st.textContent = j.msg || (j.ok?'Done':'Error');
+      st.style.color = j.ok?'#3fb950':'#f85149';
+    } catch(e){ st.textContent='Network error'; st.style.color='#f85149'; }
+  };
+})();
 </script>
 </body>
 </html>
