@@ -609,7 +609,7 @@ async function updatePnl() {
         let lj=await lr.json();
         if(lj.ok) ltpMap=lj.ltp_map||{};
       } catch(e){}
-      let cols=[{l:'Symbol'},{l:'Side',a:'center'},{l:'Entry ₹',a:'right'},{l:'LTP',a:'right'},{l:'Points',a:'right'},{l:'Qty',a:'center'},{l:'Unrealized',a:'right'},{l:'',a:'center'}];
+      let cols=[{l:'Symbol'},{l:'Side',a:'center'},{l:'Entry Time',a:'center'},{l:'Exit Time',a:'center'},{l:'Entry ₹',a:'right'},{l:'LTP',a:'right'},{l:'Points',a:'right'},{l:'Qty',a:'center'},{l:'Unrealized',a:'right'},{l:'',a:'center'}];
       let rows=allOpen.map(d=>{
         let entry=d.entry_price||0, ld=ltpMap[d.sym]||null;
         let ltp=ld?.ltp??null, qty=d.qty||65;
@@ -620,8 +620,10 @@ async function updatePnl() {
         let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
         let modeNow=(window.qoGetMode&&window.qoGetMode())||'paper';
         let bId=`xb_${d.sym.replace(/[^a-z0-9]/gi,'_')}`;
-        return _pnlTD(`<b>${d.sym}</b><br><span style="color:#8b949e;font-size:10px">${d.entry_time||''}</span>`)+
+        return _pnlTD(`<b>${d.sym}</b>`)+
                _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center')+
+               _pnlTD(d.entry_time||'—','#e6edf3','center')+
+               _pnlTD('<span style="color:#8b949e">open</span>','','center')+
                _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right')+
                _pnlTD(ltp!=null?'₹'+ltp.toFixed(2):'⏳','#e6edf3','right')+
                _pnlTD(pts!=null?(pts>=0?'+':'')+pts.toFixed(1):'—',_pnlColor(pts),'right','font-weight:700')+

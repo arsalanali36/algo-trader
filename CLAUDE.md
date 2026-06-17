@@ -6,9 +6,16 @@ Web dashboard se control hota hai — koi command line nahi.
 
 ## Files
 
+> **📘 Pine→Python validation? PEHLE YEH PADHO:** `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md`
+> — reusable methodology + all findings (fill convention, Wilder ATR, pyramiding=0,
+> consistent-log export, etc.). Pichli baar pura din laga; yeh playbook se turant pick hoga.
+> Tool: `validate_strategy.py` (`--signals <log>` to score, `--debug DATE` to trace).
+> Best result: **90.2% exact / 93% entry** (Range Chain vs TradingView, NIFTY).
+
 | File | Kaam |
 |------|------|
 | `nifty_ema_trader.py` | EMA crossover strategy |
+| `validate_strategy.py` | TV Pine vs engine matching harness — `--signals`, `--debug`, HTML report |
 | `rsi_trader.py` | RSI overbought/oversold strategy |
 | `range_trader.py` | Range breakout/zone strategy with advanced exits (ATR, Fib) |
 | `trader_dashboard.py` | Flask web UI — port 5099, Backend API, process manager |
@@ -119,4 +126,5 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-17 | Phase 3 — `universe.py` (Nifty-50 + sec_id/option resolvers, 48/50) + `strategies/` plugin (`base`, `sample_ema`, `always_buy`) + `universe_trader.py` (Nifty-50 scan, route equity/stock_option/index_option, caps, 3:15 exit, `--once` flag). Dashboard `STRATEGIES['universe']`. Config: `nifty_config.json`→`universe_v1`. Verified: 48-equity scan, caps stop at 5. |
 | 2026-06-17 | Phase 4 DONE — `validate_strategy.py`: NIFTY 1-min→5-min, runs range_trader zone/ATR per-day (collects ALL trades), compares vs TradingView List-of-Trades CSV. TV next-bar-open fill, continuous ATR(14), tolerance diag. Data: `._TRADING DATA\Index\NIFTY`. Run: `python validate_strategy.py --csv <tv.csv> --to 2026-05-19`. |
 | 2026-06-17 | Phase 5 (in progress) — Pine fidelity: TV fill convention, bullHarami/bearHarami, Zone Exit (MainExit ON), post-entry zone reset, max-cs entry filter, selectedLine RESISTANCE-priority, **exact candle patterns** (`AA_CandlePatterns`: wickRatio **2.5**, redHammer upperWick≤body, invRedHam lowerWick≤body — in `range_trader.py`). Score Jan06-May19 NIFTY: **entry-exact 44%, within-1bar 47%, exact entry+exit 27%**. |
-| 2026-06-17 | **Phase 5 REMAINING (next session):** (1) Daily key-level history — chains need ~20+ prior daily bars; local data starts Jan-01 → early chains truncated vs TradingView. FIX: fetch NIFTY daily from Dhan (`historical_daily_data`, sec_id 13, IDX_I) back ~6mo. (2) Port tracked-high/low state machine + `longBelowTrackedHigh`/`shortAboveTrackedLow` filters + `trackedTooClose<20`. (3) Verify pivot/chain construction vs Pine (lines 347-580). (4) TV data May20-Jun17 missing — download. Pending: Phase 6 live, UI polish. |
+| 2026-06-17 | **Phase 5 COMPLETE — validation 90.2% exact / 93% entry** (Range Chain vs TradingView, NIFTY). Methodology + ALL findings saved to `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md` (read FIRST next time). Key fixes: TV next-bar fill, Wilder-RMA ATR, exact `AA_CandlePatterns`, pyramiding=0, current-bar zone touch, Not_on_Red/Gren_line, block ≥15:15 entries, full Dhan daily history, skip data-gap days. Biggest trap: List-of-Trades & zone-log were from DIFFERENT runs → use ONE consistent `log.info` export (`Ars_Auto_Rev_Chain_ZONELOG.pine` logs ZONE+SIGNAL+EXIT). Tools: `validate_strategy.py --signals <log>` (score) / `--debug DATE` (trace) / HTML report. Pivots+data verified match TV to ~1pt. Remaining ~3 trades = gap-day level micro-edges (diminishing returns). |
+| 2026-06-17 | **Pending:** Phase 6 live (small qty, market hours), UI polish (universe config tab, shadow badge, Quick Order bid/ask). |
