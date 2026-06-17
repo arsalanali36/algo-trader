@@ -33,7 +33,7 @@ CFG = {
     "use_fresh_zone_only": True,
     "hawa_me_zone": False,
     "exit_atr": True,
-    "exit_zone": False,
+    "exit_main": True,            # Pine MainExit_Toggle (Zone Exit) = true
     "max_trades_per_symbol": 4,   # Pine maxTradesPerDay
 }
 ATR_LEN, ATR_MULT, ZONE_AGE = 14, 2.0, 2
@@ -75,6 +75,34 @@ def daily_bars():
     return pd.DataFrame(rows)
 
 
+# Pine: bullish = bullEngulf or bullHarami or greenHammer
+#       bearish = bearEngulf or bearHarami or invRedHam or redHammer
+def _ohlc(df, i):
+    r = df.iloc[i]
+    return float(r["open"]), float(r["high"]), float(r["low"]), float(r["close"])
+
+
+def _bull(df, i):
+    if i < 1:
+        return False
+    o, h, l, c = _ohlc(df, i)
+    po, ph, pl, pc = _ohlc(df, i - 1)
+    return (rt.green_hammer(o, h, l, c)
+            or rt.bull_engulfing(po, ph, pl, pc, o, h, l, c)
+            or rt.bull_harami(po, ph, pl, pc, o, h, l, c))
+
+
+def _bear(df, i):
+    if i < 1:
+        return False
+    o, h, l, c = _ohlc(df, i)
+    po, ph, pl, pc = _ohlc(df, i - 1)
+    return (rt.red_hammer(o, h, l, c)
+            or rt.inv_red_hammer(o, h, l, c)
+            or rt.bear_engulfing(po, ph, pl, pc, o, h, l, c)
+            or rt.bear_harami(po, ph, pl, pc, o, h, l, c))
+
+
 # ───────────────────────── backtest one day ─────────────────────────
 def backtest_day(df5, key_levels, cfg, atr_series=None):
     """Mirror of run_signal_engine but COLLECTS every trade. Adds 3:15 exit.
@@ -84,9 +112,10 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
     if df5 is None or len(df5) < 20 or not key_levels:
         return trades
 
-    max_cs     = 25.0
+    max_cs     = cfg.get("max_candle_size", 25)
     fresh_only = cfg.get("use_fresh_zone_only", True)
     exit_atr   = cfg.get("exit_atr", True)
+    exit_main  = cfg.get("exit_main", True)
     max_trades = cfg.get("max_trades_per_symbol", 4)
 
     if atr_series is None:
@@ -141,12 +170,19 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
             # after square-off, no new entries this loop iter
             continue
 
-        # touch detection
+        # touch detection — Pine selectedLine: RESISTANCE priority (locks),
+        # last resistance wins; else last support/CP touched
         touched_type = None
+        res_locked = False
         for price, ltype in key_levels:
-            if l <= price <= h:
+            if not (l <= price <= h):
+                continue
+            if ltype in ("RESISTANCE", "PD_H"):
+                touched_type, res_locked = ltype, True
+            elif ltype in ("SUPPORT", "PD_L") and not res_locked:
                 touched_type = ltype
-                break
+            elif ltype in ("CP", "PD_C") and not res_locked:
+                touched_type = ltype
         if touched_type is not None:
             if not touch_active:
                 touch_active = True
@@ -157,31 +193,42 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
                 if h > (tracked_high or h): tracked_high = h
                 if l < (tracked_low or l):  tracked_low = l
 
-        # zone formation
-        bullish = rt.is_bullish_pattern(df5, i)
-        bearish = rt.is_bearish_pattern(df5, i)
+        # zone formation (Pine: no candle-size check here — that's an entry filter)
+        bullish = _bull(df5, i)
+        bearish = _bear(df5, i)
         if touch_active:
             not_red = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
             not_grn = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
-            if bearish and not_grn and (h - l) <= max_cs:
+            if bearish and not_grn:
                 zone_upper, zone_lower, zone_type, zone_bar = h, l, "RED", i
                 tracked_high = tracked_low = None
                 touch_active = False
-            elif bullish and not_red and (h - l) <= max_cs:
+            elif bullish and not_red:
                 zone_upper, zone_lower, zone_type, zone_bar = h, l, "GREEN", i
                 tracked_high = tracked_low = None
                 touch_active = False
 
-        # ATR trailing exit
-        if exit_atr and position == "LONG" and atr_sl_long is not None:
-            atr_sl_long = max(atr_sl_long, c - atr_val * ATR_MULT)
-            if c < atr_sl_long:
+        # zone freshness (Pine maxZoneAge)
+        zfresh = zone_type is not None and (i - zone_bar) <= ZONE_AGE
+
+        # EXIT — Pine priority: ATR first, else ZONE (MainExit)
+        if position == "LONG":
+            if atr_sl_long is not None:
+                atr_sl_long = max(atr_sl_long, c - atr_val * ATR_MULT)
+            if exit_atr and atr_sl_long is not None and c < atr_sl_long:
                 _close(i, "ATR_LONG")
                 atr_sl_long = None
-        elif exit_atr and position == "Short" and atr_sl_short is not None:
-            atr_sl_short = min(atr_sl_short, c + atr_val * ATR_MULT)
-            if c > atr_sl_short:
+            elif exit_main and zfresh and zone_type == "RED" and c < zone_lower and c < o:
+                _close(i, "ZONE_LONG")
+                atr_sl_long = None
+        elif position == "Short":
+            if atr_sl_short is not None:
+                atr_sl_short = min(atr_sl_short, c + atr_val * ATR_MULT)
+            if exit_atr and atr_sl_short is not None and c > atr_sl_short:
                 _close(i, "ATR_SHORT")
+                atr_sl_short = None
+            elif exit_main and zfresh and zone_type == "GREEN" and c > zone_upper and c > o:
+                _close(i, "ZONE_SHORT")
                 atr_sl_short = None
 
         # entries
@@ -195,17 +242,27 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
         curr_green = c > o
         curr_red   = c < o
 
-        if (zone_type == "GREEN" and use_zone and c > zone_upper and
-                prev_green and curr_green and
-                (tracked_high is None or c <= tracked_high) and position != "LONG"):
+        big_candle = (h - l) > max_cs
+        long_ok = (zone_type == "GREEN" and use_zone and c > zone_upper and
+                   prev_green and curr_green and
+                   (tracked_high is None or c <= tracked_high) and not big_candle)
+        short_ok = (zone_type == "RED" and use_zone and c < zone_lower and
+                    prev_red and curr_red and
+                    (tracked_low is None or c >= tracked_low) and not big_candle)
+
+        if long_ok and position != "LONG":
+            if position == "Short":
+                _close(i, "Long")          # reversal exit labeled by new signal
             _open("Long", i, "ZONE")
-            atr_sl_long = c - atr_val * ATR_MULT
+            atr_sl_long = cur["entry_price"] - atr_val * ATR_MULT
+            zone_type = zone_upper = zone_lower = None   # Pine: Green_Zone := false
             trades_today += 1
-        elif (zone_type == "RED" and use_zone and c < zone_lower and
-                prev_red and curr_red and
-                (tracked_low is None or c >= tracked_low) and position != "Short"):
+        elif short_ok and position != "Short":
+            if position == "LONG":
+                _close(i, "Short")
             _open("Short", i, "ZONE")
-            atr_sl_short = c + atr_val * ATR_MULT
+            atr_sl_short = cur["entry_price"] + atr_val * ATR_MULT
+            zone_type = zone_upper = zone_lower = None   # Pine: Red_Zone := false
             trades_today += 1
 
     # day ended still open -> force close at last bar (safety; shouldn't happen post 15:15)
