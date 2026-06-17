@@ -344,6 +344,8 @@ def run(tv_csv, date_from=None, date_to=None):
     for t in tv:
         tv_by_day.setdefault(t["entry_time"].date(), []).append(t)
 
+    ONEBAR = pd.Timedelta(minutes=5)
+    entry_exact = entry_1bar = full_1bar = 0   # tolerance diagnostics
     for d in days:
         tlist = tv_by_day.get(d, [])
         elist = eng_by_day.get(d, [])
@@ -357,12 +359,27 @@ def run(tv_csv, date_from=None, date_to=None):
                         and e["exit_time"] == tv_t["exit_time"]):
                     hit = j
                     break
+            # tolerance diagnostics — nearest same-side engine trade
+            near = None
+            for k, e in enumerate(elist):
+                if e["side"] != tv_t["side"]:
+                    continue
+                if near is None or abs(e["entry_time"] - tv_t["entry_time"]) < abs(near["entry_time"] - tv_t["entry_time"]):
+                    near = e
+            if near is not None:
+                de = abs(near["entry_time"] - tv_t["entry_time"])
+                dx = abs(near["exit_time"] - tv_t["exit_time"])
+                if de == pd.Timedelta(0):
+                    entry_exact += 1
+                if de <= ONEBAR:
+                    entry_1bar += 1
+                    if dx <= ONEBAR:
+                        full_1bar += 1
             if hit is not None:
                 used.add(hit)
                 matched += 1
                 report.append(("MATCH", tv_t, elist[hit]))
             else:
-                # find closest engine entry same side for diagnostics
                 cand = [e for k, e in enumerate(elist) if k not in used and e["side"] == tv_t["side"]]
                 report.append(("MISS", tv_t, cand[0] if cand else None))
 
@@ -373,7 +390,10 @@ def run(tv_csv, date_from=None, date_to=None):
           f"{fmt(tv[-1]['entry_time']) if tv else '-'}")
     print(f"TV trades: {total} | Engine trades: {len(eng)} | "
           f"MATCHED (entry+exit+side): {matched}")
-    print(f"SCORE: {pct:.1f}%")
+    print(f"SCORE (exact entry+exit): {pct:.1f}%")
+    print(f"  entry exact (time+side):       {entry_exact}/{total} ({100.0*entry_exact/total:.0f}%)")
+    print(f"  entry within 1 bar:            {entry_1bar}/{total} ({100.0*entry_1bar/total:.0f}%)")
+    print(f"  entry+exit within 1 bar:       {full_1bar}/{total} ({100.0*full_1bar/total:.0f}%)")
     print(f"{'='*78}")
     print(f"{'res':5} {'TV entry':16} {'side':5} {'TV exit':16} {'TVrsn':14} | "
           f"{'ENG entry':16} {'ENG exit':16} {'ENGrsn':10}")

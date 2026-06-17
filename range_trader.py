@@ -290,8 +290,8 @@ def build_key_levels(daily_df, is_index=False, max_jump_pct=50.0):
 # CANDLE PATTERNS (AA_CandlePatterns equivalent)
 # ─────────────────────────────────────────────────────────────────────────────
 
-MIN_BODY_SIZE = 0.5    # minimum body in points
-WICK_RATIO    = 2.0    # lower wick >= WICK_RATIO * body
+MIN_BODY_SIZE = 0.5    # minimum body in points (Pine minBodySize)
+WICK_RATIO    = 2.5    # wick >= WICK_RATIO * body (Pine wickRatio=2.5)
 
 def _body(o, c):
     return abs(c - o)
@@ -315,14 +315,16 @@ def red_hammer(o, h, l, c):
     if body < MIN_BODY_SIZE or c >= o:   # must be red
         return False
     lw = _lower_wick(o, c, l)
-    return lw >= WICK_RATIO * body
+    uw = _upper_wick(o, c, h)
+    return lw >= WICK_RATIO * body and uw <= body   # Pine: upperWick <= bodySize
 
 def inv_red_hammer(o, h, l, c):
     body = _body(o, c)
     if body < MIN_BODY_SIZE or c >= o:   # must be red
         return False
     uw = _upper_wick(o, c, h)
-    return uw >= WICK_RATIO * body
+    lw = _lower_wick(o, c, l)
+    return uw >= WICK_RATIO * body and lw <= body   # Pine: lowerWick <= bodySize
 
 def bull_engulfing(po, ph, pl, pc, o, h, l, c):
     prev_red   = pc < po
