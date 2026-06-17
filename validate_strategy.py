@@ -372,22 +372,28 @@ def run(tv_csv, date_from=None, date_to=None):
                     continue
                 if near is None or abs(e["entry_time"] - tv_t["entry_time"]) < abs(near["entry_time"] - tv_t["entry_time"]):
                     near = e
+            de = dx = None
             if near is not None:
-                de = abs(near["entry_time"] - tv_t["entry_time"])
-                dx = abs(near["exit_time"] - tv_t["exit_time"])
-                if de == pd.Timedelta(0):
+                de = (near["entry_time"] - tv_t["entry_time"]) / ONEBAR   # in bars (signed)
+                dx = (near["exit_time"] - tv_t["exit_time"]) / ONEBAR
+                if abs(de) == 0:
                     entry_exact += 1
-                if de <= ONEBAR:
+                if abs(de) <= 1:
                     entry_1bar += 1
-                    if dx <= ONEBAR:
+                    if abs(dx) <= 1:
                         full_1bar += 1
             if hit is not None:
                 used.add(hit)
                 matched += 1
-                report.append(("MATCH", tv_t, elist[hit]))
+                status = "exact"
+            elif near is not None and abs(de) <= 1 and abs(dx) <= 1:
+                status = "near"
+            elif near is not None and abs(de) <= 1:
+                status = "entry"     # entry aligns, exit off
             else:
-                cand = [e for k, e in enumerate(elist) if k not in used and e["side"] == tv_t["side"]]
-                report.append(("MISS", tv_t, cand[0] if cand else None))
+                status = "miss"
+            report.append({"status": status, "tv": tv_t, "eng": near,
+                           "de": de, "dx": dx})
 
     total = len(tv)
     pct = 100.0 * matched / total if total else 0.0
@@ -401,16 +407,102 @@ def run(tv_csv, date_from=None, date_to=None):
     print(f"  entry within 1 bar:            {entry_1bar}/{total} ({100.0*entry_1bar/total:.0f}%)")
     print(f"  entry+exit within 1 bar:       {full_1bar}/{total} ({100.0*full_1bar/total:.0f}%)")
     print(f"{'='*78}")
-    print(f"{'res':5} {'TV entry':16} {'side':5} {'TV exit':16} {'TVrsn':14} | "
-          f"{'ENG entry':16} {'ENG exit':16} {'ENGrsn':10}")
-    for res, tvt, e in report:
+    print(f"{'stat':6} {'TV entry':16} {'side':5} {'TV exit':16} {'TVrsn':14} | "
+          f"{'ENG entry':16} {'ENG exit':16} {'ENGrsn':10} {'dE':>4} {'dX':>4}")
+    for r in report:
+        tvt, e = r["tv"], r["eng"]
         eng_entry = fmt(e["entry_time"]) if e else "-"
         eng_exit  = fmt(e["exit_time"]) if e else "-"
         eng_rsn   = e["exit_reason"] if e else "-"
-        print(f"{res:5} {fmt(tvt['entry_time']):16} {tvt['side']:5} "
+        de = f"{r['de']:+.0f}" if r["de"] is not None else "-"
+        dx = f"{r['dx']:+.0f}" if r["dx"] is not None else "-"
+        print(f"{r['status']:6} {fmt(tvt['entry_time']):16} {tvt['side']:5} "
               f"{fmt(tvt['exit_time']):16} {tvt['exit_reason']:14} | "
-              f"{eng_entry:16} {eng_exit:16} {eng_rsn:10}")
+              f"{eng_entry:16} {eng_exit:16} {eng_rsn:10} {de:>4} {dx:>4}")
+
+    # extra engine trades (took a trade TV didn't) — diagnostic
+    matched_eng = {id(r["eng"]) for r in report if r["status"] in ("exact", "near", "entry") and r["eng"]}
+    extras = [e for e in eng if id(e) not in matched_eng]
+
+    write_html(report, extras, dict(total=total, matched=matched, pct=pct,
+               entry_exact=entry_exact, entry_1bar=entry_1bar, full_1bar=full_1bar,
+               eng_n=len(eng),
+               span=f"{fmt(tv[0]['entry_time']) if tv else '-'} .. {fmt(tv[-1]['entry_time']) if tv else '-'}"))
     return pct
+
+
+def write_html(report, extras, stats):
+    def fmt(t): return t.strftime("%Y-%m-%d %H:%M") if t is not None else "—"
+    COL = {"exact": "#3fb950", "near": "#d29922", "entry": "#58a6ff", "miss": "#f85149"}
+    counts = {k: sum(1 for r in report if r["status"] == k) for k in COL}
+
+    rows = []
+    for r in report:
+        tvt, e = r["tv"], r["eng"]
+        c = COL[r["status"]]
+        de = f"{r['de']:+.0f}" if r["de"] is not None else "—"
+        dx = f"{r['dx']:+.0f}" if r["dx"] is not None else "—"
+        rows.append(f"""<tr>
+<td><span class="dot" style="background:{c}"></span>{r['status']}</td>
+<td>{fmt(tvt['entry_time'])}</td><td class="{'lng' if tvt['side']=='Long' else 'sht'}">{tvt['side']}</td>
+<td>{fmt(tvt['exit_time'])}</td><td class="rsn">{tvt['exit_reason']}</td>
+<td>{fmt(e['entry_time']) if e else '—'}</td>
+<td>{fmt(e['exit_time']) if e else '—'}</td><td class="rsn">{e['exit_reason'] if e else '—'}</td>
+<td class="num">{de}</td><td class="num">{dx}</td></tr>""")
+
+    extra_rows = "".join(
+        f"<tr><td class='{'lng' if e['side']=='Long' else 'sht'}'>{e['side']}</td>"
+        f"<td>{fmt(e['entry_time'])}</td><td>{fmt(e['exit_time'])}</td>"
+        f"<td class='rsn'>{e['exit_reason']}</td></tr>" for e in extras)
+
+    html = f"""<!doctype html><html><head><meta charset="utf-8">
+<title>Strategy Validation</title><style>
+body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;margin:0;padding:24px}}
+h1{{font-size:18px;margin:0 0 4px}} .sub{{color:#8b949e;font-size:13px;margin-bottom:16px}}
+.cards{{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 18px;min-width:130px}}
+.card .v{{font-size:26px;font-weight:700}} .card .l{{color:#8b949e;font-size:12px;margin-top:2px}}
+.legend{{display:flex;gap:16px;margin-bottom:12px;font-size:12px;color:#8b949e;flex-wrap:wrap}}
+.legend span{{display:inline-flex;align-items:center;gap:6px}}
+.dot{{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}}
+table{{border-collapse:collapse;width:100%;font-size:12.5px}}
+th,td{{padding:6px 10px;border-bottom:1px solid #21262d;text-align:left;white-space:nowrap}}
+th{{color:#8b949e;font-weight:600;position:sticky;top:0;background:#0d1117}}
+.lng{{color:#3fb950;font-weight:600}} .sht{{color:#f85149;font-weight:600}}
+.rsn{{color:#8b949e;font-size:11px}} .num{{text-align:right;font-variant-numeric:tabular-nums}}
+.sec{{margin:26px 0 8px;font-size:14px;color:#e6edf3}}
+.bar{{height:8px;border-radius:4px;background:#21262d;overflow:hidden;margin-top:8px}}
+.bar i{{display:block;height:100%;background:#3fb950}}
+</style></head><body>
+<h1>🎯 Strategy Validation — TradingView vs Engine</h1>
+<div class="sub">{stats['span']} &nbsp;·&nbsp; {stats['total']} TV trades &nbsp;·&nbsp; {stats['eng_n']} engine trades</div>
+<div class="cards">
+<div class="card"><div class="v" style="color:#3fb950">{stats['pct']:.0f}%</div><div class="l">Exact entry+exit</div>
+<div class="bar"><i style="width:{stats['pct']:.0f}%"></i></div></div>
+<div class="card"><div class="v">{100*stats['entry_exact']//stats['total']}%</div><div class="l">Entry exact ({stats['entry_exact']}/{stats['total']})</div></div>
+<div class="card"><div class="v">{100*stats['entry_1bar']//stats['total']}%</div><div class="l">Entry ±1 bar</div></div>
+<div class="card"><div class="v">{100*stats['full_1bar']//stats['total']}%</div><div class="l">Entry+exit ±1 bar</div></div>
+</div>
+<div class="legend">
+<span><i class="dot" style="background:#3fb950"></i>exact (entry+exit match)</span>
+<span><i class="dot" style="background:#d29922"></i>near (both within 1 bar)</span>
+<span><i class="dot" style="background:#58a6ff"></i>entry ok, exit off</span>
+<span><i class="dot" style="background:#f85149"></i>miss (entry differs)</span>
+<span>dE/dX = engine minus TV, in 5-min bars</span>
+</div>
+<table><thead><tr>
+<th>status</th><th>TV entry</th><th>side</th><th>TV exit</th><th>TV reason</th>
+<th>ENG entry</th><th>ENG exit</th><th>ENG reason</th><th class="num">dE</th><th class="num">dX</th>
+</tr></thead><tbody>{''.join(rows)}</tbody></table>
+<div class="sec">Extra engine trades ({len(extras)}) — engine entered, TV did not</div>
+<table><thead><tr><th>side</th><th>entry</th><th>exit</th><th>reason</th></tr></thead>
+<tbody>{extra_rows or '<tr><td colspan=4 style="color:#8b949e">none</td></tr>'}</tbody></table>
+</body></html>"""
+    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                       "ACCURACY SCORE CLAUD", "validation_report.html")
+    with open(out, "w", encoding="utf-8") as f:
+        f.write(html)
+    print(f"\nHTML report: {out}")
 
 
 if __name__ == "__main__":

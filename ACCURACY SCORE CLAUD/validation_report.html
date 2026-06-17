@@ -1,0 +1,397 @@
+<!doctype html><html><head><meta charset="utf-8">
+<title>Strategy Validation</title><style>
+body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',system-ui,sans-serif;margin:0;padding:24px}
+h1{font-size:18px;margin:0 0 4px} .sub{color:#8b949e;font-size:13px;margin-bottom:16px}
+.cards{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 18px;min-width:130px}
+.card .v{font-size:26px;font-weight:700} .card .l{color:#8b949e;font-size:12px;margin-top:2px}
+.legend{display:flex;gap:16px;margin-bottom:12px;font-size:12px;color:#8b949e;flex-wrap:wrap}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+table{border-collapse:collapse;width:100%;font-size:12.5px}
+th,td{padding:6px 10px;border-bottom:1px solid #21262d;text-align:left;white-space:nowrap}
+th{color:#8b949e;font-weight:600;position:sticky;top:0;background:#0d1117}
+.lng{color:#3fb950;font-weight:600} .sht{color:#f85149;font-weight:600}
+.rsn{color:#8b949e;font-size:11px} .num{text-align:right;font-variant-numeric:tabular-nums}
+.sec{margin:26px 0 8px;font-size:14px;color:#e6edf3}
+.bar{height:8px;border-radius:4px;background:#21262d;overflow:hidden;margin-top:8px}
+.bar i{display:block;height:100%;background:#3fb950}
+</style></head><body>
+<h1>🎯 Strategy Validation — TradingView vs Engine</h1>
+<div class="sub">2026-01-06 11:10 .. 2026-05-18 10:05 &nbsp;·&nbsp; 59 TV trades &nbsp;·&nbsp; 63 engine trades</div>
+<div class="cards">
+<div class="card"><div class="v" style="color:#3fb950">46%</div><div class="l">Exact entry+exit</div>
+<div class="bar"><i style="width:46%"></i></div></div>
+<div class="card"><div class="v">54%</div><div class="l">Entry exact (32/59)</div></div>
+<div class="card"><div class="v">57%</div><div class="l">Entry ±1 bar</div></div>
+<div class="card"><div class="v">50%</div><div class="l">Entry+exit ±1 bar</div></div>
+</div>
+<div class="legend">
+<span><i class="dot" style="background:#3fb950"></i>exact (entry+exit match)</span>
+<span><i class="dot" style="background:#d29922"></i>near (both within 1 bar)</span>
+<span><i class="dot" style="background:#58a6ff"></i>entry ok, exit off</span>
+<span><i class="dot" style="background:#f85149"></i>miss (entry differs)</span>
+<span>dE/dX = engine minus TV, in 5-min bars</span>
+</div>
+<table><thead><tr>
+<th>status</th><th>TV entry</th><th>side</th><th>TV exit</th><th>TV reason</th>
+<th>ENG entry</th><th>ENG exit</th><th>ENG reason</th><th class="num">dE</th><th class="num">dX</th>
+</tr></thead><tbody><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-06 11:10</td><td class="lng">Long</td>
+<td>2026-01-06 11:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-01-06 11:10</td>
+<td>2026-01-06 11:20</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#58a6ff"></span>entry</td>
+<td>2026-01-06 15:25</td><td class="lng">Long</td>
+<td>2026-01-07 09:15</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-01-06 15:25</td>
+<td>2026-01-06 15:25</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">-214</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-07 10:25</td><td class="sht">Short</td>
+<td>2026-01-07 11:05</td><td class="rsn">ATR_SHORT</td>
+<td>2026-01-07 10:25</td>
+<td>2026-01-07 11:05</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-01-13 12:55</td><td class="sht">Short</td>
+<td>2026-01-13 14:40</td><td class="rsn">ATR_SHORT</td>
+<td>2026-01-13 12:05</td>
+<td>2026-01-13 14:40</td><td class="rsn">ATR_SHORT</td>
+<td class="num">-10</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-01-14 13:25</td><td class="sht">Short</td>
+<td>2026-01-14 14:40</td><td class="rsn">ATR_SHORT</td>
+<td>2026-01-14 14:00</td>
+<td>2026-01-14 14:40</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+7</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#d29922"></span>near</td>
+<td>2026-01-16 09:50</td><td class="lng">Long</td>
+<td>2026-01-16 11:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-01-16 09:55</td>
+<td>2026-01-16 11:20</td><td class="rsn">ATR_LONG</td>
+<td class="num">+1</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#58a6ff"></span>entry</td>
+<td>2026-01-16 13:40</td><td class="lng">Long</td>
+<td>2026-01-16 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-01-16 13:40</td>
+<td>2026-01-16 13:55</td><td class="rsn">ZONE_LONG</td>
+<td class="num">+0</td><td class="num">-17</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-19 10:25</td><td class="lng">Long</td>
+<td>2026-01-19 15:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-01-19 10:25</td>
+<td>2026-01-19 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-20 12:55</td><td class="lng">Long</td>
+<td>2026-01-20 13:35</td><td class="rsn">ATR_LONG</td>
+<td>2026-01-20 12:55</td>
+<td>2026-01-20 13:35</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-01-23 11:25</td><td class="sht">Short</td>
+<td>2026-01-23 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-01-23 10:45</td>
+<td>2026-01-23 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">-8</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-01-27 11:40</td><td class="lng">Long</td>
+<td>2026-01-27 11:55</td><td class="rsn">Short</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-01-27 11:55</td><td class="sht">Short</td>
+<td>2026-01-27 12:00</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-28 09:55</td><td class="sht">Short</td>
+<td>2026-01-28 11:05</td><td class="rsn">ATR_SHORT</td>
+<td>2026-01-28 09:55</td>
+<td>2026-01-28 11:05</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-29 11:00</td><td class="lng">Long</td>
+<td>2026-01-29 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-01-29 11:00</td>
+<td>2026-01-29 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-01-30 14:55</td><td class="lng">Long</td>
+<td>2026-01-30 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-01-30 14:55</td>
+<td>2026-01-30 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-02 14:30</td><td class="lng">Long</td>
+<td>2026-02-02 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-02-02 15:00</td>
+<td>2026-02-02 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+6</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-04 12:15</td><td class="lng">Long</td>
+<td>2026-02-04 15:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-02-04 12:15</td>
+<td>2026-02-04 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-05 15:00</td><td class="lng">Long</td>
+<td>2026-02-05 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-02-05 15:00</td>
+<td>2026-02-05 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-06 12:10</td><td class="sht">Short</td>
+<td>2026-02-06 13:40</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-06 15:00</td><td class="lng">Long</td>
+<td>2026-02-06 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-02-06 15:00</td>
+<td>2026-02-06 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-09 11:55</td><td class="sht">Short</td>
+<td>2026-02-09 13:10</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-09 11:10</td>
+<td>2026-02-09 13:10</td><td class="rsn">ATR_SHORT</td>
+<td class="num">-9</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-10 15:20</td><td class="sht">Short</td>
+<td>2026-02-10 15:25</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-02-10 15:20</td>
+<td>2026-02-10 15:25</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-11 12:40</td><td class="sht">Short</td>
+<td>2026-02-11 13:35</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-11 12:40</td>
+<td>2026-02-11 13:35</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-13 15:10</td><td class="sht">Short</td>
+<td>2026-02-13 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#d29922"></span>near</td>
+<td>2026-02-16 11:05</td><td class="lng">Long</td>
+<td>2026-02-16 12:50</td><td class="rsn">ZONE_LONG</td>
+<td>2026-02-16 11:10</td>
+<td>2026-02-16 12:50</td><td class="rsn">ZONE_LONG</td>
+<td class="num">+1</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-18 09:55</td><td class="sht">Short</td>
+<td>2026-02-18 11:35</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-18 09:55</td>
+<td>2026-02-18 11:35</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-18 12:50</td><td class="sht">Short</td>
+<td>2026-02-18 13:50</td><td class="rsn">ZONE_SHORT</td>
+<td>2026-02-18 12:50</td>
+<td>2026-02-18 13:50</td><td class="rsn">ZONE_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-19 13:00</td><td class="lng">Long</td>
+<td>2026-02-19 13:55</td><td class="rsn">ATR_LONG</td>
+<td>2026-02-19 13:00</td>
+<td>2026-02-19 13:55</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-20 09:40</td><td class="lng">Long</td>
+<td>2026-02-20 13:00</td><td class="rsn">ATR_LONG</td>
+<td>2026-02-20 09:40</td>
+<td>2026-02-20 13:00</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-23 13:40</td><td class="sht">Short</td>
+<td>2026-02-23 14:30</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-23 11:25</td>
+<td>2026-02-23 14:30</td><td class="rsn">ATR_SHORT</td>
+<td class="num">-27</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#58a6ff"></span>entry</td>
+<td>2026-02-25 10:45</td><td class="sht">Short</td>
+<td>2026-02-25 14:20</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-25 10:45</td>
+<td>2026-02-25 13:35</td><td class="rsn">ZONE_SHORT</td>
+<td class="num">+0</td><td class="num">-9</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-02-25 14:50</td><td class="sht">Short</td>
+<td>2026-02-25 15:05</td><td class="rsn">ATR_SHORT</td>
+<td>2026-02-25 15:15</td>
+<td>2026-02-25 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+5</td><td class="num">+3</td></tr><tr>
+<td><span class="dot" style="background:#58a6ff"></span>entry</td>
+<td>2026-02-26 11:20</td><td class="lng">Long</td>
+<td>2026-02-26 11:45</td><td class="rsn">ATR_LONG</td>
+<td>2026-02-26 11:20</td>
+<td>2026-02-26 11:35</td><td class="rsn">ZONE_LONG</td>
+<td class="num">+0</td><td class="num">-2</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-02-27 10:30</td><td class="lng">Long</td>
+<td>2026-02-27 11:35</td><td class="rsn">ATR_LONG</td>
+<td>2026-02-27 10:30</td>
+<td>2026-02-27 11:35</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-03-04 13:45</td><td class="lng">Long</td>
+<td>2026-03-04 15:05</td><td class="rsn">ATR_LONG</td>
+<td>2026-03-04 13:45</td>
+<td>2026-03-04 15:05</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-05 10:25</td><td class="sht">Short</td>
+<td>2026-03-05 10:45</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-05 14:00</td><td class="sht">Short</td>
+<td>2026-03-05 14:25</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-03-06 14:10</td><td class="lng">Long</td>
+<td>2026-03-06 14:45</td><td class="rsn">ATR_LONG</td>
+<td>2026-03-06 14:10</td>
+<td>2026-03-06 14:45</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-09 14:20</td><td class="sht">Short</td>
+<td>2026-03-09 14:45</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-03-10 12:45</td><td class="sht">Short</td>
+<td>2026-03-10 12:55</td><td class="rsn">ATR_SHORT</td>
+<td>2026-03-10 12:45</td>
+<td>2026-03-10 12:55</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#d29922"></span>near</td>
+<td>2026-03-11 09:45</td><td class="sht">Short</td>
+<td>2026-03-11 11:00</td><td class="rsn">ZONE_SHORT</td>
+<td>2026-03-11 09:45</td>
+<td>2026-03-11 11:05</td><td class="rsn">ZONE_SHORT</td>
+<td class="num">+0</td><td class="num">+1</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-17 12:40</td><td class="lng">Long</td>
+<td>2026-03-17 15:20</td><td class="rsn">ATR_LONG</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-23 12:20</td><td class="sht">Short</td>
+<td>2026-03-23 13:45</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-03-30 12:00</td><td class="lng">Long</td>
+<td>2026-03-30 13:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-03-30 12:00</td>
+<td>2026-03-30 13:20</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-03-30 13:40</td><td class="lng">Long</td>
+<td>2026-03-30 13:55</td><td class="rsn">ATR_LONG</td>
+<td>2026-03-30 12:00</td>
+<td>2026-03-30 13:20</td><td class="rsn">ATR_LONG</td>
+<td class="num">-20</td><td class="num">-7</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-04-02 11:00</td><td class="lng">Long</td>
+<td>2026-04-02 14:45</td><td class="rsn">ATR_LONG</td>
+<td>2026-04-02 11:40</td>
+<td>2026-04-02 14:45</td><td class="rsn">ATR_LONG</td>
+<td class="num">+8</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-04-09 09:30</td><td class="lng">Long</td>
+<td>2026-04-09 09:35</td><td class="rsn">ATR_LONG</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-04-16 14:55</td><td class="lng">Long</td>
+<td>2026-04-16 15:05</td><td class="rsn">ZONE_LONG</td>
+<td>2026-04-16 14:55</td>
+<td>2026-04-16 15:05</td><td class="rsn">ZONE_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-04-22 13:00</td><td class="lng">Long</td>
+<td>2026-04-22 13:25</td><td class="rsn">ATR_LONG</td>
+<td>2026-04-22 13:00</td>
+<td>2026-04-22 13:25</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-04-28 10:35</td><td class="sht">Short</td>
+<td>2026-04-28 14:45</td><td class="rsn">ATR_SHORT</td>
+<td>2026-04-28 10:35</td>
+<td>2026-04-28 14:45</td><td class="rsn">ATR_SHORT</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-04-29 13:30</td><td class="sht">Short</td>
+<td>2026-04-29 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-04-29 13:30</td>
+<td>2026-04-29 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-04-30 13:15</td><td class="lng">Long</td>
+<td>2026-04-30 14:20</td><td class="rsn">ATR_LONG</td>
+<td>2026-04-30 13:15</td>
+<td>2026-04-30 14:20</td><td class="rsn">ATR_LONG</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-04 14:05</td><td class="sht">Short</td>
+<td>2026-05-04 14:20</td><td class="rsn">ATR_SHORT</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#3fb950"></span>exact</td>
+<td>2026-05-06 13:15</td><td class="lng">Long</td>
+<td>2026-05-06 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-05-06 13:15</td>
+<td>2026-05-06 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+0</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-07 12:35</td><td class="sht">Short</td>
+<td>2026-05-07 12:40</td><td class="rsn">ATR_SHORT</td>
+<td>2026-05-07 14:40</td>
+<td>2026-05-07 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">+25</td><td class="num">+32</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-07 15:15</td><td class="sht">Short</td>
+<td>2026-05-07 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td>2026-05-07 14:40</td>
+<td>2026-05-07 15:20</td><td class="rsn">3:15 Daily Exit</td>
+<td class="num">-7</td><td class="num">+0</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-11 10:10</td><td class="lng">Long</td>
+<td>2026-05-11 14:15</td><td class="rsn">ATR_LONG</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-13 14:15</td><td class="lng">Long</td>
+<td>2026-05-13 15:05</td><td class="rsn">ATR_LONG</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr><tr>
+<td><span class="dot" style="background:#f85149"></span>miss</td>
+<td>2026-05-18 10:05</td><td class="lng">Long</td>
+<td>2026-05-18 12:00</td><td class="rsn">ATR_LONG</td>
+<td>—</td>
+<td>—</td><td class="rsn">—</td>
+<td class="num">—</td><td class="num">—</td></tr></tbody></table>
+<div class="sec">Extra engine trades (29) — engine entered, TV did not</div>
+<table><thead><tr><th>side</th><th>entry</th><th>exit</th><th>reason</th></tr></thead>
+<tbody><tr><td class='lng'>Long</td><td>2026-01-06 13:50</td><td>2026-01-06 14:10</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='lng'>Long</td><td>2026-01-13 11:40</td><td>2026-01-13 12:05</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='sht'>Short</td><td>2026-01-13 12:05</td><td>2026-01-13 14:40</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-01-14 14:00</td><td>2026-01-14 14:40</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-01-20 10:05</td><td>2026-01-20 12:10</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='sht'>Short</td><td>2026-01-23 10:45</td><td>2026-01-23 15:20</td><td class='rsn'>3:15 Daily Exit</td></tr><tr><td class='sht'>Short</td><td>2026-01-28 12:15</td><td>2026-01-28 14:45</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-01-30 14:00</td><td>2026-01-30 14:45</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='sht'>Short</td><td>2026-02-02 14:00</td><td>2026-02-02 14:25</td><td class='rsn'>ZONE_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-02-02 15:00</td><td>2026-02-02 15:20</td><td class='rsn'>3:15 Daily Exit</td></tr><tr><td class='sht'>Short</td><td>2026-02-05 09:50</td><td>2026-02-05 10:25</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-02-09 11:10</td><td>2026-02-09 13:10</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-02-09 13:30</td><td>2026-02-09 15:05</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-02-10 09:55</td><td>2026-02-10 10:35</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-02-11 13:50</td><td>2026-02-11 14:20</td><td class='rsn'>ZONE_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-02-11 14:20</td><td>2026-02-11 15:20</td><td class='rsn'>3:15 Daily Exit</td></tr><tr><td class='sht'>Short</td><td>2026-02-18 11:45</td><td>2026-02-18 12:40</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-02-18 13:50</td><td>2026-02-18 13:55</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='sht'>Short</td><td>2026-02-19 10:00</td><td>2026-02-19 12:55</td><td class='rsn'>ZONE_SHORT</td></tr><tr><td class='sht'>Short</td><td>2026-02-23 11:25</td><td>2026-02-23 14:30</td><td class='rsn'>ATR_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-02-25 13:35</td><td>2026-02-25 14:05</td><td class='rsn'>ZONE_LONG</td></tr><tr><td class='sht'>Short</td><td>2026-02-25 15:15</td><td>2026-02-25 15:20</td><td class='rsn'>3:15 Daily Exit</td></tr><tr><td class='sht'>Short</td><td>2026-02-26 11:35</td><td>2026-02-26 12:10</td><td class='rsn'>ZONE_SHORT</td></tr><tr><td class='lng'>Long</td><td>2026-02-26 12:10</td><td>2026-02-26 13:00</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='lng'>Long</td><td>2026-03-11 11:05</td><td>2026-03-11 11:20</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='lng'>Long</td><td>2026-04-02 11:40</td><td>2026-04-02 14:45</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='lng'>Long</td><td>2026-04-28 14:55</td><td>2026-04-28 15:10</td><td class='rsn'>ATR_LONG</td></tr><tr><td class='lng'>Long</td><td>2026-04-30 15:20</td><td>2026-04-30 15:25</td><td class='rsn'>3:15 Daily Exit</td></tr><tr><td class='sht'>Short</td><td>2026-05-07 14:40</td><td>2026-05-07 15:20</td><td class='rsn'>3:15 Daily Exit</td></tr></tbody></table>
+</body></html>
