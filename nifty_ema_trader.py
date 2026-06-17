@@ -17,6 +17,7 @@ import json
 import logging
 import socket
 import time
+import dhan_master
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -120,6 +121,7 @@ def load_creds():
 def load_config():
     default = {
         "active": True,
+        "timeframe": "1m",
         "fast_ema": 9,
         "slow_ema": 20,
         "qty": 1,
@@ -140,12 +142,12 @@ def hdrs(token, cid):
 
 # ── Candle Fetch ───────────────────────────────────────────────────────────────
 
-def fetch_candles(symbol):
+def fetch_candles(symbol, tf="1m"):
     ticker = SYMBOLS.get(symbol)
     if not ticker:
         return None
     try:
-        df = yf.download(ticker, period="1d", interval="1m", progress=False, auto_adjust=True)
+        df = yf.download(ticker, period="1d", interval=tf, progress=False, auto_adjust=True)
         if df is None or df.empty:
             return None
         df = df.reset_index()
@@ -200,9 +202,45 @@ def paper_trade(symbol, signal, price):
 
 # ── Real Order ─────────────────────────────────────────────────────────────────
 
-def place_order(symbol, side, qty, token, cid):
-    if symbol == "NIFTY":
-        log.error("NIFTY index cannot be traded directly — add futures_security_id to config")
+def place_order(symbol, side, qty, token, cid, sec_id=None, seg=None, trad_sym=None):
+    if not sec_id or not seg:
+        if symbol == "NIFTY":
+            log.error("NIFTY index cannot be traded directly in equity")
+            return False
+        info = DHAN_INFO.get(symbol)
+        if not info:
+            log.error(f"No Dhan info for {symbol}")
+            return False
+        sec_id, seg = info
+        trad_sym = symbol
+
+    payload = {
+        "dhanClientId":      cid,
+        "correlationId":     f"EMA_{trad_sym}_{int(time.time())}",
+        "transactionType":   side,
+        "exchangeSegment":   seg,
+        "productType":       "INTRADAY",
+        "orderType":         "MARKET",
+        "validity":          "DAY",
+        "tradingSymbol":     trad_sym,
+        "securityId":        sec_id,
+        "quantity":          qty,
+        "disclosedQuantity": 0,
+        "price":             0,
+        "triggerPrice":      0,
+        "afterMarketOrder":  False,
+        "amoTime":           "OPEN"
+    }
+    try:
+        r    = requests.post(ORDERS_URL, json=payload, headers=hdrs(token, cid), timeout=20)
+        resp = r.json() if r.content else {}
+        if r.status_code == 200:
+            log.info(f"  ✅ LIVE {side} {trad_sym} qty={qty}  orderId={resp.get('orderId','?')}")
+            return True
+        log.error(f"  ❌ {side} {trad_sym} failed: {resp.get('remarks') or r.text[:150]}")
+        return False
+    except Exception as e:
+        log.error(f"  Order exception: {e}")
         return False
     info = DHAN_INFO.get(symbol)
     if not info:
@@ -246,7 +284,7 @@ def place_order(symbol, side, qty, token, cid):
 
 # ── Main Loop ──────────────────────────────────────────────────────────────────
 
-def run(paper_mode=True):
+def run(paper_mode=True, strategy_id="ema"):
     mode_str = "📝 PAPER" if paper_mode else "💰 LIVE"
     log.info("=" * 60)
     log.info(f"EMA Trader  |  Mode: {mode_str}")
@@ -254,18 +292,20 @@ def run(paper_mode=True):
 
     # Per-symbol state
     positions    = {}   # symbol → +1 / -1 / 0
+    active_options = {} # symbol → {'sec_id': id, 'trad_sym': sym}
     trades_today = {}   # symbol → count
     last_date    = None
 
     while True:
         try:
             now = ist_now()
-            tc  = load_config()
+            tc  = load_config(strategy_id)
 
             # Daily reset
             if last_date != now.date():
                 last_date    = now.date()
                 positions    = {}
+                active_options = {}
                 trades_today = {}
                 log.info(f"── New day: {last_date} ──")
 
@@ -283,6 +323,7 @@ def run(paper_mode=True):
             slow    = int(tc.get("slow_ema", 20))
             qty     = int(tc.get("qty", 1))
             max_t   = int(tc.get("max_trades_per_symbol", 2))
+            tf      = tc.get("timeframe", "1m")
             sym_list = tc.get("symbols", list(SYMBOLS.keys()))
 
             token, cid = load_creds()
@@ -296,7 +337,11 @@ def run(paper_mode=True):
                         if paper_mode:
                             paper_trade(sym, side, 0)
                         else:
-                            place_order(sym, side, qty, token, cid)
+                            if sym in active_options:
+                                place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
+                                del active_options[sym]
+                            else:
+                                place_order(sym, side, qty, token, cid)
                         positions[sym] = 0
                 time.sleep(60)
                 continue
@@ -314,7 +359,7 @@ def run(paper_mode=True):
                     log.info(f"  {sym:12s} max trades ({max_t}) hit — skip")
                     continue
 
-                df = fetch_candles(sym)
+                df = fetch_candles(sym, tf)
                 if df is None or df.empty:
                     log.warning(f"  {sym:12s} no data")
                     continue
@@ -324,19 +369,63 @@ def run(paper_mode=True):
 
                 log.info(f"  {sym:12s} close={last_close:.2f}  signal={signal or 'NONE':4s}  pos={pos:+d}  trades={t_count}/{max_t}")
 
+                inst   = tc.get("instrument", "equity")
+                offset = int(tc.get("strike_offset", 0))
+
                 if signal == "BUY" and pos <= 0:
                     if pos < 0:   # close short
                         if paper_mode:
                             paper_trade(sym, "BUY", last_close)
                         else:
-                            place_order(sym, "BUY", qty, token, cid)
+                            if inst == "options" and sym in active_options:
+                                place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
+                                del active_options[sym]
+                            else:
+                                place_order(sym, "BUY", qty, token, cid)
                         trades_today[sym] = t_count + 1
+                    
                     # open long
                     if paper_mode:
                         paper_trade(sym, "BUY", last_close)
                     else:
-                        place_order(sym, "BUY", qty, token, cid)
+                        if inst == "options":
+                            sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "PE", offset)
+                            if sec_id:
+                                place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                            else:
+                                log.error(f"  {sym} PE option not found")
+                        else:
+                            place_order(sym, "BUY", qty, token, cid)
                     positions[sym]    = 1
+                    trades_today[sym] = trades_today.get(sym, 0) + 1
+
+                elif signal == "SELL" and pos >= 0:
+                    if pos > 0:   # close long
+                        if paper_mode:
+                            paper_trade(sym, "SELL", last_close)
+                        else:
+                            if inst == "options" and sym in active_options:
+                                place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
+                                del active_options[sym]
+                            else:
+                                place_order(sym, "SELL", qty, token, cid)
+                        trades_today[sym] = trades_today.get(sym, 0) + 1
+                    
+                    # open short
+                    if paper_mode:
+                        paper_trade(sym, "SELL", last_close)
+                    else:
+                        if inst == "options":
+                            sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "CE", offset)
+                            if sec_id:
+                                place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                            else:
+                                log.error(f"  {sym} CE option not found")
+                        else:
+                            place_order(sym, "SELL", qty, token, cid)
+                    positions[sym]    = -1
                     trades_today[sym] = trades_today.get(sym, 0) + 1
 
                 elif signal == "SELL" and pos >= 0:

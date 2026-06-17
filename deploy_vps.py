@@ -15,8 +15,10 @@ REMOTE_DIR = "/root/code4"
 FILES = [
     "nifty_ema_trader.py",
     "rsi_trader.py",
+    "range_trader.py",
     "trader_dashboard.py",
     "save_daily_summary.py",
+    "backtest_dashboard.html",
 ]
 
 SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
@@ -30,10 +32,18 @@ def run(cmd):
 
 print("\n🚀 Deploying to VPS...\n")
 
+# templates/ folder ensure karo
+run(SSH + [f"mkdir -p {REMOTE_DIR}/templates"])
+
 for f in FILES:
     print(f"  uploading {f}...")
     run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
     print(f"  ✅ {f}")
+
+# templates/index.html
+print("  uploading templates/index.html...")
+run(SCP + ["templates/index.html", f"{HOST}:{REMOTE_DIR}/templates/index.html"])
+print("  ✅ templates/index.html")
 
 print("\n  Restarting dashboard...")
 run(SSH + ["systemctl restart algo-dashboard"])

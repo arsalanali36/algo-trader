@@ -7,13 +7,30 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;padding:20px;min-height:100vh;font-size:13px}
+body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;min-height:100vh;font-size:13px;display:flex;flex-direction:column;height:100vh;overflow:hidden}
 input,select,textarea,button{font-family:inherit}
 
-.hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;gap:12px;flex-wrap:wrap}
-.hdr h1{font-size:17px;font-weight:700;color:#f0f6fc}
-.hdr .sub{font-size:11px;color:#8b949e;margin-top:2px}
-.hdr-btns{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+/* ── TOPBAR ── */
+.topbar{display:flex;align-items:center;justify-content:space-between;padding:0 16px;height:44px;background:#161b22;border-bottom:1px solid #30363d;flex-shrink:0;gap:12px}
+.topbar-left{display:flex;align-items:center;gap:10px}
+.app-title{font-size:14px;font-weight:700;color:#f0f6fc;white-space:nowrap}
+.app-sub{font-size:10px;color:#8b949e;margin-left:4px}
+.topbar-right{display:flex;align-items:center;gap:8px}
+.hdr-btn{padding:5px 10px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;transition:.1s}
+.hdr-btn:hover{background:#30363d}
+.hdr-btn.purple{background:#6e40c920;border-color:#6e40c9;color:#bc8cff}
+.hdr-btn.purple:hover{background:#6e40c940}
+#autoSaveLabel{font-size:10px;color:#8b949e;white-space:nowrap}
+
+/* ── LAYOUT ── */
+.layout{display:flex;flex:1;overflow:hidden}
+.main-area{flex:1;overflow-y:auto;padding:16px}
+.right-rail{width:40px;background:#161b22;border-left:1px solid #30363d;display:flex;flex-direction:column;align-items:center;padding:8px 0;gap:4px;flex-shrink:0}
+.sb-btn{width:32px;height:32px;background:none;border:none;border-radius:6px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;color:#8b949e;transition:.1s;position:relative}
+.sb-btn:hover{background:#21262d;color:#e6edf3}
+.sb-btn.active{background:#1f6feb20;color:#1f6feb}
+.sb-divider{width:24px;border-top:1px solid #30363d;margin:4px 0}
+
 .btn{border:none;border-radius:7px;padding:8px 14px;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;transition:.15s}
 .btn-green{background:#238636;color:#fff}.btn-green:hover{background:#2ea043}
 .btn-blue{background:#1f6feb;color:#fff}.btn-blue:hover{background:#388bfd}
@@ -222,22 +239,26 @@ th.sort-desc::after{content:' ↓';color:#58a6ff}
 </head>
 <body>
 
-<!-- HEADER -->
-<div class="hdr">
-  <div>
-    <h1>⚗️ Backtest Lab — KHAZANA</h1>
-    <div class="sub" id="hdrSub">Instrument → Strategy → Version → Variable</div>
+<!-- TOPBAR -->
+<div class="topbar">
+  <div class="topbar-left">
+    <span class="app-title">⚗️ Backtest Lab</span>
+    <span class="app-sub" id="hdrSub">Instrument → Strategy → Version → Variable</span>
   </div>
-  <div class="hdr-btns">
-    <button class="btn btn-purple" onclick="openImportCsvFlow()">📁 Import CSV</button>
-    <button class="btn btn-gray" onclick="openManager()">⚙ Manager</button>
-    <button class="btn btn-gray" onclick="exportJSON()">💾 Export JSON</button>
-    <button class="btn btn-gray" onclick="document.getElementById('importJSONFile').click()">📂 Import JSON</button>
-    <span id="autoSaveLabel" style="font-size:10px;color:#8b949e"></span>
+  <div class="topbar-right">
+    <button class="hdr-btn purple" onclick="openImportCsvFlow()">📁 Import CSV</button>
+    <button class="hdr-btn" onclick="exportJSON()">💾 Export</button>
+    <button class="hdr-btn" onclick="document.getElementById('importJSONFile').click()">📂 Import JSON</button>
+    <span id="autoSaveLabel"></span>
+    <a href="/" class="hdr-btn" style="text-decoration:none">← Dashboard</a>
     <input type="file" id="importJSONFile" accept=".json" style="display:none" onchange="importJSON(this)">
     <input type="file" id="csvFileInput" accept=".csv" style="display:none" onchange="handleCsvFile(this)">
   </div>
 </div>
+
+<!-- LAYOUT -->
+<div class="layout">
+<div class="main-area">
 
 <!-- STRATEGY TABS -->
 <div id="stratTabs"></div>
@@ -365,6 +386,19 @@ th.sort-desc::after{content:' ↓';color:#58a6ff}
 <div id="lightbox" onclick="closeLightbox()">
   <img id="lbImg" src="">
 </div>
+
+</div><!-- /main-area -->
+
+<!-- RIGHT SIDEBAR -->
+<div class="right-rail">
+  <button class="sb-btn" title="Strategy Manager" onclick="openManager()">⚙</button>
+  <button class="sb-btn" title="Import CSV" onclick="openImportCsvFlow()">📁</button>
+  <div class="sb-divider"></div>
+  <button class="sb-btn" title="Export JSON" onclick="exportJSON()">💾</button>
+  <button class="sb-btn" title="Import JSON" onclick="document.getElementById('importJSONFile').click()">📂</button>
+</div>
+
+</div><!-- /layout -->
 
 <script>
 // ═══════════════════════════════════════════════

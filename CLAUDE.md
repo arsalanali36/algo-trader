@@ -1,4 +1,4 @@
-# CODE3B — Algo Trader (EMA + RSI)
+# CODE3B — Algo Trader (EMA + RSI + Range)
 
 ## Project Ka Kaam
 Multi-strategy live/paper algo trader jo Dhan API pe orders deta hai.
@@ -8,11 +8,14 @@ Web dashboard se control hota hai — koi command line nahi.
 
 | File | Kaam |
 |------|------|
-| `nifty_ema_trader.py` | EMA 9/20 crossover, 1-min TF, 25 Nifty symbols |
-| `rsi_trader.py` | RSI(14), 5-min TF, same symbols |
-| `trader_dashboard.py` | Flask web UI — port 5099 |
+| `nifty_ema_trader.py` | EMA crossover strategy |
+| `rsi_trader.py` | RSI overbought/oversold strategy |
+| `range_trader.py` | Range breakout/zone strategy with advanced exits (ATR, Fib) |
+| `trader_dashboard.py` | Flask web UI — port 5099, Backend API, process manager |
+| `dhan_master.py` | Daily dhan scrip master download + Option contract resolver |
 | `save_daily_summary.py` | Aaj ki P&L ko `results/` mein save karo |
 | `deploy_vps.py` | SCP se VPS pe push + dashboard restart |
+| `templates/index.html`| Dynamic grid UI for configuration and dashboard |
 
 ## VPS Info
 
@@ -35,15 +38,27 @@ scp -i "C:/Users/arsal/.ssh/khazana_ed25519" -o StrictHostKeyChecking=no <file> 
 ssh -i "C:/Users/arsal/.ssh/khazana_ed25519" root@72.61.173.32 "systemctl restart algo-dashboard"
 ```
 
-## GitHub Backup
+## Strategy Variations & Options Trading
 
-```bash
-git add .
-git commit -m "feat: description"
-git push
+Ab system mein aap ek strategy ke **multiple variations** (jaise `ema_v1`, `ema_v2`, `rsi_v1`) alag alag configurations ke saath ek hi waqt pe chala sakte hain. Har variation ek isolated Python process ki tarah chalta hai.
+
+- **Options Support**: Config grid mein Instrument = "Options" select karke Strike Offset (-3 to +3) de sakte hain.
+- **PE/CE Selling**: Agar Long signal aata hai toh PE sell hoga, Short signal pe CE sell hoga. `dhan_master.py` dynamically live ATM strike calculate karke scrip nikalta hai.
+- **Config Storage**: Saari configs ek single file `nifty_config.json` mein store hoti hain under keys like `ema_v1`, `range_v2`.
+
+## Data Storage
+
 ```
-
-Repo: https://github.com/arsalanali36/algo-trader (private)
+/root/code4/              ← VPS pe
+├── logs/                 ← Har variation ki separate log file (e.g. ema_v1.log)
+├── nifty_config.json     ← All configurations (hot-reload)
+├── data/                 
+│   ├── config.json       ← Dhan JWT + client_id (SECRET — gitignored)
+│   └── api-scrip-master.csv ← Dhan Options symbols list
+└── results/
+    ├── YYYY-MM-DD.txt    ← Daily P&L summary
+    └── master_log.json   ← All-time P&L history
+```
 
 ## Critical Rules — Kabhi Mat Bhoolna
 
@@ -56,93 +71,27 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
     return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 socket.getaddrinfo = _v4
 ```
-**Yeh hatao mat — warna DH-905 error aayega.**
 
 ### 2. yfinance for candles (DH-902 fix)
 Dhan intraday candle API = paid subscription (DH-902).
 **Free alternative: yfinance** — NSE symbols `.NS` suffix, indices `^NSEI`.
 
 ### 3. correlationId = strategy prefix
-Agar dono strategies same symbol trade karti hain (e.g. RELIANCE), orders Dhan mein alag dikhne chahiye:
-- EMA orders: `EMA_RELIANCE_<timestamp>`
-- RSI orders: `RSI_RELIANCE_<timestamp>`
+Har order ka ek specific correlation ID hota hai jisme strategy version prefix hota hai: `EMA_V1_NIFTY_<timestamp>`.
+Issey dashboard P&L parse kar pata hai.
 
-### 4. Config hot-reload
-Trader restart ki zaroorat nahi — `nifty_config.json` / `rsi_config.json` edit karo, agla loop pick kar lega.
-
-### 5. Dhan token — rozana update
+### 4. Dhan token — rozana update
 JWT token har 24 ghante mein expire hota hai.
 Dashboard ke **Control tab** mein token paste karo → Save.
 
-## Data Storage
-
-```
-/root/code4/              ← VPS pe
-├── nifty_trader.log      ← EMA signals + orders
-├── rsi_trader.log        ← RSI signals + orders
-├── nifty_config.json     ← EMA config (hot-reload)
-├── rsi_config.json       ← RSI config (hot-reload)
-├── data/config.json      ← Dhan JWT + client_id (SECRET — gitignored)
-└── results/
-    ├── YYYY-MM-DD.txt    ← Daily P&L summary
-    └── master_log.json   ← All-time P&L history
-```
-
-**Local mein store nahi hota** — results/ backup ke liye:
-```bash
-scp -i "C:/Users/arsal/.ssh/khazana_ed25519" -r root@72.61.173.32:/root/code4/results/ results/
-```
-
-## Symbol Map (Yahoo Finance)
-
-```python
-SYMBOLS = {
-    "NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK",
-    "RELIANCE": "RELIANCE.NS", "TCS": "TCS.NS",
-    "INFY": "INFY.NS", "HDFCBANK": "HDFCBANK.NS",
-    "ICICIBANK": "ICICIBANK.NS", "SBIN": "SBIN.NS",
-    # ...25 total
-}
-```
-
-## Dhan Security IDs (Live Orders)
-
-```python
-DHAN_INFO = {
-    "RELIANCE": ("2885", "NSE_EQ"),
-    "TCS":      ("11536", "NSE_EQ"),
-    "INFY":     ("1594",  "NSE_EQ"),
-    # ...
-}
-```
-Nayi symbol add karni ho → Dhan scrip master CSV se `securityId` dhundho.
-
-## Dashboard Tabs
-
-| Tab | Kya hai |
-|-----|---------|
-| **Control** | Token update + EMA/RSI start/stop |
-| **P&L** | Dono strategies ki P&L + trades table |
-| **Log** | EMA log (left) + RSI log (right) |
-| **Config** | EMA config + RSI config — alag alag save |
-
-## Nai Strategy Add Karna
-
-1. `<name>_trader.py` banao — `correlationId` mein strategy prefix lagao
-2. `trader_dashboard.py` mein `STRATEGIES` dict mein entry add karo:
-   ```python
-   STRATEGIES = {
-       "ema": {...},
-       "rsi": {...},
-       "newstrat": {"script": "newstrat_trader.py", "log": BASE_DIR/"newstrat.log", "cfg": BASE_DIR/"newstrat_config.json", "grep": "newstrat_trader"},
-   }
-   ```
-3. Dashboard HTML mein Control/P&L/Log/Config tabs mein card add karo
-4. `deploy_vps.py` ke `FILES` list mein add karo
-5. Deploy: `python deploy_vps.py`
+### 5. Auto Scheduler
+Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper mode mein start kar deta hai, aur 15:30 par stop.
 
 ## Update Log
 
 | Date | Kya bana |
 |------|----------|
-| 2026-06-16 | Project init — EMA + RSI trader, tabbed dashboard, VPS deploy, GitHub backup |
+| 2026-06-16 | Init — EMA + RSI trader, tabbed dashboard, VPS deploy, GitHub backup |
+| 2026-06-16 | Added Range Strategy, Auto-scheduler for 9:10 AM |
+| 2026-06-16 | **Options Trading** added via `dhan_master.py` (Dynamic Strike Offset PE/CE Selling) |
+| 2026-06-16 | **Multi-Instance (Variations)** added with dynamic Grid UI in Vanilla JS, separated logs and processes |

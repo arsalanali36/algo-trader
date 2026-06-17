@@ -1,0 +1,17 @@
+{
+  "symbols": [
+    "NIFTY",
+    "BANKNIFTY",
+    "RELIANCE"
+  ],
+  "active": true,
+  "timeframe": "1m",
+  "max_candle_size": 25,
+  "qty": 1,
+  "max_trades_per_symbol": 2,
+  "hawa_me_zone": false,
+  "use_fresh_zone_only": true,
+  "exit_zone": false,
+  "exit_atr": true,
+  "exit_fib": false
+}
