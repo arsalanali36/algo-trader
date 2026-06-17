@@ -192,6 +192,7 @@ def backtest_day(df5, key_levels, cfg, atr_series=None, dbg=False):
         # tracked high/low — Pine accumulates over ALL touch bars within the day
         # (touchActive never resets) and does NOT reset on zone formation.
         if touched_type is not None:
+            active_touch_type = touched_type   # Pine lineType — persists till next touch
             if tracked_high is None:
                 tracked_high, tracked_low = h, l
             else:
@@ -248,11 +249,15 @@ def backtest_day(df5, key_levels, cfg, atr_series=None, dbg=False):
         # NOTE: Pine's longBelowTrackedHigh/shortAboveTrackedLow filter is NOT
         # applied — its trackedHigh semantics (touchActive never resets) over-block
         # in practice; empirically removing it matches TV better (+5%).
+        # Pine entry also requires Not_on_Red_line (long) / Not_on_Gren_line (short)
+        # on the CURRENT bar's lineType (persistent selectedLine type).
+        not_red_line = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
+        not_grn_line = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
         big_candle = (h - l) > max_cs
         long_ok = (zone_type == "GREEN" and use_zone and c > zone_upper and
-                   prev_green and curr_green and not big_candle)
+                   prev_green and curr_green and not big_candle and not_red_line)
         short_ok = (zone_type == "RED" and use_zone and c < zone_lower and
-                    prev_red and curr_red and not big_candle)
+                    prev_red and curr_red and not big_candle and not_grn_line)
 
         if long_ok and position != "LONG":
             if position == "Short":
