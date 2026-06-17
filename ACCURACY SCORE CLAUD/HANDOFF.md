@@ -35,11 +35,22 @@ Fixes already applied (engine now faithful on these):
 - **full daily history** (`nifty_daily.csv`, Dhan historical_daily_data sec_id 13,
   2025-01..2026-06) for chain lookback — in DATA_DIR
 
-REMAINING gap (~37%) = micro-level zone-formation TIMING (which exact bar a zone
-forms). No single systematic bug left — each off-day has its own micro-reason.
-To close further, need TradingView BAR-LEVEL zone markers (plotshape/zone-box
-export), since List-of-Trades only gives entry/exit, not zone-formation bars.
-Chains + pivots + candle patterns + ATR all verified faithful to Pine.
+BREAKTHROUGH (zone-log forensics): engine ZONES match TV **EXACTLY** bar-for-bar
+(verified 01-06, 01-13, 01-19 — every zone same price/time/line). Engine entry
+precision ~96% (27/28). Against the CONSISTENT same-run SIGNAL log: 75% entry
+match (27/36); 9 misses are same-side RE-ENTRIES after an ATR exit.
+
+ROOT CAUSE of remaining gap: the List-of-Trades CSV and the zone-log were
+exported from DIFFERENT backtest runs (different date range → different
+continuous-ATR warmup → different exits → different re-entries). They literally
+disagree (01-19: List=1 long held; zone-log=4 longs). So the ground truth was
+inconsistent.
+
+FIX/NEXT: user re-runs the strategy ONCE and exports the Pine Logs from
+`Ars_Auto_Rev_Chain_ZONELOG.pine` (now logs ZONE + SIGNAL + EXIT — fully
+self-contained). Then build a `--signals <log.csv>` validator that scores
+engine entries+exits against that single consistent log. Expect 90%+ given
+zones already match exactly. Engine logic itself is validated faithful.
 
 Fixes applied this round (all committed):
 - Wilder-RMA ATR (was the big exit fix)

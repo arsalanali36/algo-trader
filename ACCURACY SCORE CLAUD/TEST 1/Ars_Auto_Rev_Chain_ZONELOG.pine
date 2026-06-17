@@ -1284,6 +1284,7 @@ if strategy.position_size > 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Long", comment=exitReason)
+        log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close, "#.##"))
         alert("🚪 EXIT LONG @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
         exitSide := "LONG"
         atrSL_Long := na
@@ -1300,6 +1301,7 @@ if strategy.position_size < 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Short", comment=exitReason)
+        log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close, "#.##"))
         alert("🚪 EXIT SHORT @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
         exitSide := "SHORT"
         atrSL_Short := na
@@ -1314,6 +1316,8 @@ exitMinute        = 15
 exitTimeCondition = (hour == exitHour and minute >= exitMinute)
 
 if exitTimeCondition
+    if strategy.position_size != 0
+        log.info("EXIT " + (strategy.position_size > 0 ? "LONG" : "SHORT") + " " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=3:15_Daily_Exit close=" + str.tostring(close, "#.##"))
     strategy.close_all(comment="3:15 Daily Exit")
 
 
