@@ -42,12 +42,15 @@ RSI_CFG      = BASE_DIR / "rsi_config.json"
 RANGE_SCRIPT = str(BASE_DIR / "range_trader.py")
 RANGE_LOG    = BASE_DIR / "range_trader.log"
 RANGE_CFG    = BASE_DIR / "range_config.json"
+UNIV_SCRIPT  = str(BASE_DIR / "universe_trader.py")
+UNIV_LOG     = BASE_DIR / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
 
 STRATEGIES = {
-    "ema":   {"script": TRADER_SCRIPT, "log": LOG_FILE,  "cfg": TC_FILE,   "grep": "nifty_ema_trader"},
-    "rsi":   {"script": RSI_SCRIPT,    "log": RSI_LOG,   "cfg": RSI_CFG,   "grep": "rsi_trader"},
-    "range": {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
+    "ema":      {"script": TRADER_SCRIPT, "log": LOG_FILE,  "cfg": TC_FILE,   "grep": "nifty_ema_trader"},
+    "rsi":      {"script": RSI_SCRIPT,    "log": RSI_LOG,   "cfg": RSI_CFG,   "grep": "rsi_trader"},
+    "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
+    "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
 }
 
 def _base(strategy):
