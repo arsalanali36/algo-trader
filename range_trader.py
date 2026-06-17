@@ -92,6 +92,36 @@ DHAN_INFO = {
     "ONGC":        ("2475",  "NSE_EQ"),
 }
 
+# Dhan Data API — sec_id + segment + instrument type
+# NSE_IDX for indices, NSE_EQ for stocks
+_DHAN_DATA = {
+    "NIFTY":      ("13",    "NSE_IDX", "INDEX"),
+    "BANKNIFTY":  ("25",    "NSE_IDX", "INDEX"),
+    "RELIANCE":   ("2885",  "NSE_EQ",  "EQUITY"),
+    "TCS":        ("11536", "NSE_EQ",  "EQUITY"),
+    "INFY":       ("1594",  "NSE_EQ",  "EQUITY"),
+    "HDFCBANK":   ("1333",  "NSE_EQ",  "EQUITY"),
+    "ICICIBANK":  ("4963",  "NSE_EQ",  "EQUITY"),
+    "SBIN":       ("3045",  "NSE_EQ",  "EQUITY"),
+    "AXISBANK":   ("5900",  "NSE_EQ",  "EQUITY"),
+    "BAJFINANCE": ("317",   "NSE_EQ",  "EQUITY"),
+    "WIPRO":      ("3787",  "NSE_EQ",  "EQUITY"),
+    "KOTAKBANK":  ("1922",  "NSE_EQ",  "EQUITY"),
+    "LT":         ("11483", "NSE_EQ",  "EQUITY"),
+    "MARUTI":     ("10999", "NSE_EQ",  "EQUITY"),
+    "HINDUNILVR": ("1394",  "NSE_EQ",  "EQUITY"),
+    "ITC":        ("1660",  "NSE_EQ",  "EQUITY"),
+    "SUNPHARMA":  ("3351",  "NSE_EQ",  "EQUITY"),
+    "TITAN":      ("3506",  "NSE_EQ",  "EQUITY"),
+    "ULTRACEMCO": ("11532", "NSE_EQ",  "EQUITY"),
+    "NESTLEIND":  ("17963", "NSE_EQ",  "EQUITY"),
+    "POWERGRID":  ("14977", "NSE_EQ",  "EQUITY"),
+    "NTPC":       ("11630", "NSE_EQ",  "EQUITY"),
+    "ONGC":       ("2475",  "NSE_EQ",  "EQUITY"),
+}
+
+_TF_MAP = {"1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30"}
+
 ORDERS_URL   = "https://api.dhan.co/v2/orders"
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
@@ -138,7 +168,7 @@ def load_config(strategy_id=None):
         "exit_zone": False,
         "exit_atr": True,
         "exit_fib": False,
-        "symbols": list(SYMBOLS.keys())[:10]
+        "symbols": ["NIFTY"]
     }
     # Multi-variation: read from nifty_config.json[strategy_id]
     if strategy_id:
@@ -166,7 +196,7 @@ def hdrs(token, cid):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_daily(symbol, days=22):
-    """Fetch daily OHLC for last N days."""
+    """Fetch daily OHLC via yfinance."""
     ticker = SYMBOLS.get(symbol)
     if not ticker:
         return None
@@ -552,10 +582,11 @@ def run_signal_engine(df_1m, key_levels, cfg):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_1m(symbol, tf="1m"):
+    """Fetch intraday candles via yfinance."""
     ticker = SYMBOLS.get(symbol)
     if not ticker:
         return None
-    period = "5d" if tf in ("5m","15m","30m") else "2d"
+    period = "5d" if tf in ("5m", "15m", "30m") else "2d"
     try:
         df = yf.download(ticker, period=period, interval=tf,
                          progress=False, auto_adjust=True)
@@ -599,13 +630,29 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         "price":           0,
         "triggerPrice":    0,
     }
+    # For options: fetch actual option LTP from Dhan (index price is not useful here)
+    if seg == "NSE_FNO" and sec_id:
+        try:
+            qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                               json={"NSE_FNO": [int(sec_id)]},
+                               headers=hdrs(token, cid), timeout=4)
+            if qr.status_code == 200:
+                qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                for v in (qdata.values() if isinstance(qdata, dict) else []):
+                    ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                    if ltp_v:
+                        price = ltp_v
+                        break
+        except Exception:
+            pass  # fallback: use whatever price was passed
+
     if mode == "paper":
         log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
         return
     try:
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
         if r.status_code == 200:
-            log.info(f"ORDER OK  {side} {qty} {trad_sym}  → {r.json()}")
+            log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
         else:
             log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
             raise Exception(f"Dhan {r.status_code}: {r.text[:200]}")
@@ -714,7 +761,7 @@ def main(strategy_id="range"):
             f"Entry: zone touch + bearish/bullish candle + close break + 2-candle confirm"
         )
 
-        symbols = cfg.get("symbols", list(SYMBOLS.keys()))
+        symbols = cfg.get("symbols", ["NIFTY"])
 
         for symbol in symbols:
             st = get_state(symbol)

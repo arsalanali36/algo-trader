@@ -135,9 +135,13 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 </div>
 
 <!-- P&L TAB -->
-<div class="tab-body" id="tab-pnl">
-  <div id="pnl-stats-grid" class="grid" style="margin-bottom:16px"></div>
-  <div id="pnl-trades-grid" class="grid"></div>
+<div class="tab-body" id="tab-pnl" style="padding:16px">
+  <!-- Summary row -->
+  <div id="pnl-summary-row" style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap"></div>
+  <!-- Open Positions full width -->
+  <div id="pnl-positions-section" style="margin-bottom:16px"></div>
+  <!-- Completed Trades full width -->
+  <div id="pnl-orders-section"></div>
 </div>
 
 <!-- LOG TAB -->
@@ -265,31 +269,7 @@ function renderControlTab() {
 
 // P&L TAB
 function renderPnlTab() {
-  const statsContainer = document.getElementById('pnl-stats-grid');
-  const tradesContainer = document.getElementById('pnl-trades-grid');
-  let statsHtml = ''; let tradesHtml = '';
-  
-  Object.keys(GLOBAL_CONFIG).forEach(key => {
-    const type = key.split('_')[0];
-    const color = getStratColor(type);
-    statsHtml += `
-      <div class="card" style="border-color:${color}">
-        <h2 style="color:${color}">${key.toUpperCase()} P&L</h2>
-        <div class="stat"><span class="stat-label">Trades</span><span class="stat-value" id="${key}-trades">—</span></div>
-        <div class="stat"><span class="stat-label">Wins</span><span class="stat-value green" id="${key}-wins">—</span></div>
-        <div class="stat"><span class="stat-label">Losses</span><span class="stat-value red" id="${key}-losses">—</span></div>
-        <div class="stat"><span class="stat-label">Net P&L</span><span class="stat-value" id="${key}-pnl">—</span></div>
-      </div>
-    `;
-    tradesHtml += `
-      <div class="card" style="border-color:${color}">
-        <h2 style="color:${color}">${key.toUpperCase()} Trades</h2>
-        <div id="${key}-trades-list">—</div>
-      </div>
-    `;
-  });
-  statsContainer.innerHTML = statsHtml;
-  tradesContainer.innerHTML = tradesHtml;
+  // Summary pills rendered dynamically in updatePnl — nothing to init here
 }
 
 // LOG TAB
@@ -563,75 +543,125 @@ async function stopBot(s) {
 }
 
 // ── PNL & LOG UPDATE LOOPS ──
+function _card(title, color, content) {
+  return `<div style="background:#161b22;border:1px solid ${color}40;border-radius:8px;overflow:hidden;margin-bottom:16px">
+    <div style="background:${color}15;padding:8px 14px;font-size:12px;font-weight:700;color:${color};border-bottom:1px solid ${color}30">${title}</div>
+    <div>${content}</div>
+  </div>`;
+}
+const _pnlTH = (t,a) => `<th style="padding:7px 12px;color:#8b949e;font-size:11px;font-weight:600;border-bottom:1px solid #30363d;text-align:${a||'left'};white-space:nowrap">${t}</th>`;
+const _pnlTD = (t,c,a,x) => `<td style="padding:7px 12px;font-size:12px;color:${c||'#e6edf3'};text-align:${a||'left'};${x||''}">${t}</td>`;
+function _pnlTable(cols, rows) {
+  let h=`<table style="width:100%;border-collapse:collapse"><thead><tr>${cols.map(c=>_pnlTH(c.l,c.a)).join('')}</tr></thead><tbody>`;
+  rows.forEach(r=>{h+=`<tr style="border-bottom:1px solid #21262d">${r}</tr>`;});
+  return h+'</tbody></table>';
+}
+function _pnlColor(v){return v==null?'#8b949e':v>=0?'#3fb950':'#f85149';}
+function _fmt(v){if(v==null||isNaN(v))return'—';return(v>=0?'+':'')+'₹'+Math.abs(v).toFixed(2);}
+
 async function updatePnl() {
   if (activeTab !== 'pnl') return;
-  for(let key of Object.keys(GLOBAL_CONFIG)) {
-    try {
-      let r = await fetch(`/api/pnl?s=${key}`);
-      let j = await r.json();
 
-      const set = (id, val) => { let el = document.getElementById(id); if(el) el.innerText = val; };
-      set(`${key}-trades`, j.trades ?? 0);
-      set(`${key}-wins`,   j.wins   ?? 0);
-      set(`${key}-losses`, j.losses ?? 0);
-
-      let pnlEl = document.getElementById(`${key}-pnl`);
-      if(pnlEl) {
-        let pnl = j.total_pnl ?? 0;
-        pnlEl.innerText   = '₹' + pnl.toFixed(2);
-        pnlEl.className   = pnl >= 0 ? 'stat-value green' : 'stat-value red';
-      }
-
-      let tl = document.getElementById(`${key}-trades-list`);
-      if(tl) {
-        let details = j.details || [];
-        if(!details.length) { tl.innerHTML = '<div style="color:#484f58;padding:8px">Aaj koi completed trade nahi</div>'; continue; }
-        // Group by date
-        let byDate = {};
-        details.forEach(d => {
-          let dt = (d.entry_time || '').split(' ')[0] || 'Today';
-          if(!byDate[dt]) byDate[dt] = [];
-          byDate[dt].push(d);
-        });
-        let html = '';
-        Object.keys(byDate).sort().reverse().forEach(dt => {
-          let dayPnl = byDate[dt].reduce((s,d)=>s+d.pnl,0);
-          let dayColor = dayPnl>=0?'#3fb950':'#f85149';
-          html += `<div style="margin-bottom:16px">
-            <div style="color:#8b949e;font-size:11px;padding:4px 8px;border-bottom:1px solid #30363d;display:flex;justify-content:space-between">
-              <span>${dt||'Today'}</span>
-              <span style="color:${dayColor};font-weight:700">${dayPnl>=0?'+':''}₹${dayPnl.toFixed(2)}</span>
-            </div>
-            <table style="width:100%;border-collapse:collapse;font-size:12px">
-              <tr style="color:#484f58;font-size:11px">
-                <th style="text-align:left;padding:3px 8px">Symbol</th>
-                <th style="padding:3px 8px">Side</th>
-                <th style="padding:3px 8px">Entry Time</th>
-                <th style="padding:3px 8px">Entry ₹</th>
-                <th style="padding:3px 8px">Exit Time</th>
-                <th style="padding:3px 8px">Exit ₹</th>
-                <th style="padding:3px 8px">P&L</th>
-              </tr>`;
-          byDate[dt].forEach(d => {
-            let pnlColor = d.pnl >= 0 ? '#3fb950' : '#f85149';
-            let sideColor = d.entry === 'BUY' ? '#3fb950' : '#f85149';
-            html += `<tr style="border-bottom:1px solid #21262d">
-              <td style="padding:5px 8px;font-weight:600">${d.sym}</td>
-              <td style="padding:5px 8px;color:${sideColor};text-align:center;font-weight:700">${d.entry}</td>
-              <td style="padding:5px 8px;color:#8b949e;text-align:center">${d.entry_time||'—'}</td>
-              <td style="padding:5px 8px;text-align:right">₹${d.entry_price.toFixed(2)}</td>
-              <td style="padding:5px 8px;color:#8b949e;text-align:center">${d.exit_time||'—'}</td>
-              <td style="padding:5px 8px;text-align:right">₹${d.exit_price.toFixed(2)}</td>
-              <td style="padding:5px 8px;text-align:right;font-weight:700;color:${pnlColor}">${d.pnl>=0?'+':''}₹${d.pnl.toFixed(2)}</td>
-            </tr>`;
-          });
-          html += '</table></div>';
-        });
-        html = html || '<div style="color:#484f58;padding:8px">Aaj koi completed trade nahi</div>';
-        tl.innerHTML = html;
-      }
-    } catch(e){ console.error('updatePnl error', e); }
+  // Fetch all strategies
+  const keys = Object.keys(GLOBAL_CONFIG);
+  let allResults = {};
+  for(let key of keys) {
+    try { let r=await fetch(`/api/pnl?s=${key}`); allResults[key]=await r.json(); }
+    catch(e){ allResults[key]={trades:0,wins:0,losses:0,total_pnl:0,details:[],open:[]}; }
   }
+
+  // SUMMARY PILLS
+  let summaryEl = document.getElementById('pnl-summary-row');
+  if(summaryEl) {
+    let totalPnl=0,totalTrades=0,totalWins=0,totalLoss=0;
+    keys.forEach(k=>{let j=allResults[k];totalPnl+=j.total_pnl||0;totalTrades+=j.trades||0;totalWins+=j.wins||0;totalLoss+=j.losses||0;});
+    let sh = keys.map(key=>{
+      let j=allResults[key],color=getStratColor(key.split('_')[0]);
+      let pc=(j.total_pnl||0)>=0?'#3fb950':'#f85149';
+      return `<div style="background:#161b22;border:1px solid ${color}50;border-radius:8px;padding:10px 16px;min-width:150px">
+        <div style="color:${color};font-size:11px;font-weight:700;margin-bottom:6px">${key.toUpperCase()}</div>
+        <div style="font-size:20px;font-weight:700;color:${pc}">${(j.total_pnl||0)>=0?'+':''}₹${(j.total_pnl||0).toFixed(2)}</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">${j.trades||0} trades · ${j.wins||0}W ${j.losses||0}L</div>
+      </div>`;
+    }).join('');
+    if(keys.length>1){
+      let tc=totalPnl>=0?'#3fb950':'#f85149';
+      sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:150px">
+        <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL</div>
+        <div style="font-size:20px;font-weight:700;color:${tc}">${totalPnl>=0?'+':''}₹${totalPnl.toFixed(2)}</div>
+        <div style="color:#8b949e;font-size:11px;margin-top:4px">${totalTrades} trades · ${totalWins}W ${totalLoss}L</div>
+      </div>`;
+    }
+    summaryEl.innerHTML = sh;
+  }
+
+  // OPEN POSITIONS
+  let allOpen = [];
+  keys.forEach(k=>{(allResults[k].open||[]).forEach(p=>allOpen.push({...p,_strat:k}));});
+  let posEl = document.getElementById('pnl-positions-section');
+  if(posEl) {
+    if(!allOpen.length) { posEl.innerHTML=''; }
+    else {
+      let ltpMap = {};
+      try {
+        let sl=[...new Set(allOpen.map(d=>d.sym))].map(encodeURIComponent).join(',');
+        let lr=await fetch('/api/positions-ltp?syms='+sl);
+        let lj=await lr.json();
+        if(lj.ok) ltpMap=lj.ltp_map||{};
+      } catch(e){}
+      let cols=[{l:'Symbol'},{l:'Side',a:'center'},{l:'Entry ₹',a:'right'},{l:'LTP',a:'right'},{l:'Points',a:'right'},{l:'Qty',a:'center'},{l:'Unrealized',a:'right'},{l:'',a:'center'}];
+      let rows=allOpen.map(d=>{
+        let entry=d.entry_price||0, ld=ltpMap[d.sym]||null;
+        let ltp=ld?.ltp??null, qty=d.qty||65;
+        let pts=ltp!=null?(d.entry==='BUY'?ltp-entry:entry-ltp):null;
+        let unrl=(pts!=null&&d.qty)?pts*d.qty:null;
+        let sc=d.entry==='BUY'?'#3fb950':'#f85149';
+        let closeSide=d.entry==='BUY'?'SELL':'BUY';
+        let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
+        let modeNow=(window.qoGetMode&&window.qoGetMode())||'paper';
+        let bId=`xb_${d.sym.replace(/[^a-z0-9]/gi,'_')}`;
+        return _pnlTD(`<b>${d.sym}</b><br><span style="color:#8b949e;font-size:10px">${d.entry_time||''}</span>`)+
+               _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center')+
+               _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right')+
+               _pnlTD(ltp!=null?'₹'+ltp.toFixed(2):'⏳','#e6edf3','right')+
+               _pnlTD(pts!=null?(pts>=0?'+':'')+pts.toFixed(1):'—',_pnlColor(pts),'right','font-weight:700')+
+               _pnlTD(qty,'#8b949e','center')+
+               _pnlTD(unrl!=null?_fmt(unrl):'—',_pnlColor(unrl),'right','font-weight:700')+
+               `<td style="padding:5px 10px;text-align:center">
+                 <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
+                   style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
+                   ${closeSide} ✕
+                 </button>
+               </td>`;
+      });
+      posEl.innerHTML=_card(`⏳ OPEN POSITIONS (${allOpen.length})`,'#d29922',_pnlTable(cols,rows));
+    }
+  }
+
+  // COMPLETED TRADES
+  let ordEl = document.getElementById('pnl-orders-section');
+  if(!ordEl) return;
+  let allDetails=[];
+  keys.forEach(k=>{(allResults[k].details||[]).forEach(d=>allDetails.push({...d,_strat:k}));});
+  allDetails.sort((a,b)=>(b.entry_time||'').localeCompare(a.entry_time||''));
+  if(!allDetails.length){
+    ordEl.innerHTML=`<div style="color:#484f58;padding:16px;text-align:center;font-size:13px">Aaj koi completed trade nahi</div>`;
+    return;
+  }
+  let oCols=[{l:'Symbol'},{l:'Side',a:'center'},{l:'Entry Time',a:'center'},{l:'Entry ₹',a:'right'},{l:'Exit Time',a:'center'},{l:'Exit ₹',a:'right'},{l:'Qty',a:'center'},{l:'P&L',a:'right'}];
+  let oRows=allDetails.map(d=>{
+    let pnl=d.pnl??0,sc=d.entry==='BUY'?'#3fb950':'#f85149';
+    return _pnlTD(`<b>${d.sym}</b>`)+
+           _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center')+
+           _pnlTD(d.entry_time||'—','#8b949e','center')+
+           _pnlTD(d.entry_price!=null?'₹'+d.entry_price.toFixed(2):'—','','right')+
+           _pnlTD(d.exit_time||'—','#8b949e','center')+
+           _pnlTD(d.exit_price!=null?'₹'+d.exit_price.toFixed(2):'—','','right')+
+           _pnlTD(d.qty||'—','#8b949e','center')+
+           _pnlTD(_fmt(pnl),_pnlColor(pnl),'right','font-weight:700');
+  });
+  ordEl.innerHTML=_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows));
+
 }
 
 function formatLogLine(L) {
@@ -766,6 +796,25 @@ loadAll();
 <div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:10px">
   ${[-3,-2,-1,0,1,2,3].map(v=>`<button onclick="qoSetAtm(${v})" data-atm="${v}" style="flex:1;padding:4px 0;border:1px solid ${v===0?'#1f6feb':'#30363d'};border-radius:4px;background:${v===0?'#1f6feb':'#21262d'};color:${v===0?'#fff':'#8b949e'};font-size:10px;cursor:pointer">${v===0?'ATM':v>0?'+'+v:v}</button>`).join('')}
 </div>
+<div id="qo-ltp-box" style="background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:8px 10px;margin-bottom:10px">
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+    <div onclick="qoUsePrice('pe')" title="Click → price box me PE LTP bharo" style="background:#3fb95015;border:1px solid #3fb95040;border-radius:5px;padding:5px 7px;cursor:pointer">
+      <div style="font-size:9px;color:#3fb950;margin-bottom:2px">PE (BUY)</div>
+      <div id="qo-pe-ltp" style="font-size:13px;color:#e6edf3;font-weight:700">⏳</div>
+      <div id="qo-pe-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+    </div>
+    <div onclick="qoUsePrice('ce')" title="Click → price box me CE LTP bharo" style="background:#f8514915;border:1px solid #f8514940;border-radius:5px;padding:5px 7px;cursor:pointer">
+      <div style="font-size:9px;color:#f85149;margin-bottom:2px">CE (SELL)</div>
+      <div id="qo-ce-ltp" style="font-size:13px;color:#e6edf3;font-weight:700">⏳</div>
+      <div id="qo-ce-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+    </div>
+  </div>
+</div>
+<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Limit Price <span style="color:#484f58">(blank = LTP par bhejo)</span></div>
+<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
+  <span style="font-size:13px;color:#8b949e">₹</span>
+  <input id="qo-price" type="number" step="0.05" placeholder="auto (LTP)" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:6px 8px;font-size:13px;outline:none">
+</div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
   <input id="qo-lots" type="number" value="1" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
@@ -802,7 +851,13 @@ loadAll();
     panel.style.top=(e.clientY-dy)+'px';
   });
   document.addEventListener('mouseup', ()=>dragging=false);
-  document.getElementById('qo-close').onclick = ()=>panel.remove();
+  document.getElementById('qo-close').onclick = ()=>{ clearInterval(_qoAutoRefresh); panel.remove(); };
+
+  // First fetch on open + auto-refresh every 30s
+  qoFetchLtp();
+  let _qoAutoRefresh = setInterval(qoFetchLtp, 3000);
+
+  window.qoGetMode = ()=>qoMode;
 
   window.qoSetMode = m=>{
     qoMode=m;
@@ -814,6 +869,32 @@ loadAll();
     document.getElementById('qo-status').style.color = m==='live'?'#f85149':'#8b949e';
   };
 
+  let _qoLtpTimer = null;
+  async function qoFetchLtp() {
+    document.getElementById('qo-pe-ltp').textContent = '⏳';
+    document.getElementById('qo-ce-ltp').textContent = '⏳';
+    try {
+      const r = await fetch(`/api/option-ltp?symbol=${qoSym}&offset=${qoAtm}`);
+      const j = await r.json();
+      if (j.ok) {
+        window._qoPeLtp = j.pe_ltp; window._qoCeLtp = j.ce_ltp;
+        document.getElementById('qo-pe-ltp').textContent = j.pe_ltp != null ? '₹' + j.pe_ltp.toFixed(2) : '—';
+        document.getElementById('qo-ce-ltp').textContent = j.ce_ltp != null ? '₹' + j.ce_ltp.toFixed(2) : '—';
+        document.getElementById('qo-pe-sym').textContent = (j.pe_sym||'').replace(qoSym+'-','');
+        document.getElementById('qo-ce-sym').textContent = (j.ce_sym||'').replace(qoSym+'-','');
+      } else {
+        document.getElementById('qo-pe-ltp').textContent = j.msg || 'Error';
+        document.getElementById('qo-ce-ltp').textContent = '';
+      }
+    } catch(e) {
+      document.getElementById('qo-pe-ltp').textContent = 'JS Error: ' + e.message;
+    }
+  }
+  function qoRefreshLtp() {
+    clearTimeout(_qoLtpTimer);
+    _qoLtpTimer = setTimeout(qoFetchLtp, 300);
+  }
+
   window.qoSetSym = s=>{
     qoSym=s;
     ['NIFTY','BANKNIFTY'].forEach(sym=>{
@@ -824,6 +905,7 @@ loadAll();
       b.style.color       = sel?'#58a6ff':'#8b949e';
     });
     updateQtyHint();
+    qoRefreshLtp();
   };
 
   window.qoSetAtm = v=>{
@@ -834,6 +916,7 @@ loadAll();
       b.style.borderColor= bv===v?'#1f6feb':'#30363d';
       b.style.color      = bv===v?'#fff':'#8b949e';
     });
+    qoRefreshLtp();
   };
 
   window.updateQtyHint = ()=>{
@@ -845,19 +928,52 @@ loadAll();
     if(ls2) ls2.textContent = ls;
   };
 
+  window.qoUsePrice = leg=>{
+    const v = leg==='pe' ? window._qoPeLtp : window._qoCeLtp;
+    if (v != null) document.getElementById('qo-price').value = v.toFixed(2);
+  };
+
   window.qoOrder = async side=>{
     const lots = parseInt(document.getElementById('qo-lots').value)||1;
     const st = document.getElementById('qo-status');
-    st.textContent = 'Placing order...'; st.style.color='#d29922';
+    // blank price → auto: use displayed LTP of relevant leg (BUY=PE, SELL=CE)
+    let priceRaw = document.getElementById('qo-price').value.trim();
+    let price = priceRaw==='' ? (side==='BUY'?window._qoPeLtp:window._qoCeLtp) : parseFloat(priceRaw);
+    if (price==null || isNaN(price) || price<=0){ st.textContent='Price nahi mila — LTP load hone do'; st.style.color='#f85149'; return; }
+    st.textContent = `LIMIT ${side} @ ₹${price.toFixed(2)}...`; st.style.color='#d29922';
     try {
       const r = await fetch('/api/manual-order',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({symbol:qoSym, side, lots, strike_offset:qoAtm, mode:qoMode})});
+        body: JSON.stringify({symbol:qoSym, side, lots, strike_offset:qoAtm, mode:qoMode, order_type:'LIMIT', price})});
       const j = await r.json();
       st.textContent = j.msg || (j.ok?'Done':'Error');
       st.style.color = j.ok?'#3fb950':'#f85149';
     } catch(e){ st.textContent='Network error'; st.style.color='#f85149'; }
   };
 })();
+
+async function closePosition(tSym, entrySide, qty, mode, btnId) {
+  const btn = document.getElementById(btnId);
+  if(btn) { btn.disabled=true; btn.textContent='...'; }
+  const modeNow = (window.qoGetMode && window.qoGetMode()) || mode || 'paper';
+  try {
+    let r = await fetch('/api/close-position', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({t_sym:tSym, entry_side:entrySide, qty:qty, mode:modeNow})
+    });
+    let j = await r.json();
+    if(j.ok) {
+      flash('✅ ' + j.msg, '#3fb950');
+      setTimeout(updatePnl, 800);
+    } else {
+      flash('❌ ' + j.msg, '#f85149');
+      if(btn) { btn.disabled=false; btn.textContent=entrySide==='BUY'?'SELL ✕':'BUY ✕'; }
+    }
+  } catch(e) {
+    flash('❌ Network error', '#f85149');
+    if(btn) { btn.disabled=false; btn.textContent='ERR'; }
+  }
+}
 </script>
 </body>
 </html>

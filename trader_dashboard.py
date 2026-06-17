@@ -95,37 +95,54 @@ def parse_pnl(log_path, today, qty=1):
         if ms:
             last_signal_price[ms.group(2)] = float(ms.group(3))
 
-        # Entry: [PAPER] BUY/SELL 1 SYM @ price  (new format)
-        m = re.search(r'\[PAPER\]\s+(BUY|SELL)\s+\d+\s+(\w+)\s+@\s+([\d.]+)', line)
+        # Entry: [PAPER] or [LIVE] BUY/SELL QTY SYM @ price  (SYM can be NIFTY-Jun2026-24100-CE)
+        m = re.search(r'\[(?:PAPER|LIVE)\]\s+(BUY|SELL)\s+(\d+)\s+([\w\-]+)\s+@\s+([\d.]+)', line)
         if m:
-            side, sym, price = m.group(1), m.group(2), float(m.group(3))
-            open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
+            side, q_log, sym, price = m.group(1), int(m.group(2)), m.group(3), float(m.group(4))
+            # Position netting — opposite side on same symbol = close existing position
+            if sym in open_pos and open_pos[sym]["side"] != side:
+                entry = open_pos.pop(sym)
+                exit_price = price
+                q_use = entry.get("qty", qty)
+                pnl = (exit_price - entry["price"]) * q_use if entry["side"] == "BUY" else (entry["price"] - exit_price) * q_use
+                total_pnl += pnl
+                wins   += 1 if pnl > 0 else 0
+                losses += 0 if pnl > 0 else 1
+                details.append({
+                    "sym": sym, "entry": entry["side"], "qty": q_use,
+                    "entry_price": entry["price"], "entry_time": entry["time"],
+                    "exit_price": exit_price, "exit_time": _ts(line),
+                    "pnl": round(pnl, 2)
+                })
+            else:
+                open_pos[sym] = {"side": side, "price": price, "time": _ts(line), "qty": q_log}
             continue
 
-        # Entry: [PAPER] BUY/SELL 1 SYM  (old format — use last SIGNAL price)
-        m = re.search(r'\[PAPER\]\s+(BUY|SELL)\s+\d+\s+(\w+)\s+correlationId', line)
+        # Entry: [PAPER] BUY/SELL QTY SYM  correlationId (old format — use last SIGNAL price)
+        m = re.search(r'\[PAPER\]\s+(BUY|SELL)\s+\d+\s+([\w\-]+)\s+correlationId', line)
         if m:
             side, sym = m.group(1), m.group(2)
             price = last_signal_price.get(sym, 0.0)
             open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
             continue
 
-        # Exit: EXIT SYM via REASON @ price
-        m = re.search(r'EXIT\s+(\w+)\s+via\s+\S+\s+@\s+([\d.]+)', line)
+        # Exit: EXIT SYM via REASON @ price  (SYM can have hyphens)
+        m = re.search(r'EXIT\s+([\w\-]+)\s+via\s+\S+\s+@\s+([\d.]+)', line)
         if m:
             sym, exit_price = m.group(1), float(m.group(2))
             if sym not in open_pos:
                 continue  # stale state exit — no entry this session, skip
             entry = open_pos.pop(sym)
+            q_use = entry.get("qty", qty)
             if entry["side"] == "BUY":
-                pnl = (exit_price - entry["price"]) * qty
+                pnl = (exit_price - entry["price"]) * q_use
             else:
-                pnl = (entry["price"] - exit_price) * qty
+                pnl = (entry["price"] - exit_price) * q_use
             total_pnl += pnl
             wins   += 1 if pnl > 0 else 0
             losses += 0 if pnl > 0 else 1
             details.append({
-                "sym": sym, "entry": entry["side"],
+                "sym": sym, "entry": entry["side"], "qty": q_use,
                 "entry_price": entry["price"], "entry_time": entry["time"],
                 "exit_price": exit_price, "exit_time": _ts(line),
                 "pnl": round(pnl, 2)
@@ -138,10 +155,17 @@ def parse_pnl(log_path, today, qty=1):
             sym, price, side = m.group(1), float(m.group(2)), m.group(3)
             open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
 
+    # Open positions (entry without exit yet)
+    open_list = [{"sym": sym, "entry": v["side"], "entry_price": v["price"],
+                  "entry_time": v["time"], "qty": v.get("qty", qty),
+                  "exit_price": None, "exit_time": "—", "pnl": None}
+                 for sym, v in open_pos.items()]
+
     n = len(details)
     return {"trades": n, "wins": wins, "losses": losses,
             "win_rate": round(wins/n*100, 1) if n else 0,
-            "total_pnl": round(total_pnl, 2), "details": details}
+            "total_pnl": round(total_pnl, 2), "details": details,
+            "open": open_list}
 
 @app.route('/')
 def index():
@@ -276,6 +300,115 @@ def api_lot_sizes():
         pass  # return fallback defaults
     return jsonify(result)
 
+_sec_id_cache = {}  # trading_symbol -> security_id
+
+def _get_sec_ids(syms: list) -> dict:
+    """Lookup security IDs for given trading symbols. Uses dhan_master's
+    nearest-NON-expired-expiry resolver — a plain CSV first-match returns the
+    EXPIRED contract (same trad_sym exists for multiple expiries) which has no LTP."""
+    import dhan_master
+    out = {}
+    for s in syms:
+        if s in _sec_id_cache:
+            out[s] = _sec_id_cache[s]
+            continue
+        sid = dhan_master.get_sec_id_for_trad_sym(s)
+        if sid:
+            _sec_id_cache[s] = sid
+            out[s] = sid
+    return out
+
+
+@app.route('/api/positions-ltp')
+def api_positions_ltp():
+    """Fetch live LTP for open positions using Dhan /v2/quotes (works for paper too)."""
+    syms_raw = request.args.get('syms', '')
+    syms = [s.strip() for s in syms_raw.split(',') if s.strip()]
+    if not syms:
+        return jsonify({"ok": True, "ltp_map": {}})
+
+    ltp_map = {}
+    try:
+        import range_trader, requests as _req
+        token, cid = range_trader.load_creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+
+        # Look up security IDs
+        sec_id_map = _get_sec_ids(syms)  # sym -> sec_id string
+
+        if sec_id_map:
+            body = {"NSE_FNO": [int(v) for v in sec_id_map.values() if v]}
+            r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+            if r.status_code == 200:
+                data = r.json().get("data", {}) or {}
+                quotes = data.get("NSE_FNO", {}) or {}
+                # quotes keyed by security_id (int or str)
+                id_to_sym = {v: k for k, v in sec_id_map.items()}
+                for sec_id_str, q in quotes.items():
+                    sec_id_key = str(sec_id_str)
+                    sym = id_to_sym.get(sec_id_key) or id_to_sym.get(sec_id_key.lstrip('0'))
+                    if not sym:
+                        continue
+                    ltp = float(q.get("last_price") or q.get("ltp") or q.get("lastTradedPrice") or 0)
+                    if ltp:
+                        ltp_map[sym] = {"ltp": ltp, "qty": None}
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "ltp_map": ltp_map})
+
+    return jsonify({"ok": True, "ltp_map": ltp_map})
+
+# Cache: (symbol, offset) -> {result, ts}
+_ltp_cache = {}
+_LTP_CACHE_TTL = 3  # seconds — match widget refresh interval
+
+@app.route('/api/option-ltp')
+def api_option_ltp():
+    """CE/PE LTP for Quick Order widget. Cached 15s to avoid Dhan 429."""
+    import time as _t
+    symbol = request.args.get('symbol', 'NIFTY')
+    offset = int(request.args.get('offset', 0))
+    cache_key = (symbol, offset)
+
+    # Return cached if fresh
+    cached = _ltp_cache.get(cache_key)
+    if cached and (_t.time() - cached['ts']) < _LTP_CACHE_TTL:
+        return jsonify(cached['data'])
+
+    try:
+        import dhan_master, range_trader, requests as _req, yfinance as yf
+        token, cid = range_trader.load_creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+
+        ticker_map = {"NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK"}
+        idx_price = float(yf.Ticker(ticker_map.get(symbol, "^NSEI")).fast_info["last_price"])
+
+        sec_ce, t_ce = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
+        sec_pe, t_pe = dhan_master.get_option_contract(symbol, idx_price, "PE", offset)
+
+        ltp_ce = ltp_pe = None
+        sec_ids = [int(s) for s in [sec_ce, sec_pe] if s]
+        if sec_ids:
+            qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                           json={"NSE_FNO": sec_ids}, headers=headers, timeout=5)
+            if qr.status_code == 200:
+                fno = qr.json().get("data", {}).get("NSE_FNO", {})
+                for sid_str, v in (fno.items() if isinstance(fno, dict) else []):
+                    ltp_v = float(v.get("last_price") or v.get("ltp") or 0) or None
+                    if str(sec_ce) == sid_str: ltp_ce = ltp_v
+                    if str(sec_pe) == sid_str: ltp_pe = ltp_v
+            elif qr.status_code == 429:
+                # Rate limited — return stale cache if available
+                if cached:
+                    return jsonify({**cached['data'], '_stale': True})
+                return jsonify({"ok": False, "msg": "Rate limit (429) — retry in 15s"})
+
+        result = {"ok": True, "ce_sym": t_ce, "ce_ltp": ltp_ce, "pe_sym": t_pe, "pe_ltp": ltp_pe}
+        _ltp_cache[cache_key] = {"data": result, "ts": _t.time()}
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/manual-order', methods=['POST'])
 def api_manual_order():
     data   = request.get_json()
@@ -284,6 +417,8 @@ def api_manual_order():
     lots   = int(data.get('lots', 1))
     offset = int(data.get('strike_offset', 0))
     mode   = data.get('mode', 'paper')
+    order_type = (data.get('order_type', 'MARKET') or 'MARKET').upper()
+    limit_price = data.get('price')   # user-entered LIMIT price (₹), may be None
     try:
         import dhan_master
         import range_trader
@@ -317,9 +452,38 @@ def api_manual_order():
 
         qty_shares = lots * lot_size   # e.g. 1 lot × 65 = 65 shares
 
-        # Build body explicitly so we can log it
+        # Get actual option LTP from Dhan quotes (not index price)
         import requests as _req
         import time as _time
+        option_ltp = price  # fallback: index price
+        try:
+            q_headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+            q_resp = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                               json={"NSE_FNO": [int(sec_id)]},
+                               headers=q_headers, timeout=4)
+            if q_resp.status_code == 200:
+                qdata = q_resp.json().get("data", {}).get("NSE_FNO", {})
+                for v in (qdata.values() if isinstance(qdata, dict) else qdata):
+                    ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                    if ltp_v:
+                        option_ltp = ltp_v
+                        break
+        except Exception:
+            pass
+
+        # LIMIT order: use user-entered price (fallback to live LTP); MARKET: price 0
+        if order_type == 'LIMIT':
+            try:
+                limit_price = float(limit_price)
+            except (TypeError, ValueError):
+                limit_price = option_ltp
+            if not limit_price or limit_price <= 0:
+                limit_price = option_ltp
+            order_price = round(float(limit_price), 2)
+            option_ltp = order_price   # log the exact LIMIT price
+        else:
+            order_price = 0
+
         ts = int(_time.time())
         body = {
             'dhanClientId':    cid,
@@ -327,29 +491,115 @@ def api_manual_order():
             'transactionType': side,
             'exchangeSegment': 'NSE_FNO',
             'productType':     'INTRADAY',
-            'orderType':       'MARKET',
+            'orderType':       order_type,
             'validity':        'DAY',
             'securityId':      sec_id,
             'tradingSymbol':   t_sym,
             'quantity':        qty_shares,
-            'price':           0,
+            'price':           order_price,
             'triggerPrice':    0,
         }
         print(f"[MANUAL ORDER] body={body}", flush=True)
 
+        def _write_to_log(tag):
+            # Append to active strategy log so P&L parser picks it up
+            try:
+                cfg_data = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                active = next(iter(cfg_data.keys()), 'range_v1')
+                log_path = BASE_DIR / 'logs' / f'{active}.log'
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with open(log_path, 'a') as lf:
+                    lf.write(f"{now},000  INFO      [{tag}] {side} {qty_shares} {t_sym} @ {option_ltp:.2f}  correlationId=MANUAL_{symbol}_{ts}\n")
+            except Exception:
+                pass
+
         if mode == 'paper':
-            print(f"[PAPER] {side} {qty_shares} {t_sym} @ {price:.2f}", flush=True)
-            return jsonify({'ok': True, 'msg': f'[PAPER] {side} {lots}L ({qty_shares} qty) {t_sym} @ {price:.0f}'})
+            _write_to_log('PAPER')
+            return jsonify({'ok': True, 'msg': f'[PAPER] {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
 
         hdrs_dict = range_trader.hdrs(token, cid)
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs_dict, timeout=10)
         print(f"[MANUAL ORDER] status={r.status_code} resp={r.text}", flush=True)
         if r.status_code == 200:
-            return jsonify({'ok': True, 'msg': f'[LIVE] {side} {lots}L ({qty_shares} qty) {t_sym} @ {price:.0f}'})
+            _write_to_log('LIVE')
+            return jsonify({'ok': True, 'msg': f'[LIVE] {order_type} {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
         else:
             return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:300]}'})
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
+
+@app.route('/api/close-position', methods=['POST'])
+def api_close_position():
+    """Close an open position — place opposite order using exact trading symbol."""
+    data     = request.get_json()
+    t_sym    = data.get('t_sym', '')        # e.g. NIFTY-Jun2026-24100-CE
+    entry_side = data.get('entry_side', '') # BUY or SELL
+    qty_shares = int(data.get('qty', 65))
+    mode     = data.get('mode', 'paper')
+
+    close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
+
+    try:
+        import range_trader, requests as _req, time as _time
+        token, cid = range_trader.load_creds()
+
+        # Security ID from scrip master
+        sec_id = _get_sec_ids([t_sym]).get(t_sym, '')
+
+        # Get current LTP for log
+        option_ltp = 0.0
+        if sec_id:
+            try:
+                qh = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+                qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                               json={"NSE_FNO": [int(sec_id)]}, headers=qh, timeout=4)
+                if qr.status_code == 200:
+                    qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                    for v in (qdata.values() if isinstance(qdata, dict) else []):
+                        ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                        if ltp_v:
+                            option_ltp = ltp_v
+                            break
+            except Exception:
+                pass
+
+        ts = int(_time.time())
+
+        def _write_log(tag):
+            try:
+                cfg_data = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                active = next(iter(cfg_data.keys()), 'range_v1')
+                log_path = BASE_DIR / 'logs' / f'{active}.log'
+                now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                with open(log_path, 'a') as lf:
+                    lf.write(f"{now},000  INFO      [{tag}] {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}  correlationId=CLOSE_{t_sym}_{ts}\n")
+            except Exception:
+                pass
+
+        if mode == 'paper':
+            _write_log('PAPER')
+            return jsonify({'ok': True, 'msg': f'[PAPER] CLOSE {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}'})
+
+        if not sec_id:
+            return jsonify({'ok': False, 'msg': f'Security ID not found for {t_sym}'})
+
+        body = {
+            'dhanClientId': cid, 'correlationId': f'CLOSE_{t_sym}_{ts}',
+            'transactionType': close_side, 'exchangeSegment': 'NSE_FNO',
+            'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
+            'securityId': sec_id, 'tradingSymbol': t_sym,
+            'quantity': qty_shares, 'price': 0, 'triggerPrice': 0,
+        }
+        hdrs = range_trader.hdrs(token, cid)
+        r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
+        if r.status_code == 200:
+            _write_log('LIVE')
+            return jsonify({'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym}'})
+        else:
+            return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)})
+
 
 @app.route('/api/debug-order')
 def api_debug_order():

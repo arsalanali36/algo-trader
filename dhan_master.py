@@ -145,6 +145,33 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
             
     return None, None
 
+def get_sec_id_for_trad_sym(trad_sym):
+    """Resolve sec_id for an exact trading symbol, picking the nearest NON-expired
+    expiry. Same trading symbol (e.g. NIFTY-Jun2026-24050-CE) can map to multiple
+    expiries since the day is not in the symbol — never return an expired contract."""
+    if not _options_cache:
+        build_cache()
+    if not trad_sym:
+        return None
+    symbol = trad_sym.split('-')[0]
+    if symbol not in _options_cache:
+        return None
+    now = ist_now()
+    best = None  # (exp_date, sec_id)
+    for exp_str, contracts in _options_cache[symbol].items():
+        try:
+            exp_date = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        if exp_date.date() < now.date():
+            continue
+        for c in contracts:
+            if c["trad_sym"] == trad_sym:
+                if best is None or exp_date < best[0]:
+                    best = (exp_date, c["sec_id"])
+    return best[1] if best else None
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     download_master_if_needed()
