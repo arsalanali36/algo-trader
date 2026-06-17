@@ -17,6 +17,7 @@ import argparse
 import csv
 import glob
 import os
+import re
 from datetime import time as dtime
 
 import numpy as np
@@ -308,9 +309,49 @@ def parse_tv(csv_path):
     return trades
 
 
+def parse_log(path):
+    """Parse the consistent Pine Logs export (ZONE/SIGNAL/EXIT from ONE run) into
+    trades. Times are the signal/exit bar; +1 bar (5min) = TradingView fill, to
+    match the engine's next-bar-open convention. Handles reversals."""
+    BAR = pd.Timedelta(minutes=5)
+    rows = []
+    for line in open(path, encoding="utf-8"):
+        msg = line.split(",", 1)[-1] if "," in line else line
+        rows.append(msg.strip())
+    events = []
+    for msg in rows:
+        m = re.search(r'SIGNAL (LONG|SHORT) (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) close=([\d.]+)', msg)
+        if m:
+            events.append(("SIG", "Long" if m.group(1) == "LONG" else "Short",
+                           pd.to_datetime(m.group(2)) + BAR, float(m.group(3)), None))
+            continue
+        m = re.search(r'EXIT (LONG|SHORT) (\d{4}-\d{2}-\d{2} \d{2}:\d{2}) reason=(\S+) close=([\d.]+)', msg)
+        if m:
+            events.append(("EXIT", "Long" if m.group(1) == "LONG" else "Short",
+                           pd.to_datetime(m.group(2)) + BAR, float(m.group(4)), m.group(3)))
+    events.sort(key=lambda e: e[2])
+    trades, cur = [], None
+    for typ, side, t, px, reason in events:
+        if typ == "SIG":
+            if cur is None:                  # flat -> open
+                cur = {"entry_time": t, "entry_price": px, "side": side,
+                       "exit_time": None, "exit_price": None, "exit_reason": None}
+            elif cur["side"] != side:        # reversal -> close prior, open new
+                cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, px, "Reversal"
+                trades.append(cur)
+                cur = {"entry_time": t, "entry_price": px, "side": side,
+                       "exit_time": None, "exit_price": None, "exit_reason": None}
+            # else: already in this direction & pyramiding=0 -> SIGNAL ignored (no trade)
+        elif typ == "EXIT" and cur:
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, px, reason
+            trades.append(cur)
+            cur = None
+    return trades
+
+
 # ───────────────────────── run + compare ─────────────────────────
-def run(tv_csv, date_from=None, date_to=None):
-    tv = parse_tv(tv_csv)
+def run(tv_csv, date_from=None, date_to=None, tv_trades=None):
+    tv = tv_trades if tv_trades is not None else parse_tv(tv_csv)
     if date_from:
         tv = [t for t in tv if t["entry_time"] >= pd.to_datetime(date_from)]
     if date_to:
@@ -547,8 +588,11 @@ if __name__ == "__main__":
     ap.add_argument("--from", dest="dfrom", default=None)
     ap.add_argument("--to", dest="dto", default=None)
     ap.add_argument("--debug", default=None, help="YYYY-MM-DD single-day trace")
+    ap.add_argument("--signals", default=None, help="Pine Logs export (consistent ZONE/SIGNAL/EXIT) to score against")
     args = ap.parse_args()
     if args.debug:
         debug_day(args.csv, args.debug)
+    elif args.signals:
+        run(None, args.dfrom, args.dto, tv_trades=parse_log(args.signals))
     else:
         run(args.csv, args.dfrom, args.dto)
