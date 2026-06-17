@@ -17,10 +17,13 @@ Plan file: `~/.claude/plans/dapper-yawning-waffle.md`. Full log: CODE3B `CLAUDE.
 Run: `python validate_strategy.py --csv "ACCURACY SCORE CLAUD/TEST 1/<tv>.csv" --to 2026-05-19`
 
 Current score (Jan06–May19 NIFTY, 59 TV trades):
-- **exact entry+exit: 46%**
-- entry-exact (same 5-min bar + side): 54%
-- entry within 1 bar: 58%
-- entry+exit within 1 bar: 51%
+- **exact entry+exit: 61%**
+- entry-exact (same 5-min bar + side): 63%
+- entry within 1 bar: 68%
+- entry+exit within 1 bar: 66%
+
+Tools: HTML report `ACCURACY SCORE CLAUD/validation_report.html` (color-coded,
+dE/dX deltas). Debug one day: `python validate_strategy.py --csv <tv> --debug YYYY-MM-DD`.
 
 Fixes already applied (engine now faithful on these):
 - TV next-bar-open fill convention; **continuous Wilder-RMA ATR(14)** (Pine ta.atr
@@ -32,10 +35,17 @@ Fixes already applied (engine now faithful on these):
 - **full daily history** (`nifty_daily.csv`, Dhan historical_daily_data sec_id 13,
   2025-01..2026-06) for chain lookback — in DATA_DIR
 
-REMAINING gap = per-day zone-formation TIMING (which bar the zone forms / breaks).
-Entries off are mixed direction (no single offset) -> needs per-trade forensics
-comparing selectedLine/touch/zone bar-by-bar vs a TV bar-marked export.
-Chains + pivots verified structurally equal to Pine (build_key_levels OK).
+REMAINING gap (~37%) = micro-level zone-formation TIMING (which exact bar a zone
+forms). No single systematic bug left — each off-day has its own micro-reason.
+To close further, need TradingView BAR-LEVEL zone markers (plotshape/zone-box
+export), since List-of-Trades only gives entry/exit, not zone-formation bars.
+Chains + pivots + candle patterns + ATR all verified faithful to Pine.
+
+Fixes applied this round (all committed):
+- Wilder-RMA ATR (was the big exit fix)
+- full Dhan daily history for chains
+- tracked-high/low accumulate + current-bar zone touch (forensics on 01-13)
+- DROPPED Pine's longBelowTrackedHigh/shortAboveTrackedLow (over-blocks; +5%)
 
 ## NEXT STEPS (resume here) — bottleneck = key LEVELS + tracked filters
 1. **Daily key-level history (biggest lever).** Chains need ~20+ prior daily
