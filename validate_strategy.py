@@ -59,7 +59,13 @@ def resample_5m(df1):
 
 
 def daily_bars():
-    """Aggregate per-day 1-min files into a daily OHLC frame (for key levels)."""
+    """Daily OHLC for key levels. Prefer full Dhan daily history (nifty_daily.csv,
+    back to 2025-01) so chains have enough lookback; else aggregate per-day files."""
+    daily_csv = os.path.join(DATA_DIR, "nifty_daily.csv")
+    if os.path.exists(daily_csv):
+        df = pd.read_csv(daily_csv)
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        return df[["date", "open", "high", "low", "close"]].sort_values("date").reset_index(drop=True)
     rows = []
     for p in sorted(glob.glob(os.path.join(DATA_DIR, "NIFTY_2026-*.csv"))):
         df = load_1m(p)

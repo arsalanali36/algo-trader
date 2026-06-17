@@ -393,7 +393,8 @@ def is_bearish_pattern(df, idx):
 def compute_atr(df, period=14):
     h, l, pc = df["high"], df["low"], df["close"].shift(1)
     tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
-    return tr.ewm(span=period, adjust=False).mean()
+    # Pine ta.atr uses Wilder's RMA (alpha = 1/period), NOT EMA span
+    return tr.ewm(alpha=1.0 / period, adjust=False).mean()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
