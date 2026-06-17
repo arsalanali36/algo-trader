@@ -18,6 +18,7 @@ FILES = [
     "range_trader.py",
     "trader_dashboard.py",
     "dhan_master.py",
+    "dhan_feed.py",
     "save_daily_summary.py",
     "backtest_dashboard.html",
 ]
