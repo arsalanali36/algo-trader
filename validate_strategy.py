@@ -241,6 +241,12 @@ def backtest_day(df5, key_levels, cfg, atr_series=None, dbg=False):
             continue
         zone_fresh = (i - zone_bar) <= ZONE_AGE
         use_zone = zone_fresh if fresh_only else (zone_type is not None)
+        # No new entries if the fill would land at/after 15:15 — you can't hold
+        # past the 3:15 square-off, so the entry is pointless.
+        fill_t = df5.iloc[i + 1]["time"] if i + 1 < n else t
+        if fill_t.time() >= EXIT_HM:
+            continue
+
         prev = df5.iloc[i - 1]
         prev_green = float(prev["close"]) > float(prev["open"])
         prev_red   = float(prev["close"]) < float(prev["open"])
@@ -346,6 +352,8 @@ def parse_log(path):
             cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, px, reason
             trades.append(cur)
             cur = None
+    # drop entries that fill at/after 15:15 (not holdable — same rule as engine)
+    trades = [t for t in trades if t["entry_time"].time() < pd.Timestamp("15:15").time()]
     return trades
 
 
