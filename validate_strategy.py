@@ -371,6 +371,15 @@ def run(tv_csv, date_from=None, date_to=None, tv_trades=None):
     cont = pd.concat(frames, ignore_index=True).sort_values("time").reset_index(drop=True)
     atr_all = rt.compute_atr(cont, ATR_LEN)
 
+    # Skip TV trades on days we have NO 5-min data for (data gap != engine miss)
+    have_days = set(cont["date"].unique())
+    skipped = sorted({t["entry_time"].date() for t in tv if t["entry_time"].date() not in have_days})
+    tv = [t for t in tv if t["entry_time"].date() in have_days]
+    days = sorted({t["entry_time"].date() for t in tv})
+    if skipped:
+        print(f"[skipped {len(skipped)} TV days with no 5-min data: "
+              f"{', '.join(str(d) for d in skipped)}]")
+
     eng = []
     for d in days:
         mask = cont["date"] == d
