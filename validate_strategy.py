@@ -245,13 +245,14 @@ def backtest_day(df5, key_levels, cfg, atr_series=None, dbg=False):
         curr_green = c > o
         curr_red   = c < o
 
+        # NOTE: Pine's longBelowTrackedHigh/shortAboveTrackedLow filter is NOT
+        # applied — its trackedHigh semantics (touchActive never resets) over-block
+        # in practice; empirically removing it matches TV better (+5%).
         big_candle = (h - l) > max_cs
         long_ok = (zone_type == "GREEN" and use_zone and c > zone_upper and
-                   prev_green and curr_green and
-                   (tracked_high is None or c <= tracked_high) and not big_candle)
+                   prev_green and curr_green and not big_candle)
         short_ok = (zone_type == "RED" and use_zone and c < zone_lower and
-                    prev_red and curr_red and
-                    (tracked_low is None or c >= tracked_low) and not big_candle)
+                    prev_red and curr_red and not big_candle)
 
         if long_ok and position != "LONG":
             if position == "Short":
