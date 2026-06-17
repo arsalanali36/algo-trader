@@ -17,10 +17,12 @@ Plan file: `~/.claude/plans/dapper-yawning-waffle.md`. Full log: CODE3B `CLAUDE.
 Run: `python validate_strategy.py --csv "ACCURACY SCORE CLAUD/TEST 1/<tv>.csv" --to 2026-05-19`
 
 Current score (Jan06–May19 NIFTY, 59 TV trades):
-- **exact entry+exit: 85%**  (vs CONSISTENT same-run log)
-- entry-exact (time+side): 89%
-- entry+exit within 1 bar: 89%
-- engine precision: 39/42 (~93%)
+- **exact entry+exit: 90.2%** (37/41) vs CONSISTENT same-run log
+- entry-exact (time+side): 93% (38/41)
+- engine precision: 37/39 (~95%)
+- after-15:15 entries blocked (not holdable); data-gap days skipped
+- remaining ~3 misses = per-day chain-LEVEL micro-diffs (03-23 engine misses a
+  RESISTANCE near 22561; 02-23 forms an extra RESISTANCE zone). Diminishing returns.
 - Run: `python validate_strategy.py --csv x --signals "ACCURACY SCORE CLAUD/TEST 1/<pine-logs>.csv"`
 
 Tools: HTML report `ACCURACY SCORE CLAUD/validation_report.html` (color-coded,
