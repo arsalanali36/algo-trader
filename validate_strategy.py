@@ -110,7 +110,7 @@ def _bear(df, i):
 
 
 # ───────────────────────── backtest one day ─────────────────────────
-def backtest_day(df5, key_levels, cfg, atr_series=None):
+def backtest_day(df5, key_levels, cfg, atr_series=None, dbg=False):
     """Mirror of run_signal_engine but COLLECTS every trade. Adds 3:15 exit.
     atr_series (continuous, pre-warmed) aligned to df5 rows; else computed here.
     Returns list of dicts: {entry_time, entry_price, side, exit_time, exit_price, exit_reason}."""
@@ -189,30 +189,27 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
                 touched_type = ltype
             elif ltype in ("CP", "PD_C") and not res_locked:
                 touched_type = ltype
+        # tracked high/low — Pine accumulates over ALL touch bars within the day
+        # (touchActive never resets) and does NOT reset on zone formation.
         if touched_type is not None:
-            if not touch_active:
-                touch_active = True
-                active_touch_type = touched_type
+            if tracked_high is None:
                 tracked_high, tracked_low = h, l
             else:
-                active_touch_type = touched_type
-                if h > (tracked_high or h): tracked_high = h
-                if l < (tracked_low or l):  tracked_low = l
+                tracked_high = max(tracked_high, h)
+                tracked_low  = min(tracked_low, l)
 
-        # zone formation (Pine: no candle-size check here — that's an entry filter)
+        # zone formation — Pine uses CURRENT-bar `touched` (not persistent touch_active)
         bullish = _bull(df5, i)
         bearish = _bear(df5, i)
-        if touch_active:
-            not_red = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
-            not_grn = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
+        if touched_type is not None:
+            not_red = touched_type not in ("RESISTANCE", "PD_H")
+            not_grn = touched_type not in ("SUPPORT", "PD_L")
             if bearish and not_grn:
                 zone_upper, zone_lower, zone_type, zone_bar = h, l, "RED", i
-                tracked_high = tracked_low = None
-                touch_active = False
+                if dbg: print(f"  {t:%H:%M} RED zone formed [{l:.1f}-{h:.1f}] touch={touched_type}")
             elif bullish and not_red:
                 zone_upper, zone_lower, zone_type, zone_bar = h, l, "GREEN", i
-                tracked_high = tracked_low = None
-                touch_active = False
+                if dbg: print(f"  {t:%H:%M} GREEN zone formed [{l:.1f}-{h:.1f}] touch={touched_type}")
 
         # zone freshness (Pine maxZoneAge)
         zfresh = zone_type is not None and (i - zone_bar) <= ZONE_AGE
@@ -263,6 +260,7 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
             atr_sl_long = cur["entry_price"] - atr_val * ATR_MULT
             zone_type = zone_upper = zone_lower = None   # Pine: Green_Zone := false
             trades_today += 1
+            if dbg: print(f"  {t:%H:%M} >>> LONG entry  close={c:.1f} zoneUpper(broken) prevG={prev_green}")
         elif short_ok and position != "Short":
             if position == "LONG":
                 _close(i, "Short")
@@ -270,6 +268,7 @@ def backtest_day(df5, key_levels, cfg, atr_series=None):
             atr_sl_short = cur["entry_price"] + atr_val * ATR_MULT
             zone_type = zone_upper = zone_lower = None   # Pine: Red_Zone := false
             trades_today += 1
+            if dbg: print(f"  {t:%H:%M} >>> SHORT entry close={c:.1f} prevR={prev_red}")
 
     # day ended still open -> force close at last bar (safety; shouldn't happen post 15:15)
     if cur:
@@ -505,10 +504,45 @@ th{{color:#8b949e;font-weight:600;position:sticky;top:0;background:#0d1117}}
     print(f"\nHTML report: {out}")
 
 
+def debug_day(tv_csv, date_str):
+    """Trace a single day: key levels, zone formations, entries/exits + TV trades."""
+    d = pd.to_datetime(date_str).date()
+    daily = daily_bars()
+    all_paths = sorted(glob.glob(os.path.join(DATA_DIR, "NIFTY_2026-*.csv")))
+    frames = []
+    for p in all_paths:
+        d5 = resample_5m(load_1m(p)); d5["date"] = d5["time"].dt.date
+        frames.append(d5)
+    cont = pd.concat(frames, ignore_index=True).sort_values("time").reset_index(drop=True)
+    atr_all = rt.compute_atr(cont, ATR_LEN)
+    mask = cont["date"] == d
+    df5 = cont[mask].reset_index(drop=True)
+    atr_slice = atr_all[mask].reset_index(drop=True)
+    sub = daily[daily["date"] <= d].reset_index(drop=True)
+    levels = rt.build_key_levels(sub, is_index=True)
+    print(f"\n=== DEBUG {d} ===")
+    print("KEY LEVELS:", ", ".join(f"{t}:{p:.0f}" for p, t in sorted(levels, key=lambda x: -x[0])))
+    print("ENGINE trace:")
+    eng = backtest_day(df5, levels, CFG, atr_slice, dbg=True)
+    print("ENGINE trades:")
+    for e in eng:
+        print(f"  {e['side']:5} {e['entry_time']:%H:%M} -> {e['exit_time']:%H:%M} "
+              f"@{e['entry_price']:.1f}->{e['exit_price']:.1f} {e['exit_reason']}")
+    print("TV trades that day:")
+    for t in parse_tv(tv_csv):
+        if t["entry_time"].date() == d:
+            print(f"  {t['side']:5} {t['entry_time']:%H:%M} -> {t['exit_time']:%H:%M} "
+                  f"@{t['entry_price']:.1f}->{t['exit_price']:.1f} {t['exit_reason']}")
+
+
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--csv", required=True)
     ap.add_argument("--from", dest="dfrom", default=None)
     ap.add_argument("--to", dest="dto", default=None)
+    ap.add_argument("--debug", default=None, help="YYYY-MM-DD single-day trace")
     args = ap.parse_args()
-    run(args.csv, args.dfrom, args.dto)
+    if args.debug:
+        debug_day(args.csv, args.debug)
+    else:
+        run(args.csv, args.dfrom, args.dto)
