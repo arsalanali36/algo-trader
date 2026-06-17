@@ -101,3 +101,6 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-17 | Startup exit guard — `if st["position"] is None: continue` before EXIT handler (fake startup trades fix) |
 | 2026-06-17 | `[CONFIG]` log line har loop pe — TF, Instrument, Qty, MaxTrades, FreshZoneOnly, Exit mode, Entry rules |
 | 2026-06-17 | Log panel — Pause/Play scroll button added; config line 3 separate lines mein (Entry / Exit / Config) |
+| 2026-06-17 | Quick Order floating panel — NIFTY/BANKNIFTY, lot size from scrip CSV (/api/lot-sizes), draggable, Paper/Live toggle, BUY/SELL |
+| 2026-06-17 | /api/manual-order — direct requests.post to Dhan (not via place_order — was silently failing). IPv4 patch added to trader_dashboard.py top |
+| 2026-06-17 | DH-905 fix — NFO_OPT -> NSE_FNO everywhere + IPv4 force in dashboard. Orders confirmed working live on Dhan |
