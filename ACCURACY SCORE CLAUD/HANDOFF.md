@@ -1,88 +1,116 @@
-# Universe System + Validation — HANDOFF (resume point)
+# CODE3B — HANDOFF (next session resume point)
 
-**Last updated:** 2026-06-17. All work committed to CODE3B git (master).
-Plan file: `~/.claude/plans/dapper-yawning-waffle.md`. Full log: CODE3B `CLAUDE.md`.
+**Last updated:** 2026-06-18. All work committed to CODE3B git (master) + GitHub.
+Full log: `CODE3B/CLAUDE.md` Update Log.
 
-## Built & verified (Phases 0–4 done)
-- **brokers/** — Dhan/Kite switchable. `dhan_broker.py`: Dhan Data API intraday
-  candles (IST +5:30 fix), REST quote/orders, funds. `get_broker("dhan")`.
-- **dhan_feed.py** — WebSocket Full packet → live bid/ask `LIVE` dict.
-- **smart_order.py** — marketable-limit (BUY=ask, SELL=bid), paper==live, shadow.
-- **universe.py / universe_trader.py / strategies/** — Nifty-50 scanner, routes
-  equity/stock_option/index_option, caps. Dashboard `STRATEGIES['universe']`,
-  config `nifty_config.json` → `universe_v1`.
-- **validate_strategy.py** (Phase 4) — TV List-of-Trades vs engine % match.
+---
 
-## Validation status (the active task)
-Run: `python validate_strategy.py --csv "ACCURACY SCORE CLAUD/TEST 1/<tv>.csv" --to 2026-05-19`
+## ✅ WHAT'S DONE — DON'T REDO
 
-Current score (Jan06–May19 NIFTY, 59 TV trades):
-- **exact entry+exit: 90.2%** (37/41) vs CONSISTENT same-run log
-- entry-exact (time+side): 93% (38/41)
-- engine precision: 37/39 (~95%)
-- after-15:15 entries blocked (not holdable); data-gap days skipped
-- remaining ~3 misses = per-day chain-LEVEL micro-diffs (03-23 engine misses a
-  RESISTANCE near 22561; 02-23 forms an extra RESISTANCE zone). Diminishing returns.
-- Run: `python validate_strategy.py --csv x --signals "ACCURACY SCORE CLAUD/TEST 1/<pine-logs>.csv"`
+### Universe System (Phases 0–3) — VPS pe live
+| File | Kaam |
+|------|------|
+| `brokers/base_broker.py` | Abstract interface (Dhan/Kite switchable) |
+| `brokers/dhan_broker.py` | Dhan Data API candles (IST +5:30), REST orders/quote, funds |
+| `brokers/kite_broker.py` | Stub — future Zerodha |
+| `dhan_feed.py` | WebSocket Full packet → `LIVE` dict (ltp/bid/ask per sec_id) |
+| `smart_order.py` | Marketable-limit (BUY=ask, SELL=bid, tick 0.05). Paper==Live. Shadow badge. |
+| `universe.py` | Nifty-50 list + equity/option sec_id resolvers |
+| `universe_trader.py` | Engine: scan all 50, route equity/stock_opt/index_opt, caps, 3:15 exit |
+| `strategies/` | `base.py` + `sample_ema.py` + `always_buy.py` plugins |
 
-Tools: HTML report `ACCURACY SCORE CLAUD/validation_report.html` (color-coded,
-dE/dX deltas). Debug one day: `python validate_strategy.py --csv <tv> --debug YYYY-MM-DD`.
+Config: `nifty_config.json` → `"universe_v1"` variation block.
+Dashboard: `STRATEGIES["universe"]` entry registered.
 
-Fixes already applied (engine now faithful on these):
-- TV next-bar-open fill convention; **continuous Wilder-RMA ATR(14)** (Pine ta.atr
-  = RMA alpha 1/14, NOT ewm span — was causing early exits)
-- candle patterns EXACT vs Pine `AA_CandlePatterns` (wickRatio 2.5; redHammer
-  upperWick≤body; invRedHam lowerWick≤body) — in `range_trader.py`
-- bullHarami/bearHarami added; Zone Exit (MainExit) ON; post-entry zone reset;
-  max-candle-size as ENTRY filter; selectedLine RESISTANCE-priority
-- **full daily history** (`nifty_daily.csv`, Dhan historical_daily_data sec_id 13,
-  2025-01..2026-06) for chain lookback — in DATA_DIR
+### Validation (Phases 4–5) — 90.2% exact / 93% entry
+- Tool: `validate_strategy.py` — `--signals <pine-log.csv>` score, `--debug YYYY-MM-DD` trace, HTML report
+- Methodology: **READ FIRST** → `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md`
+- Ground truth file: `ACCURACY SCORE CLAUD/TEST 1/pine-logs UPDATE.csv` (consistent single-run log)
+- Engine fixes baked in: Wilder ATR, WICK_RATIO=2.5, redHammer upperWick≤body, next-bar fill, pyramiding=0, block ≥15:15
 
-BREAKTHROUGH (zone-log forensics): engine ZONES match TV **EXACTLY** bar-for-bar
-(verified 01-06, 01-13, 01-19 — every zone same price/time/line). Engine entry
-precision ~96% (27/28). Against the CONSISTENT same-run SIGNAL log: 75% entry
-match (27/36); 9 misses are same-side RE-ENTRIES after an ATR exit.
+### Range Trader engine — `range_trader.py` on VPS ✅
+Key values (DO NOT regress):
+```python
+WICK_RATIO = 2.5
+# red_hammer: lw >= WICK_RATIO * body and uw <= body
+# compute_atr: tr.ewm(alpha=1.0 / period, adjust=False).mean()  ← Wilder RMA
+```
 
-ROOT CAUSE of remaining gap: the List-of-Trades CSV and the zone-log were
-exported from DIFFERENT backtest runs (different date range → different
-continuous-ATR warmup → different exits → different re-entries). They literally
-disagree (01-19: List=1 long held; zone-log=4 longs). So the ground truth was
-inconsistent.
+### Pine Version Control — `_PINE/` folder ✅
+```
+_PINE/range_chain.pine          ← CANONICAL latest (paste new version here)
+_PINE/range_chain_zonelog.pine  ← validation variant (log.info ZONE+SIGNAL+EXIT)
+_PINE/README.md                 ← ritual + TV chart link
+```
+Tagged `pine-v1` on GitHub. TV chart: https://in.tradingview.com/chart/KS2Wf9N5/
 
-FIX/NEXT: user re-runs the strategy ONCE and exports the Pine Logs from
-`Ars_Auto_Rev_Chain_ZONELOG.pine` (now logs ZONE + SIGNAL + EXIT — fully
-self-contained). Then build a `--signals <log.csv>` validator that scores
-engine entries+exits against that single consistent log. Expect 90%+ given
-zones already match exactly. Engine logic itself is validated faithful.
+### VPS Status ✅
+- IP: `72.61.173.32:5099` | Dir: `/root/code4/` | Service: `algo-dashboard`
+- SSH Key: `C:\Users\arsal\.ssh\khazana_ed25519`
+- All files deployed. `systemctl status algo-dashboard` → active.
+- Deploy: `python deploy_vps.py` (in CODE3B dir)
 
-Fixes applied this round (all committed):
-- Wilder-RMA ATR (was the big exit fix)
-- full Dhan daily history for chains
-- tracked-high/low accumulate + current-bar zone touch (forensics on 01-13)
-- DROPPED Pine's longBelowTrackedHigh/shortAboveTrackedLow (over-blocks; +5%)
+---
 
-## NEXT STEPS (resume here) — bottleneck = key LEVELS + tracked filters
-1. **Daily key-level history (biggest lever).** Chains need ~20+ prior daily
-   bars; local NIFTY data starts Jan-01 → early chains truncated vs TradingView.
-   FIX: fetch NIFTY daily history from Dhan:
-   `get_broker("dhan").intraday_candles` won't do daily — use SDK
-   `historical_daily_data(sec_id="13", "IDX_I", "INDEX", from, to)` back ~6 months.
-   Feed those daily bars into `daily_bars()` instead of (or before) the per-day
-   1-min aggregates. Then re-run validation.
-2. **Port tracked-high/low state machine** (Pine lines ~929-973): trackedHigh/Low
-   maintained while touching selectedLine; entry filters
-   `longBelowTrackedHigh = close<=trackedHigh`, `shortAboveTrackedLow = close>=trackedLow`,
-   and `trackedTooClose<20` (Pine lines 1105-1114, 1160-1170).
-3. **Verify pivot/chain construction** vs Pine (lines 347-580): traditional
-   pivots from prev-day HLC + high/low chain with max-jump 10% (index).
-4. **Missing TV data** May20–Jun17: download via pipeline for full-period score.
+## 🔴 PENDING — START HERE NEXT SESSION
 
-## Pine reference (in ACCURACY SCORE CLAUD/TEST 1/FOR CLAUD.txt)
-- Entry: lines 1162-1205 (Index_Long_Signal / Index_Short_Signal + strategy.entry)
-- Exit: lines 1216-1296 (ATR first, else ZONE) + 3:15 (1300-1308)
-- Candle lib params: lines 819-829 (minBodySize 0.5, wickRatio 2.5, prevBodyMin 0.5)
-- Touch/selectedLine: lines 905-973 ; bullish/bearish defs: 867-870
+### Phase 6 — Go Live (small qty, market hours)
 
-## Pending after validation hits target %
-- Phase 6: go live (small qty, after % match acceptable to user)
-- UI polish: universe config tab, shadow status badge, Quick Order bid/ask
+**Pre-req:**
+1. Dhan account mein balance fund karo (was ₹0.18 during testing)
+2. Dhan JWT token refresh — Control tab mein paste karo (expires every 24h)
+3. Market hours: 9:15–15:30 IST
+
+**Test order flow (one manual order first):**
+1. Dashboard open → `http://72.61.173.32:5099`
+2. Quick Order widget → Paper toggle → **Live** toggle
+3. NIFTY ATM CE/PE → LTP dikhe → Place Order → verify Dhan order-book mein aaya
+
+**Then universe live:**
+```json
+// nifty_config.json mein universe_v1 update:
+{
+  "active": true,
+  "mode": "live",        ← paper se live karo
+  "max_concurrent_positions": 1,
+  "max_trades_per_symbol": 1,
+  "qty": 1
+}
+```
+Start universe_v1 from dashboard → watch P&L tab → Open Positions LTP live → shadow badge ✓/✗.
+
+**UI polish (pending, non-blocking):**
+- Universe config tab in dashboard (abhi manual JSON edit)
+- Shadow status badge on Open Positions rows (intended fill vs actual Dhan fill)
+- Quick Order widget showing live bid/ask from `dhan_feed.py`
+
+---
+
+## Pine Workflow (agar user nayi script paste kare)
+
+1. User chat mein poori nayi Pine paste karta hai
+2. `_PINE/range_chain.pine` overwrite (Write tool)
+3. `git diff -- _PINE/range_chain.pine` → changes explain (logic vs cosmetic)
+4. Logic change → `range_trader.py` sync → `range_chain_zonelog.pine` update
+5. User fresh Pine Logs export kare → `validate_strategy.py --signals <log>` → naya score
+6. Commit + push: `pine: <summary> + engine sync`
+
+---
+
+## Key File Map
+
+| File | Purpose |
+|------|---------|
+| `range_trader.py` | **Single source of truth** for all Range Chain logic (live + validation) |
+| `validate_strategy.py` | Validation harness — score + HTML report + debug |
+| `trader_dashboard.py` | Flask UI, spawn/stop strategies, P&L/Open Positions |
+| `dhan_master.py` | Scrip master download + `get_sec_id_for_trad_sym()` |
+| `deploy_vps.py` | SCP deploy to VPS |
+| `nifty_config.json` | All strategy configs |
+| `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md` | **READ FIRST before any Pine→Python validation** |
+
+## Critical rules (never violate)
+- IPv4 force patch at top of every trader file (DH-905 — VPS IPv6 issue)
+- Dhan token expires every 24h — Control tab se update
+- `bundle.js` AUTO-GENERATED — kabhi direct edit mat karo
+- `validate_strategy.py --signals` = single consistent log → score accurate; mixed exports = fake low scores
