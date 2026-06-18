@@ -13,7 +13,9 @@ import subprocess
 import signal
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, Response
+import time as _time
+import threading as _threading
 
 # IPv4 force — Dhan rejects IPv6 (DH-905). Must be here, not just in range_trader.
 _orig_gai = socket.getaddrinfo
@@ -30,6 +32,38 @@ PYTHON        = str(BASE_DIR / "venv" / "bin" / "python")
 TRADER_SCRIPT = str(BASE_DIR / "nifty_ema_trader.py")
 
 app = Flask(__name__)
+
+# ── Dhan Feed (WebSocket real-time LTP) ───────────────────────────────────────
+_feed_started = False
+_feed_lock = _threading.Lock()
+_sec_to_sym = {}   # sec_id(str) -> sym — populated by api_positions_ltp, used by SSE
+
+def _ensure_feed_started():
+    """Start dhan_feed background thread once credentials are available."""
+    global _feed_started
+    if _feed_started:
+        return
+    with _feed_lock:
+        if _feed_started:
+            return
+        try:
+            import dhan_feed, range_trader
+            token, cid = range_trader.load_creds()
+            from dhanhq import DhanContext
+            ctx = DhanContext(cid, token)
+            dhan_feed.start(ctx, [])   # start with empty list; instruments added dynamically
+            _feed_started = True
+        except Exception as e:
+            pass  # no creds yet or import error — will retry next call
+
+def _feed_subscribe(sym_sec_pairs):
+    """Subscribe (seg, sec_id) pairs to live feed. Safe to call multiple times."""
+    try:
+        import dhan_feed
+        for seg, sec_id in sym_sec_pairs:
+            dhan_feed.add((seg, str(sec_id)))
+    except Exception:
+        pass
 
 # ── HTML ───────────────────────────────────────────────────────────────────────
 
@@ -52,9 +86,12 @@ STRATEGIES = {
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
 }
+# Aliases — custom variation names map to base strategy
+STRATEGY_ALIASES = {"ARS": "range"}
 
 def _base(strategy):
-    return strategy.split('_')[0] if '_' in strategy else strategy
+    first = strategy.split('_')[0] if '_' in strategy else strategy
+    return STRATEGY_ALIASES.get(first, first)
 
 def get_pid(strategy="ema"):
     grep = STRATEGIES[_base(strategy)]["grep"]
@@ -152,12 +189,6 @@ def parse_pnl(log_path, today, qty=1):
             })
             continue
 
-        # EMA/RSI fallback
-        m = re.search(r'(\w+)\s+close=([\d.]+)\s+signal=(BUY|SELL)', line)
-        if m:
-            sym, price, side = m.group(1), float(m.group(2)), m.group(3)
-            open_pos[sym] = {"side": side, "price": price, "time": _ts(line)}
-
     # Open positions (entry without exit yet)
     open_list = [{"sym": sym, "entry": v["side"], "entry_price": v["price"],
                   "entry_time": v["time"], "qty": v.get("qty", qty),
@@ -219,7 +250,7 @@ def api_set_config():
 def api_start():
     s    = request.args.get('s', 'ema_v1')
     mode = request.args.get('mode', 'paper')
-    base_s = s.split('_')[0] if '_' in s else s
+    base_s = _base(s)
     st   = STRATEGIES.get(base_s, STRATEGIES['ema'])
     pid  = get_pid(s)
     if pid:
@@ -305,60 +336,162 @@ def api_lot_sizes():
 
 _sec_id_cache = {}  # trading_symbol -> security_id
 
+# sec_id + segment for equity/index symbols (from range_trader._DHAN_DATA)
+_EQ_IDX_SEC = {
+    "NIFTY":      ("13",    "IDX_I"),
+    "BANKNIFTY":  ("25",    "IDX_I"),
+    "RELIANCE":   ("2885",  "NSE_EQ"),
+    "TCS":        ("11536", "NSE_EQ"),
+    "INFY":       ("1594",  "NSE_EQ"),
+    "HDFCBANK":   ("1333",  "NSE_EQ"),
+    "ICICIBANK":  ("4963",  "NSE_EQ"),
+    "SBIN":       ("3045",  "NSE_EQ"),
+    "AXISBANK":   ("5900",  "NSE_EQ"),
+    "BAJFINANCE": ("317",   "NSE_EQ"),
+    "WIPRO":      ("3787",  "NSE_EQ"),
+    "KOTAKBANK":  ("1922",  "NSE_EQ"),
+    "LT":         ("11483", "NSE_EQ"),
+    "MARUTI":     ("10999", "NSE_EQ"),
+    "HINDUNILVR": ("1394",  "NSE_EQ"),
+    "ITC":        ("1660",  "NSE_EQ"),
+    "SUNPHARMA":  ("3351",  "NSE_EQ"),
+    "TITAN":      ("3506",  "NSE_EQ"),
+    "ULTRACEMCO": ("11532", "NSE_EQ"),
+    "NESTLEIND":  ("17963", "NSE_EQ"),
+    "POWERGRID":  ("14977", "NSE_EQ"),
+    "NTPC":       ("11630", "NSE_EQ"),
+    "ONGC":       ("2475",  "NSE_EQ"),
+    "ADANIENT":   ("25",    "NSE_EQ"),
+    "ASIANPAINT": ("236",   "NSE_EQ"),
+    "BHARTIARTL": ("10604", "NSE_EQ"),
+    "HCLTECH":    ("1698",  "NSE_EQ"),
+    "BAJAJFINSV": ("16675", "NSE_EQ"),
+    "TATACONSUM": ("3432",  "NSE_EQ"),
+    "COALINDIA":  ("1679",  "NSE_EQ"),
+    "DIVISLAB":   ("10720", "NSE_EQ"),
+    "DRREDDY":    ("881",   "NSE_EQ"),
+    "EICHERMOT":  ("910",   "NSE_EQ"),
+    "GRASIM":     ("1232",  "NSE_EQ"),
+    "HEROMOTOCO": ("1348",  "NSE_EQ"),
+    "HINDALCO":   ("1351",  "NSE_EQ"),
+    "JSWSTEEL":   ("11723", "NSE_EQ"),
+    "SBILIFE":    ("21808", "NSE_EQ"),
+    "SHRIRAMFIN": ("4306",  "NSE_EQ"),
+    "TATASTEEL":  ("3499",  "NSE_EQ"),
+    "TECHM":      ("13538", "NSE_EQ"),
+    "TRENT":      ("3537",  "NSE_EQ"),
+}
+
 def _get_sec_ids(syms: list) -> dict:
-    """Lookup security IDs for given trading symbols. Uses dhan_master's
-    nearest-NON-expired-expiry resolver — a plain CSV first-match returns the
-    EXPIRED contract (same trad_sym exists for multiple expiries) which has no LTP."""
+    """Returns {sym: sec_id}. Handles options (via dhan_master) + equity/index (via _EQ_IDX_SEC)."""
     import dhan_master
     out = {}
     for s in syms:
         if s in _sec_id_cache:
             out[s] = _sec_id_cache[s]
             continue
+        # Equity/index lookup first
+        if s in _EQ_IDX_SEC:
+            sid = _EQ_IDX_SEC[s][0]
+            _sec_id_cache[s] = sid
+            out[s] = sid
+            continue
+        # Options — dhan_master nearest-expiry resolver
         sid = dhan_master.get_sec_id_for_trad_sym(s)
         if sid:
             _sec_id_cache[s] = sid
             out[s] = sid
     return out
 
+def _get_seg(sym: str) -> str:
+    """Return Dhan segment string for a symbol."""
+    if sym in _EQ_IDX_SEC:
+        return _EQ_IDX_SEC[sym][1]
+    return "NSE_FNO"   # options default
+
 
 @app.route('/api/positions-ltp')
 def api_positions_ltp():
-    """Fetch live LTP for open positions using Dhan /v2/quotes (works for paper too)."""
+    """Fetch live LTP for open positions — uses dhan_feed WebSocket if running, else REST fallback."""
     syms_raw = request.args.get('syms', '')
     syms = [s.strip() for s in syms_raw.split(',') if s.strip()]
     if not syms:
         return jsonify({"ok": True, "ltp_map": {}})
 
+    _ensure_feed_started()
     ltp_map = {}
+
+    # Try WebSocket feed first (instant, no REST call)
+    try:
+        import dhan_feed
+        sec_id_map = _get_sec_ids(syms)
+        pairs = [(_get_seg(s), v) for s, v in sec_id_map.items() if v]
+        _feed_subscribe(pairs)
+        id_to_sym = {v: k for k, v in sec_id_map.items()}
+        _sec_to_sym.update(id_to_sym)   # keep global map for SSE
+        for sec_id, sym in id_to_sym.items():
+            q = dhan_feed.get_quote(sec_id)
+            if q and q.get("ltp"):
+                ltp_map[sym] = {"ltp": q["ltp"], "qty": None}
+        if ltp_map:
+            return jsonify({"ok": True, "ltp_map": ltp_map, "src": "ws"})
+    except Exception:
+        pass
+
+    # Fallback: Dhan REST API
     try:
         import range_trader, requests as _req
         token, cid = range_trader.load_creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-
-        # Look up security IDs
-        sec_id_map = _get_sec_ids(syms)  # sym -> sec_id string
-
+        sec_id_map = _get_sec_ids(syms)
         if sec_id_map:
-            body = {"NSE_FNO": [int(v) for v in sec_id_map.values() if v]}
+            # Group by segment for REST call
+            seg_groups = {}
+            for s, sid in sec_id_map.items():
+                seg = _get_seg(s)
+                seg_groups.setdefault(seg, []).append((s, sid))
+            body = {}
+            for seg, pairs in seg_groups.items():
+                dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
+                body[dhan_seg] = [int(sid) for _, sid in pairs]
             r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
             if r.status_code == 200:
-                data = r.json().get("data", {}) or {}
-                quotes = data.get("NSE_FNO", {}) or {}
-                # quotes keyed by security_id (int or str)
                 id_to_sym = {v: k for k, v in sec_id_map.items()}
-                for sec_id_str, q in quotes.items():
-                    sec_id_key = str(sec_id_str)
-                    sym = id_to_sym.get(sec_id_key) or id_to_sym.get(sec_id_key.lstrip('0'))
-                    if not sym:
-                        continue
-                    ltp = float(q.get("last_price") or q.get("ltp") or q.get("lastTradedPrice") or 0)
-                    if ltp:
-                        ltp_map[sym] = {"ltp": ltp, "qty": None}
+                for seg_key, quotes in (r.json().get("data", {}) or {}).items():
+                    if not isinstance(quotes, dict): continue
+                    for sec_id_str, q in quotes.items():
+                        sym = id_to_sym.get(str(sec_id_str)) or id_to_sym.get(str(sec_id_str).lstrip('0'))
+                        if not sym: continue
+                        ltp = float(q.get("last_price") or q.get("ltp") or 0)
+                        if ltp: ltp_map[sym] = {"ltp": ltp, "qty": None}
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e), "ltp_map": ltp_map})
 
-    return jsonify({"ok": True, "ltp_map": ltp_map})
+    return jsonify({"ok": True, "ltp_map": ltp_map, "src": "rest"})
+
+
+@app.route('/api/ltp-stream')
+def api_ltp_stream():
+    """SSE endpoint — streams live LTP from dhan_feed WebSocket every 500ms."""
+    _ensure_feed_started()
+
+    def generate():
+        import dhan_feed
+        while True:
+            try:
+                # Send sym->ltp map so frontend can update cells directly by symbol name
+                sym_ltp = {}
+                for sec_id, q in dhan_feed.LIVE.items():
+                    sym = _sec_to_sym.get(str(sec_id))
+                    if sym and q.get("ltp"):
+                        sym_ltp[sym] = round(q["ltp"], 2)
+                yield f"data: {json.dumps(sym_ltp)}\n\n"
+            except Exception:
+                yield "data: {}\n\n"
+            _time.sleep(0.5)
+
+    return Response(generate(), mimetype='text/event-stream',
+                    headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 # Cache: (symbol, offset) -> {result, ts}
 _ltp_cache = {}
@@ -668,7 +801,34 @@ def api_pine_save():
     versions.append(entry)
     ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
     (pine_dir / 'range_chain.pine').write_text(code, encoding='utf-8')
+    (pine_dir / f'v{version}.pine').write_text(code, encoding='utf-8')
     return jsonify(entry)
+
+@app.route('/api/pine/code/<int:version>')
+def api_pine_code(version):
+    pine_dir = BASE_DIR / '_PINE'
+    # Try version-specific file first, fallback to latest
+    vfile = pine_dir / f'v{version}.pine'
+    if vfile.exists():
+        return vfile.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    latest = pine_dir / 'range_chain.pine'
+    if latest.exists():
+        return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    return 'Code not found', 404
+
+@app.route('/api/pine/delete/<int:version>', methods=['DELETE'])
+def api_pine_delete(version):
+    import json as _json
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify({"ok": False, "error": "No versions file"}), 404
+    versions = _json.loads(ver_file.read_text())
+    versions = [v for v in versions if v['version'] != version]
+    ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
+    vfile = BASE_DIR / '_PINE' / f'v{version}.pine'
+    if vfile.exists():
+        vfile.unlink()
+    return jsonify({"ok": True})
 
 @app.route('/pine/report/<int:version>')
 def pine_report(version):
@@ -722,6 +882,17 @@ def api_pine_history():
     if not ver_file.exists():
         return jsonify([])
     return jsonify(list(reversed(_json.loads(ver_file.read_text()))))
+
+@app.route('/api/downloader-alerts')
+def api_downloader_alerts():
+    alert_file = BASE_DIR / "data" / "downloader_alert.json"
+    if not alert_file.exists():
+        return jsonify([])
+    try:
+        return jsonify(json.loads(alert_file.read_text()))
+    except Exception:
+        return jsonify([])
+
 
 @app.route('/api/save-summary', methods=['POST'])
 def api_save_summary():

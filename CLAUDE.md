@@ -23,6 +23,9 @@ Web dashboard se control hota hai — koi command line nahi.
 | `save_daily_summary.py` | Aaj ki P&L ko `results/` mein save karo |
 | `deploy_vps.py` | SCP se VPS pe push + dashboard restart |
 | `templates/index.html`| Dynamic grid UI for configuration and dashboard |
+| `mfe_routes.py` | MFE/MAE analysis routes — trade_log CRUD + analyse + generate-backtest |
+| `generate_june_mfe.py` | Backtest→trade_log pipeline (NIFTY 1-min → Range Chain → ATM option bars) |
+| `auto_data_downloader.py` | VPS daemon — polls Dhan orders → downloads OHLC bars → gap detection → dashboard banner |
 
 ## VPS Info
 
@@ -128,3 +131,6 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-17 | Phase 5 (in progress) — Pine fidelity: TV fill convention, bullHarami/bearHarami, Zone Exit (MainExit ON), post-entry zone reset, max-cs entry filter, selectedLine RESISTANCE-priority, **exact candle patterns** (`AA_CandlePatterns`: wickRatio **2.5**, redHammer upperWick≤body, invRedHam lowerWick≤body — in `range_trader.py`). Score Jan06-May19 NIFTY: **entry-exact 44%, within-1bar 47%, exact entry+exit 27%**. |
 | 2026-06-17 | **Phase 5 COMPLETE — validation 90.2% exact / 93% entry** (Range Chain vs TradingView, NIFTY). Methodology + ALL findings saved to `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md` (read FIRST next time). Key fixes: TV next-bar fill, Wilder-RMA ATR, exact `AA_CandlePatterns`, pyramiding=0, current-bar zone touch, Not_on_Red/Gren_line, block ≥15:15 entries, full Dhan daily history, skip data-gap days. Biggest trap: List-of-Trades & zone-log were from DIFFERENT runs → use ONE consistent `log.info` export (`Ars_Auto_Rev_Chain_ZONELOG.pine` logs ZONE+SIGNAL+EXIT). Tools: `validate_strategy.py --signals <log>` (score) / `--debug DATE` (trace) / HTML report. Pivots+data verified match TV to ~1pt. Remaining ~3 trades = gap-day level micro-edges (diminishing returns). |
 | 2026-06-17 | **Pending:** Phase 6 live (small qty, market hours), UI polish (universe config tab, shadow badge, Quick Order bid/ask). |
+| 2026-06-18 | MFE/MAE analysis tab — `mfe_routes.py`: per-trade runup/DD (premium pts + ₹ + index move + duration), sec_id cache for expired contracts, generate-backtest route. LOT_SIZE=65. |
+| 2026-06-18 | `generate_june_mfe.py` — pipeline: NIFTY 1-min from Dhan → Range Chain backtest → ATM strike (`round(price/50)*50`) → option sec_id probe (cache-first for expired) → option bars → trade_log.json. DH-904 retry with backoff. |
+| 2026-06-18 | `auto_data_downloader.py` — VPS daemon: polls Dhan /v2/orders every 5min (market hours) / 60min (off-hours), downloads 1-min OHLC bars to `data/trade_ohlc/{SECID}_{DATE}.json`, gap detection, token-expiry alert → `data/downloader_alert.json` → dashboard red banner via `/api/downloader-alerts` route. |
