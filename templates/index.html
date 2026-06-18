@@ -112,6 +112,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('pnl')">P&amp;L</div>
   <div class="tab" onclick="switchTab('log')">Logs</div>
   <div class="tab" onclick="switchTab('config')">Config</div>
+  <div class="tab" onclick="switchTab('pine')">📌 Pine</div>
 </div>
 
 <!-- CONTROL TAB -->
@@ -160,6 +161,42 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div id="cfg-content"></div>
 </div>
 
+<!-- PINE TAB -->
+<div class="tab-body" id="tab-pine" style="padding:20px;max-width:900px">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+    <h2 style="margin:0;font-size:16px">Pine Script Version Manager</h2>
+    <div id="pine-latest-badge" style="font-size:12px;background:#161b22;border:1px solid #30363d;padding:6px 12px;border-radius:6px;color:#8b949e">loading...</div>
+  </div>
+
+  <textarea id="pine-code" placeholder="Yahan apni poori Pine script paste karo..." style="width:100%;height:300px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+
+  <textarea id="pine-desc" placeholder="Notes / kya badla is version mein... (optional)" style="width:100%;height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;margin-top:8px"></textarea>
+
+  <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+    <button class="btn btn-blue" onclick="pineSave()">💾 Save Version</button>
+    <div id="pine-save-msg" style="font-size:13px;color:#3fb950"></div>
+  </div>
+
+  <div style="margin-top:24px">
+    <h3 style="font-size:13px;color:#8b949e;margin-bottom:10px">Version History</h3>
+    <div style="overflow-x:auto">
+      <table id="pine-history-table" style="width:100%;border-collapse:collapse;font-size:13px">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d">
+            <th onclick="pineSortBy('version')"  style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Ver <span id="sort-ind-version"></span></th>
+            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;white-space:nowrap">Python File</th>
+            <th onclick="pineSortBy('timestamp')" style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Date/Time <span id="sort-ind-timestamp"></span></th>
+            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;min-width:200px">Description</th>
+            <th onclick="pineSortBy('accuracy')" style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center;cursor:pointer;white-space:nowrap;user-select:none">Accu% <span id="sort-ind-accuracy"></span></th>
+            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Report</th>
+          </tr>
+        </thead>
+        <tbody id="pine-history"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
 <!-- MODAL FOR SYMBOLS -->
 <div class="modal-overlay" id="symbol-modal">
   <div class="modal">
@@ -197,6 +234,7 @@ function switchTab(id) {
   document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
   document.getElementById('tab-'+id).classList.add('active');
   activeTab = id;
+  if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
 }
 
 function switchCfgTab(type) {
@@ -976,6 +1014,138 @@ async function closePosition(tSym, entrySide, qty, mode, btnId) {
     if(btn) { btn.disabled=false; btn.textContent='ERR'; }
   }
 }
+
+// ── PINE VERSION MANAGER ──────────────────────────────────────
+async function pineLoadLatest() {
+  const r = await fetch('/api/pine/latest');
+  const d = await r.json();
+  const badge = document.getElementById('pine-latest-badge');
+  if (d.version === 0) {
+    badge.innerHTML = 'Koi version nahi — pehli script paste karo';
+  } else {
+    badge.innerHTML = `<span style="color:#3fb950">v${d.version}</span> &nbsp;|&nbsp; <span style="color:#e6edf3">${d.name}</span> &nbsp;|&nbsp; <span style="color:#8b949e">${d.timestamp}</span>`;
+  }
+}
+
+let _pineData = [];
+let _pineSortKey = 'version';
+let _pineSortAsc = false;
+
+async function pineLoadHistory() {
+  const r = await fetch('/api/pine/history');
+  _pineData = await r.json();
+  pineRenderTable();
+}
+
+function pineSortBy(key) {
+  if (_pineSortKey === key) _pineSortAsc = !_pineSortAsc;
+  else { _pineSortKey = key; _pineSortAsc = false; }
+  pineRenderTable();
+}
+
+function pineRenderTable() {
+  const el = document.getElementById('pine-history');
+  if (!_pineData.length) { el.innerHTML = '<tr><td colspan="6" style="padding:16px;color:#8b949e;text-align:center">Abhi koi version saved nahi hai</td></tr>'; return; }
+
+  // update sort indicators
+  ['version','name','timestamp','accuracy'].forEach(k => {
+    const el = document.getElementById('sort-ind-' + k);
+    if (el) el.textContent = _pineSortKey === k ? (_pineSortAsc ? '↑' : '↓') : '';
+  });
+
+  const sorted = [..._pineData].sort((a, b) => {
+    let av = a[_pineSortKey] ?? '', bv = b[_pineSortKey] ?? '';
+    if (_pineSortKey === 'accuracy') { av = av || -1; bv = bv || -1; }
+    const res = av < bv ? -1 : av > bv ? 1 : 0;
+    return _pineSortAsc ? res : -res;
+  });
+
+  // group by strategy name (preserve sort order within groups if sorting by name/version)
+  const groups = [];
+  const seen = {};
+  sorted.forEach(v => {
+    if (!seen[v.name]) { seen[v.name] = []; groups.push({ name: v.name, items: seen[v.name] }); }
+    seen[v.name].push(v);
+  });
+
+  el.innerHTML = groups.map(g => {
+    const headerRow = `<tr><td colspan="6" style="padding:10px 10px 4px;color:#8b949e;font-size:11px;font-weight:600;letter-spacing:0.5px;border-bottom:1px solid #30363d;border-top:2px solid #30363d;background:#161b2288">${g.name}</td></tr>`;
+    const rows = g.items.map(v => {
+    const acc = v.accuracy != null ? v.accuracy : null;
+    const accColor = acc >= 85 ? '#3fb950' : acc >= 60 ? '#d29922' : acc != null ? '#f85149' : '#8b949e';
+    const accCell = acc != null ? `<span style="color:${accColor};font-weight:700">${acc}%</span>` : `<span style="color:#8b949e">—</span>`;
+    const pyFile = v.py_file && v.py_file !== 'none' ? v.py_file : null;
+    const pyBadge = pyFile ? `<span style="background:#1f6feb22;color:#1f6feb;font-size:10px;padding:1px 6px;border-radius:3px;font-family:monospace">${pyFile}</span>` : `<span style="background:#30363d33;color:#8b949e;font-size:10px;padding:1px 6px;border-radius:3px">not converted</span>`;
+    const reportCell = v.report_stats
+      ? `<a href="/pine/report/${v.version}" target="_blank" style="color:#58a6ff;font-size:12px;text-decoration:none;white-space:nowrap">📊 Report<br><span style="font-size:10px;color:#8b949e">${v.report_stats.tv_trades}TV / ${v.report_stats.eng_trades}Eng</span></a>`
+      : `<span style="color:#30363d;font-size:12px">—</span>`;
+    const sv = v.strat_version || v.version;
+    return `<tr style="border-bottom:1px solid #21262d" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
+      <td style="padding:10px;color:#3fb950;font-weight:700;white-space:nowrap">v${sv}</td>
+      <td style="padding:10px">${pyBadge}</td>
+      <td style="padding:10px;color:#8b949e;font-size:12px;white-space:nowrap">${v.timestamp}</td>
+      <td style="padding:10px;min-width:200px">
+        <div id="pine-view-${v.version}" style="display:flex;align-items:flex-start;gap:6px;cursor:default">
+          <span style="color:${v.desc ? '#e6edf3' : '#8b949e'};font-size:12px;flex:1;line-height:1.5">${v.desc || 'Add notes...'}</span>
+          <span onclick="pineEditStart(${v.version})" title="Edit" style="color:#8b949e;font-size:13px;cursor:pointer;flex-shrink:0;padding:1px 3px;border-radius:3px" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">✏️</span>
+        </div>
+        <div id="pine-edit-${v.version}" style="display:none">
+          <textarea id="pine-desc-${v.version}" style="width:100%;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:5px 7px;font-size:12px;resize:vertical;min-height:50px;font-family:inherit;box-sizing:border-box">${v.desc || ''}</textarea>
+          <div style="display:flex;gap:6px;margin-top:4px">
+            <button onclick="pineDescSave(${v.version})" style="background:#1f6feb33;border:1px solid #1f6feb55;color:#58a6ff;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">💾 Save</button>
+            <button onclick="pineEditCancel(${v.version})" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer">✕</button>
+          </div>
+        </div>
+      </td>
+      <td style="padding:10px;text-align:center">${accCell}</td>
+      <td style="padding:10px;text-align:center">${reportCell}</td>
+    </tr>`;
+    }).join('');
+    return headerRow + rows;
+  }).join('');
+}
+
+async function pineSave() {
+  const code = document.getElementById('pine-code').value.trim();
+  if (!code) { document.getElementById('pine-save-msg').textContent = '⚠️ Kuch paste karo pehle'; return; }
+  const msg = document.getElementById('pine-save-msg');
+  msg.style.color = '#8b949e'; msg.textContent = 'Saving...';
+  const desc = document.getElementById('pine-desc').value.trim();
+  const r = await fetch('/api/pine/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, desc}) });
+  const d = await r.json();
+  msg.style.color = '#3fb950';
+  msg.textContent = `✅ v${d.version} saved — "${d.name}"`;
+  document.getElementById('pine-code').value = '';
+  document.getElementById('pine-desc').value = '';
+  setTimeout(() => msg.textContent = '', 4000);
+  pineLoadLatest();
+  pineLoadHistory();
+}
+
+function pineEditStart(version) {
+  document.getElementById('pine-view-' + version).style.display = 'none';
+  document.getElementById('pine-edit-' + version).style.display = 'block';
+  document.getElementById('pine-desc-' + version).focus();
+}
+
+function pineEditCancel(version) {
+  document.getElementById('pine-edit-' + version).style.display = 'none';
+  document.getElementById('pine-view-' + version).style.display = 'flex';
+}
+
+async function pineDescSave(version) {
+  const desc = document.getElementById('pine-desc-' + version).value.trim();
+  await fetch('/api/pine/desc', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({version, desc}) });
+  // update view inline without full reload
+  const viewEl = document.getElementById('pine-view-' + version);
+  viewEl.querySelector('span:first-child').textContent = desc || 'Add notes...';
+  viewEl.querySelector('span:first-child').style.color = desc ? '#e6edf3' : '#8b949e';
+  pineEditCancel(version);
+  flash('✅ Saved');
+}
+
+// init
+pineLoadLatest();
 </script>
 </body>
 </html>

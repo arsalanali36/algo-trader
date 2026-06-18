@@ -646,6 +646,83 @@ def backtest_db_set():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+@app.route('/api/pine/save', methods=['POST'])
+def api_pine_save():
+    import re, json as _json
+    code = request.json.get('code', '').strip()
+    if not code:
+        return jsonify({"error": "Empty code"}), 400
+    desc = request.json.get('desc', '').strip()
+    m = re.search(r'strategy\s*\(\s*"([^"]+)"', code)
+    strat_name = m.group(1) if m else "unknown"
+    pine_dir = BASE_DIR / '_PINE'
+    pine_dir.mkdir(exist_ok=True)
+    ver_file = pine_dir / 'versions.json'
+    versions = _json.loads(ver_file.read_text()) if ver_file.exists() else []
+    version = len(versions) + 1
+    from datetime import datetime, timezone, timedelta
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    ts = ist.strftime('%Y-%m-%d %H:%M IST')
+    strat_version = sum(1 for v in versions if v.get('name') == strat_name) + 1
+    entry = {"version": version, "name": strat_name, "strat_version": strat_version, "timestamp": ts, "desc": desc}
+    versions.append(entry)
+    ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
+    (pine_dir / 'range_chain.pine').write_text(code, encoding='utf-8')
+    return jsonify(entry)
+
+@app.route('/pine/report/<int:version>')
+def pine_report(version):
+    import json as _json
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return "No versions", 404
+    versions = _json.loads(ver_file.read_text())
+    v = next((x for x in versions if x['version'] == version), None)
+    if not v or not v.get('report_file'):
+        return "No report attached", 404
+    rpath = BASE_DIR / v['report_file']
+    if not rpath.exists():
+        return "Report file missing", 404
+    return rpath.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+@app.route('/api/pine/latest')
+def api_pine_latest():
+    import json as _json
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify({"version": 0, "name": "—", "timestamp": "—"})
+    versions = _json.loads(ver_file.read_text())
+    return jsonify(versions[-1] if versions else {"version": 0, "name": "—", "timestamp": "—"})
+
+@app.route('/api/pine/desc', methods=['POST'])
+def api_pine_desc():
+    import json as _json
+    data = request.json
+    version = data.get('version')
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify({"error": "No versions"}), 404
+    versions = _json.loads(ver_file.read_text())
+    for v in versions:
+        if v['version'] == version:
+            if 'desc'         in data: v['desc']         = data['desc'].strip()
+            if 'py_file'      in data: v['py_file']      = data['py_file'].strip()
+            if 'accuracy'     in data: v['accuracy']     = data['accuracy']
+            if 'report_file'   in data: v['report_file']   = data['report_file']
+            if 'report_stats'  in data: v['report_stats']  = data['report_stats']
+            if 'strat_version' in data: v['strat_version'] = data['strat_version']
+            break
+    ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
+    return jsonify({"ok": True})
+
+@app.route('/api/pine/history')
+def api_pine_history():
+    import json as _json
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify([])
+    return jsonify(list(reversed(_json.loads(ver_file.read_text()))))
+
 @app.route('/api/save-summary', methods=['POST'])
 def api_save_summary():
     try:
