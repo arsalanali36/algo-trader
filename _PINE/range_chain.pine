@@ -1067,6 +1067,11 @@ if (Bearish_Candle_exitingZone or Bullish_Candle_exitingZone) and inDateRange
     Green_Zone_Touch_and_Candle := Bullish_Candle_exitingZone
     Red_Zone_Touch_and_Candle   := Bearish_Candle_exitingZone
 
+    if Bullish_Candle_exitingZone
+        log.info("ZONE GREEN " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
+    if Bearish_Candle_exitingZone
+        log.info("ZONE RED " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
+
     _distance = math.round(math.abs(_highPrice - _lowPrice))
     _distText = str.tostring(_distance)
     bullZoneLabel := label.new(bar_index + 10, _highPrice, text=_distText, xloc=xloc.bar_index, yloc=yloc.price,
@@ -1197,6 +1202,7 @@ if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     tradesToday += 1
     Green_Zone := false
     Red_Zone   := false
+    log.info("SIGNAL LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
     alert("🟢 LONG ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
 
 if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
@@ -1204,6 +1210,7 @@ if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     tradesToday += 1
     Green_Zone := false
     Red_Zone   := false
+    log.info("SIGNAL SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
     alert("🔴 SHORT ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
 
 
@@ -1275,6 +1282,7 @@ if strategy.position_size > 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Long", comment=exitReason)
+        log.info("EXIT LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
         alert("🚪 EXIT LONG @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
         exitSide := "LONG"
         atrSL_Long := na
@@ -1291,6 +1299,7 @@ if strategy.position_size < 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Short", comment=exitReason)
+        log.info("EXIT SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
         alert("🚪 EXIT SHORT @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
         exitSide := "SHORT"
         atrSL_Short := na

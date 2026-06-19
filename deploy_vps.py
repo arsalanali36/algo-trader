@@ -21,6 +21,7 @@ FILES = [
     "dhan_feed.py",
     "save_daily_summary.py",
     "backtest_dashboard.html",
+    "nifty_config.json",
 ]
 
 SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]

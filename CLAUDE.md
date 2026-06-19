@@ -134,3 +134,9 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-18 | MFE/MAE analysis tab — `mfe_routes.py`: per-trade runup/DD (premium pts + ₹ + index move + duration), sec_id cache for expired contracts, generate-backtest route. LOT_SIZE=65. |
 | 2026-06-18 | `generate_june_mfe.py` — pipeline: NIFTY 1-min from Dhan → Range Chain backtest → ATM strike (`round(price/50)*50`) → option sec_id probe (cache-first for expired) → option bars → trade_log.json. DH-904 retry with backoff. |
 | 2026-06-18 | `auto_data_downloader.py` — VPS daemon: polls Dhan /v2/orders every 5min (market hours) / 60min (off-hours), downloads 1-min OHLC bars to `data/trade_ohlc/{SECID}_{DATE}.json`, gap detection, token-expiry alert → `data/downloader_alert.json` → dashboard red banner via `/api/downloader-alerts` route. |
+| 2026-06-19 | Token banner auto-clear — `api_set_token` token save hone ke baad `downloader_alert.json` se token-expire entries filter karta hai. |
+| 2026-06-19 | Auto-scheduler active flag — Stop → `"active": false`; Paper/Live → `"active": true`. Sirf active=true strategies 9:10 pe start hoti hain. |
+| 2026-06-19 | Order sound notification — Log polling mein `[PAPER]/[LIVE] BUY/SELL` detect ho to browser beep (Web Audio API). WIN=ascending, entry=double beep. Duplicate guard. |
+| 2026-06-19 | dhan_master lot size fix — `int(float(...))` se `'850.0'` crash fix. Sab error returns `None,None,None` (3 values) — pehle 2 the, unpack crash hota tha. |
+| 2026-06-19 | Quick Order PE/CE unpack fix — `trader_dashboard.py` mein 3 jagah `sec,sym=` → `sec,sym,_=`. Lot size ab dhan_master cache se (hardcoded 65 hata). |
+| 2026-06-19 | P&L Column Selector — ⚙️ Columns button → modal → checkboxes. New columns: Capital Invested, Gross P&L, Tax & Charges (Zerodha formula), Net P&L. localStorage persist. |

@@ -263,6 +263,15 @@ def api_start():
                      stdout=lf, stderr=lf,
                      cwd=str(BASE_DIR),
                      start_new_session=True)
+    # Mark active so auto-scheduler knows user wants this running
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        if s not in cfg:
+            cfg[s] = {}
+        cfg[s]['active'] = True
+        TC_FILE.write_text(json.dumps(cfg, indent=2))
+    except Exception:
+        pass
     return jsonify({"msg": f"✅ {s.upper()} started — {mode.upper()} mode"})
 
 @app.route('/api/stop', methods=['POST'])
@@ -273,6 +282,15 @@ def api_stop():
         return jsonify({"msg": f"{s.upper()} not running"})
     try:
         os.kill(pid, signal.SIGTERM)
+        # Mark inactive so auto-scheduler won't restart it tomorrow
+        try:
+            cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+            if s not in cfg:
+                cfg[s] = {}
+            cfg[s]['active'] = False
+            TC_FILE.write_text(json.dumps(cfg, indent=2))
+        except Exception:
+            pass
         return jsonify({"msg": f"⏹ {s.upper()} stopped"})
     except Exception as e:
         return jsonify({"msg": f"Error: {e}"})
@@ -305,6 +323,15 @@ def api_set_token():
         cfg['jwt_token']     = token
         cfg['token_saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        # Clear any token-expiry alerts from downloader_alert.json
+        alert_file = BASE_DIR / "data" / "downloader_alert.json"
+        if alert_file.exists():
+            try:
+                alerts = json.loads(alert_file.read_text())
+                alerts = [a for a in alerts if 'token expire' not in a.lower()]
+                alert_file.write_text(json.dumps(alerts))
+            except Exception:
+                pass
         return jsonify({"ok": True, "msg": "✅ Token saved!"})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -518,8 +545,8 @@ def api_option_ltp():
         ticker_map = {"NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK"}
         idx_price = float(yf.Ticker(ticker_map.get(symbol, "^NSEI")).fast_info["last_price"])
 
-        sec_ce, t_ce = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
-        sec_pe, t_pe = dhan_master.get_option_contract(symbol, idx_price, "PE", offset)
+        sec_ce, t_ce, _ = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
+        sec_pe, t_pe, _ = dhan_master.get_option_contract(symbol, idx_price, "PE", offset)
 
         ltp_ce = ltp_pe = None
         sec_ids = [int(s) for s in [sec_ce, sec_pe] if s]
@@ -569,22 +596,12 @@ def api_manual_order():
         price = float(tk.fast_info['last_price'])
 
         # Option contract lookup
-        sec_id, t_sym = dhan_master.get_option_contract(symbol, price, opt_type, offset)
+        sec_id, t_sym, lot_sz_master = dhan_master.get_option_contract(symbol, price, opt_type, offset)
         if not sec_id:
             return jsonify({'ok': False, 'msg': f'Contract not found: {symbol} {opt_type} offset={offset}'})
 
-        # Lot size from scrip master — Dhan needs actual shares, not lots
-        lot_size = 65  # fallback
-        try:
-            import csv
-            with open(SCRIP_MASTER, newline='') as f:
-                for row in csv.DictReader(f):
-                    ts_col = row.get('SEM_TRADING_SYMBOL', '')
-                    if ts_col.startswith(symbol) and 'CE' in ts_col:
-                        lot_size = int(float(row.get('SEM_LOT_UNITS', 65)))
-                        break
-        except Exception:
-            pass
+        # Lot size — from dhan_master cache (already parsed correctly)
+        lot_size = lot_sz_master if lot_sz_master else 65
 
         qty_shares = lots * lot_size   # e.g. 1 lot × 65 = 65 shares
 

@@ -65,6 +65,25 @@ SYMBOLS = {
     "POWERGRID":    "POWERGRID.NS",
     "NTPC":         "NTPC.NS",
     "ONGC":         "ONGC.NS",
+    "ASIANPAINT":   "ASIANPAINT.NS",
+    "BHARTIARTL":   "BHARTIARTL.NS",
+    "HCLTECH":      "HCLTECH.NS",
+    "BAJAJFINSV":   "BAJAJFINSV.NS",
+    "TATACONSUM":   "TATACONSUM.NS",
+    "COALINDIA":    "COALINDIA.NS",
+    "DIVISLAB":     "DIVISLAB.NS",
+    "DRREDDY":      "DRREDDY.NS",
+    "EICHERMOT":    "EICHERMOT.NS",
+    "GRASIM":       "GRASIM.NS",
+    "HEROMOTOCO":   "HEROMOTOCO.NS",
+    "HINDALCO":     "HINDALCO.NS",
+    "JSWSTEEL":     "JSWSTEEL.NS",
+    "M&M":          "M&M.NS",
+    "SBILIFE":      "SBILIFE.NS",
+    "SHRIRAMFIN":   "SHRIRAMFIN.NS",
+    "TATASTEEL":    "TATASTEEL.NS",
+    "TECHM":        "TECHM.NS",
+    "TRENT":        "TRENT.NS",
 }
 
 DHAN_INFO = {
@@ -123,7 +142,7 @@ _DHAN_DATA = {
 _TF_MAP = {"1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30"}
 
 ORDERS_URL   = "https://api.dhan.co/v2/orders"
-MARKET_OPEN  = (9, 16)
+MARKET_OPEN  = (9, 15)
 MARKET_CLOSE = (15, 25)
 AUTO_EXIT_AT = (15, 15)
 
@@ -716,14 +735,14 @@ def main(strategy_id="range"):
                     for sym, st in _state.items():
                         if st["position"] == "LONG":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                             else:
                                 place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode)
                             st["position"] = None
                             st["opt_sec_id"] = None
                         elif st["position"] == "SHORT":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                             else:
                                 place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode)
                             st["position"] = None
@@ -807,11 +826,13 @@ def main(strategy_id="range"):
                 
                 if inst == "options":
                     opt_type = "PE" if signal == "BUY" else "CE"
-                    sec_id, t_sym = dhan_master.get_option_contract(symbol, price, opt_type, offset)
+                    sec_id, t_sym, lot_sz = dhan_master.get_option_contract(symbol, price, opt_type, offset)
                     if sec_id:
-                        place_order(symbol, "SELL", qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
+                        actual_qty = qty * lot_sz
+                        place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
                         st["opt_sec_id"] = sec_id
                         st["opt_trad_sym"] = t_sym
+                        st["opt_qty"] = actual_qty
                     else:
                         log.error(f"Option contract not found for {symbol} {opt_type}")
                 else:
@@ -829,7 +850,7 @@ def main(strategy_id="range"):
                 log.info(f"EXIT {symbol} via {reason} @ {price:.2f}")
                 
                 if st.get("opt_sec_id"):
-                    place_order(symbol, "BUY", cfg.get("qty", 1), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                    place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
                 else:
                     place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode)
                     

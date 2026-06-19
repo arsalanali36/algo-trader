@@ -301,7 +301,6 @@ def run(paper_mode=True, strategy_id="rsi"):
     log.info("=" * 60)
 
     positions    = {}
-                active_options = {}
     active_options = {}
     trades_today = {}
     last_date    = None
@@ -450,6 +449,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper", action="store_true")
     ap.add_argument("--live",  action="store_true")
+    ap.add_argument("--id",    default="rsi")
     args = ap.parse_args()
 
     if args.live:

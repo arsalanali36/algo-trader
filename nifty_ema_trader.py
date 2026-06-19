@@ -84,7 +84,7 @@ DHAN_INFO = {
 }
 
 # ── Market Hours IST ───────────────────────────────────────────────────────────
-MARKET_OPEN  = (9, 16)
+MARKET_OPEN  = (9, 15)
 MARKET_CLOSE = (15, 25)
 AUTO_EXIT_AT = (15, 15)
 
@@ -118,7 +118,7 @@ def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
     return cfg["jwt_token"], cfg["client_id"]
 
-def load_config():
+def load_config(strategy_id=None):
     default = {
         "active": True,
         "timeframe": "1m",
@@ -189,7 +189,7 @@ def paper_trade(symbol, signal, price):
     t = ist_now().strftime("%H:%M:%S")
     book = _paper_book.setdefault(symbol, [])
     book.append({"signal": signal, "price": price, "time": t})
-    log.info(f"  📝 PAPER {signal:4s} {symbol:12s} @ {price:.2f}  [{t}]")
+    log.info(f"  [PAPER] {signal} 1 {symbol} @ {price:.2f}")
     if len(book) >= 2:
         prev = book[-2]
         if prev["signal"] == "BUY" and signal == "SELL":
@@ -355,7 +355,8 @@ def run(paper_mode=True, strategy_id="ema"):
                 t_count = trades_today.get(sym, 0)
                 pos     = positions.get(sym, 0)
 
-                if t_count >= max_t:
+                # max_trades hit + no open position → skip entirely
+                if t_count >= max_t and pos == 0:
                     log.info(f"  {sym:12s} max trades ({max_t}) hit — skip")
                     continue
 
@@ -372,8 +373,11 @@ def run(paper_mode=True, strategy_id="ema"):
                 inst   = tc.get("instrument", "equity")
                 offset = int(tc.get("strike_offset", 0))
 
-                if signal == "BUY" and pos <= 0:
-                    if pos < 0:   # close short
+                # max_trades hit but position open → only exit allowed, no new entry
+                allow_entry = (t_count < max_t)
+
+                if signal == "BUY":
+                    if pos < 0:   # EXIT short (always, regardless of max_trades)
                         if paper_mode:
                             paper_trade(sym, "BUY", last_close)
                         else:
@@ -382,26 +386,27 @@ def run(paper_mode=True, strategy_id="ema"):
                                 del active_options[sym]
                             else:
                                 place_order(sym, "BUY", qty, token, cid)
-                        trades_today[sym] = t_count + 1
-                    
-                    # open long
-                    if paper_mode:
-                        paper_trade(sym, "BUY", last_close)
-                    else:
-                        if inst == "options":
-                            sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "PE", offset)
-                            if sec_id:
-                                place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
-                                active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
-                            else:
-                                log.error(f"  {sym} PE option not found")
-                        else:
-                            place_order(sym, "BUY", qty, token, cid)
-                    positions[sym]    = 1
-                    trades_today[sym] = trades_today.get(sym, 0) + 1
+                        positions[sym]    = 0
+                        trades_today[sym] = trades_today.get(sym, 0) + 1
 
-                elif signal == "SELL" and pos >= 0:
-                    if pos > 0:   # close long
+                    if pos <= 0 and allow_entry:   # ENTRY long (only if trades left)
+                        if paper_mode:
+                            paper_trade(sym, "BUY", last_close)
+                        else:
+                            if inst == "options":
+                                sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "PE", offset)
+                                if sec_id:
+                                    place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                    active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                else:
+                                    log.error(f"  {sym} PE option not found")
+                            else:
+                                place_order(sym, "BUY", qty, token, cid)
+                        positions[sym]    = 1
+                        trades_today[sym] = trades_today.get(sym, 0) + 1
+
+                elif signal == "SELL":
+                    if pos > 0:   # EXIT long (always, regardless of max_trades)
                         if paper_mode:
                             paper_trade(sym, "SELL", last_close)
                         else:
@@ -410,38 +415,24 @@ def run(paper_mode=True, strategy_id="ema"):
                                 del active_options[sym]
                             else:
                                 place_order(sym, "SELL", qty, token, cid)
+                        positions[sym]    = 0
                         trades_today[sym] = trades_today.get(sym, 0) + 1
-                    
-                    # open short
-                    if paper_mode:
-                        paper_trade(sym, "SELL", last_close)
-                    else:
-                        if inst == "options":
-                            sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "CE", offset)
-                            if sec_id:
-                                place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
-                                active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
-                            else:
-                                log.error(f"  {sym} CE option not found")
-                        else:
-                            place_order(sym, "SELL", qty, token, cid)
-                    positions[sym]    = -1
-                    trades_today[sym] = trades_today.get(sym, 0) + 1
 
-                elif signal == "SELL" and pos >= 0:
-                    if pos > 0:   # close long
+                    if pos >= 0 and allow_entry:   # ENTRY short (only if trades left)
                         if paper_mode:
                             paper_trade(sym, "SELL", last_close)
                         else:
-                            place_order(sym, "SELL", qty, token, cid)
+                            if inst == "options":
+                                sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "CE", offset)
+                                if sec_id:
+                                    place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                    active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                else:
+                                    log.error(f"  {sym} CE option not found")
+                            else:
+                                place_order(sym, "SELL", qty, token, cid)
+                        positions[sym]    = -1
                         trades_today[sym] = trades_today.get(sym, 0) + 1
-                    # open short
-                    if paper_mode:
-                        paper_trade(sym, "SELL", last_close)
-                    else:
-                        place_order(sym, "SELL", qty, token, cid)
-                    positions[sym]    = -1
-                    trades_today[sym] = trades_today.get(sym, 0) + 1
 
         except KeyboardInterrupt:
             log.info("Stopped")
@@ -459,6 +450,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--paper", action="store_true", help="Paper mode (default)")
     ap.add_argument("--live",  action="store_true", help="Real orders on Dhan")
+    ap.add_argument("--id",    default="ema")
     args = ap.parse_args()
 
     if args.live:

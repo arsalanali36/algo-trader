@@ -88,7 +88,8 @@ def build_cache():
                     "strike": strike,
                     "type": opt_type,
                     "sec_id": sec_id,
-                    "trad_sym": trad_sym
+                    "trad_sym": trad_sym,
+                    "lot_size": int(float(row.get("SEM_LOT_UNITS") or 1))
                 })
         log.info("Options Cache built successfully.")
     except Exception as e:
@@ -100,10 +101,10 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
         
     if symbol not in _options_cache:
         log.error(f"Symbol {symbol} not found in options cache")
-        return None, None
-        
+        return None, None, None
+
     expiries = list(_options_cache[symbol].keys())
-    
+
     valid_expiries = []
     now = ist_now()
     for exp in expiries:
@@ -113,37 +114,37 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
                 valid_expiries.append((exp_date, exp))
         except:
             continue
-            
+
     if not valid_expiries:
         log.error(f"No valid expiries found for {symbol}")
-        return None, None
-        
+        return None, None, None
+
     valid_expiries.sort(key=lambda x: x[0])
     nearest_expiry_str = valid_expiries[0][1]
-    
+
     contracts = _options_cache[symbol][nearest_expiry_str]
     contracts = [c for c in contracts if c["type"] == option_type]
-    
+
     if not contracts:
-        return None, None
-        
+        return None, None, None
+
     strikes = sorted(list(set(c["strike"] for c in contracts)))
-    
+
     if not strikes:
-        return None, None
-        
+        return None, None, None
+
     atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
     atm_idx = strikes.index(atm_strike)
-    
+
     target_idx = atm_idx + offset
     target_idx = max(0, min(len(strikes) - 1, target_idx))
     target_strike = strikes[target_idx]
-    
+
     for c in contracts:
         if c["strike"] == target_strike:
-            return c["sec_id"], c["trad_sym"]
-            
-    return None, None
+            return c["sec_id"], c["trad_sym"], c.get("lot_size", 1)
+
+    return None, None, None
 
 def get_sec_id_for_trad_sym(trad_sym):
     """Resolve sec_id for an exact trading symbol, picking the nearest NON-expired
