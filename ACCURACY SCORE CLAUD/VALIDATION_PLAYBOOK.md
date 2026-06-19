@@ -8,6 +8,27 @@ Tools live in `CODE3B- TV BACKTEST ENGINE/validate_strategy.py`.
 
 ---
 
+## DEFAULT RULE — every new Pine file gets this logging built in
+**As of 2026-06-19: don't wait for a mismatch to add this.** Every Pine strategy
+file written from now on (any `_PINE/*.pine`) gets `log.info()` SIGNAL/EXIT lines
+at the entry/exit conditions from the start — not bolted on later. Reference:
+`_PINE/rsi_v1.pine` and `_PINE/range_chain_zonelog.pine`. This means:
+- `backtest_engine.py`'s `_load_tv_trades()` can always parse a Pine Logs export
+  for ANY strategy (not just Range Chain), no per-strategy CSV-format guessing.
+- TV "List of Trades" CSV export (`Trade number/Type/Date and time/Price` columns)
+  still works too — `validate_strategy.parse_tv()` / `backtest_engine._load_tv_trades()`
+  auto-detect `.csv` vs `.log` by extension.
+
+Also default ON: **date-range inputs** (`startDate`/`endDate`/`inDateRange`) in every
+new Pine file, gating entry conditions. Lets the TV Strategy Tester window match the
+Python `date_from`/`date_to` exactly — no manual date trimming before comparing.
+```pinescript
+startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Date", group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 15:15"), title="Backtest End Date",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+// long_entry := ... and inDateRange   (exits don't need the gate)
+```
+
 ## THE FAST WORKFLOW (do this in order)
 
 ### 1. Get a CONSISTENT ground truth (the #1 time-saver)

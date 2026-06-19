@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Algo Trader</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:14px}
@@ -302,8 +303,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <div id="run-modal-live"  onclick="runModalMode('live')"
              style="padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#8b949e">LIVE</div>
       </div>
-      <button onclick="runModalStart()" style="padding:5px 16px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Start</button>
-      <button onclick="runModalStop()"  style="padding:5px 16px;background:#da3633;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">⏹ Stop</button>
+      <button id="run-modal-toggle" onclick="runModalToggle()" style="padding:5px 16px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Start</button>
       <div id="run-modal-msg" style="font-size:12px;color:#3fb950"></div>
     </div>
 
@@ -314,6 +314,33 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
         <button onclick="runModalSaveConfig()" style="padding:5px 14px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">💾 Save Config</button>
         <div id="run-modal-cfg-msg" style="font-size:12px;color:#3fb950"></div>
+      </div>
+    </div>
+
+    <!-- Backtest -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:7px;padding:14px;margin-top:12px">
+      <div style="font-size:11px;color:#8b949e;font-weight:600;letter-spacing:0.5px;margin-bottom:10px">📊 BACKTEST (PYTHON vs PINE)</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div>
+          <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">From</label>
+          <input type="date" id="bt-from" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
+        </div>
+        <div>
+          <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">To</label>
+          <input type="date" id="bt-to" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
+        </div>
+      </div>
+      <div style="margin-top:8px">
+        <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv, select both together for Pine vs Python match %). From/To auto-fills from the file's date range — adjust manually if needed.</label>
+        <input type="file" id="bt-tv-log" multiple accept=".log,.txt,.csv" onchange="btAutoDateRange()" style="width:100%;background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:11px;box-sizing:border-box">
+      </div>
+      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
+        <button id="bt-run-btn" onclick="btRun()" style="padding:5px 14px;background:#9e6a03;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Run Backtest</button>
+        <div id="bt-msg" style="font-size:12px;color:#8b949e"></div>
+      </div>
+      <div id="bt-results" style="display:none;margin-top:12px">
+        <div id="bt-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;color:#8b949e"></div>
+        <div id="bt-chart" style="width:100%;height:320px;border:1px solid #30363d;border-radius:6px"></div>
       </div>
     </div>
   </div>
@@ -1597,29 +1624,177 @@ function runModalMode(m) {
   document.getElementById('run-modal-live').style.color       = m === 'live'  ? '#fff'    : '#8b949e';
 }
 
+let _runModalRunning = false;
+
 function _runModalUpdateStatus(running) {
+  _runModalRunning = running;
   const p = document.getElementById('run-modal-status');
   p.textContent      = running ? '● Running' : '● Stopped';
   p.style.background = running ? '#23863633' : '#30363d';
   p.style.color      = running ? '#3fb950'   : '#8b949e';
+
+  const btn = document.getElementById('run-modal-toggle');
+  if (running) {
+    btn.textContent = '⏹ Stop';
+    btn.style.background = '#da3633';
+  } else {
+    btn.textContent = '▶ Start';
+    btn.style.background = '#238636';
+  }
 }
 
-async function runModalStart() {
-  const r = await fetch(`/api/start?s=${_runStrategyId}&mode=${_runMode}`, {method:'POST'});
-  const d = await r.json();
+async function runModalToggle() {
   const msg = document.getElementById('run-modal-msg');
-  msg.textContent = d.msg;
+  if (_runModalRunning) {
+    const r = await fetch(`/api/stop?s=${_runStrategyId}`, {method:'POST'});
+    const d = await r.json();
+    msg.textContent = d.msg;
+    _runModalUpdateStatus(false);
+  } else {
+    const r = await fetch(`/api/start?s=${_runStrategyId}&mode=${_runMode}`, {method:'POST'});
+    const d = await r.json();
+    msg.textContent = d.msg;
+    _runModalUpdateStatus(true);
+  }
   setTimeout(() => { msg.textContent = ''; }, 4000);
-  _runModalUpdateStatus(true);
 }
 
-async function runModalStop() {
-  const r = await fetch(`/api/stop?s=${_runStrategyId}`, {method:'POST'});
-  const d = await r.json();
-  const msg = document.getElementById('run-modal-msg');
-  msg.textContent = d.msg;
-  setTimeout(() => { msg.textContent = ''; }, 4000);
-  _runModalUpdateStatus(false);
+// ── Backtest (Pine vs Python) ───────────────────────────────────────────────
+let _btChart = null;
+const _BT_MONTHS = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
+
+// Reads the uploaded TV file(s) client-side and auto-fills From/To from the
+// min/max date found inside — still a plain <input type=date>, so user can
+// override manually after the auto-fill.
+async function btAutoDateRange() {
+  const input = document.getElementById('bt-tv-log');
+  const msg = document.getElementById('bt-msg');
+  if (!input.files.length) return;
+
+  const isoRe = /(\d{4})-(\d{2})-(\d{2})[ T]\d{1,2}:\d{2}/g;
+  const tvRe  = /([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4}),?\s+(\d{1,2}):(\d{2})/g;
+  const dates = [];
+
+  for (const f of input.files) {
+    const text = await f.text();
+    let m;
+    while ((m = isoRe.exec(text)) !== null) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
+    while ((m = tvRe.exec(text)) !== null) {
+      const mon = _BT_MONTHS[m[1].toLowerCase()];
+      if (mon) dates.push(`${m[3]}-${mon}-${String(m[2]).padStart(2,'0')}`);
+    }
+  }
+
+  if (!dates.length) {
+    msg.textContent = '⚠ Could not detect dates in file — set From/To manually';
+    msg.style.color = '#d29922';
+    return;
+  }
+  dates.sort();
+  document.getElementById('bt-from').value = dates[0];
+  document.getElementById('bt-to').value   = dates[dates.length - 1];
+  msg.textContent = `📅 Auto-filled from file: ${dates[0]} → ${dates[dates.length - 1]} (edit manually if needed)`;
+  msg.style.color = '#3fb950';
+}
+
+async function btRun() {
+  const dfrom = document.getElementById('bt-from').value;
+  const dto   = document.getElementById('bt-to').value;
+  const tvLogInput = document.getElementById('bt-tv-log');
+  const btn = document.getElementById('bt-run-btn');
+  const msg = document.getElementById('bt-msg');
+
+  if (!dfrom || !dto) { msg.textContent = '⚠ Pick From + To dates'; return; }
+
+  btn.disabled = true;
+  const origText = btn.textContent;
+  btn.textContent = '⏳ Running...';
+  msg.textContent = '';
+
+  const fd = new FormData();
+  fd.append('strategy', _runStrategyId);
+  fd.append('date_from', dfrom);
+  fd.append('date_to', dto);
+  for (const f of tvLogInput.files) fd.append('tv_files', f);   // log + csv together, backend sorts them out
+
+  try {
+    const r = await fetch('/api/backtest/run', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.error) { msg.textContent = '⚠ ' + d.error; return; }
+    btRenderResults(d);
+  } catch (e) {
+    msg.textContent = '⚠ ' + e.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = origText;
+  }
+}
+
+let _btLastResult = null;
+
+function btRenderResults(d) {
+  _btLastResult = d;
+  document.getElementById('bt-results').style.display = 'block';
+  const s = d.summary;
+  let statsHtml = `
+    <div>Trades: <b style="color:#e6edf3">${s.n_trades}</b></div>
+    <div>Wins: <b style="color:#3fb950">${s.wins}</b></div>
+    <div>Losses: <b style="color:#f85149">${s.losses}</b></div>
+    <div>PnL: <b style="color:${s.pnl_points >= 0 ? '#3fb950' : '#f85149'}">${s.pnl_points} pts</b></div>`;
+  if (d.accuracy) {
+    statsHtml += `<div>Pine match: <b style="color:#d29922">${d.accuracy.matched}/${d.accuracy.total_tv} (${d.accuracy.pct}%)</b></div>`;
+  }
+  statsHtml += `<div><button onclick="btOpenFullView()" style="padding:3px 10px;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:5px;font-size:11px;cursor:pointer" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">🔍 Full View</button></div>`;
+  document.getElementById('bt-stats').innerHTML = statsHtml;
+  btDrawChart(d.candles, d.trades, d.tv_trades);
+}
+
+function btOpenFullView() {
+  if (!_btLastResult) return;
+  localStorage.setItem('bt_chart_data', JSON.stringify(_btLastResult));
+  window.open('/backtest-chart', '_blank');
+}
+
+function btDrawChart(candles, pyTrades, tvTrades) {
+  const container = document.getElementById('bt-chart');
+  container.innerHTML = '';
+  if (_btChart) { try { _btChart.remove(); } catch(e) {} _btChart = null; }
+  if (!candles || candles.length === 0) {
+    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:12px">No candle data</div>';
+    return;
+  }
+  _btChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    timeScale: { timeVisible: true, secondsVisible: false }
+  });
+  const series = _btChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
+  series.setData(candles);
+
+  const markers = [];
+  (pyTrades || []).forEach(t => {
+    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
+                   color: '#1f6feb', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
+                   text: 'PY ' + t.side + ' @' + t.entry_price });
+    if (t.exit_time) {
+      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
+                     color: '#58a6ff', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
+                     text: 'PY exit @' + t.exit_price });
+    }
+  });
+  (tvTrades || []).forEach(t => {
+    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
+                   color: '#d29922', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
+                   text: 'TV ' + t.side + ' @' + t.entry_price });
+    if (t.exit_time) {
+      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
+                     color: '#f0883e', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
+                     text: 'TV exit @' + t.exit_price });
+    }
+  });
+  series.setMarkers(markers.sort((a, b) => a.time - b.time));
+  _btChart.timeScale().fitContent();
 }
 
 async function runModalSaveConfig() {

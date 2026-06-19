@@ -41,6 +41,14 @@ ob         = input.float(70, "Overbought",   step=1)   // PE entry zone
 os_        = input.float(30, "Oversold",     step=1)   // CE entry zone
 exit_mid   = input.float(50, "Exit at RSI",  step=1)   // exit trigger
 
+// ── BACKTEST DATE RANGE (default ON) ────────────────────────────────────────
+// Python backtest_engine.py se date range match karne ke liye yahan bhi range
+// set karo — Strategy Tester sirf isi window ke trades dikhayega, List of
+// Trades / Pine Logs export bhi sirf isi range ka hoga (Python se 1:1 compare).
+startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Date", group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 15:15"), title="Backtest End Date",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+
 // ── RSI CALCULATION ──────────────────────────────────────────────────────────
 // ta.rsi() internally uses Wilder smoothing (same as Python compute_rsi)
 rsi = ta.rsi(close, rsi_period)
@@ -49,8 +57,8 @@ rsi = ta.rsi(close, rsi_period)
 // ta.crossover(A, B) → previous bar mein A < B tha, current mein A > B
 // ta.crossunder(A, B) → previous bar mein A > B tha, current mein A < B
 
-long_entry  = ta.crossover(rsi, os_)    // RSI upar aaya 30 se → BUY CE
-short_entry = ta.crossunder(rsi, ob)   // RSI neeche aaya 70 se → BUY PE
+long_entry  = ta.crossover(rsi, os_)  and inDateRange   // RSI upar aaya 30 se → BUY CE
+short_entry = ta.crossunder(rsi, ob)  and inDateRange   // RSI neeche aaya 70 se → BUY PE
 
 // ── EXIT SIGNALS ─────────────────────────────────────────────────────────────
 // RSI 50 (middle) pe aaya → momentum neutral → exit karo
@@ -61,6 +69,24 @@ short_exit = strategy.position_size < 0 and rsi <= exit_mid   // PE exit
 // TV pe "strategy.long" = CE position ki taraf
 // TV pe "strategy.short" = PE position ki taraf
 // (Real life mein dono BUY orders hote hain — CE buy ya PE buy)
+
+// ── CONSISTENT LOG EXPORT (default ON) ───────────────────────────────────────
+// validate_strategy.py / backtest_engine.py ka --signals parser isi exact
+// format ko parse karta hai: "SIGNAL LONG/SHORT <time> close=<px>" aur
+// "EXIT LONG/SHORT <time> reason=<reason> close=<px>". Pine Logs panel se
+// export karke seedha Python backtest ke against compare karo — alag-alag
+// runs se mat lo, ek hi run se SIGNAL+EXIT dono log hone chahiye.
+if long_entry
+    log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+if short_entry
+    log.info("SIGNAL SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+if long_exit
+    log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=MID_EXIT close=" + str.tostring(close, "#.##"))
+
+if short_exit
+    log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=MID_EXIT close=" + str.tostring(close, "#.##"))
 
 if long_entry
     strategy.entry("CE", strategy.long)

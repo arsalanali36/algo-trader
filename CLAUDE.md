@@ -16,6 +16,7 @@ Web dashboard se control hota hai — koi command line nahi.
 |------|------|
 | `nifty_ema_trader.py` | EMA crossover strategy |
 | `validate_strategy.py` | TV Pine vs engine matching harness — `--signals`, `--debug`, HTML report |
+| `_TOOLS/backtest_engine.py` | **Generic date-range backtester — any strategy (range/rsi/ema)**. Dashboard "📊 Backtest" button in Run modal → `POST /api/backtest/run` (strategy, date_from, date_to, optional TV log file) → candles + python trades + (if TV log given) accuracy %. Renders on TradingView-style chart (lightweight-charts CDN) with PY (blue) vs TV (orange) markers. |
 | `rsi_trader.py` | RSI overbought/oversold strategy |
 | `range_trader.py` | Range breakout/zone strategy with advanced exits (ATR, Fib) |
 | `trader_dashboard.py` | Flask web UI — port 5099, Backend API, process manager |
@@ -101,6 +102,7 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 
 | Date | Kya bana |
 |------|----------|
+| 2026-06-19 | Run modal — Start/Stop merged into single toggle button (`runModalToggle()`). Added "📊 Backtest" section: date range + optional TV log upload → `_TOOLS/backtest_engine.py` (generic replay for range/rsi/ema, reuses `validate_strategy.backtest_day`/`parse_log`) → `/api/backtest/run` → TradingView-style candlestick chart (lightweight-charts CDN) with PY vs TV entry/exit markers + match %. |
 | 2026-06-16 | Init — EMA + RSI trader, tabbed dashboard, VPS deploy, GitHub backup |
 | 2026-06-16 | Added Range Strategy, Auto-scheduler for 9:10 AM |
 | 2026-06-16 | **Options Trading** added via `dhan_master.py` (Dynamic Strike Offset PE/CE Selling) |

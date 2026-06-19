@@ -216,6 +216,13 @@ def backtest():
     from flask import send_file
     return send_file(BASE_DIR / 'backtest_dashboard.html')
 
+@app.route('/backtest-chart')
+def backtest_chart():
+    """Full-page chart view — opened in a new tab via the Run modal's
+    '🔍 Full View' button. Reads the chart JSON from localStorage client-side
+    (same origin, so it's already there from the modal that opened this tab)."""
+    return render_template("backtest_chart.html")
+
 @app.route('/api/status')
 def api_status():
     st = {}
@@ -328,6 +335,15 @@ def api_set_token():
         cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
         cfg['jwt_token']     = token
         cfg['token_saved_at'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+        # dhanClientId is also embedded in the JWT payload — decode it so
+        # cfg['client_id'] is always populated even if never set explicitly.
+        try:
+            import base64
+            payload = token.split('.')[1]
+            payload += '=' * (-len(payload) % 4)
+            cfg['client_id'] = json.loads(base64.urlsafe_b64decode(payload)).get('dhanClientId') or cfg.get('client_id')
+        except Exception:
+            pass
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
         # Clear any token-expiry alerts from downloader_alert.json
         alert_file = BASE_DIR / "data" / "downloader_alert.json"
@@ -935,20 +951,37 @@ def api_pine_save():
         entry["py_file"] = py_file
     versions.append(entry)
     ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
-    (pine_dir / 'range_chain.pine').write_text(code, encoding='utf-8')
+    # Per-version snapshot (always) + per-strategy "latest" file (slug of strat_name,
+    # NOT a hardcoded shared filename — multi-strategy saves were overwriting each
+    # other's "latest" file before this fix).
+    slug = re.sub(r'[^a-z0-9]+', '_', strat_name.lower()).strip('_') or 'unknown'
+    (pine_dir / f'{slug}_latest.pine').write_text(code, encoding='utf-8')
     (pine_dir / f'v{version}.pine').write_text(code, encoding='utf-8')
     return jsonify(entry)
 
 @app.route('/api/pine/code/<int:version>')
 def api_pine_code(version):
+    import json as _json, re
     pine_dir = BASE_DIR / '_PINE'
-    # Try version-specific file first, fallback to latest
+    # Try version-specific snapshot first, fallback to that version's strategy "latest" file
     vfile = pine_dir / f'v{version}.pine'
     if vfile.exists():
         return vfile.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
-    latest = pine_dir / 'range_chain.pine'
-    if latest.exists():
-        return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    ver_file = pine_dir / 'versions.json'
+    if ver_file.exists():
+        versions = _json.loads(ver_file.read_text())
+        v = next((x for x in versions if x['version'] == version), None)
+        if v:
+            # Legacy/hand-registered entries (never went through /api/pine/save)
+            # carry an explicit "pine_file" pointer — try that first.
+            if v.get('pine_file'):
+                explicit = pine_dir / v['pine_file']
+                if explicit.exists():
+                    return explicit.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+            slug = re.sub(r'[^a-z0-9]+', '_', v['name'].lower()).strip('_') or 'unknown'
+            latest = pine_dir / f'{slug}_latest.pine'
+            if latest.exists():
+                return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
     return 'Code not found', 404
 
 @app.route('/api/pine/delete/<int:version>', methods=['DELETE'])
@@ -1098,6 +1131,65 @@ def api_run_status():
     except Exception:
         pass
     return jsonify(status)
+
+@app.route('/api/backtest/run', methods=['POST'])
+def api_backtest_run():
+    """Generic date-range backtest for any strategy type (range/rsi/ema).
+    Accepts multipart form (date_from, date_to, strategy=<id>, optional tv_files —
+    one or more: Pine Logs .log/.txt AND/OR List-of-Trades .csv, upload both
+    together and this picks the more reliable one) or plain JSON body. Returns
+    candles + python trades (+ TV trades/accuracy if a TV file was attached)."""
+    import sys as _s, tempfile
+    _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
+    import backtest_engine as be
+
+    if request.content_type and "multipart" in request.content_type:
+        sid       = request.form.get("strategy", "range")
+        date_from = request.form.get("date_from") or None
+        date_to   = request.form.get("date_to") or None
+        tv_files  = [f for f in request.files.getlist("tv_files") if f and f.filename]
+    else:
+        body      = request.get_json(silent=True) or {}
+        sid       = body.get("strategy", "range")
+        date_from = body.get("date_from")
+        date_to   = body.get("date_to")
+        tv_files  = []
+
+    strat_type = _base(sid)
+    if strat_type not in ("range", "rsi", "rsi_v1", "ema"):
+        return jsonify({"error": f"backtest not supported for strategy type '{strat_type}'"}), 400
+
+    cfg_file = STRATEGIES.get(strat_type, {}).get("cfg", TC_FILE)
+    try:
+        all_cfg = json.loads(Path(cfg_file).read_text()) if Path(cfg_file).exists() else {}
+        cfg = all_cfg.get(sid, {})
+    except Exception:
+        cfg = {}
+
+    # Save every uploaded TV file to temp, then prefer a Pine Logs export
+    # (.log/.txt) over a List-of-Trades CSV — per VALIDATION_PLAYBOOK.md the
+    # log export is the more reliable single-run ground truth.
+    saved_paths = []
+    for f in tv_files:
+        suffix = os.path.splitext(f.filename)[1].lower() or ".log"
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=suffix)
+        tmp.close()   # release Windows file lock before save/remove
+        f.save(tmp.name)
+        saved_paths.append(tmp.name)
+
+    tv_log_path = next((p for p in saved_paths if p.lower().endswith((".log", ".txt"))), None) \
+                  or (saved_paths[0] if saved_paths else None)
+
+    try:
+        result = be.run_backtest(strat_type, cfg, date_from, date_to, tv_log_path=tv_log_path)
+    except Exception as e:
+        return jsonify({"error": f"Backtest failed: {e}"}), 200
+    finally:
+        for p in saved_paths:
+            if os.path.exists(p):
+                os.remove(p)
+
+    return jsonify(result)
 
 @app.route('/api/watch')
 def api_watch():
