@@ -102,22 +102,25 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <h1>Algo Trader</h1>
   <span id="hdr-badge" style="font-size:12px;color:#8b949e">—</span>
   <div class="hdr-right">
+    <button onclick="qoToggle()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">⚡ Quick Order</button>
+    <button onclick="watchToggle()" id="watch-btn" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">👁 Watch</button>
     <a href="/backtest" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128200; Backtest</a>
     <span id="clock"></span>
   </div>
 </div>
 
 <div class="tabs">
-  <div class="tab active" onclick="switchTab('control')">Control</div>
+  <div class="tab" onclick="switchTab('control')">Control</div>
   <div class="tab" onclick="switchTab('pnl')">P&amp;L</div>
   <div class="tab" onclick="switchTab('log')">Logs</div>
   <div class="tab" onclick="switchTab('config')">Config</div>
-  <div class="tab" onclick="switchTab('pine')">📌 Pine</div>
+  <div class="tab active" onclick="switchTab('pine')">📌 Pine</div>
 </div>
 
 <!-- CONTROL TAB -->
-<div class="tab-body active" id="tab-control">
-  <div class="card" style="margin-bottom:16px;border-color:#d29922">
+<div class="tab-body" id="tab-control">
+  <!-- Dhan Token -->
+  <div class="card" style="margin-bottom:12px;border-color:#d29922">
     <h2 style="color:#d29922">Dhan Token</h2>
     <div style="display:flex;gap:10px;align-items:flex-start;margin-top:4px">
       <textarea id="token-input" placeholder="JWT token..." style="width:100%;height:60px;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;"></textarea>
@@ -127,6 +130,42 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       </div>
     </div>
     <div id="token-msg" style="font-size:12px;margin-top:6px;color:#8b949e"></div>
+  </div>
+
+  <!-- Kite Token (Zerodha order placement) -->
+  <div class="card" style="margin-bottom:12px;border-color:#6e40c9">
+    <h2 style="color:#a371f7">Kite Token <span style="font-size:11px;color:#8b949e;font-weight:normal">(Zerodha — order placement)</span></h2>
+    <!-- One-time API key setup (collapse karo jab ho jaye) -->
+    <details style="margin-bottom:10px">
+      <summary style="font-size:11px;color:#8b949e;cursor:pointer">⚙️ One-time Setup — API Key & Secret</summary>
+      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+        <input id="kite-api-key"    placeholder="API Key (kite.trade developer console se)"
+               style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+        <input id="kite-api-secret" placeholder="API Secret" type="password"
+               style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+        <button class="btn" style="background:#21262d;border-color:#30363d;font-size:12px;align-self:flex-start"
+                onclick="kiteSaveKey()">Save API Key</button>
+        <div id="kite-key-msg" style="font-size:11px;color:#8b949e"></div>
+      </div>
+    </details>
+
+    <!-- Daily token refresh -->
+    <div style="font-size:11px;color:#8b949e;margin-bottom:8px;line-height:1.7">
+      <b style="color:#e6edf3">Rozana subah:</b>
+      <span onclick="kiteOpenLogin()" style="color:#a371f7;cursor:pointer;text-decoration:underline">
+        🔗 Step 1 — Zerodha login kholo
+      </span>
+      → login karo → redirect URL mein se
+      <code style="color:#e6edf3;background:#21262d;padding:1px 4px;border-radius:3px">request_token=XXXX</code>
+      copy karo → Step 2 mein paste karo
+    </div>
+    <div style="display:flex;gap:10px;align-items:flex-start">
+      <input id="kite-request-token" placeholder="Step 2 — request_token yahan paste karo"
+             style="flex:1;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+      <button class="btn" style="background:#6e40c9;border-color:#6e40c9;white-space:nowrap"
+              onclick="kiteExchangeToken()">Exchange → Save</button>
+    </div>
+    <div id="kite-token-msg" style="font-size:12px;margin-top:6px;color:#8b949e"></div>
   </div>
   <div id="control-grid" class="grid" style="margin-bottom:12px"></div>
   <div class="btn-row">
@@ -186,51 +225,96 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 </div>
 
 <!-- PINE TAB -->
-<div class="tab-body" id="tab-pine" style="padding:20px;max-width:900px">
-  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
-    <h2 style="margin:0;font-size:16px">Pine Script Version Manager</h2>
-    <div id="pine-latest-badge" style="font-size:12px;background:#161b22;border:1px solid #30363d;padding:6px 12px;border-radius:6px;color:#8b949e">loading...</div>
+<div class="tab-body active" id="tab-pine" style="padding:16px 20px 20px">
+  <!-- Inner sub-tab bar -->
+  <div style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:18px">
+    <div id="pine-sub-editor" onclick="pineSwitchSub('editor')"
+         style="padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid transparent;color:#8b949e;margin-bottom:-1px">📝 Editor</div>
+    <div id="pine-sub-history" onclick="pineSwitchSub('history')"
+         style="padding:8px 18px;font-size:13px;font-weight:600;cursor:pointer;border-bottom:2px solid #1f6feb;color:#e6edf3;margin-bottom:-1px">📋 History</div>
   </div>
 
-  <textarea id="pine-code" placeholder="Yahan apni poori Pine script paste karo..." style="width:100%;height:300px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
-
-  <textarea id="pine-desc" placeholder="Notes / kya badla is version mein... (optional)" style="width:100%;height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;margin-top:8px"></textarea>
-
-  <!-- Image attach area -->
-  <div id="pine-img-drop" onclick="document.getElementById('pine-img-input').click()"
-       ondragover="event.preventDefault();this.style.borderColor='#58a6ff'"
-       ondragleave="this.style.borderColor='#30363d'"
-       ondrop="pineImgDrop(event)"
-       style="margin-top:8px;border:1px dashed #30363d;border-radius:6px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:border-color 0.15s">
-    <span style="font-size:18px">🖼</span>
-    <span style="color:#8b949e;font-size:13px">Screenshots attach karo — click ya drag & drop (multiple)</span>
-    <input id="pine-img-input" type="file" multiple accept="image/*" style="display:none" onchange="pineImgPreview(this.files)">
+  <!-- ── Sub-tab: Editor ───────────────────────────────────────────────── -->
+  <div id="pine-panel-editor" style="display:none">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-size:13px;color:#8b949e">Pine Script Version Manager</span>
+      <div id="pine-latest-badge" style="font-size:12px;background:#161b22;border:1px solid #30363d;padding:5px 10px;border-radius:6px;color:#8b949e">loading...</div>
+    </div>
+    <textarea id="pine-code" placeholder="Yahan apni poori Pine script paste karo..." style="width:100%;height:280px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+    <textarea id="pine-desc" placeholder="Notes / kya badla is version mein... (optional)" style="width:100%;height:54px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;margin-top:8px"></textarea>
+    <div id="pine-img-drop" onclick="document.getElementById('pine-img-input').click()"
+         ondragover="event.preventDefault();this.style.borderColor='#58a6ff'"
+         ondragleave="this.style.borderColor='#30363d'"
+         ondrop="pineImgDrop(event)"
+         style="margin-top:8px;border:1px dashed #30363d;border-radius:6px;padding:10px 14px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:border-color 0.15s">
+      <span style="font-size:16px">🖼</span>
+      <span style="color:#8b949e;font-size:13px">Screenshots attach karo — click ya drag & drop</span>
+      <input id="pine-img-input" type="file" multiple accept="image/*" style="display:none" onchange="pineImgPreview(this.files)">
+    </div>
+    <div id="pine-img-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+    <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
+      <button class="btn btn-blue" onclick="pineSave()">💾 Save Version</button>
+      <div id="pine-save-msg" style="font-size:13px;color:#3fb950"></div>
+    </div>
   </div>
-  <div id="pine-img-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
 
-  <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
-    <button class="btn btn-blue" onclick="pineSave()">💾 Save Version</button>
-    <div id="pine-save-msg" style="font-size:13px;color:#3fb950"></div>
+  <!-- ── Sub-tab: History ──────────────────────────────────────────────── -->
+  <div id="pine-panel-history" style="overflow-x:auto">
+    <table id="pine-history-table" style="width:100%;border-collapse:collapse;font-size:12px;min-width:680px">
+      <thead>
+        <tr style="border-bottom:1px solid #30363d">
+          <th onclick="pineSortBy('version')" style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Ver <span id="sort-ind-version"></span></th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:left;white-space:nowrap">Author</th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:left;white-space:nowrap">Python File</th>
+          <th onclick="pineSortBy('timestamp')" style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Date/Time <span id="sort-ind-timestamp"></span></th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:left;min-width:140px">Description</th>
+          <th onclick="pineSortBy('accuracy')" style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:center;cursor:pointer;white-space:nowrap;user-select:none">Accu%</th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:center">Report</th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:center">Imgs</th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:center;white-space:nowrap">Run</th>
+          <th style="padding:7px 10px;color:#8b949e;font-weight:600;text-align:center;white-space:nowrap">Copy / Del</th>
+        </tr>
+      </thead>
+      <tbody id="pine-history"></tbody>
+    </table>
   </div>
+</div>
 
-  <div style="margin-top:24px">
-    <h3 style="font-size:13px;color:#8b949e;margin-bottom:10px">Version History</h3>
-    <div style="overflow-x:auto">
-      <table id="pine-history-table" style="width:100%;border-collapse:collapse;font-size:13px">
-        <thead>
-          <tr style="border-bottom:1px solid #30363d">
-            <th onclick="pineSortBy('version')"  style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Ver <span id="sort-ind-version"></span></th>
-            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;white-space:nowrap">Python File</th>
-            <th onclick="pineSortBy('timestamp')" style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;cursor:pointer;white-space:nowrap;user-select:none">Date/Time <span id="sort-ind-timestamp"></span></th>
-            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;min-width:200px">Description</th>
-            <th onclick="pineSortBy('accuracy')" style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center;cursor:pointer;white-space:nowrap;user-select:none">Accu% <span id="sort-ind-accuracy"></span></th>
-            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Report</th>
-            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Images</th>
-            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Copy / Del</th>
-          </tr>
-        </thead>
-        <tbody id="pine-history"></tbody>
-      </table>
+<!-- ── Run Popup Modal ────────────────────────────────────────────────────── -->
+<div id="run-modal-overlay" onclick="if(event.target===this)runModalClose()"
+     style="display:none;position:fixed;inset:0;background:#000a;z-index:9000;align-items:center;justify-content:center">
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;width:480px;max-width:95vw;padding:20px;position:relative">
+    <!-- Header -->
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+      <div>
+        <div id="run-modal-title" style="font-size:14px;font-weight:700;color:#e6edf3"></div>
+        <div id="run-modal-sub"   style="font-size:11px;color:#8b949e;margin-top:2px"></div>
+      </div>
+      <span onclick="runModalClose()" style="cursor:pointer;color:#8b949e;font-size:18px;line-height:1;padding:4px 6px" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">✕</span>
+    </div>
+
+    <!-- Status + Mode + Buttons -->
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap">
+      <div id="run-modal-status" style="font-size:12px;padding:3px 10px;border-radius:10px;background:#30363d;color:#8b949e;font-weight:600">● Stopped</div>
+      <div style="display:flex;background:#0d1117;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+        <div id="run-modal-paper" onclick="runModalMode('paper')"
+             style="padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;background:#d29922;color:#0d1117">PAPER</div>
+        <div id="run-modal-live"  onclick="runModalMode('live')"
+             style="padding:5px 14px;font-size:12px;font-weight:600;cursor:pointer;background:transparent;color:#8b949e">LIVE</div>
+      </div>
+      <button onclick="runModalStart()" style="padding:5px 16px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Start</button>
+      <button onclick="runModalStop()"  style="padding:5px 16px;background:#da3633;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">⏹ Stop</button>
+      <div id="run-modal-msg" style="font-size:12px;color:#3fb950"></div>
+    </div>
+
+    <!-- Params -->
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:7px;padding:14px">
+      <div style="font-size:11px;color:#8b949e;font-weight:600;letter-spacing:0.5px;margin-bottom:10px">PARAMETERS</div>
+      <div id="run-modal-params" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+      <div style="margin-top:12px;display:flex;gap:8px;align-items:center">
+        <button onclick="runModalSaveConfig()" style="padding:5px 14px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">💾 Save Config</button>
+        <div id="run-modal-cfg-msg" style="font-size:12px;color:#3fb950"></div>
+      </div>
     </div>
   </div>
 </div>
@@ -256,7 +340,8 @@ const NIFTY50 = ["NIFTY","BANKNIFTY","RELIANCE","TCS","INFY","HDFCBANK","ICICIBA
 
 let GLOBAL_CONFIG = {};
 let RUNNING_PIDS = {};
-let activeTab = 'control';
+let activeTab = 'pine';
+pineLoadLatest(); pineLoadHistory(); // History is default sub-tab
 let activeCfgTab = 'ema';
 let currentModalTarget = null; // store the config key (e.g. ema_v1) being edited
 
@@ -985,6 +1070,53 @@ async function checkToken(){
   document.getElementById('token-msg').innerText = j.msg;
 }
 
+// ── KITE TOKEN ──────────────────────────────────────────────────────────────
+// Step 1: Login link banao (api_key config se aata hai)
+async function kiteSaveKey() {
+  const key = document.getElementById('kite-api-key').value.trim();
+  const sec = document.getElementById('kite-api-secret').value.trim();
+  const msg = document.getElementById('kite-key-msg');
+  if (!key || !sec) { msg.textContent = '⚠️ Key aur Secret dono chahiye'; msg.style.color='#f85149'; return; }
+  const r = await fetch('/api/kite-save-key', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({api_key:key, api_secret:sec})}).then(r=>r.json()).catch(()=>({}));
+  if (r.ok) { msg.textContent = '✅ Saved! Ab Step 1 se login karo'; msg.style.color='#3fb950'; }
+  else { msg.textContent = '❌ ' + (r.error||'Error'); msg.style.color='#f85149'; }
+}
+
+async function kiteOpenLogin() {
+  const r = await fetch('/api/kite-login-url').then(r=>r.json()).catch(()=>({}));
+  if (r.url) {
+    window.open(r.url, '_blank');
+  } else {
+    document.getElementById('kite-token-msg').textContent =
+      '⚠️ kite_api_key config.json mein nahi hai — pehle save karo';
+    document.getElementById('kite-token-msg').style.color = '#f85149';
+  }
+}
+
+// Step 2: request_token paste karo → exchange karke access_token save karo
+async function kiteExchangeToken() {
+  // URL se paste kiya to extra params strip karo — sirf token chahiye
+  let req_token = document.getElementById('kite-request-token').value.trim();
+  req_token = req_token.split('&')[0].replace('request_token=','').trim();
+  const msg       = document.getElementById('kite-token-msg');
+  if (!req_token) { msg.textContent = 'request_token paste karo pehle'; return; }
+  msg.textContent = 'Exchanging...'; msg.style.color = '#8b949e';
+  const r = await fetch('/api/kite-exchange-token', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({request_token: req_token})
+  }).then(r=>r.json()).catch(e=>({ok:false, error: e.toString()}));
+
+  if (r.ok) {
+    msg.textContent = '✅ Kite token saved! Orders ab Zerodha pe jayenge.';
+    msg.style.color = '#3fb950';
+    document.getElementById('kite-request-token').value = '';
+  } else {
+    msg.textContent = '❌ ' + (r.error || 'Exchange failed');
+    msg.style.color = '#f85149';
+  }
+}
+
 // ── CLOCK & LOOP ──
 setInterval(()=>{
   document.getElementById('clock').innerText = new Date().toLocaleTimeString('en-IN');
@@ -1119,11 +1251,117 @@ loadAll();
     position:'fixed', bottom:'24px', right:'24px', width:'268px',
     background:'#161b22', border:'1px solid #30363d', borderRadius:'10px',
     padding:'14px', fontFamily:'monospace', zIndex:'9999',
-    boxShadow:'0 4px 24px rgba(0,0,0,0.6)', userSelect:'none'
+    boxShadow:'0 4px 24px rgba(0,0,0,0.6)', userSelect:'none', display:'none'
   });
   document.body.appendChild(panel);
+  window.qoToggle = () => { panel.style.display = panel.style.display === 'none' ? '' : 'none'; if(panel.style.display!=='none') qoFetchLtp(); };
+
+  // ── WATCH PANEL ────────────────────────────────────────────────────────────
+  // Floating panel — RSI candidates jo entry ke paas hain
+  // Zones: OVERSOLD(<30 CE zone), NEAR_OS(30-35), OVERBOUGHT(>70 PE zone), NEAR_OB(65-70)
+  const wp = document.createElement('div');
+  wp.id = 'watch-panel';
+  Object.assign(wp.style, {
+    position:'fixed', top:'60px', right:'16px', width:'340px',
+    background:'#161b22', border:'1px solid #30363d', borderRadius:'10px',
+    padding:'14px', zIndex:'9998', boxShadow:'0 4px 24px rgba(0,0,0,0.6)',
+    display:'none', fontFamily:'monospace'
+  });
+  wp.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+      <span style="color:#58a6ff;font-size:12px;font-weight:bold;letter-spacing:1px">👁 RSI WATCH</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span id="watch-updated" style="font-size:10px;color:#8b949e">—</span>
+        <button onclick="watchFetch()" style="background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:11px;padding:2px 7px;cursor:pointer">↻</button>
+        <button onclick="watchToggle()" style="background:none;border:none;color:#8b949e;font-size:14px;cursor:pointer">✕</button>
+      </div>
+    </div>
+    <div style="font-size:10px;color:#8b949e;margin-bottom:8px;display:flex;gap:10px">
+      <span style="color:#3fb950">■ CE zone</span>
+      <span style="color:#f85149">■ PE zone</span>
+      <span style="color:#d29922">■ Approaching</span>
+      <span style="color:#8b949e">■ Neutral</span>
+    </div>
+    <div id="watch-body" style="max-height:400px;overflow-y:auto">
+      <div style="color:#8b949e;font-size:12px;text-align:center;padding:20px">Loading...</div>
+    </div>`;
+  document.body.appendChild(wp);
+
+  let _watchTimer = null;
+
+  window.watchFetch = function() {
+    fetch('/api/watch')
+      .then(r => r.json())
+      .then(d => {
+        const body = document.getElementById('watch-body');
+        const upd  = document.getElementById('watch-updated');
+        if (d.updated) upd.textContent = d.updated.slice(11,16) + ' IST';
+
+        const rows = (d.symbols || []);
+        if (!rows.length) {
+          body.innerHTML = '<div style="color:#8b949e;font-size:12px;text-align:center;padding:20px">No data yet — wait for next scan cycle</div>';
+          return;
+        }
+
+        // Zone → visual style
+        const zStyle = {
+          OVERSOLD:   {bg:'rgba(63,185,80,0.12)',  border:'#3fb950', badge:'CE ZONE', bc:'#3fb950'},
+          NEAR_OS:    {bg:'rgba(210,153,34,0.10)', border:'#d29922', badge:'CE SOON', bc:'#d29922'},
+          OVERBOUGHT: {bg:'rgba(248,81,73,0.12)',  border:'#f85149', badge:'PE ZONE', bc:'#f85149'},
+          NEAR_OB:    {bg:'rgba(210,153,34,0.10)', border:'#d29922', badge:'PE SOON', bc:'#d29922'},
+          NEUTRAL:    {bg:'transparent',            border:'#21262d', badge:'',        bc:'#555'},
+        };
+
+        // Group by strategy — header dikhao jab strategy change ho
+        let lastStrat = null;
+        let html = '';
+        const interesting = rows.filter(r => r.zone !== 'NEUTRAL');
+        const neutral     = rows.filter(r => r.zone === 'NEUTRAL');
+
+        [...interesting, ...neutral].forEach(r => {
+          const z    = zStyle[r.zone] || zStyle.NEUTRAL;
+          const pos  = r.pos === 1 ? '<span style="color:#3fb950;font-size:10px">▲CE</span>'
+                     : r.pos === -1 ? '<span style="color:#f85149;font-size:10px">▼PE</span>' : '';
+          const sig  = r.signal === 'EXIT'  ? '<span style="color:#8b949e;font-size:10px">EXIT</span>'
+                     : r.signal === 'BUY'   ? '<span style="color:#3fb950;font-size:10px">★BUY</span>'
+                     : r.signal === 'SELL'  ? '<span style="color:#f85149;font-size:10px">★SELL</span>' : '';
+          const strat = r.strategy || '';
+
+          // Strategy group header
+          if (strat !== lastStrat) {
+            lastStrat = strat;
+            html += `<div style="color:#58a6ff;font-size:10px;font-weight:bold;letter-spacing:1px;
+                                 padding:6px 4px 2px;margin-top:${html?'8px':'0'}">${strat.toUpperCase()}</div>`;
+          }
+
+          html += `
+          <div style="display:flex;align-items:center;gap:6px;padding:5px 8px;margin-bottom:3px;
+                      background:${z.bg};border:1px solid ${z.border};border-radius:6px">
+            <span style="width:88px;color:#e6edf3;font-size:12px;font-weight:bold;flex-shrink:0">${r.sym}</span>
+            <span style="width:52px;color:#8b949e;font-size:11px;text-align:right;flex-shrink:0">${r.close}</span>
+            <span style="width:34px;color:#e6edf3;font-size:12px;font-weight:bold;text-align:right;flex-shrink:0">${r.rsi ?? ''}</span>
+            <span style="flex:1;font-size:10px;color:${z.bc};font-weight:bold">${z.badge}</span>
+            <span>${pos}${sig}</span>
+          </div>`;
+        });
+        body.innerHTML = html;
+      })
+      .catch(() => {});
+  };
+
+  window.watchToggle = function() {
+    wp.style.display = wp.style.display === 'none' ? '' : 'none';
+    if (wp.style.display !== 'none') {
+      watchFetch();
+      // auto-refresh har 30s jab panel open ho
+      _watchTimer = setInterval(() => watchFetch(), 30000);
+    } else {
+      clearInterval(_watchTimer);
+    }
+  };
 
   // drag
+
   const hdr = document.getElementById('qo-header');
   let dragging=false, dx=0, dy=0;
   hdr.addEventListener('mousedown', e=>{
@@ -1148,7 +1386,7 @@ loadAll();
   const _qoElTs    = document.getElementById('qo-ts');
 
   let _qoAutoRefresh = null;
-  document.getElementById('qo-close').onclick = ()=>{ clearInterval(_qoAutoRefresh); panel.remove(); };
+  document.getElementById('qo-close').onclick = ()=>{ panel.style.display = 'none'; };
 
   let _qoLtpTimer = null;
   async function qoFetchLtp() {
@@ -1291,6 +1529,116 @@ let _pineData = [];
 let _pineSortKey = 'version';
 let _pineSortAsc = false;
 
+// ── Pine inner sub-tabs ───────────────────────────────────────────────────────
+// ── Pine inner sub-tabs ───────────────────────────────────────────────────────
+function pineSwitchSub(tab) {
+  document.getElementById('pine-panel-editor').style.display  = tab === 'editor'  ? '' : 'none';
+  document.getElementById('pine-panel-history').style.display = tab === 'history' ? '' : 'none';
+  ['editor','history'].forEach(t => {
+    const el = document.getElementById('pine-sub-' + t);
+    el.style.borderBottomColor = tab === t ? '#1f6feb' : 'transparent';
+    el.style.color             = tab === t ? '#e6edf3' : '#8b949e';
+  });
+  if (tab === 'history') pineLoadHistory();
+}
+
+// ── Run Modal ─────────────────────────────────────────────────────────────────
+let _runMode = 'paper';
+let _runStrategyId = '';
+const _RUN_PARAM_LABELS = {
+  rsi_period: 'RSI Period', overbought: 'Overbought (OB)',
+  oversold: 'Oversold (OS)', rsi_exit: 'Exit at RSI',
+  qty: 'Qty (lots)', timeframe: 'Timeframe',
+  max_trades_per_symbol: 'Max Trades', instrument: 'Instrument'
+};
+const _RUN_PARAM_DEFAULTS = {
+  rsi_period: 14, overbought: 70, oversold: 30, rsi_exit: 50,
+  qty: 1, timeframe: '5m', max_trades_per_symbol: 2, instrument: 'options'
+};
+
+async function runModalOpen(stratId, versionName, timestamp, pyFile) {
+  _runStrategyId = stratId || versionName.toLowerCase().replace(/[^a-z0-9]/g,'_');
+  document.getElementById('run-modal-title').textContent = stratId;
+  document.getElementById('run-modal-sub').textContent   = versionName + (timestamp ? '  ·  ' + timestamp : '');
+  document.getElementById('run-modal-msg').textContent     = '';
+  document.getElementById('run-modal-cfg-msg').textContent = '';
+
+  // load config + status in parallel
+  const [cfgR, stR] = await Promise.all([fetch('/api/config'), fetch('/api/run-status')]);
+  const cfg = await cfgR.json();
+  const st  = await stR.json();
+
+  _runModalUpdateStatus(st[stratId] || false);
+  runModalMode('paper');
+
+  const sc = cfg[stratId] || {};
+  const params = { ..._RUN_PARAM_DEFAULTS, ...sc };
+  document.getElementById('run-modal-params').innerHTML = Object.entries(params).map(([k, v]) => {
+    const label = _RUN_PARAM_LABELS[k] || k;
+    return `<div>
+      <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">${label}</label>
+      <input id="rmp-${k}" value="${v}" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
+    </div>`;
+  }).join('');
+
+  const ov = document.getElementById('run-modal-overlay');
+  ov.style.display = 'flex';
+}
+
+function runModalClose() {
+  document.getElementById('run-modal-overlay').style.display = 'none';
+}
+
+function runModalMode(m) {
+  _runMode = m;
+  document.getElementById('run-modal-paper').style.background = m === 'paper' ? '#d29922' : 'transparent';
+  document.getElementById('run-modal-paper').style.color      = m === 'paper' ? '#0d1117' : '#8b949e';
+  document.getElementById('run-modal-live').style.background  = m === 'live'  ? '#f85149' : 'transparent';
+  document.getElementById('run-modal-live').style.color       = m === 'live'  ? '#fff'    : '#8b949e';
+}
+
+function _runModalUpdateStatus(running) {
+  const p = document.getElementById('run-modal-status');
+  p.textContent      = running ? '● Running' : '● Stopped';
+  p.style.background = running ? '#23863633' : '#30363d';
+  p.style.color      = running ? '#3fb950'   : '#8b949e';
+}
+
+async function runModalStart() {
+  const r = await fetch(`/api/start?s=${_runStrategyId}&mode=${_runMode}`, {method:'POST'});
+  const d = await r.json();
+  const msg = document.getElementById('run-modal-msg');
+  msg.textContent = d.msg;
+  setTimeout(() => { msg.textContent = ''; }, 4000);
+  _runModalUpdateStatus(true);
+}
+
+async function runModalStop() {
+  const r = await fetch(`/api/stop?s=${_runStrategyId}`, {method:'POST'});
+  const d = await r.json();
+  const msg = document.getElementById('run-modal-msg');
+  msg.textContent = d.msg;
+  setTimeout(() => { msg.textContent = ''; }, 4000);
+  _runModalUpdateStatus(false);
+}
+
+async function runModalSaveConfig() {
+  const inputs = document.querySelectorAll('[id^="rmp-"]');
+  const patch = {};
+  inputs.forEach(inp => {
+    const k = inp.id.replace('rmp-', '');
+    const v = inp.value;
+    patch[k] = isNaN(v) || v === '' ? v : Number(v);
+  });
+  const r = await fetch('/api/config');
+  const cfg = await r.json();
+  cfg[_runStrategyId] = { ...(cfg[_runStrategyId] || {}), ...patch };
+  await fetch('/api/config', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
+  const msg = document.getElementById('run-modal-cfg-msg');
+  msg.textContent = '✅ Saved';
+  setTimeout(() => { msg.textContent = ''; }, 3000);
+}
+
 async function pineLoadHistory() {
   const r = await fetch('/api/pine/history');
   _pineData = await r.json();
@@ -1329,11 +1677,14 @@ function pineRenderTable() {
   });
 
   el.innerHTML = groups.map(g => {
-    const headerRow = `<tr><td colspan="8" style="padding:10px 10px 4px;color:#8b949e;font-size:11px;font-weight:600;letter-spacing:0.5px;border-bottom:1px solid #30363d;border-top:2px solid #30363d;background:#161b2288">${g.name}</td></tr>`;
+    const headerRow = `<tr><td colspan="10" style="padding:10px 10px 4px;color:#8b949e;font-size:11px;font-weight:600;letter-spacing:0.5px;border-bottom:1px solid #30363d;border-top:2px solid #30363d;background:#161b2288">${g.name}</td></tr>`;
     const rows = g.items.map(v => {
     const acc = v.accuracy != null ? v.accuracy : null;
     const accColor = acc >= 85 ? '#3fb950' : acc >= 60 ? '#d29922' : acc != null ? '#f85149' : '#8b949e';
     const accCell = acc != null ? `<span style="color:${accColor};font-weight:700">${acc}%</span>` : `<span style="color:#8b949e">—</span>`;
+    const author = v.author || 'Arsalan';
+    const isClaud = author === 'Claude';
+    const authorBadge = `<span style="background:${isClaud ? '#6e40c922' : '#d2992222'};color:${isClaud ? '#a371f7' : '#d29922'};font-size:10px;padding:2px 8px;border-radius:10px;font-weight:600;white-space:nowrap">${isClaud ? '🤖 Claude' : '👤 Arsalan'}</span>`;
     const pyFile = v.py_file && v.py_file !== 'none' ? v.py_file : null;
     const pyBadge = pyFile ? `<span style="background:#1f6feb22;color:#1f6feb;font-size:10px;padding:1px 6px;border-radius:3px;font-family:monospace">${pyFile}</span>` : `<span style="background:#30363d33;color:#8b949e;font-size:10px;padding:1px 6px;border-radius:3px">not converted</span>`;
     const reportCell = v.report_stats
@@ -1342,6 +1693,7 @@ function pineRenderTable() {
     const sv = v.strat_version || v.version;
     return `<tr style="border-bottom:1px solid #21262d" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
       <td style="padding:10px;color:#3fb950;font-weight:700;white-space:nowrap;cursor:pointer" onclick="pineLoadVersion(${v.version})" title="Click karke code textarea mein load karo">v${sv}</td>
+      <td style="padding:10px">${authorBadge}</td>
       <td style="padding:10px">${pyBadge}</td>
       <td style="padding:10px;color:#8b949e;font-size:12px;white-space:nowrap">${v.timestamp}</td>
       <td style="padding:10px;min-width:200px">
@@ -1361,6 +1713,11 @@ function pineRenderTable() {
       <td style="padding:10px;text-align:center">${reportCell}</td>
       <td style="padding:10px;text-align:center" id="pine-imgcell-${v.version}">
         <button onclick="pineOpenImages(${v.version})" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'" title="Screenshots dekho / add karo">🖼 <span id="pine-imgcount-${v.version}">…</span></button>
+      </td>
+      <td style="padding:10px;text-align:center">
+        <button onclick="runModalOpen('${pyFile ? pyFile.replace('strategies/','').replace('.py','') : ''}','${v.name.replace(/'/g,"\\'")} v${sv}','${v.timestamp}','${pyFile||''}')"
+          style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap"
+          onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">▶ Run</button>
       </td>
       <td style="padding:10px;text-align:center;white-space:nowrap">
         <button onclick="pineCopyCode(${v.version})" title="Code clipboard mein copy karo" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">📋 Copy</button>
@@ -1412,25 +1769,45 @@ async function pineSave() {
 }
 
 // ── Image preview strip (before save) ────────────────────────────────────────
+let _pinePreviewFiles = [];   // mutable list before save
+
 function pineImgPreview(files) {
+  _pinePreviewFiles = Array.from(files);
+  _pineRenderPreview();
+}
+
+function _pineRenderPreview() {
   const wrap = document.getElementById('pine-img-preview');
   wrap.innerHTML = '';
-  Array.from(files).forEach((f, i) => {
+  _pinePreviewFiles.forEach((f, i) => {
     const url = URL.createObjectURL(f);
     const div = document.createElement('div');
     div.style.cssText = 'position:relative;width:80px;height:60px;border-radius:4px;overflow:hidden;border:1px solid #30363d;flex-shrink:0';
-    div.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;display:block" onclick="_pineLbShowBlobs(${i})">`;
+    div.innerHTML = `
+      <img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;display:block" onclick="_pineLbShowBlobs(${i})">
+      <button onclick="_pineRemovePreview(${i})" title="Remove"
+        style="position:absolute;top:2px;right:2px;width:18px;height:18px;background:#f85149cc;border:none;
+               border-radius:50%;color:#fff;font-size:11px;line-height:1;cursor:pointer;padding:0;
+               display:flex;align-items:center;justify-content:center">✕</button>`;
     wrap.appendChild(div);
   });
+  // sync file input with current list
+  const dt = new DataTransfer();
+  _pinePreviewFiles.forEach(f => dt.items.add(f));
+  document.getElementById('pine-img-input').files = dt.files;
+}
+
+function _pineRemovePreview(idx) {
+  _pinePreviewFiles.splice(idx, 1);
+  _pineRenderPreview();
 }
 
 function pineImgDrop(e) {
   e.preventDefault();
   document.getElementById('pine-img-drop').style.borderColor = '#30363d';
-  const dt = new DataTransfer();
-  for (const f of e.dataTransfer.files) if (f.type.startsWith('image/')) dt.items.add(f);
-  document.getElementById('pine-img-input').files = dt.files;
-  pineImgPreview(dt.files);
+  const incoming = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+  _pinePreviewFiles = [..._pinePreviewFiles, ...incoming];
+  _pineRenderPreview();
 }
 
 // ── Lightbox ─────────────────────────────────────────────────────────────────

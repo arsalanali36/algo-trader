@@ -24,12 +24,17 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 BASE_DIR      = Path(__file__).resolve().parent
+TRADERS_DIR   = BASE_DIR / "_TRADERS"   # actual trading runner scripts live here
 TC_FILE       = BASE_DIR / "nifty_config.json"
 LOG_FILE      = BASE_DIR / "nifty_trader.log"
 RESULTS_DIR   = BASE_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
 PYTHON        = str(BASE_DIR / "venv" / "bin" / "python")
-TRADER_SCRIPT = str(BASE_DIR / "nifty_ema_trader.py")
+TRADER_SCRIPT = str(TRADERS_DIR / "nifty_ema_trader.py")
+
+# Allow "import range_trader" etc. from _TRADERS/ without moving shared utils
+import sys as _sys
+_sys.path.insert(0, str(TRADERS_DIR))
 
 app = Flask(__name__)
 
@@ -70,24 +75,25 @@ def _feed_subscribe(sym_sec_pairs):
 
 # ── API Routes ─────────────────────────────────────────────────────────────────
 
-RSI_SCRIPT   = str(BASE_DIR / "rsi_trader.py")
-RSI_LOG      = BASE_DIR / "rsi_trader.log"
-RSI_CFG      = BASE_DIR / "rsi_config.json"
-RANGE_SCRIPT = str(BASE_DIR / "range_trader.py")
-RANGE_LOG    = BASE_DIR / "range_trader.log"
+RSI_SCRIPT   = str(TRADERS_DIR / "01_rsi_v1.py")
+RSI_LOG      = BASE_DIR / "logs" / "rsi_v1.log"
+RSI_CFG      = BASE_DIR / "nifty_config.json"
+RANGE_SCRIPT = str(TRADERS_DIR / "range_trader.py")
+RANGE_LOG    = BASE_DIR / "logs" / "range_trader.log"
 RANGE_CFG    = BASE_DIR / "range_config.json"
-UNIV_SCRIPT  = str(BASE_DIR / "universe_trader.py")
-UNIV_LOG     = BASE_DIR / "universe_trader.log"
+UNIV_SCRIPT  = str(TRADERS_DIR / "universe_trader.py")
+UNIV_LOG     = BASE_DIR / "logs" / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
 
 STRATEGIES = {
     "ema":      {"script": TRADER_SCRIPT, "log": LOG_FILE,  "cfg": TC_FILE,   "grep": "nifty_ema_trader"},
     "rsi":      {"script": RSI_SCRIPT,    "log": RSI_LOG,   "cfg": RSI_CFG,   "grep": "rsi_trader"},
+    "rsi_v1":   {"script": RSI_SCRIPT,    "log": BASE_DIR / "logs/rsi_v1.log", "cfg": TC_FILE, "grep": "01_rsi_v1"},
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
 }
 # Aliases — custom variation names map to base strategy
-STRATEGY_ALIASES = {"ARS": "range"}
+STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
 
 def _base(strategy):
     first = strategy.split('_')[0] if '_' in strategy else strategy
@@ -335,6 +341,107 @@ def api_set_token():
         return jsonify({"ok": True, "msg": "✅ Token saved!"})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+@app.route('/api/kite-login-url')
+def api_kite_login_url():
+    """Zerodha login URL return karo — user browser mein kholta hai."""
+    try:
+        cfg     = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+        api_key = cfg.get("kite_api_key", "")
+        if not api_key:
+            return jsonify({"url": None, "error": "kite_api_key not set in config.json"})
+        url = f"https://kite.trade/connect/login?api_key={api_key}&v=3"
+        return jsonify({"url": url})
+    except Exception as e:
+        return jsonify({"url": None, "error": str(e)})
+
+
+@app.route('/api/kite-exchange-token', methods=['POST'])
+def api_kite_exchange_token():
+    """
+    request_token → access_token exchange karo via Kite API.
+    access_token config.json mein save hota hai.
+    """
+    req_token = (request.get_json() or {}).get("request_token", "").strip()
+    if not req_token:
+        return jsonify({"ok": False, "error": "request_token missing"})
+    try:
+        _sys.path.insert(0, str(TRADERS_DIR))
+        _sys.path.insert(0, str(BASE_DIR / "brokers"))
+        import kite_broker
+        access_token, err = kite_broker.exchange_request_token(req_token)
+        if err:
+            return jsonify({"ok": False, "error": err})
+        return jsonify({"ok": True, "msg": "Kite access token saved"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/kite-save-key', methods=['POST'])
+def api_kite_save_key():
+    """API key + secret config.json mein save karo (one-time setup)."""
+    data   = request.get_json() or {}
+    api_key    = data.get("api_key", "").strip()
+    api_secret = data.get("api_secret", "").strip()
+    if not api_key or not api_secret:
+        return jsonify({"ok": False, "error": "api_key and api_secret required"})
+    try:
+        cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+        cfg["kite_api_key"]    = api_key
+        cfg["kite_api_secret"] = api_secret
+        CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/kite-test-order', methods=['POST'])
+def api_kite_test_order():
+    """NIFTY ATM CE test order (1 lot) — Kite F&O permission verify karne ke liye."""
+    try:
+        _sys.path.insert(0, str(BASE_DIR / "brokers"))
+        _sys.path.insert(0, str(BASE_DIR))
+        import kite_broker, importlib; importlib.reload(kite_broker)
+        import dhan_master
+        kite = kite_broker._load_kite()
+
+        # NIFTY spot price se ATM strike nikalo
+        import json, requests
+        cfg = json.loads((BASE_DIR / "data" / "config.json").read_text())
+        headers = {"access-token": cfg["jwt_token"], "client-id": cfg["client_id"], "Content-Type": "application/json"}
+        r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                          json={"IDX_I": [13]}, headers=headers, timeout=5)
+        nifty_price = float(r.json()["data"]["IDX_I"]["13"]["last_price"])
+        atm = round(nifty_price / 50) * 50
+
+        # Dhan master se ATM CE — returns (sec_id, trad_sym, lot_size)
+        sec_id, trad_sym, lot_size = dhan_master.get_option_contract("NIFTY", atm, "CE")
+        if not trad_sym:
+            return jsonify({"ok": False, "error": f"ATM CE contract nahi mila (NIFTY {atm} CE)"})
+
+        # Kite format mein convert karo
+        kite_sym = kite_broker.dhan_sym_to_kite(trad_sym)
+
+        # LTP Dhan se lo (Personal app mein Kite quotes nahi)
+        r2 = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                           json={"NSE_FNO": [int(sec_id)]}, headers=headers, timeout=5)
+        ltp = float(r2.json()["data"]["NSE_FNO"][str(sec_id)]["last_price"])
+
+        order_id = kite.place_order(
+            variety=kite.VARIETY_REGULAR,
+            exchange=kite.EXCHANGE_NFO,
+            tradingsymbol=kite_sym,
+            transaction_type=kite.TRANSACTION_TYPE_BUY,
+            quantity=lot_size,  # 1 lot
+            product=kite.PRODUCT_MIS,
+            order_type=kite.ORDER_TYPE_LIMIT,
+            price=ltp,
+            tag="KITE_TEST",
+        )
+        return jsonify({"ok": True, "order_id": order_id, "symbol": kite_sym, "ltp": ltp, "lot_size": lot_size, "msg": f"{kite_sym} {lot_size}qty BUY LIMIT@{ltp} — orderId={order_id}"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
 
 SCRIP_MASTER = BASE_DIR / "data" / "api-scrip-master.csv"
 
@@ -820,7 +927,12 @@ def api_pine_save():
     ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     ts = ist.strftime('%Y-%m-%d %H:%M IST')
     strat_version = sum(1 for v in versions if v.get('name') == strat_name) + 1
-    entry = {"version": version, "name": strat_name, "strat_version": strat_version, "timestamp": ts, "desc": desc}
+    author  = request.json.get('author', 'Arsalan').strip()
+    py_file = request.json.get('py_file', '').strip() or None
+    entry = {"version": version, "name": strat_name, "strat_version": strat_version,
+             "timestamp": ts, "desc": desc, "author": author}
+    if py_file:
+        entry["py_file"] = py_file
     versions.append(entry)
     ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
     (pine_dir / 'range_chain.pine').write_text(code, encoding='utf-8')
@@ -949,6 +1061,67 @@ def pine_img_serve(version, fname):
         return 'not found', 404
     mime = mimetypes.guess_type(str(fpath))[0] or 'image/png'
     return fpath.read_bytes(), 200, {'Content-Type': mime}
+
+@app.route('/api/pine/strategies')
+def api_pine_strategies():
+    """Return unique strategies that have a py_file, for the Run tab dropdown."""
+    import json as _json
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify([])
+    versions = _json.loads(ver_file.read_text())
+    seen, result = set(), []
+    for v in reversed(versions):
+        py = v.get('py_file', '')
+        if not py:
+            continue
+        # derive strategy id: "strategies/rsi_v1.py" → "rsi_v1"
+        sid = py.replace('strategies/', '').replace('.py', '')
+        if sid in seen:
+            continue
+        seen.add(sid)
+        result.append({"id": sid, "py_file": py, "name": v.get('name', sid),
+                        "version": v.get('version'), "timestamp": v.get('timestamp', '')})
+    return jsonify(result)
+
+@app.route('/api/run-status')
+def api_run_status():
+    """Return running status of all known strategy ids."""
+    status = {}
+    for sid in list(STRATEGIES.keys()):
+        status[sid] = bool(get_pid(sid))
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        for sid in cfg:
+            if sid not in status:
+                status[sid] = bool(get_pid(sid))
+    except Exception:
+        pass
+    return jsonify(status)
+
+@app.route('/api/watch')
+def api_watch():
+    """Merge all *_watch.json files — one entry per running strategy."""
+    data_dir = BASE_DIR / "data"
+    all_rows  = []
+    latest_ts = None
+    for f in sorted(data_dir.glob("*_watch.json")):
+        try:
+            d   = json.loads(f.read_text())
+            sid = d.get("strategy", f.stem.replace("_watch", ""))
+            ts  = d.get("updated")
+            if ts and (latest_ts is None or ts > latest_ts):
+                latest_ts = ts
+            for row in d.get("symbols", []):
+                row["strategy"] = sid   # tag each row with its strategy
+                all_rows.append(row)
+        except Exception:
+            continue
+    # sort: interesting zones first, then by RSI distance from zone
+    zone_order = {"OVERSOLD": 0, "OVERBOUGHT": 1, "NEAR_OS": 2, "NEAR_OB": 3, "NEUTRAL": 4}
+    all_rows.sort(key=lambda r: (zone_order.get(r.get("zone","NEUTRAL"), 9), r.get("rsi", 50)))
+    return jsonify({"updated": latest_ts, "symbols": all_rows})
+
 
 @app.route('/api/downloader-alerts')
 def api_downloader_alerts():

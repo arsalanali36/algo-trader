@@ -1,0 +1,115 @@
+// ╔══════════════════════════════════════════════════════════════════════════╗
+// ║  01_rsi_v1.pine  —  RSI Oversold/Overbought Strategy  (Version 1)      ║
+// ║  Python counterpart : ../_TRADERS/01_rsi_v1.py                         ║
+// ╚══════════════════════════════════════════════════════════════════════════╝
+//
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │  CONDITIONS SUMMARY                                                     │
+// │                                                                         │
+// │  LONG ENTRY  : RSI < 30 (oversold) ke baad RSI > 30 cross kare         │
+// │                → strategy.long  (real life: BUY ATM CE)                │
+// │                                                                         │
+// │  SHORT ENTRY : RSI > 70 (overbought) ke baad RSI < 70 cross kare       │
+// │                → strategy.short  (real life: BUY ATM PE)               │
+// │                                                                         │
+// │  LONG EXIT   : RSI >= 50  → CE close karo                              │
+// │  SHORT EXIT  : RSI <= 50  → PE close karo                              │
+// │                                                                         │
+// │  NOTE: pyramiding=0 → ek waqt mein sirf ek position allowed            │
+// └─────────────────────────────────────────────────────────────────────────┘
+//
+// HOW TO USE:
+//   1. Pine Editor mein paste karo → "Add to chart"
+//   2. RSI pane mein CE/PE labels dekho
+//   3. Strategy Tester → List of Trades → P&L check karo
+//   4. Signals sahi lage → Python trader mein same settings dalo
+
+//@version=5
+strategy("01 RSI v1 [Khazana]",
+         overlay      = false,    // RSI apne pane mein dikhega
+         pyramiding   = 0,        // ek waqt mein sirf ek position
+         default_qty_type  = strategy.fixed,
+         default_qty_value = 1,
+         initial_capital   = 100000,
+         commission_value  = 0.05)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 1 — USER SETTINGS
+//  TV ke right panel mein yeh settings dikhti hain (change kar sakte ho)
+// ═══════════════════════════════════════════════════════════════════════════
+
+rsi_period = input.int  (14, "RSI Period",    minval=2, maxval=50)
+oversold   = input.float(30, "Oversold (CE)", step=1)   // LONG ENTRY level
+overbought = input.float(70, "Overbought (PE)", step=1) // SHORT ENTRY level
+exit_mid   = input.float(50, "Exit at RSI",  step=1)    // exit level
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 2 — CORE INDICATOR
+//  ta.rsi() = Wilder smoothing (Python _compute_rsi se exactly match karta)
+// ═══════════════════════════════════════════════════════════════════════════
+
+rsi = ta.rsi(close, rsi_period)
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 3 — SIGNAL LOGIC  ★ (conditions yahan hain)
+//
+//  LONG ENTRY  : RSI < 30 ke baad > 30 cross (ta.crossover)
+//  SHORT ENTRY : RSI > 70 ke baad < 70 cross (ta.crossunder)
+//  LONG EXIT   : RSI >= 50 aur position long hai
+//  SHORT EXIT  : RSI <= 50 aur position short hai
+// ═══════════════════════════════════════════════════════════════════════════
+
+// ta.crossover(A, B)  : pehle A < B tha, ab A > B hua
+// ta.crossunder(A, B) : pehle A > B tha, ab A < B hua
+long_entry  = ta.crossover (rsi, oversold)    // RSI 30 se upar aaya  → BUY CE
+short_entry = ta.crossunder(rsi, overbought)  // RSI 70 se neeche aaya → BUY PE
+
+long_exit   = strategy.position_size > 0 and rsi >= exit_mid   // CE exit
+short_exit  = strategy.position_size < 0 and rsi <= exit_mid   // PE exit
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 4 — ORDERS
+// ═══════════════════════════════════════════════════════════════════════════
+
+if long_entry
+    strategy.entry("CE", strategy.long)
+
+if short_entry
+    strategy.entry("PE", strategy.short)
+
+if long_exit
+    strategy.close("CE", comment="EXIT @50")
+
+if short_exit
+    strategy.close("PE", comment="EXIT @50")
+
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 5 — VISUALS
+//  RSI line + zones + entry labels
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Zone lines
+hline(overbought, "OB",  color=color.new(color.red,   20), linestyle=hline.style_dashed)
+hline(oversold,   "OS",  color=color.new(color.green, 20), linestyle=hline.style_dashed)
+hline(exit_mid,   "Mid", color=color.gray,                  linestyle=hline.style_dotted)
+
+// RSI line — zone ke hisaab se color change karta hai
+rsi_color = rsi >= overbought ? color.red   :
+            rsi <= oversold   ? color.green :
+            color.yellow
+plot(rsi, "RSI", color=rsi_color, linewidth=2)
+
+// Background flash jab signal aaye
+bgcolor(long_entry  ? color.new(color.green, 85) : na, title="CE Signal")
+bgcolor(short_entry ? color.new(color.red,   85) : na, title="PE Signal")
+
+// Labels on RSI pane
+plotshape(long_entry,  title="CE", style=shape.labelup,   location=location.bottom,
+          color=color.green, text="CE", textcolor=color.white, size=size.small)
+plotshape(short_entry, title="PE", style=shape.labeldown, location=location.top,
+          color=color.red,   text="PE", textcolor=color.white, size=size.small)

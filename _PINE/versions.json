@@ -1,0 +1,11 @@
+[
+  {
+    "version": 1,
+    "name": "RSI Simple v1 [NIFTY]",
+    "strat_version": 1,
+    "timestamp": "2026-06-19 00:00 IST",
+    "desc": "Scratch build — RSI(14) crossover/crossunder at OB/OS levels. CE on OS recovery, PE on OB reversal. Exit at RSI=50 mid.",
+    "pine_file": "rsi_v1.pine",
+    "python_file": "strategies/rsi_v1.py"
+  }
+]
