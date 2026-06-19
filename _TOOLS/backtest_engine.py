@@ -36,7 +36,17 @@ import rsi_trader as rsit
 import nifty_ema_trader as emat
 import validate_strategy as vs   # reuse backtest_day (range) + parse_log (TV)
 
-DATA_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Index\NIFTY"
+# Dev machine has the big pre-downloaded NIFTY store at this fixed Windows
+# path (shared by validate_strategy.py / generate_june_mfe.py too) — use it
+# when present. Anywhere else (e.g. the Linux VPS) falls back to a project-
+# local folder that auto_download fills in on demand, so this still works
+# without that path existing.
+_WIN_DATA_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Index\NIFTY"
+if os.path.isdir(_WIN_DATA_DIR):
+    DATA_DIR = _WIN_DATA_DIR
+else:
+    DATA_DIR = os.path.join(BASE_DIR, "_TRADING_DATA", "Index", "NIFTY")
+    os.makedirs(DATA_DIR, exist_ok=True)
 TF_MIN   = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
 EXIT_HM  = dtime(15, 15)
 CONFIG_FILE = os.path.join(BASE_DIR, "data", "config.json")   # Dhan jwt_token + client_id
