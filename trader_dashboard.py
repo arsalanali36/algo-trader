@@ -906,6 +906,50 @@ def api_pine_history():
         return jsonify([])
     return jsonify(list(reversed(_json.loads(ver_file.read_text()))))
 
+@app.route('/api/pine/images/<int:version>', methods=['GET'])
+def api_pine_images_get(version):
+    img_dir = BASE_DIR / '_PINE' / f'v{version}_imgs'
+    if not img_dir.exists():
+        return jsonify([])
+    files = sorted(img_dir.glob('*'), key=lambda f: f.stat().st_mtime)
+    return jsonify([f'/pine/img/{version}/{f.name}' for f in files if f.is_file()])
+
+@app.route('/api/pine/images/<int:version>', methods=['POST'])
+def api_pine_images_upload(version):
+    import uuid, imghdr
+    img_dir = BASE_DIR / '_PINE' / f'v{version}_imgs'
+    img_dir.mkdir(parents=True, exist_ok=True)
+    saved = []
+    for f in request.files.getlist('images'):
+        ext = Path(f.filename).suffix.lower() or '.png'
+        fname = f'{uuid.uuid4().hex}{ext}'
+        dest = img_dir / fname
+        f.save(str(dest))
+        saved.append(f'/pine/img/{version}/{fname}')
+    return jsonify({'ok': True, 'urls': saved})
+
+@app.route('/api/pine/images/<int:version>/<fname>', methods=['DELETE'])
+def api_pine_images_delete(version, fname):
+    import re
+    if re.search(r'[/\\]', fname):
+        return jsonify({'ok': False}), 400
+    fpath = BASE_DIR / '_PINE' / f'v{version}_imgs' / fname
+    if fpath.exists():
+        fpath.unlink()
+    return jsonify({'ok': True})
+
+@app.route('/pine/img/<int:version>/<fname>')
+def pine_img_serve(version, fname):
+    import re, mimetypes
+    if re.search(r'[/\\]', fname):
+        return 'invalid', 400
+    img_dir = BASE_DIR / '_PINE' / f'v{version}_imgs'
+    fpath = img_dir / fname
+    if not fpath.exists():
+        return 'not found', 404
+    mime = mimetypes.guess_type(str(fpath))[0] or 'image/png'
+    return fpath.read_bytes(), 200, {'Content-Type': mime}
+
 @app.route('/api/downloader-alerts')
 def api_downloader_alerts():
     alert_file = BASE_DIR / "data" / "downloader_alert.json"

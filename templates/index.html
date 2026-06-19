@@ -196,6 +196,18 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
   <textarea id="pine-desc" placeholder="Notes / kya badla is version mein... (optional)" style="width:100%;height:60px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;margin-top:8px"></textarea>
 
+  <!-- Image attach area -->
+  <div id="pine-img-drop" onclick="document.getElementById('pine-img-input').click()"
+       ondragover="event.preventDefault();this.style.borderColor='#58a6ff'"
+       ondragleave="this.style.borderColor='#30363d'"
+       ondrop="pineImgDrop(event)"
+       style="margin-top:8px;border:1px dashed #30363d;border-radius:6px;padding:12px 16px;cursor:pointer;display:flex;align-items:center;gap:10px;transition:border-color 0.15s">
+    <span style="font-size:18px">🖼</span>
+    <span style="color:#8b949e;font-size:13px">Screenshots attach karo — click ya drag & drop (multiple)</span>
+    <input id="pine-img-input" type="file" multiple accept="image/*" style="display:none" onchange="pineImgPreview(this.files)">
+  </div>
+  <div id="pine-img-preview" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:8px"></div>
+
   <div style="display:flex;gap:10px;margin-top:10px;align-items:center">
     <button class="btn btn-blue" onclick="pineSave()">💾 Save Version</button>
     <div id="pine-save-msg" style="font-size:13px;color:#3fb950"></div>
@@ -213,6 +225,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
             <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:left;min-width:200px">Description</th>
             <th onclick="pineSortBy('accuracy')" style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center;cursor:pointer;white-space:nowrap;user-select:none">Accu% <span id="sort-ind-accuracy"></span></th>
             <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Report</th>
+            <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Images</th>
             <th style="padding:8px 10px;color:#8b949e;font-weight:600;text-align:center">Copy / Del</th>
           </tr>
         </thead>
@@ -641,12 +654,14 @@ function _card(title, color, content) {
 const _pnlTH = (t,a) => `<th style="padding:7px 12px;color:#8b949e;font-size:11px;font-weight:600;border-bottom:1px solid #30363d;text-align:${a||'left'};white-space:nowrap">${t}</th>`;
 const _pnlTD = (t,c,a,x) => `<td style="padding:7px 12px;font-size:12px;color:${c||'#e6edf3'};text-align:${a||'left'};${x||''}">${t}</td>`;
 function _pnlTable(cols, rows) {
-  let h=`<table style="width:100%;border-collapse:collapse"><thead><tr>${cols.map(c=>_pnlTH(c.l,c.a)).join('')}</tr></thead><tbody>`;
+  let h=`<table style="width:100%;border-collapse:collapse;table-layout:fixed"><thead><tr>${cols.map(c=>_pnlTH(c.l,c.a)).join('')}</tr></thead><tbody>`;
   rows.forEach(r=>{h+=`<tr style="border-bottom:1px solid #21262d">${r}</tr>`;});
   return h+'</tbody></table>';
 }
 function _pnlColor(v){return v==null?'#8b949e':v>=0?'#3fb950':'#f85149';}
 function _fmt(v){if(v==null||isNaN(v))return'—';return(v>=0?'+':'')+'₹'+Math.abs(v).toFixed(2);}
+// Only update DOM if content actually changed — avoids blank flash on every poll
+function _setHtml(el, html) { if(el && el.innerHTML !== html) el.innerHTML = html; }
 
 // ── ZERODHA OPTIONS CHARGES ──────────────────────────────────────────────────
 // Ref: zerodha.com/charges (Options intraday/positional)
@@ -786,31 +801,26 @@ async function updatePnl() {
         <div style="color:#8b949e;font-size:11px;margin-top:4px">${totalTrades} trades · ${totalWins}W ${totalLoss}L</div>
       </div>`;
     }
-    summaryEl.innerHTML = sh;
+    _setHtml(summaryEl, sh);
   }
 
   // OPEN POSITIONS
   let allOpen = [];
   keys.forEach(k=>{(allResults[k].open||[]).forEach(p=>allOpen.push({...p,_strat:k}));});
   let posEl = document.getElementById('pnl-positions-section');
+  // Fingerprint: only rebuild table when position LIST changes (not LTP)
+  const _posFingerprint = allOpen.map(d=>`${d.sym}|${d.entry}|${d.entry_price}|${d.qty}|${d._strat}`).join(',');
   if(posEl) {
-    if(!allOpen.length) { posEl.innerHTML=''; }
-    else {
-      let ltpMap = {};
-      try {
-        let sl=[...new Set(allOpen.map(d=>d.sym))].map(encodeURIComponent).join(',');
-        let lr=await fetch('/api/positions-ltp?syms='+sl);
-        let lj=await lr.json();
-        if(lj.ok) ltpMap=lj.ltp_map||{};
-      } catch(e){}
+    if(!allOpen.length) { _setHtml(posEl,''); posEl.dataset.fp=''; }
+    else if(posEl.dataset.fp === _posFingerprint) {
+      // Structure unchanged — skip rebuild, LTP already patching via _fetchPositionLtp
+    } else {
+      posEl.dataset.fp = _posFingerprint;
       if(!_openCols) _loadColPrefs();
       const ov = id => _colVisible(_openCols, id);
       let cols = _openCols.filter(c=>c.on).map(c=>({l:c.l,a:c.a}));
       let rows=allOpen.map(d=>{
-        let entry=d.entry_price||0, ld=ltpMap[d.sym]||null;
-        let ltp=ld?.ltp??null, qty=d.qty||65;
-        let pts=ltp!=null?(d.entry==='BUY'?ltp-entry:entry-ltp):null;
-        let unrl=(pts!=null&&d.qty)?pts*d.qty:null;
+        let entry=d.entry_price||0, qty=d.qty||65;
         let sc=d.entry==='BUY'?'#3fb950':'#f85149';
         let closeSide=d.entry==='BUY'?'SELL':'BUY';
         let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
@@ -826,10 +836,11 @@ async function updatePnl() {
         if(ov('exit_time')) row += _pnlTD('<span style="color:#8b949e">open</span>','','center');
         if(ov('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
         if(ov('entry_px'))  row += _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right');
-        if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">${ltp!=null?'₹'+ltp.toFixed(2):'⏳'}</span></td>`;
-        if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">${pts!=null?(pts>=0?'+':'')+pts.toFixed(1):'—'}</td>`;
+        // LTP/Points/Unrealized: placeholder only — _patchLtpCells fills these live (no re-render flash)
+        if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">⏳</span></td>`;
+        if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">—</td>`;
         if(ov('qty'))       row += _pnlTD(qty,'#8b949e','center');
-        if(ov('unrealized'))row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="unrl-cell" data-sym="${d.sym}">${unrl!=null?_fmt(unrl):'—'}</td>`;
+        if(ov('unrealized'))row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="unrl-cell" data-sym="${d.sym}">—</td>`;
         if(ov('action'))    row += `<td style="padding:5px 10px;text-align:center">
                  <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
                    style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
@@ -837,7 +848,7 @@ async function updatePnl() {
                  </button></td>`;
         return row;
       });
-      posEl.innerHTML=_card(`⏳ OPEN POSITIONS (${allOpen.length})`,'#d29922',_pnlTable(cols,rows));
+      _setHtml(posEl,_card(`⏳ OPEN POSITIONS (${allOpen.length})`,'#d29922',_pnlTable(cols,rows)));
     }
   }
 
@@ -848,7 +859,7 @@ async function updatePnl() {
   keys.forEach(k=>{(allResults[k].details||[]).forEach(d=>allDetails.push({...d,_strat:k}));});
   allDetails.sort((a,b)=>(b.entry_time||'').localeCompare(a.entry_time||''));
   if(!allDetails.length){
-    ordEl.innerHTML=`<div style="color:#484f58;padding:16px;text-align:center;font-size:13px">Aaj koi completed trade nahi</div>`;
+    _setHtml(ordEl,`<div style="color:#484f58;padding:16px;text-align:center;font-size:13px">Aaj koi completed trade nahi</div>`);
     return;
   }
   if(!_closedCols) _loadColPrefs();
@@ -877,7 +888,7 @@ async function updatePnl() {
     if(cv('net'))       row += _pnlTD(_fmt(net),_pnlColor(net),'right','font-weight:700');
     return row;
   });
-  ordEl.innerHTML=_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows));
+  _setHtml(ordEl,_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows)));
 
 }
 
@@ -990,7 +1001,7 @@ setInterval(()=>{
 }, 4000);
 
 // ── Real-time LTP via SSE (dhan_feed WebSocket) ──
-let _ltpLive = {};  // sec_id -> {ltp, bid, ask}
+let _ltpLive = {};  // trad_sym -> ltp  (populated by _fetchPositionLtp)
 let _sseSrc = null;
 function startLtpStream() {
   if(_sseSrc) return;
@@ -1001,10 +1012,28 @@ function startLtpStream() {
   };
   _sseSrc.onerror = () => { _sseSrc.close(); _sseSrc=null; setTimeout(startLtpStream,5000); };
 }
+
+// Fetch position LTP separately — updates cells without rebuilding table
+async function _fetchPositionLtp() {
+  const cells = document.querySelectorAll('.ltp-cell[data-sym]');
+  if(!cells.length) return;
+  const syms = [...new Set([...cells].map(el=>el.getAttribute('data-sym')))];
+  try {
+    const r = await fetch('/api/positions-ltp?syms=' + syms.map(encodeURIComponent).join(','));
+    const j = await r.json();
+    if(!j.ok) return;
+    const ltpMap = j.ltp_map || {};
+    Object.entries(ltpMap).forEach(([sym, data]) => { _ltpLive[sym] = data?.ltp; });
+    _patchLtpCells();
+  } catch(e) {}
+}
+setInterval(()=>{ if(activeTab==='pnl') _fetchPositionLtp(); }, 3000);
 function _patchLtpCells() {
   document.querySelectorAll('.ltp-cell[data-sym]').forEach(el => {
-    const sym   = el.getAttribute('data-sym');
-    const ltp   = _ltpLive[sym];
+    const sym = el.getAttribute('data-sym');
+    const raw = _ltpLive[sym];
+    // _ltpLive[sym] can be a number (from _fetchPositionLtp) or object (from SSE)
+    const ltp = typeof raw === 'number' ? raw : raw?.ltp;
     if(ltp == null) return;
     el.textContent = '₹' + ltp.toFixed(2);
     // patch points cell
@@ -1068,6 +1097,7 @@ loadAll();
       <div id="qo-ce-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
     </div>
   </div>
+  <div id="qo-ts" style="font-size:9px;color:#484f58;text-align:right;margin-top:4px">fetching...</div>
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Limit Price <span style="color:#484f58">(blank = LTP par bhejo)</span></div>
 <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
@@ -1110,11 +1140,44 @@ loadAll();
     panel.style.top=(e.clientY-dy)+'px';
   });
   document.addEventListener('mouseup', ()=>dragging=false);
+  // Cache element refs immediately after panel is in DOM
+  const _qoElPeLtp = document.getElementById('qo-pe-ltp');
+  const _qoElCeLtp = document.getElementById('qo-ce-ltp');
+  const _qoElPeSym = document.getElementById('qo-pe-sym');
+  const _qoElCeSym = document.getElementById('qo-ce-sym');
+  const _qoElTs    = document.getElementById('qo-ts');
+
+  let _qoAutoRefresh = null;
   document.getElementById('qo-close').onclick = ()=>{ clearInterval(_qoAutoRefresh); panel.remove(); };
 
-  // First fetch on open + auto-refresh every 30s
+  let _qoLtpTimer = null;
+  async function qoFetchLtp() {
+    try {
+      const r = await fetch(`/api/option-ltp?symbol=${qoSym}&offset=${qoAtm}`);
+      const j = await r.json();
+      const now = new Date();
+      const ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
+      if (j.ok) {
+        window._qoPeLtp = j.pe_ltp; window._qoCeLtp = j.ce_ltp;
+        _qoElPeLtp.textContent = j.pe_ltp != null ? '₹' + j.pe_ltp.toFixed(2) : '—';
+        _qoElCeLtp.textContent = j.ce_ltp != null ? '₹' + j.ce_ltp.toFixed(2) : '—';
+        _qoElPeSym.textContent = (j.pe_sym||'').replace(qoSym+'-','');
+        _qoElCeSym.textContent = (j.ce_sym||'').replace(qoSym+'-','');
+        if(_qoElTs) _qoElTs.textContent = '⚡ ' + ts + (j._stale?' (stale)':'');
+      } else {
+        _qoElPeLtp.textContent = j.msg || 'Error';
+        _qoElCeLtp.textContent = '';
+        if(_qoElTs) _qoElTs.textContent = '❌ ' + ts;
+      }
+    } catch(e) {
+      _qoElPeLtp.textContent = 'JS Error: ' + e.message;
+      if(_qoElTs) _qoElTs.textContent = '❌ err';
+    }
+  }
+
+  // First fetch on open + auto-refresh every 4s
   qoFetchLtp();
-  let _qoAutoRefresh = setInterval(qoFetchLtp, 3000);
+  _qoAutoRefresh = setInterval(qoFetchLtp, 4000);
 
   window.qoGetMode = ()=>qoMode;
 
@@ -1127,28 +1190,6 @@ loadAll();
     document.getElementById('qo-status').textContent = m==='live'?'Mode: LIVE — Real orders!':'Mode: PAPER';
     document.getElementById('qo-status').style.color = m==='live'?'#f85149':'#8b949e';
   };
-
-  let _qoLtpTimer = null;
-  async function qoFetchLtp() {
-    document.getElementById('qo-pe-ltp').textContent = '⏳';
-    document.getElementById('qo-ce-ltp').textContent = '⏳';
-    try {
-      const r = await fetch(`/api/option-ltp?symbol=${qoSym}&offset=${qoAtm}`);
-      const j = await r.json();
-      if (j.ok) {
-        window._qoPeLtp = j.pe_ltp; window._qoCeLtp = j.ce_ltp;
-        document.getElementById('qo-pe-ltp').textContent = j.pe_ltp != null ? '₹' + j.pe_ltp.toFixed(2) : '—';
-        document.getElementById('qo-ce-ltp').textContent = j.ce_ltp != null ? '₹' + j.ce_ltp.toFixed(2) : '—';
-        document.getElementById('qo-pe-sym').textContent = (j.pe_sym||'').replace(qoSym+'-','');
-        document.getElementById('qo-ce-sym').textContent = (j.ce_sym||'').replace(qoSym+'-','');
-      } else {
-        document.getElementById('qo-pe-ltp').textContent = j.msg || 'Error';
-        document.getElementById('qo-ce-ltp').textContent = '';
-      }
-    } catch(e) {
-      document.getElementById('qo-pe-ltp').textContent = 'JS Error: ' + e.message;
-    }
-  }
   function qoRefreshLtp() {
     clearTimeout(_qoLtpTimer);
     _qoLtpTimer = setTimeout(qoFetchLtp, 300);
@@ -1288,7 +1329,7 @@ function pineRenderTable() {
   });
 
   el.innerHTML = groups.map(g => {
-    const headerRow = `<tr><td colspan="7" style="padding:10px 10px 4px;color:#8b949e;font-size:11px;font-weight:600;letter-spacing:0.5px;border-bottom:1px solid #30363d;border-top:2px solid #30363d;background:#161b2288">${g.name}</td></tr>`;
+    const headerRow = `<tr><td colspan="8" style="padding:10px 10px 4px;color:#8b949e;font-size:11px;font-weight:600;letter-spacing:0.5px;border-bottom:1px solid #30363d;border-top:2px solid #30363d;background:#161b2288">${g.name}</td></tr>`;
     const rows = g.items.map(v => {
     const acc = v.accuracy != null ? v.accuracy : null;
     const accColor = acc >= 85 ? '#3fb950' : acc >= 60 ? '#d29922' : acc != null ? '#f85149' : '#8b949e';
@@ -1318,6 +1359,9 @@ function pineRenderTable() {
       </td>
       <td style="padding:10px;text-align:center">${accCell}</td>
       <td style="padding:10px;text-align:center">${reportCell}</td>
+      <td style="padding:10px;text-align:center" id="pine-imgcell-${v.version}">
+        <button onclick="pineOpenImages(${v.version})" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'" title="Screenshots dekho / add karo">🖼 <span id="pine-imgcount-${v.version}">…</span></button>
+      </td>
       <td style="padding:10px;text-align:center;white-space:nowrap">
         <button onclick="pineCopyCode(${v.version})" title="Code clipboard mein copy karo" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">📋 Copy</button>
         <button onclick="pineDelete(${v.version})" title="Is version ko delete karo" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer;margin-left:4px" onmouseover="this.style.color='#f85149';this.style.borderColor='#f85149'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">🗑</button>
@@ -1326,6 +1370,19 @@ function pineRenderTable() {
     }).join('');
     return headerRow + rows;
   }).join('');
+  // load image counts for all versions after render
+  _pineData.forEach(v => _pineLoadImgCount(v.version));
+}
+
+async function _pineLoadImgCount(version) {
+  const el = document.getElementById('pine-imgcount-' + version);
+  if (!el) return;
+  try {
+    const r = await fetch('/api/pine/images/' + version);
+    const imgs = await r.json();
+    el.textContent = imgs.length ? imgs.length : '0';
+    el.style.color = imgs.length ? '#58a6ff' : '#484f58';
+  } catch(e) { el.textContent = '0'; }
 }
 
 async function pineSave() {
@@ -1336,13 +1393,151 @@ async function pineSave() {
   const desc = document.getElementById('pine-desc').value.trim();
   const r = await fetch('/api/pine/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, desc}) });
   const d = await r.json();
+  // upload pending images
+  const files = document.getElementById('pine-img-input').files;
+  if (files && files.length) {
+    const fd = new FormData();
+    for (const f of files) fd.append('images', f);
+    await fetch('/api/pine/images/' + d.version, { method:'POST', body: fd });
+  }
   msg.style.color = '#3fb950';
-  msg.textContent = `✅ v${d.version} saved — "${d.name}"`;
+  msg.textContent = `✅ v${d.strat_version || d.version} saved — "${d.name}"`;
   document.getElementById('pine-code').value = '';
   document.getElementById('pine-desc').value = '';
+  document.getElementById('pine-img-input').value = '';
+  document.getElementById('pine-img-preview').innerHTML = '';
   setTimeout(() => msg.textContent = '', 4000);
   pineLoadLatest();
   pineLoadHistory();
+}
+
+// ── Image preview strip (before save) ────────────────────────────────────────
+function pineImgPreview(files) {
+  const wrap = document.getElementById('pine-img-preview');
+  wrap.innerHTML = '';
+  Array.from(files).forEach((f, i) => {
+    const url = URL.createObjectURL(f);
+    const div = document.createElement('div');
+    div.style.cssText = 'position:relative;width:80px;height:60px;border-radius:4px;overflow:hidden;border:1px solid #30363d;flex-shrink:0';
+    div.innerHTML = `<img src="${url}" style="width:100%;height:100%;object-fit:cover;cursor:pointer;display:block" onclick="_pineLbShowBlobs(${i})">`;
+    wrap.appendChild(div);
+  });
+}
+
+function pineImgDrop(e) {
+  e.preventDefault();
+  document.getElementById('pine-img-drop').style.borderColor = '#30363d';
+  const dt = new DataTransfer();
+  for (const f of e.dataTransfer.files) if (f.type.startsWith('image/')) dt.items.add(f);
+  document.getElementById('pine-img-input').files = dt.files;
+  pineImgPreview(dt.files);
+}
+
+// ── Lightbox ─────────────────────────────────────────────────────────────────
+let _lb = { urls:[], idx:0, version:null, blobUrls:[] };
+
+function _pineGetOrCreateLb() {
+  let el = document.getElementById('pine-lb');
+  if (el) return el;
+  el = document.createElement('div');
+  el.id = 'pine-lb';
+  el.style.cssText = 'position:fixed;inset:0;background:#000000dd;z-index:9999;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px';
+  el.addEventListener('click', e => { if (e.target === el) _pineLbClose(); });
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;gap:12px;max-width:90vw">
+      <button onclick="_pineLbNav(-1)" style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:50%;width:38px;height:38px;font-size:20px;cursor:pointer;flex-shrink:0;line-height:1">‹</button>
+      <div style="position:relative">
+        <img id="pine-lb-img" src="" style="max-width:80vw;max-height:72vh;border-radius:8px;object-fit:contain;display:block;background:#0d1117">
+        <button id="pine-lb-del" onclick="_pineLbDelete()" style="position:absolute;top:8px;right:8px;background:#f8514988;border:1px solid #f85149;color:#fff;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer">🗑 Delete</button>
+      </div>
+      <button onclick="_pineLbNav(1)"  style="background:#21262d;border:1px solid #30363d;color:#e6edf3;border-radius:50%;width:38px;height:38px;font-size:20px;cursor:pointer;flex-shrink:0;line-height:1">›</button>
+    </div>
+    <div id="pine-lb-counter" style="color:#8b949e;font-size:13px"></div>
+    <div id="pine-lb-thumbs" style="display:flex;gap:6px;flex-wrap:wrap;justify-content:center;max-width:90vw"></div>
+    <div style="display:flex;gap:10px;margin-top:4px">
+      <label id="pine-lb-add-lbl" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:5px 14px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">
+        ➕ Add Images<input type="file" multiple accept="image/*" style="display:none" onchange="_pineLbUpload(this.files)">
+      </label>
+      <button onclick="_pineLbClose()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:5px 14px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">✕ Close</button>
+    </div>`;
+  document.body.appendChild(el);
+  return el;
+}
+
+function _pineLbRender() {
+  const img = document.getElementById('pine-lb-img');
+  const counter = document.getElementById('pine-lb-counter');
+  const thumbs = document.getElementById('pine-lb-thumbs');
+  const delBtn = document.getElementById('pine-lb-del');
+  const addLbl = document.getElementById('pine-lb-add-lbl');
+  const urls = _lb.urls;
+  if (!urls.length) {
+    img.src = ''; counter.textContent = 'Koi image nahi';
+    thumbs.innerHTML = ''; if (delBtn) delBtn.style.display = 'none';
+    return;
+  }
+  _lb.idx = Math.max(0, Math.min(_lb.idx, urls.length - 1));
+  img.src = urls[_lb.idx];
+  counter.textContent = `${_lb.idx + 1} / ${urls.length}`;
+  if (delBtn) delBtn.style.display = _lb.version ? 'block' : 'none';
+  if (addLbl) addLbl.style.display = _lb.version ? 'inline-flex' : 'none';
+  thumbs.innerHTML = urls.map((u, i) =>
+    `<img src="${u}" onclick="_lb.idx=${i};_pineLbRender()"
+      style="width:54px;height:40px;object-fit:cover;border-radius:4px;cursor:pointer;
+             border:2px solid ${i===_lb.idx?'#58a6ff':'#30363d'};transition:border-color 0.15s">`
+  ).join('');
+}
+
+async function pineOpenImages(version) {
+  const r = await fetch('/api/pine/images/' + version);
+  const urls = await r.json();
+  _lb = { urls, idx:0, version, blobUrls:[] };
+  _pineGetOrCreateLb().style.display = 'flex';
+  _pineLbRender();
+}
+
+function _pineLbShowBlobs(startIdx) {
+  const files = document.getElementById('pine-img-input').files;
+  const blobUrls = Array.from(files).map(f => URL.createObjectURL(f));
+  _lb = { urls: blobUrls, idx: startIdx, version: null, blobUrls };
+  _pineGetOrCreateLb().style.display = 'flex';
+  _pineLbRender();
+}
+
+function _pineLbNav(dir) {
+  if (!_lb.urls.length) return;
+  _lb.idx = (_lb.idx + dir + _lb.urls.length) % _lb.urls.length;
+  _pineLbRender();
+}
+
+async function _pineLbDelete() {
+  if (!_lb.version || !_lb.urls.length) return;
+  const url = _lb.urls[_lb.idx];
+  const fname = url.split('/').pop();
+  if (!confirm('Is image ko delete karein?')) return;
+  await fetch(`/api/pine/images/${_lb.version}/${fname}`, { method:'DELETE' });
+  _lb.urls.splice(_lb.idx, 1);
+  _lb.idx = Math.max(0, _lb.idx - 1);
+  _pineLbRender();
+  _pineLoadImgCount(_lb.version);
+}
+
+async function _pineLbUpload(files) {
+  if (!_lb.version || !files.length) return;
+  const fd = new FormData();
+  for (const f of files) fd.append('images', f);
+  const r = await fetch('/api/pine/images/' + _lb.version, { method:'POST', body: fd });
+  const d = await r.json();
+  _lb.urls = [..._lb.urls, ...d.urls];
+  _lb.idx = _lb.urls.length - d.urls.length;
+  _pineLbRender();
+  _pineLoadImgCount(_lb.version);
+}
+
+function _pineLbClose() {
+  const el = document.getElementById('pine-lb');
+  if (el) el.style.display = 'none';
+  if (_lb.version) _pineLoadImgCount(_lb.version);
 }
 
 function pineEditStart(version) {
