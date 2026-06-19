@@ -173,6 +173,43 @@ def get_sec_id_for_trad_sym(trad_sym):
     return best[1] if best else None
 
 
+_equity_cache = {}  # symbol -> (sec_id, seg, instrument)
+
+def build_equity_cache():
+    global _equity_cache
+    if _equity_cache:
+        return _equity_cache
+    if not MASTER_CSV.exists():
+        download_master_if_needed()
+    result = {}
+    # Indices: known Dhan sec_ids (not in the equity CSV rows)
+    result["NIFTY"]     = ("13",  "IDX_I", "INDEX")
+    result["BANKNIFTY"] = ("25",  "IDX_I", "INDEX")
+    try:
+        with open(MASTER_CSV, 'r', encoding='utf-8') as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                exch = row.get("SEM_EXM_EXCH_ID", "")
+                inst = row.get("SEM_INSTRUMENT_NAME", "")
+                if exch != "NSE" or inst not in ("EQUITY", "EQUITY-ETF"):
+                    continue
+                sym    = row.get("SEM_TRADING_SYMBOL", "").strip()
+                sec_id = row.get("SEM_SMST_SECURITY_ID", "").strip()
+                if sym and sec_id:
+                    result[sym] = (sec_id, "NSE_EQ", "EQUITY")
+    except Exception as e:
+        log.error(f"build_equity_cache error: {e}")
+    _equity_cache = result
+    log.info(f"Equity cache built: {len(result)} symbols")
+    return _equity_cache
+
+def get_equity_info(symbol):
+    """(sec_id, seg, instrument) for an equity/index symbol from master CSV."""
+    if not _equity_cache:
+        build_equity_cache()
+    return _equity_cache.get(symbol)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     download_master_if_needed()

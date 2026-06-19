@@ -23,7 +23,6 @@ from pathlib import Path
 
 import pandas as pd
 import requests
-import yfinance as yf
 
 # ── IPv4 Force — Dhan rejects IPv6 (DH-905) ───────────────────────────────────
 _orig_gai = socket.getaddrinfo
@@ -37,35 +36,13 @@ CONFIG_FILE = BASE_DIR / "data" / "config.json"
 TC_FILE     = BASE_DIR / "nifty_config.json"
 LOG_FILE    = BASE_DIR / "nifty_trader.log"
 
-# ── Yahoo Finance symbol map ───────────────────────────────────────────────────
-# Add/remove symbols here freely
-SYMBOLS = {
-    "NIFTY":        "^NSEI",
-    "BANKNIFTY":    "^NSEBANK",
-    "RELIANCE":     "RELIANCE.NS",
-    "TCS":          "TCS.NS",
-    "INFY":         "INFY.NS",
-    "HDFCBANK":     "HDFCBANK.NS",
-    "ICICIBANK":    "ICICIBANK.NS",
-    "SBIN":         "SBIN.NS",
-    "AXISBANK":     "AXISBANK.NS",
-    "BAJFINANCE":   "BAJFINANCE.NS",
-    "WIPRO":        "WIPRO.NS",
-    "KOTAKBANK":    "KOTAKBANK.NS",
-    "LT":           "LT.NS",
-    "TATAMOTORS":   "TATAMOTORS.BO",
-    "MARUTI":       "MARUTI.NS",
-    "HINDUNILVR":   "HINDUNILVR.NS",
-    "ITC":          "ITC.NS",
-    "ADANIENT":     "ADANIENT.NS",
-    "SUNPHARMA":    "SUNPHARMA.NS",
-    "TITAN":        "TITAN.NS",
-    "ULTRACEMCO":   "ULTRACEMCO.NS",
-    "NESTLEIND":    "NESTLEIND.NS",
-    "POWERGRID":    "POWERGRID.NS",
-    "NTPC":         "NTPC.NS",
-    "ONGC":         "ONGC.NS",
-}
+# ── Symbol list (Dhan equity symbols) ─────────────────────────────────────────
+SYMBOLS = [
+    "NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
+    "SBIN", "AXISBANK", "BAJFINANCE", "WIPRO", "KOTAKBANK", "LT",
+    "MARUTI", "HINDUNILVR", "ITC", "ADANIENT", "SUNPHARMA", "TITAN",
+    "ULTRACEMCO", "NESTLEIND", "POWERGRID", "NTPC", "ONGC",
+]
 
 # ── Dhan API (orders only) ─────────────────────────────────────────────────────
 ORDERS_URL = "https://api.dhan.co/v2/orders"
@@ -126,7 +103,7 @@ def load_config(strategy_id=None):
         "slow_ema": 20,
         "qty": 1,
         "max_trades_per_symbol": 2,
-        "symbols": list(SYMBOLS.keys())
+        "symbols": list(SYMBOLS)
     }
     if not TC_FILE.exists():
         TC_FILE.write_text(json.dumps(default, indent=2))
@@ -140,22 +117,36 @@ def hdrs(token, cid):
     return {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
 
 
-# ── Candle Fetch ───────────────────────────────────────────────────────────────
+# ── Candle Fetch (Dhan intraday API) ──────────────────────────────────────────
+INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
+_TF_MAP = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
 
 def fetch_candles(symbol, tf="1m"):
-    ticker = SYMBOLS.get(symbol)
-    if not ticker:
+    info = dhan_master.get_equity_info(symbol)
+    if not info:
+        log.error(f"No Dhan sec_id for {symbol}")
         return None
+    sec_id, seg, inst = info
+    interval = _TF_MAP.get(tf, 1)
     try:
-        df = yf.download(ticker, period="1d", interval=tf, progress=False, auto_adjust=True)
-        if df is None or df.empty:
+        token, cid = load_creds()
+        hdrs_c = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        today = ist_now().strftime("%Y-%m-%d")
+        body  = {"securityId": sec_id, "exchangeSegment": seg,
+                 "instrument": inst, "interval": interval,
+                 "fromDate": today, "toDate": today}
+        r = requests.post(INTRADAY_URL, json=body, headers=hdrs_c, timeout=10)
+        if r.status_code != 200:
+            log.error(f"{symbol} intraday {r.status_code}: {r.text[:120]}")
             return None
-        df = df.reset_index()
-        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
-        if "datetime" in df.columns:
-            df = df.rename(columns={"datetime": "time"})
-        df = df[["time", "open", "high", "low", "close"]].dropna()
-        return df
+        d = r.json()
+        ts   = d.get("timestamp", [])
+        rows = list(zip(ts, d.get("open", []), d.get("high", []), d.get("low", []), d.get("close", [])))
+        if not rows:
+            return None
+        df = pd.DataFrame(rows, columns=["time", "open", "high", "low", "close"])
+        df["time"] = pd.to_datetime(df["time"], unit="s", utc=True).dt.tz_convert("Asia/Kolkata").dt.tz_localize(None)
+        return df.dropna()
     except Exception as e:
         log.error(f"{symbol} candle error: {e}")
         return None

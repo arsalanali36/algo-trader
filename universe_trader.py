@@ -5,7 +5,7 @@ Scans a whole universe (Nifty-50) on real-time Dhan Data API candles, runs a
 pluggable strategy on each symbol, and on a signal fires a marketable-limit
 order routed to: cash equity / the stock's option / an index option.
 
-- Candles  : Dhan Data API (broker.intraday_candles) — NO yfinance.
+- Candles  : Dhan Data API (broker.intraday_candles).
 - Execution: smart_order (BUY=ask, SELL=bid) via WebSocket bid/ask feed.
 - Paper == Live: identical intended-fill logging; live also fires real order.
 - Caps     : max_concurrent_positions + max_trades_per_symbol.

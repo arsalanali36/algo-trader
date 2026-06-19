@@ -538,12 +538,15 @@ def api_option_ltp():
         return jsonify(cached['data'])
 
     try:
-        import dhan_master, range_trader, requests as _req, yfinance as yf
+        import dhan_master, range_trader, requests as _req
         token, cid = range_trader.load_creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
 
-        ticker_map = {"NIFTY": "^NSEI", "BANKNIFTY": "^NSEBANK"}
-        idx_price = float(yf.Ticker(ticker_map.get(symbol, "^NSEI")).fast_info["last_price"])
+        _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
+        _idx_id  = _idx_sec.get(symbol, "13")
+        _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                             json={"IDX_I": [int(_idx_id)]}, headers=headers, timeout=5)
+        idx_price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
 
         sec_ce, t_ce, _ = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
         sec_pe, t_pe, _ = dhan_master.get_option_contract(symbol, idx_price, "PE", offset)
@@ -585,15 +588,16 @@ def api_manual_order():
     try:
         import dhan_master
         import range_trader
-        import yfinance as yf
 
         token, cid = range_trader.load_creds()
         opt_type = 'PE' if side == 'BUY' else 'CE'
 
-        # ATM price from yfinance
-        ticker_map = {'NIFTY': '^NSEI', 'BANKNIFTY': '^NSEBANK'}
-        tk = yf.Ticker(ticker_map.get(symbol, '^NSEI'))
-        price = float(tk.fast_info['last_price'])
+        _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
+        _idx_id  = _idx_sec.get(symbol, "13")
+        _qr_idx  = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                                 json={"IDX_I": [int(_idx_id)]}, headers=_hdrs, timeout=5)
+        price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
 
         # Option contract lookup
         sec_id, t_sym, lot_sz_master = dhan_master.get_option_contract(symbol, price, opt_type, offset)
@@ -758,12 +762,14 @@ def api_close_position():
 def api_debug_order():
     """Test Dhan API call directly from Flask process — diagnose DH-905"""
     try:
-        import range_trader, requests as req, yfinance as yf, socket as sk
+        import range_trader, requests as req, socket as sk
         # confirm IPv4 patch is active
         ipv4_active = sk.getaddrinfo.__name__ == '_v4'
         token, cid = range_trader.load_creds()
-        tk = yf.Ticker('^NSEI')
-        price = float(tk.fast_info['last_price'])
+        _hdrs_dbg = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _qr_dbg   = req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                             json={"IDX_I": [13]}, headers=_hdrs_dbg, timeout=5)
+        price = float(_qr_dbg.json()["data"]["IDX_I"]["13"]["last_price"])
         body = {
             'dhanClientId': cid, 'correlationId': 'DEBUG_001',
             'transactionType': 'SELL', 'exchangeSegment': 'NSE_FNO',

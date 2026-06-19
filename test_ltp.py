@@ -10,11 +10,11 @@ cfg = json.loads(open('data/config.json').read())
 token, cid = cfg['jwt_token'], cfg['client_id']
 hdrs = {'access-token': token, 'client-id': cid, 'Content-Type': 'application/json'}
 
-import yfinance as yf
-tk = yf.Ticker('^NSEI')
-idx = float(tk.fast_info['last_price'])
+r_idx = requests.post('https://api.dhan.co/v2/marketfeed/ltp',
+    json={'IDX_I': [13]}, headers=hdrs, timeout=5)
+idx = float(r_idx.json()['data']['IDX_I']['13']['last_price'])
 atm = round(idx / 50) * 50
-print(f'NIFTY Index (yfinance): {idx:.2f}  ATM Strike: {atm}')
+print(f'NIFTY Index (Dhan IDX_I): {idx:.2f}  ATM Strike: {atm}')
 
 ce_sec = pe_sec = None
 with open('data/api-scrip-master.csv') as f:

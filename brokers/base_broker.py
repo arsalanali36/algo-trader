@@ -29,7 +29,7 @@ class BaseBroker(ABC):
     def intraday_candles(self, sec_id, seg, instrument, days: int = 5,
                          interval: int = 1):
         """Return intraday OHLC as a DataFrame [time,open,high,low,close,volume].
-        Real-time data API — NO yfinance."""
+        Real-time data from broker's intraday API."""
 
     @abstractmethod
     def quote(self, sec_id, seg) -> dict:

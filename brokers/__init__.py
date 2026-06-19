@@ -9,7 +9,7 @@ Usage:
     r  = bk.place_order("BUY", sec_id, "NSE_EQ", qty, "LIMIT", price)
 
 Config drives the active broker: nifty_config.json -> "broker": "dhan".
-No yfinance anywhere — candles come from the broker's data API.
+Candles come from the broker's data API (Dhan intraday/historical REST).
 """
 
 from .base_broker import BaseBroker  # noqa: F401

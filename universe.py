@@ -6,7 +6,7 @@ universe.py — symbol universe + security-id / option routing resolvers.
 - index_spot_secid(idx)         -> IDX_I security id for NIFTY/BANKNIFTY.
 - stock_option_atm / index_option_atm -> reuse dhan_master resolver.
 
-No yfinance — spot prices come from the broker (Dhan Data API / feed).
+Spot prices come from the broker (Dhan Data API / feed).
 """
 
 import csv

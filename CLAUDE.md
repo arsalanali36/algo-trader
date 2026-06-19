@@ -82,9 +82,9 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 ```
 
-### 2. yfinance for candles (DH-902 fix)
-Dhan intraday candle API = paid subscription (DH-902).
-**Free alternative: yfinance** — NSE symbols `.NS` suffix, indices `^NSEI`.
+### 2. Candles — Dhan intraday API only
+All candle data comes from Dhan `/v2/charts/intraday` (sec_id from `dhan_master.get_equity_info()`).
+Index spot price from Dhan `/v2/marketfeed/ltp` with `IDX_I` segment (sec_id 13=NIFTY, 25=BANKNIFTY).
 
 ### 3. correlationId = strategy prefix
 Har order ka ek specific correlation ID hota hai jisme strategy version prefix hota hai: `EMA_V1_NIFTY_<timestamp>`.
@@ -106,7 +106,7 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-16 | **Options Trading** added via `dhan_master.py` (Dynamic Strike Offset PE/CE Selling) |
 | 2026-06-16 | **Multi-Instance (Variations)** added with dynamic Grid UI in Vanilla JS, separated logs and processes |
 | 2026-06-17 | Stale entry fix — `run_signal_engine` ab `signal_bar` + `total_bars` return karta hai; main loop skip karta hai agar `(total_bars - sig_bar) > 2` (purana historical signal) |
-| 2026-06-17 | TATAMOTORS removed from SYMBOLS (delisted/yfinance error) |
+| 2026-06-17 | TATAMOTORS removed from SYMBOLS (delisted — data unavailable) |
 | 2026-06-17 | Options branch mein `price=price` fix — paper log ab 0.00 nahi dikhata |
 | 2026-06-17 | Startup exit guard — `if st["position"] is None: continue` before EXIT handler (fake startup trades fix) |
 | 2026-06-17 | `[CONFIG]` log line har loop pe — TF, Instrument, Qty, MaxTrades, FreshZoneOnly, Exit mode, Entry rules |
@@ -119,10 +119,10 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-17 | Position netting — `parse_pnl()` ab opposite-side same-symbol order ko auto-close treat karta hai (BUY → SELL = completed trade with P&L). Qty also captured from log line. |
 | 2026-06-17 | Manual order price fix — `api_manual_order` ab index price nahi, **actual option LTP** log karta hai (Dhan `/v2/quotes` se pehle fetch karta hai). |
 | 2026-06-17 | Close Position button — Open Positions har row pe SELL ✕ / BUY ✕ button. `/api/close-position` route: sec_id lookup → LTP fetch → log write (paper) ya Dhan order (live). Mode Quick Order panel ke Paper/Live toggle se sync. |
-| 2026-06-17 | LTP endpoint `/v2/quotes` → `/v2/marketfeed/ltp` (quotes 404 deta tha). Quick Order widget: index price hata, sirf selected ATM CE/PE LTP; server-side cache (`_ltp_cache`, 3s TTL) DH-904 rate-limit se bachne ko; auto-refresh 3s. Bot candles wapas yfinance pe (Dhan Data API ₹499/mo nahi chahiye). |
+| 2026-06-17 | LTP endpoint `/v2/quotes` → `/v2/marketfeed/ltp` (quotes 404 deta tha). Quick Order widget: index price hata, sirf selected ATM CE/PE LTP; server-side cache (`_ltp_cache`, 3s TTL) DH-904 rate-limit se bachne ko; auto-refresh 3s. |
 | 2026-06-17 | Quick Order — LIMIT order + manual price box: `qo-price` input (blank = LTP par bhejo), PE/CE box click → price autofill, `qoOrder` ab `order_type:'LIMIT'` + `price` bhejta hai. Backend `api_manual_order` LIMIT/price accept karta hai. Strike/symbol line bada+bright (12px `#adbac7`). |
 | 2026-06-17 | **CRITICAL fix** — Open Positions LTP ⏳ atak raha tha. Wajah: same trad_sym (e.g. `NIFTY-Jun2026-24050-CE`) **multiple expiries** ko map karta hai (symbol me din nahi hota); CSV first-match = EXPIRED contract (no LTP). Fix: `dhan_master.get_sec_id_for_trad_sym()` — nearest NON-expired expiry resolve karta hai; `_get_sec_ids()` ab isse use karta hai. `dhan_master.py` deploy list me bhi add kiya. |
-| 2026-06-17 | **BEST-IN-CLASS UNIVERSE SYSTEM** (Phases 0-3 done). Plan: `~/.claude/plans/dapper-yawning-waffle.md`. **No yfinance** — sab Dhan se. |
+| 2026-06-17 | **BEST-IN-CLASS UNIVERSE SYSTEM** (Phases 0-3 done). Plan: `~/.claude/plans/dapper-yawning-waffle.md`. All data from Dhan API. |
 | 2026-06-17 | Phase 0 — `brokers/`: `base_broker.py` + `dhan_broker.py` (Dhan Data API intraday candles real-time, IST +5:30 fix; REST quote/orders; funds) + `kite_broker.py` stub. `get_broker(name)` factory, config `"broker":"dhan"`. dhanhq 2.x: `dhanhq(DhanContext(cid,token))`. |
 | 2026-06-17 | Phase 1 — `dhan_feed.py`: Dhan WebSocket **Full packet** (`MarketFeed`) → in-memory `LIVE` best bid/ask/LTP per sec_id. Single persistent conn (5000 instr). Marketable-limit ka price source. |
 | 2026-06-17 | Phase 2 — `smart_order.py`: marketable-limit (BUY=ask, SELL=bid, tick 0.05). **Paper==Live**: always logs intended-fill `[PAPER]/[LIVE]` (P&L identical); live also fires real LIMIT + `[BROKER]` status line (shadow badge). |

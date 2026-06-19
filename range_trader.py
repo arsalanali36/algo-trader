@@ -25,7 +25,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import requests
-import yfinance as yf
 
 # ── IPv4 Force — Dhan rejects IPv6 (DH-905) ──────────────────────────────────
 _orig_gai = socket.getaddrinfo
@@ -40,51 +39,15 @@ CFG_FILE    = BASE_DIR / "range_config.json"
 LOG_FILE    = BASE_DIR / "range_trader.log"
 
 # ── Symbols ───────────────────────────────────────────────────────────────────
-SYMBOLS = {
-    "NIFTY":        "^NSEI",
-    "BANKNIFTY":    "^NSEBANK",
-    "RELIANCE":     "RELIANCE.NS",
-    "TCS":          "TCS.NS",
-    "INFY":         "INFY.NS",
-    "HDFCBANK":     "HDFCBANK.NS",
-    "ICICIBANK":    "ICICIBANK.NS",
-    "SBIN":         "SBIN.NS",
-    "AXISBANK":     "AXISBANK.NS",
-    "BAJFINANCE":   "BAJFINANCE.NS",
-    "WIPRO":        "WIPRO.NS",
-    "KOTAKBANK":    "KOTAKBANK.NS",
-    "LT":           "LT.NS",
-    "MARUTI":       "MARUTI.NS",
-    "HINDUNILVR":   "HINDUNILVR.NS",
-    "ITC":          "ITC.NS",
-    "ADANIENT":     "ADANIENT.NS",
-    "SUNPHARMA":    "SUNPHARMA.NS",
-    "TITAN":        "TITAN.NS",
-    "ULTRACEMCO":   "ULTRACEMCO.NS",
-    "NESTLEIND":    "NESTLEIND.NS",
-    "POWERGRID":    "POWERGRID.NS",
-    "NTPC":         "NTPC.NS",
-    "ONGC":         "ONGC.NS",
-    "ASIANPAINT":   "ASIANPAINT.NS",
-    "BHARTIARTL":   "BHARTIARTL.NS",
-    "HCLTECH":      "HCLTECH.NS",
-    "BAJAJFINSV":   "BAJAJFINSV.NS",
-    "TATACONSUM":   "TATACONSUM.NS",
-    "COALINDIA":    "COALINDIA.NS",
-    "DIVISLAB":     "DIVISLAB.NS",
-    "DRREDDY":      "DRREDDY.NS",
-    "EICHERMOT":    "EICHERMOT.NS",
-    "GRASIM":       "GRASIM.NS",
-    "HEROMOTOCO":   "HEROMOTOCO.NS",
-    "HINDALCO":     "HINDALCO.NS",
-    "JSWSTEEL":     "JSWSTEEL.NS",
-    "M&M":          "M&M.NS",
-    "SBILIFE":      "SBILIFE.NS",
-    "SHRIRAMFIN":   "SHRIRAMFIN.NS",
-    "TATASTEEL":    "TATASTEEL.NS",
-    "TECHM":        "TECHM.NS",
-    "TRENT":        "TRENT.NS",
-}
+SYMBOLS = list({
+    "NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK",
+    "SBIN", "AXISBANK", "BAJFINANCE", "WIPRO", "KOTAKBANK", "LT", "MARUTI",
+    "HINDUNILVR", "ITC", "ADANIENT", "SUNPHARMA", "TITAN", "ULTRACEMCO",
+    "NESTLEIND", "POWERGRID", "NTPC", "ONGC", "ASIANPAINT", "BHARTIARTL",
+    "HCLTECH", "BAJAJFINSV", "TATACONSUM", "COALINDIA", "DIVISLAB", "DRREDDY",
+    "EICHERMOT", "GRASIM", "HEROMOTOCO", "HINDALCO", "JSWSTEEL", "M&M",
+    "SBILIFE", "SHRIRAMFIN", "TATASTEEL", "TECHM", "TRENT",
+})
 
 DHAN_INFO = {
     "RELIANCE":    ("2885",  "NSE_EQ"),
@@ -214,22 +177,53 @@ def hdrs(token, cid):
 # DAILY DATA — key levels
 # ─────────────────────────────────────────────────────────────────────────────
 
+HIST_URL     = "https://api.dhan.co/v2/charts/historical"
+INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
+
+def _dhan_info(symbol):
+    """Sec_id + segment + instrument for a symbol from Dhan equity cache."""
+    info = dhan_master.get_equity_info(symbol)
+    if info:
+        return info
+    # fallback for indices: Dhan well-known sec_ids
+    _IDX = {"NIFTY": ("13", "IDX_I", "INDEX"), "BANKNIFTY": ("25", "IDX_I", "INDEX")}
+    return _IDX.get(symbol)
+
 def fetch_daily(symbol, days=22):
-    """Fetch daily OHLC via yfinance."""
-    ticker = SYMBOLS.get(symbol)
-    if not ticker:
+    """Fetch daily OHLC from Dhan /v2/charts/historical."""
+    from datetime import date as _date
+    info = _dhan_info(symbol)
+    if not info:
+        log.error(f"fetch_daily: no Dhan info for {symbol}")
         return None
+    sec_id, seg, inst = info
+    today = _date.today()
+    frm = (_date.fromordinal(today.toordinal() - max(days * 2, 60))).isoformat()
+    token, cid = load_creds()
     try:
-        df = yf.download(ticker, period=f"{days}d", interval="1d",
-                         progress=False, auto_adjust=True)
-        if df is None or df.empty:
+        r = requests.post(HIST_URL,
+            json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
+                  "expiryCode": 0, "fromDate": frm, "toDate": today.isoformat()},
+            headers=hdrs(token, cid), timeout=10)
+        if r.status_code != 200:
+            log.error(f"fetch_daily {symbol}: HTTP {r.status_code} — {r.text[:200]}")
             return None
-        df = df.reset_index()
-        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
-        df = df[["date", "open", "high", "low", "close"]].dropna()
-        return df.tail(21).reset_index(drop=True)
+        d = r.json()
+        ts  = d.get("start_Time") or d.get("timestamp") or []
+        if not ts:
+            log.error(f"fetch_daily {symbol}: empty response")
+            return None
+        df = pd.DataFrame({
+            "date":  pd.to_datetime(ts, unit="s") + pd.Timedelta(hours=5, minutes=30),
+            "open":  d.get("open", []),
+            "high":  d.get("high", []),
+            "low":   d.get("low", []),
+            "close": d.get("close", []),
+        })
+        df["date"] = df["date"].dt.date
+        return df.tail(days).reset_index(drop=True)
     except Exception as e:
-        log.error(f"{symbol} daily fetch error: {e}")
+        log.error(f"fetch_daily {symbol} error: {e}")
         return None
 
 
@@ -604,23 +598,43 @@ def run_signal_engine(df_1m, key_levels, cfg):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_1m(symbol, tf="1m"):
-    """Fetch intraday candles via yfinance."""
-    ticker = SYMBOLS.get(symbol)
-    if not ticker:
+    """Fetch intraday candles from Dhan /v2/charts/intraday."""
+    from datetime import date as _date
+    info = _dhan_info(symbol)
+    if not info:
+        log.error(f"fetch_1m: no Dhan info for {symbol}")
         return None
-    period = "5d" if tf in ("5m", "15m", "30m") else "2d"
+    sec_id, seg, inst = info
+    today = _date.today()
+    days_back = 5 if tf in ("5m", "15m", "30m") else 2
+    frm = (_date.fromordinal(today.toordinal() - days_back)).isoformat()
+    interval = _TF_MAP.get(tf, "1")
+    token, cid = load_creds()
     try:
-        df = yf.download(ticker, period=period, interval=tf,
-                         progress=False, auto_adjust=True)
-        if df is None or df.empty:
+        r = requests.post(INTRADAY_URL,
+            json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
+                  "interval": interval, "fromDate": frm, "toDate": today.isoformat()},
+            headers=hdrs(token, cid), timeout=10)
+        if r.status_code != 200:
+            log.error(f"fetch_1m {symbol}: HTTP {r.status_code} — {r.text[:200]}")
             return None
-        df = df.reset_index()
-        df.columns = [c[0].lower() if isinstance(c, tuple) else c.lower() for c in df.columns]
-        if "datetime" in df.columns:
-            df = df.rename(columns={"datetime": "time"})
-        return df[["time", "open", "high", "low", "close"]].dropna().reset_index(drop=True)
+        d = r.json()
+        ts = d.get("start_Time") or d.get("timestamp") or []
+        if not ts:
+            return None
+        df = pd.DataFrame({
+            "time":  pd.to_datetime(ts, unit="s") + pd.Timedelta(hours=5, minutes=30),
+            "open":  d.get("open", []),
+            "high":  d.get("high", []),
+            "low":   d.get("low", []),
+            "close": d.get("close", []),
+        })
+        # Sirf aaj ke bars rakho
+        today_str = today.isoformat()
+        df = df[df["time"].dt.strftime("%Y-%m-%d") == today_str].reset_index(drop=True)
+        return df if not df.empty else None
     except Exception as e:
-        log.error(f"{symbol} 1m fetch error: {e}")
+        log.error(f"fetch_1m {symbol} error: {e}")
         return None
 
 
@@ -652,21 +666,31 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         "price":           0,
         "triggerPrice":    0,
     }
-    # For options: fetch actual option LTP from Dhan (index price is not useful here)
+    # For options: fetch actual option LTP from Dhan — index/spot price is WRONG here
+    opt_ltp = None
     if seg == "NSE_FNO" and sec_id:
-        try:
-            qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                               json={"NSE_FNO": [int(sec_id)]},
-                               headers=hdrs(token, cid), timeout=4)
-            if qr.status_code == 200:
-                qdata = qr.json().get("data", {}).get("NSE_FNO", {})
-                for v in (qdata.values() if isinstance(qdata, dict) else []):
-                    ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
-                    if ltp_v:
-                        price = ltp_v
-                        break
-        except Exception:
-            pass  # fallback: use whatever price was passed
+        for _attempt in range(2):
+            try:
+                qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                                   json={"NSE_FNO": [int(sec_id)]},
+                                   headers=hdrs(token, cid), timeout=5)
+                if qr.status_code == 429:
+                    time.sleep(1.5)
+                    continue
+                if qr.status_code == 200:
+                    qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                    for v in (qdata.values() if isinstance(qdata, dict) else []):
+                        ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                        if ltp_v:
+                            opt_ltp = ltp_v
+                    break
+            except Exception:
+                break
+        if opt_ltp:
+            price = opt_ltp
+        else:
+            log.warning(f"Option LTP fetch failed for {trad_sym} — logging price as 0 (NOT spot price)")
+            price = 0.0  # 0 = unknown; spot price logged karna WRONG hoga
 
     if mode == "paper":
         log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
@@ -793,6 +817,7 @@ def main(strategy_id="range"):
             # Build daily levels once per day per symbol
             if symbol not in daily_levels:
                 daily_df = fetch_daily(symbol)
+                time.sleep(0.4)  # Dhan DH-904: 25 symbols @ 0.4s = ~10s startup, well under rate limit
                 is_idx   = symbol in ("NIFTY", "BANKNIFTY")
                 daily_levels[symbol] = build_key_levels(
                     daily_df, is_index=is_idx,
@@ -806,13 +831,13 @@ def main(strategy_id="range"):
 
             tf    = cfg.get("timeframe", "1m")
             df_1m = fetch_1m(symbol, tf)
+            time.sleep(0.25)  # DH-904 guard: 25 symbols * 0.25s = ~6s per loop
             if df_1m is None or len(df_1m) < 20:
                 continue
 
             signal, price, reason, sig_bar, total_bars = run_signal_engine(df_1m, levels, cfg)
 
-            # Entry sirf tab valid hai jab signal CURRENT candle (last bar) se aaya ho
-            # Purana historical signal ignore karo — stale entry avoid karo
+            # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega
             if signal in ("BUY", "SELL") and (total_bars - sig_bar) > 2:
                 log.debug(f"Skipping stale {signal} {symbol} — signal bar {sig_bar}, total {total_bars}")
                 signal = None
@@ -826,7 +851,11 @@ def main(strategy_id="range"):
                 
                 if inst == "options":
                     opt_type = "PE" if signal == "BUY" else "CE"
-                    sec_id, t_sym, lot_sz = dhan_master.get_option_contract(symbol, price, opt_type, offset)
+                    try:
+                        sec_id, t_sym, lot_sz = dhan_master.get_option_contract(symbol, price, opt_type, offset)
+                    except (ValueError, TypeError) as _e:
+                        log.error(f"get_option_contract failed for {symbol}: {_e} — skipping order, strategy continues")
+                        continue
                     if sec_id:
                         actual_qty = qty * lot_sz
                         place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
