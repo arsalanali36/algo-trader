@@ -274,13 +274,33 @@ def _ema_signal_backtest(df, fast, slow):
     return None
 
 
+# TradingView's ta.rsi()/ta.ema() run continuously over the chart's full
+# history, so by the time the requested backtest window starts they're
+# already converged. Our backtest only loads data starting at date_from —
+# with no prior bars, the Wilder EMA (RSI) / EMA seed cold-starts and won't
+# match TV until enough bars accumulate (visibly: early-window trades show
+# "No match", later ones converge to "Exact"). Pull this many EXTRA calendar
+# days before date_from purely as RSI/EMA warm-up, then drop any trade that
+# entered before the actually-requested date_from.
+_WARMUP_CALENDAR_DAYS = 45
+
+
+def _buffered_from(date_from):
+    if not date_from:
+        return date_from
+    return (pd.to_datetime(date_from) - pd.Timedelta(days=_WARMUP_CALENDAR_DAYS)).strftime("%Y-%m-%d")
+
+
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
 def _run_rsi(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
-    cont1 = load_1m_range(date_from, date_to)
+    buffered_from = _buffered_from(date_from)
+    ensure_nifty_data(buffered_from, date_to)
+    cont1 = load_1m_range(buffered_from, date_to)
     if cont1.empty:
         return [], pd.DataFrame()
-    df = resample(cont1, tf_min)
+    df = resample(cont1, tf_min)   # includes the warm-up buffer — RSI computed over this
+    cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
     period     = cfg.get("rsi_period", 14)
     oversold   = cfg.get("oversold", 30)
@@ -328,16 +348,25 @@ def _run_rsi(date_from, date_to, cfg):
         last = df.iloc[-1]
         cur["exit_time"], cur["exit_price"], cur["exit_reason"] = last["time"], float(last["close"]), "EOD"
         trades.append(cur)
+
+    # Drop the warm-up buffer now that RSI has had a chance to converge on
+    # it — only trades/candles inside the actually-requested window matter.
+    if cutoff_ts is not None:
+        trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
+        df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
     return trades, df
 
 
 # ───────────────────────── EMA (generic growing-window replay) ─────────────────────────
 def _run_ema(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "1m"), 1)
-    cont1 = load_1m_range(date_from, date_to)
+    buffered_from = _buffered_from(date_from)
+    ensure_nifty_data(buffered_from, date_to)
+    cont1 = load_1m_range(buffered_from, date_to)
     if cont1.empty:
         return [], pd.DataFrame()
-    df = resample(cont1, tf_min)
+    df = resample(cont1, tf_min)   # includes the warm-up buffer — see _run_rsi's note
+    cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
     fast, slow = cfg.get("fast_ema", 9), cfg.get("slow_ema", 20)
     max_trades = cfg.get("max_trades_per_symbol", 2)
@@ -385,6 +414,10 @@ def _run_ema(date_from, date_to, cfg):
         last = df.iloc[-1]
         cur["exit_time"], cur["exit_price"], cur["exit_reason"] = last["time"], float(last["close"]), "EOD"
         trades.append(cur)
+
+    if cutoff_ts is not None:
+        trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
+        df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
     return trades, df
 
 
