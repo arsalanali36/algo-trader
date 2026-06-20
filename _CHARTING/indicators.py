@@ -43,13 +43,15 @@ def _bbands_mid(df, period=20):
     return BollingerBands(close=df["close"], window=int(period)).bollinger_mavg()
 
 
+# overlay=True  → drawn ON the price chart (same scale as candles): EMA/SMA/VWAP/BBANDS
+# overlay=False → oscillator, drawn in its OWN bottom panel (separate scale): RSI/ATR
 INDICATOR_REGISTRY = {
-    "EMA":     {"fn": _ema,        "type": "line",      "color": "#d29922", "params": ["period"], "default": {"period": 20}},
-    "SMA":     {"fn": _sma,        "type": "line",      "color": "#8b949e", "params": ["period"], "default": {"period": 20}},
-    "RSI":     {"fn": _rsi,        "type": "line",      "color": "#1f6feb", "params": ["period"], "default": {"period": 14}},
-    "ATR":     {"fn": _atr,        "type": "line",      "color": "#f85149", "params": ["period"], "default": {"period": 14}},
-    "VWAP":    {"fn": _vwap,       "type": "line",      "color": "#3fb950", "params": [],          "default": {}},
-    "BBANDS":  {"fn": _bbands_mid, "type": "line",       "color": "#d2a8ff", "params": ["period"], "default": {"period": 20}},
+    "EMA":     {"fn": _ema,        "type": "line", "color": "#d29922", "params": ["period"], "default": {"period": 20}, "overlay": True},
+    "SMA":     {"fn": _sma,        "type": "line", "color": "#8b949e", "params": ["period"], "default": {"period": 20}, "overlay": True},
+    "RSI":     {"fn": _rsi,        "type": "line", "color": "#1f6feb", "params": ["period"], "default": {"period": 14}, "overlay": False},
+    "ATR":     {"fn": _atr,        "type": "line", "color": "#f85149", "params": ["period"], "default": {"period": 14}, "overlay": False},
+    "VWAP":    {"fn": _vwap,       "type": "line", "color": "#3fb950", "params": [],          "default": {},            "overlay": True},
+    "BBANDS":  {"fn": _bbands_mid, "type": "line", "color": "#d2a8ff", "params": ["period"], "default": {"period": 20}, "overlay": True},
 }
 
 
@@ -63,7 +65,8 @@ def compute_indicator(df, name, **params):
 def list_available_indicators():
     """Name + param schema for the dashboard's 'Add Indicator' dropdown."""
     return [
-        {"name": name, "params": spec["params"], "default": spec["default"], "type": spec["type"], "color": spec["color"]}
+        {"name": name, "params": spec["params"], "default": spec["default"],
+         "type": spec["type"], "color": spec["color"], "overlay": spec["overlay"]}
         for name, spec in INDICATOR_REGISTRY.items()
     ]
 

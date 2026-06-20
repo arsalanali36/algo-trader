@@ -27,6 +27,7 @@ def build_plot_spec(df, *, indicators=None, zones=None, pattern_tags=None):
             "name": ind["name"],
             "type": ind.get("type", "line"),
             "color": ind.get("color", "#8b949e"),
+            "overlay": ind.get("overlay", True),   # False = own bottom panel (oscillator)
             "values": indicator_series_to_points(ind["series"], df),
         })
 

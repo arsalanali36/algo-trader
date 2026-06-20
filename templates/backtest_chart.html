@@ -467,7 +467,7 @@ async function copyPineCode() {
 }
 
 // ───────────────────────── init ─────────────────────────
-function init() {
+async function init() {
   const raw = localStorage.getItem('bt_chart_data');
   if (!raw) return;
   D = JSON.parse(raw);
@@ -478,9 +478,11 @@ function init() {
   renderSymTabs();
   renderMatchFilterTabs();
   renderStats();
+  // Load the indicator registry (overlay/color metadata) BEFORE the first
+  // drawChart() so persisted indicators render in the right panel from the start.
+  await initIndicatorPicker();
   drawChart();
   setView('chart');
-  initIndicatorPicker();
 
   const sw = document.getElementById('split-wrap');
   document.getElementById('left-pane').style.flex = `1 1 ${_splitRatio}%`;
@@ -540,31 +542,109 @@ function addIndicatorToChart() {
     const el = document.getElementById(`ind-param-${p}`);
     if (el) params[p] = Number(el.value);
   });
-  fetchAndRenderIndicator(name, params, /*persist=*/true);
+  renderIndicator(name, params, /*persist=*/true);
 }
 
-async function fetchAndRenderIndicator(name, params, persist) {
-  const symbol = (D.cfg && D.cfg.symbol) || (_activeSymbol === 'NIFTY' ? 'NIFTY' : _activeSymbol) || 'NIFTY';
-  const body = {
-    symbol, name, params,
-    date_from: D.date_from, date_to: D.date_to,
-    timeframe: (D.cfg && D.cfg.timeframe) || '5m',
-  };
-  let r, j;
-  try {
-    r = await fetch('/api/indicators/compute', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    j = await r.json();
-  } catch (e) {
-    alert('Indicator fetch failed: ' + e.message);
-    return;
+// ── Client-side indicator math ──────────────────────────────────────────────
+// Computed in the browser straight from the candles already on the page — no
+// server round-trip, no data re-download, so adding an indicator is instant.
+// (The server's /api/indicators/compute still exists and matches these, but the
+// picker no longer needs it.) VWAP needs volume, which _candles_json now ships.
+function _emaArr(vals, period) {
+  const k = 2 / (period + 1), out = new Array(vals.length).fill(null);
+  let prev = null;
+  for (let i = 0; i < vals.length; i++) {
+    const v = vals[i];
+    if (v == null) { out[i] = prev; continue; }
+    prev = prev == null ? v : v * k + prev * (1 - k);
+    out[i] = prev;
   }
-  if (j.error) { alert('Indicator error: ' + j.error); return; }
+  return out;
+}
+function _smaArr(vals, period) {
+  const out = new Array(vals.length).fill(null);
+  let sum = 0;
+  for (let i = 0; i < vals.length; i++) {
+    sum += vals[i];
+    if (i >= period) sum -= vals[i - period];
+    if (i >= period - 1) out[i] = sum / period;
+  }
+  return out;
+}
+function _rsiArr(close, period) {
+  const out = new Array(close.length).fill(null);
+  let avgG = 0, avgL = 0;
+  for (let i = 1; i < close.length; i++) {
+    const ch = close[i] - close[i - 1];
+    const g = Math.max(ch, 0), l = Math.max(-ch, 0);
+    if (i <= period) {
+      avgG += g; avgL += l;
+      if (i === period) { avgG /= period; avgL /= period; out[i] = 100 - 100 / (1 + (avgL === 0 ? 100 : avgG / avgL)); }
+    } else {
+      avgG = (avgG * (period - 1) + g) / period;
+      avgL = (avgL * (period - 1) + l) / period;
+      out[i] = 100 - 100 / (1 + (avgL === 0 ? 100 : avgG / avgL));
+    }
+  }
+  return out;
+}
+function _atrArr(candles, period) {
+  const out = new Array(candles.length).fill(null);
+  const tr = candles.map((c, i) => i === 0 ? (c.high - c.low)
+    : Math.max(c.high - c.low, Math.abs(c.high - candles[i-1].close), Math.abs(c.low - candles[i-1].close)));
+  let atr = null;
+  for (let i = 0; i < candles.length; i++) {
+    if (i === period - 1) { atr = tr.slice(0, period).reduce((a, b) => a + b, 0) / period; out[i] = atr; }
+    else if (i >= period) { atr = (atr * (period - 1) + tr[i]) / period; out[i] = atr; }
+  }
+  return out;
+}
+function _vwapArr(candles) {
+  // Cumulative VWAP, reset each calendar day (matches a typical session VWAP).
+  const out = new Array(candles.length).fill(null);
+  let cumPV = 0, cumV = 0, curDay = null;
+  for (let i = 0; i < candles.length; i++) {
+    const c = candles[i];
+    const day = new Date(c.time * 1000).toISOString().slice(0, 10);
+    if (day !== curDay) { curDay = day; cumPV = 0; cumV = 0; }
+    const tp = (c.high + c.low + c.close) / 3;
+    const v = c.volume || 0;
+    cumPV += tp * v; cumV += v;
+    out[i] = cumV > 0 ? cumPV / cumV : tp;
+  }
+  return out;
+}
+
+function _computeIndicator(name, params, candles) {
+  const close = candles.map(c => c.close);
+  const period = params.period;
+  let arr;
+  switch (name) {
+    case 'EMA':    arr = _emaArr(close, period); break;
+    case 'SMA':    arr = _smaArr(close, period); break;
+    case 'BBANDS': arr = _smaArr(close, period); break;   // mid band
+    case 'RSI':    arr = _rsiArr(close, period); break;
+    case 'ATR':    arr = _atrArr(candles, period); break;
+    case 'VWAP':   arr = _vwapArr(candles); break;
+    default: return null;
+  }
+  const values = [];
+  for (let i = 0; i < candles.length; i++) {
+    if (arr[i] == null || isNaN(arr[i])) continue;
+    values.push({ time: candles[i].time, value: Math.round(arr[i] * 10000) / 10000 });
+  }
+  return values;
+}
+
+// Render one indicator from client-side math (instant). persist=true saves it
+// to localStorage so it survives refreshes and chart redraws.
+function renderIndicator(name, params, persist) {
   if (!_chart) return;
-  const ind = j.indicator;
-  const series = ind.type === 'histogram'
-    ? _chart.addHistogramSeries({ color: ind.color })
-    : _chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, title: ind.name });
-  series.setData(ind.values || []);
+  const spec = _indicatorRegistry.find(i => i.name === name) || {};
+  const values = _computeIndicator(name, params, _curCandles());
+  if (values == null) { alert('Unknown indicator: ' + name); return; }
+  const label = name + (Object.keys(params || {}).length ? '(' + Object.values(params).join(',') + ')' : '');
+  _addIndicatorSeries({ name: label, type: spec.type || 'line', color: spec.color || '#8b949e', overlay: spec.overlay, values });
 
   if (persist) {
     const list = _getActiveIndicators();
@@ -588,7 +668,6 @@ function removeActiveIndicator(i) {
   _saveActiveIndicators(list);
   drawChart();
   renderActiveIndicatorChips();
-  for (const ind of list) fetchAndRenderIndicator(ind.name, ind.params, false);
 }
 
 // Two-tier dropdown: pick the strategy type first (rsi/range/ema), then
@@ -833,6 +912,7 @@ function drawChart() {
     container.innerHTML = '<div class="empty">No candle data</div>';
     return;
   }
+  _hasOscillator = false;   // fresh chart — no oscillator panel yet
   _chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
     layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
@@ -883,8 +963,37 @@ function drawChart() {
   // drawChart() recreates _chart/_series from scratch — re-apply any
   // user-added indicators (picker) on top, since they don't come from D.
   if (document.getElementById('ind-active-list')) {
-    for (const ind of _getActiveIndicators()) fetchAndRenderIndicator(ind.name, ind.params, false);
+    for (const ind of _getActiveIndicators()) renderIndicator(ind.name, ind.params, false);
   }
+}
+
+// Tracks whether any oscillator (RSI/ATR — own bottom panel) is on the chart,
+// so we can shrink the candle area to make room (TV-style stacked panes).
+let _hasOscillator = false;
+
+// Adds one indicator series, honouring ind.overlay:
+//   overlay !== false  → same price scale as candles (EMA/SMA/VWAP/BBANDS)
+//   overlay === false  → its OWN scale pinned to the bottom ~22% (RSI/ATR),
+//                        i.e. a separate panel like TradingView.
+function _addIndicatorSeries(ind) {
+  const overlay = ind.overlay !== false;
+  const opts = { color: ind.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: ind.name };
+  if (!overlay) {
+    opts.priceScaleId = 'osc_' + ind.name;   // own scale → own panel
+  }
+  const series = ind.type === 'histogram'
+    ? _chart.addHistogramSeries(opts)
+    : _chart.addLineSeries(opts);
+  series.setData(ind.values || []);
+  if (!overlay) {
+    _chart.priceScale('osc_' + ind.name).applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+    if (!_hasOscillator) {
+      _hasOscillator = true;
+      // Push the candles up into the top 75% so the oscillator panel below is clear.
+      _chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
+    }
+  }
+  return series;
 }
 
 // Generic renderer for the _CHARTING plot-spec JSON (indicators/zones/pattern
@@ -892,12 +1001,7 @@ function drawChart() {
 // See _CHARTING/plot_spec.py for the schema this consumes.
 function _renderPlotSpec(spec) {
   if (!spec) return;
-  (spec.indicators || []).forEach(ind => {
-    const series = ind.type === 'histogram'
-      ? _chart.addHistogramSeries({ color: ind.color })
-      : _chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, title: ind.name });
-    series.setData(ind.values || []);
-  });
+  (spec.indicators || []).forEach(ind => _addIndicatorSeries(ind));
   (spec.zones || []).forEach(z => {
     if (z.kind === 'line') {
       _series.createPriceLine({ price: z.price, color: z.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: z.label });

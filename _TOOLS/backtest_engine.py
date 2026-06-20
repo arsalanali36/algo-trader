@@ -541,7 +541,7 @@ def _run_rsi(date_from, date_to, cfg):
 
     rsi_series = chind.compute_indicator(df, "RSI", period=period)
     spec = chspec.build_plot_spec(df, indicators=[
-        {"name": f"RSI({period})", "series": rsi_series, "type": "line", "color": "#1f6feb"},
+        {"name": f"RSI({period})", "series": rsi_series, "type": "line", "color": "#1f6feb", "overlay": False},
     ])
     return trades, df, spec
 
@@ -716,8 +716,10 @@ def _match(eng, tv):
 
 # ───────────────────────── JSON shaping ─────────────────────────
 def _candles_json(df):
+    has_vol = "volume" in df.columns
     return [{"time": int(r["time"].timestamp()), "open": float(r["open"]), "high": float(r["high"]),
-             "low": float(r["low"]), "close": float(r["close"])} for _, r in df.iterrows()]
+             "low": float(r["low"]), "close": float(r["close"]),
+             "volume": float(r["volume"]) if has_vol else 0.0} for _, r in df.iterrows()]
 
 
 def _trades_json(trades, statuses=None):
@@ -928,7 +930,7 @@ def compute_indicator_for_chart(symbol, date_from, date_to, name, params, timefr
     reg = chind.INDICATOR_REGISTRY[name]
     label = name if not params else f"{name}({','.join(str(v) for v in params.values())})"
     spec = chspec.build_plot_spec(df, indicators=[
-        {"name": label, "series": series, "type": reg["type"], "color": reg["color"]},
+        {"name": label, "series": series, "type": reg["type"], "color": reg["color"], "overlay": reg["overlay"]},
     ])
     return {"indicator": spec["indicators"][0]}
 
