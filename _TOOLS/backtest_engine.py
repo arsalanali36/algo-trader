@@ -285,10 +285,31 @@ def _ema_signal_backtest(df, fast, slow):
 _WARMUP_CALENDAR_DAYS = 45
 
 
+def _earliest_cached_day():
+    """Earliest NIFTY_*.csv already on disk — using it costs nothing (no
+    download) and gives RSI/EMA more bars to converge than the flat 45-day
+    floor alone, which still leaves visible residual error right at a hard
+    threshold (e.g. RSI hovering at exactly 70) even after 45 days."""
+    days = []
+    for p in glob.glob(os.path.join(DATA_DIR, "NIFTY_*.csv")):
+        b = os.path.basename(p)
+        if "daily" in b.lower():
+            continue
+        try:
+            days.append(pd.to_datetime(b[6:16]))
+        except Exception:
+            pass
+    return min(days) if days else None
+
+
 def _buffered_from(date_from):
     if not date_from:
         return date_from
-    return (pd.to_datetime(date_from) - pd.Timedelta(days=_WARMUP_CALENDAR_DAYS)).strftime("%Y-%m-%d")
+    floor = pd.to_datetime(date_from) - pd.Timedelta(days=_WARMUP_CALENDAR_DAYS)
+    earliest = _earliest_cached_day()
+    if earliest is not None and earliest < floor:
+        floor = earliest   # free extra warm-up already cached locally
+    return floor.strftime("%Y-%m-%d")
 
 
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
