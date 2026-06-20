@@ -36,6 +36,15 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .sym-tab{padding:4px 10px;border-radius:5px;font-size:11px;color:#8b949e;cursor:pointer;background:#161b22;border:1px solid #30363d}
 .sym-tab.active{color:#fff;background:#1f6feb;border-color:#1f6feb}
 
+/* match-status filter tabs (chart markers + table rows) */
+.match-filter-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid #21262d;flex-shrink:0;flex-wrap:wrap}
+.match-filter-tab{padding:3px 9px;border-radius:5px;font-size:11px;cursor:pointer;background:#161b22;border:1px solid #30363d;color:#8b949e}
+.match-filter-tab.active{border-color:currentColor}
+.match-filter-tab.active.green{color:#3fb950;background:#3fb95015}
+.match-filter-tab.active.gray{color:#d29922;background:#d2992215}
+.match-filter-tab.active.red{color:#f85149;background:#f8514915}
+.match-filter-tab.active.all{color:#e6edf3;background:#1f6feb;border-color:#1f6feb}
+
 #chart{flex:1;width:100%;min-height:0}
 .empty{display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:13px;text-align:center;padding:20px}
 
@@ -84,9 +93,12 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <div class="hdr">
   <h1>📊 Backtest Results</h1>
-  <select id="strategy-select" onchange="onStrategyChange()"></select>
+  <select id="strategy-base-select" onchange="onBaseChange()"></select>
+  <select id="strategy-version-select" onchange="onVersionChange()"></select>
   <span id="hdr-range" style="font-size:11px;color:#8b949e"></span>
   <div style="margin-left:auto;display:flex;gap:8px">
+    <button class="btn btn-gray" onclick="openSavedResults()">📂 Saved Results</button>
+    <button class="btn btn-gray" onclick="saveCurrentResult()">💾 Save Result</button>
     <button class="btn btn-gray" id="copy-code-btn" onclick="copyPineCode()">📋 Copy Pine Code</button>
     <button class="btn btn-blue" onclick="openEditModal()">✏️ Edit &amp; Re-run</button>
   </div>
@@ -98,6 +110,14 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <div class="sym-tabs" id="sym-tabs"></div>
       <span class="ttl" style="text-align:right">CHART</span>
       <button class="collapse-btn" id="left-collapse-btn" onclick="togglePane('left')">▢</button>
+    </div>
+    <div class="match-filter-tabs" id="match-filter-tabs"></div>
+    <div id="indicator-picker" style="display:flex;gap:6px;align-items:center;padding:4px 8px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d">
+      <span>➕ Add Indicator:</span>
+      <select id="ind-name-select" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:2px 4px"></select>
+      <span id="ind-param-wrap"></span>
+      <button class="btn btn-gray" style="font-size:11px;padding:2px 8px" onclick="addIndicatorToChart()">Add</button>
+      <span id="ind-active-list" style="display:flex;gap:4px;flex-wrap:wrap"></span>
     </div>
     <div id="chart"><div class="empty">No chart data — open this from the backtest panel's "🔍 Full View" button.</div></div>
   </div>
@@ -116,6 +136,10 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
         <button id="btn-view-table" onclick="setView('table')">📋 Table</button>
       </div>
     </div>
+    <!-- Filter tabs live OUTSIDE the scrollable area (flex-shrink:0, like
+         stats-block above) so they — and the toggle buttons above them —
+         stay visible no matter how far you scroll through a long trade list. -->
+    <div id="right-toolbar" style="flex-shrink:0"></div>
     <div class="right-content" id="right-content"></div>
   </div>
 </div>
@@ -136,6 +160,13 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
         <label>TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv)</label>
         <input type="file" id="modal-tv-files" multiple accept=".log,.txt,.csv">
       </div>
+      <div class="field-row" id="modal-multi-row" style="display:none">
+        <label>Symbol(s) — pick 1 for a single-symbol run, or several for a combined multi-symbol run</label>
+        <div style="margin-top:6px">
+          <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openSymbolPicker()">📋 Pick Symbols</button>
+          <span id="modal-symbols-summary" style="font-size:11px;color:#8b949e;margin-left:8px"></span>
+        </div>
+      </div>
     </div>
 
     <div class="modal-actions">
@@ -144,6 +175,37 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <button class="btn btn-green" onclick="modalRun(true)">💾 Save &amp; Run</button>
     </div>
     <div class="modal-msg" id="modal-msg"></div>
+  </div>
+</div>
+
+<!-- Saved Results — past backtest runs, re-runnable -->
+<div class="modal-overlay" id="saved-results-modal">
+  <div class="modal-box" style="width:760px;max-width:95vw">
+    <h2>📂 Saved Backtest Results</h2>
+    <div id="saved-results-list" style="max-height:420px;overflow-y:auto">Loading...</div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeSavedResults()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Symbol picker — which equities a multi-symbol backtest runs on -->
+<div class="modal-overlay" id="symbol-picker-modal">
+  <div class="modal-box" style="width:420px">
+    <h2>📋 Pick Symbols</h2>
+    <input type="text" id="symbol-picker-search" placeholder="🔍 Search any NSE stock (e.g. TECHM)..."
+      style="width:100%;margin-bottom:10px;padding:6px 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px"
+      oninput="_symPickerSearch(this.value)">
+    <div style="display:flex;gap:8px;margin-bottom:10px">
+      <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="_symPickerSetAll(true)">Select All</button>
+      <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="_symPickerSetAll(false)">Clear</button>
+      <span id="symbol-picker-selected-count" style="font-size:11px;color:#8b949e;align-self:center;margin-left:auto"></span>
+    </div>
+    <div id="symbol-picker-list" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;max-height:320px;overflow-y:auto"></div>
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeSymbolPicker()">Cancel</button>
+      <button class="btn btn-blue" onclick="confirmSymbolPicker()">Done</button>
+    </div>
   </div>
 </div>
 
@@ -176,7 +238,11 @@ const STRAT_FIELDS = {
     {id: 'max_trades_per_symbol', label: 'Max Trades/Symbol', type: 'number'},
     {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
   ],
-  range: [
+  // key is the baseType() result, not the backend's strategy_type string —
+  // range's saved variant ids are "ARS_CHAIN_V1" etc (alias to "range" only
+  // server-side in trader_dashboard.py's _base()), so this must be keyed
+  // "ARS_CHAIN" to actually match here.
+  ARS_CHAIN: [
     {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
     {id: 'strike_offset', label: 'Strike Offset', type: 'select', opts: ['-3','-2','-1','0','1','2','3']},
     {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m']},
@@ -189,9 +255,192 @@ const STRAT_FIELDS = {
     {id: 'atr_exit', label: 'ATR Exit', type: 'checkbox'},
     {id: 'fib_exit', label: 'Fib Exit', type: 'checkbox'},
     {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ],
+  vwap: [
+    // No separate "Symbol" select here — the 📋 Pick Symbols button covers
+    // it for both single- and multi-symbol runs now (pick 1 = single run).
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m']},
+    {id: 'ema_len', label: 'EMA Length', type: 'number'},
+    {id: 'sl_buffer_points', label: 'SL Buffer (pts)', type: 'number'},
+    {id: 'r1', label: 'Target 1 (R)', type: 'number'},
+    {id: 'r2', label: 'Target 2 (R)', type: 'number'},
+    {id: 'r3', label: 'Target 3 (R)', type: 'number'},
+    {id: 'max_sl_percent', label: 'Max SL %', type: 'number'},
+    {id: 'partial1_pct', label: 'Qty% Exit @ T1', type: 'number'},
+    {id: 'partial2_pct', label: 'Qty% Exit @ T2', type: 'number'},
+    {id: 'use_partial_exits', label: 'Use Partial Exits', type: 'checkbox'},
+    {id: 'use_daily_trend_filter', label: 'Daily Trend Filter', type: 'checkbox'},
+    {id: 'use_session_filter', label: 'Session Filter', type: 'checkbox'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
   ]
 };
-function baseType(sid){ return (sid||'').replace(/_v\d+$/,'').replace(/_\d+$/,''); }
+
+// Symbol picker (multi-symbol "Run on multiple symbols" backtest). Starting
+// list is just a handful of popular names — typing in the search box calls
+// /api/symbols/search (backed by Dhan's NSE equity scrip master) so ANY
+// listed stock is reachable, not just a hardcoded NIFTY-50 subset.
+const DEFAULT_EQUITY_SYMBOLS = ["TCS", "RELIANCE", "POLYCAB", "INFY", "HDFCBANK", "ICICIBANK", "SBIN"];
+let _selectedSymbols = ['TCS', 'POLYCAB', 'RELIANCE'];
+let _symPickerVisible = DEFAULT_EQUITY_SYMBOLS;
+let _symPickerSearchTimer = null;
+
+function _renderSymbolPickerList() {
+  const wrap = document.getElementById('symbol-picker-list');
+  // Union so already-selected symbols never disappear from view just
+  // because they don't match the current search text.
+  const shown = [...new Set([..._selectedSymbols, ..._symPickerVisible])];
+  wrap.innerHTML = shown.map(sym =>
+    `<label style="font-size:12px;display:flex;align-items:center;gap:5px">
+      <input type="checkbox" class="sym-picker-cb" value="${sym}" ${_selectedSymbols.includes(sym) ? 'checked' : ''} onchange="_symPickerSync()"> ${sym}
+    </label>`
+  ).join('');
+  _symPickerUpdateCount();
+}
+function _symPickerSync() {
+  // Keep _selectedSymbols live as checkboxes change, so a search-triggered
+  // re-render doesn't lose a selection that's no longer in the visible set.
+  document.querySelectorAll('.sym-picker-cb').forEach(cb => {
+    if (cb.checked) { if (!_selectedSymbols.includes(cb.value)) _selectedSymbols.push(cb.value); }
+    else { _selectedSymbols = _selectedSymbols.filter(s => s !== cb.value); }
+  });
+  _symPickerUpdateCount();
+}
+function _symPickerUpdateCount() {
+  const el = document.getElementById('symbol-picker-selected-count');
+  if (el) el.textContent = _selectedSymbols.length ? `${_selectedSymbols.length} selected` : '';
+}
+async function _symPickerSearch(q) {
+  clearTimeout(_symPickerSearchTimer);
+  _symPickerSearchTimer = setTimeout(async () => {
+    _symPickerSync();
+    if (!q.trim()) { _symPickerVisible = DEFAULT_EQUITY_SYMBOLS; _renderSymbolPickerList(); return; }
+    try {
+      const r = await fetch('/api/symbols/search?q=' + encodeURIComponent(q.trim()));
+      const d = await r.json();
+      _symPickerVisible = Array.isArray(d) ? d : [];
+    } catch (e) { _symPickerVisible = []; }
+    _renderSymbolPickerList();
+  }, 250);
+}
+function openSymbolPicker() {
+  _symPickerVisible = DEFAULT_EQUITY_SYMBOLS;
+  const search = document.getElementById('symbol-picker-search');
+  if (search) search.value = '';
+  _renderSymbolPickerList();
+  document.getElementById('symbol-picker-modal').classList.add('open');
+}
+function closeSymbolPicker() { document.getElementById('symbol-picker-modal').classList.remove('open'); }
+function _symPickerSetAll(checked) {
+  document.querySelectorAll('.sym-picker-cb').forEach(cb => cb.checked = checked);
+  _symPickerSync();
+}
+function confirmSymbolPicker() {
+  _symPickerSync();
+  document.getElementById('modal-symbols-summary').textContent =
+    _selectedSymbols.length ? _selectedSymbols.join(', ') : '(none selected)';
+  closeSymbolPicker();
+}
+
+// ───────────────────────── Saved Backtest Results ─────────────────────────
+async function saveCurrentResult() {
+  if (!D || !D.summary) { alert('Run a backtest first'); return; }
+  const defaultName = `${D.strategy || '?'} ${D.date_from || ''}→${D.date_to || ''}`;
+  const name = prompt('Name this saved result:', defaultName);
+  if (!name) return;
+  const body = {
+    name, strategy: D.strategy, cfg: D.cfg, date_from: D.date_from, date_to: D.date_to,
+    summary: D.summary, symbols: D.multi ? Object.keys(D.multi) : null
+  };
+  try {
+    const r = await fetch('/api/backtest/saved', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await r.json();
+    if (d.error) { alert('⚠ ' + d.error); return; }
+    alert('✅ Saved: ' + name);
+  } catch (e) { alert('⚠ ' + e.message); }
+}
+
+async function openSavedResults() {
+  document.getElementById('saved-results-modal').classList.add('open');
+  const list = document.getElementById('saved-results-list');
+  list.textContent = 'Loading...';
+  try {
+    const r = await fetch('/api/backtest/saved');
+    const entries = await r.json();
+    _renderSavedResultsList(entries);
+  } catch (e) {
+    list.textContent = '⚠ ' + e.message;
+  }
+}
+function closeSavedResults() { document.getElementById('saved-results-modal').classList.remove('open'); }
+
+function _renderSavedResultsList(entries) {
+  const list = document.getElementById('saved-results-list');
+  if (!entries.length) { list.innerHTML = '<div class="empty">No saved results yet — run a backtest, then click "💾 Save Result".</div>'; return; }
+  entries.sort((a, b) => (b.saved_at || '').localeCompare(a.saved_at || ''));
+  list.innerHTML = `<table class="trades"><thead><tr>
+    <th>Name</th><th>Strategy</th><th>Range</th><th>Trades</th><th>Win%</th><th>PF</th><th>PnL</th><th>Saved</th><th></th>
+  </tr></thead><tbody>` + entries.map(e => {
+    const s = e.summary || {};
+    const pnlCls = (s.pnl_points || 0) >= 0 ? 'green' : 'red';
+    return `<tr>
+      <td>${e.name}${e.symbols ? ` <span class="gray" style="font-size:10px">(${e.symbols.join('+')})</span>` : ''}</td>
+      <td>${e.strategy || '—'}</td>
+      <td style="font-size:11px;color:#8b949e">${e.date_from || '?'} → ${e.date_to || '?'}</td>
+      <td>${s.n_trades ?? '—'}</td>
+      <td>${s.win_rate != null ? s.win_rate + '%' : '—'}</td>
+      <td>${s.profit_factor ?? '—'}</td>
+      <td class="${pnlCls}">${s.pnl_points ?? '—'}</td>
+      <td style="font-size:11px;color:#8b949e">${e.saved_at || ''}</td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-blue" style="padding:3px 8px;font-size:11px" onclick='_runSavedEntry(${JSON.stringify(e).replace(/'/g, "&#39;")})'>▶ Re-run</button>
+        <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick='_deploySavedEntry(${JSON.stringify(e).replace(/'/g, "&#39;")})' title="Open in Run modal for Paper/Live deploy">🚀 Deploy</button>
+        <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="deleteSavedResult('${e.id}')">🗑</button>
+      </td>
+    </tr>`;
+  }).join('') + '</tbody></table>';
+}
+
+async function deleteSavedResult(id) {
+  if (!confirm('Delete this saved result?')) return;
+  await fetch('/api/backtest/saved/' + id, { method: 'DELETE' });
+  openSavedResults();
+}
+
+// Loads a saved entry's strategy/cfg/dates back into the Edit & Re-run modal
+// (pre-filled, including the multi-symbol checkbox if it was a combined
+// run) rather than re-running silently — lets the user double-check/tweak
+// params before actually re-running, same as any other Edit & Re-run.
+// Jumps to the live dashboard's Run modal so the user can deploy this saved
+// backtest result to Paper/Live straight from the Saved Results list,
+// instead of having to find the matching strategy/variant in the grid.
+function _deploySavedEntry(entry) {
+  const sym = (entry.cfg && entry.cfg.symbol) || (entry.symbols || [])[0] || '';
+  const params = new URLSearchParams({ deploy: entry.strategy || '' });
+  if (sym) params.set('symbol', sym);
+  window.location.href = '/?' + params.toString();
+}
+
+function _runSavedEntry(entry) {
+  D = Object.assign({}, D, { strategy: entry.strategy, cfg: entry.cfg || {}, date_from: entry.date_from, date_to: entry.date_to });
+  const isMulti = entry.symbols && entry.symbols.length;
+  _selectedSymbols = isMulti ? entry.symbols : (entry.cfg && entry.cfg.symbol ? [entry.cfg.symbol] : ['TCS']);
+  closeSavedResults();
+  populateStrategySelectors();
+  openEditModal(true);   // preserve the symbol list just set above
+}
+
+function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,''); }
+
+// Friendly labels — config keys are internal ids (ARS_CHAIN_V1, rsi_v1) and
+// look ugly verbatim in a dropdown. Map the base id to a readable name; the
+// version dropdown then shows just the version suffix (v1/v2) since the base
+// name is already shown in the dropdown to its left.
+const STRAT_DISPLAY_NAMES = { ARS_CHAIN: 'Range Chain', rsi: 'RSI', ema: 'EMA Crossover', vwap: 'VWAP-EMA Failure' };
+function baseLabel(base){ return STRAT_DISPLAY_NAMES[base] || base; }
+function versionLabel(id, base){
+  const suffix = id.slice(base.length).replace(/^_/, '');
+  return suffix ? suffix.toUpperCase() : id;
+}
 
 async function copyPineCode() {
   const btn = document.getElementById('copy-code-btn');
@@ -222,54 +471,168 @@ function init() {
   const raw = localStorage.getItem('bt_chart_data');
   if (!raw) return;
   D = JSON.parse(raw);
-  _activeSymbol = (D.cfg && Array.isArray(D.cfg.symbols) && D.cfg.symbols[0]) || 'NIFTY';
+  _activeSymbol = symbolsFor(D.cfg)[0] || 'NIFTY';
 
   document.getElementById('hdr-range').textContent = (D.date_from || '?') + ' → ' + (D.date_to || '?');
-  populateStrategySelect();
+  populateStrategySelectors();
   renderSymTabs();
+  renderMatchFilterTabs();
   renderStats();
   drawChart();
   setView('chart');
+  initIndicatorPicker();
 
   const sw = document.getElementById('split-wrap');
   document.getElementById('left-pane').style.flex = `1 1 ${_splitRatio}%`;
   document.getElementById('right-pane').style.flex = `1 1 ${100 - _splitRatio}%`;
 }
 
-async function populateStrategySelect() {
-  const sel = document.getElementById('strategy-select');
-  const sid = D.strategy || 'range_v1';
-  sel.innerHTML = `<option value="${sid}">${sid}</option>`;
-  sel.value = sid;
+// ───────────────────────── Add Indicator picker ─────────────────────────
+// No-code indicator plotting: dropdown is populated from the server's
+// _CHARTING.indicators registry, not hand-maintained here. Selections persist
+// per (strategy, date range) in localStorage so they survive a refresh.
+let _indicatorRegistry = [];
+
+function _indicatorStorageKey() {
+  return `bt_indicators_${D.strategy || 'unknown'}_${D.date_from || ''}_${D.date_to || ''}`;
+}
+
+function _getActiveIndicators() {
+  try { return JSON.parse(localStorage.getItem(_indicatorStorageKey()) || '[]'); }
+  catch (e) { return []; }
+}
+
+function _saveActiveIndicators(list) {
+  localStorage.setItem(_indicatorStorageKey(), JSON.stringify(list));
+}
+
+async function initIndicatorPicker() {
   try {
-    // Use the actual saved variant ids (nifty_config.json keys, e.g.
-    // "range_v1"/"rsi_v1"/"ema_v1") — not /api/pine/strategies' ids, which
-    // are derived from py_file names and don't always match real variant ids
-    // (e.g. range's py_file is "range_trader.py", not "range_v1").
+    const r = await fetch('/api/indicators/list');
+    _indicatorRegistry = await r.json();
+  } catch (e) {
+    _indicatorRegistry = [];
+  }
+  const sel = document.getElementById('ind-name-select');
+  sel.innerHTML = _indicatorRegistry.map(i => `<option value="${i.name}">${i.name}</option>`).join('');
+  sel.onchange = renderIndicatorParamInput;
+  renderIndicatorParamInput();
+  renderActiveIndicatorChips();
+  // drawChart() (already called once in init(), before this registry was
+  // ready) re-applies persisted indicators on every redraw — see its tail.
+}
+
+function renderIndicatorParamInput() {
+  const name = document.getElementById('ind-name-select').value;
+  const spec = _indicatorRegistry.find(i => i.name === name);
+  const wrap = document.getElementById('ind-param-wrap');
+  if (!spec || !spec.params.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = spec.params.map(p =>
+    `<input id="ind-param-${p}" type="number" value="${spec.default[p] ?? ''}" placeholder="${p}" style="width:50px;background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:2px 4px">`
+  ).join('');
+}
+
+function addIndicatorToChart() {
+  const name = document.getElementById('ind-name-select').value;
+  const spec = _indicatorRegistry.find(i => i.name === name);
+  const params = {};
+  (spec ? spec.params : []).forEach(p => {
+    const el = document.getElementById(`ind-param-${p}`);
+    if (el) params[p] = Number(el.value);
+  });
+  fetchAndRenderIndicator(name, params, /*persist=*/true);
+}
+
+async function fetchAndRenderIndicator(name, params, persist) {
+  const symbol = (D.cfg && D.cfg.symbol) || (_activeSymbol === 'NIFTY' ? 'NIFTY' : _activeSymbol) || 'NIFTY';
+  const body = {
+    symbol, name, params,
+    date_from: D.date_from, date_to: D.date_to,
+    timeframe: (D.cfg && D.cfg.timeframe) || '5m',
+  };
+  let r, j;
+  try {
+    r = await fetch('/api/indicators/compute', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    j = await r.json();
+  } catch (e) {
+    alert('Indicator fetch failed: ' + e.message);
+    return;
+  }
+  if (j.error) { alert('Indicator error: ' + j.error); return; }
+  if (!_chart) return;
+  const ind = j.indicator;
+  const series = ind.type === 'histogram'
+    ? _chart.addHistogramSeries({ color: ind.color })
+    : _chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, title: ind.name });
+  series.setData(ind.values || []);
+
+  if (persist) {
+    const list = _getActiveIndicators();
+    list.push({ name, params });
+    _saveActiveIndicators(list);
+    renderActiveIndicatorChips();
+  }
+}
+
+function renderActiveIndicatorChips() {
+  const wrap = document.getElementById('ind-active-list');
+  const list = _getActiveIndicators();
+  wrap.innerHTML = list.map((ind, i) =>
+    `<span style="background:#21262d;border:1px solid #30363d;border-radius:10px;padding:1px 6px">${ind.name}${Object.keys(ind.params||{}).length ? '(' + Object.values(ind.params).join(',') + ')' : ''} <a href="javascript:removeActiveIndicator(${i})" style="color:#f85149">✕</a></span>`
+  ).join('');
+}
+
+function removeActiveIndicator(i) {
+  const list = _getActiveIndicators();
+  list.splice(i, 1);
+  _saveActiveIndicators(list);
+  drawChart();
+  renderActiveIndicatorChips();
+  for (const ind of list) fetchAndRenderIndicator(ind.name, ind.params, false);
+}
+
+// Two-tier dropdown: pick the strategy type first (rsi/range/ema), then
+// which saved variant/version of it (rsi_v1, rsi_v2, ...). Built from the
+// actual saved variant ids in nifty_config.json (not /api/pine/strategies'
+// ids, which are derived from py_file names and don't always match real
+// variant ids — e.g. range's py_file is "range_trader.py", not "range_v1").
+let _allVariantIds = [];
+
+async function populateStrategySelectors() {
+  const sid = D.strategy || 'range_v1';
+  _allVariantIds = [sid];
+  try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
     const ids = Object.keys(cfg);
-    if (!ids.length) return;
-    sel.innerHTML = '';
-    if (!ids.includes(sid)) {
-      const cur = document.createElement('option');
-      cur.value = sid; cur.textContent = sid + ' (current run)';
-      sel.appendChild(cur);
-    }
-    ids.forEach(id => {
-      const opt = document.createElement('option');
-      opt.value = id; opt.textContent = id;
-      sel.appendChild(opt);
-    });
-    sel.value = sid;
-  } catch (e) { /* keep the single current-run option already set above */ }
+    if (ids.length) _allVariantIds = ids.includes(sid) ? ids : [sid, ...ids];
+  } catch (e) { /* keep just the current run's id */ }
+
+  const baseSel = document.getElementById('strategy-base-select');
+  const bases = [...new Set(_allVariantIds.map(baseType))];
+  baseSel.innerHTML = bases.map(b => `<option value="${b}">${baseLabel(b)}</option>`).join('');
+  baseSel.value = baseType(sid);
+  populateVersionSelect(sid);
+}
+
+function populateVersionSelect(selectedId) {
+  const base = document.getElementById('strategy-base-select').value;
+  const verSel = document.getElementById('strategy-version-select');
+  const versions = _allVariantIds.filter(id => baseType(id) === base);
+  verSel.innerHTML = versions.map(id => `<option value="${id}">${versionLabel(id, base)}</option>`).join('');
+  if (selectedId && versions.includes(selectedId)) verSel.value = selectedId;
+}
+
+function onBaseChange() {
+  populateVersionSelect(null);   // base changed — default to first version of that base
+  onVersionChange();
 }
 
 // Switching strategy here doesn't re-run a backtest by itself (no result to
 // show yet for a strategy you haven't run) — it loads that strategy's saved
 // config straight into the Edit & Re-run popup so you can pick dates and run it.
-async function onStrategyChange() {
-  const sid = document.getElementById('strategy-select').value;
+async function onVersionChange() {
+  const sid = document.getElementById('strategy-version-select').value;
   if (!sid || sid === D.strategy) return;
   try {
     const r = await fetch('/api/config');
@@ -281,10 +644,103 @@ async function onStrategyChange() {
   }
 }
 
+// ───────────────────────── match-status filter ─────────────────────────
+let _matchFilter = 'all';   // all | exact | near | entry | unmatched
+const FILTER_TABS = [
+  { key: 'all',       label: 'All',         cls: 'all'  },
+  { key: 'exact',     label: '✅ Exact',     cls: 'green'},
+  { key: 'near',      label: '🟡 Near',      cls: 'gray' },
+  { key: 'entry',     label: '🟠 Entry-only',cls: 'gray' },
+  { key: 'unmatched', label: '❌ No match',  cls: 'red'  }
+];
+function renderMatchFilterTabs() {
+  const wrap = document.getElementById('match-filter-tabs');
+  if (!D.accuracy) { wrap.innerHTML = ''; return; }   // no TV log uploaded — nothing to filter by
+  wrap.innerHTML = FILTER_TABS.map(f =>
+    `<div class="match-filter-tab ${f.cls}${_matchFilter === f.key ? ' active' : ''}" onclick="setMatchFilter('${f.key}')">${f.label}</div>`
+  ).join('');
+}
+function setMatchFilter(key) {
+  _matchFilter = key;
+  renderMatchFilterTabs();
+  drawChart();
+  if (document.getElementById('btn-view-table').classList.contains('active')) renderTradeTable();
+}
+
+// Independent of the match-status filter above — Win/Loss is about the
+// trade's own P&L, not how well it matched TV, so both filters can be
+// active together (e.g. "show only the Losses that were also No-match").
+let _pnlFilter = 'all';   // all | win | loss
+const PNL_FILTER_TABS = [
+  { key: 'all',  label: 'All',     cls: 'all'   },
+  { key: 'win',  label: '✅ Win',  cls: 'green' },
+  { key: 'loss', label: '❌ Loss', cls: 'red'   }
+];
+function renderPnlFilterTabs() {
+  const wrap = document.getElementById('pnl-filter-tabs');
+  if (!wrap) return;
+  wrap.innerHTML = PNL_FILTER_TABS.map(f =>
+    `<div class="match-filter-tab ${f.cls}${_pnlFilter === f.key ? ' active' : ''}" onclick="setPnlFilter('${f.key}')">${f.label}</div>`
+  ).join('');
+}
+function setPnlFilter(key) {
+  _pnlFilter = key;
+  renderPnlFilterTabs();
+  if (document.getElementById('btn-view-table').classList.contains('active')) renderTradeTable();
+}
+function _tradePnl(t) {
+  if (t.exit_price === null || t.exit_price === undefined) return null;
+  return t.side === 'Long' ? (t.exit_price - t.entry_price) : (t.entry_price - t.exit_price);
+}
+function tradePassesPnlFilter(t) {
+  if (_pnlFilter === 'all') return true;
+  const pnl = _tradePnl(t);
+  if (pnl === null) return false;
+  return _pnlFilter === 'win' ? pnl >= 0 : pnl < 0;
+}
+// Symbol filter — only meaningful for multi-symbol (D.multi) runs, where
+// the combined table mixes trades from several stocks.
+let _symbolFilter = 'all';
+function renderSymbolFilterTabs() {
+  const wrap = document.getElementById('symbol-filter-tabs');
+  if (!wrap) return;
+  if (!D.multi) { wrap.innerHTML = ''; return; }
+  const syms = Object.keys(D.multi);
+  wrap.innerHTML = ['all', ...syms].map(s =>
+    `<div class="match-filter-tab all${_symbolFilter === s ? ' active' : ''}" onclick="setSymbolFilter('${s}')">${s === 'all' ? 'All Symbols' : s}</div>`
+  ).join('');
+}
+function setSymbolFilter(s) {
+  _symbolFilter = s;
+  renderSymbolFilterTabs();
+  renderTradeTable();
+}
+function tradePassesSymbolFilter(t) {
+  // t.symbol only exists on the COMBINED multi-run trade list (used by the
+  // table); the left-chart's per-symbol trades (_curTrades(), already
+  // scoped to the active tab) never carry it — always pass those through,
+  // don't let an undefined-vs-string mismatch hide every chart marker.
+  return _symbolFilter === 'all' || t.symbol === undefined || t.symbol === _symbolFilter;
+}
+function tradePassesFilter(t) {
+  return (_matchFilter === 'all' || t.match_status === _matchFilter) && tradePassesPnlFilter(t) && tradePassesSymbolFilter(t);
+}
+
+// Multi-symbol strategies (ema/range) save a "symbols" array in cfg; single-
+// symbol ones (vwap) save just "symbol". Without this, vwap runs always
+// fell through to the ['NIFTY'] default and showed "NIFTY" on the tab even
+// while charting RIL/TCS/POLYCAB data.
+function symbolsFor(cfg) {
+  if (D.multi) return Object.keys(D.multi);
+  if (cfg && Array.isArray(cfg.symbols) && cfg.symbols.length) return cfg.symbols;
+  if (cfg && cfg.symbol) return [cfg.symbol];
+  return ['NIFTY'];
+}
+
 function renderSymTabs() {
   const wrap = document.getElementById('sym-tabs');
   wrap.innerHTML = '';
-  const symbols = (D.cfg && Array.isArray(D.cfg.symbols) && D.cfg.symbols.length) ? D.cfg.symbols : ['NIFTY'];
+  const symbols = symbolsFor(D.cfg);
   symbols.forEach(sym => {
     const b = document.createElement('div');
     b.className = 'sym-tab' + (sym === _activeSymbol ? ' active' : '');
@@ -312,30 +768,68 @@ const MATCH_LABEL = { exact: '✅ Exact', near: '🟡 Near', entry: '🟠 Entry-
 const MATCH_CLASS = { exact: 'green', near: 'gray', entry: 'gray', unmatched: 'red' };
 function fmtNum(v){ return (v === null || v === undefined) ? '—' : v; }
 
+// Small "TV: ..." sub-line under a stat card, shown only when a TV log was
+// uploaded — lets you eyeball PY vs TV side by side without separate cards.
+function tvSubline(label, value) {
+  if (value === null || value === undefined) return '';
+  return `<div class="gray" style="font-size:10px;margin-top:2px">TV: ${label}${value}</div>`;
+}
+
 function renderStats() {
   const s = D.summary || {};
+  const tv = D.tv_summary || {};
   const grid = document.getElementById('stats-grid');
   const pnlClass = (s.pnl_points || 0) >= 0 ? 'green' : 'red';
   const ddClass = (s.max_drawdown || 0) < 0 ? 'red' : 'gray';
   const pfClass = (s.profit_factor || 0) >= 1 ? 'green' : 'red';
   grid.innerHTML = `
-    <div class="stat-card"><div class="lbl">PnL (pts)</div><div class="val ${pnlClass}">${fmtNum(s.pnl_points)}</div></div>
-    <div class="stat-card"><div class="lbl">Win Rate</div><div class="val">${fmtPct(s.win_rate)}</div></div>
-    <div class="stat-card"><div class="lbl">Profit Factor</div><div class="val ${s.profit_factor==null?'gray':pfClass}">${fmtNum(s.profit_factor)}</div></div>
-    <div class="stat-card"><div class="lbl">Sharpe</div><div class="val">${fmtNum(s.sharpe)}</div></div>
-    <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val ${ddClass}">${fmtNum(s.max_drawdown)}</div></div>
-    <div class="stat-card"><div class="lbl">Trades</div><div class="val">${fmtNum(s.n_trades)} <span class="gray" style="font-size:11px">(${fmtNum(s.wins)}W/${fmtNum(s.losses)}L)</span></div></div>`;
+    <div class="stat-card"><div class="lbl">PnL (pts)</div><div class="val ${pnlClass}">${fmtNum(s.pnl_points)}</div>${D.tv_summary ? tvSubline('', fmtNum(tv.pnl_points)) : ''}</div>
+    <div class="stat-card"><div class="lbl">Win Rate</div><div class="val">${fmtPct(s.win_rate)}</div>${D.tv_summary ? tvSubline('', fmtPct(tv.win_rate)) : ''}</div>
+    <div class="stat-card"><div class="lbl">Profit Factor</div><div class="val ${s.profit_factor==null?'gray':pfClass}">${fmtNum(s.profit_factor)}</div>${D.tv_summary ? tvSubline('', fmtNum(tv.profit_factor)) : ''}</div>
+    <div class="stat-card"><div class="lbl">Sharpe</div><div class="val">${fmtNum(s.sharpe)}</div>${D.tv_summary ? tvSubline('', fmtNum(tv.sharpe)) : ''}</div>
+    <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val ${ddClass}">${fmtNum(s.max_drawdown)}</div>${D.tv_summary ? tvSubline('', fmtNum(tv.max_drawdown)) : ''}</div>
+    <div class="stat-card"><div class="lbl">Trades</div><div class="val">${fmtNum(s.n_trades)} <span class="gray" style="font-size:11px">(${fmtNum(s.wins)}W/${fmtNum(s.losses)}L)</span></div>${D.tv_summary ? tvSubline('', fmtNum(tv.n_trades) + ' (' + fmtNum(tv.wins) + 'W/' + fmtNum(tv.losses) + 'L)') : ''}</div>`;
   if (D.accuracy) {
-    grid.innerHTML += `<div class="stat-card" style="grid-column:span 3"><div class="lbl">Pine Match</div><div class="val" style="color:#d29922">${D.accuracy.matched}/${D.accuracy.total_tv} (${D.accuracy.pct}%)</div></div>`;
+    grid.innerHTML += `<div class="stat-card" style="grid-column:span 3"><div class="lbl">Pine Match</div><div class="val" style="color:#d29922">${D.accuracy.matched}/${D.accuracy.total_tv} (${D.accuracy.pct}%)</div>${matchBreakdownHtml()}</div>`;
   }
 }
 
+// Per-engine-trade breakdown (exact/near/entry-only/no-match counts + %),
+// computed from the same match_status the table's "Pine Match" column and
+// the chart's red dots already use — so all three views agree with each other.
+function matchBreakdownHtml() {
+  const statuses = (D.trades || []).map(t => t.match_status).filter(s => s !== undefined);
+  if (!statuses.length) return '';
+  const total = statuses.length;
+  const counts = { exact: 0, near: 0, entry: 0, unmatched: 0 };
+  statuses.forEach(s => { if (counts[s] !== undefined) counts[s]++; });
+  const pct = n => total ? Math.round(n / total * 1000) / 10 : 0;
+  return `<div style="display:flex;gap:10px;margin-top:6px;font-size:11px;flex-wrap:wrap">
+    <span class="green">✅ Exact ${counts.exact} (${pct(counts.exact)}%)</span>
+    <span class="gray">🟡 Near ${counts.near} (${pct(counts.near)}%)</span>
+    <span class="gray">🟠 Entry-only ${counts.entry} (${pct(counts.entry)}%)</span>
+    <span class="red">❌ No match ${counts.unmatched} (${pct(counts.unmatched)}%)</span>
+  </div>`;
+}
+
 // ───────────────────────── chart (left pane) ─────────────────────────
+// Multi-symbol runs (Run All Symbols) store per-symbol candles/trades in
+// D.multi[symbol] instead of flat D.candles/D.trades — these two helpers
+// pick the right source so drawChart/jumpToTrade don't need to branch
+// everywhere on "are we in multi mode".
+function _curCandles() {
+  return D.multi ? (D.multi[_activeSymbol] || {}).candles || [] : (D.candles || []);
+}
+function _curTrades() {
+  return D.multi ? (D.multi[_activeSymbol] || {}).trades || [] : (D.trades || []);
+}
+
 function drawChart() {
   const container = document.getElementById('chart');
   container.innerHTML = '';
   if (_chart) { try { _chart.remove(); } catch(e) {} _chart = null; }
-  if (!D.candles || D.candles.length === 0) {
+  const candles = _curCandles();
+  if (!candles.length) {
     container.innerHTML = '<div class="empty">No candle data</div>';
     return;
   }
@@ -347,10 +841,13 @@ function drawChart() {
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
   });
   _series = _chart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
-  _series.setData(D.candles);
+  _series.setData(candles);
 
   _markers = [];
-  (D.trades || []).forEach((t, i) => {
+  // TV markers have no match_status of their own, so they're only shown
+  // when filter is "all" — picking a specific status filters PY trades only.
+  _curTrades().forEach((t, i) => {
+    if (!tradePassesFilter(t)) return;
     _markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
                    color: '#1f6feb', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
                    text: 'PY ' + t.side + ' @' + t.entry_price, _tradeIdx: i });
@@ -367,28 +864,72 @@ function drawChart() {
                      text: '❌ no match', _tradeIdx: i });
     }
   });
-  (D.tv_trades || []).forEach(t => {
-    _markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
-                   color: '#d29922', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
-                   text: 'TV ' + t.side + ' @' + t.entry_price });
-    if (t.exit_time) {
-      _markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
-                     color: '#f0883e', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
-                     text: 'TV exit @' + t.exit_price });
-    }
-  });
+  if (_matchFilter === 'all' && !D.multi) {
+    (D.tv_trades || []).forEach(t => {
+      _markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
+                     color: '#d29922', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
+                     text: 'TV ' + t.side + ' @' + t.entry_price });
+      if (t.exit_time) {
+        _markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
+                       color: '#f0883e', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
+                       text: 'TV exit @' + t.exit_price });
+      }
+    });
+  }
+  _renderPlotSpec(D.multi ? (D.multi[_activeSymbol] || {}).plot_spec : D.plot_spec);
   _markers.sort((a, b) => a.time - b.time);
   _series.setMarkers(_markers);
   _chart.timeScale().fitContent();
+  // drawChart() recreates _chart/_series from scratch — re-apply any
+  // user-added indicators (picker) on top, since they don't come from D.
+  if (document.getElementById('ind-active-list')) {
+    for (const ind of _getActiveIndicators()) fetchAndRenderIndicator(ind.name, ind.params, false);
+  }
+}
+
+// Generic renderer for the _CHARTING plot-spec JSON (indicators/zones/pattern
+// markers) — any strategy can populate this without writing new chart JS.
+// See _CHARTING/plot_spec.py for the schema this consumes.
+function _renderPlotSpec(spec) {
+  if (!spec) return;
+  (spec.indicators || []).forEach(ind => {
+    const series = ind.type === 'histogram'
+      ? _chart.addHistogramSeries({ color: ind.color })
+      : _chart.addLineSeries({ color: ind.color, lineWidth: 1, priceLineVisible: false, title: ind.name });
+    series.setData(ind.values || []);
+  });
+  (spec.zones || []).forEach(z => {
+    if (z.kind === 'line') {
+      _series.createPriceLine({ price: z.price, color: z.color, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: z.label });
+    } else if (z.kind === 'box') {
+      _series.createPriceLine({ price: z.price_upper, color: z.color, lineWidth: 1, title: z.label + ' ▲' });
+      _series.createPriceLine({ price: z.price_lower, color: z.color, lineWidth: 1, title: z.label + ' ▼' });
+    }
+  });
+  (spec.pattern_tags || []).forEach(p => {
+    _markers.push({ time: p.time, position: p.direction === 'bull' ? 'belowBar' : 'aboveBar',
+                   color: p.direction === 'bull' ? '#3fb950' : '#f85149',
+                   shape: 'circle', text: p.pattern });
+  });
 }
 
 function jumpToTrade(idx) {
-  if (!_chart || !D.trades || !D.trades[idx]) return;
-  const t = D.trades[idx];
-  _selectedTradeIdx = idx;
+  const trades = D.trades || [];
+  const t = trades[idx];
+  if (!t) return;
+  // Combined multi-symbol table can hold a trade for a symbol whose chart
+  // isn't currently shown — switch tabs to it first.
+  if (D.multi && t.symbol && t.symbol !== _activeSymbol) {
+    _activeSymbol = t.symbol;
+    renderSymTabs();
+    drawChart();
+  }
+  if (!_chart) return;
+  const candles = _curCandles();
+  const localIdx = _curTrades().indexOf(t);
+  _selectedTradeIdx = localIdx;
   try { _chart.timeScale().scrollToPosition(0, false); } catch(e) {}
   try {
-    const candles = D.candles;
     const entryT = t.entry_time;
     const idxInCandles = candles.findIndex(c => c.time >= entryT);
     const from = Math.max(0, idxInCandles - 20);
@@ -397,9 +938,12 @@ function jumpToTrade(idx) {
       _chart.timeScale().setVisibleRange({ from: candles[from].time, to: candles[to].time });
     }
   } catch(e) {}
-  // brighten the selected trade's markers
+  // brighten the selected trade's markers — _markers' _tradeIdx is always
+  // the LOCAL index within the currently-shown symbol's trade list (set in
+  // drawChart from _curTrades()), so compare against localIdx, not the
+  // combined table's row index.
   const highlighted = _markers.map(m => {
-    if (m._tradeIdx === idx) return Object.assign({}, m, { size: 2 });
+    if (m._tradeIdx === localIdx) return Object.assign({}, m, { size: 2 });
     return Object.assign({}, m, { size: 1 });
   });
   _series.setMarkers(highlighted);
@@ -414,12 +958,89 @@ function setView(which) {
   document.getElementById('btn-view-chart').classList.toggle('active', which === 'chart');
   document.getElementById('btn-view-table').classList.toggle('active', which === 'table');
   const content = document.getElementById('right-content');
+  const toolbar = document.getElementById('right-toolbar');
+  if (toolbar) toolbar.innerHTML = '';
   if (which === 'chart') {
-    content.innerHTML = '<div id="equity-chart"></div>';
+    // Equity curve (cumulative) on top, per-trade P&L bars below — both
+    // under the one "Chart" tab now, stacked, instead of a separate toggle.
+    content.innerHTML = `
+      <div style="display:flex;flex-direction:column;height:100%">
+        <div style="flex:1 1 55%;min-height:0;border-bottom:1px solid #21262d;display:flex;flex-direction:column">
+          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0;display:flex;justify-content:space-between">
+            <span>EQUITY CURVE — click a point to jump to that trade</span>
+            <span id="equity-legend"></span>
+          </div>
+          <div id="equity-chart" style="flex:1;min-height:0"></div>
+        </div>
+        <div style="flex:1 1 45%;min-height:0;display:flex;flex-direction:column">
+          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0">PER-TRADE P&amp;L</div>
+          <div id="runup-chart" style="flex:1;min-height:0"></div>
+        </div>
+      </div>`;
     drawEquityCurve();
+    drawRunupChart();
   } else {
     renderTradeTable();
   }
+}
+
+// Per-trade P&L bars (not cumulative like the equity curve) — quick visual
+// of which trades won/lost and by how much, same idea as CODE7's
+// points-per-trade chart. Plain SVG, no extra chart-library dependency.
+function drawRunupChart() {
+  const container = document.getElementById('runup-chart');
+  if (!container) return;
+  const trades = (D.trades || []).map(_tradePnl);
+  const valid = trades.filter(p => p !== null);
+  if (!valid.length) { container.innerHTML = '<div class="empty">No closed trades yet</div>'; return; }
+
+  const w = container.clientWidth || 600, h = container.clientHeight || 300;
+  const padL = 40, padB = 20, padT = 10;
+  const maxAbs = Math.max(1, ...valid.map(p => Math.abs(p)));
+  const barW = Math.max(2, (w - padL - 10) / valid.length - 2);
+  const zeroY = padT + (h - padT - padB) / 2;
+  const scale = (h - padT - padB) / 2 / maxAbs;
+
+  let bars = '';
+  valid.forEach((p, i) => {
+    const x = padL + i * (barW + 2);
+    const barH = Math.abs(p) * scale;
+    const y = p >= 0 ? zeroY - barH : zeroY;
+    bars += `<rect x="${x}" y="${y}" width="${barW}" height="${Math.max(1, barH)}" fill="${p >= 0 ? '#3fb950' : '#f85149'}"><title>${p.toFixed(2)}</title></rect>`;
+  });
+
+  container.innerHTML = `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="background:#0d1117">
+    <line x1="${padL}" y1="${zeroY}" x2="${w - 5}" y2="${zeroY}" stroke="#30363d" stroke-width="1"/>
+    <text x="4" y="${zeroY - maxAbs * scale + 4}" fill="#8b949e" font-size="10">${maxAbs.toFixed(0)}</text>
+    <text x="4" y="${zeroY + 4}" fill="#8b949e" font-size="10">0</text>
+    <text x="4" y="${zeroY + maxAbs * scale + 4}" fill="#8b949e" font-size="10">-${maxAbs.toFixed(0)}</text>
+    ${bars}
+  </svg>`;
+}
+
+// equity_curve's trade_no (1-based) only counts CLOSED trades, in the same
+// order they appear in D.trades — map trade_no back to D.trades' real index
+// so a curve click can jump the chart/table to that exact trade.
+function _closedTradeIndices() {
+  const indices = [];
+  (D.trades || []).forEach((t, i) => {
+    if (t.exit_price !== null && t.exit_price !== undefined) indices.push(i);
+  });
+  return indices;
+}
+
+const _SYMBOL_COLORS = ['#1f6feb', '#d29922', '#3fb950', '#f85149', '#a371f7', '#39c5cf', '#db61a2'];
+
+function _equityCurveFromTrades(trades) {
+  let cum = 0;
+  const out = [];
+  trades.forEach(t => {
+    const pnl = _tradePnl(t);
+    if (pnl === null) return;
+    cum += pnl;
+    out.push({ trade_no: out.length + 1, cum_pnl: Math.round(cum * 100) / 100 });
+  });
+  return out;
 }
 
 function drawEquityCurve() {
@@ -437,8 +1058,43 @@ function drawEquityCurve() {
     grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
     timeScale: { visible: false }
   });
-  const lineSeries = _equityChart.addLineSeries({ color: '#3fb950', lineWidth: 2 });
-  lineSeries.setData(curve.map(p => ({ time: p.trade_no, value: p.cum_pnl })));
+  // "All" combined line always shown — white so it stands out against the
+  // per-symbol colors below.
+  const allColor = D.multi ? '#e6edf3' : '#3fb950';
+  const allSeries = _equityChart.addLineSeries({ color: allColor, lineWidth: 2 });
+  allSeries.setData(curve.map(p => ({ time: p.trade_no, value: p.cum_pnl })));
+
+  // Multi-symbol run: overlay each symbol's own equity curve too, so you can
+  // see which stock is actually driving the combined result.
+  const legend = document.getElementById('equity-legend');
+  if (legend) legend.innerHTML = '';
+  if (D.multi) {
+    const symbols = Object.keys(D.multi);
+    let legendHtml = `<span style="color:${allColor}">⬤ All (combined)</span>`;
+    symbols.forEach((sym, i) => {
+      // Prefer the backend-computed per-symbol curve; fall back to
+      // computing it client-side from that symbol's own trades — covers
+      // older localStorage/saved-result data saved before summary.equity_curve
+      // was stored per symbol.
+      let symCurve = (D.multi[sym].summary && D.multi[sym].summary.equity_curve) || [];
+      if (!symCurve.length) symCurve = _equityCurveFromTrades(D.multi[sym].trades || []);
+      if (!symCurve.length) return;
+      const color = _SYMBOL_COLORS[i % _SYMBOL_COLORS.length];
+      const s = _equityChart.addLineSeries({ color, lineWidth: 1 });
+      s.setData(symCurve.map(p => ({ time: p.trade_no, value: p.cum_pnl })));
+      legendHtml += ` &nbsp; <span style="color:${color}">⬤ ${sym}</span>`;
+    });
+    if (legend) legend.innerHTML = legendHtml;
+  }
+
+  _equityChart.subscribeClick(param => {
+    if (!param || param.time === undefined || param.time === null) return;
+    const indices = _closedTradeIndices();
+    const idx = indices[param.time - 1];
+    // Table must exist in the DOM before jumpToTrade can scroll/highlight
+    // its row — switch view first.
+    if (idx !== undefined) { setView('table'); jumpToTrade(idx); }
+  });
   _equityChart.timeScale().fitContent();
 }
 
@@ -447,12 +1103,23 @@ function renderTradeTable() {
   const trades = D.trades || [];
   if (!trades.length) {
     content.innerHTML = '<div class="empty">No trades</div>';
+    const tb = document.getElementById('right-toolbar');
+    if (tb) tb.innerHTML = '';
     return;
   }
   const hasMatch = trades.some(t => t.match_status !== undefined);
+  const hasSymbol = trades.some(t => t.symbol !== undefined);
   let cum = 0;
+  // Filter tabs render into #right-toolbar (outside the scrollable
+  // #right-content area, flex-shrink:0 like stats-block) so they stay
+  // visible no matter how far the trade list is scrolled.
+  const toolbar = document.getElementById('right-toolbar');
+  if (toolbar) {
+    toolbar.innerHTML = (hasSymbol ? `<div class="match-filter-tabs" id="symbol-filter-tabs" style="border-bottom:none;padding:0 0 6px"></div>` : '') +
+      `<div class="match-filter-tabs" id="pnl-filter-tabs" style="border-bottom:none;padding:0 0 8px"></div>`;
+  }
   let html = `<table class="trades"><thead><tr>
-    <th>#</th><th>Side</th><th>Entry</th><th>Entry ₹</th><th>Exit</th><th>Exit ₹</th><th>PnL</th><th>Cum</th>${hasMatch ? '<th>Pine Match</th>' : ''}
+    ${hasSymbol ? '<th>Symbol</th>' : ''}<th>#</th><th>Side</th><th>Entry</th><th>Entry ₹</th><th>Exit</th><th>Exit ₹</th><th>PnL</th><th>Cum</th>${hasMatch ? '<th>Pine Match</th>' : ''}
   </tr></thead><tbody>`;
   trades.forEach((t, i) => {
     let pnl = null;
@@ -460,10 +1127,14 @@ function renderTradeTable() {
       pnl = t.side === 'Long' ? (t.exit_price - t.entry_price) : (t.entry_price - t.exit_price);
       cum += pnl;
     }
+    // Cum runs over the FULL trade sequence (so it still means "cumulative
+    // PnL up to here") even though the filter may hide some rows below.
+    if (!tradePassesFilter(t)) return;
     const pnlCls = pnl === null ? 'gray' : (pnl >= 0 ? 'green' : 'red');
     const status = t.match_status;
     const rowCls = 'trade-row' + (status === 'unmatched' ? ' unmatched-row' : '');
     html += `<tr class="${rowCls}" data-trade-idx="${i}" onclick="jumpToTrade(${i})">
+      ${hasSymbol ? `<td>${t.symbol || '—'}</td>` : ''}
       <td>${i + 1}</td>
       <td>${t.side}</td>
       <td>${fmtTime(t.entry_time)}</td>
@@ -477,6 +1148,8 @@ function renderTradeTable() {
   });
   html += '</tbody></table>';
   content.innerHTML = html;
+  renderPnlFilterTabs();
+  renderSymbolFilterTabs();
 }
 
 // ───────────────────────── splitter drag ─────────────────────────
@@ -487,10 +1160,17 @@ function renderTradeTable() {
   const wrap = document.getElementById('split-wrap');
   let dragging = false;
 
-  splitter.addEventListener('mousedown', () => {
+  splitter.addEventListener('mousedown', (e) => {
     if (_leftCollapsed || _rightCollapsed) return;
     dragging = true;
     document.body.style.userSelect = 'none';
+    // The candlestick canvas (lightweight-charts) captures its own mouse
+    // events for crosshair/pan — while it has focus, dragging the splitter
+    // over the chart area felt stuck/jumpy because our window-level
+    // mousemove was competing with the chart's internal handlers. Disable
+    // pointer events on the chart container itself for the drag duration.
+    document.getElementById('chart').style.pointerEvents = 'none';
+    e.preventDefault();
   });
   window.addEventListener('mousemove', (e) => {
     if (!dragging) return;
@@ -506,6 +1186,7 @@ function renderTradeTable() {
     if (!dragging) return;
     dragging = false;
     document.body.style.userSelect = '';
+    document.getElementById('chart').style.pointerEvents = '';
     localStorage.setItem('bt_split_ratio', _splitRatio);
   });
 })();
@@ -542,7 +1223,10 @@ window.addEventListener('resize', () => {
 // Save Config + Backtest date range + TV log/CSV upload) instead of
 // duplicating that UI here — deep-links back to the dashboard which opens it.
 // ───────────────────────── Edit & Re-run (stays on this page) ─────────────────────────
-function openEditModal() {
+// preserveSymbols=true skips resetting _selectedSymbols to the saved cfg's
+// single symbol — used by _runSavedEntry() when re-opening a multi-symbol
+// saved result, so its symbol list isn't clobbered back down to one.
+function openEditModal(preserveSymbols) {
   const sid = D.strategy || 'range_v1';
   const type = baseType(sid);
   const fields = STRAT_FIELDS[type] || [];
@@ -568,6 +1252,11 @@ function openEditModal() {
     }
   });
   document.getElementById('modal-fields').innerHTML = html;
+  document.getElementById('modal-multi-row').style.display = type === 'vwap' ? '' : 'none';
+  if (type === 'vwap' && !preserveSymbols) {
+    _selectedSymbols = cfg.symbol ? [cfg.symbol] : ['TCS'];
+  }
+  document.getElementById('modal-symbols-summary').textContent = _selectedSymbols.join(', ');
   document.getElementById('edit-modal').classList.add('open');
 }
 function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
@@ -587,15 +1276,95 @@ function collectModalFields() {
   return out;
 }
 
+// Polls /api/backtest/progress while a run is in flight — a missing-data
+// backtest blocks on a synchronous multi-day Dhan download first, which used
+// to just sit on "⏳ Running..." with no sense of how long it'd take.
+function _startProgressPoll(msgEl) {
+  return setInterval(async () => {
+    try {
+      const r = await fetch('/api/backtest/progress');
+      const p = await r.json();
+      if (p.active && p.total > 0) {
+        const pct = Math.round(p.done / p.total * 100);
+        msgEl.textContent = `⏳ Downloading ${p.symbol} ${p.done}/${p.total} (${pct}%)...`;
+      }
+    } catch (e) { /* ignore — keep showing the generic "Running..." text */ }
+  }, 600);
+}
+
+// Combine N single-symbol runs into one D — same shape drawChart/jumpToTrade/
+// renderTradeTable already understand via _curCandles()/_curTrades()/symbol
+// column. No backend change needed: this just calls /api/backtest/run once
+// per symbol (sequentially, so the progress poll has one clear thing to show
+// at a time) and merges the results client-side.
+async function _runMultiSymbol(sid, editedFields, dfrom, dto, msg) {
+  const symbols = _selectedSymbols.length ? _selectedSymbols : ['TCS', 'POLYCAB', 'RELIANCE'];
+  const multi = {};
+  const combinedTrades = [];
+  for (const sym of symbols) {
+    msg.textContent = `⏳ Running ${sym}...`;
+    const fd = new FormData();
+    fd.append('strategy', sid);
+    fd.append('date_from', dfrom);
+    fd.append('date_to', dto);
+    fd.append('cfg_override', JSON.stringify(Object.assign({}, editedFields, { symbol: sym })));
+    const r = await fetch('/api/backtest/run', { method: 'POST', body: fd });
+    const d = await r.json();
+    if (d.error) throw new Error(`${sym}: ${d.error}`);
+    // d.summary.equity_curve here is THIS symbol's own curve (computed
+    // backend-side, same _compute_stats() every single-symbol run uses) —
+    // kept per-symbol so the "Per Symbol" equity view can overlay each
+    // stock's own curve next to the combined "All" one.
+    multi[sym] = { candles: d.candles, trades: d.trades, summary: d.summary };
+    (d.trades || []).forEach(t => combinedTrades.push(Object.assign({}, t, { symbol: sym })));
+  }
+  combinedTrades.sort((a, b) => a.entry_time - b.entry_time);
+
+  // Same win-rate/profit-factor/sharpe/drawdown math as backend's
+  // _compute_stats(), just run client-side over the combined trade list.
+  const closed = combinedTrades.filter(t => t.exit_price !== null && t.exit_price !== undefined);
+  const pnls = closed.map(t => t.side === 'Long' ? t.exit_price - t.entry_price : t.entry_price - t.exit_price);
+  const wins = pnls.filter(p => p > 0).length;
+  const pnlTotal = pnls.reduce((a, b) => a + b, 0);
+  const gains = pnls.filter(p => p > 0).reduce((a, b) => a + b, 0);
+  const losses = -pnls.filter(p => p < 0).reduce((a, b) => a + b, 0);
+  let cum = 0, peak = 0, maxDd = 0;
+  const equity_curve = pnls.map((p, i) => { cum += p; peak = Math.max(peak, cum); maxDd = Math.min(maxDd, cum - peak); return { trade_no: i + 1, cum_pnl: Math.round(cum * 100) / 100 }; });
+  // Same per-trade Sharpe as backend's _compute_stats(): mean/stdev * sqrt(n).
+  let sharpe = null;
+  if (closed.length >= 2) {
+    const mean = pnlTotal / closed.length;
+    const variance = pnls.reduce((a, p) => a + (p - mean) ** 2, 0) / (closed.length - 1);
+    const stdev = Math.sqrt(variance);
+    sharpe = stdev > 0 ? Math.round(mean / stdev * Math.sqrt(closed.length) * 100) / 100 : null;
+  }
+  const summary = {
+    n_trades: combinedTrades.length, wins, losses: closed.length - wins,
+    pnl_points: Math.round(pnlTotal * 100) / 100,
+    win_rate: closed.length ? Math.round(wins / closed.length * 1000) / 10 : null,
+    profit_factor: losses > 0 ? Math.round(gains / losses * 100) / 100 : null,
+    sharpe, max_drawdown: closed.length ? Math.round(maxDd * 100) / 100 : null,
+    equity_curve
+  };
+
+  return { multi, trades: combinedTrades, summary, tv_trades: null, tv_summary: null, accuracy: null };
+}
+
 async function modalRun(saveFirst) {
   const sid = D.strategy || 'range_v1';
+  const isVwap = baseType(sid) === 'vwap';
   const editedFields = collectModalFields();
+  // No separate "Symbol" field for vwap anymore — pick-symbols list decides
+  // it: exactly 1 selected = single-symbol run, more = combined multi-run.
+  if (isVwap) editedFields.symbol = _selectedSymbols[0] || 'TCS';
+  const runAllSymbols = isVwap && _selectedSymbols.length > 1;
   const dfrom = document.getElementById('modal-from').value;
   const dto = document.getElementById('modal-to').value;
   const tvFiles = document.getElementById('modal-tv-files').files;
   const msg = document.getElementById('modal-msg');
   msg.style.color = '#d29922';
   msg.textContent = '⏳ Running...';
+  const pollHandle = _startProgressPoll(msg);
 
   try {
     if (saveFirst) {
@@ -608,21 +1377,30 @@ async function modalRun(saveFirst) {
     }
 
     const newCfg = Object.assign({}, D.cfg, editedFields);
-    const fd = new FormData();
-    fd.append('strategy', sid);
-    fd.append('date_from', dfrom);
-    fd.append('date_to', dto);
-    fd.append('cfg_override', JSON.stringify(editedFields));
-    for (const f of tvFiles) fd.append('tv_files', f);
-    const r2 = await fetch('/api/backtest/run', { method: 'POST', body: fd });
-    const d2 = await r2.json();
-    if (d2.error) { msg.style.color = '#f85149'; msg.textContent = '⚠ ' + d2.error; return; }
+    let d2;
+    if (runAllSymbols) {
+      d2 = await _runMultiSymbol(sid, editedFields, dfrom, dto, msg);
+    } else {
+      const fd = new FormData();
+      fd.append('strategy', sid);
+      fd.append('date_from', dfrom);
+      fd.append('date_to', dto);
+      fd.append('cfg_override', JSON.stringify(editedFields));
+      for (const f of tvFiles) fd.append('tv_files', f);
+      const r2 = await fetch('/api/backtest/run', { method: 'POST', body: fd });
+      d2 = await r2.json();
+      if (d2.error) { msg.style.color = '#f85149'; msg.textContent = '⚠ ' + d2.error; return; }
+    }
 
     D = Object.assign({}, d2, { strategy: sid, cfg: newCfg, date_from: dfrom, date_to: dto });
     localStorage.setItem('bt_chart_data', JSON.stringify(D));
 
     document.getElementById('hdr-range').textContent = dfrom + ' → ' + dto;
+    _matchFilter = 'all';
+    _pnlFilter = 'all';
+    _symbolFilter = 'all';
     renderSymTabs();
+    renderMatchFilterTabs();
     renderStats();
     drawChart();
     const tableActive = document.getElementById('btn-view-table').classList.contains('active');
@@ -631,6 +1409,8 @@ async function modalRun(saveFirst) {
   } catch (e) {
     msg.style.color = '#f85149';
     msg.textContent = '⚠ ' + e.message;
+  } finally {
+    clearInterval(pollHandle);
   }
 }
 

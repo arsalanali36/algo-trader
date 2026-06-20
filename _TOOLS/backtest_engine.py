@@ -35,6 +35,12 @@ import range_trader as rt
 import rsi_trader as rsit
 import nifty_ema_trader as emat
 import validate_strategy as vs   # reuse backtest_day (range) + parse_log (TV)
+import dhan_master
+from strategies import vwap_ema_failure as vwapf
+from _CHARTING import zones as chzones
+from _CHARTING import patterns as chpatterns
+from _CHARTING import plot_spec as chspec
+from _CHARTING import indicators as chind
 
 # Dev machine has the big pre-downloaded NIFTY store at this fixed Windows
 # path (shared by validate_strategy.py / generate_june_mfe.py too) — use it
@@ -49,8 +55,29 @@ else:
     os.makedirs(DATA_DIR, exist_ok=True)
 TF_MIN   = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
 EXIT_HM  = dtime(15, 15)
+
+# Same fixed-Windows-store-first convention as NIFTY's DATA_DIR above —
+# this folder already has TCS/RELIANCE etc. pre-downloaded with the exact
+# CSV shape (Datetime,Open,High,Low,Close,Volume) validate_strategy.load_1m
+# expects, so equity strategies (e.g. vwap_ema_failure) reuse it as-is.
+_WIN_EQUITY_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Equity"
+if os.path.isdir(_WIN_EQUITY_DIR):
+    EQUITY_DATA_ROOT = _WIN_EQUITY_DIR
+else:
+    EQUITY_DATA_ROOT = os.path.join(BASE_DIR, "_TRADING_DATA", "Equity")
+    os.makedirs(EQUITY_DATA_ROOT, exist_ok=True)
 CONFIG_FILE = os.path.join(BASE_DIR, "data", "config.json")   # Dhan jwt_token + client_id
 NIFTY_SEC_ID = "13"   # IDX_I — same id used everywhere else in this project
+
+
+# Polled by the dashboard's GET /api/backtest/progress while a backtest run
+# (which may trigger a synchronous multi-day Dhan download first) is in
+# flight, so the UI can show "downloading TCS 3/12" instead of a frozen
+# spinner. Module-level + mutated in place (not reassigned) so the SAME dict
+# object is visible whether read via a fresh `import backtest_engine` in
+# another request or the one already running the download — they're the
+# same process, same sys.modules entry.
+progress = {"active": False, "symbol": None, "done": 0, "total": 0}
 
 
 # ───────────────────────── auto-download missing days ─────────────────────────
@@ -129,20 +156,149 @@ def ensure_nifty_data(date_from, date_to):
         return
 
     print(f"[backtest_engine] downloading {len(missing)} missing NIFTY day(s) from Dhan...")
-    for day in missing:
-        date_str = day.isoformat()
-        for attempt in range(3):
-            df = _fetch_nifty_day(date_str, token, cid)
-            if isinstance(df, str) and df == "RATE_LIMIT":
-                _time.sleep((attempt + 1) * 5)
-                continue
-            break
-        if not isinstance(df, pd.DataFrame) or df.empty:
-            continue   # holiday, no data, or rate-limited out — not fatal, just skip this day
-        fpath = os.path.join(DATA_DIR, f"NIFTY_{date_str}.csv")
-        df.to_csv(fpath, index=False)
-        print(f"  + {date_str} ({len(df)} bars)")
-        _time.sleep(1)   # be polite to the rate limit
+    progress.update(active=True, symbol="NIFTY", done=0, total=len(missing))
+    try:
+        for day in missing:
+            date_str = day.isoformat()
+            for attempt in range(3):
+                df = _fetch_nifty_day(date_str, token, cid)
+                if isinstance(df, str) and df == "RATE_LIMIT":
+                    _time.sleep((attempt + 1) * 5)
+                    continue
+                break
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                fpath = os.path.join(DATA_DIR, f"NIFTY_{date_str}.csv")
+                df.to_csv(fpath, index=False)
+                print(f"  + {date_str} ({len(df)} bars)")
+            progress["done"] += 1
+            _time.sleep(1)   # be polite to the rate limit
+    finally:
+        progress["active"] = False
+
+
+# ───────────────────────── equity data (generic, any NSE symbol) ─────────────────────────
+def _equity_dir(symbol):
+    d = os.path.join(EQUITY_DATA_ROOT, symbol)
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _fetch_equity_day(symbol, date_str, token, cid):
+    """One day of 1-min bars for an equity symbol from Dhan /v2/charts/intraday.
+    Mirrors _fetch_nifty_day but resolves sec_id/segment via dhan_master's
+    equity scrip cache and keeps real volume (equities have it; the index
+    feed above always sets Volume=0, since indices have none)."""
+    info = dhan_master.get_equity_info(symbol)
+    if not info:
+        return None
+    sec_id, seg, instrument = info
+    try:
+        r = requests.post(
+            "https://api.dhan.co/v2/charts/intraday",
+            headers={"access-token": token, "client-id": cid, "Content-Type": "application/json"},
+            json={"securityId": sec_id, "exchangeSegment": seg, "instrument": instrument,
+                  "expiryCode": 0, "fromDate": date_str, "toDate": date_str},
+            timeout=15,
+        )
+        d = r.json()
+        if d.get("errorCode") == "DH-904":
+            return "RATE_LIMIT"
+        ts = d.get("timestamp") or []
+        if not ts:
+            return None
+        rows = []
+        vols = d.get("volume") or [0] * len(ts)
+        for t, o, h, l, c, v in zip(ts, d["open"], d["high"], d["low"], d["close"], vols):
+            dt = datetime.datetime.fromtimestamp(t)
+            rows.append({"Datetime": dt.strftime("%Y-%m-%d %H:%M:%S"), "Open": o, "High": h,
+                         "Low": l, "Close": c, "Volume": v})
+        return pd.DataFrame(rows)
+    except Exception:
+        return None
+
+
+def ensure_equity_data(symbol, date_from, date_to):
+    """Download any missing trading-day 1-min CSVs for this symbol, same
+    auto-download-on-demand convention as ensure_nifty_data."""
+    if not date_from or not date_to:
+        return
+    token, cid = _dhan_creds()
+    if not token:
+        return
+
+    eq_dir = _equity_dir(symbol)
+    d = pd.to_datetime(date_from).date()
+    end = pd.to_datetime(date_to).date()
+    missing = []
+    while d <= end:
+        if d.weekday() < 5:
+            fpath = os.path.join(eq_dir, f"{symbol}_{d.isoformat()}.csv")
+            if not os.path.exists(fpath):
+                missing.append(d)
+        d += datetime.timedelta(days=1)
+    if not missing:
+        return
+
+    print(f"[backtest_engine] downloading {len(missing)} missing {symbol} day(s) from Dhan...")
+    progress.update(active=True, symbol=symbol, done=0, total=len(missing))
+    try:
+        for day in missing:
+            date_str = day.isoformat()
+            for attempt in range(3):
+                df = _fetch_equity_day(symbol, date_str, token, cid)
+                if isinstance(df, str) and df == "RATE_LIMIT":
+                    _time.sleep((attempt + 1) * 5)
+                    continue
+                break
+            if isinstance(df, pd.DataFrame) and not df.empty:
+                fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
+                df.to_csv(fpath, index=False)
+                print(f"  + {date_str} ({len(df)} bars)")
+            progress["done"] += 1
+            _time.sleep(1)
+    finally:
+        progress["active"] = False
+
+
+def load_equity_1m_range(symbol, date_from=None, date_to=None):
+    eq_dir = _equity_dir(symbol)
+    paths = sorted(glob.glob(os.path.join(eq_dir, f"{symbol}_*.csv")))
+    frames = []
+    for p in paths:
+        d = vs.load_1m(p)
+        if d.empty:
+            continue
+        day = d["datetime"].iloc[0].date()
+        if date_from and day < pd.to_datetime(date_from).date():
+            continue
+        if date_to and day > pd.to_datetime(date_to).date():
+            continue
+        frames.append(d)
+    if not frames:
+        return pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"])
+    return pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
+
+
+def resample_with_volume(df1, tf_min):
+    """Same as resample() but also sums volume — needed for VWAP, which
+    resample() (used by RSI/EMA, neither of which needs volume) drops."""
+    d = df1.rename(columns={"datetime": "time"}) if tf_min <= 1 else None
+    if tf_min <= 1:
+        cols = ["time", "open", "high", "low", "close"]
+        if "volume" in df1.columns:
+            cols.append("volume")
+        return df1.rename(columns={"datetime": "time"})[cols]
+    d = df1.set_index("datetime")
+    agg = {
+        "open":  d["open"].resample(f"{tf_min}min").first(),
+        "high":  d["high"].resample(f"{tf_min}min").max(),
+        "low":   d["low"].resample(f"{tf_min}min").min(),
+        "close": d["close"].resample(f"{tf_min}min").last(),
+    }
+    if "volume" in d.columns:
+        agg["volume"] = d["volume"].resample(f"{tf_min}min").sum()
+    r = pd.DataFrame(agg).dropna(subset=["open"]).reset_index().rename(columns={"datetime": "time"})
+    return r
 
 
 # ───────────────────────── data loading ─────────────────────────
@@ -211,6 +367,7 @@ def _run_range(date_from, date_to, cfg):
         "max_trades_per_symbol":  cfg.get("max_trades_per_symbol", 4),
     }
     eng = []
+    chart_zones = []
     for d in days:
         mask = cont5["date"] == d
         if not mask.any():
@@ -222,7 +379,13 @@ def _run_range(date_from, date_to, cfg):
             continue
         levels = rt.build_key_levels(sub, is_index=True)
         eng += vs.backtest_day(df5, levels, rcfg, atr_slice)
-    return eng, cont5
+        day_start = int(df5["time"].iloc[0].timestamp())
+        day_end = int(df5["time"].iloc[-1].timestamp())
+        chart_zones += chzones.levels_to_chart_zones(levels, day_start, day_end)
+
+    pattern_tags = chpatterns.detect_pattern_tags(cont5, time_col="time")
+    spec = chspec.build_plot_spec(cont5, zones=chart_zones, pattern_tags=pattern_tags)
+    return eng, cont5, spec
 
 
 # rsi_trader.compute_signal() is written for the LIVE feed, where the last
@@ -375,7 +538,12 @@ def _run_rsi(date_from, date_to, cfg):
     if cutoff_ts is not None:
         trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
         df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
-    return trades, df
+
+    rsi_series = chind.compute_indicator(df, "RSI", period=period)
+    spec = chspec.build_plot_spec(df, indicators=[
+        {"name": f"RSI({period})", "series": rsi_series, "type": "line", "color": "#1f6feb"},
+    ])
+    return trades, df, spec
 
 
 # ───────────────────────── EMA (generic growing-window replay) ─────────────────────────
@@ -439,10 +607,54 @@ def _run_ema(date_from, date_to, cfg):
     if cutoff_ts is not None:
         trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
         df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
-    return trades, df
+
+    ema_fast_series = chind.compute_indicator(df, "EMA", period=fast)
+    ema_slow_series = chind.compute_indicator(df, "EMA", period=slow)
+    spec = chspec.build_plot_spec(df, indicators=[
+        {"name": f"EMA({fast})", "series": ema_fast_series, "type": "line", "color": "#d29922"},
+        {"name": f"EMA({slow})", "series": ema_slow_series, "type": "line", "color": "#8b949e"},
+    ])
+    return trades, df, spec
 
 
-_RUNNERS = {"range": _run_range, "rsi": _run_rsi, "rsi_v1": _run_rsi, "ema": _run_ema}
+# ───────────────────────── VWAP-EMA Failure Reversal (equity, per-symbol) ─────────────────────────
+def _run_vwap_ema(date_from, date_to, cfg):
+    symbol = cfg.get("symbol", "TCS")
+    tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
+    # EMA(10) converges in a handful of bars and VWAP resets every day anyway,
+    # so this only needs a small buffer (unlike RSI/EMA's 45-day warm-up).
+    buffered_from = (pd.to_datetime(date_from) - pd.Timedelta(days=5)).strftime("%Y-%m-%d") if date_from else date_from
+    ensure_equity_data(symbol, buffered_from, date_to)
+    cont1 = load_equity_1m_range(symbol, buffered_from, date_to)
+    if cont1.empty:
+        return [], pd.DataFrame()
+    df = resample_with_volume(cont1, tf_min)
+
+    # vwapf.backtest() enforces the project-wide 3:15 EOD force-exit (+ no
+    # re-entry) itself, bar-by-bar — no post-processing needed here.
+    trades = vwapf.backtest(df, cfg)
+
+    # Chart EMA(10)/VWAP using the strategy's OWN functions (ema_len, daily-
+    # reset _daily_vwap), not the generic _CHARTING.indicators registry —
+    # the registry's VWAP is a rolling window, not daily-reset, so it would
+    # show a different line than what actually drove these signals.
+    ema_len = cfg.get("ema_len", 10)
+    ema10_series = df["close"].ewm(span=ema_len, adjust=False).mean()
+    vwap_series = vwapf._daily_vwap(df)
+    spec = chspec.build_plot_spec(df, indicators=[
+        {"name": f"EMA({ema_len})", "series": ema10_series, "type": "line", "color": "#d29922"},
+        {"name": "VWAP", "series": vwap_series, "type": "line", "color": "#3fb950"},
+    ])
+
+    cutoff_ts = pd.to_datetime(date_from) if date_from else None
+    if cutoff_ts is not None:
+        trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
+        df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
+    return trades, df, spec
+
+
+_RUNNERS = {"range": _run_range, "rsi": _run_rsi, "rsi_v1": _run_rsi, "ema": _run_ema,
+            "vwap": _run_vwap_ema}
 
 
 # ───────────────────────── TV comparison (mirrors validate_strategy.run matching) ─────────────────────────
@@ -596,19 +808,10 @@ def _load_tv_trades(tv_path):
         return _parse_tv_csv_flexible(tv_path)
 
 
-# ───────────────────────── entry point ─────────────────────────
-def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
-    runner = _RUNNERS.get(strategy_type)
-    if runner is None:
-        return {"error": f"unsupported strategy type: {strategy_type}"}
-
-    ensure_nifty_data(date_from, date_to)
-
-    trades, df = runner(date_from, date_to, cfg)
-    if df.empty:
-        return {"error": "No 1-min data found for this date range, and auto-download failed "
-                          "(check Dhan token in data/config.json, or it's a market holiday)."}
-
+def _compute_stats(trades):
+    """Shared PnL/win-rate/profit-factor/sharpe/drawdown math — used for both
+    our engine's trades AND the TV trade list, so the overview cards can show
+    both side-by-side."""
     wins = sum(1 for t in trades if t.get("exit_price") is not None and
                ((t["exit_price"] - t["entry_price"] > 0) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"] > 0)))
     closed_pnls = [(t["exit_price"] - t["entry_price"]) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"])
@@ -641,8 +844,36 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
         equity_curve.append({"trade_no": i, "cum_pnl": round(cum, 2)})
     max_drawdown = round(max_dd, 2) if n_closed else None
 
+    return {"n_trades": len(trades), "wins": wins,
+            "losses": len(trades) - wins, "pnl_points": round(pnl_pts, 2),
+            "win_rate": win_rate, "profit_factor": profit_factor,
+            "sharpe": sharpe, "max_drawdown": max_drawdown,
+            "equity_curve": equity_curve}
+
+
+# ───────────────────────── entry point ─────────────────────────
+def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
+    runner = _RUNNERS.get(strategy_type)
+    if runner is None:
+        return {"error": f"unsupported strategy type: {strategy_type}"}
+
+    ensure_nifty_data(date_from, date_to)
+
+    runner_result = runner(date_from, date_to, cfg)
+    if len(runner_result) == 3:
+        trades, df, plot_spec = runner_result
+    else:
+        trades, df = runner_result
+        plot_spec = None
+    if df.empty:
+        return {"error": "No 1-min data found for this date range, and auto-download failed "
+                          "(check Dhan token in data/config.json, or it's a market holiday)."}
+
+    summary = _compute_stats(trades)
+
     accuracy = None
     tv_trades_json = None
+    tv_summary = None
     if tv_log_path and os.path.exists(tv_log_path):
         tv_trades = _load_tv_trades(tv_log_path)
         if date_from:
@@ -651,19 +882,55 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
             tv_trades = [t for t in tv_trades if t["entry_time"] <= pd.to_datetime(date_to) + pd.Timedelta(days=1)]
         tv_trades_json = _trades_json(tv_trades)
         accuracy = _match(trades, tv_trades)
+        tv_summary = _compute_stats(tv_trades)
 
     result = {
         "candles": _candles_json(df),
         "trades": _trades_json(trades, statuses=accuracy["eng_status"] if accuracy else None),
-        "summary": {"n_trades": len(trades), "wins": wins,
-                    "losses": len(trades) - wins, "pnl_points": round(pnl_pts, 2),
-                    "win_rate": win_rate, "profit_factor": profit_factor,
-                    "sharpe": sharpe, "max_drawdown": max_drawdown,
-                    "equity_curve": equity_curve},
+        "summary": summary,
         "tv_trades": tv_trades_json,
+        "tv_summary": tv_summary,
         "accuracy": accuracy,
+        "plot_spec": plot_spec,
     }
     return result
+
+
+# ───────────────────────── on-demand indicator picker (no-code add-to-chart) ─────────────────────────
+def compute_indicator_for_chart(symbol, date_from, date_to, name, params, timeframe="5m"):
+    """
+    Backs the dashboard's 'Add Indicator' dropdown — POST /api/indicators/compute.
+    Loads the same OHLC(V) this symbol's backtest runners use, computes one
+    indicator via _CHARTING.indicators' pandas-ta-style registry, and returns
+    just that indicator's plot_spec fragment (no trades/zones/patterns).
+    """
+    tf_min = TF_MIN.get(timeframe, 5)
+    if symbol == "NIFTY":
+        ensure_nifty_data(date_from, date_to)
+        cont1 = load_1m_range(date_from, date_to)
+        if cont1.empty:
+            return {"error": "No NIFTY 1-min data for this range"}
+        df = resample(cont1, tf_min)
+    else:
+        ensure_equity_data(symbol, date_from, date_to)
+        cont1 = load_equity_1m_range(symbol, date_from, date_to)
+        if cont1.empty:
+            return {"error": f"No {symbol} 1-min data for this range"}
+        df = resample_with_volume(cont1, tf_min) if name == "VWAP" else resample(cont1, tf_min)
+
+    try:
+        series = chind.compute_indicator(df, name, **(params or {}))
+    except KeyError:
+        return {"error": f"unknown indicator '{name}'"}
+    except ValueError as e:
+        return {"error": str(e)}
+
+    reg = chind.INDICATOR_REGISTRY[name]
+    label = name if not params else f"{name}({','.join(str(v) for v in params.values())})"
+    spec = chspec.build_plot_spec(df, indicators=[
+        {"name": label, "series": series, "type": reg["type"], "color": reg["color"]},
+    ])
+    return {"indicator": spec["indicators"][0]}
 
 
 if __name__ == "__main__":

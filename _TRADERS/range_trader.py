@@ -227,176 +227,20 @@ def fetch_daily(symbol, days=22):
         return None
 
 
-def traditional_pivots(h, l, c):
-    """Traditional pivot points from prev day H/L/C."""
-    P  = (h + l + c) / 3
-    R1 = 2 * P - l
-    S1 = 2 * P - h
-    R2 = P + (h - l)
-    S2 = P - (h - l)
-    R3 = h + 2 * (P - l)
-    S3 = l - 2 * (h - P)
-    R4 = R3 + (h - l)
-    S4 = S3 - (h - l)
-    R5 = R4 + (h - l)
-    S5 = S4 - (h - l)
-    return dict(P=P, R1=R1, R2=R2, R3=R3, R4=R4, R5=R5,
-                S1=S1, S2=S2, S3=S3, S4=S4, S5=S5)
-
-
-def build_key_levels(daily_df, is_index=False, max_jump_pct=50.0):
-    """
-    Build all key levels: pivot + prev-day HLC + high/low chain.
-    Returns list of (price, level_type) tuples.
-    Sorted: resistances first, then CP, then supports, then chain.
-    """
-    if daily_df is None or len(daily_df) < 2:
-        return []
-
-    mj = 10.0 if is_index else max_jump_pct
-
-    # Prev day (index -2 = yesterday, -1 = today/current)
-    prev = daily_df.iloc[-2]
-    ph, pl, pc = float(prev["high"]), float(prev["low"]), float(prev["close"])
-
-    levels = []  # (price, type)
-
-    # Pivot points
-    piv = traditional_pivots(ph, pl, pc)
-    for name in ["R5","R4","R3","R2","R1"]:
-        levels.append((piv[name], "RESISTANCE"))
-    levels.append((piv["P"], "CP"))
-    for name in ["S1","S2","S3","S4","S5"]:
-        levels.append((piv[name], "SUPPORT"))
-
-    # Prev day H/L/C
-    levels.append((ph, "PD_H"))
-    levels.append((pc, "PD_C"))
-    levels.append((pl, "PD_L"))
-
-    # High chain: consecutive higher highs going back from prev day
-    h_thresh = ph
-    for i in range(len(daily_df) - 3, max(len(daily_df) - 23, -1), -1):
-        row_h = float(daily_df.iloc[i]["high"])
-        if row_h > h_thresh:
-            jump = (row_h - h_thresh) / h_thresh * 100
-            if jump <= mj:
-                levels.append((row_h, "RESISTANCE"))
-                h_thresh = row_h
-
-    # Low chain: consecutive lower lows going back from prev day
-    l_thresh = pl
-    for i in range(len(daily_df) - 3, max(len(daily_df) - 23, -1), -1):
-        row_l = float(daily_df.iloc[i]["low"])
-        if row_l < l_thresh:
-            drop = (l_thresh - row_l) / l_thresh * 100
-            if drop <= mj:
-                levels.append((row_l, "SUPPORT"))
-                l_thresh = row_l
-
-    # Remove NaN / zero
-    levels = [(p, t) for p, t in levels if p and not np.isnan(p) and p > 0]
-    return levels
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# CANDLE PATTERNS (AA_CandlePatterns equivalent)
-# ─────────────────────────────────────────────────────────────────────────────
+# ── Patterns + zones now live in _CHARTING/ (shared, reusable module) ───────
+# Re-exported here so existing callers (validate_strategy.py, run_signal_engine
+# below) keep working unchanged. See _CHARTING/patterns.py + _CHARTING/zones.py
+# for the actual implementations.
+sys.path.insert(0, str(BASE_DIR.parent))
+from _CHARTING.zones import traditional_pivots, build_key_levels
+from _CHARTING.patterns import (
+    green_hammer, red_hammer, inv_red_hammer,
+    bull_engulfing, bear_engulfing, bull_harami, bear_harami,
+    is_bullish_pattern, is_bearish_pattern,
+)
 
 MIN_BODY_SIZE = 0.5    # minimum body in points (Pine minBodySize)
 WICK_RATIO    = 2.5    # wick >= WICK_RATIO * body (Pine wickRatio=2.5)
-
-def _body(o, c):
-    return abs(c - o)
-
-def _lower_wick(o, c, l):
-    return min(o, c) - l
-
-def _upper_wick(o, c, h):
-    return h - max(o, c)
-
-def green_hammer(o, h, l, c):
-    body = _body(o, c)
-    if body < MIN_BODY_SIZE or c <= o:   # must be green
-        return False
-    lw = _lower_wick(o, c, l)
-    uw = _upper_wick(o, c, h)
-    return lw >= WICK_RATIO * body and uw <= body
-
-def red_hammer(o, h, l, c):
-    body = _body(o, c)
-    if body < MIN_BODY_SIZE or c >= o:   # must be red
-        return False
-    lw = _lower_wick(o, c, l)
-    uw = _upper_wick(o, c, h)
-    return lw >= WICK_RATIO * body and uw <= body   # Pine: upperWick <= bodySize
-
-def inv_red_hammer(o, h, l, c):
-    body = _body(o, c)
-    if body < MIN_BODY_SIZE or c >= o:   # must be red
-        return False
-    uw = _upper_wick(o, c, h)
-    lw = _lower_wick(o, c, l)
-    return uw >= WICK_RATIO * body and lw <= body   # Pine: lowerWick <= bodySize
-
-def bull_engulfing(po, ph, pl, pc, o, h, l, c):
-    prev_red   = pc < po
-    curr_green = c > o
-    prev_body = abs(po - pc)
-    curr_body = abs(o - c)
-    if not prev_red or not curr_green:
-        return False
-    return c >= po and o <= pc and curr_body > prev_body and prev_body >= 0.5
-
-def bear_engulfing(po, ph, pl, pc, o, h, l, c):
-    prev_green = pc > po
-    curr_red   = c < o
-    prev_body = abs(po - pc)
-    curr_body = abs(o - c)
-    if not prev_green or not curr_red:
-        return False
-    return c <= po and o >= pc and curr_body > prev_body and prev_body >= 0.5
-
-def bull_harami(po, ph, pl, pc, o, h, l, c):
-    prev_red   = pc < po
-    curr_green = c > o
-    prev_body  = abs(pc - po)
-    curr_body  = abs(c - o)
-    body50pct = curr_body >= prev_body * 0.5
-    if not prev_red or not curr_green:
-        return False
-    return o > pc and c < po and body50pct
-
-def bear_harami(po, ph, pl, pc, o, h, l, c):
-    prev_green = pc > po
-    curr_red   = c < o
-    prev_body  = abs(pc - po)
-    curr_body  = abs(c - o)
-    body50pct = curr_body >= prev_body * 0.5
-    if not prev_green or not curr_red:
-        return False
-    return o < pc and c > po and body50pct
-
-def is_bullish_pattern(df, idx):
-    if idx < 1:
-        return False
-    r  = df.iloc[idx]
-    rp = df.iloc[idx - 1]
-    o, h, l, c    = float(r["open"]),  float(r["high"]),  float(r["low"]),  float(r["close"])
-    po, ph, pl, pc = float(rp["open"]), float(rp["high"]), float(rp["low"]), float(rp["close"])
-    return (green_hammer(o, h, l, c) or
-            bull_engulfing(po, ph, pl, pc, o, h, l, c))
-
-def is_bearish_pattern(df, idx):
-    if idx < 1:
-        return False
-    r  = df.iloc[idx]
-    rp = df.iloc[idx - 1]
-    o, h, l, c    = float(r["open"]),  float(r["high"]),  float(r["low"]),  float(r["close"])
-    po, ph, pl, pc = float(rp["open"]), float(rp["high"]), float(rp["low"]), float(rp["close"])
-    return (red_hammer(o, h, l, c) or
-            inv_red_hammer(o, h, l, c) or
-            bear_engulfing(po, ph, pl, pc, o, h, l, c))
 
 
 # ─────────────────────────────────────────────────────────────────────────────

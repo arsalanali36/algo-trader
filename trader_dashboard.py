@@ -11,6 +11,7 @@ import re
 import socket
 import subprocess
 import signal
+import uuid
 from datetime import datetime
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request, Response
@@ -104,7 +105,10 @@ def _base(strategy):
     return STRATEGY_ALIASES.get(first, first)
 
 def get_pid(strategy="ema"):
-    grep = STRATEGIES[_base(strategy)]["grep"]
+    entry = STRATEGIES.get(_base(strategy))
+    if not entry:
+        return None   # no live trader script for this type (e.g. vwap — backtest-only so far)
+    grep = entry["grep"]
     try:
         out = subprocess.check_output(['pgrep', '-f', grep], text=True).strip()
         return int(out.split('\n')[0]) if out else None
@@ -218,7 +222,7 @@ def index():
 @app.route('/backtest')
 def backtest():
     from flask import send_file
-    return send_file(BASE_DIR / 'backtest_dashboard.html')
+    return send_file(BASE_DIR / '_TOOLS' / 'backtest_dashboard.html')
 
 @app.route('/backtest-chart')
 def backtest_chart():
@@ -268,7 +272,12 @@ def api_start():
     s    = request.args.get('s', 'ema_v1')
     mode = request.args.get('mode', 'paper')
     base_s = _base(s)
-    st   = STRATEGIES.get(base_s, STRATEGIES['ema'])
+    st   = STRATEGIES.get(base_s)
+    if st is None:
+        # No live trader script for this type yet (e.g. vwap — backtest-only
+        # so far). Falling back to a different strategy's script here would
+        # silently run the WRONG strategy under this config — refuse instead.
+        return jsonify({"msg": f"⚠ Live/paper trading not built yet for '{base_s}' — backtest only for now."}), 400
     pid  = get_pid(s)
     if pid:
         return jsonify({"msg": f"{s.upper()} already running (PID {pid})"})
@@ -942,7 +951,13 @@ def api_pine_save():
     pine_dir.mkdir(exist_ok=True)
     ver_file = pine_dir / 'versions.json'
     versions = _json.loads(ver_file.read_text()) if ver_file.exists() else []
-    version = len(versions) + 1
+    # NOT len(versions)+1 — any hand-edited/out-of-order entry (e.g. a manually
+    # registered version) makes the array length diverge from the highest
+    # version id actually in use, and the next save then collides with an
+    # existing version, silently overwriting that version's v{N}.pine snapshot
+    # and image folder. Happened once already (rsi_v1's v6.pine got clobbered
+    # by a later vwap save that also landed on id 6) — use the real max instead.
+    version = max((v.get("version", 0) for v in versions), default=0) + 1
     from datetime import datetime, timezone, timedelta
     ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     ts = ist.strftime('%Y-%m-%d %H:%M IST')
@@ -1108,7 +1123,11 @@ def api_pine_images_get(version):
 
 @app.route('/api/pine/images/<int:version>', methods=['POST'])
 def api_pine_images_upload(version):
-    import uuid, imghdr
+    # NOT "import imghdr" — removed in Python 3.13+ (this server runs 3.14),
+    # so every image upload 500'd before even reaching mkdir(). It was never
+    # actually used below (extension comes from f.filename instead), so the
+    # import alone was the entire bug — nothing else needed it.
+    import uuid
     img_dir = BASE_DIR / '_PINE' / f'v{version}_imgs'
     img_dir.mkdir(parents=True, exist_ok=True)
     saved = []
@@ -1179,6 +1198,16 @@ def api_run_status():
         pass
     return jsonify(status)
 
+@app.route('/api/backtest/progress')
+def api_backtest_progress():
+    """Polled by the Results page while /api/backtest/run is in flight, so a
+    multi-day Dhan download (which blocks that request for a while) shows a
+    live 'downloading TCS 3/12' instead of a frozen spinner."""
+    import sys as _s
+    _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
+    import backtest_engine as be
+    return jsonify(be.progress)
+
 @app.route('/api/backtest/run', methods=['POST'])
 def api_backtest_run():
     """Generic date-range backtest for any strategy type (range/rsi/ema).
@@ -1211,7 +1240,7 @@ def api_backtest_run():
         cfg_override = body.get("cfg_override")
 
     strat_type = _base(sid)
-    if strat_type not in ("range", "rsi", "rsi_v1", "ema"):
+    if strat_type not in ("range", "rsi", "rsi_v1", "ema", "vwap"):
         return jsonify({"error": f"backtest not supported for strategy type '{strat_type}'"}), 400
 
     cfg_file = STRATEGIES.get(strat_type, {}).get("cfg", TC_FILE)
@@ -1251,6 +1280,38 @@ def api_backtest_run():
 
     return jsonify(result)
 
+@app.route('/api/indicators/list')
+def api_indicators_list():
+    """Backs the chart's 'Add Indicator' dropdown — name + param schema for
+    every standard indicator in _CHARTING/indicators.py's registry."""
+    import sys as _s
+    _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
+    import backtest_engine as be
+    return jsonify(be.chind.list_available_indicators())
+
+@app.route('/api/indicators/compute', methods=['POST'])
+def api_indicators_compute():
+    """Compute one indicator on demand for the chart's 'Add Indicator' picker.
+    Body: {symbol, date_from, date_to, name, params, timeframe}. Returns just
+    that indicator's plot_spec fragment — the chart appends it without a
+    full backtest re-run."""
+    import sys as _s
+    _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
+    import backtest_engine as be
+
+    body = request.get_json(silent=True) or {}
+    result = be.compute_indicator_for_chart(
+        symbol=body.get("symbol", "NIFTY"),
+        date_from=body.get("date_from"),
+        date_to=body.get("date_to"),
+        name=body.get("name"),
+        params=body.get("params") or {},
+        timeframe=body.get("timeframe", "5m"),
+    )
+    if "error" in result:
+        return jsonify(result), 400
+    return jsonify(result)
+
 @app.route('/api/backtest/save-config', methods=['POST'])
 def api_backtest_save_config():
     """Edit & Re-run modal's 'Save & Run' — merge edited fields into
@@ -1267,6 +1328,79 @@ def api_backtest_save_config():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     return jsonify({"msg": f"✅ {sid} config saved"})
+
+@app.route('/api/symbols/search', methods=['GET'])
+def api_symbols_search():
+    """Backtest Results symbol picker — search Dhan's NSE equity scrip master
+    (already cached for live option-chain lookups) instead of the old
+    hardcoded NIFTY-50 list, so any listed stock (e.g. TECHM) is findable."""
+    q = (request.args.get('q') or '').strip().upper()
+    try:
+        import dhan_master
+        cache = dhan_master.build_equity_cache()
+        symbols = sorted(cache.keys())
+        if q:
+            symbols = [s for s in symbols if q in s]
+        return jsonify(symbols[:50])
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+SAVED_BACKTESTS_FILE = BASE_DIR / "data" / "saved_backtests.json"
+
+def _load_saved_backtests():
+    if not SAVED_BACKTESTS_FILE.exists():
+        return []
+    try:
+        return json.loads(SAVED_BACKTESTS_FILE.read_text())
+    except Exception:
+        return []
+
+@app.route('/api/backtest/saved', methods=['GET'])
+def api_backtest_saved_list():
+    """Saved Results table on the Results page — only key stats + the run's
+    own strategy/cfg/date-range are stored (not candles/trades), so this is
+    light enough to list in full every time without a separate paging API."""
+    return jsonify(_load_saved_backtests())
+
+@app.route('/api/backtest/saved', methods=['POST'])
+def api_backtest_saved_save():
+    # Wrapped in try/except so any unexpected failure here returns JSON —
+    # otherwise Flask's default error page is HTML, and the frontend's
+    # `await r.json()` throws a confusing "Unexpected token '<'" instead of
+    # whatever the real problem was.
+    try:
+        body = request.get_json(silent=True) or {}
+        name = (body.get("name") or "").strip()
+        if not name:
+            return jsonify({"error": "name required"}), 400
+        entries = _load_saved_backtests()
+        entry = {
+            "id": uuid.uuid4().hex[:10],
+            "name": name,
+            "strategy": body.get("strategy"),
+            "cfg": body.get("cfg") or {},
+            "date_from": body.get("date_from"),
+            "date_to": body.get("date_to"),
+            "summary": body.get("summary") or {},
+            "symbols": body.get("symbols"),   # present only for multi-symbol saves
+            "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        }
+        entries.append(entry)
+        SAVED_BACKTESTS_FILE.parent.mkdir(parents=True, exist_ok=True)
+        SAVED_BACKTESTS_FILE.write_text(json.dumps(entries, indent=2, ensure_ascii=False))
+        return jsonify(entry)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/saved/<sid>', methods=['DELETE'])
+def api_backtest_saved_delete(sid):
+    try:
+        entries = _load_saved_backtests()
+        entries = [e for e in entries if e.get("id") != sid]
+        SAVED_BACKTESTS_FILE.write_text(json.dumps(entries, indent=2, ensure_ascii=False))
+        return jsonify({"ok": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/api/watch')
 def api_watch():
