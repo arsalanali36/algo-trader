@@ -322,6 +322,36 @@ def load_1m_range(date_from=None, date_to=None):
     return pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
 
 
+def _cfg_symbol(cfg, default="NIFTY"):
+    """The symbol a backtest should run on — single `symbol` (vwap-style) or
+    the first of a `symbols` list (ema/rsi-style), else the default."""
+    s = cfg.get("symbol")
+    if not s:
+        syms = cfg.get("symbols")
+        if isinstance(syms, list) and syms:
+            s = syms[0]
+    return s or default
+
+
+def _is_index(symbol):
+    return symbol in ("NIFTY", "BANKNIFTY")
+
+
+def ensure_and_load_symbol(symbol, date_from, date_to, tf_min, need_volume=False):
+    """Generic per-symbol bar loader — picks the NIFTY index store or the
+    equity store by symbol, downloads any missing days, and returns resampled
+    bars. Lets rsi/ema (and anything new) run on ANY symbol, not just NIFTY."""
+    if _is_index(symbol):
+        ensure_nifty_data(date_from, date_to)
+        cont1 = load_1m_range(date_from, date_to)
+    else:
+        ensure_equity_data(symbol, date_from, date_to)
+        cont1 = load_equity_1m_range(symbol, date_from, date_to)
+    if cont1.empty:
+        return pd.DataFrame()
+    return resample_with_volume(cont1, tf_min) if need_volume else resample(cont1, tf_min)
+
+
 def resample(df1, tf_min):
     if tf_min <= 1:
         return df1.rename(columns={"datetime": "time"})[["time", "open", "high", "low", "close"]]
@@ -344,6 +374,12 @@ def _fill(df, i):
 
 # ───────────────────────── RANGE (reuses validate_strategy.backtest_day) ─────────────────────────
 def _run_range(date_from, date_to, cfg):
+    # Range Chain is NIFTY/index-specific (pivots + high/low chains use index
+    # daily bars, validated at 90.2% on NIFTY) — it always runs on NIFTY data
+    # regardless of any cfg.symbol, so it owns its own NIFTY ensure here (the
+    # unconditional top-level one was removed so equity strategies don't pull
+    # NIFTY days they never use).
+    ensure_nifty_data(date_from, date_to)
     cont1 = load_1m_range(date_from, date_to)
     if cont1.empty:
         return [], pd.DataFrame()
@@ -465,25 +501,30 @@ def _earliest_cached_day():
     return min(days) if days else None
 
 
-def _buffered_from(date_from):
+def _buffered_from(date_from, symbol="NIFTY"):
     if not date_from:
         return date_from
     floor = pd.to_datetime(date_from) - pd.Timedelta(days=_WARMUP_CALENDAR_DAYS)
-    earliest = _earliest_cached_day()
-    if earliest is not None and earliest < floor:
-        floor = earliest   # free extra warm-up already cached locally
+    # The free extra warm-up trick (use already-cached earlier days) only
+    # applies to NIFTY — _earliest_cached_day globs the NIFTY store. For an
+    # equity symbol, extending to a NIFTY date would just trigger pointless
+    # equity downloads for days outside the window, so keep the flat 45-day floor.
+    if _is_index(symbol):
+        earliest = _earliest_cached_day()
+        if earliest is not None and earliest < floor:
+            floor = earliest
     return floor.strftime("%Y-%m-%d")
 
 
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
 def _run_rsi(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
-    buffered_from = _buffered_from(date_from)
-    ensure_nifty_data(buffered_from, date_to)
-    cont1 = load_1m_range(buffered_from, date_to)
-    if cont1.empty:
+    symbol = _cfg_symbol(cfg)
+    buffered_from = _buffered_from(date_from, symbol)
+    df = ensure_and_load_symbol(symbol, buffered_from, date_to, tf_min)
+    if df.empty:
         return [], pd.DataFrame()
-    df = resample(cont1, tf_min)   # includes the warm-up buffer — RSI computed over this
+    # df includes the warm-up buffer — RSI computed over this
     cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
     period     = cfg.get("rsi_period", 14)
@@ -549,12 +590,12 @@ def _run_rsi(date_from, date_to, cfg):
 # ───────────────────────── EMA (generic growing-window replay) ─────────────────────────
 def _run_ema(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "1m"), 1)
-    buffered_from = _buffered_from(date_from)
-    ensure_nifty_data(buffered_from, date_to)
-    cont1 = load_1m_range(buffered_from, date_to)
-    if cont1.empty:
+    symbol = _cfg_symbol(cfg)
+    buffered_from = _buffered_from(date_from, symbol)
+    df = ensure_and_load_symbol(symbol, buffered_from, date_to, tf_min)
+    if df.empty:
         return [], pd.DataFrame()
-    df = resample(cont1, tf_min)   # includes the warm-up buffer — see _run_rsi's note
+    # df includes the warm-up buffer — see _run_rsi's note
     cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
     fast, slow = cfg.get("fast_ema", 9), cfg.get("slow_ema", 20)
@@ -859,8 +900,10 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
     if runner is None:
         return {"error": f"unsupported strategy type: {strategy_type}"}
 
-    ensure_nifty_data(date_from, date_to)
-
+    # NOTE: no unconditional ensure_nifty_data here — each runner pulls its OWN
+    # symbol's data (NIFTY for range, cfg.symbol equity for rsi/ema/vwap). A
+    # blanket NIFTY download was forcing equity backtests (TCS/POLYCAB) to
+    # re-fetch NIFTY days they never use ("downloading NIFTY 1/10" every run).
     runner_result = runner(date_from, date_to, cfg)
     if len(runner_result) == 3:
         trades, df, plot_spec = runner_result

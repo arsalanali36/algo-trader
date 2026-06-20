@@ -119,6 +119,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <button class="btn btn-gray" style="font-size:11px;padding:2px 8px" onclick="addIndicatorToChart()">Add</button>
       <span id="ind-active-list" style="display:flex;gap:4px;flex-wrap:wrap"></span>
     </div>
+    <div id="ind-style-list" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:3px 8px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d"></div>
     <div id="chart"><div class="empty">No chart data — open this from the backtest panel's "🔍 Full View" button.</div></div>
   </div>
 
@@ -430,6 +431,9 @@ function _runSavedEntry(entry) {
 }
 
 function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,''); }
+// Which strategy types let you pick the backtest symbol — anything whose
+// signal logic is symbol-agnostic. Range is excluded (NIFTY/index-only engine).
+function symbolPickable(type){ return ['vwap','rsi','ema'].includes(type); }
 
 // Friendly labels — config keys are internal ids (ARS_CHAIN_V1, rsi_v1) and
 // look ugly verbatim in a dropdown. Map the base id to a readable name; the
@@ -652,6 +656,7 @@ function renderIndicator(name, params, persist) {
     _saveActiveIndicators(list);
     renderActiveIndicatorChips();
   }
+  renderIndicatorStyleControls();   // include the just-added line in the colour/width controls
 }
 
 function renderActiveIndicatorChips() {
@@ -811,8 +816,11 @@ function tradePassesFilter(t) {
 // while charting RIL/TCS/POLYCAB data.
 function symbolsFor(cfg) {
   if (D.multi) return Object.keys(D.multi);
-  if (cfg && Array.isArray(cfg.symbols) && cfg.symbols.length) return cfg.symbols;
+  // An explicit single `symbol` (set by the picker on a single-symbol run)
+  // wins over a leftover `symbols` array from the saved config — otherwise an
+  // rsi/ema run picked as TCS would still show the default NIFTY tab.
   if (cfg && cfg.symbol) return [cfg.symbol];
+  if (cfg && Array.isArray(cfg.symbols) && cfg.symbols.length) return cfg.symbols;
   return ['NIFTY'];
 }
 
@@ -913,6 +921,7 @@ function drawChart() {
     return;
   }
   _hasOscillator = false;   // fresh chart — no oscillator panel yet
+  _indSeries = {};          // fresh chart — indicator series handles reset
   _chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
     layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
@@ -965,11 +974,27 @@ function drawChart() {
   if (document.getElementById('ind-active-list')) {
     for (const ind of _getActiveIndicators()) renderIndicator(ind.name, ind.params, false);
   }
+  renderIndicatorStyleControls();   // list every drawn indicator's colour/width controls
 }
 
 // Tracks whether any oscillator (RSI/ATR — own bottom panel) is on the chart,
 // so we can shrink the candle area to make room (TV-style stacked panes).
 let _hasOscillator = false;
+// name → series handle for every indicator currently drawn (defaults + picker),
+// so the style controls below can recolor / re-thicken a line live.
+let _indSeries = {};
+
+// Per-indicator line style (color + thickness) the user set from the UI,
+// keyed by indicator name, persisted globally so it sticks across reruns.
+function _getIndStyles() {
+  try { return JSON.parse(localStorage.getItem('bt_ind_styles') || '{}'); }
+  catch (e) { return {}; }
+}
+function _setIndStyle(name, style) {
+  const all = _getIndStyles();
+  all[name] = Object.assign({}, all[name], style);
+  localStorage.setItem('bt_ind_styles', JSON.stringify(all));
+}
 
 // Adds one indicator series, honouring ind.overlay:
 //   overlay !== false  → same price scale as candles (EMA/SMA/VWAP/BBANDS)
@@ -977,7 +1002,10 @@ let _hasOscillator = false;
 //                        i.e. a separate panel like TradingView.
 function _addIndicatorSeries(ind) {
   const overlay = ind.overlay !== false;
-  const opts = { color: ind.color, lineWidth: 1, priceLineVisible: false, lastValueVisible: true, title: ind.name };
+  const saved = _getIndStyles()[ind.name] || {};
+  const color = saved.color || ind.color;
+  const lineWidth = saved.width || 1;
+  const opts = { color, lineWidth, priceLineVisible: false, lastValueVisible: true, title: ind.name };
   if (!overlay) {
     opts.priceScaleId = 'osc_' + ind.name;   // own scale → own panel
   }
@@ -993,7 +1021,40 @@ function _addIndicatorSeries(ind) {
       _chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
     }
   }
+  _indSeries[ind.name] = { series, color, overlay };
   return series;
+}
+
+// Color + thickness controls for every indicator currently on the chart
+// (strategy defaults AND picker-added). Changes apply live via applyOptions
+// and persist in localStorage.
+function renderIndicatorStyleControls() {
+  const wrap = document.getElementById('ind-style-list');
+  if (!wrap) return;
+  const names = Object.keys(_indSeries);
+  if (!names.length) { wrap.innerHTML = ''; return; }
+  wrap.innerHTML = '<span>🎨 Lines:</span>' + names.map(name => {
+    const st = _indSeries[name];
+    const saved = _getIndStyles()[name] || {};
+    const w = saved.width || 1;
+    return `<span style="display:inline-flex;align-items:center;gap:3px;background:#161b22;border:1px solid #21262d;border-radius:10px;padding:1px 6px">
+      <input type="color" value="${st.color}" title="${name} colour" style="width:18px;height:18px;border:none;background:none;padding:0;cursor:pointer" onchange="setIndicatorColor('${name}', this.value)">
+      <span style="color:#e6edf3">${name}</span>
+      <select title="${name} thickness" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;font-size:10px" onchange="setIndicatorWidth('${name}', this.value)">
+        ${[1,2,3,4].map(n => `<option value="${n}" ${n===w?'selected':''}>${n}px</option>`).join('')}
+      </select>
+    </span>`;
+  }).join('');
+}
+function setIndicatorColor(name, color) {
+  if (_indSeries[name]) { _indSeries[name].series.applyOptions({ color }); _indSeries[name].color = color; }
+  _setIndStyle(name, { color });
+  renderIndicatorStyleControls();
+}
+function setIndicatorWidth(name, width) {
+  width = Number(width);
+  if (_indSeries[name]) _indSeries[name].series.applyOptions({ lineWidth: width });
+  _setIndStyle(name, { width });
 }
 
 // Generic renderer for the _CHARTING plot-spec JSON (indicators/zones/pattern
@@ -1356,9 +1417,15 @@ function openEditModal(preserveSymbols) {
     }
   });
   document.getElementById('modal-fields').innerHTML = html;
-  document.getElementById('modal-multi-row').style.display = type === 'vwap' ? '' : 'none';
-  if (type === 'vwap' && !preserveSymbols) {
-    _selectedSymbols = cfg.symbol ? [cfg.symbol] : ['TCS'];
+  // Symbol picker is available for every symbol-agnostic strategy (vwap/rsi/ema).
+  // Range stays NIFTY-only — its pivot/zone/chain engine is index-specific
+  // (validated 90.2% on NIFTY) and isn't wired for arbitrary equities.
+  const pickable = symbolPickable(type);
+  document.getElementById('modal-multi-row').style.display = pickable ? '' : 'none';
+  if (pickable && !preserveSymbols) {
+    _selectedSymbols = cfg.symbol ? [cfg.symbol]
+      : (Array.isArray(cfg.symbols) && cfg.symbols.length ? cfg.symbols.slice()
+      : (type === 'vwap' ? ['TCS'] : ['NIFTY']));
   }
   document.getElementById('modal-symbols-summary').textContent = _selectedSymbols.join(', ');
   document.getElementById('edit-modal').classList.add('open');
@@ -1456,12 +1523,12 @@ async function _runMultiSymbol(sid, editedFields, dfrom, dto, msg) {
 
 async function modalRun(saveFirst) {
   const sid = D.strategy || 'range_v1';
-  const isVwap = baseType(sid) === 'vwap';
+  const pickable = symbolPickable(baseType(sid));
   const editedFields = collectModalFields();
-  // No separate "Symbol" field for vwap anymore — pick-symbols list decides
-  // it: exactly 1 selected = single-symbol run, more = combined multi-run.
-  if (isVwap) editedFields.symbol = _selectedSymbols[0] || 'TCS';
-  const runAllSymbols = isVwap && _selectedSymbols.length > 1;
+  // For symbol-pickable strategies the Pick-Symbols list decides the symbol:
+  // exactly 1 selected = single-symbol run, more = combined multi-run.
+  if (pickable) editedFields.symbol = _selectedSymbols[0] || (baseType(sid) === 'vwap' ? 'TCS' : 'NIFTY');
+  const runAllSymbols = pickable && _selectedSymbols.length > 1;
   const dfrom = document.getElementById('modal-from').value;
   const dto = document.getElementById('modal-to').value;
   const tvFiles = document.getElementById('modal-tv-files').files;
