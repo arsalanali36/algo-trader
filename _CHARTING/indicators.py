@@ -48,7 +48,7 @@ def _bbands_mid(df, period=20):
 INDICATOR_REGISTRY = {
     "EMA":     {"fn": _ema,        "type": "line", "color": "#d29922", "params": ["period"], "default": {"period": 20}, "overlay": True},
     "SMA":     {"fn": _sma,        "type": "line", "color": "#8b949e", "params": ["period"], "default": {"period": 20}, "overlay": True},
-    "RSI":     {"fn": _rsi,        "type": "line", "color": "#1f6feb", "params": ["period"], "default": {"period": 14}, "overlay": False},
+    "RSI":     {"fn": _rsi,        "type": "line", "color": "#7e57c2", "params": ["period"], "default": {"period": 14}, "overlay": False},
     "ATR":     {"fn": _atr,        "type": "line", "color": "#f85149", "params": ["period"], "default": {"period": 14}, "overlay": False},
     "VWAP":    {"fn": _vwap,       "type": "line", "color": "#3fb950", "params": [],          "default": {},            "overlay": True},
     "BBANDS":  {"fn": _bbands_mid, "type": "line", "color": "#d2a8ff", "params": ["period"], "default": {"period": 20}, "overlay": True},

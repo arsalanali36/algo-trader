@@ -117,6 +117,9 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <select id="ind-name-select" style="background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:4px;font-size:11px;padding:2px 4px"></select>
       <span id="ind-param-wrap"></span>
       <button class="btn btn-gray" style="font-size:11px;padding:2px 8px" onclick="addIndicatorToChart()">Add</button>
+      <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-left:6px" title="Show AA_CandlePatterns markers (hammer / engulfing / harami) on the candles">
+        <input type="checkbox" id="patterns-toggle" onchange="togglePatterns(this.checked)"> 📍 Candle Patterns
+      </label>
       <span id="ind-active-list" style="display:flex;gap:4px;flex-wrap:wrap"></span>
     </div>
     <div id="ind-style-list" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:3px 8px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d"></div>
@@ -485,6 +488,9 @@ async function init() {
   // Load the indicator registry (overlay/color metadata) BEFORE the first
   // drawChart() so persisted indicators render in the right panel from the start.
   await initIndicatorPicker();
+  _showPatterns = localStorage.getItem('bt_show_patterns') === '1';
+  const ptog = document.getElementById('patterns-toggle');
+  if (ptog) ptog.checked = _showPatterns;
   drawChart();
   setView('chart');
 
@@ -638,6 +644,47 @@ function _computeIndicator(name, params, candles) {
     values.push({ time: candles[i].time, value: Math.round(arr[i] * 10000) / 10000 });
   }
   return values;
+}
+
+// ── Candle pattern detection (mirrors the user's AA_CandlePatterns Pine lib) ──
+// Same thresholds as the Python port in _CHARTING/patterns.py: minBody=0.5,
+// wickRatio=2.5, prevBodyMin=0.5. Returns markers for every matched pattern.
+let _showPatterns = false;
+function _detectCandlePatterns(candles, minBody = 0.5, wickRatio = 2.5, prevBodyMin = 0.5) {
+  const tags = [];
+  for (let i = 1; i < candles.length; i++) {
+    const c = candles[i], p = candles[i - 1];
+    const o = c.open, h = c.high, l = c.low, cl = c.close;
+    const po = p.open, pc = p.close;
+    const body = Math.abs(cl - o), lw = Math.min(o, cl) - l, uw = h - Math.max(o, cl);
+    const validBody = body >= minBody;
+    const prevBody = Math.abs(po - pc), currBody = Math.abs(o - cl);
+    const body50 = currBody >= prevBody * 0.5;
+
+    const greenHammer  = validBody && lw >= wickRatio * body && uw <= body && cl > o;
+    const redHammer    = validBody && lw >= wickRatio * body && uw <= body && cl < o;
+    const invRedHammer = validBody && uw >= wickRatio * body && lw <= body && cl < o;
+    const bullEng = pc < po && o < cl && o <= pc && cl >= po && currBody > (po - pc) && prevBody >= prevBodyMin;
+    const bearEng = pc > po && o > cl && o >= pc && cl <= po && currBody > (pc - po) && prevBody >= prevBodyMin;
+    const bullHar = pc < po && o < cl && o > pc && cl < po && body50;
+    const bearHar = pc > po && o > cl && o < pc && cl > po && body50;
+
+    const hit = [];
+    if (greenHammer)  hit.push(['bull', 'gHammer']);
+    if (redHammer)    hit.push(['bear', 'rHammer']);
+    if (invRedHammer) hit.push(['bear', 'invHammer']);
+    if (bullEng)      hit.push(['bull', 'bullEngulf']);
+    if (bearEng)      hit.push(['bear', 'bearEngulf']);
+    if (bullHar)      hit.push(['bull', 'bullHarami']);
+    if (bearHar)      hit.push(['bear', 'bearHarami']);
+    hit.forEach(([dir, label]) => tags.push({ time: c.time, dir, label }));
+  }
+  return tags;
+}
+function togglePatterns(on) {
+  _showPatterns = on;
+  localStorage.setItem('bt_show_patterns', on ? '1' : '0');
+  drawChart();
 }
 
 // Render one indicator from client-side math (instant). persist=true saves it
@@ -966,6 +1013,15 @@ function drawChart() {
     });
   }
   _renderPlotSpec(D.multi ? (D.multi[_activeSymbol] || {}).plot_spec : D.plot_spec);
+  // Candle-pattern markers (AA_CandlePatterns) — client-side toggle, works on
+  // every strategy/symbol, not just range's server-emitted pattern_tags.
+  if (_showPatterns) {
+    _detectCandlePatterns(candles).forEach(p => {
+      _markers.push({ time: p.time, position: p.dir === 'bull' ? 'belowBar' : 'aboveBar',
+                     color: p.dir === 'bull' ? '#3fb950' : '#f85149',
+                     shape: p.dir === 'bull' ? 'arrowUp' : 'arrowDown', text: p.label });
+    });
+  }
   _markers.sort((a, b) => a.time - b.time);
   _series.setMarkers(_markers);
   _chart.timeScale().fitContent();
@@ -1014,11 +1070,29 @@ function _addIndicatorSeries(ind) {
     : _chart.addLineSeries(opts);
   series.setData(ind.values || []);
   if (!overlay) {
-    _chart.priceScale('osc_' + ind.name).applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
+    const scaleId = 'osc_' + ind.name;
+    _chart.priceScale(scaleId).applyOptions({ scaleMargins: { top: 0.80, bottom: 0 } });
     if (!_hasOscillator) {
       _hasOscillator = true;
       // Push the candles up into the top 75% so the oscillator panel below is clear.
       _chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.05, bottom: 0.28 } });
+    }
+    // TradingView-style RSI dressing: 70/50/30 guide lines + a yellow RSI-based
+    // SMA(14) companion line, both pinned to the RSI's own panel scale.
+    if (ind.name.toUpperCase().startsWith('RSI')) {
+      [[70, '#f85149'], [50, '#8b949e'], [30, '#3fb950']].forEach(([lvl, col]) => {
+        series.createPriceLine({ price: lvl, color: col, lineWidth: 1, lineStyle: LightweightCharts.LineStyle.Dashed, axisLabelVisible: true, title: String(lvl) });
+      });
+      const vals = ind.values || [];
+      if (vals.length > 14) {
+        const maLine = _chart.addLineSeries({ color: '#e3b341', lineWidth: 1, priceScaleId: scaleId, priceLineVisible: false, lastValueVisible: false, title: 'RSI-MA' });
+        const maData = [];
+        for (let i = 13; i < vals.length; i++) {
+          let s = 0; for (let j = i - 13; j <= i; j++) s += vals[j].value;
+          maData.push({ time: vals[i].time, value: Math.round(s / 14 * 100) / 100 });
+        }
+        maLine.setData(maData);
+      }
     }
   }
   _indSeries[ind.name] = { series, color, overlay };
@@ -1071,11 +1145,16 @@ function _renderPlotSpec(spec) {
       _series.createPriceLine({ price: z.price_lower, color: z.color, lineWidth: 1, title: z.label + ' ▼' });
     }
   });
-  (spec.pattern_tags || []).forEach(p => {
-    _markers.push({ time: p.time, position: p.direction === 'bull' ? 'belowBar' : 'aboveBar',
-                   color: p.direction === 'bull' ? '#3fb950' : '#f85149',
-                   shape: 'circle', text: p.pattern });
-  });
+  // Skip server-emitted pattern_tags (range only) when the client-side
+  // Candle-Patterns toggle is on — it becomes the single source, so range
+  // doesn't get double markers.
+  if (!_showPatterns) {
+    (spec.pattern_tags || []).forEach(p => {
+      _markers.push({ time: p.time, position: p.direction === 'bull' ? 'belowBar' : 'aboveBar',
+                     color: p.direction === 'bull' ? '#3fb950' : '#f85149',
+                     shape: 'circle', text: p.pattern });
+    });
+  }
 }
 
 function jumpToTrade(idx) {
