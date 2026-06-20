@@ -106,6 +106,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <button onclick="qoToggle()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">⚡ Quick Order</button>
     <button onclick="watchToggle()" id="watch-btn" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">👁 Watch</button>
     <a href="/backtest" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128200; Backtest</a>
+    <a href="/backtest-chart" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128202; Results</a>
     <span id="clock"></span>
   </div>
 </div>
@@ -1751,7 +1752,13 @@ function btRenderResults(d) {
 
 function btOpenFullView() {
   if (!_btLastResult) return;
-  localStorage.setItem('bt_chart_data', JSON.stringify(_btLastResult));
+  const payload = Object.assign({}, _btLastResult, {
+    strategy: _runStrategyId,
+    cfg: (GLOBAL_CONFIG && GLOBAL_CONFIG[_runStrategyId]) || {},
+    date_from: document.getElementById('bt-from').value,
+    date_to: document.getElementById('bt-to').value
+  });
+  localStorage.setItem('bt_chart_data', JSON.stringify(payload));
   window.open('/backtest-chart', '_blank');
 }
 

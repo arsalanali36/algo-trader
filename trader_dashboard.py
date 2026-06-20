@@ -29,7 +29,11 @@ TC_FILE       = BASE_DIR / "nifty_config.json"
 LOG_FILE      = BASE_DIR / "nifty_trader.log"
 RESULTS_DIR   = BASE_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
-PYTHON        = str(BASE_DIR / "venv" / "bin" / "python")
+import sys as _sys_boot
+# venv/bin/python is the VPS (Linux) layout. On Windows there's no such
+# path — use the interpreter actually running this process either way, so
+# Start/Stop works identically on the VPS and on a local Windows dev box.
+PYTHON        = _sys_boot.executable
 TRADER_SCRIPT = str(TRADERS_DIR / "nifty_ema_trader.py")
 
 # Allow "import range_trader" etc. from _TRADERS/ without moving shared utils
@@ -984,6 +988,49 @@ def api_pine_code(version):
                 return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
     return 'Code not found', 404
 
+@app.route('/api/backtest/pine-code')
+def api_backtest_pine_code():
+    """Pine source for the strategy actually run in a backtest — used by the
+    Results page's 'Copy Code' button so the user can paste the exact same
+    Pine code into TradingView for an apples-to-apples comparison (instead of
+    guessing which Pine version matches the Python run)."""
+    import json as _json
+    sid = request.args.get('strategy', '')
+    strat_type = _base(sid)   # e.g. "range_v1" -> "range", "rsi_v1" -> "rsi"
+    pine_dir = BASE_DIR / '_PINE'
+
+    # Fast path: a Pine snapshot file literally named after the strategy id
+    # (e.g. "rsi_v1.pine") — several hand-registered versions never got linked
+    # into versions.json's pine_file/py_file fields, so check disk directly
+    # before falling back to the version-history lookup.
+    direct = pine_dir / f'{sid}.pine'
+    if direct.exists():
+        return direct.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+
+    ver_file = pine_dir / 'versions.json'
+    if not ver_file.exists():
+        return 'No Pine versions found', 404
+    try:
+        versions = _json.loads(ver_file.read_text())
+    except Exception:
+        return 'versions.json unreadable', 500
+
+    # Latest version whose py_file's basename relates to this strategy's type
+    # (py_file isn't always literally "<sid>.py" — e.g. range_v1's py_file is
+    # "range_trader.py" — so match on the file stem containing the base type),
+    # newest entries are at the end.
+    match = None
+    for v in reversed(versions):
+        py = v.get('py_file', '') or ''
+        stem = py.replace('strategies/', '').replace('.py', '')
+        if stem and (stem == sid or strat_type in stem or stem in strat_type):
+            match = v
+            break
+    if not match:
+        return f'No Pine version mapped to strategy "{sid}"', 404
+
+    return api_pine_code(match['version'])
+
 @app.route('/api/pine/delete/<int:version>', methods=['DELETE'])
 def api_pine_delete(version):
     import json as _json
@@ -1143,17 +1190,25 @@ def api_backtest_run():
     _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
     import backtest_engine as be
 
+    cfg_override = None
     if request.content_type and "multipart" in request.content_type:
         sid       = request.form.get("strategy", "range")
         date_from = request.form.get("date_from") or None
         date_to   = request.form.get("date_to") or None
         tv_files  = [f for f in request.files.getlist("tv_files") if f and f.filename]
+        cfg_raw   = request.form.get("cfg_override")
+        if cfg_raw:
+            try:
+                cfg_override = json.loads(cfg_raw)
+            except Exception:
+                cfg_override = None
     else:
         body      = request.get_json(silent=True) or {}
         sid       = body.get("strategy", "range")
         date_from = body.get("date_from")
         date_to   = body.get("date_to")
         tv_files  = []
+        cfg_override = body.get("cfg_override")
 
     strat_type = _base(sid)
     if strat_type not in ("range", "rsi", "rsi_v1", "ema"):
@@ -1165,6 +1220,11 @@ def api_backtest_run():
         cfg = all_cfg.get(sid, {})
     except Exception:
         cfg = {}
+    # Edit & Re-run modal can pass a temporary param override without
+    # touching the saved config on disk (saving is a separate explicit step).
+    if isinstance(cfg_override, dict):
+        cfg = dict(cfg)
+        cfg.update(cfg_override)
 
     # Save every uploaded TV file to temp, then prefer a Pine Logs export
     # (.log/.txt) over a List-of-Trades CSV — per VALIDATION_PLAYBOOK.md the
@@ -1190,6 +1250,23 @@ def api_backtest_run():
                 os.remove(p)
 
     return jsonify(result)
+
+@app.route('/api/backtest/save-config', methods=['POST'])
+def api_backtest_save_config():
+    """Edit & Re-run modal's 'Save & Run' — merge edited fields into
+    nifty_config.json[sid], same target file the Config tab writes to."""
+    body = request.get_json(silent=True) or {}
+    sid = body.get("strategy")
+    fields = body.get("cfg") or {}
+    if not sid:
+        return jsonify({"error": "missing strategy id"}), 400
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        cfg.setdefault(sid, {}).update(fields)
+        TC_FILE.write_text(json.dumps(cfg, indent=2))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    return jsonify({"msg": f"✅ {sid} config saved"})
 
 @app.route('/api/watch')
 def api_watch():

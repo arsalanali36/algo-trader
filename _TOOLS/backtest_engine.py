@@ -225,6 +225,55 @@ def _run_range(date_from, date_to, cfg):
     return eng, cont5
 
 
+# rsi_trader.compute_signal() is written for the LIVE feed, where the last
+# candle row is still forming — it deliberately reads iloc[-2]/iloc[-3] to
+# get the last *closed* bar. In the backtest, df.iloc[:i+1] already ends
+# exactly at the closed bar i (no forming bar), so reusing compute_signal()
+# as-is reads bar i-1 instead of bar i — every signal lands one full bar
+# late vs TV (TV's bar_index is i, ours was i-1, then _fill() next-bar-fills
+# from the wrong bar). This local copy uses iloc[-1]/iloc[-2] to match the
+# backtest's own "last row = closed bar i" convention instead.
+def _rsi_signal_backtest(df, period, oversold, overbought, rsi_exit, pos):
+    if len(df) < period + 5:
+        return None, None
+    rsi = rsit.compute_rsi(df["close"], period)
+    cur = float(rsi.iloc[-1])
+    prv = float(rsi.iloc[-2])
+
+    if pos == 1 and cur >= rsi_exit:
+        return "EXIT", round(cur, 1)
+    if pos == -1 and cur <= rsi_exit:
+        return "EXIT", round(cur, 1)
+    if pos != 0:
+        return None, round(cur, 1)
+
+    if prv <= oversold and cur > oversold:
+        return "BUY", round(cur, 1)
+    if prv >= overbought and cur < overbought:
+        return "SELL", round(cur, 1)
+    return None, round(cur, 1)
+
+
+# Same live-vs-backtest bar-convention mismatch as RSI above: emat.compute_signal()
+# is written for the live feed (iloc[-2]/iloc[-3] = last closed bar, because the
+# live candle list always has one still-forming bar at the end). In the backtest
+# df.iloc[:i+1] already ends at the closed bar i, so calling the live function
+# as-is reads bar i-1 — one bar late vs TV. Local copy uses iloc[-1]/iloc[-2].
+def _ema_signal_backtest(df, fast, slow):
+    if len(df) < slow + 5:
+        return None
+    close = df["close"]
+    ema_fast = close.ewm(span=fast, adjust=False).mean()
+    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    cf, cs = ema_fast.iloc[-1], ema_slow.iloc[-1]
+    pf, ps = ema_fast.iloc[-2], ema_slow.iloc[-2]
+    if pf <= ps and cf > cs:
+        return "BUY"
+    if pf >= ps and cf < cs:
+        return "SELL"
+    return None
+
+
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
 def _run_rsi(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
@@ -248,13 +297,17 @@ def _run_rsi(date_from, date_to, cfg):
         if cur_day != t.date():
             cur_day, trades_today = t.date(), 0
 
+        # Forced 3:15 cutoff must execute WITHIN this bar (its own close) —
+        # NOT via _fill()'s next-bar-open convention, which is for signal
+        # exits where TV's strategy.close() genuinely fills next bar. Using
+        # next-bar fill here pushed the exit to 15:20+ (past the cutoff),
+        # which TV (no such bug) never matched — TV just held into next day.
         if pos != 0 and t.time() >= EXIT_HM:
-            ft, fp = _fill(df, i)
-            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "3:15 Daily Exit"
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, float(row["close"]), "3:15 Daily Exit"
             trades.append(cur); cur, pos = None, 0
             continue
 
-        sig, _rsi_val = rsit.compute_signal(df.iloc[:i + 1], period, oversold, overbought, rsi_exit, pos)
+        sig, _rsi_val = _rsi_signal_backtest(df.iloc[:i + 1], period, oversold, overbought, rsi_exit, pos)
 
         if sig == "EXIT" and pos != 0:
             ft, fp = _fill(df, i)
@@ -298,13 +351,14 @@ def _run_ema(date_from, date_to, cfg):
         if cur_day != t.date():
             cur_day, trades_today = t.date(), 0
 
+        # Same fix as RSI's forced-cutoff above — exit within bar i's own
+        # close, not via next-bar-open fill (which pushed it past 15:15).
         if pos != 0 and t.time() >= EXIT_HM:
-            ft, fp = _fill(df, i)
-            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "3:15 Daily Exit"
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, float(row["close"]), "3:15 Daily Exit"
             trades.append(cur); cur, pos = None, 0
             continue
 
-        sig = emat.compute_signal(df.iloc[:i + 1], fast, slow)
+        sig = _ema_signal_backtest(df.iloc[:i + 1], fast, slow)
         if not sig or trades_today >= max_trades:
             continue
 
@@ -339,11 +393,20 @@ _RUNNERS = {"range": _run_range, "rsi": _run_rsi, "rsi_v1": _run_rsi, "ema": _ru
 
 # ───────────────────────── TV comparison (mirrors validate_strategy.run matching) ─────────────────────────
 def _match(eng, tv):
+    # eng_by_day keeps (global_index_into_eng, trade) so match status can be
+    # written back onto the original python trade — the Results page uses
+    # this to flag exactly which rows didn't match TV, instead of only
+    # showing an aggregate percentage.
     eng_by_day, tv_by_day = {}, {}
-    for e in eng:
-        eng_by_day.setdefault(e["entry_time"].date(), []).append(e)
+    for idx, e in enumerate(eng):
+        eng_by_day.setdefault(e["entry_time"].date(), []).append((idx, e))
     for t in tv:
         tv_by_day.setdefault(t["entry_time"].date(), []).append(t)
+
+    # Precedence so a trade already marked "exact" by one TV comparison isn't
+    # downgraded by a later, weaker "near" comparison against another TV row.
+    RANK = {"exact": 3, "near": 2, "entry": 1, "unmatched": 0}
+    eng_status = ["unmatched"] * len(eng)
 
     ONEBAR = pd.Timedelta(minutes=5)
     matched, report = 0, []
@@ -351,7 +414,7 @@ def _match(eng, tv):
         tlist, elist, used = tv_by_day[d], eng_by_day.get(d, []), set()
         for tv_t in tlist:
             hit = None
-            for j, e in enumerate(elist):
+            for j, (gidx, e) in enumerate(elist):
                 if j in used:
                     continue
                 if (e["entry_time"] == tv_t["entry_time"] and e["side"] == tv_t["side"]
@@ -359,25 +422,30 @@ def _match(eng, tv):
                     hit = j
                     break
             near = None
-            for e in elist:
+            for gidx, e in elist:
                 if e["side"] != tv_t["side"]:
                     continue
-                if near is None or abs(e["entry_time"] - tv_t["entry_time"]) < abs(near["entry_time"] - tv_t["entry_time"]):
-                    near = e
-            de = (near["entry_time"] - tv_t["entry_time"]) / ONEBAR if near is not None else None
-            dx = (near["exit_time"] - tv_t["exit_time"]) / ONEBAR if near is not None else None
+                if near is None or abs(e["entry_time"] - tv_t["entry_time"]) < abs(near[1]["entry_time"] - tv_t["entry_time"]):
+                    near = (gidx, e)
+            de = (near[1]["entry_time"] - tv_t["entry_time"]) / ONEBAR if near is not None else None
+            dx = (near[1]["exit_time"] - tv_t["exit_time"]) / ONEBAR if near is not None else None
             if hit is not None:
                 used.add(hit); matched += 1; status = "exact"
+                hit_gidx = elist[hit][0]
             elif near is not None and de is not None and abs(de) <= 1 and dx is not None and abs(dx) <= 1:
                 status = "near"
             elif near is not None and de is not None and abs(de) <= 1:
                 status = "entry"
             else:
                 status = "miss"
+            mark_gidx = hit_gidx if hit is not None else (near[0] if near is not None else None)
+            if mark_gidx is not None and RANK[status if status != "miss" else "unmatched"] > RANK[eng_status[mark_gidx]]:
+                eng_status[mark_gidx] = status if status != "miss" else "unmatched"
             report.append({"status": status, "tv_entry": tv_t["entry_time"], "side": tv_t["side"]})
     total = len(tv)
     pct = 100.0 * matched / total if total else 0.0
-    return {"total_tv": total, "total_eng": len(eng), "matched": matched, "pct": round(pct, 1), "report": report}
+    return {"total_tv": total, "total_eng": len(eng), "matched": matched, "pct": round(pct, 1),
+            "report": report, "eng_status": eng_status}
 
 
 # ───────────────────────── JSON shaping ─────────────────────────
@@ -386,20 +454,23 @@ def _candles_json(df):
              "low": float(r["low"]), "close": float(r["close"])} for _, r in df.iterrows()]
 
 
-def _trades_json(trades):
+def _trades_json(trades, statuses=None):
     out = []
-    for t in trades:
+    for i, t in enumerate(trades):
         pnl = None
         if t.get("exit_price") is not None:
             pnl = (t["exit_price"] - t["entry_price"]) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"])
-        out.append({
+        row = {
             "side": t["side"],
             "entry_time": int(t["entry_time"].timestamp()), "entry_price": round(t["entry_price"], 2),
             "exit_time": int(t["exit_time"].timestamp()) if t.get("exit_time") is not None else None,
             "exit_price": round(t["exit_price"], 2) if t.get("exit_price") is not None else None,
             "exit_reason": t.get("exit_reason"),
             "pnl": round(pnl, 2) if pnl is not None else None,
-        })
+        }
+        if statuses is not None:
+            row["match_status"] = statuses[i]
+        out.append(row)
     return out
 
 
@@ -486,27 +557,58 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
 
     wins = sum(1 for t in trades if t.get("exit_price") is not None and
                ((t["exit_price"] - t["entry_price"] > 0) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"] > 0)))
-    pnl_pts = sum((t["exit_price"] - t["entry_price"]) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"])
-                  for t in trades if t.get("exit_price") is not None)
+    closed_pnls = [(t["exit_price"] - t["entry_price"]) if t["side"] == "Long" else (t["entry_price"] - t["exit_price"])
+                   for t in trades if t.get("exit_price") is not None]
+    pnl_pts = sum(closed_pnls)
 
-    result = {
-        "candles": _candles_json(df),
-        "trades": _trades_json(trades),
-        "summary": {"n_trades": len(trades), "wins": wins,
-                    "losses": len(trades) - wins, "pnl_points": round(pnl_pts, 2)},
-        "tv_trades": None,
-        "accuracy": None,
-    }
+    n_closed = len(closed_pnls)
+    win_rate = round(wins / n_closed * 100, 1) if n_closed else None
 
+    gains = sum(p for p in closed_pnls if p > 0)
+    losses_sum = sum(-p for p in closed_pnls if p < 0)
+    profit_factor = round(gains / losses_sum, 2) if losses_sum > 0 else None
+
+    if n_closed >= 2:
+        mean_pnl = pnl_pts / n_closed
+        variance = sum((p - mean_pnl) ** 2 for p in closed_pnls) / (n_closed - 1)
+        stdev = variance ** 0.5
+        sharpe = round(mean_pnl / stdev * (n_closed ** 0.5), 2) if stdev > 0 else None
+    else:
+        sharpe = None
+
+    equity_curve = []
+    cum = 0.0
+    peak = 0.0
+    max_dd = 0.0
+    for i, p in enumerate(closed_pnls, start=1):
+        cum += p
+        peak = max(peak, cum)
+        max_dd = min(max_dd, cum - peak)
+        equity_curve.append({"trade_no": i, "cum_pnl": round(cum, 2)})
+    max_drawdown = round(max_dd, 2) if n_closed else None
+
+    accuracy = None
+    tv_trades_json = None
     if tv_log_path and os.path.exists(tv_log_path):
         tv_trades = _load_tv_trades(tv_log_path)
         if date_from:
             tv_trades = [t for t in tv_trades if t["entry_time"] >= pd.to_datetime(date_from)]
         if date_to:
             tv_trades = [t for t in tv_trades if t["entry_time"] <= pd.to_datetime(date_to) + pd.Timedelta(days=1)]
-        result["tv_trades"] = _trades_json(tv_trades)
-        result["accuracy"] = _match(trades, tv_trades)
+        tv_trades_json = _trades_json(tv_trades)
+        accuracy = _match(trades, tv_trades)
 
+    result = {
+        "candles": _candles_json(df),
+        "trades": _trades_json(trades, statuses=accuracy["eng_status"] if accuracy else None),
+        "summary": {"n_trades": len(trades), "wins": wins,
+                    "losses": len(trades) - wins, "pnl_points": round(pnl_pts, 2),
+                    "win_rate": win_rate, "profit_factor": profit_factor,
+                    "sharpe": sharpe, "max_drawdown": max_drawdown,
+                    "equity_curve": equity_curve},
+        "tv_trades": tv_trades_json,
+        "accuracy": accuracy,
+    }
     return result
 
 

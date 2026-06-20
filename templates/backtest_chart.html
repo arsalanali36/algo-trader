@@ -2,93 +2,633 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>Backtest Chart — Full View</title>
+<title>Backtest Results — Full View</title>
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:14px;height:100vh;display:flex;flex-direction:column}
-.hdr{background:#161b22;border-bottom:1px solid #30363d;padding:12px 20px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
-.hdr h1{font-size:15px;font-weight:600}
-.stats{display:flex;gap:16px;font-size:12px;color:#8b949e;flex-wrap:wrap}
-.stats b{color:#e6edf3}
-.legend{display:flex;gap:14px;margin-left:auto;font-size:11px;color:#8b949e;flex-wrap:wrap}
-.legend span{display:inline-flex;align-items:center;gap:5px}
-.dot{width:9px;height:9px;border-radius:50%;display:inline-block}
-#chart{flex:1;width:100%}
-.empty{display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:14px}
+body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+/* header */
+.hdr{background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+.hdr h1{font-size:14px;font-weight:600}
+.hdr select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:4px 8px;font-size:12px}
+.btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:opacity .15s}
+.btn:hover{opacity:.85}
+.btn-blue{background:#1f6feb;color:#fff}
+.btn-gray{background:#21262d;color:#e6edf3;border:1px solid #30363d}
+.btn-green{background:#238636;color:#fff}
+
+/* split layout */
+.split-wrap{flex:1;display:flex;overflow:hidden;min-height:0}
+.pane{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0d1117}
+.pane-hidden{flex:0 0 0 !important;width:0 !important;overflow:hidden}
+#left-pane{flex:1 1 55%}
+#right-pane{flex:1 1 45%}
+.splitter{flex:0 0 6px;background:#161b22;border-left:1px solid #30363d;border-right:1px solid #30363d;cursor:col-resize;position:relative}
+.splitter:hover{background:#1f6feb}
+.pane-hdr{display:flex;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid #30363d;flex-shrink:0;background:#161b22}
+.pane-hdr .ttl{font-size:11px;color:#8b949e;font-weight:600;text-transform:uppercase;letter-spacing:.4px;flex:1}
+.collapse-btn{width:22px;height:22px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer;font-size:11px;line-height:1}
+.collapse-btn:hover{color:#e6edf3}
+
+/* symbol tabs */
+.sym-tabs{display:flex;gap:4px;padding:6px 10px;border-bottom:1px solid #21262d;flex-shrink:0}
+.sym-tab{padding:4px 10px;border-radius:5px;font-size:11px;color:#8b949e;cursor:pointer;background:#161b22;border:1px solid #30363d}
+.sym-tab.active{color:#fff;background:#1f6feb;border-color:#1f6feb}
+
+#chart{flex:1;width:100%;min-height:0}
+.empty{display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:13px;text-align:center;padding:20px}
+
+/* right pane: frozen stats + toggle + content */
+.stats-block{flex-shrink:0;padding:12px;border-bottom:1px solid #21262d}
+.stats-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+.stat-card{background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 10px}
+.stat-card .lbl{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.3px;margin-bottom:3px}
+.stat-card .val{font-size:15px;font-weight:700}
+.green{color:#3fb950}.red{color:#f85149}.gray{color:#8b949e}
+
+.view-toggle{display:flex;gap:6px;margin-top:10px}
+.view-toggle button{flex:1;padding:6px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;cursor:pointer}
+.view-toggle button.active{background:#1f6feb;color:#fff;border-color:#1f6feb}
+
+.right-content{flex:1;overflow-y:auto;min-height:0}
+#equity-chart{width:100%;height:100%}
+
+table.trades{width:100%;border-collapse:collapse;font-size:11.5px}
+table.trades th{position:sticky;top:0;background:#161b22;color:#8b949e;text-align:left;padding:6px 8px;border-bottom:1px solid #30363d;font-weight:600}
+table.trades td{padding:6px 8px;border-bottom:1px solid #161b22}
+table.trades tr.trade-row{cursor:pointer}
+table.trades tr.trade-row:hover{background:#161b22}
+table.trades tr.trade-row.selected{background:#1f6feb22}
+table.trades tr.unmatched-row{background:#f8514915}
+table.trades tr.unmatched-row:hover{background:#f8514930}
+
+/* modal */
+.modal-overlay{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50}
+.modal-overlay.open{display:flex}
+.modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;width:460px;max-height:85vh;overflow-y:auto}
+.modal-box h2{font-size:14px;margin-bottom:14px}
+.field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.field-row{margin-bottom:10px}
+.field-row label{display:block;font-size:11px;color:#8b949e;margin-bottom:4px}
+.field-row input,.field-row select{width:100%;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:12px}
+.field-row input[type=checkbox]{width:auto}
+.modal-section{border-top:1px solid #30363d;margin-top:14px;padding-top:14px}
+.modal-section .ttl{font-size:11px;color:#8b949e;font-weight:600;letter-spacing:.4px;margin-bottom:10px}
+.modal-actions{display:flex;gap:8px;margin-top:16px}
+.modal-actions button{flex:1}
+.modal-msg{font-size:11px;color:#d29922;margin-top:8px;min-height:14px}
 </style>
 </head>
 <body>
-  <div class="hdr">
-    <h1>📊 Backtest — Python vs Pine</h1>
-    <div class="stats" id="stats"></div>
-    <div class="legend">
-      <span><i class="dot" style="background:#1f6feb"></i>PY entry</span>
-      <span><i class="dot" style="background:#58a6ff"></i>PY exit</span>
-      <span><i class="dot" style="background:#d29922"></i>TV entry</span>
-      <span><i class="dot" style="background:#f0883e"></i>TV exit</span>
-    </div>
+
+<div class="hdr">
+  <h1>📊 Backtest Results</h1>
+  <select id="strategy-select" onchange="onStrategyChange()"></select>
+  <span id="hdr-range" style="font-size:11px;color:#8b949e"></span>
+  <div style="margin-left:auto;display:flex;gap:8px">
+    <button class="btn btn-gray" id="copy-code-btn" onclick="copyPineCode()">📋 Copy Pine Code</button>
+    <button class="btn btn-blue" onclick="openEditModal()">✏️ Edit &amp; Re-run</button>
   </div>
-  <div id="chart"><div class="empty">No chart data — open this from the Backtest panel's "🔍 Full View" button.</div></div>
+</div>
+
+<div class="split-wrap" id="split-wrap">
+  <div class="pane" id="left-pane">
+    <div class="pane-hdr">
+      <div class="sym-tabs" id="sym-tabs"></div>
+      <span class="ttl" style="text-align:right">CHART</span>
+      <button class="collapse-btn" id="left-collapse-btn" onclick="togglePane('left')">▢</button>
+    </div>
+    <div id="chart"><div class="empty">No chart data — open this from the backtest panel's "🔍 Full View" button.</div></div>
+  </div>
+
+  <div class="splitter" id="splitter"></div>
+
+  <div class="pane" id="right-pane">
+    <div class="pane-hdr">
+      <span class="ttl">OVERVIEW</span>
+      <button class="collapse-btn" id="right-collapse-btn" onclick="togglePane('right')">▢</button>
+    </div>
+    <div class="stats-block">
+      <div class="stats-grid" id="stats-grid"></div>
+      <div class="view-toggle">
+        <button id="btn-view-chart" class="active" onclick="setView('chart')">📈 Chart</button>
+        <button id="btn-view-table" onclick="setView('table')">📋 Table</button>
+      </div>
+    </div>
+    <div class="right-content" id="right-content"></div>
+  </div>
+</div>
+
+<!-- Edit & Re-run popup — stays on this page, never navigates away -->
+<div class="modal-overlay" id="edit-modal">
+  <div class="modal-box">
+    <h2>✏️ Edit &amp; Re-run — <span id="modal-strat-name"></span></h2>
+    <div class="field-grid" id="modal-fields"></div>
+
+    <div class="modal-section">
+      <div class="ttl">📊 BACKTEST DATE RANGE</div>
+      <div class="field-grid">
+        <div class="field-row"><label>From</label><input type="date" id="modal-from"></div>
+        <div class="field-row"><label>To</label><input type="date" id="modal-to"></div>
+      </div>
+      <div class="field-row">
+        <label>TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv)</label>
+        <input type="file" id="modal-tv-files" multiple accept=".log,.txt,.csv">
+      </div>
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-gray" onclick="closeEditModal()">Cancel</button>
+      <button class="btn btn-blue" onclick="modalRun(false)">▶ Run</button>
+      <button class="btn btn-green" onclick="modalRun(true)">💾 Save &amp; Run</button>
+    </div>
+    <div class="modal-msg" id="modal-msg"></div>
+  </div>
+</div>
 
 <script>
-function render() {
+// ───────────────────────── state ─────────────────────────
+let D = null;                 // current result payload (candles/trades/summary/...)
+let _chart = null, _series = null, _markers = [];
+let _equityChart = null;
+let _selectedTradeIdx = null;
+let _splitRatio = parseFloat(localStorage.getItem('bt_split_ratio') || '55');
+let _leftCollapsed = false, _rightCollapsed = false;
+let _activeSymbol = null;
+
+const STRAT_FIELDS = {
+  ema: [
+    {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
+    {id: 'strike_offset', label: 'Strike Offset', type: 'select', opts: ['-3','-2','-1','0','1','2','3']},
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m']},
+    {id: 'qty', label: 'Quantity', type: 'number'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ],
+  rsi: [
+    {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
+    {id: 'strike_offset', label: 'Strike Offset', type: 'select', opts: ['-3','-2','-1','0','1','2','3']},
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m']},
+    {id: 'period', label: 'RSI Period', type: 'number'},
+    {id: 'oversold', label: 'Oversold', type: 'number'},
+    {id: 'overbought', label: 'Overbought', type: 'number'},
+    {id: 'qty', label: 'Quantity', type: 'number'},
+    {id: 'max_trades_per_symbol', label: 'Max Trades/Symbol', type: 'number'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ],
+  range: [
+    {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
+    {id: 'strike_offset', label: 'Strike Offset', type: 'select', opts: ['-3','-2','-1','0','1','2','3']},
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m']},
+    {id: 'max_candle_size', label: 'Max Candle Size (pts)', type: 'number'},
+    {id: 'qty', label: 'Quantity', type: 'number'},
+    {id: 'max_trades_per_symbol', label: 'Max Trades/Symbol', type: 'number'},
+    {id: 'hawa_me_zone', label: 'Hawa Me Zone', type: 'checkbox'},
+    {id: 'fresh_zone_only', label: 'Use Fresh Zone Only', type: 'checkbox'},
+    {id: 'zone_exit', label: 'Zone Exit', type: 'checkbox'},
+    {id: 'atr_exit', label: 'ATR Exit', type: 'checkbox'},
+    {id: 'fib_exit', label: 'Fib Exit', type: 'checkbox'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ]
+};
+function baseType(sid){ return (sid||'').replace(/_v\d+$/,'').replace(/_\d+$/,''); }
+
+async function copyPineCode() {
+  const btn = document.getElementById('copy-code-btn');
+  const orig = btn.textContent;
+  const sid = D && D.strategy;
+  if (!sid) return;
+  try {
+    const r = await fetch('/api/backtest/pine-code?strategy=' + encodeURIComponent(sid));
+    if (!r.ok) { btn.textContent = '❌ Not found'; setTimeout(() => btn.textContent = orig, 2000); return; }
+    const code = await r.text();
+    const ta = document.createElement('textarea');
+    ta.value = code;
+    ta.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+    document.body.appendChild(ta);
+    ta.focus(); ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = orig, 2000);
+  } catch (e) {
+    btn.textContent = '❌ ' + e.message;
+    setTimeout(() => btn.textContent = orig, 2000);
+  }
+}
+
+// ───────────────────────── init ─────────────────────────
+function init() {
   const raw = localStorage.getItem('bt_chart_data');
   if (!raw) return;
-  const d = JSON.parse(raw);
-  const s = d.summary || {};
-  let statsHtml = `
-    <div>Trades: <b>${s.n_trades ?? '-'}</b></div>
-    <div>Wins: <b style="color:#3fb950">${s.wins ?? '-'}</b></div>
-    <div>Losses: <b style="color:#f85149">${s.losses ?? '-'}</b></div>
-    <div>PnL: <b style="color:${(s.pnl_points||0) >= 0 ? '#3fb950' : '#f85149'}">${s.pnl_points ?? '-'} pts</b></div>`;
-  if (d.accuracy) {
-    statsHtml += `<div>Pine match: <b style="color:#d29922">${d.accuracy.matched}/${d.accuracy.total_tv} (${d.accuracy.pct}%)</b></div>`;
-  }
-  document.getElementById('stats').innerHTML = statsHtml;
+  D = JSON.parse(raw);
+  _activeSymbol = (D.cfg && Array.isArray(D.cfg.symbols) && D.cfg.symbols[0]) || 'NIFTY';
 
+  document.getElementById('hdr-range').textContent = (D.date_from || '?') + ' → ' + (D.date_to || '?');
+  populateStrategySelect();
+  renderSymTabs();
+  renderStats();
+  drawChart();
+  setView('chart');
+
+  const sw = document.getElementById('split-wrap');
+  document.getElementById('left-pane').style.flex = `1 1 ${_splitRatio}%`;
+  document.getElementById('right-pane').style.flex = `1 1 ${100 - _splitRatio}%`;
+}
+
+async function populateStrategySelect() {
+  const sel = document.getElementById('strategy-select');
+  const sid = D.strategy || 'range_v1';
+  sel.innerHTML = `<option value="${sid}">${sid}</option>`;
+  sel.value = sid;
+  try {
+    // Use the actual saved variant ids (nifty_config.json keys, e.g.
+    // "range_v1"/"rsi_v1"/"ema_v1") — not /api/pine/strategies' ids, which
+    // are derived from py_file names and don't always match real variant ids
+    // (e.g. range's py_file is "range_trader.py", not "range_v1").
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    const ids = Object.keys(cfg);
+    if (!ids.length) return;
+    sel.innerHTML = '';
+    if (!ids.includes(sid)) {
+      const cur = document.createElement('option');
+      cur.value = sid; cur.textContent = sid + ' (current run)';
+      sel.appendChild(cur);
+    }
+    ids.forEach(id => {
+      const opt = document.createElement('option');
+      opt.value = id; opt.textContent = id;
+      sel.appendChild(opt);
+    });
+    sel.value = sid;
+  } catch (e) { /* keep the single current-run option already set above */ }
+}
+
+// Switching strategy here doesn't re-run a backtest by itself (no result to
+// show yet for a strategy you haven't run) — it loads that strategy's saved
+// config straight into the Edit & Re-run popup so you can pick dates and run it.
+async function onStrategyChange() {
+  const sid = document.getElementById('strategy-select').value;
+  if (!sid || sid === D.strategy) return;
+  try {
+    const r = await fetch('/api/config');
+    const allCfg = await r.json();
+    D = Object.assign({}, D, { strategy: sid, cfg: allCfg[sid] || {} });
+    openEditModal();
+  } catch (e) {
+    alert('Could not load config for ' + sid + ': ' + e.message);
+  }
+}
+
+function renderSymTabs() {
+  const wrap = document.getElementById('sym-tabs');
+  wrap.innerHTML = '';
+  const symbols = (D.cfg && Array.isArray(D.cfg.symbols) && D.cfg.symbols.length) ? D.cfg.symbols : ['NIFTY'];
+  symbols.forEach(sym => {
+    const b = document.createElement('div');
+    b.className = 'sym-tab' + (sym === _activeSymbol ? ' active' : '');
+    b.textContent = sym;
+    b.onclick = () => { _activeSymbol = sym; renderSymTabs(); drawChart(); };
+    wrap.appendChild(b);
+  });
+}
+
+// ───────────────────────── stats block ─────────────────────────
+function fmtPct(v){ return (v === null || v === undefined) ? '—' : v.toFixed(1) + '%'; }
+function fmtTime(t){
+  if (t === null || t === undefined) return '—';
+  const d = new Date(t * 1000);
+  const pad = n => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}-${pad(d.getMonth()+1)} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+const MATCH_LABEL = { exact: '✅ Exact', near: '🟡 Near', entry: '🟠 Entry-only', unmatched: '❌ No match' };
+const MATCH_CLASS = { exact: 'green', near: 'gray', entry: 'gray', unmatched: 'red' };
+function fmtNum(v){ return (v === null || v === undefined) ? '—' : v; }
+
+function renderStats() {
+  const s = D.summary || {};
+  const grid = document.getElementById('stats-grid');
+  const pnlClass = (s.pnl_points || 0) >= 0 ? 'green' : 'red';
+  const ddClass = (s.max_drawdown || 0) < 0 ? 'red' : 'gray';
+  const pfClass = (s.profit_factor || 0) >= 1 ? 'green' : 'red';
+  grid.innerHTML = `
+    <div class="stat-card"><div class="lbl">PnL (pts)</div><div class="val ${pnlClass}">${fmtNum(s.pnl_points)}</div></div>
+    <div class="stat-card"><div class="lbl">Win Rate</div><div class="val">${fmtPct(s.win_rate)}</div></div>
+    <div class="stat-card"><div class="lbl">Profit Factor</div><div class="val ${s.profit_factor==null?'gray':pfClass}">${fmtNum(s.profit_factor)}</div></div>
+    <div class="stat-card"><div class="lbl">Sharpe</div><div class="val">${fmtNum(s.sharpe)}</div></div>
+    <div class="stat-card"><div class="lbl">Max Drawdown</div><div class="val ${ddClass}">${fmtNum(s.max_drawdown)}</div></div>
+    <div class="stat-card"><div class="lbl">Trades</div><div class="val">${fmtNum(s.n_trades)} <span class="gray" style="font-size:11px">(${fmtNum(s.wins)}W/${fmtNum(s.losses)}L)</span></div></div>`;
+  if (D.accuracy) {
+    grid.innerHTML += `<div class="stat-card" style="grid-column:span 3"><div class="lbl">Pine Match</div><div class="val" style="color:#d29922">${D.accuracy.matched}/${D.accuracy.total_tv} (${D.accuracy.pct}%)</div></div>`;
+  }
+}
+
+// ───────────────────────── chart (left pane) ─────────────────────────
+function drawChart() {
   const container = document.getElementById('chart');
-  if (!d.candles || d.candles.length === 0) {
+  container.innerHTML = '';
+  if (_chart) { try { _chart.remove(); } catch(e) {} _chart = null; }
+  if (!D.candles || D.candles.length === 0) {
     container.innerHTML = '<div class="empty">No candle data</div>';
     return;
   }
-  container.innerHTML = '';
-  const chart = LightweightCharts.createChart(container, {
+  _chart = LightweightCharts.createChart(container, {
     width: container.clientWidth, height: container.clientHeight,
     layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
     grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
     timeScale: { timeVisible: true, secondsVisible: false },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal }
   });
-  const series = chart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
-  series.setData(d.candles);
+  _series = _chart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
+  _series.setData(D.candles);
 
-  const markers = [];
-  (d.trades || []).forEach(t => {
-    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
+  _markers = [];
+  (D.trades || []).forEach((t, i) => {
+    _markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
                    color: '#1f6feb', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
-                   text: 'PY ' + t.side + ' @' + t.entry_price });
+                   text: 'PY ' + t.side + ' @' + t.entry_price, _tradeIdx: i });
     if (t.exit_time) {
-      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
+      _markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
                      color: '#58a6ff', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
-                     text: 'PY exit @' + t.exit_price });
+                     text: 'PY exit @' + t.exit_price, _tradeIdx: i });
+    }
+    // Extra red dot right on the entry bar for trades that didn't match TV —
+    // makes mismatches visible on the chart itself, not just the table.
+    if (t.match_status === 'unmatched') {
+      _markers.push({ time: t.entry_time, position: 'inBar',
+                     color: '#f85149', shape: 'circle',
+                     text: '❌ no match', _tradeIdx: i });
     }
   });
-  (d.tv_trades || []).forEach(t => {
-    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
+  (D.tv_trades || []).forEach(t => {
+    _markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
                    color: '#d29922', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
                    text: 'TV ' + t.side + ' @' + t.entry_price });
     if (t.exit_time) {
-      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
+      _markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
                      color: '#f0883e', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
                      text: 'TV exit @' + t.exit_price });
     }
   });
-  series.setMarkers(markers.sort((a, b) => a.time - b.time));
-  chart.timeScale().fitContent();
-  window.addEventListener('resize', () => chart.resize(container.clientWidth, container.clientHeight));
+  _markers.sort((a, b) => a.time - b.time);
+  _series.setMarkers(_markers);
+  _chart.timeScale().fitContent();
 }
-render();
+
+function jumpToTrade(idx) {
+  if (!_chart || !D.trades || !D.trades[idx]) return;
+  const t = D.trades[idx];
+  _selectedTradeIdx = idx;
+  try { _chart.timeScale().scrollToPosition(0, false); } catch(e) {}
+  try {
+    const candles = D.candles;
+    const entryT = t.entry_time;
+    const idxInCandles = candles.findIndex(c => c.time >= entryT);
+    const from = Math.max(0, idxInCandles - 20);
+    const to = Math.min(candles.length - 1, idxInCandles + 20);
+    if (candles[from] && candles[to]) {
+      _chart.timeScale().setVisibleRange({ from: candles[from].time, to: candles[to].time });
+    }
+  } catch(e) {}
+  // brighten the selected trade's markers
+  const highlighted = _markers.map(m => {
+    if (m._tradeIdx === idx) return Object.assign({}, m, { size: 2 });
+    return Object.assign({}, m, { size: 1 });
+  });
+  _series.setMarkers(highlighted);
+
+  document.querySelectorAll('tr.trade-row').forEach(r => r.classList.remove('selected'));
+  const row = document.querySelector(`tr.trade-row[data-trade-idx="${idx}"]`);
+  if (row) row.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+// ───────────────────────── right pane: chart/table toggle ─────────────────────────
+function setView(which) {
+  document.getElementById('btn-view-chart').classList.toggle('active', which === 'chart');
+  document.getElementById('btn-view-table').classList.toggle('active', which === 'table');
+  const content = document.getElementById('right-content');
+  if (which === 'chart') {
+    content.innerHTML = '<div id="equity-chart"></div>';
+    drawEquityCurve();
+  } else {
+    renderTradeTable();
+  }
+}
+
+function drawEquityCurve() {
+  const container = document.getElementById('equity-chart');
+  if (!container) return;
+  const curve = (D.summary && D.summary.equity_curve) || [];
+  if (!curve.length) {
+    container.innerHTML = '<div class="empty">No closed trades yet</div>';
+    return;
+  }
+  if (_equityChart) { try { _equityChart.remove(); } catch(e) {} _equityChart = null; }
+  _equityChart = LightweightCharts.createChart(container, {
+    width: container.clientWidth, height: container.clientHeight,
+    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+    timeScale: { visible: false }
+  });
+  const lineSeries = _equityChart.addLineSeries({ color: '#3fb950', lineWidth: 2 });
+  lineSeries.setData(curve.map(p => ({ time: p.trade_no, value: p.cum_pnl })));
+  _equityChart.timeScale().fitContent();
+}
+
+function renderTradeTable() {
+  const content = document.getElementById('right-content');
+  const trades = D.trades || [];
+  if (!trades.length) {
+    content.innerHTML = '<div class="empty">No trades</div>';
+    return;
+  }
+  const hasMatch = trades.some(t => t.match_status !== undefined);
+  let cum = 0;
+  let html = `<table class="trades"><thead><tr>
+    <th>#</th><th>Side</th><th>Entry</th><th>Entry ₹</th><th>Exit</th><th>Exit ₹</th><th>PnL</th><th>Cum</th>${hasMatch ? '<th>Pine Match</th>' : ''}
+  </tr></thead><tbody>`;
+  trades.forEach((t, i) => {
+    let pnl = null;
+    if (t.exit_price !== null && t.exit_price !== undefined) {
+      pnl = t.side === 'Long' ? (t.exit_price - t.entry_price) : (t.entry_price - t.exit_price);
+      cum += pnl;
+    }
+    const pnlCls = pnl === null ? 'gray' : (pnl >= 0 ? 'green' : 'red');
+    const status = t.match_status;
+    const rowCls = 'trade-row' + (status === 'unmatched' ? ' unmatched-row' : '');
+    html += `<tr class="${rowCls}" data-trade-idx="${i}" onclick="jumpToTrade(${i})">
+      <td>${i + 1}</td>
+      <td>${t.side}</td>
+      <td>${fmtTime(t.entry_time)}</td>
+      <td>${t.entry_price}</td>
+      <td>${fmtTime(t.exit_time)}</td>
+      <td>${t.exit_price ?? '—'}</td>
+      <td class="${pnlCls}">${pnl === null ? '—' : pnl.toFixed(2)}</td>
+      <td>${pnl === null ? '—' : cum.toFixed(2)}</td>
+      ${hasMatch ? `<td class="${MATCH_CLASS[status] || 'gray'}">${MATCH_LABEL[status] || '—'}</td>` : ''}
+    </tr>`;
+  });
+  html += '</tbody></table>';
+  content.innerHTML = html;
+}
+
+// ───────────────────────── splitter drag ─────────────────────────
+(function setupSplitter() {
+  const splitter = document.getElementById('splitter');
+  const left = document.getElementById('left-pane');
+  const right = document.getElementById('right-pane');
+  const wrap = document.getElementById('split-wrap');
+  let dragging = false;
+
+  splitter.addEventListener('mousedown', () => {
+    if (_leftCollapsed || _rightCollapsed) return;
+    dragging = true;
+    document.body.style.userSelect = 'none';
+  });
+  window.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const rect = wrap.getBoundingClientRect();
+    let pct = ((e.clientX - rect.left) / rect.width) * 100;
+    pct = Math.max(20, Math.min(80, pct));
+    _splitRatio = pct;
+    left.style.flex = `1 1 ${pct}%`;
+    right.style.flex = `1 1 ${100 - pct}%`;
+    if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+  });
+  window.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.style.userSelect = '';
+    localStorage.setItem('bt_split_ratio', _splitRatio);
+  });
+})();
+
+function togglePane(which) {
+  const left = document.getElementById('left-pane');
+  const right = document.getElementById('right-pane');
+  const leftBtn = document.getElementById('left-collapse-btn');
+  const rightBtn = document.getElementById('right-collapse-btn');
+
+  if (which === 'left') {
+    _leftCollapsed = !_leftCollapsed;
+    left.classList.toggle('pane-hidden', _leftCollapsed);
+    leftBtn.textContent = _leftCollapsed ? '▣' : '▢';
+    if (_leftCollapsed) { right.style.flex = '1 1 100%'; } else { right.style.flex = `1 1 ${100 - _splitRatio}%`; left.style.flex = `1 1 ${_splitRatio}%`; }
+  } else {
+    _rightCollapsed = !_rightCollapsed;
+    right.classList.toggle('pane-hidden', _rightCollapsed);
+    rightBtn.textContent = _rightCollapsed ? '▣' : '▢';
+    if (_rightCollapsed) { left.style.flex = '1 1 100%'; } else { left.style.flex = `1 1 ${_splitRatio}%`; right.style.flex = `1 1 ${100 - _splitRatio}%`; }
+  }
+  setTimeout(() => {
+    if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+    if (_equityChart) _equityChart.resize(document.getElementById('equity-chart')?.clientWidth || 0, document.getElementById('equity-chart')?.clientHeight || 0);
+  }, 0);
+}
+
+window.addEventListener('resize', () => {
+  if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+});
+
+// ───────────────────────── Edit & Re-run ─────────────────────────
+// Reuses the exact same Run modal as the Pine tab's History table (params +
+// Save Config + Backtest date range + TV log/CSV upload) instead of
+// duplicating that UI here — deep-links back to the dashboard which opens it.
+// ───────────────────────── Edit & Re-run (stays on this page) ─────────────────────────
+function openEditModal() {
+  const sid = D.strategy || 'range_v1';
+  const type = baseType(sid);
+  const fields = STRAT_FIELDS[type] || [];
+  const cfg = D.cfg || {};
+
+  document.getElementById('modal-strat-name').textContent = sid;
+  document.getElementById('modal-from').value = D.date_from || '';
+  document.getElementById('modal-to').value = D.date_to || '';
+  document.getElementById('modal-tv-files').value = '';
+  document.getElementById('modal-msg').textContent = '';
+
+  let html = '';
+  fields.forEach(f => {
+    const val = cfg[f.id];
+    if (f.type === 'select') {
+      html += `<div class="field-row"><label>${f.label}</label><select id="mf-${f.id}">` +
+        f.opts.map(o => `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`).join('') +
+        `</select></div>`;
+    } else if (f.type === 'number') {
+      html += `<div class="field-row"><label>${f.label}</label><input type="number" id="mf-${f.id}" value="${val ?? ''}"></div>`;
+    } else if (f.type === 'checkbox') {
+      html += `<div class="field-row"><label><input type="checkbox" id="mf-${f.id}" ${val ? 'checked' : ''}> ${f.label}</label></div>`;
+    }
+  });
+  document.getElementById('modal-fields').innerHTML = html;
+  document.getElementById('edit-modal').classList.add('open');
+}
+function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
+
+function collectModalFields() {
+  const sid = D.strategy || 'range_v1';
+  const type = baseType(sid);
+  const fields = STRAT_FIELDS[type] || [];
+  const out = {};
+  fields.forEach(f => {
+    const el = document.getElementById('mf-' + f.id);
+    if (!el) return;
+    if (f.type === 'checkbox') out[f.id] = el.checked;
+    else if (f.type === 'number') out[f.id] = Number(el.value);
+    else out[f.id] = el.value === 'true' ? true : (el.value === 'false' ? false : el.value);
+  });
+  return out;
+}
+
+async function modalRun(saveFirst) {
+  const sid = D.strategy || 'range_v1';
+  const editedFields = collectModalFields();
+  const dfrom = document.getElementById('modal-from').value;
+  const dto = document.getElementById('modal-to').value;
+  const tvFiles = document.getElementById('modal-tv-files').files;
+  const msg = document.getElementById('modal-msg');
+  msg.style.color = '#d29922';
+  msg.textContent = '⏳ Running...';
+
+  try {
+    if (saveFirst) {
+      const r = await fetch('/api/backtest/save-config', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ strategy: sid, cfg: editedFields })
+      });
+      const rd = await r.json();
+      if (rd.error) { msg.style.color = '#f85149'; msg.textContent = '⚠ ' + rd.error; return; }
+    }
+
+    const newCfg = Object.assign({}, D.cfg, editedFields);
+    const fd = new FormData();
+    fd.append('strategy', sid);
+    fd.append('date_from', dfrom);
+    fd.append('date_to', dto);
+    fd.append('cfg_override', JSON.stringify(editedFields));
+    for (const f of tvFiles) fd.append('tv_files', f);
+    const r2 = await fetch('/api/backtest/run', { method: 'POST', body: fd });
+    const d2 = await r2.json();
+    if (d2.error) { msg.style.color = '#f85149'; msg.textContent = '⚠ ' + d2.error; return; }
+
+    D = Object.assign({}, d2, { strategy: sid, cfg: newCfg, date_from: dfrom, date_to: dto });
+    localStorage.setItem('bt_chart_data', JSON.stringify(D));
+
+    document.getElementById('hdr-range').textContent = dfrom + ' → ' + dto;
+    renderSymTabs();
+    renderStats();
+    drawChart();
+    const tableActive = document.getElementById('btn-view-table').classList.contains('active');
+    setView(tableActive ? 'table' : 'chart');
+    closeEditModal();
+  } catch (e) {
+    msg.style.color = '#f85149';
+    msg.textContent = '⚠ ' + e.message;
+  }
+}
+
+init();
 </script>
 </body>
 </html>

@@ -1,11 +1,52 @@
 [
   {
     "version": 1,
+    "name": "🦺Ars_Auto_Rev_Chain_😎_common",
+    "strat_version": 1,
+    "timestamp": "2026-06-18 14:04 IST",
+    "desc": "abhi ye sahi chalne waala system",
+    "py_file": "range_trader.py",
+    "accuracy": 90.2,
+    "report_file": "ACCURACY SCORE CLAUD/validation_report.html",
+    "report_stats": {
+      "tv_trades": 41,
+      "eng_trades": 39,
+      "exact": 37,
+      "entry": 38,
+      "entry_1bar": 38,
+      "exact_1bar": 37
+    }
+  },
+  {
+    "version": 4,
+    "name": "🦺Ars_Auto_Rev_Chain_😎_common",
+    "strat_version": 2,
+    "timestamp": "2026-06-18 15:05 IST",
+    "desc": "logg ke saath file, claude ne di thi"
+  },
+  {
+    "version": 5,
+    "name": "🦺Ars_Auto_Rev_Chain_😎_common",
+    "strat_version": 3,
+    "timestamp": "2026-06-19 11:42 IST",
+    "desc": "yahan pe green area me bhi red zone ban raha tha to usko permanent remove kiya"
+  },
+  {
+    "version": 6,
     "name": "RSI Simple v1 [NIFTY]",
     "strat_version": 1,
-    "timestamp": "2026-06-19 00:00 IST",
-    "desc": "Scratch build — RSI(14) crossover/crossunder at OB/OS levels. CE on OS recovery, PE on OB reversal. Exit at RSI=50 mid.",
-    "pine_file": "rsi_v1.pine",
-    "python_file": "strategies/rsi_v1.py"
+    "timestamp": "2026-06-19 13:33 IST",
+    "desc": "[Claude] RSI Simple v1 — scratch build. RSI(14) OS=30->CE, OB=70->PE, exit RSI=50. Python: strategies/rsi_v1.py",
+    "author": "Claude",
+    "py_file": "strategies/rsi_v1.py"
+  },
+  {
+    "version": 7,
+    "name": "RSI Simple v1 [NIFTY]",
+    "strat_version": 2,
+    "timestamp": "2026-06-20 12:14 IST",
+    "desc": "[Claude] v2 - 3:15 PM EOD force-exit + no re-entry added (matches Python backtest_engine.py cutoff). Fixes Pine-vs-Python mismatch where TV held positions past 3:15 into next day. Python: _TRADERS/rsi_trader.py",
+    "author": "Claude",
+    "py_file": "strategies/rsi_v1.py"
   }
 ]

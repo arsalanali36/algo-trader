@@ -1,0 +1,1330 @@
+//@version=5
+strategy("🦺Ars_Auto_Rev_Chain_😎_common", overlay=true, max_lines_count=500, max_boxes_count=500, max_labels_count=500, default_qty_type=strategy.percent_of_equity, default_qty_value=100)
+
+
+// ===== INPUTS =====//
+//=== Time Filter Inputs ===
+grp1 = "Day Selection"
+
+// 🔄 CHANGED: Single day → Multi-month date range
+startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Date", group="Day Selection")
+endDate     = input.time(timestamp("2026-06-30 15:15"), title="Backtest End Date",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+
+maxTradesPerDay = input.int(4, "Max Trades Per Day", minval=1, group="Day Selection")
+
+// ===== GROUP ORDER FIX — Exit & Zone Logic ko upar lane ke liye =====
+// Pine Script mein jo group pehle declare hoga woh Settings mein upar dikhega
+// Isliye yahan pehle declare kar rahe hain — actual logic neeche same jagah hai
+MainExit_Toggle     = input.bool(true,  "Zone Exit", group="Exit ⏰")
+AtrExit_Toggle      = input.bool(true,  "ATR Exit",  group="Exit ⏰")
+SL_Blw_Fib_Exit_Tog = input.bool(true,  "Fib Exit",  group="Exit ⏰")
+maxCandleSize       = input.float(25.0, "Max Candle Size (Points)", minval=1.0, step=1.0, group="Exit ⏰", tooltip="Entry skip hoga agar candle ka size (High-Low) is value se zyada ho. Nifty ke liye 20-40 try karo.")
+
+HawaME_toggle    = input.bool(false, "🌬️ Hawa Me Zone",      group="🧠 Zone Logic")
+useFreshZoneOnly = input.bool(true,  "✅ Use Fresh Zone Only", group="🧠 Zone Logic")
+// ===== END GROUP ORDER FIX =====
+
+// 🔄 REMOVED: selected_bars_ago manual logic — ab always 1 (yesterday)
+// selected_bars_ago is now hardcoded to 1 (previous day always)
+
+lookback          = 20
+max_jump_pct_input = input.float(50.0, "Max Chain Jump % (Non-Index)", minval=1.0, maxval=500.0, step=5.0, group=grp1, tooltip="Index (Nifty/BankNifty) pe 10% fixed rahega, baaki instruments pe yeh value use hogi")
+
+grp2 = "High Chain"
+high_color  = color(color.red)
+
+grp3 = "Low Chain"
+low_color   = color(color.green)
+
+grp4 = "Prev Chain Line Style"
+
+grpX = "KeyLines"
+show_chain_global  = input.bool(true,  "Show Chain Lines 🔗",        group=grpX)
+show_high          = show_chain_global and input.bool(true,  "  ↳ High Chain (H1/H2..)", group=grpX, inline="chain_toggle")
+show_low           = show_chain_global and input.bool(true,  "  ↳ Low Chain  (L1/L2..)", group=grpX, inline="chain_toggle")
+show_chain_name    = show_high or show_low
+line_width    = 1
+line_style_in = "dashed"
+
+show_labels   = false
+show_chain_price = false
+
+grp5 = "Yest H/L/C Lines💸💸"
+show_hlc        = input.bool(true,         "Show PrevDay H/L/C Lines", group=grpX)
+
+hlc_high_color  = color.red
+hlc_low_color   = color.green
+hlc_close_color = color.blue
+
+hlc_width       = 2
+hlc_fontsize    = size.normal
+
+grp6 = "Fibonacci Levels (Selected Day)🔑🔑"
+show_fib       = false
+
+grp_fc = "Fibonacci Grp 🕯️🕯️"
+show_fc_fib        = input.bool(true,         "Show First Candle Fib",   group=grpX)
+
+fc_fib_color_1     = color.new(color.purple, 10)
+fc_fib_color_236   = color.new(color.orange, 10)
+fc_fib_color_5     = color.new(color.black, 30)
+fc_fib_color_618   = color.new(color.lime,   10)
+fc_fib_color_786   = color.new(color.teal,   10)
+
+fc_fib_width       = 1
+fc_fib_style_in    = "solid"
+fc_fib_show_label  = false
+fc_fib_font        = size.small
+fc_fib_length      = 10
+
+grp_pd = "Prev Day Fibonacci 📅📅"
+show_pd_fib        = input.bool(false,         "Show Prev Day Fib",        group=grpX,inline = "x1")
+pd_fib_invert      = input.bool(false, "🔄 Invert fib ", group=grpX,inline = "x1")
+
+pd_fib_color_1     = color.new(color.blue,   10)
+pd_fib_color_236   = color.new(color.orange, 10)
+pd_fib_color_5     = color.new(color.black, 0)
+pd_fib_width_5     = 2
+pd_fib_style_5_in  = "solid"
+pd_fib_color_618    = color.new(color.lime, 0)
+pd_fib_width_618    = 2
+pd_fib_style_618_in = "solid"
+pd_fib_color_786   = color.new(color.teal,   10)
+pd_fib_width       = 1
+pd_fib_style_in    = "dashed"
+pd_fib_show_label  = false
+pd_fib_font        = size.huge
+pd_fib_label_pos   = "Right"
+
+show_fib_1_1   = true
+show_fib_0     = true
+show_fib_236   = true
+show_fib_5     = true
+show_fib_618   = true
+show_fib_786   = true
+fib_color_1    = (color.new(color.blue, 20))
+fib_color_236  = (color.new(color.orange, 20))
+fib_color_5    = (color.new(color.black, 20))
+fib_color_618  = (color.new(color.lime, 20))
+fib_color_786  = (color.new(color.teal, 20))
+fib_width      = 1
+fib_style_in   = "solid"
+fib_show_label = false
+fib_font       = size.small
+
+
+// ===== DAILY DATA — tuple fetch =====
+get_day(idx) =>
+    [h, l, c, t] = request.security(syminfo.tickerid, "D",
+         [high[idx], low[idx], close[idx], time[idx]],
+         lookahead=barmerge.lookahead_on)
+    [h, l, c, t]
+
+[h0,  l0,  c0,  t0]  = get_day(0)
+[h1,  l1,  c1,  t1]  = get_day(1)
+[h2,  l2,  c2,  t2]  = get_day(2)
+[h3,  l3,  c3,  t3]  = get_day(3)
+[h4,  l4,  c4,  t4]  = get_day(4)
+[h5,  l5,  c5,  t5]  = get_day(5)
+[h6,  l6,  c6,  t6]  = get_day(6)
+[h7,  l7,  c7,  t7]  = get_day(7)
+[h8,  l8,  c8,  t8]  = get_day(8)
+[h9,  l9,  c9,  t9]  = get_day(9)
+[h10, l10, c10, t10] = get_day(10)
+[h11, l11, c11, t11] = get_day(11)
+[h12, l12, c12, t12] = get_day(12)
+[h13, l13, c13, t13] = get_day(13)
+[h14, l14, c14, t14] = get_day(14)
+[h15, l15, c15, t15] = get_day(15)
+[h16, l16, c16, t16] = get_day(16)
+[h17, l17, c17, t17] = get_day(17)
+[h18, l18, c18, t18] = get_day(18)
+[h19, l19, c19, t19] = get_day(19)
+[h20, l20, c20, t20] = get_day(20)
+
+// ===== STORE IN ARRAYS =====
+var float[] dh = array.new_float(21)
+var float[] dl = array.new_float(21)
+var float[] dc = array.new_float(21)
+var int[]   dt = array.new_int(21)
+
+array.set(dh, 0,  h0)
+array.set(dh, 1,  h1)
+array.set(dh, 2,  h2)
+array.set(dh, 3,  h3)
+array.set(dh, 4,  h4)
+array.set(dh, 5,  h5)
+array.set(dh, 6,  h6)
+array.set(dh, 7,  h7)
+array.set(dh, 8,  h8)
+array.set(dh, 9,  h9)
+array.set(dh, 10, h10)
+array.set(dh, 11, h11)
+array.set(dh, 12, h12)
+array.set(dh, 13, h13)
+array.set(dh, 14, h14)
+array.set(dh, 15, h15)
+array.set(dh, 16, h16)
+array.set(dh, 17, h17)
+array.set(dh, 18, h18)
+array.set(dh, 19, h19)
+array.set(dh, 20, h20)
+
+array.set(dl, 0,  l0)
+array.set(dl, 1,  l1)
+array.set(dl, 2,  l2)
+array.set(dl, 3,  l3)
+array.set(dl, 4,  l4)
+array.set(dl, 5,  l5)
+array.set(dl, 6,  l6)
+array.set(dl, 7,  l7)
+array.set(dl, 8,  l8)
+array.set(dl, 9,  l9)
+array.set(dl, 10, l10)
+array.set(dl, 11, l11)
+array.set(dl, 12, l12)
+array.set(dl, 13, l13)
+array.set(dl, 14, l14)
+array.set(dl, 15, l15)
+array.set(dl, 16, l16)
+array.set(dl, 17, l17)
+array.set(dl, 18, l18)
+array.set(dl, 19, l19)
+array.set(dl, 20, l20)
+
+array.set(dc, 0,  c0)
+array.set(dc, 1,  c1)
+array.set(dc, 2,  c2)
+array.set(dc, 3,  c3)
+array.set(dc, 4,  c4)
+array.set(dc, 5,  c5)
+array.set(dc, 6,  c6)
+array.set(dc, 7,  c7)
+array.set(dc, 8,  c8)
+array.set(dc, 9,  c9)
+array.set(dc, 10, c10)
+array.set(dc, 11, c11)
+array.set(dc, 12, c12)
+array.set(dc, 13, c13)
+array.set(dc, 14, c14)
+array.set(dc, 15, c15)
+array.set(dc, 16, c16)
+array.set(dc, 17, c17)
+array.set(dc, 18, c18)
+array.set(dc, 19, c19)
+array.set(dc, 20, c20)
+
+array.set(dt, 0,  t0)
+array.set(dt, 1,  t1)
+array.set(dt, 2,  t2)
+array.set(dt, 3,  t3)
+array.set(dt, 4,  t4)
+array.set(dt, 5,  t5)
+array.set(dt, 6,  t6)
+array.set(dt, 7,  t7)
+array.set(dt, 8,  t8)
+array.set(dt, 9,  t9)
+array.set(dt, 10, t10)
+array.set(dt, 11, t11)
+array.set(dt, 12, t12)
+array.set(dt, 13, t13)
+array.set(dt, 14, t14)
+array.set(dt, 15, t15)
+array.set(dt, 16, t16)
+array.set(dt, 17, t17)
+array.set(dt, 18, t18)
+array.set(dt, 19, t19)
+array.set(dt, 20, t20)
+
+// 🔄 CHANGED: selected_bars_ago always = 1 (yesterday)
+// Har bar ka "selected day" = previous daily candle
+selected_bars_ago = 1
+
+// ===== FIB ARRAYS =====
+var line[]  fib_lines  = array.new_line()
+var label[] fib_labels = array.new_label()
+
+f_fib_style() =>
+    st = line.style_solid
+    if fib_style_in == "dashed"
+        st := line.style_dashed
+    if fib_style_in == "dotted"
+        st := line.style_dotted
+    st
+
+get_vis(base_color, base_width, level_price) =>
+    [base_color, base_width]
+
+draw_fib(y_val, clr, lbl_text, start_time) =>
+    [fin_clr, fin_wid] = get_vis(clr, fib_width, y_val)
+    ln = line.new(
+         x1 = start_time, y1 = y_val,
+         x2 = start_time + 1, y2 = y_val,
+         color = fin_clr, width = fin_wid,
+         style = f_fib_style(),
+         extend = extend.right,
+         xloc = xloc.bar_time)
+    array.push(fib_lines, ln)
+    if fib_show_label
+        lb = label.new(
+             x = bar_index, y = y_val,
+             text = lbl_text,
+             color = color.new(color.white, 100),
+             textcolor = fin_clr,
+             style = label.style_none,
+             size = fib_font)
+        array.push(fib_labels, lb)
+
+// ===== HELPERS =====
+f_style() =>
+    st = line.style_solid
+    if line_style_in == "dashed"
+        st := line.style_dashed
+    if line_style_in == "dotted"
+        st := line.style_dotted
+    st
+
+f_pd_fib_style() =>
+    st = line.style_solid
+    if pd_fib_style_in == "dashed"
+        st := line.style_dashed
+    if pd_fib_style_in == "dotted"
+        st := line.style_dotted
+    st
+
+f_pd_fib_style_50() =>
+    st = line.style_solid
+    if pd_fib_style_5_in == "dashed"
+        st := line.style_dashed
+    if pd_fib_style_5_in == "dotted"
+        st := line.style_dotted
+    st
+
+f_pd_fib_style_618() =>
+    st = line.style_solid
+    if pd_fib_style_618_in == "dashed"
+        st := line.style_dashed
+    if pd_fib_style_618_in == "dotted"
+        st := line.style_dotted
+    st
+
+draw_pd_fib(y_val, clr, lbl_text, start_t, lines, labels) =>
+    _is50    = lbl_text == "Prev 50"
+    _is618   = lbl_text == "Prev 618"
+    _width   = _is50  ? pd_fib_width_5   : _is618 ? pd_fib_width_618  : pd_fib_width
+    _style   = _is50  ? f_pd_fib_style_50()        : _is618 ? f_pd_fib_style_618()       : f_pd_fib_style()
+    ln = line.new(
+         x1 = start_t, y1 = y_val,
+         x2 = start_t + 1, y2 = y_val,
+         color = clr, width = _width,
+         style = _style,
+         extend = extend.right,
+         xloc = xloc.bar_time)
+    array.push(lines, ln)
+    if pd_fib_show_label or _is50 or _is618
+        pd_lbl_x     = pd_fib_label_pos == "Left"   ? start_t :
+                       pd_fib_label_pos == "Center"  ? math.round((start_t + time) / 2) :
+                       bar_index
+        pd_lbl_style = pd_fib_label_pos == "Left"   ? label.style_label_right :
+                       pd_fib_label_pos == "Center"  ? label.style_label_center :
+                       label.style_label_left
+        pd_lbl_xloc  = pd_fib_label_pos == "Right"  ? xloc.bar_index : xloc.bar_time
+        lb = label.new(
+             x = pd_lbl_x, y = y_val,
+             text = "PD " + lbl_text,
+             color = color.new(color.white, 100),
+             textcolor = clr,
+             style = pd_lbl_style,
+             xloc = pd_lbl_xloc,
+             size = pd_fib_font)
+        array.push(labels, lb)
+
+// ===== LINE/LABEL ARRAYS =====
+var line[]  all_lines  = array.new_line()
+var label[] all_labels = array.new_label()
+
+var float[] chain_high_vals = array.new_float()
+var float[] chain_low_vals  = array.new_float()
+
+var float max_jump_pct = na
+max_jump_pct := syminfo.type == "index" ? 10.0 : max_jump_pct_input
+
+// ===== MAIN — barstate.islast pe visual drawing =====
+if barstate.islast or barstate.islastconfirmedhistory
+
+    for ln in all_lines
+        line.delete(ln)
+    array.clear(all_lines)
+    for lb in all_labels
+        label.delete(lb)
+    array.clear(all_labels)
+
+    // 🔄 selected_bars_ago = 1 always (yesterday)
+    sel_high  = array.get(dh, 1)
+    sel_low   = array.get(dl, 1)
+    sel_close = array.get(dc, 1)
+    sel_time  = array.get(dt, 1)
+
+    if show_hlc
+        hl = line.new(
+             x1 = sel_time, y1 = sel_high,
+             x2 = sel_time + 1, y2 = sel_high,
+             color = hlc_high_color, width = hlc_width,
+             style = line.style_solid, extend = extend.right,
+             xloc = xloc.bar_time)
+        array.push(all_lines, hl)
+
+        ll = line.new(
+             x1 = sel_time, y1 = sel_low,
+             x2 = sel_time + 1, y2 = sel_low,
+             color = hlc_low_color, width = hlc_width,
+             style = line.style_solid, extend = extend.right,
+             xloc = xloc.bar_time)
+        array.push(all_lines, ll)
+
+        cl = line.new(
+             x1 = sel_time, y1 = sel_close,
+             x2 = sel_time + 1, y2 = sel_close,
+             color = hlc_close_color, width = hlc_width,
+             style = line.style_solid, extend = extend.right,
+             xloc = xloc.bar_time)
+        array.push(all_lines, cl)
+
+        if show_labels
+            array.push(all_labels, label.new(
+                 x = bar_index, y = sel_high,
+                 text = "H " + str.tostring(sel_high, "#.##"),
+                 color = color.new(color.white, 100),
+                 textcolor = hlc_high_color,
+                 style = label.style_none, size = hlc_fontsize))
+            array.push(all_labels, label.new(
+                 x = bar_index, y = sel_low,
+                 text = "L " + str.tostring(sel_low, "#.##"),
+                 color = color.new(color.white, 100),
+                 textcolor = hlc_low_color,
+                 style = label.style_none, size = hlc_fontsize))
+            array.push(all_labels, label.new(
+                 x = bar_index, y = sel_close,
+                 text = "C " + str.tostring(sel_close, "#.##"),
+                 color = color.new(color.white, 100),
+                 textcolor = hlc_close_color,
+                 style = label.style_none, size = hlc_fontsize))
+
+    // ===== HIGH CHAIN =====
+    array.clear(chain_high_vals)
+    if show_high
+        float h_thresh = sel_high
+        int max_i = math.min(1 + lookback, 20)
+        int h_count = 1
+        for i = 2 to max_i
+            ph = array.get(dh, i)
+            pt = array.get(dt, i)
+            jump_pct = (ph - h_thresh) / h_thresh * 100
+            if ph > h_thresh and jump_pct <= max_jump_pct
+                [hln_clr, hln_wid] = get_vis(high_color, line_width, ph)
+                hln = line.new(
+                     x1 = pt, y1 = ph,
+                     x2 = pt + 1, y2 = ph,
+                     color = hln_clr, width = hln_wid,
+                     style = f_style(), extend = extend.right,
+                     xloc = xloc.bar_time)
+                array.push(all_lines, hln)
+                array.push(chain_high_vals, ph)
+                if show_labels
+                    h_name  = show_chain_name  ? "H" + str.tostring(h_count) + " " : ""
+                    h_price = show_chain_price ? str.tostring(ph, "#.##") : ""
+                    hlb = label.new(
+                         x = bar_index, y = ph,
+                         text = h_name + h_price,
+                         color = color.new(color.white, 100),
+                         textcolor = hln_clr,
+                         style = label.style_none,
+                         size = hlc_fontsize)
+                    array.push(all_labels, hlb)
+                h_thresh := ph
+                h_count  := h_count + 1
+
+    // ===== LOW CHAIN =====
+    array.clear(chain_low_vals)
+    if show_low
+        float l_thresh = sel_low
+        int max_i = math.min(1 + lookback, 20)
+        int l_count = 1
+        for i = 2 to max_i
+            pl = array.get(dl, i)
+            pt = array.get(dt, i)
+            drop_pct = (l_thresh - pl) / l_thresh * 100
+            if pl < l_thresh and drop_pct <= max_jump_pct
+                [lln_clr, lln_wid] = get_vis(low_color, line_width, pl)
+                lln = line.new(
+                     x1 = pt, y1 = pl,
+                     x2 = pt + 1, y2 = pl,
+                     color = lln_clr, width = lln_wid,
+                     style = f_style(), extend = extend.right,
+                     xloc = xloc.bar_time)
+                array.push(all_lines, lln)
+                array.push(chain_low_vals, pl)
+                if show_labels
+                    l_name  = show_chain_name  ? "L" + str.tostring(l_count) + " " : ""
+                    l_price = show_chain_price ? str.tostring(pl, "#.##") : ""
+                    llb = label.new(
+                         x = bar_index, y = pl,
+                         text = l_name + l_price,
+                         color = color.new(color.white, 100),
+                         textcolor = lln_clr,
+                         style = label.style_none,
+                         size = hlc_fontsize)
+                    array.push(all_labels, llb)
+                l_thresh := pl
+                l_count  := l_count + 1
+
+    // ===== FIBONACCI LEVELS =====
+    if show_fib
+        for ln in fib_lines
+            line.delete(ln)
+        array.clear(fib_lines)
+        for lb in fib_labels
+            label.delete(lb)
+        array.clear(fib_labels)
+
+        fib_start = array.get(dt, 0)
+        fh  = array.get(dh, 0)
+        fl  = array.get(dl, 0)
+        rng = fh - fl
+
+        if show_fib_1_1
+            draw_fib(fh,               fib_color_1,   "1",     fib_start)
+        if show_fib_786
+            draw_fib(fl + rng * 0.786, fib_color_786, "0.786", fib_start)
+        if show_fib_618
+            draw_fib(fl + rng * 0.618, fib_color_618, "0.618", fib_start)
+        if show_fib_5
+            draw_fib(fl + rng * 0.5,   fib_color_5,   "0.5",   fib_start)
+        if show_fib_236
+            draw_fib(fl + rng * 0.236, fib_color_236, "0.236", fib_start)
+        if show_fib_0
+            draw_fib(fl,               fib_color_1,   "0",     fib_start)
+
+    // ===== PD FIB LEVELS =====
+    if show_pd_fib
+        pd_high = array.get(dh, 1)
+        pd_low  = array.get(dl, 1)
+        pd_time = array.get(dt, 1)
+        pd_rng  = pd_high - pd_low
+
+        if not na(pd_high) and not na(pd_low) and pd_rng > 0
+            draw_pd_fib(pd_fib_invert ? pd_high - pd_rng * 0.618    : pd_low + pd_rng * 0.618, pd_fib_color_618, "Prev 618", pd_time, all_lines, all_labels)
+            draw_pd_fib(pd_fib_invert ? pd_high - pd_rng * 0.5      : pd_low + pd_rng * 0.5,   pd_fib_color_5,   "Prev 50",  pd_time, all_lines, all_labels)
+            draw_pd_fib(pd_fib_invert ? pd_high                     : pd_low,               pd_fib_color_1,   "0",        pd_time, all_lines, all_labels)
+
+
+//────────────────────────────────────────────────────────────────────
+// Dynamic Pivot Point
+//────────────────────────────────────────────────────────────────────
+
+showExtra_PP              = true
+lineWidthOpt_Yest_OHLC       = 1
+styleMap_Yest_OHLC           = line.style_dashed
+
+OHLC_line_OpacityPercent = 5.0
+OHLC_lineOpacity         = math.round(OHLC_line_OpacityPercent / 100 * 255)
+pivotColor              = color.new(color.blue,   OHLC_lineOpacity)
+resistanceColor         = color.new(color.red,   OHLC_lineOpacity)
+supportColor            = color.new(color.green,   OHLC_lineOpacity)
+mode = 0
+
+isFirstBarOfDay = (ta.change(time("D")) != 0)
+prevBarIndex = bar_index - 1
+prevHigh  = request.security(syminfo.tickerid, "D", high[mode])
+prevLow   = request.security(syminfo.tickerid, "D", low[mode])
+prevClose = request.security(syminfo.tickerid, "D", close[mode])
+
+lineStyleOpt_PIVOT                  = line.style_dashed
+lineWidthOpt_PIVOT         = 1
+numberOfPivotsToDraw                = 1
+lookbackCandles                     = 1
+
+showP           = true
+showLabelsInput = true
+showPricesInput = false
+
+showR1          = true
+showR2          = true
+showR3          = true
+showR4          = true and showExtra_PP
+showR5          = true and showExtra_PP
+
+showS1          = true
+showS2          = true
+showS3          = true
+showS4          = true and showExtra_PP
+showS5          = true and showExtra_PP
+
+Pivot_line_OpacityPercent = 5.0
+Pivor_lineOpacity         = math.round(Pivot_line_OpacityPercent / 100 * 255)
+
+labelSizeInput = size.large
+
+labelSize = labelSizeInput == "tiny"  ? size.tiny  :
+             labelSizeInput == "small" ? size.small :
+             labelSizeInput == "normal"? size.normal:
+             labelSizeInput == "large" ? size.large :
+             labelSizeInput == "huge"  ? size.huge  : size.auto
+
+enablePivotLines       = input.bool(true, title="Pivot Lines",group = grpX)
+PIVOT_INLINE_PP        = "PP"
+PIVOT_INLINE_R         = "R"
+PIVOT_INLINE_S         = "S"
+
+pivotTypeInput         = "Traditional"
+pivotTimeframe         = "1D"
+positionLabelsInput    = "Left"
+
+type GraphicSettings
+    string levelName
+    color levelColor
+    bool showLevel
+
+type PivotGraphic
+    line pivotLine
+    label pivotLabel
+
+method delete(PivotGraphic graphic) =>
+    graphic.pivotLine.delete()
+    graphic.pivotLabel.delete()
+
+initGraphicSettings() => 
+     array.from( 
+         GraphicSettings.new("P",  pivotColor,       showP),
+         GraphicSettings.new("R1", resistanceColor,  showR1),
+         GraphicSettings.new("S1", supportColor,     showS1),
+         GraphicSettings.new("R2", resistanceColor,  showR2),
+         GraphicSettings.new("S2", supportColor,     showS2),
+         GraphicSettings.new("R3", resistanceColor,  showR3),
+         GraphicSettings.new("S3", supportColor,     showS3),
+         GraphicSettings.new("R4", resistanceColor,  showR4),
+         GraphicSettings.new("S4", supportColor,     showS4),
+         GraphicSettings.new("R5", resistanceColor,  showR5),
+         GraphicSettings.new("S5", supportColor,     showS5)
+     )
+
+affixOldPivots(matrix<PivotGraphic> drawnGraphics, string labelPosition, int endTime) =>
+    if drawnGraphics.rows() > 0
+        lastGraphics = drawnGraphics.row(drawnGraphics.rows() - 1)
+        for graphic in lastGraphics
+            graphic.pivotLine.set_x2(endTime)
+            if labelPosition == "Right"
+                graphic.pivotLabel.set_x(endTime)
+
+drawPivotLevels(array<float> pivotPointsArray, array<GraphicSettings> graphicSettingsArray, matrix<PivotGraphic> drawnGraphics, int startTime, int yearMultiplier) =>
+    newGraphics = array.new<PivotGraphic>()
+    for [index, coord] in pivotPointsArray
+        levelSettings = graphicSettingsArray.get(index)
+        if not na(coord) and levelSettings.showLevel
+            lineEndTime = startTime + timeframe.in_seconds(pivotTimeframe) * 1000 * yearMultiplier
+            pivotLine = line.new(startTime, coord, lineEndTime, coord, xloc = xloc.bar_time, color=levelSettings.levelColor, width=lineWidthOpt_PIVOT,style = lineStyleOpt_PIVOT)
+            pivotLabel = label.new(
+                 x = positionLabelsInput == "Left" ? startTime : lineEndTime,
+                 y = coord,
+                 text = (showLabelsInput ? levelSettings.levelName + " " : "") + (showPricesInput ? "(" + str.tostring(coord, format.mintick) + ")" : ""),
+                 style = positionLabelsInput == "Left" ? label.style_label_right : label.style_label_left,
+                 textcolor = levelSettings.levelColor,
+                 color = #00000000,
+                 xloc = xloc.bar_time,
+                 size = labelSize)
+            newGraphics.push(PivotGraphic.new(pivotLine, pivotLabel))
+    drawnGraphics.add_row(array_id = newGraphics)
+    if drawnGraphics.rows() > numberOfPivotsToDraw
+        oldGraphics = drawnGraphics.remove_row(0)
+        for graphic in oldGraphics
+            graphic.delete()
+
+var graphicSettingsArray = initGraphicSettings()
+var drawnGraphics        = matrix.new<PivotGraphic>()
+pivotYearMultiplier      = 1
+
+pivotTimeframeChangeCounter(condition) => 
+    var count = 0
+    if condition and bar_index > 0
+        count += 1
+    count
+
+localTimeframeChange    = timeframe.change(pivotTimeframe)
+securityTimeframeChange = timeframe.change(timeframe.period)
+
+localPivots      = ta.pivot_point_levels(pivotTypeInput, localTimeframeChange)
+securityPivotsArray = ta.pivot_point_levels(pivotTypeInput, securityTimeframeChange)
+
+[securityPivots, pivotDrawTrigger] = request.security(syminfo.tickerid, pivotTimeframe, [securityPivotsArray, pivotTimeframeChangeCounter(securityTimeframeChange)], 
+ lookahead = barmerge.lookahead_on)
+
+pivotP  = array.get(securityPivots, 0)
+pivotR1 = array.get(securityPivots, 1)
+pivotS1 = array.get(securityPivots, 2)
+pivotR2 = array.get(securityPivots, 3)
+pivotS2 = array.get(securityPivots, 4)
+pivotR3 = array.get(securityPivots, 5)
+pivotS3 = array.get(securityPivots, 6)
+pivotS4 = array.get(securityPivots, 7)
+pivotR4 = array.get(securityPivots, 8)
+pivotS5 = array.get(securityPivots, 9)
+pivotR5 = array.get(securityPivots, 10)
+
+if enablePivotLines and inDateRange and isFirstBarOfDay
+    if pivotDrawTrigger != pivotDrawTrigger[1]
+        affixOldPivots(drawnGraphics, positionLabelsInput, time)
+        drawPivotLevels(securityPivots, graphicSettingsArray, drawnGraphics, time, pivotYearMultiplier)
+
+    var FIRST_BAR_TIME = time
+    if inDateRange and barstate.islastconfirmedhistory and drawnGraphics.columns() == 0
+        if not na(securityPivots) and pivotDrawTrigger > 0
+            drawPivotLevels(securityPivots, graphicSettingsArray, drawnGraphics, FIRST_BAR_TIME, pivotYearMultiplier)
+        else
+            runtime.error("Not enough data to calculate Pivot Points. Lower the Pivot Timeframe in the settings.")
+
+
+//────────────────────────────────────────────────────────────
+// 🟢 COLLECT ALL PIVOT + OHLC LEVELS
+//────────────────────────────────────────────────────────────
+
+Toggle_Use_lookaheadBars = false
+lookaheadBars = 10
+includePIVOT = true
+includeOHLC = true
+useExtraLevels = false
+Extra    = 55510
+
+var selectedLines = array.new_float()
+
+array.clear(selectedLines)
+
+if includePIVOT
+    array.push(selectedLines, pivotR5)
+    array.push(selectedLines, pivotR4)
+    array.push(selectedLines, pivotR3)
+    array.push(selectedLines, pivotR2)
+    array.push(selectedLines, pivotR1)
+    array.push(selectedLines, pivotP)
+    array.push(selectedLines, pivotS1)
+    array.push(selectedLines, pivotS2)
+    array.push(selectedLines, pivotS3)
+    array.push(selectedLines, pivotS4)
+    array.push(selectedLines, pivotS5)
+
+if includeOHLC
+    array.push(selectedLines, prevHigh)
+    array.push(selectedLines, prevClose)
+    array.push(selectedLines, prevLow)
+
+if useExtraLevels
+    array.push(selectedLines, Extra)
+
+// 🔄 CHANGED: selected_bars_ago = 1 (always yesterday)
+if true
+    _ch_thresh = array.get(dh, 1)
+    _ch_max_i  = math.min(1 + lookback, 20)
+    for _ci = 2 to _ch_max_i
+        _cph = array.get(dh, _ci)
+        if not na(_cph) and _cph > _ch_thresh
+            _jump = (_cph - _ch_thresh) / _ch_thresh * 100
+            if _jump <= max_jump_pct
+                array.push(selectedLines, _cph)
+                _ch_thresh := _cph
+    _cl_thresh = array.get(dl, 1)
+    for _ci = 2 to _ch_max_i
+        _cpl = array.get(dl, _ci)
+        if not na(_cpl) and _cpl < _cl_thresh
+            _drop = (_cl_thresh - _cpl) / _cl_thresh * 100
+            if _drop <= max_jump_pct
+                array.push(selectedLines, _cpl)
+                _cl_thresh := _cpl
+
+hline(
+     useExtraLevels ? Extra : na,
+     "EXTRA Line",
+     color=color.black,
+     linestyle=hline.style_solid,
+     linewidth=3
+     )
+
+//────────────────────────────────────────────────────────────
+// 🕯️ FIRST CANDLE FIBONACCI
+//────────────────────────────────────────────────────────────
+
+var float fc_high = na
+var float fc_low  = na
+var int   fc_time = na
+
+if isFirstBarOfDay and inDateRange
+    fc_high := high
+    fc_low  := low
+    fc_time := time
+
+f_fc_fib_style() =>
+    st = line.style_solid
+    if fc_fib_style_in == "dashed"
+        st := line.style_dashed
+    if fc_fib_style_in == "dotted"
+        st := line.style_dotted
+    st
+
+var line[]  fc_fib_lines  = array.new_line()
+var label[] fc_fib_labels = array.new_label()
+
+draw_fc_fib(y_val, clr, lbl_text, start_t, end_t) =>
+    ln = line.new(
+         x1 = start_t, y1 = y_val,
+         x2 = end_t, y2 = y_val,
+         color = clr, width = fc_fib_width,
+         style = f_fc_fib_style(),
+         extend = extend.none,
+         xloc = xloc.bar_time)
+    array.push(fc_fib_lines, ln)
+    if fc_fib_show_label
+        lb = label.new(
+             x = bar_index, y = y_val,
+             text = "FC " + lbl_text,
+             color = color.new(color.white, 100),
+             textcolor = clr,
+             style = label.style_none,
+             size = fc_fib_font)
+        array.push(fc_fib_labels, lb)
+
+if (barstate.islast or barstate.islastconfirmedhistory) and show_fc_fib and not na(fc_high) and not na(fc_low) and not na(fc_time)
+    for ln in fc_fib_lines
+        line.delete(ln)
+    array.clear(fc_fib_lines)
+    for lb in fc_fib_labels
+        label.delete(lb)
+    array.clear(fc_fib_labels)
+
+    fc_rng = fc_high - fc_low
+
+    if fc_rng > 0
+        fc_tf_ms  = timeframe.in_seconds() * 1000
+        fc_end_t  = fc_time + fc_fib_length * fc_tf_ms
+        draw_fc_fib(fc_high,                 fc_fib_color_1,   "1",     fc_time, fc_end_t)
+        draw_fc_fib(fc_low + fc_rng * 0.786, fc_fib_color_786, "0.786", fc_time, fc_end_t)
+        draw_fc_fib(fc_low + fc_rng * 0.618, fc_fib_color_618, "0.618", fc_time, fc_end_t)
+        draw_fc_fib(fc_low + fc_rng * 0.5,   fc_fib_color_5,   "0.5",   fc_time, fc_end_t)
+        draw_fc_fib(fc_low + fc_rng * 0.236, fc_fib_color_236, "0.236", fc_time, fc_end_t)
+        draw_fc_fib(fc_low,                  fc_fib_color_1,   "0",     fc_time, fc_end_t)
+
+
+//────────────────────────────────────────────────────────────────────
+// 🟢🟢🟢🟢 === CANDLE PATTERNS BLOCK ===
+//────────────────────────────────────────────────────────────────────
+
+import arsalanali36/AA_CandlePatterns/2 as cp
+minBodySize     = 0.5
+wickRatio       = 2.5
+prevBodyMinPts  = 0.5
+
+greenHammer = cp.greenHammer(minBodySize, wickRatio)
+redHammer   = cp.redHammer(minBodySize, wickRatio)
+invRedHam   = cp.invertedRedHammer(minBodySize, wickRatio)
+
+bullEngulf = cp.bullishEngulfing(prevBodyMinPts)
+bearEngulf = cp.bearishEngulfing(prevBodyMinPts)
+
+bullHarami = cp.bullishHarami()
+bearHarami = cp.bearishHarami()
+
+plotshape(
+     greenHammer and inDateRange,
+     title = "Green Hammer",
+     location = location.belowbar,
+     style = shape.labelup,
+     color = color.green,
+     text = "🔨"
+     )
+plotshape(
+     redHammer  and inDateRange,
+     title = "Red Hammer",
+     location = location.belowbar,
+     style = shape.labelup,
+     color = color.red,
+     text = "🔨"
+     )
+plotshape(
+     invRedHam  and inDateRange,
+     title = "Inv Red Hammer",
+     location = location.abovebar,
+     style = shape.labeldown,
+     color = #7f1e1e,
+     text = "🔨ᶦ"
+     )
+
+barcolor(
+     bullEngulf ? color.black :
+     bearEngulf ? color.rgb(2, 0, 0) :
+     bullHarami ? color.new(color.green, 70) :
+     bearHarami ? color.new(color.red, 70) :
+     na
+     )
+
+bullish = (bullEngulf or bullHarami or greenHammer)
+prevBullish = (bullEngulf[1] or bullHarami[1] or greenHammer[1])
+
+bearish = (bearEngulf or bearHarami or invRedHam or redHammer)
+prevBearish = (bearEngulf[1] or bearHarami[1] or invRedHam[1] or redHammer[1])
+
+
+// =================================================================
+// 🟢🔴 ZONE BUILDING BLOCK
+// =================================================================
+
+showLatest    = true
+deleteOld     = true
+lineLength    = 25
+
+// HawaME_toggle, useFreshZoneOnly — declared at top for group ordering
+
+var float selectedLine = na
+var string lineType    = ""
+
+_baseCount = (includePIVOT ? 11 : 0) + (includeOHLC ? 3 : 0) + (useExtraLevels ? 1 : 0)
+
+_chainHighCount = 0
+if true
+    _tmp_thresh = array.get(dh, 1)
+    _tmp_max_i  = math.min(1 + lookback, 20)
+    for _ci = 2 to _tmp_max_i
+        _cph = array.get(dh, _ci)
+        if not na(_cph) and _cph > _tmp_thresh
+            _jump = (_cph - _tmp_thresh) / _tmp_thresh * 100
+            if _jump <= max_jump_pct
+                _chainHighCount += 1
+                _tmp_thresh := _cph
+
+_chainHighEnd = _baseCount + _chainHighCount - 1
+
+// 🔒 Resistance-priority lock: ek baar RESISTANCE/PD_H match ho jaye to
+// baad mein loop mein aane wala SUPPORT-type match use overwrite nahi karega.
+// Isse R1-R5 / Chain High / PD_H touch hone par Green Zone nahi banega.
+var bool _resistanceLocked = false
+_resistanceLocked := false
+
+for i = 0 to array.size(selectedLines) - 1
+    lineVal = array.get(selectedLines, i)
+    if not na(lineVal) and (low <= lineVal and high >= lineVal)
+        _isResistanceType = (i <= 4) or (i == 11) or (i >= _baseCount and i <= _chainHighEnd)
+        _isSupportType    = (i >= 6 and i <= 10) or (i == 13) or (i > _chainHighEnd)
+
+        if _isResistanceType
+            selectedLine := lineVal
+            lineType := i == 11 ? "PD_H" : "RESISTANCE"
+            _resistanceLocked := true
+        else if _isSupportType and not _resistanceLocked
+            selectedLine := lineVal
+            lineType := i == 13 ? "PD_L" : "SUPPORT"
+        else if not _resistanceLocked
+            selectedLine := lineVal
+            if i == 5
+                lineType := "CP"
+            else if i == 12
+                lineType := "PD_C"
+
+var float trackedHigh  = na
+var float trackedLow   = na
+var int trackedHighBar = na
+var int trackedLowBar  = na
+var int touchStartBar  = na
+var bool touchActive   = false
+var line hhLine        = na
+var line llLine        = na
+var color hhColor      = na
+var color llColor      = na
+var float hhPrice      = na
+var float llPrice      = na
+
+touched = inDateRange and not na(selectedLine) and (low <= selectedLine and high >= selectedLine)
+
+if touched and not touchActive
+    touchActive    := true
+    touchStartBar  := bar_index
+    trackedHigh    := high
+    trackedLow     := low
+    trackedHighBar := bar_index
+    trackedLowBar  := bar_index
+
+hhColor := na
+llColor := na
+if not na(selectedLine) and showLatest
+    if lineType == "RESISTANCE" or lineType == "PD_H"
+        hhColor := color.red
+        llColor := color.black
+    else if lineType == "SUPPORT" or lineType == "PD_L"
+        hhColor := color.black
+        llColor := color.green
+    else if lineType == "CP" or lineType == "PD_C"
+        hhColor := color.orange
+        llColor := color.orange
+
+if touchActive
+    if inDateRange and not na(selectedLine) and low <= selectedLine and high >= selectedLine
+        if high > trackedHigh or na(trackedHigh)
+            trackedHigh    := high
+            trackedHighBar := bar_index
+            hhPrice        := high
+        if low < trackedLow or na(trackedLow)
+            trackedLow    := low
+            trackedLowBar := bar_index
+            llPrice       := low
+
+hhWidth = (hhColor == color.black) ? 2 : 5
+llWidth = (llColor == color.black) ? 2 : 5
+
+var label hhLabel = na
+var label llLabel = na
+
+if inDateRange and bar_index == trackedHighBar
+    if deleteOld and not na(hhLine)
+        line.delete(hhLine)
+        if not na(hhLabel)
+            label.delete(hhLabel)
+    hhLine := line.new(bar_index, trackedHigh, bar_index + lineLength, trackedHigh, color=hhColor, width=hhWidth)
+    hhLabel := label.new(bar_index + lineLength, trackedHigh, "HH", style=label.style_label_left, color=color.new(color.blue, 80), textcolor=color.black)
+
+if inDateRange and bar_index == trackedLowBar
+    if deleteOld and not na(llLine)
+        line.delete(llLine)
+        if not na(llLabel)
+            label.delete(llLabel)
+    llLine := line.new(bar_index, trackedLow, bar_index + lineLength, trackedLow, color=llColor, width=llWidth)
+    llLabel := label.new(bar_index + lineLength, trackedLow, "LL", style=label.style_label_left, color=color.new(color.blue, 80), textcolor=color.black)
+
+latestHH = na(hhLine) ? na : line.get_y1(hhLine)
+latestLL = na(llLine) ? na : line.get_y1(llLine)
+
+touchHH = high >= latestHH
+touchLL = low  <= latestLL
+
+var bool touchedHH_prev = false
+var bool touchedLL_prev = false
+
+if touchHH
+    touchedHH_prev := true
+if touchLL
+    touchedLL_prev := true
+
+effectiveTouchedHH = HawaME_toggle ? touchedHH_prev : false
+effectiveTouchedLL = HawaME_toggle ? touchedLL_prev : false
+
+Bearish_Candle_exitingZone = (touched or effectiveTouchedHH) and bearish and (lineType != "SUPPORT") and (lineType != "PD_L")
+Bullish_Candle_exitingZone = (touched or effectiveTouchedLL) and bullish and (lineType != "RESISTANCE") and (lineType != "PD_H")
+
+var bool Green_Zone = false
+var bool Red_Zone   = false
+
+var bool Green_Zone_Touch_and_Candle = false
+var bool Red_Zone_Touch_and_Candle   = false
+
+// 🔄 CHANGED: zone_Upper_line/zone_Lower_line (line objects) → zone_Box (box object)
+// WAJAH: Pine Script mein line, box, label — teeno ke alag-alag 500 object pools hain.
+// Pehle zones LINE objects the, jo Chain/Pivot/Fib lines ke SAME pool mein count hote the.
+// Lambe multi-month backtest mein total lines 500 cross kar jati thi, aur Pine Script
+// automatically sabse PURANI line delete kar deta tha — kabhi kabhi woh active
+// zone-tracking line hoti thi, jiski wajah se naye zones "random" jagah ban jate the
+// jab Fib toggles on/off karne se history re-run hoti thi.
+// Box object ek alag pool use karta hai, isliye Chain/Pivot/Fib lines se compete nahi karega.
+var box   zone_Box       = na
+var label bullZoneLabel  = na
+
+var int lastGreenZoneBar = na
+var int lastRedZoneBar   = na
+maxZoneAge = 2
+
+if Bullish_Candle_exitingZone and inDateRange
+    lastGreenZoneBar := bar_index
+if Bearish_Candle_exitingZone and inDateRange
+    lastRedZoneBar := bar_index
+
+greenZoneFresh = not na(lastGreenZoneBar) and (bar_index - lastGreenZoneBar <= maxZoneAge)
+redZoneFresh   = not na(lastRedZoneBar)   and (bar_index - lastRedZoneBar   <= maxZoneAge)
+
+// keepOldLines removed — purani zones ab delete nahi hoti (box object hi hai),
+// aur 500-cap cross hone par Pine sirf sabse purani BOX delete karega,
+// jo Chain/Pivot/Fib LINE count ko affect nahi karega.
+
+if (Bearish_Candle_exitingZone or Bullish_Candle_exitingZone) and inDateRange
+
+    _isBull    = Bearish_Candle_exitingZone
+    _color     = _isBull ? color.new(color.red, 0) : color.new(color.teal, 0)
+    _highPrice = high
+    _lowPrice  = low
+
+    zone_Box := box.new(
+         left = bar_index, top = _highPrice,
+         right = bar_index + 10, bottom = _lowPrice,
+         border_color = _color, border_width = 2,
+         bgcolor = color.new(_color, 90))
+
+    Green_Zone := Bullish_Candle_exitingZone
+    Red_Zone   := Bearish_Candle_exitingZone
+
+    Green_Zone_Touch_and_Candle := Bullish_Candle_exitingZone
+    Red_Zone_Touch_and_Candle   := Bearish_Candle_exitingZone
+
+    if Bullish_Candle_exitingZone
+        log.info("ZONE GREEN " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
+    if Bearish_Candle_exitingZone
+        log.info("ZONE RED " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
+
+    _distance = math.round(math.abs(_highPrice - _lowPrice))
+    _distText = str.tostring(_distance)
+    bullZoneLabel := label.new(bar_index + 10, _highPrice, text=_distText, xloc=xloc.bar_index, yloc=yloc.price,
+                               style=label.style_label_center, color=_color, textcolor=color.white, size=size.small)
+
+    touchedHH_prev := false
+    touchedLL_prev := false
+
+// 🔄 CHANGED: zone_Lower_line_price/zone_Upper_line_price ab box.get_bottom()/box.get_top() se aate hain
+var float zone_Lower_line_price = na
+var float zone_Upper_line_price = na
+
+if not na(zone_Box)
+    zone_Lower_line_price := box.get_bottom(zone_Box)
+    zone_Upper_line_price := box.get_top(zone_Box)
+
+
+// =================================================================
+// 🛡️ SAFETY CONDITIONS
+// =================================================================
+
+var float lastTrackedLow  = na
+var float lastZoneLow     = na
+var float lastTrackedHigh = na
+var float lastZoneHigh    = na
+
+if not na(trackedLow)
+    lastTrackedLow := trackedLow
+if not na(zone_Lower_line_price)
+    lastZoneLow := zone_Lower_line_price
+if not na(trackedHigh)
+    lastTrackedHigh := trackedHigh
+if not na(zone_Upper_line_price)
+    lastZoneHigh := zone_Upper_line_price
+
+var float trackedLowZoneDiff  = na
+var float trackedHighZoneDiff = na
+
+if not na(lastTrackedLow) and not na(lastZoneLow)
+    trackedLowZoneDiff  := math.abs(lastTrackedLow  - lastZoneLow)
+if not na(lastTrackedHigh) and not na(lastZoneHigh)
+    trackedHighZoneDiff := math.abs(lastTrackedHigh - lastZoneHigh)
+
+trackedLowTooClose  = not na(trackedLowZoneDiff)  and trackedLowZoneDiff  < 20
+trackedHighTooClose = not na(trackedHighZoneDiff) and trackedHighZoneDiff < 20
+
+var bool llTooCloseShown = false
+var bool hhTooCloseShown = false
+if (Bearish_Candle_exitingZone or Bullish_Candle_exitingZone) and inDateRange
+    llTooCloseShown := false
+    hhTooCloseShown := false
+
+
+// =================================================================
+// 📋 ENTRY CONDITIONS
+// =================================================================
+
+Not_on_Gren_line = (lineType != "SUPPORT") and (lineType != "PD_L")
+Not_on_Red_line  = (lineType != "RESISTANCE") and (lineType != "PD_H")
+
+close_Above_Green_zone = not na(zone_Upper_line_price) and (close > zone_Upper_line_price)
+close_Below_Red_zone   = not na(zone_Lower_line_price) and (close < zone_Lower_line_price)
+
+candleSize    = high - low
+// maxCandleSize — input se aa raha hai (top mein declared)
+
+var bool skipBigCandleZoneExit_Short = false
+if close_Below_Red_zone
+    if candleSize > maxCandleSize
+        skipBigCandleZoneExit_Short := true
+    else
+        skipBigCandleZoneExit_Short := false
+
+var bool skipBigCandleZoneExit_Long = false
+if close_Above_Green_zone
+    if candleSize > maxCandleSize
+        skipBigCandleZoneExit_Long := true
+    else
+        skipBigCandleZoneExit_Long := false
+
+
+// =================================================================
+// CONDITIONS
+// =================================================================
+
+isGreenCandle = close > open
+isRedCandle   = close < open
+
+Prev_Green = Green_Zone and (close[1] > open[1])
+Prev_Red   = Red_Zone   and (close[1] < open[1])
+
+shortAboveTrackedLow = na(trackedLow) or close >= trackedLow
+longBelowTrackedHigh = na(trackedHigh) or close <= trackedHigh
+
+Index_Long_Signal = (
+         (useFreshZoneOnly ? greenZoneFresh : Green_Zone_Touch_and_Candle)
+     and Green_Zone
+     and Not_on_Red_line
+     and close_Above_Green_zone
+     and Prev_Green
+     and not skipBigCandleZoneExit_Long
+     and isGreenCandle
+     and longBelowTrackedHigh
+     )
+
+Index_Short_Signal = (
+         (useFreshZoneOnly ? redZoneFresh : Red_Zone_Touch_and_Candle)
+     and Red_Zone
+     and Not_on_Gren_line
+     and close_Below_Red_zone
+     and Prev_Red
+     and not skipBigCandleZoneExit_Short
+     and isRedCandle
+     and shortAboveTrackedLow
+     )
+
+
+// =================================================================
+// 📊 ENTRY PLOTSHAPES + STRATEGY ORDERS
+// =================================================================
+
+var int tradesToday = 0
+if ta.change(time("D")) != 0
+    tradesToday := 0
+
+if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
+    strategy.entry("Long", strategy.long)
+    tradesToday += 1
+    Green_Zone := false
+    Red_Zone   := false
+    log.info("SIGNAL LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
+    alert("🟢 LONG ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
+
+if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
+    strategy.entry("Short", strategy.short)
+    tradesToday += 1
+    Green_Zone := false
+    Red_Zone   := false
+    log.info("SIGNAL SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
+    alert("🔴 SHORT ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
+
+
+// =================================================================
+// 🚪 EXIT SYSTEM
+// =================================================================
+
+// MainExit_Toggle, AtrExit_Toggle, SL_Blw_Fib_Exit_Tog — declared at top for group ordering
+
+atrLen  = 14
+atrMult = 2.0
+atrVal  = ta.atr(atrLen)
+
+isNewLong  = strategy.position_size > 0 and strategy.position_size[1] == 0
+isNewShort = strategy.position_size < 0 and strategy.position_size[1] == 0
+
+var float atrSL_Long  = na
+var float atrSL_Short = na
+
+if isNewLong
+    atrSL_Long := strategy.position_avg_price - atrVal * atrMult
+
+if strategy.position_size > 0 and not na(atrSL_Long)
+    float newLongSL = close - atrVal * atrMult
+    if newLongSL > atrSL_Long
+        atrSL_Long := newLongSL
+
+if isNewShort
+    atrSL_Short := strategy.position_avg_price + atrVal * atrMult
+
+if strategy.position_size < 0 and not na(atrSL_Short)
+    float newShortSL = close + atrVal * atrMult
+    if newShortSL < atrSL_Short
+        atrSL_Short := newShortSL
+
+SL_Long_ATR  = strategy.position_size > 0 and not na(atrSL_Long)  and close < atrSL_Long
+SL_Short_ATR = strategy.position_size < 0 and not na(atrSL_Short) and close > atrSL_Short
+
+plot(AtrExit_Toggle and strategy.position_size > 0 ? atrSL_Long  : na,
+     title="ATR SL LONG",  color=color.orange, linewidth=3, style=plot.style_stepline_diamond)
+plot(AtrExit_Toggle and strategy.position_size < 0 ? atrSL_Short : na,
+     title="ATR SL SHORT", color=color.aqua,   linewidth=3, style=plot.style_stepline_diamond)
+
+close_Above_Red_zone = not na(zone_Upper_line_price) and (close > zone_Upper_line_price)
+
+Long_indexExitCondition  = close_Below_Red_zone and (close < open)
+     and (useFreshZoneOnly ? redZoneFresh   : Red_Zone_Touch_and_Candle)
+
+Short_indexExitCondition = close_Above_Red_zone and (close > open)
+     and (useFreshZoneOnly ? greenZoneFresh : Green_Zone_Touch_and_Candle)
+
+var bool  exitSignal = false
+var string exitReason = ""
+var string exitSide   = ""
+
+exitSignal := false
+exitSide   := ""
+exitReason := ""
+
+if strategy.position_size > 0 and barstate.isconfirmed
+
+    if AtrExit_Toggle and SL_Long_ATR
+        exitSignal := true
+        exitReason := "ATR_LONG"
+
+    else if MainExit_Toggle and Long_indexExitCondition and inDateRange
+        exitSignal := true
+        exitReason := "ZONE_LONG"
+
+    if exitSignal
+        strategy.close("Long", comment=exitReason)
+        log.info("EXIT LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
+        alert("🚪 EXIT LONG @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+        exitSide := "LONG"
+        atrSL_Long := na
+
+if strategy.position_size < 0 and barstate.isconfirmed
+
+    if AtrExit_Toggle and SL_Short_ATR
+        exitSignal := true
+        exitReason := "ATR_SHORT"
+
+    else if MainExit_Toggle and Short_indexExitCondition and inDateRange
+        exitSignal := true
+        exitReason := "ZONE_SHORT"
+
+    if exitSignal
+        strategy.close("Short", comment=exitReason)
+        log.info("EXIT SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
+        alert("🚪 EXIT SHORT @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+        exitSide := "SHORT"
+        atrSL_Short := na
+
+
+// =================================================================
+// ⏰ EXIT AT 3:15 PM
+// =================================================================
+
+exitHour          = 15
+exitMinute        = 15
+exitTimeCondition = (hour == exitHour and minute >= exitMinute)
+
+if exitTimeCondition
+    strategy.close_all(comment="3:15 Daily Exit")
+
+
+// =================================================================
+// 🔔 ALERTS
+// =================================================================
+
+alertcondition(Index_Long_Signal  and inDateRange, title="LONG Entry",  message="🟢 LONG ENTRY @ {{ticker}} | Level: {{close}}")
+alertcondition(Index_Short_Signal and inDateRange, title="SHORT Entry", message="🔴 SHORT ENTRY @ {{ticker}} | Level: {{close}}")
+
+alertcondition(exitSignal and exitSide == "LONG"  and inDateRange, title="EXIT Long",  message="🚪 EXIT LONG @ {{ticker}} | {{close}}")
+alertcondition(exitSignal and exitSide == "SHORT" and inDateRange, title="EXIT Short", message="🚪 EXIT SHORT @ {{ticker}} | {{close}}")
+
+alertcondition(exitTimeCondition, title="3:15 PM Exit", message="⏰ 3:15 PM — Close all trades @ {{ticker}}")

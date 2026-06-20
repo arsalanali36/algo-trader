@@ -19,7 +19,14 @@ STRATEGY LOGIC (simple):
   │  3:15 PM — har open position force-exit                     │
   └─────────────────────────────────────────────────────────────┘
 
-PINE COUNTERPART:  ../_PINE/rsi_v1.pine  (same logic, TV pe test karo)
+PINE COUNTERPART:  ../_PINE/rsi_v1.pine  (v2 — 3:15 EOD force-exit + no re-entry
+  added 2026-06-20, same rule as AUTO_EXIT_AT below; same logic, TV pe test karo)
+
+BACKTEST PATH:  ../_TOOLS/backtest_engine.py uses its own _rsi_signal_backtest()
+  (not this file's compute_signal — that one's bar convention is for the LIVE
+  feed's still-forming last candle). The 3:15 cutoff there now exits AT bar i's
+  own close, not via next-bar fill — next-bar fill pushed the cutoff exit to
+  15:20+, which TV (no such bug) never matched.
 
 CONFIG:  ../nifty_config.json  →  "rsi_v1": { ... }
   Saari values wahan se aati hain — yahan kuch hardcode nahi hai.
