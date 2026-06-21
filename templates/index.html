@@ -105,7 +105,22 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 <div class="hdr">
   <span class="dot" id="hdr-dot"></span>
   <h1>Algo Trader</h1>
+  <span id="envBadge" style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px;border:1px solid #30363d;margin-left:2px">—</span>
   <span id="hdr-badge" style="font-size:12px;color:#8b949e">—</span>
+  <script>
+  (function(){
+    var h = location.hostname;
+    var isLocal = h==='127.0.0.1' || h==='localhost' || h.indexOf('192.168.')===0 || h.indexOf('10.')===0 || h.indexOf('172.')===0;
+    var b = document.getElementById('envBadge');
+    if(b){
+      b.textContent = isLocal ? '🖥️ LOCAL' : '☁️ VPS';
+      b.style.background   = isLocal ? '#1f6feb22' : '#23863622';
+      b.style.color        = isLocal ? '#58a6ff'   : '#3fb950';
+      b.style.borderColor  = isLocal ? '#1f6feb'   : '#238636';
+      document.title = (isLocal ? '🖥️ LOCAL · ' : '☁️ VPS · ') + 'Algo Trader';
+    }
+  })();
+  </script>
   <div class="hdr-right">
     <button onclick="qoToggle()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">⚡ Quick Order</button>
     <button onclick="watchToggle()" id="watch-btn" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">👁 Watch</button>
