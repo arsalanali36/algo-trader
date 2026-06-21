@@ -137,6 +137,41 @@ def _index_spot(symbol):
     return q.get("ltp")
 
 
+def _current_premium(sec_id):
+    """Live option premium — WebSocket feed first, REST quote fallback."""
+    try:
+        import dhan_feed
+        q = dhan_feed.get_quote(sec_id) or {}
+        if q.get("ltp"):
+            return float(q["ltp"])
+    except Exception:
+        pass
+    q = _broker().quote(str(sec_id), "NSE_FNO") or {}
+    return float(q["ltp"]) if q.get("ltp") else None
+
+
+def _index_atr(symbol, period=14, mult=2.0):
+    """Best-effort index ATR-based trail distance (index points). Falls back to
+    None if candles unavailable (e.g. token expired) — caller uses a default."""
+    try:
+        import dhan_master
+        info = dhan_master.get_equity_info(symbol)
+        if not info:
+            return None
+        sec_id, seg, inst = info
+        df = _broker().intraday_candles(sec_id, seg, inst, days=2, interval=5)
+        if df is None or len(df) < period + 1:
+            return None
+        import pandas as pd
+        h, l, c = df["high"], df["low"], df["close"]
+        pc = c.shift(1)
+        tr = pd.concat([(h - l), (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
+        atr = tr.ewm(alpha=1.0 / period, adjust=False).mean().iloc[-1]  # Wilder RMA
+        return float(atr) * mult if atr and atr == atr else None
+    except Exception:
+        return None
+
+
 def _maybe_reset_day():
     global _last_reset_day
     today = ist_now().date()
@@ -254,16 +289,24 @@ def _do_entry(symbol, action, cfg):
         sl     = entry_px + sl_pts if sl_pts else None
         target = entry_px - tgt_pts if tgt_pts else None
 
-    _wh_state[symbol] = {
+    st = {
         "position": direction, "direction": direction,
         "opt_sec_id": str(sec_id), "opt_trad_sym": trad_sym, "opt_qty": qty,
         "opt_action": opt_action, "entry_premium": entry_px,
-        "sl": sl, "target": target,
+        "sl": sl, "target": target, "entry_spot": spot,
+        "idx_sl": None, "idx_trail_dist": None,
         "entry_time": now.strftime("%H:%M"),
     }
+    # index-mode trailing: trail the underlying by ATR×mult (fallback 30 pts)
+    if cfg.get("trail_mode") == "index":
+        dist = _index_atr(symbol, mult=float(cfg.get("trail_value", 2) or 2)) or 30.0
+        st["idx_trail_dist"] = dist
+        st["idx_sl"] = spot - dist if direction == "LONG" else spot + dist
+
+    _wh_state[symbol] = st
     _trades_today[symbol] = _trades_today.get(symbol, 0) + 1
     _log(f"ENTRY {direction} {symbol} {opt_action} {qty} {trad_sym} @ {entry_px:.2f} "
-         f"(spot={spot:.2f} off={offset} SL={sl} TGT={target})")
+         f"(spot={spot:.2f} off={offset} SL={sl} TGT={target} mode={cfg.get('trail_mode')})")
     return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": _wh_state[symbol]}
 
 
@@ -289,6 +332,73 @@ def _do_exit(symbol, cfg, reason="TV_EXIT"):
     _log(f"EXIT_INFO {st['opt_trad_sym']} reason={reason} @ {exit_px:.2f}")
     _wh_state[symbol]["position"] = None
     return {"ok": True, "msg": f"closed {st['opt_trad_sym']} @ {exit_px:.2f} ({reason})"}
+
+
+def monitor_tick():
+    """Called every few seconds by the dashboard daemon. Trails SL, hits
+    target/SL, and force-squares-off open webhook positions at 3:15 PM.
+
+    trail_mode 'premium' → trail on the option premium (default).
+    trail_mode 'index'   → trail a stop on the underlying; exit option on breach.
+    """
+    with _lock:
+        _maybe_reset_day()
+        cfg = _cfg()
+        now = ist_now()
+        force_sq = (now.hour, now.minute) >= _hm(cfg.get("squareoff_at", "15:15"))
+        tv = float(cfg.get("trail_value", 0) or 0)
+        mode = cfg.get("trail_mode", "premium")
+
+        for symbol in list(_wh_state.keys()):
+            st = _wh_state[symbol]
+            if not st.get("position"):
+                continue
+
+            if force_sq:
+                _do_exit(symbol, cfg, reason="SQUAREOFF_315")
+                continue
+
+            if mode == "index":
+                spot = _index_spot(symbol)
+                if spot is None:
+                    continue
+                dist = st.get("idx_trail_dist") or 30.0
+                if st["direction"] == "LONG":
+                    new = spot - dist
+                    if st.get("idx_sl") is None or new > st["idx_sl"]:
+                        st["idx_sl"] = new
+                    if spot <= st["idx_sl"]:
+                        _do_exit(symbol, cfg, reason="IDX_TRAIL")
+                else:  # SHORT (bought PE / sold CE) — exit if underlying rises
+                    new = spot + dist
+                    if st.get("idx_sl") is None or new < st["idx_sl"]:
+                        st["idx_sl"] = new
+                    if spot >= st["idx_sl"]:
+                        _do_exit(symbol, cfg, reason="IDX_TRAIL")
+                continue
+
+            # premium mode — trail on the option premium itself
+            prem = _current_premium(st["opt_sec_id"])
+            if prem is None:
+                continue
+            if st["opt_action"] == "BUY":      # long option: SL below, ratchet up
+                if tv:
+                    new = prem - tv
+                    if st.get("sl") is None or new > st["sl"]:
+                        st["sl"] = new
+                if st.get("sl") is not None and prem <= st["sl"]:
+                    _do_exit(symbol, cfg, reason="TRAIL_SL")
+                elif st.get("target") and prem >= st["target"]:
+                    _do_exit(symbol, cfg, reason="TARGET")
+            else:                              # short option: SL above, ratchet down
+                if tv:
+                    new = prem + tv
+                    if st.get("sl") is None or new < st["sl"]:
+                        st["sl"] = new
+                if st.get("sl") is not None and prem >= st["sl"]:
+                    _do_exit(symbol, cfg, reason="TRAIL_SL")
+                elif st.get("target") and prem <= st["target"]:
+                    _do_exit(symbol, cfg, reason="TARGET")
 
 
 def status():

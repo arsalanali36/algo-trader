@@ -1539,8 +1539,22 @@ def auto_scheduler():
         
         time.sleep(30)
 
+def webhook_monitor_loop():
+    """Trails SL / target / 3:15 squareoff for open TradingView-webhook positions."""
+    import webhook_executor as wh
+    import time
+    while True:
+        try:
+            _ensure_feed_started()
+            wh.monitor_tick()
+        except Exception as e:
+            print("Webhook monitor error:", e)
+        time.sleep(3)
+
+
 if __name__ == '__main__':
     threading.Thread(target=auto_scheduler, daemon=True).start()
+    threading.Thread(target=webhook_monitor_loop, daemon=True).start()
 
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
