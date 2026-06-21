@@ -1197,13 +1197,16 @@ var int tradesToday = 0
 if ta.change(time("D")) != 0
     tradesToday := 0
 
+// 🔗 Webhook: ye symbol alert JSON me jaata hai — dashboard isi se option resolve karta hai
+whSymbol = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
+
 if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Long", strategy.long)
     tradesToday += 1
     Green_Zone := false
     Red_Zone   := false
     log.info("SIGNAL LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
-    alert("🟢 LONG ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
+    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"buy"}', alert.freq_once_per_bar_close)
 
 if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Short", strategy.short)
@@ -1211,7 +1214,7 @@ if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     Green_Zone := false
     Red_Zone   := false
     log.info("SIGNAL SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
-    alert("🔴 SHORT ENTRY @ " + syminfo.ticker + " | Level: " + str.tostring(close) + " | Type: " + lineType, alert.freq_once_per_bar_close)
+    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"sell"}', alert.freq_once_per_bar_close)
 
 
 // =================================================================
@@ -1283,7 +1286,7 @@ if strategy.position_size > 0 and barstate.isconfirmed
     if exitSignal
         strategy.close("Long", comment=exitReason)
         log.info("EXIT LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
-        alert("🚪 EXIT LONG @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "LONG"
         atrSL_Long := na
 
@@ -1300,7 +1303,7 @@ if strategy.position_size < 0 and barstate.isconfirmed
     if exitSignal
         strategy.close("Short", comment=exitReason)
         log.info("EXIT SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
-        alert("🚪 EXIT SHORT @ " + syminfo.ticker + " | Reason: " + exitReason + " | Price: " + str.tostring(close), alert.freq_once_per_bar_close)
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "SHORT"
         atrSL_Short := na
 
@@ -1314,6 +1317,8 @@ exitMinute        = 15
 exitTimeCondition = (hour == exitHour and minute >= exitMinute)
 
 if exitTimeCondition
+    if strategy.position_size != 0
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
     strategy.close_all(comment="3:15 Daily Exit")
 
 
