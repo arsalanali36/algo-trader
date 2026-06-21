@@ -47,6 +47,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .btn-gray{background:#21262d;color:#e6edf3;border:1px solid #30363d}
 .btn-amber{background:#9e6a03;color:#fff}
 .btn-row{display:flex;gap:8px;flex-wrap:wrap}
+.wh-f{display:flex;flex-direction:column;gap:3px;font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.3px}
+.wh-f input,.wh-f select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:12px;text-transform:none}
+.wh-seg.on{background:#1f6feb;color:#fff}
+.wh-optseg.on{background:#9e6a03;color:#fff}
 
 /* ── Strategy card ── */
 .strat-card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:18px}
@@ -116,6 +120,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('pnl')">P&amp;L</div>
   <div class="tab" onclick="switchTab('log')">Logs</div>
   <div class="tab" onclick="switchTab('config')">Config</div>
+  <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
   <div class="tab active" onclick="switchTab('pine')">📌 Pine</div>
 </div>
 
@@ -226,6 +231,109 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div id="cfg-content"></div>
 </div>
 
+<!-- WEBHOOK TAB -->
+<div class="tab-body" id="tab-webhook" style="padding:16px 18px 24px">
+  <!-- status + mode -->
+  <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
+    <span id="wh-dot" style="width:9px;height:9px;border-radius:50%;background:#3fb950;display:inline-block"></span>
+    <span id="wh-status-txt" style="font-size:13px">Webhook listener active</span>
+    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
+      <span style="font-size:11px;color:#8b949e">Mode</span>
+      <div id="wh-mode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+        <span class="wh-seg" data-mode="paper" onclick="whSetMode('paper')" style="padding:5px 14px;font-size:12px;cursor:pointer">Paper</span>
+        <span class="wh-seg" data-mode="live"  onclick="whSetMode('live')"  style="padding:5px 14px;font-size:12px;cursor:pointer;color:#8b949e">Live</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- connection -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">WEBHOOK URL <span style="color:#6e7681">(TradingView alert → Notifications → Webhook URL)</span></div>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+      <code id="wh-url" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></code>
+      <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whCopy('wh-url')">Copy</button>
+    </div>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">SECRET TOKEN <span style="color:#6e7681">(URL me already lagaa hai)</span></div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <code id="wh-token" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7"></code>
+      <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whRegenToken()">Regenerate</button>
+    </div>
+  </div>
+
+  <!-- execution config -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <span style="font-size:13px;font-weight:600;color:#adbac7">Execution config</span>
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:#8b949e">Option mode</span>
+        <div id="wh-optmode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+          <span class="wh-optseg" data-m="SELL" onclick="whSetOptMode('SELL')" style="padding:5px 13px;font-size:12px;cursor:pointer">Sell</span>
+          <span class="wh-optseg" data-m="BUY"  onclick="whSetOptMode('BUY')"  style="padding:5px 13px;font-size:12px;cursor:pointer;color:#8b949e">Buy</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- live LTP preview -->
+    <div style="display:flex;align-items:center;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px 11px;margin-bottom:14px;flex-wrap:wrap">
+      <select id="wh-ltp-sym" onchange="whLtpPoll()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 7px;font-size:12px">
+        <option>NIFTY</option><option>BANKNIFTY</option>
+      </select>
+      <span style="font-size:11px;color:#8b949e">selected strike LTP</span>
+      <span style="margin-left:auto;display:flex;gap:14px;font-size:13px">
+        <span>CE <b id="wh-ltp-ce" style="color:#3fb950">—</b></span>
+        <span>PE <b id="wh-ltp-pe" style="color:#f85149">—</b></span>
+      </span>
+      <span id="wh-ltp-strike" style="width:100%;font-size:10.5px;color:#6e7681"></span>
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
+      <label class="wh-f">Strike<select id="wh-strike_offset">
+        <option value="-2">ITM+2 (-2)</option><option value="-1">ITM+1 (-1)</option>
+        <option value="0" selected>ATM (0)</option>
+        <option value="1">OTM+1 (+1)</option><option value="2">OTM+2 (+2)</option></select></label>
+      <label class="wh-f">Qty (lots)<input id="wh-qty" type="number" min="1" value="1"></label>
+      <label class="wh-f">Max trades/day<input id="wh-max_trades_per_day" type="number" min="1" value="2"></label>
+      <label class="wh-f">Trail mode<select id="wh-trail_mode">
+        <option value="premium">Premium</option><option value="index">Index</option></select></label>
+      <label class="wh-f">Trail value<input id="wh-trail_value" type="number" min="0" value="20"></label>
+      <label class="wh-f">SL points<input id="wh-sl_points" type="number" min="0" value="30"></label>
+      <label class="wh-f">Target points<input id="wh-target_points" type="number" min="0" value="0"></label>
+      <label class="wh-f">No entry after<input id="wh-no_entry_after" value="15:15"></label>
+      <label class="wh-f">Squareoff at<input id="wh-squareoff_at" value="15:15"></label>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+      <button class="btn btn-green" onclick="whSave()">💾 Save config</button>
+      <span id="wh-save-msg" style="font-size:12px;color:#8b949e"></span>
+      <span style="margin-left:auto;font-size:10.5px;color:#6e7681">Strategy logic Pine me; ye sirf execution. Pine alert JSON me koi field bhejo to wo override karega.</span>
+    </div>
+  </div>
+
+  <!-- TradingView alert template -->
+  <div class="card" style="margin-bottom:12px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+      <span style="font-size:13px;font-weight:600;color:#adbac7">TradingView alert message</span>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-gray" style="padding:5px 10px;font-size:11px" onclick="whCopy('wh-tpl-entry')">Copy ENTRY</button>
+        <button class="btn btn-gray" style="padding:5px 10px;font-size:11px" onclick="whCopy('wh-tpl-exit')">Copy EXIT</button>
+      </div>
+    </div>
+    <pre id="wh-tpl-entry" style="margin:0 0 8px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px;font-size:11px;color:#79c0ff;white-space:pre-wrap"></pre>
+    <pre id="wh-tpl-exit" style="margin:0;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px;font-size:11px;color:#79c0ff;white-space:pre-wrap"></pre>
+  </div>
+
+  <!-- positions + log -->
+  <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:12px">
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">Open positions</div>
+      <div id="wh-positions" style="font-size:12px;color:#8b949e">—</div>
+    </div>
+    <div class="card">
+      <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">Live webhook log</div>
+      <div id="wh-log" style="font-family:ui-monospace,monospace;font-size:10.5px;line-height:1.7;color:#8b949e;max-height:180px;overflow:auto">—</div>
+    </div>
+  </div>
+</div>
+
 <!-- PINE TAB -->
 <div class="tab-body active" id="tab-pine" style="padding:16px 20px 20px">
   <!-- Inner sub-tab bar -->
@@ -318,32 +426,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       </div>
     </div>
 
-    <!-- Backtest -->
-    <div style="background:#0d1117;border:1px solid #30363d;border-radius:7px;padding:14px;margin-top:12px">
-      <div style="font-size:11px;color:#8b949e;font-weight:600;letter-spacing:0.5px;margin-bottom:10px">📊 BACKTEST (PYTHON vs PINE)</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <div>
-          <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">From</label>
-          <input type="date" id="bt-from" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
-        </div>
-        <div>
-          <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">To</label>
-          <input type="date" id="bt-to" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
-        </div>
-      </div>
-      <div style="margin-top:8px">
-        <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv, select both together for Pine vs Python match %). From/To auto-fills from the file's date range — adjust manually if needed.</label>
-        <input type="file" id="bt-tv-log" multiple accept=".log,.txt,.csv" onchange="btAutoDateRange()" style="width:100%;background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:11px;box-sizing:border-box">
-      </div>
-      <div style="margin-top:10px;display:flex;gap:8px;align-items:center">
-        <button id="bt-run-btn" onclick="btRun()" style="padding:5px 14px;background:#9e6a03;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:600;cursor:pointer">▶ Run Backtest</button>
-        <div id="bt-msg" style="font-size:12px;color:#8b949e"></div>
-      </div>
-      <div id="bt-results" style="display:none;margin-top:12px">
-        <div id="bt-stats" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;font-size:11px;color:#8b949e"></div>
-        <div id="bt-chart" style="width:100%;height:320px;border:1px solid #30363d;border-radius:6px"></div>
-      </div>
-    </div>
   </div>
 </div>
 
@@ -386,6 +468,138 @@ function switchTab(id) {
   document.getElementById('tab-'+id).classList.add('active');
   activeTab = id;
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
+  if (id === 'webhook') { whEnter(); } else { whLeave(); }
+}
+
+// ── WEBHOOK TAB ──
+let WH_MODE='paper', WH_OPTMODE='SELL', WH_TOKEN='', _whTimer=null;
+
+function whEnter(){ renderWebhookTab(); whTick(); _whTimer=setInterval(whTick, 4000); }
+function whLeave(){ if(_whTimer){ clearInterval(_whTimer); _whTimer=null; } }
+function whTick(){ whLtpPoll(); whStatusPoll(); }
+
+async function renderWebhookTab(){
+  let cfg = (GLOBAL_CONFIG && GLOBAL_CONFIG.webhook_v1) || {};
+  try { const r=await fetch('/api/config'); GLOBAL_CONFIG=await r.json(); cfg=GLOBAL_CONFIG.webhook_v1||{}; } catch(e){}
+  WH_TOKEN  = cfg.secret_token || '';
+  WH_MODE   = cfg.mode || 'paper';
+  WH_OPTMODE= (cfg.opt_action||'SELL').toUpperCase();
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el!=null && v!=null) el.value=v; };
+  set('wh-strike_offset', String(cfg.strike_offset!=null?cfg.strike_offset:0));
+  set('wh-qty', cfg.qty!=null?cfg.qty:1);
+  set('wh-max_trades_per_day', cfg.max_trades_per_day!=null?cfg.max_trades_per_day:2);
+  set('wh-trail_mode', cfg.trail_mode||'premium');
+  set('wh-trail_value', cfg.trail_value!=null?cfg.trail_value:20);
+  set('wh-sl_points', cfg.sl_points!=null?cfg.sl_points:30);
+  set('wh-target_points', cfg.target_points!=null?cfg.target_points:0);
+  set('wh-no_entry_after', cfg.no_entry_after||'15:15');
+  set('wh-squareoff_at', cfg.squareoff_at||'15:15');
+  whSetMode(WH_MODE, true); whSetOptMode(WH_OPTMODE, true);
+  whRenderConn(); whRenderTpl();
+}
+
+function whRenderConn(){
+  document.getElementById('wh-token').innerText = WH_TOKEN || '(set karein — Regenerate)';
+  document.getElementById('wh-url').innerText = location.origin + '/api/webhook/tv?token=' + (WH_TOKEN||'');
+}
+function whRenderTpl(){
+  const sym = (document.getElementById('wh-ltp-sym')||{}).value || 'NIFTY';
+  {% raw %}
+  document.getElementById('wh-tpl-entry').innerText =
+    '{"id":"{{timenow}}","symbol":"SYM","signal":"ENTRY","action":"{{strategy.order.action}}"}'.replace('SYM', sym);
+  document.getElementById('wh-tpl-exit').innerText =
+    '{"id":"{{timenow}}","symbol":"SYM","signal":"EXIT"}'.replace('SYM', sym);
+  {% endraw %}
+}
+
+function whSetMode(m, silent){
+  WH_MODE=m;
+  document.querySelectorAll('#wh-mode-seg .wh-seg').forEach(e=>{
+    const on=e.dataset.mode===m; e.classList.toggle('on',on); e.style.color=on?'#fff':'#8b949e'; });
+  if(!silent && m==='live') flash('⚠️ Live mode — Save karne pe real orders lagenge','#d29922');
+}
+function whSetOptMode(m, silent){
+  WH_OPTMODE=m;
+  document.querySelectorAll('#wh-optmode-seg .wh-optseg').forEach(e=>{
+    const on=e.dataset.m===m; e.classList.toggle('on',on); e.style.color=on?'#fff':'#8b949e'; });
+}
+
+function whCopy(id){
+  const t=document.getElementById(id).innerText;
+  navigator.clipboard.writeText(t).then(()=>flash('Copied ✓')).catch(()=>flash('Copy fail','#f85149'));
+}
+function whRegenToken(){
+  const a=new Uint8Array(10); crypto.getRandomValues(a);
+  WH_TOKEN='wh_'+Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('');
+  whRenderConn();
+  flash('Naya token bana — Save config dabayein','#d29922');
+}
+
+async function whSave(){
+  const g=id=>document.getElementById(id).value;
+  let cfg={}; try{ const r=await fetch('/api/config'); cfg=await r.json(); }catch(e){}
+  cfg.webhook_v1 = Object.assign({}, cfg.webhook_v1||{}, {
+    active:true, mode:WH_MODE, instrument:'options',
+    strike_offset:parseInt(g('wh-strike_offset')),
+    qty:parseInt(g('wh-qty')),
+    max_trades_per_day:parseInt(g('wh-max_trades_per_day')),
+    trail_mode:g('wh-trail_mode'),
+    trail_value:parseFloat(g('wh-trail_value')),
+    sl_points:parseFloat(g('wh-sl_points')),
+    target_points:parseFloat(g('wh-target_points')),
+    no_entry_after:g('wh-no_entry_after'),
+    squareoff_at:g('wh-squareoff_at'),
+    secret_token:WH_TOKEN,
+    opt_action:WH_OPTMODE,
+    long_opt_type: WH_OPTMODE==='SELL'?'PE':'CE',
+    short_opt_type:WH_OPTMODE==='SELL'?'CE':'PE'
+  });
+  const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  GLOBAL_CONFIG=cfg;
+  const msg=document.getElementById('wh-save-msg');
+  msg.innerText = res.ok?'Saved ✓':'Save failed'; msg.style.color = res.ok?'#3fb950':'#f85149';
+  whRenderTpl();
+  setTimeout(()=>msg.innerText='',3000);
+}
+
+async function whLtpPoll(){
+  const symEl=document.getElementById('wh-ltp-sym'); if(!symEl) return;
+  const sym=symEl.value||'NIFTY';
+  const off=(document.getElementById('wh-strike_offset')||{}).value||'0';
+  whRenderTpl();
+  try{
+    const r=await fetch('/api/option-ltp?symbol='+sym+'&offset='+off);
+    const d=await r.json();
+    if(d.ok){
+      document.getElementById('wh-ltp-ce').innerText = d.ce_ltp!=null?('₹'+d.ce_ltp):'—';
+      document.getElementById('wh-ltp-pe').innerText = d.pe_ltp!=null?('₹'+d.pe_ltp):'—';
+      document.getElementById('wh-ltp-strike').innerText = (d.ce_sym||'')+'   /   '+(d.pe_sym||'');
+    } else {
+      document.getElementById('wh-ltp-ce').innerText='—'; document.getElementById('wh-ltp-pe').innerText='—';
+      const note=document.getElementById('wh-ltp-strike');
+      note.innerText = 'LTP unavailable — Dhan token check karein';
+      note.title = d.msg||'';
+    }
+  }catch(e){}
+}
+
+async function whStatusPoll(){
+  try{
+    const r=await fetch('/api/webhook/status'); const d=await r.json();
+    const pos=d.positions||{}; const keys=Object.keys(pos);
+    let ph = keys.length ? '' : '<span style="color:#6e7681">koi open position nahi</span>';
+    keys.forEach(s=>{ const p=pos[s];
+      ph += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d">'
+          + '<span style="color:#adbac7">'+(p.opt_trad_sym||s)+'</span>'
+          + '<span>'+p.opt_action+' '+p.opt_qty+' @ '+Number(p.entry_premium||0).toFixed(2)+'</span></div>'; });
+    document.getElementById('wh-positions').innerHTML = ph;
+    const ev=d.events||[];
+    document.getElementById('wh-log').innerHTML = ev.length
+      ? ev.slice().reverse().map(e=>'<div><span style="color:#6e7681">'+(e.t||'').slice(11)+'</span> '+(e.msg||'').replace(/</g,'&lt;')+'</div>').join('')
+      : '<span style="color:#6e7681">—</span>';
+    document.getElementById('wh-status-txt').innerText = d.active?('Webhook active · mode '+(d.mode||'paper')):'Webhook inactive';
+    document.getElementById('wh-dot').style.background = d.active?'#3fb950':'#6e7681';
+  }catch(e){}
 }
 
 function switchCfgTab(type) {
@@ -1584,8 +1798,115 @@ const _RUN_PARAM_DEFAULTS = {
   qty: 1, timeframe: '5m', max_trades_per_symbol: 2, instrument: 'options'
 };
 
+// VWAP-EMA Failure's saved variants are equity-only and need a richer field
+// set (symbol choice, R-multiples, partial exits) than the generic RSI-shaped
+// _RUN_PARAM_LABELS/_RUN_PARAM_DEFAULTS this modal was originally built for —
+// those were never updated for any strategy besides RSI, so e.g. range/ema's
+// Run modal still mislabels its own fields too (pre-existing, left as-is here
+// since it's not what broke). vwap gets its own explicit field list instead.
+const _VWAP_FIELDS = [
+  {id: 'symbol', label: 'Symbol', type: 'select', opts: ['TCS', 'POLYCAB', 'RELIANCE']},
+  {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity', 'options'], default: 'equity'},
+  {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m', '3m', '5m', '15m', '30m'], default: '5m'},
+  {id: 'qty', label: 'Quantity', type: 'number', default: 1},
+  {id: 'ema_len', label: 'EMA Length', type: 'number', default: 10},
+  {id: 'sl_buffer_points', label: 'SL Buffer (pts)', type: 'number', default: 2},
+  {id: 'r1', label: 'Target 1 (R)', type: 'number', default: 1},
+  {id: 'r2', label: 'Target 2 (R)', type: 'number', default: 2},
+  {id: 'r3', label: 'Target 3 (R)', type: 'number', default: 3},
+  {id: 'max_sl_percent', label: 'Max SL %', type: 'number', default: 2.5},
+  {id: 'partial1_pct', label: 'Qty% Exit @ T1', type: 'number', default: 40},
+  {id: 'partial2_pct', label: 'Qty% Exit @ T2', type: 'number', default: 30},
+  {id: 'use_partial_exits', label: 'Use Partial Exits', type: 'checkbox', default: true},
+  {id: 'use_daily_trend_filter', label: 'Daily Trend Filter', type: 'checkbox', default: true},
+  {id: 'use_session_filter', label: 'Session Filter', type: 'checkbox', default: true}
+];
+
+function _runModalFieldHtml(f, val) {
+  if (val === undefined) val = f.default;
+  if (f.type === 'select') {
+    return `<div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">${f.label}</label>
+      <select id="rmp-${f.id}" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
+        ${f.opts.map(o => `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`).join('')}
+      </select></div>`;
+  }
+  if (f.type === 'checkbox') {
+    return `<div style="display:flex;align-items:end"><label style="font-size:12px;color:#e6edf3;display:flex;align-items:center;gap:6px"><input type="checkbox" id="rmp-${f.id}" ${val ? 'checked' : ''}> ${f.label}</label></div>`;
+  }
+  return `<div><label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">${f.label}</label>
+    <input id="rmp-${f.id}" type="number" value="${val ?? ''}" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box"></div>`;
+}
+
+// vwap_ema_failure.py is shared by 3 saved configs (vwap_v1/v2/v3 — one per
+// symbol). The old "Variant" dropdown just listed those 3 raw config keys,
+// which wasn't useful for actually deciding what to deploy — instead, show
+// this strategy's saved Backtest Results here so the user can pick a result
+// (by symbol/PF/win-rate) and deploy straight from it. Clicking a result's
+// "🚀 Use This" button loads its symbol+cfg into the variant whose saved
+// `symbol` matches (falling back to vwap_v1 if none match yet).
+async function _runModalRenderVwap(allCfg, preferId) {
+  const variantIds = Object.keys(allCfg).filter(k => k.startsWith('vwap_v'));
+  if (!variantIds.length) variantIds.push('vwap_v1');
+  _runStrategyId = variantIds.includes(preferId) ? preferId : variantIds[0];
+
+  const sc = allCfg[_runStrategyId] || {};
+  const fieldsHtml = _VWAP_FIELDS.map(f => _runModalFieldHtml(f, sc[f.id])).join('');
+  document.getElementById('run-modal-params').innerHTML =
+    `<div id="run-modal-backtest-results" style="margin-bottom:12px"></div>
+     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">${fieldsHtml}</div>`;
+
+  const stR = await fetch('/api/run-status');
+  const st = await stR.json();
+  _runModalUpdateStatus(st[_runStrategyId] || false);
+  _runModalLoadBacktestResults(allCfg);
+}
+
+async function _runModalLoadBacktestResults(allCfg) {
+  const wrap = document.getElementById('run-modal-backtest-results');
+  if (!wrap) return;
+  wrap.innerHTML = '<div style="font-size:11px;color:#8b949e">Loading backtest results...</div>';
+  try {
+    const r = await fetch('/api/backtest/saved');
+    const all = await r.json();
+    const results = (Array.isArray(all) ? all : []).filter(e => (e.strategy || '').startsWith('vwap'));
+    if (!results.length) {
+      wrap.innerHTML = '<div style="font-size:11px;color:#8b949e">No saved backtest results yet for this strategy — run one from 📊 Results.</div>';
+      return;
+    }
+    wrap.innerHTML = `<label style="font-size:11px;color:#8b949e;display:block;margin-bottom:5px">📊 Backtest Results — pick one to deploy</label>
+      <div style="display:flex;flex-direction:column;gap:5px;max-height:140px;overflow-y:auto">
+        ${results.map(e => {
+          const sym = (e.cfg || {}).symbol || (e.symbols || [])[0] || '?';
+          const pf = e.summary && e.summary.profit_factor != null ? e.summary.profit_factor : '—';
+          const wr = e.summary && e.summary.win_rate != null ? e.summary.win_rate + '%' : '—';
+          const pnl = e.summary && e.summary.pnl_points != null ? e.summary.pnl_points : '—';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;background:#161b22;border:1px solid #30363d;border-radius:5px;padding:6px 8px;font-size:11px">
+            <span style="color:#e6edf3">${e.name} <span style="color:#8b949e">(${sym})</span></span>
+            <span style="color:#8b949e">PF ${pf} · Win ${wr} · PnL ${pnl}</span>
+            <button type="button" class="btn btn-gray" style="padding:3px 8px;font-size:10px" onclick='_runModalUseBacktestResult(${JSON.stringify(e).replace(/'/g, "&apos;")})'>🚀 Use This</button>
+          </div>`;
+        }).join('')}
+      </div>`;
+  } catch (e) {
+    wrap.innerHTML = '<div style="font-size:11px;color:#f85149">Failed to load backtest results</div>';
+  }
+}
+
+async function _runModalUseBacktestResult(entry) {
+  const r = await fetch('/api/config');
+  const allCfg = await r.json();
+  const variantIds = Object.keys(allCfg).filter(k => k.startsWith('vwap_v'));
+  const sym = (entry.cfg || {}).symbol || (entry.symbols || [])[0];
+  const targetId = variantIds.find(id => (allCfg[id] || {}).symbol === sym) || entry.strategy || variantIds[0] || 'vwap_v1';
+  allCfg[targetId] = { ...(allCfg[targetId] || {}), ...(entry.cfg || {}) };
+  await _runModalRenderVwap(allCfg, targetId);
+  const msg = document.getElementById('run-modal-msg');
+  if (msg) { msg.textContent = `✅ Loaded "${entry.name}" into ${targetId}`; setTimeout(() => { msg.textContent = ''; }, 3000); }
+}
+
 async function runModalOpen(stratId, versionName, timestamp, pyFile) {
-  _runStrategyId = stratId || versionName.toLowerCase().replace(/[^a-z0-9]/g,'_');
+  stratId = stratId || versionName.toLowerCase().replace(/[^a-z0-9]/g,'_');
+  _runStrategyId = stratId;
   document.getElementById('run-modal-title').textContent = stratId;
   document.getElementById('run-modal-sub').textContent   = versionName + (timestamp ? '  ·  ' + timestamp : '');
   document.getElementById('run-modal-msg').textContent     = '';
@@ -1596,18 +1917,22 @@ async function runModalOpen(stratId, versionName, timestamp, pyFile) {
   const cfg = await cfgR.json();
   const st  = await stR.json();
 
-  _runModalUpdateStatus(st[stratId] || false);
   runModalMode('paper');
 
-  const sc = cfg[stratId] || {};
-  const params = { ..._RUN_PARAM_DEFAULTS, ...sc };
-  document.getElementById('run-modal-params').innerHTML = Object.entries(params).map(([k, v]) => {
-    const label = _RUN_PARAM_LABELS[k] || k;
-    return `<div>
-      <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">${label}</label>
-      <input id="rmp-${k}" value="${v}" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
-    </div>`;
-  }).join('');
+  if (stratId.startsWith('vwap')) {
+    await _runModalRenderVwap(cfg, stratId);
+  } else {
+    _runModalUpdateStatus(st[stratId] || false);
+    const sc = cfg[stratId] || {};
+    const params = { ..._RUN_PARAM_DEFAULTS, ...sc };
+    document.getElementById('run-modal-params').innerHTML = Object.entries(params).map(([k, v]) => {
+      const label = _RUN_PARAM_LABELS[k] || k;
+      return `<div>
+        <label style="font-size:11px;color:#8b949e;display:block;margin-bottom:3px">${label}</label>
+        <input id="rmp-${k}" value="${v}" style="width:100%;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 8px;font-size:12px;box-sizing:border-box">
+      </div>`;
+    }).join('');
+  }
 
   const ov = document.getElementById('run-modal-overlay');
   ov.style.display = 'flex';
@@ -1660,157 +1985,20 @@ async function runModalToggle() {
   setTimeout(() => { msg.textContent = ''; }, 4000);
 }
 
-// ── Backtest (Pine vs Python) ───────────────────────────────────────────────
-let _btChart = null;
-const _BT_MONTHS = {jan:'01',feb:'02',mar:'03',apr:'04',may:'05',jun:'06',jul:'07',aug:'08',sep:'09',oct:'10',nov:'11',dec:'12'};
-
-// Reads the uploaded TV file(s) client-side and auto-fills From/To from the
-// min/max date found inside — still a plain <input type=date>, so user can
-// override manually after the auto-fill.
-async function btAutoDateRange() {
-  const input = document.getElementById('bt-tv-log');
-  const msg = document.getElementById('bt-msg');
-  if (!input.files.length) return;
-
-  const isoRe = /(\d{4})-(\d{2})-(\d{2})[ T]\d{1,2}:\d{2}/g;
-  const tvRe  = /([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4}),?\s+(\d{1,2}):(\d{2})/g;
-  const dates = [];
-
-  for (const f of input.files) {
-    const text = await f.text();
-    let m;
-    while ((m = isoRe.exec(text)) !== null) dates.push(`${m[1]}-${m[2]}-${m[3]}`);
-    while ((m = tvRe.exec(text)) !== null) {
-      const mon = _BT_MONTHS[m[1].toLowerCase()];
-      if (mon) dates.push(`${m[3]}-${mon}-${String(m[2]).padStart(2,'0')}`);
-    }
-  }
-
-  if (!dates.length) {
-    msg.textContent = '⚠ Could not detect dates in file — set From/To manually';
-    msg.style.color = '#d29922';
-    return;
-  }
-  dates.sort();
-  document.getElementById('bt-from').value = dates[0];
-  document.getElementById('bt-to').value   = dates[dates.length - 1];
-  msg.textContent = `📅 Auto-filled from file: ${dates[0]} → ${dates[dates.length - 1]} (edit manually if needed)`;
-  msg.style.color = '#3fb950';
-}
-
-async function btRun() {
-  const dfrom = document.getElementById('bt-from').value;
-  const dto   = document.getElementById('bt-to').value;
-  const tvLogInput = document.getElementById('bt-tv-log');
-  const btn = document.getElementById('bt-run-btn');
-  const msg = document.getElementById('bt-msg');
-
-  if (!dfrom || !dto) { msg.textContent = '⚠ Pick From + To dates'; return; }
-
-  btn.disabled = true;
-  const origText = btn.textContent;
-  btn.textContent = '⏳ Running...';
-  msg.textContent = '';
-
-  const fd = new FormData();
-  fd.append('strategy', _runStrategyId);
-  fd.append('date_from', dfrom);
-  fd.append('date_to', dto);
-  for (const f of tvLogInput.files) fd.append('tv_files', f);   // log + csv together, backend sorts them out
-
-  try {
-    const r = await fetch('/api/backtest/run', { method: 'POST', body: fd });
-    const d = await r.json();
-    if (d.error) { msg.textContent = '⚠ ' + d.error; return; }
-    btRenderResults(d);
-  } catch (e) {
-    msg.textContent = '⚠ ' + e.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = origText;
-  }
-}
-
-let _btLastResult = null;
-
-function btRenderResults(d) {
-  _btLastResult = d;
-  document.getElementById('bt-results').style.display = 'block';
-  const s = d.summary;
-  let statsHtml = `
-    <div>Trades: <b style="color:#e6edf3">${s.n_trades}</b></div>
-    <div>Wins: <b style="color:#3fb950">${s.wins}</b></div>
-    <div>Losses: <b style="color:#f85149">${s.losses}</b></div>
-    <div>PnL: <b style="color:${s.pnl_points >= 0 ? '#3fb950' : '#f85149'}">${s.pnl_points} pts</b></div>`;
-  if (d.accuracy) {
-    statsHtml += `<div>Pine match: <b style="color:#d29922">${d.accuracy.matched}/${d.accuracy.total_tv} (${d.accuracy.pct}%)</b></div>`;
-  }
-  statsHtml += `<div><button onclick="btOpenFullView()" style="padding:3px 10px;background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:5px;font-size:11px;cursor:pointer" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">🔍 Full View</button></div>`;
-  document.getElementById('bt-stats').innerHTML = statsHtml;
-  btDrawChart(d.candles, d.trades, d.tv_trades);
-}
-
-function btOpenFullView() {
-  if (!_btLastResult) return;
-  const payload = Object.assign({}, _btLastResult, {
-    strategy: _runStrategyId,
-    cfg: (GLOBAL_CONFIG && GLOBAL_CONFIG[_runStrategyId]) || {},
-    date_from: document.getElementById('bt-from').value,
-    date_to: document.getElementById('bt-to').value
-  });
-  localStorage.setItem('bt_chart_data', JSON.stringify(payload));
-  window.open('/backtest-chart', '_blank');
-}
-
-function btDrawChart(candles, pyTrades, tvTrades) {
-  const container = document.getElementById('bt-chart');
-  container.innerHTML = '';
-  if (_btChart) { try { _btChart.remove(); } catch(e) {} _btChart = null; }
-  if (!candles || candles.length === 0) {
-    container.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100%;color:#8b949e;font-size:12px">No candle data</div>';
-    return;
-  }
-  _btChart = LightweightCharts.createChart(container, {
-    width: container.clientWidth, height: container.clientHeight,
-    layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
-    grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-    timeScale: { timeVisible: true, secondsVisible: false }
-  });
-  const series = _btChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
-  series.setData(candles);
-
-  const markers = [];
-  (pyTrades || []).forEach(t => {
-    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
-                   color: '#1f6feb', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
-                   text: 'PY ' + t.side + ' @' + t.entry_price });
-    if (t.exit_time) {
-      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
-                     color: '#58a6ff', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
-                     text: 'PY exit @' + t.exit_price });
-    }
-  });
-  (tvTrades || []).forEach(t => {
-    markers.push({ time: t.entry_time, position: t.side === 'Long' ? 'belowBar' : 'aboveBar',
-                   color: '#d29922', shape: t.side === 'Long' ? 'arrowUp' : 'arrowDown',
-                   text: 'TV ' + t.side + ' @' + t.entry_price });
-    if (t.exit_time) {
-      markers.push({ time: t.exit_time, position: t.side === 'Long' ? 'aboveBar' : 'belowBar',
-                     color: '#f0883e', shape: t.side === 'Long' ? 'arrowDown' : 'arrowUp',
-                     text: 'TV exit @' + t.exit_price });
-    }
-  });
-  series.setMarkers(markers.sort((a, b) => a.time - b.time));
-  _btChart.timeScale().fitContent();
-}
+// Backtest now lives only on the dedicated Results page (📊 Results button,
+// /backtest-chart) — this Run modal's old embedded mini-backtest panel
+// always ran against NIFTY regardless of which symbol/variant was selected
+// here (it hardcoded the index data path), so it's removed rather than fixed.
 
 async function runModalSaveConfig() {
   const inputs = document.querySelectorAll('[id^="rmp-"]');
   const patch = {};
   inputs.forEach(inp => {
+    if (inp.id === 'rmp-variant-picker') return;   // selector itself, not a config field
     const k = inp.id.replace('rmp-', '');
+    if (inp.type === 'checkbox') { patch[k] = inp.checked; return; }
     const v = inp.value;
-    patch[k] = isNaN(v) || v === '' ? v : Number(v);
+    patch[k] = (v !== '' && !isNaN(v)) ? Number(v) : v;
   });
   const r = await fetch('/api/config');
   const cfg = await r.json();
@@ -2169,6 +2357,19 @@ async function pineCopyCode(version) {
 
 // init
 pineLoadLatest();
+
+// "🚀 Deploy" from the Backtest Results page's Saved Results list lands
+// here as /?deploy=<strategy>&symbol=<sym> — auto-open the Run modal for
+// that strategy so the user can go straight to Paper/Live without hunting
+// for it in the strategy grid.
+(function _autoOpenDeployFromQuery() {
+  const params = new URLSearchParams(window.location.search);
+  const deploy = params.get('deploy');
+  if (!deploy) return;
+  const base = deploy.startsWith('vwap') ? 'vwap_ema_failure' : deploy;
+  setTimeout(() => runModalOpen(deploy, base, '', `strategies/${base}.py`), 300);
+  history.replaceState(null, '', window.location.pathname);
+})();
 </script>
 </body>
 </html>

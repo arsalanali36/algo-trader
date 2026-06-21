@@ -59,10 +59,19 @@ _DEFAULTS = {
     "no_entry_after":  "15:15",       # IST — no new entry at/after this
     "squareoff_at":    "15:15",       # IST — force-exit all (Phase 2)
     "secret_token":    "",
-    "long_opt_type":   "CE",          # LONG signal → this option type
-    "short_opt_type":  "PE",          # SHORT signal → this option type
-    "opt_action":      "BUY",         # "BUY" (long option) | "SELL" (option selling)
+    # Default = option SELLING (range_trader convention): LONG→sell PE, SHORT→sell CE.
+    # UI toggle flips this trio to BUY mode (LONG→buy CE, SHORT→buy PE).
+    "long_opt_type":   "PE",          # LONG signal → this option type
+    "short_opt_type":  "CE",          # SHORT signal → this option type
+    "opt_action":      "SELL",        # "SELL" (option selling) | "BUY" (long option)
 }
+
+# Execution params the Pine alert JSON may override per-signal (dashboard config
+# is the fallback). Lets the user set a value once in Pine and have it reflect
+# here automatically — no double entry.
+_OVERRIDABLE = ("strike_offset", "qty", "sl_points", "target_points",
+                "trail_value", "trail_mode", "opt_action",
+                "long_opt_type", "short_opt_type")
 
 # ── shared state ────────────────────────────────────────────────────────────────
 _lock = threading.Lock()
@@ -226,13 +235,24 @@ def handle_signal(payload: dict) -> dict:
         if signal == "EXIT":
             return _do_exit(symbol, cfg, reason="TV_EXIT")
         if signal == "ENTRY":
-            return _do_entry(symbol, action, cfg)
+            return _do_entry(symbol, action, cfg, payload)
         return {"ok": False, "msg": f"unknown signal '{signal}'"}
 
 
-def _do_entry(symbol, action, cfg):
+def _merge_overrides(cfg, payload):
+    """Alert payload values win over dashboard config for execution params."""
+    eff = dict(cfg)
+    for k in _OVERRIDABLE:
+        if k in payload and payload[k] not in (None, ""):
+            eff[k] = payload[k]
+    return eff
+
+
+def _do_entry(symbol, action, cfg, payload=None):
     import dhan_master
     import smart_order
+
+    cfg = _merge_overrides(cfg, payload or {})
 
     # ── safety net (server-side) ──
     now = ist_now()
