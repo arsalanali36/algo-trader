@@ -58,7 +58,7 @@ def _ensure_feed_started():
             return
         try:
             import dhan_feed, range_trader
-            token, cid = range_trader.load_creds()
+            token, cid = _creds()
             from dhanhq import DhanContext
             ctx = DhanContext(cid, token)
             dhan_feed.start(ctx, [])   # start with empty list; instruments added dynamically
@@ -89,6 +89,16 @@ RANGE_CFG    = BASE_DIR / "range_config.json"
 UNIV_SCRIPT  = str(TRADERS_DIR / "universe_trader.py")
 UNIV_LOG     = BASE_DIR / "logs" / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
+
+def _creds():
+    """JWT token + client_id from the dashboard's OWN config (root data/config.json).
+    Don't use range_trader.load_creds(): on the local dev layout range_trader is
+    imported from _TRADERS/ so its BASE_DIR is _TRADERS and it reads
+    _TRADERS/data/config.json — which doesn't exist (token is saved at root).
+    On the VPS (flat layout) it happened to read root, which is why it worked there
+    but not locally. Reading CONFIG_FILE directly is correct on both."""
+    cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
+    return cfg["jwt_token"], cfg["client_id"]
 
 STRATEGIES = {
     "ema":      {"script": TRADER_SCRIPT, "log": LOG_FILE,  "cfg": TC_FILE,   "grep": "nifty_ema_trader"},
@@ -604,7 +614,7 @@ def api_positions_ltp():
     # Fallback: Dhan REST API
     try:
         import range_trader, requests as _req
-        token, cid = range_trader.load_creds()
+        token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         sec_id_map = _get_sec_ids(syms)
         if sec_id_map:
@@ -675,7 +685,7 @@ def api_option_ltp():
 
     try:
         import dhan_master, range_trader, requests as _req
-        token, cid = range_trader.load_creds()
+        token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
 
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
@@ -725,7 +735,7 @@ def api_manual_order():
         import dhan_master
         import range_trader
 
-        token, cid = range_trader.load_creds()
+        token, cid = _creds()
         opt_type = 'PE' if side == 'BUY' else 'CE'
 
         _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
@@ -834,7 +844,7 @@ def api_close_position():
 
     try:
         import range_trader, requests as _req, time as _time
-        token, cid = range_trader.load_creds()
+        token, cid = _creds()
 
         # Security ID from scrip master
         sec_id = _get_sec_ids([t_sym]).get(t_sym, '')
@@ -901,7 +911,7 @@ def api_debug_order():
         import range_trader, requests as req, socket as sk
         # confirm IPv4 patch is active
         ipv4_active = sk.getaddrinfo.__name__ == '_v4'
-        token, cid = range_trader.load_creds()
+        token, cid = _creds()
         _hdrs_dbg = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _qr_dbg   = req.post("https://api.dhan.co/v2/marketfeed/ltp",
                              json={"IDX_I": [13]}, headers=_hdrs_dbg, timeout=5)
