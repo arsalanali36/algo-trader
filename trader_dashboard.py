@@ -668,7 +668,9 @@ def api_ltp_stream():
 
 # Cache: (symbol, offset) -> {result, ts}
 _ltp_cache = {}
-_LTP_CACHE_TTL = 3  # seconds — match widget refresh interval
+_LTP_CACHE_TTL = 30  # seconds — was 3 (caused Dhan 429: 2 dashboards + live
+                     # strategies share one token). 30s = far fewer LTP calls,
+                     # fine for a preview (esp. market-closed last price).
 
 @app.route('/api/option-ltp')
 def api_option_ltp():
@@ -692,6 +694,11 @@ def api_option_ltp():
         _idx_id  = _idx_sec.get(symbol, "13")
         _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                              json={"IDX_I": [int(_idx_id)]}, headers=headers, timeout=5)
+        if _qr_idx.status_code != 200:
+            # index call rate-limited/failed — show last good value instead of erroring
+            if cached:
+                return jsonify({**cached['data'], '_stale': True})
+            return jsonify({"ok": False, "msg": "LTP busy (Dhan rate limit) — thodi der me"})
         idx_price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
 
         sec_ce, t_ce, _ = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
@@ -700,6 +707,7 @@ def api_option_ltp():
         ltp_ce = ltp_pe = None
         sec_ids = [int(s) for s in [sec_ce, sec_pe] if s]
         if sec_ids:
+            _t.sleep(1.1)   # Dhan marketfeed ~1 req/sec — space the 2nd call from the index call
             qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                            json={"NSE_FNO": sec_ids}, headers=headers, timeout=5)
             if qr.status_code == 200:

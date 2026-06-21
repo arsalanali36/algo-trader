@@ -302,7 +302,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
 
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
-      <label class="wh-f">Strike<select id="wh-strike_offset">
+      <label class="wh-f">Strike<select id="wh-strike_offset" onchange="whLtpPoll()">
         <option value="-2">ITM+2 (-2)</option><option value="-1">ITM+1 (-1)</option>
         <option value="0" selected>ATM (0)</option>
         <option value="1">OTM+1 (+1)</option><option value="2">OTM+2 (+2)</option></select></label>
@@ -489,9 +489,16 @@ function switchTab(id) {
 // ── WEBHOOK TAB ──
 let WH_MODE='paper', WH_OPTMODE='SELL', WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null;
 
-function whEnter(){ renderWebhookTab(); whTick(); _whTimer=setInterval(whTick, 4000); }
-function whLeave(){ if(_whTimer){ clearInterval(_whTimer); _whTimer=null; } }
-function whTick(){ whLtpPoll(); whStatusPoll(); }
+let _whLtpTimer=null;
+function whEnter(){
+  renderWebhookTab(); whStatusPoll(); whLtpPoll();
+  _whTimer    = setInterval(whStatusPoll, 4000);   // status/log — local, no Dhan
+  _whLtpTimer = setInterval(whLtpPoll, 15000);     // LTP — light on Dhan (rate limit)
+}
+function whLeave(){
+  if(_whTimer){ clearInterval(_whTimer); _whTimer=null; }
+  if(_whLtpTimer){ clearInterval(_whLtpTimer); _whLtpTimer=null; }
+}
 
 async function renderWebhookTab(){
   let cfg = (GLOBAL_CONFIG && GLOBAL_CONFIG.webhook_v1) || {};
