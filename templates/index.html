@@ -472,7 +472,7 @@ function switchTab(id) {
 }
 
 // ── WEBHOOK TAB ──
-let WH_MODE='paper', WH_OPTMODE='SELL', WH_TOKEN='', _whTimer=null;
+let WH_MODE='paper', WH_OPTMODE='SELL', WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null;
 
 function whEnter(){ renderWebhookTab(); whTick(); _whTimer=setInterval(whTick, 4000); }
 function whLeave(){ if(_whTimer){ clearInterval(_whTimer); _whTimer=null; } }
@@ -484,6 +484,7 @@ async function renderWebhookTab(){
   WH_TOKEN  = cfg.secret_token || '';
   WH_MODE   = cfg.mode || 'paper';
   WH_OPTMODE= (cfg.opt_action||'SELL').toUpperCase();
+  WH_PUBLIC_BASE = cfg.public_webhook_base || '';
   const set=(id,v)=>{ const el=document.getElementById(id); if(el!=null && v!=null) el.value=v; };
   set('wh-strike_offset', String(cfg.strike_offset!=null?cfg.strike_offset:0));
   set('wh-qty', cfg.qty!=null?cfg.qty:1);
@@ -500,7 +501,8 @@ async function renderWebhookTab(){
 
 function whRenderConn(){
   document.getElementById('wh-token').innerText = WH_TOKEN || '(set karein — Regenerate)';
-  document.getElementById('wh-url').innerText = location.origin + '/api/webhook/tv?token=' + (WH_TOKEN||'');
+  const base = WH_PUBLIC_BASE || (location.origin + '/api/webhook/tv');
+  document.getElementById('wh-url').innerText = base + '?token=' + (WH_TOKEN||'');
 }
 function whRenderTpl(){
   const sym = (document.getElementById('wh-ltp-sym')||{}).value || 'NIFTY';
