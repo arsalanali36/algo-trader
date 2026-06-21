@@ -36,20 +36,21 @@ Web dashboard se control hota hai — koi command line nahi.
 
 - **IP:** `72.61.173.32` (Hostinger)
 - **User:** `root`
-- **Project dir:** `/root/code4/`
+- **Project dir:** `/root/CODE3B- TV BACKTEST ENGINE/`  *(dir name me space hai — scp/ssh me quote karo. Purana `/root/code4` ab nahi hai.)*
+- **venv:** `/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python`
 - **SSH Key:** `C:\Users\arsal\.ssh\khazana_ed25519`
 - **Dashboard:** `http://72.61.173.32:5099`
 - **Service:** `algo-dashboard` (systemd, auto-start on reboot)
 
 ## Deploy Karna
 
-```bash
-python deploy_vps.py
-```
+> ⚠️ `deploy_vps.py` abhi **STALE** hai (2026-06-21): REMOTE_DIR `/root/code4` galat,
+> FILES me root-level trader files hain jo ab `_TRADERS/` me hain, aur spaced dir ke liye
+> scp/ssh quoting nahi. Fix hone tak **manual SCP** use karo (dir name quote karke):
 
-Ya manually:
 ```bash
-scp -i "C:/Users/arsal/.ssh/khazana_ed25519" -o StrictHostKeyChecking=no <file> root@72.61.173.32:/root/code4/
+# dir name me space hai — SFTP scp literal path leta hai, bas quote karo:
+scp -i "C:/Users/arsal/.ssh/khazana_ed25519" -o StrictHostKeyChecking=no <file> "root@72.61.173.32:/root/CODE3B- TV BACKTEST ENGINE/<file>"
 ssh -i "C:/Users/arsal/.ssh/khazana_ed25519" root@72.61.173.32 "systemctl restart algo-dashboard"
 ```
 
@@ -64,7 +65,7 @@ Ab system mein aap ek strategy ke **multiple variations** (jaise `ema_v1`, `ema_
 ## Data Storage
 
 ```
-/root/code4/              ← VPS pe
+/root/CODE3B- TV BACKTEST ENGINE/   ← VPS pe (purana /root/code4 nahi)
 ├── logs/                 ← Har variation ki separate log file (e.g. ema_v1.log)
 ├── nifty_config.json     ← All configurations (hot-reload)
 ├── data/                 
@@ -149,3 +150,4 @@ Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper m
 | 2026-06-20 | Backtest Results page — match-status filter tabs (All/Exact/Near/Entry-only/No match) above chart, filters chart markers + table together; TV's own Win Rate/Profit Factor/Sharpe/Trades shown subtly under each PY stat card (`tv_summary` in backtest_engine.py, shared `_compute_stats()` for PY+TV); Range Chain renamed "Range Chain" in dropdown (was raw `ARS_CHAIN` config key), version dropdown shows just the suffix. |
 | 2026-06-20 | **`_CHARTING/` reusable charting module** — candle pattern detection (`patterns.py`, extracted verbatim from `range_trader.py`, behavior-preserving — regression gate re-confirmed 90.2%/93% baseline unchanged) + pivot/zone builder (`zones.py`, same extraction) + library-backed indicator calc (`indicators.py`, uses the open-source `ta` package — `pandas-ta` doesn't support Python 3.14 here, numba build fails) + JSON shaper (`plot_spec.py`). `backtest_engine.py`'s `_run_range`/`_run_rsi`/`_run_ema`/`_run_vwap_ema` all now emit a `plot_spec` (zones/pattern markers/indicator lines) in the backtest JSON; `backtest_chart.html` has a generic `_renderPlotSpec()` that draws it — no per-strategy chart JS needed going forward. Dashboard also got a no-code "➕ Add Indicator" dropdown (`/api/indicators/list` + `/api/indicators/compute`) backed by the same registry, persisted per strategy+date-range in localStorage. Goal: close the Pine-vs-Python visualization gap that was costing debugging time; stretch goal is visualization good enough to skip the Pine-first step for new strategies. **Found and left unfixed (separate scope):** `/backtest` route in `trader_dashboard.py` 500s — `send_file(BASE_DIR / 'backtest_dashboard.html')` points at a nonexistent path (real file is at `_TOOLS/backtest_dashboard.html`); the working route is `/backtest-chart` → `templates/backtest_chart.html`. |
 | 2026-06-20 | **VWAP-EMA Failure Reversal strategy** added (Mukul's strategy, decent on TCS/POLYCAB/RIL 5-min). `strategies/vwap_ema_failure.py` — EMA(10) vs daily VWAP regime, failure/reversal trigger, R-multiple targets w/ partial exits (40/30/30%), daily-trend filter, session filter; 3:15 EOD force-exit enforced bar-by-bar (no overnight holds, ever — project rule). `_TOOLS/backtest_engine.py` — generic per-symbol equity 1-min downloader (`ensure_equity_data`/`load_equity_1m_range`, mirrors NIFTY's, uses `dhan_master.get_equity_info()`), `resample_with_volume()` (VWAP needs volume, NIFTY's `resample()` doesn't keep it), `_run_vwap_ema()` runner registered as `_RUNNERS["vwap"]`. Configs: `vwap_v1`(TCS)/`vwap_v2`(POLYCAB)/`vwap_v3`(RELIANCE) in `nifty_config.json`, all `active:false` (backtest-only for now). Pine: `_PINE/v6.pine` / `vwap_v{1,2,3}.pine`. |
+| 2026-06-21 | **TradingView Webhook → auto order engine** (Phases 1-4, LIVE on VPS). TV Pine sirf thin signal (`{id,symbol,signal:ENTRY/EXIT,action:buy/sell}`) bhejta hai; strike (ATM±N)/qty/paper-live/trailing/exit sab Python decide karta — strategy Pine me hi rehti, zero drift. `webhook_executor.py` (NEW): `handle_signal` + monitor (trailing SL premium/index, target, 3:15 squareoff), dedup, max-trades/day, no-entry-after. `trader_dashboard.py`: `/api/webhook/tv` (token auth ?token=/X-WH-Token) + `/api/webhook/status` + monitor daemon + scheduler guard (webhook_v1 process nahi). `templates/index.html`: 🔗 Webhook tab — URL/secret-token, config grid, **Sell/Buy toggle** (SELL default: LONG→PE sell, SHORT→CE sell), **live strike LTP** (CE+PE, `/api/option-ltp` reuse), TV alert template (`{% raw %}` for `{{...}}`), positions+log. **Pine override:** alert JSON me koi exec param (sl/qty/strike_offset…) bheja to dashboard config override (`_merge_overrides`). Reuse: `dhan_master.get_option_contract`, `smart_order.execute` (paper==live), `DhanBroker`, `dhan_feed`; log parse_pnl-compatible. VPS verified: real paper SELL 24000-PE @72.30. Config `webhook_v1`. |
