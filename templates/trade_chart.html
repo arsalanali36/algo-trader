@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><title>Trade Chart</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  body{margin:0;background:#0d1117;color:#e6edf3;font-family:-apple-system,Segoe UI,Roboto,sans-serif}
+  .hdr{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid #21262d}
+  .hdr h1{font-size:16px;margin:0;font-weight:600}
+  .pill{font-size:12px;padding:3px 10px;border-radius:12px;border:1px solid #30363d;background:#161b22}
+  .muted{color:#8b949e;font-size:12px}
+  #chart{width:100%;height:calc(100vh - 110px)}
+  #msg{padding:40px;text-align:center;color:#8b949e;font-size:14px}
+</style></head>
+<body>
+  <div class="hdr">
+    <h1 id="sym">Trade Chart</h1>
+    <span class="pill" id="side">—</span>
+    <span class="muted" id="px">—</span>
+    <span class="pill" id="pnl">—</span>
+    <span class="muted" id="date" style="margin-left:auto"></span>
+  </div>
+  <div id="msg" style="display:none"></div>
+  <div id="chart"></div>
+<script>
+(function(){
+  const q = new URLSearchParams(location.search);
+  const sym = q.get('sym')||'', side=(q.get('side')||'').toUpperCase();
+  const entry=parseFloat(q.get('entry')||0), exit=parseFloat(q.get('exit')||0);
+  const et=q.get('et')||'', xt=q.get('xt')||'', qty=parseFloat(q.get('qty')||0);
+  document.getElementById('sym').textContent = sym || 'Trade Chart';
+  const sideEl=document.getElementById('side');
+  sideEl.textContent = side||'—';
+  sideEl.style.color = side==='SELL'?'#f85149':'#3fb950';
+  document.getElementById('px').textContent = (entry?('₹'+entry.toFixed(2)):'—')+'  →  '+(exit?('₹'+exit.toFixed(2)):'—')+(et?('   ('+et+' → '+xt+')'):'');
+  // P&L: SELL = entry-exit, BUY = exit-entry
+  const pts = side==='SELL' ? (entry-exit) : (exit-entry);
+  const rs  = qty ? pts*qty : null;
+  const pnlEl=document.getElementById('pnl');
+  pnlEl.textContent = (pts>=0?'+':'')+pts.toFixed(2)+' pts'+(rs!=null?('  ('+(rs>=0?'+':'')+'₹'+rs.toFixed(0)+')'):'');
+  pnlEl.style.color = pts>=0?'#3fb950':'#f85149';
+
+  function showMsg(t){ document.getElementById('chart').style.display='none'; const m=document.getElementById('msg'); m.style.display='block'; m.textContent=t; }
+
+  const dt=q.get('date')||'';
+  fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):''))
+    .then(r=>r.json()).then(d=>{
+      document.getElementById('date').textContent = d.date||'';
+      if(!d.ok){ showMsg(d.msg||'Data nahi mila'); return; }
+      if(!d.candles || !d.candles.length){ showMsg('Is din ka intraday data nahi (non-trading day?)'); return; }
+      const chart = LightweightCharts.createChart(document.getElementById('chart'), {
+        layout:{ background:{color:'#0d1117'}, textColor:'#8b949e' },
+        grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
+        timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
+        rightPriceScale:{ borderColor:'#30363d' },
+        crosshair:{ mode:0 }
+      });
+      const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
+        borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
+      s.setData(d.candles);
+      const mk=[];
+      if(d.entry_mk) mk.push({time:d.entry_mk, position:'belowBar', color:'#3fb950', shape:'arrowUp',   text:'Entry '+side+' ₹'+entry.toFixed(2)});
+      if(d.exit_mk)  mk.push({time:d.exit_mk,  position:'aboveBar', color:'#f85149', shape:'arrowDown', text:'Exit ₹'+exit.toFixed(2)});
+      mk.sort((a,b)=>a.time-b.time);
+      if(mk.length) s.setMarkers(mk);
+      // entry/exit price lines
+      if(entry) s.createPriceLine({price:entry, color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Entry'});
+      if(exit)  s.createPriceLine({price:exit,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Exit'});
+      chart.timeScale().fitContent();
+      window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
+    }).catch(e=>showMsg('Error: '+e.message));
+})();
+</script>
+</body></html>

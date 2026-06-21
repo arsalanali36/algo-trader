@@ -729,6 +729,45 @@ def api_option_ltp():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/trade-chart')
+def trade_chart_page():
+    return render_template('trade_chart.html')
+
+@app.route('/api/trade-chart-data')
+def api_trade_chart_data():
+    """Option premium 1-min candles for one completed trade + entry/exit marker times.
+    Data: Dhan /v2/charts/intraday (raw REST). sec_id from trad_sym (nearest live expiry)."""
+    import dhan_master, requests as _req, datetime as _dt
+    trad_sym = request.args.get('trad_sym', '').strip()
+    date_str = request.args.get('date', '').strip() or \
+        (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    entry_t  = request.args.get('et', '').strip()   # HH:MM IST
+    exit_t   = request.args.get('xt', '').strip()
+    try:
+        sec_id = dhan_master.get_sec_id_for_trad_sym(trad_sym)
+        if not sec_id:
+            return jsonify({"ok": False, "msg": f"sec_id not found: {trad_sym}"})
+        token, cid = _creds()
+        hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
+            "securityId": str(sec_id), "exchangeSegment": "NSE_FNO", "instrument": "OPTIDX",
+            "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
+        d = r.json()
+        if not d.get("open"):
+            return jsonify({"ok": False, "msg": f"{date_str} ka intraday data nahi (non-trading day?)"})
+        candles, entry_mk, exit_mk = [], None, None
+        for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
+            t_ist = int(ts) + 19800   # +5:30 → chart shows IST (treated as UTC by lightweight-charts)
+            hhmm  = _dt.datetime.utcfromtimestamp(int(ts) + 19800).strftime("%H:%M")
+            candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
+                            "low": round(float(l), 2), "close": round(float(c), 2)})
+            if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
+            if exit_t  and hhmm == exit_t:  exit_mk = t_ist
+        return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
+                        "trad_sym": trad_sym, "date": date_str})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
 @app.route('/api/manual-order', methods=['POST'])
 def api_manual_order():
     data   = request.get_json()

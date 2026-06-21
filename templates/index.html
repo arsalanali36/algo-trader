@@ -1237,10 +1237,17 @@ async function updatePnl() {
     if(cv('gross'))     row += _pnlTD(_fmt(gross),_pnlColor(gross),'right','font-weight:600');
     if(cv('tax'))       row += _pnlTD(tax!=null?'−₹'+tax.toFixed(2):'—','#f85149','right');
     if(cv('net'))       row += _pnlTD(_fmt(net),_pnlColor(net),'right','font-weight:700');
+    row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty})" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
     return row;
   });
+  oCols.push({l:'Chart',a:'center'});
   _setHtml(ordEl,_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows)));
 
+}
+
+function openTradeChart(sym, side, entry, exit, et, xt, qty){
+  const q = new URLSearchParams({sym, side, entry, exit, et, xt, qty});
+  window.open('/trade-chart?'+q.toString(), '_blank');
 }
 
 function formatLogLine(L) {
