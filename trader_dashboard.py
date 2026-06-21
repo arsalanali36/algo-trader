@@ -1446,6 +1446,43 @@ def api_save_summary():
         return jsonify({"msg": f"Error: {e}"})
 
 
+# ── TradingView Webhook → auto order ──────────────────────────────────────────
+@app.route('/api/webhook/tv', methods=['POST'])
+def api_webhook_tv():
+    """Receive a TradingView Pine alert (JSON) and execute via webhook_executor.
+
+    Auth: token via ?token= query OR X-WH-Token header, matched against
+    nifty_config.json["webhook_v1"]["secret_token"]. Mismatch → 403.
+    Body: {"id","symbol","signal":"ENTRY|EXIT","action":"buy|sell"}
+    """
+    import webhook_executor as wh
+    secret = wh._cfg().get("secret_token", "")
+    given  = request.args.get("token") or request.headers.get("X-WH-Token", "")
+    if not secret or given != secret:
+        return jsonify({"ok": False, "msg": "forbidden"}), 403
+
+    # TradingView posts JSON; tolerate text/plain bodies too.
+    payload = request.get_json(silent=True)
+    if payload is None:
+        try:
+            payload = json.loads((request.get_data(as_text=True) or "").strip() or "{}")
+        except Exception:
+            return jsonify({"ok": False, "msg": "bad payload"}), 400
+
+    _ensure_feed_started()
+    try:
+        res = wh.handle_signal(payload)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
+@app.route('/api/webhook/status')
+def api_webhook_status():
+    import webhook_executor as wh
+    return jsonify(wh.status())
+
+
 import threading
 import requests
 
@@ -1475,6 +1512,8 @@ def auto_scheduler():
                     try:
                         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
+                            if _base(key) not in STRATEGIES:
+                                continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict) and cfg[key].get("active", True):
                                 requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode=paper", timeout=5)
                     except Exception as e:
@@ -1487,6 +1526,8 @@ def auto_scheduler():
                     try:
                         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
+                            if _base(key) not in STRATEGIES:
+                                continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict):
                                 requests.post(f"http://127.0.0.1:5099/api/stop?s={key}", timeout=5)
                     except Exception as e:
