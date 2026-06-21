@@ -42,6 +42,36 @@ def load(p):
     return json.loads(Path(p).read_text(encoding="utf-8"))
 
 
+def sync_images():
+    """Union-sync per-version image folders (_PINE/v{N}_imgs/) both ways.
+    Filenames are uuid-based so same name == same file; missing-on-one-side
+    files get copied across. Nothing is deleted."""
+    local_dirs = {os.path.basename(p) for p in glob.glob(str(LDIR / "*_imgs"))
+                  if os.path.isdir(p)}
+    vls = run(SSH + [f"ls -1d '{RDIR}'/*_imgs 2>/dev/null || true"], fatal=False) or ""
+    vps_dirs = {os.path.basename(l.strip()) for l in vls.splitlines() if l.strip()}
+
+    total_pushed = total_pulled = 0
+    for d in sorted(local_dirs | vps_dirs):
+        ldir = LDIR / d
+        rdir = f"{RDIR}/{d}"
+        ldir.mkdir(exist_ok=True)
+        run(SSH + [f"mkdir -p '{rdir}'"], fatal=False)
+        lfiles = {f.name for f in ldir.glob("*") if f.is_file()}
+        rls = run(SSH + [f"ls -1 '{rdir}' 2>/dev/null || true"], fatal=False) or ""
+        rfiles = {l.strip() for l in rls.splitlines() if l.strip()}
+        for f in lfiles - rfiles:                      # local -> VPS
+            run(SCP + [str(ldir / f), f"{HOST}:{rdir}/{f}"], fatal=False)
+            total_pushed += 1
+        for f in rfiles - lfiles:                      # VPS -> local
+            run(SCP + [f"{HOST}:{rdir}/{f}", str(ldir / f)], fatal=False)
+            total_pulled += 1
+        if lfiles | rfiles:
+            print(f"   imgs {d}: {len(lfiles | rfiles)} total")
+    if total_pushed or total_pulled:
+        print(f"   images: {total_pushed} pushed, {total_pulled} pulled")
+
+
 def main():
     if not (LDIR / "versions.json").exists():
         print("Local versions.json nahi mila:", LDIR); sys.exit(1)
@@ -98,6 +128,10 @@ def main():
         if lp.exists():
             run(SCP + [str(lp), f"{HOST}:{RDIR}/{f}"])
             pushed += 1
+
+    # 4) per-version images (v{N}_imgs/) bhi union-sync
+    print("Syncing images ...")
+    sync_images()
 
     print(f"\n✅ Sync done — dono identical ({len(merged_list)} versions).")
     if vps_only_ids:
