@@ -532,7 +532,10 @@ OHLC_lineOpacity         = math.round(OHLC_line_OpacityPercent / 100 * 255)
 pivotColor              = color.new(color.blue,   OHLC_lineOpacity)
 resistanceColor         = color.new(color.red,   OHLC_lineOpacity)
 supportColor            = color.new(color.green,   OHLC_lineOpacity)
-mode = 0
+// 🔄 FIXED: mode=0 tha jo "high[0]" yaani AAJ ka running high/low/close deta tha
+// (jo din ke saath badalta rehta hai), na ki yesterday ka FIXED value.
+// mode=1 ka matlab "D" series mein [1] bars pehle = yesterday's final HLC.
+mode = 1
 
 isFirstBarOfDay = (ta.change(time("D")) != 0)
 prevBarIndex = bar_index - 1
@@ -1067,11 +1070,6 @@ if (Bearish_Candle_exitingZone or Bullish_Candle_exitingZone) and inDateRange
     Green_Zone_Touch_and_Candle := Bullish_Candle_exitingZone
     Red_Zone_Touch_and_Candle   := Bearish_Candle_exitingZone
 
-    if Bullish_Candle_exitingZone
-        log.info("ZONE GREEN " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
-    if Bearish_Candle_exitingZone
-        log.info("ZONE RED " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " hi=" + str.tostring(high,"#.##") + " lo=" + str.tostring(low,"#.##") + " line=" + lineType)
-
     _distance = math.round(math.abs(_highPrice - _lowPrice))
     _distText = str.tostring(_distance)
     bullZoneLabel := label.new(bar_index + 10, _highPrice, text=_distText, xloc=xloc.bar_index, yloc=yloc.price,
@@ -1197,7 +1195,6 @@ var int tradesToday = 0
 if ta.change(time("D")) != 0
     tradesToday := 0
 
-// 🔗 Webhook: ye symbol alert JSON me jaata hai — dashboard isi se option resolve karta hai
 whSymbol = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
 
 if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
@@ -1205,7 +1202,6 @@ if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     tradesToday += 1
     Green_Zone := false
     Red_Zone   := false
-    log.info("SIGNAL LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
     alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"buy"}', alert.freq_once_per_bar_close)
 
 if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
@@ -1213,7 +1209,6 @@ if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     tradesToday += 1
     Green_Zone := false
     Red_Zone   := false
-    log.info("SIGNAL SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
     alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"sell"}', alert.freq_once_per_bar_close)
 
 
@@ -1285,7 +1280,6 @@ if strategy.position_size > 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Long", comment=exitReason)
-        log.info("EXIT LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
         alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "LONG"
         atrSL_Long := na
@@ -1302,7 +1296,6 @@ if strategy.position_size < 0 and barstate.isconfirmed
 
     if exitSignal
         strategy.close("Short", comment=exitReason)
-        log.info("EXIT SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
         alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "SHORT"
         atrSL_Short := na
