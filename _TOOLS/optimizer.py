@@ -22,12 +22,13 @@ def _run_single_worker(kwargs):
         if "error" in res:
             return {"cfg": cfg, "error": res["error"]}
             
-        net_pnl = res.get("pnl_points", 0)
-        win_rate = res.get("win_rate", 0)
-        total_trades = res.get("n_trades", 0)
-        max_dd = res.get("max_drawdown", 0)
-        profit_factor = res.get("profit_factor", 0)
-        sharpe = res.get("sharpe", 0)
+        summary = res.get("summary", {})
+        net_pnl = summary.get("pnl_points", 0)
+        win_rate = summary.get("win_rate", 0)
+        total_trades = summary.get("n_trades", 0)
+        max_dd = summary.get("max_drawdown", 0)
+        profit_factor = summary.get("profit_factor", 0)
+        sharpe = summary.get("sharpe", 0)
         
         return {
             "cfg": cfg,

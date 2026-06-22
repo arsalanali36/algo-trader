@@ -1,5 +1,835 @@
 [
   {
+    "id": 1782134490036,
+    "timestamp": "2026-06-22 18:51:30",
+    "strat_type": "bb_v1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-06-01",
+    "date_to": "2026-06-20",
+    "results": [
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "1.5",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 55.7,
+        "win_rate": 65.9,
+        "total_trades": 449,
+        "max_dd": -57.5,
+        "profit_factor": 1.18,
+        "sharpe": 1.03,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.5",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 52.1,
+        "win_rate": 70.5,
+        "total_trades": 61,
+        "max_dd": -16.7,
+        "profit_factor": 2.34,
+        "sharpe": 1.76,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.5",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 43.4,
+        "win_rate": 65.4,
+        "total_trades": 107,
+        "max_dd": -30.2,
+        "profit_factor": 1.45,
+        "sharpe": 1.11,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "1.5",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 32.9,
+        "win_rate": 67.7,
+        "total_trades": 347,
+        "max_dd": -75.9,
+        "profit_factor": 1.11,
+        "sharpe": 0.59,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.0",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 31.0,
+        "win_rate": 66.2,
+        "total_trades": 198,
+        "max_dd": -73.8,
+        "profit_factor": 1.14,
+        "sharpe": 0.56,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.5",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 28.8,
+        "win_rate": 65.1,
+        "total_trades": 63,
+        "max_dd": -12.9,
+        "profit_factor": 1.84,
+        "sharpe": 1.81,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "1.5",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 19.4,
+        "win_rate": 61.9,
+        "total_trades": 239,
+        "max_dd": -27.4,
+        "profit_factor": 1.13,
+        "sharpe": 0.63,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "1.5",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 15.3,
+        "win_rate": 64.9,
+        "total_trades": 111,
+        "max_dd": -32.8,
+        "profit_factor": 1.15,
+        "sharpe": 0.54,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.5",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 15.1,
+        "win_rate": 58.0,
+        "total_trades": 50,
+        "max_dd": -18.4,
+        "profit_factor": 1.29,
+        "sharpe": 0.68,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.5",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 14.6,
+        "win_rate": 60.6,
+        "total_trades": 33,
+        "max_dd": -7.4,
+        "profit_factor": 1.69,
+        "sharpe": 1.11,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "1.5",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 14.4,
+        "win_rate": 66.9,
+        "total_trades": 124,
+        "max_dd": -28.0,
+        "profit_factor": 1.13,
+        "sharpe": 0.5,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.0",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 10.5,
+        "win_rate": 62.3,
+        "total_trades": 252,
+        "max_dd": -75.8,
+        "profit_factor": 1.05,
+        "sharpe": 0.21,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "1.5",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 9.0,
+        "win_rate": 69.2,
+        "total_trades": 211,
+        "max_dd": -91.4,
+        "profit_factor": 1.04,
+        "sharpe": 0.14,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.0",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 8.8,
+        "win_rate": 62.3,
+        "total_trades": 106,
+        "max_dd": -31.6,
+        "profit_factor": 1.09,
+        "sharpe": 0.34,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.5",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 7.7,
+        "win_rate": 64.9,
+        "total_trades": 94,
+        "max_dd": -79.3,
+        "profit_factor": 1.05,
+        "sharpe": 0.13,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.0",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 7.4,
+        "win_rate": 66.5,
+        "total_trades": 170,
+        "max_dd": -78.3,
+        "profit_factor": 1.03,
+        "sharpe": 0.12,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "1.5",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 6.4,
+        "win_rate": 65.5,
+        "total_trades": 142,
+        "max_dd": -33.7,
+        "profit_factor": 1.05,
+        "sharpe": 0.22,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.0",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 5.6,
+        "win_rate": 68.2,
+        "total_trades": 148,
+        "max_dd": -93.0,
+        "profit_factor": 1.03,
+        "sharpe": 0.09,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.0",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 5.1,
+        "win_rate": 65.4,
+        "total_trades": 231,
+        "max_dd": -78.8,
+        "profit_factor": 1.02,
+        "sharpe": 0.1,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.5",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 5.0,
+        "win_rate": 58.3,
+        "total_trades": 60,
+        "max_dd": -26.4,
+        "profit_factor": 1.09,
+        "sharpe": 0.25,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.0",
+          "bb_window": "10",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 4.5,
+        "win_rate": 57.7,
+        "total_trades": 142,
+        "max_dd": -29.7,
+        "profit_factor": 1.05,
+        "sharpe": 0.18,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "1.5",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 2.5,
+        "win_rate": 67.9,
+        "total_trades": 234,
+        "max_dd": -90.6,
+        "profit_factor": 1.01,
+        "sharpe": 0.04,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.0",
+          "bb_window": "30",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 2.4,
+        "win_rate": 59.7,
+        "total_trades": 77,
+        "max_dd": -35.7,
+        "profit_factor": 1.03,
+        "sharpe": 0.09,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.5",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 2.1,
+        "win_rate": 58.5,
+        "total_trades": 53,
+        "max_dd": -23.4,
+        "profit_factor": 1.04,
+        "sharpe": 0.1,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "1.5",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 1.4,
+        "win_rate": 62.2,
+        "total_trades": 180,
+        "max_dd": -33.6,
+        "profit_factor": 1.01,
+        "sharpe": 0.05,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "1.5",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 1.2,
+        "win_rate": 65.1,
+        "total_trades": 269,
+        "max_dd": -88.8,
+        "profit_factor": 1.0,
+        "sharpe": 0.02,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.5",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -3.1,
+        "win_rate": 57.8,
+        "total_trades": 109,
+        "max_dd": -75.2,
+        "profit_factor": 0.98,
+        "sharpe": -0.07,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.0",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -3.7,
+        "win_rate": 60.7,
+        "total_trades": 89,
+        "max_dd": -36.7,
+        "profit_factor": 0.96,
+        "sharpe": -0.14,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "false",
+          "bb_std": "2.0",
+          "bb_window": "15",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -10.5,
+        "win_rate": 62.8,
+        "total_trades": 121,
+        "max_dd": -34.7,
+        "profit_factor": 0.91,
+        "sharpe": -0.39,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2.5",
+          "bb_window": "25",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -20.1,
+        "win_rate": 64.0,
+        "total_trades": 100,
+        "max_dd": -85.3,
+        "profit_factor": 0.88,
+        "sharpe": -0.36,
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": 1782134284482,
+    "timestamp": "2026-06-22 18:48:04",
+    "strat_type": "bb_v1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-20",
+    "results": [
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 136.8,
+        "win_rate": 66.4,
+        "total_trades": 1509,
+        "max_dd": -117.7,
+        "profit_factor": 1.08,
+        "sharpe": 0.87,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "15m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -97.2,
+        "win_rate": 62.4,
+        "total_trades": 109,
+        "max_dd": -211.9,
+        "profit_factor": 0.85,
+        "sharpe": -0.54,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "5m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -308.4,
+        "win_rate": 64.9,
+        "total_trades": 291,
+        "max_dd": -371.4,
+        "profit_factor": 0.74,
+        "sharpe": -1.45,
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": 1782134075329,
+    "timestamp": "2026-06-22 18:44:35",
+    "strat_type": "bb_v1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-05-01",
+    "date_to": "2026-06-20",
+    "results": [
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 100.1,
+        "win_rate": 68.0,
+        "total_trades": 459,
+        "max_dd": -73.8,
+        "profit_factor": 1.21,
+        "sharpe": 1.32,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "5m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -82.1,
+        "win_rate": 67.8,
+        "total_trades": 87,
+        "max_dd": -123.7,
+        "profit_factor": 0.72,
+        "sharpe": -0.99,
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": 1782133119003,
+    "timestamp": "2026-06-22 18:28:39",
+    "strat_type": "bb_v1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-05-01",
+    "date_to": "2026-06-20",
+    "results": [
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1mm5m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 64.0,
+        "win_rate": 100.0,
+        "total_trades": 1,
+        "max_dd": 0.0,
+        "profit_factor": null,
+        "sharpe": null,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "15m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": -2.0,
+        "win_rate": 62.1,
+        "total_trades": 29,
+        "max_dd": -49.9,
+        "profit_factor": 0.98,
+        "sharpe": -0.03,
+        "error": null
+      }
+    ]
+  },
+  {
+    "id": 1782132066070,
+    "timestamp": "2026-06-22 18:11:06",
+    "strat_type": "bb_v1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-05-01",
+    "date_to": "2026-06-20",
+    "results": [
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "5m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "max_dd": 0,
+        "profit_factor": 0,
+        "sharpe": 0,
+        "error": null
+      },
+      {
+        "cfg": {
+          "instrument": "equity",
+          "symbols": "RELIANCE",
+          "timeframe": "1m",
+          "active": "false",
+          "allow_short": "true",
+          "bb_std": "2",
+          "bb_window": "20",
+          "qty": "1",
+          "symbol": "RELIANCE"
+        },
+        "net_pnl": 0,
+        "win_rate": 0,
+        "total_trades": 0,
+        "max_dd": 0,
+        "profit_factor": 0,
+        "sharpe": 0,
+        "error": null
+      }
+    ]
+  },
+  {
     "id": 1782131718953,
     "timestamp": "2026-06-22 18:05:18",
     "strat_type": "bb_v1",

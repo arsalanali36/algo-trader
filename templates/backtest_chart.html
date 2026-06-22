@@ -63,6 +63,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .right-content{flex:1;min-height:0}
 #equity-chart{width:100%;height:100%}
 
+table.table { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.table th { position: sticky; top: 0; background: #161b22; color: #c9d1d9; text-align: left; padding: 8px; border-bottom: 2px solid #30363d; font-weight: 600; white-space: nowrap; }
+table.table td { padding: 8px; text-align: left; border-bottom: 1px solid #21262d; }
+table.table tbody tr:hover { background: #1c2128; }
+
 table.trades{width:100%;border-collapse:collapse;font-size:11.5px}
 table.trades th{position:sticky;top:0;background:#161b22;color:#8b949e;text-align:left;padding:6px 8px;border-bottom:1px solid #30363d;font-weight:600}
 table.trades td{padding:6px 8px;border-bottom:1px solid #161b22}
@@ -125,6 +130,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <label style="display:inline-flex;align-items:center;gap:4px;cursor:pointer;margin-left:6px" title="Show AA_CandlePatterns markers (hammer / engulfing / harami) on the candles">
         <input type="checkbox" id="patterns-toggle" onchange="togglePatterns(this.checked)"> 📍 Candle Patterns
       </label>
+      <input type="text" id="chart-timeframe-input" title="Type to change timeframe (e.g. 5m) and hit Enter" style="background:#1f6feb; color:#fff; padding:2px 6px; border-radius:4px; margin-left:8px; display:none; font-weight:600; font-size:10px; border:none; width:35px; text-align:center" onkeydown="if(event.key==='Enter') changeChartTimeframe(this.value)">
       <span id="ind-active-list" style="display:flex;gap:4px;flex-wrap:wrap"></span>
     </div>
     <div id="ind-style-list" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:3px 8px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d"></div>
@@ -201,7 +207,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <!-- Optimizer Modal -->
 <div class="modal-overlay" id="optimize-modal">
-  <div class="modal-box" style="max-width:700px">
+  <div class="modal-box" style="max-width:1100px; width:95%">
     <h2>🚀 Optimize Strategy — <span id="opt-strat-name"></span></h2>
     
     <div id="opt-input-view">
@@ -241,9 +247,18 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
     </div>
     
     <div id="opt-results-view" style="display:none;">
+      <div style="margin-bottom: 10px; display: flex; align-items: center; justify-content: space-between;">
+        <input type="text" id="opt-query-input" placeholder="Query e.g. win_rate > 65 and total_trades < 95" class="input" style="flex:1; margin-right: 10px; font-family: monospace; padding: 6px 10px; background: #0d1117; border: 1px solid #30363d; color: #e6edf3; border-radius: 5px;">
+        <button class="btn btn-blue" onclick="applyOptQuery()" style="margin-right: 5px;">Filter</button>
+        <button class="btn btn-gray" onclick="clearOptQuery()">Clear</button>
+      </div>
+      <div style="font-size: 11px; color: #8b949e; margin-bottom: 15px;">
+        <span style="color:#d29922">💡 Hint:</span> Available columns: <code>total_trades</code>, <code>win_rate</code>, <code>profit_factor</code>, <code>sharpe</code>, <code>net_pnl</code>, and strategy params (e.g., <code>bb_window</code>). <br>
+        Operators: <code>></code>, <code><</code>, <code>>=</code>, <code><=</code>, <code>==</code>. Use <code>and</code> / <code>or</code> to combine.
+      </div>
       <div style="max-height: 400px; overflow-y:auto; margin-bottom: 15px;">
         <table class="table" id="opt-results-table">
-          <thead><tr><th>Rank</th><th>Params</th><th>Trades</th><th>Win %</th><th>PF</th><th>Sharpe</th><th>PnL</th><th>Action</th></tr></thead>
+          <thead></thead>
           <tbody></tbody>
         </table>
       </div>
@@ -271,7 +286,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <!-- Saved Results — past backtest runs, re-runnable -->
 <div class="modal-overlay" id="saved-results-modal">
-  <div class="modal-box" style="width:760px;max-width:95vw">
+  <div class="modal-box" style="max-width:1100px; width:95%">
     <h2>📂 Saved Backtest Results</h2>
     <div id="saved-results-list" style="max-height:420px;overflow-y:auto">Loading...</div>
     <div class="modal-actions">
@@ -444,11 +459,10 @@ function confirmSymbolPicker() {
 // ───────────────────────── Saved Backtest Results ─────────────────────────
 async function saveCurrentResult() {
   if (!D || !D.summary) { alert('Run a backtest first'); return; }
-  const defaultName = `${D.strategy || '?'} ${D.date_from || ''}→${D.date_to || ''}`;
-  const name = prompt('Name this saved result:', defaultName);
-  if (!name) return;
+  const desc = prompt('Enter a description for this saved result:', 'Manual Run');
+  if (!desc) return;
   const body = {
-    name, strategy: D.strategy, cfg: D.cfg, date_from: D.date_from, date_to: D.date_to,
+    name: desc, strategy: D.strategy, cfg: D.cfg, date_from: D.date_from, date_to: D.date_to,
     summary: D.summary, symbols: D.multi ? Object.keys(D.multi) : null
   };
   try {
@@ -459,33 +473,88 @@ async function saveCurrentResult() {
   } catch (e) { alert('⚠ ' + e.message); }
 }
 
+let _savedOptResults = [];
+let _savedSortCol = 'strategy';
+let _savedSortAsc = true;
+
 async function openSavedResults() {
   document.getElementById('saved-results-modal').classList.add('open');
   const list = document.getElementById('saved-results-list');
   list.textContent = 'Loading...';
   try {
     const r = await fetch('/api/backtest/saved');
-    const entries = await r.json();
-    _renderSavedResultsList(entries);
+    _savedOptResults = await r.json();
+    _savedSortCol = 'strategy';
+    _savedSortAsc = true;
+    _renderSavedResultsList();
   } catch (e) {
     list.textContent = '⚠ ' + e.message;
   }
 }
 function closeSavedResults() { document.getElementById('saved-results-modal').classList.remove('open'); }
 
-function _renderSavedResultsList(entries) {
+function sortSavedResults(col) {
+  if (_savedSortCol === col) {
+    _savedSortAsc = !_savedSortAsc;
+  } else {
+    _savedSortCol = col;
+    _savedSortAsc = true;
+  }
+  _renderSavedResultsList();
+}
+
+function _renderSavedResultsList() {
   const list = document.getElementById('saved-results-list');
-  if (!entries.length) { list.innerHTML = '<div class="empty">No saved results yet — run a backtest, then click "💾 Save Result".</div>'; return; }
-  entries.sort((a, b) => (b.saved_at || '').localeCompare(a.saved_at || ''));
-  list.innerHTML = `<table class="trades"><thead><tr>
-    <th>Name</th><th>Strategy</th><th>Range</th><th>Trades</th><th>Win%</th><th>PF</th><th>PnL</th><th>Saved</th><th></th>
-  </tr></thead><tbody>` + entries.map(e => {
+  const entries = _savedOptResults;
+  if (!entries || !entries.length) { list.innerHTML = '<div class="empty">No saved results yet — run a backtest, then click "💾 Save Result".</div>'; return; }
+  
+  entries.sort((a, b) => {
+    let va = a[_savedSortCol], vb = b[_savedSortCol];
+    if (['n_trades', 'win_rate', 'profit_factor', 'pnl_points'].includes(_savedSortCol)) {
+        va = a.summary ? a.summary[_savedSortCol] : 0;
+        vb = b.summary ? b.summary[_savedSortCol] : 0;
+    }
+    va = va || ''; vb = vb || '';
+    if (va < vb) return _savedSortAsc ? -1 : 1;
+    if (va > vb) return _savedSortAsc ? 1 : -1;
+    const da = a.saved_at || '';
+    const db = b.saved_at || '';
+    return db.localeCompare(da);
+  });
+
+  const getSortIcon = (col) => _savedSortCol === col ? (_savedSortAsc ? ' ▲' : ' ▼') : '';
+
+  let html = `<table class="table"><thead><tr>
+    <th style="cursor:pointer" onclick="sortSavedResults('name')">Description${getSortIcon('name')}</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('strategy')">Strategy${getSortIcon('strategy')}</th>
+    <th>Params</th>
+    <th>Range</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('n_trades')">Trades${getSortIcon('n_trades')}</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('win_rate')">Win%${getSortIcon('win_rate')}</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('profit_factor')">PF${getSortIcon('profit_factor')}</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('pnl_points')">PnL${getSortIcon('pnl_points')}</th>
+    <th style="cursor:pointer" onclick="sortSavedResults('saved_at')">Saved${getSortIcon('saved_at')}</th>
+    <th>Action</th>
+  </tr></thead><tbody>`;
+
+  let currentStrategy = null;
+
+  entries.forEach(e => {
+    if (_savedSortCol === 'strategy' && e.strategy !== currentStrategy) {
+       currentStrategy = e.strategy;
+       html += `<tr><td colspan="10" style="background:#1c2128; font-weight:bold; color:#58a6ff; font-size:13px; text-transform:uppercase; text-align:left; padding:10px 8px">${currentStrategy || 'Unknown Strategy'}</td></tr>`;
+    }
+
     const s = e.summary || {};
     const pnlCls = (s.pnl_points || 0) >= 0 ? 'green' : 'red';
-    return `<tr>
-      <td>${e.name}${e.symbols ? ` <span class="gray" style="font-size:10px">(${e.symbols.join('+')})</span>` : ''}</td>
+    const cfg = e.cfg || {};
+    const pStr = Object.entries(cfg).filter(([k,v])=>k!=='instrument'&&k!=='symbols'&&k!=='active').map(([k,v])=>`${k}:${v}`).join(', ');
+
+    html += `<tr>
+      <td><span style="margin-right:5px" title="Saved Result">❤️</span>${e.name || ''}${e.symbols ? ` <span class="gray" style="font-size:10px">(${e.symbols.join('+')})</span>` : ''}</td>
       <td>${e.strategy || '—'}</td>
-      <td style="font-size:11px;color:#8b949e">${e.date_from || '?'} → ${e.date_to || '?'}</td>
+      <td style="font-size:11px; max-width:200px; white-space:normal; color:#8b949e">${pStr}</td>
+      <td style="font-size:11px;color:#8b949e">${e.date_from || '?'} to ${e.date_to || '?'}</td>
       <td>${s.n_trades ?? '—'}</td>
       <td>${s.win_rate != null ? s.win_rate + '%' : '—'}</td>
       <td>${s.profit_factor ?? '—'}</td>
@@ -497,14 +566,67 @@ function _renderSavedResultsList(entries) {
         <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="deleteSavedResult('${e.id}')">🗑</button>
       </td>
     </tr>`;
-  }).join('') + '</tbody></table>';
+  });
+  html += '</tbody></table>';
+  list.innerHTML = html;
 }
 
-async function deleteSavedResult(id) {
-  if (!confirm('Delete this saved result?')) return;
-  await fetch('/api/backtest/saved/' + id, { method: 'DELETE' });
-  openSavedResults();
+let _pendingDeletes = {};
+let _lastDeletedId = null;
+
+function deleteSavedResult(id) {
+  const itemIndex = _savedOptResults.findIndex(r => r.id === id);
+  if (itemIndex === -1) return;
+  const item = _savedOptResults[itemIndex];
+  
+  _savedOptResults.splice(itemIndex, 1);
+  _renderSavedResultsList();
+  
+  const toastId = 'toast-' + id;
+  const toastHtml = `<div id="${toastId}" style="position:fixed; bottom:20px; right:20px; background:#1c2128; border:1px solid #30363d; padding:10px 15px; border-radius:5px; color:#e6edf3; z-index:9999; display:flex; align-items:center; gap:10px; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+    Deleted "${item.name || 'Saved Result'}". 
+    <button class="btn btn-blue" style="padding:2px 8px; font-size:11px" onclick="undoDelete('${id}')">Undo (Ctrl+Z)</button>
+  </div>`;
+  document.body.insertAdjacentHTML('beforeend', toastHtml);
+  
+  _lastDeletedId = id;
+  _pendingDeletes[id] = {
+    item: item,
+    index: itemIndex,
+    timer: setTimeout(async () => {
+      await fetch('/api/backtest/saved/' + id, { method: 'DELETE' });
+      const toast = document.getElementById(toastId);
+      if (toast) toast.remove();
+      delete _pendingDeletes[id];
+      if (_lastDeletedId === id) _lastDeletedId = null;
+    }, 6000)
+  };
 }
+
+function undoDelete(id) {
+  const pending = _pendingDeletes[id];
+  if (!pending) return;
+  clearTimeout(pending.timer);
+  _savedOptResults.splice(pending.index, 0, pending.item);
+  _renderSavedResultsList();
+  
+  const toast = document.getElementById('toast-' + id);
+  if (toast) toast.remove();
+  delete _pendingDeletes[id];
+  
+  if (_lastDeletedId === id) {
+     const remaining = Object.keys(_pendingDeletes);
+     _lastDeletedId = remaining.length > 0 ? remaining[remaining.length - 1] : null;
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.ctrlKey && e.key.toLowerCase() === 'z') {
+    if (_lastDeletedId && _pendingDeletes[_lastDeletedId]) {
+      undoDelete(_lastDeletedId);
+    }
+  }
+});
 
 // Loads a saved entry's strategy/cfg/dates back into the Edit & Re-run modal
 // (pre-filled, including the multi-symbol checkbox if it was a combined
@@ -1059,6 +1181,15 @@ function drawChart() {
   container.innerHTML = '';
   if (_chart) { try { _chart.remove(); } catch(e) {} _chart = null; }
   const candles = _curCandles();
+  
+  const tbTimeframe = document.getElementById('chart-timeframe-input');
+  if (tbTimeframe && D.cfg && D.cfg.timeframe) {
+      tbTimeframe.value = D.cfg.timeframe;
+      tbTimeframe.style.display = 'inline-block';
+  } else if (tbTimeframe) {
+      tbTimeframe.style.display = 'none';
+  }
+
   if (!candles.length) {
     container.innerHTML = '<div class="empty">No candle data</div>';
     return;
@@ -1433,10 +1564,52 @@ function drawEquityCurve() {
     if (!param || param.time === undefined || param.time === null) return;
     const indices = _closedTradeIndices();
     const idx = indices[param.time - 1];
-    // Table must exist in the DOM before jumpToTrade can scroll/highlight
-    // its row — switch view first.
     if (idx !== undefined) { setMainTab('results'); setResultTab('table'); jumpToTrade(idx); }
   });
+  
+  let tooltip = document.getElementById('equity-tooltip');
+  if (!tooltip) {
+    tooltip = document.createElement('div');
+    tooltip.id = 'equity-tooltip';
+    tooltip.style = 'position: absolute; display: none; padding: 8px 12px; background: rgba(22, 27, 34, 0.9); color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; pointer-events: none; z-index: 1000; font-size: 11.5px; line-height: 1.4; box-shadow: 0 4px 12px rgba(0,0,0,0.5); backdrop-filter: blur(4px);';
+    container.style.position = 'relative';
+    container.appendChild(tooltip);
+  }
+
+  _equityChart.subscribeCrosshairMove(param => {
+    if (!param.time || param.point.x < 0 || param.point.x > container.clientWidth || param.point.y < 0 || param.point.y > container.clientHeight) {
+      tooltip.style.display = 'none';
+      return;
+    }
+    const val = param.seriesData.get(allSeries);
+    if (!val) { tooltip.style.display = 'none'; return; }
+    
+    let dateStr = 'Trade #' + param.time;
+    if (!D.multi && D.trades) {
+        const indices = _closedTradeIndices();
+        const idx = indices[param.time - 1];
+        if (idx !== undefined && D.trades[idx]) {
+            dateStr = 'Date: ' + (D.trades[idx].exit_time || '?') + '<br>Trade: #' + param.time;
+        }
+    } else if (D.multi) {
+        let allTradesSorted = [];
+        Object.values(D.multi).forEach(symData => {
+            if (symData.trades) allTradesSorted = allTradesSorted.concat(symData.trades.filter(t => t.exit_price !== null && t.exit_price !== undefined));
+        });
+        allTradesSorted.sort((a,b) => (a.exit_time || '').localeCompare(b.exit_time || ''));
+        if (allTradesSorted[param.time - 1]) {
+            dateStr = 'Date: ' + (allTradesSorted[param.time - 1].exit_time || '?') + '<br>Trade: #' + param.time;
+        }
+    }
+    
+    tooltip.style.display = 'block';
+    const x = param.point.x + 15;
+    const y = param.point.y + 15;
+    tooltip.style.left = Math.min(x, container.clientWidth - 150) + 'px';
+    tooltip.style.top = y + 'px';
+    tooltip.innerHTML = `${dateStr}<br><span style="color:${val.value >= 0 ? '#3fb950' : '#f85149'}">PnL: ₹${val.value.toFixed(2)}</span>`;
+  });
+  
   _equityChart.timeScale().fitContent();
 }
 
@@ -1539,6 +1712,12 @@ function openEditModal(preserveSymbols) {
       html += `<div class="field-row"><label><input type="checkbox" id="mf-${f.id}" ${val ? 'checked' : ''}> ${f.label}</label></div>`;
     }
   });
+  html += `
+    <div id="custom-params-container" style="margin-top:10px; border-top:1px solid #30363d; padding-top:8px"></div>
+    <div style="margin-top:8px; text-align:right">
+      <button type="button" class="btn btn-gray" style="padding:4px 8px; font-size:11px" onclick="addCustomParam()">➕ Add Parameter</button>
+    </div>
+  `;
   document.getElementById('modal-fields').innerHTML = html;
   // Symbol picker is available for every symbol-agnostic strategy (vwap/rsi/ema).
   // Range stays NIFTY-only — its pivot/zone/chain engine is index-specific
@@ -1567,7 +1746,111 @@ function collectModalFields() {
     else if (f.type === 'number') out[f.id] = Number(el.value);
     else out[f.id] = el.value === 'true' ? true : (el.value === 'false' ? false : el.value);
   });
+  
+  const customParams = document.querySelectorAll('.custom-param-row');
+  customParams.forEach(row => {
+     const keys = row.querySelectorAll('.cp-key');
+     const vals = row.querySelectorAll('.cp-val');
+     for(let i=0; i<keys.length; i++) {
+         const key = keys[i].value.trim();
+         let val = vals[i].value.trim();
+         if (key) {
+            if (!isNaN(val) && val !== '') val = Number(val);
+            else if (val === 'true') val = true;
+            else if (val === 'false') val = false;
+            out[key] = val;
+         }
+     }
+  });
+  
   return out;
+}
+
+function addCustomParam() {
+  const container = document.getElementById('custom-params-container');
+  const div = document.createElement('div');
+  div.className = 'custom-param-row';
+  div.style.cssText = 'display:flex; gap:6px; margin-bottom:6px; align-items:flex-start;';
+  
+  let opts = '<option value="">-- Indicator --</option>';
+  if (typeof _indicatorRegistry !== 'undefined') {
+      _indicatorRegistry.forEach(ind => {
+          opts += `<option value="${ind.name}">${ind.name}</option>`;
+      });
+  }
+  opts += '<option value="custom">Custom (Type)</option>';
+
+  div.innerHTML = `
+    <select class="cp-ind-select" style="width:100px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px" onchange="onCustomParamIndSelect(this)">
+        ${opts}
+    </select>
+    <div class="cp-fields-wrap" style="flex:1; display:flex; gap:6px;">
+        <input type="text" class="cp-key" placeholder="Param Name" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
+        <input type="text" class="cp-val" placeholder="Value" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
+    </div>
+    <button type="button" class="btn btn-gray cp-remove-btn" onclick="this.parentElement.remove()" style="padding:2px 6px">✕</button>
+  `;
+  container.appendChild(div);
+}
+
+function onCustomParamIndSelect(selectEl) {
+    const val = selectEl.value;
+    const wrap = selectEl.parentElement.querySelector('.cp-fields-wrap');
+    if (val === '' || val === 'custom') {
+        wrap.innerHTML = `
+            <input type="text" class="cp-key" placeholder="Param Name" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
+            <input type="text" class="cp-val" placeholder="Value" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
+        `;
+        return;
+    }
+    const spec = _indicatorRegistry.find(i => i.name === val);
+    if (!spec || !spec.params.length) {
+        wrap.innerHTML = `<input type="hidden" class="cp-key" value="${val.toLowerCase()}_enabled"><input type="text" class="cp-val" value="true" readonly style="flex:1; background:#0d1117; color:#8b949e; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px; text-align:center">`;
+        return;
+    }
+    
+    wrap.innerHTML = spec.params.map(p => `
+        <div style="display:flex; flex-direction:column; gap:2px; flex:1">
+            <input type="hidden" class="cp-key" value="${val.toLowerCase()}_${p}">
+            <input type="text" class="cp-val" placeholder="${p}" title="${val.toLowerCase()}_${p}" value="${spec.default[p] ?? ''}" style="width:100%; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
+        </div>
+    `).join('');
+}
+
+function changeChartTimeframe(val) {
+   if (!D.cfg || !D.strategy) return;
+   let tf = val.toLowerCase().trim();
+   if (!tf) return;
+   if (!isNaN(tf)) tf = tf + 'm'; 
+   
+   const payload = {
+      strategy: D.strategy,
+      cfg: Object.assign({}, D.cfg, { timeframe: tf }),
+      date_from: D.date_from,
+      date_to: D.date_to,
+      symbols: D.multi ? Object.keys(D.multi) : (D.cfg.symbol ? [D.cfg.symbol] : [])
+   };
+   
+   const inp = document.getElementById('chart-timeframe-input');
+   if(inp) { inp.style.backgroundColor = '#d29922'; inp.value = '⏳'; }
+   
+   fetch('/api/backtest/run', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+   }).then(r => r.json()).then(res => {
+      if (res.error) { alert('Error: ' + res.error); if(inp) {inp.style.backgroundColor='#1f6feb'; inp.value=tf;} return; }
+      D = res;
+      _activeSymbol = symbolsFor(D.cfg)[0] || 'NIFTY';
+      renderSymTabs();
+      setMainTab('chart');
+      renderTradeTable();
+      populateStrategySelectors();
+      if(inp) {inp.style.backgroundColor='#1f6feb'; inp.value=tf;}
+   }).catch(e => {
+      alert('Error: ' + e);
+      if(inp) {inp.style.backgroundColor='#1f6feb'; inp.value=tf;}
+   });
 }
 
 // Polls /api/backtest/progress while a run is in flight — a missing-data
@@ -1687,7 +1970,11 @@ async function modalRun(saveFirst) {
     }
 
     D = Object.assign({}, d2, { strategy: sid, cfg: newCfg, date_from: dfrom, date_to: dto });
-    localStorage.setItem('bt_chart_data', JSON.stringify(D));
+    try {
+      localStorage.setItem('bt_chart_data', JSON.stringify(D));
+    } catch (e) {
+      console.warn("LocalStorage quota exceeded, couldn't save chart data. This is normal for large datasets.");
+    }
 
     document.getElementById('hdr-range').textContent = dfrom + ' → ' + dto;
     _matchFilter = 'all';
@@ -1807,27 +2094,172 @@ function startOptimization() {
   };
 }
 
+let _currentOptResults = [];
+let _filteredOptResults = [];
+let _optSortCol = 'net_pnl';
+let _optSortAsc = false;
+
+function applyOptQuery() {
+  const queryStr = document.getElementById('opt-query-input').value.trim();
+  if (!queryStr) {
+     _filteredOptResults = [..._currentOptResults];
+     renderOptResultsTable();
+     return;
+  }
+  
+  _filteredOptResults = _currentOptResults.filter(r => {
+    try {
+      const ctx = {
+        total_trades: r.total_trades,
+        win_rate: r.win_rate,
+        profit_factor: r.profit_factor,
+        sharpe: r.sharpe,
+        net_pnl: r.net_pnl,
+        timeframe: r.cfg.timeframe
+      };
+      for(let k in r.cfg) ctx[k] = isNaN(parseFloat(r.cfg[k])) ? r.cfg[k] : parseFloat(r.cfg[k]);
+      
+      let jsQuery = queryStr
+        .replace(/\b(and)\b/ig, '&&')
+        .replace(/\b(or)\b/ig, '||')
+        .replace(/\b([a-zA-Z_][a-zA-Z0-9_]*)\b/g, (match) => {
+           if (match.toLowerCase() === 'and' || match.toLowerCase() === 'or') return match;
+           if (ctx[match] !== undefined) return 'ctx.' + match;
+           return match;
+        });
+        
+      const fn = new Function('ctx', 'return ' + jsQuery);
+      return fn(ctx);
+    } catch (e) {
+      return false; 
+    }
+  });
+  renderOptResultsTable();
+}
+
+function clearOptQuery() {
+  document.getElementById('opt-query-input').value = '';
+  applyOptQuery();
+}
+
+function sortOptResults(event, col) {
+  if (event && event.ctrlKey) {
+    const q = document.getElementById('opt-query-input');
+    q.value += (q.value ? ' and ' : '') + col + ' ';
+    q.focus();
+    return;
+  }
+  if (_optSortCol === col) {
+    _optSortAsc = !_optSortAsc;
+  } else {
+    _optSortCol = col;
+    _optSortAsc = false;
+  }
+  _filteredOptResults.sort((a, b) => {
+    let va, vb;
+    if (['total_trades', 'win_rate', 'profit_factor', 'sharpe', 'net_pnl'].includes(col)) {
+      va = a[col] || 0;
+      vb = b[col] || 0;
+    } else {
+      va = a.cfg[col] || '';
+      vb = b.cfg[col] || '';
+      let fna = parseFloat(va), fnb = parseFloat(vb);
+      if (!isNaN(fna) && !isNaN(fnb)) { va = fna; vb = fnb; }
+    }
+    if (va < vb) return _optSortAsc ? -1 : 1;
+    if (va > vb) return _optSortAsc ? 1 : -1;
+    return 0;
+  });
+  renderOptResultsTable();
+}
+
 function renderOptResults(results) {
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'block';
-  
+  _currentOptResults = results;
+  _filteredOptResults = [...results];
+  _optSortCol = 'net_pnl';
+  _optSortAsc = false;
+  document.getElementById('opt-query-input').value = '';
+  renderOptResultsTable();
+}
+
+function renderOptResultsTable() {
+  const thead = document.querySelector('#opt-results-table thead');
   const tbody = document.querySelector('#opt-results-table tbody');
+  
+  if (!_filteredOptResults || _filteredOptResults.length === 0) {
+     thead.innerHTML = '';
+     tbody.innerHTML = '<tr><td style="text-align:center; padding: 20px; color:#8b949e">No results found matching your query.</td></tr>';
+     return;
+  }
+  
+  const firstCfg = _currentOptResults[0].cfg;
+  const paramKeys = Object.keys(firstCfg).filter(k => k !== 'instrument' && k !== 'symbols' && k !== 'timeframe' && k !== 'active');
+  
+  const getSortIcon = (col) => _optSortCol === col ? (_optSortAsc ? ' ▲' : ' ▼') : '';
+  let thHtml = `<tr>
+    <th>Rank</th>
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'timeframe')">Timeframe${getSortIcon('timeframe')}</th>`;
+    
+  paramKeys.forEach(k => {
+    thHtml += `<th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, '${k}')">${k}${getSortIcon(k)}</th>`;
+  });
+  
+  thHtml += `
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'total_trades')">Trades${getSortIcon('total_trades')}</th>
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'win_rate')">Win %${getSortIcon('win_rate')}</th>
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'profit_factor')">PF${getSortIcon('profit_factor')}</th>
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'sharpe')">Sharpe${getSortIcon('sharpe')}</th>
+    <th style="cursor:pointer" title="Ctrl+Click to add to Query" onclick="sortOptResults(event, 'net_pnl')">PnL${getSortIcon('net_pnl')}</th>
+    <th>Action</th>
+  </tr>`;
+  thead.innerHTML = thHtml;
+  
   tbody.innerHTML = '';
-  results.forEach((r, i) => {
-    const pStr = Object.entries(r.cfg).filter(([k,v]) => k!=='instrument' && k!=='symbols').map(([k,v]) => `${k}:${v}`).join(', ');
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td>${i+1}</td>
-      <td style="font-size:11px; max-width:250px; white-space:normal">${pStr}</td>
+  _filteredOptResults.forEach((r, i) => {
+    let trHtml = `<td>${i+1}</td>
+                  <td>${r.cfg.timeframe || ''}</td>`;
+    paramKeys.forEach(k => {
+      trHtml += `<td>${r.cfg[k] || ''}</td>`;
+    });
+    trHtml += `
       <td>${r.total_trades}</td>
       <td>${(r.win_rate || 0).toFixed(1)}%</td>
       <td>${(r.profit_factor || 0).toFixed(2)}</td>
       <td>${(r.sharpe || 0).toFixed(2)}</td>
       <td style="color:${r.net_pnl>=0?'#3fb950':'#f85149'}">₹${(r.net_pnl || 0).toFixed(2)}</td>
-      <td><button class="btn btn-green" style="padding:2px 6px; font-size:11px" onclick='loadOptRun(${JSON.stringify(r.cfg)})'>Load</button></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-green" style="padding:2px 6px; font-size:11px" onclick='loadOptRun(${JSON.stringify(r.cfg)})'>Load</button>
+        <button class="btn btn-gray" title="Save this optimization result" style="padding:2px 6px; font-size:11px; margin-left:4px" onclick='saveOptRun(this, ${JSON.stringify(r)})'>🤍</button>
+      </td>
     `;
+    const tr = document.createElement('tr');
+    tr.innerHTML = trHtml;
     tbody.appendChild(tr);
   });
+}
+
+async function saveOptRun(btn, r) {
+  const desc = prompt('Enter a description for this optimized result:', 'Optimized Param Set');
+  if (!desc) return;
+  const body = {
+    name: desc, strategy: D.strategy, cfg: r.cfg, date_from: document.getElementById('opt-from').value, date_to: document.getElementById('opt-to').value,
+    summary: {
+       n_trades: r.total_trades,
+       win_rate: r.win_rate,
+       profit_factor: r.profit_factor,
+       sharpe: r.sharpe,
+       pnl_points: r.net_pnl
+    },
+    symbols: [r.cfg.symbol || document.getElementById('opt-symbols').value.split(',')[0]]
+  };
+  try {
+    const res = await fetch('/api/backtest/saved', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    const d = await res.json();
+    if (d.error) { alert('⚠ ' + d.error); return; }
+    btn.textContent = '❤️';
+  } catch (e) { alert('⚠ ' + e.message); }
 }
 
 let _optHistoryData = [];

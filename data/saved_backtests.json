@@ -4474,607 +4474,90 @@
     "saved_at": "2026-06-20 22:24"
   },
   {
-    "id": "298615a0ee",
-    "name": "ARS_CHAIN_V1 2026-01-01to2026-06-20",
-    "strategy": "ARS_CHAIN_V1",
-    "cfg": {
-      "active": true,
-      "atr_exit": true,
-      "fib_exit": false,
-      "fresh_zone_only": true,
-      "hawa_me_zone": false,
-      "instrument": "options",
-      "max_candle_size": 25,
-      "max_trades_per_symbol": 2,
-      "qty": 1,
-      "strike_offset": "0",
-      "symbols": [
-        "NIFTY",
-        "BANKNIFTY",
-        "RELIANCE",
-        "TCS",
-        "INFY",
-        "HDFCBANK",
-        "ICICIBANK",
-        "SBIN",
-        "AXISBANK",
-        "BAJFINANCE",
-        "WIPRO",
-        "KOTAKBANK",
-        "LT",
-        "TATAMOTORS",
-        "MARUTI",
-        "HINDUNILVR",
-        "ITC",
-        "ADANIENT",
-        "SUNPHARMA",
-        "TITAN",
-        "ULTRACEMCO",
-        "NESTLEIND",
-        "POWERGRID",
-        "NTPC",
-        "ONGC"
-      ],
-      "timeframe": "5m",
-      "zone_exit": false
-    },
-    "date_from": "2026-01-01",
-    "date_to": "2026-06-20",
-    "summary": {
-      "equity_curve": [
-        {
-          "cum_pnl": -35.8,
-          "trade_no": 1
-        },
-        {
-          "cum_pnl": -45.95,
-          "trade_no": 2
-        },
-        {
-          "cum_pnl": -108.7,
-          "trade_no": 3
-        },
-        {
-          "cum_pnl": -136.15,
-          "trade_no": 4
-        },
-        {
-          "cum_pnl": -78.35,
-          "trade_no": 5
-        },
-        {
-          "cum_pnl": -23.9,
-          "trade_no": 6
-        },
-        {
-          "cum_pnl": -33.3,
-          "trade_no": 7
-        },
-        {
-          "cum_pnl": -0.5,
-          "trade_no": 8
-        },
-        {
-          "cum_pnl": -32,
-          "trade_no": 9
-        },
-        {
-          "cum_pnl": 193.05,
-          "trade_no": 10
-        },
-        {
-          "cum_pnl": 160.45,
-          "trade_no": 11
-        },
-        {
-          "cum_pnl": 347.35,
-          "trade_no": 12
-        },
-        {
-          "cum_pnl": 320.85,
-          "trade_no": 13
-        },
-        {
-          "cum_pnl": 349.25,
-          "trade_no": 14
-        },
-        {
-          "cum_pnl": 333.65,
-          "trade_no": 15
-        },
-        {
-          "cum_pnl": 356,
-          "trade_no": 16
-        },
-        {
-          "cum_pnl": 333.65,
-          "trade_no": 17
-        },
-        {
-          "cum_pnl": 300.55,
-          "trade_no": 18
-        },
-        {
-          "cum_pnl": 323.7,
-          "trade_no": 19
-        },
-        {
-          "cum_pnl": 313.95,
-          "trade_no": 20
-        },
-        {
-          "cum_pnl": 294,
-          "trade_no": 21
-        },
-        {
-          "cum_pnl": 277.5,
-          "trade_no": 22
-        },
-        {
-          "cum_pnl": 402.3,
-          "trade_no": 23
-        },
-        {
-          "cum_pnl": 392.15,
-          "trade_no": 24
-        },
-        {
-          "cum_pnl": 517,
-          "trade_no": 25
-        },
-        {
-          "cum_pnl": 443.65,
-          "trade_no": 26
-        },
-        {
-          "cum_pnl": 403.85,
-          "trade_no": 27
-        },
-        {
-          "cum_pnl": 449,
-          "trade_no": 28
-        },
-        {
-          "cum_pnl": 380.55,
-          "trade_no": 29
-        },
-        {
-          "cum_pnl": 361.95,
-          "trade_no": 30
-        },
-        {
-          "cum_pnl": 321.35,
-          "trade_no": 31
-        },
-        {
-          "cum_pnl": 250.4,
-          "trade_no": 32
-        },
-        {
-          "cum_pnl": 336.4,
-          "trade_no": 33
-        },
-        {
-          "cum_pnl": 338.55,
-          "trade_no": 34
-        },
-        {
-          "cum_pnl": 300.25,
-          "trade_no": 35
-        },
-        {
-          "cum_pnl": 262.35,
-          "trade_no": 36
-        },
-        {
-          "cum_pnl": 383.15,
-          "trade_no": 37
-        },
-        {
-          "cum_pnl": 533.1,
-          "trade_no": 38
-        },
-        {
-          "cum_pnl": 580.45,
-          "trade_no": 39
-        },
-        {
-          "cum_pnl": 871.7,
-          "trade_no": 40
-        },
-        {
-          "cum_pnl": 917.35,
-          "trade_no": 41
-        },
-        {
-          "cum_pnl": 819.65,
-          "trade_no": 42
-        },
-        {
-          "cum_pnl": 854.1,
-          "trade_no": 43
-        },
-        {
-          "cum_pnl": 940.55,
-          "trade_no": 44
-        },
-        {
-          "cum_pnl": 1054.2,
-          "trade_no": 45
-        },
-        {
-          "cum_pnl": 1020.3,
-          "trade_no": 46
-        },
-        {
-          "cum_pnl": 986.3,
-          "trade_no": 47
-        },
-        {
-          "cum_pnl": 956.15,
-          "trade_no": 48
-        },
-        {
-          "cum_pnl": 1023,
-          "trade_no": 49
-        },
-        {
-          "cum_pnl": 993.5,
-          "trade_no": 50
-        },
-        {
-          "cum_pnl": 969.85,
-          "trade_no": 51
-        },
-        {
-          "cum_pnl": 988.8,
-          "trade_no": 52
-        },
-        {
-          "cum_pnl": 1063,
-          "trade_no": 53
-        },
-        {
-          "cum_pnl": 1001.2,
-          "trade_no": 54
-        },
-        {
-          "cum_pnl": 1019.1,
-          "trade_no": 55
-        },
-        {
-          "cum_pnl": 1047.85,
-          "trade_no": 56
-        },
-        {
-          "cum_pnl": 1047.7,
-          "trade_no": 57
-        },
-        {
-          "cum_pnl": 1018.05,
-          "trade_no": 58
-        },
-        {
-          "cum_pnl": 972.35,
-          "trade_no": 59
-        },
-        {
-          "cum_pnl": 962.7,
-          "trade_no": 60
-        },
-        {
-          "cum_pnl": 992.05,
-          "trade_no": 61
-        },
-        {
-          "cum_pnl": 982.75,
-          "trade_no": 62
-        },
-        {
-          "cum_pnl": 1003.85,
-          "trade_no": 63
-        }
-      ],
-      "losses": 35,
-      "max_drawdown": -266.6,
-      "n_trades": 63,
-      "pnl_points": 1003.85,
-      "profit_factor": 1.87,
-      "sharpe": 1.72,
-      "win_rate": 44.4,
-      "wins": 28
-    },
-    "symbols": null,
-    "saved_at": "2026-06-20 22:25"
-  },
-  {
-    "id": "1f40a5ae52",
-    "name": "bb_v1 2026-06-01to2026-06-20",
+    "id": "514cdaecda",
+    "name": "bb_v1 1m (Opt)",
     "strategy": "bb_v1",
     "cfg": {
-      "active": false,
-      "allow_short": false,
-      "bb_std": 2,
-      "bb_window": 20,
+      "active": "false",
+      "allow_short": "true",
+      "bb_std": "2.5",
+      "bb_window": "10",
       "instrument": "equity",
-      "qty": 1,
-      "symbols": [
-        "HDFCBANK",
-        "RELIANCE",
-        "TCS",
-        "INFY",
-        "ICICIBANK"
-      ],
-      "timeframe": "5m",
-      "symbol": "HDFCBANK"
+      "qty": "1",
+      "symbol": "RELIANCE",
+      "symbols": "RELIANCE",
+      "timeframe": "1m"
     },
-    "date_from": "2026-06-01",
+    "date_from": "2026-05-01",
     "date_to": "2026-06-20",
     "summary": {
-      "n_trades": 62,
-      "wins": 48,
-      "losses": 14,
-      "pnl_points": 613.85,
-      "win_rate": 77.4,
-      "profit_factor": 8.77,
-      "sharpe": 3.25,
-      "max_drawdown": -21.2,
-      "equity_curve": [
-        {
-          "trade_no": 1,
-          "cum_pnl": 36
-        },
-        {
-          "trade_no": 2,
-          "cum_pnl": 36.9
-        },
-        {
-          "trade_no": 3,
-          "cum_pnl": 39.65
-        },
-        {
-          "trade_no": 4,
-          "cum_pnl": 53.15
-        },
-        {
-          "trade_no": 5,
-          "cum_pnl": 56.45
-        },
-        {
-          "trade_no": 6,
-          "cum_pnl": 44.05
-        },
-        {
-          "trade_no": 7,
-          "cum_pnl": 49.25
-        },
-        {
-          "trade_no": 8,
-          "cum_pnl": 48.75
-        },
-        {
-          "trade_no": 9,
-          "cum_pnl": 49.8
-        },
-        {
-          "trade_no": 10,
-          "cum_pnl": 52.3
-        },
-        {
-          "trade_no": 11,
-          "cum_pnl": 109.3
-        },
-        {
-          "trade_no": 12,
-          "cum_pnl": 112.45
-        },
-        {
-          "trade_no": 13,
-          "cum_pnl": 113.55
-        },
-        {
-          "trade_no": 14,
-          "cum_pnl": 120.85
-        },
-        {
-          "trade_no": 15,
-          "cum_pnl": 125.3
-        },
-        {
-          "trade_no": 16,
-          "cum_pnl": 122.8
-        },
-        {
-          "trade_no": 17,
-          "cum_pnl": 157.3
-        },
-        {
-          "trade_no": 18,
-          "cum_pnl": 161.15
-        },
-        {
-          "trade_no": 19,
-          "cum_pnl": 162.75
-        },
-        {
-          "trade_no": 20,
-          "cum_pnl": 161.55
-        },
-        {
-          "trade_no": 21,
-          "cum_pnl": 163.95
-        },
-        {
-          "trade_no": 22,
-          "cum_pnl": 227.45
-        },
-        {
-          "trade_no": 23,
-          "cum_pnl": 226.25
-        },
-        {
-          "trade_no": 24,
-          "cum_pnl": 226.15
-        },
-        {
-          "trade_no": 25,
-          "cum_pnl": 227.25
-        },
-        {
-          "trade_no": 26,
-          "cum_pnl": 235.25
-        },
-        {
-          "trade_no": 27,
-          "cum_pnl": 232.75
-        },
-        {
-          "trade_no": 28,
-          "cum_pnl": 233.2
-        },
-        {
-          "trade_no": 29,
-          "cum_pnl": 272.2
-        },
-        {
-          "trade_no": 30,
-          "cum_pnl": 275.5
-        },
-        {
-          "trade_no": 31,
-          "cum_pnl": 277.8
-        },
-        {
-          "trade_no": 32,
-          "cum_pnl": 278.9
-        },
-        {
-          "trade_no": 33,
-          "cum_pnl": 412.9
-        },
-        {
-          "trade_no": 34,
-          "cum_pnl": 403.2
-        },
-        {
-          "trade_no": 35,
-          "cum_pnl": 391.7
-        },
-        {
-          "trade_no": 36,
-          "cum_pnl": 392.4
-        },
-        {
-          "trade_no": 37,
-          "cum_pnl": 469.9
-        },
-        {
-          "trade_no": 38,
-          "cum_pnl": 482.4
-        },
-        {
-          "trade_no": 39,
-          "cum_pnl": 494.3
-        },
-        {
-          "trade_no": 40,
-          "cum_pnl": 495.5
-        },
-        {
-          "trade_no": 41,
-          "cum_pnl": 497.3
-        },
-        {
-          "trade_no": 42,
-          "cum_pnl": 515.3
-        },
-        {
-          "trade_no": 43,
-          "cum_pnl": 511.4
-        },
-        {
-          "trade_no": 44,
-          "cum_pnl": 512.95
-        },
-        {
-          "trade_no": 45,
-          "cum_pnl": 535.45
-        },
-        {
-          "trade_no": 46,
-          "cum_pnl": 588.45
-        },
-        {
-          "trade_no": 47,
-          "cum_pnl": 590.05
-        },
-        {
-          "trade_no": 48,
-          "cum_pnl": 592.25
-        },
-        {
-          "trade_no": 49,
-          "cum_pnl": 592.75
-        },
-        {
-          "trade_no": 50,
-          "cum_pnl": 595.25
-        },
-        {
-          "trade_no": 51,
-          "cum_pnl": 582.75
-        },
-        {
-          "trade_no": 52,
-          "cum_pnl": 584.65
-        },
-        {
-          "trade_no": 53,
-          "cum_pnl": 588.35
-        },
-        {
-          "trade_no": 54,
-          "cum_pnl": 591.05
-        },
-        {
-          "trade_no": 55,
-          "cum_pnl": 614.05
-        },
-        {
-          "trade_no": 56,
-          "cum_pnl": 617.05
-        },
-        {
-          "trade_no": 57,
-          "cum_pnl": 631.55
-        },
-        {
-          "trade_no": 58,
-          "cum_pnl": 623.5
-        },
-        {
-          "trade_no": 59,
-          "cum_pnl": 614.5
-        },
-        {
-          "trade_no": 60,
-          "cum_pnl": 616.8
-        },
-        {
-          "trade_no": 61,
-          "cum_pnl": 617.85
-        },
-        {
-          "trade_no": 62,
-          "cum_pnl": 613.85
-        }
-      ]
+      "n_trades": 61,
+      "win_rate": 70.5,
+      "profit_factor": 2.34,
+      "sharpe": 1.76,
+      "pnl_points": 52.1
     },
     "symbols": [
-      "HDFCBANK",
-      "RELIANCE",
-      "POLYCAB"
+      "RELIANCE"
     ],
-    "saved_at": "2026-06-22 16:59"
+    "saved_at": "2026-06-22 19:03"
+  },
+  {
+    "id": "84cdcd725e",
+    "name": "bb_v1 1m (Opt)",
+    "strategy": "bb_v1",
+    "cfg": {
+      "active": "false",
+      "allow_short": "false",
+      "bb_std": "2.5",
+      "bb_window": "15",
+      "instrument": "equity",
+      "qty": "1",
+      "symbol": "RELIANCE",
+      "symbols": "RELIANCE",
+      "timeframe": "1m"
+    },
+    "date_from": "2026-05-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "n_trades": 63,
+      "win_rate": 65.1,
+      "profit_factor": 1.84,
+      "sharpe": 1.81,
+      "pnl_points": 28.8
+    },
+    "symbols": [
+      "RELIANCE"
+    ],
+    "saved_at": "2026-06-22 19:03"
+  },
+  {
+    "id": "7bc7e1da05",
+    "name": "bb_v1 1m (Opt)",
+    "strategy": "bb_v1",
+    "cfg": {
+      "active": "false",
+      "allow_short": "false",
+      "bb_std": "2.5",
+      "bb_window": "10",
+      "instrument": "equity",
+      "qty": "1",
+      "symbol": "RELIANCE",
+      "symbols": "RELIANCE",
+      "timeframe": "1m"
+    },
+    "date_from": "2026-05-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "n_trades": 33,
+      "win_rate": 60.6,
+      "profit_factor": 1.69,
+      "sharpe": 1.11,
+      "pnl_points": 14.6
+    },
+    "symbols": [
+      "RELIANCE"
+    ],
+    "saved_at": "2026-06-22 19:03"
   }
 ]
