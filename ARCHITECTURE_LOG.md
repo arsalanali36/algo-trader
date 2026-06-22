@@ -182,3 +182,15 @@
 **Files:** `trader_dashboard.py`, `templates/index.html`
 **Kyun:** Non-blocking — live ke baad karna hai
 **Depends on:** Phase 6 done
+
+## 2026-06-22 — Dashboard: Orders+P&L merge, Quick Order CE/PE fix, dates+charts
+**Status:** DONE
+**Kya:**
+- #3 Quick Order CE/PE confusion fix — ab CE/PE explicitly select hota hai (tick swatch), BUY/SELL usi selected leg pe chalta hai. Pehle hardcoded tha (BUY→PE, SELL→CE). Backend `api_manual_order` ab `opt_type` request se leta hai (legacy fallback retained).
+- #4 P&L tab ko Orders tab me fold kiya (P&L tab + col-modal markup hata). 📒 Orders & P&L ab per-strategy summary pills + Gross/Tax(Zerodha charges)/Net columns dikhata hai. `calcCharges()` reuse.
+- #2 Completed Trades me Date column; Open Positions me 📈 chart button (entry kahan hua). `order_store.trades_for` ab entry_date/exit_date deta hai. `openTradeChart()` optional date param leta hai.
+- Orders tab 4s auto-refresh (DB-backed, no Dhan) — P&L ki jagah.
+**Layer:** ui / data
+**Files:** `templates/index.html`, `trader_dashboard.py`, `order_store.py`
+**Kyun:** User feedback — quick order galat leg le raha tha; do tab same kaam; trade date + open-position entry visibility chahiye thi
+**Pending:** #5 webhook reversal bug (TV reverse karta, Python `_do_entry` "position already open" pe block karke purani pakde rehta) — baad me. Validated: Jinja render + node --check + py_compile sab OK. VPS deploy pending.

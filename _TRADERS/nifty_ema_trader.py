@@ -15,8 +15,14 @@ Config file: nifty_config.json (hot-reload every loop)
 
 import json
 import logging
+import os
 import socket
+import sys
 import time
+# project root (parent of _TRADERS/) on path BEFORE importing root modules —
+# launched as a subprocess (sys.path[0] = _TRADERS/), so dhan_master at the
+# project root is otherwise not importable.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dhan_master
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -31,7 +37,9 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-BASE_DIR    = Path(__file__).resolve().parent
+# BASE_DIR = project root (parent of _TRADERS/) — creds, nifty_config.json and
+# logs/ live at the root, not inside _TRADERS/ (same as rsi_trader.py).
+BASE_DIR    = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 TC_FILE     = BASE_DIR / "nifty_config.json"
 LOG_FILE    = BASE_DIR / "nifty_trader.log"

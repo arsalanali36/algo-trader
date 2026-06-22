@@ -1,0 +1,5080 @@
+[
+  {
+    "id": "df25bce053",
+    "name": "car",
+    "strategy": "vwap_v1",
+    "cfg": {
+      "active": false,
+      "ema_len": 10,
+      "max_ema_vwap_gap": 0,
+      "max_sl_percent": 2.5,
+      "partial1_pct": 40,
+      "partial2_pct": 30,
+      "r1": 1,
+      "r2": 2,
+      "r3": 3,
+      "session_end": "15:30",
+      "session_start": "09:15",
+      "sl_buffer_points": 2,
+      "symbol": "TCS",
+      "timeframe": "5m",
+      "use_daily_trend_filter": true,
+      "use_partial_exits": true,
+      "use_session_filter": true
+    },
+    "date_from": "2025-12-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "equity_curve": [
+        {
+          "cum_pnl": -4.6,
+          "trade_no": 1
+        },
+        {
+          "cum_pnl": 3.19,
+          "trade_no": 2
+        },
+        {
+          "cum_pnl": -3.01,
+          "trade_no": 3
+        },
+        {
+          "cum_pnl": -13.81,
+          "trade_no": 4
+        },
+        {
+          "cum_pnl": -20.31,
+          "trade_no": 5
+        },
+        {
+          "cum_pnl": -23.41,
+          "trade_no": 6
+        },
+        {
+          "cum_pnl": -28.31,
+          "trade_no": 7
+        },
+        {
+          "cum_pnl": -31.91,
+          "trade_no": 8
+        },
+        {
+          "cum_pnl": -38.61,
+          "trade_no": 9
+        },
+        {
+          "cum_pnl": -47.11,
+          "trade_no": 10
+        },
+        {
+          "cum_pnl": -52.01,
+          "trade_no": 11
+        },
+        {
+          "cum_pnl": -60.01,
+          "trade_no": 12
+        },
+        {
+          "cum_pnl": -67.41,
+          "trade_no": 13
+        },
+        {
+          "cum_pnl": -54.06,
+          "trade_no": 14
+        },
+        {
+          "cum_pnl": -64.06,
+          "trade_no": 15
+        },
+        {
+          "cum_pnl": -74.16,
+          "trade_no": 16
+        },
+        {
+          "cum_pnl": -60.48,
+          "trade_no": 17
+        },
+        {
+          "cum_pnl": -65.68,
+          "trade_no": 18
+        },
+        {
+          "cum_pnl": -69.98,
+          "trade_no": 19
+        },
+        {
+          "cum_pnl": -67.28,
+          "trade_no": 20
+        },
+        {
+          "cum_pnl": -79.18,
+          "trade_no": 21
+        },
+        {
+          "cum_pnl": -73.28,
+          "trade_no": 22
+        },
+        {
+          "cum_pnl": -80.88,
+          "trade_no": 23
+        },
+        {
+          "cum_pnl": -72.6,
+          "trade_no": 24
+        },
+        {
+          "cum_pnl": -77.6,
+          "trade_no": 25
+        },
+        {
+          "cum_pnl": -72.7,
+          "trade_no": 26
+        },
+        {
+          "cum_pnl": -77.4,
+          "trade_no": 27
+        },
+        {
+          "cum_pnl": -75.4,
+          "trade_no": 28
+        },
+        {
+          "cum_pnl": -80.8,
+          "trade_no": 29
+        },
+        {
+          "cum_pnl": -86.4,
+          "trade_no": 30
+        },
+        {
+          "cum_pnl": -75.94,
+          "trade_no": 31
+        },
+        {
+          "cum_pnl": -62.45,
+          "trade_no": 32
+        },
+        {
+          "cum_pnl": -65.75,
+          "trade_no": 33
+        },
+        {
+          "cum_pnl": -60.51,
+          "trade_no": 34
+        },
+        {
+          "cum_pnl": -67.21,
+          "trade_no": 35
+        },
+        {
+          "cum_pnl": -72.51,
+          "trade_no": 36
+        },
+        {
+          "cum_pnl": -63.21,
+          "trade_no": 37
+        },
+        {
+          "cum_pnl": -58.99,
+          "trade_no": 38
+        },
+        {
+          "cum_pnl": -69.89,
+          "trade_no": 39
+        },
+        {
+          "cum_pnl": -60.39,
+          "trade_no": 40
+        },
+        {
+          "cum_pnl": -69.09,
+          "trade_no": 41
+        },
+        {
+          "cum_pnl": -72.39,
+          "trade_no": 42
+        },
+        {
+          "cum_pnl": -65.55,
+          "trade_no": 43
+        },
+        {
+          "cum_pnl": -69.05,
+          "trade_no": 44
+        },
+        {
+          "cum_pnl": -71.45,
+          "trade_no": 45
+        },
+        {
+          "cum_pnl": -78.65,
+          "trade_no": 46
+        },
+        {
+          "cum_pnl": -76.65,
+          "trade_no": 47
+        },
+        {
+          "cum_pnl": -65.63,
+          "trade_no": 48
+        },
+        {
+          "cum_pnl": -52.14,
+          "trade_no": 49
+        },
+        {
+          "cum_pnl": -58.64,
+          "trade_no": 50
+        },
+        {
+          "cum_pnl": -48.22,
+          "trade_no": 51
+        },
+        {
+          "cum_pnl": -56.62,
+          "trade_no": 52
+        },
+        {
+          "cum_pnl": -55.66,
+          "trade_no": 53
+        },
+        {
+          "cum_pnl": -60.76,
+          "trade_no": 54
+        },
+        {
+          "cum_pnl": -49.3,
+          "trade_no": 55
+        },
+        {
+          "cum_pnl": -55.3,
+          "trade_no": 56
+        },
+        {
+          "cum_pnl": -59,
+          "trade_no": 57
+        },
+        {
+          "cum_pnl": -65.1,
+          "trade_no": 58
+        },
+        {
+          "cum_pnl": -52.94,
+          "trade_no": 59
+        },
+        {
+          "cum_pnl": -40.78,
+          "trade_no": 60
+        },
+        {
+          "cum_pnl": -48.78,
+          "trade_no": 61
+        },
+        {
+          "cum_pnl": -45.92,
+          "trade_no": 62
+        },
+        {
+          "cum_pnl": -50.12,
+          "trade_no": 63
+        },
+        {
+          "cum_pnl": -35.68,
+          "trade_no": 64
+        },
+        {
+          "cum_pnl": -38.88,
+          "trade_no": 65
+        },
+        {
+          "cum_pnl": -42.88,
+          "trade_no": 66
+        },
+        {
+          "cum_pnl": -42.98,
+          "trade_no": 67
+        },
+        {
+          "cum_pnl": -29.49,
+          "trade_no": 68
+        },
+        {
+          "cum_pnl": -20.56,
+          "trade_no": 69
+        },
+        {
+          "cum_pnl": -7.32,
+          "trade_no": 70
+        },
+        {
+          "cum_pnl": -12.22,
+          "trade_no": 71
+        },
+        {
+          "cum_pnl": -19.72,
+          "trade_no": 72
+        },
+        {
+          "cum_pnl": -28.02,
+          "trade_no": 73
+        },
+        {
+          "cum_pnl": -31.92,
+          "trade_no": 74
+        },
+        {
+          "cum_pnl": -38.02,
+          "trade_no": 75
+        },
+        {
+          "cum_pnl": -47.52,
+          "trade_no": 76
+        },
+        {
+          "cum_pnl": -51.02,
+          "trade_no": 77
+        },
+        {
+          "cum_pnl": -61.22,
+          "trade_no": 78
+        },
+        {
+          "cum_pnl": -68.22,
+          "trade_no": 79
+        },
+        {
+          "cum_pnl": -73.92,
+          "trade_no": 80
+        },
+        {
+          "cum_pnl": -78.02,
+          "trade_no": 81
+        },
+        {
+          "cum_pnl": -84.62,
+          "trade_no": 82
+        },
+        {
+          "cum_pnl": -90.32,
+          "trade_no": 83
+        },
+        {
+          "cum_pnl": -101.72,
+          "trade_no": 84
+        },
+        {
+          "cum_pnl": -106.02,
+          "trade_no": 85
+        },
+        {
+          "cum_pnl": -110.22,
+          "trade_no": 86
+        },
+        {
+          "cum_pnl": -116.12,
+          "trade_no": 87
+        },
+        {
+          "cum_pnl": -123.9,
+          "trade_no": 88
+        },
+        {
+          "cum_pnl": -146.4,
+          "trade_no": 89
+        },
+        {
+          "cum_pnl": -159.1,
+          "trade_no": 90
+        },
+        {
+          "cum_pnl": -168.9,
+          "trade_no": 91
+        },
+        {
+          "cum_pnl": -173.3,
+          "trade_no": 92
+        },
+        {
+          "cum_pnl": -154.11,
+          "trade_no": 93
+        },
+        {
+          "cum_pnl": -160.61,
+          "trade_no": 94
+        },
+        {
+          "cum_pnl": -166.11,
+          "trade_no": 95
+        },
+        {
+          "cum_pnl": -161.29,
+          "trade_no": 96
+        },
+        {
+          "cum_pnl": -153.12,
+          "trade_no": 97
+        },
+        {
+          "cum_pnl": -160.42,
+          "trade_no": 98
+        },
+        {
+          "cum_pnl": -156.96,
+          "trade_no": 99
+        },
+        {
+          "cum_pnl": -171.76,
+          "trade_no": 100
+        },
+        {
+          "cum_pnl": -178.96,
+          "trade_no": 101
+        },
+        {
+          "cum_pnl": -186.36,
+          "trade_no": 102
+        },
+        {
+          "cum_pnl": -194.36,
+          "trade_no": 103
+        },
+        {
+          "cum_pnl": -169.47,
+          "trade_no": 104
+        },
+        {
+          "cum_pnl": -158.26,
+          "trade_no": 105
+        },
+        {
+          "cum_pnl": -144.39,
+          "trade_no": 106
+        },
+        {
+          "cum_pnl": -163.39,
+          "trade_no": 107
+        },
+        {
+          "cum_pnl": -171.39,
+          "trade_no": 108
+        },
+        {
+          "cum_pnl": -176.19,
+          "trade_no": 109
+        },
+        {
+          "cum_pnl": -181.19,
+          "trade_no": 110
+        },
+        {
+          "cum_pnl": -195.09,
+          "trade_no": 111
+        },
+        {
+          "cum_pnl": -203.79,
+          "trade_no": 112
+        },
+        {
+          "cum_pnl": -208.49,
+          "trade_no": 113
+        },
+        {
+          "cum_pnl": -191.58,
+          "trade_no": 114
+        },
+        {
+          "cum_pnl": -187.4,
+          "trade_no": 115
+        },
+        {
+          "cum_pnl": -198.1,
+          "trade_no": 116
+        },
+        {
+          "cum_pnl": -187.72,
+          "trade_no": 117
+        },
+        {
+          "cum_pnl": -192.12,
+          "trade_no": 118
+        },
+        {
+          "cum_pnl": -202.72,
+          "trade_no": 119
+        },
+        {
+          "cum_pnl": -187.71,
+          "trade_no": 120
+        },
+        {
+          "cum_pnl": -191.61,
+          "trade_no": 121
+        },
+        {
+          "cum_pnl": -183.82,
+          "trade_no": 122
+        },
+        {
+          "cum_pnl": -190.62,
+          "trade_no": 123
+        },
+        {
+          "cum_pnl": -188.82,
+          "trade_no": 124
+        },
+        {
+          "cum_pnl": -195.22,
+          "trade_no": 125
+        },
+        {
+          "cum_pnl": -189.71,
+          "trade_no": 126
+        },
+        {
+          "cum_pnl": -193.81,
+          "trade_no": 127
+        },
+        {
+          "cum_pnl": -186.79,
+          "trade_no": 128
+        },
+        {
+          "cum_pnl": -170.07,
+          "trade_no": 129
+        },
+        {
+          "cum_pnl": -174.17,
+          "trade_no": 130
+        },
+        {
+          "cum_pnl": -180.67,
+          "trade_no": 131
+        },
+        {
+          "cum_pnl": -183.97,
+          "trade_no": 132
+        },
+        {
+          "cum_pnl": -187.77,
+          "trade_no": 133
+        },
+        {
+          "cum_pnl": -179.79,
+          "trade_no": 134
+        },
+        {
+          "cum_pnl": -171.18,
+          "trade_no": 135
+        },
+        {
+          "cum_pnl": -175.58,
+          "trade_no": 136
+        },
+        {
+          "cum_pnl": -167.03,
+          "trade_no": 137
+        },
+        {
+          "cum_pnl": -162.83,
+          "trade_no": 138
+        },
+        {
+          "cum_pnl": -170.83,
+          "trade_no": 139
+        },
+        {
+          "cum_pnl": -178.33,
+          "trade_no": 140
+        },
+        {
+          "cum_pnl": -182.13,
+          "trade_no": 141
+        },
+        {
+          "cum_pnl": -187.33,
+          "trade_no": 142
+        },
+        {
+          "cum_pnl": -192.73,
+          "trade_no": 143
+        },
+        {
+          "cum_pnl": -197.03,
+          "trade_no": 144
+        },
+        {
+          "cum_pnl": -184.3,
+          "trade_no": 145
+        },
+        {
+          "cum_pnl": -191.3,
+          "trade_no": 146
+        },
+        {
+          "cum_pnl": -195.6,
+          "trade_no": 147
+        },
+        {
+          "cum_pnl": -199.6,
+          "trade_no": 148
+        },
+        {
+          "cum_pnl": -206.8,
+          "trade_no": 149
+        },
+        {
+          "cum_pnl": -218.1,
+          "trade_no": 150
+        },
+        {
+          "cum_pnl": -225.1,
+          "trade_no": 151
+        },
+        {
+          "cum_pnl": -217.31,
+          "trade_no": 152
+        },
+        {
+          "cum_pnl": -224.31,
+          "trade_no": 153
+        },
+        {
+          "cum_pnl": -241.31,
+          "trade_no": 154
+        },
+        {
+          "cum_pnl": -245.71,
+          "trade_no": 155
+        },
+        {
+          "cum_pnl": -251.41,
+          "trade_no": 156
+        },
+        {
+          "cum_pnl": -259.31,
+          "trade_no": 157
+        },
+        {
+          "cum_pnl": -264.61,
+          "trade_no": 158
+        },
+        {
+          "cum_pnl": -233.83,
+          "trade_no": 159
+        },
+        {
+          "cum_pnl": -237.63,
+          "trade_no": 160
+        },
+        {
+          "cum_pnl": -239.63,
+          "trade_no": 161
+        },
+        {
+          "cum_pnl": -205.43,
+          "trade_no": 162
+        },
+        {
+          "cum_pnl": -209.93,
+          "trade_no": 163
+        },
+        {
+          "cum_pnl": -203.49,
+          "trade_no": 164
+        },
+        {
+          "cum_pnl": -209.89,
+          "trade_no": 165
+        },
+        {
+          "cum_pnl": -215.19,
+          "trade_no": 166
+        },
+        {
+          "cum_pnl": -220.79,
+          "trade_no": 167
+        },
+        {
+          "cum_pnl": -201.95,
+          "trade_no": 168
+        },
+        {
+          "cum_pnl": -209.45,
+          "trade_no": 169
+        },
+        {
+          "cum_pnl": -218.05,
+          "trade_no": 170
+        },
+        {
+          "cum_pnl": -226.45,
+          "trade_no": 171
+        },
+        {
+          "cum_pnl": -230.25,
+          "trade_no": 172
+        },
+        {
+          "cum_pnl": -222.75,
+          "trade_no": 173
+        },
+        {
+          "cum_pnl": -225.65,
+          "trade_no": 174
+        },
+        {
+          "cum_pnl": -215.99,
+          "trade_no": 175
+        },
+        {
+          "cum_pnl": -219.69,
+          "trade_no": 176
+        },
+        {
+          "cum_pnl": -223.79,
+          "trade_no": 177
+        },
+        {
+          "cum_pnl": -229.67,
+          "trade_no": 178
+        },
+        {
+          "cum_pnl": -213.71,
+          "trade_no": 179
+        },
+        {
+          "cum_pnl": -218.01,
+          "trade_no": 180
+        },
+        {
+          "cum_pnl": -210.22,
+          "trade_no": 181
+        },
+        {
+          "cum_pnl": -206.62,
+          "trade_no": 182
+        },
+        {
+          "cum_pnl": -210.72,
+          "trade_no": 183
+        },
+        {
+          "cum_pnl": -215.42,
+          "trade_no": 184
+        },
+        {
+          "cum_pnl": -219.92,
+          "trade_no": 185
+        },
+        {
+          "cum_pnl": -221.32,
+          "trade_no": 186
+        },
+        {
+          "cum_pnl": -210.64,
+          "trade_no": 187
+        },
+        {
+          "cum_pnl": -216.34,
+          "trade_no": 188
+        },
+        {
+          "cum_pnl": -220.24,
+          "trade_no": 189
+        },
+        {
+          "cum_pnl": -222.14,
+          "trade_no": 190
+        },
+        {
+          "cum_pnl": -215.68,
+          "trade_no": 191
+        },
+        {
+          "cum_pnl": -219.88,
+          "trade_no": 192
+        },
+        {
+          "cum_pnl": -236.48,
+          "trade_no": 193
+        },
+        {
+          "cum_pnl": -222.61,
+          "trade_no": 194
+        },
+        {
+          "cum_pnl": -221.21,
+          "trade_no": 195
+        },
+        {
+          "cum_pnl": -225.51,
+          "trade_no": 196
+        },
+        {
+          "cum_pnl": -237.01,
+          "trade_no": 197
+        },
+        {
+          "cum_pnl": -240.41,
+          "trade_no": 198
+        },
+        {
+          "cum_pnl": -245.21,
+          "trade_no": 199
+        },
+        {
+          "cum_pnl": -254.71,
+          "trade_no": 200
+        },
+        {
+          "cum_pnl": -257.21,
+          "trade_no": 201
+        },
+        {
+          "cum_pnl": -263.41,
+          "trade_no": 202
+        },
+        {
+          "cum_pnl": -269.61,
+          "trade_no": 203
+        },
+        {
+          "cum_pnl": -276.51,
+          "trade_no": 204
+        },
+        {
+          "cum_pnl": -291.51,
+          "trade_no": 205
+        },
+        {
+          "cum_pnl": -298.41,
+          "trade_no": 206
+        },
+        {
+          "cum_pnl": -280.5,
+          "trade_no": 207
+        },
+        {
+          "cum_pnl": -287.5,
+          "trade_no": 208
+        },
+        {
+          "cum_pnl": -297.1,
+          "trade_no": 209
+        },
+        {
+          "cum_pnl": -300.5,
+          "trade_no": 210
+        },
+        {
+          "cum_pnl": -296.3,
+          "trade_no": 211
+        },
+        {
+          "cum_pnl": -302.2,
+          "trade_no": 212
+        },
+        {
+          "cum_pnl": -306.7,
+          "trade_no": 213
+        },
+        {
+          "cum_pnl": -303.8,
+          "trade_no": 214
+        },
+        {
+          "cum_pnl": -310.3,
+          "trade_no": 215
+        },
+        {
+          "cum_pnl": -314.9,
+          "trade_no": 216
+        },
+        {
+          "cum_pnl": -318.9,
+          "trade_no": 217
+        },
+        {
+          "cum_pnl": -323.5,
+          "trade_no": 218
+        },
+        {
+          "cum_pnl": -320.1,
+          "trade_no": 219
+        },
+        {
+          "cum_pnl": -311.55,
+          "trade_no": 220
+        },
+        {
+          "cum_pnl": -317.15,
+          "trade_no": 221
+        },
+        {
+          "cum_pnl": -311.97,
+          "trade_no": 222
+        },
+        {
+          "cum_pnl": -307.22,
+          "trade_no": 223
+        },
+        {
+          "cum_pnl": -293.92,
+          "trade_no": 224
+        },
+        {
+          "cum_pnl": -299.42,
+          "trade_no": 225
+        },
+        {
+          "cum_pnl": -303.22,
+          "trade_no": 226
+        },
+        {
+          "cum_pnl": -294.42,
+          "trade_no": 227
+        },
+        {
+          "cum_pnl": -283.97,
+          "trade_no": 228
+        },
+        {
+          "cum_pnl": -292.47,
+          "trade_no": 229
+        },
+        {
+          "cum_pnl": -288.97,
+          "trade_no": 230
+        },
+        {
+          "cum_pnl": -294.07,
+          "trade_no": 231
+        },
+        {
+          "cum_pnl": -293.67,
+          "trade_no": 232
+        },
+        {
+          "cum_pnl": -301.57,
+          "trade_no": 233
+        },
+        {
+          "cum_pnl": -305.87,
+          "trade_no": 234
+        },
+        {
+          "cum_pnl": -294.66,
+          "trade_no": 235
+        },
+        {
+          "cum_pnl": -292.06,
+          "trade_no": 236
+        },
+        {
+          "cum_pnl": -282.97,
+          "trade_no": 237
+        },
+        {
+          "cum_pnl": -275.89,
+          "trade_no": 238
+        },
+        {
+          "cum_pnl": -269.05,
+          "trade_no": 239
+        },
+        {
+          "cum_pnl": -272.05,
+          "trade_no": 240
+        },
+        {
+          "cum_pnl": -275.65,
+          "trade_no": 241
+        },
+        {
+          "cum_pnl": -279.25,
+          "trade_no": 242
+        },
+        {
+          "cum_pnl": -282.75,
+          "trade_no": 243
+        }
+      ],
+      "losses": 163,
+      "max_drawdown": -326.69,
+      "n_trades": 243,
+      "pnl_points": -282.75,
+      "profit_factor": 0.73,
+      "sharpe": -2.1,
+      "win_rate": 32.9,
+      "wins": 80
+    },
+    "symbols": null,
+    "saved_at": "2026-06-20 20:49"
+  },
+  {
+    "id": "afd564d8fa",
+    "name": "vwap_v1 2025-12-01 to 2026-06-20",
+    "strategy": "vwap_v1",
+    "cfg": {
+      "active": false,
+      "ema_len": 10,
+      "max_ema_vwap_gap": 0,
+      "max_sl_percent": 2.5,
+      "partial1_pct": 40,
+      "partial2_pct": 30,
+      "r1": 1,
+      "r2": 2,
+      "r3": 3,
+      "session_end": "15:30",
+      "session_start": "09:15",
+      "sl_buffer_points": 2,
+      "symbol": "POLYCAB",
+      "timeframe": "5m",
+      "use_daily_trend_filter": true,
+      "use_partial_exits": false,
+      "use_session_filter": true
+    },
+    "date_from": "2025-12-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "equity_curve": [
+        {
+          "cum_pnl": -7.5,
+          "trade_no": 1
+        },
+        {
+          "cum_pnl": 15,
+          "trade_no": 2
+        },
+        {
+          "cum_pnl": -6,
+          "trade_no": 3
+        },
+        {
+          "cum_pnl": -31,
+          "trade_no": 4
+        },
+        {
+          "cum_pnl": 51.5,
+          "trade_no": 5
+        },
+        {
+          "cum_pnl": 29,
+          "trade_no": 6
+        },
+        {
+          "cum_pnl": 13,
+          "trade_no": 7
+        },
+        {
+          "cum_pnl": 8.5,
+          "trade_no": 8
+        },
+        {
+          "cum_pnl": -16.5,
+          "trade_no": 9
+        },
+        {
+          "cum_pnl": 49.5,
+          "trade_no": 10
+        },
+        {
+          "cum_pnl": 31.5,
+          "trade_no": 11
+        },
+        {
+          "cum_pnl": 18.5,
+          "trade_no": 12
+        },
+        {
+          "cum_pnl": 2.5,
+          "trade_no": 13
+        },
+        {
+          "cum_pnl": 58,
+          "trade_no": 14
+        },
+        {
+          "cum_pnl": 42.5,
+          "trade_no": 15
+        },
+        {
+          "cum_pnl": 45,
+          "trade_no": 16
+        },
+        {
+          "cum_pnl": 75,
+          "trade_no": 17
+        },
+        {
+          "cum_pnl": 72.5,
+          "trade_no": 18
+        },
+        {
+          "cum_pnl": 45,
+          "trade_no": 19
+        },
+        {
+          "cum_pnl": 37.5,
+          "trade_no": 20
+        },
+        {
+          "cum_pnl": 5.5,
+          "trade_no": 21
+        },
+        {
+          "cum_pnl": -63,
+          "trade_no": 22
+        },
+        {
+          "cum_pnl": -40.5,
+          "trade_no": 23
+        },
+        {
+          "cum_pnl": 2.5,
+          "trade_no": 24
+        },
+        {
+          "cum_pnl": -5.5,
+          "trade_no": 25
+        },
+        {
+          "cum_pnl": -17,
+          "trade_no": 26
+        },
+        {
+          "cum_pnl": -30.5,
+          "trade_no": 27
+        },
+        {
+          "cum_pnl": -35,
+          "trade_no": 28
+        },
+        {
+          "cum_pnl": -40,
+          "trade_no": 29
+        },
+        {
+          "cum_pnl": -16,
+          "trade_no": 30
+        },
+        {
+          "cum_pnl": -0.5,
+          "trade_no": 31
+        },
+        {
+          "cum_pnl": -29.5,
+          "trade_no": 32
+        },
+        {
+          "cum_pnl": 38,
+          "trade_no": 33
+        },
+        {
+          "cum_pnl": 38,
+          "trade_no": 34
+        },
+        {
+          "cum_pnl": 89,
+          "trade_no": 35
+        },
+        {
+          "cum_pnl": 82.5,
+          "trade_no": 36
+        },
+        {
+          "cum_pnl": 65.5,
+          "trade_no": 37
+        },
+        {
+          "cum_pnl": 63.5,
+          "trade_no": 38
+        },
+        {
+          "cum_pnl": 46.5,
+          "trade_no": 39
+        },
+        {
+          "cum_pnl": 41.5,
+          "trade_no": 40
+        },
+        {
+          "cum_pnl": 97,
+          "trade_no": 41
+        },
+        {
+          "cum_pnl": 91.5,
+          "trade_no": 42
+        },
+        {
+          "cum_pnl": 118.5,
+          "trade_no": 43
+        },
+        {
+          "cum_pnl": 104.5,
+          "trade_no": 44
+        },
+        {
+          "cum_pnl": 91.5,
+          "trade_no": 45
+        },
+        {
+          "cum_pnl": 84.5,
+          "trade_no": 46
+        },
+        {
+          "cum_pnl": 59.5,
+          "trade_no": 47
+        },
+        {
+          "cum_pnl": 75,
+          "trade_no": 48
+        },
+        {
+          "cum_pnl": 64,
+          "trade_no": 49
+        },
+        {
+          "cum_pnl": 50.5,
+          "trade_no": 50
+        },
+        {
+          "cum_pnl": 115,
+          "trade_no": 51
+        },
+        {
+          "cum_pnl": 109.5,
+          "trade_no": 52
+        },
+        {
+          "cum_pnl": 97.5,
+          "trade_no": 53
+        },
+        {
+          "cum_pnl": 87,
+          "trade_no": 54
+        },
+        {
+          "cum_pnl": 81,
+          "trade_no": 55
+        },
+        {
+          "cum_pnl": 73,
+          "trade_no": 56
+        },
+        {
+          "cum_pnl": 101.5,
+          "trade_no": 57
+        },
+        {
+          "cum_pnl": 128.5,
+          "trade_no": 58
+        },
+        {
+          "cum_pnl": 124,
+          "trade_no": 59
+        },
+        {
+          "cum_pnl": 116.5,
+          "trade_no": 60
+        },
+        {
+          "cum_pnl": 196,
+          "trade_no": 61
+        },
+        {
+          "cum_pnl": 184,
+          "trade_no": 62
+        },
+        {
+          "cum_pnl": 211,
+          "trade_no": 63
+        },
+        {
+          "cum_pnl": 191.5,
+          "trade_no": 64
+        },
+        {
+          "cum_pnl": 175,
+          "trade_no": 65
+        },
+        {
+          "cum_pnl": 169,
+          "trade_no": 66
+        },
+        {
+          "cum_pnl": 149,
+          "trade_no": 67
+        },
+        {
+          "cum_pnl": 111,
+          "trade_no": 68
+        },
+        {
+          "cum_pnl": 97.5,
+          "trade_no": 69
+        },
+        {
+          "cum_pnl": 73,
+          "trade_no": 70
+        },
+        {
+          "cum_pnl": 122.5,
+          "trade_no": 71
+        },
+        {
+          "cum_pnl": 112.5,
+          "trade_no": 72
+        },
+        {
+          "cum_pnl": 160.5,
+          "trade_no": 73
+        },
+        {
+          "cum_pnl": 213,
+          "trade_no": 74
+        },
+        {
+          "cum_pnl": 203,
+          "trade_no": 75
+        },
+        {
+          "cum_pnl": 230,
+          "trade_no": 76
+        },
+        {
+          "cum_pnl": 211.5,
+          "trade_no": 77
+        },
+        {
+          "cum_pnl": 176.5,
+          "trade_no": 78
+        },
+        {
+          "cum_pnl": 163.5,
+          "trade_no": 79
+        },
+        {
+          "cum_pnl": 240.5,
+          "trade_no": 80
+        },
+        {
+          "cum_pnl": 221.5,
+          "trade_no": 81
+        },
+        {
+          "cum_pnl": 277,
+          "trade_no": 82
+        },
+        {
+          "cum_pnl": 267.5,
+          "trade_no": 83
+        },
+        {
+          "cum_pnl": 255.5,
+          "trade_no": 84
+        },
+        {
+          "cum_pnl": 271,
+          "trade_no": 85
+        },
+        {
+          "cum_pnl": 332.5,
+          "trade_no": 86
+        },
+        {
+          "cum_pnl": 380.5,
+          "trade_no": 87
+        },
+        {
+          "cum_pnl": 352,
+          "trade_no": 88
+        },
+        {
+          "cum_pnl": 328,
+          "trade_no": 89
+        },
+        {
+          "cum_pnl": 407.5,
+          "trade_no": 90
+        },
+        {
+          "cum_pnl": 420,
+          "trade_no": 91
+        },
+        {
+          "cum_pnl": 321.5,
+          "trade_no": 92
+        },
+        {
+          "cum_pnl": 306,
+          "trade_no": 93
+        },
+        {
+          "cum_pnl": 367.5,
+          "trade_no": 94
+        },
+        {
+          "cum_pnl": 295,
+          "trade_no": 95
+        },
+        {
+          "cum_pnl": 270,
+          "trade_no": 96
+        },
+        {
+          "cum_pnl": 264.5,
+          "trade_no": 97
+        },
+        {
+          "cum_pnl": 302,
+          "trade_no": 98
+        },
+        {
+          "cum_pnl": 315.5,
+          "trade_no": 99
+        },
+        {
+          "cum_pnl": 307,
+          "trade_no": 100
+        },
+        {
+          "cum_pnl": 318,
+          "trade_no": 101
+        },
+        {
+          "cum_pnl": 291,
+          "trade_no": 102
+        },
+        {
+          "cum_pnl": 268,
+          "trade_no": 103
+        },
+        {
+          "cum_pnl": 251.5,
+          "trade_no": 104
+        },
+        {
+          "cum_pnl": 230.5,
+          "trade_no": 105
+        },
+        {
+          "cum_pnl": 221.5,
+          "trade_no": 106
+        },
+        {
+          "cum_pnl": 211.5,
+          "trade_no": 107
+        },
+        {
+          "cum_pnl": 201.5,
+          "trade_no": 108
+        },
+        {
+          "cum_pnl": 202,
+          "trade_no": 109
+        },
+        {
+          "cum_pnl": 181.5,
+          "trade_no": 110
+        },
+        {
+          "cum_pnl": 149,
+          "trade_no": 111
+        },
+        {
+          "cum_pnl": 138.5,
+          "trade_no": 112
+        },
+        {
+          "cum_pnl": 172.5,
+          "trade_no": 113
+        },
+        {
+          "cum_pnl": 166,
+          "trade_no": 114
+        },
+        {
+          "cum_pnl": 151.5,
+          "trade_no": 115
+        },
+        {
+          "cum_pnl": 145.5,
+          "trade_no": 116
+        },
+        {
+          "cum_pnl": 137,
+          "trade_no": 117
+        },
+        {
+          "cum_pnl": 124,
+          "trade_no": 118
+        },
+        {
+          "cum_pnl": 108.5,
+          "trade_no": 119
+        },
+        {
+          "cum_pnl": 93,
+          "trade_no": 120
+        },
+        {
+          "cum_pnl": 72.5,
+          "trade_no": 121
+        },
+        {
+          "cum_pnl": 61,
+          "trade_no": 122
+        },
+        {
+          "cum_pnl": 53,
+          "trade_no": 123
+        },
+        {
+          "cum_pnl": 42,
+          "trade_no": 124
+        },
+        {
+          "cum_pnl": 115.5,
+          "trade_no": 125
+        },
+        {
+          "cum_pnl": 144.5,
+          "trade_no": 126
+        },
+        {
+          "cum_pnl": 130,
+          "trade_no": 127
+        },
+        {
+          "cum_pnl": 142,
+          "trade_no": 128
+        },
+        {
+          "cum_pnl": 132.5,
+          "trade_no": 129
+        },
+        {
+          "cum_pnl": 123,
+          "trade_no": 130
+        },
+        {
+          "cum_pnl": 137.5,
+          "trade_no": 131
+        },
+        {
+          "cum_pnl": 124,
+          "trade_no": 132
+        },
+        {
+          "cum_pnl": 116.5,
+          "trade_no": 133
+        },
+        {
+          "cum_pnl": 108.5,
+          "trade_no": 134
+        },
+        {
+          "cum_pnl": 100,
+          "trade_no": 135
+        },
+        {
+          "cum_pnl": 122.5,
+          "trade_no": 136
+        },
+        {
+          "cum_pnl": 151,
+          "trade_no": 137
+        },
+        {
+          "cum_pnl": 139,
+          "trade_no": 138
+        },
+        {
+          "cum_pnl": 117.5,
+          "trade_no": 139
+        },
+        {
+          "cum_pnl": 96,
+          "trade_no": 140
+        },
+        {
+          "cum_pnl": 75,
+          "trade_no": 141
+        },
+        {
+          "cum_pnl": 127.5,
+          "trade_no": 142
+        },
+        {
+          "cum_pnl": 97.5,
+          "trade_no": 143
+        },
+        {
+          "cum_pnl": 181.5,
+          "trade_no": 144
+        },
+        {
+          "cum_pnl": 174.5,
+          "trade_no": 145
+        },
+        {
+          "cum_pnl": 207.5,
+          "trade_no": 146
+        },
+        {
+          "cum_pnl": 189,
+          "trade_no": 147
+        },
+        {
+          "cum_pnl": 170,
+          "trade_no": 148
+        },
+        {
+          "cum_pnl": 198.5,
+          "trade_no": 149
+        },
+        {
+          "cum_pnl": 246.5,
+          "trade_no": 150
+        },
+        {
+          "cum_pnl": 217,
+          "trade_no": 151
+        },
+        {
+          "cum_pnl": 262.5,
+          "trade_no": 152
+        },
+        {
+          "cum_pnl": 303,
+          "trade_no": 153
+        },
+        {
+          "cum_pnl": 292.5,
+          "trade_no": 154
+        },
+        {
+          "cum_pnl": 279.5,
+          "trade_no": 155
+        },
+        {
+          "cum_pnl": 252.5,
+          "trade_no": 156
+        },
+        {
+          "cum_pnl": 225.5,
+          "trade_no": 157
+        },
+        {
+          "cum_pnl": 201,
+          "trade_no": 158
+        },
+        {
+          "cum_pnl": 239,
+          "trade_no": 159
+        },
+        {
+          "cum_pnl": 312.5,
+          "trade_no": 160
+        },
+        {
+          "cum_pnl": 336.5,
+          "trade_no": 161
+        },
+        {
+          "cum_pnl": 391.5,
+          "trade_no": 162
+        },
+        {
+          "cum_pnl": 382,
+          "trade_no": 163
+        },
+        {
+          "cum_pnl": 460,
+          "trade_no": 164
+        },
+        {
+          "cum_pnl": 505,
+          "trade_no": 165
+        },
+        {
+          "cum_pnl": 489.5,
+          "trade_no": 166
+        },
+        {
+          "cum_pnl": 480.5,
+          "trade_no": 167
+        },
+        {
+          "cum_pnl": 489.5,
+          "trade_no": 168
+        },
+        {
+          "cum_pnl": 471.5,
+          "trade_no": 169
+        },
+        {
+          "cum_pnl": 466.5,
+          "trade_no": 170
+        },
+        {
+          "cum_pnl": 430.5,
+          "trade_no": 171
+        },
+        {
+          "cum_pnl": 414.5,
+          "trade_no": 172
+        },
+        {
+          "cum_pnl": 540.5,
+          "trade_no": 173
+        },
+        {
+          "cum_pnl": 615.5,
+          "trade_no": 174
+        },
+        {
+          "cum_pnl": 671.5,
+          "trade_no": 175
+        },
+        {
+          "cum_pnl": 771,
+          "trade_no": 176
+        },
+        {
+          "cum_pnl": 766,
+          "trade_no": 177
+        },
+        {
+          "cum_pnl": 735.5,
+          "trade_no": 178
+        },
+        {
+          "cum_pnl": 722.5,
+          "trade_no": 179
+        },
+        {
+          "cum_pnl": 713.5,
+          "trade_no": 180
+        },
+        {
+          "cum_pnl": 705,
+          "trade_no": 181
+        },
+        {
+          "cum_pnl": 683,
+          "trade_no": 182
+        },
+        {
+          "cum_pnl": 660,
+          "trade_no": 183
+        },
+        {
+          "cum_pnl": 697.5,
+          "trade_no": 184
+        },
+        {
+          "cum_pnl": 680,
+          "trade_no": 185
+        },
+        {
+          "cum_pnl": 662,
+          "trade_no": 186
+        },
+        {
+          "cum_pnl": 643,
+          "trade_no": 187
+        },
+        {
+          "cum_pnl": 637,
+          "trade_no": 188
+        },
+        {
+          "cum_pnl": 659.5,
+          "trade_no": 189
+        },
+        {
+          "cum_pnl": 638.5,
+          "trade_no": 190
+        },
+        {
+          "cum_pnl": 631,
+          "trade_no": 191
+        },
+        {
+          "cum_pnl": 598.5,
+          "trade_no": 192
+        },
+        {
+          "cum_pnl": 636,
+          "trade_no": 193
+        },
+        {
+          "cum_pnl": 625,
+          "trade_no": 194
+        },
+        {
+          "cum_pnl": 643,
+          "trade_no": 195
+        },
+        {
+          "cum_pnl": 629.5,
+          "trade_no": 196
+        },
+        {
+          "cum_pnl": 611,
+          "trade_no": 197
+        },
+        {
+          "cum_pnl": 640,
+          "trade_no": 198
+        },
+        {
+          "cum_pnl": 624.5,
+          "trade_no": 199
+        },
+        {
+          "cum_pnl": 608.5,
+          "trade_no": 200
+        },
+        {
+          "cum_pnl": 585.5,
+          "trade_no": 201
+        },
+        {
+          "cum_pnl": 572.5,
+          "trade_no": 202
+        },
+        {
+          "cum_pnl": 563,
+          "trade_no": 203
+        },
+        {
+          "cum_pnl": 587,
+          "trade_no": 204
+        },
+        {
+          "cum_pnl": 566,
+          "trade_no": 205
+        },
+        {
+          "cum_pnl": 546,
+          "trade_no": 206
+        },
+        {
+          "cum_pnl": 531,
+          "trade_no": 207
+        },
+        {
+          "cum_pnl": 543.5,
+          "trade_no": 208
+        },
+        {
+          "cum_pnl": 515.5,
+          "trade_no": 209
+        },
+        {
+          "cum_pnl": 499,
+          "trade_no": 210
+        },
+        {
+          "cum_pnl": 479,
+          "trade_no": 211
+        },
+        {
+          "cum_pnl": 464.5,
+          "trade_no": 212
+        },
+        {
+          "cum_pnl": 532,
+          "trade_no": 213
+        },
+        {
+          "cum_pnl": 569.5,
+          "trade_no": 214
+        },
+        {
+          "cum_pnl": 620.5,
+          "trade_no": 215
+        },
+        {
+          "cum_pnl": 599,
+          "trade_no": 216
+        },
+        {
+          "cum_pnl": 689.5,
+          "trade_no": 217
+        },
+        {
+          "cum_pnl": 714,
+          "trade_no": 218
+        },
+        {
+          "cum_pnl": 698,
+          "trade_no": 219
+        },
+        {
+          "cum_pnl": 682,
+          "trade_no": 220
+        },
+        {
+          "cum_pnl": 707.5,
+          "trade_no": 221
+        },
+        {
+          "cum_pnl": 670.5,
+          "trade_no": 222
+        },
+        {
+          "cum_pnl": 655.5,
+          "trade_no": 223
+        },
+        {
+          "cum_pnl": 642.5,
+          "trade_no": 224
+        },
+        {
+          "cum_pnl": 629.5,
+          "trade_no": 225
+        },
+        {
+          "cum_pnl": 682,
+          "trade_no": 226
+        },
+        {
+          "cum_pnl": 660.5,
+          "trade_no": 227
+        },
+        {
+          "cum_pnl": 634.5,
+          "trade_no": 228
+        },
+        {
+          "cum_pnl": 620.5,
+          "trade_no": 229
+        },
+        {
+          "cum_pnl": 644.5,
+          "trade_no": 230
+        },
+        {
+          "cum_pnl": 624,
+          "trade_no": 231
+        },
+        {
+          "cum_pnl": 672.5,
+          "trade_no": 232
+        },
+        {
+          "cum_pnl": 753.5,
+          "trade_no": 233
+        },
+        {
+          "cum_pnl": 739,
+          "trade_no": 234
+        },
+        {
+          "cum_pnl": 723.5,
+          "trade_no": 235
+        },
+        {
+          "cum_pnl": 708,
+          "trade_no": 236
+        },
+        {
+          "cum_pnl": 687.5,
+          "trade_no": 237
+        },
+        {
+          "cum_pnl": 669,
+          "trade_no": 238
+        },
+        {
+          "cum_pnl": 657.5,
+          "trade_no": 239
+        },
+        {
+          "cum_pnl": 641,
+          "trade_no": 240
+        },
+        {
+          "cum_pnl": 633.5,
+          "trade_no": 241
+        },
+        {
+          "cum_pnl": 617,
+          "trade_no": 242
+        },
+        {
+          "cum_pnl": 651.5,
+          "trade_no": 243
+        },
+        {
+          "cum_pnl": 697.5,
+          "trade_no": 244
+        },
+        {
+          "cum_pnl": 778.5,
+          "trade_no": 245
+        },
+        {
+          "cum_pnl": 770.5,
+          "trade_no": 246
+        },
+        {
+          "cum_pnl": 760.5,
+          "trade_no": 247
+        },
+        {
+          "cum_pnl": 748,
+          "trade_no": 248
+        },
+        {
+          "cum_pnl": 740.5,
+          "trade_no": 249
+        },
+        {
+          "cum_pnl": 898,
+          "trade_no": 250
+        },
+        {
+          "cum_pnl": 884,
+          "trade_no": 251
+        },
+        {
+          "cum_pnl": 872,
+          "trade_no": 252
+        },
+        {
+          "cum_pnl": 853.5,
+          "trade_no": 253
+        },
+        {
+          "cum_pnl": 828,
+          "trade_no": 254
+        },
+        {
+          "cum_pnl": 809,
+          "trade_no": 255
+        },
+        {
+          "cum_pnl": 790,
+          "trade_no": 256
+        },
+        {
+          "cum_pnl": 832,
+          "trade_no": 257
+        },
+        {
+          "cum_pnl": 810.5,
+          "trade_no": 258
+        },
+        {
+          "cum_pnl": 787,
+          "trade_no": 259
+        },
+        {
+          "cum_pnl": 731,
+          "trade_no": 260
+        },
+        {
+          "cum_pnl": 703,
+          "trade_no": 261
+        },
+        {
+          "cum_pnl": 685.5,
+          "trade_no": 262
+        },
+        {
+          "cum_pnl": 673.5,
+          "trade_no": 263
+        },
+        {
+          "cum_pnl": 653,
+          "trade_no": 264
+        },
+        {
+          "cum_pnl": 702.5,
+          "trade_no": 265
+        },
+        {
+          "cum_pnl": 759.5,
+          "trade_no": 266
+        },
+        {
+          "cum_pnl": 753.5,
+          "trade_no": 267
+        },
+        {
+          "cum_pnl": 725,
+          "trade_no": 268
+        },
+        {
+          "cum_pnl": 718,
+          "trade_no": 269
+        },
+        {
+          "cum_pnl": 699.5,
+          "trade_no": 270
+        },
+        {
+          "cum_pnl": 689.5,
+          "trade_no": 271
+        },
+        {
+          "cum_pnl": 663,
+          "trade_no": 272
+        },
+        {
+          "cum_pnl": 706.5,
+          "trade_no": 273
+        },
+        {
+          "cum_pnl": 698,
+          "trade_no": 274
+        },
+        {
+          "cum_pnl": 683,
+          "trade_no": 275
+        },
+        {
+          "cum_pnl": 725,
+          "trade_no": 276
+        },
+        {
+          "cum_pnl": 711,
+          "trade_no": 277
+        },
+        {
+          "cum_pnl": 697,
+          "trade_no": 278
+        },
+        {
+          "cum_pnl": 680,
+          "trade_no": 279
+        },
+        {
+          "cum_pnl": 694,
+          "trade_no": 280
+        },
+        {
+          "cum_pnl": 679,
+          "trade_no": 281
+        },
+        {
+          "cum_pnl": 715,
+          "trade_no": 282
+        },
+        {
+          "cum_pnl": 681,
+          "trade_no": 283
+        },
+        {
+          "cum_pnl": 858,
+          "trade_no": 284
+        },
+        {
+          "cum_pnl": 842.5,
+          "trade_no": 285
+        },
+        {
+          "cum_pnl": 821,
+          "trade_no": 286
+        },
+        {
+          "cum_pnl": 831.5,
+          "trade_no": 287
+        },
+        {
+          "cum_pnl": 821,
+          "trade_no": 288
+        },
+        {
+          "cum_pnl": 807,
+          "trade_no": 289
+        },
+        {
+          "cum_pnl": 796,
+          "trade_no": 290
+        },
+        {
+          "cum_pnl": 836.5,
+          "trade_no": 291
+        },
+        {
+          "cum_pnl": 820.5,
+          "trade_no": 292
+        },
+        {
+          "cum_pnl": 793,
+          "trade_no": 293
+        },
+        {
+          "cum_pnl": 777.5,
+          "trade_no": 294
+        },
+        {
+          "cum_pnl": 751.5,
+          "trade_no": 295
+        },
+        {
+          "cum_pnl": 722,
+          "trade_no": 296
+        },
+        {
+          "cum_pnl": 700.5,
+          "trade_no": 297
+        },
+        {
+          "cum_pnl": 667.5,
+          "trade_no": 298
+        },
+        {
+          "cum_pnl": 661,
+          "trade_no": 299
+        },
+        {
+          "cum_pnl": 639,
+          "trade_no": 300
+        },
+        {
+          "cum_pnl": 686,
+          "trade_no": 301
+        },
+        {
+          "cum_pnl": 670.5,
+          "trade_no": 302
+        },
+        {
+          "cum_pnl": 661,
+          "trade_no": 303
+        },
+        {
+          "cum_pnl": 641.5,
+          "trade_no": 304
+        },
+        {
+          "cum_pnl": 620.5,
+          "trade_no": 305
+        },
+        {
+          "cum_pnl": 601,
+          "trade_no": 306
+        },
+        {
+          "cum_pnl": 585.5,
+          "trade_no": 307
+        },
+        {
+          "cum_pnl": 628.5,
+          "trade_no": 308
+        },
+        {
+          "cum_pnl": 608.5,
+          "trade_no": 309
+        },
+        {
+          "cum_pnl": 594.5,
+          "trade_no": 310
+        },
+        {
+          "cum_pnl": 585.5,
+          "trade_no": 311
+        },
+        {
+          "cum_pnl": 575,
+          "trade_no": 312
+        },
+        {
+          "cum_pnl": 555,
+          "trade_no": 313
+        },
+        {
+          "cum_pnl": 536,
+          "trade_no": 314
+        },
+        {
+          "cum_pnl": 584,
+          "trade_no": 315
+        },
+        {
+          "cum_pnl": 572,
+          "trade_no": 316
+        },
+        {
+          "cum_pnl": 608,
+          "trade_no": 317
+        },
+        {
+          "cum_pnl": 596,
+          "trade_no": 318
+        },
+        {
+          "cum_pnl": 582,
+          "trade_no": 319
+        },
+        {
+          "cum_pnl": 574.5,
+          "trade_no": 320
+        },
+        {
+          "cum_pnl": 678,
+          "trade_no": 321
+        }
+      ],
+      "losses": 224,
+      "max_drawdown": -378,
+      "n_trades": 321,
+      "pnl_points": 678,
+      "profit_factor": 1.18,
+      "sharpe": 1.1,
+      "win_rate": 30.2,
+      "wins": 97
+    },
+    "symbols": null,
+    "saved_at": "2026-06-20 21:59"
+  },
+  {
+    "id": "39161dc50f",
+    "name": "vwap_v1 2025-09-01to2026-06-20",
+    "strategy": "vwap_v1",
+    "cfg": {
+      "active": false,
+      "ema_len": 10,
+      "max_ema_vwap_gap": 0,
+      "max_sl_percent": 2.5,
+      "partial1_pct": 40,
+      "partial2_pct": 30,
+      "r1": 1,
+      "r2": 2,
+      "r3": 3,
+      "session_end": "15:30",
+      "session_start": "09:15",
+      "sl_buffer_points": 2,
+      "symbol": "POLYCAB",
+      "timeframe": "5m",
+      "use_daily_trend_filter": true,
+      "use_partial_exits": false,
+      "use_session_filter": true
+    },
+    "date_from": "2025-09-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "equity_curve": [
+        {
+          "cum_pnl": 24,
+          "trade_no": 1
+        },
+        {
+          "cum_pnl": 15.5,
+          "trade_no": 2
+        },
+        {
+          "cum_pnl": 51,
+          "trade_no": 3
+        },
+        {
+          "cum_pnl": 37.5,
+          "trade_no": 4
+        },
+        {
+          "cum_pnl": 20.5,
+          "trade_no": 5
+        },
+        {
+          "cum_pnl": 4.5,
+          "trade_no": 6
+        },
+        {
+          "cum_pnl": -4,
+          "trade_no": 7
+        },
+        {
+          "cum_pnl": -10.5,
+          "trade_no": 8
+        },
+        {
+          "cum_pnl": -25.5,
+          "trade_no": 9
+        },
+        {
+          "cum_pnl": -5.5,
+          "trade_no": 10
+        },
+        {
+          "cum_pnl": -14.5,
+          "trade_no": 11
+        },
+        {
+          "cum_pnl": 32,
+          "trade_no": 12
+        },
+        {
+          "cum_pnl": 28.5,
+          "trade_no": 13
+        },
+        {
+          "cum_pnl": 46.5,
+          "trade_no": 14
+        },
+        {
+          "cum_pnl": 36,
+          "trade_no": 15
+        },
+        {
+          "cum_pnl": 47.5,
+          "trade_no": 16
+        },
+        {
+          "cum_pnl": 41,
+          "trade_no": 17
+        },
+        {
+          "cum_pnl": 35,
+          "trade_no": 18
+        },
+        {
+          "cum_pnl": -6.5,
+          "trade_no": 19
+        },
+        {
+          "cum_pnl": -17,
+          "trade_no": 20
+        },
+        {
+          "cum_pnl": -29,
+          "trade_no": 21
+        },
+        {
+          "cum_pnl": -37,
+          "trade_no": 22
+        },
+        {
+          "cum_pnl": -37.5,
+          "trade_no": 23
+        },
+        {
+          "cum_pnl": -7.5,
+          "trade_no": 24
+        },
+        {
+          "cum_pnl": 8,
+          "trade_no": 25
+        },
+        {
+          "cum_pnl": -14,
+          "trade_no": 26
+        },
+        {
+          "cum_pnl": -30.5,
+          "trade_no": 27
+        },
+        {
+          "cum_pnl": -40,
+          "trade_no": 28
+        },
+        {
+          "cum_pnl": -50.5,
+          "trade_no": 29
+        },
+        {
+          "cum_pnl": -59,
+          "trade_no": 30
+        },
+        {
+          "cum_pnl": -66,
+          "trade_no": 31
+        },
+        {
+          "cum_pnl": -31.5,
+          "trade_no": 32
+        },
+        {
+          "cum_pnl": -25,
+          "trade_no": 33
+        },
+        {
+          "cum_pnl": -50,
+          "trade_no": 34
+        },
+        {
+          "cum_pnl": -73,
+          "trade_no": 35
+        },
+        {
+          "cum_pnl": -81,
+          "trade_no": 36
+        },
+        {
+          "cum_pnl": -95,
+          "trade_no": 37
+        },
+        {
+          "cum_pnl": -108,
+          "trade_no": 38
+        },
+        {
+          "cum_pnl": -34.5,
+          "trade_no": 39
+        },
+        {
+          "cum_pnl": 6,
+          "trade_no": 40
+        },
+        {
+          "cum_pnl": 17.5,
+          "trade_no": 41
+        },
+        {
+          "cum_pnl": 4.5,
+          "trade_no": 42
+        },
+        {
+          "cum_pnl": -24,
+          "trade_no": 43
+        },
+        {
+          "cum_pnl": -37,
+          "trade_no": 44
+        },
+        {
+          "cum_pnl": -45,
+          "trade_no": 45
+        },
+        {
+          "cum_pnl": -62,
+          "trade_no": 46
+        },
+        {
+          "cum_pnl": -87,
+          "trade_no": 47
+        },
+        {
+          "cum_pnl": -52.5,
+          "trade_no": 48
+        },
+        {
+          "cum_pnl": -68.5,
+          "trade_no": 49
+        },
+        {
+          "cum_pnl": -49,
+          "trade_no": 50
+        },
+        {
+          "cum_pnl": -41.5,
+          "trade_no": 51
+        },
+        {
+          "cum_pnl": -13,
+          "trade_no": 52
+        },
+        {
+          "cum_pnl": -21.5,
+          "trade_no": 53
+        },
+        {
+          "cum_pnl": -35.5,
+          "trade_no": 54
+        },
+        {
+          "cum_pnl": -5.5,
+          "trade_no": 55
+        },
+        {
+          "cum_pnl": -17,
+          "trade_no": 56
+        },
+        {
+          "cum_pnl": -54.5,
+          "trade_no": 57
+        },
+        {
+          "cum_pnl": -66.5,
+          "trade_no": 58
+        },
+        {
+          "cum_pnl": -51,
+          "trade_no": 59
+        },
+        {
+          "cum_pnl": -65,
+          "trade_no": 60
+        },
+        {
+          "cum_pnl": -77,
+          "trade_no": 61
+        },
+        {
+          "cum_pnl": -90.5,
+          "trade_no": 62
+        },
+        {
+          "cum_pnl": -100.5,
+          "trade_no": 63
+        },
+        {
+          "cum_pnl": -110,
+          "trade_no": 64
+        },
+        {
+          "cum_pnl": -116,
+          "trade_no": 65
+        },
+        {
+          "cum_pnl": -92,
+          "trade_no": 66
+        },
+        {
+          "cum_pnl": -102,
+          "trade_no": 67
+        },
+        {
+          "cum_pnl": -88.5,
+          "trade_no": 68
+        },
+        {
+          "cum_pnl": -111,
+          "trade_no": 69
+        },
+        {
+          "cum_pnl": -76.5,
+          "trade_no": 70
+        },
+        {
+          "cum_pnl": -85,
+          "trade_no": 71
+        },
+        {
+          "cum_pnl": -91,
+          "trade_no": 72
+        },
+        {
+          "cum_pnl": -105.5,
+          "trade_no": 73
+        },
+        {
+          "cum_pnl": -60.5,
+          "trade_no": 74
+        },
+        {
+          "cum_pnl": -83,
+          "trade_no": 75
+        },
+        {
+          "cum_pnl": -101,
+          "trade_no": 76
+        },
+        {
+          "cum_pnl": -117,
+          "trade_no": 77
+        },
+        {
+          "cum_pnl": -123.5,
+          "trade_no": 78
+        },
+        {
+          "cum_pnl": -130.5,
+          "trade_no": 79
+        },
+        {
+          "cum_pnl": -150.5,
+          "trade_no": 80
+        },
+        {
+          "cum_pnl": -155.5,
+          "trade_no": 81
+        },
+        {
+          "cum_pnl": -161.5,
+          "trade_no": 82
+        },
+        {
+          "cum_pnl": -134.5,
+          "trade_no": 83
+        },
+        {
+          "cum_pnl": -115,
+          "trade_no": 84
+        },
+        {
+          "cum_pnl": -56.5,
+          "trade_no": 85
+        },
+        {
+          "cum_pnl": -26.5,
+          "trade_no": 86
+        },
+        {
+          "cum_pnl": -37.5,
+          "trade_no": 87
+        },
+        {
+          "cum_pnl": -34,
+          "trade_no": 88
+        },
+        {
+          "cum_pnl": -48.5,
+          "trade_no": 89
+        },
+        {
+          "cum_pnl": -58,
+          "trade_no": 90
+        },
+        {
+          "cum_pnl": -68.5,
+          "trade_no": 91
+        },
+        {
+          "cum_pnl": -8.5,
+          "trade_no": 92
+        },
+        {
+          "cum_pnl": -15,
+          "trade_no": 93
+        },
+        {
+          "cum_pnl": -20.5,
+          "trade_no": 94
+        },
+        {
+          "cum_pnl": -31,
+          "trade_no": 95
+        },
+        {
+          "cum_pnl": -29,
+          "trade_no": 96
+        },
+        {
+          "cum_pnl": -43,
+          "trade_no": 97
+        },
+        {
+          "cum_pnl": -73.5,
+          "trade_no": 98
+        },
+        {
+          "cum_pnl": -34.5,
+          "trade_no": 99
+        },
+        {
+          "cum_pnl": -49,
+          "trade_no": 100
+        },
+        {
+          "cum_pnl": 15.5,
+          "trade_no": 101
+        },
+        {
+          "cum_pnl": -4.5,
+          "trade_no": 102
+        },
+        {
+          "cum_pnl": -20,
+          "trade_no": 103
+        },
+        {
+          "cum_pnl": 14.5,
+          "trade_no": 104
+        },
+        {
+          "cum_pnl": 43,
+          "trade_no": 105
+        },
+        {
+          "cum_pnl": 52,
+          "trade_no": 106
+        },
+        {
+          "cum_pnl": 42,
+          "trade_no": 107
+        },
+        {
+          "cum_pnl": 26,
+          "trade_no": 108
+        },
+        {
+          "cum_pnl": 14,
+          "trade_no": 109
+        },
+        {
+          "cum_pnl": 29.5,
+          "trade_no": 110
+        },
+        {
+          "cum_pnl": 14.5,
+          "trade_no": 111
+        },
+        {
+          "cum_pnl": 5.5,
+          "trade_no": 112
+        },
+        {
+          "cum_pnl": 26.5,
+          "trade_no": 113
+        },
+        {
+          "cum_pnl": 61,
+          "trade_no": 114
+        },
+        {
+          "cum_pnl": 54.5,
+          "trade_no": 115
+        },
+        {
+          "cum_pnl": 102.5,
+          "trade_no": 116
+        },
+        {
+          "cum_pnl": 88,
+          "trade_no": 117
+        },
+        {
+          "cum_pnl": 69.5,
+          "trade_no": 118
+        },
+        {
+          "cum_pnl": 40,
+          "trade_no": 119
+        },
+        {
+          "cum_pnl": 20,
+          "trade_no": 120
+        },
+        {
+          "cum_pnl": 22.5,
+          "trade_no": 121
+        },
+        {
+          "cum_pnl": 38.5,
+          "trade_no": 122
+        },
+        {
+          "cum_pnl": 26.5,
+          "trade_no": 123
+        },
+        {
+          "cum_pnl": 3,
+          "trade_no": 124
+        },
+        {
+          "cum_pnl": 7.5,
+          "trade_no": 125
+        },
+        {
+          "cum_pnl": 0,
+          "trade_no": 126
+        },
+        {
+          "cum_pnl": 22.5,
+          "trade_no": 127
+        },
+        {
+          "cum_pnl": 1.5,
+          "trade_no": 128
+        },
+        {
+          "cum_pnl": -23.5,
+          "trade_no": 129
+        },
+        {
+          "cum_pnl": 59,
+          "trade_no": 130
+        },
+        {
+          "cum_pnl": 36.5,
+          "trade_no": 131
+        },
+        {
+          "cum_pnl": 20.5,
+          "trade_no": 132
+        },
+        {
+          "cum_pnl": 16,
+          "trade_no": 133
+        },
+        {
+          "cum_pnl": -9,
+          "trade_no": 134
+        },
+        {
+          "cum_pnl": 57,
+          "trade_no": 135
+        },
+        {
+          "cum_pnl": 39,
+          "trade_no": 136
+        },
+        {
+          "cum_pnl": 26,
+          "trade_no": 137
+        },
+        {
+          "cum_pnl": 10,
+          "trade_no": 138
+        },
+        {
+          "cum_pnl": 65.5,
+          "trade_no": 139
+        },
+        {
+          "cum_pnl": 50,
+          "trade_no": 140
+        },
+        {
+          "cum_pnl": 52.5,
+          "trade_no": 141
+        },
+        {
+          "cum_pnl": 82.5,
+          "trade_no": 142
+        },
+        {
+          "cum_pnl": 80,
+          "trade_no": 143
+        },
+        {
+          "cum_pnl": 52.5,
+          "trade_no": 144
+        },
+        {
+          "cum_pnl": 45,
+          "trade_no": 145
+        },
+        {
+          "cum_pnl": 13,
+          "trade_no": 146
+        },
+        {
+          "cum_pnl": -55.5,
+          "trade_no": 147
+        },
+        {
+          "cum_pnl": -33,
+          "trade_no": 148
+        },
+        {
+          "cum_pnl": 10,
+          "trade_no": 149
+        },
+        {
+          "cum_pnl": 2,
+          "trade_no": 150
+        },
+        {
+          "cum_pnl": -9.5,
+          "trade_no": 151
+        },
+        {
+          "cum_pnl": -23,
+          "trade_no": 152
+        },
+        {
+          "cum_pnl": -27.5,
+          "trade_no": 153
+        },
+        {
+          "cum_pnl": -32.5,
+          "trade_no": 154
+        },
+        {
+          "cum_pnl": -8.5,
+          "trade_no": 155
+        },
+        {
+          "cum_pnl": 7,
+          "trade_no": 156
+        },
+        {
+          "cum_pnl": -22,
+          "trade_no": 157
+        },
+        {
+          "cum_pnl": 45.5,
+          "trade_no": 158
+        },
+        {
+          "cum_pnl": 45.5,
+          "trade_no": 159
+        },
+        {
+          "cum_pnl": 96.5,
+          "trade_no": 160
+        },
+        {
+          "cum_pnl": 90,
+          "trade_no": 161
+        },
+        {
+          "cum_pnl": 73,
+          "trade_no": 162
+        },
+        {
+          "cum_pnl": 71,
+          "trade_no": 163
+        },
+        {
+          "cum_pnl": 54,
+          "trade_no": 164
+        },
+        {
+          "cum_pnl": 49,
+          "trade_no": 165
+        },
+        {
+          "cum_pnl": 104.5,
+          "trade_no": 166
+        },
+        {
+          "cum_pnl": 99,
+          "trade_no": 167
+        },
+        {
+          "cum_pnl": 126,
+          "trade_no": 168
+        },
+        {
+          "cum_pnl": 112,
+          "trade_no": 169
+        },
+        {
+          "cum_pnl": 99,
+          "trade_no": 170
+        },
+        {
+          "cum_pnl": 92,
+          "trade_no": 171
+        },
+        {
+          "cum_pnl": 67,
+          "trade_no": 172
+        },
+        {
+          "cum_pnl": 82.5,
+          "trade_no": 173
+        },
+        {
+          "cum_pnl": 71.5,
+          "trade_no": 174
+        },
+        {
+          "cum_pnl": 58,
+          "trade_no": 175
+        },
+        {
+          "cum_pnl": 122.5,
+          "trade_no": 176
+        },
+        {
+          "cum_pnl": 117,
+          "trade_no": 177
+        },
+        {
+          "cum_pnl": 105,
+          "trade_no": 178
+        },
+        {
+          "cum_pnl": 94.5,
+          "trade_no": 179
+        },
+        {
+          "cum_pnl": 88.5,
+          "trade_no": 180
+        },
+        {
+          "cum_pnl": 80.5,
+          "trade_no": 181
+        },
+        {
+          "cum_pnl": 109,
+          "trade_no": 182
+        },
+        {
+          "cum_pnl": 136,
+          "trade_no": 183
+        },
+        {
+          "cum_pnl": 131.5,
+          "trade_no": 184
+        },
+        {
+          "cum_pnl": 124,
+          "trade_no": 185
+        },
+        {
+          "cum_pnl": 203.5,
+          "trade_no": 186
+        },
+        {
+          "cum_pnl": 191.5,
+          "trade_no": 187
+        },
+        {
+          "cum_pnl": 218.5,
+          "trade_no": 188
+        },
+        {
+          "cum_pnl": 199,
+          "trade_no": 189
+        },
+        {
+          "cum_pnl": 182.5,
+          "trade_no": 190
+        },
+        {
+          "cum_pnl": 176.5,
+          "trade_no": 191
+        },
+        {
+          "cum_pnl": 156.5,
+          "trade_no": 192
+        },
+        {
+          "cum_pnl": 118.5,
+          "trade_no": 193
+        },
+        {
+          "cum_pnl": 105,
+          "trade_no": 194
+        },
+        {
+          "cum_pnl": 80.5,
+          "trade_no": 195
+        },
+        {
+          "cum_pnl": 130,
+          "trade_no": 196
+        },
+        {
+          "cum_pnl": 120,
+          "trade_no": 197
+        },
+        {
+          "cum_pnl": 168,
+          "trade_no": 198
+        },
+        {
+          "cum_pnl": 220.5,
+          "trade_no": 199
+        },
+        {
+          "cum_pnl": 210.5,
+          "trade_no": 200
+        },
+        {
+          "cum_pnl": 237.5,
+          "trade_no": 201
+        },
+        {
+          "cum_pnl": 219,
+          "trade_no": 202
+        },
+        {
+          "cum_pnl": 184,
+          "trade_no": 203
+        },
+        {
+          "cum_pnl": 171,
+          "trade_no": 204
+        },
+        {
+          "cum_pnl": 248,
+          "trade_no": 205
+        },
+        {
+          "cum_pnl": 229,
+          "trade_no": 206
+        },
+        {
+          "cum_pnl": 284.5,
+          "trade_no": 207
+        },
+        {
+          "cum_pnl": 275,
+          "trade_no": 208
+        },
+        {
+          "cum_pnl": 263,
+          "trade_no": 209
+        },
+        {
+          "cum_pnl": 278.5,
+          "trade_no": 210
+        },
+        {
+          "cum_pnl": 340,
+          "trade_no": 211
+        },
+        {
+          "cum_pnl": 388,
+          "trade_no": 212
+        },
+        {
+          "cum_pnl": 359.5,
+          "trade_no": 213
+        },
+        {
+          "cum_pnl": 335.5,
+          "trade_no": 214
+        },
+        {
+          "cum_pnl": 415,
+          "trade_no": 215
+        },
+        {
+          "cum_pnl": 427.5,
+          "trade_no": 216
+        },
+        {
+          "cum_pnl": 329,
+          "trade_no": 217
+        },
+        {
+          "cum_pnl": 313.5,
+          "trade_no": 218
+        },
+        {
+          "cum_pnl": 375,
+          "trade_no": 219
+        },
+        {
+          "cum_pnl": 302.5,
+          "trade_no": 220
+        },
+        {
+          "cum_pnl": 277.5,
+          "trade_no": 221
+        },
+        {
+          "cum_pnl": 272,
+          "trade_no": 222
+        },
+        {
+          "cum_pnl": 309.5,
+          "trade_no": 223
+        },
+        {
+          "cum_pnl": 323,
+          "trade_no": 224
+        },
+        {
+          "cum_pnl": 314.5,
+          "trade_no": 225
+        },
+        {
+          "cum_pnl": 325.5,
+          "trade_no": 226
+        },
+        {
+          "cum_pnl": 298.5,
+          "trade_no": 227
+        },
+        {
+          "cum_pnl": 275.5,
+          "trade_no": 228
+        },
+        {
+          "cum_pnl": 259,
+          "trade_no": 229
+        },
+        {
+          "cum_pnl": 238,
+          "trade_no": 230
+        },
+        {
+          "cum_pnl": 229,
+          "trade_no": 231
+        },
+        {
+          "cum_pnl": 219,
+          "trade_no": 232
+        },
+        {
+          "cum_pnl": 209,
+          "trade_no": 233
+        },
+        {
+          "cum_pnl": 209.5,
+          "trade_no": 234
+        },
+        {
+          "cum_pnl": 189,
+          "trade_no": 235
+        },
+        {
+          "cum_pnl": 156.5,
+          "trade_no": 236
+        },
+        {
+          "cum_pnl": 146,
+          "trade_no": 237
+        },
+        {
+          "cum_pnl": 180,
+          "trade_no": 238
+        },
+        {
+          "cum_pnl": 173.5,
+          "trade_no": 239
+        },
+        {
+          "cum_pnl": 159,
+          "trade_no": 240
+        },
+        {
+          "cum_pnl": 153,
+          "trade_no": 241
+        },
+        {
+          "cum_pnl": 144.5,
+          "trade_no": 242
+        },
+        {
+          "cum_pnl": 131.5,
+          "trade_no": 243
+        },
+        {
+          "cum_pnl": 116,
+          "trade_no": 244
+        },
+        {
+          "cum_pnl": 100.5,
+          "trade_no": 245
+        },
+        {
+          "cum_pnl": 80,
+          "trade_no": 246
+        },
+        {
+          "cum_pnl": 68.5,
+          "trade_no": 247
+        },
+        {
+          "cum_pnl": 60.5,
+          "trade_no": 248
+        },
+        {
+          "cum_pnl": 49.5,
+          "trade_no": 249
+        },
+        {
+          "cum_pnl": 123,
+          "trade_no": 250
+        },
+        {
+          "cum_pnl": 152,
+          "trade_no": 251
+        },
+        {
+          "cum_pnl": 137.5,
+          "trade_no": 252
+        },
+        {
+          "cum_pnl": 149.5,
+          "trade_no": 253
+        },
+        {
+          "cum_pnl": 140,
+          "trade_no": 254
+        },
+        {
+          "cum_pnl": 130.5,
+          "trade_no": 255
+        },
+        {
+          "cum_pnl": 145,
+          "trade_no": 256
+        },
+        {
+          "cum_pnl": 131.5,
+          "trade_no": 257
+        },
+        {
+          "cum_pnl": 124,
+          "trade_no": 258
+        },
+        {
+          "cum_pnl": 116,
+          "trade_no": 259
+        },
+        {
+          "cum_pnl": 107.5,
+          "trade_no": 260
+        },
+        {
+          "cum_pnl": 130,
+          "trade_no": 261
+        },
+        {
+          "cum_pnl": 158.5,
+          "trade_no": 262
+        },
+        {
+          "cum_pnl": 146.5,
+          "trade_no": 263
+        },
+        {
+          "cum_pnl": 125,
+          "trade_no": 264
+        },
+        {
+          "cum_pnl": 103.5,
+          "trade_no": 265
+        },
+        {
+          "cum_pnl": 82.5,
+          "trade_no": 266
+        },
+        {
+          "cum_pnl": 135,
+          "trade_no": 267
+        },
+        {
+          "cum_pnl": 105,
+          "trade_no": 268
+        },
+        {
+          "cum_pnl": 189,
+          "trade_no": 269
+        },
+        {
+          "cum_pnl": 182,
+          "trade_no": 270
+        },
+        {
+          "cum_pnl": 215,
+          "trade_no": 271
+        },
+        {
+          "cum_pnl": 196.5,
+          "trade_no": 272
+        },
+        {
+          "cum_pnl": 177.5,
+          "trade_no": 273
+        },
+        {
+          "cum_pnl": 206,
+          "trade_no": 274
+        },
+        {
+          "cum_pnl": 254,
+          "trade_no": 275
+        },
+        {
+          "cum_pnl": 224.5,
+          "trade_no": 276
+        },
+        {
+          "cum_pnl": 270,
+          "trade_no": 277
+        },
+        {
+          "cum_pnl": 310.5,
+          "trade_no": 278
+        },
+        {
+          "cum_pnl": 300,
+          "trade_no": 279
+        },
+        {
+          "cum_pnl": 287,
+          "trade_no": 280
+        },
+        {
+          "cum_pnl": 260,
+          "trade_no": 281
+        },
+        {
+          "cum_pnl": 233,
+          "trade_no": 282
+        },
+        {
+          "cum_pnl": 208.5,
+          "trade_no": 283
+        },
+        {
+          "cum_pnl": 246.5,
+          "trade_no": 284
+        },
+        {
+          "cum_pnl": 320,
+          "trade_no": 285
+        },
+        {
+          "cum_pnl": 344,
+          "trade_no": 286
+        },
+        {
+          "cum_pnl": 399,
+          "trade_no": 287
+        },
+        {
+          "cum_pnl": 389.5,
+          "trade_no": 288
+        },
+        {
+          "cum_pnl": 467.5,
+          "trade_no": 289
+        },
+        {
+          "cum_pnl": 512.5,
+          "trade_no": 290
+        },
+        {
+          "cum_pnl": 497,
+          "trade_no": 291
+        },
+        {
+          "cum_pnl": 488,
+          "trade_no": 292
+        },
+        {
+          "cum_pnl": 497,
+          "trade_no": 293
+        },
+        {
+          "cum_pnl": 479,
+          "trade_no": 294
+        },
+        {
+          "cum_pnl": 474,
+          "trade_no": 295
+        },
+        {
+          "cum_pnl": 438,
+          "trade_no": 296
+        },
+        {
+          "cum_pnl": 422,
+          "trade_no": 297
+        },
+        {
+          "cum_pnl": 548,
+          "trade_no": 298
+        },
+        {
+          "cum_pnl": 623,
+          "trade_no": 299
+        },
+        {
+          "cum_pnl": 679,
+          "trade_no": 300
+        },
+        {
+          "cum_pnl": 778.5,
+          "trade_no": 301
+        },
+        {
+          "cum_pnl": 773.5,
+          "trade_no": 302
+        },
+        {
+          "cum_pnl": 743,
+          "trade_no": 303
+        },
+        {
+          "cum_pnl": 730,
+          "trade_no": 304
+        },
+        {
+          "cum_pnl": 721,
+          "trade_no": 305
+        },
+        {
+          "cum_pnl": 712.5,
+          "trade_no": 306
+        },
+        {
+          "cum_pnl": 690.5,
+          "trade_no": 307
+        },
+        {
+          "cum_pnl": 667.5,
+          "trade_no": 308
+        },
+        {
+          "cum_pnl": 705,
+          "trade_no": 309
+        },
+        {
+          "cum_pnl": 687.5,
+          "trade_no": 310
+        },
+        {
+          "cum_pnl": 669.5,
+          "trade_no": 311
+        },
+        {
+          "cum_pnl": 650.5,
+          "trade_no": 312
+        },
+        {
+          "cum_pnl": 644.5,
+          "trade_no": 313
+        },
+        {
+          "cum_pnl": 667,
+          "trade_no": 314
+        },
+        {
+          "cum_pnl": 646,
+          "trade_no": 315
+        },
+        {
+          "cum_pnl": 638.5,
+          "trade_no": 316
+        },
+        {
+          "cum_pnl": 606,
+          "trade_no": 317
+        },
+        {
+          "cum_pnl": 643.5,
+          "trade_no": 318
+        },
+        {
+          "cum_pnl": 632.5,
+          "trade_no": 319
+        },
+        {
+          "cum_pnl": 650.5,
+          "trade_no": 320
+        },
+        {
+          "cum_pnl": 637,
+          "trade_no": 321
+        },
+        {
+          "cum_pnl": 618.5,
+          "trade_no": 322
+        },
+        {
+          "cum_pnl": 647.5,
+          "trade_no": 323
+        },
+        {
+          "cum_pnl": 632,
+          "trade_no": 324
+        },
+        {
+          "cum_pnl": 616,
+          "trade_no": 325
+        },
+        {
+          "cum_pnl": 593,
+          "trade_no": 326
+        },
+        {
+          "cum_pnl": 580,
+          "trade_no": 327
+        },
+        {
+          "cum_pnl": 570.5,
+          "trade_no": 328
+        },
+        {
+          "cum_pnl": 594.5,
+          "trade_no": 329
+        },
+        {
+          "cum_pnl": 573.5,
+          "trade_no": 330
+        },
+        {
+          "cum_pnl": 553.5,
+          "trade_no": 331
+        },
+        {
+          "cum_pnl": 538.5,
+          "trade_no": 332
+        },
+        {
+          "cum_pnl": 551,
+          "trade_no": 333
+        },
+        {
+          "cum_pnl": 523,
+          "trade_no": 334
+        },
+        {
+          "cum_pnl": 506.5,
+          "trade_no": 335
+        },
+        {
+          "cum_pnl": 486.5,
+          "trade_no": 336
+        },
+        {
+          "cum_pnl": 472,
+          "trade_no": 337
+        },
+        {
+          "cum_pnl": 539.5,
+          "trade_no": 338
+        },
+        {
+          "cum_pnl": 577,
+          "trade_no": 339
+        },
+        {
+          "cum_pnl": 628,
+          "trade_no": 340
+        },
+        {
+          "cum_pnl": 606.5,
+          "trade_no": 341
+        },
+        {
+          "cum_pnl": 697,
+          "trade_no": 342
+        },
+        {
+          "cum_pnl": 721.5,
+          "trade_no": 343
+        },
+        {
+          "cum_pnl": 705.5,
+          "trade_no": 344
+        },
+        {
+          "cum_pnl": 689.5,
+          "trade_no": 345
+        },
+        {
+          "cum_pnl": 715,
+          "trade_no": 346
+        },
+        {
+          "cum_pnl": 678,
+          "trade_no": 347
+        },
+        {
+          "cum_pnl": 663,
+          "trade_no": 348
+        },
+        {
+          "cum_pnl": 650,
+          "trade_no": 349
+        },
+        {
+          "cum_pnl": 637,
+          "trade_no": 350
+        },
+        {
+          "cum_pnl": 689.5,
+          "trade_no": 351
+        },
+        {
+          "cum_pnl": 668,
+          "trade_no": 352
+        },
+        {
+          "cum_pnl": 642,
+          "trade_no": 353
+        },
+        {
+          "cum_pnl": 628,
+          "trade_no": 354
+        },
+        {
+          "cum_pnl": 652,
+          "trade_no": 355
+        },
+        {
+          "cum_pnl": 631.5,
+          "trade_no": 356
+        },
+        {
+          "cum_pnl": 680,
+          "trade_no": 357
+        },
+        {
+          "cum_pnl": 761,
+          "trade_no": 358
+        },
+        {
+          "cum_pnl": 746.5,
+          "trade_no": 359
+        },
+        {
+          "cum_pnl": 731,
+          "trade_no": 360
+        },
+        {
+          "cum_pnl": 715.5,
+          "trade_no": 361
+        },
+        {
+          "cum_pnl": 695,
+          "trade_no": 362
+        },
+        {
+          "cum_pnl": 676.5,
+          "trade_no": 363
+        },
+        {
+          "cum_pnl": 665,
+          "trade_no": 364
+        },
+        {
+          "cum_pnl": 648.5,
+          "trade_no": 365
+        },
+        {
+          "cum_pnl": 641,
+          "trade_no": 366
+        },
+        {
+          "cum_pnl": 624.5,
+          "trade_no": 367
+        },
+        {
+          "cum_pnl": 659,
+          "trade_no": 368
+        },
+        {
+          "cum_pnl": 705,
+          "trade_no": 369
+        },
+        {
+          "cum_pnl": 786,
+          "trade_no": 370
+        },
+        {
+          "cum_pnl": 778,
+          "trade_no": 371
+        },
+        {
+          "cum_pnl": 768,
+          "trade_no": 372
+        },
+        {
+          "cum_pnl": 755.5,
+          "trade_no": 373
+        },
+        {
+          "cum_pnl": 748,
+          "trade_no": 374
+        },
+        {
+          "cum_pnl": 905.5,
+          "trade_no": 375
+        },
+        {
+          "cum_pnl": 891.5,
+          "trade_no": 376
+        },
+        {
+          "cum_pnl": 879.5,
+          "trade_no": 377
+        },
+        {
+          "cum_pnl": 861,
+          "trade_no": 378
+        },
+        {
+          "cum_pnl": 835.5,
+          "trade_no": 379
+        },
+        {
+          "cum_pnl": 816.5,
+          "trade_no": 380
+        },
+        {
+          "cum_pnl": 797.5,
+          "trade_no": 381
+        },
+        {
+          "cum_pnl": 839.5,
+          "trade_no": 382
+        },
+        {
+          "cum_pnl": 818,
+          "trade_no": 383
+        },
+        {
+          "cum_pnl": 794.5,
+          "trade_no": 384
+        },
+        {
+          "cum_pnl": 738.5,
+          "trade_no": 385
+        },
+        {
+          "cum_pnl": 710.5,
+          "trade_no": 386
+        },
+        {
+          "cum_pnl": 693,
+          "trade_no": 387
+        },
+        {
+          "cum_pnl": 681,
+          "trade_no": 388
+        },
+        {
+          "cum_pnl": 660.5,
+          "trade_no": 389
+        },
+        {
+          "cum_pnl": 710,
+          "trade_no": 390
+        },
+        {
+          "cum_pnl": 767,
+          "trade_no": 391
+        },
+        {
+          "cum_pnl": 761,
+          "trade_no": 392
+        },
+        {
+          "cum_pnl": 732.5,
+          "trade_no": 393
+        },
+        {
+          "cum_pnl": 725.5,
+          "trade_no": 394
+        },
+        {
+          "cum_pnl": 707,
+          "trade_no": 395
+        },
+        {
+          "cum_pnl": 697,
+          "trade_no": 396
+        },
+        {
+          "cum_pnl": 670.5,
+          "trade_no": 397
+        },
+        {
+          "cum_pnl": 714,
+          "trade_no": 398
+        },
+        {
+          "cum_pnl": 705.5,
+          "trade_no": 399
+        },
+        {
+          "cum_pnl": 690.5,
+          "trade_no": 400
+        },
+        {
+          "cum_pnl": 732.5,
+          "trade_no": 401
+        },
+        {
+          "cum_pnl": 718.5,
+          "trade_no": 402
+        },
+        {
+          "cum_pnl": 704.5,
+          "trade_no": 403
+        },
+        {
+          "cum_pnl": 687.5,
+          "trade_no": 404
+        },
+        {
+          "cum_pnl": 701.5,
+          "trade_no": 405
+        },
+        {
+          "cum_pnl": 686.5,
+          "trade_no": 406
+        },
+        {
+          "cum_pnl": 722.5,
+          "trade_no": 407
+        },
+        {
+          "cum_pnl": 688.5,
+          "trade_no": 408
+        },
+        {
+          "cum_pnl": 865.5,
+          "trade_no": 409
+        },
+        {
+          "cum_pnl": 850,
+          "trade_no": 410
+        },
+        {
+          "cum_pnl": 828.5,
+          "trade_no": 411
+        },
+        {
+          "cum_pnl": 839,
+          "trade_no": 412
+        },
+        {
+          "cum_pnl": 828.5,
+          "trade_no": 413
+        },
+        {
+          "cum_pnl": 814.5,
+          "trade_no": 414
+        },
+        {
+          "cum_pnl": 803.5,
+          "trade_no": 415
+        },
+        {
+          "cum_pnl": 844,
+          "trade_no": 416
+        },
+        {
+          "cum_pnl": 828,
+          "trade_no": 417
+        },
+        {
+          "cum_pnl": 800.5,
+          "trade_no": 418
+        },
+        {
+          "cum_pnl": 785,
+          "trade_no": 419
+        },
+        {
+          "cum_pnl": 759,
+          "trade_no": 420
+        },
+        {
+          "cum_pnl": 729.5,
+          "trade_no": 421
+        },
+        {
+          "cum_pnl": 708,
+          "trade_no": 422
+        },
+        {
+          "cum_pnl": 675,
+          "trade_no": 423
+        },
+        {
+          "cum_pnl": 668.5,
+          "trade_no": 424
+        },
+        {
+          "cum_pnl": 646.5,
+          "trade_no": 425
+        },
+        {
+          "cum_pnl": 693.5,
+          "trade_no": 426
+        },
+        {
+          "cum_pnl": 678,
+          "trade_no": 427
+        },
+        {
+          "cum_pnl": 668.5,
+          "trade_no": 428
+        },
+        {
+          "cum_pnl": 649,
+          "trade_no": 429
+        },
+        {
+          "cum_pnl": 628,
+          "trade_no": 430
+        },
+        {
+          "cum_pnl": 608.5,
+          "trade_no": 431
+        },
+        {
+          "cum_pnl": 593,
+          "trade_no": 432
+        },
+        {
+          "cum_pnl": 636,
+          "trade_no": 433
+        },
+        {
+          "cum_pnl": 616,
+          "trade_no": 434
+        },
+        {
+          "cum_pnl": 602,
+          "trade_no": 435
+        },
+        {
+          "cum_pnl": 593,
+          "trade_no": 436
+        },
+        {
+          "cum_pnl": 582.5,
+          "trade_no": 437
+        },
+        {
+          "cum_pnl": 562.5,
+          "trade_no": 438
+        },
+        {
+          "cum_pnl": 543.5,
+          "trade_no": 439
+        },
+        {
+          "cum_pnl": 591.5,
+          "trade_no": 440
+        },
+        {
+          "cum_pnl": 579.5,
+          "trade_no": 441
+        },
+        {
+          "cum_pnl": 615.5,
+          "trade_no": 442
+        },
+        {
+          "cum_pnl": 603.5,
+          "trade_no": 443
+        },
+        {
+          "cum_pnl": 589.5,
+          "trade_no": 444
+        },
+        {
+          "cum_pnl": 582,
+          "trade_no": 445
+        },
+        {
+          "cum_pnl": 685.5,
+          "trade_no": 446
+        }
+      ],
+      "losses": 307,
+      "max_drawdown": -378,
+      "n_trades": 446,
+      "pnl_points": 685.5,
+      "profit_factor": 1.14,
+      "sharpe": 1.03,
+      "win_rate": 31.2,
+      "wins": 139
+    },
+    "symbols": null,
+    "saved_at": "2026-06-20 22:12"
+  },
+  {
+    "id": "7ee9a19585",
+    "name": "ARS_CHAIN_V1 2026-01-01to2026-06-20",
+    "strategy": "ARS_CHAIN_V1",
+    "cfg": {
+      "active": true,
+      "atr_exit": true,
+      "fib_exit": false,
+      "fresh_zone_only": true,
+      "hawa_me_zone": false,
+      "instrument": "options",
+      "max_candle_size": 25,
+      "max_trades_per_symbol": 2,
+      "qty": 1,
+      "strike_offset": "0",
+      "symbols": [
+        "NIFTY",
+        "BANKNIFTY",
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "AXISBANK",
+        "BAJFINANCE",
+        "WIPRO",
+        "KOTAKBANK",
+        "LT",
+        "TATAMOTORS",
+        "MARUTI",
+        "HINDUNILVR",
+        "ITC",
+        "ADANIENT",
+        "SUNPHARMA",
+        "TITAN",
+        "ULTRACEMCO",
+        "NESTLEIND",
+        "POWERGRID",
+        "NTPC",
+        "ONGC"
+      ],
+      "timeframe": "1m",
+      "zone_exit": false
+    },
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "equity_curve": [
+        {
+          "cum_pnl": -35.8,
+          "trade_no": 1
+        },
+        {
+          "cum_pnl": -45.95,
+          "trade_no": 2
+        },
+        {
+          "cum_pnl": -108.7,
+          "trade_no": 3
+        },
+        {
+          "cum_pnl": -136.15,
+          "trade_no": 4
+        },
+        {
+          "cum_pnl": -78.35,
+          "trade_no": 5
+        },
+        {
+          "cum_pnl": -23.9,
+          "trade_no": 6
+        },
+        {
+          "cum_pnl": -33.3,
+          "trade_no": 7
+        },
+        {
+          "cum_pnl": -0.5,
+          "trade_no": 8
+        },
+        {
+          "cum_pnl": -32,
+          "trade_no": 9
+        },
+        {
+          "cum_pnl": 193.05,
+          "trade_no": 10
+        },
+        {
+          "cum_pnl": 160.45,
+          "trade_no": 11
+        },
+        {
+          "cum_pnl": 347.35,
+          "trade_no": 12
+        },
+        {
+          "cum_pnl": 320.85,
+          "trade_no": 13
+        },
+        {
+          "cum_pnl": 349.25,
+          "trade_no": 14
+        },
+        {
+          "cum_pnl": 333.65,
+          "trade_no": 15
+        },
+        {
+          "cum_pnl": 356,
+          "trade_no": 16
+        },
+        {
+          "cum_pnl": 333.65,
+          "trade_no": 17
+        },
+        {
+          "cum_pnl": 300.55,
+          "trade_no": 18
+        },
+        {
+          "cum_pnl": 323.7,
+          "trade_no": 19
+        },
+        {
+          "cum_pnl": 313.95,
+          "trade_no": 20
+        },
+        {
+          "cum_pnl": 294,
+          "trade_no": 21
+        },
+        {
+          "cum_pnl": 277.5,
+          "trade_no": 22
+        },
+        {
+          "cum_pnl": 402.3,
+          "trade_no": 23
+        },
+        {
+          "cum_pnl": 392.15,
+          "trade_no": 24
+        },
+        {
+          "cum_pnl": 517,
+          "trade_no": 25
+        },
+        {
+          "cum_pnl": 443.65,
+          "trade_no": 26
+        },
+        {
+          "cum_pnl": 403.85,
+          "trade_no": 27
+        },
+        {
+          "cum_pnl": 449,
+          "trade_no": 28
+        },
+        {
+          "cum_pnl": 380.55,
+          "trade_no": 29
+        },
+        {
+          "cum_pnl": 361.95,
+          "trade_no": 30
+        },
+        {
+          "cum_pnl": 321.35,
+          "trade_no": 31
+        },
+        {
+          "cum_pnl": 250.4,
+          "trade_no": 32
+        },
+        {
+          "cum_pnl": 336.4,
+          "trade_no": 33
+        },
+        {
+          "cum_pnl": 338.55,
+          "trade_no": 34
+        },
+        {
+          "cum_pnl": 300.25,
+          "trade_no": 35
+        },
+        {
+          "cum_pnl": 262.35,
+          "trade_no": 36
+        },
+        {
+          "cum_pnl": 383.15,
+          "trade_no": 37
+        },
+        {
+          "cum_pnl": 533.1,
+          "trade_no": 38
+        },
+        {
+          "cum_pnl": 580.45,
+          "trade_no": 39
+        },
+        {
+          "cum_pnl": 871.7,
+          "trade_no": 40
+        },
+        {
+          "cum_pnl": 917.35,
+          "trade_no": 41
+        },
+        {
+          "cum_pnl": 819.65,
+          "trade_no": 42
+        },
+        {
+          "cum_pnl": 854.1,
+          "trade_no": 43
+        },
+        {
+          "cum_pnl": 940.55,
+          "trade_no": 44
+        },
+        {
+          "cum_pnl": 1054.2,
+          "trade_no": 45
+        },
+        {
+          "cum_pnl": 1020.3,
+          "trade_no": 46
+        },
+        {
+          "cum_pnl": 986.3,
+          "trade_no": 47
+        },
+        {
+          "cum_pnl": 956.15,
+          "trade_no": 48
+        },
+        {
+          "cum_pnl": 1023,
+          "trade_no": 49
+        },
+        {
+          "cum_pnl": 993.5,
+          "trade_no": 50
+        },
+        {
+          "cum_pnl": 969.85,
+          "trade_no": 51
+        },
+        {
+          "cum_pnl": 988.8,
+          "trade_no": 52
+        },
+        {
+          "cum_pnl": 1063,
+          "trade_no": 53
+        },
+        {
+          "cum_pnl": 1001.2,
+          "trade_no": 54
+        },
+        {
+          "cum_pnl": 1019.1,
+          "trade_no": 55
+        },
+        {
+          "cum_pnl": 1047.85,
+          "trade_no": 56
+        },
+        {
+          "cum_pnl": 1047.7,
+          "trade_no": 57
+        },
+        {
+          "cum_pnl": 1018.05,
+          "trade_no": 58
+        },
+        {
+          "cum_pnl": 972.35,
+          "trade_no": 59
+        },
+        {
+          "cum_pnl": 962.7,
+          "trade_no": 60
+        },
+        {
+          "cum_pnl": 992.05,
+          "trade_no": 61
+        },
+        {
+          "cum_pnl": 982.75,
+          "trade_no": 62
+        },
+        {
+          "cum_pnl": 1003.85,
+          "trade_no": 63
+        }
+      ],
+      "losses": 35,
+      "max_drawdown": -266.6,
+      "n_trades": 63,
+      "pnl_points": 1003.85,
+      "profit_factor": 1.87,
+      "sharpe": 1.72,
+      "win_rate": 44.4,
+      "wins": 28
+    },
+    "symbols": null,
+    "saved_at": "2026-06-20 22:24"
+  },
+  {
+    "id": "298615a0ee",
+    "name": "ARS_CHAIN_V1 2026-01-01to2026-06-20",
+    "strategy": "ARS_CHAIN_V1",
+    "cfg": {
+      "active": true,
+      "atr_exit": true,
+      "fib_exit": false,
+      "fresh_zone_only": true,
+      "hawa_me_zone": false,
+      "instrument": "options",
+      "max_candle_size": 25,
+      "max_trades_per_symbol": 2,
+      "qty": 1,
+      "strike_offset": "0",
+      "symbols": [
+        "NIFTY",
+        "BANKNIFTY",
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "HDFCBANK",
+        "ICICIBANK",
+        "SBIN",
+        "AXISBANK",
+        "BAJFINANCE",
+        "WIPRO",
+        "KOTAKBANK",
+        "LT",
+        "TATAMOTORS",
+        "MARUTI",
+        "HINDUNILVR",
+        "ITC",
+        "ADANIENT",
+        "SUNPHARMA",
+        "TITAN",
+        "ULTRACEMCO",
+        "NESTLEIND",
+        "POWERGRID",
+        "NTPC",
+        "ONGC"
+      ],
+      "timeframe": "5m",
+      "zone_exit": false
+    },
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "equity_curve": [
+        {
+          "cum_pnl": -35.8,
+          "trade_no": 1
+        },
+        {
+          "cum_pnl": -45.95,
+          "trade_no": 2
+        },
+        {
+          "cum_pnl": -108.7,
+          "trade_no": 3
+        },
+        {
+          "cum_pnl": -136.15,
+          "trade_no": 4
+        },
+        {
+          "cum_pnl": -78.35,
+          "trade_no": 5
+        },
+        {
+          "cum_pnl": -23.9,
+          "trade_no": 6
+        },
+        {
+          "cum_pnl": -33.3,
+          "trade_no": 7
+        },
+        {
+          "cum_pnl": -0.5,
+          "trade_no": 8
+        },
+        {
+          "cum_pnl": -32,
+          "trade_no": 9
+        },
+        {
+          "cum_pnl": 193.05,
+          "trade_no": 10
+        },
+        {
+          "cum_pnl": 160.45,
+          "trade_no": 11
+        },
+        {
+          "cum_pnl": 347.35,
+          "trade_no": 12
+        },
+        {
+          "cum_pnl": 320.85,
+          "trade_no": 13
+        },
+        {
+          "cum_pnl": 349.25,
+          "trade_no": 14
+        },
+        {
+          "cum_pnl": 333.65,
+          "trade_no": 15
+        },
+        {
+          "cum_pnl": 356,
+          "trade_no": 16
+        },
+        {
+          "cum_pnl": 333.65,
+          "trade_no": 17
+        },
+        {
+          "cum_pnl": 300.55,
+          "trade_no": 18
+        },
+        {
+          "cum_pnl": 323.7,
+          "trade_no": 19
+        },
+        {
+          "cum_pnl": 313.95,
+          "trade_no": 20
+        },
+        {
+          "cum_pnl": 294,
+          "trade_no": 21
+        },
+        {
+          "cum_pnl": 277.5,
+          "trade_no": 22
+        },
+        {
+          "cum_pnl": 402.3,
+          "trade_no": 23
+        },
+        {
+          "cum_pnl": 392.15,
+          "trade_no": 24
+        },
+        {
+          "cum_pnl": 517,
+          "trade_no": 25
+        },
+        {
+          "cum_pnl": 443.65,
+          "trade_no": 26
+        },
+        {
+          "cum_pnl": 403.85,
+          "trade_no": 27
+        },
+        {
+          "cum_pnl": 449,
+          "trade_no": 28
+        },
+        {
+          "cum_pnl": 380.55,
+          "trade_no": 29
+        },
+        {
+          "cum_pnl": 361.95,
+          "trade_no": 30
+        },
+        {
+          "cum_pnl": 321.35,
+          "trade_no": 31
+        },
+        {
+          "cum_pnl": 250.4,
+          "trade_no": 32
+        },
+        {
+          "cum_pnl": 336.4,
+          "trade_no": 33
+        },
+        {
+          "cum_pnl": 338.55,
+          "trade_no": 34
+        },
+        {
+          "cum_pnl": 300.25,
+          "trade_no": 35
+        },
+        {
+          "cum_pnl": 262.35,
+          "trade_no": 36
+        },
+        {
+          "cum_pnl": 383.15,
+          "trade_no": 37
+        },
+        {
+          "cum_pnl": 533.1,
+          "trade_no": 38
+        },
+        {
+          "cum_pnl": 580.45,
+          "trade_no": 39
+        },
+        {
+          "cum_pnl": 871.7,
+          "trade_no": 40
+        },
+        {
+          "cum_pnl": 917.35,
+          "trade_no": 41
+        },
+        {
+          "cum_pnl": 819.65,
+          "trade_no": 42
+        },
+        {
+          "cum_pnl": 854.1,
+          "trade_no": 43
+        },
+        {
+          "cum_pnl": 940.55,
+          "trade_no": 44
+        },
+        {
+          "cum_pnl": 1054.2,
+          "trade_no": 45
+        },
+        {
+          "cum_pnl": 1020.3,
+          "trade_no": 46
+        },
+        {
+          "cum_pnl": 986.3,
+          "trade_no": 47
+        },
+        {
+          "cum_pnl": 956.15,
+          "trade_no": 48
+        },
+        {
+          "cum_pnl": 1023,
+          "trade_no": 49
+        },
+        {
+          "cum_pnl": 993.5,
+          "trade_no": 50
+        },
+        {
+          "cum_pnl": 969.85,
+          "trade_no": 51
+        },
+        {
+          "cum_pnl": 988.8,
+          "trade_no": 52
+        },
+        {
+          "cum_pnl": 1063,
+          "trade_no": 53
+        },
+        {
+          "cum_pnl": 1001.2,
+          "trade_no": 54
+        },
+        {
+          "cum_pnl": 1019.1,
+          "trade_no": 55
+        },
+        {
+          "cum_pnl": 1047.85,
+          "trade_no": 56
+        },
+        {
+          "cum_pnl": 1047.7,
+          "trade_no": 57
+        },
+        {
+          "cum_pnl": 1018.05,
+          "trade_no": 58
+        },
+        {
+          "cum_pnl": 972.35,
+          "trade_no": 59
+        },
+        {
+          "cum_pnl": 962.7,
+          "trade_no": 60
+        },
+        {
+          "cum_pnl": 992.05,
+          "trade_no": 61
+        },
+        {
+          "cum_pnl": 982.75,
+          "trade_no": 62
+        },
+        {
+          "cum_pnl": 1003.85,
+          "trade_no": 63
+        }
+      ],
+      "losses": 35,
+      "max_drawdown": -266.6,
+      "n_trades": 63,
+      "pnl_points": 1003.85,
+      "profit_factor": 1.87,
+      "sharpe": 1.72,
+      "win_rate": 44.4,
+      "wins": 28
+    },
+    "symbols": null,
+    "saved_at": "2026-06-20 22:25"
+  },
+  {
+    "id": "1f40a5ae52",
+    "name": "bb_v1 2026-06-01to2026-06-20",
+    "strategy": "bb_v1",
+    "cfg": {
+      "active": false,
+      "allow_short": false,
+      "bb_std": 2,
+      "bb_window": 20,
+      "instrument": "equity",
+      "qty": 1,
+      "symbols": [
+        "HDFCBANK",
+        "RELIANCE",
+        "TCS",
+        "INFY",
+        "ICICIBANK"
+      ],
+      "timeframe": "5m",
+      "symbol": "HDFCBANK"
+    },
+    "date_from": "2026-06-01",
+    "date_to": "2026-06-20",
+    "summary": {
+      "n_trades": 62,
+      "wins": 48,
+      "losses": 14,
+      "pnl_points": 613.85,
+      "win_rate": 77.4,
+      "profit_factor": 8.77,
+      "sharpe": 3.25,
+      "max_drawdown": -21.2,
+      "equity_curve": [
+        {
+          "trade_no": 1,
+          "cum_pnl": 36
+        },
+        {
+          "trade_no": 2,
+          "cum_pnl": 36.9
+        },
+        {
+          "trade_no": 3,
+          "cum_pnl": 39.65
+        },
+        {
+          "trade_no": 4,
+          "cum_pnl": 53.15
+        },
+        {
+          "trade_no": 5,
+          "cum_pnl": 56.45
+        },
+        {
+          "trade_no": 6,
+          "cum_pnl": 44.05
+        },
+        {
+          "trade_no": 7,
+          "cum_pnl": 49.25
+        },
+        {
+          "trade_no": 8,
+          "cum_pnl": 48.75
+        },
+        {
+          "trade_no": 9,
+          "cum_pnl": 49.8
+        },
+        {
+          "trade_no": 10,
+          "cum_pnl": 52.3
+        },
+        {
+          "trade_no": 11,
+          "cum_pnl": 109.3
+        },
+        {
+          "trade_no": 12,
+          "cum_pnl": 112.45
+        },
+        {
+          "trade_no": 13,
+          "cum_pnl": 113.55
+        },
+        {
+          "trade_no": 14,
+          "cum_pnl": 120.85
+        },
+        {
+          "trade_no": 15,
+          "cum_pnl": 125.3
+        },
+        {
+          "trade_no": 16,
+          "cum_pnl": 122.8
+        },
+        {
+          "trade_no": 17,
+          "cum_pnl": 157.3
+        },
+        {
+          "trade_no": 18,
+          "cum_pnl": 161.15
+        },
+        {
+          "trade_no": 19,
+          "cum_pnl": 162.75
+        },
+        {
+          "trade_no": 20,
+          "cum_pnl": 161.55
+        },
+        {
+          "trade_no": 21,
+          "cum_pnl": 163.95
+        },
+        {
+          "trade_no": 22,
+          "cum_pnl": 227.45
+        },
+        {
+          "trade_no": 23,
+          "cum_pnl": 226.25
+        },
+        {
+          "trade_no": 24,
+          "cum_pnl": 226.15
+        },
+        {
+          "trade_no": 25,
+          "cum_pnl": 227.25
+        },
+        {
+          "trade_no": 26,
+          "cum_pnl": 235.25
+        },
+        {
+          "trade_no": 27,
+          "cum_pnl": 232.75
+        },
+        {
+          "trade_no": 28,
+          "cum_pnl": 233.2
+        },
+        {
+          "trade_no": 29,
+          "cum_pnl": 272.2
+        },
+        {
+          "trade_no": 30,
+          "cum_pnl": 275.5
+        },
+        {
+          "trade_no": 31,
+          "cum_pnl": 277.8
+        },
+        {
+          "trade_no": 32,
+          "cum_pnl": 278.9
+        },
+        {
+          "trade_no": 33,
+          "cum_pnl": 412.9
+        },
+        {
+          "trade_no": 34,
+          "cum_pnl": 403.2
+        },
+        {
+          "trade_no": 35,
+          "cum_pnl": 391.7
+        },
+        {
+          "trade_no": 36,
+          "cum_pnl": 392.4
+        },
+        {
+          "trade_no": 37,
+          "cum_pnl": 469.9
+        },
+        {
+          "trade_no": 38,
+          "cum_pnl": 482.4
+        },
+        {
+          "trade_no": 39,
+          "cum_pnl": 494.3
+        },
+        {
+          "trade_no": 40,
+          "cum_pnl": 495.5
+        },
+        {
+          "trade_no": 41,
+          "cum_pnl": 497.3
+        },
+        {
+          "trade_no": 42,
+          "cum_pnl": 515.3
+        },
+        {
+          "trade_no": 43,
+          "cum_pnl": 511.4
+        },
+        {
+          "trade_no": 44,
+          "cum_pnl": 512.95
+        },
+        {
+          "trade_no": 45,
+          "cum_pnl": 535.45
+        },
+        {
+          "trade_no": 46,
+          "cum_pnl": 588.45
+        },
+        {
+          "trade_no": 47,
+          "cum_pnl": 590.05
+        },
+        {
+          "trade_no": 48,
+          "cum_pnl": 592.25
+        },
+        {
+          "trade_no": 49,
+          "cum_pnl": 592.75
+        },
+        {
+          "trade_no": 50,
+          "cum_pnl": 595.25
+        },
+        {
+          "trade_no": 51,
+          "cum_pnl": 582.75
+        },
+        {
+          "trade_no": 52,
+          "cum_pnl": 584.65
+        },
+        {
+          "trade_no": 53,
+          "cum_pnl": 588.35
+        },
+        {
+          "trade_no": 54,
+          "cum_pnl": 591.05
+        },
+        {
+          "trade_no": 55,
+          "cum_pnl": 614.05
+        },
+        {
+          "trade_no": 56,
+          "cum_pnl": 617.05
+        },
+        {
+          "trade_no": 57,
+          "cum_pnl": 631.55
+        },
+        {
+          "trade_no": 58,
+          "cum_pnl": 623.5
+        },
+        {
+          "trade_no": 59,
+          "cum_pnl": 614.5
+        },
+        {
+          "trade_no": 60,
+          "cum_pnl": 616.8
+        },
+        {
+          "trade_no": 61,
+          "cum_pnl": 617.85
+        },
+        {
+          "trade_no": 62,
+          "cum_pnl": 613.85
+        }
+      ]
+    },
+    "symbols": [
+      "HDFCBANK",
+      "RELIANCE",
+      "POLYCAB"
+    ],
+    "saved_at": "2026-06-22 16:59"
+  }
+]

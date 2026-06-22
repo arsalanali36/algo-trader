@@ -110,37 +110,74 @@ def _tags(row):
 
 def trades_for(date, **filters):
     """Net entry/exit legs into completed trades + open positions for a date.
-    Pairing key = (source, strategy, trad_sym). Returns {details, open, count}."""
-    rows = query(date=date, **filters)
-    open_pos, details, opens = {}, [], []
+
+    Two-pass netting:
+      Pass 1 — exact (source, strategy, trad_sym) round-trips. Ek strategy jo
+               apni hi position open+close kare → clean pairing + attribution.
+      Pass 2 — Pass 1 ke baad bache hue opposite legs ko (mode, trad_sym) pe
+               FIFO net karo, chahe source/strategy alag ho. Isse Quick Order ka
+               manual BUY ek webhook/strategy SELL ko bhi close kar deta hai
+               (broker reality: same contract+account me sides net hote hain).
+    Returns {details, open, count}. Attribution = ENTRY (pehla) leg ka source/strategy.
+    """
+    # Rejected/cancelled/failed orders = koi real fill nahi → position hi nahi.
+    # Inhe netting se bahar rakho (warna phantom open positions dikhte hain).
+    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired"}
+    rows = [r for r in query(date=date, **filters)
+            if str(r.get("status") or "").lower() not in _DEAD]
+    details = []
 
     def _meta(r):
         return {"source": r["source"], "strategy": r["strategy"], "mode": r["mode"],
                 "broker": r["broker"], "instrument": r["instrument"],
                 "symbol": r["symbol"], "tags": _tags(r)}
 
+    def _complete(entry_r, exit_r):
+        ep, xp, q = entry_r["price"], exit_r["price"], entry_r["qty"]
+        pnl = (xp - ep) * q if entry_r["side"] == "BUY" else (ep - xp) * q
+        d = {"sym": entry_r["trad_sym"], "entry": entry_r["side"], "qty": q,
+             "entry_price": ep, "entry_time": entry_r["ts"][11:16],
+             "entry_date": entry_r["ts"][:10], "exit_date": exit_r["ts"][:10],
+             "exit_price": xp, "exit_time": exit_r["ts"][11:16], "pnl": round(pnl, 2)}
+        d.update(_meta(entry_r))   # attribution from the entry leg
+        return d
+
+    # ── Pass 1: exact (source, strategy, trad_sym) round-trips ──
+    open_pos = {}     # key -> currently-open entry row
+    leftover = []     # legs not paired in pass 1
     for r in rows:
         key = (r["source"], r["strategy"], r["trad_sym"])
         prev = open_pos.get(key)
         if prev and prev["side"] != r["side"]:
-            ep, xp, q = prev["price"], r["price"], prev["qty"]
-            pnl = (xp - ep) * q if prev["side"] == "BUY" else (ep - xp) * q
-            d = {"sym": r["trad_sym"], "entry": prev["side"], "qty": q,
-                 "entry_price": ep, "entry_time": prev["ts"][11:16],
-                 "exit_price": xp, "exit_time": r["ts"][11:16], "pnl": round(pnl, 2)}
-            d.update(_meta(r))
-            details.append(d)
+            details.append(_complete(prev, r))
             open_pos.pop(key, None)
+        elif prev:                       # same side again (pyramid/dup) — bump prev
+            leftover.append(prev)
+            open_pos[key] = r
         else:
             open_pos[key] = r
+    leftover.extend(open_pos.values())
+    leftover.sort(key=lambda r: r["ts"])  # chronological for FIFO
 
-    for r in open_pos.values():
-        o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
-             "entry_price": r["price"], "entry_time": r["ts"][11:16],
-             "exit_price": None, "exit_time": "—", "pnl": None}
-        o.update(_meta(r))
-        opens.append(o)
+    # ── Pass 2: net leftover opposite legs by (mode, trad_sym), FIFO ──
+    stacks, opens = {}, []
+    for r in leftover:
+        k2 = (r["mode"], r["trad_sym"])
+        st = stacks.setdefault(k2, [])
+        if st and st[0]["side"] != r["side"]:
+            details.append(_complete(st.pop(0), r))   # oldest open leg = entry
+        else:
+            st.append(r)
+    for st in stacks.values():
+        for r in st:
+            o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
+                 "entry_price": r["price"], "entry_time": r["ts"][11:16],
+                 "entry_date": r["ts"][:10],
+                 "exit_price": None, "exit_time": "—", "pnl": None}
+            o.update(_meta(r))
+            opens.append(o)
 
+    details.sort(key=lambda d: (d.get("entry_date", ""), d.get("entry_time", "")))
     return {"details": details, "open": opens, "count": len(details)}
 
 

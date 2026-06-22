@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "algo-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-X", "utf8", "trader_dashboard.py"],
+      "port": 5099
+    }
+  ]
+}

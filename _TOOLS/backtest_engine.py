@@ -53,7 +53,7 @@ if os.path.isdir(_WIN_DATA_DIR):
 else:
     DATA_DIR = os.path.join(BASE_DIR, "_TRADING_DATA", "Index", "NIFTY")
     os.makedirs(DATA_DIR, exist_ok=True)
-TF_MIN   = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
+TF_MIN   = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30, "1D": 1440}
 EXIT_HM  = dtime(15, 15)
 
 # Same fixed-Windows-store-first convention as NIFTY's DATA_DIR above —
@@ -170,6 +170,10 @@ def ensure_nifty_data(date_from, date_to):
                 fpath = os.path.join(DATA_DIR, f"NIFTY_{date_str}.csv")
                 df.to_csv(fpath, index=False)
                 print(f"  + {date_str} ({len(df)} bars)")
+            else:
+                fpath = os.path.join(DATA_DIR, f"NIFTY_{date_str}.csv")
+                pd.DataFrame(columns=["Datetime", "Open", "High", "Low", "Close", "Volume"]).to_csv(fpath, index=False)
+                print(f"  + {date_str} (holiday/no data)")
             progress["done"] += 1
             _time.sleep(1)   # be polite to the rate limit
     finally:
@@ -254,13 +258,21 @@ def ensure_equity_data(symbol, date_from, date_to):
                 fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
                 df.to_csv(fpath, index=False)
                 print(f"  + {date_str} ({len(df)} bars)")
+            else:
+                fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
+                pd.DataFrame(columns=["Datetime", "Open", "High", "Low", "Close", "Volume"]).to_csv(fpath, index=False)
+                print(f"  + {date_str} (holiday/no data)")
             progress["done"] += 1
             _time.sleep(1)
     finally:
         progress["active"] = False
 
+_CACHE_1M = {}
 
 def load_equity_1m_range(symbol, date_from=None, date_to=None):
+    cache_key = ("equity", symbol, str(date_from), str(date_to))
+    if cache_key in _CACHE_1M:
+        return _CACHE_1M[cache_key].copy()
     eq_dir = _equity_dir(symbol)
     paths = sorted(glob.glob(os.path.join(eq_dir, f"{symbol}_*.csv")))
     frames = []
@@ -275,9 +287,11 @@ def load_equity_1m_range(symbol, date_from=None, date_to=None):
             continue
         frames.append(d)
     if not frames:
-        return pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"])
-    return pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
-
+        df = pd.DataFrame(columns=["datetime", "open", "high", "low", "close", "volume"])
+    else:
+        df = pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
+    _CACHE_1M[cache_key] = df
+    return df.copy()
 
 def resample_with_volume(df1, tf_min):
     """Same as resample() but also sums volume — needed for VWAP, which
@@ -303,6 +317,10 @@ def resample_with_volume(df1, tf_min):
 
 # ───────────────────────── data loading ─────────────────────────
 def load_1m_range(date_from=None, date_to=None):
+    cache_key = ("nifty", "NIFTY", str(date_from), str(date_to))
+    if cache_key in _CACHE_1M:
+        return _CACHE_1M[cache_key].copy()
+    
     paths = sorted(glob.glob(os.path.join(DATA_DIR, "NIFTY_*.csv")))
     frames = []
     for p in paths:
@@ -318,8 +336,11 @@ def load_1m_range(date_from=None, date_to=None):
             continue
         frames.append(d)
     if not frames:
-        return pd.DataFrame(columns=["datetime", "open", "high", "low", "close"])
-    return pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
+        df = pd.DataFrame(columns=["datetime", "open", "high", "low", "close"])
+    else:
+        df = pd.concat(frames, ignore_index=True).sort_values("datetime").reset_index(drop=True)
+    _CACHE_1M[cache_key] = df
+    return df.copy()
 
 
 def _cfg_symbol(cfg, default="NIFTY"):
@@ -424,53 +445,10 @@ def _run_range(date_from, date_to, cfg):
     return eng, cont5, spec
 
 
-# rsi_trader.compute_signal() is written for the LIVE feed, where the last
-# candle row is still forming — it deliberately reads iloc[-2]/iloc[-3] to
-# get the last *closed* bar. In the backtest, df.iloc[:i+1] already ends
-# exactly at the closed bar i (no forming bar), so reusing compute_signal()
-# as-is reads bar i-1 instead of bar i — every signal lands one full bar
-# late vs TV (TV's bar_index is i, ours was i-1, then _fill() next-bar-fills
-# from the wrong bar). This local copy uses iloc[-1]/iloc[-2] to match the
-# backtest's own "last row = closed bar i" convention instead.
-def _rsi_signal_backtest(df, period, oversold, overbought, rsi_exit, pos):
-    if len(df) < period + 5:
-        return None, None
-    rsi = rsit.compute_rsi(df["close"], period)
-    cur = float(rsi.iloc[-1])
-    prv = float(rsi.iloc[-2])
-
-    if pos == 1 and cur >= rsi_exit:
-        return "EXIT", round(cur, 1)
-    if pos == -1 and cur <= rsi_exit:
-        return "EXIT", round(cur, 1)
-    if pos != 0:
-        return None, round(cur, 1)
-
-    if prv <= oversold and cur > oversold:
-        return "BUY", round(cur, 1)
-    if prv >= overbought and cur < overbought:
-        return "SELL", round(cur, 1)
-    return None, round(cur, 1)
+# _rsi_signal_backtest removed for vectorized optimization
 
 
-# Same live-vs-backtest bar-convention mismatch as RSI above: emat.compute_signal()
-# is written for the live feed (iloc[-2]/iloc[-3] = last closed bar, because the
-# live candle list always has one still-forming bar at the end). In the backtest
-# df.iloc[:i+1] already ends at the closed bar i, so calling the live function
-# as-is reads bar i-1 — one bar late vs TV. Local copy uses iloc[-1]/iloc[-2].
-def _ema_signal_backtest(df, fast, slow):
-    if len(df) < slow + 5:
-        return None
-    close = df["close"]
-    ema_fast = close.ewm(span=fast, adjust=False).mean()
-    ema_slow = close.ewm(span=slow, adjust=False).mean()
-    cf, cs = ema_fast.iloc[-1], ema_slow.iloc[-1]
-    pf, ps = ema_fast.iloc[-2], ema_slow.iloc[-2]
-    if pf <= ps and cf > cs:
-        return "BUY"
-    if pf >= ps and cf < cs:
-        return "SELL"
-    return None
+# _ema_signal_backtest removed for vectorized optimization
 
 
 # TradingView's ta.rsi()/ta.ema() run continuously over the chart's full
@@ -527,11 +505,14 @@ def _run_rsi(date_from, date_to, cfg):
     # df includes the warm-up buffer — RSI computed over this
     cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
-    period     = cfg.get("rsi_period", 14)
-    oversold   = cfg.get("oversold", 30)
-    overbought = cfg.get("overbought", 70)
-    rsi_exit   = cfg.get("rsi_exit", 50)
-    max_trades = cfg.get("max_trades_per_symbol", 1)
+    period     = int(cfg.get("rsi_period", 14))
+    oversold   = float(cfg.get("oversold", 30))
+    overbought = float(cfg.get("overbought", 70))
+    rsi_exit   = float(cfg.get("rsi_exit", 50))
+    max_trades = int(cfg.get("max_trades_per_symbol", 1))
+
+    # Vectorized computations
+    df["rsi"] = rsit.compute_rsi(df["close"], period)
 
     trades, pos, cur = [], 0, None
     cur_day, trades_today = None, 0
@@ -552,7 +533,18 @@ def _run_rsi(date_from, date_to, cfg):
             trades.append(cur); cur, pos = None, 0
             continue
 
-        sig, _rsi_val = _rsi_signal_backtest(df.iloc[:i + 1], period, oversold, overbought, rsi_exit, pos)
+        cur_rsi = float(row["rsi"])
+        prv_rsi = float(df.iloc[i-1]["rsi"])
+        
+        sig = None
+        if pos == 1 and cur_rsi >= rsi_exit:
+            sig = "EXIT"
+        elif pos == -1 and cur_rsi <= rsi_exit:
+            sig = "EXIT"
+        elif prv_rsi <= oversold and cur_rsi > oversold:
+            sig = "BUY"
+        elif prv_rsi >= overbought and cur_rsi < overbought:
+            sig = "SELL"
 
         if sig == "EXIT" and pos != 0:
             ft, fp = _fill(df, i)
@@ -598,8 +590,13 @@ def _run_ema(date_from, date_to, cfg):
     # df includes the warm-up buffer — see _run_rsi's note
     cutoff_ts = pd.to_datetime(date_from) if date_from else None
 
-    fast, slow = cfg.get("fast_ema", 9), cfg.get("slow_ema", 20)
-    max_trades = cfg.get("max_trades_per_symbol", 2)
+    fast, slow = int(cfg.get("fast_ema", 9)), int(cfg.get("slow_ema", 20))
+    max_trades = int(cfg.get("max_trades_per_symbol", 2))
+
+    # Vectorized computations
+    close_s = df["close"]
+    df["ema_fast"] = close_s.ewm(span=fast, adjust=False).mean()
+    df["ema_slow"] = close_s.ewm(span=slow, adjust=False).mean()
 
     trades, pos, cur = [], 0, None
     cur_day, trades_today = None, 0
@@ -617,7 +614,16 @@ def _run_ema(date_from, date_to, cfg):
             trades.append(cur); cur, pos = None, 0
             continue
 
-        sig = _ema_signal_backtest(df.iloc[:i + 1], fast, slow)
+        cf, cs = float(row["ema_fast"]), float(row["ema_slow"])
+        prv_row = df.iloc[i-1]
+        pf, ps = float(prv_row["ema_fast"]), float(prv_row["ema_slow"])
+        
+        sig = None
+        if pf <= ps and cf > cs:
+            sig = "BUY"
+        elif pf >= ps and cf < cs:
+            sig = "SELL"
+            
         if not sig or trades_today >= max_trades:
             continue
 
@@ -694,8 +700,92 @@ def _run_vwap_ema(date_from, date_to, cfg):
     return trades, df, spec
 
 
+# _bb_signal_backtest removed for vectorized optimization
+
+def _run_bb(date_from, date_to, cfg):
+    symbol = _cfg_symbol(cfg)
+    tf_min = TF_MIN.get(cfg.get("timeframe", "1D"), 1440)
+    buffered_from = _buffered_from(date_from, symbol)
+    df = ensure_and_load_symbol(symbol, buffered_from, date_to, tf_min)
+    if df.empty:
+        # Caller expects 3 values (trades, df, spec)
+        return [], pd.DataFrame(), None
+        
+    cutoff_ts = pd.to_datetime(date_from) if date_from else None
+    window = int(cfg.get("bb_window", 20))
+    std_dev = float(cfg.get("bb_std", 2.0))
+    allow_short = cfg.get("allow_short", False)
+    if isinstance(allow_short, str): allow_short = allow_short.lower() == "true"
+    
+    # Vectorized computations
+    close_s = df["close"].astype(float)
+    df["sma"] = close_s.rolling(window=window).mean()
+    std_s = close_s.rolling(window=window).std()
+    df["upper"] = df["sma"] + (std_s * std_dev)
+    df["lower"] = df["sma"] - (std_s * std_dev)
+    
+    trades, pos, cur = [], 0, None
+    n = len(df)
+    for i in range(window + 2, n):
+        row = df.iloc[i]
+        c_close = float(row["close"])
+        c_sma = float(row["sma"])
+        c_upper = float(row["upper"])
+        c_lower = float(row["lower"])
+        
+        sig = None
+        if pos == 0:
+            if c_close < c_lower:
+                sig = "BUY"
+            elif allow_short and c_close > c_upper:
+                sig = "SELL"
+        elif pos == 1:
+            if c_close > c_sma:
+                sig = "EXIT"
+        elif pos == -1:
+            if c_close < c_sma:
+                sig = "EXIT"
+        
+        if sig == "EXIT" and pos != 0:
+            ft, fp = _fill(df, i)
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "Mean_Reversion"
+            trades.append(cur); cur, pos = None, 0
+        elif sig in ("BUY", "SELL") and pos == 0:
+            ft, fp = _fill(df, i)
+            side = "Long" if sig == "BUY" else "Short"
+            cur = {"entry_time": ft, "entry_price": fp, "side": side, "exit_time": None, "exit_price": None, "exit_reason": None}
+            pos = 1 if sig == "BUY" else -1
+            
+    if cur:
+        last = df.iloc[-1]
+        cur["exit_time"], cur["exit_price"], cur["exit_reason"] = last["time"], float(last["close"]), "EOD"
+        trades.append(cur)
+        
+    # Calculate indicators BEFORE truncating the warm-up buffer!
+    close_s = df["close"].astype(float)
+    sma_s = chind.compute_indicator(df, "SMA", period=window)
+    std_s = close_s.rolling(window=window).std()
+    up_s = sma_s + (std_s * std_dev)
+    dn_s = sma_s - (std_s * std_dev)
+    
+    if cutoff_ts is not None:
+        trades = [tr for tr in trades if tr["entry_time"] >= cutoff_ts]
+        mask = df["time"] >= cutoff_ts
+        df = df[mask].reset_index(drop=True)
+        sma_s = sma_s[mask].reset_index(drop=True)
+        up_s = up_s[mask].reset_index(drop=True)
+        dn_s = dn_s[mask].reset_index(drop=True)
+        
+    spec = chspec.build_plot_spec(df, indicators=[
+        {"name": f"BB_Mid({window})", "series": sma_s, "type": "line", "color": "#d29922"},
+        {"name": f"BB_Up", "series": up_s, "type": "line", "color": "#8b949e"},
+        {"name": f"BB_Dn", "series": dn_s, "type": "line", "color": "#8b949e"},
+    ])
+    return trades, df, spec
+
+
 _RUNNERS = {"range": _run_range, "rsi": _run_rsi, "rsi_v1": _run_rsi, "ema": _run_ema,
-            "vwap": _run_vwap_ema}
+            "vwap": _run_vwap_ema, "bb": _run_bb, "bb_v1": _run_bb}
 
 
 # ───────────────────────── TV comparison (mirrors validate_strategy.run matching) ─────────────────────────

@@ -48,5 +48,31 @@
     "desc": "[Claude] v2 - 3:15 PM EOD force-exit + no re-entry added (matches Python backtest_engine.py cutoff). Fixes Pine-vs-Python mismatch where TV held positions past 3:15 into next day. Python: _TRADERS/rsi_trader.py",
     "author": "Claude",
     "py_file": "strategies/rsi_v1.py"
+  },
+  {
+    "version": 8,
+    "name": "🦺Ars_Auto_Rev_Chain_😎_common",
+    "strat_version": 4,
+    "timestamp": "2026-06-21 15:57 IST",
+    "desc": "[Claude] Webhook alerts -> JSON (LONG=ENTRY/buy, SHORT=ENTRY/sell, exits=EXIT). Base = user's LATEST.txt (show_hlc/show_fc_fib hardcoded false preserved). Sirf alerts + whSymbol input add; logic unchanged. TV: 'alert() function calls only'.\n\n\nTF 5 min,PF 1.9= , Sharp1.81 Trade 54/103 , Accu 52.43%",
+    "author": "Claude"
+  },
+  {
+    "version": 9,
+    "name": "VWAP-EMA Failure Reversal Strategy",
+    "strat_version": 1,
+    "timestamp": "2026-06-20 15:20 IST",
+    "desc": "mukul ki strategy hai,TCS, polcab aur ril pe 5 min\nhttps://www.youtube.com/watch?v=eOEYYTrlEG0",
+    "author": "Arsalan",
+    "py_file": "strategies/vwap_ema_failure.py"
+  },
+  {
+    "version": 10,
+    "name": "VWAP-EMA Failure Reversal Strategy",
+    "strat_version": 2,
+    "timestamp": "2026-06-20 16:05 IST",
+    "desc": "[Claude] Python conversion — strategies/vwap_ema_failure.py + backtest_engine.py runner (equity 1-min data, VWAP/EMA10 regime, R-multiple partial exits, 3:15 EOD force-exit). Configs added: vwap_v1 (TCS), vwap_v2 (POLYCAB), vwap_v3 (RELIANCE). Also added log.info SIGNAL/EXIT lines (project convention) so this exports a Pine Logs file matching backtest_engine.py's match-status comparison.",
+    "author": "Claude",
+    "py_file": "strategies/vwap_ema_failure.py"
   }
 ]

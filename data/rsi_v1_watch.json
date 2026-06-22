@@ -1,0 +1,11 @@
+{
+  "updated": "2026-06-22 09:47:05",
+  "strategy": "rsi_v1",
+  "tf": "5m",
+  "levels": {
+    "oversold": 30.0,
+    "overbought": 70.0,
+    "exit": 50.0
+  },
+  "symbols": []
+}

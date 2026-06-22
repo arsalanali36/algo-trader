@@ -775,6 +775,37 @@ def api_trade_chart_data():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+def _dhan_live_fate(resp, token, cid):
+    """Live order ka asli anjaam pata karo. Dhan ka 200 = 'accepted', 'filled' NAHI.
+    Price-band/freeze pe order accept hoke turant REJECT ho jaata (async). Return
+    (ok, status_upper): ok=False matlab koi real position nahi bani."""
+    import time as _t, requests as _rq
+    try:
+        jr = resp.json() or {}
+    except Exception:
+        jr = {}
+    if not isinstance(jr, dict):
+        jr = {}
+    oid = str(jr.get('orderId') or jr.get('data', {}).get('orderId') or '')
+    status = str(jr.get('orderStatus') or jr.get('data', {}).get('orderStatus') or '').upper()
+    # accept hua par abhi final nahi → ek baar confirm karo (reject async aata hai)
+    if oid and status not in ('TRADED', 'REJECTED', 'CANCELLED', 'EXPIRED'):
+        _t.sleep(1.2)
+        try:
+            h = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+            rr = _rq.get(f"https://api.dhan.co/v2/orders/{oid}", headers=h, timeout=6)
+            if rr.status_code == 200:
+                d = rr.json()
+                if isinstance(d, list) and d:
+                    d = d[0]
+                if isinstance(d, dict):
+                    status = str(d.get('orderStatus') or status).upper()
+        except Exception:
+            pass
+    dead = status in ('REJECTED', 'CANCELLED', 'EXPIRED')
+    return (not dead, status or 'SUBMITTED', oid)
+
+
 @app.route('/api/manual-order', methods=['POST'])
 def api_manual_order():
     data   = request.get_json()
@@ -790,7 +821,11 @@ def api_manual_order():
         import range_trader
 
         token, cid = _creds()
-        opt_type = 'PE' if side == 'BUY' else 'CE'
+        # opt_type explicitly from request (Quick Order CE/PE selector). Legacy
+        # fallback (BUY→PE, SELL→CE) only if client didn't send a valid leg.
+        opt_type = str(data.get('opt_type') or '').upper()
+        if opt_type not in ('CE', 'PE'):
+            opt_type = 'PE' if side == 'BUY' else 'CE'
 
         _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
@@ -889,13 +924,13 @@ def api_manual_order():
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs_dict, timeout=10)
         print(f"[MANUAL ORDER] status={r.status_code} resp={r.text}", flush=True)
         if r.status_code == 200:
+            ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
+            if not ok_fill:
+                # REJECTED/CANCELLED → koi real position nahi. Record MAT karo (phantom se bacho).
+                return jsonify({'ok': False, 'msg': f'Dhan ne order {ostatus} kiya (price-band/margin?) — koi position nahi bani'})
             _write_to_log('LIVE')
-            try:
-                _oid = str((r.json() or {}).get('data', {}).get('orderId', '') or '')
-            except Exception:
-                _oid = ''
-            _record('filled', 'live', _oid)
-            return jsonify({'ok': True, 'msg': f'[LIVE] {order_type} {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
+            _record('filled' if ostatus == 'TRADED' else 'pending', 'live', _oid)
+            return jsonify({'ok': True, 'msg': f'[LIVE] {order_type} {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f} ({ostatus})'})
         else:
             return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:300]}'})
     except Exception as e:
@@ -909,6 +944,10 @@ def api_close_position():
     entry_side = data.get('entry_side', '') # BUY or SELL
     qty_shares = int(data.get('qty', 65))
     mode     = data.get('mode', 'paper')
+    # source/strategy of the OPEN leg — close ko isi (source,strategy,trad_sym) se
+    # record karo taaki order_store.trades_for me net hoke completed ban jaaye.
+    src_in   = data.get('source', '') or 'manual'
+    strat_in = data.get('strategy', '') or ''
 
     close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
 
@@ -952,8 +991,8 @@ def api_close_position():
         def _record_close(status_, m, oid=''):
             try:
                 import order_store
-                order_store.record(close_side, qty_shares, option_ltp, source='manual', mode=m,
-                    broker='dhan', symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
+                order_store.record(close_side, qty_shares, option_ltp, source=src_in, strategy=strat_in,
+                    mode=m, broker='dhan', symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
                     sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
                     correlation_id=f'CLOSE_{t_sym}_{ts}', status=status_)
             except Exception:
@@ -977,15 +1016,43 @@ def api_close_position():
         hdrs = range_trader.hdrs(token, cid)
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
         if r.status_code == 200:
+            ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
+            if not ok_fill:
+                return jsonify({'ok': False, 'msg': f'Dhan ne close order {ostatus} kiya — position band nahi hui (Dhan pe verify karo)'})
             _write_log('LIVE')
-            try:
-                _oid = str((r.json() or {}).get('data', {}).get('orderId', '') or '')
-            except Exception:
-                _oid = ''
-            _record_close('filled', 'live', _oid)
-            return jsonify({'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym}'})
+            _record_close('filled' if ostatus == 'TRADED' else 'pending', 'live', _oid)
+            return jsonify({'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym} ({ostatus})'})
         else:
             return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'})
+    except Exception as e:
+        return jsonify({'ok': False, 'msg': str(e)})
+
+
+@app.route('/api/orders/book-close', methods=['POST'])
+def api_orders_book_close():
+    """Open position ko BOOK se hatao — koi real Dhan order NAHI jaata. Sirf ek
+    offsetting leg (same price → pnl 0) record hota hai jo position ko net karke
+    Completed me bhej deta hai. Use: rejected/phantom live positions (jo Dhan pe
+    asal me the hi nahi) ya kisi bhi stuck entry ko ledger se saaf karne ke liye."""
+    import order_store, time as _t
+    d = request.get_json() or {}
+    t_sym      = (d.get('t_sym') or '').strip()
+    entry_side = (d.get('entry_side') or '').upper()
+    qty        = int(d.get('qty', 0) or 0)
+    price      = float(d.get('entry_price', 0) or 0)
+    mode       = d.get('mode', 'paper')
+    source     = d.get('source', '') or 'manual'
+    strategy   = d.get('strategy', '') or ''
+    if not t_sym or entry_side not in ('BUY', 'SELL'):
+        return jsonify({'ok': False, 'msg': 'bad request (t_sym/entry_side)'})
+    close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
+    try:
+        order_store.record(close_side, qty, price, source=source, strategy=strategy,
+            mode=mode, broker='dhan', symbol=t_sym.split('-')[0], instrument='options',
+            trad_sym=t_sym, sec_id='', segment='NSE_FNO',
+            correlation_id=f'BOOKCLOSE_{t_sym}_{int(_t.time())}',
+            status='bookclose', tags=['bookclose'])
+        return jsonify({'ok': True, 'msg': f'Book-closed {t_sym} (no real order, pnl 0)'})
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
 
@@ -1304,6 +1371,59 @@ def api_backtest_progress():
     import backtest_engine as be
     return jsonify(be.progress)
 
+@app.route('/api/backtest/optimize')
+def api_backtest_optimize():
+    params_str = request.args.get("params")
+    if not params_str:
+        return jsonify({"error": "No params provided"}), 400
+    try:
+        p = json.loads(params_str)
+        strat_type = p["strat_type"]
+        grid = p["grid"]
+        date_from = p.get("date_from", "")
+        date_to = p.get("date_to", "")
+        symbols = p.get("symbols", "NIFTY")
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+        
+    import sys as _s
+    if str(BASE_DIR / "_TOOLS") not in _s.path:
+        _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
+    import optimizer
+    
+    def generate():
+        try:
+            for update in optimizer.run_optimization_stream(strat_type, grid, date_from, date_to, symbols):
+                yield f"data: {json.dumps(update)}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'error': str(e)})}\n\n"
+            
+    return Response(generate(), mimetype='text/event-stream')
+
+
+@app.route('/api/backtest/optimizations', methods=['GET'])
+def api_get_optimizations():
+    try:
+        hist_file = BASE_DIR / "data" / "saved_optimizations.json"
+        if not hist_file.exists():
+            return jsonify([])
+        return jsonify(json.loads(hist_file.read_text()))
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/backtest/optimizations/<int:run_id>', methods=['DELETE'])
+def api_delete_optimization(run_id):
+    try:
+        hist_file = BASE_DIR / "data" / "saved_optimizations.json"
+        if not hist_file.exists():
+            return jsonify({"success": True})
+        hist = json.loads(hist_file.read_text())
+        hist = [h for h in hist if h["id"] != run_id]
+        hist_file.write_text(json.dumps(hist, indent=2))
+        return jsonify({"success": True})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/api/backtest/run', methods=['POST'])
 def api_backtest_run():
     """Generic date-range backtest for any strategy type (range/rsi/ema).
@@ -1336,7 +1456,7 @@ def api_backtest_run():
         cfg_override = body.get("cfg_override")
 
     strat_type = _base(sid)
-    if strat_type not in ("range", "rsi", "rsi_v1", "ema", "vwap"):
+    if strat_type not in ("range", "rsi", "rsi_v1", "ema", "vwap", "bb"):
         return jsonify({"error": f"backtest not supported for strategy type '{strat_type}'"}), 400
 
     cfg_file = STRATEGIES.get(strat_type, {}).get("cfg", TC_FILE)

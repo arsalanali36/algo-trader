@@ -56,11 +56,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .stat-card .val{font-size:15px;font-weight:700}
 .green{color:#3fb950}.red{color:#f85149}.gray{color:#8b949e}
 
-.view-toggle{display:flex;gap:6px;margin-top:10px}
-.view-toggle button{flex:1;padding:6px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;cursor:pointer}
-.view-toggle button.active{background:#1f6feb;color:#fff;border-color:#1f6feb}
+.main-tab { padding: 10px 20px; font-size: 13px; font-weight: 600; color: #8b949e; background: transparent; border: none; border-bottom: 2px solid transparent; cursor: pointer; transition: all 0.2s;}
+.main-tab.active { color: #fff; border-bottom-color: #1f6feb; }
+.main-tab:hover:not(.active) { color: #c9d1d9; }
 
-.right-content{flex:1;overflow-y:auto;min-height:0}
+.right-content{flex:1;min-height:0}
 #equity-chart{width:100%;height:100%}
 
 table.trades{width:100%;border-collapse:collapse;font-size:11.5px}
@@ -101,16 +101,21 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
     <button class="btn btn-gray" onclick="saveCurrentResult()">💾 Save Result</button>
     <button class="btn btn-gray" id="copy-code-btn" onclick="copyPineCode()">📋 Copy Pine Code</button>
     <button class="btn btn-blue" onclick="openEditModal()">✏️ Edit &amp; Re-run</button>
+    <button class="btn btn-blue" onclick="openOptimizeModal()" style="background:#8a2be2; border-color:#8a2be2">🚀 Optimize</button>
   </div>
 </div>
 
-<div class="split-wrap" id="split-wrap">
-  <div class="pane" id="left-pane">
-    <div class="pane-hdr">
-      <div class="sym-tabs" id="sym-tabs"></div>
-      <span class="ttl" style="text-align:right">CHART</span>
-      <button class="collapse-btn" id="left-collapse-btn" onclick="togglePane('left')">▢</button>
-    </div>
+<div style="display:flex; background:#161b22; border-bottom:1px solid #30363d; padding: 0 10px; align-items:center; flex-shrink:0">
+  <div style="display:flex; gap:10px;">
+    <button id="main-tab-chart" class="main-tab active" onclick="setMainTab('chart')">📈 Chart</button>
+    <button id="main-tab-results" class="main-tab" onclick="setMainTab('results')">📊 Results</button>
+  </div>
+  <div class="sym-tabs" id="sym-tabs" style="margin-left:20px; border-bottom:none; padding:0"></div>
+</div>
+
+<div style="flex:1; display:flex; flex-direction:column; overflow:hidden; min-height:0">
+  <!-- MAIN CHART VIEW -->
+  <div id="view-chart-container" style="flex:1; display:flex; flex-direction:column; min-height:0">
     <div class="match-filter-tabs" id="match-filter-tabs"></div>
     <div id="indicator-picker" style="display:flex;gap:6px;align-items:center;padding:4px 8px;font-size:11px;color:#8b949e;border-bottom:1px solid #21262d">
       <span>➕ Add Indicator:</span>
@@ -126,25 +131,37 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
     <div id="chart"><div class="empty">No chart data — open this from the backtest panel's "🔍 Full View" button.</div></div>
   </div>
 
-  <div class="splitter" id="splitter"></div>
-
-  <div class="pane" id="right-pane">
-    <div class="pane-hdr">
-      <span class="ttl">OVERVIEW</span>
-      <button class="collapse-btn" id="right-collapse-btn" onclick="togglePane('right')">▢</button>
-    </div>
-    <div class="stats-block">
+  <!-- MAIN RESULTS VIEW -->
+  <div id="view-results-container" style="flex:1; display:none; flex-direction:column; min-height:0; overflow-y:auto">
+    <div class="stats-block" style="border-bottom:none; padding-bottom:0">
       <div class="stats-grid" id="stats-grid"></div>
-      <div class="view-toggle">
-        <button id="btn-view-chart" class="active" onclick="setView('chart')">📈 Chart</button>
-        <button id="btn-view-table" onclick="setView('table')">📋 Table</button>
-      </div>
     </div>
-    <!-- Filter tabs live OUTSIDE the scrollable area (flex-shrink:0, like
-         stats-block above) so they — and the toggle buttons above them —
-         stay visible no matter how far you scroll through a long trade list. -->
-    <div id="right-toolbar" style="flex-shrink:0"></div>
-    <div class="right-content" id="right-content"></div>
+
+    <!-- Results Sub-tabs -->
+    <div style="display:flex; gap:6px; margin: 12px 12px 0 12px; border-bottom: 1px solid #30363d; padding-bottom: 10px;">
+       <button id="sub-tab-chart" class="btn btn-gray active" onclick="setResultTab('chart')">📈 Equity &amp; PnL</button>
+       <button id="sub-tab-table" class="btn btn-gray" onclick="setResultTab('table')">📋 Trade Table</button>
+    </div>
+
+    <!-- Sub-tab Content -->
+    <div id="sub-view-chart" style="display:flex; flex-direction:column; padding:12px;">
+       <div style="height:350px; border-bottom:1px solid #21262d; display:flex; flex-direction:column">
+          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0;display:flex;justify-content:space-between">
+            <span>EQUITY CURVE — click a point to jump to that trade</span>
+            <span id="equity-legend"></span>
+          </div>
+          <div id="equity-chart" style="flex:1;min-height:0"></div>
+       </div>
+       <div style="height:250px; display:flex; flex-direction:column; margin-top:10px;">
+          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0">PER-TRADE P&amp;L</div>
+          <div id="runup-chart" style="flex:1;min-height:0"></div>
+       </div>
+    </div>
+
+    <div id="sub-view-table" style="display:none; flex-direction:column; padding:12px;">
+       <div id="right-toolbar"></div>
+       <div id="right-content"></div>
+    </div>
   </div>
 </div>
 
@@ -179,6 +196,76 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
       <button class="btn btn-green" onclick="modalRun(true)">💾 Save &amp; Run</button>
     </div>
     <div class="modal-msg" id="modal-msg"></div>
+  </div>
+</div>
+
+<!-- Optimizer Modal -->
+<div class="modal-overlay" id="optimize-modal">
+  <div class="modal-box" style="max-width:700px">
+    <h2>🚀 Optimize Strategy — <span id="opt-strat-name"></span></h2>
+    
+    <div id="opt-input-view">
+      <div class="modal-msg" style="color:#8b949e; margin-bottom:15px; display:block">
+        Enter comma-separated values to test multiple parameters simultaneously.<br>
+        Example Timeframes: <code>1m, 3m, 5m</code> | Example Windows: <code>10, 20, 30</code>
+      </div>
+      <div class="field-grid" id="opt-fields"></div>
+      
+      <div class="modal-section">
+        <div class="ttl">📊 DATE RANGE &amp; SYMBOLS</div>
+        <div class="field-grid">
+          <div class="field-row"><label>From</label><input type="date" id="opt-from"></div>
+          <div class="field-row"><label>To</label><input type="date" id="opt-to"></div>
+        </div>
+        <div class="field-row">
+          <label>Symbols (comma separated)</label>
+          <input type="text" id="opt-symbols" value="RELIANCE">
+        </div>
+      </div>
+      
+      <div class="modal-actions" style="margin-top:15px">
+        <button class="btn btn-gray" onclick="closeOptimizeModal()">Cancel</button>
+        <button class="btn btn-blue" onclick="startOptimization()" style="background:#8a2be2; border-color:#8a2be2">🚀 Start Optimizer</button>
+        <button class="btn btn-gray" onclick="openOptHistory()">📂 Past Optimizations</button>
+      </div>
+    </div>
+    
+    <div id="opt-progress-view" style="display:none; text-align:center; padding: 20px 0;">
+      <h3 id="opt-status-text" style="margin-bottom:10px;">Starting Optimizer...</h3>
+      <div style="width:100%; background:#21262d; border-radius:10px; overflow:hidden">
+        <div id="opt-progress-bar" style="width:0%; height:20px; background:#8a2be2; transition: width 0.3s ease;"></div>
+      </div>
+      <div class="modal-actions" style="margin-top:20px; justify-content:center">
+        <button class="btn btn-gray" onclick="cancelOptimization()">Cancel</button>
+      </div>
+    </div>
+    
+    <div id="opt-results-view" style="display:none;">
+      <div style="max-height: 400px; overflow-y:auto; margin-bottom: 15px;">
+        <table class="table" id="opt-results-table">
+          <thead><tr><th>Rank</th><th>Params</th><th>Trades</th><th>Win %</th><th>PF</th><th>Sharpe</th><th>PnL</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="document.getElementById('opt-results-view').style.display='none'; document.getElementById('opt-input-view').style.display='block';">Back</button>
+        <button class="btn btn-gray" onclick="closeOptimizeModal()">Close</button>
+      </div>
+    </div>
+    
+    <div id="opt-history-view" style="display:none;">
+      <h3 style="margin-bottom:15px">Past Optimizations</h3>
+      <div style="max-height: 400px; overflow-y:auto; margin-bottom: 15px;">
+        <table class="table" id="opt-history-table">
+          <thead><tr><th>Time</th><th>Strategy</th><th>Symbols</th><th>Dates</th><th>Action</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-gray" onclick="document.getElementById('opt-history-view').style.display='none'; document.getElementById('opt-input-view').style.display='block';">Back</button>
+      </div>
+    </div>
+    
   </div>
 </div>
 
@@ -224,6 +311,15 @@ let _leftCollapsed = false, _rightCollapsed = false;
 let _activeSymbol = null;
 
 const STRAT_FIELDS = {
+  bb: [
+    {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m','1D']},
+    {id: 'bb_window', label: 'BB Window', type: 'number'},
+    {id: 'bb_std', label: 'BB Std Dev', type: 'number'},
+    {id: 'allow_short', label: 'Allow Short', type: 'select', opts: ['true','false']},
+    {id: 'qty', label: 'Quantity', type: 'number'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ],
   ema: [
     {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
     {id: 'strike_offset', label: 'Strike Offset', type: 'select', opts: ['-3','-2','-1','0','1','2','3']},
@@ -436,7 +532,7 @@ function _runSavedEntry(entry) {
 function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,''); }
 // Which strategy types let you pick the backtest symbol — anything whose
 // signal logic is symbol-agnostic. Range is excluded (NIFTY/index-only engine).
-function symbolPickable(type){ return ['vwap','rsi','ema'].includes(type); }
+function symbolPickable(type){ return ['vwap','rsi','ema','bb'].includes(type); }
 
 // Friendly labels — config keys are internal ids (ARS_CHAIN_V1, rsi_v1) and
 // look ugly verbatim in a dropdown. Map the base id to a readable name; the
@@ -492,11 +588,11 @@ async function init() {
   const ptog = document.getElementById('patterns-toggle');
   if (ptog) ptog.checked = _showPatterns;
   drawChart();
-  setView('chart');
-
-  const sw = document.getElementById('split-wrap');
-  document.getElementById('left-pane').style.flex = `1 1 ${_splitRatio}%`;
-  document.getElementById('right-pane').style.flex = `1 1 ${100 - _splitRatio}%`;
+  drawEquityCurve();
+  drawRunupChart();
+  renderTradeTable();
+  setMainTab('chart');
+  setResultTab('chart');
 }
 
 // ───────────────────────── Add Indicator picker ─────────────────────────
@@ -795,7 +891,7 @@ function setMatchFilter(key) {
   _matchFilter = key;
   renderMatchFilterTabs();
   drawChart();
-  if (document.getElementById('btn-view-table').classList.contains('active')) renderTradeTable();
+  if (document.getElementById('sub-tab-table').classList.contains('active')) renderTradeTable();
 }
 
 // Independent of the match-status filter above — Win/Loss is about the
@@ -817,7 +913,7 @@ function renderPnlFilterTabs() {
 function setPnlFilter(key) {
   _pnlFilter = key;
   renderPnlFilterTabs();
-  if (document.getElementById('btn-view-table').classList.contains('active')) renderTradeTable();
+  if (document.getElementById('sub-tab-table').classList.contains('active')) renderTradeTable();
 }
 function _tradePnl(t) {
   if (t.exit_price === null || t.exit_price === undefined) return null;
@@ -1198,33 +1294,35 @@ function jumpToTrade(idx) {
 }
 
 // ───────────────────────── right pane: chart/table toggle ─────────────────────────
-function setView(which) {
-  document.getElementById('btn-view-chart').classList.toggle('active', which === 'chart');
-  document.getElementById('btn-view-table').classList.toggle('active', which === 'table');
-  const content = document.getElementById('right-content');
-  const toolbar = document.getElementById('right-toolbar');
-  if (toolbar) toolbar.innerHTML = '';
-  if (which === 'chart') {
-    // Equity curve (cumulative) on top, per-trade P&L bars below — both
-    // under the one "Chart" tab now, stacked, instead of a separate toggle.
-    content.innerHTML = `
-      <div style="display:flex;flex-direction:column;height:100%">
-        <div style="flex:1 1 55%;min-height:0;border-bottom:1px solid #21262d;display:flex;flex-direction:column">
-          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0;display:flex;justify-content:space-between">
-            <span>EQUITY CURVE — click a point to jump to that trade</span>
-            <span id="equity-legend"></span>
-          </div>
-          <div id="equity-chart" style="flex:1;min-height:0"></div>
-        </div>
-        <div style="flex:1 1 45%;min-height:0;display:flex;flex-direction:column">
-          <div style="font-size:10px;color:#8b949e;padding:4px 8px;flex-shrink:0">PER-TRADE P&amp;L</div>
-          <div id="runup-chart" style="flex:1;min-height:0"></div>
-        </div>
-      </div>`;
-    drawEquityCurve();
+function setMainTab(which) {
+  document.getElementById('main-tab-chart').classList.toggle('active', which === 'chart');
+  document.getElementById('main-tab-results').classList.toggle('active', which === 'results');
+  document.getElementById('view-chart-container').style.display = which === 'chart' ? 'flex' : 'none';
+  document.getElementById('view-results-container').style.display = which === 'results' ? 'flex' : 'none';
+  if (which === 'chart' && _chart) {
+    _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+  } else if (which === 'results') {
+    if (_equityChart) {
+      _equityChart.resize(document.getElementById('equity-chart').clientWidth, document.getElementById('equity-chart').clientHeight);
+    } else {
+      drawEquityCurve();
+    }
     drawRunupChart();
-  } else {
-    renderTradeTable();
+  }
+}
+
+function setResultTab(which) {
+  document.getElementById('sub-tab-chart').classList.toggle('active', which === 'chart');
+  document.getElementById('sub-tab-table').classList.toggle('active', which === 'table');
+  document.getElementById('sub-view-chart').style.display = which === 'chart' ? 'flex' : 'none';
+  document.getElementById('sub-view-table').style.display = which === 'table' ? 'flex' : 'none';
+  if (which === 'chart') {
+    if (_equityChart) {
+      _equityChart.resize(document.getElementById('equity-chart').clientWidth, document.getElementById('equity-chart').clientHeight);
+    } else {
+      drawEquityCurve();
+    }
+    drawRunupChart();
   }
 }
 
@@ -1337,7 +1435,7 @@ function drawEquityCurve() {
     const idx = indices[param.time - 1];
     // Table must exist in the DOM before jumpToTrade can scroll/highlight
     // its row — switch view first.
-    if (idx !== undefined) { setView('table'); jumpToTrade(idx); }
+    if (idx !== undefined) { setMainTab('results'); setResultTab('table'); jumpToTrade(idx); }
   });
   _equityChart.timeScale().fitContent();
 }
@@ -1396,70 +1494,16 @@ function renderTradeTable() {
   renderSymbolFilterTabs();
 }
 
-// ───────────────────────── splitter drag ─────────────────────────
-(function setupSplitter() {
-  const splitter = document.getElementById('splitter');
-  const left = document.getElementById('left-pane');
-  const right = document.getElementById('right-pane');
-  const wrap = document.getElementById('split-wrap');
-  let dragging = false;
-
-  splitter.addEventListener('mousedown', (e) => {
-    if (_leftCollapsed || _rightCollapsed) return;
-    dragging = true;
-    document.body.style.userSelect = 'none';
-    // The candlestick canvas (lightweight-charts) captures its own mouse
-    // events for crosshair/pan — while it has focus, dragging the splitter
-    // over the chart area felt stuck/jumpy because our window-level
-    // mousemove was competing with the chart's internal handlers. Disable
-    // pointer events on the chart container itself for the drag duration.
-    document.getElementById('chart').style.pointerEvents = 'none';
-    e.preventDefault();
-  });
-  window.addEventListener('mousemove', (e) => {
-    if (!dragging) return;
-    const rect = wrap.getBoundingClientRect();
-    let pct = ((e.clientX - rect.left) / rect.width) * 100;
-    pct = Math.max(20, Math.min(80, pct));
-    _splitRatio = pct;
-    left.style.flex = `1 1 ${pct}%`;
-    right.style.flex = `1 1 ${100 - pct}%`;
-    if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
-  });
-  window.addEventListener('mouseup', () => {
-    if (!dragging) return;
-    dragging = false;
-    document.body.style.userSelect = '';
-    document.getElementById('chart').style.pointerEvents = '';
-    localStorage.setItem('bt_split_ratio', _splitRatio);
-  });
-})();
-
-function togglePane(which) {
-  const left = document.getElementById('left-pane');
-  const right = document.getElementById('right-pane');
-  const leftBtn = document.getElementById('left-collapse-btn');
-  const rightBtn = document.getElementById('right-collapse-btn');
-
-  if (which === 'left') {
-    _leftCollapsed = !_leftCollapsed;
-    left.classList.toggle('pane-hidden', _leftCollapsed);
-    leftBtn.textContent = _leftCollapsed ? '▣' : '▢';
-    if (_leftCollapsed) { right.style.flex = '1 1 100%'; } else { right.style.flex = `1 1 ${100 - _splitRatio}%`; left.style.flex = `1 1 ${_splitRatio}%`; }
-  } else {
-    _rightCollapsed = !_rightCollapsed;
-    right.classList.toggle('pane-hidden', _rightCollapsed);
-    rightBtn.textContent = _rightCollapsed ? '▣' : '▢';
-    if (_rightCollapsed) { left.style.flex = '1 1 100%'; } else { left.style.flex = `1 1 ${_splitRatio}%`; right.style.flex = `1 1 ${100 - _splitRatio}%`; }
-  }
-  setTimeout(() => {
-    if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
-    if (_equityChart) _equityChart.resize(document.getElementById('equity-chart')?.clientWidth || 0, document.getElementById('equity-chart')?.clientHeight || 0);
-  }, 0);
-}
+// (Splitter and toggle pane logic removed for single-pane layout)
 
 window.addEventListener('resize', () => {
-  if (_chart) _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+  if (_chart && document.getElementById('view-chart-container').style.display !== 'none') {
+    _chart.resize(document.getElementById('chart').clientWidth, document.getElementById('chart').clientHeight);
+  }
+  if (document.getElementById('view-results-container').style.display !== 'none' && document.getElementById('sub-view-chart').style.display !== 'none') {
+    if (_equityChart) _equityChart.resize(document.getElementById('equity-chart').clientWidth, document.getElementById('equity-chart').clientHeight);
+    drawRunupChart();
+  }
 });
 
 // ───────────────────────── Edit & Re-run ─────────────────────────
@@ -1653,8 +1697,11 @@ async function modalRun(saveFirst) {
     renderMatchFilterTabs();
     renderStats();
     drawChart();
-    const tableActive = document.getElementById('btn-view-table').classList.contains('active');
-    setView(tableActive ? 'table' : 'chart');
+    drawEquityCurve();
+    drawRunupChart();
+    renderTradeTable();
+    const tableActive = document.getElementById('sub-tab-table').classList.contains('active');
+    setResultTab(tableActive ? 'table' : 'chart');
     closeEditModal();
   } catch (e) {
     msg.style.color = '#f85149';
@@ -1662,6 +1709,189 @@ async function modalRun(saveFirst) {
   } finally {
     clearInterval(pollHandle);
   }
+}
+
+// ───────────────────────── Optimizer ─────────────────────────
+let optEventSource = null;
+
+function openOptimizeModal() {
+  document.getElementById('opt-strat-name').textContent = D.strategy;
+  document.getElementById('opt-from').value = D.date_from || '';
+  document.getElementById('opt-to').value = D.date_to || '';
+  
+  const grid = document.getElementById('opt-fields');
+  grid.innerHTML = '';
+  
+  const tf = D.cfg.timeframe || '5m';
+  grid.innerHTML += `<div class="field-row"><label>timeframe</label><input type="text" id="opt-grid-timeframe" value="${tf}"></div>`;
+  
+  for (let [k,v] of Object.entries(D.cfg)) {
+    if (k === 'instrument' || k === 'symbols' || k === 'timeframe') continue;
+    grid.innerHTML += `<div class="field-row"><label>${k}</label><input type="text" id="opt-grid-${k}" value="${v}"></div>`;
+  }
+  
+  document.getElementById('opt-input-view').style.display = 'block';
+  document.getElementById('opt-progress-view').style.display = 'none';
+  document.getElementById('opt-results-view').style.display = 'none';
+  document.getElementById('opt-history-view').style.display = 'none';
+  document.getElementById('optimize-modal').classList.add('open');
+}
+
+function closeOptimizeModal() {
+  cancelOptimization();
+  document.getElementById('optimize-modal').classList.remove('open');
+}
+
+function cancelOptimization() {
+  if (optEventSource) {
+    optEventSource.close();
+    optEventSource = null;
+  }
+  document.getElementById('opt-input-view').style.display = 'block';
+  document.getElementById('opt-progress-view').style.display = 'none';
+}
+
+function startOptimization() {
+  const params = {
+    strat_type: D.strategy,
+    date_from: document.getElementById('opt-from').value,
+    date_to: document.getElementById('opt-to').value,
+    symbols: document.getElementById('opt-symbols').value,
+    grid: {}
+  };
+  
+  const tfVal = document.getElementById('opt-grid-timeframe').value;
+  params.grid.timeframe = tfVal.split(',').map(s => s.trim());
+  
+  for (let k of Object.keys(D.cfg)) {
+    if (k === 'instrument' || k === 'symbols' || k === 'timeframe') continue;
+    const el = document.getElementById(`opt-grid-${k}`);
+    if (el) {
+      params.grid[k] = el.value.split(',').map(s => s.trim());
+    }
+  }
+  
+  document.getElementById('opt-input-view').style.display = 'none';
+  document.getElementById('opt-progress-view').style.display = 'block';
+  document.getElementById('opt-results-view').style.display = 'none';
+  
+  const pb = document.getElementById('opt-progress-bar');
+  const txt = document.getElementById('opt-status-text');
+  pb.style.width = '0%';
+  txt.textContent = 'Starting workers...';
+  
+  const query = encodeURIComponent(JSON.stringify(params));
+  optEventSource = new EventSource('/api/backtest/optimize?params=' + query);
+  
+  optEventSource.onmessage = (e) => {
+    const data = JSON.parse(e.data);
+    if (data.error) {
+      txt.textContent = 'Error: ' + data.error;
+      optEventSource.close();
+      return;
+    }
+    if (data.progress !== undefined) {
+      pb.style.width = data.progress + '%';
+      txt.textContent = `Progress: ${data.progress}% (${data.completed}/${data.total})`;
+    }
+    if (data.results) {
+      txt.textContent = 'Complete!';
+      optEventSource.close();
+      renderOptResults(data.results);
+    }
+  };
+  
+  optEventSource.onerror = (e) => {
+    txt.textContent = 'Connection error or disconnected.';
+    optEventSource.close();
+  };
+}
+
+function renderOptResults(results) {
+  document.getElementById('opt-progress-view').style.display = 'none';
+  document.getElementById('opt-results-view').style.display = 'block';
+  
+  const tbody = document.querySelector('#opt-results-table tbody');
+  tbody.innerHTML = '';
+  results.forEach((r, i) => {
+    const pStr = Object.entries(r.cfg).filter(([k,v]) => k!=='instrument' && k!=='symbols').map(([k,v]) => `${k}:${v}`).join(', ');
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i+1}</td>
+      <td style="font-size:11px; max-width:250px; white-space:normal">${pStr}</td>
+      <td>${r.total_trades}</td>
+      <td>${(r.win_rate || 0).toFixed(1)}%</td>
+      <td>${(r.profit_factor || 0).toFixed(2)}</td>
+      <td>${(r.sharpe || 0).toFixed(2)}</td>
+      <td style="color:${r.net_pnl>=0?'#3fb950':'#f85149'}">₹${(r.net_pnl || 0).toFixed(2)}</td>
+      <td><button class="btn btn-green" style="padding:2px 6px; font-size:11px" onclick='loadOptRun(${JSON.stringify(r.cfg)})'>Load</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+let _optHistoryData = [];
+
+async function openOptHistory() {
+  document.getElementById('opt-input-view').style.display = 'none';
+  document.getElementById('opt-progress-view').style.display = 'none';
+  document.getElementById('opt-results-view').style.display = 'none';
+  document.getElementById('opt-history-view').style.display = 'block';
+  
+  const tbody = document.querySelector('#opt-history-table tbody');
+  tbody.innerHTML = '<tr><td colspan="5" style="text-align:center">Loading...</td></tr>';
+  
+  try {
+    const res = await fetch('/api/backtest/optimizations');
+    const data = await res.json();
+    _optHistoryData = data;
+    tbody.innerHTML = '';
+    
+    if (!data.length) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#8b949e">No past optimizations saved.</td></tr>';
+      return;
+    }
+    
+    data.forEach((r, i) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${r.timestamp}</td>
+        <td>${r.strat_type}</td>
+        <td>${r.symbols}</td>
+        <td>${r.date_from} to ${r.date_to}</td>
+        <td>
+          <button class="btn btn-blue" style="padding:2px 6px; font-size:11px" onclick='viewOptHistoryRun(${i})'>View Results</button>
+          <button class="btn btn-gray" style="padding:2px 6px; font-size:11px; margin-left:5px" onclick='deleteOptHistoryRun(${r.id}, event)'>🗑️</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#f85149">Error: ${e.message}</td></tr>`;
+  }
+}
+
+function viewOptHistoryRun(index) {
+  const run = _optHistoryData[index];
+  document.getElementById('opt-history-view').style.display = 'none';
+  renderOptResults(run.results);
+}
+
+async function deleteOptHistoryRun(id, e) {
+  e.stopPropagation();
+  if (!confirm("Delete this saved optimization?")) return;
+  try {
+    await fetch('/api/backtest/optimizations/' + id, { method: 'DELETE' });
+    openOptHistory(); // refresh
+  } catch (err) {
+    alert("Failed to delete: " + err);
+  }
+}
+
+function loadOptRun(cfg) {
+  closeOptimizeModal();
+  D.cfg = cfg;
+  openEditModal();
 }
 
 init();

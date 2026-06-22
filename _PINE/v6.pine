@@ -1,0 +1,137 @@
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  rsi_v1.pine  —  RSI Simple v1 Strategy  (v2 — 3:15 EOD exit)   ║
+// ║  Python counterpart: ../_TRADERS/rsi_trader.py                 ║
+// ╚══════════════════════════════════════════════════════════════════╝
+//
+// STRATEGY LOGIC:
+//   RSI ek momentum indicator hai (0-100 range).
+//   Jab market bahut zyada girta hai → RSI 30 ke neeche jaata hai (oversold)
+//   Jab market bahut zyada chadhta hai → RSI 70 ke upar jaata hai (overbought)
+//
+//   ENTRY:
+//     RSI 30 cross kare upar → BUY CE  (price bounce expect)
+//     RSI 70 cross kare neeche → BUY PE  (price reversal expect)
+//
+//   EXIT:
+//     RSI 50 ke paas aaye → position close karo (momentum khatam)
+//     3:15 PM IST → chahe RSI kuch bhi ho, FORCE exit + no re-entry baaki din
+//     (intraday-only rule — koi bhi strategy overnight/gap-up risk nahi leti,
+//      yeh rule sab strategies pe hamesha lagta hai, RSI hi nahi)
+//
+// HOW TO USE ON TRADINGVIEW:
+//   1. Is script ko Pine Editor mein paste karo
+//   2. "Add to chart" karo
+//   3. RSI pane mein signals dikhenge (CE/PE labels)
+//   4. Strategy tester mein P&L dekho
+//   5. Results sahi lage toh Python trader chalao same settings pe
+//
+// SETTINGS:
+//   RSI Period  : 14 (default) — kitne bars ka RSI calculate ho
+//   Overbought  : 70 — isse upar gaya toh PE entry zone
+//   Oversold    : 30 — isse neeche gaya toh CE entry zone
+//   Exit at RSI : 50 — yahan position close hoga
+//
+// v2 CHANGE (2026-06-20): 3:15 PM IST force exit + no re-entry added.
+//   Pehle koi EOD square-off nahi tha — TV position ko agle din tak hold
+//   kar leta tha jab tak RSI=50 wapas na aaye, jabki Python backtest_engine.py
+//   hamesha 3:15 pe force-exit karta tha. Isi mismatch se Pine-vs-Python
+//   match % kam aa raha tha (TV "EXIT agle din" dikhata, Python "EXIT same
+//   day 3:15"). Ab dono identical hain.
+
+//@version=5
+strategy("RSI Simple v1 [NIFTY]", overlay=false, pyramiding=0,
+         default_qty_type=strategy.fixed, default_qty_value=1,
+         initial_capital=100000, commission_value=0.05)
+// pyramiding=0 → ek hi waqt mein ek position (double entry nahi hogi)
+// overlay=false → RSI apne alag pane mein dikhega, chart pe nahi
+
+// ── USER SETTINGS (TV pe right-side settings se change karo) ────────────────
+rsi_period = input.int(14,   "RSI Period",   minval=2, maxval=50)
+ob         = input.float(70, "Overbought",   step=1)   // PE entry zone
+os_        = input.float(30, "Oversold",     step=1)   // CE entry zone
+exit_mid   = input.float(50, "Exit at RSI",  step=1)   // exit trigger
+
+// ── BACKTEST DATE RANGE (default ON) ────────────────────────────────────────
+// Python backtest_engine.py se date range match karne ke liye yahan bhi range
+// set karo — Strategy Tester sirf isi window ke trades dikhayega, List of
+// Trades / Pine Logs export bhi sirf isi range ka hoga (Python se 1:1 compare).
+startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Date", group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 15:15"), title="Backtest End Date",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+
+// ── 3:15 PM EOD CUTOFF (mandatory — every strategy, no exceptions) ──────────
+// hour/minute Pine builtins exchange timezone follow karte hain (NSE = IST,
+// chart timezone NSE hona chahiye). isPastCutoff TRUE rehta hai 15:15 se
+// market close tak — naya entry block, aur open position force-close.
+isPastCutoff = (hour == 15 and minute >= 15) or hour > 15
+canEnter     = inDateRange and not isPastCutoff
+
+// ── RSI CALCULATION ──────────────────────────────────────────────────────────
+// ta.rsi() internally uses Wilder smoothing (same as Python compute_rsi)
+rsi = ta.rsi(close, rsi_period)
+
+// ── ENTRY SIGNALS ────────────────────────────────────────────────────────────
+// ta.crossover(A, B) → previous bar mein A < B tha, current mein A > B
+// ta.crossunder(A, B) → previous bar mein A > B tha, current mein A < B
+
+long_entry  = ta.crossover(rsi, os_)  and canEnter   // RSI upar aaya 30 se → BUY CE
+short_entry = ta.crossunder(rsi, ob)  and canEnter   // RSI neeche aaya 70 se → BUY PE
+
+// ── EXIT SIGNALS ─────────────────────────────────────────────────────────────
+// RSI 50 (middle) pe aaya → momentum neutral → exit karo
+// 3:15 cutoff pe bhi exit — chahe RSI 50 ke paas ho ya na ho
+long_exit  = strategy.position_size > 0 and (rsi >= exit_mid or isPastCutoff)   // CE exit
+short_exit = strategy.position_size < 0 and (rsi <= exit_mid or isPastCutoff)   // PE exit
+
+// ── ORDERS ───────────────────────────────────────────────────────────────────
+// TV pe "strategy.long" = CE position ki taraf
+// TV pe "strategy.short" = PE position ki taraf
+// (Real life mein dono BUY orders hote hain — CE buy ya PE buy)
+
+// ── CONSISTENT LOG EXPORT (default ON) ───────────────────────────────────────
+// validate_strategy.py / backtest_engine.py ka --signals parser isi exact
+// format ko parse karta hai: "SIGNAL LONG/SHORT <time> close=<px>" aur
+// "EXIT LONG/SHORT <time> reason=<reason> close=<px>". Pine Logs panel se
+// export karke seedha Python backtest ke against compare karo — alag-alag
+// runs se mat lo, ek hi run se SIGNAL+EXIT dono log hone chahiye.
+if long_entry
+    log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+if short_entry
+    log.info("SIGNAL SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+if long_exit
+    log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + (isPastCutoff ? "EOD_315" : "MID_EXIT") + " close=" + str.tostring(close, "#.##"))
+
+if short_exit
+    log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + (isPastCutoff ? "EOD_315" : "MID_EXIT") + " close=" + str.tostring(close, "#.##"))
+
+if long_entry
+    strategy.entry("CE", strategy.long)
+
+if short_entry
+    strategy.entry("PE", strategy.short)
+
+if long_exit
+    strategy.close("CE", comment=isPastCutoff ? "3:15 EOD" : "MID EXIT")   // RSI 50 ya 3:15 cutoff pe CE band karo
+
+if short_exit
+    strategy.close("PE", comment=isPastCutoff ? "3:15 EOD" : "MID EXIT")   // RSI 50 ya 3:15 cutoff pe PE band karo
+
+// ── VISUALS ──────────────────────────────────────────────────────────────────
+// Horizontal lines — OB/OS/Mid zones clearly dikhane ke liye
+hline(ob,       "OB",  color=color.new(color.red,   20), linestyle=hline.style_dashed, linewidth=1)
+hline(os_,      "OS",  color=color.new(color.green, 20), linestyle=hline.style_dashed, linewidth=1)
+hline(exit_mid, "Mid", color=color.gray,                  linestyle=hline.style_dotted, linewidth=1)
+
+// RSI line — color change karta hai zone ke hisaab se
+rsi_color = rsi >= ob ? color.red : rsi <= os_ ? color.green : color.yellow
+plot(rsi, "RSI", color=rsi_color, linewidth=2)
+
+// Background flash jab signal aaye
+bgcolor(long_entry  ? color.new(color.green, 80) : na, title="Long signal")
+bgcolor(short_entry ? color.new(color.red,   80) : na, title="Short signal")
+
+// CE/PE labels RSI pane mein signal bar pe
+plotshape(long_entry,  title="CE Entry", style=shape.labelup,   location=location.bottom, color=color.green, text="CE", textcolor=color.white, size=size.small)
+plotshape(short_entry, title="PE Entry", style=shape.labeldown, location=location.top,    color=color.red,   text="PE", textcolor=color.white, size=size.small)

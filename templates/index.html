@@ -132,11 +132,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
 <div class="tabs">
   <div class="tab" onclick="switchTab('control')">Control</div>
-  <div class="tab" onclick="switchTab('pnl')">P&amp;L</div>
   <div class="tab" onclick="switchTab('log')">Logs</div>
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
-  <div class="tab" onclick="switchTab('orders')">📒 Orders</div>
+  <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
   <div class="tab active" onclick="switchTab('pine')">📌 Pine</div>
 </div>
 
@@ -197,39 +196,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div id="flash"></div>
 </div>
 
-<!-- P&L TAB -->
-<div class="tab-body" id="tab-pnl" style="padding:16px">
-  <!-- Summary row -->
-  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;flex-wrap:wrap">
-    <div id="pnl-summary-row" style="display:flex;gap:12px;flex-wrap:wrap;flex:1"></div>
-    <button onclick="openColModal()" title="Column Settings"
-      style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:13px;cursor:pointer;white-space:nowrap;flex-shrink:0">
-      ⚙️ Columns
-    </button>
-  </div>
-  <!-- Open Positions full width -->
-  <div id="pnl-positions-section" style="margin-bottom:16px"></div>
-  <!-- Completed Trades full width -->
-  <div id="pnl-orders-section"></div>
-</div>
-
-<!-- Column Selector Modal -->
-<div id="col-modal" style="display:none;position:fixed;inset:0;background:#000a;z-index:9999;align-items:center;justify-content:center">
-  <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:24px;min-width:360px;max-width:480px;width:90%">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:18px">
-      <span style="font-weight:700;font-size:14px">⚙️ Column Settings</span>
-      <button onclick="closeColModal()" style="background:none;border:none;color:#8b949e;font-size:18px;cursor:pointer">✕</button>
-    </div>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Open Positions</div>
-    <div id="col-open-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px"></div>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:8px;text-transform:uppercase;letter-spacing:.5px">Completed Trades</div>
-    <div id="col-closed-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:20px"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end">
-      <button onclick="resetColPrefs()" style="padding:7px 14px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:12px;cursor:pointer">Reset</button>
-      <button onclick="saveColPrefs()" style="padding:7px 14px;background:#1f6feb;border:none;border-radius:6px;color:#fff;font-size:12px;font-weight:700;cursor:pointer">Save</button>
-    </div>
-  </div>
-</div>
+<!-- P&L tab merged into 📒 Orders & P&L (per-strategy pills + tax/charges folded there) -->
 
 <!-- LOG TAB -->
 <div class="tab-body" id="tab-log">
@@ -825,54 +792,119 @@ async function ordersRender(){
   _ordFillSelect('ord-broker', (d.filters||{}).broker||[], broker, 'All brokers');
 
   const det=d.details||[], opn=d.open||[];
-  const net=det.reduce((a,t)=>a+(t.pnl||0),0);
-  const wins=det.filter(t=>(t.pnl||0)>0).length;
-  document.getElementById('ord-summary').innerHTML =
-    _ordPill('Trades', det.length)
-    + _ordPill('Net P&L', '₹'+Math.round(net), net>0?'#3fb950':(net<0?'#f85149':'#e6edf3'))
-    + _ordPill('Win / Loss', wins+' / '+(det.length-wins))
-    + _ordPill('Open', opn.length);
+  const ordDate=date;
 
+  // ── per-trade gross / tax / net (Zerodha charges) ──
+  det.forEach(t=>{
+    const ep=t.entry_price||0, xp=t.exit_price||0, q=t.qty||0;
+    t._gross = ep&&xp&&q ? (t.entry==='BUY'?xp-ep:ep-xp)*q : (t.pnl||0);
+    t._tax   = ep&&xp&&q ? (calcCharges(ep,xp,q,t.entry)||0) : 0;
+    t._net   = t._gross - t._tax;
+  });
+
+  // ── PER-STRATEGY SUMMARY PILLS (P&L tab se folded) ──
+  const groups={};
+  det.forEach(t=>{
+    const g=(t.strategy||t.source||'other');
+    (groups[g]=groups[g]||{net:0,gross:0,n:0,w:0});
+    groups[g].net+=t._net; groups[g].gross+=t._gross; groups[g].n++;
+    if(t._net>0) groups[g].w++;
+  });
+  const totNet=det.reduce((a,t)=>a+t._net,0);
+  const totGross=det.reduce((a,t)=>a+t._gross,0);
+  const totWins=det.filter(t=>t._net>0).length;
+  let sh='';
+  Object.keys(groups).forEach(g=>{
+    const j=groups[g], color=getStratColor(String(g).split('_')[0]);
+    const pc=j.net>=0?'#3fb950':'#f85149';
+    sh+=`<div style="background:#161b22;border:1px solid ${color}50;border-radius:8px;padding:10px 16px;min-width:150px">
+      <div style="color:${color};font-size:11px;font-weight:700;margin-bottom:6px">${String(g).toUpperCase()}</div>
+      <div style="font-size:20px;font-weight:700;color:${pc}">${j.net>=0?'+':''}₹${j.net.toFixed(2)}</div>
+      <div style="color:#8b949e;font-size:11px;margin-top:4px">${j.n} trades · ${j.w}W ${j.n-j.w}L</div>
+    </div>`;
+  });
+  // TOTAL pill (net after tax + gross + open count)
+  const tc=totNet>=0?'#3fb950':'#f85149';
+  sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
+    <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (net)</div>
+    <div style="font-size:20px;font-weight:700;color:${tc}">${totNet>=0?'+':''}₹${totNet.toFixed(2)}</div>
+    <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ₹${Math.round(totGross)} · ${det.length} trades · ${totWins}W ${det.length-totWins}L · ${opn.length} open</div>
+  </div>`;
+  _setHtml(document.getElementById('ord-summary'), sh ||
+    '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
+
+  // ── COMPLETED TRADES (Date + Gross/Tax/Net — P&L charges view folded) ──
   let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(det.length){
     ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Symbol','Tags','Side','Entry','Exit','Qty','Net P&L','Chart'].map(h=>'<th style="padding:6px;font-weight:500'+(h==='Net P&L'?';text-align:right':(h==='Chart'?';text-align:center':''))+'">'+h+'</th>').join('')
+      + ['Date','Symbol','Tags','Side','Entry','Exit','Qty','Gross','Tax','Net','Chart']
+        .map(h=>{const r=['Gross','Tax','Net'].includes(h),c=h==='Chart';
+          return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
     det.slice().reverse().forEach(t=>{
-      const pnl=t.pnl||0;
+      const g=t._gross, tx=t._tax, n=t._net;
+      const nc=n>0?'#3fb950':(n<0?'#f85149':'#e6edf3'), gc=g>0?'#3fb950':(g<0?'#f85149':'#e6edf3');
       ch += '<tr style="border-bottom:1px solid #21262d">'
+        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
         + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
         + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
-        + '<td style="padding:7px 6px">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;color:#8b949e">'+t.entry_time+'</td>'
-        + '<td style="padding:7px 6px;color:#8b949e">'+t.exit_time+'</td>'
+        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
+        + '<td style="padding:7px 6px;color:#8b949e;white-space:nowrap">₹'+Number(t.entry_price||0).toFixed(2)+' · '+t.entry_time+'</td>'
+        + '<td style="padding:7px 6px;color:#8b949e;white-space:nowrap">₹'+Number(t.exit_price||0).toFixed(2)+' · '+t.exit_time+'</td>'
         + '<td style="padding:7px 6px">'+t.qty+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+(pnl>0?'#3fb950':(pnl<0?'#f85149':'#e6edf3'))+'">₹'+Math.round(pnl)+'</td>'
-        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Premium chart" onclick="openTradeChart(\''+t.sym+'\',\''+t.entry+'\','+t.entry_price+','+t.exit_price+',\''+t.entry_time+'\',\''+t.exit_time+'\','+t.qty+')">📈</span></td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+gc+'">₹'+Math.round(g)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#f85149">−₹'+tx.toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+'">₹'+Math.round(n)+'</td>'
+        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Premium chart" onclick="openTradeChart(\''+t.sym+'\',\''+t.entry+'\','+t.entry_price+','+t.exit_price+',\''+t.entry_time+'\',\''+t.exit_time+'\','+t.qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
         + '</tr>';
     });
     ch += '</tbody></table>';
   }
-  document.getElementById('ord-completed').innerHTML = ch;
+  _setHtml(document.getElementById('ord-completed'), ch);
 
-  let oh = opn.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>';
-  if(opn.length){
-    oh = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Symbol','Tags','Side','Entry time','Entry ₹','Qty'].map(h=>'<th style="padding:6px;font-weight:500">'+h+'</th>').join('')
+  // ── OPEN POSITIONS (#2: chart + live LTP/Points/Unrealized P&L + Close) ──
+  // Flicker fix: list same ho to table rebuild NA karo — sirf live cells patch.
+  const ordOpenEl = document.getElementById('ord-open');
+  const openFp = opn.map(t=>`${t.sym}|${t.entry}|${t.entry_price}|${t.qty}|${t.mode}|${t.source}|${t.strategy}`).join(',');
+  if(!opn.length){
+    _setHtml(ordOpenEl, '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
+    ordOpenEl.dataset.fp='';
+  } else if(ordOpenEl.dataset.fp === openFp){
+    _patchLtpCells();   // structure same — sirf LTP/Points/P&L refresh, koi flash nahi
+  } else {
+    let oh = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+      + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','Qty','Chart','']
+        .map(h=>{const r=['LTP','Points','P&L'].includes(h),c=h==='Chart';
+          return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
     opn.forEach(t=>{
+      const entry=Number(t.entry_price||0), qty=t.qty||0;
+      const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
+      const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
+      const argEsc=s=>String(s||'').replace(/'/g,'');
       oh += '<tr style="border-bottom:1px solid #21262d">'
+        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
         + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
         + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
-        + '<td style="padding:7px 6px">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;color:#8b949e">'+t.entry_time+'</td>'
-        + '<td style="padding:7px 6px">'+Number(t.entry_price||0).toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px">'+t.qty+'</td>'
+        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
+        + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e">₹'+entry.toFixed(2)+' · '+t.entry_time+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
+        + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
+        + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
+        + '<td style="padding:7px 6px">'+qty+'</td>'
+        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+t.entry_price+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
+        + '<td style="padding:7px 6px;text-align:center;white-space:nowrap">'
+          + '<button id="'+bId+'" onclick="closePosition(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\',\''+bId+'\')" '
+          + 'style="padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
+          + '<button title="Book se hatao — koi real order nahi (rejected/phantom position ke liye)" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
+          + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
         + '</tr>';
     });
     oh += '</tbody></table>';
+    ordOpenEl.innerHTML = oh;
+    ordOpenEl.dataset.fp = openFp;
+    _patchLtpCells(); _fetchPositionLtp();   // cache se turant bharo, phir fresh fetch
   }
-  document.getElementById('ord-open').innerHTML = oh;
 }
 
 function switchCfgTab(type) {
@@ -1033,6 +1065,16 @@ const DEFAULT_CONFIGS = {
 };
 
 const STRAT_FIELDS = {
+  bb: [
+    {id: 'symbols', label: 'Symbols', type: 'symbols'},
+    {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
+    {id: 'timeframe', label: 'Timeframe', type: 'select', opts: ['1m','3m','5m','15m','30m','1D']},
+    {id: 'bb_window', label: 'BB Window', type: 'number'},
+    {id: 'bb_std', label: 'BB Std Dev', type: 'number'},
+    {id: 'allow_short', label: 'Allow Short', type: 'select', opts: ['true','false']},
+    {id: 'qty', label: 'Quantity', type: 'number'},
+    {id: 'active', label: 'Active', type: 'select', opts: ['true','false']}
+  ],
   ema: [
     {id: 'symbols', label: 'Symbols', type: 'symbols'},
     {id: 'instrument', label: 'Instrument', type: 'select', opts: ['equity','options']},
@@ -1509,8 +1551,10 @@ async function updatePnl() {
 
 }
 
-function openTradeChart(sym, side, entry, exit, et, xt, qty){
-  const q = new URLSearchParams({sym, side, entry, exit, et, xt, qty});
+function openTradeChart(sym, side, entry, exit, et, xt, qty, date){
+  const params = {sym, side, entry, exit, et, xt, qty};
+  if(date) params.date = date;
+  const q = new URLSearchParams(params);
   window.open('/trade-chart?'+q.toString(), '_blank');
 }
 
@@ -1665,7 +1709,7 @@ setInterval(()=>{
 }, 5000);
 
 setInterval(()=>{
-  if(activeTab==='pnl') updatePnl();
+  if(activeTab==='orders') ordersRender();   // P&L merged here — DB-backed, no Dhan
   if(activeTab==='log') updateLogs();
 }, 4000);
 
@@ -1677,7 +1721,7 @@ function startLtpStream() {
   _sseSrc = new EventSource('/api/ltp-stream');
   _sseSrc.onmessage = (e) => {
     try { _ltpLive = JSON.parse(e.data); } catch(_){ return; }
-    if(activeTab==='pnl') _patchLtpCells();
+    if(activeTab==='orders') _patchLtpCells();
   };
   _sseSrc.onerror = () => { _sseSrc.close(); _sseSrc=null; setTimeout(startLtpStream,5000); };
 }
@@ -1696,7 +1740,7 @@ async function _fetchPositionLtp() {
     _patchLtpCells();
   } catch(e) {}
 }
-setInterval(()=>{ if(activeTab==='pnl') _fetchPositionLtp(); }, 3000);
+setInterval(()=>{ if(activeTab==='orders') _fetchPositionLtp(); }, 3000);
 function _patchLtpCells() {
   document.querySelectorAll('.ltp-cell[data-sym]').forEach(el => {
     const sym = el.getAttribute('data-sym');
@@ -1753,17 +1797,24 @@ loadAll();
 <div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:10px">
   ${[-3,-2,-1,0,1,2,3].map(v=>`<button onclick="qoSetAtm(${v})" data-atm="${v}" style="flex:1;padding:4px 0;border:1px solid ${v===0?'#1f6feb':'#30363d'};border-radius:4px;background:${v===0?'#1f6feb':'#21262d'};color:${v===0?'#fff':'#8b949e'};font-size:10px;cursor:pointer">${v===0?'ATM':v>0?'+'+v:v}</button>`).join('')}
 </div>
+<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Option — select karo, phir BUY/SELL</div>
 <div id="qo-ltp-box" style="background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:8px 10px;margin-bottom:10px">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
-    <div onclick="qoUsePrice('pe')" title="Click → price box me PE LTP bharo" style="background:#3fb95015;border:1px solid #3fb95040;border-radius:5px;padding:5px 7px;cursor:pointer">
-      <div style="font-size:9px;color:#3fb950;margin-bottom:2px">PE (BUY)</div>
-      <div id="qo-pe-ltp" style="font-size:13px;color:#e6edf3;font-weight:700">⏳</div>
-      <div id="qo-pe-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
-    </div>
-    <div onclick="qoUsePrice('ce')" title="Click → price box me CE LTP bharo" style="background:#f8514915;border:1px solid #f8514940;border-radius:5px;padding:5px 7px;cursor:pointer">
-      <div style="font-size:9px;color:#f85149;margin-bottom:2px">CE (SELL)</div>
+    <div id="qo-opt-ce" onclick="qoSetOpt('CE')" title="Call select karo" style="background:#3fb95015;border:1px solid #3fb95040;border-radius:5px;padding:5px 7px;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="font-size:9px;color:#3fb950;font-weight:700">CE · Call</span>
+        <span id="qo-tick-ce" style="font-size:11px;color:#3fb950;visibility:hidden">✓</span>
+      </div>
       <div id="qo-ce-ltp" style="font-size:13px;color:#e6edf3;font-weight:700">⏳</div>
       <div id="qo-ce-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
+    </div>
+    <div id="qo-opt-pe" onclick="qoSetOpt('PE')" title="Put select karo" style="background:#f8514915;border:1px solid #f8514940;border-radius:5px;padding:5px 7px;cursor:pointer">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:2px">
+        <span style="font-size:9px;color:#f85149;font-weight:700">PE · Put</span>
+        <span id="qo-tick-pe" style="font-size:11px;color:#f85149;visibility:hidden">✓</span>
+      </div>
+      <div id="qo-pe-ltp" style="font-size:13px;color:#e6edf3;font-weight:700">⏳</div>
+      <div id="qo-pe-sym" style="font-size:12px;color:#adbac7;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">—</div>
     </div>
   </div>
   <div id="qo-ts" style="font-size:9px;color:#484f58;text-align:right;margin-top:4px">fetching...</div>
@@ -1778,10 +1829,11 @@ loadAll();
   <input id="qo-lots" type="number" value="1" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
   <span style="font-size:11px;color:#8b949e">= <span id="qo-qty-num" style="color:#e6edf3;font-weight:bold">65</span> qty <span style="color:#444;font-size:10px">(1L=<span id="qo-ls">65</span>)</span></span>
 </div>
-<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
-  <button onclick="qoOrder('BUY')"  style="padding:11px;background:#3fb950;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">BUY</button>
-  <button onclick="qoOrder('SELL')" style="padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">SELL</button>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+  <button onclick="qoOrder('BUY')"  style="padding:11px;background:#3fb950;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">BUY <span id="qo-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
+  <button onclick="qoOrder('SELL')" style="padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">SELL <span id="qo-sell-leg" style="font-size:11px;opacity:.85">CE</span></button>
 </div>
+<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">jo <b id="qo-leg-hint" style="color:#adbac7">CE</b> select hai usi pe BUY/SELL chalega</div>
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
   Object.assign(panel.style, {
@@ -1934,6 +1986,7 @@ loadAll();
       const ts = now.getHours().toString().padStart(2,'0')+':'+now.getMinutes().toString().padStart(2,'0')+':'+now.getSeconds().toString().padStart(2,'0');
       if (j.ok) {
         window._qoPeLtp = j.pe_ltp; window._qoCeLtp = j.ce_ltp;
+        _qoSyncPricePlaceholder();
         _qoElPeLtp.textContent = j.pe_ltp != null ? '₹' + j.pe_ltp.toFixed(2) : '—';
         _qoElCeLtp.textContent = j.ce_ltp != null ? '₹' + j.ce_ltp.toFixed(2) : '—';
         _qoElPeSym.textContent = (j.pe_sym||'').replace(qoSym+'-','');
@@ -1972,6 +2025,7 @@ loadAll();
 
   window.qoSetSym = s=>{
     qoSym=s;
+    const _pe=document.getElementById('qo-price'); if(_pe) _pe.value='';  // strike change → stale price clear
     ['NIFTY','BANKNIFTY'].forEach(sym=>{
       const b=document.getElementById('qo-sym-'+sym);
       const sel=sym===s;
@@ -1985,6 +2039,7 @@ loadAll();
 
   window.qoSetAtm = v=>{
     qoAtm=v;
+    const _pe=document.getElementById('qo-price'); if(_pe) _pe.value='';  // strike change → stale price clear
     document.querySelectorAll('#qo-atm-row button').forEach(b=>{
       const bv=parseInt(b.dataset.atm);
       b.style.background = bv===v?'#1f6feb':'#21262d';
@@ -2003,43 +2058,76 @@ loadAll();
     if(ls2) ls2.textContent = ls;
   };
 
-  window.qoUsePrice = leg=>{
-    const v = leg==='pe' ? window._qoPeLtp : window._qoCeLtp;
-    if (v != null) document.getElementById('qo-price').value = v.toFixed(2);
+  // Selected option leg (CE/PE) — BUY/SELL dono isi pe chalenge
+  window._qoOptType = 'CE';
+  window.qoSetOpt = type=>{
+    window._qoOptType = type;
+    const ce=document.getElementById('qo-opt-ce'), pe=document.getElementById('qo-opt-pe');
+    const tce=document.getElementById('qo-tick-ce'), tpe=document.getElementById('qo-tick-pe');
+    if(ce){ ce.style.borderColor=type==='CE'?'#3fb950':'#3fb95040'; ce.style.background=type==='CE'?'#3fb95028':'#3fb95015'; }
+    if(pe){ pe.style.borderColor=type==='PE'?'#f85149':'#f8514940'; pe.style.background=type==='PE'?'#f8514928':'#f8514915'; }
+    if(tce) tce.style.visibility=type==='CE'?'visible':'hidden';
+    if(tpe) tpe.style.visibility=type==='PE'?'visible':'hidden';
+    ['qo-buy-leg','qo-sell-leg','qo-leg-hint'].forEach(id=>{const e=document.getElementById(id); if(e){e.textContent=type; e.style.color=id==='qo-leg-hint'?(type==='CE'?'#3fb950':'#f85149'):'';}});
+    // leg badla → stale custom price hata do, blank = live LTP par jaayega
+    const _priceEl=document.getElementById('qo-price'); if(_priceEl) _priceEl.value='';
+    _qoSyncPricePlaceholder();
   };
+
+  // price box ka placeholder = selected leg ki live LTP (blank chhodo to yahi use hoga)
+  function _qoSyncPricePlaceholder(){
+    const t=window._qoOptType||'CE';
+    const v=t==='CE'?window._qoCeLtp:window._qoPeLtp;
+    const el=document.getElementById('qo-price');
+    if(el) el.placeholder = (v!=null) ? ('auto = ₹'+v.toFixed(2)+' (live '+t+')') : 'auto (live LTP)';
+  }
 
   window.qoOrder = async side=>{
     const lots = parseInt(document.getElementById('qo-lots').value)||1;
     const st = document.getElementById('qo-status');
-    // blank price → auto: use displayed LTP of relevant leg (BUY=PE, SELL=CE)
+    const optType = window._qoOptType || 'CE';
+    // blank price → auto: use displayed LTP of the SELECTED leg (CE/PE), side se nahi
+    const liveLtp = optType==='CE'?window._qoCeLtp:window._qoPeLtp;
     let priceRaw = document.getElementById('qo-price').value.trim();
-    let price = priceRaw==='' ? (side==='BUY'?window._qoPeLtp:window._qoCeLtp) : parseFloat(priceRaw);
+    let price = priceRaw==='' ? liveLtp : parseFloat(priceRaw);
     if (price==null || isNaN(price) || price<=0){ st.textContent='Price nahi mila — LTP load hone do'; st.style.color='#f85149'; return; }
-    st.textContent = `LIMIT ${side} @ ₹${price.toFixed(2)}...`; st.style.color='#d29922';
+    // safety: typed price live LTP se bahut door → Dhan price-band reject karega. Confirm maango.
+    if (priceRaw!=='' && liveLtp && Math.abs(price-liveLtp)/liveLtp > 0.20){
+      const pct = Math.round(Math.abs(price-liveLtp)/liveLtp*100);
+      if(!confirm(`⚠️ Limit ₹${price.toFixed(2)} live ${optType} LTP ₹${liveLtp.toFixed(2)} se ${pct}% door hai.\nDhan price-band pe reject kar sakta. Phir bhi ${side} bhejun?`)){
+        st.textContent='cancelled'; st.style.color='#8b949e'; return;
+      }
+    }
+    st.textContent = `LIMIT ${side} ${optType} @ ₹${price.toFixed(2)}...`; st.style.color='#d29922';
     try {
       const r = await fetch('/api/manual-order',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({symbol:qoSym, side, lots, strike_offset:qoAtm, mode:qoMode, order_type:'LIMIT', price})});
+        body: JSON.stringify({symbol:qoSym, side, opt_type:optType, lots, strike_offset:qoAtm, mode:qoMode, order_type:'LIMIT', price})});
       const j = await r.json();
       st.textContent = j.msg || (j.ok?'Done':'Error');
       st.style.color = j.ok?'#3fb950':'#f85149';
     } catch(e){ st.textContent='Network error'; st.style.color='#f85149'; }
   };
+
+  // initial CE selection highlight
+  qoSetOpt('CE');
 })();
 
-async function closePosition(tSym, entrySide, qty, mode, btnId) {
+async function closePosition(tSym, entrySide, qty, mode, source, strategy, btnId) {
   const btn = document.getElementById(btnId);
+  const modeNow = mode || 'paper';   // position ke apne mode me close (live→real order, paper→log)
+  if(!confirm(`${entrySide==='BUY'?'SELL':'BUY'} ${qty} ${tSym}\nClose karein? (${modeNow.toUpperCase()})`)) return;
   if(btn) { btn.disabled=true; btn.textContent='...'; }
-  const modeNow = (window.qoGetMode && window.qoGetMode()) || mode || 'paper';
   try {
     let r = await fetch('/api/close-position', {
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({t_sym:tSym, entry_side:entrySide, qty:qty, mode:modeNow})
+      body: JSON.stringify({t_sym:tSym, entry_side:entrySide, qty:qty, mode:modeNow, source:source||'', strategy:strategy||''})
     });
     let j = await r.json();
     if(j.ok) {
       flash('✅ ' + j.msg, '#3fb950');
-      setTimeout(updatePnl, 800);
+      const el=document.getElementById('ord-open'); if(el) el.dataset.fp='';  // force rebuild
+      setTimeout(()=>{ if(activeTab==='orders') ordersRender(); }, 800);
     } else {
       flash('❌ ' + j.msg, '#f85149');
       if(btn) { btn.disabled=false; btn.textContent=entrySide==='BUY'?'SELL ✕':'BUY ✕'; }

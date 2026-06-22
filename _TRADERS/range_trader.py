@@ -15,8 +15,13 @@ Modes:
 
 import json
 import logging
+import os
 import socket
 import sys
+# project root (parent of _TRADERS/) on path BEFORE importing root modules —
+# this script is launched as a subprocess (sys.path[0] = _TRADERS/), so dhan_master
+# at the project root is otherwise not importable.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dhan_master
 import time
 from datetime import datetime, timedelta, timezone
@@ -33,7 +38,9 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-BASE_DIR    = Path(__file__).resolve().parent
+# BASE_DIR = project root (parent of _TRADERS/) — creds, nifty_config.json and
+# logs/ all live at the root, not inside _TRADERS/ (same as rsi_trader.py).
+BASE_DIR    = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 CFG_FILE    = BASE_DIR / "range_config.json"
 LOG_FILE    = BASE_DIR / "range_trader.log"
@@ -231,7 +238,7 @@ def fetch_daily(symbol, days=22):
 # Re-exported here so existing callers (validate_strategy.py, run_signal_engine
 # below) keep working unchanged. See _CHARTING/patterns.py + _CHARTING/zones.py
 # for the actual implementations.
-sys.path.insert(0, str(BASE_DIR.parent))
+sys.path.insert(0, str(BASE_DIR))
 from _CHARTING.zones import traditional_pivots, build_key_levels
 from _CHARTING.patterns import (
     green_hammer, red_hammer, inv_red_hammer,

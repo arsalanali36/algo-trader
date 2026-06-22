@@ -1,0 +1,255 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+// © Arsalan
+
+//@version=5
+strategy("VWAP-EMA Failure Reversal Strategy", shorttitle="VWAP-EMA Failure", overlay=true,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     initial_capital=100000, currency=currency.INR, calc_on_every_tick=true,
+     process_orders_on_close=true)
+
+// ============================================================================
+// INPUTS
+// ============================================================================
+
+grp_core = "Core Settings"
+emaLen        = input.int(10, "EMA Length", group=grp_core)
+maxEmaVwapGap = input.float(0.0, "Max EMA-VWAP Distance Filter (0 = off, in points)", minval=0.0, group=grp_core, tooltip="If >0, skips trades where EMA-VWAP gap exceeds this many points at entry")
+
+grp_session = "Session / Period Filter"
+useSessionFilter = input.bool(true, "Restrict Trades to Session Window", group=grp_session)
+sessionStart      = input.session("0915-1530", "Trading Session (Golden+Silver default)", group=grp_session, tooltip="Default 9:15-15:30. Set to 0915-1130 for Golden only, or 0915-1400 for Golden+Silver")
+
+grp_risk = "Risk Management"
+slBufferPoints = input.float(2.0, "SL Buffer (points added beyond breaking candle)", minval=0.0, group=grp_risk)
+targetMode     = input.string("R-Multiple", "Target Mode", options=["R-Multiple", "Previous Day VWAP/Level"], group=grp_risk)
+rMultiple1     = input.float(1.0, "Target 1 (R-Multiple)", group=grp_risk)
+rMultiple2     = input.float(2.0, "Target 2 (R-Multiple)", group=grp_risk)
+rMultiple3     = input.float(3.0, "Target 3 (R-Multiple)", group=grp_risk)
+maxSLPercent   = input.float(2.5, "Max SL % of Price (skip trade if SL wider)", minval=0.0, group=grp_risk)
+usePartialExits = input.bool(true, "Use Partial Exits at T1/T2 (rest at T3)", group=grp_risk)
+partial1Pct     = input.int(40, "Qty % to exit at Target 1", minval=0, maxval=100, group=grp_risk)
+partial2Pct     = input.int(30, "Qty % to exit at Target 2", minval=0, maxval=100, group=grp_risk)
+
+grp_filter = "Direction / Trend Filter"
+useDailyTrendFilter = input.bool(true, "Filter trades against prior-day daily trend", group=grp_filter, tooltip="Avoids longs on a falling overall market day and shorts on a rising day, per the discretionary rule in the video")
+
+grp_plot = "Plot Settings"
+showPrevDayLevels = input.bool(true, "Show Previous Day High/Low/Close/VWAP", group=grp_plot)
+showSignals       = input.bool(true, "Show Entry Signal Labels", group=grp_plot)
+
+// ============================================================================
+// CORE INDICATORS
+// ============================================================================
+
+ema10 = ta.ema(close, emaLen)
+cvwap = ta.vwap(hlc3)   // Current day VWAP, resets daily automatically
+
+plot(ema10, "10 EMA", color=color.new(color.white, 0), linewidth=2)
+plot(cvwap, "Current VWAP", color=color.new(color.yellow, 0), linewidth=2)
+
+// ============================================================================
+// PREVIOUS DAY LEVELS (request.security for daily OHLC - reliable, do not optimize away)
+// ============================================================================
+
+dailyHigh  = request.security(syminfo.tickerid, "D", high[1], lookahead=barmerge.lookahead_off)
+dailyLow   = request.security(syminfo.tickerid, "D", low[1], lookahead=barmerge.lookahead_off)
+dailyClose = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_off)
+
+// Previous day VWAP final value: capture last VWAP value of previous session
+var float prevDayVwap = na
+newDay = ta.change(time("D")) != 0
+var float lastVwapOfDay = na
+if not newDay
+    lastVwapOfDay := cvwap
+if newDay and not na(lastVwapOfDay)
+    prevDayVwap := lastVwapOfDay
+
+plot(showPrevDayLevels ? dailyHigh : na, "Prev Day High", color=color.new(color.lime, 0), style=plot.style_circles, linewidth=1)
+plot(showPrevDayLevels ? dailyLow : na, "Prev Day Low", color=color.new(color.red, 0), style=plot.style_circles, linewidth=1)
+plot(showPrevDayLevels ? prevDayVwap : na, "Prev Day VWAP", color=color.new(color.orange, 0), style=plot.style_circles, linewidth=1)
+
+// ============================================================================
+// SESSION FILTER
+// ============================================================================
+
+inSession = useSessionFilter ? not na(time(timeframe.period, sessionStart)) : true
+
+// ============================================================================
+// DAILY TREND FILTER (avoid counter-trend trades vs overall index/stock daily direction)
+// ============================================================================
+
+dailyTrendUp   = useDailyTrendFilter ? close > dailyClose : true   // today trading above prev close = up bias day
+dailyTrendDown = useDailyTrendFilter ? close < dailyClose : true   // today trading below prev close = down bias day
+
+// ============================================================================
+// FAILURE / REVERSAL LOGIC
+// ============================================================================
+// SHORT setup: EMA already below VWAP, then price candle CLOSES below EMA -> confirms failure of buyers
+// LONG setup:  EMA already above VWAP, then price candle CLOSES above EMA -> confirms failure of sellers
+
+emaBelowVwap = ema10 < cvwap
+emaAboveVwap = ema10 > cvwap
+
+// "Already below/above" means prior bar condition, confirmation candle is the close below/above EMA
+shortTrigger = emaBelowVwap[1] and emaBelowVwap and close < ema10 and close[1] >= ema10[1]
+longTrigger  = emaAboveVwap[1] and emaAboveVwap and close > ema10 and close[1] <= ema10[1]
+
+// EMA-VWAP gap filter (skip if gap too wide, per video's "distance should be minimum" rule)
+emaVwapGapOk = maxEmaVwapGap <= 0 or math.abs(ema10 - cvwap) <= maxEmaVwapGap
+
+// ============================================================================
+// SL / TARGET CALCULATION
+// ============================================================================
+// SL placed above/below the candle that broke the EMA/VWAP (the trigger candle itself)
+
+shortSL = high + slBufferPoints
+longSL  = low  - slBufferPoints
+
+shortRisk = shortSL - close
+longRisk  = close - longSL
+
+shortSLPct = (shortRisk / close) * 100
+longSLPct  = (longRisk / close) * 100
+
+shortSLOk = maxSLPercent <= 0 or shortSLPct <= maxSLPercent
+longSLOk  = maxSLPercent <= 0 or longSLPct  <= maxSLPercent
+
+// Targets - R multiple mode
+shortT1_R = close - shortRisk * rMultiple1
+shortT2_R = close - shortRisk * rMultiple2
+shortT3_R = close - shortRisk * rMultiple3
+
+longT1_R = close + longRisk * rMultiple1
+longT2_R = close + longRisk * rMultiple2
+longT3_R = close + longRisk * rMultiple3
+
+// Targets - Previous Day Level mode (falls back to R-multiple if level is na or invalid)
+shortT1_Lvl = not na(prevDayVwap) and prevDayVwap < close ? prevDayVwap : shortT1_R
+shortT2_Lvl = not na(dailyLow) and dailyLow < close ? dailyLow : shortT2_R
+shortT3_Lvl = shortT3_R
+
+longT1_Lvl = not na(prevDayVwap) and prevDayVwap > close ? prevDayVwap : longT1_R
+longT2_Lvl = not na(dailyHigh) and dailyHigh > close ? dailyHigh : longT2_R
+longT3_Lvl = longT3_R
+
+shortT1 = targetMode == "R-Multiple" ? shortT1_R : shortT1_Lvl
+shortT2 = targetMode == "R-Multiple" ? shortT2_R : shortT2_Lvl
+shortT3 = targetMode == "R-Multiple" ? shortT3_R : shortT3_Lvl
+
+longT1 = targetMode == "R-Multiple" ? longT1_R : longT1_Lvl
+longT2 = targetMode == "R-Multiple" ? longT2_R : longT2_Lvl
+longT3 = targetMode == "R-Multiple" ? longT3_R : longT3_Lvl
+
+// ============================================================================
+// ENTRY CONDITIONS (combine all filters)
+// ============================================================================
+
+canShort = shortTrigger and emaVwapGapOk and shortSLOk and inSession and dailyTrendDown and strategy.position_size <= 0
+canLong  = longTrigger  and emaVwapGapOk and longSLOk  and inSession and dailyTrendUp   and strategy.position_size >= 0
+
+// ============================================================================
+// STRATEGY EXECUTION
+// ============================================================================
+
+var float activeSL    = na
+var float activeT1    = na
+var float activeT2    = na
+var float activeT3    = na
+var bool  partial1Done = false
+var bool  partial2Done = false
+
+if canShort
+    strategy.entry("Short", strategy.short)
+    activeSL := shortSL
+    activeT1 := shortT1
+    activeT2 := shortT2
+    activeT3 := shortT3
+    partial1Done := false
+    partial2Done := false
+    log.info("SIGNAL SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+if canLong
+    strategy.entry("Long", strategy.long)
+    activeSL := longSL
+    activeT1 := longT1
+    activeT2 := longT2
+    activeT3 := longT3
+    partial1Done := false
+    partial2Done := false
+    log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " close=" + str.tostring(close, "#.##"))
+
+// Exit management
+if strategy.position_size > 0
+    strategy.exit("L-SL", "Long", stop=activeSL)
+    if low <= activeSL
+        log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=SL close=" + str.tostring(close, "#.##"))
+    if usePartialExits
+        qtyT1 = math.round(strategy.position_size * partial1Pct / 100)
+        qtyT2 = math.round(strategy.position_size * partial2Pct / 100)
+        if not partial1Done and high >= activeT1
+            strategy.close("Long", qty=qtyT1, comment="T1")
+            partial1Done := true
+            log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T1 close=" + str.tostring(close, "#.##"))
+        if partial1Done and not partial2Done and high >= activeT2
+            strategy.close("Long", qty=qtyT2, comment="T2")
+            partial2Done := true
+            log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T2 close=" + str.tostring(close, "#.##"))
+        if partial1Done and partial2Done and high >= activeT3
+            strategy.close("Long", comment="T3")
+            log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T3 close=" + str.tostring(close, "#.##"))
+    else
+        strategy.exit("L-TP", "Long", limit=activeT3)
+
+if strategy.position_size < 0
+    strategy.exit("S-SL", "Short", stop=activeSL)
+    if high >= activeSL
+        log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=SL close=" + str.tostring(close, "#.##"))
+    if usePartialExits
+        qtyT1 = math.round(math.abs(strategy.position_size) * partial1Pct / 100)
+        qtyT2 = math.round(math.abs(strategy.position_size) * partial2Pct / 100)
+        if not partial1Done and low <= activeT1
+            strategy.close("Short", qty=qtyT1, comment="T1")
+            partial1Done := true
+            log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T1 close=" + str.tostring(close, "#.##"))
+        if partial1Done and not partial2Done and low <= activeT2
+            strategy.close("Short", qty=qtyT2, comment="T2")
+            partial2Done := true
+            log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T2 close=" + str.tostring(close, "#.##"))
+        if partial1Done and partial2Done and low <= activeT3
+            strategy.close("Short", comment="T3")
+            log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=T3 close=" + str.tostring(close, "#.##"))
+    else
+        strategy.exit("S-TP", "Short", limit=activeT3)
+
+// Reset state when flat
+if strategy.position_size == 0
+    activeSL := na
+    activeT1 := na
+    activeT2 := na
+    activeT3 := na
+
+// Force close all positions at session end (avoid carrying intraday positions)
+sessionEndExit = useSessionFilter and not na(time(timeframe.period, sessionStart)) and na(time(timeframe.period, sessionStart)[1]) == false and inSession[1] and not inSession
+if sessionEndExit
+    strategy.close_all(comment="Session End")
+    if strategy.position_size > 0
+        log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=SessionEnd close=" + str.tostring(close, "#.##"))
+    if strategy.position_size < 0
+        log.info("EXIT SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=SessionEnd close=" + str.tostring(close, "#.##"))
+
+// ============================================================================
+// VISUALS / SIGNALS
+// ============================================================================
+
+plotshape(showSignals and canShort, title="Short Signal", style=shape.triangledown, location=location.abovebar, color=color.new(color.red, 0), size=size.small)
+plotshape(showSignals and canLong, title="Long Signal", style=shape.triangleup, location=location.belowbar, color=color.new(color.green, 0), size=size.small)
+
+// Background tint for quick visual of EMA-VWAP regime
+bgcolor(emaBelowVwap ? color.new(color.red, 92) : emaAboveVwap ? color.new(color.green, 92) : na)
+
+// ============================================================================
+// ALERTS
+// ============================================================================
+
+alertcondition(canShort, title="VWAP-EMA Short Trigger", message="Short trigger: EMA closed below VWAP, price closed below EMA")
+alertcondition(canLong, title="VWAP-EMA Long Trigger", message="Long trigger: EMA closed above VWAP, price closed above EMA")
