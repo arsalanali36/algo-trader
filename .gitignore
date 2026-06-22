@@ -10,6 +10,11 @@ __pycache__/
 *.pyo
 venv/
 
+# Trade DB (order_store) — local/VPS runtime data, never commit
+data/trades.db
+data/trades.db-wal
+data/trades.db-shm
+
 # Config files (sensitive — VPS pe manually rakho)
 nifty_config.json
 rsi_config.json

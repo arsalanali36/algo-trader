@@ -486,6 +486,9 @@ def fetch_1m(symbol, tf="1m"):
 # DHAN ORDER
 # ─────────────────────────────────────────────────────────────────────────────
 
+_STRAT_ID = "range"   # set by main() to the running variation's config key (trade DB tag)
+
+
 def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
@@ -536,13 +539,30 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
             log.warning(f"Option LTP fetch failed for {trad_sym} — logging price as 0 (NOT spot price)")
             price = 0.0  # 0 = unknown; spot price logged karna WRONG hoga
 
+    def _rec(status_, oid=''):
+        try:
+            import sys as _s, os as _o
+            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+            if _root not in _s.path:
+                _s.path.insert(0, _root)
+            import order_store
+            order_store.record(side, qty, price, source='strategy', strategy=_STRAT_ID,
+                mode=mode, broker='dhan', symbol=symbol,
+                instrument=('options' if seg == 'NSE_FNO' else 'equity'),
+                trad_sym=trad_sym, sec_id=sec_id, segment=seg,
+                correlation_id=f'RANGE_{trad_sym}_{ts}', broker_order_id=oid, status=status_)
+        except Exception:
+            pass
+
     if mode == "paper":
         log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
+        _rec('paper')
         return
     try:
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
         if r.status_code == 200:
             log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
+            _rec('filled')
         else:
             log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
             raise Exception(f"Dhan {r.status_code}: {r.text[:200]}")
@@ -572,6 +592,8 @@ def reset_daily_state():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def main(strategy_id="range"):
+    global _STRAT_ID
+    _STRAT_ID = strategy_id
     mode = "live" if "--live" in sys.argv else "paper"
     log.info(f"Range Trader starting — mode={mode}")
 

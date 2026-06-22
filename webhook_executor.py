@@ -432,8 +432,11 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     except Exception:
         pass
 
+    instrument = cfg.get("instrument", "options")
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
-                              trad_sym, mode, broker, log=_log, tag="TVWH")
+                              trad_sym, mode, broker, log=_log, tag="TVWH",
+                              source="webhook", strategy=strat, instrument=instrument,
+                              broker_name=cfg.get("broker", "dhan"))
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
 
@@ -455,7 +458,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         "sl": sl, "target": target, "entry_spot": spot,
         "idx_sl": None, "idx_trail_dist": None,
         "entry_time": now.strftime("%H:%M"), "mode": mode,
-        "broker": cfg.get("broker", "dhan"),
+        "broker": cfg.get("broker", "dhan"), "instrument": instrument,
     }
     if cfg.get("trail_mode") == "index":
         dist = _index_atr(symbol, mult=float(cfg.get("trail_value", 2) or 2)) or 30.0
@@ -483,7 +486,10 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
     broker = _broker(cfg.get("broker", st.get("broker", "dhan")))
     res = smart_order.execute(close_side, symbol, st["opt_sec_id"], "NSE_FNO",
                               st["opt_qty"], st["opt_trad_sym"], mode, broker,
-                              log=_log, tag="TVWH")
+                              log=_log, tag="TVWH",
+                              source="webhook", strategy=strat,
+                              instrument=st.get("instrument", "options"),
+                              broker_name=cfg.get("broker", st.get("broker", "dhan")))
     if not res.get("ok"):
         _log(f"EXIT fail {key} — {res.get('reason')}")
         return {"ok": False, "msg": f"exit failed: {res.get('reason')}"}

@@ -30,6 +30,13 @@ TC_FILE       = BASE_DIR / "nifty_config.json"
 LOG_FILE      = BASE_DIR / "nifty_trader.log"
 RESULTS_DIR   = BASE_DIR / "results"
 RESULTS_DIR.mkdir(exist_ok=True)
+
+# Trade DB (order_store) — every order (webhook/manual/strategy, paper/live) recorded.
+try:
+    import order_store
+    order_store.init_db()
+except Exception as _e:
+    print("[order_store] init fail:", _e, flush=True)
 import sys as _sys_boot
 # venv/bin/python is the VPS (Linux) layout. On Windows there's no such
 # path — use the interpreter actually running this process either way, so
@@ -863,8 +870,19 @@ def api_manual_order():
             except Exception:
                 pass
 
+        def _record(status_, m, oid=''):
+            try:
+                import order_store
+                order_store.record(side, qty_shares, option_ltp, source='manual', mode=m,
+                    broker='dhan', symbol=symbol, instrument='options', trad_sym=t_sym,
+                    sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
+                    correlation_id=f'MANUAL_{symbol}_{ts}', status=status_)
+            except Exception:
+                pass
+
         if mode == 'paper':
             _write_to_log('PAPER')
+            _record('paper', 'paper')
             return jsonify({'ok': True, 'msg': f'[PAPER] {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
 
         hdrs_dict = range_trader.hdrs(token, cid)
@@ -872,6 +890,11 @@ def api_manual_order():
         print(f"[MANUAL ORDER] status={r.status_code} resp={r.text}", flush=True)
         if r.status_code == 200:
             _write_to_log('LIVE')
+            try:
+                _oid = str((r.json() or {}).get('data', {}).get('orderId', '') or '')
+            except Exception:
+                _oid = ''
+            _record('filled', 'live', _oid)
             return jsonify({'ok': True, 'msg': f'[LIVE] {order_type} {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
         else:
             return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:300]}'})
@@ -926,8 +949,19 @@ def api_close_position():
             except Exception:
                 pass
 
+        def _record_close(status_, m, oid=''):
+            try:
+                import order_store
+                order_store.record(close_side, qty_shares, option_ltp, source='manual', mode=m,
+                    broker='dhan', symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
+                    sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
+                    correlation_id=f'CLOSE_{t_sym}_{ts}', status=status_)
+            except Exception:
+                pass
+
         if mode == 'paper':
             _write_log('PAPER')
+            _record_close('paper', 'paper')
             return jsonify({'ok': True, 'msg': f'[PAPER] CLOSE {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}'})
 
         if not sec_id:
@@ -944,6 +978,11 @@ def api_close_position():
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
         if r.status_code == 200:
             _write_log('LIVE')
+            try:
+                _oid = str((r.json() or {}).get('data', {}).get('orderId', '') or '')
+            except Exception:
+                _oid = ''
+            _record_close('filled', 'live', _oid)
             return jsonify({'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym}'})
         else:
             return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'})
@@ -1538,6 +1577,24 @@ def api_webhook_tv():
 def api_webhook_status():
     import webhook_executor as wh
     return jsonify(wh.status())
+
+
+@app.route('/api/orders')
+def api_orders():
+    """Trade DB (order_store) — completed trades + open positions for a date,
+    with source/mode/strategy/broker tags. Query: date, source, mode, broker,
+    strategy, instrument. Plus distinct filter values for the UI dropdowns."""
+    import order_store
+    from datetime import datetime, timezone, timedelta
+    ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+    date = request.args.get('date') or ist.strftime('%Y-%m-%d')
+    filt = {k: request.args.get(k) for k in
+            ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    data = order_store.trades_for(date, **filt)
+    data['date'] = date
+    data['filters'] = {f: order_store.distinct(f, date)
+                       for f in ('source', 'mode', 'strategy', 'broker')}
+    return jsonify(data)
 
 
 import threading

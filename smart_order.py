@@ -54,13 +54,15 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 
 
 def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
-            buffer_bps=10, log=print, tag="UNIV"):
+            buffer_bps=10, log=print, tag="UNIV",
+            source="", strategy="", instrument="", broker_name=""):
     """Execute one entry/exit.
 
     Returns: {ok, price, src, status, reason, order_id}
       status: 'paper' | 'filled' | 'pending' | 'rejected'
     Always logs an intended-fill line (P&L truth, same for paper & live).
     Live also fires the real order and logs a [BROKER] status line.
+    source/strategy/instrument/broker_name are recorded into order_store (trade DB).
     """
     price, src = marketable_price(side, sec_id, seg, broker, buffer_bps)
     if price is None:
@@ -82,5 +84,18 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         res.update(status=r["status"], reason=r["reason"], order_id=r["order_id"])
         log(f"[BROKER] {trad_sym} {side} {qty} -> {r['status'].upper()} "
             f"({r['reason']})")
+
+    # 3) persist to the trade DB (best-effort, never blocks the order)
+    try:
+        import order_store
+        bname = broker_name or (broker.name() if hasattr(broker, "name") else "dhan")
+        order_store.record(side, qty, price, source=source, strategy=strategy,
+                           mode=mode, broker=bname, symbol=sym, instrument=instrument,
+                           trad_sym=trad_sym, sec_id=sec_id, segment=seg,
+                           correlation_id=f"{tag}_{sym}",
+                           broker_order_id=res.get("order_id") or "",
+                           status=res.get("status", "paper"))
+    except Exception:
+        pass
 
     return res
