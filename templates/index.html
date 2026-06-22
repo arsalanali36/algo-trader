@@ -1368,6 +1368,13 @@ function resetColPrefs() {
   updatePnl();
 }
 
+let _pnlTagMap = {};   // "sym|entry_time" -> trade-DB row (source/mode/strategy tags)
+function _pnlTagChips(d){
+  const t=_pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
+  if(!t || typeof _ordTag!=='function') return '';
+  return ' '+_ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)+(t.strategy?_ordTag(t.strategy,'name'):'');
+}
+
 async function updatePnl() {
   if (activeTab !== 'pnl') return;
 
@@ -1378,6 +1385,14 @@ async function updatePnl() {
     try { let r=await fetch(`/api/pnl?s=${key}`); allResults[key]=await r.json(); }
     catch(e){ allResults[key]={trades:0,wins:0,losses:0,total_pnl:0,details:[],open:[]}; }
   }
+
+  // tag overlay from trade DB (order_store) — match by sym|entry_time
+  _pnlTagMap = {};
+  try {
+    const _td = new Date().toISOString().slice(0,10);
+    const _o = await (await fetch('/api/orders?date='+_td)).json();
+    [].concat(_o.details||[], _o.open||[]).forEach(t=>{ _pnlTagMap[(t.sym||'')+'|'+(t.entry_time||'')]=t; });
+  } catch(e){}
 
   // SUMMARY PILLS
   let summaryEl = document.getElementById('pnl-summary-row');
@@ -1429,7 +1444,7 @@ async function updatePnl() {
         let stratLabel=(d._strat||'').toUpperCase();
         let capital = entry * qty;
         let row = '';
-        if(ov('symbol'))    row += _pnlTD(`<b>${d.sym}</b>`);
+        if(ov('symbol'))    row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}`);
         if(ov('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
         if(ov('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
         if(ov('entry_time'))row += _pnlTD(d.entry_time||'—','#e6edf3','center');
@@ -1474,7 +1489,7 @@ async function updatePnl() {
     let capital = ep*qty;
     let stratLabel=(d._strat||'').toUpperCase();
     let row='';
-    if(cv('symbol'))    row += _pnlTD(`<b>${d.sym}</b>`);
+    if(cv('symbol'))    row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}`);
     if(cv('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
     if(cv('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
     if(cv('entry_time'))row += _pnlTD(d.entry_time||'—','#8b949e','center');
