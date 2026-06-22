@@ -43,8 +43,14 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
     else:
         ref, src = (bid, "bid") if bid else (ltp, "feed_ltp")
 
-    if not ref:  # feed empty -> REST LTP fallback
-        ref = (broker.quote(sec_id, seg) or {}).get("ltp")
+    if not ref:  # feed empty (cold subscribe) -> REST LTP fallback.
+        # Webhook entry fires spot+option quotes back-to-back; Dhan marketfeed is
+        # ~1 req/sec, so a fresh option quote can 429. Retry past the limit window.
+        for _i in range(3):
+            ref = (broker.quote(sec_id, seg) or {}).get("ltp")
+            if ref:
+                break
+            time.sleep(1.2)
         src = "rest_ltp"
     if not ref:
         return None, "none"
