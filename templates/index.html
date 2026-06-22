@@ -248,78 +248,93 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
 <!-- WEBHOOK TAB -->
 <div class="tab-body" id="tab-webhook" style="padding:16px 18px 24px">
-  <!-- status + mode -->
+  <!-- status + day P&L -->
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
     <span id="wh-dot" style="width:9px;height:9px;border-radius:50%;background:#3fb950;display:inline-block"></span>
     <span id="wh-status-txt" style="font-size:13px">Webhook listener active</span>
-    <div style="margin-left:auto;display:flex;align-items:center;gap:8px">
-      <span style="font-size:11px;color:#8b949e">Mode</span>
-      <div id="wh-mode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
-        <span class="wh-seg" data-mode="paper" onclick="whSetMode('paper')" style="padding:5px 14px;font-size:12px;cursor:pointer">Paper</span>
-        <span class="wh-seg" data-mode="live"  onclick="whSetMode('live')"  style="padding:5px 14px;font-size:12px;cursor:pointer;color:#8b949e">Live</span>
-      </div>
-    </div>
+    <span id="wh-daypnl" style="margin-left:auto;font-size:11.5px;color:#8b949e">—</span>
   </div>
 
-  <!-- connection -->
+  <!-- global: one URL + secret + caps (shared by all strategies) -->
   <div class="card" style="margin-bottom:12px">
-    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">WEBHOOK URL <span style="color:#6e7681">(TradingView alert → Notifications → Webhook URL)</span></div>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">WEBHOOK URL <span style="color:#6e7681">(ek hi URL — sab strategies; TradingView → Notifications → Webhook URL)</span></div>
     <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
       <code id="wh-url" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></code>
       <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whCopy('wh-url')">Copy</button>
     </div>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">SECRET TOKEN <span style="color:#6e7681">(URL me already lagaa hai)</span></div>
-    <div style="display:flex;gap:8px;align-items:center">
-      <code id="wh-token" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7"></code>
-      <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whRegenToken()">Regenerate</button>
+    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
+      <label class="wh-f">Secret token<span style="display:flex;gap:6px"><input id="wh-token" readonly style="flex:1"><button class="btn btn-gray" style="padding:4px 9px;font-size:13px" onclick="whRegenToken()" title="Regenerate">↻</button></span></label>
+      <label class="wh-f">Global daily ₹ loss cap<input id="wh-daily_cap" type="number" min="0" value="5000"></label>
+      <label class="wh-f">Global max trades/day (0=off)<input id="wh-global_max" type="number" min="0" value="0"></label>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
+      <button class="btn btn-green" onclick="whSaveGlobal()">💾 Save global</button>
+      <span id="wh-global-msg" style="font-size:12px;color:#8b949e"></span>
     </div>
   </div>
 
-  <!-- execution config -->
-  <div class="card" style="margin-bottom:12px">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <span style="font-size:13px;font-weight:600;color:#adbac7">Execution config</span>
-      <div style="display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;color:#8b949e">Option mode</span>
-        <div id="wh-optmode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
-          <span class="wh-optseg" data-m="SELL" onclick="whSetOptMode('SELL')" style="padding:5px 13px;font-size:12px;cursor:pointer">Sell</span>
-          <span class="wh-optseg" data-m="BUY"  onclick="whSetOptMode('BUY')"  style="padding:5px 13px;font-size:12px;cursor:pointer;color:#8b949e">Buy</span>
+  <!-- strategies: list + selected config -->
+  <div style="display:grid;grid-template-columns:180px 1fr;gap:12px;margin-bottom:12px">
+    <div class="card" style="padding:10px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
+        <span style="font-size:12px;font-weight:600;color:#adbac7">Strategies</span>
+        <button class="btn btn-gray" style="padding:1px 9px;font-size:16px;line-height:1.2;color:#3fb950" onclick="whAddStrat()" title="Add strategy">+</button>
+      </div>
+      <div id="wh-strat-list" style="display:flex;flex-direction:column;gap:5px"></div>
+    </div>
+
+    <div class="card" id="wh-cfg-card">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <span style="font-size:13px;font-weight:600;color:#adbac7"><span id="wh-sel-name">—</span> · config</span>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#8b949e;cursor:pointer"><input type="checkbox" id="wh-active" style="accent-color:#3fb950"> Active</label>
+          <div id="wh-optmode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span class="wh-optseg" data-m="SELL" onclick="whSetOptMode('SELL')" style="padding:4px 11px;font-size:11px;cursor:pointer">Sell</span>
+            <span class="wh-optseg" data-m="BUY"  onclick="whSetOptMode('BUY')"  style="padding:4px 11px;font-size:11px;cursor:pointer;color:#8b949e">Buy</span>
+          </div>
+          <div id="wh-mode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span class="wh-seg" data-mode="paper" onclick="whSetMode('paper')" style="padding:4px 11px;font-size:11px;cursor:pointer">Paper</span>
+            <span class="wh-seg" data-mode="live"  onclick="whSetMode('live')"  style="padding:4px 11px;font-size:11px;cursor:pointer;color:#8b949e">Live</span>
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- live LTP preview -->
-    <div style="display:flex;align-items:center;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:9px 11px;margin-bottom:14px;flex-wrap:wrap">
-      <select id="wh-ltp-sym" onchange="whLtpPoll()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 7px;font-size:12px">
-        <option>NIFTY</option><option>BANKNIFTY</option>
-      </select>
-      <span style="font-size:11px;color:#8b949e">selected strike LTP</span>
-      <span style="margin-left:auto;display:flex;gap:14px;font-size:13px">
-        <span>CE <b id="wh-ltp-ce" style="color:#3fb950">—</b></span>
-        <span>PE <b id="wh-ltp-pe" style="color:#f85149">—</b></span>
-      </span>
-      <span id="wh-ltp-strike" style="width:100%;font-size:10.5px;color:#6e7681"></span>
-    </div>
+      <!-- live LTP preview -->
+      <div style="display:flex;align-items:center;gap:10px;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 11px;margin-bottom:13px;flex-wrap:wrap">
+        <select id="wh-ltp-sym" onchange="whLtpPoll()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:5px 7px;font-size:12px">
+          <option>NIFTY</option><option>BANKNIFTY</option>
+        </select>
+        <span style="font-size:11px;color:#8b949e">selected strike LTP</span>
+        <span style="margin-left:auto;display:flex;gap:14px;font-size:13px">
+          <span>CE <b id="wh-ltp-ce" style="color:#3fb950">—</b></span>
+          <span>PE <b id="wh-ltp-pe" style="color:#f85149">—</b></span>
+        </span>
+        <span id="wh-ltp-strike" style="width:100%;font-size:10.5px;color:#6e7681"></span>
+      </div>
 
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
-      <label class="wh-f">Strike<select id="wh-strike_offset" onchange="whLtpPoll()">
-        <option value="-2">ITM+2 (-2)</option><option value="-1">ITM+1 (-1)</option>
-        <option value="0" selected>ATM (0)</option>
-        <option value="1">OTM+1 (+1)</option><option value="2">OTM+2 (+2)</option></select></label>
-      <label class="wh-f">Qty (lots)<input id="wh-qty" type="number" min="1" value="1"></label>
-      <label class="wh-f">Max trades/day<input id="wh-max_trades_per_day" type="number" min="1" value="2"></label>
-      <label class="wh-f">Trail mode<select id="wh-trail_mode">
-        <option value="premium">Premium</option><option value="index">Index</option></select></label>
-      <label class="wh-f">Trail value<input id="wh-trail_value" type="number" min="0" value="20"></label>
-      <label class="wh-f">SL points<input id="wh-sl_points" type="number" min="0" value="30"></label>
-      <label class="wh-f">Target points<input id="wh-target_points" type="number" min="0" value="0"></label>
-      <label class="wh-f">No entry after<input id="wh-no_entry_after" value="15:15"></label>
-      <label class="wh-f">Squareoff at<input id="wh-squareoff_at" value="15:15"></label>
-    </div>
-    <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
-      <button class="btn btn-green" onclick="whSave()">💾 Save config</button>
-      <span id="wh-save-msg" style="font-size:12px;color:#8b949e"></span>
-      <span style="margin-left:auto;font-size:10.5px;color:#6e7681">Strategy logic Pine me; ye sirf execution. Pine alert JSON me koi field bhejo to wo override karega.</span>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
+        <label class="wh-f">Instrument<select id="wh-instrument"><option value="options">Options</option><option value="equity">Equity</option></select></label>
+        <label class="wh-f">Broker<select id="wh-broker"><option value="dhan">Dhan</option><option value="kite">Kite (Zerodha)</option></select></label>
+        <label class="wh-f">Strike<select id="wh-strike_offset" onchange="whLtpPoll()">
+          <option value="-2">ITM+2 (-2)</option><option value="-1">ITM+1 (-1)</option>
+          <option value="0">ATM (0)</option>
+          <option value="1">OTM+1 (+1)</option><option value="2">OTM+2 (+2)</option></select></label>
+        <label class="wh-f">Qty (lots/shares)<input id="wh-qty" type="number" min="1" value="1"></label>
+        <label class="wh-f">SL points<input id="wh-sl_points" type="number" min="0" value="30"></label>
+        <label class="wh-f">Target points<input id="wh-target_points" type="number" min="0" value="0"></label>
+        <label class="wh-f">Trail mode<select id="wh-trail_mode">
+          <option value="premium">Premium</option><option value="index">Index</option></select></label>
+        <label class="wh-f">Trail value<input id="wh-trail_value" type="number" min="0" value="20"></label>
+        <label class="wh-f">Max trades/day<input id="wh-max_trades_per_day" type="number" min="1" value="2"></label>
+        <label class="wh-f">No entry after<input id="wh-no_entry_after" value="15:15"></label>
+        <label class="wh-f">Squareoff at<input id="wh-squareoff_at" value="15:15"></label>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
+        <button class="btn btn-green" onclick="whSaveStrat()">💾 Save</button>
+        <button class="btn btn-gray" style="color:#f85149" onclick="whDeleteStrat()">Delete</button>
+        <span id="wh-save-msg" style="font-size:12px;color:#8b949e"></span>
+        <span style="margin-left:auto;font-size:10.5px;color:#6e7681">Strike/qty/SL — Pine alert JSON me bheja to override karega</span>
+      </div>
     </div>
   </div>
 
@@ -486,10 +501,9 @@ function switchTab(id) {
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
 }
 
-// ── WEBHOOK TAB ──
-let WH_MODE='paper', WH_OPTMODE='SELL', WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null;
-
-let _whLtpTimer=null;
+// ── WEBHOOK TAB (multi-strategy) ──
+let WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null, _whLtpTimer=null;
+let WH_STRATS={}, WH_GLOBAL={}, WH_SEL=null, WH_MODE='paper', WH_OPTMODE='SELL';
 function whEnter(){
   renderWebhookTab(); whStatusPoll(); whLtpPoll();
   _whTimer    = setInterval(whStatusPoll, 4000);   // status/log — local, no Dhan
@@ -500,39 +514,137 @@ function whLeave(){
   if(_whLtpTimer){ clearInterval(_whLtpTimer); _whLtpTimer=null; }
 }
 
+function _whDefaults(){
+  return {active:true,broker:'dhan',mode:'paper',instrument:'options',strike_offset:0,qty:1,
+    opt_action:'SELL',long_opt_type:'PE',short_opt_type:'CE',sl_points:30,target_points:0,
+    trail_mode:'premium',trail_value:20,max_trades_per_day:2,no_entry_after:'15:15',squareoff_at:'15:15'};
+}
+
 async function renderWebhookTab(){
-  let cfg = (GLOBAL_CONFIG && GLOBAL_CONFIG.webhook_v1) || {};
-  try { const r=await fetch('/api/config'); GLOBAL_CONFIG=await r.json(); cfg=GLOBAL_CONFIG.webhook_v1||{}; } catch(e){}
-  WH_TOKEN  = cfg.secret_token || '';
-  WH_MODE   = cfg.mode || 'paper';
-  WH_OPTMODE= (cfg.opt_action||'SELL').toUpperCase();
-  WH_PUBLIC_BASE = cfg.public_webhook_base || '';
+  try { const r=await fetch('/api/config'); GLOBAL_CONFIG=await r.json(); } catch(e){}
+  const whs = (GLOBAL_CONFIG && GLOBAL_CONFIG.webhooks) || {};
+  WH_GLOBAL = Object.assign({secret_token:'',daily_amount_cap:5000,global_max_trades:0}, whs.global||{});
+  WH_STRATS = {};
+  Object.keys(whs).forEach(k=>{ if(k!=='global') WH_STRATS[k]=whs[k]; });
+  if(!Object.keys(WH_STRATS).length) WH_STRATS['default']=_whDefaults();
+  WH_TOKEN = WH_GLOBAL.secret_token || '';
+  WH_PUBLIC_BASE = WH_GLOBAL.public_webhook_base
+    || ((GLOBAL_CONFIG.webhook_v1||{}).public_webhook_base) || '';
   const set=(id,v)=>{ const el=document.getElementById(id); if(el!=null && v!=null) el.value=v; };
-  set('wh-strike_offset', String(cfg.strike_offset!=null?cfg.strike_offset:0));
-  set('wh-qty', cfg.qty!=null?cfg.qty:1);
-  set('wh-max_trades_per_day', cfg.max_trades_per_day!=null?cfg.max_trades_per_day:2);
-  set('wh-trail_mode', cfg.trail_mode||'premium');
-  set('wh-trail_value', cfg.trail_value!=null?cfg.trail_value:20);
-  set('wh-sl_points', cfg.sl_points!=null?cfg.sl_points:30);
-  set('wh-target_points', cfg.target_points!=null?cfg.target_points:0);
-  set('wh-no_entry_after', cfg.no_entry_after||'15:15');
-  set('wh-squareoff_at', cfg.squareoff_at||'15:15');
-  whSetMode(WH_MODE, true); whSetOptMode(WH_OPTMODE, true);
-  whRenderConn(); whRenderTpl();
+  set('wh-daily_cap', WH_GLOBAL.daily_amount_cap!=null?WH_GLOBAL.daily_amount_cap:5000);
+  set('wh-global_max', WH_GLOBAL.global_max_trades!=null?WH_GLOBAL.global_max_trades:0);
+  whRenderConn();
+  if(!WH_SEL || !WH_STRATS[WH_SEL]) WH_SEL = Object.keys(WH_STRATS)[0];
+  whRenderStratList();
+  whSelectStrat(WH_SEL);
+}
+
+function whRenderStratList(){
+  const box=document.getElementById('wh-strat-list'); if(!box) return;
+  box.innerHTML='';
+  Object.keys(WH_STRATS).forEach(name=>{
+    const c=WH_STRATS[name]; const sel=name===WH_SEL;
+    const dot=c.active!==false?'#3fb950':'#6e7681';
+    const sub=[c.instrument||'options', c.broker||'dhan', c.mode||'paper'].join(' · ');
+    const d=document.createElement('div');
+    d.style.cssText='cursor:pointer;border-radius:6px;padding:7px 8px;border:1px solid '+(sel?'#1f6feb':'#30363d')+';background:'+(sel?'#1f6feb22':'#0d1117');
+    d.onclick=()=>whSelectStrat(name);
+    d.innerHTML='<div style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:'+dot+'"></span>'
+      +'<span style="font-size:12px;'+(sel?'font-weight:600':'')+';color:'+(c.active!==false?'#e6edf3':'#8b949e')+'">'+name+'</span></div>'
+      +'<div style="font-size:10px;color:#8b949e;margin-top:2px">'+sub+'</div>';
+    box.appendChild(d);
+  });
+}
+
+function whSelectStrat(name){
+  if(!WH_STRATS[name]) return;
+  WH_SEL=name; const c=WH_STRATS[name];
+  document.getElementById('wh-sel-name').innerText=name;
+  const set=(id,v)=>{ const el=document.getElementById(id); if(el!=null && v!=null) el.value=v; };
+  set('wh-instrument', c.instrument||'options');
+  set('wh-broker', c.broker||'dhan');
+  set('wh-strike_offset', String(c.strike_offset!=null?c.strike_offset:0));
+  set('wh-qty', c.qty!=null?c.qty:1);
+  set('wh-sl_points', c.sl_points!=null?c.sl_points:30);
+  set('wh-target_points', c.target_points!=null?c.target_points:0);
+  set('wh-trail_mode', c.trail_mode||'premium');
+  set('wh-trail_value', c.trail_value!=null?c.trail_value:20);
+  set('wh-max_trades_per_day', c.max_trades_per_day!=null?c.max_trades_per_day:2);
+  set('wh-no_entry_after', c.no_entry_after||'15:15');
+  set('wh-squareoff_at', c.squareoff_at||'15:15');
+  document.getElementById('wh-active').checked = c.active!==false;
+  whSetMode(c.mode||'paper', true);
+  whSetOptMode((c.opt_action||'SELL').toUpperCase(), true);
+  whRenderStratList(); whRenderTpl();
+}
+
+function whAddStrat(){
+  let name=prompt('Nayi webhook strategy ka naam (Pine alert ke "strategy" field se match hona chahiye):','');
+  if(name==null) return; name=name.trim(); if(!name) return;
+  if(WH_STRATS[name]){ flash('Ye naam already hai','#d29922'); whSelectStrat(name); return; }
+  WH_STRATS[name]=_whDefaults();
+  WH_SEL=name; whRenderStratList(); whSelectStrat(name);
+  flash('“'+name+'” bana — config set karke Save dabayein','#3fb950');
+}
+
+async function whDeleteStrat(){
+  if(!WH_SEL) return;
+  if(!confirm('Delete webhook strategy “'+WH_SEL+'”?')) return;
+  delete WH_STRATS[WH_SEL];
+  await _whPersist();
+  WH_SEL=Object.keys(WH_STRATS)[0]||null;
+  renderWebhookTab();
+}
+
+function _whReadForm(){
+  const g=id=>document.getElementById(id).value;
+  return {
+    active: document.getElementById('wh-active').checked,
+    broker: g('wh-broker'), mode: WH_MODE, instrument: g('wh-instrument'),
+    strike_offset: parseInt(g('wh-strike_offset')),
+    qty: parseInt(g('wh-qty')),
+    sl_points: parseFloat(g('wh-sl_points')),
+    target_points: parseFloat(g('wh-target_points')),
+    trail_mode: g('wh-trail_mode'),
+    trail_value: parseFloat(g('wh-trail_value')),
+    max_trades_per_day: parseInt(g('wh-max_trades_per_day')),
+    no_entry_after: g('wh-no_entry_after'),
+    squareoff_at: g('wh-squareoff_at'),
+    opt_action: WH_OPTMODE,
+    long_opt_type: WH_OPTMODE==='SELL'?'PE':'CE',
+    short_opt_type: WH_OPTMODE==='SELL'?'CE':'PE'
+  };
+}
+
+async function _whPersist(){
+  let cfg={}; try{ const r=await fetch('/api/config'); cfg=await r.json(); }catch(e){}
+  const whs = cfg.webhooks || {};
+  whs.global = Object.assign({}, whs.global||{}, {
+    secret_token: WH_TOKEN,
+    daily_amount_cap: parseFloat(document.getElementById('wh-daily_cap').value||0),
+    global_max_trades: parseInt(document.getElementById('wh-global_max').value||0)
+  });
+  Object.keys(whs).forEach(k=>{ if(k!=='global' && !WH_STRATS[k]) delete whs[k]; });
+  Object.keys(WH_STRATS).forEach(k=>{ whs[k]=WH_STRATS[k]; });
+  cfg.webhooks=whs;
+  const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  GLOBAL_CONFIG=cfg;
+  return res.ok;
 }
 
 function whRenderConn(){
-  document.getElementById('wh-token').innerText = WH_TOKEN || '(set karein — Regenerate)';
+  const t=document.getElementById('wh-token'); if(t) t.value = WH_TOKEN || '';
   const base = WH_PUBLIC_BASE || (location.origin + '/api/webhook/tv');
   document.getElementById('wh-url').innerText = base + '?token=' + (WH_TOKEN||'');
 }
 function whRenderTpl(){
   const sym = (document.getElementById('wh-ltp-sym')||{}).value || 'NIFTY';
+  const strat = WH_SEL || 'default';
   {% raw %}
   document.getElementById('wh-tpl-entry').innerText =
-    '{"id":"{{timenow}}","symbol":"SYM","signal":"ENTRY","action":"{{strategy.order.action}}"}'.replace('SYM', sym);
+    '{"id":"{{timenow}}","strategy":"STRAT","symbol":"SYM","signal":"ENTRY","action":"{{strategy.order.action}}"}'.replace('STRAT',strat).replace('SYM', sym);
   document.getElementById('wh-tpl-exit').innerText =
-    '{"id":"{{timenow}}","symbol":"SYM","signal":"EXIT"}'.replace('SYM', sym);
+    '{"id":"{{timenow}}","strategy":"STRAT","symbol":"SYM","signal":"EXIT"}'.replace('STRAT',strat).replace('SYM', sym);
   {% endraw %}
 }
 
@@ -549,40 +661,31 @@ function whSetOptMode(m, silent){
 }
 
 function whCopy(id){
-  const t=document.getElementById(id).innerText;
+  const el=document.getElementById(id);
+  const t=(el.tagName==='INPUT')?el.value:el.innerText;
   navigator.clipboard.writeText(t).then(()=>flash('Copied ✓')).catch(()=>flash('Copy fail','#f85149'));
 }
 function whRegenToken(){
   const a=new Uint8Array(10); crypto.getRandomValues(a);
   WH_TOKEN='wh_'+Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('');
   whRenderConn();
-  flash('Naya token bana — Save config dabayein','#d29922');
+  flash('Naya token bana — Save global dabayein','#d29922');
 }
 
-async function whSave(){
-  const g=id=>document.getElementById(id).value;
-  let cfg={}; try{ const r=await fetch('/api/config'); cfg=await r.json(); }catch(e){}
-  cfg.webhook_v1 = Object.assign({}, cfg.webhook_v1||{}, {
-    active:true, mode:WH_MODE, instrument:'options',
-    strike_offset:parseInt(g('wh-strike_offset')),
-    qty:parseInt(g('wh-qty')),
-    max_trades_per_day:parseInt(g('wh-max_trades_per_day')),
-    trail_mode:g('wh-trail_mode'),
-    trail_value:parseFloat(g('wh-trail_value')),
-    sl_points:parseFloat(g('wh-sl_points')),
-    target_points:parseFloat(g('wh-target_points')),
-    no_entry_after:g('wh-no_entry_after'),
-    squareoff_at:g('wh-squareoff_at'),
-    secret_token:WH_TOKEN,
-    opt_action:WH_OPTMODE,
-    long_opt_type: WH_OPTMODE==='SELL'?'PE':'CE',
-    short_opt_type:WH_OPTMODE==='SELL'?'CE':'PE'
-  });
-  const res=await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
-  GLOBAL_CONFIG=cfg;
+async function whSaveStrat(){
+  if(!WH_SEL) return;
+  WH_STRATS[WH_SEL]=Object.assign({}, WH_STRATS[WH_SEL]||{}, _whReadForm());
+  const ok=await _whPersist();
   const msg=document.getElementById('wh-save-msg');
-  msg.innerText = res.ok?'Saved ✓':'Save failed'; msg.style.color = res.ok?'#3fb950':'#f85149';
-  whRenderTpl();
+  msg.innerText=ok?'Saved ✓':'Save failed'; msg.style.color=ok?'#3fb950':'#f85149';
+  whRenderStratList(); whRenderTpl();
+  setTimeout(()=>msg.innerText='',3000);
+}
+
+async function whSaveGlobal(){
+  const ok=await _whPersist();
+  const msg=document.getElementById('wh-global-msg');
+  msg.innerText=ok?'Saved ✓':'Save failed'; msg.style.color=ok?'#3fb950':'#f85149';
   setTimeout(()=>msg.innerText='',3000);
 }
 
@@ -612,17 +715,23 @@ async function whStatusPoll(){
     const r=await fetch('/api/webhook/status'); const d=await r.json();
     const pos=d.positions||{}; const keys=Object.keys(pos);
     let ph = keys.length ? '' : '<span style="color:#6e7681">koi open position nahi</span>';
-    keys.forEach(s=>{ const p=pos[s];
+    keys.forEach(k=>{ const p=pos[k]; const parts=k.split('|');
       ph += '<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #21262d">'
-          + '<span style="color:#adbac7">'+(p.opt_trad_sym||s)+'</span>'
-          + '<span>'+p.opt_action+' '+p.opt_qty+' @ '+Number(p.entry_premium||0).toFixed(2)+'</span></div>'; });
+          + '<span style="color:#adbac7"><b>'+(parts[0]||'')+'</b> · '+(parts[1]||'')+' <span style="color:#8b949e">'+(p.opt_action||'')+'</span></span>'
+          + '<span>'+(p.opt_qty||'')+' @ '+Number(p.entry_premium||0).toFixed(2)+'</span></div>'; });
     document.getElementById('wh-positions').innerHTML = ph;
     const ev=d.events||[];
     document.getElementById('wh-log').innerHTML = ev.length
       ? ev.slice().reverse().map(e=>'<div><span style="color:#6e7681">'+(e.t||'').slice(11)+'</span> '+(e.msg||'').replace(/</g,'&lt;')+'</div>').join('')
       : '<span style="color:#6e7681">—</span>';
-    document.getElementById('wh-status-txt').innerText = d.active?('Webhook active · mode '+(d.mode||'paper')):'Webhook inactive';
-    document.getElementById('wh-dot').style.background = d.active?'#3fb950':'#6e7681';
+    const g=d.global||{}; const dr=g.day_realized||0; const cap=g.daily_amount_cap||0;
+    const drColor = dr>0?'#3fb950':(dr<0?'#f85149':'#8b949e');
+    document.getElementById('wh-daypnl').innerHTML =
+      'Day realized <b style="color:'+drColor+'">₹'+Math.round(dr)+'</b>'
+      + (cap?(' &nbsp;·&nbsp; Loss cap <b style="color:#adbac7">₹'+cap+'</b>'):'');
+    const nstrat=Object.keys(d.strategies||{}).length;
+    document.getElementById('wh-status-txt').innerText = nstrat+' strateg'+(nstrat===1?'y':'ies')+' configured';
+    document.getElementById('wh-dot').style.background = nstrat?'#3fb950':'#6e7681';
   }catch(e){}
 }
 

@@ -1509,11 +1509,11 @@ def api_webhook_tv():
     """Receive a TradingView Pine alert (JSON) and execute via webhook_executor.
 
     Auth: token via ?token= query OR X-WH-Token header, matched against
-    nifty_config.json["webhook_v1"]["secret_token"]. Mismatch → 403.
-    Body: {"id","symbol","signal":"ENTRY|EXIT","action":"buy|sell"}
+    nifty_config.json["webhooks"]["global"]["secret_token"]. Mismatch → 403.
+    Body: {"id","strategy","symbol","signal":"ENTRY|EXIT","action":"buy|sell"}
     """
     import webhook_executor as wh
-    secret = wh._cfg().get("secret_token", "")
+    secret = wh.webhook_secret()
     given  = request.args.get("token") or request.headers.get("X-WH-Token", "")
     if not secret or given != secret:
         return jsonify({"ok": False, "msg": "forbidden"}), 403

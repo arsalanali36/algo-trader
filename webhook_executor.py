@@ -1,26 +1,43 @@
 #!/usr/bin/env python3
 """
-webhook_executor.py — TradingView webhook → Dhan order executor.
+webhook_executor.py — TradingView webhook → Dhan/Kite order executor (MULTI-STRATEGY).
 
 Idea: TradingView Pine sirf SIGNAL bhejta hai (ENTRY/EXIT + direction). Saara
 execution dimaag yahan Python me hai — strike select (ATM / ATM±N), option
-buy/sell, qty, paper/live, aur (Phase 2) trailing SL + target + 3:15 squareoff.
-Strategy ek hi jagah (Pine) rehti hai → zero drift.
+buy/sell, qty, paper/live, trailing SL + target + 3:15 squareoff. Strategy ek hi
+jagah (Pine) rehti hai → zero drift.
+
+MULTI-STRATEGY ROUTING (2026-06-22):
+  Har alert apni pehchaan bhejta hai → JSON me "strategy" field. Position state
+  ab (strategy, symbol) se keyed hai, isliye ek hi instrument pe alag-alag
+  timeframe/strategy ke alerts takraate nahi:
+
+      {"id":..,"strategy":"range5m","symbol":"NIFTY","signal":"ENTRY","action":"buy"}
+
+  - range5m|NIFTY, ema1m|NIFTY, range5m|BANKNIFTY → sab isolated positions.
+  - Har strategy ka apna config block: nifty_config.json["webhooks"]["<strat>"]
+    (qty / strike / SL / instrument / paper-live / broker).
+  - Limits: per-(strategy,symbol) max_trades_per_day + global daily ₹ loss cap
+    (sab strategies milake) → cap hit → naye ENTRY block + monitor squareoff-all.
+  - "strategy" missing → "default" (backward-compat with the old single webhook).
+
+Config (nifty_config.json):
+  "webhooks": {
+    "global":  {"secret_token","daily_amount_cap","global_max_trades"},
+    "<strat>": {active,broker,mode,instrument,strike_offset,qty,opt_action,
+                long_opt_type,short_opt_type,sl_points,target_points,
+                trail_mode,trail_value,max_trades_per_day,no_entry_after,squareoff_at}
+  }
+  Agar "webhooks" map nahi mila → legacy flat "webhook_v1" se derive (default + global secret).
 
 Reuse:
-  - dhan_master.get_option_contract()  → ATM±offset sec_id + lot_size
-  - dhan_master.get_equity_info()      → index sec_id (NIFTY=13, BANKNIFTY=25)
-  - smart_order.execute()              → marketable-limit, paper==live parity
-  - brokers/dhan_broker.DhanBroker     → REST quote + live order
-  - dhan_feed                          → live bid/ask (subscribe option sec_id)
+  - dhan_master.get_option_contract() → ATM±offset sec_id + lot_size
+  - dhan_master.get_equity_info()     → index sec_id (NIFTY=13, BANKNIFTY=25)
+  - smart_order.execute()             → marketable-limit, paper==live parity
+  - brokers.get_broker(name)          → dhan / kite order routing
+  - dhan_feed                         → live bid/ask (data ALWAYS Dhan)
 
-Log lines are written in the SAME format trader_dashboard.parse_pnl() expects,
-so webhook trades show up in the P&L tab automatically:
-  entry : "<ts>,000  INFO      [PAPER] BUY 65 NIFTY-Jun2026-24100-CE @ 150.25  ..."
-  exit  : opposite-side line (smart_order) — parse_pnl nets it into a closed trade.
-
-Phase 1: handle_signal() (ENTRY/EXIT, paper), safety (max/day, no-entry-after).
-Phase 2 (next): monitor_tick() trailing SL / target / 3:15 force squareoff.
+Log lines parse_pnl-compatible (P&L tab me webhook trades auto dikhte hain).
 """
 
 import json
@@ -41,68 +58,143 @@ BASE_DIR   = Path(__file__).resolve().parent
 TC_FILE    = BASE_DIR / "nifty_config.json"
 LOG_DIR    = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)
-WH_LOG     = LOG_DIR / "webhook_v1.log"
-CFG_KEY    = "webhook_v1"
+WH_LOG     = LOG_DIR / "webhook_v1.log"   # shared webhook log (parse_pnl reads it)
 
-# Config defaults — overlaid by nifty_config.json["webhook_v1"] on every read (hot-reload).
+# Per-strategy config defaults — overlaid by nifty_config.json["webhooks"][strat].
 _DEFAULTS = {
     "active":          True,
+    "broker":          "dhan",        # "dhan" | "kite"
     "mode":            "paper",       # "paper" | "live"
-    "instrument":      "options",
-    "strike_offset":   0,             # ATM=0, ATM±N
-    "qty":             1,             # lots (× lot_size from scrip master)
-    "trail_mode":      "premium",     # "premium" | "index"  (used in Phase 2)
-    "trail_value":     20,            # premium: points to trail by; index: atr_mult
+    "instrument":      "options",     # "options" | "equity"
+    "strike_offset":   0,             # ATM=0, ATM±N (options only)
+    "qty":             1,             # options: lots (× lot_size); equity: shares
+    "trail_mode":      "premium",     # "premium" | "index"
+    "trail_value":     20,            # premium: points to trail; index: atr_mult
     "target_points":   0,             # 0 = no fixed target (trail only)
     "sl_points":       30,            # initial stop distance (premium points)
-    "max_trades_per_day": 2,
+    "max_trades_per_day": 2,          # per (strategy, symbol)
     "no_entry_after":  "15:15",       # IST — no new entry at/after this
-    "squareoff_at":    "15:15",       # IST — force-exit all (Phase 2)
-    "secret_token":    "",
-    # Default = option SELLING (range_trader convention): LONG→sell PE, SHORT→sell CE.
-    # UI toggle flips this trio to BUY mode (LONG→buy CE, SHORT→buy PE).
-    "long_opt_type":   "PE",          # LONG signal → this option type
-    "short_opt_type":  "CE",          # SHORT signal → this option type
+    "squareoff_at":    "15:15",       # IST — force-exit all
+    # Default = option SELLING: LONG→sell PE, SHORT→sell CE. Toggle flips to BUY.
+    "long_opt_type":   "PE",
+    "short_opt_type":  "CE",
     "opt_action":      "SELL",        # "SELL" (option selling) | "BUY" (long option)
 }
 
-# Execution params the Pine alert JSON may override per-signal (dashboard config
-# is the fallback). Lets the user set a value once in Pine and have it reflect
-# here automatically — no double entry.
+# Global block defaults (one per webhook engine, not per strategy).
+_GLOBAL_DEFAULTS = {
+    "secret_token":     "",
+    "daily_amount_cap": 0,    # ₹ overall loss cap across all webhook strategies (0=off)
+    "global_max_trades": 0,   # total entries/day across all strategies (0=off)
+}
+
+# Execution params the Pine alert JSON may override per-signal.
 _OVERRIDABLE = ("strike_offset", "qty", "sl_points", "target_points",
                 "trail_value", "trail_mode", "opt_action",
-                "long_opt_type", "short_opt_type")
+                "long_opt_type", "short_opt_type", "instrument")
 
 # ── shared state ────────────────────────────────────────────────────────────────
 _lock = threading.Lock()
-# _wh_state[symbol] = {position, direction, opt_sec_id, opt_trad_sym, opt_qty,
-#                      opt_action, entry_premium, sl, target, entry_time}
-_wh_state = {}
-_trades_today = {}            # symbol -> int (reset daily)
+_wh_state = {}            # "strat|symbol" -> position dict
+_trades_today = {}        # "strat|symbol" -> int (reset daily)
+_day_realized = 0.0       # ₹ realized P&L today across all webhook strategies
 _last_reset_day = None
-_seen = {}                    # dedup: alert id -> epoch ts
-_events = deque(maxlen=80)    # recent (ts, text) for the UI live log
-_broker_cache = None
+_seen = {}                # dedup: alert id -> epoch ts
+_events = deque(maxlen=80)
+_broker_cache = {}        # broker_name -> broker object
 
 
 def ist_now():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
 
 
-def _cfg():
-    """webhook_v1 config, defaults overlaid by nifty_config.json (hot-reload)."""
-    cfg = dict(_DEFAULTS)
+def _key(strat, symbol):
+    return f"{strat}|{symbol}"
+
+
+# ── config ────────────────────────────────────────────────────────────────────
+
+def _raw_cfg():
     try:
-        allc = json.loads(TC_FILE.read_text())
-        if isinstance(allc.get(CFG_KEY), dict):
-            cfg.update(allc[CFG_KEY])
+        return json.loads(TC_FILE.read_text())
     except Exception:
-        pass
-    return cfg
+        return {}
+
+
+def _all_webhooks():
+    """Return {'global': {...}, '<strat>': {merged cfg}, ...} (hot-reload).
+    Backward-compat: no 'webhooks' map → derive from legacy flat 'webhook_v1'."""
+    allc = _raw_cfg()
+    wh = allc.get("webhooks")
+    if not isinstance(wh, dict):
+        legacy = allc.get("webhook_v1") if isinstance(allc.get("webhook_v1"), dict) else {}
+        legacy = legacy or {}
+        glob = dict(_GLOBAL_DEFAULTS)
+        if legacy.get("secret_token"):
+            glob["secret_token"] = legacy["secret_token"]
+        default = {k: v for k, v in legacy.items() if k != "secret_token"}
+        wh = {"global": glob, "default": default}
+
+    out = {}
+    glob = dict(_GLOBAL_DEFAULTS)
+    glob.update(wh.get("global") or {})
+    out["global"] = glob
+    for strat, c in wh.items():
+        if strat == "global":
+            continue
+        merged = dict(_DEFAULTS)
+        if isinstance(c, dict):
+            merged.update(c)
+        out[strat] = merged
+    return out
+
+
+def _strat_cfg(strat):
+    """Merged config for one strategy id; falls back to 'default' then bare defaults."""
+    whs = _all_webhooks()
+    if strat in whs and strat != "global":
+        return whs[strat]
+    if "default" in whs:
+        return whs["default"]
+    return dict(_DEFAULTS)
+
+
+def _global_cfg():
+    return _all_webhooks()["global"]
+
+
+def _register_strategy(strat):
+    """Persist a new webhook strategy block (INACTIVE) so an unknown strategy name
+    arriving from a TradingView alert auto-appears in the dashboard to configure.
+    Inactive by default → no surprise orders until the user reviews + activates."""
+    allc = _raw_cfg()
+    whs = allc.get("webhooks")
+    if not isinstance(whs, dict):
+        # legacy config had no map yet — seed it from the in-memory view
+        cur = _all_webhooks()
+        whs = {"global": cur["global"]}
+        for s, c in cur.items():
+            if s != "global":
+                whs[s] = c
+    if strat not in whs:
+        block = dict(_DEFAULTS)
+        block["active"] = False        # pending — user activates after review
+        whs[strat] = block
+        allc["webhooks"] = whs
+        try:
+            TC_FILE.write_text(json.dumps(allc, indent=2))
+        except Exception:
+            pass
+        _log(f"NEW strategy '{strat}' registered (inactive) — configure & activate in dashboard")
+
+
+def webhook_secret():
+    """Shared secret token for /api/webhook/tv auth (from global block)."""
+    return _global_cfg().get("secret_token", "")
 
 
 def _log(msg):
-    """Append to webhook_v1.log in parse_pnl-compatible format + keep for UI."""
+    """Append to webhook log in parse_pnl-compatible format + keep for UI."""
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"{now},000  INFO      {msg}"
     try:
@@ -114,12 +206,13 @@ def _log(msg):
     print("[WEBHOOK]", msg, flush=True)
 
 
-def _broker():
-    global _broker_cache
-    if _broker_cache is None:
-        from brokers.dhan_broker import DhanBroker
-        _broker_cache = DhanBroker()   # loads creds from data/config.json
-    return _broker_cache
+def _broker(name="dhan"):
+    """Cached broker object by name (dhan/kite). DATA always comes from Dhan."""
+    name = (name or "dhan").lower()
+    if name not in _broker_cache:
+        from brokers import get_broker
+        _broker_cache[name] = get_broker(name)
+    return _broker_cache[name]
 
 
 def _hm(s):
@@ -132,22 +225,21 @@ def _hm(s):
 
 
 def _index_spot(symbol):
-    """Live index/equity spot price via broker REST quote."""
+    """Live index/equity spot price via Dhan REST quote (data always Dhan)."""
     import dhan_master
     info = dhan_master.get_equity_info(symbol)
     if not info:
-        # NIFTY/BANKNIFTY fallbacks if not in cache
         info = {"NIFTY": ("13", "IDX_I", "INDEX"),
                 "BANKNIFTY": ("25", "IDX_I", "INDEX")}.get(symbol)
     if not info:
         return None
     sec_id, seg, _inst = info
-    q = _broker().quote(sec_id, seg) or {}
+    q = _broker("dhan").quote(sec_id, seg) or {}
     return q.get("ltp")
 
 
 def _current_premium(sec_id):
-    """Live option premium — WebSocket feed first, REST quote fallback."""
+    """Live option premium — WebSocket feed first, Dhan REST quote fallback."""
     try:
         import dhan_feed
         q = dhan_feed.get_quote(sec_id) or {}
@@ -155,20 +247,19 @@ def _current_premium(sec_id):
             return float(q["ltp"])
     except Exception:
         pass
-    q = _broker().quote(str(sec_id), "NSE_FNO") or {}
+    q = _broker("dhan").quote(str(sec_id), "NSE_FNO") or {}
     return float(q["ltp"]) if q.get("ltp") else None
 
 
 def _index_atr(symbol, period=14, mult=2.0):
-    """Best-effort index ATR-based trail distance (index points). Falls back to
-    None if candles unavailable (e.g. token expired) — caller uses a default."""
+    """Best-effort index ATR-based trail distance (index points)."""
     try:
         import dhan_master
         info = dhan_master.get_equity_info(symbol)
         if not info:
             return None
         sec_id, seg, inst = info
-        df = _broker().intraday_candles(sec_id, seg, inst, days=2, interval=5)
+        df = _broker("dhan").intraday_candles(sec_id, seg, inst, days=2, interval=5)
         if df is None or len(df) < period + 1:
             return None
         import pandas as pd
@@ -182,12 +273,13 @@ def _index_atr(symbol, period=14, mult=2.0):
 
 
 def _maybe_reset_day():
-    global _last_reset_day
+    global _last_reset_day, _day_realized
     today = ist_now().date()
     if _last_reset_day != today:
         _last_reset_day = today
         _trades_today.clear()
-        _log(f"new trading day {today} — trade counters reset")
+        _day_realized = 0.0
+        _log(f"new trading day {today} — trade counters + day P&L reset")
 
 
 def _dedup(alert_id):
@@ -195,7 +287,6 @@ def _dedup(alert_id):
     if not alert_id:
         return False
     now = time.time()
-    # prune old ids (>120s)
     for k in [k for k, v in _seen.items() if now - v > 120]:
         _seen.pop(k, None)
     if alert_id in _seen:
@@ -204,28 +295,61 @@ def _dedup(alert_id):
     return False
 
 
+def _leg_pnl(st, exit_px):
+    """Realized ₹ P&L for a closed leg, given the exit premium."""
+    q = st.get("opt_qty", 0)
+    ep = st.get("entry_premium", 0) or 0
+    if st.get("opt_action") == "BUY":
+        return (exit_px - ep) * q
+    return (ep - exit_px) * q       # SELL: profit when premium falls
+
+
+def _day_pnl():
+    """(realized, unrealized, total) ₹ across all open webhook positions today.
+    Unrealized hits the live premium feed — call sparingly (entry/monitor only)."""
+    unreal = 0.0
+    for st in _wh_state.values():
+        if not st.get("position"):
+            continue
+        prem = _current_premium(st["opt_sec_id"])
+        if prem is None:
+            continue
+        unreal += _leg_pnl(st, prem)
+    return _day_realized, unreal, _day_realized + unreal
+
+
 # ── public API ──────────────────────────────────────────────────────────────────
 
 def handle_signal(payload: dict) -> dict:
     """Process one TradingView alert. Returns {ok, msg}.
 
     payload: {
-      "id":     unique alert id (dedup),
-      "symbol": "NIFTY" | "BANKNIFTY" | ...,
-      "signal": "ENTRY" | "EXIT",
-      "action": "buy" | "sell"   (direction: buy=LONG, sell=SHORT; ENTRY only),
+      "id":       unique alert id (dedup),
+      "strategy": webhook config id (routing key; missing → "default"),
+      "symbol":   "NIFTY" | "BANKNIFTY" | "SBIN" | ...,
+      "signal":   "ENTRY" | "EXIT",
+      "action":   "buy" | "sell"   (buy=LONG, sell=SHORT; ENTRY only),
     }
     """
     with _lock:
         _maybe_reset_day()
-        cfg = _cfg()
+
+        strat = str(payload.get("strategy") or "default").strip() or "default"
+        whs = _all_webhooks()
+        if strat not in whs:
+            # unknown strategy name from Pine → auto-register (inactive) so it shows
+            # up in the dashboard for the user to configure. No trade this time.
+            _register_strategy(strat)
+            return {"ok": False,
+                    "msg": f"strategy '{strat}' registered — configure & activate it in the dashboard"}
+        cfg = whs[strat]
 
         if not cfg.get("active", True):
-            return {"ok": False, "msg": "webhook strategy inactive"}
+            return {"ok": False, "msg": f"webhook strategy '{strat}' inactive"}
 
         alert_id = str(payload.get("id") or "")
         if _dedup(alert_id):
-            _log(f"DEDUP skip id={alert_id}")
+            _log(f"DEDUP skip strat={strat} id={alert_id}")
             return {"ok": True, "msg": "duplicate ignored"}
 
         symbol = str(payload.get("symbol") or "NIFTY").upper().strip()
@@ -233,9 +357,9 @@ def handle_signal(payload: dict) -> dict:
         action = str(payload.get("action") or "buy").lower().strip()
 
         if signal == "EXIT":
-            return _do_exit(symbol, cfg, reason="TV_EXIT")
+            return _do_exit(strat, symbol, cfg, reason="TV_EXIT")
         if signal == "ENTRY":
-            return _do_entry(symbol, action, cfg, payload)
+            return _do_entry(strat, symbol, action, cfg, payload)
         return {"ok": False, "msg": f"unknown signal '{signal}'"}
 
 
@@ -248,46 +372,60 @@ def _merge_overrides(cfg, payload):
     return eff
 
 
-def _do_entry(symbol, action, cfg, payload=None):
+def _do_entry(strat, symbol, action, cfg, payload=None):
     import dhan_master
     import smart_order
 
     cfg = _merge_overrides(cfg, payload or {})
+    key = _key(strat, symbol)
+    now = ist_now()
 
     # ── safety net (server-side) ──
-    now = ist_now()
     if (now.hour, now.minute) >= _hm(cfg.get("no_entry_after", "15:15")):
-        _log(f"ENTRY blocked {symbol} — after {cfg.get('no_entry_after')}")
+        _log(f"ENTRY blocked {key} — after {cfg.get('no_entry_after')}")
         return {"ok": False, "msg": "no entry after cutoff"}
 
-    if _trades_today.get(symbol, 0) >= int(cfg.get("max_trades_per_day", 2)):
-        _log(f"ENTRY blocked {symbol} — max trades/day reached")
+    if _trades_today.get(key, 0) >= int(cfg.get("max_trades_per_day", 2)):
+        _log(f"ENTRY blocked {key} — max trades/day reached")
         return {"ok": False, "msg": "max trades/day reached"}
 
-    if symbol in _wh_state and _wh_state[symbol].get("position"):
-        _log(f"ENTRY blocked {symbol} — position already open")
+    if key in _wh_state and _wh_state[key].get("position"):
+        _log(f"ENTRY blocked {key} — position already open")
         return {"ok": False, "msg": "position already open"}
 
-    direction = "LONG" if action in ("buy", "long") else "SHORT"
-    opt_type  = cfg.get("long_opt_type", "CE") if direction == "LONG" else cfg.get("short_opt_type", "PE")
+    # ── global limits (across all strategies) ──
+    glob = _global_cfg()
+    gmax = int(glob.get("global_max_trades", 0) or 0)
+    if gmax > 0 and sum(_trades_today.values()) >= gmax:
+        _log(f"ENTRY blocked {key} — global max trades/day ({gmax}) reached")
+        return {"ok": False, "msg": "global max trades/day reached"}
+    cap = float(glob.get("daily_amount_cap", 0) or 0)
+    if cap > 0:
+        _, _, total = _day_pnl()
+        if total <= -cap:
+            _log(f"ENTRY blocked {key} — global daily loss cap ₹{cap:.0f} hit (pnl={total:.0f})")
+            return {"ok": False, "msg": "daily loss cap hit"}
+
+    direction  = "LONG" if action in ("buy", "long") else "SHORT"
+    opt_type   = cfg.get("long_opt_type", "CE") if direction == "LONG" else cfg.get("short_opt_type", "PE")
     opt_action = (cfg.get("opt_action", "BUY") or "BUY").upper()
 
     spot = _index_spot(symbol)
     if not spot:
-        _log(f"ENTRY fail {symbol} — no spot price")
+        _log(f"ENTRY fail {key} — no spot price")
         return {"ok": False, "msg": "no spot price"}
 
     offset = int(cfg.get("strike_offset", 0))
     sec_id, trad_sym, lot_size = dhan_master.get_option_contract(symbol, spot, opt_type, offset)
     if not sec_id:
-        _log(f"ENTRY fail {symbol} — contract not found {opt_type} off={offset}")
+        _log(f"ENTRY fail {key} — contract not found {opt_type} off={offset}")
         return {"ok": False, "msg": "contract not found"}
 
     lot_size = lot_size or 65
     qty = int(cfg.get("qty", 1)) * lot_size
     mode = cfg.get("mode", "paper")
+    broker = _broker(cfg.get("broker", "dhan"))
 
-    # subscribe option to live feed for future ticks (Phase 2 trailing)
     try:
         import dhan_feed
         dhan_feed.add(("NSE_FNO", str(sec_id)))
@@ -295,7 +433,7 @@ def _do_entry(symbol, action, cfg, payload=None):
         pass
 
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
-                              trad_sym, mode, _broker(), log=_log, tag="TVWH")
+                              trad_sym, mode, broker, log=_log, tag="TVWH")
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
 
@@ -310,73 +448,88 @@ def _do_entry(symbol, action, cfg, payload=None):
         target = entry_px - tgt_pts if tgt_pts else None
 
     st = {
+        "strategy": strat, "symbol": symbol,
         "position": direction, "direction": direction,
         "opt_sec_id": str(sec_id), "opt_trad_sym": trad_sym, "opt_qty": qty,
         "opt_action": opt_action, "entry_premium": entry_px,
         "sl": sl, "target": target, "entry_spot": spot,
         "idx_sl": None, "idx_trail_dist": None,
-        "entry_time": now.strftime("%H:%M"),
+        "entry_time": now.strftime("%H:%M"), "mode": mode,
+        "broker": cfg.get("broker", "dhan"),
     }
-    # index-mode trailing: trail the underlying by ATR×mult (fallback 30 pts)
     if cfg.get("trail_mode") == "index":
         dist = _index_atr(symbol, mult=float(cfg.get("trail_value", 2) or 2)) or 30.0
         st["idx_trail_dist"] = dist
         st["idx_sl"] = spot - dist if direction == "LONG" else spot + dist
 
-    _wh_state[symbol] = st
-    _trades_today[symbol] = _trades_today.get(symbol, 0) + 1
-    _log(f"ENTRY {direction} {symbol} {opt_action} {qty} {trad_sym} @ {entry_px:.2f} "
+    _wh_state[key] = st
+    _trades_today[key] = _trades_today.get(key, 0) + 1
+    _log(f"ENTRY {strat} {direction} {symbol} {opt_action} {qty} {trad_sym} @ {entry_px:.2f} "
          f"(spot={spot:.2f} off={offset} SL={sl} TGT={target} mode={cfg.get('trail_mode')})")
-    return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": _wh_state[symbol]}
+    return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": st}
 
 
-def _do_exit(symbol, cfg, reason="TV_EXIT"):
+def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
+    global _day_realized
     import smart_order
-    st = _wh_state.get(symbol)
+    key = _key(strat, symbol)
+    st = _wh_state.get(key)
     if not st or not st.get("position"):
-        _log(f"EXIT skip {symbol} — no open position")
+        _log(f"EXIT skip {key} — no open position")
         return {"ok": True, "msg": "no open position"}
 
     close_side = "SELL" if st["opt_action"] == "BUY" else "BUY"
     mode = cfg.get("mode", "paper")
+    broker = _broker(cfg.get("broker", st.get("broker", "dhan")))
     res = smart_order.execute(close_side, symbol, st["opt_sec_id"], "NSE_FNO",
-                              st["opt_qty"], st["opt_trad_sym"], mode, _broker(),
+                              st["opt_qty"], st["opt_trad_sym"], mode, broker,
                               log=_log, tag="TVWH")
     if not res.get("ok"):
-        # leave position open so a retry/monitor can close it
-        _log(f"EXIT fail {symbol} — {res.get('reason')}")
+        _log(f"EXIT fail {key} — {res.get('reason')}")
         return {"ok": False, "msg": f"exit failed: {res.get('reason')}"}
 
     exit_px = res["price"]
-    # human-readable reason (parse_pnl ignores this line; the smart_order line nets P&L)
-    _log(f"EXIT_INFO {st['opt_trad_sym']} reason={reason} @ {exit_px:.2f}")
-    _wh_state[symbol]["position"] = None
+    pnl = _leg_pnl(st, exit_px)
+    _day_realized += pnl
+    _log(f"EXIT_INFO {strat} {st['opt_trad_sym']} reason={reason} @ {exit_px:.2f} pnl={pnl:.0f}")
+    _wh_state[key]["position"] = None
     return {"ok": True, "msg": f"closed {st['opt_trad_sym']} @ {exit_px:.2f} ({reason})"}
 
 
 def monitor_tick():
     """Called every few seconds by the dashboard daemon. Trails SL, hits
-    target/SL, and force-squares-off open webhook positions at 3:15 PM.
-
-    trail_mode 'premium' → trail on the option premium (default).
-    trail_mode 'index'   → trail a stop on the underlying; exit option on breach.
-    """
+    target/SL, force-squares-off at 3:15 PM, and enforces the global ₹ loss cap.
+    Each (strategy, symbol) position uses its own strategy config."""
     with _lock:
         _maybe_reset_day()
-        cfg = _cfg()
         now = ist_now()
-        force_sq = (now.hour, now.minute) >= _hm(cfg.get("squareoff_at", "15:15"))
-        tv = float(cfg.get("trail_value", 0) or 0)
-        mode = cfg.get("trail_mode", "premium")
 
-        for symbol in list(_wh_state.keys()):
-            st = _wh_state[symbol]
+        # global daily loss cap → squareoff everything
+        glob = _global_cfg()
+        cap = float(glob.get("daily_amount_cap", 0) or 0)
+        cap_hit = False
+        if cap > 0 and any(v.get("position") for v in _wh_state.values()):
+            _, _, total = _day_pnl()
+            cap_hit = total <= -cap
+
+        for key in list(_wh_state.keys()):
+            st = _wh_state[key]
             if not st.get("position"):
                 continue
+            strat, symbol = key.split("|", 1)
+            cfg = _strat_cfg(strat)
 
-            if force_sq:
-                _do_exit(symbol, cfg, reason="SQUAREOFF_315")
+            if cap_hit:
+                _do_exit(strat, symbol, cfg, reason="GLOBAL_CAP")
                 continue
+
+            force_sq = (now.hour, now.minute) >= _hm(cfg.get("squareoff_at", "15:15"))
+            if force_sq:
+                _do_exit(strat, symbol, cfg, reason="SQUAREOFF_315")
+                continue
+
+            tv = float(cfg.get("trail_value", 0) or 0)
+            mode = cfg.get("trail_mode", "premium")
 
             if mode == "index":
                 spot = _index_spot(symbol)
@@ -388,13 +541,13 @@ def monitor_tick():
                     if st.get("idx_sl") is None or new > st["idx_sl"]:
                         st["idx_sl"] = new
                     if spot <= st["idx_sl"]:
-                        _do_exit(symbol, cfg, reason="IDX_TRAIL")
-                else:  # SHORT (bought PE / sold CE) — exit if underlying rises
+                        _do_exit(strat, symbol, cfg, reason="IDX_TRAIL")
+                else:
                     new = spot + dist
                     if st.get("idx_sl") is None or new < st["idx_sl"]:
                         st["idx_sl"] = new
                     if spot >= st["idx_sl"]:
-                        _do_exit(symbol, cfg, reason="IDX_TRAIL")
+                        _do_exit(strat, symbol, cfg, reason="IDX_TRAIL")
                 continue
 
             # premium mode — trail on the option premium itself
@@ -407,27 +560,38 @@ def monitor_tick():
                     if st.get("sl") is None or new > st["sl"]:
                         st["sl"] = new
                 if st.get("sl") is not None and prem <= st["sl"]:
-                    _do_exit(symbol, cfg, reason="TRAIL_SL")
+                    _do_exit(strat, symbol, cfg, reason="TRAIL_SL")
                 elif st.get("target") and prem >= st["target"]:
-                    _do_exit(symbol, cfg, reason="TARGET")
+                    _do_exit(strat, symbol, cfg, reason="TARGET")
             else:                              # short option: SL above, ratchet down
                 if tv:
                     new = prem + tv
                     if st.get("sl") is None or new < st["sl"]:
                         st["sl"] = new
                 if st.get("sl") is not None and prem >= st["sl"]:
-                    _do_exit(symbol, cfg, reason="TRAIL_SL")
+                    _do_exit(strat, symbol, cfg, reason="TRAIL_SL")
                 elif st.get("target") and prem <= st["target"]:
-                    _do_exit(symbol, cfg, reason="TARGET")
+                    _do_exit(strat, symbol, cfg, reason="TARGET")
 
 
 def status():
-    """Snapshot for the UI: open positions + recent events + counters."""
+    """Snapshot for the UI: per-strategy meta + open positions + counters + day P&L."""
     with _lock:
-        opens = {s: v for s, v in _wh_state.items() if v.get("position")}
+        whs = _all_webhooks()
+        opens = {k: v for k, v in _wh_state.items() if v.get("position")}
+        strategies = {
+            s: {"active": c.get("active"), "mode": c.get("mode"),
+                "instrument": c.get("instrument"), "broker": c.get("broker"),
+                "qty": c.get("qty")}
+            for s, c in whs.items() if s != "global"
+        }
         return {
-            "active": _cfg().get("active", True),
-            "mode": _cfg().get("mode", "paper"),
+            "strategies": strategies,
+            "global": {
+                "daily_amount_cap": whs["global"].get("daily_amount_cap"),
+                "global_max_trades": whs["global"].get("global_max_trades"),
+                "day_realized": round(_day_realized, 2),
+            },
             "positions": opens,
             "trades_today": dict(_trades_today),
             "events": [{"t": t, "msg": m} for t, m in list(_events)[-40:]],
