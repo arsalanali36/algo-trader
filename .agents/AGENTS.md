@@ -16,10 +16,13 @@ To make things easy for the user to memorize and reuse, ALWAYS use these specifi
 - `c_low` : Current candle Low price
 - `c_close` : Current candle Close price
 - `c_volume` : Current candle Volume
+- `c_atr` : Current candle ATR (Average True Range)
 
 **Trade Data:**
 - `ep` or `entry_price` : The price at which the current position was entered.
 - `pos` : Current position status (`1` for Long, `-1` for Short, `0` for Flat)
+- `entry_candle_high` : The High price of the candle that triggered the entry.
+- `entry_candle_low` : The Low price of the candle that triggered the entry.
 
 **Standard Config Options:**
 - `max_trades_per_day` : Limit number of trades per day (0 = unlimited). You must implement this logic in the strategy loop.

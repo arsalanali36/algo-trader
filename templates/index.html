@@ -778,6 +778,18 @@ function _ordTags(t){
   return _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
        +(t.strategy?_ordTag(t.strategy,'name'):'')+_ordTag(t.broker,'name');
 }
+// "HH:MM" entry→exit ka duration ("23m" / "1h 12m"). Cross-din nahi (intraday).
+function _durMin(a,b){
+  if(!a||!b||String(a).indexOf(':')<0||String(b).indexOf(':')<0) return null;
+  const [ah,am]=a.split(':').map(Number), [bh,bm]=b.split(':').map(Number);
+  return (bh*60+bm)-(ah*60+am);
+}
+function _durFmt(a,b){
+  const d=_durMin(a,b);
+  if(d==null) return '—';
+  let m=Math.abs(d); const h=Math.floor(m/60); m=m%60;
+  return (d<0?'-':'')+(h?(h+'h '+m+'m'):(m+'m'));
+}
 async function ordersRender(){
   const date=(document.getElementById('ord-date')||{}).value;
   if(!date) return;
@@ -837,8 +849,8 @@ async function ordersRender(){
   let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(det.length){
     ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry','Exit','Qty','Gross','Tax','Net','Chart']
-        .map(h=>{const r=['Gross','Tax','Net'].includes(h),c=h==='Chart';
+      + ['Date','Symbol','Tags','Side','Entry','Exit','In','Out','Dur','Qty','Gross','Tax','Net','Chart']
+        .map(h=>{const r=['Entry','Exit','Gross','Tax','Net'].includes(h),c=['In','Out','Dur','Chart'].includes(h);
           return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
     det.slice().reverse().forEach(t=>{
@@ -849,8 +861,11 @@ async function ordersRender(){
         + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
         + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
         + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;color:#8b949e;white-space:nowrap">₹'+Number(t.entry_price||0).toFixed(2)+' · '+t.entry_time+'</td>'
-        + '<td style="padding:7px 6px;color:#8b949e;white-space:nowrap">₹'+Number(t.exit_price||0).toFixed(2)+' · '+t.exit_time+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap">₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap">₹'+Number(t.exit_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#6e7681">'+(t.entry_time||'—')+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#6e7681">'+(t.exit_time||'—')+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
         + '<td style="padding:7px 6px">'+t.qty+'</td>'
         + '<td style="padding:7px 6px;text-align:right;color:'+gc+'">₹'+Math.round(g)+'</td>'
         + '<td style="padding:7px 6px;text-align:right;color:#f85149">−₹'+tx.toFixed(2)+'</td>'
