@@ -315,6 +315,49 @@ def place_order(sym, side, qty, token, cid, sec_id, seg, trad_sym, log):
         return False
 
 
+MARKETFEED_LTP = "https://api.dhan.co/v2/marketfeed/ltp"
+
+def _opt_ltp(sec_id, token, cid):
+    """Option ka LIVE premium (Dhan marketfeed). Retry 3x (rate-limit). 0 = nahi mila.
+    NOTE: ye option premium hai — underlying (stock) price NAHI."""
+    if not sec_id:
+        return 0.0
+    for _i in range(3):
+        try:
+            r = requests.post(MARKETFEED_LTP, json={"NSE_FNO": [int(sec_id)]},
+                              headers=hdrs(token, cid), timeout=5)
+            if r.status_code == 200:
+                data = r.json().get("data", {}).get("NSE_FNO", {})
+                for v in (data.values() if isinstance(data, dict) else []):
+                    ltp = float(v.get("last_price") or v.get("ltp") or 0)
+                    if ltp:
+                        return ltp
+        except Exception:
+            pass
+        time.sleep(1.1)
+    return 0.0
+
+
+def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=None):
+    """order_store me ek leg record karo → dashboard ke 'Orders & P&L' tab me RSI
+    trades dikhein (range_trader jaisa). Best-effort — kabhi raise nahi karta.
+    price=0 (premium na mila) ho to record NAHI karta — warna jhooth P&L banega."""
+    if not price:
+        if log:
+            log.warning(f"  [REC SKIP] {side} {trad_sym} — premium 0, order_store me record nahi")
+        return
+    try:
+        if str(BASE_DIR) not in sys.path:
+            sys.path.insert(0, str(BASE_DIR))
+        import order_store
+        order_store.record(side, qty, price, source='strategy', strategy=strategy_id,
+            mode=mode, broker='dhan', symbol=(trad_sym.split('-')[0] if trad_sym else ''),
+            instrument='options', trad_sym=trad_sym, sec_id=str(sec_id), segment='NSE_FNO',
+            correlation_id=f'RSI_{trad_sym}_{int(time.time())}', status=status)
+    except Exception:
+        pass
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  MAIN LOOP
 #
@@ -392,11 +435,14 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         o         = active_opts[sym]
                         close_side = "SELL" if o["side"] == "BUY" else "BUY"
                         exit_qty  = o.get("qty", qty)
+                        exit_prem = _opt_ltp(o["sec_id"], token, cid)
                         if not paper_mode:
                             place_order(sym, close_side, exit_qty, token, cid,
                                         o["sec_id"], "NSE_FNO", o["trad_sym"], log)
+                            _record(close_side, exit_qty, exit_prem, "live", o["trad_sym"], o["sec_id"], strategy_id, "filled", log)
                         else:
-                            log.info(f"  [PAPER] 3:15 EXIT {o['trad_sym']}  qty={exit_qty}  pos={pos}")
+                            log.info(f"  [PAPER] 3:15 EXIT {o['trad_sym']}  qty={exit_qty}  @ {exit_prem:.2f}  pos={pos}")
+                            _record(close_side, exit_qty, exit_prem, "paper", o["trad_sym"], o["sec_id"], strategy_id, "paper", log)
                         del active_opts[sym]
                     else:
                         log.info(f"  [PAPER] 3:15 EXIT {sym}  pos={pos}")
@@ -438,11 +484,14 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         o          = active_opts[sym]
                         close_side = "SELL" if o["side"] == "BUY" else "BUY"
                         exit_qty   = o.get("qty", qty)
+                        exit_prem  = _opt_ltp(o["sec_id"], token, cid)
                         if not paper_mode:
                             place_order(sym, close_side, exit_qty, token, cid,
                                         o["sec_id"], "NSE_FNO", o["trad_sym"], log)
+                            _record(close_side, exit_qty, exit_prem, "live", o["trad_sym"], o["sec_id"], strategy_id, "filled", log)
                         else:
-                            log.info(f"  [PAPER] EXIT {o['trad_sym']}  qty={exit_qty}  RSI={rsi_val}")
+                            log.info(f"  [PAPER] EXIT {o['trad_sym']}  qty={exit_qty}  @ {exit_prem:.2f}  RSI={rsi_val}")
+                            _record(close_side, exit_qty, exit_prem, "paper", o["trad_sym"], o["sec_id"], strategy_id, "paper", log)
                         del active_opts[sym]
                     else:
                         log.info(f"  [PAPER] EXIT {sym}  RSI={rsi_val}")
@@ -468,25 +517,32 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 sec_id, trad_sym, lot_size = result
                 # actual_qty = lots × lot_size (lot_size Dhan CSV se, kabhi hardcode nahi)
                 actual_qty = qty * (lot_size or 1)
+                # entry par ACTUAL option premium fetch karo (underlying close NAHI) —
+                # order_store/P&L isi se sahi banega
+                entry_prem = _opt_ltp(sec_id, token, cid)
 
                 if not paper_mode:
                     ok = place_order(sym, "BUY", actual_qty, token, cid,
                                      sec_id, "NSE_FNO", trad_sym, log)
                     if ok:
                         active_opts[sym]  = {"sec_id": sec_id, "trad_sym": trad_sym,
-                                              "side": "BUY", "qty": actual_qty}
+                                              "side": "BUY", "qty": actual_qty,
+                                              "entry_premium": entry_prem}
                         positions[sym]    = 1 if signal == "BUY" else -1
                         trades_today[sym] = t_count + 1
+                        _record("BUY", actual_qty, entry_prem, "live", trad_sym, sec_id, strategy_id, "filled", log)
                 else:
                     log.info(
                         f"  [PAPER] BUY {opt_type} {trad_sym}"
                         f"  qty={actual_qty} ({qty}L × {lot_size})"
-                        f"  @ ~{last_close:.1f}  RSI={rsi_val}"
+                        f"  @ {entry_prem:.2f} (premium)  underlying~{last_close:.1f}  RSI={rsi_val}"
                     )
                     active_opts[sym]  = {"sec_id": sec_id, "trad_sym": trad_sym,
-                                          "side": "BUY", "qty": actual_qty}
+                                          "side": "BUY", "qty": actual_qty,
+                                          "entry_premium": entry_prem}
                     positions[sym]    = 1 if signal == "BUY" else -1
                     trades_today[sym] = t_count + 1
+                    _record("BUY", actual_qty, entry_prem, "paper", trad_sym, sec_id, strategy_id, "paper", log)
 
         except KeyboardInterrupt:
             log.info("[RSI] Stopped by user (Ctrl+C)")

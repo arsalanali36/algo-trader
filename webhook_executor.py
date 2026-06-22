@@ -380,18 +380,31 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     key = _key(strat, symbol)
     now = ist_now()
 
-    # ── safety net (server-side) ──
+    # naye signal ki direction — reversal detect karne ke liye pehle chahiye
+    direction = "LONG" if action in ("buy", "long") else "SHORT"
+
+    # ── safety net (server-side) — entry cutoff ──
     if (now.hour, now.minute) >= _hm(cfg.get("no_entry_after", "15:15")):
         _log(f"ENTRY blocked {key} — after {cfg.get('no_entry_after')}")
         return {"ok": False, "msg": "no entry after cutoff"}
 
+    # ── REVERSAL vs duplicate (TV ka strategy.entry auto-reverse mirror karo) ──
+    # TV reverse karta hai par alert sirf naya ENTRY bhejta. Pehle hum "position
+    # already open" pe block kar dete the → Python purani pakde rehta, TV nayi pe.
+    # Ab: opposite direction = reversal (purani exit, nayi enter); same = ignore.
+    existing = _wh_state.get(key)
+    reversing = False
+    if existing and existing.get("position"):
+        if existing.get("direction") == direction:
+            _log(f"ENTRY skip {key} — already {direction} (pyramiding off)")
+            return {"ok": True, "msg": f"already {direction}, ignored"}
+        reversing = True   # opposite → checks pass hone ke baad reverse karenge
+
     if _trades_today.get(key, 0) >= int(cfg.get("max_trades_per_day", 2)):
+        # max hit → naya entry nahi. Reversal ho to bhi purani ko flat nahi karte
+        # (half-state se bachne ko) — purani as-is, monitor 3:15 pe squareoff karega.
         _log(f"ENTRY blocked {key} — max trades/day reached")
         return {"ok": False, "msg": "max trades/day reached"}
-
-    if key in _wh_state and _wh_state[key].get("position"):
-        _log(f"ENTRY blocked {key} — position already open")
-        return {"ok": False, "msg": "position already open"}
 
     # ── global limits (across all strategies) ──
     glob = _global_cfg()
@@ -406,7 +419,15 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
             _log(f"ENTRY blocked {key} — global daily loss cap ₹{cap:.0f} hit (pnl={total:.0f})")
             return {"ok": False, "msg": "daily loss cap hit"}
 
-    direction  = "LONG" if action in ("buy", "long") else "SHORT"
+    # ── reversal: ab jab naya entry allowed hai, pehle purani leg close karo ──
+    # (atomic-ish: purani exit fail hui to nayi entry NAHI lete — half-state se bacho)
+    if reversing:
+        _log(f"REVERSAL {key} — closing {existing.get('direction')} before opening {direction}")
+        ex = _do_exit(strat, symbol, cfg, reason="REVERSAL")
+        if not ex.get("ok"):
+            _log(f"REVERSAL abort {key} — purani exit fail, nayi entry nahi li")
+            return {"ok": False, "msg": f"reversal exit failed: {ex.get('msg')}"}
+
     opt_type   = cfg.get("long_opt_type", "CE") if direction == "LONG" else cfg.get("short_opt_type", "PE")
     opt_action = (cfg.get("opt_action", "BUY") or "BUY").upper()
 

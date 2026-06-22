@@ -958,22 +958,32 @@ def api_close_position():
         # Security ID from scrip master
         sec_id = _get_sec_ids([t_sym]).get(t_sym, '')
 
-        # Get current LTP for log
+        # Get current LTP — retry 3x (rapid closes Dhan marketfeed ~1req/sec ko 429 dete).
         option_ltp = 0.0
         if sec_id:
-            try:
-                qh = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-                qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
-                               json={"NSE_FNO": [int(sec_id)]}, headers=qh, timeout=4)
-                if qr.status_code == 200:
-                    qdata = qr.json().get("data", {}).get("NSE_FNO", {})
-                    for v in (qdata.values() if isinstance(qdata, dict) else []):
-                        ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
-                        if ltp_v:
-                            option_ltp = ltp_v
-                            break
-            except Exception:
-                pass
+            for _attempt in range(3):
+                try:
+                    qh = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+                    qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                                   json={"NSE_FNO": [int(sec_id)]}, headers=qh, timeout=5)
+                    if qr.status_code == 200:
+                        qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                        for v in (qdata.values() if isinstance(qdata, dict) else []):
+                            ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                            if ltp_v:
+                                option_ltp = ltp_v
+                                break
+                    if option_ltp:
+                        break
+                except Exception:
+                    pass
+                _time.sleep(1.2)
+
+        # CRITICAL: LTP na mile to close ko 0.00 par record MAT karo — wo P&L
+        # corrupt karta (SELL @71 → exit @0 = jhootha bada profit). Refuse + bolo.
+        # Phantom/expired position clear karni ho to 🗑 book-close use karo.
+        if not option_ltp:
+            return jsonify({'ok': False, 'msg': f'{t_sym} ka LTP nahi mila (Dhan rate-limit/expired) — close record NAHI kiya. Dobara try karo, ya phantom ho to 🗑 book-close use karo.'})
 
         ts = int(_time.time())
 

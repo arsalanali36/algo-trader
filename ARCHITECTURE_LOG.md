@@ -194,3 +194,23 @@
 **Files:** `templates/index.html`, `trader_dashboard.py`, `order_store.py`
 **Kyun:** User feedback — quick order galat leg le raha tha; do tab same kaam; trade date + open-position entry visibility chahiye thi
 **Pending:** #5 webhook reversal bug (TV reverse karta, Python `_do_entry` "position already open" pe block karke purani pakde rehta) — baad me. Validated: Jinja render + node --check + py_compile sab OK. VPS deploy pending.
+
+## 2026-06-22 — Close zero-price fix, two-pass netting, phantom-position handling, RSI→order_store
+**Status:** DONE
+**Kya:**
+- **Zero-price close fix** — `api_close_position` me `option_ltp` default 0.0; LTP fetch fail/429 pe close 0.00 record ho raha tha (SELL@71→exit@0 = jhootha profit). Ab 3x retry; na mile to record NAHI karta, error deta. Same `_dhan_live_fate()` verify manual-order + close dono me — Dhan 200=accepted (filled nahi); REJECTED ko phantom position nahi banata.
+- **Two-pass netting** (`order_store.trades_for`) — Pass1: exact (source,strategy,trad_sym) round-trips; Pass2: bache opposite legs ko (mode,trad_sym) FIFO net (manual BUY se webhook/strategy SELL bhi close hoti). Rejected/cancelled/failed legs netting se excluded.
+- **Phantom clear** — `/api/orders/book-close` + 🗑 button: stuck/phantom position ko ledger se hatao (offsetting leg @ entry price, pnl0, no real order).
+- **RSI → order_store** — `_TRADERS/rsi_trader.py` ab entry + RSI-exit + 3:15-exit pe `order_store.record()` karta hai (source='strategy'), **actual option premium fetch karke** (`_opt_ltp`, pehle sirf underlying close logs hota tha). Isse RSI trades 'Orders & P&L' tab me dikhenge (range_trader/webhook ki tarah). ema/universe inactive — chhoda.
+**Layer:** ui / data / strategy-engine
+**Files:** `trader_dashboard.py`, `order_store.py`, `templates/index.html`, `_TRADERS/rsi_trader.py`
+**Kyun:** User-reported: close zero price, manual close net nahi hota, live phantom positions, strategy entries P&L tab me nahi
+**Verify:** RSI order_store recording next market session (9:10) pe live confirm hoga — abhi market band.
+
+## 2026-06-22 — Webhook reversal fix (#5) + zero-leg data cleanup
+**Status:** DONE
+**Kya:**
+- **Webhook reversal** (`webhook_executor._do_entry`) — pehle "position already open" pe naya ENTRY block hota tha → TV reverse karta, Python purani pakde rehta. Ab: opposite-direction ENTRY = REVERSAL (purani exit → nayi enter, atomic: exit fail to entry nahi), same-direction = ignore (pyramiding off). Pine unchanged (ek alert, Python reconcile). Unit-tested: buy→LONG, sell→reverse→SHORT, sell→ignored, 2 trades.
+- **Zero-leg cleanup** — aaj ke 2 corrupt @0 close legs (24150-CE webhook, 24000-CE manual) ko Dhan intraday se asli exit premium (₹62.80 / ₹163.95) set kiya (one-off `_fix_zero_legs.py`, DB backup leke, script delete). Fake ~₹15,343 profit hata.
+**Files:** `webhook_executor.py`
+**Verify:** reversal unit-test pass + VPS deploy OK. Live reversal kal market me confirm hoga.

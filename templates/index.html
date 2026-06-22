@@ -2138,6 +2138,24 @@ async function closePosition(tSym, entrySide, qty, mode, source, strategy, btnId
   }
 }
 
+// Book-close: position ko ledger se hatao — koi real Dhan order nahi jaata.
+// Rejected/phantom live positions ke liye (jo Dhan pe asal me the hi nahi).
+async function bookClose(tSym, entrySide, qty, entryPrice, mode, source, strategy) {
+  if(!confirm(`🗑 ${tSym}\nBook se hata dein? (pnl 0)\n\n⚠️ Koi REAL order nahi jaayega — sirf ledger saaf hoga.\nSirf un positions ke liye jo Dhan pe asal me nahi hain (rejected/phantom).`)) return;
+  try {
+    const r = await fetch('/api/orders/book-close', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({t_sym:tSym, entry_side:entrySide, qty:qty, entry_price:entryPrice, mode:mode||'paper', source:source||'', strategy:strategy||''})
+    });
+    const j = await r.json();
+    if(j.ok){
+      flash('✅ ' + j.msg, '#8b949e');
+      const el=document.getElementById('ord-open'); if(el) el.dataset.fp='';
+      setTimeout(()=>{ if(activeTab==='orders') ordersRender(); }, 500);
+    } else flash('❌ ' + j.msg, '#f85149');
+  } catch(e){ flash('❌ Network error', '#f85149'); }
+}
+
 // ── PINE VERSION MANAGER ──────────────────────────────────────
 async function pineLoadLatest() {
   const r = await fetch('/api/pine/latest');
