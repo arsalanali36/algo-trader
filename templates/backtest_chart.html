@@ -80,6 +80,8 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 /* modal */
 .modal-overlay{position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:50}
 .modal-overlay.open{display:flex}
+#edit-modal, #optimize-modal { background: none; pointer-events: none; }
+#edit-modal .modal-box, #optimize-modal .modal-box { pointer-events: auto; box-shadow: 0 4px 30px rgba(0,0,0,0.8); border: 1px solid #444c56; }
 .modal-box{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;width:460px;max-height:85vh;overflow-y:auto}
 .modal-box h2{font-size:14px;margin-bottom:14px}
 .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -173,20 +175,22 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <!-- Edit & Re-run popup — stays on this page, never navigates away -->
 <div class="modal-overlay" id="edit-modal">
-  <div class="modal-box" style="max-width: 900px; width: 95%;">
-    <h2>✏️ Edit &amp; Re-run — <span id="modal-strat-name"></span></h2>
+  <div class="modal-box" id="edit-modal-box" style="max-width: 540px; width: 95%;">
+    <h2 id="edit-modal-drag-handle" style="cursor: grab; margin-top: -5px; padding-top: 5px;">✏️ Edit &amp; Re-run — <span id="modal-strat-name"></span></h2>
     <div id="modal-strat-desc" style="display:none; margin-bottom:12px; background:#1c2128; border:1px solid #30363d; border-radius:6px; padding:10px 14px; font-size:12px; color:#c9d1d9; line-height:1.5"></div>
     
-    <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-      <!-- LEFT COLUMN -->
-      <div style="flex: 1.5; min-width: 300px; display: flex; flex-direction: column;">
-        <div id="modal-fields" style="flex: 1;"></div>
-      </div>
-      
-      <!-- RIGHT COLUMN -->
-      <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column;">
-        <div class="modal-section" style="margin-top: 0; flex: 1;">
-          <div class="ttl">📊 BACKTEST DATE RANGE</div>
+    <div style="display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #30363d; padding-bottom: 10px;">
+      <button type="button" id="edit-tab-btn-params" class="btn btn-blue" style="flex:1" onclick="switchEditTab('params')">⚙️ Parameters</button>
+      <button type="button" id="edit-tab-btn-bt" class="btn btn-gray" style="flex:1" onclick="switchEditTab('bt')">📊 Backtest Settings</button>
+    </div>
+
+    <div id="edit-tab-params" style="display: flex; flex-direction: column;">
+      <div id="modal-fields" style="flex: 1;"></div>
+    </div>
+    
+    <div id="edit-tab-bt" style="display: none; flex-direction: column;">
+      <div class="modal-section" style="margin-top: 0; flex: 1;">
+        <div class="ttl">📊 BACKTEST DATE RANGE</div>
           <div class="field-grid">
             <div class="field-row"><label>From</label><input type="date" id="modal-from"></div>
             <div class="field-row"><label>To</label><input type="date" id="modal-to"></div>
@@ -202,7 +206,6 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
               <span id="modal-symbols-summary" style="font-size:11px;color:#8b949e;margin-left:8px"></span>
             </div>
           </div>
-        </div>
       </div>
     </div>
 
@@ -217,8 +220,8 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <!-- Optimizer Modal -->
 <div class="modal-overlay" id="optimize-modal">
-  <div class="modal-box" style="max-width:1100px; width:95%">
-    <h2>🚀 Optimize Strategy — <span id="opt-strat-name"></span></h2>
+  <div class="modal-box" id="opt-modal-box" style="max-width:540px; width:95%">
+    <h2 id="opt-modal-drag-handle" style="cursor: grab; margin-top: -5px; padding-top: 5px;">🚀 Optimize Strategy — <span id="opt-strat-name"></span></h2>
     <div id="opt-strat-desc" style="display:none; margin-bottom:12px; background:#1c2128; border:1px solid #30363d; border-radius:6px; padding:10px 14px; font-size:12px; color:#c9d1d9; line-height:1.5"></div>
     <div id="opt-input-view">
       <div class="modal-msg" style="color:#8b949e; margin-bottom:15px; display:block">
@@ -226,24 +229,25 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
         Example Timeframes: <code>1m, 3m, 5m</code> | Example Windows: <code>10, 20, 30</code>
       </div>
       
-      <div style="display: flex; flex-wrap: wrap; gap: 20px;">
-        <!-- LEFT COLUMN -->
-        <div style="flex: 1.5; min-width: 300px; display: flex; flex-direction: column;">
-          <div id="opt-fields" style="flex: 1;"></div>
-        </div>
-        
-        <!-- RIGHT COLUMN -->
-        <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column;">
-          <div class="modal-section" style="margin-top: 0; flex: 1;">
-            <div class="ttl">📊 DATE RANGE &amp; SYMBOLS</div>
-            <div class="field-grid">
-              <div class="field-row"><label>From</label><input type="date" id="opt-from"></div>
-              <div class="field-row"><label>To</label><input type="date" id="opt-to"></div>
-            </div>
-            <div class="field-row" style="margin-top: 15px;">
-              <label>Symbols (comma separated)</label>
-              <input type="text" id="opt-symbols" value="RELIANCE" style="margin-top: 5px;">
-            </div>
+      <div style="display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid #30363d; padding-bottom: 10px;">
+        <button type="button" id="opt-tab-btn-params" class="btn btn-blue" style="flex:1" onclick="switchOptTab('params')">⚙️ Parameters</button>
+        <button type="button" id="opt-tab-btn-bt" class="btn btn-gray" style="flex:1" onclick="switchOptTab('bt')">📊 Backtest Settings</button>
+      </div>
+
+      <div id="opt-tab-params" style="display: flex; flex-direction: column;">
+        <div id="opt-fields" style="flex: 1;"></div>
+      </div>
+      
+      <div id="opt-tab-bt" style="display: none; flex-direction: column;">
+        <div class="modal-section" style="margin-top: 0; flex: 1;">
+          <div class="ttl">📊 BACKTEST DATE RANGE & SYMBOLS</div>
+          <div class="field-grid">
+            <div class="field-row"><label>From</label><input type="date" id="opt-from"></div>
+            <div class="field-row"><label>To</label><input type="date" id="opt-to"></div>
+          </div>
+          <div class="field-row" style="margin-top: 15px;">
+            <label>Symbols (comma separated)</label>
+            <input type="text" id="opt-symbols" value="RELIANCE" style="margin-top: 5px;">
           </div>
         </div>
       </div>
@@ -640,12 +644,75 @@ function undoDelete(id) {
 }
 
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') {
+    closeEditModal();
+    if(typeof closeOptimizeModal === 'function') closeOptimizeModal();
+    if(typeof closeSymbolPicker === 'function') closeSymbolPicker();
+    if(typeof _closeSavedResults === 'function') _closeSavedResults();
+  }
   if (e.ctrlKey && e.key.toLowerCase() === 'z') {
     if (_lastDeletedId && _pendingDeletes[_lastDeletedId]) {
       undoDelete(_lastDeletedId);
     }
   }
 });
+
+function makeDraggable(modalId, handleId) {
+  const modalBox = document.getElementById(modalId);
+  const handle = document.getElementById(handleId);
+  if (!modalBox || !handle) return;
+  
+  let isDragging = false, startX, startY, initialX, initialY;
+  
+  handle.addEventListener('mousedown', e => {
+    isDragging = true;
+    startX = e.clientX;
+    startY = e.clientY;
+    const rect = modalBox.getBoundingClientRect();
+    if (modalBox.style.position !== 'absolute') {
+      modalBox.style.position = 'absolute';
+      modalBox.style.left = rect.left + 'px';
+      modalBox.style.top = rect.top + 'px';
+      modalBox.style.transform = 'none';
+      modalBox.style.margin = '0';
+    }
+    initialX = parseFloat(modalBox.style.left) || rect.left;
+    initialY = parseFloat(modalBox.style.top) || rect.top;
+    handle.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+  
+  document.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    const dx = e.clientX - startX;
+    const dy = e.clientY - startY;
+    modalBox.style.left = (initialX + dx) + 'px';
+    modalBox.style.top = (initialY + dy) + 'px';
+  });
+  
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+    handle.style.cursor = 'grab';
+  });
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  makeDraggable('edit-modal-box', 'edit-modal-drag-handle');
+  makeDraggable('opt-modal-box', 'opt-modal-drag-handle');
+});
+
+function switchEditTab(tab) {
+  document.getElementById('edit-tab-params').style.display = tab === 'params' ? 'flex' : 'none';
+  document.getElementById('edit-tab-bt').style.display = tab === 'bt' ? 'flex' : 'none';
+  document.getElementById('edit-tab-btn-params').className = tab === 'params' ? 'btn btn-blue' : 'btn btn-gray';
+  document.getElementById('edit-tab-btn-bt').className = tab === 'bt' ? 'btn btn-blue' : 'btn btn-gray';
+}
+function switchOptTab(tab) {
+  document.getElementById('opt-tab-params').style.display = tab === 'params' ? 'flex' : 'none';
+  document.getElementById('opt-tab-bt').style.display = tab === 'bt' ? 'flex' : 'none';
+  document.getElementById('opt-tab-btn-params').className = tab === 'params' ? 'btn btn-blue' : 'btn btn-gray';
+  document.getElementById('opt-tab-btn-bt').className = tab === 'bt' ? 'btn btn-blue' : 'btn btn-gray';
+}
 
 // Loads a saved entry's strategy/cfg/dates back into the Edit & Re-run modal
 // (pre-filled, including the multi-symbol checkbox if it was a combined
@@ -681,7 +748,7 @@ function symbolPickable(type){ return ['vwap','rsi','ema','bb'].includes(type); 
 // name is already shown in the dropdown to its left.
 const STRAT_DISPLAY_NAMES = { ARS_CHAIN: 'Range Chain', rsi: 'RSI', ema: 'EMA Crossover', vwap: 'VWAP-EMA Failure' };
 const STRAT_DESCRIPTIONS = {
-  bb: "<b style='color:#3fb950'>Entry:</b> Price touches or crosses the Lower/Upper Bollinger Band.<br><b style='color:#f85149'>Exit:</b> Price reverts back to the Middle Band (Mean Reversion).",
+  bb: "<b style='color:#3fb950'>Custom Entry:</b> Type your own formula! E.g. <code>entry_long = c_close > c_upper</code><br><b style='color:#f85149'>Custom Exit & SL:</b> E.g. <code>exit_long = c_close < c_sma</code> | Add <code>sl_pct = 1</code> for 1% stop loss.<br><b style='color:#58a6ff'>Variables:</b> <code>c_close</code>, <code>c_high</code>, <code>c_low</code>, <code>c_sma</code> (Middle Band), <code>c_upper</code>, <code>c_lower</code>, <code>entry_price</code>, <code>sl_pct</code>, <code>tp_pct</code>",
   ema: "<b style='color:#3fb950'>Entry:</b> Fast EMA crosses above/below Slow EMA.<br><b style='color:#f85149'>Exit:</b> Opposite EMA crossover occurs.",
   rsi: "<b style='color:#3fb950'>Entry:</b> RSI drops below Oversold and crosses back up.<br><b style='color:#f85149'>Exit:</b> RSI goes above Overbought extreme.",
   ARS_CHAIN: "<b style='color:#3fb950'>Entry:</b> Price breakout or rejection at dynamically calculated zones.<br><b style='color:#f85149'>Exit:</b> Zone crossover, Trailing ATR, or Fibonacci levels.",
@@ -1735,11 +1802,26 @@ function openEditModal(preserveSymbols) {
       }
   }
 
-  let text = '';
+  const generalKeys = ['active', 'allow_short', 'instrument', 'qty', 'max_trades_per_day'];
+  const entryKeys = ['entry_long', 'entry_short', 'bb_std', 'bb_window'];
+  const exitKeys = ['exit_long', 'exit_short', 'sl_pct', 'tp_pct'];
+
+  let generalText = '// --- General ---\ntimeframe = ' + (cfg.timeframe || '5m') + '\n';
+  if (cfg.max_trades_per_day === undefined) generalText += 'max_trades_per_day = 0\n';
+  let entryText = '\n// --- Entry ---\n';
+  let exitText = '\n// --- Exit ---\n';
+  let otherText = '\n// --- Other ---\n';
+
   for(let key in cfg) {
       if(key === 'symbol' || key === 'symbols' || key === 'timeframe') continue;
-      text += `${key} = ${cfg[key]}\n`;
+      if (generalKeys.includes(key)) generalText += `${key} = ${cfg[key]}\n`;
+      else if (entryKeys.includes(key)) entryText += `${key} = ${cfg[key]}\n`;
+      else if (exitKeys.includes(key)) exitText += `${key} = ${cfg[key]}\n`;
+      else otherText += `${key} = ${cfg[key]}\n`;
   }
+  
+  let text = generalText + entryText + exitText;
+  if (otherText.trim() !== '// --- Other ---') text += otherText;
   
   document.getElementById('modal-fields').innerHTML = `
      <textarea id="modal-cfg-editor" spellcheck="false" style="width:100%; height:250px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:6px; font-family:monospace; padding:10px; font-size:12px; resize:vertical; line-height:1.4">${text}</textarea>
@@ -1761,6 +1843,9 @@ function openEditModal(preserveSymbols) {
       : (type === 'vwap' ? ['TCS'] : ['NIFTY']));
   }
   document.getElementById('modal-symbols-summary').textContent = _selectedSymbols.join(', ');
+  document.getElementById('edit-modal-box').style.position = '';
+  document.getElementById('edit-modal-box').style.transform = '';
+  switchEditTab('params');
   document.getElementById('edit-modal').classList.add('open');
   _attachEditorShortcuts('modal-cfg-editor');
 }
@@ -2025,7 +2110,8 @@ async function modalRun(saveFirst) {
     renderTradeTable();
     const tableActive = document.getElementById('sub-tab-table').classList.contains('active');
     setResultTab(tableActive ? 'table' : 'chart');
-    closeEditModal();
+    msg.style.color = '#3fb950';
+    msg.textContent = '✅ Success! Chart updated.';
   } catch (e) {
     msg.style.color = '#f85149';
     msg.textContent = '⚠ ' + e.message;
@@ -2056,11 +2142,26 @@ function openOptimizeModal() {
   document.getElementById('opt-to').value = D.date_to || '';
   
   const cfg = D.cfg || {};
-  let text = '';
+  const generalKeys = ['active', 'allow_short', 'instrument', 'qty', 'max_trades_per_day'];
+  const entryKeys = ['entry_long', 'entry_short', 'bb_std', 'bb_window'];
+  const exitKeys = ['exit_long', 'exit_short', 'sl_pct', 'tp_pct'];
+
+  let generalText = '// --- General ---\ntimeframe = ' + (cfg.timeframe || '5m') + '\n';
+  if (cfg.max_trades_per_day === undefined) generalText += 'max_trades_per_day = 0\n';
+  let entryText = '\n// --- Entry ---\n';
+  let exitText = '\n// --- Exit ---\n';
+  let otherText = '\n// --- Other ---\n';
+
   for(let key in cfg) {
-      if(key === 'symbol' || key === 'symbols') continue;
-      text += `${key} = ${cfg[key]}\n`;
+      if(key === 'symbol' || key === 'symbols' || key === 'timeframe') continue;
+      if (generalKeys.includes(key)) generalText += `${key} = ${cfg[key]}\n`;
+      else if (entryKeys.includes(key)) entryText += `${key} = ${cfg[key]}\n`;
+      else if (exitKeys.includes(key)) exitText += `${key} = ${cfg[key]}\n`;
+      else otherText += `${key} = ${cfg[key]}\n`;
   }
+  
+  let text = generalText + entryText + exitText;
+  if (otherText.trim() !== '// --- Other ---') text += otherText;
   
   const grid = document.getElementById('opt-fields');
   grid.innerHTML = `
@@ -2077,6 +2178,9 @@ function openOptimizeModal() {
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'none';
   document.getElementById('opt-history-view').style.display = 'none';
+  document.getElementById('opt-modal-box').style.position = '';
+  document.getElementById('opt-modal-box').style.transform = '';
+  switchOptTab('params');
   document.getElementById('optimize-modal').classList.add('open');
   _attachEditorShortcuts('opt-cfg-editor');
 }

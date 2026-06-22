@@ -717,6 +717,21 @@ def _run_bb(date_from, date_to, cfg):
     allow_short = cfg.get("allow_short", False)
     if isinstance(allow_short, str): allow_short = allow_short.lower() == "true"
     
+    sl_pct = float(cfg.get("sl_pct", 0.0))
+    tp_pct = float(cfg.get("tp_pct", 0.0))
+    
+    # Custom formula strings
+    entry_long_str = str(cfg.get("entry_long", "c_close < c_lower"))
+    entry_short_str = str(cfg.get("entry_short", "allow_short and c_close > c_upper"))
+    exit_long_str = str(cfg.get("exit_long", "c_close > c_sma"))
+    exit_short_str = str(cfg.get("exit_short", "c_close < c_sma"))
+    
+    # Compile for speed
+    el_code = compile(entry_long_str, "<string>", "eval")
+    es_code = compile(entry_short_str, "<string>", "eval")
+    xl_code = compile(exit_long_str, "<string>", "eval")
+    xs_code = compile(exit_short_str, "<string>", "eval")
+    
     # Vectorized computations
     close_s = df["close"].astype(float)
     df["sma"] = close_s.rolling(window=window).mean()
@@ -726,6 +741,11 @@ def _run_bb(date_from, date_to, cfg):
     
     trades, pos, cur = [], 0, None
     n = len(df)
+    
+    max_trades = int(cfg.get("max_trades_per_day", 0))
+    trades_today = 0
+    last_trade_date = None
+    
     for i in range(window + 2, n):
         row = df.iloc[i]
         c_close = float(row["close"])
@@ -733,28 +753,65 @@ def _run_bb(date_from, date_to, cfg):
         c_upper = float(row["upper"])
         c_lower = float(row["lower"])
         
+        c_high = float(row["high"])
+        c_low = float(row["low"])
+        
+        env = {
+            "c_close": c_close,
+            "c_high": c_high,
+            "c_low": c_low,
+            "c_sma": c_sma,
+            "c_upper": c_upper,
+            "c_lower": c_lower,
+            "allow_short": allow_short,
+            "entry_price": cur["entry_price"] if cur else None
+        }
+        
+        current_date = row["time"].date()
+        if current_date != last_trade_date:
+            trades_today = 0
+            last_trade_date = current_date
+            
         sig = None
         if pos == 0:
-            if c_close < c_lower:
-                sig = "BUY"
-            elif allow_short and c_close > c_upper:
-                sig = "SELL"
+            if max_trades == 0 or trades_today < max_trades:
+                if eval(el_code, {}, env):
+                    sig = "BUY"
+                elif eval(es_code, {}, env):
+                    sig = "SELL"
         elif pos == 1:
-            if c_close > c_sma:
+            ep = cur["entry_price"]
+            if sl_pct > 0 and c_close <= ep * (1 - sl_pct/100):
                 sig = "EXIT"
+                exit_reason = "SL Hit"
+            elif tp_pct > 0 and c_close >= ep * (1 + tp_pct/100):
+                sig = "EXIT"
+                exit_reason = "TP Hit"
+            elif eval(xl_code, {}, env):
+                sig = "EXIT"
+                exit_reason = "Rule Exit"
         elif pos == -1:
-            if c_close < c_sma:
+            ep = cur["entry_price"]
+            if sl_pct > 0 and c_close >= ep * (1 + sl_pct/100):
                 sig = "EXIT"
+                exit_reason = "SL Hit"
+            elif tp_pct > 0 and c_close <= ep * (1 - tp_pct/100):
+                sig = "EXIT"
+                exit_reason = "TP Hit"
+            elif eval(xs_code, {}, env):
+                sig = "EXIT"
+                exit_reason = "Rule Exit"
         
         if sig == "EXIT" and pos != 0:
             ft, fp = _fill(df, i)
-            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "Mean_Reversion"
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, locals().get("exit_reason", "Rule Exit")
             trades.append(cur); cur, pos = None, 0
         elif sig in ("BUY", "SELL") and pos == 0:
             ft, fp = _fill(df, i)
             side = "Long" if sig == "BUY" else "Short"
             cur = {"entry_time": ft, "entry_price": fp, "side": side, "exit_time": None, "exit_price": None, "exit_reason": None}
             pos = 1 if sig == "BUY" else -1
+            trades_today += 1
             
     if cur:
         last = df.iloc[-1]
