@@ -173,30 +173,40 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 
 <!-- Edit & Re-run popup — stays on this page, never navigates away -->
 <div class="modal-overlay" id="edit-modal">
-  <div class="modal-box">
+  <div class="modal-box" style="max-width: 900px; width: 95%;">
     <h2>✏️ Edit &amp; Re-run — <span id="modal-strat-name"></span></h2>
-    <div class="field-grid" id="modal-fields"></div>
-
-    <div class="modal-section">
-      <div class="ttl">📊 BACKTEST DATE RANGE</div>
-      <div class="field-grid">
-        <div class="field-row"><label>From</label><input type="date" id="modal-from"></div>
-        <div class="field-row"><label>To</label><input type="date" id="modal-to"></div>
+    <div id="modal-strat-desc" style="display:none; margin-bottom:12px; background:#1c2128; border:1px solid #30363d; border-radius:6px; padding:10px 14px; font-size:12px; color:#c9d1d9; line-height:1.5"></div>
+    
+    <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+      <!-- LEFT COLUMN -->
+      <div style="flex: 1.5; min-width: 300px; display: flex; flex-direction: column;">
+        <div id="modal-fields" style="flex: 1;"></div>
       </div>
-      <div class="field-row">
-        <label>TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv)</label>
-        <input type="file" id="modal-tv-files" multiple accept=".log,.txt,.csv">
-      </div>
-      <div class="field-row" id="modal-multi-row" style="display:none">
-        <label>Symbol(s) — pick 1 for a single-symbol run, or several for a combined multi-symbol run</label>
-        <div style="margin-top:6px">
-          <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openSymbolPicker()">📋 Pick Symbols</button>
-          <span id="modal-symbols-summary" style="font-size:11px;color:#8b949e;margin-left:8px"></span>
+      
+      <!-- RIGHT COLUMN -->
+      <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column;">
+        <div class="modal-section" style="margin-top: 0; flex: 1;">
+          <div class="ttl">📊 BACKTEST DATE RANGE</div>
+          <div class="field-grid">
+            <div class="field-row"><label>From</label><input type="date" id="modal-from"></div>
+            <div class="field-row"><label>To</label><input type="date" id="modal-to"></div>
+          </div>
+          <div class="field-row" style="margin-top: 15px;">
+            <label>TradingView files (optional — Pine Logs .log/.txt AND/OR List of Trades .csv)</label>
+            <input type="file" id="modal-tv-files" multiple accept=".log,.txt,.csv" style="margin-top: 5px;">
+          </div>
+          <div class="field-row" id="modal-multi-row" style="display:none; margin-top: 15px;">
+            <label>Symbol(s) — pick 1 for a single-symbol run, or several for a combined multi-symbol run</label>
+            <div style="margin-top:6px">
+              <button type="button" class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openSymbolPicker()">📋 Pick Symbols</button>
+              <span id="modal-symbols-summary" style="font-size:11px;color:#8b949e;margin-left:8px"></span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="modal-actions">
+    <div class="modal-actions" style="margin-top: 15px;">
       <button class="btn btn-gray" onclick="closeEditModal()">Cancel</button>
       <button class="btn btn-blue" onclick="modalRun(false)">▶ Run</button>
       <button class="btn btn-green" onclick="modalRun(true)">💾 Save &amp; Run</button>
@@ -209,23 +219,32 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
 <div class="modal-overlay" id="optimize-modal">
   <div class="modal-box" style="max-width:1100px; width:95%">
     <h2>🚀 Optimize Strategy — <span id="opt-strat-name"></span></h2>
-    
+    <div id="opt-strat-desc" style="display:none; margin-bottom:12px; background:#1c2128; border:1px solid #30363d; border-radius:6px; padding:10px 14px; font-size:12px; color:#c9d1d9; line-height:1.5"></div>
     <div id="opt-input-view">
       <div class="modal-msg" style="color:#8b949e; margin-bottom:15px; display:block">
         Enter comma-separated values to test multiple parameters simultaneously.<br>
         Example Timeframes: <code>1m, 3m, 5m</code> | Example Windows: <code>10, 20, 30</code>
       </div>
-      <div class="field-grid" id="opt-fields"></div>
       
-      <div class="modal-section">
-        <div class="ttl">📊 DATE RANGE &amp; SYMBOLS</div>
-        <div class="field-grid">
-          <div class="field-row"><label>From</label><input type="date" id="opt-from"></div>
-          <div class="field-row"><label>To</label><input type="date" id="opt-to"></div>
+      <div style="display: flex; flex-wrap: wrap; gap: 20px;">
+        <!-- LEFT COLUMN -->
+        <div style="flex: 1.5; min-width: 300px; display: flex; flex-direction: column;">
+          <div id="opt-fields" style="flex: 1;"></div>
         </div>
-        <div class="field-row">
-          <label>Symbols (comma separated)</label>
-          <input type="text" id="opt-symbols" value="RELIANCE">
+        
+        <!-- RIGHT COLUMN -->
+        <div style="flex: 1; min-width: 300px; display: flex; flex-direction: column;">
+          <div class="modal-section" style="margin-top: 0; flex: 1;">
+            <div class="ttl">📊 DATE RANGE &amp; SYMBOLS</div>
+            <div class="field-grid">
+              <div class="field-row"><label>From</label><input type="date" id="opt-from"></div>
+              <div class="field-row"><label>To</label><input type="date" id="opt-to"></div>
+            </div>
+            <div class="field-row" style="margin-top: 15px;">
+              <label>Symbols (comma separated)</label>
+              <input type="text" id="opt-symbols" value="RELIANCE" style="margin-top: 5px;">
+            </div>
+          </div>
         </div>
       </div>
       
@@ -661,6 +680,13 @@ function symbolPickable(type){ return ['vwap','rsi','ema','bb'].includes(type); 
 // version dropdown then shows just the version suffix (v1/v2) since the base
 // name is already shown in the dropdown to its left.
 const STRAT_DISPLAY_NAMES = { ARS_CHAIN: 'Range Chain', rsi: 'RSI', ema: 'EMA Crossover', vwap: 'VWAP-EMA Failure' };
+const STRAT_DESCRIPTIONS = {
+  bb: "<b style='color:#3fb950'>Entry:</b> Price touches or crosses the Lower/Upper Bollinger Band.<br><b style='color:#f85149'>Exit:</b> Price reverts back to the Middle Band (Mean Reversion).",
+  ema: "<b style='color:#3fb950'>Entry:</b> Fast EMA crosses above/below Slow EMA.<br><b style='color:#f85149'>Exit:</b> Opposite EMA crossover occurs.",
+  rsi: "<b style='color:#3fb950'>Entry:</b> RSI drops below Oversold and crosses back up.<br><b style='color:#f85149'>Exit:</b> RSI goes above Overbought extreme.",
+  ARS_CHAIN: "<b style='color:#3fb950'>Entry:</b> Price breakout or rejection at dynamically calculated zones.<br><b style='color:#f85149'>Exit:</b> Zone crossover, Trailing ATR, or Fibonacci levels.",
+  vwap: "<b style='color:#3fb950'>Entry:</b> Price pulls back to VWAP but fails to break, reversing through EMA.<br><b style='color:#f85149'>Exit:</b> Fixed Risk:Reward (R1/R2 targets) or Trailing Stop Loss."
+};
 function baseLabel(base){ return STRAT_DISPLAY_NAMES[base] || base; }
 function versionLabel(id, base){
   const suffix = id.slice(base.length).replace(/^_/, '');
@@ -1699,26 +1725,31 @@ function openEditModal(preserveSymbols) {
   document.getElementById('modal-tv-files').value = '';
   document.getElementById('modal-msg').textContent = '';
 
-  let html = '';
-  fields.forEach(f => {
-    const val = cfg[f.id];
-    if (f.type === 'select') {
-      html += `<div class="field-row"><label>${f.label}</label><select id="mf-${f.id}">` +
-        f.opts.map(o => `<option value="${o}" ${String(val) === String(o) ? 'selected' : ''}>${o}</option>`).join('') +
-        `</select></div>`;
-    } else if (f.type === 'number') {
-      html += `<div class="field-row"><label>${f.label}</label><input type="number" id="mf-${f.id}" value="${val ?? ''}"></div>`;
-    } else if (f.type === 'checkbox') {
-      html += `<div class="field-row"><label><input type="checkbox" id="mf-${f.id}" ${val ? 'checked' : ''}> ${f.label}</label></div>`;
-    }
-  });
-  html += `
-    <div id="custom-params-container" style="margin-top:10px; border-top:1px solid #30363d; padding-top:8px"></div>
-    <div style="margin-top:8px; text-align:right">
-      <button type="button" class="btn btn-gray" style="padding:4px 8px; font-size:11px" onclick="addCustomParam()">➕ Add Parameter</button>
-    </div>
+  const descEl = document.getElementById('modal-strat-desc');
+  if (descEl) {
+      if (STRAT_DESCRIPTIONS[type]) {
+          descEl.innerHTML = STRAT_DESCRIPTIONS[type];
+          descEl.style.display = 'block';
+      } else {
+          descEl.style.display = 'none';
+      }
+  }
+
+  let text = '';
+  for(let key in cfg) {
+      if(key === 'symbol' || key === 'symbols' || key === 'timeframe') continue;
+      text += `${key} = ${cfg[key]}\n`;
+  }
+  
+  document.getElementById('modal-fields').innerHTML = `
+     <textarea id="modal-cfg-editor" spellcheck="false" style="width:100%; height:250px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:6px; font-family:monospace; padding:10px; font-size:12px; resize:vertical; line-height:1.4">${text}</textarea>
+     <div style="font-size:10.5px; color:#8b949e; margin-top:6px; display:flex; justify-content:space-between">
+        <span>Tip: Use <b>Ctrl + Shift + X</b> to toggle disable a line (#).</span>
+        <div id="custom-params-container" style="display:flex; gap:6px; align-items:center">
+           <button type="button" class="btn btn-gray" style="padding:4px 8px; font-size:10px" onclick="addCustomParamToEditor('modal-cfg-editor', 'custom-params-container')">➕ Add Indicator</button>
+        </div>
+     </div>
   `;
-  document.getElementById('modal-fields').innerHTML = html;
   // Symbol picker is available for every symbol-agnostic strategy (vwap/rsi/ema).
   // Range stays NIFTY-only — its pivot/zone/chain engine is index-specific
   // (validated 90.2% on NIFTY) and isn't wired for arbitrary equities.
@@ -1731,46 +1762,34 @@ function openEditModal(preserveSymbols) {
   }
   document.getElementById('modal-symbols-summary').textContent = _selectedSymbols.join(', ');
   document.getElementById('edit-modal').classList.add('open');
+  _attachEditorShortcuts('modal-cfg-editor');
 }
 function closeEditModal() { document.getElementById('edit-modal').classList.remove('open'); }
 
 function collectModalFields() {
-  const sid = D.strategy || 'range_v1';
-  const type = baseType(sid);
-  const fields = STRAT_FIELDS[type] || [];
+  const editor = document.getElementById('modal-cfg-editor');
+  if(!editor) return {};
+  const lines = editor.value.split('\n');
   const out = {};
-  fields.forEach(f => {
-    const el = document.getElementById('mf-' + f.id);
-    if (!el) return;
-    if (f.type === 'checkbox') out[f.id] = el.checked;
-    else if (f.type === 'number') out[f.id] = Number(el.value);
-    else out[f.id] = el.value === 'true' ? true : (el.value === 'false' ? false : el.value);
+  lines.forEach(line => {
+      let l = line.trim();
+      if(!l || l.startsWith('#') || l.startsWith('//')) return;
+      let parts = l.split('=');
+      if(parts.length >= 2) {
+          const key = parts[0].trim();
+          let val = parts.slice(1).join('=').trim();
+          if(val === 'true') val = true;
+          else if(val === 'false') val = false;
+          else if(!isNaN(val) && val !== '') val = Number(val);
+          out[key] = val;
+      }
   });
-  
-  const customParams = document.querySelectorAll('.custom-param-row');
-  customParams.forEach(row => {
-     const keys = row.querySelectorAll('.cp-key');
-     const vals = row.querySelectorAll('.cp-val');
-     for(let i=0; i<keys.length; i++) {
-         const key = keys[i].value.trim();
-         let val = vals[i].value.trim();
-         if (key) {
-            if (!isNaN(val) && val !== '') val = Number(val);
-            else if (val === 'true') val = true;
-            else if (val === 'false') val = false;
-            out[key] = val;
-         }
-     }
-  });
-  
   return out;
 }
 
-function addCustomParam() {
-  const container = document.getElementById('custom-params-container');
-  const div = document.createElement('div');
-  div.className = 'custom-param-row';
-  div.style.cssText = 'display:flex; gap:6px; margin-bottom:6px; align-items:flex-start;';
+function addCustomParamToEditor(editorId, containerId) {
+  const container = document.getElementById(containerId);
+  if (document.getElementById(`cp-ind-select-${editorId}`)) return;
   
   let opts = '<option value="">-- Indicator --</option>';
   if (typeof _indicatorRegistry !== 'undefined') {
@@ -1778,43 +1797,60 @@ function addCustomParam() {
           opts += `<option value="${ind.name}">${ind.name}</option>`;
       });
   }
-  opts += '<option value="custom">Custom (Type)</option>';
 
-  div.innerHTML = `
-    <select class="cp-ind-select" style="width:100px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px" onchange="onCustomParamIndSelect(this)">
-        ${opts}
-    </select>
-    <div class="cp-fields-wrap" style="flex:1; display:flex; gap:6px;">
-        <input type="text" class="cp-key" placeholder="Param Name" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
-        <input type="text" class="cp-val" placeholder="Value" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
-    </div>
-    <button type="button" class="btn btn-gray cp-remove-btn" onclick="this.parentElement.remove()" style="padding:2px 6px">✕</button>
-  `;
-  container.appendChild(div);
+  const select = document.createElement('select');
+  select.id = `cp-ind-select-${editorId}`;
+  select.style.cssText = "width:100px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:2px; font-size:10px; border-radius:4px; margin-left:8px";
+  select.innerHTML = opts;
+  
+  select.onchange = function() {
+      const val = this.value;
+      if (!val) return;
+      const spec = _indicatorRegistry.find(i => i.name === val);
+      let newLines = '';
+      if (!spec || !spec.params.length) {
+          newLines = `\n${val.toLowerCase()}_enabled = true\n`;
+      } else {
+          newLines = '\n' + spec.params.map(p => `${val.toLowerCase()}_${p} = ${spec.default[p] ?? ''}`).join('\n') + '\n';
+      }
+      
+      const editor = document.getElementById(editorId);
+      if(editor) {
+          editor.value += newLines;
+          editor.scrollTop = editor.scrollHeight;
+      }
+      this.remove();
+  };
+  
+  container.appendChild(select);
 }
 
-function onCustomParamIndSelect(selectEl) {
-    const val = selectEl.value;
-    const wrap = selectEl.parentElement.querySelector('.cp-fields-wrap');
-    if (val === '' || val === 'custom') {
-        wrap.innerHTML = `
-            <input type="text" class="cp-key" placeholder="Param Name" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
-            <input type="text" class="cp-val" placeholder="Value" style="flex:1; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
-        `;
-        return;
-    }
-    const spec = _indicatorRegistry.find(i => i.name === val);
-    if (!spec || !spec.params.length) {
-        wrap.innerHTML = `<input type="hidden" class="cp-key" value="${val.toLowerCase()}_enabled"><input type="text" class="cp-val" value="true" readonly style="flex:1; background:#0d1117; color:#8b949e; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px; text-align:center">`;
-        return;
-    }
-    
-    wrap.innerHTML = spec.params.map(p => `
-        <div style="display:flex; flex-direction:column; gap:2px; flex:1">
-            <input type="hidden" class="cp-key" value="${val.toLowerCase()}_${p}">
-            <input type="text" class="cp-val" placeholder="${p}" title="${val.toLowerCase()}_${p}" value="${spec.default[p] ?? ''}" style="width:100%; background:#0d1117; color:#e6edf3; border:1px solid #30363d; padding:4px; font-size:11px; border-radius:4px">
-        </div>
-    `).join('');
+function _attachEditorShortcuts(id) {
+  const editor = document.getElementById(id);
+  if(!editor) return;
+  editor.addEventListener('keydown', function(e) {
+      if(e.ctrlKey && e.shiftKey && (e.key === 'x' || e.key === 'X')) {
+          e.preventDefault();
+          const start = this.selectionStart;
+          const end = this.selectionEnd;
+          const val = this.value;
+          
+          let lineStart = val.lastIndexOf('\n', start - 1) + 1;
+          let lineEnd = val.indexOf('\n', end);
+          if(lineEnd === -1) lineEnd = val.length;
+          
+          let line = val.substring(lineStart, lineEnd);
+          if(line.trim().startsWith('#')) {
+              line = line.replace(/^[ \t]*#[ \t]*/, '');
+          } else {
+              line = '# ' + line;
+          }
+          
+          this.value = val.substring(0, lineStart) + line + val.substring(lineEnd);
+          this.selectionStart = lineStart;
+          this.selectionEnd = lineStart + line.length;
+      }
+  });
 }
 
 function changeChartTimeframe(val) {
@@ -2003,25 +2039,46 @@ let optEventSource = null;
 
 function openOptimizeModal() {
   document.getElementById('opt-strat-name').textContent = D.strategy;
+  
+  const sid = D.strategy || 'range_v1';
+  const type = baseType(sid);
+  const descEl = document.getElementById('opt-strat-desc');
+  if (descEl) {
+      if (STRAT_DESCRIPTIONS[type]) {
+          descEl.innerHTML = STRAT_DESCRIPTIONS[type];
+          descEl.style.display = 'block';
+      } else {
+          descEl.style.display = 'none';
+      }
+  }
+
   document.getElementById('opt-from').value = D.date_from || '';
   document.getElementById('opt-to').value = D.date_to || '';
   
-  const grid = document.getElementById('opt-fields');
-  grid.innerHTML = '';
-  
-  const tf = D.cfg.timeframe || '5m';
-  grid.innerHTML += `<div class="field-row"><label>timeframe</label><input type="text" id="opt-grid-timeframe" value="${tf}"></div>`;
-  
-  for (let [k,v] of Object.entries(D.cfg)) {
-    if (k === 'instrument' || k === 'symbols' || k === 'timeframe') continue;
-    grid.innerHTML += `<div class="field-row"><label>${k}</label><input type="text" id="opt-grid-${k}" value="${v}"></div>`;
+  const cfg = D.cfg || {};
+  let text = '';
+  for(let key in cfg) {
+      if(key === 'symbol' || key === 'symbols') continue;
+      text += `${key} = ${cfg[key]}\n`;
   }
+  
+  const grid = document.getElementById('opt-fields');
+  grid.innerHTML = `
+     <textarea id="opt-cfg-editor" spellcheck="false" style="width:100%; height:250px; background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:6px; font-family:monospace; padding:10px; font-size:12px; resize:vertical; line-height:1.4">${text}</textarea>
+     <div style="font-size:10.5px; color:#8b949e; margin-top:6px; display:flex; justify-content:space-between">
+        <span>Tip: Use <b>Ctrl + Shift + X</b> to toggle disable a line (#). Comma separate values for optimization (e.g. bb_window = 10, 20).</span>
+        <div id="opt-custom-params-container" style="display:flex; gap:6px; align-items:center">
+           <button type="button" class="btn btn-gray" style="padding:4px 8px; font-size:10px" onclick="addCustomParamToEditor('opt-cfg-editor', 'opt-custom-params-container')">➕ Add Indicator</button>
+        </div>
+     </div>
+  `;
   
   document.getElementById('opt-input-view').style.display = 'block';
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'none';
   document.getElementById('opt-history-view').style.display = 'none';
   document.getElementById('optimize-modal').classList.add('open');
+  _attachEditorShortcuts('opt-cfg-editor');
 }
 
 function closeOptimizeModal() {
@@ -2038,25 +2095,46 @@ function cancelOptimization() {
   document.getElementById('opt-progress-view').style.display = 'none';
 }
 
+function collectOptFields() {
+  const editor = document.getElementById('opt-cfg-editor');
+  if(!editor) return {};
+  const lines = editor.value.split('\n');
+  const out = {};
+  lines.forEach(line => {
+      let l = line.trim();
+      if(!l || l.startsWith('#') || l.startsWith('//')) return;
+      let parts = l.split('=');
+      if(parts.length >= 2) {
+          const key = parts[0].trim();
+          let val = parts.slice(1).join('=').trim();
+          
+          if (val.includes(',')) {
+              out[key] = val.split(',').map(v => {
+                  v = v.trim();
+                  if(v === 'true') return true;
+                  if(v === 'false') return false;
+                  if(!isNaN(v) && v !== '') return Number(v);
+                  return v;
+              });
+          } else {
+              if(val === 'true') val = true;
+              else if(val === 'false') val = false;
+              else if(!isNaN(val) && val !== '') val = Number(val);
+              out[key] = [val]; // optimizer needs lists
+          }
+      }
+  });
+  return out;
+}
+
 function startOptimization() {
   const params = {
     strat_type: D.strategy,
     date_from: document.getElementById('opt-from').value,
     date_to: document.getElementById('opt-to').value,
-    symbols: document.getElementById('opt-symbols').value,
-    grid: {}
+    symbols: document.getElementById('opt-symbols') ? document.getElementById('opt-symbols').value : '',
+    grid: collectOptFields()
   };
-  
-  const tfVal = document.getElementById('opt-grid-timeframe').value;
-  params.grid.timeframe = tfVal.split(',').map(s => s.trim());
-  
-  for (let k of Object.keys(D.cfg)) {
-    if (k === 'instrument' || k === 'symbols' || k === 'timeframe') continue;
-    const el = document.getElementById(`opt-grid-${k}`);
-    if (el) {
-      params.grid[k] = el.value.split(',').map(s => s.trim());
-    }
-  }
   
   document.getElementById('opt-input-view').style.display = 'none';
   document.getElementById('opt-progress-view').style.display = 'block';
