@@ -136,6 +136,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('log')">Logs</div>
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
+  <div class="tab" onclick="switchTab('orders')">📒 Orders</div>
   <div class="tab active" onclick="switchTab('pine')">📌 Pine</div>
 </div>
 
@@ -364,6 +365,41 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 </div>
 
+<!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
+<div class="tab-body" id="tab-orders" style="padding:16px 18px 24px">
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:11px;color:#6e7681">Date</span>
+    <input type="date" id="ord-date" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
+    <span style="font-size:11px;color:#6e7681;margin-left:4px">Source</span>
+    <span id="ord-src" class="ord-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="" class="on" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer">All</span>
+      <span data-v="webhook" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
+      <span data-v="manual" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
+      <span data-v="strategy" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+    </span>
+    <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
+    <span id="ord-mode" class="ord-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="" class="on" onclick="ordSeg('ord-mode',this)" style="padding:4px 10px;cursor:pointer">All</span>
+      <span data-v="paper" onclick="ordSeg('ord-mode',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Paper</span>
+      <span data-v="live" onclick="ordSeg('ord-mode',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
+    </span>
+    <select id="ord-strat" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px"><option value="">All strategies</option></select>
+    <select id="ord-broker" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All brokers</option></select>
+    <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="ordersRender()">↻ Refresh</button>
+  </div>
+
+  <div id="ord-summary" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"></div>
+
+  <div class="card" style="margin-bottom:12px">
+    <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">✅ Completed Trades</div>
+    <div id="ord-completed" style="overflow-x:auto"></div>
+  </div>
+  <div class="card">
+    <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">⏳ Open Positions</div>
+    <div id="ord-open" style="overflow-x:auto"></div>
+  </div>
+</div>
+
 <!-- PINE TAB -->
 <div class="tab-body active" id="tab-pine" style="padding:16px 20px 20px">
   <!-- Inner sub-tab bar -->
@@ -499,6 +535,7 @@ function switchTab(id) {
   activeTab = id;
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
+  if (id === 'orders') { ordersEnter(); }
 }
 
 // ── WEBHOOK TAB (multi-strategy) ──
@@ -733,6 +770,109 @@ async function whStatusPoll(){
     document.getElementById('wh-status-txt').innerText = nstrat+' strateg'+(nstrat===1?'y':'ies')+' configured';
     document.getElementById('wh-dot').style.background = nstrat?'#3fb950':'#6e7681';
   }catch(e){}
+}
+
+// ── ORDERS TAB (DB-backed, cross-day, tagged) ──
+function ordersEnter(){
+  const di=document.getElementById('ord-date');
+  if(di && !di.value){ di.value = new Date().toISOString().slice(0,10); }
+  ordersRender();
+}
+function ordSeg(segId, el){
+  document.querySelectorAll('#'+segId+' span').forEach(s=>{ s.classList.remove('on'); s.style.color='#8b949e'; });
+  el.classList.add('on'); el.style.color='#fff';
+  ordersRender();
+}
+function _ordSegVal(segId){
+  const on=document.querySelector('#'+segId+' span.on'); return on?on.dataset.v:'';
+}
+function _ordTag(text, kind){
+  const C={ 'webhook':['#1f6feb22','#79c0ff'], 'manual':['#23863622','#3fb950'],
+    'strategy':['#8957e522','#bc8cff'], 'paper':['#9e6a0322','#e3a008'],
+    'live':['#f8514922','#f85149'], 'name':['#21262d','#8b949e'] };
+  const c=C[kind]||C['name'];
+  if(!text) return '';
+  return '<span style="background:'+c[0]+';color:'+c[1]+';padding:2px 6px;border-radius:4px;font-size:10px;margin-right:3px">'+text+'</span>';
+}
+function _ordPill(label, val, color){
+  return '<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:8px 14px;min-width:78px">'
+    + '<div style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.3px">'+label+'</div>'
+    + '<div style="font-size:18px;font-weight:600;color:'+(color||'#e6edf3')+';margin-top:2px">'+val+'</div></div>';
+}
+function _ordFillSelect(id, vals, cur, allLabel){
+  const sel=document.getElementById(id); if(!sel) return;
+  const want=JSON.stringify([''].concat(vals));
+  const have=JSON.stringify(Array.from(sel.options).map(o=>o.value));
+  if(have===want) return;
+  sel.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(v=>'<option value="'+v+'">'+v+'</option>').join('');
+  sel.value=cur||'';
+}
+function _ordTags(t){
+  return _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
+       +(t.strategy?_ordTag(t.strategy,'name'):'')+_ordTag(t.broker,'name');
+}
+async function ordersRender(){
+  const date=(document.getElementById('ord-date')||{}).value;
+  if(!date) return;
+  const q=new URLSearchParams({date});
+  const src=_ordSegVal('ord-src'); if(src) q.set('source',src);
+  const mode=_ordSegVal('ord-mode'); if(mode) q.set('mode',mode);
+  const strat=document.getElementById('ord-strat').value; if(strat) q.set('strategy',strat);
+  const broker=document.getElementById('ord-broker').value; if(broker) q.set('broker',broker);
+  let d={};
+  try{ const r=await fetch('/api/orders?'+q.toString()); d=await r.json(); }catch(e){ return; }
+  _ordFillSelect('ord-strat', (d.filters||{}).strategy||[], strat, 'All strategies');
+  _ordFillSelect('ord-broker', (d.filters||{}).broker||[], broker, 'All brokers');
+
+  const det=d.details||[], opn=d.open||[];
+  const net=det.reduce((a,t)=>a+(t.pnl||0),0);
+  const wins=det.filter(t=>(t.pnl||0)>0).length;
+  document.getElementById('ord-summary').innerHTML =
+    _ordPill('Trades', det.length)
+    + _ordPill('Net P&L', '₹'+Math.round(net), net>0?'#3fb950':(net<0?'#f85149':'#e6edf3'))
+    + _ordPill('Win / Loss', wins+' / '+(det.length-wins))
+    + _ordPill('Open', opn.length);
+
+  let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
+  if(det.length){
+    ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+      + ['Symbol','Tags','Side','Entry','Exit','Qty','Net P&L','Chart'].map(h=>'<th style="padding:6px;font-weight:500'+(h==='Net P&L'?';text-align:right':(h==='Chart'?';text-align:center':''))+'">'+h+'</th>').join('')
+      + '</tr></thead><tbody>';
+    det.slice().reverse().forEach(t=>{
+      const pnl=t.pnl||0;
+      ch += '<tr style="border-bottom:1px solid #21262d">'
+        + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
+        + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
+        + '<td style="padding:7px 6px">'+t.entry+'</td>'
+        + '<td style="padding:7px 6px;color:#8b949e">'+t.entry_time+'</td>'
+        + '<td style="padding:7px 6px;color:#8b949e">'+t.exit_time+'</td>'
+        + '<td style="padding:7px 6px">'+t.qty+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+(pnl>0?'#3fb950':(pnl<0?'#f85149':'#e6edf3'))+'">₹'+Math.round(pnl)+'</td>'
+        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Premium chart" onclick="openTradeChart(\''+t.sym+'\',\''+t.entry+'\','+t.entry_price+','+t.exit_price+',\''+t.entry_time+'\',\''+t.exit_time+'\','+t.qty+')">📈</span></td>'
+        + '</tr>';
+    });
+    ch += '</tbody></table>';
+  }
+  document.getElementById('ord-completed').innerHTML = ch;
+
+  let oh = opn.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>';
+  if(opn.length){
+    oh = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+      + ['Symbol','Tags','Side','Entry time','Entry ₹','Qty'].map(h=>'<th style="padding:6px;font-weight:500">'+h+'</th>').join('')
+      + '</tr></thead><tbody>';
+    opn.forEach(t=>{
+      oh += '<tr style="border-bottom:1px solid #21262d">'
+        + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
+        + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
+        + '<td style="padding:7px 6px">'+t.entry+'</td>'
+        + '<td style="padding:7px 6px;color:#8b949e">'+t.entry_time+'</td>'
+        + '<td style="padding:7px 6px">'+Number(t.entry_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px">'+t.qty+'</td>'
+        + '</tr>';
+    });
+    oh += '</tbody></table>';
+  }
+  document.getElementById('ord-open').innerHTML = oh;
 }
 
 function switchCfgTab(type) {
