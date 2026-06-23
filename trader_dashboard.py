@@ -412,20 +412,24 @@ def api_start():
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
     s   = request.args.get('s', 'ema')
+    # keep_active=1 -> sirf process band karo, 'active' intent RAKHO. 15:30 ka
+    # scheduled-stop yeh bhejta hai taaki kal 9:10 auto-start phir chala de.
+    # Manual stop (user ne click kiya) = keep_active nahi -> active:false (band hi rahe).
+    keep_active = request.args.get('keep_active') == '1'
     pid = get_pid(s)
     if not pid:
         return jsonify({"msg": f"{s.upper()} not running"})
     try:
         os.kill(pid, signal.SIGTERM)
-        # Mark inactive so auto-scheduler won't restart it tomorrow
-        try:
-            cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
-            if s not in cfg:
-                cfg[s] = {}
-            cfg[s]['active'] = False
-            TC_FILE.write_text(json.dumps(cfg, indent=2))
-        except Exception:
-            pass
+        if not keep_active:
+            try:
+                cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                if s not in cfg:
+                    cfg[s] = {}
+                cfg[s]['active'] = False
+                TC_FILE.write_text(json.dumps(cfg, indent=2))
+            except Exception:
+                pass
         return jsonify({"msg": f"⏹ {s.upper()} stopped"})
     except Exception as e:
         return jsonify({"msg": f"Error: {e}"})
@@ -2275,7 +2279,8 @@ def auto_scheduler():
                             if _base(key) not in STRATEGIES:
                                 continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict):
-                                requests.post(f"http://127.0.0.1:5099/api/stop?s={key}", timeout=5)
+                                # keep_active=1 -> intent rakho, kal auto-start phir chale
+                                requests.post(f"http://127.0.0.1:5099/api/stop?s={key}&keep_active=1", timeout=5)
                     except Exception as e:
                         pass
                     has_stopped_today = True
