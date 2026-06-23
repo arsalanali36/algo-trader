@@ -208,7 +208,8 @@ def _proc_cmdline(grep, strategy=None):
         pass
     try:  # pgrep fallback (Linux/VPS jahan psutil na ho)
         pat = f"--id {want_id}" if want_id else grep
-        out = subprocess.check_output(['pgrep', '-f', pat], text=True).strip()
+        # '--' end-of-options — warna '--id ...' ko pgrep option samajh ke usage print karta
+        out = subprocess.check_output(['pgrep', '-f', '--', pat], text=True).strip()
         if out:
             return int(out.split('\n')[0]), ""
     except Exception:
@@ -2301,11 +2302,14 @@ def pos_monitor_loop():
     import time
     import order_store
     import dhan_feed
-    
+    from datetime import timedelta
+
     while True:
         try:
             _ensure_feed_started()
-            ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+            # 'datetime' is the CLASS (from datetime import datetime) — datetime.datetime
+            # galat tha, har loop crash karta tha (SL/TP monitor band pada tha).
+            ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
             
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
