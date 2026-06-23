@@ -1,0 +1,11 @@
+[Unit]
+Description=CODE3B strategy health check (order-readiness preflight)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+# python path me space hai -> quote zaroori
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" health_check.py --report
+# RED hone pe script exit 1 deta (banner me alert chala jaata) -> systemd failure mat samjho
+SuccessExitStatus=0 1

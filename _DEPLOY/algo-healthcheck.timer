@@ -1,0 +1,10 @@
+[Unit]
+Description=Run CODE3B health check weekday mornings (09:20 IST)
+
+[Timer]
+# 9:10 pe scheduler bots start karta -> 9:15 market open -> 9:20 pe warm + open
+OnCalendar=Mon..Fri 09:20:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target
