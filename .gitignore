@@ -18,3 +18,7 @@ data/trades.db-shm
 # Config files (sensitive — VPS pe manually rakho)
 nifty_config.json
 rsi_config.json
+
+# Health-check + alert runtime output (per-run, har baar badalta)
+data/health_report.json
+data/downloader_alert.json
