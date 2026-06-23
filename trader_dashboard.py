@@ -359,9 +359,12 @@ def api_start():
     flag = '--live' if mode == 'live' else '--paper'
     log_file = BASE_DIR / 'logs' / f"{s}.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    lf   = open(log_file, 'a')
+    lf   = open(log_file, 'a', encoding='utf-8')
+    # PYTHONUTF8=1 — traders ke log me unicode (→ ─ emoji) Windows cp1252 pe
+    # crash karta tha ("UnicodeEncodeError ... charmap"). UTF-8 force se khatam.
+    _env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
     subprocess.Popen([PYTHON, st['script'], flag, '--id', s],
-                     stdout=lf, stderr=lf,
+                     stdout=lf, stderr=lf, env=_env,
                      cwd=str(BASE_DIR),
                      start_new_session=True)
     # Mark active so auto-scheduler knows user wants this running
@@ -1998,6 +2001,30 @@ def api_downloader_alerts():
         return jsonify([])
 
 
+@app.route('/api/health-report')
+def api_health_report():
+    """Last startup health-check ka structured report (health_check.py --json ne
+    likha). on_demand=1 ho to abhi taaza chala ke do (manual refresh)."""
+    if request.args.get('on_demand') == '1':
+        try:
+            _env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+            r = subprocess.run([PYTHON, "-X", "utf8", str(BASE_DIR / "health_check.py"), "--json"],
+                               capture_output=True, text=True, cwd=str(BASE_DIR), timeout=150, env=_env)
+            if r.stdout.strip().startswith("{"):
+                rep = json.loads(r.stdout)
+                HEALTH_REPORT.write_text(json.dumps(rep, indent=2))
+                return jsonify(rep)
+            return jsonify({"error": r.stdout[-200:] or r.stderr[-200:]})
+        except Exception as e:
+            return jsonify({"error": str(e)})
+    if not HEALTH_REPORT.exists():
+        return jsonify({"error": "abhi tak koi health report nahi (9:10 auto-check ya on_demand=1)"})
+    try:
+        return jsonify(json.loads(HEALTH_REPORT.read_text()))
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
+
 @app.route('/api/save-summary', methods=['POST'])
 def api_save_summary():
     try:
@@ -2145,6 +2172,33 @@ def api_update_note():
 import threading
 import requests
 
+
+HEALTH_REPORT = BASE_DIR / "data" / "health_report.json"
+
+def _startup_healthcheck():
+    """9:10 auto-start ke baad bots ko boot hone do, phir health_check.py --json
+    chala ke data/health_report.json likho. Koi ACTIVE strategy order-ready na ho
+    to dashboard ke red banner (downloader_alert.json) me alert push karo —
+    taaki subah firefight ki jagah ek nazar me dikh jaaye kya nahi laga."""
+    import time as _t, json as _j
+    _t.sleep(90)
+    try:
+        env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        r = subprocess.run([PYTHON, "-X", "utf8", str(BASE_DIR / "health_check.py"), "--json"],
+                           capture_output=True, text=True, cwd=str(BASE_DIR), timeout=150, env=env)
+        rep = _j.loads(r.stdout) if r.stdout.strip().startswith("{") else {"error": r.stdout[-200:]}
+        HEALTH_REPORT.write_text(_j.dumps(rep, indent=2))
+        reds = [s["id"] for s in rep.get("strategies", []) if s.get("red")]
+        alert_file = BASE_DIR / "data" / "downloader_alert.json"
+        alerts = _j.loads(alert_file.read_text()) if alert_file.exists() else []
+        alerts = [a for a in alerts if "Health" not in a]   # purana health alert hatao
+        if reds:
+            alerts.append(f"⚠️ Health: {', '.join(reds)} order-ready NAHI — health_check report dekho")
+        alert_file.write_text(_j.dumps(alerts))
+        print(f"[health] startup check done — RED: {reds or 'none'}")
+    except Exception as e:
+        print("startup healthcheck error:", e)
+
 def auto_scheduler():
     from datetime import datetime, timezone, timedelta
     import time
@@ -2178,6 +2232,8 @@ def auto_scheduler():
                     except Exception as e:
                         pass
                     has_started_today = True
+                    # bots start hone ke baad auto health-check (90s baad, alag thread)
+                    threading.Thread(target=_startup_healthcheck, daemon=True).start()
 
             if t >= (15, 30):
                 if not has_stopped_today:

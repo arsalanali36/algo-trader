@@ -196,6 +196,18 @@ def distinct(col, date=None):
     except Exception:
         return []
 
+def delete_by_source(source):
+    """Saare orders delete karo jinka source == given (health_check --fire-test
+    apne 'healthtest' rows ko verify karne ke baad cleanup me use karta — production
+    P&L kabhi pollute na ho). Returns deleted row count."""
+    try:
+        with _lock, _conn() as c:
+            cur = c.execute("DELETE FROM orders WHERE source=?", (source,))
+            return cur.rowcount
+    except Exception as e:
+        print("[order_store] delete_by_source fail:", e, flush=True)
+        return 0
+
 def update_tags(order_id, tags):
     """Updates the tags JSON string for a specific order ID."""
     try:
