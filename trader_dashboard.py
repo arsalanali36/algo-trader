@@ -179,26 +179,56 @@ def _script_header(code):
             hdr[k] = v
     return hdr
 
+def _proc_cmdline(grep, strategy=None):
+    """Pehli running trader process ki (pid, cmdline). Reliable key = `--id <strategy>`
+    (cmdline me exact token; grep/_base mismatch se bachata — e.g. rsi_v1 chalti hai
+    01_rsi_v1.py se par alias grep 'rsi_trader' deta). grep sirf fallback (jab --id na ho).
+    psutil cross-platform — Windows pe pgrep NAHI hota (us bug se get_pid hamesha None
+    deta tha → restart pe DUPLICATE traders spawn). pgrep fallback Linux/VPS ke liye."""
+    want_id = strategy if (strategy and '_' in strategy) else None
+    try:
+        import psutil
+        for p in psutil.process_iter(['pid', 'cmdline']):
+            try:
+                parts = p.info.get('cmdline') or []
+            except Exception:
+                continue
+            if not parts:
+                continue
+            cl = ' '.join(parts)
+            if want_id:   # exact token match — substring se 'rsi_v1' != 'rsi_v10'
+                hit = any(t == f"--id={want_id}" or
+                          (t == "--id" and i + 1 < len(parts) and parts[i + 1] == want_id)
+                          for i, t in enumerate(parts))
+                if hit:
+                    return p.info['pid'], cl
+            elif grep and grep in cl:
+                return p.info['pid'], cl
+    except Exception:
+        pass
+    try:  # pgrep fallback (Linux/VPS jahan psutil na ho)
+        pat = f"--id {want_id}" if want_id else grep
+        out = subprocess.check_output(['pgrep', '-f', pat], text=True).strip()
+        if out:
+            return int(out.split('\n')[0]), ""
+    except Exception:
+        pass
+    return None, None
+
 def get_pid(strategy="ema"):
     entry = STRATEGIES.get(_base(strategy))
     if not entry:
         return None   # no live trader script for this type (e.g. vwap — backtest-only so far)
-    grep = entry["grep"]
-    try:
-        out = subprocess.check_output(['pgrep', '-f', grep], text=True).strip()
-        return int(out.split('\n')[0]) if out else None
-    except Exception:
-        return None
+    pid, _ = _proc_cmdline(entry["grep"], strategy)
+    return pid
 
 def get_mode(strategy="ema"):
-    grep = STRATEGIES[_base(strategy)]["grep"]
-    try:
-        out = subprocess.check_output(['ps', 'aux'], text=True)
-        for line in out.splitlines():
-            if grep in line:
-                return 'live' if '--live' in line else 'paper'
-    except Exception:
-        pass
+    entry = STRATEGIES.get(_base(strategy))
+    if not entry:
+        return 'paper'
+    _, cl = _proc_cmdline(entry["grep"], strategy)
+    if cl:
+        return 'live' if '--live' in cl else 'paper'
     return 'paper'
 
 def _ts(line):
