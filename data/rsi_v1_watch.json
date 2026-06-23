@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-23 13:45:44",
+  "updated": "2026-06-23 14:29:49",
   "strategy": "rsi_v1",
   "tf": "5m",
   "levels": {
@@ -10,11 +10,11 @@
   "symbols": [
     {
       "sym": "NIFTY",
-      "close": 23893.2,
-      "rsi": 31.4,
-      "zone": "NEAR_OS",
+      "close": 23918.0,
+      "rsi": 47.1,
+      "zone": "NEUTRAL",
       "pos": 0,
-      "signal": "BUY"
+      "signal": ""
     }
   ]
 }

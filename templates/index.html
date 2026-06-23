@@ -922,63 +922,96 @@ async function ordersRender(){
     t._net   = t._gross - t._tax;
   });
 
-  // ── PER-STRATEGY SUMMARY PILLS (P&L tab se folded) ──
-  const groups={};
+  // ── SOURCE SUMMARY PILLS (STRATEGY, MANUAL, WEBHOOK) ──
+  const srcTotals = { 'STRATEGY': {net:0, gross:0, n:0, w:0, opn:0}, 'MANUAL': {net:0, gross:0, n:0, w:0, opn:0}, 'WEBHOOK': {net:0, gross:0, n:0, w:0, opn:0} };
   det.forEach(t=>{
-    const g=(t.strategy||t.source||'other');
-    (groups[g]=groups[g]||{net:0,gross:0,n:0,w:0});
-    groups[g].net+=t._net; groups[g].gross+=t._gross; groups[g].n++;
-    if(t._net>0) groups[g].w++;
+    let s = String(t.source || 'STRATEGY').toUpperCase();
+    if(s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
+    srcTotals[s].net += t._net; srcTotals[s].gross += t._gross; srcTotals[s].n++;
+    if(t._net > 0) srcTotals[s].w++;
   });
-  const totNet=det.reduce((a,t)=>a+t._net,0);
-  const totGross=det.reduce((a,t)=>a+t._gross,0);
-  const totWins=det.filter(t=>t._net>0).length;
+  opn.forEach(t=>{
+    let s = String(t.source || 'STRATEGY').toUpperCase();
+    if(s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
+    srcTotals[s].opn++;
+  });
+  
   let sh='';
-  Object.keys(groups).forEach(g=>{
-    const j=groups[g], color=getStratColor(String(g).split('_')[0]);
-    const pc=j.net>=0?'#3fb950':'#f85149';
-    sh+=`<div style="background:#161b22;border:1px solid ${color}50;border-radius:8px;padding:10px 16px;min-width:150px">
-      <div style="color:${color};font-size:11px;font-weight:700;margin-bottom:6px">${String(g).toUpperCase()}</div>
-      <div style="font-size:20px;font-weight:700;color:${pc}">${j.net>=0?'+':''}₹${j.net.toFixed(2)}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">${j.n} trades · ${j.w}W ${j.n-j.w}L</div>
+  Object.keys(srcTotals).forEach(s => {
+    let st = srcTotals[s];
+    if(st.n === 0 && st.opn === 0) return;
+    const tc=st.net>=0?'#3fb950':'#f85149';
+    sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
+      <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (${s})</div>
+      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}₹${Math.round(st.net)}</div>
+      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ₹${Math.round(st.gross)} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
     </div>`;
   });
-  // TOTAL pill (net after tax + gross + open count)
-  const tc=totNet>=0?'#3fb950':'#f85149';
-  sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
-    <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (net)</div>
-    <div style="font-size:20px;font-weight:700;color:${tc}">${totNet>=0?'+':''}₹${totNet.toFixed(2)}</div>
-    <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ₹${Math.round(totGross)} · ${det.length} trades · ${totWins}W ${det.length-totWins}L · ${opn.length} open</div>
-  </div>`;
   _setHtml(document.getElementById('ord-summary'), sh ||
     '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
 
   // ── COMPLETED TRADES (Date + Gross/Tax/Net — P&L charges view folded) ──
   let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(det.length){
-    ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry','Exit','In','Out','Dur','Qty','Gross','Tax','Net','Chart']
-        .map(h=>{const r=['Entry','Exit','Gross','Tax','Net'].includes(h),c=['In','Out','Dur','Chart'].includes(h);
+      ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+      + ['Date','Symbol','Tags','Side','Entry','Exit','In','Out','Dur','Qty','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
+        .map(h=>{const r=['Entry','Exit','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
           return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
     det.slice().reverse().forEach(t=>{
       const g=t._gross, tx=t._tax, n=t._net;
       const nc=n>0?'#3fb950':(n<0?'#f85149':'#e6edf3'), gc=g>0?'#3fb950':(g<0?'#f85149':'#e6edf3');
+      
+      const inv = t.qty * (t.entry_price || 0);
+      const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
+      const rc = n>0?'#3fb950':(n<0?'#f85149':'#8b949e');
+      
+      let max_pnl = '—', min_pnl = '—';
+      let note = '';
+      if(t.tags) {
+        let max_ltp = null, min_ltp = null;
+        t.tags.forEach(tg => {
+          if(tg.startsWith('MAX_LTP:')) max_ltp = parseFloat(tg.split(':')[1]);
+          if(tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
+          if(tg.startsWith('NOTE:')) note = tg.substring(5);
+        });
+        
+        if(max_ltp !== null && t.entry_price > 0) {
+            let pnl = (max_ltp - t.entry_price) * t.qty;
+            if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty; // For short, min_ltp gives max profit
+            if(pnl > 0) max_pnl = `<span style="color:#3fb950">₹${Math.round(pnl)}</span>`;
+        }
+        if(min_ltp !== null && t.entry_price > 0) {
+            let pnl = (min_ltp - t.entry_price) * t.qty;
+            if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty; // For short, max_ltp gives max loss
+            if(pnl < 0) min_pnl = `<span style="color:#f85149">₹${Math.round(pnl)}</span>`;
+        }
+      }
+      
+      let encNote = encodeURIComponent(note);
+      let actions = `<span style="cursor:pointer" title="Premium chart" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}')">📈</span>`;
+      actions += ` <span style="cursor:pointer; margin-left:8px;" title="${note ? 'Edit Note' : 'Add Note'}" onclick="openNoteModal(${t.id}, '${encNote}')">📝</span>`;
+      
+      let dispNote = note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '';
+      
       ch += '<tr style="border-bottom:1px solid #21262d">'
-        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
-        + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
-        + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
-        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap">₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap">₹'+Number(t.exit_price||0).toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#6e7681">'+(t.entry_time||'—')+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#6e7681">'+(t.exit_time||'—')+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
-        + '<td style="padding:7px 6px">'+t.qty+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+gc+'">₹'+Math.round(g)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#f85149">−₹'+tx.toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+'">₹'+Math.round(n)+'</td>'
-        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Premium chart" onclick="openTradeChart(\''+t.sym+'\',\''+t.entry+'\','+t.entry_price+','+t.exit_price+',\''+t.entry_time+'\',\''+t.exit_time+'\','+t.qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
+        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
+        + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
+        + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
+        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;">₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;">₹'+Number(t.exit_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.entry_time||'—')+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.exit_time||'—')+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap;vertical-align:top;">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
+        + '<td style="padding:7px 6px;vertical-align:top;">'+t.qty+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+gc+';vertical-align:top;">₹'+Math.round(g)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−₹'+tx.toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+';vertical-align:top;">₹'+Math.round(n)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+rc+';vertical-align:top;">'+retPct+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+max_pnl+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+min_pnl+'</td>'
+        + '<td style="padding:7px 6px;text-align:center;vertical-align:top;">'+actions+'</td>'
         + '</tr>';
     });
     ch += '</tbody></table>';
@@ -1015,8 +1048,8 @@ async function ordersRender(){
       }
       
       let tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-        + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','Qty','Chart','']
-          .map(h=>{const r=['LTP','Points','P&L'].includes(h),c=h==='Chart';
+        + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','% Ret','Qty','Chart','Actions']
+          .map(h=>{const r=['LTP','Points','P&L','% Ret'].includes(h),c=['Chart','Actions'].includes(h);
             return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
         + '</tr></thead><tbody>';
         
@@ -1025,21 +1058,47 @@ async function ordersRender(){
         const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
         const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
         const argEsc=s=>String(s||'').replace(/'/g,'');
+        
+        let sl_pct='', tp_pct='', note='';
+        if(t.tags) {
+          t.tags.forEach(tg => {
+            if(tg.startsWith('SL_PCT:')) sl_pct = tg.split(':')[1];
+            if(tg.startsWith('TP_PCT:')) tp_pct = tg.split(':')[1];
+            if(tg.startsWith('NOTE:')) note = tg.substring(5);
+          });
+        }
+        
+        let sltp_disp = '';
+        if(sl_pct || tp_pct) {
+           sltp_disp = `<div style="font-size:9px;margin-top:2px;white-space:nowrap">`;
+           if(sl_pct) sltp_disp += `<span style="color:#f85149">SL ${sl_pct}%</span> `;
+           if(tp_pct) sltp_disp += `<span style="color:#3fb950">TP ${tp_pct}%</span>`;
+           sltp_disp += `</div>`;
+        }
+
+        let encNote = encodeURIComponent(note);
+        let actions = `<button onclick="openSlTpModal(${t.id}, '${sl_pct}', '${tp_pct}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="Set SL/Target">⚙️</button>`;
+        actions += `<button onclick="openNoteModal(${t.id}, '${encNote}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="${note ? 'Edit Note' : 'Add Note'}">📝</button>`;
+        
+        let dispNote = note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '';
+        
         tableHtml += '<tr style="border-bottom:1px solid #21262d">'
-          + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
-          + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
-          + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
-          + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
-          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e">₹'+entry.toFixed(2)+' · '+t.entry_time+'</td>'
-          + '<td style="padding:7px 6px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
-          + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
-          + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
-          + '<td style="padding:7px 6px">'+qty+'</td>'
-          + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+t.entry_price+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
-          + '<td style="padding:7px 6px;text-align:center;white-space:nowrap">'
+          + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
+          + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
+          + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
+          + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
+          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e;vertical-align:top;">₹'+entry.toFixed(2)+' · '+t.entry_time+sltp_disp+'</td>'
+          + '<td style="padding:7px 6px;text-align:right;color:#e6edf3;vertical-align:top;"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
+          + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
+          + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
+          + '<td class="ret-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
+          + '<td style="padding:7px 6px;vertical-align:top;">'+qty+'</td>'
+          + '<td style="padding:7px 6px;text-align:center;vertical-align:top;"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+entry+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
+          + '<td style="padding:7px 6px;text-align:center;white-space:nowrap;vertical-align:top;">'
+            + actions
             + '<button id="'+bId+'" onclick="closePosition(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\',\''+bId+'\')" '
-            + 'style="padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
-            + '<button title="Book se hatao — koi real order nahi (rejected/phantom position ke liye)" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
+            + 'style="margin-left:5px;padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
+            + '<button title="Book se hatao" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
             + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
           + '</tr>';
       });
@@ -1978,8 +2037,15 @@ function _patchLtpCells() {
     const unrl  = pts * qty;
     const ptEl  = document.querySelector(`.pts-cell[data-sym="${sym}"]`);
     const unEl  = document.querySelector(`.unrl-cell[data-sym="${sym}"]`);
+    const retEl = document.querySelector(`.ret-cell[data-sym="${sym}"]`);
     if(ptEl) { ptEl.textContent=(pts>=0?'+':'')+pts.toFixed(1); ptEl.style.color=pts>=0?'#3fb950':'#f85149'; }
-    if(unEl) { unEl.textContent=_fmt(unrl); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
+    if(unEl) { unEl.textContent=(unrl>=0?'+':'')+'₹'+Math.round(unrl); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
+    if(retEl) {
+      const inv = entry * qty;
+      const retPct = inv > 0 ? ((unrl / inv) * 100).toFixed(2) + '%' : '—';
+      retEl.textContent = retPct; 
+      retEl.style.color = unrl>=0?'#3fb950':'#f85149';
+    }
   });
 }
 startLtpStream();
@@ -3430,6 +3496,101 @@ pineLoadLatest();
     </div>
   </div>
 </div>
+
+<div id="edit-sltp-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+  <div style="background: #0d1117; width: 350px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
+    <div style="padding: 16px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #161b22;">
+      <h3 style="margin: 0; font-size: 15px; color: #e6edf3;">⚙️ Edit SL / TP</h3>
+      <span onclick="document.getElementById('edit-sltp-modal').style.display='none'" style="cursor: pointer; color: #8b949e; font-size: 16px;">✕</span>
+    </div>
+    <div style="padding: 20px; flex: 1; overflow-y: auto;">
+      <input type="hidden" id="edit-sltp-id">
+      
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Stop Loss (%)</label>
+      <input type="number" step="0.1" id="edit-sltp-sl" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin-bottom: 16px; box-sizing: border-box;" placeholder="e.g. 1.5">
+      
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Target (%)</label>
+      <input type="number" step="0.1" id="edit-sltp-tp" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin-bottom: 16px; box-sizing: border-box;" placeholder="e.g. 3.0">
+      
+      <button onclick="saveSlTp()" style="width: 100%; padding: 10px; margin-top: 10px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div id="edit-note-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+  <div style="background: #0d1117; width: 450px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
+    <div style="padding: 16px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #161b22;">
+      <h3 style="margin: 0; font-size: 15px; color: #e6edf3;">📝 Edit Note / Observation</h3>
+      <span onclick="document.getElementById('edit-note-modal').style.display='none'" style="cursor: pointer; color: #8b949e; font-size: 16px;">✕</span>
+    </div>
+    <div style="padding: 20px; flex: 1; overflow-y: auto;">
+      <input type="hidden" id="edit-note-id">
+      <textarea id="edit-note-text" rows="6" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical; font-family: inherit; box-sizing: border-box;" placeholder="Write your observations here..."></textarea>
+      
+      <button onclick="saveNote()" style="width: 100%; padding: 10px; margin-top: 20px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Note</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function openSlTpModal(id, sl, tp) {
+  document.getElementById('edit-sltp-id').value = id;
+  document.getElementById('edit-sltp-sl').value = sl || '';
+  document.getElementById('edit-sltp-tp').value = tp || '';
+  document.getElementById('edit-sltp-modal').style.display = 'flex';
+}
+
+async function saveSlTp() {
+  const id = document.getElementById('edit-sltp-id').value;
+  const sl = document.getElementById('edit-sltp-sl').value;
+  const tp = document.getElementById('edit-sltp-tp').value;
+  
+  try {
+    const res = await fetch('/api/orders/update-sl-tp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, sl_pct: sl, tp_pct: tp })
+    });
+    const data = await res.json();
+    if(data.status === 'success') {
+      document.getElementById('edit-sltp-modal').style.display = 'none';
+      ordersRender(); // Refresh orders
+    } else {
+      alert("Error: " + data.message);
+    }
+  } catch(e) {
+    alert("Error saving SL/TP.");
+  }
+}
+
+function openNoteModal(id, note) {
+  document.getElementById('edit-note-id').value = id;
+  document.getElementById('edit-note-text').value = decodeURIComponent(note || '');
+  document.getElementById('edit-note-modal').style.display = 'flex';
+}
+
+async function saveNote() {
+  const id = document.getElementById('edit-note-id').value;
+  const note = document.getElementById('edit-note-text').value;
+  
+  try {
+    const res = await fetch('/api/orders/update-note', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: id, note: note })
+    });
+    const data = await res.json();
+    if(data.status === 'success') {
+      document.getElementById('edit-note-modal').style.display = 'none';
+      ordersRender(); // Refresh orders
+    } else {
+      alert("Error: " + data.message);
+    }
+  } catch(e) {
+    alert("Error saving Note.");
+  }
+}
+</script>
 
 </body>
 </html>

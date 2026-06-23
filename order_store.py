@@ -128,7 +128,7 @@ def trades_for(date, **filters):
     details = []
 
     def _meta(r):
-        return {"source": r["source"], "strategy": r["strategy"], "mode": r["mode"],
+        return {"id": r["id"], "source": r["source"], "strategy": r["strategy"], "mode": r["mode"],
                 "broker": r["broker"], "instrument": r["instrument"],
                 "symbol": r["symbol"], "tags": _tags(r)}
 
@@ -195,3 +195,12 @@ def distinct(col, date=None):
             return [r[0] for r in c.execute(sql, args).fetchall() if r[0]]
     except Exception:
         return []
+
+def update_tags(order_id, tags):
+    """Updates the tags JSON string for a specific order ID."""
+    try:
+        with _lock, _conn() as c:
+            c.execute("UPDATE orders SET tags=? WHERE id=?", (json.dumps(tags), order_id))
+            c.commit()
+    except Exception as e:
+        print("Error updating tags:", e)

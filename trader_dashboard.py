@@ -2078,6 +2078,70 @@ def api_rename_strategy():
         return jsonify({"status": "error", "message": str(e)})
 
 
+@app.route('/api/orders/update-sl-tp', methods=['POST'])
+def api_update_sl_tp():
+    data = request.get_json()
+    order_id = data.get('id')
+    sl_pct = data.get('sl_pct')
+    tp_pct = data.get('tp_pct')
+    if not order_id:
+        return jsonify({"status": "error", "message": "Missing order ID"})
+    try:
+        import order_store
+        # Fetch current tags
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row: return jsonify({"status": "error", "message": "Order not found"})
+            
+            tags = []
+            try: tags = json.loads(row[0] or "[]")
+            except: pass
+            
+            # Remove existing SL_PCT and TP_PCT
+            tags = [t for t in tags if not t.startswith("SL_PCT:") and not t.startswith("TP_PCT:")]
+            
+            # Add new if provided
+            if sl_pct is not None and str(sl_pct).strip() != "":
+                tags.append(f"SL_PCT:{float(sl_pct)}")
+            if tp_pct is not None and str(tp_pct).strip() != "":
+                tags.append(f"TP_PCT:{float(tp_pct)}")
+                
+            c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
+            c.commit()
+        return jsonify({"status": "success", "tags": tags})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+@app.route('/api/orders/update-note', methods=['POST'])
+def api_update_note():
+    data = request.get_json()
+    order_id = data.get('id')
+    note = data.get('note', '')
+    if not order_id:
+        return jsonify({"status": "error", "message": "Missing order ID"})
+    try:
+        import order_store
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row: return jsonify({"status": "error", "message": "Order not found"})
+            
+            tags = []
+            try: tags = json.loads(row[0] or "[]")
+            except: pass
+            
+            tags = [t for t in tags if not t.startswith("NOTE:")]
+            
+            if note.strip():
+                # Replace newlines with a special sequence or just encode it. JSON handles newlines.
+                # But to be safe with our split logic elsewhere, let's just save it.
+                tags.append(f"NOTE:{note.strip()}")
+                
+            c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
+            c.commit()
+        return jsonify({"status": "success", "tags": tags})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
 import threading
 import requests
 
@@ -2146,8 +2210,8 @@ def webhook_monitor_loop():
             print("Webhook monitor error:", e)
         time.sleep(3)
 
-def bulk_sl_monitor_loop():
-    """Monitors Bulk manual trades with SL_PCT tags and squares them off if LTP drops below max SL."""
+def pos_monitor_loop():
+    """Monitors open positions for SL_PCT, TP_PCT hits and tracks MAX/MIN LTP."""
     import time
     import order_store
     import dhan_feed
@@ -2157,47 +2221,89 @@ def bulk_sl_monitor_loop():
             _ensure_feed_started()
             ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
             
-            # Check open positions today
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
             
             for p in open_pos:
-                if not p.get("tags"): continue
-                
-                # Extract SL_PCT
-                sl_tag = next((t for t in p["tags"] if t.startswith("SL_PCT:")), None)
-                if not sl_tag: continue
-                
-                try:
-                    sl_pct = float(sl_tag.split(":")[1])
-                except:
-                    continue
-                
-                # We only monitor BUY positions for SL drops (assume scanners are long)
-                if p["entry"] != "BUY": continue
-                if p["qty"] <= 0: continue
-                
-                entry_px = float(p.get("entry_px") or 0)
-                if entry_px <= 0: continue
-                
-                sl_px = entry_px * (1 - (sl_pct / 100.0))
-                
-                # Get live price
+                if not p.get("tags") and not p.get("sec_id"): continue
                 sec_id = p.get("sec_id")
                 if not sec_id: continue
                 
-                # Subscribe if not already
+                tags = p.get("tags") or []
+                
                 seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
                 _feed_subscribe([(seg, sec_id)])
                 
                 q = dhan_feed.get_quote(sec_id)
                 ltp = float(q.get("ltp") or 0) if q else 0.0
+                if ltp <= 0: continue
                 
-                # If hit SL, exit!
-                if ltp > 0 and ltp <= sl_px:
-                    print(f"[SL HIT] {p['sym']} LTP {ltp} <= SL {sl_px:.2f} ({sl_pct}%). Squaring off...")
+                # Update MAX/MIN LTP for Run-up / Run-down tracking
+                entry_px = float(p.get("entry_price") or 0)
+                if entry_px > 0:
+                    max_ltp = ltp
+                    min_ltp = ltp
+                    max_tag_idx = -1
+                    min_tag_idx = -1
+                    for i, t in enumerate(tags):
+                        if t.startswith("MAX_LTP:"):
+                            max_tag_idx = i
+                            try: max_ltp = max(ltp, float(t.split(":")[1]))
+                            except: pass
+                        elif t.startswith("MIN_LTP:"):
+                            min_tag_idx = i
+                            try: min_ltp = min(ltp, float(t.split(":")[1]))
+                            except: pass
+                    
+                    changed = False
+                    if max_tag_idx != -1:
+                        if tags[max_tag_idx] != f"MAX_LTP:{max_ltp}":
+                            tags[max_tag_idx] = f"MAX_LTP:{max_ltp}"
+                            changed = True
+                    else:
+                        tags.append(f"MAX_LTP:{max_ltp}")
+                        changed = True
+                        
+                    if min_tag_idx != -1:
+                        if tags[min_tag_idx] != f"MIN_LTP:{min_ltp}":
+                            tags[min_tag_idx] = f"MIN_LTP:{min_ltp}"
+                            changed = True
+                    else:
+                        tags.append(f"MIN_LTP:{min_ltp}")
+                        changed = True
+                        
+                    if changed and p.get("id"):
+                        order_store.update_tags(p["id"], tags)
+
+                if p["qty"] <= 0 or entry_px <= 0: continue
+                
+                # Check SL/TP
+                sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None)
+                tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None)
+                
+                sl_px = None
+                tp_px = None
+                
+                if p["entry"] == "BUY":
+                    if sl_pct is not None: sl_px = entry_px * (1 - (sl_pct / 100.0))
+                    if tp_pct is not None: tp_px = entry_px * (1 + (tp_pct / 100.0))
+                else: # SELL
+                    if sl_pct is not None: sl_px = entry_px * (1 + (sl_pct / 100.0))
+                    if tp_pct is not None: tp_px = entry_px * (1 - (tp_pct / 100.0))
+                
+                exit_reason = None
+                if p["entry"] == "BUY":
+                    if sl_px and ltp <= sl_px: exit_reason = f"SL_HIT:{sl_pct}%"
+                    elif tp_px and ltp >= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
+                else: # SELL
+                    if sl_px and ltp >= sl_px: exit_reason = f"SL_HIT:{sl_pct}%"
+                    elif tp_px and ltp <= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
+                
+                if exit_reason:
+                    print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
+                    exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
                     order_store.record(
-                        side="SELL",
+                        side=exit_side,
                         qty=p["qty"],
                         price=ltp,
                         source=p["source"],
@@ -2209,11 +2315,11 @@ def bulk_sl_monitor_loop():
                         trad_sym=p["sym"],
                         sec_id=sec_id,
                         segment=seg,
-                        status=p["status"],
-                        tags=["bulk_sl_exit", sl_tag]
+                        status=p.get("status", "paper"),
+                        tags=["pos_monitor_exit", exit_reason]
                     )
         except Exception as e:
-            print("Bulk SL monitor error:", e)
+            print("Pos monitor error:", e)
             
         time.sleep(5)
 
@@ -2222,7 +2328,7 @@ def bulk_sl_monitor_loop():
 if __name__ == '__main__':
     threading.Thread(target=auto_scheduler, daemon=True).start()
     threading.Thread(target=webhook_monitor_loop, daemon=True).start()
-    threading.Thread(target=bulk_sl_monitor_loop, daemon=True).start()
+    threading.Thread(target=pos_monitor_loop, daemon=True).start()
 
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
