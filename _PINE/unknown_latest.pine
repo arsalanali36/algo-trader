@@ -1,0 +1,9 @@
+// --- Entry ---
+bb_window = 20
+bb_std = 2
+entry_long = c_close < c_lower
+// --- Exit ---
+exit_long = c_high >= c_upper
+sl_pct = 0.5
+symbol = NIFTY
+timeframe = 5m

@@ -43,11 +43,85 @@
   function showMsg(t){ document.getElementById('chart').style.display='none'; const m=document.getElementById('msg'); m.style.display='block'; m.textContent=t; }
 
   const dt=q.get('date')||'';
-  fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):''))
+  const tf=q.get('tf')||'';
+  const ind=q.get('ind')||'';
+  
+  // Calculate SMA
+  function calcSMA(data, period) {
+    const res = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) continue;
+      let sum = 0;
+      for (let j = 0; j < period; j++) sum += data[i - j].close;
+      res.push({ time: data[i].time, value: sum / period });
+    }
+    return res;
+  }
+
+  // Calculate EMA
+  function calcEMA(data, period) {
+    const res = [];
+    let k = 2 / (period + 1);
+    let ema = 0;
+    for (let i = 0; i < data.length; i++) {
+      if (i === 0) { ema = data[i].close; }
+      else { ema = (data[i].close - ema) * k + ema; }
+      if (i >= period - 1) {
+        res.push({ time: data[i].time, value: ema });
+      }
+    }
+    return res;
+  }
+
+  // Calculate VWAP
+  function calcVWAP(data) {
+    const res = [];
+    let cumVol = 0;
+    let cumVolPx = 0;
+    for (let i = 0; i < data.length; i++) {
+      const typicalPx = (data[i].high + data[i].low + data[i].close) / 3;
+      const vol = data[i].volume || 1; // fallback to 1 if no vol
+      cumVol += vol;
+      cumVolPx += typicalPx * vol;
+      res.push({ time: data[i].time, value: cumVolPx / cumVol });
+    }
+    return res;
+  }
+
+  // Calculate Bollinger Bands
+  function calcBB(data, period, stdDev) {
+    const sma = calcSMA(data, period);
+    const upper = [], lower = [];
+    for (let i = 0; i < data.length; i++) {
+      if (i < period - 1) continue;
+      let s = sma.find(x => x.time === data[i].time);
+      if(!s) continue;
+      let sumSq = 0;
+      for (let j = 0; j < period; j++) {
+        sumSq += Math.pow(data[i - j].close - s.value, 2);
+      }
+      const sd = Math.sqrt(sumSq / period);
+      upper.push({ time: data[i].time, value: s.value + (stdDev * sd) });
+      lower.push({ time: data[i].time, value: s.value - (stdDev * sd) });
+    }
+    return { sma, upper, lower };
+  }
+  
+  fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):'')+(tf?('&tf='+tf):''))
     .then(r=>r.json()).then(d=>{
       document.getElementById('date').textContent = d.date||'';
       if(!d.ok){ showMsg(d.msg||'Data nahi mila'); return; }
       if(!d.candles || !d.candles.length){ showMsg('Is din ka intraday data nahi (non-trading day?)'); return; }
+      
+      // Deduplicate candles and sort
+      const uniqueCandles = [];
+      const seen = new Set();
+      d.candles.forEach(c => {
+        if(!seen.has(c.time)){ seen.add(c.time); uniqueCandles.push(c); }
+      });
+      uniqueCandles.sort((a,b) => a.time - b.time);
+      d.candles = uniqueCandles;
+
       const chart = LightweightCharts.createChart(document.getElementById('chart'), {
         layout:{ background:{color:'#0d1117'}, textColor:'#8b949e' },
         grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
@@ -63,6 +137,51 @@
       if(d.exit_mk)  mk.push({time:d.exit_mk,  position:'aboveBar', color:'#f85149', shape:'arrowDown', text:'Exit ₹'+exit.toFixed(2)});
       mk.sort((a,b)=>a.time-b.time);
       if(mk.length) s.setMarkers(mk);
+      
+      // Plot indicators
+      if(ind) {
+        const indList = ind.split(',').map(x=>x.trim());
+        const colors = ['#f9a8d4', '#818cf8', '#fcd34d', '#34d399']; 
+        let colorIdx = 0;
+        
+        indList.forEach(indicator => {
+          const typeMatch = indicator.match(/^[a-zA-Z]+/);
+          if(!typeMatch) return;
+          const type = typeMatch[0].toUpperCase();
+          
+          if(type === 'EMA' || type === 'SMA') {
+            const m = indicator.match(/\d+/);
+            if(m) {
+              const period = parseInt(m[0]);
+              const c = colors[colorIdx % colors.length]; colorIdx++;
+              let idata = type === 'SMA' ? calcSMA(d.candles, period) : calcEMA(d.candles, period);
+              if(idata.length > 0) {
+                const ls = chart.addLineSeries({ color: c, lineWidth: 2, crosshairMarkerVisible: false, title: type+period });
+                ls.setData(idata);
+              }
+            }
+          } else if(type === 'VWAP') {
+            const idata = calcVWAP(d.candles);
+            if(idata.length > 0) {
+              const ls = chart.addLineSeries({ color: '#fcd34d', lineWidth: 2, crosshairMarkerVisible: false, title: 'VWAP' });
+              ls.setData(idata);
+            }
+          } else if(type === 'BB') {
+            const m = indicator.match(/\d+/g);
+            if(m && m.length >= 2) {
+              const period = parseInt(m[0]);
+              const stdDev = parseFloat(m[1]);
+              const res = calcBB(d.candles, period, stdDev);
+              if(res.upper.length > 0) {
+                chart.addLineSeries({ color: '#818cf8', lineWidth: 1, crosshairMarkerVisible: false, title: 'BB Up' }).setData(res.upper);
+                chart.addLineSeries({ color: '#818cf8', lineWidth: 1, crosshairMarkerVisible: false, title: 'BB Low' }).setData(res.lower);
+                chart.addLineSeries({ color: '#818cf8', lineWidth: 1, lineStyle: 2, crosshairMarkerVisible: false }).setData(res.sma);
+              }
+            }
+          }
+        });
+      }
+      
       // entry/exit price lines
       if(entry) s.createPriceLine({price:entry, color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Entry'});
       if(exit)  s.createPriceLine({price:exit,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Exit'});

@@ -1,5 +1,5 @@
 {
-  "updated": "2026-06-22 09:47:05",
+  "updated": "2026-06-23 13:45:44",
   "strategy": "rsi_v1",
   "tf": "5m",
   "levels": {
@@ -7,5 +7,14 @@
     "overbought": 70.0,
     "exit": 50.0
   },
-  "symbols": []
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 23893.2,
+      "rsi": 31.4,
+      "zone": "NEAR_OS",
+      "pos": 0,
+      "signal": "BUY"
+    }
+  ]
 }

@@ -122,6 +122,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   })();
   </script>
   <div class="hdr-right">
+    <button onclick="openBulkModal()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;margin-right:4px;" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">📝 Bulk Orders</button>
+    <button onclick="openScannerModal()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;margin-right:4px;" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">🔍 Scanner</button>
     <button onclick="qoToggle()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">⚡ Quick Order</button>
     <button onclick="watchToggle()" id="watch-btn" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">👁 Watch</button>
     <a href="/backtest" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128200; Backtest</a>
@@ -136,7 +138,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
   <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
-  <div class="tab active" onclick="switchTab('pine')">📌 Pine</div>
+  <div class="tab active" onclick="switchTab('pine')">📜 Script</div>
 </div>
 
 <!-- CONTROL TAB -->
@@ -380,10 +382,25 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <!-- ── Sub-tab: Editor ───────────────────────────────────────────────── -->
   <div id="pine-panel-editor" style="display:none">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <span style="font-size:13px;color:#8b949e">Pine Script Version Manager</span>
-      <div id="pine-latest-badge" style="font-size:12px;background:#161b22;border:1px solid #30363d;padding:5px 10px;border-radius:6px;color:#8b949e">loading...</div>
+      <span style="font-size:13px;color:#8b949e">Script Version Manager — Pine / Python / DSL Rules</span>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-gray" style="padding:5px 10px;font-size:12px" onclick="scriptShowMasterPrompt()">📋 Master Prompt</button>
+        <div id="pine-latest-badge" style="font-size:12px;background:#161b22;border:1px solid #30363d;padding:5px 10px;border-radius:6px;color:#8b949e">loading...</div>
+      </div>
     </div>
-    <textarea id="pine-code" placeholder="Yahan apni poori Pine script paste karo..." style="width:100%;height:280px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
+    <!-- Language selector + name + upload -->
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px">
+      <span style="font-size:12px;color:#8b949e">Language:</span>
+      <div id="script-lang-pills" style="display:flex;gap:4px">
+        <button type="button" data-lang="pine"   onclick="scriptSetLang('pine')"   class="script-lang-pill" style="padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#8b949e;cursor:pointer">📌 Pine</button>
+        <button type="button" data-lang="python" onclick="scriptSetLang('python')" class="script-lang-pill" style="padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#8b949e;cursor:pointer">🐍 Python</button>
+        <button type="button" data-lang="dsl"    onclick="scriptSetLang('dsl')"    class="script-lang-pill" style="padding:4px 12px;font-size:12px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#8b949e;cursor:pointer">⚙️ DSL Rules</button>
+      </div>
+      <span id="script-lang-auto" style="font-size:11px;color:#6e7681"></span>
+      <input id="script-name" placeholder="Strategy name (e.g. My BB Reversion)" style="flex:1;min-width:180px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 10px;font-size:12px;box-sizing:border-box">
+      <label class="btn btn-gray" style="padding:5px 12px;font-size:12px;cursor:pointer;margin:0">📤 Upload file<input id="script-file-input" type="file" accept=".py,.pine,.txt,.rules" style="display:none" onchange="scriptUploadFile(this.files)"></label>
+    </div>
+    <textarea id="pine-code" oninput="scriptAutoDetect()" placeholder="Pine / Python / DSL script yahan paste karo — language auto-detect ho jayegi (confirm kar lena). Python/DSL run honge, Pine reference ke liye save hoga." style="width:100%;height:280px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:12px;font-family:monospace;font-size:12px;resize:vertical;box-sizing:border-box"></textarea>
     <textarea id="pine-desc" placeholder="Notes / kya badla is version mein... (optional)" style="width:100%;height:54px;background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:10px;font-size:13px;resize:vertical;box-sizing:border-box;margin-top:8px"></textarea>
     <div id="pine-img-drop" onclick="document.getElementById('pine-img-input').click()"
          ondragover="event.preventDefault();this.style.borderColor='#58a6ff'"
@@ -459,6 +476,93 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       </div>
     </div>
 
+  </div>
+</div>
+
+<!-- MODAL FOR SCANNER -->
+<div class="modal-overlay" id="scanner-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;">
+  <div class="modal" style="width: 500px; max-width: 90vw;">
+    <div class="modal-hdr">
+      <span>🔍 52-EMA Scanner</span>
+      <span style="cursor:pointer;color:#8b949e" onclick="document.getElementById('scanner-modal').style.display='none'">✕</span>
+    </div>
+    <div class="modal-body" id="scanner-modal-body" style="min-height: 100px; padding: 15px; text-align: center; display: block;">
+      <p style="color: #8b949e; margin-bottom: 15px;">Scanning NIFTY50 stocks for price crossing above the 52-week EMA. This takes a few seconds...</p>
+      <div id="scanner-loader" style="display: none; color: #58a6ff; font-weight: bold; font-size: 14px;">Scanning... Please wait ⏳</div>
+      <div id="scanner-results" style="margin-top: 15px; text-align: left; max-height: 300px; overflow-y: auto;"></div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-blue" onclick="runScannerAPI()">Run Scan</button>
+      <button class="btn btn-gray" onclick="document.getElementById('scanner-modal').style.display='none'">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FOR BULK ORDERS -->
+<div class="modal-overlay" id="bulk-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:9999;justify-content:center;align-items:center;">
+  <div class="modal" style="width: 700px; max-width: 90vw;">
+    <div class="modal-hdr">
+      <span>📝 Place Bulk Paper Trades</span>
+      <span style="cursor:pointer;color:#8b949e" onclick="document.getElementById('bulk-modal').style.display='none'">✕</span>
+    </div>
+    <div class="modal-body" style="padding: 15px; display: block;">
+      <div id="bulk-step1">
+        <p style="color: #8b949e; margin-bottom: 15px; font-size: 13px;">Select a strategy, enter your reason, and paste symbols. Everything else is automatic.</p>
+        
+        <div style="display:flex; gap: 12px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Strategy</label>
+            <input list="bulk-strategy-options" id="bulk-strategy" placeholder="Select or type..." value="52_Week_Breakout" oninput="autoFillStrategyDesc()" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9;">
+            <datalist id="bulk-strategy-options">
+              <option value="52_Week_Breakout">52 Week EMA Breakout</option>
+              <option value="Bollinger_Bounce">Bollinger Band Bounce</option>
+              <option value="VWAP_Reversal">VWAP EMA Reversal</option>
+              <option value="Price_Action">Pure Price Action</option>
+              <option value="Custom">Custom Entry</option>
+            </datalist>
+          </div>
+          <div style="flex: 2;">
+            <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Reason / Notes (Optional)</label>
+            <textarea id="bulk-reason" rows="2" placeholder="e.g., Double bottom on daily, high volume" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical;"></textarea>
+          </div>
+        </div>
+        
+        <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Symbols (Comma or Newline separated)</label>
+        <textarea id="bulk-symbols" rows="6" placeholder="e.g., RELIANCE, TCS, INFY" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical;"></textarea>
+        
+        <button onclick="loadBulkPreview()" style="width: 100%; padding: 10px; margin-top: 15px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Load Preview</button>
+      </div>
+      
+      <div id="bulk-step2" style="display: none;">
+        <div style="max-height: 400px; overflow-y: auto; margin-bottom: 15px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;" id="bulk-preview-table">
+            <thead>
+              <tr style="border-bottom: 1px solid #30363d; color: #8b949e; text-align: left;">
+                <th style="padding: 8px; position: sticky; top: 0; background: #0d1117; z-index: 10;">Symbol</th>
+                <th style="padding: 8px; position: sticky; top: 0; background: #0d1117; z-index: 10; text-align: right;">LTP</th>
+                <th style="padding: 8px; position: sticky; top: 0; background: #0d1117; z-index: 10; text-align: center;">Qty</th>
+                <th style="padding: 8px; position: sticky; top: 0; background: #0d1117; z-index: 10; text-align: center;">Max SL %</th>
+                <th style="padding: 8px; position: sticky; top: 0; background: #0d1117; z-index: 10; text-align: right;">Total Cap</th>
+              </tr>
+            </thead>
+            <tbody id="bulk-preview-body">
+              <!-- Dynamically populated -->
+            </tbody>
+          </table>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; padding-top: 10px; border-top: 1px solid #30363d; margin-bottom: 15px;">
+          <button onclick="document.getElementById('bulk-step2').style.display='none';document.getElementById('bulk-step1').style.display='block';" style="padding: 8px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-size: 12px;">Back</button>
+          <div style="text-align: right;">
+            <span style="color: #8b949e; font-size: 12px; margin-right: 10px;">Est. Total Capital:</span>
+            <span id="bulk-grand-total" style="color: #e6edf3; font-weight: bold; font-size: 16px;">₹0.00</span>
+          </div>
+        </div>
+        <button onclick="submitBulkOrders()" style="width: 100%; padding: 10px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Place Paper Trades</button>
+      </div>
+
+      <div id="bulk-loader" style="display: none; color: #58a6ff; font-weight: bold; font-size: 14px; margin-top: 10px; text-align: center;">Placing Trades... ⏳</div>
+      <div id="bulk-msg" style="margin-top: 10px; font-size: 14px; text-align: center;"></div>
+    </div>
   </div>
 </div>
 
@@ -771,12 +875,16 @@ function _ordFillSelect(id, vals, cur, allLabel){
   const want=JSON.stringify([''].concat(vals));
   const have=JSON.stringify(Array.from(sel.options).map(o=>o.value));
   if(have===want) return;
-  sel.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(v=>'<option value="'+v+'">'+v+'</option>').join('');
+  sel.innerHTML='<option value="">'+allLabel+'</option>'+vals.map(v=>{
+    let display = v;
+    if(id === 'ord-strat' && v.includes(' | ')) display = v.split(' | ')[0];
+    return '<option value="'+v+'">'+display+'</option>';
+  }).join('');
   sel.value=cur||'';
 }
 function _ordTags(t){
   return _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
-       +(t.strategy?_ordTag(t.strategy,'name'):'')+_ordTag(t.broker,'name');
+       +(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'')+_ordTag(t.broker,'name');
 }
 // "HH:MM" entry→exit ka duration ("23m" / "1h 12m"). Cross-din nahi (intraday).
 function _durMin(a,b){
@@ -887,35 +995,73 @@ async function ordersRender(){
   } else if(ordOpenEl.dataset.fp === openFp){
     _patchLtpCells();   // structure same — sirf LTP/Points/P&L refresh, koi flash nahi
   } else {
-    let oh = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','Qty','Chart','']
-        .map(h=>{const r=['LTP','Points','P&L'].includes(h),c=h==='Chart';
-          return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
-      + '</tr></thead><tbody>';
-    opn.forEach(t=>{
-      const entry=Number(t.entry_price||0), qty=t.qty||0;
-      const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
-      const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
-      const argEsc=s=>String(s||'').replace(/'/g,'');
-      oh += '<tr style="border-bottom:1px solid #21262d">'
-        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
-        + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
-        + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
-        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e">₹'+entry.toFixed(2)+' · '+t.entry_time+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
-        + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
-        + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
-        + '<td style="padding:7px 6px">'+qty+'</td>'
-        + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+t.entry_price+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
-        + '<td style="padding:7px 6px;text-align:center;white-space:nowrap">'
-          + '<button id="'+bId+'" onclick="closePosition(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\',\''+bId+'\')" '
-          + 'style="padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
-          + '<button title="Book se hatao — koi real order nahi (rejected/phantom position ke liye)" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
-          + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
-        + '</tr>';
+    let grouped = {};
+    opn.forEach(t => {
+      let stratKey = t.strategy || t.source || 'MANUAL';
+      if(!grouped[stratKey]) grouped[stratKey] = [];
+      grouped[stratKey].push(t);
     });
-    oh += '</tbody></table>';
+    
+    let oh = '';
+    
+    for(let stratKey in grouped) {
+      let items = grouped[stratKey];
+      let stratName = stratKey;
+      let stratDesc = '';
+      if (stratKey.includes(' | ')) {
+        let parts = stratKey.split(' | ');
+        stratName = parts[0];
+        stratDesc = parts.slice(1).join(' | ');
+      }
+      
+      let tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+        + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','Qty','Chart','']
+          .map(h=>{const r=['LTP','Points','P&L'].includes(h),c=h==='Chart';
+            return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
+        + '</tr></thead><tbody>';
+        
+      items.forEach(t=>{
+        const entry=Number(t.entry_price||0), qty=t.qty||0;
+        const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
+        const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
+        const argEsc=s=>String(s||'').replace(/'/g,'');
+        tableHtml += '<tr style="border-bottom:1px solid #21262d">'
+          + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap">'+(t.entry_date||ordDate)+'</td>'
+          + '<td style="padding:7px 6px;color:#adbac7">'+t.sym+'</td>'
+          + '<td style="padding:7px 6px">'+_ordTags(t)+'</td>'
+          + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600">'+t.entry+'</td>'
+          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e">₹'+entry.toFixed(2)+' · '+t.entry_time+'</td>'
+          + '<td style="padding:7px 6px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
+          + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
+          + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700">—</td>'
+          + '<td style="padding:7px 6px">'+qty+'</td>'
+          + '<td style="padding:7px 6px;text-align:center"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+t.entry_price+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
+          + '<td style="padding:7px 6px;text-align:center;white-space:nowrap">'
+            + '<button id="'+bId+'" onclick="closePosition(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\',\''+bId+'\')" '
+            + 'style="padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
+            + '<button title="Book se hatao — koi real order nahi (rejected/phantom position ke liye)" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
+            + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
+          + '</tr>';
+      });
+      tableHtml += '</tbody></table>';
+      
+      oh += `
+      <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
+        <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
+        <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
+          <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
+            <span>📂 ${stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
+            ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
+          </div>
+          <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
+          <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
+        </summary>
+        <div style="border-top: 1px solid #30363d; overflow-x: auto;">
+          ${tableHtml}
+        </div>
+      </details>`;
+    }
+    
     ordOpenEl.innerHTML = oh;
     ordOpenEl.dataset.fp = openFp;
     _patchLtpCells(); _fetchPositionLtp();   // cache se turant bharo, phir fresh fetch
@@ -1351,6 +1497,7 @@ const OPEN_COLS_DEF = [
   {id:'points',   l:'Points',          a:'right',  on:true},
   {id:'qty',      l:'Qty',             a:'center', on:true},
   {id:'unrealized',l:'Unrealized',     a:'right',  on:true},
+  {id:'chart',    l:'Chart',           a:'center', on:true, fixed:true},
   {id:'action',   l:'',                a:'center', on:true,  fixed:true},
 ];
 const CLOSED_COLS_DEF = [
@@ -1377,6 +1524,10 @@ function _loadColPrefs() {
     const c = localStorage.getItem('pnl_closed_cols');
     _openCols   = o ? JSON.parse(o) : JSON.parse(JSON.stringify(OPEN_COLS_DEF));
     _closedCols = c ? JSON.parse(c) : JSON.parse(JSON.stringify(CLOSED_COLS_DEF));
+    // Force inject missing fixed columns (like chart) into cached layout
+    OPEN_COLS_DEF.filter(x=>x.fixed).forEach(def => {
+      if(!_openCols.find(x=>x.id===def.id)) _openCols.push(JSON.parse(JSON.stringify(def)));
+    });
   } catch(e) {
     _openCols   = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
     _closedCols = JSON.parse(JSON.stringify(CLOSED_COLS_DEF));
@@ -1429,7 +1580,7 @@ let _pnlTagMap = {};   // "sym|entry_time" -> trade-DB row (source/mode/strategy
 function _pnlTagChips(d){
   const t=_pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
   if(!t || typeof _ordTag!=='function') return '';
-  return ' '+_ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)+(t.strategy?_ordTag(t.strategy,'name'):'');
+  return ' '+_ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)+(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'');
 }
 
 async function updatePnl() {
@@ -1491,36 +1642,82 @@ async function updatePnl() {
       if(!_openCols) _loadColPrefs();
       const ov = id => _colVisible(_openCols, id);
       let cols = _openCols.filter(c=>c.on).map(c=>({l:c.l,a:c.a}));
-      let rows=allOpen.map(d=>{
-        let entry=d.entry_price||0, qty=d.qty||65;
-        let sc=d.entry==='BUY'?'#3fb950':'#f85149';
-        let closeSide=d.entry==='BUY'?'SELL':'BUY';
-        let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
-        let modeNow=(window.qoGetMode&&window.qoGetMode())||'paper';
-        let bId=`xb_${d.sym.replace(/[^a-z0-9]/gi,'_')}`;
-        let stratLabel=(d._strat||'').toUpperCase();
-        let capital = entry * qty;
-        let row = '';
-        if(ov('symbol'))    row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}`);
-        if(ov('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
-        if(ov('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
-        if(ov('entry_time'))row += _pnlTD(d.entry_time||'—','#e6edf3','center');
-        if(ov('exit_time')) row += _pnlTD('<span style="color:#8b949e">open</span>','','center');
-        if(ov('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
-        if(ov('entry_px'))  row += _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right');
-        // LTP/Points/Unrealized: placeholder only — _patchLtpCells fills these live (no re-render flash)
-        if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">⏳</span></td>`;
-        if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">—</td>`;
-        if(ov('qty'))       row += _pnlTD(qty,'#8b949e','center');
-        if(ov('unrealized'))row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="unrl-cell" data-sym="${d.sym}">—</td>`;
-        if(ov('action'))    row += `<td style="padding:5px 10px;text-align:center">
-                 <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
-                   style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
-                   ${closeSide} ✕
-                 </button></td>`;
-        return row;
+      
+      let grouped = {};
+      allOpen.forEach(d => {
+        let strat = (d._strat || 'MANUAL').toUpperCase();
+        if(!grouped[strat]) grouped[strat] = [];
+        grouped[strat].push(d);
       });
-      _setHtml(posEl,_card(`⏳ OPEN POSITIONS (${allOpen.length})`,'#d29922',_pnlTable(cols,rows)));
+      
+      let finalHtml = `<div style="font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">⏳ OPEN POSITIONS (${allOpen.length})</div>`;
+      
+      for(let strat in grouped) {
+        let items = grouped[strat];
+        let stratRows = items.map(d => {
+          let entry=d.entry_price||0, qty=d.qty||65;
+          let sc=d.entry==='BUY'?'#3fb950':'#f85149';
+          let closeSide=d.entry==='BUY'?'SELL':'BUY';
+          let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
+          let modeNow=(window.qoGetMode&&window.qoGetMode())||'paper';
+          let bId=`xb_${d.sym.replace(/[^a-z0-9]/gi,'_')}`;
+          let stratLabel=(d._strat||'').toUpperCase();
+          let capital = entry * qty;
+          let row = '';
+          if(ov('symbol'))    row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}`);
+          if(ov('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
+          if(ov('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
+          if(ov('entry_time'))row += _pnlTD(d.entry_time||'—','#e6edf3','center');
+          if(ov('exit_time')) row += _pnlTD('<span style="color:#8b949e">open</span>','','center');
+          if(ov('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
+          if(ov('entry_px'))  row += _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right');
+          if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">⏳</span></td>`;
+          if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">—</td>`;
+          
+          let c_tf = '', c_ind = '';
+          let tTag = _pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
+          if(tTag && tTag.tags) {
+            const cTag = tTag.tags.find(t=>t.startsWith('CHART:'));
+            if(cTag) { const parts=cTag.split(':'); c_tf=parts[1]||''; c_ind=parts.slice(2).join(':')||''; }
+          }
+          
+          if(ov('qty'))       row += _pnlTD(qty,'#8b949e','center');
+          if(ov('unrealized'))row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="unrl-cell" data-sym="${d.sym}">—</td>`;
+          if(ov('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${entry},0,'${d.entry_time||''}','',${qty},'','${c_tf}','${c_ind}')" title="Premium chart (entry)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
+          if(ov('action'))    row += `<td style="padding:5px 10px;text-align:center">
+                   <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
+                     style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
+                     ${closeSide} ✕
+                   </button></td>`;
+          return row;
+        });
+        
+        let stratName = strat;
+        let stratDesc = '';
+        if (strat.includes(' | ')) {
+          let parts = strat.split(' | ');
+          stratName = parts[0];
+          stratDesc = parts.slice(1).join(' | ');
+        }
+        
+        finalHtml += `
+        <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
+          <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
+          <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
+            <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
+              <span>📂 ${stratName} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
+              ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
+            </div>
+            <button onclick="editStrategyLabel(this, event)" data-strat="${strat.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
+            <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
+          </summary>
+          <div style="border-top: 1px solid #30363d; overflow-x: auto;">
+            ${_pnlTable(cols, stratRows)}
+          </div>
+        </details>`;
+      }
+      
+      _setHtml(posEl, `<div class="card" style="border-color:#d29922; padding:18px;">${finalHtml}</div>`);
     }
   }
 
@@ -1555,10 +1752,17 @@ async function updatePnl() {
     if(cv('exit_px'))   row += _pnlTD(xp?'₹'+xp.toFixed(2):'—','','right');
     if(cv('qty'))       row += _pnlTD(qty||'—','#8b949e','center');
     if(cv('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
+    // Extract CHART tag if present
+    let c_tf = '', c_ind = '';
+    if(d.tags) {
+      const cTag = d.tags.find(t=>t.startsWith('CHART:'));
+      if(cTag) { const parts=cTag.split(':'); c_tf=parts[1]||''; c_ind=parts.slice(2).join(':')||''; }
+    }
+    
     if(cv('gross'))     row += _pnlTD(_fmt(gross),_pnlColor(gross),'right','font-weight:600');
     if(cv('tax'))       row += _pnlTD(tax!=null?'−₹'+tax.toFixed(2):'—','#f85149','right');
     if(cv('net'))       row += _pnlTD(_fmt(net),_pnlColor(net),'right','font-weight:700');
-    row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty})" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
+    row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty},'','${c_tf}','${c_ind}')" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
     return row;
   });
   oCols.push({l:'Chart',a:'center'});
@@ -1566,9 +1770,11 @@ async function updatePnl() {
 
 }
 
-function openTradeChart(sym, side, entry, exit, et, xt, qty, date){
+function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind){
   const params = {sym, side, entry, exit, et, xt, qty};
   if(date) params.date = date;
+  if(tf) params.tf = tf;
+  if(ind) params.ind = ind;
   const q = new URLSearchParams(params);
   window.open('/trade-chart?'+q.toString(), '_blank');
 }
@@ -2477,8 +2683,12 @@ function pineRenderTable() {
       ? `<a href="/pine/report/${v.version}" target="_blank" style="color:#58a6ff;font-size:12px;text-decoration:none;white-space:nowrap">📊 Report<br><span style="font-size:10px;color:#8b949e">${v.report_stats.tv_trades}TV / ${v.report_stats.eng_trades}Eng</span></a>`
       : `<span style="color:#30363d;font-size:12px">—</span>`;
     const sv = v.strat_version || v.version;
+    const scriptLang = v.lang || (pyFile ? 'python' : 'pine');
+    const _lm = {pine:['📌 Pine','#d2992222','#d29922'], python:['🐍 Py','#1f6feb22','#58a6ff'], dsl:['⚙️ DSL','#3fb95022','#3fb950']}[scriptLang] || ['?','#30363d33','#8b949e'];
+    const langChip = `<span style="background:${_lm[1]};color:${_lm[2]};font-size:9px;padding:1px 5px;border-radius:8px;font-weight:600;white-space:nowrap">${_lm[0]}</span>`;
+    const runnable = !!v.script_id;
     return `<tr style="border-bottom:1px solid #21262d" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
-      <td style="padding:10px;color:#3fb950;font-weight:700;white-space:nowrap;cursor:pointer" onclick="pineLoadVersion(${v.version})" title="Click karke code textarea mein load karo">v${sv}</td>
+      <td style="padding:10px;color:#3fb950;font-weight:700;white-space:nowrap;cursor:pointer" onclick="pineLoadVersion(${v.version})" title="Click karke code textarea mein load karo">v${sv}<br>${langChip}</td>
       <td style="padding:10px">${authorBadge}</td>
       <td style="padding:10px">${pyBadge}</td>
       <td style="padding:10px;color:#8b949e;font-size:12px;white-space:nowrap">${v.timestamp}</td>
@@ -2501,9 +2711,14 @@ function pineRenderTable() {
         <button onclick="pineOpenImages(${v.version})" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'" title="Screenshots dekho / add karo">🖼 <span id="pine-imgcount-${v.version}">…</span></button>
       </td>
       <td style="padding:10px;text-align:center">
-        <button onclick="runModalOpen('${pyFile ? pyFile.replace('strategies/','').replace('.py','') : ''}','${v.name.replace(/'/g,"\\'")} v${sv}','${v.timestamp}','${pyFile||''}')"
-          style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap"
-          onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">▶ Run</button>
+        ${runnable
+          ? `<button onclick="window.open('/backtest-chart?strategy=${v.script_id}','_blank')"
+               title="Backtest dropdown me '${v.script_id}' khulega — dates pick karke run karo"
+               style="background:#1f6feb;border:1px solid #388bfd;color:#fff;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap"
+               onmouseover="this.style.background='#388bfd'" onmouseout="this.style.background='#1f6feb'">📊 Backtest</button>`
+          : `<button onclick="runModalOpen('${pyFile ? pyFile.replace('strategies/','').replace('.py','') : ''}','${v.name.replace(/'/g,"\\'")} v${sv}','${v.timestamp}','${pyFile||''}')"
+               style="background:#238636;border:1px solid #2ea043;color:#fff;border-radius:4px;padding:4px 12px;font-size:12px;cursor:pointer;font-weight:600;white-space:nowrap"
+               onmouseover="this.style.background='#2ea043'" onmouseout="this.style.background='#238636'">▶ Run</button>`}
       </td>
       <td style="padding:10px;text-align:center;white-space:nowrap">
         <button onclick="pineCopyCode(${v.version})" title="Code clipboard mein copy karo" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:4px;padding:4px 8px;font-size:12px;cursor:pointer" onmouseover="this.style.color='#e6edf3';this.style.borderColor='#58a6ff'" onmouseout="this.style.color='#8b949e';this.style.borderColor='#30363d'">📋 Copy</button>
@@ -2528,13 +2743,157 @@ async function _pineLoadImgCount(version) {
   } catch(e) { el.textContent = '0'; }
 }
 
+// ── Script language: detection + manual pills ────────────────────────────────
+let _scriptLang = null;       // null = user hasn't overridden; follow auto-detect
+let _scriptLangAuto = 'pine'; // last auto-detected value
+
+function scriptDetectLang(code) {
+  const c = (code || ''), low = c.toLowerCase();
+  if (low.includes('//@version') || low.includes('strategy(') || low.includes('indicator(') || low.includes('ta.')) return 'pine';
+  if (low.includes('def evaluate') || low.includes('def backtest') || /\n\s*import\s/.test(c) || c.startsWith('import ') || /\n\s*def\s/.test(c) || low.includes('class ')) return 'python';
+  if (low.includes('entry_long') || low.includes('exit_long') || low.includes('entry_short')) return 'dsl';
+  return 'pine';
+}
+function _scriptCurrentLang() { return _scriptLang || _scriptLangAuto; }
+function _scriptPaintPills() {
+  const cur = _scriptCurrentLang();
+  document.querySelectorAll('.script-lang-pill').forEach(b => {
+    const on = b.dataset.lang === cur;
+    b.style.background = on ? '#1f6feb22' : '#161b22';
+    b.style.borderColor = on ? '#1f6feb' : '#30363d';
+    b.style.color = on ? '#58a6ff' : '#8b949e';
+  });
+  const note = document.getElementById('script-lang-auto');
+  if (note) note.textContent = _scriptLang ? '(manually set)' : '(auto-detected — change if wrong)';
+}
+function scriptSetLang(lang) { _scriptLang = lang; _scriptPaintPills(); }
+function scriptAutoDetect() {
+  _scriptLangAuto = scriptDetectLang(document.getElementById('pine-code').value);
+  _scriptPaintPills();
+}
+function scriptUploadFile(files) {
+  if (!files || !files.length) return;
+  const f = files[0];
+  const rd = new FileReader();
+  rd.onload = e => {
+    document.getElementById('pine-code').value = e.target.result || '';
+    const ext = (f.name.split('.').pop() || '').toLowerCase();
+    _scriptLang = ext === 'py' ? 'python' : ext === 'pine' ? 'pine' : ext === 'rules' ? 'dsl' : null;
+    scriptAutoDetect();
+    if (!document.getElementById('script-name').value.trim())
+      document.getElementById('script-name').value = f.name.replace(/\.[^.]+$/, '');
+  };
+  rd.readAsText(f);
+}
+
+// ── Master Prompt: give this to DeepSeek/any AI so it writes engine-ready code ──
+const SCRIPT_MASTER_PROMPT = `You are writing a backtest strategy for my custom Python engine (NOT TradingView, NOT backtrader). Output ONLY one self-contained Python file — no prose.
+
+CONTRACT — implement EITHER of these (evaluate is simplest):
+
+(A) def evaluate(df, cfg, pos):
+    # df: pandas DataFrame, oldest->newest, columns: time, open, high, low, close, volume
+    #     (df is the history UP TO AND INCLUDING the current bar; last row = current bar)
+    # cfg: dict of params (read with cfg.get('x', default))
+    # pos: 'LONG' | 'SHORT' | None  (your current position)
+    # RETURN exactly one of: 'BUY' | 'SELL' | 'EXIT' | None
+    # Use df.iloc[-1] for the current bar, df.iloc[-2] for the previous. Guard len(df).
+    ...
+
+(B) def backtest(df, cfg):
+    # full control; RETURN (trades, df, plot_spec) where trades is a list of dicts:
+    #   {entry_time, entry_price, side('Long'/'Short'), exit_time, exit_price, exit_reason}
+    # plot_spec = None, OR draw indicator lines on the chart ONLY via the engine helper
+    # (do NOT invent your own plot_spec shape — the chart will ignore it):
+    #   from _CHARTING import spec as chspec
+    #   df['bb_upper'] = ...; df['bb_lower'] = ...   # compute as DataFrame columns
+    #   plot_spec = chspec.build_plot_spec(df, indicators=[
+    #       {"name":"BB Upper","series":df["bb_upper"],"type":"line","color":"#FF69B4"},
+    #       {"name":"BB Lower","series":df["bb_lower"],"type":"line","color":"#FF69B4"},
+    #   ])
+    #   # each "series" is a pandas Series aligned with df; "color" is a hex string.
+    #   # The chart draws candles + buy/sell/exit markers itself — only add indicator LINES here.
+
+RULES:
+- Pure pandas/numpy only (plus 'from _CHARTING import spec as chspec' for plot_spec). No network, no file I/O, no extra pip installs.
+- To draw indicators on the chart you MUST use def backtest + chspec.build_plot_spec — the evaluate() path cannot draw lines.
+- Intraday only: the engine force-exits every position at 15:15 IST and blocks entries after — do NOT hold overnight.
+- Optional config header (first lines, as comments) to set defaults:
+    # symbol: NIFTY        (NIFTY/BANKNIFTY = index; anything else = equity)
+    # timeframe: 5m        (1m/3m/5m/15m/30m)
+    # qty: 1
+- Keep it simple — fewer conditions = more robust.
+
+Strategy to implement: <DESCRIBE YOUR STRATEGY HERE>`;
+
+const SCRIPT_DSL_HELP = `DSL Rule-block (lightest option — runs via the built-in rule engine). Paste lines like:
+
+// --- Entry ---
+bb_window = 20
+bb_std = 2
+entry_long = c_close < c_lower
+entry_short = allow_short and c_close > c_upper
+// --- Exit ---
+exit_long = c_high >= c_upper
+exit_short = c_low <= c_lower
+sl_pct = 0.5
+tp_pct = 0
+// --- Other ---
+symbol = NIFTY
+timeframe = 5m
+
+Variables available in entry_*/exit_* expressions:
+  c_open c_close c_high c_low  c_sma c_upper c_lower  c_ema_52 c_ema_100  c_atr c_body_pct
+  entry_price entry_candle_high entry_candle_low  allow_short  abs()
+Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allow_short max_trades_per_day symbol timeframe`;
+
+function scriptShowMasterPrompt() {
+  let el = document.getElementById('script-mp-modal');
+  if (el) el.remove();
+  el = document.createElement('div');
+  el.id = 'script-mp-modal';
+  el.style.cssText = 'position:fixed;inset:0;background:#000000cc;z-index:9999;display:flex;align-items:center;justify-content:center;padding:24px';
+  el.addEventListener('click', e => { if (e.target === el) el.remove(); });
+  el.innerHTML = `
+    <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:760px;width:100%;max-height:88vh;overflow:auto;padding:20px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+        <span style="font-size:15px;font-weight:700;color:#e6edf3">📋 Script Contract — DeepSeek/AI ko yeh do</span>
+        <button onclick="document.getElementById('script-mp-modal').remove()" style="background:#21262d;border:1px solid #30363d;color:#8b949e;border-radius:6px;padding:5px 12px;cursor:pointer">✕ Close</button>
+      </div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <button class="btn btn-blue" style="padding:5px 12px;font-size:12px" onclick="_scriptCopyText(SCRIPT_MASTER_PROMPT, this)">📋 Copy Python Master Prompt</button>
+        <button class="btn btn-gray" style="padding:5px 12px;font-size:12px" onclick="_scriptCopyText(SCRIPT_DSL_HELP, this)">📋 Copy DSL Cheatsheet</button>
+      </div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px">Python (powerful, any logic):</div>
+      <pre style="white-space:pre-wrap;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:11px;color:#adbac7;line-height:1.5;margin:0 0 12px">${SCRIPT_MASTER_PROMPT.replace(/</g,'&lt;')}</pre>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:6px">DSL Rules (lightweight, no .py file):</div>
+      <pre style="white-space:pre-wrap;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:11px;color:#adbac7;line-height:1.5;margin:0">${SCRIPT_DSL_HELP.replace(/</g,'&lt;')}</pre>
+    </div>`;
+  document.body.appendChild(el);
+}
+function _scriptCopyText(text, btn) {
+  navigator.clipboard.writeText(text).then(() => {
+    const o = btn.textContent; btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = o, 1800);
+  });
+}
+
 async function pineSave() {
   const code = document.getElementById('pine-code').value.trim();
   if (!code) { document.getElementById('pine-save-msg').textContent = '⚠️ Kuch paste karo pehle'; return; }
+  const lang = _scriptCurrentLang();
+  const name = document.getElementById('script-name').value.trim();
+  if (lang !== 'pine' && !name) {
+    document.getElementById('pine-save-msg').style.color = '#d29922';
+    document.getElementById('pine-save-msg').textContent = '⚠️ Python/DSL ke liye strategy name zaroori hai';
+    return;
+  }
+  // Confirm the language before committing (user explicitly wanted to be asked)
+  if (!confirm(`Yeh "${lang.toUpperCase()}" code save kar rahe hain` + (lang === 'pine' ? ' (reference-only, run nahi hoga).' : ' (dropdown me run-able banega).') + `\n\nLanguage sahi hai? Galat ho to Cancel karke pill change karo.`)) return;
   const msg = document.getElementById('pine-save-msg');
   msg.style.color = '#8b949e'; msg.textContent = 'Saving...';
   const desc = document.getElementById('pine-desc').value.trim();
-  const r = await fetch('/api/pine/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, desc}) });
+  const r = await fetch('/api/pine/save', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({code, desc, lang, name}) });
   const d = await r.json();
   // upload pending images
   const files = document.getElementById('pine-img-input').files;
@@ -2544,12 +2903,15 @@ async function pineSave() {
     await fetch('/api/pine/images/' + d.version, { method:'POST', body: fd });
   }
   msg.style.color = '#3fb950';
-  msg.textContent = `✅ v${d.strat_version || d.version} saved — "${d.name}"`;
+  msg.textContent = `✅ v${d.strat_version || d.version} saved — "${d.name}" [${(d.lang||lang).toUpperCase()}]` + (d.script_id ? ` — dropdown me "${d.script_id}" se run karo` : '');
   document.getElementById('pine-code').value = '';
   document.getElementById('pine-desc').value = '';
+  document.getElementById('script-name').value = '';
+  document.getElementById('script-file-input').value = '';
+  _scriptLang = null; _scriptLangAuto = 'pine'; _scriptPaintPills();
   document.getElementById('pine-img-input').value = '';
   document.getElementById('pine-img-preview').innerHTML = '';
-  setTimeout(() => msg.textContent = '', 4000);
+  setTimeout(() => msg.textContent = '', 6000);
   pineLoadLatest();
   pineLoadHistory();
 }
@@ -2771,6 +3133,269 @@ async function pineCopyCode(version) {
   }
 }
 
+function openScannerModal() {
+  document.getElementById('scanner-modal').style.display = 'flex';
+  document.getElementById('scanner-results').innerHTML = '';
+}
+
+async function runScannerAPI() {
+  const loader = document.getElementById('scanner-loader');
+  const resultsDiv = document.getElementById('scanner-results');
+  loader.style.display = 'block';
+  resultsDiv.innerHTML = '';
+  
+  try {
+    const res = await fetch('/api/scanner/run', { method: 'POST' });
+    const data = await res.json();
+    if (data.status === 'success') {
+      if (data.results && data.results.length > 0) {
+        let html = '<table style="width:100%; border-collapse: collapse; color: #e6edf3;">';
+        html += '<tr style="border-bottom: 1px solid #30363d; color: #8b949e; text-align: left;"><th style="padding: 8px;">Symbol</th><th style="padding: 8px;">Date</th><th style="padding: 8px;">Close</th><th style="padding: 8px;">EMA52</th></tr>';
+        data.results.forEach(row => {
+          html += `<tr style="border-bottom: 1px solid #30363d;"><td style="padding: 8px;">${row.Symbol}</td><td style="padding: 8px;">${row.Date}</td><td style="padding: 8px; color: #3fb950;">${row.Close}</td><td style="padding: 8px;">${row.EMA52}</td></tr>`;
+        });
+        html += '</table>';
+        resultsDiv.innerHTML = html;
+      } else {
+        resultsDiv.innerHTML = '<p style="color: #8b949e; text-align: center;">No stocks found crossing above 52-EMA today.</p>';
+      }
+    } else {
+      resultsDiv.innerHTML = `<p style="color: #f85149; text-align: center;">Error: ${data.message}</p>`;
+    }
+  } catch (err) {
+    resultsDiv.innerHTML = `<p style="color: #f85149; text-align: center;">Request failed: ${err}</p>`;
+  } finally {
+    loader.style.display = 'none';
+  }
+}
+
+function openBulkModal() {
+  document.getElementById('bulk-modal').style.display = 'flex';
+  document.getElementById('bulk-step1').style.display = 'block';
+  document.getElementById('bulk-step2').style.display = 'none';
+  document.getElementById('bulk-symbols').value = '';
+  document.getElementById('bulk-msg').innerHTML = '';
+  autoFillStrategyDesc();
+}
+
+let _bulkPreviewData = [];
+
+async function loadBulkPreview() {
+  const symbols = document.getElementById('bulk-symbols').value;
+  if (!symbols.trim()) {
+    document.getElementById('bulk-msg').innerHTML = '<span style="color: #f85149">Please enter at least one symbol.</span>';
+    return;
+  }
+  
+  document.getElementById('bulk-loader').style.display = 'block';
+  document.getElementById('bulk-loader').innerText = 'Loading Prices... ⏳';
+  document.getElementById('bulk-msg').innerHTML = '';
+  
+  try {
+    const res = await fetch('/api/bulk-preview', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbols: symbols })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'success' && data.data && data.data.length > 0) {
+      _bulkPreviewData = data.data;
+      const tbody = document.getElementById('bulk-preview-body');
+      tbody.innerHTML = '';
+      
+      _bulkPreviewData.forEach((item, idx) => {
+        // default qty 1, sl 2.0%
+        item.qty = 1;
+        item.sl_pct = 2.0;
+        
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #21262d';
+        
+        const formatMoney = (val) => '₹' + val.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        
+        tr.innerHTML = `
+          <td style="padding: 8px; color: #e6edf3; font-weight: 600;">${item.sym}</td>
+          <td style="padding: 8px; color: #e6edf3; text-align: right;">${formatMoney(item.ltp)}</td>
+          <td style="padding: 8px; text-align: center;">
+            <input type="number" id="bulk-q-${idx}" value="${item.qty}" min="1" oninput="updateBulkMath(${idx})" style="width: 60px; padding: 4px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; text-align: center;">
+          </td>
+          <td style="padding: 8px; text-align: center;">
+            <input type="number" id="bulk-sl-${idx}" value="${item.sl_pct}" min="0" step="0.1" oninput="updateBulkMath(${idx})" style="width: 60px; padding: 4px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #c9d1d9; text-align: center;">%
+            <div id="bulk-sl-math-${idx}" style="font-size: 11px; color: #f85149; margin-top: 4px; white-space: nowrap;"></div>
+          </td>
+          <td style="padding: 8px; color: #e6edf3; text-align: right; font-weight: bold;" id="bulk-cap-${idx}">
+            ${formatMoney(item.ltp * item.qty)}
+          </td>
+        `;
+        tbody.appendChild(tr);
+        setTimeout(() => updateBulkMath(idx), 0); // initialize math
+      });
+      
+      updateBulkGrandTotal();
+      document.getElementById('bulk-step1').style.display = 'none';
+      document.getElementById('bulk-step2').style.display = 'block';
+    } else {
+      document.getElementById('bulk-msg').innerHTML = `<span style="color: #f85149">❌ ${data.message || 'No symbols found.'}</span>`;
+    }
+  } catch (err) {
+    document.getElementById('bulk-msg').innerHTML = `<span style="color: #f85149">❌ Request failed: ${err}</span>`;
+  } finally {
+    document.getElementById('bulk-loader').style.display = 'none';
+    document.getElementById('bulk-loader').innerText = 'Placing Trades... ⏳';
+  }
+}
+
+function updateBulkMath(idx) {
+  const item = _bulkPreviewData[idx];
+  const qEl = document.getElementById(`bulk-q-${idx}`);
+  const slEl = document.getElementById(`bulk-sl-${idx}`);
+  
+  const qty = parseInt(qEl.value) || 0;
+  const sl = parseFloat(slEl.value) || 0;
+  
+  item.qty = qty;
+  item.sl_pct = sl;
+  
+  const cap = item.ltp * qty;
+  document.getElementById(`bulk-cap-${idx}`).innerText = '₹' + cap.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  
+  if (sl > 0 && item.ltp > 0) {
+    const slPx = item.ltp * (1 - (sl/100));
+    const loss = (item.ltp - slPx) * qty;
+    document.getElementById(`bulk-sl-math-${idx}`).innerText = `Sell @ ₹${slPx.toFixed(1)} (-₹${Math.round(loss)})`;
+  } else {
+    document.getElementById(`bulk-sl-math-${idx}`).innerText = '';
+  }
+  
+  updateBulkGrandTotal();
+}
+
+function updateBulkGrandTotal() {
+  const total = _bulkPreviewData.reduce((acc, item) => acc + (item.ltp * (item.qty||0)), 0);
+  document.getElementById('bulk-grand-total').innerText = '₹' + total.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+const STRATEGY_MAP = {
+  "52_Week_Breakout": { tf: "1D", ind: "EMA(52)", desc: "Price closing above 52-week EMA with high volume" },
+  "Bollinger_Bounce": { tf: "15", ind: "BB(20,2)", desc: "Bounce from lower Bollinger Band with bullish candle" },
+  "VWAP_Reversal": { tf: "5", ind: "VWAP,EMA(9)", desc: "Reversing towards VWAP after morning extreme" },
+  "Price_Action": { tf: "1D", ind: "", desc: "Pure price action or horizontal support breakout" },
+  "Custom": { tf: "1D", ind: "", desc: "" }
+};
+
+function autoFillStrategyDesc() {
+  const strategyName = document.getElementById('bulk-strategy').value;
+  const reasonEl = document.getElementById('bulk-reason');
+  if (STRATEGY_MAP[strategyName] && STRATEGY_MAP[strategyName].desc) {
+    reasonEl.value = STRATEGY_MAP[strategyName].desc;
+  } else if (!STRATEGY_MAP[strategyName]) {
+    // If it's a completely custom typed strategy, don't clear the user's reason
+  }
+}
+
+let _editStratOld = "";
+function editStrategyLabel(btn, ev) {
+  ev.preventDefault();
+  ev.stopPropagation();
+  let oldStrat = btn.getAttribute('data-strat');
+  _editStratOld = oldStrat;
+  let parts = oldStrat.split(' | ');
+  let name = parts[0];
+  let desc = parts.slice(1).join(' | ');
+  
+  document.getElementById('edit-strat-name').value = name;
+  document.getElementById('edit-strat-desc').value = desc;
+  document.getElementById('edit-strat-modal').style.display = 'flex';
+}
+
+async function saveStrategyLabel() {
+  let newName = document.getElementById('edit-strat-name').value.trim();
+  let newDesc = document.getElementById('edit-strat-desc').value.trim();
+  if(!newName) return;
+  
+  let newStrat = newName;
+  if(newDesc) newStrat += " | " + newDesc;
+  
+  if (newStrat === _editStratOld) {
+    document.getElementById('edit-strat-modal').style.display = 'none';
+    return;
+  }
+  
+  document.getElementById('edit-strat-modal').style.display = 'none';
+  try {
+    let r = await fetch('/api/orders/rename-strategy', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ old_strategy: _editStratOld, new_strategy: newStrat })
+    });
+    let j = await r.json();
+    if (j.status === "success") {
+      updatePnl();
+      ordersRender();
+      flash("Strategy updated!", "#3fb950");
+    } else {
+      alert("Failed to update: " + j.message);
+    }
+  } catch (e) {
+    alert("Error: " + e);
+  }
+}
+
+async function submitBulkOrders() {
+  const strategyName = document.getElementById('bulk-strategy').value;
+  const reason = document.getElementById('bulk-reason').value;
+  
+  const mapped = STRATEGY_MAP[strategyName] || { tf: "1D", ind: "" };
+  let tf = mapped.tf;
+  let ind = mapped.ind;
+  
+  let finalFilterName = strategyName;
+  if (reason.trim()) {
+    finalFilterName += ` | ${reason.trim()}`;
+  }
+  
+  const trades = _bulkPreviewData.filter(x => x.qty > 0).map(x => ({
+    sym: x.sym,
+    sec_id: x.sec_id,
+    ltp: x.ltp,
+    qty: x.qty,
+    sl_pct: x.sl_pct
+  }));
+  
+  if (trades.length === 0) {
+    document.getElementById('bulk-msg').innerHTML = '<span style="color: #f85149">No valid trades to place.</span>';
+    return;
+  }
+  
+  document.getElementById('bulk-loader').style.display = 'block';
+  document.getElementById('bulk-msg').innerHTML = '';
+  
+  try {
+    const res = await fetch('/api/bulk-order', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filter_name: finalFilterName, tf: tf, ind: ind, trades: trades })
+    });
+    const data = await res.json();
+    
+    if (data.status === 'success') {
+      document.getElementById('bulk-msg').innerHTML = `<span style="color: #3fb950">✅ ${data.message}</span>`;
+      setTimeout(() => {
+        document.getElementById('bulk-modal').style.display = 'none';
+        switchTab('orders'); // Jump to orders tab
+      }, 1500);
+    } else {
+      document.getElementById('bulk-msg').innerHTML = `<span style="color: #f85149">❌ Error: ${data.message}</span>`;
+    }
+  } catch (err) {
+    document.getElementById('bulk-msg').innerHTML = `<span style="color: #f85149">❌ Request failed: ${err}</span>`;
+  } finally {
+    document.getElementById('bulk-loader').style.display = 'none';
+  }
+}
+
+
 // init
 pineLoadLatest();
 
@@ -2786,6 +3411,25 @@ pineLoadLatest();
   setTimeout(() => runModalOpen(deploy, base, '', `strategies/${base}.py`), 300);
   history.replaceState(null, '', window.location.pathname);
 })();
+
 </script>
+<div id="edit-strat-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
+  <div style="background: #0d1117; width: 450px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
+    <div style="padding: 16px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #161b22;">
+      <h3 style="margin: 0; font-size: 15px; color: #e6edf3;">✏️ Edit Strategy Label</h3>
+      <span onclick="document.getElementById('edit-strat-modal').style.display='none'" style="cursor: pointer; color: #8b949e; font-size: 16px;">✕</span>
+    </div>
+    <div style="padding: 20px; flex: 1; overflow-y: auto;">
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Strategy Name</label>
+      <input type="text" id="edit-strat-name" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin-bottom: 16px; box-sizing: border-box;">
+      
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Description / Notes</label>
+      <textarea id="edit-strat-desc" rows="6" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical; font-family: inherit; box-sizing: border-box;"></textarea>
+      
+      <button onclick="saveStrategyLabel()" style="width: 100%; padding: 10px; margin-top: 20px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Changes</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>

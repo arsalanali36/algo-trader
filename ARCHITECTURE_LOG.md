@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-06-23 — Script Library: paste-and-run custom strategies (TradingView-style)
+**Status:** DONE (local build + backend verified) — VPS deploy PENDING (market open; do off-market)
+**Kya:** "📌 Pine" tab → "📜 Script" library banao jisme Pine + Python + DSL-rule versions save hon. Koi bhi conforming Python/DSL script ko backtest dropdown se runnable banao (Pine reference-only). Plus ek master-prompt + contract doc jo kisi bhi AI ko de do to woh hamare syntax me code likhe.
+**Layer:** strategy, ui, config
+**Files:** `_TOOLS/backtest_engine.py` (new `_run_custom` generic dynamic-import runner + `_eval_loop` + dispatch in `run_backtest`), `trader_dashboard.py` (`/api/pine/save` lang+snapshot-ext+python→`strategies/<id>.py`+dsl→cfg parse, `_parse_dsl_block` helper, `api_backtest_run` dynamic dispatch), `templates/index.html` (Script rename, lang pills+auto-detect+confirm, file upload, Lang badge, Master-Prompt modal), `templates/backtest_chart.html` (skip `_`-keys in edit modal; dropdown auto-lists new config keys — free), `strategies/SCRIPT_CONTRACT.md` (NEW — DSL+Python spec + master prompt), `strategies/custom_rule_engine.py` (exists local, VPS pe deploy)
+**Kyun:** User ko TradingView/QuantMan jaisa flow chahiye — ek file paste/upload → version-history library → dropdown → backtest. Abhi har strategy hardcoded (`_RUNNERS` + manual `strategies/*.py`). custom_rule_engine local pe bana tha, VPS pe missing.
+**Reuse:** `custom_rule_engine._run_bb` (DSL exec), `_run_ema`/`_run_vwap_ema` patterns (eval-loop / backtest-call), data loaders (`ensure_and_load_symbol`/equity loaders/`_cfg_symbol`/`_fill`/`TF_MIN`), generic Edit modal + `collectModalFields` (already a key=value editor), `/api/config`-driven dropdown (auto-lists any nifty_config key)
+**Depends on:** nothing (backtest cached data; no live Dhan)
+**Build:** LOCAL first (VPS pe live trading — undisturbed), verify, phir off-market SCP deploy
+**Verified (local, port 5098, NIFTY Apr-2026 cached):** python save → id `user_<slug>_v1` + `strategies/<id>.py` + nifty_config `{_module,_lang,active:false}`; dsl save → parsed `entry_long/exit_long/bb_window/sl_pct` + `_lang:dsl`; pine save → name from `strategy("...")`, NO script_id (reference-only); backtest python script = 1507 candles/36 trades/+904 pts; dsl script = 23 trades; delete cleans config+`.py`+snapshots. Frontend (Script tab pills/upload/Master-Prompt modal, lang badge, deep-link Run) = needs user's visual check after restart.
+**Known caveat (follow-up):** evaluate() path recomputes indicators per-bar (O(n²)) — ~1-2 min for ~1500 bars over a buffered month; fine for 5m/short ranges, slow for 1m/multi-month. backtest(df,cfg) path (vectorized) avoids it.
+**Pending:** off-market VPS deploy (incl. `strategies/custom_rule_engine.py` which is MISSING on VPS) + restart `algo-dashboard`; `sync_pine.py` extend for `.py`/`.rules` snapshots + `strategies/user_*.py`.
+
 ## 2026-06-21 — TradingView Webhook → auto order engine (Phase 1)
 **Status:** DONE
 **Kya:** TV Pine alert → Flask webhook → Dhan paper order. TV sirf thin signal (ENTRY/EXIT + direction) bhejta hai; strike select (ATM±offset), option type, qty, paper/live — sab Python config (`webhook_v1`) decide karta hai. Strategy ek hi jagah (Pine) → zero drift. Phase 1: receiver + executor + safety (max/day, no-entry-after).

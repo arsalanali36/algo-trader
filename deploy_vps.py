@@ -1,64 +1,153 @@
 #!/usr/bin/env python3
 """
-deploy_vps.py — VPS pe files push karo (SCP via ED25519 key)
-Usage: python deploy_vps.py
+deploy_vps.py — CODE3B ko VPS pe push karo (tarball via SCP, ek command me)
+
+Kaise kaam karta hai:
+  1. curated code files ka tarball banata hai (tarfile — Windows pe bhi spaced
+     remote dir ke saath reliable, scp per-file quoting ka jhamela nahi)
+  2. VPS pe purani files ka timestamped backup leta hai (rollback ke liye)
+  3. tarball extract karta hai REMOTE_DIR me
+  4. zaroori pip deps ensure karta hai (e.g. `ta`)
+  5. algo-dashboard restart + health check
+
+Usage:  python deploy_vps.py
+        python deploy_vps.py --dry-run     # sirf list dikhao, kuch bhejo mat
+
+NOTE: secrets (data/config.json), state (nifty_config.json, backtest_db.json,
+logs/, results/, data/) aur Pine store (_PINE/ — sync_pine.py se sync hota hai)
+JAAN-BOOJH KAR exclude hain. Inhe VPS pe alag manage karo.
 """
 
-import subprocess
+import os
 import sys
+import glob
+import time
+import tarfile
+import tempfile
+import subprocess
 
 HOST       = "root@72.61.173.32"
 KEY        = r"C:\Users\arsal\.ssh\khazana_ed25519"
-REMOTE_DIR = "/root/code4"
+REMOTE_DIR = "/root/CODE3B- TV BACKTEST ENGINE"   # dir name me space hai — sab jagah quote
+SERVICE    = "algo-dashboard"
+PORT       = 5099
+HERE       = os.path.dirname(os.path.abspath(__file__))
 
-# Yeh files deploy hongi — secrets aur logs nahi
-FILES = [
-    "nifty_ema_trader.py",
-    "rsi_trader.py",
-    "range_trader.py",
+# pip deps jo VPS venv me honi chahiye (idempotent ensure)
+EXTRA_PIP  = ["ta"]
+
+# ---- Curated root-level files (tests/scratch/secrets/state NAHI) ----
+ROOT_FILES = [
     "trader_dashboard.py",
+    "smart_order.py",
+    "order_store.py",
+    "webhook_executor.py",
     "dhan_master.py",
     "dhan_feed.py",
-    "save_daily_summary.py",
-    "backtest_dashboard.html",
-    "nifty_config.json",
+    "universe.py",
+    "mfe_routes.py",
+    "auto_data_downloader.py",
+    "optimize_strategy.py",
+    "download_nifty50.py",
+    "download_equity_history.py",
+    "sync_data.py",
+    "sync_pine.py",
 ]
 
-SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
-SSH = ["ssh", "-i", KEY, "-o", "StrictHostKeyChecking=no", HOST]
+# ---- Folder globs (relative paths preserve hote hain tar me) ----
+FOLDER_GLOBS = [
+    "_CHARTING/*.py",
+    "_TOOLS/*.py",
+    "_TRADERS/*.py",
+    "_TRADERS/*.json",
+    "brokers/*.py",
+    "strategies/*.py",
+    "templates/*.html",
+]
+
+# in patterns wali files chhod do (curated globs me ghus na jaayein)
+SKIP_SUBSTR = ["_test_", "scratch_test", "/test", "__pycache__", ".bak"]
+
+
+def collect_files():
+    files = []
+    for f in ROOT_FILES:
+        p = os.path.join(HERE, f)
+        if os.path.isfile(p):
+            files.append(f.replace("\\", "/"))
+        else:
+            print(f"  WARN: missing root file {f} (skip)")
+    for pat in FOLDER_GLOBS:
+        for p in glob.glob(os.path.join(HERE, pat)):
+            rel = os.path.relpath(p, HERE).replace("\\", "/")
+            if any(s in rel for s in SKIP_SUBSTR):
+                continue
+            files.append(rel)
+    # de-dup, stable order
+    seen, out = set(), []
+    for f in files:
+        if f not in seen:
+            seen.add(f)
+            out.append(f)
+    return out
+
 
 def run(cmd):
     r = subprocess.run(cmd, capture_output=True, text=True)
+    if r.stdout.strip():
+        print(r.stdout.rstrip())
     if r.returncode != 0:
         print(f"  ERROR: {r.stderr.strip()}")
         sys.exit(1)
+    return r
 
-print("\nDeploying to VPS...\n")
 
-# folders ensure karo
-run(SSH + [f"mkdir -p {REMOTE_DIR}/templates {REMOTE_DIR}/brokers {REMOTE_DIR}/strategies"])
+def main():
+    dry = "--dry-run" in sys.argv
+    files = collect_files()
 
-for f in FILES:
-    print(f"  uploading {f}...")
-    run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
-    print(f"  OK {f}")
+    print(f"\nDeploying CODE3B -> {HOST}:{REMOTE_DIR}\n")
+    print(f"  {len(files)} files:")
+    for f in files:
+        print(f"    {f}")
+    if dry:
+        print("\n  [dry-run] kuch nahi bheja.\n")
+        return
 
-# package folders (brokers/, strategies/) — push all .py
-import glob as _glob
-for pkg in ("brokers", "strategies"):
-    for f in _glob.glob(f"{pkg}/*.py"):
-        f = f.replace("\\", "/")
-        print(f"  uploading {f}...")
-        run(SCP + [f, f"{HOST}:{REMOTE_DIR}/{f}"])
-        print(f"  OK {f}")
+    # 1) tarball banao
+    tgz = os.path.join(tempfile.gettempdir(), "code3b_deploy.tgz")
+    with tarfile.open(tgz, "w:gz") as tar:
+        for f in files:
+            tar.add(os.path.join(HERE, f), arcname=f)
+    print(f"\n  tarball -> {tgz} ({os.path.getsize(tgz)//1024} KB)")
 
-# templates/index.html
-print("  uploading templates/index.html...")
-run(SCP + ["templates/index.html", f"{HOST}:{REMOTE_DIR}/templates/index.html"])
-print("  OK templates/index.html")
+    SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
+    SSH = ["ssh", "-i", KEY, "-o", "StrictHostKeyChecking=no", HOST]
 
-print("\n  Restarting dashboard...")
-run(SSH + ["systemctl restart algo-dashboard"])
-print("  OK Dashboard restarted\n")
+    # 2) upload
+    print("  uploading tarball...")
+    run(SCP + [tgz, f"{HOST}:/tmp/code3b_deploy.tgz"])
 
-print("Done! Open: http://72.61.173.32:5099\n")
+    # 3) remote: backup + extract + deps + restart  (spaced dir => quote)
+    ts = int(time.time())
+    pip_line = (f"venv/bin/pip install -q {' '.join(EXTRA_PIP)};"
+                if EXTRA_PIP else "true;")
+    remote = (
+        f"cd '{REMOTE_DIR}' && "
+        f"tar czf /tmp/code3b_backup_{ts}.tgz "
+        f"$(tar tzf /tmp/code3b_deploy.tgz) 2>/dev/null; "
+        f"echo 'backup -> /tmp/code3b_backup_{ts}.tgz'; "
+        f"tar xzf /tmp/code3b_deploy.tgz -C '{REMOTE_DIR}/' && echo 'EXTRACT OK'; "
+        f"{pip_line} "
+        f"systemctl restart {SERVICE}; sleep 4; "
+        f"echo -n 'service: '; systemctl is-active {SERVICE}; "
+        f"echo -n 'http: '; curl -s -o /dev/null -w '%{{http_code}}\\n' http://localhost:{PORT}/"
+    )
+    print("  remote: backup -> extract -> deps -> restart...")
+    run(SSH + [remote])
+
+    print(f"\nDone! Open: http://72.61.173.32:{PORT}\n")
+
+
+if __name__ == "__main__":
+    main()

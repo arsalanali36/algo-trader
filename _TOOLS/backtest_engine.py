@@ -258,10 +258,15 @@ def ensure_equity_data(symbol, date_from, date_to):
                 fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
                 df.to_csv(fpath, index=False)
                 print(f"  + {date_str} ({len(df)} bars)")
-            else:
+            elif df is None:
+                # genuine empty response = holiday/no trading -> mark so we don't refetch
                 fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
                 pd.DataFrame(columns=["Datetime", "Open", "High", "Low", "Close", "Volume"]).to_csv(fpath, index=False)
                 print(f"  + {date_str} (holiday/no data)")
+            else:
+                # RATE_LIMIT (or other transient) after retries -> DO NOT poison with an
+                # empty file; leave the day missing so a later run retries it.
+                print(f"  ! {date_str} skipped (rate-limited) — will retry next run")
             progress["done"] += 1
             _time.sleep(1)
     finally:
@@ -710,8 +715,124 @@ def _run_bb(date_from, date_to, cfg):
     return real_run_bb(date_from, date_to, cfg)
 
 
+# ───────────────────────── Generic user-script runner (paste-and-run) ─────────────────────────
+def _load_df_for_cfg(date_from, date_to, cfg):
+    """Load OHLC(V) the same way the built-in runners do — NIFTY/BANKNIFTY via
+    the index loader, anything else via the per-symbol equity loader (mirrors
+    _run_vwap_ema). Returns a resampled DataFrame (incl. warm-up buffer)."""
+    symbol = _cfg_symbol(cfg)
+    tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
+    if symbol in ("NIFTY", "BANKNIFTY"):
+        buffered_from = _buffered_from(date_from, symbol)
+        return ensure_and_load_symbol(symbol, buffered_from, date_to, tf_min, need_volume=True)
+    buffered_from = (pd.to_datetime(date_from) - pd.Timedelta(days=5)).strftime("%Y-%m-%d") if date_from else date_from
+    ensure_equity_data(symbol, buffered_from, date_to)
+    cont1 = load_equity_1m_range(symbol, buffered_from, date_to)
+    if cont1.empty:
+        return pd.DataFrame()
+    return resample_with_volume(cont1, tf_min)
+
+
+def _eval_loop(mod, df, cfg):
+    """Drive a strategy module that exposes evaluate(df, cfg, pos) -> 'BUY'/'SELL'/
+    'EXIT'/None (see strategies/base.py). Mirrors _run_ema's bar loop: 3:15 EOD
+    force-exit, max_trades_per_day cap, _fill next-bar-open entry/exit, reversal
+    handling. pos is passed as 'LONG'/'SHORT'/None."""
+    max_trades = int(cfg.get("max_trades_per_day", cfg.get("max_trades_per_symbol", 0)) or 0)
+    warmup = max(1, min(int(cfg.get("warmup_bars", 20)), len(df) - 1))
+    trades, pos, cur = [], 0, None
+    cur_day, trades_today = None, 0
+    n = len(df)
+    for i in range(warmup, n):
+        row = df.iloc[i]
+        t = row["time"]
+        if cur_day != t.date():
+            cur_day, trades_today = t.date(), 0
+        # project-wide 3:15 force-exit + no re-entry after
+        if pos != 0 and t.time() >= EXIT_HM:
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = t, float(row["close"]), "3:15 Daily Exit"
+            trades.append(cur); cur, pos = None, 0
+            continue
+        pos_str = "LONG" if pos == 1 else "SHORT" if pos == -1 else None
+        try:
+            sig = mod.evaluate(df.iloc[:i + 1], cfg, pos_str)
+        except Exception as e:
+            raise RuntimeError(f"strategy evaluate() crashed at bar {i} ({t}): {e}")
+        if not sig:
+            continue
+        if sig == "EXIT":
+            if pos == 0:
+                continue
+            ft, fp = _fill(df, i)
+            cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "Rule Exit"
+            trades.append(cur); cur, pos = None, 0
+            continue
+        if sig in ("BUY", "SELL"):
+            if max_trades and trades_today >= max_trades:
+                continue
+            ft, fp = _fill(df, i)
+            if ft.time() >= EXIT_HM:
+                continue
+            if pos != 0:
+                is_rev = (pos == 1 and sig == "SELL") or (pos == -1 and sig == "BUY")
+                if not is_rev:
+                    continue
+                cur["exit_time"], cur["exit_price"], cur["exit_reason"] = ft, fp, "Reversal"
+                trades.append(cur); cur, pos = None, 0
+            side = "Long" if sig == "BUY" else "Short"
+            cur = {"entry_time": ft, "entry_price": fp, "side": side,
+                   "exit_time": None, "exit_price": None, "exit_reason": None}
+            pos = 1 if sig == "BUY" else -1
+            trades_today += 1
+    if cur:
+        last = df.iloc[-1]
+        cur["exit_time"], cur["exit_price"], cur["exit_reason"] = last["time"], float(last["close"]), "EOD"
+        trades.append(cur)
+    return trades
+
+
+def _run_custom(date_from, date_to, cfg):
+    """Run an arbitrary user-pasted Python strategy saved under strategies/.
+    cfg['_module'] = dotted import path (e.g. 'strategies.user_mybb_v1').
+    Module must expose EITHER backtest(df, cfg) -> (trades, df[, plot_spec])
+    OR evaluate(df, cfg, pos). Reloaded each run so re-saves take effect."""
+    import importlib
+    mod_name = cfg.get("_module")
+    if not mod_name:
+        return [], pd.DataFrame(), None
+    mod = importlib.import_module(mod_name)
+    importlib.reload(mod)
+
+    df = _load_df_for_cfg(date_from, date_to, cfg)
+    if df.empty:
+        return [], pd.DataFrame(), None
+    cutoff_ts = pd.to_datetime(date_from) if date_from else None
+    spec = None
+
+    if hasattr(mod, "backtest"):
+        res = mod.backtest(df, cfg)
+        if isinstance(res, tuple):
+            if len(res) == 3:
+                trades, df, spec = res
+            elif len(res) == 2:
+                trades, df = res
+            else:
+                trades = res[0]
+        else:
+            trades = res
+    elif hasattr(mod, "evaluate"):
+        trades = _eval_loop(mod, df, cfg)
+    else:
+        raise RuntimeError(f"{mod_name} has no backtest(df,cfg) or evaluate(df,cfg,pos)")
+
+    if cutoff_ts is not None:
+        trades = [t for t in trades if t["entry_time"] >= cutoff_ts]
+        df = df[df["time"] >= cutoff_ts].reset_index(drop=True)
+    return trades, df, spec
+
+
 _RUNNERS = {"range": _run_range, "rsi": _run_rsi, "rsi_v1": _run_rsi, "ema": _run_ema,
-            "vwap": _run_vwap_ema, "bb": _run_bb, "bb_v1": _run_bb}
+            "vwap": _run_vwap_ema, "bb": _run_bb, "bb_v1": _run_bb, "_custom": _run_custom}
 
 
 # ───────────────────────── TV comparison (mirrors validate_strategy.run matching) ─────────────────────────
@@ -913,6 +1034,8 @@ def _compute_stats(trades):
 # ───────────────────────── entry point ─────────────────────────
 def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
     runner = _RUNNERS.get(strategy_type)
+    if runner is None and cfg.get("_module"):
+        runner = _run_custom   # user-pasted Python script (cfg carries dotted module path)
     if runner is None:
         return {"error": f"unsupported strategy type: {strategy_type}"}
 

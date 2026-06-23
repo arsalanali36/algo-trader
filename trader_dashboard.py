@@ -121,6 +121,64 @@ def _base(strategy):
     first = strategy.split('_')[0] if '_' in strategy else strategy
     return STRATEGY_ALIASES.get(first, first)
 
+def _detect_lang(code):
+    """Best-effort Pine vs Python vs DSL-rule-block detection (the UI also asks
+    the user to confirm). Pine: //@version / strategy()/indicator(). Python: a
+    def/import/class. Else if it has entry_long/exit_long rule lines → dsl."""
+    c = code or ""
+    low = c.lower()
+    if "//@version" in low or "strategy(" in low or "indicator(" in low or "ta." in low:
+        return "pine"
+    if "def evaluate" in low or "def backtest" in low or "\nimport " in c or c.startswith("import ") or "\ndef " in c or "class " in low:
+        return "python"
+    if "entry_long" in low or "exit_long" in low or "entry_short" in low:
+        return "dsl"
+    return "pine"
+
+def _parse_dsl_block(code):
+    """Turn a rule-block (// comments + `key = value` lines) into a cfg dict the
+    custom_rule_engine reads. entry_*/exit_* stay as expression strings; numbers
+    coerce to int/float; true/false to bool. Mirrors the Edit-modal parser."""
+    EXPR_KEYS = {"entry_long", "entry_short", "exit_long", "exit_short"}
+    out = {}
+    for raw in (code or "").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("//") or line.startswith("#"):
+            continue
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key, val = key.strip(), val.strip()
+        # strip trailing inline comments on non-expression numeric/string lines
+        if key in EXPR_KEYS:
+            out[key] = val
+            continue
+        if "//" in val:
+            val = val.split("//", 1)[0].strip()
+        low = val.lower()
+        if low in ("true", "false"):
+            out[key] = (low == "true")
+        else:
+            try:
+                out[key] = int(val) if val.lstrip("-").isdigit() else float(val)
+            except ValueError:
+                out[key] = val
+    return out
+
+def _script_header(code):
+    """Read optional `# symbol: X` / `# timeframe: 5m` / `# qty: 1` header lines
+    from a pasted Python script so it can pre-fill its run config."""
+    hdr = {}
+    for raw in (code or "").splitlines()[:25]:
+        line = raw.strip()
+        if not line.startswith("#") or ":" not in line:
+            continue
+        k, v = line[1:].split(":", 1)
+        k, v = k.strip().lower(), v.strip()
+        if k in ("symbol", "timeframe", "qty", "max_trades_per_day"):
+            hdr[k] = v
+    return hdr
+
 def get_pid(strategy="ema"):
     entry = STRATEGIES.get(_base(strategy))
     if not entry:
@@ -563,18 +621,26 @@ _EQ_IDX_SEC = {
 }
 
 def _get_sec_ids(syms: list) -> dict:
-    """Returns {sym: sec_id}. Handles options (via dhan_master) + equity/index (via _EQ_IDX_SEC)."""
+    """Returns {sym: sec_id}. Handles options (via dhan_master) + equity/index (via _EQ_IDX_SEC and universe)."""
     import dhan_master
+    import universe
     out = {}
     for s in syms:
         if s in _sec_id_cache:
             out[s] = _sec_id_cache[s]
             continue
-        # Equity/index lookup first
+        # Hardcoded Equity/index lookup first
         if s in _EQ_IDX_SEC:
             sid = _EQ_IDX_SEC[s][0]
             _sec_id_cache[s] = sid
             out[s] = sid
+            continue
+        # Try full universe for all other equities
+        uni_sid = universe.equity_secid(s)
+        if uni_sid:
+            _EQ_IDX_SEC[s] = (uni_sid, "NSE_EQ")
+            _sec_id_cache[s] = uni_sid
+            out[s] = uni_sid
             continue
         # Options — dhan_master nearest-expiry resolver
         sid = dhan_master.get_sec_id_for_trad_sym(s)
@@ -750,14 +816,61 @@ def api_trade_chart_data():
         (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
     entry_t  = request.args.get('et', '').strip()   # HH:MM IST
     exit_t   = request.args.get('xt', '').strip()
+    tf       = request.args.get('tf', '').strip()
+
     try:
+        import universe
+        seg = "NSE_FNO"
+        inst = "OPTIDX"
         sec_id = dhan_master.get_sec_id_for_trad_sym(trad_sym)
+        
+        # If not found in FNO, check Equity universe
+        if not sec_id:
+            sec_id = universe.equity_secid(trad_sym)
+            if sec_id:
+                seg = "NSE_EQ"
+                inst = "EQUITY"
+                
         if not sec_id:
             return jsonify({"ok": False, "msg": f"sec_id not found: {trad_sym}"})
+            
+        if tf == '1D':
+            import sys
+            tools_path = str(BASE_DIR / "_TOOLS")
+            if tools_path not in sys.path:
+                sys.path.insert(0, tools_path)
+            import backtest_engine
+            
+            end_dt = _dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)
+            start_dt = end_dt - _dt.timedelta(days=400) # Give enough buffer for indicators like 200 EMA
+            df = backtest_engine.ensure_and_load_symbol(trad_sym, start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"), 1440)
+            
+            if df is None or df.empty:
+                return jsonify({"ok": False, "msg": f"Daily data fetch failed for {trad_sym}"})
+                
+            candles = []
+            entry_mk, exit_mk = None, None
+            for i, row in df.iterrows():
+                dt_obj = _dt.datetime.strptime(str(row['Datetime']), "%Y-%m-%d %H:%M:%S")
+                # Add 5:30 to treat as IST (lightweight charts expects UTC timestamp, but we offset it so it displays local)
+                t_ist = int(dt_obj.timestamp()) + 19800 
+                candles.append({
+                    "time": t_ist,
+                    "open": round(float(row['Open']), 2),
+                    "high": round(float(row['High']), 2),
+                    "low": round(float(row['Low']), 2),
+                    "close": round(float(row['Close']), 2)
+                })
+                # if the entry was on this date, set marker
+                if dt_obj.strftime("%Y-%m-%d") == date_str:
+                    entry_mk = t_ist
+                    
+            return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk, "date": date_str})
+            
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
-            "securityId": str(sec_id), "exchangeSegment": "NSE_FNO", "instrument": "OPTIDX",
+            "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
             "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
         d = r.json()
         if not d.get("open"):
@@ -804,6 +917,131 @@ def _dhan_live_fate(resp, token, cid):
             pass
     dead = status in ('REJECTED', 'CANCELLED', 'EXPIRED')
     return (not dead, status or 'SUBMITTED', oid)
+
+@app.route('/api/bulk-preview', methods=['POST'])
+def api_bulk_preview():
+    data = request.get_json()
+    symbols_raw = data.get('symbols', '')
+    
+    import re
+    raw_list = re.split(r'[,\n\t]+', symbols_raw)
+    symbols = [s.strip().upper() for s in raw_list if s.strip()]
+    if not symbols:
+        return jsonify({"status": "error", "message": "No valid symbols provided."})
+        
+    try:
+        import universe
+        import requests as _req
+        token, cid = _creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        
+        # Lookup sec_id for all
+        sec_ids = {}
+        for sym in symbols:
+            sid = universe.equity_secid(sym)
+            if sid:
+                sec_ids[sym] = sid
+                
+        if not sec_ids:
+            return jsonify({"status": "error", "message": "Could not resolve any of the symbols to Dhan NSE_EQ security IDs."})
+            
+        import time
+        ltp_map = {}
+        
+        # Try to get from live feed first if available
+        try:
+            import dhan_feed
+            for sym, mapped_sid in sec_ids.items():
+                if str(mapped_sid) in dhan_feed.LIVE:
+                    feed_ltp = float(dhan_feed.LIVE[str(mapped_sid)].get("ltp", 0))
+                    if feed_ltp > 0:
+                        ltp_map[sym] = feed_ltp
+        except Exception:
+            pass
+
+        # For remaining, fetch from REST API with retries
+        remaining_sids = [int(sid) for sym, sid in sec_ids.items() if sym not in ltp_map]
+        if remaining_sids:
+            body = {"NSE_EQ": remaining_sids}
+            for attempt in range(3):
+                r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+                if r.status_code == 200:
+                    qdata = r.json().get("data", {}).get("NSE_EQ", {})
+                    for sid_str, q in qdata.items():
+                        ltp_v = float(q.get("last_price") or q.get("ltp") or 0)
+                        if ltp_v:
+                            for sym, mapped_sid in sec_ids.items():
+                                if str(mapped_sid) == str(sid_str):
+                                    ltp_map[sym] = ltp_v
+                                    break
+                    break # Success
+                time.sleep(1.2)
+                            
+        results = []
+        for sym in symbols:
+            if sym in sec_ids:
+                results.append({"sym": sym, "ltp": ltp_map.get(sym, 0.0), "sec_id": sec_ids[sym]})
+        
+        return jsonify({"status": "success", "data": results})
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "message": str(e), "trace": traceback.format_exc()})
+
+
+@app.route('/api/bulk-order', methods=['POST'])
+def api_bulk_order():
+    data = request.get_json()
+    filter_name = data.get('filter_name', 'Bulk_Test')
+    tf = data.get('tf', '')
+    ind = data.get('ind', '')
+    trades = data.get('trades', []) # list of {"sym": "A", "qty": 1, "sl_pct": 2.0, "sec_id": "123", "ltp": 150.0}
+    
+    if not trades:
+        return jsonify({"status": "error", "message": "No trades provided."})
+        
+    try:
+        import order_store
+        placed = 0
+        order_store.init_db()
+        for t in trades:
+            sym = t.get('sym')
+            qty = int(t.get('qty', 1))
+            sl_pct = float(t.get('sl_pct', 0.0))
+            price = float(t.get('ltp', 0.0))
+            sid = t.get('sec_id', '')
+            
+            tags_list = ["bulk"]
+            if tf or ind:
+                tags_list.append(f"CHART:{tf}:{ind}")
+            if sl_pct > 0:
+                tags_list.append(f"SL_PCT:{sl_pct}")
+                
+            order_store.record(
+                side="BUY",
+                qty=qty,
+                price=price,
+                source="manual",
+                strategy=filter_name,
+                mode="paper",
+                broker="dhan",
+                symbol=sym,
+                instrument="EQUITY",
+                trad_sym=sym,
+                sec_id=str(sid),
+                segment="NSE_EQ",
+                status="paper",
+                tags=tags_list
+            )
+            placed += 1
+            
+        return jsonify({
+            "status": "success", 
+            "message": f"Successfully placed paper trades for {placed} out of {len(trades)} symbols.",
+            "placed_count": placed
+        })
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "message": str(e), "trace": traceback.format_exc()})
 
 
 @app.route('/api/manual-order', methods=['POST'])
@@ -1118,8 +1356,14 @@ def api_pine_save():
     if not code:
         return jsonify({"error": "Empty code"}), 400
     desc = request.json.get('desc', '').strip()
+    lang = (request.json.get('lang') or _detect_lang(code)).strip().lower()
+    if lang not in ("pine", "python", "dsl"):
+        lang = "pine"
+    # Name: Pine pulls it from strategy("..."); python/dsl take the user-given
+    # name (Script editor field) and fall back to a strategy()/header hint.
     m = re.search(r'strategy\s*\(\s*"([^"]+)"', code)
-    strat_name = m.group(1) if m else "unknown"
+    req_name = (request.json.get('name') or '').strip()
+    strat_name = req_name or (m.group(1) if m else None) or "script"
     pine_dir = BASE_DIR / '_PINE'
     pine_dir.mkdir(exist_ok=True)
     ver_file = pine_dir / 'versions.json'
@@ -1127,38 +1371,71 @@ def api_pine_save():
     # NOT len(versions)+1 — any hand-edited/out-of-order entry (e.g. a manually
     # registered version) makes the array length diverge from the highest
     # version id actually in use, and the next save then collides with an
-    # existing version, silently overwriting that version's v{N}.pine snapshot
-    # and image folder. Happened once already (rsi_v1's v6.pine got clobbered
-    # by a later vwap save that also landed on id 6) — use the real max instead.
+    # existing version, silently overwriting that version's snapshot and image
+    # folder. Happened once already (rsi_v1's v6.pine got clobbered by a later
+    # vwap save that also landed on id 6) — use the real max instead.
     version = max((v.get("version", 0) for v in versions), default=0) + 1
     from datetime import datetime, timezone, timedelta
     ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     ts = ist.strftime('%Y-%m-%d %H:%M IST')
     strat_version = sum(1 for v in versions if v.get('name') == strat_name) + 1
     author  = request.json.get('author', 'Arsalan').strip()
-    py_file = request.json.get('py_file', '').strip() or None
+    slug = re.sub(r'[^a-z0-9]+', '_', strat_name.lower()).strip('_') or 'script'
+
     entry = {"version": version, "name": strat_name, "strat_version": strat_version,
-             "timestamp": ts, "desc": desc, "author": author}
-    if py_file:
-        entry["py_file"] = py_file
+             "timestamp": ts, "desc": desc, "author": author, "lang": lang}
+
+    # snapshot extension by language
+    ext = {"pine": "pine", "python": "py", "dsl": "rules"}[lang]
+    (pine_dir / f'{slug}_latest.{ext}').write_text(code, encoding='utf-8')
+    (pine_dir / f'v{version}.{ext}').write_text(code, encoding='utf-8')
+
+    # ── Make python/dsl scripts RUNNABLE: register a config entry (keyed by a
+    #    unique script id) in nifty_config.json — the backtest dropdown lists
+    #    every config key automatically, and api_backtest_run dispatches by the
+    #    `_module`/`_lang` markers we write here. `user_` prefix avoids ever
+    #    colliding with a built-in strategy file/config key. ──
+    if lang in ("python", "dsl"):
+        script_id = f"user_{slug}_v{strat_version}"
+        try:
+            all_cfg = _json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        except Exception:
+            all_cfg = {}
+        if lang == "python":
+            py_rel = f"strategies/{script_id}.py"
+            (BASE_DIR / py_rel).write_text(code, encoding='utf-8')
+            entry["py_file"] = py_rel
+            hdr = _script_header(code)
+            cfg_entry = {"_module": f"strategies.{script_id}", "_lang": "python",
+                         "symbol": hdr.get("symbol", "NIFTY"),
+                         "timeframe": hdr.get("timeframe", "5m"),
+                         "qty": int(hdr.get("qty", 1)) if str(hdr.get("qty", "1")).isdigit() else 1,
+                         "active": False}
+        else:  # dsl
+            parsed = _parse_dsl_block(code)
+            cfg_entry = {**parsed, "_lang": "dsl",
+                         "symbol": parsed.get("symbol", "NIFTY"),
+                         "timeframe": parsed.get("timeframe", "5m"),
+                         "active": False}
+        all_cfg[script_id] = cfg_entry
+        TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+        entry["script_id"] = script_id
+
     versions.append(entry)
     ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
-    # Per-version snapshot (always) + per-strategy "latest" file (slug of strat_name,
-    # NOT a hardcoded shared filename — multi-strategy saves were overwriting each
-    # other's "latest" file before this fix).
-    slug = re.sub(r'[^a-z0-9]+', '_', strat_name.lower()).strip('_') or 'unknown'
-    (pine_dir / f'{slug}_latest.pine').write_text(code, encoding='utf-8')
-    (pine_dir / f'v{version}.pine').write_text(code, encoding='utf-8')
     return jsonify(entry)
 
 @app.route('/api/pine/code/<int:version>')
 def api_pine_code(version):
     import json as _json, re
     pine_dir = BASE_DIR / '_PINE'
-    # Try version-specific snapshot first, fallback to that version's strategy "latest" file
-    vfile = pine_dir / f'v{version}.pine'
-    if vfile.exists():
-        return vfile.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+    EXTS = ('pine', 'py', 'rules')   # pine / python / dsl snapshots
+    # Try version-specific snapshot first (any language), fallback to that
+    # version's strategy "latest" file.
+    for e in EXTS:
+        vfile = pine_dir / f'v{version}.{e}'
+        if vfile.exists():
+            return vfile.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
     ver_file = pine_dir / 'versions.json'
     if ver_file.exists():
         versions = _json.loads(ver_file.read_text())
@@ -1171,9 +1448,10 @@ def api_pine_code(version):
                 if explicit.exists():
                     return explicit.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
             slug = re.sub(r'[^a-z0-9]+', '_', v['name'].lower()).strip('_') or 'unknown'
-            latest = pine_dir / f'{slug}_latest.pine'
-            if latest.exists():
-                return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
+            for e in EXTS:
+                latest = pine_dir / f'{slug}_latest.{e}'
+                if latest.exists():
+                    return latest.read_text(encoding='utf-8'), 200, {'Content-Type': 'text/plain; charset=utf-8'}
     return 'Code not found', 404
 
 @app.route('/api/backtest/pine-code')
@@ -1226,11 +1504,28 @@ def api_pine_delete(version):
     if not ver_file.exists():
         return jsonify({"ok": False, "error": "No versions file"}), 404
     versions = _json.loads(ver_file.read_text())
+    gone = next((v for v in versions if v['version'] == version), None)
     versions = [v for v in versions if v['version'] != version]
     ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
-    vfile = BASE_DIR / '_PINE' / f'v{version}.pine'
-    if vfile.exists():
-        vfile.unlink()
+    # snapshot (any language extension)
+    for e in ('pine', 'py', 'rules'):
+        f = BASE_DIR / '_PINE' / f'v{version}.{e}'
+        if f.exists():
+            f.unlink()
+    # If this was a runnable user script, also drop its nifty_config entry + the
+    # generated strategies/ file so it disappears from the backtest dropdown.
+    sid = (gone or {}).get('script_id')
+    if sid:
+        try:
+            all_cfg = _json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+            if sid in all_cfg:
+                all_cfg.pop(sid, None)
+                TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+        except Exception:
+            pass
+        pyf = BASE_DIR / 'strategies' / f'{sid}.py'
+        if pyf.exists():
+            pyf.unlink()
     return jsonify({"ok": True})
 
 @app.route('/pine/report/<int:version>')
@@ -1466,20 +1761,46 @@ def api_backtest_run():
         cfg_override = body.get("cfg_override")
 
     strat_type = _base(sid)
-    if strat_type not in ("range", "rsi", "rsi_v1", "ema", "vwap", "bb"):
-        return jsonify({"error": f"backtest not supported for strategy type '{strat_type}'"}), 400
+    BUILTIN = ("range", "rsi", "rsi_v1", "ema", "vwap", "bb")
 
     cfg_file = STRATEGIES.get(strat_type, {}).get("cfg", TC_FILE)
     try:
         all_cfg = json.loads(Path(cfg_file).read_text()) if Path(cfg_file).exists() else {}
-        cfg = all_cfg.get(sid, {})
+        disk_cfg = all_cfg.get(sid, {})
     except Exception:
-        cfg = {}
-    # Edit & Re-run modal can pass a temporary param override without
-    # touching the saved config on disk (saving is a separate explicit step).
+        disk_cfg = {}
+    # Custom user scripts (Script library) live in nifty_config.json keyed by
+    # their full id and carry a `_module` (python) or `_lang=dsl` marker. They
+    # aren't BUILTIN, so if the per-type cfg file didn't have them, fall back to
+    # the shared nifty_config.json.
+    if not disk_cfg and Path(cfg_file) != TC_FILE:
+        try:
+            disk_cfg = (json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}).get(sid, {})
+        except Exception:
+            disk_cfg = {}
+
+    # Edit & Re-run modal can pass a temporary param override without touching
+    # the saved config on disk (saving is a separate explicit step).
+    cfg = dict(disk_cfg)
     if isinstance(cfg_override, dict):
-        cfg = dict(cfg)
         cfg.update(cfg_override)
+    # `_module` / `_lang` are engine-internal routing markers — always trust the
+    # saved values, never the editable Re-run text (so an accidental edit/delete
+    # in the cfg textarea can't break dispatch).
+    for k in ("_module", "_lang"):
+        if disk_cfg.get(k) is not None:
+            cfg[k] = disk_cfg[k]
+
+    # Pick the engine runner: custom python → _custom; DSL rule-block → bb
+    # (custom_rule_engine); otherwise the built-in type.
+    if cfg.get("_module"):
+        engine_strat = "_custom"
+    elif cfg.get("_lang") == "dsl" or strat_type == "bb":
+        engine_strat = "bb"
+    elif strat_type in BUILTIN:
+        engine_strat = strat_type
+    else:
+        return jsonify({"error": f"backtest not supported for strategy '{sid}'"}), 400
 
     # Save every uploaded TV file to temp, then prefer a Pine Logs export
     # (.log/.txt) over a List-of-Trades CSV — per VALIDATION_PLAYBOOK.md the
@@ -1496,7 +1817,7 @@ def api_backtest_run():
                   or (saved_paths[0] if saved_paths else None)
 
     try:
-        result = be.run_backtest(strat_type, cfg, date_from, date_to, tv_log_path=tv_log_path)
+        result = be.run_backtest(engine_strat, cfg, date_from, date_to, tv_log_path=tv_log_path)
     except Exception as e:
         return jsonify({"error": f"Backtest failed: {e}"}), 200
     finally:
@@ -1505,6 +1826,20 @@ def api_backtest_run():
                 os.remove(p)
 
     return jsonify(result)
+
+@app.route('/api/scanner/run', methods=['POST'])
+def api_scanner_run():
+    import sys as _s
+    tools_path = str(BASE_DIR / "_TOOLS")
+    if tools_path not in _s.path:
+        _s.path.insert(0, tools_path)
+    try:
+        import scanner_ema_52
+        results = scanner_ema_52.run_scanner()
+        return jsonify({"status": "success", "results": results})
+    except Exception as e:
+        import traceback
+        return jsonify({"status": "error", "message": str(e), "trace": traceback.format_exc()})
 
 @app.route('/api/indicators/list')
 def api_indicators_list():
@@ -1727,6 +2062,22 @@ def api_orders():
     return jsonify(data)
 
 
+@app.route('/api/orders/rename-strategy', methods=['POST'])
+def api_rename_strategy():
+    data = request.get_json()
+    old_strat = data.get('old_strategy', '')
+    new_strat = data.get('new_strategy', '')
+    if not old_strat or not new_strat:
+        return jsonify({"status": "error", "message": "Missing parameters"})
+    try:
+        import order_store
+        with order_store._lock, order_store._conn() as c:
+            c.execute("UPDATE orders SET strategy = ? WHERE strategy = ?", (new_strat, old_strat))
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
 import threading
 import requests
 
@@ -1795,10 +2146,83 @@ def webhook_monitor_loop():
             print("Webhook monitor error:", e)
         time.sleep(3)
 
+def bulk_sl_monitor_loop():
+    """Monitors Bulk manual trades with SL_PCT tags and squares them off if LTP drops below max SL."""
+    import time
+    import order_store
+    import dhan_feed
+    
+    while True:
+        try:
+            _ensure_feed_started()
+            ist_now = datetime.datetime.utcnow() + datetime.timedelta(hours=5, minutes=30)
+            
+            # Check open positions today
+            data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
+            open_pos = data.get("open", [])
+            
+            for p in open_pos:
+                if not p.get("tags"): continue
+                
+                # Extract SL_PCT
+                sl_tag = next((t for t in p["tags"] if t.startswith("SL_PCT:")), None)
+                if not sl_tag: continue
+                
+                try:
+                    sl_pct = float(sl_tag.split(":")[1])
+                except:
+                    continue
+                
+                # We only monitor BUY positions for SL drops (assume scanners are long)
+                if p["entry"] != "BUY": continue
+                if p["qty"] <= 0: continue
+                
+                entry_px = float(p.get("entry_px") or 0)
+                if entry_px <= 0: continue
+                
+                sl_px = entry_px * (1 - (sl_pct / 100.0))
+                
+                # Get live price
+                sec_id = p.get("sec_id")
+                if not sec_id: continue
+                
+                # Subscribe if not already
+                seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
+                _feed_subscribe([(seg, sec_id)])
+                
+                q = dhan_feed.get_quote(sec_id)
+                ltp = float(q.get("ltp") or 0) if q else 0.0
+                
+                # If hit SL, exit!
+                if ltp > 0 and ltp <= sl_px:
+                    print(f"[SL HIT] {p['sym']} LTP {ltp} <= SL {sl_px:.2f} ({sl_pct}%). Squaring off...")
+                    order_store.record(
+                        side="SELL",
+                        qty=p["qty"],
+                        price=ltp,
+                        source=p["source"],
+                        strategy=p["strategy"],
+                        mode=p["mode"],
+                        broker=p["broker"],
+                        symbol=p["sym"],
+                        instrument=p["instrument"],
+                        trad_sym=p["sym"],
+                        sec_id=sec_id,
+                        segment=seg,
+                        status=p["status"],
+                        tags=["bulk_sl_exit", sl_tag]
+                    )
+        except Exception as e:
+            print("Bulk SL monitor error:", e)
+            
+        time.sleep(5)
+
+
 
 if __name__ == '__main__':
     threading.Thread(target=auto_scheduler, daemon=True).start()
     threading.Thread(target=webhook_monitor_loop, daemon=True).start()
+    threading.Thread(target=bulk_sl_monitor_loop, daemon=True).start()
 
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
