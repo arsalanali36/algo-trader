@@ -52,6 +52,8 @@ LOGS_DIR    = BASE_DIR / "logs"
 TRADERS_DIR = BASE_DIR / "_TRADERS"
 IST         = timezone(timedelta(hours=5, minutes=30))
 TEST_SOURCE = "healthtest"     # --fire-test ke orders ka source (cleanup isse hota)
+HEALTH_REPORT = BASE_DIR / "data" / "health_report.json"
+ALERT_FILE    = BASE_DIR / "data" / "downloader_alert.json"   # dashboard ka maujooda red-banner
 
 # strategy base-type -> live trader script (trader_dashboard.STRATEGIES ka mirror).
 TRADER_SCRIPTS = {
@@ -440,6 +442,8 @@ def main():
     ap.add_argument("--all", action="store_true", help="config ki saari (inactive bhi)")
     ap.add_argument("--all-symbols", action="store_true", help="har symbol (default: pehla)")
     ap.add_argument("--json", action="store_true", help="machine-readable JSON output")
+    ap.add_argument("--report", action="store_true",
+                    help="data/health_report.json likho + RED ho to dashboard red-banner me alert (cron/timer use)")
     ap.add_argument("--fire-test", dest="fire_test", action="store_true",
                     help="PAPER test-fire — order DB me land hota hai confirm karo (market band pe)")
     ap.add_argument("--force", action="store_true", help="--fire-test market khula ho tab bhi chalao")
@@ -465,6 +469,17 @@ def main():
         except Exception as e:
             print(json.dumps({"error": str(e)}) if args.json else f"{RED}✗ {e}{RST}")
             return 1
+        if args.report:           # report file + dashboard red-banner alert (cron/timer)
+            try:
+                HEALTH_REPORT.write_text(json.dumps(rep, indent=2))
+                reds = [s["id"] for s in rep["strategies"] if s["red"]]
+                alerts = json.loads(ALERT_FILE.read_text()) if ALERT_FILE.exists() else []
+                alerts = [a for a in alerts if "Health" not in a]   # purana health alert hatao
+                if reds:
+                    alerts.append(f"⚠️ Health: {', '.join(reds)} order-ready NAHI — health_check report dekho")
+                ALERT_FILE.write_text(json.dumps(alerts))
+            except Exception as e:
+                print(f"[report] write fail: {e}")
         if args.json:
             print(json.dumps(rep))
         else:
