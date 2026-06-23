@@ -138,6 +138,19 @@ def _tf_seconds(tf):
     return n * {"m": 60, "h": 3600, "d": 86400}.get(unit, 60)
 
 
+def _symbols(sc):
+    """Config se symbol list — `symbols` list ya string dono handle (VPS config me
+    kabhi-kabhi `symbols` ek string hota hai, list nahi → char-by-char tootne se bacho)."""
+    s = sc.get("symbols")
+    if not s:
+        s = sc.get("symbol")
+    if not s:
+        return []
+    if isinstance(s, str):
+        s = [p for p in re.split(r"[,\s]+", s) if p]   # "NIFTY,BANKNIFTY" / "NIFTY BANKNIFTY"
+    return [str(x).upper() for x in s]
+
+
 def _market_open():
     now = datetime.now(IST)
     if now.weekday() >= 5:
@@ -272,8 +285,7 @@ def check_strategy(sid, cfg, headers, spot_cache, args):
     else:
         rows.append(("heartbeat", "WARN", f"{age/60:.0f} min se chup (inactive)"))
 
-    syms = sc.get("symbols") or ([sc["symbol"]] if sc.get("symbol") else [])
-    syms = [s.upper() for s in syms]
+    syms = _symbols(sc)
     if not syms:
         rows.append(("symbols", "FAIL", "config me koi symbol nahi")); return rows, True
     for sym in (syms if args.all_symbols else syms[:1]):
@@ -296,10 +308,10 @@ def fire_test(sid, cfg, headers, spot_cache):
     sc = cfg.get(sid, {})
     if _base(sid) == "webhook" or _base(sid) not in TRADER_SCRIPTS:
         return "SKIP", "subprocess/order-path strategy nahi (webhook/backtest-only)"
-    syms = sc.get("symbols") or ([sc["symbol"]] if sc.get("symbol") else [])
+    syms = _symbols(sc)
     if not syms:
         return "FAIL", "koi symbol nahi"
-    sym = syms[0].upper()
+    sym = syms[0]
     tgt = _resolve_target(sym, sc, headers, spot_cache)
     if tgt.get("error"):
         return "FAIL", f"target resolve fail: {tgt['error']}"
