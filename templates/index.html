@@ -641,7 +641,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           <button onclick="document.getElementById('bulk-step2').style.display='none';document.getElementById('bulk-step1').style.display='block';" style="padding: 8px 12px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-size: 12px;">Back</button>
           <div style="text-align: right;">
             <span style="color: #8b949e; font-size: 12px; margin-right: 10px;">Est. Total Capital:</span>
-            <span id="bulk-grand-total" style="color: #e6edf3; font-weight: bold; font-size: 16px;">₹0.00</span>
+            <span id="bulk-grand-total" style="color: #e6edf3; font-weight: bold; font-size: 16px;">0.00</span>
           </div>
         </div>
         <button onclick="submitBulkOrders()" style="width: 100%; padding: 10px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Place Paper Trades</button>
@@ -706,8 +706,8 @@ async function renderRmsSummary(){
     el.innerHTML = '<div style="color:#f85149;font-size:12px;padding:6px">Load failed: '+e+'</div>'; return;
   }
   const rows = d.strategies || [];
-  const fmtRs = v => v===null||v===undefined ? '—' : '₹'+Math.round(v);
-  const fmtPnl = v => v===null||v===undefined ? '—' : (v>=0?'+':'')+'₹'+Math.round(v);
+  const fmtRs = v => v===null||v===undefined ? '—' : Math.round(v);
+  const fmtPnl = v => v===null||v===undefined ? '—' : (v>=0?'+':'')+Math.round(v);
   const pnlColor = v => v===null||v===undefined ? '#8b949e' : (v>=0?'#3fb950':'#f85149');
 
   let html = '<table class="cfg-table"><tr><th>Strategy</th><th>Capital Used</th><th>Capital Cap</th>'
@@ -751,7 +751,7 @@ async function runReconcile(){
     const ours = d.our_capital_in_use ?? 0;
     const avail = d.broker_available;
     el.style.color = '#3fb950';
-    el.textContent = `Our capital-in-use: ₹${Math.round(ours)} · Broker available: ₹${Math.round(avail)} — ${d.note || ''}`;
+    el.textContent = `Our capital-in-use: ${Math.round(ours)} · Broker available: ${Math.round(avail)} — ${d.note || ''}`;
   } catch(e) {
     el.style.color = '#f85149';
     el.textContent = 'Reconcile failed: ' + e;
@@ -1061,8 +1061,8 @@ async function whLtpPoll(){
     const r=await fetch('/api/option-ltp?symbol='+sym+'&offset='+off);
     const d=await r.json();
     if(d.ok){
-      document.getElementById('wh-ltp-ce').innerText = d.ce_ltp!=null?('₹'+d.ce_ltp):'—';
-      document.getElementById('wh-ltp-pe').innerText = d.pe_ltp!=null?('₹'+d.pe_ltp):'—';
+      document.getElementById('wh-ltp-ce').innerText = d.ce_ltp!=null?(d.ce_ltp):'—';
+      document.getElementById('wh-ltp-pe').innerText = d.pe_ltp!=null?(d.pe_ltp):'—';
       document.getElementById('wh-ltp-strike').innerText = (d.ce_sym||'')+'   /   '+(d.pe_sym||'');
     } else {
       document.getElementById('wh-ltp-ce').innerText='—'; document.getElementById('wh-ltp-pe').innerText='—';
@@ -1090,8 +1090,8 @@ async function whStatusPoll(){
     const g=d.global||{}; const dr=g.day_realized||0; const cap=g.daily_amount_cap||0;
     const drColor = dr>0?'#3fb950':(dr<0?'#f85149':'#8b949e');
     document.getElementById('wh-daypnl').innerHTML =
-      'Day realized <b style="color:'+drColor+'">₹'+Math.round(dr)+'</b>'
-      + (cap?(' &nbsp;·&nbsp; Loss cap <b style="color:#adbac7">₹'+cap+'</b>'):'');
+      'Day realized <b style="color:'+drColor+'">'+Math.round(dr)+'</b>'
+      + (cap?(' &nbsp;·&nbsp; Loss cap <b style="color:#adbac7">'+cap+'</b>'):'');
     const nstrat=Object.keys(d.strategies||{}).length;
     document.getElementById('wh-status-txt').innerText = nstrat+' strateg'+(nstrat===1?'y':'ies')+' configured';
     document.getElementById('wh-dot').style.background = nstrat?'#3fb950':'#6e7681';
@@ -1140,6 +1140,13 @@ function _ordFillSelect(id, vals, cur, allLabel){
 function _ordTags(t){
   return _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
        +(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'')+_ordTag(t.broker,'name');
+}
+function _imgTagsOf(t){ return (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)); }
+function _noteThumbs(id, imgs){
+  if(!imgs || !imgs.length) return '';
+  return '<div style="display:flex;gap:4px;margin-top:4px">' + imgs.map(fn =>
+    `<a href="/api/orders/note-image/${id}/${fn}" target="_blank"><img src="/api/orders/note-image/${id}/${fn}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #30363d"></a>`
+  ).join('') + '</div>';
 }
 // "HH:MM" entry→exit ka duration ("23m" / "1h 12m"). Cross-din nahi (intraday).
 function _durMin(a,b){
@@ -1201,8 +1208,8 @@ async function ordersRender(){
     const tc=st.net>=0?'#3fb950':'#f85149';
     sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
       <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (${s})</div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}₹${Math.round(st.net)}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ₹${Math.round(st.gross)} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
+      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}${Math.round(st.net)}</div>
+      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross)} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
     </div>`;
   });
   _setHtml(document.getElementById('ord-summary'), sh ||
@@ -1212,10 +1219,11 @@ async function ordersRender(){
   let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(det.length){
       ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry','Exit','In','Out','Dur','Qty','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
-        .map(h=>{const r=['Entry','Exit','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
+      + ['Date','Symbol','Tags','Side','Entry / Exit','In','Out','Dur','Qty','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
+        .map(h=>{const r=['Entry / Exit','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
           return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
+    let _tot = {g:0, tx:0, n:0, pts:0, inv:0};
     det.slice().reverse().forEach(t=>{
       const g=t._gross, tx=t._tax, n=t._net;
       const nc=n>0?'#3fb950':(n<0?'#f85149':'#e6edf3'), gc=g>0?'#3fb950':(g<0?'#f85149':'#e6edf3');
@@ -1237,42 +1245,53 @@ async function ordersRender(){
         if(max_ltp !== null && t.entry_price > 0) {
             let pnl = (max_ltp - t.entry_price) * t.qty;
             if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty; // For short, min_ltp gives max profit
-            if(pnl > 0) max_pnl = `<span style="color:#3fb950">₹${Math.round(pnl)}</span>`;
+            if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl)}</span>`;
         }
         if(min_ltp !== null && t.entry_price > 0) {
             let pnl = (min_ltp - t.entry_price) * t.qty;
             if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty; // For short, max_ltp gives max loss
-            if(pnl < 0) min_pnl = `<span style="color:#f85149">₹${Math.round(pnl)}</span>`;
+            if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl)}</span>`;
         }
       }
       
       let encNote = encodeURIComponent(note);
+      let imgs = _imgTagsOf(t);
+      let encImgs = encodeURIComponent(JSON.stringify(imgs));
       let actions = `<span style="cursor:pointer" title="Premium chart" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}')">📈</span>`;
-      actions += ` <span style="cursor:pointer; margin-left:8px;" title="${note ? 'Edit Note' : 'Add Note'}" onclick="openNoteModal(${t.id}, '${encNote}')">📝</span>`;
-      
-      let dispNote = note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '';
-      
+      actions += ` <span style="cursor:pointer; margin-left:8px;" title="${note ? 'Edit Note' : 'Add Note'}" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝</span>`;
+
+      let dispNote = (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '') + _noteThumbs(t.id, imgs);
+
+      _tot.g += g; _tot.tx += tx; _tot.n += n; _tot.inv += inv;
+
       ch += '<tr style="border-bottom:1px solid #21262d">'
         + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
         + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
         + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
         + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;">₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;">₹'+Number(t.exit_price||0).toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;line-height:1.5">'+Number(t.entry_price||0).toFixed(2)+'<br>'+Number(t.exit_price||0).toFixed(2)+'</td>'
         + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.entry_time||'—')+'</td>'
         + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.exit_time||'—')+'</td>'
         + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap;vertical-align:top;">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
         + '<td style="padding:7px 6px;vertical-align:top;">'+t.qty+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+gc+';vertical-align:top;">₹'+Math.round(g)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−₹'+tx.toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+';vertical-align:top;">₹'+Math.round(n)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+gc+';vertical-align:top;">'+Math.round(g)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−'+tx.toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+';vertical-align:top;">'+Math.round(n)+'</td>'
         + '<td style="padding:7px 6px;text-align:right;color:'+rc+';vertical-align:top;">'+retPct+'</td>'
         + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+max_pnl+'</td>'
         + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+min_pnl+'</td>'
         + '<td style="padding:7px 6px;text-align:center;vertical-align:top;">'+actions+'</td>'
         + '</tr>';
     });
-    ch += '</tbody></table>';
+    const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
+    ch += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">'
+      + '<td colspan="8" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.g>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.g)+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:#f85149">−'+_tot.tx.toFixed(2)+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.n)+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+_totRetPct+'</td>'
+      + '<td colspan="3"></td>'
+      + '</tr></tfoot></table>';
   }
   _setHtml(document.getElementById('ord-completed'), ch);
 
@@ -1302,7 +1321,7 @@ async function ordersRender(){
               + '<td style="padding:6px;color:#adbac7">'+t.sym+'</td>'
               + '<td style="padding:6px;color:#8b949e">'+(t.strategy||'—')+'</td>'
               + '<td style="padding:6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+'">'+t.entry+'</td>'
-              + '<td style="padding:6px;text-align:right;color:#8b949e">'+t.qty+' @ ₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
+              + '<td style="padding:6px;text-align:right;color:#8b949e">'+t.qty+' @ '+Number(t.entry_price||0).toFixed(2)+'</td>'
               + '<td style="padding:6px;color:#f85149;font-size:10.5px">'+reason+'</td></tr>';
           }).join('')
         + '</tbody></table></div>';
@@ -1327,51 +1346,80 @@ async function ordersRender(){
         stratDesc = parts.slice(1).join(' | ');
       }
       
-      let tableHtml = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-        + ['Date','Symbol','Tags','Side','Entry','LTP','Points','P&L','% Ret','Qty','Chart','Actions']
-          .map(h=>{const r=['LTP','Points','P&L','% Ret'].includes(h),c=['Chart','Actions'].includes(h);
+      const grpId = 'grp_'+stratKey.replace(/[^a-z0-9]/gi,'_');
+      let tableHtml = '<table id="'+grpId+'" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
+        + ['Date','Symbol','Tags','Side','Entry / LTP','Points','P&L','% Ret','Margin','Run-Up','Run-Down','Qty','Chart','Actions']
+          .map(h=>{const r=['Entry / LTP','Points','P&L','% Ret','Margin','Run-Up','Run-Down'].includes(h),c=['Chart','Actions'].includes(h);
             return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
         + '</tr></thead><tbody>';
-        
+      let grpMargin = 0;
       items.forEach(t=>{
         const entry=Number(t.entry_price||0), qty=t.qty||0;
         const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
         const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
         const argEsc=s=>String(s||'').replace(/'/g,'');
         
-        let sl_pct='', tp_pct='', note='';
+        let sl_pct='', tp_pct='', note='', sl_type='', sl_val='', tp_type='', tp_val='';
         if(t.tags) {
           t.tags.forEach(tg => {
             if(tg.startsWith('SL_PCT:')) sl_pct = tg.split(':')[1];
             if(tg.startsWith('TP_PCT:')) tp_pct = tg.split(':')[1];
+            if(tg.startsWith('SL_TYPE:')) sl_type = tg.split(':')[1];
+            if(tg.startsWith('SL_VAL:')) sl_val = tg.split(':')[1];
+            if(tg.startsWith('TP_TYPE:')) tp_type = tg.split(':')[1];
+            if(tg.startsWith('TP_VAL:')) tp_val = tg.split(':')[1];
             if(tg.startsWith('NOTE:')) note = tg.substring(5);
           });
         }
-        
+        const _unitLbl = {pct:'%', pt:'pt', rs:'₹', premium:'prem', index:'idx'};
         let sltp_disp = '';
-        if(sl_pct || tp_pct) {
+        if(sl_type || tp_type || sl_pct || tp_pct) {
            sltp_disp = `<div style="font-size:9px;margin-top:2px;white-space:nowrap">`;
-           if(sl_pct) sltp_disp += `<span style="color:#f85149">SL ${sl_pct}%</span> `;
-           if(tp_pct) sltp_disp += `<span style="color:#3fb950">TP ${tp_pct}%</span>`;
+           if(sl_type && sl_val) sltp_disp += `<span style="color:#f85149">SL ${sl_val}${_unitLbl[sl_type]||''}</span> `;
+           else if(sl_pct) sltp_disp += `<span style="color:#f85149">SL ${sl_pct}%</span> `;
+           if(tp_type && tp_val) sltp_disp += `<span style="color:#3fb950">TP ${tp_val}${_unitLbl[tp_type]||''}</span>`;
+           else if(tp_pct) sltp_disp += `<span style="color:#3fb950">TP ${tp_pct}%</span>`;
            sltp_disp += `</div>`;
         }
 
         let encNote = encodeURIComponent(note);
-        let actions = `<button onclick="openSlTpModal(${t.id}, '${sl_pct}', '${tp_pct}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="Set SL/Target">⚙️</button>`;
-        actions += `<button onclick="openNoteModal(${t.id}, '${encNote}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="${note ? 'Edit Note' : 'Add Note'}">📝</button>`;
-        
-        let dispNote = note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '';
-        
+        let imgs = _imgTagsOf(t);
+        let encImgs = encodeURIComponent(JSON.stringify(imgs));
+        let actions = `<button onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="Set SL/Target">⚙️</button>`;
+        actions += `<button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="${note ? 'Edit Note' : 'Add Note'}">📝</button>`;
+
+        let dispNote = (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '') + _noteThumbs(t.id, imgs);
+
+        const margin = t.margin_used!=null ? Number(t.margin_used) : null;
+        grpMargin += margin || 0;
+
+        let runup='—', rundown='—';
+        if(t.tags && entry>0){
+          let max_ltp=null, min_ltp=null;
+          t.tags.forEach(tg=>{
+            if(tg.startsWith('MAX_LTP:')) max_ltp=parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltp=parseFloat(tg.split(':')[1]);
+          });
+          if(max_ltp!=null && min_ltp!=null){
+            let up = t.entry==='BUY' ? (max_ltp-entry)*qty : (entry-min_ltp)*qty;
+            let down = t.entry==='BUY' ? (min_ltp-entry)*qty : (entry-max_ltp)*qty;
+            runup   = `<span style="color:${up>=0?'#3fb950':'#f85149'}">${up>=0?'+':''}${Math.round(up)}</span>`;
+            rundown = `<span style="color:${down<=0?'#f85149':'#3fb950'}">${down>=0?'+':''}${Math.round(down)}</span>`;
+          }
+        }
+
         tableHtml += '<tr style="border-bottom:1px solid #21262d">'
           + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
           + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
           + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
           + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
-          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e;vertical-align:top;">₹'+entry.toFixed(2)+' · '+t.entry_time+sltp_disp+'</td>'
-          + '<td style="padding:7px 6px;text-align:right;color:#e6edf3;vertical-align:top;"><span class="ltp-cell" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
+          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e;vertical-align:top;line-height:1.5">'+entry.toFixed(2)+' ('+t.entry_time+')'+sltp_disp+'<br><span class="ltp-cell" style="color:#e6edf3" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
           + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
           + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
           + '<td class="ret-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
+          + '<td style="padding:7px 6px;text-align:right;color:#8b949e;vertical-align:top;">'+(margin!=null?Math.round(margin):'—')+'</td>'
+          + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+runup+'</td>'
+          + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+rundown+'</td>'
           + '<td style="padding:7px 6px;vertical-align:top;">'+qty+'</td>'
           + '<td style="padding:7px 6px;text-align:center;vertical-align:top;"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+entry+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
           + '<td style="padding:7px 6px;text-align:center;white-space:nowrap;vertical-align:top;">'
@@ -1382,8 +1430,15 @@ async function ordersRender(){
             + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
           + '</tr>';
       });
-      tableHtml += '</tbody></table>';
-      
+      tableHtml += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">'
+        + '<td colspan="5" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
+        + '<td class="grp-tot-pts" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
+        + '<td class="grp-tot-unrl" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
+        + '<td class="grp-tot-ret" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#8b949e">'+Math.round(grpMargin)+'</td>'
+        + '<td colspan="4"></td>'
+        + '</tr></tfoot></table>';
+
       oh += `
       <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
@@ -1807,7 +1862,7 @@ function _pnlTable(cols, rows) {
   return h+'</tbody></table>';
 }
 function _pnlColor(v){return v==null?'#8b949e':v>=0?'#3fb950':'#f85149';}
-function _fmt(v){if(v==null||isNaN(v))return'—';return(v>=0?'+':'')+'₹'+Math.abs(v).toFixed(2);}
+function _fmt(v){if(v==null||isNaN(v))return'—';return(v>=0?'+':'')+Math.abs(v).toFixed(2);}
 // Only update DOM if content actually changed — avoids blank flash on every poll
 function _setHtml(el, html) { if(el && el.innerHTML !== html) el.innerHTML = html; }
 
@@ -1820,10 +1875,10 @@ function calcCharges(entryPx, exitPx, qty, entrySide) {
   const buyTurn  = buySide  * qty;
   const sellTurn = sellSide * qty;
   const totalTurn= buyTurn + sellTurn;
-  const brokerage    = 40;                       // ₹20 × 2 orders
+  const brokerage    = 40;                       // 20 × 2 orders
   const stt          = 0.000625 * sellTurn;      // 0.0625% on sell premium
   const exchCharges  = 0.00053  * totalTurn;     // 0.053% both legs
-  const sebi         = 0.0000001* totalTurn;     // ₹10/crore
+  const sebi         = 0.0000001* totalTurn;     // 10/crore
   const stampDuty    = 0.00003  * buyTurn;       // 0.003% on buy side
   const gst          = 0.18 * (brokerage + exchCharges + sebi);
   return brokerage + stt + exchCharges + sebi + stampDuty + gst;
@@ -1957,7 +2012,7 @@ async function updatePnl() {
       let pc=(j.total_pnl||0)>=0?'#3fb950':'#f85149';
       return `<div style="background:#161b22;border:1px solid ${color}50;border-radius:8px;padding:10px 16px;min-width:150px">
         <div style="color:${color};font-size:11px;font-weight:700;margin-bottom:6px">${key.toUpperCase()}</div>
-        <div style="font-size:20px;font-weight:700;color:${pc}">${(j.total_pnl||0)>=0?'+':''}₹${(j.total_pnl||0).toFixed(2)}</div>
+        <div style="font-size:20px;font-weight:700;color:${pc}">${(j.total_pnl||0)>=0?'+':''}${(j.total_pnl||0).toFixed(2)}</div>
         <div style="color:#8b949e;font-size:11px;margin-top:4px">${j.trades||0} trades · ${j.wins||0}W ${j.losses||0}L</div>
       </div>`;
     }).join('');
@@ -1965,7 +2020,7 @@ async function updatePnl() {
       let tc=totalPnl>=0?'#3fb950':'#f85149';
       sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:150px">
         <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL</div>
-        <div style="font-size:20px;font-weight:700;color:${tc}">${totalPnl>=0?'+':''}₹${totalPnl.toFixed(2)}</div>
+        <div style="font-size:20px;font-weight:700;color:${tc}">${totalPnl>=0?'+':''}${totalPnl.toFixed(2)}</div>
         <div style="color:#8b949e;font-size:11px;margin-top:4px">${totalTrades} trades · ${totalWins}W ${totalLoss}L</div>
       </div>`;
     }
@@ -2014,8 +2069,8 @@ async function updatePnl() {
           if(ov('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
           if(ov('entry_time'))row += _pnlTD(d.entry_time||'—','#e6edf3','center');
           if(ov('exit_time')) row += _pnlTD('<span style="color:#8b949e">open</span>','','center');
-          if(ov('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
-          if(ov('entry_px'))  row += _pnlTD(entry?'₹'+entry.toFixed(2):'—','#e6edf3','right');
+          if(ov('capital'))   row += _pnlTD(capital?capital.toFixed(0):'—','#8b949e','right');
+          if(ov('entry_px'))  row += _pnlTD(entry?entry.toFixed(2):'—','#e6edf3','right');
           if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">⏳</span></td>`;
           if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">—</td>`;
           
@@ -2092,11 +2147,11 @@ async function updatePnl() {
     if(cv('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
     if(cv('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
     if(cv('entry_time'))row += _pnlTD(d.entry_time||'—','#8b949e','center');
-    if(cv('entry_px'))  row += _pnlTD(ep?'₹'+ep.toFixed(2):'—','','right');
+    if(cv('entry_px'))  row += _pnlTD(ep?ep.toFixed(2):'—','','right');
     if(cv('exit_time')) row += _pnlTD(d.exit_time||'—','#8b949e','center');
-    if(cv('exit_px'))   row += _pnlTD(xp?'₹'+xp.toFixed(2):'—','','right');
+    if(cv('exit_px'))   row += _pnlTD(xp?xp.toFixed(2):'—','','right');
     if(cv('qty'))       row += _pnlTD(qty||'—','#8b949e','center');
-    if(cv('capital'))   row += _pnlTD(capital?'₹'+capital.toFixed(0):'—','#8b949e','right');
+    if(cv('capital'))   row += _pnlTD(capital?capital.toFixed(0):'—','#8b949e','right');
     // Extract CHART tag if present
     let c_tf = '', c_ind = '';
     if(d.tags) {
@@ -2105,7 +2160,7 @@ async function updatePnl() {
     }
     
     if(cv('gross'))     row += _pnlTD(_fmt(gross),_pnlColor(gross),'right','font-weight:600');
-    if(cv('tax'))       row += _pnlTD(tax!=null?'−₹'+tax.toFixed(2):'—','#f85149','right');
+    if(cv('tax'))       row += _pnlTD(tax!=null?'−'+tax.toFixed(2):'—','#f85149','right');
     if(cv('net'))       row += _pnlTD(_fmt(net),_pnlColor(net),'right','font-weight:700');
     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty},'','${c_tf}','${c_ind}')" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
     return row;
@@ -2314,7 +2369,7 @@ function _patchLtpCells() {
     // _ltpLive[sym] can be a number (from _fetchPositionLtp) or object (from SSE)
     const ltp = typeof raw === 'number' ? raw : raw?.ltp;
     if(ltp == null) return;
-    el.textContent = '₹' + ltp.toFixed(2);
+    el.textContent = ltp.toFixed(2);
     // patch points cell
     const entry = parseFloat(el.getAttribute('data-entry')) || 0;
     const side  = el.getAttribute('data-side');
@@ -2325,12 +2380,39 @@ function _patchLtpCells() {
     const unEl  = document.querySelector(`.unrl-cell[data-sym="${sym}"]`);
     const retEl = document.querySelector(`.ret-cell[data-sym="${sym}"]`);
     if(ptEl) { ptEl.textContent=(pts>=0?'+':'')+pts.toFixed(1); ptEl.style.color=pts>=0?'#3fb950':'#f85149'; }
-    if(unEl) { unEl.textContent=(unrl>=0?'+':'')+'₹'+Math.round(unrl); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
+    if(unEl) { unEl.textContent=(unrl>=0?'+':'')+Math.round(unrl); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
     if(retEl) {
       const inv = entry * qty;
       const retPct = inv > 0 ? ((unrl / inv) * 100).toFixed(2) + '%' : '—';
-      retEl.textContent = retPct; 
+      retEl.textContent = retPct;
       retEl.style.color = unrl>=0?'#3fb950':'#f85149';
+    }
+  });
+  // per-strategy-table totals — sum pts/unrl/inv across each table's own rows
+  document.querySelectorAll('table[id^="grp_"]').forEach(tbl=>{
+    let totPts=0, totUnrl=0, totInv=0, any=false;
+    tbl.querySelectorAll('tbody tr').forEach(tr=>{
+      const ltpCell = tr.querySelector('.ltp-cell');
+      const unEl = tr.querySelector('.unrl-cell');
+      if(!ltpCell || !unEl || unEl.textContent==='—') return;
+      any = true;
+      const entry = parseFloat(ltpCell.getAttribute('data-entry')) || 0;
+      const qty   = parseFloat(ltpCell.getAttribute('data-qty')) || 0;
+      totUnrl += parseFloat(unEl.textContent.replace('+','')) || 0;
+      totInv  += entry*qty;
+      const ptEl = tr.querySelector('.pts-cell');
+      if(ptEl) totPts += parseFloat(ptEl.textContent.replace('+','')) || 0;
+    });
+    const id = tbl.id;
+    const ptsFoot = document.querySelector(`.grp-tot-pts[data-grp="${id}"]`);
+    const unrlFoot = document.querySelector(`.grp-tot-unrl[data-grp="${id}"]`);
+    const retFoot = document.querySelector(`.grp-tot-ret[data-grp="${id}"]`);
+    if(!any) return;
+    if(ptsFoot) { ptsFoot.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsFoot.style.color=totPts>=0?'#3fb950':'#f85149'; }
+    if(unrlFoot) { unrlFoot.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlFoot.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
+    if(retFoot) {
+      const retPct = totInv > 0 ? ((totUnrl/totInv)*100).toFixed(2)+'%' : '—';
+      retFoot.textContent = retPct; retFoot.style.color = totUnrl>=0?'#3fb950':'#f85149';
     }
   });
 }
@@ -2394,7 +2476,6 @@ loadAll();
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Limit Price <span style="color:#484f58">(blank = LTP par bhejo)</span></div>
 <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
-  <span style="font-size:13px;color:#8b949e">₹</span>
   <input id="qo-price" type="number" step="0.05" placeholder="auto (LTP)" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:6px 8px;font-size:13px;outline:none">
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
@@ -2560,8 +2641,8 @@ loadAll();
       if (j.ok) {
         window._qoPeLtp = j.pe_ltp; window._qoCeLtp = j.ce_ltp;
         _qoSyncPricePlaceholder();
-        _qoElPeLtp.textContent = j.pe_ltp != null ? '₹' + j.pe_ltp.toFixed(2) : '—';
-        _qoElCeLtp.textContent = j.ce_ltp != null ? '₹' + j.ce_ltp.toFixed(2) : '—';
+        _qoElPeLtp.textContent = j.pe_ltp != null ? j.pe_ltp.toFixed(2) : '—';
+        _qoElCeLtp.textContent = j.ce_ltp != null ? j.ce_ltp.toFixed(2) : '—';
         _qoElPeSym.textContent = (j.pe_sym||'').replace(qoSym+'-','');
         _qoElCeSym.textContent = (j.ce_sym||'').replace(qoSym+'-','');
         if(_qoElTs) _qoElTs.textContent = '⚡ ' + ts + (j._stale?' (stale)':'');
@@ -2652,7 +2733,7 @@ loadAll();
     const t=window._qoOptType||'CE';
     const v=t==='CE'?window._qoCeLtp:window._qoPeLtp;
     const el=document.getElementById('qo-price');
-    if(el) el.placeholder = (v!=null) ? ('auto = ₹'+v.toFixed(2)+' (live '+t+')') : 'auto (live LTP)';
+    if(el) el.placeholder = (v!=null) ? ('auto = '+v.toFixed(2)+' (live '+t+')') : 'auto (live LTP)';
   }
 
   window.qoOrder = async side=>{
@@ -2667,11 +2748,11 @@ loadAll();
     // safety: typed price live LTP se bahut door → Dhan price-band reject karega. Confirm maango.
     if (priceRaw!=='' && liveLtp && Math.abs(price-liveLtp)/liveLtp > 0.20){
       const pct = Math.round(Math.abs(price-liveLtp)/liveLtp*100);
-      if(!confirm(`⚠️ Limit ₹${price.toFixed(2)} live ${optType} LTP ₹${liveLtp.toFixed(2)} se ${pct}% door hai.\nDhan price-band pe reject kar sakta. Phir bhi ${side} bhejun?`)){
+      if(!confirm(`⚠️ Limit ${price.toFixed(2)} live ${optType} LTP ${liveLtp.toFixed(2)} se ${pct}% door hai.\nDhan price-band pe reject kar sakta. Phir bhi ${side} bhejun?`)){
         st.textContent='cancelled'; st.style.color='#8b949e'; return;
       }
     }
-    st.textContent = `LIMIT ${side} ${optType} @ ₹${price.toFixed(2)}...`; st.style.color='#d29922';
+    st.textContent = `LIMIT ${side} ${optType} @ ${price.toFixed(2)}...`; st.style.color='#d29922';
     try {
       const r = await fetch('/api/manual-order',{method:'POST',headers:{'Content-Type':'application/json'},
         body: JSON.stringify({symbol:qoSym, side, opt_type:optType, lots, strike_offset:qoAtm, mode:qoMode, order_type:'LIMIT', price})});
@@ -3564,7 +3645,7 @@ async function loadBulkPreview() {
         const tr = document.createElement('tr');
         tr.style.borderBottom = '1px solid #21262d';
         
-        const formatMoney = (val) => '₹' + val.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+        const formatMoney = (val) => val.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
         
         tr.innerHTML = `
           <td style="padding: 8px; color: #e6edf3; font-weight: 600;">${item.sym}</td>
@@ -3610,12 +3691,12 @@ function updateBulkMath(idx) {
   item.sl_pct = sl;
   
   const cap = item.ltp * qty;
-  document.getElementById(`bulk-cap-${idx}`).innerText = '₹' + cap.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById(`bulk-cap-${idx}`).innerText = cap.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
   
   if (sl > 0 && item.ltp > 0) {
     const slPx = item.ltp * (1 - (sl/100));
     const loss = (item.ltp - slPx) * qty;
-    document.getElementById(`bulk-sl-math-${idx}`).innerText = `Sell @ ₹${slPx.toFixed(1)} (-₹${Math.round(loss)})`;
+    document.getElementById(`bulk-sl-math-${idx}`).innerText = `Sell @ ${slPx.toFixed(1)} (-${Math.round(loss)})`;
   } else {
     document.getElementById(`bulk-sl-math-${idx}`).innerText = '';
   }
@@ -3625,7 +3706,7 @@ function updateBulkMath(idx) {
 
 function updateBulkGrandTotal() {
   const total = _bulkPreviewData.reduce((acc, item) => acc + (item.ltp * (item.qty||0)), 0);
-  document.getElementById('bulk-grand-total').innerText = '₹' + total.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+  document.getElementById('bulk-grand-total').innerText = total.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
 const STRATEGY_MAP = {
@@ -3791,13 +3872,32 @@ pineLoadLatest();
     </div>
     <div style="padding: 20px; flex: 1; overflow-y: auto;">
       <input type="hidden" id="edit-sltp-id">
-      
-      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Stop Loss (%)</label>
-      <input type="number" step="0.1" id="edit-sltp-sl" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin-bottom: 16px; box-sizing: border-box;" placeholder="e.g. 1.5">
-      
-      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Target (%)</label>
-      <input type="number" step="0.1" id="edit-sltp-tp" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; margin-bottom: 16px; box-sizing: border-box;" placeholder="e.g. 3.0">
-      
+
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #f85149;">Stop Loss</label>
+      <div style="display:flex; gap:6px; margin-bottom: 16px;">
+        <select id="edit-sltp-sl-type" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
+          <option value="pct">%</option>
+          <option value="pt">Points (premium)</option>
+          <option value="rs">Amount (₹)</option>
+          <option value="premium">Premium level</option>
+          <option value="index">Index/Underlying level</option>
+        </select>
+        <input type="number" step="0.05" id="edit-sltp-sl" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;" placeholder="value">
+      </div>
+
+      <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #3fb950;">Target</label>
+      <div style="display:flex; gap:6px; margin-bottom: 16px;">
+        <select id="edit-sltp-tp-type" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
+          <option value="pct">%</option>
+          <option value="pt">Points (premium)</option>
+          <option value="rs">Amount (₹)</option>
+          <option value="premium">Premium level</option>
+          <option value="index">Index/Underlying level</option>
+        </select>
+        <input type="number" step="0.05" id="edit-sltp-tp" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;" placeholder="value">
+      </div>
+      <div style="font-size:10.5px;color:#6e7681;margin-bottom:14px;line-height:1.4">% / Points / ₹ are relative to entry. Premium level = absolute LTP value. Index/Underlying level = absolute spot level of the underlying (only works for symbols with a known sec_id mapping).</div>
+
       <button onclick="saveSlTp()" style="width: 100%; padding: 10px; margin-top: 10px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Changes</button>
     </div>
   </div>
@@ -3812,17 +3912,24 @@ pineLoadLatest();
     <div style="padding: 20px; flex: 1; overflow-y: auto;">
       <input type="hidden" id="edit-note-id">
       <textarea id="edit-note-text" rows="6" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical; font-family: inherit; box-sizing: border-box;" placeholder="Write your observations here..."></textarea>
-      
+
+      <div id="edit-note-imgs" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;"></div>
+
+      <label style="display:block; margin-top:14px; margin-bottom:6px; font-size:12px; color:#8b949e;">📷 Add Images</label>
+      <input type="file" id="edit-note-file" accept="image/*" multiple style="width:100%; font-size:12px; color:#8b949e;">
+
       <button onclick="saveNote()" style="width: 100%; padding: 10px; margin-top: 20px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Note</button>
     </div>
   </div>
 </div>
 
 <script>
-function openSlTpModal(id, sl, tp) {
+function openSlTpModal(id, sl, tp, slType, tpType) {
   document.getElementById('edit-sltp-id').value = id;
   document.getElementById('edit-sltp-sl').value = sl || '';
   document.getElementById('edit-sltp-tp').value = tp || '';
+  document.getElementById('edit-sltp-sl-type').value = slType || 'pct';
+  document.getElementById('edit-sltp-tp-type').value = tpType || 'pct';
   document.getElementById('edit-sltp-modal').style.display = 'flex';
 }
 
@@ -3830,12 +3937,14 @@ async function saveSlTp() {
   const id = document.getElementById('edit-sltp-id').value;
   const sl = document.getElementById('edit-sltp-sl').value;
   const tp = document.getElementById('edit-sltp-tp').value;
-  
+  const slType = document.getElementById('edit-sltp-sl-type').value;
+  const tpType = document.getElementById('edit-sltp-tp-type').value;
+
   try {
     const res = await fetch('/api/orders/update-sl-tp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, sl_pct: sl, tp_pct: tp })
+      body: JSON.stringify({ id: id, sl_type: slType, sl_val: sl, tp_type: tpType, tp_val: tp })
     });
     const data = await res.json();
     if(data.status === 'success') {
@@ -3849,16 +3958,42 @@ async function saveSlTp() {
   }
 }
 
-function openNoteModal(id, note) {
+function openNoteModal(id, note, imgs) {
   document.getElementById('edit-note-id').value = id;
   document.getElementById('edit-note-text').value = decodeURIComponent(note || '');
+  document.getElementById('edit-note-file').value = '';
+  _renderNoteImgs(id, imgs ? JSON.parse(decodeURIComponent(imgs)) : []);
   document.getElementById('edit-note-modal').style.display = 'flex';
+}
+
+function _renderNoteImgs(id, imgs) {
+  const el = document.getElementById('edit-note-imgs');
+  if(!imgs || !imgs.length) { el.innerHTML = ''; return; }
+  el.innerHTML = imgs.map(fn => `
+    <div style="position:relative">
+      <a href="/api/orders/note-image/${id}/${fn}" target="_blank">
+        <img src="/api/orders/note-image/${id}/${fn}" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid #30363d">
+      </a>
+      <span onclick="deleteNoteImg(${id},'${fn}')" style="position:absolute;top:-6px;right:-6px;background:#f85149;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:pointer;color:#fff">✕</span>
+    </div>`).join('');
+}
+
+async function deleteNoteImg(id, fn) {
+  await fetch('/api/orders/delete-image', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, filename: fn})});
+  const r = await fetch('/api/orders?date='+(document.getElementById('ord-date')||{}).value);
+  const d = await r.json();
+  const all = (d.details||[]).concat(d.open||[]);
+  const t = all.find(x=>String(x.id)===String(id));
+  const imgs = t ? (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)) : [];
+  _renderNoteImgs(id, imgs);
+  ordersRender();
 }
 
 async function saveNote() {
   const id = document.getElementById('edit-note-id').value;
   const note = document.getElementById('edit-note-text').value;
-  
+  const fileInput = document.getElementById('edit-note-file');
+
   try {
     const res = await fetch('/api/orders/update-note', {
       method: 'POST',
@@ -3866,12 +4001,19 @@ async function saveNote() {
       body: JSON.stringify({ id: id, note: note })
     });
     const data = await res.json();
-    if(data.status === 'success') {
-      document.getElementById('edit-note-modal').style.display = 'none';
-      ordersRender(); // Refresh orders
-    } else {
-      alert("Error: " + data.message);
+    if(data.status !== 'success') { alert("Error: " + data.message); return; }
+
+    if(fileInput.files && fileInput.files.length) {
+      const fd = new FormData();
+      fd.append('id', id);
+      for(const f of fileInput.files) fd.append('images', f);
+      const ir = await fetch('/api/orders/upload-image', {method:'POST', body: fd});
+      const ij = await ir.json();
+      if(ij.status !== 'success') { alert("Image upload error: " + ij.message); }
     }
+
+    document.getElementById('edit-note-modal').style.display = 'none';
+    ordersRender(); // Refresh orders
   } catch(e) {
     alert("Error saving Note.");
   }

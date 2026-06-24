@@ -14,7 +14,7 @@ import signal
 import uuid
 from datetime import datetime
 from pathlib import Path
-from flask import Flask, jsonify, render_template, request, Response
+from flask import Flask, jsonify, render_template, request, Response, send_from_directory
 import time as _time
 import threading as _threading
 
@@ -94,6 +94,8 @@ RANGE_CFG    = BASE_DIR / "range_config.json"
 UNIV_SCRIPT  = str(TRADERS_DIR / "universe_trader.py")
 UNIV_LOG     = BASE_DIR / "logs" / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
+NOTE_IMG_DIR = BASE_DIR / "data" / "note_images"
+NOTE_IMG_DIR.mkdir(parents=True, exist_ok=True)
 
 def _creds():
     """JWT token + client_id from the dashboard's OWN config (root data/config.json).
@@ -2239,6 +2241,14 @@ def api_orders():
     data['date'] = date
     data['filters'] = {f: order_store.distinct(f, date)
                        for f in ('source', 'mode', 'strategy', 'broker')}
+    try:
+        import risk_gate
+        for p in data.get('open', []):
+            if (p.get('tags') or []) and 'CAPITAL_BLOCKED' in p['tags']:
+                continue
+            p['margin_used'] = round(risk_gate._leg_capital(p) or 0, 2)
+    except Exception as _e:
+        pass
     return jsonify(data)
 
 
@@ -2260,32 +2270,41 @@ def api_rename_strategy():
 
 @app.route('/api/orders/update-sl-tp', methods=['POST'])
 def api_update_sl_tp():
+    """Per-position SL/Target. Generic form (sl_type/sl_val, tp_type/tp_val —
+    type one of pct/pt/rs/premium/index) takes priority; legacy sl_pct/tp_pct
+    kept for older callers."""
     data = request.get_json()
     order_id = data.get('id')
+    sl_type = data.get('sl_type'); sl_val = data.get('sl_val')
+    tp_type = data.get('tp_type'); tp_val = data.get('tp_val')
     sl_pct = data.get('sl_pct')
     tp_pct = data.get('tp_pct')
     if not order_id:
         return jsonify({"status": "error", "message": "Missing order ID"})
     try:
         import order_store
-        # Fetch current tags
         with order_store._lock, order_store._conn() as c:
             row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
             if not row: return jsonify({"status": "error", "message": "Order not found"})
-            
+
             tags = []
             try: tags = json.loads(row[0] or "[]")
             except: pass
-            
-            # Remove existing SL_PCT and TP_PCT
-            tags = [t for t in tags if not t.startswith("SL_PCT:") and not t.startswith("TP_PCT:")]
-            
-            # Add new if provided
-            if sl_pct is not None and str(sl_pct).strip() != "":
+
+            tags = [t for t in tags if not t.startswith(("SL_PCT:", "TP_PCT:", "SL_TYPE:", "SL_VAL:", "TP_TYPE:", "TP_VAL:"))]
+
+            if sl_type and sl_val is not None and str(sl_val).strip() != "":
+                tags.append(f"SL_TYPE:{sl_type}")
+                tags.append(f"SL_VAL:{float(sl_val)}")
+            elif sl_pct is not None and str(sl_pct).strip() != "":
                 tags.append(f"SL_PCT:{float(sl_pct)}")
-            if tp_pct is not None and str(tp_pct).strip() != "":
+
+            if tp_type and tp_val is not None and str(tp_val).strip() != "":
+                tags.append(f"TP_TYPE:{tp_type}")
+                tags.append(f"TP_VAL:{float(tp_val)}")
+            elif tp_pct is not None and str(tp_pct).strip() != "":
                 tags.append(f"TP_PCT:{float(tp_pct)}")
-                
+
             c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
             c.commit()
         return jsonify({"status": "success", "tags": tags})
@@ -2318,6 +2337,73 @@ def api_update_note():
                 
             c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
             c.commit()
+        return jsonify({"status": "success", "tags": tags})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route('/api/orders/upload-image', methods=['POST'])
+def api_orders_upload_image():
+    """Attach one or more images to a trade's note — saved to disk under
+    data/note_images/<order_id>/, persisted as IMG:<filename> tags so they
+    survive in history (not just the day they were taken)."""
+    order_id = request.form.get('id')
+    files = request.files.getlist('images')
+    if not order_id or not files:
+        return jsonify({"status": "error", "message": "Missing order id or images"})
+    try:
+        import order_store, time as _time
+        order_dir = NOTE_IMG_DIR / str(order_id)
+        order_dir.mkdir(parents=True, exist_ok=True)
+        saved = []
+        for f in files:
+            if not f.filename:
+                continue
+            ext = os.path.splitext(f.filename)[1][:10] or '.jpg'
+            fname = f"{int(_time.time()*1000)}_{len(saved)}{ext}"
+            f.save(str(order_dir / fname))
+            saved.append(fname)
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row: return jsonify({"status": "error", "message": "Order not found"})
+            tags = []
+            try: tags = json.loads(row[0] or "[]")
+            except: pass
+            for fname in saved:
+                tags.append(f"IMG:{fname}")
+            c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
+            c.commit()
+        return jsonify({"status": "success", "tags": tags, "saved": saved})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+
+@app.route('/api/orders/note-image/<order_id>/<filename>')
+def api_orders_note_image(order_id, filename):
+    return send_from_directory(str(NOTE_IMG_DIR / order_id), filename)
+
+
+@app.route('/api/orders/delete-image', methods=['POST'])
+def api_orders_delete_image():
+    data = request.get_json()
+    order_id = data.get('id'); filename = data.get('filename')
+    if not order_id or not filename:
+        return jsonify({"status": "error", "message": "Missing id or filename"})
+    try:
+        import order_store
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
+            if not row: return jsonify({"status": "error", "message": "Order not found"})
+            tags = []
+            try: tags = json.loads(row[0] or "[]")
+            except: pass
+            tags = [t for t in tags if t != f"IMG:{filename}"]
+            c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
+            c.commit()
+        img_path = NOTE_IMG_DIR / str(order_id) / filename
+        if img_path.exists():
+            try: img_path.unlink()
+            except Exception: pass
         return jsonify({"status": "success", "tags": tags})
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
@@ -2490,13 +2576,118 @@ def pos_monitor_loop():
 
                 if p["qty"] <= 0 or entry_px <= 0: continue
 
-                # Check SL/TP — manual per-position tags take priority over the
-                # strategy/global max-loss defaults (set in the Risk tab).
-                sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None)
-                tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None)
+                # Generic per-position SL/TP — set via the ⚙️ modal, type can be
+                # %, points (premium), ₹ (amount), absolute premium level, or
+                # underlying index/equity level. SL_TYPE/SL_VAL + TP_TYPE/TP_VAL
+                # tags take priority over the legacy SL_PCT/TP_PCT tags below.
+                sl_type = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_TYPE:")), None)
+                sl_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_VAL:")), None)
+                tp_type = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_TYPE:")), None)
+                tp_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_VAL:")), None)
+
+                def _underlying_ltp(p):
+                    """Best-effort spot LTP for the option's underlying (index level SL/TP)."""
+                    root = p.get("symbol") or p["sym"].split("-")[0]
+                    info = _EQ_IDX_SEC.get(root)
+                    if not info:
+                        return None
+                    u_sec, u_seg = info
+                    _feed_subscribe([(u_seg, u_sec)])
+                    q = dhan_feed.get_quote(u_sec)
+                    return float(q.get("ltp") or 0) if q else None
+
+                def _generic_px(typ, val, is_sl):
+                    """Convert a (type, val) SL/TP spec to a premium trigger price, or None."""
+                    if typ is None or val is None:
+                        return None
+                    try: val = float(val)
+                    except Exception: return None
+                    side = p["entry"]  # BUY or SELL
+                    opt_ce = p["sym"].upper().endswith("-CE") or p["sym"].upper().endswith("CE")
+                    bullish = (side == "BUY" and opt_ce) or (side == "SELL" and not opt_ce)
+                    if typ == "pct":
+                        return entry_px * (1 - val/100.0) if (is_sl) == (side == "BUY") else entry_px * (1 + val/100.0)
+                    if typ == "pt":
+                        if side == "BUY":
+                            return entry_px - val if is_sl else entry_px + val
+                        else:
+                            return entry_px + val if is_sl else entry_px - val
+                    if typ == "rs":
+                        per_unit = val / p["qty"]
+                        if side == "BUY":
+                            return entry_px - per_unit if is_sl else entry_px + per_unit
+                        else:
+                            return entry_px + per_unit if is_sl else entry_px - per_unit
+                    if typ == "premium":
+                        return val  # absolute premium level, taken as-is
+                    if typ == "index":
+                        u_ltp = _underlying_ltp(p)
+                        if u_ltp is None: return None
+                        # is the index level breach adverse (SL) or favourable (TP) given direction?
+                        trigger = (u_ltp <= val) if (bullish == is_sl) else (u_ltp >= val)
+                        return "INDEX_HIT" if trigger else None
+                    return None
+
+                def _do_squareoff(p, ltp, exit_reason, sec_id, seg):
+                    """Exit a position now — live round-trips a real broker order
+                    first (never marks closed unless the broker confirms), paper
+                    just records the fill. Returns True once handled."""
+                    print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
+                    exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
+                    if p.get("mode") == "live":
+                        import smart_order
+                        from brokers import get_broker
+                        broker = get_broker(p.get("broker") or "dhan")
+                        res = smart_order.execute(
+                            exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
+                            p["mode"], broker, log=print, tag="POSMON",
+                            source=p["source"], strategy=p["strategy"],
+                            instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
+                        )
+                        if not res.get("ok"):
+                            print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
+                            return True
+                        # smart_order.execute already persisted the trade — don't double-record.
+                    else:
+                        order_store.record(
+                            side=exit_side, qty=p["qty"], price=ltp, source=p["source"],
+                            strategy=p["strategy"], mode=p["mode"], broker=p["broker"],
+                            symbol=p["sym"], instrument=p["instrument"], trad_sym=p["sym"],
+                            sec_id=sec_id, segment=seg, status=p.get("status", "paper"),
+                            tags=["pos_monitor_exit", exit_reason]
+                        )
+                    return True
+
+                sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
+                tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None
+                # "INDEX_HIT" is a sentinel meaning the underlying index/equity level
+                # was already breached — short-circuit straight to exit below.
+                if sl_px_generic == "INDEX_HIT" or tp_px_generic == "INDEX_HIT":
+                    reason = "SL_HIT:index_level" if sl_px_generic == "INDEX_HIT" else "TP_HIT:index_level"
+                    _do_squareoff(p, ltp, reason, sec_id, seg)
+                    continue
+                # numeric generic SL/TP trigger price (None if no generic tag set)
+                sl_px_num = sl_px_generic if isinstance(sl_px_generic, float) else None
+                tp_px_num = tp_px_generic if isinstance(tp_px_generic, float) else None
+                if sl_px_num is not None:
+                    hit = ltp <= sl_px_num if p["entry"] == "BUY" else ltp >= sl_px_num
+                    if hit:
+                        _do_squareoff(p, ltp, f"SL_HIT:{sl_type}:{sl_val}", sec_id, seg)
+                        continue
+                if tp_px_num is not None:
+                    hit = ltp >= tp_px_num if p["entry"] == "BUY" else ltp <= tp_px_num
+                    if hit:
+                        _do_squareoff(p, ltp, f"TP_HIT:{tp_type}:{tp_val}", sec_id, seg)
+                        continue
+                if sl_px_num is not None and tp_px_num is not None:
+                    continue  # generic SL+TP both set and neither hit — skip legacy fallback entirely
+
+                # Legacy SL_PCT/TP_PCT (kept for older positions / strategy defaults).
+                sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None) if sl_px_num is None else None
+                tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None) if tp_px_num is None else None
                 sl_rs  = None  # ₹ max-loss for this position (qty already applied)
 
-                if sl_pct is None:
+                if sl_pct is None and sl_px_num is None:
                     rc = _risk_config()
                     strat_risk = rc.get("per_strategy", {}).get(p.get("strategy") or "", {})
                     glob_risk  = rc.get("global", {})
@@ -2537,45 +2728,7 @@ def pos_monitor_loop():
                     elif tp_px and ltp <= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
                 
                 if exit_reason:
-                    print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
-                    exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
-
-                    if p.get("mode") == "live":
-                        # LIVE: round-trip a real square-off order to the broker
-                        # (same path as webhook_executor._do_exit / smart_order.execute)
-                        # before recording — DB must never show "closed" while the
-                        # actual Dhan position is still open.
-                        import smart_order
-                        from brokers import get_broker
-                        broker = get_broker(p.get("broker") or "dhan")
-                        res = smart_order.execute(
-                            exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
-                            p["mode"], broker, log=print, tag="POSMON",
-                            source=p["source"], strategy=p["strategy"],
-                            instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
-                        )
-                        if not res.get("ok"):
-                            print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
-                            continue
-                        # smart_order.execute already persisted the trade to order_store
-                        # with the actual broker order id/status — don't double-record.
-                    else:
-                        order_store.record(
-                            side=exit_side,
-                            qty=p["qty"],
-                            price=ltp,
-                            source=p["source"],
-                            strategy=p["strategy"],
-                            mode=p["mode"],
-                            broker=p["broker"],
-                            symbol=p["sym"],
-                            instrument=p["instrument"],
-                            trad_sym=p["sym"],
-                            sec_id=sec_id,
-                            segment=seg,
-                            status=p.get("status", "paper"),
-                            tags=["pos_monitor_exit", exit_reason]
-                        )
+                    _do_squareoff(p, ltp, exit_reason, sec_id, seg)
         except Exception as e:
             print("Pos monitor error:", e)
             
