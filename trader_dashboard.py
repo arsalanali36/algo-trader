@@ -2562,6 +2562,36 @@ def webhook_monitor_loop():
             print("Webhook monitor error:", e)
         time.sleep(3)
 
+_rest_ltp_cache = {}   # sec_id -> (ltp, ts) — 3s TTL, avoids DH-904 across many open positions
+_REST_LTP_TTL = 3
+
+def _rest_ltp_fallback(sec_id, seg):
+    """Direct Dhan REST LTP call — used when the dhan_feed WebSocket isn't
+    delivering quotes (e.g. dhanhq version mismatch). Same endpoint/shape as
+    /api/positions-ltp's own REST fallback."""
+    import time as _t
+    cached = _rest_ltp_cache.get(sec_id)
+    if cached and (_t.time() - cached[1]) < _REST_LTP_TTL:
+        return cached[0]
+    try:
+        import requests as _req
+        token, cid = _creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
+        body = {dhan_seg: [int(sec_id)]}
+        r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+        if r.status_code == 200:
+            quotes = (r.json().get("data", {}) or {}).get(dhan_seg, {})
+            q = quotes.get(str(sec_id)) or quotes.get(str(int(sec_id)))
+            if q:
+                ltp = float(q.get("last_price") or q.get("ltp") or 0)
+                if ltp > 0:
+                    _rest_ltp_cache[sec_id] = (ltp, _t.time())
+                    return ltp
+    except Exception as e:
+        print("[_rest_ltp_fallback] fail:", e, flush=True)
+    return None
+
 def pos_monitor_loop():
     """Monitors open positions for SL_PCT, TP_PCT hits and tracks MAX/MIN LTP."""
     import time
@@ -2591,6 +2621,13 @@ def pos_monitor_loop():
                 
                 q = dhan_feed.get_quote(sec_id)
                 ltp = float(q.get("ltp") or 0) if q else 0.0
+                if ltp <= 0:
+                    # WebSocket feed (dhan_feed) needs dhanhq's DhanContext/MarketFeed,
+                    # which some installed dhanhq versions don't export — when that's
+                    # the case the feed silently never starts and ltp stays 0 forever,
+                    # so SL/TP/EOD-squareoff would never fire for ANY position. REST
+                    # fallback here mirrors /api/positions-ltp's same fallback path.
+                    ltp = _rest_ltp_fallback(sec_id, seg) or 0.0
                 if ltp <= 0: continue
                 
                 # Update MAX/MIN LTP for Run-up / Run-down tracking
@@ -2650,7 +2687,10 @@ def pos_monitor_loop():
                     u_sec, u_seg = info
                     _feed_subscribe([(u_seg, u_sec)])
                     q = dhan_feed.get_quote(u_sec)
-                    return float(q.get("ltp") or 0) if q else None
+                    u_ltp = float(q.get("ltp") or 0) if q else 0.0
+                    if u_ltp <= 0:
+                        u_ltp = _rest_ltp_fallback(u_sec, u_seg) or 0.0
+                    return u_ltp if u_ltp > 0 else None
 
                 def _generic_px(typ, val, is_sl):
                     """Convert a (type, val) SL/TP spec to a premium trigger price, or None."""
