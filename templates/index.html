@@ -138,6 +138,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
   <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
+  <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
   <div class="tab active" onclick="switchTab('pine')">📜 Script</div>
 </div>
 
@@ -366,6 +367,92 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="card">
     <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">⏳ Open Positions</div>
     <div id="ord-open" style="overflow-x:auto"></div>
+  </div>
+</div>
+
+<!-- RISK TAB -->
+<div class="tab-body" id="tab-risk" style="padding:16px 18px 24px">
+  <div class="card" style="margin-bottom:14px;border-color:#3fb950">
+    <h2 style="color:#3fb950">📊 RMS Summary</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Capital used/available, open unrealized P&amp;L, aur max-loss cap ke kitne paas ho — ek nazar me.
+      LTP feed na chal raha ho to unrealized P&amp;L "—" dikhega (capital/position count phir bhi accurate hai).
+    </div>
+    <div id="rms-summary-content" style="overflow-x:auto"><div style="color:#8b949e;font-size:12px;padding:6px">Loading…</div></div>
+    <div style="margin-top:10px">
+      <button class="btn btn-gray" onclick="runReconcile()">🔍 Reconcile vs Broker Funds</button>
+      <span id="rms-reconcile-result" style="font-size:11px;color:#8b949e;margin-left:10px"></span>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;border-color:#d29922">
+    <h2 style="color:#d29922">⚠️ Global Max Loss (default for every strategy)</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Jis strategy ka apna max-loss set nahi hai, uske liye yeh default lagega. Naya position khulte hi
+      yeh cap apply ho jaata hai — manually har trade pe SL set karne ki zaroorat nahi.
+      Dono diye ho to jo pehle hit ho (tighter) wahi exit karega.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:12px;color:#adbac7">Max Loss %</label>
+      <input id="risk-global-pct" type="number" step="0.1" placeholder="e.g. 25"
+             style="width:100px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <label style="font-size:12px;color:#adbac7;margin-left:14px">Max Loss ₹ (per position)</label>
+      <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 2000"
+             style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+    </div>
+    <div id="risk-msg" style="font-size:12px;margin-top:8px;color:#8b949e"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;border-color:#1f6feb">
+    <h2 style="color:#58a6ff">💰 Capital Allocation</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Global capital — sab strategies milake itne se zyada deploy nahi hoga. Jo signal capital
+      na hone ki wajah se nahi li gayi, woh Orders &amp; P&amp;L me "🚫 Capital" tag ke saath dikhegi (real order nahi jaata).
+      <b style="color:#e6edf3">Margin Multiplier:</b> option-SELL karne me premium se zyada margin block hota hai
+      (real broker number nahi, ek estimate) — multiplier se SELL legs ka "capital used" notional se zyada dikhega
+      (e.g. 5 = qty×premium×5). BUY legs (premium pay karna) is se affect nahi hote. Default 1 (off).
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:12px;color:#adbac7">Global Capital ₹</label>
+      <input id="risk-global-capital" type="number" step="1" placeholder="e.g. 200000"
+             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <label style="font-size:12px;color:#adbac7;margin-left:14px">Margin Multiplier (SELL legs)</label>
+      <input id="risk-global-margin" type="number" step="0.1" placeholder="e.g. 5 (default 1)"
+             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <label style="font-size:12px;color:#adbac7;margin-left:14px">Mode</label>
+      <select id="risk-global-mode" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px">
+        <option value="reject">Reject (block entry)</option>
+        <option value="size_down">Size down (fill what fits)</option>
+      </select>
+      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;border-color:#f85149">
+    <h2 style="color:#f85149">🧪 Shadow-Live Testing (DANGEROUS — OFF by default)</h2>
+    <div style="font-size:11px;color:#f85149;margin-bottom:10px;font-weight:600">
+      ON karne par har PAPER trade ke saath ek REAL Dhan order bhi parallel me fire hoga (same price/qty) —
+      sirf fill/reject compare karne ke liye (slippage check). Paper P&amp;L is se kabhi affect nahi hota.
+      <u>Sirf tab ON karo jab Dhan account balance zero/near-zero ho</u> (warna real order fill ho sakta hai!).
+      Test khatam hote hi OFF kar dena.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:12px;color:#adbac7">Global</label>
+      <select id="risk-global-shadow" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px">
+        <option value="false">OFF</option>
+        <option value="true">ON — fire real orders on paper trades</option>
+      </select>
+      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Per-Strategy Override</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
+    </div>
+    <div id="risk-strategy-table" style="overflow-x:auto"></div>
   </div>
 </div>
 
@@ -607,6 +694,174 @@ function switchTab(id) {
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
   if (id === 'orders') { ordersEnter(); }
+  if (id === 'risk') { renderRiskTab(); }
+}
+
+// ── RISK TAB (global + per-strategy max-loss) ──
+let RISK_CFG = {global:{}, per_strategy:{}};
+async function renderRmsSummary(){
+  const el = document.getElementById('rms-summary-content');
+  let d = {};
+  try { const r = await fetch('/api/rms-summary'); d = await r.json(); } catch(e){
+    el.innerHTML = '<div style="color:#f85149;font-size:12px;padding:6px">Load failed: '+e+'</div>'; return;
+  }
+  const rows = d.strategies || [];
+  const fmtRs = v => v===null||v===undefined ? '—' : '₹'+Math.round(v);
+  const fmtPnl = v => v===null||v===undefined ? '—' : (v>=0?'+':'')+'₹'+Math.round(v);
+  const pnlColor = v => v===null||v===undefined ? '#8b949e' : (v>=0?'#3fb950':'#f85149');
+
+  let html = '<table class="cfg-table"><tr><th>Strategy</th><th>Capital Used</th><th>Capital Cap</th>'
+    + '<th>Open Pos</th><th>Unrealized P&amp;L</th><th>Max-Loss Used</th></tr>';
+  rows.forEach(s => {
+    const capPct = s.capital_cap ? Math.min(100, Math.round(s.capital_used/s.capital_cap*100)) : null;
+    html += `<tr><td>${s.strategy}</td>
+      <td>${fmtRs(s.capital_used)}${capPct!==null?` <span style="color:${capPct>=90?'#f85149':'#8b949e'};font-size:10px">(${capPct}%)</span>`:''}</td>
+      <td>${fmtRs(s.capital_cap)}</td>
+      <td>${s.priced}/${s.open_positions}${s.priced<s.open_positions?' <span style="color:#8b949e;font-size:10px">(unpriced)</span>':''}</td>
+      <td style="color:${pnlColor(s.unrealized_pnl)};font-weight:600">${fmtPnl(s.unrealized_pnl)}</td>
+      <td>${s.max_loss_pct_used!==null?`<span style="color:${s.max_loss_pct_used>=80?'#f85149':'#d29922'}">${s.max_loss_pct_used}%</span>`:'—'}</td>
+      </tr>`;
+  });
+  const t = d.totals || {};
+  const tCapPct = t.capital_cap ? Math.min(100, Math.round(t.capital_used/t.capital_cap*100)) : null;
+  html += `<tr style="border-top:2px solid #30363d;font-weight:700"><td>TOTAL (all strategies)</td>
+    <td>${fmtRs(t.capital_used)}${tCapPct!==null?` <span style="color:${tCapPct>=90?'#f85149':'#8b949e'};font-size:10px">(${tCapPct}%)</span>`:''}</td>
+    <td>${fmtRs(t.capital_cap)}</td>
+    <td>${t.priced}/${t.open_positions}</td>
+    <td style="color:${pnlColor(t.unrealized_pnl)}">${fmtPnl(t.unrealized_pnl)}</td>
+    <td>—</td></tr>`;
+  html += '</table>';
+  if (!rows.length) {
+    html += '<div style="color:#8b949e;font-size:11px;padding:8px 2px">Koi strategy nifty_config.json me configured nahi hai — sirf TOTAL row (sab tags milake) dikh rahi hai.</div>';
+  }
+  el.innerHTML = html;
+}
+
+async function runReconcile(){
+  const el = document.getElementById('rms-reconcile-result');
+  el.textContent = 'Checking…';
+  try {
+    const r = await fetch('/api/rms-reconcile');
+    const d = await r.json();
+    if (d.broker_available === null || d.broker_available === undefined) {
+      el.style.color = '#8b949e';
+      el.textContent = d.note || 'Could not reach broker funds API';
+      return;
+    }
+    const ours = d.our_capital_in_use ?? 0;
+    const avail = d.broker_available;
+    el.style.color = '#3fb950';
+    el.textContent = `Our capital-in-use: ₹${Math.round(ours)} · Broker available: ₹${Math.round(avail)} — ${d.note || ''}`;
+  } catch(e) {
+    el.style.color = '#f85149';
+    el.textContent = 'Reconcile failed: ' + e;
+  }
+}
+
+async function renderRiskTab(){
+  renderRmsSummary();
+  try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch(e){}
+  document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
+  document.getElementById('risk-global-rs').value  = RISK_CFG.global.max_loss_rs ?? '';
+  document.getElementById('risk-global-capital').value = RISK_CFG.global.capital_rs ?? '';
+  document.getElementById('risk-global-margin').value = RISK_CFG.global.margin_multiplier ?? '';
+  document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
+  document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
+
+  // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
+  let cfg = {};
+  try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch(e){}
+  const reserved = new Set(['_risk', 'webhooks']);
+  const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+
+  const tbl = document.getElementById('risk-strategy-table');
+  if (!stratIds.length) {
+    tbl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Koi strategy configured nahi hai abhi.</div>';
+    return;
+  }
+  let html = '<table class="cfg-table"><tr><th>Strategy</th><th>Max Loss %</th><th>Max Loss ₹</th><th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th></tr>';
+  stratIds.forEach(id => {
+    const ov = RISK_CFG.per_strategy[id] || {};
+    const curMode = ov.capital_mode || '';
+    const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
+    html += `<tr><td>${id}</td>
+      <td><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global default"
+            value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td><input id="risk-rs-${id}" type="number" step="1" placeholder="global default"
+            value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global default"
+            value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global default"
+            value="${ov.margin_multiplier ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td><select id="risk-mode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px">
+            <option value="" ${curMode===''?'selected':''}>global default</option>
+            <option value="reject" ${curMode==='reject'?'selected':''}>Reject</option>
+            <option value="size_down" ${curMode==='size_down'?'selected':''}>Size down</option>
+          </select></td>
+      <td><select id="risk-shadow-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #f85149;border-radius:4px">
+            <option value="" ${curShadow===''?'selected':''}>global default</option>
+            <option value="false" ${curShadow==='false'?'selected':''}>OFF</option>
+            <option value="true" ${curShadow==='true'?'selected':''}>ON</option>
+          </select></td>
+      </tr>`;
+  });
+  html += '</table><button class="btn btn-amber" style="margin-top:10px" onclick="saveRiskConfig()">💾 Save</button>';
+  tbl.innerHTML = html;
+}
+
+async function saveRiskConfig(){
+  let cfg = {};
+  try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch(e){}
+  const reserved = new Set(['_risk', 'webhooks']);
+  const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+
+  const gPct = document.getElementById('risk-global-pct').value;
+  const gRs  = document.getElementById('risk-global-rs').value;
+  const gCap = document.getElementById('risk-global-capital').value;
+  const gMar = document.getElementById('risk-global-margin').value;
+  const gMode = document.getElementById('risk-global-mode').value;
+  const gShadow = document.getElementById('risk-global-shadow').value;
+  const payload = {
+    global: {
+      max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
+      max_loss_rs:  gRs  !== '' ? parseFloat(gRs)  : null,
+      capital_rs:   gCap !== '' ? parseFloat(gCap) : null,
+      margin_multiplier: gMar !== '' ? parseFloat(gMar) : null,
+      capital_mode: gMode || 'reject',
+      shadow_live: gShadow === 'true',
+    },
+    per_strategy: {}
+  };
+  stratIds.forEach(id => {
+    const pEl = document.getElementById(`risk-pct-${id}`);
+    const rEl = document.getElementById(`risk-rs-${id}`);
+    const cEl = document.getElementById(`risk-capital-${id}`);
+    const mEl = document.getElementById(`risk-margin-${id}`);
+    const modeEl = document.getElementById(`risk-mode-${id}`);
+    const shadowEl = document.getElementById(`risk-shadow-${id}`);
+    if (!pEl || !rEl) return;
+    const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
+    const mode = modeEl ? modeEl.value : '';
+    const shadow = shadowEl ? shadowEl.value : '';
+    if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '') {
+      payload.per_strategy[id] = {
+        max_loss_pct: p !== '' ? parseFloat(p) : null,
+        max_loss_rs:  r !== '' ? parseFloat(r)  : null,
+        capital_rs:   c !== '' ? parseFloat(c)  : null,
+        margin_multiplier: m !== '' ? parseFloat(m) : null,
+        capital_mode: mode || null,
+        shadow_live: shadow === '' ? null : (shadow === 'true'),
+      };
+    }
+  });
+  try {
+    const res = await fetch('/api/risk-config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const j = await res.json();
+    document.getElementById('risk-msg').textContent = j.msg || 'Saved';
+    RISK_CFG = payload;
+  } catch(e) {
+    document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
+  }
 }
 
 // ── WEBHOOK TAB (multi-strategy) ──
@@ -913,6 +1168,9 @@ async function ordersRender(){
 
   const det=d.details||[], opn=d.open||[];
   const ordDate=date;
+  const isCapBlocked = t => (t.tags||[]).some(tg => tg === 'CAPITAL_BLOCKED');
+  const opnBlocked = opn.filter(isCapBlocked);
+  const opnReal = opn.filter(t => !isCapBlocked(t));
 
   // ── per-trade gross / tax / net (Zerodha charges) ──
   det.forEach(t=>{
@@ -930,7 +1188,7 @@ async function ordersRender(){
     srcTotals[s].net += t._net; srcTotals[s].gross += t._gross; srcTotals[s].n++;
     if(t._net > 0) srcTotals[s].w++;
   });
-  opn.forEach(t=>{
+  opnReal.forEach(t=>{
     let s = String(t.source || 'STRATEGY').toUpperCase();
     if(s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
     srcTotals[s].opn++;
@@ -1021,15 +1279,37 @@ async function ordersRender(){
   // ── OPEN POSITIONS (#2: chart + live LTP/Points/Unrealized P&L + Close) ──
   // Flicker fix: list same ho to table rebuild NA karo — sirf live cells patch.
   const ordOpenEl = document.getElementById('ord-open');
-  const openFp = opn.map(t=>`${t.sym}|${t.entry}|${t.entry_price}|${t.qty}|${t.mode}|${t.source}|${t.strategy}`).join(',');
-  if(!opn.length){
+  const openFp = opnReal.map(t=>`${t.sym}|${t.entry}|${t.entry_price}|${t.qty}|${t.mode}|${t.source}|${t.strategy}`).join(',')
+               + '|blocked:' + opnBlocked.map(t=>t.id).join(',');
+  if(!opnReal.length && !opnBlocked.length){
     _setHtml(ordOpenEl, '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
     ordOpenEl.dataset.fp='';
   } else if(ordOpenEl.dataset.fp === openFp){
     _patchLtpCells();   // structure same — sirf LTP/Points/P&L refresh, koi flash nahi
   } else {
+    // 🚫 Capital-blocked signals — never a real order, shown so the entry isn't silently lost.
+    let blockedHtml = '';
+    if(opnBlocked.length){
+      blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
+        <div style="font-weight:600;color:#f85149;margin-bottom:6px">🚫 Capital se Block hui Entries (${opnBlocked.length})</div>
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">
+          <th style="padding:5px 6px">Date</th><th style="padding:5px 6px">Symbol</th><th style="padding:5px 6px">Strategy</th>
+          <th style="padding:5px 6px">Side</th><th style="padding:5px 6px;text-align:right">Qty @ Price</th><th style="padding:5px 6px">Reason</th></tr></thead><tbody>`
+        + opnBlocked.map(t => {
+            const reason = (t.tags||[]).filter(tg => tg !== 'CAPITAL_BLOCKED').join(', ') || 'capital cap hit';
+            return '<tr style="border-bottom:1px solid #30363d;opacity:.85">'
+              + '<td style="padding:6px">'+(t.entry_date||ordDate)+'</td>'
+              + '<td style="padding:6px;color:#adbac7">'+t.sym+'</td>'
+              + '<td style="padding:6px;color:#8b949e">'+(t.strategy||'—')+'</td>'
+              + '<td style="padding:6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+'">'+t.entry+'</td>'
+              + '<td style="padding:6px;text-align:right;color:#8b949e">'+t.qty+' @ ₹'+Number(t.entry_price||0).toFixed(2)+'</td>'
+              + '<td style="padding:6px;color:#f85149;font-size:10.5px">'+reason+'</td></tr>';
+          }).join('')
+        + '</tbody></table></div>';
+    }
+
     let grouped = {};
-    opn.forEach(t => {
+    opnReal.forEach(t => {
       let stratKey = t.strategy || t.source || 'MANUAL';
       if(!grouped[stratKey]) grouped[stratKey] = [];
       grouped[stratKey].push(t);
@@ -1121,7 +1401,7 @@ async function ordersRender(){
       </details>`;
     }
     
-    ordOpenEl.innerHTML = oh;
+    ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>'));
     ordOpenEl.dataset.fp = openFp;
     _patchLtpCells(); _fetchPositionLtp();   // cache se turant bharo, phir fresh fetch
   }
@@ -1172,8 +1452,14 @@ function getStratColor(type) {
 function renderControlTab() {
   const container = document.getElementById('control-grid');
   let html = '';
+  // webhook strategies aren't process-based (no separate script — they run
+  // inside this dashboard process, controlled by the 🔗 Webhook tab's own
+  // active/paper-live toggle) and "_risk"/"webhooks" are config-only keys, not
+  // strategies at all — none of these belong in the Paper/Live/Stop grid.
+  const _skipTypes = new Set(['webhook', '_risk', 'webhooks']);
   Object.keys(GLOBAL_CONFIG).forEach(key => {
     const type = key.split('_')[0];
+    if (_skipTypes.has(type) || key === '_risk' || key === 'webhooks') return;
     const color = getStratColor(type);
     const pid = RUNNING_PIDS[key];
     const mode = pid ? `Running (PID ${pid})` : 'Stopped';

@@ -449,7 +449,10 @@ def run_signal_engine(df_1m, key_levels, cfg):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def fetch_1m(symbol, tf="1m"):
-    """Fetch intraday candles from Dhan /v2/charts/intraday."""
+    """Fetch intraday candles from Dhan /v2/charts/intraday.
+    DH-904 (rate limit) — retry with backoff instead of giving up immediately;
+    a single 429 shouldn't drop the symbol for the whole loop, and NOT backing
+    off here is exactly what cascades into the next symbol's 429 too."""
     from datetime import date as _date
     info = _dhan_info(symbol)
     if not info:
@@ -462,10 +465,17 @@ def fetch_1m(symbol, tf="1m"):
     interval = _TF_MAP.get(tf, "1")
     token, cid = load_creds()
     try:
-        r = requests.post(INTRADAY_URL,
-            json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
-                  "interval": interval, "fromDate": frm, "toDate": today.isoformat()},
-            headers=hdrs(token, cid), timeout=10)
+        r = None
+        for _attempt in range(3):
+            r = requests.post(INTRADAY_URL,
+                json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
+                      "interval": interval, "fromDate": frm, "toDate": today.isoformat()},
+                headers=hdrs(token, cid), timeout=10)
+            if r.status_code != 429:
+                break
+            wait = 2.0 * (_attempt + 1)  # 2s, 4s, 6s
+            log.warning(f"fetch_1m {symbol}: DH-904 rate limit, backing off {wait}s (attempt {_attempt+1}/3)")
+            time.sleep(wait)
         if r.status_code != 200:
             log.error(f"fetch_1m {symbol}: HTTP {r.status_code} — {r.text[:200]}")
             return None
@@ -564,6 +574,23 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
     if mode == "paper":
         log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
         _rec('paper')
+        # Diagnostic-only shadow order — fires a REAL Dhan order at the same
+        # qty/price purely to compare fill/reject vs the paper fill (slippage
+        # check). Never affects the paper record above — best-effort, never
+        # raises. OFF unless risk_gate.shadow_live_enabled() is explicitly set.
+        try:
+            import sys as _s, os as _o
+            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+            if _root not in _s.path:
+                _s.path.insert(0, _root)
+            import risk_gate
+            if risk_gate.shadow_live_enabled(_STRAT_ID):
+                shadow_body = dict(body, correlationId=f"RANGE_{trad_sym}_{ts}_SHADOW")
+                sr = requests.post(ORDERS_URL, json=shadow_body, headers=hdrs(token, cid), timeout=10)
+                log.info(f"[BROKER-SHADOW] {trad_sym} {side} {qty} @ {price:.2f} -> "
+                        f"HTTP {sr.status_code} — {sr.text[:200]} — paper fill unaffected")
+        except Exception as e:
+            log.warning(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
         return
     try:
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
@@ -731,6 +758,48 @@ def main(strategy_id="range"):
                         continue
                     if sec_id:
                         actual_qty = qty * lot_sz
+                        # ── risk gate (RMS Stage 1+2+3) — drawdown breaker >
+                        # concentration cap > capital allocation (size-down if
+                        # configured). Exits (3:15 squareoff / EXIT signal below)
+                        # are never gated. No broker-funds check here — this
+                        # legacy trader doesn't have a brokers.* broker object. ──
+                        try:
+                            import risk_gate
+                            dd_ok, dd_reason = risk_gate.check_drawdown()
+                            opt_prem = risk_gate._quick_option_ltp(sec_id, token, cid) or price
+                            cap_ok, cap_reason = True, ""
+                            if not dd_ok:
+                                cap_ok, cap_reason = False, dd_reason
+                            else:
+                                conc_ok, conc_reason = risk_gate.check_concentration(symbol, actual_qty, opt_prem)
+                                if not conc_ok:
+                                    cap_ok, cap_reason = False, conc_reason
+                                else:
+                                    cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, opt_prem)
+                        except Exception as _e:
+                            cap_ok, cap_reason = True, ""
+                            log.warning(f"risk gate check failed (allowing entry): {_e}")
+                        if not cap_ok:
+                            fit_lots = 0
+                            # size-down only applies to the capital cap, not the
+                            # drawdown breaker or concentration cap (those are
+                            # deliberate hard stops, not a sizing problem).
+                            if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
+                                fit_lots = risk_gate.sized_lots(strategy_id, qty, lot_sz, opt_prem)
+                            if fit_lots > 0:
+                                log.info(f"ENTRY sized down {symbol} — {qty}L -> {fit_lots}L ({cap_reason})")
+                                actual_qty = fit_lots * lot_sz
+                            else:
+                                log.info(f"ENTRY blocked {symbol} — {cap_reason}")
+                                try:
+                                    import order_store
+                                    order_store.record("SELL", actual_qty, price, source='strategy',
+                                        strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
+                                        instrument='options', trad_sym=t_sym, sec_id=sec_id, segment='NSE_FNO',
+                                        status='blocked', tags=["CAPITAL_BLOCKED", cap_reason])
+                                except Exception:
+                                    pass
+                                continue
                         place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
                         st["opt_sec_id"] = sec_id
                         st["opt_trad_sym"] = t_sym
@@ -738,6 +807,39 @@ def main(strategy_id="range"):
                     else:
                         log.error(f"Option contract not found for {symbol} {opt_type}")
                 else:
+                    try:
+                        import risk_gate
+                        dd_ok, dd_reason = risk_gate.check_drawdown()
+                        cap_ok, cap_reason = True, ""
+                        if not dd_ok:
+                            cap_ok, cap_reason = False, dd_reason
+                        else:
+                            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=signal)
+                            if not conc_ok:
+                                cap_ok, cap_reason = False, conc_reason
+                            else:
+                                cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=signal)
+                    except Exception as _e:
+                        cap_ok, cap_reason = True, ""
+                        log.warning(f"risk gate check failed (allowing entry): {_e}")
+                    if not cap_ok:
+                        fit_qty = 0
+                        if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
+                            fit_qty = risk_gate.sized_lots(strategy_id, qty, 1, price, side=signal)
+                        if fit_qty > 0:
+                            log.info(f"ENTRY sized down {symbol} — {qty} -> {fit_qty} ({cap_reason})")
+                            qty = fit_qty
+                        else:
+                            log.info(f"ENTRY blocked {symbol} — {cap_reason}")
+                            try:
+                                import order_store
+                                order_store.record(signal, qty, price, source='strategy',
+                                    strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
+                                    instrument='equity', trad_sym=symbol, status='blocked',
+                                    tags=["CAPITAL_BLOCKED", cap_reason])
+                            except Exception:
+                                pass
+                            continue
                     place_order(symbol, signal, qty, token, cid, mode, price=price)
 
                 st["trades_today"] += 1

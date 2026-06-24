@@ -64,14 +64,12 @@ def _ensure_feed_started():
         if _feed_started:
             return
         try:
-            import dhan_feed, range_trader
+            import dhan_feed
             token, cid = _creds()
-            from dhanhq import DhanContext
-            ctx = DhanContext(cid, token)
-            dhan_feed.start(ctx, [])   # start with empty list; instruments added dynamically
+            dhan_feed.start({"client_id": cid, "jwt_token": token}, [])   # start with empty list; instruments added dynamically
             _feed_started = True
         except Exception as e:
-            pass  # no creds yet or import error — will retry next call
+            print("[_ensure_feed_started] fail:", e, flush=True)  # no creds yet or import error — will retry next call
 
 def _feed_subscribe(sym_sec_pairs):
     """Subscribe (seg, sec_id) pairs to live feed. Safe to call multiple times."""
@@ -372,6 +370,124 @@ def api_set_config():
     data = request.get_json()
     TC_FILE.write_text(json.dumps(data, indent=2))
     return jsonify({"msg": "Config saved successfully!"})
+
+def _risk_config():
+    """_risk block from nifty_config.json: {global:{max_loss_pct,max_loss_rs,capital_rs},
+    per_strategy:{<strategy_id>:{max_loss_pct,max_loss_rs,capital_rs}}}. Strategy-specific
+    overrides the global default; absent = no auto cap (manual SL_PCT tag still works).
+    capital_rs = ₹ allowed to be deployed (notional, qty*price) — see risk_gate.py."""
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        cfg = {}
+    rc = cfg.get("_risk") or {}
+    return {"global": rc.get("global") or {}, "per_strategy": rc.get("per_strategy") or {}}
+
+@app.route('/api/risk-config', methods=['GET'])
+def api_get_risk_config():
+    return jsonify(_risk_config())
+
+@app.route('/api/risk-config', methods=['POST'])
+def api_set_risk_config():
+    data = request.get_json() or {}
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        cfg = {}
+    cfg["_risk"] = {"global": data.get("global") or {}, "per_strategy": data.get("per_strategy") or {}}
+    TC_FILE.write_text(json.dumps(cfg, indent=2))
+    return jsonify({"msg": "Risk settings saved!"})
+
+@app.route('/api/rms-summary')
+def api_rms_summary():
+    """Combined RMS view (Stage 2): per-strategy + global capital used/available,
+    open unrealized P&L, and proximity to the max-loss cap — one read for the
+    Risk tab's summary panel. Best-effort live LTP (dhan_feed); positions whose
+    quote isn't available yet just show '—' for unrealized P&L, not an error."""
+    import risk_gate, order_store, dhan_feed
+    from datetime import timedelta
+
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        cfg = {}
+    reserved = {"_risk", "webhooks"}
+    strat_ids = [k for k in cfg.keys() if k not in reserved]
+
+    ist_now_ = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    data = order_store.trades_for(ist_now_.strftime("%Y-%m-%d"))
+    open_pos = data.get("open", [])
+
+    rc = risk_gate._risk_cfg()
+    glob = rc.get("global", {})
+
+    def _eff(strat, key):
+        sv = (rc.get("per_strategy", {}).get(strat, {}) or {}).get(key)
+        return sv if sv is not None else glob.get(key)
+
+    def _unrealized(positions):
+        total, n_priced = 0.0, 0
+        for p in positions:
+            sec_id = p.get("sec_id")
+            if not sec_id:
+                continue
+            try:
+                _feed_subscribe([(p.get("segment") or "NSE_FNO", sec_id)])
+                q = dhan_feed.get_quote(sec_id)
+                ltp = float(q.get("ltp") or 0) if q else 0.0
+            except Exception:
+                ltp = 0.0
+            if ltp <= 0:
+                continue
+            entry = float(p.get("entry_price") or 0)
+            qty = float(p.get("qty") or 0)
+            pnl = (ltp - entry) * qty if p.get("entry") == "BUY" else (entry - ltp) * qty
+            total += pnl
+            n_priced += 1
+        return total, n_priced, len(positions)
+
+    rows = []
+    for sid_ in strat_ids:
+        s_open = [p for p in open_pos if p.get("strategy") == sid_ and not any(
+            t == "CAPITAL_BLOCKED" for t in (p.get("tags") or []))]
+        cap_used = risk_gate.capital_in_use(sid_)
+        cap_cap = _eff(sid_, "capital_rs")
+        unreal, priced, total_n = _unrealized(s_open)
+        max_loss_rs = _eff(sid_, "max_loss_rs")
+        rows.append({
+            "strategy": sid_, "capital_used": round(cap_used, 2),
+            "capital_cap": cap_cap, "open_positions": total_n, "priced": priced,
+            "unrealized_pnl": round(unreal, 2) if priced else None,
+            "max_loss_rs": max_loss_rs,
+            "max_loss_pct_used": round(abs(unreal) / max_loss_rs * 100, 1)
+                if (max_loss_rs and unreal < 0) else None,
+        })
+
+    glob_open = [p for p in open_pos if not any(
+        t == "CAPITAL_BLOCKED" for t in (p.get("tags") or []))]
+    glob_unreal, glob_priced, glob_n = _unrealized(glob_open)
+    totals = {
+        "capital_used": round(risk_gate.capital_in_use(None), 2),
+        "capital_cap": glob.get("capital_rs"),
+        "open_positions": glob_n, "priced": glob_priced,
+        "unrealized_pnl": round(glob_unreal, 2) if glob_priced else None,
+    }
+    return jsonify({"strategies": rows, "totals": totals})
+
+@app.route('/api/rms-reconcile')
+def api_rms_reconcile():
+    """RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
+    broker's real available funds (health_check.py-style; doesn't block or
+    change anything, just surfaces drift for manual investigation)."""
+    import risk_gate
+    broker_name = request.args.get('broker', 'dhan')
+    try:
+        from brokers import get_broker
+        broker = get_broker(broker_name)
+    except Exception as e:
+        return jsonify({"ok": True, "our_capital_in_use": risk_gate.capital_in_use(None),
+                        "broker_available": None, "note": f"broker init failed: {e}"})
+    return jsonify(risk_gate.reconcile_funds(broker))
 
 @app.route('/api/start', methods=['POST'])
 def api_start():
@@ -856,10 +972,12 @@ def api_trade_chart_data():
     exit_t   = request.args.get('xt', '').strip()
     tf       = request.args.get('tf', '').strip()
 
+    INDEX_UNDERLYINGS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"}
+
     try:
         import universe
         seg = "NSE_FNO"
-        inst = "OPTIDX"
+        inst = "OPTIDX" if trad_sym.split('-')[0] in INDEX_UNDERLYINGS else "OPTSTK"
         sec_id = dhan_master.get_sec_id_for_trad_sym(trad_sym)
         
         # If not found in FNO, check Equity universe
@@ -2371,48 +2489,93 @@ def pos_monitor_loop():
                         order_store.update_tags(p["id"], tags)
 
                 if p["qty"] <= 0 or entry_px <= 0: continue
-                
-                # Check SL/TP
+
+                # Check SL/TP — manual per-position tags take priority over the
+                # strategy/global max-loss defaults (set in the Risk tab).
                 sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None)
                 tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None)
-                
-                sl_px = None
+                sl_rs  = None  # ₹ max-loss for this position (qty already applied)
+
+                if sl_pct is None:
+                    rc = _risk_config()
+                    strat_risk = rc.get("per_strategy", {}).get(p.get("strategy") or "", {})
+                    glob_risk  = rc.get("global", {})
+                    eff_pct = strat_risk.get("max_loss_pct") if strat_risk.get("max_loss_pct") is not None else glob_risk.get("max_loss_pct")
+                    eff_rs  = strat_risk.get("max_loss_rs")  if strat_risk.get("max_loss_rs")  is not None else glob_risk.get("max_loss_rs")
+                    if eff_pct is not None:
+                        try: sl_pct = float(eff_pct)
+                        except Exception: pass
+                    if eff_rs is not None:
+                        try: sl_rs = float(eff_rs)
+                        except Exception: pass
+
+                sl_px_pct = None
+                sl_px_rs  = None
                 tp_px = None
-                
+
                 if p["entry"] == "BUY":
-                    if sl_pct is not None: sl_px = entry_px * (1 - (sl_pct / 100.0))
+                    if sl_pct is not None: sl_px_pct = entry_px * (1 - (sl_pct / 100.0))
+                    if sl_rs  is not None: sl_px_rs  = entry_px - (sl_rs / p["qty"])
                     if tp_pct is not None: tp_px = entry_px * (1 + (tp_pct / 100.0))
                 else: # SELL
-                    if sl_pct is not None: sl_px = entry_px * (1 + (sl_pct / 100.0))
+                    if sl_pct is not None: sl_px_pct = entry_px * (1 + (sl_pct / 100.0))
+                    if sl_rs  is not None: sl_px_rs  = entry_px + (sl_rs / p["qty"])
                     if tp_pct is not None: tp_px = entry_px * (1 - (tp_pct / 100.0))
-                
+
+                # Tighter of % / ₹ wins (whichever is hit first / closer to entry).
+                if p["entry"] == "BUY":
+                    sl_px = max([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
+                else:
+                    sl_px = min([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
+
                 exit_reason = None
                 if p["entry"] == "BUY":
-                    if sl_px and ltp <= sl_px: exit_reason = f"SL_HIT:{sl_pct}%"
+                    if sl_px and ltp <= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
                     elif tp_px and ltp >= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
                 else: # SELL
-                    if sl_px and ltp >= sl_px: exit_reason = f"SL_HIT:{sl_pct}%"
+                    if sl_px and ltp >= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
                     elif tp_px and ltp <= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
                 
                 if exit_reason:
                     print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
                     exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
-                    order_store.record(
-                        side=exit_side,
-                        qty=p["qty"],
-                        price=ltp,
-                        source=p["source"],
-                        strategy=p["strategy"],
-                        mode=p["mode"],
-                        broker=p["broker"],
-                        symbol=p["sym"],
-                        instrument=p["instrument"],
-                        trad_sym=p["sym"],
-                        sec_id=sec_id,
-                        segment=seg,
-                        status=p.get("status", "paper"),
-                        tags=["pos_monitor_exit", exit_reason]
-                    )
+
+                    if p.get("mode") == "live":
+                        # LIVE: round-trip a real square-off order to the broker
+                        # (same path as webhook_executor._do_exit / smart_order.execute)
+                        # before recording — DB must never show "closed" while the
+                        # actual Dhan position is still open.
+                        import smart_order
+                        from brokers import get_broker
+                        broker = get_broker(p.get("broker") or "dhan")
+                        res = smart_order.execute(
+                            exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
+                            p["mode"], broker, log=print, tag="POSMON",
+                            source=p["source"], strategy=p["strategy"],
+                            instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
+                        )
+                        if not res.get("ok"):
+                            print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
+                            continue
+                        # smart_order.execute already persisted the trade to order_store
+                        # with the actual broker order id/status — don't double-record.
+                    else:
+                        order_store.record(
+                            side=exit_side,
+                            qty=p["qty"],
+                            price=ltp,
+                            source=p["source"],
+                            strategy=p["strategy"],
+                            mode=p["mode"],
+                            broker=p["broker"],
+                            symbol=p["sym"],
+                            instrument=p["instrument"],
+                            trad_sym=p["sym"],
+                            sec_id=sec_id,
+                            segment=seg,
+                            status=p.get("status", "paper"),
+                            tags=["pos_monitor_exit", exit_reason]
+                        )
         except Exception as e:
             print("Pos monitor error:", e)
             

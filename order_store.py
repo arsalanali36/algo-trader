@@ -130,7 +130,8 @@ def trades_for(date, **filters):
     def _meta(r):
         return {"id": r["id"], "source": r["source"], "strategy": r["strategy"], "mode": r["mode"],
                 "broker": r["broker"], "instrument": r["instrument"],
-                "symbol": r["symbol"], "tags": _tags(r)}
+                "symbol": r["symbol"], "tags": _tags(r),
+                "sec_id": r["sec_id"], "segment": r["segment"]}
 
     def _complete(entry_r, exit_r):
         ep, xp, q = entry_r["price"], exit_r["price"], entry_r["qty"]

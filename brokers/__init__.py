@@ -12,10 +12,12 @@ Config drives the active broker: nifty_config.json -> "broker": "dhan".
 Candles come from the broker's data API (Dhan intraday/historical REST).
 """
 
+from typing import Optional
+
 from .base_broker import BaseBroker  # noqa: F401
 
 
-def get_broker(name: str = "dhan", creds: dict | None = None) -> BaseBroker:
+def get_broker(name: str = "dhan", creds: Optional[dict] = None) -> BaseBroker:
     name = (name or "dhan").lower()
     if name == "dhan":
         from .dhan_broker import DhanBroker

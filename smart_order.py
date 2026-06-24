@@ -90,6 +90,20 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         res.update(status=r["status"], reason=r["reason"], order_id=r["order_id"])
         log(f"[BROKER] {trad_sym} {side} {qty} -> {r['status'].upper()} "
             f"({r['reason']})")
+    elif mode == "paper":
+        # Diagnostic-only shadow order — fires a REAL broker order at the same
+        # paper price/qty purely to compare against Dhan's actual fill/reject
+        # (slippage check). Never touches `res` — the paper fill price/P&L
+        # recorded below stays exactly what it would have been without this.
+        try:
+            import risk_gate
+            if risk_gate.shadow_live_enabled(strategy):
+                sr = broker.place_order(side, sec_id, seg, qty, "LIMIT", price,
+                                        trad_sym=trad_sym, tag=f"{tag}_{sym}_SHADOW")
+                log(f"[BROKER-SHADOW] {trad_sym} {side} {qty} @ {price:.2f} -> "
+                    f"{sr['status'].upper()} ({sr['reason']}) — paper fill unaffected")
+        except Exception as e:
+            log(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
 
     # 3) persist to the trade DB (best-effort, never blocks the order)
     try:

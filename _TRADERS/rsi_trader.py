@@ -338,7 +338,7 @@ def _opt_ltp(sec_id, token, cid):
     return 0.0
 
 
-def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=None):
+def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=None, tags=None):
     """order_store me ek leg record karo → dashboard ke 'Orders & P&L' tab me RSI
     trades dikhein (range_trader jaisa). Best-effort — kabhi raise nahi karta.
     price=0 (premium na mila) ho to record NAHI karta — warna jhooth P&L banega."""
@@ -353,7 +353,7 @@ def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=N
         order_store.record(side, qty, price, source='strategy', strategy=strategy_id,
             mode=mode, broker='dhan', symbol=(trad_sym.split('-')[0] if trad_sym else ''),
             instrument='options', trad_sym=trad_sym, sec_id=str(sec_id), segment='NSE_FNO',
-            correlation_id=f'RSI_{trad_sym}_{int(time.time())}', status=status)
+            correlation_id=f'RSI_{trad_sym}_{int(time.time())}', status=status, tags=tags)
     except Exception:
         pass
 
@@ -520,6 +520,38 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 # entry par ACTUAL option premium fetch karo (underlying close NAHI) —
                 # order_store/P&L isi se sahi banega
                 entry_prem = _opt_ltp(sec_id, token, cid)
+
+                # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration
+                # cap > capital allocation (size-down if configured). Applies to
+                # paper too (paper is supposed to reveal real constraints). ──
+                try:
+                    import risk_gate
+                    dd_ok, dd_reason = risk_gate.check_drawdown()
+                    cap_ok, cap_reason = True, ""
+                    if not dd_ok:
+                        cap_ok, cap_reason = False, dd_reason
+                    else:
+                        conc_ok, conc_reason = risk_gate.check_concentration(sym, actual_qty, entry_prem or 0, side="BUY")
+                        if not conc_ok:
+                            cap_ok, cap_reason = False, conc_reason
+                        else:
+                            cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, entry_prem or 0, side="BUY")
+                except Exception as _e:
+                    cap_ok, cap_reason = True, ""
+                    log.warning(f"  risk gate check failed (allowing entry): {_e}")
+                if not cap_ok:
+                    fit_lots = 0
+                    if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
+                        fit_lots = risk_gate.sized_lots(strategy_id, qty, lot_size or 1, entry_prem or 0, side="BUY")
+                    if fit_lots > 0:
+                        log.info(f"  ENTRY sized down {sym} — {qty}L -> {fit_lots}L ({cap_reason})")
+                        actual_qty = fit_lots * (lot_size or 1)
+                    else:
+                        log.info(f"  ENTRY blocked {sym} — {cap_reason}")
+                        _record("BUY", actual_qty, entry_prem or 0, "paper" if paper_mode else "live",
+                                trad_sym, sec_id, strategy_id, "blocked", log,
+                                tags=["CAPITAL_BLOCKED", cap_reason])
+                        continue
 
                 if not paper_mode:
                     ok = place_order(sym, "BUY", actual_qty, token, cid,

@@ -443,7 +443,8 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         return {"ok": False, "msg": "contract not found"}
 
     lot_size = lot_size or 65
-    qty = int(cfg.get("qty", 1)) * lot_size
+    lots = int(cfg.get("qty", 1))
+    qty = lots * lot_size
     mode = cfg.get("mode", "paper")
     broker = _broker(cfg.get("broker", "dhan"))
 
@@ -452,6 +453,60 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         dhan_feed.add(("NSE_FNO", str(sec_id)))
     except Exception:
         pass
+
+    # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration cap >
+    # capital allocation (size-down if configured) > real broker funds (live
+    # only). Blocked/sized-down legs are logged tagged in Orders & P&L instead
+    # of the signal silently vanishing. ──
+    def _record_blocked(price_, qty_, tag_reason):
+        try:
+            import order_store
+            order_store.record(opt_action, qty_, price_, source="webhook", strategy=strat,
+                               mode=mode, broker=cfg.get("broker", "dhan"), symbol=symbol,
+                               instrument=cfg.get("instrument", "options"), trad_sym=trad_sym,
+                               sec_id=sec_id, segment="NSE_FNO", status="blocked",
+                               tags=["CAPITAL_BLOCKED", tag_reason])
+        except Exception:
+            pass
+
+    try:
+        import risk_gate
+        dd_ok, dd_reason = risk_gate.check_drawdown()
+        if not dd_ok:
+            _log(f"ENTRY blocked {key} — {dd_reason}")
+            _record_blocked(0, qty, dd_reason)
+            return {"ok": False, "msg": dd_reason}
+
+        est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)
+        if est_price:
+            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, est_price, side=opt_action)
+            if not conc_ok:
+                _log(f"ENTRY blocked {key} — {conc_reason}")
+                _record_blocked(est_price, qty, conc_reason)
+                return {"ok": False, "msg": conc_reason}
+
+            cap_ok, cap_reason = risk_gate.check_capital(strat, qty, est_price, side=opt_action)
+            if not cap_ok:
+                if risk_gate.capital_mode(strat) == "size_down":
+                    fit_lots = risk_gate.sized_lots(strat, lots, lot_size, est_price, side=opt_action)
+                else:
+                    fit_lots = 0
+                if fit_lots > 0:
+                    _log(f"ENTRY sized down {key} — {lots}L -> {fit_lots}L ({cap_reason})")
+                    lots, qty = fit_lots, fit_lots * lot_size
+                else:
+                    _log(f"ENTRY blocked {key} — {cap_reason}")
+                    _record_blocked(est_price, qty, cap_reason)
+                    return {"ok": False, "msg": cap_reason}
+
+            if mode == "live":
+                fund_ok, fund_reason = risk_gate.check_broker_funds(broker, qty * est_price)
+                if not fund_ok:
+                    _log(f"ENTRY blocked {key} — {fund_reason}")
+                    _record_blocked(est_price, qty, fund_reason)
+                    return {"ok": False, "msg": fund_reason}
+    except Exception as e:
+        _log(f"risk gate check failed (allowing entry): {e}")
 
     instrument = cfg.get("instrument", "options")
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,

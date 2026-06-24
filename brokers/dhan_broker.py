@@ -12,6 +12,7 @@ IPv4 force (DH-905) at module top — Dhan rejects IPv6 on the VPS.
 import json
 import socket
 from pathlib import Path
+from typing import Optional
 
 import requests
 
@@ -34,7 +35,7 @@ _LTP_SEG = {"NSE_EQ": "NSE_EQ", "NSE_FNO": "NSE_FNO", "IDX_I": "IDX_I"}
 
 class DhanBroker(BaseBroker):
 
-    def __init__(self, creds: dict | None = None):
+    def __init__(self, creds: Optional[dict] = None):
         if creds:
             self.token = creds["jwt_token"]
             self.cid   = creds["client_id"]

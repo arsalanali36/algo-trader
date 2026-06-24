@@ -172,7 +172,7 @@ def main(sid, once=False):
                     ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                     smart_order.execute(ex_side, sym, s_id, seg, qty, tsym, mode,
                                         broker, cfg.get("limit_buffer_bps", 10),
-                                        log=log, tag="EXIT")
+                                        log=log, tag="EXIT", source="strategy", strategy=sid)
                     st["position"] = None
                     st["open_inst"] = None
             log("[EXIT] 3:15 square-off done")
@@ -206,7 +206,7 @@ def main(sid, once=False):
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                 smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="EXIT")
+                                    log=log, tag="EXIT", source="strategy", strategy=sid)
                 st["position"] = None
                 st["open_inst"] = None
                 continue
@@ -228,7 +228,7 @@ def main(sid, once=False):
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                 smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="FLIP")
+                                    log=log, tag="FLIP", source="strategy", strategy=sid)
                 st["position"] = None
                 st["open_inst"] = None
 
@@ -239,9 +239,59 @@ def main(sid, once=False):
                 log(f"[SKIP] {sym} {sig} — route '{route}' unresolved")
                 continue
             o_side = order_side_for(sig, route)
+
+            # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration
+            # cap > capital allocation (size-down if configured) > real broker
+            # funds (live only). ──
+            try:
+                import risk_gate
+                dd_ok, dd_reason = risk_gate.check_drawdown()
+                if not dd_ok:
+                    log(f"[SKIP] {sym} {sig} — {dd_reason}")
+                    continue
+                est_price, _src = smart_order.marketable_price(o_side, sec_id, seg, broker)
+                conc_ok, conc_reason = risk_gate.check_concentration(sym, qty, est_price or 0, side=o_side)
+                if not conc_ok:
+                    log(f"[SKIP] {sym} {sig} — {conc_reason}")
+                    continue
+                cap_ok, cap_reason = risk_gate.check_capital(sid, qty, est_price or 0, side=o_side)
+            except Exception as _e:
+                cap_ok, cap_reason = True, ""
+                log(f"risk gate check failed (allowing entry): {_e}")
+            if not cap_ok:
+                fit_lots = 0
+                if risk_gate.capital_mode(sid) == "size_down":
+                    per_lot = int(cfg.get("qty", 1))
+                    fit_lots = risk_gate.sized_lots(sid, int(cfg.get("lots", 1)), per_lot, est_price or 0, side=o_side)
+                if fit_lots > 0:
+                    sized_qty = fit_lots * int(cfg.get("qty", 1))
+                    log(f"[SIZE-DOWN] {sym} {sig} — qty {qty} -> {sized_qty} ({cap_reason})")
+                    qty = sized_qty
+                else:
+                    log(f"[SKIP] {sym} {sig} — {cap_reason}")
+                    try:
+                        import order_store
+                        order_store.record(o_side, qty, est_price or 0, source="strategy", strategy=sid,
+                                           mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
+                                           instrument=("equity" if route == "equity" else "options"),
+                                           trad_sym=tsym, sec_id=sec_id, segment=seg,
+                                           status="blocked", tags=["CAPITAL_BLOCKED", cap_reason])
+                    except Exception:
+                        pass
+                    continue
+
+            if mode == "live":
+                try:
+                    fund_ok, fund_reason = risk_gate.check_broker_funds(broker, qty * (est_price or 0))
+                    if not fund_ok:
+                        log(f"[SKIP] {sym} {sig} — {fund_reason}")
+                        continue
+                except Exception:
+                    pass
+
             r = smart_order.execute(o_side, sym, sec_id, seg, qty, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="UNIV")
+                                    log=log, tag="UNIV", source="strategy", strategy=sid)
             if r.get("ok"):
                 st["position"] = want
                 st["open_inst"] = (sec_id, seg, tsym, qty)
