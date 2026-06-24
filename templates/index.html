@@ -1384,18 +1384,23 @@ async function ordersRender(){
   let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(det.length){
       ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry / Exit','In','Out','Dur','Qty','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
-        .map(h=>{const r=['Entry / Exit','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
+      + ['Date','Symbol','Tags','Side','Entry / Exit','In','Out','Dur','Qty','Points','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
+        .map(h=>{const r=['Entry / Exit','Points','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
           return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
       + '</tr></thead><tbody>';
     let _tot = {g:0, tx:0, n:0, pts:0, inv:0};
-    det.slice().reverse().forEach(t=>{
+    const _dispTrades = det.slice().reverse();
+    const _chartList = _dispTrades.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate}));
+    localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
+    _dispTrades.forEach((t,_idx)=>{
       const g=t._gross, tx=t._tax, n=t._net;
       const nc=n>0?'#3fb950':(n<0?'#f85149':'#e6edf3'), gc=g>0?'#3fb950':(g<0?'#f85149':'#e6edf3');
       
       const inv = t.qty * (t.entry_price || 0);
       const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
       const rc = n>0?'#3fb950':(n<0?'#f85149':'#8b949e');
+      const pts = t.entry==='BUY' ? (t.exit_price||0)-(t.entry_price||0) : (t.entry_price||0)-(t.exit_price||0);
+      const ptsC = pts>0?'#3fb950':(pts<0?'#f85149':'#8b949e');
       
       let max_pnl = '—', min_pnl = '—';
       let note = '';
@@ -1422,12 +1427,12 @@ async function ordersRender(){
       let encNote = encodeURIComponent(note);
       let imgs = _imgTagsOf(t);
       let encImgs = encodeURIComponent(JSON.stringify(imgs));
-      let actions = `<span style="cursor:pointer" title="Premium chart" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}')">📈</span>`;
+      let actions = `<span style="cursor:pointer" title="Premium chart (←/→ to move between trades)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx})">📈</span>`;
       actions += ` <span style="cursor:pointer; margin-left:8px;" title="${note ? 'Edit Note' : 'Add Note'}" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝</span>`;
 
       let dispNote = (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '') + _noteThumbs(t.id, imgs);
 
-      _tot.g += g; _tot.tx += tx; _tot.n += n; _tot.inv += inv;
+      _tot.g += g; _tot.tx += tx; _tot.n += n; _tot.inv += inv; _tot.pts += pts;
 
       ch += '<tr style="border-bottom:1px solid #21262d">'
         + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
@@ -1439,8 +1444,9 @@ async function ordersRender(){
         + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.exit_time||'—')+'</td>'
         + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap;vertical-align:top;">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
         + '<td style="padding:7px 6px;vertical-align:top;">'+t.qty+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:'+ptsC+';vertical-align:top;">'+(pts>=0?'+':'')+pts.toFixed(2)+'</td>'
         + '<td style="padding:7px 6px;text-align:right;color:'+gc+';vertical-align:top;">'+Math.round(g)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−'+tx.toFixed(2)+'</td>'
+        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−'+Math.round(tx)+'</td>'
         + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+';vertical-align:top;">'+Math.round(n)+'</td>'
         + '<td style="padding:7px 6px;text-align:right;color:'+rc+';vertical-align:top;">'+retPct+'</td>'
         + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+max_pnl+'</td>'
@@ -1450,9 +1456,10 @@ async function ordersRender(){
     });
     const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
     ch += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">'
-      + '<td colspan="8" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
+      + '<td colspan="9" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.pts>=0?'#3fb950':'#f85149')+'">'+(_tot.pts>=0?'+':'')+_tot.pts.toFixed(2)+'</td>'
       + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.g>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.g)+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:#f85149">−'+_tot.tx.toFixed(2)+'</td>'
+      + '<td style="padding:7px 6px;text-align:right;color:#f85149">−'+Math.round(_tot.tx)+'</td>'
       + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.n)+'</td>'
       + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+_totRetPct+'</td>'
       + '<td colspan="3"></td>'
@@ -2335,13 +2342,14 @@ async function updatePnl() {
 
 }
 
-function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind){
+function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx){
   const params = {sym, side, entry, exit, et, xt, qty};
   if(date) params.date = date;
   if(tf) params.tf = tf;
   if(ind) params.ind = ind;
+  if(idx != null) params.idx = idx;
   const q = new URLSearchParams(params);
-  window.open('/trade-chart?'+q.toString(), '_blank');
+  window.open('/trade-chart?'+q.toString(), 'trade_chart_win');
 }
 
 function formatLogLine(L) {

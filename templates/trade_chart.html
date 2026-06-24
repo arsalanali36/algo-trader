@@ -32,12 +32,12 @@
   const sideEl=document.getElementById('side');
   sideEl.textContent = side||'—';
   sideEl.style.color = side==='SELL'?'#f85149':'#3fb950';
-  document.getElementById('px').textContent = (entry?('₹'+entry.toFixed(2)):'—')+'  →  '+(exit?('₹'+exit.toFixed(2)):'—')+(et?('   ('+et+' → '+xt+')'):'');
+  document.getElementById('px').textContent = (entry?entry.toFixed(2):'—')+'  →  '+(exit?exit.toFixed(2):'—')+(et?('   ('+et+' → '+xt+')'):'');
   // P&L: SELL = entry-exit, BUY = exit-entry
   const pts = side==='SELL' ? (entry-exit) : (exit-entry);
   const rs  = qty ? pts*qty : null;
   const pnlEl=document.getElementById('pnl');
-  pnlEl.textContent = (pts>=0?'+':'')+pts.toFixed(2)+' pts'+(rs!=null?('  ('+(rs>=0?'+':'')+'₹'+rs.toFixed(0)+')'):'');
+  pnlEl.textContent = (pts>=0?'+':'')+pts.toFixed(2)+' pts'+(rs!=null?('  ('+(rs>=0?'+':'')+rs.toFixed(0)+')'):'');
   pnlEl.style.color = pts>=0?'#3fb950':'#f85149';
 
   function showMsg(t){ document.getElementById('chart').style.display='none'; const m=document.getElementById('msg'); m.style.display='block'; m.textContent=t; }
@@ -188,6 +188,37 @@
       chart.timeScale().fitContent();
       window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
     }).catch(e=>showMsg('Error: '+e.message));
+})();
+
+// ── ←/→ navigate between trades (list saved in localStorage by the Orders & P&L tab) ──
+(function(){
+  const q = new URLSearchParams(location.search);
+  const idxStr = q.get('idx');
+  if(idxStr == null) return;  // opened standalone (no list context) — no nav
+  const idx = parseInt(idxStr, 10);
+  let list = [];
+  try { list = JSON.parse(localStorage.getItem('chartTradeList') || '[]'); } catch(e) {}
+  if(!list.length) return;
+
+  function goTo(newIdx){
+    if(newIdx < 0 || newIdx >= list.length) return;
+    const t = list[newIdx];
+    const params = {sym:t.sym, side:t.side, entry:t.entry, exit:t.exit, et:t.et, xt:t.xt, qty:t.qty, idx:newIdx};
+    if(t.date) params.date = t.date;
+    location.href = '/trade-chart?' + new URLSearchParams(params).toString();
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'ArrowLeft') goTo(idx - 1);
+    else if(e.key === 'ArrowRight') goTo(idx + 1);
+  });
+
+  // small on-screen hint so the user knows the shortcut exists
+  const hint = document.createElement('span');
+  hint.className = 'muted';
+  hint.style.marginLeft = '8px';
+  hint.textContent = `← / → (${idx+1}/${list.length})`;
+  document.querySelector('.hdr').appendChild(hint);
 })();
 </script>
 </body></html>
