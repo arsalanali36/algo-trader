@@ -2252,6 +2252,62 @@ def api_orders():
     return jsonify(data)
 
 
+@app.route('/api/orders/calendar-summary')
+def api_orders_calendar_summary():
+    """Returns daily P&L and trade count summary for a given year and month."""
+    import order_store
+    year = request.args.get('year')
+    month = request.args.get('month')
+    filt = {k: request.args.get(k) for k in
+            ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    
+    prefix = ""
+    if year and month:
+        prefix = f"{year}-{month.zfill(2)}-%"
+    elif year:
+        prefix = f"{year}-%"
+        
+    import sqlite3
+    db_path = order_store.DB_PATH
+    dates = []
+    try:
+        with order_store._lock, sqlite3.connect(str(db_path), timeout=10) as c:
+            sql = "SELECT DISTINCT date FROM orders"
+            args = []
+            if prefix:
+                sql += " WHERE date LIKE ?"
+                args.append(prefix)
+            sql += " ORDER BY date ASC"
+            dates = [r[0] for r in c.execute(sql, args).fetchall() if r[0]]
+    except Exception as e:
+        print("[calendar_summary] distinct dates fail:", e, flush=True)
+        
+    summary = {}
+    for d in dates:
+        data = order_store.trades_for(d, **filt)
+        det = data.get('details', [])
+        if det:
+            pnl_sum = sum(t.get('pnl') or 0 for t in det)
+            summary[d] = {
+                'pnl': round(pnl_sum, 2),
+                'count': len(det)
+            }
+            
+    # Also include distinct filter options for the UI
+    try:
+        distinct_filters = {
+            'strategy': order_store.distinct('strategy'),
+            'broker': order_store.distinct('broker')
+        }
+    except Exception:
+        distinct_filters = {'strategy': [], 'broker': []}
+        
+    return jsonify({
+        'summary': summary,
+        'filters': distinct_filters
+    })
+
+
 @app.route('/api/orders/rename-strategy', methods=['POST'])
 def api_rename_strategy():
     data = request.get_json()
@@ -2657,6 +2713,15 @@ def pos_monitor_loop():
                             tags=["pos_monitor_exit", exit_reason]
                         )
                     return True
+
+                # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
+                # system, no option position should carry overnight regardless of
+                # which strategy/source opened it. Takes priority over SL/TP so a
+                # position with no SL/TP tags set still gets closed at EOD.
+                if (ist_now.hour > 15 or (ist_now.hour == 15 and ist_now.minute >= 15)) \
+                   and (p.get("instrument") or "").upper() != "EQUITY":
+                    _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
+                    continue
 
                 sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
                 tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None
