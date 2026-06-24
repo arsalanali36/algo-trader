@@ -98,6 +98,119 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .pill-container { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; padding-bottom:8px; }
 .pill { background:#21262d; border:1px solid #30363d; border-radius:12px; padding:3px 10px; font-size:11px; color:#8b949e; display:flex; align-items:center; gap:6px; }
 .pill .remove { cursor:pointer; color:#f85149; font-weight:bold; }
+
+/* ── Calendar Styles ── */
+.cal-seg span { color: #8b949e; }
+.cal-seg.on { background:#1f6feb; color:#fff; }
+.cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border-bottom: 1px solid #30363d;
+  margin-bottom: 8px;
+}
+.cal-weekdays div {
+  text-align: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b949e;
+  padding: 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.cal-weekdays .weekend {
+  color: #d29922;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.cal-day-cell {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 6px;
+  min-height: 95px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  position: relative;
+}
+.cal-day-cell:hover {
+  background: #21262d;
+  border-color: #58a6ff;
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.cal-day-cell.empty {
+  background: transparent;
+  border: none;
+  cursor: default;
+  pointer-events: none;
+}
+.cal-day-cell.today {
+  border: 1px solid #1f6feb;
+  background: rgba(31, 111, 235, 0.05);
+}
+.cal-day-cell.today .cal-day-num {
+  background: #1f6feb;
+  color: #fff;
+  border-radius: 50%;
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.cal-day-cell.profit-pos {
+  background: rgba(63, 185, 80, 0.08);
+  border-left: 3px solid #3fb950;
+}
+.cal-day-cell.profit-pos:hover {
+  background: rgba(63, 185, 80, 0.15);
+}
+.cal-day-cell.profit-neg {
+  background: rgba(248, 81, 73, 0.08);
+  border-left: 3px solid #f85149;
+}
+.cal-day-cell.profit-neg:hover {
+  background: rgba(248, 81, 73, 0.15);
+}
+.cal-day-cell.holiday {
+  background: rgba(210, 153, 34, 0.05);
+  border-top: 2px solid #d29922;
+}
+.cal-day-cell.holiday .cal-day-num {
+  color: #d29922;
+}
+.cal-day-num {
+  font-size: 11px;
+  font-weight: 700;
+  color: #8b949e;
+}
+.cal-day-pnl {
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
+  margin: 6px 0;
+}
+.cal-day-pnl.pos { color: #3fb950; }
+.cal-day-pnl.neg { color: #f85149; }
+.cal-day-count {
+  font-size: 10px;
+  color: #8b949e;
+  text-align: right;
+}
+.cal-holiday-lbl {
+  font-size: 9px;
+  color: #d29922;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
 </style>
 </head>
 <body>
@@ -138,6 +251,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
   <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
+  <div class="tab" onclick="switchTab('calendar')">📅 Calendar</div>
   <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
   <div class="tab active" onclick="switchTab('pine')">📜 Script</div>
 </div>
@@ -367,6 +481,56 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="card">
     <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">⏳ Open Positions</div>
     <div id="ord-open" style="overflow-x:auto"></div>
+  </div>
+</div>
+
+<!-- CALENDAR TAB -->
+<div class="tab-body" id="tab-calendar" style="padding:16px 18px 24px">
+  <!-- Filters (exact same as orders, named with cal-) -->
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <span style="font-size:11px;color:#6e7681">Source</span>
+    <span id="cal-src" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="" class="on" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer">All</span>
+      <span data-v="webhook" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
+      <span data-v="manual" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
+      <span data-v="strategy" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+    </span>
+    <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
+    <span id="cal-mode" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="" class="on" onclick="calSeg('cal-mode',this)" style="padding:4px 10px;cursor:pointer">All</span>
+      <span data-v="paper" onclick="calSeg('cal-mode',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Paper</span>
+      <span data-v="live" onclick="calSeg('cal-mode',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
+    </span>
+    <select id="cal-strat" onchange="calendarRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px"><option value="">All strategies</option></select>
+    <select id="cal-broker" onchange="calendarRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All brokers</option></select>
+    <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="calendarRender()">↻ Refresh</button>
+  </div>
+
+  <!-- Month Selector and Stats Summary Card -->
+  <div class="card" style="margin-bottom:12px; padding: 14px 18px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+      <div style="display:flex; align-items:center; gap:8px;">
+        <button class="btn btn-gray" style="padding:4px 10px; font-size:12px;" onclick="calPrevMonth()">◀ Prev</button>
+        <span id="cal-month-label" style="font-size:16px; font-weight:700; min-width:120px; text-align:center; color:#e6edf3;">June 2026</span>
+        <button class="btn btn-gray" style="padding:4px 10px; font-size:12px;" onclick="calNextMonth()">Next ▶</button>
+        <button class="btn btn-gray" style="padding:4px 10px; font-size:12px; margin-left:4px;" onclick="calGoToday()">Today</button>
+      </div>
+      <div id="cal-stats-summary" style="display:flex; gap:16px; font-size:12px; color:#8b949e;">
+        <div>Gross: <span id="cal-stat-gross" style="font-weight:700;">₹0</span></div>
+        <div>Win Rate: <span id="cal-stat-winrate" style="font-weight:700;">0%</span></div>
+        <div>Trades: <span id="cal-stat-count" style="font-weight:700;">0</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Calendar Container Card -->
+  <div class="card" style="padding: 12px 14px;">
+    <!-- Weekdays Header -->
+    <div class="cal-weekdays">
+      <div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div><div class="weekend">Sat</div><div class="weekend">Sun</div>
+    </div>
+    <!-- Days Grid -->
+    <div class="cal-grid" id="cal-grid"></div>
   </div>
 </div>
 
@@ -694,6 +858,7 @@ function switchTab(id) {
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
   if (id === 'orders') { ordersEnter(); }
+  if (id === 'calendar') { calendarRender(); }
   if (id === 'risk') { renderRiskTab(); }
 }
 
@@ -3825,6 +3990,226 @@ async function submitBulkOrders() {
     document.getElementById('bulk-msg').innerHTML = `<span style="color: #f85149">❌ Request failed: ${err}</span>`;
   } finally {
     document.getElementById('bulk-loader').style.display = 'none';
+  }
+}
+
+
+// ── CALENDAR TAB LOGIC ──
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth(); // 0-indexed, so 5 = June
+const CAL_MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+const CAL_MARKET_HOLIDAYS = {
+  '2026-01-26': 'Republic Day',
+  '2026-03-03': 'Holi',
+  '2026-03-26': 'Shri Ram Navami',
+  '2026-03-31': 'Shri Mahavir Jayanti',
+  '2026-04-03': 'Good Friday',
+  '2026-04-14': 'Dr. Baba Saheb Ambedkar Jayanti',
+  '2026-05-01': 'Maharashtra Day',
+  '2026-05-28': 'Bakri Id',
+  '2026-06-26': 'Muharram',
+  '2026-09-14': 'Ganesh Chaturthi',
+  '2026-10-02': 'Mahatma Gandhi Jayanti',
+  '2026-10-20': 'Dussehra',
+  '2026-11-10': 'Diwali-Balipratipada',
+  '2026-11-24': 'Prakash Gurpurb Sri Guru Nanak Dev',
+  '2026-12-25': 'Christmas',
+};
+
+// Segment selection for calendar tab
+function calSeg(id, el) {
+  const p = document.getElementById(id);
+  p.querySelectorAll('span').forEach(x => {
+    x.classList.remove('on');
+    x.style.color = '#8b949e';
+  });
+  el.classList.add('on');
+  el.style.color = '';
+  calendarRender();
+}
+
+function _calSegVal(id) {
+  const el = document.querySelector(`#${id} .on`);
+  return el ? el.getAttribute('data-v') : '';
+}
+
+function calPrevMonth() {
+  calMonth--;
+  if (calMonth < 0) {
+    calMonth = 11;
+    calYear--;
+  }
+  calendarRender();
+}
+
+function calNextMonth() {
+  calMonth++;
+  if (calMonth > 11) {
+    calMonth = 0;
+    calYear++;
+  }
+  calendarRender();
+}
+
+function calGoToday() {
+  const today = new Date();
+  calYear = today.getFullYear();
+  calMonth = today.getMonth();
+  calendarRender();
+}
+
+// Function to handle clicking on a calendar cell
+function calSelectDate(dateStr) {
+  // Set date input in Orders tab
+  const dateInput = document.getElementById('ord-date');
+  if (dateInput) {
+    dateInput.value = dateStr;
+  }
+  
+  // Switch to orders tab
+  switchTab('orders');
+  
+  // Refresh orders for that day
+  ordersRender();
+}
+
+async function calendarRender() {
+  const monthLabel = document.getElementById('cal-month-label');
+  if (monthLabel) {
+    monthLabel.textContent = `${CAL_MONTH_NAMES[calMonth]} ${calYear}`;
+  }
+
+  // Get active filters
+  const q = new URLSearchParams({
+    year: calYear.toString(),
+    month: (calMonth + 1).toString()
+  });
+  
+  const src = _calSegVal('cal-src'); if (src) q.set('source', src);
+  const mode = _calSegVal('cal-mode'); if (mode) q.set('mode', mode);
+  const strat = document.getElementById('cal-strat').value; if (strat) q.set('strategy', strat);
+  const broker = document.getElementById('cal-broker').value; if (broker) q.set('broker', broker);
+
+  let d = { summary: {}, filters: {} };
+  try {
+    const r = await fetch('/api/orders/calendar-summary?' + q.toString());
+    d = await r.json();
+  } catch (e) {
+    console.error("Calendar load failed:", e);
+  }
+
+  // Populate filter dropdowns (strategy & broker)
+  _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
+  _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
+
+  const summary = d.summary || {};
+  
+  // Compute monthly stats for summary card
+  let grossPnL = 0;
+  let totalTrades = 0;
+  let winDays = 0;
+  let tradingDays = 0;
+
+  Object.keys(summary).forEach(dateStr => {
+    const day = summary[dateStr];
+    grossPnL += day.pnl || 0;
+    totalTrades += day.count || 0;
+    tradingDays++;
+    if ((day.pnl || 0) > 0) winDays++;
+  });
+
+  const winrate = tradingDays > 0 ? Math.round((winDays / tradingDays) * 100) : 0;
+  
+  const grossEl = document.getElementById('cal-stat-gross');
+  if (grossEl) {
+    grossEl.textContent = `${grossPnL >= 0 ? '+' : ''}₹${Math.round(grossPnL)}`;
+    grossEl.style.color = grossPnL >= 0 ? '#3fb950' : '#f85149';
+  }
+  
+  const wrEl = document.getElementById('cal-stat-winrate');
+  if (wrEl) {
+    wrEl.textContent = `${winrate}%`;
+    wrEl.style.color = winrate >= 50 ? '#3fb950' : '#8b949e';
+  }
+  
+  const cntEl = document.getElementById('cal-stat-count');
+  if (cntEl) {
+    cntEl.textContent = totalTrades.toString();
+  }
+
+  // Render Grid
+  const grid = document.getElementById('cal-grid');
+  if (!grid) return;
+  grid.innerHTML = '';
+
+  const firstDay = new Date(calYear, calMonth, 1).getDay(); // 0 = Sun, 1 = Mon
+  const daysInMonth = new Date(calYear, calMonth + 1, 0).getDate();
+  const today = new Date();
+
+  // Mon index format: Mon = 0, Sun = 6
+  const toMonIndex = dow => (dow === 0 ? 6 : dow - 1);
+  const startOffset = toMonIndex(firstDay);
+
+  // Add empty cells for offset
+  for (let i = 0; i < startOffset; i++) {
+    const emptyCell = document.createElement('div');
+    emptyCell.className = 'cal-day-cell empty';
+    grid.appendChild(emptyCell);
+  }
+
+  // Add month days
+  for (let dayNum = 1; dayNum <= daysInMonth; dayNum++) {
+    const cellDate = new Date(calYear, calMonth, dayNum);
+    const dateStr = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(dayNum).padStart(2, '0')}`;
+    const dayData = summary[dateStr] || null;
+    const isToday = cellDate.toDateString() === today.toDateString();
+    const dow = cellDate.getDay();
+    const isWeekend = dow === 0 || dow === 6;
+    const holidayName = CAL_MARKET_HOLIDAYS[dateStr];
+
+    const cell = document.createElement('div');
+    cell.className = 'cal-day-cell';
+    if (isToday) cell.classList.add('today');
+    if (holidayName) cell.classList.add('holiday');
+
+    // Color based on P&L
+    if (dayData && dayData.pnl !== 0) {
+      cell.classList.add(dayData.pnl > 0 ? 'profit-pos' : 'profit-neg');
+    }
+
+    // Cell click action
+    cell.addEventListener('click', () => calSelectDate(dateStr));
+
+    // 1. Day number (Top Left)
+    const numDiv = document.createElement('div');
+    numDiv.className = 'cal-day-num';
+    numDiv.textContent = dayNum.toString();
+    cell.appendChild(numDiv);
+
+    // 2. Holiday Label if any
+    if (holidayName) {
+      const holDiv = document.createElement('div');
+      holDiv.className = 'cal-holiday-lbl';
+      holDiv.textContent = holidayName;
+      holDiv.title = holidayName;
+      cell.appendChild(holDiv);
+    }
+
+    // 3. P&L and Trade Count (Center/Bottom)
+    if (dayData) {
+      const pnlDiv = document.createElement('div');
+      pnlDiv.className = `cal-day-pnl ${dayData.pnl >= 0 ? 'pos' : 'neg'}`;
+      pnlDiv.textContent = `${dayData.pnl >= 0 ? '+' : ''}₹${Math.round(dayData.pnl)}`;
+      cell.appendChild(pnlDiv);
+
+      const countDiv = document.createElement('div');
+      countDiv.className = 'cal-day-count';
+      countDiv.textContent = `${dayData.count} trade${dayData.count > 1 ? 's' : ''}`;
+      cell.appendChild(countDiv);
+    }
+
+    grid.appendChild(cell);
   }
 }
 
