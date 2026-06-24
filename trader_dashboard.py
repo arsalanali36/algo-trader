@@ -2283,6 +2283,7 @@ def api_orders_calendar_summary():
         print("[calendar_summary] distinct dates fail:", e, flush=True)
         
     summary = {}
+    all_trades = []
     for d in dates:
         data = order_store.trades_for(d, **filt)
         det = data.get('details', [])
@@ -2292,6 +2293,8 @@ def api_orders_calendar_summary():
                 'pnl': round(pnl_sum, 2),
                 'count': len(det)
             }
+            for t in det:
+                all_trades.append(t)
             
     # Also include distinct filter options for the UI
     try:
@@ -2304,6 +2307,7 @@ def api_orders_calendar_summary():
         
     return jsonify({
         'summary': summary,
+        'trades': all_trades,
         'filters': distinct_filters
     })
 

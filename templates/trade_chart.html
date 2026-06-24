@@ -9,7 +9,7 @@
   .hdr h1{font-size:16px;margin:0;font-weight:600}
   .pill{font-size:12px;padding:3px 10px;border-radius:12px;border:1px solid #30363d;background:#161b22}
   .muted{color:#8b949e;font-size:12px}
-  #chart{width:100%;height:calc(100vh - 110px)}
+  #chart{flex:1;height:100%}
   #msg{padding:40px;text-align:center;color:#8b949e;font-size:14px}
 </style></head>
 <body>
@@ -21,7 +21,19 @@
     <span class="muted" id="date" style="margin-left:auto"></span>
   </div>
   <div id="msg" style="display:none"></div>
-  <div id="chart"></div>
+  <div style="display:flex; height:calc(100vh - 110px);">
+    <!-- Watchlist Sidebar -->
+    <div id="watchlist" style="width:230px; border-right:1px solid #21262d; background:#161b22; overflow-y:auto; flex-shrink:0; display:flex; flex-direction:column;">
+      <div id="watchlist-title" style="padding:10px 14px; border-bottom:1px solid #21262d; font-size:11px; text-transform:uppercase; color:#8b949e; font-weight:700; letter-spacing:0.5px;">
+        Watchlist
+      </div>
+      <div id="watchlist-items" style="flex:1; overflow-y:auto;">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+    <!-- Chart -->
+    <div id="chart"></div>
+  </div>
 <script>
 (function(){
   const q = new URLSearchParams(location.search);
@@ -133,8 +145,25 @@
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(d.candles);
       const mk=[];
-      if(d.entry_mk) mk.push({time:d.entry_mk, position:'belowBar', color:'#3fb950', shape:'arrowUp',   text:'Entry '+side+' ₹'+entry.toFixed(2)});
-      if(d.exit_mk)  mk.push({time:d.exit_mk,  position:'aboveBar', color:'#f85149', shape:'arrowDown', text:'Exit ₹'+exit.toFixed(2)});
+      const isSell = side==='SELL';
+      if(d.entry_mk) {
+        mk.push({
+          time: d.entry_mk,
+          position: isSell?'aboveBar':'belowBar',
+          color: isSell?'#f85149':'#3fb950',
+          shape: isSell?'arrowDown':'arrowUp',
+          text: 'Entry '+side+' ₹'+entry.toFixed(2)
+        });
+      }
+      if(d.exit_mk) {
+        mk.push({
+          time: d.exit_mk,
+          position: isSell?'belowBar':'aboveBar',
+          color: isSell?'#3fb950':'#f85149',
+          shape: isSell?'arrowUp':'arrowDown',
+          text: 'Exit '+(isSell?'BUY':'SELL')+' ₹'+exit.toFixed(2)
+        });
+      }
       mk.sort((a,b)=>a.time-b.time);
       if(mk.length) s.setMarkers(mk);
       
@@ -194,11 +223,71 @@
 (function(){
   const q = new URLSearchParams(location.search);
   const idxStr = q.get('idx');
-  if(idxStr == null) return;  // opened standalone (no list context) — no nav
-  const idx = parseInt(idxStr, 10);
   let list = [];
   try { list = JSON.parse(localStorage.getItem('chartTradeList') || '[]'); } catch(e) {}
-  if(!list.length) return;
+  
+  if(idxStr == null || !list.length) {
+    const wl = document.getElementById('watchlist');
+    if (wl) wl.style.display = 'none';
+    return; // opened standalone (no list context) — no nav, hide watchlist
+  }
+  
+  const idx = parseInt(idxStr, 10);
+  
+  // Populate watchlist sidebar
+  const wlItems = document.getElementById('watchlist-items');
+  const wlTitle = document.getElementById('watchlist-title');
+  if (wlTitle) {
+    wlTitle.textContent = `Watchlist (${list.length})`;
+  }
+  
+  if (wlItems) {
+    list.forEach((t, i) => {
+      const item = document.createElement('div');
+      item.style.cssText = `
+        padding: 10px 14px;
+        cursor: pointer;
+        border-bottom: 1px solid #21262d;
+        font-size: 11.5px;
+        transition: all 0.15s ease;
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+      `;
+      
+      if (i === idx) {
+        item.style.background = '#21262d';
+        item.style.borderLeft = '3px solid #1f6feb';
+        item.style.paddingLeft = '11px';
+      } else {
+        item.style.borderLeft = '3px solid transparent';
+      }
+      
+      item.addEventListener('mouseover', () => {
+        if (i !== idx) item.style.background = '#1b2028';
+      });
+      item.addEventListener('mouseout', () => {
+        if (i !== idx) item.style.background = 'transparent';
+      });
+      
+      item.addEventListener('click', () => goTo(i));
+      
+      const pts = t.side === 'SELL' ? (t.entry - t.exit) : (t.exit - t.entry);
+      const ptsColor = pts >= 0 ? '#3fb950' : '#f85149';
+      
+      item.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+          <span style="font-weight:600; color:#e6edf3; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:140px;" title="${t.sym}">${t.sym}</span>
+          <span style="font-size:10px; font-weight:700; color:${t.side==='SELL'?'#f85149':'#3fb950'};">${t.side}</span>
+        </div>
+        <div style="display:flex; justify-content:space-between; align-items:center; font-size:10.5px; color:#8b949e;">
+          <span>${t.et} → ${t.xt}</span>
+          <span style="color:${ptsColor}; font-weight:600;">${pts >= 0 ? '+' : ''}${pts.toFixed(2)}</span>
+        </div>
+      `;
+      wlItems.appendChild(item);
+    });
+  }
 
   function goTo(newIdx){
     if(newIdx < 0 || newIdx >= list.length) return;

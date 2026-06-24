@@ -253,6 +253,112 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   text-overflow: ellipsis;
   max-width: 100%;
 }
+
+/* Active segment highlights */
+.ord-seg span.on, .cal-seg span.on {
+  background-color: #1f6feb !important;
+  color: #ffffff !important;
+}
+.ord-seg span, .cal-seg span {
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+.ord-seg span:not(.on):hover, .cal-seg span:not(.on):hover {
+  background-color: #21262d;
+  color: #c9d1d9 !important;
+}
+
+/* Image Viewer Lightbox */
+#image-viewer-modal {
+  display: none;
+  position: fixed;
+  z-index: 10000;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(10, 12, 16, 0.95);
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+#image-viewer-content {
+  position: relative;
+  max-width: 90%;
+  max-height: 90%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+#image-viewer-img {
+  max-width: 100%;
+  max-height: 80vh;
+  object-fit: contain;
+  border-radius: 4px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+  border: 1px solid #30363d;
+  transition: transform 0.2s ease-in-out;
+}
+
+#image-viewer-prev, #image-viewer-next {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  background: rgba(33, 38, 45, 0.8);
+  border: 1px solid #30363d;
+  color: #c9d1d9;
+  font-size: 24px;
+  padding: 12px 18px;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  z-index: 10001;
+}
+
+#image-viewer-prev:hover, #image-viewer-next:hover {
+  background: #1f6feb;
+  color: #fff;
+  border-color: #388bfd;
+}
+
+#image-viewer-prev {
+  left: -80px;
+}
+
+#image-viewer-next {
+  right: -80px;
+}
+
+#image-viewer-close {
+  position: absolute;
+  top: -50px;
+  right: 0;
+  color: #8b949e;
+  font-size: 28px;
+  font-weight: bold;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+#image-viewer-close:hover {
+  color: #fff;
+}
+
+#image-viewer-counter {
+  margin-top: 12px;
+  color: #8b949e;
+  font-size: 14px;
+  font-family: monospace;
+}
+
+/* Responsive adjust for nav buttons */
+@media (max-width: 768px) {
+  #image-viewer-prev { left: 10px; }
+  #image-viewer-next { right: 10px; }
+  #image-viewer-close { right: 10px; top: 10px; }
+  #image-viewer-counter { margin-top: 20px; }
+}
 </style>
 </head>
 <body>
@@ -293,7 +399,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="tab" onclick="switchTab('config')">Config</div>
   <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
   <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
-  <div class="tab" onclick="switchTab('calendar')">📅 Calendar</div>
+  <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
   <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
   <div class="tab active" onclick="switchTab('pine')">📜 Script</div>
 </div>
@@ -579,6 +685,63 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
     <!-- Days Grid -->
     <div class="cal-grid" id="cal-grid"></div>
+  </div>
+
+  <!-- Equity Curve Card -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
+      📈 Equity Curve (Cumulative P&amp;L)
+    </h3>
+    <div id="cal-equity-curve-container" style="position:relative; width:100%; height:260px;">
+      <!-- SVG Equity Curve will be drawn here -->
+    </div>
+  </div>
+
+  <!-- Day Totals Card -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">
+      📅 Day Total Summary
+    </h3>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
+            <th style="padding:6px; font-weight:500;">Date</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">Trades Count</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody id="cal-day-totals-tbody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Points Per Trade Card -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">
+      🎯 Point Per Trade Details
+    </h3>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
+        <thead>
+          <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
+            <th style="padding:6px; font-weight:500;">Exit Date &amp; Time</th>
+            <th style="padding:6px; font-weight:500;">Symbol</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">Side</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Qty</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Entry Price</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Exit Price</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Points</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Net P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody id="cal-points-per-trade-tbody">
+          <!-- Populated by JS -->
+        </tbody>
+      </table>
+    </div>
   </div>
 </div>
 
@@ -1381,9 +1544,11 @@ function _ordTags(t){
 function _imgTagsOf(t){ return (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)); }
 function _noteThumbs(id, imgs){
   if(!imgs || !imgs.length) return '';
-  return '<div style="display:flex;gap:4px;margin-top:4px">' + imgs.map(fn =>
-    `<a href="/api/orders/note-image/${id}/${fn}" target="_blank"><img src="/api/orders/note-image/${id}/${fn}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #30363d"></a>`
-  ).join('') + '</div>';
+  const urls = imgs.map(fn => `/api/orders/note-image/${id}/${fn}`);
+  return '<div style="display:flex;gap:4px;margin-top:4px">' + imgs.map((fn, index) => {
+    const escapedUrls = JSON.stringify(urls).replace(/"/g, '&quot;');
+    return `<a href="javascript:void(0)" onclick="openImageViewer(${escapedUrls}, ${index})"><img src="/api/orders/note-image/${id}/${fn}" style="width:28px;height:28px;object-fit:cover;border-radius:4px;border:1px solid #30363d"></a>`;
+  }).join('') + '</div>';
 }
 // "HH:MM" entry→exit ka duration ("23m" / "1h 12m"). Cross-din nahi (intraday).
 function _durMin(a,b){
@@ -4803,7 +4968,330 @@ async function calendarRender() {
 
     grid.appendChild(cell);
   }
+
+  // Save trades in window object for resize events
+  window.currentCalendarTrades = d.trades || [];
+
+  // Draw Equity Curve Chart
+  drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades);
+
+  // Render Day Totals table
+  const dayTotalsBody = document.getElementById('cal-day-totals-tbody');
+  if (dayTotalsBody) {
+    const sortedDates = Object.keys(summary).sort((a, b) => b.localeCompare(a));
+    let dayHtml = '';
+    if (sortedDates.length === 0) {
+      dayHtml = `<tr><td colspan="3" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
+    } else {
+      sortedDates.forEach(dateStr => {
+        const day = summary[dateStr];
+        const pnl = day.pnl || 0;
+        const pnlColor = pnl >= 0 ? '#3fb950' : '#f85149';
+        const pnlText = `${pnl >= 0 ? '+' : ''}₹${Math.round(pnl)}`;
+        dayHtml += `
+          <tr style="border-bottom:1px solid #21262d; cursor:pointer;" onclick="calSelectDate('${dateStr}')" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
+            <td style="padding:8px; color:#adbac7;">${dateStr}</td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">${day.count}</td>
+            <td style="padding:8px; text-align:right; color:${pnlColor}; font-weight:600;">${pnlText}</td>
+          </tr>
+        `;
+      });
+    }
+    dayTotalsBody.innerHTML = dayHtml;
+  }
+
+  // Render Point Per Trade table
+  const pointsBody = document.getElementById('cal-points-per-trade-tbody');
+  if (pointsBody) {
+    const sortedTrades = [...window.currentCalendarTrades].sort((a, b) => {
+      const da = a.entry_date + ' ' + (a.entry_time || '00:00');
+      const db = b.entry_date + ' ' + (b.entry_time || '00:00');
+      return db.localeCompare(da); // Descending (most recent first)
+    });
+    let pointsHtml = '';
+    if (sortedTrades.length === 0) {
+      pointsHtml = `<tr><td colspan="8" style="text-align:center;color:#6e7681;padding:12px;">Is filter pe koi trade details nahi hain</td></tr>`;
+    } else {
+      sortedTrades.forEach(t => {
+        const pts = t.entry === 'BUY'
+          ? (t.exit_price || 0) - (t.entry_price || 0)
+          : (t.entry_price || 0) - (t.exit_price || 0);
+        const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
+        const ptsText = `${pts >= 0 ? '+' : ''}${pts.toFixed(2)}`;
+        
+        const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
+        const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
+        const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
+        
+        pointsHtml += `
+          <tr style="border-bottom:1px solid #21262d;">
+            <td style="padding:8px; color:#6e7681; white-space:nowrap;">${t.exit_date || t.entry_date} <span style="font-size:10px; color:#8b949e;">${t.exit_time || t.entry_time || '—'}</span></td>
+            <td style="padding:8px; color:#adbac7;"><b>${t.sym || t.symbol}</b></td>
+            <td style="padding:8px; text-align:center; color:${sideColor}; font-weight:600;">${t.entry}</td>
+            <td style="padding:8px; text-align:right; color:#e6edf3;">${t.qty}</td>
+            <td style="padding:8px; text-align:right; color:#8b949e;">${Number(t.entry_price || 0).toFixed(2)}</td>
+            <td style="padding:8px; text-align:right; color:#8b949e;">${Number(t.exit_price || 0).toFixed(2)}</td>
+            <td style="padding:8px; text-align:right; color:${ptsC}; font-weight:600;">${ptsText}</td>
+            <td style="padding:8px; text-align:right; color:${netColor}; font-weight:600;">${netText}</td>
+          </tr>
+        `;
+      });
+    }
+    pointsBody.innerHTML = pointsHtml;
+  }
 }
+
+function drawEquityCurveChart(containerId, trades) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+  container.innerHTML = '';
+  
+  if (!trades || !trades.length) {
+    container.innerHTML = `<div style="color:#6e7681;font-size:12px;text-align:center;padding:60px 0;">No trades to display equity curve</div>`;
+    return;
+  }
+  
+  // Calculate cumulative PnL
+  let cumPnL = 0;
+  const data = [];
+  
+  // Start at 0 PnL
+  data.push({
+    xLabel: 'Start',
+    pnl: 0,
+    cumulative: 0,
+    symbol: '',
+    date: '',
+    time: ''
+  });
+  
+  // Sort trades chronologically
+  const sorted = [...trades].sort((a, b) => {
+    const da = a.entry_date + ' ' + (a.entry_time || '00:00');
+    const db = b.entry_date + ' ' + (b.entry_time || '00:00');
+    return da.localeCompare(db);
+  });
+  
+  sorted.forEach((t, i) => {
+    cumPnL += (t.pnl || 0);
+    data.push({
+      xLabel: `${i + 1}`,
+      pnl: t.pnl || 0,
+      cumulative: cumPnL,
+      symbol: t.sym || t.symbol,
+      date: t.exit_date || t.entry_date || '',
+      time: t.exit_time || t.entry_time || ''
+    });
+  });
+  
+  const width = container.clientWidth || 600;
+  const height = 240;
+  const paddingLeft = 60;
+  const paddingRight = 20;
+  const paddingTop = 20;
+  const paddingBottom = 30;
+  
+  const chartWidth = width - paddingLeft - paddingRight;
+  const chartHeight = height - paddingTop - paddingBottom;
+  
+  // Find min & max cumulative PnL
+  let minVal = Math.min(...data.map(d => d.cumulative));
+  let maxVal = Math.max(...data.map(d => d.cumulative));
+  
+  // Add padding/buffer
+  const diff = maxVal - minVal;
+  if (diff === 0) {
+    minVal -= 1000;
+    maxVal += 1000;
+  } else {
+    minVal -= diff * 0.1;
+    maxVal += diff * 0.1;
+  }
+  
+  // X scale helper: maps index to X coordinate
+  const getX = (index) => paddingLeft + (index / (data.length - 1)) * chartWidth;
+  
+  // Y scale helper: maps cumulative PnL value to Y coordinate
+  const getY = (val) => paddingTop + chartHeight - ((val - minVal) / (maxVal - minVal)) * chartHeight;
+  
+  // Build SVG string
+  let svg = `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow:visible; font-family: -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">`;
+  
+  // Definitions (gradiants and clip paths)
+  svg += `
+    <defs>
+      <linearGradient id="area-grad-green" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#3fb950" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#3fb950" stop-opacity="0.0"/>
+      </linearGradient>
+      <linearGradient id="area-grad-red" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="#f85149" stop-opacity="0.3"/>
+        <stop offset="100%" stop-color="#f85149" stop-opacity="0.0"/>
+      </linearGradient>
+    </defs>
+  `;
+  
+  // Select gradient based on final net P&L
+  const finalPnL = data[data.length - 1].cumulative;
+  const fillGrad = finalPnL >= 0 ? 'url(#area-grad-green)' : 'url(#area-grad-red)';
+  const strokeColor = finalPnL >= 0 ? '#3fb950' : '#f85149';
+  
+  // Draw horizontal grid lines (e.g. 5 lines)
+  const steps = 5;
+  for (let i = 0; i <= steps; i++) {
+    const val = minVal + (i / steps) * (maxVal - minVal);
+    const y = getY(val);
+    svg += `<line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#30363d" stroke-dasharray="${val === 0 ? '0' : '3,3'}" stroke-width="${val === 0 ? '1.5' : '1'}"/>`;
+    // Y-axis label
+    svg += `<text x="${paddingLeft - 10}" y="${y + 4}" fill="#8b949e" font-size="10" text-anchor="end">₹${Math.round(val)}</text>`;
+  }
+  
+  // Draw Zero Line separately if it is within range but not hit by step loop
+  if (minVal < 0 && maxVal > 0) {
+    const zeroY = getY(0);
+    svg += `<line x1="${paddingLeft}" y1="${zeroY}" x2="${width - paddingRight}" y2="${zeroY}" stroke="#8b949e" stroke-width="1.2" stroke-dasharray="4,4" opacity="0.6"/>`;
+  }
+  
+  // Build Line Path and Area Path
+  let linePath = '';
+  let areaPath = `M ${paddingLeft} ${getY(0)} `; // Start at zero line
+  
+  data.forEach((d, i) => {
+    const x = getX(i);
+    const y = getY(d.cumulative);
+    
+    if (i === 0) {
+      linePath += `M ${x} ${y} `;
+      areaPath += `L ${x} ${y} `;
+    } else {
+      linePath += `L ${x} ${y} `;
+      areaPath += `L ${x} ${y} `;
+    }
+  });
+  
+  // Close the area path to the bottom or zero line?
+  areaPath += `L ${getX(data.length - 1)} ${paddingTop + chartHeight} L ${paddingLeft} ${paddingTop + chartHeight} Z`;
+  
+  // Draw the area fill
+  svg += `<path d="${areaPath}" fill="${fillGrad}" />`;
+  
+  // Draw the stroke line
+  svg += `<path d="${linePath}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+  
+  // Draw X-axis labels (e.g. 6 labels max)
+  const xLabelsCount = Math.min(data.length, 6);
+  for (let i = 0; i < xLabelsCount; i++) {
+    const idx = Math.round((i / (xLabelsCount - 1)) * (data.length - 1));
+    if (idx >= 0 && idx < data.length) {
+      const x = getX(idx);
+      const label = data[idx].xLabel === 'Start' ? 'Start' : `T#${data[idx].xLabel}`;
+      svg += `<text x="${x}" y="${paddingTop + chartHeight + 16}" fill="#8b949e" font-size="9" text-anchor="middle">${label}</text>`;
+    }
+  }
+  
+  // Add hover interactive elements
+  svg += `
+    <g id="equity-hover-group" style="display:none;">
+      <line id="equity-hover-line" x1="0" y1="${paddingTop}" x2="0" y2="${paddingTop + chartHeight}" stroke="#8b949e" stroke-width="1" stroke-dasharray="2,2"/>
+      <circle id="equity-hover-circle" r="5" fill="${strokeColor}" stroke="#ffffff" stroke-width="1.5"/>
+    </g>
+  `;
+  
+  svg += `</svg>`;
+  
+  // Append SVG to container
+  container.innerHTML = svg;
+  
+  // Create HTML Tooltip element in container (absolutely positioned)
+  const tooltip = document.createElement('div');
+  tooltip.id = 'equity-tooltip';
+  tooltip.style.cssText = `
+    position: absolute;
+    display: none;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 8px 10px;
+    color: #e6edf3;
+    font-size: 11px;
+    pointer-events: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    z-index: 100;
+    line-height: 1.4;
+    white-space: nowrap;
+  `;
+  container.appendChild(tooltip);
+  
+  // Mouse interaction
+  const svgEl = container.querySelector('svg');
+  const hoverGroup = svgEl.getElementById('equity-hover-group');
+  const hoverLine = svgEl.getElementById('equity-hover-line');
+  const hoverCircle = svgEl.getElementById('equity-hover-circle');
+  
+  svgEl.addEventListener('mousemove', (e) => {
+    const rect = svgEl.getBoundingClientRect();
+    const mouseX = (e.clientX - rect.left) * (width / rect.width); // Adjust for viewBox scaling
+    
+    let idx = Math.round(((mouseX - paddingLeft) / chartWidth) * (data.length - 1));
+    if (idx < 0) idx = 0;
+    if (idx >= data.length) idx = data.length - 1;
+    
+    const pt = data[idx];
+    const x = getX(idx);
+    const y = getY(pt.cumulative);
+    
+    // Scale back coordinates to actual screen pixels for absolute tooltip positioning
+    const scaleX = rect.width / width;
+    const scaleY = rect.height / height;
+    
+    // Update SVG elements
+    hoverGroup.style.display = 'block';
+    hoverLine.setAttribute('x1', x);
+    hoverLine.setAttribute('x2', x);
+    hoverCircle.setAttribute('cx', x);
+    hoverCircle.setAttribute('cy', y);
+    hoverCircle.setAttribute('fill', pt.cumulative >= 0 ? '#3fb950' : '#f85149');
+    
+    // Update HTML Tooltip content and position
+    let tooltipHtml = '';
+    if (pt.xLabel === 'Start') {
+      tooltipHtml = `<b>Start of Month</b><br>Cumulative P&L: ₹0`;
+    } else {
+      const pnlColor = pt.pnl >= 0 ? '#3fb950' : '#f85149';
+      const cumColor = pt.cumulative >= 0 ? '#3fb950' : '#f85149';
+      tooltipHtml = `
+        <b>Trade #${pt.xLabel} Details</b><br>
+        Date: ${pt.date} ${pt.time}<br>
+        Symbol: <b>${pt.symbol}</b><br>
+        Trade P&L: <span style="color:${pnlColor}; font-weight:600">${pt.pnl >= 0 ? '+' : ''}₹${Math.round(pt.pnl)}</span><br>
+        Cumulative: <span style="color:${cumColor}; font-weight:600">${pt.cumulative >= 0 ? '+' : ''}₹${Math.round(pt.cumulative)}</span>
+      `;
+    }
+    
+    tooltip.innerHTML = tooltipHtml;
+    tooltip.style.display = 'block';
+    
+    const tooltipWidth = tooltip.clientWidth || 150;
+    let tooltipX = (x * scaleX) + 15;
+    if (tooltipX + tooltipWidth > rect.width) {
+      tooltipX = (x * scaleX) - tooltipWidth - 15;
+    }
+    tooltip.style.left = `${tooltipX}px`;
+    tooltip.style.top = `${(y * scaleY) - 20}px`;
+  });
+  
+  svgEl.addEventListener('mouseleave', () => {
+    hoverGroup.style.display = 'none';
+    tooltip.style.display = 'none';
+  });
+}
+
+// Window resize handler for Stats tab
+window.addEventListener('resize', () => {
+  if (document.getElementById('tab-calendar').classList.contains('active') && window.currentCalendarTrades) {
+    drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades);
+  }
+});
 
 
 // init
@@ -4946,13 +5434,17 @@ function openNoteModal(id, note, imgs) {
 function _renderNoteImgs(id, imgs) {
   const el = document.getElementById('edit-note-imgs');
   if(!imgs || !imgs.length) { el.innerHTML = ''; return; }
-  el.innerHTML = imgs.map(fn => `
+  const urls = imgs.map(fn => `/api/orders/note-image/${id}/${fn}`);
+  el.innerHTML = imgs.map((fn, index) => {
+    const escapedUrls = JSON.stringify(urls).replace(/"/g, '&quot;');
+    return `
     <div style="position:relative">
-      <a href="/api/orders/note-image/${id}/${fn}" target="_blank">
+      <a href="javascript:void(0)" onclick="openImageViewer(${escapedUrls}, ${index})">
         <img src="/api/orders/note-image/${id}/${fn}" style="width:70px;height:70px;object-fit:cover;border-radius:6px;border:1px solid #30363d">
       </a>
       <span onclick="deleteNoteImg(${id},'${fn}')" style="position:absolute;top:-6px;right:-6px;background:#f85149;border-radius:50%;width:16px;height:16px;font-size:10px;line-height:16px;text-align:center;cursor:pointer;color:#fff">✕</span>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 }
 
 async function deleteNoteImg(id, fn) {
@@ -4995,7 +5487,74 @@ async function saveNote() {
     alert("Error saving Note.");
   }
 }
+
+// ── IMAGE LIGHTBOX VIEWER ──
+let currentViewerUrls = [];
+let currentViewerIndex = 0;
+
+function openImageViewer(urls, index) {
+  currentViewerUrls = urls;
+  currentViewerIndex = index;
+  document.getElementById('image-viewer-modal').style.display = 'flex';
+  updateImageViewer();
+  document.addEventListener('keydown', handleViewerKeyDown);
+}
+
+function closeImageViewer(event) {
+  if (event) {
+    event.stopPropagation();
+  }
+  document.getElementById('image-viewer-modal').style.display = 'none';
+  document.removeEventListener('keydown', handleViewerKeyDown);
+}
+
+function updateImageViewer() {
+  if (!currentViewerUrls || !currentViewerUrls.length) return;
+  if (currentViewerIndex < 0) {
+    currentViewerIndex = currentViewerUrls.length - 1;
+  } else if (currentViewerIndex >= currentViewerUrls.length) {
+    currentViewerIndex = 0;
+  }
+  const img = document.getElementById('image-viewer-img');
+  img.src = currentViewerUrls[currentViewerIndex];
+  const counter = document.getElementById('image-viewer-counter');
+  counter.textContent = `${currentViewerIndex + 1} / ${currentViewerUrls.length}`;
+  const prevBtn = document.getElementById('image-viewer-prev');
+  const nextBtn = document.getElementById('image-viewer-next');
+  if (currentViewerUrls.length <= 1) {
+    prevBtn.style.display = 'none';
+    nextBtn.style.display = 'none';
+  } else {
+    prevBtn.style.display = 'block';
+    nextBtn.style.display = 'block';
+  }
+}
+
+function navigateImageViewer(dir) {
+  currentViewerIndex += dir;
+  updateImageViewer();
+}
+
+function handleViewerKeyDown(e) {
+  if (e.key === 'ArrowLeft') {
+    navigateImageViewer(-1);
+  } else if (e.key === 'ArrowRight') {
+    navigateImageViewer(1);
+  } else if (e.key === 'Escape') {
+    closeImageViewer();
+  }
+}
 </script>
+<!-- Image Viewer Lightbox Modal -->
+<div id="image-viewer-modal" onclick="closeImageViewer(event)">
+  <div id="image-viewer-content" onclick="event.stopPropagation()">
+    <span id="image-viewer-close" onclick="closeImageViewer(event)">&times;</span>
+    <img id="image-viewer-img" src="" alt="Trade image">
+    <button id="image-viewer-prev" onclick="navigateImageViewer(-1)">◀</button>
+    <button id="image-viewer-next" onclick="navigateImageViewer(1)">▶</button>
+    <div id="image-viewer-counter"></div>
+  </div>
+</div>
 
 </body>
 </html>
