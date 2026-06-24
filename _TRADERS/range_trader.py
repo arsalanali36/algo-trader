@@ -775,7 +775,7 @@ def main(strategy_id="range"):
                                 if not conc_ok:
                                     cap_ok, cap_reason = False, conc_reason
                                 else:
-                                    cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, opt_prem)
+                                    cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, opt_prem, sec_id=sec_id)
                         except Exception as _e:
                             cap_ok, cap_reason = True, ""
                             log.warning(f"risk gate check failed (allowing entry): {_e}")
@@ -785,7 +785,7 @@ def main(strategy_id="range"):
                             # drawdown breaker or concentration cap (those are
                             # deliberate hard stops, not a sizing problem).
                             if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
-                                fit_lots = risk_gate.sized_lots(strategy_id, qty, lot_sz, opt_prem)
+                                fit_lots = risk_gate.sized_lots(strategy_id, qty, lot_sz, opt_prem, sec_id=sec_id)
                             if fit_lots > 0:
                                 log.info(f"ENTRY sized down {symbol} — {qty}L -> {fit_lots}L ({cap_reason})")
                                 actual_qty = fit_lots * lot_sz

@@ -51,12 +51,13 @@ def _today_open(strategy=None):
 
 
 def _margin_multiplier(strategy, rc=None):
-    """Selling an option blocks margin, not just the premium received — qty*price
-    massively understates the real capital block for SELL legs. Until a real
-    broker margin-API check exists (Stage 3), use a configurable multiplier on
-    the notional for SELL legs: capital_used = qty*price*multiplier.
-    Strategy-specific margin_multiplier overrides global; default 1.0 (off,
-    same behavior as Stage 1) so existing setups aren't surprised by this."""
+    """Fallback ONLY — used when the real Dhan margin-calculator call (see
+    dhan_real_margin below) fails (no token, network, rate-limited, unexpected
+    response shape). Selling an option blocks margin, not just the premium
+    received — qty*price massively understates the real capital block for
+    SELL legs, so even the fallback applies a configurable multiplier rather
+    than raw notional. Strategy-specific margin_multiplier overrides global;
+    default 1.0 (off) so existing setups aren't surprised by this."""
     rc = rc or _risk_cfg()
     strat_mult = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("margin_multiplier")
     glob_mult = (rc.get("global", {}) or {}).get("margin_multiplier")
@@ -67,14 +68,81 @@ def _margin_multiplier(strategy, rc=None):
         return 1.0
 
 
+_MARGIN_CACHE = {}     # (sec_id, seg, qty, side, round(price)) -> (ts, margin_rs)
+_MARGIN_CACHE_TTL = 90  # seconds — margin doesn't move fast enough to need fresher than this
+
+
+def _dhan_creds():
+    try:
+        cfg = json.loads((BASE_DIR / "data" / "config.json").read_text())
+        return cfg.get("jwt_token", ""), cfg.get("client_id", "")
+    except Exception:
+        return "", ""
+
+
+def dhan_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY"):
+    """Real NSE-grade margin (SPAN + exposure) for ONE leg, straight from Dhan's
+    own `/v2/margincalculator` — this is the actual number Dhan would block for
+    that single order, not a guessed multiplier. Cached (90s TTL) since this is
+    a live API call and gets queried repeatedly for the same open positions.
+
+    IMPORTANT LIMITATION: this evaluates each leg as if it were the ONLY
+    position in the account. It does NOT know about hedge/spread benefit
+    across multiple legs of the same strategy (e.g. a short strangle: SELL CE
+    + SELL PE on the same underlying+expiry) — NSE/the broker only recognizes
+    that benefit once both legs are actually live in the same account, which a
+    pre-trade per-leg API call can't see. For genuinely hedged strategies this
+    will OVER-estimate margin (conservative, not wrong-direction-dangerous) —
+    if that matters, check the real combined margin in the Dhan app once both
+    legs are live and set a manual per-strategy `capital_rs` override instead
+    of relying on this estimate for that strategy.
+
+    Returns None on any failure — caller must fall back to _margin_multiplier."""
+    if not sec_id or qty <= 0 or price <= 0:
+        return None
+    key = (str(sec_id), seg, int(qty), str(side).upper(), round(float(price)))
+    now = __import__("time").time()
+    cached = _MARGIN_CACHE.get(key)
+    if cached and (now - cached[0]) < _MARGIN_CACHE_TTL:
+        return cached[1]
+    token, cid = _dhan_creds()
+    if not token or not cid:
+        return None
+    try:
+        import requests
+        r = requests.post("https://api.dhan.co/v2/margincalculator",
+            json={"dhanClientId": cid, "exchangeSegment": seg,
+                  "transactionType": str(side).upper(), "quantity": int(qty),
+                  "productType": product_type, "securityId": str(sec_id),
+                  "price": float(price), "triggerPrice": 0},
+            headers={"access-token": token, "client-id": cid, "Content-Type": "application/json"},
+            timeout=6)
+        if r.status_code != 200:
+            return None
+        d = r.json() or {}
+        total = d.get("totalMargin")
+        if total is None:
+            return None
+        margin = float(total)
+        _MARGIN_CACHE[key] = (now, margin)
+        return margin
+    except Exception:
+        return None
+
+
 def _leg_capital(p, rc=None):
-    """Margin-adjusted ₹ capital for one open-position dict from order_store."""
+    """Margin-adjusted ₹ capital for one open-position dict from order_store.
+    SELL legs: try the real Dhan margin-calculator first (dhan_real_margin);
+    fall back to the configurable multiplier estimate only if that call fails."""
     try:
         qty, price = float(p.get("qty") or 0), float(p.get("entry_price") or 0)
     except Exception:
         return 0.0
     notional = qty * price
     if str(p.get("entry") or "").upper() == "SELL":
+        real = dhan_real_margin(p.get("sec_id"), p.get("segment") or "NSE_FNO", qty, price, "SELL")
+        if real is not None:
+            return real
         notional *= _margin_multiplier(p.get("strategy"), rc)
     return notional
 
@@ -87,21 +155,26 @@ def capital_in_use(strategy=None):
     return sum(_leg_capital(p, rc) for p in _today_open(strategy))
 
 
-def check_capital(strategy, qty, price, side="SELL"):
+def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO"):
     """Would adding qty@price (side BUY/SELL) to `strategy` breach its allocation
     or the global ceiling? Returns (ok: bool, reason: str). reason='' when ok.
 
-    SELL legs (option-selling, the common case for these strategies) get the
-    margin_multiplier applied — see _margin_multiplier(). BUY legs use the
-    premium paid as-is (that IS the capital committed).
+    SELL legs (option-selling, the common case for these strategies): if
+    sec_id is given, tries the REAL Dhan margin-calculator first (see
+    dhan_real_margin — actual SPAN+exposure for this exact order), falling
+    back to the configurable margin_multiplier estimate only if that call
+    fails or sec_id wasn't provided. BUY legs use the premium paid as-is
+    (that IS the capital committed, no margin involved).
 
     Strategy-specific capital_rs overrides the global one for that strategy's
     own cap; the global cap (sum across ALL strategies) always applies too —
     whichever is hit first blocks the entry."""
     rc = _risk_cfg()
-    needed = float(qty or 0) * float(price or 0)
+    qty, price = float(qty or 0), float(price or 0)
+    needed = qty * price
     if str(side or "SELL").upper() == "SELL":
-        needed *= _margin_multiplier(strategy, rc)
+        real = dhan_real_margin(sec_id, seg, qty, price, "SELL") if sec_id else None
+        needed = real if real is not None else needed * _margin_multiplier(strategy, rc)
     if needed <= 0:
         return True, ""
 
@@ -159,7 +232,7 @@ def check_capital_option(strategy, qty, sec_id, token, cid, fallback_price=0.0, 
     legacy traders pass around internally). Falls back to fallback_price if the
     LTP fetch fails (still useful as a rough gate rather than skipping entirely)."""
     price = _quick_option_ltp(sec_id, token, cid) or float(fallback_price or 0)
-    return check_capital(strategy, qty, price, side=side)
+    return check_capital(strategy, qty, price, side=side, sec_id=sec_id)
 
 
 def capital_mode(strategy):
@@ -178,20 +251,21 @@ def sized_lots_option(strategy, lots, lot_size, sec_id, token, cid, fallback_pri
     """sized_lots() but fetches the real option premium first, like
     check_capital_option() does for the reject path."""
     price = _quick_option_ltp(sec_id, token, cid) or float(fallback_price or 0)
-    return sized_lots(strategy, lots, lot_size, price, side=side)
+    return sized_lots(strategy, lots, lot_size, price, side=side, sec_id=sec_id)
 
 
-def sized_lots(strategy, lots, lot_size, price, side="SELL"):
+def sized_lots(strategy, lots, lot_size, price, side="SELL", sec_id=None, seg="NSE_FNO"):
     """For capital_mode='size_down': how many of the requested `lots` (each
     `lot_size` qty) actually fit in the remaining capital? Returns an int
     0..lots — 0 means even one lot doesn't fit (caller should still block).
-    Respects lot boundaries (can't size into a fractional lot)."""
+    Respects lot boundaries (can't size into a fractional lot). Pass sec_id
+    for SELL legs to use the real Dhan margin-calculator (see check_capital)."""
     lots = int(lots or 0)
     if lots <= 0:
         return 0
     per_lot_qty = max(1, int(lot_size or 1))
     for try_lots in range(lots, 0, -1):
-        ok, _ = check_capital(strategy, try_lots * per_lot_qty, price, side=side)
+        ok, _ = check_capital(strategy, try_lots * per_lot_qty, price, side=side, sec_id=sec_id, seg=seg)
         if ok:
             return try_lots
     return 0

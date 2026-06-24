@@ -485,10 +485,10 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
                 _record_blocked(est_price, qty, conc_reason)
                 return {"ok": False, "msg": conc_reason}
 
-            cap_ok, cap_reason = risk_gate.check_capital(strat, qty, est_price, side=opt_action)
+            cap_ok, cap_reason = risk_gate.check_capital(strat, qty, est_price, side=opt_action, sec_id=sec_id)
             if not cap_ok:
                 if risk_gate.capital_mode(strat) == "size_down":
-                    fit_lots = risk_gate.sized_lots(strat, lots, lot_size, est_price, side=opt_action)
+                    fit_lots = risk_gate.sized_lots(strat, lots, lot_size, est_price, side=opt_action, sec_id=sec_id)
                 else:
                     fit_lots = 0
                 if fit_lots > 0:

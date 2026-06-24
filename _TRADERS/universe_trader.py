@@ -254,7 +254,7 @@ def main(sid, once=False):
                 if not conc_ok:
                     log(f"[SKIP] {sym} {sig} — {conc_reason}")
                     continue
-                cap_ok, cap_reason = risk_gate.check_capital(sid, qty, est_price or 0, side=o_side)
+                cap_ok, cap_reason = risk_gate.check_capital(sid, qty, est_price or 0, side=o_side, sec_id=sec_id, seg=seg)
             except Exception as _e:
                 cap_ok, cap_reason = True, ""
                 log(f"risk gate check failed (allowing entry): {_e}")
@@ -262,7 +262,7 @@ def main(sid, once=False):
                 fit_lots = 0
                 if risk_gate.capital_mode(sid) == "size_down":
                     per_lot = int(cfg.get("qty", 1))
-                    fit_lots = risk_gate.sized_lots(sid, int(cfg.get("lots", 1)), per_lot, est_price or 0, side=o_side)
+                    fit_lots = risk_gate.sized_lots(sid, int(cfg.get("lots", 1)), per_lot, est_price or 0, side=o_side, sec_id=sec_id, seg=seg)
                 if fit_lots > 0:
                     sized_qty = fit_lots * int(cfg.get("qty", 1))
                     log(f"[SIZE-DOWN] {sym} {sig} — qty {qty} -> {sized_qty} ({cap_reason})")
