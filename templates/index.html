@@ -99,6 +99,48 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .pill { background:#21262d; border:1px solid #30363d; border-radius:12px; padding:3px 10px; font-size:11px; color:#8b949e; display:flex; align-items:center; gap:6px; }
 .pill .remove { cursor:pointer; color:#f85149; font-weight:bold; }
 
+/* Dropdown Menu styling */
+.dropdown {
+  position: relative;
+  display: inline-block;
+}
+.dropdown-trigger {
+  cursor: pointer;
+  padding: 2px 6px;
+  font-size: 16px;
+  color: #8b949e;
+  border-radius: 4px;
+  user-select: none;
+}
+.dropdown-trigger:hover {
+  background: #21262d;
+  color: #e6edf3;
+}
+.dropdown-content {
+  display: none;
+  position: absolute;
+  right: 0;
+  background-color: #161b22;
+  border: 1px solid #30363d;
+  min-width: 150px;
+  box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.6);
+  z-index: 1000;
+  border-radius: 6px;
+  padding: 4px 0;
+}
+.dropdown-content a {
+  color: #adbac7;
+  padding: 8px 12px;
+  text-decoration: none;
+  display: block;
+  font-size: 12px;
+  text-align: left;
+}
+.dropdown-content a:hover {
+  background-color: #1f6feb;
+  color: #ffffff;
+}
+
 /* ── Calendar Styles ── */
 .cal-seg span { color: #8b949e; }
 .cal-seg.on { background:#1f6feb; color:#fff; }
@@ -475,11 +517,17 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div id="ord-summary" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"></div>
 
   <div class="card" style="margin-bottom:12px">
-    <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">✅ Completed Trades</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
+      <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+    </div>
     <div id="ord-completed" style="overflow-x:auto"></div>
   </div>
   <div class="card">
-    <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">⏳ Open Positions</div>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+      <div style="font-size:13px;font-weight:600;color:#adbac7">⏳ Open Positions</div>
+      <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+    </div>
     <div id="ord-open" style="overflow-x:auto"></div>
   </div>
 </div>
@@ -829,6 +877,30 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <button class="btn btn-gray" onclick="selectAllSymbols(true)">All</button>
       <button class="btn btn-gray" onclick="selectAllSymbols(false)">Clear</button>
       <button class="btn btn-blue" onclick="confirmSymbols()">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL FOR COLUMNS SELECTOR -->
+<div class="modal-overlay" id="col-modal">
+  <div class="modal" style="width: 600px; max-width: 95%;">
+    <div class="modal-hdr">
+      <span>⚙️ Column Options</span>
+      <span style="cursor:pointer;color:#8b949e" onclick="closeColModal()">✕</span>
+    </div>
+    <div class="modal-body" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; max-height: 60vh; overflow-y: auto; padding: 18px;">
+      <div>
+        <div style="font-weight: 600; color: #3fb950; font-size: 13px; border-bottom: 1px solid #30363d; padding-bottom: 6px; margin-bottom: 10px; letter-spacing: 0.5px;">COMPLETED TRADES</div>
+        <div id="col-completed-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+      <div>
+        <div style="font-weight: 600; color: #58a6ff; font-size: 13px; border-bottom: 1px solid #30363d; padding-bottom: 6px; margin-bottom: 10px; letter-spacing: 0.5px;">OPEN POSITIONS</div>
+        <div id="col-open-list" style="display: flex; flex-direction: column; gap: 8px;"></div>
+      </div>
+    </div>
+    <div class="modal-ftr">
+      <button class="btn btn-gray" onclick="resetColPrefs()">Reset Defaults</button>
+      <button class="btn btn-blue" onclick="saveColPrefs()">Save Changes</button>
     </div>
   </div>
 </div>
@@ -1338,12 +1410,8 @@ async function ordersRender(){
   _ordFillSelect('ord-strat', (d.filters||{}).strategy||[], strat, 'All strategies');
   _ordFillSelect('ord-broker', (d.filters||{}).broker||[], broker, 'All brokers');
 
-  const det=d.details||[], opn=d.open||[];
-  const ordDate=date;
-  const isCapBlocked = t => (t.tags||[]).some(tg => tg === 'CAPITAL_BLOCKED');
-  const opnBlocked = opn.filter(isCapBlocked);
-  const opnReal = opn.filter(t => !isCapBlocked(t));
-
+  const det=d.details||[];
+  
   // ── per-trade gross / tax / net (Zerodha charges) ──
   det.forEach(t=>{
     const ep=t.entry_price||0, xp=t.exit_price||0, q=t.qty||0;
@@ -1351,6 +1419,259 @@ async function ordersRender(){
     t._tax   = ep&&xp&&q ? (calcCharges(ep,xp,q,t.entry)||0) : 0;
     t._net   = t._gross - t._tax;
   });
+
+  window._lastOrdersData = d;
+  renderCachedOrders();
+}
+
+// Global state for sorting & hidden notes
+window._completedSortCol = localStorage.getItem('ord_completed_sort_col') || 'entry_time';
+window._completedSortDir = localStorage.getItem('ord_completed_sort_dir') || 'desc';
+window._openSortCol = localStorage.getItem('ord_open_sort_col') || 'entry_time';
+window._openSortDir = localStorage.getItem('ord_open_sort_dir') || 'desc';
+window._hiddenNotes = new Set(JSON.parse(localStorage.getItem('ord_hidden_notes') || '[]'));
+
+function toggleSort(tableType, colId) {
+  if (colId === 'actions' || colId === 'chart') return;
+  if (tableType === 'completed') {
+    if (window._completedSortCol === colId) {
+      window._completedSortDir = window._completedSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      window._completedSortCol = colId;
+      window._completedSortDir = 'desc';
+    }
+    localStorage.setItem('ord_completed_sort_col', window._completedSortCol);
+    localStorage.setItem('ord_completed_sort_dir', window._completedSortDir);
+  } else {
+    if (window._openSortCol === colId) {
+      window._openSortDir = window._openSortDir === 'asc' ? 'desc' : 'asc';
+    } else {
+      window._openSortCol = colId;
+      window._openSortDir = 'desc';
+    }
+    localStorage.setItem('ord_open_sort_col', window._openSortCol);
+    localStorage.setItem('ord_open_sort_dir', window._openSortDir);
+  }
+  renderCachedOrders();
+}
+
+function toggleDropdown(event, tradeId) {
+  event.stopPropagation();
+  const dropdown = document.getElementById(`dropdown-${tradeId}`);
+  if (!dropdown) return;
+  const isCurrentlyOpen = dropdown.style.display === 'block';
+  
+  document.querySelectorAll('.dropdown-content').forEach(el => {
+    el.style.display = 'none';
+  });
+  
+  if (!isCurrentlyOpen) {
+    dropdown.style.display = 'block';
+  }
+}
+
+window.addEventListener('click', function(e) {
+  if (!e.target.matches('.dropdown-trigger')) {
+    document.querySelectorAll('.dropdown-content').forEach(el => {
+      el.style.display = 'none';
+    });
+  }
+});
+
+function toggleNoteDesc(tradeId) {
+  const el = document.getElementById(`note-wrapper-${tradeId}`);
+  if (el) {
+    const isHidden = el.style.display === 'none';
+    el.style.display = isHidden ? '' : 'none';
+    if (isHidden) {
+      window._hiddenNotes.delete(tradeId);
+    } else {
+      window._hiddenNotes.add(tradeId);
+    }
+    localStorage.setItem('ord_hidden_notes', JSON.stringify([...window._hiddenNotes]));
+  }
+}
+
+function _sortData(arr, col, dir) {
+  const isDesc = dir === 'desc';
+  return arr.sort((a, b) => {
+    let valA, valB;
+    switch(col) {
+      case 'date':
+        valA = a.entry_date || '';
+        valB = b.entry_date || '';
+        break;
+      case 'symbol':
+        valA = a.sym || '';
+        valB = b.sym || '';
+        break;
+      case 'tags':
+        valA = (a.tags || []).join(',');
+        valB = (b.tags || []).join(',');
+        break;
+      case 'side':
+        valA = a.entry || '';
+        valB = b.entry || '';
+        break;
+      case 'entry_px':
+        valA = a.entry_price || 0;
+        valB = b.entry_price || 0;
+        break;
+      case 'exit_px':
+        valA = a.exit_price || 0;
+        valB = b.exit_price || 0;
+        break;
+      case 'entry_time':
+        valA = a.entry_time || '';
+        valB = b.entry_time || '';
+        break;
+      case 'exit_time':
+        valA = a.exit_time || '';
+        valB = b.exit_time || '';
+        break;
+      case 'duration':
+        valA = _durMin(a.entry_time, a.exit_time) || 0;
+        valB = _durMin(b.entry_time, b.exit_time) || 0;
+        break;
+      case 'qty':
+        valA = a.qty || 0;
+        valB = b.qty || 0;
+        break;
+      case 'points':
+        valA = a.entry === 'BUY' ? (a.exit_price || 0) - (a.entry_price || 0) : (a.entry_price || 0) - (a.exit_price || 0);
+        valB = b.entry === 'BUY' ? (b.exit_price || 0) - (b.entry_price || 0) : (b.entry_price || 0) - (b.exit_price || 0);
+        break;
+      case 'gross':
+        valA = a._gross || 0;
+        valB = b._gross || 0;
+        break;
+      case 'tax':
+        valA = a._tax || 0;
+        valB = b._tax || 0;
+        break;
+      case 'net':
+        valA = a._net || 0;
+        valB = b._net || 0;
+        break;
+      case 'ret_pct':
+        {
+          const invA = (a.qty || 0) * (a.entry_price || 0);
+          const invB = (b.qty || 0) * (b.entry_price || 0);
+          valA = invA > 0 ? (a._net || 0) / invA : 0;
+          valB = invB > 0 ? (b._net || 0) / invB : 0;
+        }
+        break;
+      case 'run_up':
+        {
+          let max_ltpA = null, min_ltpA = null;
+          if(a.tags) a.tags.forEach(tg => {
+            if(tg.startsWith('MAX_LTP:')) max_ltpA = parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltpA = parseFloat(tg.split(':')[1]);
+          });
+          if(a.entry_price > 0) {
+            if (max_ltpA !== null && a.entry === 'BUY') valA = (max_ltpA - a.entry_price) * a.qty;
+            else if (min_ltpA !== null && a.entry === 'SELL') valA = (a.entry_price - min_ltpA) * a.qty;
+            else valA = -Infinity;
+          } else {
+            valA = -Infinity;
+          }
+          
+          let max_ltpB = null, min_ltpB = null;
+          if(b.tags) b.tags.forEach(tg => {
+            if(tg.startsWith('MAX_LTP:')) max_ltpB = parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltpB = parseFloat(tg.split(':')[1]);
+          });
+          if(b.entry_price > 0) {
+            if (max_ltpB !== null && b.entry === 'BUY') valB = (max_ltpB - b.entry_price) * b.qty;
+            else if (min_ltpB !== null && b.entry === 'SELL') valB = (b.entry_price - min_ltpB) * b.qty;
+            else valB = -Infinity;
+          } else {
+            valB = -Infinity;
+          }
+        }
+        break;
+      case 'run_down':
+        {
+          let max_ltpA = null, min_ltpA = null;
+          if(a.tags) a.tags.forEach(tg => {
+            if(tg.startsWith('MAX_LTP:')) max_ltpA = parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltpA = parseFloat(tg.split(':')[1]);
+          });
+          if(a.entry_price > 0) {
+            if (min_ltpA !== null && a.entry === 'BUY') valA = (min_ltpA - a.entry_price) * a.qty;
+            else if (max_ltpA !== null && a.entry === 'SELL') valA = (a.entry_price - max_ltpA) * a.qty;
+            else valA = Infinity;
+          } else {
+            valA = Infinity;
+          }
+          
+          let max_ltpB = null, min_ltpB = null;
+          if(b.tags) b.tags.forEach(tg => {
+            if(tg.startsWith('MAX_LTP:')) max_ltpB = parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltpB = parseFloat(tg.split(':')[1]);
+          });
+          if(b.entry_price > 0) {
+            if (min_ltpB !== null && b.entry === 'BUY') valB = (min_ltpB - b.entry_price) * b.qty;
+            else if (max_ltpB !== null && b.entry === 'SELL') valB = (b.entry_price - max_ltpB) * b.qty;
+            else valB = Infinity;
+          } else {
+            valB = Infinity;
+          }
+        }
+        break;
+      case 'ltp':
+        {
+          const rawA = _ltpLive[a.sym];
+          valA = typeof rawA === 'number' ? rawA : (rawA?.ltp || a.entry_price || 0);
+          const rawB = _ltpLive[b.sym];
+          valB = typeof rawB === 'number' ? rawB : (rawB?.ltp || b.entry_price || 0);
+        }
+        break;
+      case 'pnl':
+        {
+          const rawA = _ltpLive[a.sym];
+          const ltpA = typeof rawA === 'number' ? rawA : (rawA?.ltp || a.entry_price || 0);
+          const ptsA = a.entry === 'BUY' ? ltpA - a.entry_price : a.entry_price - ltpA;
+          valA = ptsA * (a.qty || 0);
+
+          const rawB = _ltpLive[b.sym];
+          const ltpB = typeof rawB === 'number' ? rawB : (rawB?.ltp || b.entry_price || 0);
+          const ptsB = b.entry === 'BUY' ? ltpB - b.entry_price : b.entry_price - ltpB;
+          valB = ptsB * (b.qty || 0);
+        }
+        break;
+      case 'margin':
+        valA = a.margin_used || 0;
+        valB = b.margin_used || 0;
+        break;
+      default:
+        valA = a[col] || '';
+        valB = b[col] || '';
+    }
+
+    if (valA === valB) return 0;
+    if (valA == null || valA === '') return 1;
+    if (valB == null || valB === '') return -1;
+
+    if (typeof valA === 'string' && typeof valB === 'string') {
+      return isDesc ? valB.localeCompare(valA) : valA.localeCompare(valB);
+    } else {
+      return isDesc ? valB - valA : valA - valB;
+    }
+  });
+}
+
+function renderCachedOrders() {
+  if (!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
+  const d = window._lastOrdersData || {};
+  const det = d.details || [];
+  const opn = d.open || [];
+  const date = (document.getElementById('ord-date')||{}).value;
+  const ordDate = date;
+
+  const isCapBlocked = t => (t.tags||[]).some(tg => tg === 'CAPITAL_BLOCKED');
+  const opnBlocked = opn.filter(isCapBlocked);
+  const opnReal = opn.filter(t => !isCapBlocked(t));
 
   // ── SOURCE SUMMARY PILLS (STRATEGY, MANUAL, WEBHOOK) ──
   const srcTotals = { 'STRATEGY': {net:0, gross:0, n:0, w:0, opn:0}, 'MANUAL': {net:0, gross:0, n:0, w:0, opn:0}, 'WEBHOOK': {net:0, gross:0, n:0, w:0, opn:0} };
@@ -1380,27 +1701,60 @@ async function ordersRender(){
   _setHtml(document.getElementById('ord-summary'), sh ||
     '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
 
-  // ── COMPLETED TRADES (Date + Gross/Tax/Net — P&L charges view folded) ──
-  let ch = det.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
-  if(det.length){
-      ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-      + ['Date','Symbol','Tags','Side','Entry / Exit','In','Out','Dur','Qty','Points','Gross','Tax','Net','% Ret','Run-Up','Run-Down','Actions']
-        .map(h=>{const r=['Entry / Exit','Points','Gross','Tax','Net','% Ret','Run-Up','Run-Down'].includes(h),c=['In','Out','Dur','Actions'].includes(h);
-          return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
-      + '</tr></thead><tbody>';
+  // ── COMPLETED TRADES ──
+  let sortedCompleted = det.slice();
+  if (window._completedSortCol) {
+    _sortData(sortedCompleted, window._completedSortCol, window._completedSortDir);
+  } else {
+    sortedCompleted.reverse(); // Default to original reverse order
+  }
+
+  const _chartList = sortedCompleted.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate}));
+  localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
+
+  let ch = sortedCompleted.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
+  if(sortedCompleted.length){
+    const activeCols = window._ordCompletedCols.filter(c => c.on);
+    
+    ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">';
+    
+    activeCols.forEach(c => {
+      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+      const isCenter = ['entry_time','exit_time','duration','actions'].includes(c.id);
+      const alignStyle = isRight ? ';text-align:right' : (isCenter ? ';text-align:center' : '');
+      
+      let sortIndicator = '';
+      let sortCursor = 'cursor:pointer;';
+      if (c.id !== 'actions') {
+        if (window._completedSortCol === c.id) {
+          sortIndicator = window._completedSortDir === 'desc' ? ' ▼' : ' ▲';
+        } else {
+          sortIndicator = ' ↕';
+        }
+      } else {
+        sortCursor = '';
+      }
+      
+      const onclickAttr = c.id !== 'actions' ? ` onclick="toggleSort('completed', '${c.id}')"` : '';
+      ch += `<th style="padding:6px;font-weight:500;user-select:none;${sortCursor}${alignStyle}"${onclickAttr}>${c.l}${sortIndicator}</th>`;
+    });
+    
+    ch += '</tr></thead><tbody>';
+    
     let _tot = {g:0, tx:0, n:0, pts:0, inv:0};
-    const _dispTrades = det.slice().reverse();
-    const _chartList = _dispTrades.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate}));
-    localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
-    _dispTrades.forEach((t,_idx)=>{
-      const g=t._gross, tx=t._tax, n=t._net;
-      const nc=n>0?'#3fb950':(n<0?'#f85149':'#e6edf3'), gc=g>0?'#3fb950':(g<0?'#f85149':'#e6edf3');
+    
+    sortedCompleted.forEach((t, _idx) => {
+      const g = t._gross;
+      const tx = t._tax;
+      const n = t._net;
+      const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
+      const gc = g > 0 ? '#3fb950' : (g < 0 ? '#f85149' : '#e6edf3');
       
       const inv = t.qty * (t.entry_price || 0);
       const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
-      const rc = n>0?'#3fb950':(n<0?'#f85149':'#8b949e');
-      const pts = t.entry==='BUY' ? (t.exit_price||0)-(t.entry_price||0) : (t.entry_price||0)-(t.exit_price||0);
-      const ptsC = pts>0?'#3fb950':(pts<0?'#f85149':'#8b949e');
+      const rc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#8b949e');
+      const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
+      const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
       
       let max_pnl = '—', min_pnl = '—';
       let note = '';
@@ -1414,12 +1768,12 @@ async function ordersRender(){
         
         if(max_ltp !== null && t.entry_price > 0) {
             let pnl = (max_ltp - t.entry_price) * t.qty;
-            if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty; // For short, min_ltp gives max profit
+            if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty;
             if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl)}</span>`;
         }
         if(min_ltp !== null && t.entry_price > 0) {
             let pnl = (min_ltp - t.entry_price) * t.qty;
-            if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty; // For short, max_ltp gives max loss
+            if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty;
             if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl)}</span>`;
         }
       }
@@ -1427,58 +1781,174 @@ async function ordersRender(){
       let encNote = encodeURIComponent(note);
       let imgs = _imgTagsOf(t);
       let encImgs = encodeURIComponent(JSON.stringify(imgs));
-      let actions = `<span style="cursor:pointer" title="Premium chart (←/→ to move between trades)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx})">📈</span>`;
-      actions += ` <span style="cursor:pointer; margin-left:8px;" title="${note ? 'Edit Note' : 'Add Note'}" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝</span>`;
-
-      let dispNote = (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '') + _noteThumbs(t.id, imgs);
-
+      
+      const isNoteHidden = window._hiddenNotes.has(t.id);
+      let dispNote = '';
+      if (note || (imgs && imgs.length)) {
+        dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
+                 + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+                 + _noteThumbs(t.id, imgs)
+                 + `</div>`;
+      }
+      
       _tot.g += g; _tot.tx += tx; _tot.n += n; _tot.inv += inv; _tot.pts += pts;
-
-      ch += '<tr style="border-bottom:1px solid #21262d">'
-        + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
-        + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
-        + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
-        + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e;white-space:nowrap;vertical-align:top;line-height:1.5">'+Number(t.entry_price||0).toFixed(2)+'<br>'+Number(t.exit_price||0).toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.entry_time||'—')+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#6e7681;vertical-align:top;">'+(t.exit_time||'—')+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;color:#8b949e;white-space:nowrap;vertical-align:top;">'+_durFmt(t.entry_time,t.exit_time)+'</td>'
-        + '<td style="padding:7px 6px;vertical-align:top;">'+t.qty+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+ptsC+';vertical-align:top;">'+(pts>=0?'+':'')+pts.toFixed(2)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+gc+';vertical-align:top;">'+Math.round(g)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#f85149;vertical-align:top;">−'+Math.round(tx)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;font-weight:700;color:'+nc+';vertical-align:top;">'+Math.round(n)+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:'+rc+';vertical-align:top;">'+retPct+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+max_pnl+'</td>'
-        + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+min_pnl+'</td>'
-        + '<td style="padding:7px 6px;text-align:center;vertical-align:top;">'+actions+'</td>'
-        + '</tr>';
+      
+      ch += '<tr style="border-bottom:1px solid #21262d">';
+      
+      activeCols.forEach(c => {
+        let val = '';
+        let colorStyle = '';
+        
+        switch(c.id) {
+          case 'date':
+            val = t.entry_date || ordDate;
+            colorStyle = 'color:#6e7681;';
+            val = `<span style="white-space:nowrap;">${val}</span>`;
+            break;
+          case 'symbol':
+            val = `<b>${t.sym}</b>` + dispNote;
+            colorStyle = 'color:#adbac7;';
+            break;
+          case 'tags':
+            val = _ordTags(t);
+            break;
+          case 'side':
+            val = t.entry;
+            colorStyle = 'color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + ';font-weight:600;';
+            break;
+          case 'entry_px':
+            val = Number(t.entry_price || 0).toFixed(2);
+            colorStyle = 'color:#8b949e;';
+            break;
+          case 'exit_px':
+            val = Number(t.exit_price || 0).toFixed(2);
+            colorStyle = 'color:#8b949e;';
+            break;
+          case 'entry_time':
+            val = t.entry_time || '—';
+            colorStyle = 'color:#6e7681;';
+            break;
+          case 'exit_time':
+            val = t.exit_time || '—';
+            colorStyle = 'color:#6e7681;';
+            break;
+          case 'duration':
+            val = _durFmt(t.entry_time, t.exit_time);
+            colorStyle = 'color:#8b949e;';
+            val = `<span style="white-space:nowrap;">${val}</span>`;
+            break;
+          case 'qty':
+            val = t.qty;
+            break;
+          case 'points':
+            val = (pts >= 0 ? '+' : '') + pts.toFixed(2);
+            colorStyle = 'color:' + ptsC + ';';
+            break;
+          case 'gross':
+            val = Math.round(g);
+            colorStyle = 'color:' + gc + ';';
+            break;
+          case 'tax':
+            val = '−' + Math.round(tx);
+            colorStyle = 'color:#f85149;';
+            break;
+          case 'net':
+            val = Math.round(n);
+            colorStyle = 'color:' + nc + ';font-weight:700;';
+            break;
+          case 'ret_pct':
+            val = retPct;
+            colorStyle = 'color:' + rc + ';';
+            break;
+          case 'run_up':
+            val = max_pnl;
+            break;
+          case 'run_down':
+            val = min_pnl;
+            break;
+          case 'actions':
+            val = `
+              <div class="dropdown">
+                <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
+                <div id="dropdown-${t.id}" class="dropdown-content">
+                  <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+                  <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx})">📈 Chart</a>
+                  <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
+                </div>
+              </div>`;
+            break;
+        }
+        
+        const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+        const isCenter = ['entry_time','exit_time','duration','actions'].includes(c.id);
+        const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+        
+        ch += `<td style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
+      });
+      
+      ch += '</tr>';
     });
+    
     const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
-    ch += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">'
-      + '<td colspan="9" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.pts>=0?'#3fb950':'#f85149')+'">'+(_tot.pts>=0?'+':'')+_tot.pts.toFixed(2)+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.g>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.g)+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:#f85149">−'+Math.round(_tot.tx)+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+Math.round(_tot.n)+'</td>'
-      + '<td style="padding:7px 6px;text-align:right;color:'+(_tot.n>=0?'#3fb950':'#f85149')+'">'+_totRetPct+'</td>'
-      + '<td colspan="3"></td>'
-      + '</tr></tfoot></table>';
+    ch += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">';
+    
+    activeCols.forEach((c, idx) => {
+      let val = '';
+      let colorStyle = '';
+      
+      if (idx === 0) {
+        val = 'TOTAL';
+        colorStyle = 'color:#8b949e;';
+      } else {
+        switch(c.id) {
+          case 'points':
+            val = (_tot.pts >= 0 ? '+' : '') + _tot.pts.toFixed(2);
+            colorStyle = 'color:' + (_tot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
+            break;
+          case 'gross':
+            val = Math.round(_tot.g);
+            colorStyle = 'color:' + (_tot.g >= 0 ? '#3fb950' : '#f85149') + ';';
+            break;
+          case 'tax':
+            val = '−' + Math.round(_tot.tx);
+            colorStyle = 'color:#f85149;';
+            break;
+          case 'net':
+            val = Math.round(_tot.n);
+            colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+            break;
+          case 'ret_pct':
+            val = _totRetPct;
+            colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+            break;
+        }
+      }
+      
+      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+      const isCenter = ['entry_time','exit_time','duration','actions'].includes(c.id);
+      const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+      
+      ch += `<td style="padding:7px 6px;${alignStyle}${colorStyle}">${val}</td>`;
+    });
+    
+    ch += '</tr></tfoot></table>';
   }
   _setHtml(document.getElementById('ord-completed'), ch);
 
-  // ── OPEN POSITIONS (#2: chart + live LTP/Points/Unrealized P&L + Close) ──
-  // Flicker fix: list same ho to table rebuild NA karo — sirf live cells patch.
+  // ── OPEN POSITIONS ──
   const ordOpenEl = document.getElementById('ord-open');
+  const activeOpenColsStr = window._ordOpenCols.filter(c => c.on).map(c => c.id).join(',');
   const openFp = opnReal.map(t=>`${t.sym}|${t.entry}|${t.entry_price}|${t.qty}|${t.mode}|${t.source}|${t.strategy}`).join(',')
-               + '|blocked:' + opnBlocked.map(t=>t.id).join(',');
+               + '|blocked:' + opnBlocked.map(t=>t.id).join(',')
+               + '|sort:' + window._openSortCol + '|dir:' + window._openSortDir
+               + '|cols:' + activeOpenColsStr;
+               
   if(!opnReal.length && !opnBlocked.length){
     _setHtml(ordOpenEl, '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
     ordOpenEl.dataset.fp='';
   } else if(ordOpenEl.dataset.fp === openFp){
-    _patchLtpCells();   // structure same — sirf LTP/Points/P&L refresh, koi flash nahi
+    _patchLtpCells();
   } else {
-    // 🚫 Capital-blocked signals — never a real order, shown so the entry isn't silently lost.
     let blockedHtml = '';
     if(opnBlocked.length){
       blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
@@ -1507,9 +1977,15 @@ async function ordersRender(){
     });
     
     let oh = '';
+    const activeOpenCols = window._ordOpenCols.filter(c => c.on);
     
     for(let stratKey in grouped) {
-      let items = grouped[stratKey];
+      let items = grouped[stratKey].slice();
+      
+      if (window._openSortCol) {
+        _sortData(items, window._openSortCol, window._openSortDir);
+      }
+      
       let stratName = stratKey;
       let stratDesc = '';
       if (stratKey.includes(' | ')) {
@@ -1519,12 +1995,32 @@ async function ordersRender(){
       }
       
       const grpId = 'grp_'+stratKey.replace(/[^a-z0-9]/gi,'_');
-      let tableHtml = '<table id="'+grpId+'" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">'
-        + ['Date','Symbol','Tags','Side','Entry / LTP','Points','P&L','% Ret','Margin','Run-Up','Run-Down','Qty','Chart','Actions']
-          .map(h=>{const r=['Entry / LTP','Points','P&L','% Ret','Margin','Run-Up','Run-Down'].includes(h),c=['Chart','Actions'].includes(h);
-            return '<th style="padding:6px;font-weight:500'+(r?';text-align:right':(c?';text-align:center':''))+'">'+h+'</th>';}).join('')
-        + '</tr></thead><tbody>';
+      let tableHtml = '<table id="'+grpId+'" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">';
+      
+      activeOpenCols.forEach(c => {
+        const isRight = ['entry_px','ltp','points','pnl','ret_pct','margin','run_up','run_down'].includes(c.id);
+        const isCenter = ['entry_time','qty','chart','actions'].includes(c.id);
+        const alignStyle = isRight ? ';text-align:right' : (isCenter ? ';text-align:center' : '');
+        
+        let sortIndicator = '';
+        let sortCursor = 'cursor:pointer;';
+        if (c.id !== 'actions' && c.id !== 'chart') {
+          if (window._openSortCol === c.id) {
+            sortIndicator = window._openSortDir === 'desc' ? ' ▼' : ' ▲';
+          } else {
+            sortIndicator = ' ↕';
+          }
+        } else {
+          sortCursor = '';
+        }
+        
+        const onclickAttr = (c.id !== 'actions' && c.id !== 'chart') ? ` onclick="toggleSort('open', '${c.id}')"` : '';
+        tableHtml += `<th style="padding:6px;font-weight:500;user-select:none;${sortCursor}${alignStyle}"${onclickAttr}>${c.l}${sortIndicator}</th>`;
+      });
+      
+      tableHtml += '</tr></thead><tbody>';
       let grpMargin = 0;
+      
       items.forEach(t=>{
         const entry=Number(t.entry_price||0), qty=t.qty||0;
         const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
@@ -1557,10 +2053,15 @@ async function ordersRender(){
         let encNote = encodeURIComponent(note);
         let imgs = _imgTagsOf(t);
         let encImgs = encodeURIComponent(JSON.stringify(imgs));
-        let actions = `<button onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="Set SL/Target">⚙️</button>`;
-        actions += `<button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="margin-right:5px;padding:3px;background:transparent;border:none;cursor:pointer;font-size:12px" title="${note ? 'Edit Note' : 'Add Note'}">📝</button>`;
-
-        let dispNote = (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '') + _noteThumbs(t.id, imgs);
+        
+        const isNoteHidden = window._hiddenNotes.has(t.id);
+        let dispNote = '';
+        if (note || (imgs && imgs.length)) {
+          dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
+                   + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+                   + _noteThumbs(t.id, imgs)
+                   + `</div>`;
+        }
 
         const margin = t.margin_used!=null ? Number(t.margin_used) : null;
         grpMargin += margin || 0;
@@ -1580,37 +2081,98 @@ async function ordersRender(){
           }
         }
 
-        tableHtml += '<tr style="border-bottom:1px solid #21262d">'
-          + '<td style="padding:7px 6px;color:#6e7681;white-space:nowrap;vertical-align:top;">'+(t.entry_date||ordDate)+'</td>'
-          + '<td style="padding:7px 6px;color:#adbac7;vertical-align:top;">'+t.sym+dispNote+'</td>'
-          + '<td style="padding:7px 6px;vertical-align:top;">'+_ordTags(t)+'</td>'
-          + '<td style="padding:7px 6px;color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;vertical-align:top;">'+t.entry+'</td>'
-          + '<td style="padding:7px 6px;white-space:nowrap;color:#8b949e;vertical-align:top;line-height:1.5">'+entry.toFixed(2)+' ('+t.entry_time+')'+sltp_disp+'<br><span class="ltp-cell" style="color:#e6edf3" data-sym="'+t.sym+'" data-entry="'+entry+'" data-side="'+t.entry+'" data-qty="'+qty+'">⏳</span></td>'
-          + '<td class="pts-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
-          + '<td class="unrl-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
-          + '<td class="ret-cell" data-sym="'+t.sym+'" style="padding:7px 6px;text-align:right;font-weight:700;vertical-align:top;">—</td>'
-          + '<td style="padding:7px 6px;text-align:right;color:#8b949e;vertical-align:top;">'+(margin!=null?Math.round(margin):'—')+'</td>'
-          + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+runup+'</td>'
-          + '<td style="padding:7px 6px;text-align:right;vertical-align:top;">'+rundown+'</td>'
-          + '<td style="padding:7px 6px;vertical-align:top;">'+qty+'</td>'
-          + '<td style="padding:7px 6px;text-align:center;vertical-align:top;"><span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+entry+',0,\''+t.entry_time+'\',\'\','+qty+',\''+(t.entry_date||ordDate)+'\')">📈</span></td>'
-          + '<td style="padding:7px 6px;text-align:center;white-space:nowrap;vertical-align:top;">'
-            + actions
-            + '<button id="'+bId+'" onclick="closePosition(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\',\''+bId+'\')" '
-            + 'style="margin-left:5px;padding:4px 10px;background:'+cbc+'20;border:1px solid '+cbc+'80;border-radius:5px;color:'+cbc+';font-size:11px;font-weight:700;cursor:pointer">'+closeSide+' ✕</button>'
-            + '<button title="Book se hatao" onclick="bookClose(\''+argEsc(t.sym)+'\',\''+t.entry+'\','+qty+','+entry+',\''+(t.mode||'paper')+'\',\''+argEsc(t.source)+'\',\''+argEsc(t.strategy)+'\')" '
-            + 'style="margin-left:5px;padding:4px 8px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;cursor:pointer">🗑</button></td>'
-          + '</tr>';
+        tableHtml += '<tr style="border-bottom:1px solid #21262d">';
+        
+        activeOpenCols.forEach(c => {
+          let val = '';
+          let colorStyle = '';
+          
+          switch(c.id) {
+            case 'date':
+              val = t.entry_date || ordDate;
+              colorStyle = 'color:#6e7681;';
+              val = `<span style="white-space:nowrap;">${val}</span>`;
+              break;
+            case 'symbol':
+              val = `<b>${t.sym}</b>` + dispNote;
+              colorStyle = 'color:#adbac7;';
+              break;
+            case 'tags':
+              val = _ordTags(t);
+              break;
+            case 'side':
+              val = t.entry;
+              colorStyle = 'color:'+(t.entry==='BUY'?'#3fb950':'#f85149')+';font-weight:600;';
+              break;
+            case 'entry_px':
+              val = entry.toFixed(2);
+              colorStyle = 'color:#8b949e;';
+              break;
+            case 'ltp':
+              val = `<span class="ltp-cell" style="color:#e6edf3" data-sym="${t.sym}" data-entry="${entry}" data-side="${t.entry}" data-qty="${qty}">⏳</span>`;
+              break;
+            case 'entry_time':
+              val = (t.entry_time || '') + sltp_disp;
+              colorStyle = 'color:#8b949e;';
+              break;
+            case 'points':
+              val = `<span class="pts-cell" data-sym="${t.sym}" style="font-weight:700;">—</span>`;
+              break;
+            case 'pnl':
+              val = `<span class="unrl-cell" data-sym="${t.sym}" style="font-weight:700;">—</span>`;
+              break;
+            case 'ret_pct':
+              val = `<span class="ret-cell" data-sym="${t.sym}" style="font-weight:700;">—</span>`;
+              break;
+            case 'margin':
+              val = margin!=null ? Math.round(margin) : '—';
+              colorStyle = 'color:#8b949e;';
+              break;
+            case 'run_up':
+              val = runup;
+              break;
+            case 'run_down':
+              val = rundown;
+              break;
+            case 'qty':
+              val = qty;
+              break;
+            case 'chart':
+              val = `<span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}')">📈</span>`;
+              break;
+            case 'actions':
+              val = `
+                <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                  <button id="${bId}" onclick="closePosition('${argEsc(t.sym)}','${t.entry}',${qty},'${t.mode||'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}','${bId}')"
+                    style="padding:4px 10px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer">
+                    ${closeSide} ✕
+                  </button>
+                  <div class="dropdown">
+                    <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
+                    <div id="dropdown-${t.id}" class="dropdown-content">
+                      <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}')">📈 Chart</a>
+                      <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')">⚙️ SL/Target</a>
+                      <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+                      <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
+                      <a href="javascript:void(0)" onclick="bookClose('${argEsc(t.sym)}','${t.entry}',${qty},${entry},'${t.mode||'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}')" style="color:#f85149">🗑 Remove from Book</a>
+                    </div>
+                  </div>
+                </div>`;
+              break;
+          }
+          
+          const isRight = ['entry_px','ltp','points','pnl','ret_pct','margin','run_up','run_down'].includes(c.id);
+          const isCenter = ['entry_time','qty','chart','actions'].includes(c.id);
+          const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+          
+          tableHtml += `<td style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
+        });
+        
+        tableHtml += '</tr>';
       });
-      tableHtml += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">'
-        + '<td colspan="5" style="padding:7px 6px;color:#8b949e">TOTAL</td>'
-        + '<td class="grp-tot-pts" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
-        + '<td class="grp-tot-unrl" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
-        + '<td class="grp-tot-ret" data-grp="'+grpId+'" style="padding:7px 6px;text-align:right">—</td>'
-        + '<td style="padding:7px 6px;text-align:right;color:#8b949e">'+Math.round(grpMargin)+'</td>'
-        + '<td colspan="4"></td>'
-        + '</tr></tfoot></table>';
-
+      
+      tableHtml += '</tr></tfoot></table>';
+      
       oh += `
       <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
@@ -1630,7 +2192,7 @@ async function ordersRender(){
     
     ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>'));
     ordOpenEl.dataset.fp = openFp;
-    _patchLtpCells(); _fetchPositionLtp();   // cache se turant bharo, phir fresh fetch
+    _patchLtpCells(); _fetchPositionLtp();
   }
 }
 
@@ -2057,74 +2619,93 @@ function calcCharges(entryPx, exitPx, qty, entrySide) {
 }
 
 // ── COLUMN PREFS (localStorage) ──────────────────────────────────────────────
+const COMPLETED_COLS_DEF = [
+  {id:'date',       l:'Date',        a:'left',   on:true,  fixed:true},
+  {id:'symbol',     l:'Symbol',      a:'left',   on:true,  fixed:true},
+  {id:'tags',       l:'Tags',        a:'left',   on:true},
+  {id:'side',       l:'Side',        a:'center', on:true},
+  {id:'entry_px',   l:'Entry Px',    a:'right',  on:true},
+  {id:'exit_px',    l:'Exit Px',     a:'right',  on:true},
+  {id:'entry_time', l:'In',          a:'center', on:true},
+  {id:'exit_time',  l:'Out',         a:'center', on:true},
+  {id:'duration',   l:'Dur',         a:'center', on:true},
+  {id:'qty',        l:'Qty',         a:'left',   on:true},
+  {id:'points',     l:'Points',      a:'right',  on:true},
+  {id:'gross',      l:'Gross',       a:'right',  on:true},
+  {id:'tax',        l:'Tax',         a:'right',  on:true},
+  {id:'net',        l:'Net',         a:'right',  on:true},
+  {id:'ret_pct',    l:'% Ret',       a:'right',  on:true},
+  {id:'run_up',     l:'Run-Up',      a:'right',  on:true},
+  {id:'run_down',   l:'Run-Down',    a:'right',  on:true},
+  {id:'actions',    l:'Actions',     a:'center', on:true,  fixed:true}
+];
+
 const OPEN_COLS_DEF = [
-  {id:'symbol',   l:'Symbol',           a:'left',   on:true,  fixed:true},
-  {id:'strategy', l:'Strategy',         a:'center', on:true},
-  {id:'side',     l:'Side',             a:'center', on:true,  fixed:true},
-  {id:'entry_time',l:'Entry Time',      a:'center', on:true},
-  {id:'exit_time', l:'Exit Time',       a:'center', on:false},
-  {id:'capital',  l:'Capital Invested', a:'right',  on:false},
-  {id:'entry_px', l:'Entry ₹',         a:'right',  on:true},
-  {id:'ltp',      l:'LTP',             a:'right',  on:true},
-  {id:'points',   l:'Points',          a:'right',  on:true},
-  {id:'qty',      l:'Qty',             a:'center', on:true},
-  {id:'unrealized',l:'Unrealized',     a:'right',  on:true},
-  {id:'chart',    l:'Chart',           a:'center', on:true, fixed:true},
-  {id:'action',   l:'',                a:'center', on:true,  fixed:true},
-];
-const CLOSED_COLS_DEF = [
-  {id:'symbol',   l:'Symbol',           a:'left',   on:true,  fixed:true},
-  {id:'strategy', l:'Strategy',         a:'center', on:true},
-  {id:'side',     l:'Side',             a:'center', on:true,  fixed:true},
-  {id:'entry_time',l:'Entry Time',      a:'center', on:true},
-  {id:'entry_px', l:'Entry ₹',         a:'right',  on:true},
-  {id:'exit_time', l:'Exit Time',       a:'center', on:true},
-  {id:'exit_px',  l:'Exit ₹',          a:'right',  on:true},
-  {id:'qty',      l:'Qty',             a:'center', on:true},
-  {id:'capital',  l:'Capital Invested', a:'right',  on:false},
-  {id:'gross',    l:'Gross P&L',        a:'right',  on:true},
-  {id:'tax',      l:'Tax & Charges',    a:'right',  on:true},
-  {id:'net',      l:'Net P&L',          a:'right',  on:true},
+  {id:'date',       l:'Date',        a:'left',   on:true,  fixed:true},
+  {id:'symbol',     l:'Symbol',      a:'left',   on:true,  fixed:true},
+  {id:'tags',       l:'Tags',        a:'left',   on:true},
+  {id:'side',       l:'Side',        a:'center', on:true},
+  {id:'entry_px',   l:'Entry Px',    a:'right',  on:true},
+  {id:'ltp',        l:'LTP',         a:'right',  on:true},
+  {id:'entry_time', l:'Entry Time',  a:'center', on:true},
+  {id:'points',     l:'Points',      a:'right',  on:true},
+  {id:'pnl',        l:'P&L',         a:'right',  on:true},
+  {id:'ret_pct',    l:'% Ret',       a:'right',  on:true},
+  {id:'margin',     l:'Margin',      a:'right',  on:true},
+  {id:'run_up',     l:'Run-Up',      a:'right',  on:true},
+  {id:'run_down',   l:'Run-Down',    a:'right',  on:true},
+  {id:'qty',        l:'Qty',         a:'left',   on:true},
+  {id:'chart',      l:'Chart',       a:'center', on:false},
+  {id:'actions',    l:'Actions',     a:'center', on:true,  fixed:true}
 ];
 
-let _openCols   = null;
-let _closedCols = null;
+window._ordCompletedCols = null;
+window._ordOpenCols = null;
 
-function _loadColPrefs() {
+function _loadOrdColPrefs() {
   try {
-    const o = localStorage.getItem('pnl_open_cols');
-    const c = localStorage.getItem('pnl_closed_cols');
-    _openCols   = o ? JSON.parse(o) : JSON.parse(JSON.stringify(OPEN_COLS_DEF));
-    _closedCols = c ? JSON.parse(c) : JSON.parse(JSON.stringify(CLOSED_COLS_DEF));
-    // Force inject missing fixed columns (like chart) into cached layout
-    OPEN_COLS_DEF.filter(x=>x.fixed).forEach(def => {
-      if(!_openCols.find(x=>x.id===def.id)) _openCols.push(JSON.parse(JSON.stringify(def)));
+    const c = localStorage.getItem('ord_completed_cols');
+    const o = localStorage.getItem('ord_open_cols');
+    window._ordCompletedCols = c ? JSON.parse(c) : JSON.parse(JSON.stringify(COMPLETED_COLS_DEF));
+    window._ordOpenCols = o ? JSON.parse(o) : JSON.parse(JSON.stringify(OPEN_COLS_DEF));
+    
+    COMPLETED_COLS_DEF.forEach(def => {
+      if(!window._ordCompletedCols.find(x=>x.id===def.id)) {
+        window._ordCompletedCols.push(JSON.parse(JSON.stringify(def)));
+      }
+    });
+    OPEN_COLS_DEF.forEach(def => {
+      if(!window._ordOpenCols.find(x=>x.id===def.id)) {
+        window._ordOpenCols.push(JSON.parse(JSON.stringify(def)));
+      }
     });
   } catch(e) {
-    _openCols   = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
-    _closedCols = JSON.parse(JSON.stringify(CLOSED_COLS_DEF));
+    window._ordCompletedCols = JSON.parse(JSON.stringify(COMPLETED_COLS_DEF));
+    window._ordOpenCols = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
   }
-}
-function _colVisible(cols, id) {
-  const c = cols.find(x=>x.id===id);
-  return c ? c.on : true;
 }
 
 function openColModal() {
-  if(!_openCols) _loadColPrefs();
+  if(!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
+  
   const renderList = (elId, defs) => {
     const el = document.getElementById(elId);
     el.innerHTML = defs.map(c => `
       <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d1117;border-radius:6px;cursor:${c.fixed?'default':'pointer'};opacity:${c.fixed?'.5':'1'}">
         <input type="checkbox" data-col="${c.id}" ${c.on?'checked':''} ${c.fixed?'disabled':''} style="accent-color:#1f6feb;width:14px;height:14px">
-        <span style="font-size:12px;color:#e6edf3">${c.l||'Action'}</span>
+        <span style="font-size:12px;color:#e6edf3">${c.l}</span>
       </label>`).join('');
   };
-  renderList('col-open-list',   _openCols);
-  renderList('col-closed-list', _closedCols);
+  
+  renderList('col-completed-list', window._ordCompletedCols);
+  renderList('col-open-list', window._ordOpenCols);
   document.getElementById('col-modal').style.display = 'flex';
 }
-function closeColModal() { document.getElementById('col-modal').style.display='none'; }
+
+function closeColModal() {
+  document.getElementById('col-modal').style.display = 'none';
+}
+
 function saveColPrefs() {
   const read = (elId, cols) => {
     document.querySelectorAll(`#${elId} input[data-col]`).forEach(inp => {
@@ -2132,21 +2713,24 @@ function saveColPrefs() {
       if(c && !c.fixed) c.on = inp.checked;
     });
   };
-  read('col-open-list',   _openCols);
-  read('col-closed-list', _closedCols);
-  localStorage.setItem('pnl_open_cols',   JSON.stringify(_openCols));
-  localStorage.setItem('pnl_closed_cols', JSON.stringify(_closedCols));
+  read('col-completed-list', window._ordCompletedCols);
+  read('col-open-list', window._ordOpenCols);
+  localStorage.setItem('ord_completed_cols', JSON.stringify(window._ordCompletedCols));
+  localStorage.setItem('ord_open_cols', JSON.stringify(window._ordOpenCols));
   closeColModal();
-  updatePnl();
+  renderCachedOrders();
 }
+
 function resetColPrefs() {
-  _openCols   = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
-  _closedCols = JSON.parse(JSON.stringify(CLOSED_COLS_DEF));
-  localStorage.removeItem('pnl_open_cols');
-  localStorage.removeItem('pnl_closed_cols');
+  window._ordCompletedCols = JSON.parse(JSON.stringify(COMPLETED_COLS_DEF));
+  window._ordOpenCols = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
+  localStorage.removeItem('ord_completed_cols');
+  localStorage.removeItem('ord_open_cols');
   closeColModal();
-  updatePnl();
+  renderCachedOrders();
 }
+
+_loadOrdColPrefs();
 
 let _pnlTagMap = {};   // "sym|entry_time" -> trade-DB row (source/mode/strategy tags)
 function _pnlTagChips(d){
@@ -2653,7 +3237,7 @@ loadAll();
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-  <input id="qo-lots" type="number" value="1" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
+  <input id="qo-lots" type="number" value="3" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
   <span style="font-size:11px;color:#8b949e">= <span id="qo-qty-num" style="color:#e6edf3;font-weight:bold">65</span> qty <span style="color:#444;font-size:10px">(1L=<span id="qo-ls">65</span>)</span></span>
 </div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
