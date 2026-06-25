@@ -976,11 +976,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
             <th style="padding:6px; font-weight:500;">Date</th>
             <th style="padding:6px; font-weight:500; text-align:center;">Trades Count</th>
-            <th style="padding:6px; font-weight:500; text-align:center;">W</th>
-            <th style="padding:6px; font-weight:500; text-align:center;">L</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">W/L</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">Win %</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Gross</th>
             <th style="padding:6px; font-weight:500; text-align:right;">Tax</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Net P&amp;L</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Gross P&amp;L</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Net</th>
           </tr>
         </thead>
         <tbody id="cal-day-totals-tbody">
@@ -6142,22 +6142,26 @@ async function calendarRender() {
         const tax = stat.tax;
         
         const grossColor = gross >= 0 ? '#3fb950' : '#f85149';
-        const grossText = `${gross >= 0 ? '+' : ''}₹${Math.round(gross)}`;
+        const grossText = Math.round(gross).toLocaleString('en-IN');
         
         const netColor = net >= 0 ? '#3fb950' : '#f85149';
-        const netText = `${net >= 0 ? '+' : ''}₹${Math.round(net)}`;
+        const netText = Math.round(net).toLocaleString('en-IN');
         
-        const taxText = `₹${Math.round(tax)}`;
+        const taxText = Math.round(tax).toLocaleString('en-IN');
+        
+        const winRate = stat.count > 0 ? Math.round((stat.wins / stat.count) * 100) : 0;
         
         dayHtml += `
           <tr style="border-bottom:1px solid #21262d; cursor:pointer;" onclick="calSelectDate('${dateStr}')" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
             <td style="padding:8px; color:#adbac7;">${dateStr}</td>
             <td style="padding:8px; text-align:center; color:#8b949e;">${stat.count}</td>
-            <td style="padding:8px; text-align:center; color:#3fb950; font-weight:600;">${stat.wins}</td>
-            <td style="padding:8px; text-align:center; color:#f85149; font-weight:600;">${stat.losses}</td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">
+              <span style="color:#3fb950; font-weight:600;">${stat.wins}</span> / <span style="color:#f85149; font-weight:600;">${stat.losses}</span>
+            </td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">${winRate}%</td>
+            <td style="padding:8px; text-align:right; color:${grossColor}; font-weight:600;">${grossText}</td>
             <td style="padding:8px; text-align:right; color:#8b949e;">${taxText}</td>
             <td style="padding:8px; text-align:right; color:${netColor}; font-weight:600;">${netText}</td>
-            <td style="padding:8px; text-align:right; color:${grossColor}; font-weight:600;">${grossText}</td>
           </tr>
         `;
       });
