@@ -976,7 +976,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
             <th style="padding:6px; font-weight:500;">Date</th>
             <th style="padding:6px; font-weight:500; text-align:center;">Trades Count</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">P&amp;L</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">W</th>
+            <th style="padding:6px; font-weight:500; text-align:center;">L</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Tax</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Net P&amp;L</th>
+            <th style="padding:6px; font-weight:500; text-align:right;">Gross P&amp;L</th>
           </tr>
         </thead>
         <tbody id="cal-day-totals-tbody">
@@ -6070,24 +6074,90 @@ async function calendarRender() {
   // Draw Equity Curve Chart
   drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades);
 
+  // Group trades by date and compute stats
+  const dayStats = {};
+  const trades = d.trades || [];
+  trades.forEach(t => {
+    const dateStr = t.exit_date || t.entry_date;
+    if (!dateStr) return;
+    if (!dayStats[dateStr]) {
+      dayStats[dateStr] = { count: 0, wins: 0, losses: 0, tax: 0, gross: 0, net: 0 };
+    }
+    
+    const stat = dayStats[dateStr];
+    stat.count++;
+    
+    const ep = t.entry_price || 0;
+    const xp = t.exit_price || 0;
+    const qty = t.qty || 0;
+    const entrySide = t.entry || 'BUY';
+    
+    // Calculate gross
+    let gross = t.pnl;
+    if (gross == null) {
+      gross = (xp - ep) * qty;
+      if (entrySide === 'SELL') gross = (ep - xp) * qty;
+    }
+    
+    // Calculate charges
+    let tax = 0;
+    if (typeof calcCharges === 'function') {
+      tax = calcCharges(ep, xp, qty, entrySide) || 0;
+    }
+    
+    const net = gross - tax;
+    
+    stat.gross += gross;
+    stat.tax += tax;
+    stat.net += net;
+    
+    if (net > 0) {
+      stat.wins++;
+    } else if (net < 0) {
+      stat.losses++;
+    }
+  });
+
   // Render Day Totals table
   const dayTotalsBody = document.getElementById('cal-day-totals-tbody');
   if (dayTotalsBody) {
     const sortedDates = Object.keys(summary).sort((a, b) => b.localeCompare(a));
     let dayHtml = '';
     if (sortedDates.length === 0) {
-      dayHtml = `<tr><td colspan="3" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
+      dayHtml = `<tr><td colspan="7" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
     } else {
       sortedDates.forEach(dateStr => {
-        const day = summary[dateStr];
-        const pnl = day.pnl || 0;
-        const pnlColor = pnl >= 0 ? '#3fb950' : '#f85149';
-        const pnlText = `${pnl >= 0 ? '+' : ''}₹${Math.round(pnl)}`;
+        const daySummary = summary[dateStr] || {};
+        const stat = dayStats[dateStr] || {
+          count: daySummary.count || 0,
+          wins: 0,
+          losses: 0,
+          tax: 0,
+          gross: daySummary.pnl || 0,
+          net: daySummary.pnl || 0
+        };
+        
+        const gross = stat.gross;
+        const net = stat.net;
+        const tax = stat.tax;
+        
+        const grossColor = gross >= 0 ? '#3fb950' : '#f85149';
+        const grossText = `${gross >= 0 ? '+' : ''}₹${Math.round(gross)}`;
+        
+        const netColor = net >= 0 ? '#3fb950' : '#f85149';
+        const netText = `${net >= 0 ? '+' : ''}₹${Math.round(net)}`;
+        
+        const taxText = `₹${Math.round(tax)}`;
+        
         dayHtml += `
           <tr style="border-bottom:1px solid #21262d; cursor:pointer;" onclick="calSelectDate('${dateStr}')" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
             <td style="padding:8px; color:#adbac7;">${dateStr}</td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">${day.count}</td>
-            <td style="padding:8px; text-align:right; color:${pnlColor}; font-weight:600;">${pnlText}</td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">${stat.count}</td>
+            <td style="padding:8px; text-align:center; color:#3fb950; font-weight:600;">${stat.wins}</td>
+            <td style="padding:8px; text-align:center; color:#f85149; font-weight:600;">${stat.losses}</td>
+            <td style="padding:8px; text-align:right; color:#8b949e;">${taxText}</td>
+            <td style="padding:8px; text-align:right; color:${netColor}; font-weight:600;">${netText}</td>
+            <td style="padding:8px; text-align:right; color:${grossColor}; font-weight:600;">${grossText}</td>
           </tr>
         `;
       });
