@@ -22,3 +22,8 @@ rsi_config.json
 # Health-check + alert runtime output (per-run, har baar badalta)
 data/health_report.json
 data/downloader_alert.json
+
+# Runtime data — local/VPS only, code nahi (large, har run badalta)
+_TRADING_DATA/
+data/note_images/
+data/shared_ltp_cache.json

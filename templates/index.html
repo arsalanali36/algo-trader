@@ -705,13 +705,13 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </style>
 
   <!-- Trade-entry list grouped by day, 1-2 column responsive -->
-  <div class="card" style="margin-top:16px; padding:16px 18px;">
+  <div class="card" style="margin-top:16px; padding:16px 18px; display: none;">
     <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">🗂 Trade Entries (grouped by day)</h3>
     <div id="stats-grouped-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px"></div>
   </div>
 
   <!-- Closed positions — toggleable columns -->
-  <div class="card" style="margin-top:16px; padding:16px 18px;">
+  <div class="card" style="margin-top:16px; padding:16px 18px; display: none;">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h3 style="color:#e6edf3; font-size:13px; font-weight:600;">📋 Closed Positions</h3>
       <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openStatsColModal()">⚙️ Columns</button>
