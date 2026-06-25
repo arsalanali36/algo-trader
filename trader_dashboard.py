@@ -2773,8 +2773,14 @@ def pos_monitor_loop():
                 if not p.get("tags") and not p.get("sec_id"): continue
                 sec_id = p.get("sec_id")
                 if not sec_id: continue
-                
+
                 tags = p.get("tags") or []
+                # CAPITAL_BLOCKED legs are not real holdings — they're rejected
+                # entries recorded for visibility (status='blocked'). Never
+                # square them off (would create a phantom opposite trade); they
+                # carry no live exposure for SL/TP/RMS to act on.
+                if p.get("status") == "blocked" or "CAPITAL_BLOCKED" in tags:
+                    continue
                 
                 seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
                 _feed_subscribe([(seg, sec_id)])
