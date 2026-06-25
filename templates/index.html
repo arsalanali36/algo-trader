@@ -2149,6 +2149,7 @@ function toggleNoteDesc(tradeId) {
 
 function toggleAllNotes(show) {
   localStorage.setItem('global_notes_show', show ? 'true' : 'false');
+  saveUiConfigToBackend('global_notes_show', show ? 'true' : 'false');
   const elements = document.querySelectorAll('[id^="note-wrapper-"]');
   elements.forEach(el => {
     el.style.display = show ? '' : 'none';
@@ -2171,7 +2172,7 @@ function toggleAllNotes(show) {
 }
 
 function initGlobalNotesToggle() {
-  const globalShow = localStorage.getItem('global_notes_show') !== 'false';
+  const globalShow = localStorage.getItem('global_notes_show') === 'true';
   const toggleInput = document.getElementById('global-notes-toggle');
   if (toggleInput) {
     toggleInput.checked = globalShow;
@@ -2468,7 +2469,7 @@ function renderCachedOrders() {
       let imgs = _imgTagsOf(t);
       let encImgs = encodeURIComponent(JSON.stringify(imgs));
       
-      const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
+      const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
       let dispNote = '';
       if (note || (imgs && imgs.length)) {
         dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -2778,7 +2779,7 @@ function renderCachedOrders() {
         let imgs = _imgTagsOf(t);
         let encImgs = encodeURIComponent(JSON.stringify(imgs));
         
-        const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
+        const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
         let dispNote = '';
         if (note || (imgs && imgs.length)) {
           dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -2951,10 +2952,48 @@ function switchCfgTab(type) {
 }
 
 // ── DATA FETCHING ──
+async function saveUiConfigToBackend(key, value) {
+  try {
+    const r = await fetch('/api/config');
+    const cfg = await r.json();
+    if (!cfg._ui_config) cfg._ui_config = {};
+    if (value === null) {
+      delete cfg._ui_config[key];
+    } else {
+      cfg._ui_config[key] = value;
+    }
+    await fetch('/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(cfg)
+    });
+    GLOBAL_CONFIG._ui_config = cfg._ui_config;
+  } catch (e) {
+    console.error("Failed to save UI config to backend:", e);
+  }
+}
+
+async function fetchConfig() {
+  const r = await fetch('/api/config');
+  GLOBAL_CONFIG = await r.json();
+  if (GLOBAL_CONFIG && GLOBAL_CONFIG._ui_config) {
+    for (const k in GLOBAL_CONFIG._ui_config) {
+      if (GLOBAL_CONFIG._ui_config[k] === null) {
+        localStorage.removeItem(k);
+      } else {
+        localStorage.setItem(k, GLOBAL_CONFIG._ui_config[k]);
+      }
+    }
+  }
+}
+
 async function loadAll() {
+  await fetchConfig();
+  _loadOrdColPrefs();
+  _loadCalPointsColPrefs();
+  _loadStatsColPrefs();
   initGlobalNotesToggle();
   initCalGroupSymbolToggle();
-  await fetchConfig();
   await checkStatus();
   renderControlTab();
   renderPnlTab();
@@ -2963,11 +3002,6 @@ async function loadAll() {
   loadTokenStatus();
   if(activeTab === 'pnl') updatePnl();
   if(activeTab === 'log') updateLogs();
-}
-
-async function fetchConfig() {
-  const r = await fetch('/api/config');
-  GLOBAL_CONFIG = await r.json();
 }
 
 async function checkStatus() {
@@ -3520,6 +3554,8 @@ function saveColPrefs() {
   read('col-open-list', window._ordOpenCols);
   localStorage.setItem('ord_completed_cols', JSON.stringify(window._ordCompletedCols));
   localStorage.setItem('ord_open_cols', JSON.stringify(window._ordOpenCols));
+  saveUiConfigToBackend('ord_completed_cols', JSON.stringify(window._ordCompletedCols));
+  saveUiConfigToBackend('ord_open_cols', JSON.stringify(window._ordOpenCols));
   closeColModal();
   renderCachedOrders();
 }
@@ -3529,6 +3565,8 @@ function resetColPrefs() {
   window._ordOpenCols = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
   localStorage.removeItem('ord_completed_cols');
   localStorage.removeItem('ord_open_cols');
+  saveUiConfigToBackend('ord_completed_cols', null);
+  saveUiConfigToBackend('ord_open_cols', null);
   closeColModal();
   renderCachedOrders();
 }
@@ -3553,6 +3591,7 @@ function saveCalPointsColPrefs() {
     if(c && !c.fixed) c.on = inp.checked;
   });
   localStorage.setItem('cal_points_cols', JSON.stringify(window._calPointsCols));
+  saveUiConfigToBackend('cal_points_cols', JSON.stringify(window._calPointsCols));
   document.getElementById('cal-points-col-modal').style.display = 'none';
   renderPointsPerTradeTable();
 }
@@ -3622,6 +3661,7 @@ function saveStatsColPrefs(){
     if(c && !c.fixed) c.on = inp.checked;
   });
   localStorage.setItem('stats_cols', JSON.stringify(window._statsCols));
+  saveUiConfigToBackend('stats_cols', JSON.stringify(window._statsCols));
   document.getElementById('stats-col-modal').style.display = 'none';
   renderStatsClosedTable(window._statsLastTrades || []);
 }
@@ -3778,7 +3818,7 @@ async function updatePnl() {
           let encNote = encodeURIComponent(note);
           let imgs = t ? _imgTagsOf(t) : [];
           let encImgs = encodeURIComponent(JSON.stringify(imgs));
-          const isNoteHidden = (t ? window._hiddenNotes.has(t.id) : false) || localStorage.getItem('global_notes_show') === 'false';
+           const isNoteHidden = (t ? window._hiddenNotes.has(t.id) : false) || localStorage.getItem('global_notes_show') !== 'true';
           let dispNote = '';
           if (t && (note || (imgs && imgs.length))) {
             dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -3893,7 +3933,7 @@ async function updatePnl() {
     let encNote = encodeURIComponent(note);
     let imgs = tTag ? _imgTagsOf(tTag) : [];
     let encImgs = encodeURIComponent(JSON.stringify(imgs));
-    const isNoteHidden = (tTag ? window._hiddenNotes.has(tTag.id) : false) || localStorage.getItem('global_notes_show') === 'false';
+    const isNoteHidden = (tTag ? window._hiddenNotes.has(tTag.id) : false) || localStorage.getItem('global_notes_show') !== 'true';
     let dispNote = '';
     if (tTag && (note || (imgs && imgs.length))) {
       dispNote = `<div id="note-wrapper-${tTag.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -6421,7 +6461,7 @@ function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId =
   let imgs = _imgTagsOf(t);
   let encImgs = encodeURIComponent(JSON.stringify(imgs));
   
-  const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
+  const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
   let dispNote = '';
   if (note || (imgs && imgs.length)) {
     dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -6516,7 +6556,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
   let totalPnl = 0;
   let weightedEntrySum = 0;
   let weightedExitSum = 0;
-  let weightedPointsSum = 0;
+  let totalPoints = 0;
   
   let allBuy = true;
   let allSell = true;
@@ -6532,7 +6572,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
     const pts = t.entry === 'BUY'
       ? (t.exit_price || 0) - (t.entry_price || 0)
       : (t.entry_price || 0) - (t.exit_price || 0);
-    weightedPointsSum += pts * qty;
+    totalPoints += pts;
     
     if (t.entry === 'BUY') allSell = false;
     if (t.entry === 'SELL') allBuy = false;
@@ -6548,7 +6588,6 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
   
   const avgEntry = totalQty > 0 ? weightedEntrySum / totalQty : 0;
   const avgExit = totalQty > 0 ? weightedExitSum / totalQty : 0;
-  const avgPoints = totalQty > 0 ? weightedPointsSum / totalQty : 0;
   
   const sideText = allBuy ? 'BUY' : (allSell ? 'SELL' : 'BUY/SELL');
   const sideColor = allBuy ? '#3fb950' : (allSell ? '#f85149' : '#8b949e');
@@ -6570,7 +6609,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
   let imgs = _imgTagsOf(latestT);
   let encImgs = encodeURIComponent(JSON.stringify(imgs));
   
-  const isNoteHidden = window._hiddenNotes.has(latestT.id) || localStorage.getItem('global_notes_show') === 'false';
+  const isNoteHidden = window._hiddenNotes.has(latestT.id) || localStorage.getItem('global_notes_show') !== 'true';
   let dispNote = '';
   if (combinedNote || (imgs && imgs.length)) {
     dispNote = `<div id="note-wrapper-group-${parentId}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -6595,8 +6634,8 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
     } else if (c.id === 'exit_price') {
       v = avgExit.toFixed(2);
     } else if (c.id === 'points') {
-      const ptsC = avgPoints > 0 ? '#3fb950' : (avgPoints < 0 ? '#f85149' : '#8b949e');
-      const ptsText = `${avgPoints >= 0 ? '+' : ''}${avgPoints.toFixed(2)}`;
+      const ptsC = totalPoints > 0 ? '#3fb950' : (totalPoints < 0 ? '#f85149' : '#8b949e');
+      const ptsText = `${totalPoints >= 0 ? '+' : ''}${totalPoints.toFixed(2)}`;
       v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
     } else if (c.id === 'pnl') {
       const netColor = totalPnl >= 0 ? '#3fb950' : '#f85149';
@@ -6676,6 +6715,7 @@ function toggleCalGroupRows(parentId) {
 
 function toggleCalGroupSymbol(checked) {
   localStorage.setItem('cal_group_symbol', checked ? 'true' : 'false');
+  saveUiConfigToBackend('cal_group_symbol', checked ? 'true' : 'false');
   renderPointsPerTradeTable();
 }
 
