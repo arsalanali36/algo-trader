@@ -411,7 +411,7 @@ def handle_signal(payload: dict) -> dict:
             return {"ok": False, "msg": f"webhook strategy '{strat}' inactive"}
 
         alert_id = str(payload.get("id") or "")
-        if _dedup(alert_id):
+        if _dedup(f"{strat}:{alert_id}"):
             _log(f"DEDUP skip strat={strat} id={alert_id}")
             return {"ok": True, "msg": "duplicate ignored"}
 
