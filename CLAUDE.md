@@ -109,6 +109,21 @@ Dashboard ke **Control tab** mein token paste karo → Save.
 ### 5. Auto Scheduler
 Subah 9:10 par `trader_dashboard.py` apne aap saare active variations ko paper mode mein start kar deta hai, aur 15:30 par stop.
 
+### 6. RMS is SUPREME — har strategy order_store mein likhe (warna RMS andha)
+RMS (`risk_gate.py`) ki guardrails — unified daily-loss breaker
+(`effective_daily_loss_cap`/`daily_loss_breached`, always-on default ₹5000) aur
+capital allocation — ko **koi strategy bypass nahi kar sakti**. Ye breaker dono
+karta hai: nayi entry block + `pos_monitor_loop` se open positions ka force
+squareoff. Per-strategy SL/target iske **neeche** independent hain (jaldi exit
+kar sakte hain, par RMS cap se aage kabhi nahi).
+**HARD RULE for every strategy (current + future):** har order entry/exit
+`smart_order.execute()` ya `order_store.record()` ke through hi jaaye — RMS sirf
+wahi positions dekhta hai jo order_store mein hain. Jo strategy seedha broker pe
+order daale (jaise legacy `nifty_ema_trader.py`=ema_v1 aur `01_rsi_v1.py`=rsi_v1
+abhi karte hain — apne in-memory dicts + log se, order_store mein nahi) wo
+**RMS-blind** hai aur use live nahi chalana chahiye jab tak order_store recording
+add na ho. Nayi strategy banate waqt: pehle order_store recording wire karo.
+
 ## Update Log
 
 | Date | Kya bana |
