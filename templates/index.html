@@ -992,7 +992,13 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0;">
         🎯 Point Per Trade Details
       </h3>
-      <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="openCalPointsColModal()">⚙️ Columns</button>
+      <div style="display:flex; align-items:center; gap:12px;">
+        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none;">
+          <input id="global-notes-toggle" type="checkbox" onchange="toggleAllNotes(this.checked)" style="accent-color:#1f6feb; width:13px; height:13px; cursor:pointer; margin:0;">
+          Show Notes
+        </label>
+        <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="openCalPointsColModal()">⚙️ Columns</button>
+      </div>
     </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
@@ -2130,6 +2136,37 @@ function toggleNoteDesc(tradeId) {
   }
 }
 
+function toggleAllNotes(show) {
+  localStorage.setItem('global_notes_show', show ? 'true' : 'false');
+  const elements = document.querySelectorAll('[id^="note-wrapper-"]');
+  elements.forEach(el => {
+    el.style.display = show ? '' : 'none';
+    const idAttr = el.getAttribute('id');
+    const tradeId = parseInt(idAttr.replace('note-wrapper-', ''));
+    if (tradeId) {
+      if (show) {
+        window._hiddenNotes.delete(tradeId);
+      } else {
+        window._hiddenNotes.add(tradeId);
+      }
+    }
+  });
+  localStorage.setItem('ord_hidden_notes', JSON.stringify([...window._hiddenNotes]));
+  
+  const toggleInput = document.getElementById('global-notes-toggle');
+  if (toggleInput) {
+    toggleInput.checked = show;
+  }
+}
+
+function initGlobalNotesToggle() {
+  const globalShow = localStorage.getItem('global_notes_show') !== 'false';
+  const toggleInput = document.getElementById('global-notes-toggle');
+  if (toggleInput) {
+    toggleInput.checked = globalShow;
+  }
+}
+
 function _sortData(arr, col, dir) {
   const isDesc = dir === 'desc';
   return arr.sort((a, b) => {
@@ -2420,7 +2457,7 @@ function renderCachedOrders() {
       let imgs = _imgTagsOf(t);
       let encImgs = encodeURIComponent(JSON.stringify(imgs));
       
-      const isNoteHidden = window._hiddenNotes.has(t.id);
+      const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
       let dispNote = '';
       if (note || (imgs && imgs.length)) {
         dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -2730,7 +2767,7 @@ function renderCachedOrders() {
         let imgs = _imgTagsOf(t);
         let encImgs = encodeURIComponent(JSON.stringify(imgs));
         
-        const isNoteHidden = window._hiddenNotes.has(t.id);
+        const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
         let dispNote = '';
         if (note || (imgs && imgs.length)) {
           dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -2904,6 +2941,7 @@ function switchCfgTab(type) {
 
 // ── DATA FETCHING ──
 async function loadAll() {
+  initGlobalNotesToggle();
   await fetchConfig();
   await checkStatus();
   renderControlTab();
@@ -3728,7 +3766,7 @@ async function updatePnl() {
           let encNote = encodeURIComponent(note);
           let imgs = t ? _imgTagsOf(t) : [];
           let encImgs = encodeURIComponent(JSON.stringify(imgs));
-          const isNoteHidden = t ? window._hiddenNotes.has(t.id) : false;
+          const isNoteHidden = (t ? window._hiddenNotes.has(t.id) : false) || localStorage.getItem('global_notes_show') === 'false';
           let dispNote = '';
           if (t && (note || (imgs && imgs.length))) {
             dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -3843,7 +3881,7 @@ async function updatePnl() {
     let encNote = encodeURIComponent(note);
     let imgs = tTag ? _imgTagsOf(tTag) : [];
     let encImgs = encodeURIComponent(JSON.stringify(imgs));
-    const isNoteHidden = tTag ? window._hiddenNotes.has(tTag.id) : false;
+    const isNoteHidden = (tTag ? window._hiddenNotes.has(tTag.id) : false) || localStorage.getItem('global_notes_show') === 'false';
     let dispNote = '';
     if (tTag && (note || (imgs && imgs.length))) {
       dispNote = `<div id="note-wrapper-${tTag.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
@@ -6153,7 +6191,7 @@ function renderPointsPerTradeTable() {
     let imgs = _imgTagsOf(t);
     let encImgs = encodeURIComponent(JSON.stringify(imgs));
     
-    const isNoteHidden = window._hiddenNotes.has(t.id);
+    const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
     let dispNote = '';
     if (note || (imgs && imgs.length)) {
       dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
