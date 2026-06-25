@@ -2979,23 +2979,23 @@ def pos_monitor_loop():
                     _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
                     continue
 
-                # ── Always-on 1% max-loss squareoff — independent of any SL/TP
-                # tag, applies to EVERY open position regardless of source
-                # (manual/strategy/webhook). Distinct from the legacy
-                # max_loss_pct/max_loss_rs fallback below (which only kicks in
-                # when no SL tag is set) and from risk_gate's drawdown breaker
-                # (which blocks new entries, doesn't close existing ones).
-                # Safe no-op until the user sets total_capital_rs explicitly.
-                _rc_ml = _risk_config().get("global", {})
-                _total_cap = _rc_ml.get("total_capital_rs")
-                if _total_cap:
-                    try: _total_cap = float(_total_cap)
-                    except Exception: _total_cap = None
-                if _total_cap and _total_cap > 0:
-                    unrealized = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
-                    if unrealized <= -0.01 * _total_cap:
-                        _do_squareoff(p, ltp, "MAXLOSS_1PCT_SQUAREOFF", sec_id, seg)
+                # ── SUPREME RMS daily-loss breaker — the one guardrail no strategy
+                # can bypass. Once a strategy's cumulative P&L today (realized +
+                # this leg's unrealized) breaches its unified ₹ cap
+                # (risk_gate.effective_daily_loss_cap → per-strategy/global
+                # max_loss_rs, always-on default ₹5000), force-close THIS leg.
+                # Per-position SL/target below stay independent (they can exit
+                # earlier, never later than this). Replaces the old footgun-prone
+                # total_capital_rs 1% block.
+                try:
+                    import risk_gate
+                    _unrl = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
+                    _breached, _why = risk_gate.daily_loss_breached(p.get("strategy") or "", unrealized=_unrl)
+                    if _breached:
+                        _do_squareoff(p, ltp, f"RMS_MAXLOSS:{_why}", sec_id, seg)
                         continue
+                except Exception as _e:
+                    print("RMS daily-loss check failed (leaving position):", _e)
 
                 sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
                 tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None

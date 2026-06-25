@@ -475,12 +475,20 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     if gmax > 0 and sum(_trades_today.values()) >= gmax:
         _log(f"ENTRY blocked {key} — global max trades/day ({gmax}) reached")
         return {"ok": False, "msg": "global max trades/day reached"}
-    cap = float(glob.get("daily_amount_cap", 0) or 0)
-    if cap > 0:
-        _, _, total = _day_pnl()
-        if total <= -cap:
-            _log(f"ENTRY blocked {key} — global daily loss cap ₹{cap:.0f} hit (pnl={total:.0f})")
-            return {"ok": False, "msg": "daily loss cap hit"}
+    # ── SUPREME RMS daily-loss breaker (unified) — same cap that pos_monitor
+    # uses to square off; blocks new entries for this strategy once breached.
+    # Replaces the webhook's old standalone daily_amount_cap so there's ONE cap.
+    # realized-only here (unrealized is per-leg and would cross-contaminate
+    # strategies if summed globally); any still-open losing leg gets squared off
+    # by pos_monitor's same-cap check, which realizes it and feeds back here.
+    try:
+        import risk_gate
+        breached, why = risk_gate.daily_loss_breached(strat, unrealized=0.0)
+        if breached:
+            _log(f"ENTRY blocked {key} — {why}")
+            return {"ok": False, "msg": "RMS daily loss cap hit"}
+    except Exception as _e:
+        _log(f"RMS daily-loss gate check failed (allowing entry): {_e}")
 
     # ── reversal: ab jab naya entry allowed hai, pehle purani leg close karo ──
     # (atomic-ish: purani exit fail hui to nayi entry NAHI lete — half-state se bacho)

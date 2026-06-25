@@ -381,6 +381,68 @@ def check_drawdown(unrealized_pnl=0.0):
     return True, ""
 
 
+# ── Unified daily loss breaker (SUPREME RMS layer) ───────────────────────────
+# One ₹ daily-loss cap per strategy that NO strategy can bypass. It is the single
+# source of truth that replaces the older scattered caps (webhook's own
+# daily_amount_cap, the per-position total_capital_rs 1%, the drawdown breaker).
+# It both (a) blocks new entries and (b) force-squares-off that strategy's open
+# positions once breached. Per-strategy SL/target stay independent BELOW this —
+# they can exit earlier, but can never let a strategy run past this loss.
+#
+# Resolution order for the cap (first non-null wins), so existing config keeps
+# working and it's ALWAYS on by default:
+#   per_strategy[strat].max_loss_rs  ->  global.max_loss_rs  ->
+#   global.daily_drawdown_cap_rs     ->  DEFAULT_DAILY_LOSS_RS
+DEFAULT_DAILY_LOSS_RS = 5000.0
+
+
+def effective_daily_loss_cap(strategy=None, rc=None):
+    """The unified ₹ daily-loss cap for a strategy (always returns a positive
+    number — RMS is mandatory). per-strategy overrides global; absent everywhere
+    falls back to DEFAULT_DAILY_LOSS_RS so it can never be silently off."""
+    rc = rc or _risk_cfg()
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
+    gl = (rc.get("global", {}) or {})
+    for v in (ps.get("max_loss_rs"), gl.get("max_loss_rs"),
+              gl.get("daily_drawdown_cap_rs")):
+        if v is not None:
+            try:
+                f = float(v)
+                if f > 0:
+                    return f
+            except Exception:
+                pass
+    return DEFAULT_DAILY_LOSS_RS
+
+
+def _strategy_day_pnl(strategy, unrealized_by_strat=None):
+    """Today's realized P&L for one strategy (from order_store's netted details)
+    + an optional caller-supplied unrealized estimate for that strategy."""
+    import datetime
+    from datetime import timedelta
+    ist_now = datetime.datetime.utcnow() + timedelta(hours=5, minutes=30)
+    date_str = ist_now.strftime("%Y-%m-%d")
+    realized = 0.0
+    try:
+        import order_store
+        data = order_store.trades_for(date_str, strategy=strategy)
+        realized = sum(float(d.get("pnl") or 0) for d in data.get("details", []))
+    except Exception:
+        pass
+    return realized + float(unrealized_by_strat or 0)
+
+
+def daily_loss_breached(strategy, unrealized=0.0, rc=None):
+    """SUPREME check: True if `strategy` has lost >= its unified daily cap today
+    (realized + caller's unrealized estimate). Used by BOTH the entry gate (block
+    new entries) and pos_monitor (square off open legs). Returns (breached, reason)."""
+    cap = effective_daily_loss_cap(strategy, rc=rc)
+    pnl = _strategy_day_pnl(strategy, unrealized)
+    if pnl <= -abs(cap):
+        return True, f"RMS daily loss cap ₹{cap:.0f} hit for '{strategy}' (today's P&L ₹{pnl:.0f})"
+    return False, ""
+
+
 def reconcile_funds(broker):
     """Read-only health_check.py-style comparison: our own capital_in_use(None)
     vs the broker's actual available funds. Doesn't block anything — just
