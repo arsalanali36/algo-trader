@@ -86,6 +86,18 @@ class DhanBroker(BaseBroker):
         return df
 
     def quote(self, sec_id, seg) -> dict:
+        # Cross-process shared cache first — every strategy process (range_trader,
+        # rsi_trader, webhook, universe_trader, ...) shares this same Dhan account's
+        # ~1 req/sec LTP limit. Reusing whatever ANY process fetched in the last
+        # few seconds turns "N processes hitting Dhan" into ~1 real call per
+        # symbol per window, which is what actually fixes DH-904 429s under load
+        # (a per-process retry/cache alone doesn't, since other processes keep
+        # consuming the same shared limit regardless of what this one does).
+        import shared_ltp_cache
+        cached = shared_ltp_cache.get(sec_id, max_age=3.0)
+        if cached:
+            return {"ltp": cached, "bid": None, "ask": None}
+
         key = _LTP_SEG.get(seg, "NSE_EQ")
         try:
             r = requests.post(LTP_URL, json={key: [int(sec_id)]},
@@ -94,10 +106,15 @@ class DhanBroker(BaseBroker):
                 node = r.json().get("data", {}).get(key, {}) or {}
                 for _sid, v in node.items():
                     ltp = float(v.get("last_price") or v.get("ltp") or 0) or None
+                    if ltp:
+                        shared_ltp_cache.put(sec_id, ltp)
                     return {"ltp": ltp, "bid": None, "ask": None}
         except Exception:
             pass
-        return {"ltp": None, "bid": None, "ask": None}
+
+        # last resort: a slightly-stale value from ANY process beats failing outright
+        stale = shared_ltp_cache.get_stale(sec_id, max_age=15.0)
+        return {"ltp": stale, "bid": None, "ask": None}
 
     # ---- orders ----
     def place_order(self, side, sec_id, seg, qty, order_type="MARKET",
