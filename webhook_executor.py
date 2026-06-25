@@ -622,6 +622,28 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": st}
 
 
+def release_position(sec_id=None, trad_sym=None, reason="external_squareoff"):
+    """Mark a webhook position closed because something OUTSIDE this module
+    already squared it off (e.g. the dashboard's global pos_monitor_loop 1%
+    max-loss / SL / EOD net). Without this, the webhook's own monitor_tick or a
+    later TradingView EXIT would fire a SECOND closing order against an already-
+    closed leg, leaving an orphan position (the CE-BUY-not-netted bug). Matches
+    by option sec_id (preferred) or trad_sym. Returns True if it cleared one.
+    Caller (pos_monitor) records the actual closing order itself; here we only
+    clear in-memory state so we never double-close."""
+    with _lock:
+        for key, st in _wh_state.items():
+            if not st or not st.get("position"):
+                continue
+            if (sec_id and str(st.get("opt_sec_id")) == str(sec_id)) or \
+               (trad_sym and st.get("opt_trad_sym") == trad_sym):
+                st["position"] = None
+                _log(f"RELEASE {key} {st.get('opt_trad_sym')} — closed externally ({reason}), "
+                     f"webhook monitor backing off (no double-close)")
+                return True
+    return False
+
+
 def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
     global _day_realized
     import smart_order

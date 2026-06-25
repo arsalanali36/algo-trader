@@ -2905,6 +2905,23 @@ def pos_monitor_loop():
                     """Exit a position now — live round-trips a real broker order
                     first (never marks closed unless the broker confirms), paper
                     just records the fill. Returns True once handled."""
+                    # Webhook positions are co-owned by webhook_executor's own
+                    # monitor/TV-EXIT. Atomically CLAIM the leg first: release_position
+                    # flips its in-memory state open->closed and returns True only if
+                    # WE won the race. If it returns False the webhook side already
+                    # closed it this instant — skip, so we don't fire a duplicate
+                    # closing order (the orphan-BUY double-close bug).
+                    if (p.get("source") or "") == "webhook":
+                        try:
+                            import webhook_executor as _wh
+                            claimed = _wh.release_position(sec_id=sec_id,
+                                                           trad_sym=p.get("sym"),
+                                                           reason=exit_reason)
+                            if not claimed:
+                                _closed_ids.add(p.get("id"))
+                                return True
+                        except Exception as _e:
+                            print(f"[{exit_reason}] webhook claim failed: {_e}")
                     print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
                     exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
                     if p.get("mode") == "live":
