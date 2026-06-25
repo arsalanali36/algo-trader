@@ -1001,6 +1001,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       </h3>
       <div style="display:flex; align-items:center; gap:12px;">
         <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none;">
+          <input id="cal-group-symbol-toggle" type="checkbox" onchange="toggleCalGroupSymbol(this.checked)" style="accent-color:#1f6feb; width:13px; height:13px; cursor:pointer; margin:0;">
+          Group by Symbol
+        </label>
+        <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none;">
           <input id="global-notes-toggle" type="checkbox" onchange="toggleAllNotes(this.checked)" style="accent-color:#1f6feb; width:13px; height:13px; cursor:pointer; margin:0;">
           Show Notes
         </label>
@@ -2949,6 +2953,7 @@ function switchCfgTab(type) {
 // ── DATA FETCHING ──
 async function loadAll() {
   initGlobalNotesToggle();
+  initCalGroupSymbolToggle();
   await fetchConfig();
   await checkStatus();
   renderControlTab();
@@ -6308,22 +6313,70 @@ function renderPointsPerTradeTable() {
     return;
   }
   
+  // Group trades by date and symbol if enabled
+  const isGroupEnabled = localStorage.getItem('cal_group_symbol') === 'true';
+  let displayItems = [];
+  
+  if (isGroupEnabled) {
+    const dateGroups = {}; // date -> { symbol -> [trades] }
+    sortedTrades.forEach(t => {
+      const dStr = t.exit_date || t.entry_date || '—';
+      const sStr = t.sym || t.symbol || '—';
+      if (!dateGroups[dStr]) dateGroups[dStr] = {};
+      if (!dateGroups[dStr][sStr]) dateGroups[dStr][sStr] = [];
+      dateGroups[dStr][sStr].push(t);
+    });
+
+    const seenGroups = new Set();
+    sortedTrades.forEach(t => {
+      const dStr = t.exit_date || t.entry_date || '—';
+      const sStr = t.sym || t.symbol || '—';
+      const grpKey = dStr + '||' + sStr;
+      if (seenGroups.has(grpKey)) return;
+      seenGroups.add(grpKey);
+      
+      const groupTrades = dateGroups[dStr][sStr];
+      if (groupTrades.length > 1) {
+        displayItems.push({
+          type: 'group',
+          date: dStr,
+          symbol: sStr,
+          trades: groupTrades
+        });
+      } else {
+        displayItems.push({
+          type: 'single',
+          date: dStr,
+          trade: groupTrades[0]
+        });
+      }
+    });
+  } else {
+    sortedTrades.forEach(t => {
+      displayItems.push({
+        type: 'single',
+        date: t.exit_date || t.entry_date || '—',
+        trade: t
+      });
+    });
+  }
+  
   const pageSize = 20;
-  const totalTrades = sortedTrades.length;
-  const totalPages = Math.ceil(totalTrades / pageSize);
+  const totalItems = displayItems.length;
+  const totalPages = Math.ceil(totalItems / pageSize);
   
   if (window.calPointsCurrentPage < 1) window.calPointsCurrentPage = 1;
   if (window.calPointsCurrentPage > totalPages) window.calPointsCurrentPage = totalPages;
   
   const startIdx = (window.calPointsCurrentPage - 1) * pageSize;
-  const endIdx = Math.min(startIdx + pageSize, totalTrades);
-  const pageTrades = sortedTrades.slice(startIdx, endIdx);
+  const endIdx = Math.min(startIdx + pageSize, totalItems);
+  const pageItems = displayItems.slice(startIdx, endIdx);
   
   let pointsHtml = '';
   let currentGroupDate = '';
   
-  pageTrades.forEach(t => {
-    const tradeDate = t.exit_date || t.entry_date;
+  pageItems.forEach((item, itemIdx) => {
+    const tradeDate = item.date;
     if (tradeDate !== currentGroupDate) {
       currentGroupDate = tradeDate;
       let dateText = tradeDate;
@@ -6342,100 +6395,297 @@ function renderPointsPerTradeTable() {
       `;
     }
     
+    if (item.type === 'single') {
+      pointsHtml += renderSingleTradeRow(item.trade, cols, sortedTrades);
+    } else {
+      pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
+    }
+  });
+  
+  pointsBody.innerHTML = pointsHtml;
+  renderPointsPagination(totalPages);
+}
+
+function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId = '') {
+  let note = '';
+  let sl = '', tp = '';
+  if (t.tags) {
+    t.tags.forEach(tg => {
+      if (tg.startsWith('NOTE:')) note = tg.substring(5);
+      if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
+      if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
+    });
+  }
+  
+  let encNote = encodeURIComponent(note);
+  let imgs = _imgTagsOf(t);
+  let encImgs = encodeURIComponent(JSON.stringify(imgs));
+  
+  const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
+  let dispNote = '';
+  if (note || (imgs && imgs.length)) {
+    dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
+             + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+             + _noteThumbs(t.id, imgs)
+             + `</div>`;
+  }
+  
+  const _idx = sortedTrades.indexOf(t);
+  const childStyle = isChild ? 'background: #161b22; display: none;' : '';
+  const childClass = isChild ? `class="${parentId}-child"` : '';
+  
+  let rowHtml = `<tr ${childClass} style="border-bottom:1px solid #21262d; ${childStyle}">` + cols.map(c => {
+    let v = '';
+    if (c.id === 'exit_time') {
+      v = t.exit_time || t.entry_time || '—';
+    } else if (c.id === 'symbol') {
+      const isNoteColOn = cols.some(x => x.id === 'note');
+      const prefix = isChild ? `<span style="color:#8b949e; margin-right:8px; font-weight:normal;">↳</span>` : '';
+      v = `${prefix}<b>${t.sym || t.symbol || '—'}</b>` + (isNoteColOn ? '' : dispNote);
+    } else if (c.id === 'side') {
+      const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
+      v = `<span style="color:${sideColor}; font-weight:600;">${t.entry || '—'}</span>`;
+    } else if (c.id === 'qty') {
+      v = t.qty ?? '—';
+    } else if (c.id === 'entry_price') {
+      v = Number(t.entry_price || 0).toFixed(2);
+    } else if (c.id === 'exit_price') {
+      v = Number(t.exit_price || 0).toFixed(2);
+    } else if (c.id === 'points') {
+      const pts = t.entry === 'BUY'
+        ? (t.exit_price || 0) - (t.entry_price || 0)
+        : (t.entry_price || 0) - (t.exit_price || 0);
+      const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
+      const ptsText = `${pts >= 0 ? '+' : ''}${pts.toFixed(2)}`;
+      v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
+    } else if (c.id === 'pnl') {
+      const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
+      const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
+      v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
+    } else if (c.id === 'strategy') {
+      v = t.strategy || t.strat || t.strategy_type || '—';
+    } else if (c.id === 'source') {
+      v = t.source || '—';
+    } else if (c.id === 'mode') {
+      v = t.mode || '—';
+    } else if (c.id === 'broker') {
+      v = t.broker || '—';
+    } else if (c.id === 'chart') {
+      v = `<button onclick="openTradeChart('${(t.sym || t.symbol || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+    } else if (c.id === 'note') {
+      v = `<div style="display:flex; align-items:center; gap:6px;">
+             <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
+             ${dispNote}
+           </div>`;
+    } else if (c.id === 'actions') {
+      v = `
+        <div class="dropdown">
+          <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${t.id})">⋮</span>
+          <div id="cal-dropdown-${t.id}" class="dropdown-content">
+            <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+            <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
+            <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
+          </div>
+        </div>`;
+    } else {
+      v = t[c.id] ?? '—';
+    }
+    
+    let align = 'left';
+    if (c.a === 'center') align = 'center';
+    if (c.a === 'right') align = 'right';
+    
+    let style = `padding:8px; text-align:${align};`;
+    if (c.id === 'exit_time') style += ' color:#8b949e; white-space:nowrap; padding-left:16px;';
+    if (c.id === 'symbol') style += ' color:#adbac7;';
+    if (c.id === 'qty') style += ' color:#e6edf3;';
+    if (c.id === 'entry_price' || c.id === 'exit_price') style += ' color:#8b949e;';
+    
+    return `<td style="${style}">${v}</td>`;
+  }).join('') + `</tr>`;
+  
+  return rowHtml;
+}
+
+function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
+  const parentId = `cal-grp-${itemIdx}`;
+  const trades = item.trades;
+  const count = trades.length;
+  
+  let totalQty = 0;
+  let totalPnl = 0;
+  let weightedEntrySum = 0;
+  let weightedExitSum = 0;
+  let weightedPointsSum = 0;
+  
+  let allBuy = true;
+  let allSell = true;
+  let notesArr = [];
+  
+  trades.forEach(t => {
+    const qty = t.qty || 0;
+    totalQty += qty;
+    totalPnl += t.pnl || 0;
+    weightedEntrySum += (t.entry_price || 0) * qty;
+    weightedExitSum += (t.exit_price || 0) * qty;
+    
+    const pts = t.entry === 'BUY'
+      ? (t.exit_price || 0) - (t.entry_price || 0)
+      : (t.entry_price || 0) - (t.exit_price || 0);
+    weightedPointsSum += pts * qty;
+    
+    if (t.entry === 'BUY') allSell = false;
+    if (t.entry === 'SELL') allBuy = false;
+    
     let note = '';
-    let sl = '', tp = '';
     if (t.tags) {
       t.tags.forEach(tg => {
         if (tg.startsWith('NOTE:')) note = tg.substring(5);
-        if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
-        if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
       });
     }
-    
-    let encNote = encodeURIComponent(note);
-    let imgs = _imgTagsOf(t);
-    let encImgs = encodeURIComponent(JSON.stringify(imgs));
-    
-    const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') === 'false';
-    let dispNote = '';
-    if (note || (imgs && imgs.length)) {
-      dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
-               + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-               + _noteThumbs(t.id, imgs)
-               + `</div>`;
+    if (note) notesArr.push(note);
+  });
+  
+  const avgEntry = totalQty > 0 ? weightedEntrySum / totalQty : 0;
+  const avgExit = totalQty > 0 ? weightedExitSum / totalQty : 0;
+  const avgPoints = totalQty > 0 ? weightedPointsSum / totalQty : 0;
+  
+  const sideText = allBuy ? 'BUY' : (allSell ? 'SELL' : 'BUY/SELL');
+  const sideColor = allBuy ? '#3fb950' : (allSell ? '#f85149' : '#8b949e');
+  
+  const uniqueNotes = [...new Set(notesArr)];
+  const combinedNote = uniqueNotes.join('; ');
+  
+  const latestT = trades[0];
+  let sl = '', tp = '';
+  if (latestT.tags) {
+    latestT.tags.forEach(tg => {
+      if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
+      if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
+    });
+  }
+  const _idx = sortedTrades.indexOf(latestT);
+  
+  let encNote = encodeURIComponent(combinedNote);
+  let imgs = _imgTagsOf(latestT);
+  let encImgs = encodeURIComponent(JSON.stringify(imgs));
+  
+  const isNoteHidden = window._hiddenNotes.has(latestT.id) || localStorage.getItem('global_notes_show') === 'false';
+  let dispNote = '';
+  if (combinedNote || (imgs && imgs.length)) {
+    dispNote = `<div id="note-wrapper-group-${parentId}" style="${isNoteHidden ? 'display:none;' : ''}">`
+             + (combinedNote ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${combinedNote.replace(/"/g, '&quot;')}">${combinedNote.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+             + _noteThumbs(latestT.id, imgs)
+             + `</div>`;
+  }
+  
+  let rowHtml = `<tr onclick="toggleCalGroupRows('${parentId}')" style="cursor:pointer; border-bottom:1px solid #30363d; background:#1f6feb0f;" onmouseover="this.style.background='#1f6feb1c'" onmouseout="this.style.background='#1f6feb0f'">` + cols.map(c => {
+    let v = '';
+    if (c.id === 'exit_time') {
+      v = `<span style="font-style:italic; font-size:10.5px; color:#8b949e;">${count} trades</span>`;
+    } else if (c.id === 'symbol') {
+      const isNoteColOn = cols.some(x => x.id === 'note');
+      v = `<span id="${parentId}-arrow" style="margin-right:8px; cursor:pointer; color:#58a6ff; font-family:monospace; font-weight:bold;">▶</span><b>${item.symbol}</b>` + (isNoteColOn ? '' : dispNote);
+    } else if (c.id === 'side') {
+      v = `<span style="color:${sideColor}; font-weight:600;">${sideText}</span>`;
+    } else if (c.id === 'qty') {
+      v = totalQty;
+    } else if (c.id === 'entry_price') {
+      v = avgEntry.toFixed(2);
+    } else if (c.id === 'exit_price') {
+      v = avgExit.toFixed(2);
+    } else if (c.id === 'points') {
+      const ptsC = avgPoints > 0 ? '#3fb950' : (avgPoints < 0 ? '#f85149' : '#8b949e');
+      const ptsText = `${avgPoints >= 0 ? '+' : ''}${avgPoints.toFixed(2)}`;
+      v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
+    } else if (c.id === 'pnl') {
+      const netColor = totalPnl >= 0 ? '#3fb950' : '#f85149';
+      const netText = `${totalPnl >= 0 ? '+' : ''}₹${Math.round(totalPnl)}`;
+      v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
+    } else if (c.id === 'strategy') {
+      const uniqueStrats = [...new Set(trades.map(t => t.strategy || t.strat || t.strategy_type || '—'))];
+      v = uniqueStrats.join(', ');
+    } else if (c.id === 'source') {
+      const uniqueSources = [...new Set(trades.map(t => t.source || '—'))];
+      v = uniqueSources.join(', ');
+    } else if (c.id === 'mode') {
+      const uniqueModes = [...new Set(trades.map(t => t.mode || '—'))];
+      v = uniqueModes.join(', ');
+    } else if (c.id === 'broker') {
+      const uniqueBrokers = [...new Set(trades.map(t => t.broker || '—'))];
+      v = uniqueBrokers.join(', ');
+    } else if (c.id === 'chart') {
+      v = `<button onclick="event.stopPropagation(); openTradeChart('${(latestT.sym || latestT.symbol || '').replace(/'/g,'')}','${latestT.entry || ''}',${latestT.entry_price || 0},${latestT.exit_price || 0},'${latestT.entry_time || ''}','${latestT.exit_time || ''}',${latestT.qty || 0},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')" title="Premium chart for latest trade" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+    } else if (c.id === 'note') {
+      v = `<div style="display:flex; align-items:center; gap:6px;">
+             <button onclick="event.stopPropagation(); openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
+             ${dispNote}
+           </div>`;
+    } else if (c.id === 'actions') {
+      v = `
+        <div class="dropdown" onclick="event.stopPropagation();">
+          <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${latestT.id})">⋮</span>
+          <div id="cal-dropdown-${latestT.id}" class="dropdown-content">
+            <a href="javascript:void(0)" onclick="openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+            <a href="javascript:void(0)" onclick="openTradeChart('${latestT.sym || latestT.symbol}','${latestT.entry}',${latestT.entry_price},${latestT.exit_price},'${latestT.entry_time}','${latestT.exit_time}',${latestT.qty},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
+            <a href="javascript:void(0)" onclick="toggleNoteDesc(${latestT.id})">👁️ Toggle Note</a>
+          </div>
+        </div>`;
+    } else {
+      v = latestT[c.id] ?? '—';
     }
     
-    const _idx = sortedTrades.indexOf(t);
+    let align = 'left';
+    if (c.a === 'center') align = 'center';
+    if (c.a === 'right') align = 'right';
     
-    pointsHtml += `<tr style="border-bottom:1px solid #21262d;">` + cols.map(c => {
-      let v = '';
-      if (c.id === 'exit_time') {
-        v = t.exit_time || t.entry_time || '—';
-      } else if (c.id === 'symbol') {
-        const isNoteColOn = cols.some(x => x.id === 'note');
-        v = `<b>${t.sym || t.symbol || '—'}</b>` + (isNoteColOn ? '' : dispNote);
-      } else if (c.id === 'side') {
-        const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
-        v = `<span style="color:${sideColor}; font-weight:600;">${t.entry || '—'}</span>`;
-      } else if (c.id === 'qty') {
-        v = t.qty ?? '—';
-      } else if (c.id === 'entry_price') {
-        v = Number(t.entry_price || 0).toFixed(2);
-      } else if (c.id === 'exit_price') {
-        v = Number(t.exit_price || 0).toFixed(2);
-      } else if (c.id === 'points') {
-        const pts = t.entry === 'BUY'
-          ? (t.exit_price || 0) - (t.entry_price || 0)
-          : (t.entry_price || 0) - (t.exit_price || 0);
-        const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
-        const ptsText = `${pts >= 0 ? '+' : ''}${pts.toFixed(2)}`;
-        v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
-      } else if (c.id === 'pnl') {
-        const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
-        const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
-        v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
-      } else if (c.id === 'strategy') {
-        v = t.strategy || t.strat || t.strategy_type || '—';
-      } else if (c.id === 'source') {
-        v = t.source || '—';
-      } else if (c.id === 'mode') {
-        v = t.mode || '—';
-      } else if (c.id === 'broker') {
-        v = t.broker || '—';
-      } else if (c.id === 'chart') {
-        v = `<button onclick="openTradeChart('${(t.sym || t.symbol || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
-      } else if (c.id === 'note') {
-        v = `<div style="display:flex; align-items:center; gap:6px;">
-               <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-               ${dispNote}
-             </div>`;
-      } else if (c.id === 'actions') {
-        v = `
-          <div class="dropdown">
-            <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${t.id})">⋮</span>
-            <div id="cal-dropdown-${t.id}" class="dropdown-content">
-              <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-              <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
-              <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
-            </div>
-          </div>`;
-      } else {
-        v = t[c.id] ?? '—';
-      }
-      
-      let align = 'left';
-      if (c.a === 'center') align = 'center';
-      if (c.a === 'right') align = 'right';
-      
-      let style = `padding:8px; text-align:${align};`;
-      if (c.id === 'exit_time') style += ' color:#8b949e; white-space:nowrap; padding-left:16px;';
-      if (c.id === 'symbol') style += ' color:#adbac7;';
-      if (c.id === 'qty') style += ' color:#e6edf3;';
-      if (c.id === 'entry_price' || c.id === 'exit_price') style += ' color:#8b949e;';
-      
-      return `<td style="${style}">${v}</td>`;
-    }).join('') + `</tr>`;
+    let style = `padding:8px; text-align:${align};`;
+    if (c.id === 'exit_time') style += ' color:#8b949e; white-space:nowrap; padding-left:16px;';
+    if (c.id === 'symbol') style += ' color:#adbac7;';
+    if (c.id === 'qty') style += ' color:#e6edf3;';
+    if (c.id === 'entry_price' || c.id === 'exit_price') style += ' color:#8b949e;';
+    
+    return `<td style="${style}">${v}</td>`;
+  }).join('') + `</tr>`;
+  
+  trades.forEach(childT => {
+    rowHtml += renderSingleTradeRow(childT, cols, sortedTrades, true, parentId);
   });
+  
+  return rowHtml;
+}
+
+function toggleCalGroupRows(parentId) {
+  const children = document.querySelectorAll('.' + parentId + '-child');
+  const arrow = document.getElementById(parentId + '-arrow');
+  children.forEach(child => {
+    if (child.style.display === 'none' || child.style.display === '') {
+      child.style.display = 'table-row';
+    } else {
+      child.style.display = 'none';
+    }
+  });
+  if (arrow) {
+    if (arrow.textContent === '▶') {
+      arrow.textContent = '▼';
+    } else {
+      arrow.textContent = '▶';
+    }
+  }
+}
+
+function toggleCalGroupSymbol(checked) {
+  localStorage.setItem('cal_group_symbol', checked ? 'true' : 'false');
+  renderPointsPerTradeTable();
+}
+
+function initCalGroupSymbolToggle() {
+  const isGrouped = localStorage.getItem('cal_group_symbol') === 'true';
+  const toggleInput = document.getElementById('cal-group-symbol-toggle');
+  if (toggleInput) {
+    toggleInput.checked = isGrouped;
+  }
+}
   
   pointsBody.innerHTML = pointsHtml;
   renderPointsPagination(totalPages);
