@@ -79,6 +79,20 @@ def record(side, qty, price, *, source="", strategy="", mode="paper", broker="dh
     """
     try:
         now = ts or ist_now_str()
+        # GUARD (LESSONS.md TRAP #1 — recurring ₹0-price phantom fill): a REAL
+        # fill (paper/filled/live) at price<=0 is ALWAYS a bug — the premium
+        # fetch failed and ₹0 fabricates P&L (it has tripped the RMS breaker and
+        # force-squared-off real legs). Blocked/rejected rows legitimately carry
+        # no price. We log LOUD rather than drop (dropping could desync a caller's
+        # in-memory position) so ANY new code path that regresses is caught in the
+        # logs immediately — this bug returned 4x in different files before this.
+        if float(price or 0) <= 0 and str(status or "").lower() not in (
+                "blocked", "rejected", "cancelled", "canceled", "failed", "expired"):
+            # ASCII-only (no emoji) — a print that raises UnicodeEncodeError on a
+            # non-UTF8 console would be caught below and SKIP the insert.
+            print(f"[order_store] WARNING SUSPICIOUS 0-price {status} fill -- {side} {qty} "
+                  f"{trad_sym or symbol} src={source} strat={strategy}. Premium fetch "
+                  f"likely failed (DH-904). See LESSONS.md TRAP #1.", flush=True)
         row = {
             "ts": now, "date": now[:10], "source": source, "strategy": strategy,
             "mode": mode, "broker": broker, "symbol": symbol, "instrument": instrument,
@@ -132,6 +146,23 @@ def _tags(row):
         return []
 
 
+# Exit-leg reason tags that pos_monitor_loop records alongside "pos_monitor_exit"
+# (and webhook/manual paths may add) — surfaced on completed trades so the UI can
+# show WHY a trade exited (SL / target / EOD squareoff / RMS max-loss / trail).
+_EXIT_REASON_PREFIXES = ("SL_HIT", "TP_HIT", "EOD_315_SQUAREOFF", "RMS_MAXLOSS",
+                         "TRAIL_SL", "TARGET", "REVERSAL", "MANUAL_CLOSE", "TV_EXIT")
+
+
+def _exit_reason(row):
+    """Best human-ish exit reason from an exit leg's tags. '' if none recorded
+    (e.g. a plain manual/webhook close that didn't tag a reason)."""
+    for t in _tags(row):
+        for p in _EXIT_REASON_PREFIXES:
+            if str(t).startswith(p):
+                return t
+    return ""
+
+
 def trades_for(date, **filters):
     """Net entry/exit legs into completed trades + open positions for a date.
     See `_net_rows()` for the netting algorithm. Returns {details, open, count}.
@@ -183,6 +214,7 @@ def _net_rows(rows):
              "entry_date": entry_r["ts"][:10], "exit_date": exit_r["ts"][:10],
              "exit_price": xp, "exit_time": exit_r["ts"][11:16], "pnl": round(pnl, 2)}
         d.update(_meta(entry_r))   # attribution from the entry leg
+        d["exit_reason"] = _exit_reason(exit_r)   # WHY it closed (from exit leg)
         return d
 
     # ── Pass 1: exact (source, strategy, trad_sym) round-trips ──

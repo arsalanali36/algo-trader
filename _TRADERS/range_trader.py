@@ -37,6 +37,28 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
     return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 socket.getaddrinfo = _v4
 
+
+def _ensure_root_path():
+    """Idempotent safety net so root-level modules (shared_ltp_cache, universe,
+    order_store) stay importable from inside functions. Root is already inserted
+    at import time above; this just re-adds it if something cleared sys.path."""
+    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+
+
+_RT_ONCE = {}
+def _rt_once(key):
+    """True only the first time `key` is seen on the current IST day (resets next
+    day). Keeps repeated [WHITELIST]/[MAX-TRADES] log lines from spamming when
+    the scan loop re-hits the same symbol every cycle."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    today = (_dt.now(_tz.utc) + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    if _RT_ONCE.get(key) == today:
+        return False
+    _RT_ONCE[key] = today
+    return True
+
 # ── Paths ─────────────────────────────────────────────────────────────────────
 # BASE_DIR = project root (parent of _TRADERS/) — creds, nifty_config.json and
 # logs/ all live at the root, not inside _TRADERS/ (same as rsi_trader.py).
@@ -511,7 +533,7 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         info = DHAN_INFO.get(symbol)
         if not info:
             log.warning(f"{symbol} not in DHAN_INFO — skipping order")
-            return
+            return False
         sec_id, seg = info
         trad_sym = symbol
 
@@ -530,31 +552,56 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         "price":           0,
         "triggerPrice":    0,
     }
-    # For options: fetch actual option LTP from Dhan — index/spot price is WRONG here
+    # For options: fetch the actual option PREMIUM — index/spot price is WRONG
+    # here, and logging 0 corrupts P&L (a SELL "filled" at ₹0 looks like a free
+    # position). Priority: shared cross-process cache → direct Dhan call (with
+    # DH-904 backoff) → wider stale cache. If NOTHING gives a real premium, skip
+    # the entry entirely (return False) rather than record a phantom ₹0 fill —
+    # this was the root cause of the MARUTI/TCS PX 0.00 entries the user flagged.
     opt_ltp = None
     if seg == "NSE_FNO" and sec_id:
-        for _attempt in range(2):
-            try:
-                qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                                   json={"NSE_FNO": [int(sec_id)]},
-                                   headers=hdrs(token, cid), timeout=5)
-                if qr.status_code == 429:
-                    time.sleep(1.5)
-                    continue
-                if qr.status_code == 200:
-                    qdata = qr.json().get("data", {}).get("NSE_FNO", {})
-                    for v in (qdata.values() if isinstance(qdata, dict) else []):
-                        ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
-                        if ltp_v:
-                            opt_ltp = ltp_v
+        _ensure_root_path()
+        try:
+            import shared_ltp_cache
+            opt_ltp = shared_ltp_cache.get(sec_id, max_age=15)
+        except Exception:
+            opt_ltp = None
+        if not opt_ltp:
+            for _attempt in range(3):
+                try:
+                    qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                                       json={"NSE_FNO": [int(sec_id)]},
+                                       headers=hdrs(token, cid), timeout=5)
+                    if qr.status_code == 429:
+                        time.sleep(1.0 * (_attempt + 1))
+                        continue
+                    if qr.status_code == 200:
+                        qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                        for v in (qdata.values() if isinstance(qdata, dict) else []):
+                            ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                            if ltp_v:
+                                opt_ltp = ltp_v
+                        break
+                except Exception:
                     break
-            except Exception:
-                break
+            if opt_ltp:
+                try:
+                    import shared_ltp_cache
+                    shared_ltp_cache.put(sec_id, opt_ltp)   # share with other processes
+                except Exception:
+                    pass
+            else:
+                try:
+                    import shared_ltp_cache
+                    opt_ltp = shared_ltp_cache.get_stale(sec_id, max_age=120)
+                except Exception:
+                    opt_ltp = None
         if opt_ltp:
             price = opt_ltp
         else:
-            log.warning(f"Option LTP fetch failed for {trad_sym} — logging price as 0 (NOT spot price)")
-            price = 0.0  # 0 = unknown; spot price logged karna WRONG hoga
+            log.warning(f"Option premium unavailable for {trad_sym} (likely DH-904 "
+                        f"rate-limit) — SKIPPING entry, no phantom ₹0 fill recorded")
+            return False
 
     def _rec(status_, oid=''):
         try:
@@ -591,12 +638,13 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
                         f"HTTP {sr.status_code} — {sr.text[:200]} — paper fill unaffected")
         except Exception as e:
             log.warning(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
-        return
+        return True
     try:
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
         if r.status_code == 200:
             log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
             _rec('filled')
+            return True
         else:
             log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
             raise Exception(f"Dhan {r.status_code}: {r.text[:200]}")
@@ -708,10 +756,35 @@ def main(strategy_id="range"):
         )
 
         symbols = cfg.get("symbols", ["NIFTY"])
+        # Liquid stock whitelist (item B) — only trade the user's hand-picked
+        # liquid F&O stocks (avoids slippage / wide bid-ask on thin chains like
+        # TCS/HINDUNILVR). Indices always pass. cfg["stock_whitelist"]: custom
+        # list, or "all" to disable. Also shrinks the per-loop scan → fewer Dhan
+        # candle/LTP calls (DH-904 relief).
+        _wl = cfg.get("stock_whitelist")
+        if _wl != "all":
+            try:
+                _ensure_root_path()
+                import universe as _u
+                _allowed = set(_wl) if (isinstance(_wl, list) and _wl) else set(_u.LIQUID_PREMIUM)
+            except Exception:
+                _allowed = None
+            if _allowed is not None:
+                _IDX = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"}
+                _kept = [s for s in symbols if s in _IDX or s in _allowed]
+                if len(_kept) != len(symbols):
+                    if _rt_once(f"wl:{strategy_id}"):
+                        _dropped = [s for s in symbols if s not in _kept]
+                        log.info(f"[WHITELIST] trading {len(_kept)} liquid names; dropped "
+                                 f"{len(_dropped)} illiquid: {','.join(_dropped)}")
+                    symbols = _kept
 
         for symbol in symbols:
             st = get_state(symbol)
             if st["trades_today"] >= cfg.get("max_trades_per_symbol", 2):
+                if _rt_once(f"maxtrades:{strategy_id}:{symbol}"):
+                    log.info(f"[MAX-TRADES] {symbol} hit max_trades_per_symbol "
+                             f"({cfg.get('max_trades_per_symbol', 2)}) — no further entries today for it")
                 continue
 
             # Build daily levels once per day per symbol
@@ -800,7 +873,10 @@ def main(strategy_id="range"):
                                 except Exception:
                                     pass
                                 continue
-                        place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price)
+                        if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price):
+                            # premium unavailable → entry skipped, leave flat so a
+                            # later signal can retry (no phantom 0-price position)
+                            continue
                         st["opt_sec_id"] = sec_id
                         st["opt_trad_sym"] = t_sym
                         st["opt_qty"] = actual_qty

@@ -103,6 +103,24 @@ def log(msg):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S},000  INFO      {msg}", flush=True)
 
 
+# Dedupe helpers — once a strategy is gated (RMS-blocked) for the rest of the
+# day, the scan loop keeps re-hitting the same symbols; without these the log
+# fills with the same [GATED] line and the Orders table fills with duplicate
+# PX-0.00 blocked rows on every scan. Keyed by IST day so they reset next day.
+_ONCE_SEEN = {}   # key -> "YYYY-MM-DD" it was last emitted for
+
+def _once(key):
+    today = ist_now().strftime("%Y-%m-%d")
+    if _ONCE_SEEN.get(key) == today:
+        return False
+    _ONCE_SEEN[key] = today
+    return True
+
+def _log_once(key, msg):
+    if _once("log:" + key):
+        log(msg)
+
+
 # ---------------- routing ----------------
 def resolve_route(symbol, signal, spot, cfg):
     """Return (sec_id, seg, trad_sym) for where the order goes, per cfg['route'].
@@ -156,6 +174,23 @@ def main(sid, once=False):
             broker = get_broker(cfg.get("broker", "dhan"), creds)
 
         symbols = universe.resolve_universe(cfg.get("universe", "nifty50"))
+        # Liquid stock-option whitelist (item B) — when routing to STOCK options,
+        # only trade the user's hand-picked liquid F&O names (avoids slippage /
+        # wide bid-ask on thin chains). Default = universe.LIQUID_PREMIUM; set
+        # cfg["stock_whitelist"] to a custom list, or "all" to disable. Also
+        # trims the scan (fewer candle fetches → less rate-limit pressure).
+        if cfg.get("route") == "stock_option":
+            wl = cfg.get("stock_whitelist")
+            if wl == "all":
+                pass  # explicit opt-out — scan the configured universe as-is
+            else:
+                # The whitelist IS the stock-option universe (so non-NIFTY50
+                # names like PFC/RECLTD/HAL are included, and thin chains are
+                # never traded), regardless of cfg["universe"].
+                names = wl if (isinstance(wl, list) and wl) else universe.LIQUID_PREMIUM
+                symbols = list(names)
+                _log_once(f"WL:{sid}", f"[WHITELIST] stock-option universe = "
+                          f"{len(symbols)} liquid names (slippage guard)")
         eqmap = universe.equity_secids(symbols)   # symbol -> equity sec_id
 
         # start feed once (all equity sec_ids for live bid/ask)
@@ -240,6 +275,25 @@ def main(sid, once=False):
                 continue
             o_side = order_side_for(sig, route)
 
+            # ── RMS hard-block short-circuit ──
+            # If this strategy can't take ANY new entry today (per-strategy
+            # daily-loss breached, global drawdown breached, or capital fully
+            # used), skip BEFORE the marketable_price() LTP call and WITHOUT
+            # recording a PX-0.00 blocked ghost row. This is exactly the wasted
+            # rate-limit + ghost-order pileup the user flagged. gating_status()
+            # makes no live quote call, so the check itself is cheap. Logged
+            # once/strategy/day so the log isn't spammed every scan.
+            try:
+                import risk_gate
+                g_blocked, g_reason, _g_hard = risk_gate.gating_status(sid)
+            except Exception:
+                g_blocked, g_reason = False, ""
+            if g_blocked:
+                _log_once(f"GATED:{sid}",
+                          f"[GATED] {sid} — {g_reason} | no further entries; "
+                          f"skipping LTP calls for the rest of today")
+                continue
+
             # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration
             # cap > capital allocation (size-down if configured) > real broker
             # funds (live only). ──
@@ -269,15 +323,19 @@ def main(sid, once=False):
                     qty = sized_qty
                 else:
                     log(f"[SKIP] {sym} {sig} — {cap_reason}")
-                    try:
-                        import order_store
-                        order_store.record(o_side, qty, est_price or 0, source="strategy", strategy=sid,
-                                           mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
-                                           instrument=("equity" if route == "equity" else "options"),
-                                           trad_sym=tsym, sec_id=sec_id, segment=seg,
-                                           status="blocked", tags=["CAPITAL_BLOCKED", cap_reason])
-                    except Exception:
-                        pass
+                    # Record a visible "blocked" row ONLY if we have a real price
+                    # (never PX 0.00 — that was the confusing ghost order) and
+                    # only once per symbol/day (no per-scan pileup).
+                    if est_price and _once(f"block:{sid}:{sym}"):
+                        try:
+                            import order_store
+                            order_store.record(o_side, qty, est_price, source="strategy", strategy=sid,
+                                               mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
+                                               instrument=("equity" if route == "equity" else "options"),
+                                               trad_sym=tsym, sec_id=sec_id, segment=seg,
+                                               status="blocked", tags=["CAPITAL_BLOCKED", cap_reason])
+                        except Exception:
+                            pass
                     continue
 
             if mode == "live":

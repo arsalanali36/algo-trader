@@ -443,6 +443,53 @@ def daily_loss_breached(strategy, unrealized=0.0, rc=None):
     return False, ""
 
 
+def capital_headroom(strategy):
+    """Remaining ₹ capital for `strategy` before its own cap OR the global cap is
+    hit (whichever is tighter). None = no cap configured (unlimited). Uses
+    order_store entry prices + cached margin only — makes NO live LTP/quote call,
+    so it's safe to poll cheaply and to short-circuit a scan loop with."""
+    rc = _risk_cfg()
+    strat_cap = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("capital_rs")
+    glob_cap = (rc.get("global", {}) or {}).get("capital_rs")
+    rooms = []
+    if strat_cap is not None:
+        try:
+            rooms.append(float(strat_cap) - capital_in_use(strategy))
+        except Exception:
+            pass
+    if glob_cap is not None:
+        try:
+            rooms.append(float(glob_cap) - capital_in_use(None))
+        except Exception:
+            pass
+    return min(rooms) if rooms else None
+
+
+def gating_status(strategy, unrealized=0.0):
+    """Consolidated "can this strategy take a NEW entry right now?" answer — used
+    by the RMS panel AND by the traders' pre-scan short-circuit so a fully-blocked
+    strategy stops firing wasteful LTP calls + stops piling up PX 0.00 blocked
+    rows. Returns (blocked: bool, reason: str, hard: bool).
+
+    hard=True  → won't reverse today on its own (daily-loss or global drawdown
+                 breached) — genuinely "no further entries today".
+    hard=False → recoverable intraday (capital fully used; frees up when a
+                 position closes).
+
+    Makes NO live LTP/quote call (only order_store + config + the optional
+    caller-supplied `unrealized` estimate) so it's cheap to poll."""
+    breached, why = daily_loss_breached(strategy, unrealized=unrealized)
+    if breached:
+        return True, why, True
+    dd_ok, dd_why = check_drawdown(unrealized_pnl=unrealized)
+    if not dd_ok:
+        return True, dd_why, True
+    room = capital_headroom(strategy)
+    if room is not None and room <= 0:
+        return True, "capital cap fully used (no headroom — frees up when a position closes)", False
+    return False, "", False
+
+
 def reconcile_funds(broker):
     """Read-only health_check.py-style comparison: our own capital_in_use(None)
     vs the broker's actual available funds. Doesn't block anything — just

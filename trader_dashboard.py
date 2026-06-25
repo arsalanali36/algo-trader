@@ -346,6 +346,7 @@ def api_status():
             pid = get_pid(s)
             if pid:
                 st[s] = pid
+                st[f"{s}_mode"] = get_mode(s)
     except:
         pass
     return jsonify(st)
@@ -456,6 +457,13 @@ def api_rms_summary():
         cap_cap = _eff(sid_, "capital_rs")
         unreal, priced, total_n = _unrealized(s_open)
         max_loss_rs = _eff(sid_, "max_loss_rs")
+        # Can this strategy take a NEW entry right now? (daily-loss / drawdown /
+        # capital-exhausted) — so the panel can flag "no further entries today".
+        try:
+            g_blocked, g_reason, g_hard = risk_gate.gating_status(
+                sid_, unrealized=(unreal if priced else 0.0))
+        except Exception:
+            g_blocked, g_reason, g_hard = False, "", False
         rows.append({
             "strategy": sid_, "capital_used": round(cap_used, 2),
             "capital_cap": cap_cap, "open_positions": total_n, "priced": priced,
@@ -463,6 +471,7 @@ def api_rms_summary():
             "max_loss_rs": max_loss_rs,
             "max_loss_pct_used": round(abs(unreal) / max_loss_rs * 100, 1)
                 if (max_loss_rs and unreal < 0) else None,
+            "blocked": g_blocked, "block_reason": g_reason, "block_hard": g_hard,
         })
 
     glob_open = [p for p in open_pos if not any(
@@ -474,7 +483,39 @@ def api_rms_summary():
         "open_positions": glob_n, "priced": glob_priced,
         "unrealized_pnl": round(glob_unreal, 2) if glob_priced else None,
     }
-    return jsonify({"strategies": rows, "totals": totals})
+
+    # ── Webhook max-trades-per-day status ──
+    # Webhook strategies run inside THIS dashboard process, so we can read their
+    # live per-(strategy,symbol) trade counters directly. Surfaces "max trades
+    # reached → no further entries today" right in the RMS panel.
+    webhook = []
+    try:
+        import webhook_executor
+        whs = webhook_executor._all_webhooks()
+        tdy = dict(webhook_executor._trades_today)   # "strat|symbol" -> count
+        gmax = int((whs.get("global", {}) or {}).get("global_max_trades", 0) or 0)
+        gsum = sum(tdy.values())
+        for k, c in sorted(tdy.items()):
+            strat_k, _, sym_k = k.partition("|")
+            scfg = whs.get(strat_k, {}) or {}
+            mx = int(scfg.get("max_trades_per_day", 2) or 0)
+            try:
+                wb, wr, wh = risk_gate.gating_status(strat_k)
+            except Exception:
+                wb, wr, wh = False, "", False
+            webhook.append({
+                "strategy": strat_k, "symbol": sym_k,
+                "trades_today": c, "max_trades": mx,
+                "maxed": bool(mx and c >= mx),
+                "blocked": wb, "block_reason": wr, "block_hard": wh,
+            })
+        wh_global = {"global_max_trades": gmax, "total_trades_today": gsum,
+                     "maxed": bool(gmax and gsum >= gmax)}
+    except Exception as e:
+        wh_global = {"error": str(e)}
+
+    return jsonify({"strategies": rows, "totals": totals,
+                    "webhook": webhook, "webhook_global": wh_global})
 
 @app.route('/api/rms-reconcile')
 def api_rms_reconcile():

@@ -32,6 +32,27 @@ NIFTY50 = [
     "LTIM", "SHRIRAMFIN", "ADANIGREEN",
 ]
 
+# Liquid premium F&O names (user's hand-picked list, 2026-06-25) — only trade
+# STOCK OPTIONS in these to avoid the slippage / wide bid-ask that thinner
+# option chains have. Used as the default stock-option whitelist and as the
+# "liquid_premium" universe. Note: several of these are NOT in NIFTY50 (PFC,
+# RECLTD, CHOLAFIN, HAL, BEL, DLF) — they still resolve fine since equity_secid
+# reads the full NSE scrip master, not just NIFTY50.
+LIQUID_PREMIUM = [
+    # Banking & Finance
+    "KOTAKBANK", "INDUSINDBK", "PFC", "RECLTD", "CHOLAFIN",
+    # IT
+    "WIPRO", "HCLTECH", "TECHM",
+    # Auto
+    "M&M", "MARUTI", "BAJAJ-AUTO",
+    # Metals & Energy
+    "JSWSTEEL", "HINDALCO", "NTPC", "COALINDIA",
+    # Pharma
+    "SUNPHARMA", "CIPLA",
+    # Defense & Infra
+    "HAL", "BEL", "ADANIPORTS", "DLF",
+]
+
 _eq_cache = {}   # symbol -> sec_id (NSE_EQ)
 _eq_loaded = False
 
@@ -68,6 +89,8 @@ def resolve_universe(name="nifty50", custom=None):
     """Return list of symbols for a universe name (or custom list)."""
     if custom:
         return list(custom)
+    if name in ("liquid_premium", "liquid", "premium"):
+        return list(LIQUID_PREMIUM)
     if name == "nifty50":
         return list(NIFTY50)
     return list(NIFTY50)

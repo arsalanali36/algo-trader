@@ -10,21 +10,137 @@
 body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:14px}
 
 /* ── Header ── */
-.hdr{background:#161b22;border-bottom:1px solid #30363d;padding:14px 20px;display:flex;align-items:center;gap:12px}
-.hdr h1{font-size:16px;font-weight:600}
-.hdr-right{margin-left:auto;display:flex;align-items:center;gap:12px}
-#clock{color:#8b949e;font-size:13px}
-.dot{width:9px;height:9px;border-radius:50%;background:#f85149;display:inline-block;flex-shrink:0}
-.dot.on{background:#3fb950;animation:pulse 1.5s infinite}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.hdr {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9998;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 0 20px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.hdr h1 {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+}
+.hdr-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+#clock {
+  color: #8b949e;
+  font-size: 13px;
+  font-family: monospace;
+}
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f85149;
+  display: inline-block;
+  flex-shrink: 0;
+}
+.dot.on {
+  background: #3fb950;
+  animation: pulse 1.5s infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1 }
+  50% { opacity: .35 }
+}
 
-/* ── Tabs ── */
-.tabs{display:flex;background:#161b22;border-bottom:1px solid #30363d;padding:0 20px; overflow-x:auto;}
-.tab{padding:12px 18px;cursor:pointer;color:#8b949e;font-size:13px;font-weight:500;border-bottom:2px solid transparent;transition:.15s; white-space:nowrap;}
-.tab:hover{color:#e6edf3}
-.tab.active{color:#e6edf3;border-bottom-color:#1f6feb}
-.tab-body{display:none;padding:20px}
-.tab-body.active{display:block}
+/* ── Main Navigation Tabs (inside Header) ── */
+.hdr .tabs {
+  display: flex;
+  background: transparent;
+  border-bottom: none;
+  padding: 0;
+  margin-left: 20px;
+  height: 100%;
+  align-items: stretch;
+  overflow: visible;
+}
+.hdr .tab {
+  padding: 0 16px;
+  cursor: pointer;
+  color: #8b949e;
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom: 3px solid transparent;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  height: 100%;
+}
+.hdr .tab:hover {
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.03);
+}
+.hdr .tab.active {
+  color: #58a6ff;
+  border-bottom-color: #1f6feb;
+  background: rgba(31, 111, 235, 0.05);
+}
+
+/* ── Fallback/Sub Tabs (not in header, e.g. Config sub-tabs) ── */
+.tabs {
+  display: flex;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  padding: 0 20px;
+  overflow-x: auto;
+}
+.tab {
+  padding: 12px 18px;
+  cursor: pointer;
+  color: #8b949e;
+  font-size: 13px;
+  font-weight: 500;
+  border-bottom: 2px solid transparent;
+  transition: .15s;
+  white-space: nowrap;
+}
+.tab:hover {
+  color: #e6edf3;
+}
+.tab.active {
+  color: #e6edf3;
+  border-bottom-color: #1f6feb;
+}
+.tab-body {
+  display: none;
+  padding: 20px !important;
+  margin-top: 52px; /* clear frozen header */
+}
+.tab-body.active {
+  display: block;
+}
+
+/* ── Dropdown Menus ── */
+.dropdown-menu {
+  display: none;
+}
+.dropdown-item {
+  color: #c9d1d9;
+  cursor: pointer;
+  padding: 8px 12px;
+  font-size: 12px;
+  transition: background 0.12s, color 0.12s;
+}
+.dropdown-item:hover {
+  background: #1f6feb;
+  color: #ffffff !important;
+}
 
 /* ── Cards / Grid ── */
 .grid{display:grid;grid-template-columns:repeat(auto-fill, minmax(300px, 1fr));gap:16px}
@@ -88,11 +204,39 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 #flash{font-size:13px;color:#8b949e;min-height:20px;padding:6px 0}
 
 /* Modal */
-.modal-overlay { display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.7); z-index:999; align-items:center; justify-content:center; }
-.modal { background:#161b22; border:1px solid #30363d; border-radius:8px; width:450px; max-width:90%; max-height:80vh; display:flex; flex-direction:column; }
-.modal-hdr { padding:14px 18px; border-bottom:1px solid #30363d; display:flex; justify-content:space-between; align-items:center; font-weight:600; font-size:15px; }
-.modal-body { padding:14px 18px; overflow-y:auto; flex:1; display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; }
-.modal-ftr { padding:14px 18px; border-top:1px solid #30363d; display:flex; justify-content:flex-end; gap:10px; }
+.modal-overlay {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 10000; /* above frozen header */
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(5px);
+  -webkit-backdrop-filter: blur(5px);
+}
+.modal {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  width: 450px;
+  max-width: 90%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  animation: modalFadeIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@keyframes modalFadeIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+.modal-hdr { padding: 14px 18px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 15px; }
+.modal-body { padding: 14px 18px; overflow-y: auto; flex: 1; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; }
+.modal-ftr { padding: 14px 18px; border-top: 1px solid #30363d; display: flex; justify-content: flex-end; gap: 10px; }
 .symbol-cb { display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:#e6edf3; }
 .symbol-cb input { cursor:pointer; }
 .pill-container { display:flex; flex-wrap:wrap; gap:6px; margin-top:4px; padding-bottom:8px; }
@@ -359,6 +503,108 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   #image-viewer-close { right: 10px; top: 10px; }
   #image-viewer-counter { margin-top: 20px; }
 }
+
+/* ── Sidebar Right ── */
+.sidebar-right {
+  position: fixed;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 64px;
+  background: rgba(22, 27, 34, 0.85);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-left: 1px solid rgba(48, 54, 61, 0.8);
+  display: none; /* Hide sidebar completely */
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 0;
+  gap: 16px;
+  z-index: 9999;
+}
+
+/* User avatar at the top */
+.sidebar-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: #1f6feb;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  margin-bottom: 8px;
+  box-shadow: 0 0 10px rgba(31, 111, 235, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  user-select: none;
+}
+
+.sidebar-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  border: 1px solid #30363d;
+  background: #21262d;
+  color: #e6edf3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+}
+
+.sidebar-btn:hover {
+  background: #30363d;
+  border-color: #58a6ff;
+  transform: translateY(-2px) scale(1.05);
+  box-shadow: 0 4px 12px rgba(88, 166, 255, 0.15);
+  color: #fff;
+}
+
+.sidebar-btn:active {
+  transform: translateY(0) scale(0.95);
+}
+
+/* Tooltip styling */
+.sidebar-btn[data-tooltip]::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  right: 76px;
+  top: 50%;
+  transform: translateY(-50%) scale(0.85);
+  background: #161b22;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  z-index: 10000;
+}
+
+.sidebar-btn[data-tooltip]:hover::after {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* Settings Gear at the bottom */
+.sidebar-bottom {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
 </style>
 </head>
 <body>
@@ -367,7 +613,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <span class="dot" id="hdr-dot"></span>
   <h1>Algo Trader</h1>
   <span id="envBadge" style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px;border:1px solid #30363d;margin-left:2px">—</span>
-  <span id="hdr-badge" style="font-size:12px;color:#8b949e">—</span>
   <script>
   (function(){
     var h = location.hostname;
@@ -382,81 +627,58 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     }
   })();
   </script>
-  <div class="hdr-right">
-    <button onclick="openBulkModal()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;margin-right:4px;" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">📝 Bulk Orders</button>
-    <button onclick="openScannerModal()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer;margin-right:4px;" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">🔍 Scanner</button>
-    <button onclick="qoToggle()" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">⚡ Quick Order</button>
-    <button onclick="watchToggle()" id="watch-btn" style="padding:6px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;font-weight:600;cursor:pointer" onmouseover="this.style.background='#30363d'" onmouseout="this.style.background='#21262d'">👁 Watch</button>
-    <a href="/backtest" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128200; Backtest</a>
-    <a href="/backtest-chart" target="_blank" class="btn btn-gray" style="padding:6px 12px;text-decoration:none;">&#128202; Results</a>
-    <span id="clock"></span>
+  
+  <div class="tabs">
+    <div class="tab" onclick="switchTab('control')" style="display: none;">Control</div>
+    <div class="tab" onclick="switchTab('log')">Logs</div>
+    <div class="tab" onclick="switchTab('config')" style="display: none;">Config</div>
+    <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
+    <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
+    <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
+    <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
+    <div class="tab" onclick="switchTab('pine')">📜 Script</div>
+    <a href="/backtest-chart" target="_blank" class="tab" style="text-decoration: none;">📊 Results</a>
+    <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
+      <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More ▾</div>
+      <div class="dropdown-menu" id="more-dropdown" style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 140px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+        <div class="dropdown-item" onclick="watchToggle(); closeMoreDropdown();" style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">👁 Watch List</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="hdr-right" style="gap: 12px;">
+    <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; line-height: 1.2;">
+      <span id="hdr-top-date" style="font-size: 11px; color: #8b949e; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">—</span>
+      <span id="clock" style="font-size: 13px; color: #e6edf3; font-family: monospace; font-weight: bold;">—</span>
+    </div>
+    <div class="hdr-avatar-container" style="position: relative;">
+      <div class="hdr-avatar" onclick="toggleAvatarDropdown(event)" id="avatar-btn" style="width: 28px; height: 28px; border-radius: 50%; background: #1f6feb; color: #ffffff; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; cursor: pointer; user-select: none;">A</div>
+      <div class="dropdown-menu" id="avatar-dropdown" style="display: none; position: absolute; top: 34px; right: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 120px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+        <div class="dropdown-item" onclick="openCredentialsModal(); closeAvatarDropdown();" style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">Credentials</div>
+        <div class="dropdown-item" onclick="switchTab('config'); closeAvatarDropdown();" style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">Settings</div>
+      </div>
+    </div>
   </div>
 </div>
 
-<div class="tabs">
-  <div class="tab" onclick="switchTab('control')">Control</div>
-  <div class="tab" onclick="switchTab('log')">Logs</div>
-  <div class="tab" onclick="switchTab('config')">Config</div>
-  <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
-  <div class="tab" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
-  <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
-  <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
-  <div class="tab active" onclick="switchTab('pine')">📜 Script</div>
+<div class="sidebar-right">
+  <div class="sidebar-avatar" onclick="openCredentialsModal()" title="Credentials & API Keys" style="cursor:pointer;">A</div>
+  <button class="sidebar-btn" onclick="openBulkModal()" data-tooltip="Bulk Orders" style="display: none;">📝</button>
+  <button class="sidebar-btn" onclick="qoToggle()" data-tooltip="Quick Order">⚡</button>
+  <button class="sidebar-btn" onclick="openScannerModal()" data-tooltip="52-EMA Scanner" style="display: none;">🔍</button>
+  <button class="sidebar-btn" onclick="watchToggle()" id="watch-btn" data-tooltip="Watch List">👁</button>
+  <a href="/backtest" target="_blank" class="sidebar-btn" data-tooltip="Backtest Engine" style="display: none;">📈</a>
+  <a href="/backtest-chart" target="_blank" class="sidebar-btn" data-tooltip="Backtest Results" style="display: none;">📊</a>
+  <div class="sidebar-bottom">
+    <button class="sidebar-btn" onclick="switchTab('config')" data-tooltip="Settings / Config">⚙️</button>
+  </div>
 </div>
 
 <!-- CONTROL TAB -->
 <div class="tab-body" id="tab-control">
-  <!-- Dhan Token -->
-  <div class="card" style="margin-bottom:12px;border-color:#d29922">
-    <h2 style="color:#d29922">Dhan Token</h2>
-    <div style="display:flex;gap:10px;align-items:flex-start;margin-top:4px">
-      <textarea id="token-input" placeholder="JWT token..." style="width:100%;height:60px;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;"></textarea>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <button class="btn btn-amber" onclick="saveToken()">Save</button>
-        <button class="btn btn-gray"  onclick="checkToken()">Check</button>
-      </div>
-    </div>
-    <div id="token-msg" style="font-size:12px;margin-top:6px;color:#8b949e"></div>
-  </div>
-
-  <!-- Kite Token (Zerodha order placement) -->
-  <div class="card" style="margin-bottom:12px;border-color:#6e40c9">
-    <h2 style="color:#a371f7">Kite Token <span style="font-size:11px;color:#8b949e;font-weight:normal">(Zerodha — order placement)</span></h2>
-    <!-- One-time API key setup (collapse karo jab ho jaye) -->
-    <details style="margin-bottom:10px">
-      <summary style="font-size:11px;color:#8b949e;cursor:pointer">⚙️ One-time Setup — API Key & Secret</summary>
-      <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
-        <input id="kite-api-key"    placeholder="API Key (kite.trade developer console se)"
-               style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
-        <input id="kite-api-secret" placeholder="API Secret" type="password"
-               style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
-        <button class="btn" style="background:#21262d;border-color:#30363d;font-size:12px;align-self:flex-start"
-                onclick="kiteSaveKey()">Save API Key</button>
-        <div id="kite-key-msg" style="font-size:11px;color:#8b949e"></div>
-      </div>
-    </details>
-
-    <!-- Daily token refresh -->
-    <div style="font-size:11px;color:#8b949e;margin-bottom:8px;line-height:1.7">
-      <b style="color:#e6edf3">Rozana subah:</b>
-      <span onclick="kiteOpenLogin()" style="color:#a371f7;cursor:pointer;text-decoration:underline">
-        🔗 Step 1 — Zerodha login kholo
-      </span>
-      → login karo → redirect URL mein se
-      <code style="color:#e6edf3;background:#21262d;padding:1px 4px;border-radius:3px">request_token=XXXX</code>
-      copy karo → Step 2 mein paste karo
-    </div>
-    <div style="display:flex;gap:10px;align-items:flex-start">
-      <input id="kite-request-token" placeholder="Step 2 — request_token yahan paste karo"
-             style="flex:1;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
-      <button class="btn" style="background:#6e40c9;border-color:#6e40c9;white-space:nowrap"
-              onclick="kiteExchangeToken()">Exchange → Save</button>
-    </div>
-    <div id="kite-token-msg" style="font-size:12px;margin-top:6px;color:#8b949e"></div>
-  </div>
   <div id="control-grid" class="grid" style="margin-bottom:12px"></div>
   <div class="btn-row">
-    <button class="btn btn-gray" onclick="saveSummary()">💾 Save Today's Summary</button>
+    <button class="btn btn-gray" onclick="saveSummary()" style="display: none;">💾 Save Today's Summary</button>
   </div>
   <div id="flash"></div>
 </div>
@@ -488,23 +710,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <span id="wh-daypnl" style="margin-left:auto;font-size:11.5px;color:#8b949e">—</span>
   </div>
 
-  <!-- global: one URL + secret + caps (shared by all strategies) -->
-  <div class="card" style="margin-bottom:12px">
-    <div style="font-size:11px;color:#8b949e;margin-bottom:6px">WEBHOOK URL <span style="color:#6e7681">(ek hi URL — sab strategies; TradingView → Notifications → Webhook URL)</span></div>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
-      <code id="wh-url" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></code>
-      <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whCopy('wh-url')">Copy</button>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
-      <label class="wh-f">Secret token<span style="display:flex;gap:6px"><input id="wh-token" readonly style="flex:1"></span></label>
-      <label class="wh-f">Global daily ₹ loss cap<input id="wh-daily_cap" type="number" min="0" value="5000"></label>
-      <label class="wh-f">Global max trades/day (0=off)<input id="wh-global_max" type="number" min="0" value="0"></label>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;margin-top:12px">
-      <button class="btn btn-green" onclick="whSaveGlobal()">💾 Save global</button>
-      <span id="wh-global-msg" style="font-size:12px;color:#8b949e"></span>
-    </div>
-  </div>
+
 
   <!-- strategies: list + selected config -->
   <div style="display:grid;grid-template-columns:180px 1fr;gap:12px;margin-bottom:12px">
@@ -572,7 +778,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 
   <!-- TradingView alert template -->
-  <div class="card" style="margin-bottom:12px">
+  <div class="card" style="margin-bottom:12px; display: none;">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
       <span style="font-size:13px;font-weight:600;color:#adbac7">TradingView alert message</span>
       <div style="display:flex;gap:6px">
@@ -585,8 +791,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 
   <!-- positions + log -->
-  <div style="display:grid;grid-template-columns:1.1fr 1fr;gap:12px">
-    <div class="card">
+  <div style="display:grid;grid-template-columns:1fr;gap:12px">
+    <div class="card" style="display: none;">
       <div style="font-size:13px;font-weight:600;color:#adbac7;margin-bottom:8px">Open positions</div>
       <div id="wh-positions" style="font-size:12px;color:#8b949e">—</div>
     </div>
@@ -598,7 +804,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 </div>
 
 <!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
-<div class="tab-body" id="tab-orders" style="padding:16px 18px 24px">
+<div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <span style="font-size:11px;color:#6e7681">Date</span>
     <input type="date" id="ord-date" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
@@ -618,6 +824,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <select id="ord-strat" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px"><option value="">All strategies</option></select>
     <select id="ord-broker" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All brokers</option></select>
     <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="ordersRender()">↻ Refresh</button>
+    <button class="btn btn-blue" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="openBulkModal()">📝 Bulk Order</button>
   </div>
 
   <div id="ord-summary" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"></div>
@@ -884,7 +1091,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 </div>
 
 <!-- PINE TAB -->
-<div class="tab-body active" id="tab-pine" style="padding:16px 20px 20px">
+<div class="tab-body" id="tab-pine" style="padding:16px 20px 20px">
   <!-- Inner sub-tab bar -->
   <div style="display:flex;gap:0;border-bottom:1px solid #30363d;margin-bottom:18px">
     <div id="pine-sub-editor" onclick="pineSwitchSub('editor')"
@@ -1128,13 +1335,104 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 </div>
 
+<!-- MODAL FOR API CREDENTIALS & TOKENS -->
+<div class="modal-overlay" id="credentials-modal" onclick="if(event.target===this)closeCredentialsModal()">
+  <div class="modal" style="width: 550px; max-width: 90vw;">
+    <div class="modal-hdr">
+      <span>🔑 API Credentials &amp; Access Tokens</span>
+      <span style="cursor:pointer;color:#8b949e" onclick="closeCredentialsModal()">✕</span>
+    </div>
+    <div class="modal-body" style="padding: 16px; display: flex; flex-direction: column; gap: 16px; overflow-y: auto; max-height: 75vh; grid-template-columns: 1fr;">
+      
+      <!-- Dhan Token -->
+      <div class="card" style="border-color:#d29922; margin: 0; padding: 16px;">
+        <h2 style="color:#d29922; font-size: 13px; margin-bottom: 10px;">Dhan Token</h2>
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-top:4px">
+          <textarea id="token-input" placeholder="JWT token..." style="width:100%;height:60px;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;border-radius:6px;font-size:12px;resize:none;"></textarea>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-amber" style="padding: 6px 12px;" onclick="saveToken()">Save</button>
+            <button class="btn btn-gray" style="padding: 6px 12px;" onclick="checkToken()">Check</button>
+          </div>
+        </div>
+        <div id="token-msg" style="font-size:11px;margin-top:6px;color:#8b949e"></div>
+      </div>
+
+      <!-- Kite Token (Zerodha) -->
+      <div class="card" style="border-color:#6e40c9; margin: 0; padding: 16px;">
+        <h2 style="color:#a371f7; font-size: 13px; margin-bottom: 10px;">Kite Token <span style="font-size:11px;color:#8b949e;font-weight:normal">(Zerodha — order placement)</span></h2>
+        
+        <!-- One-time Setup -->
+        <details style="margin-bottom:10px">
+          <summary style="font-size:11px;color:#8b949e;cursor:pointer">⚙️ One-time Setup — API Key &amp; Secret</summary>
+          <div style="margin-top:8px;display:flex;flex-direction:column;gap:6px">
+            <input id="kite-api-key" placeholder="API Key (kite.trade developer console se)" style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+            <input id="kite-api-secret" placeholder="API Secret" type="password" style="background:#0d1117;color:#e6edf3;padding:7px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+            <button class="btn" style="background:#21262d;border-color:#30363d;font-size:11px;align-self:flex-start;padding:5px 10px;" onclick="kiteSaveKey()">Save API Key</button>
+            <div id="kite-key-msg" style="font-size:11px;color:#8b949e"></div>
+          </div>
+        </details>
+
+        <!-- Daily token refresh -->
+        <div style="font-size:11px;color:#8b949e;margin-bottom:8px;line-height:1.6">
+          <b style="color:#e6edf3">Rozana subah:</b>
+          <span onclick="kiteOpenLogin()" style="color:#a371f7;cursor:pointer;text-decoration:underline">
+            🔗 Step 1 — Zerodha login kholo
+          </span>
+          → login karo → redirect URL mein se
+          <code style="color:#e6edf3;background:#21262d;padding:1px 4px;border-radius:3px">request_token=XXXX</code>
+          copy karo → Step 2 mein paste karo
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <input id="kite-request-token" placeholder="Step 2 — request_token yahan paste karo" style="flex:1;background:#0d1117;color:#e6edf3;padding:8px;border:1px solid #30363d;border-radius:4px;font-size:12px"/>
+          <button class="btn" style="background:#6e40c9;border-color:#6e40c9;white-space:nowrap;padding:8px 12px;font-size:12px;" onclick="kiteExchangeToken()">Exchange → Save</button>
+        </div>
+        <div id="kite-token-msg" style="font-size:11px;margin-top:6px;color:#8b949e"></div>
+      </div>
+
+      <!-- Webhook Global Config -->
+      <div class="card" style="border-color:#1f6feb; margin: 0; padding: 16px;">
+        <h2 style="color:#58a6ff; font-size: 13px; margin-bottom: 10px;">Webhook Credentials &amp; Caps</h2>
+        
+        <div style="font-size:11px;color:#8b949e;margin-bottom:6px">WEBHOOK URL <span style="color:#6e7681">(ek hi URL — sab strategies; TradingView → Notifications → Webhook URL)</span></div>
+        <div style="display:flex;gap:8px;align-items:center;margin-bottom:12px">
+          <code id="wh-url" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:8px 9px;font-size:11px;color:#adbac7;overflow:hidden;white-space:nowrap;text-overflow:ellipsis"></code>
+          <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whCopy('wh-url')">Copy</button>
+        </div>
+        
+        <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:12px">
+          <div style="display:flex; flex-direction:column; gap:4px">
+            <span style="font-size:11px; color:#8b949e">Secret token</span>
+            <input id="wh-token" readonly style="background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:6px 8px; font-size:12px; outline:none;" />
+          </div>
+          <div style="display:grid; grid-template-columns: 1fr 1fr; gap:10px">
+            <div style="display:flex; flex-direction:column; gap:4px">
+              <span style="font-size:11px; color:#8b949e">Global daily ₹ loss cap</span>
+              <input id="wh-daily_cap" type="number" min="0" value="5000" style="background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:6px 8px; font-size:12px; outline:none;" />
+            </div>
+            <div style="display:flex; flex-direction:column; gap:4px">
+              <span style="font-size:11px; color:#8b949e">Global max trades/day (0=off)</span>
+              <input id="wh-global_max" type="number" min="0" value="0" style="background:#0d1117; color:#e6edf3; border:1px solid #30363d; border-radius:4px; padding:6px 8px; font-size:12px; outline:none;" />
+            </div>
+          </div>
+        </div>
+        
+        <div style="display:flex;align-items:center;gap:10px">
+          <button class="btn btn-green" onclick="whSaveGlobal()" style="padding: 6px 12px; font-size:12px;">💾 Save global</button>
+          <span id="wh-global-msg" style="font-size:12px;color:#8b949e"></span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
 const NIFTY50 = ["NIFTY","BANKNIFTY","RELIANCE","TCS","INFY","HDFCBANK","ICICIBANK","SBIN","AXISBANK","BAJFINANCE","WIPRO","KOTAKBANK","LT","TATAMOTORS","MARUTI","HINDUNILVR","ITC","ADANIENT","SUNPHARMA","TITAN","ULTRACEMCO","NESTLEIND","POWERGRID","NTPC","ONGC"];
 
 let GLOBAL_CONFIG = {};
 let RUNNING_PIDS = {};
-let activeTab = 'pine';
-pineLoadLatest(); pineLoadHistory(); // History is default sub-tab
+let activeTab = 'orders';   // default landing tab on (re)load = Orders & P&L
+pineLoadLatest(); pineLoadHistory(); // preload pine sub-tab data (hidden until opened)
 let activeCfgTab = 'ema';
 let currentModalTarget = null; // store the config key (e.g. ema_v1) being edited
 
@@ -1157,12 +1455,37 @@ function switchTab(id) {
   if (id === 'risk') { renderRiskTab(); }
 }
 
+function openCredentialsModal() {
+  document.getElementById('credentials-modal').style.display = 'flex';
+  renderWebhookTab();
+}
+function closeCredentialsModal() {
+  document.getElementById('credentials-modal').style.display = 'none';
+}
+
+async function riskStartBot(s, mode) {
+  let r = await fetch(`/api/start?s=${s}&mode=${mode}`, {method:'POST'});
+  let j = await r.json();
+  flash(j.msg, j.msg.includes('✅')?'#3fb950':'#d29922');
+  renderRmsSummary();
+}
+async function riskStopBot(s) {
+  let r = await fetch(`/api/stop?s=${s}`, {method:'POST'});
+  let j = await r.json();
+  flash(j.msg, '#f85149');
+  renderRmsSummary();
+}
+
 // ── RISK TAB (global + per-strategy max-loss) ──
 let RISK_CFG = {global:{}, per_strategy:{}};
 async function renderRmsSummary(){
   const el = document.getElementById('rms-summary-content');
   let d = {};
-  try { const r = await fetch('/api/rms-summary'); d = await r.json(); } catch(e){
+  try {
+    await checkStatus(); // refresh process PIDs & modes first
+    const r = await fetch('/api/rms-summary');
+    d = await r.json();
+  } catch(e){
     el.innerHTML = '<div style="color:#f85149;font-size:12px;padding:6px">Load failed: '+e+'</div>'; return;
   }
   const rows = d.strategies || [];
@@ -1170,11 +1493,48 @@ async function renderRmsSummary(){
   const fmtPnl = v => v===null||v===undefined ? '—' : (v>=0?'+':'')+Math.round(v);
   const pnlColor = v => v===null||v===undefined ? '#8b949e' : (v>=0?'#3fb950':'#f85149');
 
-  let html = '<table class="cfg-table"><tr><th>Strategy</th><th>Capital Used</th><th>Capital Cap</th>'
-    + '<th>Open Pos</th><th>Unrealized P&amp;L</th><th>Max-Loss Used</th></tr>';
+  // Gating badge — "can this strategy take a new entry right now?"
+  const gateBadge = s => {
+    if (!s.blocked) return '<span style="color:#3fb950">✅ Active</span>';
+    const c = s.block_hard ? '#f85149' : '#d29922';
+    const lbl = s.block_hard ? '🛑 No further entries today' : '⏸ Capital full';
+    return `<span style="color:${c}" title="${(s.block_reason||'').replace(/"/g,'&quot;')}">${lbl}</span>`;
+  };
+
+  let html = '<table class="cfg-table">'
+    + '<tr><th style="width:130px;">Strategy</th>'
+    + '<th style="width:175px;">Run Controls</th>'
+    + '<th style="width:130px;">Status</th>'
+    + '<th style="width:110px;">Capital Used</th>'
+    + '<th style="width:100px;">Capital Cap</th>'
+    + '<th style="width:80px;">Open Pos</th>'
+    + '<th style="width:110px;">Unrealized P&amp;L</th>'
+    + '<th style="width:110px;">Max-Loss Used</th></tr>';
+
   rows.forEach(s => {
     const capPct = s.capital_cap ? Math.min(100, Math.round(s.capital_used/s.capital_cap*100)) : null;
+
+    let runControlsHtml = '—';
+    const isWebhook = s.strategy.toLowerCase().startsWith('webhook');
+    if (!isWebhook) {
+      const pid = RUNNING_PIDS[s.strategy] || RUNNING_PIDS[s.strategy.toLowerCase()];
+      const mode = RUNNING_PIDS[s.strategy + '_mode'] || RUNNING_PIDS[s.strategy.toLowerCase() + '_mode'] || 'paper';
+      if (pid) {
+        const modeBadge = mode === 'live' 
+          ? '<span style="color:#58a6ff;font-weight:600;">🔵 Live</span>' 
+          : '<span style="color:#3fb950;font-weight:600;">🟢 Paper</span>';
+        runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap">${modeBadge} <span style="font-size:10px;color:#8b949e;margin-left:3px">(PID ${pid})</span>`
+          + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskStopBot('${s.strategy}')">Stop</button></div>`;
+      } else {
+        runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap"><span style="color:#8b949e">⚫ Stopped</span>`
+          + `<button class="btn btn-green" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskStartBot('${s.strategy}','paper')">Paper</button>`
+          + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1;" onclick="riskStartBot('${s.strategy}','live')">Live</button></div>`;
+      }
+    }
+
     html += `<tr><td>${s.strategy}</td>
+      <td>${runControlsHtml}</td>
+      <td style="font-size:11px">${gateBadge(s)}</td>
       <td>${fmtRs(s.capital_used)}${capPct!==null?` <span style="color:${capPct>=90?'#f85149':'#8b949e'};font-size:10px">(${capPct}%)</span>`:''}</td>
       <td>${fmtRs(s.capital_cap)}</td>
       <td>${s.priced}/${s.open_positions}${s.priced<s.open_positions?' <span style="color:#8b949e;font-size:10px">(unpriced)</span>':''}</td>
@@ -1182,9 +1542,12 @@ async function renderRmsSummary(){
       <td>${s.max_loss_pct_used!==null?`<span style="color:${s.max_loss_pct_used>=80?'#f85149':'#d29922'}">${s.max_loss_pct_used}%</span>`:'—'}</td>
       </tr>`;
   });
+
   const t = d.totals || {};
   const tCapPct = t.capital_cap ? Math.min(100, Math.round(t.capital_used/t.capital_cap*100)) : null;
   html += `<tr style="border-top:2px solid #30363d;font-weight:700"><td>TOTAL (all strategies)</td>
+    <td>—</td>
+    <td>—</td>
     <td>${fmtRs(t.capital_used)}${tCapPct!==null?` <span style="color:${tCapPct>=90?'#f85149':'#8b949e'};font-size:10px">(${tCapPct}%)</span>`:''}</td>
     <td>${fmtRs(t.capital_cap)}</td>
     <td>${t.priced}/${t.open_positions}</td>
@@ -1194,6 +1557,33 @@ async function renderRmsSummary(){
   if (!rows.length) {
     html += '<div style="color:#8b949e;font-size:11px;padding:8px 2px">Koi strategy nifty_config.json me configured nahi hai — sirf TOTAL row (sab tags milake) dikh rahi hai.</div>';
   }
+
+  // ── Webhook max-trades-per-day status ──
+  const wh = d.webhook || [];
+  const whg = d.webhook_global || {};
+  if (wh.length || (whg.global_max_trades)) {
+    html += '<div style="margin-top:14px;font-size:12px;font-weight:700;color:#58a6ff">🔗 Webhook — Trades / Day</div>';
+    html += '<table class="cfg-table" style="margin-top:6px"><tr><th>Strategy</th><th>Symbol</th><th>Trades Today</th><th>Max/Day</th><th>Status</th></tr>';
+    wh.forEach(w => {
+      const limitHit = w.maxed || w.blocked;
+      let statusTxt, statusCol;
+      if (w.maxed) { statusTxt = '🛑 Max trades reached — no further entries'; statusCol = '#f85149'; }
+      else if (w.blocked) { statusTxt = (w.block_hard?'🛑 ':'⏸ ') + (w.block_reason||'blocked'); statusCol = w.block_hard?'#f85149':'#d29922'; }
+      else { statusTxt = '✅ Open'; statusCol = '#3fb950'; }
+      html += `<tr><td>${w.strategy}</td><td>${w.symbol||'—'}</td>
+        <td style="color:${limitHit?'#f85149':'#e6edf3'};font-weight:600">${w.trades_today}</td>
+        <td>${w.max_trades||'—'}</td>
+        <td style="font-size:11px;color:${statusCol}" title="${(w.block_reason||'').replace(/"/g,'&quot;')}">${statusTxt}</td></tr>`;
+    });
+    if (whg.global_max_trades) {
+      html += `<tr style="border-top:2px solid #30363d;font-weight:700"><td colspan="2">GLOBAL (all webhook strategies)</td>
+        <td style="color:${whg.maxed?'#f85149':'#e6edf3'}">${whg.total_trades_today}</td>
+        <td>${whg.global_max_trades}</td>
+        <td style="color:${whg.maxed?'#f85149':'#3fb950'};font-size:11px">${whg.maxed?'🛑 Global max reached':'✅ Open'}</td></tr>`;
+    }
+    html += '</table>';
+  }
+
   el.innerHTML = html;
 }
 
@@ -1682,14 +2072,29 @@ function toggleDropdown(event, tradeId) {
   const dropdown = document.getElementById(`dropdown-${tradeId}`);
   if (!dropdown) return;
   const isCurrentlyOpen = dropdown.style.display === 'block';
-  
+
   document.querySelectorAll('.dropdown-content').forEach(el => {
     el.style.display = 'none';
   });
-  
-  if (!isCurrentlyOpen) {
-    dropdown.style.display = 'block';
-  }
+  if (isCurrentlyOpen) return;
+
+  // Position the ⋮ menu as FIXED relative to the trigger so it escapes the
+  // table's overflow-x:auto wrapper — that wrapper used to clip the menu when
+  // there were only a row or two ("3-dot menu ajeeb / jagha khatam"). Flips up
+  // near the viewport bottom so it's never cut off.
+  const trig = event.currentTarget || event.target;
+  const r = trig.getBoundingClientRect();
+  dropdown.style.display = 'block';
+  dropdown.style.position = 'fixed';
+  dropdown.style.right = 'auto';
+  const mw = dropdown.offsetWidth || 160, mh = dropdown.offsetHeight || 190;
+  let left = r.right - mw;            // right-align the menu to the ⋮
+  if (left < 8) left = 8;
+  let top = r.bottom + 4;
+  if (top + mh > window.innerHeight - 8) top = r.top - mh - 4;   // flip up
+  if (top < 8) top = 8;
+  dropdown.style.left = left + 'px';
+  dropdown.style.top = top + 'px';
 }
 
 window.addEventListener('click', function(e) {
@@ -2054,6 +2459,9 @@ function renderCachedOrders() {
             val = t.exit_time || '—';
             colorStyle = 'color:#6e7681;';
             break;
+          case 'exit_reason':
+            val = _exitReasonBadge(t.exit_reason);
+            break;
           case 'duration':
             val = _durFmt(t.entry_time, t.exit_time);
             colorStyle = 'color:#8b949e;';
@@ -2272,6 +2680,31 @@ function renderCachedOrders() {
            sltp_disp += `</div>`;
         }
 
+        // Resolve SL/Target to a PREMIUM price level for the chart (item F).
+        // pct/pt/premium map directly; ₹-amount (rs) → premium points (₹ ÷ qty)
+        // so it's plottable; index/underlying-level SL/TP can't be drawn on the
+        // premium axis so they're left blank (no line). BUY: SL below / TP above
+        // entry; SELL (option-selling): SL above / TP below.
+        const _resolveSlTp = (type, valStr, isSL) => {
+          const v = parseFloat(valStr);
+          if(!isFinite(v) || !entry) return '';
+          if(type === 'premium') return v;
+          let dlt;
+          if(type === 'pt') dlt = v;
+          else if(type === 'pct') dlt = entry * v / 100;
+          else if(type === 'rs') dlt = v / (qty || 1);
+          else return '';
+          const below = (t.entry === 'BUY') ? isSL : !isSL;
+          return Number((below ? entry - dlt : entry + dlt).toFixed(2));
+        };
+        let _slPx = '', _tpPx = '';
+        if(sl_type && sl_val) _slPx = _resolveSlTp(sl_type, sl_val, true);
+        else if(sl_pct) _slPx = _resolveSlTp('pct', sl_pct, true);
+        if(tp_type && tp_val) _tpPx = _resolveSlTp(tp_type, tp_val, false);
+        else if(tp_pct) _tpPx = _resolveSlTp('pct', tp_pct, false);
+        const _slArg = (_slPx === '' || _slPx == null) ? 'null' : _slPx;
+        const _tpArg = (_tpPx === '' || _tpPx == null) ? 'null' : _tpPx;
+
         let encNote = encodeURIComponent(note);
         let imgs = _imgTagsOf(t);
         let encImgs = encodeURIComponent(JSON.stringify(imgs));
@@ -2360,7 +2793,7 @@ function renderCachedOrders() {
               val = qty;
               break;
             case 'chart':
-              val = `<span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}')">📈</span>`;
+              val = `<span style="cursor:pointer" title="Entry kahan hua — premium chart" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg})">📈</span>`;
               break;
             case 'actions':
               val = `
@@ -2374,7 +2807,7 @@ function renderCachedOrders() {
                   <div class="dropdown">
                     <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
                     <div id="dropdown-${t.id}" class="dropdown-content">
-                      <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}')">📈 Chart</a>
+                      <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg})">📈 Chart</a>
                       <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')">⚙️ SL/Target</a>
                       <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
                       <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
@@ -2414,7 +2847,21 @@ function renderCachedOrders() {
       </details>`;
     }
     
-    ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>'));
+    // Grand TOTAL bar across ALL open positions (item D — like the Completed
+    // Trades table's TOTAL). Count + margin are known now; Points / Unrealized /
+    // Return are live and get filled by _patchLtpCells as LTPs arrive.
+    let _openCount = opnReal.length, _openMargin = 0;
+    opnReal.forEach(t => { _openMargin += (t.margin_used != null ? Number(t.margin_used) : 0); });
+    const grandTotal = _openCount ? `
+      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:11px 16px;font-size:12px">
+        <span style="font-weight:700;color:#58a6ff">📊 TOTAL (all open positions)</span>
+        <span style="color:#8b949e">Positions: <b style="color:#e6edf3">${_openCount}</b></span>
+        <span style="color:#8b949e">Margin: <b style="color:#e6edf3">${Math.round(_openMargin)}</b></span>
+        <span style="color:#8b949e">Points: <b id="open-tot-pts">—</b></span>
+        <span style="color:#8b949e">Unrealized P&amp;L: <b id="open-tot-unrl">—</b></span>
+        <span style="color:#8b949e">Return: <b id="open-tot-ret">—</b></span>
+      </div>` : '';
+    ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>')) + grandTotal;
     ordOpenEl.dataset.fp = openFp;
     _patchLtpCells(); _fetchPositionLtp();
   }
@@ -2842,6 +3289,23 @@ function calcCharges(entryPx, exitPx, qty, entrySide) {
   return brokerage + stt + exchCharges + sebi + stampDuty + gst;
 }
 
+// Friendly exit-reason badge (item F) — turns the raw exit-leg tag stored by
+// order_store (_exit_reason) into a short coloured label. '' / unknown → dash.
+function _exitReasonBadge(raw) {
+  if (!raw) return '<span style="color:#6e7681">—</span>';
+  const r = String(raw);
+  let label = r, color = '#8b949e';
+  if (r.startsWith('SL_HIT'))            { label = '🛑 Stop-Loss'; color = '#f85149'; }
+  else if (r.startsWith('TP_HIT') || r.startsWith('TARGET')) { label = '🎯 Target'; color = '#3fb950'; }
+  else if (r.startsWith('TRAIL_SL'))     { label = '📉 Trail SL'; color = '#f0883e'; }
+  else if (r.startsWith('EOD_315'))      { label = '⏰ 3:15 EOD'; color = '#d29922'; }
+  else if (r.startsWith('RMS_MAXLOSS'))  { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
+  else if (r.startsWith('REVERSAL'))     { label = '🔄 Reversal'; color = '#58a6ff'; }
+  else if (r.startsWith('MANUAL'))       { label = '✋ Manual'; color = '#8b949e'; }
+  else if (r.startsWith('TV_EXIT'))      { label = '📡 TV Exit'; color = '#58a6ff'; }
+  return `<span style="color:${color};font-size:11px;white-space:nowrap" title="${r.replace(/"/g,'&quot;')}">${label}</span>`;
+}
+
 // ── COLUMN PREFS (localStorage) ──────────────────────────────────────────────
 const COMPLETED_COLS_DEF = [
   {id:'date',       l:'Date',        a:'left',   on:true,  fixed:true},
@@ -2852,6 +3316,7 @@ const COMPLETED_COLS_DEF = [
   {id:'exit_px',    l:'Exit Px',     a:'right',  on:true},
   {id:'entry_time', l:'In',          a:'center', on:true},
   {id:'exit_time',  l:'Out',         a:'center', on:true},
+  {id:'exit_reason',l:'Exit Reason', a:'left',   on:true},
   {id:'duration',   l:'Dur',         a:'center', on:true},
   {id:'qty',        l:'Qty',         a:'left',   on:true},
   {id:'points',     l:'Points',      a:'right',  on:true},
@@ -3244,12 +3709,14 @@ async function updatePnl() {
 
 }
 
-function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx){
+function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx, sl, tp){
   const params = {sym, side, entry, exit, et, xt, qty};
   if(date) params.date = date;
   if(tf) params.tf = tf;
   if(ind) params.ind = ind;
   if(idx != null) params.idx = idx;
+  if(sl != null && sl !== '') params.sl = sl;   // SL as a premium price level (item F)
+  if(tp != null && tp !== '') params.tp = tp;   // Target as a premium price level
   const q = new URLSearchParams(params);
   window.open('/trade-chart?'+q.toString(), 'trade_chart_win');
 }
@@ -3394,10 +3861,48 @@ async function kiteExchangeToken() {
   }
 }
 
-// ── CLOCK & LOOP ──
-setInterval(()=>{
-  document.getElementById('clock').innerText = new Date().toLocaleTimeString('en-IN');
-}, 1000);
+// ── CLOCK, DATE & DROPDOWNS ──
+function updateClockAndDate() {
+  const d = new Date();
+  document.getElementById('clock').innerText = d.toLocaleTimeString('en-IN');
+  
+  const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  const dayNames = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+  const dateStr = `${monthNames[d.getMonth()]} ${d.getDate()}, ${dayNames[d.getDay()]}`;
+  const dateEl = document.getElementById('hdr-top-date');
+  if (dateEl && dateEl.textContent !== dateStr) {
+    dateEl.textContent = dateStr;
+  }
+}
+updateClockAndDate();
+setInterval(updateClockAndDate, 1000);
+
+// Dropdown Menus toggles
+window.toggleAvatarDropdown = (event) => {
+  event.stopPropagation();
+  window.closeMoreDropdown();
+  const dropdown = document.getElementById('avatar-dropdown');
+  dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+};
+window.closeAvatarDropdown = () => {
+  const dropdown = document.getElementById('avatar-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+};
+window.toggleMoreDropdown = (event) => {
+  event.stopPropagation();
+  window.closeAvatarDropdown();
+  const dropdown = document.getElementById('more-dropdown');
+  dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+};
+window.closeMoreDropdown = () => {
+  const dropdown = document.getElementById('more-dropdown');
+  if (dropdown) dropdown.style.display = 'none';
+};
+
+document.addEventListener('click', () => {
+  window.closeAvatarDropdown();
+  window.closeMoreDropdown();
+});
 
 setInterval(()=>{
   checkStatus();
@@ -3490,10 +3995,35 @@ function _patchLtpCells() {
       retFoot.textContent = retPct; retFoot.style.color = totUnrl>=0?'#3fb950':'#f85149';
     }
   });
+  // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
+  (function(){
+    const unrlB = document.getElementById('open-tot-unrl');
+    if(!unrlB) return;
+    let totPts=0, totUnrl=0, totInv=0, any=false;
+    document.querySelectorAll('#ord-open table[id^="grp_"] tbody tr').forEach(tr=>{
+      const ltpCell = tr.querySelector('.ltp-cell');
+      const unEl = tr.querySelector('.unrl-cell');
+      if(!ltpCell || !unEl || unEl.textContent==='—') return;
+      any = true;
+      const entry = parseFloat(ltpCell.getAttribute('data-entry')) || 0;
+      const qty   = parseFloat(ltpCell.getAttribute('data-qty')) || 0;
+      totUnrl += parseFloat(unEl.textContent.replace('+','')) || 0;
+      totInv  += entry*qty;
+      const ptEl = tr.querySelector('.pts-cell');
+      if(ptEl) totPts += parseFloat(ptEl.textContent.replace('+','')) || 0;
+    });
+    if(!any) return;
+    const ptsB = document.getElementById('open-tot-pts');
+    const retB = document.getElementById('open-tot-ret');
+    if(ptsB){ ptsB.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsB.style.color=totPts>=0?'#3fb950':'#f85149'; }
+    unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
+    if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
+  })();
 }
 startLtpStream();
 
 loadAll();
+if (activeTab === 'orders') ordersEnter();   // render the default Orders tab immediately
 
 // ── QUICK ORDER FLOATING PANEL ───────────────────────────────────────────────
 (function(){
@@ -3572,7 +4102,49 @@ loadAll();
     boxShadow:'0 4px 24px rgba(0,0,0,0.6)', userSelect:'none', display:'none'
   });
   document.body.appendChild(panel);
-  window.qoToggle = () => { panel.style.display = panel.style.display === 'none' ? '' : 'none'; if(panel.style.display!=='none') qoFetchLtp(); };
+
+  // Create floating bubble icon (FAB)
+  const fab = document.createElement('button');
+  fab.id = 'qo-fab';
+  fab.innerHTML = '⚡';
+  fab.title = 'Quick Order';
+  Object.assign(fab.style, {
+    position: 'fixed', bottom: '24px', right: '24px',
+    width: '50px', height: '50px', borderRadius: '50%',
+    background: '#1f6feb', border: 'none', color: '#ffffff',
+    fontSize: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    cursor: 'pointer', zIndex: '9998', boxShadow: '0 4px 16px rgba(0,0,0,0.5)',
+    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)'
+  });
+  
+  fab.onmouseenter = () => {
+    fab.style.background = '#388bfd';
+    fab.style.transform = 'scale(1.1)';
+    fab.style.boxShadow = '0 6px 20px rgba(31, 111, 235, 0.4)';
+  };
+  fab.onmouseleave = () => {
+    fab.style.background = '#1f6feb';
+    fab.style.transform = 'scale(1)';
+    fab.style.boxShadow = '0 4px 16px rgba(0,0,0,0.5)';
+  };
+  fab.onmousedown = () => {
+    fab.style.transform = 'scale(0.95)';
+  };
+  fab.onmouseup = () => {
+    fab.style.transform = 'scale(1.1)';
+  };
+  fab.onclick = () => {
+    window.qoToggle();
+  };
+  document.body.appendChild(fab);
+
+  window.qoToggle = () => {
+    const isHidden = panel.style.display === 'none';
+    panel.style.display = isHidden ? '' : 'none';
+    const f = document.getElementById('qo-fab');
+    if (f) f.style.display = isHidden ? 'none' : 'flex';
+    if (panel.style.display !== 'none') qoFetchLtp();
+  };
 
   // ── WATCH PANEL ────────────────────────────────────────────────────────────
   // Floating panel — RSI candidates jo entry ke paas hain
@@ -3704,7 +4276,11 @@ loadAll();
   const _qoElTs    = document.getElementById('qo-ts');
 
   let _qoAutoRefresh = null;
-  document.getElementById('qo-close').onclick = ()=>{ panel.style.display = 'none'; };
+  document.getElementById('qo-close').onclick = ()=>{
+    panel.style.display = 'none';
+    const f = document.getElementById('qo-fab');
+    if (f) f.style.display = 'flex';
+  };
 
   let _qoLtpTimer = null;
   async function qoFetchLtp() {
@@ -3840,11 +4416,13 @@ loadAll();
   // initial CE selection highlight
   qoSetOpt('CE');
 
-  // ── SYMBOL WATCHLIST PANEL ───────────────────────────────────────────────
-  // Right-side dock: user-managed symbol list with live LTP. Resizable (drag
-  // left edge) + collapsible (slim strip). Pure client-side (localStorage) —
-  // reuses existing /api/positions-ltp (works for equity+index symbols).
+  // ── SYMBOL WATCHLIST PANEL — REMOVED (2026-06-25, user request) ──────────
+  // The right-side resizable/collapsible watchlist dock was removed. The IIFE
+  // is kept but returns immediately, so nothing renders and its 5s
+  // /api/positions-ltp poll no longer runs (also frees a little rate limit).
+  // To restore the watchlist, delete the early `return;` below (git history).
   (function(){
+    return;
     const LS_SYMS = 'wl_symbols', LS_WIDTH = 'wl_width', LS_COLLAPSED = 'wl_collapsed';
     let syms = [];
     try { syms = JSON.parse(localStorage.getItem(LS_SYMS) || '[]'); } catch(e){ syms = []; }
@@ -5686,7 +6264,7 @@ pineLoadLatest();
 
       <div id="edit-note-imgs" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;"></div>
 
-      <label style="display:block; margin-top:14px; margin-bottom:6px; font-size:12px; color:#8b949e;">📷 Add Images</label>
+      <label style="display:block; margin-top:14px; margin-bottom:6px; font-size:12px; color:#8b949e;">📷 Add Images <span style="color:#6e7681;font-size:11px">(file chuno ya clipboard se Ctrl+V paste karo)</span></label>
       <input type="file" id="edit-note-file" accept="image/*" multiple style="width:100%; font-size:12px; color:#8b949e;">
 
       <button onclick="saveNote()" style="width: 100%; padding: 10px; margin-top: 20px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Note</button>
@@ -5742,7 +6320,11 @@ async function saveSlTp() {
     const data = await res.json();
     if(data.status === 'success') {
       document.getElementById('edit-sltp-modal').style.display = 'none';
-      ordersRender(); // Refresh orders
+      // Force a rebuild (not just an LTP patch) so the new SL/TP shows
+      // immediately — the open-table fingerprint doesn't track tag changes, so
+      // without this the SL/Target only appeared after a manual refresh.
+      const el = document.getElementById('ord-open'); if(el) el.dataset.fp = '';
+      ordersRender();
     } else {
       alert("Error: " + data.message);
     }
@@ -5775,16 +6357,54 @@ function _renderNoteImgs(id, imgs) {
   }).join('');
 }
 
+async function _refreshNoteImgs(id) {
+  try {
+    const r = await fetch('/api/orders?date='+(document.getElementById('ord-date')||{}).value);
+    const d = await r.json();
+    const all = (d.details||[]).concat(d.open||[]);
+    const t = all.find(x=>String(x.id)===String(id));
+    const imgs = t ? (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)) : [];
+    _renderNoteImgs(id, imgs);
+    ordersRender();
+  } catch(e) {}
+}
+
 async function deleteNoteImg(id, fn) {
   await fetch('/api/orders/delete-image', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({id, filename: fn})});
-  const r = await fetch('/api/orders?date='+(document.getElementById('ord-date')||{}).value);
-  const d = await r.json();
-  const all = (d.details||[]).concat(d.open||[]);
-  const t = all.find(x=>String(x.id)===String(id));
-  const imgs = t ? (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)) : [];
-  _renderNoteImgs(id, imgs);
-  ordersRender();
+  await _refreshNoteImgs(id);
 }
+
+// Clipboard paste → image upload in the Edit Note modal (item E). When the note
+// modal is open, pasting (Ctrl+V) an image from the clipboard uploads it right
+// away to the current note and shows the thumbnail — same endpoint as the file
+// picker. Non-image pastes (plain text into the textarea) are left untouched.
+document.addEventListener('paste', async (e) => {
+  const modal = document.getElementById('edit-note-modal');
+  if (!modal || modal.style.display !== 'flex') return;
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  const files = [];
+  for (const it of items) {
+    if (it.kind === 'file' && it.type && it.type.startsWith('image/')) {
+      const f = it.getAsFile();
+      if (f) files.push(f);
+    }
+  }
+  if (!files.length) return;          // let normal text paste through
+  e.preventDefault();
+  const id = document.getElementById('edit-note-id').value;
+  if (!id) return;
+  const fd = new FormData();
+  fd.append('id', id);
+  files.forEach((f, i) => fd.append('images', f, (f.name || `pasted_${Date.now()}_${i}.png`)));
+  try {
+    flash('⏳ Uploading pasted image…', '#8b949e');
+    const ir = await fetch('/api/orders/upload-image', {method:'POST', body: fd});
+    const ij = await ir.json();
+    if (ij.status !== 'success') { alert('Paste upload error: ' + (ij.message||'')); return; }
+    await _refreshNoteImgs(id);
+    flash('✅ Image pasted', '#3fb950');
+  } catch(err) { alert('Paste upload failed.'); }
+});
 
 async function saveNote() {
   const id = document.getElementById('edit-note-id').value;

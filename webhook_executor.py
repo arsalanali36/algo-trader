@@ -544,8 +544,10 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         import risk_gate
         dd_ok, dd_reason = risk_gate.check_drawdown()
         if not dd_ok:
+            # No price available here yet, so don't record a PX 0.00 ghost row
+            # (that was the confusing entry the user flagged). The block is still
+            # logged, and the RMS panel surfaces the gating status separately.
             _log(f"ENTRY blocked {key} — {dd_reason}")
-            _record_blocked(0, qty, dd_reason)
             return {"ok": False, "msg": dd_reason}
 
         est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)

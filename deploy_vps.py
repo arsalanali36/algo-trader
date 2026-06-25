@@ -27,7 +27,12 @@ import tempfile
 import subprocess
 
 HOST       = "root@72.61.173.32"
-KEY        = r"C:\Users\arsal\.ssh\khazana_ed25519"
+KEY        = os.path.expanduser("~/.ssh/khazana_ed25519")
+if not os.path.exists(KEY):
+    for alt in [r"C:\Users\arsal\.ssh\khazana_ed25519", r"C:\Users\91933\.ssh\khazana_ed25519"]:
+        if os.path.exists(alt):
+            KEY = alt
+            break
 REMOTE_DIR = "/root/CODE3B- TV BACKTEST ENGINE"   # dir name me space hai — sab jagah quote
 SERVICE    = "algo-dashboard"
 PORT       = 5099
