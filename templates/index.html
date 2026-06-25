@@ -993,8 +993,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <!-- Points Per Trade Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0;">
-        🎯 Point Per Trade Details
+      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0; display:flex; align-items:center; gap:8px;">
+        🎯 Point Per Trade Details <span id="cal-selected-date-badge" style="display:none; background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1;"></span>
       </h3>
       <div style="display:flex; align-items:center; gap:12px;">
         <label style="display:inline-flex; align-items:center; gap:6px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none;">
@@ -5903,22 +5903,63 @@ function calGoToday() {
   calendarRender();
 }
 
-// Function to handle clicking on a calendar cell
+window.calSelectedDateFilter = null;
+
 function calSelectDate(dateStr) {
-  // Set date input in Orders tab
+  // Set date input in Orders tab as backup
   const dateInput = document.getElementById('ord-date');
   if (dateInput) {
     dateInput.value = dateStr;
+    ordersRender();
   }
   
-  // Switch to orders tab
-  switchTab('orders');
+  // Toggle filter
+  if (window.calSelectedDateFilter === dateStr) {
+    window.calSelectedDateFilter = null;
+  } else {
+    window.calSelectedDateFilter = dateStr;
+  }
   
-  // Refresh orders for that day
-  ordersRender();
+  updateCalSelectedDateBadge();
+  window.calPointsCurrentPage = 1;
+  renderPointsPerTradeTable();
+  
+  // Scroll smoothly to Point Per Trade Details card
+  const container = document.getElementById('cal-points-per-trade-tbody');
+  if (container) {
+    const card = container.closest('.card');
+    if (card) {
+      card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+}
+
+function updateCalSelectedDateBadge() {
+  const badge = document.getElementById('cal-selected-date-badge');
+  if (!badge) return;
+  if (window.calSelectedDateFilter) {
+    badge.innerHTML = `📅 ${window.calSelectedDateFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalSelectedDateFilter(event)">✕</span>`;
+    badge.style.display = 'inline-flex';
+    badge.style.alignItems = 'center';
+  } else {
+    badge.innerHTML = '';
+    badge.style.display = 'none';
+  }
+}
+
+function clearCalSelectedDateFilter(event) {
+  if (event) event.stopPropagation();
+  window.calSelectedDateFilter = null;
+  updateCalSelectedDateBadge();
+  window.calPointsCurrentPage = 1;
+  renderPointsPerTradeTable();
 }
 
 async function calendarRender() {
+  // Clear day filter on fresh month/filter render
+  window.calSelectedDateFilter = null;
+  updateCalSelectedDateBadge();
+
   const monthLabel = document.getElementById('cal-month-label');
   if (monthLabel) {
     monthLabel.textContent = `${CAL_MONTH_NAMES[calMonth]} ${calYear}`;
@@ -6193,7 +6234,12 @@ function renderPointsPerTradeTable() {
     }).join('');
   }
   
-  const sortedTrades = [...(window.currentCalendarTrades || [])].sort((a, b) => {
+  let tradesList = [...(window.currentCalendarTrades || [])];
+  if (window.calSelectedDateFilter) {
+    tradesList = tradesList.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter);
+  }
+  
+  const sortedTrades = tradesList.sort((a, b) => {
     const da = a.entry_date + ' ' + (a.entry_time || '00:00');
     const db = b.entry_date + ' ' + (b.entry_time || '00:00');
     return db.localeCompare(da); // Descending (most recent first)
