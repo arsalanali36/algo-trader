@@ -687,6 +687,55 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <div class="cal-grid" id="cal-grid"></div>
   </div>
 
+  <!-- Aggregate Metrics Card (Profit Factor / Expectancy / Sharpe) -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">📐 Metrics (this month, filtered)</h3>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px" id="stats-metric-pills">
+      <div class="stat-pill"><div class="lbl">Profit Factor</div><div class="val" id="sm-pf">—</div></div>
+      <div class="stat-pill"><div class="lbl">Expectancy</div><div class="val" id="sm-exp">—</div></div>
+      <div class="stat-pill"><div class="lbl">Sharpe Ratio</div><div class="val" id="sm-sharpe">—</div></div>
+      <div class="stat-pill"><div class="lbl">Win Rate</div><div class="val" id="sm-wr">—</div></div>
+      <div class="stat-pill"><div class="lbl">Trades</div><div class="val" id="sm-n">—</div></div>
+    </div>
+  </div>
+  <style>
+    .stat-pill{background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:10px 12px}
+    .stat-pill .lbl{font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.3px;margin-bottom:4px}
+    .stat-pill .val{font-size:16px;font-weight:700;color:#e6edf3}
+  </style>
+
+  <!-- Trade-entry list grouped by day, 1-2 column responsive -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">🗂 Trade Entries (grouped by day)</h3>
+    <div id="stats-grouped-list" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:12px"></div>
+  </div>
+
+  <!-- Closed positions — toggleable columns -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h3 style="color:#e6edf3; font-size:13px; font-weight:600;">📋 Closed Positions</h3>
+      <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openStatsColModal()">⚙️ Columns</button>
+    </div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:11.5px; text-align:left;">
+        <thead><tr id="stats-cols-thead" style="border-bottom:1px solid #30363d; color:#8b949e;"></tr></thead>
+        <tbody id="stats-closed-tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Stats columns modal -->
+  <div id="stats-col-modal" class="modal-overlay" style="position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:60">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;width:340px">
+      <h2 style="font-size:14px;margin-bottom:12px;color:#e6edf3">Toggle Columns</h2>
+      <div id="stats-col-list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-blue" style="flex:1" onclick="saveStatsColPrefs()">Save</button>
+        <button class="btn btn-gray" style="flex:1" onclick="document.getElementById('stats-col-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Equity Curve Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
     <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
@@ -792,6 +841,9 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <label style="font-size:12px;color:#adbac7">Global Capital ₹</label>
       <input id="risk-global-capital" type="number" step="1" placeholder="e.g. 200000"
              style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <label style="font-size:12px;color:#f85149;margin-left:14px" title="Always-on per-position rule: any open position whose unrealized loss crosses 1% of THIS number gets force-squared-off, regardless of source/SL tags. Leave blank to keep this rule OFF.">Total Capital ₹ (1% max-loss)</label>
+      <input id="risk-global-total-capital" type="number" step="1" placeholder="blank = rule OFF"
+             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px"/>
       <label style="font-size:12px;color:#adbac7;margin-left:14px">Margin Multiplier (SELL legs)</label>
       <input id="risk-global-margin" type="number" step="0.1" placeholder="e.g. 5 (default 1)"
              style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
@@ -991,7 +1043,15 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         
         <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Symbols (Comma or Newline separated)</label>
         <textarea id="bulk-symbols" rows="6" placeholder="e.g., RELIANCE, TCS, INFY" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical;"></textarea>
-        
+
+        <div style="margin-top:10px">
+          <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #c9d1d9;">Order Type</label>
+          <select id="bulk-product-type" style="width:160px;padding:7px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#c9d1d9">
+            <option value="NRML">NRML (intraday — 3:15 squareoff)</option>
+            <option value="CNC">CNC (carry forward — equity only)</option>
+          </select>
+        </div>
+
         <button onclick="loadBulkPreview()" style="width: 100%; padding: 10px; margin-top: 15px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Load Preview</button>
       </div>
       
@@ -1164,6 +1224,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
   document.getElementById('risk-global-rs').value  = RISK_CFG.global.max_loss_rs ?? '';
   document.getElementById('risk-global-capital').value = RISK_CFG.global.capital_rs ?? '';
+  document.getElementById('risk-global-total-capital').value = RISK_CFG.global.total_capital_rs ?? '';
   document.getElementById('risk-global-margin').value = RISK_CFG.global.margin_multiplier ?? '';
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
@@ -1218,6 +1279,7 @@ async function saveRiskConfig(){
   const gPct = document.getElementById('risk-global-pct').value;
   const gRs  = document.getElementById('risk-global-rs').value;
   const gCap = document.getElementById('risk-global-capital').value;
+  const gTotalCap = document.getElementById('risk-global-total-capital').value;
   const gMar = document.getElementById('risk-global-margin').value;
   const gMode = document.getElementById('risk-global-mode').value;
   const gShadow = document.getElementById('risk-global-shadow').value;
@@ -1226,6 +1288,7 @@ async function saveRiskConfig(){
       max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
       max_loss_rs:  gRs  !== '' ? parseFloat(gRs)  : null,
       capital_rs:   gCap !== '' ? parseFloat(gCap) : null,
+      total_capital_rs: gTotalCap !== '' ? parseFloat(gTotalCap) : null,
       margin_multiplier: gMar !== '' ? parseFloat(gMar) : null,
       capital_mode: gMode || 'reject',
       shadow_live: gShadow === 'true',
@@ -2308,6 +2371,8 @@ function renderCachedOrders() {
             case 'actions':
               val = `
                 <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
+                  ${t.group_id ? `<button title="Hedge group — close both legs together" onclick="closePositionGroup('${argEsc(t.group_id)}','${t.mode||'paper'}')"
+                    style="padding:4px 8px;background:#8a2be220;border:1px solid #8a2be280;border-radius:5px;color:#c9a6ff;font-size:10px;font-weight:700;cursor:pointer">🔗 Group ✕</button>` : ''}
                   <button id="${bId}" onclick="closePosition('${argEsc(t.sym)}','${t.entry}',${qty},'${t.mode||'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}','${bId}')"
                     style="padding:4px 10px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer">
                     ${closeSide} ✕
@@ -2896,6 +2961,100 @@ function resetColPrefs() {
 }
 
 _loadOrdColPrefs();
+
+// ── Stats tab: toggleable-columns closed-positions table ───────────────────
+const STATS_COLS_DEF = [
+  {id:'entry_date', l:'Date',       a:'left',  on:true, fixed:true},
+  {id:'sym',        l:'Symbol',     a:'left',  on:true, fixed:true},
+  {id:'entry',      l:'Side',       a:'center',on:true},
+  {id:'qty',        l:'Qty',        a:'right', on:true},
+  {id:'entry_price',l:'Entry Px',   a:'right', on:true},
+  {id:'exit_price', l:'Exit Px',    a:'right', on:true},
+  {id:'entry_time', l:'In',         a:'center',on:false},
+  {id:'exit_time',  l:'Out',        a:'center',on:false},
+  {id:'pnl',        l:'P&L',        a:'right', on:true},
+  {id:'strategy',   l:'Strategy',   a:'left',  on:false},
+  {id:'source',     l:'Source',     a:'left',  on:false},
+  {id:'mode',       l:'Mode',       a:'left',  on:false},
+];
+window._statsCols = null;
+function _loadStatsColPrefs(){
+  try {
+    const s = localStorage.getItem('stats_cols');
+    window._statsCols = s ? JSON.parse(s) : JSON.parse(JSON.stringify(STATS_COLS_DEF));
+    STATS_COLS_DEF.forEach(def => { if(!window._statsCols.find(x=>x.id===def.id)) window._statsCols.push(JSON.parse(JSON.stringify(def))); });
+  } catch(e){ window._statsCols = JSON.parse(JSON.stringify(STATS_COLS_DEF)); }
+}
+function openStatsColModal(){
+  if(!window._statsCols) _loadStatsColPrefs();
+  const el = document.getElementById('stats-col-list');
+  el.innerHTML = window._statsCols.map(c => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d1117;border-radius:6px;cursor:${c.fixed?'default':'pointer'};opacity:${c.fixed?'.5':'1'}">
+      <input type="checkbox" data-col="${c.id}" ${c.on?'checked':''} ${c.fixed?'disabled':''} style="accent-color:#1f6feb;width:14px;height:14px">
+      <span style="font-size:12px;color:#e6edf3">${c.l}</span>
+    </label>`).join('');
+  document.getElementById('stats-col-modal').style.display = 'flex';
+}
+function saveStatsColPrefs(){
+  document.querySelectorAll('#stats-col-list input[data-col]').forEach(inp => {
+    const c = window._statsCols.find(x=>x.id===inp.dataset.col);
+    if(c && !c.fixed) c.on = inp.checked;
+  });
+  localStorage.setItem('stats_cols', JSON.stringify(window._statsCols));
+  document.getElementById('stats-col-modal').style.display = 'none';
+  renderStatsClosedTable(window._statsLastTrades || []);
+}
+function renderStatsClosedTable(trades){
+  if(!window._statsCols) _loadStatsColPrefs();
+  const cols = window._statsCols.filter(c=>c.on);
+  document.getElementById('stats-cols-thead').innerHTML =
+    cols.map(c=>`<th style="padding:6px;font-weight:500;text-align:${c.a}">${c.l}</th>`).join('');
+  const closed = trades.filter(t => t.pnl !== null && t.pnl !== undefined);
+  document.getElementById('stats-closed-tbody').innerHTML = closed.map(t => {
+    return '<tr style="border-bottom:1px solid #21262d">' + cols.map(c => {
+      let v = t[c.id];
+      if (c.id==='pnl' && v!=null) v = `<span style="color:${v>=0?'#3fb950':'#f85149'}">${v>=0?'+':''}${v}</span>`;
+      else if (v==null) v = '—';
+      return `<td style="padding:6px;text-align:${c.a}">${v}</td>`;
+    }).join('') + '</tr>';
+  }).join('') || '<tr><td colspan="'+cols.length+'" style="padding:14px;text-align:center;color:#8b949e">No closed trades in range</td></tr>';
+}
+function renderStatsGroupedList(trades){
+  const byDay = {};
+  trades.forEach(t => { const k = t.entry_date || t.exit_date || '—'; (byDay[k] = byDay[k]||[]).push(t); });
+  const days = Object.keys(byDay).sort().reverse();
+  document.getElementById('stats-grouped-list').innerHTML = days.map(day => {
+    const rows = byDay[day];
+    const dayPnl = rows.reduce((s,t)=>s+(t.pnl||0),0);
+    return `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+        <span style="color:#58a6ff;font-weight:600;font-size:12px">${day}</span>
+        <span style="font-size:12px;font-weight:700;color:${dayPnl>=0?'#3fb950':'#f85149'}">${dayPnl>=0?'+':''}${Math.round(dayPnl)}</span>
+      </div>
+      ${rows.map(t=>`<div style="display:flex;gap:6px;font-size:11px;color:#adbac7;padding:2px 0">
+        <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.sym||''}</span>
+        <span style="color:#8b949e">${t.entry||''}</span>
+        <span style="min-width:50px;text-align:right;color:${(t.pnl||0)>=0?'#3fb950':'#f85149'}">${t.pnl!=null?(t.pnl>=0?'+':'')+t.pnl:'open'}</span>
+      </div>`).join('')}
+    </div>`;
+  }).join('') || '<div style="color:#8b949e;font-size:12px;padding:10px">Koi trade nahi is range mein</div>';
+}
+async function statsMetricsRender(dateFrom, dateTo, filt){
+  try {
+    const q = new URLSearchParams({date_from:dateFrom, date_to:dateTo, ...filt});
+    const r = await fetch('/api/orders/stats-summary?'+q.toString());
+    const j = await r.json();
+    const m = j.metrics || {};
+    window._statsLastTrades = j.trades || [];
+    document.getElementById('sm-pf').textContent = m.profit_factor ?? '—';
+    document.getElementById('sm-exp').textContent = m.expectancy ?? '—';
+    document.getElementById('sm-sharpe').textContent = m.sharpe ?? '—';
+    document.getElementById('sm-wr').textContent = (m.win_rate ?? 0) + '%';
+    document.getElementById('sm-n').textContent = m.n_trades ?? 0;
+    renderStatsGroupedList(window._statsLastTrades);
+    renderStatsClosedTable(window._statsLastTrades);
+  } catch(e){ /* best-effort, ignore */ }
+}
 
 let _pnlTagMap = {};   // "sym|entry_time" -> trade-DB row (source/mode/strategy tags)
 function _pnlTagChips(d){
@@ -3686,6 +3845,117 @@ loadAll();
 
   // initial CE selection highlight
   qoSetOpt('CE');
+
+  // ── SYMBOL WATCHLIST PANEL ───────────────────────────────────────────────
+  // Right-side dock: user-managed symbol list with live LTP. Resizable (drag
+  // left edge) + collapsible (slim strip). Pure client-side (localStorage) —
+  // reuses existing /api/positions-ltp (works for equity+index symbols).
+  (function(){
+    const LS_SYMS = 'wl_symbols', LS_WIDTH = 'wl_width', LS_COLLAPSED = 'wl_collapsed';
+    let syms = [];
+    try { syms = JSON.parse(localStorage.getItem(LS_SYMS) || '[]'); } catch(e){ syms = []; }
+    let width = parseInt(localStorage.getItem(LS_WIDTH)) || 280;
+    let collapsed = localStorage.getItem(LS_COLLAPSED) === '1';
+
+    const wl = document.createElement('div');
+    wl.id = 'wl-panel';
+    Object.assign(wl.style, {
+      position:'fixed', top:'60px', right:'0', bottom:'10px',
+      width: (collapsed?'34px':width+'px'),
+      background:'#161b22', border:'1px solid #30363d', borderRight:'none',
+      borderTopLeftRadius:'10px', borderBottomLeftRadius:'10px',
+      zIndex:'9000', boxShadow:'-4px 0 16px rgba(0,0,0,0.4)',
+      display:'flex', flexDirection:'column', overflow:'hidden', fontFamily:'monospace'
+    });
+    wl.innerHTML = `
+      <div id="wl-splitter" title="Drag to resize" style="position:absolute;left:-3px;top:0;bottom:0;width:6px;cursor:col-resize;z-index:1"></div>
+      <div style="display:flex;align-items:center;gap:6px;padding:8px 10px;border-bottom:1px solid #30363d;flex-shrink:0">
+        <button id="wl-collapse-btn" title="Collapse/Expand" style="background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;font-size:11px;width:20px;height:20px;cursor:pointer;flex-shrink:0">»</button>
+        <span id="wl-title" style="color:#58a6ff;font-size:12px;font-weight:bold;letter-spacing:.5px;flex:1;white-space:nowrap;overflow:hidden">📋 WATCHLIST</span>
+      </div>
+      <div id="wl-add-row" style="display:flex;gap:6px;padding:8px 10px;border-bottom:1px solid #21262d;flex-shrink:0">
+        <input id="wl-add-input" placeholder="Symbol e.g. RELIANCE" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 7px;font-size:11px;outline:none">
+        <button id="wl-add-btn" style="background:#238636;border:none;border-radius:5px;color:#fff;font-size:12px;font-weight:bold;padding:5px 9px;cursor:pointer">+</button>
+      </div>
+      <div id="wl-body" style="flex:1;overflow-y:auto;padding:6px 8px"></div>`;
+    document.body.appendChild(wl);
+
+    function setCollapsed(c){
+      collapsed = c;
+      localStorage.setItem(LS_COLLAPSED, c?'1':'0');
+      wl.style.width = c ? '34px' : width+'px';
+      document.getElementById('wl-add-row').style.display = c ? 'none' : '';
+      document.getElementById('wl-body').style.display = c ? 'none' : '';
+      document.getElementById('wl-title').style.display = c ? 'none' : '';
+      document.getElementById('wl-collapse-btn').textContent = c ? '«' : '»';
+    }
+    setCollapsed(collapsed);
+    document.getElementById('wl-collapse-btn').onclick = () => setCollapsed(!collapsed);
+
+    function saveSyms(){ localStorage.setItem(LS_SYMS, JSON.stringify(syms)); }
+
+    function renderRows(ltpMap){
+      const body = document.getElementById('wl-body');
+      if (!syms.length){
+        body.innerHTML = '<div style="color:#8b949e;font-size:11px;text-align:center;padding:16px">Symbol add karo upar se</div>';
+        return;
+      }
+      ltpMap = ltpMap || {};
+      body.innerHTML = syms.map(s => {
+        const q = ltpMap[s];
+        const ltp = q && q.ltp != null ? q.ltp.toFixed(2) : '—';
+        return `<div style="display:flex;align-items:center;gap:6px;padding:5px 6px;margin-bottom:3px;background:#0d1117;border:1px solid #21262d;border-radius:6px">
+          <span style="flex:1;color:#e6edf3;font-size:11.5px;font-weight:bold;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${s}</span>
+          <span style="color:#adbac7;font-size:11.5px;min-width:54px;text-align:right">${ltp}</span>
+          <button data-sym="${s}" class="wl-rm" style="background:none;border:none;color:#8b949e;font-size:12px;cursor:pointer;padding:0 2px">✕</button>
+        </div>`;
+      }).join('');
+      body.querySelectorAll('.wl-rm').forEach(btn => {
+        btn.onclick = () => {
+          syms = syms.filter(s => s !== btn.getAttribute('data-sym'));
+          saveSyms(); renderRows(window._wlLastLtp);
+        };
+      });
+    }
+
+    async function fetchLtp(){
+      if (!syms.length || collapsed) { renderRows({}); return; }
+      try {
+        const r = await fetch('/api/positions-ltp?syms=' + syms.map(encodeURIComponent).join(','));
+        const j = await r.json();
+        window._wlLastLtp = j.ltp_map || {};
+        renderRows(window._wlLastLtp);
+      } catch(e){ renderRows(window._wlLastLtp); }
+    }
+
+    document.getElementById('wl-add-btn').onclick = () => {
+      const inp = document.getElementById('wl-add-input');
+      const v = inp.value.trim().toUpperCase();
+      if (!v) return;
+      if (!syms.includes(v)) { syms.push(v); saveSyms(); renderRows(window._wlLastLtp); fetchLtp(); }
+      inp.value = '';
+    };
+    document.getElementById('wl-add-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('wl-add-btn').click();
+    });
+
+    // resize via left-edge splitter drag
+    const splitter = document.getElementById('wl-splitter');
+    let dragging = false;
+    splitter.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+    document.addEventListener('mousemove', e => {
+      if (!dragging || collapsed) return;
+      width = Math.max(200, Math.min(560, window.innerWidth - e.clientX));
+      wl.style.width = width + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+      if (dragging) { dragging = false; localStorage.setItem(LS_WIDTH, width); }
+    });
+
+    renderRows({});
+    fetchLtp();
+    setInterval(fetchLtp, 5000);
+  })();
 })();
 
 async function closePosition(tSym, entrySide, qty, mode, source, strategy, btnId) {
@@ -3711,6 +3981,24 @@ async function closePosition(tSym, entrySide, qty, mode, source, strategy, btnId
   } catch(e) {
     flash('❌ Network error', '#f85149');
     if(btn) { btn.disabled=false; btn.textContent='ERR'; }
+  }
+}
+
+async function closePositionGroup(groupId, mode) {
+  const modeNow = mode || 'paper';
+  if (!confirm(`Hedge group ${groupId}\nDono legs ek sath close karein? (${modeNow.toUpperCase()})`)) return;
+  flash('⏳ Closing group...', '#8b949e');
+  try {
+    const r = await fetch('/api/close-position-group', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group_id: groupId, mode: modeNow })
+    });
+    const j = await r.json();
+    flash(j.ok ? '✅ Group closed: ' + j.msg : '❌ ' + j.msg, j.ok ? '#3fb950' : '#f85149');
+    const el = document.getElementById('ord-open'); if (el) el.dataset.fp = '';
+    setTimeout(() => { if (activeTab === 'orders') ordersRender(); }, 800);
+  } catch (e) {
+    flash('❌ Network error', '#f85149');
   }
 }
 
@@ -4710,12 +4998,14 @@ async function submitBulkOrders() {
     finalFilterName += ` | ${reason.trim()}`;
   }
   
+  const productType = document.getElementById('bulk-product-type').value;
   const trades = _bulkPreviewData.filter(x => x.qty > 0).map(x => ({
     sym: x.sym,
     sec_id: x.sec_id,
     ltp: x.ltp,
     qty: x.qty,
-    sl_pct: x.sl_pct
+    sl_pct: x.sl_pct,
+    product_type: productType
   }));
   
   if (trades.length === 0) {
@@ -4893,6 +5183,18 @@ async function calendarRender() {
   const cntEl = document.getElementById('cal-stat-count');
   if (cntEl) {
     cntEl.textContent = totalTrades.toString();
+  }
+
+  // New: Profit Factor / Expectancy / Sharpe + grouped list + toggleable table
+  {
+    const mFrom = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
+    const mTo = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(new Date(calYear, calMonth + 1, 0).getDate()).padStart(2, '0')}`;
+    const sfilt = {};
+    if (src) sfilt.source = src;
+    if (mode) sfilt.mode = mode;
+    if (strat) sfilt.strategy = strat;
+    if (broker) sfilt.broker = broker;
+    statsMetricsRender(mFrom, mTo, sfilt);
   }
 
   // Render Grid
@@ -5340,28 +5642,38 @@ pineLoadLatest();
 
       <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #f85149;">Stop Loss</label>
       <div style="display:flex; gap:6px; margin-bottom: 16px;">
-        <select id="edit-sltp-sl-type" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
+        <select id="edit-sltp-sl-type" onchange="_sltpToggleCandleDir('sl')" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
           <option value="pct">%</option>
           <option value="pt">Points (premium)</option>
           <option value="rs">Amount (₹)</option>
           <option value="premium">Premium level</option>
           <option value="index">Index/Underlying level</option>
+          <option value="candle_close">Candle Close</option>
+        </select>
+        <select id="edit-sltp-sl-dir" style="display:none;width:70px; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9;">
+          <option value="above">above</option>
+          <option value="below">below</option>
         </select>
         <input type="number" step="0.05" id="edit-sltp-sl" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;" placeholder="value">
       </div>
 
       <label style="display:block; margin-bottom: 4px; font-weight: 600; color: #3fb950;">Target</label>
       <div style="display:flex; gap:6px; margin-bottom: 16px;">
-        <select id="edit-sltp-tp-type" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
+        <select id="edit-sltp-tp-type" onchange="_sltpToggleCandleDir('tp')" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
           <option value="pct">%</option>
           <option value="pt">Points (premium)</option>
           <option value="rs">Amount (₹)</option>
           <option value="premium">Premium level</option>
           <option value="index">Index/Underlying level</option>
+          <option value="candle_close">Candle Close</option>
+        </select>
+        <select id="edit-sltp-tp-dir" style="display:none;width:70px; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9;">
+          <option value="above">above</option>
+          <option value="below">below</option>
         </select>
         <input type="number" step="0.05" id="edit-sltp-tp" style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;" placeholder="value">
       </div>
-      <div style="font-size:10.5px;color:#6e7681;margin-bottom:14px;line-height:1.4">% / Points / ₹ are relative to entry. Premium level = absolute LTP value. Index/Underlying level = absolute spot level of the underlying (only works for symbols with a known sec_id mapping).</div>
+      <div style="font-size:10.5px;color:#6e7681;margin-bottom:14px;line-height:1.4">% / Points / ₹ are relative to entry. Premium level = absolute LTP value. Index/Underlying level = absolute spot level of the underlying. Candle Close = exits when a closed 1-min candle's close goes above/below the entered price (underlying for index SL/TP, premium otherwise).</div>
 
       <button onclick="saveSlTp()" style="width: 100%; padding: 10px; margin-top: 10px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #ffffff; font-weight: 600; cursor: pointer;">Save Changes</button>
     </div>
@@ -5389,21 +5701,43 @@ pineLoadLatest();
 </div>
 
 <script>
+function _sltpToggleCandleDir(which) {
+  const typeEl = document.getElementById(`edit-sltp-${which}-type`);
+  const dirEl = document.getElementById(`edit-sltp-${which}-dir`);
+  dirEl.style.display = typeEl.value === 'candle_close' ? '' : 'none';
+}
+
 function openSlTpModal(id, sl, tp, slType, tpType) {
   document.getElementById('edit-sltp-id').value = id;
-  document.getElementById('edit-sltp-sl').value = sl || '';
-  document.getElementById('edit-sltp-tp').value = tp || '';
+  // candle_close stores val as "above:25000" / "below:120" — split back into dir+number for the UI
+  function splitCandle(val, dirElId, valElId) {
+    if (val && val.includes(':')) {
+      const [dir, num] = val.split(':');
+      document.getElementById(dirElId).value = dir;
+      document.getElementById(valElId).value = num;
+    } else {
+      document.getElementById(valElId).value = val || '';
+    }
+  }
   document.getElementById('edit-sltp-sl-type').value = slType || 'pct';
   document.getElementById('edit-sltp-tp-type').value = tpType || 'pct';
+  splitCandle(slType === 'candle_close' ? sl : null, 'edit-sltp-sl-dir', 'edit-sltp-sl');
+  splitCandle(tpType === 'candle_close' ? tp : null, 'edit-sltp-tp-dir', 'edit-sltp-tp');
+  if (slType !== 'candle_close') document.getElementById('edit-sltp-sl').value = sl || '';
+  if (tpType !== 'candle_close') document.getElementById('edit-sltp-tp').value = tp || '';
+  _sltpToggleCandleDir('sl');
+  _sltpToggleCandleDir('tp');
   document.getElementById('edit-sltp-modal').style.display = 'flex';
 }
 
 async function saveSlTp() {
   const id = document.getElementById('edit-sltp-id').value;
-  const sl = document.getElementById('edit-sltp-sl').value;
-  const tp = document.getElementById('edit-sltp-tp').value;
   const slType = document.getElementById('edit-sltp-sl-type').value;
   const tpType = document.getElementById('edit-sltp-tp-type').value;
+  let sl = document.getElementById('edit-sltp-sl').value;
+  let tp = document.getElementById('edit-sltp-tp').value;
+  if (slType === 'candle_close' && sl) sl = document.getElementById('edit-sltp-sl-dir').value + ':' + sl;
+  if (tpType === 'candle_close' && tp) tp = document.getElementById('edit-sltp-tp-dir').value + ':' + tp;
 
   try {
     const res = await fetch('/api/orders/update-sl-tp', {

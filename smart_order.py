@@ -61,7 +61,7 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 
 def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             buffer_bps=10, log=print, tag="UNIV",
-            source="", strategy="", instrument="", broker_name=""):
+            source="", strategy="", instrument="", broker_name="", group_id=""):
     """Execute one entry/exit.
 
     Returns: {ok, price, src, status, reason, order_id}
@@ -114,8 +114,52 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                            trad_sym=trad_sym, sec_id=sec_id, segment=seg,
                            correlation_id=f"{tag}_{sym}",
                            broker_order_id=res.get("order_id") or "",
-                           status=res.get("status", "paper"))
+                           status=res.get("status", "paper"), group_id=group_id)
     except Exception:
         pass
 
     return res
+
+
+def place_hedge_if_configured(symbol, spot_price, sell_option_type, sell_offset, qty,
+                               mode, broker, group_id, hedge_offset_strikes,
+                               buffer_bps=10, log=print, tag="HEDGE",
+                               source="", strategy="", instrument="", broker_name=""):
+    """If `hedge_offset_strikes` is configured (truthy), auto-place a hedge BUY
+    leg further OTM than the sold leg, same option_type, tagged with the same
+    `group_id` as the SELL leg so the dashboard can show/close them together.
+
+    hedge_offset_strikes is OFF by default (None/0/absent) — opt-in per
+    strategy/webhook. `sell_offset` + `hedge_offset_strikes` is the strike
+    INDEX further OTM (dhan_master.get_option_contract's `offset` param is
+    already an index into the sorted-strikes list, not a points value — same
+    unit the rest of the codebase already uses for strike_offset).
+
+    Returns the execute() result dict, or None if not configured / contract
+    resolution failed (best-effort — never raises into the caller, and never
+    blocks the SELL leg that already happened before this is called).
+    """
+    if not hedge_offset_strikes:
+        return None
+    try:
+        hedge_offset_strikes = int(hedge_offset_strikes)
+    except Exception:
+        return None
+    if hedge_offset_strikes == 0:
+        return None
+
+    try:
+        import dhan_master
+        hedge_offset = sell_offset + hedge_offset_strikes
+        h_sec_id, h_trad_sym, _lot = dhan_master.get_option_contract(
+            symbol, spot_price, sell_option_type, hedge_offset)
+        if not h_sec_id:
+            log(f"[HEDGE] contract resolve failed for {symbol} {sell_option_type} offset={hedge_offset} — hedge leg skipped")
+            return None
+        return execute("BUY", symbol, h_sec_id, "NSE_FNO", qty, h_trad_sym, mode, broker,
+                       buffer_bps=buffer_bps, log=log, tag=tag,
+                       source=source, strategy=strategy, instrument=instrument,
+                       broker_name=broker_name, group_id=group_id)
+    except Exception as e:
+        log(f"[HEDGE] failed (sell leg unaffected): {e}")
+        return None

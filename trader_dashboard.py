@@ -1046,6 +1046,55 @@ def api_trade_chart_data():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+@app.route('/api/trade-chart-underlying-data')
+def api_trade_chart_underlying_data():
+    """Underlying instrument/index 1-min candles for the chart split-view's left
+    pane — mirrors /api/trade-chart-data's signature (trad_sym/date/et/xt) but
+    resolves the UNDERLYING root symbol (e.g. NIFTY from NIFTY-Jun2026-24050-CE)
+    instead of the option contract itself."""
+    import requests as _req, datetime as _dt
+    trad_sym = request.args.get('trad_sym', '').strip()
+    date_str = request.args.get('date', '').strip() or \
+        (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    entry_t = request.args.get('et', '').strip()
+    exit_t = request.args.get('xt', '').strip()
+    root = trad_sym.split('-')[0].strip().upper()
+    if not root:
+        return jsonify({"ok": False, "msg": "no underlying symbol"})
+
+    try:
+        import universe
+        if root in _EQ_IDX_SEC:
+            sec_id, seg = _EQ_IDX_SEC[root]
+            inst = "INDEX" if seg == "IDX_I" else "EQUITY"
+        else:
+            sec_id = universe.equity_secid(root)
+            seg, inst = "NSE_EQ", "EQUITY"
+        if not sec_id:
+            return jsonify({"ok": False, "msg": f"underlying sec_id not found: {root}"})
+
+        token, cid = _creds()
+        hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
+            "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
+            "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
+        d = r.json()
+        if not d.get("open"):
+            return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
+        candles, entry_mk, exit_mk = [], None, None
+        for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
+            t_ist = int(ts) + 19800
+            hhmm = _dt.datetime.utcfromtimestamp(int(ts) + 19800).strftime("%H:%M")
+            candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
+                            "low": round(float(l), 2), "close": round(float(c), 2)})
+            if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
+            if exit_t and hhmm == exit_t: exit_mk = t_ist
+        return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
+                        "symbol": root, "date": date_str})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 def _dhan_live_fate(resp, token, cid):
     """Live order ka asli anjaam pata karo. Dhan ka 200 = 'accepted', 'filled' NAHI.
     Price-band/freeze pe order accept hoke turant REJECT ho jaata (async). Return
@@ -1173,7 +1222,14 @@ def api_bulk_order():
                 tags_list.append(f"CHART:{tf}:{ind}")
             if sl_pct > 0:
                 tags_list.append(f"SL_PCT:{sl_pct}")
-                
+
+            # CNC only makes sense for EQUITY (carry-forward) — instrument here
+            # is always EQUITY, so the client's choice is honored as-is; non-equity
+            # order paths elsewhere force NRML server-side regardless of client input.
+            product_type = (t.get('product_type') or 'NRML').upper()
+            if product_type not in ('NRML', 'CNC'):
+                product_type = 'NRML'
+
             order_store.record(
                 side="BUY",
                 qty=qty,
@@ -1188,7 +1244,8 @@ def api_bulk_order():
                 sec_id=str(sid),
                 segment="NSE_EQ",
                 status="paper",
-                tags=tags_list
+                tags=tags_list,
+                product_type=product_type,
             )
             placed += 1
             
@@ -1307,7 +1364,8 @@ def api_manual_order():
                 order_store.record(side, qty_shares, option_ltp, source='manual', mode=m,
                     broker='dhan', symbol=symbol, instrument='options', trad_sym=t_sym,
                     sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
-                    correlation_id=f'MANUAL_{symbol}_{ts}', status=status_)
+                    correlation_id=f'MANUAL_{symbol}_{ts}', status=status_,
+                    product_type='NRML')  # options always NRML — CNC only applies to EQUITY
             except Exception:
                 pass
 
@@ -1344,7 +1402,13 @@ def api_close_position():
     # record karo taaki order_store.trades_for me net hoke completed ban jaaye.
     src_in   = data.get('source', '') or 'manual'
     strat_in = data.get('strategy', '') or ''
+    return jsonify(_close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in))
 
+
+def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
+    """Shared close-one-leg logic — used by /api/close-position and (looped per
+    leg) by /api/close-position-group. Returns the same {ok, msg} dict shape
+    the route used to jsonify directly."""
     close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
 
     try:
@@ -1379,7 +1443,7 @@ def api_close_position():
         # corrupt karta (SELL @71 → exit @0 = jhootha bada profit). Refuse + bolo.
         # Phantom/expired position clear karni ho to 🗑 book-close use karo.
         if not option_ltp:
-            return jsonify({'ok': False, 'msg': f'{t_sym} ka LTP nahi mila (Dhan rate-limit/expired) — close record NAHI kiya. Dobara try karo, ya phantom ho to 🗑 book-close use karo.'})
+            return {'ok': False, 'msg': f'{t_sym} ka LTP nahi mila (Dhan rate-limit/expired) — close record NAHI kiya. Dobara try karo, ya phantom ho to 🗑 book-close use karo.'}
 
         ts = int(_time.time())
 
@@ -1407,10 +1471,10 @@ def api_close_position():
         if mode == 'paper':
             _write_log('PAPER')
             _record_close('paper', 'paper')
-            return jsonify({'ok': True, 'msg': f'[PAPER] CLOSE {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}'})
+            return {'ok': True, 'msg': f'[PAPER] CLOSE {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}'}
 
         if not sec_id:
-            return jsonify({'ok': False, 'msg': f'Security ID not found for {t_sym}'})
+            return {'ok': False, 'msg': f'Security ID not found for {t_sym}'}
 
         body = {
             'dhanClientId': cid, 'correlationId': f'CLOSE_{t_sym}_{ts}',
@@ -1424,14 +1488,44 @@ def api_close_position():
         if r.status_code == 200:
             ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
             if not ok_fill:
-                return jsonify({'ok': False, 'msg': f'Dhan ne close order {ostatus} kiya — position band nahi hui (Dhan pe verify karo)'})
+                return {'ok': False, 'msg': f'Dhan ne close order {ostatus} kiya — position band nahi hui (Dhan pe verify karo)'}
             _write_log('LIVE')
             _record_close('filled' if ostatus == 'TRADED' else 'pending', 'live', _oid)
-            return jsonify({'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym} ({ostatus})'})
+            return {'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym} ({ostatus})'}
         else:
-            return jsonify({'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'})
+            return {'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'}
     except Exception as e:
-        return jsonify({'ok': False, 'msg': str(e)})
+        return {'ok': False, 'msg': str(e)}
+
+
+@app.route('/api/close-position-group', methods=['POST'])
+def api_close_position_group():
+    """Square off ALL open legs sharing a group_id together (e.g. a sold option
+    + its auto-placed hedge) — one button, one combined result, instead of
+    closing each leg independently and risking a half-closed hedge."""
+    import order_store
+    from datetime import timedelta as _td
+    data = request.get_json() or {}
+    group_id = (data.get('group_id') or '').strip()
+    mode = data.get('mode', 'paper')
+    if not group_id:
+        return jsonify({'ok': False, 'msg': 'group_id required'})
+
+    today = (datetime.utcnow() + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    open_pos = order_store.trades_for(today).get('open', [])
+    legs = [p for p in open_pos if p.get('group_id') == group_id]
+    if not legs:
+        return jsonify({'ok': False, 'msg': f'No open legs found for group {group_id}'})
+
+    results = []
+    for leg in legs:
+        r = _close_position_impl(leg['sym'], leg['entry'], leg['qty'], mode,
+                                  leg.get('source', 'manual'), leg.get('strategy', ''))
+        r['sym'] = leg['sym']
+        results.append(r)
+
+    all_ok = all(r.get('ok') for r in results)
+    return jsonify({'ok': all_ok, 'msg': '; '.join(r.get('msg', '') for r in results), 'legs': results})
 
 
 @app.route('/api/orders/book-close', methods=['POST'])
@@ -2312,6 +2406,22 @@ def api_orders_calendar_summary():
     })
 
 
+@app.route('/api/orders/stats-summary')
+def api_orders_stats_summary():
+    """Profit Factor / Expectancy / Sharpe over a date range (live/paper data),
+    plus the closed-trades list for the Stats tab's grouped/toggleable table.
+    Separate from /api/orders/calendar-summary to avoid changing that route's
+    existing response shape (calendar view is already in production use)."""
+    import order_store
+    date_from = request.args.get('date_from')
+    date_to = request.args.get('date_to')
+    filt = {k: request.args.get(k) for k in
+            ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    metrics = order_store.stats_summary(date_from=date_from, date_to=date_to, **filt)
+    details = order_store.trades_for_range(date_from or "0000-00-00", date_to or "9999-12-31", **filt)['details']
+    return jsonify({'ok': True, 'metrics': metrics, 'trades': details})
+
+
 @app.route('/api/orders/rename-strategy', methods=['POST'])
 def api_rename_strategy():
     data = request.get_json()
@@ -2596,6 +2706,47 @@ def _rest_ltp_fallback(sec_id, seg):
         print("[_rest_ltp_fallback] fail:", e, flush=True)
     return None
 
+
+_candle_close_cache = {}   # sec_id -> (close_price, fetched_at) — throttles Dhan intraday calls
+_CANDLE_CLOSE_TTL = 30      # seconds; a 1-min candle only closes once a minute anyway
+
+def _last_closed_candle_close(sec_id, seg):
+    """Close price of the most recently CLOSED 1-min candle (not the still-forming
+    one) — used by the CANDLE_CLOSE SL/TP trigger type. Cached (30s TTL) to avoid
+    hammering Dhan's intraday-candle endpoint every pos_monitor_loop tick (same
+    DH-904 rate-limit concern already documented elsewhere in this codebase)."""
+    import time as _t
+    cached = _candle_close_cache.get(sec_id)
+    if cached and (_t.time() - cached[1]) < _CANDLE_CLOSE_TTL:
+        return cached[0]
+    try:
+        import requests as _req, datetime as _dt
+        token, cid = _creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        date_str = now_ist.strftime("%Y-%m-%d")
+        inst = "EQUITY" if seg == "NSE_EQ" else ("INDEX" if seg == "IDX_I" else "OPTIDX")
+        r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=headers, json={
+            "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
+            "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=8)
+        d = r.json()
+        if not d.get("close"):
+            return None
+        closes = d["close"]
+        timestamps = d["timestamp"]
+        now_epoch = int((now_ist - timedelta(hours=5, minutes=30) - datetime(1970, 1, 1)).total_seconds())
+        # drop the still-forming bar (its timestamp + 60s hasn't elapsed yet)
+        closed_idx = [i for i, ts in enumerate(timestamps) if int(ts) + 60 <= now_epoch]
+        if not closed_idx:
+            return None
+        last_close = float(closes[closed_idx[-1]])
+        _candle_close_cache[sec_id] = (last_close, _t.time())
+        return last_close
+    except Exception as e:
+        print("[_last_closed_candle_close] fail:", e, flush=True)
+        return None
+
+
 def pos_monitor_loop():
     """Monitors open positions for SL_PCT, TP_PCT hits and tracks MAX/MIN LTP."""
     import time
@@ -2612,8 +2763,13 @@ def pos_monitor_loop():
             
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
-            
+            # Tracks ids already squared-off THIS pass (e.g. as a hedge group
+            # sibling) — without this, the for-loop below would re-process a
+            # sibling leg that _do_squareoff already closed earlier this pass.
+            _closed_ids = set()
+
             for p in open_pos:
+                if p.get("id") in _closed_ids: continue
                 if not p.get("tags") and not p.get("sec_id"): continue
                 sec_id = p.get("sec_id")
                 if not sec_id: continue
@@ -2728,6 +2884,23 @@ def pos_monitor_loop():
                         return "INDEX_HIT" if trigger else None
                     return None
 
+                def _candle_close_px(val):
+                    """val is the raw SL_VAL/TP_VAL string '<above|below>:<price>'
+                    (set via the new Candle Close trigger type). Returns a
+                    sentinel once the last CLOSED 1-min candle's close has
+                    crossed the specified level in the specified direction."""
+                    try:
+                        direction, price_s = str(val).split(":", 1)
+                        level = float(price_s)
+                    except Exception:
+                        return None
+                    last_close = _last_closed_candle_close(sec_id, seg)
+                    if last_close is None:
+                        return None
+                    if direction == "above" and last_close > level: return "CANDLE_HIT"
+                    if direction == "below" and last_close < level: return "CANDLE_HIT"
+                    return None
+
                 def _do_squareoff(p, ltp, exit_reason, sec_id, seg):
                     """Exit a position now — live round-trips a real broker order
                     first (never marks closed unless the broker confirms), paper
@@ -2756,6 +2929,28 @@ def pos_monitor_loop():
                             sec_id=sec_id, segment=seg, status=p.get("status", "paper"),
                             tags=["pos_monitor_exit", exit_reason]
                         )
+
+                    # ── Group-aware: a hedge SELL+BUY pair (or any group_id'd
+                    # legs) must close together — close any open sibling now,
+                    # tagged so it's clear it followed automatically, not its
+                    # own independent SL/TP/EOD hit.
+                    _closed_ids.add(p.get("id"))
+                    gid = p.get("group_id")
+                    if gid:
+                        for sib in open_pos:
+                            sib_id = sib.get("id")
+                            if sib_id in _closed_ids or sib is p: continue
+                            if sib.get("group_id") != gid: continue
+                            sib_sec = sib.get("sec_id")
+                            if not sib_sec: continue
+                            sib_seg = "NSE_EQ" if (sib.get("instrument") or "").upper() == "EQUITY" else "NSE_FNO"
+                            _feed_subscribe([(sib_seg, sib_sec)])
+                            qsib = dhan_feed.get_quote(sib_sec)
+                            sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
+                            if sib_ltp <= 0:
+                                sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
+                            if sib_ltp > 0:
+                                _do_squareoff(sib, sib_ltp, exit_reason + "_GROUP", sib_sec, sib_seg)
                     return True
 
                 # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
@@ -2767,12 +2962,36 @@ def pos_monitor_loop():
                     _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
                     continue
 
+                # ── Always-on 1% max-loss squareoff — independent of any SL/TP
+                # tag, applies to EVERY open position regardless of source
+                # (manual/strategy/webhook). Distinct from the legacy
+                # max_loss_pct/max_loss_rs fallback below (which only kicks in
+                # when no SL tag is set) and from risk_gate's drawdown breaker
+                # (which blocks new entries, doesn't close existing ones).
+                # Safe no-op until the user sets total_capital_rs explicitly.
+                _rc_ml = _risk_config().get("global", {})
+                _total_cap = _rc_ml.get("total_capital_rs")
+                if _total_cap:
+                    try: _total_cap = float(_total_cap)
+                    except Exception: _total_cap = None
+                if _total_cap and _total_cap > 0:
+                    unrealized = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
+                    if unrealized <= -0.01 * _total_cap:
+                        _do_squareoff(p, ltp, "MAXLOSS_1PCT_SQUAREOFF", sec_id, seg)
+                        continue
+
                 sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
                 tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None
-                # "INDEX_HIT" is a sentinel meaning the underlying index/equity level
-                # was already breached — short-circuit straight to exit below.
-                if sl_px_generic == "INDEX_HIT" or tp_px_generic == "INDEX_HIT":
-                    reason = "SL_HIT:index_level" if sl_px_generic == "INDEX_HIT" else "TP_HIT:index_level"
+                if sl_type == "candle_close":
+                    sl_px_generic = _candle_close_px(sl_val)
+                if tp_type == "candle_close":
+                    tp_px_generic = _candle_close_px(tp_val)
+                # "INDEX_HIT"/"CANDLE_HIT" are sentinels meaning the trigger already
+                # fired — short-circuit straight to exit below.
+                if sl_px_generic in ("INDEX_HIT", "CANDLE_HIT") or tp_px_generic in ("INDEX_HIT", "CANDLE_HIT"):
+                    hit_sl = sl_px_generic in ("INDEX_HIT", "CANDLE_HIT")
+                    kind = "index_level" if (sl_px_generic == "INDEX_HIT" or tp_px_generic == "INDEX_HIT") else "candle_close"
+                    reason = f"SL_HIT:{kind}" if hit_sl else f"TP_HIT:{kind}"
                     _do_squareoff(p, ltp, reason, sec_id, seg)
                     continue
                 # numeric generic SL/TP trigger price (None if no generic tag set)

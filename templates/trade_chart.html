@@ -11,6 +11,16 @@
   .muted{color:#8b949e;font-size:12px}
   #chart{flex:1;height:100%}
   #msg{padding:40px;text-align:center;color:#8b949e;font-size:14px}
+  .split-wrap{flex:1;display:flex;overflow:hidden;min-height:0}
+  .pane{display:flex;flex-direction:column;min-width:0;overflow:hidden;background:#0d1117}
+  .pane-hidden{flex:0 0 0 !important;width:0 !important;overflow:hidden}
+  #pane-left{flex:1 1 45%}
+  #pane-right{flex:1 1 55%}
+  .splitter2{flex:0 0 6px;background:#161b22;border-left:1px solid #30363d;border-right:1px solid #30363d;cursor:col-resize}
+  .splitter2:hover{background:#1f6feb}
+  .pane-hdr{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e;flex-shrink:0;text-transform:uppercase;letter-spacing:.4px}
+  .pane-hdr .hint{color:#484f58;text-transform:none;letter-spacing:0}
+  #chart-left{flex:1;width:100%;min-height:0}
 </style></head>
 <body>
   <div class="hdr">
@@ -31,8 +41,18 @@
         <!-- Populated by JS -->
       </div>
     </div>
-    <!-- Chart -->
-    <div id="chart"></div>
+    <!-- Split chart view: left = instrument/index, right = option premium -->
+    <div class="split-wrap" id="split-wrap">
+      <div class="pane" id="pane-left">
+        <div class="pane-hdr"><span id="left-pane-title">Instrument</span><span class="hint">Ctrl+Click to expand</span></div>
+        <div id="chart-left"><div class="empty muted" style="padding:20px;text-align:center">Loading underlying chart...</div></div>
+      </div>
+      <div class="splitter2" id="splitter2"></div>
+      <div class="pane" id="pane-right">
+        <div class="pane-hdr"><span>Premium</span><span class="hint">Ctrl+Click to expand</span></div>
+        <div id="chart"></div>
+      </div>
+    </div>
   </div>
 <script>
 (function(){
@@ -217,6 +237,87 @@
       chart.timeScale().fitContent();
       window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
     }).catch(e=>showMsg('Error: '+e.message));
+})();
+
+// ── Left pane: underlying instrument/index chart ────────────────────────────
+(function(){
+  const q = new URLSearchParams(location.search);
+  const sym = q.get('sym')||'';
+  const dt = q.get('date')||'';
+  const et = q.get('et')||'', xt = q.get('xt')||'';
+  if (!sym) return;
+  const root = sym.split('-')[0];
+  document.getElementById('left-pane-title').textContent = root || 'Instrument';
+
+  fetch('/api/trade-chart-underlying-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):''))
+    .then(r=>r.json()).then(d=>{
+      const el = document.getElementById('chart-left');
+      if (!d.ok || !d.candles || !d.candles.length){
+        el.innerHTML = '<div class="muted" style="padding:20px;text-align:center">'+(d.msg||'Underlying data nahi mila')+'</div>';
+        return;
+      }
+      el.innerHTML = '';
+      const chart = LightweightCharts.createChart(el, {
+        layout:{ background:{color:'#0d1117'}, textColor:'#8b949e' },
+        grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
+        timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
+        rightPriceScale:{ borderColor:'#30363d' },
+        crosshair:{ mode:0 }
+      });
+      const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
+        borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
+      const uniq = []; const seen = new Set();
+      d.candles.forEach(c=>{ if(!seen.has(c.time)){ seen.add(c.time); uniq.push(c); } });
+      uniq.sort((a,b)=>a.time-b.time);
+      s.setData(uniq);
+      if (d.entry_mk) s.setMarkers([{time:d.entry_mk, position:'belowBar', color:'#58a6ff', shape:'circle', text:'Entry'}]);
+      chart.timeScale().fitContent();
+      window._leftChart = chart;
+      window.addEventListener('resize', ()=>chart.applyOptions({width: el.clientWidth}));
+    }).catch(()=>{
+      document.getElementById('chart-left').innerHTML = '<div class="muted" style="padding:20px;text-align:center">Error loading underlying chart</div>';
+    });
+})();
+
+// ── Split-view resize (drag splitter) + Ctrl+Click full-width toggle ───────
+(function(){
+  const wrap = document.getElementById('split-wrap');
+  const left = document.getElementById('pane-left');
+  const right = document.getElementById('pane-right');
+  const splitter = document.getElementById('splitter2');
+  let dragging = false;
+
+  splitter.addEventListener('mousedown', e => { dragging = true; e.preventDefault(); });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const rect = wrap.getBoundingClientRect();
+    const pct = Math.max(20, Math.min(80, ((e.clientX - rect.left) / rect.width) * 100));
+    left.style.flex = `1 1 ${pct}%`;
+    right.style.flex = `1 1 ${100 - pct}%`;
+    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+
+  function resizeCharts(){
+    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+    window.dispatchEvent(new Event('resize'));
+  }
+
+  function expandPane(which){
+    if (which === 'left'){ right.classList.add('pane-hidden'); left.classList.remove('pane-hidden'); }
+    else { left.classList.add('pane-hidden'); right.classList.remove('pane-hidden'); }
+    splitter.style.display = 'none';
+    setTimeout(resizeCharts, 0);
+  }
+  function restoreSplit(){
+    left.classList.remove('pane-hidden'); right.classList.remove('pane-hidden');
+    splitter.style.display = '';
+    setTimeout(resizeCharts, 0);
+  }
+
+  left.addEventListener('click', e => { if (e.ctrlKey) expandPane('left'); });
+  right.addEventListener('click', e => { if (e.ctrlKey) expandPane('right'); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') restoreSplit(); });
 })();
 
 // ── ←/→ navigate between trades (list saved in localStorage by the Orders & P&L tab) ──

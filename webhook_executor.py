@@ -509,12 +509,23 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         _log(f"risk gate check failed (allowing entry): {e}")
 
     instrument = cfg.get("instrument", "options")
+    # group_id links this leg to its auto-hedge BUY (if hedge_offset_strikes is
+    # configured below) — empty string if no hedge, so existing single-leg
+    # behavior/netting is completely unaffected when the feature is off.
+    hedge_offset_strikes = cfg.get("hedge_offset_strikes")
+    group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and hedge_offset_strikes) else ""
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
                               trad_sym, mode, broker, log=_log, tag="TVWH",
                               source="webhook", strategy=strat, instrument=instrument,
-                              broker_name=cfg.get("broker", "dhan"))
+                              broker_name=cfg.get("broker", "dhan"), group_id=group_id)
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
+
+    if group_id:
+        smart_order.place_hedge_if_configured(
+            symbol, spot, opt_type, offset, qty, mode, broker, group_id, hedge_offset_strikes,
+            log=_log, tag="TVWH_HEDGE", source="webhook", strategy=strat,
+            instrument=instrument, broker_name=cfg.get("broker", "dhan"))
 
     entry_px = res["price"]
     sl_pts   = float(cfg.get("sl_points", 0) or 0)
