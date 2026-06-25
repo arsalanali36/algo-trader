@@ -986,6 +986,9 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <tbody id="cal-day-totals-tbody">
           <!-- Populated by JS -->
         </tbody>
+        <tfoot id="cal-day-totals-tfoot">
+          <!-- Populated by JS -->
+        </tfoot>
       </table>
     </div>
   </div>
@@ -6161,11 +6164,21 @@ async function calendarRender() {
 
   // Render Day Totals table
   const dayTotalsBody = document.getElementById('cal-day-totals-tbody');
+  const dayTotalsFoot = document.getElementById('cal-day-totals-tfoot');
   if (dayTotalsBody) {
     const sortedDates = Object.keys(summary).sort((a, b) => b.localeCompare(a));
     let dayHtml = '';
+    
+    let grandTrades = 0;
+    let grandWins = 0;
+    let grandLosses = 0;
+    let grandGross = 0;
+    let grandTax = 0;
+    let grandNet = 0;
+    
     if (sortedDates.length === 0) {
       dayHtml = `<tr><td colspan="7" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
+      if (dayTotalsFoot) dayTotalsFoot.innerHTML = '';
     } else {
       sortedDates.forEach(dateStr => {
         const daySummary = summary[dateStr] || {};
@@ -6181,6 +6194,13 @@ async function calendarRender() {
         const gross = stat.gross;
         const net = stat.net;
         const tax = stat.tax;
+        
+        grandTrades += stat.count;
+        grandWins += stat.wins;
+        grandLosses += stat.losses;
+        grandGross += gross;
+        grandTax += tax;
+        grandNet += net;
         
         const grossColor = gross >= 0 ? '#3fb950' : '#f85149';
         const grossText = Math.round(gross).toLocaleString('en-IN');
@@ -6206,6 +6226,31 @@ async function calendarRender() {
           </tr>
         `;
       });
+      
+      if (dayTotalsFoot) {
+        const grandWinRate = grandTrades > 0 ? Math.round((grandWins / grandTrades) * 100) : 0;
+        const grandGrossColor = grandGross >= 0 ? '#3fb950' : '#f85149';
+        const grandGrossText = Math.round(grandGross).toLocaleString('en-IN');
+        
+        const grandNetColor = grandNet >= 0 ? '#3fb950' : '#f85149';
+        const grandNetText = Math.round(grandNet).toLocaleString('en-IN');
+        
+        const grandTaxText = Math.round(grandTax).toLocaleString('en-IN');
+        
+        dayTotalsFoot.innerHTML = `
+          <tr style="border-top:2px solid #30363d; font-weight:700; background:#161b22;">
+            <td style="padding:8px; color:#adbac7;">Total / Avg</td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">${grandTrades}</td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">
+              <span style="color:#3fb950; font-weight:700;">${grandWins}</span> / <span style="color:#f85149; font-weight:700;">${grandLosses}</span>
+            </td>
+            <td style="padding:8px; text-align:center; color:#8b949e;">${grandWinRate}%</td>
+            <td style="padding:8px; text-align:right; color:${grandGrossColor}; font-weight:700;">${grandGrossText}</td>
+            <td style="padding:8px; text-align:right; color:#8b949e;">${grandTaxText}</td>
+            <td style="padding:8px; text-align:right; color:${grandNetColor}; font-weight:700;">${grandNetText}</td>
+          </tr>
+        `;
+      }
     }
     dayTotalsBody.innerHTML = dayHtml;
   }
