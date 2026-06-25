@@ -25,6 +25,8 @@ import dhan_feed
 
 TICK = 0.05
 
+_ltp_cache = {}   # sec_id -> (ltp, epoch_ts) — opportunistically warmed by every call
+
 
 def _snap(p):
     """Snap to NSE tick size (0.05)."""
@@ -45,13 +47,23 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 
     if not ref:  # feed empty (cold subscribe) -> REST LTP fallback.
         # Webhook entry fires spot+option quotes back-to-back; Dhan marketfeed is
-        # ~1 req/sec, so a fresh option quote can 429. Retry past the limit window.
-        for _i in range(3):
+        # ~1 req/sec, so a fresh option quote can 429. A 3x1.2s blocking retry
+        # here used to push total webhook-handler latency past TradingView's own
+        # webhook timeout ("request took too long and timed out") — one quick
+        # retry + a short-TTL cache instead, so the request path stays fast.
+        for _i, delay in enumerate((0, 0.3)):
+            if delay:
+                time.sleep(delay)
             ref = (broker.quote(sec_id, seg) or {}).get("ltp")
             if ref:
                 break
-            time.sleep(1.2)
         src = "rest_ltp"
+        if ref:
+            _ltp_cache[sec_id] = (ref, time.time())
+        else:
+            cached = _ltp_cache.get(sec_id)
+            if cached and (time.time() - cached[1]) <= 6:
+                ref, src = cached[0], "rest_ltp_cached"
     if not ref:
         return None, "none"
 
