@@ -496,7 +496,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <button class="btn btn-gray" style="padding:7px 11px;font-size:12px" onclick="whCopy('wh-url')">Copy</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:11px">
-      <label class="wh-f">Secret token<span style="display:flex;gap:6px"><input id="wh-token" readonly style="flex:1"><button class="btn btn-gray" style="padding:4px 9px;font-size:13px" onclick="whRegenToken()" title="Regenerate">↻</button></span></label>
+      <label class="wh-f">Secret token<span style="display:flex;gap:6px"><input id="wh-token" readonly style="flex:1"></span></label>
       <label class="wh-f">Global daily ₹ loss cap<input id="wh-daily_cap" type="number" min="0" value="5000"></label>
       <label class="wh-f">Global max trades/day (0=off)<input id="wh-global_max" type="number" min="0" value="0"></label>
     </div>
@@ -1490,12 +1490,6 @@ function whCopy(id){
   const el=document.getElementById(id);
   const t=(el.tagName==='INPUT')?el.value:el.innerText;
   navigator.clipboard.writeText(t).then(()=>flash('Copied ✓')).catch(()=>flash('Copy fail','#f85149'));
-}
-function whRegenToken(){
-  const a=new Uint8Array(10); crypto.getRandomValues(a);
-  WH_TOKEN='wh_'+Array.from(a).map(b=>b.toString(16).padStart(2,'0')).join('');
-  whRenderConn();
-  flash('Naya token bana — Save global dabayein','#d29922');
 }
 
 async function whSaveStrat(){
