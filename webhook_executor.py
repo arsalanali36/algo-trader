@@ -224,8 +224,15 @@ def _hm(s):
         return (15, 15)
 
 
+_spot_cache = {}   # symbol -> (ltp, epoch_ts) — 5s TTL, survives a transient DH-904 429
+
+
 def _index_spot(symbol):
-    """Live index/equity spot price via Dhan REST quote (data always Dhan)."""
+    """Live index/equity spot price via Dhan REST quote (data always Dhan).
+    Many processes (dashboard pollers, traders, this webhook) hit Dhan's LTP
+    endpoint concurrently and can trip the DH-904 rate limit (429) — a single
+    failed call used to kill the whole ENTRY. Retry with backoff, then fall
+    back to the last good price (5s TTL) instead of failing outright."""
     import dhan_master
     info = dhan_master.get_equity_info(symbol)
     if not info:
@@ -234,8 +241,21 @@ def _index_spot(symbol):
     if not info:
         return None
     sec_id, seg, _inst = info
-    q = _broker("dhan").quote(sec_id, seg) or {}
-    return q.get("ltp")
+
+    for attempt, delay in enumerate((0, 1.5, 3.0)):
+        if delay:
+            time.sleep(delay)
+        q = _broker("dhan").quote(sec_id, seg) or {}
+        ltp = q.get("ltp")
+        if ltp:
+            _spot_cache[symbol] = (ltp, time.time())
+            return ltp
+
+    cached = _spot_cache.get(symbol)
+    if cached and (time.time() - cached[1]) <= 5:
+        _log(f"_index_spot {symbol} — Dhan quote failed after retries, using {cached[1]:.1f}s-old cached price")
+        return cached[0]
+    return None
 
 
 def _current_premium(sec_id):
