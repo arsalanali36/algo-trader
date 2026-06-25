@@ -2115,10 +2115,12 @@ window.addEventListener('click', function(e) {
 });
 
 function toggleNoteDesc(tradeId) {
-  const el = document.getElementById(`note-wrapper-${tradeId}`);
-  if (el) {
-    const isHidden = el.style.display === 'none';
-    el.style.display = isHidden ? '' : 'none';
+  const elements = document.querySelectorAll(`[id="note-wrapper-${tradeId}"]`);
+  if (elements.length > 0) {
+    const isHidden = elements[0].style.display === 'none';
+    elements.forEach(el => {
+      el.style.display = isHidden ? '' : 'none';
+    });
     if (isHidden) {
       window._hiddenNotes.delete(tradeId);
     } else {
@@ -3369,7 +3371,8 @@ const CAL_POINTS_COLS_DEF = [
   {id:'strategy',    l:'Strategy',     a:'left',   on:false},
   {id:'source',      l:'Source',       a:'left',   on:false},
   {id:'mode',        l:'Mode',         a:'left',   on:false},
-  {id:'broker',      l:'Broker',       a:'left',   on:false}
+  {id:'broker',      l:'Broker',       a:'left',   on:false},
+  {id:'actions',     l:'Actions',      a:'center', on:true,  fixed:true}
 ];
 
 window._ordCompletedCols = null;
@@ -3480,6 +3483,32 @@ function saveCalPointsColPrefs() {
   localStorage.setItem('cal_points_cols', JSON.stringify(window._calPointsCols));
   document.getElementById('cal-points-col-modal').style.display = 'none';
   renderPointsPerTradeTable();
+}
+
+function toggleCalDropdown(event, tradeId) {
+  event.stopPropagation();
+  const dropdown = document.getElementById(`cal-dropdown-${tradeId}`);
+  if (!dropdown) return;
+  const isCurrentlyOpen = dropdown.style.display === 'block';
+
+  document.querySelectorAll('.dropdown-content').forEach(el => {
+    el.style.display = 'none';
+  });
+  if (isCurrentlyOpen) return;
+
+  const trig = event.currentTarget || event.target;
+  const r = trig.getBoundingClientRect();
+  dropdown.style.display = 'block';
+  dropdown.style.position = 'fixed';
+  dropdown.style.right = 'auto';
+  const mw = dropdown.offsetWidth || 160, mh = dropdown.offsetHeight || 190;
+  let left = r.right - mw;
+  if (left < 8) left = 8;
+  let top = r.bottom + 4;
+  if (top + mh > window.innerHeight - 8) top = r.top - mh - 4;
+  if (top < 8) top = 8;
+  dropdown.style.left = left + 'px';
+  dropdown.style.top = top + 'px';
 }
 
 // ── Stats tab: toggleable-columns closed-positions table ───────────────────
@@ -5965,6 +5994,18 @@ function renderPointsPerTradeTable() {
     return db.localeCompare(da); // Descending (most recent first)
   });
   
+  const _chartList = sortedTrades.map(t => ({
+    sym: t.sym || t.symbol,
+    side: t.entry,
+    entry: t.entry_price,
+    exit: t.exit_price,
+    et: t.entry_time,
+    xt: t.exit_time,
+    qty: t.qty,
+    date: t.exit_date || t.entry_date
+  }));
+  localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
+  
   if (sortedTrades.length === 0) {
     pointsBody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is filter pe koi trade details nahi hain</td></tr>`;
     renderPointsPagination(0);
@@ -6005,12 +6046,37 @@ function renderPointsPerTradeTable() {
       `;
     }
     
+    let note = '';
+    let sl = '', tp = '';
+    if (t.tags) {
+      t.tags.forEach(tg => {
+        if (tg.startsWith('NOTE:')) note = tg.substring(5);
+        if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
+        if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
+      });
+    }
+    
+    let encNote = encodeURIComponent(note);
+    let imgs = _imgTagsOf(t);
+    let encImgs = encodeURIComponent(JSON.stringify(imgs));
+    
+    const isNoteHidden = window._hiddenNotes.has(t.id);
+    let dispNote = '';
+    if (note || (imgs && imgs.length)) {
+      dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
+               + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+               + _noteThumbs(t.id, imgs)
+               + `</div>`;
+    }
+    
+    const _idx = sortedTrades.indexOf(t);
+    
     pointsHtml += `<tr style="border-bottom:1px solid #21262d;">` + cols.map(c => {
       let v = '';
       if (c.id === 'exit_time') {
         v = t.exit_time || t.entry_time || '—';
       } else if (c.id === 'symbol') {
-        v = `<b>${t.sym || t.symbol || '—'}</b>`;
+        v = `<b>${t.sym || t.symbol || '—'}</b>` + dispNote;
       } else if (c.id === 'side') {
         const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
         v = `<span style="color:${sideColor}; font-weight:600;">${t.entry || '—'}</span>`;
@@ -6039,6 +6105,16 @@ function renderPointsPerTradeTable() {
         v = t.mode || '—';
       } else if (c.id === 'broker') {
         v = t.broker || '—';
+      } else if (c.id === 'actions') {
+        v = `
+          <div class="dropdown">
+            <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${t.id})">⋮</span>
+            <div id="cal-dropdown-${t.id}" class="dropdown-content">
+              <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+              <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
+              <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
+            </div>
+          </div>`;
       } else {
         v = t[c.id] ?? '—';
       }
@@ -6649,6 +6725,7 @@ async function saveNote() {
 
     document.getElementById('edit-note-modal').style.display = 'none';
     ordersRender(); // Refresh orders
+    if(typeof calendarRender === 'function') calendarRender(); // Refresh calendar trades
   } catch(e) {
     alert("Error saving Note.");
   }
