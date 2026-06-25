@@ -224,36 +224,79 @@ def _hm(s):
         return (15, 15)
 
 
-_spot_cache = {}   # symbol -> (ltp, epoch_ts) — 5s TTL, survives a transient DH-904 429
+_spot_cache = {}     # symbol -> (ltp, epoch_ts) — kept warm by _spot_refresher_loop
+_spot_started = False
+_spot_lock = threading.Lock()
 
 
-def _index_spot(symbol):
-    """Live index/equity spot price via Dhan REST quote (data always Dhan).
-    Many processes (dashboard pollers, traders, this webhook) hit Dhan's LTP
-    endpoint concurrently and can trip the DH-904 rate limit (429) — a single
-    failed call used to kill the whole ENTRY. Retry with backoff, then fall
-    back to the last good price (5s TTL) instead of failing outright."""
+def _spot_info(symbol):
     import dhan_master
     info = dhan_master.get_equity_info(symbol)
     if not info:
         info = {"NIFTY": ("13", "IDX_I", "INDEX"),
                 "BANKNIFTY": ("25", "IDX_I", "INDEX")}.get(symbol)
+    return info
+
+
+def _spot_refresher_loop():
+    """Background thread — refreshes _spot_cache every ~3s for symbols actually
+    used by configured webhook strategies, ONE Dhan call at a time (no burst).
+    Keeps the webhook request path (handle_signal) fully non-blocking: it just
+    reads this cache instead of making a live network call + retries, which
+    used to add 1.5-4.5s of latency inside the HTTP response and trip
+    TradingView's own webhook timeout ('request took too long and timed out')."""
+    while True:
+        try:
+            # webhook strategy configs don't carry a symbol field (it comes per-alert),
+            # so just keep both indices warm — cheap, one call each, ~1.1s apart.
+            for sym in ("NIFTY", "BANKNIFTY"):
+                info = _spot_info(sym)
+                if not info:
+                    continue
+                sec_id, seg, _inst = info
+                try:
+                    q = _broker("dhan").quote(sec_id, seg) or {}
+                    ltp = q.get("ltp")
+                    if ltp:
+                        _spot_cache[sym] = (ltp, time.time())
+                except Exception:
+                    pass
+                time.sleep(1.1)   # stay well under Dhan's ~1 req/sec LTP limit
+        except Exception:
+            pass
+        time.sleep(2)
+
+
+def _ensure_spot_refresher():
+    global _spot_started
+    with _spot_lock:
+        if not _spot_started:
+            _spot_started = True
+            threading.Thread(target=_spot_refresher_loop, daemon=True).start()
+
+
+def _index_spot(symbol):
+    """Live index/equity spot price — reads the background-refreshed cache
+    (non-blocking, see _spot_refresher_loop). Falls back to a single direct
+    Dhan call only if the cache is missing/stale, so a cold start still works."""
+    _ensure_spot_refresher()
+    cached = _spot_cache.get(symbol)
+    if cached and (time.time() - cached[1]) <= 8:
+        return cached[0]
+
+    info = _spot_info(symbol)
     if not info:
         return None
     sec_id, seg, _inst = info
+    q = _broker("dhan").quote(sec_id, seg) or {}
+    ltp = q.get("ltp")
+    if ltp:
+        _spot_cache[symbol] = (ltp, time.time())
+        return ltp
 
-    for attempt, delay in enumerate((0, 1.5, 3.0)):
-        if delay:
-            time.sleep(delay)
-        q = _broker("dhan").quote(sec_id, seg) or {}
-        ltp = q.get("ltp")
-        if ltp:
-            _spot_cache[symbol] = (ltp, time.time())
-            return ltp
-
-    cached = _spot_cache.get(symbol)
-    if cached and (time.time() - cached[1]) <= 5:
-        _log(f"_index_spot {symbol} — Dhan quote failed after retries, using {cached[1]:.1f}s-old cached price")
+    # last resort: a slightly-stale cached value beats failing the entry outright
+    if cached:
+        _log(f"_index_spot {symbol} — Dhan quote failed, using {time.time()-cached[1]:.1f}s-old cached price")
         return cached[0]
     return None
 
