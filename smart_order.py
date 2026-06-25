@@ -51,7 +51,7 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
         # here used to push total webhook-handler latency past TradingView's own
         # webhook timeout ("request took too long and timed out") — one quick
         # retry + a short-TTL cache instead, so the request path stays fast.
-        for _i, delay in enumerate((0, 0.3)):
+        for _i, delay in enumerate((0, 0.5, 1.0)):
             if delay:
                 time.sleep(delay)
             ref = (broker.quote(sec_id, seg) or {}).get("ltp")
