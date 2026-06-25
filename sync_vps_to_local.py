@@ -46,6 +46,9 @@ SYNC_ITEMS = [
     "data/shared_ltp_cache.json",
     "data/trade_log.json",
     "data/trade_ohlc",
+    "data/backtest.db",
+    "data/saved_backtests.json",
+    "data/saved_optimizations.json",
     "_TRADING_DATA",
     "logs"
 ]

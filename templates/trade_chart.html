@@ -234,6 +234,13 @@
       // entry/exit price lines
       if(entry) s.createPriceLine({price:entry, color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Entry'});
       if(exit)  s.createPriceLine({price:exit,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Exit'});
+      // SL / Target lines (item F) — passed as PREMIUM price levels by the
+      // caller (₹-amount SL/TP already converted to premium points so they're
+      // plottable on this premium axis). Solid so they stand out from the
+      // dashed entry/exit lines.
+      const _slPx = parseFloat(q.get('sl')||''), _tpPx = parseFloat(q.get('tp')||'');
+      if(isFinite(_slPx) && _slPx>0) s.createPriceLine({price:_slPx, color:'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL'});
+      if(isFinite(_tpPx) && _tpPx>0) s.createPriceLine({price:_tpPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
       chart.timeScale().fitContent();
       window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
     }).catch(e=>showMsg('Error: '+e.message));

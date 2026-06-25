@@ -6,6 +6,12 @@ Web dashboard se control hota hai — koi command line nahi.
 
 ## Files
 
+> **🐞 Koi bug/weird-P&L diagnose karne se PEHLE: `LESSONS.md` padho.** Recurring traps ki
+> indexed library hai (₹0-price phantom fills, DH-904 rate-limit, galat-process-blame, Python
+> 3.8 VPS crash, deploy gotchas, UI fingerprint-skip). Bug fix karke jo dobara aa sakta hai —
+> wahan ek entry add karo. Goal: **ek bug do baar diagnose na karna.** (`ARCHITECTURE_LOG.md` =
+> "kya badla" changelog; `LESSONS.md` = "kya seekha / permanent guard".)
+>
 > **📘 Pine→Python validation? PEHLE YEH PADHO:** `ACCURACY SCORE CLAUD/VALIDATION_PLAYBOOK.md`
 > — reusable methodology + all findings (fill convention, Wilder ATR, pyramiding=0,
 > consistent-log export, etc.). Pichli baar pura din laga; yeh playbook se turant pick hoga.
@@ -26,6 +32,7 @@ Web dashboard se control hota hai — koi command line nahi.
 | `deploy_vps.py` | SCP se VPS pe push + dashboard restart |
 | `templates/index.html`| Dynamic grid UI for configuration and dashboard |
 | `mfe_routes.py` | MFE/MAE analysis routes — trade_log CRUD + analyse + generate-backtest |
+| `LESSONS.md` | **Recurring-traps knowledge base** (problem se indexed): symptom → root pattern → permanent guard → fast-detect. Bug diagnose karne se pehle yahan dekho; fix karke yahan likho. |
 | `generate_june_mfe.py` | Backtest→trade_log pipeline (NIFTY 1-min → Range Chain → ATM option bars) |
 | `auto_data_downloader.py` | VPS daemon — polls Dhan orders → downloads OHLC bars → gap detection → dashboard banner |
 | `webhook_executor.py` | **TradingView webhook → Dhan order engine.** `handle_signal` (ENTRY/EXIT), monitor (trailing SL premium/index, target, 3:15 squareoff), dedup, max-trades/day, Pine-alert overrides. Config `webhook_v1` in nifty_config.json |
@@ -123,6 +130,15 @@ order daale (jaise legacy `nifty_ema_trader.py`=ema_v1 aur `01_rsi_v1.py`=rsi_v1
 abhi karte hain — apne in-memory dicts + log se, order_store mein nahi) wo
 **RMS-blind** hai aur use live nahi chalana chahiye jab tak order_store recording
 add na ho. Nayi strategy banate waqt: pehle order_store recording wire karo.
+
+### 7. Kabhi ₹0-price pe REAL fill record mat karo (LESSONS.md TRAP #1)
+Option premium fetch fail ho (DH-904 rate-limit) to `price = 0` record karna ek
+real fill ke roop me **P&L corrupt karta hai** (SELL@₹0 → close@real = jhootha bada
+loss/profit → RMS breaker trip → asli legs squareoff). Yeh bug 4 baar laut chuka.
+**Rule:** premium na mile to entry **SKIP karo** (₹0 record mat karo) — `shared_ltp_cache`
+→ direct Dhan (backoff) → stale cache try karke bhi na mile to caller ko skip karwao.
+`order_store.record()` me central tripwire hai jo ₹0 real-fill pe loud ⚠️ log karta hai —
+us warning ko kabhi ignore mat karo. Detail + fast-detect query: `LESSONS.md` TRAP #1.
 
 ## Update Log
 

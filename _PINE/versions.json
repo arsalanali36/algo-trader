@@ -109,28 +109,6 @@
     "script_id": "user_bb2_v1"
   },
   {
-    "version": 14,
-    "name": "CC1 - gemni",
-    "strat_version": 1,
-    "timestamp": "2026-06-23 11:35 IST",
-    "desc": "",
-    "author": "Arsalan",
-    "lang": "python",
-    "py_file": "strategies/user_cc1_gemni_v1.py",
-    "script_id": "user_cc1_gemni_v1"
-  },
-  {
-    "version": 15,
-    "name": "DD - DeepSeEEK 1",
-    "strat_version": 1,
-    "timestamp": "2026-06-23 11:40 IST",
-    "desc": "",
-    "author": "Arsalan",
-    "lang": "python",
-    "py_file": "strategies/user_dd_deepseeek_1_v1.py",
-    "script_id": "user_dd_deepseeek_1_v1"
-  },
-  {
     "version": 16,
     "name": "TEMP - 52 WEEK - GEmni",
     "strat_version": 1,
