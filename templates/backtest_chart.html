@@ -286,7 +286,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
         </table>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-gray" onclick="document.getElementById('opt-results-view').style.display='none'; document.getElementById('opt-input-view').style.display='block';">Back</button>
+        <button class="btn btn-gray" onclick="document.getElementById('opt-results-view').style.display='none'; document.getElementById('opt-input-view').style.display='block'; document.getElementById('opt-modal-box').style.maxWidth='540px';">Back</button>
         <button class="btn btn-gray" onclick="closeOptimizeModal()">Close</button>
       </div>
     </div>
@@ -300,7 +300,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
         </table>
       </div>
       <div class="modal-actions">
-        <button class="btn btn-gray" onclick="document.getElementById('opt-history-view').style.display='none'; document.getElementById('opt-input-view').style.display='block';">Back</button>
+        <button class="btn btn-gray" onclick="document.getElementById('opt-history-view').style.display='none'; document.getElementById('opt-input-view').style.display='block'; document.getElementById('opt-modal-box').style.maxWidth='540px';">Back</button>
       </div>
     </div>
     
@@ -2195,6 +2195,7 @@ function openOptimizeModal() {
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'none';
   document.getElementById('opt-history-view').style.display = 'none';
+  document.getElementById('opt-modal-box').style.maxWidth = '540px';
   document.getElementById('opt-modal-box').style.position = '';
   document.getElementById('opt-modal-box').style.transform = '';
   switchOptTab('params');
@@ -2214,6 +2215,7 @@ function cancelOptimization() {
   }
   document.getElementById('opt-input-view').style.display = 'block';
   document.getElementById('opt-progress-view').style.display = 'none';
+  document.getElementById('opt-modal-box').style.maxWidth = '540px';
 }
 
 function collectOptFields() {
@@ -2373,6 +2375,7 @@ function sortOptResults(event, col) {
 }
 
 function renderOptResults(results) {
+  document.getElementById('opt-modal-box').style.maxWidth = '1000px';
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'block';
   _currentOptResults = results;
@@ -2464,6 +2467,7 @@ async function saveOptRun(btn, r) {
 let _optHistoryData = [];
 
 async function openOptHistory() {
+  document.getElementById('opt-modal-box').style.maxWidth = '900px';
   document.getElementById('opt-input-view').style.display = 'none';
   document.getElementById('opt-progress-view').style.display = 'none';
   document.getElementById('opt-results-view').style.display = 'none';
