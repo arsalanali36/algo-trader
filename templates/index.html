@@ -943,6 +943,18 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 
+  <!-- Calendar Points columns modal -->
+  <div id="cal-points-col-modal" class="modal-overlay" style="position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:60">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;width:340px">
+      <h2 style="font-size:14px;margin-bottom:12px;color:#e6edf3">Toggle Columns</h2>
+      <div id="cal-points-col-list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto"></div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn btn-blue" style="flex:1" onclick="saveCalPointsColPrefs()">Save</button>
+        <button class="btn btn-gray" style="flex:1" onclick="document.getElementById('cal-points-col-modal').style.display='none'">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Equity Curve Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
     <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
@@ -976,21 +988,17 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
   <!-- Points Per Trade Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
-    <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">
-      🎯 Point Per Trade Details
-    </h3>
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0;">
+        🎯 Point Per Trade Details
+      </h3>
+      <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="openCalPointsColModal()">⚙️ Columns</button>
+    </div>
     <div style="overflow-x:auto;">
       <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
         <thead>
-          <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
-            <th style="padding:6px; font-weight:500;">Exit Time</th>
-            <th style="padding:6px; font-weight:500;">Symbol</th>
-            <th style="padding:6px; font-weight:500; text-align:center;">Side</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Qty</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Entry Price</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Exit Price</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Points</th>
-            <th style="padding:6px; font-weight:500; text-align:right;">Net P&amp;L</th>
+          <tr id="cal-points-cols-thead" style="border-bottom:1px solid #30363d; color:#8b949e;">
+            <!-- Rendered dynamically -->
           </tr>
         </thead>
         <tbody id="cal-points-per-trade-tbody">
@@ -3349,8 +3357,38 @@ const OPEN_COLS_DEF = [
   {id:'actions',    l:'Actions',     a:'center', on:true,  fixed:true}
 ];
 
+const CAL_POINTS_COLS_DEF = [
+  {id:'exit_time',   l:'Exit Time',    a:'left',   on:true,  fixed:true},
+  {id:'symbol',      l:'Symbol',       a:'left',   on:true,  fixed:true},
+  {id:'side',        l:'Side',         a:'center', on:true},
+  {id:'qty',         l:'Qty',          a:'right',  on:true},
+  {id:'entry_price', l:'Entry Price',  a:'right',  on:true},
+  {id:'exit_price',  l:'Exit Price',   a:'right',  on:true},
+  {id:'points',      l:'Points',       a:'right',  on:true},
+  {id:'pnl',         l:'Net P&L',      a:'right',  on:true},
+  {id:'strategy',    l:'Strategy',     a:'left',   on:false},
+  {id:'source',      l:'Source',       a:'left',   on:false},
+  {id:'mode',        l:'Mode',         a:'left',   on:false},
+  {id:'broker',      l:'Broker',       a:'left',   on:false}
+];
+
 window._ordCompletedCols = null;
 window._ordOpenCols = null;
+window._calPointsCols = null;
+
+function _loadCalPointsColPrefs() {
+  try {
+    const s = localStorage.getItem('cal_points_cols');
+    window._calPointsCols = s ? JSON.parse(s) : JSON.parse(JSON.stringify(CAL_POINTS_COLS_DEF));
+    CAL_POINTS_COLS_DEF.forEach(def => {
+      if(!window._calPointsCols.find(x=>x.id===def.id)) {
+        window._calPointsCols.push(JSON.parse(JSON.stringify(def)));
+      }
+    });
+  } catch(e) {
+    window._calPointsCols = JSON.parse(JSON.stringify(CAL_POINTS_COLS_DEF));
+  }
+}
 
 function _loadOrdColPrefs() {
   try {
@@ -3421,6 +3459,28 @@ function resetColPrefs() {
 }
 
 _loadOrdColPrefs();
+_loadCalPointsColPrefs();
+
+function openCalPointsColModal() {
+  if(!window._calPointsCols) _loadCalPointsColPrefs();
+  const el = document.getElementById('cal-points-col-list');
+  el.innerHTML = window._calPointsCols.map(c => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d1117;border-radius:6px;cursor:${c.fixed?'default':'pointer'};opacity:${c.fixed?'.5':'1'}">
+      <input type="checkbox" data-col="${c.id}" ${c.on?'checked':''} ${c.fixed?'disabled':''} style="accent-color:#1f6feb;width:14px;height:14px">
+      <span style="font-size:12px;color:#e6edf3">${c.l}</span>
+    </label>`).join('');
+  document.getElementById('cal-points-col-modal').style.display = 'flex';
+}
+
+function saveCalPointsColPrefs() {
+  document.querySelectorAll('#cal-points-col-list input[data-col]').forEach(inp => {
+    const c = window._calPointsCols.find(x=>x.id===inp.dataset.col);
+    if(c && !c.fixed) c.on = inp.checked;
+  });
+  localStorage.setItem('cal_points_cols', JSON.stringify(window._calPointsCols));
+  document.getElementById('cal-points-col-modal').style.display = 'none';
+  renderPointsPerTradeTable();
+}
 
 // ── Stats tab: toggleable-columns closed-positions table ───────────────────
 const STATS_COLS_DEF = [
@@ -5885,6 +5945,20 @@ function renderPointsPerTradeTable() {
   const pointsBody = document.getElementById('cal-points-per-trade-tbody');
   if (!pointsBody) return;
   
+  if (!window._calPointsCols) _loadCalPointsColPrefs();
+  const cols = window._calPointsCols.filter(c => c.on);
+  
+  // Render table headers
+  const theadRow = document.getElementById('cal-points-cols-thead');
+  if (theadRow) {
+    theadRow.innerHTML = cols.map(c => {
+      let align = 'left';
+      if (c.a === 'center') align = 'center';
+      if (c.a === 'right') align = 'right';
+      return `<th style="padding:6px; font-weight:500; text-align:${align};">${c.l}</th>`;
+    }).join('');
+  }
+  
   const sortedTrades = [...(window.currentCalendarTrades || [])].sort((a, b) => {
     const da = a.entry_date + ' ' + (a.entry_time || '00:00');
     const db = b.entry_date + ' ' + (b.entry_time || '00:00');
@@ -5892,7 +5966,7 @@ function renderPointsPerTradeTable() {
   });
   
   if (sortedTrades.length === 0) {
-    pointsBody.innerHTML = `<tr><td colspan="8" style="text-align:center;color:#6e7681;padding:12px;">Is filter pe koi trade details nahi hain</td></tr>`;
+    pointsBody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is filter pe koi trade details nahi hain</td></tr>`;
     renderPointsPagination(0);
     return;
   }
@@ -5926,33 +6000,61 @@ function renderPointsPerTradeTable() {
       
       pointsHtml += `
         <tr style="background:#1c2128; font-weight:600; border-bottom:1px solid #30363d; border-top:1px solid #30363d;">
-          <td colspan="8" style="padding:8px; color:#58a6ff; font-size:11.5px; font-weight:600;">📅 ${dateText}</td>
+          <td colspan="${cols.length}" style="padding:8px; color:#58a6ff; font-size:11.5px; font-weight:600;">📅 ${dateText}</td>
         </tr>
       `;
     }
     
-    const pts = t.entry === 'BUY'
-      ? (t.exit_price || 0) - (t.entry_price || 0)
-      : (t.entry_price || 0) - (t.exit_price || 0);
-    const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
-    const ptsText = `${pts >= 0 ? '+' : ''}${pts.toFixed(2)}`;
-    
-    const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
-    const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
-    const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
-    
-    pointsHtml += `
-      <tr style="border-bottom:1px solid #21262d;">
-        <td style="padding:8px; color:#8b949e; white-space:nowrap;">${t.exit_time || t.entry_time || '—'}</td>
-        <td style="padding:8px; color:#adbac7;"><b>${t.sym || t.symbol}</b></td>
-        <td style="padding:8px; text-align:center; color:${sideColor}; font-weight:600;">${t.entry}</td>
-        <td style="padding:8px; text-align:right; color:#e6edf3;">${t.qty}</td>
-        <td style="padding:8px; text-align:right; color:#8b949e;">${Number(t.entry_price || 0).toFixed(2)}</td>
-        <td style="padding:8px; text-align:right; color:#8b949e;">${Number(t.exit_price || 0).toFixed(2)}</td>
-        <td style="padding:8px; text-align:right; color:${ptsC}; font-weight:600;">${ptsText}</td>
-        <td style="padding:8px; text-align:right; color:${netColor}; font-weight:600;">${netText}</td>
-      </tr>
-    `;
+    pointsHtml += `<tr style="border-bottom:1px solid #21262d;">` + cols.map(c => {
+      let v = '';
+      if (c.id === 'exit_time') {
+        v = t.exit_time || t.entry_time || '—';
+      } else if (c.id === 'symbol') {
+        v = `<b>${t.sym || t.symbol || '—'}</b>`;
+      } else if (c.id === 'side') {
+        const sideColor = t.entry === 'BUY' ? '#3fb950' : '#f85149';
+        v = `<span style="color:${sideColor}; font-weight:600;">${t.entry || '—'}</span>`;
+      } else if (c.id === 'qty') {
+        v = t.qty ?? '—';
+      } else if (c.id === 'entry_price') {
+        v = Number(t.entry_price || 0).toFixed(2);
+      } else if (c.id === 'exit_price') {
+        v = Number(t.exit_price || 0).toFixed(2);
+      } else if (c.id === 'points') {
+        const pts = t.entry === 'BUY'
+          ? (t.exit_price || 0) - (t.entry_price || 0)
+          : (t.entry_price || 0) - (t.exit_price || 0);
+        const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
+        const ptsText = `${pts >= 0 ? '+' : ''}${pts.toFixed(2)}`;
+        v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
+      } else if (c.id === 'pnl') {
+        const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
+        const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
+        v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
+      } else if (c.id === 'strategy') {
+        v = t.strategy || t.strat || t.strategy_type || '—';
+      } else if (c.id === 'source') {
+        v = t.source || '—';
+      } else if (c.id === 'mode') {
+        v = t.mode || '—';
+      } else if (c.id === 'broker') {
+        v = t.broker || '—';
+      } else {
+        v = t[c.id] ?? '—';
+      }
+      
+      let align = 'left';
+      if (c.a === 'center') align = 'center';
+      if (c.a === 'right') align = 'right';
+      
+      let style = `padding:8px; text-align:${align};`;
+      if (c.id === 'exit_time') style += ' color:#8b949e; white-space:nowrap; padding-left:16px;';
+      if (c.id === 'symbol') style += ' color:#adbac7;';
+      if (c.id === 'qty') style += ' color:#e6edf3;';
+      if (c.id === 'entry_price' || c.id === 'exit_price') style += ' color:#8b949e;';
+      
+      return `<td style="${style}">${v}</td>`;
+    }).join('') + `</tr>`;
   });
   
   pointsBody.innerHTML = pointsHtml;
