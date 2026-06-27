@@ -851,8 +851,12 @@ def main(strategy_id="range"):
                                 else:
                                     cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, opt_prem, sec_id=sec_id)
                         except Exception as _e:
-                            cap_ok, cap_reason = True, ""
-                            log.warning(f"risk gate check failed (allowing entry): {_e}")
+                            # FAIL CLOSED — an RMS check that throws (rate-limit,
+                            # network, order_store hiccup) must never silently
+                            # allow an unchecked entry. Missing an entry is safe;
+                            # an entry no risk gate ever saw is not.
+                            cap_ok, cap_reason = False, f"risk gate check failed: {_e}"
+                            log.warning(f"ENTRY blocked {symbol} — risk gate check failed (fail-closed): {_e}")
                         if not cap_ok:
                             fit_lots = 0
                             # size-down only applies to the capital cap, not the

@@ -579,7 +579,11 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
                     _record_blocked(est_price, qty, fund_reason)
                     return {"ok": False, "msg": fund_reason}
     except Exception as e:
-        _log(f"risk gate check failed (allowing entry): {e}")
+        # FAIL CLOSED — see _TRADERS/range_trader.py for the same fix/reasoning.
+        # An RMS check that throws must never silently fall through to the
+        # entry below as if every gate passed.
+        _log(f"ENTRY blocked {key} — risk gate check failed (fail-closed): {e}")
+        return {"ok": False, "msg": f"risk gate check failed: {e}"}
 
     instrument = cfg.get("instrument", "options")
     # group_id links this leg to its auto-hedge BUY (if hedge_offset_strikes is

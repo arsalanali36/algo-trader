@@ -537,8 +537,9 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         else:
                             cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, entry_prem or 0, side="BUY")
                 except Exception as _e:
-                    cap_ok, cap_reason = True, ""
-                    log.warning(f"  risk gate check failed (allowing entry): {_e}")
+                    # FAIL CLOSED — see range_trader.py for the same fix/reasoning.
+                    cap_ok, cap_reason = False, f"risk gate check failed: {_e}"
+                    log.warning(f"  ENTRY blocked {sym} — risk gate check failed (fail-closed): {_e}")
                 if not cap_ok:
                     fit_lots = 0
                     if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":

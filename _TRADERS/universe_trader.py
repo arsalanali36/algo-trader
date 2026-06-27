@@ -310,8 +310,9 @@ def main(sid, once=False):
                     continue
                 cap_ok, cap_reason = risk_gate.check_capital(sid, qty, est_price or 0, side=o_side, sec_id=sec_id, seg=seg)
             except Exception as _e:
-                cap_ok, cap_reason = True, ""
-                log(f"risk gate check failed (allowing entry): {_e}")
+                # FAIL CLOSED — see range_trader.py for the same fix/reasoning.
+                cap_ok, cap_reason = False, f"risk gate check failed: {_e}"
+                log(f"ENTRY blocked {sym} — risk gate check failed (fail-closed): {_e}")
             if not cap_ok:
                 fit_lots = 0
                 if risk_gate.capital_mode(sid) == "size_down":

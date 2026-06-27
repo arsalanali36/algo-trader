@@ -2822,310 +2822,377 @@ def pos_monitor_loop():
                 # carry no live exposure for SL/TP/RMS to act on.
                 if p.get("status") == "blocked" or "CAPITAL_BLOCKED" in tags:
                     continue
-                
-                seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
-                _feed_subscribe([(seg, sec_id)])
-                
-                q = dhan_feed.get_quote(sec_id)
-                ltp = float(q.get("ltp") or 0) if q else 0.0
-                if ltp <= 0:
-                    # WebSocket feed (dhan_feed) needs dhanhq's DhanContext/MarketFeed,
-                    # which some installed dhanhq versions don't export — when that's
-                    # the case the feed silently never starts and ltp stays 0 forever,
-                    # so SL/TP/EOD-squareoff would never fire for ANY position. REST
-                    # fallback here mirrors /api/positions-ltp's same fallback path.
-                    ltp = _rest_ltp_fallback(sec_id, seg) or 0.0
-                if ltp <= 0: continue
-                
-                # Update MAX/MIN LTP for Run-up / Run-down tracking
-                entry_px = float(p.get("entry_price") or 0)
-                if entry_px > 0:
-                    max_ltp = ltp
-                    min_ltp = ltp
-                    max_tag_idx = -1
-                    min_tag_idx = -1
-                    for i, t in enumerate(tags):
-                        if t.startswith("MAX_LTP:"):
-                            max_tag_idx = i
-                            try: max_ltp = max(ltp, float(t.split(":")[1]))
-                            except: pass
-                        elif t.startswith("MIN_LTP:"):
-                            min_tag_idx = i
-                            try: min_ltp = min(ltp, float(t.split(":")[1]))
-                            except: pass
-                    
-                    changed = False
-                    if max_tag_idx != -1:
-                        if tags[max_tag_idx] != f"MAX_LTP:{max_ltp}":
-                            tags[max_tag_idx] = f"MAX_LTP:{max_ltp}"
-                            changed = True
-                    else:
-                        tags.append(f"MAX_LTP:{max_ltp}")
-                        changed = True
-                        
-                    if min_tag_idx != -1:
-                        if tags[min_tag_idx] != f"MIN_LTP:{min_ltp}":
-                            tags[min_tag_idx] = f"MIN_LTP:{min_ltp}"
-                            changed = True
-                    else:
-                        tags.append(f"MIN_LTP:{min_ltp}")
-                        changed = True
-                        
-                    if changed and p.get("id"):
-                        order_store.update_tags(p["id"], tags)
 
-                if p["qty"] <= 0 or entry_px <= 0: continue
-
-                # Generic per-position SL/TP — set via the ⚙️ modal, type can be
-                # %, points (premium), ₹ (amount), absolute premium level, or
-                # underlying index/equity level. SL_TYPE/SL_VAL + TP_TYPE/TP_VAL
-                # tags take priority over the legacy SL_PCT/TP_PCT tags below.
-                sl_type = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_TYPE:")), None)
-                sl_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_VAL:")), None)
-                tp_type = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_TYPE:")), None)
-                tp_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_VAL:")), None)
-
-                def _underlying_ltp(p):
-                    """Best-effort spot LTP for the option's underlying (index level SL/TP)."""
-                    root = p.get("symbol") or p["sym"].split("-")[0]
-                    info = _EQ_IDX_SEC.get(root)
-                    if not info:
-                        return None
-                    u_sec, u_seg = info
-                    _feed_subscribe([(u_seg, u_sec)])
-                    q = dhan_feed.get_quote(u_sec)
-                    u_ltp = float(q.get("ltp") or 0) if q else 0.0
-                    if u_ltp <= 0:
-                        u_ltp = _rest_ltp_fallback(u_sec, u_seg) or 0.0
-                    return u_ltp if u_ltp > 0 else None
-
-                def _generic_px(typ, val, is_sl):
-                    """Convert a (type, val) SL/TP spec to a premium trigger price, or None."""
-                    if typ is None or val is None:
-                        return None
-                    try: val = float(val)
-                    except Exception: return None
-                    side = p["entry"]  # BUY or SELL
-                    opt_ce = p["sym"].upper().endswith("-CE") or p["sym"].upper().endswith("CE")
-                    bullish = (side == "BUY" and opt_ce) or (side == "SELL" and not opt_ce)
-                    if typ == "pct":
-                        return entry_px * (1 - val/100.0) if (is_sl) == (side == "BUY") else entry_px * (1 + val/100.0)
-                    if typ == "pt":
-                        if side == "BUY":
-                            return entry_px - val if is_sl else entry_px + val
-                        else:
-                            return entry_px + val if is_sl else entry_px - val
-                    if typ == "rs":
-                        per_unit = val / p["qty"]
-                        if side == "BUY":
-                            return entry_px - per_unit if is_sl else entry_px + per_unit
-                        else:
-                            return entry_px + per_unit if is_sl else entry_px - per_unit
-                    if typ == "premium":
-                        return val  # absolute premium level, taken as-is
-                    if typ == "index":
-                        u_ltp = _underlying_ltp(p)
-                        if u_ltp is None: return None
-                        # is the index level breach adverse (SL) or favourable (TP) given direction?
-                        trigger = (u_ltp <= val) if (bullish == is_sl) else (u_ltp >= val)
-                        return "INDEX_HIT" if trigger else None
-                    return None
-
-                def _candle_close_px(val):
-                    """val is the raw SL_VAL/TP_VAL string '<above|below>:<price>'
-                    (set via the new Candle Close trigger type). Returns a
-                    sentinel once the last CLOSED 1-min candle's close has
-                    crossed the specified level in the specified direction."""
-                    try:
-                        direction, price_s = str(val).split(":", 1)
-                        level = float(price_s)
-                    except Exception:
-                        return None
-                    last_close = _last_closed_candle_close(sec_id, seg)
-                    if last_close is None:
-                        return None
-                    if direction == "above" and last_close > level: return "CANDLE_HIT"
-                    if direction == "below" and last_close < level: return "CANDLE_HIT"
-                    return None
-
-                def _do_squareoff(p, ltp, exit_reason, sec_id, seg):
-                    """Exit a position now — live round-trips a real broker order
-                    first (never marks closed unless the broker confirms), paper
-                    just records the fill. Returns True once handled."""
-                    # Webhook positions are co-owned by webhook_executor's own
-                    # monitor/TV-EXIT. Atomically CLAIM the leg first: release_position
-                    # flips its in-memory state open->closed and returns True only if
-                    # WE won the race. If it returns False the webhook side already
-                    # closed it this instant — skip, so we don't fire a duplicate
-                    # closing order (the orphan-BUY double-close bug).
-                    if (p.get("source") or "") == "webhook":
-                        try:
-                            import webhook_executor as _wh
-                            claimed = _wh.release_position(sec_id=sec_id,
-                                                           trad_sym=p.get("sym"),
-                                                           reason=exit_reason)
-                            if not claimed:
-                                _closed_ids.add(p.get("id"))
-                                return True
-                        except Exception as _e:
-                            print(f"[{exit_reason}] webhook claim failed: {_e}")
-                    print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
-                    exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
-                    if p.get("mode") == "live":
-                        import smart_order
-                        from brokers import get_broker
-                        broker = get_broker(p.get("broker") or "dhan")
-                        res = smart_order.execute(
-                            exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
-                            p["mode"], broker, log=print, tag="POSMON",
-                            source=p["source"], strategy=p["strategy"],
-                            instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
-                        )
-                        if not res.get("ok"):
-                            print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
-                            return True
-                        # smart_order.execute already persisted the trade — don't double-record.
-                    else:
-                        order_store.record(
-                            side=exit_side, qty=p["qty"], price=ltp, source=p["source"],
-                            strategy=p["strategy"], mode=p["mode"], broker=p["broker"],
-                            symbol=p["sym"], instrument=p["instrument"], trad_sym=p["sym"],
-                            sec_id=sec_id, segment=seg, status=p.get("status", "paper"),
-                            tags=["pos_monitor_exit", exit_reason]
-                        )
-
-                    # ── Group-aware: a hedge SELL+BUY pair (or any group_id'd
-                    # legs) must close together — close any open sibling now,
-                    # tagged so it's clear it followed automatically, not its
-                    # own independent SL/TP/EOD hit.
-                    _closed_ids.add(p.get("id"))
-                    gid = p.get("group_id")
-                    if gid:
-                        for sib in open_pos:
-                            sib_id = sib.get("id")
-                            if sib_id in _closed_ids or sib is p: continue
-                            if sib.get("group_id") != gid: continue
-                            sib_sec = sib.get("sec_id")
-                            if not sib_sec: continue
-                            sib_seg = "NSE_EQ" if (sib.get("instrument") or "").upper() == "EQUITY" else "NSE_FNO"
-                            _feed_subscribe([(sib_seg, sib_sec)])
-                            qsib = dhan_feed.get_quote(sib_sec)
-                            sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
-                            if sib_ltp <= 0:
-                                sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
-                            if sib_ltp > 0:
-                                _do_squareoff(sib, sib_ltp, exit_reason + "_GROUP", sib_sec, sib_seg)
-                    return True
-
-                # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
-                # system, no option position should carry overnight regardless of
-                # which strategy/source opened it. Takes priority over SL/TP so a
-                # position with no SL/TP tags set still gets closed at EOD.
-                if (ist_now.hour > 15 or (ist_now.hour == 15 and ist_now.minute >= 15)) \
-                   and (p.get("instrument") or "").upper() != "EQUITY":
-                    _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
-                    continue
-
-                # ── SUPREME RMS daily-loss breaker — the one guardrail no strategy
-                # can bypass. Once a strategy's cumulative P&L today (realized +
-                # this leg's unrealized) breaches its unified ₹ cap
-                # (risk_gate.effective_daily_loss_cap → per-strategy/global
-                # max_loss_rs, always-on default ₹5000), force-close THIS leg.
-                # Per-position SL/target below stay independent (they can exit
-                # earlier, never later than this). Replaces the old footgun-prone
-                # total_capital_rs 1% block.
+                # Isolate each position's check — a feed hiccup, a malformed
+                # tag, or any other exception on ONE position must never skip
+                # SL/TP/RMS enforcement for every OTHER open position this
+                # cycle (previously an uncaught exception here propagated to
+                # the loop's single top-level try/except, which silently
+                # skipped the entire `for p in open_pos` pass).
                 try:
-                    import risk_gate
-                    _unrl = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
-                    _breached, _why = risk_gate.daily_loss_breached(p.get("strategy") or "", unrealized=_unrl)
-                    if _breached:
-                        _do_squareoff(p, ltp, f"RMS_MAXLOSS:{_why}", sec_id, seg)
-                        continue
-                except Exception as _e:
-                    print("RMS daily-loss check failed (leaving position):", _e)
-
-                sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
-                tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None
-                if sl_type == "candle_close":
-                    sl_px_generic = _candle_close_px(sl_val)
-                if tp_type == "candle_close":
-                    tp_px_generic = _candle_close_px(tp_val)
-                # "INDEX_HIT"/"CANDLE_HIT" are sentinels meaning the trigger already
-                # fired — short-circuit straight to exit below.
-                if sl_px_generic in ("INDEX_HIT", "CANDLE_HIT") or tp_px_generic in ("INDEX_HIT", "CANDLE_HIT"):
-                    hit_sl = sl_px_generic in ("INDEX_HIT", "CANDLE_HIT")
-                    kind = "index_level" if (sl_px_generic == "INDEX_HIT" or tp_px_generic == "INDEX_HIT") else "candle_close"
-                    reason = f"SL_HIT:{kind}" if hit_sl else f"TP_HIT:{kind}"
-                    _do_squareoff(p, ltp, reason, sec_id, seg)
-                    continue
-                # numeric generic SL/TP trigger price (None if no generic tag set)
-                sl_px_num = sl_px_generic if isinstance(sl_px_generic, float) else None
-                tp_px_num = tp_px_generic if isinstance(tp_px_generic, float) else None
-                if sl_px_num is not None:
-                    hit = ltp <= sl_px_num if p["entry"] == "BUY" else ltp >= sl_px_num
-                    if hit:
-                        _do_squareoff(p, ltp, f"SL_HIT:{sl_type}:{sl_val}", sec_id, seg)
-                        continue
-                if tp_px_num is not None:
-                    hit = ltp >= tp_px_num if p["entry"] == "BUY" else ltp <= tp_px_num
-                    if hit:
-                        _do_squareoff(p, ltp, f"TP_HIT:{tp_type}:{tp_val}", sec_id, seg)
-                        continue
-                if sl_px_num is not None and tp_px_num is not None:
-                    continue  # generic SL+TP both set and neither hit — skip legacy fallback entirely
-
-                # Legacy SL_PCT/TP_PCT (kept for older positions / strategy defaults).
-                sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None) if sl_px_num is None else None
-                tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None) if tp_px_num is None else None
-                sl_rs  = None  # ₹ max-loss for this position (qty already applied)
-
-                if sl_pct is None and sl_px_num is None:
-                    rc = _risk_config()
-                    strat_risk = rc.get("per_strategy", {}).get(p.get("strategy") or "", {})
-                    glob_risk  = rc.get("global", {})
-                    eff_pct = strat_risk.get("max_loss_pct") if strat_risk.get("max_loss_pct") is not None else glob_risk.get("max_loss_pct")
-                    eff_rs  = strat_risk.get("max_loss_rs")  if strat_risk.get("max_loss_rs")  is not None else glob_risk.get("max_loss_rs")
-                    if eff_pct is not None:
-                        try: sl_pct = float(eff_pct)
-                        except Exception: pass
-                    if eff_rs is not None:
-                        try: sl_rs = float(eff_rs)
-                        except Exception: pass
-
-                sl_px_pct = None
-                sl_px_rs  = None
-                tp_px = None
-
-                if p["entry"] == "BUY":
-                    if sl_pct is not None: sl_px_pct = entry_px * (1 - (sl_pct / 100.0))
-                    if sl_rs  is not None: sl_px_rs  = entry_px - (sl_rs / p["qty"])
-                    if tp_pct is not None: tp_px = entry_px * (1 + (tp_pct / 100.0))
-                else: # SELL
-                    if sl_pct is not None: sl_px_pct = entry_px * (1 + (sl_pct / 100.0))
-                    if sl_rs  is not None: sl_px_rs  = entry_px + (sl_rs / p["qty"])
-                    if tp_pct is not None: tp_px = entry_px * (1 - (tp_pct / 100.0))
-
-                # Tighter of % / ₹ wins (whichever is hit first / closer to entry).
-                if p["entry"] == "BUY":
-                    sl_px = max([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
-                else:
-                    sl_px = min([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
-
-                exit_reason = None
-                if p["entry"] == "BUY":
-                    if sl_px and ltp <= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
-                    elif tp_px and ltp >= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
-                else: # SELL
-                    if sl_px and ltp >= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
-                    elif tp_px and ltp <= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
-                
-                if exit_reason:
-                    _do_squareoff(p, ltp, exit_reason, sec_id, seg)
+                    _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids)
+                except Exception as _pe:
+                    print(f"[pos_monitor] check failed for {p.get('sym')} (id={p.get('id')}) "
+                          f"— leaving position open, will retry next cycle: {_pe}", flush=True)
         except Exception as e:
             print("Pos monitor error:", e)
-            
+
         time.sleep(5)
 
+
+# Consecutive LTP-miss counter per sec_id — once a position has gone this many
+# cycles (≈30s at 5s/cycle) with NO price from feed, REST, or even the stale
+# cross-process cache, SL/TP/RMS literally cannot be evaluated for it (there's
+# no safe action without a price). Past this threshold we escalate loudly in
+# the log instead of silently retrying forever — visibility is the realistic
+# safety net here, since a stale/guessed price could itself trigger a wrong
+# exit.
+_ltp_miss_streak = {}
+_rms_fail_streak = {}
+_LTP_MISS_ALERT_AFTER = 6
+
+def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
+    import dhan_feed
+    import order_store
+    seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
+    _feed_subscribe([(seg, sec_id)])
+
+    q = dhan_feed.get_quote(sec_id)
+    ltp = float(q.get("ltp") or 0) if q else 0.0
+    if ltp <= 0:
+        # WebSocket feed (dhan_feed) needs dhanhq's DhanContext/MarketFeed,
+        # which some installed dhanhq versions don't export — when that's
+        # the case the feed silently never starts and ltp stays 0 forever,
+        # so SL/TP/EOD-squareoff would never fire for ANY position. REST
+        # fallback here mirrors /api/positions-ltp's same fallback path.
+        ltp = _rest_ltp_fallback(sec_id, seg) or 0.0
+    if ltp <= 0:
+        # Last-resort tier: the cross-process shared_ltp_cache other
+        # strategies/processes populate (range_trader's place_order already
+        # uses this same cache → direct → stale pattern) — a few-minutes-old
+        # price beats no check at all when both live sources are down.
+        try:
+            import shared_ltp_cache
+            ltp = shared_ltp_cache.get_stale(sec_id, max_age=120) or 0.0
+        except Exception:
+            ltp = 0.0
+    if ltp <= 0:
+        streak = _ltp_miss_streak.get(sec_id, 0) + 1
+        _ltp_miss_streak[sec_id] = streak
+        if streak >= _LTP_MISS_ALERT_AFTER and streak % _LTP_MISS_ALERT_AFTER == 0:
+            print(f"[pos_monitor] ⚠️ CRITICAL: {p.get('sym')} (strategy={p.get('strategy')}) "
+                  f"has had NO price for {streak} consecutive cycles (~{streak*5}s) — "
+                  f"SL/TP/RMS cannot be checked for this position. Feed + REST + stale "
+                  f"cache all empty. Check Dhan token/rate-limit.", flush=True)
+        return
+    _ltp_miss_streak.pop(sec_id, None)
+
+    entry_px = float(p.get("entry_price") or 0)
+    if entry_px > 0:
+        max_ltp = ltp
+        min_ltp = ltp
+        max_tag_idx = -1
+        min_tag_idx = -1
+        for i, t in enumerate(tags):
+            if t.startswith("MAX_LTP:"):
+                max_tag_idx = i
+                try: max_ltp = max(ltp, float(t.split(":")[1]))
+                except: pass
+            elif t.startswith("MIN_LTP:"):
+                min_tag_idx = i
+                try: min_ltp = min(ltp, float(t.split(":")[1]))
+                except: pass
+
+        changed = False
+        if max_tag_idx != -1:
+            if tags[max_tag_idx] != f"MAX_LTP:{max_ltp}":
+                tags[max_tag_idx] = f"MAX_LTP:{max_ltp}"
+                changed = True
+        else:
+            tags.append(f"MAX_LTP:{max_ltp}")
+            changed = True
+
+        if min_tag_idx != -1:
+            if tags[min_tag_idx] != f"MIN_LTP:{min_ltp}":
+                tags[min_tag_idx] = f"MIN_LTP:{min_ltp}"
+                changed = True
+        else:
+            tags.append(f"MIN_LTP:{min_ltp}")
+            changed = True
+
+        if changed and p.get("id"):
+            order_store.update_tags(p["id"], tags)
+
+    if p["qty"] <= 0 or entry_px <= 0: return
+
+    # Generic per-position SL/TP — set via the ⚙️ modal, type can be
+    # %, points (premium), ₹ (amount), absolute premium level, or
+    # underlying index/equity level. SL_TYPE/SL_VAL + TP_TYPE/TP_VAL
+    # tags take priority over the legacy SL_PCT/TP_PCT tags below.
+    sl_type = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_TYPE:")), None)
+    sl_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("SL_VAL:")), None)
+    tp_type = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_TYPE:")), None)
+    tp_val  = next((t.split(":", 1)[1] for t in tags if t.startswith("TP_VAL:")), None)
+
+    def _underlying_ltp(p):
+        """Best-effort spot LTP for the option's underlying (index level SL/TP)."""
+        root = p.get("symbol") or p["sym"].split("-")[0]
+        info = _EQ_IDX_SEC.get(root)
+        if not info:
+            return None
+        u_sec, u_seg = info
+        _feed_subscribe([(u_seg, u_sec)])
+        q = dhan_feed.get_quote(u_sec)
+        u_ltp = float(q.get("ltp") or 0) if q else 0.0
+        if u_ltp <= 0:
+            u_ltp = _rest_ltp_fallback(u_sec, u_seg) or 0.0
+        return u_ltp if u_ltp > 0 else None
+
+    def _generic_px(typ, val, is_sl):
+        """Convert a (type, val) SL/TP spec to a premium trigger price, or None."""
+        if typ is None or val is None:
+            return None
+        try: val = float(val)
+        except Exception: return None
+        side = p["entry"]  # BUY or SELL
+        opt_ce = p["sym"].upper().endswith("-CE") or p["sym"].upper().endswith("CE")
+        bullish = (side == "BUY" and opt_ce) or (side == "SELL" and not opt_ce)
+        if typ == "pct":
+            return entry_px * (1 - val/100.0) if (is_sl) == (side == "BUY") else entry_px * (1 + val/100.0)
+        if typ == "pt":
+            if side == "BUY":
+                return entry_px - val if is_sl else entry_px + val
+            else:
+                return entry_px + val if is_sl else entry_px - val
+        if typ == "rs":
+            per_unit = val / p["qty"]
+            if side == "BUY":
+                return entry_px - per_unit if is_sl else entry_px + per_unit
+            else:
+                return entry_px + per_unit if is_sl else entry_px - per_unit
+        if typ == "premium":
+            return val  # absolute premium level, taken as-is
+        if typ == "index":
+            u_ltp = _underlying_ltp(p)
+            if u_ltp is None: return None
+            # is the index level breach adverse (SL) or favourable (TP) given direction?
+            trigger = (u_ltp <= val) if (bullish == is_sl) else (u_ltp >= val)
+            return "INDEX_HIT" if trigger else None
+        return None
+
+    def _candle_close_px(val):
+        """val is the raw SL_VAL/TP_VAL string '<above|below>:<price>'
+        (set via the new Candle Close trigger type). Returns a
+        sentinel once the last CLOSED 1-min candle's close has
+        crossed the specified level in the specified direction."""
+        try:
+            direction, price_s = str(val).split(":", 1)
+            level = float(price_s)
+        except Exception:
+            return None
+        last_close = _last_closed_candle_close(sec_id, seg)
+        if last_close is None:
+            return None
+        if direction == "above" and last_close > level: return "CANDLE_HIT"
+        if direction == "below" and last_close < level: return "CANDLE_HIT"
+        return None
+
+    def _do_squareoff(p, ltp, exit_reason, sec_id, seg):
+        """Exit a position now — live round-trips a real broker order
+        first (never marks closed unless the broker confirms), paper
+        just records the fill. Returns True once handled."""
+        # Webhook positions are co-owned by webhook_executor's own
+        # monitor/TV-EXIT. Atomically CLAIM the leg first: release_position
+        # flips its in-memory state open->closed and returns True only if
+        # WE won the race. If it returns False the webhook side already
+        # closed it this instant — skip, so we don't fire a duplicate
+        # closing order (the orphan-BUY double-close bug).
+        if (p.get("source") or "") == "webhook":
+            try:
+                import webhook_executor as _wh
+                claimed = _wh.release_position(sec_id=sec_id,
+                                               trad_sym=p.get("sym"),
+                                               reason=exit_reason)
+                if not claimed:
+                    _closed_ids.add(p.get("id"))
+                    return True
+            except Exception as _e:
+                print(f"[{exit_reason}] webhook claim failed: {_e}")
+        print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
+        exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
+        if p.get("mode") == "live":
+            import smart_order
+            from brokers import get_broker
+            broker = get_broker(p.get("broker") or "dhan")
+            try:
+                res = smart_order.execute(
+                    exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
+                    p["mode"], broker, log=print, tag="POSMON",
+                    source=p["source"], strategy=p["strategy"],
+                    instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
+                )
+            except Exception as _ex:
+                # A network/API exception here must NOT propagate up and abort
+                # this position's check (the per-position try/except in the
+                # caller would catch it too, but explicit here documents the
+                # intent: never mark closed unless we know the broker round-
+                # tripped — leave it open, it retries next 5s cycle.
+                print(f"[{exit_reason}] LIVE square-off EXCEPTION for {p['sym']} — {_ex}; leaving position open, will retry")
+                return True
+            if not res.get("ok"):
+                print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
+                return True
+            # smart_order.execute already persisted the trade — don't double-record.
+        else:
+            order_store.record(
+                side=exit_side, qty=p["qty"], price=ltp, source=p["source"],
+                strategy=p["strategy"], mode=p["mode"], broker=p["broker"],
+                symbol=p["sym"], instrument=p["instrument"], trad_sym=p["sym"],
+                sec_id=sec_id, segment=seg, status=p.get("status", "paper"),
+                tags=["pos_monitor_exit", exit_reason]
+            )
+
+        # ── Group-aware: a hedge SELL+BUY pair (or any group_id'd
+        # legs) must close together — close any open sibling now,
+        # tagged so it's clear it followed automatically, not its
+        # own independent SL/TP/EOD hit.
+        _closed_ids.add(p.get("id"))
+        gid = p.get("group_id")
+        if gid:
+            for sib in open_pos:
+                sib_id = sib.get("id")
+                if sib_id in _closed_ids or sib is p: continue
+                if sib.get("group_id") != gid: continue
+                sib_sec = sib.get("sec_id")
+                if not sib_sec: continue
+                sib_seg = "NSE_EQ" if (sib.get("instrument") or "").upper() == "EQUITY" else "NSE_FNO"
+                _feed_subscribe([(sib_seg, sib_sec)])
+                qsib = dhan_feed.get_quote(sib_sec)
+                sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
+                if sib_ltp <= 0:
+                    sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
+                if sib_ltp > 0:
+                    _do_squareoff(sib, sib_ltp, exit_reason + "_GROUP", sib_sec, sib_seg)
+        return True
+
+    # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
+    # system, no option position should carry overnight regardless of
+    # which strategy/source opened it. Takes priority over SL/TP so a
+    # position with no SL/TP tags set still gets closed at EOD.
+    if (ist_now.hour > 15 or (ist_now.hour == 15 and ist_now.minute >= 15)) \
+       and (p.get("instrument") or "").upper() != "EQUITY":
+        _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
+        return
+
+    # ── SUPREME RMS daily-loss breaker — the one guardrail no strategy
+    # can bypass. Once a strategy's cumulative P&L today (realized +
+    # this leg's unrealized) breaches its unified ₹ cap
+    # (risk_gate.effective_daily_loss_cap → per-strategy/global
+    # max_loss_rs, always-on default ₹5000), force-close THIS leg.
+    # Per-position SL/target below stay independent (they can exit
+    # earlier, never later than this). Replaces the old footgun-prone
+    # total_capital_rs 1% block.
+    #
+    # FAIL-SAFE on exception: a transient risk_gate failure here used to
+    # just log and silently leave the position open forever with NO
+    # retry-aware visibility. Track consecutive failures per sec_id and
+    # escalate loudly — we still can't force a blind exit (no way to know
+    # if the cap is actually breached without the check succeeding), but
+    # the operator now finds out the breaker is blind instead of trusting
+    # a guardrail that's quietly stopped working.
+    try:
+        import risk_gate
+        _unrl = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
+        _breached, _why = risk_gate.daily_loss_breached(p.get("strategy") or "", unrealized=_unrl)
+        _rms_fail_streak.pop(sec_id, None)
+        if _breached:
+            _do_squareoff(p, ltp, f"RMS_MAXLOSS:{_why}", sec_id, seg)
+            return
+    except Exception as _e:
+        streak = _rms_fail_streak.get(sec_id, 0) + 1
+        _rms_fail_streak[sec_id] = streak
+        level = "⚠️ CRITICAL —" if streak >= _LTP_MISS_ALERT_AFTER else ""
+        print(f"[pos_monitor] {level} RMS daily-loss check failed for {p.get('sym')} "
+              f"(strategy={p.get('strategy')}, {streak}x consecutive) — leaving position "
+              f"open, will retry: {_e}", flush=True)
+
+    sl_px_generic = _generic_px(sl_type, sl_val, True) if sl_type else None
+    tp_px_generic = _generic_px(tp_type, tp_val, False) if tp_type else None
+    if sl_type == "candle_close":
+        sl_px_generic = _candle_close_px(sl_val)
+    if tp_type == "candle_close":
+        tp_px_generic = _candle_close_px(tp_val)
+    # "INDEX_HIT"/"CANDLE_HIT" are sentinels meaning the trigger already
+    # fired — short-circuit straight to exit below.
+    if sl_px_generic in ("INDEX_HIT", "CANDLE_HIT") or tp_px_generic in ("INDEX_HIT", "CANDLE_HIT"):
+        hit_sl = sl_px_generic in ("INDEX_HIT", "CANDLE_HIT")
+        kind = "index_level" if (sl_px_generic == "INDEX_HIT" or tp_px_generic == "INDEX_HIT") else "candle_close"
+        reason = f"SL_HIT:{kind}" if hit_sl else f"TP_HIT:{kind}"
+        _do_squareoff(p, ltp, reason, sec_id, seg)
+        return
+    # numeric generic SL/TP trigger price (None if no generic tag set)
+    sl_px_num = sl_px_generic if isinstance(sl_px_generic, float) else None
+    tp_px_num = tp_px_generic if isinstance(tp_px_generic, float) else None
+    if sl_px_num is not None:
+        hit = ltp <= sl_px_num if p["entry"] == "BUY" else ltp >= sl_px_num
+        if hit:
+            _do_squareoff(p, ltp, f"SL_HIT:{sl_type}:{sl_val}", sec_id, seg)
+            return
+    if tp_px_num is not None:
+        hit = ltp >= tp_px_num if p["entry"] == "BUY" else ltp <= tp_px_num
+        if hit:
+            _do_squareoff(p, ltp, f"TP_HIT:{tp_type}:{tp_val}", sec_id, seg)
+            return
+    if sl_px_num is not None and tp_px_num is not None:
+        return  # generic SL+TP both set and neither hit — skip legacy fallback entirely
+
+    # Legacy SL_PCT/TP_PCT (kept for older positions / strategy defaults).
+    sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None) if sl_px_num is None else None
+    tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None) if tp_px_num is None else None
+    sl_rs  = None  # ₹ max-loss for this position (qty already applied)
+
+    if sl_pct is None and sl_px_num is None:
+        rc = _risk_config()
+        strat_risk = rc.get("per_strategy", {}).get(p.get("strategy") or "", {})
+        glob_risk  = rc.get("global", {})
+        eff_pct = strat_risk.get("max_loss_pct") if strat_risk.get("max_loss_pct") is not None else glob_risk.get("max_loss_pct")
+        eff_rs  = strat_risk.get("max_loss_rs")  if strat_risk.get("max_loss_rs")  is not None else glob_risk.get("max_loss_rs")
+        if eff_pct is not None:
+            try: sl_pct = float(eff_pct)
+            except Exception: pass
+        if eff_rs is not None:
+            try: sl_rs = float(eff_rs)
+            except Exception: pass
+
+    sl_px_pct = None
+    sl_px_rs  = None
+    tp_px = None
+
+    if p["entry"] == "BUY":
+        if sl_pct is not None: sl_px_pct = entry_px * (1 - (sl_pct / 100.0))
+        if sl_rs  is not None: sl_px_rs  = entry_px - (sl_rs / p["qty"])
+        if tp_pct is not None: tp_px = entry_px * (1 + (tp_pct / 100.0))
+    else: # SELL
+        if sl_pct is not None: sl_px_pct = entry_px * (1 + (sl_pct / 100.0))
+        if sl_rs  is not None: sl_px_rs  = entry_px + (sl_rs / p["qty"])
+        if tp_pct is not None: tp_px = entry_px * (1 - (tp_pct / 100.0))
+
+    # Tighter of % / ₹ wins (whichever is hit first / closer to entry).
+    if p["entry"] == "BUY":
+        sl_px = max([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
+    else:
+        sl_px = min([v for v in (sl_px_pct, sl_px_rs) if v is not None], default=None)
+
+    exit_reason = None
+    if p["entry"] == "BUY":
+        if sl_px and ltp <= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
+        elif tp_px and ltp >= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
+    else: # SELL
+        if sl_px and ltp >= sl_px: exit_reason = f"SL_HIT:{sl_pct if sl_px==sl_px_pct else None}%/₹{sl_rs if sl_px==sl_px_rs else ''}"
+        elif tp_px and ltp <= tp_px: exit_reason = f"TP_HIT:{tp_pct}%"
+
+    if exit_reason:
+        _do_squareoff(p, ltp, exit_reason, sec_id, seg)
 
 
 if __name__ == '__main__':
