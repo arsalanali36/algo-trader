@@ -1519,13 +1519,17 @@ async function riskStartBot(s, mode) {
   let r = await fetch(`/api/start?s=${s}&mode=${mode}`, {method:'POST'});
   let j = await r.json();
   flash(j.msg, j.msg.includes('✅')?'#3fb950':'#d29922');
+  await checkStatus();
   renderRmsSummary();
+  renderLogRunControls();
 }
 async function riskStopBot(s) {
   let r = await fetch(`/api/stop?s=${s}`, {method:'POST'});
   let j = await r.json();
   flash(j.msg, '#f85149');
+  await checkStatus();
   renderRmsSummary();
+  renderLogRunControls();
 }
 
 // ── RISK TAB (global + per-strategy max-loss) ──
@@ -3128,22 +3132,59 @@ function renderLogTab() {
   const container = document.getElementById('log-grid');
   let html = '';
   Object.keys(GLOBAL_CONFIG).forEach(key => {
+    if (key === '_risk' || key === 'webhooks') return;
     const type = key.split('_')[0];
     const color = getStratColor(type);
     html += `
       <div class="card" style="border-color:${color}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
           <h2 style="color:${color};margin:0">${key.toUpperCase()} LOG</h2>
-          <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
-            style="padding:4px 12px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:12px;cursor:pointer">
-            ⏸ Pause
-          </button>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div id="${key}-log-runctl"><!-- run status/start/stop, synced w/ Risk tab --></div>
+            <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
+              style="padding:4px 12px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:12px;cursor:pointer">
+              ⏸ Pause
+            </button>
+          </div>
         </div>
         <div class="log-box" id="${key}-log">Loading...</div>
       </div>
     `;
   });
   container.innerHTML = html;
+  renderLogRunControls();
+}
+
+// Run status/Start/Stop badge per strategy card on the Logs tab — reads the
+// SAME RUNNING_PIDS state (from /api/status) and calls the SAME
+// riskStartBot/riskStopBot used by the Risk tab's "Run Controls" column, so
+// both pages always agree and either one can be used to start/stop a bot.
+function renderLogRunControls() {
+  Object.keys(GLOBAL_CONFIG).forEach(key => {
+    if (key === '_risk' || key === 'webhooks') return;
+    const el = document.getElementById(`${key}-log-runctl`);
+    if (!el) return;
+    if (key.toLowerCase().startsWith('webhook')) { el.innerHTML = ''; return; }
+    const pid = RUNNING_PIDS[key] || RUNNING_PIDS[key.toLowerCase()];
+    const mode = RUNNING_PIDS[key + '_mode'] || RUNNING_PIDS[key.toLowerCase() + '_mode'] || 'paper';
+    if (pid) {
+      const modeBadge = mode === 'live'
+        ? '<span style="color:#58a6ff;font-weight:600">🔵 Live</span>'
+        : '<span style="color:#3fb950;font-weight:600">🟢 Paper</span>';
+      el.innerHTML = `<div style="display:flex;align-items:center;white-space:nowrap;font-size:11px">${modeBadge}`
+        + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','stop')">Stop</button></div>`;
+    } else {
+      el.innerHTML = `<div style="display:flex;align-items:center;white-space:nowrap;font-size:11px"><span style="color:#8b949e">⚫ Stopped</span>`
+        + `<button class="btn btn-green" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','paper')">Paper</button>`
+        + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1" onclick="riskStartStopFromLog('${key}','live')">Live</button></div>`;
+    }
+  });
+}
+
+async function riskStartStopFromLog(s, action) {
+  if (action === 'stop') await riskStopBot(s);
+  else await riskStartBot(s, action);
+  renderLogRunControls();
 }
 
 function toggleLogPause(key) {
@@ -4216,8 +4257,10 @@ document.addEventListener('click', () => {
 });
 
 setInterval(()=>{
-  checkStatus();
-  if(activeTab==='control') renderControlTab();
+  checkStatus().then(()=>{
+    if(activeTab==='control') renderControlTab();
+    if(activeTab==='log') renderLogRunControls();
+  });
 }, 5000);
 
 setInterval(()=>{
