@@ -1061,7 +1061,8 @@ async function populateStrategySelectors() {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
-    const ids = Object.keys(cfg);
+    const reserved = new Set(['_risk', '_ui_config', 'webhooks']);
+    const ids = Object.keys(cfg).filter(k => !reserved.has(k));
     if (ids.length) _allVariantIds = ids.includes(sid) ? ids : [sid, ...ids];
   } catch (e) { /* keep just the current run's id */ }
 
