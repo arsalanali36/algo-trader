@@ -553,6 +553,12 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                                 tags=["CAPITAL_BLOCKED", cap_reason])
                         continue
 
+                try:
+                    import risk_gate
+                    default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, sym)
+                except Exception:
+                    default_sl_tags = None
+
                 if not paper_mode:
                     ok = place_order(sym, "BUY", actual_qty, token, cid,
                                      sec_id, "NSE_FNO", trad_sym, log)
@@ -562,7 +568,8 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                                               "entry_premium": entry_prem}
                         positions[sym]    = 1 if signal == "BUY" else -1
                         trades_today[sym] = t_count + 1
-                        _record("BUY", actual_qty, entry_prem, "live", trad_sym, sec_id, strategy_id, "filled", log)
+                        _record("BUY", actual_qty, entry_prem, "live", trad_sym, sec_id, strategy_id, "filled", log,
+                                tags=default_sl_tags)
                 else:
                     log.info(
                         f"  [PAPER] BUY {opt_type} {trad_sym}"
@@ -574,7 +581,8 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                                           "entry_premium": entry_prem}
                     positions[sym]    = 1 if signal == "BUY" else -1
                     trades_today[sym] = t_count + 1
-                    _record("BUY", actual_qty, entry_prem, "paper", trad_sym, sec_id, strategy_id, "paper", log)
+                    _record("BUY", actual_qty, entry_prem, "paper", trad_sym, sec_id, strategy_id, "paper", log,
+                            tags=default_sl_tags)
 
         except KeyboardInterrupt:
             log.info("[RSI] Stopped by user (Ctrl+C)")

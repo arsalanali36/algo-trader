@@ -432,6 +432,32 @@ def _strategy_day_pnl(strategy, unrealized_by_strat=None):
     return realized + float(unrealized_by_strat or 0)
 
 
+def default_instrument_sl_tags(strategy, symbol=None):
+    """Default ₹ stop-loss, applied automatically to EVERY NEW position
+    (any instrument, any strategy) at entry time — a per-position stop, not a
+    cumulative day cap. Once hit and the leg is squared off, a fresh entry
+    (same or different instrument) is allowed again. The strategy-wide daily
+    max-loss (`daily_loss_breached`) is separate and unaffected.
+    per_strategy[strategy].default_sl_rs overrides global.default_sl_rs;
+    absent either way means no default SL is stamped (unchanged behavior).
+    A manual SL set later via the ⚙️ per-trade modal always overrides this —
+    the modal's save replaces SL_TYPE/SL_VAL tags outright. Returns SL_TYPE/
+    SL_VAL tags consumed by pos_monitor_loop's existing "rs" SL handling, or []."""
+    rc = _risk_cfg()
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("default_sl_rs")
+    gl = (rc.get("global", {}) or {}).get("default_sl_rs")
+    amount = ps if ps is not None else gl
+    if amount is None:
+        return []
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            return []
+    except Exception:
+        return []
+    return [f"SL_TYPE:rs", f"SL_VAL:{amount}"]
+
+
 def daily_loss_breached(strategy, unrealized=0.0, rc=None):
     """SUPREME check: True if `strategy` has lost >= its unified daily cap today
     (realized + caller's unrealized estimate). Used by BOTH the entry gate (block

@@ -25,7 +25,12 @@ import pandas as pd
 
 import range_trader as rt
 
-DATA_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Index\NIFTY"
+_WIN_DATA_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Index\NIFTY"
+if os.path.isdir(_WIN_DATA_DIR):
+    DATA_DIR = _WIN_DATA_DIR
+else:
+    DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                             "_TRADING_DATA", "Index", "NIFTY")
 EXIT_HM  = dtime(15, 15)   # 3:15 daily square-off
 
 # Engine config — mirror the TradingView Pine settings

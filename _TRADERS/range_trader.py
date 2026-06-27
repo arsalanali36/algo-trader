@@ -528,7 +528,7 @@ def fetch_1m(symbol, tf="1m"):
 _STRAT_ID = "range"   # set by main() to the running variation's config key (trade DB tag)
 
 
-def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0):
+def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -614,7 +614,8 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
                 mode=mode, broker='dhan', symbol=symbol,
                 instrument=('options' if seg == 'NSE_FNO' else 'equity'),
                 trad_sym=trad_sym, sec_id=sec_id, segment=seg,
-                correlation_id=f'RANGE_{trad_sym}_{ts}', broker_order_id=oid, status=status_)
+                correlation_id=f'RANGE_{trad_sym}_{ts}', broker_order_id=oid, status=status_,
+                tags=list(extra_tags) if extra_tags else None)
         except Exception:
             pass
 
@@ -873,7 +874,12 @@ def main(strategy_id="range"):
                                 except Exception:
                                     pass
                                 continue
-                        if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price):
+                        try:
+                            import risk_gate
+                            default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, symbol)
+                        except Exception:
+                            default_sl_tags = []
+                        if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price, extra_tags=default_sl_tags):
                             # premium unavailable → entry skipped, leave flat so a
                             # later signal can retry (no phantom 0-price position)
                             continue
@@ -916,7 +922,12 @@ def main(strategy_id="range"):
                             except Exception:
                                 pass
                             continue
-                    place_order(symbol, signal, qty, token, cid, mode, price=price)
+                    try:
+                        import risk_gate
+                        default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, symbol)
+                    except Exception:
+                        default_sl_tags = []
+                    place_order(symbol, signal, qty, token, cid, mode, price=price, extra_tags=default_sl_tags)
 
                 st["trades_today"] += 1
                 st["last_signal"]   = signal

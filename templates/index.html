@@ -1043,21 +1043,47 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 
   <div class="card" style="margin-bottom:14px;border-color:#d29922">
-    <h2 style="color:#d29922">⚠️ Global Max Loss (default for every strategy)</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Jis strategy ka apna max-loss set nahi hai, uske liye yeh default lagega. Naya position khulte hi
-      yeh cap apply ho jaata hai — manually har trade pe SL set karne ki zaroorat nahi.
-      Dono diye ho to jo pehle hit ho (tighter) wahi exit karega.
+    <h2 style="color:#d29922">⚠️ Max-Loss Protection</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:14px">
+      Do alag-alag, independent guardrails — dono <b style="color:#e6edf3">3 level</b> pe kaam karte hain:
+      <b style="color:#d29922">Global default</b> (yahan set karo) → <b style="color:#d29922">Per-Strategy override</b>
+      (table neeche, blank = global use hoga) → <b style="color:#d29922">Per-Trade manual</b> (kisi bhi open
+      position ke ⚙️ modal se, kabhi bhi badal sakte ho — woh hamesha sabse upar priority leta hai).
     </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <label style="font-size:12px;color:#adbac7">Max Loss %</label>
-      <input id="risk-global-pct" type="number" step="0.1" placeholder="e.g. 25"
-             style="width:100px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <label style="font-size:12px;color:#adbac7;margin-left:14px">Max Loss ₹ (per position)</label>
-      <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 2000"
-             style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+
+    <div style="border:1px solid #30363d;border-radius:8px;padding:14px;margin-bottom:12px">
+      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">1️⃣ Strategy Day Cap</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        Pura din ke liye — strategy ka cumulative P&amp;L (saari open+closed legs milake) itna ₹/% loss
+        cross kare to <b style="color:#e6edf3">poori strategy</b> ke liye naye entries ruk jaate hain aur
+        open positions square-off ho jaati hain.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;color:#adbac7">Global Max Loss %</label>
+        <input id="risk-global-pct" type="number" step="0.1" placeholder="e.g. 25"
+               style="width:100px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        <label style="font-size:12px;color:#adbac7;margin-left:6px">Global Max Loss ₹</label>
+        <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 10000"
+               style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        <span style="font-size:11px;color:#6e7681">(dono diye ho to jo pehle hit ho wahi chalega)</span>
+      </div>
     </div>
+
+    <div style="border:1px solid #30363d;border-radius:8px;padding:14px">
+      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">2️⃣ Per-Trade Default SL</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        Har <b style="color:#e6edf3">individual naye position</b> (kisi bhi instrument) ke khulte hi yeh ₹
+        stop-loss automatically lag jaata hai — sirf wahi ek leg square-off hoti hai, baaki strategy/instrument
+        pe asar nahi. Hit hone ke baad usi/kisi bhi instrument me nayi entry phir bhi le sakte hain.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <label style="font-size:12px;color:#adbac7">Global Default SL ₹</label>
+        <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank = off)"
+               style="width:160px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      </div>
+    </div>
+
+    <button class="btn btn-amber" style="margin-top:14px" onclick="saveRiskConfig()">💾 Save</button>
     <div id="risk-msg" style="font-size:12px;margin-top:8px;color:#8b949e"></div>
   </div>
 
@@ -1644,6 +1670,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-margin').value = RISK_CFG.global.margin_multiplier ?? '';
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
+  document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -1656,7 +1683,11 @@ async function renderRiskTab(){
     tbl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Koi strategy configured nahi hai abhi.</div>';
     return;
   }
-  let html = '<table class="cfg-table"><tr><th>Strategy</th><th>Max Loss %</th><th>Max Loss ₹</th><th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th></tr>';
+  let html = '<table class="cfg-table"><tr><th>Strategy</th>'
+    + '<th colspan="2" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
+    + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
+    + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th></tr>'
+    + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th></th><th></th><th></th><th></th><th></th></tr>';
   stratIds.forEach(id => {
     const ov = RISK_CFG.per_strategy[id] || {};
     const curMode = ov.capital_mode || '';
@@ -1666,6 +1697,8 @@ async function renderRiskTab(){
             value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><input id="risk-rs-${id}" type="number" step="1" placeholder="global default"
             value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global default"
+            value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global default"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global default"
@@ -1699,6 +1732,7 @@ async function saveRiskConfig(){
   const gMar = document.getElementById('risk-global-margin').value;
   const gMode = document.getElementById('risk-global-mode').value;
   const gShadow = document.getElementById('risk-global-shadow').value;
+  const gInstLoss = document.getElementById('risk-global-instloss').value;
   const payload = {
     global: {
       max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
@@ -1708,6 +1742,7 @@ async function saveRiskConfig(){
       margin_multiplier: gMar !== '' ? parseFloat(gMar) : null,
       capital_mode: gMode || 'reject',
       shadow_live: gShadow === 'true',
+      default_sl_rs: gInstLoss !== '' ? parseFloat(gInstLoss) : null,
     },
     per_strategy: {}
   };
@@ -1718,11 +1753,13 @@ async function saveRiskConfig(){
     const mEl = document.getElementById(`risk-margin-${id}`);
     const modeEl = document.getElementById(`risk-mode-${id}`);
     const shadowEl = document.getElementById(`risk-shadow-${id}`);
+    const instLossEl = document.getElementById(`risk-instloss-${id}`);
     if (!pEl || !rEl) return;
     const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
     const mode = modeEl ? modeEl.value : '';
     const shadow = shadowEl ? shadowEl.value : '';
-    if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '') {
+    const instLoss = instLossEl ? instLossEl.value : '';
+    if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== '') {
       payload.per_strategy[id] = {
         max_loss_pct: p !== '' ? parseFloat(p) : null,
         max_loss_rs:  r !== '' ? parseFloat(r)  : null,
@@ -1730,6 +1767,7 @@ async function saveRiskConfig(){
         margin_multiplier: m !== '' ? parseFloat(m) : null,
         capital_mode: mode || null,
         shadow_live: shadow === '' ? null : (shadow === 'true'),
+        default_sl_rs: instLoss !== '' ? parseFloat(instLoss) : null,
       };
     }
   });

@@ -587,10 +587,15 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     # behavior/netting is completely unaffected when the feature is off.
     hedge_offset_strikes = cfg.get("hedge_offset_strikes")
     group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and hedge_offset_strikes) else ""
+    try:
+        default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol)
+    except Exception:
+        default_sl_tags = []
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
                               trad_sym, mode, broker, log=_log, tag="TVWH",
                               source="webhook", strategy=strat, instrument=instrument,
-                              broker_name=cfg.get("broker", "dhan"), group_id=group_id)
+                              broker_name=cfg.get("broker", "dhan"), group_id=group_id,
+                              extra_tags=default_sl_tags)
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
 

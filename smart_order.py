@@ -73,7 +73,8 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 
 def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             buffer_bps=10, log=print, tag="UNIV",
-            source="", strategy="", instrument="", broker_name="", group_id=""):
+            source="", strategy="", instrument="", broker_name="", group_id="",
+            extra_tags=None):
     """Execute one entry/exit.
 
     Returns: {ok, price, src, status, reason, order_id}
@@ -81,6 +82,8 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
     Always logs an intended-fill line (P&L truth, same for paper & live).
     Live also fires the real order and logs a [BROKER] status line.
     source/strategy/instrument/broker_name are recorded into order_store (trade DB).
+    extra_tags: caller-supplied tags (e.g. an RMS default per-instrument SL) to
+    stamp onto a NEW position's record — pass None/[] for exit calls.
     """
     price, src = marketable_price(side, sec_id, seg, broker, buffer_bps)
     if price is None:
@@ -126,7 +129,8 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                            trad_sym=trad_sym, sec_id=sec_id, segment=seg,
                            correlation_id=f"{tag}_{sym}",
                            broker_order_id=res.get("order_id") or "",
-                           status=res.get("status", "paper"), group_id=group_id)
+                           status=res.get("status", "paper"), group_id=group_id,
+                           tags=list(extra_tags) if extra_tags else None)
     except Exception:
         pass
 

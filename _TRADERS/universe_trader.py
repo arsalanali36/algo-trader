@@ -347,9 +347,14 @@ def main(sid, once=False):
                 except Exception:
                     pass
 
+            try:
+                default_sl_tags = risk_gate.default_instrument_sl_tags(sid, sym)
+            except Exception:
+                default_sl_tags = []
             r = smart_order.execute(o_side, sym, sec_id, seg, qty, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="UNIV", source="strategy", strategy=sid)
+                                    log=log, tag="UNIV", source="strategy", strategy=sid,
+                                    extra_tags=default_sl_tags)
             if r.get("ok"):
                 st["position"] = want
                 st["open_inst"] = (sec_id, seg, tsym, qty)
