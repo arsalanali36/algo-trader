@@ -120,6 +120,11 @@ def _fetch_nifty_day(date_str, token, cid):
         d = r.json()
         if d.get("errorCode") == "DH-904":   # rate limit — caller backs off and retries
             return "RATE_LIMIT"
+        if r.status_code != 200 or d.get("errorCode") in ("DH-901", "DH-902", "DH-905"):
+            # auth/token failure, NOT a genuine holiday — must not be cached as
+            # one (silently poisons the day forever, even after the token is
+            # fixed, since "file already exists" skips it on every future run).
+            return "AUTH_FAIL"
         ts = d.get("timestamp") or []
         if not ts:
             return None
@@ -166,6 +171,12 @@ def ensure_nifty_data(date_from, date_to):
                     _time.sleep((attempt + 1) * 5)
                     continue
                 break
+            if isinstance(df, str) and df == "AUTH_FAIL":
+                # Dhan token expired/invalid — stop immediately, don't cache a
+                # false "holiday" for this or any remaining day (that would
+                # poison the cache permanently, even after the token is fixed).
+                print(f"  ! {date_str} skipped — Dhan token expired/invalid (refresh it in Control tab), stopping download")
+                break
             if isinstance(df, pd.DataFrame) and not df.empty:
                 fpath = os.path.join(DATA_DIR, f"NIFTY_{date_str}.csv")
                 df.to_csv(fpath, index=False)
@@ -207,6 +218,8 @@ def _fetch_equity_day(symbol, date_str, token, cid):
         d = r.json()
         if d.get("errorCode") == "DH-904":
             return "RATE_LIMIT"
+        if r.status_code != 200 or d.get("errorCode") in ("DH-901", "DH-902", "DH-905"):
+            return "AUTH_FAIL"   # see _fetch_nifty_day — must not be cached as a holiday
         ts = d.get("timestamp") or []
         if not ts:
             return None
@@ -263,6 +276,9 @@ def ensure_equity_data(symbol, date_from, date_to):
                 fpath = os.path.join(eq_dir, f"{symbol}_{date_str}.csv")
                 pd.DataFrame(columns=["Datetime", "Open", "High", "Low", "Close", "Volume"]).to_csv(fpath, index=False)
                 print(f"  + {date_str} (holiday/no data)")
+            elif isinstance(df, str) and df == "AUTH_FAIL":
+                print(f"  ! {date_str} skipped — Dhan token expired/invalid (refresh it in Control tab), stopping download")
+                break
             else:
                 # RATE_LIMIT (or other transient) after retries -> DO NOT poison with an
                 # empty file; leave the day missing so a later run retries it.
