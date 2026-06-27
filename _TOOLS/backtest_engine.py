@@ -398,18 +398,42 @@ def _fill(df, i):
     return row["time"], float(row["open"])
 
 
+def _daily_bars_from_1m(cont1):
+    """Aggregate a 1-min OHLC dataframe into one daily OHLC row per trading
+    day — used for non-NIFTY symbols, which don't have validate_strategy's
+    pre-built nifty_daily.csv. NIFTY itself keeps using vs.daily_bars() (full
+    history back to 2025-01, more lookback than just the backtest window)."""
+    d = cont1.copy()
+    d["date"] = d["datetime"].dt.date
+    g = d.groupby("date", as_index=False).agg(
+        open=("open", "first"), high=("high", "max"),
+        low=("low", "min"), close=("close", "last"))
+    return g.sort_values("date").reset_index(drop=True)
+
+
 # ───────────────────────── RANGE (reuses validate_strategy.backtest_day) ─────────────────────────
 def _run_range(date_from, date_to, cfg):
-    # Range Chain is NIFTY/index-specific (pivots + high/low chains use index
-    # daily bars, validated at 90.2% on NIFTY) — it always runs on NIFTY data
-    # regardless of any cfg.symbol, so it owns its own NIFTY ensure here (the
-    # unconditional top-level one was removed so equity strategies don't pull
-    # NIFTY days they never use).
-    ensure_nifty_data(date_from, date_to)
-    cont1 = load_1m_range(date_from, date_to)
+    # Range Chain's zone/pivot logic is symbol-agnostic in LIVE trading
+    # (range_trader.py builds key levels per-symbol off that symbol's own
+    # daily bars, is_index only flips True for NIFTY/BANKNIFTY) — the backtest
+    # used to ignore cfg["symbol"] and always replay NIFTY. Now it honors the
+    # picked symbol: NIFTY keeps the original full-history daily_bars() path;
+    # any stock symbol uses the same equity 1-min downloader the rsi/ema/vwap
+    # runners already use, with daily bars aggregated from that 1-min data.
+    symbol = (cfg.get("symbol") or "NIFTY").upper()
+    is_index = symbol in ("NIFTY", "BANKNIFTY")
+    if symbol == "NIFTY":
+        ensure_nifty_data(date_from, date_to)
+        cont1 = load_1m_range(date_from, date_to)
+        daily = vs.daily_bars()
+    else:
+        if symbol == "BANKNIFTY":
+            return {"error": "BANKNIFTY backtest data isn't wired up yet — only NIFTY and equity/stock symbols are supported right now."}
+        ensure_equity_data(symbol, date_from, date_to)
+        cont1 = load_equity_1m_range(symbol, date_from, date_to)
+        daily = _daily_bars_from_1m(cont1) if not cont1.empty else pd.DataFrame()
     if cont1.empty:
         return [], pd.DataFrame()
-    daily = vs.daily_bars()
     days = sorted(cont1["datetime"].dt.date.unique())
     frames = []
     for d in days:
@@ -439,7 +463,7 @@ def _run_range(date_from, date_to, cfg):
         sub = daily[daily["date"] <= d].reset_index(drop=True)
         if len(sub) < 2:
             continue
-        levels = rt.build_key_levels(sub, is_index=True)
+        levels = rt.build_key_levels(sub, is_index=is_index)
         eng += vs.backtest_day(df5, levels, rcfg, atr_slice)
         day_start = int(df5["time"].iloc[0].timestamp())
         day_end = int(df5["time"].iloc[-1].timestamp())
@@ -1044,6 +1068,8 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
     # blanket NIFTY download was forcing equity backtests (TCS/POLYCAB) to
     # re-fetch NIFTY days they never use ("downloading NIFTY 1/10" every run).
     runner_result = runner(date_from, date_to, cfg)
+    if isinstance(runner_result, dict) and "error" in runner_result:
+        return runner_result
     if len(runner_result) == 3:
         trades, df, plot_spec = runner_result
     else:

@@ -738,9 +738,12 @@ function _runSavedEntry(entry) {
 }
 
 function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,''); }
-// Which strategy types let you pick the backtest symbol — anything whose
-// signal logic is symbol-agnostic. Range is excluded (NIFTY/index-only engine).
-function symbolPickable(type){ return ['vwap','rsi','ema','bb'].includes(type) || (type||'').startsWith('user_'); }
+// Which strategy types let you pick the backtest symbol. Range Chain's
+// pivot/zone engine works on any symbol in live trading (range_trader.py
+// builds key levels per-symbol, is_index only flips for NIFTY/BANKNIFTY) —
+// the backtest now honors this too: NIFTY (default) or any equity/stock.
+// BANKNIFTY isn't wired up yet (backend returns an error if picked).
+function symbolPickable(type){ return ['vwap','rsi','ema','bb','ARS_CHAIN'].includes(type) || (type||'').startsWith('user_'); }
 
 // Friendly labels — config keys are internal ids (ARS_CHAIN_V1, rsi_v1) and
 // look ugly verbatim in a dropdown. Map the base id to a readable name; the
@@ -1849,9 +1852,7 @@ function openEditModal(preserveSymbols) {
         </div>
      </div>
   `;
-  // Symbol picker is available for every symbol-agnostic strategy (vwap/rsi/ema).
-  // Range stays NIFTY-only — its pivot/zone/chain engine is index-specific
-  // (validated 90.2% on NIFTY) and isn't wired for arbitrary equities.
+  // Symbol picker — NIFTY (default) or any equity/stock; see symbolPickable().
   const pickable = symbolPickable(type);
   document.getElementById('modal-multi-row').style.display = pickable ? '' : 'none';
   if (pickable && !preserveSymbols) {
