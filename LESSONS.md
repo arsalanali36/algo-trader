@@ -151,6 +151,76 @@
 
 ---
 
+## TRAP #8 — Backtest auto-download poisons a day as "holiday" when the token's just expired
+
+- **Symptom:** `_TOOLS/backtest_engine.py` reports recent days as "holiday/no data" even though
+  the strategy actually traded live on those exact days (real rows in `order_store`/`trades.db`).
+  Once cached this way, the day stays "holiday" **forever** — re-running the backtest after fixing
+  the token doesn't help, because `os.path.exists(fpath)` skips re-fetching it.
+- **Root pattern:** `_fetch_nifty_day`/`_fetch_equity_day` only special-cased the `DH-904` rate-limit
+  error. Any OTHER Dhan failure — most commonly an **expired/invalid token (`DH-901`)** — fell
+  through to the same "empty response = genuine holiday" branch and got written to disk as a
+  permanent empty-CSV marker.
+- **Kahan kaata:** 2026-06-27 — user asked for a Jun 22-24 backtest matching live paper trades;
+  Jun 22-26 all came back "holiday" even though Jun 23/24 had real recorded trades. Local Dhan
+  token had expired (24h JWT, Critical Rule #4) mid-download.
+- **Permanent guard:** `_fetch_nifty_day`/`_fetch_equity_day` now return a distinct `"AUTH_FAIL"`
+  sentinel for non-200/`DH-901`/`DH-902`/`DH-905` responses — `ensure_*_data` stops the whole
+  download immediately on it and never writes the poisoning empty-file marker.
+- **Fast detect:** if a recent weekday shows "holiday/no data" but you know trading happened that
+  day (check `order_store.trades_for(date)`), suspect a poisoned marker — `wc -l` the CSV (1 line =
+  header-only = poisoned). Delete it and re-run with a **valid** token (check via a raw
+  `requests.post` to `/v2/charts/intraday` first — `DH-901` means refresh the token in Control tab).
+
+---
+
+## TRAP #9 — Stale duplicate file on VPS shadows the real (fixed) one via sys.path order
+
+- **Symptom:** Deployed a fix to `_TOOLS/validate_strategy.py`, VPS still crashes with the
+  pre-fix bug (`KeyError: 'date'`) even after restart + md5-verified the new file landed.
+- **Root pattern:** an old `validate_strategy.py` from the pre-`_TOOLS/` reorg was still sitting
+  at the **VPS project root** (`/root/CODE3B- TV BACKTEST ENGINE/validate_strategy.py`, hardcoded
+  to the dead `/root/code4/nifty_days` path) — never deleted during the `_TOOLS/` migration, and
+  not tracked in the local git repo at all (VPS-only cruft). `backtest_engine.py` does
+  `sys.path.insert(0, BASE_DIR)` AFTER `sys.path.insert(0, TOOLS_DIR)`, so `BASE_DIR` (project
+  root) ends up earlier in `sys.path` — `import validate_strategy` resolved to the stale root
+  copy, not the real `_TOOLS/` one.
+- **Kahan kaata:** 2026-06-27, mid Jun-22-24 backtest debugging.
+- **Permanent guard:** moved the stale copy aside (`validate_strategy.py._stale_root_copy_bak_*`).
+  **When deploying any file that already exists in `_TOOLS/`/`_TRADERS/`, grep the WHOLE repo root
+  for a same-named duplicate first** — `find . -iname '<file>.py'` (don't assume there's only one).
+- **Fast detect:** `python -c "import X; print(X.__file__)"` (with the same `sys.path` order the
+  real caller uses) — if `__file__` isn't the path you just deployed to, something's shadowing it.
+
+---
+
+## TRAP #10 — RMS checks failing OPEN on exception (rate-limit/network) instead of blocking
+
+- **Symptom:** no visible symptom most of the time — that's the danger. A position could exceed
+  its configured loss limit specifically DURING a Dhan rate-limit/feed outage, with no error
+  surfaced anywhere (logs just say "risk gate check failed (allowing entry)" or silently skip a
+  position's SL check).
+- **Root pattern:** every entry-gate's `try/except risk_gate.check_*` and `pos_monitor_loop`'s own
+  exception handling defaulted to **fail-open** (allow the entry / leave the position unmonitored)
+  on any exception — including the loop's single top-level `try/except`, which meant ONE bad
+  position throwing could blind monitoring of every OTHER open position that cycle too.
+- **Permanent guard (2026-06-27):**
+  - All 4 entry-gate call sites (`range_trader.py`, `rsi_trader.py`, `universe_trader.py`,
+    `webhook_executor.py`) now **fail closed** — an RMS exception blocks the entry instead of
+    allowing it. (`check_broker_funds` stays intentionally fail-open — funds-availability check,
+    not a loss-cap.)
+  - `pos_monitor_loop`'s per-position logic is now `_pos_monitor_check_one()`, called inside a
+    **per-position** try/except — one crash no longer blinds the rest of the cycle.
+  - LTP fetch gained a 3rd fallback tier (`shared_ltp_cache.get_stale`, same pattern
+    `range_trader.place_order` already used) before giving up, plus a consecutive-miss counter
+    that logs `⚠️ CRITICAL` after ~30s with zero price from any source.
+- **Fast detect:** `grep -rn "allowing entry\|leaving position open" *.py _TRADERS/*.py` — every
+  hit should either fail-closed or have an explicit, deliberate comment explaining why fail-open
+  is the safer choice there. New risk-gate call sites should default to fail-closed unless proven
+  otherwise.
+
+---
+
 ## DEBUGGING PLAYBOOK — fast diagnosis order
 
 1. **Live state pehle, assumption baad me** (TRAP #3): `ps` se kaun chal raha hai; `orders` table
@@ -161,8 +231,13 @@
 4. **"No price"/timeout/levels=0** → TRAP #2 (rate limit), `shared_ltp_cache` use ho raha hai?
 5. **VPS pe crash/silent-fail par local theek** → TRAP #4 (Python version), VPS py_compile.
 6. **Deploy ke baad bhi purana behaviour** → trader process restart hua? (dashboard restart →
-   respawn), ya galat file/path (TRAP #5).
-7. **Fix ke baad:** isi file me ek `LESSONS.md` entry add karo agar yeh dobara aa sakta hai.
+   respawn), ya galat file/path (TRAP #5), ya ek **stale duplicate file** repo root pe shadowing
+   kar raha hai (TRAP #9) — `find . -iname '<file>.py'` se confirm karo.
+7. **Backtest "holiday/no data" deta hai par live trades exist karte hain** → TRAP #8, token
+   expired hoga — poisoned empty-CSV marker delete karo, fresh token se re-run.
+8. **Naya risk-gate check likh rahe ho** → fail-closed default rakho (TRAP #10), fail-open sirf
+   deliberate, commented exception ho.
+9. **Fix ke baad:** isi file me ek `LESSONS.md` entry add karo agar yeh dobara aa sakta hai.
 
 ---
 
