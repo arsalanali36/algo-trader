@@ -27,6 +27,9 @@ import json
 import logging
 import time
 from pathlib import Path
+from typing import Optional
+
+from .base_broker import BaseBroker
 
 log = logging.getLogger("kite_broker")
 
@@ -161,23 +164,207 @@ _MONTH_MAP = {
 
 def dhan_sym_to_kite(dhan_sym):
     """
-    Convert Dhan trading symbol to Kite format.
-    "NIFTY-Jun2026-23950-CE" → "NIFTY26JUN23950CE"
-
-    Note: This is a best-effort conversion.
-    For exact symbols, use kite.instruments("NFO") dump.
+    Convert Dhan trading symbol to Kite format (STRING-GUESS fallback only —
+    see resolve_kite_symbol() below for the reliable path).
+    Dhan's real format is "NAME-DDMonYYYY-strike-CE/PE", e.g.
+    "NIFTY-28Jun2026-23950-CE" (day IS present — a previous version of this
+    function assumed no day, e.g. parsed "28Jun2026"[:3] as the month and got
+    "28J" instead of "Jun", producing a garbage/non-existent Kite symbol on
+    every single call). Even with the day parsed correctly, NIFTY's weekly
+    expiries use a different Kite symbol scheme than monthly (single-letter
+    month + day code) that this string guess does NOT reproduce — use
+    resolve_kite_symbol() (Kite's own instrument dump, exact match) as the
+    primary path; this function is only a last-resort fallback if that dump
+    is unavailable (e.g. network down), logged loudly when used.
     """
     try:
-        parts  = dhan_sym.split("-")   # ["NIFTY", "Jun2026", "23950", "CE"]
+        parts  = dhan_sym.split("-")   # ["NIFTY", "28Jun2026", "23950", "CE"]
         name   = parts[0]              # "NIFTY"
-        mon_yr = parts[1]              # "Jun2026"
+        dmy    = parts[1]              # "28Jun2026"
         strike = parts[2]              # "23950"
         opt    = parts[3]              # "CE" / "PE"
 
-        month  = mon_yr[:3]            # "Jun"
-        year   = mon_yr[3:][2:]        # "2026" → "26"
+        day    = dmy[:2]               # "28"
+        month  = dmy[2:5]              # "Jun"
+        year   = dmy[5:][2:]           # "2026" → "26"
         mon_k  = _MONTH_MAP.get(month, month.upper())
 
-        return f"{name}{year}{mon_k}{strike}{opt}"   # "NIFTY26JUN23950CE"
+        return f"{name}{year}{mon_k}{strike}{opt}"   # monthly-style guess, e.g. "NIFTY26JUN23950CE"
     except Exception:
         return dhan_sym   # fallback: return as-is
+
+
+# ── Reliable Dhan->Kite symbol resolution via Kite's own instrument dump ──
+# String-guessing a tradingsymbol is fragile (weekly vs monthly expiry codes
+# differ, and the guess above can't represent NIFTY's weekly single-letter
+# month+day scheme at all). Matching on (name, expiry date, strike, CE/PE)
+# against kite.instruments("NFO") is exact and format-agnostic.
+import datetime as _dt
+
+_kite_instr_cache = {"date": None, "data": None}
+
+
+def _get_kite_instruments(kite):
+    today = _dt.date.today().isoformat()
+    if _kite_instr_cache["date"] == today and _kite_instr_cache["data"]:
+        return _kite_instr_cache["data"]
+    instruments = kite.instruments("NFO")
+    _kite_instr_cache["date"] = today
+    _kite_instr_cache["data"] = instruments
+    return instruments
+
+
+def _parse_dhan_trad_sym(dhan_sym):
+    """"NIFTY-28Jun2026-23950-CE" -> ("NIFTY", date(2026,6,28), 23950.0, "CE")"""
+    parts = dhan_sym.split("-")
+    name = parts[0]
+    dmy = parts[1]
+    strike = float(parts[2])
+    opt_type = parts[3]
+    day = int(dmy[:2])
+    mon_str = dmy[2:5]
+    year = int(dmy[5:])
+    from datetime import datetime as _dtm
+    month = _dtm.strptime(mon_str, "%b").month
+    expiry = _dt.date(year, month, day)
+    return name, expiry, strike, opt_type
+
+
+def resolve_kite_symbol(kite, dhan_trad_sym):
+    """Exact Dhan-trad_sym -> Kite-tradingsymbol resolution via Kite's
+    instrument dump (cached per-day). Returns None (never raises) if parsing
+    or lookup fails — caller must fall back to dhan_sym_to_kite() and log
+    loudly, never silently send a guessed symbol on a live order."""
+    try:
+        name, expiry, strike, opt_type = _parse_dhan_trad_sym(dhan_trad_sym)
+    except Exception:
+        return None
+    try:
+        instruments = _get_kite_instruments(kite)
+    except Exception:
+        return None
+    for ins in instruments:
+        if ins.get("name") != name:
+            continue
+        if ins.get("instrument_type") != opt_type:
+            continue
+        try:
+            if float(ins.get("strike") or 0) != strike:
+                continue
+        except Exception:
+            continue
+        exp = ins.get("expiry")
+        if exp and hasattr(exp, "year") and not isinstance(exp, _dt.date):
+            exp = exp.date()
+        if exp != expiry:
+            continue
+        return ins.get("tradingsymbol")
+    return None
+
+
+# ── BaseBroker implementation — ORDERS go to Kite, DATA stays on Dhan (the
+# documented design at the top of this file: free Dhan data API, real money
+# orders via Kite Connect). quote()/intraday_candles() therefore delegate to
+# DhanBroker rather than calling Kite's own (rate-limited, paid-tier-gated)
+# market data endpoints — this is intentional, not a shortcut. ──
+class KiteBroker(BaseBroker):
+
+    def __init__(self, creds: Optional[dict] = None):
+        if creds:
+            self._cfg = dict(creds)
+        else:
+            self._cfg = json.loads(_CONFIG_FILE.read_text()) if _CONFIG_FILE.exists() else {}
+        self._kite = None
+        self._dhan = None  # lazy — data delegate
+
+    def name(self) -> str:
+        return "kite"
+
+    def _get_kite(self):
+        if self._kite is None:
+            from kiteconnect import KiteConnect
+            api_key = self._cfg.get("kite_api_key", "")
+            access_token = self._cfg.get("kite_access_token", "")
+            if not api_key or not access_token:
+                raise RuntimeError("kite_api_key/kite_access_token missing — refresh today's Kite token in Control tab")
+            kite = KiteConnect(api_key=api_key)
+            kite.set_access_token(access_token)
+            self._kite = kite
+        return self._kite
+
+    def _get_dhan(self):
+        if self._dhan is None:
+            from .dhan_broker import DhanBroker
+            self._dhan = DhanBroker()
+        return self._dhan
+
+    # ---- data (delegated to Dhan by design) ----
+    def intraday_candles(self, sec_id, seg, instrument, days: int = 5, interval: int = 1):
+        return self._get_dhan().intraday_candles(sec_id, seg, instrument, days, interval)
+
+    def quote(self, sec_id, seg) -> dict:
+        return self._get_dhan().quote(sec_id, seg)
+
+    # ---- orders (real Kite Connect calls) ----
+    _SEG_TO_EXCHANGE = {"NSE_FNO": "NFO", "NSE_EQ": "NSE", "IDX_I": "NSE"}
+
+    def place_order(self, side, sec_id, seg, qty, order_type="MARKET",
+                    price=0.0, trad_sym=None, tag=None) -> dict:
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+        except Exception as e:
+            return {"status": "rejected", "order_id": None, "fill_price": None,
+                    "reason": f"kite auth: {e}", "raw": None}
+
+        kite_sym = None
+        if trad_sym:
+            kite_sym = resolve_kite_symbol(kite, trad_sym)
+            if not kite_sym:
+                kite_sym = dhan_sym_to_kite(trad_sym)
+                log.warning(f"[KITE] instrument-dump resolve failed for {trad_sym} — "
+                            f"using string-guess fallback {kite_sym} (verify manually)")
+        if not kite_sym:
+            return {"status": "rejected", "order_id": None, "fill_price": None,
+                    "reason": "no trad_sym to resolve a Kite symbol from", "raw": None}
+
+        exchange = self._SEG_TO_EXCHANGE.get(seg, "NFO")
+        params = {
+            "variety": "regular",
+            "exchange": exchange,
+            "tradingsymbol": kite_sym,
+            "transaction_type": "BUY" if side == "BUY" else "SELL",
+            "quantity": int(qty),
+            "product": "MIS",
+            "order_type": "LIMIT" if order_type == "LIMIT" else "MARKET",
+            "price": round(float(price), 2) if order_type == "LIMIT" else 0,
+            "tag": (tag or "ALGO")[:20],
+        }
+        try:
+            _krl.acquire("order")
+            order_id = kite.place_order(**params)
+            log.info(f"  [KITE] {side} {kite_sym} qty={qty} orderId={order_id}")
+            return {"status": "pending", "order_id": order_id, "fill_price": None,
+                    "reason": "submitted", "raw": params}
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg or "Too many" in msg.lower():
+                _krl.note_429()
+            log.error(f"  [KITE ERR] {side} {kite_sym}: {e}")
+            return {"status": "rejected", "order_id": None, "fill_price": None,
+                    "reason": msg, "raw": None}
+
+    def funds(self) -> dict:
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            m = kite.margins()
+            eq = (m or {}).get("equity", {}) or {}
+            avail = eq.get("available", {}) or {}
+            cash = float(avail.get("live_balance", avail.get("cash", 0)) or 0)
+            return {"available": cash, "raw": m}
+        except Exception:
+            # NOTE (same contract as DhanBroker.funds()): caller must treat
+            # {} as "balance unknown" and fail-closed, not "balance is fine".
+            return {}

@@ -1,5 +1,6 @@
 flask
 pandas
 requests
-dhanhq
+dhanhq==2.0.2
 ta
+kiteconnect==5.2.0

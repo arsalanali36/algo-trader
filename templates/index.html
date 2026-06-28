@@ -1133,6 +1133,27 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:14px;border-color:#3fb950">
+    <h2 style="color:#3fb950">🛡️ Auto-Hedge (naked option SELL → auto BUY further OTM)</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Jab koi strategy option SELL karti hai (abhi sirf range_trader/ARS_CHAIN_V1), uske turant baad ek
+      hedge BUY same option type, further OTM, automatically jaata hai. <b style="color:#e6edf3">Min Strikes</b> =
+      kam se kam itne strikes ATM/sold-leg se door. <b style="color:#e6edf3">Max Premium ₹</b> (optional) = agar set hai,
+      hedge Min Strikes se aur door chalta rehta hai jab tak us strike ka premium is ₹ se kam/equal na mil jaye
+      (NIFTY jaise instruments me sasta hedge dhoondhne ke liye) — jo bhi door wala strike mile (Min Strikes ya
+      Max Premium), wahi use hota hai. Dono khali = hedge OFF.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:12px;color:#adbac7">Global Min Strikes</label>
+      <input id="risk-global-hedge-strikes" type="number" step="1" placeholder="e.g. 5 (blank = OFF)"
+             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <label style="font-size:12px;color:#adbac7;margin-left:14px">Global Max Premium ₹</label>
+      <input id="risk-global-hedge-premium" type="number" step="0.5" placeholder="e.g. 10 (blank = off)"
+             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>Per-Strategy Override</h2>
     <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
@@ -1675,6 +1696,8 @@ async function renderRiskTab(){
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
   document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
+  document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
+  document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -1690,8 +1713,10 @@ async function renderRiskTab(){
   let html = '<table class="cfg-table"><tr><th>Strategy</th>'
     + '<th colspan="2" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
     + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
-    + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th></tr>'
-    + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th></th><th></th><th></th><th></th><th></th></tr>';
+    + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th>'
+    + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
+    + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th></th><th></th><th></th><th></th><th></th>'
+    + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
   stratIds.forEach(id => {
     const ov = RISK_CFG.per_strategy[id] || {};
     const curMode = ov.capital_mode || '';
@@ -1717,6 +1742,10 @@ async function renderRiskTab(){
             <option value="false" ${curShadow==='false'?'selected':''}>OFF</option>
             <option value="true" ${curShadow==='true'?'selected':''}>ON</option>
           </select></td>
+      <td><input id="risk-hedgestrikes-${id}" type="number" step="1" placeholder="global default"
+            value="${ov.hedge_offset_strikes ?? ''}" style="width:110px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
+      <td><input id="risk-hedgepremium-${id}" type="number" step="0.5" placeholder="global default"
+            value="${ov.hedge_max_premium_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
       </tr>`;
   });
   html += '</table><button class="btn btn-amber" style="margin-top:10px" onclick="saveRiskConfig()">💾 Save</button>';
@@ -1737,6 +1766,8 @@ async function saveRiskConfig(){
   const gMode = document.getElementById('risk-global-mode').value;
   const gShadow = document.getElementById('risk-global-shadow').value;
   const gInstLoss = document.getElementById('risk-global-instloss').value;
+  const gHedgeStrikes = document.getElementById('risk-global-hedge-strikes').value;
+  const gHedgePremium = document.getElementById('risk-global-hedge-premium').value;
   const payload = {
     global: {
       max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
@@ -1747,6 +1778,8 @@ async function saveRiskConfig(){
       capital_mode: gMode || 'reject',
       shadow_live: gShadow === 'true',
       default_sl_rs: gInstLoss !== '' ? parseFloat(gInstLoss) : null,
+      hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
+      hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
     },
     per_strategy: {}
   };
@@ -1758,12 +1791,17 @@ async function saveRiskConfig(){
     const modeEl = document.getElementById(`risk-mode-${id}`);
     const shadowEl = document.getElementById(`risk-shadow-${id}`);
     const instLossEl = document.getElementById(`risk-instloss-${id}`);
+    const hedgeStrikesEl = document.getElementById(`risk-hedgestrikes-${id}`);
+    const hedgePremiumEl = document.getElementById(`risk-hedgepremium-${id}`);
     if (!pEl || !rEl) return;
     const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
     const mode = modeEl ? modeEl.value : '';
     const shadow = shadowEl ? shadowEl.value : '';
     const instLoss = instLossEl ? instLossEl.value : '';
-    if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== '') {
+    const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
+    const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
+    if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
+        || hedgeStrikes !== '' || hedgePremium !== '') {
       payload.per_strategy[id] = {
         max_loss_pct: p !== '' ? parseFloat(p) : null,
         max_loss_rs:  r !== '' ? parseFloat(r)  : null,
@@ -1772,6 +1810,8 @@ async function saveRiskConfig(){
         capital_mode: mode || null,
         shadow_live: shadow === '' ? null : (shadow === 'true'),
         default_sl_rs: instLoss !== '' ? parseFloat(instLoss) : null,
+        hedge_offset_strikes: hedgeStrikes !== '' ? parseInt(hedgeStrikes) : null,
+        hedge_max_premium_rs: hedgePremium !== '' ? parseFloat(hedgePremium) : null,
       };
     }
   });

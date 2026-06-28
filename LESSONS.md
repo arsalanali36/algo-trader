@@ -54,12 +54,31 @@
   sab 429 khaate hain.
 - **Kahan-kahan kaata:** range_trader `fetch_1m`/`fetch_daily`; webhook entry premium; har trader
   ka apna LTP call.
-- **Permanent guard:** `shared_ltp_cache.py` (file-backed cross-process cache) — sab process ek
+- **Permanent guard (v1):** `shared_ltp_cache.py` (file-backed cross-process cache) — sab process ek
   hi cache padhte/likhte hain, "N process × M symbol" calls ≈ "1 call per symbol per TTL".
   Plus: per-symbol scan me `time.sleep` throttle; whitelist se symbol count kam (kam calls);
   blocked/maxed strategy ki LTP call hi mat karo (`gating_status` short-circuit).
+- **Permanent guard (v2, 2026-06-27) — `dhan_rate_limiter.py`:** v1 ka gap yeh tha ki cache sirf
+  LTP reuse karta hai — candles aur **orders** kabhi cache nahi hote, aur har process ka apna
+  `time.sleep` throttle sirf "main akela polite hoon" guarantee karta hai, "sab milkar account
+  limit cross na karein" nahi. `dhan_rate_limiter.py` ek sqlite-backed (stdlib, no extra dep)
+  cross-process token-bucket hai jo Dhan ke EVERY call (candle/ltp/order/margin) ko ek hi global
+  cap (`DHAN_RATE_LIMIT_PER_SEC`, default 3/sec) ke through route karta hai — `acquire(priority)`
+  call karo, slot milne tak block karta hai (fast poll, koi busy-loop CPU waste nahi). **Sabse
+  zaroori hissa: priority.** `"order"` priority ke liye 1 slot **hamesha reserved** hai — chahe
+  candle-scan/LTP-poll loop kitna bhi busy ho, ek real order ka slot kabhi nahi rukta. 429 aane pe
+  `note_429()` 8-second cooldown set karta hai jisme **non-order traffic poora ruk jaata hai**
+  (sirf orders chalte rehte hain) — taaki account jaldi recover kare aur fresh orders bhi atke
+  na rahein. Wired into: `brokers/dhan_broker.py` (quote/place_order/funds/candles — saari
+  strategies+webhook+universe_trader isi se guzarti hain), `_TRADERS/range_trader.py`,
+  `_TRADERS/rsi_trader.py`, `risk_gate.py` (margin-calculator + quick LTP), `trader_dashboard.py`
+  (manual order, close-position, order-status poll, Quick Order LTP, debug routes). v1
+  (`shared_ltp_cache`) abhi bhi chalta hai — dono saath kaam karte hain (cache=reuse, rate
+  limiter=throttle+priority jab cache miss ho).
 - **Fast detect:** `grep -c DH-904 logs/<strat>.log`; agar multiple traders ek saath chal rahe
-  to aggregate rate dekho.
+  to aggregate rate dekho. Rate-limiter ka apna state `data/dhan_rate_limiter.db` (sqlite) — agar
+  shaq ho ki orders queue ho rahe hain, isko delete karke restart karo (fresh state, koi data loss
+  nahi, sirf rolling counters hain).
 
 ---
 
@@ -221,6 +240,46 @@
 
 ---
 
+## TRAP #11 — WebSocket live feed never connects (`dhanhq` missing / wrong class imported)
+
+- **Symptom:** logs spam `[_ensure_feed_started] fail: No module named 'dhanhq'` (or, before
+  2026-06-24's fix, this failed completely silently via `except: pass`). `dhan_feed.LIVE` stays
+  permanently empty → `pos_monitor_loop`'s SL/TP/EOD-squareoff always falls back to the REST
+  `/v2/marketfeed/ltp` poll (works, but means 100% of LTP traffic goes through
+  `dhan_rate_limiter`'s "ltp" priority instead of a free push-based feed — see TRAP #2).
+- **Root pattern, TWO separate bugs stacked on top of each other:**
+  1. **Package not installed at all on the VPS** — `requirements.txt` listed `dhanhq` unpinned,
+     but `pip show dhanhq` on the VPS returned "Package(s) not found". Nobody had ever actually
+     run `pip install -r requirements.txt` there for this package (or it silently failed at some
+     point and nobody noticed because of bug #2 below hiding the real error).
+  2. **Code imported symbols that don't exist in the installed version** — `dhan_feed.py` did
+     `from dhanhq import DhanContext, MarketFeed`. The installed `dhanhq==2.0.2` exports
+     `DhanFeed`, `OrderSocket`, `dhanhq`, `marketfeed`, `orderupdate` — **no** `DhanContext`,
+     **no** `MarketFeed`. Checked PyPI history — no version of dhanhq 2.x ever exported those two
+     names; the original code was likely written against a different/hypothetical API shape and
+     never actually verified to import.
+- **Kahan kaata:** every live position's SL/TP/EOD-squareoff since the feature was built
+  (2026-06-24) — masked because the REST fallback (`_rest_ltp_fallback`, same TRAP #10 fix)
+  covered for it well enough that nobody noticed positions WERE still closing correctly, just via
+  REST instead of the (faster, rate-limit-free) WebSocket path.
+- **Permanent guard (2026-06-27):** rewrote `dhan_feed.py` against the ACTUALLY installed
+  `dhanhq.DhanFeed` class (confirmed via `inspect.getsource()` on the real installed package, not
+  docs/memory) — `DhanFeed(client_id, token, instruments, version='v2')`, instrument tuples
+  `(exchange_code:int, sec_id:str, 21)` where 21 = Full packet (5-level depth, same fields the old
+  `MarketFeed.Full` gave). Public API (`start/add/get_quote/LIVE`) unchanged — zero changes needed
+  in `smart_order.py`/`webhook_executor.py`/`trader_dashboard.py`. Pinned `dhanhq==2.0.2` in
+  `requirements.txt` (was unpinned — a future `pip install -U` could silently swap the exported
+  class names again). `pip install dhanhq==2.0.2` run on VPS venv. **Live-verified on VPS:**
+  WebSocket handshake (HTTP 101) + subscription accepted + ping/pong keepalive all confirmed
+  working; actual tick data not seen because the test ran after 15:30 IST market close — re-verify
+  during market hours by checking `dhan_feed.LIVE` is non-empty for a subscribed sec_id.
+- **Fast detect:** `python -c "from dhanhq import DhanFeed"` — if this raises `ImportError`, the
+  installed version's API has drifted again; re-run `inspect.getsource(dhanhq.DhanFeed.__init__)`
+  to see the real signature before assuming the old code is still right. `grep -c
+  _ensure_feed_started logs/*.log` for the old silent-failure symptom.
+
+---
+
 ## DEBUGGING PLAYBOOK — fast diagnosis order
 
 1. **Live state pehle, assumption baad me** (TRAP #3): `ps` se kaun chal raha hai; `orders` table
@@ -237,7 +296,107 @@
    expired hoga — poisoned empty-CSV marker delete karo, fresh token se re-run.
 8. **Naya risk-gate check likh rahe ho** → fail-closed default rakho (TRAP #10), fail-open sirf
    deliberate, commented exception ho.
-9. **Fix ke baad:** isi file me ek `LESSONS.md` entry add karo agar yeh dobara aa sakta hai.
+9. **"X feature already wired in" kisi purani note/changelog mein likha mile** → TRAP #12, trust
+   mat karo bina live state dekhe (e.g. `dhan_feed.LIVE` non-empty hai ya khaali, `ps` se process
+   chal raha hai ya nahi) — changelog "likha gaya" bata sakta hai, "kaam kar raha hai" nahi.
+10. **Fix ke baad:** isi file me ek `LESSONS.md` entry add karo agar yeh dobara aa sakta hai.
+
+---
+
+## TRAP #12 — "Feature built" ≠ "feature verified end-to-end" (REST quietly covered for a dead WebSocket for ~10 days)
+
+- **Symptom:** no error anywhere, no broken trade, nothing "wrong" — just every position's SL/TP
+  ran on a slower, rate-limited path for ~10 days (2026-06-17 → 2026-06-27) while everyone assumed
+  the WebSocket feed (built day 1, "Phase 1") was live. Found only because of an unrelated
+  rate-limiter audit (TRAP #2 v2), not because anything actually broke.
+- **Root pattern, two separate habits that combined to hide this:**
+  1. **Feature shipped without an end-to-end live check.** `dhan_feed.py` was written, wired into
+     `smart_order.py`, and never crashed loudly — `_ensure_feed_started()`'s `except: pass`
+     (until the 2026-06-24 fix made it log) meant "the code exists and doesn't crash" was silently
+     treated as "the feature works." Nobody ever asked `dhan_feed.LIVE` was actually non-empty.
+  2. **REST calls always reached for the narrowest endpoint.** Every LTP call in this repo uses
+     `/v2/marketfeed/ltp` (LTP only) — copy-pasted forward into every new file (manual order, risk
+     gate, every `_TRADERS/*.py`) — even though Dhan also offers `/v2/marketfeed/ohlc` and
+     `/v2/marketfeed/quote` (same call, richer response: OHLC/volume/avg-price/buy-sell-qty too).
+     Once one file did it the narrow way, every later file copied the same pattern without anyone
+     re-checking what Dhan actually offers.
+- **Permanent guard:** TRAP #11's fix (verified WebSocket connect on the actual VPS, not just "the
+  code compiles") is the direct fix for habit #1. For habit #2: when adding a new REST quote call,
+  check whether `/quote` (richer, same cost) fits before defaulting to `/ltp` — there's no extra
+  rate-limit cost since `dhan_rate_limiter` gates per-call not per-field.
+  - **2026-06-27 follow-up:** Open Positions' LTP (`dhan_feed.get_quote()` calls already in
+    `trader_dashboard.py` + the `/api/ltp-stream` SSE route) was ALREADY wired to prefer the live
+    feed before REST — it just never benefited because the feed itself was dead (TRAP #11). Once
+    fixed, it works automatically, no extra change needed there.
+  - **Quick Order widget (`/api/option-ltp`) was the one path NOT wired to the feed at all** — it
+    had its own independent REST-only cache (`_ltp_cache`, was 30s TTL specifically to dodge
+    DH-904 since every call hit Dhan directly). Fixed: now tries `dhan_feed.get_quote()` for both
+    the index price and CE/PE premiums first, REST only for whatever the feed doesn't have yet;
+    REST calls that DO still happen now go through `dhan_rate_limiter` (were missed in the
+    original rate-limiter wiring pass — found while doing this fix); cache TTL dropped 30s→2s
+    since a feed-served read costs Dhan nothing, so a short TTL no longer means more Dhan calls.
+- **General principle worth re-reading before any "Phase N" feature claim:** a feature is not
+  "done" until someone has watched its actual runtime state (a populated dict, a non-empty log
+  line, a real packet on the wire) — not just "the code imports and doesn't throw." Apply this to
+  any future "X is wired in" claim in this file or `ARCHITECTURE_LOG.md` — re-verify live state,
+  don't just trust the changelog entry (this is also TRAP #3's lesson, one level up: don't trust
+  what *should* be running, check what *is*).
+- **Fast detect:** for any "live feed"/"webhook"/"background daemon" feature, the verification
+  command should always be "show me the populated runtime state right now" — e.g.
+  `dhan_feed.LIVE` non-empty during market hours — not `grep -c "started successfully"` in a log.
+
+---
+
+## TRAP #13 — Zerodha (Kite) was a broker name, not a broker — `get_broker("kite")` always crashed 🔴🔴🔴
+
+**Symptom:** any live position opened with `broker="kite"` could never be auto-squared-off (SL hit,
+target hit, RMS max-loss breach, 3:15 EOD) — `pos_monitor_loop`'s `_do_squareoff()` would throw
+before even reaching the order call, leaving the position open forever (retried every 5s cycle,
+failed identically every time). Pre-entry funds/margin checks for Kite would also throw.
+
+**Root cause:** `brokers/__init__.py`'s `get_broker("kite")` does `from .kite_broker import
+KiteBroker` — but `kite_broker.py` had ONLY loose module-level functions (`place_order`,
+`get_positions`, `get_ltp`), never a `KiteBroker(BaseBroker)` class. The import always raised
+`ImportError`. This sat undetected because `dhan_real_margin`/Dhan-only code paths never exercised
+it, and no live Kite order had been placed through the engine yet — "feature built ≠ feature
+verified" (see TRAP #12) struck again, one layer up: this time the feature wasn't even built, just
+named in a config comment (`"broker": "dhan" | "kite"`).
+
+**Second bug found in the same area:** the old `dhan_sym_to_kite()` string-converter assumed Dhan's
+trading-symbol format was `NAME-MonYYYY-strike-CE/PE` (e.g. `"NIFTY-Jun2026-23950-CE"`) — but Dhan's
+real format includes the **day**: `"NIFTY-28Jun2026-23950-CE"`. The old code's `mon_yr[:3]` therefore
+sliced `"28J"` as the "month", producing a garbage/non-existent Kite symbol on every single call —
+every Kite order would have been rejected (or worse, silently routed to whatever symbol that garbage
+string happened to collide with). NIFTY's weekly-expiry Kite symbol format (single-letter month +
+day code) also can't be represented by *any* string-guess scheme — only an exact instrument-dump
+match handles it correctly.
+
+**Fix (2026-06-28):**
+- `brokers/kite_broker.py` now has a real `KiteBroker(BaseBroker)` class — `place_order`/`quote`/
+  `funds`/`intraday_candles`. Per the file's own documented design ("DATA always Dhan, ORDERS via
+  Kite"), `quote()`/`intraday_candles()` delegate to `DhanBroker` rather than calling Kite's own
+  (separately rate-limited) market-data endpoints.
+- New `resolve_kite_symbol()` — matches Dhan's `(name, expiry date, strike, CE/PE)` against Kite's
+  own `kite.instruments("NFO")` dump (cached per day) for an **exact** symbol, format-agnostic
+  (works for both monthly and weekly expiries). The old `dhan_sym_to_kite()` string-guess (now with
+  the day-parsing bug also fixed) is kept only as a last-resort fallback if the instrument dump is
+  unreachable, and logs loudly when used so a wrong-symbol order is never silent.
+- New `kite_rate_limiter.py` — Kite Connect has its own separate account-wide rate limit from Dhan's;
+  reusing `dhan_rate_limiter` would have been wrong (different account, different quota). Same
+  sqlite cross-process token-bucket pattern, own DB file, conservative default (3/sec, 1 reserved
+  for "order" priority).
+- `kiteconnect` package was **not installed anywhere** (not local, not VPS) — every Kite call would
+  also have failed at `import kiteconnect` regardless of the class fix. Installed + pinned in
+  `requirements.txt`.
+
+**Permanent guard:** before trusting ANY "broker: X" config option works, actually instantiate
+`get_broker(X)` and check it has every method the engine calls (`place_order`, `quote`, `funds`) —
+`hasattr`/abstract-class enforcement catches a missing implementation at import time instead of at
+3 AM when a live position can't be closed.
+
+**Fast detect:** `python -c "from brokers import get_broker; get_broker('kite').name()"` — if this
+raises, no Kite-routed position (entry OR exit) can ever work, full stop. Run this after any change
+to `brokers/` before assuming a second broker is live-ready.
 
 ---
 

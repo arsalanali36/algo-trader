@@ -65,6 +65,7 @@ TC_FILE     = BASE_DIR / "nifty_config.json"           # strategy params
 # dhan_master (sibling at root) — import path set by dashboard already,
 # but set here too so this file works standalone as well.
 sys.path.insert(0, str(BASE_DIR))
+import dhan_rate_limiter as _rl
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  DEFAULT SYMBOL LIST
@@ -196,10 +197,13 @@ def fetch_candles(symbol, tf, token, cid):
             "fromDate":        today,
             "toDate":          today,
         }
+        _rl.acquire("candle")
         r = requests.post(INTRADAY_URL, json=body,
                           headers={"access-token": token, "client-id": cid,
                                    "Content-Type": "application/json"},
                           timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code != 200:
             return None
 
@@ -303,7 +307,10 @@ def place_order(sym, side, qty, token, cid, sec_id, seg, trad_sym, log):
         "afterMarketOrder": False, "amoTime": "OPEN",
     }
     try:
+        _rl.acquire("order")
         r    = requests.post(ORDERS_URL, json=payload, headers=hdrs(token, cid), timeout=20)
+        if r.status_code == 429:
+            _rl.note_429()
         resp = r.json() if r.content else {}
         if r.status_code == 200:
             log.info(f"  [LIVE] {side} {trad_sym} qty={qty}  orderId={resp.get('orderId','?')}")
@@ -324,8 +331,11 @@ def _opt_ltp(sec_id, token, cid):
         return 0.0
     for _i in range(3):
         try:
+            _rl.acquire("ltp")
             r = requests.post(MARKETFEED_LTP, json={"NSE_FNO": [int(sec_id)]},
                               headers=hdrs(token, cid), timeout=5)
+            if r.status_code == 429:
+                _rl.note_429()
             if r.status_code == 200:
                 data = r.json().get("data", {}).get("NSE_FNO", {})
                 for v in (data.values() if isinstance(data, dict) else []):

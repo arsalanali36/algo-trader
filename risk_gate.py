@@ -110,6 +110,8 @@ def dhan_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY"):
         return None
     try:
         import requests
+        import dhan_rate_limiter as _rl
+        _rl.acquire("account")
         r = requests.post("https://api.dhan.co/v2/margincalculator",
             json={"dhanClientId": cid, "exchangeSegment": seg,
                   "transactionType": str(side).upper(), "quantity": int(qty),
@@ -117,6 +119,8 @@ def dhan_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY"):
                   "price": float(price), "triggerPrice": 0},
             headers={"access-token": token, "client-id": cid, "Content-Type": "application/json"},
             timeout=6)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code != 200:
             return None
         d = r.json() or {}
@@ -210,10 +214,14 @@ def _quick_option_ltp(sec_id, token, cid):
     any failure — caller should fall back to a spot/estimate price."""
     try:
         import requests
+        import dhan_rate_limiter as _rl
+        _rl.acquire("ltp")
         r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                           json={"NSE_FNO": [int(sec_id)]},
                           headers={"access-token": token, "client-id": cid, "Content-Type": "application/json"},
                           timeout=5)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code != 200:
             return None
         data = r.json().get("data", {}).get("NSE_FNO", {})
@@ -556,3 +564,40 @@ def shadow_live_enabled(strategy):
     if v is None:
         v = (rc.get("global", {}) or {}).get("shadow_live")
     return bool(v)
+
+
+def hedge_config(strategy):
+    """Auto-hedge settings for naked option-SELL strategies (currently
+    range_trader). Per-strategy overrides global; absent on both = hedge OFF.
+    nifty_config.json["_risk"]["global"/"per_strategy"]["hedge_offset_strikes"
+    / "hedge_max_premium_rs"].
+
+    hedge_offset_strikes: MINIMUM strikes further OTM than the sold leg.
+    hedge_max_premium_rs: if set, the hedge keeps walking further OTM (beyond
+    the minimum above) until it finds a strike whose premium is at or below
+    this ₹ amount — cheaper insurance, common ask for NIFTY where strikes are
+    close together and a fixed strike-count can still be expensive.
+    Whichever of the two lands FURTHER OTM wins (the safer/cheaper one) —
+    the minimum is a floor, never a ceiling.
+
+    Returns (offset_strikes:int, max_premium_rs:float|None). offset_strikes==0
+    and max_premium_rs is None means hedge is OFF.
+    """
+    rc = _risk_cfg()
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
+    g = (rc.get("global", {}) or {})
+    offset = ps.get("hedge_offset_strikes")
+    if offset is None:
+        offset = g.get("hedge_offset_strikes")
+    max_prem = ps.get("hedge_max_premium_rs")
+    if max_prem is None:
+        max_prem = g.get("hedge_max_premium_rs")
+    try:
+        offset = int(offset) if offset else 0
+    except (TypeError, ValueError):
+        offset = 0
+    try:
+        max_prem = float(max_prem) if max_prem else None
+    except (TypeError, ValueError):
+        max_prem = None
+    return offset, max_prem

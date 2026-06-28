@@ -17,6 +17,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, Response, send_from_directory
 import time as _time
 import threading as _threading
+import dhan_rate_limiter as _rl
 
 # IPv4 force — Dhan rejects IPv6 (DH-905). Must be here, not just in range_trader.
 _orig_gai = socket.getaddrinfo
@@ -710,6 +711,7 @@ def api_kite_test_order():
         import json, requests
         cfg = json.loads((BASE_DIR / "data" / "config.json").read_text())
         headers = {"access-token": cfg["jwt_token"], "client-id": cfg["client_id"], "Content-Type": "application/json"}
+        _rl.acquire("ltp")
         r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                           json={"IDX_I": [13]}, headers=headers, timeout=5)
         nifty_price = float(r.json()["data"]["IDX_I"]["13"]["last_price"])
@@ -724,6 +726,7 @@ def api_kite_test_order():
         kite_sym = kite_broker.dhan_sym_to_kite(trad_sym)
 
         # LTP Dhan se lo (Personal app mein Kite quotes nahi)
+        _rl.acquire("ltp")
         r2 = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                            json={"NSE_FNO": [int(sec_id)]}, headers=headers, timeout=5)
         ltp = float(r2.json()["data"]["NSE_FNO"][str(sec_id)]["last_price"])
@@ -938,13 +941,20 @@ def api_ltp_stream():
 
 # Cache: (symbol, offset) -> {result, ts}
 _ltp_cache = {}
-_LTP_CACHE_TTL = 30  # seconds — was 3 (caused Dhan 429: 2 dashboards + live
-                     # strategies share one token). 30s = far fewer LTP calls,
-                     # fine for a preview (esp. market-closed last price).
+# 2026-06-27: dropped 30s -> 2s. The 30s TTL was compensating for every call
+# hitting Dhan REST directly; now api_option_ltp() reads dhan_feed's live
+# WebSocket feed first (free, no rate-limit cost) and only falls back to
+# REST for whatever the feed doesn't have yet — so a short TTL no longer
+# means "more Dhan calls", just "fresher Quick Order price".
+_LTP_CACHE_TTL = 2
 
 @app.route('/api/option-ltp')
 def api_option_ltp():
-    """CE/PE LTP for Quick Order widget. Cached 15s to avoid Dhan 429."""
+    """CE/PE LTP for Quick Order widget. Prefers the live dhan_feed WebSocket
+    (free, no rate-limit cost, sub-second) — REST is only the fallback for
+    whatever the feed doesn't have yet (e.g. just-resolved strike, not
+    subscribed long enough). 30s REST cache stays as a safety net for when
+    the feed genuinely has nothing (market closed, feed reconnecting)."""
     import time as _t
     symbol = request.args.get('symbol', 'NIFTY')
     offset = int(request.args.get('offset', 0))
@@ -956,30 +966,46 @@ def api_option_ltp():
         return jsonify(cached['data'])
 
     try:
-        import dhan_master, range_trader, requests as _req
+        import dhan_master, range_trader, requests as _req, dhan_feed
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
 
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
         _idx_id  = _idx_sec.get(symbol, "13")
-        _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
-                             json={"IDX_I": [int(_idx_id)]}, headers=headers, timeout=5)
-        if _qr_idx.status_code != 200:
-            # index call rate-limited/failed — show last good value instead of erroring
-            if cached:
-                return jsonify({**cached['data'], '_stale': True})
-            return jsonify({"ok": False, "msg": "LTP busy (Dhan rate limit) — thodi der me"})
-        idx_price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
+        _feed_subscribe([("IDX_I", _idx_id)])
+
+        idx_price = float(dhan_feed.get_quote(_idx_id).get("ltp") or 0) or None
+        if not idx_price:
+            _rl.acquire("ltp")
+            _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                                 json={"IDX_I": [int(_idx_id)]}, headers=headers, timeout=5)
+            if _qr_idx.status_code == 429:
+                _rl.note_429()
+            if _qr_idx.status_code != 200:
+                # index call rate-limited/failed — show last good value instead of erroring
+                if cached:
+                    return jsonify({**cached['data'], '_stale': True})
+                return jsonify({"ok": False, "msg": "LTP busy (Dhan rate limit) — thodi der me"})
+            idx_price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
 
         sec_ce, t_ce, _ = dhan_master.get_option_contract(symbol, idx_price, "CE", offset)
         sec_pe, t_pe, _ = dhan_master.get_option_contract(symbol, idx_price, "PE", offset)
 
-        ltp_ce = ltp_pe = None
-        sec_ids = [int(s) for s in [sec_ce, sec_pe] if s]
-        if sec_ids:
-            _t.sleep(1.1)   # Dhan marketfeed ~1 req/sec — space the 2nd call from the index call
+        if sec_ce:
+            _feed_subscribe([("NSE_FNO", sec_ce)])
+        if sec_pe:
+            _feed_subscribe([("NSE_FNO", sec_pe)])
+
+        ltp_ce = float(dhan_feed.get_quote(sec_ce).get("ltp") or 0) or None if sec_ce else None
+        ltp_pe = float(dhan_feed.get_quote(sec_pe).get("ltp") or 0) or None if sec_pe else None
+
+        missing_ids = [int(s) for s, l in [(sec_ce, ltp_ce), (sec_pe, ltp_pe)] if s and not l]
+        if missing_ids:
+            _rl.acquire("ltp")
             qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
-                           json={"NSE_FNO": sec_ids}, headers=headers, timeout=5)
+                           json={"NSE_FNO": missing_ids}, headers=headers, timeout=5)
+            if qr.status_code == 429:
+                _rl.note_429()
             if qr.status_code == 200:
                 fno = qr.json().get("data", {}).get("NSE_FNO", {})
                 for sid_str, v in (fno.items() if isinstance(fno, dict) else []):
@@ -990,7 +1016,8 @@ def api_option_ltp():
                 # Rate limited — return stale cache if available
                 if cached:
                     return jsonify({**cached['data'], '_stale': True})
-                return jsonify({"ok": False, "msg": "Rate limit (429) — retry in 15s"})
+                if not (ltp_ce or ltp_pe):
+                    return jsonify({"ok": False, "msg": "Rate limit (429) — retry in 15s"})
 
         result = {"ok": True, "ce_sym": t_ce, "ce_ltp": ltp_ce, "pe_sym": t_pe, "pe_ltp": ltp_pe}
         _ltp_cache[cache_key] = {"data": result, "ts": _t.time()}
@@ -1154,6 +1181,7 @@ def _dhan_live_fate(resp, token, cid):
         _t.sleep(1.2)
         try:
             h = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+            _rl.acquire("order")
             rr = _rq.get(f"https://api.dhan.co/v2/orders/{oid}", headers=h, timeout=6)
             if rr.status_code == 200:
                 d = rr.json()
@@ -1324,6 +1352,7 @@ def api_manual_order():
         _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
         _idx_id  = _idx_sec.get(symbol, "13")
+        _rl.acquire("ltp")
         _qr_idx  = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                                  json={"IDX_I": [int(_idx_id)]}, headers=_hdrs, timeout=5)
         price = float(_qr_idx.json()["data"]["IDX_I"][_idx_id]["last_price"])
@@ -1416,7 +1445,10 @@ def api_manual_order():
             return jsonify({'ok': True, 'msg': f'[PAPER] {side} {lots}L ({qty_shares} qty) {t_sym} @ {option_ltp:.2f}'})
 
         hdrs_dict = range_trader.hdrs(token, cid)
+        _rl.acquire("order")
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs_dict, timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         print(f"[MANUAL ORDER] status={r.status_code} resp={r.text}", flush=True)
         if r.status_code == 200:
             ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
@@ -1525,7 +1557,10 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
             'quantity': qty_shares, 'price': 0, 'triggerPrice': 0,
         }
         hdrs = range_trader.hdrs(token, cid)
+        _rl.acquire("order")
         r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code == 200:
             ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
             if not ok_fill:
@@ -1607,6 +1642,7 @@ def api_debug_order():
         ipv4_active = sk.getaddrinfo.__name__ == '_v4'
         token, cid = _creds()
         _hdrs_dbg = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _rl.acquire("ltp")
         _qr_dbg   = req.post("https://api.dhan.co/v2/marketfeed/ltp",
                              json={"IDX_I": [13]}, headers=_hdrs_dbg, timeout=5)
         price = float(_qr_dbg.json()["data"]["IDX_I"]["13"]["last_price"])
@@ -1618,7 +1654,10 @@ def api_debug_order():
             'quantity': 65, 'price': 0, 'triggerPrice': 0,
         }
         hdrs = range_trader.hdrs(token, cid)
+        _rl.acquire("order")
         r = req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         return jsonify({'ipv4_patch': ipv4_active, 'status': r.status_code,
                         'dhan_response': r.text, 'body_sent': body,
                         'token_preview': token[-10:] if token else 'NONE'})

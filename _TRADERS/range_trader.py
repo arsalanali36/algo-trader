@@ -23,6 +23,7 @@ import sys
 # at the project root is otherwise not importable.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dhan_master
+import dhan_rate_limiter as _rl
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -230,10 +231,13 @@ def fetch_daily(symbol, days=22):
     frm = (_date.fromordinal(today.toordinal() - max(days * 2, 60))).isoformat()
     token, cid = load_creds()
     try:
+        _rl.acquire("candle")
         r = requests.post(HIST_URL,
             json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
                   "expiryCode": 0, "fromDate": frm, "toDate": today.isoformat()},
             headers=hdrs(token, cid), timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code != 200:
             log.error(f"fetch_daily {symbol}: HTTP {r.status_code} — {r.text[:200]}")
             return None
@@ -489,12 +493,14 @@ def fetch_1m(symbol, tf="1m"):
     try:
         r = None
         for _attempt in range(3):
+            _rl.acquire("candle")
             r = requests.post(INTRADAY_URL,
                 json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
                       "interval": interval, "fromDate": frm, "toDate": today.isoformat()},
                 headers=hdrs(token, cid), timeout=10)
             if r.status_code != 429:
                 break
+            _rl.note_429()
             wait = 2.0 * (_attempt + 1)  # 2s, 4s, 6s
             log.warning(f"fetch_1m {symbol}: DH-904 rate limit, backing off {wait}s (attempt {_attempt+1}/3)")
             time.sleep(wait)
@@ -528,7 +534,84 @@ def fetch_1m(symbol, tf="1m"):
 _STRAT_ID = "range"   # set by main() to the running variation's config key (trade DB tag)
 
 
-def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None):
+def _fetch_premium(sec_id, token, cid):
+    """Real option premium for sec_id — shared cross-process cache -> direct
+    Dhan call (DH-904 backoff) -> wider stale cache. Returns None if nothing
+    real is available (caller must never fall back to ₹0 — LESSONS.md TRAP #1)."""
+    _ensure_root_path()
+    opt_ltp = None
+    try:
+        import shared_ltp_cache
+        opt_ltp = shared_ltp_cache.get(sec_id, max_age=15)
+    except Exception:
+        opt_ltp = None
+    if opt_ltp:
+        return opt_ltp
+    for _attempt in range(3):
+        try:
+            _rl.acquire("ltp")
+            qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                               json={"NSE_FNO": [int(sec_id)]},
+                               headers=hdrs(token, cid), timeout=5)
+            if qr.status_code == 429:
+                _rl.note_429()
+                time.sleep(1.0 * (_attempt + 1))
+                continue
+            if qr.status_code == 200:
+                qdata = qr.json().get("data", {}).get("NSE_FNO", {})
+                for v in (qdata.values() if isinstance(qdata, dict) else []):
+                    ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
+                    if ltp_v:
+                        opt_ltp = ltp_v
+                break
+        except Exception:
+            break
+    if opt_ltp:
+        try:
+            import shared_ltp_cache
+            shared_ltp_cache.put(sec_id, opt_ltp)
+        except Exception:
+            pass
+        return opt_ltp
+    try:
+        import shared_ltp_cache
+        return shared_ltp_cache.get_stale(sec_id, max_age=120)
+    except Exception:
+        return None
+
+
+def resolve_hedge_contract(symbol, spot_price, option_type, sell_offset, min_offset_strikes,
+                            max_premium_rs, token, cid, max_search=15):
+    """Pick the hedge BUY strike for a sold leg: at LEAST `min_offset_strikes`
+    further OTM than the sold leg, and if `max_premium_rs` is set, keep walking
+    further OTM beyond that floor until premium <= max_premium_rs (cheaper
+    insurance — common for NIFTY where a fixed strike-count can still cost a
+    lot). Whichever lands FURTHER OTM wins; the strike-count is a floor, not a
+    ceiling. Returns (sec_id, trad_sym, lot_size, offset_used) or (None,)*4."""
+    if not min_offset_strikes and not max_premium_rs:
+        return None, None, None, None
+    base_offset = sell_offset + max(int(min_offset_strikes or 0), 1)
+    h_sec_id, h_t_sym, h_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, base_offset)
+    if not max_premium_rs:
+        return (h_sec_id, h_t_sym, h_lot, base_offset) if h_sec_id else (None, None, None, None)
+
+    offset = base_offset
+    for _i in range(max_search):
+        if not h_sec_id:
+            break
+        prem = _fetch_premium(h_sec_id, token, cid)
+        if prem is not None and prem <= max_premium_rs:
+            return h_sec_id, h_t_sym, h_lot, offset
+        offset += 1
+        h_sec_id, h_t_sym, h_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, offset)
+    # ran out of strikes / no premium data — fall back to the strike-count floor
+    if h_sec_id:
+        return h_sec_id, h_t_sym, h_lot, offset
+    fb_sec_id, fb_t_sym, fb_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, base_offset)
+    return (fb_sec_id, fb_t_sym, fb_lot, base_offset) if fb_sec_id else (None, None, None, None)
+
+
+def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id=""):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -569,10 +652,12 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         if not opt_ltp:
             for _attempt in range(3):
                 try:
+                    _rl.acquire("ltp")
                     qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                                        json={"NSE_FNO": [int(sec_id)]},
                                        headers=hdrs(token, cid), timeout=5)
                     if qr.status_code == 429:
+                        _rl.note_429()
                         time.sleep(1.0 * (_attempt + 1))
                         continue
                     if qr.status_code == 200:
@@ -615,7 +700,7 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
                 instrument=('options' if seg == 'NSE_FNO' else 'equity'),
                 trad_sym=trad_sym, sec_id=sec_id, segment=seg,
                 correlation_id=f'RANGE_{trad_sym}_{ts}', broker_order_id=oid, status=status_,
-                tags=list(extra_tags) if extra_tags else None)
+                tags=list(extra_tags) if extra_tags else None, group_id=group_id)
         except Exception:
             pass
 
@@ -634,14 +719,20 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
             import risk_gate
             if risk_gate.shadow_live_enabled(_STRAT_ID):
                 shadow_body = dict(body, correlationId=f"RANGE_{trad_sym}_{ts}_SHADOW")
+                _rl.acquire("order")
                 sr = requests.post(ORDERS_URL, json=shadow_body, headers=hdrs(token, cid), timeout=10)
+                if sr.status_code == 429:
+                    _rl.note_429()
                 log.info(f"[BROKER-SHADOW] {trad_sym} {side} {qty} @ {price:.2f} -> "
                         f"HTTP {sr.status_code} — {sr.text[:200]} — paper fill unaffected")
         except Exception as e:
             log.warning(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
         return True
     try:
+        _rl.acquire("order")
         r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code == 200:
             log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
             _rec('filled')
@@ -883,13 +974,41 @@ def main(strategy_id="range"):
                             default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, symbol)
                         except Exception:
                             default_sl_tags = []
-                        if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price, extra_tags=default_sl_tags):
+                        try:
+                            import risk_gate
+                            hedge_min_strikes, hedge_max_premium = risk_gate.hedge_config(strategy_id)
+                        except Exception:
+                            hedge_min_strikes, hedge_max_premium = 0, None
+                        hedge_on = bool(hedge_min_strikes or hedge_max_premium)
+                        group_id = f"RANGE_{symbol}_{int(time.time())}" if hedge_on else ""
+                        if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price, extra_tags=default_sl_tags, group_id=group_id):
                             # premium unavailable → entry skipped, leave flat so a
                             # later signal can retry (no phantom 0-price position)
                             continue
                         st["opt_sec_id"] = sec_id
                         st["opt_trad_sym"] = t_sym
                         st["opt_qty"] = actual_qty
+
+                        # ── auto-hedge BUY (opt-in, RMS tab "Hedge" fields) —
+                        # at least hedge_min_strikes further OTM than the sold
+                        # leg, and if hedge_max_premium is set, further still
+                        # until premium <= that ₹ amount (further-OTM wins).
+                        # Best-effort: contract-resolve/premium-fetch failure
+                        # logs+skips, never unwinds the SELL that already
+                        # filled above. ──
+                        if hedge_on:
+                            try:
+                                h_sec_id, h_t_sym, _h_lot, h_offset = resolve_hedge_contract(
+                                    symbol, price, opt_type, offset, hedge_min_strikes,
+                                    hedge_max_premium, token, cid)
+                                if h_sec_id:
+                                    place_order(symbol, "BUY", actual_qty, token, cid, mode,
+                                                h_sec_id, "NSE_FNO", h_t_sym, group_id=group_id)
+                                else:
+                                    log.warning(f"[HEDGE] contract resolve failed for {symbol} "
+                                                f"{opt_type} — hedge leg skipped")
+                            except Exception as _e:
+                                log.warning(f"[HEDGE] failed (sell leg unaffected): {_e}")
                     else:
                         log.error(f"Option contract not found for {symbol} {opt_type}")
                 else:

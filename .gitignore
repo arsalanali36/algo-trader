@@ -27,3 +27,10 @@ data/downloader_alert.json
 _TRADING_DATA/
 data/note_images/
 data/shared_ltp_cache.json
+data/backtest.db
+data/dhan_rate_limiter.db
+data/kite_rate_limiter.db
+data/downloader_log.json
+data/sec_id_cache.json
+data/trade_log.json
+data/rsi_v1_watch.json

@@ -17,6 +17,7 @@ from typing import Optional
 import requests
 
 from .base_broker import BaseBroker
+import dhan_rate_limiter as _rl
 
 # --- IPv4 force (DH-905) — MUST be before any Dhan network call ---
 _orig_gai = socket.getaddrinfo
@@ -67,6 +68,7 @@ class DhanBroker(BaseBroker):
         today = _dt.date.today()
         frm = (today - _dt.timedelta(days=days)).isoformat()
         to  = today.isoformat()
+        _rl.acquire("candle")
         r = self._get_sdk().intraday_minute_data(
             str(sec_id), seg, instrument, frm, to, interval)
         if r.get("status") != "success":
@@ -100,8 +102,11 @@ class DhanBroker(BaseBroker):
 
         key = _LTP_SEG.get(seg, "NSE_EQ")
         try:
+            _rl.acquire("ltp")
             r = requests.post(LTP_URL, json={key: [int(sec_id)]},
                               headers=self._hdrs(), timeout=5)
+            if r.status_code == 429:
+                _rl.note_429()
             if r.status_code == 200:
                 node = r.json().get("data", {}).get(key, {}) or {}
                 for _sid, v in node.items():
@@ -135,7 +140,10 @@ class DhanBroker(BaseBroker):
             "triggerPrice":    0,
         }
         try:
+            _rl.acquire("order")
             r = requests.post(ORDERS_URL, json=body, headers=self._hdrs(), timeout=10)
+            if r.status_code == 429:
+                _rl.note_429()
             raw = r.json() if r.headers.get("content-type", "").startswith("application/json") else r.text
             if r.status_code == 200:
                 oid = (raw or {}).get("orderId") if isinstance(raw, dict) else None
@@ -151,10 +159,13 @@ class DhanBroker(BaseBroker):
 
     def funds(self) -> dict:
         try:
+            _rl.acquire("account")
             r = self._get_sdk().get_fund_limits()
             if r.get("status") == "success":
                 d = r.get("data", {}) or {}
                 return {"available": float(d.get("availabelBalance", 0) or 0), "raw": d}
         except Exception:
             pass
+        # NOTE: caller (risk_gate.check_broker_funds) must treat {} as
+        # "balance unknown" and fail-closed, not "balance is zero/fine".
         return {}
