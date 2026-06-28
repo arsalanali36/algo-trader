@@ -41,9 +41,10 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
       1. gating_status   — cheap pre-check, no LTP call (per-strategy hard
                             block: daily-loss breached / capital fully used)
       2. check_drawdown  — global daily drawdown circuit breaker
-      3. check_concentration — cross-strategy exposure cap per underlying
-      4. check_capital   — capital_rs allocation (size-down if configured)
-      5. check_broker_funds — LIVE mode only, real broker balance vs needed ₹
+      3. check_contract_liquidity — live market-depth liquidity (NSE_FNO only)
+      4. check_concentration — cross-strategy exposure cap per underlying
+      5. check_capital   — capital_rs allocation (size-down if configured)
+      6. check_broker_funds — LIVE mode only, real broker balance vs needed ₹
 
     Returns (proceed: bool, qty: int, reason: str). `qty` may be SIZED DOWN
     from `lots * lot_size` if capital_mode="size_down" let it fit a smaller
@@ -63,6 +64,11 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
         dd_ok, dd_reason = risk_gate.check_drawdown()
         if not dd_ok:
             return False, 0, dd_reason
+
+        if sec_id and seg == "NSE_FNO" and risk_gate.liquidity_filter_enabled(strategy_id):
+            liq_ok, liq_reason, _liq_details = check_contract_liquidity(sec_id, lot_size, log=log)
+            if not liq_ok:
+                return False, 0, liq_reason
 
         price = float(est_price or 0)
         if price > 0:
@@ -87,6 +93,126 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
         return False, 0, f"risk gate check failed (fail-closed): {e}"
 
     return True, qty, ""
+
+
+def check_contract_liquidity(sec_id, lot_size, now=None, log=print):
+    """Live market-depth liquidity gate for ONE option CONTRACT (not the
+    underlying stock — a specific strike can be thin even on a liquid name,
+    and vice versa). User-specified thresholds (2026-06-28), checked with an
+    OR-style "any 2 of 3" pass rule rather than requiring all three — a
+    contract that's a bit weak on ONE dimension but solid on the other two is
+    still tradeable; requiring every single check is what made the old
+    static stock whitelist (`universe.LIQUID_PREMIUM`) so restrictive:
+
+      - spread_pct  = (best_ask - best_bid) / ltp * 100   — PASS if <= 1.5
+      - volume_lots = day_cumulative_volume / lot_size     — PASS if >= 500
+        (>= 50 before 9:45 AM IST — cumulative volume is naturally low early
+        in the session; a fixed 500 floor would reject every single contract
+        in the first 15 minutes regardless of real liquidity)
+      - oi_lots     = open_interest / lot_size             — PASS if >= 300
+
+    Data source: `dhan_feed.LIVE` (WebSocket Full packet — has bid/ask/ltp/
+    oi/volume already, zero extra Dhan calls) first; falls back to a direct
+    `/v2/marketfeed/quote` REST call (rate-limited, "ltp" priority) if the
+    feed has no data yet for this contract (cold subscribe, or the feed
+    itself is degraded — see LESSONS.md TRAP #12, the feed's live-tick
+    reliability wasn't fully end-to-end verified during market hours).
+
+    If NEITHER source has live depth data at all (not "thin", just genuinely
+    unavailable), this FAILS OPEN (returns ok=True) with a loud warning —
+    this is a new liquidity *enhancement*, not a P&L-correctness guard like
+    the ₹0-fill tripwire (TRAP #1); blocking every trade because a brand-new
+    data path is briefly unavailable would be a worse outcome than letting
+    a trade through unchecked once. A contract WITH data that's simply thin
+    still fails closed (2-of-3 rule above) — that distinction is the whole
+    point of this fail-open-on-NO-data vs fail-closed-on-BAD-data split.
+
+    Returns (ok: bool, reason: str, details: dict) — details always present
+    (even on a pass, or when no data at all) for logging."""
+    import dhan_feed
+    q = dhan_feed.get_quote(sec_id)
+    bid, ask, ltp = q.get("bid"), q.get("ask"), q.get("ltp")
+    volume, oi = q.get("volume"), q.get("oi")
+
+    if not (bid and ask and ltp):
+        rq = _rest_quote_fallback(sec_id)
+        if rq:
+            bid, ask, ltp = rq.get("bid"), rq.get("ask"), rq.get("ltp")
+            volume, oi = rq.get("volume"), rq.get("oi")
+
+    try:
+        bid, ask, ltp = float(bid or 0), float(ask or 0), float(ltp or 0)
+    except (TypeError, ValueError):
+        bid = ask = ltp = 0.0
+
+    if not (bid and ask and ltp):
+        log(f"[LIQUIDITY] no live market-depth data for sec_id={sec_id} — "
+            f"failing OPEN (data unavailable, not confirmed illiquid)")
+        return True, "", {"data_available": False}
+
+    spread_pct = ((ask - bid) / ltp) * 100
+    spread_ok = spread_pct <= 1.5
+
+    if now is None:
+        import dhan_master
+        now = dhan_master.ist_now()
+    vol_floor = 50 if (now.hour, now.minute) < (9, 45) else 500
+    volume_lots = (float(volume or 0)) / lot_size if lot_size else 0
+    volume_ok = volume_lots >= vol_floor
+
+    oi_lots = (float(oi or 0)) / lot_size if lot_size else 0
+    oi_ok = oi_lots >= 300
+
+    details = {
+        "data_available": True,
+        "spread_pct": round(spread_pct, 2), "spread_ok": spread_ok,
+        "volume_lots": round(volume_lots, 1), "volume_ok": volume_ok, "vol_floor": vol_floor,
+        "oi_lots": round(oi_lots, 1), "oi_ok": oi_ok,
+    }
+    passed = sum([spread_ok, volume_ok, oi_ok])
+    if passed >= 2:
+        return True, "", details
+    reason = (f"illiquid contract — only {passed}/3 liquidity checks passed "
+              f"(spread={spread_pct:.2f}% vol={volume_lots:.0f}L oi={oi_lots:.0f}L, "
+              f"need spread<=1.5% / vol>={vol_floor}L / oi>=300L, any 2 of 3)")
+    return False, reason, details
+
+
+def _rest_quote_fallback(sec_id, seg="NSE_FNO"):
+    """One-shot REST fallback for liquidity data when dhan_feed has nothing
+    yet for this contract. Returns {'bid','ask','ltp','volume','oi'} or None.
+    Best-effort — any failure (network, unexpected response shape, rate
+    limit) just returns None so the caller's fail-open path takes over."""
+    try:
+        import json
+        import requests
+        from pathlib import Path
+        import dhan_rate_limiter as _rl
+
+        cfg_file = Path(__file__).resolve().parent / "data" / "config.json"
+        cfg = json.loads(cfg_file.read_text())
+        headers = {"access-token": cfg["jwt_token"], "client-id": cfg["client_id"],
+                   "Content-Type": "application/json"}
+        _rl.acquire("ltp")
+        r = requests.post("https://api.dhan.co/v2/marketfeed/quote",
+                          json={seg: [int(sec_id)]}, headers=headers, timeout=5)
+        if r.status_code == 429:
+            _rl.note_429()
+        if r.status_code != 200:
+            return None
+        node = (r.json() or {}).get("data", {}).get(seg, {}) or {}
+        d = node.get(str(sec_id)) or next(iter(node.values()), None)
+        if not d:
+            return None
+        depth = d.get("depth") or {}
+        buy0 = (depth.get("buy") or [{}])[0]
+        sell0 = (depth.get("sell") or [{}])[0]
+        return {
+            "bid": buy0.get("price"), "ask": sell0.get("price"),
+            "ltp": d.get("last_price"), "volume": d.get("volume"), "oi": d.get("oi"),
+        }
+    except Exception:
+        return None
 
 
 def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offset,

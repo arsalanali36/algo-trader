@@ -40,7 +40,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
     return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 socket.getaddrinfo = _v4
 
-LIVE = {}                     # sec_id(str) -> {ltp,bid,ask,bid_qty,ask_qty,oi,ts}
+LIVE = {}                     # sec_id(str) -> {ltp,bid,ask,bid_qty,ask_qty,oi,volume,ts}
 _lock = threading.Lock()
 _thread = None
 _running = False
@@ -105,6 +105,7 @@ def _run_loop():
                             "bid_qty": dep.get("bid_quantity"),
                             "ask_qty": dep.get("ask_quantity"),
                             "oi":      r.get("OI"),
+                            "volume":  r.get("volume"),
                             "ts":      time.time(),
                         }
         except Exception as e:

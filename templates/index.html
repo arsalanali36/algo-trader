@@ -1154,6 +1154,28 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 
+  <div class="card" style="margin-bottom:14px;border-color:#1f6feb">
+    <h2 style="color:#1f6feb">📊 Live Liquidity Filter (any 2-of-3, ON by default)</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Static stock-whitelist se zyada flexible — har entry se pehle us EXACT option contract ka
+      live market depth check hota hai: <b style="color:#e6edf3">Spread%</b> ≤ 1.5 ((ask-bid)/ltp×100),
+      <b style="color:#e6edf3">Volume lots</b> ≥ 500 (≥50 before 9:45 AM, volume naturally kam hota hai
+      session shuru mein), <b style="color:#e6edf3">OI lots</b> ≥ 300. Teeno mein se <b>kam se kam 2 pass</b>
+      karna kaafi hai — ek dimension thoda weak ho to bhi trade ho sakta hai, isse range zyada strict
+      whitelist se badi hai aur naye liquid stocks bhi automatically mil jaate hain bina manual list
+      update kiye. Live data na mile (feed cold/down) to FAIL-OPEN hota hai (block nahi karta) — yeh
+      illiquid-contract guard hai, P&L-correctness guard nahi.
+    </div>
+    <div style="display:flex;gap:10px;align-items:center">
+      <label style="font-size:12px;color:#adbac7">Global</label>
+      <select id="risk-global-liqfilter" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #1f6feb;border-radius:4px">
+        <option value="true">ON (default)</option>
+        <option value="false">OFF</option>
+      </select>
+      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
+    </div>
+  </div>
+
   <div class="card">
     <h2>Per-Strategy Override</h2>
     <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
@@ -1698,6 +1720,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
   document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
+  document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -1768,6 +1791,7 @@ async function saveRiskConfig(){
   const gInstLoss = document.getElementById('risk-global-instloss').value;
   const gHedgeStrikes = document.getElementById('risk-global-hedge-strikes').value;
   const gHedgePremium = document.getElementById('risk-global-hedge-premium').value;
+  const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
   const payload = {
     global: {
       max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
@@ -1780,6 +1804,7 @@ async function saveRiskConfig(){
       default_sl_rs: gInstLoss !== '' ? parseFloat(gInstLoss) : null,
       hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
+      liquidity_filter: gLiqFilter === 'true',
     },
     per_strategy: {}
   };

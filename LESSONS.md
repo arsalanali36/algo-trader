@@ -506,6 +506,26 @@ print(type(c['ARS_CHAIN_V1']['symbols']))"` should print `<class 'list'>`, never
 
 ---
 
+## TRAP #17 — `dhan_feed.LIVE` was silently missing `volume` even though the WebSocket packet has it
+
+**Symptom:** while building a live liquidity filter (needs day-cumulative volume per contract), found
+`dhan_feed.LIVE[sec_id]` only ever had `ltp/bid/ask/bid_qty/ask_qty/oi/ts` — no `volume`, even though
+the underlying Dhan Full-packet parser (`dhanhq/marketfeed.py`) returns a `"volume"` key in the same
+dict `dhan_feed.py` reads `"OI"` from, two lines away.
+
+**Root cause:** the 2026-06-27 `dhan_feed.py` rewrite (TRAP #11) copied over LTP/bid/ask/OI from the
+Full packet but the original feature list never needed volume, so it was never added — not a bug in
+the sense of wrong behavior, just an unused field nobody had reached for yet, until today.
+
+**Fix (2026-06-28):** added `"volume": r.get("volume")` to the `LIVE[sid]` dict — zero new Dhan calls,
+the data was already arriving in every Full packet, just not stored.
+
+**Permanent guard:** before assuming a data field "doesn't exist" in a feed/API, check what the raw
+packet/response actually contains (`inspect.getsource()` on the parser, like TRAP #11's rewrite did)
+rather than what the current consumer code happens to extract — the two are not the same thing.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,

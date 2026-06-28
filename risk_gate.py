@@ -601,3 +601,15 @@ def hedge_config(strategy):
     except (TypeError, ValueError):
         max_prem = None
     return offset, max_prem
+
+
+def liquidity_filter_enabled(strategy):
+    """ON by default everywhere — strategy_safety.check_contract_liquidity()
+    (live spread/volume/OI gate, any-2-of-3) runs unless explicitly turned
+    OFF for this strategy or globally. nifty_config.json["_risk"]["global"/
+    "per_strategy"]["liquidity_filter"] (per-strategy overrides global)."""
+    rc = _risk_cfg()
+    v = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("liquidity_filter")
+    if v is None:
+        v = (rc.get("global", {}) or {}).get("liquidity_filter")
+    return True if v is None else bool(v)
