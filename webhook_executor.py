@@ -586,11 +586,19 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         return {"ok": False, "msg": f"risk gate check failed: {e}"}
 
     instrument = cfg.get("instrument", "options")
-    # group_id links this leg to its auto-hedge BUY (if hedge_offset_strikes is
-    # configured below) — empty string if no hedge, so existing single-leg
-    # behavior/netting is completely unaffected when the feature is off.
-    hedge_offset_strikes = cfg.get("hedge_offset_strikes")
-    group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and hedge_offset_strikes) else ""
+    # group_id links this leg to its auto-hedge BUY — empty string if no
+    # hedge, so existing single-leg behavior/netting is completely unaffected
+    # when the feature is off. Hedge config lives on the RMS Risk tab
+    # (risk_gate.hedge_config, per-strategy override > global) — same place
+    # range_trader's hedge reads from, so both strategies share one config UI.
+    # A legacy per-webhook "hedge_offset_strikes" field (if still set in this
+    # webhook's own cfg) overrides the RMS floor for backward compatibility.
+    hedge_min_strikes, hedge_max_premium = risk_gate.hedge_config(strat)
+    legacy_strikes = cfg.get("hedge_offset_strikes")
+    if legacy_strikes:
+        hedge_min_strikes = int(legacy_strikes)
+    hedge_offset_strikes = hedge_min_strikes
+    group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and (hedge_min_strikes or hedge_max_premium)) else ""
     try:
         default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol)
     except Exception:
@@ -607,7 +615,8 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         smart_order.place_hedge_if_configured(
             symbol, spot, opt_type, offset, qty, mode, broker, group_id, hedge_offset_strikes,
             log=_log, tag="TVWH_HEDGE", source="webhook", strategy=strat,
-            instrument=instrument, broker_name=cfg.get("broker", "dhan"))
+            instrument=instrument, broker_name=cfg.get("broker", "dhan"),
+            max_premium_rs=hedge_max_premium)
 
     entry_px = res["price"]
     sl_pts   = float(cfg.get("sl_points", 0) or 0)

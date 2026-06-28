@@ -354,6 +354,20 @@ class KiteBroker(BaseBroker):
             return {"status": "rejected", "order_id": None, "fill_price": None,
                     "reason": msg, "raw": None}
 
+    def order_status(self, order_id):
+        if not order_id:
+            return None
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("order")
+            hist = kite.order_history(order_id)
+            if hist:
+                return str(hist[-1].get("status") or "").upper() or None
+        except Exception as e:
+            log.warning(f"[KITE] order_status({order_id}) failed: {e}")
+        return None
+
     def funds(self) -> dict:
         import kite_rate_limiter as _krl
         try:

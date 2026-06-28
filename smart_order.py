@@ -28,6 +28,20 @@ TICK = 0.05
 _ltp_cache = {}   # sec_id -> (ltp, epoch_ts) — opportunistically warmed by every call
 
 
+_REJECTED_STATUSES = {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED"}
+_TERMINAL_STATUSES = _REJECTED_STATUSES | {
+    "TRADED", "FILLED", "COMPLETE",      # Dhan + Kite "actually filled"
+}
+
+
+def _is_rejected(status):
+    return str(status or "").upper() in _REJECTED_STATUSES
+
+
+def _is_terminal(status):
+    return str(status or "").upper() in _TERMINAL_STATUSES
+
+
 def _snap(p):
     """Snap to NSE tick size (0.05)."""
     return round(round(p / TICK) * TICK, 2)
@@ -105,6 +119,30 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         res.update(status=r["status"], reason=r["reason"], order_id=r["order_id"])
         log(f"[BROKER] {trad_sym} {side} {qty} -> {r['status'].upper()} "
             f"({r['reason']})")
+
+        # A broker that outright rejects the order (bad symbol, margin,
+        # F&O permission) must NOT be treated as a successful entry — the
+        # caller builds an in-memory "position" from res["ok"] alone, so an
+        # unconditional ok=True here would let a strategy track a position
+        # that was never actually opened at the broker.
+        if _is_rejected(r["status"]):
+            res["ok"] = False
+
+        # A "pending"/"accepted" response is not a confirmed fill — some
+        # rejects (price-band, freeze) only arrive a moment later, async,
+        # after the initial 200. Re-query once if the broker supports it.
+        if not _is_terminal(r["status"]) and r.get("order_id") and hasattr(broker, "order_status"):
+            time.sleep(1.2)
+            try:
+                confirmed = broker.order_status(r["order_id"])
+            except Exception:
+                confirmed = None
+            if confirmed:
+                res["status"] = confirmed
+                log(f"[BROKER-CONFIRM] {trad_sym} order {r['order_id']} -> {confirmed}")
+                if _is_rejected(confirmed):
+                    res["ok"] = False
+                    res["reason"] = f"async reject confirmed: {confirmed}"
     elif mode == "paper":
         # Diagnostic-only shadow order — fires a REAL broker order at the same
         # paper price/qty purely to compare against Dhan's actual fill/reject
@@ -140,37 +178,59 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
 def place_hedge_if_configured(symbol, spot_price, sell_option_type, sell_offset, qty,
                                mode, broker, group_id, hedge_offset_strikes,
                                buffer_bps=10, log=print, tag="HEDGE",
-                               source="", strategy="", instrument="", broker_name=""):
+                               source="", strategy="", instrument="", broker_name="",
+                               max_premium_rs=None, max_search=15):
     """If `hedge_offset_strikes` is configured (truthy), auto-place a hedge BUY
     leg further OTM than the sold leg, same option_type, tagged with the same
     `group_id` as the SELL leg so the dashboard can show/close them together.
 
     hedge_offset_strikes is OFF by default (None/0/absent) — opt-in per
-    strategy/webhook. `sell_offset` + `hedge_offset_strikes` is the strike
-    INDEX further OTM (dhan_master.get_option_contract's `offset` param is
-    already an index into the sorted-strikes list, not a points value — same
-    unit the rest of the codebase already uses for strike_offset).
+    strategy/webhook (RMS Risk tab "🛡️ Auto-Hedge" card — see
+    risk_gate.hedge_config()). `sell_offset` + `hedge_offset_strikes` is the
+    strike INDEX further OTM (dhan_master.get_option_contract's `offset` param
+    is already an index into the sorted-strikes list, not a points value —
+    same unit the rest of the codebase already uses for strike_offset).
+
+    `max_premium_rs`, if set, is a floor on TOP of hedge_offset_strikes: keep
+    walking further OTM beyond the min-strikes floor until a strike's premium
+    is <= max_premium_rs (cheaper insurance — common ask for NIFTY where a
+    fixed strike-count can still be expensive). Whichever lands FURTHER OTM
+    wins. Premium read via `broker.quote()` — broker-agnostic by design (works
+    for Kite-routed webhooks too, since data always comes from Dhan under the
+    hood regardless of execution broker).
 
     Returns the execute() result dict, or None if not configured / contract
     resolution failed (best-effort — never raises into the caller, and never
     blocks the SELL leg that already happened before this is called).
     """
-    if not hedge_offset_strikes:
+    if not hedge_offset_strikes and not max_premium_rs:
         return None
     try:
-        hedge_offset_strikes = int(hedge_offset_strikes)
+        hedge_offset_strikes = int(hedge_offset_strikes or 0)
     except Exception:
-        return None
-    if hedge_offset_strikes == 0:
-        return None
+        hedge_offset_strikes = 0
 
     try:
         import dhan_master
-        hedge_offset = sell_offset + hedge_offset_strikes
+        offset = sell_offset + max(hedge_offset_strikes, 1)
         h_sec_id, h_trad_sym, _lot = dhan_master.get_option_contract(
-            symbol, spot_price, sell_option_type, hedge_offset)
+            symbol, spot_price, sell_option_type, offset)
+        if max_premium_rs:
+            for _i in range(max_search):
+                if not h_sec_id:
+                    break
+                try:
+                    q = broker.quote(h_sec_id, "NSE_FNO") or {}
+                    prem = q.get("ltp")
+                except Exception:
+                    prem = None
+                if prem is not None and prem <= max_premium_rs:
+                    break
+                offset += 1
+                h_sec_id, h_trad_sym, _lot = dhan_master.get_option_contract(
+                    symbol, spot_price, sell_option_type, offset)
         if not h_sec_id:
-            log(f"[HEDGE] contract resolve failed for {symbol} {sell_option_type} offset={hedge_offset} — hedge leg skipped")
+            log(f"[HEDGE] contract resolve failed for {symbol} {sell_option_type} offset={offset} — hedge leg skipped")
             return None
         return execute("BUY", symbol, h_sec_id, "NSE_FNO", qty, h_trad_sym, mode, broker,
                        buffer_bps=buffer_bps, log=log, tag=tag,

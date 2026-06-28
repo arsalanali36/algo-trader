@@ -157,6 +157,23 @@ class DhanBroker(BaseBroker):
             return {"status": "rejected", "order_id": None, "fill_price": None,
                     "reason": str(e), "raw": None}
 
+    def order_status(self, order_id):
+        if not order_id:
+            return None
+        try:
+            _rl.acquire("order")
+            r = requests.get(f"{ORDERS_URL}/{order_id}", headers=self._hdrs(), timeout=6)
+            if r.status_code != 200:
+                return None
+            d = r.json()
+            if isinstance(d, list) and d:
+                d = d[0]
+            if isinstance(d, dict):
+                return str(d.get("orderStatus") or "").upper() or None
+        except Exception:
+            pass
+        return None
+
     def funds(self) -> dict:
         try:
             _rl.acquire("account")

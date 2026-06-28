@@ -400,6 +400,75 @@ to `brokers/` before assuming a second broker is live-ready.
 
 ---
 
+## TRAP #14 — A live order's `ok` flag was always True, even when the broker rejected it 🔴🔴🔴
+
+**Symptom:** if a real (Dhan or Kite) order got rejected — bad symbol, insufficient margin, no
+F&O permission, price-band/freeze — `smart_order.execute()` still returned `{"ok": True, ...}`.
+Every caller (`webhook_executor`, `universe_trader`, `range_trader`) trusts `ok` to decide whether
+to start tracking a position. Result: a strategy could believe it has an open position (and run
+SL/TP/EOD logic against it) that **never actually existed at the broker** — or, just as bad, a
+rejected EXIT could be recorded as closed while the real position stays open and unmanaged.
+
+**Root cause:** `res = {"ok": True, ...}` was set once, early, before the live branch — the live
+branch only updated `status`/`reason`/`order_id`, never re-derived `ok` from the broker's actual
+response. A second, sneakier layer of the same bug: brokers' initial HTTP response (`200`/accepted)
+is NOT the same as "filled" — Dhan and Kite both confirm price-band/freeze rejects **asynchronously**,
+a moment after the initial accept. Nothing re-checked that later state; `_dhan_live_fate()` (in
+`trader_dashboard.py`) already solved this exact problem for the MANUAL/bulk order button, but
+`smart_order.execute()` (the path every strategy/webhook actually uses) never got the same fix.
+
+**Fix (2026-06-28):**
+- `BaseBroker.order_status(order_id)` (new, optional — default `None` so unimplemented brokers
+  degrade gracefully) — re-query a placed order's CURRENT status. Implemented for both
+  `DhanBroker` (`GET /v2/orders/{id}`) and `KiteBroker` (`kite.order_history(order_id)`).
+- `smart_order.execute()`: after placing a live order, (a) an immediately-rejected response now
+  flips `res["ok"] = False`; (b) for a non-terminal status (accepted/pending), sleeps ~1.2s then
+  calls `broker.order_status()` once and re-derives `ok`/`status` from the CONFIRMED result before
+  anything gets persisted to `order_store` or returned to the caller.
+- `_TRADERS/range_trader.py`'s `place_order()` (raw Dhan REST, doesn't go through `smart_order`)
+  got the same async-confirm treatment directly — HTTP 200 no longer means "filled" there either.
+
+**Permanent guard:** any new execution path that calls a broker's `place_order` and expects the
+caller to trust `res["ok"]`/a boolean return must do the same accept-vs-confirmed two-step. Don't
+copy the OLD (pre-fix) `smart_order.execute()` pattern from memory/an old session transcript.
+
+**Fast detect:** grep for `"ok": True` set unconditionally before a broker call, or a `place_order`
+wrapper that returns `True` straight off an HTTP `200` with no follow-up status check.
+
+---
+
+## TRAP #15 — Two different hedge configs for the same feature (range_trader vs webhook_executor)
+
+**Symptom:** the RMS Risk tab's "🛡️ Auto-Hedge" card (Min Strikes / Max Premium ₹) only ever
+affected `range_trader` (`ARS_CHAIN_V1`) — setting it for `webhook_v1` in that same UI table looked
+like it should work (the row exists, same inputs) but silently did nothing, because
+`webhook_executor.py`'s hedge code read its OWN separate `cfg["hedge_offset_strikes"]` field
+(no Max Premium support at all) instead of `risk_gate.hedge_config()`.
+
+**Root cause:** the hedge feature was built twice, in two sessions, against two different config
+sources — `webhook_executor.py` first (its own per-webhook field), then `range_trader.py` +
+`risk_gate.hedge_config()` + the RMS tab UI later, without going back to unify the older path.
+
+**Fix (2026-06-28):** `webhook_executor._do_entry()` now reads `risk_gate.hedge_config(strat)` —
+same per-strategy-overrides-global table as `range_trader`, so the ONE Risk-tab row per strategy
+(including `webhook_v1`) is the single source of truth. The old per-webhook `hedge_offset_strikes`
+field, if still set in a webhook's own `nifty_config.json` block, is honored as a legacy override
+of the Risk-tab's min-strikes floor (backward compat), but Max Premium always comes from the Risk
+tab since the legacy field never had that knob. `smart_order.place_hedge_if_configured()` gained
+`max_premium_rs` support too — walks further OTM using `broker.quote()` (broker-agnostic: works
+whether the hedge's BUY leg routes through Dhan or Kite) until premium ≤ the cap, same
+floor-vs-cheaper-insurance logic as `range_trader.resolve_hedge_contract()`.
+
+**Permanent guard:** when a config knob is meant to be shared across multiple strategies, put it
+in ONE place (`risk_gate.py` + the Risk tab) from the start — a strategy-local field for something
+that "should probably apply everywhere" is how this split happened.
+
+**Fast detect:** if a strategy's hedge "isn't working" but `hedge_offset_strikes`/`hedge_max_premium_rs`
+IS set in the Risk tab for that strategy id, check whether that code path actually calls
+`risk_gate.hedge_config()` or still reads its own local config key.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,

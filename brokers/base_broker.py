@@ -48,3 +48,14 @@ class BaseBroker(ABC):
         """Optional: start a live bid/ask feed. Implemented per-broker in Phase 1
         (Dhan) — default no-op so brokers without a feed still work."""
         return None
+
+    def order_status(self, order_id):
+        """Optional: re-query a real order's CURRENT status by id (e.g.
+        'TRADED'/'REJECTED'/'PENDING'). A broker's initial place_order response
+        can say "accepted" while a price-band/freeze reject only arrives a
+        moment later (async) — callers that care about a confirmed fill, not
+        just an accepted submission, should call this ~1-1.5s after placing.
+        Default: None (unsupported/unknown) so brokers without this wired
+        degrade gracefully — caller must treat None as "couldn't confirm,
+        don't downgrade a known-good status on it"."""
+        return None

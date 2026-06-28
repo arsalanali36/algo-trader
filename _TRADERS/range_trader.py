@@ -734,8 +734,36 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         if r.status_code == 429:
             _rl.note_429()
         if r.status_code == 200:
+            # Dhan's 200 means "accepted", NOT "filled" — a price-band/freeze
+            # reject arrives a moment later, async. Re-check once before
+            # trusting it, so a strategy never tracks a position the broker
+            # actually rejected (LESSONS.md TRAP #13 follow-up).
+            oid = None
+            try:
+                jr = r.json()
+                oid = str((jr or {}).get("orderId") or "")
+            except Exception:
+                pass
+            final_status = "filled"
+            if oid:
+                time.sleep(1.2)
+                try:
+                    _rl.acquire("order")
+                    rr = requests.get(f"{ORDERS_URL}/{oid}", headers=hdrs(token, cid), timeout=6)
+                    if rr.status_code == 200:
+                        d = rr.json()
+                        if isinstance(d, list) and d:
+                            d = d[0]
+                        st = str((d or {}).get("orderStatus") or "").upper()
+                        if st in ("REJECTED", "CANCELLED", "EXPIRED"):
+                            log.error(f"ORDER ASYNC-REJECT {side} {trad_sym} — broker status={st}; "
+                                      f"NOT tracking this as a filled position")
+                            _rec('rejected', oid)
+                            return False
+                except Exception:
+                    pass  # couldn't confirm — treat the original 200 as good, don't block
             log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
-            _rec('filled')
+            _rec(final_status, oid or '')
             return True
         else:
             log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
