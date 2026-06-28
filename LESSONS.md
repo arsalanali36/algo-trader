@@ -449,15 +449,18 @@ like it should work (the row exists, same inputs) but silently did nothing, beca
 sources — `webhook_executor.py` first (its own per-webhook field), then `range_trader.py` +
 `risk_gate.hedge_config()` + the RMS tab UI later, without going back to unify the older path.
 
-**Fix (2026-06-28):** `webhook_executor._do_entry()` now reads `risk_gate.hedge_config(strat)` —
-same per-strategy-overrides-global table as `range_trader`, so the ONE Risk-tab row per strategy
-(including `webhook_v1`) is the single source of truth. The old per-webhook `hedge_offset_strikes`
-field, if still set in a webhook's own `nifty_config.json` block, is honored as a legacy override
-of the Risk-tab's min-strikes floor (backward compat), but Max Premium always comes from the Risk
-tab since the legacy field never had that knob. `smart_order.place_hedge_if_configured()` gained
-`max_premium_rs` support too — walks further OTM using `broker.quote()` (broker-agnostic: works
-whether the hedge's BUY leg routes through Dhan or Kite) until premium ≤ the cap, same
-floor-vs-cheaper-insurance logic as `range_trader.resolve_hedge_contract()`.
+**Fix (2026-06-28, two passes):** first pass made `webhook_executor._do_entry()` read
+`risk_gate.hedge_config(strat)` instead of its own field — fixed the symptom, but the offset-walk
+math still lived in TWO places (`smart_order.place_hedge_if_configured()` and
+`range_trader.resolve_hedge_contract()`), which is exactly how this trap happened the first time —
+so it was re-extracted a second pass into ONE function, `strategy_safety.compute_hedge_target()`
+(resolution only, no placement — see `strategy_safety.py`'s module docstring). Both
+`range_trader.py` and `smart_order.place_hedge_if_configured()` (used by `webhook_executor.py`)
+now call this single function; `range_trader.resolve_hedge_contract()` was deleted entirely. The
+RMS pre-trade gate (drawdown/concentration/capital/broker-funds) got the same treatment —
+`strategy_safety.gate_entry()` — since it was independently hand-rolled in `range_trader.py`,
+`webhook_executor.py`, AND `universe_trader.py` with the same drift risk. See CLAUDE.md
+"Building a new strategy" (Critical Rule 8) for the checklist a new strategy file should follow.
 
 **Permanent guard:** when a config knob is meant to be shared across multiple strategies, put it
 in ONE place (`risk_gate.py` + the Risk tab) from the start — a strategy-local field for something
@@ -466,6 +469,40 @@ that "should probably apply everywhere" is how this split happened.
 **Fast detect:** if a strategy's hedge "isn't working" but `hedge_offset_strikes`/`hedge_max_premium_rs`
 IS set in the Risk tab for that strategy id, check whether that code path actually calls
 `risk_gate.hedge_config()` or still reads its own local config key.
+
+---
+
+## TRAP #16 — `cfg["symbols"]` saved as a comma-string silently traded ZERO symbols 🔴🔴🔴
+
+**Symptom:** `ARS_CHAIN_V1`'s log showed `[WHITELIST] trading 0 liquid names; dropped 195 illiquid:
+N,I,F,T,Y,,,B,A,N,K,N,I,F,T,Y,...` — every config symbol name spelled out letter by letter. The
+strategy was live (`active: true`, process running, no errors, no crash) but **placing zero entries
+across every symbol**, found by chance while restarting for an unrelated deploy on 2026-06-28 — could
+easily have gone unnoticed through a whole live trading day otherwise (process "running" ≠ "doing
+anything", same family of lesson as TRAP #12).
+
+**Root cause:** `nifty_config.json["ARS_CHAIN_V1"]["symbols"]` was stored as a single comma-joined
+string (`"NIFTY,BANKNIFTY,RELIANCE,..."`), not a JSON list. `range_trader.py` did
+`symbols = cfg.get("symbols", ["NIFTY"])` and then `for symbol in symbols` — Python happily iterates
+a STRING character-by-character with no error, so every "symbol" was a single letter, which then
+failed the liquid-stock whitelist filter (single letters match nothing in `universe.LIQUID_PREMIUM`
+or the index set) and got silently dropped to an empty list. **`health_check.py` already had a
+defensive parser for exactly this** (`_symbols()`, with a comment explicitly calling out "VPS config
+me kabhi-kabhi symbols ek string hota hai" from an earlier session) — but that fix was never carried
+over into `range_trader.py` itself, the file that actually runs live.
+
+**Fix (2026-06-28):** `range_trader.py` now splits `symbols` on commas/whitespace if it's a string,
+same regex as `health_check.py._symbols()`, before any whitelist filtering or the main symbol loop.
+
+**Permanent guard:** a defensive parser fixed in ONE file (here, a health-check/preflight tool) does
+NOT protect the file that actually trades unless it's applied there too — preflight tools that
+"work around" a data-shape bug instead of flagging it can mask the bug from the very check meant to
+catch it (health_check.py's `--fire-test` never noticed because it parsed around the broken value
+successfully).
+
+**Fast detect:** any `[WHITELIST] trading 0 liquid names` (or any "trading 0 X" log line) is never
+normal — grep for it after every restart. More generally: `python -c "import json; c=json.load(open('nifty_config.json'));
+print(type(c['ARS_CHAIN_V1']['symbols']))"` should print `<class 'list'>`, never `<class 'str'>`.
 
 ---
 

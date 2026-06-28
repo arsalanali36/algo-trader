@@ -294,59 +294,35 @@ def main(sid, once=False):
                           f"skipping LTP calls for the rest of today")
                 continue
 
-            # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration
-            # cap > capital allocation (size-down if configured) > real broker
-            # funds (live only). ──
-            try:
-                import risk_gate
-                dd_ok, dd_reason = risk_gate.check_drawdown()
-                if not dd_ok:
-                    log(f"[SKIP] {sym} {sig} — {dd_reason}")
-                    continue
-                est_price, _src = smart_order.marketable_price(o_side, sec_id, seg, broker)
-                conc_ok, conc_reason = risk_gate.check_concentration(sym, qty, est_price or 0, side=o_side)
-                if not conc_ok:
-                    log(f"[SKIP] {sym} {sig} — {conc_reason}")
-                    continue
-                cap_ok, cap_reason = risk_gate.check_capital(sid, qty, est_price or 0, side=o_side, sec_id=sec_id, seg=seg)
-            except Exception as _e:
-                # FAIL CLOSED — see range_trader.py for the same fix/reasoning.
-                cap_ok, cap_reason = False, f"risk gate check failed: {_e}"
-                log(f"ENTRY blocked {sym} — risk gate check failed (fail-closed): {_e}")
-            if not cap_ok:
-                fit_lots = 0
-                if risk_gate.capital_mode(sid) == "size_down":
-                    per_lot = int(cfg.get("qty", 1))
-                    fit_lots = risk_gate.sized_lots(sid, int(cfg.get("lots", 1)), per_lot, est_price or 0, side=o_side, sec_id=sec_id, seg=seg)
-                if fit_lots > 0:
-                    sized_qty = fit_lots * int(cfg.get("qty", 1))
-                    log(f"[SIZE-DOWN] {sym} {sig} — qty {qty} -> {sized_qty} ({cap_reason})")
-                    qty = sized_qty
-                else:
-                    log(f"[SKIP] {sym} {sig} — {cap_reason}")
-                    # Record a visible "blocked" row ONLY if we have a real price
-                    # (never PX 0.00 — that was the confusing ghost order) and
-                    # only once per symbol/day (no per-scan pileup).
-                    if est_price and _once(f"block:{sid}:{sym}"):
-                        try:
-                            import order_store
-                            order_store.record(o_side, qty, est_price, source="strategy", strategy=sid,
-                                               mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
-                                               instrument=("equity" if route == "equity" else "options"),
-                                               trad_sym=tsym, sec_id=sec_id, segment=seg,
-                                               status="blocked", tags=["CAPITAL_BLOCKED", cap_reason])
-                        except Exception:
-                            pass
-                    continue
-
-            if mode == "live":
-                try:
-                    fund_ok, fund_reason = risk_gate.check_broker_funds(broker, qty * (est_price or 0))
-                    if not fund_ok:
-                        log(f"[SKIP] {sym} {sig} — {fund_reason}")
-                        continue
-                except Exception:
-                    pass
+            # ── risk gate (RMS Stage 1+2+3) — single shared gate, see
+            # strategy_safety.gate_entry() (LESSONS.md TRAP #15: this used to
+            # be hand-rolled separately per strategy file and silently
+            # drifted). gating_status short-circuit > drawdown breaker >
+            # concentration cap > capital allocation (size-down if
+            # configured) > real broker funds (live only). ──
+            import risk_gate, strategy_safety
+            per_lot = int(cfg.get("qty", 1))
+            lots = int(cfg.get("lots", 1))
+            est_price, _src = smart_order.marketable_price(o_side, sec_id, seg, broker)
+            gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
+                sid, sym, lots, per_lot, est_price, side=o_side,
+                sec_id=sec_id, seg=seg, mode=mode, broker=broker, log=log)
+            if not gate_ok:
+                log(f"[SKIP] {sym} {sig} — {gate_reason}")
+                if est_price and _once(f"block:{sid}:{sym}"):
+                    try:
+                        import order_store
+                        order_store.record(o_side, qty, est_price, source="strategy", strategy=sid,
+                                           mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
+                                           instrument=("equity" if route == "equity" else "options"),
+                                           trad_sym=tsym, sec_id=sec_id, segment=seg,
+                                           status="blocked", tags=["CAPITAL_BLOCKED", gate_reason])
+                    except Exception:
+                        pass
+                continue
+            if gated_qty != qty:
+                log(f"[SIZE-DOWN] {sym} {sig} — qty {qty} -> {gated_qty} ({gate_reason})")
+                qty = gated_qty
 
             try:
                 default_sl_tags = risk_gate.default_instrument_sl_tags(sid, sym)

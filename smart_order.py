@@ -176,61 +176,38 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
 
 
 def place_hedge_if_configured(symbol, spot_price, sell_option_type, sell_offset, qty,
-                               mode, broker, group_id, hedge_offset_strikes,
+                               mode, broker, group_id, strategy,
                                buffer_bps=10, log=print, tag="HEDGE",
-                               source="", strategy="", instrument="", broker_name="",
-                               max_premium_rs=None, max_search=15):
-    """If `hedge_offset_strikes` is configured (truthy), auto-place a hedge BUY
-    leg further OTM than the sold leg, same option_type, tagged with the same
-    `group_id` as the SELL leg so the dashboard can show/close them together.
+                               source="", instrument="", broker_name="",
+                               min_strikes_override=None):
+    """Resolve (via strategy_safety.compute_hedge_target — the ONE place hedge
+    sizing logic lives, see LESSONS.md TRAP #15) and place the auto-hedge BUY
+    leg for a SELL that already went through, tagged with the same `group_id`
+    so the dashboard can show/close them together.
 
-    hedge_offset_strikes is OFF by default (None/0/absent) — opt-in per
-    strategy/webhook (RMS Risk tab "🛡️ Auto-Hedge" card — see
-    risk_gate.hedge_config()). `sell_offset` + `hedge_offset_strikes` is the
-    strike INDEX further OTM (dhan_master.get_option_contract's `offset` param
-    is already an index into the sorted-strikes list, not a points value —
-    same unit the rest of the codebase already uses for strike_offset).
+    Hedge config (min strikes floor + optional max-premium ₹ floor) comes
+    from risk_gate.hedge_config(strategy) — the RMS Risk tab. `min_strikes_
+    override`, if given, overrides just the floor (a caller's own legacy
+    config field) — same as compute_hedge_target's param of the same name.
 
-    `max_premium_rs`, if set, is a floor on TOP of hedge_offset_strikes: keep
-    walking further OTM beyond the min-strikes floor until a strike's premium
-    is <= max_premium_rs (cheaper insurance — common ask for NIFTY where a
-    fixed strike-count can still be expensive). Whichever lands FURTHER OTM
-    wins. Premium read via `broker.quote()` — broker-agnostic by design (works
-    for Kite-routed webhooks too, since data always comes from Dhan under the
-    hood regardless of execution broker).
-
-    Returns the execute() result dict, or None if not configured / contract
+    Returns the execute() result dict, or None if hedge is off / contract
     resolution failed (best-effort — never raises into the caller, and never
     blocks the SELL leg that already happened before this is called).
     """
-    if not hedge_offset_strikes and not max_premium_rs:
-        return None
     try:
-        hedge_offset_strikes = int(hedge_offset_strikes or 0)
-    except Exception:
-        hedge_offset_strikes = 0
+        import strategy_safety
 
-    try:
-        import dhan_master
-        offset = sell_offset + max(hedge_offset_strikes, 1)
-        h_sec_id, h_trad_sym, _lot = dhan_master.get_option_contract(
-            symbol, spot_price, sell_option_type, offset)
-        if max_premium_rs:
-            for _i in range(max_search):
-                if not h_sec_id:
-                    break
-                try:
-                    q = broker.quote(h_sec_id, "NSE_FNO") or {}
-                    prem = q.get("ltp")
-                except Exception:
-                    prem = None
-                if prem is not None and prem <= max_premium_rs:
-                    break
-                offset += 1
-                h_sec_id, h_trad_sym, _lot = dhan_master.get_option_contract(
-                    symbol, spot_price, sell_option_type, offset)
+        def _quote(sec_id):
+            try:
+                q = broker.quote(sec_id, "NSE_FNO") or {}
+                return q.get("ltp")
+            except Exception:
+                return None
+
+        h_sec_id, h_trad_sym, _lot = strategy_safety.compute_hedge_target(
+            strategy, symbol, spot_price, sell_option_type, sell_offset,
+            quote_fn=_quote, min_strikes_override=min_strikes_override, log=log)
         if not h_sec_id:
-            log(f"[HEDGE] contract resolve failed for {symbol} {sell_option_type} offset={offset} — hedge leg skipped")
             return None
         return execute("BUY", symbol, h_sec_id, "NSE_FNO", qty, h_trad_sym, mode, broker,
                        buffer_bps=buffer_bps, log=log, tag=tag,

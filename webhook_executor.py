@@ -525,10 +525,13 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     except Exception:
         pass
 
-    # ── risk gate (RMS Stage 1+2+3) — drawdown breaker > concentration cap >
-    # capital allocation (size-down if configured) > real broker funds (live
-    # only). Blocked/sized-down legs are logged tagged in Orders & P&L instead
-    # of the signal silently vanishing. ──
+    # ── risk gate (RMS Stage 1+2+3) — gating_status short-circuit > drawdown
+    # breaker > concentration cap > capital allocation (size-down if
+    # configured) > real broker funds (live only). Blocked/sized-down legs
+    # are logged tagged in Orders & P&L instead of the signal silently
+    # vanishing. Single shared gate — see strategy_safety.gate_entry()
+    # (LESSONS.md TRAP #15: this used to be hand-rolled separately per
+    # strategy file and silently drifted). ──
     def _record_blocked(price_, qty_, tag_reason):
         try:
             import order_store
@@ -540,51 +543,21 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         except Exception:
             pass
 
-    try:
-        import risk_gate
-        dd_ok, dd_reason = risk_gate.check_drawdown()
-        if not dd_ok:
-            # No price available here yet, so don't record a PX 0.00 ghost row
-            # (that was the confusing entry the user flagged). The block is still
-            # logged, and the RMS panel surfaces the gating status separately.
-            _log(f"ENTRY blocked {key} — {dd_reason}")
-            return {"ok": False, "msg": dd_reason}
-
-        est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)
+    import strategy_safety
+    est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)
+    gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
+        strat, symbol, lots, lot_size, est_price, side=opt_action,
+        sec_id=sec_id, mode=mode, broker=broker, log=_log)
+    if not gate_ok:
+        _log(f"ENTRY blocked {key} — {gate_reason}")
         if est_price:
-            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, est_price, side=opt_action)
-            if not conc_ok:
-                _log(f"ENTRY blocked {key} — {conc_reason}")
-                _record_blocked(est_price, qty, conc_reason)
-                return {"ok": False, "msg": conc_reason}
+            _record_blocked(est_price, qty, gate_reason)
+        return {"ok": False, "msg": gate_reason}
+    if gated_qty != qty:
+        _log(f"ENTRY sized down {key} — qty {qty} -> {gated_qty} ({gate_reason})")
+        lots, qty = gated_qty // lot_size, gated_qty
 
-            cap_ok, cap_reason = risk_gate.check_capital(strat, qty, est_price, side=opt_action, sec_id=sec_id)
-            if not cap_ok:
-                if risk_gate.capital_mode(strat) == "size_down":
-                    fit_lots = risk_gate.sized_lots(strat, lots, lot_size, est_price, side=opt_action, sec_id=sec_id)
-                else:
-                    fit_lots = 0
-                if fit_lots > 0:
-                    _log(f"ENTRY sized down {key} — {lots}L -> {fit_lots}L ({cap_reason})")
-                    lots, qty = fit_lots, fit_lots * lot_size
-                else:
-                    _log(f"ENTRY blocked {key} — {cap_reason}")
-                    _record_blocked(est_price, qty, cap_reason)
-                    return {"ok": False, "msg": cap_reason}
-
-            if mode == "live":
-                fund_ok, fund_reason = risk_gate.check_broker_funds(broker, qty * est_price)
-                if not fund_ok:
-                    _log(f"ENTRY blocked {key} — {fund_reason}")
-                    _record_blocked(est_price, qty, fund_reason)
-                    return {"ok": False, "msg": fund_reason}
-    except Exception as e:
-        # FAIL CLOSED — see _TRADERS/range_trader.py for the same fix/reasoning.
-        # An RMS check that throws must never silently fall through to the
-        # entry below as if every gate passed.
-        _log(f"ENTRY blocked {key} — risk gate check failed (fail-closed): {e}")
-        return {"ok": False, "msg": f"risk gate check failed: {e}"}
-
+    import risk_gate
     instrument = cfg.get("instrument", "options")
     # group_id links this leg to its auto-hedge BUY — empty string if no
     # hedge, so existing single-leg behavior/netting is completely unaffected
@@ -592,12 +565,11 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     # (risk_gate.hedge_config, per-strategy override > global) — same place
     # range_trader's hedge reads from, so both strategies share one config UI.
     # A legacy per-webhook "hedge_offset_strikes" field (if still set in this
-    # webhook's own cfg) overrides the RMS floor for backward compatibility.
+    # webhook's own cfg) overrides just the floor, for backward compatibility.
     hedge_min_strikes, hedge_max_premium = risk_gate.hedge_config(strat)
     legacy_strikes = cfg.get("hedge_offset_strikes")
     if legacy_strikes:
         hedge_min_strikes = int(legacy_strikes)
-    hedge_offset_strikes = hedge_min_strikes
     group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and (hedge_min_strikes or hedge_max_premium)) else ""
     try:
         default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol)
@@ -613,10 +585,10 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
 
     if group_id:
         smart_order.place_hedge_if_configured(
-            symbol, spot, opt_type, offset, qty, mode, broker, group_id, hedge_offset_strikes,
-            log=_log, tag="TVWH_HEDGE", source="webhook", strategy=strat,
+            symbol, spot, opt_type, offset, qty, mode, broker, group_id, strat,
+            log=_log, tag="TVWH_HEDGE", source="webhook",
             instrument=instrument, broker_name=cfg.get("broker", "dhan"),
-            max_premium_rs=hedge_max_premium)
+            min_strikes_override=legacy_strikes)
 
     entry_px = res["price"]
     sl_pts   = float(cfg.get("sl_points", 0) or 0)

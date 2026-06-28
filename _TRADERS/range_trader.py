@@ -16,6 +16,7 @@ Modes:
 import json
 import logging
 import os
+import re
 import socket
 import sys
 # project root (parent of _TRADERS/) on path BEFORE importing root modules —
@@ -580,37 +581,6 @@ def _fetch_premium(sec_id, token, cid):
         return None
 
 
-def resolve_hedge_contract(symbol, spot_price, option_type, sell_offset, min_offset_strikes,
-                            max_premium_rs, token, cid, max_search=15):
-    """Pick the hedge BUY strike for a sold leg: at LEAST `min_offset_strikes`
-    further OTM than the sold leg, and if `max_premium_rs` is set, keep walking
-    further OTM beyond that floor until premium <= max_premium_rs (cheaper
-    insurance — common for NIFTY where a fixed strike-count can still cost a
-    lot). Whichever lands FURTHER OTM wins; the strike-count is a floor, not a
-    ceiling. Returns (sec_id, trad_sym, lot_size, offset_used) or (None,)*4."""
-    if not min_offset_strikes and not max_premium_rs:
-        return None, None, None, None
-    base_offset = sell_offset + max(int(min_offset_strikes or 0), 1)
-    h_sec_id, h_t_sym, h_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, base_offset)
-    if not max_premium_rs:
-        return (h_sec_id, h_t_sym, h_lot, base_offset) if h_sec_id else (None, None, None, None)
-
-    offset = base_offset
-    for _i in range(max_search):
-        if not h_sec_id:
-            break
-        prem = _fetch_premium(h_sec_id, token, cid)
-        if prem is not None and prem <= max_premium_rs:
-            return h_sec_id, h_t_sym, h_lot, offset
-        offset += 1
-        h_sec_id, h_t_sym, h_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, offset)
-    # ran out of strikes / no premium data — fall back to the strike-count floor
-    if h_sec_id:
-        return h_sec_id, h_t_sym, h_lot, offset
-    fb_sec_id, fb_t_sym, fb_lot = dhan_master.get_option_contract(symbol, spot_price, option_type, base_offset)
-    return (fb_sec_id, fb_t_sym, fb_lot, base_offset) if fb_sec_id else (None, None, None, None)
-
-
 def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id=""):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
@@ -875,7 +845,15 @@ def main(strategy_id="range"):
             f"Entry: zone touch + bearish/bullish candle + close break + 2-candle confirm"
         )
 
+        # cfg["symbols"] is sometimes saved as a comma-string, not a JSON list
+        # (e.g. "NIFTY,BANKNIFTY,...") — iterating a string directly walks it
+        # CHARACTER BY CHARACTER ("N","I","F",...), which then all fail the
+        # whitelist filter below and silently leaves ZERO symbols to trade.
+        # health_check.py already had this exact defensive parse; range_trader
+        # never got the same fix — found 2026-06-28 while it was live-running.
         symbols = cfg.get("symbols", ["NIFTY"])
+        if isinstance(symbols, str):
+            symbols = [s for s in re.split(r"[,\s]+", symbols) if s]
         # Liquid stock whitelist (item B) — only trade the user's hand-picked
         # liquid F&O stocks (avoids slippage / wide bid-ask on thin chains like
         # TCS/HINDUNILVR). Indices always pass. cfg["stock_whitelist"]: custom
@@ -951,62 +929,39 @@ def main(strategy_id="range"):
                         continue
                     if sec_id:
                         actual_qty = qty * lot_sz
-                        # ── risk gate (RMS Stage 1+2+3) — drawdown breaker >
-                        # concentration cap > capital allocation (size-down if
-                        # configured). Exits (3:15 squareoff / EXIT signal below)
-                        # are never gated. No broker-funds check here — this
-                        # legacy trader doesn't have a brokers.* broker object. ──
+                        # ── risk gate (RMS Stage 1+2+3) — single shared gate,
+                        # see strategy_safety.gate_entry() (LESSONS.md TRAP #15:
+                        # this used to be hand-rolled separately per strategy
+                        # file and silently drifted). Exits (3:15 squareoff /
+                        # EXIT signal below) are never gated. No broker-funds
+                        # check here — this legacy trader doesn't have a
+                        # brokers.* broker object. ──
+                        _ensure_root_path()
+                        import risk_gate
+                        import strategy_safety
+                        opt_prem = risk_gate._quick_option_ltp(sec_id, token, cid) or price
+                        gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
+                            strategy_id, symbol, qty, lot_sz, opt_prem, side="SELL",
+                            sec_id=sec_id, mode=mode, log=log.info)
+                        if not gate_ok:
+                            log.info(f"ENTRY blocked {symbol} — {gate_reason}")
+                            try:
+                                import order_store
+                                order_store.record("SELL", actual_qty, price, source='strategy',
+                                    strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
+                                    instrument='options', trad_sym=t_sym, sec_id=sec_id, segment='NSE_FNO',
+                                    status='blocked', tags=["CAPITAL_BLOCKED", gate_reason])
+                            except Exception:
+                                pass
+                            continue
+                        if gated_qty != actual_qty:
+                            log.info(f"ENTRY sized down {symbol} — qty {actual_qty} -> {gated_qty} ({gate_reason})")
+                            actual_qty = gated_qty
                         try:
-                            import risk_gate
-                            dd_ok, dd_reason = risk_gate.check_drawdown()
-                            opt_prem = risk_gate._quick_option_ltp(sec_id, token, cid) or price
-                            cap_ok, cap_reason = True, ""
-                            if not dd_ok:
-                                cap_ok, cap_reason = False, dd_reason
-                            else:
-                                conc_ok, conc_reason = risk_gate.check_concentration(symbol, actual_qty, opt_prem)
-                                if not conc_ok:
-                                    cap_ok, cap_reason = False, conc_reason
-                                else:
-                                    cap_ok, cap_reason = risk_gate.check_capital(strategy_id, actual_qty, opt_prem, sec_id=sec_id)
-                        except Exception as _e:
-                            # FAIL CLOSED — an RMS check that throws (rate-limit,
-                            # network, order_store hiccup) must never silently
-                            # allow an unchecked entry. Missing an entry is safe;
-                            # an entry no risk gate ever saw is not.
-                            cap_ok, cap_reason = False, f"risk gate check failed: {_e}"
-                            log.warning(f"ENTRY blocked {symbol} — risk gate check failed (fail-closed): {_e}")
-                        if not cap_ok:
-                            fit_lots = 0
-                            # size-down only applies to the capital cap, not the
-                            # drawdown breaker or concentration cap (those are
-                            # deliberate hard stops, not a sizing problem).
-                            if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
-                                fit_lots = risk_gate.sized_lots(strategy_id, qty, lot_sz, opt_prem, sec_id=sec_id)
-                            if fit_lots > 0:
-                                log.info(f"ENTRY sized down {symbol} — {qty}L -> {fit_lots}L ({cap_reason})")
-                                actual_qty = fit_lots * lot_sz
-                            else:
-                                log.info(f"ENTRY blocked {symbol} — {cap_reason}")
-                                try:
-                                    import order_store
-                                    order_store.record("SELL", actual_qty, price, source='strategy',
-                                        strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
-                                        instrument='options', trad_sym=t_sym, sec_id=sec_id, segment='NSE_FNO',
-                                        status='blocked', tags=["CAPITAL_BLOCKED", cap_reason])
-                                except Exception:
-                                    pass
-                                continue
-                        try:
-                            import risk_gate
                             default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, symbol)
                         except Exception:
                             default_sl_tags = []
-                        try:
-                            import risk_gate
-                            hedge_min_strikes, hedge_max_premium = risk_gate.hedge_config(strategy_id)
-                        except Exception:
-                            hedge_min_strikes, hedge_max_premium = 0, None
+                        hedge_min_strikes, hedge_max_premium = risk_gate.hedge_config(strategy_id)
                         hedge_on = bool(hedge_min_strikes or hedge_max_premium)
                         group_id = f"RANGE_{symbol}_{int(time.time())}" if hedge_on else ""
                         if not place_order(symbol, "SELL", actual_qty, token, cid, mode, sec_id, "NSE_FNO", t_sym, price=price, extra_tags=default_sl_tags, group_id=group_id):
@@ -1018,23 +973,18 @@ def main(strategy_id="range"):
                         st["opt_qty"] = actual_qty
 
                         # ── auto-hedge BUY (opt-in, RMS tab "Hedge" fields) —
-                        # at least hedge_min_strikes further OTM than the sold
-                        # leg, and if hedge_max_premium is set, further still
-                        # until premium <= that ₹ amount (further-OTM wins).
-                        # Best-effort: contract-resolve/premium-fetch failure
-                        # logs+skips, never unwinds the SELL that already
-                        # filled above. ──
+                        # resolution lives in ONE place: strategy_safety.
+                        # compute_hedge_target() (LESSONS.md TRAP #15). Best-
+                        # effort: contract-resolve/premium-fetch failure logs+
+                        # skips, never unwinds the SELL that already filled. ──
                         if hedge_on:
                             try:
-                                h_sec_id, h_t_sym, _h_lot, h_offset = resolve_hedge_contract(
-                                    symbol, price, opt_type, offset, hedge_min_strikes,
-                                    hedge_max_premium, token, cid)
+                                h_sec_id, h_t_sym, _h_lot = strategy_safety.compute_hedge_target(
+                                    strategy_id, symbol, price, opt_type, offset,
+                                    quote_fn=lambda sid: _fetch_premium(sid, token, cid), log=log.warning)
                                 if h_sec_id:
                                     place_order(symbol, "BUY", actual_qty, token, cid, mode,
                                                 h_sec_id, "NSE_FNO", h_t_sym, group_id=group_id)
-                                else:
-                                    log.warning(f"[HEDGE] contract resolve failed for {symbol} "
-                                                f"{opt_type} — hedge leg skipped")
                             except Exception as _e:
                                 log.warning(f"[HEDGE] failed (sell leg unaffected): {_e}")
                     else:
