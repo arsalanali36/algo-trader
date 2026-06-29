@@ -381,6 +381,43 @@ def api_watch_strategy(strategy_id):
     except Exception as e:
         return jsonify({"error": f"Error reading watchlist: {e}"})
 
+@app.route('/watch-chart')
+def watch_chart_page():
+    return render_template('watch_chart.html')
+
+@app.route('/api/watch-chart-data')
+def api_watch_chart_data():
+    """Today's 1-min candles for a watchlist symbol + its current zone
+    (from data/watch_<strategy>.json) — lets the Watchlist modal's row-click
+    show what the strategy is actually seeing, not just the numbers."""
+    import range_trader, datetime as _dt, pandas as pd
+    symbol = request.args.get('symbol', '').strip().upper()
+    strategy_id = request.args.get('strategy', '').strip()
+    if not symbol:
+        return jsonify({"ok": False, "msg": "symbol required"})
+    try:
+        df = range_trader.fetch_1m(symbol, "1m")
+        if df is None or df.empty:
+            return jsonify({"ok": False, "msg": f"No candle data for {symbol} (market closed / no Dhan info?)"})
+        candles = []
+        for _, row in df.iterrows():
+            t_ist = int(pd.Timestamp(row["time"]).timestamp()) + 19800
+            candles.append({"time": t_ist, "open": round(float(row["open"]), 2),
+                            "high": round(float(row["high"]), 2), "low": round(float(row["low"]), 2),
+                            "close": round(float(row["close"]), 2)})
+        zone = {}
+        if strategy_id:
+            wf = BASE_DIR / 'data' / f"watch_{strategy_id}.json"
+            if wf.exists():
+                d = json.loads(wf.read_text())
+                for s in d.get("symbols", []):
+                    if s.get("symbol") == symbol:
+                        zone = s
+                        break
+        return jsonify({"ok": True, "candles": candles, "symbol": symbol, "zone": zone})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
 @app.route('/api/config', methods=['GET'])
 def api_config():
     try:

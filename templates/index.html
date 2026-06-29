@@ -3459,11 +3459,14 @@ function toggleLogPause(key) {
   }
 }
 
-let _watchPollTimer = null;
+let _watchPollTimer = null, _watchKey = null;
+let _watchSort = {col: 'symbol', dir: 1};
+let _watchLastSyms = [];
 async function openWatchlist(key) {
   const modal = document.getElementById('watch-modal');
   document.getElementById('watch-strat-name').textContent = key;
   modal.style.display = 'flex';
+  _watchKey = key;
   await _watchRefresh(key);
   clearInterval(_watchPollTimer);
   _watchPollTimer = setInterval(() => _watchRefresh(key), 5000);
@@ -3472,7 +3475,58 @@ function closeWatchlist() {
   document.getElementById('watch-modal').style.display = 'none';
   clearInterval(_watchPollTimer);
   _watchPollTimer = null;
+  _watchKey = null;
 }
+function openWatchChart(symbol) {
+  if (!_watchKey || !symbol) return;
+  window.open(`/watch-chart?symbol=${encodeURIComponent(symbol)}&strategy=${encodeURIComponent(_watchKey)}`, '_blank');
+}
+function watchSortBy(col) {
+  if (_watchSort.col === col) _watchSort.dir *= -1;
+  else _watchSort = {col, dir: 1};
+  _renderWatchTable(_watchLastSyms);
+}
+function _watchSortVal(s, col) {
+  const v = s[col];
+  if (v == null) return col === 'symbol' ? '' : -Infinity;
+  if (typeof v === 'boolean') return v ? 1 : 0;
+  if (typeof v === 'string') return v;
+  return Number(v);
+}
+function _renderWatchTable(syms) {
+  const box = document.getElementById('watch-content');
+  if (!syms.length) { box.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">No symbols yet — strategy still loading.</div>'; return; }
+  const {col, dir} = _watchSort;
+  const sorted = [...syms].sort((a, b) => {
+    const av = _watchSortVal(a, col), bv = _watchSortVal(b, col);
+    if (av < bv) return -1 * dir;
+    if (av > bv) return 1 * dir;
+    return 0;
+  });
+  const arrow = c => c === col ? (dir === 1 ? ' ▲' : ' ▼') : '';
+  const th = (c, label) => `<th onclick="watchSortBy('${c}')" style="padding:5px 8px;cursor:pointer;user-select:none" title="Sort">${label}${arrow(c)}</th>`;
+  const rows = sorted.map(s => `
+    <tr style="border-bottom:1px solid #21262d;cursor:pointer" onclick="openWatchChart('${s.symbol||''}')" title="Click to open chart">
+      <td style="padding:5px 8px;font-weight:600">${s.symbol||''}</td>
+      <td style="padding:5px 8px">${s.ltp!=null?Number(s.ltp).toFixed(2):'—'}</td>
+      <td style="padding:5px 8px;color:${s.zone_type==='GREEN'?'#3fb950':s.zone_type==='RED'?'#f85149':'#8b949e'}">${s.zone_type||'—'}</td>
+      <td style="padding:5px 8px">${s.zone_lower!=null?Number(s.zone_lower).toFixed(1):'—'} - ${s.zone_upper!=null?Number(s.zone_upper).toFixed(1):'—'}</td>
+      <td style="padding:5px 8px">${s.zone_fresh ? '🟢 fresh' : '⚪ stale'}</td>
+      <td style="padding:5px 8px">${s.touch_active ? `touching ${s.active_touch_type||''}` : '—'}</td>
+      <td style="padding:5px 8px;color:${s.position?'#58a6ff':'#8b949e'}">${s.position||'flat'}</td>
+      <td style="padding:5px 8px">${s.trades_today||0}</td>
+    </tr>`).join('');
+  box.innerHTML = `
+    <div style="font-size:10px;color:#8b949e;margin-bottom:8px">${_watchUpdatedTxt||''} — auto-refresh 5s — click a column to sort, click a row to open its chart</div>
+    <table style="width:100%;font-size:12px;border-collapse:collapse">
+      <thead style="position:sticky;top:0;background:#161b22"><tr style="text-align:left;color:#8b949e">
+        ${th('symbol','Symbol')}${th('ltp','LTP')}${th('zone_type','Zone')}${th('zone_upper','Range')}
+        ${th('zone_fresh','Freshness')}${th('touch_active','Touch')}${th('position','Position')}${th('trades_today','Trades')}
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+let _watchUpdatedTxt = '';
 async function _watchRefresh(key) {
   const box = document.getElementById('watch-content');
   try {
@@ -3480,31 +3534,9 @@ async function _watchRefresh(key) {
     const d = await r.json();
     if (d.error) { box.innerHTML = `<div style="color:#8b949e;font-size:12px;padding:10px">${d.error}</div>`; return; }
     const syms = d.symbols || [];
-    if (!syms.length) { box.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">No symbols yet — strategy still loading.</div>'; return; }
-    const rows = syms.map(s => `
-      <tr style="border-bottom:1px solid #21262d">
-        <td style="padding:5px 8px;font-weight:600">${s.symbol||''}</td>
-        <td style="padding:5px 8px">${s.ltp!=null?Number(s.ltp).toFixed(2):'—'}</td>
-        <td style="padding:5px 8px;color:${s.zone_type==='GREEN'?'#3fb950':s.zone_type==='RED'?'#f85149':'#8b949e'}">${s.zone_type||'—'}</td>
-        <td style="padding:5px 8px">${s.zone_lower!=null?Number(s.zone_lower).toFixed(1):'—'} - ${s.zone_upper!=null?Number(s.zone_upper).toFixed(1):'—'}</td>
-        <td style="padding:5px 8px">${s.zone_fresh ? '🟢 fresh' : '⚪ stale'}</td>
-        <td style="padding:5px 8px">${s.touch_active ? `touching ${s.active_touch_type||''}` : '—'}</td>
-        <td style="padding:5px 8px;color:${s.position?'#58a6ff':'#8b949e'}">${s.position||'flat'}</td>
-        <td style="padding:5px 8px">${s.trades_today||0}</td>
-      </tr>`).join('');
-    box.innerHTML = `
-      <div style="font-size:10px;color:#8b949e;margin-bottom:8px">Updated ${new Date(d.timestamp*1000).toLocaleTimeString()} — auto-refresh 5s</div>
-      <table style="width:100%;font-size:12px;border-collapse:collapse">
-        <thead style="position:sticky;top:0;background:#161b22">
-          <tr style="text-align:left;color:#8b949e">
-            <th style="padding:5px 8px">Symbol</th><th style="padding:5px 8px">LTP</th>
-            <th style="padding:5px 8px">Zone</th><th style="padding:5px 8px">Range</th>
-            <th style="padding:5px 8px">Freshness</th><th style="padding:5px 8px">Touch</th>
-            <th style="padding:5px 8px">Position</th><th style="padding:5px 8px">Trades</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>`;
+    _watchLastSyms = syms;
+    _watchUpdatedTxt = 'Updated ' + new Date(d.timestamp*1000).toLocaleTimeString();
+    _renderWatchTable(syms);
   } catch(e) {
     box.innerHTML = `<div style="color:#f85149;font-size:12px;padding:10px">Fetch failed: ${e}</div>`;
   }
