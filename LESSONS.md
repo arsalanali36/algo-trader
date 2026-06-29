@@ -654,6 +654,42 @@ tick lag is lag some other code path (liquidity check, SL/TP monitor) will also 
 
 ---
 
+## TRAP #22 — `resolve_kite_symbol()` assumed Dhan's trad_sym always has a day — wrong for INDEX options 🔴🔴🔴
+
+**Symptom:** first-ever live Kite test order (NIFTY ATM PE, via the new Quick Order broker toggle)
+was rejected by Kite with "The instrument you are placing an order for has either expired or does
+not exist." `resolve_kite_symbol()` had returned `None` (silently), so the code fell through to the
+`dhan_sym_to_kite()` string-guess fallback, which produced `NIFTYN2024100PE` — not a real Kite symbol
+at all.
+
+**Root cause:** `_parse_dhan_trad_sym()` assumed every Dhan trad_sym is day-inclusive
+("RELIANCE-28Jun2026-2500-CE" — true for stock options) and sliced `dmy[:2]` as the day. NIFTY's
+actual trad_sym from `dhan_master.get_option_contract()` is `"NIFTY-Jun2026-24100-PE"` — **no day at
+all** (`dhan_master.py` itself documents this: "Same trading symbol... can map to multiple expiries
+since the day is not in the symbol"). Slicing `"Ju"` as a day threw inside the try/except, expiry came
+back as garbage/None, and the exact-match against Kite's instrument dump could never succeed — not a
+rare edge case, this is true for **every single NIFTY/BANKNIFTY index option**, the two most-traded
+instruments in the whole system. TRAP #13's original "day-inclusive" comment was correct for stock
+options and silently wrong for index options — nobody had placed a live Kite index-option order
+before this session to surface it.
+
+**Fix (2026-06-29):** added `dhan_master.get_expiry_for_sec_id(sec_id)` — looks up the real expiry by
+sec_id (always already known to the caller, from the same `get_option_contract()` call that produced
+the trad_sym) instead of re-deriving it from a string that may or may not contain the day.
+`resolve_kite_symbol(kite, trad_sym, sec_id=...)` and `KiteBroker.place_order()` now pass/use it.
+Verified on VPS: same NIFTY ATM PE now resolves to `NIFTY26JUN24100PE` (real Kite contract).
+
+**Permanent guard:** never reconstruct a date/identifier by parsing a string when the *original
+structured value* (here: the sec_id → scrip-master row → real expiry) is already sitting one function
+call away. String-parsing a symbol is a documented LAST RESORT in this codebase (TRAP #13's own
+docstring says so) — but "last resort" still got used as the ONLY path for index options because
+nobody had exercised that path live yet. **Fast-detect:** before trusting any "Dhan symbol format is
+always X" assumption, check `dhan_master.py`'s own comments first (it already knew about this exact
+gap) — and test the actual instrument class you're about to trade live (index vs stock options aren't
+interchangeable here), not just whichever one happened to get tested first.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
