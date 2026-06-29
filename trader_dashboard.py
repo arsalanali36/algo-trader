@@ -1565,8 +1565,10 @@ def api_manual_order():
             'securityId':      sec_id,
             'tradingSymbol':   t_sym,
             'quantity':        qty_shares,
+            'disclosedQuantity': 0,
             'price':           order_price,
             'triggerPrice':    0,
+            'afterMarketOrder': False,
         }
         print(f"[MANUAL ORDER] body={body}", flush=True)
 
@@ -1619,7 +1621,19 @@ def api_manual_order():
 
 @app.route('/api/close-position', methods=['POST'])
 def api_close_position():
-    """Close an open position — place opposite order using exact trading symbol."""
+    """Close an open position — place opposite order using exact trading symbol.
+
+    Group-safety (2026-06-29): a sold option + its auto-hedge BUY share a
+    group_id. Closing only one leg of that pair through this single-leg
+    route used to leave the other naked with no automatic protection — the
+    margin requirement for a naked option SELL is dramatically higher than
+    for the hedged spread, so an unnoticed unhedged leg risks a margin call
+    that force-squares-off unrelated positions or blocks new orders entirely
+    (the scenario that prompted this fix). Now: look up the leg's group_id
+    first: if it has one, close every leg in that group together (same
+    logic as /api/close-position-group) regardless of which UI button was
+    clicked — there is no longer a single-leg-only path for a hedged pair.
+    """
     data     = request.get_json()
     t_sym    = data.get('t_sym', '')        # e.g. NIFTY-Jun2026-24100-CE
     entry_side = data.get('entry_side', '') # BUY or SELL
@@ -1629,6 +1643,30 @@ def api_close_position():
     # record karo taaki order_store.trades_for me net hoke completed ban jaaye.
     src_in   = data.get('source', '') or 'manual'
     strat_in = data.get('strategy', '') or ''
+
+    try:
+        import order_store
+        from datetime import timedelta as _td
+        today = (datetime.utcnow() + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
+        open_pos = order_store.trades_for(today).get('open', [])
+        this_leg = next((p for p in open_pos if p.get('sym') == t_sym and p.get('entry') == entry_side), None)
+        gid = (this_leg or {}).get('group_id')
+        if gid:
+            siblings = [p for p in open_pos if p.get('group_id') == gid]
+            if len(siblings) > 1:
+                results = []
+                for leg in siblings:
+                    r = _close_position_impl(leg['sym'], leg['entry'], leg['qty'], mode,
+                                              leg.get('source', 'manual'), leg.get('strategy', ''))
+                    r['sym'] = leg['sym']
+                    results.append(r)
+                all_ok = all(r.get('ok') for r in results)
+                return jsonify({'ok': all_ok,
+                    'msg': '[GROUP-CLOSE — hedge pair] ' + '; '.join(r.get('msg', '') for r in results),
+                    'legs': results})
+    except Exception:
+        pass  # best-effort group lookup — fall through to single-leg close on any failure
+
     return jsonify(_close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in))
 
 
@@ -1708,7 +1746,8 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
             'transactionType': close_side, 'exchangeSegment': 'NSE_FNO',
             'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
             'securityId': sec_id, 'tradingSymbol': t_sym,
-            'quantity': qty_shares, 'price': 0, 'triggerPrice': 0,
+            'quantity': qty_shares, 'disclosedQuantity': 0,
+            'price': 0, 'triggerPrice': 0, 'afterMarketOrder': False,
         }
         hdrs = range_trader.hdrs(token, cid)
         _rl.acquire("order")
@@ -1805,7 +1844,8 @@ def api_debug_order():
             'transactionType': 'SELL', 'exchangeSegment': 'NSE_FNO',
             'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
             'securityId': '56376', 'tradingSymbol': 'NIFTY-Jun2026-24100-CE',
-            'quantity': 65, 'price': 0, 'triggerPrice': 0,
+            'quantity': 65, 'disclosedQuantity': 0, 'price': 0, 'triggerPrice': 0,
+            'afterMarketOrder': False,
         }
         hdrs = range_trader.hdrs(token, cid)
         _rl.acquire("order")

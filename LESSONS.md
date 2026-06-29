@@ -825,6 +825,15 @@ regardless of symbol/price/qty (100% reject rate, no pattern), suspect a missing
 payload bug before suspecting margin/liquidity/symbol issues — a real margin/liquidity reject
 shows a *different* Dhan error code and won't be 100% across every contract.
 
+**Found 3 more independently-built sites with the exact same gap (2026-06-29):**
+`trader_dashboard.py`'s manual-order route (`/api/manual-order`), single-leg close
+(`/api/close-position`'s raw body), and the `/api/debug-test-order` route — none of them go through
+`DhanBroker.place_order()` (they POST to `/v2/orders` directly), so fixing the broker class didn't
+cover them. All three now have `disclosedQuantity`/`afterMarketOrder` added too. This is exactly the
+kind of drift the permanent guard above warns about — there is no single chokepoint for "build a
+Dhan order body" in this codebase, so this bug class will keep recurring at new call sites until
+that's consolidated (a real `dhan_master.build_order_body()` helper would close this permanently).
+
 ---
 
 ## TRAP #27 — `risk_gate.py` deploy drift: `default_broker()` existed locally/in git but was never scp'd to the VPS 🔴🔴🔴
@@ -927,6 +936,41 @@ checking the source.
 **Fast detect:** A lightweight-charts time axis off by a suspiciously round ~5.5 hours (or off by
 exactly double that, ~11h, if both layers shift it) is always this class of bug, never a real data
 issue — check every `+19800`/`Timedelta(hours=5, minutes=30)` in the chain from source to render.
+
+---
+
+## TRAP #30 — Closing only one leg of a hedge pair via the UI could orphan the other, naked, with no automatic protection 🔴🔴🔴
+
+**The risk (raised by user 2026-06-29, not yet observed live):** A sold option + its auto-placed
+far-OTM hedge BUY share a `group_id`. If only the hedge leg gets closed (SL hit, manual click,
+anything) while the main SELL leg stays open, the position instantly becomes a **naked option
+sell** — margin required for that is dramatically higher than for the hedged spread. If broker
+funds can't cover the sudden jump, the broker can force-squareoff *other*, unrelated positions to
+free margin, or simply start rejecting all new orders account-wide — a small mishap on one leg
+cascading into account-wide disruption.
+
+**What was already in place:** `pos_monitor_loop`'s `_do_squareoff()` (in `trader_dashboard.py`)
+is already group-aware — when SL/TP/EOD closes ANY leg, it auto-closes every sibling sharing the
+same `group_id` in the same pass. `/api/close-position-group` also already existed as a dedicated
+"close both legs together" button next to the regular per-leg button on grouped positions.
+
+**The actual gap found:** `/api/close-position` — the route wired to the regular per-leg
+"BUY✕"/"SELL✕" button shown on EVERY open position (grouped or not) — had **no group_id
+awareness at all**. Clicking that button on just the hedge leg (instead of the dedicated group
+button sitting right next to it) would close only that leg, leaving the main SELL leg open and
+unhedged with nothing flagging it.
+
+**Fix:** `/api/close-position` now looks up the leg's `group_id` first; if found, it closes every
+leg in that group together (same logic `/api/close-position-group` already used) regardless of
+which button was clicked. There is no longer a single-leg-only path for a hedged pair through the
+UI — the dedicated group-close button is now redundant (harmless) rather than the only safe option.
+
+**Still open (flagged, not fixed — lower priority since the UI path above is now closed):**
+(a) `strategy_safety.compute_hedge_target()`'s hedge *placement* is explicitly "best-effort" — if
+the hedge contract can't be resolved or its order rejects, the main SELL leg silently stays naked
+from the start with nothing tracking that it's unhedged differently from a properly-hedged one.
+(b) No dashboard alert specifically calls out "this open position has no hedge" — RMS Risk tab
+shows margin/capital usage in aggregate, not per-position hedge status.
 
 ---
 
