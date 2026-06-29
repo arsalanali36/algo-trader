@@ -59,13 +59,32 @@
       });
       series.setData(d.candles);
 
-      if (z.zone_upper != null) {
-        series.createPriceLine({price: z.zone_upper, color: z.zone_type==='RED'?'#f85149':'#3fb950',
-          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'zone upper'});
-      }
-      if (z.zone_lower != null) {
-        series.createPriceLine({price: z.zone_lower, color: z.zone_type==='RED'?'#f85149':'#3fb950',
-          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'zone lower'});
+      // Zone box (rectangle) — TradingView's Ars_Auto_Rev_Chain draws the
+      // zone as a filled box from its formation bar to "now", not as two
+      // chart-wide dashed lines. Faked here with an Area series: two points
+      // (zone_start_ts, last candle time) both at zone_upper, with baseValue
+      // pinned to zone_lower — lightweight-charts fills the band between
+      // them only across that time span.
+      if (z.zone_upper != null && z.zone_lower != null) {
+        const isRed = z.zone_type === 'RED';
+        const zoneColor = isRed ? '#f85149' : '#3fb950';
+        const startTs = z.zone_start_ts != null ? z.zone_start_ts : d.candles[0].time;
+        const lastTs = d.candles[d.candles.length - 1].time;
+        const zoneSeries = chart.addAreaSeries({
+          topColor: isRed ? 'rgba(248,81,73,0.22)' : 'rgba(63,185,80,0.22)',
+          bottomColor: isRed ? 'rgba(248,81,73,0.05)' : 'rgba(63,185,80,0.05)',
+          lineColor: zoneColor, lineWidth: 1,
+          baseValue: {type: 'price', price: z.zone_lower},
+          priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        });
+        zoneSeries.setData([
+          {time: startTs, value: z.zone_upper},
+          {time: lastTs, value: z.zone_upper},
+        ]);
+        series.createPriceLine({price: z.zone_upper, color: zoneColor, lineWidth:1, lineStyle:2,
+          axisLabelVisible:true, title:'zone upper'});
+        series.createPriceLine({price: z.zone_lower, color: zoneColor, lineWidth:1, lineStyle:2,
+          axisLabelVisible:true, title:'zone lower'});
       }
       if (z.ltp != null) {
         series.createPriceLine({price: z.ltp, color:'#58a6ff', lineWidth:1, lineStyle:3,

@@ -475,6 +475,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
         "zone_fresh": (n - 1 - zone_bar) <= zone_age if zone_bar != -999 else False,
         "zone_upper": zone_upper,
         "zone_lower": zone_lower,
+        "zone_bar": zone_bar if zone_bar != -999 else None,
         "tracked_high": tracked_high,
         "tracked_low": tracked_low,
         "ltp": float(df_1m.iloc[-1]["close"]) if n > 0 else 0
@@ -860,6 +861,11 @@ def main(strategy_id="range"):
             cur_state["trades_today"] = st.get("trades_today", 0)
             _lbl_map = pivot_labels.get(symbol, {})
             cur_state["key_levels"] = [[round(float(p), 2), _lbl_map.get(round(float(p), 2), t)] for p, t in levels]
+            zb = cur_state.get("zone_bar")
+            if zb is not None and 0 <= zb < len(df_1m):
+                cur_state["zone_start_ts"] = int(pd.Timestamp(df_1m.iloc[zb]["time"]).timestamp()) + 19800
+            else:
+                cur_state["zone_start_ts"] = None
             _watchlist_state[symbol] = cur_state
 
             # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega
