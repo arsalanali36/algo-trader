@@ -3097,6 +3097,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     p["mode"], broker, log=print, tag="POSMON",
                     source=p["source"], strategy=p["strategy"],
                     instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
+                    extra_tags=["pos_monitor_exit", exit_reason],
                 )
             except Exception as _ex:
                 # A network/API exception here must NOT propagate up and abort
