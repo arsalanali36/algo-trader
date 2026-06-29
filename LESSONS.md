@@ -690,6 +690,67 @@ interchangeable here), not just whichever one happened to get tested first.
 
 ---
 
+## TRAP #23 — RMS's "Global Max Loss %" (total-capital cap) got reused as a per-position option-premium SL 🔴🔴🔴
+
+**Symptom:** the first-ever live Kite test order (NIFTY ATM PE, no explicit SL/TP set) got auto-closed
+by `pos_monitor_loop` within ~20 seconds, on pure price noise, with `exit_reason` recorded blank.
+User clarified: "max loss % humara total capital ka hai, option premium ka nahi" — i.e. the field was
+never meant to be a per-position trigger at all.
+
+**Root cause:** `_pos_monitor_check_one`'s legacy fallback block read `global.max_loss_pct`/
+`max_loss_rs` (RMS Risk tab's "Global Max Loss %", labeled with placeholder "e.g. 25" — clearly meant
+as a percentage of total capital) and applied it as `entry_px * (1 ± pct/100)` — a per-position stop
+on the OPTION PREMIUM. 1% of an ~₹80 premium is ~₹0.80 — any position without an explicit SL tag
+would get closed on the very next normal price tick. The SAME config fields were (correctly) already
+being checked a few lines above via `risk_gate.daily_loss_breached()`, which treats them as a
+cumulative ₹ cap against the strategy's realized+unrealized day P&L — the legacy block was a second,
+differently-scaled consumer of the exact same numbers.
+
+**Fix (2026-06-29):** removed the global/per-strategy fallback from the legacy per-position SL block
+entirely. `max_loss_pct`/`max_loss_rs` now ONLY feed `daily_loss_breached()` (the correctly-scoped
+cumulative check) — a position with no explicit `SL_TYPE`/`SL_VAL` tag and no `default_sl_rs` stamp
+simply gets no automatic per-position SL from pos_monitor now, which is the actually-correct behavior.
+Same commit also fixed the live-mode branch of `_do_squareoff` never tagging `exit_reason` onto the
+closed order (paper-mode did; live didn't) — found while diagnosing why this trade's reason was blank.
+
+**Permanent guard:** a config field's UI label/placeholder is a contract — "Global Max Loss %" with a
+hint of "e.g. 25" describes a capital-percentage cap, not a premium-percentage one. Before reusing an
+existing config value in a NEW code path, check what its *existing* consumer(s) already assume about
+its units/scope (here: `risk_gate.py`'s own docstrings were explicit that these are cumulative/
+total-capital fields) — don't infer meaning from the field name alone. **Fast-detect:** `grep -n
+"max_loss_pct\|max_loss_rs" trader_dashboard.py risk_gate.py` and check every consumer agrees on what
+the number is a percentage/amount *of*.
+
+---
+
+## TRAP #24 — A second `DhanContext` import crash (TRAP #11/#12's fix missed this call site)
+
+**Symptom:** adding a Dhan-balance display (`DhanBroker.funds()`) crashed with `ImportError: cannot
+import name 'DhanContext' from 'dhanhq'` — the exact same error TRAP #11 (2026-06-27) already
+diagnosed and fixed, in a *different* file.
+
+**Root cause:** TRAP #11's fix rewrote `dhan_feed.py`'s WebSocket-feed construction to match the
+actually-installed `dhanhq==2.0.2` (no `DhanContext`/`MarketFeed` exported — only `DhanFeed`/
+`dhanhq`/`marketfeed`/`orderupdate`). `brokers/dhan_broker.py`'s `_get_sdk()` — a *separate* call site
+constructing the SDK client for `intraday_candles()`/`funds()` — had the identical broken
+`dhanhq(DhanContext(cid, token))` pattern and was never touched in that pass, because nothing had
+exercised `DhanBroker.funds()` or the broker-class candle path live yet (raw-REST call sites
+elsewhere, e.g. `api_manual_order`'s direct `requests.post`, don't go through this class at all and
+hid the gap).
+
+**Fix (2026-06-29):** same fix as TRAP #11, second location — `from dhanhq import dhanhq as
+_dhanhq_cls; self._sdk = _dhanhq_cls(self.cid, self.token)` (installed class takes
+`(client_id, access_token)` directly, no context wrapper).
+
+**Permanent guard:** when a dependency's API shape changes (or was always wrong vs. what's actually
+installed), grep for EVERY call site of the old pattern across the whole repo, not just the one file
+you were already working in — `grep -rn "DhanContext" --include="*.py" .` would have caught this
+second site back on 2026-06-27. A fix that's "done" in one file but not grepped repo-wide is a fix
+that's done by luck, not by coverage. **Fast-detect:** any code path through `brokers.DhanBroker`
+that nobody has exercised live yet is a candidate for this exact bug until proven otherwise.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
