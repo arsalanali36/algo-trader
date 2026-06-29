@@ -316,6 +316,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
     zone_lower = None
     zone_type  = None   # 'GREEN' or 'RED'
     zone_bar   = -999
+    zones_history = []   # every zone formed today (for chart display) — [start_bar, end_bar, upper, lower, type]
 
     # Tracking high/low while touching level
     tracked_high = None
@@ -380,6 +381,8 @@ def run_signal_engine(df_1m, key_levels, cfg):
                 # Red zone: short setup
                 candle_size = h - l
                 if candle_size <= max_cs:
+                    if zone_upper is not None:
+                        zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
                     zone_upper = h
                     zone_lower = l
                     zone_type  = "RED"
@@ -392,6 +395,8 @@ def run_signal_engine(df_1m, key_levels, cfg):
                 # Green zone: long setup
                 candle_size = h - l
                 if candle_size <= max_cs:
+                    if zone_upper is not None:
+                        zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
                     zone_upper = h
                     zone_lower = l
                     zone_type  = "GREEN"
@@ -468,6 +473,9 @@ def run_signal_engine(df_1m, key_levels, cfg):
             atr_sl_short = c + atr_val * atr_mult
             trades_today += 1
 
+    if zone_upper is not None:
+        zones_history.append([zone_bar, n - 1, zone_upper, zone_lower, zone_type])
+
     current_state = {
         "touch_active": touch_active,
         "active_touch_type": active_touch_type,
@@ -476,6 +484,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
         "zone_upper": zone_upper,
         "zone_lower": zone_lower,
         "zone_bar": zone_bar if zone_bar != -999 else None,
+        "zones_history": zones_history,
         "tracked_high": tracked_high,
         "tracked_low": tracked_low,
         "ltp": float(df_1m.iloc[-1]["close"]) if n > 0 else 0
@@ -916,6 +925,14 @@ def main(strategy_id="range"):
                 cur_state["zone_start_ts"] = int(pd.Timestamp(df_1m.iloc[zb]["time"]).timestamp()) + 19800
             else:
                 cur_state["zone_start_ts"] = None
+
+            def _bar_ts(idx):
+                idx = max(0, min(int(idx), len(df_1m) - 1))
+                return int(pd.Timestamp(df_1m.iloc[idx]["time"]).timestamp()) + 19800
+            cur_state["zones_history"] = [
+                {"start_ts": _bar_ts(zs), "end_ts": _bar_ts(ze), "upper": zu, "lower": zl, "type": zt}
+                for zs, ze, zu, zl, zt in cur_state.get("zones_history", [])
+            ]
             _watchlist_state[symbol] = cur_state
 
             # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega

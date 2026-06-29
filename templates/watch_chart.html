@@ -47,44 +47,61 @@
       document.getElementById('touch-txt').textContent = z.touch_active ? `Touching ${z.active_touch_type||''}` : '';
       document.getElementById('updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
 
+      const BG = '#0d1117';
       const chart = LightweightCharts.createChart(document.getElementById('chart'), {
-        layout:{background:{color:'#0d1117'}, textColor:'#8b949e'},
+        layout:{background:{color:BG}, textColor:'#8b949e'},
         grid:{vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'}},
         timeScale:{timeVisible:true, secondsVisible:false},
         rightPriceScale:{borderColor:'#30363d'},
       });
+
+      // Zone boxes (rectangles), one per zone formed today — TradingView's
+      // Ars_Auto_Rev_Chain draws each zone as a filled box confined to its
+      // own bar range, not a chart-wide line. lightweight-charts v4 has no
+      // native rectangle primitive, so each box is faked with TWO Area
+      // series sharing the same [start_ts, end_ts] x-range: one fills
+      // everything below "upper" with the zone color, the other (added
+      // right after, so it paints on top) re-fills everything below
+      // "lower" with the exact chart background color — net effect is a
+      // band confined between lower and upper. The candlestick series is
+      // added LAST (after all zone boxes) so candles always render on top
+      // and are never hidden by the background-color mask.
+      const zones = (z.zones_history && z.zones_history.length) ? z.zones_history
+        : (z.zone_upper != null && z.zone_lower != null ? [{
+            start_ts: z.zone_start_ts != null ? z.zone_start_ts : d.candles[0].time,
+            end_ts: d.candles[d.candles.length - 1].time,
+            upper: z.zone_upper, lower: z.zone_lower, type: z.zone_type,
+          }] : []);
+      zones.forEach(zone => {
+        if (zone.upper == null || zone.lower == null) return;
+        const isRed = zone.type === 'RED';
+        const zoneColor = isRed ? '#f85149' : '#3fb950';
+        const fillColor = isRed ? 'rgba(248,81,73,0.22)' : 'rgba(63,185,80,0.22)';
+        const band = chart.addAreaSeries({
+          topColor: fillColor, bottomColor: fillColor, lineColor: zoneColor, lineWidth: 1,
+          priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        });
+        band.setData([{time: zone.start_ts, value: zone.upper}, {time: zone.end_ts, value: zone.upper}]);
+        const mask = chart.addAreaSeries({
+          topColor: BG, bottomColor: BG, lineColor: 'rgba(0,0,0,0)', lineWidth: 0,
+          priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
+        });
+        mask.setData([{time: zone.start_ts, value: zone.lower}, {time: zone.end_ts, value: zone.lower}]);
+      });
+
       const series = chart.addCandlestickSeries({
         upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
         wickUpColor:'#3fb950', wickDownColor:'#f85149',
       });
       series.setData(d.candles);
 
-      // Zone box (rectangle) — TradingView's Ars_Auto_Rev_Chain draws the
-      // zone as a filled box from its formation bar to "now", not as two
-      // chart-wide dashed lines. Faked here with an Area series: two points
-      // (zone_start_ts, last candle time) both at zone_upper, with baseValue
-      // pinned to zone_lower — lightweight-charts fills the band between
-      // them only across that time span.
-      if (z.zone_upper != null && z.zone_lower != null) {
-        const isRed = z.zone_type === 'RED';
-        const zoneColor = isRed ? '#f85149' : '#3fb950';
-        const startTs = z.zone_start_ts != null ? z.zone_start_ts : d.candles[0].time;
-        const lastTs = d.candles[d.candles.length - 1].time;
-        const zoneSeries = chart.addAreaSeries({
-          topColor: isRed ? 'rgba(248,81,73,0.22)' : 'rgba(63,185,80,0.22)',
-          bottomColor: isRed ? 'rgba(248,81,73,0.05)' : 'rgba(63,185,80,0.05)',
-          lineColor: zoneColor, lineWidth: 1,
-          baseValue: {type: 'price', price: z.zone_lower},
-          priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
-        });
-        zoneSeries.setData([
-          {time: startTs, value: z.zone_upper},
-          {time: lastTs, value: z.zone_upper},
-        ]);
-        series.createPriceLine({price: z.zone_upper, color: zoneColor, lineWidth:1, lineStyle:2,
-          axisLabelVisible:true, title:'zone upper'});
-        series.createPriceLine({price: z.zone_lower, color: zoneColor, lineWidth:1, lineStyle:2,
-          axisLabelVisible:true, title:'zone lower'});
+      if (z.zone_upper != null) {
+        series.createPriceLine({price: z.zone_upper, color: z.zone_type==='RED'?'#f85149':'#3fb950',
+          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'zone upper'});
+      }
+      if (z.zone_lower != null) {
+        series.createPriceLine({price: z.zone_lower, color: z.zone_type==='RED'?'#f85149':'#3fb950',
+          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'zone lower'});
       }
       if (z.ltp != null) {
         series.createPriceLine({price: z.ltp, color:'#58a6ff', lineWidth:1, lineStyle:3,
