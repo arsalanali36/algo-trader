@@ -668,6 +668,55 @@ def reset_daily_state():
         _state[sym] = {"position": None, "trades_today": 0, "last_signal": None, "opt_sec_id": None, "opt_trad_sym": None}
 
 
+def _recover_state_from_order_store(strategy_id):
+    """Rebuild in-memory _state from today's open order_store positions on
+    process startup — a restart used to reset every symbol's position to
+    None, which the EXIT_LONG/EXIT_SHORT handler reads as "no open position
+    this session" and silently skips (the 2026-06-17 startup-EXIT guard,
+    needed to stop fake exits from stale historical data on a truly fresh
+    start, but it can't tell a fresh start apart from a restart that has
+    real open positions). Found live 2026-06-29 — 4 ARS_CHAIN_V1 positions
+    orphaned from their own strategy's exit logic after repeated restarts
+    (still protected by the separate, order_store-driven pos_monitor_loop
+    SL/EOD-squareoff in trader_dashboard.py, but the strategy's own zone/
+    ATR exit could never fire for them again). See LESSONS.md TRAP #28.
+    Best-effort: any failure here just leaves _state at its fresh-empty
+    default — never blocks startup."""
+    try:
+        import order_store
+        from datetime import datetime as _dt, timedelta as _td
+        ist = _dt.utcnow() + _td(hours=5, minutes=30)
+        data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
+        all_today = (data.get("open") or []) + (data.get("closed") or [])
+        recovered = 0
+        for p in (data.get("open") or []):
+            if p.get("strategy") != strategy_id or p.get("entry") != "SELL":
+                continue  # hedge BUY legs / other strategies — skip
+            symbol = p.get("symbol")
+            trad_sym = p.get("sym", "")
+            if not symbol or not trad_sym:
+                continue
+            opt_type = "PE" if trad_sym.endswith("-PE") else ("CE" if trad_sym.endswith("-CE") else None)
+            if opt_type is None:
+                continue
+            st = get_state(symbol)
+            st["position"]      = "LONG" if opt_type == "PE" else "SHORT"
+            st["last_signal"]   = "BUY" if opt_type == "PE" else "SELL"
+            st["entry_price"]   = p.get("entry_price")
+            st["opt_sec_id"]    = p.get("sec_id")
+            st["opt_trad_sym"]  = trad_sym
+            st["opt_qty"]       = p.get("qty")
+            st["trades_today"]  = sum(1 for q in all_today
+                                       if q.get("strategy") == strategy_id and q.get("symbol") == symbol
+                                       and q.get("entry") == "SELL")
+            recovered += 1
+        if recovered:
+            log.info(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
+                     f"exit logic will resume for them this session")
+    except Exception as e:
+        log.warning(f"[RECOVER] state recovery failed (continuing with fresh state): {e}")
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # MAIN LOOP
 # ─────────────────────────────────────────────────────────────────────────────
@@ -677,6 +726,7 @@ def main(strategy_id="range"):
     _STRAT_ID = strategy_id
     mode = "live" if "--live" in sys.argv else "paper"
     log.info(f"Range Trader starting — mode={mode}")
+    _recover_state_from_order_store(strategy_id)
 
     last_day        = None
     daily_levels    = {}   # symbol → [(price, type)]

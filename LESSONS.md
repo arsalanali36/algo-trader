@@ -856,6 +856,48 @@ the local file (and git) is *always* this — a stale VPS copy, not a logic bug.
 
 ---
 
+## TRAP #28 — Restarting a live trader process silently orphans its own open positions' exit logic 🔴🔴🔴
+
+**Symptom:** A strategy has genuinely open positions (visible in Orders & P&L), but its own
+zone/ATR-based EXIT signal never fires for them again, even though the strategy is clearly running
+and processing other symbols normally. No error logged — `EXIT_LONG`/`EXIT_SHORT` signals for
+those specific symbols are just silently skipped.
+
+**Root cause:** `_state` (the in-memory dict tracking `position`/`opt_sec_id`/`opt_qty` per symbol)
+is process-local and resets to fresh defaults (`position: None`) every time the process restarts —
+there was no persistence across restarts. The `elif signal in ("EXIT_LONG","EXIT_SHORT"): if
+st["position"] is None: continue` guard (added 2026-06-17 specifically to stop fake exits from
+stale historical data on a genuinely fresh start) can't distinguish "fresh start, nothing was ever
+open" from "restart, but 4 positions are still open" — it treats both identically and skips the
+exit either way. Found live 2026-06-29 after restarting ARS_CHAIN_V1 multiple times in one session
+(deploying unrelated fixes) without checking the **actual** open-positions API first — checking only
+the log tail for recent `SIGNAL` lines missed 4 positions opened hours earlier that never showed up
+in that tail window.
+
+**Why it wasn't worse:** These were paper-mode (zero real money), and `pos_monitor_loop` in
+`trader_dashboard.py` is a *separate* process (the dashboard, not the strategy) that reads
+open positions straight from the persistent `order_store` DB — independent of the strategy's
+in-memory state — so SL/TP tags and the blanket 3:15 PM EOD squareoff still applied. A live-money
+position hitting this same bug would have been stuck open with no risk control until that
+blanket EOD squareoff, since the strategy's own exit path was the only thing actually skipped.
+
+**Fix:** `_recover_state_from_order_store(strategy_id)` (`_TRADERS/range_trader.py`), called once
+at the top of `main()` before the loop starts — reads today's open `order_store` positions for this
+strategy (filtering `entry == "SELL"` to skip hedge BUY legs), derives `LONG`/`SHORT` from the
+option contract's `-PE`/`-CE` suffix, and re-populates `_state` so the exit logic resumes for
+positions that were already open when the process started.
+
+**Permanent guard:** Before restarting ANY live trader process, check the **actual** open-positions
+API/`order_store` (not just a log tail snippet) — a tail only shows recent lines and will miss a
+position opened hours earlier with no recent activity. The state-recovery fix above also makes a
+restart itself safe-by-default going forward, but verifying first is still the right habit.
+
+**Fast detect:** A strategy clearly running + processing symbols normally, but a specific symbol's
+EXIT never fires despite an obviously-stale/losing position sitting open for a long time → suspect
+this exact bug. Check whether the process has been restarted since that position opened.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
