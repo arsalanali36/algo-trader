@@ -1336,6 +1336,7 @@ def api_manual_order():
     lots   = int(data.get('lots', 1))
     offset = int(data.get('strike_offset', 0))
     mode   = data.get('mode', 'paper')
+    broker_choice = (data.get('broker') or 'dhan').lower()  # 'dhan' (default) or 'kite'
     order_type = (data.get('order_type', 'MARKET') or 'MARKET').upper()
     limit_price = data.get('price')   # user-entered LIMIT price (₹), may be None
     try:
@@ -1366,6 +1367,33 @@ def api_manual_order():
         lot_size = lot_sz_master if lot_sz_master else 65
 
         qty_shares = lots * lot_size   # e.g. 1 lot × 65 = 65 shares
+
+        # Zerodha test path — contract resolution (ATM strike etc) always uses
+        # Dhan per project convention ("data always Dhan, orders via Kite");
+        # only the actual order placement diverges. Reuses smart_order.execute()
+        # (broker-agnostic, marketable-limit pricing, async order-confirm,
+        # order_store recording) instead of hand-rolling a second Dhan-style
+        # REST flow for Kite — this is purely to verify "does an order from
+        # this dashboard actually reach Zerodha" without duplicating the
+        # whole live-order/paper-log/record logic a second time.
+        if broker_choice == 'kite':
+            try:
+                import smart_order
+                from brokers import get_broker
+                kite_broker_obj = get_broker('kite')
+                res = smart_order.execute(
+                    side, symbol, sec_id, 'NSE_FNO', qty_shares, t_sym, mode,
+                    kite_broker_obj, log=lambda m: print(m, flush=True),
+                    tag='MANUAL', source='manual', strategy='manual',
+                    instrument='options', broker_name='kite')
+                if not res.get('ok'):
+                    return jsonify({'ok': False, 'msg': f"Kite order failed — {res.get('reason')}"})
+                mtag = 'LIVE' if mode == 'live' else 'PAPER'
+                return jsonify({'ok': True,
+                    'msg': f"[{mtag}/KITE] {side} {lots}L ({qty_shares} qty) {t_sym} "
+                           f"@ {res['price']:.2f} ({res.get('status')})"})
+            except Exception as e:
+                return jsonify({'ok': False, 'msg': f'Kite order error: {e}'})
 
         # Get actual option LTP from Dhan quotes (not index price)
         import requests as _req

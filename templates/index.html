@@ -4451,7 +4451,7 @@ if (activeTab === 'orders') ordersEnter();   // render the default Orders tab im
 // ── QUICK ORDER FLOATING PANEL ───────────────────────────────────────────────
 (function(){
   const LOT_SIZES = {NIFTY: 65, BANKNIFTY: 30};  // fallback; overwritten by API
-  let qoSym = 'NIFTY', qoAtm = 0, qoMode = 'paper';
+  let qoSym = 'NIFTY', qoAtm = 0, qoMode = 'paper', qoBroker = 'dhan';
 
   // fetch real lot sizes from scrip master
   fetch('/api/lot-sizes').then(r=>r.json()).then(d=>{
@@ -4467,9 +4467,13 @@ if (activeTab === 'orders') ordersEnter();   // render the default Orders tab im
   <span style="color:#58a6ff;font-size:12px;font-weight:bold;letter-spacing:1px">QUICK ORDER</span>
   <span id="qo-close" style="color:#8b949e;font-size:16px;cursor:pointer;line-height:1">&#x2715;</span>
 </div>
-<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:12px;gap:2px">
+<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:8px;gap:2px">
   <button id="qo-paper" onclick="qoSetMode('paper')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#d29922;color:#0d1117">PAPER</button>
   <button id="qo-live"  onclick="qoSetMode('live')"  style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">LIVE</button>
+</div>
+<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:12px;gap:2px">
+  <button id="qo-broker-dhan" onclick="qoSetBroker('dhan')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#1f6feb;color:#fff">DHAN</button>
+  <button id="qo-broker-kite" onclick="qoSetBroker('kite')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">ZERODHA</button>
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Symbol</div>
 <div style="display:flex;gap:6px;margin-bottom:10px">
@@ -4746,6 +4750,15 @@ if (activeTab === 'orders') ordersEnter();   // render the default Orders tab im
     document.getElementById('qo-status').textContent = m==='live'?'Mode: LIVE — Real orders!':'Mode: PAPER';
     document.getElementById('qo-status').style.color = m==='live'?'#f85149':'#8b949e';
   };
+
+  window.qoGetBroker = ()=>qoBroker;
+  window.qoSetBroker = b=>{
+    qoBroker=b;
+    document.getElementById('qo-broker-dhan').style.background = b==='dhan'?'#1f6feb':'transparent';
+    document.getElementById('qo-broker-dhan').style.color      = b==='dhan'?'#fff':'#8b949e';
+    document.getElementById('qo-broker-kite').style.background = b==='kite'?'#a371f7':'transparent';
+    document.getElementById('qo-broker-kite').style.color      = b==='kite'?'#fff':'#8b949e';
+  };
   function qoRefreshLtp() {
     clearTimeout(_qoLtpTimer);
     _qoLtpTimer = setTimeout(qoFetchLtp, 300);
@@ -4829,7 +4842,7 @@ if (activeTab === 'orders') ordersEnter();   // render the default Orders tab im
     st.textContent = `LIMIT ${side} ${optType} @ ${price.toFixed(2)}...`; st.style.color='#d29922';
     try {
       const r = await fetch('/api/manual-order',{method:'POST',headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({symbol:qoSym, side, opt_type:optType, lots, strike_offset:qoAtm, mode:qoMode, order_type:'LIMIT', price})});
+        body: JSON.stringify({symbol:qoSym, side, opt_type:optType, lots, strike_offset:qoAtm, mode:qoMode, broker:qoBroker, order_type:'LIMIT', price})});
       const j = await r.json();
       st.textContent = j.msg || (j.ok?'Done':'Error');
       st.style.color = j.ok?'#3fb950':'#f85149';
