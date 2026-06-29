@@ -401,7 +401,10 @@ def api_watch_chart_data():
             return jsonify({"ok": False, "msg": f"No candle data for {symbol} (market closed / no Dhan info?)"})
         candles = []
         for _, row in df.iterrows():
-            t_ist = int(pd.Timestamp(row["time"]).timestamp()) + 19800
+            # range_trader.fetch_1m() already shifts df["time"] by +5:30 (IST
+            # wall-clock stored as a naive timestamp) — do NOT add 19800 again
+            # here, that double-shifts it (was showing candles ~5.5h ahead).
+            t_ist = int(pd.Timestamp(row["time"]).timestamp())
             candles.append({"time": t_ist, "open": round(float(row["open"]), 2),
                             "high": round(float(row["high"]), 2), "low": round(float(row["low"]), 2),
                             "close": round(float(row["close"]), 2)})

@@ -920,15 +920,18 @@ def main(strategy_id="range"):
             cur_state["trades_today"] = st.get("trades_today", 0)
             _lbl_map = pivot_labels.get(symbol, {})
             cur_state["key_levels"] = [[round(float(p), 2), _lbl_map.get(round(float(p), 2), t)] for p, t in levels]
+            # df_1m["time"] is already IST wall-clock (fetch_1m shifts it +5:30
+            # on the way in) — do NOT add 19800 again here (double-shift bug,
+            # found 2026-06-29: candles displayed ~5.5h ahead on the watch chart).
             zb = cur_state.get("zone_bar")
             if zb is not None and 0 <= zb < len(df_1m):
-                cur_state["zone_start_ts"] = int(pd.Timestamp(df_1m.iloc[zb]["time"]).timestamp()) + 19800
+                cur_state["zone_start_ts"] = int(pd.Timestamp(df_1m.iloc[zb]["time"]).timestamp())
             else:
                 cur_state["zone_start_ts"] = None
 
             def _bar_ts(idx):
                 idx = max(0, min(int(idx), len(df_1m) - 1))
-                return int(pd.Timestamp(df_1m.iloc[idx]["time"]).timestamp()) + 19800
+                return int(pd.Timestamp(df_1m.iloc[idx]["time"]).timestamp())
             cur_state["zones_history"] = [
                 {"start_ts": _bar_ts(zs), "end_ts": _bar_ts(ze), "upper": zu, "lower": zl, "type": zt}
                 for zs, ze, zu, zl, zt in cur_state.get("zones_history", [])
