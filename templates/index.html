@@ -1608,6 +1608,29 @@ async function riskStartBot(s, mode) {
   renderRmsSummary();
   renderLogRunControls();
 }
+
+async function riskToggleWebhook(s, mode) {
+  let cfg={}; try{ const r=await fetch('/api/config'); cfg=await r.json(); }catch(e){}
+  if(!cfg.webhooks) cfg.webhooks = {};
+  if(!cfg.webhooks[s]) cfg.webhooks[s] = {};
+  
+  if (mode === 'stop') {
+    cfg.webhooks[s].active = false;
+  } else {
+    cfg.webhooks[s].active = true;
+    cfg.webhooks[s].mode = mode;
+  }
+  
+  const res = await fetch('/api/config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(cfg)});
+  if (res.ok) {
+    flash(`Webhook ${s} set to ${mode}`, mode==='stop'?'#f85149':'#3fb950');
+    if (typeof whLoadStrats === 'function') await whLoadStrats();
+    renderRmsSummary();
+  } else {
+    flash(`Failed to update ${s}`, '#f85149');
+  }
+}
+
 async function riskStopBot(s) {
   let r = await fetch(`/api/stop?s=${s}`, {method:'POST'});
   let j = await r.json();
@@ -1670,6 +1693,22 @@ async function renderRmsSummary(){
         runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap"><span style="color:#8b949e">⚫ Stopped</span>`
           + `<button class="btn btn-green" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskStartBot('${s.strategy}','paper')">Paper</button>`
           + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1;" onclick="riskStartBot('${s.strategy}','live')">Live</button></div>`;
+      }
+    } else {
+      const whCfg = (GLOBAL_CONFIG.webhooks && GLOBAL_CONFIG.webhooks[s.strategy]) || {};
+      const isActive = whCfg.active === true;
+      const mode = whCfg.mode || 'paper';
+      
+      if (isActive) {
+        const modeBadge = mode === 'live' 
+          ? '<span style="color:#58a6ff;font-weight:600;">🔵 Live</span>' 
+          : '<span style="color:#3fb950;font-weight:600;">🟢 Paper</span>';
+        runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap">${modeBadge}`
+          + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskToggleWebhook('${s.strategy}','stop')">Stop</button></div>`;
+      } else {
+        runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap"><span style="color:#8b949e">⚫ Stopped</span>`
+          + `<button class="btn btn-green" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskToggleWebhook('${s.strategy}','paper')">Paper</button>`
+          + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1;" onclick="riskToggleWebhook('${s.strategy}','live')">Live</button></div>`;
       }
     }
 
@@ -3357,11 +3396,13 @@ function renderLogRunControls() {
         ? '<span style="color:#58a6ff;font-weight:600">🔵 Live</span>'
         : '<span style="color:#3fb950;font-weight:600">🟢 Paper</span>';
       el.innerHTML = `<div style="display:flex;align-items:center;white-space:nowrap;font-size:11px">${modeBadge}`
-        + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','stop')">Stop</button></div>`;
+        + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','stop')">Stop</button>`
+        + `<button class="btn btn-gray" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="openWatchlist('${key}')">👀 Watch</button></div>`;
     } else {
       el.innerHTML = `<div style="display:flex;align-items:center;white-space:nowrap;font-size:11px"><span style="color:#8b949e">⚫ Stopped</span>`
         + `<button class="btn btn-green" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','paper')">Paper</button>`
-        + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1" onclick="riskStartStopFromLog('${key}','live')">Live</button></div>`;
+        + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1" onclick="riskStartStopFromLog('${key}','live')">Live</button>`
+        + `<button class="btn btn-gray" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="openWatchlist('${key}')">👀 Watch</button></div>`;
     }
   });
 }
@@ -7722,6 +7763,18 @@ function handleViewerKeyDown(e) {
     <button id="image-viewer-prev" onclick="navigateImageViewer(-1)">◀</button>
     <button id="image-viewer-next" onclick="navigateImageViewer(1)">▶</button>
     <div id="image-viewer-counter"></div>
+  </div>
+</div>
+
+
+<!-- WATCHLIST MODAL -->
+<div id="watch-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);z-index:9999;align-items:center;justify-content:center;">
+  <div style="background:#0d1117;width:95%;max-width:800px;border:1px solid #30363d;border-radius:8px;padding:20px;display:flex;flex-direction:column;max-height:80vh;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;border-bottom:1px solid #21262d;padding-bottom:10px;">
+      <h3 style="margin:0;color:#58a6ff;">👀 Watchlist: <span id="watch-strat-name" style="color:#e6edf3"></span></h3>
+      <button onclick="closeWatchlist()" style="background:transparent;border:none;color:#8b949e;font-size:20px;cursor:pointer;">✕</button>
+    </div>
+    <div id="watch-content" style="flex:1;overflow-y:auto;"></div>
   </div>
 </div>
 
