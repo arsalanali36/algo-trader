@@ -614,11 +614,27 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
     opt_ltp = None
     if seg == "NSE_FNO" and sec_id:
         _ensure_root_path()
+        # Live WebSocket feed first — zero extra Dhan REST call, no DH-904 risk.
+        # Also proactively subscribes this contract so it (and the SL/TP monitor,
+        # liquidity check) have a tick available sooner, not just on the next
+        # entry. Often empty for a JUST-resolved ATM strike (subscribing causes
+        # a reconnect, tick arrives a moment later) — that's exactly why this
+        # still falls through to shared_ltp_cache/REST below, not a bug.
         try:
-            import shared_ltp_cache
-            opt_ltp = shared_ltp_cache.get(sec_id, max_age=15)
+            import dhan_feed
+            dhan_feed.add(("NSE_FNO", sec_id))
+            q = dhan_feed.get_quote(sec_id)
+            ltp_v = float(q.get("ltp") or 0)
+            if ltp_v:
+                opt_ltp = ltp_v
         except Exception:
-            opt_ltp = None
+            pass
+        if not opt_ltp:
+            try:
+                import shared_ltp_cache
+                opt_ltp = shared_ltp_cache.get(sec_id, max_age=15)
+            except Exception:
+                opt_ltp = None
         if not opt_ltp:
             for _attempt in range(3):
                 try:
@@ -859,8 +875,20 @@ def main(strategy_id="range"):
         # TCS/HINDUNILVR). Indices always pass. cfg["stock_whitelist"]: custom
         # list, or "all" to disable. Also shrinks the per-loop scan → fewer Dhan
         # candle/LTP calls (DH-904 relief).
+        # Skipped entirely when the live any-2-of-3 liquidity filter (2026-06-28,
+        # strategy_safety.check_contract_liquidity, runs per-contract at entry)
+        # is ON for this strategy — that filter was BUILT to replace this rigid
+        # static 21-name list with a wider real-time check; leaving this static
+        # filter active too just re-imposed the old narrow universe underneath
+        # it, silently dropping symbols (e.g. 18/25) before they ever reached
+        # the new check. Found 2026-06-29 while live.
+        try:
+            import risk_gate as _rg_wl
+            _live_filter_on = _rg_wl.liquidity_filter_enabled(strategy_id)
+        except Exception:
+            _live_filter_on = False
         _wl = cfg.get("stock_whitelist")
-        if _wl != "all":
+        if _wl != "all" and not _live_filter_on:
             try:
                 _ensure_root_path()
                 import universe as _u
@@ -929,6 +957,17 @@ def main(strategy_id="range"):
                         continue
                     if sec_id:
                         actual_qty = qty * lot_sz
+                        # Subscribe this contract on the live feed as early as
+                        # possible — gate_entry's liquidity check + place_order's
+                        # premium fetch both read dhan_feed first; a freshly
+                        # resolved ATM strike has no tick yet (subscribe causes
+                        # a reconnect), so every millisecond of head start here
+                        # reduces how often we fall through to REST/DH-904.
+                        try:
+                            import dhan_feed
+                            dhan_feed.add(("NSE_FNO", sec_id))
+                        except Exception:
+                            pass
                         # ── risk gate (RMS Stage 1+2+3) — single shared gate,
                         # see strategy_safety.gate_entry() (LESSONS.md TRAP #15:
                         # this used to be hand-rolled separately per strategy

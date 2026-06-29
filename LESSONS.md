@@ -526,6 +526,134 @@ rather than what the current consumer code happens to extract — the two are no
 
 ---
 
+## TRAP #18 — `from .base_broker import BaseBroker` breaks when `kite_broker` is imported wrong, in 3 separate call sites 🔴🔴🔴
+
+**Symptom:** Kite "Exchange → Save" request-token flow failed with `attempted relative import with
+no known parent package`; separately, the live `rsi_v1` strategy had been crash-looping on the exact
+same error since **2026-06-26** (3 days, unnoticed — its log just showed repeated tracebacks every
+loop, nobody was watching that specific log file).
+
+**Root cause:** `brokers/kite_broker.py` uses a relative import (`from .base_broker import
+BaseBroker`) because it's a package module. Three call sites did
+`sys.path.insert(0, BASE_DIR/"brokers"); import kite_broker` — this imports it as a **top-level**
+module with no package context, so the relative import inside it has no parent package to resolve
+against and crashes. The correct pattern (used everywhere else in this codebase, e.g.
+`from brokers import get_broker`) is to put `BASE_DIR` (not `BASE_DIR/"brokers"`) on `sys.path` and
+import `from brokers import kite_broker` — same module, package context preserved.
+
+**Fix (2026-06-29):** `trader_dashboard.py` (`/api/kite-exchange-token`, `/api/kite-test-order`) and
+`_TRADERS/01_rsi_v1.py` all changed to `from brokers import kite_broker`. Grepped the whole repo for
+`import kite_broker` not preceded by `from brokers` to confirm no 4th copy was hiding somewhere.
+
+**Permanent guard:** any module inside a package (anything with a relative `from .x import y`) must
+ALWAYS be imported as `from <package> import <module>`, never as a bare top-level import with the
+package's own directory shoved onto `sys.path`. If you see `sys.path.insert(0, .../"brokers")`
+anywhere, that's the smell — the fix is almost always to point `sys.path` at the package's *parent*
+instead and import properly qualified. **Fast-detect:** `grep -rn "import kite_broker" --include="*.py" .`
+and confirm every hit is `from brokers import kite_broker`.
+
+---
+
+## TRAP #19 — Restarting the dashboard silently killed the live strategy traders it had spawned 🔴🔴🔴
+
+**Symptom:** deployed an unrelated UI fix, ran `systemctl restart algo-dashboard` (routine, done many
+times before) — a few minutes later noticed `ARS_CHAIN_V1`'s log had stopped advancing exactly at
+the restart timestamp. `ps aux` confirmed: the `_TRADERS/range_trader.py` and `01_rsi_v1.py`
+processes were **gone**, even though they're spawned with `Popen(..., start_new_session=True)`
+specifically so they're supposed to survive the parent dying.
+
+**Root cause:** `start_new_session=True` detaches the child from the parent's *process group/session*
+(so it doesn't get killed by terminal signals, Ctrl+C, etc.) — but it does **not** remove the child
+from the parent's systemd **cgroup**. systemd's default `KillMode=control-group` kills every process
+in the unit's cgroup on stop/restart, session or no session. So every `systemctl restart
+algo-dashboard` was quietly killing every strategy trader the dashboard had ever started, with zero
+error or log line anywhere — they just stopped.
+
+**Fix (2026-06-29):** added `KillMode=process` to `algo-dashboard.service` — now only the dashboard's
+own main process receives the stop signal; detached children are left alone, exactly as the
+`start_new_session=True` code already assumed they would be. Re-verified: restarted the dashboard,
+confirmed via `ps aux` + unchanged trader PIDs that they survived.
+
+**Permanent guard:** any systemd service whose Python process spawns long-lived detached children via
+`Popen(start_new_session=True)` (or `subprocess.DETACHED_PROCESS` on Windows) needs `KillMode=process`
+in its unit file — `start_new_session`/`setsid` alone is **not** enough under systemd's default
+cgroup-based kill behavior. **Fast-detect after any dashboard restart:** `ps aux | grep -E
+'_TRADERS|range_trader|01_rsi_v1'` — compare PIDs/start-times before and after; if they reset, the
+service file is missing this.
+
+**Related, same root issue:** `pos_monitor_loop`/`webhook_monitor_loop`/`auto_scheduler` used to run
+as **in-process threads inside `trader_dashboard.py` itself** — meaning even with the cgroup fix
+above, those three (SL/TP/EOD-squareoff, webhook trailing-SL, 9:10/15:30 scheduler) still paused for
+the few seconds of every dashboard restart, since they live *inside* the very process being
+restarted. Moved them into a separate `monitor_daemon.py` + its own `algo-monitor` systemd service —
+now dashboard restarts (UI/route fixes) never pause live risk monitoring at all. **Rule going
+forward: nothing safety-critical (SL/TP, squareoff, daily-loss breaker, webhook monitor) may run as a
+thread inside the dashboard's own Flask process** — it has to be a separately-deployable, separately-
+restartable unit, because the dashboard *will* get restarted often (every UI tweak).
+
+---
+
+## TRAP #20 — The "wide" live liquidity filter was silently narrowed back down by the static whitelist it was built to replace
+
+**Symptom:** RMS Risk tab's "Live Liquidity Filter" (any-2-of-3 spread/volume/OI, ON by default, built
+2026-06-28 specifically to widen the tradeable universe past the old 21-name static list) was on, but
+`range_trader.py`'s log still showed `[WHITELIST] trading 7 liquid names; dropped 18 illiquid: ...`
+every loop — the exact same narrow-universe behavior the new filter was supposed to have replaced.
+
+**Root cause:** `range_trader.py` has its OWN older, separate static-whitelist filter
+(`cfg["stock_whitelist"]` vs `universe.LIQUID_PREMIUM`, a fixed 21-name list) that runs at the very
+top of the scan loop, **before symbols are even looked at individually** — completely independent of
+`strategy_safety.check_contract_liquidity()`'s newer per-contract any-2-of-3 check, which only runs
+later, per-symbol, at actual entry time. Building the new filter never removed the old one; they were
+both active simultaneously, and the *earlier* one in the pipeline wins by dropping symbols before the
+newer one ever sees them.
+
+**Fix (2026-06-29):** `range_trader.py` now checks `risk_gate.liquidity_filter_enabled(strategy_id)`
+before applying the static whitelist — if the live filter is ON for this strategy, the static
+whitelist step is skipped entirely (full symbol list reaches the per-contract check instead).
+
+**Permanent guard:** when a new feature is explicitly built to **replace** an existing rule (not
+layer on top of it), grep for the old rule's code path and either delete it outright or gate it
+behind "only if the new thing is OFF" — don't just add the new check alongside and assume the old one
+is now irrelevant. Two filters with the same *intent* but different *mechanism*, both still wired in,
+is the bug to watch for. **Fast-detect:** if a log line says some symbols/contracts were dropped for
+liquidity/illiquidity reasons, trace which function actually logged it — `grep` the exact log message
+text — before assuming it came from whichever filter you most recently touched.
+
+---
+
+## TRAP #21 — Option-premium fetch never checked the live WebSocket feed, despite it existing for exactly this
+
+**Symptom:** log repeatedly showed `Option premium unavailable for NIFTY-...-PE (likely DH-904
+rate-limit) — SKIPPING entry` even on a day with no apparent rate-limit pressure — confusing because
+`dhan_feed.py` (TRAP #11/#12, live WebSocket tick feed) was supposedly already wired in for exactly
+this kind of real-time price need.
+
+**Root cause:** `range_trader.py`'s `place_order()` premium-fetch fallback chain was
+`shared_ltp_cache → direct Dhan REST (/v2/marketfeed/ltp, with DH-904 backoff) → stale cache` —
+`dhan_feed.LIVE`/`get_quote()` was never in that chain at all. Each new strategy/feature that needed
+a price independently re-invented its own fallback chain (same pattern as TRAP #15's hedge-config
+split) instead of reusing the one canonical "best available price" lookup, so the WebSocket feed's
+benefit silently never reached this specific call site.
+
+**Fix (2026-06-29):** `dhan_feed.get_quote()` added as the FIRST attempt (free, no Dhan REST call) in
+`place_order()`'s premium chain. Also added `dhan_feed.add((seg, sec_id))` immediately after the ATM
+strike is resolved (before `gate_entry`'s liquidity check, before `place_order`) — a just-resolved
+contract has no tick yet (subscribing triggers a reconnect that takes a moment), so subscribing as
+early as possible in the entry path gives the feed the most possible head-start before either the
+liquidity check or the premium fetch needs data from it. Doesn't eliminate the REST fallback (still
+needed for the first few seconds after any new contract is resolved) but should reduce how often it's
+hit.
+
+**Permanent guard:** whenever `dhan_feed.py`'s live feed exists and a new code path needs an
+option/equity price, check `dhan_feed.get_quote()` first — never write a fresh REST-only fallback
+chain from scratch (easy to do, since REST "just works" and is what most examples/docs show). **Also:**
+any code that resolves a NEW contract (ATM strike, hedge leg, etc.) should call `dhan_feed.add()` on
+it immediately, not wait until a price is actually needed — every millisecond of subscribe-to-first-
+tick lag is lag some other code path (liquidity check, SL/TP monitor) will also pay.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
