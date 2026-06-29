@@ -3084,6 +3084,18 @@ _ltp_miss_streak = {}
 _rms_fail_streak = {}
 _LTP_MISS_ALERT_AFTER = 6
 
+# sec_id -> exit_reason — a leg whose group-sibling already closed but whose
+# OWN price couldn't be fetched at that exact moment (feed+REST+stale-cache
+# all empty for that instant). Without this, a transient price miss during
+# group-close would silently leave that leg open and unprotected (e.g. a
+# naked option SELL after its hedge BUY leg closed) until 3:15 EOD — the
+# user-flagged risk this guards against. Checked first thing every cycle for
+# every open position; forces the close through using the SAME price the
+# normal per-position check just successfully resolved, bypassing all other
+# SL/TP/EOD logic (this leg is leaving regardless of its own trigger state —
+# its sibling is already gone).
+_pending_group_close = {}
+
 def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     import dhan_feed
     import order_store
@@ -3305,9 +3317,41 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
                 if sib_ltp <= 0:
                     sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
+                if sib_ltp <= 0:
+                    try:
+                        import shared_ltp_cache
+                        sib_ltp = shared_ltp_cache.get_stale(sib_sec, max_age=120) or 0.0
+                    except Exception:
+                        sib_ltp = 0.0
                 if sib_ltp > 0:
                     _do_squareoff(sib, sib_ltp, exit_reason + "_GROUP", sib_sec, sib_seg)
+                else:
+                    # Every price source failed at this exact instant — leaving
+                    # the sibling open here (the old behavior) would mean a
+                    # naked option SELL silently outlives its hedge BUY (or
+                    # vice versa) until 3:15 EOD catches it, hours later. Queue
+                    # a forced retry instead — checked first thing every cycle
+                    # for every open position (see _pending_group_close), so
+                    # the very next time THIS leg's own price resolves (it's
+                    # still being polled normally), the close goes through
+                    # immediately instead of waiting for EOD.
+                    _pending_group_close[sib_sec] = exit_reason + "_GROUP"
+                    print(f"[{exit_reason}_GROUP] ⚠️ sibling {sib.get('sym')} has NO price "
+                          f"right now (feed+REST+stale-cache all empty) — queued for forced "
+                          f"retry next cycle instead of being left open unprotected", flush=True)
         return True
+
+    # A previous cycle's group-close couldn't get a price for THIS exact leg
+    # (see _pending_group_close above) — now that the normal LTP resolution
+    # above succeeded for it, force the close through immediately, ahead of
+    # any other check. This leg is leaving regardless of its own SL/TP/EOD
+    # state; its sibling is already gone.
+    if sec_id in _pending_group_close:
+        reason = _pending_group_close.pop(sec_id)
+        print(f"[{reason}] retry succeeded — {p.get('sym')} now has a price, forcing the "
+              f"delayed group-close through", flush=True)
+        _do_squareoff(p, ltp, reason, sec_id, seg)
+        return
 
     # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
     # system, no option position should carry overnight regardless of

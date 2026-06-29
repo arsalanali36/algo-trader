@@ -972,6 +972,26 @@ from the start with nothing tracking that it's unhedged differently from a prope
 (b) No dashboard alert specifically calls out "this open position has no hedge" — RMS Risk tab
 shows margin/capital usage in aggregate, not per-position hedge status.
 
+**Addendum (2026-06-29, same day) — the automatic side could fail silently too.** User asked
+specifically: can the hedge leg's *own* SL ever fire and close it independently of the main leg?
+Confirmed by reading the actual placement call (`_TRADERS/range_trader.py`'s hedge `place_order()`)
+— the hedge BUY leg is placed with **no `extra_tags`**, so it never gets an `SL_TYPE`/`SL_VAL` tag,
+and `_pos_monitor_check_one()`'s SL/TP logic (both the generic and legacy paths) only reads tags
+already present on *that* position — so the hedge genuinely has no independent SL/TP trigger of its
+own. The mechanism that actually matches what the user was likely seeing: `_do_squareoff()`'s
+group-aware sibling-close (whenever EOD/RMS/the main leg's own SL closes ONE leg, it closes the
+other too) only tried 2 price sources (live feed, then REST) for the SIBLING specifically — not the
+3rd "stale shared-cache" tier the PRIMARY leg's own check already had. If both failed at that exact
+instant (a real possibility — Dhan rate-limits, a feed hiccup), the sibling was silently left open,
+unhedged, with nothing retrying it until 3:15 PM EOD caught it hours later.
+
+**Fix:** (1) sibling-close now tries the same 3-tier fallback (feed → REST → `shared_ltp_cache`
+stale) as the primary leg. (2) If even that fails, the sibling's `sec_id` is queued in a new
+`_pending_group_close` dict and forced through on the very next cycle (5s later) the moment its
+own price resolves — checked first thing in `_pos_monitor_check_one()`, ahead of every other
+SL/TP/EOD check, since this leg is leaving regardless of its own trigger state. This bounds the
+orphan window to a few failed 5-second retries instead of "until 3:15 PM, hours away."
+
 ---
 
 ## How to extend this file
