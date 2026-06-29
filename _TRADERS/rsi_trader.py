@@ -187,6 +187,20 @@ def fetch_candles(symbol, tf, token, cid):
     sec_id, seg, inst = info
     interval = _TF_MAP.get(tf, 5)
 
+    # Cross-process cache first — same sec_id+interval fetched by range_trader
+    # within the TTL gets reused here instead of an independent Dhan call.
+    # This is the actual DH-904 fix (duplicate fetches across processes, not
+    # the account-wide rate cap). See shared_candle_cache.py.
+    try:
+        import shared_candle_cache
+        cached = shared_candle_cache.get(sec_id, interval, max_age=20.0)
+        if cached:
+            df = pd.DataFrame(cached)
+            df["time"] = pd.to_datetime(df["time"])
+            return df.dropna() if not df.empty else None
+    except Exception:
+        pass
+
     try:
         today = ist_now().strftime("%Y-%m-%d")
         body  = {
@@ -219,7 +233,17 @@ def fetch_candles(symbol, tf, token, cid):
         df["time"] = (pd.to_datetime(df["time"], unit="s", utc=True)
                         .dt.tz_convert("Asia/Kolkata")
                         .dt.tz_localize(None))
-        return df.dropna()
+        df = df.dropna()
+        if df.empty:
+            return None
+        try:
+            import shared_candle_cache
+            cache_df = df.copy()
+            cache_df["time"] = cache_df["time"].astype(str)
+            shared_candle_cache.put(sec_id, interval, cache_df.to_dict("records"))
+        except Exception:
+            pass
+        return df
     except Exception:
         return None
 
@@ -469,6 +493,10 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
 
             # ── Symbol-by-symbol scan ────────────────────────────────
             for sym in sym_list:
+                try:
+                    _rl.set_context(f"{strategy_id}:{sym}")
+                except Exception:
+                    pass
                 t_count = trades_today.get(sym, 0)
                 pos     = positions.get(sym, 0)
 

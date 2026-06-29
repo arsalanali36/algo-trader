@@ -172,6 +172,21 @@ def fetch_candles(symbol, tf, token, cid):
     sec_id, seg, inst = info
     interval = TF_MAP.get(tf, 5)
 
+    # Cross-process cache first — range_trader.py / rsi_trader.py may have
+    # already fetched this exact sec_id+interval within the last few
+    # seconds; reuse it instead of an independent Dhan call. This file had
+    # NEITHER caching nor rate-limiting before — the actual source of the
+    # SBIN DH-904 hits (LESSONS.md TRAP #2 v3). See shared_candle_cache.py.
+    try:
+        import shared_candle_cache
+        cached = shared_candle_cache.get(sec_id, interval, max_age=20.0)
+        if cached:
+            df = pd.DataFrame(cached)
+            df["time"] = pd.to_datetime(df["time"])
+            return df.dropna() if not df.empty else None
+    except Exception:
+        pass
+
     try:
         today = ist_now().strftime("%Y-%m-%d")
         body  = {
@@ -182,10 +197,17 @@ def fetch_candles(symbol, tf, token, cid):
             "fromDate":        today,
             "toDate":          today,
         }
+        try:
+            import dhan_rate_limiter as _rl
+            _rl.acquire("candle")
+        except Exception:
+            _rl = None
         r = requests.post(INTRADAY_URL, json=body,
                           headers={"access-token": token, "client-id": cid,
                                    "Content-Type": "application/json"},
                           timeout=10)
+        if r.status_code == 429 and _rl:
+            _rl.note_429()
         if r.status_code != 200:
             return None
 
@@ -199,7 +221,17 @@ def fetch_candles(symbol, tf, token, cid):
         df["time"] = (pd.to_datetime(df["time"], unit="s", utc=True)
                         .dt.tz_convert("Asia/Kolkata")
                         .dt.tz_localize(None))
-        return df.dropna()
+        df = df.dropna()
+        if df.empty:
+            return None
+        try:
+            import shared_candle_cache
+            cache_df = df.copy()
+            cache_df["time"] = cache_df["time"].astype(str)
+            shared_candle_cache.put(sec_id, interval, cache_df.to_dict("records"))
+        except Exception:
+            pass
+        return df
     except Exception:
         return None
 
@@ -436,6 +468,11 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
 
             # ── Symbol-by-symbol scan ────────────────────────────────────────
             for sym in sym_list:
+                try:
+                    import dhan_rate_limiter as _rl_ctx
+                    _rl_ctx.set_context(f"{strategy_id}:{sym}")
+                except Exception:
+                    pass
                 t_count = trades_today.get(sym, 0)
                 pos     = positions.get(sym, 0)
 

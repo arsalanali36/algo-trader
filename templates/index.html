@@ -628,33 +628,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   })();
   </script>
 
-  <span id="brokerBalances" style="font-size:11px;font-weight:600;color:#8b949e;display:flex;gap:8px;margin-left:6px">
-    <span id="bal-dhan" style="padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid #30363d">DHAN ⏳</span>
-    <span id="bal-kite" style="padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid #30363d">KITE ⏳</span>
-  </span>
-  <script>
-  (function(){
-    function fmt(n){ return n==null ? null : '₹' + Math.round(n).toLocaleString('en-IN'); }
-    function render(){
-      fetch('/api/broker-balances').then(r=>r.json()).then(d=>{
-        var dh = document.getElementById('bal-dhan'), kt = document.getElementById('bal-kite');
-        if(dh){
-          var dv = d.dhan && d.dhan.ok ? fmt(d.dhan.available) : null;
-          dh.textContent = 'DHAN ' + (dv!=null ? dv : '—');
-          dh.style.color = dv!=null ? '#3fb950' : '#f85149';
-        }
-        if(kt){
-          var kv = d.kite && d.kite.ok ? fmt(d.kite.available) : null;
-          kt.textContent = 'KITE ' + (kv!=null ? kv : '—');
-          kt.style.color = kv!=null ? '#3fb950' : '#f85149';
-        }
-      }).catch(()=>{});
-    }
-    render();
-    setInterval(render, 30000);
-  })();
-  </script>
-
   <div class="tabs">
     <div class="tab" onclick="switchTab('control')" style="display: none;">Control</div>
     <div class="tab" onclick="switchTab('log')">Logs</div>
@@ -1064,6 +1037,30 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       section dekho.
     </div>
     <div id="broker-balances-content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+  </div>
+
+  <div class="card" style="margin-bottom:14px;border-color:#d29922">
+    <h2 style="color:#d29922">🚦 Rate Limit Monitor</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)"
+      aur "kya (throttle = wait karke mil gaya / 429 = Dhan ne reject kiya)" ke saath tagged hai.
+      Auto-refresh 5s.
+    </div>
+    <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div style="max-height:260px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead style="position:sticky;top:0;background:#161b22">
+          <tr style="text-align:left;color:#8b949e">
+            <th style="padding:6px 8px">Time</th>
+            <th style="padding:6px 8px">Type</th>
+            <th style="padding:6px 8px">Priority</th>
+            <th style="padding:6px 8px">Strategy:Symbol</th>
+            <th style="padding:6px 8px">Wait</th>
+          </tr>
+        </thead>
+        <tbody id="rl-events-body"></tbody>
+      </table>
+    </div>
   </div>
 
   <div class="card" style="margin-bottom:14px;border-color:#3fb950">
@@ -1774,9 +1771,51 @@ async function renderBrokerBalances(){
   }
 }
 
+function _rlFmtAge(ts){
+  const s = Math.max(0, Math.round(Date.now()/1000 - ts));
+  if (s < 60) return s+'s ago';
+  return Math.round(s/60)+'m ago';
+}
+
+async function renderRateLimitEvents(){
+  const top = document.getElementById('rl-top-offenders');
+  const body = document.getElementById('rl-events-body');
+  if (!top || !body) return;
+  try {
+    const r = await fetch('/api/rate-limit-events');
+    const d = await r.json();
+    if (!d.top_offenders || !d.top_offenders.length) {
+      top.innerHTML = '<span style="font-size:11px;color:#3fb950">✅ Last 15 min me koi throttle/429 nahi — sab clean</span>';
+    } else {
+      top.innerHTML = d.top_offenders.map(([ctx,n]) =>
+        `<span style="font-size:11px;font-weight:600;padding:3px 9px;border-radius:10px;background:#d2992222;border:1px solid #d29922;color:#d29922">${ctx} × ${n}</span>`
+      ).join('');
+    }
+    if (!d.events || !d.events.length) {
+      body.innerHTML = `<tr><td colspan="5" style="padding:10px;color:#8b949e;font-size:11px">Koi event nahi abhi tak.</td></tr>`;
+    } else {
+      body.innerHTML = d.events.map(e => {
+        const kindColor = e.kind === '429' ? '#f85149' : (e.kind === 'timeout' ? '#f85149' : '#d29922');
+        const kindLabel = e.kind === '429' ? '🔴 429' : (e.kind === 'timeout' ? '⛔ timeout' : '🟡 throttle');
+        return `<tr style="border-top:1px solid #21262d">
+          <td style="padding:5px 8px;color:#8b949e">${_rlFmtAge(e.ts)}</td>
+          <td style="padding:5px 8px;color:${kindColor};font-weight:600">${kindLabel}</td>
+          <td style="padding:5px 8px;color:#8b949e">${e.priority || '—'}</td>
+          <td style="padding:5px 8px;color:#e6edf3">${e.context}</td>
+          <td style="padding:5px 8px;color:#8b949e">${e.wait!=null ? e.wait+'s' : '—'}</td>
+        </tr>`;
+      }).join('');
+    }
+  } catch(e) {
+    body.innerHTML = `<tr><td colspan="5" style="padding:10px;color:#f85149;font-size:11px">fetch failed: ${e}</td></tr>`;
+  }
+}
+setInterval(() => { if (activeTab === 'risk') renderRateLimitEvents(); }, 5000);
+
 async function renderRiskTab(){
   renderRmsSummary();
   renderBrokerBalances();
+  renderRateLimitEvents();
   try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch(e){}
   document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
   document.getElementById('risk-global-rs').value  = RISK_CFG.global.max_loss_rs ?? '';

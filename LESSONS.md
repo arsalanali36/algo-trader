@@ -79,6 +79,31 @@
   to aggregate rate dekho. Rate-limiter ka apna state `data/dhan_rate_limiter.db` (sqlite) — agar
   shaq ho ki orders queue ho rahe hain, isko delete karke restart karo (fresh state, koi data loss
   nahi, sirf rolling counters hain).
+- **Permanent guard (v3, 2026-06-29) — `shared_candle_cache.py`:** v2's rate-limiter throttles
+  calls but never asked *why* there were so many in the first place. Root cause found: `SBIN`
+  (ARS_CHAIN_V1) hit DH-904 because **`range_trader.py` AND the rsi_v1 process both independently
+  re-fetch the FULL day's 1-min candles for every overlapping symbol, every single loop (~60s)**
+  — two processes asking Dhan for data that's byte-identical within the same few seconds. The
+  account-wide cap was never really the bottleneck; the duplicate fetching was. **Gotcha:** the
+  actually-running rsi_v1 process is the legacy `_TRADERS/01_rsi_v1.py` (Critical Rule 6 —
+  RMS-blind, order_store-blind), NOT `_TRADERS/rsi_trader.py` (a newer, unused-in-prod file that
+  looks like "the" RSI strategy but isn't what's launched) — `01_rsi_v1.py`'s `fetch_candles()`
+  had ZERO rate-limiting or caching at all before this fix, the real source of the 429s. Fixed
+  BOTH files (in case `rsi_trader.py` ever does get launched) for consistency. Fix: same
+  file-backed cross-process cache pattern as `shared_ltp_cache.py`, keyed by `sec_id:interval`,
+  TTL 20s (a 1-min candle genuinely can't change faster than that). `fetch_1m()`
+  (`range_trader.py`) and `fetch_candles()` (`01_rsi_v1.py` + `rsi_trader.py`) all check this
+  cache FIRST, and all write to it after a real fetch — so whichever strategy asks first pays the
+  Dhan call, the other(s) read the cache for free. Collapses "N processes × M symbols" Dhan calls
+  into roughly "1 call per symbol per 20s window," same effect `shared_ltp_cache` already proved
+  for LTP, just never applied to candles. **Before trusting any fix to a "strategy file" again:
+  confirm via `ps aux` which file is ACTUALLY the running process** — this repo has more than one
+  file per strategy name (TRAP #3 territory).
+- **Fast detect (v3):** if DH-904 keeps recurring on a symbol that's traded by 2+ active
+  strategies, check `data/shared_candle_cache.json` exists and is being written (mtime updating
+  every loop) — if it's stale/missing, the cache import is silently failing (wrap in try/except,
+  check logs for an exception swallowed there) and both processes are fetching independently
+  again.
 
 ---
 

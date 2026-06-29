@@ -39,6 +39,7 @@ Priorities (highest to lowest):
     "account" — funds() / margin-calculator calls
 """
 
+import json
 import os
 import sqlite3
 import time
@@ -46,6 +47,55 @@ from pathlib import Path
 
 _DB_FILE = Path(__file__).resolve().parent / "data" / "dhan_rate_limiter.db"
 _DB_FILE.parent.mkdir(exist_ok=True)
+
+# ── Visibility: WHO is causing throttling/429s, not just THAT it happened ──
+# Each process sets an "ambient context" once per loop iteration (e.g.
+# "ARS_CHAIN_V1:SBIN") before making any Dhan calls for that symbol — every
+# acquire()/note_429() in that process during that window is then tagged with
+# it automatically, without needing to thread a context param through every
+# one of the ~40 call sites across the codebase. Since each strategy runs as
+# its own OS process, a plain module-level var is enough (no cross-process
+# locking needed for the SETTING; only the EVENT LOG file is cross-process).
+_EVENTS_FILE = Path(__file__).resolve().parent / "data" / "dhan_rate_limit_events.json"
+_MAX_EVENTS = 300
+_ctx = {"value": None}
+
+
+def set_context(label):
+    """Call once per symbol/operation, before any acquire()/note_429() for
+    it — e.g. `set_context(f"{strategy_id}:{symbol}")` at the top of a
+    per-symbol loop. Tags every throttle/429 event logged afterwards in this
+    process until the next set_context() call."""
+    _ctx["value"] = label
+
+
+def _log_event(kind, priority, wait=None):
+    try:
+        data = json.loads(_EVENTS_FILE.read_text()) if _EVENTS_FILE.exists() else []
+    except Exception:
+        data = []
+    data.append({
+        "ts": time.time(), "kind": kind, "priority": priority,
+        "context": _ctx["value"] or "unknown", "wait": round(wait, 2) if wait else None,
+        "pid": os.getpid(),
+    })
+    data = data[-_MAX_EVENTS:]
+    try:
+        _EVENTS_FILE.write_text(json.dumps(data))
+    except Exception:
+        pass
+
+
+def get_events(limit=100, since_seconds=None):
+    """Recent throttle/429 events across ALL processes, newest first."""
+    try:
+        data = json.loads(_EVENTS_FILE.read_text()) if _EVENTS_FILE.exists() else []
+    except Exception:
+        data = []
+    if since_seconds:
+        cutoff = time.time() - since_seconds
+        data = [e for e in data if e.get("ts", 0) >= cutoff]
+    return list(reversed(data))[:limit]
 
 # Account-wide cap (Dhan's real limit is ~1 req/sec sustained; default leaves
 # a little burst headroom). Override via env if Dhan support confirms a
@@ -113,21 +163,27 @@ def acquire(priority: str = "ltp", timeout: float = 8.0) -> bool:
     Returns True once a slot was taken. Returns False only if `timeout`
     elapsed first — caller should treat that like any other transient Dhan
     failure (skip / use stale cache / log), never as "go ahead anyway"."""
-    deadline = time.time() + timeout
+    start = time.time()
+    deadline = start + timeout
     poll = 0.05 if priority == "order" else 0.12
     while True:
         if _try_take(priority):
+            waited = time.time() - start
+            if waited > 0.3:
+                _log_event("throttle", priority, wait=waited)
             return True
         if time.time() >= deadline:
+            _log_event("timeout", priority, wait=time.time() - start)
             return False
         time.sleep(poll)
 
 
-def note_429(cooldown_seconds: float = COOLDOWN_SECONDS) -> None:
+def note_429(cooldown_seconds: float = COOLDOWN_SECONDS, priority: str = None) -> None:
     """Call this right after seeing a 429/DH-904 from Dhan. Shrinks the
     account-wide cap for everyone (all processes) for the cooldown window,
     with non-order traffic shut out entirely so orders keep flowing while
     the account recovers."""
+    _log_event("429", priority)
     conn = _connect()
     try:
         until = time.time() + cooldown_seconds

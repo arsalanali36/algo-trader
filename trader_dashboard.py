@@ -657,6 +657,23 @@ def api_broker_balances():
         out[name] = risk_gate.get_broker_balance(name)
     return jsonify(out)
 
+@app.route('/api/rate-limit-events')
+def api_rate_limit_events():
+    """Visibility into Dhan rate-limit throttling/429s — RMS Risk tab '🚦
+    Rate Limit Monitor' card. Every acquire()/note_429() call across every
+    process (range_trader, rsi_v1, webhook, dashboard, ...) gets tagged with
+    an ambient 'strategy:symbol' context (dhan_rate_limiter.set_context) so
+    the user can see exactly WHICH strategy+symbol is causing 429s/throttle,
+    not just that it happened somewhere."""
+    import dhan_rate_limiter as _rl
+    events = _rl.get_events(limit=100, since_seconds=900)  # last 15 min
+    counts = {}
+    for e in events:
+        ctx = e.get("context") or "unknown"
+        counts[ctx] = counts.get(ctx, 0) + 1
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:10]
+    return jsonify({"events": events, "top_offenders": top})
+
 @app.route('/api/kite-login-url')
 def api_kite_login_url():
     """Zerodha login URL return karo — user browser mein kholta hai."""

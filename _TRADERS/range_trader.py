@@ -490,6 +490,22 @@ def fetch_1m(symbol, tf="1m"):
     days_back = 5 if tf in ("5m", "15m", "30m") else 2
     frm = (_date.fromordinal(today.toordinal() - days_back)).isoformat()
     interval = _TF_MAP.get(tf, "1")
+
+    # Cross-process cache first — range_trader + rsi_trader (+ any future
+    # strategy) on the same symbol within the TTL reuse one fetch instead of
+    # each hitting Dhan independently. This is what actually fixes DH-904 —
+    # the account-wide rate cap was never the real bottleneck, duplicate
+    # candle fetches across processes were. See shared_candle_cache.py.
+    try:
+        import shared_candle_cache
+        cached = shared_candle_cache.get(sec_id, interval, max_age=20.0)
+        if cached:
+            df = pd.DataFrame(cached)
+            df["time"] = pd.to_datetime(df["time"])
+            return df if not df.empty else None
+    except Exception:
+        pass
+
     token, cid = load_creds()
     try:
         r = None
@@ -522,7 +538,16 @@ def fetch_1m(symbol, tf="1m"):
         # Sirf aaj ke bars rakho
         today_str = today.isoformat()
         df = df[df["time"].dt.strftime("%Y-%m-%d") == today_str].reset_index(drop=True)
-        return df if not df.empty else None
+        if df.empty:
+            return None
+        try:
+            import shared_candle_cache
+            cache_df = df.copy()
+            cache_df["time"] = cache_df["time"].astype(str)
+            shared_candle_cache.put(sec_id, interval, cache_df.to_dict("records"))
+        except Exception:
+            pass
+        return df
     except Exception as e:
         log.error(f"fetch_1m {symbol} error: {e}")
         return None
@@ -906,6 +931,10 @@ def main(strategy_id="range"):
                     symbols = _kept
 
         for symbol in symbols:
+            try:
+                _rl.set_context(f"{strategy_id}:{symbol}")
+            except Exception:
+                pass
             st = get_state(symbol)
             if st["trades_today"] >= cfg.get("max_trades_per_symbol", 2):
                 if _rt_once(f"maxtrades:{strategy_id}:{symbol}"):
