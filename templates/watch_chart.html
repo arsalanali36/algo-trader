@@ -71,6 +71,18 @@
         series.createPriceLine({price: z.ltp, color:'#58a6ff', lineWidth:1, lineStyle:3,
           axisLabelVisible:true, title:'LTP'});
       }
+      if (z.tracked_high != null) {
+        series.createPriceLine({price: z.tracked_high, color:'#d29922', lineWidth:1, lineStyle:1,
+          axisLabelVisible:true, title:'touch high'});
+      }
+      if (z.tracked_low != null) {
+        series.createPriceLine({price: z.tracked_low, color:'#d29922', lineWidth:1, lineStyle:1,
+          axisLabelVisible:true, title:'touch low'});
+      }
+      (z.key_levels || []).forEach(([price, type]) => {
+        series.createPriceLine({price: price, color:'#484f58', lineWidth:1, lineStyle:0,
+          axisLabelVisible:false, title:type});
+      });
       chart.timeScale().fitContent();
       window.addEventListener('resize', () => chart.applyOptions({width: document.getElementById('chart').clientWidth}));
     }catch(e){

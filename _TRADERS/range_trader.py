@@ -837,6 +837,7 @@ def main(strategy_id="range"):
             cur_state["symbol"] = symbol
             cur_state["position"] = st["position"]
             cur_state["trades_today"] = st.get("trades_today", 0)
+            cur_state["key_levels"] = [[round(float(p), 2), t] for p, t in levels]
             _watchlist_state[symbol] = cur_state
 
             # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega
