@@ -79,8 +79,22 @@
         series.createPriceLine({price: z.tracked_low, color:'#d29922', lineWidth:2, lineStyle:0,
           axisLabelVisible:true, title:'touch low'});
       }
+      // R1-R5 = red dashed, S1-S5 = green dashed, PDH = red solid, PDL = green
+      // solid, PDC = blue solid, P (pivot) = blue dashed. Generic RESISTANCE/
+      // SUPPORT (the high/low chain levels, which don't map to a specific
+      // pivot number) fall into the same red/green-dashed buckets.
+      function _levelStyle(type) {
+        if (type === 'PDH') return {color:'#f85149', style:0};
+        if (type === 'PDL') return {color:'#3fb950', style:0};
+        if (type === 'PDC') return {color:'#1f6feb', style:0};
+        if (type === 'P')   return {color:'#1f6feb', style:2};
+        if (/^R\d$/.test(type) || type === 'RESISTANCE') return {color:'#f85149', style:2};
+        if (/^S\d$/.test(type) || type === 'SUPPORT')    return {color:'#3fb950', style:2};
+        return {color:'#8b949e', style:2};
+      }
       (z.key_levels || []).forEach(([price, type]) => {
-        series.createPriceLine({price: price, color:'#bc8cff', lineWidth:1, lineStyle:2,
+        const st = _levelStyle(type);
+        series.createPriceLine({price: price, color:st.color, lineWidth:1, lineStyle:st.style,
           axisLabelVisible:true, title:type});
       });
       chart.timeScale().fitContent();

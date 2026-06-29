@@ -679,6 +679,7 @@ def main(strategy_id="range"):
 
     last_day        = None
     daily_levels    = {}   # symbol → [(price, type)]
+    pivot_labels    = {}   # symbol → {rounded_price: specific label, e.g. "R3"/"S1"/"P"/"PDH"} — display-only, never used in entry logic
 
     while True:
         now = ist_now()
@@ -688,6 +689,7 @@ def main(strategy_id="range"):
             log.info("New trading day — resetting state & reloading daily levels")
             reset_daily_state()
             daily_levels = {}
+            pivot_labels = {}
             last_day = now.date()
 
         if not is_market_open():
@@ -822,6 +824,25 @@ def main(strategy_id="range"):
                 )
                 log.info(f"{symbol} levels: {len(daily_levels[symbol])} key levels loaded")
 
+                # Display-only specific labels (R1-R5/S1-S5/P/PDH/PDC/PDL) for the
+                # Watch chart — build_key_levels() collapses these to generic
+                # RESISTANCE/SUPPORT/CP/PD_H/PD_C/PD_L on purpose (entry logic only
+                # cares about the bucket, e.g. not_on_red_line checks "RESISTANCE"),
+                # so recompute the specific pivot here without touching that.
+                try:
+                    if daily_df is not None and len(daily_df) >= 2:
+                        _prev = daily_df.iloc[-2]
+                        _ph, _pl, _pc = float(_prev["high"]), float(_prev["low"]), float(_prev["close"])
+                        _piv = traditional_pivots(_ph, _pl, _pc)
+                        _lbl = {round(_piv[name], 2): name for name in
+                                ["R5", "R4", "R3", "R2", "R1", "P", "S1", "S2", "S3", "S4", "S5"]}
+                        _lbl[round(_ph, 2)] = "PDH"
+                        _lbl[round(_pc, 2)] = "PDC"
+                        _lbl[round(_pl, 2)] = "PDL"
+                        pivot_labels[symbol] = _lbl
+                except Exception:
+                    pivot_labels[symbol] = {}
+
             levels = daily_levels.get(symbol, [])
             if not levels:
                 continue
@@ -837,7 +858,8 @@ def main(strategy_id="range"):
             cur_state["symbol"] = symbol
             cur_state["position"] = st["position"]
             cur_state["trades_today"] = st.get("trades_today", 0)
-            cur_state["key_levels"] = [[round(float(p), 2), t] for p, t in levels]
+            _lbl_map = pivot_labels.get(symbol, {})
+            cur_state["key_levels"] = [[round(float(p), 2), _lbl_map.get(round(float(p), 2), t)] for p, t in levels]
             _watchlist_state[symbol] = cur_state
 
             # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega

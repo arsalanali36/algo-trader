@@ -827,6 +827,35 @@ shows a *different* Dhan error code and won't be 100% across every contract.
 
 ---
 
+## TRAP #27 — `risk_gate.py` deploy drift: `default_broker()` existed locally/in git but was never scp'd to the VPS 🔴🔴🔴
+
+**Symptom:** A real ARS_CHAIN_V1 signal fires (`SIGNAL SELL ICICIBANK @ 1387.50`), then immediately
+`ERROR ORDER ERR ICICIBANK-Jun2026-1390-CE: module 'risk_gate' has no attribute 'default_broker'`.
+No order reaches Dhan; `place_order()`'s `if not place_order(...): continue` guard correctly skips
+marking a phantom position, so there's no P&L corruption — but the entry signal is simply lost.
+
+**Root cause:** `risk_gate.default_broker()` (added in an earlier session, fully committed to git)
+was never actually copied to the VPS — a manual-scp deploy gap, not a code bug. The local file was
+690 lines; the VPS's was 685 — a `diff` showed exactly the missing 5-line function. Because Python
+caches imported modules in `sys.modules` per-process, even scp'ing the fix over doesn't take effect
+until the live process (which already did `import risk_gate` once) restarts.
+
+**Fix:** `diff` local vs. a freshly-scp'd-down copy of the VPS file to confirm exact scope before
+redeploying (don't assume — confirm), scp the corrected `risk_gate.py`, then restart the live trader
+process (checked for zero open positions first, per the standard live-restart safety check).
+
+**Permanent guard:** This project's manual-scp deploy process (no CI, no `git pull` on the VPS) means
+"committed to git" ≠ "live on the VPS" — they can silently diverge any time a file is edited locally
+across multiple sessions and only *some* of the touched files get scp'd. After any session that
+edited shared/imported modules (`risk_gate.py`, `smart_order.py`, `strategy_safety.py`,
+`brokers/*.py`, etc.), diff the VPS copy against local before assuming a fix is live.
+
+**Fast detect:** `module 'X' has no attribute 'Y'` on the VPS for a `Y` that demonstrably exists in
+the local file (and git) is *always* this — a stale VPS copy, not a logic bug. `wc -l` or a real
+`diff` (scp the VPS file to a temp path first) settles it in seconds.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
