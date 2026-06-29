@@ -1032,11 +1032,23 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 <!-- RISK TAB -->
 <div class="tab-body" id="tab-risk" style="padding:16px 18px 24px">
   <div class="card" style="margin-bottom:14px;border-color:#58a6ff">
-    <h2 style="color:#58a6ff">💰 Broker Balances</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center">
+      <h2 style="color:#58a6ff;margin:0">💰 Broker Balances</h2>
+      <label style="font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px">
+        Live orders bhejo
+        <select id="default-broker-select" onchange="saveDefaultBroker()"
+          style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font-size:12px">
+          <option value="dhan">Dhan</option>
+          <option value="kite">Zerodha (Kite)</option>
+        </select>
+      </label>
+    </div>
+    <div style="font-size:11px;color:#8b949e;margin:10px 0">
       Live cash + collateral, dono brokers se. <b style="color:#e6edf3">Total Margin</b> (cash+collateral)
       isi se LIVE strategies ka "Global Max Loss %" cap calculate hota hai — neeche 1️⃣ Strategy Day Cap
-      section dekho.
+      section dekho. <b style="color:#e6edf3">"Live orders bhejo"</b> decide karta hai naye LIVE entries kis
+      broker pe jaayenge (`risk_gate.default_broker()` — har strategy isi ko padhta hai, jab tak kisi ka apna
+      explicit `broker` override na ho).
     </div>
     <div id="broker-balances-content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
   </div>
@@ -1853,11 +1865,27 @@ async function renderRateLimitEvents(){
 }
 setInterval(() => { if (activeTab === 'risk') renderRateLimitEvents(); }, 5000);
 
+async function saveDefaultBroker(){
+  const broker = document.getElementById('default-broker-select').value;
+  try {
+    const r = await fetch('/api/risk-config'); const cur = await r.json();
+    const payload = {global: {...cur.global, default_broker: broker}, per_strategy: cur.per_strategy || {}};
+    const res = await fetch('/api/risk-config', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload)});
+    const j = await res.json();
+    RISK_CFG = payload;
+    const msgEl = document.getElementById('risk-msg');
+    if (msgEl) msgEl.textContent = `Live orders ab ${broker.toUpperCase()} pe jaayenge`;
+  } catch(e) {
+    alert('Default broker save failed: ' + e);
+  }
+}
+
 async function renderRiskTab(){
   renderRmsSummary();
   renderBrokerBalances();
   renderRateLimitEvents();
   try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch(e){}
+  document.getElementById('default-broker-select').value = RISK_CFG.global.default_broker || 'dhan';
   document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
   document.getElementById('risk-global-rs').value  = RISK_CFG.global.max_loss_rs ?? '';
   document.getElementById('risk-global-capital').value = RISK_CFG.global.capital_rs ?? '';
@@ -1942,6 +1970,7 @@ async function saveRiskConfig(){
   const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
   const payload = {
     global: {
+      default_broker: document.getElementById('default-broker-select').value || 'dhan',
       max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
       max_loss_rs:  gRs  !== '' ? parseFloat(gRs)  : null,
       capital_rs:   gCap !== '' ? parseFloat(gCap) : null,
@@ -3427,6 +3456,57 @@ function toggleLogPause(key) {
     // scroll to bottom when resuming
     const box = document.getElementById(`${key}-log`);
     if(box) box.scrollTop = box.scrollHeight;
+  }
+}
+
+let _watchPollTimer = null;
+async function openWatchlist(key) {
+  const modal = document.getElementById('watch-modal');
+  document.getElementById('watch-strat-name').textContent = key;
+  modal.style.display = 'flex';
+  await _watchRefresh(key);
+  clearInterval(_watchPollTimer);
+  _watchPollTimer = setInterval(() => _watchRefresh(key), 5000);
+}
+function closeWatchlist() {
+  document.getElementById('watch-modal').style.display = 'none';
+  clearInterval(_watchPollTimer);
+  _watchPollTimer = null;
+}
+async function _watchRefresh(key) {
+  const box = document.getElementById('watch-content');
+  try {
+    const r = await fetch(`/api/watch/${key}`);
+    const d = await r.json();
+    if (d.error) { box.innerHTML = `<div style="color:#8b949e;font-size:12px;padding:10px">${d.error}</div>`; return; }
+    const syms = d.symbols || [];
+    if (!syms.length) { box.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">No symbols yet — strategy still loading.</div>'; return; }
+    const rows = syms.map(s => `
+      <tr style="border-bottom:1px solid #21262d">
+        <td style="padding:5px 8px;font-weight:600">${s.symbol||''}</td>
+        <td style="padding:5px 8px">${s.ltp!=null?Number(s.ltp).toFixed(2):'—'}</td>
+        <td style="padding:5px 8px;color:${s.zone_type==='GREEN'?'#3fb950':s.zone_type==='RED'?'#f85149':'#8b949e'}">${s.zone_type||'—'}</td>
+        <td style="padding:5px 8px">${s.zone_lower!=null?Number(s.zone_lower).toFixed(1):'—'} - ${s.zone_upper!=null?Number(s.zone_upper).toFixed(1):'—'}</td>
+        <td style="padding:5px 8px">${s.zone_fresh ? '🟢 fresh' : '⚪ stale'}</td>
+        <td style="padding:5px 8px">${s.touch_active ? `touching ${s.active_touch_type||''}` : '—'}</td>
+        <td style="padding:5px 8px;color:${s.position?'#58a6ff':'#8b949e'}">${s.position||'flat'}</td>
+        <td style="padding:5px 8px">${s.trades_today||0}</td>
+      </tr>`).join('');
+    box.innerHTML = `
+      <div style="font-size:10px;color:#8b949e;margin-bottom:8px">Updated ${new Date(d.timestamp*1000).toLocaleTimeString()} — auto-refresh 5s</div>
+      <table style="width:100%;font-size:12px;border-collapse:collapse">
+        <thead style="position:sticky;top:0;background:#161b22">
+          <tr style="text-align:left;color:#8b949e">
+            <th style="padding:5px 8px">Symbol</th><th style="padding:5px 8px">LTP</th>
+            <th style="padding:5px 8px">Zone</th><th style="padding:5px 8px">Range</th>
+            <th style="padding:5px 8px">Freshness</th><th style="padding:5px 8px">Touch</th>
+            <th style="padding:5px 8px">Position</th><th style="padding:5px 8px">Trades</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>`;
+  } catch(e) {
+    box.innerHTML = `<div style="color:#f85149;font-size:12px;padding:10px">Fetch failed: ${e}</div>`;
   }
 }
 
