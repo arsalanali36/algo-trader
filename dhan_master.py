@@ -173,6 +173,30 @@ def get_sec_id_for_trad_sym(trad_sym):
     return best[1] if best else None
 
 
+def get_expiry_for_sec_id(sec_id):
+    """Exact expiry date for a sec_id — needed because Dhan's trad_sym for
+    INDEX options (NIFTY/BANKNIFTY) omits the day ("NIFTY-Jun2026-24100-PE"),
+    unlike stock options which include it. Any code that needs the real
+    expiry date (e.g. kite_broker.resolve_kite_symbol matching against Kite's
+    instrument dump) must look it up here by sec_id, not parse it out of the
+    trad_sym string — string-parsing silently produces a wrong/empty date for
+    every index contract. Returns a `date` or None."""
+    if not _options_cache:
+        build_cache()
+    if not sec_id:
+        return None
+    sec_id = str(sec_id)
+    for symbol_contracts in _options_cache.values():
+        for exp_str, contracts in symbol_contracts.items():
+            for c in contracts:
+                if str(c.get("sec_id")) == sec_id:
+                    try:
+                        return datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S").date()
+                    except Exception:
+                        return None
+    return None
+
+
 _equity_cache = {}  # symbol -> (sec_id, seg, instrument)
 
 def build_equity_cache():

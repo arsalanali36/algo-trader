@@ -230,14 +230,49 @@ def _parse_dhan_trad_sym(dhan_sym):
     return name, expiry, strike, opt_type
 
 
-def resolve_kite_symbol(kite, dhan_trad_sym):
+def resolve_kite_symbol(kite, dhan_trad_sym, sec_id=None):
     """Exact Dhan-trad_sym -> Kite-tradingsymbol resolution via Kite's
     instrument dump (cached per-day). Returns None (never raises) if parsing
     or lookup fails — caller must fall back to dhan_sym_to_kite() and log
-    loudly, never silently send a guessed symbol on a live order."""
+    loudly, never silently send a guessed symbol on a live order.
+
+    `sec_id`, if given, is used to get the EXACT expiry date from
+    dhan_master (by sec_id, not by parsing the trad_sym string) — Dhan's
+    trad_sym omits the day for INDEX options (NIFTY/BANKNIFTY,
+    "NIFTY-Jun2026-24100-PE"), unlike stock options which include it
+    ("RELIANCE-28Jun2026-..."). Parsing a day out of a day-less string used
+    to silently produce a wrong expiry and a guaranteed no-match. Found
+    2026-06-29 — first live Kite test order, NIFTY, failed with "instrument
+    ... does not exist" because of exactly this."""
+    name, expiry, strike, opt_type = None, None, None, None
     try:
         name, expiry, strike, opt_type = _parse_dhan_trad_sym(dhan_trad_sym)
     except Exception:
+        pass
+    if sec_id:
+        try:
+            import sys as _s, os as _o
+            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+            if _root not in _s.path:
+                _s.path.insert(0, _root)
+            import dhan_master
+            real_expiry = dhan_master.get_expiry_for_sec_id(sec_id)
+            if real_expiry:
+                expiry = real_expiry
+        except Exception:
+            pass
+        if name is None or strike is None or opt_type is None:
+            # trad_sym parse failed outright (e.g. ValueError on a day-less
+            # string) — still recover name/strike/opt_type from the string,
+            # just not the expiry (that came from sec_id above, or stays None).
+            try:
+                parts = dhan_trad_sym.split("-")
+                name = name or parts[0]
+                strike = strike if strike is not None else float(parts[2])
+                opt_type = opt_type or parts[3]
+            except Exception:
+                pass
+    if name is None or expiry is None or strike is None or opt_type is None:
         return None
     try:
         instruments = _get_kite_instruments(kite)
@@ -319,7 +354,7 @@ class KiteBroker(BaseBroker):
 
         kite_sym = None
         if trad_sym:
-            kite_sym = resolve_kite_symbol(kite, trad_sym)
+            kite_sym = resolve_kite_symbol(kite, trad_sym, sec_id=sec_id)
             if not kite_sym:
                 kite_sym = dhan_sym_to_kite(trad_sym)
                 log.warning(f"[KITE] instrument-dump resolve failed for {trad_sym} — "
