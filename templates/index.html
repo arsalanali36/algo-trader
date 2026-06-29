@@ -627,7 +627,34 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     }
   })();
   </script>
-  
+
+  <span id="brokerBalances" style="font-size:11px;font-weight:600;color:#8b949e;display:flex;gap:8px;margin-left:6px">
+    <span id="bal-dhan" style="padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid #30363d">DHAN ⏳</span>
+    <span id="bal-kite" style="padding:2px 8px;border-radius:10px;background:#21262d;border:1px solid #30363d">KITE ⏳</span>
+  </span>
+  <script>
+  (function(){
+    function fmt(n){ return n==null ? null : '₹' + Math.round(n).toLocaleString('en-IN'); }
+    function render(){
+      fetch('/api/broker-balances').then(r=>r.json()).then(d=>{
+        var dh = document.getElementById('bal-dhan'), kt = document.getElementById('bal-kite');
+        if(dh){
+          var dv = d.dhan && d.dhan.ok ? fmt(d.dhan.available) : null;
+          dh.textContent = 'DHAN ' + (dv!=null ? dv : '—');
+          dh.style.color = dv!=null ? '#3fb950' : '#f85149';
+        }
+        if(kt){
+          var kv = d.kite && d.kite.ok ? fmt(d.kite.available) : null;
+          kt.textContent = 'KITE ' + (kv!=null ? kv : '—');
+          kt.style.color = kv!=null ? '#3fb950' : '#f85149';
+        }
+      }).catch(()=>{});
+    }
+    render();
+    setInterval(render, 30000);
+  })();
+  </script>
+
   <div class="tabs">
     <div class="tab" onclick="switchTab('control')" style="display: none;">Control</div>
     <div class="tab" onclick="switchTab('log')">Logs</div>

@@ -644,6 +644,28 @@ def api_set_token():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+_balances_cache = {"ts": 0, "data": None}
+_BALANCES_TTL = 20  # seconds — broker funds() calls are real API hits, don't poll-spam
+
+@app.route('/api/broker-balances')
+def api_broker_balances():
+    """Dhan + Kite available cash, for the header widget. Cached 20s (both
+    funds() calls hit the real broker API — rate-limited, not LTP-cheap)."""
+    now = _time.time()
+    if _balances_cache["data"] is not None and (now - _balances_cache["ts"]) < _BALANCES_TTL:
+        return jsonify(_balances_cache["data"])
+    out = {}
+    from brokers import get_broker
+    for name in ("dhan", "kite"):
+        try:
+            f = get_broker(name).funds()
+            out[name] = {"available": f.get("available"), "ok": bool(f)} if f else {"available": None, "ok": False}
+        except Exception as e:
+            out[name] = {"available": None, "ok": False, "error": str(e)}
+    _balances_cache["data"] = out
+    _balances_cache["ts"] = now
+    return jsonify(out)
+
 @app.route('/api/kite-login-url')
 def api_kite_login_url():
     """Zerodha login URL return karo — user browser mein kholta hai."""
@@ -3214,23 +3236,23 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     if sl_px_num is not None and tp_px_num is not None:
         return  # generic SL+TP both set and neither hit — skip legacy fallback entirely
 
-    # Legacy SL_PCT/TP_PCT (kept for older positions / strategy defaults).
+    # Legacy SL_PCT/TP_PCT — ONLY from tags explicitly set on THIS position
+    # (e.g. an older position created before the SL_TYPE/SL_VAL modal existed).
+    # Do NOT fall back to RMS's global/per-strategy max_loss_pct/max_loss_rs
+    # here — those are CUMULATIVE/total-capital daily-loss-cap fields (the
+    # "Global Max Loss %" RMS Risk-tab field, e.g. "1" meaning 1% of capital),
+    # already correctly enforced a few lines above via risk_gate.daily_loss_
+    # breached(). Reusing the same number as a PER-POSITION % of the OPTION
+    # PREMIUM here was a unit mismatch — 1% of an ~₹80 premium is ~₹0.80,
+    # so any untagged position (e.g. a manual/Quick-Order test trade) got
+    # force-closed within seconds of entry on pure noise, with no per-position
+    # SL ever actually configured. Found 2026-06-29 (first live Kite test
+    # order squared off in ~20s). A position with no explicit SL tag and no
+    # entry-time default_sl_rs stamp simply gets no automatic SL here now —
+    # exactly matching "max loss % is a total-capital cap, not a premium SL".
     sl_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("SL_PCT:")), None) if sl_px_num is None else None
     tp_pct = next((float(t.split(":")[1]) for t in tags if t.startswith("TP_PCT:")), None) if tp_px_num is None else None
-    sl_rs  = None  # ₹ max-loss for this position (qty already applied)
-
-    if sl_pct is None and sl_px_num is None:
-        rc = _risk_config()
-        strat_risk = rc.get("per_strategy", {}).get(p.get("strategy") or "", {})
-        glob_risk  = rc.get("global", {})
-        eff_pct = strat_risk.get("max_loss_pct") if strat_risk.get("max_loss_pct") is not None else glob_risk.get("max_loss_pct")
-        eff_rs  = strat_risk.get("max_loss_rs")  if strat_risk.get("max_loss_rs")  is not None else glob_risk.get("max_loss_rs")
-        if eff_pct is not None:
-            try: sl_pct = float(eff_pct)
-            except Exception: pass
-        if eff_rs is not None:
-            try: sl_rs = float(eff_rs)
-            except Exception: pass
+    sl_rs  = None  # ₹ max-loss for this position (qty already applied) — explicit SL_RS tag only
 
     sl_px_pct = None
     sl_px_rs  = None

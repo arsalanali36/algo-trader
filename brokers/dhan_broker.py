@@ -55,9 +55,13 @@ class DhanBroker(BaseBroker):
                 "Content-Type": "application/json"}
 
     def _get_sdk(self):
+        # `DhanContext` doesn't exist in the installed dhanhq==2.0.2 (same
+        # mismatch already found+fixed in dhan_feed.py — TRAP #11/#12 — but
+        # this call site was missed back then). The installed `dhanhq` class
+        # takes (client_id, access_token) directly.
         if self._sdk is None:
-            from dhanhq import DhanContext, dhanhq
-            self._sdk = dhanhq(DhanContext(self.cid, self.token))
+            from dhanhq import dhanhq as _dhanhq_cls
+            self._sdk = _dhanhq_cls(self.cid, self.token)
         return self._sdk
 
     # ---- data ----
