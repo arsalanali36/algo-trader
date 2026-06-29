@@ -647,6 +647,9 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 
   <div class="hdr-right" style="gap: 12px;">
+    <button id="pause-feed-btn" onclick="toggleFeedPause()" style="background: #238636; border: 1px solid #2ea043; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; font-family: sans-serif; transition: all 0.2s;">
+      🟢 Feed Active
+    </button>
     <div style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; line-height: 1.2;">
       <span id="hdr-top-date" style="font-size: 11px; color: #8b949e; font-weight: 600; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">—</span>
       <span id="clock" style="font-size: 13px; color: #e6edf3; font-family: monospace; font-weight: bold;">—</span>
@@ -2140,6 +2143,7 @@ async function whSaveGlobal(){
 }
 
 async function whLtpPoll(){
+  if (window.feedPaused) return;
   const symEl=document.getElementById('wh-ltp-sym'); if(!symEl) return;
   const sym=symEl.value||'NIFTY';
   const off=(document.getElementById('wh-strike_offset')||{}).value||'0';
@@ -4458,7 +4462,25 @@ function startLtpStream() {
 }
 
 // Fetch position LTP separately — updates cells without rebuilding table
+window.feedPaused = false;
+function toggleFeedPause() {
+  window.feedPaused = !window.feedPaused;
+  const btn = document.getElementById('pause-feed-btn');
+  if (window.feedPaused) {
+    btn.innerHTML = '⏸️ Feed Paused';
+    btn.style.background = '#da3633';
+    btn.style.borderColor = '#f85149';
+  } else {
+    btn.innerHTML = '🟢 Feed Active';
+    btn.style.background = '#238636';
+    btn.style.borderColor = '#2ea043';
+    if (typeof _fetchPositionLtp === 'function') _fetchPositionLtp();
+    if (typeof qoFetchLtp === 'function') qoFetchLtp();
+  }
+}
+
 async function _fetchPositionLtp() {
+  if (window.feedPaused) return;
   const cells = document.querySelectorAll('.ltp-cell[data-sym]');
   if(!cells.length) return;
   const syms = [...new Set([...cells].map(el=>el.getAttribute('data-sym')))];
@@ -4818,6 +4840,7 @@ if (activeTab === 'orders') ordersEnter();   // render the default Orders tab im
 
   let _qoLtpTimer = null;
   async function qoFetchLtp() {
+    if (window.feedPaused) return;
     try {
       const r = await fetch(`/api/option-ltp?symbol=${qoSym}&offset=${qoAtm}`);
       const j = await r.json();

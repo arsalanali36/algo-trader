@@ -886,6 +886,9 @@ def _get_seg(sym: str) -> str:
     return "NSE_FNO"   # options default
 
 
+_pos_ltp_cache = {}
+_POS_CACHE_TTL = 15
+
 @app.route('/api/positions-ltp')
 def api_positions_ltp():
     """Fetch live LTP for open positions — uses dhan_feed WebSocket if running, else REST fallback."""
@@ -898,6 +901,7 @@ def api_positions_ltp():
     ltp_map = {}
 
     # Try WebSocket feed first (instant, no REST call)
+    missing_syms = []
     try:
         import dhan_feed
         sec_id_map = _get_sec_ids(syms)
@@ -909,37 +913,64 @@ def api_positions_ltp():
             q = dhan_feed.get_quote(sec_id)
             if q and q.get("ltp"):
                 ltp_map[sym] = {"ltp": q["ltp"], "qty": None}
-        if ltp_map:
-            return jsonify({"ok": True, "ltp_map": ltp_map, "src": "ws"})
+            else:
+                missing_syms.append(sym)
     except Exception:
-        pass
+        missing_syms = syms
 
-    # Fallback: Dhan REST API
+    # If all found in WS, return early
+    if not missing_syms:
+        return jsonify({"ok": True, "ltp_map": ltp_map, "src": "ws"})
+
+    # Fallback: Dhan REST API only for missing symbols
     try:
         import range_trader, requests as _req
+        import time as _t
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-        sec_id_map = _get_sec_ids(syms)
-        if sec_id_map:
+        missing_sec_id_map = _get_sec_ids(missing_syms)
+        
+        # Check pos cache to avoid hitting Dhan REST too frequently
+        now = _t.time()
+        still_missing = {}
+        for s, sid in missing_sec_id_map.items():
+            c = _pos_ltp_cache.get(s)
+            if c and (now - c['ts']) < _POS_CACHE_TTL:
+                ltp_map[s] = {"ltp": c['ltp'], "qty": None}
+            else:
+                still_missing[s] = sid
+                
+        missing_sec_id_map = still_missing
+        
+        if missing_sec_id_map:
+            _rl.set_context("Dashboard:PosLTP")
+            _rl.acquire("ltp")
+            
             # Group by segment for REST call
             seg_groups = {}
-            for s, sid in sec_id_map.items():
+            for s, sid in missing_sec_id_map.items():
                 seg = _get_seg(s)
                 seg_groups.setdefault(seg, []).append((s, sid))
             body = {}
             for seg, pairs in seg_groups.items():
                 dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
                 body[dhan_seg] = [int(sid) for _, sid in pairs]
+            
             r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+            if r.status_code == 429:
+                _rl.note_429()
+                
             if r.status_code == 200:
-                id_to_sym = {v: k for k, v in sec_id_map.items()}
+                id_to_sym = {v: k for k, v in missing_sec_id_map.items()}
                 for seg_key, quotes in (r.json().get("data", {}) or {}).items():
                     if not isinstance(quotes, dict): continue
                     for sec_id_str, q in quotes.items():
                         sym = id_to_sym.get(str(sec_id_str)) or id_to_sym.get(str(sec_id_str).lstrip('0'))
                         if not sym: continue
                         ltp = float(q.get("last_price") or q.get("ltp") or 0)
-                        if ltp: ltp_map[sym] = {"ltp": ltp, "qty": None}
+                        if ltp: 
+                            ltp_map[sym] = {"ltp": ltp, "qty": None}
+                            _pos_ltp_cache[sym] = {'ltp': ltp, 'ts': now}
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e), "ltp_map": ltp_map})
 
@@ -976,7 +1007,7 @@ _ltp_cache = {}
 # WebSocket feed first (free, no rate-limit cost) and only falls back to
 # REST for whatever the feed doesn't have yet — so a short TTL no longer
 # means "more Dhan calls", just "fresher Quick Order price".
-_LTP_CACHE_TTL = 2
+_LTP_CACHE_TTL = 15
 
 @app.route('/api/option-ltp')
 def api_option_ltp():
@@ -1006,6 +1037,7 @@ def api_option_ltp():
 
         idx_price = float(dhan_feed.get_quote(_idx_id).get("ltp") or 0) or None
         if not idx_price:
+            _rl.set_context("Dashboard:IdxLTP")
             _rl.acquire("ltp")
             _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                                  json={"IDX_I": [int(_idx_id)]}, headers=headers, timeout=5)
@@ -1031,6 +1063,7 @@ def api_option_ltp():
 
         missing_ids = [int(s) for s, l in [(sec_ce, ltp_ce), (sec_pe, ltp_pe)] if s and not l]
         if missing_ids:
+            _rl.set_context("Dashboard:OptionLTP")
             _rl.acquire("ltp")
             qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                            json={"NSE_FNO": missing_ids}, headers=headers, timeout=5)
@@ -1270,7 +1303,11 @@ def api_bulk_preview():
         if remaining_sids:
             body = {"NSE_EQ": remaining_sids}
             for attempt in range(3):
+                _rl.set_context("Dashboard:BulkLTP")
+                _rl.acquire("ltp")
                 r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+                if r.status_code == 429:
+                    _rl.note_429()
                 if r.status_code == 200:
                     qdata = r.json().get("data", {}).get("NSE_EQ", {})
                     for sid_str, q in qdata.items():
