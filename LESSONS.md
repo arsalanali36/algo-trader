@@ -898,6 +898,38 @@ this exact bug. Check whether the process has been restarted since that position
 
 ---
 
+## TRAP #29 — Watch chart candles/zone boxes displayed ~5.5h ahead — IST offset applied twice
+
+**Symptom:** New `/watch-chart` page (built 2026-06-29) showed candle timestamps and zone-box edges
+roughly 5 hours 30 minutes ahead of the actual current IST time — e.g. dashboard header showing
+3:13 PM but the chart's last candle labeled ~20:41.
+
+**Root cause:** `_TRADERS/range_trader.py`'s `fetch_1m()` already converts Dhan's raw UTC epoch into
+an IST wall-clock value on the way in: `pd.to_datetime(ts, unit="s") + pd.Timedelta(hours=5,
+minutes=30)` — so `df["time"]` is a naive timestamp that already *reads* as IST. Two new call
+sites (`trader_dashboard.py`'s `/api/watch-chart-data`, and `range_trader.py`'s own
+`zone_start_ts`/`zones_history` conversion in the watchlist snapshot) both did
+`int(pd.Timestamp(row["time"]).timestamp()) + 19800` — the `+19800` (5:30 in seconds) is the right
+move when the source is genuine UTC (that's the convention used elsewhere in this codebase, e.g.
+`trade-chart-data`'s raw Dhan REST epoch), but here it was applied a SECOND time on data that was
+already shifted, double-counting the offset.
+
+**Fix:** Drop the redundant `+ 19800` in both new call sites — just
+`int(pd.Timestamp(row["time"]).timestamp())`, since the shift already happened in `fetch_1m()`.
+
+**Permanent guard:** Before adding a `+19800`/`-19800` IST conversion anywhere, check whether the
+upstream data source (especially `range_trader.fetch_1m()`, which several call sites now consume)
+already did the shift — grep the call chain for `Timedelta(hours=5` / `+ 19800` first. This
+codebase has at least two different conventions in play (raw-UTC-from-Dhan vs. already-IST-shifted
+`fetch_1m` output) and they look identical in code (`pd.Timestamp(...).timestamp()`) without
+checking the source.
+
+**Fast detect:** A lightweight-charts time axis off by a suspiciously round ~5.5 hours (or off by
+exactly double that, ~11h, if both layers shift it) is always this class of bug, never a real data
+issue — check every `+19800`/`Timedelta(hours=5, minutes=30)` in the chain from source to render.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
