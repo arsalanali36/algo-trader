@@ -140,8 +140,10 @@ class DhanBroker(BaseBroker):
             "securityId":      str(sec_id),
             "tradingSymbol":   trad_sym or "",
             "quantity":        int(qty),
+            "disclosedQuantity": 0,
             "price":           round(float(price), 2) if order_type == "LIMIT" else 0,
             "triggerPrice":    0,
+            "afterMarketOrder": False,
         }
         try:
             _rl.acquire("order")

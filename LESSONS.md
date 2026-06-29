@@ -791,6 +791,42 @@ that nobody has exercised live yet is a candidate for this exact bug until prove
 
 ---
 
+## TRAP #26 — `brokers/dhan_broker.py` order body missing `disclosedQuantity`/`afterMarketOrder` — every order via `smart_order.execute()` rejected with DH-905 🔴🔴🔴
+
+**Symptom:** 100% of `[BROKER-SHADOW]` (and would-be `[BROKER]` live) order attempts reject with
+`HTTP 400 — {"errorType":"Input_Exception","errorCode":"DH-905","errorMessage":"Missing required
+fields, bad values for parameters etc."}` — every symbol, every price, every qty, no exceptions
+(23/23 in `ARS_CHAIN_V1.log` history). Paper fill logs look completely normal, so this hides
+silently behind shadow-live testing or behind a strategy nobody's pushed live yet.
+
+**Root cause:** `DhanBroker.place_order()` (`brokers/dhan_broker.py`) builds the Dhan `/v2/orders`
+POST body with `dhanClientId`/`transactionType`/`exchangeSegment`/`productType`/`orderType`/
+`validity`/`securityId`/`tradingSymbol`/`quantity`/`price`/`triggerPrice` — but is **missing
+`disclosedQuantity` and `afterMarketOrder`**, which Dhan's v2 API requires. The older, independently
+written "proven working live" scripts (`_TRADERS/rsi_trader.py`, `_TRADERS/nifty_ema_trader.py`,
+`_TRADERS/01_rsi_v1.py`) all include both fields and work fine — only the newer shared
+`brokers/dhan_broker.py` (used by `smart_order.execute()`, i.e. `range_trader.py` /
+`webhook_executor.py` / `universe_trader.py` — the entire "Best-in-class Universe System" stack)
+had the gap. Found 2026-06-29 while ARS_CHAIN_V1 was live — meaning real entries would have
+silently failed to place at the broker (the in-memory paper-equivalent fill still logs, and
+`smart_order.execute()` correctly flips `res["ok"]=False` on the reject so no phantom position
+gets tracked — but the live strategy was effectively placing zero real orders).
+
+**Fix:** Added `"disclosedQuantity": 0` and `"afterMarketOrder": False` to the body dict in
+`DhanBroker.place_order()`. Matches the legacy scripts' working payload shape exactly.
+
+**Permanent guard:** Any NEW broker-call site that builds a Dhan order body by hand (not via
+`DhanBroker.place_order()`) must diff its field list against this function or a known-working
+legacy script — don't assume "it returns HTTP 200 reach" means the body is complete; DH-905 is
+Dhan's generic catch-all and will fire even when auth/sec_id/segment are all correct.
+
+**Fast detect:** If `[BROKER-SHADOW]` or `[BROKER]` lines show DH-905 on literally every attempt
+regardless of symbol/price/qty (100% reject rate, no pattern), suspect a missing-required-field
+payload bug before suspecting margin/liquidity/symbol issues — a real margin/liquidity reject
+shows a *different* Dhan error code and won't be 100% across every contract.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
