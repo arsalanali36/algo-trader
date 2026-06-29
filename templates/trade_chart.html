@@ -21,6 +21,11 @@
   .pane-hdr{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e;flex-shrink:0;text-transform:uppercase;letter-spacing:.4px}
   .pane-hdr .hint{color:#484f58;text-transform:none;letter-spacing:0}
   #chart-left{flex:1;width:100%;min-height:0}
+  #watchlist{width:230px; border-left:1px solid #21262d; background:#161b22; flex-shrink:0; display:flex; flex-direction:column; transition:width .15s ease, min-width .15s ease}
+  #watchlist.collapsed{width:0; min-width:0; border-left:none; overflow:hidden}
+  #watchlist-title{padding:10px 14px; border-bottom:1px solid #21262d; font-size:11px; text-transform:uppercase; color:#8b949e; font-weight:700; letter-spacing:0.5px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0}
+  #wl-toggle{position:absolute; top:50%; right:230px; transform:translateY(-50%); width:18px; height:44px; background:#21262d; border:1px solid #30363d; border-right:none; border-radius:6px 0 0 6px; color:#8b949e; cursor:pointer; font-size:11px; z-index:5; display:flex; align-items:center; justify-content:center; transition:right .15s ease}
+  #watchlist.collapsed ~ #wl-toggle{right:0}
 </style></head>
 <body>
   <div class="hdr">
@@ -31,28 +36,29 @@
     <span class="muted" id="date" style="margin-left:auto"></span>
   </div>
   <div id="msg" style="display:none"></div>
-  <div style="display:flex; height:calc(100vh - 110px);">
-    <!-- Watchlist Sidebar -->
-    <div id="watchlist" style="width:230px; border-right:1px solid #21262d; background:#161b22; overflow-y:auto; flex-shrink:0; display:flex; flex-direction:column;">
-      <div id="watchlist-title" style="padding:10px 14px; border-bottom:1px solid #21262d; font-size:11px; text-transform:uppercase; color:#8b949e; font-weight:700; letter-spacing:0.5px;">
-        Watchlist
+  <div id="body-row" style="display:flex; height:calc(100vh - 110px); position:relative;">
+    <!-- Split chart view: left = instrument/index, right = option premium -->
+    <div class="split-wrap" id="split-wrap">
+      <div class="pane" id="pane-left">
+        <div class="pane-hdr"><span id="left-pane-title">Instrument</span><span class="hint">Alt+Click to expand</span></div>
+        <div id="chart-left"><div class="empty muted" style="padding:20px;text-align:center">Loading underlying chart...</div></div>
+      </div>
+      <div class="splitter2" id="splitter2"></div>
+      <div class="pane" id="pane-right">
+        <div class="pane-hdr"><span>Premium</span><span class="hint">Alt+Click to expand</span></div>
+        <div id="chart"></div>
+      </div>
+    </div>
+    <!-- Watchlist Sidebar (right side, collapsible) -->
+    <div id="watchlist">
+      <div id="watchlist-title">
+        <span>Watchlist</span>
       </div>
       <div id="watchlist-items" style="flex:1; overflow-y:auto;">
         <!-- Populated by JS -->
       </div>
     </div>
-    <!-- Split chart view: left = instrument/index, right = option premium -->
-    <div class="split-wrap" id="split-wrap">
-      <div class="pane" id="pane-left">
-        <div class="pane-hdr"><span id="left-pane-title">Instrument</span><span class="hint">Ctrl+Click to expand</span></div>
-        <div id="chart-left"><div class="empty muted" style="padding:20px;text-align:center">Loading underlying chart...</div></div>
-      </div>
-      <div class="splitter2" id="splitter2"></div>
-      <div class="pane" id="pane-right">
-        <div class="pane-hdr"><span>Premium</span><span class="hint">Ctrl+Click to expand</span></div>
-        <div id="chart"></div>
-      </div>
-    </div>
+    <button id="wl-toggle" title="Toggle watchlist">▶</button>
   </div>
 <script>
 (function(){
@@ -252,11 +258,12 @@
   const sym = q.get('sym')||'';
   const dt = q.get('date')||'';
   const et = q.get('et')||'', xt = q.get('xt')||'';
+  const strategy = q.get('strategy')||'';
   if (!sym) return;
   const root = sym.split('-')[0];
   document.getElementById('left-pane-title').textContent = root || 'Instrument';
 
-  fetch('/api/trade-chart-underlying-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):''))
+  fetch('/api/trade-chart-underlying-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):'')+(strategy?('&strategy='+encodeURIComponent(strategy)):''))
     .then(r=>r.json()).then(d=>{
       const el = document.getElementById('chart-left');
       if (!d.ok || !d.candles || !d.candles.length){
@@ -264,23 +271,91 @@
         return;
       }
       el.innerHTML = '';
+      const BG = '#0d1117';
+      // lightweight-charts measures the container's clientWidth/clientHeight
+      // AT createChart() call time. This pane sits inside a multi-level flex
+      // layout (split-wrap > pane > chart-left) and on first paint the
+      // browser sometimes hasn't finished resolving that flex chain's height
+      // yet (it has a width but not a height), so the chart silently gets
+      // created with height 0 — found 2026-06-29: the candle plot canvas +
+      // time-axis never rendered, while the right price-scale's own labels
+      // (a separately-sized sub-element) still showed. Explicit width/height
+      // here + a deferred re-apply on the next frame is the fix.
       const chart = LightweightCharts.createChart(el, {
-        layout:{ background:{color:'#0d1117'}, textColor:'#8b949e' },
+        width: el.clientWidth, height: el.clientHeight,
+        layout:{ background:{color:BG}, textColor:'#8b949e' },
         grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
         timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
         rightPriceScale:{ borderColor:'#30363d' },
         crosshair:{ mode:0 }
       });
-      const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
-        borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
+
       const uniq = []; const seen = new Set();
       d.candles.forEach(c=>{ if(!seen.has(c.time)){ seen.add(c.time); uniq.push(c); } });
       uniq.sort((a,b)=>a.time-b.time);
+
+      const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
+        borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(uniq);
       if (d.entry_mk) s.setMarkers([{time:d.entry_mk, position:'belowBar', color:'#58a6ff', shape:'circle', text:'Entry'}]);
+
+      // Zone shown as two horizontal price lines (not a filled box) — this
+      // pane covers the FULL trading day, so price legitimately trades both
+      // above and below the zone. The Watch-chart's box-mask trick (two
+      // stacked Area series painting background color below "lower") hides
+      // any real candle whose price falls below the zone's lower bound,
+      // which happens routinely over a full day — found 2026-06-29 on a
+      // MARUTI trade chart where most of the day's candles vanished because
+      // they traded below a zone formed mid-session. Price lines never hide
+      // candles, so they're the safe choice here.
+      const z = d.zone || {};
+      if (z.zone_upper != null && z.zone_lower != null) {
+        const zoneColor = z.zone_type === 'RED' ? '#f85149' : '#3fb950';
+        s.createPriceLine({price: z.zone_upper, color: zoneColor, lineWidth: 1, lineStyle: 2,
+          axisLabelVisible: true, title: 'zone upper'});
+        s.createPriceLine({price: z.zone_lower, color: zoneColor, lineWidth: 1, lineStyle: 2,
+          axisLabelVisible: true, title: 'zone lower'});
+      }
+
+      // R1-R5 = red dashed, S1-S5 = green dashed, PDH = red solid, PDL = green
+      // solid, PDC = blue solid, P (pivot) = blue dashed — same scheme as the
+      // Watchlist chart / user's TradingView setup.
+      function _levelStyle(type) {
+        if (type === 'PDH') return {color:'#f85149', style:0};
+        if (type === 'PDL') return {color:'#3fb950', style:0};
+        if (type === 'PDC') return {color:'#1f6feb', style:0};
+        if (type === 'P')   return {color:'#1f6feb', style:2};
+        if (/^R\d$/.test(type) || type === 'RESISTANCE') return {color:'#f85149', style:2};
+        if (/^S\d$/.test(type) || type === 'SUPPORT')    return {color:'#3fb950', style:2};
+        return {color:'#8b949e', style:2};
+      }
+      (z.key_levels || []).forEach(([price, type]) => {
+        const st = _levelStyle(type);
+        s.createPriceLine({price: price, color:st.color, lineWidth:1, lineStyle:st.style,
+          axisLabelVisible:true, title:type});
+      });
+      if (z.tracked_high != null) {
+        s.createPriceLine({price: z.tracked_high, color:'#d29922', lineWidth:2, lineStyle:0,
+          axisLabelVisible:true, title:'touch high'});
+      }
+      if (z.tracked_low != null) {
+        s.createPriceLine({price: z.tracked_low, color:'#d29922', lineWidth:2, lineStyle:0,
+          axisLabelVisible:true, title:'touch low'});
+      }
+
       chart.timeScale().fitContent();
       window._leftChart = chart;
-      window.addEventListener('resize', ()=>chart.applyOptions({width: el.clientWidth}));
+      // Re-measure on the next two frames — covers the case where the
+      // flex layout's height wasn't settled yet at createChart() time.
+      requestAnimationFrame(() => {
+        chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
+        chart.timeScale().fitContent();
+        requestAnimationFrame(() => {
+          chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
+          chart.timeScale().fitContent();
+        });
+      });
+      window.addEventListener('resize', ()=>chart.applyOptions({width: el.clientWidth, height: el.clientHeight}));
     }).catch(()=>{
       document.getElementById('chart-left').innerHTML = '<div class="muted" style="padding:20px;text-align:center">Error loading underlying chart</div>';
     });
@@ -322,9 +397,34 @@
     setTimeout(resizeCharts, 0);
   }
 
-  left.addEventListener('click', e => { if (e.ctrlKey) expandPane('left'); });
-  right.addEventListener('click', e => { if (e.ctrlKey) expandPane('right'); });
-  document.addEventListener('keydown', e => { if (e.key === 'Escape') restoreSplit(); });
+  function isExpanded(){ return right.classList.contains('pane-hidden') || left.classList.contains('pane-hidden'); }
+  left.addEventListener('click', e => {
+    if (!e.altKey) return;
+    if (left.classList.contains('pane-hidden')===false && right.classList.contains('pane-hidden')) restoreSplit();
+    else expandPane('left');
+  });
+  right.addEventListener('click', e => {
+    if (!e.altKey) return;
+    if (right.classList.contains('pane-hidden')===false && left.classList.contains('pane-hidden')) restoreSplit();
+    else expandPane('right');
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && isExpanded()) restoreSplit(); });
+})();
+
+// ── Watchlist collapse toggle ───────────────────────────────────────────────
+(function(){
+  const wl = document.getElementById('watchlist');
+  const btn = document.getElementById('wl-toggle');
+  if (!wl || !btn) return;
+  function resizeCharts(){
+    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+    window.dispatchEvent(new Event('resize'));
+  }
+  btn.addEventListener('click', () => {
+    const collapsed = wl.classList.toggle('collapsed');
+    btn.textContent = collapsed ? '◀' : '▶';
+    setTimeout(resizeCharts, 160); // after the CSS width transition
+  });
 })();
 
 // ── ←/→ navigate between trades (list saved in localStorage by the Orders & P&L tab) ──
@@ -336,7 +436,9 @@
   
   if(idxStr == null || !list.length) {
     const wl = document.getElementById('watchlist');
+    const wlBtn = document.getElementById('wl-toggle');
     if (wl) wl.style.display = 'none';
+    if (wlBtn) wlBtn.style.display = 'none';
     return; // opened standalone (no list context) — no nav, hide watchlist
   }
   
@@ -402,6 +504,7 @@
     const t = list[newIdx];
     const params = {sym:t.sym, side:t.side, entry:t.entry, exit:t.exit, et:t.et, xt:t.xt, qty:t.qty, idx:newIdx};
     if(t.date) params.date = t.date;
+    if(t.strategy) params.strategy = t.strategy;
     location.href = '/trade-chart?' + new URLSearchParams(params).toString();
   }
 

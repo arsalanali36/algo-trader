@@ -877,6 +877,23 @@ def main(strategy_id="range"):
             if symbol not in daily_levels:
                 daily_df = fetch_daily(symbol)
                 time.sleep(0.4)  # Dhan DH-904: 25 symbols @ 0.4s = ~10s startup, well under rate limit
+                # build_key_levels()/pivot_labels below both assume iloc[-2] is
+                # "yesterday" and iloc[-1] is "today" — true for backtest tools
+                # (which slice daily_df to end at their simulated day on
+                # purpose) but NOT guaranteed live: Dhan's daily-historical
+                # endpoint never returns a partial bar for today, and was found
+                # 2026-06-29 to sometimes lag by 2+ trading days (e.g. last row
+                # = Thursday when "today" was Monday) — silently shifting every
+                # symbol's pivot/PD_H/PD_C/PD_L levels a full day stale vs
+                # TradingView. Pad with a dummy "today" row whenever the last
+                # real row isn't actually today, so iloc[-2] always resolves to
+                # the true most-recent CLOSED trading day.
+                if daily_df is not None and len(daily_df) and daily_df.iloc[-1]["date"] != ist_now().date():
+                    import pandas as _pd
+                    daily_df = _pd.concat([daily_df, _pd.DataFrame([{
+                        "date": ist_now().date(), "open": float("nan"),
+                        "high": float("nan"), "low": float("nan"), "close": float("nan"),
+                    }])], ignore_index=True)
                 is_idx   = symbol in ("NIFTY", "BANKNIFTY")
                 daily_levels[symbol] = build_key_levels(
                     daily_df, is_index=is_idx,

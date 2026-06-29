@@ -1248,9 +1248,27 @@ def api_trade_chart_underlying_data():
         (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
     entry_t = request.args.get('et', '').strip()
     exit_t = request.args.get('xt', '').strip()
+    strategy_id = request.args.get('strategy', '').strip()
     root = trad_sym.split('-')[0].strip().upper()
     if not root:
         return jsonify({"ok": False, "msg": "no underlying symbol"})
+
+    # Same key_levels/zones_history/touch-high-low the Watchlist chart shows —
+    # written by range_trader.py's main loop to data/watch_<strategy>.json,
+    # keyed by the underlying root symbol (NIFTY/BANKNIFTY/...), not the
+    # option trad_sym. Best-effort: trade chart still works without it.
+    zone = {}
+    if strategy_id:
+        try:
+            wf = BASE_DIR / 'data' / f"watch_{strategy_id}.json"
+            if wf.exists():
+                wd = json.loads(wf.read_text())
+                for s in wd.get("symbols", []):
+                    if s.get("symbol") == root:
+                        zone = s
+                        break
+        except Exception:
+            pass
 
     try:
         import universe
@@ -1280,7 +1298,7 @@ def api_trade_chart_underlying_data():
             if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
             if exit_t and hhmm == exit_t: exit_mk = t_ist
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
-                        "symbol": root, "date": date_str})
+                        "symbol": root, "date": date_str, "zone": zone})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

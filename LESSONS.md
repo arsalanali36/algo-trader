@@ -994,6 +994,39 @@ orphan window to a few failed 5-second retries instead of "until 3:15 PM, hours 
 
 ---
 
+## TRAP #31 — `fetch_daily()`'s last row isn't always "today", silently shifting EVERY symbol's pivot/PD_H/PD_C/PD_L levels by a full trading day 🔴🔴🔴
+
+**Found 2026-06-29**, user noticed (LT trade-chart vs TradingView side-by-side) that the
+pivot/R1-R5/S1-S5/PDH/PDC/PDL levels our dashboard showed didn't match TV's own
+`Ars_Auto_Rev_Chain` indicator on the same symbol, same day, at all — not a small rounding
+difference, off by ~30-50 points on LT.
+
+**Root cause:** `_CHARTING/zones.py`'s `build_key_levels(daily_df, ...)` hardcodes the assumption
+`daily_df.iloc[-2] = yesterday, iloc[-1] = today` (a comment says so explicitly). That's true for
+the backtest tools (`backtest_engine.py`, `validate_strategy.py`) because THEY deliberately slice
+`daily_df` to end exactly at their simulated "today". It is **not** true for the live caller
+(`_TRADERS/range_trader.py`'s `fetch_daily()` + `main()` loop) — Dhan's `/v2/charts/historical`
+daily endpoint never returns a partial bar for the still-forming today, and was found to sometimes
+lag by 2+ trading days (e.g. on Monday 2026-06-29, LT's last available daily row was **Thursday
+2026-06-25** — Friday's row was simply missing from Dhan's response). So `iloc[-2]` silently
+resolved to **Wednesday**, a full extra day stale, and every pivot/PD level computed from it was
+wrong — not just cosmetically on the watch/trade charts, but for the actual live entry-signal logic
+too, since `daily_levels[symbol]` (built from this same function) is what `run_signal_engine()`
+checks candles against for zone-touch entries.
+
+**Fix:** Don't touch `build_key_levels()` itself (backtest tools rely on its current contract and
+work correctly). Instead, in `range_trader.py`'s `main()` loop right after `fetch_daily(symbol)`,
+check if the last row's date actually equals real IST "today" (`ist_now().date()`); if not, append
+a dummy all-NaN row dated today. This restores the `-2=yesterday / -1=today` contract universally
+regardless of how many days Dhan's feed is lagging by, without needing to know *why* it lagged
+(holiday, vendor delay, gap — doesn't matter, the date check self-corrects for all of them).
+
+**Fast-detect for next time:** if a symbol's TradingView pivot lines and our dashboard's don't
+match, the FIRST thing to check is `fetch_daily(<symbol>).tail(3)` — if the last row's date isn't
+real today, this bug (or its next variant) is back.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,

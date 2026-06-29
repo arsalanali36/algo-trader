@@ -858,6 +858,55 @@ plotshape(
      text = "🔨ᶦ"
      )
 
+// Engulfing + Harami were only barcolor-tinted before (easy to miss on a
+// busy chart) — explicit labels so they're visible like the hammers above.
+plotshape(
+     bullEngulf and inDateRange,
+     title = "Bull Engulfing",
+     location = location.belowbar,
+     style = shape.labelup,
+     color = color.new(color.lime, 0),
+     text = "🟢E"
+     )
+plotshape(
+     bearEngulf and inDateRange,
+     title = "Bear Engulfing",
+     location = location.abovebar,
+     style = shape.labeldown,
+     color = color.new(color.red, 0),
+     text = "🔴E"
+     )
+plotshape(
+     bullHarami and inDateRange,
+     title = "Bull Harami",
+     location = location.belowbar,
+     style = shape.labelup,
+     color = color.new(color.green, 40),
+     text = "H"
+     )
+plotshape(
+     bearHarami and inDateRange,
+     title = "Bear Harami",
+     location = location.abovebar,
+     style = shape.labeldown,
+     color = color.new(color.maroon, 40),
+     text = "H"
+     )
+
+// Inside Candle — current bar's range fully inside the previous bar's range
+// (high <= prev high and low >= prev low). Not in the AA_CandlePatterns
+// library, so detected inline. Display-only — not wired into bullish/bearish
+// or any entry/exit condition, so it can't change live trading behaviour.
+insideCandle = (high <= high[1]) and (low >= low[1])
+plotshape(
+     insideCandle and inDateRange,
+     title = "Inside Candle",
+     location = location.abovebar,
+     style = shape.labeldown,
+     color = color.new(color.gray, 0),
+     text = "IN"
+     )
+
 barcolor(
      bullEngulf ? color.black :
      bearEngulf ? color.rgb(2, 0, 0) :

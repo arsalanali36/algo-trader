@@ -816,6 +816,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <span data-v="webhook" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
       <span data-v="manual" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
       <span data-v="strategy" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+      <span data-v="hedge" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
     </span>
     <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
     <span id="ord-mode" class="ord-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
@@ -857,6 +858,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <span data-v="webhook" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
       <span data-v="manual" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
       <span data-v="strategy" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+      <span data-v="hedge" onclick="calSeg('cal-src',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
     </span>
     <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
     <span id="cal-mode" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
@@ -2273,7 +2275,7 @@ function _ordSegVal(segId){
 function _ordTag(text, kind){
   const C={ 'webhook':['#1f6feb22','#79c0ff'], 'manual':['#23863622','#3fb950'],
     'strategy':['#8957e522','#bc8cff'], 'paper':['#9e6a0322','#e3a008'],
-    'live':['#f8514922','#f85149'], 'name':['#21262d','#8b949e'] };
+    'live':['#f8514922','#f85149'], 'hedge':['#2ea04322','#3fb950'], 'name':['#21262d','#8b949e'] };
   const c=C[kind]||C['name'];
   if(!text) return '';
   return '<span style="background:'+c[0]+';color:'+c[1]+';padding:2px 6px;border-radius:4px;font-size:10px;margin-right:3px">'+text+'</span>';
@@ -2296,8 +2298,19 @@ function _ordFillSelect(id, vals, cur, allLabel){
   sel.value=cur||'';
 }
 function _ordTags(t){
-  return _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
-       +(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'')+_ordTag(t.broker,'name');
+  let isHedge = (t.group_id && t.group_id.startsWith('RANGE_') && t.entry==='BUY') ||
+                (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry==='BUY') ||
+                (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
+                
+  let h = _ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)
+       +(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'');
+       
+  if(isHedge) {
+    h += _ordTag('hedge', 'hedge');
+  }
+  
+  h += _ordTag(t.broker,'name');
+  return h;
 }
 function _imgTagsOf(t){ return (t.tags||[]).filter(tg=>tg.startsWith('IMG:')).map(tg=>tg.slice(4)); }
 function _noteThumbs(id, imgs){
@@ -2324,22 +2337,31 @@ async function ordersRender(){
   const date=(document.getElementById('ord-date')||{}).value;
   if(!date) return;
   const q=new URLSearchParams({date});
-  const src=_ordSegVal('ord-src'); if(src) q.set('source',src);
+  const src=_ordSegVal('ord-src'); if(src && src !== 'hedge') q.set('source',src);
   const mode=_ordSegVal('ord-mode'); if(mode) q.set('mode',mode);
   const strat=document.getElementById('ord-strat').value; if(strat) q.set('strategy',strat);
   const broker=document.getElementById('ord-broker').value; if(broker) q.set('broker',broker);
   let d={};
   try{ const r=await fetch('/api/orders?'+q.toString()); d=await r.json(); }catch(e){ return; }
+  
+  let det=d.details||[];
+  if (src === 'hedge') {
+    det = det.filter(t => {
+      return (t.group_id && t.group_id.startsWith('RANGE_') && t.entry==='BUY') ||
+             (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry==='BUY') ||
+             (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
+    });
+    d.details = det;
+  }
+  
   _ordFillSelect('ord-strat', (d.filters||{}).strategy||[], strat, 'All strategies');
   _ordFillSelect('ord-broker', (d.filters||{}).broker||[], broker, 'All brokers');
 
-  const det=d.details||[];
-  
   // ── per-trade gross / tax / net (Zerodha charges) ──
   det.forEach(t=>{
-    const ep=t.entry_price||0, xp=t.exit_price||0, q=t.qty||0;
-    t._gross = ep&&xp&&q ? (t.entry==='BUY'?xp-ep:ep-xp)*q : (t.pnl||0);
-    t._tax   = ep&&xp&&q ? (calcCharges(ep,xp,q,t.entry)||0) : 0;
+    const ep=t.entry_price||0, xp=t.exit_price||0, qt=t.qty||0;
+    t._gross = ep&&xp&&qt ? (t.entry==='BUY'?xp-ep:ep-xp)*qt : (t.pnl||0);
+    t._tax   = ep&&xp&&qt ? (calcCharges(ep,xp,qt,t.entry)||0) : 0;
     t._net   = t._gross - t._tax;
   });
 
@@ -2681,7 +2703,7 @@ function renderCachedOrders() {
     sortedCompleted.reverse(); // Default to original reverse order
   }
 
-  const _chartList = sortedCompleted.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate}));
+  const _chartList = sortedCompleted.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate, strategy:t.strategy||''}));
   localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
 
   let ch = sortedCompleted.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
@@ -2849,7 +2871,7 @@ function renderCachedOrders() {
                    </div>`;
             break;
           case 'chart':
-            val = `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${(t.entry_date||ordDate)}',null,null,${_idx})" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+            val = `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
             break;
           case 'actions':
             val = `
@@ -2857,7 +2879,7 @@ function renderCachedOrders() {
                 <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
                 <div id="dropdown-${t.id}" class="dropdown-content">
                   <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-                  <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx})">📈 Chart</a>
+                  <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
                   <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
                 </div>
               </div>`;
@@ -3155,7 +3177,7 @@ function renderCachedOrders() {
                      </div>`;
               break;
             case 'chart':
-              val = `<button onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg})" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+              val = `<button onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
               break;
             case 'actions':
               val = `
@@ -3169,7 +3191,7 @@ function renderCachedOrders() {
                   <div class="dropdown">
                     <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
                     <div id="dropdown-${t.id}" class="dropdown-content">
-                      <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg})">📈 Chart</a>
+                      <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')">📈 Chart</a>
                       <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')">⚙️ SL/Target</a>
                       <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
                       <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
@@ -4277,7 +4299,7 @@ async function updatePnl() {
               row += _pnlTD('—', '', 'left');
             }
           }
-          if(ov('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${entry},0,'${d.entry_time||''}','',${qty},'','${c_tf}','${c_ind}')" title="Premium chart (entry)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
+          if(ov('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${entry},0,'${d.entry_time||''}','',${qty},'','${c_tf}','${c_ind}',null,null,null,'${(d.strategy||'').replace(/'/g,'')}')" title="Premium chart (entry)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
           if(ov('action'))    row += `<td style="padding:5px 10px;text-align:center">
                    <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
                      style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
@@ -4392,14 +4414,14 @@ async function updatePnl() {
         row += _pnlTD('—', '', 'left');
       }
     }
-    if(cv('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty},'','${c_tf}','${c_ind}')" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
+    if(cv('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty},'','${c_tf}','${c_ind}',null,null,null,'${(d.strategy||'').replace(/'/g,'')}')" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
     return row;
   });
   _setHtml(ordEl,_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows)));
 
 }
 
-function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx, sl, tp){
+function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx, sl, tp, strategy){
   const params = {sym, side, entry, exit, et, xt, qty};
   if(date) params.date = date;
   if(tf) params.tf = tf;
@@ -4407,6 +4429,7 @@ function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx,
   if(idx != null) params.idx = idx;
   if(sl != null && sl !== '') params.sl = sl;   // SL as a premium price level (item F)
   if(tp != null && tp !== '') params.tp = tp;   // Target as a premium price level
+  if(strategy) params.strategy = strategy;      // for underlying-pane zone/key-level overlay
   const q = new URLSearchParams(params);
   window.open('/trade-chart?'+q.toString(), 'trade_chart_win');
 }
@@ -6508,12 +6531,19 @@ async function calendarRender() {
     month: (calMonth + 1).toString()
   });
   
-  const src = _calSegVal('cal-src'); if (src) q.set('source', src);
+  const src = _calSegVal('cal-src'); if (src && src !== 'hedge') q.set('source', src);
   const mode = _calSegVal('cal-mode'); if (mode) q.set('mode', mode);
   const strat = document.getElementById('cal-strat').value; if (strat) q.set('strategy', strat);
   const broker = document.getElementById('cal-broker').value; if (broker) q.set('broker', broker);
 
   let d = { summary: {}, filters: {} };
+  if (src === 'hedge') {
+    // For hedge in calendar, we actually need to intercept at the backend to filter it efficiently.
+    // So let's send source=hedge and update the backend too, because the backend processes the calendar summary
+    // across all days.
+    q.set('source', 'hedge');
+  }
+
   try {
     const r = await fetch('/api/orders/calendar-summary?' + q.toString());
     d = await r.json();
@@ -6832,7 +6862,8 @@ function renderPointsPerTradeTable() {
     et: t.entry_time,
     xt: t.exit_time,
     qty: t.qty,
-    date: t.exit_date || t.entry_date
+    date: t.exit_date || t.entry_date,
+    strategy: t.strategy || ''
   }));
   localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
   
@@ -7000,7 +7031,7 @@ function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId =
     } else if (c.id === 'broker') {
       v = t.broker || '—';
     } else if (c.id === 'chart') {
-      v = `<button onclick="openTradeChart('${(t.sym || t.symbol || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+      v = `<button onclick="openTradeChart('${(t.sym || t.symbol || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(t.strategy||'').replace(/'/g,'')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
     } else if (c.id === 'note') {
       v = `<div style="display:flex; align-items:center; gap:6px;">
              <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
@@ -7012,7 +7043,7 @@ function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId =
           <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${t.id})">⋮</span>
           <div id="cal-dropdown-${t.id}" class="dropdown-content">
             <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-            <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
+            <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(t.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
             <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
           </div>
         </div>`;
@@ -7143,7 +7174,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
       const uniqueBrokers = [...new Set(trades.map(t => t.broker || '—'))];
       v = uniqueBrokers.join(', ');
     } else if (c.id === 'chart') {
-      v = `<button onclick="event.stopPropagation(); openTradeChart('${(latestT.sym || latestT.symbol || '').replace(/'/g,'')}','${latestT.entry || ''}',${latestT.entry_price || 0},${latestT.exit_price || 0},'${latestT.entry_time || ''}','${latestT.exit_time || ''}',${latestT.qty || 0},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')" title="Premium chart for latest trade" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+      v = `<button onclick="event.stopPropagation(); openTradeChart('${(latestT.sym || latestT.symbol || '').replace(/'/g,'')}','${latestT.entry || ''}',${latestT.entry_price || 0},${latestT.exit_price || 0},'${latestT.entry_time || ''}','${latestT.exit_time || ''}',${latestT.qty || 0},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(latestT.strategy||'').replace(/'/g,'')}')" title="Premium chart for latest trade" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
     } else if (c.id === 'note') {
       v = `<div style="display:flex; align-items:center; gap:6px;">
              <button onclick="event.stopPropagation(); openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
@@ -7155,7 +7186,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
           <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${latestT.id})">⋮</span>
           <div id="cal-dropdown-${latestT.id}" class="dropdown-content">
             <a href="javascript:void(0)" onclick="openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-            <a href="javascript:void(0)" onclick="openTradeChart('${latestT.sym || latestT.symbol}','${latestT.entry}',${latestT.entry_price},${latestT.exit_price},'${latestT.entry_time}','${latestT.exit_time}',${latestT.qty},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}')">📈 Chart</a>
+            <a href="javascript:void(0)" onclick="openTradeChart('${latestT.sym || latestT.symbol}','${latestT.entry}',${latestT.entry_price},${latestT.exit_price},'${latestT.entry_time}','${latestT.exit_time}',${latestT.qty},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(latestT.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
             <a href="javascript:void(0)" onclick="toggleNoteDesc(${latestT.id})">👁️ Toggle Note</a>
           </div>
         </div>`;
