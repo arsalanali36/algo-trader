@@ -1,0 +1,12 @@
+[Unit]
+Description=CODE3B Monitor Daemon (SL/TP/EOD-squareoff, webhook trailing-SL, auto-scheduler)
+After=network.target
+
+[Service]
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" "/root/CODE3B- TV BACKTEST ENGINE/monitor_daemon.py"
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

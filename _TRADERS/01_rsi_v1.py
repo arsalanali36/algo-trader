@@ -53,8 +53,7 @@ TC_FILE     = BASE_DIR / "nifty_config.json"          # strategy params
 # dhan_master root pe hai — import ke liye path add karo
 sys.path.insert(0, str(BASE_DIR))
 import dhan_master
-sys.path.insert(0, str(BASE_DIR / "brokers"))
-import kite_broker
+from brokers import kite_broker
 
 # Market timing (IST)
 MARKET_OPEN  = (9,  16)   # 9:16 AM — market chalu

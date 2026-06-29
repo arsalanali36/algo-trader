@@ -4244,10 +4244,14 @@ async function kiteSaveKey() {
 }
 
 async function kiteOpenLogin() {
+  // Tab ko click ke turant baad (synchronously) kholo — warna await fetch ke baad
+  // window.open() ko browser popup-blocker silently block kar deta hai (no error shown).
+  const win = window.open('about:blank', '_blank');
   const r = await fetch('/api/kite-login-url').then(r=>r.json()).catch(()=>({}));
   if (r.url) {
-    window.open(r.url, '_blank');
+    if (win) win.location = r.url;
   } else {
+    if (win) win.close();
     document.getElementById('kite-token-msg').textContent =
       '⚠️ kite_api_key config.json mein nahi hai — pehle save karo';
     document.getElementById('kite-token-msg').style.color = '#f85149';

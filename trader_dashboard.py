@@ -669,8 +669,8 @@ def api_kite_exchange_token():
         return jsonify({"ok": False, "error": "request_token missing"})
     try:
         _sys.path.insert(0, str(TRADERS_DIR))
-        _sys.path.insert(0, str(BASE_DIR / "brokers"))
-        import kite_broker
+        _sys.path.insert(0, str(BASE_DIR))
+        from brokers import kite_broker
         access_token, err = kite_broker.exchange_request_token(req_token)
         if err:
             return jsonify({"ok": False, "error": err})
@@ -701,9 +701,9 @@ def api_kite_save_key():
 def api_kite_test_order():
     """NIFTY ATM CE test order (1 lot) — Kite F&O permission verify karne ke liye."""
     try:
-        _sys.path.insert(0, str(BASE_DIR / "brokers"))
         _sys.path.insert(0, str(BASE_DIR))
-        import kite_broker, importlib; importlib.reload(kite_broker)
+        from brokers import kite_broker
+        import importlib; importlib.reload(kite_broker)
         import dhan_master
         kite = kite_broker._load_kite()
 
@@ -3235,10 +3235,14 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
 
 
 if __name__ == '__main__':
-    threading.Thread(target=auto_scheduler, daemon=True).start()
-    threading.Thread(target=webhook_monitor_loop, daemon=True).start()
-    threading.Thread(target=pos_monitor_loop, daemon=True).start()
-
+    # auto_scheduler / webhook_monitor_loop / pos_monitor_loop ab is process ke
+    # andar NAHI chalte — woh `monitor_daemon.py` mein, apni alag systemd service
+    # (algo-monitor) ke roop mein chalte hain. Wajah: pehle yeh dashboard ke hi
+    # background threads the, isliye `systemctl restart algo-dashboard` (UI fix
+    # deploy karte waqt) unhe bhi 2-3 sec pause kar deta tha — SL/TP/EOD-squareoff
+    # aur webhook trailing-SL us window mein miss ho sakte the. Ab dashboard
+    # restart in loops ko bilkul touch nahi karta.
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
+    print("   (SL/TP/webhook-monitor/scheduler ab monitor_daemon.py mein — alag se chal rahe honge)\n")
     app.run(host='0.0.0.0', port=5099, debug=False)

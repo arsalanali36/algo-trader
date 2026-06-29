@@ -1,0 +1,18 @@
+[Unit]
+Description=Algo Trader Dashboard
+After=network.target
+
+[Service]
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" "/root/CODE3B- TV BACKTEST ENGINE/trader_dashboard.py"
+Restart=always
+RestartSec=5
+# KillMode=process — sirf is service ka MAIN process (dashboard) ko signal milta
+# hai. Default 'control-group' poore cgroup ko kill karta — jisme dashboard ke
+# Popen(start_new_session=True) se spawn kiye gaye standalone strategy traders
+# (range/rsi/ema) bhi aate hain. Bina is setting ke, dashboard restart un
+# traders ko bhi maar deta tha — bug pakda gaya 2026-06-29.
+KillMode=process
+
+[Install]
+WantedBy=multi-user.target
