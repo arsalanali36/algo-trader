@@ -632,8 +632,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <div class="tab" onclick="switchTab('control')" style="display: none;">Control</div>
     <div class="tab" onclick="switchTab('log')">Logs</div>
     <div class="tab" onclick="switchTab('config')" style="display: none;">Config</div>
-    <div class="tab" onclick="switchTab('webhook')">🔗 Webhook</div>
-    <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
+        <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
     <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
     <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
     <div class="tab" onclick="switchTab('pine')">📜 Script</div>
@@ -699,13 +698,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <div class="tab active" onclick="switchCfgTab('ema')" style="font-size:12px;">EMA</div>
     <div class="tab" onclick="switchCfgTab('rsi')" style="font-size:12px;">RSI</div>
     <div class="tab" onclick="switchCfgTab('range')" style="font-size:12px;">Range</div>
+    <div class="tab" onclick="switchCfgTab('webhook')" style="font-size:12px;">Webhook</div>
   </div>
   
   <div id="cfg-content"></div>
-</div>
-
-<!-- WEBHOOK TAB -->
-<div class="tab-body" id="tab-webhook" style="padding:16px 18px 24px">
+  <div id="webhook-content-wrapper" style="display:none; padding-top:10px;">
   <!-- status + day P&L -->
   <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap">
     <span id="wh-dot" style="width:9px;height:9px;border-radius:50%;background:#3fb950;display:inline-block"></span>
@@ -805,7 +802,9 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 </div>
+</div>
 
+<!-- WEBHOOK TAB -->
 <!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
 <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
@@ -3164,9 +3163,19 @@ function renderCachedOrders() {
 
 function switchCfgTab(type) {
   document.querySelectorAll('#cfg-tabs .tab').forEach(e => e.classList.remove('active'));
-  document.querySelector(`#cfg-tabs .tab[onclick="switchCfgTab('${type}')"]`).classList.add('active');
+  const targetTab = document.querySelector(`#cfg-tabs .tab[onclick="switchCfgTab('${type}')"]`);
+  if (targetTab) targetTab.classList.add('active');
   activeCfgTab = type;
-  renderConfigTable();
+  if (type === 'webhook') {
+    document.getElementById('cfg-content').style.display = 'none';
+    document.getElementById('webhook-content-wrapper').style.display = 'block';
+    if(typeof renderWebhookTab === 'function') renderWebhookTab();
+  } else {
+    document.getElementById('cfg-content').style.display = 'block';
+    const whWrapper = document.getElementById('webhook-content-wrapper');
+    if (whWrapper) whWrapper.style.display = 'none';
+    renderConfigTable();
+  }
 }
 
 // ── DATA FETCHING ──
@@ -4278,12 +4287,46 @@ function formatLogLine(L) {
   }
 
   let cls = 'lb-info';
-  if(/ERROR|error|Traceback|ModuleNot|TypeError/.test(L)) cls = 'lb-err';
-  else if(/WARNING|warning|Skipping stale|Failed|fail/.test(L))  cls = 'lb-warn';
-  else if(/\[PAPER\].*BUY|SIGNAL.*BUY/.test(L))                  cls = 'lb-buy';
-  else if(/\[PAPER\].*SELL|SIGNAL.*SELL|EXIT/.test(L))           cls = 'lb-sell';
-  else if(/levels loaded|sleeping|Loop done/.test(L))             cls = 'lb-dim';
-  return `<div class="${cls}">${L}</div>`;
+  let formattedL = L;
+  
+  if(/ERROR|error|Traceback|ModuleNot|TypeError/.test(L)) {
+    cls = 'lb-err';
+    formattedL = formattedL.replace(/ERROR/, "<span style='background:#f8514933;color:#f85149;padding:2px 6px;border-radius:4px;font-weight:bold'>❌ ERROR</span>");
+  }
+  else if(/WARNING|warning|Skipping stale|Failed|fail|HTTP 400/.test(L)) {
+    cls = 'lb-warn';
+    formattedL = formattedL.replace(/WARNING/, "<span style='background:#d2992233;color:#d29922;padding:2px 6px;border-radius:4px;font-weight:bold'>⚠️ WARNING</span>");
+  }
+  else if(L.includes('INFO SIGNAL ')) {
+    cls = 'lb-info';
+    formattedL = formattedL
+      .replace('INFO SIGNAL BUY', "<span style='background:#3fb95033;color:#3fb950;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>⚡ SIGNAL BUY</span>")
+      .replace('INFO SIGNAL SELL', "<span style='background:#f8514933;color:#f85149;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>⚡ SIGNAL SELL</span>")
+      .replace(/reason=(.+)/, "<span style='color:#8b949e;font-size:11px;border:1px solid #30363d;padding:1px 4px;border-radius:4px;margin-left:8px'>reason=$1</span>");
+  }
+  else if(/\[PAPER\]/.test(L)) {
+    cls = 'lb-info';
+    formattedL = formattedL
+      .replace('[PAPER] BUY', "<span style='background:#d2992233;color:#d29922;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>📄 PAPER BUY</span>")
+      .replace('[PAPER] SELL', "<span style='background:#d2992233;color:#d29922;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>📄 PAPER SELL</span>")
+      .replace(/correlationId=([\w-]+)/, "<span style='color:#8b949e;font-size:10px;margin-left:8px'>id: $1</span>");
+  }
+  else if(/\[LIVE\]/.test(L)) {
+    cls = 'lb-info';
+    formattedL = formattedL
+      .replace('[LIVE] BUY', "<span style='background:#8957e533;color:#bc8cff;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>🔥 LIVE BUY</span>")
+      .replace('[LIVE] SELL', "<span style='background:#8957e533;color:#bc8cff;padding:2px 6px;border-radius:4px;font-weight:bold;margin:0 4px'>🔥 LIVE SELL</span>")
+      .replace(/correlationId=([\w-]+)/, "<span style='color:#8b949e;font-size:10px;margin-left:8px'>id: $1</span>");
+  }
+  else if(/\[BROKER-SHADOW\]/.test(L)) {
+    cls = 'lb-dim';
+    formattedL = formattedL.replace('[BROKER-SHADOW]', "<span style='color:#8b949e;font-weight:bold;background:#161b22;padding:1px 4px;border-radius:3px;border:1px solid #30363d'>SHADOW</span>");
+  }
+  else if(/levels loaded|sleeping|Loop done/.test(L)) {
+    cls = 'lb-dim';
+  }
+  
+  return `<div class="${cls}" style="margin-bottom:2px">${formattedL}</div>`;
 }
 
 async function updateLogs() {

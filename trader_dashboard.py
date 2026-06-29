@@ -210,9 +210,13 @@ def _proc_cmdline(grep, strategy=None):
     try:  # pgrep fallback (Linux/VPS jahan psutil na ho)
         pat = f"--id {want_id}" if want_id else grep
         # '--' end-of-options — warna '--id ...' ko pgrep option samajh ke usage print karta
-        out = subprocess.check_output(['pgrep', '-f', '--', pat], text=True).strip()
+        out = subprocess.check_output(['pgrep', '-a', '-f', '--', pat], text=True).strip()
         if out:
-            return int(out.split('\n')[0]), ""
+            first_line = out.split('\n')[0]
+            parts = first_line.split(maxsplit=1)
+            pid = int(parts[0])
+            cl = parts[1] if len(parts) > 1 else ""
+            return pid, cl
     except Exception:
         pass
     return None, None
@@ -361,6 +365,21 @@ def api_log():
         return jsonify({"lines": lines})
     except Exception:
         return jsonify({"lines": ["Log not found"]})
+
+@app.route('/api/watch/<strategy_id>')
+def api_watch_strategy(strategy_id):
+    wf = BASE_DIR / 'data' / f"watch_{strategy_id}.json"
+    try:
+        if wf.exists():
+            age = _time.time() - wf.stat().st_mtime
+            if age < 120:
+                return jsonify(json.loads(wf.read_text()))
+            else:
+                return jsonify({"error": f"Watchlist stale (age: {age:.1f}s). Ensure strategy is running."})
+        else:
+            return jsonify({"error": f"Watchlist file not found: {wf.name}"})
+    except Exception as e:
+        return jsonify({"error": f"Error reading watchlist: {e}"})
 
 @app.route('/api/config', methods=['GET'])
 def api_config():

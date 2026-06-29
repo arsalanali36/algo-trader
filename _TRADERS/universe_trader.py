@@ -20,6 +20,7 @@ import json
 import socket
 import sys
 import time
+import risk_gate
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -171,7 +172,7 @@ def main(sid, once=False):
 
         cfg = load_config(sid)
         if broker is None:
-            broker = get_broker(cfg.get("broker", "dhan"), creds)
+            broker = get_broker(cfg.get("broker", risk_gate.default_broker()), creds)
 
         symbols = universe.resolve_universe(cfg.get("universe", "nifty50"))
         # Liquid stock-option whitelist (item B) — when routing to STOCK options,
@@ -313,7 +314,7 @@ def main(sid, once=False):
                     try:
                         import order_store
                         order_store.record(o_side, qty, est_price, source="strategy", strategy=sid,
-                                           mode=mode, broker=cfg.get("broker", "dhan"), symbol=sym,
+                                           mode=mode, broker=cfg.get("broker", risk_gate.default_broker()), symbol=sym,
                                            instrument=("equity" if route == "equity" else "options"),
                                            trad_sym=tsym, sec_id=sec_id, segment=seg,
                                            status="blocked", tags=["CAPITAL_BLOCKED", gate_reason])

@@ -131,7 +131,7 @@ class DhanBroker(BaseBroker):
         import time as _t
         body = {
             "dhanClientId":    self.cid,
-            "correlationId":   (tag or f"BK_{trad_sym or sec_id}")[:25] + f"_{int(_t.time())}",
+            "correlationId":   str(tag or f"BK_{trad_sym or sec_id}")[:14] + f"_{int(_t.time())}",
             "transactionType": side,
             "exchangeSegment": seg,
             "productType":     "INTRADAY",

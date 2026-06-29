@@ -468,7 +468,18 @@ def run_signal_engine(df_1m, key_levels, cfg):
             atr_sl_short = c + atr_val * atr_mult
             trades_today += 1
 
-    return signal, signal_price, signal_reason, signal_bar, n
+    current_state = {
+        "touch_active": touch_active,
+        "active_touch_type": active_touch_type,
+        "zone_type": zone_type,
+        "zone_fresh": (n - 1 - zone_bar) <= zone_age if zone_bar != -999 else False,
+        "zone_upper": zone_upper,
+        "zone_lower": zone_lower,
+        "tracked_high": tracked_high,
+        "tracked_low": tracked_low,
+        "ltp": float(df_1m.iloc[-1]["close"]) if n > 0 else 0
+    }
+    return signal, signal_price, signal_reason, signal_bar, n, current_state
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -615,173 +626,29 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         sec_id, seg = info
         trad_sym = symbol
 
-    ts = int(time.time())
-    body = {
-        "dhanClientId":    cid,
-        "correlationId":   f"RANGE_{trad_sym}_{ts}",
-        "transactionType": side,       # "BUY" or "SELL"
-        "exchangeSegment": seg,
-        "productType":     "INTRADAY",
-        "orderType":       "MARKET",
-        "validity":        "DAY",
-        "securityId":      sec_id,
-        "tradingSymbol":   trad_sym,
-        "quantity":        qty,
-        "price":           0,
-        "triggerPrice":    0,
-    }
-    # For options: fetch the actual option PREMIUM — index/spot price is WRONG
-    # here, and logging 0 corrupts P&L (a SELL "filled" at ₹0 looks like a free
-    # position). Priority: shared cross-process cache → direct Dhan call (with
-    # DH-904 backoff) → wider stale cache. If NOTHING gives a real premium, skip
-    # the entry entirely (return False) rather than record a phantom ₹0 fill —
-    # this was the root cause of the MARUTI/TCS PX 0.00 entries the user flagged.
-    opt_ltp = None
-    if seg == "NSE_FNO" and sec_id:
-        _ensure_root_path()
-        # Live WebSocket feed first — zero extra Dhan REST call, no DH-904 risk.
-        # Also proactively subscribes this contract so it (and the SL/TP monitor,
-        # liquidity check) have a tick available sooner, not just on the next
-        # entry. Often empty for a JUST-resolved ATM strike (subscribing causes
-        # a reconnect, tick arrives a moment later) — that's exactly why this
-        # still falls through to shared_ltp_cache/REST below, not a bug.
-        try:
-            import dhan_feed
-            dhan_feed.add(("NSE_FNO", sec_id))
-            q = dhan_feed.get_quote(sec_id)
-            ltp_v = float(q.get("ltp") or 0)
-            if ltp_v:
-                opt_ltp = ltp_v
-        except Exception:
-            pass
-        if not opt_ltp:
-            try:
-                import shared_ltp_cache
-                opt_ltp = shared_ltp_cache.get(sec_id, max_age=15)
-            except Exception:
-                opt_ltp = None
-        if not opt_ltp:
-            for _attempt in range(3):
-                try:
-                    _rl.acquire("ltp")
-                    qr = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                                       json={"NSE_FNO": [int(sec_id)]},
-                                       headers=hdrs(token, cid), timeout=5)
-                    if qr.status_code == 429:
-                        _rl.note_429()
-                        time.sleep(1.0 * (_attempt + 1))
-                        continue
-                    if qr.status_code == 200:
-                        qdata = qr.json().get("data", {}).get("NSE_FNO", {})
-                        for v in (qdata.values() if isinstance(qdata, dict) else []):
-                            ltp_v = float(v.get("last_price") or v.get("ltp") or 0)
-                            if ltp_v:
-                                opt_ltp = ltp_v
-                        break
-                except Exception:
-                    break
-            if opt_ltp:
-                try:
-                    import shared_ltp_cache
-                    shared_ltp_cache.put(sec_id, opt_ltp)   # share with other processes
-                except Exception:
-                    pass
-            else:
-                try:
-                    import shared_ltp_cache
-                    opt_ltp = shared_ltp_cache.get_stale(sec_id, max_age=120)
-                except Exception:
-                    opt_ltp = None
-        if opt_ltp:
-            price = opt_ltp
-        else:
-            log.warning(f"Option premium unavailable for {trad_sym} (likely DH-904 "
-                        f"rate-limit) — SKIPPING entry, no phantom ₹0 fill recorded")
-            return False
-
-    def _rec(status_, oid=''):
-        try:
-            import sys as _s, os as _o
-            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
-            if _root not in _s.path:
-                _s.path.insert(0, _root)
-            import order_store
-            order_store.record(side, qty, price, source='strategy', strategy=_STRAT_ID,
-                mode=mode, broker='dhan', symbol=symbol,
-                instrument=('options' if seg == 'NSE_FNO' else 'equity'),
-                trad_sym=trad_sym, sec_id=sec_id, segment=seg,
-                correlation_id=f'RANGE_{trad_sym}_{ts}', broker_order_id=oid, status=status_,
-                tags=list(extra_tags) if extra_tags else None, group_id=group_id)
-        except Exception:
-            pass
-
-    if mode == "paper":
-        log.info(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
-        _rec('paper')
-        # Diagnostic-only shadow order — fires a REAL Dhan order at the same
-        # qty/price purely to compare fill/reject vs the paper fill (slippage
-        # check). Never affects the paper record above — best-effort, never
-        # raises. OFF unless risk_gate.shadow_live_enabled() is explicitly set.
-        try:
-            import sys as _s, os as _o
-            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
-            if _root not in _s.path:
-                _s.path.insert(0, _root)
-            import risk_gate
-            if risk_gate.shadow_live_enabled(_STRAT_ID):
-                shadow_body = dict(body, correlationId=f"RANGE_{trad_sym}_{ts}_SHADOW")
-                _rl.acquire("order")
-                sr = requests.post(ORDERS_URL, json=shadow_body, headers=hdrs(token, cid), timeout=10)
-                if sr.status_code == 429:
-                    _rl.note_429()
-                log.info(f"[BROKER-SHADOW] {trad_sym} {side} {qty} @ {price:.2f} -> "
-                        f"HTTP {sr.status_code} — {sr.text[:200]} — paper fill unaffected")
-        except Exception as e:
-            log.warning(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
-        return True
     try:
-        _rl.acquire("order")
-        r = requests.post(ORDERS_URL, json=body, headers=hdrs(token, cid), timeout=10)
-        if r.status_code == 429:
-            _rl.note_429()
-        if r.status_code == 200:
-            # Dhan's 200 means "accepted", NOT "filled" — a price-band/freeze
-            # reject arrives a moment later, async. Re-check once before
-            # trusting it, so a strategy never tracks a position the broker
-            # actually rejected (LESSONS.md TRAP #13 follow-up).
-            oid = None
-            try:
-                jr = r.json()
-                oid = str((jr or {}).get("orderId") or "")
-            except Exception:
-                pass
-            final_status = "filled"
-            if oid:
-                time.sleep(1.2)
-                try:
-                    _rl.acquire("order")
-                    rr = requests.get(f"{ORDERS_URL}/{oid}", headers=hdrs(token, cid), timeout=6)
-                    if rr.status_code == 200:
-                        d = rr.json()
-                        if isinstance(d, list) and d:
-                            d = d[0]
-                        st = str((d or {}).get("orderStatus") or "").upper()
-                        if st in ("REJECTED", "CANCELLED", "EXPIRED"):
-                            log.error(f"ORDER ASYNC-REJECT {side} {trad_sym} — broker status={st}; "
-                                      f"NOT tracking this as a filled position")
-                            _rec('rejected', oid)
-                            return False
-                except Exception:
-                    pass  # couldn't confirm — treat the original 200 as good, don't block
-            log.info(f"[LIVE] {side} {qty} {trad_sym} @ {price:.2f}  correlationId=RANGE_{trad_sym}_{ts}")
-            _rec(final_status, oid or '')
-            return True
-        else:
-            log.error(f"ORDER FAIL {side} {trad_sym}  status={r.status_code}  body={r.text[:300]}")
-            raise Exception(f"Dhan {r.status_code}: {r.text[:200]}")
-    except requests.exceptions.RequestException as e:
+        import sys as _s, os as _o
+        _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+        if _root not in _s.path:
+            _s.path.insert(0, _root)
+        import smart_order
+        import risk_gate
+        from brokers import get_broker
+        
+        broker_name = risk_gate.default_broker()
+        broker = get_broker(broker_name)
+        
+        res = smart_order.execute(
+            side, symbol, sec_id, seg, qty, trad_sym, mode, broker,
+            buffer_bps=10, log=log.info, tag="ENTRY" if side=="BUY" else "EXIT",
+            source="strategy", strategy=_STRAT_ID, 
+            instrument="options" if seg == "NSE_FNO" else "equity",
+            broker_name=broker_name, group_id=group_id, extra_tags=extra_tags
+        )
+        return res.get("ok", False)
+    except Exception as e:
         log.error(f"ORDER ERR  {trad_sym}: {e}")
-        raise
+        return False
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -857,6 +724,8 @@ def main(strategy_id="range"):
                     log.error(f"Exit error: {e}")
             time.sleep(120)
             continue
+
+        _watchlist_state = {}
 
         cfg = load_config(strategy_id)
         if not cfg.get("active", True):
@@ -963,7 +832,12 @@ def main(strategy_id="range"):
             if df_1m is None or len(df_1m) < 20:
                 continue
 
-            signal, price, reason, sig_bar, total_bars = run_signal_engine(df_1m, levels, cfg)
+            signal, price, reason, sig_bar, total_bars, cur_state = run_signal_engine(df_1m, levels, cfg)
+            
+            cur_state["symbol"] = symbol
+            cur_state["position"] = st["position"]
+            cur_state["trades_today"] = st.get("trades_today", 0)
+            _watchlist_state[symbol] = cur_state
 
             # Sirf last 2 bars ka signal valid hai — purana signal duplicate entry karega
             if signal in ("BUY", "SELL") and (total_bars - sig_bar) > 2:
@@ -1016,7 +890,7 @@ def main(strategy_id="range"):
                             try:
                                 import order_store
                                 order_store.record("SELL", actual_qty, price, source='strategy',
-                                    strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
+                                    strategy=strategy_id, mode=mode, broker=risk_gate.default_broker(), symbol=symbol,
                                     instrument='options', trad_sym=t_sym, sec_id=sec_id, segment='NSE_FNO',
                                     status='blocked', tags=["CAPITAL_BLOCKED", gate_reason])
                             except Exception:
@@ -1085,7 +959,7 @@ def main(strategy_id="range"):
                             try:
                                 import order_store
                                 order_store.record(signal, qty, price, source='strategy',
-                                    strategy=strategy_id, mode=mode, broker='dhan', symbol=symbol,
+                                    strategy=strategy_id, mode=mode, broker=risk_gate.default_broker(), symbol=symbol,
                                     instrument='equity', trad_sym=symbol, status='blocked',
                                     tags=["CAPITAL_BLOCKED", cap_reason])
                             except Exception:
@@ -1118,6 +992,14 @@ def main(strategy_id="range"):
                 st["last_signal"] = None
                 st["opt_sec_id"] = None
                 st["opt_trad_sym"] = None
+
+        try:
+            watch_file = BASE_DIR / "data" / f"watch_{strategy_id}.json"
+            watch_file.parent.mkdir(exist_ok=True)
+            with open(watch_file, "w") as f:
+                json.dump({"timestamp": time.time(), "symbols": list(_watchlist_state.values())}, f)
+        except Exception as e:
+            log.error(f"Watchlist dump error: {e}")
 
         tf_secs = {"1m":60,"3m":180,"5m":300,"15m":900,"30m":1800}.get(cfg.get("timeframe","1m"), 60)
         log.info(f"Loop done — sleeping {tf_secs}s")

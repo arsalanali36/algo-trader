@@ -43,6 +43,7 @@ Log lines parse_pnl-compatible (P&L tab me webhook trades auto dikhte hain).
 import json
 import socket
 import threading
+import risk_gate
 import time
 from collections import deque
 from datetime import datetime, timezone, timedelta
@@ -485,7 +486,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         import risk_gate
         breached, why = risk_gate.daily_loss_breached(
             strat, unrealized=0.0,
-            mode=cfg.get("mode", "paper"), broker=cfg.get("broker", "dhan"))
+            mode=cfg.get("mode", "paper"), broker=cfg.get("broker", risk_gate.default_broker()))
         if breached:
             _log(f"ENTRY blocked {key} — {why}")
             return {"ok": False, "msg": "RMS daily loss cap hit"}
@@ -519,7 +520,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     lots = int(cfg.get("qty", 1))
     qty = lots * lot_size
     mode = cfg.get("mode", "paper")
-    broker = _broker(cfg.get("broker", "dhan"))
+    broker = _broker(cfg.get("broker", risk_gate.default_broker()))
 
     try:
         import dhan_feed
@@ -538,7 +539,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         try:
             import order_store
             order_store.record(opt_action, qty_, price_, source="webhook", strategy=strat,
-                               mode=mode, broker=cfg.get("broker", "dhan"), symbol=symbol,
+                               mode=mode, broker=cfg.get("broker", risk_gate.default_broker()), symbol=symbol,
                                instrument=cfg.get("instrument", "options"), trad_sym=trad_sym,
                                sec_id=sec_id, segment="NSE_FNO", status="blocked",
                                tags=["CAPITAL_BLOCKED", tag_reason])
@@ -580,7 +581,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
                               trad_sym, mode, broker, log=_log, tag="TVWH",
                               source="webhook", strategy=strat, instrument=instrument,
-                              broker_name=cfg.get("broker", "dhan"), group_id=group_id,
+                              broker_name=cfg.get("broker", risk_gate.default_broker()), group_id=group_id,
                               extra_tags=default_sl_tags)
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
@@ -589,7 +590,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         smart_order.place_hedge_if_configured(
             symbol, spot, opt_type, offset, qty, mode, broker, group_id, strat,
             log=_log, tag="TVWH_HEDGE", source="webhook",
-            instrument=instrument, broker_name=cfg.get("broker", "dhan"),
+            instrument=instrument, broker_name=cfg.get("broker", risk_gate.default_broker()),
             min_strikes_override=legacy_strikes)
 
     entry_px = res["price"]
@@ -610,7 +611,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         "sl": sl, "target": target, "entry_spot": spot,
         "idx_sl": None, "idx_trail_dist": None,
         "entry_time": now.strftime("%H:%M"), "mode": mode,
-        "broker": cfg.get("broker", "dhan"), "instrument": instrument,
+        "broker": cfg.get("broker", risk_gate.default_broker()), "instrument": instrument,
     }
     if cfg.get("trail_mode") == "index":
         dist = _index_atr(symbol, mult=float(cfg.get("trail_value", 2) or 2)) or 30.0

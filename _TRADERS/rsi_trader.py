@@ -385,7 +385,7 @@ def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=N
             sys.path.insert(0, str(BASE_DIR))
         import order_store
         order_store.record(side, qty, price, source='strategy', strategy=strategy_id,
-            mode=mode, broker='dhan', symbol=(trad_sym.split('-')[0] if trad_sym else ''),
+            mode=mode, broker=risk_gate.default_broker(), symbol=(trad_sym.split('-')[0] if trad_sym else ''),
             instrument='options', trad_sym=trad_sym, sec_id=str(sec_id), segment='NSE_FNO',
             correlation_id=f'RSI_{trad_sym}_{int(time.time())}', status=status, tags=tags)
     except Exception:

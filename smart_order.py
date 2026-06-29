@@ -20,6 +20,7 @@ LTP fallback. NSE tick size 0.05 enforced.
 """
 
 import time
+import risk_gate
 
 import dhan_feed
 
@@ -161,7 +162,7 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
     # 3) persist to the trade DB (best-effort, never blocks the order)
     try:
         import order_store
-        bname = broker_name or (broker.name() if hasattr(broker, "name") else "dhan")
+        bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
         order_store.record(side, qty, price, source=source, strategy=strategy,
                            mode=mode, broker=bname, symbol=sym, instrument=instrument,
                            trad_sym=trad_sym, sec_id=sec_id, segment=seg,

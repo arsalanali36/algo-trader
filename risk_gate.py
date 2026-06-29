@@ -34,6 +34,11 @@ def _risk_cfg():
     return {"global": rc.get("global") or {}, "per_strategy": rc.get("per_strategy") or {}}
 
 
+def default_broker():
+    """Returns the globally configured default live broker (e.g. 'dhan', 'kite')."""
+    return _risk_cfg().get("global", {}).get("default_broker", "dhan")
+
+
 # ── Live broker balance (cash + collateral) — single cached source, shared by
 # the dashboard's header/RMS-tab display AND the live daily-loss cap below, so
 # there's exactly one funds() call per broker per TTL window, not one per caller.

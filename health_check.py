@@ -323,7 +323,7 @@ def fire_test(sid, cfg, headers, spot_cache):
         sys.path.insert(0, str(BASE_DIR))
         import smart_order, order_store
         from brokers import get_broker
-        broker = get_broker(sc.get("broker", "dhan"))
+        broker = get_broker(sc.get("broker", risk_gate.default_broker()))
     except Exception as e:
         return "FAIL", f"order modules load fail: {str(e)[:60]}"
 
@@ -334,7 +334,7 @@ def fire_test(sid, cfg, headers, spot_cache):
             "BUY", sym, tgt["sec_id"], tgt["seg"], tgt["qty"], tgt["trad_sym"],
             mode="paper", broker=broker, tag="HEALTHTEST",
             source=TEST_SOURCE, strategy=sid,
-            instrument=sc.get("instrument", ""), broker_name=sc.get("broker", "dhan"),
+            instrument=sc.get("instrument", ""), broker_name=sc.get("broker", risk_gate.default_broker()),
             log=_log)
     except Exception as e:
         return "FAIL", f"execute() raised: {str(e)[:60]}"
