@@ -644,26 +644,17 @@ def api_set_token():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
-_balances_cache = {"ts": 0, "data": None}
-_BALANCES_TTL = 20  # seconds — broker funds() calls are real API hits, don't poll-spam
-
 @app.route('/api/broker-balances')
 def api_broker_balances():
-    """Dhan + Kite available cash, for the header widget. Cached 20s (both
-    funds() calls hit the real broker API — rate-limited, not LTP-cheap)."""
-    now = _time.time()
-    if _balances_cache["data"] is not None and (now - _balances_cache["ts"]) < _BALANCES_TTL:
-        return jsonify(_balances_cache["data"])
+    """Dhan + Kite cash/collateral/total_margin, for the header widget + RMS
+    Risk tab. Delegates to risk_gate.get_broker_balance() — same cached (20s)
+    source the live daily-loss-cap calculation uses, so the dashboard always
+    shows the exact number RMS is actually computing against, not a second
+    independent fetch that could drift/disagree."""
+    import risk_gate
     out = {}
-    from brokers import get_broker
     for name in ("dhan", "kite"):
-        try:
-            f = get_broker(name).funds()
-            out[name] = {"available": f.get("available"), "ok": bool(f)} if f else {"available": None, "ok": False}
-        except Exception as e:
-            out[name] = {"available": None, "ok": False, "error": str(e)}
-    _balances_cache["data"] = out
-    _balances_cache["ts"] = now
+        out[name] = risk_gate.get_broker_balance(name)
     return jsonify(out)
 
 @app.route('/api/kite-login-url')
@@ -3193,7 +3184,9 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     try:
         import risk_gate
         _unrl = (ltp - entry_px) * p["qty"] if p["entry"] == "BUY" else (entry_px - ltp) * p["qty"]
-        _breached, _why = risk_gate.daily_loss_breached(p.get("strategy") or "", unrealized=_unrl)
+        _breached, _why = risk_gate.daily_loss_breached(
+            p.get("strategy") or "", unrealized=_unrl,
+            mode=p.get("mode"), broker=p.get("broker"))
         _rms_fail_streak.pop(sec_id, None)
         if _breached:
             _do_squareoff(p, ltp, f"RMS_MAXLOSS:{_why}", sec_id, seg)

@@ -412,7 +412,8 @@ class KiteBroker(BaseBroker):
             eq = (m or {}).get("equity", {}) or {}
             avail = eq.get("available", {}) or {}
             cash = float(avail.get("live_balance", avail.get("cash", 0)) or 0)
-            return {"available": cash, "raw": m}
+            collateral = float(avail.get("collateral", 0) or 0)
+            return {"available": cash, "collateral": collateral, "raw": m}
         except Exception:
             # NOTE (same contract as DhanBroker.funds()): caller must treat
             # {} as "balance unknown" and fail-closed, not "balance is fine".

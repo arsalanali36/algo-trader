@@ -483,7 +483,9 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     # by pos_monitor's same-cap check, which realizes it and feeds back here.
     try:
         import risk_gate
-        breached, why = risk_gate.daily_loss_breached(strat, unrealized=0.0)
+        breached, why = risk_gate.daily_loss_breached(
+            strat, unrealized=0.0,
+            mode=cfg.get("mode", "paper"), broker=cfg.get("broker", "dhan"))
         if breached:
             _log(f"ENTRY blocked {key} — {why}")
             return {"ok": False, "msg": "RMS daily loss cap hit"}

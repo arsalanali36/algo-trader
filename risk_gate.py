@@ -34,6 +34,40 @@ def _risk_cfg():
     return {"global": rc.get("global") or {}, "per_strategy": rc.get("per_strategy") or {}}
 
 
+# ── Live broker balance (cash + collateral) — single cached source, shared by
+# the dashboard's header/RMS-tab display AND the live daily-loss cap below, so
+# there's exactly one funds() call per broker per TTL window, not one per caller.
+_balance_cache = {}   # broker_name -> (ts, {available, collateral, total_margin, ok})
+_BALANCE_TTL = 20      # seconds — funds() is a real broker API hit, not LTP-cheap
+
+
+def get_broker_balance(broker_name):
+    """{available, collateral, total_margin, ok} for 'dhan'/'kite', cached
+    _BALANCE_TTL seconds. total_margin = available + collateral — the real
+    capital base a LIVE position's risk is actually sized against (cash alone
+    understates it for an account using collateral/pledged-securities margin,
+    which is the normal way option-selling capital works on both brokers).
+    ok=False (available/collateral/total_margin=None) on any failure — callers
+    must treat that as 'unknown', never as 'zero balance'."""
+    import time as _t
+    cached = _balance_cache.get(broker_name)
+    if cached and (_t.time() - cached[0]) < _BALANCE_TTL:
+        return cached[1]
+    out = {"available": None, "collateral": None, "total_margin": None, "ok": False}
+    try:
+        from brokers import get_broker
+        f = get_broker(broker_name).funds()
+        if f:
+            avail = float(f.get("available") or 0)
+            coll = float(f.get("collateral") or 0)
+            out = {"available": avail, "collateral": coll,
+                   "total_margin": avail + coll, "ok": True}
+    except Exception:
+        pass
+    _balance_cache[broker_name] = (_t.time(), out)
+    return out
+
+
 def _today_open(strategy=None):
     import datetime
     from datetime import timedelta
@@ -404,13 +438,40 @@ def check_drawdown(unrealized_pnl=0.0):
 DEFAULT_DAILY_LOSS_RS = 5000.0
 
 
-def effective_daily_loss_cap(strategy=None, rc=None):
+def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
     """The unified ₹ daily-loss cap for a strategy (always returns a positive
-    number — RMS is mandatory). per-strategy overrides global; absent everywhere
-    falls back to DEFAULT_DAILY_LOSS_RS so it can never be silently off."""
+    number — RMS is mandatory).
+
+    LIVE mode + a configured max_loss_pct + a working broker-balance fetch:
+    the cap becomes `max_loss_pct% of that broker's REAL total_margin (cash +
+    collateral)` — computed fresh each call (cached 20s, see
+    get_broker_balance()), so it tracks the actual account, not a number
+    someone typed in once. This REPLACES the ₹ cap below for live (per user
+    request 2026-06-29: "is balance ka 1% limit ko follow karenge, na ki
+    paper trade ke limits") — it does not combine with it. Falls through to
+    the static ₹ cap if mode isn't 'live', no broker given, no max_loss_pct
+    configured, or the balance fetch fails (fail-safe: never silently
+    "unlimited").
+
+    Paper mode (or anything missing above): per-strategy overrides global;
+    absent everywhere falls back to DEFAULT_DAILY_LOSS_RS so it can never be
+    silently off."""
     rc = rc or _risk_cfg()
     ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
     gl = (rc.get("global", {}) or {})
+
+    if mode == "live" and broker:
+        pct = ps.get("max_loss_pct") if ps.get("max_loss_pct") is not None else gl.get("max_loss_pct")
+        if pct is not None:
+            try:
+                pct = float(pct)
+            except Exception:
+                pct = None
+            if pct and pct > 0:
+                bal = get_broker_balance(broker)
+                if bal.get("ok") and bal.get("total_margin"):
+                    return bal["total_margin"] * (pct / 100.0)
+
     for v in (ps.get("max_loss_rs"), gl.get("max_loss_rs"),
               gl.get("daily_drawdown_cap_rs")):
         if v is not None:
@@ -466,11 +527,14 @@ def default_instrument_sl_tags(strategy, symbol=None):
     return [f"SL_TYPE:rs", f"SL_VAL:{amount}"]
 
 
-def daily_loss_breached(strategy, unrealized=0.0, rc=None):
+def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=None):
     """SUPREME check: True if `strategy` has lost >= its unified daily cap today
     (realized + caller's unrealized estimate). Used by BOTH the entry gate (block
-    new entries) and pos_monitor (square off open legs). Returns (breached, reason)."""
-    cap = effective_daily_loss_cap(strategy, rc=rc)
+    new entries) and pos_monitor (square off open legs). Returns (breached, reason).
+
+    `mode`/`broker` (if given) let the cap be computed against the broker's
+    REAL live balance for live positions — see effective_daily_loss_cap()."""
+    cap = effective_daily_loss_cap(strategy, rc=rc, mode=mode, broker=broker)
     pnl = _strategy_day_pnl(strategy, unrealized)
     if pnl <= -abs(cap):
         return True, f"RMS daily loss cap ₹{cap:.0f} hit for '{strategy}' (today's P&L ₹{pnl:.0f})"
@@ -499,7 +563,7 @@ def capital_headroom(strategy):
     return min(rooms) if rooms else None
 
 
-def gating_status(strategy, unrealized=0.0):
+def gating_status(strategy, unrealized=0.0, mode=None, broker=None):
     """Consolidated "can this strategy take a NEW entry right now?" answer — used
     by the RMS panel AND by the traders' pre-scan short-circuit so a fully-blocked
     strategy stops firing wasteful LTP calls + stops piling up PX 0.00 blocked
@@ -510,9 +574,15 @@ def gating_status(strategy, unrealized=0.0):
     hard=False → recoverable intraday (capital fully used; frees up when a
                  position closes).
 
-    Makes NO live LTP/quote call (only order_store + config + the optional
-    caller-supplied `unrealized` estimate) so it's cheap to poll."""
-    breached, why = daily_loss_breached(strategy, unrealized=unrealized)
+    `mode`/`broker`, if known by the caller, let the daily-loss cap be computed
+    against the broker's real live balance for a live position — see
+    effective_daily_loss_cap(). Pre-scan callers that don't know either yet can
+    omit them (falls back to the static ₹ cap, same as before).
+
+    Makes NO live LTP/quote call of its own (the broker-balance fetch above IS
+    a real API call, but it's cached 20s — see get_broker_balance()) so it's
+    still cheap to poll at the usual cadence."""
+    breached, why = daily_loss_breached(strategy, unrealized=unrealized, mode=mode, broker=broker)
     if breached:
         return True, why, True
     dd_ok, dd_why = check_drawdown(unrealized_pnl=unrealized)

@@ -1056,6 +1056,16 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
 <!-- RISK TAB -->
 <div class="tab-body" id="tab-risk" style="padding:16px 18px 24px">
+  <div class="card" style="margin-bottom:14px;border-color:#58a6ff">
+    <h2 style="color:#58a6ff">💰 Broker Balances</h2>
+    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+      Live cash + collateral, dono brokers se. <b style="color:#e6edf3">Total Margin</b> (cash+collateral)
+      isi se LIVE strategies ka "Global Max Loss %" cap calculate hota hai — neeche 1️⃣ Strategy Day Cap
+      section dekho.
+    </div>
+    <div id="broker-balances-content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
+  </div>
+
   <div class="card" style="margin-bottom:14px;border-color:#3fb950">
     <h2 style="color:#3fb950">📊 RMS Summary</h2>
     <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
@@ -1092,7 +1102,13 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <label style="font-size:12px;color:#adbac7;margin-left:6px">Global Max Loss ₹</label>
         <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 10000"
                style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        <span style="font-size:11px;color:#6e7681">(dono diye ho to jo pehle hit ho wahi chalega)</span>
+      </div>
+      <div style="font-size:11px;color:#6e7681;margin-top:6px">
+        <b style="color:#d29922">PAPER</b> strategies: ₹ cap use hota hai (jo upar 💰 Broker Balances
+        card me "dono diye ho to jo pehle hit ho wahi chalega"). <b style="color:#d29922">LIVE</b>
+        strategies (uska jo broker — Dhan ya Zerodha — woh trade kar rahi hai): % cap ab us broker ke
+        REAL Total Margin (cash+collateral) ka % hota hai, ₹ cap ko replace karke — har baar fresh
+        balance se calculate hota hai, kabhi stale nahi.
       </div>
     </div>
 
@@ -1734,8 +1750,33 @@ async function runReconcile(){
   }
 }
 
+async function renderBrokerBalances(){
+  const el = document.getElementById('broker-balances-content');
+  if (!el) return;
+  function fmt(n){ return n==null ? '—' : '₹' + Math.round(n).toLocaleString('en-IN'); }
+  function card(label, color, b){
+    const ok = b && b.ok;
+    return `<div style="border:1px solid #30363d;border-radius:8px;padding:12px">
+      <div style="font-size:12px;font-weight:700;color:${color};margin-bottom:8px">${label}</div>
+      ${ok ? `
+        <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Cash</span><span style="color:#e6edf3">${fmt(b.available)}</span></div>
+        <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Collateral</span><span style="color:#e6edf3">${fmt(b.collateral)}</span></div>
+        <div style="font-size:12px;color:#8b949e;display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid #21262d"><span>Total Margin</span><span style="color:#3fb950;font-weight:700">${fmt(b.total_margin)}</span></div>
+      ` : `<div style="font-size:11px;color:#f85149">⚠️ balance unavailable${b && b.error ? ' — '+b.error.slice(0,60) : ' (token/login check karo)'}</div>`}
+    </div>`;
+  }
+  try {
+    const r = await fetch('/api/broker-balances');
+    const d = await r.json();
+    el.innerHTML = card('DHAN', '#1f6feb', d.dhan) + card('ZERODHA', '#a371f7', d.kite);
+  } catch(e) {
+    el.innerHTML = '<div style="color:#f85149;font-size:11px">balance fetch failed</div>';
+  }
+}
+
 async function renderRiskTab(){
   renderRmsSummary();
+  renderBrokerBalances();
   try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch(e){}
   document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
   document.getElementById('risk-global-rs').value  = RISK_CFG.global.max_loss_rs ?? '';

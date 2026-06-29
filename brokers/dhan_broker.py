@@ -184,7 +184,8 @@ class DhanBroker(BaseBroker):
             r = self._get_sdk().get_fund_limits()
             if r.get("status") == "success":
                 d = r.get("data", {}) or {}
-                return {"available": float(d.get("availabelBalance", 0) or 0), "raw": d}
+                return {"available": float(d.get("availabelBalance", 0) or 0),
+                        "collateral": float(d.get("collateralAmount", 0) or 0), "raw": d}
         except Exception:
             pass
         # NOTE: caller (risk_gate.check_broker_funds) must treat {} as

@@ -57,7 +57,12 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
     import risk_gate
     qty = lots * lot_size
     try:
-        g_blocked, g_reason, _g_hard = risk_gate.gating_status(strategy_id)
+        # `broker` here is sometimes a broker NAME string (range_trader/webhook
+        # callers don't always wrap it), sometimes a broker OBJECT (webhook_
+        # executor passes one from its own _broker() factory) — risk_gate's
+        # live-balance lookup needs a plain name string either way.
+        broker_name = broker if isinstance(broker, str) else (broker.name() if hasattr(broker, "name") else None)
+        g_blocked, g_reason, _g_hard = risk_gate.gating_status(strategy_id, mode=mode, broker=broker_name)
         if g_blocked:
             return False, 0, g_reason
 
