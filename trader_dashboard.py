@@ -2685,11 +2685,21 @@ def api_orders():
     data['filters'] = {f: order_store.distinct(f, date)
                        for f in ('source', 'mode', 'strategy', 'broker')}
     try:
-        import risk_gate
+        import risk_gate as _rg
+        _rc   = _rg._risk_cfg()
+        _mult = float((_rc.get("global") or {}).get("margin_multiplier") or 5.0)
         for p in data.get('open', []):
             if (p.get('tags') or []) and 'CAPITAL_BLOCKED' in p['tags']:
                 continue
-            p['margin_used'] = round(risk_gate._leg_capital(p) or 0, 2)
+            try:
+                qty      = float(p.get("qty") or 0)
+                price    = float(p.get("entry_price") or 0)
+                notional = qty * price
+                if str(p.get("entry") or "").upper() == "SELL":
+                    notional *= _mult
+                p['margin_used'] = round(notional, 2)
+            except Exception:
+                p['margin_used'] = 0
     except Exception as _e:
         pass
     return jsonify(data)

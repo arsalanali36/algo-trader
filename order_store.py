@@ -217,10 +217,25 @@ def _net_rows(rows):
         d["exit_reason"] = _exit_reason(exit_r)   # WHY it closed (from exit leg)
         return d
 
-    # ── Pass 1: exact (source, strategy, trad_sym) round-trips ──
+    # OPEN-status rows = still-live positions; don't run them through netting.
+    # Netting would pair a SELL OPEN + hedge BUY OPEN (same trad_sym/strategy)
+    # → phantom completed trade (LESSONS.md TRAP #32).
+    _OPEN_ST = {"open"}
+    live_rows   = [r for r in rows if str(r.get("status") or "").lower() in _OPEN_ST]
+    closed_rows = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST]
+
+    def _as_open(r):
+        o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
+             "entry_price": r["price"], "entry_time": r["ts"][11:16],
+             "entry_date": r["ts"][:10],
+             "exit_price": None, "exit_time": "—", "pnl": None}
+        o.update(_meta(r))
+        return o
+
+    # ── Pass 1: exact (source, strategy, trad_sym) round-trips (closed only) ──
     open_pos = {}     # key -> currently-open entry row
     leftover = []     # legs not paired in pass 1
-    for r in rows:
+    for r in closed_rows:
         key = (r["source"], r["strategy"], r["trad_sym"])
         prev = open_pos.get(key)
         if prev and prev["side"] != r["side"]:
@@ -245,12 +260,19 @@ def _net_rows(rows):
             st.append(r)
     for st in stacks.values():
         for r in st:
-            o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
-                 "entry_price": r["price"], "entry_time": r["ts"][11:16],
-                 "entry_date": r["ts"][:10],
-                 "exit_price": None, "exit_time": "—", "pnl": None}
-            o.update(_meta(r))
-            opens.append(o)
+            opens.append(_as_open(r))
+
+    # ── Live OPEN-status rows → directly open positions ──
+    # Among SELL+BUY OPEN pairs for same trad_sym: show only SELL (main leg).
+    # BUY is the hedge leg — no independent P&L to track.
+    by_sym = {}
+    for r in live_rows:
+        by_sym.setdefault(r["trad_sym"], []).append(r)
+    for sym_rows in by_sym.values():
+        sells = [r for r in sym_rows if r["side"] == "SELL"]
+        buys  = [r for r in sym_rows if r["side"] == "BUY"]
+        for r in (sells if sells else buys):
+            opens.append(_as_open(r))
 
     details.sort(key=lambda d: (d.get("entry_date", ""), d.get("entry_time", "")))
     return {"details": details, "open": opens, "count": len(details)}

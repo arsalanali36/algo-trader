@@ -2980,6 +2980,7 @@ function renderCachedOrders() {
   const _chartList = sortedCompleted.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate, strategy:t.strategy||''}));
   localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
 
+  let _tot = {g:0, tx:0, n:0, pts:0, inv:0};
   let ch = sortedCompleted.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Is filter pe koi completed trade nahi</div>';
   if(sortedCompleted.length){
     const activeCols = window._ordCompletedCols.filter(c => c.on);
@@ -3008,9 +3009,7 @@ function renderCachedOrders() {
     });
     
     ch += '</tr></thead><tbody>';
-    
-    let _tot = {g:0, tx:0, n:0, pts:0, inv:0};
-    
+
     sortedCompleted.forEach((t, _idx) => {
       const g = t._gross;
       const tx = t._tax;
@@ -3228,9 +3227,10 @@ function renderCachedOrders() {
   if(!opnReal.length && !opnBlocked.length){
     _setHtml(ordOpenEl, '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
     ordOpenEl.dataset.fp='';
+    _patchLtpCells();
   } else if(ordOpenEl.dataset.fp === openFp){
     _patchLtpCells();
-  } else {
+  } else { try { // catch render errors so blank section doesn't appear silently
     let blockedHtml = '';
     if(opnBlocked.length){
       blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
@@ -3487,7 +3487,7 @@ function renderCachedOrders() {
         tableHtml += '</tr>';
       });
       
-      tableHtml += '</tr></tfoot></table>';
+      tableHtml += '</tbody></table>';
       
       oh += `
       <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
@@ -3523,6 +3523,9 @@ function renderCachedOrders() {
     ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>')) + grandTotal;
     ordOpenEl.dataset.fp = openFp;
     _patchLtpCells(); _fetchPositionLtp();
+  } catch(e) {
+    if(ordOpenEl) ordOpenEl.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px;background:#21262d;border-radius:4px">JS ERROR: '+e.message+'<br><pre style="font-size:10px;white-space:pre-wrap">'+e.stack+'</pre></div>';
+  }
   }
 }
 
