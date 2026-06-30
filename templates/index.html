@@ -2085,7 +2085,13 @@ async function loadPeakGraph() {
 
   // MTM = total P&L line (pts[i][2])
   // Floor line = peak * (1 - lockPct/100) per point OR peak - lockRs
-  const totals = pts.map(p => p[2]);
+  // Smooth MTM line with 5-point moving average — removes jitter, preserves trend
+  const rawTotals = pts.map(p => p[2]);
+  const totals = rawTotals.map((v, i, arr) => {
+    const w = 5, half = Math.floor(w/2);
+    const sl = arr.slice(Math.max(0, i-half), Math.min(arr.length, i+half+1));
+    return sl.reduce((a,b) => a+b, 0) / sl.length;
+  });
   const peaks  = pts.map(p => p[1]);
   const floors = pts.map(p => {
     const pk = p[1];
