@@ -724,7 +724,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
     <div class="card" id="wh-cfg-card">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
-        <span style="font-size:13px;font-weight:600;color:#adbac7"><span id="wh-sel-name">—</span> · config</span>
+        <span style="font-size:13px;font-weight:600;color:#adbac7"><span id="wh-sel-name">—</span> · config <button onclick="whRenameStrat()" title="Rename strategy" style="background:none;border:none;cursor:pointer;color:#8b949e;font-size:12px;padding:0 4px;line-height:1;vertical-align:middle" onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='#8b949e'">✏️</button></span>
         <div style="display:flex;align-items:center;gap:8px">
           <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:#8b949e;cursor:pointer"><input type="checkbox" id="wh-active" style="accent-color:#3fb950"> Active</label>
           <div id="wh-optmode-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
@@ -1137,6 +1137,22 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank = off)"
                style="width:160px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
       </div>
+    </div>
+
+    <div style="border:1px solid #30363d;border-radius:8px;padding:14px;margin-top:12px">
+      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">3️⃣ Account-Level Trailing Profit Lock 🔒</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        Jab <b style="color:#3fb950">aaj ka total P&L (realized + unrealized)</b> apne peak se itne ₹ neeche aaye →
+        <b style="color:#f85149">saari positions auto-squareoff</b>. Sirf tab fire hota hai jab peak ≥ ₹1 ho
+        (profit mein the, phir gire). Example: peak ₹5000, lock ₹2000 → ₹3000 pe sab close.
+        <br><span style="color:#d29922">Blank = off (no trailing lock).</span>
+      </div>
+      <div style="display:flex;gap:10px;align-items:center">
+        <label style="font-size:12px;color:#adbac7">Trailing Drawdown Lock ₹</label>
+        <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000 (blank = off)"
+               style="width:200px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      </div>
+      <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
     </div>
 
     <button class="btn btn-amber" style="margin-top:14px" onclick="saveRiskConfig()">💾 Save</button>
@@ -1582,7 +1598,7 @@ const NIFTY50 = ["NIFTY","BANKNIFTY","RELIANCE","TCS","INFY","HDFCBANK","ICICIBA
 
 let GLOBAL_CONFIG = {};
 let RUNNING_PIDS = {};
-let activeTab = 'orders';   // default landing tab on (re)load = Orders & P&L
+let activeTab = localStorage.getItem('activeMainTab') || 'orders';
 pineLoadLatest(); pineLoadHistory(); // preload pine sub-tab data (hidden until opened)
 let activeCfgTab = 'ema';
 let currentModalTarget = null; // store the config key (e.g. ema_v1) being edited
@@ -1596,9 +1612,13 @@ function flash(msg, color='#3fb950') {
 function switchTab(id) {
   document.querySelectorAll('.tab').forEach(e => e.classList.remove('active'));
   document.querySelectorAll('.tab-body').forEach(e => e.classList.remove('active'));
-  document.querySelector(`.tab[onclick="switchTab('${id}')"]`).classList.add('active');
-  document.getElementById('tab-'+id).classList.add('active');
+  const tabEl = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
+  const bodyEl = document.getElementById('tab-'+id);
+  if (!tabEl || !bodyEl) return;
+  tabEl.classList.add('active');
+  bodyEl.classList.add('active');
   activeTab = id;
+  localStorage.setItem('activeMainTab', id);
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
   if (id === 'orders') { ordersEnter(); }
@@ -1689,8 +1709,28 @@ async function renderRmsSummary(){
     + '<th style="width:110px;">Unrealized P&amp;L</th>'
     + '<th style="width:110px;">Max-Loss Used</th></tr>';
 
+  // Per-strategy: live → broker used_margin (split equally among live strategies);
+  // paper/stopped → paper estimate. Broker total split: distribute broker_used_margin
+  // proportionally across live strategies by their paper-estimate weight.
+  const liveStrats = rows.filter(s => s.run_mode === 'live');
+  const totalPaperEst = liveStrats.reduce((a,s) => a+(s.capital_used||0), 0);
+  const brokerUsed = (d.totals||{}).broker_used_margin;
+
   rows.forEach(s => {
-    const capPct = s.capital_cap ? Math.min(100, Math.round(s.capital_used/s.capital_cap*100)) : null;
+    // Capital to display: live → actual broker margin (proportional share), paper → estimate
+    let capDisplay, capLabel;
+    if (s.run_mode === 'live' && brokerUsed != null) {
+      const share = totalPaperEst > 0 ? (s.capital_used / totalPaperEst) : (1 / liveStrats.length);
+      capDisplay = Math.round(brokerUsed * share);
+      capLabel = 'live';
+    } else {
+      capDisplay = s.capital_used;
+      capLabel = s.run_mode === 'paper' ? 'paper' : null;
+    }
+    const capCapDisplay = (s.run_mode === 'live' && brokerTotal) ? brokerTotal : s.capital_cap;
+    const capCapLabel   = (s.run_mode === 'live' && brokerTotal)
+      ? ' <span style="color:#8b949e;font-size:10px">cash+col</span>' : '';
+    const capPct = (capCapDisplay && capDisplay) ? Math.min(100, Math.round(capDisplay/capCapDisplay*100)) : null;
 
     let runControlsHtml = '—';
     const isWebhook = s.strategy.toLowerCase().startsWith('webhook');
@@ -1726,11 +1766,19 @@ async function renderRmsSummary(){
       }
     }
 
+    // Capital Cap cell: live → broker_total (cash+collateral), paper → config cap
+    const brokerTotal = (d.totals||{}).broker_total;
+
+    const capLabelHtml = capLabel === 'live'
+      ? ' <span style="color:#58a6ff;font-size:10px">live</span>'
+      : capLabel === 'paper'
+        ? ' <span style="color:#8b949e;font-size:10px">paper</span>'
+        : '';
     html += `<tr><td>${s.strategy}</td>
       <td>${runControlsHtml}</td>
       <td style="font-size:11px">${gateBadge(s)}</td>
-      <td>${fmtRs(s.capital_used)}${capPct!==null?` <span style="color:${capPct>=90?'#f85149':'#8b949e'};font-size:10px">(${capPct}%)</span>`:''}</td>
-      <td>${fmtRs(s.capital_cap)}</td>
+      <td>${fmtRs(capDisplay)}${capPct!==null?` <span style="color:${capPct>=90?'#f85149':'#8b949e'};font-size:10px">(${capPct}%)</span>`:''}${capLabelHtml}</td>
+      <td>${fmtRs(capCapDisplay)}${capCapLabel}</td>
       <td>${s.priced}/${s.open_positions}${s.priced<s.open_positions?' <span style="color:#8b949e;font-size:10px">(unpriced)</span>':''}</td>
       <td style="color:${pnlColor(s.unrealized_pnl)};font-weight:600">${fmtPnl(s.unrealized_pnl)}</td>
       <td>${s.max_loss_pct_used!==null?`<span style="color:${s.max_loss_pct_used>=80?'#f85149':'#d29922'}">${s.max_loss_pct_used}%</span>`:'—'}</td>
@@ -1738,11 +1786,18 @@ async function renderRmsSummary(){
   });
 
   const t = d.totals || {};
-  const tCapPct = t.capital_cap ? Math.min(100, Math.round(t.capital_used/t.capital_cap*100)) : null;
+  // TOTAL row: if any strategy is live, show actual broker used_margin; else paper estimate
+  const anyLive = liveStrats.length > 0;
+  const tCapVal   = (anyLive && t.broker_used_margin != null) ? t.broker_used_margin : t.capital_used;
+  const tCapBase  = t.broker_total || t.capital_cap;
+  const tCapPct   = (tCapBase && tCapVal) ? Math.min(100, Math.round(tCapVal/tCapBase*100)) : null;
+  const tCapLabel = anyLive && t.broker_used_margin != null
+    ? ' <span style="color:#58a6ff;font-size:10px">live</span>'
+    : ' <span style="color:#8b949e;font-size:10px">paper</span>';
   html += `<tr style="border-top:2px solid #30363d;font-weight:700"><td>TOTAL (all strategies)</td>
     <td>—</td>
     <td>—</td>
-    <td>${fmtRs(t.capital_used)}${tCapPct!==null?` <span style="color:${tCapPct>=90?'#f85149':'#8b949e'};font-size:10px">(${tCapPct}%)</span>`:''}</td>
+    <td>${fmtRs(tCapVal)}${tCapPct!==null?` <span style="color:${tCapPct>=90?'#f85149':'#8b949e'};font-size:10px">(${tCapPct}%)</span>`:''}${tCapLabel}</td>
     <td>${fmtRs(t.capital_cap)}</td>
     <td>${t.priced}/${t.open_positions}</td>
     <td style="color:${pnlColor(t.unrealized_pnl)}">${fmtPnl(t.unrealized_pnl)}</td>
@@ -1750,6 +1805,25 @@ async function renderRmsSummary(){
   html += '</table>';
   if (!rows.length) {
     html += '<div style="color:#8b949e;font-size:11px;padding:8px 2px">Koi strategy nifty_config.json me configured nahi hai — sirf TOTAL row (sab tags milake) dikh rahi hai.</div>';
+  }
+
+  // ── Actual broker balance (Zerodha/Dhan real margin) ──
+  if (t.broker_ok) {
+    const bName = (t.broker_name||'broker').toUpperCase();
+    const fmt = v => v != null ? '₹'+v.toLocaleString('en-IN') : '—';
+    const bAvail = fmt(t.broker_available);
+    const bUsed  = fmt(t.broker_used_margin);
+    const bTotal = fmt(t.broker_total);
+    const bCash  = fmt(t.broker_cash);
+    const estUsed = t.capital_used > 0 ? '₹'+Math.round(t.capital_used).toLocaleString('en-IN') : '—';
+    html += `<div style="margin-top:12px;padding:10px 14px;background:#161b22;border:1px solid #30363d;border-radius:6px;font-size:12px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <span style="font-weight:700;color:#58a6ff">🏦 ${bName}</span>
+      <span><span style="color:#8b949e">Collateral: </span><span style="font-weight:600">${fmt(t.broker_collateral)}</span></span>
+      <span><span style="color:#8b949e">Used margin: </span><span style="color:${t.broker_used_margin>0?'#f85149':'#e6edf3'};font-weight:600">${bUsed}</span></span>
+      <span><span style="color:#8b949e">Cash: </span><span style="font-weight:600;color:${t.broker_cash<0?'#f85149':'#e6edf3'}">${bCash}</span></span>
+      <span><span style="color:#8b949e">Paper capital: </span><span style="font-weight:600">${bTotal}</span></span>
+      <span><span style="color:#8b949e">Paper estimate: </span><span style="font-weight:600">${estUsed}</span></span>
+    </div>`;
   }
 
   // ── Webhook max-trades-per-day status ──
@@ -1899,6 +1973,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
   document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
+  document.getElementById('risk-trailing-lock').value = RISK_CFG.global.trailing_profit_lock_rs != null ? RISK_CFG.global.trailing_profit_lock_rs : '';
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -1970,6 +2045,7 @@ async function saveRiskConfig(){
   const gHedgeStrikes = document.getElementById('risk-global-hedge-strikes').value;
   const gHedgePremium = document.getElementById('risk-global-hedge-premium').value;
   const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
+  const gTrailingLock = document.getElementById('risk-trailing-lock').value;
   const payload = {
     global: {
       default_broker: document.getElementById('default-broker-select').value || 'dhan',
@@ -1984,6 +2060,7 @@ async function saveRiskConfig(){
       hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
       liquidity_filter: gLiqFilter === 'true',
+      trailing_profit_lock_rs: gTrailingLock !== '' ? parseFloat(gTrailingLock) : null,
     },
     per_strategy: {}
   };
@@ -2113,6 +2190,21 @@ function whAddStrat(){
   WH_STRATS[name]=_whDefaults();
   WH_SEL=name; whRenderStratList(); whSelectStrat(name);
   flash('“'+name+'” bana — config set karke Save dabayein','#3fb950');
+}
+
+async function whRenameStrat(){
+  if(!WH_SEL) return;
+  let newName = prompt('Naya naam do (Pine alert ke "strategy" field se match karna chahiye):', WH_SEL);
+  if(newName == null) return;
+  newName = newName.trim();
+  if(!newName || newName === WH_SEL) return;
+  if(WH_STRATS[newName]){ flash('"'+newName+'" naam already exist karta hai','#d29922'); return; }
+  WH_STRATS[newName] = WH_STRATS[WH_SEL];
+  delete WH_STRATS[WH_SEL];
+  WH_SEL = newName;
+  await _whPersist();
+  renderWebhookTab();
+  flash('"'+newName+'" rename ho gaya ✓','#3fb950');
 }
 
 async function whDeleteStrat(){
@@ -3259,11 +3351,12 @@ function switchCfgTab(type) {
   if (type === 'webhook') {
     document.getElementById('cfg-content').style.display = 'none';
     document.getElementById('webhook-content-wrapper').style.display = 'block';
-    if(typeof renderWebhookTab === 'function') renderWebhookTab();
+    if(typeof whEnter === 'function') whEnter();
   } else {
     document.getElementById('cfg-content').style.display = 'block';
     const whWrapper = document.getElementById('webhook-content-wrapper');
     if (whWrapper) whWrapper.style.display = 'none';
+    if(typeof whLeave === 'function') whLeave();
     renderConfigTable();
   }
 }
@@ -4794,7 +4887,7 @@ function _patchLtpCells() {
 startLtpStream();
 
 loadAll();
-if (activeTab === 'orders') ordersEnter();   // render the default Orders tab immediately
+switchTab(activeTab);   // restore last active tab (saved in localStorage)
 
 // ── QUICK ORDER FLOATING PANEL ───────────────────────────────────────────────
 (function(){

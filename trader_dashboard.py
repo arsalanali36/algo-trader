@@ -3078,12 +3078,16 @@ def _last_closed_candle_close(sec_id, seg):
         return None
 
 
+_trailing_peak_pnl = 0.0   # account-level high watermark for today
+
+
 def pos_monitor_loop():
     """Monitors open positions for SL_PCT, TP_PCT hits and tracks MAX/MIN LTP."""
     import time
     import order_store
     import dhan_feed
     from datetime import timedelta
+    global _trailing_peak_pnl
 
     while True:
         try:
@@ -3091,13 +3095,92 @@ def pos_monitor_loop():
             # 'datetime' is the CLASS (from datetime import datetime) — datetime.datetime
             # galat tha, har loop crash karta tha (SL/TP monitor band pada tha).
             ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
-            
+
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
             # Tracks ids already squared-off THIS pass (e.g. as a hedge group
             # sibling) — without this, the for-loop below would re-process a
             # sibling leg that _do_squareoff already closed earlier this pass.
             _closed_ids = set()
+
+            # ── Account-level trailing profit lock ───────────────────────────
+            # Config: _risk.global.trailing_profit_lock_rs in nifty_config.json
+            # If account P&L drops more than this ₹ from its peak today →
+            # squareoff EVERYTHING. Only activates once peak > 0 (i.e. you're
+            # in profit — not a stop-loss, it's a profit-protector).
+            try:
+                import risk_gate as _rg
+                _trail_rs = (_rg._risk_cfg().get("global") or {}).get("trailing_profit_lock_rs")
+                if _trail_rs and float(_trail_rs) > 0:
+                    # Realized P&L today
+                    _realized = _rg._today_realized_pnl()
+                    # Unrealized P&L: sum across all live open positions
+                    _unrealized = 0.0
+                    for _p in open_pos:
+                        if _p.get("status") == "blocked" or "CAPITAL_BLOCKED" in (_p.get("tags") or []):
+                            continue
+                        _sid = _p.get("sec_id")
+                        _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                        _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                               _rest_ltp_fallback(_sid, _seg) or 0.0
+                        _epx = float(_p.get("entry_price") or _p.get("price") or 0)
+                        _qty = int(_p.get("qty") or 0)
+                        if _ltp > 0 and _epx > 0 and _qty:
+                            _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
+                                    else (_epx - _ltp) * _qty
+                            _unrealized += _unrl
+                    _total_pnl = _realized + _unrealized
+                    # Update high watermark
+                    if _total_pnl > _trailing_peak_pnl:
+                        _trailing_peak_pnl = _total_pnl
+                    # Fire if peak was positive AND drawdown from peak exceeds lock
+                    _drawdown = _trailing_peak_pnl - _total_pnl
+                    if _trailing_peak_pnl > 0 and _drawdown >= float(_trail_rs):
+                        print(f"[TRAILING-LOCK] Peak ₹{_trailing_peak_pnl:.0f} → now ₹{_total_pnl:.0f} "
+                              f"(drawdown ₹{_drawdown:.0f} ≥ lock ₹{_trail_rs}) — squaring off ALL positions",
+                              flush=True)
+                        for _p in list(open_pos):
+                            _sid = _p.get("sec_id")
+                            if not _sid or _p.get("status") == "blocked": continue
+                            if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
+                            if _p.get("id") in _closed_ids: continue
+                            _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                            _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                    _rest_ltp_fallback(_sid, _seg) or 0.0
+                            if _ltp2 > 0:
+                                try:
+                                    import smart_order
+                                    from brokers import get_broker
+                                    _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                    _bname = _p.get("broker") or "dhan"
+                                    if _p.get("mode") == "live":
+                                        _br = get_broker(_bname)
+                                        smart_order.execute(
+                                            _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                            _p["mode"], _br, log=print, tag="TRAILING",
+                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                            instrument=_p.get("instrument",""), broker_name=_bname,
+                                            extra_tags=["TRAILING_PROFIT_LOCK"],
+                                        )
+                                    else:
+                                        import order_store as _os
+                                        _os.record(
+                                            side=_exit_side, qty=_p["qty"], price=_ltp2,
+                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                            mode=_p.get("mode","paper"), broker=_bname,
+                                            symbol=_p["sym"], instrument=_p.get("instrument",""),
+                                            trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                            status="paper", tags=["TRAILING_PROFIT_LOCK"],
+                                        )
+                                    _closed_ids.add(_p.get("id"))
+                                except Exception as _te:
+                                    print(f"[TRAILING-LOCK] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
+                        _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
+                        time.sleep(5)
+                        continue                    # skip per-position checks this cycle
+            except Exception as _trail_e:
+                print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
 
             for p in open_pos:
                 if p.get("id") in _closed_ids: continue
