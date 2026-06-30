@@ -1027,6 +1027,92 @@ real today, this bug (or its next variant) is back.
 
 ---
 
+## TRAP #32 — PE option strike offset goes the WRONG way: `atm_idx + offset` picks ITM, not OTM 🔴🔴🔴
+
+**Date:** 2026-06-30 | **Symptom:** Hedge/sell PE strike landed at 15600 (deep ITM) instead of ~13000 (OTM). 5-strike offset sent price UP the chain instead of DOWN.
+
+**Root cause:** `dhan_master.get_option_contract()` did `target_idx = atm_idx + offset` for BOTH CE and PE. For CE, higher index = higher strike = more OTM ✅. For PE it's the opposite — higher strike = more ITM, you need to go LEFT (lower index) to go OTM.
+
+**Fix (`dhan_master.py`):**
+```python
+if option_type == "PE":
+    target_idx = atm_idx - offset   # PE: lower strike = more OTM
+else:
+    target_idx = atm_idx + offset   # CE: higher strike = more OTM
+```
+
+**Permanent guard:** Whenever you add a new offset param for any option type, verify the direction by printing `(atm_strike, target_strike, option_type)` before deploying. CE offset +2 → strike goes UP. PE offset +2 → strike goes DOWN.
+
+**Fast detect:** In logs, check `[HEDGE] contract resolved` line — if PE strike > ATM strike by more than ~50pts, direction is wrong.
+
+---
+
+## TRAP #33 — Hedge BUY leg routed to the WRONG broker 🔴🔴🔴
+
+**Date:** 2026-06-30 | **Symptom:** Hedge order went to wrong broker — Kite blocked fresh MIS BUY for stock options in expiry week (physical delivery policy) — hedge silently failed.
+
+**Root cause:** `_TRADERS/range_trader.py`'s `place_order()` called `risk_gate.default_broker()` which returned `"kite"`, but hedge was also being routed there. Main + hedge should BOTH go to the same `default_broker()` — whatever the user has selected as live broker.
+
+**Fix:** Hedge call uses `default_broker()` (no override) — same broker as main leg:
+```python
+place_order(symbol, "BUY", actual_qty, ..., group_id=group_id)  # no broker_override — same as main
+```
+The `broker_override` param exists for cases where a specific leg MUST go to a different broker — but that is an explicit user decision, not a code assumption.
+
+**Permanent guard:** Never hardcode a broker for any leg based on an assumption. Always follow `default_broker()` unless the user has explicitly configured a per-leg override.
+
+**Fast detect:** After any hedge placement, check `[BROKER]` tag in log — should match the same broker as the main SELL leg.
+
+---
+
+## TRAP #34 — Kite MIS blocks fresh BUY on stock options in expiry week (physical delivery) 🔴
+
+**Date:** 2026-06-30
+
+**Symptom:** `[KITE ERR] Fresh buy orders are not allowed for stock options using MIS due to compulsory physical delivery. Try next month's expiry.` — hedge BUY fails silently on Kite when the contract is in its expiry week.
+
+**Root cause:** Zerodha blocks fresh MIS (intraday) BUY orders on **stock options** (OPTSTK) in expiry week — physical delivery settlement risk. NIFTY/BANKNIFTY (OPTIDX) are NOT affected (cash-settled). The restriction is Kite-side, unconditional.
+
+**Fix:** Hedge BUY orders placed via Kite use `product="NRML"` instead of `"MIS"`. Since we force-squareoff at 3:15 PM anyway via `pos_monitor_loop`, there is zero overnight risk from using NRML for the hedge.
+
+**How it's wired:**
+- `smart_order.place_hedge_if_configured()` → `execute(..., product="NRML")` (permanent, all callers)
+- `range_trader.place_order()` hedge call → `product="NRML"` passed explicitly
+- `KiteBroker.place_order()` now accepts `product` param: `"NRML"` → `PRODUCT_NRML`, else `MIS`
+- `DhanBroker.place_order()` similarly: `"NRML"` → `"MARGIN"`, else `"INTRADAY"`
+
+**Permanent guard:** Hedge BUY = always NRML (it's fine — 3:15 squareoff). Never use MIS for a hedge leg on Kite. Main SELL can stay MIS.
+
+**Fast detect:** `[KITE ERR]` with "physical delivery" in logs → check product type of the BUY leg.
+
+---
+
+## TRAP #35 — Live order P&L recorded BEFORE broker confirms fill 🔴🔴
+
+**Date:** 2026-06-30
+
+**Symptom:** App shows a P&L position (profit/loss updating) even when the broker rejected or never filled the order. A limit order "zabardasti" entered the app's books the moment it was placed, not when it actually traded.
+
+**Root cause:** `smart_order.execute()` logged the `[LIVE]` intended-fill line (which `order_store.record()` uses to build the P&L position) BEFORE firing the real broker order — and then only checked for async rejects as a best-effort afterthought. If the broker rejected (bad symbol, margin, price moved away), the P&L record already existed with no matching real fill.
+
+**Fix:** In live mode, the flow is now strictly:
+1. Place LIMIT order at bid/ask
+2. Poll `broker.get_fill(order_id)` every 1.5s, up to 8s (5 attempts)
+3. **`TRADED`** → log `[LIVE]` with **actual average fill price** → `order_store.record()` → return `ok=True`
+4. **`REJECTED`** → log `[LIVE-SKIP]` → return `ok=False`, nothing recorded
+5. **Timeout** (still PENDING after 8s) → log `[LIVE-PENDING]` → return `ok=False`, nothing recorded
+
+Both `DhanBroker` and `KiteBroker` now implement `get_fill(order_id) → (status, fill_price)`.
+Paper mode is unchanged — simulation records immediately (no real broker to wait for).
+
+**Bonus:** When `TRADED` + actual `fill_price > 0` is returned, P&L uses the real average fill price (Kite: `average_price`, Dhan: `tradedPrice`) — not the theoretical marketable-limit estimate. Slippage is visible in log as `[FILL-ACTUAL] trad_sym 72.00 → 71.95 (−0.05)`.
+
+**Permanent guard:** In `smart_order.execute()`, `[LIVE]` log line + `order_store.record()` are now INSIDE the `fill_st == "TRADED"` branch — physically impossible to record P&L before fill confirmation.
+
+**Fast detect:** Check log — a real live entry should always show `[FILL-POLL] attempt N/5 -> TRADED` before `[LIVE]`. If you see `[LIVE]` without a preceding `[FILL-POLL]`, the guard was bypassed somewhere.
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,

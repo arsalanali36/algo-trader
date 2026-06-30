@@ -37,8 +37,9 @@ class BaseBroker(ABC):
 
     @abstractmethod
     def place_order(self, side, sec_id, seg, qty, order_type="MARKET",
-                    price=0.0, trad_sym=None, tag=None) -> dict:
-        """Place a real order. Returns the order-result dict described above."""
+                    price=0.0, trad_sym=None, tag=None, product=None) -> dict:
+        """Place a real order. Returns the order-result dict described above.
+        product: 'MIS'/'INTRADAY' (default) or 'NRML'/'MARGIN' for overnight."""
 
     @abstractmethod
     def funds(self) -> dict:
@@ -59,3 +60,10 @@ class BaseBroker(ABC):
         degrade gracefully — caller must treat None as "couldn't confirm,
         don't downgrade a known-good status on it"."""
         return None
+
+    def get_fill(self, order_id):
+        """Optional: return (status_str, fill_price) for a placed order.
+        status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
+        fill_price: actual average fill price float, or None.
+        Default: (None, None) — callers treat as "could not confirm"."""
+        return None, None

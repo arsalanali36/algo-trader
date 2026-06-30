@@ -89,7 +89,7 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             buffer_bps=10, log=print, tag="UNIV",
             source="", strategy="", instrument="", broker_name="", group_id="",
-            extra_tags=None):
+            extra_tags=None, product=None):
     """Execute one entry/exit.
 
     Returns: {ok, price, src, status, reason, order_id}
@@ -105,50 +105,75 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         log(f"[SKIP] {side} {trad_sym} — no price (feed+REST empty)")
         return {"ok": False, "reason": "no_price"}
 
-    # 1) intended fill — builds P&L position; identical in paper & live
-    mtag = "LIVE" if mode == "live" else "PAPER"
-    log(f"[{mtag}] {side} {qty} {trad_sym} @ {price:.2f}  "
-        f"correlationId={tag}_{sym}_{int(time.time())}")
-
     res = {"ok": True, "price": price, "src": src, "status": "paper",
            "reason": "paper", "order_id": None}
 
-    # 2) live — fire the real order, record broker reality (shadow badge)
+    # ── LIVE mode: fire order first, wait for actual fill, THEN record P&L ──
     if mode == "live":
         r = broker.place_order(side, sec_id, seg, qty, "LIMIT", price,
-                               trad_sym=trad_sym, tag=f"{tag}_{sym}")
+                               trad_sym=trad_sym, tag=f"{tag}_{sym}",
+                               product=product)
         res.update(status=r["status"], reason=r["reason"], order_id=r["order_id"])
-        log(f"[BROKER] {trad_sym} {side} {qty} -> {r['status'].upper()} "
-            f"({r['reason']})")
+        log(f"[BROKER] {trad_sym} {side} {qty} @ {price:.2f} -> {r['status'].upper()} "
+            f"({r['reason']}) orderId={r.get('order_id')}")
 
-        # A broker that outright rejects the order (bad symbol, margin,
-        # F&O permission) must NOT be treated as a successful entry — the
-        # caller builds an in-memory "position" from res["ok"] alone, so an
-        # unconditional ok=True here would let a strategy track a position
-        # that was never actually opened at the broker.
         if _is_rejected(r["status"]):
+            log(f"[LIVE-SKIP] {trad_sym} — broker rejected, P&L not recorded")
             res["ok"] = False
+            return res
 
-        # A "pending"/"accepted" response is not a confirmed fill — some
-        # rejects (price-band, freeze) only arrive a moment later, async,
-        # after the initial 200. Re-query once if the broker supports it.
-        if not _is_terminal(r["status"]) and r.get("order_id") and hasattr(broker, "order_status"):
-            time.sleep(1.2)
-            try:
-                confirmed = broker.order_status(r["order_id"])
-            except Exception:
-                confirmed = None
-            if confirmed:
-                res["status"] = confirmed
-                log(f"[BROKER-CONFIRM] {trad_sym} order {r['order_id']} -> {confirmed}")
-                if _is_rejected(confirmed):
-                    res["ok"] = False
-                    res["reason"] = f"async reject confirmed: {confirmed}"
+        # Poll for actual fill — max ~8s (5 attempts × 1.5s).
+        # Marketable limits on liquid options typically fill in <1s.
+        # P&L is recorded ONLY after TRADED confirmed — no premature entries.
+        fill_st, fill_price = None, None
+        oid = r.get("order_id")
+        if oid and hasattr(broker, "get_fill"):
+            for attempt in range(5):
+                time.sleep(1.5)
+                try:
+                    fill_st, fill_price = broker.get_fill(oid)
+                except Exception:
+                    fill_st = None
+                log(f"[FILL-POLL] {trad_sym} attempt {attempt+1}/5 -> {fill_st}")
+                if fill_st in ("TRADED", "REJECTED"):
+                    break
+
+        if fill_st == "REJECTED":
+            log(f"[LIVE-SKIP] {trad_sym} — fill confirmed REJECTED, P&L not recorded")
+            res["ok"] = False
+            res["status"] = "rejected"
+            res["reason"] = "fill rejected at broker"
+            return res
+
+        if fill_st != "TRADED":
+            # Timeout — order still pending (rare for marketable limit; possible
+            # if price moved away from our limit after placement).
+            log(f"[LIVE-PENDING] {trad_sym} orderId={oid} — fill not confirmed in 8s; "
+                f"P&L on hold. Monitor Open Positions or check broker manually.")
+            res["ok"] = False
+            res["status"] = "pending"
+            res["reason"] = "fill not confirmed within timeout"
+            return res
+
+        # Use actual fill price if broker returned one (more accurate P&L)
+        if fill_price and fill_price > 0:
+            actual_price = fill_price
+            log(f"[FILL-ACTUAL] {trad_sym} slippage {price:.2f} → {actual_price:.2f} "
+                f"({actual_price - price:+.2f})")
+        else:
+            actual_price = price  # broker returned TRADED but no average_price yet
+
+        res["price"] = actual_price
+        res["status"] = "filled"
+        # NOW log the intended fill — this is what builds the P&L position
+        log(f"[LIVE] {side} {qty} {trad_sym} @ {actual_price:.2f}  "
+            f"correlationId={tag}_{sym}_{int(time.time())}")
+
+    # ── PAPER mode: log immediately (no real broker, P&L is simulation) ──
     elif mode == "paper":
-        # Diagnostic-only shadow order — fires a REAL broker order at the same
-        # paper price/qty purely to compare against Dhan's actual fill/reject
-        # (slippage check). Never touches `res` — the paper fill price/P&L
-        # recorded below stays exactly what it would have been without this.
+        log(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  "
+            f"correlationId={tag}_{sym}_{int(time.time())}")
+        # Diagnostic-only shadow order (slippage check — never touches P&L)
         try:
             import risk_gate
             if risk_gate.shadow_live_enabled(strategy):
@@ -159,11 +184,11 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         except Exception as e:
             log(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
 
-    # 3) persist to the trade DB (best-effort, never blocks the order)
+    # ── Persist to trade DB (best-effort, never blocks) ──
     try:
         import order_store
         bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
-        order_store.record(side, qty, price, source=source, strategy=strategy,
+        order_store.record(side, qty, res["price"], source=source, strategy=strategy,
                            mode=mode, broker=bname, symbol=sym, instrument=instrument,
                            trad_sym=trad_sym, sec_id=sec_id, segment=seg,
                            correlation_id=f"{tag}_{sym}",
@@ -213,7 +238,8 @@ def place_hedge_if_configured(symbol, spot_price, sell_option_type, sell_offset,
         return execute("BUY", symbol, h_sec_id, "NSE_FNO", qty, h_trad_sym, mode, broker,
                        buffer_bps=buffer_bps, log=log, tag=tag,
                        source=source, strategy=strategy, instrument=instrument,
-                       broker_name=broker_name, group_id=group_id)
+                       broker_name=broker_name, group_id=group_id,
+                       product="NRML")
     except Exception as e:
         log(f"[HEDGE] failed (sell leg unaffected): {e}")
         return None

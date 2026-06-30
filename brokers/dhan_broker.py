@@ -127,14 +127,15 @@ class DhanBroker(BaseBroker):
 
     # ---- orders ----
     def place_order(self, side, sec_id, seg, qty, order_type="MARKET",
-                    price=0.0, trad_sym=None, tag=None) -> dict:
+                    price=0.0, trad_sym=None, tag=None, product=None) -> dict:
         import time as _t
+        _prod = "MARGIN" if product == "NRML" else "INTRADAY"
         body = {
             "dhanClientId":    self.cid,
             "correlationId":   str(tag or f"BK_{trad_sym or sec_id}")[:14] + f"_{int(_t.time())}",
             "transactionType": side,
             "exchangeSegment": seg,
-            "productType":     "INTRADAY",
+            "productType":     _prod,
             "orderType":       order_type,
             "validity":        "DAY",
             "securityId":      str(sec_id),
@@ -179,6 +180,33 @@ class DhanBroker(BaseBroker):
         except Exception:
             pass
         return None
+
+    def get_fill(self, order_id):
+        """Return (status_str, fill_price) for a placed order.
+        status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
+        fill_price: actual average fill price, or None if not yet filled."""
+        if not order_id:
+            return None, None
+        try:
+            _rl.acquire("order")
+            r = requests.get(f"{ORDERS_URL}/{order_id}", headers=self._hdrs(), timeout=6)
+            if r.status_code != 200:
+                return None, None
+            d = r.json()
+            if isinstance(d, list) and d:
+                d = d[0]
+            if isinstance(d, dict):
+                st = str(d.get("orderStatus") or "").upper()
+                # Dhan statuses: TRADED, REJECTED, CANCELLED, PENDING, TRANSIT
+                if st == "TRADED":
+                    price = float(d.get("tradedPrice") or d.get("price") or 0)
+                    return "TRADED", price if price > 0 else None
+                if st in ("REJECTED", "CANCELLED"):
+                    return "REJECTED", None
+                return "PENDING", None
+        except Exception:
+            pass
+        return None, None
 
     def funds(self) -> dict:
         try:

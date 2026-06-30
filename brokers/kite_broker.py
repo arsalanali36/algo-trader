@@ -344,7 +344,7 @@ class KiteBroker(BaseBroker):
     _SEG_TO_EXCHANGE = {"NSE_FNO": "NFO", "NSE_EQ": "NSE", "IDX_I": "NSE"}
 
     def place_order(self, side, sec_id, seg, qty, order_type="MARKET",
-                    price=0.0, trad_sym=None, tag=None) -> dict:
+                    price=0.0, trad_sym=None, tag=None, product=None) -> dict:
         import kite_rate_limiter as _krl
         try:
             kite = self._get_kite()
@@ -370,7 +370,7 @@ class KiteBroker(BaseBroker):
             "tradingsymbol": kite_sym,
             "transaction_type": "BUY" if side == "BUY" else "SELL",
             "quantity": int(qty),
-            "product": "MIS",
+            "product": "NRML" if product == "NRML" else "MIS",
             "order_type": "LIMIT" if order_type == "LIMIT" else "MARKET",
             "price": round(float(price), 2) if order_type == "LIMIT" else 0,
             "tag": (tag or "ALGO")[:20],
@@ -403,6 +403,34 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] order_status({order_id}) failed: {e}")
         return None
 
+    def get_fill(self, order_id):
+        """Return (status_str, fill_price) for a placed order.
+        status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
+        fill_price: actual average fill price, or None if not yet filled."""
+        if not order_id:
+            return None, None
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("order")
+            hist = kite.order_history(order_id)
+            if not hist:
+                return None, None
+            last = hist[-1]
+            st = str(last.get("status") or "").upper()
+            # Kite statuses: COMPLETE, REJECTED, CANCELLED, OPEN, TRIGGER PENDING
+            if st == "COMPLETE":
+                price = float(last.get("average_price") or 0)
+                return "TRADED", price if price > 0 else None
+            if st in ("REJECTED", "CANCELLED"):
+                reason = last.get("status_message") or ""
+                log.warning(f"[KITE] order {order_id} {st}: {reason}")
+                return "REJECTED", None
+            return "PENDING", None
+        except Exception as e:
+            log.warning(f"[KITE] get_fill({order_id}) failed: {e}")
+        return None, None
+
     def funds(self) -> dict:
         import kite_rate_limiter as _krl
         try:
@@ -411,9 +439,16 @@ class KiteBroker(BaseBroker):
             m = kite.margins()
             eq = (m or {}).get("equity", {}) or {}
             avail = eq.get("available", {}) or {}
-            cash = float(avail.get("live_balance", avail.get("cash", 0)) or 0)
+            utilised = eq.get("utilised", {}) or {}
+            # eq["net"] = Kite UI "Available margin" (cash + collateral - used debits)
+            available = float(eq.get("net", 0) or 0)
+            # actual cash balance (can be negative when collateral covers margin)
+            cash = float(avail.get("cash", avail.get("live_balance", 0)) or 0)
             collateral = float(avail.get("collateral", 0) or 0)
-            return {"available": cash, "collateral": collateral, "raw": m}
+            # "Used margin" = utilised.debits (matches Kite UI exactly)
+            used = float(utilised.get("debits", 0) or 0)
+            return {"available": available, "collateral": collateral,
+                    "cash": cash, "used_margin": used, "raw": m}
         except Exception:
             # NOTE (same contract as DhanBroker.funds()): caller must treat
             # {} as "balance unknown" and fail-closed, not "balance is fine".

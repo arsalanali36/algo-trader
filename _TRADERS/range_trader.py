@@ -627,7 +627,7 @@ def _fetch_premium(sec_id, token, cid):
         return None
 
 
-def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id=""):
+def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id="", broker_override=None, product=None):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -645,15 +645,16 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         import risk_gate
         from brokers import get_broker
         
-        broker_name = risk_gate.default_broker()
+        broker_name = broker_override or risk_gate.default_broker()
         broker = get_broker(broker_name)
         
         res = smart_order.execute(
             side, symbol, sec_id, seg, qty, trad_sym, mode, broker,
             buffer_bps=10, log=log.info, tag="ENTRY" if side=="BUY" else "EXIT",
-            source="strategy", strategy=_STRAT_ID, 
+            source="strategy", strategy=_STRAT_ID,
             instrument="options" if seg == "NSE_FNO" else "equity",
-            broker_name=broker_name, group_id=group_id, extra_tags=extra_tags
+            broker_name=broker_name, group_id=group_id, extra_tags=extra_tags,
+            product=product
         )
         return res.get("ok", False)
     except Exception as e:
@@ -1042,7 +1043,8 @@ def main(strategy_id="range"):
                                     quote_fn=lambda sid: _fetch_premium(sid, token, cid), log=log.warning)
                                 if h_sec_id:
                                     place_order(symbol, "BUY", actual_qty, token, cid, mode,
-                                                h_sec_id, "NSE_FNO", h_t_sym, group_id=group_id)
+                                                h_sec_id, "NSE_FNO", h_t_sym, group_id=group_id,
+                                                product="NRML")
                             except Exception as _e:
                                 log.warning(f"[HEDGE] failed (sell leg unaffected): {_e}")
                     else:
