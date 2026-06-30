@@ -1986,6 +1986,7 @@ async function renderRateLimitEvents(){
   }
 }
 setInterval(() => { if (activeTab === 'risk') renderRateLimitEvents(); }, 5000);
+setInterval(() => { if (activeTab === 'calendar') { calendarRender(); loadPeakGraph(); } }, 60000);
 
 async function saveDefaultBroker(){
   const broker = document.getElementById('default-broker-select').value;
@@ -3301,8 +3302,8 @@ function renderCachedOrders() {
       });
       
       tableHtml += '</tr></thead><tbody>';
-      let grpMargin = 0;
-      
+      let grpMargin = 0, grpQty = 0;
+
       items.forEach(t=>{
         const entry=Number(t.entry_price||0), qty=t.qty||0;
         const closeSide=t.entry==='BUY'?'SELL':'BUY', cbc=t.entry==='BUY'?'#f85149':'#3fb950';
@@ -3372,6 +3373,7 @@ function renderCachedOrders() {
 
         const margin = t.margin_used!=null ? Number(t.margin_used) : null;
         grpMargin += margin || 0;
+        grpQty += qty || 0;
 
         let runup='—', rundown='—';
         if(t.tags && entry>0){
@@ -3487,7 +3489,26 @@ function renderCachedOrders() {
         tableHtml += '</tr>';
       });
       
-      tableHtml += '</tbody></table>';
+      // ── per-group TOTAL row (tfoot, column-aligned like completed trades) ──
+      const isLastGrp = Object.keys(grouped).indexOf(stratKey) === Object.keys(grouped).length - 1;
+      tableHtml += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">';
+      activeOpenCols.forEach((c, idx) => {
+        const isRight = ['entry_px','ltp','points','pnl','ret_pct','margin','run_up','run_down'].includes(c.id);
+        const isCenter = ['entry_time','qty','chart','actions'].includes(c.id);
+        const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+        let val = '', colorStyle = 'color:#8b949e;';
+        if(idx === 0) { val = 'TOTAL'; }
+        else { switch(c.id) {
+          case 'qty':    val = grpQty; break;
+          case 'margin': val = Math.round(grpMargin).toLocaleString('en-IN'); break;
+          // live cells — updated by _patchLtpCells; put grand-total IDs on last (or only) group
+          case 'points': val = isLastGrp ? `<b id="open-tot-pts">—</b>` : '—'; break;
+          case 'pnl':    val = isLastGrp ? `<b id="open-tot-unrl">—</b>` : '—'; break;
+          case 'ret_pct':val = isLastGrp ? `<b id="open-tot-ret">—</b>` : '—'; break;
+        }}
+        tableHtml += `<td style="padding:7px 6px;${alignStyle}${colorStyle}">${val}</td>`;
+      });
+      tableHtml += '</tr></tfoot></table>';
       
       oh += `
       <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
@@ -3506,21 +3527,7 @@ function renderCachedOrders() {
       </details>`;
     }
     
-    // Grand TOTAL bar across ALL open positions (item D — like the Completed
-    // Trades table's TOTAL). Count + margin are known now; Points / Unrealized /
-    // Return are live and get filled by _patchLtpCells as LTPs arrive.
-    let _openCount = opnReal.length, _openMargin = 0;
-    opnReal.forEach(t => { _openMargin += (t.margin_used != null ? Number(t.margin_used) : 0); });
-    const grandTotal = _openCount ? `
-      <div style="border-top:2px solid #30363d;margin-top:4px;padding:8px 6px;display:flex;gap:28px;align-items:center;font-size:12px;font-weight:700">
-        <span style="color:#8b949e;min-width:50px">TOTAL</span>
-        <span style="color:#8b949e;font-weight:400">Pos: <b style="color:#e6edf3">${_openCount}</b></span>
-        <span style="color:#8b949e;font-weight:400">Margin: <b style="color:#e6edf3">${Math.round(_openMargin).toLocaleString('en-IN')}</b></span>
-        <span style="color:#8b949e;font-weight:400">Points: <b id="open-tot-pts">—</b></span>
-        <span style="color:#8b949e;font-weight:400">Unrealized: <b id="open-tot-unrl">—</b></span>
-        <span style="color:#8b949e;font-weight:400">Return: <b id="open-tot-ret">—</b></span>
-      </div>` : '';
-    ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>')) + grandTotal;
+    ordOpenEl.innerHTML = blockedHtml + (oh || '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
     ordOpenEl.dataset.fp = openFp;
     _patchLtpCells(); _fetchPositionLtp();
   } catch(e) {
@@ -4432,7 +4439,7 @@ async function statsMetricsRender(dateFrom, dateTo, filt){
     document.getElementById('sm-n').textContent = m.n_trades ?? 0;
     renderStatsGroupedList(window._statsLastTrades);
     renderStatsClosedTable(window._statsLastTrades);
-  } catch(e){ /* best-effort, ignore */ }
+  } catch(e){ console.error('[statsMetrics] error:', e); }
 }
 
 let _pnlTagMap = {};   // "sym|entry_time" -> trade-DB row (source/mode/strategy tags)

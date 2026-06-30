@@ -15,6 +15,53 @@
 
 ---
 
+## 2026-06-30 — Orders & P&L tab: 5 compounding bugs fixed (OPEN positions, trailing floor, NET panel)
+**Status:** DONE
+**Kya:** P&L tab me open positions nahi dikh rahi thi, trailing 30% floor kabhi fire nahi hoti thi, NET panel tiles "—" dikh rahe the, page refresh pe 10+ second freeze. Sab ek hi session me fix kiya.
+**Layer:** broker, ui
+**Files:** `order_store.py` (`_net_rows`), `trader_dashboard.py` (margin estimate, trailing peak restore), `templates/index.html` (JS bugs: `let _tot` scope, `</tfoot>` without opener, `_patchLtpCells` missing branch, TOTAL row as `<tfoot>`)
+
+### BUG #1 — `_net_rows` phantom completed trades (order_store.py)
+**Root cause:** OPEN-status rows (status="OPEN", live positions) ko netting algorithm mein daal rahe the. Ek SELL OPEN + hedge BUY OPEN (same trad_sym/strategy) pair ho ke phantom "completed trade" ban jaata tha — P&L=0, open positions blank.
+**Fix:** `_OPEN_ST = {"open"}` set banao. `live_rows` alag karo pehle, sirf `closed_rows` par netting chalao. `live_rows` directly `opens` list mein.
+**LESSONS.md TRAP #32 bana iske liye.**
+**Downstream effect:** Trailing floor bhi is wajah se nahi chal raha tha — `_n_pos=0` se wrong branch execute hoti thi.
+
+### BUG #2 — Trailing peak reset on restart (trader_dashboard.py)
+**Root cause:** `_trailing_peak_pnl = 0.0` on every service restart. Agar service 09:50 pe peak ₹7246 dekha, phir 11:30 pe restart hua — peak 0 ho gayi, floor 0 → kabhi squareoff trigger nahi hua.
+**Fix:** Startup pe `data/peak_pnl_history.json` padho. Agar aaj ki file hai → `max(v[1] for v in history)` se peak restore karo. Confirmed working: `[TRAILING-LOCK] Restored peak ₹7246 from 500 history entries after restart.`
+
+### BUG #3 — Page freeze 10+ seconds on refresh
+**Root cause:** `risk_gate._leg_capital()` har open position ke liye Dhan `/v2/margincalculator` API hit karta tha. 10 positions × 1 req/sec rate limit = 10+ second freeze. `/api/orders` route ka response await hota hai — is doran UI hang.
+**Fix:** Local estimate: `margin = qty × price × multiplier (5x for SELL)`. Multiplier `risk_config.json` ke `margin_multiplier` key se. Zero Dhan API calls. Instant.
+
+### BUG #4 — `let _tot` block-scope JS ReferenceError (index.html)
+**Root cause:** `let _tot = {g:0,...}` declare tha `if(sortedCompleted.length){` block ke ANDAR, lekin reference tha bahar `window._realizedTot = _tot` line par. Classic JS block-scope trap — `let`/`const` sirf us block mein visible hote hain, `var` ki tarah nahi.
+**Fix:** `let _tot` ko `if` block se BAHAR hoist kiya (ek line upar).
+**Symptom:** Try-catch daala tha render ke around — error: `ReferenceError: _tot is not defined`.
+
+### BUG #5 — `</tfoot>` without `<tfoot>` opener
+**Root cause:** TOTAL row add karte waqt `</tbody></table>` ko `</tr></tfoot></table>` se replace kiya, but `<tfoot>` kabhi open nahi hua. Browser silently ignore karta hai malformed HTML.
+**Fix:** `tfoot` open + close dono properly kiye.
+
+### BUG #6 — `_patchLtpCells()` not called in no-positions branch
+**Root cause:** Jab koi open position nahi hoti, ek branch `return` kar jaata tha bina `_patchLtpCells()` call kiye. NET panel tiles (REALIZED/UNREALIZED/NET TODAY) "—" dikha rahe the.
+**Fix:** No-positions branch mein bhi `_patchLtpCells()` call karo.
+
+### OPEN POSITIONS TOTAL ROW
+**Kya bana:** Completed trades wali `<tfoot>` TOTAL row pattern open positions table mein bhi lagai. Pehle ek flex div tha jo columns se align nahi hota tha.
+**How:** Per-strategy group ke end mein `<tfoot><tr>` banao. `activeOpenCols` ke har column ke liye `text-align` decide karo (right: entry_px/ltp/points/pnl/ret_pct/margin/run_up/run_down, center: entry_time/qty/chart/actions). `qty` aur `margin` sum show karo.
+
+### LESSON: DB file name trap
+**Real file:** `trades.db` (not `orders.db`). Table name: `orders`. Columns: id, ts, date, source, strategy, mode, broker, symbol, instrument, trad_sym, sec_id, segment, side, qty, price, correlation_id, broker_order_id, status, tags, product_type, group_id.
+**Status values in DB:** `"COMPLETE"` / `"filled"` (closed), `"OPEN"` (live open position), `"paper"` (paper filled), `"rejected"` / `"cancelled"` / `"failed"` (dead — skip from netting).
+
+### LESSON: Try-catch silently kills progress
+**Problem:** `statsMetricsRender` ka `catch(e){ /* ignore */ }` aisi errors swallow karta tha jo pills update se pehle throw hoti. Debugging impossible.
+**Fix rule:** Production code mein bhi `catch(e){ console.error('[context] error:', e); }` likho. `/* ignore */` kabhi mat karo — at least console me dikhao.
+
+---
+
 ## 2026-06-23 — Script Library: paste-and-run custom strategies (TradingView-style)
 **Status:** DONE (local build + backend verified) — VPS deploy PENDING (market open; do off-market)
 **Kya:** "📌 Pine" tab → "📜 Script" library banao jisme Pine + Python + DSL-rule versions save hon. Koi bhi conforming Python/DSL script ko backtest dropdown se runnable banao (Pine reference-only). Plus ek master-prompt + contract doc jo kisi bhi AI ko de do to woh hamare syntax me code likhe.

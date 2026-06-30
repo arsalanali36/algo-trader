@@ -1148,3 +1148,69 @@ Paper mode is unchanged — simulation records immediately (no real broker to wa
   guard + fast-detect.**
 - Agar ek guard code me bhi daal sakte ho (central chokepoint), to woh memory/doc se behtar hai —
   doc bhula ja sakta hai, code-guard nahi. (Jaise TRAP #1 ka `order_store.record` tripwire.)
+
+---
+
+## TRAP #37 — `_net_rows` treats live OPEN-status orders as pairable legs → phantom completed trades + blank open positions 🔴🔴🔴
+
+**Seen:** 2026-06-30. Dashboard: open positions blank, trailing floor never fires, NET panel "—".
+
+**What happens:** `order_store._net_rows()` ran ALL rows through the netting algorithm. A live Zerodha/Kite short leg (`status="OPEN"`, side="SELL") + its hedge BUY leg (same trad_sym/strategy, `status="OPEN"`) got paired as a phantom "completed trade" (P&L ≈ 0). `open` list stayed empty → `_n_pos=0` → trailing-floor code took wrong branch → no squareoff ever.
+
+**Permanent guard (in code):**
+```python
+_OPEN_ST = {"open"}
+live_rows   = [r for r in rows if str(r.get("status") or "").lower() in _OPEN_ST]
+closed_rows = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST]
+# Only closed_rows go through Pass 1 + Pass 2 netting.
+# live_rows go directly to opens list (show sell leg, skip hedge BUY).
+```
+
+**Fast detect:** `/api/orders?date=TODAY` returns `{"open": [], "details": [...]}` even though Zerodha shows live positions → check `status` column in `trades.db` (`SELECT status, COUNT(*) FROM orders GROUP BY status`). If "OPEN" rows exist but open=[] → trap active.
+
+---
+
+## TRAP #38 — `_trailing_peak_pnl = 0.0` on service restart wipes the daily highwater mark 🔴🔴
+
+**Seen:** 2026-06-30. Strategy made ₹7246 profit peak; service restarted mid-session; `_trailing_peak_pnl` reset to 0 → 30% floor computed from 0 → never triggered → held positions all day.
+
+**Permanent guard (in code):**
+```python
+# On startup, restore today's peak from file:
+try:
+    _phf = BASE_DIR / "data" / "peak_pnl_history.json"
+    if _phf.exists():
+        _fmtime = datetime.datetime.fromtimestamp(_phf.stat().st_mtime)
+        if _fmtime.date() == datetime.datetime.now().date():
+            _hist = json.loads(_phf.read_text())
+            if _hist:
+                _trailing_peak_pnl = max(v[1] for v in _hist)
+except Exception: pass
+```
+
+**Fast detect:** After restart, check logs for `[TRAILING-LOCK] Restored peak ₹...`. If not seen → guard didn't fire → peak was reset to 0.
+
+---
+
+## TRAP #39 — `let` block-scope in JS: variable declared inside `if{}` invisible outside → silent ReferenceError 🔴
+
+**Seen:** 2026-06-30. `let _tot = {g:0,tx:0,n:0,pts:0,inv:0}` was inside `if(sortedCompleted.length){ ... }` block. `window._realizedTot = _tot` was OUTSIDE. Browser threw `ReferenceError: _tot is not defined` but it was swallowed by a surrounding try-catch → open positions render silently aborted.
+
+**Rule:** Declare loop accumulators BEFORE the `if` block that populates them. `let` and `const` are block-scoped — they don't leak out like `var`.
+
+**Fast detect:** Wrap suspicious render functions in try-catch with `console.error` (never `/* ignore */`) → errors surface in DevTools console.
+
+---
+
+## TRAP #40 — Dhan `/v2/margincalculator` called per-position → 10+ second page freeze 🔴🔴
+
+**Seen:** 2026-06-30. `risk_gate._leg_capital()` called Dhan margin API once per open position. Dhan rate-limits at ~1 req/sec. 10 positions = 10+ second wait. The `/api/orders` route awaits this → entire Orders tab freezes on every 4-second auto-refresh.
+
+**Permanent guard:** Replace with local estimate in the `/api/orders` route:
+```python
+_mult = float(risk_cfg.get("global", {}).get("margin_multiplier", 5.0))
+margin = qty * price * (_mult if side == "SELL" else 1.0)
+```
+
+**Rule:** Never call Dhan REST API in a per-item loop inside a Flask route that the UI polls every few seconds. Cache or estimate instead.
+
