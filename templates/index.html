@@ -969,6 +969,21 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 
+  <!-- Today's Peak P&L Graph -->
+  <div class="card" style="margin-top:16px; padding:16px 18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+      <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L (Live)</h3>
+      <button onclick="loadPeakGraph()" style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻ Refresh</button>
+    </div>
+    <div id="peak-pnl-graph" style="position:relative;width:100%;height:180px;">
+      <div style="color:#8b949e;font-size:12px;padding:20px">Refresh karein ya market hours mein auto-load hoga...</div>
+    </div>
+    <div style="display:flex;gap:20px;margin-top:8px;font-size:11px;color:#8b949e">
+      <span>— <span style="color:#d29922">Peak (high watermark)</span></span>
+      <span>— <span style="color:#3fb950">Total P&amp;L (realized + unrealized)</span></span>
+    </div>
+  </div>
+
   <!-- Day Totals Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
     <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">
@@ -1156,9 +1171,16 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <div style="display:flex;gap:8px;align-items:center">
           <label style="font-size:12px;color:#adbac7">Multi trade — % of peak</label>
           <input id="risk-trailing-lock-pct" type="number" step="1" min="1" max="99" placeholder="e.g. 30 (blank = off)"
-                 style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+                 style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"
+                 oninput="updateTrailingLockTip()"/>
           <span style="font-size:12px;color:#8b949e">%</span>
         </div>
+      </div>
+      <div id="trailing-lock-tip" style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.8;display:none">
+        <span style="color:#d29922">% of peak examples:</span><br>
+        <span id="tlp-ex1"></span><br>
+        <span id="tlp-ex2"></span><br>
+        <span id="tlp-ex3"></span>
       </div>
       <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
     </div>
@@ -1630,7 +1652,7 @@ function switchTab(id) {
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
   if (id === 'orders') { ordersEnter(); }
-  if (id === 'calendar') { calendarRender(); }
+  if (id === 'calendar') { calendarRender(); loadPeakGraph(); }
   if (id === 'risk') { renderRiskTab(); }
 }
 
@@ -2035,6 +2057,91 @@ async function renderRiskTab(){
   });
   html += '</table><button class="btn btn-amber" style="margin-top:10px" onclick="saveRiskConfig()">💾 Save</button>';
   tbl.innerHTML = html;
+}
+
+async function loadPeakGraph() {
+  const container = document.getElementById('peak-pnl-graph');
+  if (!container) return;
+  let pts = [];
+  try {
+    const r = await fetch('/api/peak-pnl-history');
+    pts = await r.json();
+  } catch(e) {
+    container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
+    return;
+  }
+  if (!pts || pts.length < 2) {
+    container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Data nahi hai abhi — market hours mein position open hone ke baad graph aayega.</div>';
+    return;
+  }
+  const W = container.clientWidth || 600, H = 180;
+  const PAD = { t: 10, r: 12, b: 28, l: 56 };
+  const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+
+  const peaks  = pts.map(p => p[1]);
+  const totals = pts.map(p => p[2]);
+  const allVals = [...peaks, ...totals];
+  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const range = maxV - minV || 1;
+  const px = (i) => PAD.l + (i / (pts.length - 1)) * gW;
+  const py = (v) => PAD.t + gH - ((v - minV) / range) * gH;
+
+  const peakPath  = pts.map((p, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(p[1]).toFixed(1)}`).join(' ');
+  const totalPath = pts.map((p, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(p[2]).toFixed(1)}`).join(' ');
+
+  // Y-axis labels (5 steps)
+  let yLabels = '';
+  for (let s = 0; s <= 4; s++) {
+    const v = minV + (range * s / 4);
+    const y = py(v);
+    const col = v >= 0 ? '#3fb950' : '#f85149';
+    yLabels += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#21262d" stroke-width="1"/>`;
+    yLabels += `<text x="${PAD.l - 4}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${col}">${v>=0?'':''}${Math.round(v).toLocaleString('en-IN')}</text>`;
+  }
+
+  // X-axis labels (show ~5 time labels)
+  let xLabels = '';
+  const step = Math.max(1, Math.floor(pts.length / 5));
+  for (let i = 0; i < pts.length; i += step) {
+    const x = px(i);
+    xLabels += `<text x="${x.toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
+  }
+
+  // Zero line
+  const zeroY = py(0);
+  const zeroLine = (zeroY >= PAD.t && zeroY <= PAD.t + gH)
+    ? `<line x1="${PAD.l}" y1="${zeroY.toFixed(1)}" x2="${W-PAD.r}" y2="${zeroY.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="4,3"/>`
+    : '';
+
+  // Last values tooltip
+  const last = pts[pts.length - 1];
+  const tipColor = last[2] >= 0 ? '#3fb950' : '#f85149';
+
+  container.innerHTML = `
+  <svg width="${W}" height="${H}" style="overflow:visible">
+    ${yLabels}${zeroLine}${xLabels}
+    <path d="${peakPath}"  fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="5,3"/>
+    <path d="${totalPath}" fill="none" stroke="#3fb950" stroke-width="2"/>
+    <circle cx="${px(pts.length-1).toFixed(1)}" cy="${py(last[1]).toFixed(1)}" r="3" fill="#d29922"/>
+    <circle cx="${px(pts.length-1).toFixed(1)}" cy="${py(last[2]).toFixed(1)}" r="3" fill="${tipColor}"/>
+    <text x="${(W-PAD.r-2).toFixed(1)}" y="${(py(last[1])-6).toFixed(1)}" text-anchor="end" font-size="10" fill="#d29922">Peak ₹${Math.round(last[1]).toLocaleString('en-IN')}</text>
+    <text x="${(W-PAD.r-2).toFixed(1)}" y="${(py(last[2])+14).toFixed(1)}" text-anchor="end" font-size="10" fill="${tipColor}">Now ₹${Math.round(last[2]).toLocaleString('en-IN')}</text>
+  </svg>`;
+}
+
+function updateTrailingLockTip() {
+  const pct = parseFloat(document.getElementById('risk-trailing-lock-pct').value);
+  const tip = document.getElementById('trailing-lock-tip');
+  if (!pct || pct <= 0) { tip.style.display = 'none'; return; }
+  tip.style.display = 'block';
+  const examples = [5000, 20000, 50000];
+  const ids = ['tlp-ex1','tlp-ex2','tlp-ex3'];
+  examples.forEach((peak, i) => {
+    const lock = Math.round(peak * pct / 100);
+    const safe = peak - lock;
+    document.getElementById(ids[i]).innerHTML =
+      `Peak <b style="color:#3fb950">₹${peak.toLocaleString('en-IN')}</b> → ${pct}% = lock <b style="color:#f85149">₹${lock.toLocaleString('en-IN')}</b> → safe floor <b style="color:#58a6ff">₹${safe.toLocaleString('en-IN')}</b>`;
+  });
 }
 
 async function saveRiskConfig(){

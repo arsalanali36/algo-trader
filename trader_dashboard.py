@@ -1676,6 +1676,12 @@ def api_manual_order():
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
 
+@app.route('/api/peak-pnl-history')
+def api_peak_pnl_history():
+    """Returns today's peak P&L history for the Stats tab graph."""
+    return jsonify(_peak_pnl_history)
+
+
 @app.route('/api/close-position', methods=['POST'])
 def api_close_position():
     """Close an open position — place opposite order using exact trading symbol.
@@ -3079,6 +3085,7 @@ def _last_closed_candle_close(sec_id, seg):
 
 
 _trailing_peak_pnl = 0.0   # account-level high watermark for today
+_peak_pnl_history  = []    # [(iso_time, peak_value, total_pnl)] — for Stats tab graph
 
 
 def pos_monitor_loop():
@@ -3087,7 +3094,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl
+    global _trailing_peak_pnl, _peak_pnl_history
 
     while True:
         try:
@@ -3135,9 +3142,16 @@ def pos_monitor_loop():
                                     else (_epx - _ltp) * _qty
                             _unrealized += _unrl
                     _total_pnl = _realized + _unrealized
-                    # Update high watermark
+                    # Update high watermark + record history for Stats graph
                     if _total_pnl > _trailing_peak_pnl:
                         _trailing_peak_pnl = _total_pnl
+                    _peak_pnl_history.append((
+                        (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
+                        round(_trailing_peak_pnl, 2),
+                        round(_total_pnl, 2)
+                    ))
+                    if len(_peak_pnl_history) > 500:   # keep ~80 min at 10s interval
+                        _peak_pnl_history = _peak_pnl_history[-500:]
                     # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
                     _n_pos = len(_active_pos)
                     if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
