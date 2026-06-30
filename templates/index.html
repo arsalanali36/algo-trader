@@ -979,8 +979,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div style="color:#8b949e;font-size:12px;padding:20px">Refresh karein ya market hours mein auto-load hoga...</div>
     </div>
     <div style="display:flex;gap:20px;margin-top:8px;font-size:11px;color:#8b949e">
-      <span>— <span style="color:#d29922">Peak (high watermark)</span></span>
-      <span>— <span style="color:#3fb950">Total P&amp;L (realized + unrealized)</span></span>
+      <span>— <span style="color:#3fb950">MTM P&amp;L (realized + unrealized)</span></span>
+      <span>- - <span style="color:#f0883e">Trailing lock floor (squareoff trigger)</span></span>
     </div>
   </div>
 
@@ -2062,70 +2062,112 @@ async function renderRiskTab(){
 async function loadPeakGraph() {
   const container = document.getElementById('peak-pnl-graph');
   if (!container) return;
-  let pts = [];
+  let resp = {};
   try {
     const r = await fetch('/api/peak-pnl-history');
-    pts = await r.json();
+    resp = await r.json();
   } catch(e) {
     container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
     return;
   }
+  const pts      = resp.data || [];
+  const lockPct  = resp.lock_pct ? parseFloat(resp.lock_pct) : null;
+  const lockRs   = resp.lock_rs  ? parseFloat(resp.lock_rs)  : null;
+
   if (!pts || pts.length < 2) {
     container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Data nahi hai abhi — market hours mein position open hone ke baad graph aayega.</div>';
     return;
   }
-  const W = container.clientWidth || 600, H = 180;
-  const PAD = { t: 10, r: 12, b: 28, l: 56 };
+
+  const W = container.clientWidth || 700, H = 200;
+  const PAD = { t: 14, r: 100, b: 28, l: 60 };
   const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
 
-  const peaks  = pts.map(p => p[1]);
+  // MTM = total P&L line (pts[i][2])
+  // Floor line = peak * (1 - lockPct/100) per point OR peak - lockRs
   const totals = pts.map(p => p[2]);
-  const allVals = [...peaks, ...totals];
-  const minV = Math.min(...allVals), maxV = Math.max(...allVals);
+  const peaks  = pts.map(p => p[1]);
+  const floors = pts.map(p => {
+    const pk = p[1];
+    if (pk <= 0) return null;  // floor only meaningful when in profit
+    if (lockPct) return pk * (1 - lockPct / 100);
+    if (lockRs)  return pk - lockRs;
+    return null;
+  });
+
+  const allVals = [...totals, ...floors.filter(f => f !== null)];
+  const minV = Math.min(...allVals, 0);
+  const maxV = Math.max(...allVals, 0);
   const range = maxV - minV || 1;
+
   const px = (i) => PAD.l + (i / (pts.length - 1)) * gW;
   const py = (v) => PAD.t + gH - ((v - minV) / range) * gH;
 
-  const peakPath  = pts.map((p, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(p[1]).toFixed(1)}`).join(' ');
-  const totalPath = pts.map((p, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(p[2]).toFixed(1)}`).join(' ');
+  // MTM curve — green when above 0, red when below
+  const mtmPath = totals.map((v, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
 
-  // Y-axis labels (5 steps)
+  // Floor (trailing lock threshold) — dashed orange, only where peak > 0
+  let floorPath = '';
+  let inSeg = false;
+  floors.forEach((f, i) => {
+    if (f === null) { inSeg = false; return; }
+    floorPath += `${inSeg ? 'L' : 'M'}${px(i).toFixed(1)},${py(f).toFixed(1)} `;
+    inSeg = true;
+  });
+
+  // Zero line
+  const z0 = py(0);
+  const zeroLine = (z0 >= PAD.t && z0 <= PAD.t + gH)
+    ? `<line x1="${PAD.l}" y1="${z0.toFixed(1)}" x2="${W-PAD.r}" y2="${z0.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>`
+    : '';
+
+  // Y-axis labels
   let yLabels = '';
   for (let s = 0; s <= 4; s++) {
     const v = minV + (range * s / 4);
     const y = py(v);
-    const col = v >= 0 ? '#3fb950' : '#f85149';
-    yLabels += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#21262d" stroke-width="1"/>`;
-    yLabels += `<text x="${PAD.l - 4}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${col}">${v>=0?'':''}${Math.round(v).toLocaleString('en-IN')}</text>`;
+    const col = v > 0 ? '#3fb950' : v < 0 ? '#f85149' : '#6e7681';
+    yLabels += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W-PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22" stroke-width="1"/>`;
+    yLabels += `<text x="${PAD.l-5}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${col}">${Math.round(v).toLocaleString('en-IN')}</text>`;
   }
 
-  // X-axis labels (show ~5 time labels)
+  // X-axis time labels
   let xLabels = '';
-  const step = Math.max(1, Math.floor(pts.length / 5));
+  const step = Math.max(1, Math.floor(pts.length / 6));
   for (let i = 0; i < pts.length; i += step) {
-    const x = px(i);
-    xLabels += `<text x="${x.toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
+    xLabels += `<text x="${px(i).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
   }
 
-  // Zero line
-  const zeroY = py(0);
-  const zeroLine = (zeroY >= PAD.t && zeroY <= PAD.t + gH)
-    ? `<line x1="${PAD.l}" y1="${zeroY.toFixed(1)}" x2="${W-PAD.r}" y2="${zeroY.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="4,3"/>`
+  // Right-side labels for last values
+  const last    = pts[pts.length - 1];
+  const lastMtm = last[2];
+  const lastPk  = last[1];
+  const lastFlr = floors[floors.length - 1];
+  const mtmCol  = lastMtm >= 0 ? '#3fb950' : '#f85149';
+  const drawDown = lastPk > 0 ? lastPk - lastMtm : 0;
+  const lockLabel = lockPct
+    ? `${lockPct}% floor`
+    : lockRs ? `₹${lockRs} floor` : 'floor';
+
+  let rightLabels = `
+    <circle cx="${(W-PAD.r+4).toFixed(1)}" cy="${py(lastMtm).toFixed(1)}" r="3" fill="${mtmCol}"/>
+    <text x="${(W-PAD.r+8).toFixed(1)}" y="${(py(lastMtm)+4).toFixed(1)}" font-size="11" fill="${mtmCol}" font-weight="600">₹${Math.round(lastMtm).toLocaleString('en-IN')}</text>`;
+  if (lastFlr !== null) {
+    rightLabels += `
+    <circle cx="${(W-PAD.r+4).toFixed(1)}" cy="${py(lastFlr).toFixed(1)}" r="3" fill="#f0883e"/>
+    <text x="${(W-PAD.r+8).toFixed(1)}" y="${(py(lastFlr)+4).toFixed(1)}" font-size="10" fill="#f0883e">${lockLabel} ₹${Math.round(lastFlr).toLocaleString('en-IN')}</text>`;
+  }
+  // Drawdown badge
+  const ddBadge = lastPk > 0
+    ? `<text x="${(W/2).toFixed(1)}" y="${PAD.t-2}" text-anchor="middle" font-size="10" fill="#8b949e">Peak ₹${Math.round(lastPk).toLocaleString('en-IN')}  |  Drawdown ₹${Math.round(drawDown).toLocaleString('en-IN')}</text>`
     : '';
 
-  // Last values tooltip
-  const last = pts[pts.length - 1];
-  const tipColor = last[2] >= 0 ? '#3fb950' : '#f85149';
-
   container.innerHTML = `
-  <svg width="${W}" height="${H}" style="overflow:visible">
-    ${yLabels}${zeroLine}${xLabels}
-    <path d="${peakPath}"  fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="5,3"/>
-    <path d="${totalPath}" fill="none" stroke="#3fb950" stroke-width="2"/>
-    <circle cx="${px(pts.length-1).toFixed(1)}" cy="${py(last[1]).toFixed(1)}" r="3" fill="#d29922"/>
-    <circle cx="${px(pts.length-1).toFixed(1)}" cy="${py(last[2]).toFixed(1)}" r="3" fill="${tipColor}"/>
-    <text x="${(W-PAD.r-2).toFixed(1)}" y="${(py(last[1])-6).toFixed(1)}" text-anchor="end" font-size="10" fill="#d29922">Peak ₹${Math.round(last[1]).toLocaleString('en-IN')}</text>
-    <text x="${(W-PAD.r-2).toFixed(1)}" y="${(py(last[2])+14).toFixed(1)}" text-anchor="end" font-size="10" fill="${tipColor}">Now ₹${Math.round(last[2]).toLocaleString('en-IN')}</text>
+  <svg width="${W}" height="${H}" style="overflow:visible;display:block">
+    ${yLabels}${zeroLine}${xLabels}${ddBadge}
+    <path d="${mtmPath}" fill="none" stroke="${mtmCol}" stroke-width="2.5"/>
+    ${floorPath ? `<path d="${floorPath}" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="6,4"/>` : ''}
+    ${rightLabels}
   </svg>`;
 }
 

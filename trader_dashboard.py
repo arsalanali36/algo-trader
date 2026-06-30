@@ -1678,14 +1678,20 @@ def api_manual_order():
 
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
-    """Returns today's peak P&L history for the Stats tab graph."""
+    """Returns today's peak P&L history + lock config for the Stats tab MTM graph."""
+    try:
+        import risk_gate as _rg
+        gcfg = (_rg._risk_cfg().get("global") or {})
+        lock_rs  = gcfg.get("trailing_profit_lock_rs")
+        lock_pct = gcfg.get("trailing_profit_lock_pct")
+    except Exception:
+        lock_rs = lock_pct = None
     try:
         f = BASE_DIR / "data" / "peak_pnl_history.json"
-        if f.exists():
-            return jsonify(json.loads(f.read_text()))
+        data = json.loads(f.read_text()) if f.exists() else []
     except Exception:
-        pass
-    return jsonify([])
+        data = []
+    return jsonify({"data": data, "lock_pct": lock_pct, "lock_rs": lock_rs})
 
 
 @app.route('/api/close-position', methods=['POST'])
