@@ -1326,3 +1326,114 @@ WHERE trad_sym='SYMBOL-HERE' AND date='YYYY-MM-DD' AND status='OPEN';
 
 **Prevention:** Never close positions at broker directly without telling the app. If you must (panic), immediately go to P&L tab → find the position → 🗑 book-close it so the app marks it closed. Until `/api/sync-positions` is built, this is the manual workflow.
 
+
+---
+
+## TRAP #45 — Max trades/day counter was RAM-only → reset on every service restart 🔴🔴
+
+**Symptom:** Strategy fires way more than `max_trades_per_day` limit across a trading day. After any service restart (even for an unrelated fix), the counter resets to 0 — suddenly 10 more entries are allowed even though 8 already happened.
+
+**Root cause:** `_trades_today` in `webhook_executor.py` was a plain Python dict — module-level, in-memory only. Any `systemctl restart algo-dashboard` or crash wipes it.
+
+**Fix:** `daily_state.py` — thread-safe, IST-date-aware, disk-persisted daily counters. Reads from `data/daily_state.json` on startup. Auto-resets when IST date changes (not midnight UTC — market-aware).
+
+**Usage:**
+```python
+import daily_state as _ds
+count = _ds.inc("webhook", "ARS_CHAIN_V1|NIFTY")   # returns new count
+count = _ds.get("webhook", "ARS_CHAIN_V1|NIFTY")   # read without increment
+_ds.reset()                                          # called at day boundary
+```
+
+**Fast detect:** `grep "trades_today" logs/` — if you see >max_trades entries after a restart, this is the bug.
+
+**Guard:** Every new counter in `webhook_executor.py` or any strategy that needs "per-day" semantics must go through `daily_state`, never a module-level dict.
+
+---
+
+## TRAP #46 — Kite token expiry not monitored — silent failure all day 🔴🔴
+
+**Symptom:** All Kite-routed live orders fail silently from 09:15 onwards. Token expired overnight. No red banner, no alert — user only notices when checking P&L at EOD and realising zero trades went through.
+
+**Root cause:** `health_check.py` checked Dhan token (JWT expiry) but had no Kite-specific check. Kite tokens expire after 24 hours (or manual revoke). The only existing check was Dhan's `api_auth_fail` flag — Kite errors set no such flag.
+
+**Fix:** `health_check._check_kite_token()` — calls `kite.profile()` (lightweight read-only validity check) at 09:20 IST via systemd timer. If `TokenException` / 403 → sets `token_red=True` (cascades RED to ALL strategies in the report) + writes red banner to `data/downloader_alert.json` — visible immediately on dashboard.
+
+**Fast detect:** `python -X utf8 health_check.py --report` → look for `kite_tok: FAIL` line.
+
+**Guard:** Every morning after login, dashboard Control tab shows token status. If Kite shows RED → paste fresh access token. Kite token rotate = revoke+new from `kite.generate_session()` flow.
+
+---
+
+## TRAP #47 — Paper trades counted in daily loss limit → circuit breaker fires prematurely 🟡
+
+**Symptom:** `risk_gate.daily_loss_breached()` returns True even though no real money was lost. All new entries blocked. User puzzled because Dhan/Kite P&L shows positive.
+
+**Root cause:** `_today_realized_pnl()` summed ALL `order_store` details entries. Paper-mode button clicks during testing create entries with `mode="paper"`, `broker="dhan"`, `source="manual"` — these are phantom. A test sequence with heavy paper losses could trip the real-money circuit breaker.
+
+**Fix:** `risk_gate._today_realized_pnl()` now filters `d.get("mode") != "paper"` before summing.
+
+**Fast detect:** `grep "paper" data/order_store_YYYY-MM-DD.json | wc -l` — if >0 and circuit breaker is firing unexpectedly, this is the cause.
+
+**Guard:** Same filter (`mode != "paper"`) applied in `counterfactual.py` — paper entries excluded from the algo P&L curve too.
+
+---
+
+## TRAP #48 — Trailing SL state (`_wh_state`) lost on restart → open positions become unmonitored 🔴🔴
+
+**Symptom:** Service restarts mid-day while a webhook-placed position is open. After restart, `_wh_state` is empty → `monitor_tick()` has no record of the position → no trailing SL, no target, no 3:15 squareoff for that position. Only `pos_monitor_loop` (order_store-based) still watches it.
+
+**Root cause:** `_wh_state` is a module-level dict in `webhook_executor.py`. Lost on any restart.
+
+**Fix:** `_recover_wh_state()` runs once at module import. Reads `order_store.trades_for(today)["open"]`, parses `SL_VAL` from tags (stored as `"SL_VAL:72.5"` format), reconstructs `_wh_state[key]` with conservative SL (entry ± SL_VAL). Sets `_recovered: True` flag so monitor knows this is a recovery.
+
+**Fast detect:** After a restart, `grep "RECOVER" logs/` should show a `[RECOVER]` line. If you see a webhook position in `order_store` with `status=OPEN` but no `[RECOVER]` log line → old code, state not restored.
+
+**Guard:** `_recover_wh_state()` must be called at module-level init in `webhook_executor.py` — not inside a route handler.
+
+---
+
+## TRAP #49 — Corrupt peak P&L daemon entry → crash or silent data loss 🔴
+
+**Symptom:** Dashboard Peak P&L graph crashes or shows a gap/flatline. Log shows TypeError or IndexError around the normalization code.
+
+**Root cause:** `peak_pnl.json` is written by the daemon at every tick. A restart mid-write, a kill-9, or a daemon bug can write a partial/corrupt JSON array entry. The old `_norm()` assumed every entry was a 4-element list with valid numeric values — no guard.
+
+**Fix:** `_safe_norm()` wrapper validates each entry:
+1. Must survive `_norm()` (4-element list reorder)
+2. Time must parse without exception
+3. Value must be a real float (NaN check: `v == v`)
+4. Time must be within market hours
+
+Any entry failing any check is silently dropped.
+
+**Fast detect:** `python3 -c "import json; d=json.load(open('data/peak_pnl.json')); print([e for e in d if len(e)!=4])"` — non-4-length entries = corrupt.
+
+**Guard:** Daemon archives daily files to `data/peak_pnl_history_YYYY-MM-DD.json` at startup.
+
+---
+
+## TRAP #50 — Counterfactual tagging impossible when algo and manual trades share the same broker account 🔴
+
+**Symptom:** Every trade tagged as "PANIC" (0 algo found) or every trade tagged as "ALGO" (all FIFO-matched). Symbol normalization between Dhan `trad_sym` format and Kite tradingsymbol format reliably fails. Time-based matching also fails because user closes algo positions mid-trade.
+
+**Root cause (first attempt):** Trying to cross-reference `order_store` (algo) and Kite fills (manual) by symbol+time. This is fundamentally unsolvable when algo and user trade on the SAME Kite account — the fills are interleaved and indistinguishable.
+
+**Root cause (real):** Architecture mismatch. The counterfactual question does not require per-trade tagging.
+
+**Fix — two-broker architecture:**
+- `order_store` = algo INTENDED trades (always the algo timeline)
+- Kite FIFO = ALL actual fills (always the panic timeline)
+- No cross-referencing. No symbol normalization. No time-matching.
+- `intervention_cost = algo_pnl - actual_pnl` — positive = algo was better
+- `counterfactual.py` builds two separate equity curves; Stats tab shows both
+
+**June 30 live verification:**
+- Algo (order_store): +₹3,263.25 (12 trades)
+- Actual (Kite FIFO): -₹2,908.40 (23 matched trades)
+- Intervention cost: ₹6,171.65
+
+**Fast detect:** `counterfactual.py analyze(date)["summary"]` — check `algo_count` and `panic_count`.
+
+**Guard:** Never try to cross-reference `order_store` and Kite fills by symbol+time. Kite = ALL actual, `order_store` = ALL algo. Two separate universes.
+
