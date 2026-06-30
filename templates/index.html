@@ -832,6 +832,22 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
   <div id="ord-summary" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"></div>
 
+  <!-- NET P&L Summary Panel -->
+  <div id="net-pnl-panel" style="display:flex;gap:0;margin-bottom:12px;border:1px solid #30363d;border-radius:8px;overflow:hidden;font-size:13px">
+    <div style="flex:1;padding:12px 18px;background:#161b22;border-right:1px solid #30363d">
+      <div style="font-size:10px;color:#8b949e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Realized (Closed)</div>
+      <div id="net-realized" style="font-weight:700;font-size:18px;color:#e6edf3">—</div>
+    </div>
+    <div style="flex:1;padding:12px 18px;background:#161b22;border-right:1px solid #30363d">
+      <div style="font-size:10px;color:#8b949e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">Unrealized (Open)</div>
+      <div id="net-unrealized" style="font-weight:700;font-size:18px;color:#e6edf3">—</div>
+    </div>
+    <div style="flex:1;padding:12px 18px;background:#0d1117">
+      <div style="font-size:10px;color:#8b949e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">NET Today</div>
+      <div id="net-total" style="font-weight:700;font-size:18px;color:#e6edf3">—</div>
+    </div>
+  </div>
+
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
       <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
@@ -5048,6 +5064,25 @@ function _patchLtpCells() {
     if(ptsB){ ptsB.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsB.style.color=totPts>=0?'#3fb950':'#f85149'; }
     unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
     if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
+
+    // NET summary panel — realized (closed) + unrealized (open)
+    const _d = window._lastOrdersData || {};
+    const _closed = _d.details || [];
+    let _realized = 0;
+    _closed.forEach(t => { _realized += (parseFloat(t._net) || parseFloat(t.pnl) || 0); });
+    const _net = _realized + totUnrl;
+    const _fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
+    const _col = (v) => v >= 0 ? '#3fb950' : '#f85149';
+    const rEl = document.getElementById('net-realized');
+    const uEl = document.getElementById('net-unrealized');
+    const nEl = document.getElementById('net-total');
+    if(rEl){ rEl.textContent = _fmt(_realized); rEl.style.color = _col(_realized); }
+    if(uEl){ uEl.textContent = _fmt(totUnrl);   uEl.style.color = _col(totUnrl); }
+    if(nEl){ nEl.textContent = _fmt(_net);       nEl.style.color = _col(_net);
+      // highlight NET panel background based on value
+      const panel = document.getElementById('net-pnl-panel');
+      if(panel) panel.style.borderColor = _net >= 0 ? '#238636' : '#6e2c2c';
+    }
   })();
 }
 startLtpStream();
