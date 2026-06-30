@@ -3110,15 +3110,20 @@ def pos_monitor_loop():
             # in profit — not a stop-loss, it's a profit-protector).
             try:
                 import risk_gate as _rg
-                _trail_rs = (_rg._risk_cfg().get("global") or {}).get("trailing_profit_lock_rs")
-                if _trail_rs and float(_trail_rs) > 0:
+                _gcfg = (_rg._risk_cfg().get("global") or {})
+                _trail_rs  = _gcfg.get("trailing_profit_lock_rs")   # fixed ₹  (single position)
+                _trail_pct = _gcfg.get("trailing_profit_lock_pct")  # % of peak (multi position)
+                _either_set = (_trail_rs and float(_trail_rs) > 0) or \
+                              (_trail_pct and float(_trail_pct) > 0)
+                if _either_set:
                     # Realized P&L today
                     _realized = _rg._today_realized_pnl()
                     # Unrealized P&L: sum across all live open positions
                     _unrealized = 0.0
-                    for _p in open_pos:
-                        if _p.get("status") == "blocked" or "CAPITAL_BLOCKED" in (_p.get("tags") or []):
-                            continue
+                    _active_pos = [_p for _p in open_pos
+                                   if _p.get("status") != "blocked"
+                                   and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
+                    for _p in _active_pos:
                         _sid = _p.get("sec_id")
                         _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
                         _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
@@ -3133,11 +3138,25 @@ def pos_monitor_loop():
                     # Update high watermark
                     if _total_pnl > _trailing_peak_pnl:
                         _trailing_peak_pnl = _total_pnl
+                    # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
+                    _n_pos = len(_active_pos)
+                    if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
+                        _effective_lock = float(_trail_rs)
+                        _lock_desc = f"₹{_effective_lock:.0f} (single-pos fixed)"
+                    elif _n_pos > 1 and _trail_pct and float(_trail_pct) > 0:
+                        _effective_lock = _trailing_peak_pnl * float(_trail_pct) / 100.0
+                        _lock_desc = f"₹{_effective_lock:.0f} ({_trail_pct}% of peak)"
+                    elif _trail_rs and float(_trail_rs) > 0:
+                        _effective_lock = float(_trail_rs)   # fallback: use ₹ if pct not set
+                        _lock_desc = f"₹{_effective_lock:.0f} (fixed fallback)"
+                    else:
+                        _effective_lock = 0.0
+                        _lock_desc = "none"
                     # Fire if peak was positive AND drawdown from peak exceeds lock
                     _drawdown = _trailing_peak_pnl - _total_pnl
-                    if _trailing_peak_pnl > 0 and _drawdown >= float(_trail_rs):
+                    if _trailing_peak_pnl > 0 and _effective_lock > 0 and _drawdown >= _effective_lock:
                         print(f"[TRAILING-LOCK] Peak ₹{_trailing_peak_pnl:.0f} → now ₹{_total_pnl:.0f} "
-                              f"(drawdown ₹{_drawdown:.0f} ≥ lock ₹{_trail_rs}) — squaring off ALL positions",
+                              f"(drawdown ₹{_drawdown:.0f} ≥ lock {_lock_desc}, pos={_n_pos}) — squaring off ALL",
                               flush=True)
                         for _p in list(open_pos):
                             _sid = _p.get("sec_id")

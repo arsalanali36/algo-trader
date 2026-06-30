@@ -1142,15 +1142,23 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <div style="border:1px solid #30363d;border-radius:8px;padding:14px;margin-top:12px">
       <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">3️⃣ Account-Level Trailing Profit Lock 🔒</div>
       <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        Jab <b style="color:#3fb950">aaj ka total P&L (realized + unrealized)</b> apne peak se itne ₹ neeche aaye →
-        <b style="color:#f85149">saari positions auto-squareoff</b>. Sirf tab fire hota hai jab peak ≥ ₹1 ho
-        (profit mein the, phir gire). Example: peak ₹5000, lock ₹2000 → ₹3000 pe sab close.
-        <br><span style="color:#d29922">Blank = off (no trailing lock).</span>
+        Jab <b style="color:#3fb950">aaj ka total P&L (realized + unrealized)</b> apne peak se neeche aaye →
+        <b style="color:#f85149">saari positions auto-squareoff</b>. Sirf tab fire hota hai jab peak ≥ ₹1 ho.
+        <br>• <b>1 position open</b> → Fixed ₹ use hoga &nbsp;|&nbsp; <b>2+ positions open</b> → % of peak use hoga (jo bhi set hai)
+        <br><span style="color:#d29922">Blank = off. Dono blank = trailing lock off.</span>
       </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <label style="font-size:12px;color:#adbac7">Trailing Drawdown Lock ₹</label>
-        <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000 (blank = off)"
-               style="width:200px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Single trade — Fixed ₹</label>
+          <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000 (blank = off)"
+                 style="width:160px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Multi trade — % of peak</label>
+          <input id="risk-trailing-lock-pct" type="number" step="1" min="1" max="99" placeholder="e.g. 30 (blank = off)"
+                 style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+          <span style="font-size:12px;color:#8b949e">%</span>
+        </div>
       </div>
       <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
     </div>
@@ -1974,6 +1982,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
   document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
   document.getElementById('risk-trailing-lock').value = RISK_CFG.global.trailing_profit_lock_rs != null ? RISK_CFG.global.trailing_profit_lock_rs : '';
+  document.getElementById('risk-trailing-lock-pct').value = RISK_CFG.global.trailing_profit_lock_pct != null ? RISK_CFG.global.trailing_profit_lock_pct : '';
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -2046,6 +2055,7 @@ async function saveRiskConfig(){
   const gHedgePremium = document.getElementById('risk-global-hedge-premium').value;
   const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
   const gTrailingLock = document.getElementById('risk-trailing-lock').value;
+  const gTrailingLockPct = document.getElementById('risk-trailing-lock-pct').value;
   const payload = {
     global: {
       default_broker: document.getElementById('default-broker-select').value || 'dhan',
@@ -2061,6 +2071,7 @@ async function saveRiskConfig(){
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
       liquidity_filter: gLiqFilter === 'true',
       trailing_profit_lock_rs: gTrailingLock !== '' ? parseFloat(gTrailingLock) : null,
+      trailing_profit_lock_pct: gTrailingLockPct !== '' ? parseFloat(gTrailingLockPct) : null,
     },
     per_strategy: {}
   };
