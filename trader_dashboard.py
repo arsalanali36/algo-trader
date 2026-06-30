@@ -3098,6 +3098,7 @@ def _last_closed_candle_close(sec_id, seg):
 
 _trailing_peak_pnl = 0.0   # account-level high watermark for today
 _peak_pnl_history  = []    # [(iso_time, peak_value, total_pnl)] — for Stats tab graph
+_peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips when feed fails
 
 
 def pos_monitor_loop():
@@ -3106,7 +3107,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _peak_pnl_history
+    global _trailing_peak_pnl, _peak_pnl_history, _peak_ltp_cache
 
     while True:
         try:
@@ -3146,6 +3147,10 @@ def pos_monitor_loop():
                     _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
                     _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
                            _rest_ltp_fallback(_sid, _seg) or 0.0
+                    if _ltp > 0:
+                        _peak_ltp_cache[_sid] = _ltp        # fresh — update cache
+                    else:
+                        _ltp = _peak_ltp_cache.get(_sid, 0.0)  # stale feed — use last known
                     _epx = float(_p.get("entry_price") or _p.get("price") or 0)
                     _qty = int(_p.get("qty") or 0)
                     if _ltp > 0 and _epx > 0 and _qty:
