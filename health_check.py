@@ -376,6 +376,23 @@ def fire_test(sid, cfg, headers, spot_cache):
     return "FAIL", f"execute OK par DB me row nahi mila (order_store.record fail?)"
 
 
+def _check_kite_token():
+    """Kite access_token valid hai? Lightweight profile call se verify.
+    Returns (True, None) | (False, err_msg) | (None, warn_msg)"""
+    try:
+        import sys as _sys
+        _sys.path.insert(0, str(BASE_DIR))
+        from brokers.kite_broker import _load_kite
+        kite = _load_kite()
+        kite.profile()
+        return True, None
+    except Exception as e:
+        err = str(e)
+        if "token" in err.lower() or "403" in err or "access" in err.lower() or "TokenException" in err:
+            return False, "Kite token EXPIRED — subah Control tab se login karo"
+        return None, f"Kite check skip (transient): {err}"
+
+
 def build_report(cfg, args):
     """Poora report dict banao (pretty + json dono isi se)."""
     token, client_id = _load_creds()
@@ -385,10 +402,21 @@ def build_report(cfg, args):
     if nifty is not None:
         tok_status, token_red = "OK", False
     elif (terr or "").startswith("AUTH:"):
-        tok_status, token_red = "FAIL", True            # real token reject — sab RED
+        tok_status, token_red = "FAIL", True
     else:
-        tok_status, token_red = "WARN", False           # transient (429/network) — cascade RED mat karo
+        tok_status, token_red = "WARN", False
+
+    kite_ok, kite_err = _check_kite_token()
+    if kite_ok is True:
+        kite_tok = {"ok": True, "status": "OK", "error": None}
+    elif kite_ok is False:
+        kite_tok = {"ok": False, "status": "FAIL", "error": kite_err}
+        token_red = True   # Kite FAIL → sab RED (orders Kite se jaate hain)
+    else:
+        kite_tok = {"ok": None, "status": "WARN", "error": kite_err}
+
     tok = {"ok": nifty is not None, "status": tok_status, "nifty": nifty, "error": terr,
+           "kite": kite_tok,
            "expiry": exp_dt.strftime("%d-%b %H:%M") if exp_dt else None,
            "hours_left": round(hrs, 1) if hrs is not None else None}
 

@@ -97,7 +97,8 @@ _OVERRIDABLE = ("strike_offset", "qty", "sl_points", "target_points",
 # ── shared state ────────────────────────────────────────────────────────────────
 _lock = threading.Lock()
 _wh_state = {}            # "strat|symbol" -> position dict
-_trades_today = {}        # "strat|symbol" -> int (reset daily)
+import daily_state as _ds  # persists across restarts
+_trades_today = _ds.get_all("webhook")  # loaded from disk on startup
 _day_realized = 0.0       # ₹ realized P&L today across all webhook strategies
 _last_reset_day = None
 _seen = {}                # dedup: alert id -> epoch ts
@@ -341,9 +342,10 @@ def _maybe_reset_day():
     today = ist_now().date()
     if _last_reset_day != today:
         _last_reset_day = today
+        _ds.reset()
         _trades_today.clear()
         _day_realized = 0.0
-        _log(f"new trading day {today} — trade counters + day P&L reset")
+        _log(f"new trading day {today} — trade counters + day P&L reset (persisted)")
 
 
 def _dedup(alert_id):
@@ -380,6 +382,55 @@ def _day_pnl():
             continue
         unreal += _leg_pnl(st, prem)
     return _day_realized, unreal, _day_realized + unreal
+
+
+def _recover_wh_state():
+    """On startup: rebuild _wh_state from today's open positions in order_store.
+    SL restored conservatively to entry SL — monitor_tick tightens from there.
+    Prevents ghost positions and SL blindness after a service restart."""
+    try:
+        import order_store
+        from datetime import datetime as _dt, timedelta as _td
+        date = (_dt.utcnow() + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        data = order_store.trades_for(date)
+        recovered = 0
+        for p in data.get("open", []):
+            strat  = p.get("strategy") or "unknown"
+            symbol = p.get("symbol") or ""
+            if not symbol:
+                continue
+            tags      = {t.split(":")[0]: t.split(":", 1)[1] for t in (p.get("tags") or []) if ":" in t}
+            sl_val    = float(tags.get("SL_VAL", 0) or 0)
+            entry_px  = float(p.get("entry_price") or 0)
+            opt_action = p.get("opt_action") or ("SELL" if p.get("entry") == "SELL" else "BUY")
+            direction  = "SHORT" if opt_action == "SELL" else "LONG"
+            sl = (entry_px + sl_val if opt_action == "SELL" else entry_px - sl_val) if sl_val else None
+            key = _key(strat, symbol)
+            _wh_state[key] = {
+                "strategy": strat, "symbol": symbol,
+                "position": direction, "direction": direction,
+                "opt_sec_id": str(p.get("sec_id") or ""),
+                "opt_trad_sym": p.get("trad_sym") or "",
+                "opt_qty": int(p.get("qty") or 0),
+                "opt_action": opt_action,
+                "entry_premium": entry_px,
+                "sl": sl, "target": None,
+                "entry_spot": float(p.get("entry_spot") or 0),
+                "idx_sl": None, "idx_trail_dist": None,
+                "entry_time": (p.get("entry_time") or "")[:5],
+                "mode": p.get("mode") or "paper",
+                "broker": p.get("broker") or "kite",
+                "instrument": p.get("instrument") or "options",
+                "_recovered": True,
+            }
+            recovered += 1
+        if recovered:
+            _log(f"[RECOVER] {recovered} open webhook position(s) restored — SL at entry level, trail tightens as market moves")
+    except Exception as e:
+        _log(f"[RECOVER] wh_state recovery skip (ok to continue): {e}")
+
+
+_recover_wh_state()   # runs at module import (service start)
 
 
 # ── public API ──────────────────────────────────────────────────────────────────
@@ -628,7 +679,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         st["idx_sl"] = spot - dist if direction == "LONG" else spot + dist
 
     _wh_state[key] = st
-    _trades_today[key] = _trades_today.get(key, 0) + 1
+    _trades_today[key] = _ds.inc("webhook", key)
     _log(f"ENTRY {strat} {direction} {symbol} {opt_action} {qty} {trad_sym} @ {entry_px:.2f} "
          f"(spot={spot:.2f} off={offset} SL={sl} TGT={target} mode={cfg.get('trail_mode')})")
     return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": st}

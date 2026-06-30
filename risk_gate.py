@@ -407,7 +407,8 @@ def _today_realized_pnl():
         data = order_store.trades_for(date_str)
     except Exception:
         return 0.0
-    return sum(float(d.get("pnl") or 0) for d in data.get("details", []))
+    return sum(float(d.get("pnl") or 0) for d in data.get("details", [])
+               if d.get("mode") != "paper")
 
 
 def check_drawdown(unrealized_pnl=0.0):
@@ -447,6 +448,40 @@ def check_drawdown(unrealized_pnl=0.0):
 #   per_strategy[strat].max_loss_rs  ->  global.max_loss_rs  ->
 #   global.daily_drawdown_cap_rs     ->  DEFAULT_DAILY_LOSS_RS
 DEFAULT_DAILY_LOSS_RS = 5000.0
+
+# ── Daily profit target (mirror of daily-loss cap) ───────────────────────────
+# When combined realized P&L hits this target: block all new entries + force
+# squareoff of all open positions. Same resolution order as loss cap.
+# per_strategy[strat].profit_target_rs -> global.profit_target_rs -> None (off)
+# Unlike the loss cap, this has NO default — if not configured, it never fires.
+
+
+def effective_daily_profit_target(strategy=None, rc=None):
+    """₹ profit target for the day. Returns None if not configured (off)."""
+    rc = rc or _risk_cfg()
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
+    gl = rc.get("global", {}) or {}
+    for v in (ps.get("profit_target_rs"), gl.get("profit_target_rs")):
+        if v is not None:
+            try:
+                f = float(v)
+                if f > 0:
+                    return f
+            except Exception:
+                pass
+    return None
+
+
+def daily_profit_target_hit(strategy, unrealized=0.0, rc=None):
+    """True if today's combined P&L (realized + unrealized) has hit the profit
+    target for `strategy`. Returns (hit, reason)."""
+    target = effective_daily_profit_target(strategy, rc=rc)
+    if target is None:
+        return False, ""
+    pnl = _strategy_day_pnl(strategy, unrealized)
+    if pnl >= abs(target):
+        return True, f"🎯 Daily profit target ₹{target:.0f} hit for '{strategy}' (today's P&L ₹{pnl:.0f})"
+    return False, ""
 
 
 def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
@@ -596,6 +631,9 @@ def gating_status(strategy, unrealized=0.0, mode=None, broker=None):
     breached, why = daily_loss_breached(strategy, unrealized=unrealized, mode=mode, broker=broker)
     if breached:
         return True, why, True
+    pt_hit, pt_why = daily_profit_target_hit(strategy, unrealized=unrealized)
+    if pt_hit:
+        return True, pt_why, True
     dd_ok, dd_why = check_drawdown(unrealized_pnl=unrealized)
     if not dd_ok:
         return True, dd_why, True
