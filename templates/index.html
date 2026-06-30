@@ -2101,7 +2101,8 @@ async function loadPeakGraph() {
   const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
 
   // MTM = total P&L line (pts[i][2])
-  // Floor line = peak * (1 - lockPct/100) per point OR peak - lockRs
+  // Floor line = daily_peak_ever * (1 - lockPct/100) — uses v[3] (monotonic max, never drops)
+  // Falls back to running max of v[1] for older history entries that lack v[3]
   // Smooth MTM line with 5-point moving average — removes jitter, preserves trend
   const rawTotals = pts.map(p => p[2]);
   const totals = rawTotals.map((v, i, arr) => {
@@ -2110,8 +2111,15 @@ async function loadPeakGraph() {
     return sl.reduce((a,b) => a+b, 0) / sl.length;
   });
   const peaks  = pts.map(p => p[1]);
-  const floors = pts.map(p => {
-    const pk = p[1];
+  // Build monotonic daily max from v[3] if present, else running max of v[1]
+  let _runMax = 0;
+  const dailyPeakEver = pts.map(p => {
+    const v3 = p.length > 3 ? p[3] : p[1];
+    _runMax = Math.max(_runMax, v3);
+    return _runMax;
+  });
+  const floors = pts.map((p, i) => {
+    const pk = dailyPeakEver[i];   // monotonic — never drops
     if (pk <= 0) return null;  // floor only meaningful when in profit
     if (lockPct) return pk * (1 - lockPct / 100);
     if (lockRs)  return pk - lockRs;
@@ -2164,7 +2172,7 @@ async function loadPeakGraph() {
   // Right-side labels for last values
   const last    = pts[pts.length - 1];
   const lastMtm = last[2];
-  const lastPk  = last[1];
+  const lastPk  = dailyPeakEver[dailyPeakEver.length - 1];  // daily max (never drops)
   const lastFlr = floors[floors.length - 1];
   const mtmCol  = lastMtm >= 0 ? '#3fb950' : '#f85149';
   const drawDown = lastPk > 0 ? lastPk - lastMtm : 0;

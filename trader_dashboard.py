@@ -3106,9 +3106,42 @@ def _last_closed_candle_close(sec_id, seg):
         return None
 
 
-_trailing_peak_pnl = 0.0   # account-level high watermark for today
-_peak_pnl_history  = []    # [(iso_time, peak_value, total_pnl)] — for Stats tab graph
 _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips when feed fails
+
+# Restore peak + history from file on startup — so restart mid-day doesn't reset the floor.
+# Only restore if history entries exist and were written TODAY (check file mtime).
+_trailing_peak_pnl = 0.0
+_daily_peak_ever   = 0.0   # monotonic daily max — NEVER resets, used for graph floor line
+_peak_pnl_history  = []
+try:
+    import datetime as _dt_mod
+    _phf_init = BASE_DIR / "data" / "peak_pnl_history.json"
+    if _phf_init.exists():
+        _fmtime = _dt_mod.datetime.fromtimestamp(_phf_init.stat().st_mtime)
+        _today  = _dt_mod.datetime.now().date()
+        if _fmtime.date() == _today:           # file written today → safe to restore
+            _hist_init = json.loads(_phf_init.read_text())
+            if _hist_init:
+                # v[1] = peak at that tick (resets after squareoff)
+                # v[3] = daily_peak_ever (if present, never resets)
+                _trailing_peak_pnl = max(v[1] for v in _hist_init)
+                _daily_peak_ever   = max(v[3] if len(v) > 3 else v[1] for v in _hist_init)
+                _peak_pnl_history  = _hist_init
+                print(f"[TRAILING-LOCK] Restored peak ₹{_trailing_peak_pnl:.0f} "
+                      f"(daily max ₹{_daily_peak_ever:.0f}) "
+                      f"from {len(_hist_init)} history entries after restart.", flush=True)
+except Exception as _e_init:
+    print(f"[TRAILING-LOCK] Peak restore failed (ok, starting fresh): {_e_init}", flush=True)
+
+
+def _trailing_lock_fired_today() -> bool:
+    """Returns True if trailing squareoff already fired today — blocks new entries."""
+    try:
+        from datetime import datetime as _dtc
+        _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+        return _flag.exists()
+    except Exception:
+        return False
 
 
 def pos_monitor_loop():
@@ -3117,7 +3150,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _peak_pnl_history, _peak_ltp_cache
+    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache
 
     while True:
         try:
@@ -3172,10 +3205,13 @@ def pos_monitor_loop():
                 # Update high watermark + record history for Stats graph (always)
                 if _total_pnl > _trailing_peak_pnl:
                     _trailing_peak_pnl = _total_pnl
+                if _total_pnl > _daily_peak_ever:
+                    _daily_peak_ever = _total_pnl   # monotonic — never resets
                 _peak_pnl_history.append((
                     (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
                     round(_trailing_peak_pnl, 2),
-                    round(_total_pnl, 2)
+                    round(_total_pnl, 2),
+                    round(_daily_peak_ever, 2),      # v[3]: floor line base (monotonic, never drops)
                 ))
                 if len(_peak_pnl_history) > 500:
                     _peak_pnl_history = _peak_pnl_history[-500:]
@@ -3244,6 +3280,14 @@ def pos_monitor_loop():
                                 except Exception as _te:
                                     print(f"[TRAILING-LOCK] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
                         _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
+                        # Write day-level flag so webhook/strategy blocks new entries
+                        try:
+                            from datetime import datetime as _dtc
+                            _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+                            _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
+                            print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
+                        except Exception as _fe:
+                            print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
                         time.sleep(5)
                         continue                    # skip per-position checks this cycle
             except Exception as _trail_e:

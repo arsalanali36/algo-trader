@@ -452,6 +452,15 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         _log(f"ENTRY blocked {key} — after {cfg.get('no_entry_after')}")
         return {"ok": False, "msg": "no entry after cutoff"}
 
+    # ── trailing profit lock fired today → no new entries ──
+    try:
+        from trader_dashboard import _trailing_lock_fired_today
+        if _trailing_lock_fired_today():
+            _log(f"ENTRY blocked {key} — trailing profit lock fired today (floor breached)")
+            return {"ok": False, "msg": "trailing profit lock fired today — no new entries"}
+    except Exception:
+        pass
+
     # ── REVERSAL vs duplicate (TV ka strategy.entry auto-reverse mirror karo) ──
     # TV reverse karta hai par alert sirf naya ENTRY bhejta. Pehle hum "position
     # already open" pe block kar dete the → Python purani pakde rehta, TV nayi pe.
