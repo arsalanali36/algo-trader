@@ -1214,3 +1214,51 @@ margin = qty * price * (_mult if side == "SELL" else 1.0)
 
 **Rule:** Never call Dhan REST API in a per-item loop inside a Flask route that the UI polls every few seconds. Cache or estimate instead.
 
+
+---
+
+## TRAP #41 — Trailing squareoff fires → peak resets to 0 → strategy re-enters → squareoff fires AGAIN → infinite cycle 🔴🔴🔴
+
+**Seen:** 2026-06-30. Squareoff fired 10 times in one session. Floor line visually dropped after each fire.
+
+**What happens:**
+1. `_trailing_peak_pnl` hits ₹7,246, MTM drops → squareoff fires
+2. After squareoff: `_trailing_peak_pnl = 0.0` (reset so it doesn't re-fire)
+3. Strategy (webhook/TV) has no idea squareoff happened → enters new positions
+4. New peak builds to ₹6,116 → squareoff fires again
+5. Floor drops on graph (₹4,587 → ₹2,992) because new peak is lower
+6. Repeat 10+ times, burning the day's profit
+
+**Permanent guards (in code):**
+
+Guard 1 — Block new entries after squareoff fires:
+```python
+# trader_dashboard.py — on squareoff fire:
+_flag = BASE_DIR / "data" / f"trailing_lock_fired_{date}.txt"
+_flag.write_text(f"fired at {time}, peak was ₹{_daily_peak_ever:.0f}")
+
+# webhook_executor.py — _do_entry():
+if _trailing_lock_fired_today():
+    return {"ok": False, "msg": "trailing profit lock fired today — no new entries"}
+```
+
+Guard 2 — Floor line never drops (graph):
+- Track `_daily_peak_ever` separately (only goes UP, NEVER resets)
+- History stores `v[3] = daily_peak_ever` (4th element)
+- Graph reads `v[3]` for floor line, not `v[1]` (which resets after squareoff)
+- Result: floor line is monotonically non-decreasing on the graph
+
+**Fast detect:** Floor line dropping on graph = squareoff fired + positions re-entered. Check `data/trailing_lock_fired_*.txt` exists. Check `journalctl -u algo-monitor | grep TRAILING-LOCK` — if multiple fires same day → this trap.
+
+---
+
+## TRAP #42 — `_trailing_peak_pnl` and `_daily_peak_ever` are module-level globals shared between trader_dashboard.py and monitor_daemon.py via import 🟡
+
+**Context:** `monitor_daemon.py` does `import trader_dashboard as td`. The module is imported ONCE. All globals (`td._trailing_peak_pnl`, `td._daily_peak_ever`) are shared — monitor_daemon's pos_monitor_loop modifies them, and the `/api/peak-pnl-history` route reads them. This is by design.
+
+**But:** When `algo-dashboard` (Flask) restarts, it runs its own COPY of `trader_dashboard.py` module. The `[TRAILING-LOCK] Restored peak ₹7246` log seen at 14:12 came from the DASHBOARD process, NOT from monitor_daemon. The monitor_daemon was never restarted and kept its own `_trailing_peak_pnl` running continuously.
+
+**Rule:** Don't confuse which process is printing `[TRAILING-LOCK]` logs. Check `journalctl -u algo-monitor` vs `journalctl -u algo-dashboard` separately. Squareoff is always logged by `algo-monitor` (monitor_daemon), never by `algo-dashboard`.
+
+**Fast detect:** `journalctl -u algo-dashboard | grep TRAILING` → only startup restore messages. `journalctl -u algo-monitor | grep TRAILING` → actual squareoff events.
+
