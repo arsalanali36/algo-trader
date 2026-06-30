@@ -616,6 +616,28 @@ def api_rms_summary():
     return jsonify({"strategies": rows, "totals": totals,
                     "webhook": webhook, "webhook_global": wh_global})
 
+@app.route('/api/sync-positions', methods=['POST'])
+def api_sync_positions():
+    """Force-reconcile DB open positions against actual broker positions.
+    Marks ghost positions (flat at broker, OPEN in DB) as externally_closed.
+    Use this after manually closing positions at the broker directly (TRAP #44)."""
+    from datetime import timedelta as _td2
+    import order_store as _os3
+    import broker_sync as _bsync2
+    today = (datetime.utcnow() + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    open_pos = _os3.trades_for(today).get('open', [])
+    try:
+        closed_ids = _bsync2.force_sync(open_pos, log=print)
+        return jsonify({
+            "ok": True,
+            "ghosts_cleared": len(closed_ids),
+            "msg": f"✅ {len(closed_ids)} ghost position(s) cleared" if closed_ids
+                   else "✅ No ghost positions found — all DB positions match broker"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)}), 500
+
+
 @app.route('/api/rms-reconcile')
 def api_rms_reconcile():
     """RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
@@ -3161,6 +3183,24 @@ def pos_monitor_loop():
 
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
+
+            # ── Ghost position sync (TRAP #44) ───────────────────────────────
+            # Every 2 min: reconcile DB open positions against actual broker
+            # positions. Manually-closed or reject-orphaned positions that are
+            # flat at the broker get marked externally_closed so the monitor
+            # stops watching them (and trailing lock can't accidentally open
+            # new longs on them).
+            try:
+                import broker_sync as _bsync
+                _ghost_ids = _bsync.sync_if_due(open_pos, log=print)
+                if _ghost_ids:
+                    # Re-fetch so this cycle runs on clean data
+                    data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
+                    open_pos = data.get("open", [])
+            except Exception as _bse:
+                print(f"[broker_sync] skipped (error): {_bse}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
             # Tracks ids already squared-off THIS pass (e.g. as a hedge group
             # sibling) — without this, the for-loop below would re-process a
             # sibling leg that _do_squareoff already closed earlier this pass.
@@ -3335,6 +3375,10 @@ def pos_monitor_loop():
 _ltp_miss_streak = {}
 _rms_fail_streak = {}
 _LTP_MISS_ALERT_AFTER = 6
+# After this many no-price cycles (~5 min), attempt blind emergency exit for
+# LIVE positions (smart_order fetches its own price via REST/feed — best effort).
+# Paper positions can't be exited at ₹0 (TRAP #1), so only CRITICAL log fires.
+_NO_PRICE_EMERGENCY_EXIT_AFTER = 60
 
 # sec_id -> exit_reason — a leg whose group-sibling already closed but whose
 # OWN price couldn't be fetched at that exact moment (feed+REST+stale-cache
@@ -3381,6 +3425,22 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                   f"has had NO price for {streak} consecutive cycles (~{streak*5}s) — "
                   f"SL/TP/RMS cannot be checked for this position. Feed + REST + stale "
                   f"cache all empty. Check Dhan token/rate-limit.", flush=True)
+        # TRAP #43: after 5 min of no price, LIVE positions get a blind emergency
+        # exit (smart_order fetches its own price via REST — best effort, better
+        # than holding a position with a blown SL indefinitely). Paper positions
+        # cannot record ₹0 exit (TRAP #1), so only a loud warning fires there.
+        if streak >= _NO_PRICE_EMERGENCY_EXIT_AFTER:
+            _ltp_miss_streak.pop(sec_id, None)  # reset streak — one attempt per cycle
+            if p.get("mode") == "live":
+                print(f"[pos_monitor] 🚨 NO-PRICE EMERGENCY EXIT: {p.get('sym')} — "
+                      f"{streak} cycles ({streak*5}s) with zero LTP. Attempting blind "
+                      f"exit via smart_order (will use its own REST fallback).", flush=True)
+                _do_squareoff(p, 0.0, "NO_PRICE_EMERGENCY_EXIT", sec_id, seg)
+            else:
+                print(f"[pos_monitor] 🚨 NO-PRICE {p.get('mode','paper').upper()} POSITION: "
+                      f"{p.get('sym')} — {streak} cycles with zero LTP. Cannot exit paper "
+                      f"at ₹0 (TRAP #1). MANUAL EXIT REQUIRED immediately.", flush=True)
+            _ltp_miss_streak[sec_id] = 0  # restart count so next 5 min it fires again
         return
     _ltp_miss_streak.pop(sec_id, None)
 
@@ -3517,6 +3577,31 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 print(f"[{exit_reason}] webhook claim failed: {_e}")
         print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
         exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
+
+        # ── Pre-exit broker check (TRAP #44 guard) ──────────────────────────
+        # Before placing any exit order, verify the position actually exists at
+        # the broker. If it's already flat (manually closed / earlier reject
+        # orphan), placing a closing order would open a NEW opposite position.
+        # Uses broker_sync's cached data (fresh API call only if cache stale).
+        if p.get("mode") == "live":
+            try:
+                import broker_sync as _bsync
+                _br_name = (p.get("broker") or "dhan").lower()
+                _sym_chk = p.get("sym") or ""
+                _sec_chk = str(p.get("sec_id") or "")
+                if _bsync.is_flat(_br_name, _sym_chk, _sec_chk):
+                    import order_store as _os2
+                    _os2.mark_externally_closed(p.get("id"))
+                    _closed_ids.add(p.get("id"))
+                    print(f"[{exit_reason}] PRE-EXIT CHECK: {p['sym']} already FLAT at "
+                          f"{_br_name} — marked externally_closed, skipping exit order. "
+                          f"(TRAP #44: would have opened accidental new position)", flush=True)
+                    return True
+            except Exception as _pe:
+                # Fail open — never block a real exit due to sync check error
+                print(f"[{exit_reason}] pre-exit broker check failed ({_pe}) — proceeding", flush=True)
+        # ────────────────────────────────────────────────────────────────────
+
         if p.get("mode") == "live":
             import smart_order
             from brokers import get_broker

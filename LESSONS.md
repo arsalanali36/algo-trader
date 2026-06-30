@@ -1262,3 +1262,67 @@ Guard 2 — Floor line never drops (graph):
 
 **Fast detect:** `journalctl -u algo-dashboard | grep TRAILING` → only startup restore messages. `journalctl -u algo-monitor | grep TRAILING` → actual squareoff events.
 
+---
+
+## TRAP #43 — No-price position held open indefinitely — SL, TP, Global Max Loss, and Trailing Squareoff all silently disabled 🔴
+
+**Symptom:** Position in DB. SL set to ₹5000. Feed dead for that symbol. Monitor logs "CRITICAL: NO price for 6/12/18... cycles." Position stays open for hours. SL never fires. Global max loss never fires. Trailing profit lock never fires. Manual intervention required at EOD.
+
+**Root cause:** `pos_monitor_loop`'s per-position check function returns immediately when `ltp <= 0`:
+```python
+if ltp <= 0:
+    # ... log CRITICAL every 6 cycles ...
+    return   # ← just returns. NOTHING ELSE HAPPENS.
+```
+No LTP = no SL check, no TP check, no RMS max-loss check, no trailing squareoff check — ALL monitoring is skipped. The position is effectively unmonitored.
+
+**How it compounds:** If the no-price position is losing money (SL already blown), the monitor sees `unrealized = 0` (because it uses last known LTP = 0), so the Global Max Loss calculation is UNDERSTATED. The cap looks like it hasn't been hit even when the actual loss is ₹20,000+.
+
+**Real incident (2026-06-30):** BAJFINANCE-Jun2026-990-CE. Entry 10:35. Feed dead 10:37 → 10:47+ (114+ cycles, ~570 seconds). SL ₹5000 never fired. Global Max Loss ₹10,000 never fired. At 14:28, a manual exit attempt was ALSO rejected ("Kite NFO disabled"), leaving the position permanently stuck.
+
+**Fix (trader_dashboard.py):**
+- `_NO_PRICE_EMERGENCY_EXIT_AFTER = 60` (60 cycles × ~5s = ~5 min)
+- After 60 no-price cycles: LIVE position → `_do_squareoff(..., "NO_PRICE_EMERGENCY_EXIT", ...)` — `smart_order` uses its own REST fallback for pricing (better than holding forever)
+- Paper position → log `🚨 MANUAL EXIT REQUIRED` (can't record ₹0, TRAP #1)
+- Streak resets to 0 after attempt, so it fires again every 5 min if feed stays dead
+
+**Additional bugs found in same incident:**
+- Kite NFO segment was disabled — even manual exit attempts were rejected. **Check Zerodha console > Segment Activation if any Kite order fails with "NFO is disabled".**
+- `shared_ltp_cache.get_stale()` also had no data for BAJFINANCE — suggests this symbol wasn't being polled at all, or was a wrong sec_id.
+
+**Fast detect:** `journalctl -u algo-monitor | grep "CRITICAL.*NO price"` → see how many cycles. If streak > 60 and no "EMERGENCY EXIT" line follows → old code (before fix). After fix: `"NO-PRICE EMERGENCY EXIT"` log appears at cycle 60.
+
+**Guard:** Every broker account must have FNO segment active. Verify once per account: Zerodha console > Segment Activation > NSE F&O = Active. Test with `/api/debug-test-order` before going live.
+
+---
+
+## TRAP #44 — "Feed dead" is often a ghost position — broker rejected exit, app still watching it 🔴
+
+**Symptom:** Monitor logs "CRITICAL: NO price for X cycles" for a symbol. Feels like Dhan feed went dead. But market was open and other symbols worked fine.
+
+**Root cause:** Exit order was placed at Kite/Dhan but got REJECTED (NFO disabled / already flat / manual close by user). App recorded the BUY exit leg as `status="OPEN"` (since broker confirmation never came). Now DB has:
+- SELL entry → `status=OPEN`  
+- BUY exit attempt → `status=OPEN`
+
+Both legs show as "open positions". Monitor subscribes to the symbol's feed and polls every 5s. If Dhan feed has no data for that specific contract (expired, not subscribed, wrong sec_id) → `ltp_miss_streak` grows → "CRITICAL: NO price" every 6 cycles → LOOKS like feed is broken.
+
+**Real incident (2026-06-30):** 5 symbols had ghost SELL+BUY "OPEN" pairs (HINDUNILVR, TCS, AXISBANK, BAJFINANCE, INFY). User had manually squared off at Zerodha in panic after app's exit orders were rejected due to NFO-disabled. App kept watching these "open" positions for hours. BAJFINANCE specifically had no Dhan feed data → CRITICAL every 30s → looked like feed failure.
+
+**Distinguish from real feed failure:**
+- Ghost position: `grep "CRITICAL.*NO price" log` — only 1-2 specific symbols affected, rest fine
+- Real feed failure: ALL symbols suddenly show no price simultaneously
+
+**Fix (manual — emergency):**
+```sql
+-- Run on VPS: python3 -c "..."
+UPDATE orders 
+SET status='externally_closed' 
+WHERE trad_sym='SYMBOL-HERE' AND date='YYYY-MM-DD' AND status='OPEN';
+```
+
+**Fix needed (permanent, NOT yet built):** `/api/sync-positions` route — hits Kite `kite.positions()` + Dhan `GET /v2/positions` → compares against DB open legs → auto-marks anything flat at broker as `externally_closed`. Should be a button on the P&L tab "🔄 Sync from Broker". Call this whenever you manually close something at the broker directly.
+
+**Fast detect (next time):** Check how many symbols are affected → if only 1-2 specific symbols → ghost position first, feed second. Check `SELECT trad_sym, side, status FROM orders WHERE status='OPEN' AND date='today'` — do SELL+BUY both show OPEN for the same symbol? → ghost confirmed.
+
+**Prevention:** Never close positions at broker directly without telling the app. If you must (panic), immediately go to P&L tab → find the position → 🗑 book-close it so the app marks it closed. Until `/api/sync-positions` is built, this is the manual workflow.
+

@@ -180,10 +180,17 @@ def trades_for_range(date_from, date_to, **filters):
     return _net_rows(rows)
 
 
+def mark_externally_closed(row_id):
+    """Mark a DB row as externally_closed (manually closed at broker / ghost position).
+    broker_sync.py calls this when broker shows qty=0 for a DB-OPEN position (TRAP #44)."""
+    with _lock, _conn() as c:
+        c.execute("UPDATE orders SET status='externally_closed' WHERE id=?", (row_id,))
+
+
 def _dead_filtered(rows):
-    # Rejected/cancelled/failed orders = koi real fill nahi → position hi nahi.
+    # Rejected/cancelled/failed/externally_closed orders = no real open position.
     # Inhe netting se bahar rakho (warna phantom open positions dikhte hain).
-    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired"}
+    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired", "externally_closed"}
     return [r for r in rows if str(r.get("status") or "").lower() not in _DEAD]
 
 

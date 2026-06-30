@@ -1199,7 +1199,8 @@ var int tradesToday = 0
 if ta.change(time("D")) != 0
     tradesToday := 0
 
-whSymbol = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
+whSymbol   = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
+whStrategy = input.string("Auto_Rev_Chain_😎_5", "Webhook strategy name (dashboard se match karo)", group="🔗 Webhook")
 
 if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Long", strategy.long)
@@ -1207,7 +1208,7 @@ if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     Green_Zone := false
     Red_Zone   := false
     log.info("SIGNAL LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
-    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"buy"}', alert.freq_once_per_bar_close)
+    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","strategy":"' + whStrategy + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"buy"}', alert.freq_once_per_bar_close)
 
 if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Short", strategy.short)
@@ -1215,7 +1216,7 @@ if Index_Short_Signal and inDateRange and tradesToday < maxTradesPerDay
     Green_Zone := false
     Red_Zone   := false
     log.info("SIGNAL SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " close=" + str.tostring(close,"#.##") + " line=" + lineType)
-    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"sell"}', alert.freq_once_per_bar_close)
+    alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","strategy":"' + whStrategy + '","symbol":"' + whSymbol + '","signal":"ENTRY","action":"sell"}', alert.freq_once_per_bar_close)
 
 
 // =================================================================
@@ -1287,7 +1288,7 @@ if strategy.position_size > 0 and barstate.isconfirmed
     if exitSignal
         strategy.close("Long", comment=exitReason)
         log.info("EXIT LONG " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
-        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","strategy":"' + whStrategy + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "LONG"
         atrSL_Long := na
 
@@ -1304,7 +1305,7 @@ if strategy.position_size < 0 and barstate.isconfirmed
     if exitSignal
         strategy.close("Short", comment=exitReason)
         log.info("EXIT SHORT " + str.format_time(time,"yyyy-MM-dd HH:mm","Asia/Kolkata") + " reason=" + exitReason + " close=" + str.tostring(close,"#.##"))
-        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","strategy":"' + whStrategy + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
         exitSide := "SHORT"
         atrSL_Short := na
 
@@ -1319,7 +1320,7 @@ exitTimeCondition = (hour == exitHour and minute >= exitMinute)
 
 if exitTimeCondition
     if strategy.position_size != 0
-        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
+        alert('{"id":"' + str.format_time(time,"yyyyMMddHHmm","Asia/Kolkata") + '","strategy":"' + whStrategy + '","symbol":"' + whSymbol + '","signal":"EXIT"}', alert.freq_once_per_bar_close)
     strategy.close_all(comment="3:15 Daily Exit")
 
 

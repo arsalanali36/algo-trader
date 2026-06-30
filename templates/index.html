@@ -858,7 +858,13 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
       <div style="font-size:13px;font-weight:600;color:#adbac7">⏳ Open Positions</div>
-      <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="sync-broker-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
+          onclick="syncBrokerPositions(this)"
+          title="Manually kuch close kiya Zerodha/Dhan pe? Yeh click karo — ghost positions clear hongi">🔄 Sync from Broker</button>
+        <span id="sync-broker-result" style="font-size:11px;color:#8b949e"></span>
+        <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+      </div>
     </div>
     <div id="ord-open" style="overflow-x:auto"></div>
   </div>
@@ -1899,6 +1905,27 @@ async function renderRmsSummary(){
   }
 
   el.innerHTML = html;
+}
+
+async function syncBrokerPositions(btn){
+  const result = document.getElementById('sync-broker-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Syncing…';
+  result.style.color = '#8b949e';
+  result.textContent = '';
+  try {
+    const r = await fetch('/api/sync-positions', {method:'POST'});
+    const d = await r.json();
+    result.style.color = d.ghosts_cleared > 0 ? '#f85149' : '#3fb950';
+    result.textContent = d.msg;
+    if (d.ghosts_cleared > 0) loadPnl();  // refresh P&L table
+  } catch(e) {
+    result.style.color = '#f85149';
+    result.textContent = 'Sync failed: ' + e;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔄 Sync from Broker';
+  }
 }
 
 async function runReconcile(){

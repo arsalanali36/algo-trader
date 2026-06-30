@@ -136,7 +136,12 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
     atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
     atm_idx = strikes.index(atm_strike)
 
-    target_idx = atm_idx + offset
+    # CE: higher strike = more OTM → positive offset goes right
+    # PE: lower strike = more OTM → positive offset must go left
+    if option_type == "PE":
+        target_idx = atm_idx - offset
+    else:
+        target_idx = atm_idx + offset
     target_idx = max(0, min(len(strikes) - 1, target_idx))
     target_strike = strikes[target_idx]
 

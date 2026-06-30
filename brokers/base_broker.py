@@ -67,3 +67,11 @@ class BaseBroker(ABC):
         fill_price: actual average fill price float, or None.
         Default: (None, None) — callers treat as "could not confirm"."""
         return None, None
+
+    def positions(self) -> dict:
+        """Return current net positions as a dict.
+        Kite: {kite_tradingsymbol: net_qty}  (net_qty 0 = flat, <0 = short)
+        Dhan: {sec_id_str: net_qty}
+        Default: {} — broker that doesn't implement this degrades gracefully
+        (broker_sync will skip reconciliation for that broker)."""
+        return {}

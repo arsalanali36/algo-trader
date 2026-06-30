@@ -431,6 +431,26 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] get_fill({order_id}) failed: {e}")
         return None, None
 
+    def positions(self) -> dict:
+        """Return {kite_tradingsymbol: net_qty} for all today's net positions.
+        net_qty == 0 means flat (position was opened+closed today).
+        Called by broker_sync.py every 2 min to detect ghost positions (TRAP #44)."""
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            data = kite.positions()
+            result = {}
+            for p in (data.get("net") or []):
+                sym = p.get("tradingsymbol", "")
+                qty = int(p.get("net_quantity", 0) or 0)
+                if sym:
+                    result[sym] = qty
+            return result
+        except Exception as e:
+            log.warning(f"[KITE] positions() failed: {e}")
+            return {}
+
     def funds(self) -> dict:
         import kite_rate_limiter as _krl
         try:

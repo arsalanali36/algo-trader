@@ -301,6 +301,31 @@ def check_strategy(sid, cfg, headers, spot_cache, args):
         rows.append((f"data:{sym}", "OK", f"LTP={tgt['price']}"))
         if tgt["is_opt"]:
             rows.append((f"contract:{sym}", "OK", f"{tgt['trad_sym']} (qty={tgt['qty']})"))
+            # ── TRAP #32 guard: PE offset must go to LOWER strike than ATM ──
+            try:
+                import dhan_master as _dm
+                _spot = tgt["price"]
+                _atm  = round(_spot / 50) * 50
+                _off  = int(sc.get("strike_offset", 0) or 0)
+                if _off > 0:
+                    _, ce_sym, _ = _dm.get_option_contract(sym, _spot, "CE", _off)
+                    _, pe_sym, _ = _dm.get_option_contract(sym, _spot, "PE", _off)
+                    if ce_sym and pe_sym:
+                        ce_strike = float(ce_sym.split("-")[2])
+                        pe_strike = float(pe_sym.split("-")[2])
+                        if pe_strike >= _atm:
+                            rows.append(("offset-dir", "FAIL",
+                                f"TRAP#32: PE strike {pe_strike} >= ATM {_atm} — offset direction GALAT! dhan_master.py check karo"))
+                            red = True
+                        elif ce_strike <= _atm:
+                            rows.append(("offset-dir", "FAIL",
+                                f"TRAP#32: CE strike {ce_strike} <= ATM {_atm} — offset direction GALAT! dhan_master.py check karo"))
+                            red = True
+                        else:
+                            rows.append(("offset-dir", "OK",
+                                f"CE={ce_strike} > ATM={_atm} > PE={pe_strike} ✓"))
+            except Exception as _e:
+                rows.append(("offset-dir", "WARN", f"direction check skip: {_e}"))
     return rows, red
 
 

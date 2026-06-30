@@ -208,6 +208,26 @@ class DhanBroker(BaseBroker):
             pass
         return None, None
 
+    def positions(self) -> dict:
+        """Return {sec_id_str: net_qty} for all today's Dhan positions.
+        net_qty == 0 means flat. Called by broker_sync.py (TRAP #44 ghost detection)."""
+        try:
+            _rl.acquire("account")
+            r = requests.get("https://api.dhan.co/v2/positions",
+                             headers=self._hdrs(), timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            result = {}
+            items = data if isinstance(data, list) else (data.get("data") or [])
+            for p in items:
+                sec_id = str(p.get("securityId") or p.get("security_id") or "")
+                qty = int(p.get("netQty") or p.get("net_qty") or 0)
+                if sec_id:
+                    result[sec_id] = qty
+            return result
+        except Exception:
+            return {}
+
     def funds(self) -> dict:
         try:
             _rl.acquire("account")
