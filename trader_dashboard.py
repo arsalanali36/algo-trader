@@ -1698,22 +1698,167 @@ def api_manual_order():
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
 
+@app.route('/api/counterfactual')
+def api_counterfactual():
+    """Alternate history: what would have happened if user hadn't intervened manually.
+    ?date=YYYY-MM-DD (defaults to today)"""
+    from datetime import timedelta as _td
+    _ist = datetime.utcnow() + _td(hours=5, minutes=30)
+    date = request.args.get("date") or _ist.strftime("%Y-%m-%d")
+    try:
+        import counterfactual as cf
+        result = cf.analyze(date)
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
-    """Returns today's peak P&L history + lock config for the Stats tab MTM graph."""
+    """Returns P&L history for any date. Accepts ?date=YYYY-MM-DD (defaults to today).
+    Strategy: daemon file PRIMARY (captures unrealized peaks every minute) with 09:15
+    anchor prepended if daemon started late. order_store used only for entry markers
+    and as full fallback when daemon file has no data for that date.
+    Response: {data: [[time, cum_pnl, trail_peak, peak_ever], ...],
+               entries: [[entry_time, cum_pnl_at_entry, sym], ...],
+               profit_target_rs, lock_pct, lock_rs}"""
+    from datetime import timedelta as _td
+    _ist_now = datetime.utcnow() + _td(hours=5, minutes=30)
+    req_date = request.args.get("date") or _ist_now.strftime("%Y-%m-%d")
+    is_today = (req_date == _ist_now.strftime("%Y-%m-%d"))
+
     try:
         import risk_gate as _rg
         gcfg = (_rg._risk_cfg().get("global") or {})
-        lock_rs  = gcfg.get("trailing_profit_lock_rs")
-        lock_pct = gcfg.get("trailing_profit_lock_pct")
+        lock_rs          = gcfg.get("trailing_profit_lock_rs")
+        lock_pct         = gcfg.get("trailing_profit_lock_pct")
+        profit_target_rs = gcfg.get("profit_target_rs")
     except Exception:
-        lock_rs = lock_pct = None
+        lock_rs = lock_pct = profit_target_rs = None
+
+    def _to_min(hm):
+        try:
+            h, m = hm.split(":")
+            return int(h) * 60 + int(m)
+        except Exception:
+            return 0
+
+    # ── Build entry markers from order_store (independent of P&L source) ──
+    entries = []
     try:
-        f = BASE_DIR / "data" / "peak_pnl_history.json"
-        data = json.loads(f.read_text()) if f.exists() else []
+        import order_store as _os
+        details = (_os.trades_for(req_date).get("details") or [])
+        completed = [d for d in details if d.get("exit_time") and d.get("pnl") is not None]
+        completed.sort(key=lambda d: d["exit_time"])
+
+        if completed:
+            # Build cumulative P&L timeline to place entry markers at correct Y
+            _cum = 0.0
+            _exits = {d["exit_time"]: d for d in completed}
+            _entry_events = sorted(
+                {(d["entry_time"], d["sym"]) for d in completed if d.get("entry_time")},
+                key=lambda x: x[0])
+            # We'll place entry markers at the cum P&L value just BEFORE the exit
+            # that follows them; simpler: track cum at each entry using sorted exits
+            _eidx = 0
+            _cum2 = 0.0
+            for d in completed:
+                while _eidx < len(_entry_events) and _entry_events[_eidx][0] <= d["exit_time"]:
+                    et, esym = _entry_events[_eidx]
+                    entries.append([et, round(_cum2, 2), esym])
+                    _eidx += 1
+                _cum2 += float(d["pnl"] or 0)
+            while _eidx < len(_entry_events):
+                et, esym = _entry_events[_eidx]
+                entries.append([et, round(_cum2, 2), esym])
+                _eidx += 1
     except Exception:
-        data = []
-    return jsonify({"data": data, "lock_pct": lock_pct, "lock_rs": lock_rs})
+        pass
+
+    # ── PRIMARY: per-date daemon file (captures unrealized peaks every minute) ──
+    # Each entry: [time_str, cum_pnl, trail_peak, peak_ever]
+    # Daemon writes to peak_pnl_history.json for today; past dates stored in
+    # peak_pnl_history_YYYY-MM-DD.json (if archiving enabled) — try both.
+    daemon_pts = []
+    try:
+        candidates = []
+        if is_today:
+            candidates.append(BASE_DIR / "data" / "peak_pnl_history.json")
+        candidates.append(BASE_DIR / "data" / f"peak_pnl_history_{req_date}.json")
+        for f in candidates:
+            if f.exists():
+                raw = json.loads(f.read_text())
+                if raw:
+                    daemon_pts = raw
+                    break
+    except Exception:
+        pass
+
+    if daemon_pts:
+        # Daemon format: [time, trail_peak, total_mtm, peak_ever]
+        # Normalize to: [time, total_mtm, trail_peak, peak_ever]
+        def _norm(p):
+            if len(p) >= 4:
+                return [p[0], p[2], p[1], p[3]]
+            elif len(p) == 3:
+                return [p[0], p[2], p[1], p[1]]
+            return p
+
+        # Clip to market hours only (09:15–15:30) — daemon may run after hours
+        MARKET_OPEN  = _to_min("09:15")
+        MARKET_CLOSE = _to_min("15:30")
+        mkt_pts = [_norm(p) for p in daemon_pts if MARKET_OPEN <= _to_min(p[0]) <= MARKET_CLOSE]
+
+        if mkt_pts:
+            pts = mkt_pts
+            # Prepend 09:15 anchor only if daemon started DURING market hours (not long after open)
+            # If daemon started within 30 min of open, anchor at 09:15; otherwise skip anchor
+            # (avoids fake flat-line when daemon started mid-day or later)
+            first_min = _to_min(pts[0][0])
+            if first_min > MARKET_OPEN and first_min <= MARKET_OPEN + 30:
+                pts = [["09:15", 0.0, 0.0, 0.0]] + pts
+            elif first_min == MARKET_OPEN:
+                pass  # already starts at open
+            # else: daemon started mid-day — don't anchor at 09:15, show from where data begins
+
+            # Extend to 15:30 for past dates / closed market
+            now_hm = _ist_now.strftime("%H:%M")
+            end_hm = "15:30" if (not is_today or now_hm >= "15:30") else now_hm
+            if pts[-1][0] < end_hm:
+                last = pts[-1]
+                pts = pts + [[end_hm, last[1], last[2], last[3]]]
+            return jsonify({"data": pts, "entries": entries,
+                            "lock_pct": lock_pct, "lock_rs": lock_rs,
+                            "profit_target_rs": profit_target_rs})
+        # Daemon file existed but had no market-hours data → fall through to order_store
+
+    # ── FALLBACK: reconstruct from order_store exits (no unrealized peaks) ──
+    try:
+        import order_store as _os
+        details = (_os.trades_for(req_date).get("details") or [])
+        completed = [d for d in details if d.get("exit_time") and d.get("pnl") is not None]
+        completed.sort(key=lambda d: d["exit_time"])
+
+        if completed:
+            pts = [["09:15", 0.0, 0.0, 0.0]]
+            cum = trail_peak = peak_ever = 0.0
+            for d in completed:
+                cum += float(d["pnl"] or 0)
+                trail_peak = max(trail_peak, cum)
+                peak_ever  = max(peak_ever, cum)
+                pts.append([d["exit_time"], round(cum, 2), round(trail_peak, 2), round(peak_ever, 2)])
+            now_hm = _ist_now.strftime("%H:%M")
+            end_hm = "15:30" if (not is_today or now_hm >= "15:30") else now_hm
+            if pts[-1][0] < end_hm:
+                pts.append([end_hm, round(cum, 2), round(trail_peak, 2), round(peak_ever, 2)])
+            return jsonify({"data": pts, "entries": entries,
+                            "lock_pct": lock_pct, "lock_rs": lock_rs,
+                            "profit_target_rs": profit_target_rs})
+    except Exception:
+        pass
+
+    return jsonify({"data": [], "entries": [], "lock_pct": lock_pct,
+                    "lock_rs": lock_rs, "profit_target_rs": profit_target_rs})
 
 
 @app.route('/api/close-position', methods=['POST'])
@@ -1826,7 +1971,8 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
                 order_store.record(close_side, qty_shares, option_ltp, source=src_in, strategy=strat_in,
                     mode=m, broker='dhan', symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
                     sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
-                    correlation_id=f'CLOSE_{t_sym}_{ts}', status=status_)
+                    correlation_id=f'CLOSE_{t_sym}_{ts}', status=status_,
+                    tags=['MANUAL_CLOSE'])
             except Exception:
                 pass
 
@@ -3261,6 +3407,26 @@ def pos_monitor_loop():
                     _phf.write_text(json.dumps(_peak_pnl_history))
                 except Exception:
                     pass
+                # Archive previous day's file at midnight rollover
+                try:
+                    _today_str = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+                    _arch_f = BASE_DIR / "data" / f"peak_pnl_history_{_today_str}.json"
+                    # If archive for today doesn't exist yet and current file has data
+                    # from a PREVIOUS date, archive it first then reset
+                    if not _arch_f.exists() and _peak_pnl_history:
+                        _first_hm = _peak_pnl_history[0][0]  # "HH:MM"
+                        # Check mtime of peak_pnl_history.json — if written on a previous date, archive it
+                        import os as _os_mod
+                        _mdate = _dt_mod.datetime.fromtimestamp(_phf.stat().st_mtime).strftime("%Y-%m-%d") if _phf.exists() else _today_str
+                        if _mdate < _today_str:
+                            # Archive the previous day's data
+                            _prev_arch = BASE_DIR / "data" / f"peak_pnl_history_{_mdate}.json"
+                            _prev_arch.write_text(json.dumps(_peak_pnl_history))
+                            # Reset for new day
+                            _peak_pnl_history.clear()
+                            _trailing_peak_pnl = 0.0
+                except Exception:
+                    pass
 
                 if _either_set:
                     # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
@@ -3772,6 +3938,13 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         if _breached:
             _do_squareoff(p, ltp, f"RMS_MAXLOSS:{_why}", sec_id, seg)
             return
+        # ── Daily profit target hit → squareoff + block further entries ──
+        _pt_hit, _pt_why = risk_gate.daily_profit_target_hit(
+            p.get("strategy") or "", unrealized=_unrl)
+        if _pt_hit:
+            _do_squareoff(p, ltp, f"RMS_PROFIT_TARGET:{_pt_why}", sec_id, seg)
+            return
+        _rms_fail_streak.pop(sec_id, None)
     except Exception as _e:
         streak = _rms_fail_streak.get(sec_id, 0) + 1
         _rms_fail_streak[sec_id] = streak

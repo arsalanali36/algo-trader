@@ -809,7 +809,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <span style="font-size:11px;color:#6e7681">Date</span>
-    <input type="date" id="ord-date" onchange="ordersRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
+    <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph(); loadCounterfactual();" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
     <span style="font-size:11px;color:#6e7681;margin-left:4px">Source</span>
     <span id="ord-src" class="ord-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
       <span data-v="" class="on" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer">All</span>
@@ -845,6 +845,60 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     <div style="flex:1;padding:12px 18px;background:#0d1117">
       <div style="font-size:10px;color:#8b949e;margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px">NET Today</div>
       <div id="net-total" style="font-weight:700;font-size:18px;color:#e6edf3">—</div>
+    </div>
+  </div>
+
+  <!-- Today's Peak P&L Graph — moved from Calendar tab -->
+  <div class="card" style="margin-bottom:12px; padding:14px 18px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L</h3>
+      <button onclick="loadPeakGraph()" style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻ Refresh</button>
+    </div>
+    <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+      <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
+      <span>— <span style="color:#3fb950">MTM P&amp;L</span></span>
+      <span>- - <span style="color:#f0883e">Trailing floor</span></span>
+      <span>- - <span style="color:#3fb950">🎯 Target</span></span>
+      <span>▲ <span style="color:#58a6ff">Entry</span></span>
+    </div>
+  </div>
+
+  <!-- ── Counterfactual / Alternate History ── -->
+  <div class="card" style="margin-bottom:12px;padding:14px 18px;" id="cf-card">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+      <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🔄 Alternate History <span style="font-size:11px;color:#8b949e;font-weight:400">— agar manual trades na hote?</span></h3>
+      <button onclick="loadCounterfactual()" style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻ Refresh</button>
+    </div>
+    <!-- Summary pills -->
+    <div id="cf-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
+    <!-- Dual-line graph -->
+    <div id="cf-graph" style="width:100%;height:180px;overflow:hidden;margin-bottom:6px">
+      <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+    </div>
+    <div style="display:flex;gap:16px;margin-bottom:10px;font-size:10px;color:#8b949e">
+      <span>— <span style="color:#3fb950">Actual P&amp;L</span> (sab trades)</span>
+      <span>— <span style="color:#58a6ff">Algo-only P&amp;L</span> (sirf strategy/webhook)</span>
+      <span>▲ <span style="color:#3fb950">Algo entry</span></span>
+      <span>▼ <span style="color:#f85149">Panic entry</span></span>
+    </div>
+    <!-- Trade comparison table -->
+    <div id="cf-table-wrap" style="overflow-x:auto">
+      <table id="cf-table" style="width:100%;border-collapse:collapse;font-size:11px;display:none">
+        <thead>
+          <tr style="color:#8b949e;border-bottom:1px solid #30363d">
+            <th style="text-align:left;padding:4px 8px">Type</th>
+            <th style="text-align:left;padding:4px 8px">Symbol</th>
+            <th style="padding:4px 8px">Entry</th>
+            <th style="padding:4px 8px">Exit</th>
+            <th style="padding:4px 8px">Side</th>
+            <th style="padding:4px 8px">P&amp;L</th>
+            <th style="padding:4px 8px;color:#8b949e">Note</th>
+          </tr>
+        </thead>
+        <tbody id="cf-tbody"></tbody>
+      </table>
     </div>
   </div>
 
@@ -991,20 +1045,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
     </div>
   </div>
 
-  <!-- Today's Peak P&L Graph -->
-  <div class="card" style="margin-top:16px; padding:16px 18px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L (Live)</h3>
-      <button onclick="loadPeakGraph()" style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻ Refresh</button>
-    </div>
-    <div id="peak-pnl-graph" style="position:relative;width:100%;height:180px;">
-      <div style="color:#8b949e;font-size:12px;padding:20px">Refresh karein ya market hours mein auto-load hoga...</div>
-    </div>
-    <div style="display:flex;gap:20px;margin-top:8px;font-size:11px;color:#8b949e">
-      <span>— <span style="color:#3fb950">MTM P&amp;L (realized + unrealized)</span></span>
-      <span>- - <span style="color:#f0883e">Trailing lock floor (squareoff trigger)</span></span>
-    </div>
-  </div>
 
   <!-- Day Totals Card -->
   <div class="card" style="margin-top:16px; padding:16px 18px;">
@@ -1159,6 +1199,23 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         strategies (uska jo broker — Dhan ya Zerodha — woh trade kar rahi hai): % cap ab us broker ke
         REAL Total Margin (cash+collateral) ka % hota hai, ₹ cap ko replace karke — har baar fresh
         balance se calculate hota hai, kabhi stale nahi.
+      </div>
+    </div>
+
+    <div style="border:1px solid #1f6feb55;border-radius:8px;padding:14px;background:#1f6feb08">
+      <div style="font-size:13px;font-weight:600;color:#3fb950;margin-bottom:4px">🎯 Daily Profit Target</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        Jab <b style="color:#3fb950">aaj ka combined realized P&amp;L</b> is target ko cross kare →
+        <b style="color:#e6edf3">saari open positions immediately square-off</b> + us din ke liye
+        <b style="color:#e6edf3">koi bhi nayi entry nahi</b>. Blank = off.
+      </div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <label style="font-size:12px;color:#adbac7">Global Profit Target ₹</label>
+        <input id="risk-global-profit-target" type="number" step="1" placeholder="e.g. 5000 (blank = off)"
+               style="width:180px;background:#0d1117;color:#3fb950;padding:6px;border:1px solid #1f6feb55;border-radius:4px;font-weight:600"/>
+      </div>
+      <div style="font-size:11px;color:#6e7681;margin-top:6px">
+        Max-loss ki tarah hi kaam karta hai — par profit cross hone pe trigger hota hai. Dono independent hain.
       </div>
     </div>
 
@@ -1673,8 +1730,8 @@ function switchTab(id) {
   localStorage.setItem('activeMainTab', id);
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
-  if (id === 'orders') { ordersEnter(); }
-  if (id === 'calendar') { calendarRender(); loadPeakGraph(); }
+  if (id === 'orders') { ordersEnter(); loadPeakGraph(); loadCounterfactual(); }
+  if (id === 'calendar') { calendarRender(); }
   if (id === 'risk') { renderRiskTab(); }
 }
 
@@ -1767,6 +1824,7 @@ async function renderRmsSummary(){
   const liveStrats = rows.filter(s => s.run_mode === 'live');
   const totalPaperEst = liveStrats.reduce((a,s) => a+(s.capital_used||0), 0);
   const brokerUsed = (d.totals||{}).broker_used_margin;
+  const brokerTotal = (d.totals||{}).broker_total;  // hoisted — was inside forEach (TDZ bug)
 
   rows.forEach(s => {
     // Capital to display: live → actual broker margin (proportional share), paper → estimate
@@ -1817,9 +1875,6 @@ async function renderRmsSummary(){
           + `<button class="btn btn-blue" style="padding:3px 7px;font-size:11px;margin-left:4px;line-height:1;" onclick="riskToggleWebhook('${s.strategy}','live')">Live</button></div>`;
       }
     }
-
-    // Capital Cap cell: live → broker_total (cash+collateral), paper → config cap
-    const brokerTotal = (d.totals||{}).broker_total;
 
     const capLabelHtml = capLabel === 'live'
       ? ' <span style="color:#58a6ff;font-size:10px">live</span>'
@@ -2013,7 +2068,8 @@ async function renderRateLimitEvents(){
   }
 }
 setInterval(() => { if (activeTab === 'risk') renderRateLimitEvents(); }, 5000);
-setInterval(() => { if (activeTab === 'calendar') { calendarRender(); loadPeakGraph(); } }, 60000);
+setInterval(() => { if (activeTab === 'calendar') { calendarRender(); } }, 60000);
+setInterval(() => { if (activeTab === 'orders') { loadPeakGraph(); } }, 60000);
 
 async function saveDefaultBroker(){
   const broker = document.getElementById('default-broker-select').value;
@@ -2044,6 +2100,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
   document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
+  document.getElementById('risk-global-profit-target').value = RISK_CFG.global.profit_target_rs ?? '';
   document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
   document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
@@ -2106,17 +2163,22 @@ async function renderRiskTab(){
 async function loadPeakGraph() {
   const container = document.getElementById('peak-pnl-graph');
   if (!container) return;
+  // Pass selected date so graph works for any day, not just today
+  const selDate = (document.getElementById('ord-date') || {}).value || '';
   let resp = {};
   try {
-    const r = await fetch('/api/peak-pnl-history');
+    const url = '/api/peak-pnl-history' + (selDate ? '?date=' + selDate : '');
+    const r = await fetch(url);
     resp = await r.json();
   } catch(e) {
     container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
     return;
   }
-  const pts      = resp.data || [];
-  const lockPct  = resp.lock_pct ? parseFloat(resp.lock_pct) : null;
-  const lockRs   = resp.lock_rs  ? parseFloat(resp.lock_rs)  : null;
+  const pts           = resp.data || [];
+  const entries       = resp.entries || [];      // [{time, cum_pnl, sym}]
+  const lockPct       = resp.lock_pct ? parseFloat(resp.lock_pct) : null;
+  const lockRs        = resp.lock_rs  ? parseFloat(resp.lock_rs)  : null;
+  const profitTarget  = resp.profit_target_rs ? parseFloat(resp.profit_target_rs) : null;
 
   if (!pts || pts.length < 2) {
     container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Data nahi hai abhi — market hours mein position open hone ke baad graph aayega.</div>';
@@ -2127,33 +2189,43 @@ async function loadPeakGraph() {
   const PAD = { t: 14, r: 100, b: 28, l: 60 };
   const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
 
-  // MTM = total P&L line (pts[i][2])
-  // Floor line = daily_peak_ever * (1 - lockPct/100) — uses v[3] (monotonic max, never drops)
-  // Falls back to running max of v[1] for older history entries that lack v[3]
-  // Smooth MTM line with 5-point moving average — removes jitter, preserves trend
-  const rawTotals = pts.map(p => p[2]);
+  // MTM line (pts[i][1] = cum_pnl), floor from pts[i][3] (monotonic peak)
+  const rawTotals = pts.map(p => p[1]);
   const totals = rawTotals.map((v, i, arr) => {
     const w = 5, half = Math.floor(w/2);
     const sl = arr.slice(Math.max(0, i-half), Math.min(arr.length, i+half+1));
     return sl.reduce((a,b) => a+b, 0) / sl.length;
   });
-  const peaks  = pts.map(p => p[1]);
-  // Build monotonic daily max from v[3] if present, else running max of v[1]
   let _runMax = 0;
   const dailyPeakEver = pts.map(p => {
     const v3 = p.length > 3 ? p[3] : p[1];
     _runMax = Math.max(_runMax, v3);
     return _runMax;
   });
-  const floors = pts.map((p, i) => {
-    const pk = dailyPeakEver[i];   // monotonic — never drops
-    if (pk <= 0) return null;  // floor only meaningful when in profit
+  const floors = pts.map((_, i) => {
+    const pk = dailyPeakEver[i];
+    if (pk <= 0) return null;
     if (lockPct) return pk * (1 - lockPct / 100);
     if (lockRs)  return pk - lockRs;
     return null;
   });
 
+  // Time → x-position mapping using pts time strings
+  const timeToX = (hm) => {
+    // Find nearest index by lexicographic time comparison
+    let best = 0, bestDiff = Infinity;
+    pts.forEach((p, i) => {
+      const diff = Math.abs(hm.localeCompare(p[0]));
+      // Use numeric difference via minutes
+      const toMin = t => { const [h,m] = t.split(':').map(Number); return h*60+m; };
+      const d = Math.abs(toMin(hm) - toMin(p[0]));
+      if (d < bestDiff) { bestDiff = d; best = i; }
+    });
+    return PAD.l + (best / (pts.length - 1)) * gW;
+  };
+
   const allVals = [...totals, ...floors.filter(f => f !== null)];
+  if (profitTarget) allVals.push(profitTarget);
   const minV = Math.min(...allVals, 0);
   const maxV = Math.max(...allVals, 0);
   const range = maxV - minV || 1;
@@ -2161,10 +2233,8 @@ async function loadPeakGraph() {
   const px = (i) => PAD.l + (i / (pts.length - 1)) * gW;
   const py = (v) => PAD.t + gH - ((v - minV) / range) * gH;
 
-  // MTM curve — green when above 0, red when below
   const mtmPath = totals.map((v, i) => `${i===0?'M':'L'}${px(i).toFixed(1)},${py(v).toFixed(1)}`).join(' ');
 
-  // Floor (trailing lock threshold) — dashed orange, only where peak > 0
   let floorPath = '';
   let inSeg = false;
   floors.forEach((f, i) => {
@@ -2173,13 +2243,38 @@ async function loadPeakGraph() {
     inSeg = true;
   });
 
-  // Zero line
+  // 🎯 Daily Profit Target — dashed green horizontal line
+  let targetLine = '';
+  if (profitTarget && profitTarget > 0) {
+    const ty = py(profitTarget);
+    if (ty >= PAD.t && ty <= PAD.t + gH) {
+      targetLine = `
+    <line x1="${PAD.l}" y1="${ty.toFixed(1)}" x2="${W-PAD.r}" y2="${ty.toFixed(1)}"
+          stroke="#3fb950" stroke-width="1.5" stroke-dasharray="8,4" opacity="0.85"/>
+    <text x="${(W-PAD.r+4).toFixed(1)}" y="${(ty-3).toFixed(1)}" font-size="10" fill="#3fb950">🎯 ₹${Math.round(profitTarget).toLocaleString('en-IN')}</text>`;
+    }
+  }
+
+  // ▲ Entry markers — small green triangle at each entry_time on the P&L curve
+  let entryMarkers = '';
+  entries.forEach(([etime, cumAtEntry, sym]) => {
+    const ex = timeToX(etime);
+    const ey = py(cumAtEntry);
+    if (ey < PAD.t || ey > PAD.t + gH) return;
+    // Upward triangle pointing at the curve
+    const tw = 6;
+    entryMarkers += `
+    <polygon points="${ex},${(ey+1).toFixed(1)} ${(ex-tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)} ${(ex+tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)}"
+             fill="#58a6ff" stroke="none" opacity="0.9">
+      <title>${etime} ENTRY${sym ? ': '+sym : ''} (P&amp;L then: ₹${Math.round(cumAtEntry).toLocaleString('en-IN')})</title>
+    </polygon>`;
+  });
+
   const z0 = py(0);
   const zeroLine = (z0 >= PAD.t && z0 <= PAD.t + gH)
     ? `<line x1="${PAD.l}" y1="${z0.toFixed(1)}" x2="${W-PAD.r}" y2="${z0.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>`
     : '';
 
-  // Y-axis labels
   let yLabels = '';
   for (let s = 0; s <= 4; s++) {
     const v = minV + (range * s / 4);
@@ -2189,23 +2284,19 @@ async function loadPeakGraph() {
     yLabels += `<text x="${PAD.l-5}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${col}">${Math.round(v).toLocaleString('en-IN')}</text>`;
   }
 
-  // X-axis time labels
   let xLabels = '';
   const step = Math.max(1, Math.floor(pts.length / 6));
   for (let i = 0; i < pts.length; i += step) {
     xLabels += `<text x="${px(i).toFixed(1)}" y="${H-6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
   }
 
-  // Right-side labels for last values
   const last    = pts[pts.length - 1];
-  const lastMtm = last[2];
-  const lastPk  = dailyPeakEver[dailyPeakEver.length - 1];  // daily max (never drops)
+  const lastMtm = last[1];
+  const lastPk  = dailyPeakEver[dailyPeakEver.length - 1];
   const lastFlr = floors[floors.length - 1];
   const mtmCol  = lastMtm >= 0 ? '#3fb950' : '#f85149';
   const drawDown = lastPk > 0 ? lastPk - lastMtm : 0;
-  const lockLabel = lockPct
-    ? `${lockPct}% floor`
-    : lockRs ? `₹${lockRs} floor` : 'floor';
+  const lockLabel = lockPct ? `${lockPct}% floor` : lockRs ? `₹${lockRs} floor` : 'floor';
 
   let rightLabels = `
     <circle cx="${(W-PAD.r+4).toFixed(1)}" cy="${py(lastMtm).toFixed(1)}" r="3" fill="${mtmCol}"/>
@@ -2215,18 +2306,192 @@ async function loadPeakGraph() {
     <circle cx="${(W-PAD.r+4).toFixed(1)}" cy="${py(lastFlr).toFixed(1)}" r="3" fill="#f0883e"/>
     <text x="${(W-PAD.r+8).toFixed(1)}" y="${(py(lastFlr)+4).toFixed(1)}" font-size="10" fill="#f0883e">${lockLabel} ₹${Math.round(lastFlr).toLocaleString('en-IN')}</text>`;
   }
-  // Drawdown badge
+
   const ddBadge = lastPk > 0
-    ? `<text x="${(W/2).toFixed(1)}" y="${PAD.t-2}" text-anchor="middle" font-size="10" fill="#8b949e">Peak ₹${Math.round(lastPk).toLocaleString('en-IN')}  |  Drawdown ₹${Math.round(drawDown).toLocaleString('en-IN')}</text>`
+    ? `<text x="${(W/2).toFixed(1)}" y="${PAD.t-2}" text-anchor="middle" font-size="10" fill="#8b949e">Peak ₹${Math.round(lastPk).toLocaleString('en-IN')}  |  DD ₹${Math.round(drawDown).toLocaleString('en-IN')}${entries.length ? '  |  ' + entries.length + ' entries' : ''}</text>`
     : '';
 
   container.innerHTML = `
   <svg width="${W}" height="${H}" style="overflow:visible;display:block">
     ${yLabels}${zeroLine}${xLabels}${ddBadge}
+    ${targetLine}
     <path d="${mtmPath}" fill="none" stroke="${mtmCol}" stroke-width="2.5"/>
     ${floorPath ? `<path d="${floorPath}" fill="none" stroke="#f0883e" stroke-width="1.5" stroke-dasharray="6,4"/>` : ''}
+    ${entryMarkers}
     ${rightLabels}
   </svg>`;
+}
+
+// ── Counterfactual / Alternate History ──────────────────────────────────────
+async function loadCounterfactual() {
+  const summEl  = document.getElementById('cf-summary');
+  const graphEl = document.getElementById('cf-graph');
+  const tableEl = document.getElementById('cf-table');
+  const tbodyEl = document.getElementById('cf-tbody');
+  if (!graphEl) return;
+
+  const selDate = (document.getElementById('ord-date') || {}).value || '';
+  let cf = {};
+  try {
+    const r = await fetch('/api/counterfactual' + (selDate ? '?date=' + selDate : ''));
+    cf = await r.json();
+  } catch(e) {
+    graphEl.innerHTML = '<div style="color:#f85149;font-size:12px;padding:12px">Load failed</div>';
+    return;
+  }
+  if (cf.error) {
+    graphEl.innerHTML = `<div style="color:#f85149;font-size:12px;padding:12px">${cf.error}</div>`;
+    return;
+  }
+
+  const s        = cf.summary || {};
+  const actualPts= cf.actual_timeline || [];
+  const algoPts  = cf.algo_timeline   || [];
+  const aEntries = cf.algo_entries    || [];
+  const pTrades  = cf.panic_trades    || [];
+
+  // ── Summary pills ──────────────────────────────────────────────────────────
+  const fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
+  const col = (v) => v >= 0 ? '#3fb950' : '#f85149';
+  const cost = s.intervention_cost || 0;  // algo_pnl - actual_pnl; positive = algo was better
+
+  summEl.innerHTML = `
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 12px;text-align:center">
+      <div style="font-size:10px;color:#8b949e">Actual P&L</div>
+      <div style="font-size:15px;font-weight:700;color:${col(s.actual_pnl)}">${fmt(s.actual_pnl)}</div>
+      <div style="font-size:10px;color:#8b949e">${(s.panic_count||0)+(s.algo_count||0)} trades</div>
+    </div>
+    <div style="display:flex;align-items:center;font-size:18px;color:#8b949e">→</div>
+    <div style="background:#161b22;border:1px solid #1f6feb;border-radius:6px;padding:6px 12px;text-align:center">
+      <div style="font-size:10px;color:#8b949e">Algo-only P&L</div>
+      <div style="font-size:15px;font-weight:700;color:${col(s.algo_pnl)}">${fmt(s.algo_pnl)}</div>
+      <div style="font-size:10px;color:#8b949e">${s.algo_count||0} strategy trades</div>
+    </div>
+    <div style="background:#161b22;border:1px solid ${cost>0?'#238636':'#6e2c2c'};border-radius:6px;padding:6px 12px;text-align:center;min-width:110px">
+      <div style="font-size:10px;color:#8b949e">Manual cost</div>
+      <div style="font-size:15px;font-weight:700;color:${cost>0?'#f85149':col(cost)}">${cost>0?'-':''}₹${Math.abs(Math.round(cost)).toLocaleString('en-IN')}</div>
+      <div style="font-size:10px;color:#8b949e">${s.panic_count||0} panic trades</div>
+    </div>
+    ${s.panic_count === 0 ? '<div style="font-size:11px;color:#3fb950;padding:6px 10px;align-self:center">✅ No manual intervention today!</div>' : ''}
+    ${s.v2_available ? '<div style="font-size:10px;color:#d29922;padding:4px 8px;align-self:center;background:#161b22;border:1px solid #d29922;border-radius:4px">⚠️ MANUAL_CLOSE tagged — v2 sim available</div>' : ''}
+  `;
+
+  // ── Dual-line SVG graph ────────────────────────────────────────────────────
+  const W = graphEl.clientWidth || 700, H = 180;
+  const PAD = { t: 14, r: 90, b: 26, l: 60 };
+  const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+
+  if (actualPts.length < 2 && algoPts.length < 2) {
+    graphEl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:16px">Is date pe koi trades nahi milе.</div>';
+    return;
+  }
+
+  const allCum = [...actualPts.map(p=>p[1]), ...algoPts.map(p=>p[1]), 0];
+  const minV = Math.min(...allCum), maxV = Math.max(...allCum);
+  const range = maxV - minV || 1;
+
+  // Use actual_timeline as x-axis reference (more points)
+  const refPts = actualPts.length >= algoPts.length ? actualPts : algoPts;
+
+  const px = (i, total) => PAD.l + (i / Math.max(total - 1, 1)) * gW;
+  const py = (v) => PAD.t + gH - ((v - minV) / range) * gH;
+
+  // Map HH:MM to x-position using refPts
+  const timeToX = (hm) => {
+    const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
+    let best=0, bestD=Infinity;
+    refPts.forEach((p,i) => { const d=Math.abs(toMin(hm)-toMin(p[0])); if(d<bestD){bestD=d;best=i;} });
+    return px(best, refPts.length);
+  };
+
+  const buildPath = (pts) => pts.map((p,i)=>`${i===0?'M':'L'}${px(i,pts.length).toFixed(1)},${py(p[1]).toFixed(1)}`).join(' ');
+
+  const actualPath = actualPts.length >= 2 ? buildPath(actualPts) : '';
+  const algoPath   = algoPts.length   >= 2 ? buildPath(algoPts)   : '';
+
+  const z0 = py(0);
+  const zeroLine = (z0 >= PAD.t && z0 <= PAD.t + gH)
+    ? `<line x1="${PAD.l}" y1="${z0.toFixed(1)}" x2="${W-PAD.r}" y2="${z0.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>`
+    : '';
+
+  // Y-axis labels (3 levels)
+  let yLabels = '';
+  for (let s2 = 0; s2 <= 3; s2++) {
+    const v = minV + range * s2 / 3;
+    const y = py(v);
+    const c = v > 0 ? '#3fb950' : v < 0 ? '#f85149' : '#6e7681';
+    yLabels += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W-PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22" stroke-width="1"/>`;
+    yLabels += `<text x="${PAD.l-4}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${c}">${Math.round(v).toLocaleString('en-IN')}</text>`;
+  }
+
+  // X-axis labels
+  let xLabels = '';
+  const step = Math.max(1, Math.floor(refPts.length / 5));
+  for (let i = 0; i < refPts.length; i += step)
+    xLabels += `<text x="${px(i,refPts.length).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="10" fill="#6e7681">${refPts[i][0]}</text>`;
+
+  // Algo entry markers ▲ blue
+  let entryMarkers = '';
+  aEntries.forEach(([hm, cum2, sym]) => {
+    const ex = timeToX(hm), ey = py(cum2);
+    if (ey < PAD.t || ey > PAD.t + gH) return;
+    const tw = 5;
+    entryMarkers += `<polygon points="${ex},${(ey+1).toFixed(1)} ${(ex-tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)} ${(ex+tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)}" fill="#58a6ff" opacity="0.9"><title>${hm} ALGO ENTRY: ${sym}</title></polygon>`;
+  });
+
+  // Panic trade markers ▼ red (at their entry_time on actual_timeline)
+  let panicMarkers = '';
+  pTrades.forEach(t => {
+    if (!t.entry_time) return;
+    const ex = timeToX(t.entry_time);
+    // find cum on actual at this time
+    const ey = py(0);  // approximate: panic entries start at whatever cum was
+    const tw = 5;
+    panicMarkers += `<polygon points="${ex},${(ey-1).toFixed(1)} ${(ex-tw).toFixed(1)},${(ey-tw*1.6).toFixed(1)} ${(ex+tw).toFixed(1)},${(ey-tw*1.6).toFixed(1)}" fill="#f85149" opacity="0.9"><title>${t.entry_time} PANIC: ${t.sym} P&L ₹${Math.round(t.pnl||0)}</title></polygon>`;
+  });
+
+  // Right-side end labels
+  const lastActual = actualPts.length ? actualPts[actualPts.length-1][1] : 0;
+  const lastAlgo   = algoPts.length   ? algoPts[algoPts.length-1][1]   : 0;
+  const rightLabels = `
+    <circle cx="${(W-PAD.r+3).toFixed(1)}" cy="${py(lastActual).toFixed(1)}" r="3" fill="${col(lastActual)}"/>
+    <text x="${(W-PAD.r+7).toFixed(1)}" y="${(py(lastActual)+4).toFixed(1)}" font-size="11" fill="${col(lastActual)}" font-weight="600">₹${Math.round(lastActual).toLocaleString('en-IN')}</text>
+    ${algoPts.length >= 2 ? `
+    <circle cx="${(W-PAD.r+3).toFixed(1)}" cy="${py(lastAlgo).toFixed(1)}" r="3" fill="#58a6ff"/>
+    <text x="${(W-PAD.r+7).toFixed(1)}" y="${(py(lastAlgo)+4).toFixed(1)}" font-size="10" fill="#58a6ff">₹${Math.round(lastAlgo).toLocaleString('en-IN')}</text>` : ''}
+  `;
+
+  graphEl.innerHTML = `
+  <svg width="${W}" height="${H}" style="overflow:visible;display:block">
+    ${yLabels}${zeroLine}${xLabels}
+    ${actualPath ? `<path d="${actualPath}" fill="none" stroke="${col(lastActual)}" stroke-width="2.5"/>` : ''}
+    ${algoPath   ? `<path d="${algoPath}"   fill="none" stroke="#58a6ff" stroke-width="1.8" stroke-dasharray="6,3" opacity="0.9"/>` : ''}
+    ${entryMarkers}${panicMarkers}${rightLabels}
+  </svg>`;
+
+  // ── Trade comparison table ────────────────────────────────────────────────
+  const allTrades = cf.all_trades || [];
+  if (allTrades.length === 0) { tableEl.style.display = 'none'; return; }
+
+  tbodyEl.innerHTML = allTrades.map(t => {
+    const isPanic = t.cf_role === 'panic';
+    const pnl = parseFloat(t.pnl || 0);
+    const rowBg = isPanic ? 'background:#1a0f0f' : '';
+    const roleChip = isPanic
+      ? `<span style="background:#6e2c2c;color:#f85149;padding:1px 6px;border-radius:3px;font-size:10px">⚡ Panic</span>`
+      : `<span style="background:#1f2d1f;color:#3fb950;padding:1px 6px;border-radius:3px;font-size:10px">🤖 Algo</span>`;
+    const note = isPanic ? 'Manual — outside algo plan' : (t.exit_reason || '—');
+    return `<tr style="border-bottom:1px solid #21262d;${rowBg}">
+      <td style="padding:5px 8px">${roleChip}</td>
+      <td style="padding:5px 8px;color:#e6edf3;font-size:11px">${(t.sym||'').replace(/-/g,' ')}</td>
+      <td style="padding:5px 8px;color:#8b949e;text-align:center">${t.entry_time||'—'}</td>
+      <td style="padding:5px 8px;color:#8b949e;text-align:center">${t.exit_time||'—'}</td>
+      <td style="padding:5px 8px;text-align:center;color:${t.entry==='BUY'?'#3fb950':'#f85149'}">${t.entry||'—'}</td>
+      <td style="padding:5px 8px;text-align:right;font-weight:600;color:${pnl>=0?'#3fb950':'#f85149'}">${pnl>=0?'+':''}₹${Math.abs(Math.round(pnl)).toLocaleString('en-IN')}</td>
+      <td style="padding:5px 8px;color:#6e7681;font-size:10px">${note}</td>
+    </tr>`;
+  }).join('');
+  tableEl.style.display = 'table';
 }
 
 function updateTrailingLockTip() {
@@ -2263,6 +2528,7 @@ async function saveRiskConfig(){
   const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
   const gTrailingLock = document.getElementById('risk-trailing-lock').value;
   const gTrailingLockPct = document.getElementById('risk-trailing-lock-pct').value;
+  const gProfitTarget = document.getElementById('risk-global-profit-target').value;
   const payload = {
     global: {
       default_broker: document.getElementById('default-broker-select').value || 'dhan',
@@ -2279,6 +2545,7 @@ async function saveRiskConfig(){
       liquidity_filter: gLiqFilter === 'true',
       trailing_profit_lock_rs: gTrailingLock !== '' ? parseFloat(gTrailingLock) : null,
       trailing_profit_lock_pct: gTrailingLockPct !== '' ? parseFloat(gTrailingLockPct) : null,
+      profit_target_rs: gProfitTarget !== '' ? parseFloat(gProfitTarget) : null,
     },
     per_strategy: {}
   };
@@ -3251,6 +3518,7 @@ function renderCachedOrders() {
   }
   _setHtml(document.getElementById('ord-completed'), ch);
   window._realizedTot = _tot;   // store for NET panel
+  _updateNetPanel(0);           // refresh NET panel immediately after render (no open pos yet)
 
   // ── OPEN POSITIONS ──
   const ordOpenEl = document.getElementById('ord-open');
@@ -5104,30 +5372,34 @@ function _patchLtpCells() {
       const ptEl = tr.querySelector('.pts-cell');
       if(ptEl) totPts += parseFloat(ptEl.textContent.replace('+','')) || 0;
     });
-    if(!any) return;
-    const ptsB = document.getElementById('open-tot-pts');
-    const retB = document.getElementById('open-tot-ret');
-    if(ptsB){ ptsB.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsB.style.color=totPts>=0?'#3fb950':'#f85149'; }
-    unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
-    if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
-
-    // NET summary panel — realized (closed) + unrealized (open)
-    const _realized = (window._realizedTot || {}).n || 0;
-    const _net = _realized + totUnrl;
-    const _fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
-    const _col = (v) => v >= 0 ? '#3fb950' : '#f85149';
-    const rEl = document.getElementById('net-realized');
-    const uEl = document.getElementById('net-unrealized');
-    const nEl = document.getElementById('net-total');
-    if(rEl){ rEl.textContent = _fmt(_realized); rEl.style.color = _col(_realized); }
-    if(uEl){ uEl.textContent = _fmt(totUnrl);   uEl.style.color = _col(totUnrl); }
-    if(nEl){ nEl.textContent = _fmt(_net);       nEl.style.color = _col(_net);
-      // highlight NET panel background based on value
-      const panel = document.getElementById('net-pnl-panel');
-      if(panel) panel.style.borderColor = _net >= 0 ? '#238636' : '#6e2c2c';
+    if(any){
+      const ptsB = document.getElementById('open-tot-pts');
+      const retB = document.getElementById('open-tot-ret');
+      if(ptsB){ ptsB.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsB.style.color=totPts>=0?'#3fb950':'#f85149'; }
+      unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
+      if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
     }
+    // NET summary panel — always update (even when no open positions, show realized + 0 unrealized)
+    _updateNetPanel(totUnrl);
   })();
 }
+function _updateNetPanel(unrealizedPnl) {
+  const _realized = (window._realizedTot || {}).n || 0;
+  const _unrl = unrealizedPnl || 0;
+  const _net = _realized + _unrl;
+  const _fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
+  const _col = (v) => v >= 0 ? '#3fb950' : '#f85149';
+  const rEl = document.getElementById('net-realized');
+  const uEl = document.getElementById('net-unrealized');
+  const nEl = document.getElementById('net-total');
+  if(rEl){ rEl.textContent = _fmt(_realized); rEl.style.color = _col(_realized); }
+  if(uEl){ uEl.textContent = _unrl !== 0 ? _fmt(_unrl) : '₹0'; uEl.style.color = _unrl >= 0 ? '#3fb950' : '#f85149'; }
+  if(nEl){ nEl.textContent = _fmt(_net); nEl.style.color = _col(_net);
+    const panel = document.getElementById('net-pnl-panel');
+    if(panel) panel.style.borderColor = _net >= 0 ? '#238636' : '#6e2c2c';
+  }
+}
+
 startLtpStream();
 
 loadAll();
