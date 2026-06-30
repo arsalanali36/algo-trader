@@ -962,10 +962,25 @@ def main(strategy_id="range"):
                 signal = None
 
             if signal in ("BUY", "SELL") and signal != st["last_signal"]:
+                # ── Expiry-day entry block: no new positions after 2:00 PM
+                # on expiry day — last-hour chaos + ITM risk not worth it.
+                # (pos_monitor_loop fires EXPIRY_EOD at 2:55 to close existing
+                # positions — a new entry just before that is pointless.)
+                _now = ist_now()
+                _ensure_root_path()
+                import risk_gate as _rg
+                _no_entry_after = (_now.hour, _now.minute) >= _rg.EXPIRY_NO_ENTRY_AFTER_HM
+                if _no_entry_after:
+                    _probe_sec = st.get("opt_sec_id")
+                    if _probe_sec and _rg.is_expiry_day(sec_id=str(_probe_sec)):
+                        log.info(f"ENTRY BLOCKED {symbol} — expiry day, no new entries after "
+                                 f"{_rg.EXPIRY_NO_ENTRY_AFTER_HM[0]:02d}:{_rg.EXPIRY_NO_ENTRY_AFTER_HM[1]:02d}")
+                        continue
+
                 qty = cfg.get("qty", 1)
                 inst = cfg.get("instrument", "equity")
                 offset = int(cfg.get("strike_offset", 0))
-                
+
                 log.info(f"SIGNAL {signal} {symbol} @ {price:.2f}  reason={reason}")
                 
                 if inst == "options":

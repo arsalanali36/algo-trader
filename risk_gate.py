@@ -58,15 +58,21 @@ def get_broker_balance(broker_name):
     cached = _balance_cache.get(broker_name)
     if cached and (_t.time() - cached[0]) < _BALANCE_TTL:
         return cached[1]
-    out = {"available": None, "collateral": None, "total_margin": None, "ok": False}
+    out = {"available": None, "collateral": None, "total_margin": None,
+           "used_margin": None, "cash": None, "ok": False}
     try:
         from brokers import get_broker
         f = get_broker(broker_name).funds()
         if f:
             avail = float(f.get("available") or 0)
             coll = float(f.get("collateral") or 0)
+            used = f.get("used_margin")
+            used = float(used) if used is not None else None
+            cash = f.get("cash")
+            cash = float(cash) if cash is not None else None
             out = {"available": avail, "collateral": coll,
-                   "total_margin": avail + coll, "ok": True}
+                   "total_margin": avail + (used or 0),
+                   "used_margin": used, "cash": cash, "ok": True}
     except Exception:
         pass
     _balance_cache[broker_name] = (_t.time(), out)
@@ -688,3 +694,79 @@ def liquidity_filter_enabled(strategy):
     if v is None:
         v = (rc.get("global", {}) or {}).get("liquidity_filter")
     return True if v is None else bool(v)
+
+
+# ── Expiry-day guards ────────────────────────────────────────────────────────
+
+# On expiry day, close ALL open option positions at this time (not 3:15)
+# — avoids last-hour chaos, physical-delivery margin blocks, and ITM panic.
+EXPIRY_EOD_HM = (14, 55)
+
+# No new entries on expiry day after this time.
+EXPIRY_NO_ENTRY_AFTER_HM = (14, 0)
+
+
+def is_expiry_day(trad_sym=None, sec_id=None):
+    """True if today is the expiry date of this F&O contract.
+
+    Tries two methods (first hit wins):
+    1. Parse day from trad_sym — works for stock options ("NIFTY-28Jun2026-...")
+    2. sec_id lookup via dhan_master — works for index options ("NIFTY-Jun2026-...")
+
+    Returns False on any parse failure (safe default — guards run on confirmed
+    expiry-day contracts only, never misfire on a non-expiry leg).
+    """
+    import datetime as _dt
+    today = _dt.date.today()
+
+    # Method 1: day present in trad_sym (stock options include DDMonYYYY)
+    if trad_sym:
+        try:
+            parts = trad_sym.split("-")
+            dmy = parts[1]          # "28Jun2026" (stock) or "Jun2026" (index)
+            if len(dmy) > 7:        # day prefix present
+                day = int(dmy[:2])
+                mon = _dt.datetime.strptime(dmy[2:5], "%b").month
+                year = int(dmy[5:])
+                return _dt.date(year, mon, day) == today
+        except Exception:
+            pass
+
+    # Method 2: dhan_master exact expiry (reliable for both index + stock)
+    if sec_id:
+        try:
+            import sys as _s, os as _o
+            _root = _o.path.dirname(_o.path.abspath(__file__))
+            if _root not in _s.path:
+                _s.path.insert(0, _root)
+            import dhan_master
+            expiry = dhan_master.get_expiry_for_sec_id(sec_id)
+            return expiry == today if expiry else False
+        except Exception:
+            pass
+
+    return False
+
+
+def option_is_itm(trad_sym, spot_price):
+    """True if a SHORT option position (SELL) is currently In-The-Money.
+
+    trad_sym : e.g. "NIFTY-Jun2026-23900-PE" or "MARUTI-28Jun2026-13600-PE"
+    spot_price: live underlying LTP
+
+    For SELL PE: ITM when spot < strike (option has intrinsic value → we lose)
+    For SELL CE: ITM when spot > strike
+
+    Returns False on any parse failure.
+    """
+    try:
+        parts = trad_sym.split("-")
+        strike = float(parts[-2])
+        opt_type = parts[-1].upper()   # "PE" or "CE"
+        if opt_type == "PE":
+            return spot_price < strike
+        if opt_type == "CE":
+            return spot_price > strike
+    except Exception:
+        pass
+    return False

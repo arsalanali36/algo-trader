@@ -488,18 +488,45 @@ def api_rms_summary():
         sv = (rc.get("per_strategy", {}).get(strat, {}) or {}).get(key)
         return sv if sv is not None else glob.get(key)
 
+    def _get_ltp(sec_id, segment):
+        # 1. Live WebSocket feed
+        try:
+            _feed_subscribe([(segment or "NSE_FNO", sec_id)])
+            q = dhan_feed.get_quote(sec_id)
+            ltp = float(q.get("ltp") or 0) if q else 0.0
+            if ltp > 0:
+                return ltp
+        except Exception:
+            pass
+        # 2. shared_ltp_cache (cross-process, file-backed)
+        try:
+            import shared_ltp_cache
+            v = shared_ltp_cache.get(str(sec_id))
+            if v and float(v) > 0:
+                return float(v)
+        except Exception:
+            pass
+        # 3. Dhan REST (rate-limited)
+        try:
+            import dhan_rate_limiter as _rl
+            from brokers.dhan_broker import DhanBroker
+            _rl.acquire("ltp")
+            db = DhanBroker()
+            q2 = db.quote(sec_id, segment or "NSE_FNO")
+            ltp2 = float((q2 or {}).get("ltp") or 0)
+            if ltp2 > 0:
+                return ltp2
+        except Exception:
+            pass
+        return 0.0
+
     def _unrealized(positions):
         total, n_priced = 0.0, 0
         for p in positions:
             sec_id = p.get("sec_id")
             if not sec_id:
                 continue
-            try:
-                _feed_subscribe([(p.get("segment") or "NSE_FNO", sec_id)])
-                q = dhan_feed.get_quote(sec_id)
-                ltp = float(q.get("ltp") or 0) if q else 0.0
-            except Exception:
-                ltp = 0.0
+            ltp = _get_ltp(sec_id, p.get("segment"))
             if ltp <= 0:
                 continue
             entry = float(p.get("entry_price") or 0)
@@ -532,16 +559,28 @@ def api_rms_summary():
             "max_loss_pct_used": round(abs(unreal) / max_loss_rs * 100, 1)
                 if (max_loss_rs and unreal < 0) else None,
             "blocked": g_blocked, "block_reason": g_reason, "block_hard": g_hard,
+            "run_mode": get_mode(sid_),   # 'live' / 'paper' / None (stopped)
         })
 
     glob_open = [p for p in open_pos if not any(
         t == "CAPITAL_BLOCKED" for t in (p.get("tags") or []))]
     glob_unreal, glob_priced, glob_n = _unrealized(glob_open)
+
+    # Actual broker margin (cash available + used) — for display vs Dhan estimate
+    _def_broker = risk_gate.default_broker()
+    _bal = risk_gate.get_broker_balance(_def_broker)
     totals = {
         "capital_used": round(risk_gate.capital_in_use(None), 2),
         "capital_cap": glob.get("capital_rs"),
         "open_positions": glob_n, "priced": glob_priced,
         "unrealized_pnl": round(glob_unreal, 2) if glob_priced else None,
+        "broker_name": _def_broker,
+        "broker_available": round(_bal["available"], 2) if _bal.get("available") is not None else None,
+        "broker_used_margin": round(_bal["used_margin"], 2) if _bal.get("used_margin") is not None else None,
+        "broker_total": round(_bal["total_margin"], 2) if _bal.get("total_margin") is not None else None,
+        "broker_cash": round(_bal["cash"], 2) if _bal.get("cash") is not None else None,
+        "broker_collateral": round(_bal["collateral"], 2) if _bal.get("collateral") is not None else None,
+        "broker_ok": _bal.get("ok", False),
     }
 
     # ── Webhook max-trades-per-day status ──
@@ -3371,12 +3410,59 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         _do_squareoff(p, ltp, reason, sec_id, seg)
         return
 
+    # ── Expiry-day guards (run before general EOD so they fire earlier) ──────
+    # On expiry day: (a) close 20 min earlier to avoid last-hour chaos and
+    # physical-delivery margin blocks; (b) if a short option goes ITM, exit
+    # immediately — don't wait for EOD, the loss only grows from here.
+    _trad_sym = p.get("trad_sym") or p.get("sym") or ""
+    _is_option = (p.get("instrument") or "").upper() != "EQUITY"
+    if _is_option:
+        try:
+            import risk_gate as _rg
+            _exp_day = _rg.is_expiry_day(trad_sym=_trad_sym, sec_id=sec_id)
+        except Exception:
+            _exp_day = False
+
+        if _exp_day:
+            # (a) Earlier EOD squareoff on expiry day
+            _eod_h, _eod_m = _rg.EXPIRY_EOD_HM
+            if ist_now.hour > _eod_h or (ist_now.hour == _eod_h and ist_now.minute >= _eod_m):
+                _do_squareoff(p, ltp, "EXPIRY_EOD_SQUAREOFF", sec_id, seg)
+                return
+
+            # (b) ITM guard — short option went ITM on expiry day → exit now
+            # Get underlying spot: use shared_ltp_cache for NIFTY/BANKNIFTY,
+            # REST quote for stock options.
+            if p.get("entry") == "SELL" and _trad_sym:
+                _spot = 0.0
+                try:
+                    import shared_ltp_cache as _slc
+                    _root_sym = _trad_sym.split("-")[0]
+                    _idx_id = {"NIFTY": 13, "BANKNIFTY": 25, "FINNIFTY": 27}.get(_root_sym)
+                    if _idx_id:
+                        _spot = _slc.get(_idx_id) or 0.0
+                    if _spot <= 0:
+                        # Stock option — use equity LTP from dhan_master sec_id
+                        import dhan_master as _dm
+                        _eq_info = _dm.get_equity_info(_root_sym) or {}
+                        _eq_sid = _eq_info.get("SEM_SMST_SECURITY_ID")
+                        if _eq_sid:
+                            _spot = _slc.get(str(_eq_sid)) or _rest_ltp_fallback(str(_eq_sid), "NSE_EQ") or 0.0
+                except Exception:
+                    _spot = 0.0
+
+                if _spot > 0 and _rg.option_is_itm(_trad_sym, _spot):
+                    print(f"[EXPIRY-ITM] {_trad_sym} is ITM on expiry day "
+                          f"(spot={_spot:.2f}) — squaring off immediately", flush=True)
+                    _do_squareoff(p, ltp, "EXPIRY_ITM_SQUAREOFF", sec_id, seg)
+                    return
+
     # ── Blanket 3:15 PM EOD squareoff — this is a positional/intraday
     # system, no option position should carry overnight regardless of
     # which strategy/source opened it. Takes priority over SL/TP so a
     # position with no SL/TP tags set still gets closed at EOD.
     if (ist_now.hour > 15 or (ist_now.hour == 15 and ist_now.minute >= 15)) \
-       and (p.get("instrument") or "").upper() != "EQUITY":
+       and _is_option:
         _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
         return
 

@@ -1113,6 +1113,34 @@ Paper mode is unchanged — simulation records immediately (no real broker to wa
 
 ---
 
+## TRAP #36 — Expiry-day positions held too long → physical delivery margin / ITM loss 🔴
+
+**Date:** 2026-06-30
+
+**Symptom:** On expiry day, Zerodha shows a banner: "Additional physical delivery margin applicable for ITM options." Short options that are borderline OTM at 2 PM can go ITM in the last hour — broker may auto-square-off with a penalty, OR block new orders due to margin spike.
+
+**Root cause:** System was treating expiry day identically to any other day — waited until 3:15 PM EOD squareoff. Last hour on expiry is high-volatility, and a short option that was 15 pts OTM at 2 PM can easily flip ITM before 3:15.
+
+**Three permanent guards added:**
+
+1. **Earlier EOD on expiry day** (`EXPIRY_EOD_HM = (14, 55)`)
+   `pos_monitor_loop` → `_pos_monitor_check_one()` — if `is_expiry_day(trad_sym, sec_id)` is True, squareoff tag `EXPIRY_EOD_SQUAREOFF` fires at 2:55 PM instead of 3:15 PM.
+
+2. **ITM immediate squareoff on expiry day**
+   Same function — if short option (`entry == "SELL"`) goes ITM on expiry day (`option_is_itm(trad_sym, spot_price)`), exits immediately with tag `EXPIRY_ITM_SQUAREOFF`. Spot fetched from `shared_ltp_cache` (index sec_id 13/25/27) or REST (stock options).
+
+3. **No new entries after 2:00 PM on expiry day** (`EXPIRY_NO_ENTRY_AFTER_HM = (14, 0)`)
+   `_TRADERS/range_trader.py` entry signal block — if time ≥ 14:00 AND `is_expiry_day(sec_id=last_known_opt_sec_id)`, entry blocked with `continue`. (A new entry at 2 PM that gets closed at 2:55 has only 55 mins of runway and disproportionate expiry risk.)
+
+**New helpers in `risk_gate.py`:**
+- `is_expiry_day(trad_sym=None, sec_id=None)` — checks today == contract expiry, tries trad_sym parse then dhan_master sec_id lookup
+- `option_is_itm(trad_sym, spot_price)` — PE: spot < strike → ITM; CE: spot > strike → ITM
+- Constants: `EXPIRY_EOD_HM`, `EXPIRY_NO_ENTRY_AFTER_HM` (change in risk_gate.py if needed)
+
+**Fast detect:** On expiry day → check logs for `EXPIRY_EOD_SQUAREOFF` by 2:56 PM. If not seen for any open option position → guard didn't fire (check `is_expiry_day()` returned True for that sec_id).
+
+---
+
 ## How to extend this file
 
 - Naya recurring-trap milte hi (ya purana lautte hi) ek `TRAP #N` add karo — **problem se index,
