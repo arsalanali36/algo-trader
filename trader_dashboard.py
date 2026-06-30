@@ -1679,7 +1679,13 @@ def api_manual_order():
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
     """Returns today's peak P&L history for the Stats tab graph."""
-    return jsonify(_peak_pnl_history)
+    try:
+        f = BASE_DIR / "data" / "peak_pnl_history.json"
+        if f.exists():
+            return jsonify(json.loads(f.read_text()))
+    except Exception:
+        pass
+    return jsonify([])
 
 
 @app.route('/api/close-position', methods=['POST'])
@@ -3152,6 +3158,12 @@ def pos_monitor_loop():
                 ))
                 if len(_peak_pnl_history) > 500:
                     _peak_pnl_history = _peak_pnl_history[-500:]
+                # Write to file so dashboard process can read it via API
+                try:
+                    _phf = BASE_DIR / "data" / "peak_pnl_history.json"
+                    _phf.write_text(json.dumps(_peak_pnl_history))
+                except Exception:
+                    pass
 
                 if _either_set:
                     # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
