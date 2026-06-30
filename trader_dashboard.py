@@ -3118,40 +3118,42 @@ def pos_monitor_loop():
             try:
                 import risk_gate as _rg
                 _gcfg = (_rg._risk_cfg().get("global") or {})
-                _trail_rs  = _gcfg.get("trailing_profit_lock_rs")   # fixed ₹  (single position)
-                _trail_pct = _gcfg.get("trailing_profit_lock_pct")  # % of peak (multi position)
+                _trail_rs  = _gcfg.get("trailing_profit_lock_rs")
+                _trail_pct = _gcfg.get("trailing_profit_lock_pct")
                 _either_set = (_trail_rs and float(_trail_rs) > 0) or \
                               (_trail_pct and float(_trail_pct) > 0)
+
+                # Always compute realized+unrealized for Stats graph — regardless of lock config
+                _realized = _rg._today_realized_pnl()
+                _unrealized = 0.0
+                _active_pos = [_p for _p in open_pos
+                               if _p.get("status") != "blocked"
+                               and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
+                for _p in _active_pos:
+                    _sid = _p.get("sec_id")
+                    _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                    _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                           _rest_ltp_fallback(_sid, _seg) or 0.0
+                    _epx = float(_p.get("entry_price") or _p.get("price") or 0)
+                    _qty = int(_p.get("qty") or 0)
+                    if _ltp > 0 and _epx > 0 and _qty:
+                        _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
+                                else (_epx - _ltp) * _qty
+                        _unrealized += _unrl
+                _total_pnl = _realized + _unrealized
+
+                # Update high watermark + record history for Stats graph (always)
+                if _total_pnl > _trailing_peak_pnl:
+                    _trailing_peak_pnl = _total_pnl
+                _peak_pnl_history.append((
+                    (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
+                    round(_trailing_peak_pnl, 2),
+                    round(_total_pnl, 2)
+                ))
+                if len(_peak_pnl_history) > 500:
+                    _peak_pnl_history = _peak_pnl_history[-500:]
+
                 if _either_set:
-                    # Realized P&L today
-                    _realized = _rg._today_realized_pnl()
-                    # Unrealized P&L: sum across all live open positions
-                    _unrealized = 0.0
-                    _active_pos = [_p for _p in open_pos
-                                   if _p.get("status") != "blocked"
-                                   and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
-                    for _p in _active_pos:
-                        _sid = _p.get("sec_id")
-                        _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                        _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                               _rest_ltp_fallback(_sid, _seg) or 0.0
-                        _epx = float(_p.get("entry_price") or _p.get("price") or 0)
-                        _qty = int(_p.get("qty") or 0)
-                        if _ltp > 0 and _epx > 0 and _qty:
-                            _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
-                                    else (_epx - _ltp) * _qty
-                            _unrealized += _unrl
-                    _total_pnl = _realized + _unrealized
-                    # Update high watermark + record history for Stats graph
-                    if _total_pnl > _trailing_peak_pnl:
-                        _trailing_peak_pnl = _total_pnl
-                    _peak_pnl_history.append((
-                        (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
-                        round(_trailing_peak_pnl, 2),
-                        round(_total_pnl, 2)
-                    ))
-                    if len(_peak_pnl_history) > 500:   # keep ~80 min at 10s interval
-                        _peak_pnl_history = _peak_pnl_history[-500:]
                     # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
                     _n_pos = len(_active_pos)
                     if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
