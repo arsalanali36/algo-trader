@@ -3215,6 +3215,7 @@ function renderCachedOrders() {
     ch += '</tr></tfoot></table>';
   }
   _setHtml(document.getElementById('ord-completed'), ch);
+  window._realizedTot = _tot;   // store for NET panel
 
   // ── OPEN POSITIONS ──
   const ordOpenEl = document.getElementById('ord-open');
@@ -3511,13 +3512,13 @@ function renderCachedOrders() {
     let _openCount = opnReal.length, _openMargin = 0;
     opnReal.forEach(t => { _openMargin += (t.margin_used != null ? Number(t.margin_used) : 0); });
     const grandTotal = _openCount ? `
-      <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:20px;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:11px 16px;font-size:12px">
-        <span style="font-weight:700;color:#58a6ff">📊 TOTAL (all open positions)</span>
-        <span style="color:#8b949e">Positions: <b style="color:#e6edf3">${_openCount}</b></span>
-        <span style="color:#8b949e">Margin: <b style="color:#e6edf3">${Math.round(_openMargin)}</b></span>
-        <span style="color:#8b949e">Points: <b id="open-tot-pts">—</b></span>
-        <span style="color:#8b949e">Unrealized P&amp;L: <b id="open-tot-unrl">—</b></span>
-        <span style="color:#8b949e">Return: <b id="open-tot-ret">—</b></span>
+      <div style="border-top:2px solid #30363d;margin-top:4px;padding:8px 6px;display:flex;gap:28px;align-items:center;font-size:12px;font-weight:700">
+        <span style="color:#8b949e;min-width:50px">TOTAL</span>
+        <span style="color:#8b949e;font-weight:400">Pos: <b style="color:#e6edf3">${_openCount}</b></span>
+        <span style="color:#8b949e;font-weight:400">Margin: <b style="color:#e6edf3">${Math.round(_openMargin).toLocaleString('en-IN')}</b></span>
+        <span style="color:#8b949e;font-weight:400">Points: <b id="open-tot-pts">—</b></span>
+        <span style="color:#8b949e;font-weight:400">Unrealized: <b id="open-tot-unrl">—</b></span>
+        <span style="color:#8b949e;font-weight:400">Return: <b id="open-tot-ret">—</b></span>
       </div>` : '';
     ordOpenEl.innerHTML = blockedHtml + (oh || (opnReal.length ? '' : '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>')) + grandTotal;
     ordOpenEl.dataset.fp = openFp;
@@ -5066,10 +5067,7 @@ function _patchLtpCells() {
     if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
 
     // NET summary panel — realized (closed) + unrealized (open)
-    const _d = window._lastOrdersData || {};
-    const _closed = _d.details || [];
-    let _realized = 0;
-    _closed.forEach(t => { _realized += (parseFloat(t._net) || parseFloat(t.pnl) || 0); });
+    const _realized = (window._realizedTot || {}).n || 0;
     const _net = _realized + totUnrl;
     const _fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
     const _col = (v) => v >= 0 ? '#3fb950' : '#f85149';
