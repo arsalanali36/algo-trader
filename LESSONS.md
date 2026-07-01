@@ -1744,3 +1744,23 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 
 **Fast detect:** `ssh ... "grep -c '<distinctive-new-string>' <deployed-file-path>"` right after any deploy that includes a non-Python file — `0` means it didn't land, re-deploy that file alone.
 
+---
+
+## TRAP #70 — Global Option Hedging Switch (Naked vs. Hedge Mode) 🔴 (Fixed)
+
+**Symptom:** Auto-hedging (which resolve and place further OTM buy options for naked SELL strategies) was running uncontrolled or placing too many orders when the user preferred to trade naked positions to save execution costs/margin.
+
+**Root cause:** Hedging was always active if `min_strikes` or `max_premium` was set in the strategy config/nifty_config.json. There was no simple way to turn it off globally for all strategies on a single switch.
+
+**Fix (by Antigravity AI):** Added a global switch (`hedge_enabled`) under the "Auto-Hedge" card on the RMS/Control tab. If turned off (Naked Mode), `risk_gate.hedge_config()` returns `0, None`, which makes `strategy_safety.compute_hedge_target()` skip hedge resolution entirely, ensuring only naked short positions are placed.
+
+---
+
+## TRAP #71 — Aggregate vs. Per-Instrument Trailing Profit Lock Toggle 🔴 (Fixed)
+
+**Symptom:** The account-level trailing profit lock squared off the entire portfolio of open positions when aggregate P&L dropped from its peak. This forced closure on healthy positions due to drawdown on a single bad position.
+
+**Root cause:** The trailing lock logic in `pos_monitor_loop()` of `trader_dashboard.py` only evaluated portfolio-level total P&L (`_total_pnl`).
+
+**Fix (by Antigravity AI):** Added a `Trailing Mode` selector (Aggregate vs. Per-Instrument) under the Trailing Lock card on the RMS tab. In **Per-Instrument** mode, the loop tracks individual peak unrealized P&L for each open position ID in `_pos_peaks`. If a position's P&L drops from its specific peak by the ₹ lock amount (or % of its peak), only that specific position is squared off, keeping the rest of the portfolio open.
+

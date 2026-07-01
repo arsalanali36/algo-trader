@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 risk_gate.py — capital allocation gate (RMS Stage 1).
 
@@ -702,8 +702,13 @@ def hedge_config(strategy):
     and max_premium_rs is None means hedge is OFF.
     """
     rc = _risk_cfg()
-    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
     g = (rc.get("global", {}) or {})
+    # Global hedge switch: if disabled globally, return 0, None (hedging completely off)
+    # Fixed by Antigravity AI.
+    if not g.get("hedge_enabled", True):
+        return 0, None
+
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
     offset = ps.get("hedge_offset_strikes")
     if offset is None:
         offset = g.get("hedge_offset_strikes")

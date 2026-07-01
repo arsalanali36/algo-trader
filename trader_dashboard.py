@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 trader_dashboard.py — Web UI for Algo Trader
 Run: python trader_dashboard.py
@@ -3317,6 +3317,7 @@ def _last_closed_candle_close(sec_id, seg):
 
 
 _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips when feed fails
+_pos_peaks         = {}    # {pos_id: peak_pnl} — tracks peak PnL for per-instrument trailing lock (Fixed by Antigravity AI)
 
 # Restore peak + history from file on startup — so restart mid-day doesn't reset the floor.
 # Only restore if history entries exist and were written TODAY (check file mtime).
@@ -3363,7 +3364,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str
+    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_peaks
 
     while True:
         try:
@@ -3467,6 +3468,7 @@ def pos_monitor_loop():
                     _peak_pnl_history  = []
                     _trailing_peak_pnl = 0.0
                     _daily_peak_ever   = 0.0
+                    _pos_peaks         = {}
                     _peak_day_str      = _today_str
                     print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor reset to ₹0.", flush=True)
 
@@ -3491,72 +3493,157 @@ def pos_monitor_loop():
                     pass
 
                 if _either_set:
-                    # Pick threshold: 1 active position → fixed ₹, 2+ → % of peak
-                    _n_pos = len(_active_pos)
-                    if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
-                        _effective_lock = float(_trail_rs)
-                        _lock_desc = f"₹{_effective_lock:.0f} (single-pos fixed)"
-                    elif _n_pos > 1 and _trail_pct and float(_trail_pct) > 0:
-                        _effective_lock = _trailing_peak_pnl * float(_trail_pct) / 100.0
-                        _lock_desc = f"₹{_effective_lock:.0f} ({_trail_pct}% of peak)"
-                    elif _trail_rs and float(_trail_rs) > 0:
-                        _effective_lock = float(_trail_rs)   # fallback: use ₹ if pct not set
-                        _lock_desc = f"₹{_effective_lock:.0f} (fixed fallback)"
-                    else:
-                        _effective_lock = 0.0
-                        _lock_desc = "none"
-                    # Fire if peak was positive AND drawdown from peak exceeds lock
-                    _drawdown = _trailing_peak_pnl - _total_pnl
-                    if _trailing_peak_pnl > 0 and _effective_lock > 0 and _drawdown >= _effective_lock:
-                        print(f"[TRAILING-LOCK] Peak ₹{_trailing_peak_pnl:.0f} → now ₹{_total_pnl:.0f} "
-                              f"(drawdown ₹{_drawdown:.0f} ≥ lock {_lock_desc}, pos={_n_pos}) — squaring off ALL",
-                              flush=True)
-                        for _p in list(open_pos):
+                    _lock_mode = _gcfg.get("trailing_lock_mode", "aggregate")
+                    if _lock_mode == "per_instrument":
+                        # Per-Instrument Trailing Lock: track and trigger for each individual open position
+                        # Fixed by Antigravity AI.
+                        for _p in _active_pos:
+                            _pid = _p.get("id")
+                            if not _pid or _p.get("id") in _closed_ids:
+                                continue
                             _sid = _p.get("sec_id")
-                            if not _sid or _p.get("status") == "blocked": continue
-                            if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
-                            if _p.get("id") in _closed_ids: continue
                             _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                            _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                                    _rest_ltp_fallback(_sid, _seg) or 0.0
-                            if _ltp2 > 0:
-                                try:
-                                    import smart_order
-                                    from brokers import get_broker
-                                    _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
-                                    _bname = _p.get("broker") or "dhan"
-                                    if _p.get("mode") == "live":
-                                        _br = get_broker(_bname)
-                                        smart_order.execute(
-                                            _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
-                                            _p["mode"], _br, log=print, tag="TRAILING",
-                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                            instrument=_p.get("instrument",""), broker_name=_bname,
-                                            extra_tags=["TRAILING_PROFIT_LOCK"],
-                                            is_exit=True,
-                                        )
-                                    else:
-                                        import order_store as _os
-                                        _os.record(
-                                            side=_exit_side, qty=_p["qty"], price=_ltp2,
-                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                            mode=_p.get("mode","paper"), broker=_bname,
-                                            symbol=_p["sym"], instrument=_p.get("instrument",""),
-                                            trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
-                                            status="paper", tags=["TRAILING_PROFIT_LOCK"],
-                                        )
-                                    _closed_ids.add(_p.get("id"))
-                                except Exception as _te:
-                                    print(f"[TRAILING-LOCK] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
-                        _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
-                        # Write day-level flag so webhook/strategy blocks new entries
-                        try:
-                            from datetime import datetime as _dtc
-                            _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-                            _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
-                            print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
-                        except Exception as _fe:
-                            print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
+                            _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                   _rest_ltp_fallback(_sid, _seg) or 0.0
+                            if _ltp <= 0:
+                                _ltp = _peak_ltp_cache.get(_sid, 0.0)
+                            
+                            _epx = float(_p.get("entry_price") or _p.get("price") or 0)
+                            _qty = int(_p.get("qty") or 0)
+                            _unrl = 0.0
+                            if _ltp > 0 and _epx > 0 and _qty:
+                                _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
+                                         else (_epx - _ltp) * _qty
+                            
+                            # Update peak for this position
+                            if _pid not in _pos_peaks:
+                                _pos_peaks[_pid] = max(0.0, _unrl)
+                            else:
+                                _pos_peaks[_pid] = max(_pos_peaks[_pid], _unrl)
+                            
+                            _p_drawdown = _pos_peaks[_pid] - _unrl
+                            
+                            # Threshold calculation
+                            _effective_p_lock = 0.0
+                            _p_lock_desc = "none"
+                            if _trail_rs and float(_trail_rs) > 0:
+                                _effective_p_lock = float(_trail_rs)
+                                _p_lock_desc = f"₹{_effective_p_lock:.0f} (fixed)"
+                            elif _trail_pct and float(_trail_pct) > 0:
+                                _effective_p_lock = _pos_peaks[_pid] * float(_trail_pct) / 100.0
+                                _p_lock_desc = f"₹{_effective_p_lock:.0f} ({_trail_pct}% of peak)"
+                            
+                            if _pos_peaks[_pid] > 0 and _effective_p_lock > 0 and _p_drawdown >= _effective_p_lock:
+                                print(f"[TRAILING-LOCK] [PER-POSITION] Position {_p.get('sym')} (ID {_pid}) "
+                                      f"Peak ₹{_pos_peaks[_pid]:.0f} → now ₹{_unrl:.0f} "
+                                      f"(drawdown ₹{_p_drawdown:.0f} >= lock {_p_lock_desc}) — squaring off single position",
+                                      flush=True)
+                                if _ltp > 0:
+                                    try:
+                                        import smart_order
+                                        from brokers import get_broker
+                                        _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                        _bname = _p.get("broker") or "dhan"
+                                        if _p.get("mode") == "live":
+                                            _br = get_broker(_bname)
+                                            smart_order.execute(
+                                                _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                                _p["mode"], _br, log=print, tag="TRAILING",
+                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                                instrument=_p.get("instrument",""), broker_name=_bname,
+                                                extra_tags=["TRAILING_PROFIT_LOCK"],
+                                                is_exit=True,
+                                            )
+                                        else:
+                                            import order_store as _os
+                                            _os.record(
+                                                side=_exit_side, qty=_p["qty"], price=_ltp,
+                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                                mode=_p.get("mode","paper"), broker=_bname,
+                                                symbol=_p["sym"], instrument=_p.get("instrument",""),
+                                                trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                                status="paper", tags=["TRAILING_PROFIT_LOCK"],
+                                            )
+                                        _closed_ids.add(_pid)
+                                    except Exception as _te:
+                                        print(f"[TRAILING-LOCK] [PER-POSITION] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
+                                    
+                                    # Write day-level flag so new entries are blocked (matches aggregate lock design)
+                                    try:
+                                        from datetime import datetime as _dtc
+                                        _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+                                        if not _flag.exists():
+                                            _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, per-position {_p.get('sym')} peak was ₹{_pos_peaks[_pid]:.0f}")
+                                            print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
+                                    except Exception as _fe:
+                                        print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
+                    else:
+                        # Aggregate Trailing Lock: original portfolio-level trailing lock
+                        _n_pos = len(_active_pos)
+                        if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
+                            _effective_lock = float(_trail_rs)
+                            _lock_desc = f"₹{_effective_lock:.0f} (single-pos fixed)"
+                        elif _n_pos > 1 and _trail_pct and float(_trail_pct) > 0:
+                            _effective_lock = _trailing_peak_pnl * float(_trail_pct) / 100.0
+                            _lock_desc = f"₹{_effective_lock:.0f} ({_trail_pct}% of peak)"
+                        elif _trail_rs and float(_trail_rs) > 0:
+                            _effective_lock = float(_trail_rs)   # fallback: use ₹ if pct not set
+                            _lock_desc = f"₹{_effective_lock:.0f} (fixed fallback)"
+                        else:
+                            _effective_lock = 0.0
+                            _lock_desc = "none"
+                        # Fire if peak was positive AND drawdown from peak exceeds lock
+                        _drawdown = _trailing_peak_pnl - _total_pnl
+                        if _trailing_peak_pnl > 0 and _effective_lock > 0 and _drawdown >= _effective_lock:
+                            print(f"[TRAILING-LOCK] Peak ₹{_trailing_peak_pnl:.0f} → now ₹{_total_pnl:.0f} "
+                                  f"(drawdown ₹{_drawdown:.0f} ≥ lock {_lock_desc}, pos={_n_pos}) — squaring off ALL",
+                                  flush=True)
+                            for _p in list(open_pos):
+                                _sid = _p.get("sec_id")
+                                if not _sid or _p.get("status") == "blocked": continue
+                                if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
+                                if _p.get("id") in _closed_ids: continue
+                                _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                                _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                        _rest_ltp_fallback(_sid, _seg) or 0.0
+                                if _ltp2 > 0:
+                                    try:
+                                        import smart_order
+                                        from brokers import get_broker
+                                        _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                        _bname = _p.get("broker") or "dhan"
+                                        if _p.get("mode") == "live":
+                                            _br = get_broker(_bname)
+                                            smart_order.execute(
+                                                _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                                _p["mode"], _br, log=print, tag="TRAILING",
+                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                                instrument=_p.get("instrument",""), broker_name=_bname,
+                                                extra_tags=["TRAILING_PROFIT_LOCK"],
+                                                is_exit=True,
+                                            )
+                                        else:
+                                            import order_store as _os
+                                            _os.record(
+                                                side=_exit_side, qty=_p["qty"], price=_ltp2,
+                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                                mode=_p.get("mode","paper"), broker=_bname,
+                                                symbol=_p["sym"], instrument=_p.get("instrument",""),
+                                                trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                                status="paper", tags=["TRAILING_PROFIT_LOCK"],
+                                            )
+                                        _closed_ids.add(_p.get("id"))
+                                    except Exception as _te:
+                                        print(f"[TRAILING-LOCK] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
+                            _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
+                            # Write day-level flag so webhook/strategy blocks new entries
+                            try:
+                                from datetime import datetime as _dtc
+                                _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+                                _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
+                                print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
+                            except Exception as _fe:
+                                print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
                         time.sleep(5)
                         continue                    # skip per-position checks this cycle
             except Exception as _trail_e:
