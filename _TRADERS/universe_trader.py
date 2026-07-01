@@ -171,6 +171,14 @@ def main(sid, once=False):
             continue
 
         cfg = load_config(sid)
+
+        # Fetch today's open positions from order_store to re-validate in-memory state (TRAP #62)
+        open_legs_in_store = None
+        try:
+            import order_store
+            open_legs_in_store = order_store.trades_for(n.strftime("%Y-%m-%d")).get("open")
+        except Exception as _se:
+            log(f"[SYNC] order_store query failed: {_se}")
         if broker is None:
             broker = get_broker(cfg.get("broker", risk_gate.default_broker()), creds)
 
@@ -225,6 +233,23 @@ def main(sid, once=False):
 
         for sym, eq_sid in eqmap.items():
             st = get_state(sym)
+            if st["position"] is not None and open_legs_in_store is not None:
+                # Re-validate with order_store
+                matching_open = False
+                for p in open_legs_in_store:
+                    if p.get("strategy") == sid and p.get("symbol") == sym:
+                        if st.get("open_inst"):
+                            # st["open_inst"] is (sec_id, seg, trad_sym, qty)
+                            if str(p.get("sec_id")) == str(st["open_inst"][0]):
+                                matching_open = True
+                                break
+                        else:
+                            matching_open = True
+                            break
+                if not matching_open:
+                    log(f"[SYNC] Position for {sym} closed externally in order_store (broker flat/manual exit/trailing lock). Clearing state.")
+                    st["position"] = None
+                    st["open_inst"] = None
             try:
                 df = broker.intraday_candles(eq_sid, "NSE_EQ", "EQUITY",
                                              days=3, interval=interval)

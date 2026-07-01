@@ -459,6 +459,14 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
             token, cid = load_creds()
             tf_secs    = _TF_MAP.get(tf, 5) * 60   # loop sleep = 1 candle time
 
+            # Fetch today's open positions from order_store to re-validate in-memory state (TRAP #62)
+            open_legs_in_store = None
+            try:
+                import order_store
+                open_legs_in_store = order_store.trades_for(now.strftime("%Y-%m-%d")).get("open")
+            except Exception as _se:
+                log.warning(f"[SYNC] order_store query failed: {_se}")
+
             # ── 3:15 PM force-exit ───────────────────────────────────
             if is_exit_time():
                 for sym, pos in list(positions.items()):
@@ -499,6 +507,25 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                     pass
                 t_count = trades_today.get(sym, 0)
                 pos     = positions.get(sym, 0)
+
+                if pos != 0 and open_legs_in_store is not None:
+                    # Re-validate with order_store
+                    matching_open = False
+                    opt_info = active_opts.get(sym)
+                    for p in open_legs_in_store:
+                        if p.get("strategy") == strategy_id and p.get("symbol") == sym:
+                            if opt_info and opt_info.get("sec_id"):
+                                if str(p.get("sec_id")) == str(opt_info["sec_id"]):
+                                    matching_open = True
+                                    break
+                            else:
+                                matching_open = True
+                                break
+                    if not matching_open:
+                        log.info(f"[SYNC] Position for {sym} closed externally in order_store (broker flat/manual exit/trailing lock). Clearing state.")
+                        positions[sym] = 0
+                        active_opts.pop(sym, None)
+                        pos = 0
 
                 # Candles fetch karo (aaj ka din)
                 df = fetch_candles(sym, tf, token, cid)

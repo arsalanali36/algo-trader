@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 range_trader.py — Ars_Auto_Rev_Chain RANGE Strategy | 1-min
 
@@ -823,6 +823,14 @@ def main(strategy_id="range"):
             time.sleep(60)
             continue
 
+        # Fetch today's open positions from order_store to re-validate in-memory state (TRAP #62)
+        open_legs_in_store = None
+        try:
+            import order_store
+            open_legs_in_store = order_store.trades_for(now.strftime("%Y-%m-%d")).get("open")
+        except Exception as _se:
+            log.warning(f"[SYNC] order_store query failed: {_se}")
+
         # ── Strategy summary (log once per loop so config always visible) ──────
         tf         = cfg.get("timeframe", "1m")
         instrument = cfg.get("instrument", "equity").upper()
@@ -888,6 +896,25 @@ def main(strategy_id="range"):
             except Exception:
                 pass
             st = get_state(symbol)
+            if st["position"] is not None and open_legs_in_store is not None:
+                # Re-validate with order_store open legs
+                matching_open = False
+                for p in open_legs_in_store:
+                    if p.get("strategy") == strategy_id and p.get("symbol") == symbol:
+                        if st.get("opt_sec_id"):
+                            if str(p.get("sec_id")) == str(st["opt_sec_id"]):
+                                matching_open = True
+                                break
+                        else:
+                            matching_open = True
+                            break
+                if not matching_open:
+                    log.info(f"[SYNC] Position for {symbol} closed externally in order_store (broker flat/manual exit/trailing lock). Clearing state.")
+                    st["position"] = None
+                    st["last_signal"] = None
+                    st["opt_sec_id"] = None
+                    st["opt_trad_sym"] = None
+
             if st["trades_today"] >= cfg.get("max_trades_per_symbol", 2):
                 if _rt_once(f"maxtrades:{strategy_id}:{symbol}"):
                     log.info(f"[MAX-TRADES] {symbol} hit max_trades_per_symbol "
