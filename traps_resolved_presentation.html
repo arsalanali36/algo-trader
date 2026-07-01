@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Algo Trader Gaps & Traps Resolved — Antigravity AI</title>
+  <title>Algo-Trader Gaps & Traps: The Battle of Bugs 🕵️‍♂️💥</title>
   <!-- Modern Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -76,7 +76,7 @@
 
     /* Presentation Header */
     header {
-      padding: 24px 40px;
+      padding: 20px 40px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -123,15 +123,15 @@
     .slide {
       position: absolute;
       width: 90%;
-      max-width: 1100px;
-      height: 75vh;
-      max-height: 650px;
+      max-width: 1150px;
+      height: 78vh;
+      max-height: 680px;
       background: var(--bg-card);
       border: 1px solid var(--border-glow);
       border-radius: 20px;
       backdrop-filter: blur(15px);
       box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
-      padding: 48px;
+      padding: 40px 48px;
       display: flex;
       flex-direction: column;
       justify-content: space-between;
@@ -154,11 +154,11 @@
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
     }
     .slide-title-group h2 {
       font-family: var(--font-title);
-      font-size: 32px;
+      font-size: 30px;
       font-weight: 800;
       letter-spacing: -0.5px;
       color: var(--text-main);
@@ -192,23 +192,23 @@
     .slide-body {
       flex-grow: 1;
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
+      grid-template-columns: 1.25fr 1fr;
       gap: 40px;
       align-items: center;
-      margin-bottom: 20px;
+      margin-bottom: 15px;
     }
 
     .slide-text h3 {
-      font-size: 18px;
+      font-size: 17px;
       font-weight: 600;
       color: var(--accent-blue);
-      margin-bottom: 12px;
+      margin-bottom: 8px;
     }
     .slide-text p {
-      font-size: 15px;
-      line-height: 1.6;
+      font-size: 14px;
+      line-height: 1.5;
       color: #c9d1d9;
-      margin-bottom: 20px;
+      margin-bottom: 16px;
     }
 
     /* Styled bullets */
@@ -216,19 +216,21 @@
       list-style: none;
     }
     .bullet-list li {
-      font-size: 14px;
-      line-height: 1.6;
-      margin-bottom: 12px;
+      font-size: 13.5px;
+      line-height: 1.5;
+      margin-bottom: 10px;
       padding-left: 24px;
       position: relative;
       color: #b1bac4;
     }
     .bullet-list li::before {
-      content: "→";
+      content: "💥";
       position: absolute;
       left: 0;
-      color: var(--accent-purple);
-      font-weight: bold;
+      font-size: 12px;
+    }
+    .bullet-list.solution li::before {
+      content: "🚀";
     }
 
     /* Right side interactive visualization panels */
@@ -237,29 +239,40 @@
       border: 1px solid rgba(255, 255, 255, 0.08);
       border-radius: 12px;
       height: 100%;
-      min-height: 260px;
+      min-height: 280px;
       display: flex;
       flex-direction: column;
-      padding: 24px;
+      padding: 20px;
       justify-content: center;
       position: relative;
       overflow: hidden;
       box-shadow: inset 0 0 20px rgba(0,0,0,0.4);
+      align-items: center;
+    }
+
+    .panel-img {
+      max-width: 90%;
+      max-height: 220px;
+      border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+      border: 1px solid rgba(255,255,255,0.1);
+      margin-bottom: 12px;
     }
 
     /* Code View style */
     .code-view {
       font-family: var(--font-mono);
-      font-size: 12px;
+      font-size: 11px;
       color: #e6edf3;
       background: #090c10;
-      padding: 16px;
+      padding: 14px;
       border-radius: 8px;
       border: 1px solid #21262d;
       white-space: pre-wrap;
       overflow-y: auto;
-      max-height: 260px;
+      max-height: 250px;
       text-align: left;
+      width: 100%;
     }
     .code-view .added {
       color: var(--accent-green);
@@ -280,20 +293,21 @@
     }
     .slide-title-only h1 {
       font-family: var(--font-title);
-      font-size: 56px;
+      font-size: 50px;
       font-weight: 800;
       letter-spacing: -1.5px;
       line-height: 1.1;
-      margin-bottom: 20px;
+      margin-top: 15px;
+      margin-bottom: 15px;
       background: linear-gradient(135deg, #ffffff 30%, #a5c2f4 100%);
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .slide-title-only p {
-      font-size: 18px;
+      font-size: 16px;
       color: var(--text-muted);
       max-width: 600px;
-      margin-bottom: 40px;
+      margin-bottom: 25px;
       line-height: 1.5;
     }
     .author-tag {
@@ -362,12 +376,12 @@
       border: 1px solid #21262d;
       border-radius: 8px;
       padding: 12px;
-      min-height: 150px;
+      min-height: 140px;
       display: flex;
       flex-direction: column;
       gap: 8px;
       font-family: var(--font-mono);
-      font-size: 12px;
+      font-size: 11px;
     }
     .sim-position {
       display: flex;
@@ -408,10 +422,11 @@
     .hedge-sim-display {
       display: flex;
       flex-direction: column;
-      gap: 16px;
+      gap: 12px;
       align-items: center;
       justify-content: center;
       height: 100%;
+      width: 100%;
     }
     .flow-step {
       background: #161b22;
@@ -441,7 +456,7 @@
 
     /* Footer Controls */
     footer {
-      padding: 24px 40px;
+      padding: 20px 40px;
       display: flex;
       justify-content: space-between;
       align-items: center;
@@ -453,8 +468,8 @@
       gap: 16px;
     }
     .nav-btn {
-      width: 44px;
-      height: 44px;
+      width: 40px;
+      height: 40px;
       border-radius: 50%;
       border: 1px solid var(--border-glow);
       background: var(--bg-card);
@@ -535,32 +550,81 @@
     <!-- Slide 1: Welcome -->
     <div class="slide active" id="slide-1">
       <div class="slide-title-only">
-        <h1>Traps & Gaps Resolved Today</h1>
-        <p>Interactive summary of RMS robustness updates and live execution safeguards implemented to eliminate trading anomalies.</p>
+        <img class="panel-img" src="images/algo_trading_illustration.png" alt="Algo Trading Illustration" style="max-height: 250px; margin-bottom: 20px;">
+        <h1>Algo-Trader Gaps & Traps: The Battle of Bugs 🕵️‍♂️💥</h1>
+        <p>A fun, interactive retrospective of how we fought and conquered Traps #53 to #71 to make the execution engine absolutely bulletproof!</p>
         <div class="author-tag">
-          <span></span> Edits & Resolutions by Antigravity AI
+          <span></span> Code Fixes & presentation by Antigravity AI
         </div>
       </div>
     </div>
 
-    <!-- Slide 2: Trap 62 -->
+    <!-- Slide 2: Trap 53 / 58 -->
     <div class="slide" id="slide-2">
       <div class="slide-header">
         <div class="slide-title-group">
-          <h2>🔄 TRAP #62 — Position State Desync</h2>
+          <h2>🛡️ TRAP #53 / #58: Option Hedging Go Brrr...</h2>
+          <div class="slide-meta">Files Modified: risk_gate.py, templates/index.html</div>
+        </div>
+        <span class="slide-badge">Option Safeguard</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem 💸</h3>
+          <ul class="bullet-list">
+            <li>Auto-hedging system was a bit <b>too enthusiastic</b> — buying further OTM options immediately on short entry.</li>
+            <li>Hedge order placement was running <b>uncontrolled</b>, throwing orders around like a shopper on Black Friday.</li>
+            <li>User was getting buried in brokerage fees and unnecessary executions! 📉</li>
+          </ul>
+          <h3>The Solution 🚀</h3>
+          <ul class="bullet-list solution">
+            <li>Added a global <b>"Option Hedging"</b> selector in the RMS tab to toggle between <b>Hedge Mode</b> and <b>Naked Mode</b>.</li>
+            <li>If set to <b>Naked Mode</b>, <code>risk_gate.hedge_config()</code> returns <code>0, None</code> immediately.</li>
+            <li>This bypasses options contract lookup entirely — no hedge orders are sent. Blissful silence! 🤫</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <img class="panel-img" src="images/hedge_mode_shield.png" alt="Hedge Shield">
+          <div class="hedge-sim-display">
+            <div class="sim-toggle">
+              <button class="sim-toggle-btn active" id="hedge-btn-on" onclick="toggleHedgeSim(true)">Hedge Mode</button>
+              <button class="sim-toggle-btn" id="hedge-btn-off" onclick="toggleHedgeSim(false)">Naked Mode</button>
+            </div>
+            <div class="flow-step" id="flow-sell">
+              🟢 OPTION SELL Entry Triggers (1 Lot)
+            </div>
+            <div class="flow-arrow" id="flow-arr">⬇️</div>
+            <div class="flow-step" id="flow-buy">
+              🔵 AUTO-HEDGE BUY Contract Placed (+5 strikes OTM)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3: Trap 62 -->
+    <div class="slide" id="slide-3">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🧟‍♂️ TRAP #62: The Zombie Position Desync</h2>
           <div class="slide-meta">Files Modified: range_trader.py, universe_trader.py, rsi_trader.py</div>
         </div>
         <span class="slide-badge trap">Critical</span>
       </div>
       <div class="slide-body">
         <div class="slide-text">
-          <h3>The Problem</h3>
-          <p>When a position was manually closed on Zerodha (or via trailing lock), the running strategy process was completely unaware. It kept its internal state as "OPEN", and on the next signal, placed an opposite order that opened a duplicate reverse position (causing triple trades, heavy tax, and losses).</p>
-          <h3>The Solution</h3>
+          <h3>The Problem 🧟</h3>
           <ul class="bullet-list">
-            <li>Scanner loops now perform live database re-validation against <code>order_store.trades_for(today)["open"]</code> on every tick.</li>
-            <li>If a trade was reconciled as closed at the broker, the strategy instantly clears its memory state (<code>st["position"] = None</code>).</li>
-            <li>This shields the account from duplicate, unhedged entries due to manual interventions.</li>
+            <li>You close a position manually on Zerodha because of panic or trailing lock.</li>
+            <li>The strategy process was <b>sleeping at the wheel</b>, still keeping its in-memory state as <code>"OPEN"</code>.</li>
+            <li>On the next opposite signal, the strategy fired an exit order that actually opened a <b>brand new opposite position</b>!</li>
+            <li>1 trade became 3 trades. More taxes, double losses, and high blood pressure! 📈🤬</li>
+          </ul>
+          <h3>The Solution 🚀</h3>
+          <ul class="bullet-list solution">
+            <li>Scanner loops now perform live database checks against <code>order_store.trades_for(today)["open"]</code> on every tick.</li>
+            <li>If a trade was closed at the broker/database, the strategy instantly clears its memory state (<code>st["position"] = None</code>).</li>
+            <li>Prevents accidental ghost entries dead in their tracks. 🛡️</li>
           </ul>
         </div>
         <div class="visual-panel">
@@ -576,24 +640,28 @@ open_syms = {t["sym"] for t in open_trades}
       </div>
     </div>
 
-    <!-- Slide 3: Trap 64 -->
-    <div class="slide" id="slide-3">
+    <!-- Slide 4: Trap 64 -->
+    <div class="slide" id="slide-4">
       <div class="slide-header">
         <div class="slide-title-group">
-          <h2>🚫 TRAP #64 — Kite Phantom Positions</h2>
+          <h2>🪁 TRAP #64: Kite's Phantom Omission</h2>
           <div class="slide-meta">Files Modified: broker_sync.py</div>
         </div>
         <span class="slide-badge trap">Critical</span>
       </div>
       <div class="slide-body">
         <div class="slide-text">
-          <h3>The Problem</h3>
-          <p>Zerodha Kite's API completely omits contracts with zero trade history (such as cancelled or rejected orders) from its <code>positions()</code> list. Since the app didn't find the contract in the list, it didn't verify order status, resulting in "phantom positions" tracked in the app database that blocked subsequent entries.</p>
-          <h3>The Solution</h3>
+          <h3>The Problem 🕳️</h3>
           <ul class="bullet-list">
-            <li><code>broker_sync.py</code> modified to verify order logs directly if a database-open contract is missing from the API positions list.</li>
-            <li>Queries Kite order history using <code>broker.order_status</code>.</li>
-            <li>If order is confirmed as <code>CANCELLED</code> or <code>REJECTED</code>, it reconciles it as flat and marks it <code>externally_closed</code> immediately.</li>
+            <li>Zerodha Kite's <code>positions()</code> API completely hides limit orders that were <b>cancelled or rejected</b> (zero traded qty).</li>
+            <li>Since the contract was missing from the positions query, the app couldn't verify its status.</li>
+            <li>It kept tracking them as open <b>"Phantom Positions"</b> in our DB, blocking any fresh trades! 👻</li>
+          </ul>
+          <h3>The Solution 🚀</h3>
+          <ul class="bullet-list solution">
+            <li>Updated <code>broker_sync.py</code> to check the actual order logs directly using <code>broker.order_status</code> for any unmatched open positions.</li>
+            <li>If order is confirmed as <code>CANCELLED</code> or <code>REJECTED</code>, it marks it <code>externally_closed</code>.</li>
+            <li>Cleans the phantom records without double-counting trades. 🧹</li>
           </ul>
         </div>
         <div class="visual-panel">
@@ -609,24 +677,28 @@ for sym in missing_syms:
       </div>
     </div>
 
-    <!-- Slide 4: Trap 65 -->
-    <div class="slide" id="slide-4">
+    <!-- Slide 5: Trap 65 -->
+    <div class="slide" id="slide-5">
       <div class="slide-header">
         <div class="slide-title-group">
-          <h2>🔥 TRAP #65 — Proactive Feed Cold-Starts</h2>
+          <h2>🥶 TRAP #65: The Cold WebSocket Freezer</h2>
           <div class="slide-meta">Files Modified: range_trader.py, universe_trader.py</div>
         </div>
         <span class="slide-badge">Optimized</span>
       </div>
       <div class="slide-body">
         <div class="slide-text">
-          <h3>The Problem</h3>
-          <p>WebSocket feed subscriptions are capped at 100 concurrent symbols. When starting up, or when a signal was about to fire, dynamic options contracts were subscribed on-the-fly, meaning the tick data was cold (no ticks available) at the exact moment of signal evaluation.</p>
-          <h3>The Solution</h3>
+          <h3>The Problem 🧊</h3>
           <ul class="bullet-list">
-            <li>Watchlist underlying indices and equities are proactively subscribed to <code>dhan_feed</code> at startup.</li>
-            <li>Scanner loops proactively resolve and subscribe the ATM Call & Put contracts dynamically <i>before</i> signals trigger.</li>
-            <li>Ensures ticks are warm and live liquidity filters have immediate data for pre-trade gating.</li>
+            <li>WebSocket feed has a strict limit of 100 concurrent subscriptions.</li>
+            <li>Dynamic option contracts were subscribed only at the exact millisecond a signal fired.</li>
+            <li>The feed was <b>cold</b> (zero ticks accumulated), causing the live liquidity checks to fail and miss the trade! 🥶</li>
+          </ul>
+          <h3>The Solution 🚀</h3>
+          <ul class="bullet-list solution">
+            <li>Watchlist underlying stocks and indices are subscribed to <code>dhan_feed</code> right at startup.</li>
+            <li>The scanner loop proactively resolves and subscribes likely ATM CE/PE option contracts during each scan iteration.</li>
+            <li>Ticks are warm and warm liquidity data is ready <b>before</b> any signal fires! 🔥</li>
           </ul>
         </div>
         <div class="visual-panel">
@@ -643,65 +715,32 @@ dhan_feed.add(("NSE_FNO", pe_sec))</span></div>
       </div>
     </div>
 
-    <!-- Slide 5: Trap 70 -->
-    <div class="slide" id="slide-5">
-      <div class="slide-header">
-        <div class="slide-title-group">
-          <h2>🛡️ TRAP #70 — Global Option Hedging Switch</h2>
-          <div class="slide-meta">Files Modified: risk_gate.py, templates/index.html</div>
-        </div>
-        <span class="slide-badge">New Control</span>
-      </div>
-      <div class="slide-body">
-        <div class="slide-text">
-          <h3>The Problem</h3>
-          <p>Auto-hedging buys further OTM options immediately after short entries. However, the hedge order placement was uncontrolled, placing too many orders or generating unnecessary brokerage costs. The user wanted a global switch to toggle between naked positions and hedged positions.</p>
-          <h3>The Solution</h3>
-          <ul class="bullet-list">
-            <li>Added a global <strong>Option Hedging</strong> dropdown in the RMS tab dashboard (Hedge vs. Naked).</li>
-            <li>Stored under <code>_risk.global.hedge_enabled</code>.</li>
-            <li>When set to <strong>Naked Mode</strong>, <code>risk_gate.hedge_config()</code> returns <code>0, None</code>, skipping hedge placement entirely system-wide.</li>
-          </ul>
-        </div>
-        <div class="visual-panel">
-          <div class="hedge-sim-display">
-            <div class="sim-toggle" style="width:100%">
-              <button class="sim-toggle-btn active" id="hedge-btn-on" onclick="toggleHedgeSim(true)">Hedge Mode</button>
-              <button class="sim-toggle-btn" id="hedge-btn-off" onclick="toggleHedgeSim(false)">Naked Mode</button>
-            </div>
-            <div class="flow-step" id="flow-sell">
-              🟢 OPTION SELL Entry Triggers (1 Lot)
-            </div>
-            <div class="flow-arrow" id="flow-arr">⬇️</div>
-            <div class="flow-step" id="flow-buy">
-              🔵 AUTO-HEDGE BUY Contract Placed (+5 strikes OTM)
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
     <!-- Slide 6: Trap 71 -->
     <div class="slide" id="slide-6">
       <div class="slide-header">
         <div class="slide-title-group">
-          <h2>🔒 TRAP #71 — Per-Instrument Trailing Lock</h2>
+          <h2>🔒 TRAP #71: The "Save Everyone" vs "Save Yourself" Lock</h2>
           <div class="slide-meta">Files Modified: trader_dashboard.py, templates/index.html</div>
         </div>
         <span class="slide-badge">New Control</span>
       </div>
       <div class="slide-body">
         <div class="slide-text">
-          <h3>The Problem</h3>
-          <p>The account-level trailing profit lock tracked aggregate daily P&L. When aggregate P&L fell from its peak, the daemon squared off all positions. This cut off other healthy positions because of a drawdown in one single bad position.</p>
-          <h3>The Solution</h3>
+          <h3>The Problem 💥</h3>
           <ul class="bullet-list">
-            <li>Added a <strong>Trailing Mode</strong> dropdown in the RMS tab (Aggregate vs. Per-Instrument).</li>
-            <li><strong>Per-Instrument Mode:</strong> tracks individual peak P&L for each open position in <code>_pos_peaks</code>.</li>
-            <li>If a position's P&L falls from its personal peak, only that specific position is squared off, keeping other trades active.</li>
+            <li>The trailing profit lock worked at the total aggregate portfolio level.</li>
+            <li>If P&L dropped from its peak, the daemon hit the panic button and <b>squared off every open trade</b>.</li>
+            <li>This was like a bad team manager: one player performs badly, and the <b>entire team gets fired</b>! NIFTY was forced to close just because SBIN dipped. 🤦‍♂️</li>
+          </ul>
+          <h3>The Solution 🚀</h3>
+          <ul class="bullet-list solution">
+            <li>Added a <b>Trailing Mode</b> select element in the RMS tab to choose between <b>Aggregate</b> and <b>Per-Instrument</b> locks.</li>
+            <li><b>Per-Instrument Mode:</b> Tracks peak P&L for each open position individually in <code>_pos_peaks</code>.</li>
+            <li>If a single position drops from its peak, only that leg is squared off. The healthy positions are left to keep printing cash! 💰🧗‍♂️</li>
           </ul>
         </div>
         <div class="visual-panel">
+          <img class="panel-img" src="images/per_instrument_lock.png" alt="Lock Shield">
           <div class="sim-container">
             <div class="sim-toggle">
               <button class="sim-toggle-btn active" id="lock-btn-agg" onclick="setLockMode('aggregate')">Aggregate Mode</button>
