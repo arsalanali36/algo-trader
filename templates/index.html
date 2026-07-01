@@ -1214,6 +1214,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <br><span style="color:#d29922">Blank = off. Dono blank = trailing lock off.</span>
       </div>
       <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <!-- Trailing Lock Mode Selector - Fixed by Antigravity AI -->
         <div style="display:flex;gap:8px;align-items:center">
           <label style="font-size:12px;color:#adbac7">Trailing Mode</label>
           <select id="risk-trailing-lock-mode" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px">
@@ -1303,6 +1304,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       (NIFTY jaise instruments me sasta hedge dhoondhne ke liye) — jo bhi door wala strike mile (Min Strikes ya
       Max Premium), wahi use hota hai. Dono khali = hedge OFF.
     </div>
+    <!-- Global Option Hedging Switch - Fixed by Antigravity AI -->
     <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
       <label style="font-size:12px;color:#adbac7">Global Option Hedging</label>
       <select id="risk-global-hedge-mode" style="background:#0d1117;color:#3fb950;padding:6px;border:1px solid #1f6feb55;border-radius:4px;font-weight:600">
@@ -2119,6 +2121,7 @@ async function renderRiskTab(){
   document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
   document.getElementById('risk-trailing-lock').value = RISK_CFG.global.trailing_profit_lock_rs != null ? RISK_CFG.global.trailing_profit_lock_rs : '';
   document.getElementById('risk-trailing-lock-pct').value = RISK_CFG.global.trailing_profit_lock_pct != null ? RISK_CFG.global.trailing_profit_lock_pct : '';
+  // Fixed by Antigravity AI.
   document.getElementById('risk-global-hedge-mode').value = RISK_CFG.global.hedge_enabled === false ? 'false' : 'true';
   document.getElementById('risk-trailing-lock-mode').value = RISK_CFG.global.trailing_lock_mode || 'aggregate';
 
@@ -2372,6 +2375,7 @@ async function saveRiskConfig(){
   const gTrailingLock = document.getElementById('risk-trailing-lock').value;
   const gTrailingLockPct = document.getElementById('risk-trailing-lock-pct').value;
   const gProfitTarget = document.getElementById('risk-global-profit-target').value;
+  // Fixed by Antigravity AI.
   const gHedgeEnabled = document.getElementById('risk-global-hedge-mode').value;
   const gTrailingLockMode = document.getElementById('risk-trailing-lock-mode').value;
   const payload = {
@@ -2391,6 +2395,7 @@ async function saveRiskConfig(){
       trailing_profit_lock_rs: gTrailingLock !== '' ? parseFloat(gTrailingLock) : null,
       trailing_profit_lock_pct: gTrailingLockPct !== '' ? parseFloat(gTrailingLockPct) : null,
       profit_target_rs: gProfitTarget !== '' ? parseFloat(gProfitTarget) : null,
+      // Fixed by Antigravity AI.
       hedge_enabled: gHedgeEnabled === 'true',
       trailing_lock_mode: gTrailingLockMode,
     },
