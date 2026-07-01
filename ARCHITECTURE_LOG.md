@@ -370,3 +370,14 @@
 **Depends on:** TRAP #63 (isi session)
 **Not done:** ICICIBANK phantom row (id 386) abhi bhi order_store me "open" dikha raha hai — real risk nahi hai (kabhi fill hi nahi hua), lekin cleanup pending. 30% ceiling per-instrument vs account-level — user decide karenge.
 **Verify:** Syntax check + deploy + restart (paper mode me, safe waqt), clean startup confirmed, koi error nahi.
+
+## 2026-07-01 — TRAP #65: liquidity filter poore din data hi nahi paa raha tha — `dhan_feed.start()` kabhi call hi nahi hua
+**Status:** DONE (root fix) / PENDING (cold-start proactive-subscribe, REST fallback hardening)
+**Kya:** User ne pucha "hamare paas to 2/3 wala liquidity filter hai, TITAN/ICICI illiquid hone ke bawajood kaise chal gaye?" — check kiya to poore din ke SAARE 13 `[LIQUIDITY]` log lines mein se HAR EK "no live market-depth data — failing OPEN" tha. Ek bhi real data check nahi hua. Root cause: `range_trader.py` sirf `dhan_feed.add()` call karta tha, `dhan_feed.start()` KABHI nahi — `add()` sirf tabhi kaam karta hai jab feed ka background thread already chal raha ho; woh thread sirf `start()` create karta hai. Isliye `dhan_feed.LIVE` is process me hamesha khaali raha (confirmed: size 0), aur har liquidity check REST fallback pe gira — jo khud test karne pe theek kaam kiya (direct call se real data mila) lekin real-time load me consistently fail ho raha tha.
+**Fix:** `range_trader.py`'s `main()` ab startup pe `dhan_feed.start({client_id, jwt_token}, [])` call karta hai (same pattern jo `trader_dashboard.py`'s `_ensure_feed_started()` use karta hai) — ab feed genuinely connect hoga.
+**Layer:** broker / risk-management
+**Files:** `_TRADERS/range_trader.py`
+**Kyun:** User ka sawaal ("filter kaam kyun nahi kiya") — investigate karke root cause mila
+**Depends on:** nothing
+**Not done:** din ki shuruaat me saare universe symbols ko proactively subscribe karna (abhi sirf reactive, signal aane pe) — pehla signal cold-start rahega. REST fallback ki reliability under load bhi harden karni chahiye shayad.
+**Verify:** Deploy + restart clean, `[startup] dhan_feed started` log confirm hua. Real signal ka wait chal raha hai final confirmation ke liye (`[LIQUIDITY]` line real data ke saath aani chahiye ab).

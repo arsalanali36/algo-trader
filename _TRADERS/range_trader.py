@@ -738,6 +738,26 @@ def main(strategy_id="range"):
     log.info(f"Range Trader starting — mode={mode}")
     _recover_state_from_order_store(strategy_id)
 
+    # TRAP #65: this process only ever called dhan_feed.add() to subscribe
+    # contracts, never dhan_feed.start() — add() just queues an instrument
+    # if the feed's background thread isn't already running (_running stays
+    # False forever), so the WebSocket connection here never actually
+    # started. dhan_feed.LIVE stayed permanently empty in this process,
+    # which meant strategy_safety.check_contract_liquidity()'s primary data
+    # source was always empty, forcing every single check onto the REST
+    # fallback (which itself is best-effort/rate-limited) and explaining why
+    # the "any 2-of-3" liquidity gate never actually gated anything today —
+    # it was fail-open on missing data on every single call. Starting the
+    # feed here (once, with an empty instrument list — same pattern as
+    # trader_dashboard.py's _ensure_feed_started) fixes it at the source.
+    try:
+        jwt_token, client_id = load_creds()
+        import dhan_feed
+        dhan_feed.start({"client_id": client_id, "jwt_token": jwt_token}, [])
+        log.info("dhan_feed started — live market-depth now available for liquidity checks")
+    except Exception as e:
+        log.warning(f"dhan_feed start failed (liquidity checks will keep using REST fallback only): {e}")
+
     last_day        = None
     daily_levels    = {}   # symbol → [(price, type)]
     pivot_labels    = {}   # symbol → {rounded_price: specific label, e.g. "R3"/"S1"/"P"/"PDH"} — display-only, never used in entry logic
