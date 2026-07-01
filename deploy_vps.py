@@ -57,6 +57,8 @@ ROOT_FILES = [
     "download_equity_history.py",
     "sync_data.py",
     "sync_pine.py",
+    "risk_gate.py",
+    "strategy_safety.py",
 ]
 
 # ---- Folder globs (relative paths preserve hote hain tar me) ----
