@@ -5,6 +5,8 @@
 <title>Algo Trader</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:14px}
@@ -877,6 +879,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾 Reconcile vs Broker</button>
         <span id="reconcile-manual-result" style="font-size:11px;color:#8b949e"></span>
         <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+        <button id="ord-pdf-btn" class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="exportCompletedPdf(this)"
+          title="Completed Trades ko PDF report (table + TOTAL) mein download karo">📄 Export PDF</button>
       </div>
     </div>
     <div id="ord-completed" style="overflow-x:auto"></div>
@@ -3265,6 +3269,86 @@ function _sortData(arr, col, dir) {
   });
 }
 
+// ── 📄 Export Completed Trades → PDF report ──────────────────────────────────
+// Data se banata hai (DOM scrape nahi) taaki actions/sort-arrows/expand-arrows
+// PDF me na aayein. Globals render ke time set hote hain (renderCachedOrders end).
+function exportCompletedPdf(btn){
+  try {
+    if(!window.jspdf || !window.jspdf.jsPDF){
+      alert('PDF library load nahi hui (internet check karo — jsPDF CDN se aata hai).');
+      return;
+    }
+    const rows = window._completedData || [];
+    if(!rows.length){ alert('Is din koi completed trade nahi hai — export ke liye kuch nahi.'); return; }
+    const date = window._completedDate || '';
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ orientation:'landscape', unit:'pt', format:'a4' });
+
+    // Header
+    doc.setFontSize(15); doc.setTextColor(20);
+    doc.text('Completed Trades — P&L Report', 40, 40);
+    doc.setFontSize(10); doc.setTextColor(90);
+    doc.text('Date: ' + (date||'—') + '     Generated: ' + new Date().toLocaleString(), 40, 58);
+
+    // Source summary line (STRATEGY / MANUAL / WEBHOOK)
+    const st = window._completedSrcTotals || {};
+    const sumParts = [];
+    ['STRATEGY','MANUAL','WEBHOOK'].forEach(s=>{
+      if(st[s] && (st[s].n || st[s].opn))
+        sumParts.push(s + ': ' + (st[s].net>=0?'+':'') + Math.round(st[s].net) +
+                      ' (' + st[s].n + ' trades, ' + st[s].w + 'W/' + (st[s].n-st[s].w) + 'L)');
+    });
+    if(sumParts.length){ doc.setFontSize(9); doc.setTextColor(60); doc.text(sumParts.join('     '), 40, 74); }
+
+    // Body + totals
+    let tg=0, ttx=0, tn=0, tpts=0;
+    const body = rows.map(t=>{
+      const pts = (t.entry==='BUY') ? (t.exit_price||0)-(t.entry_price||0)
+                                     : (t.entry_price||0)-(t.exit_price||0);
+      tg += (t._gross||0); ttx += (t._tax||0); tn += (t._net||0); tpts += pts;
+      return [
+        t.sym || '',
+        t.entry || '',
+        t.qty || 0,
+        (t.entry_price!=null ? Number(t.entry_price).toFixed(2) : ''),
+        (t.exit_price!=null ? Number(t.exit_price).toFixed(2) : ''),
+        (pts>=0?'+':'') + pts.toFixed(2),
+        Math.round(t._gross||0),
+        '-' + Math.round(t._tax||0),
+        Math.round(t._net||0),
+        (t.strategy || t.source || '')
+      ];
+    });
+    const foot = [['TOTAL','','','','',
+      (tpts>=0?'+':'') + tpts.toFixed(2),
+      Math.round(tg), '-' + Math.round(ttx), Math.round(tn), '']];
+
+    doc.autoTable({
+      startY: sumParts.length ? 88 : 72,
+      head: [['Symbol','Side','Qty','Entry','Exit','Points','Gross','Tax','Net','Strategy']],
+      body: body,
+      foot: foot,
+      styles: { fontSize:8, cellPadding:3, overflow:'linebreak' },
+      headStyles: { fillColor:[31,111,235], textColor:255 },
+      footStyles: { fillColor:[235,235,235], textColor:20, fontStyle:'bold' },
+      columnStyles: { 2:{halign:'right'}, 3:{halign:'right'}, 4:{halign:'right'},
+                      5:{halign:'right'}, 6:{halign:'right'}, 7:{halign:'right'}, 8:{halign:'right'} },
+      didParseCell: function(d){
+        if(d.section==='body' && (d.column.index===5 || d.column.index===8)){
+          const v = parseFloat(d.cell.raw);
+          if(!isNaN(v)) d.cell.styles.textColor = v>=0 ? [22,120,60] : [200,40,40];
+        }
+      }
+    });
+
+    doc.save('completed_trades_' + (date || 'report') + '.pdf');
+    if(btn){ const o = btn.textContent; btn.textContent = '✓ Saved'; setTimeout(()=>{ btn.textContent = o; }, 1500); }
+  } catch(e){
+    console.error('exportCompletedPdf failed:', e);
+    alert('PDF export fail: ' + (e && e.message ? e.message : e));
+  }
+}
+
 function renderCachedOrders() {
   if (!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
   const d = window._lastOrdersData || {};
@@ -3468,6 +3552,9 @@ function renderCachedOrders() {
   }
   _setHtml(document.getElementById('ord-completed'), ch);
   window._realizedTot = _tot;   // store for NET panel
+  window._completedData     = sortedCompleted;   // for 📄 Export PDF
+  window._completedDate      = ordDate;
+  window._completedSrcTotals = srcTotals;
   _updateNetPanel(0);           // refresh NET panel immediately after render (no open pos yet)
 
   // ── OPEN POSITIONS ──
