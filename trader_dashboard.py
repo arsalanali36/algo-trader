@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 trader_dashboard.py — Web UI for Algo Trader
 Run: python trader_dashboard.py
@@ -12,7 +12,7 @@ import socket
 import subprocess
 import signal
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from flask import Flask, jsonify, render_template, request, Response, send_from_directory
 import time as _time
@@ -477,7 +477,7 @@ def api_rms_summary():
     reserved = {"_risk", "webhooks"}
     strat_ids = [k for k in cfg.keys() if k not in reserved]
 
-    ist_now_ = datetime.utcnow() + timedelta(hours=5, minutes=30)
+    ist_now_ = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     data = order_store.trades_for(ist_now_.strftime("%Y-%m-%d"))
     open_pos = data.get("open", [])
 
@@ -624,7 +624,7 @@ def api_sync_positions():
     from datetime import timedelta as _td2
     import order_store as _os3
     import broker_sync as _bsync2
-    today = (datetime.utcnow() + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    today = (datetime.now(timezone.utc) + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
     open_pos = _os3.trades_for(today).get('open', [])
     try:
         closed_ids = _bsync2.force_sync(open_pos, log=print)
@@ -1220,7 +1220,7 @@ def api_trade_chart_data():
     import dhan_master, requests as _req, datetime as _dt
     trad_sym = request.args.get('trad_sym', '').strip()
     date_str = request.args.get('date', '').strip() or \
-        (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
     entry_t  = request.args.get('et', '').strip()   # HH:MM IST
     exit_t   = request.args.get('xt', '').strip()
     tf       = request.args.get('tf', '').strip()
@@ -1250,7 +1250,7 @@ def api_trade_chart_data():
                 sys.path.insert(0, tools_path)
             import backtest_engine
             
-            end_dt = _dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)
+            end_dt = _dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)
             start_dt = end_dt - _dt.timedelta(days=400) # Give enough buffer for indicators like 200 EMA
             df = backtest_engine.ensure_and_load_symbol(trad_sym, start_dt.strftime("%Y-%m-%d"), end_dt.strftime("%Y-%m-%d"), 1440)
             
@@ -1306,7 +1306,7 @@ def api_trade_chart_underlying_data():
     import requests as _req, datetime as _dt
     trad_sym = request.args.get('trad_sym', '').strip()
     date_str = request.args.get('date', '').strip() or \
-        (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
     entry_t = request.args.get('et', '').strip()
     exit_t = request.args.get('xt', '').strip()
     strategy_id = request.args.get('strategy', '').strip()
@@ -1703,7 +1703,7 @@ def api_counterfactual():
     """Alternate history: what would have happened if user hadn't intervened manually.
     ?date=YYYY-MM-DD (defaults to today)"""
     from datetime import timedelta as _td
-    _ist = datetime.utcnow() + _td(hours=5, minutes=30)
+    _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
     date = request.args.get("date") or _ist.strftime("%Y-%m-%d")
     try:
         import counterfactual as cf
@@ -1720,7 +1720,7 @@ def api_kite_csv_upload():
     Form field: file (CSV), date (YYYY-MM-DD optional, defaults to today)."""
     import tempfile, os
     from datetime import timedelta as _td
-    _ist = datetime.utcnow() + _td(hours=5, minutes=30)
+    _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
     date = request.form.get('date') or _ist.strftime('%Y-%m-%d')
     if 'file' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
@@ -1746,7 +1746,7 @@ def api_peak_pnl_history():
                entries: [[entry_time, cum_pnl_at_entry, sym], ...],
                profit_target_rs, lock_pct, lock_rs}"""
     from datetime import timedelta as _td
-    _ist_now = datetime.utcnow() + _td(hours=5, minutes=30)
+    _ist_now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
     req_date = request.args.get("date") or _ist_now.strftime("%Y-%m-%d")
     is_today = (req_date == _ist_now.strftime("%Y-%m-%d"))
 
@@ -1922,7 +1922,7 @@ def api_close_position():
     try:
         import order_store
         from datetime import timedelta as _td
-        today = (datetime.utcnow() + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
+        today = (datetime.now(timezone.utc) + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
         open_pos = order_store.trades_for(today).get('open', [])
         this_leg = next((p for p in open_pos if p.get('sym') == t_sym and p.get('entry') == entry_side), None)
         gid = (this_leg or {}).get('group_id')
@@ -2056,7 +2056,7 @@ def api_close_position_group():
     if not group_id:
         return jsonify({'ok': False, 'msg': 'group_id required'})
 
-    today = (datetime.utcnow() + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    today = (datetime.now(timezone.utc) + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
     open_pos = order_store.trades_for(today).get('open', [])
     legs = [p for p in open_pos if p.get('group_id') == group_id]
     if not legs:
@@ -2177,7 +2177,7 @@ def api_pine_save():
     # folder. Happened once already (rsi_v1's v6.pine got clobbered by a later
     # vwap save that also landed on id 6) — use the real max instead.
     version = max((v.get("version", 0) for v in versions), default=0) + 1
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone, timezone, timedelta
     ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     ts = ist.strftime('%Y-%m-%d %H:%M IST')
     strat_version = sum(1 for v in versions if v.get('name') == strat_name) + 1
@@ -2876,7 +2876,7 @@ def api_orders():
     with source/mode/strategy/broker tags. Query: date, source, mode, broker,
     strategy, instrument. Plus distinct filter values for the UI dropdowns."""
     import order_store
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone, timezone, timedelta
     ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
     date = request.args.get('date') or ist.strftime('%Y-%m-%d')
     filt = {k: request.args.get(k) for k in
@@ -3169,7 +3169,7 @@ def _startup_healthcheck():
         print("startup healthcheck error:", e)
 
 def auto_scheduler():
-    from datetime import datetime, timezone, timedelta
+    from datetime import datetime, timedelta, timezone, timezone, timedelta
     import time
     def ist_now():
         return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
@@ -3283,7 +3283,7 @@ def _last_closed_candle_close(sec_id, seg):
         import requests as _req, datetime as _dt
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-        now_ist = datetime.utcnow() + timedelta(hours=5, minutes=30)
+        now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
         date_str = now_ist.strftime("%Y-%m-%d")
         inst = "EQUITY" if seg == "NSE_EQ" else ("INDEX" if seg == "IDX_I" else "OPTIDX")
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=headers, json={
@@ -3338,7 +3338,7 @@ except Exception as _e_init:
 def _trailing_lock_fired_today() -> bool:
     """Returns True if trailing squareoff already fired today — blocks new entries."""
     try:
-        from datetime import datetime as _dtc
+        from datetime import datetime, timedelta, timezone as _dtc
         _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
         return _flag.exists()
     except Exception:
@@ -3356,9 +3356,9 @@ def pos_monitor_loop():
     while True:
         try:
             _ensure_feed_started()
-            # 'datetime' is the CLASS (from datetime import datetime) — datetime.datetime
+            # 'datetime' is the CLASS (from datetime import datetime, timedelta, timezone) — datetime.datetime
             # galat tha, har loop crash karta tha (SL/TP monitor band pada tha).
-            ist_now = datetime.utcnow() + timedelta(hours=5, minutes=30)
+            ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
 
             data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
             open_pos = data.get("open", [])
@@ -3427,7 +3427,7 @@ def pos_monitor_loop():
                 if _total_pnl > _daily_peak_ever:
                     _daily_peak_ever = _total_pnl   # monotonic — never resets
                 _peak_pnl_history.append((
-                    (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
+                    (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%H:%M"),
                     round(_trailing_peak_pnl, 2),
                     round(_total_pnl, 2),
                     round(_daily_peak_ever, 2),      # v[3]: floor line base (monotonic, never drops)
@@ -3442,7 +3442,7 @@ def pos_monitor_loop():
                     pass
                 # Archive previous day's file at midnight rollover
                 try:
-                    _today_str = (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+                    _today_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
                     _arch_f = BASE_DIR / "data" / f"peak_pnl_history_{_today_str}.json"
                     # If archive for today doesn't exist yet and current file has data
                     # from a PREVIOUS date, archive it first then reset
@@ -3521,7 +3521,7 @@ def pos_monitor_loop():
                         _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
                         # Write day-level flag so webhook/strategy blocks new entries
                         try:
-                            from datetime import datetime as _dtc
+                            from datetime import datetime, timedelta, timezone as _dtc
                             _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
                             _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
                             print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)

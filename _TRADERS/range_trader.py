@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 range_trader.py — Ars_Auto_Rev_Chain RANGE Strategy | 1-min
 
@@ -695,7 +695,7 @@ def _recover_state_from_order_store(strategy_id):
     try:
         import order_store
         from datetime import datetime as _dt, timedelta as _td
-        ist = _dt.utcnow() + _td(hours=5, minutes=30)
+        ist = _dt.now(timezone.utc) + _td(hours=5, minutes=30)
         data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
         all_today = (data.get("open") or []) + (data.get("closed") or [])
         recovered = 0

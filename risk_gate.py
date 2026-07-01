@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 risk_gate.py — capital allocation gate (RMS Stage 1).
 
@@ -80,9 +80,9 @@ def get_broker_balance(broker_name):
 
 
 def _today_open(strategy=None):
-    import datetime
-    from datetime import timedelta
-    ist_now = datetime.datetime.utcnow() + timedelta(hours=5, minutes=30)
+    
+    from datetime import timezone
+    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     try:
         import order_store
@@ -398,9 +398,9 @@ def check_concentration(symbol, qty, price, side="SELL"):
 def _today_realized_pnl():
     """Sum of realized P&L (completed trades, all strategies) for today —
     from order_store's already-netted 'details'."""
-    import datetime
-    from datetime import timedelta
-    ist_now = datetime.datetime.utcnow() + timedelta(hours=5, minutes=30)
+    
+    from datetime import timezone
+    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     try:
         import order_store
@@ -533,9 +533,9 @@ def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
 def _strategy_day_pnl(strategy, unrealized_by_strat=None):
     """Today's realized P&L for one strategy (from order_store's netted details)
     + an optional caller-supplied unrealized estimate for that strategy."""
-    import datetime
-    from datetime import timedelta
-    ist_now = datetime.datetime.utcnow() + timedelta(hours=5, minutes=30)
+    
+    from datetime import timezone
+    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     realized = 0.0
     try:

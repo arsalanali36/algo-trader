@@ -1,4 +1,4 @@
-"""
+﻿"""
 counterfactual.py — "Man in the loop" alternate history analysis.
 
 Architecture (two separate broker accounts):
@@ -13,7 +13,7 @@ Panic cost  = Zerodha manual P&L (how much the interventions cost)
 from __future__ import annotations
 import json
 from collections import defaultdict, deque
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -23,7 +23,7 @@ DATA_DIR = BASE_DIR / "data"
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _ist_today() -> str:
-    return (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 
 
 # ── Kite (Zerodha) fetch + cache ──────────────────────────────────────────────

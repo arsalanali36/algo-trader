@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 """
 webhook_executor.py — TradingView webhook → Dhan/Kite order executor (MULTI-STRATEGY).
 
@@ -391,7 +391,7 @@ def _recover_wh_state():
     try:
         import order_store
         from datetime import datetime as _dt, timedelta as _td
-        date = (_dt.utcnow() + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        date = (_dt.now(timezone.utc) + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
         data = order_store.trades_for(date)
         recovered = 0
         for p in data.get("open", []):

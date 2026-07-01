@@ -1,4 +1,4 @@
-"""
+﻿"""
 daily_state.py — persists daily counters to disk so service restarts don't reset them.
 
 File: data/daily_state.json
@@ -15,7 +15,7 @@ Usage:
 from __future__ import annotations
 import json
 import threading
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 _FILE = Path(__file__).parent / "data" / "daily_state.json"
@@ -23,7 +23,7 @@ _lock = threading.Lock()
 
 
 def _ist_date() -> str:
-    return (datetime.utcnow() + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 
 
 def _load() -> dict:
