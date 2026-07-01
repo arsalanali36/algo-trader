@@ -228,6 +228,40 @@ class DhanBroker(BaseBroker):
         except Exception:
             return {}
 
+    def positions_detailed(self) -> list:
+        """Richer version of positions() — full symbol/segment/avg-price per
+        non-flat position. Used by broker_sync's untracked-position scan
+        (TRAP #57): unlike positions()'s bare {sec_id: qty}, this carries
+        enough to safely auto-adopt an orphaned position into order_store
+        without guessing (Dhan gives us its own tradingSymbol/segment
+        directly — no reverse-lookup needed, unlike Kite)."""
+        try:
+            _rl.acquire("account")
+            r = requests.get("https://api.dhan.co/v2/positions",
+                             headers=self._hdrs(), timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            items = data if isinstance(data, list) else (data.get("data") or [])
+            out = []
+            for p in items:
+                qty = int(p.get("netQty") or p.get("net_qty") or 0)
+                if qty == 0:
+                    continue
+                avg = (p.get("costPrice") or p.get("buyAvg") or p.get("sellAvg")
+                       or p.get("avgPrice") or 0)
+                out.append({
+                    "sec_id": str(p.get("securityId") or p.get("security_id") or ""),
+                    "trad_sym": p.get("tradingSymbol") or p.get("trading_symbol") or "",
+                    "segment": p.get("exchangeSegment") or p.get("exchange_segment") or "",
+                    "qty": qty,
+                    "side": "BUY" if qty > 0 else "SELL",
+                    "avg_price": float(avg or 0),
+                    "product_type": p.get("productType") or p.get("product_type") or "",
+                })
+            return out
+        except Exception:
+            return []
+
     def trades(self) -> list:
         """Return today's fills for exit-price capture when ghost positions are detected.
         Called by broker_sync._fetch_fills() (S3/S8 fix — records P&L on manual exit)."""

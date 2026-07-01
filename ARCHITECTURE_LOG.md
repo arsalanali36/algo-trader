@@ -285,3 +285,15 @@
 **Kyun:** User-reported cosmetic bug (peak P&L stale) → diagnosis ke dauraan ek zyada critical live-safety bug mil gaya (pos_monitor_loop poora silently down tha restart ke baad)
 **Depends on:** nothing
 **Verify:** VPS pe dono `algo-dashboard` + `algo-monitor` restart karke confirm kiya — `peak_pnl_history.json` ab clean ₹0 se start hota hai, koi error log nahi, `_trailing_lock_fired_today()` sahi kaam karta hai. Us waqt koi open position nahi thi (zero live-trading impact is baar).
+
+## 2026-07-01 — Restart-risk scenario modeling → 2 preemptive fixes (mode-preservation + untracked-position scan)
+**Status:** DONE
+**Kya:** User ne pucha "restart bolun to kya toot sakta hai" — 4 restart-types (single strategy / algo-monitor / algo-dashboard / full VPS reboot) x 3 categories (data corruption / order flow / position mismatch) model kiya, code padh ke (guesswork nahi). 4 findings mile, user ne top-2 critical fix karne bola:
+- **TRAP #57 — silent live→paper downgrade:** `auto_scheduler()` restart-recovery hardcoded `mode=paper` bhejta tha; `nifty_config.json` `mode` store hi nahi karta tha. Fix: `/api/start` ab `cfg[s]['mode']` bhi save karta hai; `auto_scheduler` usi ko read karke restore karta hai.
+- **TRAP #58 — untracked live position:** `broker_sync.py` sirf ek direction check karta tha (DB-open-but-broker-flat). Ulta kabhi nahi (broker-open-but-DB-absent) — jo `smart_order.execute()`'s ~8s live-fill-poll window me SIGTERM (koi handler kahin nahi hai) se ban sakta hai. Fix: naya `broker_sync.untracked_scan_if_due()` — dono broker ke live positions seedhe poll karke order_store se diff karta hai; Dhan → auto-adopt (apna hi tradingSymbol/segment deta hai, guessing nahi), Kite → alert-only (reverse-symbol-guess nahi kiya, TRAP #13/#22 jaisa hi).
+**Layer:** infra / broker / validation / risk-management
+**Files:** `trader_dashboard.py`, `broker_sync.py`, `brokers/base_broker.py`, `brokers/dhan_broker.py`, `brokers/kite_broker.py`
+**Kyun:** User khud VPS pe build karta hai (restart frequent) — preemptive modeling taaki live capital risk na aaye
+**Depends on:** nothing
+**Not done (user-scoped out for later):** #3 webhook profit-target lost on recovery (target:None), #4 nifty_config.json concurrent-write race (no atomic write)
+**Verify:** VPS deploy + syntax-check + restart (no open positions) + confirmed clean logs, peak-pnl still healthy, zero errors in pos_monitor_loop for 2+ min post-restart. Untracked-scan correctly silent (nothing to find). Live "adopt a real orphan" path not yet exercised (no orphan existed to test against) — logic reviewed carefully but flagging as unverified-in-anger.

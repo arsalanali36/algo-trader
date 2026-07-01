@@ -451,6 +451,36 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] positions() failed: {e}")
             return {}
 
+    def positions_detailed(self) -> list:
+        """Richer version of positions() — for broker_sync's untracked-position
+        scan (TRAP #57). Kite's own tradingsymbol/average_price is returned
+        as-is (kite_sym, NOT a Dhan trad_sym — no reverse-mapping attempted
+        here, see resolve_kite_symbol()'s forward-only design / TRAP #13/#22).
+        Callers must treat kite_sym as broker-side identity only and alert,
+        not silently guess a Dhan trad_sym from it."""
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            data = kite.positions()
+            out = []
+            for p in (data.get("net") or []):
+                qty = int(p.get("net_quantity", 0) or 0)
+                if qty == 0:
+                    continue
+                out.append({
+                    "kite_sym": p.get("tradingsymbol", ""),
+                    "exchange": p.get("exchange", ""),
+                    "qty": qty,
+                    "side": "BUY" if qty > 0 else "SELL",
+                    "avg_price": float(p.get("average_price") or 0),
+                    "product": p.get("product", ""),
+                })
+            return out
+        except Exception as e:
+            log.warning(f"[KITE] positions_detailed() failed: {e}")
+            return []
+
     def trades(self) -> list:
         """Return today's fills for exit-price capture when ghost positions are detected.
         Called by broker_sync._fetch_fills() (S3/S8 fix — records P&L on manual exit)."""

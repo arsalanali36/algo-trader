@@ -83,3 +83,13 @@ class BaseBroker(ABC):
         transaction_type/transactionType, quantity.
         Default: [] — broker_sync will skip exit-price recording for that broker."""
         return []
+
+    def positions_detailed(self) -> list:
+        """Optional: richer per-position detail (symbol/segment/avg_price) than
+        positions()'s bare {key: qty}. Used by broker_sync's untracked-position
+        scan (TRAP #57) to detect + best-effort adopt a live broker position
+        that has no matching OPEN row in order_store at all (e.g. the process
+        was killed mid-order-placement, before order_store.record() ran).
+        Default: [] — broker that doesn't implement this is simply skipped by
+        the scan (degrades gracefully, same convention as positions())."""
+        return []

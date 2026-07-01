@@ -678,12 +678,15 @@ def api_start():
                      stdout=lf, stderr=lf, env=_env,
                      cwd=str(BASE_DIR),
                      start_new_session=True)
-    # Mark active so auto-scheduler knows user wants this running
+    # Mark active + remember mode, so a later auto-restart (crash recovery,
+    # algo-monitor restart mid-day, VPS reboot) brings it back the same way
+    # it was actually running — not silently downgraded to paper (TRAP #57).
     try:
         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
         if s not in cfg:
             cfg[s] = {}
         cfg[s]['active'] = True
+        cfg[s]['mode'] = mode
         TC_FILE.write_text(json.dumps(cfg, indent=2))
     except Exception:
         pass
@@ -3190,14 +3193,21 @@ def auto_scheduler():
 
             if (9, 10) <= t < (15, 30):
                 if not has_started_today:
-                    print(f"[{now.strftime('%H:%M:%S')}] Auto-starting bots in PAPER mode...")
+                    print(f"[{now.strftime('%H:%M:%S')}] Auto-starting bots (last-known mode each)...")
                     try:
                         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
                             if _base(key) not in STRATEGIES:
                                 continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict) and cfg[key].get("active", True):
-                                requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode=paper", timeout=5)
+                                # Restore the mode it was last explicitly started in — NOT
+                                # always paper. This fires on every algo-monitor restart
+                                # during trading hours (has_started_today is per-process,
+                                # not per-day-only), and on VPS reboot recovery — a strategy
+                                # that was LIVE must come back LIVE, or it silently stops
+                                # placing real orders with zero alert. See LESSONS.md TRAP #57.
+                                saved_mode = cfg[key].get("mode", "paper")
+                                requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode={saved_mode}", timeout=5)
                     except Exception as e:
                         pass
                     has_started_today = True
@@ -3381,6 +3391,19 @@ def pos_monitor_loop():
                     open_pos = data.get("open", [])
             except Exception as _bse:
                 print(f"[broker_sync] skipped (error): {_bse}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
+            # ── Untracked-position scan (TRAP #57) — mirror image of the ghost
+            # sync above: catches a broker position that order_store has NO row
+            # for at all (e.g. a restart landed mid-order, killing the process
+            # before order_store.record() ran — no SIGTERM handler exists
+            # anywhere to prevent that). Independent of open_pos on purpose —
+            # must work even if the orphan is the ONLY position that exists.
+            try:
+                import broker_sync as _bsync2
+                _bsync2.untracked_scan_if_due(log=print)
+            except Exception as _use:
+                print(f"[broker_sync] untracked-scan skipped (error): {_use}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
             # Tracks ids already squared-off THIS pass (e.g. as a hedge group

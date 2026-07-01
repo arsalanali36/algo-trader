@@ -24,10 +24,12 @@ import time
 _lock     = threading.Lock()
 _INTERVAL = 30    # seconds between auto-syncs (was 120 — reduced for faster ghost detection, S6 fix)
 _CACHE_TTL = 35   # seconds — pre-exit check uses this cached data (avoids per-SL API hit)
+_UNTRACKED_INTERVAL = 30   # seconds between untracked-position scans (TRAP #57)
 
 # broker_name → {"positions": {sym_key: net_qty}, "ts": float}
 _cache: dict = {}
 _last_auto_sync = 0.0
+_last_untracked_scan = 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -54,6 +56,29 @@ def force_sync(open_positions: list, log=print) -> set:
     with _lock:
         _last_auto_sync = 0.0
     return _run_sync(open_positions, log)
+
+
+def untracked_scan_if_due(log=print) -> None:
+    """
+    Call from pos_monitor_loop every tick (mirrors sync_if_due's cadence).
+    Detects the MIRROR-IMAGE gap of ghost-position detection (TRAP #44):
+    sync_if_due/_run_sync only ever look at positions order_store ALREADY
+    thinks are open, and check if the broker has gone flat on them. This
+    scan instead pulls the broker's actual live positions directly — so it
+    also catches a position the broker has, that order_store has NO row for
+    at all (e.g. the process was SIGTERM'd mid-way through smart_order.execute()'s
+    live fill-confirm poll, before order_store.record() ever ran — no signal
+    handler exists anywhere in this codebase to prevent that). See TRAP #57.
+    Independent of open_positions (doesn't need order_store to already know
+    about ANYTHING) — this is what makes it catch the worst case: the
+    orphaned position being the ONLY position that exists.
+    """
+    global _last_untracked_scan
+    with _lock:
+        if time.time() - _last_untracked_scan < _UNTRACKED_INTERVAL:
+            return
+        _last_untracked_scan = time.time()
+    _run_untracked_scan(log)
 
 
 def is_flat(broker_name: str, trad_sym: str, sec_id: str) -> bool:
@@ -294,3 +319,156 @@ def _check_flat(broker_name: str, broker_pos: dict, trad_sym: str, sec_id: str) 
         if sec_id and sec_id in broker_pos:
             return int(broker_pos[sec_id]) == 0
         return False  # not in response → uncertain → assume open
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Untracked-position scan (TRAP #57) — the mirror image of ghost detection.
+# Ghost detection (above) asks "DB says open, is broker actually flat?"
+# This asks "broker has a real position, does DB even know it exists?"
+# ──────────────────────────────────────────────────────────────────────────────
+
+_UNTRACKED_ALERT_KEY = "untracked_position"
+
+
+def _ist_today_str() -> str:
+    from datetime import datetime, timedelta, timezone
+    return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+
+
+def _known_broker_keys(broker_name: str, open_for_broker: list) -> set:
+    """Identity keys order_store already has an OPEN row for, on this broker —
+    sec_id for Dhan (exact match, no guessing needed), resolved kite_sym for
+    Kite (forward-only Dhan-trad_sym -> Kite-symbol via resolve_kite_symbol,
+    same direction TRAP #44's ghost detection already trusts)."""
+    keys = set()
+    for p in open_for_broker:
+        if broker_name == "kite":
+            try:
+                from brokers.kite_broker import resolve_kite_symbol
+                ks = resolve_kite_symbol(p.get("sym") or p.get("trad_sym") or "")
+                if ks:
+                    keys.add(ks)
+            except Exception:
+                pass
+        else:
+            sid = str(p.get("sec_id") or "")
+            if sid:
+                keys.add(sid)
+    return keys
+
+
+def _run_untracked_scan(log=print) -> None:
+    for broker_name in ("dhan", "kite"):
+        try:
+            import order_store
+            from brokers import get_broker
+            data = order_store.trades_for(_ist_today_str())
+            open_for_broker = [p for p in (data.get("open") or [])
+                                if (p.get("broker") or "dhan").lower() == broker_name]
+            known = _known_broker_keys(broker_name, open_for_broker)
+
+            broker = get_broker(broker_name)
+            live = broker.positions_detailed() if hasattr(broker, "positions_detailed") else []
+        except Exception as e:
+            log(f"[broker_sync] untracked-scan ({broker_name}) fetch failed: {e}", flush=True)
+            continue
+
+        for pos in (live or []):
+            key = pos.get("sec_id") if broker_name != "kite" else pos.get("kite_sym")
+            key = str(key or "")
+            if not key or key in known:
+                continue
+            _handle_untracked(broker_name, key, pos, log)
+
+
+def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:
+    """A live broker position exists with NO matching order_store OPEN row.
+    Always alert loudly. Auto-adopt into order_store ONLY for Dhan, where the
+    broker gives us its own tradingSymbol/segment directly (no guessing) — for
+    Kite, alert-only (never guess a Dhan trad_sym from a kite_sym, see TRAP #13/#22)."""
+    label = pos.get("trad_sym") or key
+    qty, side, avg = pos.get("qty"), pos.get("side"), pos.get("avg_price")
+    adopted = False
+
+    if broker_name == "dhan":
+        trad_sym = pos.get("trad_sym") or ""
+        seg = pos.get("segment") or "NSE_FNO"
+        is_opt = "-CE" in trad_sym or "-PE" in trad_sym
+        instrument = "options" if is_opt else ("EQUITY" if "EQ" in seg else "unknown")
+        if trad_sym and pos.get("sec_id"):
+            try:
+                import order_store
+                # avg_price==0 means Dhan itself didn't give us a cost basis
+                # (e.g. proxy/edge response shape) — fall back to a live LTP
+                # so this still gets *some* SL protection rather than being
+                # dropped (TRAP #1's ₹0-fill guard would otherwise reject it).
+                price = float(avg or 0)
+                approx = False
+                if price <= 0:
+                    try:
+                        import shared_ltp_cache
+                        _sid = str(pos.get("sec_id"))
+                        price = float(shared_ltp_cache.get(_sid) or
+                                      shared_ltp_cache.get_stale(_sid) or 0)
+                        approx = True
+                    except Exception:
+                        pass
+                if price > 0:
+                    tags = ["UNTRACKED_ADOPTED"]
+                    if approx:
+                        tags.append("APPROX_ENTRY_PRICE")
+                    order_store.record(
+                        side=(pos.get("side") or "BUY"),
+                        qty=abs(int(qty or 0)),
+                        price=price,
+                        source="broker_sync",
+                        strategy="unknown",
+                        mode="live",
+                        broker=broker_name,
+                        symbol=trad_sym.split("-")[0] if trad_sym else "",
+                        instrument=instrument,
+                        trad_sym=trad_sym,
+                        sec_id=str(pos.get("sec_id") or ""),
+                        segment=seg,
+                        status="open",
+                        tags=tags,
+                    )
+                    adopted = True
+                    log(f"[broker_sync] 🔧 ADOPTED untracked {trad_sym} qty={qty} "
+                        f"@ ₹{price:.2f}{' (approx — LTP, not real cost basis)' if approx else ''} "
+                        f"— order_store row created so SL/EOD protection now applies. "
+                        f"Verify strategy/entry-price manually. TRAP #57.", flush=True)
+            except Exception as _ae:
+                log(f"[broker_sync] ⚠️ untracked adoption failed for {trad_sym}: {_ae}", flush=True)
+
+    if not adopted:
+        _write_untracked_alert(broker_name, key, label, qty, side, avg, log)
+
+
+def _write_untracked_alert(broker_name, key, label, qty, side, avg, log=print):
+    try:
+        import json as _j
+        from pathlib import Path
+        _af = Path(__file__).resolve().parent / "data" / "downloader_alert.json"
+        existing = []
+        try:
+            existing = _j.loads(_af.read_text())
+        except Exception:
+            pass
+        existing = [a for a in existing if not (a.get("key") == _UNTRACKED_ALERT_KEY
+                                                  and a.get("broker") == broker_name
+                                                  and a.get("sym") == key)]
+        existing.append({
+            "key": _UNTRACKED_ALERT_KEY,
+            "broker": broker_name,
+            "sym": key,
+            "level": "error",
+            "msg": (f"🚨 UNTRACKED LIVE POSITION ({broker_name}): {label} qty={qty} side={side} "
+                    f"avg=₹{avg or 0:.2f} — this position exists at the broker but has NO row in "
+                    f"order_store. It has ZERO SL/TP/EOD protection and is invisible to RMS capital "
+                    f"checks. Close it manually or add it via the dashboard. See LESSONS.md TRAP #57."),
+        })
+        _af.write_text(_j.dumps(existing))
+        log(f"[broker_sync] 🚨 UNTRACKED POSITION ALERT written for {broker_name}:{label}", flush=True)
+    except Exception as _ae:
+        log(f"[broker_sync] ⚠️ untracked alert write failed: {_ae}", flush=True)
