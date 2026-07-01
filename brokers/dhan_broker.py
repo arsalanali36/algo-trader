@@ -281,6 +281,9 @@ class DhanBroker(BaseBroker):
                     "average_price":   float(t.get("tradedPrice") or 0),
                     "transaction_type": t.get("transactionType") or "",
                     "quantity":        int(t.get("tradedQuantity") or 0),
+                    # Unique per-fill id — lets broker_sync's dedup guard (TRAP #60)
+                    # tell "already recorded this exact fill" from "genuinely new".
+                    "trade_id": str(t.get("exchangeTradeId") or t.get("orderId") or ""),
                 })
             return result
         except Exception:

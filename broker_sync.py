@@ -136,7 +136,20 @@ def _run_sync(open_positions: list, log=print) -> set:
                 continue
 
             # ── S3/S8: record exit leg with actual fill price ─────────────────
-            exit_px = _resolve_exit_price(broker_name, broker_fills, sym, sec_id)
+            exit_px, exit_tid = _resolve_exit_price(broker_name, broker_fills, sym, sec_id)
+
+            # TRAP #60 guard: if this exact fill was already recorded on an
+            # earlier cycle, order_store's Pass-1 netting is just displaying a
+            # pairing artifact, not a genuine new gap — do NOT write another
+            # exit (duplicate P&L) and do NOT mark_externally_closed either
+            # (that would silently drop this row's leg from P&L entirely,
+            # since _dead_filtered excludes externally_closed rows outright —
+            # worse than doing nothing). Skip this leg this cycle only.
+            if exit_tid and _fill_already_used(exit_tid, sym, broker_name):
+                log(f"[broker_sync] {sym} — fill {exit_tid} already recorded, "
+                    f"skipping (Pass-1 netting display artifact, not a real gap). TRAP #60.", flush=True)
+                continue
+
             if exit_px and exit_px > 0:
                 try:
                     import order_store
@@ -154,6 +167,7 @@ def _run_sync(open_positions: list, log=print) -> set:
                         trad_sym=sym,
                         sec_id=sec_id,
                         segment=p.get("segment") or "",
+                        correlation_id=exit_tid or "",
                         status="filled",
                         tags=["EXTERNALLY_CLOSED", "MANUAL_EXIT_BROKER"],
                         group_id=p.get("group_id") or "",
@@ -218,26 +232,40 @@ def _fetch_and_cache(broker_name: str, log=print):
 
 
 def _fetch_fills(broker_name: str, log=print) -> dict:
-    """Fetch today's fills from broker. Returns {sym_or_secid: avg_px} for closed legs.
-    Used to record exit price when a ghost position is detected (S3/S8 fix)."""
+    """Fetch today's fills from broker. Returns {sym_or_secid: {"price":avg_px,"tid":trade_id}}.
+    Used to record exit price when a ghost position is detected (S3/S8 fix).
+
+    A symbol with 3+ fills in a day (multiple round-trips) collapses to ONE
+    dict entry per key — last-fill-wins, since building this dict has no
+    concept of "which fill closes which leg." Combined with _run_sync()
+    re-checking every ~30s cycle, this used to mean the SAME already-consumed
+    fill could get handed out repeatedly as "the" exit price for whatever
+    row Pass-1 netting happened to display as dangling-open that cycle —
+    creating duplicate phantom exit records every cycle (TRAP #60, found
+    live 2026-07-01, corrupted a day's MARUTI P&L history through a cascade
+    of ~15 spurious rows before being caught). The "tid" (trade_id/order_id)
+    carried here lets _run_sync check "have I already recorded THIS specific
+    fill" before writing, closing the gap at its source."""
     try:
         from brokers import get_broker
         broker = get_broker(broker_name)
         fills = broker.trades()   # broker-specific — see kite_broker/dhan_broker
         result = {}
         for f in (fills or []):
-            # Kite: tradingsymbol + average_price + transaction_type
-            # Dhan: tradingSymbol + tradedPrice + transactionType
+            # Kite: tradingsymbol + average_price + transaction_type + trade_id
+            # Dhan: tradingSymbol + tradedPrice + transactionType + trade_id
             sym = (f.get("tradingsymbol") or f.get("tradingSymbol") or
                    f.get("trad_sym") or "")
             sid = str(f.get("securityId") or f.get("sec_id") or "")
             px  = float(f.get("average_price") or f.get("tradedPrice") or
                         f.get("price") or 0)
+            tid = str(f.get("trade_id") or f.get("order_id") or "")
             if px > 0:
+                entry = {"price": px, "tid": tid}
                 if sym:
-                    result[sym] = px
+                    result[sym] = entry
                 if sid:
-                    result[sid] = px
+                    result[sid] = entry
         return result
     except Exception as e:
         log(f"[broker_sync] ⚠️ fills fetch ({broker_name}) failed: {e}", flush=True)
@@ -245,25 +273,48 @@ def _fetch_fills(broker_name: str, log=print) -> dict:
 
 
 def _resolve_exit_price(broker_name: str, fills: dict, trad_sym: str, sec_id: str):
-    """Look up the exit fill price for a position that went flat. Returns float or None."""
+    """Look up the exit fill (price, trade_id) for a position that went flat.
+    Returns (price, tid) or (None, None)."""
     if not fills:
-        return None
+        return None, None
     # Try Kite symbol first, then sec_id, then trad_sym directly
     if broker_name == "kite":
         try:
             from brokers import get_broker
             kite_sym = get_broker("kite").resolve_symbol(trad_sym, sec_id=sec_id)
             if kite_sym and kite_sym in fills:
-                return fills[kite_sym]
+                e = fills[kite_sym]
+                return e["price"], e["tid"]
         except Exception:
             pass
     # Try sec_id
     if sec_id and sec_id in fills:
-        return fills[sec_id]
+        e = fills[sec_id]
+        return e["price"], e["tid"]
     # Try trad_sym as-is (Dhan format often matches)
     if trad_sym and trad_sym in fills:
-        return fills[trad_sym]
-    return None
+        e = fills[trad_sym]
+        return e["price"], e["tid"]
+    return None, None
+
+
+def _fill_already_used(tid: str, trad_sym: str, broker_name: str) -> bool:
+    """True if this exact broker fill (by trade_id/order_id) has already been
+    recorded in order_store today for this trad_sym+broker — prevents
+    _run_sync from writing a duplicate exit record for a fill it already
+    consumed on an earlier cycle (TRAP #60). Fails open (False, i.e. "not
+    used yet") on any error — uncertain should never block a genuine
+    reconcile, same convention as _check_flat's other safety defaults."""
+    if not tid:
+        return False
+    try:
+        import order_store
+        from datetime import datetime, timezone, timedelta
+        today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        rows = order_store.query(date=today, broker=broker_name)
+        return any(r.get("trad_sym") == trad_sym and r.get("correlation_id") == tid for r in rows)
+    except Exception:
+        return False
 
 
 _NAKED_ALERT_KEY = "naked_leg"
