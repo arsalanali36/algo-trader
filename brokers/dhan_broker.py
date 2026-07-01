@@ -228,6 +228,30 @@ class DhanBroker(BaseBroker):
         except Exception:
             return {}
 
+    def trades(self) -> list:
+        """Return today's fills for exit-price capture when ghost positions are detected.
+        Called by broker_sync._fetch_fills() (S3/S8 fix — records P&L on manual exit)."""
+        try:
+            _rl.acquire("account")
+            r = requests.get("https://api.dhan.co/v2/trades",
+                             headers=self._hdrs(), timeout=10)
+            r.raise_for_status()
+            data = r.json()
+            items = data if isinstance(data, list) else (data.get("data") or [])
+            # Normalize to common shape broker_sync expects
+            result = []
+            for t in items:
+                result.append({
+                    "tradingsymbol":   t.get("tradingSymbol") or "",
+                    "securityId":      str(t.get("securityId") or ""),
+                    "average_price":   float(t.get("tradedPrice") or 0),
+                    "transaction_type": t.get("transactionType") or "",
+                    "quantity":        int(t.get("tradedQuantity") or 0),
+                })
+            return result
+        except Exception:
+            return []
+
     def funds(self) -> dict:
         try:
             _rl.acquire("account")

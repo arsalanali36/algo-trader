@@ -1437,3 +1437,81 @@ Any entry failing any check is silently dropped.
 
 **Guard:** Never try to cross-reference `order_store` and Kite fills by symbol+time. Kite = ALL actual, `order_store` = ALL algo. Two separate universes.
 
+
+---
+
+## TRAP #51 — TV EXIT webhook fires on manually-closed position → new accidental position 🔴🔴🔴
+
+**Symptom:** TradingView fires an EXIT alert after you already closed the position manually at Zerodha. Webhook executor sees the position in `_wh_state`, sends a BUY-to-close order to Kite. Position is already flat → Kite opens a NEW naked long/short.
+
+**Root cause:** `_do_exit()` in `webhook_executor.py` only checked `_wh_state` (in-memory) — never looked at order_store status or broker flat-check. `broker_sync` may have already marked the entry leg `externally_closed` in order_store, but webhook had no idea.
+
+**Fix:** At the start of `_do_exit()`, two-layer flat check before placing any exit order:
+1. Look up today's open legs in order_store — if the matching leg has `status=externally_closed` → skip
+2. Ask `broker_sync.is_flat()` (cached, fast) — if flat → skip
+In both cases: clear `_wh_state[key]["position"] = None` so the state is clean, log the skip, return without placing any order.
+
+**Code location:** `webhook_executor._do_exit()` — guard block before `smart_order.execute()`.
+
+**Fast detect:** After a manual exit, watch the log for the next TV alert. Should see:
+`EXIT skip <key> — position already flat at broker (manually closed). Clearing _wh_state.`
+If you see `[PAPER]/[LIVE] BUY ...` instead → old code still running.
+
+**Guard:** This is a fail-open design — if the flat-check itself errors (broker API down), the exit proceeds (real open positions must be able to exit). Only definitively-flat positions are blocked.
+
+---
+
+## TRAP #52 — Manual exit P&L stays null in order_store → algo curve wrong in counterfactual 🔴🔴
+
+**Symptom:** You manually close a position at Zerodha. broker_sync marks it `externally_closed`. But `pnl` field in order_store stays null forever. Dashboard shows ₹0 for that trade. Counterfactual algo curve understates algo_pnl for every manually-closed day.
+
+**Root cause:** `broker_sync._run_sync()` previously only called `order_store.mark_externally_closed(row_id)` — just flipped a status flag. It never fetched the actual fill price from the broker, so no exit leg was recorded.
+
+**Fix:** When `_check_flat()` returns True for a leg:
+1. Call `broker.trades()` (new method on all brokers) to get today's fills
+2. `_resolve_exit_price()` maps trad_sym/sec_id → fill price from the fills list
+3. If found: `order_store.record()` an exit leg with `tags=["EXTERNALLY_CLOSED", "MANUAL_EXIT_BROKER"]`
+4. Then (as before) `mark_externally_closed(row_id)` on the entry leg
+
+**New broker methods:** `KiteBroker.trades()` → `kite.trades()` | `DhanBroker.trades()` → `GET /v2/trades`. Both defined in `BaseBroker` as `return []` (safe fallback if not implemented).
+
+**Downstream fix:** This also fixes the counterfactual — once order_store has the correct exit price, `algo_trades` P&L is accurate and `intervention_cost = algo_pnl - actual_pnl` reflects reality.
+
+**Fast detect:** After manual exit, next broker_sync cycle should log:
+`[broker_sync] EXIT RECORDED — SYMBOL @ ₹XX.XX (broker fill price fetched, P&L now captured)`
+If you see `fill price unavailable` instead → broker.trades() failed or symbol not in fills (check kite_rate_limiter / Dhan token).
+
+---
+
+## TRAP #53 — Hedge BUY closed manually → main SELL stays naked, zero alert 🔴🔴
+
+**Symptom:** You close only the hedge BUY leg on Zerodha in a panic. App marks it externally_closed. Main SELL leg stays OPEN with no hedge. Margin required jumps sharply. No banner, no warning — you only find out when Zerodha sends a margin call SMS.
+
+**Root cause:** broker_sync detected the hedge leg as flat and marked it closed — but had no logic to check if that leg was part of a group, or to alert when the sibling SELL leg was left exposed.
+
+**Fix:** After marking any leg externally_closed, broker_sync now checks `group_id`:
+- If the cleared leg has a `group_id`, look up siblings in the current `open_positions` list
+- If any sibling has `entry == "SELL"` and is still OPEN → call `_write_naked_alert(sym, row_id)`
+- `_write_naked_alert()` writes an error-level entry to `data/downloader_alert.json` — shows as a red banner on the dashboard immediately
+
+**What the banner says:** `🚨 NAKED POSITION: SYMBOL — hedge leg was closed at broker but SELL leg is still open. Margin risk HIGH. Close the SELL leg immediately or replace the hedge.`
+
+**What it does NOT do (intentional):** does not auto-replace the hedge (risky at unknown premium) and does not auto-close the SELL leg (user may want to keep it). It alerts and leaves the decision to the user.
+
+**Fast detect:** Check dashboard for red banner after manually closing a hedge leg. Also:
+`grep "NAKED LEG ALERT" logs/` → if line present → alert fired → check dashboard.
+
+---
+
+## TRAP #54 — broker_sync interval 120s → ghost position blocks entries for up to 2 min 🟡
+
+**Symptom:** You manually close a losing position at Zerodha at 09:16 AM. A fresh signal fires at 09:17. Risk gate sees the ghost position's unrealized loss → `daily_loss_breached()` → entry blocked. Signal missed. broker_sync finally clears the ghost at 09:18. By then signal is gone.
+
+**Root cause:** `broker_sync._INTERVAL = 120` — ghost detection ran every 2 minutes. In early morning when signals are dense, a 2-minute window is too large.
+
+**Fix:** Reduced `_INTERVAL = 30` (30 seconds). At 30s intervals, broker_sync runs ~4x per session-minute — ghost cleared within one cycle in most cases.
+
+**Cost:** Each cycle calls `broker.positions()` on every active broker. Rate-limited via `kite_rate_limiter`/`dhan_rate_limiter` at `"account"` priority (lowest, never starves orders). At 30s interval = 2 calls/min per broker — well within Kite's 3 req/s limit and Dhan's 1 req/s with account-priority queuing.
+
+**Also added:** `broker.trades()` call per cycle when a ghost is detected (not every cycle — only when `_check_flat()` returns True, which is rare during normal trading).
+

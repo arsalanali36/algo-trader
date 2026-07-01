@@ -434,7 +434,7 @@ class KiteBroker(BaseBroker):
     def positions(self) -> dict:
         """Return {kite_tradingsymbol: net_qty} for all today's net positions.
         net_qty == 0 means flat (position was opened+closed today).
-        Called by broker_sync.py every 2 min to detect ghost positions (TRAP #44)."""
+        Called by broker_sync.py to detect ghost positions (TRAP #44)."""
         import kite_rate_limiter as _krl
         try:
             kite = self._get_kite()
@@ -450,6 +450,18 @@ class KiteBroker(BaseBroker):
         except Exception as e:
             log.warning(f"[KITE] positions() failed: {e}")
             return {}
+
+    def trades(self) -> list:
+        """Return today's fills for exit-price capture when ghost positions are detected.
+        Called by broker_sync._fetch_fills() (S3/S8 fix — records P&L on manual exit)."""
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            return kite.trades() or []
+        except Exception as e:
+            log.warning(f"[KITE] trades() failed: {e}")
+            return []
 
     def funds(self) -> dict:
         import kite_rate_limiter as _krl

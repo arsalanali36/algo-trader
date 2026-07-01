@@ -716,6 +716,42 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
         _log(f"EXIT skip {key} — no open position")
         return {"ok": True, "msg": "no open position"}
 
+    # ── S7 guard: check if position was manually closed at broker ──────────────
+    # broker_sync runs every 30s and marks externally_closed in order_store.
+    # If the entry leg is already marked, placing a TV EXIT order would open a
+    # NEW opposite position (accidental long/short). Check first, skip if flat.
+    # (LESSONS.md TRAP #51-ext — webhook EXIT on ghost position)
+    try:
+        import order_store as _os_wh
+        _br_name_wh = (cfg.get("broker") or st.get("broker") or "dhan").lower()
+        _os_today = _os_wh.trades_for(ist_now().strftime("%Y-%m-%d"))
+        _open_legs = _os_today.get("open", [])
+        _opt_sym = st.get("opt_trad_sym") or ""
+        _opt_sid = str(st.get("opt_sec_id") or "")
+        _leg_dead = False
+        for _leg in _open_legs:
+            if (str(_leg.get("sec_id") or "") == _opt_sid or
+                    (_leg.get("sym") or _leg.get("trad_sym") or "") == _opt_sym):
+                if _leg.get("status") == "externally_closed":
+                    _leg_dead = True
+                    break
+        if not _leg_dead:
+            # Also ask broker_sync cache directly (faster, no DB round-trip)
+            try:
+                import broker_sync as _bsync_wh
+                if _bsync_wh.is_flat(_br_name_wh, _opt_sym, _opt_sid):
+                    _leg_dead = True
+            except Exception:
+                pass
+        if _leg_dead:
+            _log(f"EXIT skip {key} — position already flat at broker (manually closed). "
+                 f"Clearing _wh_state. TV EXIT signal ignored to prevent accidental re-open.")
+            _wh_state[key]["position"] = None
+            return {"ok": True, "msg": "position already flat — no exit order sent"}
+    except Exception as _eg:
+        _log(f"EXIT flat-check error ({_eg}) — proceeding with exit (fail-open)")
+    # ──────────────────────────────────────────────────────────────────────────
+
     close_side = "SELL" if st["opt_action"] == "BUY" else "BUY"
     mode = cfg.get("mode", "paper")
     broker = _broker(cfg.get("broker", st.get("broker", "dhan")))

@@ -75,3 +75,11 @@ class BaseBroker(ABC):
         Default: {} — broker that doesn't implement this degrades gracefully
         (broker_sync will skip reconciliation for that broker)."""
         return {}
+
+    def trades(self) -> list:
+        """Return today's fills as a list of dicts.
+        Used by broker_sync to capture exit price when a ghost position is detected.
+        Each dict should have: tradingsymbol/tradingSymbol, average_price/tradedPrice,
+        transaction_type/transactionType, quantity.
+        Default: [] — broker_sync will skip exit-price recording for that broker."""
+        return []
