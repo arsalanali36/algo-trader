@@ -1688,3 +1688,57 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 
 **Fast detect:** `grep "no live market-depth data" logs/<strategy>.log | wc -l` vs total `[LIQUIDITY]` line count — if it's anywhere close to 100%, the feed isn't connected in that process. Confirm directly (careful — reads process memory, not a config file, so this only works if you can get code to run *inside* that same process, e.g. a debug hook, not a fresh `python -c` from outside).
 
+---
+
+## TRAP #66 — Broker Balances card labeled Kite's "net available margin" as "Cash" — off by ~₹10.65L 🔴🔴
+
+**Symptom:** User: "Zerodha se mera balance app ka match nahi kar raha" — dashboard's 💰 Broker Balances card showed "Cash: ₹10,72,173", real Zerodha cash was ₹8,819.20.
+
+**Root cause:** `KiteBroker.funds()` (`brokers/kite_broker.py`) correctly returns BOTH `available` (Kite's `eq["net"]` — cash + pledged collateral − used margin, i.e. total usable margin) AND `cash` (the real `eq["available"]["cash"]`) — the raw data was always correct. But `templates/index.html`'s "💰 Broker Balances" card (`renderBrokerBalances()`) rendered the "Cash" line from `b.available` instead of `b.cash` — `available` for Kite is NOT cash, it's total margin including pledged stock collateral (this user has ~₹10.65L in stock collateral). A DIFFERENT card on the same dashboard (the per-strategy RMS summary, driven by `/api/rms-summary`'s `broker_cash` field) already used the correct field — this was an isolated bug in one hand-rolled card that fetched straight from `/api/broker-balances` instead of reusing the already-correct rms-summary fields.
+
+**Fix:** card now shows Cash (`b.cash`, falls back to `b.available` for Dhan where `funds()` returns no separate cash field), Collateral, a new "Available Margin" line (`b.available`, correctly relabeled), and Total Margin.
+
+**Permanent guard:** when a broker returns MULTIPLE distinct balance concepts (cash vs total margin vs collateral), never assume a single "available"-ish field is safe to label "Cash" — check what the broker's own docs/API actually mean by each field, especially when the same field name means different things across two brokers (Dhan's `available` ≈ real cash; Kite's `available` = total net margin).
+
+**Fast detect:** compare the dashboard's "Cash" figure against the broker's own app/site directly — a mismatch in the thousands (not paisa-level rounding) means a wrong field is being read, not a sync delay.
+
+---
+
+## TRAP #67 — Manual-trade reconciliation double-counted several real trades, because matching relied only on `broker_order_id` 🔴🔴🔴
+
+**Symptom:** User pointed out the Completed Trades TOTAL still didn't match Zerodha's real day P&L, and explained Zerodha is the actual source of truth for real fills (this app just places orders and estimates prices). Built `broker_sync.reconcile_manual_trades()` — pulls today's real Kite fills via `broker.trades()`, matches each against an existing `order_store` row by `broker_order_id` (the order id we placed), and inserts anything unmatched as a `source="manual"` row. First live run inserted 32 "manual" rows and corrected 1 price — but several of the 32 (SUNPHARMA, RELIANCE, MARUTI, HINDUNILVR legs) were **duplicates of trades already correctly recorded** earlier in the same session (during a manual TRAP #60/61 cleanup) — those earlier manual inserts had never had `broker_order_id` populated (that field simply wasn't part of that ad-hoc cleanup), so the new order-id-only matching saw them as "unmatched" and inserted a second copy of the same real trade.
+
+**Root cause:** `broker_order_id` is a good match key ONLY if every historical row that could correspond to a real fill reliably has it populated. It doesn't — several legitimate rows across this project's history (manual dashboard fixes, earlier ad-hoc reconciliations, `broker_sync`'s own ghost-close exit records) were written without it.
+
+**Fix:** replaced order-id matching with a **signature + count** match: canonicalize every fill (both broker fills and existing `order_store` rows) into `(root_symbol, strike, CE/PE-or-EQ, side, qty, round(price,2))` — tolerant of Dhan's dashed trad_sym format and Kite's compact format alike (`_reconcile_sig()`). For each signature, insert only `max(0, broker_count - db_count)` new rows. This can't double-count regardless of whether an old row has a `broker_order_id` or not, and is naturally idempotent (re-running always converges to 0 inserts once counts match) — verified via a **read-only dry-run script** against the real DB (found the exact 12 genuinely-missing fills, zero of the 10 already-recorded symbols flagged) before ever touching the live DB with the fixed version.
+
+**Also verified before trusting the "missing" trades were genuinely manual (not misfired shadow-live orders):** checked `risk_gate.shadow_live_enabled()` was `False` (global + per-strategy) — since some of the missing signatures (HINDUNILVR, NESTLEIND) are symbols the paper-mode strategy also watches, a shadow-live real order firing in parallel to a paper signal could look identical to a genuine manual trade. Confirming shadow-live was off first is what makes tagging them `MANUAL_TRADE` (rather than a mislabeled algo order) defensible.
+
+**Permanent guard:** the bad 32-row run was undone via a **surgical, targeted DELETE** (`WHERE correlation_id LIKE 'MANUAL_TID_%'`, all rows this run itself had just inserted, individually identifiable) plus reverting the single price correction — NOT a full-database restore-from-backup, which (see TRAP #68) would have silently discarded 18+ rows of real trading data that arrived after the backup was taken. When undoing a bad automated write, prefer deleting exactly what you know you wrote over restoring a whole table from a snapshot, unless you've confirmed the snapshot is complete and current.
+
+**Fast detect:** before trusting ANY broker-reconciliation match key, dry-run it read-only first and manually eyeball every signature it would insert/skip — a match key that "should" be unique (an order id) can still have silent gaps in older data it was never applied to.
+
+---
+
+## TRAP #68 — `cp trades.db backup.db` (plain file copy) silently missed rows sitting in SQLite's WAL file — a "backup" that was already stale the moment it was taken 🔴🔴
+
+**Symptom:** After surgically undoing TRAP #67's bad reconcile run, comparing the live `trades.db` against a `cp`-made backup taken minutes earlier showed the live DB had 19 MORE rows than the "before" backup — even though the backup was supposed to predate all of that day's real trading activity (ICICIBANK, TITAN, BANKNIFTY, NESTLEIND rows from as early as 12:00 PM were simply absent from a backup file timestamped 15:38).
+
+**Root cause:** `order_store.py` opens its sqlite connection in WAL mode (`_conn()`). In WAL mode, recently-committed writes can live in a separate `trades.db-wal` file and haven't necessarily been checkpointed back into the main `trades.db` file yet. A plain `cp trades.db backup.db` only copies the main file — it can silently produce a backup that's already missing recent commits, with no error or warning of any kind. This was caught only because a row-count diff looked suspiciously large — it easily could have gone unnoticed, and if the earlier (correctly-blocked) full-DB restore had been allowed to proceed, it would have silently wiped 18+ rows of real trading history.
+
+**Permanent guard:** never `cp` a live, actively-written SQLite database file for backup purposes. Use `sqlite3`'s own online backup API instead (`src_conn.backup(dst_conn)`, or the `.backup` CLI command / `VACUUM INTO`) — these consult the WAL correctly and produce a genuinely consistent snapshot. Verified the fix: a `.backup()`-made copy's row count matched the live DB exactly, where the `cp`-made one was short by 19 rows.
+
+**Fast detect:** after taking any backup of `trades.db` (or any WAL-mode sqlite file) while its owning process is running, immediately compare `SELECT COUNT(*) FROM orders` between the backup and the live file — they should match exactly; if the backup is short, it's WAL-incomplete, not a real point-in-time snapshot.
+
+---
+
+## TRAP #69 — A multi-file `scp` in one shell call silently failed for exactly one of the files, with no visible error 🔴🔴
+
+**Symptom:** Deployed a dashboard button fix (`templates/index.html`) alongside `broker_sync.py` in one `scp file1 file2 file3 "user@host:dest/"` call. `broker_sync.py`'s change verifiably landed (`py_compile` succeeded, behavior changed) — but `templates/index.html` silently kept serving the OLD version for ~40 minutes, with no scp error, no exception, nothing. Only caught because the user reported a button that should exist wasn't visible, and a file-mtime check on the VPS showed `index.html`'s last-modified time was from an earlier, unrelated deploy.
+
+**Root cause:** unclear exactly why that specific multi-file `scp` invocation dropped one file (no error surfaced to investigate after the fact) — but the broader lesson is that "the scp command didn't print an error" was silently trusted as "every file landed," which isn't a safe assumption for a file (an `.html` template) with no compile step to catch a stale copy the way `py_compile` does for `.py` files.
+
+**Permanent guard:** for any file with no local syntax/compile check available (HTML/JS templates, configs, etc.), verify deployment by grepping the SERVED output (or the file's own mtime/content on disk) for a distinctive string unique to the just-made change — not just "the scp command exited 0." Doubly important when deploying several files in one command; deploy templates in their own explicit, single-file `scp` call and verify each one independently rather than trusting a bundled multi-file copy.
+
+**Fast detect:** `ssh ... "grep -c '<distinctive-new-string>' <deployed-file-path>"` right after any deploy that includes a non-Python file — `0` means it didn't land, re-deploy that file alone.
+

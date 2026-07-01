@@ -760,7 +760,8 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
                               log=_log, tag="TVWH",
                               source="webhook", strategy=strat,
                               instrument=st.get("instrument", "options"),
-                              broker_name=cfg.get("broker", st.get("broker", "dhan")))
+                              broker_name=cfg.get("broker", st.get("broker", "dhan")),
+                              is_exit=True)
     if not res.get("ok"):
         _log(f"EXIT fail {key} — {res.get('reason')}")
         return {"ok": False, "msg": f"exit failed: {res.get('reason')}"}

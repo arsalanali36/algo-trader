@@ -551,3 +551,124 @@ def _write_untracked_alert(broker_name, key, label, qty, side, avg, log=print):
         log(f"[broker_sync] 🚨 UNTRACKED POSITION ALERT written for {broker_name}:{label}", flush=True)
     except Exception as _ae:
         log(f"[broker_sync] ⚠️ untracked alert write failed: {_ae}", flush=True)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# On-demand manual-trade reconciliation (user-requested, 2026-07-01)
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# Different gap from everything above: ghost-sync (_run_sync) and the
+# untracked-scan both start from "order_store thinks X exists/is open" and
+# check the broker. Neither ever asks the broker "give me EVERY fill you
+# have today" and cross-checks it against what order_store knows — so a
+# trade the user placed manually on the SAME broker account the algo trades
+# through (Kite, per this project's "data always Dhan, orders via Kite"
+# convention) never shows up anywhere in this app at all, and the day's
+# TOTAL in Completed Trades silently diverges from the broker's real
+# account P&L with no visible reason why.
+#
+# On-demand only (button-triggered) — pulls broker.trades() for the day and
+# groups both sides (broker fills AND existing order_store rows) into a
+# canonical per-contract SIGNATURE: (root_symbol, strike, CE/PE-or-EQ, side,
+# qty, price). Inserts exactly enough new rows to make each signature's
+# order_store COUNT match the broker's real fill COUNT for that signature.
+#
+# Why not match by broker_order_id (the first version of this function did,
+# and it double-counted several real trades — found+reverted same day):
+# some existing order_store rows (from an earlier manual reconciliation this
+# session, before this feature existed) never had a broker_order_id recorded
+# at all. Matching only by order_id then treated those already-correct rows
+# as "unmatched" and inserted duplicates of them. Signature+count matching
+# doesn't care whether an old row has an order_id or not — if order_store
+# already has as many rows matching a signature as the broker does, nothing
+# gets inserted, full stop. This is what makes it safe to re-run repeatedly.
+
+
+def _reconcile_sig(trad_sym_or_symbol: str, side: str, qty, price) -> tuple:
+    """Canonical per-contract key, tolerant of both Dhan's dashed format
+    ('SUNPHARMA-Jul2026-1880-CE') and Kite's compact format
+    ('SUNPHARMA26JUL1880CE') — root symbol + strike + CE/PE (or 'EQ'),
+    combined with side/qty/price so two genuinely different real fills on
+    the same contract (e.g. two SELLs at the same price seconds apart) are
+    still counted separately, not collapsed into one."""
+    import re
+    s = (trad_sym_or_symbol or "").upper()
+    if "-" in s:
+        root = s.split("-")[0]
+    else:
+        m = re.match(r"[A-Z]+", s)
+        root = m.group(0) if m else s
+    m2 = re.search(r"(\d+)-?(CE|PE)$", s)
+    strike, opt = (m2.group(1), m2.group(2)) if m2 else (None, "EQ")
+    return (root, strike, opt, (side or "").upper(), int(qty or 0), round(float(price or 0), 2))
+
+
+def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=print) -> dict:
+    """Button-triggered (not part of the 30s auto-sync loop, deliberately —
+    user's choice, 2026-07-01). Returns {ok, manual_inserted, msg}."""
+    import sqlite3
+    import order_store
+    from datetime import datetime, timedelta, timezone
+
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+
+    try:
+        from brokers import get_broker
+        broker = get_broker(broker_name)
+        raw_fills = broker.trades() or []
+    except Exception as e:
+        return {"ok": False, "msg": f"broker fetch failed: {e}"}
+
+    fills = []
+    for f in raw_fills:
+        ts = str(f.get("fill_timestamp") or f.get("exchange_timestamp") or "")
+        if not ts or ts[:10] != date:
+            continue
+        fills.append({
+            "trade_id": str(f.get("trade_id") or ""),
+            "order_id":  str(f.get("order_id") or ""),
+            "ts":       ts[:19] if len(ts) >= 19 else ts,
+            "type":     str(f.get("transaction_type") or "").upper(),
+            "sym":      str(f.get("tradingsymbol") or ""),
+            "qty":      int(f.get("quantity") or 0),
+            "px":       float(f.get("average_price") or 0),
+        })
+    if not fills:
+        return {"ok": True, "manual_inserted": 0, "msg": f"no {broker_name} fills found for {date}"}
+
+    conn = sqlite3.connect(str(order_store.DB_PATH))
+    conn.row_factory = sqlite3.Row
+    existing = conn.execute(
+        "SELECT trad_sym, symbol, side, qty, price FROM orders WHERE date=? AND broker=?",
+        (date, broker_name)).fetchall()
+    conn.close()
+
+    db_counts: dict = {}
+    for r in existing:
+        sig = _reconcile_sig(r["trad_sym"] or r["symbol"], r["side"], r["qty"], r["price"])
+        db_counts[sig] = db_counts.get(sig, 0) + 1
+
+    manual_inserted = 0
+    for f in fills:
+        sig = _reconcile_sig(f["sym"], f["type"], f["qty"], f["px"])
+        have = db_counts.get(sig, 0)
+        if have > 0:
+            db_counts[sig] = have - 1   # this fill already accounted for — consume one
+            continue
+
+        instrument = "options" if ("CE" in f["sym"] or "PE" in f["sym"]) else "equity"
+        order_store.record(
+            f["type"], f["qty"], f["px"], source="manual", strategy="manual",
+            mode="live", broker=broker_name, symbol=f["sym"], instrument=instrument,
+            trad_sym=f["sym"], sec_id="",
+            segment="NSE_FNO" if instrument == "options" else "NSE_EQ",
+            correlation_id=f"MANUAL_TID_{f['trade_id']}", broker_order_id=f["order_id"],
+            status="filled", tags=["MANUAL_TRADE"], ts=f["ts"] or None,
+        )
+        log(f"[RECONCILE] manual trade found (not placed by this app) — inserted: "
+            f"{f['type']} {f['qty']} {f['sym']} @ {f['px']:.2f}", flush=True)
+        manual_inserted += 1
+
+    msg = f"{manual_inserted} manual trade(s) added" if manual_inserted else "already in sync — nothing to add"
+    return {"ok": True, "manual_inserted": manual_inserted, "msg": msg}

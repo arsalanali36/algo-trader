@@ -627,7 +627,7 @@ def _fetch_premium(sec_id, token, cid):
         return None
 
 
-def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id="", broker_override=None, product=None):
+def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id="", broker_override=None, product=None, is_exit=False):
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -654,7 +654,7 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
             source="strategy", strategy=_STRAT_ID,
             instrument="options" if seg == "NSE_FNO" else "equity",
             broker_name=broker_name, group_id=group_id, extra_tags=extra_tags,
-            product=product
+            product=product, is_exit=is_exit
         )
         return res.get("ok", False)
     except Exception as e:
@@ -788,20 +788,20 @@ def main(strategy_id="range"):
                     for sym, st in _state.items():
                         if st["position"] == "LONG":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                             else:
-                                place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode)
+                                place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode, is_exit=True)
                             st["position"] = None
                             st["opt_sec_id"] = None
                         elif st["position"] == "SHORT":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                             else:
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode)
+                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True)
                             st["position"] = None
                             st["opt_sec_id"] = None
                         elif st["position"] == "SHORT":
-                            place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode)
+                            place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True)
                             st["position"] = None
                 except Exception as e:
                     log.error(f"Exit error: {e}")
@@ -1137,9 +1137,9 @@ def main(strategy_id="range"):
                 log.info(f"EXIT {symbol} via {reason} @ {price:.2f}")
                 
                 if st.get("opt_sec_id"):
-                    place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"])
+                    place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                 else:
-                    place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode)
+                    place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode, is_exit=True)
                     
                 st["position"]    = None
                 st["last_signal"] = None

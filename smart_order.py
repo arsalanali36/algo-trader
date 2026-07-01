@@ -130,7 +130,7 @@ def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
 def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             buffer_bps=10, log=print, tag="UNIV",
             source="", strategy="", instrument="", broker_name="", group_id="",
-            extra_tags=None, product=None):
+            extra_tags=None, product=None, is_exit=False):
     """Execute one entry/exit.
 
     Returns: {ok, price, src, status, reason, order_id}
@@ -140,6 +140,13 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
     source/strategy/instrument/broker_name are recorded into order_store (trade DB).
     extra_tags: caller-supplied tags (e.g. an RMS default per-instrument SL) to
     stamp onto a NEW position's record — pass None/[] for exit calls.
+    is_exit: entries can afford to be conservative (skip if the market runs
+    away — see TRAP #64); an exit's whole job is to actually get out, so it
+    gets more chase rounds AND an escalating limit price each round (crosses
+    the spread further with every failed attempt). Still always a LIMIT order,
+    never MARKET — Zerodha rejects MARKET orders on stock options outright, so
+    an aggressively-priced LIMIT is the only broker-agnostic way to chase a
+    fill harder without risking an outright reject on that leg.
     """
     price, src = marketable_price(side, sec_id, seg, broker, buffer_bps)
     if price is None:
@@ -198,7 +205,10 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         fill_st, fill_price = None, None
         oid = r.get("order_id")
         attempts_taken = 0
-        MAX_CHASE = 2   # up to 2 re-places (3 order attempts total) chasing the market
+        # Exits get more rounds — the goal shifts from "good price" to "get out"
+        # (user's own framing: entries can skip a fast-moving price, exits can't
+        # afford to sit unfilled while a loss runs). See TRAP #64 follow-up.
+        MAX_CHASE = 4 if is_exit else 2
         can_chase = hasattr(broker, "cancel_order")
         chase_round = 0
 
@@ -242,7 +252,13 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             if fill_st in ("TRADED", "REJECTED"):
                 break
 
-            new_price, new_src = marketable_price(side, sec_id, seg, broker, buffer_bps)
+            # Exit chase escalates how far the LIMIT crosses the spread each
+            # round (never switches to MARKET — Zerodha rejects MARKET orders
+            # on stock options outright, so this is the only way to chase
+            # harder without risking a flat reject). Entries keep the same
+            # buffer_bps every round — unchanged, deliberately conservative.
+            round_buffer = min(buffer_bps * (2 ** chase_round), 150) if is_exit else buffer_bps
+            new_price, new_src = marketable_price(side, sec_id, seg, broker, round_buffer)
             if new_price is None:
                 log(f"[CHASE] {trad_sym} — no fresh price available, stopping chase")
                 break
@@ -251,7 +267,8 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                                    trad_sym=trad_sym, tag=f"{tag}_{sym}",
                                    product=product)
             log(f"[BROKER] {trad_sym} {side} {qty} @ {price:.2f} -> {r['status'].upper()} "
-                f"({r['reason']}) orderId={r.get('order_id')} (chase {chase_round}/{MAX_CHASE})")
+                f"({r['reason']}) orderId={r.get('order_id')} (chase {chase_round}/{MAX_CHASE}"
+                f"{f', buffer={round_buffer}bps' if is_exit else ''})")
 
             if _is_rejected(r["status"]):
                 log(f"[LIVE-SKIP] {trad_sym} — broker rejected on chase re-place, P&L not recorded")

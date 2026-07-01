@@ -208,7 +208,8 @@ def main(sid, once=False):
                     ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                     smart_order.execute(ex_side, sym, s_id, seg, qty, tsym, mode,
                                         broker, cfg.get("limit_buffer_bps", 10),
-                                        log=log, tag="EXIT", source="strategy", strategy=sid)
+                                        log=log, tag="EXIT", source="strategy", strategy=sid,
+                                        is_exit=True)
                     st["position"] = None
                     st["open_inst"] = None
             log("[EXIT] 3:15 square-off done")
@@ -242,7 +243,8 @@ def main(sid, once=False):
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                 smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="EXIT", source="strategy", strategy=sid)
+                                    log=log, tag="EXIT", source="strategy", strategy=sid,
+                                    is_exit=True)
                 st["position"] = None
                 st["open_inst"] = None
                 continue
@@ -264,7 +266,8 @@ def main(sid, once=False):
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
                 smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="FLIP", source="strategy", strategy=sid)
+                                    log=log, tag="FLIP", source="strategy", strategy=sid,
+                                    is_exit=True)
                 st["position"] = None
                 st["open_inst"] = None
 

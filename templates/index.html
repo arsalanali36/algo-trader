@@ -909,6 +909,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
           onclick="toggleCompletedGrouping()"
           title="Zerodha ke Day's History jaisa — symbol-wise group karo, expand karke individual trades dekho">📁 Group by Symbol</button>
+        <button id="reconcile-manual-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
+          onclick="reconcileManualTrades(this)"
+          title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾 Reconcile vs Broker</button>
+        <span id="reconcile-manual-result" style="font-size:11px;color:#8b949e"></span>
         <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
       </div>
     </div>
@@ -1988,6 +1992,32 @@ async function syncBrokerPositions(btn){
   }
 }
 
+async function reconcileManualTrades(btn){
+  const result = document.getElementById('reconcile-manual-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Checking Zerodha…';
+  result.style.color = '#8b949e';
+  result.textContent = '';
+  try {
+    const r = await fetch('/api/reconcile-manual-trades?broker=kite', {method:'POST'});
+    const d = await r.json();
+    if (!d.ok) {
+      result.style.color = '#f85149';
+      result.textContent = 'Failed: ' + (d.msg || 'unknown error');
+      return;
+    }
+    result.style.color = (d.manual_inserted > 0) ? '#d29922' : '#3fb950';
+    result.textContent = d.msg;
+    if (d.manual_inserted > 0) loadPnl();  // refresh P&L table
+  } catch(e) {
+    result.style.color = '#f85149';
+    result.textContent = 'Reconcile failed: ' + e;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🧾 Reconcile vs Broker';
+  }
+}
+
 async function runReconcile(){
   const el = document.getElementById('rms-reconcile-result');
   el.textContent = 'Checking…';
@@ -2018,8 +2048,9 @@ async function renderBrokerBalances(){
     return `<div style="border:1px solid #30363d;border-radius:8px;padding:12px">
       <div style="font-size:12px;font-weight:700;color:${color};margin-bottom:8px">${label}</div>
       ${ok ? `
-        <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Cash</span><span style="color:#e6edf3">${fmt(b.available)}</span></div>
+        <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Cash</span><span style="color:#e6edf3">${fmt(b.cash != null ? b.cash : b.available)}</span></div>
         <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Collateral</span><span style="color:#e6edf3">${fmt(b.collateral)}</span></div>
+        <div style="font-size:11px;color:#8b949e;display:flex;justify-content:space-between;margin-bottom:4px"><span>Available Margin</span><span style="color:#e6edf3">${fmt(b.available)}</span></div>
         <div style="font-size:12px;color:#8b949e;display:flex;justify-content:space-between;padding-top:6px;border-top:1px solid #21262d"><span>Total Margin</span><span style="color:#3fb950;font-weight:700">${fmt(b.total_margin)}</span></div>
       ` : `<div style="font-size:11px;color:#f85149">⚠️ balance unavailable${b && b.error ? ' — '+b.error.slice(0,60) : ' (token/login check karo)'}</div>`}
     </div>`;

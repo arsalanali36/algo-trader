@@ -381,3 +381,33 @@
 **Depends on:** nothing
 **Not done:** din ki shuruaat me saare universe symbols ko proactively subscribe karna (abhi sirf reactive, signal aane pe) — pehla signal cold-start rahega. REST fallback ki reliability under load bhi harden karni chahiye shayad.
 **Verify:** Deploy + restart clean, `[startup] dhan_feed started` log confirm hua. Real signal ka wait chal raha hai final confirmation ke liye (`[LIQUIDITY]` line real data ke saath aani chahiye ab).
+
+## 2026-07-01 — Exit-side order-chasing (TRAP #64 follow-up) + phantom ICICI row cleanup
+**Status:** DONE
+**Kya:** User: entries conservative reh sakte hain (price bhaag jaye to skip), par exits ko zyada aggressive hona chahiye — loss badhta jaye aur price hi na mile aisa nahi hona chahiye. `smart_order.execute()` ab `is_exit` param leta hai — exits ko 4 chase rounds milte hain (entries 2 hi), aur har round LIMIT price ko spread ke aur andar cross karta hai (buffer double hota hai round pe, 150bps tak cap) — kabhi MARKET order nahi (Zerodha stock-options pe MARKET reject karta hai, sirf LIMIT allow hai). Saare automated exit call-sites (`range_trader` EOD+EXIT, `webhook_executor._do_exit`, `universe_trader` 3 exits, `trader_dashboard` trailing-lock+`_do_squareoff`) ko `is_exit=True` diya. Saath hi ICICIBANK ka ek phantom row (id 386, BUY 1330-PE @9.85, UNCONFIRMED_FILL) mila — Kite `order_history()` se verify kiya ki woh order CANCELLED hua tha (filled_quantity=0, kabhi fill nahi hua) — safe delete, DB backup lekar.
+**Layer:** broker / risk-management
+**Files:** `smart_order.py`, `_TRADERS/range_trader.py`, `_TRADERS/universe_trader.py`, `webhook_executor.py`, `trader_dashboard.py`
+**Kyun:** User ne live TITAN/ICICIBANK stuck-order incident ke baad flexibility maangi
+**Depends on:** TRAP #64 (order-chasing base)
+**Verify:** Deploy + restart, ARS_CHAIN_V1 clean startup, koi open positions disturb nahi hui.
+
+## 2026-07-01 — Broker Balances "Cash" label fix (TRAP #66)
+**Status:** DONE
+**Kya:** User: "Zerodha se mera balance app ka match nahi kar raha." 💰 Broker Balances card "Cash" line `b.available` dikha raha tha — Kite ke liye yeh total available MARGIN hai (cash + pledged collateral − used), asli cash nahi. Real cash (`b.cash`) already API se aa raha tha, bas UI mein kabhi use nahi hua. Fix: Cash ab `b.cash` dikhata hai, naya "Available Margin" line `b.available` ke liye add kiya.
+**Layer:** UI / broker
+**Files:** `templates/index.html`
+**Kyun:** User ka mismatch report
+**Depends on:** nothing
+**Verify:** Deploy + dashboard restart, curl se "Available Margin" text confirm hua page pe.
+
+## 2026-07-01 — Manual-trade broker reconciliation (🧾 Reconcile vs Broker) — built, broke, fixed (TRAP #67, #68, #69)
+**Status:** DONE
+**Kya:** User: Zerodha hi actual source of truth hai (app sirf order punch karti hai) — chahte hain ki Zerodha ke real fills se app automatically match ho jaye, jo trade app ne nahi kiya (manual) wo tag ke saath dikhe. Naya `broker_sync.reconcile_manual_trades()` (button-triggered, `/api/reconcile-manual-trades` route, "🧾 Reconcile vs Broker" button Completed Trades ke paas) — Kite ke `trades()` se aaj ke saare real fills leta hai, `order_store` se match karta hai, jo match nahi hota use `source=manual` tag ke saath insert kar deta hai.
+**Pehla version TOOTA:** matching sirf `broker_order_id` (order id) se ki thi — kuch purani rows (isi session ki earlier manual TRAP#60/61 cleanup se) ka broker_order_id kabhi populate hi nahi hua tha, to unhe "unmatched" samajh ke 32 DUPLICATE rows insert kar diye. User ne turant screenshot se pakda ("gross balance alag hai"). Surgical DELETE se (`correlation_id LIKE 'MANUAL_TID_%'`) saaf kiya — poori DB restore nahi ki (WAL-mode backup incomplete nikla, restore karta to 19 real rows kho jaate — TRAP #68).
+**Fix (v2):** matching ab SIGNATURE+COUNT se — `(root_symbol, strike, CE/PE, side, qty, price)` normalize karke, jitne broker ke fills us signature ke utne hi order_store rows hone chahiye; farak > 0 to utne hi naye insert karo. Ye kisi bhi purani row ke broker_order_id missing hone se safe hai, aur khud-idempotent hai. Dry-run script se pehle verify kiya (12 genuinely-missing fills mile, 0 false-positive dupes) tab jaake live chalaya.
+**Deploy gotcha:** ek multi-file scp mein `templates/index.html` silently deploy nahi hua tha (koi error nahi dikha) — user ne button missing dekha, mtime check se pakda, alag se re-deploy kiya (TRAP #69).
+**Layer:** broker / data-integrity / UI
+**Files:** `broker_sync.py`, `trader_dashboard.py`, `templates/index.html`
+**Kyun:** User ka reconciliation automation ka ask
+**Depends on:** nothing
+**Verify:** Signature-based version live-run kiya — 12 manual trades insert hue (HINDUNILVR, NIFTY x2, NESTLEIND), per-instrument Zerodha se exact match (HINDUNILVR -225, NIFTY -1215.50, NIFTY -1186.25). Live-mode total ab ₹-2,389.25 vs Zerodha ₹-2,426.75 (₹37.50 ka chhota gap bacha, NESTLEIND-1450 pe — further check pending).

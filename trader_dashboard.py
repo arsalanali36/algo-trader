@@ -638,6 +638,22 @@ def api_sync_positions():
         return jsonify({"ok": False, "msg": str(e)}), 500
 
 
+@app.route('/api/reconcile-manual-trades', methods=['POST'])
+def api_reconcile_manual_trades():
+    """Button-triggered (Completed Trades card): pulls today's real broker
+    fills, matches each against order_store by broker_order_id, corrects
+    drifted prices, and inserts any fill the broker has that this app never
+    placed at all (a manual trade on the same account) — tagged 'manual' so
+    it shows up like any other row and the day's TOTAL reconciles against
+    the broker's real account P&L. See broker_sync.reconcile_manual_trades()."""
+    import broker_sync
+    broker_name = request.args.get('broker', 'kite')
+    date = request.args.get('date') or None
+    result = broker_sync.reconcile_manual_trades(date=date, broker_name=broker_name, log=print)
+    status = 200 if result.get("ok") else 500
+    return jsonify(result), status
+
+
 @app.route('/api/rms-reconcile')
 def api_rms_reconcile():
     """RMS Stage 3 — read-only drift check: our own capital_in_use(None) vs the
@@ -3555,6 +3571,7 @@ def pos_monitor_loop():
                                             source=_p.get("source",""), strategy=_p.get("strategy",""),
                                             instrument=_p.get("instrument",""), broker_name=_bname,
                                             extra_tags=["TRAILING_PROFIT_LOCK"],
+                                            is_exit=True,
                                         )
                                     else:
                                         import order_store as _os
@@ -3863,6 +3880,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     source=p["source"], strategy=p["strategy"],
                     instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
                     extra_tags=["pos_monitor_exit", exit_reason],
+                    is_exit=True,
                 )
             except Exception as _ex:
                 # A network/API exception here must NOT propagate up and abort
