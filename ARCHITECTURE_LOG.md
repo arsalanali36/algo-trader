@@ -359,3 +359,14 @@
 **Kyun:** User-requested UI parity with Zerodha's own trade history view
 **Depends on:** nothing
 **Verify:** JS syntax `node --check` se verify kiya (Jinja tags strip karke). Deploy kiya (Flask templates auto-reload — koi service restart nahi lagi, `curl` se 200 OK + naya button HTML confirm kiya). Visual/interaction testing user ne khud browser me karna hai (is session me direct browser access nahi tha).
+
+## 2026-07-01 — Full-day live incident investigation (Zerodha CSV se) → TRAP #64 order-chasing + shadow-live/paper-mode clarify
+**Status:** DONE (order-chasing) / user ke apne actions clarify hue (shadow-live, paper mode, NIFTY manual trade)
+**Kya:** User ne poore din ka Zerodha orders CSV diya — TITAN aur ICICIBANK ke orders 8-second wait ke baad bhi minutes tak broker pe unfilled reh rahe the (TITAN ~4.5 min baad khud fill hua; ICICIBANK kabhi fill hi nahi hua, user ne haath se cancel kiya). 30% trailing-lock din me 3 baar fire hua (12:00, 12:05, 13:41) — design ke mutabik kaam kar raha hai, lekin user ne pucha kya per-instrument lagana better hoga (design question, abhi decide nahi hua). Shadow-Live ON mila (user ne khud on kiya tha bhool se, ab OFF kar diya maine seedha config me — UI se save nahi hua tha). Paper mode (12:41 se) user ka apna intentional choice tha.
+**Fix:** User ka idea implement kiya — order agar poll ke baad bhi fill nahi hua, cancel karke fresh price pe re-place karo (max 2 chase, 3 total attempts, ~24s max). Naya `BaseBroker.cancel_order()` (Dhan `DELETE /v2/orders/{id}`, Kite `cancel_order()`). Provisional row (TRAP #63) ka price + broker_order_id har chase round update hota hai.
+**Layer:** broker / order-flow
+**Files:** `smart_order.py`, `order_store.py`, `brokers/base_broker.py`, `brokers/dhan_broker.py`, `brokers/kite_broker.py`
+**Kyun:** User ne khud suggest kiya jab dekha orders manually cancel karne pad rahe the
+**Depends on:** TRAP #63 (isi session)
+**Not done:** ICICIBANK phantom row (id 386) abhi bhi order_store me "open" dikha raha hai — real risk nahi hai (kabhi fill hi nahi hua), lekin cleanup pending. 30% ceiling per-instrument vs account-level — user decide karenge.
+**Verify:** Syntax check + deploy + restart (paper mode me, safe waqt), clean startup confirmed, koi error nahi.

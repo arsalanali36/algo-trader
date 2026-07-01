@@ -113,7 +113,7 @@ def record(side, qty, price, *, source="", strategy="", mode="paper", broker="dh
         return None
 
 
-def update_fill(row_id, price=None, status=None, tags=None):
+def update_fill(row_id, price=None, status=None, tags=None, broker_order_id=None):
     """Update a previously-recorded row's price/status/tags in place.
 
     Used by smart_order.execute()'s live path (TRAP #58/#62 root fix) — a
@@ -124,7 +124,12 @@ def update_fill(row_id, price=None, status=None, tags=None):
     (excluded from all P&L via _dead_filtered, correctly). If the poll times
     out either way, the row is simply left as-is — already a real 'filled'
     leg, already protected by pos_monitor_loop, already reconcilable by
-    broker_sync — instead of never having existed at all."""
+    broker_sync — instead of never having existed at all.
+
+    broker_order_id: also used by the order-chase (TRAP #64) — cancelling a
+    stale unfilled limit and re-placing at a fresh price gets a NEW broker
+    order id; this keeps the row pointing at whichever order is currently
+    live so a later get_fill() poll checks the right one."""
     if row_id is None:
         return
     sets, args = [], []
@@ -134,6 +139,8 @@ def update_fill(row_id, price=None, status=None, tags=None):
         sets.append("status=?"); args.append(status)
     if tags is not None:
         sets.append("tags=?"); args.append(json.dumps(tags))
+    if broker_order_id is not None:
+        sets.append("broker_order_id=?"); args.append(str(broker_order_id))
     if not sets:
         return
     args.append(row_id)

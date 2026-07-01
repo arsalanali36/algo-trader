@@ -176,7 +176,10 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         # 4 separate real occurrences). Writing this row FIRST means a timeout
         # no longer means "invisible" — worst case it sits tagged
         # UNCONFIRMED_FILL until broker_sync's regular sync reconciles it,
-        # instead of not existing at all. ──
+        # instead of not existing at all. See also TRAP #64 below (order
+        # chase) — the complementary fix for WHY these confirmations were
+        # slow in the first place (thin liquidity), not just the visibility
+        # gap when they are. ──
         try:
             import order_store
             bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
@@ -190,22 +193,87 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         except Exception as _pe:
             log(f"[order_store] provisional record failed (fill-confirm gap NOT closed this call): {_pe}")
 
-        # Poll for actual fill — max ~8s (5 attempts × 1.5s).
+        # Poll for actual fill — max ~8s per round (5 attempts × 1.5s).
         # Marketable limits on liquid options typically fill in <1s.
         fill_st, fill_price = None, None
         oid = r.get("order_id")
         attempts_taken = 0
-        if oid and hasattr(broker, "get_fill"):
-            for attempt in range(5):
-                time.sleep(1.5)
-                attempts_taken = attempt + 1
+        MAX_CHASE = 2   # up to 2 re-places (3 order attempts total) chasing the market
+        can_chase = hasattr(broker, "cancel_order")
+        chase_round = 0
+
+        while True:
+            if oid and hasattr(broker, "get_fill"):
+                for attempt in range(5):
+                    time.sleep(1.5)
+                    attempts_taken += 1
+                    try:
+                        fill_st, fill_price = broker.get_fill(oid)
+                    except Exception:
+                        fill_st = None
+                    log(f"[FILL-POLL] {trad_sym} attempt {attempt+1}/5"
+                        f"{f' (chase {chase_round})' if chase_round else ''} -> {fill_st}")
+                    if fill_st in ("TRADED", "REJECTED"):
+                        break
+
+            if fill_st in ("TRADED", "REJECTED"):
+                break
+            if not can_chase or chase_round >= MAX_CHASE:
+                break   # give up — falls through to the timeout handling below
+
+            # ── TRAP #64: order chase — a marketable limit that hasn't filled
+            # after a full poll round is very likely sitting unfilled in an
+            # illiquid contract's order book (found live 2026-07-01: TITAN and
+            # ICICIBANK both sat OPEN for minutes on end, user had to notice
+            # and cancel them by hand). Cancel the stale order and re-place at
+            # the CURRENT market price — chasing it — instead of leaving it
+            # to fill (or not) on its own, unmanaged, for an unbounded time. ──
+            chase_round += 1
+            try:
+                broker.cancel_order(oid)
+            except Exception as _ce:
+                log(f"[CHASE] {trad_sym} cancel failed: {_ce}")
+            # Cancel can race a fill that landed a moment earlier — re-check
+            # before assuming a re-place is actually needed.
+            try:
+                fill_st, fill_price = broker.get_fill(oid)
+            except Exception:
+                pass
+            if fill_st in ("TRADED", "REJECTED"):
+                break
+
+            new_price, new_src = marketable_price(side, sec_id, seg, broker, buffer_bps)
+            if new_price is None:
+                log(f"[CHASE] {trad_sym} — no fresh price available, stopping chase")
+                break
+            price, src = new_price, new_src
+            r = broker.place_order(side, sec_id, seg, qty, "LIMIT", price,
+                                   trad_sym=trad_sym, tag=f"{tag}_{sym}",
+                                   product=product)
+            log(f"[BROKER] {trad_sym} {side} {qty} @ {price:.2f} -> {r['status'].upper()} "
+                f"({r['reason']}) orderId={r.get('order_id')} (chase {chase_round}/{MAX_CHASE})")
+
+            if _is_rejected(r["status"]):
+                log(f"[LIVE-SKIP] {trad_sym} — broker rejected on chase re-place, P&L not recorded")
+                res.update(status=r["status"], reason=r["reason"], order_id=r["order_id"])
+                res["ok"] = False
+                if provisional_id:
+                    try:
+                        import order_store
+                        order_store.update_fill(provisional_id, status="rejected")
+                    except Exception:
+                        pass
+                return res
+
+            oid = r.get("order_id")
+            res["order_id"] = oid
+            if provisional_id:
                 try:
-                    fill_st, fill_price = broker.get_fill(oid)
-                except Exception:
-                    fill_st = None
-                log(f"[FILL-POLL] {trad_sym} attempt {attempt+1}/5 -> {fill_st}")
-                if fill_st in ("TRADED", "REJECTED"):
-                    break
+                    import order_store
+                    order_store.update_fill(provisional_id, price=price, broker_order_id=oid)
+                except Exception as _ue:
+                    log(f"[order_store] chase provisional update failed: {_ue}")
+            fill_st, fill_price = None, None   # reset for this round's poll
 
         if fill_st == "REJECTED":
             log(f"[LIVE-SKIP] {trad_sym} — fill confirmed REJECTED, P&L not recorded")

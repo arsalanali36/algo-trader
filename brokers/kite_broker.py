@@ -417,6 +417,19 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] order_status({order_id}) failed: {e}")
         return None
 
+    def cancel_order(self, order_id):
+        if not order_id:
+            return False
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("order")
+            kite.cancel_order(variety="regular", order_id=order_id)
+            return True
+        except Exception as e:
+            log.warning(f"[KITE] cancel_order({order_id}) failed: {e}")
+            return False
+
     def get_fill(self, order_id):
         """Return (status_str, fill_price) for a placed order.
         status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None

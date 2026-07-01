@@ -181,6 +181,16 @@ class DhanBroker(BaseBroker):
             pass
         return None
 
+    def cancel_order(self, order_id):
+        if not order_id:
+            return False
+        try:
+            _rl.acquire("order")
+            r = requests.delete(f"{ORDERS_URL}/{order_id}", headers=self._hdrs(), timeout=6)
+            return r.status_code in (200, 202)
+        except Exception:
+            return False
+
     def get_fill(self, order_id):
         """Return (status_str, fill_price) for a placed order.
         status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None

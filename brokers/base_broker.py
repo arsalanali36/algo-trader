@@ -61,6 +61,20 @@ class BaseBroker(ABC):
         don't downgrade a known-good status on it"."""
         return None
 
+    def cancel_order(self, order_id):
+        """Optional: cancel a still-open (unfilled) order. Used by
+        smart_order.execute()'s order-chase (TRAP #64) — if a marketable
+        limit hasn't filled after a few poll attempts, the price likely moved
+        away from it (thin/illiquid contract); cancel the stale order and
+        re-place at the current price rather than leaving it sitting in the
+        book indefinitely (previously the user had to notice and cancel
+        these by hand — TITAN/ICICIBANK, 2026-07-01). Returns True if the
+        cancel request was accepted, False otherwise (e.g. it already filled
+        or was already cancelled — caller should re-check get_fill() in that
+        case, not assume the chase failed). Default: False (unsupported) so
+        brokers without this wired degrade gracefully — no chasing attempted."""
+        return False
+
     def get_fill(self, order_id):
         """Optional: return (status_str, fill_price) for a placed order.
         status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
