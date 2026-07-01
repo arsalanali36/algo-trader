@@ -80,9 +80,8 @@ def get_broker_balance(broker_name):
 
 
 def _today_open(strategy=None):
-    
-    from datetime import timezone
-    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
+    from datetime import datetime, timedelta, timezone
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     try:
         import order_store
@@ -399,8 +398,8 @@ def _today_realized_pnl():
     """Sum of realized P&L (completed trades, all strategies) for today —
     from order_store's already-netted 'details'."""
     
-    from datetime import timezone
-    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
+    from datetime import datetime, timedelta, timezone
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     try:
         import order_store
@@ -534,8 +533,8 @@ def _strategy_day_pnl(strategy, unrealized_by_strat=None):
     """Today's realized P&L for one strategy (from order_store's netted details)
     + an optional caller-supplied unrealized estimate for that strategy."""
     
-    from datetime import timezone
-    ist_now = datetime.datetime.now(datetime.timezone.utc) + timedelta(hours=5, minutes=30)
+    from datetime import datetime, timedelta, timezone
+    ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
     realized = 0.0
     try:

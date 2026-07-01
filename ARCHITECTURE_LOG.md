@@ -274,3 +274,14 @@
 - **Zero-leg cleanup** — aaj ke 2 corrupt @0 close legs (24150-CE webhook, 24000-CE manual) ko Dhan intraday se asli exit premium (₹62.80 / ₹163.95) set kiya (one-off `_fix_zero_legs.py`, DB backup leke, script delete). Fake ~₹15,343 profit hata.
 **Files:** `webhook_executor.py`
 **Verify:** reversal unit-test pass + VPS deploy OK. Live reversal kal market me confirm hoga.
+
+## 2026-07-01 — Peak-P&L day-rollover fix + critical pos_monitor_loop silent-break fix (datetime.utcnow() deprecation-commit fallout)
+**Status:** DONE
+**Kya:**
+- **Peak-P&L stale-carryover fix** — user ne dekha ki naye din ki shuruaat me (zero trades) Peak/DD/30% floor purane din ke ₹7,916 dikha raha tha. Root cause: `pos_monitor_loop`'s day-rollover check apne hi abhi-abhi-likhe hue `peak_pnl_history.json` ka mtime check kar raha tha — hamesha "aaj" hi milta, reset kabhi fire nahi hota tha (process long-lived systemd service hai, roz restart nahi hota). Fix: naya module-level `_peak_day_str` explicit day-tracker, mtime-dependency hata di. TRAP #55.
+- **CRITICAL — same restart ne ek alag, pehle se maujood bug expose kiya:** commit `3cbad3f` (isi session se ~10 min pehle, ek earlier session ne `datetime.utcnow()` deprecation fix kiya tha) ne 5 jagah imports galat kar diye the — `risk_gate.py` ke 3 functions (`_today_open`/`_today_realized_pnl`/`_strategy_day_pnl` — capital/daily-loss/concentration checks) NameError pe crash kar rahe the, aur `trader_dashboard.py` me `_trailing_lock_fired_today()` + trailing-lock flag-write ka `as _dtc` galti se `timezone` ko bind kar raha tha (`datetime` ko nahi) — ek jagah to poore `pos_monitor_loop` (SL/TP/EOD-squareoff wala loop) ko HAR CYCLE UnboundLocalError pe crash kara raha tha, bilkul silently (missing `flush=True` outer print pe). Dono bugs sirf isliye pehle nazar nahi aaye kyunki purana already-running process apna OLD in-memory code use kar raha tha — restart karte hi surface hue. Fix: sab 5 jagah sahi import wapas kiya. TRAP #56.
+**Layer:** infra / broker / validation
+**Files:** `trader_dashboard.py`, `risk_gate.py`
+**Kyun:** User-reported cosmetic bug (peak P&L stale) → diagnosis ke dauraan ek zyada critical live-safety bug mil gaya (pos_monitor_loop poora silently down tha restart ke baad)
+**Depends on:** nothing
+**Verify:** VPS pe dono `algo-dashboard` + `algo-monitor` restart karke confirm kiya — `peak_pnl_history.json` ab clean ₹0 se start hota hai, koi error log nahi, `_trailing_lock_fired_today()` sahi kaam karta hai. Us waqt koi open position nahi thi (zero live-trading impact is baar).

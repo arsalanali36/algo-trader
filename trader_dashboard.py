@@ -3314,6 +3314,9 @@ _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips whe
 _trailing_peak_pnl = 0.0
 _daily_peak_ever   = 0.0   # monotonic daily max — NEVER resets, used for graph floor line
 _peak_pnl_history  = []
+# IST "today" this peak state belongs to — used by pos_monitor_loop to detect a real
+# midnight rollover on a long-running process (see TRAP: mtime-after-write self-defeat below).
+_peak_day_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 try:
     import datetime as _dt_mod
     _phf_init = BASE_DIR / "data" / "peak_pnl_history.json"
@@ -3338,7 +3341,7 @@ except Exception as _e_init:
 def _trailing_lock_fired_today() -> bool:
     """Returns True if trailing squareoff already fired today — blocks new entries."""
     try:
-        from datetime import datetime, timedelta, timezone as _dtc
+        from datetime import datetime as _dtc
         _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
         return _flag.exists()
     except Exception:
@@ -3351,7 +3354,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache
+    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str
 
     while True:
         try:
@@ -3421,6 +3424,30 @@ def pos_monitor_loop():
                         _unrealized += _unrl
                 _total_pnl = _realized + _unrealized
 
+                # Day-rollover check — MUST run before the peak/history update below.
+                # trader_dashboard runs as a long-lived systemd service and is NOT
+                # restarted every trading day, so the module-load-time restore (above)
+                # only resets peak on an actual process restart. Previously this was
+                # detected by re-reading peak_pnl_history.json's mtime — but that file
+                # was rewritten (mtime bumped to "now") a few lines below in the SAME
+                # iteration, so by the time the check ran, mtime was always "today" and
+                # the reset branch could never fire. Fixed: track the day explicitly in
+                # _peak_day_str instead of relying on the file's own mtime.
+                _today_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+                if _today_str != _peak_day_str:
+                    try:
+                        if _peak_pnl_history:
+                            _prev_arch = BASE_DIR / "data" / f"peak_pnl_history_{_peak_day_str}.json"
+                            if not _prev_arch.exists():
+                                _prev_arch.write_text(json.dumps(_peak_pnl_history))
+                    except Exception:
+                        pass
+                    _peak_pnl_history  = []
+                    _trailing_peak_pnl = 0.0
+                    _daily_peak_ever   = 0.0
+                    _peak_day_str      = _today_str
+                    print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor reset to ₹0.", flush=True)
+
                 # Update high watermark + record history for Stats graph (always)
                 if _total_pnl > _trailing_peak_pnl:
                     _trailing_peak_pnl = _total_pnl
@@ -3438,26 +3465,6 @@ def pos_monitor_loop():
                 try:
                     _phf = BASE_DIR / "data" / "peak_pnl_history.json"
                     _phf.write_text(json.dumps(_peak_pnl_history))
-                except Exception:
-                    pass
-                # Archive previous day's file at midnight rollover
-                try:
-                    _today_str = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
-                    _arch_f = BASE_DIR / "data" / f"peak_pnl_history_{_today_str}.json"
-                    # If archive for today doesn't exist yet and current file has data
-                    # from a PREVIOUS date, archive it first then reset
-                    if not _arch_f.exists() and _peak_pnl_history:
-                        _first_hm = _peak_pnl_history[0][0]  # "HH:MM"
-                        # Check mtime of peak_pnl_history.json — if written on a previous date, archive it
-                        import os as _os_mod
-                        _mdate = _dt_mod.datetime.fromtimestamp(_phf.stat().st_mtime).strftime("%Y-%m-%d") if _phf.exists() else _today_str
-                        if _mdate < _today_str:
-                            # Archive the previous day's data
-                            _prev_arch = BASE_DIR / "data" / f"peak_pnl_history_{_mdate}.json"
-                            _prev_arch.write_text(json.dumps(_peak_pnl_history))
-                            # Reset for new day
-                            _peak_pnl_history.clear()
-                            _trailing_peak_pnl = 0.0
                 except Exception:
                     pass
 
@@ -3521,7 +3528,7 @@ def pos_monitor_loop():
                         _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
                         # Write day-level flag so webhook/strategy blocks new entries
                         try:
-                            from datetime import datetime, timedelta, timezone as _dtc
+                            from datetime import datetime as _dtc
                             _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
                             _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
                             print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
