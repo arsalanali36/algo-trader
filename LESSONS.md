@@ -1635,3 +1635,22 @@ If you see `fill price unavailable` instead → broker.trades() failed or symbol
 
 **Fast detect:** `EXIT <symbol> via <reason>` in a strategy's log with NO matching earlier `SIGNAL` line for that specific open episode (i.e., the position it's "exiting" was actually opened AND closed by something else already) — cross-check against `[TRAILING-LOCK]` lines in `algo-monitor`'s log around the same account, earlier in the day.
 
+---
+
+## TRAP #63 — TRAP #58's root cause fixed at the source: write the order_store row the instant the broker accepts, not after fill confirmation 🔴🔴🔴
+
+**Symptom:** TRAP #58's untracked-position scan (detection only, deployed earlier the same day) caught the SAME root gap recur **4 separate times in one session** — RELIANCE, the SUNPHARMA hedge leg, and HINDUNILVR all hit `[LIVE-PENDING] ... fill not confirmed in 8s`, each one a real broker fill that never got an `order_store` row because `smart_order.execute()`'s live path only calls `order_store.record()` AFTER confirming `TRADED`, and gives up polling at 8s (5×1.5s). User asked directly why this kept happening: every affected symbol (RELIANCE, SUNPHARMA, MARUTI, HINDUNILVR) is a stock option — wider spreads than NIFTY/BANKNIFTY index options — and Kite's fill-confirmation routinely took longer than 8s to reflect `TRADED` even though the broker fill was genuine. Not a restart-timing coincidence (TRAP #58's original framing) — a near-certain outcome for this strategy's instrument mix, every single trading day.
+
+**Fix:** `execute()`'s live path now writes a **provisional** `order_store` row immediately after the broker accepts the order (right after the immediate-reject check, before the fill-confirm poll even starts) — using the marketable price attempted, `status="filled"`, tagged `UNCONFIRMED_FILL`. Then, whichever way the poll resolves:
+- **Confirmed TRADED** → `order_store.update_fill()` (new function) corrects the row's price to the real fill price and drops the `UNCONFIRMED_FILL` tag. No behavior change from the caller's perspective — `res["ok"]=True` as before.
+- **Confirmed REJECTED** → the same row's status is updated to `"rejected"` — correctly excluded from all P&L via `_dead_filtered()`, same as if it had never been written.
+- **Timeout (can't confirm either way)** → the row is left exactly as written. It's already a normal `"filled"`-status leg, so `pos_monitor_loop` starts protecting it with SL/EOD immediately, and `broker_sync`'s regular ghost-sync can reconcile it correctly later regardless of which way it actually resolved (genuinely filled → nothing more to do; genuinely never filled → `broker_sync` finds it flat with no matching fill price and cleanly excludes it via TRAP #61's no-exit-price branch — no dangling leg either way).
+
+The bottom "persist to trade DB" block that previously ran unconditionally for every call is now skipped specifically for live-mode calls that got a provisional row (avoids a duplicate) — paper mode, and live mode if the provisional write itself failed, still fall through to it unchanged as a fallback.
+
+**Why this wasn't done from the start:** the original design deliberately waited for confirmed `TRADED` before recording, to avoid ever logging a price that might not be real (see TRAP #35 — "Live P&L records only after confirmed fill"). This fix doesn't relax that goal — the recorded price still gets corrected to the real fill price once confirmed; it just stops treating "can't confirm within 8s" as equivalent to "doesn't exist."
+
+**Deployed while a real position was open** (MARUTI, protected by SL tags) — required restarting the `ARS_CHAIN_V1` strategy process specifically (not just `algo-dashboard`/`algo-monitor` — Python doesn't hot-reload an already-imported `smart_order.py`), verified `_recover_state_from_order_store()` (TRAP #28) correctly re-attached the open position afterward, zero gap in protection.
+
+**Fast detect:** `grep "LIVE-PENDING" logs/<strategy>.log` — before this fix, every such line meant a real fill was potentially untracked; after, check the corresponding `order_store` row exists with `UNCONFIRMED_FILL` still in its tags (means still genuinely unconfirmed — worth a manual broker check) vs. tag cleared (means it later confirmed fine on its own).
+

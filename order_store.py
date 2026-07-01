@@ -103,12 +103,45 @@ def record(side, qty, price, *, source="", strategy="", mode="paper", broker="dh
             "product_type": product_type or "NRML", "group_id": group_id or "",
         }
         with _lock, _conn() as c:
-            c.execute(
+            cur = c.execute(
                 "INSERT INTO orders (" + ",".join(_COLS) + ") VALUES (" +
                 ",".join("?" * len(_COLS)) + ")",
                 tuple(row[k] for k in _COLS))
+            return cur.lastrowid
     except Exception as e:
         print("[order_store] record fail:", e, flush=True)
+        return None
+
+
+def update_fill(row_id, price=None, status=None, tags=None):
+    """Update a previously-recorded row's price/status/tags in place.
+
+    Used by smart_order.execute()'s live path (TRAP #58/#62 root fix) — a
+    provisional row is written the moment the broker ACCEPTS an order
+    (before the ~8s fill-confirm poll even starts), tagged UNCONFIRMED_FILL.
+    Once the poll resolves, this updates that same row: confirmed TRADED ->
+    correct price + clear the tag; confirmed REJECTED -> status='rejected'
+    (excluded from all P&L via _dead_filtered, correctly). If the poll times
+    out either way, the row is simply left as-is — already a real 'filled'
+    leg, already protected by pos_monitor_loop, already reconcilable by
+    broker_sync — instead of never having existed at all."""
+    if row_id is None:
+        return
+    sets, args = [], []
+    if price is not None:
+        sets.append("price=?"); args.append(float(price))
+    if status is not None:
+        sets.append("status=?"); args.append(status)
+    if tags is not None:
+        sets.append("tags=?"); args.append(json.dumps(tags))
+    if not sets:
+        return
+    args.append(row_id)
+    try:
+        with _lock, _conn() as c:
+            c.execute(f"UPDATE orders SET {','.join(sets)} WHERE id=?", args)
+    except Exception as e:
+        print("[order_store] update_fill fail:", e, flush=True)
 
 
 def query(date=None, date_from=None, date_to=None, source=None, mode=None, broker=None,

@@ -329,3 +329,13 @@
 **Kyun:** User ne khud confusion flag kiya ("strategy sirf sell karti hai, yeh buy kaise") — investigate karke 2 real bugs mile
 **Depends on:** TRAP #60 (isi session — jiske baad yeh path pehli baar cleanly exercise hua)
 **Verify:** Row 378 ka status fix karke turant sahi pair hua (BUY 28.60→SELL 28.25, pnl -122.50). Poore din ka total ab ₹1,705.00 — Zerodha ke apne "Total P&L" se EXACT match. Deploy + restart clean, 10 completed trades, open:[].
+
+## 2026-07-01 — TRAP #63: TRAP #58 ka root cause fix — order_store row broker-accept pe hi likho, fill-confirm ke baad nahi
+**Status:** DONE
+**Kya:** Aaj hi 4 baar (RELIANCE, SUNPHARMA-hedge, HINDUNILVR, aur implicitly MARUTI ke through bhi) same gap dikha — `smart_order.execute()` sirf TRADED confirm hone ke baad hi order_store me likhta tha, aur 8 second (5×1.5s) baad haar maan leta tha. User ne pucha "yeh baar-baar kyun ho raha hai" — jawaab: saare affected symbols (RELIANCE/SUNPHARMA/MARUTI/HINDUNILVR) STOCK options hain, NIFTY jaise liquid nahi — inka fill-confirm aksar 8 sec se zyada leta hai, chahe fill genuinely ho chuka ho.
+**Fix:** Order broker accept karte hi (poll shuru hone se PEHLE) ek "provisional" row likh do (best-guess price, `UNCONFIRMED_FILL` tag). Confirm TRADED → price sahi karo, tag hatao. Confirm REJECTED → status='rejected' (P&L se sahi exclude). Timeout → row waise hi chhodo — already protected hai (pos_monitor_loop SL/EOD laga dega), aur agar genuinely fill nahi hua to broker_sync khud clean kar dega (TRAP #61 ka no-price-branch).
+**Layer:** broker / risk-management / order-flow
+**Files:** `smart_order.py`, `order_store.py` (naya `update_fill()` function)
+**Kyun:** User ne khud pucha "kyun baar-baar ho raha hai" — root fix maangi
+**Depends on:** TRAP #58 (jisne yeh gap pehli baar identify kiya), TRAP #61 (jiska no-price branch iske timeout-case ko safely clean karta hai)
+**Verify:** Deploy karte waqt ek REAL open MARUTI position thi (protected) — `ARS_CHAIN_V1` strategy process restart karna zaroori tha (Python `smart_order.py` hot-reload nahi karta), `_recover_state_from_order_store` (TRAP #28) se position sahi recover hui, zero protection-gap. Restart ke baad dashboard pe MARUTI abhi bhi correctly tracked confirmed.

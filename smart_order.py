@@ -107,6 +107,8 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
 
     res = {"ok": True, "price": price, "src": src, "status": "paper",
            "reason": "paper", "order_id": None}
+    provisional_id = None   # order_store row written the instant the broker
+                             # accepts, before the fill-confirm poll — see below
 
     # ── LIVE mode: fire order first, wait for actual fill, THEN record P&L ──
     if mode == "live":
@@ -122,9 +124,33 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             res["ok"] = False
             return res
 
+        # ── TRAP #58/#62 root fix: write a PROVISIONAL row right now, before
+        # polling for fill confirmation. The old design only recorded AFTER
+        # confirming TRADED within ~8s — but stock options (RELIANCE, SUNPHARMA,
+        # MARUTI, HINDUNILVR — all wider-spread than NIFTY) routinely take
+        # longer than that to confirm, even though the broker fill genuinely
+        # happens. When the poll timed out, execute() returned early and
+        # order_store.record() at the bottom never ran — the position existed
+        # for real at the broker but nowhere in this app (2026-07-01, same day,
+        # 4 separate real occurrences). Writing this row FIRST means a timeout
+        # no longer means "invisible" — worst case it sits tagged
+        # UNCONFIRMED_FILL until broker_sync's regular sync reconciles it,
+        # instead of not existing at all. ──
+        try:
+            import order_store
+            bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
+            provisional_id = order_store.record(
+                side, qty, price, source=source, strategy=strategy, mode=mode,
+                broker=bname, symbol=sym, instrument=instrument, trad_sym=trad_sym,
+                sec_id=sec_id, segment=seg, correlation_id=f"{tag}_{sym}",
+                broker_order_id=r.get("order_id") or "", status="filled",
+                group_id=group_id,
+                tags=(list(extra_tags) if extra_tags else []) + ["UNCONFIRMED_FILL"])
+        except Exception as _pe:
+            log(f"[order_store] provisional record failed (fill-confirm gap NOT closed this call): {_pe}")
+
         # Poll for actual fill — max ~8s (5 attempts × 1.5s).
         # Marketable limits on liquid options typically fill in <1s.
-        # P&L is recorded ONLY after TRADED confirmed — no premature entries.
         fill_st, fill_price = None, None
         oid = r.get("order_id")
         if oid and hasattr(broker, "get_fill"):
@@ -143,13 +169,26 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             res["ok"] = False
             res["status"] = "rejected"
             res["reason"] = "fill rejected at broker"
+            if provisional_id:
+                try:
+                    import order_store
+                    order_store.update_fill(provisional_id, status="rejected")
+                except Exception:
+                    pass
             return res
 
         if fill_st != "TRADED":
-            # Timeout — order still pending (rare for marketable limit; possible
-            # if price moved away from our limit after placement).
+            # Timeout — order may still have filled at the broker; we just
+            # can't confirm it from here. The provisional row (already
+            # written above) stays exactly as-is: pos_monitor_loop protects
+            # it like any other open position from this point on, and if it
+            # turns out to have never actually filled, broker_sync's regular
+            # ghost-sync will find it flat with no matching fill and cleanly
+            # exclude it (TRAP #61's no-exit-price branch) — no dangling leg
+            # either way.
             log(f"[LIVE-PENDING] {trad_sym} orderId={oid} — fill not confirmed in 8s; "
-                f"P&L on hold. Monitor Open Positions or check broker manually.")
+                f"provisional order_store row (id={provisional_id}) protects it either way. "
+                f"Monitor Open Positions or check broker manually.")
             res["ok"] = False
             res["status"] = "pending"
             res["reason"] = "fill not confirmed within timeout"
@@ -169,6 +208,15 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         log(f"[LIVE] {side} {qty} {trad_sym} @ {actual_price:.2f}  "
             f"correlationId={tag}_{sym}_{int(time.time())}")
 
+        if provisional_id:
+            try:
+                import order_store
+                order_store.update_fill(
+                    provisional_id, price=actual_price,
+                    tags=list(extra_tags) if extra_tags else [])
+            except Exception as _ue:
+                log(f"[order_store] provisional update failed: {_ue}")
+
     # ── PAPER mode: log immediately (no real broker, P&L is simulation) ──
     elif mode == "paper":
         log(f"[PAPER] {side} {qty} {trad_sym} @ {price:.2f}  "
@@ -185,18 +233,23 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             log(f"[BROKER-SHADOW] failed (paper fill unaffected): {e}")
 
     # ── Persist to trade DB (best-effort, never blocks) ──
-    try:
-        import order_store
-        bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
-        order_store.record(side, qty, res["price"], source=source, strategy=strategy,
-                           mode=mode, broker=bname, symbol=sym, instrument=instrument,
-                           trad_sym=trad_sym, sec_id=sec_id, segment=seg,
-                           correlation_id=f"{tag}_{sym}",
-                           broker_order_id=res.get("order_id") or "",
-                           status=res.get("status", "paper"), group_id=group_id,
-                           tags=list(extra_tags) if extra_tags else None)
-    except Exception:
-        pass
+    # Live mode already recorded above (provisional row written before the
+    # poll, then updated on confirm/reject) — skip here to avoid a duplicate.
+    # Paper mode, and live mode where the provisional write itself failed,
+    # still need this as their only record.
+    if not (mode == "live" and provisional_id):
+        try:
+            import order_store
+            bname = broker_name or (broker.name() if hasattr(broker, "name") else risk_gate.default_broker())
+            order_store.record(side, qty, res["price"], source=source, strategy=strategy,
+                               mode=mode, broker=bname, symbol=sym, instrument=instrument,
+                               trad_sym=trad_sym, sec_id=sec_id, segment=seg,
+                               correlation_id=f"{tag}_{sym}",
+                               broker_order_id=res.get("order_id") or "",
+                               status=res.get("status", "paper"), group_id=group_id,
+                               tags=list(extra_tags) if extra_tags else None)
+        except Exception:
+            pass
 
     return res
 
