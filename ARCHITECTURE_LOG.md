@@ -349,3 +349,13 @@
 **Kyun:** User ne khud pucha "is data ko rakh lo, baad me kaam aayega"
 **Depends on:** TRAP #63 (isi session)
 **Verify:** Deploy + restart clean (`ARS_CHAIN_V1` + dashboard/monitor dono), koi open position nahi thi. Route `/api/fill-delays` test kiya — `[]` return kar raha (abhi tak koi delayed fill nahi hui, expected).
+
+## 2026-07-01 — UI: Completed Trades "Group by Symbol" (Zerodha Day's History jaisa)
+**Status:** DONE
+**Kya:** User ne Zerodha ke "Day's history" table ka screenshot dikhaya — per-symbol grouped totals, expand karke individual trades. Wahi feature app ke "Completed Trades" table me bhi maanga.
+**Fix:** Naya "📁 Group by Symbol" toggle button (Completed Trades header). OFF = purana flat view (byte-identical, refactor-only). ON = per-symbol summary row (points/gross/tax/net total + trade count), click karke expand/collapse — individual trades neeche sub-rows me dikhte hain. Row-rendering logic ek reusable function `_completedRowHtml()` me nikaala (pehle forEach ke andar duplicate tha) taaki flat aur grouped dono modes same code use karein — zero drift risk.
+**Layer:** ui
+**Files:** `templates/index.html`
+**Kyun:** User-requested UI parity with Zerodha's own trade history view
+**Depends on:** nothing
+**Verify:** JS syntax `node --check` se verify kiya (Jinja tags strip karke). Deploy kiya (Flask templates auto-reload — koi service restart nahi lagi, `curl` se 200 OK + naya button HTML confirm kiya). Visual/interaction testing user ne khud browser me karna hai (is session me direct browser access nahi tha).

@@ -905,7 +905,12 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="card" style="margin-bottom:12px">
     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
       <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
-      <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+      <div style="display:flex;gap:6px;align-items:center">
+        <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
+          onclick="toggleCompletedGrouping()"
+          title="Zerodha ke Day's History jaisa — symbol-wise group karo, expand karke individual trades dekho">📁 Group by Symbol</button>
+        <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
+      </div>
     </div>
     <div id="ord-completed" style="overflow-x:auto"></div>
   </div>
@@ -2953,6 +2958,187 @@ window._openSortCol = localStorage.getItem('ord_open_sort_col') || 'entry_time';
 window._openSortDir = localStorage.getItem('ord_open_sort_dir') || 'desc';
 window._hiddenNotes = new Set(JSON.parse(localStorage.getItem('ord_hidden_notes') || '[]'));
 
+// Completed-trades "Group by Symbol" — Zerodha Day's History style: one
+// collapsed summary row per symbol (totals), expand to see individual trades.
+window._completedGroupBy = localStorage.getItem('ord_completed_group_by') === 'true';
+window._completedGroupExpanded = new Set();   // symbol keys currently expanded — not persisted, resets per page load (matches Zerodha's own transient expand state)
+
+function toggleCompletedGrouping(){
+  window._completedGroupBy = !window._completedGroupBy;
+  localStorage.setItem('ord_completed_group_by', window._completedGroupBy ? 'true' : 'false');
+  const btn = document.getElementById('ord-group-btn');
+  if(btn){
+    btn.style.background = window._completedGroupBy ? '#1f6feb' : '';
+    btn.style.borderColor = window._completedGroupBy ? '#1f6feb' : '#30363d';
+  }
+  renderCachedOrders();
+}
+
+function toggleCompletedGroupExpand(symKey){
+  if(window._completedGroupExpanded.has(symKey)) window._completedGroupExpanded.delete(symKey);
+  else window._completedGroupExpanded.add(symKey);
+  renderCachedOrders();
+}
+
+// One Completed-Trades <tr> — extracted so both flat mode and grouped mode
+// (see renderCachedOrders) render individual trade rows identically.
+// Returns {html, g, tx, n, pts, inv} so callers can accumulate totals.
+function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
+  const g = t._gross, tx = t._tax, n = t._net;
+  const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
+  const gc = g > 0 ? '#3fb950' : (g < 0 ? '#f85149' : '#e6edf3');
+
+  const inv = t.qty * (t.entry_price || 0);
+  const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
+  const rc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#8b949e');
+  const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
+  const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
+
+  let max_pnl = '—', min_pnl = '—';
+  let note = '';
+  if(t.tags) {
+    let max_ltp = null, min_ltp = null;
+    t.tags.forEach(tg => {
+      if(tg.startsWith('MAX_LTP:')) max_ltp = parseFloat(tg.split(':')[1]);
+      if(tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
+      if(tg.startsWith('NOTE:')) note = tg.substring(5);
+    });
+
+    if(max_ltp !== null && t.entry_price > 0) {
+        let pnl = (max_ltp - t.entry_price) * t.qty;
+        if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty;
+        if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl)}</span>`;
+    }
+    if(min_ltp !== null && t.entry_price > 0) {
+        let pnl = (min_ltp - t.entry_price) * t.qty;
+        if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty;
+        if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl)}</span>`;
+    }
+  }
+
+  let encNote = encodeURIComponent(note);
+  let imgs = _imgTagsOf(t);
+  let encImgs = encodeURIComponent(JSON.stringify(imgs));
+
+  const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
+  let dispNote = '';
+  if (note || (imgs && imgs.length)) {
+    dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
+             + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
+             + _noteThumbs(t.id, imgs)
+             + `</div>`;
+  }
+
+  let rowHtml = `<tr style="border-bottom:1px solid #21262d${subRow ? ';background:#0d1117' : ''}">`;
+
+  activeCols.forEach(c => {
+    let val = '';
+    let colorStyle = '';
+
+    switch(c.id) {
+      case 'date':
+        val = t.entry_date || ordDate;
+        colorStyle = 'color:#6e7681;';
+        val = `<span style="white-space:nowrap;">${val}</span>`;
+        break;
+      case 'symbol':
+        const isNoteColOn = activeCols.some(x => x.id === 'note');
+        val = (subRow ? '<span style="color:#6e7681;margin-right:4px">↳</span>' : '') + `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
+        colorStyle = 'color:#adbac7;';
+        break;
+      case 'tags':
+        val = _ordTags(t);
+        break;
+      case 'side':
+        val = t.entry;
+        colorStyle = 'color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + ';font-weight:600;';
+        break;
+      case 'entry_px':
+        val = Number(t.entry_price || 0).toFixed(2);
+        colorStyle = 'color:#8b949e;';
+        break;
+      case 'exit_px':
+        val = Number(t.exit_price || 0).toFixed(2);
+        colorStyle = 'color:#8b949e;';
+        break;
+      case 'entry_time':
+        val = t.entry_time || '—';
+        colorStyle = 'color:#6e7681;';
+        break;
+      case 'exit_time':
+        val = t.exit_time || '—';
+        colorStyle = 'color:#6e7681;';
+        break;
+      case 'exit_reason':
+        val = _exitReasonBadge(t.exit_reason);
+        break;
+      case 'duration':
+        val = _durFmt(t.entry_time, t.exit_time);
+        colorStyle = 'color:#8b949e;';
+        val = `<span style="white-space:nowrap;">${val}</span>`;
+        break;
+      case 'qty':
+        val = t.qty;
+        break;
+      case 'points':
+        val = (pts >= 0 ? '+' : '') + pts.toFixed(2);
+        colorStyle = 'color:' + ptsC + ';';
+        break;
+      case 'gross':
+        val = Math.round(g);
+        colorStyle = 'color:' + gc + ';';
+        break;
+      case 'tax':
+        val = '−' + Math.round(tx);
+        colorStyle = 'color:#f85149;';
+        break;
+      case 'net':
+        val = Math.round(n);
+        colorStyle = 'color:' + nc + ';font-weight:700;';
+        break;
+      case 'ret_pct':
+        val = retPct;
+        colorStyle = 'color:' + rc + ';';
+        break;
+      case 'run_up':
+        val = max_pnl;
+        break;
+      case 'run_down':
+        val = min_pnl;
+        break;
+      case 'note':
+        val = `<div style="display:flex; align-items:center; gap:6px;">
+                 <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
+                 ${dispNote}
+               </div>`;
+        break;
+      case 'chart':
+        val = `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
+        break;
+      case 'actions':
+        val = `
+          <div class="dropdown">
+            <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
+            <div id="dropdown-${t.id}" class="dropdown-content">
+              <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+              <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
+              <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
+            </div>
+          </div>`;
+        break;
+    }
+
+    const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+    const isCenter = ['entry_time','exit_time','duration','actions','chart'].includes(c.id);
+    const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+
+    rowHtml += `<td style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
+  });
+
+  rowHtml += '</tr>';
+  return {html: rowHtml, g, tx, n, pts, inv};
+}
+
 function toggleSort(tableType, colId) {
   if (colId === 'actions' || colId === 'chart') return;
   if (tableType === 'completed') {
@@ -3240,6 +3426,12 @@ function renderCachedOrders() {
   const date = (document.getElementById('ord-date')||{}).value;
   const ordDate = date;
 
+  const _grpBtn = document.getElementById('ord-group-btn');
+  if(_grpBtn){
+    _grpBtn.style.background = window._completedGroupBy ? '#1f6feb' : '';
+    _grpBtn.style.borderColor = window._completedGroupBy ? '#1f6feb' : '#30363d';
+  }
+
   const isCapBlocked = t => (t.tags||[]).some(tg => tg === 'CAPITAL_BLOCKED');
   const opnBlocked = opn.filter(isCapBlocked);
   const opnReal = opn.filter(t => !isCapBlocked(t));
@@ -3313,165 +3505,76 @@ function renderCachedOrders() {
     
     ch += '</tr></thead><tbody>';
 
-    sortedCompleted.forEach((t, _idx) => {
-      const g = t._gross;
-      const tx = t._tax;
-      const n = t._net;
-      const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
-      const gc = g > 0 ? '#3fb950' : (g < 0 ? '#f85149' : '#e6edf3');
-      
-      const inv = t.qty * (t.entry_price || 0);
-      const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
-      const rc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#8b949e');
-      const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
-      const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
-      
-      let max_pnl = '—', min_pnl = '—';
-      let note = '';
-      if(t.tags) {
-        let max_ltp = null, min_ltp = null;
-        t.tags.forEach(tg => {
-          if(tg.startsWith('MAX_LTP:')) max_ltp = parseFloat(tg.split(':')[1]);
-          if(tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
-          if(tg.startsWith('NOTE:')) note = tg.substring(5);
-        });
-        
-        if(max_ltp !== null && t.entry_price > 0) {
-            let pnl = (max_ltp - t.entry_price) * t.qty;
-            if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty;
-            if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl)}</span>`;
-        }
-        if(min_ltp !== null && t.entry_price > 0) {
-            let pnl = (min_ltp - t.entry_price) * t.qty;
-            if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty;
-            if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl)}</span>`;
-        }
-      }
-      
-      let encNote = encodeURIComponent(note);
-      let imgs = _imgTagsOf(t);
-      let encImgs = encodeURIComponent(JSON.stringify(imgs));
-      
-      const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
-      let dispNote = '';
-      if (note || (imgs && imgs.length)) {
-        dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
-                 + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-                 + _noteThumbs(t.id, imgs)
-                 + `</div>`;
-      }
-      
-      _tot.g += g; _tot.tx += tx; _tot.n += n; _tot.inv += inv; _tot.pts += pts;
-      
-      ch += '<tr style="border-bottom:1px solid #21262d">';
-      
-      activeCols.forEach(c => {
-        let val = '';
-        let colorStyle = '';
-        
-        switch(c.id) {
-          case 'date':
-            val = t.entry_date || ordDate;
-            colorStyle = 'color:#6e7681;';
-            val = `<span style="white-space:nowrap;">${val}</span>`;
-            break;
-          case 'symbol':
-            const isNoteColOn = activeCols.some(x => x.id === 'note');
-            val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
-            colorStyle = 'color:#adbac7;';
-            break;
-          case 'tags':
-            val = _ordTags(t);
-            break;
-          case 'side':
-            val = t.entry;
-            colorStyle = 'color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + ';font-weight:600;';
-            break;
-          case 'entry_px':
-            val = Number(t.entry_price || 0).toFixed(2);
-            colorStyle = 'color:#8b949e;';
-            break;
-          case 'exit_px':
-            val = Number(t.exit_price || 0).toFixed(2);
-            colorStyle = 'color:#8b949e;';
-            break;
-          case 'entry_time':
-            val = t.entry_time || '—';
-            colorStyle = 'color:#6e7681;';
-            break;
-          case 'exit_time':
-            val = t.exit_time || '—';
-            colorStyle = 'color:#6e7681;';
-            break;
-          case 'exit_reason':
-            val = _exitReasonBadge(t.exit_reason);
-            break;
-          case 'duration':
-            val = _durFmt(t.entry_time, t.exit_time);
-            colorStyle = 'color:#8b949e;';
-            val = `<span style="white-space:nowrap;">${val}</span>`;
-            break;
-          case 'qty':
-            val = t.qty;
-            break;
-          case 'points':
-            val = (pts >= 0 ? '+' : '') + pts.toFixed(2);
-            colorStyle = 'color:' + ptsC + ';';
-            break;
-          case 'gross':
-            val = Math.round(g);
-            colorStyle = 'color:' + gc + ';';
-            break;
-          case 'tax':
-            val = '−' + Math.round(tx);
-            colorStyle = 'color:#f85149;';
-            break;
-          case 'net':
-            val = Math.round(n);
-            colorStyle = 'color:' + nc + ';font-weight:700;';
-            break;
-          case 'ret_pct':
-            val = retPct;
-            colorStyle = 'color:' + rc + ';';
-            break;
-          case 'run_up':
-            val = max_pnl;
-            break;
-          case 'run_down':
-            val = min_pnl;
-            break;
-          case 'note':
-            val = `<div style="display:flex; align-items:center; gap:6px;">
-                     <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-                     ${dispNote}
-                   </div>`;
-            break;
-          case 'chart':
-            val = `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
-            break;
-          case 'actions':
-            val = `
-              <div class="dropdown">
-                <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
-                <div id="dropdown-${t.id}" class="dropdown-content">
-                  <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-                  <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
-                  <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
-                </div>
-              </div>`;
-            break;
-        }
-        
-        const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
-        const isCenter = ['entry_time','exit_time','duration','actions','chart'].includes(c.id);
-        const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
-        
-        ch += `<td style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
+    if(window._completedGroupBy){
+      // ── Grouped by symbol (Zerodha Day's History style) ──
+      // Preserves sortedCompleted's current order for group POSITION (first-
+      // occurrence order) — respects whatever sort column is active.
+      const groups = [];
+      const groupIdx = {};
+      sortedCompleted.forEach((t, i) => {
+        const key = t.sym || '—';
+        if(!(key in groupIdx)){ groupIdx[key] = groups.length; groups.push({sym:key, trades:[], g:0, tx:0, n:0, pts:0, inv:0, qty:0}); }
+        groups[groupIdx[key]].trades.push({t, idx:i});
       });
-      
-      ch += '</tr>';
-    });
-    
+      groups.forEach(grp => {
+        grp.trades.forEach(({t}) => {
+          grp.g += t._gross; grp.tx += t._tax; grp.n += t._net; grp.qty += (t.qty||0);
+          grp.inv += t.qty * (t.entry_price || 0);
+          grp.pts += t.entry === 'BUY' ? (t.exit_price||0)-(t.entry_price||0) : (t.entry_price||0)-(t.exit_price||0);
+        });
+        _tot.g += grp.g; _tot.tx += grp.tx; _tot.n += grp.n; _tot.pts += grp.pts; _tot.inv += grp.inv;
+      });
+
+      groups.forEach(grp => {
+        const expanded = window._completedGroupExpanded.has(grp.sym);
+        const gnc = grp.n > 0 ? '#3fb950' : (grp.n < 0 ? '#f85149' : '#e6edf3');
+        const ggc = grp.g > 0 ? '#3fb950' : (grp.g < 0 ? '#f85149' : '#e6edf3');
+        const gptsC = grp.pts > 0 ? '#3fb950' : (grp.pts < 0 ? '#f85149' : '#8b949e');
+        const gRetPct = grp.inv > 0 ? ((grp.n / grp.inv) * 100).toFixed(2) + '%' : '—';
+        const grc = grp.n > 0 ? '#3fb950' : (grp.n < 0 ? '#f85149' : '#8b949e');
+        const symKeySafe = grp.sym.replace(/'/g, "\\'");
+
+        ch += `<tr style="border-bottom:1px solid #21262d;background:#161b22;cursor:pointer" onclick="toggleCompletedGroupExpand('${symKeySafe}')">`;
+        activeCols.forEach(c => {
+          let val = '', colorStyle = '';
+          const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+          const isCenter = ['entry_time','exit_time','duration','actions','chart'].includes(c.id);
+          const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+          switch(c.id){
+            case 'symbol':
+              val = `<span style="display:inline-block;width:14px;color:#8b949e">${expanded?'▼':'▶'}</span><b>${grp.sym}</b> <span style="color:#6e7681;font-weight:400">(${grp.trades.length})</span>`;
+              colorStyle = 'color:#adbac7;font-weight:600;';
+              break;
+            case 'qty': val = grp.qty; break;
+            case 'points':
+              val = (grp.pts>=0?'+':'')+grp.pts.toFixed(2);
+              colorStyle = 'color:'+gptsC+';';
+              break;
+            case 'gross': val = Math.round(grp.g); colorStyle = 'color:'+ggc+';'; break;
+            case 'tax': val = '−'+Math.round(grp.tx); colorStyle = 'color:#f85149;'; break;
+            case 'net': val = Math.round(grp.n); colorStyle = 'color:'+gnc+';font-weight:700;'; break;
+            case 'ret_pct': val = gRetPct; colorStyle = 'color:'+grc+';'; break;
+            default: val = ''; break;
+          }
+          ch += `<td style="padding:7px 6px;${alignStyle}${colorStyle}">${val}</td>`;
+        });
+        ch += '</tr>';
+
+        if(expanded){
+          grp.trades.forEach(({t, idx}) => {
+            ch += _completedRowHtml(t, idx, activeCols, ordDate, true).html;
+          });
+        }
+      });
+    } else {
+      // ── Flat (default) ──
+      sortedCompleted.forEach((t, _idx) => {
+        const r = _completedRowHtml(t, _idx, activeCols, ordDate, false);
+        _tot.g += r.g; _tot.tx += r.tx; _tot.n += r.n; _tot.inv += r.inv; _tot.pts += r.pts;
+        ch += r.html;
+      });
+    }
+
     const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
     ch += '</tbody><tfoot><tr style="border-top:2px solid #30363d;font-weight:700">';
     
