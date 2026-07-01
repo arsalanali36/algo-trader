@@ -1717,44 +1717,6 @@ def api_manual_order():
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
 
-@app.route('/api/counterfactual')
-def api_counterfactual():
-    """Alternate history: what would have happened if user hadn't intervened manually.
-    ?date=YYYY-MM-DD (defaults to today)"""
-    from datetime import timedelta as _td
-    _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
-    date = request.args.get("date") or _ist.strftime("%Y-%m-%d")
-    try:
-        import counterfactual as cf
-        result = cf.analyze(date)
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-
-@app.route('/api/kite-csv-upload', methods=['POST'])
-def api_kite_csv_upload():
-    """Upload a Zerodha tradebook CSV to cache as kite_trades_YYYY-MM-DD.json.
-    Form field: file (CSV), date (YYYY-MM-DD optional, defaults to today)."""
-    import tempfile, os
-    from datetime import timedelta as _td
-    _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
-    date = request.form.get('date') or _ist.strftime('%Y-%m-%d')
-    if 'file' not in request.files:
-        return jsonify({'error': 'No file uploaded'}), 400
-    f = request.files['file']
-    with tempfile.NamedTemporaryFile(delete=False, suffix='.csv') as tmp:
-        f.save(tmp.name)
-        try:
-            import counterfactual as cf
-            cf.load_kite_csv(tmp.name, date)
-            return jsonify({'ok': True, 'date': date})
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
-        finally:
-            os.unlink(tmp.name)
-
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
     """Returns P&L history for any date. Accepts ?date=YYYY-MM-DD (defaults to today).

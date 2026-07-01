@@ -809,7 +809,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
   <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
     <span style="font-size:11px;color:#6e7681">Date</span>
-    <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph(); loadCounterfactual();" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
+    <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph();" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
     <span style="font-size:11px;color:#6e7681;margin-left:4px">Source</span>
     <span id="ord-src" class="ord-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
       <span data-v="" class="on" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer">All</span>
@@ -862,43 +862,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <span>- - <span style="color:#f0883e">Trailing floor</span></span>
       <span>- - <span style="color:#3fb950">🎯 Target</span></span>
       <span>▲ <span style="color:#58a6ff">Entry</span></span>
-    </div>
-  </div>
-
-  <!-- ── Counterfactual / Alternate History ── -->
-  <div class="card" style="margin-bottom:12px;padding:14px 18px;" id="cf-card">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-      <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🔄 Alternate History <span style="font-size:11px;color:#8b949e;font-weight:400">— agar manual trades na hote?</span></h3>
-      <button onclick="loadCounterfactual()" style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻ Refresh</button>
-    </div>
-    <!-- Summary pills -->
-    <div id="cf-summary" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px"></div>
-    <!-- Dual-line graph -->
-    <div id="cf-graph" style="width:100%;height:180px;overflow:hidden;margin-bottom:6px">
-      <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
-    </div>
-    <div style="display:flex;gap:16px;margin-bottom:10px;font-size:10px;color:#8b949e">
-      <span>— <span style="color:#3fb950">Actual P&amp;L</span> (sab trades)</span>
-      <span>— <span style="color:#58a6ff">Algo-only P&amp;L</span> (sirf strategy/webhook)</span>
-      <span>▲ <span style="color:#3fb950">Algo entry</span></span>
-      <span>▼ <span style="color:#f85149">Panic entry</span></span>
-    </div>
-    <!-- Trade comparison table -->
-    <div id="cf-table-wrap" style="overflow-x:auto">
-      <table id="cf-table" style="width:100%;border-collapse:collapse;font-size:11px;display:none">
-        <thead>
-          <tr style="color:#8b949e;border-bottom:1px solid #30363d">
-            <th style="text-align:left;padding:4px 8px">Type</th>
-            <th style="text-align:left;padding:4px 8px">Symbol</th>
-            <th style="padding:4px 8px">Entry</th>
-            <th style="padding:4px 8px">Exit</th>
-            <th style="padding:4px 8px">Side</th>
-            <th style="padding:4px 8px">P&amp;L</th>
-            <th style="padding:4px 8px;color:#8b949e">Note</th>
-          </tr>
-        </thead>
-        <tbody id="cf-tbody"></tbody>
-      </table>
     </div>
   </div>
 
@@ -1739,7 +1702,7 @@ function switchTab(id) {
   localStorage.setItem('activeMainTab', id);
   if (id === 'pine') { pineLoadLatest(); pineLoadHistory(); }
   if (id === 'webhook') { whEnter(); } else { whLeave(); }
-  if (id === 'orders') { ordersEnter(); loadPeakGraph(); loadCounterfactual(); }
+  if (id === 'orders') { ordersEnter(); loadPeakGraph(); }
   if (id === 'calendar') { calendarRender(); }
   if (id === 'risk') { renderRiskTab(); }
 }
@@ -2356,178 +2319,6 @@ async function loadPeakGraph() {
     ${entryMarkers}
     ${rightLabels}
   </svg>`;
-}
-
-// ── Counterfactual / Alternate History ──────────────────────────────────────
-async function loadCounterfactual() {
-  const summEl  = document.getElementById('cf-summary');
-  const graphEl = document.getElementById('cf-graph');
-  const tableEl = document.getElementById('cf-table');
-  const tbodyEl = document.getElementById('cf-tbody');
-  if (!graphEl) return;
-
-  const selDate = (document.getElementById('ord-date') || {}).value || '';
-  let cf = {};
-  try {
-    const r = await fetch('/api/counterfactual' + (selDate ? '?date=' + selDate : ''));
-    cf = await r.json();
-  } catch(e) {
-    graphEl.innerHTML = '<div style="color:#f85149;font-size:12px;padding:12px">Load failed</div>';
-    return;
-  }
-  if (cf.error) {
-    graphEl.innerHTML = `<div style="color:#f85149;font-size:12px;padding:12px">${cf.error}</div>`;
-    return;
-  }
-
-  const s        = cf.summary || {};
-  const actualPts= cf.actual_timeline || [];
-  const algoPts  = cf.algo_timeline   || [];
-  const aEntries = cf.algo_entries    || [];
-  const pTrades  = cf.panic_trades    || [];
-
-  // ── Summary pills ──────────────────────────────────────────────────────────
-  const fmt = (v) => (v >= 0 ? '+' : '') + '₹' + Math.abs(Math.round(v)).toLocaleString('en-IN');
-  const col = (v) => v >= 0 ? '#3fb950' : '#f85149';
-  const cost = s.intervention_cost || 0;  // algo_pnl - actual_pnl; positive = algo was better
-
-  summEl.innerHTML = `
-    <div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 12px;text-align:center">
-      <div style="font-size:10px;color:#8b949e">Actual P&L</div>
-      <div style="font-size:15px;font-weight:700;color:${col(s.actual_pnl)}">${fmt(s.actual_pnl)}</div>
-      <div style="font-size:10px;color:#8b949e">${(s.panic_count||0)+(s.algo_count||0)} trades</div>
-    </div>
-    <div style="display:flex;align-items:center;font-size:18px;color:#8b949e">→</div>
-    <div style="background:#161b22;border:1px solid #1f6feb;border-radius:6px;padding:6px 12px;text-align:center">
-      <div style="font-size:10px;color:#8b949e">Algo-only P&L</div>
-      <div style="font-size:15px;font-weight:700;color:${col(s.algo_pnl)}">${fmt(s.algo_pnl)}</div>
-      <div style="font-size:10px;color:#8b949e">${s.algo_count||0} strategy trades</div>
-    </div>
-    <div style="background:#161b22;border:1px solid ${cost>0?'#238636':'#6e2c2c'};border-radius:6px;padding:6px 12px;text-align:center;min-width:110px">
-      <div style="font-size:10px;color:#8b949e">Manual cost</div>
-      <div style="font-size:15px;font-weight:700;color:${cost>0?'#f85149':col(cost)}">${cost>0?'-':''}₹${Math.abs(Math.round(cost)).toLocaleString('en-IN')}</div>
-      <div style="font-size:10px;color:#8b949e">${s.panic_count||0} panic trades</div>
-    </div>
-    ${s.panic_count === 0 ? '<div style="font-size:11px;color:#3fb950;padding:6px 10px;align-self:center">✅ No manual intervention today!</div>' : ''}
-    ${s.v2_available ? '<div style="font-size:10px;color:#d29922;padding:4px 8px;align-self:center;background:#161b22;border:1px solid #d29922;border-radius:4px">⚠️ MANUAL_CLOSE tagged — v2 sim available</div>' : ''}
-  `;
-
-  // ── Dual-line SVG graph ────────────────────────────────────────────────────
-  const W = graphEl.clientWidth || 700, H = 180;
-  const PAD = { t: 14, r: 90, b: 26, l: 60 };
-  const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
-
-  if (actualPts.length < 2 && algoPts.length < 2) {
-    graphEl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:16px">Is date pe koi trades nahi milе.</div>';
-    return;
-  }
-
-  const allCum = [...actualPts.map(p=>p[1]), ...algoPts.map(p=>p[1]), 0];
-  const minV = Math.min(...allCum), maxV = Math.max(...allCum);
-  const range = maxV - minV || 1;
-
-  // Use actual_timeline as x-axis reference (more points)
-  const refPts = actualPts.length >= algoPts.length ? actualPts : algoPts;
-
-  const px = (i, total) => PAD.l + (i / Math.max(total - 1, 1)) * gW;
-  const py = (v) => PAD.t + gH - ((v - minV) / range) * gH;
-
-  // Map HH:MM to x-position using refPts
-  const timeToX = (hm) => {
-    const toMin = t => { const [h,m]=t.split(':').map(Number); return h*60+m; };
-    let best=0, bestD=Infinity;
-    refPts.forEach((p,i) => { const d=Math.abs(toMin(hm)-toMin(p[0])); if(d<bestD){bestD=d;best=i;} });
-    return px(best, refPts.length);
-  };
-
-  const buildPath = (pts) => pts.map((p,i)=>`${i===0?'M':'L'}${px(i,pts.length).toFixed(1)},${py(p[1]).toFixed(1)}`).join(' ');
-
-  const actualPath = actualPts.length >= 2 ? buildPath(actualPts) : '';
-  const algoPath   = algoPts.length   >= 2 ? buildPath(algoPts)   : '';
-
-  const z0 = py(0);
-  const zeroLine = (z0 >= PAD.t && z0 <= PAD.t + gH)
-    ? `<line x1="${PAD.l}" y1="${z0.toFixed(1)}" x2="${W-PAD.r}" y2="${z0.toFixed(1)}" stroke="#30363d" stroke-width="1" stroke-dasharray="3,3"/>`
-    : '';
-
-  // Y-axis labels (3 levels)
-  let yLabels = '';
-  for (let s2 = 0; s2 <= 3; s2++) {
-    const v = minV + range * s2 / 3;
-    const y = py(v);
-    const c = v > 0 ? '#3fb950' : v < 0 ? '#f85149' : '#6e7681';
-    yLabels += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W-PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22" stroke-width="1"/>`;
-    yLabels += `<text x="${PAD.l-4}" y="${(y+4).toFixed(1)}" text-anchor="end" font-size="10" fill="${c}">${Math.round(v).toLocaleString('en-IN')}</text>`;
-  }
-
-  // X-axis labels
-  let xLabels = '';
-  const step = Math.max(1, Math.floor(refPts.length / 5));
-  for (let i = 0; i < refPts.length; i += step)
-    xLabels += `<text x="${px(i,refPts.length).toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="10" fill="#6e7681">${refPts[i][0]}</text>`;
-
-  // Algo entry markers ▲ blue
-  let entryMarkers = '';
-  aEntries.forEach(([hm, cum2, sym]) => {
-    const ex = timeToX(hm), ey = py(cum2);
-    if (ey < PAD.t || ey > PAD.t + gH) return;
-    const tw = 5;
-    entryMarkers += `<polygon points="${ex},${(ey+1).toFixed(1)} ${(ex-tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)} ${(ex+tw).toFixed(1)},${(ey+tw*1.6).toFixed(1)}" fill="#58a6ff" opacity="0.9"><title>${hm} ALGO ENTRY: ${sym}</title></polygon>`;
-  });
-
-  // Panic trade markers ▼ red (at their entry_time on actual_timeline)
-  let panicMarkers = '';
-  pTrades.forEach(t => {
-    if (!t.entry_time) return;
-    const ex = timeToX(t.entry_time);
-    // find cum on actual at this time
-    const ey = py(0);  // approximate: panic entries start at whatever cum was
-    const tw = 5;
-    panicMarkers += `<polygon points="${ex},${(ey-1).toFixed(1)} ${(ex-tw).toFixed(1)},${(ey-tw*1.6).toFixed(1)} ${(ex+tw).toFixed(1)},${(ey-tw*1.6).toFixed(1)}" fill="#f85149" opacity="0.9"><title>${t.entry_time} PANIC: ${t.sym} P&L ₹${Math.round(t.pnl||0)}</title></polygon>`;
-  });
-
-  // Right-side end labels
-  const lastActual = actualPts.length ? actualPts[actualPts.length-1][1] : 0;
-  const lastAlgo   = algoPts.length   ? algoPts[algoPts.length-1][1]   : 0;
-  const rightLabels = `
-    <circle cx="${(W-PAD.r+3).toFixed(1)}" cy="${py(lastActual).toFixed(1)}" r="3" fill="${col(lastActual)}"/>
-    <text x="${(W-PAD.r+7).toFixed(1)}" y="${(py(lastActual)+4).toFixed(1)}" font-size="11" fill="${col(lastActual)}" font-weight="600">₹${Math.round(lastActual).toLocaleString('en-IN')}</text>
-    ${algoPts.length >= 2 ? `
-    <circle cx="${(W-PAD.r+3).toFixed(1)}" cy="${py(lastAlgo).toFixed(1)}" r="3" fill="#58a6ff"/>
-    <text x="${(W-PAD.r+7).toFixed(1)}" y="${(py(lastAlgo)+4).toFixed(1)}" font-size="10" fill="#58a6ff">₹${Math.round(lastAlgo).toLocaleString('en-IN')}</text>` : ''}
-  `;
-
-  graphEl.innerHTML = `
-  <svg width="${W}" height="${H}" style="overflow:visible;display:block">
-    ${yLabels}${zeroLine}${xLabels}
-    ${actualPath ? `<path d="${actualPath}" fill="none" stroke="${col(lastActual)}" stroke-width="2.5"/>` : ''}
-    ${algoPath   ? `<path d="${algoPath}"   fill="none" stroke="#58a6ff" stroke-width="1.8" stroke-dasharray="6,3" opacity="0.9"/>` : ''}
-    ${entryMarkers}${panicMarkers}${rightLabels}
-  </svg>`;
-
-  // ── Trade comparison table ────────────────────────────────────────────────
-  const allTrades = cf.all_trades || [];
-  if (allTrades.length === 0) { tableEl.style.display = 'none'; return; }
-
-  tbodyEl.innerHTML = allTrades.map(t => {
-    const isPanic = t.cf_role === 'panic';
-    const pnl = parseFloat(t.pnl || 0);
-    const rowBg = isPanic ? 'background:#1a0f0f' : '';
-    const roleChip = isPanic
-      ? `<span style="background:#6e2c2c;color:#f85149;padding:1px 6px;border-radius:3px;font-size:10px">⚡ Panic</span>`
-      : `<span style="background:#1f2d1f;color:#3fb950;padding:1px 6px;border-radius:3px;font-size:10px">🤖 Algo</span>`;
-    const note = isPanic ? 'Manual — outside algo plan' : (t.exit_reason || '—');
-    return `<tr style="border-bottom:1px solid #21262d;${rowBg}">
-      <td style="padding:5px 8px">${roleChip}</td>
-      <td style="padding:5px 8px;color:#e6edf3;font-size:11px">${(t.sym||'').replace(/-/g,' ')}</td>
-      <td style="padding:5px 8px;color:#8b949e;text-align:center">${t.entry_time||'—'}</td>
-      <td style="padding:5px 8px;color:#8b949e;text-align:center">${t.exit_time||'—'}</td>
-      <td style="padding:5px 8px;text-align:center;color:${t.entry==='BUY'?'#3fb950':'#f85149'}">${t.entry||'—'}</td>
-      <td style="padding:5px 8px;text-align:right;font-weight:600;color:${pnl>=0?'#3fb950':'#f85149'}">${pnl>=0?'+':''}₹${Math.abs(Math.round(pnl)).toLocaleString('en-IN')}</td>
-      <td style="padding:5px 8px;color:#6e7681;font-size:10px">${note}</td>
-    </tr>`;
-  }).join('');
-  tableEl.style.display = 'table';
 }
 
 function updateTrailingLockTip() {

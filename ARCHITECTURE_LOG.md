@@ -411,3 +411,12 @@
 **Kyun:** User ka reconciliation automation ka ask
 **Depends on:** nothing
 **Verify:** Signature-based version live-run kiya — 12 manual trades insert hue (HINDUNILVR, NIFTY x2, NESTLEIND), per-instrument Zerodha se exact match (HINDUNILVR -225, NIFTY -1215.50, NIFTY -1186.25). Live-mode total ab ₹-2,389.25 vs Zerodha ₹-2,426.75 (₹37.50 ka chhota gap bacha, NESTLEIND-1450 pe — further check pending).
+
+## 2026-07-01 — Alternate History / Counterfactual feature — rewritten, then REMOVED entirely (user decision)
+**Status:** DONE (removal)
+**Kya:** Same-session follow-up: user ne "Alternate History" table (duplicate Algo+Panic rows same trade ke liye) dikhaya. Root cause counterfactual.py's dual-source design tha (order_store + separate Kite raw-fill refetch, same real trade dono jagah se aa raha tha — TRAP #67 wali exact same class of bug, ek level upar). Pehle isko theek kiya: `order_store._net_rows()`'s `_complete()` mein `exit_source`/`exit_strategy` add kiya (entry aur exit ka origin independently pata chale), `counterfactual.analyze()` ko poora order_store-only (single source) pe rewrite kiya, table mein per-leg 🤖Algo/👤Manual chip + price dikhaya, chart hover tooltips (price+instrument), bottom-label overlap bhi fix kiya. Live-verify kiya — duplicate rows gaye, numbers sahi (algo ₹1337.50, manual -₹3726.75, panic ₹0). **User phir bhi bola "ye eakdum bekar hai, pura hata do"** — feature hi hata diya: `counterfactual.py` delete, `/api/counterfactual` + `/api/kite-csv-upload` routes hate, poora "🔄 Alternate History" card + JS (`loadCounterfactual()`) UI se nikala, `order_store.py`'s `exit_source`/`exit_strategy` bhi revert kiya (sirf isi feature ke liye tha, koi aur consumer nahi).
+**Layer:** UI / broker / data-integrity
+**Files:** `counterfactual.py` (deleted), `trader_dashboard.py`, `templates/index.html`, `order_store.py`
+**Kyun:** User ka explicit "hata do" — feature trust nahi bana paya, complexity uske value se zyada thi
+**Depends on:** nothing (Completed Trades' apna manual-trade tagging aur "🧾 Reconcile vs Broker" button untouched hai — wo alag feature hai, iska hissa nahi)
+**Verify:** Deploy + restart, `/api/counterfactual` 404, koi UI trace nahi bacha, baaki dashboard (Completed Trades, Open Positions) normal chal raha.
