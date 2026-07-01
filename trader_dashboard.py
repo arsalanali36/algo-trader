@@ -3393,7 +3393,7 @@ def pos_monitor_loop():
                 print(f"[broker_sync] skipped (error): {_bse}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
-            # ── Untracked-position scan (TRAP #57) — mirror image of the ghost
+            # ── Untracked-position scan (TRAP #58) — mirror image of the ghost
             # sync above: catches a broker position that order_store has NO row
             # for at all (e.g. a restart landed mid-order, killing the process
             # before order_store.record() ran — no SIGTERM handler exists

@@ -24,7 +24,7 @@ import time
 _lock     = threading.Lock()
 _INTERVAL = 30    # seconds between auto-syncs (was 120 — reduced for faster ghost detection, S6 fix)
 _CACHE_TTL = 35   # seconds — pre-exit check uses this cached data (avoids per-SL API hit)
-_UNTRACKED_INTERVAL = 30   # seconds between untracked-position scans (TRAP #57)
+_UNTRACKED_INTERVAL = 30   # seconds between untracked-position scans (TRAP #58)
 
 # broker_name → {"positions": {sym_key: net_qty}, "ts": float}
 _cache: dict = {}
@@ -68,7 +68,7 @@ def untracked_scan_if_due(log=print) -> None:
     also catches a position the broker has, that order_store has NO row for
     at all (e.g. the process was SIGTERM'd mid-way through smart_order.execute()'s
     live fill-confirm poll, before order_store.record() ever ran — no signal
-    handler exists anywhere in this codebase to prevent that). See TRAP #57.
+    handler exists anywhere in this codebase to prevent that). See TRAP #58.
     Independent of open_positions (doesn't need order_store to already know
     about ANYTHING) — this is what makes it catch the worst case: the
     orphaned position being the ONLY position that exists.
@@ -251,8 +251,8 @@ def _resolve_exit_price(broker_name: str, fills: dict, trad_sym: str, sec_id: st
     # Try Kite symbol first, then sec_id, then trad_sym directly
     if broker_name == "kite":
         try:
-            from brokers.kite_broker import resolve_kite_symbol
-            kite_sym = resolve_kite_symbol(trad_sym)
+            from brokers import get_broker
+            kite_sym = get_broker("kite").resolve_symbol(trad_sym, sec_id=sec_id)
             if kite_sym and kite_sym in fills:
                 return fills[kite_sym]
         except Exception:
@@ -279,8 +279,11 @@ def _write_naked_alert(sym: str, row_id, log=print):
             existing = _j.loads(_af.read_text())
         except Exception:
             pass
-        # Remove any previous naked alert for this sym
-        existing = [a for a in existing if not (a.get("key") == _NAKED_ALERT_KEY
+        # Remove any previous naked alert for this sym. downloader_alert.json is
+        # shared with auto_data_downloader.py, which writes plain strings, not
+        # dicts — isinstance guard needed or .get() crashes (found via TRAP #59).
+        existing = [a for a in existing if not (isinstance(a, dict)
+                                                  and a.get("key") == _NAKED_ALERT_KEY
                                                   and a.get("sym") == sym)]
         existing.append({
             "key": _NAKED_ALERT_KEY,
@@ -304,10 +307,10 @@ def _check_flat(broker_name: str, broker_pos: dict, trad_sym: str, sec_id: str) 
     """
     if broker_name == "kite":
         # Kite uses its own date-encoded tradingsymbol (e.g. NIFTY2463023900PE)
-        # resolve_kite_symbol() maps our trad_sym → kite format
+        # resolve_symbol() maps our trad_sym → kite format
         try:
-            from brokers.kite_broker import resolve_kite_symbol
-            kite_sym = resolve_kite_symbol(trad_sym)
+            from brokers import get_broker
+            kite_sym = get_broker("kite").resolve_symbol(trad_sym, sec_id=sec_id)
             if kite_sym and kite_sym in broker_pos:
                 return int(broker_pos[kite_sym]) == 0
         except Exception:
@@ -322,7 +325,7 @@ def _check_flat(broker_name: str, broker_pos: dict, trad_sym: str, sec_id: str) 
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Untracked-position scan (TRAP #57) — the mirror image of ghost detection.
+# Untracked-position scan (TRAP #58) — the mirror image of ghost detection.
 # Ghost detection (above) asks "DB says open, is broker actually flat?"
 # This asks "broker has a real position, does DB even know it exists?"
 # ──────────────────────────────────────────────────────────────────────────────
@@ -338,14 +341,18 @@ def _ist_today_str() -> str:
 def _known_broker_keys(broker_name: str, open_for_broker: list) -> set:
     """Identity keys order_store already has an OPEN row for, on this broker —
     sec_id for Dhan (exact match, no guessing needed), resolved kite_sym for
-    Kite (forward-only Dhan-trad_sym -> Kite-symbol via resolve_kite_symbol,
+    Kite (forward-only Dhan-trad_sym -> Kite-symbol via KiteBroker.resolve_symbol,
     same direction TRAP #44's ghost detection already trusts)."""
     keys = set()
+    kite_broker = None
     for p in open_for_broker:
         if broker_name == "kite":
             try:
-                from brokers.kite_broker import resolve_kite_symbol
-                ks = resolve_kite_symbol(p.get("sym") or p.get("trad_sym") or "")
+                if kite_broker is None:
+                    from brokers import get_broker
+                    kite_broker = get_broker("kite")
+                ks = kite_broker.resolve_symbol(p.get("sym") or p.get("trad_sym") or "",
+                                                 sec_id=p.get("sec_id"))
                 if ks:
                     keys.add(ks)
             except Exception:
@@ -437,7 +444,7 @@ def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:
                     log(f"[broker_sync] 🔧 ADOPTED untracked {trad_sym} qty={qty} "
                         f"@ ₹{price:.2f}{' (approx — LTP, not real cost basis)' if approx else ''} "
                         f"— order_store row created so SL/EOD protection now applies. "
-                        f"Verify strategy/entry-price manually. TRAP #57.", flush=True)
+                        f"Verify strategy/entry-price manually. TRAP #58.", flush=True)
             except Exception as _ae:
                 log(f"[broker_sync] ⚠️ untracked adoption failed for {trad_sym}: {_ae}", flush=True)
 
@@ -455,9 +462,13 @@ def _write_untracked_alert(broker_name, key, label, qty, side, avg, log=print):
             existing = _j.loads(_af.read_text())
         except Exception:
             pass
-        existing = [a for a in existing if not (a.get("key") == _UNTRACKED_ALERT_KEY
-                                                  and a.get("broker") == broker_name
-                                                  and a.get("sym") == key)]
+        # downloader_alert.json is shared with auto_data_downloader.py, which
+        # writes PLAIN STRINGS (not dicts) — a naive a.get(...) on those raises
+        # AttributeError. Keep any non-dict entry untouched (not ours to dedupe),
+        # only dedupe our own dict-shaped entries.
+        existing = [a for a in existing
+                    if not (isinstance(a, dict) and a.get("key") == _UNTRACKED_ALERT_KEY
+                            and a.get("broker") == broker_name and a.get("sym") == key)]
         existing.append({
             "key": _UNTRACKED_ALERT_KEY,
             "broker": broker_name,
@@ -466,7 +477,7 @@ def _write_untracked_alert(broker_name, key, label, qty, side, avg, log=print):
             "msg": (f"🚨 UNTRACKED LIVE POSITION ({broker_name}): {label} qty={qty} side={side} "
                     f"avg=₹{avg or 0:.2f} — this position exists at the broker but has NO row in "
                     f"order_store. It has ZERO SL/TP/EOD protection and is invisible to RMS capital "
-                    f"checks. Close it manually or add it via the dashboard. See LESSONS.md TRAP #57."),
+                    f"checks. Close it manually or add it via the dashboard. See LESSONS.md TRAP #58."),
         })
         _af.write_text(_j.dumps(existing))
         log(f"[broker_sync] 🚨 UNTRACKED POSITION ALERT written for {broker_name}:{label}", flush=True)

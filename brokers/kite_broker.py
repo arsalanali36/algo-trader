@@ -340,6 +340,20 @@ class KiteBroker(BaseBroker):
     def quote(self, sec_id, seg) -> dict:
         return self._get_dhan().quote(sec_id, seg)
 
+    def resolve_symbol(self, dhan_trad_sym, sec_id=None):
+        """Public wrapper for resolve_kite_symbol() — external callers (e.g.
+        broker_sync.py) don't have access to this instance's internal `kite`
+        SDK client, and the free function's real signature is
+        (kite, dhan_trad_sym, sec_id=None). Every external call site that
+        called resolve_kite_symbol(trad_sym) directly (1 positional arg) was
+        silently raising TypeError, swallowed by a broad except — Kite ghost-
+        detection has never actually resolved a symbol. See LESSONS.md TRAP #59."""
+        try:
+            kite = self._get_kite()
+        except Exception:
+            return None
+        return resolve_kite_symbol(kite, dhan_trad_sym, sec_id=sec_id)
+
     # ---- orders (real Kite Connect calls) ----
     _SEG_TO_EXCHANGE = {"NSE_FNO": "NFO", "NSE_EQ": "NSE", "IDX_I": "NSE"}
 
@@ -443,7 +457,18 @@ class KiteBroker(BaseBroker):
             result = {}
             for p in (data.get("net") or []):
                 sym = p.get("tradingsymbol", "")
-                qty = int(p.get("net_quantity", 0) or 0)
+                # Kite's actual field is "quantity" (net position qty), not
+                # "net_quantity" — that name never existed in the real API
+                # response. This silently made every Kite position look flat
+                # (qty defaulted to 0), the whole time TRAP #44 ghost-detection
+                # has existed. It only ever "worked" by accident because the
+                # separate resolve_kite_symbol() call-signature bug (TRAP #59)
+                # ALSO always failed, so broker_pos lookups never matched and
+                # _check_flat() fell through to its safe "assume open" default
+                # instead of ever reading this wrong qty. Fixing both together —
+                # fixing only one would have made the other's bug newly-dangerous
+                # (real positions getting wrongly marked externally_closed).
+                qty = int(p.get("quantity", 0) or 0)
                 if sym:
                     result[sym] = qty
             return result
@@ -465,7 +490,7 @@ class KiteBroker(BaseBroker):
             data = kite.positions()
             out = []
             for p in (data.get("net") or []):
-                qty = int(p.get("net_quantity", 0) or 0)
+                qty = int(p.get("quantity", 0) or 0)   # field is "quantity", not "net_quantity"
                 if qty == 0:
                     continue
                 out.append({

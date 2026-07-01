@@ -231,7 +231,7 @@ class DhanBroker(BaseBroker):
     def positions_detailed(self) -> list:
         """Richer version of positions() — full symbol/segment/avg-price per
         non-flat position. Used by broker_sync's untracked-position scan
-        (TRAP #57): unlike positions()'s bare {sec_id: qty}, this carries
+        (TRAP #58): unlike positions()'s bare {sec_id: qty}, this carries
         enough to safely auto-adopt an orphaned position into order_store
         without guessing (Dhan gives us its own tradingSymbol/segment
         directly — no reverse-lookup needed, unlike Kite)."""
