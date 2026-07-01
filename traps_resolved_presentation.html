@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Algo Trader Gaps & Traps Resolved — Antigravity AI</title>
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=Plus+Jakarta+Sans:wght@300;400;600;700&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-dark: #07090e;
+      --bg-card: rgba(13, 17, 23, 0.7);
+      --border-glow: rgba(31, 111, 235, 0.25);
+      --text-main: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-purple: #bc8cff;
+      --accent-red: #f85149;
+      --accent-orange: #f0883e;
+      --accent-glow-green: rgba(63, 185, 80, 0.15);
+      --font-title: 'Outfit', sans-serif;
+      --font-body: 'Plus Jakarta Sans', sans-serif;
+      --font-mono: 'Fira Code', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-body);
+      min-height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      position: relative;
+    }
+
+    /* Animated background gradient glows */
+    .glow-bg {
+      position: absolute;
+      width: 600px;
+      height: 600px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(31, 111, 235, 0.08) 0%, rgba(0,0,0,0) 70%);
+      top: -200px;
+      left: -200px;
+      z-index: -1;
+      animation: floatGlow 15s infinite alternate ease-in-out;
+    }
+    .glow-bg-right {
+      position: absolute;
+      width: 700px;
+      height: 700px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(188, 140, 255, 0.06) 0%, rgba(0,0,0,0) 70%);
+      bottom: -200px;
+      right: -200px;
+      z-index: -1;
+      animation: floatGlow 20s infinite alternate-reverse ease-in-out;
+    }
+
+    @keyframes floatGlow {
+      0% { transform: translate(0, 0) scale(1); }
+      100% { transform: translate(80px, 50px) scale(1.15); }
+    }
+
+    /* Presentation Header */
+    header {
+      padding: 24px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    .brand {
+      font-family: var(--font-title);
+      font-weight: 800;
+      font-size: 20px;
+      letter-spacing: 0.5px;
+      background: linear-gradient(90deg, #58a6ff, #bc8cff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand span {
+      font-size: 12px;
+      font-weight: 600;
+      background: rgba(88, 166, 255, 0.1);
+      border: 1px solid rgba(88, 166, 255, 0.2);
+      padding: 2px 8px;
+      border-radius: 12px;
+      color: var(--accent-blue);
+      -webkit-text-fill-color: var(--accent-blue);
+    }
+    .session-info {
+      font-size: 13px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* Slide container */
+    .slides-viewport {
+      flex-grow: 1;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 10px 40px;
+      position: relative;
+    }
+
+    .slide {
+      position: absolute;
+      width: 90%;
+      max-width: 1100px;
+      height: 75vh;
+      max-height: 650px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-glow);
+      border-radius: 20px;
+      backdrop-filter: blur(15px);
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+      padding: 48px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      opacity: 0;
+      transform: translateY(30px) scale(0.98);
+      pointer-events: none;
+      transition: all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 1;
+    }
+
+    .slide.active {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      pointer-events: auto;
+      z-index: 2;
+    }
+
+    /* Slide Content Typo */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 20px;
+    }
+    .slide-title-group h2 {
+      font-family: var(--font-title);
+      font-size: 32px;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .slide-badge {
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--accent-glow-green);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+      padding: 4px 10px;
+      border-radius: 6px;
+      color: var(--accent-green);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .slide-badge.trap {
+      background: rgba(248, 81, 73, 0.1);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+      color: var(--accent-red);
+    }
+    .slide-meta {
+      font-size: 13px;
+      color: var(--accent-purple);
+      font-family: var(--font-mono);
+      margin-top: 4px;
+    }
+
+    .slide-body {
+      flex-grow: 1;
+      display: grid;
+      grid-template-columns: 1.2fr 1fr;
+      gap: 40px;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .slide-text h3 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--accent-blue);
+      margin-bottom: 12px;
+    }
+    .slide-text p {
+      font-size: 15px;
+      line-height: 1.6;
+      color: #c9d1d9;
+      margin-bottom: 20px;
+    }
+
+    /* Styled bullets */
+    .bullet-list {
+      list-style: none;
+    }
+    .bullet-list li {
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 12px;
+      padding-left: 24px;
+      position: relative;
+      color: #b1bac4;
+    }
+    .bullet-list li::before {
+      content: "→";
+      position: absolute;
+      left: 0;
+      color: var(--accent-purple);
+      font-weight: bold;
+    }
+
+    /* Right side interactive visualization panels */
+    .visual-panel {
+      background: rgba(7, 9, 14, 0.8);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 12px;
+      height: 100%;
+      min-height: 260px;
+      display: flex;
+      flex-direction: column;
+      padding: 24px;
+      justify-content: center;
+      position: relative;
+      overflow: hidden;
+      box-shadow: inset 0 0 20px rgba(0,0,0,0.4);
+    }
+
+    /* Code View style */
+    .code-view {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: #e6edf3;
+      background: #090c10;
+      padding: 16px;
+      border-radius: 8px;
+      border: 1px solid #21262d;
+      white-space: pre-wrap;
+      overflow-y: auto;
+      max-height: 260px;
+      text-align: left;
+    }
+    .code-view .added {
+      color: var(--accent-green);
+      background: rgba(63, 185, 80, 0.1);
+      display: block;
+      padding: 2px 4px;
+      border-radius: 2px;
+    }
+
+    /* Title Slide Specific */
+    .slide-title-only {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      text-align: center;
+      height: 100%;
+    }
+    .slide-title-only h1 {
+      font-family: var(--font-title);
+      font-size: 56px;
+      font-weight: 800;
+      letter-spacing: -1.5px;
+      line-height: 1.1;
+      margin-bottom: 20px;
+      background: linear-gradient(135deg, #ffffff 30%, #a5c2f4 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .slide-title-only p {
+      font-size: 18px;
+      color: var(--text-muted);
+      max-width: 600px;
+      margin-bottom: 40px;
+      line-height: 1.5;
+    }
+    .author-tag {
+      font-family: var(--font-mono);
+      color: var(--accent-purple);
+      font-size: 14px;
+      background: rgba(188, 140, 255, 0.08);
+      border: 1px solid rgba(188, 140, 255, 0.2);
+      padding: 8px 16px;
+      border-radius: 30px;
+      box-shadow: 0 0 20px rgba(188, 140, 255, 0.1);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .author-tag span {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--accent-purple);
+      display: inline-block;
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.9); opacity: 0.6; }
+      50% { transform: scale(1.3); opacity: 1; }
+      100% { transform: scale(0.9); opacity: 0.6; }
+    }
+
+    /* Simulation Styles for Trailing Lock Mode Toggle */
+    .sim-container {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      width: 100%;
+    }
+    .sim-toggle {
+      display: flex;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 4px;
+      justify-content: space-between;
+    }
+    .sim-toggle-btn {
+      flex: 1;
+      background: transparent;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px;
+      font-family: var(--font-title);
+      font-weight: 600;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.3s;
+    }
+    .sim-toggle-btn.active {
+      background: var(--accent-blue);
+      color: var(--bg-dark);
+      box-shadow: 0 4px 10px rgba(88, 166, 255, 0.3);
+    }
+    .sim-display {
+      background: #090c10;
+      border: 1px solid #21262d;
+      border-radius: 8px;
+      padding: 12px;
+      min-height: 150px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .sim-position {
+      display: flex;
+      justify-content: space-between;
+      padding: 6px 10px;
+      border-radius: 4px;
+      background: rgba(255,255,255,0.03);
+      align-items: center;
+      transition: all 0.3s;
+    }
+    .sim-pnl-pos {
+      color: var(--accent-green);
+      font-weight: bold;
+    }
+    .sim-pnl-neg {
+      color: var(--accent-red);
+      font-weight: bold;
+    }
+    .sim-action-btn {
+      background: rgba(188, 140, 255, 0.1);
+      border: 1px solid var(--accent-purple);
+      color: var(--accent-purple);
+      font-family: var(--font-title);
+      font-weight: 600;
+      padding: 8px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      margin-top: 4px;
+    }
+    .sim-action-btn:hover {
+      background: var(--accent-purple);
+      color: var(--bg-dark);
+      box-shadow: 0 0 15px rgba(188, 140, 255, 0.3);
+    }
+
+    /* Simulation for Hedge Switch */
+    .hedge-sim-display {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+    }
+    .flow-step {
+      background: #161b22;
+      border: 1px solid #30363d;
+      padding: 10px 16px;
+      border-radius: 8px;
+      width: 100%;
+      text-align: center;
+      font-size: 13px;
+      position: relative;
+      transition: all 0.3s;
+    }
+    .flow-arrow {
+      color: var(--accent-blue);
+      font-size: 18px;
+      animation: bounceArrow 1s infinite alternate;
+    }
+    @keyframes bounceArrow {
+      0% { transform: translateY(-3px); }
+      100% { transform: translateY(3px); }
+    }
+    .flow-step.disabled {
+      opacity: 0.3;
+      border-style: dashed;
+      color: var(--text-muted);
+    }
+
+    /* Footer Controls */
+    footer {
+      padding: 24px 40px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 10;
+    }
+    .navigation-controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .nav-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      border: 1px solid var(--border-glow);
+      background: var(--bg-card);
+      color: var(--text-main);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      transition: all 0.3s;
+    }
+    .nav-btn:hover:not(:disabled) {
+      background: var(--accent-blue);
+      color: var(--bg-dark);
+      border-color: var(--accent-blue);
+      box-shadow: 0 0 15px rgba(88, 166, 255, 0.4);
+    }
+    .nav-btn:disabled {
+      opacity: 0.25;
+      cursor: not-allowed;
+    }
+    .progress-indicators {
+      display: flex;
+      gap: 8px;
+    }
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--text-muted);
+      opacity: 0.3;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+    .dot.active {
+      background-color: var(--accent-blue);
+      opacity: 1;
+      width: 24px;
+      border-radius: 4px;
+    }
+    
+    .slide-number {
+      font-size: 14px;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    /* Help Banner */
+    .keyboard-help {
+      font-size: 11px;
+      color: var(--text-muted);
+      background: rgba(255,255,255,0.02);
+      border: 1px solid rgba(255,255,255,0.05);
+      padding: 4px 10px;
+      border-radius: 4px;
+    }
+
+  </style>
+</head>
+<body>
+
+  <div class="glow-bg"></div>
+  <div class="glow-bg-right"></div>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      💎 Algo-Trader RMS <span>v2.0-Live</span>
+    </div>
+    <div class="session-info">
+      Session: July 01, 2026 • Host: 72.61.173.32
+    </div>
+  </header>
+
+  <!-- Viewport for Slides -->
+  <div class="slides-viewport">
+
+    <!-- Slide 1: Welcome -->
+    <div class="slide active" id="slide-1">
+      <div class="slide-title-only">
+        <h1>Traps & Gaps Resolved Today</h1>
+        <p>Interactive summary of RMS robustness updates and live execution safeguards implemented to eliminate trading anomalies.</p>
+        <div class="author-tag">
+          <span></span> Edits & Resolutions by Antigravity AI
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 2: Trap 62 -->
+    <div class="slide" id="slide-2">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🔄 TRAP #62 — Position State Desync</h2>
+          <div class="slide-meta">Files Modified: range_trader.py, universe_trader.py, rsi_trader.py</div>
+        </div>
+        <span class="slide-badge trap">Critical</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem</h3>
+          <p>When a position was manually closed on Zerodha (or via trailing lock), the running strategy process was completely unaware. It kept its internal state as "OPEN", and on the next signal, placed an opposite order that opened a duplicate reverse position (causing triple trades, heavy tax, and losses).</p>
+          <h3>The Solution</h3>
+          <ul class="bullet-list">
+            <li>Scanner loops now perform live database re-validation against <code>order_store.trades_for(today)["open"]</code> on every tick.</li>
+            <li>If a trade was reconciled as closed at the broker, the strategy instantly clears its memory state (<code>st["position"] = None</code>).</li>
+            <li>This shields the account from duplicate, unhedged entries due to manual interventions.</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <div class="code-view">
+# Inside range_trader.py scanner loop
+# Re-validate open position against DB
+open_trades = order_store.trades_for(today)["open"]
+open_syms = {t["sym"] for t in open_trades}
+<span class="added">if st["position"] and st["position"] not in open_syms:
+    log.info(f"Position {st['position']} closed externally. Resetting state.")
+    st["position"] = None # Avoid double exit!</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 3: Trap 64 -->
+    <div class="slide" id="slide-3">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🚫 TRAP #64 — Kite Phantom Positions</h2>
+          <div class="slide-meta">Files Modified: broker_sync.py</div>
+        </div>
+        <span class="slide-badge trap">Critical</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem</h3>
+          <p>Zerodha Kite's API completely omits contracts with zero trade history (such as cancelled or rejected orders) from its <code>positions()</code> list. Since the app didn't find the contract in the list, it didn't verify order status, resulting in "phantom positions" tracked in the app database that blocked subsequent entries.</p>
+          <h3>The Solution</h3>
+          <ul class="bullet-list">
+            <li><code>broker_sync.py</code> modified to verify order logs directly if a database-open contract is missing from the API positions list.</li>
+            <li>Queries Kite order history using <code>broker.order_status</code>.</li>
+            <li>If order is confirmed as <code>CANCELLED</code> or <code>REJECTED</code>, it reconciles it as flat and marks it <code>externally_closed</code> immediately.</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <div class="code-view">
+# Inside broker_sync.py positions check
+missing_syms = db_open_symbols - api_positions
+for sym in missing_syms:
+    status = broker.order_status(b_order_id)
+<span class="added">    if status in ["CANCELLED", "REJECTED"]:
+        # Mark as externally closed so phantom position is cleared
+        order_store.mark_closed(sym, tags=["REJECTED_CLEANUP"])</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 4: Trap 65 -->
+    <div class="slide" id="slide-4">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🔥 TRAP #65 — Proactive Feed Cold-Starts</h2>
+          <div class="slide-meta">Files Modified: range_trader.py, universe_trader.py</div>
+        </div>
+        <span class="slide-badge">Optimized</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem</h3>
+          <p>WebSocket feed subscriptions are capped at 100 concurrent symbols. When starting up, or when a signal was about to fire, dynamic options contracts were subscribed on-the-fly, meaning the tick data was cold (no ticks available) at the exact moment of signal evaluation.</p>
+          <h3>The Solution</h3>
+          <ul class="bullet-list">
+            <li>Watchlist underlying indices and equities are proactively subscribed to <code>dhan_feed</code> at startup.</li>
+            <li>Scanner loops proactively resolve and subscribe the ATM Call & Put contracts dynamically <i>before</i> signals trigger.</li>
+            <li>Ensures ticks are warm and live liquidity filters have immediate data for pre-trade gating.</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <div class="code-view">
+# Pre-subscribe ATM contracts on scan tick
+spot = get_live_spot(symbol)
+atm_strike = round_to_strike(spot)
+ce_sec, pe_sec = resolve_options(symbol, atm_strike)
+
+<span class="added"># Warm up feed subscription before signal fires
+dhan_feed.add(("NSE_FNO", ce_sec))
+dhan_feed.add(("NSE_FNO", pe_sec))</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 5: Trap 70 -->
+    <div class="slide" id="slide-5">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🛡️ TRAP #70 — Global Option Hedging Switch</h2>
+          <div class="slide-meta">Files Modified: risk_gate.py, templates/index.html</div>
+        </div>
+        <span class="slide-badge">New Control</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem</h3>
+          <p>Auto-hedging buys further OTM options immediately after short entries. However, the hedge order placement was uncontrolled, placing too many orders or generating unnecessary brokerage costs. The user wanted a global switch to toggle between naked positions and hedged positions.</p>
+          <h3>The Solution</h3>
+          <ul class="bullet-list">
+            <li>Added a global <strong>Option Hedging</strong> dropdown in the RMS tab dashboard (Hedge vs. Naked).</li>
+            <li>Stored under <code>_risk.global.hedge_enabled</code>.</li>
+            <li>When set to <strong>Naked Mode</strong>, <code>risk_gate.hedge_config()</code> returns <code>0, None</code>, skipping hedge placement entirely system-wide.</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <div class="hedge-sim-display">
+            <div class="sim-toggle" style="width:100%">
+              <button class="sim-toggle-btn active" id="hedge-btn-on" onclick="toggleHedgeSim(true)">Hedge Mode</button>
+              <button class="sim-toggle-btn" id="hedge-btn-off" onclick="toggleHedgeSim(false)">Naked Mode</button>
+            </div>
+            <div class="flow-step" id="flow-sell">
+              🟢 OPTION SELL Entry Triggers (1 Lot)
+            </div>
+            <div class="flow-arrow" id="flow-arr">⬇️</div>
+            <div class="flow-step" id="flow-buy">
+              🔵 AUTO-HEDGE BUY Contract Placed (+5 strikes OTM)
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Slide 6: Trap 71 -->
+    <div class="slide" id="slide-6">
+      <div class="slide-header">
+        <div class="slide-title-group">
+          <h2>🔒 TRAP #71 — Per-Instrument Trailing Lock</h2>
+          <div class="slide-meta">Files Modified: trader_dashboard.py, templates/index.html</div>
+        </div>
+        <span class="slide-badge">New Control</span>
+      </div>
+      <div class="slide-body">
+        <div class="slide-text">
+          <h3>The Problem</h3>
+          <p>The account-level trailing profit lock tracked aggregate daily P&L. When aggregate P&L fell from its peak, the daemon squared off all positions. This cut off other healthy positions because of a drawdown in one single bad position.</p>
+          <h3>The Solution</h3>
+          <ul class="bullet-list">
+            <li>Added a <strong>Trailing Mode</strong> dropdown in the RMS tab (Aggregate vs. Per-Instrument).</li>
+            <li><strong>Per-Instrument Mode:</strong> tracks individual peak P&L for each open position in <code>_pos_peaks</code>.</li>
+            <li>If a position's P&L falls from its personal peak, only that specific position is squared off, keeping other trades active.</li>
+          </ul>
+        </div>
+        <div class="visual-panel">
+          <div class="sim-container">
+            <div class="sim-toggle">
+              <button class="sim-toggle-btn active" id="lock-btn-agg" onclick="setLockMode('aggregate')">Aggregate Mode</button>
+              <button class="sim-toggle-btn" id="lock-btn-ind" onclick="setLockMode('per_instrument')">Per-Instrument</button>
+            </div>
+            <div class="sim-display" id="sim-log">
+              <!-- filled by JS -->
+            </div>
+            <button class="sim-action-btn" onclick="runSimTick()">Simulate P&L Tick (Move Prices)</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Footer controls -->
+  <footer>
+    <div class="keyboard-help">
+      Keyboard: Use [Left / Right Arrow] or [Space] to navigate
+    </div>
+    <div class="navigation-controls">
+      <button class="nav-btn" id="prev-btn" onclick="changeSlide(-1)" disabled>←</button>
+      <div class="progress-indicators" id="dots-container"></div>
+      <button class="nav-btn" id="next-btn" onclick="changeSlide(1)">→</button>
+    </div>
+    <div class="slide-number" id="slide-num">Slide 1 of 6</div>
+  </footer>
+
+  <script>
+    // Slide Navigation
+    const slides = document.querySelectorAll('.slide');
+    const prevBtn = document.getElementById('prev-btn');
+    const nextBtn = document.getElementById('next-btn');
+    const slideNum = document.getElementById('slide-num');
+    const dotsContainer = document.getElementById('dots-container');
+    let currentSlideIndex = 0;
+
+    // Create dots
+    slides.forEach((_, i) => {
+      const dot = document.createElement('div');
+      dot.className = `dot ${i === 0 ? 'active' : ''}`;
+      dot.onclick = () => goToSlide(i);
+      dotsContainer.appendChild(dot);
+    });
+
+    const dots = document.querySelectorAll('.dot');
+
+    function updateControls() {
+      prevBtn.disabled = currentSlideIndex === 0;
+      nextBtn.disabled = currentSlideIndex === slides.length - 1;
+      slideNum.textContent = `Slide ${currentSlideIndex + 1} of ${slides.length}`;
+      
+      dots.forEach((dot, i) => {
+        dot.className = `dot ${i === currentSlideIndex ? 'active' : ''}`;
+      });
+    }
+
+    function goToSlide(index) {
+      slides[currentSlideIndex].classList.remove('active');
+      currentSlideIndex = index;
+      slides[currentSlideIndex].classList.add('active');
+      updateControls();
+    }
+
+    function changeSlide(direction) {
+      const target = currentSlideIndex + direction;
+      if (target >= 0 && target < slides.length) {
+        goToSlide(target);
+      }
+    }
+
+    // Keyboard handlers
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ') {
+        changeSlide(1);
+      } else if (e.key === 'ArrowLeft') {
+        changeSlide(-1);
+      }
+    });
+
+    // Hedge Switch Simulation
+    function toggleHedgeSim(enabled) {
+      const btnOn = document.getElementById('hedge-btn-on');
+      const btnOff = document.getElementById('hedge-btn-off');
+      const buyStep = document.getElementById('flow-buy');
+      const arr = document.getElementById('flow-arr');
+
+      if (enabled) {
+        btnOn.classList.add('active');
+        btnOff.classList.remove('active');
+        buyStep.classList.remove('disabled');
+        buyStep.textContent = "🔵 AUTO-HEDGE BUY Contract Placed (+5 strikes OTM)";
+        arr.style.display = "block";
+      } else {
+        btnOn.classList.remove('active');
+        btnOff.classList.add('active');
+        buyStep.classList.add('disabled');
+        buyStep.textContent = "❌ Hedge Skipped (Naked Option Entry)";
+        arr.style.display = "none";
+      }
+    }
+
+    // Trailing Profit Lock Simulation
+    let positions = [
+      { sym: 'NIFTY-CE', peak: 4000, current: 4000, status: 'Active' },
+      { sym: 'SBIN-PE', peak: 1500, current: 1500, status: 'Active' }
+    ];
+    let lockMode = 'aggregate'; // aggregate or per_instrument
+    let threshold = 1000; // Rs. 1000 trailing lock drop
+
+    function setLockMode(mode) {
+      lockMode = mode;
+      document.getElementById('lock-btn-agg').className = `sim-toggle-btn ${mode === 'aggregate' ? 'active' : ''}`;
+      document.getElementById('lock-btn-ind').className = `sim-toggle-btn ${mode === 'per_instrument' ? 'active' : ''}`;
+      resetSim();
+    }
+
+    function resetSim() {
+      positions = [
+        { sym: 'NIFTY-CE', peak: 4000, current: 4000, status: 'Active' },
+        { sym: 'SBIN-PE', peak: 1500, current: 1500, status: 'Active' }
+      ];
+      renderSim();
+    }
+
+    function renderSim() {
+      const display = document.getElementById('sim-log');
+      display.innerHTML = '';
+      
+      let totalCurrent = 0;
+      let totalPeak = 0;
+      
+      positions.forEach(pos => {
+        totalCurrent += pos.status === 'Active' ? pos.current : 0;
+        totalPeak += pos.status === 'Active' ? pos.peak : 0;
+
+        const row = document.createElement('div');
+        row.className = 'sim-position';
+        
+        let statusSpan = `<span class="sim-pnl-pos">₹${pos.current}</span>`;
+        if (pos.status === 'SQUARED OFF') {
+          statusSpan = `<span style="color:var(--accent-red)">[SQUARED OFF]</span>`;
+          row.style.opacity = '0.5';
+        }
+
+        row.innerHTML = `
+          <span><b>${pos.sym}</b> (Peak: ₹${pos.peak})</span>
+          ${statusSpan}
+        `;
+        display.appendChild(row);
+      });
+
+      const footer = document.createElement('div');
+      footer.style.borderTop = '1px solid #21262d';
+      footer.style.paddingTop = '8px';
+      footer.style.marginTop = '4px';
+      
+      let aggregateText = `Total Peak: ₹${totalPeak} | Total Current: ₹${totalCurrent} (Drawdown: ₹${totalPeak - totalCurrent})`;
+      let actionText = '';
+
+      if (lockMode === 'aggregate') {
+        const drawdown = totalPeak - totalCurrent;
+        if (drawdown >= threshold && totalPeak > 0) {
+          positions.forEach(p => p.status = 'SQUARED OFF');
+          actionText = `<div style="color:var(--accent-red);font-weight:bold;margin-top:4px">⚠️ Lock Triggered! SQUARED OFF ALL POSITIONS</div>`;
+        }
+      } else {
+        positions.forEach(p => {
+          if (p.status === 'Active') {
+            const indDrawdown = p.peak - p.current;
+            if (indDrawdown >= threshold && p.peak > 0) {
+              p.status = 'SQUARED OFF';
+              actionText += `<div style="color:var(--accent-purple);font-weight:bold;margin-top:4px">⚠️ Lock Triggered! Squared off ${p.sym} only</div>`;
+            }
+          }
+        });
+      }
+
+      footer.innerHTML = `
+        <div style="color:var(--text-muted)">${aggregateText}</div>
+        ${actionText}
+      `;
+      display.appendChild(footer);
+    }
+
+    // Initialize Sim
+    setLockMode('aggregate');
+
+  </script>
+</body>
+</html>
