@@ -323,7 +323,17 @@ def run(paper_mode=True, strategy_id="ema"):
             qty     = int(tc.get("qty", 1))
             max_t   = int(tc.get("max_trades_per_symbol", 2))
             tf      = tc.get("timeframe", "1m")
-            sym_list = tc.get("symbols", list(SYMBOLS.keys()))
+            # SYMBOLS is a LIST, not a dict — `.keys()` here crashed the loop
+            # every single cycle with "'list' object has no attribute 'keys'"
+            # (Python evaluates a default arg eagerly, so it fired regardless of
+            # whether config had a "symbols" key). Also handle the comma-string
+            # form of "symbols" in nifty_config.json (TRAP #16) — iterating a
+            # raw string would loop character-by-character and silently scan 0
+            # real symbols.
+            sym_list = tc.get("symbols") or list(SYMBOLS)
+            if isinstance(sym_list, str):
+                import re as _re
+                sym_list = [s.strip().upper() for s in _re.split(r"[,\s]+", sym_list) if s.strip()]
 
             token, cid = load_creds()
 

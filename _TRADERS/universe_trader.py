@@ -264,10 +264,10 @@ def main(sid, once=False):
             off = int(cfg.get("strike_offset", 0))
             if route == "stock_option":
                 try:
-                    opt_ce_sec_id, _ = universe.stock_option_atm(sym, spot, "CE", off)
+                    opt_ce_sec_id, _, _ = universe.stock_option_atm(sym, spot, "CE", off)
                     if opt_ce_sec_id:
                         dhan_feed.add(("NSE_FNO", opt_ce_sec_id))
-                    opt_pe_sec_id, _ = universe.stock_option_atm(sym, spot, "PE", off)
+                    opt_pe_sec_id, _, _ = universe.stock_option_atm(sym, spot, "PE", off)
                     if opt_pe_sec_id:
                         dhan_feed.add(("NSE_FNO", opt_pe_sec_id))
                 except Exception:
@@ -275,10 +275,10 @@ def main(sid, once=False):
             elif route == "index_option":
                 try:
                     idx = cfg.get("index", "NIFTY")
-                    opt_ce_sec_id, _ = universe.index_option_atm(idx, spot, "CE", off)
+                    opt_ce_sec_id, _, _ = universe.index_option_atm(idx, spot, "CE", off)
                     if opt_ce_sec_id:
                         dhan_feed.add(("NSE_FNO", opt_ce_sec_id))
-                    opt_pe_sec_id, _ = universe.index_option_atm(idx, spot, "PE", off)
+                    opt_pe_sec_id, _, _ = universe.index_option_atm(idx, spot, "PE", off)
                     if opt_pe_sec_id:
                         dhan_feed.add(("NSE_FNO", opt_pe_sec_id))
                 except Exception:
@@ -291,6 +291,23 @@ def main(sid, once=False):
             if sig == "EXIT" and st["position"] and st["open_inst"]:
                 s_id, seg, tsym, oq = st["open_inst"]
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
+                # Pre-exit broker-flat guard (manual-close protection) — live only.
+                # If already flat at the broker, firing this exit would open a
+                # phantom opposite position (1 trade -> 3 + extra tax). Fresh
+                # broker positions() check, not the 30s-lagged order_store/cache.
+                if mode == "live":
+                    try:
+                        import broker_sync as _bs
+                        _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
+                        _bpos = broker.positions()
+                        if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
+                            log(f"[FLAT-CHECK] {sym} already flat at broker (manual close?) "
+                                f"— skipping exit order, clearing state")
+                            st["position"] = None
+                            st["open_inst"] = None
+                            continue
+                    except Exception as _fe:
+                        log(f"[FLAT-CHECK] pre-exit check failed ({_fe}) — proceeding (fail-open)")
                 smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
                                     broker, cfg.get("limit_buffer_bps", 10),
                                     log=log, tag="EXIT", source="strategy", strategy=sid,

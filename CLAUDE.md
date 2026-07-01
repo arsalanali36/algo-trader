@@ -17,6 +17,12 @@ Web dashboard se control hota hai — koi command line nahi.
 > consistent-log export, etc.). Pichli baar pura din laga; yeh playbook se turant pick hoga.
 > Tool: `validate_strategy.py` (`--signals <log>` to score, `--debug DATE` to trace).
 > Best result: **90.2% exact / 93% entry** (Range Chain vs TradingView, NIFTY).
+>
+> **🧭 Koi NAYI live strategy (`_TRADERS/*.py`) likhne se PEHLE: `_TRADERS/NEW_STRATEGY_CHECKLIST.md`
+> padho.** Copy-paste-ready RMS-safe entry/exit templates + har wo galti jo yahan bite kar chuki
+> (RMS-blind order_store gap, manual-close phantom BUY, ₹0-price fill, `symbols` string-parse,
+> default-arg `.keys()` crash, dashboard `STRATEGIES` grep-mismatch, restart-orphan). Critical
+> Rule 6/8 ka full practical version — ek galti do baar na ho.
 
 | File | Kaam |
 |------|------|

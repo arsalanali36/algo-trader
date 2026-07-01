@@ -1195,8 +1195,46 @@ def main(strategy_id="range"):
                 if st["position"] is None:
                     continue  # no open position this session — skip stale startup EXIT
                 exit_side = "SELL" if signal == "EXIT_LONG" else "BUY"
+
+                # ── Pre-exit broker-flat guard (manual-close protection) ──────────
+                # If this position was already closed at the broker (user did it
+                # manually on Zerodha, an SL fired there, etc.), firing our own
+                # exit here would OPEN a brand-new OPPOSITE position — 1 trade
+                # becomes 3, plus extra tax/loss. The TRAP #62 order_store
+                # re-validation above only self-heals AFTER broker_sync (a
+                # separate process, 30s cadence) has recorded the close; a
+                # freshly-fired exit in that 30s window would still slip through.
+                # So do a FRESH live broker positions() check right now — not the
+                # per-process broker_sync cache (empty in THIS strategy's process),
+                # not order_store (lags broker_sync). Live mode only: in paper
+                # there is no real broker position and no phantom-money risk.
+                if mode == "live":
+                    try:
+                        import broker_sync as _bs
+                        from brokers import get_broker as _gb
+                        _bn      = (cfg.get("broker") or "dhan")
+                        _chk_sid = str(st.get("opt_sec_id") or "")
+                        _chk_sym = st.get("opt_trad_sym") or symbol
+                        if not _chk_sid:
+                            _info = _dhan_info(symbol)
+                            _chk_sid = str(_info[0]) if _info else ""
+                        _bpos = _gb(_bn).positions()
+                        if _bpos is not None and _bs._check_flat(_bn.lower(), _bpos, _chk_sym, _chk_sid):
+                            log.info(f"[FLAT-CHECK] {symbol} already flat at broker "
+                                     f"(manually closed / SL hit elsewhere) — skipping exit "
+                                     f"order to avoid a phantom opposite position; clearing state.")
+                            st["position"]     = None
+                            st["last_signal"]  = None
+                            st["opt_sec_id"]   = None
+                            st["opt_trad_sym"] = None
+                            continue
+                    except Exception as _fe:
+                        log.warning(f"[FLAT-CHECK] pre-exit broker check failed ({_fe}) "
+                                    f"— proceeding with exit (fail-open)")
+                # ──────────────────────────────────────────────────────────────────
+
                 log.info(f"EXIT {symbol} via {reason} @ {price:.2f}")
-                
+
                 if st.get("opt_sec_id"):
                     place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                 else:

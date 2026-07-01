@@ -372,18 +372,53 @@ def place_order(side, trad_sym, sec_id, qty, token, cid, log, cfg=None):
         return False
 
 
-def close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, cfg=None):
-    """Open option position band karo (EXIT order)."""
+def close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, cfg=None, strategy_id="rsi_v1"):
+    """Open option position band karo (EXIT order).
+
+    Ab smart_order.execute() ke through jaata hai — order_store recording (taaki
+    RMS + pos_monitor position dekhein aur SL/TP/EOD lagayein), async fill-confirm,
+    aur ₹0-price guard (TRAP #1) sab automatic milte hain. Live exit se PEHLE ek
+    fresh broker positions() flat-check: agar position broker pe already flat hai
+    (user ne manually close kiya / SL laga), to apna exit order phantom OPPOSITE
+    position khol dega (1 trade -> 3 + tax) — isliye skip karke state saaf karo."""
     if sym not in active_opts:
         log.info(f"    [PAPER] EXIT {sym}  RSI={rsi_val}")
         return
     o          = active_opts.pop(sym)
     close_side = "SELL" if o["side"] == "BUY" else "BUY"
+    mode       = "paper" if paper_mode else "live"
+    _bname     = _order_broker(cfg or {})
+    try:
+        from brokers import get_broker
+        _bkr = get_broker(_bname)
+    except Exception as _be:
+        log.error(f"    [EXIT] broker init failed ({_be}) — {sym} exit skipped "
+                  f"(pos_monitor SL/EOD will still protect it via order_store)")
+        return
+
+    # Manual-close flat guard (live only) — fresh broker check, not 30s cache.
     if not paper_mode:
-        place_order(close_side, o["trad_sym"], o["sec_id"], o["qty"], token, cid, log, cfg)
-    else:
-        broker = _order_broker(cfg or {})
-        log.info(f"    [PAPER/{broker.upper()}] EXIT {o['trad_sym']}  qty={o['qty']}  RSI={rsi_val}")
+        try:
+            import broker_sync as _bs
+            _bpos = _bkr.positions()
+            if _bpos is not None and _bs._check_flat(_bname, _bpos, o["trad_sym"], str(o["sec_id"])):
+                log.info(f"    [FLAT-CHECK] {o['trad_sym']} already flat at broker "
+                         f"(manual close?) — skipping exit order to avoid a phantom "
+                         f"opposite position; state cleared")
+                return
+        except Exception as _fe:
+            log.warning(f"    [FLAT-CHECK] pre-exit check failed ({_fe}) — proceeding (fail-open)")
+
+    try:
+        import smart_order
+        smart_order.execute(close_side, sym, o["sec_id"], "NSE_FNO", o["qty"],
+                            o["trad_sym"], mode, _bkr,
+                            log=log.info, tag="RSI", source="strategy",
+                            strategy=strategy_id, instrument="options",
+                            broker_name=_bname, is_exit=True)
+    except Exception as _ee:
+        log.error(f"    [EXIT] {sym} exit order failed: {_ee} "
+                  f"(pos_monitor SL/EOD will retry via order_store)")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -450,7 +485,7 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                     if pos == 0:
                         continue
                     log.info(f"[FORCE EXIT 3:15] {sym}")
-                    close_position(sym, active_opts, token, cid, paper_mode, "3:15", log)
+                    close_position(sym, active_opts, token, cid, paper_mode, "3:15", log, tc, strategy_id)
                     positions[sym] = 0
                 time.sleep(300)
                 continue
@@ -516,7 +551,7 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
 
                 # ── EXIT ────────────────────────────────────────────────────
                 if signal == "EXIT":
-                    close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, tc)
+                    close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, tc, strategy_id)
                     positions[sym]    = 0
                     trades_today[sym] = t_count + 1
                     continue
@@ -538,23 +573,57 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 sec_id, trad_sym, lot_size = result
                 actual_qty = lots * (lot_size or 1)   # lot_size CSV se, kabhi hardcode nahi
 
-                if not paper_mode:
-                    ok = place_order("BUY", trad_sym, sec_id, actual_qty, token, cid, log, tc)
-                    if ok:
+                # ── Order ab smart_order.execute() ke through — RMS-safe ─────────
+                # Isse milta hai (CLAUDE.md Critical Rule 6/8): order_store
+                # recording (RMS + pos_monitor position dekhein → auto SL/TP/EOD),
+                # marketable-limit pricing (MARKET nahi — Zerodha options pe MARKET
+                # reject karta), async fill-confirm, ₹0-price guard (TRAP #1), aur
+                # correct Kite symbol resolve. Entry se pehle RMS gate_entry
+                # (capital/drawdown/concentration) — legacy raw path RMS-blind tha.
+                mode = "paper" if paper_mode else "live"
+                try:
+                    import smart_order as _so
+                    import risk_gate as _rg
+                    import strategy_safety as _ss
+                    from brokers import get_broker as _gb
+                    _bname = _order_broker(tc)
+                    _bkr   = _gb(_bname)
+
+                    est_price, _psrc = _so.marketable_price("BUY", sec_id, "NSE_FNO", _bkr)
+                    if not est_price or est_price <= 0:
+                        # premium na mile to entry SKIP (₹0 record mat karo — TRAP #1)
+                        log.warning(f"  {sym} — no option premium (rate-limit?) — entry skipped this cycle")
+                        continue
+
+                    gate_ok, gated_qty, gate_reason = _ss.gate_entry(
+                        strategy_id, sym, lots, (lot_size or 1), est_price, side="BUY",
+                        sec_id=sec_id, seg="NSE_FNO", mode=mode, broker=_bkr, log=log.info)
+                    if not gate_ok:
+                        log.info(f"  [SKIP] {sym} entry blocked — {gate_reason}")
+                        continue
+                    if gated_qty and gated_qty != actual_qty:
+                        log.info(f"  [SIZE-DOWN] {sym} qty {actual_qty} -> {gated_qty} ({gate_reason})")
+                        actual_qty = gated_qty
+
+                    try:
+                        default_sl_tags = _rg.default_instrument_sl_tags(strategy_id, sym)
+                    except Exception:
+                        default_sl_tags = []
+
+                    res = _so.execute("BUY", sym, sec_id, "NSE_FNO", actual_qty, trad_sym,
+                                      mode, _bkr, log=log.info, tag="RSI", source="strategy",
+                                      strategy=strategy_id, instrument="options",
+                                      broker_name=_bname, extra_tags=default_sl_tags)
+                    if res.get("ok"):
                         active_opts[sym]  = {"sec_id": sec_id, "trad_sym": trad_sym,
                                               "side": "BUY", "qty": actual_qty}
                         positions[sym]    = +1 if signal == "BUY" else -1
                         trades_today[sym] = t_count + 1
-                else:
-                    log.info(
-                        f"    [PAPER] BUY {opt_type} {trad_sym}"
-                        f"  qty={actual_qty} ({lots}L × {lot_size})"
-                        f"  @ ~{last_close:.1f}  RSI={rsi_val}"
-                    )
-                    active_opts[sym]  = {"sec_id": sec_id, "trad_sym": trad_sym,
-                                          "side": "BUY", "qty": actual_qty}
-                    positions[sym]    = +1 if signal == "BUY" else -1
-                    trades_today[sym] = t_count + 1
+                    else:
+                        log.info(f"  [ENTRY SKIP] {sym} — {res.get('reason','order not ok')}")
+                except Exception as _ent:
+                    log.error(f"  [ENTRY ERR] {sym}: {_ent}")
+                    continue
 
             # ── Watch file update ────────────────────────────────────────
             # Zone priority sort: OVERSOLD / OVERBOUGHT pehle, phir NEAR, phir NEUTRAL

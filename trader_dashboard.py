@@ -3644,8 +3644,8 @@ def pos_monitor_loop():
                                 print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
                             except Exception as _fe:
                                 print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
-                        time.sleep(5)
-                        continue                    # skip per-position checks this cycle
+                            time.sleep(5)
+                            continue                    # skip per-position checks this cycle
             except Exception as _trail_e:
                 print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
             # ─────────────────────────────────────────────────────────────────

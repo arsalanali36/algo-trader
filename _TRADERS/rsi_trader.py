@@ -551,6 +551,27 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         exit_qty   = o.get("qty", qty)
                         exit_prem  = _opt_ltp(o["sec_id"], token, cid)
                         if not paper_mode:
+                            # Pre-exit broker-flat guard (manual-close protection).
+                            # If already flat at the broker, firing this exit would
+                            # open a phantom opposite position (1 trade -> 3 + tax).
+                            # Fresh broker positions() check, not the 30s-lagged
+                            # order_store/cache.
+                            _skip_exit = False
+                            try:
+                                import broker_sync as _bs
+                                from brokers import get_broker as _gb
+                                _bpos = _gb("dhan").positions()
+                                if _bpos is not None and _bs._check_flat("dhan", _bpos, o["trad_sym"], str(o["sec_id"])):
+                                    log.info(f"  [FLAT-CHECK] {o['trad_sym']} already flat at broker "
+                                             f"(manual close?) — skipping exit, clearing state")
+                                    _skip_exit = True
+                            except Exception as _fe:
+                                log.warning(f"  [FLAT-CHECK] pre-exit check failed ({_fe}) — proceeding (fail-open)")
+                            if _skip_exit:
+                                del active_opts[sym]
+                                positions[sym]    = 0
+                                trades_today[sym] = t_count + 1
+                                continue
                             place_order(sym, close_side, exit_qty, token, cid,
                                         o["sec_id"], "NSE_FNO", o["trad_sym"], log)
                             _record(close_side, exit_qty, exit_prem, "live", o["trad_sym"], o["sec_id"], strategy_id, "filled", log)
