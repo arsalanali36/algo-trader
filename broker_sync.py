@@ -132,8 +132,28 @@ def _run_sync(open_positions: list, log=print) -> set:
             sec_id = str(p.get("sec_id") or "")
             row_id = p.get("id")
 
-            if not _check_flat(broker_name, broker_pos, sym, sec_id):
-                continue
+            is_position_flat = _check_flat(broker_name, broker_pos, sym, sec_id)
+            if not is_position_flat:
+                # TRAP #64: If Kite position is not present in the positions response,
+                # check if the order itself was cancelled or rejected (never filled).
+                # Fixed by Antigravity AI.
+                if broker_name == "kite":
+                    b_order_id = p.get("broker_order_id")
+                    if b_order_id:
+                        try:
+                            from brokers import get_broker
+                            broker = get_broker("kite")
+                            status = broker.order_status(b_order_id)
+                            if status in ("CANCELLED", "REJECTED"):
+                                log(f"[broker_sync] {sym} — order {b_order_id} is {status} (never filled). Reconciling as flat. TRAP #64 fixed by Antigravity AI.", flush=True)
+                            else:
+                                continue
+                        except Exception:
+                            continue
+                    else:
+                        continue
+                else:
+                    continue
 
             # ── S3/S8: record exit leg with actual fill price ─────────────────
             exit_px, exit_tid = _resolve_exit_price(broker_name, broker_fills, sym, sec_id)

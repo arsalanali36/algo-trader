@@ -258,6 +258,31 @@ def main(sid, once=False):
             if df is None or df.empty:
                 continue
             spot = float(df.iloc[-1]["close"])
+
+            # Proactive Option feed subscription (TRAP #65 - Fixed by Antigravity AI)
+            route = cfg.get("route", "equity")
+            off = int(cfg.get("strike_offset", 0))
+            if route == "stock_option":
+                try:
+                    opt_ce_sec_id, _ = universe.stock_option_atm(sym, spot, "CE", off)
+                    if opt_ce_sec_id:
+                        dhan_feed.add(("NSE_FNO", opt_ce_sec_id))
+                    opt_pe_sec_id, _ = universe.stock_option_atm(sym, spot, "PE", off)
+                    if opt_pe_sec_id:
+                        dhan_feed.add(("NSE_FNO", opt_pe_sec_id))
+                except Exception:
+                    pass
+            elif route == "index_option":
+                try:
+                    idx = cfg.get("index", "NIFTY")
+                    opt_ce_sec_id, _ = universe.index_option_atm(idx, spot, "CE", off)
+                    if opt_ce_sec_id:
+                        dhan_feed.add(("NSE_FNO", opt_ce_sec_id))
+                    opt_pe_sec_id, _ = universe.index_option_atm(idx, spot, "PE", off)
+                    if opt_pe_sec_id:
+                        dhan_feed.add(("NSE_FNO", opt_pe_sec_id))
+                except Exception:
+                    pass
             sig = strat.evaluate(df, cfg, st["position"])
             if not sig:
                 continue

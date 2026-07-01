@@ -750,11 +750,25 @@ def main(strategy_id="range"):
     # it was fail-open on missing data on every single call. Starting the
     # feed here (once, with an empty instrument list — same pattern as
     # trader_dashboard.py's _ensure_feed_started) fixes it at the source.
+    # TRAP #65: Proactive underlying feed subscription at startup (Fixed by Antigravity AI).
     try:
         jwt_token, client_id = load_creds()
+        cfg = load_config(strategy_id)
+        symbols = cfg.get("symbols", ["NIFTY"])
+        if isinstance(symbols, str):
+            import re
+            symbols = [s.strip().upper() for s in re.split(r"[,\s]+", symbols) if s.strip()]
+        
+        initial_subs = []
+        for sym in symbols:
+            info = _dhan_info(sym)
+            if info:
+                sec_id, seg, _inst = info
+                initial_subs.append((seg, sec_id))
+        
         import dhan_feed
-        dhan_feed.start({"client_id": client_id, "jwt_token": jwt_token}, [])
-        log.info("dhan_feed started — live market-depth now available for liquidity checks")
+        dhan_feed.start({"client_id": client_id, "jwt_token": jwt_token}, initial_subs)
+        log.info(f"dhan_feed started with {len(initial_subs)} proactive underlying subscriptions (Fixed by Antigravity AI) — live market-depth now available for liquidity checks")
     except Exception as e:
         log.warning(f"dhan_feed start failed (liquidity checks will keep using REST fallback only): {e}")
 
@@ -977,6 +991,26 @@ def main(strategy_id="range"):
             time.sleep(0.25)  # DH-904 guard: 25 symbols * 0.25s = ~6s per loop
             if df_1m is None or len(df_1m) < 20:
                 continue
+
+            # Proactive Option feed subscription (TRAP #65 - Fixed by Antigravity AI)
+            # If the strategy is trading options, resolve likely ATM contracts at the current spot price
+            # and subscribe them to dhan_feed early.
+            if cfg.get("instrument", "equity") == "options" and df_1m is not None and not df_1m.empty:
+                try:
+                    spot_price = float(df_1m.iloc[-1]["close"])
+                    offset = int(cfg.get("strike_offset", 0))
+                    import dhan_master
+                    import dhan_feed
+                    # Resolve and subscribe likely ATM CALL
+                    ce_sec_id, _, _ = dhan_master.get_option_contract(symbol, spot_price, "CE", offset)
+                    if ce_sec_id:
+                        dhan_feed.add(("NSE_FNO", ce_sec_id))
+                    # Resolve and subscribe likely ATM PUT
+                    pe_sec_id, _, _ = dhan_master.get_option_contract(symbol, spot_price, "PE", offset)
+                    if pe_sec_id:
+                        dhan_feed.add(("NSE_FNO", pe_sec_id))
+                except Exception:
+                    pass
 
             signal, price, reason, sig_bar, total_bars, cur_state = run_signal_engine(df_1m, levels, cfg)
             
