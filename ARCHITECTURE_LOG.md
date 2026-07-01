@@ -339,3 +339,13 @@
 **Kyun:** User ne khud pucha "kyun baar-baar ho raha hai" — root fix maangi
 **Depends on:** TRAP #58 (jisne yeh gap pehli baar identify kiya), TRAP #61 (jiska no-price branch iske timeout-case ko safely clean karta hai)
 **Verify:** Deploy karte waqt ek REAL open MARUTI position thi (protected) — `ARS_CHAIN_V1` strategy process restart karna zaroori tha (Python `smart_order.py` hot-reload nahi karta), `_recover_state_from_order_store` (TRAP #28) se position sahi recover hui, zero protection-gap. Restart ke baad dashboard pe MARUTI abhi bhi correctly tracked confirmed.
+
+## 2026-07-01 — TRAP #63 follow-up: delayed-fill monitoring log (user-requested — "is state ko track karo, data baad me kaam aayega")
+**Status:** DONE
+**Kya:** User ne 2 sawaal pucho: (1) 15-min-delay jaisa extreme case ho to SL protection turant lagti hai ya confirm ka wait karti hai — confirm kiya: turant lagti hai, kyunki provisional row apne SL tags ke saath hi likha jaata hai. (2) TRAP #63 ka fix delay resolve hone pe `UNCONFIRMED_FILL` tag hata deta hai — matlab "yeh delay hua tha" ka record kho jaata hai. User ne isko track karne ko bola.
+**Fix:** Naya append-only log `data/fill_confirm_delays.json` — har live order jiska fill-confirm poll 1 se zyada attempt le (symbol, side, qty, attempted price, order_id, attempts, resolution: confirmed/rejected/timeout). Dashboard route `/api/fill-delays` (optional `?symbol=` filter) se dekho.
+**Layer:** broker / monitoring
+**Files:** `smart_order.py`, `trader_dashboard.py`
+**Kyun:** User ne khud pucha "is data ko rakh lo, baad me kaam aayega"
+**Depends on:** TRAP #63 (isi session)
+**Verify:** Deploy + restart clean (`ARS_CHAIN_V1` + dashboard/monitor dono), koi open position nahi thi. Route `/api/fill-delays` test kiya — `[]` return kar raha (abhi tak koi delayed fill nahi hui, expected).

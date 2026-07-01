@@ -28,6 +28,47 @@ TICK = 0.05
 
 _ltp_cache = {}   # sec_id -> (ltp, epoch_ts) — opportunistically warmed by every call
 
+_DELAY_LOG_FILE = None   # lazy — avoid import cost when never used
+
+
+def _log_fill_delay(trad_sym, side, qty, price, order_id, attempts, resolved, resolved_price=None):
+    """Append one row to data/fill_confirm_delays.json — every live fill-confirm
+    poll that took more than 1 attempt (i.e. wasn't instant), win or lose.
+    Purpose: TRAP #63's provisional-row fix stops a slow/late confirmation from
+    ever meaning "position invisible" — but it also erases the evidence that a
+    confirmation was ever slow at all (the UNCONFIRMED_FILL tag gets cleared
+    once resolved). This log is the permanent record instead — which symbols
+    hit this, how often, how many of the 5 poll attempts (~1.5s each) it took,
+    and whether it eventually confirmed, got rejected, or timed out outright.
+    Meant to be read later (not by any running code) — e.g. to decide whether
+    a specific stock option needs a wider buffer_bps or a longer poll window."""
+    global _DELAY_LOG_FILE
+    try:
+        import json
+        from pathlib import Path
+        from datetime import datetime, timezone, timedelta
+        if _DELAY_LOG_FILE is None:
+            _DELAY_LOG_FILE = Path(__file__).resolve().parent / "data" / "fill_confirm_delays.json"
+        existing = []
+        try:
+            existing = json.loads(_DELAY_LOG_FILE.read_text())
+        except Exception:
+            pass
+        ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        existing.append({
+            "ts": ist.strftime("%Y-%m-%d %H:%M:%S"),
+            "trad_sym": trad_sym, "side": side, "qty": qty,
+            "price_attempted": price, "order_id": order_id,
+            "attempts": attempts, "seconds_approx": round(attempts * 1.5, 1),
+            "resolved": resolved,               # "confirmed" | "rejected" | "timeout"
+            "resolved_price": resolved_price,
+        })
+        if len(existing) > 2000:
+            existing = existing[-2000:]
+        _DELAY_LOG_FILE.write_text(json.dumps(existing))
+    except Exception:
+        pass
+
 
 _REJECTED_STATUSES = {"REJECTED", "CANCELLED", "CANCELED", "EXPIRED"}
 _TERMINAL_STATUSES = _REJECTED_STATUSES | {
@@ -153,9 +194,11 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
         # Marketable limits on liquid options typically fill in <1s.
         fill_st, fill_price = None, None
         oid = r.get("order_id")
+        attempts_taken = 0
         if oid and hasattr(broker, "get_fill"):
             for attempt in range(5):
                 time.sleep(1.5)
+                attempts_taken = attempt + 1
                 try:
                     fill_st, fill_price = broker.get_fill(oid)
                 except Exception:
@@ -175,6 +218,7 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                     order_store.update_fill(provisional_id, status="rejected")
                 except Exception:
                     pass
+            _log_fill_delay(trad_sym, side, qty, price, oid, attempts_taken, "rejected")
             return res
 
         if fill_st != "TRADED":
@@ -192,6 +236,7 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             res["ok"] = False
             res["status"] = "pending"
             res["reason"] = "fill not confirmed within timeout"
+            _log_fill_delay(trad_sym, side, qty, price, oid, attempts_taken, "timeout")
             return res
 
         # Use actual fill price if broker returned one (more accurate P&L)
@@ -201,6 +246,12 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                 f"({actual_price - price:+.2f})")
         else:
             actual_price = price  # broker returned TRADED but no average_price yet
+
+        # attempts_taken > 1 means it wasn't an instant fill — worth tracking
+        # (TRAP #63's whole reason for existing: how close to the 8s cliff are
+        # these confirmations actually running, in practice, over time).
+        if attempts_taken > 1:
+            _log_fill_delay(trad_sym, side, qty, price, oid, attempts_taken, "confirmed", actual_price)
 
         res["price"] = actual_price
         res["status"] = "filled"

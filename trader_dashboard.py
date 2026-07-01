@@ -2803,6 +2803,27 @@ def api_downloader_alerts():
         return jsonify([])
 
 
+@app.route('/api/fill-delays')
+def api_fill_delays():
+    """TRAP #63 monitoring data — every live order whose fill-confirm poll
+    took more than one attempt (i.e. wasn't instant), across all strategies.
+    Most-recent-first. ?symbol=RELIANCE filters (substring match on trad_sym).
+    Not real-time-critical — this is history for later review (which
+    instruments run close to the 8s poll cliff, how often, does it correlate
+    with time of day/liquidity), not something any code reads back."""
+    delay_file = BASE_DIR / "data" / "fill_confirm_delays.json"
+    if not delay_file.exists():
+        return jsonify([])
+    try:
+        rows = json.loads(delay_file.read_text())
+    except Exception:
+        return jsonify([])
+    sym_filter = request.args.get('symbol', '').strip().upper()
+    if sym_filter:
+        rows = [r for r in rows if sym_filter in (r.get('trad_sym') or '').upper()]
+    return jsonify(list(reversed(rows)))
+
+
 @app.route('/api/health-report')
 def api_health_report():
     """Last startup health-check ka structured report (health_check.py --json ne
