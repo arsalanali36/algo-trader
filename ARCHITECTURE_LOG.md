@@ -318,3 +318,14 @@
 **Kyun:** Live P&L corruption diagnosis ke dauraan mila — root cause fix taaki dobara na ho (kal ya kabhi bhi, 3+ round-trip wale din pe)
 **Depends on:** TRAP #58/#59 (isi session, jinhone yeh pre-existing bug expose kiya)
 **Verify:** Fix deploy + restart, 60s window me row-count stable (9, no new phantom) — 2 baar independently confirm kiya (before aur after root fix). Broker confirmed fully flat throughout.
+
+## 2026-07-01 — TRAP #61 (mark_externally_closed unconditionally hid P&L entries) fixed + TRAP #62 (strategy state-desync causing real unintended orders) flagged
+**Status:** DONE (#61) / PENDING (#62, user-flagged for later)
+**Kya:** User ne khud pucha "yeh SUNPHARMA BUY kaise ho gaya, hamari strategy sirf SELL karti hai" — investigate karne pe do alag bugs mile. **TRAP #62 (root trigger):** account-level trailing-profit-lock (jo pura account squareoff karta hai) ne SUNPHARMA position 10:26 pe close kiya, lekin strategy process (`range_trader.py`) ki apni memory ko pata hi nahi chala — 40 min baad strategy ne "EXIT via ATR_TRAILING" samajh ke ek REAL BUY order bhej diya, jabki koi position band karne layak thi hi nahi (fresh unwanted long entry, ~₹122.50 cost). **TRAP #61 (display bug jo isse expose hua):** jab user ne is phantom BUY ko Zerodha pe manually close kiya, `broker_sync` ne sahi se exit record kiya (TRAP #60 ka fix sahi kaam kar raha tha) — lekin sath hi entry row ko `mark_externally_closed` bhi kar diya, jo P&L calculation se hi row hata deta hai (`_dead_filtered`) — isliye entry gayab ho gaya, exit akela "nayi open position" jaisa dikhne laga.
+**Fix (#61 — done):** `mark_externally_closed` ab sirf tab call hota hai jab exit price hi nahi mila (genuinely kuch pair karne ko nahi). Jab exit sahi se record ho jaaye, entry ka status chhedo mat — normal netting khud pair kar leta hai.
+**#62 abhi fix nahi hua** — user ne baad ke liye flag kiya. Do options note kiye: trailing-lock squareoff strategy process ko signal bheje, ya strategy apni state ko live periodically order_store se re-validate kare.
+**Layer:** broker / strategy-engine / data-integrity
+**Files:** `broker_sync.py`
+**Kyun:** User ne khud confusion flag kiya ("strategy sirf sell karti hai, yeh buy kaise") — investigate karke 2 real bugs mile
+**Depends on:** TRAP #60 (isi session — jiske baad yeh path pehli baar cleanly exercise hua)
+**Verify:** Row 378 ka status fix karke turant sahi pair hua (BUY 28.60→SELL 28.25, pnl -122.50). Poore din ka total ab ₹1,705.00 — Zerodha ke apne "Total P&L" se EXACT match. Deploy + restart clean, 10 completed trades, open:[].

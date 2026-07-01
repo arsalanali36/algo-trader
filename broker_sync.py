@@ -174,22 +174,39 @@ def _run_sync(open_positions: list, log=print) -> set:
                     )
                     log(f"[broker_sync] 📝 EXIT RECORDED — {sym} @ ₹{exit_px:.2f} "
                         f"(broker fill price fetched, P&L now captured in order_store)", flush=True)
+                    # TRAP #61 fix: do NOT mark_externally_closed the entry row
+                    # here — that status is in _dead_filtered()'s exclusion set,
+                    # so it would vanish from ALL P&L (open AND closed) while
+                    # the exit leg just recorded above (status="filled") is left
+                    # with no partner to pair against, showing up as a brand
+                    # new phantom "open" position (found live 2026-07-01 —
+                    # SUNPHARMA-1880's entry(378) got hidden, exit(379) looked
+                    # like a fresh unmatched SELL). Leaving the entry's status
+                    # untouched (still "filled") lets normal Pass-2 FIFO netting
+                    # pair it with the exit leg naturally — same mode+trad_sym,
+                    # alternating sides — producing a correct completed trade.
+                    closed_ids.add(row_id)
+                    log(f"[broker_sync] ✅ GHOST CLEARED — {sym} flat at {broker_name} "
+                        f"(id={row_id}). Exit leg recorded, entry left as-is for netting. TRAP #44/#61.", flush=True)
                 except Exception as _re:
                     log(f"[broker_sync] ⚠️ exit record failed for {sym}: {_re}", flush=True)
             else:
+                # No exit price available at all — nothing to pair the entry
+                # against, so hiding it via externally_closed is the least-bad
+                # option here (matches original TRAP #44 intent for this
+                # specific no-price case only).
                 log(f"[broker_sync] ⚠️ {sym} flat at broker but fill price unavailable "
                     f"— marking externally_closed without exit leg (P&L will be null)", flush=True)
+                try:
+                    import order_store
+                    order_store.mark_externally_closed(row_id)
+                    closed_ids.add(row_id)
+                    log(f"[broker_sync] ✅ GHOST CLEARED — {sym} flat at {broker_name} "
+                        f"(id={row_id}). Marked externally_closed (no exit price found). TRAP #44.", flush=True)
+                except Exception as _e:
+                    log(f"[broker_sync] ⚠️ mark_externally_closed failed for {sym}: {_e}", flush=True)
+                    continue
             # ─────────────────────────────────────────────────────────────────
-
-            try:
-                import order_store
-                order_store.mark_externally_closed(row_id)
-                closed_ids.add(row_id)
-                log(f"[broker_sync] ✅ GHOST CLEARED — {sym} flat at {broker_name} "
-                    f"(id={row_id}). Marked externally_closed. TRAP #44 prevented.", flush=True)
-            except Exception as _e:
-                log(f"[broker_sync] ⚠️ mark_externally_closed failed for {sym}: {_e}", flush=True)
-                continue
 
             # ── S7: clear webhook_executor _wh_state so TV EXIT doesn't re-open ──
             try:
