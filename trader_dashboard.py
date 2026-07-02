@@ -1256,6 +1256,11 @@ def api_option_ltp():
 def trade_chart_page():
     return render_template('trade_chart.html')
 
+@app.route('/mtm-charts')
+def mtm_charts_page():
+    return render_template('mtm_charts.html')
+
+
 @app.route('/api/trade-chart-data')
 def api_trade_chart_data():
     """Option premium 1-min candles for one completed trade + entry/exit marker times.
@@ -3605,8 +3610,18 @@ def pos_monitor_loop():
                     round(_total_pnl, 2),
                     round(_daily_peak_ever, 2),      # v[3]: floor line base (monotonic, never drops)
                 ))
-                if len(_peak_pnl_history) > 500:
-                    _peak_pnl_history = _peak_pnl_history[-500:]
+                # Cap sized for a FULL trading day, not a rolling window. Loop cycles
+                # every ~5s (time.sleep(5) at the bottom, plus whatever the SL/TP/
+                # kill-floor checks above it take) — market hours 09:15-15:30 = 375min
+                # = 22500s, so even at the fastest possible 5s/cycle that's ≤4500
+                # entries/day. The OLD cap of 500 meant the graph only ever showed the
+                # most recent ~500×5s ≈ 42 MINUTES — found live 2026-07-02, user
+                # reported the Peak P&L graph "looks like only the last 1hr", which is
+                # exactly this symptom (worse: less than 1hr, since real cycles run
+                # slower than the bare 5s sleep). 6000 gives headroom above the
+                # fastest-possible-cycle worst case for the whole session.
+                if len(_peak_pnl_history) > 6000:
+                    _peak_pnl_history = _peak_pnl_history[-6000:]
                 # Write to file so dashboard process can read it via API
                 try:
                     _phf = BASE_DIR / "data" / "peak_pnl_history.json"

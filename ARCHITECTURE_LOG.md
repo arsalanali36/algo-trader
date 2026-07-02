@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — Peak P&L graph was truncated to ~last 40 minutes (500-entry cap, fixed to 6000)
+**Status:** DONE (deployed, algo-monitor restarted — market already closed, 0 open positions)
+**Kya:** User reported "Today's Peak P&L graph looks like only last 1hr of data" + wanted the graph's MTM to clearly match Zerodha's gross (realized+unrealized) day P&L. Root cause found: `pos_monitor_loop` (in `trader_dashboard.py`, runs inside `algo-monitor`/`monitor_daemon.py`) appends one entry to `_peak_pnl_history` every ~5s cycle, then capped the in-memory list (and therefore what gets written to `data/peak_pnl_history.json`, which the graph API reads) at 500 entries — 500×5s ≈ 42 minutes, so the graph only ever showed the most recent ~40min slice of the trading day, discarding everything from 09:15 onward. The underlying MTM MATH itself was already correct (gross realized+unrealized, no brokerage/tax subtracted — matches Zerodha's own M2M display) — the bug was purely the graph's visible WINDOW, which explains why the second complaint ("gross MTM not clear") likely stems from the same root cause: only seeing a 40-min slice makes the day's actual shape/total invisible.
+**Layer:** ui / config
+**Files:** trader_dashboard.py (pos_monitor_loop's `_peak_pnl_history` cap: 500 → 6000)
+**Kyun:** Market day is 09:15-15:30 = 375min; even at the fastest possible 5s/cycle that's ≤4500 entries — 6000 gives headroom. Frontend (`loadPeakGraph()`) and the API endpoint (`/api/peak-pnl-history`) already handle a full-day array correctly with zero windowing of their own — confirmed by code read, no changes needed there.
+**Depends on:** nothing — fix is forward-looking only; today's already-truncated history before the restart is not retroactively recoverable (was already discarded before ever being written under the old cap).
+
+---
+
 ## 2026-07-02 — RMS/Risk tab: Live Monitoring accordions moved INTO the sidebar (9 tabs total, no more bottom accordion block)
 **Status:** DONE (deployed, algo-dashboard restarted — algo-monitor untouched)
 **Kya:** User feedback on the v2 RMS layout — move Broker Balances/RMS Live Summary/Rate Limit Room/Per-Strategy Override out of the bottom collapsible accordion block and into the same sidebar as the 5 config tabs. Sidebar now has 2 header groups ("Global Settings" 5 tabs, "Live Monitoring" 4 tabs), all 9 as `settings-section` panels in one `folder-content` area — single consistent navigation pattern instead of two different UI patterns (tabs + accordion) on one screen. Dead-code cleanup in the same pass: `toggleAccordion()` JS function and 6 now-unused CSS rules (`.monitor-group`, `.monitor-title`, `.accordion-card` + its color variants, `.accordion-header*`, `.accordion-body`) removed — nothing referenced them anymore after the move. All ids (`broker-balances-content`, `rms-summary-content`, `killfloor-live`/`kf-floor`/`kf-peak`/`kf-status`, `rl-top-offenders`/`rl-events-body`, `risk-strategy-table`) unchanged, zero JS data-loading function changes.
