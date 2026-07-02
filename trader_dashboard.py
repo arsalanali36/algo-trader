@@ -485,6 +485,42 @@ def api_kill_floor_status():
     })
 
 
+@app.route('/api/per-instrument-lock-status')
+def api_per_instrument_lock_status():
+    """Live per-instrument trailing-lock state for the RMS tab's display
+    (2026-07-02 redesign) — same read-the-disk-state pattern as
+    /api/kill-floor-status, since pos_monitor_loop runs in algo-monitor, not
+    this dashboard process. One row per position currently tracked."""
+    import risk_gate, order_store
+    from datetime import timedelta as _td
+    cfg = risk_gate.per_instrument_lock_config()
+    state = {}
+    try:
+        _raw = json.loads((BASE_DIR / "data" / "pos_lock_state.json").read_text())
+        state = _raw.get("state") or {}
+    except Exception:
+        pass
+    sym_by_id = {}
+    try:
+        _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+        for _p in order_store.trades_for(_ist.strftime("%Y-%m-%d")).get("open", []):
+            sym_by_id[str(_p.get("id"))] = _p.get("sym")
+    except Exception:
+        pass
+    rows = []
+    for pid, st in state.items():
+        rows.append({
+            "id": pid,
+            "sym": sym_by_id.get(str(pid), "?"),
+            "armed": bool(st.get("armed")),
+            "peak": st.get("peak") or 0.0,
+            "floor": st.get("floor"),
+            "fired": bool(st.get("fired")),
+            "breaching": st.get("breach_since") is not None,
+        })
+    return jsonify({"config": cfg, "positions": rows})
+
+
 @app.route('/api/rms-summary')
 def api_rms_summary():
     """Combined RMS view (Stage 2): per-strategy + global capital used/available,
@@ -1761,11 +1797,15 @@ def api_peak_pnl_history():
     is_today = (req_date == _ist_now.strftime("%Y-%m-%d"))
 
     try:
+        # Graph's dashed floor line now mirrors the account-level KILL-FLOOR's
+        # own gap_rs (2026-07-02 redesign replaced the old aggregate trailing
+        # lock these two keys used to read) — same "peak − gap" shape, just
+        # sourced from the system that's actually live.
         import risk_gate as _rg
-        gcfg = (_rg._risk_cfg().get("global") or {})
-        lock_rs          = gcfg.get("trailing_profit_lock_rs")
-        lock_pct         = gcfg.get("trailing_profit_lock_pct")
-        profit_target_rs = gcfg.get("profit_target_rs")
+        _kfc = _rg.kill_floor_config()
+        lock_rs          = _kfc["gap_rs"] if _kfc["enabled"] else None
+        lock_pct         = None
+        profit_target_rs = (_rg._risk_cfg().get("global") or {}).get("profit_target_rs")
     except Exception:
         lock_rs = lock_pct = profit_target_rs = None
 
@@ -3390,7 +3430,7 @@ def _last_closed_candle_close(sec_id, seg):
 
 
 _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips when feed fails
-_pos_peaks         = {}    # {pos_id: peak_pnl} — tracks peak PnL for per-instrument trailing lock (Fixed by Antigravity AI)
+_pos_lock_state    = {}    # {pos_id: {armed,peak,floor,breach_since,fired,prev_mtm}} — per-instrument trailing-lock state machine (2026-07-02 redesign)
 
 # Restore peak + history from file on startup — so restart mid-day doesn't reset the floor.
 # Only restore if history entries exist and were written TODAY (check file mtime).
@@ -3420,29 +3460,31 @@ try:
 except Exception as _e_init:
     print(f"[TRAILING-LOCK] Peak restore failed (ok, starting fresh): {_e_init}", flush=True)
 
-# Per-position peaks persist to disk (same pattern as peak_pnl_history.json) —
-# a mid-day dashboard restart must not wipe a position's trailing-lock memory
-# (TRAP #38's failure shape, per-instrument-mode equivalent). Keyed by
-# order_store row id, so entries survive restarts and never cross-contaminate.
-_POS_PEAKS_FILE = BASE_DIR / "data" / "pos_peaks.json"
+# Per-position trailing-lock state persists to disk (same pattern as
+# peak_pnl_history.json / kill_floor_state.json) — a mid-day dashboard restart
+# must not wipe a position's trailing-lock memory (TRAP #38's failure shape,
+# per-instrument equivalent). Keyed by order_store row id, so entries survive
+# restarts and never cross-contaminate.
+_POS_LOCK_STATE_FILE = BASE_DIR / "data" / "pos_lock_state.json"
 try:
-    if _POS_PEAKS_FILE.exists():
-        _pp_init = json.loads(_POS_PEAKS_FILE.read_text())
-        if _pp_init.get("day") == _peak_day_str and isinstance(_pp_init.get("peaks"), dict):
-            for _pk, _pv in _pp_init["peaks"].items():
+    if _POS_LOCK_STATE_FILE.exists():
+        _pls_init = json.loads(_POS_LOCK_STATE_FILE.read_text())
+        if _pls_init.get("day") == _peak_day_str and isinstance(_pls_init.get("state"), dict):
+            for _pk, _pv in _pls_init["state"].items():
                 try:
-                    _pos_peaks[int(_pk)] = float(_pv)
+                    _pos_lock_state[int(_pk)] = _pv
                 except (ValueError, TypeError):
-                    _pos_peaks[_pk] = float(_pv)
-            if _pos_peaks:
-                print(f"[TRAILING-LOCK] Restored {len(_pos_peaks)} per-position peak(s) after restart.", flush=True)
-except Exception as _e_pp:
-    print(f"[TRAILING-LOCK] pos_peaks restore failed (ok, starting fresh): {_e_pp}", flush=True)
+                    _pos_lock_state[_pk] = _pv
+            if _pos_lock_state:
+                print(f"[TRAILING-LOCK] Restored {len(_pos_lock_state)} per-instrument lock state(s) "
+                      f"after restart.", flush=True)
+except Exception as _e_pls:
+    print(f"[TRAILING-LOCK] pos_lock_state restore failed (ok, starting fresh): {_e_pls}", flush=True)
 
 
-def _save_pos_peaks():
+def _save_pos_lock_state():
     try:
-        _POS_PEAKS_FILE.write_text(json.dumps({"day": _peak_day_str, "peaks": _pos_peaks}))
+        _POS_LOCK_STATE_FILE.write_text(json.dumps({"day": _peak_day_str, "state": _pos_lock_state}))
     except Exception:
         pass
 
@@ -3463,7 +3505,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_peaks
+    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_lock_state, _kf_state
 
     while True:
         try:
@@ -3525,18 +3567,16 @@ def pos_monitor_loop():
             # sibling leg that _do_squareoff already closed earlier this pass.
             _closed_ids = set()
 
-            # ── Account-level trailing profit lock ───────────────────────────
-            # Config: _risk.global.trailing_profit_lock_rs in nifty_config.json
-            # If account P&L drops more than this ₹ from its peak today →
-            # squareoff EVERYTHING. Only activates once peak > 0 (i.e. you're
-            # in profit — not a stop-loss, it's a profit-protector).
+            # ── Per-instrument trailing lock (2026-07-02 redesign) ────────────
+            # Config: risk_gate.per_instrument_lock_config() — same arm+gap+
+            # confirm state machine as the account-level KILL-FLOOR below,
+            # scoped to ONE open position instead of the whole account. Old
+            # flat-₹/%-of-peak design (no arm threshold, no confirm window)
+            # replaced outright — that was the exact misfire shape the
+            # account-level lock also had before this same fix (TRAP #77 family).
             try:
                 import risk_gate as _rg
-                _gcfg = (_rg._risk_cfg().get("global") or {})
-                _trail_rs  = _gcfg.get("trailing_profit_lock_rs")
-                _trail_pct = _gcfg.get("trailing_profit_lock_pct")
-                _either_set = (_trail_rs and float(_trail_rs) > 0) or \
-                              (_trail_pct and float(_trail_pct) > 0)
+                _pi_cfg = _rg.per_instrument_lock_config()
 
                 # Always compute realized+unrealized for Stats graph — regardless of lock config
                 _realized = _rg._today_realized_pnl()
@@ -3588,9 +3628,9 @@ def pos_monitor_loop():
                     _peak_pnl_history  = []
                     _trailing_peak_pnl = 0.0
                     _daily_peak_ever   = 0.0
-                    _pos_peaks         = {}
+                    _pos_lock_state    = {}
                     _peak_day_str      = _today_str
-                    _save_pos_peaks()
+                    _save_pos_lock_state()
                     _pending_group_close.clear()   # yesterday's queued closes are moot (EOD handled them)
                     _save_pending_group_close()
                     _kf_state.update({"day": _today_str, "armed": False, "peak": 0.0,
@@ -3629,108 +3669,120 @@ def pos_monitor_loop():
                 except Exception:
                     pass
 
-                if _either_set:
-                    _lock_mode = _gcfg.get("trailing_lock_mode", "aggregate")
-                    if _lock_mode == "per_instrument":
-                        # Per-Instrument Trailing Lock: track and trigger for each individual open position
-                        # Fixed by Antigravity AI.
-                        for _p in _active_pos:
-                            _pid = _p.get("id")
-                            if not _pid or _p.get("id") in _closed_ids:
-                                continue
-                            _sid = _p.get("sec_id")
-                            _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                            _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                                   _rest_ltp_fallback(_sid, _seg) or 0.0
+                if _pi_cfg["enabled"]:
+                    _pos_lock_state_dirty = False
+                    for _p in _active_pos:
+                        _pid = _p.get("id")
+                        if not _pid or _pid in _closed_ids:
+                            continue
+                        _pst = _pos_lock_state.get(_pid) or {
+                            "armed": False, "peak": 0.0, "floor": None,
+                            "breach_since": None, "fired": False, "prev_mtm": None,
+                        }
+                        if _pst.get("fired"):
+                            continue   # already fired for this position today — resolved, leave it
+
+                        _sid = _p.get("sec_id")
+                        _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                        _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                               _rest_ltp_fallback(_sid, _seg) or 0.0
+                        _pi_unreliable = False
+                        if _ltp > 0:
+                            _peak_ltp_cache[_sid] = _ltp
+                        else:
+                            _ltp = _peak_ltp_cache.get(_sid, 0.0)
                             if _ltp <= 0:
-                                _ltp = _peak_ltp_cache.get(_sid, 0.0)
-                            
-                            _epx = float(_p.get("entry_price") or _p.get("price") or 0)
-                            _qty = int(_p.get("qty") or 0)
-                            _unrl = 0.0
-                            if _ltp > 0 and _epx > 0 and _qty:
-                                _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
-                                         else (_epx - _ltp) * _qty
-                            
-                            # Update peak for this position
-                            if _pid not in _pos_peaks:
-                                _pos_peaks[_pid] = max(0.0, _unrl)
+                                _pi_unreliable = True
+
+                        _epx = float(_p.get("entry_price") or _p.get("price") or 0)
+                        _qty = int(_p.get("qty") or 0)
+                        _unrl = 0.0
+                        if _ltp > 0 and _epx > 0 and _qty:
+                            _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
+                                     else (_epx - _ltp) * _qty
+                        else:
+                            _pi_unreliable = True
+
+                        _was_armed_pi = _pst.get("armed", False)
+                        _was_breaching_pi = _pst.get("breach_since") is not None
+                        _pst, _pst_changed = _rg.advance_trailing_lock(
+                            _pst, _unrl, _pi_cfg["arm_rs"], _pi_cfg["gap_rs"], _pi_cfg["confirm_secs"],
+                            time.time(), mtm_unreliable=_pi_unreliable)
+                        _pos_lock_state[_pid] = _pst
+                        if _pst_changed:
+                            _pos_lock_state_dirty = True
+
+                        if _pst["armed"] and not _was_armed_pi:
+                            print(f"[TRAILING-LOCK] [PER-INSTRUMENT] {_p.get('sym')} (ID {_pid}) ARMED — "
+                                  f"confirmed peak ₹{_pst['peak']:.0f} crossed arm ₹{_pi_cfg['arm_rs']:.0f}; "
+                                  f"floor trails at peak − ₹{_pi_cfg['gap_rs']:.0f}", flush=True)
+                        if _pst.get("breach_since") is not None and not _was_breaching_pi:
+                            print(f"[TRAILING-LOCK] [PER-INSTRUMENT] {_p.get('sym')} P&L ₹{_unrl:.0f} below "
+                                  f"floor ₹{_pst['floor']:.0f} — confirm timer started "
+                                  f"({_pi_cfg['confirm_secs']:.0f}s)", flush=True)
+                        if _pst.get("breach_since") is None and _was_breaching_pi and not _pst["fired"]:
+                            print(f"[TRAILING-LOCK] [PER-INSTRUMENT] {_p.get('sym')} P&L ₹{_unrl:.0f} back above "
+                                  f"floor ₹{_pst['floor']:.0f} — confirm timer reset", flush=True)
+
+                        if _pst["fired"]:
+                            print(f"[TRAILING-LOCK] [PER-INSTRUMENT] 🔒 FIRED — {_p.get('sym')} (ID {_pid}) "
+                                  f"P&L ₹{_unrl:.0f} stayed below floor ₹{_pst['floor']:.0f} for "
+                                  f"{_pi_cfg['confirm_secs']:.0f}s (peak was ₹{_pst['peak']:.0f}) "
+                                  f"— squaring off this position only", flush=True)
+                            if _ltp <= 0:
+                                print(f"[TRAILING-LOCK] [PER-INSTRUMENT] ⚠️ {_p.get('sym')} — no price this "
+                                      f"instant; queued for forced close next cycle", flush=True)
+                                _pending_group_close[str(_sid)] = "TRAILING_PROFIT_LOCK_PI"
+                                _save_pending_group_close()
+                            elif _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_PI", _closed_ids, log=print):
+                                pass
                             else:
-                                _pos_peaks[_pid] = max(_pos_peaks[_pid], _unrl)
-                            
-                            _p_drawdown = _pos_peaks[_pid] - _unrl
-                            
-                            # Threshold calculation
-                            _effective_p_lock = 0.0
-                            _p_lock_desc = "none"
-                            if _trail_rs and float(_trail_rs) > 0:
-                                _effective_p_lock = float(_trail_rs)
-                                _p_lock_desc = f"₹{_effective_p_lock:.0f} (fixed)"
-                            elif _trail_pct and float(_trail_pct) > 0:
-                                _effective_p_lock = _pos_peaks[_pid] * float(_trail_pct) / 100.0
-                                _p_lock_desc = f"₹{_effective_p_lock:.0f} ({_trail_pct}% of peak)"
-                            
-                            if _pos_peaks[_pid] > 0 and _effective_p_lock > 0 and _p_drawdown >= _effective_p_lock:
-                                print(f"[TRAILING-LOCK] [PER-POSITION] Position {_p.get('sym')} (ID {_pid}) "
-                                      f"Peak ₹{_pos_peaks[_pid]:.0f} → now ₹{_unrl:.0f} "
-                                      f"(drawdown ₹{_p_drawdown:.0f} >= lock {_p_lock_desc}) — squaring off single position",
-                                      flush=True)
-                                if _ltp > 0:
-                                    # P6 audit fix (2026-07-02): this squareoff path placed
-                                    # orders directly, bypassing _do_squareoff entirely — so it
-                                    # never got the webhook-claim or fresh-flat-check guards
-                                    # (TRAP #44/#73 family). A manual close landing in the same
-                                    # instant this floor fires used to be able to open a phantom
-                                    # opposite position. Now uses the same shared gate.
-                                    if _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_PI", _closed_ids, log=print):
-                                        continue
-                                    try:
-                                        import smart_order
-                                        from brokers import get_broker
-                                        _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
-                                        _bname = _p.get("broker") or "dhan"
-                                        if _p.get("mode") == "live":
-                                            _br = get_broker(_bname)
-                                            smart_order.execute(
-                                                _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
-                                                _p["mode"], _br, log=print, tag="TRAILING",
-                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                                instrument=_p.get("instrument",""), broker_name=_bname,
-                                                extra_tags=["TRAILING_PROFIT_LOCK"],
-                                                is_exit=True,
-                                            )
-                                        else:
-                                            import order_store as _os
-                                            _os.record(
-                                                side=_exit_side, qty=_p["qty"], price=_ltp,
-                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                                mode=_p.get("mode","paper"), broker=_bname,
-                                                symbol=_p["sym"], instrument=_p.get("instrument",""),
-                                                trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
-                                                status="paper", tags=["TRAILING_PROFIT_LOCK"],
-                                            )
-                                        _closed_ids.add(_pid)
-                                    except Exception as _te:
-                                        print(f"[TRAILING-LOCK] [PER-POSITION] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
-                                    # NOTE (2026-07-02, user decision): per-instrument mode
-                                    # deliberately does NOT write the day-level
-                                    # trailing_lock_fired flag. That flag blocks ALL new
-                                    # entries account-wide (webhook _do_entry checks it) —
-                                    # correct for the aggregate lock, but it defeated the
-                                    # entire point of per-instrument mode: one position's
-                                    # floor firing is a closed, resolved event and must not
-                                    # stop other symbols/strategies from trading.
-                        # Prune peaks for positions no longer open, persist the rest —
-                        # restart mid-day must not reset trailing-lock memory to zero.
-                        _active_peak_ids = {_p.get("id") for _p in _active_pos}
-                        _pos_peaks = {k: v for k, v in _pos_peaks.items() if k in _active_peak_ids}
-                        _save_pos_peaks()
-                    # NOTE (2026-07-02): the old "aggregate" trailing-lock branch that
-                    # lived here was REPLACED by the account-level KILL-FLOOR below
-                    # (user decision — one account-level system, not two in parallel).
-                    # trailing_lock_mode now only controls the per-instrument locks
-                    # above; mode="aggregate" without kill_floor_enabled = no
-                    # account-level lock at all.
+                                try:
+                                    import smart_order
+                                    from brokers import get_broker
+                                    _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                    _bname = _p.get("broker") or "dhan"
+                                    if _p.get("mode") == "live":
+                                        _br = get_broker(_bname)
+                                        smart_order.execute(
+                                            _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                            _p["mode"], _br, log=print, tag="TRAILING",
+                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                            instrument=_p.get("instrument",""), broker_name=_bname,
+                                            extra_tags=["TRAILING_PROFIT_LOCK"],
+                                            is_exit=True,
+                                        )
+                                    else:
+                                        import order_store as _os
+                                        _os.record(
+                                            side=_exit_side, qty=_p["qty"], price=_ltp,
+                                            source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                            mode=_p.get("mode","paper"), broker=_bname,
+                                            symbol=_p["sym"], instrument=_p.get("instrument",""),
+                                            trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                            status="paper", tags=["TRAILING_PROFIT_LOCK"],
+                                        )
+                                    _closed_ids.add(_pid)
+                                except Exception as _te:
+                                    print(f"[TRAILING-LOCK] [PER-INSTRUMENT] squareoff failed for "
+                                          f"{_p.get('sym')}: {_te}", flush=True)
+                            # NOTE (2026-07-02, user decision, TRAP #77): deliberately does NOT
+                            # write the day-level trailing_lock_fired flag. That flag blocks
+                            # ALL new entries account-wide (webhook _do_entry + strategies via
+                            # risk_gate.gating_status check it) — correct for the account-level
+                            # KILL-FLOOR, but would defeat the entire point of per-instrument:
+                            # one position's floor firing is a closed, resolved event and must
+                            # not stop other symbols/strategies from trading.
+
+                    # Prune state for positions no longer open, persist the rest —
+                    # restart mid-day must not reset trailing-lock memory to zero.
+                    _active_pi_ids = {_p.get("id") for _p in _active_pos}
+                    for _k in list(_pos_lock_state.keys()):
+                        if _k not in _active_pi_ids:
+                            del _pos_lock_state[_k]
+                            _pos_lock_state_dirty = True
+                    if _pos_lock_state_dirty:
+                        _save_pos_lock_state()
             except Exception as _trail_e:
                 print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
             # ─────────────────────────────────────────────────────────────────
@@ -3752,119 +3804,99 @@ def pos_monitor_loop():
                 import risk_gate as _rg_kf   # own import — never depend on the previous block's local
                 _kfc = _rg_kf.kill_floor_config()
                 if _kfc["enabled"] and not _kf_state["fired"]:
-                    _kf_changed = False
-                    _confirmed = _total_pnl if _kf_state["prev_mtm"] is None \
-                        else min(_kf_state["prev_mtm"], _total_pnl)
-                    if not _mtm_unreliable and _confirmed > _kf_state["peak"]:
-                        _kf_state["peak"] = round(_confirmed, 2)
-                        _kf_changed = True
-                    if not _kf_state["armed"] and _kf_state["peak"] >= _kfc["arm_rs"]:
-                        _kf_state["armed"] = True
-                        _kf_changed = True
+                    _was_armed_kf = _kf_state.get("armed", False)
+                    _was_breaching_kf = _kf_state.get("breach_since") is not None
+                    _kf_state, _kf_changed = _rg_kf.advance_trailing_lock(
+                        _kf_state, _total_pnl, _kfc["arm_rs"], _kfc["gap_rs"], _kfc["confirm_secs"],
+                        time.time(), mtm_unreliable=_mtm_unreliable)
+                    if _kf_state["armed"] and not _was_armed_kf:
                         print(f"[KILL-FLOOR] ARMED — confirmed peak ₹{_kf_state['peak']:.0f} crossed "
                               f"arm threshold ₹{_kfc['arm_rs']:.0f}; floor trails at peak − ₹{_kfc['gap_rs']:.0f}", flush=True)
-                    if _kf_state["armed"]:
-                        _new_floor = round(_kf_state["peak"] - _kfc["gap_rs"], 2)
-                        if _kf_state["floor"] is None or _new_floor > _kf_state["floor"]:
-                            _kf_state["floor"] = _new_floor   # ratchet UP only — never down
-                            _kf_changed = True
-                        if _mtm_unreliable:
-                            # incomplete price data — freeze: never fire (or even
-                            # advance toward firing) a kill-all on an understated MTM
-                            pass
-                        elif _total_pnl < _kf_state["floor"]:
-                            if _kf_state["breach_since"] is None:
-                                _kf_state["breach_since"] = time.time()
-                                _kf_changed = True
-                                print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
-                                      f"— confirm timer started ({_kfc['confirm_secs']:.0f}s)", flush=True)
-                            elif time.time() - _kf_state["breach_since"] >= _kfc["confirm_secs"]:
-                                _kf_state["fired"] = True
-                                _kf_changed = True
-                                print(f"[KILL-FLOOR] 🔒 FIRED — MTM ₹{_total_pnl:.0f} stayed below floor "
-                                      f"₹{_kf_state['floor']:.0f} for {_kfc['confirm_secs']:.0f}s "
-                                      f"(peak was ₹{_kf_state['peak']:.0f}). KILLING ALL POSITIONS.", flush=True)
-                                for _p in list(open_pos):
-                                    _sid = _p.get("sec_id")
-                                    if not _sid or _p.get("status") == "blocked": continue
-                                    if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
-                                    if _p.get("id") in _closed_ids: continue
-                                    _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                                    _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                                            _rest_ltp_fallback(_sid, _seg) or 0.0
-                                    if _ltp2 <= 0:
-                                        try:
-                                            import shared_ltp_cache as _slc_kf
-                                            _ltp2 = _slc_kf.get_stale(_sid, max_age=120) or 0.0
-                                        except Exception:
-                                            _ltp2 = 0.0
-                                    if _ltp2 <= 0:
-                                        print(f"[KILL-FLOOR] ⚠️ {_p.get('sym')} — no price this instant; "
-                                              f"queued for forced close next cycle", flush=True)
-                                        _pending_group_close[str(_sid)] = "KILL_FLOOR"
-                                        _save_pending_group_close()
-                                        continue
-                                    if _pre_exit_guard(_p, _sid, "KILL_FLOOR", _closed_ids, log=print):
-                                        continue
-                                    try:
-                                        import smart_order
-                                        from brokers import get_broker
-                                        _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
-                                        _bname = _p.get("broker") or "dhan"
-                                        if _p.get("mode") == "live":
-                                            _br = get_broker(_bname)
-                                            smart_order.execute(
-                                                _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
-                                                _p["mode"], _br, log=print, tag="KILLFLOOR",
-                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                                instrument=_p.get("instrument",""), broker_name=_bname,
-                                                extra_tags=["KILL_FLOOR"],
-                                                is_exit=True,
-                                            )
-                                        else:
-                                            import order_store as _os
-                                            _os.record(
-                                                side=_exit_side, qty=_p["qty"], price=_ltp2,
-                                                source=_p.get("source",""), strategy=_p.get("strategy",""),
-                                                mode=_p.get("mode","paper"), broker=_bname,
-                                                symbol=_p["sym"], instrument=_p.get("instrument",""),
-                                                trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
-                                                status="paper", tags=["KILL_FLOOR"],
-                                            )
-                                        _closed_ids.add(_p.get("id"))
-                                    except Exception as _ke:
-                                        print(f"[KILL-FLOOR] squareoff failed for {_p.get('sym')}: {_ke}", flush=True)
-                                # Day-level entry block: webhook checks this flag directly,
-                                # every strategy via risk_gate.gating_status (added 2026-07-02)
+                    if _kf_state.get("breach_since") is not None and not _was_breaching_kf:
+                        print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
+                              f"— confirm timer started ({_kfc['confirm_secs']:.0f}s)", flush=True)
+                    if _kf_state.get("breach_since") is None and _was_breaching_kf and not _kf_state["fired"]:
+                        print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} back above floor "
+                              f"₹{_kf_state['floor']:.0f} — confirm timer reset", flush=True)
+                    if _kf_state["fired"]:
+                        print(f"[KILL-FLOOR] 🔒 FIRED — MTM ₹{_total_pnl:.0f} stayed below floor "
+                              f"₹{_kf_state['floor']:.0f} for {_kfc['confirm_secs']:.0f}s "
+                              f"(peak was ₹{_kf_state['peak']:.0f}). KILLING ALL POSITIONS.", flush=True)
+                        for _p in list(open_pos):
+                            _sid = _p.get("sec_id")
+                            if not _sid or _p.get("status") == "blocked": continue
+                            if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
+                            if _p.get("id") in _closed_ids: continue
+                            _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                            _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                    _rest_ltp_fallback(_sid, _seg) or 0.0
+                            if _ltp2 <= 0:
                                 try:
-                                    from datetime import datetime as _dtc
-                                    _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-                                    _flag.write_text(f"KILL_FLOOR fired at {_dtc.now().strftime('%H:%M:%S')} — "
-                                                     f"MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
-                                                     f"for {_kfc['confirm_secs']:.0f}s (peak ₹{_kf_state['peak']:.0f})")
-                                    print(f"[KILL-FLOOR] Flag written: {_flag.name} — ALL new entries blocked for today.", flush=True)
-                                except Exception as _fe:
-                                    print(f"[KILL-FLOOR] Flag write failed: {_fe}", flush=True)
-                                try:
-                                    _af = BASE_DIR / "data" / "downloader_alert.json"
-                                    _alerts = []
-                                    try:
-                                        _alerts = json.loads(_af.read_text())
-                                    except Exception:
-                                        pass
-                                    _alerts.append({"key": "kill_floor", "level": "error",
-                                                    "msg": (f"🔒 KILL-FLOOR FIRED — profit locked at "
-                                                            f"~₹{_kf_state['floor']:.0f} (peak was ₹{_kf_state['peak']:.0f}). "
-                                                            f"All positions squared off, entries blocked for today.")})
-                                    _af.write_text(json.dumps(_alerts))
+                                    import shared_ltp_cache as _slc_kf
+                                    _ltp2 = _slc_kf.get_stale(_sid, max_age=120) or 0.0
                                 except Exception:
-                                    pass
-                        else:
-                            if _kf_state["breach_since"] is not None:
-                                print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} back above floor "
-                                      f"₹{_kf_state['floor']:.0f} — confirm timer reset", flush=True)
-                                _kf_state["breach_since"] = None
-                                _kf_changed = True
+                                    _ltp2 = 0.0
+                            if _ltp2 <= 0:
+                                print(f"[KILL-FLOOR] ⚠️ {_p.get('sym')} — no price this instant; "
+                                      f"queued for forced close next cycle", flush=True)
+                                _pending_group_close[str(_sid)] = "KILL_FLOOR"
+                                _save_pending_group_close()
+                                continue
+                            if _pre_exit_guard(_p, _sid, "KILL_FLOOR", _closed_ids, log=print):
+                                continue
+                            try:
+                                import smart_order
+                                from brokers import get_broker
+                                _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                _bname = _p.get("broker") or "dhan"
+                                if _p.get("mode") == "live":
+                                    _br = get_broker(_bname)
+                                    smart_order.execute(
+                                        _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                        _p["mode"], _br, log=print, tag="KILLFLOOR",
+                                        source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                        instrument=_p.get("instrument",""), broker_name=_bname,
+                                        extra_tags=["KILL_FLOOR"],
+                                        is_exit=True,
+                                    )
+                                else:
+                                    import order_store as _os
+                                    _os.record(
+                                        side=_exit_side, qty=_p["qty"], price=_ltp2,
+                                        source=_p.get("source",""), strategy=_p.get("strategy",""),
+                                        mode=_p.get("mode","paper"), broker=_bname,
+                                        symbol=_p["sym"], instrument=_p.get("instrument",""),
+                                        trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                        status="paper", tags=["KILL_FLOOR"],
+                                    )
+                                _closed_ids.add(_p.get("id"))
+                            except Exception as _ke:
+                                print(f"[KILL-FLOOR] squareoff failed for {_p.get('sym')}: {_ke}", flush=True)
+                        # Day-level entry block: webhook checks this flag directly,
+                        # every strategy via risk_gate.gating_status (added 2026-07-02)
+                        try:
+                            from datetime import datetime as _dtc
+                            _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+                            _flag.write_text(f"KILL_FLOOR fired at {_dtc.now().strftime('%H:%M:%S')} — "
+                                             f"MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
+                                             f"for {_kfc['confirm_secs']:.0f}s (peak ₹{_kf_state['peak']:.0f})")
+                            print(f"[KILL-FLOOR] Flag written: {_flag.name} — ALL new entries blocked for today.", flush=True)
+                        except Exception as _fe:
+                            print(f"[KILL-FLOOR] Flag write failed: {_fe}", flush=True)
+                        try:
+                            _af = BASE_DIR / "data" / "downloader_alert.json"
+                            _alerts = []
+                            try:
+                                _alerts = json.loads(_af.read_text())
+                            except Exception:
+                                pass
+                            _alerts.append({"key": "kill_floor", "level": "error",
+                                            "msg": (f"🔒 KILL-FLOOR FIRED — profit locked at "
+                                                    f"~₹{_kf_state['floor']:.0f} (peak was ₹{_kf_state['peak']:.0f}). "
+                                                    f"All positions squared off, entries blocked for today.")})
+                            _af.write_text(json.dumps(_alerts))
+                        except Exception:
+                            pass
                     if not _mtm_unreliable:
                         _kf_state["prev_mtm"] = _total_pnl
                     if _kf_changed:

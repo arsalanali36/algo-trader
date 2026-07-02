@@ -85,6 +85,96 @@ def kill_floor_fired_today() -> bool:
         return False
 
 
+def per_instrument_lock_config():
+    """Per-position trailing lock settings (2026-07-02) — same arm+gap+confirm
+    design as kill_floor_config(), just scoped to ONE open position instead of
+    the whole account. Built specifically because the OLD per-instrument
+    trailing lock (flat ₹ or % of peak, no arm threshold, no confirm window)
+    was the exact system that misfired historically — same root cause as the
+    old account-level lock (TRAP #71/#72/#77 family): no confirm-window, so a
+    single noisy tick could trigger it. Replaced outright, not patched.
+      enabled     — master switch (default OFF)
+      arm_rs      — this position's OWN unrealized P&L must cross this once
+                    to arm ITS floor (₹500 default, same convention as
+                    account-level)
+      gap_rs      — this position's floor = its own confirmed peak − gap
+      confirm_secs— this position's P&L must stay below ITS floor this many
+                    consecutive seconds to fire (60 default)
+    Firing squares off ONLY that one position — does NOT block account-wide
+    entries (that would defeat the entire point of "per-instrument": one bad
+    position shouldn't stop everything else — explicit user decision,
+    matches TRAP #77's fix for the old design)."""
+    g = _risk_cfg().get("global", {})
+    def _f(key, default):
+        try:
+            v = g.get(key)
+            return default if v is None else float(v)
+        except (TypeError, ValueError):
+            return default
+    return {
+        "enabled": bool(g.get("per_instrument_lock_enabled", False)),
+        "arm_rs": _f("per_instrument_lock_arm_rs", 500.0),
+        "gap_rs": _f("per_instrument_lock_gap_rs", 1500.0),
+        "confirm_secs": _f("per_instrument_lock_confirm_secs", 60.0),
+    }
+
+
+def advance_trailing_lock(state, mtm, arm_rs, gap_rs, confirm_secs, now_ts, mtm_unreliable=False):
+    """One tick of the shared arm+gap+confirm+2-reading-peak trailing-lock
+    state machine — used by BOTH the account-level kill-floor and the
+    per-instrument lock (2026-07-02). Extracted into one function specifically
+    so the two systems' safety logic can never independently drift the way
+    TRAP #77 found (a per-X variant copy-pasting an aggregate branch and
+    missing an adjustment) — fix the state machine once here, both callers
+    get it.
+
+    state: mutable dict {armed, peak, floor, breach_since, fired, prev_mtm} —
+           caller owns persistence (disk-persist it, restart-safe).
+    mtm:   this tick's raw P&L reading (account MTM, or one position's
+           unrealized P&L — caller decides the scope).
+    arm_rs/gap_rs/confirm_secs: this scope's config.
+    now_ts: caller's own time.time() (or equivalent) — testable, no hidden
+           clock dependency.
+    mtm_unreliable: True if this tick's price data is incomplete/missing —
+           freezes the peak AND the breach timer (never advances toward
+           firing on data known to be incomplete); state["prev_mtm"] is also
+           NOT updated on an unreliable tick, so the confirmed-peak's 2-
+           reading window isn't corrupted by a bad reading either.
+
+    Mutates state in place. Returns (state, changed) — changed=True if the
+    caller should persist state to disk this tick (avoids a write every
+    single cycle when nothing moved)."""
+    changed = False
+    confirmed = mtm if state.get("prev_mtm") is None else min(state["prev_mtm"], mtm)
+    if not mtm_unreliable and confirmed > state.get("peak", 0.0):
+        state["peak"] = round(confirmed, 2)
+        changed = True
+    if not state.get("armed") and state.get("peak", 0.0) >= arm_rs:
+        state["armed"] = True
+        changed = True
+    if state.get("armed"):
+        new_floor = round(state["peak"] - gap_rs, 2)
+        if state.get("floor") is None or new_floor > state["floor"]:
+            state["floor"] = new_floor
+            changed = True
+        if mtm_unreliable:
+            pass
+        elif mtm < state["floor"]:
+            if state.get("breach_since") is None:
+                state["breach_since"] = now_ts
+                changed = True
+            elif now_ts - state["breach_since"] >= confirm_secs:
+                state["fired"] = True
+                changed = True
+        else:
+            if state.get("breach_since") is not None:
+                state["breach_since"] = None
+                changed = True
+    if not mtm_unreliable:
+        state["prev_mtm"] = mtm
+    return state, changed
+
+
 # ── Live broker balance (cash + collateral) — single cached source, shared by
 # the dashboard's header/RMS-tab display AND the live daily-loss cap below, so
 # there's exactly one funds() call per broker per TTL window, not one per caller.

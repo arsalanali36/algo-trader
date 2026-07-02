@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-07-02 — Per-Instrument Trailing Lock redesigned to match KILL-ALL's arm+gap+confirm pattern; shared state machine extracted into risk_gate.py
+**Status:** DONE (deployed, algo-dashboard + algo-monitor restarted — 0 open positions confirmed; hit + fixed a live UnboundLocalError mid-deploy, see TRAP #82)
+**Kya:** User's 4-point request on Section 3 of the Risk tab, clarified via a short back-and-forth (user was confused between account-level vs per-instrument semantics):
+1. Renamed "Account-Level Trailing Lock" → "Per-Instrument Trailing Lock" — removed the Aggregate/Total-Portfolio mode entirely (that concept now lives solely in the KILL-ALL Profit Floor, Section 4).
+2. Added the missing "Arm ₹ (base)" concept the user was asking about — per-instrument now arms only after ITS OWN unrealized P&L first crosses an arm threshold, same convention as the account-level system.
+3. Removed the "Multi trade — % of peak" field.
+4. Both systems (account-level KILL-FLOOR + per-instrument) now share the exact same design: Enabled toggle + Arm ₹ + Gap ₹ + Confirm sec, confirmed via AskUserQuestion (confirm-timer=yes, entry-block scope=this-position-only per TRAP #77, Enabled=explicit dropdown).
+**Layer:** strategy / execution / ui / config
+**Files:**
+- `risk_gate.py` — new `per_instrument_lock_config()` + shared `advance_trailing_lock(state, mtm, arm_rs, gap_rs, confirm_secs, now_ts, mtm_unreliable)` pure state-machine function (arm/peak/floor/breach-confirm/fire), used by BOTH the account-level kill-floor and the new per-instrument lock — extracted specifically so the two can't independently drift the way TRAP #77 found.
+- `trader_dashboard.py` — Kill-Floor block refactored to call the shared function (was inline-duplicated); per-instrument block fully rewritten from the old flat-₹/%-of-peak design (`_pos_peaks`, `_trail_rs`, `_trail_pct`, `_lock_mode`) to per-position `advance_trailing_lock()` state stored in `_pos_lock_state` (disk-persisted to `data/pos_lock_state.json`, replacing `pos_peaks.json`); new `/api/per-instrument-lock-status` endpoint (mirrors `/api/kill-floor-status`); `/api/peak-pnl-history`'s dashed floor-line now sources from the Kill-Floor's own `gap_rs` instead of the removed aggregate-lock keys.
+- `templates/index.html` — Section 3 HTML rebuilt to match Section 4's exact field layout (Enabled/Arm/Gap/Confirm); new `per-instrument-live` status box + `perInstrumentLockStatusPoll()` JS (mirrors `killfloor-live`/`killFloorStatusPoll()`); dead `updateTrailingLockTip()` + its now-orphaned HTML removed; `saveRiskConfig()`/load wiring switched to the new `per_instrument_lock_*` config keys.
+**Kyun:** User's own words: "KILL-ALL Profit Floor me jaise aap ne base amt diya ki base ho, gap from peak itene amt se ho to nikal jaye waise hi do ban jayenge eak account level pe aur eak trade level pe" — wanted one proven design (the KILL-FLOOR's arm+gap+confirm+2-reading-peak anti-misfire pattern) applied at BOTH scopes, not two different designs.
+**Depends on:** TRAP #77 (per-instrument must not write the account-wide entry-block flag), the KILL-ALL feature note (2026-07-02) for the underlying state-machine design this reuses.
+
+---
+
 ## 2026-07-02 — Notes UI reorganized, note-preview modal redesigned, Exit Reason robustified + documented, Cumulative column + sort-arrow cleanup
 **Status:** DONE (deployed, algo-dashboard + algo-monitor restarted — 0 open positions confirmed, both times, including a re-deploy after a silent scp under-write on the first attempt matching LESSONS.md TRAP #27/#69)
 **Kya:** User's Priority-2-followup list, all items done in one pass:

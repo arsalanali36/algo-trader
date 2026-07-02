@@ -1324,29 +1324,23 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
             </div></td>
           </tr>
           <tr>
-            <td class="param-info"><span>3️⃣ Account-Level Trailing Lock 🔒</span>
-              <span class="wavy-subtext">Aaj ka total P&amp;L (realized+unrealized) apne peak se neeche aaye → saari
-                positions auto-squareoff. Peak ≥ ₹1 tabhi active. 1 position open → Fixed ₹, 2+ open → % of peak.
-                Blank = off.</span></td>
-            <td class="param-inputs">
-              <div class="inputs-grid">
-                <div class="inputs-row"><label>Trailing Mode</label>
-                  <select id="risk-trailing-lock-mode">
-                    <option value="aggregate">Aggregate (Total Portfolio)</option>
-                    <option value="per_instrument">Per-Instrument (Individual)</option>
-                  </select></div>
-                <div class="inputs-row"><label>Single trade — Fixed ₹</label>
-                  <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000"/></div>
-                <div class="inputs-row"><label>Multi trade — % of peak</label>
-                  <input id="risk-trailing-lock-pct" type="number" step="1" min="1" max="99" placeholder="e.g. 30"
-                         oninput="updateTrailingLockTip()"/></div>
-              </div>
-              <div id="trailing-lock-tip" style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.8;display:none">
-                <span style="color:#d29922">% of peak examples:</span><br>
-                <span id="tlp-ex1"></span><br><span id="tlp-ex2"></span><br><span id="tlp-ex3"></span>
-              </div>
-              <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
-            </td>
+            <td class="param-info" style="border-left:3px solid #f0883e"><span>3️⃣ Per-Instrument Trailing Lock 🔒</span>
+              <span class="wavy-subtext">Har open position ka apna alag arm+gap+confirm floor — ek position ka profit
+                uske peak se Gap ₹ neeche aaye (Arm ₹ cross karne ke baad) aur Confirm sec lagatar wahi rahe → sirf
+                WAHI position squareoff, baaki sab chalte rehte hain. Same design jaisa KILL-ALL (4️⃣), sirf scope
+                account ki jagah ek position tak.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Enabled</label>
+                <select id="risk-per-instrument-enabled" style="border-color:#f0883e">
+                  <option value="false">OFF</option><option value="true">ON</option>
+                </select></div>
+              <div class="inputs-row"><label>Arm ₹ (base)</label>
+                <input id="risk-per-instrument-arm" type="number" step="100" placeholder="500"/></div>
+              <div class="inputs-row"><label>Gap ₹ (from peak)</label>
+                <input id="risk-per-instrument-gap" type="number" step="100" placeholder="1500"/></div>
+              <div class="inputs-row"><label>Confirm sec</label>
+                <input id="risk-per-instrument-confirm" type="number" step="5" placeholder="60"/></div>
+            </div></td>
           </tr>
           <tr>
             <td class="param-info" style="border-left:3px solid #f85149"><span>4️⃣ 🔒 KILL-ALL Profit Floor</span>
@@ -1507,6 +1501,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
                  <span id="kf-status" style="font-size:14px;font-weight:600">—</span></div>
           </div>
         </div>
+        <div id="per-instrument-live" style="margin-top:14px;display:none;background:#0d1117;border:1px solid rgba(240,136,62,.2);border-radius:8px;padding:12px 16px">
+          <div style="font-size:12px;font-weight:600;color:#f0883e;margin-bottom:8px">🔒 PER-INSTRUMENT LIVE FLOORS</div>
+          <div id="pi-lock-rows" style="font-size:12px;color:#8b949e">No open position tracked yet.</div>
+        </div>
       </div>
 
       <!-- Rate Limit Room -->
@@ -1559,7 +1557,7 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           <tr><td class="param-info"><span>⚠️ RMS Max-Loss</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Din ka combined loss cap cross ho gaya (Max Loss Protection → 1️⃣ Strategy Day Cap) — poori strategy squareoff</td></tr>
           <tr><td class="param-info"><span>✅ RMS Profit Target</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Din ka combined profit target hit (🎯 Daily Profit Target) — poori strategy squareoff</td></tr>
           <tr><td class="param-info"><span>🔒 Kill-Floor</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Account-level KILL-ALL profit floor fired (4️⃣ card) — saari positions, poore din ke liye entries block</td></tr>
-          <tr><td class="param-info"><span>🔒 Trailing Lock</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Purana Account-Level Trailing Profit Lock (3️⃣ card, per-instrument mode) fire hua</td></tr>
+          <tr><td class="param-info"><span>🔒 Trailing Lock</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Per-Instrument Trailing Lock (3️⃣ card) fire hua — sirf yehi position squareoff, baaki entries block nahi hoti</td></tr>
           <tr><td class="param-info"><span>🚨 No-Price Emergency</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Position ka price 60+ cycles (~5 min) se kahin se nahi mil raha (feed+REST+cache sab fail) — emergency exit koshish</td></tr>
         </tbody></table>
 
@@ -2359,16 +2357,17 @@ async function renderRiskTab(){
   document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
   document.getElementById('risk-global-liqfilter').value = RISK_CFG.global.liquidity_filter === false ? 'false' : 'true';
-  document.getElementById('risk-trailing-lock').value = RISK_CFG.global.trailing_profit_lock_rs != null ? RISK_CFG.global.trailing_profit_lock_rs : '';
-  document.getElementById('risk-trailing-lock-pct').value = RISK_CFG.global.trailing_profit_lock_pct != null ? RISK_CFG.global.trailing_profit_lock_pct : '';
-  // Fixed by Antigravity AI.
   document.getElementById('risk-global-hedge-mode').value = RISK_CFG.global.hedge_enabled === false ? 'false' : 'true';
-  document.getElementById('risk-trailing-lock-mode').value = RISK_CFG.global.trailing_lock_mode || 'aggregate';
+  document.getElementById('risk-per-instrument-enabled').value = RISK_CFG.global.per_instrument_lock_enabled === true ? 'true' : 'false';
+  document.getElementById('risk-per-instrument-arm').value = RISK_CFG.global.per_instrument_lock_arm_rs != null ? RISK_CFG.global.per_instrument_lock_arm_rs : '';
+  document.getElementById('risk-per-instrument-gap').value = RISK_CFG.global.per_instrument_lock_gap_rs != null ? RISK_CFG.global.per_instrument_lock_gap_rs : '';
+  document.getElementById('risk-per-instrument-confirm').value = RISK_CFG.global.per_instrument_lock_confirm_secs != null ? RISK_CFG.global.per_instrument_lock_confirm_secs : '';
   document.getElementById('risk-killfloor-enabled').value = RISK_CFG.global.kill_floor_enabled === true ? 'true' : 'false';
   document.getElementById('risk-killfloor-arm').value = RISK_CFG.global.kill_floor_arm_rs != null ? RISK_CFG.global.kill_floor_arm_rs : '';
   document.getElementById('risk-killfloor-gap').value = RISK_CFG.global.kill_floor_gap_rs != null ? RISK_CFG.global.kill_floor_gap_rs : '';
   document.getElementById('risk-killfloor-confirm').value = RISK_CFG.global.kill_floor_confirm_secs != null ? RISK_CFG.global.kill_floor_confirm_secs : '';
   killFloorStatusPoll();
+  perInstrumentLockStatusPoll();
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -2601,21 +2600,6 @@ async function loadPeakGraph() {
   </svg>`;
 }
 
-function updateTrailingLockTip() {
-  const pct = parseFloat(document.getElementById('risk-trailing-lock-pct').value);
-  const tip = document.getElementById('trailing-lock-tip');
-  if (!pct || pct <= 0) { tip.style.display = 'none'; return; }
-  tip.style.display = 'block';
-  const examples = [5000, 20000, 50000];
-  const ids = ['tlp-ex1','tlp-ex2','tlp-ex3'];
-  examples.forEach((peak, i) => {
-    const lock = Math.round(peak * pct / 100);
-    const safe = peak - lock;
-    document.getElementById(ids[i]).innerHTML =
-      `Peak <b style="color:#3fb950">₹${peak.toLocaleString('en-IN')}</b> → ${pct}% = lock <b style="color:#f85149">₹${lock.toLocaleString('en-IN')}</b> → safe floor <b style="color:#58a6ff">₹${safe.toLocaleString('en-IN')}</b>`;
-  });
-}
-
 async function saveRiskConfig(){
   let cfg = {};
   try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch(e){}
@@ -2633,12 +2617,8 @@ async function saveRiskConfig(){
   const gHedgeStrikes = document.getElementById('risk-global-hedge-strikes').value;
   const gHedgePremium = document.getElementById('risk-global-hedge-premium').value;
   const gLiqFilter = document.getElementById('risk-global-liqfilter').value;
-  const gTrailingLock = document.getElementById('risk-trailing-lock').value;
-  const gTrailingLockPct = document.getElementById('risk-trailing-lock-pct').value;
   const gProfitTarget = document.getElementById('risk-global-profit-target').value;
-  // Fixed by Antigravity AI.
   const gHedgeEnabled = document.getElementById('risk-global-hedge-mode').value;
-  const gTrailingLockMode = document.getElementById('risk-trailing-lock-mode').value;
   const payload = {
     global: {
       default_broker: document.getElementById('default-broker-select').value || 'dhan',
@@ -2653,15 +2633,15 @@ async function saveRiskConfig(){
       hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
       liquidity_filter: gLiqFilter === 'true',
-      trailing_profit_lock_rs: gTrailingLock !== '' ? parseFloat(gTrailingLock) : null,
-      trailing_profit_lock_pct: gTrailingLockPct !== '' ? parseFloat(gTrailingLockPct) : null,
       profit_target_rs: gProfitTarget !== '' ? parseFloat(gProfitTarget) : null,
-      // Fixed by Antigravity AI.
       hedge_enabled: gHedgeEnabled === 'true',
-      trailing_lock_mode: gTrailingLockMode,
-      // KILL-FLOOR (2026-07-02) — /api/risk-config POST replaces _risk wholesale,
-      // so these MUST be in every save payload or saving any other risk setting
-      // would silently erase them.
+      // PER-INSTRUMENT LOCK + KILL-FLOOR (2026-07-02) — /api/risk-config POST
+      // replaces _risk wholesale, so these MUST be in every save payload or
+      // saving any other risk setting would silently erase them.
+      per_instrument_lock_enabled: document.getElementById('risk-per-instrument-enabled').value === 'true',
+      per_instrument_lock_arm_rs: document.getElementById('risk-per-instrument-arm').value !== '' ? parseFloat(document.getElementById('risk-per-instrument-arm').value) : null,
+      per_instrument_lock_gap_rs: document.getElementById('risk-per-instrument-gap').value !== '' ? parseFloat(document.getElementById('risk-per-instrument-gap').value) : null,
+      per_instrument_lock_confirm_secs: document.getElementById('risk-per-instrument-confirm').value !== '' ? parseFloat(document.getElementById('risk-per-instrument-confirm').value) : null,
       kill_floor_enabled: document.getElementById('risk-killfloor-enabled').value === 'true',
       kill_floor_arm_rs: document.getElementById('risk-killfloor-arm').value !== '' ? parseFloat(document.getElementById('risk-killfloor-arm').value) : null,
       kill_floor_gap_rs: document.getElementById('risk-killfloor-gap').value !== '' ? parseFloat(document.getElementById('risk-killfloor-gap').value) : null,
@@ -2745,6 +2725,39 @@ async function killFloorStatusPoll(){
   } catch(e) { /* dashboard reachable nahi — box jaisa hai waisa chhodo */ }
 }
 setInterval(() => { if (activeTab === 'risk') killFloorStatusPoll(); }, 5000);
+
+// ── Per-Instrument Trailing Lock live status (RMS tab) ──
+async function perInstrumentLockStatusPoll(){
+  const box = document.getElementById('per-instrument-live');
+  const rows = document.getElementById('pi-lock-rows');
+  if (!box || !rows) return;
+  try {
+    const r = await fetch('/api/per-instrument-lock-status');
+    const d = await r.json();
+    if (!d.config || !d.config.enabled) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    const positions = d.positions || [];
+    if (!positions.length) {
+      rows.innerHTML = 'No open position tracked yet.';
+      return;
+    }
+    rows.innerHTML = positions.map(p => {
+      let statusTxt, color;
+      if (p.fired) { statusTxt = '🔒 FIRED'; color = '#f85149'; }
+      else if (p.breaching) { statusTxt = '⏳ confirm timer chal raha'; color = '#d29922'; }
+      else if (p.armed) { statusTxt = '🟢 ARMED'; color = '#3fb950'; }
+      else { statusTxt = '⚪ waiting for arm'; color = '#8b949e'; }
+      const floorTxt = p.floor != null ? ('₹' + Math.round(p.floor).toLocaleString('en-IN')) : '—';
+      return `<div style="display:flex;gap:18px;align-items:baseline;padding:4px 0;border-bottom:1px solid #21262d">
+        <span style="font-weight:600;color:#e6edf3;min-width:110px">${p.sym}</span>
+        <span style="color:#8b949e">peak ₹${Math.round(p.peak||0).toLocaleString('en-IN')}</span>
+        <span style="color:#8b949e">floor ${floorTxt}</span>
+        <span style="color:${color};font-weight:600">${statusTxt}</span>
+      </div>`;
+    }).join('');
+  } catch(e) { /* dashboard reachable nahi — box jaisa hai waisa chhodo */ }
+}
+setInterval(() => { if (activeTab === 'risk') perInstrumentLockStatusPoll(); }, 5000);
 
 // ── WEBHOOK TAB (multi-strategy) ──
 let WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null, _whLtpTimer=null;
