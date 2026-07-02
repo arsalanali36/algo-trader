@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — RMS/Risk tab: Live Monitoring accordions moved INTO the sidebar (9 tabs total, no more bottom accordion block)
+**Status:** DONE (deployed, algo-dashboard restarted — algo-monitor untouched)
+**Kya:** User feedback on the v2 RMS layout — move Broker Balances/RMS Live Summary/Rate Limit Room/Per-Strategy Override out of the bottom collapsible accordion block and into the same sidebar as the 5 config tabs. Sidebar now has 2 header groups ("Global Settings" 5 tabs, "Live Monitoring" 4 tabs), all 9 as `settings-section` panels in one `folder-content` area — single consistent navigation pattern instead of two different UI patterns (tabs + accordion) on one screen. Dead-code cleanup in the same pass: `toggleAccordion()` JS function and 6 now-unused CSS rules (`.monitor-group`, `.monitor-title`, `.accordion-card` + its color variants, `.accordion-header*`, `.accordion-body`) removed — nothing referenced them anymore after the move. All ids (`broker-balances-content`, `rms-summary-content`, `killfloor-live`/`kf-floor`/`kf-peak`/`kf-status`, `rl-top-offenders`/`rl-events-body`, `risk-strategy-table`) unchanged, zero JS data-loading function changes.
+**Layer:** ui
+**Files:** templates/index.html
+**Kyun:** User: "Live Monitoring waale options ko bhi global setting ke andar daal dijiye" — wanted one unified sidebar, not tabs+accordion split.
+**Depends on:** same restart note as the earlier RMS v2 entry — Flask debug=False caches templates, algo-dashboard restart needed for template changes; algo-monitor/trading logic never touched, 0 open positions re-verified before this restart too.
+
+---
+
 ## 2026-07-02 — RMS/Risk tab v2 layout (sidebar settings + collapsible monitoring accordions)
 **Status:** DONE (deployed, algo-dashboard restarted — algo-monitor/trading logic untouched)
 **Kya:** User ne Gemini se `rms_mockup.html` banwaya tha (folder-sidebar + rms-table row layout + bottom collapsible "Live Monitoring" accordions). Real dashboard ke Risk tab (flat card stack, 9 separate cards) ko is design se replace kiya — har existing field ID (`risk-global-pct`, `risk-killfloor-*`, etc.), har JS function (`renderRiskTab`, `saveRiskConfig`, `runReconcile`, `killFloorStatusPoll`, etc.), har data endpoint bilkul same rakha — sirf visual structure badla. 5-tab sidebar (Max Loss Protection / Capital Allocation / Shadow-Live / Auto Hedge / Liquidity Filter) + bottom 4 accordions (Broker Balances, RMS Live Summary + Kill-Floor live status, Rate Limit Room, Per-Strategy Override). Naye CSS classes collision-check karke add kiye (`.btn` jaisi already-existing class ko bilkul touch nahi kiya — mockup ka apna `.btn` clash karta, isliye `.rms-btn*` naam diye). Har `<div>/<table>/<tr>/<td>/<select>/<span>` tag count balance-verified before deploy.

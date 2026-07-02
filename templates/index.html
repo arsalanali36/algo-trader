@@ -681,24 +681,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 .inputs-row input:focus, .inputs-row select:focus { border-color: #58a6ff; }
 .inputs-row select { width: 170px; text-align: left; }
 
-.monitor-group { background: rgba(31,111,235,.02); border: 1px dashed rgba(48,54,61,.7); border-radius: 12px; padding: 18px; margin-top: 8px; }
-.monitor-title { font-size: 11px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
-.accordion-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 10px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.15); transition: border-color .2s; }
-.accordion-card:last-child { margin-bottom: 0; }
-.accordion-card.blue-acc { border-left: 3px solid #1f6feb; }
-.accordion-card.green-acc { border-left: 3px solid #3fb950; }
-.accordion-card.orange-acc { border-left: 3px solid #d29922; }
-.accordion-card.purple-acc { border-left: 3px solid #8957e5; }
-.accordion-header { background: rgba(255,255,255,.005); padding: 13px 18px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: background-color .2s; }
-.accordion-header:hover { background: rgba(255,255,255,.02); }
-.accordion-header h2 { font-size: 13.5px; font-weight: 600; color: #e6edf3; margin: 0; display: flex; align-items: center; gap: 8px; }
-.accordion-header-right { display: flex; align-items: center; gap: 10px; }
-.accordion-header .arrow { font-size: 11px; color: #8b949e; transition: transform .2s ease; display: inline-block; }
-.accordion-card.open .accordion-header { border-bottom: 1px solid #30363d; }
-.accordion-card.open .accordion-header .arrow { transform: rotate(180deg); }
-.accordion-body { padding: 18px 20px; display: none; background: #0d1117; }
-.accordion-card.open .accordion-body { display: block; }
-
 .balance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 12px; }
 .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
 .mini-table th, .mini-table td { padding: 8px 10px; border-bottom: 1px solid #30363d; text-align: left; }
@@ -1284,6 +1266,11 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div class="folder-tab red-tab" onclick="switchSettingsTab('shadow-live-sec', this)"><span>🧪</span> Shadow-Live Limit</div>
       <div class="folder-tab green-tab" onclick="switchSettingsTab('auto-hedge-sec', this)"><span>🛡</span> Auto Hedge</div>
       <div class="folder-tab purple-tab" onclick="switchSettingsTab('liquidity-filter-sec', this)"><span>📊</span> Liquidity Filter</div>
+      <div class="folder-sidebar-header" style="margin-top:14px">Live Monitoring</div>
+      <div class="folder-tab blue-tab" onclick="switchSettingsTab('balances-sec', this)"><span>💰</span> Broker Balances</div>
+      <div class="folder-tab green-tab" onclick="switchSettingsTab('rms-summary-sec', this)"><span>📊</span> RMS Live Summary</div>
+      <div class="folder-tab" onclick="switchSettingsTab('rate-limit-sec', this)"><span>🚦</span> Rate Limit Room</div>
+      <div class="folder-tab purple-tab" onclick="switchSettingsTab('override-sec', this)"><span>⚙️</span> Per-Strategy Override</div>
     </div>
 
     <div class="folder-content">
@@ -1481,44 +1468,29 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         </tbody></table>
       </div>
 
-    </div>
-  </div>
-
-  <!-- ── Bottom collapsible monitoring accordions ── -->
-  <div class="monitor-group">
-    <div class="monitor-title">📊 Live Monitoring &amp; Reports Room</div>
-
-    <div class="accordion-card blue-acc open" id="acc-balances">
-      <div class="accordion-header" onclick="toggleAccordion('acc-balances')">
+      <!-- Broker Balances -->
+      <div class="settings-section" id="balances-sec">
         <h2>💰 Broker Balances &amp; Position Book</h2>
-        <div class="accordion-header-right"><span class="arrow">▼</span></div>
-      </div>
-      <div class="accordion-body">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        <div class="settings-section-subtitle">
           Live cash + collateral, dono brokers se. Total Margin (cash+collateral) isi se LIVE strategies ka
           "Global Max Loss %" cap calculate hota hai (⚠️ Max Loss Protection tab dekho).
         </div>
         <div id="broker-balances-content" class="balance-grid"></div>
       </div>
-    </div>
 
-    <div class="accordion-card green-acc open" id="acc-rms-summary">
-      <div class="accordion-header" onclick="toggleAccordion('acc-rms-summary')">
-        <h2>📊 RMS Live Summary</h2>
-        <div class="accordion-header-right">
-          <button class="rms-btn rms-btn-secondary" style="padding:3px 10px;font-size:10px"
-                  onclick="event.stopPropagation(); runReconcile()">🔍 Reconcile Funds</button>
-          <span class="arrow">▼</span>
+      <!-- RMS Live Summary -->
+      <div class="settings-section" id="rms-summary-sec">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+          <h2>📊 RMS Live Summary</h2>
+          <button class="rms-btn rms-btn-secondary" onclick="runReconcile()">🔍 Reconcile Funds</button>
         </div>
-      </div>
-      <div class="accordion-body">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        <div class="settings-section-subtitle">
           Capital used/available, open unrealized P&amp;L, max-loss cap ke kitne paas ho — ek nazar me. LTP feed na
           chal raha ho to unrealized P&amp;L "—" dikhega.
         </div>
         <div id="rms-summary-content" style="overflow-x:auto"><div style="color:#8b949e;font-size:12px;padding:6px">Loading…</div></div>
         <div style="margin-top:8px"><span id="rms-reconcile-result" style="font-size:11px;color:#8b949e"></span></div>
-        <div id="killfloor-live" style="margin-top:14px;display:none;background:#161b22;border:1px solid rgba(248,81,73,.2);border-radius:8px;padding:12px 16px">
+        <div id="killfloor-live" style="margin-top:14px;display:none;background:#0d1117;border:1px solid rgba(248,81,73,.2);border-radius:8px;padding:12px 16px">
           <div style="font-size:12px;font-weight:600;color:#f85149;margin-bottom:8px">🔒 KILL-ALL LIVE FLOOR</div>
           <div style="display:flex;gap:26px;align-items:baseline;flex-wrap:wrap">
             <div><span style="font-size:11px;color:#8b949e">FLOOR ABHI</span><br>
@@ -1530,41 +1502,33 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           </div>
         </div>
       </div>
-    </div>
 
-    <div class="accordion-card orange-acc" id="acc-rate-limit">
-      <div class="accordion-header" onclick="toggleAccordion('acc-rate-limit')">
+      <!-- Rate Limit Room -->
+      <div class="settings-section" id="rate-limit-sec">
         <h2>🚦 Rate Limit Room</h2>
-        <div class="accordion-header-right"><span class="arrow">▼</span></div>
-      </div>
-      <div class="accordion-body">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        <div class="settings-section-subtitle">
           Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)" aur "kya (throttle
           / 429)" tagged. Auto-refresh 5s.
         </div>
         <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-        <div style="max-height:260px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
+        <div style="max-height:320px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
           <table class="mini-table">
             <thead style="position:sticky;top:0"><tr><th>Time</th><th>Type</th><th>Priority</th><th>Strategy:Symbol</th><th>Wait</th></tr></thead>
             <tbody id="rl-events-body"></tbody>
           </table>
         </div>
       </div>
-    </div>
 
-    <div class="accordion-card purple-acc open" id="acc-override">
-      <div class="accordion-header" onclick="toggleAccordion('acc-override')">
+      <!-- Per-Strategy Override -->
+      <div class="settings-section" id="override-sec">
         <h2>⚙️ Per-Strategy Override</h2>
-        <div class="accordion-header-right"><span class="arrow">▼</span></div>
-      </div>
-      <div class="accordion-body">
-        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        <div class="settings-section-subtitle">
           Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
         </div>
         <div id="risk-strategy-table" style="overflow-x:auto"></div>
       </div>
-    </div>
 
+    </div>
   </div>
 </div>
 
@@ -2315,17 +2279,13 @@ async function saveDefaultBroker(){
   }
 }
 
-// ── RMS tab v2 layout helpers (2026-07-02) — sidebar section switch + bottom accordion toggle ──
+// ── RMS tab v2 layout helper (2026-07-02) — sidebar section switch (config + monitoring tabs, all in one sidebar) ──
 function switchSettingsTab(sectionId, el){
   document.querySelectorAll('#tab-risk .settings-section').forEach(s => s.classList.remove('active'));
   const sec = document.getElementById(sectionId);
   if (sec) sec.classList.add('active');
   document.querySelectorAll('#tab-risk .folder-tab').forEach(t => t.classList.remove('active'));
   if (el) el.classList.add('active');
-}
-function toggleAccordion(cardId){
-  const card = document.getElementById(cardId);
-  if (card) card.classList.toggle('open');
 }
 
 async function renderRiskTab(){
