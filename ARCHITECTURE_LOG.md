@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — Per-instrument trailing lock: account-wide entry-block flag removed + _pos_peaks disk persistence
+**Status:** DONE (deployed)
+**Kya:** (a) per_instrument mode me single position ka floor fire hone pe ab day-level trailing_lock_fired flag NAHI likha jata (wo flag webhook _do_entry se PURE account ki new entries block karta tha — per-instrument mode ka point hi khatam). User decision: option (a), koi block nahi — fired floor = closed resolved event. (b) _pos_peaks (per-position peak tracker) ab data/pos_peaks.json me persist hota hai (har cycle write, startup pe same-day restore, day-rollover pe clear) — mid-day dashboard restart pe trailing-lock memory zero hone ka gap band (TRAP #38 ka per-instrument equivalent).
+**Layer:** execution / ui
+**Files:** trader_dashboard.py
+**Kyun:** Worklist Priority 2 — live confirmed: ek instrument ka floor fire → poore account ki entries blocked, per-instrument mode chunne ki wajah hi defeat.
+**Depends on:** nothing
+
+---
+
 ## 2026-07-02 — TRAP #74: order-chase duplicate-order guard (terminal-status + cancel_ok gating)
 **Status:** DONE (user review + VPS deploy pending)
 **Kya:** smart_order chase loop — manual/external cancel ke baad duplicate order re-place hone ka path band; chase ka self-abort bug (apna hi cancel "REJECTED" samajh lena) fix; Dhan EXPIRED/PART_TRADED + Kite partial-fill statuses ab distinctly handled.

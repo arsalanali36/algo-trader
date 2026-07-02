@@ -3347,6 +3347,32 @@ try:
 except Exception as _e_init:
     print(f"[TRAILING-LOCK] Peak restore failed (ok, starting fresh): {_e_init}", flush=True)
 
+# Per-position peaks persist to disk (same pattern as peak_pnl_history.json) —
+# a mid-day dashboard restart must not wipe a position's trailing-lock memory
+# (TRAP #38's failure shape, per-instrument-mode equivalent). Keyed by
+# order_store row id, so entries survive restarts and never cross-contaminate.
+_POS_PEAKS_FILE = BASE_DIR / "data" / "pos_peaks.json"
+try:
+    if _POS_PEAKS_FILE.exists():
+        _pp_init = json.loads(_POS_PEAKS_FILE.read_text())
+        if _pp_init.get("day") == _peak_day_str and isinstance(_pp_init.get("peaks"), dict):
+            for _pk, _pv in _pp_init["peaks"].items():
+                try:
+                    _pos_peaks[int(_pk)] = float(_pv)
+                except (ValueError, TypeError):
+                    _pos_peaks[_pk] = float(_pv)
+            if _pos_peaks:
+                print(f"[TRAILING-LOCK] Restored {len(_pos_peaks)} per-position peak(s) after restart.", flush=True)
+except Exception as _e_pp:
+    print(f"[TRAILING-LOCK] pos_peaks restore failed (ok, starting fresh): {_e_pp}", flush=True)
+
+
+def _save_pos_peaks():
+    try:
+        _POS_PEAKS_FILE.write_text(json.dumps({"day": _peak_day_str, "peaks": _pos_peaks}))
+    except Exception:
+        pass
+
 
 def _trailing_lock_fired_today() -> bool:
     """Returns True if trailing squareoff already fired today — blocks new entries."""
@@ -3470,6 +3496,7 @@ def pos_monitor_loop():
                     _daily_peak_ever   = 0.0
                     _pos_peaks         = {}
                     _peak_day_str      = _today_str
+                    _save_pos_peaks()
                     print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor reset to ₹0.", flush=True)
 
                 # Update high watermark + record history for Stats graph (always)
@@ -3567,16 +3594,19 @@ def pos_monitor_loop():
                                         _closed_ids.add(_pid)
                                     except Exception as _te:
                                         print(f"[TRAILING-LOCK] [PER-POSITION] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
-                                    
-                                    # Write day-level flag so new entries are blocked (matches aggregate lock design)
-                                    try:
-                                        from datetime import datetime as _dtc
-                                        _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-                                        if not _flag.exists():
-                                            _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, per-position {_p.get('sym')} peak was ₹{_pos_peaks[_pid]:.0f}")
-                                            print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
-                                    except Exception as _fe:
-                                        print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
+                                    # NOTE (2026-07-02, user decision): per-instrument mode
+                                    # deliberately does NOT write the day-level
+                                    # trailing_lock_fired flag. That flag blocks ALL new
+                                    # entries account-wide (webhook _do_entry checks it) —
+                                    # correct for the aggregate lock, but it defeated the
+                                    # entire point of per-instrument mode: one position's
+                                    # floor firing is a closed, resolved event and must not
+                                    # stop other symbols/strategies from trading.
+                        # Prune peaks for positions no longer open, persist the rest —
+                        # restart mid-day must not reset trailing-lock memory to zero.
+                        _active_peak_ids = {_p.get("id") for _p in _active_pos}
+                        _pos_peaks = {k: v for k, v in _pos_peaks.items() if k in _active_peak_ids}
+                        _save_pos_peaks()
                     else:
                         # Aggregate Trailing Lock: original portfolio-level trailing lock
                         _n_pos = len(_active_pos)
