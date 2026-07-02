@@ -1881,3 +1881,49 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 **Also added:** `broker_sync.reconcile_if_due()` — an auto-triggered version of the existing "🧾 Reconcile vs Broker" button (own 180s cooldown, wired into `pos_monitor_loop`) — catches a manual entry+exit round-trip that both complete inside one 30s untracked-scan gap (untracked-scan only diffs CURRENT positions, so a trade that opens and closes within one gap never appears as "currently open" to be caught by that scan alone). Button stays fully available for on-demand use — this doesn't replace it.
 
 **Reusable lesson:** When translating an identifier between two systems that each have their own naming scheme, resist string-parsing/guessing in EITHER direction if either system exposes the underlying structured data (dates, numbers, enums) instead of just a formatted string — cross-match on the structured fields, which are unambiguous, rather than re-deriving a format from a string that might have edge cases (weekly vs monthly expiry codes, single-letter month encodings, etc.) neither side documents precisely. If a system's API gives you `{name, expiry_date, strike, type}` alongside a formatted `tradingsymbol`, use the structured fields for any cross-system matching — never parse the formatted string back apart.
+
+
+---
+
+## TRAP #80 — gating_status() never checked the account-level trailing-lock-fired flag for STRATEGIES — only webhook_executor honored it, found while building the kill-floor 🔴 (Fixed)
+
+**Symptom:** None live-observed — found by inspection while wiring the new KILL-ALL profit floor (2026-07-02), not by an incident. Could have meant: account-level trailing lock fires, squares everything off, writes the day-level `trailing_lock_fired_<date>.txt` flag — and a strategy process (range_trader/rsi_trader/universe_trader) takes a brand-new entry five seconds later anyway, because nothing in its own entry path ever checked that flag.
+
+**Root cause:** `webhook_executor._do_entry()` explicitly imports `trader_dashboard._trailing_lock_fired_today` and checks it before every entry (added when the aggregate trailing lock was first built). `risk_gate.gating_status()` — the consolidated "can this strategy enter right now?" check that every strategy's `strategy_safety.gate_entry()` call routes through — never had an equivalent check. The two entry paths (webhook vs strategy) independently reimplemented the same class of gate (this project's Critical Rule 6/8 exists specifically to prevent this kind of drift) and only one of them got this particular guard.
+
+**Fix:** New `risk_gate.kill_floor_fired_today()` (reads the same flag file webhook already checks) wired directly into `gating_status()`, right after the daily-loss-breach check — now every strategy's entry path blocks on this flag too, automatically, with zero per-strategy code changes needed (they all already call `gate_entry()` → `gating_status()`).
+
+**Permanent guard:** Any account-level "day is done" event (loss cap, profit target, trailing lock, kill-floor) must be checked from the ONE shared gate (`risk_gate.gating_status()`), not re-implemented per entry-path. If a new entry path is ever added that doesn't go through `gate_entry()`, it inherits this exact gap on day one — audit new entry paths against this specific flag as part of onboarding them.
+
+---
+
+## TRAP #81 — `pos_monitor_loop`'s outer catch-all `print()` was STILL missing `flush=True`, months after TRAP #56 diagnosed exactly this line as part of why that incident stayed silent 🔴 (Fixed)
+
+**Symptom:** None new — TRAP #56 (2026-07-01) already named this exact line (`print("Pos monitor error:", e)`, the loop's top-level exception handler) as a factor in why an earlier `UnboundLocalError` sat invisible for minutes on a systemd service with block-buffered stdout. Re-reading the code while adding the kill-floor (2026-07-02) found the line itself had never actually been changed — TRAP #56's fix addressed the deeper `datetime` import bugs that were the crash's ROOT cause, but the visibility gap that let it stay silent (this exact print statement) was diagnosed, written up, and then never patched.
+
+**Root cause:** A "why did we not notice this" investigation correctly named a contributing factor in its written analysis, but the fix commit only touched the bugs that were CAUSING the crash, not the logging gap that was hiding it. Nothing cross-checked the LESSONS.md writeup against the actual diff to confirm every named factor got a line changed.
+
+**Fix:** `flush=True` added to that exact `print()` call, with a comment naming TRAP #56 directly so a future reader doesn't wonder why a one-keyword change gets a comment.
+
+**Permanent guard:** When a bug writeup names MULTIPLE contributing factors (root cause + why-it-stayed-silent + any-other-compounding-issue), verify the fix commit actually touches EVERY factor named, not just the one that stops the crash from happening. A "silent failure" bug is only fully closed when BOTH the trigger and the visibility gap are fixed — fixing only the trigger means the exact same silent-failure shape is one new bug away from recurring, undetected, again.
+
+**Fast-detect:** `grep -n "except Exception as e:" -A 2 trader_dashboard.py | grep "print(" | grep -v "flush=True"` — any bare `except`-then-`print` without `flush=True` in a long-lived systemd process is a candidate.
+
+---
+
+## Feature note — KILL-ALL account-level profit floor (2026-07-02, user-designed, simulation-verified before any live fire-test)
+
+**Context:** User's own words after the earlier per-instrument trailing-lock misfire history: "is baar jab hum banayenge to aisi dikkat se bachne ke liye kya karenge" (what will we do differently this time to avoid the same problem) — an explicit ask for a proactive design conversation before any code, not just a bug-fix-after-the-fact.
+
+**Design (locked via a 2-round AskUserQuestion clarification, calibrated against the user's OWN real trading day — 2026-07-02: account MTM peaked at ₹5,193, closed at ₹1,937, a ₹3,256 giveback):**
+- One account-level system, not two — REPLACES the old "aggregate" trailing-lock branch outright (user's explicit call: same underlying flag/mechanism as the pre-existing daily-loss-cap `max_loss_rs`, upgraded UI, not a second parallel system racing it).
+- `arm_rs` (₹500 default) — MTM must cross this once before the floor arms at all; below it, only the existing loss-cap protects.
+- `gap_rs` (₹1,500 default) — floor = confirmed peak − gap. The exact gap size was picked by table-walking today's REAL trade sequence at 4 candidate gaps (₹0/500/1500/2000) and showing the user which ones would have fired prematurely (during normal multi-position flutter, before the real peak was ever reached) vs which protected more of the real ₹5,193 peak — a concrete, data-grounded choice, not a guess.
+- ₹1-fine ratchet, monotonic (never decreases) — the "clean stepped counter" idea from the initial ask turned out to be purely cosmetic once the REAL misfire cause was identified (see below); the underlying lock stays continuous/fine-grained.
+- **The actual misfire root cause, once traced through:** not the granularity of the ratchet (₹1 vs ₹100 makes no difference to false-fires) — it was firing on a SINGLE tick's dip with no confirmation. Fixed with two independent anti-whipsaw mechanisms: (1) a `confirm_secs` (60s default) debounce — MTM must stay below the floor for that many CONSECUTIVE seconds before firing, not one bad reading; (2) the peak itself only advances on a "confirmed" value (`min` of the current and previous reading) — a single spike-high tick can never inflate the peak that the floor is computed from either.
+- Fire → every leg through the existing `_pre_exit_guard()` (TRAP #75's shared helper — webhook-claim + fresh flat-check), no-price legs queued via the existing `_pending_group_close` (TRAP #74-worklist P4), day-flag write now closes TRAP #80 (blocks every strategy, not just webhook), alert-banner entry (TRAP #79's UI).
+- Bad-data handling: if ANY open leg's MTM contribution can't be priced this cycle, the WHOLE cycle is marked unreliable — the floor still ratchets from its last good state but never advances toward firing (and never fires) on data known to be incomplete. Prevents a feed hiccup on one leg from triggering a kill based on an understated total.
+
+**Verification before ANY live exposure:** the exact state-machine transitions (not a mockup — the literal same branch structure as the deployed code) were re-implemented standalone and run against 5 scenarios: today's real rise/fall shape (fires ~₹1,263 better than the actual day did), a single-tick spike (peak unaffected), a whipsaw shorter than the confirm window (no fire), 20 consecutive bad-data cycles (no fire), and a dip-then-partial-recover (floor never drops). All 5 passed before the feature was deployed with `enabled=false` — user will do a live paper fire-test after market close before ever turning it on with real capital.
+
+**Reusable lesson:** When a past feature "confused" users or misfired, the instinct is often to change the DISPLAY (round the numbers, add steps) — but walk the actual failure through to its root before designing the fix. Here the granularity (₹1 vs ₹100) was a red herring; the real fix was temporal (a confirm window) and structural (confirmed-peak, never a raw tick). A user's own proposed fix (finer/coarser increments) is worth taking seriously as a signal of WHERE the pain is, but verify the actual mechanism before building exactly what they described — the right fix here ended up being a different axis (time) than what was first proposed (granularity).
