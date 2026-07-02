@@ -1029,6 +1029,10 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           onclick="reconcileManualTrades(this)"
           title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾 Reconcile vs Broker</button>
         <span id="reconcile-manual-result" style="font-size:11px;color:#8b949e"></span>
+        <label style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none; margin-left:4px">
+          <input id="global-notes-toggle-2" type="checkbox" onchange="toggleAllNotes(this.checked)" style="accent-color:#1f6feb; width:13px; height:13px; cursor:pointer; margin:0;">
+          Show Notes
+        </label>
         <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️ Columns</button>
         <button id="ord-pdf-btn" class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="exportCompletedPdf(this)"
           title="Completed Trades ko PDF report (table + TOTAL) mein download karo">📄 Export PDF</button>
@@ -1271,6 +1275,8 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div class="folder-tab green-tab" onclick="switchSettingsTab('rms-summary-sec', this)"><span>📊</span> RMS Live Summary</div>
       <div class="folder-tab" onclick="switchSettingsTab('rate-limit-sec', this)"><span>🚦</span> Rate Limit Room</div>
       <div class="folder-tab purple-tab" onclick="switchSettingsTab('override-sec', this)"><span>⚙️</span> Per-Strategy Override</div>
+      <div class="folder-sidebar-header" style="margin-top:14px">Reference</div>
+      <div class="folder-tab" onclick="switchSettingsTab('exit-reasons-sec', this)"><span>📖</span> Reasons For Exit</div>
     </div>
 
     <div class="folder-content">
@@ -1526,6 +1532,53 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
         </div>
         <div id="risk-strategy-table" style="overflow-x:auto"></div>
+      </div>
+
+      <!-- Reasons For Exit — documentation (2026-07-02). Keep in sync with
+           order_store.py's _EXIT_REASON_PREFIXES and index.html's
+           _exitReasonBadge() — this is the human-readable version of the
+           same list, grep-audited against every real extra_tags/tag/reason=
+           call site so it never silently drifts from what the app actually
+           produces. -->
+      <div class="settings-section" id="exit-reasons-sec">
+        <h2>📖 Reasons For Exit</h2>
+        <div class="settings-section-subtitle">
+          Completed Trades table ke "Exit Reason" column me ye sab values aa sakti hain — yahan sab
+          ek jagah, kis wajah se aata hai uske saath. <code>_GROUP</code> suffix wala matlab: ye leg
+          apne hedge-pair sibling ke saath auto-close hui, khud apne trigger se nahi.
+        </div>
+        <div id="exit-reasons-active-strats" style="font-size:11px;color:#8b949e;margin-bottom:14px"></div>
+
+        <div style="font-size:12px;font-weight:600;color:#e6edf3;margin-bottom:8px">🛡️ Har open position pe lagu — koi bhi strategy ho (pos_monitor_loop)</div>
+        <table class="rms-table" style="margin-bottom:18px"><tbody>
+          <tr><td class="param-info"><span>🛑 Stop-Loss</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Per-trade SL hit (⚠️ Max Loss Protection tab → 2️⃣ Per-Trade Default SL, ya position ke apne ⚙️ modal se override)</td></tr>
+          <tr><td class="param-info"><span>🎯 Target</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Per-trade Target hit (same modal, TP side)</td></tr>
+          <tr><td class="param-info"><span>⏰ 3:15 EOD</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Blanket 3:15 PM squareoff — har open OPTION position, koi exception nahi</td></tr>
+          <tr><td class="param-info"><span>📅 Expiry EOD (2:55)</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Aaj expiry day hai — normal 3:15 se 20 min pehle hi squareoff (last-hour chaos avoid)</td></tr>
+          <tr><td class="param-info"><span>📅 Expiry ITM</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Expiry day pe sold option ITM ho gaya — turant exit, 2:55 ka bhi wait nahi</td></tr>
+          <tr><td class="param-info"><span>⚠️ RMS Max-Loss</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Din ka combined loss cap cross ho gaya (Max Loss Protection → 1️⃣ Strategy Day Cap) — poori strategy squareoff</td></tr>
+          <tr><td class="param-info"><span>✅ RMS Profit Target</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Din ka combined profit target hit (🎯 Daily Profit Target) — poori strategy squareoff</td></tr>
+          <tr><td class="param-info"><span>🔒 Kill-Floor</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Account-level KILL-ALL profit floor fired (4️⃣ card) — saari positions, poore din ke liye entries block</td></tr>
+          <tr><td class="param-info"><span>🔒 Trailing Lock</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Purana Account-Level Trailing Profit Lock (3️⃣ card, per-instrument mode) fire hua</td></tr>
+          <tr><td class="param-info"><span>🚨 No-Price Emergency</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Position ka price 60+ cycles (~5 min) se kahin se nahi mil raha (feed+REST+cache sab fail) — emergency exit koshish</td></tr>
+        </tbody></table>
+
+        <div style="font-size:12px;font-weight:600;color:#58a6ff;margin-bottom:8px">📡 Webhook (TradingView-signal) strategies pe lagu</div>
+        <table class="rms-table" style="margin-bottom:18px"><tbody>
+          <tr><td class="param-info"><span>🎯 Target</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Webhook config ka apna trailing-target hit</td></tr>
+          <tr><td class="param-info"><span>📉 Trail SL</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Webhook ka apna premium-based trailing SL</td></tr>
+          <tr><td class="param-info"><span>📉 Index Trail SL</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Webhook ka index-level (underlying-based) trailing SL</td></tr>
+          <tr><td class="param-info"><span>🔄 Reversal</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Ulta signal aaya (LONG chalte hue SHORT signal) — pehle purana close, phir naya open</td></tr>
+          <tr><td class="param-info"><span>📡 TV Exit Signal</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">TradingView ne khud EXIT signal bheja</td></tr>
+          <tr><td class="param-info"><span>🚫 Max Trades/Day</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Webhook ka global daily trade-count cap hit — is se aage koi entry nahi</td></tr>
+          <tr><td class="param-info"><span>⏰ 3:15 EOD (Webhook)</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Webhook ka apna 3:15 squareoff path (pos_monitor ke 3:15 se alag code, same waqt)</td></tr>
+        </tbody></table>
+
+        <div style="font-size:12px;font-weight:600;color:#8b949e;margin-bottom:8px">✋ Manual / broker-detected</div>
+        <table class="rms-table"><tbody>
+          <tr><td class="param-info"><span>✋ Manual Close</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Dashboard ke "close position" button se khud close kiya</td></tr>
+          <tr><td class="param-info"><span>🌐 Closed at Broker</span></td><td class="param-inputs" style="font-size:11.5px;color:#8b949e">Zerodha/Dhan pe seedha (app ke bahar) manually close kiya — app ne 30s ke andar ghost-sync se pakad liya</td></tr>
+        </tbody></table>
       </div>
 
     </div>
@@ -2323,6 +2376,22 @@ async function renderRiskTab(){
   const reserved = new Set(['_risk', 'webhooks']);
   const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
 
+  // Reasons For Exit tab — which strategies are live right now, and whether
+  // webhook-specific exit reasons apply (only webhook_executor produces
+  // TARGET/TRAIL_SL/IDX_TRAIL/REVERSAL/TV_EXIT/GLOBAL_CAP/SQUAREOFF_315 — the
+  // other strategies never will, so flag that clearly instead of showing a
+  // static list that may not match what's actually running).
+  const activeStratEl = document.getElementById('exit-reasons-active-strats');
+  if (activeStratEl) {
+    const activeIds = stratIds.filter(id => cfg[id] && cfg[id].active === true);
+    const hasWebhook = activeIds.some(id => id.toLowerCase().includes('webhook'));
+    activeStratEl.innerHTML = activeIds.length
+      ? `<b style="color:#3fb950">🟢 Abhi live:</b> ${activeIds.join(', ')}`
+        + (hasWebhook ? ' — <span style="color:#58a6ff">webhook_v1 active hai, "Webhook" group ke reasons applicable</span>'
+                      : ' — <span style="color:#8b949e">koi webhook strategy active nahi, "Webhook" group abhi applicable nahi</span>')
+      : '<span style="color:#8b949e">⚪ Koi strategy abhi live nahi (sab paused/stopped)</span>';
+  }
+
   const tbl = document.getElementById('risk-strategy-table');
   if (!stratIds.length) {
     tbl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Koi strategy configured nahi hai abhi.</div>';
@@ -3097,9 +3166,7 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
     }
   }
 
-  let encNote = encodeURIComponent(note);
   let imgs = _imgTagsOf(t);
-  let encImgs = encodeURIComponent(JSON.stringify(imgs));
 
   const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
   let dispNote = '';
@@ -3187,11 +3254,17 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
       case 'run_down':
         val = min_pnl;
         break;
-      case 'note':
-        val = `<div style="display:flex; align-items:center; gap:6px;">
-                 <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-                 ${dispNote}
-               </div>`;
+      case 'cumulative':
+        // Only meaningful when rows are in a fixed chronological order — blank
+        // otherwise so it's never misread as a real running total under any
+        // other sort. renderCachedOrders() sets t._cumulative before calling
+        // this function, only when sorted by exit_time ascending + not grouped.
+        if (t._cumulative != null) {
+          const cc = t._cumulative >= 0 ? '#3fb950' : '#f85149';
+          val = `<span style="color:${cc}">${t._cumulative >= 0 ? '+' : ''}${Math.round(t._cumulative)}</span>`;
+        } else {
+          val = '<span style="color:#6e7681">—</span>';
+        }
         break;
       case 'chart':
         val = `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g,'')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
@@ -3201,7 +3274,7 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
           <div class="dropdown">
             <span class="dropdown-trigger" onclick="toggleDropdown(event, ${t.id})">⋮</span>
             <div id="dropdown-${t.id}" class="dropdown-content">
-              <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+              <a href="javascript:void(0)" onclick="openNoteModal(${t.id})">📝 Edit Note</a>
               <a href="javascript:void(0)" onclick="openTradeChart('${t.sym}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${(t.entry_date||ordDate)}',null,null,${_idx},null,null,'${(t.strategy||'').replace(/'/g,'')}')">📈 Chart</a>
               <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
             </div>
@@ -3209,7 +3282,7 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
         break;
     }
 
-    const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+    const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down','cumulative'].includes(c.id);
     const isCenter = ['entry_time','exit_time','duration','actions','chart'].includes(c.id);
     const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
 
@@ -3315,19 +3388,22 @@ function toggleAllNotes(show) {
     }
   });
   localStorage.setItem('ord_hidden_notes', JSON.stringify([...window._hiddenNotes]));
-  
-  const toggleInput = document.getElementById('global-notes-toggle');
-  if (toggleInput) {
-    toggleInput.checked = show;
-  }
+
+  // Two checkboxes share this one state (Calendar tab + Orders/P&L tab, next
+  // to Reconcile vs Broker per 2026-07-02) — keep both in sync regardless of
+  // which one was clicked.
+  ['global-notes-toggle', 'global-notes-toggle-2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = show;
+  });
 }
 
 function initGlobalNotesToggle() {
   const globalShow = localStorage.getItem('global_notes_show') === 'true';
-  const toggleInput = document.getElementById('global-notes-toggle');
-  if (toggleInput) {
-    toggleInput.checked = globalShow;
-  }
+  ['global-notes-toggle', 'global-notes-toggle-2'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.checked = globalShow;
+  });
 }
 
 function _sortData(arr, col, dir) {
@@ -3633,6 +3709,21 @@ function renderCachedOrders() {
     sortedCompleted.reverse(); // Default to original reverse order
   }
 
+  // Cumulative P&L column (2026-07-02) — only meaningful in a fixed
+  // chronological order, so it's computed ONLY when the table is sorted by
+  // exit time ascending (oldest → newest) and not grouped by symbol (grouping
+  // breaks the one-row-per-trade chronological sequence entirely). Any other
+  // sort state leaves t._cumulative undefined, which _completedRowHtml()
+  // renders as a blank "—" rather than a misleading running total.
+  const _cumEligible = window._completedSortCol === 'exit_time'
+                      && window._completedSortDir === 'asc'
+                      && !window._completedGroupBy;
+  sortedCompleted.forEach(t => { delete t._cumulative; });
+  if (_cumEligible) {
+    let _run = 0;
+    sortedCompleted.forEach(t => { _run += (t._net || 0); t._cumulative = _run; });
+  }
+
   const _chartList = sortedCompleted.map(t=>({sym:t.sym, side:t.entry, entry:t.entry_price, exit:t.exit_price, et:t.entry_time, xt:t.exit_time, qty:t.qty, date:t.entry_date||ordDate, strategy:t.strategy||''}));
   localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
 
@@ -3644,7 +3735,7 @@ function renderCachedOrders() {
     ch = '<table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">';
     
     activeCols.forEach(c => {
-      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down','cumulative'].includes(c.id);
       const isCenter = ['entry_time','exit_time','duration','actions'].includes(c.id);
       const alignStyle = isRight ? ';text-align:right' : (isCenter ? ';text-align:center' : '');
       
@@ -3653,13 +3744,14 @@ function renderCachedOrders() {
       if (c.id !== 'actions') {
         if (window._completedSortCol === c.id) {
           sortIndicator = window._completedSortDir === 'desc' ? ' ▼' : ' ▲';
-        } else {
-          sortIndicator = ' ↕';
         }
+        // else: no indicator at all — only the currently-sorted column shows a
+        // triangle, unsorted columns show just their name (2026-07-02 cleanup,
+        // was a static ↕ on every column regardless of sort state).
       } else {
         sortCursor = '';
       }
-      
+
       const onclickAttr = c.id !== 'actions' ? ` onclick="toggleSort('completed', '${c.id}')"` : '';
       ch += `<th style="padding:6px;font-weight:500;user-select:none;${sortCursor}${alignStyle}"${onclickAttr}>${c.l}${sortIndicator}</th>`;
     });
@@ -3698,7 +3790,7 @@ function renderCachedOrders() {
         ch += `<tr style="border-bottom:1px solid #21262d;background:#161b22;cursor:pointer" onclick="toggleCompletedGroupExpand('${symKeySafe}')">`;
         activeCols.forEach(c => {
           let val = '', colorStyle = '';
-          const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+          const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down','cumulative'].includes(c.id);
           const isCenter = ['entry_time','exit_time','duration','actions','chart'].includes(c.id);
           const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
           switch(c.id){
@@ -3771,7 +3863,7 @@ function renderCachedOrders() {
         }
       }
       
-      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down'].includes(c.id);
+      const isRight = ['entry_px','exit_px','points','gross','tax','net','ret_pct','run_up','run_down','cumulative'].includes(c.id);
       const isCenter = ['entry_time','exit_time','duration','actions'].includes(c.id);
       const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
       
@@ -3860,13 +3952,12 @@ function renderCachedOrders() {
         if (c.id !== 'actions' && c.id !== 'chart') {
           if (window._openSortCol === c.id) {
             sortIndicator = window._openSortDir === 'desc' ? ' ▼' : ' ▲';
-          } else {
-            sortIndicator = ' ↕';
           }
+          // else: no indicator — same 2026-07-02 cleanup as the completed-trades header.
         } else {
           sortCursor = '';
         }
-        
+
         const onclickAttr = (c.id !== 'actions' && c.id !== 'chart') ? ` onclick="toggleSort('open', '${c.id}')"` : '';
         tableHtml += `<th style="padding:6px;font-weight:500;user-select:none;${sortCursor}${alignStyle}"${onclickAttr}>${c.l}${sortIndicator}</th>`;
       });
@@ -3928,10 +4019,8 @@ function renderCachedOrders() {
         const _slArg = (_slPx === '' || _slPx == null) ? 'null' : _slPx;
         const _tpArg = (_tpPx === '' || _tpPx == null) ? 'null' : _tpPx;
 
-        let encNote = encodeURIComponent(note);
         let imgs = _imgTagsOf(t);
-        let encImgs = encodeURIComponent(JSON.stringify(imgs));
-        
+
         const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
         let dispNote = '';
         if (note || (imgs && imgs.length)) {
@@ -4017,12 +4106,6 @@ function renderCachedOrders() {
             case 'qty':
               val = qty;
               break;
-            case 'note':
-              val = `<div style="display:flex; align-items:center; gap:6px;">
-                       <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-                       ${dispNote}
-                     </div>`;
-              break;
             case 'chart':
               val = `<button onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
               break;
@@ -4040,7 +4123,7 @@ function renderCachedOrders() {
                     <div id="dropdown-${t.id}" class="dropdown-content">
                       <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date||ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')">📈 Chart</a>
                       <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val||sl_pct}', '${tp_val||tp_pct}', '${sl_type||'pct'}', '${tp_type||'pct'}')">⚙️ SL/Target</a>
-                      <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
+                      <a href="javascript:void(0)" onclick="openNoteModal(${t.id})">📝 Edit Note</a>
                       <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
                       <a href="javascript:void(0)" onclick="bookClose('${argEsc(t.sym)}','${t.entry}',${qty},${entry},'${t.mode||'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}')" style="color:#f85149">🗑 Remove from Book</a>
                     </div>
@@ -4173,7 +4256,6 @@ async function loadAll() {
   renderLogTab();
   renderConfigTable();
   loadTokenStatus();
-  if(activeTab === 'pnl') updatePnl();
   if(activeTab === 'log') updateLogs();
 }
 
@@ -4228,7 +4310,7 @@ function renderControlTab() {
 
 // P&L TAB
 function renderPnlTab() {
-  // Summary pills rendered dynamically in updatePnl — nothing to init here
+  // no-op — P&L rendering lives in ordersRender() (Orders & P&L tab)
 }
 
 // ── ORDER SOUND NOTIFICATION ──
@@ -4698,18 +4780,41 @@ function calcCharges(entryPx, exitPx, qty, entrySide) {
 
 // Friendly exit-reason badge (item F) — turns the raw exit-leg tag stored by
 // order_store (_exit_reason) into a short coloured label. '' / unknown → dash.
+// Full list of raw reasons + what each one means: 🚨 Risk tab → "Reasons For
+// Exit" card (2026-07-02). Keep this switch and that card's HTML in sync —
+// grep-audited against every real extra_tags/tag/reason= call site in
+// trader_dashboard.py / webhook_executor.py / broker_sync.py, matches
+// order_store.py's server-side _EXIT_REASON_PREFIXES 1:1.
 function _exitReasonBadge(raw) {
   if (!raw) return '<span style="color:#6e7681">—</span>';
   const r = String(raw);
   let label = r, color = '#8b949e';
-  if (r.startsWith('SL_HIT'))            { label = '🛑 Stop-Loss'; color = '#f85149'; }
-  else if (r.startsWith('TP_HIT') || r.startsWith('TARGET')) { label = '🎯 Target'; color = '#3fb950'; }
-  else if (r.startsWith('TRAIL_SL'))     { label = '📉 Trail SL'; color = '#f0883e'; }
-  else if (r.startsWith('EOD_315'))      { label = '⏰ 3:15 EOD'; color = '#d29922'; }
-  else if (r.startsWith('RMS_MAXLOSS'))  { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
-  else if (r.startsWith('REVERSAL'))     { label = '🔄 Reversal'; color = '#58a6ff'; }
-  else if (r.startsWith('MANUAL'))       { label = '✋ Manual'; color = '#8b949e'; }
-  else if (r.startsWith('TV_EXIT'))      { label = '📡 TV Exit'; color = '#58a6ff'; }
+  // Per-position triggers (pos_monitor_loop)
+  if (r.startsWith('SL_HIT'))                 { label = '🛑 Stop-Loss'; color = '#f85149'; }
+  else if (r.startsWith('TP_HIT'))             { label = '🎯 Target'; color = '#3fb950'; }
+  // Account/EOD/expiry-wide triggers (pos_monitor_loop)
+  else if (r.startsWith('EXPIRY_ITM_SQUAREOFF')) { label = '📅 Expiry ITM'; color = '#f85149'; }
+  else if (r.startsWith('EXPIRY_EOD_SQUAREOFF')) { label = '📅 Expiry EOD (2:55)'; color = '#d29922'; }
+  else if (r.startsWith('EOD_315_SQUAREOFF'))  { label = '⏰ 3:15 EOD'; color = '#d29922'; }
+  else if (r.startsWith('KILL_FLOOR'))         { label = '🔒 Kill-Floor'; color = '#f85149'; }
+  else if (r.startsWith('TRAILING_PROFIT_LOCK')) { label = '🔒 Trailing Lock'; color = '#f0883e'; }
+  else if (r.startsWith('RMS_MAXLOSS'))        { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
+  else if (r.startsWith('RMS_PROFIT_TARGET'))  { label = '✅ RMS Profit Target'; color = '#3fb950'; }
+  else if (r.startsWith('NO_PRICE_EMERGENCY_EXIT')) { label = '🚨 No-Price Emergency'; color = '#f85149'; }
+  // Webhook (TradingView-signal-driven strategies)
+  else if (r.startsWith('IDX_TRAIL'))          { label = '📉 Index Trail SL'; color = '#f0883e'; }
+  else if (r.startsWith('TRAIL_SL'))           { label = '📉 Trail SL'; color = '#f0883e'; }
+  else if (r.startsWith('TARGET'))             { label = '🎯 Target'; color = '#3fb950'; }
+  else if (r.startsWith('GLOBAL_CAP'))         { label = '🚫 Max Trades/Day'; color = '#8b949e'; }
+  else if (r.startsWith('SQUAREOFF_315'))      { label = '⏰ 3:15 EOD (Webhook)'; color = '#d29922'; }
+  else if (r.startsWith('REVERSAL'))           { label = '🔄 Reversal'; color = '#58a6ff'; }
+  else if (r.startsWith('TV_EXIT'))            { label = '📡 TV Exit Signal'; color = '#58a6ff'; }
+  // Manual / broker-detected
+  else if (r.startsWith('MANUAL_CLOSE'))       { label = '✋ Manual Close'; color = '#8b949e'; }
+  else if (r.startsWith('EXTERNALLY_CLOSED') || r.startsWith('MANUAL_EXIT_BROKER')) { label = '🌐 Closed at Broker'; color = '#8b949e'; }
+
+  const isGroup = /_GROUP$/.test(r);
+  if (isGroup) label += ' (hedge pair)';
   return `<span style="color:${color};font-size:11px;white-space:nowrap" title="${r.replace(/"/g,'&quot;')}">${label}</span>`;
 }
 
@@ -4733,7 +4838,7 @@ const COMPLETED_COLS_DEF = [
   {id:'ret_pct',    l:'% Ret',       a:'right',  on:true},
   {id:'run_up',     l:'Run-Up',      a:'right',  on:true},
   {id:'run_down',   l:'Run-Down',    a:'right',  on:true},
-  {id:'note',       l:'Note',        a:'left',   on:true},
+  {id:'cumulative', l:'Cumulative',  a:'right',  on:true},
   {id:'chart',      l:'Chart',       a:'center', on:true},
   {id:'actions',    l:'Actions',     a:'center', on:true,  fixed:true}
 ];
@@ -4753,7 +4858,6 @@ const OPEN_COLS_DEF = [
   {id:'run_up',     l:'Run-Up',      a:'right',  on:true},
   {id:'run_down',   l:'Run-Down',    a:'right',  on:true},
   {id:'qty',        l:'Qty',         a:'left',   on:true},
-  {id:'note',       l:'Note',        a:'left',   on:true},
   {id:'chart',      l:'Chart',       a:'center', on:true},
   {id:'actions',    l:'Actions',     a:'center', on:true,  fixed:true}
 ];
@@ -4800,7 +4904,14 @@ function _loadOrdColPrefs() {
     const o = localStorage.getItem('ord_open_cols');
     window._ordCompletedCols = c ? JSON.parse(c) : JSON.parse(JSON.stringify(COMPLETED_COLS_DEF));
     window._ordOpenCols = o ? JSON.parse(o) : JSON.parse(JSON.stringify(OPEN_COLS_DEF));
-    
+
+    // 2026-07-02: 'note' was removed as a standalone column (button now lives
+    // in the ⋮ actions menu, preview shows under Symbol automatically) — drop
+    // any stale 'note' entry a user's OLD saved localStorage prefs still have,
+    // so it doesn't linger as an empty dead column.
+    window._ordCompletedCols = window._ordCompletedCols.filter(x => x.id !== 'note');
+    window._ordOpenCols = window._ordOpenCols.filter(x => x.id !== 'note');
+
     COMPLETED_COLS_DEF.forEach(def => {
       if(!window._ordCompletedCols.find(x=>x.id===def.id)) {
         window._ordCompletedCols.push(JSON.parse(JSON.stringify(def)));
@@ -5017,264 +5128,6 @@ function _pnlTagChips(d){
   const t=_pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
   if(!t || typeof _ordTag!=='function') return '';
   return ' '+_ordTag(t.source,t.source)+_ordTag(t.mode,t.mode)+(t.strategy?_ordTag(t.strategy.split(' | ')[0],'name'):'');
-}
-
-async function updatePnl() {
-  if (activeTab !== 'pnl') return;
-
-  // Fetch all strategies
-  const keys = Object.keys(GLOBAL_CONFIG);
-  let allResults = {};
-  for(let key of keys) {
-    try { let r=await fetch(`/api/pnl?s=${key}`); allResults[key]=await r.json(); }
-    catch(e){ allResults[key]={trades:0,wins:0,losses:0,total_pnl:0,details:[],open:[]}; }
-  }
-
-  // tag overlay from trade DB (order_store) — match by sym|entry_time
-  _pnlTagMap = {};
-  try {
-    const _td = new Date().toISOString().slice(0,10);
-    const _o = await (await fetch('/api/orders?date='+_td)).json();
-    [].concat(_o.details||[], _o.open||[]).forEach(t=>{ _pnlTagMap[(t.sym||'')+'|'+(t.entry_time||'')]=t; });
-  } catch(e){}
-
-  // SUMMARY PILLS
-  let summaryEl = document.getElementById('pnl-summary-row');
-  if(summaryEl) {
-    let totalPnl=0,totalTrades=0,totalWins=0,totalLoss=0;
-    keys.forEach(k=>{let j=allResults[k];totalPnl+=j.total_pnl||0;totalTrades+=j.trades||0;totalWins+=j.wins||0;totalLoss+=j.losses||0;});
-    let sh = keys.map(key=>{
-      let j=allResults[key],color=getStratColor(key.split('_')[0]);
-      let pc=(j.total_pnl||0)>=0?'#3fb950':'#f85149';
-      return `<div style="background:#161b22;border:1px solid ${color}50;border-radius:8px;padding:10px 16px;min-width:150px">
-        <div style="color:${color};font-size:11px;font-weight:700;margin-bottom:6px">${key.toUpperCase()}</div>
-        <div style="font-size:20px;font-weight:700;color:${pc}">${(j.total_pnl||0)>=0?'+':''}${(j.total_pnl||0).toFixed(2)}</div>
-        <div style="color:#8b949e;font-size:11px;margin-top:4px">${j.trades||0} trades · ${j.wins||0}W ${j.losses||0}L</div>
-      </div>`;
-    }).join('');
-    if(keys.length>1){
-      let tc=totalPnl>=0?'#3fb950':'#f85149';
-      sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:150px">
-        <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL</div>
-        <div style="font-size:20px;font-weight:700;color:${tc}">${totalPnl>=0?'+':''}${totalPnl.toFixed(2)}</div>
-        <div style="color:#8b949e;font-size:11px;margin-top:4px">${totalTrades} trades · ${totalWins}W ${totalLoss}L</div>
-      </div>`;
-    }
-    _setHtml(summaryEl, sh);
-  }
-
-  // OPEN POSITIONS
-  let allOpen = [];
-  keys.forEach(k=>{(allResults[k].open||[]).forEach(p=>allOpen.push({...p,_strat:k}));});
-  let posEl = document.getElementById('pnl-positions-section');
-  // Fingerprint: only rebuild table when position LIST changes (not LTP)
-  const _posFingerprint = allOpen.map(d=>`${d.sym}|${d.entry}|${d.entry_price}|${d.qty}|${d._strat}`).join(',');
-  if(posEl) {
-    if(!allOpen.length) { _setHtml(posEl,''); posEl.dataset.fp=''; }
-    else if(posEl.dataset.fp === _posFingerprint) {
-      // Structure unchanged — skip rebuild, LTP already patching via _fetchPositionLtp
-    } else {
-      posEl.dataset.fp = _posFingerprint;
-      if(!window._ordOpenCols) _loadOrdColPrefs();
-      const ov = id => {
-        const c = window._ordOpenCols.find(x => x.id === id);
-        return c ? c.on : false;
-      };
-      let cols = window._ordOpenCols.filter(c=>c.on).map(c=>({l:c.l,a:c.a}));
-      
-      let grouped = {};
-      allOpen.forEach(d => {
-        let strat = (d._strat || 'MANUAL').toUpperCase();
-        if(!grouped[strat]) grouped[strat] = [];
-        grouped[strat].push(d);
-      });
-      
-      let finalHtml = `<div style="font-size:12px;color:#8b949e;text-transform:uppercase;letter-spacing:.5px;margin-bottom:14px">⏳ OPEN POSITIONS (${allOpen.length})</div>`;
-      
-      for(let strat in grouped) {
-        let items = grouped[strat];
-        let stratRows = items.map(d => {
-          let entry=d.entry_price||0, qty=d.qty||65;
-          let sc=d.entry==='BUY'?'#3fb950':'#f85149';
-          let closeSide=d.entry==='BUY'?'SELL':'BUY';
-          let cbc=d.entry==='BUY'?'#f85149':'#3fb950';
-          let modeNow=(window.qoGetMode&&window.qoGetMode())||'paper';
-          let bId=`xb_${d.sym.replace(/[^a-z0-9]/gi,'_')}`;
-          let stratLabel=(d._strat||'').toUpperCase();
-          let capital = entry * qty;
-
-          let note = '';
-          const t = _pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
-          if(t && t.tags) {
-            t.tags.forEach(tg => {
-              if (tg.startsWith('NOTE:')) note = tg.substring(5);
-            });
-          }
-          let encNote = encodeURIComponent(note);
-          let imgs = t ? _imgTagsOf(t) : [];
-          let encImgs = encodeURIComponent(JSON.stringify(imgs));
-           const isNoteHidden = (t ? window._hiddenNotes.has(t.id) : false) || localStorage.getItem('global_notes_show') !== 'true';
-          let dispNote = '';
-          if (t && (note || (imgs && imgs.length))) {
-            dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
-                     + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-                     + _noteThumbs(t.id, imgs)
-                     + `</div>`;
-          }
-
-          let row = '';
-          if(ov('symbol')) {
-            const isNoteColOn = ov('note');
-            row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}` + (isNoteColOn ? '' : dispNote));
-          }
-          if(ov('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
-          if(ov('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
-          if(ov('entry_time'))row += _pnlTD(d.entry_time||'—','#e6edf3','center');
-          if(ov('exit_time')) row += _pnlTD('<span style="color:#8b949e">open</span>','','center');
-          if(ov('capital'))   row += _pnlTD(capital?capital.toFixed(0):'—','#8b949e','right');
-          if(ov('entry_px'))  row += _pnlTD(entry?entry.toFixed(2):'—','#e6edf3','right');
-          if(ov('ltp'))       row += `<td style="padding:5px 10px;text-align:right;color:#e6edf3"><span class="ltp-cell" data-sym="${d.sym}" data-entry="${entry}" data-side="${d.entry}" data-qty="${qty}">⏳</span></td>`;
-          if(ov('points'))    row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="pts-cell" data-sym="${d.sym}">—</td>`;
-          
-          let c_tf = '', c_ind = '';
-          let tTag = _pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
-          if(tTag && tTag.tags) {
-            const cTag = tTag.tags.find(t=>t.startsWith('CHART:'));
-            if(cTag) { const parts=cTag.split(':'); c_tf=parts[1]||''; c_ind=parts.slice(2).join(':')||''; }
-          }
-          
-          if(ov('qty'))       row += _pnlTD(qty,'#8b949e','center');
-          if(ov('unrealized'))row += `<td style="padding:5px 10px;text-align:right;font-weight:700" class="unrl-cell" data-sym="${d.sym}">—</td>`;
-          if(ov('note')) {
-            if (t) {
-              row += _pnlTD(`<div style="display:flex; align-items:center; gap:6px;">
-                               <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-                               ${dispNote}
-                             </div>`, '', 'left');
-            } else {
-              row += _pnlTD('—', '', 'left');
-            }
-          }
-          if(ov('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${entry},0,'${d.entry_time||''}','',${qty},'','${c_tf}','${c_ind}',null,null,null,'${(d.strategy||'').replace(/'/g,'')}')" title="Premium chart (entry)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
-          if(ov('action'))    row += `<td style="padding:5px 10px;text-align:center">
-                   <button id="${bId}" onclick="closePosition('${d.sym}','${d.entry}',${d.qty||65},'${modeNow}','${bId}')"
-                     style="padding:4px 12px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap">
-                     ${closeSide} ✕
-                   </button></td>`;
-          return row;
-        });
-        
-        let stratName = strat;
-        let stratDesc = '';
-        if (strat.includes(' | ')) {
-          let parts = strat.split(' | ');
-          stratName = parts[0];
-          stratDesc = parts.slice(1).join(' | ');
-        }
-        
-        finalHtml += `
-        <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
-          <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
-          <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
-            <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-              <span>📂 ${stratName} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
-              ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
-            </div>
-            <button onclick="editStrategyLabel(this, event)" data-strat="${strat.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
-            <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
-          </summary>
-          <div style="border-top: 1px solid #30363d; overflow-x: auto;">
-            ${_pnlTable(cols, stratRows)}
-          </div>
-        </details>`;
-      }
-      
-      _setHtml(posEl, `<div class="card" style="border-color:#d29922; padding:18px;">${finalHtml}</div>`);
-    }
-  }
-
-  // COMPLETED TRADES
-  let ordEl = document.getElementById('pnl-orders-section');
-  if(!ordEl) return;
-  let allDetails=[];
-  keys.forEach(k=>{(allResults[k].details||[]).forEach(d=>allDetails.push({...d,_strat:k}));});
-  allDetails.sort((a,b)=>(b.entry_time||'').localeCompare(a.entry_time||''));
-  if(!allDetails.length){
-    _setHtml(ordEl,`<div style="color:#484f58;padding:16px;text-align:center;font-size:13px">Aaj koi completed trade nahi</div>`);
-    return;
-  }
-  if(!window._ordCompletedCols) _loadOrdColPrefs();
-  const cv = id => {
-    const c = window._ordCompletedCols.find(x => x.id === id);
-    return c ? c.on : false;
-  };
-  let oCols = window._ordCompletedCols.filter(c=>c.on).map(c=>({l:c.l,a:c.a}));
-  let oRows=allDetails.map(d=>{
-    let sc=d.entry==='BUY'?'#3fb950':'#f85149';
-    let ep=d.entry_price||0, xp=d.exit_price||0, qty=d.qty||0;
-    let gross = ep&&xp&&qty ? (d.entry==='BUY'?xp-ep:ep-xp)*qty : (d.pnl??0);
-    let tax   = ep&&xp&&qty ? calcCharges(ep, xp, qty, d.entry) : null;
-    let net   = tax!=null ? gross - tax : gross;
-    let capital = ep*qty;
-    let stratLabel=(d._strat||'').toUpperCase();
-
-    let tTag = _pnlTagMap[(d.sym||'')+'|'+(d.entry_time||'')];
-    let note = '';
-    if(tTag && tTag.tags) {
-      tTag.tags.forEach(tg => {
-        if(tg.startsWith('NOTE:')) note = tg.substring(5);
-      });
-    }
-    let encNote = encodeURIComponent(note);
-    let imgs = tTag ? _imgTagsOf(tTag) : [];
-    let encImgs = encodeURIComponent(JSON.stringify(imgs));
-    const isNoteHidden = (tTag ? window._hiddenNotes.has(tTag.id) : false) || localStorage.getItem('global_notes_show') !== 'true';
-    let dispNote = '';
-    if (tTag && (note || (imgs && imgs.length))) {
-      dispNote = `<div id="note-wrapper-${tTag.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
-               + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-               + _noteThumbs(tTag.id, imgs)
-               + `</div>`;
-    }
-
-    let row='';
-    if(cv('symbol')) {
-      const isNoteColOn = cv('note');
-      row += _pnlTD(`<b>${d.sym}</b>${_pnlTagChips(d)}` + (isNoteColOn ? '' : dispNote));
-    }
-    if(cv('strategy'))  row += _pnlTD(`<span style="color:#8b949e;font-size:11px">${stratLabel}</span>`,'','center');
-    if(cv('side'))      row += _pnlTD(`<span style="color:${sc};font-weight:700">${d.entry}</span>`,'','center');
-    if(cv('entry_time'))row += _pnlTD(d.entry_time||'—','#8b949e','center');
-    if(cv('entry_px'))  row += _pnlTD(ep?ep.toFixed(2):'—','','right');
-    if(cv('exit_time')) row += _pnlTD(d.exit_time||'—','#8b949e','center');
-    if(cv('exit_px'))   row += _pnlTD(xp?xp.toFixed(2):'—','','right');
-    if(cv('qty'))       row += _pnlTD(qty||'—','#8b949e','center');
-    if(cv('capital'))   row += _pnlTD(capital?capital.toFixed(0):'—','#8b949e','right');
-    // Extract CHART tag if present
-    let c_tf = '', c_ind = '';
-    if(d.tags) {
-      const cTag = d.tags.find(t=>t.startsWith('CHART:'));
-      if(cTag) { const parts=cTag.split(':'); c_tf=parts[1]||''; c_ind=parts.slice(2).join(':')||''; }
-    }
-    
-    if(cv('gross'))     row += _pnlTD(_fmt(gross),_pnlColor(gross),'right','font-weight:600');
-    if(cv('tax'))       row += _pnlTD(tax!=null?'−'+tax.toFixed(2):'—','#f85149','right');
-    if(cv('net'))       row += _pnlTD(_fmt(net),_pnlColor(net),'right','font-weight:700');
-    if(cv('note')) {
-      if (tTag) {
-        row += _pnlTD(`<div style="display:flex; align-items:center; gap:6px;">
-                         <button onclick="openNoteModal(${tTag.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-                         ${dispNote}
-                       </div>`, '', 'left');
-      } else {
-        row += _pnlTD('—', '', 'left');
-      }
-    }
-    if(cv('chart'))     row += _pnlTD(`<button onclick="openTradeChart('${(d.sym||'').replace(/'/g,'')}','${d.entry||''}',${ep},${xp},'${d.entry_time||''}','${d.exit_time||''}',${qty},'','${c_tf}','${c_ind}',null,null,null,'${(d.strategy||'').replace(/'/g,'')}')" title="Premium chart (entry/exit)" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`,'','center');
-    return row;
-  });
-  _setHtml(ordEl,_card(`✅ COMPLETED TRADES (${allDetails.length})`,'#3fb950',_pnlTable(oCols,oRows)));
-
 }
 
 function openTradeChart(sym, side, entry, exit, et, xt, qty, date, tf, ind, idx, sl, tp, strategy){
@@ -7207,7 +7060,6 @@ async function saveStrategyLabel() {
     });
     let j = await r.json();
     if (j.status === "success") {
-      updatePnl();
       ordersRender();
       flash("Strategy updated!", "#3fb950");
     } else {
@@ -8533,14 +8385,19 @@ pineLoadLatest();
 </div>
 
 <div id="edit-note-modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
-  <div style="background: #0d1117; width: 450px; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
-    <div style="padding: 16px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #161b22;">
-      <h3 style="margin: 0; font-size: 15px; color: #e6edf3;">📝 Edit Note / Observation</h3>
-      <span onclick="document.getElementById('edit-note-modal').style.display='none'" style="cursor: pointer; color: #8b949e; font-size: 16px;">✕</span>
+  <div style="background: #0d1117; width: 500px; max-height:90vh; border-radius: 12px; border: 1px solid #30363d; box-shadow: 0 8px 24px rgba(0,0,0,0.5); overflow: hidden; display: flex; flex-direction: column;">
+    <div style="padding: 14px 20px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #161b22;">
+      <h3 id="edit-note-title" style="margin: 0; font-size: 15px; color: #e6edf3;">📝 Note / Observation</h3>
+      <div style="display:flex; align-items:center; gap:10px">
+        <button onclick="noteModalNav(-1)" title="Previous trade" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:12px;padding:3px 9px;cursor:pointer">◀</button>
+        <button onclick="noteModalNav(1)" title="Next trade" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:12px;padding:3px 9px;cursor:pointer">▶</button>
+        <span onclick="document.getElementById('edit-note-modal').style.display='none'" style="cursor: pointer; color: #8b949e; font-size: 16px;">✕</span>
+      </div>
     </div>
-    <div style="padding: 20px; flex: 1; overflow-y: auto;">
+    <div id="edit-note-meta" style="padding:10px 20px;background:#0d1117;border-bottom:1px solid #21262d;font-size:11px"></div>
+    <div style="padding: 16px 20px; flex: 1; overflow-y: auto;">
       <input type="hidden" id="edit-note-id">
-      <textarea id="edit-note-text" rows="6" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical; font-family: inherit; box-sizing: border-box;" placeholder="Write your observations here..."></textarea>
+      <textarea id="edit-note-text" rows="5" style="width: 100%; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; resize: vertical; font-family: inherit; box-sizing: border-box;" placeholder="Write your observations here..."></textarea>
 
       <div id="edit-note-imgs" style="display:flex; flex-wrap:wrap; gap:8px; margin-top:12px;"></div>
 
@@ -8613,12 +8470,80 @@ async function saveSlTp() {
   }
 }
 
-function openNoteModal(id, note, imgs) {
+// Note modal (2026-07-02 redesign) — id-only lookup instead of passing
+// URL-encoded note/imgs through onclick (removes escaping fragility and lets
+// the modal show full trade metadata + navigate Prev/Next across trades).
+// Old 2- and 3-arg call sites still work — the extra args are just ignored.
+function _noteModalTradeById(id) {
+  const d = window._lastOrdersData || {};
+  const all = (d.details || []).concat(d.open || []);
+  return all.find(t => String(t.id) === String(id));
+}
+
+function _noteModalBuildNavList() {
+  const d = window._lastOrdersData || {};
+  const all = (d.details || []).concat(d.open || []);
+  // Chronological order (exit time if completed, else entry time) so Next/Prev
+  // moves through the day in a predictable sequence regardless of whatever
+  // sort the table itself currently has applied.
+  return all.slice().sort((a, b) => {
+    const ta = a.exit_time || a.entry_time || '';
+    const tb = b.exit_time || b.entry_time || '';
+    return ta < tb ? -1 : ta > tb ? 1 : 0;
+  }).map(t => t.id);
+}
+
+function _noteModalMetaHtml(t) {
+  if (!t) return '';
+  const isOpen = t.exit_price == null || t.exit_price === 0 && !t.exit_time;
+  const g = t._gross != null ? t._gross : (t.pnl || 0);
+  const n = t._net != null ? t._net : g;
+  const tx = t._tax != null ? t._tax : 0;
+  const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
+  const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
+  const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
+  const dur = t.exit_time ? _durFmt(t.entry_time, t.exit_time) : '—';
+  const item = (label, val, color) => `<div><div style="color:#6e7681;font-size:9.5px;text-transform:uppercase">${label}</div><div style="color:${color||'#adbac7'};font-weight:600;margin-top:1px">${val}</div></div>`;
+  return `<div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div style="font-size:14px;font-weight:700;color:#e6edf3">${t.sym || '—'}
+        <span style="font-size:10px;font-weight:600;color:${t.entry==='BUY'?'#3fb950':'#f85149'};margin-left:6px">${t.entry||''}</span></div>
+      ${isOpen ? '<span style="font-size:10px;color:#d29922;font-weight:600">⏳ OPEN</span>' : ''}
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px 12px">
+      ${item('P&L (Net)', (n>=0?'+':'')+Math.round(n), nc)}
+      ${item('Points', (pts>=0?'+':'')+pts.toFixed(2), ptsC)}
+      ${item('Duration', dur)}
+      ${item('Tax', '−'+Math.round(tx), '#f85149')}
+      ${item('Entry Time', t.entry_time || '—')}
+      ${item('Exit Time', t.exit_time || (isOpen ? 'running' : '—'))}
+      ${item('Qty', t.qty || '—')}
+      ${item('Entry Px', Number(t.entry_price||0).toFixed(2))}
+    </div>`;
+}
+
+function openNoteModal(id) {
+  const t = _noteModalTradeById(id);
+  const note = (t && (t.tags||[]).find(tg => tg.startsWith('NOTE:'))) ? t.tags.find(tg => tg.startsWith('NOTE:')).slice(5) : '';
+  const imgs = t ? _imgTagsOf(t) : [];
+
+  window._noteModalNavList = _noteModalBuildNavList();
+  window._noteModalNavIdx = window._noteModalNavList.findIndex(x => String(x) === String(id));
+
   document.getElementById('edit-note-id').value = id;
-  document.getElementById('edit-note-text').value = decodeURIComponent(note || '');
+  document.getElementById('edit-note-text').value = note;
   document.getElementById('edit-note-file').value = '';
-  _renderNoteImgs(id, imgs ? JSON.parse(decodeURIComponent(imgs)) : []);
+  document.getElementById('edit-note-meta').innerHTML = _noteModalMetaHtml(t);
+  _renderNoteImgs(id, imgs);
   document.getElementById('edit-note-modal').style.display = 'flex';
+}
+
+function noteModalNav(dir) {
+  const list = window._noteModalNavList || [];
+  if (!list.length) return;
+  let idx = (window._noteModalNavIdx == null ? 0 : window._noteModalNavIdx) + dir;
+  if (idx < 0) idx = list.length - 1;
+  if (idx >= list.length) idx = 0;
+  openNoteModal(list[idx]);   // rebuilds the nav list fresh, but idx position carries through findIndex
 }
 
 function _renderNoteImgs(id, imgs) {

@@ -186,11 +186,27 @@ def _tags(row):
         return []
 
 
-# Exit-leg reason tags that pos_monitor_loop records alongside "pos_monitor_exit"
-# (and webhook/manual paths may add) — surfaced on completed trades so the UI can
-# show WHY a trade exited (SL / target / EOD squareoff / RMS max-loss / trail).
-_EXIT_REASON_PREFIXES = ("SL_HIT", "TP_HIT", "EOD_315_SQUAREOFF", "RMS_MAXLOSS",
-                         "TRAIL_SL", "TARGET", "REVERSAL", "MANUAL_CLOSE", "TV_EXIT")
+# Exit-leg reason tags that pos_monitor_loop/webhook_executor/manual-close
+# record on the exit leg — surfaced on completed trades so the UI can show WHY
+# a trade exited. Expanded 2026-07-02 (grep-audited against every actual
+# extra_tags=[...]/tag=.../reason=... call site in trader_dashboard.py,
+# webhook_executor.py, broker_sync.py — was missing several real reasons that
+# had been silently falling through to "" this whole time, e.g. KILL_FLOOR).
+# A `_GROUP` suffix (hedge sibling auto-closed alongside its pair) still
+# matches its base prefix here via startswith — no separate entry needed.
+_EXIT_REASON_PREFIXES = (
+    # pos_monitor_loop — per-position triggers
+    "SL_HIT", "TP_HIT",
+    # pos_monitor_loop — account/EOD/expiry-wide triggers
+    "EOD_315_SQUAREOFF", "EXPIRY_EOD_SQUAREOFF", "EXPIRY_ITM_SQUAREOFF",
+    "RMS_MAXLOSS", "RMS_PROFIT_TARGET", "KILL_FLOOR", "TRAILING_PROFIT_LOCK",
+    "NO_PRICE_EMERGENCY_EXIT",
+    # webhook_executor — TradingView-signal-driven strategies
+    "TARGET", "TRAIL_SL", "IDX_TRAIL", "REVERSAL", "TV_EXIT",
+    "GLOBAL_CAP", "SQUAREOFF_315",
+    # manual / broker-detected
+    "MANUAL_CLOSE", "EXTERNALLY_CLOSED", "MANUAL_EXIT_BROKER",
+)
 
 
 def _exit_reason(row):
