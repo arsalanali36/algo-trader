@@ -1312,15 +1312,65 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
             <td class="param-inputs"><div class="inputs-grid">
               <div class="inputs-row"><label>Global Profit Target ₹</label>
                 <input id="risk-global-profit-target" type="number" step="1" placeholder="e.g. 5000 (blank=off)"/></div>
+              <div class="inputs-row"><label>Legacy Default SL ₹ (fallback)</label>
+                <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank=off)"/></div>
             </div></td>
           </tr>
           <tr>
-            <td class="param-info"><span>2️⃣ Per-Trade Default SL</span>
-              <span class="wavy-subtext">Har naye individual position ke khulte hi ye ₹ stop-loss automatically lag
-                jaata hai — sirf wahi ek leg squareoff hoti hai, baaki strategy/instrument pe asar nahi.</span></td>
+            <td class="param-info"><span>2️⃣ Per-Trade Default SL & Target</span>
+              <span class="wavy-subtext">Har naye individual position ke khulte hi ye default Stop-Loss aur Target (TP) automatically lag jaata hai — sirf wahi ek leg squareoff hoti hai, baaki strategy/instrument pe asar nahi.</span></td>
             <td class="param-inputs"><div class="inputs-grid">
-              <div class="inputs-row"><label>Global Default SL ₹</label>
-                <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank=off)"/></div>
+              <div class="inputs-row" style="display: flex; gap: 8px;">
+                <div style="flex:1;">
+                  <label>Default SL Type</label>
+                  <select id="risk-global-default-sl-type" onchange="toggleGlobalTrailingInfo()" style="width:100%; padding: 5px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3;">
+                    <option value="">(None)</option>
+                    <option value="pct">%</option>
+                    <option value="pt">Points (premium)</option>
+                    <option value="trailing_pt">Trailing Points (premium)</option>
+                    <option value="rs">Amount (₹)</option>
+                    <option value="premium">Premium level</option>
+                    <option value="index">Index/Underlying level</option>
+                  </select>
+                </div>
+                <div style="flex:1;">
+                  <label>Default SL Value</label>
+                  <input id="risk-global-default-sl-val" type="text" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 5px;" placeholder="e.g. 10 or 10:1"/>
+                </div>
+              </div>
+              <div class="inputs-row" style="display: flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="risk-global-default-sl-candle" style="cursor:pointer; width:14px; height:14px; margin: 0;">
+                <label for="risk-global-default-sl-candle" style="font-size:11.5px; color:#c9d1d9; cursor:pointer; user-select:none; margin: 0;">Trigger on Candle Close only (🕯️)</label>
+              </div>
+              <div id="global-sl-trailing-info" style="display:none; font-size:10.5px; color:#d29922; background:#ff980010; border:1px solid #ff980030; padding:10px; border-radius:6px; margin: 4px 0; line-height:1.4;">
+                ⚠️ <b>Minimum Trailing Points (premium):</b><br/>
+                • Premium ₹0 to ₹50: min step ₹1<br/>
+                • Premium ₹50 to ₹100: min step ₹2.50<br/>
+                • Premium ₹100 to ₹500: min step ₹5<br/>
+                • Premium Above ₹500: min step ₹10
+              </div>
+
+              <div class="inputs-row" style="display: flex; gap: 8px; margin-top: 4px;">
+                <div style="flex:1;">
+                  <label>Default Target Type</label>
+                  <select id="risk-global-default-tp-type" style="width:100%; padding: 5px; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3;">
+                    <option value="">(None)</option>
+                    <option value="pct">%</option>
+                    <option value="pt">Points (premium)</option>
+                    <option value="rs">Amount (₹)</option>
+                    <option value="premium">Premium level</option>
+                    <option value="index">Index/Underlying level</option>
+                  </select>
+                </div>
+                <div style="flex:1;">
+                  <label>Default Target Value</label>
+                  <input id="risk-global-default-tp-val" type="text" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 5px;" placeholder="e.g. 20"/>
+                </div>
+              </div>
+              <div class="inputs-row" style="display: flex; align-items: center; gap: 6px;">
+                <input type="checkbox" id="risk-global-default-tp-candle" style="cursor:pointer; width:14px; height:14px; margin: 0;">
+                <label for="risk-global-default-tp-candle" style="font-size:11.5px; color:#c9d1d9; cursor:pointer; user-select:none; margin: 0;">Trigger on Candle Close only (🕯️)</label>
+              </div>
             </div></td>
           </tr>
           <tr>
@@ -2353,6 +2403,15 @@ async function renderRiskTab(){
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
   document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
+  // --- Added by Antigravity AI: Load Default SL/Target ---
+  document.getElementById('risk-global-default-sl-type').value = RISK_CFG.global.default_sl_type || '';
+  document.getElementById('risk-global-default-sl-val').value = RISK_CFG.global.default_sl_val ?? '';
+  document.getElementById('risk-global-default-sl-candle').checked = RISK_CFG.global.default_sl_candle_close === true;
+  document.getElementById('risk-global-default-tp-type').value = RISK_CFG.global.default_tp_type || '';
+  document.getElementById('risk-global-default-tp-val').value = RISK_CFG.global.default_tp_val ?? '';
+  document.getElementById('risk-global-default-tp-candle').checked = RISK_CFG.global.default_tp_candle_close === true;
+  toggleGlobalTrailingInfo();
+  // --- End Antigravity AI addition ---
   document.getElementById('risk-global-profit-target').value = RISK_CFG.global.profit_target_rs ?? '';
   document.getElementById('risk-global-hedge-strikes').value = RISK_CFG.global.hedge_offset_strikes ?? '';
   document.getElementById('risk-global-hedge-premium').value = RISK_CFG.global.hedge_max_premium_rs ?? '';
@@ -2630,6 +2689,14 @@ async function saveRiskConfig(){
       capital_mode: gMode || 'reject',
       shadow_live: gShadow === 'true',
       default_sl_rs: gInstLoss !== '' ? parseFloat(gInstLoss) : null,
+      // --- Added by Antigravity AI: Save Default SL/Target ---
+      default_sl_type: document.getElementById('risk-global-default-sl-type').value || null,
+      default_sl_val: document.getElementById('risk-global-default-sl-val').value !== '' ? document.getElementById('risk-global-default-sl-val').value : null,
+      default_sl_candle_close: document.getElementById('risk-global-default-sl-candle').checked,
+      default_tp_type: document.getElementById('risk-global-default-tp-type').value || null,
+      default_tp_val: document.getElementById('risk-global-default-tp-val').value !== '' ? document.getElementById('risk-global-default-tp-val').value : null,
+      default_tp_candle_close: document.getElementById('risk-global-default-tp-candle').checked,
+      // --- End Antigravity AI addition ---
       hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
       liquidity_filter: gLiqFilter === 'true',
@@ -8423,30 +8490,80 @@ pineLoadLatest();
 </div>
 
 <script>
+function toggleGlobalTrailingInfo() {
+  const slType = document.getElementById('risk-global-default-sl-type').value;
+  const infoEl = document.getElementById('global-sl-trailing-info');
+  if (infoEl) {
+    infoEl.style.display = slType === 'trailing_pt' ? 'block' : 'none';
+  }
+}
+
 function _sltpToggleCandleDir(which) {
   const typeEl = document.getElementById(`edit-sltp-${which}-type`);
   const dirEl = document.getElementById(`edit-sltp-${which}-dir`);
-  dirEl.style.display = typeEl.value === 'candle_close' ? '' : 'none';
+  const valInput = document.getElementById(`edit-sltp-${which}`);
+  
+  if (dirEl) {
+    dirEl.style.display = typeEl.value === 'candle_close' ? '' : 'none';
+  }
+  
+  if (which === 'sl') {
+    const infoEl = document.getElementById('sl-trailing-info');
+    if (infoEl) {
+      infoEl.style.display = typeEl.value === 'trailing_pt' ? 'block' : 'none';
+    }
+  }
+  
+  if (typeEl.value === 'trailing_pt') {
+    valInput.placeholder = 'gap:step (e.g., 10:1)';
+  } else if (typeEl.value === 'candle_close') {
+    valInput.placeholder = 'price (e.g., 25000)';
+  } else {
+    valInput.placeholder = 'value';
+  }
 }
 
-function openSlTpModal(id, sl, tp, slType, tpType) {
+function openSlTpModal(id, sl, tp, slType, tpType, entryPx, slCandle, tpCandle) {
   document.getElementById('edit-sltp-id').value = id;
-  // candle_close stores val as "above:25000" / "below:120" — split back into dir+number for the UI
+  document.getElementById('edit-sltp-sl-candle').checked = !!slCandle;
+  document.getElementById('edit-sltp-tp-candle').checked = !!tpCandle;
+  
   function splitCandle(val, dirElId, valElId) {
     if (val && val.includes(':')) {
       const [dir, num] = val.split(':');
-      document.getElementById(dirElId).value = dir;
+      const dEl = document.getElementById(dirElId);
+      if (dEl) dEl.value = dir;
       document.getElementById(valElId).value = num;
     } else {
       document.getElementById(valElId).value = val || '';
     }
   }
+  
   document.getElementById('edit-sltp-sl-type').value = slType || 'pct';
   document.getElementById('edit-sltp-tp-type').value = tpType || 'pct';
   splitCandle(slType === 'candle_close' ? sl : null, 'edit-sltp-sl-dir', 'edit-sltp-sl');
   splitCandle(tpType === 'candle_close' ? tp : null, 'edit-sltp-tp-dir', 'edit-sltp-tp');
   if (slType !== 'candle_close') document.getElementById('edit-sltp-sl').value = sl || '';
   if (tpType !== 'candle_close') document.getElementById('edit-sltp-tp').value = tp || '';
+  
+  if (entryPx) {
+    let minStep = 1.0;
+    if (entryPx <= 50) minStep = 1.0;
+    else if (entryPx <= 100) minStep = 2.5;
+    else if (entryPx <= 500) minStep = 5.0;
+    else minStep = 10.0;
+    
+    const infoSL = document.getElementById('sl-trailing-info');
+    if (infoSL) {
+      infoSL.innerHTML = `⚠️ <b>Minimum Trailing Points (premium):</b><br/>
+        • Premium ₹0 to ₹50: min step ₹1<br/>
+        • Premium ₹50 to ₹100: min step ₹2.50<br/>
+        • Premium ₹100 to ₹500: min step ₹5<br/>
+        • Premium Above ₹500: min step ₹10<br/>
+        💡 <b>Current Position Minimum Step: ₹${minStep}</b> (based on entry price ₹${entryPx})`;
+    }
+  }
+  
   _sltpToggleCandleDir('sl');
   _sltpToggleCandleDir('tp');
   document.getElementById('edit-sltp-modal').style.display = 'flex';
@@ -8460,19 +8577,27 @@ async function saveSlTp() {
   let tp = document.getElementById('edit-sltp-tp').value;
   if (slType === 'candle_close' && sl) sl = document.getElementById('edit-sltp-sl-dir').value + ':' + sl;
   if (tpType === 'candle_close' && tp) tp = document.getElementById('edit-sltp-tp-dir').value + ':' + tp;
+  
+  const slCandle = document.getElementById('edit-sltp-sl-candle').checked;
+  const tpCandle = document.getElementById('edit-sltp-tp-candle').checked;
 
   try {
     const res = await fetch('/api/orders/update-sl-tp', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: id, sl_type: slType, sl_val: sl, tp_type: tpType, tp_val: tp })
+      body: JSON.stringify({ 
+        id: id, 
+        sl_type: slType, 
+        sl_val: sl, 
+        tp_type: tpType, 
+        tp_val: tp,
+        sl_candle_close: slCandle,
+        tp_candle_close: tpCandle
+      })
     });
     const data = await res.json();
     if(data.status === 'success') {
       document.getElementById('edit-sltp-modal').style.display = 'none';
-      // Force a rebuild (not just an LTP patch) so the new SL/TP shows
-      // immediately — the open-table fingerprint doesn't track tag changes, so
-      // without this the SL/Target only appeared after a manual refresh.
       const el = document.getElementById('ord-open'); if(el) el.dataset.fp = '';
       ordersRender();
     } else {

@@ -683,29 +683,79 @@ def _strategy_day_pnl(strategy, unrealized_by_strat=None):
 
 
 def default_instrument_sl_tags(strategy, symbol=None):
-    """Default ₹ stop-loss, applied automatically to EVERY NEW position
-    (any instrument, any strategy) at entry time — a per-position stop, not a
-    cumulative day cap. Once hit and the leg is squared off, a fresh entry
-    (same or different instrument) is allowed again. The strategy-wide daily
-    max-loss (`daily_loss_breached`) is separate and unaffected.
-    per_strategy[strategy].default_sl_rs overrides global.default_sl_rs;
-    absent either way means no default SL is stamped (unchanged behavior).
-    A manual SL set later via the ⚙️ per-trade modal always overrides this —
-    the modal's save replaces SL_TYPE/SL_VAL tags outright. Returns SL_TYPE/
-    SL_VAL tags consumed by pos_monitor_loop's existing "rs" SL handling, or []."""
+    """Default stop-loss & target tags, applied automatically to EVERY NEW position at entry time.
+    Written/Modified by Antigravity AI.
+    
+    Priority:
+    1. If per-strategy default_sl_rs is set, use SL_TYPE:rs and SL_VAL:default_sl_rs.
+    2. Else, use the global default_sl_type and default_sl_val if set.
+    3. Always append default_tp_type and default_tp_val if set.
+    """
     rc = _risk_cfg()
-    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("default_sl_rs")
-    gl = (rc.get("global", {}) or {}).get("default_sl_rs")
-    amount = ps if ps is not None else gl
-    if amount is None:
-        return []
-    try:
-        amount = float(amount)
-        if amount <= 0:
-            return []
-    except Exception:
-        return []
-    return [f"SL_TYPE:rs", f"SL_VAL:{amount}"]
+    tags = []
+    
+    # 1. Check strategy-specific legacy default_sl_rs
+    ps_rs = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("default_sl_rs")
+    if ps_rs is not None:
+        try:
+            val = float(ps_rs)
+            if val > 0:
+                tags.extend([f"SL_TYPE:rs", f"SL_VAL:{val}"])
+        except Exception:
+            pass
+            
+    # 2. If no strategy legacy SL is set, check global/default SL
+    if not tags:
+        g = rc.get("global") or {}
+        sl_type = g.get("default_sl_type")
+        sl_val = g.get("default_sl_val")
+        if sl_type and sl_val is not None and str(sl_val).strip() != "":
+            if sl_type == "trailing_pt":
+                if ":" in str(sl_val):
+                    gap_part, step_part = str(sl_val).split(":", 1)
+                    gap_val = float(gap_part)
+                    step_val = float(step_part)
+                else:
+                    gap_val = float(sl_val)
+                    step_val = 1.0
+                tags.extend([f"SL_TYPE:trailing_pt", f"SL_VAL:{gap_val}", f"SL_TRAIL_STEP:{step_val}"])
+            else:
+                tags.extend([f"SL_TYPE:{sl_type}", f"SL_VAL:{sl_val}"])
+            if g.get("default_sl_candle_close") is True:
+                tags.append("SL_CANDLE_CLOSE:true")
+        else:
+            # Fall back to legacy global default_sl_rs if type/val not configured
+            gl_rs = g.get("default_sl_rs")
+            if gl_rs is not None:
+                try:
+                    val = float(gl_rs)
+                    if val > 0:
+                        tags.extend([f"SL_TYPE:rs", f"SL_VAL:{val}"])
+                        if g.get("default_sl_candle_close") is True:
+                            tags.append("SL_CANDLE_CLOSE:true")
+                except Exception:
+                    pass
+
+    # 3. Check and append global target (TP) if configured
+    g = rc.get("global") or {}
+    tp_type = g.get("default_tp_type")
+    tp_val = g.get("default_tp_val")
+    if tp_type and tp_val is not None and str(tp_val).strip() != "":
+        if tp_type == "trailing_pt":
+            if ":" in str(tp_val):
+                gap_part, step_part = str(tp_val).split(":", 1)
+                gap_val = float(gap_part)
+                step_val = float(step_part)
+            else:
+                gap_val = float(tp_val)
+                step_val = 1.0
+            tags.extend([f"TP_TYPE:trailing_pt", f"TP_VAL:{gap_val}", f"TP_TRAIL_STEP:{step_val}"])
+        else:
+            tags.extend([f"TP_TYPE:{tp_type}", f"TP_VAL:{tp_val}"])
+        if g.get("default_tp_candle_close") is True:
+            tags.append("TP_CANDLE_CLOSE:true")
+
+    return tags
 
 
 def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=None):

@@ -3093,40 +3093,87 @@ def api_rename_strategy():
 
 @app.route('/api/orders/update-sl-tp', methods=['POST'])
 def api_update_sl_tp():
-    """Per-position SL/Target. Generic form (sl_type/sl_val, tp_type/tp_val —
-    type one of pct/pt/rs/premium/index) takes priority; legacy sl_pct/tp_pct
-    kept for older callers."""
     data = request.get_json()
     order_id = data.get('id')
     sl_type = data.get('sl_type'); sl_val = data.get('sl_val')
     tp_type = data.get('tp_type'); tp_val = data.get('tp_val')
     sl_pct = data.get('sl_pct')
     tp_pct = data.get('tp_pct')
+    sl_candle_close = bool(data.get('sl_candle_close'))
+    tp_candle_close = bool(data.get('tp_candle_close'))
     if not order_id:
         return jsonify({"status": "error", "message": "Missing order ID"})
     try:
         import order_store
         with order_store._lock, order_store._conn() as c:
-            row = c.execute("SELECT tags FROM orders WHERE id = ?", (order_id,)).fetchone()
+            row = c.execute("SELECT tags, price FROM orders WHERE id = ?", (order_id,)).fetchone()
             if not row: return jsonify({"status": "error", "message": "Order not found"})
 
+            tags_str, entry_px_val = row
+            entry_px = float(entry_px_val or 0)
+            
             tags = []
-            try: tags = json.loads(row[0] or "[]")
+            try: tags = json.loads(tags_str or "[]")
             except: pass
 
-            tags = [t for t in tags if not t.startswith(("SL_PCT:", "TP_PCT:", "SL_TYPE:", "SL_VAL:", "TP_TYPE:", "TP_VAL:"))]
+            # --- Modified by Antigravity AI: Added Trailing Stop-Loss support & fixed candle_close crash ---
+            tags = [t for t in tags if not t.startswith(("SL_PCT:", "TP_PCT:", "SL_TYPE:", "SL_VAL:", "TP_TYPE:", "TP_VAL:", "SL_TRAIL_STEP:", "TP_TRAIL_STEP:")) and t not in ("SL_CANDLE_CLOSE:true", "TP_CANDLE_CLOSE:true")]
+
+            # Min trailing step resolution helper (Zerodha style)
+            def _get_min_step(px):
+                if px <= 50: return 1.0
+                elif px <= 100: return 2.5
+                elif px <= 500: return 5.0
+                else: return 10.0
 
             if sl_type and sl_val is not None and str(sl_val).strip() != "":
                 tags.append(f"SL_TYPE:{sl_type}")
-                tags.append(f"SL_VAL:{float(sl_val)}")
+                if sl_type == "candle_close":
+                    tags.append(f"SL_VAL:{sl_val}")
+                elif sl_type == "trailing_pt":
+                    min_s = _get_min_step(entry_px)
+                    if ":" in str(sl_val):
+                        gap_part, step_part = str(sl_val).split(":", 1)
+                        gap_val = float(gap_part)
+                        step_val = max(float(step_part), min_s)
+                    else:
+                        gap_val = float(sl_val)
+                        step_val = min_s
+                    tags.append(f"SL_VAL:{gap_val}")
+                    tags.append(f"SL_TRAIL_STEP:{step_val}")
+                else:
+                    tags.append(f"SL_VAL:{float(sl_val)}")
+                if sl_candle_close:
+                    tags.append("SL_CANDLE_CLOSE:true")
             elif sl_pct is not None and str(sl_pct).strip() != "":
                 tags.append(f"SL_PCT:{float(sl_pct)}")
+                if sl_candle_close:
+                    tags.append("SL_CANDLE_CLOSE:true")
 
             if tp_type and tp_val is not None and str(tp_val).strip() != "":
                 tags.append(f"TP_TYPE:{tp_type}")
-                tags.append(f"TP_VAL:{float(tp_val)}")
+                if tp_type == "candle_close":
+                    tags.append(f"TP_VAL:{tp_val}")
+                elif tp_type == "trailing_pt":
+                    min_s = _get_min_step(entry_px)
+                    if ":" in str(tp_val):
+                        gap_part, step_part = str(tp_val).split(":", 1)
+                        gap_val = float(gap_part)
+                        step_val = max(float(step_part), min_s)
+                    else:
+                        gap_val = float(tp_val)
+                        step_val = min_s
+                    tags.append(f"TP_VAL:{gap_val}")
+                    tags.append(f"TP_TRAIL_STEP:{step_val}")
+                else:
+                    tags.append(f"TP_VAL:{float(tp_val)}")
+                if tp_candle_close:
+                    tags.append("TP_CANDLE_CLOSE:true")
             elif tp_pct is not None and str(tp_pct).strip() != "":
                 tags.append(f"TP_PCT:{float(tp_pct)}")
+                if tp_candle_close:
+                    tags.append("TP_CANDLE_CLOSE:true")
+            # --- End modification ---
 
             c.execute("UPDATE orders SET tags = ? WHERE id = ?", (json.dumps(tags), order_id))
             c.commit()
@@ -4191,6 +4238,43 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         side = p["entry"]  # BUY or SELL
         opt_ce = p["sym"].upper().endswith("-CE") or p["sym"].upper().endswith("CE")
         bullish = (side == "BUY" and opt_ce) or (side == "SELL" and not opt_ce)
+        # --- Added by Antigravity AI: Stepped Trailing Stop-Loss in Points ---
+        if typ == "trailing_pt":
+            prefix = "SL" if is_sl else "TP"
+            step_val = next((float(t.split(":", 1)[1]) for t in tags if t.startswith(f"{prefix}_TRAIL_STEP:")), 1.0)
+            if side == "BUY":
+                ref_ltp = max_ltp if is_sl else min_ltp
+                if is_sl:
+                    favorable_movement = ref_ltp - entry_px
+                    if favorable_movement > 0:
+                        num_steps = int(favorable_movement / step_val)
+                        return round((entry_px - val) + (num_steps * step_val), 2)
+                    else:
+                        return round(entry_px - val, 2)
+                else:
+                    favorable_movement = entry_px - ref_ltp
+                    if favorable_movement > 0:
+                        num_steps = int(favorable_movement / step_val)
+                        return round((entry_px + val) - (num_steps * step_val), 2)
+                    else:
+                        return round(entry_px + val, 2)
+            else:
+                ref_ltp = min_ltp if is_sl else max_ltp
+                if is_sl:
+                    favorable_movement = entry_px - ref_ltp
+                    if favorable_movement > 0:
+                        num_steps = int(favorable_movement / step_val)
+                        return round((entry_px + val) - (num_steps * step_val), 2)
+                    else:
+                        return round(entry_px + val, 2)
+                else:
+                    favorable_movement = ref_ltp - entry_px
+                    if favorable_movement > 0:
+                        num_steps = int(favorable_movement / step_val)
+                        return round((entry_px - val) + (num_steps * step_val), 2)
+                    else:
+                        return round(entry_px - val, 2)
+        # --- End Antigravity AI addition ---
         if typ == "pct":
             return entry_px * (1 - val/100.0) if (is_sl) == (side == "BUY") else entry_px * (1 + val/100.0)
         if typ == "pt":
@@ -4446,21 +4530,47 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         reason = f"SL_HIT:{kind}" if hit_sl else f"TP_HIT:{kind}"
         _do_squareoff(p, ltp, reason, sec_id, seg)
         return
+    # --- Modified by Antigravity AI: Support checkbox-based Candle Close exit triggers ---
+    sl_candle_close = any(t == "SL_CANDLE_CLOSE:true" for t in tags)
+    tp_candle_close = any(t == "TP_CANDLE_CLOSE:true" for t in tags)
+
     # numeric generic SL/TP trigger price (None if no generic tag set)
     sl_px_num = sl_px_generic if isinstance(sl_px_generic, float) else None
     tp_px_num = tp_px_generic if isinstance(tp_px_generic, float) else None
+
     if sl_px_num is not None:
-        hit = ltp <= sl_px_num if p["entry"] == "BUY" else ltp >= sl_px_num
-        if hit:
-            _do_squareoff(p, ltp, f"SL_HIT:{sl_type}:{sl_val}", sec_id, seg)
-            return
+        eval_sl_price = ltp
+        if sl_candle_close:
+            last_close = _last_closed_candle_close(sec_id, seg)
+            if last_close and last_close > 0:
+                eval_sl_price = last_close
+            else:
+                eval_sl_price = None  # wait for next valid candle close
+        
+        if eval_sl_price is not None:
+            hit = eval_sl_price <= sl_px_num if p["entry"] == "BUY" else eval_sl_price >= sl_px_num
+            if hit:
+                _do_squareoff(p, eval_sl_price, f"SL_HIT:{sl_type}:{sl_val}", sec_id, seg)
+                return
+
     if tp_px_num is not None:
-        hit = ltp >= tp_px_num if p["entry"] == "BUY" else ltp <= tp_px_num
-        if hit:
-            _do_squareoff(p, ltp, f"TP_HIT:{tp_type}:{tp_val}", sec_id, seg)
-            return
+        eval_tp_price = ltp
+        if tp_candle_close:
+            last_close = _last_closed_candle_close(sec_id, seg)
+            if last_close and last_close > 0:
+                eval_tp_price = last_close
+            else:
+                eval_tp_price = None  # wait for next valid candle close
+
+        if eval_tp_price is not None:
+            hit = eval_tp_price >= tp_px_num if p["entry"] == "BUY" else eval_tp_price <= tp_px_num
+            if hit:
+                _do_squareoff(p, eval_tp_price, f"TP_HIT:{tp_type}:{tp_val}", sec_id, seg)
+                return
+
     if sl_px_num is not None and tp_px_num is not None:
         return  # generic SL+TP both set and neither hit — skip legacy fallback entirely
+    # --- End Antigravity AI modification ---
 
     # Legacy SL_PCT/TP_PCT — ONLY from tags explicitly set on THIS position
     # (e.g. an older position created before the SL_TYPE/SL_VAL modal existed).
