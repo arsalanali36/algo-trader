@@ -174,6 +174,29 @@ mein use **dohrana nahi**, sirf call karna hai. Koi bhi naya strategy file banao
 order-placement style use karte hain par dono `strategy_safety.py` ke sirf yeh 2 functions
 call karte hain. Naya strategy chahe kaisa bhi order bheje, isi pattern follow karo.
 
+## 🧨 PRE-MORTEM — money/positions/orders touch karne wale HAR naye feature se pehle (2026-07-02 se mandatory)
+
+LESSONS.md ke 74 TRAPs ka nichod: bugs alag the, FAILURE SHAPES bar-bar wahi hain.
+Naya feature likhne se PEHLE har shape pe yes/no + 1-line reasoning likho (chat me hi,
+essay nahi). Koi "yes" mila to code se pehle guard design karo. Ship ke BAAD same list
+dobara chalao — is baar har answer ke saath ek asli runtime log line ya test-output ka
+saboot, "code sahi lag raha hai" nahi.
+
+| # | Failure shape | Classic TRAPs |
+|---|---------------|---------------|
+| 1 | **Stale-state action** — position/order ki state fresh recheck ke bina "abhi bhi sach" maan kar order fire karna | #28 #44 #51 #58 #62 #73 #74 |
+| 2 | **Built ≠ wired ≠ verified** — feature ban gaya lekin kabhi call/start/render nahi hua, ya kabhi live data ke saath verify nahi hua | #11 #12 #17 #65, alert-banner (07-02) |
+| 3 | **RAM-only state, restart pe gone** — dict/var jo restart survive karna chahiye tha lekin disk pe nahi tha | #28 #38 #52 #55 #57, _pos_peaks, _pending_group_close |
+| 4 | **Duplicate logic, aadha fix** — same logic 2 jagah, fix sirf ek me laga | #16 #26-addendum #27 |
+| 5 | **Risk-check silently fails open** — bare `except: return False/pass` ne guard ko chupchaap band kar diya | #56 #72, _trailing_lock_fired_today |
+| 6 | **Shared resource, independent hitters** — har process apni taraf se account-wide limit (Dhan 1req/s, sqlite, config file) maar raha | #2, DH-904, ltp_poller se pehle ka LTP chaos |
+| 7 | **Deploy drift / silent scp skip** — git me fix hai, VPS pe purana code chal raha; multi-file scp ne ek file chhod di | #27 #69 |
+| 8 | **Hardcoded set/value vs canonical helper** — status-tuple/lot-size/expiry inline likha jabki helper/CSV maujood tha | #74, no-hardcode rule |
+| 9 | **Mechanical edit, hot-loop regression** — find-replace/re-indent ne chalta loop chupchaap tod diya (syntax valid, semantics dead) | #56 #72 |
+| 10 | **Report ka mechanism unverified** — bug report ne jo mechanism bataya use code+logs se confirm kiye bina fix kar dena (asli bug aas-paas hota hai) | #74 ka finding |
+
+---
+
 ## Update Log
 
 | Date | Kya bana |
