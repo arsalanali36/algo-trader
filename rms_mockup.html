@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Algo Trader — RMS Layout Mockup</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --bg-color: #0d1117;
+      --card-bg: #161b22;
+      --card-border: #30363d;
+      --text-main: #c9d1d9;
+      --text-bright: #f0f6fc;
+      --text-muted: #8b949e;
+      --accent-blue: #1f6feb;
+      --accent-blue-hover: #58a6ff;
+      --green-success: #238636;
+      --green-bright: #3fb950;
+      --red-danger: #da3633;
+      --red-bright: #f85149;
+      --orange-warning: #d29922;
+      --purple-accent: #8957e5;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      padding-top: 52px;
+      overflow-x: hidden;
+    }
+
+    /* ── Header ── */
+    .hdr {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 9999;
+      background: var(--card-bg);
+      border-bottom: 1px solid var(--card-border);
+      padding: 0 20px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .hdr h1 {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text-bright);
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hdr-badge {
+      font-size: 10px;
+      background: var(--purple-accent);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* ── Header Navigation Tabs ── */
+    .hdr .tabs {
+      display: flex;
+      background: transparent;
+      border-bottom: none;
+      padding: 0;
+      margin-left: 20px;
+      height: 100%;
+      align-items: stretch;
+    }
+
+    .hdr .tab {
+      padding: 0 16px;
+      cursor: pointer;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 3px solid transparent;
+      transition: all 0.15s ease;
+      white-space: nowrap;
+      display: flex;
+      align-items: center;
+      height: 100%;
+      text-decoration: none;
+    }
+
+    .hdr .tab:hover {
+      color: var(--text-bright);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .hdr .tab.active {
+      color: var(--accent-blue-hover);
+      border-bottom-color: var(--accent-blue);
+      background: rgba(31, 111, 235, 0.05);
+    }
+
+    .hdr-right {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    #clock {
+      color: var(--text-muted);
+      font-size: 13px;
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green-bright);
+      display: inline-block;
+      box-shadow: 0 0 8px var(--green-bright);
+    }
+
+    /* ── Main Container ── */
+    .main-container {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+
+    .flex-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 24px;
+    }
+
+    /* ── Folder Card Layout (Left Sidebar + Right Content) ── */
+    .folder-card {
+      display: flex;
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-bottom: 30px;
+      min-height: 480px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+    }
+
+    .folder-sidebar {
+      width: 240px;
+      background: rgba(255, 255, 255, 0.01);
+      border-right: 1px solid var(--card-border);
+      padding: 16px 0;
+      flex-shrink: 0;
+    }
+
+    .folder-sidebar-header {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--text-muted);
+      padding: 0 20px 12px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      margin-bottom: 12px;
+      font-weight: 700;
+    }
+
+    .folder-tab {
+      padding: 14px 20px;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      border-left: 3px solid transparent;
+      user-select: none;
+    }
+
+    .folder-tab:hover {
+      color: var(--text-bright);
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .folder-tab.active {
+      color: var(--orange-warning);
+      background: rgba(210, 153, 34, 0.04);
+      border-left-color: var(--orange-warning);
+      font-weight: 600;
+    }
+
+    .folder-tab.active.blue-tab {
+      color: var(--accent-blue-hover);
+      background: rgba(31, 111, 235, 0.04);
+      border-left-color: var(--accent-blue-hover);
+    }
+
+    .folder-tab.active.red-tab {
+      color: var(--red-bright);
+      background: rgba(248, 81, 73, 0.04);
+      border-left-color: var(--red-bright);
+    }
+
+    .folder-tab.active.green-tab {
+      color: var(--green-bright);
+      background: rgba(63, 185, 80, 0.04);
+      border-left-color: var(--green-bright);
+    }
+
+    .folder-tab.active.purple-tab {
+      color: #a371f7;
+      background: rgba(137, 87, 229, 0.04);
+      border-left-color: #a371f7;
+    }
+
+    .folder-content {
+      flex: 1;
+      padding: 28px;
+      background: var(--card-bg);
+      overflow-y: auto;
+    }
+
+    .settings-section {
+      display: none;
+    }
+
+    .settings-section.active {
+      display: block;
+      animation: fadeIn 0.2s ease-in-out;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    .settings-section h2 {
+      font-size: 18px;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .settings-section-subtitle {
+      font-size: 12.5px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      line-height: 1.5;
+    }
+
+    /* ── Accordion Card Layout (Full width at bottom) ── */
+    .monitor-group {
+      background: rgba(31, 111, 235, 0.02);
+      border: 1px dashed rgba(48, 54, 61, 0.7);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 10px;
+    }
+
+    .monitor-title {
+      font-size: 12px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .accordion-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      margin-bottom: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+      width: 100%;
+      transition: border-color 0.2s;
+    }
+
+    .accordion-card:last-child {
+      margin-bottom: 0;
+    }
+
+    .accordion-card.open {
+      border-color: #30363d;
+    }
+
+    .accordion-card.blue-acc { border-left: 3px solid var(--accent-blue); }
+    .accordion-card.green-acc { border-left: 3px solid var(--green-bright); }
+    .accordion-card.orange-acc { border-left: 3px solid var(--orange-warning); }
+    .accordion-card.purple-acc { border-left: 3px solid var(--purple-accent); }
+
+    .accordion-header {
+      background: rgba(255, 255, 255, 0.005);
+      padding: 14px 20px;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+      transition: background-color 0.2s;
+    }
+
+    .accordion-header:hover {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    .accordion-header h2 {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-bright);
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .accordion-header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .accordion-header .arrow {
+      font-size: 11px;
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+      display: inline-block;
+    }
+
+    .accordion-card.open .accordion-header {
+      border-bottom: 1px solid var(--card-border);
+    }
+
+    .accordion-card.open .accordion-header .arrow {
+      transform: rotate(180deg);
+    }
+
+    .accordion-body {
+      padding: 20px 24px;
+      display: none;
+      background: #0d1117;
+    }
+
+    .accordion-card.open .accordion-body {
+      display: block;
+      animation: slideDown 0.2s ease-in-out;
+    }
+
+    @keyframes slideDown {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    /* ── Table Grid layout within Settings ── */
+    .rms-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      background: #0d1117;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--card-border);
+    }
+
+    .rms-table th, .rms-table td {
+      border: 1px solid var(--card-border);
+      padding: 12px 16px;
+      text-align: left;
+      vertical-align: middle;
+    }
+
+    .rms-table tr:hover {
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    /* Left column with title & custom wavy detail lines */
+    .rms-table td.param-info {
+      width: 35%;
+      background: #161b22;
+      font-weight: 500;
+      color: var(--text-bright);
+      position: relative;
+    }
+
+    .rms-table td.param-info .wavy-subtext {
+      display: block;
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+      margin-top: 4px;
+      position: relative;
+    }
+
+    .rms-table td.param-info .wavy-subtext::after {
+      content: "~~~~~~";
+      display: block;
+      color: rgba(210, 153, 34, 0.3);
+      font-family: monospace;
+      font-size: 10px;
+      letter-spacing: -1px;
+      margin-top: 2px;
+    }
+
+    .orange-highlight .wavy-subtext::after {
+      color: rgba(210, 153, 34, 0.5) !important;
+    }
+
+    /* Right column with inputs grid */
+    .rms-table td.param-inputs {
+      width: 65%;
+      padding: 8px;
+    }
+
+    .inputs-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+
+    .inputs-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      background: rgba(255, 255, 255, 0.015);
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid rgba(255, 255, 255, 0.02);
+    }
+
+    .inputs-row label {
+      font-size: 11.5px;
+      color: var(--text-muted);
+      font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
+    }
+
+    .inputs-row input, .inputs-row select {
+      background: #0d1117;
+      color: var(--text-bright);
+      border: 1px solid var(--card-border);
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 12px;
+      width: 110px;
+      text-align: right;
+      font-family: 'JetBrains Mono', monospace;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    .inputs-row input:focus, .inputs-row select:focus {
+      border-color: var(--accent-blue-hover);
+    }
+
+    .inputs-row select {
+      width: 140px;
+      text-align: left;
+    }
+
+    /* ── Live balances visual ── */
+    .balance-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 16px;
+    }
+
+    .bal-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 16px;
+    }
+
+    .bal-header {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .bal-val {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-bright);
+      font-family: 'JetBrains Mono', monospace;
+    }
+
+    .bal-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* ── Mini Table for Accordions ── */
+    .mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+
+    .mini-table th, .mini-table td {
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--card-border);
+      text-align: left;
+    }
+
+    .mini-table th {
+      color: var(--text-muted);
+      font-weight: 600;
+      background: rgba(255, 255, 255, 0.005);
+    }
+
+    .mini-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* ── Action Buttons ── */
+    .btn {
+      padding: 8px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      transition: background-color 0.2s, opacity 0.2s;
+      outline: none;
+    }
+
+    .btn-primary {
+      background-color: var(--accent-blue);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background-color: var(--accent-blue-hover);
+    }
+
+    .btn-secondary {
+      background-color: #21262d;
+      border-color: var(--card-border);
+      color: var(--text-main);
+    }
+
+    .btn-secondary:hover {
+      background-color: #30363d;
+      color: var(--text-bright);
+    }
+
+    .btn-danger {
+      background-color: var(--red-danger);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      opacity: 0.9;
+    }
+
+    /* Status indicator */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .status-badge.fired {
+      background: rgba(248, 81, 73, 0.15);
+      color: var(--red-bright);
+      border: 1px solid rgba(248, 81, 73, 0.3);
+    }
+
+    .status-badge.active {
+      background: rgba(63, 185, 80, 0.15);
+      color: var(--green-bright);
+      border: 1px solid rgba(63, 185, 80, 0.3);
+    }
+
+    /* Form Mode Indicator */
+    .section-badge {
+      background: rgba(210, 153, 34, 0.1);
+      border: 1px solid rgba(210, 153, 34, 0.2);
+      color: var(--orange-warning);
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header matching existing layout ── -->
+  <div class="hdr">
+    <h1>📊 Algo Trader <span class="hdr-badge">RMS Mockup</span></h1>
+    <div class="tabs">
+      <a class="tab" href="#">Dashboard</a>
+      <a class="tab" href="#">Positions</a>
+      <a class="tab" href="#">Orders</a>
+      <a class="tab active" href="#">RMS / Risk Gate</a>
+      <a class="tab" href="#">Backtest</a>
+      <a class="tab" href="#">Strategy DSL</a>
+    </div>
+    <div class="hdr-right">
+      <div id="clock">2026-07-02 13:45:00 IST</div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <span class="dot"></span>
+        <span style="font-size:12px;color:var(--green-bright);font-weight:600">LIVE FEED</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Main Dashboard Content ── -->
+  <div class="main-container">
+    
+    <div class="flex-header">
+      <div>
+        <h2 style="font-size: 22px; font-weight: 600; color: var(--text-bright)">🛡️ Risk Management System (RMS)</h2>
+        <p style="color: var(--text-muted); font-size: 13px; margin-top: 4px;">Dynamic Stage 1 Risk Gate and capital limits configuration.</p>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button class="btn btn-secondary" onclick="resetForm()">Reset Settings</button>
+        <button class="btn btn-primary" onclick="alert('Demo Mockup: Real settings will not be changed.')">Save Configuration</button>
+      </div>
+    </div>
+
+    <!-- ── Folder Card Settings Layout ── -->
+    <div class="folder-card">
+      
+      <!-- Left Sidebar inside Card -->
+      <div class="folder-sidebar">
+        <div class="folder-sidebar-header">Global Settings</div>
+        
+        <div class="folder-tab active orange-tab" onclick="switchSettingsTab('max-loss-sec', this)">
+          <span>⚠️</span> Max Loss Protection
+        </div>
+        <div class="folder-tab blue-tab" onclick="switchSettingsTab('capital-alloc-sec', this)">
+          <span>💰</span> Capital Allocation
+        </div>
+        <div class="folder-tab red-tab" onclick="switchSettingsTab('shadow-live-sec', this)">
+          <span>🧪</span> Shadow-Live Limit
+        </div>
+        <div class="folder-tab green-tab" onclick="switchSettingsTab('auto-hedge-sec', this)">
+          <span>🛡</span> Auto Hedge
+        </div>
+        <div class="folder-tab purple-tab" onclick="switchSettingsTab('liquidity-filter-sec', this)">
+          <span>📊</span> Liquidity Filter
+        </div>
+      </div>
+
+      <!-- Right Content inside Card -->
+      <div class="folder-content">
+        
+        <!-- Tab 1: Max Loss Protection -->
+        <div class="settings-section active" id="max-loss-sec">
+          <div style="display: flex; justify-content: space-between; align-items: baseline;">
+            <h2>⚠️ Max Loss Protection</h2>
+            <span class="section-badge">Risk Protection Gate</span>
+          </div>
+          <div class="settings-section-subtitle">
+            Configure stop loss, trailing drawdown locks, daily loss limits and profit target parameters at global account level.
+          </div>
+          
+          <table class="rms-table">
+            <tbody>
+              <!-- Row 1: Strategy Cap -->
+              <tr>
+                <td class="param-info orange-highlight">
+                  <span>Strategy Cap (str cap)</span>
+                  <span class="wavy-subtext">Max strategy level daily loss limit</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Rate Limit</label>
+                      <input type="number" id="str-cap-rate" value="1">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Global Value Limit (₹)</label>
+                      <input type="number" id="str-cap-val" value="100">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              
+              <!-- Row 2: Daily Profit Target -->
+              <tr>
+                <td class="param-info">
+                  <span>Daily Profit Target</span>
+                  <span class="wavy-subtext">Target to stop and square-off for the day</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Target Value (₹)</label>
+                      <input type="number" id="profit-target" value="5000">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              
+              <!-- Row 3: Per Trade Default SL -->
+              <tr>
+                <td class="param-info">
+                  <span>Per Trade Default SL</span>
+                  <span class="wavy-subtext">Default stop loss automatically assigned to trades</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Default SL (₹)</label>
+                      <input type="number" id="default-sl" placeholder="No Limit">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              
+              <!-- Row 4: Account Level Drawdown -->
+              <tr>
+                <td class="param-info orange-highlight">
+                  <span>Account Level Drawdown</span>
+                  <span class="wavy-subtext">Account level trailing profit lock parameters</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Trailing Value (₹)</label>
+                      <input type="number" id="drawdown-trailing" placeholder="Off">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Single Trade Lock (Fixed ₹)</label>
+                      <input type="number" id="drawdown-single" placeholder="e.g. 2000">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Multi-Trade Lock (% of Peak)</label>
+                      <input type="number" id="drawdown-multi" placeholder="e.g. 30">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              
+              <!-- Row 5: KILL-ALL Profit Floor -->
+              <tr>
+                <td class="param-info orange-highlight">
+                  <span>KILL-ALL Profit Floor</span>
+                  <span class="wavy-subtext">Account-level trailing kill-floor protection</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Enabled</label>
+                      <select id="killfloor-enabled" style="width: 110px;">
+                        <option value="false">OFF</option>
+                        <option value="true">ON</option>
+                      </select>
+                    </div>
+                    <div class="inputs-row">
+                      <label>Arm ₹ (base)</label>
+                      <input type="number" id="killfloor-arm" value="500">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Gap ₹ (from peak)</label>
+                      <input type="number" id="killfloor-gap" value="1500">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Confirm sec</label>
+                      <input type="number" id="killfloor-confirm" value="60">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab 2: Capital Allocation -->
+        <div class="settings-section" id="capital-alloc-sec">
+          <h2>💰 Capital Allocation</h2>
+          <div class="settings-section-subtitle">
+            Define global ceilings and sizing multipliers for option writing strategies.
+          </div>
+          
+          <table class="rms-table">
+            <tbody>
+              <tr>
+                <td class="param-info">
+                  <span>Capital Allocation Settings</span>
+                  <span class="wavy-subtext">Ceilings & multipliers</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Capital (₹)</label>
+                      <input type="number" id="cap-global" placeholder="e.g. 200000">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Total Capital (%)</label>
+                      <input type="number" id="cap-pct" placeholder="e.g. 100">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Max Allocation (Str)</label>
+                      <input type="number" id="cap-max-alloc" value="1">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Allocation Mode</label>
+                      <select id="cap-mode">
+                        <option value="aggregate">Aggregate Notional</option>
+                        <option value="margin">Estimated Margin</option>
+                        <option value="strict">Strict Collateral</option>
+                      </select>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab 3: Shadow-Live Limit -->
+        <div class="settings-section" id="shadow-live-sec">
+          <h2>🧪 Shadow-Live Limit</h2>
+          <div class="settings-section-subtitle">
+            Configure parallel real orders firing for dry-run verification against live market response.
+          </div>
+          
+          <table class="rms-table">
+            <tbody>
+              <tr>
+                <td class="param-info">
+                  <span>Shadow Live Settings</span>
+                  <span class="wavy-subtext">Dangerous parallel execution</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Shadow Live Mode</label>
+                      <select id="shadow-live-select">
+                        <option value="false">OFF (Standard Paper)</option>
+                        <option value="true">ON (Parallel Live Orders)</option>
+                      </select>
+                    </div>
+                    <div class="inputs-row">
+                      <label>Slippage Thresh (%)</label>
+                      <input type="number" id="shadow-slippage" placeholder="0.5">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab 4: Auto Hedge -->
+        <div class="settings-section" id="auto-hedge-sec">
+          <h2>🛡️ Auto Hedge</h2>
+          <div class="settings-section-subtitle">
+            Automatic protection orders placed OTM for naked option selling trades.
+          </div>
+          
+          <table class="rms-table">
+            <tbody>
+              <tr>
+                <td class="param-info">
+                  <span>Option Hedging</span>
+                  <span class="wavy-subtext">Strike offsets and premium filters</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Min Strikes</label>
+                      <input type="number" id="hedge-min-strikes" placeholder="e.g. 4">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Global Max Premium (₹)</label>
+                      <input type="number" id="hedge-max-premium" placeholder="e.g. 5">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Global Hedge Switch</label>
+                      <select id="hedge-enabled">
+                        <option value="true">Enabled (Auto-Hedge)</option>
+                        <option value="false">Disabled (Naked Writing)</option>
+                      </select>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Tab 5: Liquidity Filter -->
+        <div class="settings-section" id="liquidity-filter-sec">
+          <h2>📊 Liquidity Filter</h2>
+          <div class="settings-section-subtitle">
+            Prevent trades in illiquid or high bid-ask spread options contract markets.
+          </div>
+          
+          <table class="rms-table">
+            <tbody>
+              <tr>
+                <td class="param-info">
+                  <span>Contract Liquidity Guard</span>
+                  <span class="wavy-subtext">Live bid-ask spread & volume limits</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row">
+                      <label>Global Spread Max %</label>
+                      <input type="number" id="liq-spread" value="1.5" step="0.1">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Global Min Vol (lots)</label>
+                      <input type="number" id="liq-vol" value="500">
+                    </div>
+                    <div class="inputs-row">
+                      <label>Global Min OI (lots)</label>
+                      <input type="number" id="liq-oi" value="300">
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- ── Bottom Full-Width Collapsable Accordions (Don't Touch Section) ── -->
+    <div class="monitor-group">
+      <div class="monitor-title">📊 Live Monitoring & Reports Room</div>
+      
+      <!-- Accordion 1: Broker Balances -->
+      <div class="accordion-card blue-acc open" id="acc-balances">
+        <div class="accordion-header" onclick="toggleAccordion('acc-balances')">
+          <h2>💰 Broker Balances & Position Book</h2>
+          <div class="accordion-header-right">
+            <span class="status-badge active">CONNECTED</span>
+            <span class="arrow">▼</span>
+          </div>
+        </div>
+        <div class="accordion-body">
+          <div class="balance-grid">
+            <div class="bal-card">
+              <div class="bal-header">
+                <span>Dhan Live</span>
+                <span style="color: var(--green-bright)">●</span>
+              </div>
+              <div class="bal-val">₹1,84,250</div>
+              <div class="bal-sub">Collateral: ₹5,00,000</div>
+            </div>
+            
+            <div class="bal-card">
+              <div class="bal-header">
+                <span>Zerodha</span>
+                <span style="color: var(--text-muted)">○</span>
+              </div>
+              <div class="bal-val">₹48,900</div>
+              <div class="bal-sub">Collateral: ₹0</div>
+            </div>
+          </div>
+          <div style="font-size: 12px; color: var(--text-muted); margin-top: 14px;">
+            Total Combined Margin: <strong style="color: var(--text-bright)">₹7,33,150</strong>. Open Position Count: <strong style="color: var(--accent-blue-hover)">3 active</strong>.
+          </div>
+        </div>
+      </div>
+
+      <!-- Accordion 2: RMS Live Summary -->
+      <div class="accordion-card green-acc open" id="acc-rms-summary">
+        <div class="accordion-header" onclick="toggleAccordion('acc-rms-summary')">
+          <h2>📊 RMS Live Summary</h2>
+          <div class="accordion-header-right">
+            <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 10px;" onclick="event.stopPropagation(); alert('Reconciling with Broker...')">Reconcile Funds</button>
+            <span class="arrow">▼</span>
+          </div>
+        </div>
+        <div class="accordion-body">
+          <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+            <!-- MTM stats block -->
+            <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(255, 255, 255, 0.01); padding: 16px; border-radius: 8px; border: 1px solid var(--card-border); flex: 1; min-width: 280px;">
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span>Total Portfolio MTM:</span>
+                <strong style="color: var(--green-bright); font-size: 15px;" id="live-mtm">+₹8,450.00</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Peak MTM Today:</span>
+                <strong style="color: var(--text-bright)">+₹12,600.00</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Drawdown from Peak:</span>
+                <strong style="color: var(--red-bright)">-₹4,150.00 (-32.9%)</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Capital Deployed:</span>
+                <strong style="color: var(--accent-blue-hover)">₹2,50,000 (34.1%)</strong>
+              </div>
+            </div>
+
+            <!-- Kill Floor Live status block -->
+            <div style="display: flex; flex-direction: column; gap: 10px; background: rgba(248, 81, 73, 0.03); padding: 16px; border-radius: 8px; border: 1px solid rgba(248, 81, 73, 0.15); flex: 1; min-width: 280px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+                <span style="font-size: 12px; font-weight: 600; color: var(--red-bright);">🔒 KILL-ALL LIVE FLOOR</span>
+                <span class="status-badge fired" style="font-size: 8px;">ARMED</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px;">
+                <span>Floor Level:</span>
+                <strong style="color: var(--green-bright)">₹3,693.00</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Confirmed Peak:</span>
+                <strong style="color: var(--text-bright)">₹5,193.00</strong>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Timer Threshold:</span>
+                <span style="font-family: monospace; color: var(--text-muted)">60s (MTM &lt; Floor)</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-size: 13px; border-top: 1px solid rgba(255,255,255,0.05); padding-top: 8px;">
+                <span>Trigger Status:</span>
+                <strong style="color: var(--green-bright)">NORMAL</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Accordion 3: Rate Limit Room -->
+      <div class="accordion-card orange-acc" id="acc-rate-limit">
+        <div class="accordion-header" onclick="toggleAccordion('acc-rate-limit')">
+          <h2>🚦 Rate Limit Room</h2>
+          <div class="accordion-header-right">
+            <span class="arrow">▼</span>
+          </div>
+        </div>
+        <div class="accordion-body">
+          <div class="card-subtitle" style="margin-bottom: 12px;">
+            Live API rate limiter monitor (DH-904, DH-905). Refreshes every 5s.
+          </div>
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Timestamp</th>
+                <th>Source</th>
+                <th>Limit Info</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>13:44:21</td>
+                <td>range_trader:NIFTY</td>
+                <td>50 req/sec</td>
+                <td style="color: var(--green-bright); font-weight: 600;">OK</td>
+              </tr>
+              <tr>
+                <td>13:44:02</td>
+                <td>rsi_trader:NIFTY</td>
+                <td>Throttle delay</td>
+                <td style="color: var(--orange-warning); font-weight: 600;">DELAY (25ms)</td>
+              </tr>
+              <tr>
+                <td>13:41:15</td>
+                <td>universe:BANKNIFTY</td>
+                <td>API limit 429</td>
+                <td style="color: var(--red-bright); font-weight: 600;">BLOCKED</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Accordion 4: Per-Strategy Override -->
+      <div class="accordion-card purple-acc open" id="acc-override">
+        <div class="accordion-header" onclick="toggleAccordion('acc-override')">
+          <h2>⚙️ Per-Strategy Override</h2>
+          <div class="accordion-header-right">
+            <span class="arrow">▼</span>
+          </div>
+        </div>
+        <div class="accordion-body">
+          <div class="card-subtitle" style="margin-bottom: 12px;">
+            Individual strategy overrides. Empty values inherit global settings.
+          </div>
+          <table class="mini-table">
+            <thead>
+              <tr>
+                <th>Strategy</th>
+                <th>Max Loss (₹)</th>
+                <th>Capital (₹)</th>
+                <th>Hedge (Stk)</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>range_trader</strong></td>
+                <td><input type="number" style="width: 80px; font-size: 11px; padding: 4px; text-align: left;" placeholder="2000"></td>
+                <td><input type="number" style="width: 90px; font-size: 11px; padding: 4px; text-align: left;" placeholder="Inherit"></td>
+                <td><input type="number" style="width: 60px; font-size: 11px; padding: 4px; text-align: left;" value="2"></td>
+                <td><button class="btn btn-danger" style="padding: 3px 8px; font-size: 10px;">KILL</button></td>
+              </tr>
+              <tr>
+                <td><strong>rsi_v1</strong></td>
+                <td><input type="number" style="width: 80px; font-size: 11px; padding: 4px; text-align: left;" value="5000"></td>
+                <td><input type="number" style="width: 90px; font-size: 11px; padding: 4px; text-align: left;" placeholder="Inherit"></td>
+                <td><input type="number" style="width: 60px; font-size: 11px; padding: 4px; text-align: left;" placeholder="N/A" disabled></td>
+                <td><button class="btn btn-danger" style="padding: 3px 8px; font-size: 10px;">KILL</button></td>
+              </tr>
+              <tr>
+                <td><strong>universe_trader</strong></td>
+                <td><input type="number" style="width: 80px; font-size: 11px; padding: 4px; text-align: left;" placeholder="Inherit"></td>
+                <td><input type="number" style="width: 90px; font-size: 11px; padding: 4px; text-align: left;" value="50000"></td>
+                <td><input type="number" style="width: 60px; font-size: 11px; padding: 4px; text-align: left;" placeholder="Inherit"></td>
+                <td><button class="btn btn-danger" style="padding: 3px 8px; font-size: 10px;">KILL</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // Tab switching inside folder card
+    function switchSettingsTab(tabId, element) {
+      // Hide all settings-sections
+      document.querySelectorAll('.settings-section').forEach(s => s.classList.remove('active'));
+      
+      // Show selected settings-section
+      document.getElementById(tabId).classList.add('active');
+      
+      // Deactivate all folder tabs
+      document.querySelectorAll('.folder-tab').forEach(t => t.classList.remove('active'));
+      
+      // Activate clicked tab
+      element.classList.add('active');
+    }
+
+    // Toggle bottom accordion cards
+    function toggleAccordion(cardId) {
+      const card = document.getElementById(cardId);
+      card.classList.toggle('open');
+    }
+
+    // Reset Form Fields
+    function resetForm() {
+      if(confirm("Are you sure you want to reset all mockup fields to default?")) {
+        document.getElementById('str-cap-rate').value = 1;
+        document.getElementById('str-cap-val').value = 100;
+        document.getElementById('profit-target').value = 5000;
+        document.getElementById('default-sl').value = "";
+        document.getElementById('drawdown-trailing').value = "";
+        document.getElementById('drawdown-single').value = "";
+        document.getElementById('drawdown-multi').value = "";
+        document.getElementById('killfloor-enabled').value = "false";
+        document.getElementById('killfloor-arm').value = 500;
+        document.getElementById('killfloor-gap').value = 1500;
+        document.getElementById('killfloor-confirm').value = 60;
+        document.getElementById('cap-global').value = "";
+        document.getElementById('cap-pct').value = "";
+        document.getElementById('cap-max-alloc').value = 1;
+        document.getElementById('cap-mode').value = "aggregate";
+        document.getElementById('shadow-live-select').value = "false";
+        document.getElementById('shadow-slippage').value = "";
+        document.getElementById('hedge-min-strikes').value = "";
+        document.getElementById('hedge-max-premium').value = "";
+        document.getElementById('hedge-enabled').value = "true";
+        document.getElementById('liq-spread').value = 1.5;
+        document.getElementById('liq-vol').value = 500;
+        document.getElementById('liq-oi').value = 300;
+      }
+    }
+
+    // Fake live feed change for MTM to show dynamic visual cues
+    setInterval(() => {
+      const liveMtm = document.getElementById('live-mtm');
+      if (liveMtm) {
+        const rand = (Math.random() * 200 - 100).toFixed(2);
+        const val = (8450 + parseFloat(rand)).toFixed(2);
+        liveMtm.innerText = (val >= 0 ? "+₹" : "-₹") + Math.abs(val).toLocaleString('en-IN', {minimumFractionDigits: 2});
+        liveMtm.style.color = val >= 0 ? "var(--green-bright)" : "var(--red-bright)";
+      }
+    }, 2000);
+  </script>
+</body>
+</html>

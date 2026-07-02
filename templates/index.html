@@ -607,6 +607,110 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   align-items: center;
   gap: 12px;
 }
+
+/* ── RMS / Risk tab v2 layout (2026-07-02) — folder-sidebar settings +
+   bottom collapsible monitoring accordions. Class names below are unique to
+   this section (checked against the rest of this stylesheet) except .cfg-table
+   which is intentionally reused as-is for the Per-Strategy Override table. ── */
+.folder-card {
+  display: flex;
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 12px;
+  overflow: hidden;
+  margin-bottom: 20px;
+  min-height: 420px;
+  box-shadow: 0 6px 16px rgba(0,0,0,.2);
+}
+.folder-sidebar {
+  width: 220px;
+  background: rgba(255,255,255,.01);
+  border-right: 1px solid #30363d;
+  padding: 14px 0;
+  flex-shrink: 0;
+}
+.folder-sidebar-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8b949e;
+  padding: 0 18px 12px;
+  border-bottom: 1px solid rgba(255,255,255,.03);
+  margin-bottom: 10px;
+  font-weight: 700;
+}
+.folder-tab {
+  padding: 13px 18px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #8b949e;
+  cursor: pointer;
+  transition: all .15s ease;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-left: 3px solid transparent;
+  user-select: none;
+}
+.folder-tab:hover { color: #e6edf3; background: rgba(255,255,255,.02); }
+.folder-tab.active { color: #d29922; background: rgba(210,153,34,.04); border-left-color: #d29922; font-weight: 600; }
+.folder-tab.active.blue-tab { color: #58a6ff; background: rgba(31,111,235,.04); border-left-color: #58a6ff; }
+.folder-tab.active.red-tab { color: #f85149; background: rgba(248,81,73,.04); border-left-color: #f85149; }
+.folder-tab.active.green-tab { color: #3fb950; background: rgba(63,185,80,.04); border-left-color: #3fb950; }
+.folder-tab.active.purple-tab { color: #a371f7; background: rgba(137,87,229,.04); border-left-color: #a371f7; }
+.folder-content { flex: 1; padding: 24px; background: #161b22; overflow-y: auto; min-width: 0; }
+.settings-section { display: none; }
+.settings-section.active { display: block; animation: rmsFadeIn .15s ease-in-out; }
+@keyframes rmsFadeIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
+.settings-section h2 { font-size: 17px; font-weight: 600; color: #e6edf3; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+.settings-section-subtitle { font-size: 11.5px; color: #8b949e; margin-bottom: 18px; line-height: 1.6; }
+
+.rms-table { width: 100%; border-collapse: collapse; font-size: 13px; background: #0d1117; border-radius: 8px; overflow: hidden; border: 1px solid #30363d; }
+.rms-table td { border: 1px solid #30363d; padding: 12px 16px; text-align: left; vertical-align: middle; }
+.rms-table tr:hover { background: rgba(255,255,255,.01); }
+.rms-table td.param-info { width: 32%; background: #161b22; font-weight: 500; color: #e6edf3; }
+.rms-table td.param-info .wavy-subtext { display: block; font-size: 11px; color: #8b949e; font-weight: 400; margin-top: 4px; }
+.rms-table td.param-inputs { width: 68%; padding: 10px; }
+.inputs-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.inputs-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; background: rgba(255,255,255,.015); padding: 6px 12px; border-radius: 6px; border: 1px solid rgba(255,255,255,.02); flex-wrap: wrap; }
+.inputs-row label { font-size: 11.5px; color: #8b949e; white-space: nowrap; }
+.inputs-row input, .inputs-row select {
+  background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 4px;
+  padding: 5px 8px; font-size: 12px; width: 130px; text-align: right; outline: none; transition: border-color .2s;
+}
+.inputs-row input:focus, .inputs-row select:focus { border-color: #58a6ff; }
+.inputs-row select { width: 170px; text-align: left; }
+
+.monitor-group { background: rgba(31,111,235,.02); border: 1px dashed rgba(48,54,61,.7); border-radius: 12px; padding: 18px; margin-top: 8px; }
+.monitor-title { font-size: 11px; color: #8b949e; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+.accordion-card { background: #161b22; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 10px; overflow: hidden; box-shadow: 0 2px 6px rgba(0,0,0,.15); transition: border-color .2s; }
+.accordion-card:last-child { margin-bottom: 0; }
+.accordion-card.blue-acc { border-left: 3px solid #1f6feb; }
+.accordion-card.green-acc { border-left: 3px solid #3fb950; }
+.accordion-card.orange-acc { border-left: 3px solid #d29922; }
+.accordion-card.purple-acc { border-left: 3px solid #8957e5; }
+.accordion-header { background: rgba(255,255,255,.005); padding: 13px 18px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; user-select: none; transition: background-color .2s; }
+.accordion-header:hover { background: rgba(255,255,255,.02); }
+.accordion-header h2 { font-size: 13.5px; font-weight: 600; color: #e6edf3; margin: 0; display: flex; align-items: center; gap: 8px; }
+.accordion-header-right { display: flex; align-items: center; gap: 10px; }
+.accordion-header .arrow { font-size: 11px; color: #8b949e; transition: transform .2s ease; display: inline-block; }
+.accordion-card.open .accordion-header { border-bottom: 1px solid #30363d; }
+.accordion-card.open .accordion-header .arrow { transform: rotate(180deg); }
+.accordion-body { padding: 18px 20px; display: none; background: #0d1117; }
+.accordion-card.open .accordion-body { display: block; }
+
+.balance-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px,1fr)); gap: 12px; }
+.mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.mini-table th, .mini-table td { padding: 8px 10px; border-bottom: 1px solid #30363d; text-align: left; }
+.mini-table th { color: #8b949e; font-weight: 600; background: rgba(255,255,255,.005); }
+.mini-table tr:last-child td { border-bottom: none; }
+
+.rms-btn { padding: 7px 14px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent; transition: opacity .15s, background-color .15s; outline: none; }
+.rms-btn-primary { background: #1f6feb; color: #fff; }
+.rms-btn-primary:hover { opacity: .85; }
+.rms-btn-secondary { background: #21262d; border-color: #30363d; color: #c9d1d9; }
+.rms-btn-secondary:hover { background: #30363d; color: #e6edf3; }
+.section-badge { background: rgba(210,153,34,.1); border: 1px solid rgba(210,153,34,.2); color: #d29922; font-size: 10px; padding: 2px 8px; border-radius: 4px; font-weight: 500; }
 </style>
 </head>
 <body>
@@ -705,6 +809,9 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More ▾</div>
       <div class="dropdown-menu" id="more-dropdown" style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 140px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
         <div class="dropdown-item" onclick="watchToggle(); closeMoreDropdown();" style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">👁 Watch List</div>
+        <a href="/mtm-charts" target="_blank" style="text-decoration: none;">
+          <div class="dropdown-item" style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">📈 MTM Analyzer</div>
+        </a>
       </div>
     </div>
   </div>
@@ -1146,11 +1253,15 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   </div>
 </div>
 
-<!-- RISK TAB -->
+<!-- RISK TAB (v2 layout, 2026-07-02 — sidebar settings + bottom monitoring accordions; every field id/function below is unchanged from the old flat-card layout, only the visual structure changed) -->
 <div class="tab-body" id="tab-risk" style="padding:16px 18px 24px">
-  <div class="card" style="margin-bottom:14px;border-color:#58a6ff">
-    <div style="display:flex;justify-content:space-between;align-items:center">
-      <h2 style="color:#58a6ff;margin:0">💰 Broker Balances</h2>
+
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="font-size:19px;font-weight:600;color:#e6edf3;margin:0">🛡️ Risk Management System (RMS)</h2>
+      <p style="color:#8b949e;font-size:12px;margin-top:3px">Global risk gate, capital limits, account-level protection config.</p>
+    </div>
+    <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
       <label style="font-size:11px;color:#8b949e;display:flex;align-items:center;gap:6px">
         Live orders bhejo
         <select id="default-broker-select" onchange="saveDefaultBroker()"
@@ -1159,309 +1270,301 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
           <option value="kite">Zerodha (Kite)</option>
         </select>
       </label>
+      <button class="rms-btn rms-btn-secondary" onclick="renderRiskTab()">↺ Reload</button>
+      <button class="rms-btn rms-btn-primary" onclick="saveRiskConfig()">💾 Save Configuration</button>
     </div>
-    <div style="font-size:11px;color:#8b949e;margin:10px 0">
-      Live cash + collateral, dono brokers se. <b style="color:#e6edf3">Total Margin</b> (cash+collateral)
-      isi se LIVE strategies ka "Global Max Loss %" cap calculate hota hai — neeche 1️⃣ Strategy Day Cap
-      section dekho. <b style="color:#e6edf3">"Live orders bhejo"</b> decide karta hai naye LIVE entries kis
-      broker pe jaayenge (`risk_gate.default_broker()` — har strategy isi ko padhta hai, jab tak kisi ka apna
-      explicit `broker` override na ho).
-    </div>
-    <div id="broker-balances-content" style="display:grid;grid-template-columns:1fr 1fr;gap:12px"></div>
   </div>
+  <div id="risk-msg" style="font-size:12px;margin-bottom:12px;color:#8b949e"></div>
 
-  <div class="card" style="margin-bottom:14px;border-color:#d29922">
-    <h2 style="color:#d29922">🚦 Rate Limit Monitor</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)"
-      aur "kya (throttle = wait karke mil gaya / 429 = Dhan ne reject kiya)" ke saath tagged hai.
-      Auto-refresh 5s.
+  <div class="folder-card">
+    <div class="folder-sidebar">
+      <div class="folder-sidebar-header">Global Settings</div>
+      <div class="folder-tab active" onclick="switchSettingsTab('max-loss-sec', this)"><span>⚠️</span> Max Loss Protection</div>
+      <div class="folder-tab blue-tab" onclick="switchSettingsTab('capital-alloc-sec', this)"><span>💰</span> Capital Allocation</div>
+      <div class="folder-tab red-tab" onclick="switchSettingsTab('shadow-live-sec', this)"><span>🧪</span> Shadow-Live Limit</div>
+      <div class="folder-tab green-tab" onclick="switchSettingsTab('auto-hedge-sec', this)"><span>🛡</span> Auto Hedge</div>
+      <div class="folder-tab purple-tab" onclick="switchSettingsTab('liquidity-filter-sec', this)"><span>📊</span> Liquidity Filter</div>
     </div>
-    <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-    <div style="max-height:260px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
-      <table style="width:100%;font-size:12px;border-collapse:collapse">
-        <thead style="position:sticky;top:0;background:#161b22">
-          <tr style="text-align:left;color:#8b949e">
-            <th style="padding:6px 8px">Time</th>
-            <th style="padding:6px 8px">Type</th>
-            <th style="padding:6px 8px">Priority</th>
-            <th style="padding:6px 8px">Strategy:Symbol</th>
-            <th style="padding:6px 8px">Wait</th>
+
+    <div class="folder-content">
+
+      <!-- Max Loss Protection -->
+      <div class="settings-section active" id="max-loss-sec">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;flex-wrap:wrap;gap:8px">
+          <h2>⚠️ Max Loss Protection</h2>
+          <span class="section-badge">Global → Per-Strategy → Per-Trade</span>
+        </div>
+        <div class="settings-section-subtitle">
+          3 level pe kaam karta hai: <b style="color:#d29922">Global default</b> (yahan) →
+          <b style="color:#d29922">Per-Strategy override</b> (neeche "Per-Strategy Override" accordion, blank = global) →
+          <b style="color:#d29922">Per-Trade manual</b> (kisi bhi open position ke ⚙️ modal se, hamesha sabse upar priority).
+        </div>
+        <table class="rms-table"><tbody>
+          <tr>
+            <td class="param-info"><span>1️⃣ Strategy Day Cap</span>
+              <span class="wavy-subtext">Pura din ke liye — cumulative P&amp;L itna ₹/% loss cross kare to poori strategy
+                ke naye entries ruk jaate hain + open positions squareoff. PAPER: ₹ cap use hota hai. LIVE: % cap
+                broker ke REAL Total Margin ka % hota hai (fresh balance se, kabhi stale nahi).</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global Max Loss %</label>
+                <input id="risk-global-pct" type="number" step="0.1" placeholder="e.g. 25"/></div>
+              <div class="inputs-row"><label>Global Max Loss ₹</label>
+                <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 10000"/></div>
+            </div></td>
           </tr>
-        </thead>
-        <tbody id="rl-events-body"></tbody>
-      </table>
+          <tr>
+            <td class="param-info"><span>🎯 Daily Profit Target</span>
+              <span class="wavy-subtext">Aaj ka combined realized P&amp;L is target ko cross kare → saari open positions
+                immediately squareoff + us din koi nayi entry nahi. Blank = off.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global Profit Target ₹</label>
+                <input id="risk-global-profit-target" type="number" step="1" placeholder="e.g. 5000 (blank=off)"/></div>
+            </div></td>
+          </tr>
+          <tr>
+            <td class="param-info"><span>2️⃣ Per-Trade Default SL</span>
+              <span class="wavy-subtext">Har naye individual position ke khulte hi ye ₹ stop-loss automatically lag
+                jaata hai — sirf wahi ek leg squareoff hoti hai, baaki strategy/instrument pe asar nahi.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global Default SL ₹</label>
+                <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank=off)"/></div>
+            </div></td>
+          </tr>
+          <tr>
+            <td class="param-info"><span>3️⃣ Account-Level Trailing Lock 🔒</span>
+              <span class="wavy-subtext">Aaj ka total P&amp;L (realized+unrealized) apne peak se neeche aaye → saari
+                positions auto-squareoff. Peak ≥ ₹1 tabhi active. 1 position open → Fixed ₹, 2+ open → % of peak.
+                Blank = off.</span></td>
+            <td class="param-inputs">
+              <div class="inputs-grid">
+                <div class="inputs-row"><label>Trailing Mode</label>
+                  <select id="risk-trailing-lock-mode">
+                    <option value="aggregate">Aggregate (Total Portfolio)</option>
+                    <option value="per_instrument">Per-Instrument (Individual)</option>
+                  </select></div>
+                <div class="inputs-row"><label>Single trade — Fixed ₹</label>
+                  <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000"/></div>
+                <div class="inputs-row"><label>Multi trade — % of peak</label>
+                  <input id="risk-trailing-lock-pct" type="number" step="1" min="1" max="99" placeholder="e.g. 30"
+                         oninput="updateTrailingLockTip()"/></div>
+              </div>
+              <div id="trailing-lock-tip" style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.8;display:none">
+                <span style="color:#d29922">% of peak examples:</span><br>
+                <span id="tlp-ex1"></span><br><span id="tlp-ex2"></span><br><span id="tlp-ex3"></span>
+              </div>
+              <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
+            </td>
+          </tr>
+          <tr>
+            <td class="param-info" style="border-left:3px solid #f85149"><span>4️⃣ 🔒 KILL-ALL Profit Floor</span>
+              <span class="wavy-subtext">Account-level trailing kill-floor. MTM Arm ₹ cross kare → floor arm; floor =
+                confirmed peak − Gap ₹, kabhi neeche nahi aata. MTM floor ke neeche Confirm sec lagatar rahe →
+                SAARI positions close + poore din entries block. Spike/whipsaw pe kabhi fire nahi hota.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Enabled</label>
+                <select id="risk-killfloor-enabled" style="border-color:#f85149">
+                  <option value="false">OFF</option><option value="true">ON</option>
+                </select></div>
+              <div class="inputs-row"><label>Arm ₹ (base)</label>
+                <input id="risk-killfloor-arm" type="number" step="100" placeholder="500"/></div>
+              <div class="inputs-row"><label>Gap ₹ (from peak)</label>
+                <input id="risk-killfloor-gap" type="number" step="100" placeholder="1500"/></div>
+              <div class="inputs-row"><label>Confirm sec</label>
+                <input id="risk-killfloor-confirm" type="number" step="5" placeholder="60"/></div>
+            </div></td>
+          </tr>
+        </tbody></table>
+      </div>
+
+      <!-- Capital Allocation -->
+      <div class="settings-section" id="capital-alloc-sec">
+        <h2>💰 Capital Allocation</h2>
+        <div class="settings-section-subtitle">
+          Global capital — sab strategies milake itne se zyada deploy nahi hoga. Jo signal capital na hone ki wajah se
+          nahi li gayi, woh Orders &amp; P&amp;L me "🚫 Capital" tag ke saath dikhegi (real order nahi jaata).
+          Margin Multiplier: option-SELL karne me premium se zyada margin block hota hai (estimate) — SELL legs ka
+          "capital used" notional se zyada dikhega (e.g. 5 = qty×premium×5). BUY legs affect nahi hote. Default 1 (off).
+        </div>
+        <table class="rms-table"><tbody>
+          <tr>
+            <td class="param-info"><span>Capital Ceilings &amp; Sizing</span>
+              <span class="wavy-subtext">Total Capital ₹ = always-on per-position rule: 1% loss cross kare to force-squareoff, source/SL tags se independent.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global Capital ₹</label>
+                <input id="risk-global-capital" type="number" step="1" placeholder="e.g. 200000"/></div>
+              <div class="inputs-row"><label title="Always-on per-position rule: any open position whose unrealized loss crosses 1% of THIS number gets force-squared-off, regardless of source/SL tags. Leave blank to keep this rule OFF." style="color:#f85149">Total Capital ₹ (1% max-loss)</label>
+                <input id="risk-global-total-capital" type="number" step="1" placeholder="blank = rule OFF" style="border-color:#f85149"/></div>
+              <div class="inputs-row"><label>Margin Multiplier (SELL legs)</label>
+                <input id="risk-global-margin" type="number" step="0.1" placeholder="e.g. 5 (default 1)"/></div>
+              <div class="inputs-row"><label>Mode</label>
+                <select id="risk-global-mode">
+                  <option value="reject">Reject (block entry)</option>
+                  <option value="size_down">Size down (fill what fits)</option>
+                </select></div>
+            </div></td>
+          </tr>
+        </tbody></table>
+      </div>
+
+      <!-- Shadow-Live Limit -->
+      <div class="settings-section" id="shadow-live-sec">
+        <h2>🧪 Shadow-Live Testing (DANGEROUS — OFF by default)</h2>
+        <div class="settings-section-subtitle" style="color:#f85149">
+          ON karne par har PAPER trade ke saath ek REAL Dhan order bhi parallel me fire hoga (same price/qty) — sirf
+          fill/reject compare karne ke liye (slippage check). Paper P&amp;L is se kabhi affect nahi hota. Sirf tab ON
+          karo jab Dhan account balance zero/near-zero ho (warna real order fill ho sakta hai!). Test khatam hote hi OFF kar dena.
+        </div>
+        <table class="rms-table"><tbody>
+          <tr>
+            <td class="param-info"><span>Shadow-Live Mode</span>
+              <span class="wavy-subtext">Dangerous parallel execution — real order fires alongside paper.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global</label>
+                <select id="risk-global-shadow" style="border-color:#f85149">
+                  <option value="false">OFF</option>
+                  <option value="true">ON — fire real orders on paper trades</option>
+                </select></div>
+            </div></td>
+          </tr>
+        </tbody></table>
+      </div>
+
+      <!-- Auto Hedge -->
+      <div class="settings-section" id="auto-hedge-sec">
+        <h2>🛡️ Auto-Hedge (naked option SELL → auto BUY further OTM)</h2>
+        <div class="settings-section-subtitle">
+          Jab koi strategy option SELL karti hai, uske turant baad ek hedge BUY same option type, further OTM,
+          automatically jaata hai. Min Strikes = kam se kam itne strikes ATM/sold-leg se door. Max Premium ₹
+          (optional) = hedge Min Strikes se aur door chalta rehta hai jab tak premium is ₹ se kam/equal na mil jaye —
+          jo bhi door wala strike mile, wahi use hota hai. Dono khali = hedge OFF.
+        </div>
+        <table class="rms-table"><tbody>
+          <tr>
+            <td class="param-info"><span>Option Hedging</span>
+              <span class="wavy-subtext">Strike offsets and premium filters.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global Option Hedging</label>
+                <select id="risk-global-hedge-mode">
+                  <option value="true">Hedge Mode (Auto-Hedge Enabled)</option>
+                  <option value="false">Naked Mode (Hedges Completely Off)</option>
+                </select></div>
+              <div class="inputs-row"><label>Global Min Strikes</label>
+                <input id="risk-global-hedge-strikes" type="number" step="1" placeholder="e.g. 5 (blank=OFF)"/></div>
+              <div class="inputs-row"><label>Global Max Premium ₹</label>
+                <input id="risk-global-hedge-premium" type="number" step="0.5" placeholder="e.g. 10 (blank=off)"/></div>
+            </div></td>
+          </tr>
+        </tbody></table>
+      </div>
+
+      <!-- Liquidity Filter -->
+      <div class="settings-section" id="liquidity-filter-sec">
+        <h2>📊 Live Liquidity Filter (any 2-of-3, ON by default)</h2>
+        <div class="settings-section-subtitle">
+          Static stock-whitelist se zyada flexible — har entry se pehle exact option contract ka live market depth
+          check: Spread% ≤ 1.5, Volume lots ≥ 500 (≥50 before 9:45 AM), OI lots ≥ 300. Teeno mein se kam se kam 2 pass
+          karna kaafi hai. Live data na mile to FAIL-OPEN hota hai (block nahi karta) — illiquid-contract guard hai,
+          P&amp;L-correctness guard nahi.
+        </div>
+        <table class="rms-table"><tbody>
+          <tr>
+            <td class="param-info"><span>Contract Liquidity Guard</span>
+              <span class="wavy-subtext">Live bid-ask spread &amp; volume limits.</span></td>
+            <td class="param-inputs"><div class="inputs-grid">
+              <div class="inputs-row"><label>Global</label>
+                <select id="risk-global-liqfilter">
+                  <option value="true">ON (default)</option>
+                  <option value="false">OFF</option>
+                </select></div>
+            </div></td>
+          </tr>
+        </tbody></table>
+      </div>
+
     </div>
   </div>
 
-  <div class="card" style="margin-bottom:14px;border-color:#3fb950">
-    <h2 style="color:#3fb950">📊 RMS Summary</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Capital used/available, open unrealized P&amp;L, aur max-loss cap ke kitne paas ho — ek nazar me.
-      LTP feed na chal raha ho to unrealized P&amp;L "—" dikhega (capital/position count phir bhi accurate hai).
-    </div>
-    <div id="rms-summary-content" style="overflow-x:auto"><div style="color:#8b949e;font-size:12px;padding:6px">Loading…</div></div>
-    <div style="margin-top:10px">
-      <button class="btn btn-gray" onclick="runReconcile()">🔍 Reconcile vs Broker Funds</button>
-      <span id="rms-reconcile-result" style="font-size:11px;color:#8b949e;margin-left:10px"></span>
-    </div>
-  </div>
+  <!-- ── Bottom collapsible monitoring accordions ── -->
+  <div class="monitor-group">
+    <div class="monitor-title">📊 Live Monitoring &amp; Reports Room</div>
 
-  <div class="card" style="margin-bottom:14px;border-color:#d29922">
-    <h2 style="color:#d29922">⚠️ Max-Loss Protection</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:14px">
-      Do alag-alag, independent guardrails — dono <b style="color:#e6edf3">3 level</b> pe kaam karte hain:
-      <b style="color:#d29922">Global default</b> (yahan set karo) → <b style="color:#d29922">Per-Strategy override</b>
-      (table neeche, blank = global use hoga) → <b style="color:#d29922">Per-Trade manual</b> (kisi bhi open
-      position ke ⚙️ modal se, kabhi bhi badal sakte ho — woh hamesha sabse upar priority leta hai).
-    </div>
-
-    <div style="border:1px solid #30363d;border-radius:8px;padding:14px;margin-bottom:12px">
-      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">1️⃣ Strategy Day Cap</div>
-      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        Pura din ke liye — strategy ka cumulative P&amp;L (saari open+closed legs milake) itna ₹/% loss
-        cross kare to <b style="color:#e6edf3">poori strategy</b> ke liye naye entries ruk jaate hain aur
-        open positions square-off ho jaati hain.
+    <div class="accordion-card blue-acc open" id="acc-balances">
+      <div class="accordion-header" onclick="toggleAccordion('acc-balances')">
+        <h2>💰 Broker Balances &amp; Position Book</h2>
+        <div class="accordion-header-right"><span class="arrow">▼</span></div>
       </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <label style="font-size:12px;color:#adbac7">Global Max Loss %</label>
-        <input id="risk-global-pct" type="number" step="0.1" placeholder="e.g. 25"
-               style="width:100px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        <label style="font-size:12px;color:#adbac7;margin-left:6px">Global Max Loss ₹</label>
-        <input id="risk-global-rs" type="number" step="1" placeholder="e.g. 10000"
-               style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      </div>
-      <div style="font-size:11px;color:#6e7681;margin-top:6px">
-        <b style="color:#d29922">PAPER</b> strategies: ₹ cap use hota hai (jo upar 💰 Broker Balances
-        card me "dono diye ho to jo pehle hit ho wahi chalega"). <b style="color:#d29922">LIVE</b>
-        strategies (uska jo broker — Dhan ya Zerodha — woh trade kar rahi hai): % cap ab us broker ke
-        REAL Total Margin (cash+collateral) ka % hota hai, ₹ cap ko replace karke — har baar fresh
-        balance se calculate hota hai, kabhi stale nahi.
+      <div class="accordion-body">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+          Live cash + collateral, dono brokers se. Total Margin (cash+collateral) isi se LIVE strategies ka
+          "Global Max Loss %" cap calculate hota hai (⚠️ Max Loss Protection tab dekho).
+        </div>
+        <div id="broker-balances-content" class="balance-grid"></div>
       </div>
     </div>
 
-    <div style="border:1px solid #1f6feb55;border-radius:8px;padding:14px;background:#1f6feb08">
-      <div style="font-size:13px;font-weight:600;color:#3fb950;margin-bottom:4px">🎯 Daily Profit Target</div>
-      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        Jab <b style="color:#3fb950">aaj ka combined realized P&amp;L</b> is target ko cross kare →
-        <b style="color:#e6edf3">saari open positions immediately square-off</b> + us din ke liye
-        <b style="color:#e6edf3">koi bhi nayi entry nahi</b>. Blank = off.
-      </div>
-      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
-        <label style="font-size:12px;color:#adbac7">Global Profit Target ₹</label>
-        <input id="risk-global-profit-target" type="number" step="1" placeholder="e.g. 5000 (blank = off)"
-               style="width:180px;background:#0d1117;color:#3fb950;padding:6px;border:1px solid #1f6feb55;border-radius:4px;font-weight:600"/>
-      </div>
-      <div style="font-size:11px;color:#6e7681;margin-top:6px">
-        Max-loss ki tarah hi kaam karta hai — par profit cross hone pe trigger hota hai. Dono independent hain.
-      </div>
-    </div>
-
-    <div style="border:1px solid #30363d;border-radius:8px;padding:14px">
-      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">2️⃣ Per-Trade Default SL</div>
-      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        Har <b style="color:#e6edf3">individual naye position</b> (kisi bhi instrument) ke khulte hi yeh ₹
-        stop-loss automatically lag jaata hai — sirf wahi ek leg square-off hoti hai, baaki strategy/instrument
-        pe asar nahi. Hit hone ke baad usi/kisi bhi instrument me nayi entry phir bhi le sakte hain.
-      </div>
-      <div style="display:flex;gap:10px;align-items:center">
-        <label style="font-size:12px;color:#adbac7">Global Default SL ₹</label>
-        <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank = off)"
-               style="width:160px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      </div>
-    </div>
-
-    <div style="border:1px solid #30363d;border-radius:8px;padding:14px;margin-top:12px">
-      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">3️⃣ Account-Level Trailing Profit Lock 🔒</div>
-      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        Jab <b style="color:#3fb950">aaj ka total P&L (realized + unrealized)</b> apne peak se neeche aaye →
-        <b style="color:#f85149">saari positions auto-squareoff</b>. Sirf tab fire hota hai jab peak ≥ ₹1 ho.
-        <br>• <b>1 position open</b> → Fixed ₹ use hoga &nbsp;|&nbsp; <b>2+ positions open</b> → % of peak use hoga (jo bhi set hai)
-        <br><span style="color:#d29922">Blank = off. Dono blank = trailing lock off.</span>
-      </div>
-      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-        <!-- Trailing Lock Mode Selector - Fixed by Antigravity AI -->
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Trailing Mode</label>
-          <select id="risk-trailing-lock-mode" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px">
-            <option value="aggregate">Aggregate (Total Portfolio)</option>
-            <option value="per_instrument">Per-Instrument (Individual)</option>
-          </select>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Single trade — Fixed ₹</label>
-          <input id="risk-trailing-lock" type="number" step="100" placeholder="e.g. 2000 (blank = off)"
-                 style="width:160px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Multi trade — % of peak</label>
-          <input id="risk-trailing-lock-pct" type="number" step="1" min="1" max="99" placeholder="e.g. 30 (blank = off)"
-                 style="width:120px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"
-                 oninput="updateTrailingLockTip()"/>
-          <span style="font-size:12px;color:#8b949e">%</span>
+    <div class="accordion-card green-acc open" id="acc-rms-summary">
+      <div class="accordion-header" onclick="toggleAccordion('acc-rms-summary')">
+        <h2>📊 RMS Live Summary</h2>
+        <div class="accordion-header-right">
+          <button class="rms-btn rms-btn-secondary" style="padding:3px 10px;font-size:10px"
+                  onclick="event.stopPropagation(); runReconcile()">🔍 Reconcile Funds</button>
+          <span class="arrow">▼</span>
         </div>
       </div>
-      <div id="trailing-lock-tip" style="font-size:11px;color:#8b949e;margin-top:8px;line-height:1.8;display:none">
-        <span style="color:#d29922">% of peak examples:</span><br>
-        <span id="tlp-ex1"></span><br>
-        <span id="tlp-ex2"></span><br>
-        <span id="tlp-ex3"></span>
-      </div>
-      <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
-    </div>
-
-    <div style="border:2px solid #f85149;border-radius:8px;padding:14px;margin-top:12px">
-      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">4️⃣ 🔒 KILL-ALL Profit Floor (account-level trailing)</div>
-      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-        MTM <b>Arm ₹</b> cross kare → floor arm hota hai. Floor = <b>confirmed peak − Gap ₹</b>,
-        har ₹1 ke naye (confirmed) high pe upar chadhta hai, <b style="color:#3fb950">kabhi neeche nahi aata</b>.
-        MTM floor ke neeche <b>Confirm sec</b> tak lagatar rahe → <b style="color:#f85149">SAARI positions
-        limit-order se close + poore din ki nayi entries block</b> (har strategy + webhook).
-        Ek spike/whipsaw pe kabhi fire nahi hota — confirm timer + 2-reading peak dono chahiye.
-      </div>
-      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Enabled</label>
-          <select id="risk-killfloor-enabled" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px">
-            <option value="false">OFF</option>
-            <option value="true">ON</option>
-          </select>
+      <div class="accordion-body">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+          Capital used/available, open unrealized P&amp;L, max-loss cap ke kitne paas ho — ek nazar me. LTP feed na
+          chal raha ho to unrealized P&amp;L "—" dikhega.
         </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Arm ₹ (base)</label>
-          <input id="risk-killfloor-arm" type="number" step="100" placeholder="500"
-                 style="width:110px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Gap ₹ (peak se kitna girne do)</label>
-          <input id="risk-killfloor-gap" type="number" step="100" placeholder="1500"
-                 style="width:110px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <label style="font-size:12px;color:#adbac7">Confirm sec</label>
-          <input id="risk-killfloor-confirm" type="number" step="5" placeholder="60"
-                 style="width:90px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-        </div>
-      </div>
-      <div id="killfloor-live" style="margin-top:12px;display:none;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px">
-        <div style="display:flex;gap:26px;align-items:baseline;flex-wrap:wrap">
-          <div><span style="font-size:11px;color:#8b949e">FLOOR ABHI</span><br>
-               <span id="kf-floor" style="font-size:26px;font-weight:700;color:#3fb950">—</span></div>
-          <div><span style="font-size:11px;color:#8b949e">CONFIRMED PEAK</span><br>
-               <span id="kf-peak" style="font-size:18px;font-weight:600;color:#e6edf3">—</span></div>
-          <div><span style="font-size:11px;color:#8b949e">STATUS</span><br>
-               <span id="kf-status" style="font-size:14px;font-weight:600">—</span></div>
+        <div id="rms-summary-content" style="overflow-x:auto"><div style="color:#8b949e;font-size:12px;padding:6px">Loading…</div></div>
+        <div style="margin-top:8px"><span id="rms-reconcile-result" style="font-size:11px;color:#8b949e"></span></div>
+        <div id="killfloor-live" style="margin-top:14px;display:none;background:#161b22;border:1px solid rgba(248,81,73,.2);border-radius:8px;padding:12px 16px">
+          <div style="font-size:12px;font-weight:600;color:#f85149;margin-bottom:8px">🔒 KILL-ALL LIVE FLOOR</div>
+          <div style="display:flex;gap:26px;align-items:baseline;flex-wrap:wrap">
+            <div><span style="font-size:11px;color:#8b949e">FLOOR ABHI</span><br>
+                 <span id="kf-floor" style="font-size:26px;font-weight:700;color:#3fb950">—</span></div>
+            <div><span style="font-size:11px;color:#8b949e">CONFIRMED PEAK</span><br>
+                 <span id="kf-peak" style="font-size:18px;font-weight:600;color:#e6edf3">—</span></div>
+            <div><span style="font-size:11px;color:#8b949e">STATUS</span><br>
+                 <span id="kf-status" style="font-size:14px;font-weight:600">—</span></div>
+          </div>
         </div>
       </div>
     </div>
 
-    <button class="btn btn-amber" style="margin-top:14px" onclick="saveRiskConfig()">💾 Save</button>
-    <div id="risk-msg" style="font-size:12px;margin-top:8px;color:#8b949e"></div>
-  </div>
+    <div class="accordion-card orange-acc" id="acc-rate-limit">
+      <div class="accordion-header" onclick="toggleAccordion('acc-rate-limit')">
+        <h2>🚦 Rate Limit Room</h2>
+        <div class="accordion-header-right"><span class="arrow">▼</span></div>
+      </div>
+      <div class="accordion-body">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+          Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)" aur "kya (throttle
+          / 429)" tagged. Auto-refresh 5s.
+        </div>
+        <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+        <div style="max-height:260px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
+          <table class="mini-table">
+            <thead style="position:sticky;top:0"><tr><th>Time</th><th>Type</th><th>Priority</th><th>Strategy:Symbol</th><th>Wait</th></tr></thead>
+            <tbody id="rl-events-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
 
-  <div class="card" style="margin-bottom:14px;border-color:#1f6feb">
-    <h2 style="color:#58a6ff">💰 Capital Allocation</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Global capital — sab strategies milake itne se zyada deploy nahi hoga. Jo signal capital
-      na hone ki wajah se nahi li gayi, woh Orders &amp; P&amp;L me "🚫 Capital" tag ke saath dikhegi (real order nahi jaata).
-      <b style="color:#e6edf3">Margin Multiplier:</b> option-SELL karne me premium se zyada margin block hota hai
-      (real broker number nahi, ek estimate) — multiplier se SELL legs ka "capital used" notional se zyada dikhega
-      (e.g. 5 = qty×premium×5). BUY legs (premium pay karna) is se affect nahi hote. Default 1 (off).
+    <div class="accordion-card purple-acc open" id="acc-override">
+      <div class="accordion-header" onclick="toggleAccordion('acc-override')">
+        <h2>⚙️ Per-Strategy Override</h2>
+        <div class="accordion-header-right"><span class="arrow">▼</span></div>
+      </div>
+      <div class="accordion-body">
+        <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+          Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
+        </div>
+        <div id="risk-strategy-table" style="overflow-x:auto"></div>
+      </div>
     </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <label style="font-size:12px;color:#adbac7">Global Capital ₹</label>
-      <input id="risk-global-capital" type="number" step="1" placeholder="e.g. 200000"
-             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <label style="font-size:12px;color:#f85149;margin-left:14px" title="Always-on per-position rule: any open position whose unrealized loss crosses 1% of THIS number gets force-squared-off, regardless of source/SL tags. Leave blank to keep this rule OFF.">Total Capital ₹ (1% max-loss)</label>
-      <input id="risk-global-total-capital" type="number" step="1" placeholder="blank = rule OFF"
-             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px"/>
-      <label style="font-size:12px;color:#adbac7;margin-left:14px">Margin Multiplier (SELL legs)</label>
-      <input id="risk-global-margin" type="number" step="0.1" placeholder="e.g. 5 (default 1)"
-             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <label style="font-size:12px;color:#adbac7;margin-left:14px">Mode</label>
-      <select id="risk-global-mode" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px">
-        <option value="reject">Reject (block entry)</option>
-        <option value="size_down">Size down (fill what fits)</option>
-      </select>
-      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
-    </div>
-  </div>
 
-  <div class="card" style="margin-bottom:14px;border-color:#f85149">
-    <h2 style="color:#f85149">🧪 Shadow-Live Testing (DANGEROUS — OFF by default)</h2>
-    <div style="font-size:11px;color:#f85149;margin-bottom:10px;font-weight:600">
-      ON karne par har PAPER trade ke saath ek REAL Dhan order bhi parallel me fire hoga (same price/qty) —
-      sirf fill/reject compare karne ke liye (slippage check). Paper P&amp;L is se kabhi affect nahi hota.
-      <u>Sirf tab ON karo jab Dhan account balance zero/near-zero ho</u> (warna real order fill ho sakta hai!).
-      Test khatam hote hi OFF kar dena.
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <label style="font-size:12px;color:#adbac7">Global</label>
-      <select id="risk-global-shadow" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px">
-        <option value="false">OFF</option>
-        <option value="true">ON — fire real orders on paper trades</option>
-      </select>
-      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:14px;border-color:#3fb950">
-    <h2 style="color:#3fb950">🛡️ Auto-Hedge (naked option SELL → auto BUY further OTM)</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Jab koi strategy option SELL karti hai (abhi sirf range_trader/ARS_CHAIN_V1), uske turant baad ek
-      hedge BUY same option type, further OTM, automatically jaata hai. <b style="color:#e6edf3">Min Strikes</b> =
-      kam se kam itne strikes ATM/sold-leg se door. <b style="color:#e6edf3">Max Premium ₹</b> (optional) = agar set hai,
-      hedge Min Strikes se aur door chalta rehta hai jab tak us strike ka premium is ₹ se kam/equal na mil jaye
-      (NIFTY jaise instruments me sasta hedge dhoondhne ke liye) — jo bhi door wala strike mile (Min Strikes ya
-      Max Premium), wahi use hota hai. Dono khali = hedge OFF.
-    </div>
-    <!-- Global Option Hedging Switch - Fixed by Antigravity AI -->
-    <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px">
-      <label style="font-size:12px;color:#adbac7">Global Option Hedging</label>
-      <select id="risk-global-hedge-mode" style="background:#0d1117;color:#3fb950;padding:6px;border:1px solid #1f6feb55;border-radius:4px;font-weight:600">
-        <option value="true">Hedge Mode (Auto-Hedge Enabled)</option>
-        <option value="false">Naked Mode (Hedges Completely Off)</option>
-      </select>
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <label style="font-size:12px;color:#adbac7">Global Min Strikes</label>
-      <input id="risk-global-hedge-strikes" type="number" step="1" placeholder="e.g. 5 (blank = OFF)"
-             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <label style="font-size:12px;color:#adbac7;margin-left:14px">Global Max Premium ₹</label>
-      <input id="risk-global-hedge-premium" type="number" step="0.5" placeholder="e.g. 10 (blank = off)"
-             style="width:140px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
-      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
-    </div>
-  </div>
-
-  <div class="card" style="margin-bottom:14px;border-color:#1f6feb">
-    <h2 style="color:#1f6feb">📊 Live Liquidity Filter (any 2-of-3, ON by default)</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Static stock-whitelist se zyada flexible — har entry se pehle us EXACT option contract ka
-      live market depth check hota hai: <b style="color:#e6edf3">Spread%</b> ≤ 1.5 ((ask-bid)/ltp×100),
-      <b style="color:#e6edf3">Volume lots</b> ≥ 500 (≥50 before 9:45 AM, volume naturally kam hota hai
-      session shuru mein), <b style="color:#e6edf3">OI lots</b> ≥ 300. Teeno mein se <b>kam se kam 2 pass</b>
-      karna kaafi hai — ek dimension thoda weak ho to bhi trade ho sakta hai, isse range zyada strict
-      whitelist se badi hai aur naye liquid stocks bhi automatically mil jaate hain bina manual list
-      update kiye. Live data na mile (feed cold/down) to FAIL-OPEN hota hai (block nahi karta) — yeh
-      illiquid-contract guard hai, P&L-correctness guard nahi.
-    </div>
-    <div style="display:flex;gap:10px;align-items:center">
-      <label style="font-size:12px;color:#adbac7">Global</label>
-      <select id="risk-global-liqfilter" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #1f6feb;border-radius:4px">
-        <option value="true">ON (default)</option>
-        <option value="false">OFF</option>
-      </select>
-      <button class="btn btn-amber" style="margin-left:14px" onclick="saveRiskConfig()">💾 Save</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h2>Per-Strategy Override</h2>
-    <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
-      Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
-    </div>
-    <div id="risk-strategy-table" style="overflow-x:auto"></div>
   </div>
 </div>
 
@@ -2210,6 +2313,19 @@ async function saveDefaultBroker(){
   } catch(e) {
     alert('Default broker save failed: ' + e);
   }
+}
+
+// ── RMS tab v2 layout helpers (2026-07-02) — sidebar section switch + bottom accordion toggle ──
+function switchSettingsTab(sectionId, el){
+  document.querySelectorAll('#tab-risk .settings-section').forEach(s => s.classList.remove('active'));
+  const sec = document.getElementById(sectionId);
+  if (sec) sec.classList.add('active');
+  document.querySelectorAll('#tab-risk .folder-tab').forEach(t => t.classList.remove('active'));
+  if (el) el.classList.add('active');
+}
+function toggleAccordion(cardId){
+  const card = document.getElementById(cardId);
+  if (card) card.classList.toggle('open');
 }
 
 async function renderRiskTab(){
