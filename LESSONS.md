@@ -1790,3 +1790,25 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 
 **Permanent guard:** Any code path that places an EXIT/close order for an option position must confirm the position still exists at the broker first (fresh `positions()` + `broker_sync._check_flat()`), not trust in-memory state or `order_store` alone — both can lag a manual/external close. New strategies: put this check in the exit path from day one (same as the entry path goes through `strategy_safety.gate_entry`).
 
+
+---
+
+## TRAP #74 — Order-chase could re-place a DUPLICATE order after an external/manual cancel; chase also silently aborted itself whenever its own cancel confirmed quickly 🔴🔴 (Fixed — live verification pending)
+
+**Symptom (reported as "MARUTI duplicate today"; mechanism verified by code-trace, NOT found in the strategy log):** A human cancels a pending order at the broker while `smart_order.execute()`'s live path is still polling/chasing it — and the engine places a brand-new order on the same side/instrument/strike. One intended order becomes two.
+
+**What the code-trace actually found (2026-07-02):** The originally-suspected mechanism — the fill-poll's hardcoded `if fill_st in ("TRADED", "REJECTED")` not recognizing `CANCELLED` — could NOT fire on the deployed code, because both brokers' `get_fill()` already collapsed `CANCELLED` → `"REJECTED"` internally (since commit `998249f`, 2026-06-30; verified identical local + VPS). No `[CHASE]` line or duplicate MARUTI order exists in `ARS_CHAIN_V1.log` for 07-01/07-02 either. But the same block had THREE real, adjacent gaps:
+
+1. **The real duplicate path:** in the chase branch, after `broker.cancel_order(oid)` the re-check `get_fill()` can fail (429/network — swallowed by `except: pass`, leaving `fill_st` stale at `"PENDING"`) or lag (Kite `CANCEL PENDING` → `"PENDING"`). The code then re-placed a fresh order *without ever knowing whether its own cancel — or anyone's — actually happened*. A manual cancel landing in that window = duplicate order.
+2. **Chase was self-defeating:** when the chase's OWN cancel confirmed quickly, `get_fill()` returned `CANCELLED`→`"REJECTED"`, the loop broke, and the whole entry/exit was written off as "fill confirmed REJECTED" (provisional row marked rejected) — the chase never re-placed at all. The feature only "worked" when the broker was slow to reflect the cancel — i.e., exactly when re-placing was least safe.
+3. **Unmapped terminal/partial statuses:** Dhan `EXPIRED` fell through to `"PENDING"` (→ chase re-places an order the broker already declared dead), and `PART_TRADED` (Dhan literal status; Kite `OPEN` with `filled_quantity>0`) also read as `"PENDING"` — cancel + re-place of a partially-filled order re-places the FULL qty, duplicating the already-filled part.
+
+**Fix (smart_order.py + both brokers + base_broker docstring):**
+- Fill-poll break + post-poll check use `_is_terminal(fill_st)` (the sets `_REJECTED_STATUSES`/`_TERMINAL_STATUSES` existed all along, unused here); explicit log line `terminal non-fill status X, chase skipped` when a poll ends on a non-fill terminal.
+- **Re-place is now gated on `cancel_ok`** — the chase only re-places when OUR `cancel_order()` was affirmatively accepted by the broker. `cancel_ok=False` + terminal status = someone else acted (manual cancel/reject) → chase aborted, loud log, no re-place. `cancel_ok=False` + unknown status = NOT re-placing either (duplicate-order guard), provisional row + pos_monitor protect whatever the truth turns out to be. `cancel_ok=True` + `CANCELLED` = the normal chase path — now actually re-places (fixes gap 2).
+- `get_fill()` on both brokers returns terminal statuses LITERALLY (`REJECTED`/`CANCELLED`/`EXPIRED`) instead of collapsing to `REJECTED`; Kite also matches `CANCELLED AMO` via prefix. `PART_TRADED` returned distinctly by both; smart_order refuses to chase it (no cancel, no re-place — logs and leaves the provisional row + monitor protection).
+- Downstream: the rejected-branch matches `_is_rejected(fill_st)` (any literal), logs the literal status; `order_store` status stays `"rejected"` (P&L-exclusion semantics unchanged).
+
+**Permanent guard:** Never compare broker order statuses against a hardcoded 2-tuple — always `_is_terminal()`/`_is_rejected()`. Never re-place an order unless your own cancel was POSITIVELY confirmed (`cancel_ok is True`) — "status unknown" after a cancel attempt means STOP, not retry. Any partial-fill status means the chase is over. And when a bug report names a mechanism, verify it against the deployed code + logs before fixing — here the named mechanism was impossible on the deployed code, and the real gaps were adjacent to it.
+
+**Fast-detect:** `grep -E "CHASE.*(external|NOT re-placing|PART_TRADED)|terminal non-fill" logs/*.log` — any hit means one of these guards fired in production.

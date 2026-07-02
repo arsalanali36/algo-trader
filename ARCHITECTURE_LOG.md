@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — TRAP #74: order-chase duplicate-order guard (terminal-status + cancel_ok gating)
+**Status:** DONE (user review + VPS deploy pending)
+**Kya:** smart_order chase loop — manual/external cancel ke baad duplicate order re-place hone ka path band; chase ka self-abort bug (apna hi cancel "REJECTED" samajh lena) fix; Dhan EXPIRED/PART_TRADED + Kite partial-fill statuses ab distinctly handled.
+**Layer:** execution / broker
+**Files:** smart_order.py, brokers/dhan_broker.py, brokers/kite_broker.py, brokers/base_broker.py, LESSONS.md (TRAP #74)
+**Kyun:** Worklist Priority 1 — "MARUTI duplicate" report. Code-trace ne dikhaya reported mechanism deployed code pe fire nahi ho sakta tha (get_fill CANCELLED→REJECTED collapse pehle se tha); asli gaps adjacent the — cancel_ok-unaware re-place, self-defeating chase, unmapped EXPIRED/PART_TRADED.
+**Depends on:** nothing
+
+---
+
 ## 2026-06-30 — Orders & P&L tab: 5 compounding bugs fixed (OPEN positions, trailing floor, NET panel)
 **Status:** DONE
 **Kya:** P&L tab me open positions nahi dikh rahi thi, trailing 30% floor kabhi fire nahi hoti thi, NET panel tiles "—" dikh rahe the, page refresh pe 10+ second freeze. Sab ek hi session me fix kiya.

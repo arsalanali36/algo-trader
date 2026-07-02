@@ -432,8 +432,11 @@ class KiteBroker(BaseBroker):
 
     def get_fill(self, order_id):
         """Return (status_str, fill_price) for a placed order.
-        status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
-        fill_price: actual average fill price, or None if not yet filled."""
+        status_str: 'TRADED' | 'REJECTED' | 'CANCELLED' | 'PART_TRADED' | 'PENDING' | None
+        fill_price: actual average fill price, or None if not yet filled.
+        Terminal non-fill statuses are returned LITERALLY (not collapsed to
+        REJECTED) so smart_order's _is_terminal/_is_rejected — and the logs —
+        can tell a broker reject from a manual cancel (TRAP #74)."""
         if not order_id:
             return None, None
         import kite_rate_limiter as _krl
@@ -445,14 +448,22 @@ class KiteBroker(BaseBroker):
                 return None, None
             last = hist[-1]
             st = str(last.get("status") or "").upper()
-            # Kite statuses: COMPLETE, REJECTED, CANCELLED, OPEN, TRIGGER PENDING
+            # Kite statuses: COMPLETE, REJECTED, CANCELLED, CANCELLED AMO,
+            # OPEN, TRIGGER PENDING, CANCEL PENDING, VALIDATION PENDING, ...
             if st == "COMPLETE":
                 price = float(last.get("average_price") or 0)
                 return "TRADED", price if price > 0 else None
-            if st in ("REJECTED", "CANCELLED"):
+            if st == "REJECTED" or st.startswith("CANCELLED"):
                 reason = last.get("status_message") or ""
                 log.warning(f"[KITE] order {order_id} {st}: {reason}")
-                return "REJECTED", None
+                return ("REJECTED" if st == "REJECTED" else "CANCELLED"), None
+            # Partially filled: Kite keeps status OPEN with filled_quantity>0 —
+            # smart_order must never cancel+re-place these (over-fill risk).
+            try:
+                if int(last.get("filled_quantity") or 0) > 0:
+                    return "PART_TRADED", None
+            except Exception:
+                pass
             return "PENDING", None
         except Exception as e:
             log.warning(f"[KITE] get_fill({order_id}) failed: {e}")

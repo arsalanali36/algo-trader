@@ -223,10 +223,21 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                         fill_st = None
                     log(f"[FILL-POLL] {trad_sym} attempt {attempt+1}/5"
                         f"{f' (chase {chase_round})' if chase_round else ''} -> {fill_st}")
-                    if fill_st in ("TRADED", "REJECTED"):
+                    # TRAP #74: _is_terminal, not a hardcoded ("TRADED","REJECTED")
+                    # pair — CANCELLED/EXPIRED are equally final, and treating them
+                    # as still-pending is what lets the chase re-place a duplicate.
+                    if _is_terminal(fill_st):
                         break
 
-            if fill_st in ("TRADED", "REJECTED"):
+            if _is_terminal(fill_st):
+                if _is_rejected(fill_st):
+                    log(f"[FILL-POLL] {trad_sym} — terminal non-fill status {fill_st}, chase skipped")
+                break
+            if fill_st == "PART_TRADED":
+                # Cancelling a partially-filled order and re-placing full qty would
+                # duplicate the already-filled part — never chase these.
+                log(f"[CHASE] {trad_sym} PART_TRADED — not chasing (re-place would over-fill); "
+                    f"provisional row + pos_monitor protect the filled part")
                 break
             if not can_chase or chase_round >= MAX_CHASE:
                 break   # give up — falls through to the timeout handling below
@@ -239,8 +250,9 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
             # the CURRENT market price — chasing it — instead of leaving it
             # to fill (or not) on its own, unmanaged, for an unbounded time. ──
             chase_round += 1
+            cancel_ok = False
             try:
-                broker.cancel_order(oid)
+                cancel_ok = bool(broker.cancel_order(oid))
             except Exception as _ce:
                 log(f"[CHASE] {trad_sym} cancel failed: {_ce}")
             # Cancel can race a fill that landed a moment earlier — re-check
@@ -249,7 +261,20 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                 fill_st, fill_price = broker.get_fill(oid)
             except Exception:
                 pass
-            if fill_st in ("TRADED", "REJECTED"):
+            if fill_st == "TRADED":
+                break
+            # TRAP #74: only re-place when OUR cancel was affirmatively accepted.
+            # cancel_ok=False + a terminal/unknown status means someone ELSE acted
+            # on this order (manual cancel at the broker, reject) — re-placing
+            # here is exactly the duplicate-order bug. cancel_ok=True + CANCELLED
+            # is the normal chase path (our own cancel confirming).
+            if not cancel_ok:
+                if _is_rejected(fill_st):
+                    log(f"[CHASE] {trad_sym} — order already {fill_st} at broker and our cancel "
+                        f"was not the cause (external/manual cancel or reject); chase aborted, no re-place")
+                else:
+                    log(f"[CHASE] {trad_sym} — cancel not accepted and status unconfirmed ({fill_st}); "
+                        f"NOT re-placing (duplicate-order guard), provisional row protects either way")
                 break
 
             # Exit chase escalates how far the LIMIT crosses the spread each
@@ -292,11 +317,11 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
                     log(f"[order_store] chase provisional update failed: {_ue}")
             fill_st, fill_price = None, None   # reset for this round's poll
 
-        if fill_st == "REJECTED":
-            log(f"[LIVE-SKIP] {trad_sym} — fill confirmed REJECTED, P&L not recorded")
+        if _is_rejected(fill_st):
+            log(f"[LIVE-SKIP] {trad_sym} — fill confirmed {fill_st}, P&L not recorded")
             res["ok"] = False
             res["status"] = "rejected"
-            res["reason"] = "fill rejected at broker"
+            res["reason"] = f"order {fill_st} at broker"
             if provisional_id:
                 try:
                     import order_store

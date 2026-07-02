@@ -77,7 +77,11 @@ class BaseBroker(ABC):
 
     def get_fill(self, order_id):
         """Optional: return (status_str, fill_price) for a placed order.
-        status_str: 'TRADED' | 'REJECTED' | 'PENDING' | None
+        status_str: 'TRADED' | 'REJECTED' | 'CANCELLED' | 'EXPIRED' |
+                    'PART_TRADED' | 'PENDING' | None
+        Terminal non-fill statuses must be returned literally (never collapsed
+        into REJECTED) — smart_order distinguishes them via _is_terminal /
+        _is_rejected, and PART_TRADED blocks the order-chase (TRAP #74).
         fill_price: actual average fill price float, or None.
         Default: (None, None) — callers treat as "could not confirm"."""
         return None, None
