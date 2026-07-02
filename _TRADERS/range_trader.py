@@ -772,7 +772,18 @@ def main(strategy_id="range"):
     except Exception as e:
         log.warning(f"dhan_feed start failed (liquidity checks will keep using REST fallback only): {e}")
 
-    last_day        = None
+    # Seed last_day to TODAY (not None) — _recover_state_from_order_store()
+    # above must never be immediately undone by the loop's own "new day" check
+    # below. With last_day=None, the very first iteration always sees
+    # now.date() != last_day and calls reset_daily_state(), which wipes every
+    # _state entry (including what recovery JUST populated) right back to
+    # flat, one line later. Found live 2026-07-02 via VPS log: 2026-07-01
+    # 11:24:29 "[RECOVER] re-attached 1 open position" was immediately
+    # followed by "New trading day — resetting state & reloading daily
+    # levels" — TRAP #28's fix had been silently undoing itself since it
+    # shipped 2026-06-29. Zero open positions at the time this was found+
+    # fixed (confirmed via order_store before restarting).
+    last_day        = ist_now().date()
     daily_levels    = {}   # symbol → [(price, type)]
     pivot_labels    = {}   # symbol → {rounded_price: specific label, e.g. "R3"/"S1"/"P"/"PDH"} — display-only, never used in entry logic
 

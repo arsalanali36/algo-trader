@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — range_trader.py last_day=None bug fixed (TRAP #28's fix was silently undoing itself) — LIVE process, restarted with explicit user go-ahead
+**Status:** DONE (deployed + restarted, zero open positions confirmed before AND after)
+**Kya:** Same bug as rsi_trader/universe_trader (fixed earlier today) — `last_day = None` before the main loop meant the loop's OWN "new day" check fired on the very first iteration after every restart, wiping _recover_state_from_order_store()'s just-populated _state right back to flat. VPS log proof: 2026-07-01 11:24:29 "[RECOVER] re-attached 1 open position" immediately followed by "New trading day — resetting state". This is the LIVE ARS_CHAIN_V1 process — user explicitly confirmed go-ahead after I verified zero open positions in order_store first. Fix: seed `last_day = ist_now().date()` right after recovery instead of None.
+**Layer:** execution
+**Files:** _TRADERS/range_trader.py
+**Kyun:** User asked me to verify the "data survives restart" claim end-to-end; found this while porting the same recovery pattern to rsi_trader/universe_trader.
+**Depends on:** nothing (fix is 1-line, same as the other two files)
+
+---
+
 ## 2026-07-02 — rsi_trader/universe_trader restart-recovery (TRAP #28 ported) + last_day seeding bug found+fixed
 **Status:** DONE (deployed — neither process was running at fix time, so zero live impact)
 **Kya:** rsi_trader.py aur universe_trader.py dono me _state (positions/active_opts/trades_today ya _state dict) restart pe order_store se rebuild nahi hoti thi — sirf range_trader.py ko TRAP #28 mila tha 2026-06-29, ye dono chhoot gaye the. Naya `_recover_rsi_state()` / `_recover_state_from_order_store()` add kiya, dono ne CE/PE-suffix se LONG/SHORT derive karna aur (universe ke liye) equity-route BUY/SELL entry-side bhi handle karna cover kiya. **Isi ke saath ek naya, zyada serious bug mila:** dono files (aur range_trader.py bhi, jo ABHI LIVE hai) me `last_day/last_date = None` set hota tha loop se pehle — jiski wajah se pehli hi loop-iteration turant "New trading day" reset trigger karti thi, jo recovery ne abhi populate kiya tha use turant wapas khali kar deti thi. VPS log se confirm kiya (ARS_CHAIN_V1.log 2026-07-01 11:24:29): "[RECOVER] re-attached 1 open position" ke agli hi line pe "New trading day — resetting state". rsi_trader/universe_trader me `last_date`/`last_day` ko turant `ist_now().date()` se seed kar diya (recovery ke turant baad) — range_trader.py ka wahi fix pending hai (live process, alag se permission maang raha hoon).
