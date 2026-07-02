@@ -230,6 +230,77 @@ def _parse_dhan_trad_sym(dhan_sym):
     return name, expiry, strike, opt_type
 
 
+def resolve_dhan_from_kite_symbol(kite, kite_tradingsymbol):
+    """Reverse of resolve_kite_symbol() — Kite tradingsymbol -> Dhan
+    (sec_id, trad_sym, lot_size). Built 2026-07-02 to safely auto-adopt a
+    position the user placed DIRECTLY on Zerodha (manual entry, or a manual
+    SL/Target limit that filled) so pos_monitor_loop's SL/TP/EOD protection
+    picks it up without waiting for a button click.
+
+    Uses the SAME non-guessing approach as the forward direction: Kite's own
+    structured instrument fields (name/expiry/strike/instrument_type from
+    kite.instruments("NFO"), matched by exact tradingsymbol — no string-
+    parsing the Kite symbol text) cross-matched against Dhan's scrip master
+    (dhan_master._options_cache, keyed by the same 4 structured fields — no
+    string-parsing the Dhan trad_sym either). This is the exact reverse of
+    what TRAP #13/#22 warned against (guessing FROM a Dhan trad_sym string
+    TO a Kite symbol string) — going the other way, but with the same
+    exact-structured-match discipline, not a guess in either direction.
+
+    Returns (None, None, None) on any failure (unmapped instrument, network
+    error, cache miss) — callers must treat that as "could not resolve" and
+    fall back to alert-only, never adopt with a guessed identity."""
+    try:
+        instruments = _get_kite_instruments(kite)
+    except Exception:
+        return None, None, None
+
+    match = None
+    for ins in instruments:
+        if ins.get("tradingsymbol") == kite_tradingsymbol:
+            match = ins
+            break
+    if not match:
+        return None, None, None
+
+    name = match.get("name")
+    opt_type = match.get("instrument_type")
+    try:
+        strike = float(match.get("strike") or 0)
+    except Exception:
+        return None, None, None
+    exp = match.get("expiry")
+    if exp and hasattr(exp, "date") and not isinstance(exp, _dt.date):
+        exp = exp.date()
+    if not (name and opt_type and strike and exp):
+        return None, None, None
+
+    try:
+        import sys as _s, os as _o
+        _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
+        if _root not in _s.path:
+            _s.path.insert(0, _root)
+        import dhan_master
+        if not dhan_master._options_cache:
+            dhan_master.build_cache()
+        sym_cache = dhan_master._options_cache.get(name)
+        if not sym_cache:
+            return None, None, None
+        for exp_str, contracts in sym_cache.items():
+            try:
+                exp_dt = _dt.datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S").date()
+            except Exception:
+                continue
+            if exp_dt != exp:
+                continue
+            for c in contracts:
+                if c.get("type") == opt_type and abs(float(c.get("strike") or 0) - strike) < 0.01:
+                    return c.get("sec_id"), c.get("trad_sym"), c.get("lot_size")
+    except Exception:
+        pass
+    return None, None, None
+
+
 def resolve_kite_symbol(kite, dhan_trad_sym, sec_id=None):
     """Exact Dhan-trad_sym -> Kite-tradingsymbol resolution via Kite's
     instrument dump (cached per-day). Returns None (never raises) if parsing
@@ -353,6 +424,16 @@ class KiteBroker(BaseBroker):
         except Exception:
             return None
         return resolve_kite_symbol(kite, dhan_trad_sym, sec_id=sec_id)
+
+    def resolve_dhan(self, kite_tradingsymbol):
+        """Public wrapper for resolve_dhan_from_kite_symbol() — same instance-
+        access reasoning as resolve_symbol() above. Returns (sec_id, trad_sym,
+        lot_size) or (None, None, None)."""
+        try:
+            kite = self._get_kite()
+        except Exception:
+            return None, None, None
+        return resolve_dhan_from_kite_symbol(kite, kite_tradingsymbol)
 
     # ---- orders (real Kite Connect calls) ----
     _SEG_TO_EXCHANGE = {"NSE_FNO": "NFO", "NSE_EQ": "NSE", "IDX_I": "NSE"}

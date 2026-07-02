@@ -3476,6 +3476,21 @@ def pos_monitor_loop():
                 print(f"[broker_sync] untracked-scan skipped (error): {_use}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
+            # ── Auto manual-trade reconcile (2026-07-02) — same "🧾 Reconcile
+            # vs Broker" logic the manual button triggers, now also running on
+            # its own cooldown so a Kite entry+exit round-trip placed directly
+            # on Zerodha (SL/Target limit, or a fresh manual entry) that both
+            # completed inside one untracked-scan gap still lands in
+            # order_store automatically. Button stays available for on-demand
+            # use — this doesn't replace it, just removes the need to click it
+            # every time. ──
+            try:
+                import broker_sync as _bsync3
+                _bsync3.reconcile_if_due(log=print)
+            except Exception as _rce:
+                print(f"[broker_sync] auto-reconcile skipped (error): {_rce}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
             # Tracks ids already squared-off THIS pass (e.g. as a hedge group
             # sibling) — without this, the for-loop below would re-process a
             # sibling leg that _do_squareoff already closed earlier this pass.

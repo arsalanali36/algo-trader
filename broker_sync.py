@@ -25,11 +25,17 @@ _lock     = threading.Lock()
 _INTERVAL = 30    # seconds between auto-syncs (was 120 — reduced for faster ghost detection, S6 fix)
 _CACHE_TTL = 35   # seconds — pre-exit check uses this cached data (avoids per-SL API hit)
 _UNTRACKED_INTERVAL = 30   # seconds between untracked-position scans (TRAP #58)
+_RECONCILE_INTERVAL = 180  # seconds between auto manual-trade reconciles (2026-07-02) —
+                            # slower than the 30s scans on purpose: reconcile_manual_trades()
+                            # fetches ALL of today's fills (not just current positions), so
+                            # it's a heavier call meant to catch same-cycle open+close pairs
+                            # untracked_scan's position-diffing can miss, not a tight loop.
 
 # broker_name → {"positions": {sym_key: net_qty}, "ts": float}
 _cache: dict = {}
 _last_auto_sync = 0.0
 _last_untracked_scan = 0.0
+_last_reconcile = 0.0
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -79,6 +85,30 @@ def untracked_scan_if_due(log=print) -> None:
             return
         _last_untracked_scan = time.time()
     _run_untracked_scan(log)
+
+
+def reconcile_if_due(log=print) -> None:
+    """Call from pos_monitor_loop every tick (mirrors the other two scans'
+    cadence, own slower interval — see _RECONCILE_INTERVAL). Auto version of
+    the "🧾 Reconcile vs Broker" button (2026-07-02) — runs
+    reconcile_manual_trades() against Kite automatically so a manual
+    entry+exit round-trip that both happened between two untracked-scan ticks
+    (untracked_scan only diffs CURRENT positions, so a trade that opened and
+    closed within one 30s gap would never appear as "currently open" to be
+    caught) still lands in order_store without the user needing to click
+    anything. The button itself is untouched and still works on-demand
+    (bypasses this cooldown, same relationship force_sync has to sync_if_due)."""
+    global _last_reconcile
+    with _lock:
+        if time.time() - _last_reconcile < _RECONCILE_INTERVAL:
+            return
+        _last_reconcile = time.time()
+    try:
+        result = reconcile_manual_trades(broker_name="kite", log=log)
+        if result.get("ok") and result.get("manual_inserted"):
+            log(f"[broker_sync] 🧾 auto-reconcile — {result.get('msg')}", flush=True)
+    except Exception as e:
+        log(f"[broker_sync] auto-reconcile failed: {e}", flush=True)
 
 
 def is_flat(broker_name: str, trad_sym: str, sec_id: str) -> bool:
@@ -498,9 +528,13 @@ def _run_untracked_scan(log=print) -> None:
 
 def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:
     """A live broker position exists with NO matching order_store OPEN row.
-    Always alert loudly. Auto-adopt into order_store ONLY for Dhan, where the
-    broker gives us its own tradingSymbol/segment directly (no guessing) — for
-    Kite, alert-only (never guess a Dhan trad_sym from a kite_sym, see TRAP #13/#22)."""
+    Always alert loudly. Auto-adopt into order_store for Dhan (broker gives
+    tradingSymbol/segment directly, no guessing needed) AND for Kite (as of
+    2026-07-02, via KiteBroker.resolve_dhan() — exact structured-field
+    cross-match against Dhan's scrip master, not a string-guess; see that
+    function's docstring + LESSONS.md TRAP #13/#22 for why this is safe where
+    the old string-guess approach wasn't). Falls back to alert-only whenever
+    resolution isn't a confident exact match — never adopts a guess."""
     label = pos.get("trad_sym") or key
     qty, side, avg = pos.get("qty"), pos.get("side"), pos.get("avg_price")
     adopted = False
@@ -555,6 +589,63 @@ def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:
                         f"Verify strategy/entry-price manually. TRAP #58.", flush=True)
             except Exception as _ae:
                 log(f"[broker_sync] ⚠️ untracked adoption failed for {trad_sym}: {_ae}", flush=True)
+
+    elif broker_name == "kite":
+        kite_sym = pos.get("kite_sym") or ""
+        exchange = (pos.get("exchange") or "").upper()
+        # Scoped to F&O (NFO) — this system's SL/TP/hedge/RMS logic is built
+        # around options contracts (sec_id + trad_sym + segment); a Kite
+        # equity CNC/MIS position has no equivalent Dhan options contract to
+        # resolve to, so those stay alert-only (unchanged from before).
+        if kite_sym and exchange == "NFO":
+            try:
+                from brokers import get_broker
+                kite_broker_obj = get_broker("kite")
+                sec_id, trad_sym, lot_size = kite_broker_obj.resolve_dhan(kite_sym)
+                if sec_id and trad_sym:
+                    import order_store
+                    price = float(avg or 0)
+                    approx = False
+                    if price <= 0:
+                        try:
+                            import shared_ltp_cache
+                            price = float(shared_ltp_cache.get(str(sec_id)) or
+                                          shared_ltp_cache.get_stale(str(sec_id)) or 0)
+                            approx = True
+                        except Exception:
+                            pass
+                    if price > 0:
+                        tags = ["UNTRACKED_ADOPTED", "MANUAL_ENTRY_KITE"]
+                        if approx:
+                            tags.append("APPROX_ENTRY_PRICE")
+                        order_store.record(
+                            side=(pos.get("side") or "BUY"),
+                            qty=abs(int(qty or 0)),
+                            price=price,
+                            source="broker_sync",
+                            strategy="unknown",
+                            mode="live",
+                            broker=broker_name,
+                            symbol=trad_sym.split("-")[0] if trad_sym else "",
+                            instrument="options",
+                            trad_sym=trad_sym,
+                            sec_id=str(sec_id),
+                            segment="NSE_FNO",
+                            status="open",
+                            tags=tags,
+                        )
+                        adopted = True
+                        log(f"[broker_sync] 🔧 ADOPTED untracked Kite position {kite_sym} "
+                            f"-> Dhan {trad_sym} qty={qty} @ ₹{price:.2f}"
+                            f"{' (approx — LTP, not real cost basis)' if approx else ''} "
+                            f"— order_store row created, SL/EOD protection now applies. "
+                            f"Verify strategy/entry-price manually. 2026-07-02.", flush=True)
+                else:
+                    log(f"[broker_sync] Kite position {kite_sym} — could not resolve to an "
+                        f"exact Dhan contract (no confident match), alerting instead of "
+                        f"guessing.", flush=True)
+            except Exception as _ke:
+                log(f"[broker_sync] ⚠️ Kite untracked adoption failed for {kite_sym}: {_ke}", flush=True)
 
     if not adopted:
         _write_untracked_alert(broker_name, key, label, qty, side, avg, log)
