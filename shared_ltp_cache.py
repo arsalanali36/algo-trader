@@ -56,10 +56,21 @@ def put(sec_id, ltp):
     """Record a freshly-fetched ltp so other processes can reuse it."""
     if not ltp:
         return
+    put_many({sec_id: ltp})
+
+
+def put_many(ltp_by_sec_id):
+    """Batch write — one file rewrite for a whole poller cycle's results
+    (ltp_poller feeds every open position + index spot through here)."""
+    if not ltp_by_sec_id:
+        return
     data = _read_all()
-    data[str(sec_id)] = (ltp, time.time())
+    now = time.time()
+    for k, v in ltp_by_sec_id.items():
+        if v:
+            data[str(k)] = (v, now)
     # keep the file small — drop anything older than 5 minutes
-    cutoff = time.time() - 300
+    cutoff = now - 300
     data = {k: v for k, v in data.items() if v[1] >= cutoff}
     try:
         _FILE.write_text(json.dumps(data))

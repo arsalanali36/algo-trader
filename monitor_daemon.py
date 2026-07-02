@@ -30,5 +30,13 @@ if __name__ == '__main__':
     threading.Thread(target=td.webhook_monitor_loop, daemon=True).start()
     threading.Thread(target=td.pos_monitor_loop, daemon=True).start()
 
+    # P7: one batched Dhan LTP call per cycle covers all open positions +
+    # index spot, fanned out via shared_ltp_cache (pos_monitor / webhook /
+    # risk_gate / _rest_ltp_fallback all read that cache first). This process
+    # OWNS account-wide LTP polling — everything else only makes one-off
+    # cache-miss calls.
+    import ltp_poller
+    ltp_poller.start()
+
     while True:
         time.sleep(60)

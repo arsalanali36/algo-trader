@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — Batched LTP poller (ltp_poller.py) + _rest_ltp_fallback rate-limiter wiring
+**Status:** DONE (deployed)
+**Kya:** Naya ltp_poller.py — algo-monitor me daemon thread, har 1.5s me EK batched /v2/marketfeed/ltp call (sab open positions + NIFTY/BANKNIFTY spot, segment-grouped), results shared_ltp_cache.put_many() se sab processes ko. _rest_ltp_fallback ab shared cache first + dhan_rate_limiter.acquire/note_429 through (pehle throttle se puri tarah invisible tha, apna private cache tha). dhan_broker.quote() pehle se cache-first tha — ab poller us cache ko warm rakhta hai. Direct REST sirf cache-miss one-off (naye contract entry-time) ke liye bacha hai — deliberately, warna entries block ho jati.
+**Layer:** broker / infra
+**Files:** ltp_poller.py (new), shared_ltp_cache.py (put_many), trader_dashboard.py (_rest_ltp_fallback), monitor_daemon.py (start)
+**Kyun:** Worklist Priority 7 — N open positions = N separate 1-req/sec calls; Dhan 1000 symbols/call allow karta hai.
+**Depends on:** nothing
+
+---
+
 ## 2026-07-02 — Hedge-sibling close: 35s-stale is_flat() → fresh is_flat_fresh() (TRAP #73 last open path)
 **Status:** DONE (deployed)
 **Kya:** _do_squareoff ka pre-exit flat check ab broker_sync.is_flat_fresh() use karta hai — 5s se purana positions data kabhi trust nahi, fresh broker.positions() fetch (shared cache refresh hota hai to EOD/group burst me ek hi API call). Sibling-close recursion _do_squareoff se hi jati hai to hedge leg bhi covered.

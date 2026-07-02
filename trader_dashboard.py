@@ -3249,31 +3249,53 @@ _rest_ltp_cache = {}   # sec_id -> (ltp, ts) — 3s TTL, avoids DH-904 across ma
 _REST_LTP_TTL = 3
 
 def _rest_ltp_fallback(sec_id, seg):
-    """Direct Dhan REST LTP call — used when the dhan_feed WebSocket isn't
-    delivering quotes (e.g. dhanhq version mismatch). Same endpoint/shape as
-    /api/positions-ltp's own REST fallback."""
+    """LTP when the dhan_feed WebSocket isn't delivering quotes.
+    P7 rewrite (2026-07-02): shared_ltp_cache FIRST — ltp_poller keeps every
+    open position + index spot warm there with ONE batched Dhan call per cycle,
+    so this normally never hits Dhan at all. The direct REST call survives only
+    as a cache-miss last resort (e.g. a sec_id the poller doesn't watch), and
+    is now routed through dhan_rate_limiter (acquire + note_429) — previously
+    this path was completely invisible to the cross-process throttle."""
     import time as _t
-    cached = _rest_ltp_cache.get(sec_id)
-    if cached and (_t.time() - cached[1]) < _REST_LTP_TTL:
-        return cached[0]
+    try:
+        import shared_ltp_cache as _slc
+        cached = _slc.get(sec_id, max_age=_REST_LTP_TTL)
+        if cached:
+            return cached
+    except Exception:
+        pass
     try:
         import requests as _req
+        import dhan_rate_limiter as _drl
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
         body = {dhan_seg: [int(sec_id)]}
+        _drl.acquire("ltp")
         r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+        if r.status_code == 429:
+            _drl.note_429()
         if r.status_code == 200:
             quotes = (r.json().get("data", {}) or {}).get(dhan_seg, {})
             q = quotes.get(str(sec_id)) or quotes.get(str(int(sec_id)))
             if q:
                 ltp = float(q.get("last_price") or q.get("ltp") or 0)
                 if ltp > 0:
-                    _rest_ltp_cache[sec_id] = (ltp, _t.time())
+                    try:
+                        import shared_ltp_cache as _slc2
+                        _slc2.put(sec_id, ltp)
+                    except Exception:
+                        pass
                     return ltp
     except Exception as e:
         print("[_rest_ltp_fallback] fail:", e, flush=True)
-    return None
+    # slightly-stale shared value beats returning nothing (same convention as
+    # dhan_broker.quote's last resort)
+    try:
+        import shared_ltp_cache as _slc3
+        return _slc3.get_stale(sec_id, max_age=15.0)
+    except Exception:
+        return None
 
 
 _candle_close_cache = {}   # sec_id -> (close_price, fetched_at) — throttles Dhan intraday calls
