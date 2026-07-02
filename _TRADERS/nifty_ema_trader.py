@@ -24,6 +24,7 @@ import time
 # project root is otherwise not importable.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dhan_master
+import dhan_rate_limiter as _rl
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -143,7 +144,18 @@ def fetch_candles(symbol, tf="1m"):
         body  = {"securityId": sec_id, "exchangeSegment": seg,
                  "instrument": inst, "interval": interval,
                  "fromDate": today, "toDate": today}
+        # Was calling Dhan directly with zero rate-limiting — every symbol in the
+        # watchlist hit /v2/charts/intraday back-to-back every scan cycle, blowing
+        # through Dhan's ~1 req/sec account-wide limit (DH-904 storm across
+        # LT/MARUTI/HINDUNILVR/etc, found live 2026-07-02). range_trader.py's
+        # equivalent fetch already routes through dhan_rate_limiter — this file
+        # never got that treatment. Same fix, same pattern: acquire() serializes
+        # this call against every other process's Dhan traffic; note_429() opens
+        # the shared cooldown if the account limit still gets breached.
+        _rl.acquire("candle")
         r = requests.post(INTRADAY_URL, json=body, headers=hdrs_c, timeout=10)
+        if r.status_code == 429:
+            _rl.note_429()
         if r.status_code != 200:
             log.error(f"{symbol} intraday {r.status_code}: {r.text[:120]}")
             return None

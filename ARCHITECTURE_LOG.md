@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — nifty_ema_trader.py candle-fetch DH-904 fix (dhan_rate_limiter wired in)
+**Status:** DONE (code fixed + deployed to VPS; NOT restarted — user explicit instruction, ARS_CHAIN_V1 has live positions running, restart deferred to user's call)
+**Kya:** `fetch_candles()` was calling Dhan's /v2/charts/intraday directly with zero rate-limiting — every symbol in ema_v1's watchlist hit Dhan back-to-back every scan cycle, causing a DH-904 429 storm (LT/MARUTI/HINDUNILVR/ITC/ADANIENT/SUNPHARMA/TITAN/ULTRACEMCO all failing in the same second, seen live in the dashboard log). This is a DIFFERENT Dhan endpoint than today's earlier P7 LTP-poller fix (/v2/marketfeed/ltp) — that fix never touched candle fetches. range_trader.py's equivalent candle-fetch already routes through dhan_rate_limiter (acquire("candle") + note_429() on 429); nifty_ema_trader.py never got that treatment. Same 2-line fix applied here.
+**Layer:** broker
+**Files:** _TRADERS/nifty_ema_trader.py
+**Kyun:** User spotted the DH-904 spam live in the dashboard log, asked if it was already fixed by today's LTP work — it wasn't (different endpoint), fixed on the spot.
+**Depends on:** nothing — file deployed but process (currently not even running) will only pick this up on its NEXT restart, whenever the user calls for it.
+
+---
+
 ## 2026-07-02 — range_trader.py last_day=None bug fixed (TRAP #28's fix was silently undoing itself) — LIVE process, restarted with explicit user go-ahead
 **Status:** DONE (deployed + restarted, zero open positions confirmed before AND after)
 **Kya:** Same bug as rsi_trader/universe_trader (fixed earlier today) — `last_day = None` before the main loop meant the loop's OWN "new day" check fired on the very first iteration after every restart, wiping _recover_state_from_order_store()'s just-populated _state right back to flat. VPS log proof: 2026-07-01 11:24:29 "[RECOVER] re-attached 1 open position" immediately followed by "New trading day — resetting state". This is the LIVE ARS_CHAIN_V1 process — user explicitly confirmed go-ahead after I verified zero open positions in order_store first. Fix: seed `last_day = ist_now().date()` right after recovery instead of None.
