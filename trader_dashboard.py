@@ -1998,6 +1998,28 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
         if not sec_id:
             return {'ok': False, 'msg': f'Security ID not found for {t_sym}'}
 
+        # P6 audit fix (2026-07-02): this manual-close button placed a live
+        # order straight from the clicked row's data — no fresh broker
+        # flat-check. A double-click, a stale/duplicate-tab UI, or this click
+        # racing pos_monitor_loop's own SL/TP/EOD squareoff on the same leg
+        # could all fire a closing order on an already-flat position, opening
+        # a phantom opposite one instead of doing nothing.
+        try:
+            import broker_sync as _bs_close
+            if _bs_close.is_flat_fresh('dhan', t_sym, str(sec_id)):
+                try:
+                    import order_store as _os_close
+                    _today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+                    _leg = next((p for p in _os_close.trades_for(_today).get('open', [])
+                                 if p.get('sym') == t_sym and p.get('entry') == entry_side), None)
+                    if _leg:
+                        _os_close.mark_externally_closed(_leg.get('id'))
+                except Exception:
+                    pass
+                return {'ok': True, 'msg': f'{t_sym} already FLAT at broker (manually closed / SL hit elsewhere) — no order sent, marked closed'}
+        except Exception as _fce:
+            print(f"[close-position] pre-close flat-check failed ({_fce}) — proceeding (fail-open)", flush=True)
+
         body = {
             'dhanClientId': cid, 'correlationId': f'CLOSE_{t_sym}_{ts}',
             'transactionType': close_side, 'exchangeSegment': 'NSE_FNO',
@@ -3590,6 +3612,14 @@ def pos_monitor_loop():
                                       f"(drawdown ₹{_p_drawdown:.0f} >= lock {_p_lock_desc}) — squaring off single position",
                                       flush=True)
                                 if _ltp > 0:
+                                    # P6 audit fix (2026-07-02): this squareoff path placed
+                                    # orders directly, bypassing _do_squareoff entirely — so it
+                                    # never got the webhook-claim or fresh-flat-check guards
+                                    # (TRAP #44/#73 family). A manual close landing in the same
+                                    # instant this floor fires used to be able to open a phantom
+                                    # opposite position. Now uses the same shared gate.
+                                    if _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_PI", _closed_ids, log=print):
+                                        continue
                                     try:
                                         import smart_order
                                         from brokers import get_broker
@@ -3661,6 +3691,12 @@ def pos_monitor_loop():
                                 _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
                                         _rest_ltp_fallback(_sid, _seg) or 0.0
                                 if _ltp2 > 0:
+                                    # P6 audit fix (2026-07-02) — same gate as the per-instrument
+                                    # branch above: this path bypassed _do_squareoff, so a manual
+                                    # close landing in the same instant the aggregate floor fires
+                                    # could open a phantom opposite position (TRAP #44/#73 family).
+                                    if _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_AGG", _closed_ids, log=print):
+                                        continue
                                     try:
                                         import smart_order
                                         from brokers import get_broker
@@ -3787,6 +3823,46 @@ def _save_pending_group_close():
             {"day": _peak_day_str, "pending": _pending_group_close}))
     except Exception:
         pass
+
+
+def _pre_exit_guard(p, sec_id, exit_reason, _closed_ids, log=print):
+    """Shared live-exit safety gate (P6 audit, 2026-07-02) — two checks that
+    used to live ONLY inside _do_squareoff, so any exit path that placed an
+    order a different way (trailing-lock squareoff) skipped both:
+      1. webhook co-ownership claim — a webhook position is also watched by
+         webhook_executor's own monitor/TV-EXIT; atomically claim it first so
+         two processes never both fire a closing order on the same leg.
+      2. fresh broker flat-check (TRAP #44/#73) — is_flat_fresh() never trusts
+         data older than 5s. If the position is already flat at the broker
+         (manual close, earlier reject-orphan), placing a closing order would
+         OPEN a new opposite position instead of closing anything.
+    Returns True if the exit should be SKIPPED (already handled elsewhere or
+    already flat) — caller must not place an order in that case."""
+    if (p.get("source") or "") == "webhook":
+        try:
+            import webhook_executor as _wh
+            claimed = _wh.release_position(sec_id=sec_id, trad_sym=p.get("sym"), reason=exit_reason)
+            if not claimed:
+                _closed_ids.add(p.get("id"))
+                log(f"[{exit_reason}] webhook already claimed/closed this leg — skipping", flush=True)
+                return True
+        except Exception as _e:
+            log(f"[{exit_reason}] webhook claim failed: {_e}", flush=True)
+    if p.get("mode") != "live":
+        return False
+    try:
+        import broker_sync as _bsync
+        _br_name = (p.get("broker") or "dhan").lower()
+        if _bsync.is_flat_fresh(_br_name, p.get("sym") or "", str(sec_id or "")):
+            import order_store as _os2
+            _os2.mark_externally_closed(p.get("id"))
+            _closed_ids.add(p.get("id"))
+            log(f"[{exit_reason}] PRE-EXIT CHECK: {p.get('sym')} already FLAT at "
+                f"{_br_name} — marked externally_closed, skipping exit order.", flush=True)
+            return True
+    except Exception as _pe:
+        log(f"[{exit_reason}] pre-exit broker check failed ({_pe}) — proceeding", flush=True)
+    return False
 
 
 def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
@@ -3955,53 +4031,14 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         """Exit a position now — live round-trips a real broker order
         first (never marks closed unless the broker confirms), paper
         just records the fill. Returns True once handled."""
-        # Webhook positions are co-owned by webhook_executor's own
-        # monitor/TV-EXIT. Atomically CLAIM the leg first: release_position
-        # flips its in-memory state open->closed and returns True only if
-        # WE won the race. If it returns False the webhook side already
-        # closed it this instant — skip, so we don't fire a duplicate
-        # closing order (the orphan-BUY double-close bug).
-        if (p.get("source") or "") == "webhook":
-            try:
-                import webhook_executor as _wh
-                claimed = _wh.release_position(sec_id=sec_id,
-                                               trad_sym=p.get("sym"),
-                                               reason=exit_reason)
-                if not claimed:
-                    _closed_ids.add(p.get("id"))
-                    return True
-            except Exception as _e:
-                print(f"[{exit_reason}] webhook claim failed: {_e}")
+        # ── Pre-exit safety gate (TRAP #44/#73 guard) — webhook co-ownership
+        # claim + fresh broker flat-check, both explained in _pre_exit_guard's
+        # docstring. Shared with the trailing-lock squareoff paths (P6 audit,
+        # 2026-07-02) so this logic lives in exactly one place.
+        if _pre_exit_guard(p, sec_id, exit_reason, _closed_ids, log=print):
+            return True
         print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
         exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
-
-        # ── Pre-exit broker check (TRAP #44/#73 guard) ──────────────────────
-        # Before placing any exit order, verify the position actually exists at
-        # the broker. If it's already flat (manually closed / earlier reject
-        # orphan), placing a closing order would open a NEW opposite position.
-        # is_flat_fresh: never trusts positions data older than 5s — the old
-        # is_flat() accepted a 35s-stale cache, exactly the window where both
-        # hedge legs manually closed back-to-back let the sibling-close fire
-        # on an already-flat leg. One fetch refreshes the shared cache, so an
-        # EOD/group burst of these checks costs one API call, not one each.
-        if p.get("mode") == "live":
-            try:
-                import broker_sync as _bsync
-                _br_name = (p.get("broker") or "dhan").lower()
-                _sym_chk = p.get("sym") or ""
-                _sec_chk = str(p.get("sec_id") or "")
-                if _bsync.is_flat_fresh(_br_name, _sym_chk, _sec_chk):
-                    import order_store as _os2
-                    _os2.mark_externally_closed(p.get("id"))
-                    _closed_ids.add(p.get("id"))
-                    print(f"[{exit_reason}] PRE-EXIT CHECK: {p['sym']} already FLAT at "
-                          f"{_br_name} — marked externally_closed, skipping exit order. "
-                          f"(TRAP #44: would have opened accidental new position)", flush=True)
-                    return True
-            except Exception as _pe:
-                # Fail open — never block a real exit due to sync check error
-                print(f"[{exit_reason}] pre-exit broker check failed ({_pe}) — proceeding", flush=True)
-        # ────────────────────────────────────────────────────────────────────
 
         if p.get("mode") == "live":
             import smart_order

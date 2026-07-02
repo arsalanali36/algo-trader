@@ -800,23 +800,45 @@ def main(strategy_id="range"):
                 try:
                     token, cid = load_creds()
                     for sym, st in _state.items():
+                        if st["position"] not in ("LONG", "SHORT"):
+                            continue
+                        # P6 audit fix (2026-07-02): this loop placed exit orders
+                        # unconditionally — no fresh broker flat-check, unlike the
+                        # strategy's own signal-driven exit path (TRAP #73, above).
+                        # 3:15 EOD force-exit races pos_monitor_loop's own EOD_315
+                        # squareoff (a SEPARATE process) — without this check, a
+                        # position pos_monitor already closed a moment earlier would
+                        # get a duplicate exit order here, opening a phantom
+                        # opposite position instead of doing nothing.
+                        if mode == "live":
+                            try:
+                                import broker_sync as _bs
+                                _bn      = (cfg.get("broker") or "dhan")
+                                _chk_sid = str(st.get("opt_sec_id") or "")
+                                _chk_sym = st.get("opt_trad_sym") or sym
+                                if _bs.is_flat_fresh(_bn.lower(), _chk_sym, _chk_sid):
+                                    log.info(f"[FLAT-CHECK] {sym} already flat at broker "
+                                             f"(EOD squareoff won the race elsewhere) — "
+                                             f"skipping 3:15 exit order; clearing state.")
+                                    st["position"]     = None
+                                    st["opt_sec_id"]   = None
+                                    st["opt_trad_sym"] = None
+                                    continue
+                            except Exception as _fe:
+                                log.warning(f"[FLAT-CHECK] 3:15 pre-exit check failed "
+                                            f"({_fe}) — proceeding with exit (fail-open)")
                         if st["position"] == "LONG":
                             if st.get("opt_sec_id"):
                                 place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                             else:
                                 place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode, is_exit=True)
-                            st["position"] = None
-                            st["opt_sec_id"] = None
-                        elif st["position"] == "SHORT":
+                        else:   # SHORT
                             if st.get("opt_sec_id"):
                                 place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
                             else:
                                 place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True)
-                            st["position"] = None
-                            st["opt_sec_id"] = None
-                        elif st["position"] == "SHORT":
-                            place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True)
-                            st["position"] = None
+                        st["position"] = None
+                        st["opt_sec_id"] = None
                 except Exception as e:
                     log.error(f"Exit error: {e}")
             time.sleep(120)

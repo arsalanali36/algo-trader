@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — P6 ownership-desync audit findings #1-5 all fixed
+**Status:** DONE (deployed)
+**Kya:** Kal ke audit ne 5 jagah dhoondi thi jahan exit order fresh broker flat-check ke bina fire hota tha (TRAP #44/#73 family, manual close ke saath race). Sab 5 fix: (1) trailing-lock squareoff (per-instrument + aggregate, dono) — naya shared `_pre_exit_guard()` helper, `_do_squareoff` bhi isi se refactor kiya (duplicate logic hataya); (2) webhook_executor `_do_exit` layer-2 — is_flat() → is_flat_fresh(); (3) 3:15 exit-all — range_trader/rsi_trader/universe_trader teeno me flat-check add + range_trader ka dead duplicate elif hataya; (4) universe_trader FLIP-close — flat-check add; (5) manual UI close (/api/close-position, /api/close-position-group dono isi se) — flat-check add, already-flat pe order_store externally_closed mark karta hai, koi fabricated row nahi.
+**Layer:** execution
+**Files:** trader_dashboard.py, webhook_executor.py, _TRADERS/range_trader.py, _TRADERS/rsi_trader.py, _TRADERS/universe_trader.py
+**Kyun:** User ne kal ke P6 audit report ke baad turant fix karne ko kaha — "report only" tha, ab sab live band ho gaye.
+**Depends on:** nothing (broker_sync.is_flat_fresh already P3 me bana tha)
+
+---
+
 ## 2026-07-02 — Batched LTP poller (ltp_poller.py) + _rest_ltp_fallback rate-limiter wiring
 **Status:** DONE (deployed)
 **Kya:** Naya ltp_poller.py — algo-monitor me daemon thread, har 1.5s me EK batched /v2/marketfeed/ltp call (sab open positions + NIFTY/BANKNIFTY spot, segment-grouped), results shared_ltp_cache.put_many() se sab processes ko. _rest_ltp_fallback ab shared cache first + dhan_rate_limiter.acquire/note_429 through (pehle throttle se puri tarah invisible tha, apna private cache tha). dhan_broker.quote() pehle se cache-first tha — ab poller us cache ko warm rakhta hai. Direct REST sirf cache-miss one-off (naye contract entry-time) ke liye bacha hai — deliberately, warna entries block ho jati.

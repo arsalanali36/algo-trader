@@ -214,6 +214,23 @@ def main(sid, once=False):
                 if st["position"] and st["open_inst"]:
                     s_id, seg, tsym, qty = st["open_inst"]
                     ex_side = "SELL" if st["position"] == "LONG" else "BUY"
+                    # P6 audit fix (2026-07-02): same fresh-flat guard as the
+                    # signal-driven EXIT branch below — this loop placed exit
+                    # orders unconditionally, racing pos_monitor_loop's own
+                    # EOD_315 squareoff (a separate process) with no check.
+                    if mode == "live":
+                        try:
+                            import broker_sync as _bs
+                            _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
+                            _bpos = broker.positions()
+                            if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
+                                log(f"[FLAT-CHECK] {sym} already flat at broker "
+                                    f"(EOD squareoff won the race elsewhere) — skipping 3:15 exit")
+                                st["position"] = None
+                                st["open_inst"] = None
+                                continue
+                        except Exception as _fe:
+                            log(f"[FLAT-CHECK] 3:15 pre-exit check failed ({_fe}) — proceeding (fail-open)")
                     smart_order.execute(ex_side, sym, s_id, seg, qty, tsym, mode,
                                         broker, cfg.get("limit_buffer_bps", 10),
                                         log=log, tag="EXIT", source="strategy", strategy=sid,
@@ -331,10 +348,27 @@ def main(sid, once=False):
             if st["position"] and st["open_inst"]:
                 s_id, seg, tsym, oq = st["open_inst"]
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
-                smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
-                                    broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="FLIP", source="strategy", strategy=sid,
-                                    is_exit=True)
+                # P6 audit fix (2026-07-02): same fresh-flat guard as the plain
+                # EXIT branch above — a flip fires a real closing order on the
+                # OLD leg from in-memory state alone; if that leg was already
+                # manually closed, this would open a phantom opposite position.
+                _flip_flat = False
+                if mode == "live":
+                    try:
+                        import broker_sync as _bs
+                        _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
+                        _bpos = broker.positions()
+                        if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
+                            log(f"[FLAT-CHECK] {sym} already flat at broker (manual close?) "
+                                f"— skipping FLIP-close order, clearing state")
+                            _flip_flat = True
+                    except Exception as _fe:
+                        log(f"[FLAT-CHECK] FLIP pre-exit check failed ({_fe}) — proceeding (fail-open)")
+                if not _flip_flat:
+                    smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
+                                        broker, cfg.get("limit_buffer_bps", 10),
+                                        log=log, tag="FLIP", source="strategy", strategy=sid,
+                                        is_exit=True)
                 st["position"] = None
                 st["open_inst"] = None
 

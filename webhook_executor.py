@@ -736,10 +736,14 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
                     _leg_dead = True
                     break
         if not _leg_dead:
-            # Also ask broker_sync cache directly (faster, no DB round-trip)
+            # P6 audit fix (2026-07-02): was is_flat() — accepted up to 35s-stale
+            # cached positions data. is_flat_fresh() never trusts data older than
+            # 5s (fetches fresh if the shared cache is older), closing the exact
+            # window where a fast manual close could slip past this layer-2 check
+            # and still let a TV EXIT re-open an opposite position.
             try:
                 import broker_sync as _bsync_wh
-                if _bsync_wh.is_flat(_br_name_wh, _opt_sym, _opt_sid):
+                if _bsync_wh.is_flat_fresh(_br_name_wh, _opt_sym, _opt_sid):
                     _leg_dead = True
             except Exception:
                 pass

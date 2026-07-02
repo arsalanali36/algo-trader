@@ -479,9 +479,25 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         exit_qty  = o.get("qty", qty)
                         exit_prem = _opt_ltp(o["sec_id"], token, cid)
                         if not paper_mode:
-                            place_order(sym, close_side, exit_qty, token, cid,
-                                        o["sec_id"], "NSE_FNO", o["trad_sym"], log)
-                            _record(close_side, exit_qty, exit_prem, "live", o["trad_sym"], o["sec_id"], strategy_id, "filled", log)
+                            # P6 audit fix (2026-07-02): same fresh-flat guard as the
+                            # signal-driven EXIT branch above — this 3:15 loop placed
+                            # exit orders unconditionally, racing pos_monitor_loop's
+                            # own EOD_315 squareoff (a separate process) with no check.
+                            _skip_exit = False
+                            try:
+                                import broker_sync as _bs
+                                from brokers import get_broker as _gb
+                                _bpos = _gb("dhan").positions()
+                                if _bpos is not None and _bs._check_flat("dhan", _bpos, o["trad_sym"], str(o["sec_id"])):
+                                    log.info(f"  [FLAT-CHECK] {o['trad_sym']} already flat at broker "
+                                             f"(EOD squareoff won the race elsewhere) — skipping 3:15 exit")
+                                    _skip_exit = True
+                            except Exception as _fe:
+                                log.warning(f"  [FLAT-CHECK] 3:15 pre-exit check failed ({_fe}) — proceeding (fail-open)")
+                            if not _skip_exit:
+                                place_order(sym, close_side, exit_qty, token, cid,
+                                            o["sec_id"], "NSE_FNO", o["trad_sym"], log)
+                                _record(close_side, exit_qty, exit_prem, "live", o["trad_sym"], o["sec_id"], strategy_id, "filled", log)
                         else:
                             log.info(f"  [PAPER] 3:15 EXIT {o['trad_sym']}  qty={exit_qty}  @ {exit_prem:.2f}  pos={pos}")
                             _record(close_side, exit_qty, exit_prem, "paper", o["trad_sym"], o["sec_id"], strategy_id, "paper", log)
