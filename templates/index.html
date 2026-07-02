@@ -4051,7 +4051,9 @@ function renderCachedOrders() {
         const bId='xo_'+(t.sym+'_'+(t.source||'')+'_'+(t.strategy||'')).replace(/[^a-z0-9]/gi,'_');
         const argEsc=s=>String(s||'').replace(/'/g,'');
         
-        let sl_pct='', tp_pct='', note='', sl_type='', sl_val='', tp_type='', tp_val='';
+        // --- Added by Antigravity AI: Stepped Trailing Stop-Loss & Candle Close Checkbox ---
+        let sl_pct='', tp_pct='', note='', sl_type='', sl_val='', tp_type='', tp_val='', sl_trail_step='', tp_trail_step='', sl_candle_close=false, tp_candle_close=false;
+        let max_ltp = null, min_ltp = null;
         if(t.tags) {
           t.tags.forEach(tg => {
             if(tg.startsWith('SL_PCT:')) sl_pct = tg.split(':')[1];
@@ -4060,16 +4062,58 @@ function renderCachedOrders() {
             if(tg.startsWith('SL_VAL:')) sl_val = tg.split(':')[1];
             if(tg.startsWith('TP_TYPE:')) tp_type = tg.split(':')[1];
             if(tg.startsWith('TP_VAL:')) tp_val = tg.split(':')[1];
+            if(tg.startsWith('SL_TRAIL_STEP:')) sl_trail_step = tg.split(':')[1];
+            if(tg.startsWith('TP_TRAIL_STEP:')) tp_trail_step = tg.split(':')[1];
+            if(tg === 'SL_CANDLE_CLOSE:true') sl_candle_close = true;
+            if(tg === 'TP_CANDLE_CLOSE:true') tp_candle_close = true;
+            if(tg.startsWith('MAX_LTP:')) max_ltp = parseFloat(tg.split(':')[1]);
+            if(tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
             if(tg.startsWith('NOTE:')) note = tg.substring(5);
           });
         }
-        const _unitLbl = {pct:'%', pt:'pt', rs:'₹', premium:'prem', index:'idx'};
+        const _unitLbl = {pct:'%', pt:'pt', trailing_pt:'tsl', rs:'₹', premium:'prem', index:'idx'};
         let sltp_disp = '';
         if(sl_type || tp_type || sl_pct || tp_pct) {
            sltp_disp = `<div style="font-size:9px;margin-top:2px;white-space:nowrap">`;
-           if(sl_type && sl_val) sltp_disp += `<span style="color:#f85149">SL ${sl_val}${_unitLbl[sl_type]||''}</span> `;
+           if(sl_type && sl_val) {
+             let cc_ind = sl_candle_close ? ' 🕯️' : '';
+             if(sl_type === 'trailing_pt') {
+               let step_suffix = sl_trail_step ? `:${sl_trail_step}` : '';
+               let tsl_disp = `SL ${sl_val}${step_suffix} tsl${cc_ind}`;
+               
+               let gap = parseFloat(sl_val);
+               let step = parseFloat(sl_trail_step || 1.0);
+               if (isFinite(gap) && entry) {
+                 let orig_sl = t.entry === 'BUY' ? (entry - gap) : (entry + gap);
+                 let current_sl = orig_sl;
+                 
+                 if (t.entry === 'BUY') {
+                   let ref_high = max_ltp !== null ? max_ltp : entry;
+                   let movement = ref_high - entry;
+                   if (movement > 0) {
+                     let num_steps = Math.floor(movement / step);
+                     current_sl = orig_sl + (num_steps * step);
+                   }
+                 } else {
+                   let ref_low = min_ltp !== null ? min_ltp : entry;
+                   let movement = entry - ref_low;
+                   if (movement > 0) {
+                     let num_steps = Math.floor(movement / step);
+                     current_sl = orig_sl - (num_steps * step);
+                   }
+                 }
+                 tsl_disp += `<br/><span style="color:#8b949e;font-size:9.5px">${orig_sl.toFixed(1)} → ${current_sl.toFixed(1)}</span>`;
+               }
+               sltp_disp += `<span style="color:#f85149">${tsl_disp}</span> `;
+             } else {
+               sltp_disp += `<span style="color:#f85149">SL ${sl_val}${_unitLbl[sl_type]||''}${cc_ind}</span> `;
+             }
+           }
            else if(sl_pct) sltp_disp += `<span style="color:#f85149">SL ${sl_pct}%</span> `;
-           if(tp_type && tp_val) sltp_disp += `<span style="color:#3fb950">TP ${tp_val}${_unitLbl[tp_type]||''}</span>`;
+           if(tp_type && tp_val) {
+             let cc_ind = tp_candle_close ? ' 🕯️' : '';
+             sltp_disp += `<span style="color:#3fb950">TP ${tp_val}${_unitLbl[tp_type]||''}${cc_ind}</span> `;
+           }
            else if(tp_pct) sltp_disp += `<span style="color:#3fb950">TP ${tp_pct}%</span>`;
            sltp_disp += `</div>`;
         }
@@ -4084,7 +4128,7 @@ function renderCachedOrders() {
           if(!isFinite(v) || !entry) return '';
           if(type === 'premium') return v;
           let dlt;
-          if(type === 'pt') dlt = v;
+          if(type === 'pt' || type === 'trailing_pt') dlt = v;
           else if(type === 'pct') dlt = entry * v / 100;
           else if(type === 'rs') dlt = v / (qty || 1);
           else return '';
@@ -4098,6 +4142,16 @@ function renderCachedOrders() {
         else if(tp_pct) _tpPx = _resolveSlTp('pct', tp_pct, false);
         const _slArg = (_slPx === '' || _slPx == null) ? 'null' : _slPx;
         const _tpArg = (_tpPx === '' || _tpPx == null) ? 'null' : _tpPx;
+        
+        let _slValPass = sl_val;
+        if(sl_type === 'trailing_pt' && sl_trail_step) {
+          _slValPass = sl_val + ':' + sl_trail_step;
+        }
+        let _tpValPass = tp_val;
+        if(tp_type === 'trailing_pt' && tp_trail_step) {
+          _tpValPass = tp_val + ':' + tp_trail_step;
+        }
+        // --- End Antigravity AI addition ---
 
         let imgs = _imgTagsOf(t);
 
