@@ -97,6 +97,26 @@ def is_flat(broker_name: str, trad_sym: str, sec_id: str) -> bool:
     return _check_flat(broker_name, pos, trad_sym, sec_id)
 
 
+def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float = 5.0) -> bool:
+    """
+    Pre-exit check with a FRESH broker positions() call (TRAP #73 family, hedge-
+    sibling path). Like is_flat(), but never trusts data older than max_age
+    seconds — the 35s _CACHE_TTL window is exactly where a manual close slips
+    through and a sibling-close order re-opens a phantom position. Refreshes
+    the shared cache on fetch, so a burst of sibling/EOD checks within the same
+    monitor tick reuses ONE API call instead of one per position. Fail-OPEN
+    (False = "assume still open") on any error so a real exit is never blocked.
+    """
+    with _lock:
+        entry = _cache.get(broker_name)
+    if entry and time.time() - entry["ts"] <= max_age:
+        return _check_flat(broker_name, entry["positions"], trad_sym, sec_id)
+    pos = _fetch_and_cache(broker_name)
+    if pos is None:
+        return False
+    return _check_flat(broker_name, pos, trad_sym, sec_id)
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Core reconciliation
 # ──────────────────────────────────────────────────────────────────────────────
