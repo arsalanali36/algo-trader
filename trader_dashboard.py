@@ -3497,6 +3497,8 @@ def pos_monitor_loop():
                     _pos_peaks         = {}
                     _peak_day_str      = _today_str
                     _save_pos_peaks()
+                    _pending_group_close.clear()   # yesterday's queued closes are moot (EOD handled them)
+                    _save_pending_group_close()
                     print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor reset to ₹0.", flush=True)
 
                 # Update high watermark + record history for Stats graph (always)
@@ -3738,6 +3740,33 @@ _NO_PRICE_EMERGENCY_EXIT_AFTER = 60
 # its sibling is already gone).
 _pending_group_close = {}
 
+# Disk-persisted (TRAP #74 worklist P4): a dashboard/monitor restart while a
+# leg sat in this queue used to silently drop its scheduled forced-close —
+# the naked leg stayed open, unprotected, with no retry and no alert. Same
+# same-day-restore pattern as pos_peaks.json. Keys normalized to str
+# (sec_id type varies by caller; JSON round-trip is str anyway).
+_PENDING_GROUP_CLOSE_FILE = BASE_DIR / "data" / "pending_group_close.json"
+try:
+    if _PENDING_GROUP_CLOSE_FILE.exists():
+        _pgc_init = json.loads(_PENDING_GROUP_CLOSE_FILE.read_text())
+        if _pgc_init.get("day") == _peak_day_str and isinstance(_pgc_init.get("pending"), dict):
+            _pending_group_close.update({str(k): v for k, v in _pgc_init["pending"].items()})
+            if _pending_group_close:
+                print(f"[GROUP-CLOSE] ⚠️ Recovered {len(_pending_group_close)} pending forced "
+                      f"group-close leg(s) after restart: {list(_pending_group_close.keys())} — "
+                      f"will force-close as soon as each resolves a price.", flush=True)
+except Exception as _e_pgc:
+    print(f"[GROUP-CLOSE] pending-queue restore failed (ok, starting empty): {_e_pgc}", flush=True)
+
+
+def _save_pending_group_close():
+    try:
+        _PENDING_GROUP_CLOSE_FILE.write_text(json.dumps(
+            {"day": _peak_day_str, "pending": _pending_group_close}))
+    except Exception:
+        pass
+
+
 def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     import dhan_feed
     import order_store
@@ -3924,18 +3953,22 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
         exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
 
-        # ── Pre-exit broker check (TRAP #44 guard) ──────────────────────────
+        # ── Pre-exit broker check (TRAP #44/#73 guard) ──────────────────────
         # Before placing any exit order, verify the position actually exists at
         # the broker. If it's already flat (manually closed / earlier reject
         # orphan), placing a closing order would open a NEW opposite position.
-        # Uses broker_sync's cached data (fresh API call only if cache stale).
+        # is_flat_fresh: never trusts positions data older than 5s — the old
+        # is_flat() accepted a 35s-stale cache, exactly the window where both
+        # hedge legs manually closed back-to-back let the sibling-close fire
+        # on an already-flat leg. One fetch refreshes the shared cache, so an
+        # EOD/group burst of these checks costs one API call, not one each.
         if p.get("mode") == "live":
             try:
                 import broker_sync as _bsync
                 _br_name = (p.get("broker") or "dhan").lower()
                 _sym_chk = p.get("sym") or ""
                 _sec_chk = str(p.get("sec_id") or "")
-                if _bsync.is_flat(_br_name, _sym_chk, _sec_chk):
+                if _bsync.is_flat_fresh(_br_name, _sym_chk, _sec_chk):
                     import order_store as _os2
                     _os2.mark_externally_closed(p.get("id"))
                     _closed_ids.add(p.get("id"))
@@ -4019,7 +4052,8 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     # the very next time THIS leg's own price resolves (it's
                     # still being polled normally), the close goes through
                     # immediately instead of waiting for EOD.
-                    _pending_group_close[sib_sec] = exit_reason + "_GROUP"
+                    _pending_group_close[str(sib_sec)] = exit_reason + "_GROUP"
+                    _save_pending_group_close()
                     print(f"[{exit_reason}_GROUP] ⚠️ sibling {sib.get('sym')} has NO price "
                           f"right now (feed+REST+stale-cache all empty) — queued for forced "
                           f"retry next cycle instead of being left open unprotected", flush=True)
@@ -4030,8 +4064,9 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     # above succeeded for it, force the close through immediately, ahead of
     # any other check. This leg is leaving regardless of its own SL/TP/EOD
     # state; its sibling is already gone.
-    if sec_id in _pending_group_close:
-        reason = _pending_group_close.pop(sec_id)
+    if str(sec_id) in _pending_group_close:
+        reason = _pending_group_close.pop(str(sec_id))
+        _save_pending_group_close()
         print(f"[{reason}] retry succeeded — {p.get('sym')} now has a price, forcing the "
               f"delayed group-close through", flush=True)
         _do_squareoff(p, ltp, reason, sec_id, seg)

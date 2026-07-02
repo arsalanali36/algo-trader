@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-07-02 — Hedge-sibling close: 35s-stale is_flat() → fresh is_flat_fresh() (TRAP #73 last open path)
+**Status:** DONE (deployed)
+**Kya:** _do_squareoff ka pre-exit flat check ab broker_sync.is_flat_fresh() use karta hai — 5s se purana positions data kabhi trust nahi, fresh broker.positions() fetch (shared cache refresh hota hai to EOD/group burst me ek hi API call). Sibling-close recursion _do_squareoff se hi jati hai to hedge leg bhi covered.
+**Layer:** execution
+**Files:** broker_sync.py (new is_flat_fresh), trader_dashboard.py (_do_squareoff)
+**Kyun:** Worklist Priority 3 — dono hedge legs paas-paas manually close hue to 35s stale cache sibling-close ko already-flat leg pe live order fire karne deta tha (TRAP #73 shape, ye path chhut gaya tha).
+**Depends on:** nothing
+
+---
+
+## 2026-07-02 — _pending_group_close queue disk-persist (restart-safe forced hedge-close)
+**Status:** DONE (deployed)
+**Kya:** _pending_group_close (hedge forced-retry queue) ab data/pending_group_close.json me persist — har add/pop pe write, startup pe same-day restore (loud recovery log), day-rollover pe clear. Keys str-normalized.
+**Layer:** execution
+**Files:** trader_dashboard.py
+**Kyun:** Worklist Priority 4 — restart ke waqt queued leg apni scheduled protection chupchaap kho deta tha (no retry, no alert).
+**Depends on:** nothing
+
+---
+
 ## 2026-07-02 — Per-instrument trailing lock: account-wide entry-block flag removed + _pos_peaks disk persistence
 **Status:** DONE (deployed)
 **Kya:** (a) per_instrument mode me single position ka floor fire hone pe ab day-level trailing_lock_fired flag NAHI likha jata (wo flag webhook _do_entry se PURE account ki new entries block karta tha — per-instrument mode ka point hi khatam). User decision: option (a), koi block nahi — fired floor = closed resolved event. (b) _pos_peaks (per-position peak tracker) ab data/pos_peaks.json me persist hota hai (har cycle write, startup pe same-day restore, day-rollover pe clear) — mid-day dashboard restart pe trailing-lock memory zero hone ka gap band (TRAP #38 ka per-instrument equivalent).
