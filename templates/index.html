@@ -611,6 +611,68 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 </head>
 <body>
 
+<!-- ── Alert banner (P5, 2026-07-02): /api/downloader-alerts existed since
+     2026-06-18 but NO UI ever fetched it — untracked-position, naked-leg,
+     token-expiry and health-check RED alerts were written to a JSON file
+     nobody could see. This strip is their first actual surface. ── -->
+<div id="alertBanner" style="display:none;background:#3d1214;border-bottom:2px solid #f85149;padding:8px 14px;font-size:13px;color:#ffb3ad;line-height:1.5"></div>
+<script>
+(function(){
+  var _dismissedHash = localStorage.getItem('alertBannerDismissed') || '';
+  function _hash(s){ var h=0; for(var i=0;i<s.length;i++){ h=(h*31+s.charCodeAt(i))|0; } return String(h); }
+  function _render(alerts){
+    var el = document.getElementById('alertBanner');
+    if(!el) return;
+    if(!alerts || !alerts.length){ el.style.display='none'; return; }
+    var raw = JSON.stringify(alerts);
+    if(_hash(raw) === _dismissedHash){ el.style.display='none'; return; }
+    var untracked = alerts.filter(function(a){ return a && a.key==='untracked_position'; });
+    var others    = alerts.filter(function(a){ return !(a && a.key==='untracked_position'); });
+    var html = '';
+    if(untracked.length){
+      html += '<div style="font-weight:700;color:#ff7b72">🚨 ' + untracked.length +
+              ' UNTRACKED live position(s) — broker has them, app does not. No SL/EOD protection.</div>';
+      untracked.slice(0,4).forEach(function(a){
+        html += '<div>• ' + (a.msg || (a.broker+': '+a.sym)) + '</div>';
+      });
+      html += '<button onclick="alertBannerReconcile(this)" style="margin:4px 8px 0 0;padding:4px 10px;' +
+              'background:#f85149;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer">' +
+              '🧾 Reconcile vs Broker now</button>';
+    }
+    if(others.length){
+      html += '<div style="margin-top:' + (untracked.length?'6px':'0') + '">' +
+              '⚠️ ' + others.length + ' alert(s): ' +
+              others.slice(-3).map(function(a){ return (typeof a==='string') ? a : (a.msg||JSON.stringify(a)); }).join(' &nbsp;|&nbsp; ') +
+              '</div>';
+    }
+    html += '<span onclick="alertBannerDismiss()" title="Dismiss (reappears if alerts change)" ' +
+            'style="float:right;cursor:pointer;font-weight:700;padding:0 6px">✕</span>';
+    el.innerHTML = html;
+    el.dataset.raw = raw;
+    el.style.display = 'block';
+  }
+  window.alertBannerDismiss = function(){
+    var el = document.getElementById('alertBanner');
+    _dismissedHash = _hash(el.dataset.raw || '');
+    localStorage.setItem('alertBannerDismissed', _dismissedHash);
+    el.style.display = 'none';
+  };
+  window.alertBannerReconcile = function(btn){
+    btn.disabled = true; btn.textContent = '⏳ Reconciling…';
+    fetch('/api/reconcile-manual-trades', {method:'POST'})
+      .then(function(r){ return r.json(); })
+      .then(function(d){ btn.textContent = d.ok ? ('✅ ' + (d.manual_inserted!=null ? d.manual_inserted+' trade(s) added' : 'done')) : ('❌ ' + (d.msg||'failed')); _poll(); })
+      .catch(function(e){ btn.textContent = '❌ failed: ' + e; btn.disabled = false; });
+  };
+  function _poll(){
+    fetch('/api/downloader-alerts').then(function(r){ return r.json(); })
+      .then(_render).catch(function(){ /* dashboard down = other problems */ });
+  }
+  _poll();
+  setInterval(_poll, 30000);
+})();
+</script>
+
 <div class="hdr">
   <span class="dot" id="hdr-dot"></span>
   <h1>Algo Trader</h1>
