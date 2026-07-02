@@ -100,6 +100,51 @@ def n_open():
     return sum(1 for s in _state.values() if s["position"] is not None)
 
 
+def _recover_state_from_order_store(sid, log):
+    """Rebuild _state from today's open order_store rows on process startup
+    (TRAP #28's fix, ported here 2026-07-02 — range_trader got it 2026-06-29,
+    universe_trader never did). Route determines entry-side semantics: equity
+    route enters BUY=LONG/SELL=SHORT directly; option routes always enter BUY
+    (buying premium) with LONG=CE / SHORT=PE encoded in the trad_sym suffix —
+    same convention rsi_trader.py's recovery (same date) uses. Best-effort:
+    any failure leaves _state at its fresh-empty default."""
+    try:
+        import order_store
+        ist = ist_now()
+        data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
+        all_today = (data.get("open") or []) + (data.get("closed") or [])
+        recovered = 0
+        for p in (data.get("open") or []):
+            if p.get("strategy") != sid:
+                continue
+            sym = p.get("symbol")
+            trad_sym = p.get("sym", "")
+            entry = p.get("entry")
+            if not sym or not trad_sym:
+                continue
+            if trad_sym.endswith("-CE"):
+                pos_val = "LONG"
+            elif trad_sym.endswith("-PE"):
+                pos_val = "SHORT"
+            elif entry == "BUY":
+                pos_val = "LONG"
+            elif entry == "SELL":
+                pos_val = "SHORT"
+            else:
+                continue
+            st = get_state(sym)
+            st["position"]  = pos_val
+            st["open_inst"] = (p.get("sec_id"), p.get("segment") or "", trad_sym, p.get("qty"))
+            st["trades_today"] = sum(1 for q in all_today
+                                      if q.get("strategy") == sid and q.get("symbol") == sym)
+            recovered += 1
+        if recovered:
+            log(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
+                f"exit/flip logic + concurrency cap will resume for them this session")
+    except Exception as e:
+        log(f"[RECOVER] state recovery failed (continuing with fresh state): {e}")
+
+
 def log(msg):
     print(f"{datetime.now():%Y-%m-%d %H:%M:%S},000  INFO      {msg}", flush=True)
 
@@ -156,9 +201,19 @@ def main(sid, once=False):
     mode = "live" if "--live" in sys.argv else "paper"
     broker = None
     creds = json.loads((BASE_DIR / "data" / "config.json").read_text())
-    last_day = None
     feed_started = False
     log(f"[BOOT] universe_trader id={sid} mode={mode} once={once}")
+
+    _recover_state_from_order_store(sid, log)
+    # Seed last_day to TODAY (not None) — recovery must never be immediately
+    # undone by the loop's own "new day" check below. With last_day=None, the
+    # very first iteration always sees n.date() != last_day and calls
+    # reset_daily(), which wipes every _state entry (including what recovery
+    # JUST populated) back to flat, one line later. Confirmed live in
+    # range_trader.py's equivalent bug 2026-07-02 (ARS_CHAIN_V1.log:
+    # "[RECOVER] re-attached 1 open position" immediately followed by
+    # "New trading day — resetting state").
+    last_day = ist_now().date()
 
     while True:
         n = ist_now()

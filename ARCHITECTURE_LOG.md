@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-02 — rsi_trader/universe_trader restart-recovery (TRAP #28 ported) + last_day seeding bug found+fixed
+**Status:** DONE (deployed — neither process was running at fix time, so zero live impact)
+**Kya:** rsi_trader.py aur universe_trader.py dono me _state (positions/active_opts/trades_today ya _state dict) restart pe order_store se rebuild nahi hoti thi — sirf range_trader.py ko TRAP #28 mila tha 2026-06-29, ye dono chhoot gaye the. Naya `_recover_rsi_state()` / `_recover_state_from_order_store()` add kiya, dono ne CE/PE-suffix se LONG/SHORT derive karna aur (universe ke liye) equity-route BUY/SELL entry-side bhi handle karna cover kiya. **Isi ke saath ek naya, zyada serious bug mila:** dono files (aur range_trader.py bhi, jo ABHI LIVE hai) me `last_day/last_date = None` set hota tha loop se pehle — jiski wajah se pehli hi loop-iteration turant "New trading day" reset trigger karti thi, jo recovery ne abhi populate kiya tha use turant wapas khali kar deti thi. VPS log se confirm kiya (ARS_CHAIN_V1.log 2026-07-01 11:24:29): "[RECOVER] re-attached 1 open position" ke agli hi line pe "New trading day — resetting state". rsi_trader/universe_trader me `last_date`/`last_day` ko turant `ist_now().date()` se seed kar diya (recovery ke turant baad) — range_trader.py ka wahi fix pending hai (live process, alag se permission maang raha hoon).
+**Layer:** execution
+**Files:** _TRADERS/rsi_trader.py, _TRADERS/universe_trader.py
+**Kyun:** User ne kal ke gap-report ke baad turant fix karne ko kaha (dono processes is waqt band the, safe tha).
+**Depends on:** range_trader.py ka same `last_day=None` bug — separate fix, user go-ahead pending (live process)
+
+---
+
 ## 2026-07-02 — P6 ownership-desync audit findings #1-5 all fixed
 **Status:** DONE (deployed)
 **Kya:** Kal ke audit ne 5 jagah dhoondi thi jahan exit order fresh broker flat-check ke bina fire hota tha (TRAP #44/#73 family, manual close ke saath race). Sab 5 fix: (1) trailing-lock squareoff (per-instrument + aggregate, dono) — naya shared `_pre_exit_guard()` helper, `_do_squareoff` bhi isi se refactor kiya (duplicate logic hataya); (2) webhook_executor `_do_exit` layer-2 — is_flat() → is_flat_fresh(); (3) 3:15 exit-all — range_trader/rsi_trader/universe_trader teeno me flat-check add + range_trader ka dead duplicate elif hataya; (4) universe_trader FLIP-close — flat-check add; (5) manual UI close (/api/close-position, /api/close-position-group dono isi se) — flat-check add, already-flat pe order_store externally_closed mark karta hai, koi fabricated row nahi.

@@ -392,6 +392,51 @@ def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=N
         pass
 
 
+def _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log):
+    """Rebuild positions/active_opts/trades_today from today's open order_store
+    rows on process startup (TRAP #28's fix, ported here 2026-07-02 — range_trader
+    got this in 2026-06-29 but rsi_trader never did; a restart used to reset
+    every symbol to flat in this file's OWN memory even with a real position
+    still open at the broker. pos_monitor_loop's SL/EOD-squareoff still applied
+    via order_store directly, so it wasn't naked — but this strategy's own RSI
+    EXIT signal and max_trades_per_symbol counter had zero memory of it until
+    end of day. Mutates the 3 dicts in place (they're locals in run(), not
+    module globals — pass-by-reference dict mutation is how this reaches the
+    caller). Best-effort: any failure just leaves them at fresh-empty default."""
+    try:
+        import order_store
+        ist = ist_now()
+        data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
+        all_today = (data.get("open") or []) + (data.get("closed") or [])
+        recovered = 0
+        for p in (data.get("open") or []):
+            if p.get("strategy") != strategy_id or p.get("entry") != "BUY":
+                continue   # RSI always enters with side=BUY (buys the premium)
+            sym = p.get("symbol")
+            trad_sym = p.get("sym", "")
+            if not sym or not trad_sym:
+                continue
+            if trad_sym.endswith("-CE"):
+                pos_val = 1
+            elif trad_sym.endswith("-PE"):
+                pos_val = -1
+            else:
+                continue
+            positions[sym]   = pos_val
+            active_opts[sym] = {"sec_id": p.get("sec_id"), "trad_sym": trad_sym,
+                                 "side": "BUY", "qty": p.get("qty"),
+                                 "entry_premium": p.get("entry_price")}
+            trades_today[sym] = sum(1 for q in all_today
+                                     if q.get("strategy") == strategy_id and q.get("symbol") == sym
+                                     and q.get("entry") == "BUY")
+            recovered += 1
+        if recovered:
+            log.info(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
+                     f"RSI exit logic + trade counters will resume for them this session")
+    except Exception as e:
+        log.warning(f"[RECOVER] state recovery failed (continuing with fresh state): {e}")
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 #  MAIN LOOP
 #
@@ -403,7 +448,8 @@ def _record(side, qty, price, mode, trad_sym, sec_id, strategy_id, status, log=N
 #    5. Signal → option contract nikalo → order (ya paper log)
 #    6. tf_secs ke baad phir se (5m → 300s sleep)
 #
-#  State in-memory hai — restart pe reset hota hai (positions, trades).
+#  State in-memory hai, lekin startup pe order_store se rebuild hoti hai
+#  (_recover_rsi_state) — restart naked exposure nahi banata.
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 def run(paper_mode=True, strategy_id="rsi_v1"):
     log      = _make_logger(strategy_id)
@@ -416,7 +462,16 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
     positions    = {}   # sym → +1 (CE open) / -1 (PE open) / 0 (flat)
     active_opts  = {}   # sym → {sec_id, trad_sym, side, qty}
     trades_today = {}   # sym → int (kitni baar trade hua aaj)
-    last_date    = None
+
+    _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log)
+    # Seed last_date to TODAY (not None) — recovery must never be immediately
+    # undone by the loop's own "new day" check below. With last_date=None, the
+    # very first iteration always sees last_date != now.date() and wipes the
+    # 3 dicts right back to empty, one line after populating them. Real bug
+    # found+fixed 2026-07-02 in range_trader.py's equivalent (same pattern,
+    # confirmed live in ARS_CHAIN_V1.log: "[RECOVER] re-attached 1 open
+    # position" immediately followed by "New trading day — resetting state").
+    last_date = ist_now().date()
 
     while True:
         try:
