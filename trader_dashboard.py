@@ -461,6 +461,30 @@ def api_set_risk_config():
     TC_FILE.write_text(json.dumps(cfg, indent=2))
     return jsonify({"msg": "Risk settings saved!"})
 
+@app.route('/api/kill-floor-status')
+def api_kill_floor_status():
+    """Live kill-floor state for the RMS tab's big display (2026-07-02).
+    Reads the disk state pos_monitor_loop (algo-monitor process) writes —
+    this dashboard process doesn't own the engine, so the file IS the truth."""
+    import risk_gate
+    cfg = risk_gate.kill_floor_config()
+    st = {}
+    try:
+        st = json.loads(_KILL_FLOOR_FILE.read_text())
+    except Exception:
+        pass
+    fired_flag = risk_gate.kill_floor_fired_today()
+    return jsonify({
+        "config": cfg,
+        "armed": bool(st.get("armed")),
+        "peak": st.get("peak") or 0.0,
+        "floor": st.get("floor"),
+        "fired": bool(st.get("fired")) or fired_flag,
+        "breaching": st.get("breach_since") is not None,
+        "day": st.get("day"),
+    })
+
+
 @app.route('/api/rms-summary')
 def api_rms_summary():
     """Combined RMS view (Stage 2): per-strategy + global capital used/available,
@@ -3512,6 +3536,7 @@ def pos_monitor_loop():
                 # Always compute realized+unrealized for Stats graph — regardless of lock config
                 _realized = _rg._today_realized_pnl()
                 _unrealized = 0.0
+                _mtm_unreliable = False   # any open position priced from nothing → kill-floor must not fire this cycle
                 _active_pos = [_p for _p in open_pos
                                if _p.get("status") != "blocked"
                                and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
@@ -3530,6 +3555,11 @@ def pos_monitor_loop():
                         _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
                                 else (_epx - _ltp) * _qty
                         _unrealized += _unrl
+                    else:
+                        # this leg contributed NOTHING to MTM (no price anywhere) —
+                        # total is understated; kill-floor treats this cycle as
+                        # unreliable (never fire a kill-all on incomplete data)
+                        _mtm_unreliable = True
                 _total_pnl = _realized + _unrealized
 
                 # Day-rollover check — MUST run before the peak/history update below.
@@ -3558,7 +3588,11 @@ def pos_monitor_loop():
                     _save_pos_peaks()
                     _pending_group_close.clear()   # yesterday's queued closes are moot (EOD handled them)
                     _save_pending_group_close()
-                    print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor reset to ₹0.", flush=True)
+                    _kf_state.update({"day": _today_str, "armed": False, "peak": 0.0,
+                                      "floor": None, "breach_since": None, "fired": False,
+                                      "prev_mtm": None})
+                    _save_kf_state()
+                    print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor + kill-floor reset.", flush=True)
 
                 # Update high watermark + record history for Stats graph (always)
                 if _total_pnl > _trailing_peak_pnl:
@@ -3676,41 +3710,86 @@ def pos_monitor_loop():
                         _active_peak_ids = {_p.get("id") for _p in _active_pos}
                         _pos_peaks = {k: v for k, v in _pos_peaks.items() if k in _active_peak_ids}
                         _save_pos_peaks()
-                    else:
-                        # Aggregate Trailing Lock: original portfolio-level trailing lock
-                        _n_pos = len(_active_pos)
-                        if _n_pos <= 1 and _trail_rs and float(_trail_rs) > 0:
-                            _effective_lock = float(_trail_rs)
-                            _lock_desc = f"₹{_effective_lock:.0f} (single-pos fixed)"
-                        elif _n_pos > 1 and _trail_pct and float(_trail_pct) > 0:
-                            _effective_lock = _trailing_peak_pnl * float(_trail_pct) / 100.0
-                            _lock_desc = f"₹{_effective_lock:.0f} ({_trail_pct}% of peak)"
-                        elif _trail_rs and float(_trail_rs) > 0:
-                            _effective_lock = float(_trail_rs)   # fallback: use ₹ if pct not set
-                            _lock_desc = f"₹{_effective_lock:.0f} (fixed fallback)"
-                        else:
-                            _effective_lock = 0.0
-                            _lock_desc = "none"
-                        # Fire if peak was positive AND drawdown from peak exceeds lock
-                        _drawdown = _trailing_peak_pnl - _total_pnl
-                        if _trailing_peak_pnl > 0 and _effective_lock > 0 and _drawdown >= _effective_lock:
-                            print(f"[TRAILING-LOCK] Peak ₹{_trailing_peak_pnl:.0f} → now ₹{_total_pnl:.0f} "
-                                  f"(drawdown ₹{_drawdown:.0f} ≥ lock {_lock_desc}, pos={_n_pos}) — squaring off ALL",
-                                  flush=True)
-                            for _p in list(open_pos):
-                                _sid = _p.get("sec_id")
-                                if not _sid or _p.get("status") == "blocked": continue
-                                if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
-                                if _p.get("id") in _closed_ids: continue
-                                _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                                _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                                        _rest_ltp_fallback(_sid, _seg) or 0.0
-                                if _ltp2 > 0:
-                                    # P6 audit fix (2026-07-02) — same gate as the per-instrument
-                                    # branch above: this path bypassed _do_squareoff, so a manual
-                                    # close landing in the same instant the aggregate floor fires
-                                    # could open a phantom opposite position (TRAP #44/#73 family).
-                                    if _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_AGG", _closed_ids, log=print):
+                    # NOTE (2026-07-02): the old "aggregate" trailing-lock branch that
+                    # lived here was REPLACED by the account-level KILL-FLOOR below
+                    # (user decision — one account-level system, not two in parallel).
+                    # trailing_lock_mode now only controls the per-instrument locks
+                    # above; mode="aggregate" without kill_floor_enabled = no
+                    # account-level lock at all.
+            except Exception as _trail_e:
+                print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
+            # ── Account-level trailing KILL-FLOOR (2026-07-02, user-designed) ──
+            # Replaces the old aggregate trailing lock. Semantics locked with
+            # the user + calibrated on 2026-07-02's real trades (peak ₹5,193,
+            # final ₹1,937): arm when confirmed MTM crosses arm_rs; floor =
+            # confirmed_peak − gap_rs, ratchets ₹1-fine on every confirmed new
+            # high, NEVER moves down; MTM must stay below the floor for
+            # confirm_secs CONSECUTIVE seconds to fire (one spike/whipsaw never
+            # fires — the old floor's misfire root cause). "Confirmed" = min of
+            # two consecutive readings, so a single bad tick can never inflate
+            # the peak either. Runs independent of trailing_lock_mode. Fire →
+            # every open position squared off through _pre_exit_guard (webhook
+            # claim + fresh flat-check) + day-level entry-block flag (webhook
+            # honors it directly; strategies via risk_gate.gating_status).
+            try:
+                import risk_gate as _rg_kf   # own import — never depend on the previous block's local
+                _kfc = _rg_kf.kill_floor_config()
+                if _kfc["enabled"] and not _kf_state["fired"]:
+                    _kf_changed = False
+                    _confirmed = _total_pnl if _kf_state["prev_mtm"] is None \
+                        else min(_kf_state["prev_mtm"], _total_pnl)
+                    if not _mtm_unreliable and _confirmed > _kf_state["peak"]:
+                        _kf_state["peak"] = round(_confirmed, 2)
+                        _kf_changed = True
+                    if not _kf_state["armed"] and _kf_state["peak"] >= _kfc["arm_rs"]:
+                        _kf_state["armed"] = True
+                        _kf_changed = True
+                        print(f"[KILL-FLOOR] ARMED — confirmed peak ₹{_kf_state['peak']:.0f} crossed "
+                              f"arm threshold ₹{_kfc['arm_rs']:.0f}; floor trails at peak − ₹{_kfc['gap_rs']:.0f}", flush=True)
+                    if _kf_state["armed"]:
+                        _new_floor = round(_kf_state["peak"] - _kfc["gap_rs"], 2)
+                        if _kf_state["floor"] is None or _new_floor > _kf_state["floor"]:
+                            _kf_state["floor"] = _new_floor   # ratchet UP only — never down
+                            _kf_changed = True
+                        if _mtm_unreliable:
+                            # incomplete price data — freeze: never fire (or even
+                            # advance toward firing) a kill-all on an understated MTM
+                            pass
+                        elif _total_pnl < _kf_state["floor"]:
+                            if _kf_state["breach_since"] is None:
+                                _kf_state["breach_since"] = time.time()
+                                _kf_changed = True
+                                print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
+                                      f"— confirm timer started ({_kfc['confirm_secs']:.0f}s)", flush=True)
+                            elif time.time() - _kf_state["breach_since"] >= _kfc["confirm_secs"]:
+                                _kf_state["fired"] = True
+                                _kf_changed = True
+                                print(f"[KILL-FLOOR] 🔒 FIRED — MTM ₹{_total_pnl:.0f} stayed below floor "
+                                      f"₹{_kf_state['floor']:.0f} for {_kfc['confirm_secs']:.0f}s "
+                                      f"(peak was ₹{_kf_state['peak']:.0f}). KILLING ALL POSITIONS.", flush=True)
+                                for _p in list(open_pos):
+                                    _sid = _p.get("sec_id")
+                                    if not _sid or _p.get("status") == "blocked": continue
+                                    if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
+                                    if _p.get("id") in _closed_ids: continue
+                                    _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                                    _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                            _rest_ltp_fallback(_sid, _seg) or 0.0
+                                    if _ltp2 <= 0:
+                                        try:
+                                            import shared_ltp_cache as _slc_kf
+                                            _ltp2 = _slc_kf.get_stale(_sid, max_age=120) or 0.0
+                                        except Exception:
+                                            _ltp2 = 0.0
+                                    if _ltp2 <= 0:
+                                        print(f"[KILL-FLOOR] ⚠️ {_p.get('sym')} — no price this instant; "
+                                              f"queued for forced close next cycle", flush=True)
+                                        _pending_group_close[str(_sid)] = "KILL_FLOOR"
+                                        _save_pending_group_close()
+                                        continue
+                                    if _pre_exit_guard(_p, _sid, "KILL_FLOOR", _closed_ids, log=print):
                                         continue
                                     try:
                                         import smart_order
@@ -3721,10 +3800,10 @@ def pos_monitor_loop():
                                             _br = get_broker(_bname)
                                             smart_order.execute(
                                                 _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
-                                                _p["mode"], _br, log=print, tag="TRAILING",
+                                                _p["mode"], _br, log=print, tag="KILLFLOOR",
                                                 source=_p.get("source",""), strategy=_p.get("strategy",""),
                                                 instrument=_p.get("instrument",""), broker_name=_bname,
-                                                extra_tags=["TRAILING_PROFIT_LOCK"],
+                                                extra_tags=["KILL_FLOOR"],
                                                 is_exit=True,
                                             )
                                         else:
@@ -3735,24 +3814,48 @@ def pos_monitor_loop():
                                                 mode=_p.get("mode","paper"), broker=_bname,
                                                 symbol=_p["sym"], instrument=_p.get("instrument",""),
                                                 trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
-                                                status="paper", tags=["TRAILING_PROFIT_LOCK"],
+                                                status="paper", tags=["KILL_FLOOR"],
                                             )
                                         _closed_ids.add(_p.get("id"))
-                                    except Exception as _te:
-                                        print(f"[TRAILING-LOCK] squareoff failed for {_p.get('sym')}: {_te}", flush=True)
-                            _trailing_peak_pnl = 0.0   # reset so it doesn't re-fire next cycle
-                            # Write day-level flag so webhook/strategy blocks new entries
-                            try:
-                                from datetime import datetime as _dtc
-                                _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-                                _flag.write_text(f"fired at {_dtc.now().strftime('%H:%M:%S')}, peak was ₹{_daily_peak_ever:.0f}")
-                                print(f"[TRAILING-LOCK] Flag written: {_flag.name} — new entries blocked for today.", flush=True)
-                            except Exception as _fe:
-                                print(f"[TRAILING-LOCK] Flag write failed: {_fe}", flush=True)
-                            time.sleep(5)
-                            continue                    # skip per-position checks this cycle
-            except Exception as _trail_e:
-                print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
+                                    except Exception as _ke:
+                                        print(f"[KILL-FLOOR] squareoff failed for {_p.get('sym')}: {_ke}", flush=True)
+                                # Day-level entry block: webhook checks this flag directly,
+                                # every strategy via risk_gate.gating_status (added 2026-07-02)
+                                try:
+                                    from datetime import datetime as _dtc
+                                    _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
+                                    _flag.write_text(f"KILL_FLOOR fired at {_dtc.now().strftime('%H:%M:%S')} — "
+                                                     f"MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
+                                                     f"for {_kfc['confirm_secs']:.0f}s (peak ₹{_kf_state['peak']:.0f})")
+                                    print(f"[KILL-FLOOR] Flag written: {_flag.name} — ALL new entries blocked for today.", flush=True)
+                                except Exception as _fe:
+                                    print(f"[KILL-FLOOR] Flag write failed: {_fe}", flush=True)
+                                try:
+                                    _af = BASE_DIR / "data" / "downloader_alert.json"
+                                    _alerts = []
+                                    try:
+                                        _alerts = json.loads(_af.read_text())
+                                    except Exception:
+                                        pass
+                                    _alerts.append({"key": "kill_floor", "level": "error",
+                                                    "msg": (f"🔒 KILL-FLOOR FIRED — profit locked at "
+                                                            f"~₹{_kf_state['floor']:.0f} (peak was ₹{_kf_state['peak']:.0f}). "
+                                                            f"All positions squared off, entries blocked for today.")})
+                                    _af.write_text(json.dumps(_alerts))
+                                except Exception:
+                                    pass
+                        else:
+                            if _kf_state["breach_since"] is not None:
+                                print(f"[KILL-FLOOR] MTM ₹{_total_pnl:.0f} back above floor "
+                                      f"₹{_kf_state['floor']:.0f} — confirm timer reset", flush=True)
+                                _kf_state["breach_since"] = None
+                                _kf_changed = True
+                    if not _mtm_unreliable:
+                        _kf_state["prev_mtm"] = _total_pnl
+                    if _kf_changed:
+                        _save_kf_state()
+            except Exception as _kfe:
+                print(f"[KILL-FLOOR] check error (skipped this cycle): {_kfe}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
             for p in open_pos:
@@ -3781,7 +3884,10 @@ def pos_monitor_loop():
                     print(f"[pos_monitor] check failed for {p.get('sym')} (id={p.get('id')}) "
                           f"— leaving position open, will retry next cycle: {_pe}", flush=True)
         except Exception as e:
-            print("Pos monitor error:", e)
+            # flush=True is load-bearing: without it, on a systemd service with
+            # block-buffered stdout this error sits invisible for minutes while
+            # SL/TP enforcement is down (TRAP #56's exact silent-failure mode).
+            print("Pos monitor error:", e, flush=True)
 
         time.sleep(5)
 
@@ -3836,6 +3942,42 @@ def _save_pending_group_close():
     try:
         _PENDING_GROUP_CLOSE_FILE.write_text(json.dumps(
             {"day": _peak_day_str, "pending": _pending_group_close}))
+    except Exception:
+        pass
+
+
+# ── Account-level KILL-FLOOR state (2026-07-02) — disk-persisted so a mid-day
+# restart never resets the armed floor to zero (failure shape #3: RAM-only
+# state; same pattern as pos_peaks.json / pending_group_close.json).
+# peak       — highest CONFIRMED MTM today (min of 2 consecutive readings)
+# floor      — peak − gap once armed; ratchets UP only, never down
+# breach_since — epoch when MTM first went below floor (None = not breaching)
+# fired      — kill-all executed today (also mirrored by the day flag file)
+# prev_mtm   — last cycle's MTM (for the 2-reading confirmation)
+_KILL_FLOOR_FILE = BASE_DIR / "data" / "kill_floor_state.json"
+_kf_state = {"day": _peak_day_str, "armed": False, "peak": 0.0,
+             "floor": None, "breach_since": None, "fired": False, "prev_mtm": None}
+try:
+    if _KILL_FLOOR_FILE.exists():
+        _kf_init = json.loads(_KILL_FLOOR_FILE.read_text())
+        if _kf_init.get("day") == _peak_day_str and isinstance(_kf_init, dict):
+            for _kk in ("armed", "peak", "floor", "fired", "prev_mtm"):
+                if _kk in _kf_init:
+                    _kf_state[_kk] = _kf_init[_kk]
+            # breach_since deliberately NOT restored — a restart mid-breach
+            # restarts the confirm timer (conservative: never fire off a stale
+            # timer from before the restart; worst case fire is confirm_secs late)
+            if _kf_state["armed"]:
+                print(f"[KILL-FLOOR] Restored after restart — armed, peak ₹{_kf_state['peak']:.0f}, "
+                      f"floor ₹{(_kf_state['floor'] or 0):.0f}, fired={_kf_state['fired']}", flush=True)
+except Exception as _e_kf:
+    print(f"[KILL-FLOOR] state restore failed (ok, starting fresh): {_e_kf}", flush=True)
+
+
+def _save_kf_state():
+    try:
+        _kf_state["day"] = _peak_day_str
+        _KILL_FLOOR_FILE.write_text(json.dumps(_kf_state))
     except Exception:
         pass
 

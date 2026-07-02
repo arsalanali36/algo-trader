@@ -39,6 +39,52 @@ def default_broker():
     return _risk_cfg().get("global", {}).get("default_broker", "dhan")
 
 
+def kill_floor_config():
+    """Account-level trailing kill-floor settings (2026-07-02, user-requested).
+    Semantics (locked with user, real-data-calibrated against 2026-07-02's own
+    trades — peak ₹5,193 / final ₹1,937 / ₹3,256 giveback):
+      enabled     — master switch (default OFF until user turns it on in RMS tab)
+      arm_rs      — MTM must cross this once to ARM the floor (₹500 default);
+                    below it only the existing daily-loss cap protects
+      gap_rs      — floor = confirmed_peak − gap (₹1,500 default — today's data:
+                    ₹500 would have killed the day at ~₹1,000-1,500 before the
+                    real peak; ₹1,500 survives normal multi-position flutter)
+      confirm_secs— MTM must stay below the floor this many CONSECUTIVE seconds
+                    to fire (60 default) — a single spike/whipsaw never fires it
+    Floor ratchets up ₹1-fine with every CONFIRMED new peak (min of two
+    consecutive readings — a one-tick spike can never inflate the peak), and
+    NEVER moves down. Fire → squareoff everything + block entries all day."""
+    g = _risk_cfg().get("global", {})
+    def _f(key, default):
+        try:
+            v = g.get(key)
+            return default if v is None else float(v)
+        except (TypeError, ValueError):
+            return default
+    return {
+        "enabled": bool(g.get("kill_floor_enabled", False)),
+        "arm_rs": _f("kill_floor_arm_rs", 500.0),
+        "gap_rs": _f("kill_floor_gap_rs", 1500.0),
+        "confirm_secs": _f("kill_floor_confirm_secs", 60.0),
+    }
+
+
+def kill_floor_fired_today() -> bool:
+    """True if the account-level kill-floor (or aggregate trailing lock — same
+    flag file, deliberately: both are account-level 'day is done' events) has
+    fired today. Checked by gating_status() so EVERY entry path (strategies via
+    strategy_safety.gate_entry AND webhook via its own flag check) is blocked —
+    previously only the webhook honored this flag, a gap found while building
+    the kill-floor (2026-07-02)."""
+    try:
+        from datetime import datetime, timedelta, timezone
+        ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+        flag = BASE_DIR / "data" / f"trailing_lock_fired_{ist.strftime('%Y-%m-%d')}.txt"
+        return flag.exists()
+    except Exception:
+        return False
+
+
 # ── Live broker balance (cash + collateral) — single cached source, shared by
 # the dashboard's header/RMS-tab display AND the live daily-loss cap below, so
 # there's exactly one funds() call per broker per TTL window, not one per caller.
@@ -630,6 +676,12 @@ def gating_status(strategy, unrealized=0.0, mode=None, broker=None):
     breached, why = daily_loss_breached(strategy, unrealized=unrealized, mode=mode, broker=broker)
     if breached:
         return True, why, True
+    # Account-level kill-floor / aggregate trailing lock fired today → the day
+    # is DONE for new entries, every strategy, every path (2026-07-02 — before
+    # this, only webhook_executor checked the flag; strategies could keep
+    # entering right after a kill-all squareoff).
+    if kill_floor_fired_today():
+        return True, "account kill-floor fired today — profit locked, no further entries", True
     pt_hit, pt_why = daily_profit_target_hit(strategy, unrealized=unrealized)
     if pt_hit:
         return True, pt_why, True

@@ -1310,6 +1310,51 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div id="trailing-lock-status" style="font-size:11px;color:#8b949e;margin-top:6px"></div>
     </div>
 
+    <div style="border:2px solid #f85149;border-radius:8px;padding:14px;margin-top:12px">
+      <div style="font-size:13px;font-weight:600;color:#e6edf3;margin-bottom:4px">4️⃣ 🔒 KILL-ALL Profit Floor (account-level trailing)</div>
+      <div style="font-size:11px;color:#8b949e;margin-bottom:10px">
+        MTM <b>Arm ₹</b> cross kare → floor arm hota hai. Floor = <b>confirmed peak − Gap ₹</b>,
+        har ₹1 ke naye (confirmed) high pe upar chadhta hai, <b style="color:#3fb950">kabhi neeche nahi aata</b>.
+        MTM floor ke neeche <b>Confirm sec</b> tak lagatar rahe → <b style="color:#f85149">SAARI positions
+        limit-order se close + poore din ki nayi entries block</b> (har strategy + webhook).
+        Ek spike/whipsaw pe kabhi fire nahi hota — confirm timer + 2-reading peak dono chahiye.
+      </div>
+      <div style="display:flex;gap:16px;align-items:center;flex-wrap:wrap">
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Enabled</label>
+          <select id="risk-killfloor-enabled" style="background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #f85149;border-radius:4px">
+            <option value="false">OFF</option>
+            <option value="true">ON</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Arm ₹ (base)</label>
+          <input id="risk-killfloor-arm" type="number" step="100" placeholder="500"
+                 style="width:110px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Gap ₹ (peak se kitna girne do)</label>
+          <input id="risk-killfloor-gap" type="number" step="100" placeholder="1500"
+                 style="width:110px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <label style="font-size:12px;color:#adbac7">Confirm sec</label>
+          <input id="risk-killfloor-confirm" type="number" step="5" placeholder="60"
+                 style="width:90px;background:#0d1117;color:#e6edf3;padding:6px;border:1px solid #30363d;border-radius:4px"/>
+        </div>
+      </div>
+      <div id="killfloor-live" style="margin-top:12px;display:none;background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:10px 14px">
+        <div style="display:flex;gap:26px;align-items:baseline;flex-wrap:wrap">
+          <div><span style="font-size:11px;color:#8b949e">FLOOR ABHI</span><br>
+               <span id="kf-floor" style="font-size:26px;font-weight:700;color:#3fb950">—</span></div>
+          <div><span style="font-size:11px;color:#8b949e">CONFIRMED PEAK</span><br>
+               <span id="kf-peak" style="font-size:18px;font-weight:600;color:#e6edf3">—</span></div>
+          <div><span style="font-size:11px;color:#8b949e">STATUS</span><br>
+               <span id="kf-status" style="font-size:14px;font-weight:600">—</span></div>
+        </div>
+      </div>
+    </div>
+
     <button class="btn btn-amber" style="margin-top:14px" onclick="saveRiskConfig()">💾 Save</button>
     <div id="risk-msg" style="font-size:12px;margin-top:8px;color:#8b949e"></div>
   </div>
@@ -2190,6 +2235,11 @@ async function renderRiskTab(){
   // Fixed by Antigravity AI.
   document.getElementById('risk-global-hedge-mode').value = RISK_CFG.global.hedge_enabled === false ? 'false' : 'true';
   document.getElementById('risk-trailing-lock-mode').value = RISK_CFG.global.trailing_lock_mode || 'aggregate';
+  document.getElementById('risk-killfloor-enabled').value = RISK_CFG.global.kill_floor_enabled === true ? 'true' : 'false';
+  document.getElementById('risk-killfloor-arm').value = RISK_CFG.global.kill_floor_arm_rs != null ? RISK_CFG.global.kill_floor_arm_rs : '';
+  document.getElementById('risk-killfloor-gap').value = RISK_CFG.global.kill_floor_gap_rs != null ? RISK_CFG.global.kill_floor_gap_rs : '';
+  document.getElementById('risk-killfloor-confirm').value = RISK_CFG.global.kill_floor_confirm_secs != null ? RISK_CFG.global.kill_floor_confirm_secs : '';
+  killFloorStatusPoll();
 
   // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
   let cfg = {};
@@ -2464,6 +2514,13 @@ async function saveRiskConfig(){
       // Fixed by Antigravity AI.
       hedge_enabled: gHedgeEnabled === 'true',
       trailing_lock_mode: gTrailingLockMode,
+      // KILL-FLOOR (2026-07-02) — /api/risk-config POST replaces _risk wholesale,
+      // so these MUST be in every save payload or saving any other risk setting
+      // would silently erase them.
+      kill_floor_enabled: document.getElementById('risk-killfloor-enabled').value === 'true',
+      kill_floor_arm_rs: document.getElementById('risk-killfloor-arm').value !== '' ? parseFloat(document.getElementById('risk-killfloor-arm').value) : null,
+      kill_floor_gap_rs: document.getElementById('risk-killfloor-gap').value !== '' ? parseFloat(document.getElementById('risk-killfloor-gap').value) : null,
+      kill_floor_confirm_secs: document.getElementById('risk-killfloor-confirm').value !== '' ? parseFloat(document.getElementById('risk-killfloor-confirm').value) : null,
     },
     per_strategy: {}
   };
@@ -2508,6 +2565,41 @@ async function saveRiskConfig(){
     document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
   }
 }
+
+// ── KILL-FLOOR live status (RMS tab big display) ──
+async function killFloorStatusPoll(){
+  const box = document.getElementById('killfloor-live');
+  if (!box) return;
+  try {
+    const r = await fetch('/api/kill-floor-status');
+    const d = await r.json();
+    if (!d.config || !d.config.enabled) { box.style.display = 'none'; return; }
+    box.style.display = 'block';
+    const fEl = document.getElementById('kf-floor');
+    const pEl = document.getElementById('kf-peak');
+    const sEl = document.getElementById('kf-status');
+    fEl.textContent = d.floor != null ? ('₹' + Math.round(d.floor).toLocaleString('en-IN')) : '— (not armed)';
+    pEl.textContent = '₹' + Math.round(d.peak || 0).toLocaleString('en-IN');
+    if (d.fired) {
+      sEl.textContent = '🔒 FIRED — profit locked, entries blocked today';
+      sEl.style.color = '#f85149';
+      fEl.style.color = '#f85149';
+    } else if (d.breaching) {
+      sEl.textContent = '⏳ MTM floor ke neeche — confirm timer chal raha hai';
+      sEl.style.color = '#d29922';
+      fEl.style.color = '#d29922';
+    } else if (d.armed) {
+      sEl.textContent = '🟢 ARMED — floor trail ho raha hai';
+      sEl.style.color = '#3fb950';
+      fEl.style.color = '#3fb950';
+    } else {
+      sEl.textContent = '⚪ Waiting — MTM ne abhi Arm ₹ cross nahi kiya';
+      sEl.style.color = '#8b949e';
+      fEl.style.color = '#8b949e';
+    }
+  } catch(e) { /* dashboard reachable nahi — box jaisa hai waisa chhodo */ }
+}
+setInterval(() => { if (activeTab === 'risk') killFloorStatusPoll(); }, 5000);
 
 // ── WEBHOOK TAB (multi-strategy) ──
 let WH_TOKEN='', WH_PUBLIC_BASE='', _whTimer=null, _whLtpTimer=null;
