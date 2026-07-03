@@ -9767,11 +9767,59 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let currentGroupDate = '';
 
       let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0 };
+      let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+
+      const renderDayTotalRow = () => {
+        if (_dayTot.count === 0) return '';
+        const _dTotRetPct = _dayTot.inv > 0 ? ((_dayTot.n / _dayTot.inv) * 100).toFixed(2) + '%' : '—';
+        let row = '<tr style="border-top:1px dashed #30363d; background:#161b22; font-weight:600;">';
+        cols.forEach((c, idx) => {
+          let val = '';
+          let colorStyle = '';
+          if (idx === 0) {
+            val = 'Day Total';
+            colorStyle = 'color:#8b949e; text-align:right; font-style:italic;';
+          } else {
+            switch (c.id) {
+              case 'points':
+                val = (_dayTot.pts >= 0 ? '+' : '') + _dayTot.pts.toFixed(2);
+                colorStyle = 'color:' + (_dayTot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'gross':
+                val = Math.round(_dayTot.g);
+                colorStyle = 'color:' + (_dayTot.g >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'tax':
+                val = '−' + Math.round(_dayTot.tx);
+                colorStyle = 'color:#8b949e;';
+                break;
+              case 'net':
+                val = (Math.round(_dayTot.n) > 0 ? '+' : '') + Math.round(_dayTot.n);
+                colorStyle = 'color:' + (_dayTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'ret_pct':
+                val = _dTotRetPct;
+                colorStyle = 'color:' + (_dayTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+            }
+          }
+          let align = 'left';
+          if (c.a === 'center') align = 'center';
+          if (c.a === 'right') align = 'right';
+          row += `<td style="padding:6px; text-align:${idx===0?'right':align}; ${colorStyle}">${val}</td>`;
+        });
+        row += '</tr>';
+        return row;
+      };
 
       displayItems.forEach((item, itemIdx) => {
         const tradeDate = item.date;
         if (tradeDate !== currentGroupDate) {
+          if (currentGroupDate !== '') {
+            pointsHtml += renderDayTotalRow();
+          }
           currentGroupDate = tradeDate;
+          _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
           let dateText = tradeDate;
           try {
             const parts = tradeDate.split('-');
@@ -9791,19 +9839,29 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         if (item.type === 'single') {
           const t = item.trade;
           const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
+          const p = t.entry === 'BUY' ? (xp - ep) : (ep - xp);
           _tot.g += t._gross || 0; _tot.tx += t._tax || 0; _tot.n += t._net || 0; _tot.inv += qt * ep;
-          _tot.pts += t.entry === 'BUY' ? (xp - ep) : (ep - xp);
+          _tot.pts += p;
+          _dayTot.g += t._gross || 0; _dayTot.tx += t._tax || 0; _dayTot.n += t._net || 0; _dayTot.inv += qt * ep;
+          _dayTot.pts += p; _dayTot.count++;
           pointsHtml += renderSingleTradeRow(item.trade, cols, sortedTrades);
         } else {
           const trades = item.trades;
           trades.forEach(t => {
             const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
+            const p = t.entry === 'BUY' ? (xp - ep) : (ep - xp);
             _tot.g += t._gross || 0; _tot.tx += t._tax || 0; _tot.n += t._net || 0; _tot.inv += qt * ep;
-            _tot.pts += t.entry === 'BUY' ? (xp - ep) : (ep - xp);
+            _tot.pts += p;
+            _dayTot.g += t._gross || 0; _dayTot.tx += t._tax || 0; _dayTot.n += t._net || 0; _dayTot.inv += qt * ep;
+            _dayTot.pts += p; _dayTot.count++;
           });
           pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
         }
       });
+
+      if (currentGroupDate !== '') {
+        pointsHtml += renderDayTotalRow();
+      }
 
       const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
       pointsHtml += '<tr style="border-top:2px solid #30363d;font-weight:700;background:#161b22;">';
