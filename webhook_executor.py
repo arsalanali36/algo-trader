@@ -395,6 +395,21 @@ def _recover_wh_state():
         data = order_store.trades_for(date)
         recovered = 0
         for p in data.get("open", []):
+            # Only recover the webhook monitor's OWN positions. NEVER adopt a
+            # live strategy's (range_trader / rsi_v1 / universe) open legs — they
+            # have their own monitors + configs; adopting them here double-manages
+            # them through the webhook path in PAPER via a mismatched default cfg,
+            # producing phantom paper squareoffs + phantom P&L on every restart.
+            if (p.get("source") or "") != "webhook":
+                continue
+            # CAPITAL_BLOCKED / blocked-status rows never actually opened at the
+            # broker (rejected pre-placement) yet leak into the "open" list with
+            # an index-level entry_price + empty trad_sym — adopting them makes
+            # _leg_pnl compute a phantom ₹-lakh P&L that false-fires the KILL
+            # floor. Same CAPITAL_BLOCKED-exclusion the other 4 recovery paths
+            # already got (TRAP #86/#92 family); this was the one that missed it.
+            if p.get("status") == "blocked" or "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue
             strat  = p.get("strategy") or "unknown"
             symbol = p.get("symbol") or ""
             if not symbol:
