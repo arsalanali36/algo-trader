@@ -3808,6 +3808,77 @@ function renderCachedOrders() {
       <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
     </div>`;
   });
+
+  // ── STRATEGY-SPECIFIC PILLS ──
+  const stratTotals = {};
+  
+  // 1. Gather running strategies
+  if (typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null) {
+    Object.keys(RUNNING_PIDS).forEach(k => {
+      if (!k.endsWith('_mode') && k !== '_risk' && k !== 'webhooks' && k !== '_ui_config') {
+        stratTotals[k] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+      }
+    });
+  }
+  
+  // 2. Accumulate completed trades for strategies
+  det.forEach(t => {
+    let s = String(t.source || 'STRATEGY').toUpperCase();
+    if (s !== 'MANUAL' && s !== 'WEBHOOK') {
+      const sName = t.strategy || 'STRATEGY';
+      if (!stratTotals[sName]) {
+        stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+      }
+      stratTotals[sName].net += t._net;
+      stratTotals[sName].gross += t._gross;
+      stratTotals[sName].n++;
+      if (t._net > 0) stratTotals[sName].w++;
+    }
+  });
+
+  // 3. Accumulate open positions for strategies
+  opnReal.forEach(t => {
+    let s = String(t.source || 'STRATEGY').toUpperCase();
+    if (s !== 'MANUAL' && s !== 'WEBHOOK') {
+      const sName = t.strategy || 'STRATEGY';
+      if (!stratTotals[sName]) {
+        stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+      }
+      stratTotals[sName].opn++;
+    }
+  });
+
+  // Render individual strategy cards sorted alphabetically
+  Object.keys(stratTotals).sort().forEach(s => {
+    const st = stratTotals[s];
+    const isRunning = typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null && RUNNING_PIDS[s] !== undefined;
+    
+    // Skip if it's not running and has no trades/positions today
+    if (!isRunning && st.n === 0 && st.opn === 0) return;
+    
+    const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : null;
+    let badge = '';
+    if (isRunning) {
+      if (mode === 'live') {
+        badge = '<span style="background:#238636;color:#fff;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Live</span>';
+      } else {
+        badge = '<span style="background:#d29922;color:#0d1117;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Paper</span>';
+      }
+    } else {
+      badge = '<span style="background:#30363d;color:#8b949e;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Stopped</span>';
+    }
+    
+    const tc = st.net >= 0 ? '#3fb950' : '#f85149';
+    sh += `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
+      <div style="font-size:11px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <span style="color:#8b949e">${s}</span>
+        ${badge}
+      </div>
+      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}${Math.round(st.net).toLocaleString('en-IN')}</div>
+      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
+    </div>`;
+  });
+
   _setHtml(document.getElementById('ord-summary'), sh ||
     '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
 
