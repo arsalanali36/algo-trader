@@ -9045,6 +9045,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         { id: 'avg_pts',  l: 'Avg Pts/Trade',    on: false },
         { id: 'avg_gross',l: 'Avg Gross',        on: false },
         { id: 'avg_net',  l: 'Avg Net',          on: false },
+        { id: 'avg_win',  l: 'Avg Win',          on: false },
+        { id: 'avg_loss', l: 'Avg Loss',         on: false },
         { id: 'best',     l: 'Best Trade Net',   on: false },
         { id: 'worst',    l: 'Worst Trade Net',  on: false },
         { id: 'runup',    l: 'Max Run-Up',       on: false },
@@ -9052,7 +9054,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         { id: 'maxdd',    l: 'Max Drawdown',     on: false },
         { id: 'exp',      l: 'Expectancy',       on: false },
       ];
-      window._calSumCols = !saved ? defaults : defaults.map(d => ({ ...d, on: d.fixed ? true : (saved[d.id] ?? d.on) }));
+      // Force refresh if new columns added
+      const knownIds = new Set(defaults.map(d => d.id));
+      const savedKeys = saved ? Object.keys(saved) : [];
+      const hasNew = defaults.some(d => saved && !(d.id in saved));
+      window._calSumCols = (!saved || hasNew)
+        ? defaults
+        : defaults.map(d => ({ ...d, on: d.fixed ? true : (saved[d.id] ?? d.on) }));
     }
 
     function _populateCalSumColMenu() {
@@ -9115,6 +9123,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let count = 0, wins = 0, losses = 0, gross = 0, tax = 0, net = 0;
       let totalPts = 0, best = -Infinity, worst = Infinity;
       let maxRunUp = 0, maxRunDown = 0;
+      let totalWinNet = 0, totalLossNet = 0;
       trades.forEach(t => {
         const ep = t.entry_price||0, xp = t.exit_price||0, qty = t.qty||0;
         const side = t.entry||'BUY';
@@ -9123,7 +9132,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         const tx = t._tax != null ? t._tax : 0;
         const n = t._net != null ? t._net : g - tx;
         count++; gross += g; tax += tx; net += n; totalPts += pts;
-        if (n > 0) wins++; else if (n < 0) losses++;
+        if (n > 0) { wins++; totalWinNet += n; }
+        else if (n < 0) { losses++; totalLossNet += n; }
         if (n > best) best = n;
         if (n < worst) worst = n;
         (t.tags || []).forEach(tg => {
@@ -9139,11 +9149,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           }
         });
       });
-      const exp = count > 0 ? ((wins/count)*(best===Infinity?0:best) - (losses/count)*Math.abs(worst===Infinity?0:worst)) : 0;
+      const avgWin  = wins   > 0 ? totalWinNet / wins   : 0;
+      const avgLoss = losses > 0 ? Math.abs(totalLossNet / losses) : 0;
+      // Expectancy = (WinRate × AvgWin) - (LossRate × AvgLoss)
+      const exp = count > 0 ? ((wins/count) * avgWin) - ((losses/count) * avgLoss) : 0;
       return { count, wins, losses, gross, tax, net, totalPts,
         avgPts: count>0?totalPts/count:0, avgGross: count>0?gross/count:0, avgNet: count>0?net/count:0,
         best: best===Infinity?0:best, worst: worst===Infinity?0:worst,
-        maxRunUp, maxRunDown, exp };
+        avgWin, avgLoss, maxRunUp, maxRunDown, exp };
     }
 
     function _sumRow(label, s, clickKey, isBold) {
@@ -9177,6 +9190,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             case 'avg_pts':  return `<td style="padding:8px;text-align:right;color:${s.avgPts>=0?'#3fb950':'#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
             case 'avg_gross':return `<td style="padding:8px;text-align:right;color:${s.avgGross>=0?'#3fb950':'#f85149'};${b}">${N(s.avgGross)}</td>`;
             case 'avg_net':  return `<td style="padding:8px;text-align:right;color:${s.avgNet>=0?'#3fb950':'#f85149'};${b}">${N(s.avgNet)}</td>`;
+            case 'avg_win':  return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
+            case 'avg_loss': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss>0?'-'+N(s.avgLoss):'—'}</td>`;
             case 'best':     return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
             case 'worst':    return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
             case 'runup':    return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp>0?'+'+N(s.maxRunUp):'—'}</td>`;
