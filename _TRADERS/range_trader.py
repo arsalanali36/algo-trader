@@ -531,7 +531,12 @@ def fetch_1m(symbol, tf="1m"):
     try:
         r = None
         for _attempt in range(3):
-            _rl.acquire("candle")
+            if not _rl.acquire("candle"):
+                # gate saturated / 429 cooldown — posting anyway would just
+                # extend the account-wide cooldown for everyone. Skip; caller
+                # treats None like any transient fetch failure.
+                log.warning(f"fetch_1m {symbol}: rate-gate busy, skipping this cycle")
+                return None
             r = requests.post(INTRADAY_URL,
                 json={"securityId": sec_id, "exchangeSegment": seg, "instrument": inst,
                       "interval": interval, "fromDate": frm, "toDate": today.isoformat()},

@@ -852,6 +852,22 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
   <div class="folder-card" id="log-folder-card">
     <!-- Sidebar and Content will be dynamically built here by renderLogTab() -->
   </div>
+
+  <!-- Rate Limit Room (moved here from RMS tab 2026-07-03 — it's a live log, not risk config) -->
+  <div id="rate-limit-sec" style="margin-top:16px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:16px 18px">
+    <h2 style="font-size:15px;font-weight:600;color:#e6edf3;margin:0 0 4px">🚦 Rate Limit Room</h2>
+    <div style="font-size:12px;color:#8b949e;margin-bottom:12px">
+      Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)" aur "kya (throttle
+      / 429)" tagged. Auto-refresh 5s.
+    </div>
+    <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
+    <div style="max-height:320px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
+      <table class="mini-table">
+        <thead style="position:sticky;top:0"><tr><th>Time</th><th>Type</th><th>Priority</th><th>Strategy:Symbol</th><th>Wait</th></tr></thead>
+        <tbody id="rl-events-body"></tbody>
+      </table>
+    </div>
+  </div>
 </div>
 
 <!-- CONFIG TAB -->
@@ -1282,7 +1298,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
       <div class="folder-sidebar-header" style="margin-top:14px">Live Monitoring</div>
       <div class="folder-tab blue-tab" onclick="switchSettingsTab('balances-sec', this)"><span>💰</span> Broker Balances</div>
       <div class="folder-tab green-tab" onclick="switchSettingsTab('rms-summary-sec', this)"><span>📊</span> RMS Live Summary</div>
-      <div class="folder-tab" onclick="switchSettingsTab('rate-limit-sec', this)"><span>🚦</span> Rate Limit Room</div>
       <div class="folder-tab purple-tab" onclick="switchSettingsTab('override-sec', this)"><span>⚙️</span> Per-Strategy Override</div>
       <div class="folder-sidebar-header" style="margin-top:14px">Reference</div>
       <div class="folder-tab" onclick="switchSettingsTab('exit-reasons-sec', this)"><span>📖</span> Reasons For Exit</div>
@@ -1563,22 +1578,6 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
         <div id="per-instrument-live" style="margin-top:14px;display:none;background:#0d1117;border:1px solid rgba(240,136,62,.2);border-radius:8px;padding:12px 16px">
           <div style="font-size:12px;font-weight:600;color:#f0883e;margin-bottom:8px">🔒 PER-INSTRUMENT LIVE FLOORS</div>
           <div id="pi-lock-rows" style="font-size:12px;color:#8b949e">No open position tracked yet.</div>
-        </div>
-      </div>
-
-      <!-- Rate Limit Room -->
-      <div class="settings-section" id="rate-limit-sec">
-        <h2>🚦 Rate Limit Room</h2>
-        <div class="settings-section-subtitle">
-          Dhan API rate-limit (DH-904) events, last 15 minutes — har event "kaun (strategy:symbol)" aur "kya (throttle
-          / 429)" tagged. Auto-refresh 5s.
-        </div>
-        <div id="rl-top-offenders" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px"></div>
-        <div style="max-height:320px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
-          <table class="mini-table">
-            <thead style="position:sticky;top:0"><tr><th>Time</th><th>Type</th><th>Priority</th><th>Strategy:Symbol</th><th>Wait</th></tr></thead>
-            <tbody id="rl-events-body"></tbody>
-          </table>
         </div>
       </div>
 
@@ -2370,7 +2369,7 @@ async function renderRateLimitEvents(){
     body.innerHTML = `<tr><td colspan="5" style="padding:10px;color:#f85149;font-size:11px">fetch failed: ${e}</td></tr>`;
   }
 }
-setInterval(() => { if (activeTab === 'risk') renderRateLimitEvents(); }, 5000);
+setInterval(() => { if (activeTab === 'log') renderRateLimitEvents(); }, 5000);
 setInterval(() => { if (activeTab === 'calendar') { calendarRender(); } }, 60000);
 setInterval(() => { if (activeTab === 'orders') { loadPeakGraph(); } }, 60000);
 
@@ -2401,7 +2400,6 @@ function switchSettingsTab(sectionId, el){
 async function renderRiskTab(){
   renderRmsSummary();
   renderBrokerBalances();
-  renderRateLimitEvents();
   try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch(e){}
   document.getElementById('default-broker-select').value = RISK_CFG.global.default_broker || 'dhan';
   document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
@@ -4498,6 +4496,7 @@ const _logPaused = {};
 function renderLogTab() {
   const container = document.getElementById('log-folder-card');
   if (!container) return;
+  renderRateLimitEvents();   // Rate Limit Room lives in this tab now — first paint without waiting for the 5s interval
 
   let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks' && key !== '_ui_config');
   if (keys.length === 0) {

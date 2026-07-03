@@ -39,15 +39,28 @@ def _read_all():
 
 def get(sec_id, interval, max_age=20.0):
     """Return cached candle rows (list of dicts) for sec_id+interval if
-    fresher than max_age seconds, else None."""
+    fresher than max_age seconds — OR still bar-aligned-valid: a fetch made
+    after the current bar opened contains every CLOSED bar there is (a 5-min
+    candle set genuinely can't gain a new closed bar until the next 5-min
+    boundary), so serving it is lossless for closed-bar signal logic and cuts
+    per-loop refetches massively on the wider timeframes. The +3s grace after
+    the boundary covers Dhan's own delay in publishing the just-closed bar."""
     data = _read_all()
     entry = data.get(_key(sec_id, interval))
     if not entry:
         return None
     rows, ts = entry
-    if time.time() - ts > max_age:
-        return None
-    return rows
+    now = time.time()
+    if now - ts <= max_age:
+        return rows
+    try:
+        bar_s = int(str(interval)) * 60
+        boundary = (now // bar_s) * bar_s   # IST offset is 330 min — whole minutes, so 1/5/15/30m boundaries align in epoch too
+        if ts >= boundary + 3.0:
+            return rows
+    except (ValueError, TypeError):
+        pass
+    return None
 
 
 def put(sec_id, interval, rows):

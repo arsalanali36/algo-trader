@@ -88,7 +88,9 @@ def _poll_once(log=print) -> None:
         cfg = json.loads(CONFIG_FILE.read_text(encoding="utf-8"))
         headers = {"access-token": cfg["jwt_token"], "client-id": cfg["client_id"],
                    "Content-Type": "application/json"}
-        _rl.acquire("ltp")
+        _rl.set_context("Poller:BatchLTP")
+        if not _rl.acquire("ltp"):
+            return   # gate saturated / 429 cooldown — skip; next cycle is 1.5s away
         r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
                           json=body, headers=headers, timeout=6)
         if r.status_code == 429:

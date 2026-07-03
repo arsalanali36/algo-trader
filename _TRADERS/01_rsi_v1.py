@@ -199,8 +199,11 @@ def fetch_candles(symbol, tf, token, cid):
         }
         try:
             import dhan_rate_limiter as _rl
-            _rl.acquire("candle")
-        except Exception:
+            if not _rl.acquire("candle"):
+                # gate saturated / 429 cooldown — posting anyway just extends
+                # the account-wide cooldown. Caller treats None as fetch-fail.
+                return None
+        except ImportError:
             _rl = None
         r = requests.post(INTRADAY_URL, json=body,
                           headers={"access-token": token, "client-id": cid,

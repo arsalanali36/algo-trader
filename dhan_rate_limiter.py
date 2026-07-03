@@ -104,6 +104,12 @@ DEFAULT_CAP_PER_SEC  = int(os.environ.get("DHAN_RATE_LIMIT_PER_SEC", "3"))
 RESERVE_FOR_ORDER     = 1     # slots/sec carved out exclusively for "order" priority
 COOLDOWN_SECONDS      = 8.0   # after a 429, shrink the cap for this long
 COOLDOWN_CAP_PER_SEC  = 1     # cap during cooldown (orders only — non-order cap becomes 0)
+# Candle sweeps are the burstiest traffic shape here (a strategy loop fires
+# 25 back-to-back /charts/intraday calls, one per symbol) — Dhan's burst
+# detection trips on that even when the AVERAGE rate is under budget. Capping
+# candles to 1/sec stretches a 25-symbol sweep to ~25s (fine inside a 60s
+# loop) and guarantees the other non-order slot stays free for LTP polling.
+CANDLE_CAP_PER_SEC    = 1
 
 
 def _connect():
@@ -112,6 +118,8 @@ def _connect():
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("CREATE TABLE IF NOT EXISTS windows (epoch INTEGER PRIMARY KEY, count INTEGER)")
     conn.execute("CREATE TABLE IF NOT EXISTS cooldown (id INTEGER PRIMARY KEY, until REAL)")
+    conn.execute("CREATE TABLE IF NOT EXISTS pwindows (epoch INTEGER, priority TEXT, count INTEGER, "
+                 "PRIMARY KEY (epoch, priority))")
     return conn
 
 
@@ -139,12 +147,25 @@ def _try_take(priority: str) -> bool:
             conn.execute("ROLLBACK")
             return False
 
+        # per-priority sub-cap: candle bursts must never eat every non-order
+        # slot in a window (see CANDLE_CAP_PER_SEC note above)
+        if priority == "candle":
+            prow = conn.execute("SELECT count FROM pwindows WHERE epoch=? AND priority='candle'",
+                                (epoch,)).fetchone()
+            if (prow[0] if prow else 0) >= CANDLE_CAP_PER_SEC:
+                conn.execute("ROLLBACK")
+                return False
+
         if row:
             conn.execute("UPDATE windows SET count = count + 1 WHERE epoch=?", (epoch,))
         else:
             conn.execute("INSERT INTO windows(epoch, count) VALUES (?, 1)", (epoch,))
-        # keep the table tiny — drop windows older than 10s
+        conn.execute("INSERT INTO pwindows(epoch, priority, count) VALUES (?, ?, 1) "
+                     "ON CONFLICT(epoch, priority) DO UPDATE SET count = count + 1",
+                     (epoch, priority))
+        # keep the tables tiny — drop windows older than 10s
         conn.execute("DELETE FROM windows WHERE epoch < ?", (epoch - 10,))
+        conn.execute("DELETE FROM pwindows WHERE epoch < ?", (epoch - 10,))
         conn.execute("COMMIT")
         return True
     except Exception:

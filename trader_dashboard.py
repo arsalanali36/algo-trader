@@ -1249,6 +1249,15 @@ def api_option_ltp():
 
         idx_price = float(dhan_feed.get_quote(_idx_id).get("ltp") or 0) or None
         if not idx_price:
+            # ltp_poller keeps NIFTY/BANKNIFTY spot warm in shared_ltp_cache
+            # every 1.5s during market hours — read that before any REST call
+            # (this fallback was the #1 'Dashboard:IdxLTP' rate-limit offender)
+            try:
+                import shared_ltp_cache as _slc_idx
+                idx_price = _slc_idx.get(_idx_id, max_age=8) or None
+            except Exception:
+                pass
+        if not idx_price:
             _rl.set_context("Dashboard:IdxLTP")
             _rl.acquire("ltp")
             _qr_idx  = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
@@ -1272,6 +1281,17 @@ def api_option_ltp():
 
         ltp_ce = float(dhan_feed.get_quote(sec_ce).get("ltp") or 0) or None if sec_ce else None
         ltp_pe = float(dhan_feed.get_quote(sec_pe).get("ltp") or 0) or None if sec_pe else None
+
+        # shared_ltp_cache next (ltp_poller keeps open-position contracts warm)
+        if sec_ce and not ltp_ce or sec_pe and not ltp_pe:
+            try:
+                import shared_ltp_cache as _slc_opt
+                if sec_ce and not ltp_ce:
+                    ltp_ce = _slc_opt.get(str(sec_ce), max_age=8) or None
+                if sec_pe and not ltp_pe:
+                    ltp_pe = _slc_opt.get(str(sec_pe), max_age=8) or None
+            except Exception:
+                pass
 
         missing_ids = [int(s) for s, l in [(sec_ce, ltp_ce), (sec_pe, ltp_pe)] if s and not l]
         if missing_ids:
@@ -3422,11 +3442,14 @@ def _rest_ltp_fallback(sec_id, seg):
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
         body = {dhan_seg: [int(sec_id)]}
-        _drl.acquire("ltp")
-        r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
-        if r.status_code == 429:
+        _drl.set_context("Monitor:PosLTP")
+        if not _drl.acquire("ltp"):
+            r = None   # gate saturated — fall through to the stale-cache last resort below
+        else:
+            r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
+        if r is not None and r.status_code == 429:
             _drl.note_429()
-        if r.status_code == 200:
+        if r is not None and r.status_code == 200:
             quotes = (r.json().get("data", {}) or {}).get(dhan_seg, {})
             q = quotes.get(str(sec_id)) or quotes.get(str(int(sec_id)))
             if q:
@@ -3462,21 +3485,32 @@ def _last_closed_candle_close(sec_id, seg):
     if cached and (_t.time() - cached[1]) < _CANDLE_CLOSE_TTL:
         return cached[0]
     try:
-        import requests as _req, datetime as _dt
+        import requests as _req
+        import dhan_rate_limiter as _drl
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         now_ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
         date_str = now_ist.strftime("%Y-%m-%d")
         inst = "EQUITY" if seg == "NSE_EQ" else ("INDEX" if seg == "IDX_I" else "OPTIDX")
+        # TRAP #95: this call was previously UNTHROTTLED (no acquire) and the
+        # tz-mixed epoch math below threw on every call AFTER the request —
+        # so the 30s cache never populated and every pos_monitor tick burned a
+        # raw Dhan candle call invisible to the cross-process limiter.
+        _drl.set_context("Monitor:CandleClose")
+        if not _drl.acquire("candle"):
+            return None   # gate saturated/cooldown — skip this tick, cache/next tick covers it
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=headers, json={
             "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
             "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=8)
+        if r.status_code == 429:
+            _drl.note_429()
+            return None
         d = r.json()
         if not d.get("close"):
             return None
         closes = d["close"]
         timestamps = d["timestamp"]
-        now_epoch = int((now_ist - timedelta(hours=5, minutes=30) - datetime(1970, 1, 1)).total_seconds())
+        now_epoch = int(_t.time())   # Dhan candle timestamps are plain epoch seconds
         # drop the still-forming bar (its timestamp + 60s hasn't elapsed yet)
         closed_idx = [i for i, ts in enumerate(timestamps) if int(ts) + 60 <= now_epoch]
         if not closed_idx:
