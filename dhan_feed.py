@@ -30,9 +30,12 @@ prefer this LIVE dict first wherever practical going forward.
 """
 
 import asyncio
+import os
 import socket
+import sqlite3
 import threading
 import time
+from pathlib import Path
 
 # --- IPv4 force (DH-905) — before any Dhan network call ---
 _orig_gai = socket.getaddrinfo
@@ -49,6 +52,70 @@ _instruments = []              # list of (exch_code:int, sec_id:str, 21) tuples
 _seen = set()                  # (seg_logical, sec_id) already subscribed
 _feed = None
 _pending_resub = False         # set True to make the loop rebuild cleanly
+
+# ── Cross-process connection ownership (TRAP #87/88/89) ─────────────────────
+# Dhan's feed gateway allows only a limited number of concurrent WebSocket
+# connections per account — every process that independently calls start()
+# (algo-dashboard, algo-monitor, every live strategy) opens its OWN
+# connection, and with 2+ running at once they permanently collide (HTTP
+# 429 on whichever reconnects while another already holds a slot; backoff
+# only slows the collisions, it can't eliminate them — see TRAP #87). Fixed
+# 2026-07-03 by electing exactly ONE process-wide "owner" via the same
+# sqlite cross-process pattern dhan_rate_limiter.py already uses (works
+# identically on Windows dev + the Linux VPS, no new dependency). Only the
+# owner actually opens a connection; every other process's LIVE dict just
+# stays empty and its callers fall back to REST (already how every
+# consumer here is written — this was verified before relying on it,
+# see TRAP #88). Heartbeat-based, not a clean release: this codebase has
+# no SIGTERM handlers anywhere (TRAP #58), so a killed owner's row simply
+# goes stale and another process takes over automatically.
+_OWNER_DB          = Path(__file__).resolve().parent / "data" / "dhan_feed_owner.db"
+_OWNER_STALE_SECS  = 30    # owner presumed dead if no heartbeat in this long — another process may take over
+_HEARTBEAT_EVERY   = 10    # seconds between heartbeat renewals while connected
+_NOT_OWNER_RETRY   = 5     # seconds between ownership-claim retries when not the owner
+
+
+def _owner_conn():
+    _OWNER_DB.parent.mkdir(exist_ok=True)
+    conn = sqlite3.connect(str(_OWNER_DB), timeout=5, isolation_level=None)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute("CREATE TABLE IF NOT EXISTS owner (id INTEGER PRIMARY KEY, pid INTEGER, heartbeat REAL)")
+    return conn
+
+
+def _claim_or_renew_ownership():
+    """Returns True if THIS process is (or just became) the sole owner
+    allowed to hold a dhan_feed WebSocket connection right now."""
+    now = time.time()
+    pid = os.getpid()
+    conn = _owner_conn()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        row = conn.execute("SELECT pid, heartbeat FROM owner WHERE id=1").fetchone()
+        if row is None:
+            conn.execute("INSERT INTO owner(id, pid, heartbeat) VALUES (1, ?, ?)", (pid, now))
+            conn.execute("COMMIT")
+            return True
+        owner_pid, heartbeat = row
+        if owner_pid == pid:
+            conn.execute("UPDATE owner SET heartbeat=? WHERE id=1", (now,))
+            conn.execute("COMMIT")
+            return True
+        if now - heartbeat > _OWNER_STALE_SECS:
+            conn.execute("UPDATE owner SET pid=?, heartbeat=? WHERE id=1", (pid, now))
+            conn.execute("COMMIT")
+            return True
+        conn.execute("ROLLBACK")
+        return False
+    except Exception:
+        try:
+            conn.execute("ROLLBACK")
+        except Exception:
+            pass
+        return False
+    finally:
+        conn.close()
 
 # exchange segment (string, as used everywhere else in this repo) -> Dhan's
 # numeric exchange code expected by DhanFeed's instrument tuples (matches
@@ -90,6 +157,7 @@ def _run_loop():
     # resets to 2s the moment a connection is actually accepted.
     _backoff = 2
     _BACKOFF_MAX = 30
+    _last_heartbeat = 0.0
 
     while _running:
         try:
@@ -98,15 +166,26 @@ def _run_loop():
             if not instruments:
                 time.sleep(1)
                 continue
+
+            # Only the elected owner actually connects — everyone else waits
+            # and retries the claim periodically (in case the owner dies).
+            if not _claim_or_renew_ownership():
+                time.sleep(_NOT_OWNER_RETRY)
+                continue
+
             _feed = DhanFeed(_creds["client_id"], _creds["jwt_token"], instruments, version="v2")
             _feed.run_forever()  # connect + subscribe (one-shot)
             _pending_resub = False
             _backoff = 2  # connection accepted — reset backoff for next time
+            _last_heartbeat = time.time()
 
             while _running and not _pending_resub:
                 r = _feed.get_data()
                 if not r:
                     continue
+                if time.time() - _last_heartbeat > _HEARTBEAT_EVERY:
+                    _claim_or_renew_ownership()
+                    _last_heartbeat = time.time()
                 if r.get("type") == "Full Data":
                     sid = str(r.get("security_id"))
                     dep = (r.get("depth") or [{}])[0]

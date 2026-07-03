@@ -57,32 +57,30 @@ _feed_lock = _threading.Lock()
 _sec_to_sym = {}   # sec_id(str) -> sym — populated by api_positions_ltp, used by SSE
 
 def _ensure_feed_started():
-    """DISABLED 2026-07-03 (TRAP #88) — do NOT start dhan_feed's own WebSocket
-    connection from this process (algo-dashboard). Dhan's feed gateway rejects
-    a new connection with HTTP 429 once too many are open on the same
-    account/credentials at once; algo-dashboard + range_trader.py (ARS_CHAIN_V1)
-    both independently opening one was enough to trip that limit, causing a
-    persistent reconnect storm on the LIVE strategy's own connection (the one
-    that actually matters — its liquidity filter).
+    """Start dhan_feed's background thread once credentials are available.
 
-    Verified safe to disable here: `monitor_daemon.py` (algo-monitor), which
-    runs the real SL/TP/EOD/RMS safety loop (`pos_monitor_loop`), NEVER calls
-    dhan_feed.start() at all — it gets LTP entirely from `ltp_poller.py`'s
-    batched REST polling into `shared_ltp_cache`, with no dependency on this
-    module. Every consumer of `dhan_feed.get_quote()` in THIS process
-    (Quick Order widget, Open Positions live-LTP column, Watchlist/chart
-    freshness) already has a REST fallback (`_rest_ltp_fallback()`) for
-    exactly this "no live feed data" case — this function's absence just
-    means every call takes that fallback path instead of a free WS tick.
-    range_trader.py keeps its own connection (`dhan_feed.start()` in
-    `_TRADERS/range_trader.py`) — it's now the ONLY process on this account
-    opening one, so there's nothing left to contend with.
-
-    _feed_subscribe()/dhan_feed.add()/get_quote() below are all still safe
-    no-ops when the feed was never started (dhan_feed.py's own `add()` only
-    acts if `_running`, `get_quote()` just returns {} from an empty dict)."""
+    RE-ENABLED 2026-07-03 (TRAP #89) — was disabled entirely (TRAP #88) after
+    algo-dashboard's own connection collided with range_trader.py's for the
+    same account's limited WebSocket slots (persistent HTTP 429). dhan_feed.py
+    now elects a single cross-process owner (sqlite-based, same pattern as
+    dhan_rate_limiter.py) before any process actually opens a connection —
+    safe to call from every process again, including when MULTIPLE live
+    strategies run simultaneously: whichever one wins the race connects,
+    everyone else's LIVE dict just stays empty and falls back to REST
+    (`_rest_ltp_fallback()`), exactly as already verified safe in TRAP #88."""
     global _feed_started
-    _feed_started = True  # never actually connects — see docstring
+    if _feed_started:
+        return
+    with _feed_lock:
+        if _feed_started:
+            return
+        try:
+            import dhan_feed
+            token, cid = _creds()
+            dhan_feed.start({"client_id": cid, "jwt_token": token}, [])   # start with empty list; instruments added dynamically
+            _feed_started = True
+        except Exception as e:
+            print("[_ensure_feed_started] fail:", e, flush=True)  # no creds yet or import error — will retry next call
 
 def _feed_subscribe(sym_sec_pairs):
     """Subscribe (seg, sec_id) pairs to live feed. Safe to call multiple times."""
