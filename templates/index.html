@@ -9241,44 +9241,15 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         }).join('') + '</tr>';
     }
 
-    // Helper: format minutes as Xh Ym or Ym
-    function _fmtDur(mins) {
-      if (!mins) return '—';
-      const h = Math.floor(mins / 60), m = mins % 60;
-      return h > 0 ? `${h}h ${m}m` : `${m}m`;
-    }
-
-    // Render TD for a column
-    const renderCell = (c, s, isTotal) => {
-      const b = isTotal ? 'font-weight:700;' : '';
-      const N = n => Math.round(n).toLocaleString('en-IN');
-      const wr = s.count > 0 ? Math.round((s.wins / s.count) * 100) : 0;
-      const netC = s.net >= 0 ? '#3fb950' : '#f85149';
-      const grossC = s.gross >= 0 ? '#3fb950' : '#f85149';
-      switch (c.id) {
-        case 'count': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
-        case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isTotal ? (s.stratCount || '—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
-        case 'wl': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
-        case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
-        case 'gross': return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
-        case 'tax': return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
-        case 'net': return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
-        case 'avg_pts': return `<td style="padding:8px;text-align:right;color:${s.avgPts >= 0 ? '#3fb950' : '#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
-        case 'avg_dur': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
-        case 'avg_gross': return `<td style="padding:8px;text-align:right;color:${s.avgGross >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgGross)}</td>`;
-        case 'avg_net': return `<td style="padding:8px;text-align:right;color:${s.avgNet >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgNet)}</td>`;
-        case 'avg_win': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
-        case 'avg_loss': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss > 0 ? '-' + N(s.avgLoss) : '—'}</td>`;
-        case 'best': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
-        case 'worst': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-        case 'runup': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp > 0 ? '+' + N(s.maxRunUp) : '—'}</td>`;
-        case 'rundown': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown < 0 ? N(s.maxRunDown) : '—'}</td>`;
-        case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-        case 'exp': return `<td style="padding:8px;text-align:right;color:${s.exp >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.exp)}</td>`;
-        default: return '<td></td>';
-      }
-    };
-
+    function renderSummaryTable() {
+      _initCalSumCols();
+      const cols = window._calSumCols.filter(c => c.on);
+      const mode = window._calSumMode || 'day';
+      const thead = document.querySelector('#cal-sum-table thead');
+      const tbody = document.querySelector('#cal-sum-table tbody');
+      const tfoot = document.querySelector('#cal-sum-table tfoot');
+      const trades = window.currentCalendarTrades || [];
+      if (!tbody) return;
     if (thead) {
       const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
       const sort = window._calSumSort || { col: 'label', dir: 1 };
