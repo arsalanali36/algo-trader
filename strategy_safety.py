@@ -91,7 +91,23 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
             return False, 0, cap_reason
 
         if mode == "live" and broker is not None:
-            fund_ok, fund_reason = risk_gate.check_broker_funds(broker, qty * price)
+            # `qty * price` is the PREMIUM — correct "needed ₹" for a BUY (all
+            # you ever pay is the premium), but a massive UNDERSTATEMENT for a
+            # SELL (selling an option blocks SPAN+exposure margin, routinely
+            # several times the premium — the same real-margin-vs-notional gap
+            # capital_in_use()/_leg_capital() already account for). Using raw
+            # premium here meant this check could basically never fire for any
+            # option-selling strategy even when broker funds were genuinely
+            # tight. Found + fixed 2026-07-03 while wiring range_trader.py's
+            # broker object through for the first time (TRAP #90) — mirror
+            # _leg_capital()'s exact real-margin-first, multiplier-fallback
+            # logic here too.
+            if str(side).upper() == "SELL" and sec_id:
+                _real_margin = risk_gate.dhan_real_margin(sec_id, seg, qty, price, "SELL")
+                needed_rs = _real_margin if _real_margin is not None else (qty * price * risk_gate._margin_multiplier(strategy_id))
+            else:
+                needed_rs = qty * price
+            fund_ok, fund_reason = risk_gate.check_broker_funds(broker, needed_rs)
             if not fund_ok:
                 return False, 0, fund_reason
     except Exception as e:

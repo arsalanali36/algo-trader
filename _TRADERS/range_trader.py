@@ -1123,16 +1123,37 @@ def main(strategy_id="range"):
                         # see strategy_safety.gate_entry() (LESSONS.md TRAP #15:
                         # this used to be hand-rolled separately per strategy
                         # file and silently drifted). Exits (3:15 squareoff /
-                        # EXIT signal below) are never gated. No broker-funds
-                        # check here — this legacy trader doesn't have a
-                        # brokers.* broker object. ──
+                        # EXIT signal below) are never gated.
+                        #
+                        # broker= is now passed (2026-07-03, TRAP #90) so
+                        # gate_entry()'s step 6 (check_broker_funds — LIVE mode
+                        # only, real broker balance vs needed ₹) actually runs.
+                        # It was silently skipped before: gate_entry() only
+                        # checks broker funds `if broker is not None`, and this
+                        # call never passed one — the stale comment here used
+                        # to say "this legacy trader doesn't have a brokers.*
+                        # broker object," which hasn't been true since
+                        # place_order() below started resolving one via
+                        # get_broker() for every order anyway. So every entry
+                        # was checked against the manually-configured ₹ capital
+                        # cap (an estimate via Dhan's margin calculator) but
+                        # NEVER against what the live broker (Kite/Zerodha)
+                        # actually has available — found live 2026-07-03 while
+                        # explaining a capital-cap block to the user. ──
                         _ensure_root_path()
                         import risk_gate
                         import strategy_safety
+                        from brokers import get_broker
                         opt_prem = risk_gate._quick_option_ltp(sec_id, token, cid) or price
+                        _entry_broker_name = risk_gate.default_broker()
+                        try:
+                            _entry_broker = get_broker(_entry_broker_name)
+                        except Exception as _be:
+                            log.warning(f"broker resolve failed for funds-check ({_be}) — gate proceeds without it")
+                            _entry_broker = None
                         gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
                             strategy_id, symbol, qty, lot_sz, opt_prem, side="SELL",
-                            sec_id=sec_id, mode=mode, log=log.info)
+                            sec_id=sec_id, mode=mode, broker=_entry_broker, log=log.info)
                         if not gate_ok:
                             log.info(f"ENTRY blocked {symbol} — {gate_reason}")
                             try:
