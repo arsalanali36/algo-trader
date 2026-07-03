@@ -7290,10 +7290,11 @@
       }
     }
 
-    startLtpStream();
-
-    loadAll();
-    switchTab(activeTab);   // restore last active tab (saved in localStorage)
+    setTimeout(() => {
+      startLtpStream();
+      loadAll();
+      switchTab(activeTab);   // restore last active tab (saved in localStorage)
+    }, 0);
 
     // ── QUICK ORDER FLOATING PANEL ───────────────────────────────────────────────
     (function () {
