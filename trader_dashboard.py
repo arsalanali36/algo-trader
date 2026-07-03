@@ -1145,10 +1145,22 @@ def api_positions_ltp():
         # Check pos cache to avoid hitting Dhan REST too frequently
         now = _t.time()
         still_missing = {}
+        try:
+            import shared_ltp_cache as _slc_pos
+        except Exception:
+            _slc_pos = None
         for s, sid in missing_sec_id_map.items():
             c = _pos_ltp_cache.get(s)
             if c and (now - c['ts']) < _POS_CACHE_TTL:
                 ltp_map[s] = {"ltp": c['ltp'], "qty": None}
+                continue
+            # ltp_poller keeps every open position warm in shared_ltp_cache
+            # (1.5s cycle) — this route previously only checked its own
+            # process-local cache and REST-called Dhan on every miss
+            shared = _slc_pos.get(str(sid), max_age=6) if (_slc_pos and sid) else None
+            if shared:
+                ltp_map[s] = {"ltp": shared, "qty": None}
+                _pos_ltp_cache[s] = {'ltp': shared, 'ts': now}
             else:
                 still_missing[s] = sid
                 
@@ -3417,7 +3429,7 @@ def webhook_monitor_loop():
         time.sleep(3)
 
 _rest_ltp_cache = {}   # sec_id -> (ltp, ts) — 3s TTL, avoids DH-904 across many open positions
-_REST_LTP_TTL = 3
+_REST_LTP_TTL = 5   # poller cycle is 1.5s — 5s tolerates one missed/429'd poll without a REST stampede
 
 def _rest_ltp_fallback(sec_id, seg):
     """LTP when the dhan_feed WebSocket isn't delivering quotes.

@@ -104,12 +104,14 @@ DEFAULT_CAP_PER_SEC  = int(os.environ.get("DHAN_RATE_LIMIT_PER_SEC", "3"))
 RESERVE_FOR_ORDER     = 1     # slots/sec carved out exclusively for "order" priority
 COOLDOWN_SECONDS      = 8.0   # after a 429, shrink the cap for this long
 COOLDOWN_CAP_PER_SEC  = 1     # cap during cooldown (orders only — non-order cap becomes 0)
-# Candle sweeps are the burstiest traffic shape here (a strategy loop fires
-# 25 back-to-back /charts/intraday calls, one per symbol) — Dhan's burst
-# detection trips on that even when the AVERAGE rate is under budget. Capping
-# candles to 1/sec stretches a 25-symbol sweep to ~25s (fine inside a 60s
-# loop) and guarantees the other non-order slot stays free for LTP polling.
-CANDLE_CAP_PER_SEC    = 1
+# Per-priority sub-caps — Dhan enforces SEPARATE per-endpoint limits, not one
+# account-wide pool: /v2/marketfeed/ltp (~1/sec) and /v2/charts/* (~1/sec)
+# each 429 independently. Observed live 2026-07-03: with only the global cap,
+# candle-sweep bursts (25 back-to-back calls per strategy loop) AND 2+
+# concurrent LTP callers both tripped DH-904 even under 3/sec total. 1/sec
+# each serializes every caller onto its endpoint's real budget; orders keep
+# their own reserved slot. Sub-caps sum to the non-order share of DEFAULT_CAP.
+PRIORITY_SUBCAP = {"candle": 1, "ltp": 1}
 
 
 def _connect():
@@ -147,12 +149,13 @@ def _try_take(priority: str) -> bool:
             conn.execute("ROLLBACK")
             return False
 
-        # per-priority sub-cap: candle bursts must never eat every non-order
-        # slot in a window (see CANDLE_CAP_PER_SEC note above)
-        if priority == "candle":
-            prow = conn.execute("SELECT count FROM pwindows WHERE epoch=? AND priority='candle'",
-                                (epoch,)).fetchone()
-            if (prow[0] if prow else 0) >= CANDLE_CAP_PER_SEC:
+        # per-priority sub-cap: each Dhan endpoint has its own real limit —
+        # one priority's burst must never eat another's slot (see PRIORITY_SUBCAP note)
+        subcap = PRIORITY_SUBCAP.get(priority)
+        if subcap is not None:
+            prow = conn.execute("SELECT count FROM pwindows WHERE epoch=? AND priority=?",
+                                (epoch, priority)).fetchone()
+            if (prow[0] if prow else 0) >= subcap:
                 conn.execute("ROLLBACK")
                 return False
 
