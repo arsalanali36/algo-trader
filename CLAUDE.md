@@ -177,6 +177,32 @@ mein use **dohrana nahi**, sirf call karna hai. Koi bhi naya strategy file banao
 order-placement style use karte hain par dono `strategy_safety.py` ke sirf yeh 2 functions
 call karte hain. Naya strategy chahe kaisa bhi order bheje, isi pattern follow karo.
 
+### 9. Har exit order pe reason TAG karo — kabhi khaali mat chhodo (LESSONS.md TRAP #88/#91)
+2026-07-03 ko do alag strategies (`range_trader.py`, `01_rsi_v1.py`) mein EXACT same gap
+mila — dono ka apna exit-signal logic apna "reason" compute + LOG karta tha, par kabhi
+`order_store` mein TAG nahi karta tha (`smart_order.execute(..., is_exit=True)` call mein
+`extra_tags` hi missing tha). Result: dashboard ka "Exit Reason" column blank raha for
+har strategy-driven exit — sirf `pos_monitor_loop`'s apne SL/TP/EOD exits already tag
+karte the (wo alag code path hai, bug wahan nahi tha). Audit ke baad pata chala: 119
+purani completed trades (sabhi strategies mila ke) is exact gap ki wajah se blank thi.
+
+**Naya strategy/exit-path banate/edit karte waqt:**
+- Har exit call (`smart_order.execute()` ya `place_order()`) mein `extra_tags=[reason]`
+  zaroor pass karo — `reason` chahe simple string ho (`"RSI_MIDLINE_EXIT"`) ya dynamic
+  (`f"ATR_TRAILING"`), koi bhi exit reason-less nahi jaana chahiye.
+- Naya reason string `order_store.py`'s `_EXIT_REASON_PREFIXES` list mein bhi add karo
+  (warna `_exit_reason()` usko recognize nahi karega, tag hoke bhi column blank dikhega)
+  — aur `templates/index.html`'s `_exitReasonBadge()` mein ek proper emoji+color badge
+  bhi de do (warna plain gray text fallback dikhega).
+- **Agar koi missing-reason gap MILE (existing strategy mein), sirf code fix mat karo —
+  historical blank rows ko bhi backfill karo** jahan reason confidently pata ho (e.g. us
+  strategy ka poora git history check karke — agar sirf EK possible reason value kabhi
+  bana hi nahi, to backfill safe hai). Jahan ambiguous ho (multiple possible reasons,
+  ya retired/unclear strategy jiska current config hi nahi bacha), wahan GUESS mat karo —
+  blank hi chhodo aur user ko clearly batao kyun confident nahi ho (LESSONS.md TRAP #91's
+  backfill: 71/119 confidently backfilled — `ARS_CHAIN_V1`→`ATR_TRAILING`, `rsi_v1`→
+  `RSI_MIDLINE_EXIT`, `source=manual`→`MANUAL_CLOSE` — baaki 48 jaanbhoojkar chhode gaye).
+
 ## 🧨 PRE-MORTEM — money/positions/orders touch karne wale HAR naye feature se pehle (2026-07-02 se mandatory)
 
 LESSONS.md ke 81 TRAPs ka nichod: bugs alag the, FAILURE SHAPES bar-bar wahi hain.
