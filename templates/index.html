@@ -1819,6 +1819,10 @@
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All brokers</option>
       </select>
+      <select id="cal-exit-reason" onchange="window.calExitReasonFilter=this.value;renderPointsPerTradeTable()"
+        style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
+        <option value="">All Exit Reasons</option>
+      </select>
       <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="calendarRender()">↻ Refresh</button>
     </div>
 
@@ -8941,6 +8945,16 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       // Populate filter dropdowns (strategy & broker)
       _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
       _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
+
+      // Populate exit reason dropdown from the trades themselves
+      const exitReasonSel = document.getElementById('cal-exit-reason');
+      if (exitReasonSel) {
+        const curReason = exitReasonSel.value;
+        const reasons = [...new Set((d.trades || []).map(t => t.exit_reason || '').filter(r => r))].sort();
+        exitReasonSel.innerHTML = '<option value="">All Exit Reasons</option>' +
+          reasons.map(r => `<option value="${r}"${r === curReason ? ' selected' : ''}>${r}</option>`).join('');
+        window.calExitReasonFilter = exitReasonSel.value;
+      }
 
       const summary = d.summary || {};
 
