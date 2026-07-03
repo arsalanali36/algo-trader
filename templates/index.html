@@ -4351,15 +4351,26 @@ function switchCfgTab(type) {
 }
 
 // ── DATA FETCHING ──
-async function saveUiConfigToBackend(key, value) {
+// Accepts either (key, value) for a single setting, OR a single object
+// {key1: val1, key2: val2, ...} to update several keys in ONE atomic
+// GET-modify-POST round trip. Found 2026-07-03: saveColPrefs() used to
+// fire 2 separate un-awaited calls of this function back-to-back (one
+// per column-set key) — each does its own independent GET of /api/config,
+// so whichever call's POST lands LAST silently overwrites the other's
+// just-saved change with its own (now-stale) snapshot. That's why toggling
+// "Exit Reason" on, saving, and refreshing sometimes reverted it — a
+// genuine race, not a rendering bug, and non-deterministic (whichever
+// round trip happened to finish first/last that time).
+async function saveUiConfigToBackend(keyOrUpdates, value) {
   try {
     const r = await fetch('/api/config');
     const cfg = await r.json();
     if (!cfg._ui_config) cfg._ui_config = {};
-    if (value === null) {
-      delete cfg._ui_config[key];
-    } else {
-      cfg._ui_config[key] = value;
+    const updates = (typeof keyOrUpdates === 'object' && keyOrUpdates !== null)
+      ? keyOrUpdates : {[keyOrUpdates]: value};
+    for (const k in updates) {
+      if (updates[k] === null) delete cfg._ui_config[k];
+      else cfg._ui_config[k] = updates[k];
     }
     await fetch('/api/config', {
       method: 'POST',
@@ -5005,6 +5016,9 @@ function _exitReasonBadge(raw) {
   else if (r.startsWith('RMS_MAXLOSS'))        { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
   else if (r.startsWith('RMS_PROFIT_TARGET'))  { label = '✅ RMS Profit Target'; color = '#3fb950'; }
   else if (r.startsWith('NO_PRICE_EMERGENCY_EXIT')) { label = '🚨 No-Price Emergency'; color = '#f85149'; }
+  // Strategy's own exit logic (not pos_monitor_loop-driven)
+  else if (r.startsWith('ATR_TRAILING'))       { label = '📉 ATR Trailing'; color = '#f0883e'; }
+  else if (r.startsWith('RSI_MIDLINE_EXIT'))   { label = '↩️ RSI Midline'; color = '#58a6ff'; }
   // Webhook (TradingView-signal-driven strategies)
   else if (r.startsWith('IDX_TRAIL'))          { label = '📉 Index Trail SL'; color = '#f0883e'; }
   else if (r.startsWith('TRAIL_SL'))           { label = '📉 Trail SL'; color = '#f0883e'; }
@@ -5164,8 +5178,10 @@ function saveColPrefs() {
   read('col-open-list', window._ordOpenCols);
   localStorage.setItem('ord_completed_cols', JSON.stringify(window._ordCompletedCols));
   localStorage.setItem('ord_open_cols', JSON.stringify(window._ordOpenCols));
-  saveUiConfigToBackend('ord_completed_cols', JSON.stringify(window._ordCompletedCols));
-  saveUiConfigToBackend('ord_open_cols', JSON.stringify(window._ordOpenCols));
+  saveUiConfigToBackend({
+    ord_completed_cols: JSON.stringify(window._ordCompletedCols),
+    ord_open_cols: JSON.stringify(window._ordOpenCols)
+  });
   closeColModal();
   renderCachedOrders();
 }
@@ -5175,8 +5191,7 @@ function resetColPrefs() {
   window._ordOpenCols = JSON.parse(JSON.stringify(OPEN_COLS_DEF));
   localStorage.removeItem('ord_completed_cols');
   localStorage.removeItem('ord_open_cols');
-  saveUiConfigToBackend('ord_completed_cols', null);
-  saveUiConfigToBackend('ord_open_cols', null);
+  saveUiConfigToBackend({ord_completed_cols: null, ord_open_cols: null});
   closeColModal();
   renderCachedOrders();
 }

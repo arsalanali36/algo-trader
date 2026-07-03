@@ -411,11 +411,17 @@ def close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, cfg=N
 
     try:
         import smart_order
+        # Tag the exit reason (same gap+fix as range_trader.py's ATR_TRAILING —
+        # this call had NO extra_tags at all, so the Completed Trades "Exit
+        # Reason" column stayed blank for every RSI exit, e.g. MARUTI 2026-07-03).
+        # rsi_val is the string "3:15" for the 3:15 force-exit call site, the
+        # actual RSI float for a real signal-driven exit.
+        _reason = "EOD_315_SQUAREOFF" if rsi_val == "3:15" else "RSI_MIDLINE_EXIT"
         smart_order.execute(close_side, sym, o["sec_id"], "NSE_FNO", o["qty"],
                             o["trad_sym"], mode, _bkr,
                             log=log.info, tag="RSI", source="strategy",
                             strategy=strategy_id, instrument="options",
-                            broker_name=_bname, is_exit=True)
+                            broker_name=_bname, is_exit=True, extra_tags=[_reason])
     except Exception as _ee:
         log.error(f"    [EXIT] {sym} exit order failed: {_ee} "
                   f"(pos_monitor SL/EOD will retry via order_store)")

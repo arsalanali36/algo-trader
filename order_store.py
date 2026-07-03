@@ -210,6 +210,9 @@ _EXIT_REASON_PREFIXES = (
     # reason was computed + logged but never tagged on the actual exit
     # order, so this column stayed blank for every ATR-driven exit)
     "ATR_TRAILING",
+    # 01_rsi_v1.py — strategy's own RSI-midline exit (same gap, same day:
+    # close_position()'s smart_order.execute() call had no extra_tags at all)
+    "RSI_MIDLINE_EXIT",
 )
 
 
