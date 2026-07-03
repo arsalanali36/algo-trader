@@ -61,9 +61,13 @@ def creds():
     return (c.get("jwt_token") or c.get("access_token") or ""), str(c.get("client_id") or "")
 
 
-def symbol_list(arg):
+def symbol_list(arg, universe=None):
     if arg:
         return [s.strip().upper() for s in arg.split(",") if s.strip()]
+    if universe == "fno":
+        # the full NSE F&O stock universe (~210) — the "top liquid" set
+        import fno_universe
+        return fno_universe.get_fno_symbols()
     # existing folders = ground truth of what we track
     syms = sorted(d for d in os.listdir(EQUITY_DATA_ROOT)
                   if os.path.isdir(os.path.join(EQUITY_DATA_ROOT, d)))
@@ -93,6 +97,15 @@ def fetch_chunk(sym, sec, seg, inst, frm, to, token, cid):
     """Return dict{date_iso: DataFrame} for [frm,to]; '' on rate-limit/error."""
     for attempt in range(4):
         try:
+            # honor the shared cross-process rate gate (TRAP #95) — this
+            # backfill must run post-market, but the gate keeps it from ever
+            # colliding with live strategy/order traffic if it ever overlaps
+            try:
+                import dhan_rate_limiter as _rl
+                _rl.set_context("EquityBackfill")
+                _rl.acquire("candle")
+            except Exception:
+                pass
             r = requests.post(
                 "https://api.dhan.co/v2/charts/intraday",
                 headers={"access-token": token, "client-id": cid,
@@ -188,11 +201,12 @@ def main():
     ap.add_argument("--from", dest="d_from", default="2025-01-01")
     ap.add_argument("--to",   dest="d_to",   default=dt.date.today().isoformat())
     ap.add_argument("--symbols", default="")
+    ap.add_argument("--universe", default="", help="'fno' = full NSE F&O stock universe (~210)")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
     d_from = dt.date.fromisoformat(a.d_from)
     d_to   = dt.date.fromisoformat(a.d_to)
-    syms   = symbol_list(a.symbols)
+    syms   = symbol_list(a.symbols, a.universe)
     print(f"Equity backfill: {len(syms)} symbols, {d_from} -> {d_to}, "
           f"{CHUNK_DAYS}-day chunks{' [DRY-RUN]' if a.dry_run else ''}")
     print(f"Data root: {EQUITY_DATA_ROOT}\n")
