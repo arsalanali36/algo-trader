@@ -3467,7 +3467,7 @@
       }
     }
     setInterval(() => { if (activeTab === 'log') renderRateLimitEvents(); }, 5000);
-    setInterval(() => { if (activeTab === 'calendar') { calendarRender(); } }, 60000);
+    setInterval(() => { if (activeTab === 'calendar') { calendarRender(true); } }, 60000);
     setInterval(() => { if (activeTab === 'orders') { loadPeakGraph(); } }, 60000);
 
     async function saveDefaultBroker() {
@@ -8900,9 +8900,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       renderPointsPerTradeTable();
     }
 
-    async function calendarRender() {
+    async function calendarRender(keepState = false) {
       // Clear day filter on fresh month/filter render
-      window.calSelectedDateFilter = null;
+      if (!keepState) {
+        window.calSelectedDateFilter = null;
+      }
       updateCalSelectedDateBadge();
 
       const monthLabel = document.getElementById('cal-month-label');
@@ -9211,7 +9213,9 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
 
       // Reset pagination page to 1 on fresh load
-      window.calPointsCurrentPage = 1;
+      if (!keepState) {
+        window.calPointsCurrentPage = 1;
+      }
       // Render Point Per Trade table with pagination and grouping
       renderPointsPerTradeTable();
     }
@@ -10420,7 +10424,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
         document.getElementById('edit-note-modal').style.display = 'none';
         ordersRender(); // Refresh orders
-        if (typeof calendarRender === 'function') calendarRender(); // Refresh calendar trades
+        if (typeof calendarRender === 'function') calendarRender(true); // Refresh calendar trades
       } catch (e) {
         alert("Error saving Note.");
       }
