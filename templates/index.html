@@ -9221,33 +9221,41 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
     }
 
     function renderPointsPerTradeTable() {
+      const cols = window._calPointsCols || [];
       const pointsBody = document.getElementById('cal-points-per-trade-tbody');
       if (!pointsBody) return;
 
-      if (!window._calPointsCols) _loadCalPointsColPrefs();
-      const cols = window._calPointsCols.filter(c => c.on);
-
-      // Render table headers
-      const theadRow = document.getElementById('cal-points-cols-thead');
-      if (theadRow) {
-        theadRow.innerHTML = cols.map(c => {
-          let align = 'left';
-          if (c.a === 'center') align = 'center';
-          if (c.a === 'right') align = 'right';
-          return `<th style="padding:6px; font-weight:500; text-align:${align};">${c.l}</th>`;
-        }).join('');
+      if (!window.currentCalendarTrades) {
+        pointsBody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">No data</td></tr>`;
+        return;
       }
 
-      let tradesList = [...(window.currentCalendarTrades || [])];
+      let tradesList = [...window.currentCalendarTrades];
+      
+      const searchInput = document.getElementById('cal-symbol-search');
+      if (searchInput && searchInput.value) {
+        const query = searchInput.value.toUpperCase();
+        tradesList = tradesList.filter(t => (t.sym || t.symbol || '').toUpperCase().includes(query));
+      }
+      
       if (window.calSelectedDateFilter) {
         tradesList = tradesList.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter);
       }
+      
+      if (window.calExitReasonFilter) {
+        tradesList = tradesList.filter(t => (t.exit_reason || '') === window.calExitReasonFilter);
+      }
 
-      const sortedTrades = tradesList.sort((a, b) => {
-        const da = a.entry_date + ' ' + (a.entry_time || '00:00');
-        const db = b.entry_date + ' ' + (b.entry_time || '00:00');
-        return db.localeCompare(da); // Descending (most recent first)
-      });
+      if (typeof _sortData === 'function' && window._calPointsSortCol) {
+        _sortData(tradesList, window._calPointsSortCol, window._calPointsSortDir);
+      } else {
+        tradesList.sort((a, b) => {
+          const da = a.entry_date + ' ' + (a.entry_time || '00:00');
+          const db = b.entry_date + ' ' + (b.entry_time || '00:00');
+          return db.localeCompare(da);
+        });
+      }
+      const sortedTrades = tradesList;
 
       const _chartList = sortedTrades.map(t => ({
         sym: t.sym || t.symbol,
@@ -9261,19 +9269,36 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         strategy: t.strategy || ''
       }));
       localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
+      
+      // Render table headers with sorting
+      const theadRow = document.getElementById('cal-points-cols-thead');
+      if (theadRow) {
+        theadRow.innerHTML = cols.map(c => {
+          let align = 'left';
+          if (c.a === 'center') align = 'center';
+          if (c.a === 'right') align = 'right';
+          
+          let sortIndicator = '';
+          if (window._calPointsSortCol === c.id) {
+            sortIndicator = window._calPointsSortDir === 'desc' ? ' ▼' : ' ▲';
+          }
+          const onclickAttr = c.id !== 'actions' ? ` onclick="toggleCalPointsSort('${c.id}')"` : '';
+          return `<th style="padding:6px; font-weight:500; text-align:${align}; cursor:pointer; user-select:none;"${onclickAttr}>${c.l}${sortIndicator}</th>`;
+        }).join('');
+      }
 
       if (sortedTrades.length === 0) {
         pointsBody.innerHTML = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is filter pe koi trade details nahi hain</td></tr>`;
-        renderPointsPagination(0);
+        const wrap = document.getElementById('cal-points-pagination-wrap');
+        if (wrap) wrap.innerHTML = '';
         return;
       }
 
-      // Group trades by date and symbol if enabled
       const isGroupEnabled = localStorage.getItem('cal_group_symbol') === 'true';
       let displayItems = [];
 
       if (isGroupEnabled) {
-        const dateGroups = {}; // date -> { symbol -> [trades] }
+        const dateGroups = {}; 
         sortedTrades.forEach(t => {
           const dStr = t.exit_date || t.entry_date || '—';
           const sStr = t.sym || t.symbol || '—';
@@ -9292,45 +9317,23 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
           const groupTrades = dateGroups[dStr][sStr];
           if (groupTrades.length > 1) {
-            displayItems.push({
-              type: 'group',
-              date: dStr,
-              symbol: sStr,
-              trades: groupTrades
-            });
+            displayItems.push({ type: 'group', date: dStr, symbol: sStr, trades: groupTrades });
           } else {
-            displayItems.push({
-              type: 'single',
-              date: dStr,
-              trade: groupTrades[0]
-            });
+            displayItems.push({ type: 'single', date: dStr, trade: groupTrades[0] });
           }
         });
       } else {
         sortedTrades.forEach(t => {
-          displayItems.push({
-            type: 'single',
-            date: t.exit_date || t.entry_date || '—',
-            trade: t
-          });
+          displayItems.push({ type: 'single', date: t.exit_date || t.entry_date || '—', trade: t });
         });
       }
 
-      const pageSize = 20;
-      const totalItems = displayItems.length;
-      const totalPages = Math.ceil(totalItems / pageSize);
-
-      if (window.calPointsCurrentPage < 1) window.calPointsCurrentPage = 1;
-      if (window.calPointsCurrentPage > totalPages) window.calPointsCurrentPage = totalPages;
-
-      const startIdx = (window.calPointsCurrentPage - 1) * pageSize;
-      const endIdx = Math.min(startIdx + pageSize, totalItems);
-      const pageItems = displayItems.slice(startIdx, endIdx);
-
       let pointsHtml = '';
       let currentGroupDate = '';
+      
+      let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0 };
 
-      pageItems.forEach((item, itemIdx) => {
+      displayItems.forEach((item, itemIdx) => {
         const tradeDate = item.date;
         if (tradeDate !== currentGroupDate) {
           currentGroupDate = tradeDate;
@@ -9351,314 +9354,68 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         }
 
         if (item.type === 'single') {
+          const t = item.trade;
+          const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
+          _tot.g += t._gross || 0; _tot.tx += t._tax || 0; _tot.n += t._net || 0; _tot.inv += qt * ep;
+          _tot.pts += t.entry === 'BUY' ? (xp - ep) : (ep - xp);
           pointsHtml += renderSingleTradeRow(item.trade, cols, sortedTrades);
         } else {
+          const trades = item.trades;
+          trades.forEach(t => {
+            const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
+            _tot.g += t._gross || 0; _tot.tx += t._tax || 0; _tot.n += t._net || 0; _tot.inv += qt * ep;
+            _tot.pts += t.entry === 'BUY' ? (xp - ep) : (ep - xp);
+          });
           pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
         }
       });
+      
+      const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
+      pointsHtml += '<tr style="border-top:2px solid #30363d;font-weight:700;background:#161b22;">';
+      
+      cols.forEach((c, idx) => {
+          let val = '';
+          let colorStyle = '';
+
+          if (idx === 0) {
+            val = 'TOTAL';
+            colorStyle = 'color:#8b949e;';
+          } else {
+            switch (c.id) {
+              case 'points':
+                val = (_tot.pts >= 0 ? '+' : '') + _tot.pts.toFixed(2);
+                colorStyle = 'color:' + (_tot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'gross':
+                val = Math.round(_tot.g);
+                colorStyle = 'color:' + (_tot.g >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'tax':
+                val = '−' + Math.round(_tot.tx);
+                colorStyle = 'color:#f85149;';
+                break;
+              case 'net':
+                val = (Math.round(_tot.n) > 0 ? '+' : '') + Math.round(_tot.n);
+                colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'ret_pct':
+                val = _totRetPct;
+                colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+            }
+          }
+
+          let align = 'left';
+          if (c.a === 'center') align = 'center';
+          if (c.a === 'right') align = 'right';
+          pointsHtml += `<td style="padding:7px 6px;text-align:${align};${colorStyle}">${val}</td>`;
+      });
+      pointsHtml += '</tr>';
 
       pointsBody.innerHTML = pointsHtml;
-      renderPointsPagination(totalPages);
-    }
-
-    function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId = '') {
-      const g = t._gross || 0, tx = t._tax || 0, n = t._net || 0;
-      const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
-      const gc = g > 0 ? '#3fb950' : (g < 0 ? '#f85149' : '#e6edf3');
-
-      const inv = (t.qty || 0) * (t.entry_price || 0);
-      const retPct = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—';
-      const rc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#8b949e');
-      const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
-      const ptsC = pts > 0 ? '#3fb950' : (pts < 0 ? '#f85149' : '#8b949e');
-
-      let note = '';
-      let sl = '', tp = '';
-      let max_pnl = '—', min_pnl = '—';
-      if (t.tags) {
-        let max_ltp = null, min_ltp = null;
-        t.tags.forEach(tg => {
-          if (tg.startsWith('NOTE:')) note = tg.substring(5);
-          if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
-          if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
-          if (tg.startsWith('MAX_LTP:')) max_ltp = parseFloat(tg.split(':')[1]);
-          if (tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
-        });
-        if (max_ltp !== null && t.entry_price > 0) {
-          let pnl = (max_ltp - t.entry_price) * (t.qty||0);
-          if (t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * (t.qty||0);
-          if (pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
-        }
-        if (min_ltp !== null && t.entry_price > 0) {
-          let pnl = (min_ltp - t.entry_price) * (t.qty||0);
-          if (t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * (t.qty||0);
-          if (pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
-        }
-      }
-
-      let encNote = encodeURIComponent(note);
-      let imgs = _imgTagsOf(t);
-      let encImgs = encodeURIComponent(JSON.stringify(imgs));
-      const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
-      let dispNote = '';
-      if (note || (imgs && imgs.length)) {
-        dispNote = `<div id="note-wrapper-${t.id}" style="${isNoteHidden ? 'display:none;' : ''}">`
-          + (note ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${note.replace(/"/g, '&quot;')}">${note.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-          + _noteThumbs(t.id, imgs)
-          + `</div>`;
-      }
-
-      const _idx = sortedTrades.indexOf(t);
-      const childStyle = isChild ? 'background: #161b22; display: none;' : '';
-      const childClass = isChild ? `class="${parentId}-child"` : '';
-
-      let rowHtml = `<tr ${childClass} style="border-bottom:1px solid #21262d; ${childStyle}">` + cols.map(c => {
-        let v = '';
-        let colorStyle = '';
-        
-        switch (c.id) {
-          case 'date':
-            v = `<span style="white-space:nowrap;">${t.entry_date || t.exit_date || '—'}</span>`;
-            colorStyle = 'color:#6e7681;';
-            break;
-          case 'symbol':
-            const isNoteColOn = cols.some(x => x.id === 'note');
-            const prefix = isChild ? `<span style="color:#8b949e; margin-right:8px; font-weight:normal;">↳</span>` : '';
-            v = `${prefix}<b>${t.sym || t.symbol || '—'}</b>` + (isNoteColOn ? '' : dispNote);
-            colorStyle = 'color:#adbac7;';
-            break;
-          case 'tags': v = _ordTags(t); break;
-          case 'side':
-            v = t.entry; colorStyle = 'color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + ';font-weight:600;'; break;
-          case 'entry_px': v = Number(t.entry_price || 0).toFixed(2); colorStyle = 'color:#8b949e;'; break;
-          case 'exit_px': v = Number(t.exit_price || 0).toFixed(2); colorStyle = 'color:#8b949e;'; break;
-          case 'entry_time': v = t.entry_time || '—'; colorStyle = 'color:#6e7681;'; break;
-          case 'exit_time': v = t.exit_time || '—'; colorStyle = 'color:#6e7681;'; break;
-          case 'exit_reason': v = _exitReasonBadge(t.exit_reason); break;
-          case 'duration': v = `<span style="white-space:nowrap;">${_durFmt(t.entry_time, t.exit_time)}</span>`; colorStyle = 'color:#8b949e;'; break;
-          case 'qty': v = t.qty ?? '—'; break;
-          case 'points': v = (pts >= 0 ? '+' : '') + pts.toFixed(2); colorStyle = 'color:' + ptsC + ';'; break;
-          case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
-          case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
-          case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
-          case 'ret_pct': v = retPct; colorStyle = 'color:' + rc + ';'; break;
-          case 'run_up': v = max_pnl; break;
-          case 'run_down': v = min_pnl; break;
-          case 'cumulative': v = t._cumulative != null ? Math.round(t._cumulative) : '—'; colorStyle = 'color:#e6edf3;'; break;
-          case 'chart':
-            v = `<button onclick="openTradeChart('${(t.sym || t.symbol || '').replace(/'/g, '')}','${t.entry || ''}',${t.entry_price || 0},${t.exit_price || 0},'${t.entry_time || ''}','${t.exit_time || ''}',${t.qty || 0},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(t.strategy || '').replace(/'/g, '')}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
-            break;
-          case 'note':
-            v = `<div style="display:flex; align-items:center; gap:6px;">
-               <button onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-               ${dispNote}
-             </div>`;
-            break;
-          case 'actions':
-            v = `
-          <div class="dropdown">
-            <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${t.id})">⋮</span>
-            <div id="cal-dropdown-${t.id}" class="dropdown-content">
-              <a href="javascript:void(0)" onclick="openNoteModal(${t.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-              <a href="javascript:void(0)" onclick="openTradeChart('${t.sym || t.symbol}','${t.entry}',${t.entry_price},${t.exit_price},'${t.entry_time}','${t.exit_time}',${t.qty},'${t.exit_date || t.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(t.strategy || '').replace(/'/g, '')}')">📈 Chart</a>
-              <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
-            </div>
-          </div>`;
-            break;
-          default: v = t[c.id] ?? '—'; break;
-        }
-
-        let align = 'left';
-        if (c.a === 'center') align = 'center';
-        if (c.a === 'right') align = 'right';
-
-        let style = `padding:8px; text-align:${align}; ${colorStyle}`;
-        if (c.id === 'exit_time') style += ' white-space:nowrap; padding-left:16px;';
-        if (c.id === 'qty') style += ' color:#e6edf3;';
-        
-        return `<td style="${style}">${v}</td>`;
-      }).join('') + `</tr>`;
-
-      return rowHtml;
-    }
-
-    function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
-      const parentId = `cal-grp-${itemIdx}`;
-      const trades = item.trades;
-      const count = trades.length;
-
-      let totalQty = 0;
-      let totalPnl = 0;
-      let weightedEntrySum = 0;
-      let weightedExitSum = 0;
-      let totalPoints = 0;
-      let totalGross = 0;
-      let totalTax = 0;
-      let totalNet = 0;
-
-      let allBuy = true;
-      let allSell = true;
-      let notesArr = [];
-
-      trades.forEach(t => {
-        const qty = t.qty || 0;
-        totalQty += qty;
-        totalPnl += t.pnl || 0;
-        totalGross += t._gross || 0;
-        totalTax += t._tax || 0;
-        totalNet += t._net || 0;
-        weightedEntrySum += (t.entry_price || 0) * qty;
-        weightedExitSum += (t.exit_price || 0) * qty;
-
-        const pts = t.entry === 'BUY'
-          ? (t.exit_price || 0) - (t.entry_price || 0)
-          : (t.entry_price || 0) - (t.exit_price || 0);
-        totalPoints += pts;
-
-        if (t.entry === 'BUY') allSell = false;
-        if (t.entry === 'SELL') allBuy = false;
-
-        let note = '';
-        if (t.tags) {
-          t.tags.forEach(tg => {
-            if (tg.startsWith('NOTE:')) note = tg.substring(5);
-          });
-        }
-        if (note) notesArr.push(note);
-      });
-
-      const avgEntry = totalQty > 0 ? weightedEntrySum / totalQty : 0;
-      const avgExit = totalQty > 0 ? weightedExitSum / totalQty : 0;
-
-      const sideText = allBuy ? 'BUY' : (allSell ? 'SELL' : 'BUY/SELL');
-      const sideColor = allBuy ? '#3fb950' : (allSell ? '#f85149' : '#8b949e');
-
-      const uniqueNotes = [...new Set(notesArr)];
-      const combinedNote = uniqueNotes.join('; ');
-
-      const latestT = trades[0];
-      let sl = '', tp = '';
-      if (latestT.tags) {
-        latestT.tags.forEach(tg => {
-          if (tg.startsWith('SL_VAL:')) sl = tg.split(':')[1];
-          if (tg.startsWith('TP_VAL:')) tp = tg.split(':')[1];
-        });
-      }
-      const _idx = sortedTrades.indexOf(latestT);
-
-      let encNote = encodeURIComponent(combinedNote);
-      let imgs = _imgTagsOf(latestT);
-      let encImgs = encodeURIComponent(JSON.stringify(imgs));
-
-      const isNoteHidden = window._hiddenNotes.has(latestT.id) || localStorage.getItem('global_notes_show') !== 'true';
-      let dispNote = '';
-      if (combinedNote || (imgs && imgs.length)) {
-        dispNote = `<div id="note-wrapper-group-${parentId}" style="${isNoteHidden ? 'display:none;' : ''}">`
-          + (combinedNote ? `<div style="color:#d29922;font-size:10px;margin-top:4px;white-space:normal;line-height:1.3;max-width:300px" title="${combinedNote.replace(/"/g, '&quot;')}">${combinedNote.replace(/</g, '&lt;').replace(/\n/g, '<br>')}</div>` : '')
-          + _noteThumbs(latestT.id, imgs)
-          + `</div>`;
-      }
-
-      const g = totalGross, tx = totalTax, n = totalNet;
-      const nc = n > 0 ? '#3fb950' : (n < 0 ? '#f85149' : '#e6edf3');
-      const gc = g > 0 ? '#3fb950' : (g < 0 ? '#f85149' : '#e6edf3');
-
-      let rowHtml = `<tr onclick="toggleCalGroupRows('${parentId}')" style="cursor:pointer; border-bottom:1px solid #30363d; background:#1f6feb0f;" onmouseover="this.style.background='#1f6feb1c'" onmouseout="this.style.background='#1f6feb0f'">` + cols.map(c => {
-        let v = '';
-        let colorStyle = '';
-        
-        switch (c.id) {
-          case 'date': v = `<span style="white-space:nowrap;">${latestT.entry_date || latestT.exit_date || '—'}</span>`; colorStyle = 'color:#6e7681;'; break;
-          case 'symbol':
-            const isNoteColOn = cols.some(x => x.id === 'note');
-            v = `<span id="${parentId}-arrow" style="margin-right:8px; cursor:pointer; color:#58a6ff; font-family:monospace; font-weight:bold;">▶</span><b>${item.symbol}</b>` + (isNoteColOn ? '' : dispNote);
-            colorStyle = 'color:#adbac7;';
-            break;
-          case 'tags': v = _ordTags(latestT); break;
-          case 'side': v = `<span style="color:${sideColor}; font-weight:600;">${sideText}</span>`; break;
-          case 'qty': v = totalQty; break;
-          case 'entry_px': v = avgEntry.toFixed(2); colorStyle = 'color:#8b949e;'; break;
-          case 'exit_px': v = avgExit.toFixed(2); colorStyle = 'color:#8b949e;'; break;
-          case 'points': 
-            const ptsC = totalPoints > 0 ? '#3fb950' : (totalPoints < 0 ? '#f85149' : '#8b949e');
-            v = `<span style="color:${ptsC}; font-weight:600;">${totalPoints >= 0 ? '+' : ''}${totalPoints.toFixed(2)}</span>`;
-            break;
-          case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
-          case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
-          case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
-          case 'chart':
-            v = `<button onclick="event.stopPropagation(); openTradeChart('${(latestT.sym || latestT.symbol || '').replace(/'/g, '')}','${latestT.entry || ''}',${latestT.entry_price || 0},${latestT.exit_price || 0},'${latestT.entry_time || ''}','${latestT.exit_time || ''}',${latestT.qty || 0},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(latestT.strategy || '').replace(/'/g, '')}')" title="Premium chart for latest trade" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
-            break;
-          case 'note':
-            v = `<div style="display:flex; align-items:center; gap:6px;">
-               <button onclick="event.stopPropagation(); openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')" style="padding:3px 8px;font-size:11px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#adbac7;cursor:pointer">📝 Note</button>
-               ${dispNote}
-             </div>`;
-            break;
-          case 'actions':
-            v = `
-          <div class="dropdown" onclick="event.stopPropagation();">
-            <span class="dropdown-trigger" onclick="toggleCalDropdown(event, ${latestT.id})">⋮</span>
-            <div id="cal-dropdown-${latestT.id}" class="dropdown-content">
-              <a href="javascript:void(0)" onclick="openNoteModal(${latestT.id}, '${encNote}', '${encImgs}')">📝 Edit Note</a>
-              <a href="javascript:void(0)" onclick="openTradeChart('${latestT.sym || latestT.symbol}','${latestT.entry}',${latestT.entry_price},${latestT.exit_price},'${latestT.entry_time}','${latestT.exit_time}',${latestT.qty},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(latestT.strategy || '').replace(/'/g, '')}')">📈 Chart</a>
-              <a href="javascript:void(0)" onclick="toggleNoteDesc(${latestT.id})">👁️ Toggle Note</a>
-            </div>
-          </div>`;
-            break;
-          case 'exit_time': v = `<span style="font-style:italic; font-size:10.5px; color:#8b949e;">${count} trades</span>`; break;
-          default: v = '—'; break;
-        }
-
-        let align = 'left';
-        if (c.a === 'center') align = 'center';
-        if (c.a === 'right') align = 'right';
-
-        let style = `padding:8px; text-align:${align}; ${colorStyle}`;
-        if (c.id === 'exit_time') style += ' white-space:nowrap; padding-left:16px;';
-        if (c.id === 'qty') style += ' color:#e6edf3;';
-        
-        return `<td style="${style}">${v}</td>`;
-      }).join('') + `</tr>`;
-
-      trades.forEach(childT => {
-        rowHtml += renderSingleTradeRow(childT, cols, sortedTrades, true, parentId);
-      });
-
-      return rowHtml;
-    }
-
-    function toggleCalGroupRows(parentId) {
-      const children = document.querySelectorAll('.' + parentId + '-child');
-      const arrow = document.getElementById(parentId + '-arrow');
-      children.forEach(child => {
-        if (child.style.display === 'none' || child.style.display === '') {
-          child.style.display = 'table-row';
-        } else {
-          child.style.display = 'none';
-        }
-      });
-      if (arrow) {
-        if (arrow.textContent === '▶') {
-          arrow.textContent = '▼';
-        } else {
-          arrow.textContent = '▶';
-        }
-      }
-    }
-
-    function toggleCalGroupSymbol(checked) {
-      localStorage.setItem('cal_group_symbol', checked ? 'true' : 'false');
-      saveUiConfigToBackend('cal_group_symbol', checked ? 'true' : 'false');
-      renderPointsPerTradeTable();
-    }
-
-    function initCalGroupSymbolToggle() {
-      const isGrouped = localStorage.getItem('cal_group_symbol') === 'true';
-      const toggleInput = document.getElementById('cal-group-symbol-toggle');
-      if (toggleInput) {
-        toggleInput.checked = isGrouped;
-      }
+      
+      const wrap = document.getElementById('cal-points-pagination-wrap');
+      if (wrap) wrap.innerHTML = '';
     }
 
     function renderPointsPagination(totalPages) {
