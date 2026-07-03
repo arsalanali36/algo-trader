@@ -1838,6 +1838,21 @@
             ▶</button>
           <button class="btn btn-gray" style="padding:4px 10px; font-size:12px; margin-left:4px;"
             onclick="calGoToday()">Today</button>
+          <span style="color:#30363d; font-size:14px;">|</span>
+          <label style="font-size:11px;color:#8b949e;display:flex;align-items:center;gap:4px;">
+            From
+            <input type="date" id="cal-range-from"
+              style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;"
+              onchange="calApplyDateRange()">
+          </label>
+          <label style="font-size:11px;color:#8b949e;display:flex;align-items:center;gap:4px;">
+            To
+            <input type="date" id="cal-range-to"
+              style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 6px;font-size:11px;outline:none;"
+              onchange="calApplyDateRange()">
+          </label>
+          <button class="btn btn-gray" style="padding:4px 8px;font-size:11px;color:#f85149;"
+            onclick="calClearDateRange()" title="Clear date range">✕</button>
         </div>
         <div id="cal-stats-summary" style="display:flex; gap:16px; font-size:12px; color:#8b949e;">
           <div>Gross: <span id="cal-stat-gross" style="font-weight:700;">₹0</span></div>
@@ -8911,28 +8926,49 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
     function calPrevMonth() {
       calMonth--;
-      if (calMonth < 0) {
-        calMonth = 11;
-        calYear--;
-      }
-      calendarRender();
+      if (calMonth < 0) { calMonth = 11; calYear--; }
+      calClearDateRange();
     }
 
     function calNextMonth() {
       calMonth++;
-      if (calMonth > 11) {
-        calMonth = 0;
-        calYear++;
-      }
-      calendarRender();
+      if (calMonth > 11) { calMonth = 0; calYear++; }
+      calClearDateRange();
     }
 
     function calGoToday() {
       const today = new Date();
       calYear = today.getFullYear();
       calMonth = today.getMonth();
+      calClearDateRange();
+    }
+
+    function calApplyDateRange() {
+      const from = (document.getElementById('cal-range-from') || {}).value;
+      const to   = (document.getElementById('cal-range-to')   || {}).value;
+      if (!from && !to) { calendarRender(); return; }
+      // If only one side is set, auto-fill the other
+      if (from && !to) {
+        const d = document.getElementById('cal-range-to');
+        if (d) d.value = from;
+      }
+      if (!from && to) {
+        const d = document.getElementById('cal-range-from');
+        if (d) d.value = to;
+      }
+      window._calRangeMode = true;
       calendarRender();
     }
+
+    function calClearDateRange() {
+      const f = document.getElementById('cal-range-from');
+      const t = document.getElementById('cal-range-to');
+      if (f) f.value = '';
+      if (t) t.value = '';
+      window._calRangeMode = false;
+      calendarRender();
+    }
+
 
     window.calSelectedDateFilter = null;
 
@@ -8954,6 +8990,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       updateCalSelectedDateBadge();
       window.calPointsCurrentPage = 1;
       renderPointsPerTradeTable();
+
+      // Redraw equity curve for selected day (or all if deselected)
+      const allTrades = window.currentCalendarTrades || [];
+      const filteredForCurve = window.calSelectedDateFilter
+        ? allTrades.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter)
+        : allTrades;
+      drawEquityCurveChart('cal-equity-curve-container', filteredForCurve);
 
       // Scroll smoothly to Point Per Trade Details card
       const container = document.getElementById('cal-points-per-trade-tbody');
@@ -9053,12 +9096,18 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       } else {
         // Strategy mode: filter Points Per Trade table by strategy
         if (window.calSumStrategyFilter === key) {
-          window.calSumStrategyFilter = null; // toggle off
+          window.calSumStrategyFilter = null;
         } else {
           window.calSumStrategyFilter = key;
         }
-        renderSummaryTable();    // re-render to show highlight
+        renderSummaryTable();
         renderPointsPerTradeTable();
+        // Redraw equity curve for filtered trades
+        const allTrades = window.currentCalendarTrades || [];
+        const filtered = window.calSumStrategyFilter
+          ? allTrades.filter(t => (t.strategy || t.strat || 'unknown') === window.calSumStrategyFilter)
+          : allTrades;
+        drawEquityCurveChart('cal-equity-curve-container', filtered);
       }
     }
 
@@ -9200,10 +9249,18 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
 
       // Get active filters
-      const q = new URLSearchParams({
-        year: calYear.toString(),
-        month: (calMonth + 1).toString()
-      });
+      const q = new URLSearchParams();
+      const fromDate = (document.getElementById('cal-range-from') || {}).value;
+      const toDate   = (document.getElementById('cal-range-to')   || {}).value;
+      if (fromDate && toDate) {
+        q.set('from_date', fromDate);
+        q.set('to_date', toDate);
+        const monthLabel = document.getElementById('cal-month-label');
+        if (monthLabel) monthLabel.textContent = `${fromDate}  →  ${toDate}`;
+      } else {
+        q.set('year', calYear.toString());
+        q.set('month', (calMonth + 1).toString());
+      }
 
       const src = _calSegVal('cal-src'); if (src && src !== 'hedge') q.set('source', src);
       const mode = _calSegVal('cal-mode'); if (mode) q.set('mode', mode);

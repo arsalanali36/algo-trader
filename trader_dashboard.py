@@ -3101,31 +3101,37 @@ def api_orders():
 
 @app.route('/api/orders/calendar-summary')
 def api_orders_calendar_summary():
-    """Returns daily P&L and trade count summary for a given year and month."""
+    """Returns daily P&L and trade count summary for a given year/month or from_date/to_date range."""
     import order_store
     year = request.args.get('year')
     month = request.args.get('month')
+    from_date = request.args.get('from_date')  # YYYY-MM-DD
+    to_date = request.args.get('to_date')      # YYYY-MM-DD
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
     
-    prefix = ""
-    if year and month:
-        prefix = f"{year}-{month.zfill(2)}-%"
-    elif year:
-        prefix = f"{year}-%"
-        
     import sqlite3
     db_path = order_store.DB_PATH
     dates = []
     try:
         with order_store._lock, sqlite3.connect(str(db_path), timeout=10) as c:
-            sql = "SELECT DISTINCT date FROM orders"
-            args = []
-            if prefix:
-                sql += " WHERE date LIKE ?"
-                args.append(prefix)
-            sql += " ORDER BY date ASC"
-            dates = [r[0] for r in c.execute(sql, args).fetchall() if r[0]]
+            if from_date and to_date:
+                # Date range mode: fetch all dates between from_date and to_date inclusive
+                sql = "SELECT DISTINCT date FROM orders WHERE date >= ? AND date <= ? ORDER BY date ASC"
+                dates = [r[0] for r in c.execute(sql, [from_date, to_date]).fetchall() if r[0]]
+            else:
+                prefix = ""
+                if year and month:
+                    prefix = f"{year}-{month.zfill(2)}-%"
+                elif year:
+                    prefix = f"{year}-%"
+                sql = "SELECT DISTINCT date FROM orders"
+                args = []
+                if prefix:
+                    sql += " WHERE date LIKE ?"
+                    args.append(prefix)
+                sql += " ORDER BY date ASC"
+                dates = [r[0] for r in c.execute(sql, args).fetchall() if r[0]]
     except Exception as e:
         print("[calendar_summary] distinct dates fail:", e, flush=True)
         
