@@ -9246,9 +9246,9 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       _initCalSumCols();
       const cols = window._calSumCols.filter(c => c.on);
       const mode = window._calSumMode || 'day';
-      const thead = document.querySelector('#cal-sum-table thead');
-      const tbody = document.querySelector('#cal-sum-table tbody');
-      const tfoot = document.querySelector('#cal-sum-table tfoot');
+      const thead = document.getElementById('cal-sum-thead');
+      const tbody = document.getElementById('cal-day-totals-tbody');
+      const tfoot = document.getElementById('cal-day-totals-tfoot');
       const trades = window.currentCalendarTrades || [];
       if (!tbody) return;
     if (thead) {
