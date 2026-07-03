@@ -696,6 +696,9 @@ def api_sync_positions():
     import broker_sync as _bsync2
     today = (datetime.now(timezone.utc) + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
     open_pos = _os3.trades_for(today).get('open', [])
+    # Exclude CAPITAL_BLOCKED rows before handing to broker_sync — see the
+    # matching fix + comment in pos_monitor_loop (TRAP #92).
+    open_pos = [p for p in open_pos if "CAPITAL_BLOCKED" not in (p.get("tags") or [])]
     try:
         closed_ids = _bsync2.force_sync(open_pos, log=print)
         return jsonify({
@@ -3582,7 +3585,19 @@ def pos_monitor_loop():
             # new longs on them).
             try:
                 import broker_sync as _bsync
-                _ghost_ids = _bsync.sync_if_due(open_pos, log=print)
+                # Exclude CAPITAL_BLOCKED rows (TRAP #92) — a blocked entry was
+                # never actually placed at the broker, so it always looks
+                # "flat" to _check_flat(), and broker_sync would then record a
+                # bogus "exit" for it using whatever real fill happens to
+                # exist for that contract that day (from a totally unrelated
+                # trade) — netting then pairs the blocked entry's placeholder
+                # price against that unrelated exit, producing an impossible
+                # P&L (found live: a NIFTY entry recorded at the INDEX level
+                # during a capital-block, later "closed" at a real option
+                # premium — a ₹15L+ phantom profit). Same root gap as TRAP #86,
+                # just a different consumer of the same unfiltered "open" list.
+                _bsync_pos = [p for p in open_pos if "CAPITAL_BLOCKED" not in (p.get("tags") or [])]
+                _ghost_ids = _bsync.sync_if_due(_bsync_pos, log=print)
                 if _ghost_ids:
                     # Re-fetch so this cycle runs on clean data
                     data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
