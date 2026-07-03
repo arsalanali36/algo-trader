@@ -756,12 +756,37 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
         ts = str(f.get("fill_timestamp") or f.get("exchange_timestamp") or "")
         if not ts or ts[:10] != date:
             continue
+        raw_sym = str(f.get("tradingsymbol") or "")
+        # Resolve Kite's own compact symbol to Dhan's canonical trad_sym via
+        # structured-field matching (KiteBroker.resolve_dhan(), TRAP #79's
+        # safe reverse resolver) BEFORE computing the reconcile signature —
+        # every existing order_store row is stored in Dhan format, so
+        # comparing against Kite's raw string never matches. Found live
+        # 2026-07-03: _reconcile_sig()'s regex-based strike extraction
+        # works for monthly stock options (letter month code, e.g.
+        # "SUNPHARMA26JUL1880CE") but silently swallows the WHOLE digit run
+        # for weekly index options with no letter separator
+        # ("NIFTY2670724350CE" parsed strike="2670724350", not "24350") —
+        # meaning every NIFTY/BANKNIFTY reconcile double-counted a real
+        # trade ARS_CHAIN_V1 had already recorded (root cause of TRAP #92's
+        # neighboring bug report). Falls back to the raw string if
+        # resolution fails (unmapped instrument, cache miss, network) —
+        # never silently drops a fill, just can't dedupe it as reliably.
+        resolved_sym, resolved_sec_id = raw_sym, ""
+        if broker_name == "kite" and hasattr(broker, "resolve_dhan"):
+            try:
+                _sec_id, _trad_sym, _lot = broker.resolve_dhan(raw_sym)
+                if _trad_sym:
+                    resolved_sym, resolved_sec_id = _trad_sym, (_sec_id or "")
+            except Exception:
+                pass
         fills.append({
             "trade_id": str(f.get("trade_id") or ""),
             "order_id":  str(f.get("order_id") or ""),
             "ts":       ts[:19] if len(ts) >= 19 else ts,
             "type":     str(f.get("transaction_type") or "").upper(),
-            "sym":      str(f.get("tradingsymbol") or ""),
+            "sym":      resolved_sym,
+            "sec_id":   resolved_sec_id,
             "qty":      int(f.get("quantity") or 0),
             "px":       float(f.get("average_price") or 0),
         })
@@ -792,7 +817,7 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
         order_store.record(
             f["type"], f["qty"], f["px"], source="manual", strategy="manual",
             mode="live", broker=broker_name, symbol=f["sym"], instrument=instrument,
-            trad_sym=f["sym"], sec_id="",
+            trad_sym=f["sym"], sec_id=f.get("sec_id") or "",
             segment="NSE_FNO" if instrument == "options" else "NSE_EQ",
             correlation_id=f"MANUAL_TID_{f['trade_id']}", broker_order_id=f["order_id"],
             status="filled", tags=["MANUAL_TRADE"], ts=f["ts"] or None,

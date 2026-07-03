@@ -4499,7 +4499,7 @@ function renderLogTab() {
   const container = document.getElementById('log-folder-card');
   if (!container) return;
 
-  let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks');
+  let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks' && key !== '_ui_config');
   if (keys.length === 0) {
     container.innerHTML = '<div style="padding:20px;color:#8b949e">No active strategies found.</div>';
     return;
