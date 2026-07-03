@@ -2033,8 +2033,20 @@
           </label>
           <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="openCalPointsColModal()">⚙️
             Columns</button>
-          <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="exportCalPointsCsv(this)"
-            title="Point Per Trade Details ko CSV format mein export karo">📥 Export CSV</button>
+          <div style="position:relative;display:inline-block;" id="cal-export-wrap">
+            <button class="btn btn-gray" style="padding:4px 10px; font-size:11px; display:flex; align-items:center; gap:4px;"
+              onclick="document.getElementById('cal-export-menu').style.display=document.getElementById('cal-export-menu').style.display==='block'?'none':'block';event.stopPropagation()">
+              📥 Export <span style="font-size:9px;opacity:.7;">▾</span>
+            </button>
+            <div id="cal-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:200;min-width:130px;box-shadow:0 4px 12px rgba(0,0,0,.5);">
+              <div onclick="exportCalPointsCsv(this);document.getElementById('cal-export-menu').style.display='none'"
+                style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;display:flex;align-items:center;gap:8px;"
+                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📊 Export CSV</div>
+              <div onclick="exportCalPointsPdf();document.getElementById('cal-export-menu').style.display='none'"
+                style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;display:flex;align-items:center;gap:8px;"
+                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📄 Export PDF</div>
+            </div>
+          </div>
         </div>
       </div>
       <div style="overflow-x:auto; max-height:600px; overflow-y:auto; border:1px solid #30363d; border-radius:6px;">
@@ -4223,12 +4235,15 @@
     }
     function _ordFillSelect(id, vals, cur, allLabel) {
       const sel = document.getElementById(id); if (!sel) return;
-      const want = JSON.stringify([''].concat(vals));
+      // Filter out junk strategy names from strategy dropdowns
+      const isStratSel = (id === 'ord-strat' || id === 'cal-strat');
+      const filtered = isStratSel ? vals.filter(v => v && v.toLowerCase() !== 'unknown') : vals;
+      const want = JSON.stringify([''].concat(filtered));
       const have = JSON.stringify(Array.from(sel.options).map(o => o.value));
       if (have === want) return;
-      sel.innerHTML = '<option value="">' + allLabel + '</option>' + vals.map(v => {
+      sel.innerHTML = '<option value="">' + allLabel + '</option>' + filtered.map(v => {
         let display = v;
-        if (id === 'ord-strat' && v.includes(' | ')) display = v.split(' | ')[0];
+        if (isStratSel && v.includes(' | ')) display = v.split(' | ')[0];
         return '<option value="' + v + '">' + display + '</option>';
       }).join('');
       sel.value = cur || '';
@@ -5092,6 +5107,60 @@
       const filename = `calendar_trades_${window.calSelectedDateFilter || 'filtered'}.csv`;
       downloadCsvBlob(filename, csvContent);
     }
+
+    function exportCalPointsPdf() {
+      const cols = (window._calPointsCols || []).filter(c => c.on);
+      const trades = window._lastCalPointsTrades || window.currentCalendarTrades || [];
+      if (!trades.length) { alert('No trades to export.'); return; }
+
+      const dateLabel = window.calSelectedDateFilter || 'All dates';
+      const thead = cols.map(c => `<th style="padding:6px 10px;border:1px solid #ccc;background:#f5f5f5;font-size:11px;">${c.l}</th>`).join('');
+
+      const rows = trades.map(t => {
+        const pts = t.entry === 'BUY' ? (t.exit_price||0) - (t.entry_price||0) : (t.entry_price||0) - (t.exit_price||0);
+        const g = t._gross||0, tx = t._tax||0, n = t._net||0;
+        const inv = (t.qty||0) * (t.entry_price||0);
+        return '<tr>' + cols.map(c => {
+          let val = '';
+          switch(c.id) {
+            case 'date': val = t.entry_date||t.exit_date||''; break;
+            case 'symbol': val = t.sym||t.symbol||''; break;
+            case 'side': val = t.entry||''; break;
+            case 'entry_px': val = t.entry_price||0; break;
+            case 'exit_px': val = t.exit_price||0; break;
+            case 'entry_time': val = t.entry_time||''; break;
+            case 'exit_time': val = t.exit_time||''; break;
+            case 'exit_reason': val = (t.exit_reason||'').split(':')[0]; break;
+            case 'qty': val = t.qty||0; break;
+            case 'points': val = pts.toFixed(2); break;
+            case 'gross': val = Math.round(g); break;
+            case 'tax': val = Math.round(tx); break;
+            case 'net': val = Math.round(n); break;
+            case 'ret_pct': val = inv>0 ? ((n/inv)*100).toFixed(2)+'%' : '—'; break;
+            default: val = t[c.id]||'';
+          }
+          const color = (c.id==='net'||c.id==='gross') ? (Number(val)>=0?'#196127':'#9e1c1c') : '';
+          return `<td style="padding:5px 10px;border:1px solid #e0e0e0;font-size:11px;${color?'color:'+color+';font-weight:700;':''}">${val}</td>`;
+        }).join('') + '</tr>';
+      }).join('');
+
+      const html = `<!DOCTYPE html><html><head><title>Trades - ${dateLabel}</title>
+      <style>body{font-family:Arial,sans-serif;margin:20px}h2{font-size:14px;margin-bottom:8px}table{border-collapse:collapse;width:100%}@media print{@page{size:landscape}}</style>
+      </head><body>
+      <h2>Point Per Trade Details &mdash; ${dateLabel}</h2>
+      <table><thead><tr>${thead}</tr></thead><tbody>${rows}</tbody></table>
+      <script>window.onload=function(){window.print();}<\/script>
+      </body></html>`;
+
+      const w = window.open('', '_blank', 'width=1200,height=800');
+      if (w) { w.document.write(html); w.document.close(); }
+    }
+
+    // Close export dropdown when clicking outside
+    document.addEventListener('click', function() {
+      const m = document.getElementById('cal-export-menu');
+      if (m) m.style.display = 'none';
+    });
 
     function renderCachedOrders() {
       if (!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
