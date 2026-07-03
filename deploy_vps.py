@@ -146,9 +146,10 @@ def main():
         f"echo 'backup -> /tmp/code3b_backup_{ts}.tgz'; "
         f"tar xzf /tmp/code3b_deploy.tgz -C '{REMOTE_DIR}/' && echo 'EXTRACT OK'; "
         f"{pip_line} "
-        f"systemctl restart {SERVICE}; sleep 4; "
-        f"echo -n 'service: '; systemctl is-active {SERVICE}; "
-        f"echo -n 'http: '; curl -s -o /dev/null -w '%{{http_code}}\\n' http://localhost:{PORT}/"
+        f"systemctl restart {SERVICE} algo-monitor; sleep 4; "
+        f"echo -n 'dashboard: '; systemctl is-active {SERVICE}; "
+        f"echo -n 'monitor: '; systemctl is-active algo-monitor; "
+        f"echo -n 'http: '; curl -s -o /dev/null -w '%{{http_code}}\n' http://localhost:{PORT}/"
     )
     print("  remote: backup -> extract -> deps -> restart...")
     run(SSH + [remote])
