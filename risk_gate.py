@@ -225,6 +225,19 @@ def _today_open(strategy=None):
     except Exception:
         return []
     open_pos = data.get("open", [])
+    # A CAPITAL_BLOCKED entry was REFUSED — never actually placed at the
+    # broker — but order_store's netting has no "blocked" terminal status,
+    # so it falls through as a phantom unmatched "open position" (exit_price
+    # None). The dashboard UI already excludes these (templates/index.html's
+    # isCapBlocked filter) when showing real Open Positions; capital_in_use()/
+    # exposure_by_underlying() below never had the same exclusion, so a
+    # blocked entry's re-estimated margin kept compounding into the NEXT
+    # signal's "in-use" figure — a cascading false-block loop where one
+    # rejected attempt permanently (for the rest of the day) makes every
+    # later real signal look like it would breach the cap too, even with
+    # zero real capital actually deployed. Found live 2026-07-03.
+    open_pos = [p for p in open_pos
+                if "CAPITAL_BLOCKED" not in (p.get("tags") or [])]
     if strategy is not None:
         open_pos = [p for p in open_pos if p.get("strategy") == strategy]
     return open_pos

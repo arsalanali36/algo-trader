@@ -447,6 +447,8 @@ def _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log):
         all_today = (data.get("open") or []) + (data.get("details") or [])
         recovered = 0
         for p in (data.get("open") or []):
+            if "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue   # never actually placed at the broker — not a real position (found live 2026-07-03)
             if p.get("strategy") != strategy_id or p.get("entry") != "BUY":
                 continue   # RSI always enters BUY (buys the premium, CE or PE)
             sym = p.get("symbol")

@@ -700,6 +700,8 @@ def _recover_state_from_order_store(strategy_id):
         all_today = (data.get("open") or []) + (data.get("closed") or [])
         recovered = 0
         for p in (data.get("open") or []):
+            if "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue  # never actually placed at the broker — not a real position (found live 2026-07-03)
             if p.get("strategy") != strategy_id or p.get("entry") != "SELL":
                 continue  # hedge BUY legs / other strategies — skip
             symbol = p.get("symbol")

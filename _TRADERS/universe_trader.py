@@ -115,6 +115,8 @@ def _recover_state_from_order_store(sid, log):
         all_today = (data.get("open") or []) + (data.get("closed") or [])
         recovered = 0
         for p in (data.get("open") or []):
+            if "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue  # never actually placed at the broker — not a real position (found live 2026-07-03)
             if p.get("strategy") != sid:
                 continue
             sym = p.get("symbol")
