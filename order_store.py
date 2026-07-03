@@ -223,6 +223,12 @@ def _exit_reason(row):
         for p in _EXIT_REASON_PREFIXES:
             if str(t).startswith(p):
                 return t
+    # A reconcile-inserted broker trade (source=manual / MANUAL_TRADE tag) acting
+    # as the exit leg = the position was closed by hand at the broker. Surface it
+    # as MANUAL_CLOSE instead of blank (Critical Rule 9 — no exit should read
+    # blank; matches TRAP #92's source=manual -> MANUAL_CLOSE backfill convention).
+    if str(row.get("source") or "").lower() == "manual" or "MANUAL_TRADE" in _tags(row):
+        return "MANUAL_CLOSE"
     return ""
 
 
