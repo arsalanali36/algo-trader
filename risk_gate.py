@@ -25,6 +25,34 @@ BASE_DIR = Path(__file__).resolve().parent
 TC_FILE = BASE_DIR / "nifty_config.json"
 
 
+def _inr(n):
+    """Format a ₹ amount in Indian digit grouping (2,00,000 — lakh/crore
+    style), not Python's default international grouping (200,000). Every
+    RMS block-reason string below is user-facing (shown directly in the
+    dashboard's "Capital se Block hui Entries" table) — a plain ₹171878
+    with no separators at all reads ambiguously as "1.7L or 17L?" (found
+    2026-07-03, user asked for this explicitly after exactly that
+    confusion)."""
+    try:
+        n = round(float(n))
+    except (TypeError, ValueError):
+        return str(n)
+    neg = n < 0
+    s = str(abs(n))
+    if len(s) <= 3:
+        out = s
+    else:
+        last3, rest = s[-3:], s[:-3]
+        parts = []
+        while len(rest) > 2:
+            parts.insert(0, rest[-2:])
+            rest = rest[:-2]
+        if rest:
+            parts.insert(0, rest)
+        out = ",".join(parts) + "," + last3
+    return ("-" if neg else "") + out
+
+
 def _risk_cfg():
     try:
         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
@@ -383,8 +411,8 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO")
             strat_cap = float(strat_cap)
             in_use = capital_in_use(strategy)
             if in_use + needed > strat_cap:
-                return False, (f"strategy capital cap ₹{strat_cap:.0f} hit "
-                                f"(in-use ₹{in_use:.0f} + needed ₹{needed:.0f})")
+                return False, (f"strategy capital cap ₹{_inr(strat_cap)} hit "
+                                f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)})")
         except Exception:
             pass
 
@@ -393,8 +421,8 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO")
             glob_cap = float(glob_cap)
             in_use_all = capital_in_use(None)
             if in_use_all + needed > glob_cap:
-                return False, (f"global capital cap ₹{glob_cap:.0f} hit "
-                                f"(in-use ₹{in_use_all:.0f} + needed ₹{needed:.0f})")
+                return False, (f"global capital cap ₹{_inr(glob_cap)} hit "
+                                f"(in-use ₹{_inr(in_use_all)} + needed ₹{_inr(needed)})")
         except Exception:
             pass
 
@@ -494,7 +522,7 @@ def check_broker_funds(broker, needed_rs):
     if avail <= 0:
         return True, ""  # couldn't determine — don't block on an unknown
     if needed_rs > avail:
-        return False, f"broker funds insufficient (avail ₹{avail:.0f} < needed ₹{needed_rs:.0f})"
+        return False, f"broker funds insufficient (avail ₹{_inr(avail)} < needed ₹{_inr(needed_rs)})"
     return True, ""
 
 
@@ -538,8 +566,8 @@ def check_concentration(symbol, qty, price, side="SELL"):
     u = _underlying(symbol)
     in_use = exposure_by_underlying(u)
     if in_use + needed > cap:
-        return False, (f"underlying '{u}' concentration cap ₹{cap:.0f} hit "
-                        f"(in-use ₹{in_use:.0f} + needed ₹{needed:.0f})")
+        return False, (f"underlying '{u}' concentration cap ₹{_inr(cap)} hit "
+                        f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)})")
     return True, ""
 
 
@@ -579,7 +607,7 @@ def check_drawdown(unrealized_pnl=0.0):
         return True, ""
     total = _today_realized_pnl() + float(unrealized_pnl or 0)
     if total <= -abs(cap):
-        return False, f"daily drawdown cap ₹{cap:.0f} hit (today's P&L ₹{total:.0f})"
+        return False, f"daily drawdown cap ₹{_inr(cap)} hit (today's P&L ₹{_inr(total)})"
     return True, ""
 
 
@@ -628,7 +656,7 @@ def daily_profit_target_hit(strategy, unrealized=0.0, rc=None):
         return False, ""
     pnl = _strategy_day_pnl(strategy, unrealized)
     if pnl >= abs(target):
-        return True, f"🎯 Daily profit target ₹{target:.0f} hit for '{strategy}' (today's P&L ₹{pnl:.0f})"
+        return True, f"🎯 Daily profit target ₹{_inr(target)} hit for '{strategy}' (today's P&L ₹{_inr(pnl)})"
     return False, ""
 
 
@@ -781,7 +809,7 @@ def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=Non
     cap = effective_daily_loss_cap(strategy, rc=rc, mode=mode, broker=broker)
     pnl = _strategy_day_pnl(strategy, unrealized)
     if pnl <= -abs(cap):
-        return True, f"RMS daily loss cap ₹{cap:.0f} hit for '{strategy}' (today's P&L ₹{pnl:.0f})"
+        return True, f"RMS daily loss cap ₹{_inr(cap)} hit for '{strategy}' (today's P&L ₹{_inr(pnl)})"
     return False, ""
 
 

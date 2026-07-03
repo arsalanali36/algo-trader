@@ -841,8 +841,17 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 <!-- P&L tab merged into 📒 Orders & P&L (per-strategy pills + tax/charges folded there) -->
 
 <!-- LOG TAB -->
-<div class="tab-body" id="tab-log">
-  <div id="log-grid" class="grid" style="grid-template-columns:1fr"></div>
+<div class="tab-body" id="tab-log" style="padding:16px 18px 24px">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="font-size:19px;font-weight:600;color:#e6edf3;margin:0">📄 System Activity & Strategy Logs</h2>
+      <p style="color:#8b949e;font-size:12px;margin-top:3px">Real-time log stream and execution controls for active strategies.</p>
+    </div>
+  </div>
+
+  <div class="folder-card" id="log-folder-card">
+    <!-- Sidebar and Content will be dynamically built here by renderLogTab() -->
+  </div>
 </div>
 
 <!-- CONFIG TAB -->
@@ -2290,7 +2299,7 @@ async function runReconcile(){
     const ours = d.our_capital_in_use ?? 0;
     const avail = d.broker_available;
     el.style.color = '#3fb950';
-    el.textContent = `Our capital-in-use: ${Math.round(ours)} · Broker available: ${Math.round(avail)} — ${d.note || ''}`;
+    el.textContent = `Our capital-in-use: ${Math.round(ours).toLocaleString('en-IN')} · Broker available: ${Math.round(avail).toLocaleString('en-IN')} — ${d.note || ''}`;
   } catch(e) {
     el.style.color = '#f85149';
     el.textContent = 'Reconcile failed: ' + e;
@@ -3237,12 +3246,12 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
     if(max_ltp !== null && t.entry_price > 0) {
         let pnl = (max_ltp - t.entry_price) * t.qty;
         if(t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty;
-        if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl)}</span>`;
+        if(pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
     }
     if(min_ltp !== null && t.entry_price > 0) {
         let pnl = (min_ltp - t.entry_price) * t.qty;
         if(t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty;
-        if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl)}</span>`;
+        if(pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
     }
   }
 
@@ -3341,7 +3350,7 @@ function _completedRowHtml(t, _idx, activeCols, ordDate, subRow){
         // this function, only when sorted by exit_time ascending + not grouped.
         if (t._cumulative != null) {
           const cc = t._cumulative >= 0 ? '#3fb950' : '#f85149';
-          val = `<span style="color:${cc}">${t._cumulative >= 0 ? '+' : ''}${Math.round(t._cumulative)}</span>`;
+          val = `<span style="color:${cc}">${t._cumulative >= 0 ? '+' : ''}${Math.round(t._cumulative).toLocaleString('en-IN')}</span>`;
         } else {
           val = '<span style="color:#6e7681">—</span>';
         }
@@ -3774,8 +3783,8 @@ function renderCachedOrders() {
     const tc=st.net>=0?'#3fb950':'#f85149';
     sh+=`<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
       <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (${s})</div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}${Math.round(st.net)}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross)} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
+      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net>=0?'+':''}${Math.round(st.net).toLocaleString('en-IN')}</div>
+      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n-st.w}L · ${st.opn} open</div>
     </div>`;
   });
   _setHtml(document.getElementById('ord-summary'), sh ||
@@ -4178,8 +4187,8 @@ function renderCachedOrders() {
           if(max_ltp!=null && min_ltp!=null){
             let up = t.entry==='BUY' ? (max_ltp-entry)*qty : (entry-min_ltp)*qty;
             let down = t.entry==='BUY' ? (min_ltp-entry)*qty : (entry-max_ltp)*qty;
-            runup   = `<span style="color:${up>=0?'#3fb950':'#f85149'}">${up>=0?'+':''}${Math.round(up)}</span>`;
-            rundown = `<span style="color:${down<=0?'#f85149':'#3fb950'}">${down>=0?'+':''}${Math.round(down)}</span>`;
+            runup   = `<span style="color:${up>=0?'#3fb950':'#f85149'}">${up>=0?'+':''}${Math.round(up).toLocaleString('en-IN')}</span>`;
+            rundown = `<span style="color:${down<=0?'#f85149':'#3fb950'}">${down>=0?'+':''}${Math.round(down).toLocaleString('en-IN')}</span>`;
           }
         }
 
@@ -4228,7 +4237,7 @@ function renderCachedOrders() {
               val = `<span class="ret-cell" data-sym="${t.sym}" style="font-weight:700;">—</span>`;
               break;
             case 'margin':
-              val = margin!=null ? Math.round(margin) : '—';
+              val = margin!=null ? Math.round(margin).toLocaleString('en-IN') : '—';
               colorStyle = 'color:#8b949e;';
               break;
             case 'run_up':
@@ -4476,30 +4485,91 @@ function _playOrderSound(isWin) {
 // LOG TAB
 const _logPaused = {};
 function renderLogTab() {
-  const container = document.getElementById('log-grid');
-  let html = '';
-  Object.keys(GLOBAL_CONFIG).forEach(key => {
-    if (key === '_risk' || key === 'webhooks') return;
+  const container = document.getElementById('log-folder-card');
+  if (!container) return;
+
+  let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks');
+  if (keys.length === 0) {
+    container.innerHTML = '<div style="padding:20px;color:#8b949e">No active strategies found.</div>';
+    return;
+  }
+
+  let activeLogTab = localStorage.getItem('activeLogTab') || keys[0];
+  if (!keys.includes(activeLogTab)) {
+    activeLogTab = keys[0];
+  }
+
+  let sidebarHtml = '<div class="folder-sidebar">';
+  sidebarHtml += '<div class="folder-sidebar-header">Strategies</div>';
+
+  let contentHtml = '<div class="folder-content" style="padding: 24px;">';
+
+  keys.forEach((key, index) => {
     const type = key.split('_')[0];
     const color = getStratColor(type);
-    html += `
-      <div class="card" style="border-color:${color}">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;flex-wrap:wrap;gap:6px">
-          <h2 style="color:${color};margin:0">${key.toUpperCase()} LOG</h2>
-          <div style="display:flex;align-items:center;gap:8px">
+    const isActive = key === activeLogTab;
+
+    let emoji = '📄';
+    let tabClassColor = '';
+    if (type === 'ema') { emoji = '📈'; tabClassColor = 'blue-tab'; }
+    else if (type === 'rsi') { emoji = '📉'; tabClassColor = 'active'; } // yellow/amber is standard active tab
+    else if (type === 'range') { emoji = '↕️'; tabClassColor = 'green-tab'; }
+
+    sidebarHtml += `
+      <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}" 
+           data-log-key="${key}"
+           onclick="switchLogTab('${key}', this)">
+        <span>${emoji}</span> ${key.toUpperCase()}
+      </div>
+    `;
+
+    contentHtml += `
+      <div class="settings-section ${isActive ? 'active' : ''}" id="${key}-log-section">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div>
+            <h2 style="color:${color};margin:0;font-size:17px;font-weight:600;display:flex;align-items:center;gap:8px">
+              <span>${emoji}</span> ${key.toUpperCase()} LOG
+            </h2>
+            <div style="font-size:11.5px;color:#8b949e;margin-top:4px">Strategy process log streaming.</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
             <div id="${key}-log-runctl"><!-- run status/start/stop, synced w/ Risk tab --></div>
             <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
-              style="padding:4px 12px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:12px;cursor:pointer">
+              style="padding:5px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;cursor:pointer;font-weight:500;transition:all 0.15s">
               ⏸ Pause
             </button>
           </div>
         </div>
-        <div class="log-box" id="${key}-log">Loading...</div>
+        <div class="log-box" id="${key}-log" style="height: 550px; overflow-y: auto; font-family: monospace; font-size: 12.5px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; line-height: 1.7;">Loading...</div>
       </div>
     `;
   });
-  container.innerHTML = html;
+
+  sidebarHtml += '</div>';
+  contentHtml += '</div>';
+
+  container.innerHTML = sidebarHtml + contentHtml;
   renderLogRunControls();
+}
+
+function switchLogTab(key, el) {
+  document.querySelectorAll('#log-folder-card .settings-section').forEach(s => s.classList.remove('active'));
+  const sec = document.getElementById(`${key}-log-section`);
+  if (sec) sec.classList.add('active');
+
+  document.querySelectorAll('#log-folder-card .folder-tab').forEach(t => {
+    t.classList.remove('active', 'blue-tab', 'green-tab');
+  });
+
+  if (el) {
+    el.classList.add('active');
+    const type = key.split('_')[0];
+    if (type === 'ema') el.classList.add('blue-tab');
+    else if (type === 'range') el.classList.add('green-tab');
+  }
+
+  localStorage.setItem('activeLogTab', key);
+  updateLogs();
 }
 
 // Run status/Start/Stop badge per strategy card on the Logs tab — reads the
@@ -5230,7 +5300,7 @@ function renderStatsGroupedList(trades){
     return `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
         <span style="color:#58a6ff;font-weight:600;font-size:12px">${day}</span>
-        <span style="font-size:12px;font-weight:700;color:${dayPnl>=0?'#3fb950':'#f85149'}">${dayPnl>=0?'+':''}${Math.round(dayPnl)}</span>
+        <span style="font-size:12px;font-weight:700;color:${dayPnl>=0?'#3fb950':'#f85149'}">${dayPnl>=0?'+':''}${Math.round(dayPnl).toLocaleString('en-IN')}</span>
       </div>
       ${rows.map(t=>`<div style="display:flex;gap:6px;font-size:11px;color:#adbac7;padding:2px 0">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.sym||''}</span>
@@ -5574,7 +5644,7 @@ function _patchLtpCells() {
     const unEl  = document.querySelector(`.unrl-cell[data-sym="${sym}"]`);
     const retEl = document.querySelector(`.ret-cell[data-sym="${sym}"]`);
     if(ptEl) { ptEl.textContent=(pts>=0?'+':'')+pts.toFixed(1); ptEl.style.color=pts>=0?'#3fb950':'#f85149'; }
-    if(unEl) { unEl.textContent=(unrl>=0?'+':'')+Math.round(unrl); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
+    if(unEl) { unEl.textContent=(unrl>=0?'+':'')+Math.round(unrl).toLocaleString('en-IN'); unEl.style.color=unrl>=0?'#3fb950':'#f85149'; }
     if(retEl) {
       const inv = entry * qty;
       const retPct = inv > 0 ? ((unrl / inv) * 100).toFixed(2) + '%' : '—';
@@ -5592,7 +5662,7 @@ function _patchLtpCells() {
       any = true;
       const entry = parseFloat(ltpCell.getAttribute('data-entry')) || 0;
       const qty   = parseFloat(ltpCell.getAttribute('data-qty')) || 0;
-      totUnrl += parseFloat(unEl.textContent.replace('+','')) || 0;
+      totUnrl += parseFloat(unEl.textContent.replace('+','').replace(/,/g,'')) || 0;
       totInv  += entry*qty;
       const ptEl = tr.querySelector('.pts-cell');
       if(ptEl) totPts += parseFloat(ptEl.textContent.replace('+','')) || 0;
@@ -5603,7 +5673,7 @@ function _patchLtpCells() {
     const retFoot = document.querySelector(`.grp-tot-ret[data-grp="${id}"]`);
     if(!any) return;
     if(ptsFoot) { ptsFoot.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsFoot.style.color=totPts>=0?'#3fb950':'#f85149'; }
-    if(unrlFoot) { unrlFoot.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlFoot.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
+    if(unrlFoot) { unrlFoot.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl).toLocaleString('en-IN'); unrlFoot.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
     if(retFoot) {
       const retPct = totInv > 0 ? ((totUnrl/totInv)*100).toFixed(2)+'%' : '—';
       retFoot.textContent = retPct; retFoot.style.color = totUnrl>=0?'#3fb950':'#f85149';
@@ -5621,7 +5691,7 @@ function _patchLtpCells() {
       any = true;
       const entry = parseFloat(ltpCell.getAttribute('data-entry')) || 0;
       const qty   = parseFloat(ltpCell.getAttribute('data-qty')) || 0;
-      totUnrl += parseFloat(unEl.textContent.replace('+','')) || 0;
+      totUnrl += parseFloat(unEl.textContent.replace('+','').replace(/,/g,'')) || 0;
       totInv  += entry*qty;
       const ptEl = tr.querySelector('.pts-cell');
       if(ptEl) totPts += parseFloat(ptEl.textContent.replace('+','')) || 0;
@@ -5630,7 +5700,7 @@ function _patchLtpCells() {
       const ptsB = document.getElementById('open-tot-pts');
       const retB = document.getElementById('open-tot-ret');
       if(ptsB){ ptsB.textContent=(totPts>=0?'+':'')+totPts.toFixed(1); ptsB.style.color=totPts>=0?'#3fb950':'#f85149'; }
-      unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
+      unrlB.textContent=(totUnrl>=0?'+':'')+Math.round(totUnrl).toLocaleString('en-IN'); unrlB.style.color=totUnrl>=0?'#3fb950':'#f85149';
       if(retB){ const r=totInv>0?((totUnrl/totInv)*100).toFixed(2)+'%':'—'; retB.textContent=r; retB.style.color=totUnrl>=0?'#3fb950':'#f85149'; }
     }
     // NET summary panel — always update (even when no open positions, show realized + 0 unrealized)
@@ -7437,7 +7507,7 @@ async function calendarRender() {
   
   const grossEl = document.getElementById('cal-stat-gross');
   if (grossEl) {
-    grossEl.textContent = `${grossPnL >= 0 ? '+' : ''}₹${Math.round(grossPnL)}`;
+    grossEl.textContent = `${grossPnL >= 0 ? '+' : ''}₹${Math.round(grossPnL).toLocaleString('en-IN')}`;
     grossEl.style.color = grossPnL >= 0 ? '#3fb950' : '#f85149';
   }
   
@@ -7526,7 +7596,7 @@ async function calendarRender() {
     if (dayData) {
       const pnlDiv = document.createElement('div');
       pnlDiv.className = `cal-day-pnl ${dayData.pnl >= 0 ? 'pos' : 'neg'}`;
-      pnlDiv.textContent = `${dayData.pnl >= 0 ? '+' : ''}₹${Math.round(dayData.pnl)}`;
+      pnlDiv.textContent = `${dayData.pnl >= 0 ? '+' : ''}₹${Math.round(dayData.pnl).toLocaleString('en-IN')}`;
       cell.appendChild(pnlDiv);
 
       const countDiv = document.createElement('div');
@@ -7882,7 +7952,7 @@ function renderSingleTradeRow(t, cols, sortedTrades, isChild = false, parentId =
       v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
     } else if (c.id === 'pnl') {
       const netColor = (t.pnl || 0) >= 0 ? '#3fb950' : '#f85149';
-      const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0)}`;
+      const netText = `${(t.pnl || 0) >= 0 ? '+' : ''}₹${Math.round(t.pnl || 0).toLocaleString('en-IN')}`;
       v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
     } else if (c.id === 'strategy') {
       v = t.strategy || t.strat || t.strategy_type || '—';
@@ -8021,7 +8091,7 @@ function renderGroupedRow(item, cols, sortedTrades, itemIdx) {
       v = `<span style="color:${ptsC}; font-weight:600;">${ptsText}</span>`;
     } else if (c.id === 'pnl') {
       const netColor = totalPnl >= 0 ? '#3fb950' : '#f85149';
-      const netText = `${totalPnl >= 0 ? '+' : ''}₹${Math.round(totalPnl)}`;
+      const netText = `${totalPnl >= 0 ? '+' : ''}₹${Math.round(totalPnl).toLocaleString('en-IN')}`;
       v = `<span style="color:${netColor}; font-weight:600;">${netText}</span>`;
     } else if (c.id === 'strategy') {
       const uniqueStrats = [...new Set(trades.map(t => t.strategy || t.strat || t.strategy_type || '—'))];
@@ -8283,7 +8353,7 @@ function drawEquityCurveChart(containerId, trades) {
     const y = getY(val);
     svg += `<line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" stroke="#30363d" stroke-dasharray="${val === 0 ? '0' : '3,3'}" stroke-width="${val === 0 ? '1.5' : '1'}"/>`;
     // Y-axis label
-    svg += `<text x="${paddingLeft - 10}" y="${y + 4}" fill="#8b949e" font-size="10" text-anchor="end">₹${Math.round(val)}</text>`;
+    svg += `<text x="${paddingLeft - 10}" y="${y + 4}" fill="#8b949e" font-size="10" text-anchor="end">₹${Math.round(val).toLocaleString('en-IN')}</text>`;
   }
   
   // Draw Zero Line separately if it is within range but not hit by step loop
@@ -8403,8 +8473,8 @@ function drawEquityCurveChart(containerId, trades) {
         <b>Trade #${pt.xLabel} Details</b><br>
         Date: ${pt.date} ${pt.time}<br>
         Symbol: <b>${pt.symbol}</b><br>
-        Trade P&L: <span style="color:${pnlColor}; font-weight:600">${pt.pnl >= 0 ? '+' : ''}₹${Math.round(pt.pnl)}</span><br>
-        Cumulative: <span style="color:${cumColor}; font-weight:600">${pt.cumulative >= 0 ? '+' : ''}₹${Math.round(pt.cumulative)}</span>
+        Trade P&L: <span style="color:${pnlColor}; font-weight:600">${pt.pnl >= 0 ? '+' : ''}₹${Math.round(pt.pnl).toLocaleString('en-IN')}</span><br>
+        Cumulative: <span style="color:${cumColor}; font-weight:600">${pt.cumulative >= 0 ? '+' : ''}₹${Math.round(pt.cumulative).toLocaleString('en-IN')}</span>
       `;
     }
     
