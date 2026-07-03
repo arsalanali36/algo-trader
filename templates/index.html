@@ -1657,7 +1657,8 @@
   <!-- WEBHOOK TAB -->
   <!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
   <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
+    <div
+      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Date</span>
       <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph();"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
@@ -1788,7 +1789,8 @@
   <!-- CALENDAR TAB -->
   <div class="tab-body" id="tab-calendar" style="padding:16px 18px 24px">
     <!-- Filters (exact same as orders, named with cal-) -->
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
+    <div
+      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Source</span>
       <span id="cal-src" class="cal-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
@@ -1819,7 +1821,8 @@
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All brokers</option>
       </select>
-      <select id="cal-exit-reason" onchange="this.dataset.prefix=this.value;window.calExitReasonFilter=this.value;renderPointsPerTradeTable()"
+      <select id="cal-exit-reason"
+        onchange="this.dataset.prefix=this.value;window.calExitReasonFilter=this.value;renderPointsPerTradeTable()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All Exit Reasons</option>
       </select>
@@ -1998,11 +2001,13 @@
 
     <!-- Day Totals Card -->
     <div class="card" style="margin-top:16px; padding:16px 18px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+      <div
+        style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
         <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin:0;">📊 Total Summary</h3>
         <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
           <!-- Day-wise / Strategy-wise toggle -->
-          <span id="cal-sum-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+          <span id="cal-sum-mode"
+            style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
             <span data-v="day" class="on" onclick="calSumSeg(this)"
               style="padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff;">Day</span>
             <span data-v="strategy" onclick="calSumSeg(this)"
@@ -2010,11 +2015,13 @@
           </span>
           <!-- Extra columns toggle dropdown -->
           <div style="position:relative;">
-            <button class="btn btn-gray" style="padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:4px;"
+            <button class="btn btn-gray"
+              style="padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:4px;"
               onclick="document.getElementById('cal-sum-col-menu').style.display=document.getElementById('cal-sum-col-menu').style.display==='block'?'none':'block';event.stopPropagation()">
               ⚙️ Columns <span style="font-size:9px;opacity:.7;">▾</span>
             </button>
-            <div id="cal-sum-col-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:170px;padding:8px 0;box-shadow:0 4px 12px rgba(0,0,0,.5);">
+            <div id="cal-sum-col-menu"
+              style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:170px;padding:8px 0;box-shadow:0 4px 12px rgba(0,0,0,.5);">
               <!-- Populated by JS -->
             </div>
           </div>
@@ -2042,9 +2049,12 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3
           style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0; display:flex; align-items:center; gap:8px;">
-          🎯 Point Per Trade Details 
-          <span id="cal-selected-date-badge" style="display:none; background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1;"></span>
-          <input type="text" id="cal-symbol-search" placeholder="Search Symbol..." onkeyup="renderPointsPerTradeTable()" style="background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6edf3; padding:4px 8px; font-size:11px; margin-left:8px; width:120px; outline:none;" autocomplete="off">
+          🎯 Point Per Trade Details
+          <span id="cal-selected-date-badge"
+            style="display:none; background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1;"></span>
+          <input type="text" id="cal-symbol-search" placeholder="Search Symbol..." onkeyup="renderPointsPerTradeTable()"
+            style="background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6edf3; padding:4px 8px; font-size:11px; margin-left:8px; width:120px; outline:none;"
+            autocomplete="off">
         </h3>
         <div style="display:flex; align-items:center; gap:12px;">
           <label
@@ -2062,17 +2072,21 @@
           <button class="btn btn-gray" style="padding:4px 10px; font-size:11px;" onclick="openCalPointsColModal()">⚙️
             Columns</button>
           <div style="position:relative;display:inline-block;" id="cal-export-wrap">
-            <button class="btn btn-gray" style="padding:4px 10px; font-size:11px; display:flex; align-items:center; gap:4px;"
+            <button class="btn btn-gray"
+              style="padding:4px 10px; font-size:11px; display:flex; align-items:center; gap:4px;"
               onclick="document.getElementById('cal-export-menu').style.display=document.getElementById('cal-export-menu').style.display==='block'?'none':'block';event.stopPropagation()">
               📥 Export <span style="font-size:9px;opacity:.7;">▾</span>
             </button>
-            <div id="cal-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:200;min-width:130px;box-shadow:0 4px 12px rgba(0,0,0,.5);">
+            <div id="cal-export-menu"
+              style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:200;min-width:130px;box-shadow:0 4px 12px rgba(0,0,0,.5);">
               <div onclick="exportCalPointsCsv(this);document.getElementById('cal-export-menu').style.display='none'"
                 style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;display:flex;align-items:center;gap:8px;"
-                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📊 Export CSV</div>
+                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📊 Export CSV
+              </div>
               <div onclick="exportCalPointsPdf();document.getElementById('cal-export-menu').style.display='none'"
                 style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;display:flex;align-items:center;gap:8px;"
-                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📄 Export PDF</div>
+                onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📄 Export PDF
+              </div>
             </div>
           </div>
         </div>
@@ -2089,7 +2103,7 @@
           </tbody>
         </table>
       </div>
-      
+
     </div>
   </div>
 
@@ -4937,10 +4951,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
-          colsToExport.push({id: 'source', l: 'Source'});
-          colsToExport.push({id: 'mode', l: 'Mode'});
-          colsToExport.push({id: 'strategy', l: 'Strategy'});
-          colsToExport.push({id: 'broker', l: 'Broker'});
+          colsToExport.push({ id: 'source', l: 'Source' });
+          colsToExport.push({ id: 'mode', l: 'Mode' });
+          colsToExport.push({ id: 'strategy', l: 'Strategy' });
+          colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
         }
@@ -5049,10 +5063,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
-          colsToExport.push({id: 'source', l: 'Source'});
-          colsToExport.push({id: 'mode', l: 'Mode'});
-          colsToExport.push({id: 'strategy', l: 'Strategy'});
-          colsToExport.push({id: 'broker', l: 'Broker'});
+          colsToExport.push({ id: 'source', l: 'Source' });
+          colsToExport.push({ id: 'mode', l: 'Mode' });
+          colsToExport.push({ id: 'strategy', l: 'Strategy' });
+          colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
         }
@@ -5145,30 +5159,30 @@
       const thead = cols.map(c => `<th style="padding:6px 10px;border:1px solid #ccc;background:#f5f5f5;font-size:11px;">${c.l}</th>`).join('');
 
       const rows = trades.map(t => {
-        const pts = t.entry === 'BUY' ? (t.exit_price||0) - (t.entry_price||0) : (t.entry_price||0) - (t.exit_price||0);
-        const g = t._gross||0, tx = t._tax||0, n = t._net||0;
-        const inv = (t.qty||0) * (t.entry_price||0);
+        const pts = t.entry === 'BUY' ? (t.exit_price || 0) - (t.entry_price || 0) : (t.entry_price || 0) - (t.exit_price || 0);
+        const g = t._gross || 0, tx = t._tax || 0, n = t._net || 0;
+        const inv = (t.qty || 0) * (t.entry_price || 0);
         return '<tr>' + cols.map(c => {
           let val = '';
-          switch(c.id) {
-            case 'date': val = t.entry_date||t.exit_date||''; break;
-            case 'symbol': val = t.sym||t.symbol||''; break;
-            case 'side': val = t.entry||''; break;
-            case 'entry_px': val = t.entry_price||0; break;
-            case 'exit_px': val = t.exit_price||0; break;
-            case 'entry_time': val = t.entry_time||''; break;
-            case 'exit_time': val = t.exit_time||''; break;
-            case 'exit_reason': val = (t.exit_reason||'').split(':')[0]; break;
-            case 'qty': val = t.qty||0; break;
+          switch (c.id) {
+            case 'date': val = t.entry_date || t.exit_date || ''; break;
+            case 'symbol': val = t.sym || t.symbol || ''; break;
+            case 'side': val = t.entry || ''; break;
+            case 'entry_px': val = t.entry_price || 0; break;
+            case 'exit_px': val = t.exit_price || 0; break;
+            case 'entry_time': val = t.entry_time || ''; break;
+            case 'exit_time': val = t.exit_time || ''; break;
+            case 'exit_reason': val = (t.exit_reason || '').split(':')[0]; break;
+            case 'qty': val = t.qty || 0; break;
             case 'points': val = pts.toFixed(2); break;
             case 'gross': val = Math.round(g); break;
             case 'tax': val = Math.round(tx); break;
             case 'net': val = Math.round(n); break;
-            case 'ret_pct': val = inv>0 ? ((n/inv)*100).toFixed(2)+'%' : '—'; break;
-            default: val = t[c.id]||'';
+            case 'ret_pct': val = inv > 0 ? ((n / inv) * 100).toFixed(2) + '%' : '—'; break;
+            default: val = t[c.id] || '';
           }
-          const color = (c.id==='net'||c.id==='gross') ? (Number(val)>=0?'#196127':'#9e1c1c') : '';
-          return `<td style="padding:5px 10px;border:1px solid #e0e0e0;font-size:11px;${color?'color:'+color+';font-weight:700;':''}">${val}</td>`;
+          const color = (c.id === 'net' || c.id === 'gross') ? (Number(val) >= 0 ? '#196127' : '#9e1c1c') : '';
+          return `<td style="padding:5px 10px;border:1px solid #e0e0e0;font-size:11px;${color ? 'color:' + color + ';font-weight:700;' : ''}">${val}</td>`;
         }).join('') + '</tr>';
       }).join('');
 
@@ -5185,7 +5199,7 @@
     }
 
     // Close export dropdown when clicking outside
-    document.addEventListener('click', function() {
+    document.addEventListener('click', function () {
       const m = document.getElementById('cal-export-menu');
       if (m) m.style.display = 'none';
     });
@@ -8945,7 +8959,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
     function calApplyDateRange() {
       const from = (document.getElementById('cal-range-from') || {}).value;
-      const to   = (document.getElementById('cal-range-to')   || {}).value;
+      const to = (document.getElementById('cal-range-to') || {}).value;
       if (!from && !to) { calendarRender(); return; }
       // If only one side is set, auto-fill the other
       if (from && !to) {
@@ -9035,26 +9049,26 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       if (window._calSumCols) return;
       const saved = JSON.parse(localStorage.getItem('cal_sum_cols') || 'null');
       const defaults = [
-        { id: 'label',       l: 'Date / Strategy', on: true,  fixed: true },
-        { id: 'count',       l: 'Trades',           on: true  },
-        { id: 'strat_count', l: 'Strategies',       on: true  },
-        { id: 'wl',          l: 'W/L',              on: true  },
-        { id: 'winrate',     l: 'Win %',            on: true  },
-        { id: 'gross',       l: 'Gross',            on: true  },
-        { id: 'tax',         l: 'Tax',              on: true  },
-        { id: 'net',         l: 'Net',              on: true  },
-        { id: 'avg_pts',     l: 'Avg Pts/Trade',    on: false },
-        { id: 'avg_dur',     l: 'Avg Duration',     on: false },
-        { id: 'avg_gross',   l: 'Avg Gross',        on: false },
-        { id: 'avg_net',     l: 'Avg Net',          on: false },
-        { id: 'avg_win',     l: 'Avg Win',          on: false },
-        { id: 'avg_loss',    l: 'Avg Loss',         on: false },
-        { id: 'best',        l: 'Best Trade Net',   on: false },
-        { id: 'worst',       l: 'Worst Trade Net',  on: false },
-        { id: 'runup',       l: 'Max Run-Up',       on: false },
-        { id: 'rundown',     l: 'Max Run-Down',     on: false },
-        { id: 'maxdd',       l: 'Max Drawdown',     on: false },
-        { id: 'exp',         l: 'Expectancy',       on: false },
+        { id: 'label', l: 'Date / Strategy', on: true, fixed: true },
+        { id: 'count', l: 'Trades', on: true },
+        { id: 'strat_count', l: 'Strategies', on: true },
+        { id: 'wl', l: 'W/L', on: true },
+        { id: 'winrate', l: 'Win %', on: true },
+        { id: 'gross', l: 'Gross', on: true },
+        { id: 'tax', l: 'Tax', on: true },
+        { id: 'net', l: 'Net', on: true },
+        { id: 'avg_pts', l: 'Avg Pts/Trade', on: false },
+        { id: 'avg_dur', l: 'Avg Duration', on: false },
+        { id: 'avg_gross', l: 'Avg Gross', on: false },
+        { id: 'avg_net', l: 'Avg Net', on: false },
+        { id: 'avg_win', l: 'Avg Win', on: false },
+        { id: 'avg_loss', l: 'Avg Loss', on: false },
+        { id: 'best', l: 'Best Trade Net', on: false },
+        { id: 'worst', l: 'Worst Trade Net', on: false },
+        { id: 'runup', l: 'Max Run-Up', on: false },
+        { id: 'rundown', l: 'Max Run-Down', on: false },
+        { id: 'maxdd', l: 'Max Drawdown', on: false },
+        { id: 'exp', l: 'Expectancy', on: false },
       ];
       const hasNew = defaults.some(d => saved && !(d.id in saved));
       window._calSumCols = (!saved || hasNew)
@@ -9126,10 +9140,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let totalDurMins = 0, durCount = 0;
       const stratSet = new Set();
       trades.forEach(t => {
-        const ep = t.entry_price||0, xp = t.exit_price||0, qty = t.qty||0;
-        const side = t.entry||'BUY';
+        const ep = t.entry_price || 0, xp = t.exit_price || 0, qty = t.qty || 0;
+        const side = t.entry || 'BUY';
         const pts = side === 'BUY' ? xp - ep : ep - xp;
-        const g = t._gross != null ? t._gross : (side==='BUY'?(xp-ep)*qty:(ep-xp)*qty);
+        const g = t._gross != null ? t._gross : (side === 'BUY' ? (xp - ep) * qty : (ep - xp) * qty);
         const tx = t._tax != null ? t._tax : 0;
         const n = t._net != null ? t._net : g - tx;
         count++; gross += g; tax += tx; net += n; totalPts += pts;
@@ -9150,25 +9164,81 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         (t.tags || []).forEach(tg => {
           if (tg.startsWith('MAX_LTP:')) {
             const ml = parseFloat(tg.split(':')[1]);
-            const ru = side==='BUY' ? (ml-ep)*qty : (ep-ml)*qty;
+            const ru = side === 'BUY' ? (ml - ep) * qty : (ep - ml) * qty;
             if (ru > maxRunUp) maxRunUp = ru;
           }
           if (tg.startsWith('MIN_LTP:')) {
             const ml = parseFloat(tg.split(':')[1]);
-            const rd = side==='BUY' ? (ml-ep)*qty : (ep-ml)*qty;
+            const rd = side === 'BUY' ? (ml - ep) * qty : (ep - ml) * qty;
             if (rd < maxRunDown) maxRunDown = rd;
           }
         });
       });
-      const avgWin  = wins   > 0 ? totalWinNet / wins   : 0;
+      const avgWin = wins > 0 ? totalWinNet / wins : 0;
       const avgLoss = losses > 0 ? Math.abs(totalLossNet / losses) : 0;
-      const exp = count > 0 ? ((wins/count) * avgWin) - ((losses/count) * avgLoss) : 0;
+      const exp = count > 0 ? ((wins / count) * avgWin) - ((losses / count) * avgLoss) : 0;
       const avgDurMins = durCount > 0 ? Math.round(totalDurMins / durCount) : 0;
-      return { count, wins, losses, gross, tax, net, totalPts,
-        avgPts: count>0?totalPts/count:0, avgGross: count>0?gross/count:0, avgNet: count>0?net/count:0,
-        best: best===Infinity?0:best, worst: worst===Infinity?0:worst,
+      return {
+        count, wins, losses, gross, tax, net, totalPts,
+        avgPts: count > 0 ? totalPts / count : 0, avgGross: count > 0 ? gross / count : 0, avgNet: count > 0 ? net / count : 0,
+        best: best === Infinity ? 0 : best, worst: worst === Infinity ? 0 : worst,
         avgWin, avgLoss, maxRunUp, maxRunDown, exp,
-        stratCount: stratSet.size, avgDurMins };
+        stratCount: stratSet.size, avgDurMins
+      };
+    }
+
+    // Helper: format minutes as Xh Ym or Ym
+    function _fmtDur(mins) {
+      if (!mins) return '—';
+      const h = Math.floor(mins / 60), m = mins % 60;
+      return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    }
+
+    function _sumRow(label, s, clickKey, isBold) {
+      _initCalSumCols();
+      const cols = window._calSumCols.filter(c => c.on);
+      const b = isBold ? 'font-weight:700;' : '';
+      const bg = isBold ? 'background:#161b22;' : '';
+      const mode = window._calSumMode || 'day';
+      const isActive = !isBold && window.calSumStrategyFilter === clickKey && mode === 'strategy';
+      const activeBg = isActive ? 'background:#1f6feb22;border-left:2px solid #1f6feb;' : '';
+      const netC = s.net >= 0 ? '#3fb950' : '#f85149';
+      const grossC = s.gross >= 0 ? '#3fb950' : '#f85149';
+      const N = n => Math.round(n).toLocaleString('en-IN');
+      const wr = s.count > 0 ? Math.round((s.wins / s.count) * 100) : 0;
+      const clickable = !isBold && clickKey;
+      const cursor = clickable ? 'cursor:pointer;' : '';
+      const hoverIn = clickable ? `this.style.background='${isActive ? '#1f6feb33' : '#161b22'}'` : '';
+      const hoverOut = clickable ? `this.style.background='${isActive ? '#1f6feb22' : 'transparent'}'` : '';
+      const onclick = clickable ? `onclick="calSumClickRow('${clickKey.replace(/'/g, "\\'")}')"` : '';
+      
+      return `<tr style="border-bottom:1px solid #21262d;${bg}${b}${cursor}${activeBg}" ${onclick}
+        ${hoverIn ? `onmouseover="${hoverIn}" onmouseout="${hoverOut}"` : ''}>` +
+        cols.map(c => {
+          switch (c.id) {
+            case 'label': return `<td style="padding:8px;color:${isActive ? '#58a6ff' : '#adbac7'};${b}">${label}</td>`;
+            case 'count': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
+            case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isBold ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
+            case 'wl': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
+            case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
+            case 'gross': return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
+            case 'tax': return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
+            case 'net': return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
+            case 'avg_pts': return `<td style="padding:8px;text-align:right;color:${s.avgPts >= 0 ? '#3fb950' : '#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
+            case 'avg_dur': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
+            case 'avg_gross': return `<td style="padding:8px;text-align:right;color:${s.avgGross >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgGross)}</td>`;
+            case 'avg_net': return `<td style="padding:8px;text-align:right;color:${s.avgNet >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgNet)}</td>`;
+            case 'avg_win': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
+            case 'avg_loss': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss > 0 ? '-' + N(s.avgLoss) : '—'}</td>`;
+            case 'best': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
+            case 'worst': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+            case 'runup': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp > 0 ? '+' + N(s.maxRunUp) : '—'}</td>`;
+            case 'rundown': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown < 0 ? N(s.maxRunDown) : '—'}</td>`;
+            case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+            case 'exp': return `<td style="padding:8px;text-align:right;color:${s.exp >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.exp)}</td>`;
+            default: return '<td></td>';
+          }
+        }).join('') + '</tr>';
     }
 
     // Helper: format minutes as Xh Ym or Ym
@@ -9179,173 +9249,115 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
     }
 
     // Render TD for a column
-    const renderCell = (c, s, isTotal, label, isActive) => {
+    const renderCell = (c, s, isTotal) => {
       const b = isTotal ? 'font-weight:700;' : '';
       const N = n => Math.round(n).toLocaleString('en-IN');
-      const wr = s.count>0 ? Math.round((s.wins/s.count)*100) : 0;
-      const netC = s.net>=0?'#3fb950':'#f85149';
-      const grossC = s.gross>=0?'#3fb950':'#f85149';
-      
-      switch(c.id) {
-        case 'label':       return `<td style="padding:8px;color:${isActive?'#58a6ff':'#adbac7'};${b}">${label}</td>`;
-        case 'count':       return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
-        case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isTotal ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
-        case 'wl':          return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
-        case 'winrate':     return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
-        case 'gross':       return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
-        case 'tax':         return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
-        case 'net':         return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
-        case 'avg_pts':     return `<td style="padding:8px;text-align:right;color:${s.avgPts>=0?'#3fb950':'#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
-        case 'avg_dur':     return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
-        case 'avg_gross':   return `<td style="padding:8px;text-align:right;color:${s.avgGross>=0?'#3fb950':'#f85149'};${b}">${N(s.avgGross)}</td>`;
-        case 'avg_net':     return `<td style="padding:8px;text-align:right;color:${s.avgNet>=0?'#3fb950':'#f85149'};${b}">${N(s.avgNet)}</td>`;
-        case 'avg_win':     return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
-        case 'avg_loss':    return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss>0?'-'+N(s.avgLoss):'—'}</td>`;
-        case 'best':        return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
-        case 'worst':       return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-        case 'runup':       return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp>0?'+'+N(s.maxRunUp):'—'}</td>`;
-        case 'rundown':     return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown<0?N(s.maxRunDown):'—'}</td>`;
-        case 'maxdd':       return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-        case 'exp':         return `<td style="padding:8px;text-align:right;color:${s.exp>=0?'#3fb950':'#f85149'};${b}">${N(s.exp)}</td>`;
+      const wr = s.count > 0 ? Math.round((s.wins / s.count) * 100) : 0;
+      const netC = s.net >= 0 ? '#3fb950' : '#f85149';
+      const grossC = s.gross >= 0 ? '#3fb950' : '#f85149';
+      switch (c.id) {
+        case 'count': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
+        case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isTotal ? (s.stratCount || '—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
+        case 'wl': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
+        case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
+        case 'gross': return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
+        case 'tax': return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
+        case 'net': return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
+        case 'avg_pts': return `<td style="padding:8px;text-align:right;color:${s.avgPts >= 0 ? '#3fb950' : '#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
+        case 'avg_dur': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
+        case 'avg_gross': return `<td style="padding:8px;text-align:right;color:${s.avgGross >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgGross)}</td>`;
+        case 'avg_net': return `<td style="padding:8px;text-align:right;color:${s.avgNet >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgNet)}</td>`;
+        case 'avg_win': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
+        case 'avg_loss': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss > 0 ? '-' + N(s.avgLoss) : '—'}</td>`;
+        case 'best': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
+        case 'worst': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+        case 'runup': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp > 0 ? '+' + N(s.maxRunUp) : '—'}</td>`;
+        case 'rundown': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown < 0 ? N(s.maxRunDown) : '—'}</td>`;
+        case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+        case 'exp': return `<td style="padding:8px;text-align:right;color:${s.exp >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.exp)}</td>`;
         default: return '<td></td>';
       }
     };
 
-    function _sumRow(label, s, clickKey, isBold) {
-      _initCalSumCols();
-      const cols = window._calSumCols.filter(c => c.on);
-      const b = isBold ? 'font-weight:700;' : '';
-      const bg = isBold ? 'background:#161b22;' : '';
-      const mode = window._calSumMode || 'day';
-      const isActive = !isBold && window.calSumStrategyFilter === clickKey && mode === 'strategy';
-      const activeBg = isActive ? 'background:#1f6feb22;border-left:2px solid #1f6feb;' : '';
-      const clickable = !isBold && clickKey;
-      const cursor = clickable ? 'cursor:pointer;' : '';
-      const hoverIn = clickable ? `this.style.background='${isActive?'#1f6feb33':'#161b22'}'` : '';
-      const hoverOut = clickable ? `this.style.background='${isActive?'#1f6feb22':'transparent'}'` : '';
-      const onclick = clickable ? `onclick="calSumClickRow('${clickKey.replace(/'/g,"\\'")}'); event.stopPropagation();"` : '';
-      
-      return `<tr style="border-bottom:1px solid #21262d;${bg}${b}${cursor}${activeBg}" ${onclick}
-        ${hoverIn ? `onmouseover="${hoverIn}" onmouseout="${hoverOut}"` : ''}>` +
+    if (thead) {
+      const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
+      const sort = window._calSumSort || { col: 'label', dir: 1 };
+      const rightAligned = new Set(['gross', 'tax', 'net', 'avg_pts', 'avg_gross', 'avg_net', 'avg_win', 'avg_loss', 'best', 'worst', 'runup', 'rundown', 'maxdd', 'exp']);
+      thead.innerHTML = cols.map(c => {
+        const a = c.id === 'label' ? 'left' : (rightAligned.has(c.id) ? 'right' : 'center');
+        const isSort = sort.col === c.id;
+        const arrow = isSort ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
+        const hdr = c.id === 'label' ? labelHeader : c.l;
+        return `<th style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
+            onclick="calSumSortBy('${c.id}')"
+            onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='${isSort ? '#58a6ff' : '#8b949e'}'"
+          >${hdr}${arrow}</th>`;
+      }).join('');
     }
 
-      // Helper: format minutes as Xh Ym or Ym
-      function _fmtDur(mins) {
-        if (!mins) return '—';
-        const h = Math.floor(mins / 60), m = mins % 60;
-        return h > 0 ? `${h}h ${m}m` : `${m}m`;
+    // Build grouped data
+    const groups = {};
+    trades.forEach(t => {
+      const key = mode === 'day'
+        ? (t.exit_date || t.entry_date || '—')
+        : (t.strategy || t.strat || 'unknown');
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(t);
+    });
+
+    // Compute stats for each group
+    const groupStats = {};
+    Object.keys(groups).forEach(k => { groupStats[k] = _sumTrades(groups[k]); });
+
+    // Sort rows
+    const sort = window._calSumSort || { col: 'label', dir: 1 };
+    const sortVal = (s, col) => {
+      switch (col) {
+        case 'label': return col; // use key directly
+        case 'count': return s.count;
+        case 'strat_count': return s.stratCount;
+        case 'wl': return s.wins;
+        case 'winrate': return s.count > 0 ? s.wins / s.count : 0;
+        case 'gross': return s.gross;
+        case 'tax': return s.tax;
+        case 'net': return s.net;
+        case 'avg_pts': return s.avgPts;
+        case 'avg_dur': return s.avgDurMins;
+        case 'avg_gross': return s.avgGross;
+        case 'avg_net': return s.avgNet;
+        case 'avg_win': return s.avgWin;
+        case 'avg_loss': return s.avgLoss;
+        case 'best': return s.best;
+        case 'worst': return s.worst;
+        case 'runup': return s.maxRunUp;
+        case 'rundown': return s.maxRunDown;
+        case 'exp': return s.exp;
+        default: return 0;
       }
+    };
 
-      // Render TD for a column
-      const renderCell = (c, s, isTotal) => {
-        const b = isTotal ? 'font-weight:700;' : '';
-        const N = n => Math.round(n).toLocaleString('en-IN');
-        const wr = s.count>0 ? Math.round((s.wins/s.count)*100) : 0;
-        const netC = s.net>=0?'#3fb950':'#f85149';
-        const grossC = s.gross>=0?'#3fb950':'#f85149';
-        switch(c.id) {
-          case 'count':       return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
-          case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isTotal ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
-          case 'wl':          return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
-          case 'winrate':     return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
-          case 'gross':       return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
-          case 'tax':         return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
-          case 'net':         return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
-          case 'avg_pts':     return `<td style="padding:8px;text-align:right;color:${s.avgPts>=0?'#3fb950':'#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
-          case 'avg_dur':     return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
-          case 'avg_gross':   return `<td style="padding:8px;text-align:right;color:${s.avgGross>=0?'#3fb950':'#f85149'};${b}">${N(s.avgGross)}</td>`;
-          case 'avg_net':     return `<td style="padding:8px;text-align:right;color:${s.avgNet>=0?'#3fb950':'#f85149'};${b}">${N(s.avgNet)}</td>`;
-          case 'avg_win':     return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
-          case 'avg_loss':    return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss>0?'-'+N(s.avgLoss):'—'}</td>`;
-          case 'best':        return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
-          case 'worst':       return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-          case 'runup':       return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp>0?'+'+N(s.maxRunUp):'—'}</td>`;
-          case 'rundown':     return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown<0?N(s.maxRunDown):'—'}</td>`;
-          case 'maxdd':       return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-          case 'exp':         return `<td style="padding:8px;text-align:right;color:${s.exp>=0?'#3fb950':'#f85149'};${b}">${N(s.exp)}</td>`;
-          default: return '<td></td>';
-        }
-      };
-
-      if (thead) {
-        const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
-        const sort = window._calSumSort || { col: 'label', dir: 1 };
-        const rightAligned = new Set(['gross','tax','net','avg_pts','avg_gross','avg_net','avg_win','avg_loss','best','worst','runup','rundown','maxdd','exp']);
-        thead.innerHTML = cols.map(c => {
-          const a = c.id === 'label' ? 'left' : (rightAligned.has(c.id) ? 'right' : 'center');
-          const isSort = sort.col === c.id;
-          const arrow = isSort ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
-          const hdr = c.id === 'label' ? labelHeader : c.l;
-          return `<th style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort?'#58a6ff':'#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
-            onclick="calSumSortBy('${c.id}')"
-            onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='${isSort?'#58a6ff':'#8b949e'}'"
-          >${hdr}${arrow}</th>`;
-        }).join('');
+    const keys = Object.keys(groups).sort((a, b) => {
+      if (sort.col === 'label') {
+        return mode === 'day' ? b.localeCompare(a) * sort.dir : a.localeCompare(b) * sort.dir;
       }
+      return (sortVal(groupStats[a], sort.col) - sortVal(groupStats[b], sort.col)) * sort.dir;
+    });
 
-      // Build grouped data
-      const groups = {};
-      trades.forEach(t => {
-        const key = mode === 'day'
-          ? (t.exit_date || t.entry_date || '—')
-          : (t.strategy || t.strat || 'unknown');
-        if (!groups[key]) groups[key] = [];
-        groups[key].push(t);
+    let bodyHtml = '';
+    if (!keys.length) {
+      bodyHtml = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
+      if (tfoot) tfoot.innerHTML = '';
+    } else {
+      keys.forEach(key => {
+        bodyHtml += _sumRow(key, groupStats[key], key, false);
       });
-
-      // Compute stats for each group
-      const groupStats = {};
-      Object.keys(groups).forEach(k => { groupStats[k] = _sumTrades(groups[k]); });
-
-      // Sort rows
-      const sort = window._calSumSort || { col: 'label', dir: 1 };
-      const sortVal = (s, col) => {
-        switch(col) {
-          case 'label': return col; // use key directly
-          case 'count': return s.count;
-          case 'strat_count': return s.stratCount;
-          case 'wl': return s.wins;
-          case 'winrate': return s.count>0 ? s.wins/s.count : 0;
-          case 'gross': return s.gross;
-          case 'tax': return s.tax;
-          case 'net': return s.net;
-          case 'avg_pts': return s.avgPts;
-          case 'avg_dur': return s.avgDurMins;
-          case 'avg_gross': return s.avgGross;
-          case 'avg_net': return s.avgNet;
-          case 'avg_win': return s.avgWin;
-          case 'avg_loss': return s.avgLoss;
-          case 'best': return s.best;
-          case 'worst': return s.worst;
-          case 'runup': return s.maxRunUp;
-          case 'rundown': return s.maxRunDown;
-          case 'exp': return s.exp;
-          default: return 0;
-        }
-      };
-
-      const keys = Object.keys(groups).sort((a, b) => {
-        if (sort.col === 'label') {
-          return mode === 'day' ? b.localeCompare(a) * sort.dir : a.localeCompare(b) * sort.dir;
-        }
-        return (sortVal(groupStats[a], sort.col) - sortVal(groupStats[b], sort.col)) * sort.dir;
-      });
-
-      let bodyHtml = '';
-      if (!keys.length) {
-        bodyHtml = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
-        if (tfoot) tfoot.innerHTML = '';
-      } else {
-        keys.forEach(key => {
-          bodyHtml += _sumRow(key, groupStats[key], key, false);
-        });
-        if (tfoot) {
-          const all = _sumTrades(trades);
-          const footRow = _sumRow('Total / Avg', all, null, true);
-          tfoot.innerHTML = footRow.replace('<tr style="', '<tr style="font-weight:700;background:#161b22;border-top:2px solid #30363d;');
-        }
+      if (tfoot) {
+        const all = _sumTrades(trades);
+        const footRow = _sumRow('Total / Avg', all, null, true);
+        tfoot.innerHTML = footRow.replace('<tr style="', '<tr style="font-weight:700;background:#161b22;border-top:2px solid #30363d;');
       }
-      tbody.innerHTML = bodyHtml;
+    }
+    tbody.innerHTML = bodyHtml;
     }
 
     function calSumSortBy(colId) {
@@ -9373,7 +9385,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       // Get active filters
       const q = new URLSearchParams();
       const fromDate = (document.getElementById('cal-range-from') || {}).value;
-      const toDate   = (document.getElementById('cal-range-to')   || {}).value;
+      const toDate = (document.getElementById('cal-range-to') || {}).value;
       if (fromDate && toDate) {
         q.set('from_date', fromDate);
         q.set('to_date', toDate);
@@ -9414,28 +9426,28 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         const curPrefix = exitReasonSel.dataset.prefix || '';
         // Map prefix → short label (keep in sync with _exitReasonBadge)
         const _exitPrefixMap = [
-          ['SL_HIT',                  '🛑 Stop-Loss'],
-          ['TP_HIT',                  '🎯 Target'],
-          ['EXPIRY_ITM_SQUAREOFF',    '📅 Expiry ITM'],
-          ['EXPIRY_EOD_SQUAREOFF',    '📅 Expiry EOD (2:55)'],
-          ['EOD_315_SQUAREOFF',       '⏰ 3:15 EOD'],
-          ['KILL_FLOOR',              '🔒 Kill-Floor'],
-          ['TRAILING_PROFIT_LOCK',    '🔒 Trailing Lock'],
-          ['RMS_MAXLOSS',             '⚠️ RMS Max-Loss'],
-          ['RMS_PROFIT_TARGET',       '✅ RMS Profit Target'],
+          ['SL_HIT', '🛑 Stop-Loss'],
+          ['TP_HIT', '🎯 Target'],
+          ['EXPIRY_ITM_SQUAREOFF', '📅 Expiry ITM'],
+          ['EXPIRY_EOD_SQUAREOFF', '📅 Expiry EOD (2:55)'],
+          ['EOD_315_SQUAREOFF', '⏰ 3:15 EOD'],
+          ['KILL_FLOOR', '🔒 Kill-Floor'],
+          ['TRAILING_PROFIT_LOCK', '🔒 Trailing Lock'],
+          ['RMS_MAXLOSS', '⚠️ RMS Max-Loss'],
+          ['RMS_PROFIT_TARGET', '✅ RMS Profit Target'],
           ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
-          ['ATR_TRAILING',            '📉 ATR Trailing'],
-          ['RSI_MIDLINE_EXIT',        '↩️ RSI Midline'],
-          ['IDX_TRAIL',               '📉 Index Trail SL'],
-          ['TRAIL_SL',                '📉 Trail SL'],
-          ['TARGET',                  '🎯 Target'],
-          ['GLOBAL_CAP',              '🚫 Max Trades/Day'],
-          ['SQUAREOFF_315',           '⏰ 3:15 EOD (Webhook)'],
-          ['REVERSAL',                '🔄 Reversal'],
-          ['TV_EXIT',                 '📡 TV Exit Signal'],
-          ['MANUAL_CLOSE',            '✋ Manual Close'],
-          ['EXTERNALLY_CLOSED',       '🌐 Closed at Broker'],
-          ['MANUAL_EXIT_BROKER',      '🌐 Closed at Broker'],
+          ['ATR_TRAILING', '📉 ATR Trailing'],
+          ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'],
+          ['IDX_TRAIL', '📉 Index Trail SL'],
+          ['TRAIL_SL', '📉 Trail SL'],
+          ['TARGET', '🎯 Target'],
+          ['GLOBAL_CAP', '🚫 Max Trades/Day'],
+          ['SQUAREOFF_315', '⏰ 3:15 EOD (Webhook)'],
+          ['REVERSAL', '🔄 Reversal'],
+          ['TV_EXIT', '📡 TV Exit Signal'],
+          ['MANUAL_CLOSE', '✋ Manual Close'],
+          ['EXTERNALLY_CLOSED', '🌐 Closed at Broker'],
+          ['MANUAL_EXIT_BROKER', '🌐 Closed at Broker'],
         ];
         function _rawToPrefix(raw) {
           if (!raw) return raw;
@@ -9645,7 +9657,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       renderPointsPerTradeTable();
     }
 
-    
+
     window._calPointsSortCol = localStorage.getItem('cal_points_sort_col') || '';
     window._calPointsSortDir = localStorage.getItem('cal_points_sort_dir') || 'desc';
 
@@ -9678,17 +9690,17 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
 
       let tradesList = [...window.currentCalendarTrades];
-      
+
       const searchInput = document.getElementById('cal-symbol-search');
       if (searchInput && searchInput.value) {
         const query = searchInput.value.toUpperCase();
         tradesList = tradesList.filter(t => (t.sym || t.symbol || '').toUpperCase().includes(query));
       }
-      
+
       if (window.calSelectedDateFilter) {
         tradesList = tradesList.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter);
       }
-      
+
       if (window.calExitReasonFilter) {
         tradesList = tradesList.filter(t => (t.exit_reason || '').startsWith(window.calExitReasonFilter));
       }
@@ -9720,7 +9732,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         strategy: t.strategy || ''
       }));
       localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
-      
+
       // Render table headers with sorting
       const theadRow = document.getElementById('cal-points-cols-thead');
       if (theadRow) {
@@ -9728,7 +9740,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           let align = 'left';
           if (c.a === 'center') align = 'center';
           if (c.a === 'right') align = 'right';
-          
+
           let sortIndicator = '';
           if (window._calPointsSortCol === c.id) {
             sortIndicator = window._calPointsSortDir === 'desc' ? ' ▼' : ' ▲';
@@ -9749,7 +9761,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let displayItems = [];
 
       if (isGroupEnabled) {
-        const dateGroups = {}; 
+        const dateGroups = {};
         sortedTrades.forEach(t => {
           const dStr = t.exit_date || t.entry_date || '—';
           const sStr = t.sym || t.symbol || '—';
@@ -9781,7 +9793,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
       let pointsHtml = '';
       let currentGroupDate = '';
-      
+
       let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0 };
 
       displayItems.forEach((item, itemIdx) => {
@@ -9820,51 +9832,51 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
         }
       });
-      
+
       const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
       pointsHtml += '<tr style="border-top:2px solid #30363d;font-weight:700;background:#161b22;">';
-      
+
       cols.forEach((c, idx) => {
-          let val = '';
-          let colorStyle = '';
+        let val = '';
+        let colorStyle = '';
 
-          if (idx === 0) {
-            val = 'TOTAL';
-            colorStyle = 'color:#8b949e;';
-          } else {
-            switch (c.id) {
-              case 'points':
-                val = (_tot.pts >= 0 ? '+' : '') + _tot.pts.toFixed(2);
-                colorStyle = 'color:' + (_tot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
-                break;
-              case 'gross':
-                val = Math.round(_tot.g);
-                colorStyle = 'color:' + (_tot.g >= 0 ? '#3fb950' : '#f85149') + ';';
-                break;
-              case 'tax':
-                val = '−' + Math.round(_tot.tx);
-                colorStyle = 'color:#f85149;';
-                break;
-              case 'net':
-                val = (Math.round(_tot.n) > 0 ? '+' : '') + Math.round(_tot.n);
-                colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
-                break;
-              case 'ret_pct':
-                val = _totRetPct;
-                colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
-                break;
-            }
+        if (idx === 0) {
+          val = 'TOTAL';
+          colorStyle = 'color:#8b949e;';
+        } else {
+          switch (c.id) {
+            case 'points':
+              val = (_tot.pts >= 0 ? '+' : '') + _tot.pts.toFixed(2);
+              colorStyle = 'color:' + (_tot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
+              break;
+            case 'gross':
+              val = Math.round(_tot.g);
+              colorStyle = 'color:' + (_tot.g >= 0 ? '#3fb950' : '#f85149') + ';';
+              break;
+            case 'tax':
+              val = '−' + Math.round(_tot.tx);
+              colorStyle = 'color:#f85149;';
+              break;
+            case 'net':
+              val = (Math.round(_tot.n) > 0 ? '+' : '') + Math.round(_tot.n);
+              colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+              break;
+            case 'ret_pct':
+              val = _totRetPct;
+              colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+              break;
           }
+        }
 
-          let align = 'left';
-          if (c.a === 'center') align = 'center';
-          if (c.a === 'right') align = 'right';
-          pointsHtml += `<td style="padding:7px 6px;text-align:${align};${colorStyle}">${val}</td>`;
+        let align = 'left';
+        if (c.a === 'center') align = 'center';
+        if (c.a === 'right') align = 'right';
+        pointsHtml += `<td style="padding:7px 6px;text-align:${align};${colorStyle}">${val}</td>`;
       });
       pointsHtml += '</tr>';
 
       pointsBody.innerHTML = pointsHtml;
-      
+
       const wrap = document.getElementById('cal-points-pagination-wrap');
       if (wrap) wrap.innerHTML = '';
     }
@@ -9893,13 +9905,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           if (tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
         });
         if (max_ltp !== null && t.entry_price > 0) {
-          let pnl = (max_ltp - t.entry_price) * (t.qty||0);
-          if (t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * (t.qty||0);
+          let pnl = (max_ltp - t.entry_price) * (t.qty || 0);
+          if (t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * (t.qty || 0);
           if (pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
         }
         if (min_ltp !== null && t.entry_price > 0) {
-          let pnl = (min_ltp - t.entry_price) * (t.qty||0);
-          if (t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * (t.qty||0);
+          let pnl = (min_ltp - t.entry_price) * (t.qty || 0);
+          if (t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * (t.qty || 0);
           if (pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
         }
       }
@@ -9923,7 +9935,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let rowHtml = `<tr ${childClass} style="border-bottom:1px solid #21262d; ${childStyle}">` + cols.map(c => {
         let v = '';
         let colorStyle = '';
-        
+
         switch (c.id) {
           case 'date':
             v = `<span style="white-space:nowrap;">${t.entry_date || t.exit_date || '—'}</span>`;
@@ -9983,7 +9995,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         let style = `padding:8px; text-align:${align}; ${colorStyle}`;
         if (c.id === 'exit_time') style += ' white-space:nowrap; padding-left:16px;';
         if (c.id === 'qty') style += ' color:#e6edf3;';
-        
+
         return `<td style="${style}">${v}</td>`;
       }).join('') + `</tr>`;
 
@@ -10074,7 +10086,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let rowHtml = `<tr onclick="toggleCalGroupRows('${parentId}')" style="cursor:pointer; border-bottom:1px solid #30363d; background:#1f6feb0f;" onmouseover="this.style.background='#1f6feb1c'" onmouseout="this.style.background='#1f6feb0f'">` + cols.map(c => {
         let v = '';
         let colorStyle = '';
-        
+
         switch (c.id) {
           case 'date': v = `<span style="white-space:nowrap;">${latestT.entry_date || latestT.exit_date || '—'}</span>`; colorStyle = 'color:#6e7681;'; break;
           case 'symbol':
@@ -10087,7 +10099,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           case 'qty': v = totalQty; break;
           case 'entry_px': v = avgEntry.toFixed(2); colorStyle = 'color:#8b949e;'; break;
           case 'exit_px': v = avgExit.toFixed(2); colorStyle = 'color:#8b949e;'; break;
-          case 'points': 
+          case 'points':
             const ptsC = totalPoints > 0 ? '#3fb950' : (totalPoints < 0 ? '#f85149' : '#8b949e');
             v = `<span style="color:${ptsC}; font-weight:600;">${totalPoints >= 0 ? '+' : ''}${totalPoints.toFixed(2)}</span>`;
             break;
@@ -10125,7 +10137,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         let style = `padding:8px; text-align:${align}; ${colorStyle}`;
         if (c.id === 'exit_time') style += ' white-space:nowrap; padding-left:16px;';
         if (c.id === 'qty') style += ' color:#e6edf3;';
-        
+
         return `<td style="${style}">${v}</td>`;
       }).join('') + `</tr>`;
 
