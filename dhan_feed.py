@@ -79,6 +79,18 @@ def _run_loop():
     asyncio.set_event_loop(asyncio.new_event_loop())  # own loop for this thread
     from dhanhq import DhanFeed
 
+    # Exponential backoff on reconnect — algo-dashboard, algo-monitor, and
+    # each live strategy process (range_trader.py etc.) all run this SAME
+    # module independently, each opening its own WebSocket feed connection
+    # to the same Dhan account. Dhan's feed gateway rejects a new connection
+    # (HTTP 429) when too many are open/reconnecting at once — the old flat
+    # 2s retry never let that condition clear, so it hammered forever once
+    # triggered (found live 2026-07-03, right after restarting all 3
+    # processes together for an unrelated fix). Backoff caps at 30s and
+    # resets to 2s the moment a connection is actually accepted.
+    _backoff = 2
+    _BACKOFF_MAX = 30
+
     while _running:
         try:
             with _lock:
@@ -89,6 +101,7 @@ def _run_loop():
             _feed = DhanFeed(_creds["client_id"], _creds["jwt_token"], instruments, version="v2")
             _feed.run_forever()  # connect + subscribe (one-shot)
             _pending_resub = False
+            _backoff = 2  # connection accepted — reset backoff for next time
 
             while _running and not _pending_resub:
                 r = _feed.get_data()
@@ -110,8 +123,9 @@ def _run_loop():
                         }
         except Exception as e:
             import logging
-            logging.getLogger("dhan_feed").warning(f"[dhan_feed] loop error, reconnecting in 2s: {e}")
-            time.sleep(2)  # reconnect after a brief pause
+            logging.getLogger("dhan_feed").warning(f"[dhan_feed] loop error, reconnecting in {_backoff}s: {e}")
+            time.sleep(_backoff)
+            _backoff = min(_backoff * 2, _BACKOFF_MAX)
 
 
 def start(creds, sec_tuples=None):
