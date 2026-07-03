@@ -2010,8 +2010,9 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
         <h3
           style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0; display:flex; align-items:center; gap:8px;">
-          🎯 Point Per Trade Details <span id="cal-selected-date-badge"
-            style="display:none; background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1;"></span>
+          🎯 Point Per Trade Details 
+          <span id="cal-selected-date-badge" style="display:none; background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1;"></span>
+          <input type="text" id="cal-symbol-search" placeholder="Search Symbol..." onkeyup="renderPointsPerTradeTable()" style="background:#0d1117; border:1px solid #30363d; border-radius:4px; color:#e6edf3; padding:4px 8px; font-size:11px; margin-left:8px; width:120px; outline:none;" autocomplete="off">
         </h3>
         <div style="display:flex; align-items:center; gap:12px;">
           <label
@@ -2032,9 +2033,9 @@
             title="Point Per Trade Details ko CSV format mein export karo">📥 Export CSV</button>
         </div>
       </div>
-      <div style="overflow-x:auto;">
-        <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
-          <thead>
+      <div style="overflow-x:auto; max-height:600px; overflow-y:auto; border:1px solid #30363d; border-radius:6px;">
+        <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:0; text-align:left;">
+          <thead style="position:sticky; top:0; background:#161b22; z-index:10;">
             <tr id="cal-points-cols-thead" style="border-bottom:1px solid #30363d; color:#8b949e;">
               <!-- Rendered dynamically -->
             </tr>
@@ -2044,8 +2045,7 @@
           </tbody>
         </table>
       </div>
-      <div id="cal-points-pagination-wrap"
-        style="display:flex; justify-content:center; align-items:center; gap:6px; margin-top:16px;"></div>
+      
     </div>
   </div>
 
@@ -9217,6 +9217,28 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         window.calPointsCurrentPage = 1;
       }
       // Render Point Per Trade table with pagination and grouping
+      renderPointsPerTradeTable();
+    }
+
+    
+    window._calPointsSortCol = localStorage.getItem('cal_points_sort_col') || '';
+    window._calPointsSortDir = localStorage.getItem('cal_points_sort_dir') || 'desc';
+
+    function toggleCalPointsSort(colId) {
+      if (window._calPointsSortCol === colId) {
+        window._calPointsSortDir = window._calPointsSortDir === 'desc' ? 'asc' : 'desc';
+      } else {
+        window._calPointsSortCol = colId;
+        window._calPointsSortDir = 'desc';
+      }
+      localStorage.setItem('cal_points_sort_col', window._calPointsSortCol);
+      localStorage.setItem('cal_points_sort_dir', window._calPointsSortDir);
+      renderPointsPerTradeTable();
+    }
+
+    function setCalExitReasonFilter(reason) {
+      window.calSelectedExitReasonFilter = reason;
+      updateCalSelectedDateBadge();
       renderPointsPerTradeTable();
     }
 
