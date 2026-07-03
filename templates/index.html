@@ -1983,20 +1983,33 @@
 
     <!-- Day Totals Card -->
     <div class="card" style="margin-top:16px; padding:16px 18px;">
-      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">
-        📅 Day Total Summary
-      </h3>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; flex-wrap:wrap; gap:8px;">
+        <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin:0;">📊 Total Summary</h3>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <!-- Day-wise / Strategy-wise toggle -->
+          <span id="cal-sum-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+            <span data-v="day" class="on" onclick="calSumSeg(this)"
+              style="padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff;">Day</span>
+            <span data-v="strategy" onclick="calSumSeg(this)"
+              style="padding:4px 12px;cursor:pointer;color:#8b949e;">Strategy</span>
+          </span>
+          <!-- Extra columns toggle dropdown -->
+          <div style="position:relative;">
+            <button class="btn btn-gray" style="padding:4px 10px;font-size:11px;display:flex;align-items:center;gap:4px;"
+              onclick="document.getElementById('cal-sum-col-menu').style.display=document.getElementById('cal-sum-col-menu').style.display==='block'?'none':'block';event.stopPropagation()">
+              ⚙️ Columns <span style="font-size:9px;opacity:.7;">▾</span>
+            </button>
+            <div id="cal-sum-col-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:170px;padding:8px 0;box-shadow:0 4px 12px rgba(0,0,0,.5);">
+              <!-- Populated by JS -->
+            </div>
+          </div>
+        </div>
+      </div>
       <div style="overflow-x:auto;">
         <table style="width:100%; border-collapse:collapse; font-size:11.5px; margin-top:6px; text-align:left;">
           <thead>
-            <tr style="border-bottom:1px solid #30363d; color:#8b949e;">
-              <th style="padding:6px; font-weight:500;">Date</th>
-              <th style="padding:6px; font-weight:500; text-align:center;">Trades Count</th>
-              <th style="padding:6px; font-weight:500; text-align:center;">W/L</th>
-              <th style="padding:6px; font-weight:500; text-align:center;">Win %</th>
-              <th style="padding:6px; font-weight:500; text-align:right;">Gross</th>
-              <th style="padding:6px; font-weight:500; text-align:right;">Tax</th>
-              <th style="padding:6px; font-weight:500; text-align:right;">Net</th>
+            <tr id="cal-sum-thead" style="border-bottom:1px solid #30363d; color:#8b949e;">
+              <!-- Rendered dynamically -->
             </tr>
           </thead>
           <tbody id="cal-day-totals-tbody">
@@ -9240,97 +9253,191 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       });
 
       // Render Day Totals table
-      const dayTotalsBody = document.getElementById('cal-day-totals-tbody');
-      const dayTotalsFoot = document.getElementById('cal-day-totals-tfoot');
-      if (dayTotalsBody) {
-        const sortedDates = Object.keys(summary).sort((a, b) => b.localeCompare(a));
-        let dayHtml = '';
+      // ── Total Summary: column definitions ──────────────────────────────────
+      window._calSumCols = window._calSumCols || (() => {
+        const saved = JSON.parse(localStorage.getItem('cal_sum_cols') || 'null');
+        const defaults = [
+          { id: 'label',    l: 'Date / Strategy',  on: true,  fixed: true },
+          { id: 'count',    l: 'Trades',            on: true  },
+          { id: 'wl',       l: 'W/L',               on: true  },
+          { id: 'winrate',  l: 'Win %',             on: true  },
+          { id: 'gross',    l: 'Gross',             on: true  },
+          { id: 'tax',      l: 'Tax',               on: true  },
+          { id: 'net',      l: 'Net',               on: true  },
+          { id: 'avg_pts',  l: 'Avg Pts/Trade',     on: false },
+          { id: 'avg_gross',l: 'Avg Gross',         on: false },
+          { id: 'avg_net',  l: 'Avg Net',           on: false },
+          { id: 'best',     l: 'Best Trade Net',    on: false },
+          { id: 'worst',    l: 'Worst Trade Net',   on: false },
+          { id: 'runup',    l: 'Max Run-Up',        on: false },
+          { id: 'rundown',  l: 'Max Run-Down',      on: false },
+          { id: 'maxdd',    l: 'Max Drawdown',      on: false },
+          { id: 'exp',      l: 'Expectancy',        on: false },
+        ];
+        if (!saved) return defaults;
+        return defaults.map(d => ({ ...d, on: d.fixed ? true : (saved[d.id] ?? d.on) }));
+      })();
 
-        let grandTrades = 0;
-        let grandWins = 0;
-        let grandLosses = 0;
-        let grandGross = 0;
-        let grandTax = 0;
-        let grandNet = 0;
+      // Populate the Columns menu
+      const _calSumColMenu = document.getElementById('cal-sum-col-menu');
+      if (_calSumColMenu) {
+        _calSumColMenu.innerHTML = window._calSumCols.filter(c => !c.fixed).map(c => `
+          <label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;"
+            onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">
+            <input type="checkbox" ${c.on ? 'checked' : ''} onchange="
+              window._calSumCols.find(x=>x.id==='${c.id}').on=this.checked;
+              localStorage.setItem('cal_sum_cols',JSON.stringify(Object.fromEntries(window._calSumCols.map(x=>[x.id,x.on]))));
+              renderSummaryTable();
+            " style="accent-color:#1f6feb;width:12px;height:12px;margin:0;">
+            ${c.l}
+          </label>`).join('');
+      }
 
-        if (sortedDates.length === 0) {
-          dayHtml = `<tr><td colspan="7" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
-          if (dayTotalsFoot) dayTotalsFoot.innerHTML = '';
+      // Close columns menu on outside click
+      document.addEventListener('click', function() {
+        const m = document.getElementById('cal-sum-col-menu');
+        if (m) m.style.display = 'none';
+      });
+
+      window._calSumMode = window._calSumMode || 'day';
+
+      function calSumSeg(el) {
+        const parent = document.getElementById('cal-sum-mode');
+        if (!parent) return;
+        parent.querySelectorAll('span[data-v]').forEach(s => {
+          s.style.background = ''; s.style.color = '#8b949e';
+        });
+        el.style.background = '#1f6feb'; el.style.color = '#fff';
+        window._calSumMode = el.dataset.v;
+        renderSummaryTable();
+      }
+
+      function _sumTrades(trades) {
+        // Compute aggregated stats from a list of trades
+        let count = 0, wins = 0, losses = 0, gross = 0, tax = 0, net = 0;
+        let totalPts = 0, best = -Infinity, worst = Infinity;
+        let maxRunUp = 0, maxRunDown = 0;
+        trades.forEach(t => {
+          const ep = t.entry_price||0, xp = t.exit_price||0, qty = t.qty||0;
+          const side = t.entry||'BUY';
+          const pts = side === 'BUY' ? xp - ep : ep - xp;
+          const g = t._gross != null ? t._gross : (side==='BUY'?(xp-ep)*qty:(ep-xp)*qty);
+          const tx = t._tax != null ? t._tax : 0;
+          const n = t._net != null ? t._net : g - tx;
+          count++; gross += g; tax += tx; net += n; totalPts += pts;
+          if (n > 0) wins++; else if (n < 0) losses++;
+          if (n > best) best = n;
+          if (n < worst) worst = n;
+          // Run-up / run-down from tags
+          (t.tags || []).forEach(tg => {
+            if (tg.startsWith('MAX_LTP:')) {
+              const ml = parseFloat(tg.split(':')[1]);
+              const ru = side==='BUY' ? (ml-ep)*qty : (ep-ml)*qty;
+              if (ru > maxRunUp) maxRunUp = ru;
+            }
+            if (tg.startsWith('MIN_LTP:')) {
+              const ml = parseFloat(tg.split(':')[1]);
+              const rd = side==='BUY' ? (ml-ep)*qty : (ep-ml)*qty;
+              if (rd < maxRunDown) maxRunDown = rd;
+            }
+          });
+        });
+        const maxdd = worst === Infinity ? 0 : worst;
+        const exp = count > 0 ? ((wins/count)*(best===Infinity?0:best) - (losses/count)*Math.abs(maxdd===Infinity?0:maxdd)) : 0;
+        return { count, wins, losses, gross, tax, net, totalPts,
+          avgPts: count>0?totalPts/count:0, avgGross: count>0?gross/count:0, avgNet: count>0?net/count:0,
+          best: best===Infinity?0:best, worst: worst===Infinity?0:worst,
+          maxRunUp, maxRunDown, exp };
+      }
+
+      function _sumRow(label, s, isClickable, clickArg, isBold) {
+        const cols = (window._calSumCols||[]).filter(c=>c.on);
+        const b = isBold ? 'font-weight:700;' : '';
+        const bg = isBold ? 'background:#161b22;' : '';
+        const netC = s.net>=0?'#3fb950':'#f85149';
+        const grossC = s.gross>=0?'#3fb950':'#f85149';
+        const N = n => Math.round(n).toLocaleString('en-IN');
+        const NA = n => (n>=0?'+':'')+N(n);
+        const wr = s.count>0 ? Math.round((s.wins/s.count)*100) : 0;
+        const clickAttr = isClickable ? `onclick="calSelectDate('${clickArg}')" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='${isBold?'#161b22':'transparent'}'` : '';
+        const cursor = isClickable ? 'cursor:pointer;' : '';
+        return `<tr style="border-bottom:1px solid #21262d;${bg}${b}${cursor}" ${clickAttr}>` +
+          cols.map(c => {
+            switch(c.id) {
+              case 'label':   return `<td style="padding:8px;color:#adbac7;${b}">${label}</td>`;
+              case 'count':   return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
+              case 'wl':      return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
+              case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
+              case 'gross':   return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
+              case 'tax':     return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
+              case 'net':     return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
+              case 'avg_pts': return `<td style="padding:8px;text-align:right;color:${s.avgPts>=0?'#3fb950':'#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
+              case 'avg_gross':return `<td style="padding:8px;text-align:right;color:${s.avgGross>=0?'#3fb950':'#f85149'};${b}">${N(s.avgGross)}</td>`;
+              case 'avg_net': return `<td style="padding:8px;text-align:right;color:${s.avgNet>=0?'#3fb950':'#f85149'};${b}">${N(s.avgNet)}</td>`;
+              case 'best':    return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
+              case 'worst':   return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+              case 'runup':   return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp>0?'+'+N(s.maxRunUp):'—'}</td>`;
+              case 'rundown': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown<0?N(s.maxRunDown):'—'}</td>`;
+              case 'maxdd':   return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
+              case 'exp':     return `<td style="padding:8px;text-align:right;color:${s.exp>=0?'#3fb950':'#f85149'};${b}">${N(s.exp)}</td>`;
+              default: return '<td></td>';
+            }
+          }).join('') + '</tr>';
+      }
+
+      function renderSummaryTable() {
+        const trades = window.currentCalendarTrades || [];
+        const cols = (window._calSumCols||[]).filter(c=>c.on);
+        const mode = window._calSumMode || 'day';
+        const thead = document.getElementById('cal-sum-thead');
+        const tbody = document.getElementById('cal-day-totals-tbody');
+        const tfoot = document.getElementById('cal-day-totals-tfoot');
+        if (!tbody) return;
+
+        // Render header
+        if (thead) {
+          const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
+          thead.innerHTML = cols.map(c => {
+            const align = ['gross','tax','net','avg_pts','avg_gross','avg_net','best','worst','runup','rundown','maxdd','exp'].includes(c.id) ? 'right' : 'center';
+            const a = c.id === 'label' ? 'left' : align;
+            return `<th style="padding:6px;font-weight:500;text-align:${a};">${c.id === 'label' ? labelHeader : c.l}</th>`;
+          }).join('');
+        }
+
+        // Group trades
+        const groups = {};
+        trades.forEach(t => {
+          const key = mode === 'day'
+            ? (t.exit_date || t.entry_date || '—')
+            : (t.strategy || t.strat || 'unknown');
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(t);
+        });
+
+        const keys = Object.keys(groups).sort((a,b) => mode==='day' ? b.localeCompare(a) : a.localeCompare(b));
+
+        let bodyHtml = '';
+        if (!keys.length) {
+          bodyHtml = `<tr><td colspan="${cols.length}" style="text-align:center;color:#6e7681;padding:12px;">Is month me koi trading day nahi hai</td></tr>`;
+          if (tfoot) tfoot.innerHTML = '';
         } else {
-          sortedDates.forEach(dateStr => {
-            const daySummary = summary[dateStr] || {};
-            const stat = dayStats[dateStr] || {
-              count: daySummary.count || 0,
-              wins: 0,
-              losses: 0,
-              tax: 0,
-              gross: daySummary.pnl || 0,
-              net: daySummary.pnl || 0
-            };
-
-            const gross = stat.gross;
-            const net = stat.net;
-            const tax = stat.tax;
-
-            grandTrades += stat.count;
-            grandWins += stat.wins;
-            grandLosses += stat.losses;
-            grandGross += gross;
-            grandTax += tax;
-            grandNet += net;
-
-            const grossColor = gross >= 0 ? '#3fb950' : '#f85149';
-            const grossText = Math.round(gross).toLocaleString('en-IN');
-
-            const netColor = net >= 0 ? '#3fb950' : '#f85149';
-            const netText = Math.round(net).toLocaleString('en-IN');
-
-            const taxText = Math.round(tax).toLocaleString('en-IN');
-
-            const winRate = stat.count > 0 ? Math.round((stat.wins / stat.count) * 100) : 0;
-
-            dayHtml += `
-          <tr style="border-bottom:1px solid #21262d; cursor:pointer;" onclick="calSelectDate('${dateStr}')" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
-            <td style="padding:8px; color:#adbac7;">${dateStr}</td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">${stat.count}</td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">
-              <span style="color:#3fb950; font-weight:600;">${stat.wins}</span> / <span style="color:#f85149; font-weight:600;">${stat.losses}</span>
-            </td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">${winRate}%</td>
-            <td style="padding:8px; text-align:right; color:${grossColor}; font-weight:600;">${grossText}</td>
-            <td style="padding:8px; text-align:right; color:#8b949e;">${taxText}</td>
-            <td style="padding:8px; text-align:right; color:${netColor}; font-weight:600;">${netText}</td>
-          </tr>
-        `;
+          keys.forEach(key => {
+            const s = _sumTrades(groups[key]);
+            bodyHtml += _sumRow(key, s, mode==='day', key, false);
           });
 
-          if (dayTotalsFoot) {
-            const grandWinRate = grandTrades > 0 ? Math.round((grandWins / grandTrades) * 100) : 0;
-            const grandGrossColor = grandGross >= 0 ? '#3fb950' : '#f85149';
-            const grandGrossText = Math.round(grandGross).toLocaleString('en-IN');
-
-            const grandNetColor = grandNet >= 0 ? '#3fb950' : '#f85149';
-            const grandNetText = Math.round(grandNet).toLocaleString('en-IN');
-
-            const grandTaxText = Math.round(grandTax).toLocaleString('en-IN');
-
-            dayTotalsFoot.innerHTML = `
-          <tr style="border-top:2px solid #30363d; font-weight:700; background:#161b22;">
-            <td style="padding:8px; color:#adbac7;">Total / Avg</td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">${grandTrades}</td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">
-              <span style="color:#3fb950; font-weight:700;">${grandWins}</span> / <span style="color:#f85149; font-weight:700;">${grandLosses}</span>
-            </td>
-            <td style="padding:8px; text-align:center; color:#8b949e;">${grandWinRate}%</td>
-            <td style="padding:8px; text-align:right; color:${grandGrossColor}; font-weight:700;">${grandGrossText}</td>
-            <td style="padding:8px; text-align:right; color:#8b949e;">${grandTaxText}</td>
-            <td style="padding:8px; text-align:right; color:${grandNetColor}; font-weight:700;">${grandNetText}</td>
-          </tr>
-        `;
+          // Grand total row
+          const all = _sumTrades(trades);
+          if (tfoot) {
+            tfoot.innerHTML = '<tr style="border-top:2px solid #30363d;">' +
+              _sumRow('Total / Avg', all, false, '', true).replace('<tr style="', '<tr style="font-weight:700;background:#161b22;border-top:2px solid #30363d;');
           }
         }
-        dayTotalsBody.innerHTML = dayHtml;
+        tbody.innerHTML = bodyHtml;
       }
+
+      // Initial render of summary table
+      renderSummaryTable();
 
       // Reset pagination page to 1 on fresh load
       if (!keepState) {
