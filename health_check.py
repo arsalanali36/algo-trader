@@ -58,7 +58,7 @@ ALERT_FILE    = BASE_DIR / "data" / "downloader_alert.json"   # dashboard ka mau
 # strategy base-type -> live trader script (trader_dashboard.STRATEGIES ka mirror).
 TRADER_SCRIPTS = {
     "ema":       TRADERS_DIR / "nifty_ema_trader.py",
-    "rsi":       TRADERS_DIR / "rsi_trader.py",
+    "rsi":       TRADERS_DIR / "01_rsi_v1.py",
     "rsi_v1":    TRADERS_DIR / "01_rsi_v1.py",
     "range":     TRADERS_DIR / "range_trader.py",
     "ARS_CHAIN": TRADERS_DIR / "range_trader.py",   # ARS_CHAIN = range engine

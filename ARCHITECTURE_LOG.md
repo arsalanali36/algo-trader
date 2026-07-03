@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-03 — Trailing SL spike-guard + RSI restart-recovery/duplicate-file cleanup
+**Status:** DONE (code changes local + compile-verified; NOT yet deployed to VPS/restarted)
+**Kya:** (1) Added a 2-reading confirmed peak/trough (`CONF_MAX_LTP`/`CONF_MIN_LTP`/`PREV_LTP`) feeding only the `trailing_pt` SL/TP ratchet in `_pos_monitor_check_one`/`_generic_px`, so a single spike/stale tick can no longer permanently ratchet a position's trailing SL. (2) Ported the TRAP #76 restart-recovery fix into `_TRADERS/01_rsi_v1.py` (the file actually wired to `rsi`/`rsi_v1` in `STRATEGIES` — the earlier fix had landed in `_TRADERS/rsi_trader.py`, a duplicate that was never run), added per-cycle order_store re-validation, inlined `_compute_rsi()` into `_TOOLS/backtest_engine.py` to drop its only dependency on the duplicate file, then deleted `_TRADERS/rsi_trader.py` outright. Fixed the `STRATEGIES["rsi"]["grep"]` / `health_check.py TRADER_SCRIPTS["rsi"]` mismatches that both still pointed at the (now-deleted) file.
+**Layer:** strategy / execution / infra
+**Files:** `trader_dashboard.py` (`_pos_monitor_check_one`, `_generic_px`, `STRATEGIES["rsi"]`, `_proc_cmdline` docstring), `_TRADERS/01_rsi_v1.py` (`_recover_rsi_state()` + per-cycle re-validation), `_TRADERS/rsi_trader.py` (deleted), `_TOOLS/backtest_engine.py` (inlined `_compute_rsi()`), `health_check.py` (`TRADER_SCRIPTS["rsi"]`), `CLAUDE.md` (Files table + Critical Rule 6 correction), `LESSONS.md` (TRAP #83-84)
+**Kyun:** User asked for a pre-money-risk review of the Gemini-built Trailing Points SL, and asked why yesterday's RSI session showed a symbol re-bought right after being sold with matching ₹0 phantom P&L rows. Root-caused both to real, verifiable bugs (not display glitches) — see LESSONS.md TRAP #83-84 for full chains.
+**Depends on:** nothing — but deploying either fix needs `algo-dashboard`/`algo-monitor` restarted (SL fix) and `rsi_v1` restarted (recovery fix), both requiring a zero-open-position check first per this project's standing rule.
+
+---
+
 ## 2026-07-02 — Per-Instrument Trailing Lock redesigned to match KILL-ALL's arm+gap+confirm pattern; shared state machine extracted into risk_gate.py
 **Status:** DONE (deployed, algo-dashboard + algo-monitor restarted — 0 open positions confirmed; hit + fixed a live UnboundLocalError mid-deploy, see TRAP #82)
 **Kya:** User's 4-point request on Section 3 of the Risk tab, clarified via a short back-and-forth (user was confused between account-level vs per-instrument semantics):

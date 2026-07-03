@@ -32,7 +32,6 @@ sys.path.insert(0, TOOLS_DIR)
 sys.path.insert(0, BASE_DIR)   # dhan_master.py lives at project root
 
 import range_trader as rt
-import rsi_trader as rsit
 import nifty_ema_trader as emat
 import validate_strategy as vs   # reuse backtest_day (range) + parse_log (TV)
 import dhan_master
@@ -539,6 +538,23 @@ def _buffered_from(date_from, symbol="NIFTY"):
     return floor.strftime("%Y-%m-%d")
 
 
+def _compute_rsi(series, period):
+    """Wilder RSI — same formula as _TRADERS/01_rsi_v1.py's _compute_rsi()
+    (com=period-1, matches Pine's ta.rsi()). Inlined here (2026-07-03) instead
+    of importing the live strategy file, so the backtester has no dependency
+    on either RSI strategy script — 01_rsi_v1.py can't be imported anyway
+    (Python identifiers can't start with a digit), and importing the OTHER,
+    unused rsi_trader.py file just to reuse 6 lines was the reason that file
+    stayed around looking like a second live strategy when it wasn't one."""
+    delta = series.diff()
+    gain  = delta.clip(lower=0)
+    loss  = (-delta).clip(lower=0)
+    avg_g = gain.ewm(com=period - 1, min_periods=period).mean()
+    avg_l = loss.ewm(com=period - 1, min_periods=period).mean()
+    rs    = avg_g / avg_l.replace(0, float("inf"))
+    return 100 - (100 / (1 + rs))
+
+
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
 def _run_rsi(date_from, date_to, cfg):
     tf_min = TF_MIN.get(cfg.get("timeframe", "5m"), 5)
@@ -557,7 +573,7 @@ def _run_rsi(date_from, date_to, cfg):
     max_trades = int(cfg.get("max_trades_per_symbol", 1))
 
     # Vectorized computations
-    df["rsi"] = rsit.compute_rsi(df["close"], period)
+    df["rsi"] = _compute_rsi(df["close"], period)
 
     trades, pos, cur = [], 0, None
     cur_day, trades_today = None, 0

@@ -110,7 +110,7 @@ def _creds():
 
 STRATEGIES = {
     "ema":      {"script": TRADER_SCRIPT, "log": LOG_FILE,  "cfg": TC_FILE,   "grep": "nifty_ema_trader"},
-    "rsi":      {"script": RSI_SCRIPT,    "log": RSI_LOG,   "cfg": RSI_CFG,   "grep": "rsi_trader"},
+    "rsi":      {"script": RSI_SCRIPT,    "log": RSI_LOG,   "cfg": RSI_CFG,   "grep": "01_rsi_v1"},
     "rsi_v1":   {"script": RSI_SCRIPT,    "log": BASE_DIR / "logs/rsi_v1.log", "cfg": TC_FILE, "grep": "01_rsi_v1"},
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
@@ -182,8 +182,8 @@ def _script_header(code):
 
 def _proc_cmdline(grep, strategy=None):
     """Pehli running trader process ki (pid, cmdline). Reliable key = `--id <strategy>`
-    (cmdline me exact token; grep/_base mismatch se bachata — e.g. rsi_v1 chalti hai
-    01_rsi_v1.py se par alias grep 'rsi_trader' deta). grep sirf fallback (jab --id na ho).
+    (cmdline me exact token — grep sirf fallback hai jab --id na ho; fixed 2026-07-03,
+    ab dono "rsi"/"rsi_v1" STRATEGIES entries grep="01_rsi_v1" bolte hain, sahi script se match).
     psutil cross-platform — Windows pe pgrep NAHI hota (us bug se get_pid hamesha None
     deta tha → restart pe DUPLICATE traders spawn). pgrep fallback Linux/VPS ke liye."""
     want_id = strategy if (strategy and '_' in strategy) else None
@@ -4169,11 +4169,17 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     _ltp_miss_streak.pop(sec_id, None)
 
     entry_px = float(p.get("entry_price") or 0)
+    conf_max_ltp = ltp
+    conf_min_ltp = ltp
     if entry_px > 0:
         max_ltp = ltp
         min_ltp = ltp
         max_tag_idx = -1
         min_tag_idx = -1
+        conf_max_tag_idx = -1
+        conf_min_tag_idx = -1
+        prev_tag_idx = -1
+        prev_ltp = None
         for i, t in enumerate(tags):
             if t.startswith("MAX_LTP:"):
                 max_tag_idx = i
@@ -4183,6 +4189,34 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 min_tag_idx = i
                 try: min_ltp = min(ltp, float(t.split(":")[1]))
                 except: pass
+            elif t.startswith("CONF_MAX_LTP:"):
+                conf_max_tag_idx = i
+                try: conf_max_ltp = float(t.split(":")[1])
+                except: pass
+            elif t.startswith("CONF_MIN_LTP:"):
+                conf_min_tag_idx = i
+                try: conf_min_ltp = float(t.split(":")[1])
+                except: pass
+            elif t.startswith("PREV_LTP:"):
+                prev_tag_idx = i
+                try: prev_ltp = float(t.split(":")[1])
+                except: pass
+
+        # Confirmed peak/trough — a SEPARATE track from MAX_LTP/MIN_LTP (which
+        # stay raw, for the Run-Up/Run-Down display — that's supposed to show
+        # the actual best/worst tick seen, glitch or not). CONF_MAX_LTP/
+        # CONF_MIN_LTP only advance when the current tick's LTP is confirmed
+        # by the NEXT tick not reverting below it (same "confirmed = min/max
+        # of this-and-previous reading" technique as risk_gate.
+        # advance_trailing_lock's 2-reading confirmed peak, built for the
+        # KILL-ALL floor for exactly this reason). Feeds ONLY the trailing_pt
+        # SL/TP ratchet below — a single spike/stale tick can no longer
+        # permanently ratchet a position's stop-loss to a level real price
+        # never actually held.
+        confirmed_high = ltp if prev_ltp is None else min(prev_ltp, ltp)
+        confirmed_low  = ltp if prev_ltp is None else max(prev_ltp, ltp)
+        conf_max_ltp = max(conf_max_ltp, confirmed_high)
+        conf_min_ltp = min(conf_min_ltp, confirmed_low)
 
         changed = False
         if max_tag_idx != -1:
@@ -4199,6 +4233,30 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 changed = True
         else:
             tags.append(f"MIN_LTP:{min_ltp}")
+            changed = True
+
+        if conf_max_tag_idx != -1:
+            if tags[conf_max_tag_idx] != f"CONF_MAX_LTP:{conf_max_ltp}":
+                tags[conf_max_tag_idx] = f"CONF_MAX_LTP:{conf_max_ltp}"
+                changed = True
+        else:
+            tags.append(f"CONF_MAX_LTP:{conf_max_ltp}")
+            changed = True
+
+        if conf_min_tag_idx != -1:
+            if tags[conf_min_tag_idx] != f"CONF_MIN_LTP:{conf_min_ltp}":
+                tags[conf_min_tag_idx] = f"CONF_MIN_LTP:{conf_min_ltp}"
+                changed = True
+        else:
+            tags.append(f"CONF_MIN_LTP:{conf_min_ltp}")
+            changed = True
+
+        if prev_tag_idx != -1:
+            if tags[prev_tag_idx] != f"PREV_LTP:{ltp}":
+                tags[prev_tag_idx] = f"PREV_LTP:{ltp}"
+                changed = True
+        else:
+            tags.append(f"PREV_LTP:{ltp}")
             changed = True
 
         if changed and p.get("id"):
@@ -4243,7 +4301,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             prefix = "SL" if is_sl else "TP"
             step_val = next((float(t.split(":", 1)[1]) for t in tags if t.startswith(f"{prefix}_TRAIL_STEP:")), 1.0)
             if side == "BUY":
-                ref_ltp = max_ltp if is_sl else min_ltp
+                ref_ltp = conf_max_ltp if is_sl else conf_min_ltp
                 if is_sl:
                     favorable_movement = ref_ltp - entry_px
                     if favorable_movement > 0:
@@ -4259,7 +4317,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     else:
                         return round(entry_px + val, 2)
             else:
-                ref_ltp = min_ltp if is_sl else max_ltp
+                ref_ltp = conf_min_ltp if is_sl else conf_max_ltp
                 if is_sl:
                     favorable_movement = entry_px - ref_ltp
                     if favorable_movement > 0:

@@ -422,6 +422,59 @@ def close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, cfg=N
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+#  SECTION 5b — RESTART RECOVERY (2026-07-03)
+#  Rebuild positions/active_opts/trades_today from today's open order_store
+#  rows on process startup. Without this, ANY restart mid-day (dashboard
+#  restart, VPS reboot, crash-relaunch) wipes this file's OWN in-memory
+#  belief about what's open, even though a position may still be genuinely
+#  open at the broker/order_store. The next matching RSI signal then fires
+#  a brand-new duplicate BUY on a symbol that's already open — order_store's
+#  netting then treats the orphaned original leg as a "pyramid/dup" and
+#  FIFO-pairs it with some unrelated leg, producing the exact same-price
+#  ₹0 phantom round-trip rows seen live (NTPC/HDFCBANK, 2026-07-02).
+#  Same pattern as TRAP #28/#76 (range_trader.py/universe_trader.py) — this
+#  file never had it because it's a separate, older script that turned out
+#  to be the one the dashboard actually runs for both "rsi" and "rsi_v1".
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log):
+    """Mutates the 3 dicts in place (they're locals in run(), passed by
+    reference). Best-effort — any failure just leaves fresh-empty state."""
+    try:
+        import order_store
+        ist = ist_now()
+        data = order_store.trades_for(ist.strftime("%Y-%m-%d"))
+        all_today = (data.get("open") or []) + (data.get("details") or [])
+        recovered = 0
+        for p in (data.get("open") or []):
+            if p.get("strategy") != strategy_id or p.get("entry") != "BUY":
+                continue   # RSI always enters BUY (buys the premium, CE or PE)
+            sym = p.get("symbol")
+            trad_sym = p.get("sym", "")
+            if not sym or not trad_sym:
+                continue
+            if trad_sym.endswith("-CE"):
+                pos_val = 1
+            elif trad_sym.endswith("-PE"):
+                pos_val = -1
+            else:
+                continue
+            positions[sym]   = pos_val
+            active_opts[sym] = {"sec_id": p.get("sec_id"), "trad_sym": trad_sym,
+                                 "side": "BUY", "qty": p.get("qty"),
+                                 "entry_premium": p.get("entry_price")}
+            trades_today[sym] = sum(1 for q in all_today
+                                     if q.get("strategy") == strategy_id and q.get("symbol") == sym
+                                     and q.get("entry") == "BUY")
+            recovered += 1
+        if recovered:
+            log.info(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
+                     f"RSI exit logic + trade counters will resume for them this session")
+    except Exception as e:
+        log.warning(f"[RECOVER] state recovery failed (continuing with fresh state): {e}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 #  SECTION 6 — MAIN LOOP
 #  Har candle ke baad saare symbols scan karo, signals pe act karo
 # ═══════════════════════════════════════════════════════════════════════════
@@ -436,7 +489,13 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
     positions    = {}   # sym → +1 (CE open) / -1 (PE open) / 0 (flat)
     active_opts  = {}   # sym → {sec_id, trad_sym, side, qty}
     trades_today = {}   # sym → int (aaj kitni baar trade hua)
-    last_date    = None
+
+    _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log)
+    # Seed last_date to TODAY (not None) — recovery must never be immediately
+    # undone by the loop's own "new day" check below (TRAP #76's exact
+    # failure shape: last_date=None makes iteration 1 always look like a new
+    # day, wiping what recovery just populated one line later).
+    last_date = ist_now().date()
 
     while True:
         try:
@@ -479,6 +538,18 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
             token, cid = load_creds()
             tf_secs    = TF_MAP.get(tf, 5) * 60     # sleep = 1 candle duration
 
+            # Re-validate in-memory state against order_store every cycle (not
+            # just at startup) — catches a position closed externally during
+            # the day (manual close, trailing-lock squareoff, pos_monitor
+            # EOD) that this file's own memory wouldn't otherwise learn about
+            # until its own RSI-exit signal fires, which can be a long time.
+            open_legs_in_store = None
+            try:
+                import order_store
+                open_legs_in_store = order_store.trades_for(now.strftime("%Y-%m-%d")).get("open")
+            except Exception as _se:
+                log.warning(f"[SYNC] order_store query failed: {_se}")
+
             # ── 3:15 PM force-exit ───────────────────────────────────────────
             if is_force_exit_time():
                 for sym, pos in list(positions.items()):
@@ -510,6 +581,25 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                     pass
                 t_count = trades_today.get(sym, 0)
                 pos     = positions.get(sym, 0)
+
+                if pos != 0 and open_legs_in_store is not None:
+                    matching_open = False
+                    opt_info = active_opts.get(sym)
+                    for p in open_legs_in_store:
+                        if p.get("strategy") == strategy_id and p.get("symbol") == sym:
+                            if opt_info and opt_info.get("sec_id"):
+                                if str(p.get("sec_id")) == str(opt_info["sec_id"]):
+                                    matching_open = True
+                                    break
+                            else:
+                                matching_open = True
+                                break
+                    if not matching_open:
+                        log.info(f"[SYNC] Position for {sym} closed externally in order_store "
+                                 f"(broker flat/manual exit/trailing lock). Clearing state.")
+                        positions[sym] = 0
+                        active_opts.pop(sym, None)
+                        pos = 0
 
                 df = fetch_candles(sym, tf, token, cid)
                 if df is None or df.empty:
