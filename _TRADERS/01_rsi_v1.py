@@ -602,7 +602,12 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         pos = 0
 
                 df = fetch_candles(sym, tf, token, cid)
-                if df is None or df.empty:
+                if df is None or df.empty or len(df) < 2:
+                    # len<2 hits right at market open (first scan of the day) —
+                    # df["close"].iloc[-2] below needs 2+ rows. Without this
+                    # guard one thin symbol's IndexError used to abort the
+                    # WHOLE cycle (no per-symbol try/except in this loop),
+                    # skipping every other symbol's scan that cycle too.
                     log.warning(f"  {sym:14s} no data")
                     continue
 
