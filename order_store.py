@@ -206,6 +206,10 @@ _EXIT_REASON_PREFIXES = (
     "GLOBAL_CAP", "SQUAREOFF_315",
     # manual / broker-detected
     "MANUAL_CLOSE", "EXTERNALLY_CLOSED", "MANUAL_EXIT_BROKER",
+    # range_trader.py — strategy's own ATR-trailing exit (2026-07-03: this
+    # reason was computed + logged but never tagged on the actual exit
+    # order, so this column stayed blank for every ATR-driven exit)
+    "ATR_TRAILING",
 )
 
 

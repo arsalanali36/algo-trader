@@ -1270,10 +1270,16 @@ def main(strategy_id="range"):
 
                 log.info(f"EXIT {symbol} via {reason} @ {price:.2f}")
 
+                # Tag the exit leg with its own reason (e.g. "ATR_TRAILING")
+                # so the dashboard's Completed Trades "Exit Reason" column
+                # isn't blank for a strategy-driven exit — this used to only
+                # ever reach the log file, never order_store. Found live
+                # 2026-07-03 (TCS-Jul2026-2100-CE exit showed no reason).
+                _exit_tags = [str(reason)] if reason else []
                 if st.get("opt_sec_id"):
-                    place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
+                    place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True, extra_tags=_exit_tags)
                 else:
-                    place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode, is_exit=True)
+                    place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode, is_exit=True, extra_tags=_exit_tags)
                     
                 st["position"]    = None
                 st["last_signal"] = None
