@@ -1367,11 +1367,26 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
                 <label for="risk-global-default-sl-candle" style="font-size:11.5px; color:#c9d1d9; cursor:pointer; user-select:none; margin: 0;">Trigger on Candle Close only (🕯️)</label>
               </div>
               <div id="global-sl-trailing-info" style="display:none; font-size:10.5px; color:#d29922; background:#ff980010; border:1px solid #ff980030; padding:10px; border-radius:6px; margin: 4px 0; line-height:1.4;">
-                ⚠️ <b>Minimum Trailing Points (premium):</b><br/>
-                • Premium ₹0 to ₹50: min step ₹1<br/>
-                • Premium ₹50 to ₹100: min step ₹2.50<br/>
-                • Premium ₹100 to ₹500: min step ₹5<br/>
-                • Premium Above ₹500: min step ₹10
+                <div style="font-weight: bold; margin-bottom: 6px;">⚙️ Premium-based Trailing Steps (Custom / Default):</div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 6px;">
+                  <div>
+                    <label style="font-size: 10px; color: #8b949e; display: block; margin-bottom: 2px;">Premium ₹0 to ₹50 (Default: ₹1.0)</label>
+                    <input id="risk-global-trailing-step-band1" type="number" step="0.1" placeholder="1.0" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 4px; font-size: 11px;"/>
+                  </div>
+                  <div>
+                    <label style="font-size: 10px; color: #8b949e; display: block; margin-bottom: 2px;">Premium ₹50 to ₹100 (Default: ₹2.5)</label>
+                    <input id="risk-global-trailing-step-band2" type="number" step="0.1" placeholder="2.5" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 4px; font-size: 11px;"/>
+                  </div>
+                  <div>
+                    <label style="font-size: 10px; color: #8b949e; display: block; margin-bottom: 2px;">Premium ₹100 to ₹500 (Default: ₹5.0)</label>
+                    <input id="risk-global-trailing-step-band3" type="number" step="0.1" placeholder="5.0" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 4px; font-size: 11px;"/>
+                  </div>
+                  <div>
+                    <label style="font-size: 10px; color: #8b949e; display: block; margin-bottom: 2px;">Premium Above ₹500 (Default: ₹10.0)</label>
+                    <input id="risk-global-trailing-step-band4" type="number" step="0.1" placeholder="10.0" style="width:100%; box-sizing: border-box; background: #0d1117; border: 1px solid #30363d; border-radius: 4px; color: #e6edf3; padding: 4px; font-size: 11px;"/>
+                  </div>
+                </div>
+                <span style="font-size: 9.5px; color:#8b949e; line-height: 1.2;">* Leave blank to use defaults. If you enter a custom value, it overrides the default step size for that premium band.</span>
               </div>
 
               <div class="inputs-row" style="display: flex; gap: 8px; margin-top: 4px;">
@@ -2410,13 +2425,17 @@ async function renderRiskTab(){
   document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
   document.getElementById('risk-global-shadow').value = RISK_CFG.global.shadow_live ? 'true' : 'false';
   document.getElementById('risk-global-instloss').value = RISK_CFG.global.default_sl_rs ?? '';
-  // --- Added by Antigravity AI: Load Default SL/Target ---
+  // --- Added by Antigravity AI: Load Default SL/Target & Custom Trailing Steps ---
   document.getElementById('risk-global-default-sl-type').value = RISK_CFG.global.default_sl_type || '';
   document.getElementById('risk-global-default-sl-val').value = RISK_CFG.global.default_sl_val ?? '';
   document.getElementById('risk-global-default-sl-candle').checked = RISK_CFG.global.default_sl_candle_close === true;
   document.getElementById('risk-global-default-tp-type').value = RISK_CFG.global.default_tp_type || '';
   document.getElementById('risk-global-default-tp-val').value = RISK_CFG.global.default_tp_val ?? '';
   document.getElementById('risk-global-default-tp-candle').checked = RISK_CFG.global.default_tp_candle_close === true;
+  document.getElementById('risk-global-trailing-step-band1').value = RISK_CFG.global.trailing_step_band_1 ?? '';
+  document.getElementById('risk-global-trailing-step-band2').value = RISK_CFG.global.trailing_step_band_2 ?? '';
+  document.getElementById('risk-global-trailing-step-band3').value = RISK_CFG.global.trailing_step_band_3 ?? '';
+  document.getElementById('risk-global-trailing-step-band4').value = RISK_CFG.global.trailing_step_band_4 ?? '';
   toggleGlobalTrailingInfo();
   // --- End Antigravity AI addition ---
   document.getElementById('risk-global-profit-target').value = RISK_CFG.global.profit_target_rs ?? '';
@@ -2696,13 +2715,17 @@ async function saveRiskConfig(){
       capital_mode: gMode || 'reject',
       shadow_live: gShadow === 'true',
       default_sl_rs: gInstLoss !== '' ? parseFloat(gInstLoss) : null,
-      // --- Added by Antigravity AI: Save Default SL/Target ---
+      // --- Added by Antigravity AI: Save Default SL/Target & Custom Trailing Steps ---
       default_sl_type: document.getElementById('risk-global-default-sl-type').value || null,
       default_sl_val: document.getElementById('risk-global-default-sl-val').value !== '' ? document.getElementById('risk-global-default-sl-val').value : null,
       default_sl_candle_close: document.getElementById('risk-global-default-sl-candle').checked,
       default_tp_type: document.getElementById('risk-global-default-tp-type').value || null,
       default_tp_val: document.getElementById('risk-global-default-tp-val').value !== '' ? document.getElementById('risk-global-default-tp-val').value : null,
       default_tp_candle_close: document.getElementById('risk-global-default-tp-candle').checked,
+      trailing_step_band_1: document.getElementById('risk-global-trailing-step-band1').value !== '' ? parseFloat(document.getElementById('risk-global-trailing-step-band1').value) : null,
+      trailing_step_band_2: document.getElementById('risk-global-trailing-step-band2').value !== '' ? parseFloat(document.getElementById('risk-global-trailing-step-band2').value) : null,
+      trailing_step_band_3: document.getElementById('risk-global-trailing-step-band3').value !== '' ? parseFloat(document.getElementById('risk-global-trailing-step-band3').value) : null,
+      trailing_step_band_4: document.getElementById('risk-global-trailing-step-band4').value !== '' ? parseFloat(document.getElementById('risk-global-trailing-step-band4').value) : null,
       // --- End Antigravity AI addition ---
       hedge_offset_strikes: gHedgeStrikes !== '' ? parseInt(gHedgeStrikes) : null,
       hedge_max_premium_rs: gHedgePremium !== '' ? parseFloat(gHedgePremium) : null,
@@ -8685,20 +8708,26 @@ function openSlTpModal(id, sl, tp, slType, tpType, entryPx, slCandle, tpCandle) 
   if (tpType !== 'candle_close') document.getElementById('edit-sltp-tp').value = tp || '';
   
   if (entryPx) {
+    const g = RISK_CFG.global || {};
+    const s1 = g.trailing_step_band_1 != null && g.trailing_step_band_1 !== "" ? g.trailing_step_band_1 : "1.0";
+    const s2 = g.trailing_step_band_2 != null && g.trailing_step_band_2 !== "" ? g.trailing_step_band_2 : "2.50";
+    const s3 = g.trailing_step_band_3 != null && g.trailing_step_band_3 !== "" ? g.trailing_step_band_3 : "5.0";
+    const s4 = g.trailing_step_band_4 != null && g.trailing_step_band_4 !== "" ? g.trailing_step_band_4 : "10.0";
+    
     let minStep = 1.0;
-    if (entryPx <= 50) minStep = 1.0;
-    else if (entryPx <= 100) minStep = 2.5;
-    else if (entryPx <= 500) minStep = 5.0;
-    else minStep = 10.0;
+    if (entryPx <= 50) minStep = parseFloat(s1);
+    else if (entryPx <= 100) minStep = parseFloat(s2);
+    else if (entryPx <= 500) minStep = parseFloat(s3);
+    else minStep = parseFloat(s4);
     
     const infoSL = document.getElementById('sl-trailing-info');
     if (infoSL) {
-      infoSL.innerHTML = `⚠️ <b>Minimum Trailing Points (premium):</b><br/>
-        • Premium ₹0 to ₹50: min step ₹1<br/>
-        • Premium ₹50 to ₹100: min step ₹2.50<br/>
-        • Premium ₹100 to ₹500: min step ₹5<br/>
-        • Premium Above ₹500: min step ₹10<br/>
-        💡 <b>Current Position Minimum Step: ₹${minStep}</b> (based on entry price ₹${entryPx})`;
+      infoSL.innerHTML = `⚠️ <b>Trailing Points Steps (premium):</b><br/>
+        • Premium ₹0 to ₹50: step ₹${s1}<br/>
+        • Premium ₹50 to ₹100: step ₹${s2}<br/>
+        • Premium ₹100 to ₹500: step ₹${s3}<br/>
+        • Premium Above ₹500: step ₹${s4}<br/>
+        💡 <b>Current Position Step: ₹${minStep}</b> (based on entry price ₹${entryPx})`;
     }
   }
   

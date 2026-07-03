@@ -1165,10 +1165,21 @@ def api_positions_ltp():
                 still_missing[s] = sid
                 
         missing_sec_id_map = still_missing
-        
+
         if missing_sec_id_map:
+            # ask the batched poller to keep these warm — after this one REST
+            # touch, every subsequent poll is a shared_ltp_cache hit (watchlist
+            # symbols and quick-order contracts ride the poller's single call)
+            try:
+                import ltp_poller as _lp
+                _lp.request_watch([(sid, _get_seg(s)) for s, sid in missing_sec_id_map.items()])
+            except Exception:
+                pass
             _rl.set_context("Dashboard:PosLTP")
-            _rl.acquire("ltp")
+            if not _rl.acquire("ltp"):
+                # gate busy — poller will have these warm within ~1.5s; frontend
+                # re-polls every 3s, so just return what we have this cycle
+                return jsonify({"ok": True, "ltp_map": ltp_map, "src": "cache-pending"})
             
             # Group by segment for REST call
             seg_groups = {}
@@ -1307,6 +1318,11 @@ def api_option_ltp():
 
         missing_ids = [int(s) for s, l in [(sec_ce, ltp_ce), (sec_pe, ltp_pe)] if s and not l]
         if missing_ids:
+            try:
+                import ltp_poller as _lp
+                _lp.request_watch([(str(i), "NSE_FNO") for i in missing_ids])
+            except Exception:
+                pass
             _rl.set_context("Dashboard:OptionLTP")
             _rl.acquire("ltp")
             qr = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
@@ -3164,12 +3180,39 @@ def api_update_sl_tp():
             # --- Modified by Antigravity AI: Added Trailing Stop-Loss support & fixed candle_close crash ---
             tags = [t for t in tags if not t.startswith(("SL_PCT:", "TP_PCT:", "SL_TYPE:", "SL_VAL:", "TP_TYPE:", "TP_VAL:", "SL_TRAIL_STEP:", "TP_TRAIL_STEP:")) and t not in ("SL_CANDLE_CLOSE:true", "TP_CANDLE_CLOSE:true")]
 
-            # Min trailing step resolution helper (Zerodha style)
+            # Load global configuration to check custom trailing step bands
+            g_cfg = _risk_config().get("global") or {}
+
+            # Min trailing step resolution helper (Zerodha style + custom band overrides)
             def _get_min_step(px):
-                if px <= 50: return 1.0
-                elif px <= 100: return 2.5
-                elif px <= 500: return 5.0
-                else: return 10.0
+                if px <= 50:
+                    custom = g_cfg.get("trailing_step_band_1")
+                    try:
+                        if custom is not None and str(custom).strip() != "":
+                            return float(custom)
+                    except: pass
+                    return 1.0
+                elif px <= 100:
+                    custom = g_cfg.get("trailing_step_band_2")
+                    try:
+                        if custom is not None and str(custom).strip() != "":
+                            return float(custom)
+                    except: pass
+                    return 2.5
+                elif px <= 500:
+                    custom = g_cfg.get("trailing_step_band_3")
+                    try:
+                        if custom is not None and str(custom).strip() != "":
+                            return float(custom)
+                    except: pass
+                    return 5.0
+                else:
+                    custom = g_cfg.get("trailing_step_band_4")
+                    try:
+                        if custom is not None and str(custom).strip() != "":
+                            return float(custom)
+                    except: pass
+                    return 10.0
 
             if sl_type and sl_val is not None and str(sl_val).strip() != "":
                 tags.append(f"SL_TYPE:{sl_type}")
@@ -4370,7 +4413,41 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         # --- Added by Antigravity AI: Stepped Trailing Stop-Loss in Points ---
         if typ == "trailing_pt":
             prefix = "SL" if is_sl else "TP"
-            step_val = next((float(t.split(":", 1)[1]) for t in tags if t.startswith(f"{prefix}_TRAIL_STEP:")), 1.0)
+            step_val_tag = next((t.split(":", 1)[1] for t in tags if t.startswith(f"{prefix}_TRAIL_STEP:")), None)
+            if step_val_tag is not None:
+                step_val = float(step_val_tag)
+            else:
+                def _get_custom_trailing_step(px, g_cfg):
+                    if px <= 50:
+                        custom = g_cfg.get("trailing_step_band_1")
+                        try:
+                            if custom is not None and str(custom).strip() != "":
+                                return float(custom)
+                        except: pass
+                        return 1.0
+                    elif px <= 100:
+                        custom = g_cfg.get("trailing_step_band_2")
+                        try:
+                            if custom is not None and str(custom).strip() != "":
+                                return float(custom)
+                        except: pass
+                        return 2.5
+                    elif px <= 500:
+                        custom = g_cfg.get("trailing_step_band_3")
+                        try:
+                            if custom is not None and str(custom).strip() != "":
+                                return float(custom)
+                        except: pass
+                        return 5.0
+                    else:
+                        custom = g_cfg.get("trailing_step_band_4")
+                        try:
+                            if custom is not None and str(custom).strip() != "":
+                                return float(custom)
+                        except: pass
+                        return 10.0
+                g_cfg = _risk_config().get("global") or {}
+                step_val = _get_custom_trailing_step(entry_px, g_cfg)
             if side == "BUY":
                 ref_ltp = conf_max_ltp if is_sl else conf_min_ltp
                 if is_sl:

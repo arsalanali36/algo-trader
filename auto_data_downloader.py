@@ -71,6 +71,12 @@ def _save_alerts(alerts: list):
 def fetch_orders() -> list:
     """Fetch all orders from Dhan. Returns list of dicts with filled orders only."""
     try:
+        try:
+            import dhan_rate_limiter as _rl
+            _rl.set_context("Downloader:Orders")
+            _rl.acquire("account")
+        except ImportError:
+            pass
         r = requests.get("https://api.dhan.co/v2/orders", headers=_get_headers(), timeout=10)
         if r.status_code in (401, 403):
             log.warning("Token expired (HTTP %s)", r.status_code)
@@ -95,6 +101,16 @@ def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str) ->
 
     time.sleep(3)  # rate-limit guard
     try:
+        # shared cross-process limiter — this daemon's candle bursts (one per
+        # new fill) previously bypassed it entirely and collided with the
+        # live strategies' own candle sweeps (TRAP #95)
+        try:
+            import dhan_rate_limiter as _rl
+            _rl.set_context("Downloader:Bars")
+            if not _rl.acquire("candle", timeout=20):
+                return False   # gate saturated — retried on the next 5-min cycle
+        except ImportError:
+            _rl = None
         r = requests.post(
             "https://api.dhan.co/v2/charts/intraday",
             headers=_get_headers(),
@@ -113,6 +129,8 @@ def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str) ->
 
         d = r.json()
         if d.get("errorCode") == "DH-904":
+            if _rl:
+                _rl.note_429()   # tell every other process to back off too
             log.warning("DH-904 rate limit, sleeping 15s")
             time.sleep(15)
             return False

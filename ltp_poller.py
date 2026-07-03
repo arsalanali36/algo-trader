@@ -33,8 +33,35 @@ OFF_HOURS_SLEEP = 30     # s between market-hours re-checks when closed
 # strike resolution all read these constantly).
 _IDX_ALWAYS = (("IDX_I", "13"), ("IDX_I", "25"))   # NIFTY, BANKNIFTY
 
+# Dynamic extras (TRAP #95): any process can ask the poller to keep a sec_id
+# warm (dashboard watchlist symbols, quick-order option contracts, ...) —
+# they ride the SAME single batched call instead of each making their own
+# REST fallback. Entries expire when nobody has re-requested them recently.
+_EXTRA_FILE = BASE_DIR / "data" / "ltp_watch_extra.json"
+_EXTRA_TTL = 90   # s — a 3s-polling widget re-requests long before this
+
 _started = False
 _start_lock = threading.Lock()
+
+
+def request_watch(pairs):
+    """Ask the poller to include these (sec_id, segment) pairs in its batched
+    cycle for the next _EXTRA_TTL seconds. Callable from ANY process — the
+    poller (in monitor_daemon) picks it up on its next 1.5s cycle, after which
+    shared_ltp_cache.get() serves the price with zero extra Dhan calls."""
+    try:
+        try:
+            data = json.loads(_EXTRA_FILE.read_text())
+        except Exception:
+            data = {}
+        now = time.time()
+        for sid, seg in pairs:
+            if sid:
+                data[str(sid)] = {"seg": seg or "NSE_FNO", "ts": now}
+        data = {k: v for k, v in data.items() if now - v.get("ts", 0) <= _EXTRA_TTL}
+        _EXTRA_FILE.write_text(json.dumps(data))
+    except Exception:
+        pass   # best-effort — caller still has its REST fallback
 
 
 def _ist_now():
@@ -67,6 +94,15 @@ def _watchlist() -> dict:
             pairs[sid] = seg
     except Exception:
         pass   # order_store hiccup — poll just the indices this cycle
+    # dynamic extras (dashboard watchlist / quick-order contracts — see request_watch)
+    try:
+        extra = json.loads(_EXTRA_FILE.read_text())
+        now = time.time()
+        for sid, meta in extra.items():
+            if now - meta.get("ts", 0) <= _EXTRA_TTL:
+                pairs.setdefault(str(sid), meta.get("seg") or "NSE_FNO")
+    except Exception:
+        pass
     return pairs
 
 

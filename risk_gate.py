@@ -756,10 +756,10 @@ def default_instrument_sl_tags(strategy, symbol=None):
                     gap_part, step_part = str(sl_val).split(":", 1)
                     gap_val = float(gap_part)
                     step_val = float(step_part)
+                    tags.extend([f"SL_TYPE:trailing_pt", f"SL_VAL:{gap_val}", f"SL_TRAIL_STEP:{step_val}"])
                 else:
                     gap_val = float(sl_val)
-                    step_val = 1.0
-                tags.extend([f"SL_TYPE:trailing_pt", f"SL_VAL:{gap_val}", f"SL_TRAIL_STEP:{step_val}"])
+                    tags.extend([f"SL_TYPE:trailing_pt", f"SL_VAL:{gap_val}"])
             else:
                 tags.extend([f"SL_TYPE:{sl_type}", f"SL_VAL:{sl_val}"])
             if g.get("default_sl_candle_close") is True:
@@ -787,10 +787,10 @@ def default_instrument_sl_tags(strategy, symbol=None):
                 gap_part, step_part = str(tp_val).split(":", 1)
                 gap_val = float(gap_part)
                 step_val = float(step_part)
+                tags.extend([f"TP_TYPE:trailing_pt", f"TP_VAL:{gap_val}", f"TP_TRAIL_STEP:{step_val}"])
             else:
                 gap_val = float(tp_val)
-                step_val = 1.0
-            tags.extend([f"TP_TYPE:trailing_pt", f"TP_VAL:{gap_val}", f"TP_TRAIL_STEP:{step_val}"])
+                tags.extend([f"TP_TYPE:trailing_pt", f"TP_VAL:{gap_val}"])
         else:
             tags.extend([f"TP_TYPE:{tp_type}", f"TP_VAL:{tp_val}"])
         if g.get("default_tp_candle_close") is True:

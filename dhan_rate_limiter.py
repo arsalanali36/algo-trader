@@ -122,6 +122,7 @@ def _connect():
     conn.execute("CREATE TABLE IF NOT EXISTS cooldown (id INTEGER PRIMARY KEY, until REAL)")
     conn.execute("CREATE TABLE IF NOT EXISTS pwindows (epoch INTEGER, priority TEXT, count INTEGER, "
                  "PRIMARY KEY (epoch, priority))")
+    conn.execute("CREATE TABLE IF NOT EXISTS plast (priority TEXT PRIMARY KEY, ts REAL)")
     return conn
 
 
@@ -149,13 +150,16 @@ def _try_take(priority: str) -> bool:
             conn.execute("ROLLBACK")
             return False
 
-        # per-priority sub-cap: each Dhan endpoint has its own real limit —
-        # one priority's burst must never eat another's slot (see PRIORITY_SUBCAP note)
+        # per-priority sub-cap as TRUE MIN-SPACING, not per-epoch-second
+        # counting: Dhan rate-limits on a ROLLING window, so a call at N.95s
+        # plus one at N+1.05s is "2 calls in 100ms" to Dhan even though our
+        # fixed windows saw 1 each. Enforcing >= 1/subcap seconds since the
+        # LAST call of this priority (cross-process, via plast) is immune to
+        # that boundary burst. (see PRIORITY_SUBCAP note)
         subcap = PRIORITY_SUBCAP.get(priority)
         if subcap is not None:
-            prow = conn.execute("SELECT count FROM pwindows WHERE epoch=? AND priority=?",
-                                (epoch, priority)).fetchone()
-            if (prow[0] if prow else 0) >= subcap:
+            prow = conn.execute("SELECT ts FROM plast WHERE priority=?", (priority,)).fetchone()
+            if prow and (now - prow[0]) < (1.0 / subcap):
                 conn.execute("ROLLBACK")
                 return False
 
@@ -163,12 +167,11 @@ def _try_take(priority: str) -> bool:
             conn.execute("UPDATE windows SET count = count + 1 WHERE epoch=?", (epoch,))
         else:
             conn.execute("INSERT INTO windows(epoch, count) VALUES (?, 1)", (epoch,))
-        conn.execute("INSERT INTO pwindows(epoch, priority, count) VALUES (?, ?, 1) "
-                     "ON CONFLICT(epoch, priority) DO UPDATE SET count = count + 1",
-                     (epoch, priority))
-        # keep the tables tiny — drop windows older than 10s
+        conn.execute("INSERT INTO plast(priority, ts) VALUES (?, ?) "
+                     "ON CONFLICT(priority) DO UPDATE SET ts=excluded.ts",
+                     (priority, now))
+        # keep the table tiny — drop windows older than 10s
         conn.execute("DELETE FROM windows WHERE epoch < ?", (epoch - 10,))
-        conn.execute("DELETE FROM pwindows WHERE epoch < ?", (epoch - 10,))
         conn.execute("COMMIT")
         return True
     except Exception:
