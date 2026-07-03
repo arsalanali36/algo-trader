@@ -456,6 +456,45 @@ def _risk_config():
     rc = cfg.get("_risk") or {}
     return {"global": rc.get("global") or {}, "per_strategy": rc.get("per_strategy") or {}}
 
+def resolve_trailing_step(entry_px, g_cfg=None):
+    """Helper to determine the step size for trailing Stop-Loss/Take-Profit.
+    Uses Zerodha-style guidelines (₹1.0/₹2.5/₹5.0/₹10.0 ranges) with custom overrides
+    configured in global risk settings. Done separately to keep logic clean and modular.
+    """
+    if g_cfg is None:
+        g_cfg = _risk_config().get("global") or {}
+    
+    if entry_px <= 50:
+        custom = g_cfg.get("trailing_step_band_1")
+        try:
+            if custom is not None and str(custom).strip() != "":
+                return float(custom)
+        except: pass
+        return 1.0
+    elif entry_px <= 100:
+        custom = g_cfg.get("trailing_step_band_2")
+        try:
+            if custom is not None and str(custom).strip() != "":
+                return float(custom)
+        except: pass
+        return 2.5
+    elif entry_px <= 500:
+        custom = g_cfg.get("trailing_step_band_3")
+        try:
+            if custom is not None and str(custom).strip() != "":
+                return float(custom)
+        except: pass
+        return 5.0
+    else:
+        custom = g_cfg.get("trailing_step_band_4")
+        try:
+            if custom is not None and str(custom).strip() != "":
+                return float(custom)
+        except: pass
+        return 10.0
+
+
+
 @app.route('/api/risk-config', methods=['GET'])
 def api_get_risk_config():
     return jsonify(_risk_config())
@@ -3182,44 +3221,13 @@ def api_update_sl_tp():
 
             # Load global configuration to check custom trailing step bands
             g_cfg = _risk_config().get("global") or {}
-
-            # Min trailing step resolution helper (Zerodha style + custom band overrides)
-            def _get_min_step(px):
-                if px <= 50:
-                    custom = g_cfg.get("trailing_step_band_1")
-                    try:
-                        if custom is not None and str(custom).strip() != "":
-                            return float(custom)
-                    except: pass
-                    return 1.0
-                elif px <= 100:
-                    custom = g_cfg.get("trailing_step_band_2")
-                    try:
-                        if custom is not None and str(custom).strip() != "":
-                            return float(custom)
-                    except: pass
-                    return 2.5
-                elif px <= 500:
-                    custom = g_cfg.get("trailing_step_band_3")
-                    try:
-                        if custom is not None and str(custom).strip() != "":
-                            return float(custom)
-                    except: pass
-                    return 5.0
-                else:
-                    custom = g_cfg.get("trailing_step_band_4")
-                    try:
-                        if custom is not None and str(custom).strip() != "":
-                            return float(custom)
-                    except: pass
-                    return 10.0
+            min_s = resolve_trailing_step(entry_px, g_cfg)
 
             if sl_type and sl_val is not None and str(sl_val).strip() != "":
                 tags.append(f"SL_TYPE:{sl_type}")
                 if sl_type == "candle_close":
                     tags.append(f"SL_VAL:{sl_val}")
                 elif sl_type == "trailing_pt":
-                    min_s = _get_min_step(entry_px)
                     if ":" in str(sl_val):
                         gap_part, step_part = str(sl_val).split(":", 1)
                         gap_val = float(gap_part)
@@ -4410,44 +4418,14 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         side = p["entry"]  # BUY or SELL
         opt_ce = p["sym"].upper().endswith("-CE") or p["sym"].upper().endswith("CE")
         bullish = (side == "BUY" and opt_ce) or (side == "SELL" and not opt_ce)
-        # --- Added by Antigravity AI: Stepped Trailing Stop-Loss in Points ---
+        # --- Stepped Trailing Stop-Loss/Take-Profit in Points ---
         if typ == "trailing_pt":
             prefix = "SL" if is_sl else "TP"
             step_val_tag = next((t.split(":", 1)[1] for t in tags if t.startswith(f"{prefix}_TRAIL_STEP:")), None)
             if step_val_tag is not None:
                 step_val = float(step_val_tag)
             else:
-                def _get_custom_trailing_step(px, g_cfg):
-                    if px <= 50:
-                        custom = g_cfg.get("trailing_step_band_1")
-                        try:
-                            if custom is not None and str(custom).strip() != "":
-                                return float(custom)
-                        except: pass
-                        return 1.0
-                    elif px <= 100:
-                        custom = g_cfg.get("trailing_step_band_2")
-                        try:
-                            if custom is not None and str(custom).strip() != "":
-                                return float(custom)
-                        except: pass
-                        return 2.5
-                    elif px <= 500:
-                        custom = g_cfg.get("trailing_step_band_3")
-                        try:
-                            if custom is not None and str(custom).strip() != "":
-                                return float(custom)
-                        except: pass
-                        return 5.0
-                    else:
-                        custom = g_cfg.get("trailing_step_band_4")
-                        try:
-                            if custom is not None and str(custom).strip() != "":
-                                return float(custom)
-                        except: pass
-                        return 10.0
-                g_cfg = _risk_config().get("global") or {}
-                step_val = _get_custom_trailing_step(entry_px, g_cfg)
+                step_val = resolve_trailing_step(entry_px)
             if side == "BUY":
                 ref_ltp = conf_max_ltp if is_sl else conf_min_ltp
                 if is_sl:
@@ -4480,7 +4458,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                         return round((entry_px - val) + (num_steps * step_val), 2)
                     else:
                         return round(entry_px - val, 2)
-        # --- End Antigravity AI addition ---
+        # --- End Stepped Trailing ---
         if typ == "pct":
             return entry_px * (1 - val/100.0) if (is_sl) == (side == "BUY") else entry_px * (1 + val/100.0)
         if typ == "pt":
