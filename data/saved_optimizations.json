@@ -1,5 +1,23 @@
 [
   {
+    "id": 1782668998189,
+    "timestamp": "2026-06-28 23:19:58",
+    "strat_type": "ARS_CHAIN_V1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-30",
+    "results": []
+  },
+  {
+    "id": 1782668989722,
+    "timestamp": "2026-06-28 23:19:49",
+    "strat_type": "ARS_CHAIN_V1",
+    "symbols": "RELIANCE",
+    "date_from": "2026-01-01",
+    "date_to": "2026-06-30",
+    "results": []
+  },
+  {
     "id": 1782134490036,
     "timestamp": "2026-06-22 18:51:30",
     "strat_type": "bb_v1",

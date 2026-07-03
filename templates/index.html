@@ -1657,7 +1657,7 @@
   <!-- WEBHOOK TAB -->
   <!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
   <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Date</span>
       <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph();"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
@@ -1788,7 +1788,7 @@
   <!-- CALENDAR TAB -->
   <div class="tab-body" id="tab-calendar" style="padding:16px 18px 24px">
     <!-- Filters (exact same as orders, named with cal-) -->
-    <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap">
+    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Source</span>
       <span id="cal-src" class="cal-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
