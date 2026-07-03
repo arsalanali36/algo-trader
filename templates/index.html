@@ -1819,7 +1819,7 @@
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All brokers</option>
       </select>
-      <select id="cal-exit-reason" onchange="window.calExitReasonFilter=this.value;renderPointsPerTradeTable()"
+      <select id="cal-exit-reason" onchange="this.dataset.prefix=this.value;window.calExitReasonFilter=this.value;renderPointsPerTradeTable()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All Exit Reasons</option>
       </select>
@@ -8946,13 +8946,50 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
       _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
 
-      // Populate exit reason dropdown from the trades themselves
+      // Populate exit reason dropdown from the trades — normalize raw reasons to short labels
       const exitReasonSel = document.getElementById('cal-exit-reason');
       if (exitReasonSel) {
-        const curReason = exitReasonSel.value;
-        const reasons = [...new Set((d.trades || []).map(t => t.exit_reason || '').filter(r => r))].sort();
+        const curPrefix = exitReasonSel.dataset.prefix || '';
+        // Map prefix → short label (keep in sync with _exitReasonBadge)
+        const _exitPrefixMap = [
+          ['SL_HIT',                  '🛑 Stop-Loss'],
+          ['TP_HIT',                  '🎯 Target'],
+          ['EXPIRY_ITM_SQUAREOFF',    '📅 Expiry ITM'],
+          ['EXPIRY_EOD_SQUAREOFF',    '📅 Expiry EOD (2:55)'],
+          ['EOD_315_SQUAREOFF',       '⏰ 3:15 EOD'],
+          ['KILL_FLOOR',              '🔒 Kill-Floor'],
+          ['TRAILING_PROFIT_LOCK',    '🔒 Trailing Lock'],
+          ['RMS_MAXLOSS',             '⚠️ RMS Max-Loss'],
+          ['RMS_PROFIT_TARGET',       '✅ RMS Profit Target'],
+          ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
+          ['ATR_TRAILING',            '📉 ATR Trailing'],
+          ['RSI_MIDLINE_EXIT',        '↩️ RSI Midline'],
+          ['IDX_TRAIL',               '📉 Index Trail SL'],
+          ['TRAIL_SL',                '📉 Trail SL'],
+          ['TARGET',                  '🎯 Target'],
+          ['GLOBAL_CAP',              '🚫 Max Trades/Day'],
+          ['SQUAREOFF_315',           '⏰ 3:15 EOD (Webhook)'],
+          ['REVERSAL',                '🔄 Reversal'],
+          ['TV_EXIT',                 '📡 TV Exit Signal'],
+          ['MANUAL_CLOSE',            '✋ Manual Close'],
+          ['EXTERNALLY_CLOSED',       '🌐 Closed at Broker'],
+          ['MANUAL_EXIT_BROKER',      '🌐 Closed at Broker'],
+        ];
+        function _rawToPrefix(raw) {
+          if (!raw) return raw;
+          for (const [pfx] of _exitPrefixMap) { if (raw.startsWith(pfx)) return pfx; }
+          return raw; // unknown → use as-is
+        }
+        function _prefixToLabel(pfx) {
+          for (const [p, l] of _exitPrefixMap) { if (p === pfx) return l; }
+          return pfx;
+        }
+        // Collect unique prefixes from this month's trades
+        const seenPrefixes = [...new Set((d.trades || []).map(t => _rawToPrefix(t.exit_reason || '')).filter(Boolean))].sort();
         exitReasonSel.innerHTML = '<option value="">All Exit Reasons</option>' +
-          reasons.map(r => `<option value="${r}"${r === curReason ? ' selected' : ''}>${r}</option>`).join('');
+          seenPrefixes.map(pfx => `<option value="${pfx}"${pfx === curPrefix ? ' selected' : ''}>${_prefixToLabel(pfx)}</option>`).join('');
+        exitReasonSel.dataset.prefix = exitReasonSel.value;
+        // Update live filter
         window.calExitReasonFilter = exitReasonSel.value;
       }
 
@@ -9279,7 +9316,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
       
       if (window.calExitReasonFilter) {
-        tradesList = tradesList.filter(t => (t.exit_reason || '') === window.calExitReasonFilter);
+        tradesList = tradesList.filter(t => (t.exit_reason || '').startsWith(window.calExitReasonFilter));
       }
 
       if (typeof _sortData === 'function' && window._calPointsSortCol) {
