@@ -8,11 +8,27 @@
   <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
   <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
   <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     * {
       box-sizing: border-box;
       margin: 0;
       padding: 0
+    }
+
+    ::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0d1117;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #30363d;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #484f58;
     }
 
     body {
@@ -1395,7 +1411,10 @@
       <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <div class="tab" onclick="switchTab('pine')">📜 Script</div>
+      <div class="tab" onclick="switchTab('script2')" style="color: #58a6ff;">✨ Script 2</div>
+      <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">🧪 Script 3</div>
       <a href="/backtest-chart" target="_blank" class="tab" style="text-decoration: none;">📊 Results</a>
+      <a href="#" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank');return false;" class="tab" style="text-decoration: none;">🎬 Video Journal</a>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
         <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More
           ▾</div>
@@ -2013,6 +2032,18 @@
             <span data-v="strategy" onclick="calSumSeg(this)"
               style="padding:4px 12px;cursor:pointer;color:#8b949e;">Strategy</span>
           </span>
+          <!-- Aggregation-mode switch (drives all metric columns) -->
+          <span id="cal-sum-agg" title="Metric columns is aggregation me dikhenge (Total/Avg/Min/Max)"
+            style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+            <span data-a="sum" onclick="calSumAggSeg(this)"
+              style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff;">Σ Total</span>
+            <span data-a="avg" onclick="calSumAggSeg(this)"
+              style="padding:4px 10px;cursor:pointer;color:#8b949e;">Avg</span>
+            <span data-a="min" onclick="calSumAggSeg(this)"
+              style="padding:4px 10px;cursor:pointer;color:#8b949e;">Min</span>
+            <span data-a="max" onclick="calSumAggSeg(this)"
+              style="padding:4px 10px;cursor:pointer;color:#8b949e;">Max</span>
+          </span>
           <!-- Extra columns toggle dropdown -->
           <div style="position:relative;">
             <button class="btn btn-gray"
@@ -2041,6 +2072,25 @@
             <!-- Populated by JS -->
           </tfoot>
         </table>
+      </div>
+    </div>
+
+    <!-- Points Per Trade Graph Card -->
+    <div class="card" style="margin-top:16px; padding:16px 18px;" id="cal-pnl-graph-card">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin: 0; display:flex; align-items:center; gap:8px;">
+          📊 Overall Gain/Loss
+        </h3>
+        <div style="display:flex; align-items:center; gap:12px;">
+          <div style="display:flex; align-items:center; background:#0d1117; border:1px solid #30363d; border-radius:4px; overflow:hidden;">
+            <button id="pnl-btn-instrument" onclick="document.getElementById('pnl-graph-toggle').value='instrument'; window.renderPnlGraph(); this.style.background='#1f6feb'; this.style.color='#fff'; document.getElementById('pnl-btn-symbol').style.background='transparent'; document.getElementById('pnl-btn-symbol').style.color='#8b949e';" style="background:#1f6feb; color:#fff; border:none; padding:4px 10px; font-size:11px; cursor:pointer; outline:none;">By Instrument</button>
+            <button id="pnl-btn-symbol" onclick="document.getElementById('pnl-graph-toggle').value='symbol'; window.renderPnlGraph(); this.style.background='#1f6feb'; this.style.color='#fff'; document.getElementById('pnl-btn-instrument').style.background='transparent'; document.getElementById('pnl-btn-instrument').style.color='#8b949e';" style="background:transparent; color:#8b949e; border:none; padding:4px 10px; font-size:11px; cursor:pointer; outline:none;">By Symbol</button>
+            <input type="hidden" id="pnl-graph-toggle" value="instrument">
+          </div>>
+        </div>
+      </div>
+      <div style="width:100%; height:250px;">
+        <canvas id="pnlGraphCanvas"></canvas>
       </div>
     </div>
 
@@ -2364,6 +2414,62 @@
                       <input id="risk-killfloor-confirm" type="number" step="5" placeholder="60" />
                     </div>
                   </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="param-info" style="border-left:3px solid #d29922"><span>5️⃣ 🎯 Default Target/SL</span>
+                  <span class="wavy-subtext">Har position pe ek global rupee-based exit profile: fixed Target ₹/lot,
+                    initial SL ₹/lot. Har Favour ₹/lot favour me → SL, SL Move ₹/lot upar ratchet. Target ke
+                    Aggressive% par pahunchte hi SL Move × mult ho jaata hai (fast profit lock). Min Cushion = SL kabhi
+                    live price ke itne ₹ se zyada paas na aaye (whipsaw guard — wahi flat-zone fix). Sab ₹ PER-LOT hain,
+                    lots se auto-scale. Neeche live Graph/Table preview (1 lot) — line pe hover karo.</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row"><label>Enabled</label>
+                      <select id="risk-tsl-enabled" style="border-color:#d29922" oninput="renderTslPreview()">
+                        <option value="false">OFF</option>
+                        <option value="true">ON</option>
+                      </select>
+                    </div>
+                    <div class="inputs-row"><label>Target ₹/lot</label>
+                      <input id="risk-tsl-target" type="number" step="100" placeholder="2000" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>Initial SL ₹/lot</label>
+                      <input id="risk-tsl-initsl" type="number" step="100" placeholder="1000" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>Favour step ₹/lot</label>
+                      <input id="risk-tsl-fav" type="number" step="10" placeholder="100" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>SL move ₹/lot</label>
+                      <input id="risk-tsl-move" type="number" step="10" placeholder="100" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>Aggressive @ %</label>
+                      <input id="risk-tsl-aggpct" type="number" step="5" placeholder="50" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>Aggressive × mult</label>
+                      <input id="risk-tsl-aggmult" type="number" step="0.5" placeholder="2" oninput="renderTslPreview()" />
+                    </div>
+                    <div class="inputs-row"><label>Min cushion ₹/lot</label>
+                      <input id="risk-tsl-cushion" type="number" step="10" placeholder="0" oninput="renderTslPreview()" />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td colspan="2" style="padding-top:4px">
+                  <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
+                    <button type="button" id="tsl-tab-graph" onclick="tslShowTab('graph')"
+                      style="padding:4px 12px;background:#1f6feb20;border:1px solid #1f6feb;border-radius:6px;color:#58a6ff;font-size:12px;font-weight:600;cursor:pointer">📈 Graph</button>
+                    <button type="button" id="tsl-tab-table" onclick="tslShowTab('table')"
+                      style="padding:4px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e;font-size:12px;font-weight:600;cursor:pointer">📋 Table</button>
+                    <span style="font-size:11px;color:#8b949e">1-lot preview · line pe hover karo</span>
+                  </div>
+                  <div id="tsl-preview-graph" style="position:relative">
+                    <div id="tsl-tooltip" style="position:absolute;display:none;pointer-events:none;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 8px;font-size:11px;color:#e6edf3;white-space:nowrap;z-index:20;transform:translate(-50%,-115%)"></div>
+                    <div id="tsl-svg-wrap"></div>
+                  </div>
+                  <div id="tsl-preview-table" style="display:none;max-height:240px;overflow:auto;border:1px solid #21262d;border-radius:8px"></div>
                 </td>
               </tr>
             </tbody>
@@ -2700,6 +2806,16 @@
 
       </div>
     </div>
+  </div>
+
+  <!-- SCRIPT 2 TAB -->
+  <div class="tab-body" id="tab-script2" style="padding:0; height: calc(100vh - 52px); overflow: hidden;">
+    <iframe src="/mockup" style="width: 100%; height: 100%; border: none;"></iframe>
+  </div>
+
+  <!-- SCRIPT 3 TAB (redesign mockup — iframe body only, no header) -->
+  <div class="tab-body" id="tab-script3" style="padding:0; height: calc(100vh - 52px); overflow: hidden;">
+    <iframe src="/script3" style="width: 100%; height: 100%; border: none;"></iframe>
   </div>
 
   <!-- PINE TAB -->
@@ -3591,6 +3707,16 @@
       document.getElementById('risk-killfloor-arm').value = RISK_CFG.global.kill_floor_arm_rs != null ? RISK_CFG.global.kill_floor_arm_rs : '';
       document.getElementById('risk-killfloor-gap').value = RISK_CFG.global.kill_floor_gap_rs != null ? RISK_CFG.global.kill_floor_gap_rs : '';
       document.getElementById('risk-killfloor-confirm').value = RISK_CFG.global.kill_floor_confirm_secs != null ? RISK_CFG.global.kill_floor_confirm_secs : '';
+      // Default Target/SL exit profile (2026-07-04)
+      document.getElementById('risk-tsl-enabled').value = RISK_CFG.global.default_tsl_enabled === true ? 'true' : 'false';
+      document.getElementById('risk-tsl-target').value = RISK_CFG.global.default_tsl_target_per_lot != null ? RISK_CFG.global.default_tsl_target_per_lot : '';
+      document.getElementById('risk-tsl-initsl').value = RISK_CFG.global.default_tsl_initial_sl_per_lot != null ? RISK_CFG.global.default_tsl_initial_sl_per_lot : '';
+      document.getElementById('risk-tsl-fav').value = RISK_CFG.global.default_tsl_favour_step != null ? RISK_CFG.global.default_tsl_favour_step : '';
+      document.getElementById('risk-tsl-move').value = RISK_CFG.global.default_tsl_sl_move != null ? RISK_CFG.global.default_tsl_sl_move : '';
+      document.getElementById('risk-tsl-aggpct').value = RISK_CFG.global.default_tsl_aggressive_pct != null ? RISK_CFG.global.default_tsl_aggressive_pct : '';
+      document.getElementById('risk-tsl-aggmult').value = RISK_CFG.global.default_tsl_aggressive_mult != null ? RISK_CFG.global.default_tsl_aggressive_mult : '';
+      document.getElementById('risk-tsl-cushion').value = RISK_CFG.global.default_tsl_min_cushion != null ? RISK_CFG.global.default_tsl_min_cushion : '';
+      renderTslPreview();
       killFloorStatusPoll();
       perInstrumentLockStatusPoll();
 
@@ -3883,6 +4009,15 @@
           kill_floor_arm_rs: document.getElementById('risk-killfloor-arm').value !== '' ? parseFloat(document.getElementById('risk-killfloor-arm').value) : null,
           kill_floor_gap_rs: document.getElementById('risk-killfloor-gap').value !== '' ? parseFloat(document.getElementById('risk-killfloor-gap').value) : null,
           kill_floor_confirm_secs: document.getElementById('risk-killfloor-confirm').value !== '' ? parseFloat(document.getElementById('risk-killfloor-confirm').value) : null,
+          // DEFAULT TARGET/SL exit profile (2026-07-04) — same wholesale-replace caveat as above
+          default_tsl_enabled: document.getElementById('risk-tsl-enabled').value === 'true',
+          default_tsl_target_per_lot: document.getElementById('risk-tsl-target').value !== '' ? parseFloat(document.getElementById('risk-tsl-target').value) : null,
+          default_tsl_initial_sl_per_lot: document.getElementById('risk-tsl-initsl').value !== '' ? parseFloat(document.getElementById('risk-tsl-initsl').value) : null,
+          default_tsl_favour_step: document.getElementById('risk-tsl-fav').value !== '' ? parseFloat(document.getElementById('risk-tsl-fav').value) : null,
+          default_tsl_sl_move: document.getElementById('risk-tsl-move').value !== '' ? parseFloat(document.getElementById('risk-tsl-move').value) : null,
+          default_tsl_aggressive_pct: document.getElementById('risk-tsl-aggpct').value !== '' ? parseFloat(document.getElementById('risk-tsl-aggpct').value) : null,
+          default_tsl_aggressive_mult: document.getElementById('risk-tsl-aggmult').value !== '' ? parseFloat(document.getElementById('risk-tsl-aggmult').value) : null,
+          default_tsl_min_cushion: document.getElementById('risk-tsl-cushion').value !== '' ? parseFloat(document.getElementById('risk-tsl-cushion').value) : null,
         },
         per_strategy: {}
       };
@@ -3925,6 +4060,126 @@
         RISK_CFG = payload;
       } catch (e) {
         document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
+      }
+    }
+
+    // ── Default Target/SL exit profile — live Graph/Table preview (2026-07-04) ──
+    let _tslGeo = null, _tslPts = null;
+    function _tslINR(n) { return (n < 0 ? '-' : '') + '₹' + Math.abs(Math.round(n)).toLocaleString('en-IN'); }
+    function _tslCfg() {
+      const g = id => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? null : v; };
+      return {
+        tgt: g('risk-tsl-target') ?? 2000, initSL: g('risk-tsl-initsl') ?? 1000,
+        fav: Math.max(1, g('risk-tsl-fav') ?? 100), mov: g('risk-tsl-move') ?? 100,
+        aggpct: g('risk-tsl-aggpct') ?? 50, aggmult: g('risk-tsl-aggmult') ?? 2,
+        cushion: g('risk-tsl-cushion') ?? 0
+      };
+    }
+    function _tslCompute(c) {
+      const aggAt = c.tgt * c.aggpct / 100; let sl = -c.initSL, p = 0, be = null, g = 0;
+      const pts = [{ p: 0, sl: sl, ph: 'Start', mv: 0 }];
+      while (p < c.tgt && g < 5000) {
+        g++; p += c.fav; if (p > c.tgt) p = c.tgt;
+        const agg = p > aggAt, mv = agg ? c.mov * c.aggmult : c.mov; sl += mv;
+        const ceil = p - c.cushion; if (sl > ceil) sl = ceil; if (sl < -c.initSL) sl = -c.initSL;
+        if (p === c.tgt) { pts.push({ p, sl, ph: 'Target', mv: 0, exit: true }); break; }
+        if (be === null && sl >= 0) be = p;
+        pts.push({ p, sl, ph: agg ? 'Aggressive' : 'Normal', mv });
+      }
+      return { pts, aggAt, be, tgt: c.tgt, initSL: c.initSL, cushion: c.cushion };
+    }
+    function renderTslPreview() {
+      const wrap = document.getElementById('tsl-svg-wrap'); if (!wrap) return;
+      const c = _tslCfg(); if (c.tgt <= 0) { wrap.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Target ₹/lot 0 se bada rakho.</div>'; document.getElementById('tsl-preview-table').innerHTML = ''; return; }
+      const d = _tslCompute(c);
+      const L = 58, R = 650, T = 15, B = 205, PW = R - L, PH = B - T;
+      const yMin = -d.initSL, yMax = d.tgt, span = (yMax - yMin) || 1;
+      const X = p => L + (p / d.tgt) * PW, Y = v => B - ((v - yMin) / span) * PH;
+      _tslGeo = { L, R, T, B, tgt: d.tgt, yMin, span, PW, PH }; _tslPts = d.pts;
+      const slPath = d.pts.map((o, i) => (i ? 'L' : 'M') + X(o.p).toFixed(1) + ' ' + Y(o.sl).toFixed(1)).join(' ');
+      const profPath = 'M' + X(0) + ' ' + Y(0) + ' L' + X(d.tgt).toFixed(1) + ' ' + Y(d.tgt).toFixed(1);
+      const cushionPoly = 'M' + X(0) + ' ' + Y(0) + ' L' + X(d.tgt).toFixed(1) + ' ' + Y(d.tgt).toFixed(1) + ' L'
+        + d.pts.map(o => X(o.p).toFixed(1) + ' ' + Y(o.sl).toFixed(1)).reverse().join(' L') + ' Z';
+      const y0 = Y(0), xAgg = X(d.aggAt);
+      const yt = [yMin, yMin / 2, 0, d.tgt / 2, d.tgt].filter((t, i, a) => a.indexOf(t) === i);
+      const grid = yt.map(t => '<line x1="' + L + '" y1="' + Y(t).toFixed(1) + '" x2="' + R + '" y2="' + Y(t).toFixed(1) + '" stroke="#21262d" stroke-width="0.5"/>'
+        + '<text x="' + (L - 6) + '" y="' + (Y(t) + 4).toFixed(1) + '" text-anchor="end" fill="#8b949e" font-size="10" font-family="monospace">' + _tslINR(t) + '</text>').join('');
+      const xt = [0, d.aggAt, d.tgt].filter((t, i, a) => a.indexOf(t) === i);
+      const xlab = xt.map(t => '<text x="' + X(t).toFixed(1) + '" y="' + (B + 16) + '" text-anchor="middle" fill="#8b949e" font-size="10" font-family="monospace">+' + _tslINR(t) + '</text>').join('');
+      const beMark = d.be != null ? '<circle cx="' + X(d.be).toFixed(1) + '" cy="' + y0.toFixed(1) + '" r="3.5" fill="#58a6ff"/>'
+        + '<text x="' + (X(d.be) + 6).toFixed(1) + '" y="' + (y0 - 7).toFixed(1) + '" fill="#c9d1d9" font-size="10">breakeven +' + _tslINR(d.be) + '</text>' : '';
+      wrap.innerHTML = '<svg viewBox="0 0 680 230" width="100%" xmlns="http://www.w3.org/2000/svg" style="display:block">'
+        + grid
+        + '<line x1="' + L + '" y1="' + y0.toFixed(1) + '" x2="' + R + '" y2="' + y0.toFixed(1) + '" stroke="#484f58" stroke-width="1"/>'
+        + '<path d="' + cushionPoly + '" fill="#1f6feb" opacity="0.14"/>'
+        + '<line x1="' + xAgg.toFixed(1) + '" y1="' + T + '" x2="' + xAgg.toFixed(1) + '" y2="' + B + '" stroke="#d29922" stroke-width="1.5" stroke-dasharray="5 4"/>'
+        + '<text x="' + (xAgg + 5).toFixed(1) + '" y="' + (T + 12) + '" fill="#d29922" font-size="10">aggressive ' + c.aggmult + 'x</text>'
+        + '<path d="' + profPath + '" fill="none" stroke="#8b949e" stroke-width="1.6" stroke-dasharray="6 5"/>'
+        + '<path d="' + slPath + '" fill="none" stroke="#58a6ff" stroke-width="2.4" stroke-linejoin="round"/>'
+        + '<circle cx="' + X(0) + '" cy="' + Y(-d.initSL).toFixed(1) + '" r="3.5" fill="#f85149"/>'
+        + '<text x="' + (L + 6) + '" y="' + (Y(-d.initSL) - 5).toFixed(1) + '" fill="#f85149" font-size="10">init SL ' + _tslINR(-d.initSL) + '</text>'
+        + '<circle cx="' + X(d.tgt).toFixed(1) + '" cy="' + Y(d.tgt).toFixed(1) + '" r="3.5" fill="#3fb950"/>'
+        + '<text x="' + (X(d.tgt) - 6).toFixed(1) + '" y="' + (Y(d.tgt) - 6).toFixed(1) + '" text-anchor="end" fill="#3fb950" font-size="10">target ' + _tslINR(d.tgt) + '</text>'
+        + beMark + xlab
+        + '<circle id="tsl-hover-dot" r="4" fill="#58a6ff" stroke="#0d1117" stroke-width="1.5" style="display:none"/>'
+        + '<rect x="' + L + '" y="' + T + '" width="' + PW + '" height="' + PH + '" fill="transparent" style="cursor:crosshair"'
+        + ' onmousemove="tslHover(event)" onmouseleave="tslHoverOut()"/>'
+        + '</svg>';
+      // table
+      let rows = d.pts;
+      if (rows.length > 60) { const step = Math.ceil(rows.length / 40); rows = rows.filter((_, i) => i % step === 0 || i === d.pts.length - 1); }
+      document.getElementById('tsl-preview-table').innerHTML =
+        '<table style="width:100%;border-collapse:collapse;font-size:11.5px;font-family:monospace">'
+        + '<thead><tr style="position:sticky;top:0;background:#161b22;color:#8b949e">'
+        + '<th style="padding:6px 10px;text-align:left">Profit</th><th style="padding:6px 10px;text-align:left">Phase</th>'
+        + '<th style="padding:6px 10px;text-align:right">SL move</th><th style="padding:6px 10px;text-align:right">SL now</th></tr></thead><tbody>'
+        + rows.map(x => {
+          const slCol = x.sl > 0 ? '#3fb950' : (x.sl < 0 ? '#f85149' : '#8b949e');
+          const phCol = x.exit ? '#3fb950' : (x.ph === 'Aggressive' ? '#d29922' : '#8b949e');
+          const bg = x.exit ? '#12261a' : (x.ph === 'Aggressive' ? '#2a220d' : 'transparent');
+          return '<tr style="background:' + bg + ';border-top:1px solid #21262d">'
+            + '<td style="padding:5px 10px;color:#e6edf3">' + (x.p > 0 ? '+' : '') + _tslINR(x.p) + '</td>'
+            + '<td style="padding:5px 10px;color:' + phCol + '">' + x.ph + '</td>'
+            + '<td style="padding:5px 10px;text-align:right;color:#6e7681">' + (x.mv ? '+' + _tslINR(x.mv) : '—') + '</td>'
+            + '<td style="padding:5px 10px;text-align:right;color:' + slCol + ';font-weight:600">' + _tslINR(x.sl) + '</td></tr>';
+        }).join('') + '</tbody></table>';
+    }
+    function tslHover(ev) {
+      if (!_tslGeo || !_tslPts) return;
+      const svg = ev.target.ownerSVGElement, rect = svg.getBoundingClientRect();
+      const sx = (ev.clientX - rect.left) / rect.width * 680;
+      const g = _tslGeo, p = Math.max(0, Math.min(g.tgt, (sx - g.L) / g.PW * g.tgt));
+      let best = _tslPts[0]; for (const o of _tslPts) if (Math.abs(o.p - p) < Math.abs(best.p - p)) best = o;
+      const X = pp => g.L + (pp / g.tgt) * g.PW, Y = v => g.B - ((v - g.yMin) / g.span) * g.PH;
+      const dot = document.getElementById('tsl-hover-dot');
+      if (dot) { dot.setAttribute('cx', X(best.p).toFixed(1)); dot.setAttribute('cy', Y(best.sl).toFixed(1)); dot.style.display = 'block'; }
+      const tip = document.getElementById('tsl-tooltip');
+      const cushGap = best.p - best.sl;
+      tip.innerHTML = 'Profit <b style="color:#e6edf3">' + (best.p > 0 ? '+' : '') + _tslINR(best.p) + '</b> · '
+        + '<span style="color:' + (best.ph === 'Aggressive' ? '#d29922' : (best.exit ? '#3fb950' : '#8b949e')) + '">' + best.ph + '</span><br>'
+        + 'SL <b style="color:' + (best.sl >= 0 ? '#3fb950' : '#f85149') + '">' + _tslINR(best.sl) + '</b>'
+        + '<span style="color:#6e7681"> · give-back ' + _tslINR(cushGap) + '</span>';
+      tip.style.left = (X(best.p) / 680 * rect.width) + 'px';
+      tip.style.top = (Y(best.sl) / 230 * rect.height) + 'px';
+      tip.style.display = 'block';
+    }
+    function tslHoverOut() {
+      const dot = document.getElementById('tsl-hover-dot'); if (dot) dot.style.display = 'none';
+      const tip = document.getElementById('tsl-tooltip'); if (tip) tip.style.display = 'none';
+    }
+    function tslShowTab(which) {
+      const g = document.getElementById('tsl-preview-graph'), t = document.getElementById('tsl-preview-table');
+      const gb = document.getElementById('tsl-tab-graph'), tb = document.getElementById('tsl-tab-table');
+      const on = 'background:#1f6feb20;border:1px solid #1f6feb;border-radius:6px;color:#58a6ff';
+      const off = 'background:#21262d;border:1px solid #30363d;border-radius:6px;color:#8b949e';
+      if (which === 'table') {
+        g.style.display = 'none'; t.style.display = 'block';
+        tb.style.cssText = 'padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;' + on;
+        gb.style.cssText = 'padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;' + off;
+      } else {
+        g.style.display = 'block'; t.style.display = 'none';
+        gb.style.cssText = 'padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;' + on;
+        tb.style.cssText = 'padding:4px 12px;font-size:12px;font-weight:600;cursor:pointer;' + off;
       }
     }
 
@@ -6552,6 +6807,8 @@
       else if (r.startsWith('EOD_315_SQUAREOFF')) { label = '⏰ 3:15 EOD'; color = '#d29922'; }
       else if (r.startsWith('KILL_FLOOR')) { label = '🔒 Kill-Floor'; color = '#f85149'; }
       else if (r.startsWith('TRAILING_PROFIT_LOCK')) { label = '🔒 Trailing Lock'; color = '#f0883e'; }
+      else if (r.startsWith('DEFAULT_TSL_TARGET')) { label = '🎯 Default Target'; color = '#3fb950'; }
+      else if (r.startsWith('DEFAULT_TSL_SL')) { label = '🛡️ Default SL'; color = '#f0883e'; }
       else if (r.startsWith('RMS_MAXLOSS')) { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
       else if (r.startsWith('RMS_PROFIT_TARGET')) { label = '✅ RMS Profit Target'; color = '#3fb950'; }
       else if (r.startsWith('NO_PRICE_EMERGENCY_EXIT')) { label = '🚨 No-Price Emergency'; color = '#f85149'; }
@@ -8958,6 +9215,22 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       calClearDateRange();
     }
 
+    // Default date range: 21 Jun 2026 (go-live) → today (dynamic). Applied once
+    // per page load; user can still change or clear it afterwards.
+    const _CAL_DEFAULT_FROM = '2026-06-21';
+    function _ensureDefaultDateRange() {
+      if (window._calDefaultRangeApplied) return;
+      window._calDefaultRangeApplied = true;
+      const f = document.getElementById('cal-range-from');
+      const t = document.getElementById('cal-range-to');
+      if (!f || !t || f.value || t.value) return;   // already set → respect it
+      const now = new Date();
+      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+      f.value = _CAL_DEFAULT_FROM;
+      t.value = today;
+      window._calRangeMode = true;
+    }
+
     function calApplyDateRange() {
       const from = (document.getElementById('cal-range-from') || {}).value;
       const to = (document.getElementById('cal-range-to') || {}).value;
@@ -9026,10 +9299,24 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
     function updateCalSelectedDateBadge() {
       const badge = document.getElementById('cal-selected-date-badge');
       if (!badge) return;
+      
+      let html = '';
+      
       if (window.calSelectedDateFilter) {
-        badge.innerHTML = `📅 ${window.calSelectedDateFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalSelectedDateFilter(event)">✕</span>`;
+        html += `<span style="background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1; display:inline-flex; align-items:center; margin-right:4px;">📅 ${window.calSelectedDateFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalSelectedDateFilter(event)">✕</span></span>`;
+      }
+
+      if (window.calPnlGraphFilter) {
+        html += `<span style="background:#23863620; border:1px solid #23863680; border-radius:4px; color:#3fb950; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1; display:inline-flex; align-items:center; margin-right:4px;">📊 ${window.calPnlGraphFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalPnlGraphFilter(event)">✕</span></span>`;
+      }
+      
+      if (html) {
+        badge.innerHTML = html;
         badge.style.display = 'inline-flex';
         badge.style.alignItems = 'center';
+        badge.style.background = 'transparent';
+        badge.style.border = 'none';
+        badge.style.padding = '0';
       } else {
         badge.innerHTML = '';
         badge.style.display = 'none';
@@ -9044,9 +9331,24 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       renderPointsPerTradeTable();
     }
 
+    function clearCalPnlGraphFilter(event) {
+      if (event) event.stopPropagation();
+      window.calPnlGraphFilter = null;
+      updateCalSelectedDateBadge();
+      window.calPointsCurrentPage = 1;
+      renderPointsPerTradeTable();
+    }
+
     // ── Total Summary global helpers (accessible from HTML onchange/onclick) ──
 
+    // Aggregation mode for the metric columns (Σ Total / Avg / Min / Max).
+    // A single switch replaces the old per-combo columns (Avg Net, Best Net,
+    // Max Run-Up, ...) — the base metric is toggled once, the mode picks the
+    // aggregation. Metric ids are prefixed 'm_' so they read s.m[base][mode].
+    const _CAL_AGG_LBL = { sum: 'Σ', avg: 'Avg', min: 'Min', max: 'Max' };
+
     function _initCalSumCols() {
+      if (!window._calSumAgg) window._calSumAgg = localStorage.getItem('cal_sum_agg') || 'sum';
       if (window._calSumCols) return;
       const saved = JSON.parse(localStorage.getItem('cal_sum_cols') || 'null');
       const defaults = [
@@ -9055,21 +9357,18 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         { id: 'strat_count', l: 'Strategies', on: true },
         { id: 'wl', l: 'W/L', on: true },
         { id: 'winrate', l: 'Win %', on: true },
-        { id: 'gross', l: 'Gross', on: true },
-        { id: 'tax', l: 'Tax', on: true },
-        { id: 'net', l: 'Net', on: true },
-        { id: 'avg_pts', l: 'Avg Pts/Trade', on: false },
-        { id: 'avg_dur', l: 'Avg Duration', on: false },
-        { id: 'avg_gross', l: 'Avg Gross', on: false },
-        { id: 'avg_net', l: 'Avg Net', on: false },
-        { id: 'avg_win', l: 'Avg Win', on: false },
-        { id: 'avg_loss', l: 'Avg Loss', on: false },
-        { id: 'best', l: 'Best Trade Net', on: false },
-        { id: 'worst', l: 'Worst Trade Net', on: false },
-        { id: 'runup', l: 'Max Run-Up', on: false },
-        { id: 'rundown', l: 'Max Run-Down', on: false },
-        { id: 'maxdd', l: 'Max Drawdown', on: false },
+        // aggregatable base metrics (mode switch applies)
+        { id: 'm_points', l: 'Points', on: false },
+        { id: 'm_gross', l: 'Gross', on: true },
+        { id: 'm_tax', l: 'Tax', on: true },
+        { id: 'm_net', l: 'Net', on: true },
+        { id: 'm_dur', l: 'Duration', on: false },
+        { id: 'm_runup', l: 'Run-Up', on: false },
+        { id: 'm_rundown', l: 'Run-Down', on: false },
+        { id: 'm_dd', l: 'Drawdown', on: false },
+        // fixed-value metrics (mode-independent, single value per group)
         { id: 'exp', l: 'Expectancy', on: false },
+        { id: 'maxdd', l: 'Max DD', on: false },
       ];
       const hasNew = defaults.some(d => saved && !(d.id in saved));
       window._calSumCols = (!saved || hasNew)
@@ -9111,6 +9410,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       renderSummaryTable();
     }
 
+    // Aggregation-mode switch (Σ Total / Avg / Min / Max) — one switch drives
+    // every metric column, replacing the old per-combo columns. Persisted.
+    function calSumAggSeg(el) {
+      window._calSumAgg = el.dataset.a;
+      localStorage.setItem('cal_sum_agg', el.dataset.a);
+      renderSummaryTable();
+    }
+
     function calSumClickRow(key) {
       const mode = window._calSumMode || 'day';
       if (mode === 'day') {
@@ -9133,6 +9440,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
     }
 
+    // sum/avg/min/max over a value array; null-safe (empty → all null so the
+    // renderer shows '—' instead of a misleading 0).
+    function _agg4(a) {
+      if (!a.length) return { sum: null, avg: null, min: null, max: null, n: 0 };
+      const sum = a.reduce((x, y) => x + y, 0);
+      return { sum, avg: sum / a.length, min: Math.min.apply(null, a), max: Math.max.apply(null, a), n: a.length };
+    }
+
     function _sumTrades(trades) {
       let count = 0, wins = 0, losses = 0, gross = 0, tax = 0, net = 0;
       let totalPts = 0, best = -Infinity, worst = Infinity;
@@ -9140,6 +9455,9 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let totalWinNet = 0, totalLossNet = 0;
       let totalDurMins = 0, durCount = 0;
       const stratSet = new Set();
+      // per-trade value arrays feeding the aggregation-mode switch
+      // dd = per-trade adverse excursion magnitude (positive) — "kitna against gaya"
+      const _arr = { points: [], gross: [], net: [], tax: [], dur: [], runup: [], rundown: [], dd: [] };
       trades.forEach(t => {
         const ep = t.entry_price || 0, xp = t.exit_price || 0, qty = t.qty || 0;
         const side = t.entry || 'BUY';
@@ -9148,6 +9466,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         const tx = t._tax != null ? t._tax : 0;
         const n = t._net != null ? t._net : g - tx;
         count++; gross += g; tax += tx; net += n; totalPts += pts;
+        _arr.points.push(pts); _arr.gross.push(g); _arr.tax.push(tx); _arr.net.push(n);
         if (n > 0) { wins++; totalWinNet += n; }
         else if (n < 0) { losses++; totalLossNet += n; }
         if (n > best) best = n;
@@ -9160,20 +9479,38 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           const [eh, em] = t.entry_time.split(':').map(Number);
           const [xh, xm] = t.exit_time.split(':').map(Number);
           const dur = (xh * 60 + xm) - (eh * 60 + em);
-          if (dur >= 0) { totalDurMins += dur; durCount++; }
+          if (dur >= 0) { totalDurMins += dur; durCount++; _arr.dur.push(dur); }
         }
         (t.tags || []).forEach(tg => {
           if (tg.startsWith('MAX_LTP:')) {
             const ml = parseFloat(tg.split(':')[1]);
             const ru = side === 'BUY' ? (ml - ep) * qty : (ep - ml) * qty;
             if (ru > maxRunUp) maxRunUp = ru;
+            _arr.runup.push(ru);
           }
           if (tg.startsWith('MIN_LTP:')) {
             const ml = parseFloat(tg.split(':')[1]);
             const rd = side === 'BUY' ? (ml - ep) * qty : (ep - ml) * qty;
             if (rd < maxRunDown) maxRunDown = rd;
+            _arr.rundown.push(rd);
+            _arr.dd.push(Math.max(0, -rd));   // adverse excursion as positive drawdown
           }
         });
+      });
+      // Real cumulative max-drawdown on the group's net-equity curve (trades
+      // time-ordered by exit) — a genuine peak-to-trough, mode-independent.
+      let _eq = 0, _peak = 0, _mdd = 0;
+      trades.slice().sort((a, b) => {
+        const ka = (a.exit_date || '') + ' ' + (a.exit_time || '');
+        const kb = (b.exit_date || '') + ' ' + (b.exit_time || '');
+        return ka < kb ? -1 : ka > kb ? 1 : 0;
+      }).forEach(t => {
+        const ep = t.entry_price || 0, xp = t.exit_price || 0, qty = t.qty || 0;
+        const side = t.entry || 'BUY';
+        const g = t._gross != null ? t._gross : (side === 'BUY' ? (xp - ep) * qty : (ep - xp) * qty);
+        const n = t._net != null ? t._net : g - (t._tax != null ? t._tax : 0);
+        _eq += n; if (_eq > _peak) _peak = _eq;
+        const d = _peak - _eq; if (d > _mdd) _mdd = d;
       });
       const avgWin = wins > 0 ? totalWinNet / wins : 0;
       const avgLoss = losses > 0 ? Math.abs(totalLossNet / losses) : 0;
@@ -9184,7 +9521,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         avgPts: count > 0 ? totalPts / count : 0, avgGross: count > 0 ? gross / count : 0, avgNet: count > 0 ? net / count : 0,
         best: best === Infinity ? 0 : best, worst: worst === Infinity ? 0 : worst,
         avgWin, avgLoss, maxRunUp, maxRunDown, exp,
-        stratCount: stratSet.size, avgDurMins
+        stratCount: stratSet.size, avgDurMins, maxDD: _mdd,
+        // per-metric {sum,avg,min,max} — the aggregation switch reads m[base][mode]
+        m: {
+          points: _agg4(_arr.points), gross: _agg4(_arr.gross), net: _agg4(_arr.net),
+          tax: _agg4(_arr.tax), dur: _agg4(_arr.dur), runup: _agg4(_arr.runup),
+          rundown: _agg4(_arr.rundown), dd: _agg4(_arr.dd)
+        }
       };
     }
 
@@ -9216,27 +9559,31 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       return `<tr style="border-bottom:1px solid #21262d;${bg}${b}${cursor}${activeBg}" ${onclick}
         ${hoverIn ? `onmouseover="${hoverIn}" onmouseout="${hoverOut}"` : ''}>` +
         cols.map(c => {
+          // aggregatable metric column → s.m[base][currentMode], null-safe
+          if (c.id.startsWith('m_')) {
+            const agg = window._calSumAgg || 'sum';
+            const base = c.id.slice(2);
+            const o = s.m && s.m[base];
+            const v = o ? o[agg] : null;
+            if (v == null) return `<td style="padding:8px;text-align:right;color:#6e7681;${b}">—</td>`;
+            if (base === 'dur') return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(Math.round(v))}</td>`;
+            if (base === 'points') return `<td style="padding:8px;text-align:right;color:${v >= 0 ? '#3fb950' : '#f85149'};${b}">${(v >= 0 ? '+' : '') + v.toFixed(1)}</td>`;
+            if (base === 'dd') return `<td style="padding:8px;text-align:right;color:#f0883e;${b}">${v > 0 ? '-' + N(v) : '0'}</td>`;
+            let col = v >= 0 ? '#3fb950' : '#f85149';   // gross / net
+            if (base === 'tax') col = '#8b949e';
+            else if (base === 'runup') col = '#3fb950';
+            else if (base === 'rundown') col = '#f0883e';
+            const pfx = (base === 'runup' && v > 0) ? '+' : '';
+            return `<td style="padding:8px;text-align:right;color:${col};${b}">${pfx}${N(v)}</td>`;
+          }
           switch (c.id) {
             case 'label': return `<td style="padding:8px;color:${isActive ? '#58a6ff' : '#adbac7'};${b}">${label}</td>`;
             case 'count': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
             case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isBold ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
             case 'wl': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
             case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
-            case 'gross': return `<td style="padding:8px;text-align:right;color:${grossC};${b}">${N(s.gross)}</td>`;
-            case 'tax': return `<td style="padding:8px;text-align:right;color:#8b949e;${b}">${N(s.tax)}</td>`;
-            case 'net': return `<td style="padding:8px;text-align:right;color:${netC};${b}">${N(s.net)}</td>`;
-            case 'avg_pts': return `<td style="padding:8px;text-align:right;color:${s.avgPts >= 0 ? '#3fb950' : '#f85149'};${b}">${s.avgPts.toFixed(1)}</td>`;
-            case 'avg_dur': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${_fmtDur(s.avgDurMins)}</td>`;
-            case 'avg_gross': return `<td style="padding:8px;text-align:right;color:${s.avgGross >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgGross)}</td>`;
-            case 'avg_net': return `<td style="padding:8px;text-align:right;color:${s.avgNet >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.avgNet)}</td>`;
-            case 'avg_win': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.avgWin)}</td>`;
-            case 'avg_loss': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.avgLoss > 0 ? '-' + N(s.avgLoss) : '—'}</td>`;
-            case 'best': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${N(s.best)}</td>`;
-            case 'worst': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
-            case 'runup': return `<td style="padding:8px;text-align:right;color:#3fb950;${b}">${s.maxRunUp > 0 ? '+' + N(s.maxRunUp) : '—'}</td>`;
-            case 'rundown': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${s.maxRunDown < 0 ? N(s.maxRunDown) : '—'}</td>`;
-            case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f85149;${b}">${N(s.worst)}</td>`;
             case 'exp': return `<td style="padding:8px;text-align:right;color:${s.exp >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.exp)}</td>`;
+            case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f0883e;${b}">${s.maxDD > 0 ? '-' + N(s.maxDD) : '—'}</td>`;
             default: return '<td></td>';
           }
         }).join('') + '</tr>';
@@ -9251,15 +9598,22 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const tfoot = document.getElementById('cal-day-totals-tfoot');
       const trades = window.currentCalendarTrades || [];
       if (!tbody) return;
+    // Reflect the active aggregation mode on the Σ/Avg/Min/Max switch.
+    const _aggEl = document.getElementById('cal-sum-agg');
+    if (_aggEl) _aggEl.querySelectorAll('span[data-a]').forEach(sp => {
+      const onNow = sp.dataset.a === (window._calSumAgg || 'sum');
+      sp.style.background = onNow ? '#1f6feb' : ''; sp.style.color = onNow ? '#fff' : '#8b949e';
+    });
     if (thead) {
       const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
+      const aggPfx = _CAL_AGG_LBL[window._calSumAgg || 'sum'] || 'Σ';
       const sort = window._calSumSort || { col: 'label', dir: 1 };
-      const rightAligned = new Set(['gross', 'tax', 'net', 'avg_pts', 'avg_gross', 'avg_net', 'avg_win', 'avg_loss', 'best', 'worst', 'runup', 'rundown', 'maxdd', 'exp']);
+      const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'maxdd', 'exp']);
       thead.innerHTML = cols.map(c => {
-        const a = c.id === 'label' ? 'left' : (rightAligned.has(c.id) ? 'right' : 'center');
+        const a = c.id === 'label' ? 'left' : (c.id === 'm_dur' ? 'center' : (rightAligned.has(c.id) ? 'right' : 'center'));
         const isSort = sort.col === c.id;
         const arrow = isSort ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
-        const hdr = c.id === 'label' ? labelHeader : c.l;
+        const hdr = c.id === 'label' ? labelHeader : (c.id.startsWith('m_') ? `${aggPfx} ${c.l}` : c.l);
         return `<th style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
             onclick="calSumSortBy('${c.id}')"
             onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='${isSort ? '#58a6ff' : '#8b949e'}'"
@@ -9284,26 +9638,19 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
     // Sort rows
     const sort = window._calSumSort || { col: 'label', dir: 1 };
     const sortVal = (s, col) => {
+      if (col && col.startsWith('m_')) {
+        const o = s.m && s.m[col.slice(2)];
+        const v = o ? o[window._calSumAgg || 'sum'] : null;
+        return v == null ? -Infinity : v;
+      }
       switch (col) {
         case 'label': return col; // use key directly
         case 'count': return s.count;
         case 'strat_count': return s.stratCount;
         case 'wl': return s.wins;
         case 'winrate': return s.count > 0 ? s.wins / s.count : 0;
-        case 'gross': return s.gross;
-        case 'tax': return s.tax;
-        case 'net': return s.net;
-        case 'avg_pts': return s.avgPts;
-        case 'avg_dur': return s.avgDurMins;
-        case 'avg_gross': return s.avgGross;
-        case 'avg_net': return s.avgNet;
-        case 'avg_win': return s.avgWin;
-        case 'avg_loss': return s.avgLoss;
-        case 'best': return s.best;
-        case 'worst': return s.worst;
-        case 'runup': return s.maxRunUp;
-        case 'rundown': return s.maxRunDown;
         case 'exp': return s.exp;
+        case 'maxdd': return s.maxDD;
         default: return 0;
       }
     };
@@ -9348,6 +9695,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         window.calSelectedDateFilter = null;
       }
       updateCalSelectedDateBadge();
+      _ensureDefaultDateRange();   // first load → 21 Jun 2026 to today
 
       const monthLabel = document.getElementById('cal-month-label');
       if (monthLabel) {
@@ -9405,6 +9753,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           ['EOD_315_SQUAREOFF', '⏰ 3:15 EOD'],
           ['KILL_FLOOR', '🔒 Kill-Floor'],
           ['TRAILING_PROFIT_LOCK', '🔒 Trailing Lock'],
+          ['DEFAULT_TSL_TARGET', '🎯 Default Target'],
+          ['DEFAULT_TSL_SL', '🛡️ Default SL'],
           ['RMS_MAXLOSS', '⚠️ RMS Max-Loss'],
           ['RMS_PROFIT_TARGET', '✅ RMS Profit Target'],
           ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
@@ -9681,6 +10031,26 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         tradesList = tradesList.filter(t => (t.strategy || t.strat || 'unknown') === window.calSumStrategyFilter);
       }
 
+      const graphTrades = [...tradesList]; // unfiltered by pnl graph click
+
+      if (window.calPnlGraphFilter && window.calPnlGraphMode) {
+        tradesList = tradesList.filter(t => {
+          const sym = t.sym || t.symbol || 'UNKNOWN';
+          if (window.calPnlGraphMode === 'instrument') {
+            let base = sym;
+            if (sym.includes('-')) {
+              base = sym.split('-')[0];
+            } else {
+              const match = sym.match(/^[a-z&]+/i);
+              if (match) base = match[0].toUpperCase();
+            }
+            return base === window.calPnlGraphFilter;
+          } else {
+            return sym === window.calPnlGraphFilter;
+          }
+        });
+      }
+
       if (typeof _sortData === 'function' && window._calPointsSortCol) {
         _sortData(tradesList, window._calPointsSortCol, window._calPointsSortDir);
       } else {
@@ -9704,6 +10074,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         strategy: t.strategy || ''
       }));
       localStorage.setItem('chartTradeList', JSON.stringify(_chartList));
+      if (typeof window.renderPnlGraph === 'function') window.renderPnlGraph(graphTrades);
 
       // Render table headers with sorting
       const theadRow = document.getElementById('cal-points-cols-thead');
@@ -9864,7 +10235,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       }
 
       const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
-      pointsHtml += '<tr style="border-top:2px solid #30363d;font-weight:700;background:#161b22;">';
+      pointsHtml += '<tr style="position:sticky;bottom:0;z-index:10;border-top:2px solid #30363d;font-weight:700;background:#161b22;box-shadow:0 -1px 0 #30363d;">';
 
       cols.forEach((c, idx) => {
         let val = '';
@@ -11036,6 +11407,154 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         closeImageViewer();
       }
     }
+
+    let pnlChartInstance = null;
+    window.renderPnlGraph = function(tradesList) {
+      if (!tradesList) {
+        if (window._lastTradesList) tradesList = window._lastTradesList;
+        else tradesList = window.currentCalendarTrades || [];
+      } else {
+        window._lastTradesList = tradesList;
+      }
+      
+      const toggle = document.getElementById('pnl-graph-toggle');
+      if (!toggle) return;
+      const mode = toggle.value; // 'instrument' or 'symbol'
+      
+      const aggregated = {};
+      
+      tradesList.forEach(t => {
+        const sym = t.sym || t.symbol || 'UNKNOWN';
+        let key = sym;
+        if (mode === 'instrument') {
+          if (sym.includes('-')) {
+            key = sym.split('-')[0];
+          } else {
+            const match = sym.match(/^[a-z&]+/i);
+            if (match) {
+              key = match[0].toUpperCase();
+            } else {
+              key = sym;
+            }
+          }
+        }
+        
+        let net = 0;
+        let p = parseFloat(t.points);
+        const ep = parseFloat(t.entry_price) || 0;
+        const xp = parseFloat(t.exit_price) || 0;
+        const qty = parseFloat(t.qty) || Number(t.q) || 0;
+        const entrySide = (t.entry || t.side || '').toUpperCase();
+        let gross = 0;
+        if (entrySide === 'BUY' || entrySide === 'LONG') gross = (xp - ep) * qty;
+        if (entrySide === 'SELL' || entrySide === 'SHORT') gross = (ep - xp) * qty;
+        let tax = 0;
+        if (typeof window.calcCharges === 'function') tax = window.calcCharges(ep, xp, qty, entrySide) || 0;
+        net = gross - tax;
+        
+        if (!aggregated[key]) aggregated[key] = { grossGain: 0, grossLoss: 0, net: 0, count: 0 };
+        if (net >= 0) {
+          aggregated[key].grossGain += net;
+        } else {
+          aggregated[key].grossLoss += Math.abs(net);
+        }
+        aggregated[key].net += net;
+        aggregated[key].count++;
+      });
+      
+      const labels = Object.keys(aggregated);
+      // Sort by net profit descending (highest profit on the left)
+      labels.sort((a, b) => aggregated[b].net - aggregated[a].net);
+      
+      const gainVals = labels.map(l => aggregated[l].grossGain);
+      const lossVals = labels.map(l => aggregated[l].grossLoss);
+      
+      const ctx = document.getElementById('pnlGraphCanvas');
+      if (!ctx) return;
+      
+      if (pnlChartInstance) {
+        pnlChartInstance.destroy();
+      }
+      
+      pnlChartInstance = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [
+            {
+              label: 'Gross Gain (₹)',
+              data: gainVals,
+              backgroundColor: 'rgba(63, 185, 80, 0.8)',
+              borderColor: '#3fb950',
+              borderWidth: 1,
+              stack: 'Stack 0',
+            },
+            {
+              label: 'Gross Loss (₹)',
+              data: lossVals,
+              backgroundColor: 'rgba(248, 81, 73, 0.8)',
+              borderColor: '#f85149',
+              borderWidth: 1,
+              stack: 'Stack 0',
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          onClick: (e, elements) => {
+            if (elements && elements.length > 0) {
+              const index = elements[0].index;
+              const label = pnlChartInstance.data.labels[index];
+              const toggle = document.getElementById('pnl-graph-toggle');
+              const mode = toggle ? toggle.value : 'instrument';
+              
+              if (window.calPnlGraphFilter === label && window.calPnlGraphMode === mode) {
+                window.calPnlGraphFilter = null; // deselect
+              } else {
+                window.calPnlGraphFilter = label;
+                window.calPnlGraphMode = mode;
+              }
+              if (typeof window.updateCalSelectedDateBadge === 'function') window.updateCalSelectedDateBadge();
+              if (typeof window.renderPointsPerTradeTable === 'function') window.renderPointsPerTradeTable();
+              const tableCard = document.getElementById('cal-points-per-trade-tbody');
+              if (tableCard) tableCard.closest('.tv-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              mode: 'index',
+              intersect: false,
+              callbacks: {
+                label: function(context) {
+                  return context.dataset.label + ': ₹ ' + context.raw.toFixed(2);
+                },
+                footer: function(tooltipItems) {
+                  const key = tooltipItems[0].label;
+                  const count = aggregated[key].count;
+                  const net = aggregated[key].net;
+                  return '\nTotal Trades: ' + count + '\nNet P&L: ₹ ' + net.toFixed(2);
+                }
+              }
+            }
+          },
+          scales: {
+            x: {
+              stacked: true,
+              ticks: { display: false },
+              grid: { display: false }
+            },
+            y: {
+              stacked: true,
+              ticks: { color: '#8b949e', font: {size: 10} },
+              grid: { color: '#30363d' },
+              border: { display: false }
+            }
+          }
+        }
+      });
+    };
   </script>
   <!-- Image Viewer Lightbox Modal -->
   <div id="image-viewer-modal" onclick="closeImageViewer(event)">
