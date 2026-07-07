@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-07 — Stable Architecture: Rule 6B/6C baked + architecture_audit.py + pre-commit hook (Tasks 0, 1, 1B)
+**Status:** IN-PROGRESS
+**Kya:** Task-list (Desktop/claude-code-task-list.md) ke pehle 3 tasks: (0) Rule 6B "duplicate mat karo extend karo" + Rule 6C "ADR likho" CLAUDE.md Critical Rules mein permanently baked; (1) `_TOOLS/architecture_audit.py` — pure static analysis (AST/regex, no LLM): raw broker order-calls, inline risk-checks, duplicate indicators, non-persisted state, backtest risk-bypass detect kare; `--staged-only`/`--report` flags, exit 1 on FAIL; (1B) `.git/hooks/pre-commit` wire — har commit pe audit auto-chale, FAIL pe commit block.
+**Layer:** infra / validation
+**Files:** `CLAUDE.md`, `_TOOLS/architecture_audit.py` (new), `scripts/pre-commit-architecture-audit.sh` (new), `.git/hooks/pre-commit`
+**Kyun:** Baar-baar duplicate-function bug family (indicator/risk-check/order-call ke do "sach" diverge hote hain — TRAP #77/#84 shape). Mechanical enforcement chahiye jo AI ke yaad rakhne pe depend na kare.
+**Depends on:** nothing
+
+---
+
 ## 2026-07-07 — Dhan hands-off + max-premium filter + 3-SL-systems merge + premium-chart persistence + exit-reason ₹
 **Status:** DONE — deployed to VPS + verified (md5 local==remote, py_compile 3.12.3, algo-dashboard/algo-monitor/data-downloader restarted clean, zero open positions, no code errors in logs). #2 (3-dot menu) still pending a live repro.
 **Kya:** 6-issue user worklist.

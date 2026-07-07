@@ -145,6 +145,68 @@ hai aur use live nahi chalana chahiye jab tak order_store recording add na ho.
 tak isi list mein maano.) Nayi strategy banate waqt: pehle order_store recording
 wire karo.
 
+### 6B. Naya code likhne se pehle: DUPLICATE mat karo, EXTEND karo
+
+Ye repo mein baar-baar ek hi bug-family bani hai: kisi ne ek naya function
+likh diya jo already kahin exist karta tha (indicator, risk-check, order-call,
+backtest-simulation) — aur do "sach" ban gaye jo aage chal kar diverge ho gaye.
+Isliye har naya code (chahe khud likho ya AI se likhwao) is order mein jaaye:
+
+1. **Indicator chahiye?** (EMA/RSI/ATR/VWAP/pivot/koi bhi) →
+   `_CHARTING/indicators.py` ka `INDICATOR_REGISTRY` aur `_CHARTING/zones.py`
+   check karo. Wahan hai → wahi import karo. Nahi hai aur generic hai →
+   wahin add karo, apni file ke andar inline mat likho.
+
+2. **Order place/cancel/chase karna hai?** → `smart_order.execute()` hi use
+   karo. `execute_signal()` gateway ban chuka ho (dekho neeche) to usi se
+   jao. Broker object pe seedha `place_order()`/`cancel_order()` kabhi mat
+   bulao strategy file se.
+
+3. **Risk/capital/concentration/drawdown check karna hai?** → `risk_gate.py`
+   / `strategy_safety.gate_entry()` ke through hi jao. Inline check kabhi
+   mat likho.
+
+4. **Backtest/simulation code likh rahe ho?** → agar `execute_signal()`
+   gateway ban chuka hai, uska `mode="backtest"` use karo — apna alag
+   capital/risk simulation mat likho. Agar gateway abhi nahi bana, user ko
+   explicitly batao ki "ye backtest path live risk rules follow nahi kar
+   raha" — chup-chaap koi shortcut mat lo.
+
+5. **State jo restart ke baad bhi chahiye** (peaks, pending actions, locks)
+   → disk-persist karo, `_pending_group_close`/`_kf_state` jaisa pattern
+   (`trader_dashboard.py` mein dekho). Plain in-memory dict/list mat rakho.
+
+6. **Commit karne se pehle**: `_TOOLS/architecture_audit.py` khud chalao
+   (ya commit karte hi pre-commit hook automatically chalayega). Agar FAIL
+   aaye, commit se pehle fix karo — "chhota sa fix hai" soch kar skip mat
+   karo.
+
+**Kyun**: ye repo ka pura design intent hi yehi hai ki "signal generate karna"
+aur "signal ko safely execute/plot/backtest karna" do alag layers hon — pehli
+layer (strategy files) sirf entry/exit condition likhe, doosri layer
+(gateway/charting/risk_gate) baaki sab sambhale. Is separation ko todna
+matlab purane saare TRAPs (#71-#94+) wapas possible banana.
+
+### 6C. Bade architectural decision pe ADR likho
+
+`LESSONS.md` sirf BUGS/TRAPS ke liye hai (reactive — jo hua uske baad likha
+gaya). Koi bhi **bada structural/architectural decision** — chahe bug se
+related ho ya na ho — `_ADR/` folder mein alag se likho:
+
+- File naam: `_ADR/ADR-00X-short-title.md` (number badhta jaye)
+- Format: Context (problem kya thi) → Decision (kya choose kiya) →
+  Consequence (kya trade-off accept kiya)
+- Chhoti rakho — 10-15 min mein padhne layak, poora essay nahi
+
+**Kab likhni hai**: jab bhi koi choice ki jaye jo future mein "ye kyun aisa
+kiya tha" wala sawaal utha sakti hai — jaise ek naya shared gateway banane ka
+decision, kisi do duplicate versions mein se "sach" kaun sa hai ye decide
+karna, ya koi bhi design jo alternative options ke against choose hua ho.
+
+Task complete karte waqt khud check karo: "kya isme koi aisa decision tha jo
+future mein confusing lagega agar likha na jaye?" Agar haan, ADR likhna kaam
+ka hissa hai, extra step nahi.
+
 ### 7. Kabhi ₹0-price pe REAL fill record mat karo (LESSONS.md TRAP #1)
 Option premium fetch fail ho (DH-904 rate-limit) to `price = 0` record karna ek
 real fill ke roop me **P&L corrupt karta hai** (SELL@₹0 → close@real = jhootha bada
