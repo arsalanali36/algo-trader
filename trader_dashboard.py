@@ -1409,10 +1409,95 @@ def mtm_charts_page():
     return render_template('mtm_charts.html')
 
 
+def _premium_ohlc_path(sec_id, date_str):
+    return BASE_DIR / "data" / "trade_ohlc" / f"{sec_id}_{date_str}.json"
+
+
+def _sec_id_from_order_store(trad_sym, date_str):
+    """The REAL historical sec_id this trad_sym was traded with on date_str.
+    order_store rows store the actual sec_id used at order time — use it so an
+    EXPIRED contract's chart resolves to the right (now-dead) securityId, not
+    dhan_master.get_sec_id_for_trad_sym()'s nearest-LIVE-expiry (wrong/None for
+    a past contract — the root cause of old premium charts going missing, #5).
+    None if not found."""
+    try:
+        import order_store
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute(
+                "SELECT sec_id FROM orders WHERE trad_sym=? AND substr(ts,1,10)=? "
+                "AND sec_id IS NOT NULL AND sec_id!='' ORDER BY id LIMIT 1",
+                (trad_sym, date_str)).fetchone()
+            if row and row[0]:
+                return str(row[0])
+    except Exception:
+        pass
+    return None
+
+
+def _save_premium_ohlc(sec_id, date_str, bars_by_epoch):
+    """Persist option-premium 1-min bars keyed by RAW Dhan epoch (str) → [o,h,l,c],
+    so an expired contract's premium chart still renders after Dhan stops serving
+    it (#5). Epoch keys are timezone-unambiguous (the +19800 IST-display shift is
+    applied only at read time, exactly like the live path) — avoids the double-
+    shift class of bug (TRAP #29). Merges with any existing (daemon-written)
+    file. Best-effort."""
+    try:
+        p = _premium_ohlc_path(sec_id, date_str)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        existing = {}
+        if p.exists():
+            try:
+                existing = json.loads(p.read_text())
+            except Exception:
+                existing = {}
+        existing.update(bars_by_epoch)
+        p.write_text(json.dumps(existing))
+    except Exception:
+        pass
+
+
+def _load_premium_ohlc_candles(sec_id, date_str, entry_t="", exit_t=""):
+    """Read saved epoch-keyed bars → lightweight-charts candles (+entry/exit
+    markers), or None if no usable file. Only epoch-numeric keys are read (raw
+    Dhan epoch, same +19800 transform as the live Dhan path); any legacy
+    non-numeric HH:MM keys from the old daemon format are skipped rather than
+    guessed at (ambiguous TZ)."""
+    try:
+        import datetime as _dt2
+        p = _premium_ohlc_path(sec_id, date_str)
+        if not p.exists():
+            return None
+        bars = json.loads(p.read_text())
+        if not bars:
+            return None
+        epoch_keys = [k for k in bars.keys() if str(k).lstrip("-").isdigit()]
+        if not epoch_keys:
+            return None
+        candles, entry_mk, exit_mk = [], None, None
+        for k in sorted(epoch_keys, key=lambda x: int(x)):
+            o, h, l, c = bars[k][:4]
+            t_ist = int(k) + 19800   # +5:30 → chart shows IST (treated as UTC by lightweight-charts)
+            hhmm = _dt2.datetime.utcfromtimestamp(t_ist).strftime("%H:%M")
+            candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
+                            "low": round(float(l), 2), "close": round(float(c), 2)})
+            if entry_t and hhmm == entry_t and entry_mk is None:
+                entry_mk = t_ist
+            if exit_t and hhmm == exit_t:
+                exit_mk = t_ist
+        if not candles:
+            return None
+        return {"candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk}
+    except Exception:
+        return None
+
+
 @app.route('/api/trade-chart-data')
 def api_trade_chart_data():
     """Option premium 1-min candles for one completed trade + entry/exit marker times.
-    Data: Dhan /v2/charts/intraday (raw REST). sec_id from trad_sym (nearest live expiry)."""
+    Data: Dhan /v2/charts/intraday (raw REST) live, with a disk fallback
+    (data/trade_ohlc/) for expired contracts Dhan no longer serves (#5). sec_id
+    resolved from order_store's historical row first (correct for expired
+    contracts), falling back to dhan_master's nearest-live-expiry."""
     import dhan_master, requests as _req, datetime as _dt
     trad_sym = request.args.get('trad_sym', '').strip()
     date_str = request.args.get('date', '').strip() or \
@@ -1427,8 +1512,10 @@ def api_trade_chart_data():
         import universe
         seg = "NSE_FNO"
         inst = "OPTIDX" if trad_sym.split('-')[0] in INDEX_UNDERLYINGS else "OPTSTK"
-        sec_id = dhan_master.get_sec_id_for_trad_sym(trad_sym)
-        
+        # order_store's historical sec_id first (correct for EXPIRED contracts —
+        # #5), then dhan_master's nearest-live-expiry as fallback.
+        sec_id = _sec_id_from_order_store(trad_sym, date_str) or dhan_master.get_sec_id_for_trad_sym(trad_sym)
+
         # If not found in FNO, check Equity universe
         if not sec_id:
             sec_id = universe.equity_secid(trad_sym)
@@ -1479,15 +1566,28 @@ def api_trade_chart_data():
             "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
         d = r.json()
         if not d.get("open"):
-            return jsonify({"ok": False, "msg": f"{date_str} ka intraday data nahi (non-trading day?)"})
+            # Dhan won't serve this contract (expired / non-trading day) — fall
+            # back to the on-disk copy (daemon-captured or a prior write-through)
+            # so old/expired premium charts still render (#5).
+            disk = _load_premium_ohlc_candles(sec_id, date_str, entry_t, exit_t)
+            if disk:
+                return jsonify({"ok": True, "candles": disk["candles"],
+                                "entry_mk": disk["entry_mk"], "exit_mk": disk["exit_mk"],
+                                "trad_sym": trad_sym, "date": date_str, "source": "disk"})
+            return jsonify({"ok": False, "msg": f"{date_str} ka intraday data nahi (non-trading day / expired contract)"})
         candles, entry_mk, exit_mk = [], None, None
+        _bars_by_epoch = {}
         for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
             t_ist = int(ts) + 19800   # +5:30 → chart shows IST (treated as UTC by lightweight-charts)
             hhmm  = _dt.datetime.utcfromtimestamp(int(ts) + 19800).strftime("%H:%M")
             candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
                             "low": round(float(l), 2), "close": round(float(c), 2)})
+            _bars_by_epoch[str(int(ts))] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
             if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
             if exit_t  and hhmm == exit_t:  exit_mk = t_ist
+        # Write-through: persist so this contract's chart survives its expiry (#5).
+        if seg == "NSE_FNO" and _bars_by_epoch:
+            _save_premium_ohlc(sec_id, date_str, _bars_by_epoch)
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
                         "trad_sym": trad_sym, "date": date_str})
     except Exception as e:

@@ -141,8 +141,12 @@ def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str) ->
 
         bars = {}
         for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
-            t = datetime.datetime.fromtimestamp(ts).strftime("%H:%M")
-            bars[t] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
+            # Key by RAW Dhan epoch (str), NOT a machine-local HH:MM string —
+            # the dashboard's premium-chart reader applies the +19800 IST-display
+            # shift at read time (same transform as the live path), so an epoch
+            # key is timezone-unambiguous regardless of this daemon's machine TZ.
+            # (Old HH:MM-keyed files stay on disk but the reader skips them.)
+            bars[str(int(ts))] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
 
         out_file.write_text(json.dumps(bars))
         log.info("Saved %d bars → %s", len(bars), out_file.name)
