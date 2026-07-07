@@ -504,6 +504,17 @@ def _known_broker_keys(broker_name: str, open_for_broker: list) -> set:
 
 def _run_untracked_scan(log=print) -> None:
     for broker_name in ("dhan", "kite"):
+        # Dhan is a MANUAL / data-only account — the user places trades by hand
+        # directly on the Dhan app, while the algo trades exclusively via Kite
+        # (_risk.global.default_broker == "kite"). Auto-adopting a Dhan position
+        # into order_store gave it default SL/EOD/floor management, which then
+        # squared off the user's own manual trades (reported 2026-07-07 — "app ne
+        # haath se daale order square off kar diye"). Skip Dhan entirely: no
+        # adoption, no untracked-alert, and no per-cycle Dhan positions() API call
+        # (rate-limit friendly too). Kite orphans (genuine algo fills that missed
+        # order_store) are still scanned + adopted below.
+        if broker_name == "dhan":
+            continue
         try:
             import order_store
             from brokers import get_broker
@@ -538,6 +549,15 @@ def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:
     label = pos.get("trad_sym") or key
     qty, side, avg = pos.get("qty"), pos.get("side"), pos.get("avg_price")
     adopted = False
+
+    # Defense-in-depth: Dhan is manual/data-only (algo trades via Kite). Never
+    # adopt or alert on a Dhan position — the user's manual Dhan trades must be
+    # left completely alone (2026-07-07). _run_untracked_scan already skips Dhan
+    # before ever calling this; this guard protects any future caller too.
+    if broker_name == "dhan":
+        log(f"[broker_sync] ℹ️ Dhan untracked position {label} left alone "
+            f"(Dhan = manual/data-only account; algo trades via Kite).", flush=True)
+        return
 
     if broker_name == "dhan":
         trad_sym = pos.get("trad_sym") or ""
