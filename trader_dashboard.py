@@ -3161,6 +3161,45 @@ def api_backtest_saved_delete(sid):
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/deploy-variation', methods=['POST'])
+def api_deploy_variation():
+    """Saved Result "🚀 Deploy" → create a NEW named strategy variation the
+    user's chosen name se, so it shows up in the dashboard grid + Logs tab under
+    that name (not the generic base id). The new config key carries the base
+    prefix (rsi_/ema_/range_/ARS_/universe_) so `_base()` routes it to the right
+    live script; the rest of the key is a slug of the user's name.
+    Always creates it `active:false, mode:paper` — deploy never auto-runs and
+    never goes live; the user starts it (and picks Paper/Live) themselves.
+    """
+    import re as _re
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    strategy = (body.get('strategy') or '').strip()
+    cfg = body.get('cfg') or {}
+    symbols = body.get('symbols') or []
+    if not name or not strategy:
+        return jsonify({"error": "name + strategy required"}), 400
+    base = _base(strategy)
+    if STRATEGIES.get(base) is None:
+        return jsonify({"error": f"'{strategy}' live deploy nahi hoti — backtest-only strategy (koi live trader script nahi)."}), 400
+    prefix = strategy.split('_')[0]   # rsi / ema / range / ARS / universe — casing preserve (_base ALIAS match)
+    slug = _re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') or 'run'
+    newkey = f"{prefix}_{slug}"
+    try:
+        all_cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        all_cfg = {}
+    entry = {k: v for k, v in cfg.items() if k not in ('_module', '_lang')}
+    if symbols:
+        entry['symbols'] = ','.join(str(s) for s in symbols)
+        entry.pop('symbol', None)
+    entry['active'] = False   # deploy never auto-runs
+    entry['mode'] = 'paper'   # and never lands live on its own
+    # merge over any existing same-name variation (re-deploy = same intent)
+    all_cfg[newkey] = {**all_cfg.get(newkey, {}), **entry}
+    TC_FILE.write_text(json.dumps(all_cfg, indent=2, ensure_ascii=False))
+    return jsonify({"ok": True, "key": newkey})
+
 @app.route('/api/watch')
 def api_watch():
     """Merge all *_watch.json files — one entry per running strategy."""

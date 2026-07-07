@@ -982,11 +982,20 @@ function savedRerun(e){
   PM={kind:'builtin', sid, name:sid, version:null, stratVersion:'', presetKey:baseType(sid)};
   _pmFill(e.cfg||{}, preset);
 }
-function savedDeploy(e){
-  const sym=(e.cfg&&e.cfg.symbol)||(e.symbols||[])[0]||'';
-  const params=new URLSearchParams({deploy:e.strategy||''});
-  if(sym) params.set('symbol',sym);
-  (window.top||window).location.href='/?'+params.toString();
+async function savedDeploy(e){
+  // Create a NEW named variation from this saved result — deploys under the
+  // NAME the user gave (not the generic strategy id), so it appears in the
+  // grid + Logs tab with that name. Always paper + inactive; user starts it.
+  const cfg=Object.assign({}, e.cfg||{});
+  const symbols=(e.symbols&&e.symbols.length)?e.symbols.slice():(cfg.symbol?[cfg.symbol]:[]);
+  try{
+    const r=await fetch('/api/deploy-variation',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({name:e.name||e.strategy, strategy:e.strategy, cfg, symbols})});
+    const d=await r.json();
+    if(d.error){ toast('⚠ '+d.error); return; }
+    toast('🚀 "'+(e.name||e.strategy)+'" deploy — Run modal me Paper/Live choose karo');
+    (window.top||window).location.href='/?deploy='+encodeURIComponent(d.key);
+  }catch(err){ toast('⚠ '+err.message); }
 }
 async function savedDel(e){
   if(!confirm(`"${e.name||'saved result'}" delete karein?`)) return;
