@@ -1,0 +1,9 @@
+{
+  "_comment": "Known pre-existing FAIL counts (debt) \u2014 audit only blocks when a count EXCEEDS its allowance here. After paying debt down (Tasks 3+), re-run --write-baseline to ratchet allowances DOWN. Never hand-edit upward.",
+  "updated": "2026-07-07 13:10",
+  "known_fail_counts": {
+    "trader_dashboard.py|RAW-ORDER": 1,
+    "_TRADERS/01_rsi_v1.py|RAW-ORDER": 1,
+    "_TOOLS/backtest_engine.py|BACKTEST-RISK": 1
+  }
+}

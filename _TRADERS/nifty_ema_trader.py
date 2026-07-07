@@ -25,6 +25,9 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import dhan_master
 import dhan_rate_limiter as _rl
+# EMA ka SINGLE source of truth (Rule 6B / ADR-002) — wahi span-EWM formula
+# (alpha=2/(n+1), Pine ta.ema match) jo pehle compute_signal mein inline thi.
+from _CHARTING.indicators import pine_ema
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -178,8 +181,8 @@ def compute_signal(df, fast=9, slow=20):
     if len(df) < slow + 5:
         return None
     close    = df["close"]
-    ema_fast = close.ewm(span=fast, adjust=False).mean()
-    ema_slow = close.ewm(span=slow, adjust=False).mean()
+    ema_fast = pine_ema(close, fast)   # single source of truth (Rule 6B / ADR-002)
+    ema_slow = pine_ema(close, slow)
 
     cf, cs = ema_fast.iloc[-2], ema_slow.iloc[-2]   # last confirmed candle
     pf, ps = ema_fast.iloc[-3], ema_slow.iloc[-3]   # candle before that

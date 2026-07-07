@@ -538,21 +538,13 @@ def _buffered_from(date_from, symbol="NIFTY"):
     return floor.strftime("%Y-%m-%d")
 
 
-def _compute_rsi(series, period):
-    """Wilder RSI — same formula as _TRADERS/01_rsi_v1.py's _compute_rsi()
-    (com=period-1, matches Pine's ta.rsi()). Inlined here (2026-07-03) instead
-    of importing the live strategy file, so the backtester has no dependency
-    on either RSI strategy script — 01_rsi_v1.py can't be imported anyway
-    (Python identifiers can't start with a digit), and importing the OTHER,
-    unused rsi_trader.py file just to reuse 6 lines was the reason that file
-    stayed around looking like a second live strategy when it wasn't one."""
-    delta = series.diff()
-    gain  = delta.clip(lower=0)
-    loss  = (-delta).clip(lower=0)
-    avg_g = gain.ewm(com=period - 1, min_periods=period).mean()
-    avg_l = loss.ewm(com=period - 1, min_periods=period).mean()
-    rs    = avg_g / avg_l.replace(0, float("inf"))
-    return 100 - (100 / (1 + rs))
+# Wilder RSI — ab _CHARTING/indicators.py se aata hai (Task 2 consolidation
+# 2026-07-07, Rule 6B / ADR-002). Ye wahi formula hai jo 2026-07-03 ko yahan
+# inline ki gayi thi (com=period-1, Pine ta.rsi match) — tab inline isliye ki
+# thi ki 01_rsi_v1.py import nahi ho sakta (digit-leading naam) aur duplicate
+# rsi_trader.py zinda rakhna nahi chahte the. _CHARTING/indicators.py neutral
+# importable ghar hai — na strategy file, na duplicate.
+_compute_rsi = chind.wilder_rsi
 
 
 # ───────────────────────── RSI (generic growing-window replay) ─────────────────────────
@@ -654,10 +646,10 @@ def _run_ema(date_from, date_to, cfg):
     fast, slow = int(cfg.get("fast_ema", 9)), int(cfg.get("slow_ema", 20))
     max_trades = int(cfg.get("max_trades_per_symbol", 2))
 
-    # Vectorized computations
+    # Vectorized computations — EMA from the single source of truth (Rule 6B)
     close_s = df["close"]
-    df["ema_fast"] = close_s.ewm(span=fast, adjust=False).mean()
-    df["ema_slow"] = close_s.ewm(span=slow, adjust=False).mean()
+    df["ema_fast"] = chind.pine_ema(close_s, fast)
+    df["ema_slow"] = chind.pine_ema(close_s, slow)
 
     trades, pos, cur = [], 0, None
     cur_day, trades_today = None, 0
@@ -747,7 +739,7 @@ def _run_vwap_ema(date_from, date_to, cfg):
     # the registry's VWAP is a rolling window, not daily-reset, so it would
     # show a different line than what actually drove these signals.
     ema_len = cfg.get("ema_len", 10)
-    ema10_series = df["close"].ewm(span=ema_len, adjust=False).mean()
+    ema10_series = chind.pine_ema(df["close"], ema_len)   # same fn strategy uses (Rule 6B)
     vwap_series = vwapf._daily_vwap(df)
     spec = chspec.build_plot_spec(df, indicators=[
         {"name": f"EMA({ema_len})", "series": ema10_series, "type": "line", "color": "#d29922"},

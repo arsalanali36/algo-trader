@@ -15,8 +15,18 @@
 
 ---
 
+## 2026-07-07 — Task 2: Unified Indicator Layer (duplicate RSI/ATR consolidation)
+**Status:** DONE — audit 7 FAIL → 3 FAIL (saare 4 DUP-INDICATOR gone; bache 2 RAW-ORDER + 1 BACKTEST-RISK = Task 3 scope). Scope expand hua: inline span-EMAs bhi consolidate kiye (`nifty_ema_trader.py`, `backtest_engine.py` ×2, `strategies/vwap_ema_failure.py`). `_CHARTING/indicators.py` ab 2-tier: canonical pure-pandas `wilder_rsi`/`wilder_atr`/`pine_ema` (tier 1 — live traders bina `ta` ke import kar sakte hain, `ta` lazy) + chart-only SMA/VWAP/BBANDS (tier 2). Registry RSI/ATR/EMA canonical pe point — signal aur chart EK calculation. Verification: synthetic equivalence test old-vs-new **max diff 0.0** (bit-identical → 90.2% validation score unchanged by construction, validate re-run unnecessary); py_compile ALL PASS; teeno trader files `--help` smoke PASS (module-level imports resolve). ADR: `_ADR/ADR-002-indicator-source-of-truth.md`.
+**Kya:** 4 duplicate indicator definitions ko `_CHARTING/indicators.py` mein consolidate karna. Strategy ka Wilder-RSI (Pine-validated) = "sach"; `ta`-library wala sirf chart-cosmetic tha. Sites: `_TRADERS/01_rsi_v1.py:253` `_compute_rsi`, `_TRADERS/range_trader.py:284` `compute_atr` (Wilder alpha=1/period), `_TOOLS/backtest_engine.py:541` `_compute_rsi`, `strategies/rsi_v1.py:62` `_rsi`. Sab consumers registry se import karenge — signal aur chart ek hi calculation se.
+**Layer:** strategy / validation
+**Files:** `_CHARTING/indicators.py`, `_TRADERS/01_rsi_v1.py`, `_TRADERS/range_trader.py`, `_TOOLS/backtest_engine.py`, `strategies/rsi_v1.py`, `_ADR/ADR-002-indicator-source-of-truth.md` (new)
+**Kyun:** Signal aur chart do alag formulas se aa rahe the — mismatch possible. Audit baseline ke 4 DUP-INDICATOR FAILs yahi hain.
+**Depends on:** Task 1 (audit script — FAIL count verify karne ke liye)
+
+---
+
 ## 2026-07-07 — Stable Architecture: Rule 6B/6C baked + architecture_audit.py + pre-commit hook (Tasks 0, 1, 1B)
-**Status:** IN-PROGRESS
+**Status:** DONE — commit `4a42e1f`. Hook verified: deliberate `_rsi()` violation → commit BLOCKED; clean commit → PASS. Baseline: 7 FAIL, 1 WARN (`_TOOLS/ARCH_AUDIT_REPORT.md`) — 4 DUP-INDICATOR → Task 2; 2 RAW-ORDER + 1 BACKTEST-RISK → Task 3; 1 STATE-PERSIST WARN (universe_trader `_state`). VPS pe hook ki zaroorat nahi (VPS git-archive sync hai, commits wahan nahi hote).
 **Kya:** Task-list (Desktop/claude-code-task-list.md) ke pehle 3 tasks: (0) Rule 6B "duplicate mat karo extend karo" + Rule 6C "ADR likho" CLAUDE.md Critical Rules mein permanently baked; (1) `_TOOLS/architecture_audit.py` — pure static analysis (AST/regex, no LLM): raw broker order-calls, inline risk-checks, duplicate indicators, non-persisted state, backtest risk-bypass detect kare; `--staged-only`/`--report` flags, exit 1 on FAIL; (1B) `.git/hooks/pre-commit` wire — har commit pe audit auto-chale, FAIL pe commit block.
 **Layer:** infra / validation
 **Files:** `CLAUDE.md`, `_TOOLS/architecture_audit.py` (new), `scripts/pre-commit-architecture-audit.sh` (new), `.git/hooks/pre-commit`

@@ -54,6 +54,10 @@ TC_FILE     = BASE_DIR / "nifty_config.json"          # strategy params
 sys.path.insert(0, str(BASE_DIR))
 import dhan_master
 from brokers import kite_broker
+# RSI ka SINGLE source of truth — _CHARTING/indicators.py (Rule 6B / ADR-002).
+# Wahi Wilder formula jo pehle yahin inline thi (com=period-1, Pine ta.rsi match) —
+# ab signal AUR dashboard chart dono isi se aate hain, mismatch possible hi nahi.
+from _CHARTING.indicators import wilder_rsi as _compute_rsi
 
 # Market timing (IST)
 MARKET_OPEN  = (9,  16)   # 9:16 AM — market chalu
@@ -250,22 +254,8 @@ def fetch_candles(symbol, tf, token, cid):
 #    HOLD        : koi condition match nahi                  → return None
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _compute_rsi(series, period):
-    """
-    Wilder RSI — Pine ke ta.rsi() se exactly match karta hai.
-
-    Wilder smoothing formula:
-      alpha = 1/period  →  EWM com = period - 1
-    (agar span=period use karo toh Pine se values alag aayengi)
-    """
-    delta = series.diff()
-    gain  = delta.clip(lower=0)          # sirf upar wale moves
-    loss  = (-delta).clip(lower=0)       # sirf neeche wale moves (positive rakho)
-    avg_g = gain.ewm(com=period - 1, min_periods=period).mean()
-    avg_l = loss.ewm(com=period - 1, min_periods=period).mean()
-    rs    = avg_g / avg_l.replace(0, float("inf"))   # loss=0 → RSI=100
-    return 100 - (100 / (1 + rs))
-
+# _compute_rsi = wilder_rsi (imported at top from _CHARTING/indicators.py —
+# Task 2 consolidation 2026-07-07; formula bit-for-bit wahi hai jo yahan inline thi)
 
 def get_signal(df, period, oversold, overbought, rsi_exit, pos):
     """

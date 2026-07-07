@@ -272,21 +272,18 @@ from _CHARTING.patterns import (
     bull_engulfing, bear_engulfing, bull_harami, bear_harami,
     is_bullish_pattern, is_bearish_pattern,
 )
+# ATR ka SINGLE source of truth (Rule 6B / ADR-002) — wahi Wilder RMA formula
+# (alpha=1/period) jo pehle yahin inline thi; alias se existing callers unchanged.
+from _CHARTING.indicators import wilder_atr as compute_atr
 
 MIN_BODY_SIZE = 0.5    # minimum body in points (Pine minBodySize)
 WICK_RATIO    = 2.5    # wick >= WICK_RATIO * body (Pine wickRatio=2.5)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# ATR
+# ATR — compute_atr = wilder_atr (imported above from _CHARTING/indicators.py,
+# Task 2 consolidation 2026-07-07; formula bit-for-bit wahi hai jo yahan inline thi)
 # ─────────────────────────────────────────────────────────────────────────────
-
-def compute_atr(df, period=14):
-    h, l, pc = df["high"], df["low"], df["close"].shift(1)
-    tr = pd.concat([h - l, (h - pc).abs(), (l - pc).abs()], axis=1).max(axis=1)
-    # Pine ta.atr uses Wilder's RMA (alpha = 1/period), NOT EMA span
-    return tr.ewm(alpha=1.0 / period, adjust=False).mean()
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INTRADAY SIGNAL ENGINE — runs bar by bar on 1-min data

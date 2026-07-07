@@ -14,15 +14,25 @@ staged files) and reports FAIL/WARN per Rule 6B:
                     risk_gate / strategy_safety / smart_order / execution_gateway
 
 Usage:
-  python _TOOLS/architecture_audit.py                # full repo scan
-  python _TOOLS/architecture_audit.py --staged-only  # only `git diff --cached` files (pre-commit hook)
-  python _TOOLS/architecture_audit.py --report       # also write _TOOLS/ARCH_AUDIT_REPORT.md
+  python _TOOLS/architecture_audit.py                   # full repo scan
+  python _TOOLS/architecture_audit.py --staged-only     # only `git diff --cached` files (pre-commit hook)
+  python _TOOLS/architecture_audit.py --report          # also write _TOOLS/ARCH_AUDIT_REPORT.md
+  python _TOOLS/architecture_audit.py --write-baseline  # accept current FAILs as the known-debt baseline
 
-Exit code: 1 if any FAIL (WARNs alone don't block). The pre-commit hook depends on this.
+BASELINE RATCHET (progressive adoption, like real linters):
+  _TOOLS/audit_baseline.json holds known pre-existing FAIL counts per (file, check)
+  — the debt that Tasks 3+ are scheduled to pay down. A FAIL is only BLOCKING when
+  its (file, check) count EXCEEDS the baseline (i.e., someone added a NEW violation).
+  Baselined FAILs still print (as BASE) so the scoreboard stays visible.
+  After fixing debt, re-run --write-baseline to ratchet the allowance DOWN.
+
+Exit code: 1 if any non-baselined FAIL (WARN/BASE alone don't block). The pre-commit
+hook depends on this.
 """
 
 import argparse
 import ast
+import json
 import os
 import re
 import subprocess
@@ -30,6 +40,7 @@ import sys
 from datetime import datetime
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASELINE_FILE = os.path.join(REPO_ROOT, "_TOOLS", "audit_baseline.json")
 
 # ---------------------------------------------------------------- scan scope
 
@@ -236,12 +247,13 @@ def write_report(findings, files_scanned):
     out = os.path.join(REPO_ROOT, "_TOOLS", "ARCH_AUDIT_REPORT.md")
     fails = [f for f in findings if f.level == "FAIL"]
     warns = [f for f in findings if f.level == "WARN"]
+    based = [f for f in findings if f.level == "BASE"]
     with open(out, "w", encoding="utf-8") as f:
         f.write(f"# Architecture Audit Report\n\n")
         f.write(f"- **Run:** {datetime.now().strftime('%Y-%m-%d %H:%M')}\n")
         f.write(f"- **Files scanned:** {files_scanned}\n")
-        f.write(f"- **FAIL:** {len(fails)} | **WARN:** {len(warns)}\n\n")
-        for title, items in (("FAILs", fails), ("WARNs", warns)):
+        f.write(f"- **FAIL:** {len(fails)} | **WARN:** {len(warns)} | **Baselined debt:** {len(based)}\n\n")
+        for title, items in (("FAILs", fails), ("WARNs", warns), ("Baselined (pre-existing debt — Tasks 3+ scope)", based)):
             f.write(f"## {title}\n\n")
             if not items:
                 f.write("(none)\n\n")
@@ -253,12 +265,61 @@ def write_report(findings, files_scanned):
     return out
 
 
+def _group_key(fd):
+    """Baseline key: file + check (line numbers shift, counts don't lie)."""
+    return f"{fd.rel_path.replace(os.sep, '/')}|{fd.check}"
+
+
+def load_baseline():
+    if not os.path.isfile(BASELINE_FILE):
+        return {}
+    with open(BASELINE_FILE, encoding="utf-8") as f:
+        return json.load(f).get("known_fail_counts", {})
+
+
+def apply_baseline(findings, baseline):
+    """Downgrade FAILs covered by the baseline ratchet to level BASE (non-blocking).
+    If a (file, check) group's count EXCEEDS its baseline allowance, the whole
+    group stays FAIL — someone added a NEW violation on top of the known debt."""
+    groups = {}
+    for fd in findings:
+        if fd.level == "FAIL":
+            groups.setdefault(_group_key(fd), []).append(fd)
+    for key, group in groups.items():
+        allowed = baseline.get(key, 0)
+        if allowed and len(group) <= allowed:
+            for fd in group:
+                fd.level = "BASE"
+                fd.msg += f"  [baselined pre-existing debt: {len(group)}/{allowed} allowed]"
+        elif allowed and len(group) > allowed:
+            for fd in group:
+                fd.msg += f"  [EXCEEDS baseline: {len(group)} found, only {allowed} allowed — NEW violation added]"
+
+
+def write_baseline(findings):
+    counts = {}
+    for fd in findings:
+        if fd.level in ("FAIL", "BASE"):
+            counts[_group_key(fd)] = counts.get(_group_key(fd), 0) + 1
+    with open(BASELINE_FILE, "w", encoding="utf-8") as f:
+        json.dump({
+            "_comment": "Known pre-existing FAIL counts (debt) — audit only blocks when a count EXCEEDS "
+                        "its allowance here. After paying debt down (Tasks 3+), re-run --write-baseline "
+                        "to ratchet allowances DOWN. Never hand-edit upward.",
+            "updated": datetime.now().strftime("%Y-%m-%d %H:%M"),
+            "known_fail_counts": counts,
+        }, f, indent=2)
+    return counts
+
+
 def main():
     ap = argparse.ArgumentParser(description="Mechanical architecture audit (Rule 6B)")
     ap.add_argument("--staged-only", action="store_true",
                     help="only audit files in git diff --cached (pre-commit hook mode)")
     ap.add_argument("--report", action="store_true",
                     help="also write _TOOLS/ARCH_AUDIT_REPORT.md")
+    ap.add_argument("--write-baseline", action="store_true",
+                    help="accept current full-repo FAILs as the known-debt baseline (ratchet)")
     args = ap.parse_args()
 
     files = staged_files() if args.staged_only else list(iter_repo_files())
@@ -267,8 +328,17 @@ def main():
         return 0
 
     findings = audit(files)
+
+    if args.write_baseline:
+        counts = write_baseline(findings)
+        print(f"Baseline written: {BASELINE_FILE} — {sum(counts.values())} known FAIL(s) "
+              f"across {len(counts)} (file, check) group(s)")
+        return 0
+
+    apply_baseline(findings, load_baseline())
     fails = [f for f in findings if f.level == "FAIL"]
     warns = [f for f in findings if f.level == "WARN"]
+    based = [f for f in findings if f.level == "BASE"]
 
     mode = "staged-only" if args.staged_only else "full-repo"
     print(f"Architecture audit ({mode}) — {len(files)} file(s) scanned")
@@ -276,7 +346,7 @@ def main():
     for fd in findings:
         print(fd)
     print("-" * 72)
-    print(f"RESULT: {len(fails)} FAIL, {len(warns)} WARN")
+    print(f"RESULT: {len(fails)} FAIL, {len(warns)} WARN, {len(based)} baselined (pre-existing debt)")
 
     if args.report:
         print(f"Report written: {write_report(findings, len(files))}")

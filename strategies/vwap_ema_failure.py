@@ -54,6 +54,8 @@ import datetime
 
 import pandas as pd
 
+from _CHARTING.indicators import pine_ema   # EMA source of truth (Rule 6B / ADR-002)
+
 
 def _parse_hm(s, default):
     try:
@@ -104,7 +106,7 @@ def backtest(df, cfg):
         df["volume"] = 0.0
 
     close, high, low = df["close"], df["high"], df["low"]
-    ema10 = close.ewm(span=ema_len, adjust=False).mean()
+    ema10 = pine_ema(close, ema_len)   # single source of truth (Rule 6B / ADR-002)
     vwap = _daily_vwap(df)
 
     day = df["time"].dt.date

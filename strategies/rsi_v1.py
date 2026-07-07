@@ -22,6 +22,10 @@ Interface: evaluate(df, cfg, pos) → 'BUY' | 'SELL' | 'EXIT' | None
 
 import pandas as pd
 
+# RSI ka SINGLE source of truth (Rule 6B / ADR-002) — wahi Wilder formula
+# (com=period-1, Pine ta.rsi match) jo pehle yahin inline thi.
+from _CHARTING.indicators import wilder_rsi as _rsi
+
 
 def evaluate(df: pd.DataFrame, cfg: dict, pos):
     period   = int(cfg.get("rsi_period", 14))
@@ -58,13 +62,5 @@ def evaluate(df: pd.DataFrame, cfg: dict, pos):
     return None
 
 
-# ── RSI (matches Pine's ta.rsi — Wilder/EWM method) ──────────────────────────
-def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
-    delta = series.diff()
-    gain  = delta.clip(lower=0)
-    loss  = -delta.clip(upper=0)
-    # com = period-1 gives alpha = 1/period → Wilder smoothing
-    avg_g = gain.ewm(com=period - 1, min_periods=period).mean()
-    avg_l = loss.ewm(com=period - 1, min_periods=period).mean()
-    rs    = avg_g / avg_l.replace(0, float("inf"))
-    return 100 - (100 / (1 + rs))
+# _rsi = wilder_rsi (imported at top from _CHARTING/indicators.py —
+# Task 2 consolidation 2026-07-07; formula bit-for-bit wahi hai jo yahan inline thi)
