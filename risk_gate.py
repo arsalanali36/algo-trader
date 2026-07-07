@@ -105,6 +105,35 @@ def max_premium_cap_for(symbol):
     return cfg["stock"]
 
 
+def default_sl_profile():
+    """Unified per-trade default SL/Target selector (2026-07-07 — merge of the
+    old three overlapping systems into ONE mode, so only one is ever active and
+    the "kaunsa default lag raha hai" confusion is gone). Returns (enabled, mode)
+    with mode ∈ {'legacy','dropdown','aggressive'}:
+
+      legacy     — flat whole-position ₹ (Fixed Target / Fixed SL, no per-lot
+                   scaling) → stamped as SL_TYPE:rs/TP_TYPE:rs entry tags.
+      dropdown   — separate SL type+value / Target type+value (the old 2️⃣ card)
+                   → stamped as the chosen SL_TYPE/TP_TYPE entry tags.
+      aggressive — per-lot rupee target + stepped/aggressive trailing (the old
+                   5️⃣ Default Target/SL) → run at MONITOR time, no entry tags.
+
+    Backward-compat: if the new default_sl_mode key isn't present (pre-merge
+    config), infer the mode from the old separate flags so nothing silently
+    changes behaviour on upgrade — default_tsl_enabled→aggressive, else a set
+    default_sl_type→dropdown, else off."""
+    g = _risk_cfg().get("global", {})
+    mode = g.get("default_sl_mode")
+    if mode in ("legacy", "dropdown", "aggressive"):
+        en = g.get("default_sl_enabled")
+        return (True if en is None else bool(en)), mode
+    if g.get("default_tsl_enabled"):
+        return True, "aggressive"
+    if g.get("default_sl_type"):
+        return True, "dropdown"
+    return False, "dropdown"
+
+
 def kill_floor_config():
     """Account-level trailing kill-floor settings (2026-07-02, user-requested).
     Semantics (locked with user, real-data-calibrated against 2026-07-02's own
@@ -271,8 +300,12 @@ def default_target_sl_config():
             return default if v is None else float(v)
         except (TypeError, ValueError):
             return default
+    # Aggressive runs only when the unified per-trade SL mode is 'aggressive'
+    # (2026-07-07 merge). Backward-compatible: default_sl_profile() falls back to
+    # the old default_tsl_enabled flag when the new mode key isn't set yet.
+    _en, _mode = default_sl_profile()
     return {
-        "enabled": bool(g.get("default_tsl_enabled", False)),
+        "enabled": bool(_en and _mode == "aggressive"),
         "target_per_lot": _f("default_tsl_target_per_lot", 2000.0),
         "initial_sl_per_lot": _f("default_tsl_initial_sl_per_lot", 1000.0),
         "favour_step": _f("default_tsl_favour_step", 100.0),
@@ -873,7 +906,43 @@ def default_instrument_sl_tags(strategy, symbol=None):
     """
     rc = _risk_cfg()
     tags = []
-    
+
+    # Unified per-trade default SL mode (2026-07-07 merge). Only one mode's tags
+    # ever get stamped. 'aggressive' is a MONITOR-time profile (advance_target_sl
+    # via default_target_sl_config) — it stamps NO entry tags, so return []. 'off'
+    # → []. Applies to NEW positions only (existing open positions keep whatever
+    # tags they already have — user's explicit call, mid-trade SL never changes).
+    _en, _mode = default_sl_profile()
+    if not _en:
+        return []
+    if _mode == "aggressive":
+        # Aggressive is a MONITOR-time profile (advance_target_sl), not an entry
+        # tag — but stamp a marker so pos_monitor only applies it to positions
+        # opened WHILE aggressive was the chosen mode (user's "new trades only"
+        # rule — a mid-day switch to aggressive must NOT grab already-open
+        # trades). Not an SL_TYPE/TP_TYPE prefix, so the generic SL check + exit-
+        # reason badge both ignore it.
+        return ["AGGR_TSL:1"]
+
+    g0 = rc.get("global") or {}
+    if _mode == "legacy":
+        # Flat whole-position ₹ (SL_TYPE:rs interprets val as the total-position
+        # ₹ loss/profit — see _generic_px). Fixed, does NOT scale with lots.
+        try:
+            sl_rs = float(g0.get("default_legacy_sl_rs") or 2000)
+        except Exception:
+            sl_rs = 2000.0
+        try:
+            tp_rs = float(g0.get("default_legacy_tp_rs") or 5000)
+        except Exception:
+            tp_rs = 5000.0
+        if sl_rs > 0:
+            tags.extend([f"SL_TYPE:rs", f"SL_VAL:{sl_rs}"])
+        if tp_rs > 0:
+            tags.extend([f"TP_TYPE:rs", f"TP_VAL:{tp_rs}"])
+        return tags
+
+    # ── mode == "dropdown" ── (the old 2️⃣ behaviour, preserved verbatim) ──
     # 1. Check strategy-specific legacy default_sl_rs
     ps_rs = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("default_sl_rs")
     if ps_rs is not None:
@@ -883,7 +952,7 @@ def default_instrument_sl_tags(strategy, symbol=None):
                 tags.extend([f"SL_TYPE:rs", f"SL_VAL:{val}"])
         except Exception:
             pass
-            
+
     # 2. If no strategy legacy SL is set, check global/default SL
     if not tags:
         g = rc.get("global") or {}

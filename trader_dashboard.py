@@ -4157,9 +4157,16 @@ def pos_monitor_loop():
                 _tslc = _rg_tsl.default_target_sl_config()
                 if _tslc["enabled"]:
                     _tsl_dirty = False
+                    # Only positions stamped AGGR_TSL at entry (opened while
+                    # 'aggressive' was the chosen default SL mode) — so switching
+                    # TO aggressive mid-day never grabs already-open trades
+                    # ("new trades only", 2026-07-07). Older aggressive positions
+                    # (pre-marker) also carry it going forward; nothing without
+                    # the marker is touched.
                     _active_tsl = [_p for _p in open_pos
                                    if _p.get("status") != "blocked"
-                                   and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
+                                   and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])
+                                   and any(str(_t).startswith("AGGR_TSL") for _t in (_p.get("tags") or []))]
                     for _p in _active_tsl:
                         _pid = _p.get("id")
                         if not _pid or _pid in _closed_ids:

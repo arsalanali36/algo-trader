@@ -2285,10 +2285,49 @@
                 </td>
               </tr>
               <tr>
-                <td class="param-info"><span>2️⃣ Per-Trade Default SL & Target</span>
-                  <span class="wavy-subtext">Har naye individual position ke khulte hi ye default Stop-Loss aur Target
-                    (TP) automatically lag jaata hai — sirf wahi ek leg squareoff hoti hai, baaki strategy/instrument pe
-                    asar nahi.</span>
+                <td class="param-info" style="border-left:3px solid #1f6feb"><span>🎯 Per-Trade Default SL & Target</span>
+                  <span class="wavy-subtext">Har naye position pe ye default SL/Target lagta hai — sirf wahi ek leg exit
+                    hoti hai. <b>Ek hi mode active rehta hai.</b> Purani open positions apne existing SL/TP pe chalti hain
+                    (mode change sirf naye trades pe).</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row"><label>Enabled</label>
+                      <select id="risk-defsl-enabled" style="border-color:#1f6feb">
+                        <option value="true">ON</option>
+                        <option value="false">OFF</option>
+                      </select>
+                    </div>
+                    <div class="inputs-row"><label>Mode</label>
+                      <select id="risk-defsl-mode" onchange="setDefaultSlMode(this.value)" style="border-color:#1f6feb">
+                        <option value="legacy">Legacy — Fixed ₹</option>
+                        <option value="dropdown">Dropdown — Type + Value</option>
+                        <option value="aggressive">Aggressive — Per-lot trail</option>
+                      </select>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr id="sl-mode-legacy-row">
+                <td class="param-info" style="border-left:3px solid #30363d;padding-left:14px"><span>↳ Legacy — Fixed ₹ (whole position)</span>
+                  <span class="wavy-subtext">Flat ₹ Target aur SL, poori position pe — lots se scale nahi hota (2 lot ho
+                    ya 1, wahi ₹).</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row"><label>Fixed Target ₹</label>
+                      <input id="risk-legacy-tp" type="number" step="100" placeholder="5000" />
+                    </div>
+                    <div class="inputs-row"><label>Fixed SL ₹</label>
+                      <input id="risk-legacy-sl" type="number" step="100" placeholder="2000" />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr id="sl-mode-dropdown-row">
+                <td class="param-info" style="border-left:3px solid #30363d;padding-left:14px"><span>↳ Dropdown — Type + Value</span>
+                  <span class="wavy-subtext">Target aur SL alag-alag type+value se choose karo — sirf wahi ek leg
+                    squareoff hoti hai, baaki strategy/instrument pe asar nahi.</span>
                 </td>
                 <td class="param-inputs">
                   <div class="inputs-grid">
@@ -2440,8 +2479,8 @@
                   </div>
                 </td>
               </tr>
-              <tr>
-                <td class="param-info" style="border-left:3px solid #d29922"><span>5️⃣ 🎯 Default Target/SL</span>
+              <tr id="sl-mode-aggressive-row">
+                <td class="param-info" style="border-left:3px solid #d29922;padding-left:14px"><span>↳ Aggressive — Per-lot trailing</span>
                   <span class="wavy-subtext">Har position pe ek global rupee-based exit profile: fixed Target ₹/lot,
                     initial SL ₹/lot. Har Favour ₹/lot favour me → SL, SL Move ₹/lot upar ratchet. Target ke
                     Aggressive% par pahunchte hi SL Move × mult ho jaata hai (fast profit lock). Min Cushion = SL kabhi
@@ -2450,7 +2489,7 @@
                 </td>
                 <td class="param-inputs">
                   <div class="inputs-grid">
-                    <div class="inputs-row"><label>Enabled</label>
+                    <div class="inputs-row" style="display:none"><label>Enabled</label>
                       <select id="risk-tsl-enabled" style="border-color:#d29922" oninput="renderTslPreview()">
                         <option value="false">OFF</option>
                         <option value="true">ON</option>
@@ -2480,7 +2519,7 @@
                   </div>
                 </td>
               </tr>
-              <tr>
+              <tr id="sl-mode-aggressive-graph">
                 <td colspan="2" style="padding-top:4px">
                   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                     <button type="button" id="tsl-tab-graph" onclick="tslShowTab('graph')"
@@ -3744,6 +3783,20 @@
       document.getElementById('risk-tsl-aggpct').value = RISK_CFG.global.default_tsl_aggressive_pct != null ? RISK_CFG.global.default_tsl_aggressive_pct : '';
       document.getElementById('risk-tsl-aggmult').value = RISK_CFG.global.default_tsl_aggressive_mult != null ? RISK_CFG.global.default_tsl_aggressive_mult : '';
       document.getElementById('risk-tsl-cushion').value = RISK_CFG.global.default_tsl_min_cushion != null ? RISK_CFG.global.default_tsl_min_cushion : '';
+      // Per-Trade Default SL mode (2026-07-07 merge) — infer from old flags when
+      // the new key isn't set yet (mirrors risk_gate.default_sl_profile()).
+      let _dsMode = RISK_CFG.global.default_sl_mode;
+      let _dsEn = RISK_CFG.global.default_sl_enabled;
+      if (_dsMode !== 'legacy' && _dsMode !== 'dropdown' && _dsMode !== 'aggressive') {
+        if (RISK_CFG.global.default_tsl_enabled) { _dsMode = 'aggressive'; _dsEn = true; }
+        else if (RISK_CFG.global.default_sl_type) { _dsMode = 'dropdown'; _dsEn = true; }
+        else { _dsMode = 'legacy'; _dsEn = (_dsEn === undefined ? false : _dsEn); }
+      }
+      document.getElementById('risk-defsl-mode').value = _dsMode;
+      document.getElementById('risk-defsl-enabled').value = (_dsEn === false ? 'false' : 'true');
+      document.getElementById('risk-legacy-sl').value = RISK_CFG.global.default_legacy_sl_rs != null ? RISK_CFG.global.default_legacy_sl_rs : '';
+      document.getElementById('risk-legacy-tp').value = RISK_CFG.global.default_legacy_tp_rs != null ? RISK_CFG.global.default_legacy_tp_rs : '';
+      setDefaultSlMode(_dsMode);
       renderTslPreview();
       killFloorStatusPoll();
       perInstrumentLockStatusPoll();
@@ -4032,6 +4085,12 @@
           max_premium_nifty: document.getElementById('risk-maxprem-nifty').value !== '' ? parseFloat(document.getElementById('risk-maxprem-nifty').value) : null,
           max_premium_banknifty: document.getElementById('risk-maxprem-banknifty').value !== '' ? parseFloat(document.getElementById('risk-maxprem-banknifty').value) : null,
           max_premium_stock: document.getElementById('risk-maxprem-stock').value !== '' ? parseFloat(document.getElementById('risk-maxprem-stock').value) : null,
+          // Per-Trade Default SL merge (2026-07-07) — one mode drives Legacy /
+          // Dropdown / Aggressive. Same wholesale-replace caveat as below.
+          default_sl_mode: document.getElementById('risk-defsl-mode').value,
+          default_sl_enabled: document.getElementById('risk-defsl-enabled').value === 'true',
+          default_legacy_sl_rs: document.getElementById('risk-legacy-sl').value !== '' ? parseFloat(document.getElementById('risk-legacy-sl').value) : null,
+          default_legacy_tp_rs: document.getElementById('risk-legacy-tp').value !== '' ? parseFloat(document.getElementById('risk-legacy-tp').value) : null,
           // PER-INSTRUMENT LOCK + KILL-FLOOR (2026-07-02) — /api/risk-config POST
           // replaces _risk wholesale, so these MUST be in every save payload or
           // saving any other risk setting would silently erase them.
@@ -4122,6 +4181,20 @@
       }
       return { pts, aggAt, be, tgt: c.tgt, initSL: c.initSL, cushion: c.cushion };
     }
+    // Per-Trade Default SL merge (2026-07-07) — show only the active mode's
+    // fields (Legacy / Dropdown / Aggressive). Only one is ever applied.
+    function setDefaultSlMode(mode) {
+      const rows = {
+        legacy: ['sl-mode-legacy-row'],
+        dropdown: ['sl-mode-dropdown-row'],
+        aggressive: ['sl-mode-aggressive-row', 'sl-mode-aggressive-graph'],
+      };
+      ['sl-mode-legacy-row', 'sl-mode-dropdown-row', 'sl-mode-aggressive-row', 'sl-mode-aggressive-graph']
+        .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
+      (rows[mode] || []).forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
+      if (mode === 'aggressive') { try { renderTslPreview(); } catch (e) { } }
+    }
+
     function renderTslPreview() {
       const wrap = document.getElementById('tsl-svg-wrap'); if (!wrap) return;
       const c = _tslCfg(); if (c.tgt <= 0) { wrap.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Target ₹/lot 0 se bada rakho.</div>'; document.getElementById('tsl-preview-table').innerHTML = ''; return; }
