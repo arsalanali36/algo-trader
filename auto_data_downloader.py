@@ -93,10 +93,13 @@ def fetch_orders() -> list:
         return []
 
 
-def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str) -> bool:
-    """Download 1-min OHLC bars for one instrument on one date. Returns True on success."""
+def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str, force: bool = False) -> bool:
+    """Download 1-min OHLC bars for one instrument on one date. Returns True on success.
+    force=True re-fetches even if a file already exists (used for the post-close
+    full-day capture of order_store trades — a mid-day file is only a partial day)
+    and MERGES into whatever's already saved rather than overwriting."""
     out_file = OHLC_DIR / f"{sec_id}_{date_str}.json"
-    if out_file.exists():
+    if out_file.exists() and not force:
         return True  # already have it
 
     time.sleep(3)  # rate-limit guard
@@ -148,6 +151,16 @@ def download_bars(sec_id: str, exchange: str, instrument: str, date_str: str) ->
             # (Old HH:MM-keyed files stay on disk but the reader skips them.)
             bars[str(int(ts))] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
 
+        # Merge into any existing file (a mid-day capture or a chart write-through
+        # may already hold part of the day) rather than clobbering it.
+        if out_file.exists():
+            try:
+                existing = json.loads(out_file.read_text())
+                if isinstance(existing, dict):
+                    existing.update(bars)
+                    bars = existing
+            except Exception:
+                pass
         out_file.write_text(json.dumps(bars))
         log.info("Saved %d bars → %s", len(bars), out_file.name)
         return True
@@ -187,6 +200,64 @@ def process_orders(orders: list, dl_log: dict) -> bool:
         day_log[sec_id] = "ok" if result else "missing"
 
     return True  # no token error
+
+
+INDEX_ROOTS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"}
+
+
+def process_order_store_trades(dl_log: dict) -> bool:
+    """Capture full-day 1-min premium bars for EVERY option contract traded today
+    per order_store — regardless of which broker placed it. Why this exists in
+    addition to process_orders(): that one only sees DHAN-placed orders (Dhan
+    /v2/orders), but the algo trades on Kite/Zerodha, so those trades would never
+    get their premium bars saved and their charts would vanish after the contract
+    expires (#5, 2026-07-07). The premium candle data itself always comes from
+    Dhan's charts API by securityId (broker-agnostic) — only the LIST of which
+    securityIds to grab needs to come from order_store instead of Dhan orders.
+
+    Runs only AFTER market close (15:35 IST — VPS clock is IST) so it grabs the
+    FULL day in one shot; marks each contract 'final' so it's fetched exactly once
+    per day. Returns False on a token error (so run_once can surface the alert)."""
+    if datetime.datetime.now().time() < datetime.time(15, 35):
+        return True  # capture the full day once, after close — not mid-session
+    try:
+        import order_store
+    except Exception as e:
+        log.error("order_store import failed: %s", e)
+        return True
+    today = datetime.date.today().isoformat()
+    try:
+        with order_store._lock, order_store._conn() as c:
+            rows = c.execute(
+                "SELECT DISTINCT sec_id, trad_sym FROM orders "
+                "WHERE substr(ts,1,10)=? AND sec_id IS NOT NULL AND sec_id!='' "
+                "AND trad_sym IS NOT NULL AND trad_sym!=''",
+                (today,)).fetchall()
+    except Exception as e:
+        log.error("order_store read failed: %s", e)
+        return True
+
+    day_log = dl_log.setdefault(today, {})
+    n_done = 0
+    for sec_id, trad_sym in rows:
+        sec_id = str(sec_id)
+        if "-CE" not in trad_sym and "-PE" not in trad_sym:
+            continue  # options only — premium chart
+        key = f"os_{sec_id}"
+        if day_log.get(key) == "final":
+            continue
+        root = trad_sym.split("-")[0].upper()
+        instrument = "OPTIDX" if root in INDEX_ROOTS else "OPTSTK"
+        result = download_bars(sec_id, "NSE_FNO", instrument, today, force=True)
+        if result is None:
+            log.warning("Token error during order_store capture")
+            return False
+        day_log[key] = "final" if result else "missing"
+        if result:
+            n_done += 1
+    if n_done:
+        log.info("order_store capture: %d option contract(s) saved (broker-agnostic)", n_done)
+    return True
 
 
 def gap_check(dl_log: dict) -> list:
@@ -244,6 +315,15 @@ def run_once():
             alerts.append(f"🔴 Dhan token expire — {datetime.date.today().isoformat()} ka data nahi bacha. Control tab mein update karein.")
             _save_alerts(alerts)
             return
+
+    # Broker-agnostic full-day capture from order_store (catches Kite trades the
+    # Dhan-orders poll above can't see — #5). Post-close only; idempotent.
+    os_ok = process_order_store_trades(dl_log)
+    _save_log(dl_log)
+    if not os_ok:
+        alerts.append(f"🔴 Dhan token expire — {datetime.date.today().isoformat()} ke trade charts save nahi hue. Control tab mein update karein.")
+        _save_alerts(alerts)
+        return
 
     alerts = gap_check(dl_log)
     _save_alerts(alerts)
