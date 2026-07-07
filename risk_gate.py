@@ -67,6 +67,44 @@ def default_broker():
     return _risk_cfg().get("global", {}).get("default_broker", "dhan")
 
 
+def max_premium_config():
+    """Per-index max option-premium entry cap (₹), user-requested 2026-07-07.
+    A new option entry is BLOCKED if its per-unit premium exceeds the cap for
+    that index. Rationale: an expensive premium (BANKNIFTY especially) moves a
+    fixed-₹ SL's worth in seconds, so a ₹1,000 SL gets hit almost instantly —
+    the user would rather just not enter such contracts. Caps are PER-INDEX
+    because BANKNIFTY premiums run far larger than NIFTY's, so one shared number
+    would either be too loose for NIFTY or too tight for BANKNIFTY. Blank / 0 /
+    None on a key = no cap for that bucket (unlimited, current behaviour)."""
+    g = _risk_cfg().get("global", {})
+    def _f(key):
+        try:
+            v = g.get(key)
+            if v in (None, "", 0, "0"):
+                return None
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+    return {
+        "nifty":     _f("max_premium_nifty"),
+        "banknifty": _f("max_premium_banknifty"),
+        "stock":     _f("max_premium_stock"),
+    }
+
+
+def max_premium_cap_for(symbol):
+    """Resolve the applicable per-index premium cap (₹) for an underlying root
+    symbol, or None if no cap applies. NIFTY→nifty bucket, BANKNIFTY→banknifty
+    bucket, everything else (stocks + FINNIFTY/SENSEX/etc)→stock bucket."""
+    cfg = max_premium_config()
+    s = (symbol or "").upper()
+    if s == "NIFTY":
+        return cfg["nifty"]
+    if s == "BANKNIFTY":
+        return cfg["banknifty"]
+    return cfg["stock"]
+
+
 def kill_floor_config():
     """Account-level trailing kill-floor settings (2026-07-02, user-requested).
     Semantics (locked with user, real-data-calibrated against 2026-07-02's own
@@ -201,6 +239,107 @@ def advance_trailing_lock(state, mtm, arm_rs, gap_rs, confirm_secs, now_ts, mtm_
     if not mtm_unreliable:
         state["prev_mtm"] = mtm
     return state, changed
+
+
+def default_target_sl_config():
+    """Default Target/SL exit profile (2026-07-04, user-designed) — a GLOBAL,
+    per-position, rupee-based exit manager applied to every open option leg when
+    enabled. All ₹ values are PER-LOT and scale by the position's lot count, so
+    one config behaves consistently across instruments with very different lot
+    sizes / premiums (points/percent would drift; rupee-MTM doesn't).
+
+    Semantics (locked with user, mockup + graph approved):
+      enabled            — master switch (default OFF until turned on in RMS tab)
+      target_per_lot     — fixed profit target ₹/lot → exit (2000 default)
+      initial_sl_per_lot — starting stop ₹/lot below entry (1000 default)
+      favour_step        — every this many ₹ of favourable MTM/lot...        (100)
+      sl_move            — ...the SL ratchets up this many ₹/lot             (100)
+      aggressive_pct     — once peak MTM crosses this % of target...          (50)
+      aggressive_mult    — ...each sl_move becomes this multiple (2x)        (2.0)
+      min_cushion        — SL never sits closer than this ₹/lot below the
+                           confirmed peak (0 = allowed to touch price;
+                           >0 = whipsaw guard — SL trails a fixed gap so live
+                           noise can't instant-stop a still-good trade). This is
+                           the fix for the 'gap hits 0 → SL == live price' zone
+                           the graph exposed (same class as TRAP #80-81).
+    The trailing is driven by the CONFIRMED peak (2-reading min, spike-proof —
+    same technique as advance_trailing_lock), not a single raw tick."""
+    g = _risk_cfg().get("global", {})
+    def _f(key, default):
+        try:
+            v = g.get(key)
+            return default if v is None else float(v)
+        except (TypeError, ValueError):
+            return default
+    return {
+        "enabled": bool(g.get("default_tsl_enabled", False)),
+        "target_per_lot": _f("default_tsl_target_per_lot", 2000.0),
+        "initial_sl_per_lot": _f("default_tsl_initial_sl_per_lot", 1000.0),
+        "favour_step": _f("default_tsl_favour_step", 100.0),
+        "sl_move": _f("default_tsl_sl_move", 100.0),
+        "aggressive_pct": _f("default_tsl_aggressive_pct", 50.0),
+        "aggressive_mult": _f("default_tsl_aggressive_mult", 2.0),
+        "min_cushion": _f("default_tsl_min_cushion", 0.0),
+    }
+
+
+def target_sl_level(peak_mtm, cfg, lots):
+    """Pure math: given the confirmed PEAK favourable MTM (₹, whole position)
+    reached so far, return the current SL level (₹, signed — negative = still a
+    loss stop, positive = locked profit). Deterministic; identical to the
+    dashboard simulator's trail. Ratchets up only (caller feeds it a monotonic
+    peak). Never returns above (peak_mtm - min_cushion), never below the
+    initial stop."""
+    lots = max(1, int(lots or 1))
+    target = cfg["target_per_lot"] * lots
+    init_sl = cfg["initial_sl_per_lot"] * lots
+    fav = cfg["favour_step"] * lots
+    move = cfg["sl_move"] * lots
+    cushion = cfg["min_cushion"] * lots
+    agg_at = target * cfg["aggressive_pct"] / 100.0
+    mult = cfg["aggressive_mult"]
+    sl = -init_sl
+    if fav <= 0 or peak_mtm <= 0:
+        return sl
+    steps = int(peak_mtm // fav)
+    for i in range(1, steps + 1):
+        p = i * fav
+        sl += (move * mult) if p > agg_at else move
+    ceil = peak_mtm - cushion          # never lock closer than the cushion
+    if sl > ceil:
+        sl = ceil
+    if sl < -init_sl:
+        sl = -init_sl
+    return sl
+
+
+def advance_target_sl(state, mtm, cfg, lots, mtm_unreliable=False):
+    """One monitor-tick of the Default Target/SL profile. Pure — caller owns
+    `state` and its disk persistence (restart-safe).
+
+    state: {peak, prev_mtm, fired}
+    mtm:   this position's current unrealised P&L (₹, whole position).
+    Returns (state, action, sl_level):
+      action ∈ {None, 'TARGET', 'SL'} — caller squares off the position on
+      anything non-None (tag DEFAULT_TSL_TARGET / DEFAULT_TSL_SL).
+    A tick with incomplete price data (mtm_unreliable) never advances the peak
+    and never fires — same freeze-don't-fire rule as advance_trailing_lock."""
+    lots = max(1, int(lots or 1))
+    target = cfg["target_per_lot"] * lots
+    confirmed = mtm if state.get("prev_mtm") is None else min(state["prev_mtm"], mtm)
+    if not mtm_unreliable and confirmed > state.get("peak", 0.0):
+        state["peak"] = round(confirmed, 2)
+    sl_level = target_sl_level(state.get("peak", 0.0), cfg, lots)
+    action = None
+    if not mtm_unreliable and not state.get("fired"):
+        if target > 0 and mtm >= target:
+            action = "TARGET"
+            state["fired"] = True
+        elif mtm <= sl_level:
+            action = "SL"
+            state["fired"] = True
+        state["prev_mtm"] = mtm
+    return state, action, round(sl_level, 2)
 
 
 # ── Live broker balance (cash + collateral) — single cached source, shared by

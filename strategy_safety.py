@@ -75,6 +75,17 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
             if not liq_ok:
                 return False, 0, liq_reason
 
+        # Per-index max-premium entry filter (2026-07-07) — skip entries on
+        # expensive-premium options (esp. BANKNIFTY) where a fixed-₹ SL would be
+        # hit almost instantly. est_price is the per-unit option premium; the
+        # cap is per-unit too. Options only (NSE_FNO); a 0/blank cap = off.
+        _prem = float(est_price or 0)
+        if seg == "NSE_FNO" and _prem > 0:
+            _cap = risk_gate.max_premium_cap_for(symbol)
+            if _cap is not None and _prem > _cap:
+                return False, 0, (f"premium ₹{_prem:.2f} > max ₹{_cap:.0f} cap for {symbol} "
+                                  f"— expensive premium skipped (fixed-₹ SL would hit too fast)")
+
         price = float(est_price or 0)
         if price > 0:
             conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=side)
