@@ -10,6 +10,16 @@ body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-siz
 
 /* header */
 .hdr{background:#161b22;border-bottom:1px solid #30363d;padding:10px 16px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+/* Embed mode (?embed=1): decluttered header when hosted inside the Script 3 tab.
+   Script 3 shell owns strategy selection + Saved Results; the copy-Pine button is
+   dropped per the redesign. All existing behaviour is unchanged when not embedded. */
+body.embed .hdr h1,
+body.embed #strategy-base-select,
+body.embed #strategy-version-select,
+body.embed #hdr-range,
+body.embed #copy-code-btn,
+body.embed #saved-results-btn{display:none!important}
+body.embed .hdr{padding:6px 12px;gap:8px}
 .hdr h1{font-size:14px;font-weight:600}
 .hdr select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:4px 8px;font-size:12px}
 .btn{padding:6px 12px;border:none;border-radius:6px;cursor:pointer;font-size:12px;font-weight:600;transition:opacity .15s}
@@ -104,7 +114,7 @@ table.trades tr.unmatched-row:hover{background:#f8514930}
   <select id="strategy-version-select" onchange="onVersionChange()"></select>
   <span id="hdr-range" style="font-size:11px;color:#8b949e"></span>
   <div style="margin-left:auto;display:flex;gap:8px">
-    <button class="btn btn-gray" onclick="openSavedResults()">📂 Saved Results</button>
+    <button class="btn btn-gray" id="saved-results-btn" onclick="openSavedResults()">📂 Saved Results</button>
     <button class="btn btn-gray" onclick="saveCurrentResult()">💾 Save Result</button>
     <button class="btn btn-gray" id="copy-code-btn" onclick="copyPineCode()">📋 Copy Pine Code</button>
     <button class="btn btn-blue" onclick="openEditModal()">✏️ Edit &amp; Re-run</button>
@@ -486,13 +496,16 @@ async function saveCurrentResult() {
   if (!desc) return;
   const body = {
     name: desc, strategy: D.strategy, cfg: D.cfg, date_from: D.date_from, date_to: D.date_to,
-    summary: D.summary, symbols: D.multi ? Object.keys(D.multi) : null
+    summary: D.summary, symbols: D.multi ? Object.keys(D.multi) : null,
+    // multi-symbol run → save EVERY symbol's own summary too, so the Saved
+    // Results list can expand a combined entry into per-symbol sub-rows
+    per_symbol: D.multi ? Object.fromEntries(Object.entries(D.multi).map(([s, v]) => [s, v.summary])) : null
   };
   try {
     const r = await fetch('/api/backtest/saved', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
     const d = await r.json();
     if (d.error) { alert('⚠ ' + d.error); return; }
-    alert('✅ Saved: ' + name);
+    alert('✅ Saved: ' + desc);
   } catch (e) { alert('⚠ ' + e.message); }
 }
 
@@ -725,7 +738,9 @@ function _deploySavedEntry(entry) {
   const sym = (entry.cfg && entry.cfg.symbol) || (entry.symbols || [])[0] || '';
   const params = new URLSearchParams({ deploy: entry.strategy || '' });
   if (sym) params.set('symbol', sym);
-  window.location.href = '/?' + params.toString();
+  // When embedded in the Script 3 tab, navigate the TOP window (the real
+  // dashboard) so the live Run modal opens there — not inside our iframe.
+  (window.top || window).location.href = '/?' + params.toString();
 }
 
 function _runSavedEntry(entry) {
@@ -789,9 +804,20 @@ async function copyPineCode() {
 
 // ───────────────────────── init ─────────────────────────
 async function init() {
+  const _q = new URLSearchParams(location.search);
+  // Embed mode: hosted inside the Script 3 tab's iframe — declutter the header.
+  if (_q.get('embed')) document.body.classList.add('embed');
+  // Script 3 "❤️ Saved Results" opens this page straight into the saved-results modal.
+  if (_q.get('open') === 'saved') { openSavedResults(); return; }
+  // Script 3 Parameter Modal → run in a NEW tab: payload in localStorage.
+  if (_q.get('autorun')) {
+    let p = null;
+    try { p = JSON.parse(localStorage.getItem('bt_autorun') || 'null'); } catch (e) {}
+    if (p && p.strategy) { await _autoRunFromPayload(p); return; }
+  }
   // Deep-link from the Script library's "▶ Run" — open straight into the Edit
   // & Re-run modal for a given strategy id so the user just picks dates & runs.
-  const qStrat = new URLSearchParams(location.search).get('strategy');
+  const qStrat = _q.get('strategy');
   if (qStrat) {
     try {
       const allCfg = await (await fetch('/api/config')).json();
@@ -2066,6 +2092,74 @@ async function _runMultiSymbol(sid, editedFields, dfrom, dto, msg) {
   return { multi, trades: combinedTrades, summary, tv_trades: null, tv_summary: null, accuracy: null };
 }
 
+// Shared post-run render — everything a fresh backtest result needs on screen.
+// Used by modalRun (Edit & Re-run) AND the ?autorun=1 deep-link path (Script 3's
+// Parameter Modal opens results in a NEW browser tab through this).
+function _postRunRender(dfrom, dto) {
+  try {
+    localStorage.setItem('bt_chart_data', JSON.stringify(D));
+  } catch (e) {
+    console.warn("LocalStorage quota exceeded, couldn't save chart data. This is normal for large datasets.");
+  }
+
+  document.getElementById('hdr-range').textContent = dfrom + ' → ' + dto;
+  _matchFilter = 'all';
+  _pnlFilter = 'all';
+  _symbolFilter = 'all';
+  renderSymTabs();
+  renderMatchFilterTabs();
+  renderStats();
+  drawChart();
+  drawEquityCurve();
+  drawRunupChart();
+  renderTradeTable();
+  const tableActive = document.getElementById('sub-tab-table').classList.contains('active');
+  setResultTab(tableActive ? 'table' : 'chart');
+}
+
+// Script 3 Parameter Modal → new-tab result: payload comes via localStorage
+// ('bt_autorun', same-origin) because a full cfg doesn't belong in a URL.
+async function _autoRunFromPayload(p) {
+  const sid = p.strategy;
+  D = { strategy: sid, cfg: p.cfg || {}, date_from: p.date_from || '', date_to: p.date_to || '' };
+  _selectedSymbols = (p.symbols && p.symbols.length) ? p.symbols.slice()
+    : (p.cfg && p.cfg.symbol ? [p.cfg.symbol] : ['NIFTY']);
+  populateStrategySelectors();
+  await initIndicatorPicker();
+  const hdr = document.getElementById('hdr-range');
+  hdr.textContent = '⏳ Running ' + sid + '…';
+  const pollHandle = _startProgressPoll(hdr);
+  try {
+    const editedFields = Object.assign({}, p.cfg || {});
+    const pickable = symbolPickable(baseType(sid));
+    if (pickable) editedFields.symbol = _selectedSymbols[0] || 'NIFTY';
+    let d2;
+    if (pickable && _selectedSymbols.length > 1) {
+      d2 = await _runMultiSymbol(sid, editedFields, D.date_from, D.date_to, hdr);
+    } else {
+      const fd = new FormData();
+      fd.append('strategy', sid);
+      fd.append('date_from', D.date_from);
+      fd.append('date_to', D.date_to);
+      fd.append('cfg_override', JSON.stringify(editedFields));
+      const r = await fetch('/api/backtest/run', { method: 'POST', body: fd });
+      d2 = await r.json();
+      if (d2.error) throw new Error(d2.error);
+    }
+    D = Object.assign({}, d2, { strategy: sid, cfg: editedFields, date_from: D.date_from, date_to: D.date_to });
+    _activeSymbol = symbolsFor(D.cfg)[0] || 'NIFTY';
+    _showPatterns = localStorage.getItem('bt_show_patterns') === '1';
+    const ptog = document.getElementById('patterns-toggle');
+    if (ptog) ptog.checked = _showPatterns;
+    _postRunRender(D.date_from, D.date_to);
+    setMainTab('chart');
+  } catch (e) {
+    hdr.textContent = '⚠ ' + e.message;
+  } finally {
+    clearInterval(pollHandle);
+  }
+}
+
 async function modalRun(saveFirst) {
   const sid = D.strategy || 'range_v1';
   const pickable = symbolPickable(baseType(sid));
@@ -2109,25 +2203,7 @@ async function modalRun(saveFirst) {
     }
 
     D = Object.assign({}, d2, { strategy: sid, cfg: newCfg, date_from: dfrom, date_to: dto });
-    try {
-      localStorage.setItem('bt_chart_data', JSON.stringify(D));
-    } catch (e) {
-      console.warn("LocalStorage quota exceeded, couldn't save chart data. This is normal for large datasets.");
-    }
-
-    document.getElementById('hdr-range').textContent = dfrom + ' → ' + dto;
-    _matchFilter = 'all';
-    _pnlFilter = 'all';
-    _symbolFilter = 'all';
-    renderSymTabs();
-    renderMatchFilterTabs();
-    renderStats();
-    drawChart();
-    drawEquityCurve();
-    drawRunupChart();
-    renderTradeTable();
-    const tableActive = document.getElementById('sub-tab-table').classList.contains('active');
-    setResultTab(tableActive ? 'table' : 'chart');
+    _postRunRender(dfrom, dto);
     msg.style.color = '#3fb950';
     msg.textContent = '✅ Success! Chart updated.';
   } catch (e) {
@@ -2456,7 +2532,13 @@ async function saveOptRun(btn, r) {
        sharpe: r.sharpe,
        pnl_points: r.net_pnl
     },
-    symbols: [r.cfg.symbol || document.getElementById('opt-symbols').value.split(',')[0]]
+    // ALL symbols of the optimization run — not just the first one (multi-
+    // symbol saves used to lose every symbol after the first here)
+    symbols: (() => {
+      const raw = String(r.cfg.symbols || document.getElementById('opt-symbols').value || r.cfg.symbol || '')
+        .split(',').map(s => s.trim()).filter(Boolean);
+      return raw.length ? raw : null;
+    })()
   };
   try {
     const res = await fetch('/api/backtest/saved', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
