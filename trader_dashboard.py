@@ -2434,6 +2434,101 @@ def backtest_db_set():
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
+def _parse_cfg_text(text):
+    """'key = value' lines → dict (same convention as the Parameter Modal's
+    config textarea: # / // comments skipped, true/false/number coerced,
+    comma-separated values stay a plain string — the frontend decides whether
+    a comma list means an optimizer sweep)."""
+    out = {}
+    for line in (text or '').splitlines():
+        l = line.strip()
+        if not l or l.startswith('#') or l.startswith('//'):
+            continue
+        if '=' not in l:
+            continue
+        key, val = l.split('=', 1)
+        key, val = key.strip(), val.strip()
+        if not key:
+            continue
+        if val.lower() == 'true':
+            out[key] = True
+        elif val.lower() == 'false':
+            out[key] = False
+        else:
+            try:
+                out[key] = float(val) if '.' in val else int(val)
+            except ValueError:
+                out[key] = val
+    return out
+
+@app.route('/api/pine/attach-config/<int:version>', methods=['POST'])
+def api_pine_attach_config(version):
+    """Attach/update the config text stored WITH a saved script version, and
+    (for runnable user scripts) refresh that script's nifty_config defaults."""
+    import json as _json
+    cfg_text = (request.json.get('config') or '').strip()
+    ver_file = BASE_DIR / '_PINE' / 'versions.json'
+    if not ver_file.exists():
+        return jsonify({"error": "No versions"}), 404
+    versions = _json.loads(ver_file.read_text())
+    v = next((x for x in versions if x['version'] == version), None)
+    if not v:
+        return jsonify({"error": "Version not found"}), 404
+    v['attached_cfg'] = cfg_text
+    ver_file.write_text(_json.dumps(versions, indent=2, ensure_ascii=False))
+    sid = v.get('script_id')
+    if sid and cfg_text:
+        try:
+            all_cfg = _json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+            if sid in all_cfg:
+                parsed = _parse_cfg_text(cfg_text)
+                for k in ("_module", "_lang", "active"):
+                    parsed.pop(k, None)
+                all_cfg[sid].update(parsed)
+                TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
+        except Exception:
+            pass
+    return jsonify({"ok": True})
+
+# ── Backtest Parameter-Modal presets (per-strategy, full modal state) ──
+BT_PRESETS_FILE = BASE_DIR / 'data' / 'bt_presets.json'
+
+def _load_bt_presets():
+    try:
+        return json.loads(BT_PRESETS_FILE.read_text()) if BT_PRESETS_FILE.exists() else []
+    except Exception:
+        return []
+
+@app.route('/api/backtest/presets', methods=['GET'])
+def api_bt_presets_list():
+    strat = request.args.get('strategy', '')
+    presets = _load_bt_presets()
+    if strat:
+        presets = [p for p in presets if p.get('strategy') == strat]
+    return jsonify(presets)
+
+@app.route('/api/backtest/presets', methods=['POST'])
+def api_bt_presets_save():
+    body = request.get_json(silent=True) or {}
+    name = (body.get('name') or '').strip()
+    strat = (body.get('strategy') or '').strip()
+    if not name or not strat:
+        return jsonify({"error": "name + strategy required"}), 400
+    presets = _load_bt_presets()
+    entry = {"id": uuid.uuid4().hex[:10], "strategy": strat, "name": name,
+             "state": body.get('state') or {},
+             "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M")}
+    presets.append(entry)
+    BT_PRESETS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    BT_PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False))
+    return jsonify(entry)
+
+@app.route('/api/backtest/presets/<pid>', methods=['DELETE'])
+def api_bt_presets_delete(pid):
+    presets = [p for p in _load_bt_presets() if p.get('id') != pid]
+    BT_PRESETS_FILE.write_text(json.dumps(presets, indent=2, ensure_ascii=False))
+    return jsonify({"ok": True})
+
 @app.route('/api/pine/save', methods=['POST'])
 def api_pine_save():
     import re, json as _json
@@ -2469,6 +2564,12 @@ def api_pine_save():
 
     entry = {"version": version, "name": strat_name, "strat_version": strat_version,
              "timestamp": ts, "desc": desc, "author": author, "lang": lang}
+    # AI-workflow: a strategy arrives as TWO pastes (code + config). The raw
+    # config text stays attached to this exact version (versions.json) so the
+    # Parameter Modal can always show/load the version's own defaults.
+    attached_cfg = (request.json.get('config') or '').strip()
+    if attached_cfg:
+        entry["attached_cfg"] = attached_cfg
 
     # snapshot extension by language
     ext = {"pine": "pine", "python": "py", "dsl": "rules"}[lang]
@@ -2502,6 +2603,15 @@ def api_pine_save():
                          "symbol": parsed.get("symbol", "NIFTY"),
                          "timeframe": parsed.get("timeframe", "5m"),
                          "active": False}
+        # Attached config's key=value lines become this script's saved defaults
+        # (what the Parameter Modal / backtest run read from nifty_config) —
+        # engine-routing markers stay protected, and a pasted config can never
+        # silently activate a strategy live.
+        if attached_cfg:
+            parsed_cfg = _parse_cfg_text(attached_cfg)
+            for k in ("_module", "_lang", "active"):
+                parsed_cfg.pop(k, None)
+            cfg_entry.update(parsed_cfg)
         all_cfg[script_id] = cfg_entry
         TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
         entry["script_id"] = script_id
@@ -3029,6 +3139,9 @@ def api_backtest_saved_save():
             "date_to": body.get("date_to"),
             "summary": body.get("summary") or {},
             "symbols": body.get("symbols"),   # present only for multi-symbol saves
+            # per-symbol summary breakdown (multi-symbol runs) — combined stats
+            # stay in `summary`, this powers the expandable per-symbol sub-rows
+            "per_symbol": body.get("per_symbol"),
             "saved_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
         }
         entries.append(entry)
