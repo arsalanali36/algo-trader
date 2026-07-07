@@ -131,6 +131,10 @@ def default_sl_profile():
         return True, "aggressive"
     if g.get("default_sl_type"):
         return True, "dropdown"
+    if g.get("default_sl_rs"):
+        # Old flat-₹ fallback SL was active (a live per-trade SL before this
+        # merge) — infer legacy so it keeps applying until the user picks a mode.
+        return True, "legacy"
     return False, "dropdown"
 
 
@@ -928,17 +932,24 @@ def default_instrument_sl_tags(strategy, symbol=None):
     if _mode == "legacy":
         # Flat whole-position ₹ (SL_TYPE:rs interprets val as the total-position
         # ₹ loss/profit — see _generic_px). Fixed, does NOT scale with lots.
-        try:
-            sl_rs = float(g0.get("default_legacy_sl_rs") or 2000)
-        except Exception:
-            sl_rs = 2000.0
-        try:
-            tp_rs = float(g0.get("default_legacy_tp_rs") or 5000)
-        except Exception:
-            tp_rs = 5000.0
+        def _num(v):
+            try:
+                return float(v)
+            except (TypeError, ValueError):
+                return None
+        if g0.get("default_sl_mode") == "legacy":
+            # Explicitly chosen in the merged UI → user's 5000/2000 defaults.
+            sl_rs = _num(g0.get("default_legacy_sl_rs")) or 2000.0
+            tp_rs = _num(g0.get("default_legacy_tp_rs")) or 5000.0
+        else:
+            # Inferred from the pre-merge default_sl_rs fallback → preserve the
+            # OLD behaviour EXACTLY: that flat ₹ was an SL only, no target.
+            sl_rs = _num(g0.get("default_legacy_sl_rs")) or _num(g0.get("default_sl_rs")) or 0.0
+            _tp = g0.get("default_legacy_tp_rs")
+            tp_rs = _num(_tp) if _tp not in (None, "", 0, "0") else 0.0
         if sl_rs > 0:
             tags.extend([f"SL_TYPE:rs", f"SL_VAL:{sl_rs}"])
-        if tp_rs > 0:
+        if tp_rs and tp_rs > 0:
             tags.extend([f"TP_TYPE:rs", f"TP_VAL:{tp_rs}"])
         return tags
 

@@ -3790,11 +3790,13 @@
       if (_dsMode !== 'legacy' && _dsMode !== 'dropdown' && _dsMode !== 'aggressive') {
         if (RISK_CFG.global.default_tsl_enabled) { _dsMode = 'aggressive'; _dsEn = true; }
         else if (RISK_CFG.global.default_sl_type) { _dsMode = 'dropdown'; _dsEn = true; }
+        else if (RISK_CFG.global.default_sl_rs) { _dsMode = 'legacy'; _dsEn = true; }
         else { _dsMode = 'legacy'; _dsEn = (_dsEn === undefined ? false : _dsEn); }
       }
       document.getElementById('risk-defsl-mode').value = _dsMode;
       document.getElementById('risk-defsl-enabled').value = (_dsEn === false ? 'false' : 'true');
-      document.getElementById('risk-legacy-sl').value = RISK_CFG.global.default_legacy_sl_rs != null ? RISK_CFG.global.default_legacy_sl_rs : '';
+      document.getElementById('risk-legacy-sl').value = RISK_CFG.global.default_legacy_sl_rs != null ? RISK_CFG.global.default_legacy_sl_rs
+        : (RISK_CFG.global.default_sl_rs != null ? RISK_CFG.global.default_sl_rs : '');
       document.getElementById('risk-legacy-tp').value = RISK_CFG.global.default_legacy_tp_rs != null ? RISK_CFG.global.default_legacy_tp_rs : '';
       setDefaultSlMode(_dsMode);
       renderTslPreview();
