@@ -1,0 +1,1093 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Script 3</title>
+<!--
+  Script 3 — strategy workbench shell (2026-07-07 redesign, user's sketch flow).
+  Body-only (NO AlgoTrader header — real nav lives in index.html outside this iframe).
+
+  Flow: History "▶ Run" → PARAMETER MODAL (yahin, overlay) →
+        📊 Backtest → result NAYE browser tab me (/backtest-chart?autorun=1, payload
+                       localStorage 'bt_autorun' se — same origin) →
+        🚀 Optimize → progress modal yahin → Optimize Results modal → Load (new-tab run)
+                       ya 🤍 (Saved Results me save).
+  Tabs: 📄 Editor | 📜 History | 🚀 Past Optimizations | ❤️ Saved Results.
+  Reuse-first: run/optimize/saved sab existing APIs se (/api/backtest/*, /api/pine/*).
+  Config rule: single value = Backtest; comma list (1m, 5m) = Optimize sweep.
+-->
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c2230; --border:#30363d;
+    --subtle:#21262d; --text:#e6edf3; --muted:#8b949e; --green:#3fb950;
+    --red:#f85149; --blue:#1f6feb; --blue2:#58a6ff; --yellow:#d29922; --pink:#f778ba;
+    --purple:#8a2be2;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;height:100%}
+  body{background:var(--bg);color:var(--text);font-size:13px;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif}
+  .wrap{padding:14px 20px 40px}
+
+  .s3-top{display:flex;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--border);margin-bottom:16px}
+  .subtabs{display:flex;gap:2px}
+  .subtab{padding:9px 16px;font-size:13px;font-weight:600;color:var(--muted);
+    cursor:pointer;border-bottom:2px solid transparent;user-select:none;white-space:nowrap}
+  .subtab:hover{color:var(--text)}
+  .subtab.active{color:var(--blue2);border-bottom-color:var(--blue2)}
+
+  .btn{padding:5px 11px;border-radius:6px;border:1px solid var(--border);
+    background:var(--subtle);color:var(--text);font-size:12px;font-weight:600;cursor:pointer;
+    display:inline-flex;align-items:center;gap:5px;white-space:nowrap}
+  .btn:hover{filter:brightness(1.15)}
+  .btn.green{background:#132b1a;border-color:#1f7a37;color:var(--green)}
+  .btn.blue{background:#0d2847;border-color:#1f6feb;color:var(--blue2)}
+  .btn.purple{background:#2a1447;border-color:var(--purple);color:#c996f5}
+  .btn.red{background:#3d1214;border-color:#f85149;color:var(--red)}
+  .btn.ghost{background:transparent}
+  .btn.sm{padding:3px 8px;font-size:11px}
+  .btn[disabled]{opacity:.4;cursor:not-allowed;filter:none}
+
+  input[type=text],input[type=date],input[type=search],select,textarea{
+    background:#0b0f14;border:1px solid var(--border);border-radius:6px;
+    color:var(--text);padding:7px 10px;font-size:13px}
+  input:focus,textarea:focus{outline:1px solid #1f6feb55}
+
+  table{border-collapse:collapse;width:100%}
+  th{color:var(--muted);font-weight:600;font-size:11px;text-transform:uppercase;
+    letter-spacing:.4px;text-align:left;padding:8px 10px;border-bottom:1px solid var(--border);
+    white-space:nowrap;user-select:none}
+  th.sortable{cursor:pointer}
+  th.sortable:hover{color:var(--text)}
+  td{padding:10px;border-bottom:1px solid var(--subtle);vertical-align:top}
+  tr.grp td{background:var(--panel2);color:var(--blue2);font-weight:700;font-size:12px;
+    letter-spacing:.3px;border-top:2px solid var(--border)}
+  .row:hover td{background:#12161d}
+  tr.subrow td{background:#0b0f14;font-size:11px;color:var(--muted);padding:6px 10px 6px 34px}
+  .badge{display:inline-block;padding:1px 6px;border-radius:8px;font-size:9px;font-weight:700;white-space:nowrap}
+  .b-pine{background:#3a1c1022;color:#d29922} .b-py{background:#1f6feb22;color:var(--blue2)}
+  .b-dsl{background:#3fb95022;color:var(--green)}
+  .accu{font-weight:700}
+  .muted{color:var(--muted)} .green{color:var(--green)} .red{color:var(--red)}
+  .link{color:var(--blue2);cursor:pointer} .link:hover{text-decoration:underline}
+  .hide{display:none!important}
+
+  .editor-box{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px}
+  textarea.code{width:100%;min-height:280px;background:#0b0f14;border:1px solid var(--border);
+    border-radius:6px;color:#c9d1d9;font-family:'Consolas','Monaco',monospace;font-size:12px;
+    padding:12px;resize:vertical;line-height:1.5}
+  .fld input,.fld select{margin-left:5px}
+  .hint{background:var(--panel);border:1px dashed var(--border);border-radius:8px;
+    padding:9px 13px;color:var(--muted);font-size:12px;margin-bottom:14px}
+  .hint b{color:var(--yellow)}
+
+  .toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+  .toolbar input[type=search]{width:260px}
+
+  /* modals */
+  .overlay{position:fixed;inset:0;background:rgba(1,4,9,.72);display:none;
+    align-items:flex-start;justify-content:center;z-index:100;overflow:auto;padding:34px 10px}
+  .overlay.open{display:flex}
+  .mbox{background:var(--panel);border:1px solid #444c56;border-radius:10px;
+    padding:16px 18px;width:520px;max-width:96vw;box-shadow:0 4px 30px rgba(0,0,0,.8)}
+  .mbox.wide{width:980px}
+  .mrow{display:flex;gap:10px;margin-bottom:10px}
+  .mrow>div{flex:1}
+  .mlabel{font-size:11px;color:var(--muted);margin-bottom:3px}
+
+  .chip{background:#1f6feb20;border:1px solid #1f6feb;color:var(--blue2);font-size:11px;
+    padding:2px 8px;border-radius:10px;display:inline-flex;align-items:center;gap:5px}
+  .chip .x{cursor:pointer;font-size:10px;opacity:.8} .chip .x:hover{opacity:1;color:var(--red)}
+  .chip-add{background:none;border:1px dashed var(--border);color:var(--muted);font-size:11px;
+    padding:2px 9px;border-radius:10px;cursor:pointer}
+  .pchip{background:var(--subtle);border:1px solid var(--border);color:var(--text);font-size:11px;
+    padding:3px 10px;border-radius:10px;cursor:pointer;display:inline-flex;align-items:center;gap:5px}
+  .pchip:hover{filter:brightness(1.2)}
+  .pchip .x{color:var(--muted);font-size:10px} .pchip .x:hover{color:var(--red)}
+  .verpill{background:#1f6feb20;border:1px solid #1f6feb;color:var(--blue2);font-size:11px;
+    padding:2px 10px;border-radius:10px;cursor:pointer;font-weight:700}
+  .droppanel{background:#0b0f14;border:1px solid var(--border);border-radius:6px;
+    padding:8px 10px;font-size:11px;color:var(--muted);margin:6px 0}
+  .verline{padding:4px 6px;border-radius:4px;cursor:pointer;display:flex;gap:8px;align-items:center}
+  .verline:hover{background:var(--subtle)}
+  .verline.cur{color:var(--blue2);font-weight:700}
+  .vimg{width:44px;height:44px;object-fit:cover;border:1px solid var(--border);border-radius:4px;cursor:pointer}
+
+  #pm-cfg{width:100%;height:300px;background:#0b0f14;border:1px solid var(--border);border-radius:6px;
+    color:#c9d1d9;font-family:'Consolas','Monaco',monospace;font-size:12px;padding:10px;
+    resize:vertical;line-height:1.5}
+
+  .progress-outer{background:#0b0f14;border:1px solid var(--border);border-radius:6px;overflow:hidden;height:20px}
+  .progress-inner{height:100%;width:0%;background:var(--purple);transition:width .3s ease}
+
+  #toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);
+    background:#132b1a;border:1px solid #1f7a37;color:#8ff0a8;padding:11px 18px;
+    border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:300}
+</style>
+</head>
+<body>
+
+<div id="view-list"><div class="wrap">
+  <div class="s3-top">
+    <div class="subtabs">
+      <div class="subtab" id="st-editor" onclick="subtab('editor')">📄 Editor</div>
+      <div class="subtab active" id="st-history" onclick="subtab('history')">📜 History</div>
+      <div class="subtab" id="st-opts" onclick="subtab('opts')">🚀 Past Optimizations</div>
+      <div class="subtab" id="st-saved" onclick="subtab('saved')">❤️ Saved Results</div>
+    </div>
+  </div>
+
+  <div class="hint" id="main-hint">Flow: <b>Run</b> → Parameter Modal → <b>📊 Backtest</b> (result naye tab me)
+    ya <b>🚀 Optimize</b> (comma list wali values sweep hoti hain) → Results → 🤍 Save → <b>Deploy</b>.</div>
+
+  <!-- History -->
+  <div id="panel-history">
+    <table>
+      <thead><tr>
+        <th style="width:80px">Ver</th><th>Description</th>
+        <th style="width:150px">Date / Time</th><th style="width:80px">Accu%</th>
+        <th style="width:120px">Run</th><th style="width:90px">Del</th>
+      </tr></thead>
+      <tbody id="history-body"><tr><td colspan="6" class="muted" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Editor -->
+  <div id="panel-editor" class="hide">
+    <div class="editor-box">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap">
+        <strong>Paste strategy code</strong>
+        <label class="fld muted" style="font-size:12px">Lang
+          <select id="ed-lang" onchange="_langManual=true">
+            <option value="pine">Pine (reference-only)</option>
+            <option value="python">Python (runnable)</option>
+            <option value="dsl">DSL (runnable)</option>
+          </select></label>
+        <label class="fld muted" style="font-size:12px">Name
+          <input id="ed-name" placeholder="strategy name" style="width:170px"></label>
+        <button class="btn green sm" style="margin-left:auto" onclick="saveVersion()">💾 Save version</button>
+      </div>
+      <textarea class="code" id="ed-code" spellcheck="false" oninput="autoLang()" placeholder="// paste Pine / Python / DSL here"></textarea>
+
+      <div class="mlabel" style="margin-top:12px">Description (is version ke notes)</div>
+      <textarea id="ed-desc" style="width:100%;height:52px;resize:vertical;font-size:12px" placeholder="kya change kiya / kya idea hai…"></textarea>
+
+      <div class="mlabel" style="margin-top:10px">Config (AI se mili config file — version ke saath attach hogi, optional)</div>
+      <textarea class="code" id="ed-cfg" spellcheck="false" style="min-height:110px" placeholder="timeframe = 5m&#10;max_trades_per_day = 2&#10;bb_period = 20"></textarea>
+
+      <div style="display:flex;align-items:center;gap:10px;margin-top:10px;flex-wrap:wrap">
+        <label class="btn sm" style="cursor:pointer">🖼 Images add
+          <input type="file" id="ed-imgs" accept="image/*" multiple style="display:none" onchange="edImgsChanged()">
+        </label>
+        <div id="ed-img-thumbs" style="display:flex;gap:6px;flex-wrap:wrap"></div>
+      </div>
+      <div class="muted" id="ed-msg" style="margin-top:9px">Python/DSL runnable ban jaate hain (Run se backtest); Pine reference-only. Images + desc + config version ke saath save hote hain.</div>
+    </div>
+  </div>
+
+  <!-- Past Optimizations -->
+  <div id="panel-opts" class="hide">
+    <div class="toolbar">
+      <input type="search" id="opt-search" placeholder="🔍 search strategy / symbol / date…" oninput="renderOpts()">
+      <button class="btn sm" id="opt-sel-btn" onclick="optToggleSelect()">☑ Select</button>
+      <button class="btn red sm hide" id="opt-del-btn" onclick="optDeleteSelected()">🗑 Delete (<span id="opt-del-count">0</span>)</button>
+      <span class="muted" style="margin-left:auto;font-size:11px" id="opt-count"></span>
+    </div>
+    <table>
+      <thead><tr id="opt-head">
+        <th class="hide opt-cb-col" style="width:30px"></th>
+        <th class="sortable" style="width:150px" onclick="optSort('timestamp')">Date / Time</th>
+        <th class="sortable" onclick="optSort('strat_type')">Strategy</th>
+        <th class="sortable" onclick="optSort('symbols')">Symbols</th>
+        <th style="width:180px">Range</th>
+        <th style="width:80px">Combos</th>
+        <th style="width:110px"></th>
+      </tr></thead>
+      <tbody id="opts-body"><tr><td colspan="7" class="muted" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+
+  <!-- Saved Results -->
+  <div id="panel-saved" class="hide">
+    <div class="toolbar">
+      <input type="search" id="saved-search" placeholder="🔍 search name / strategy / symbol…" oninput="renderSaved()">
+      <span class="muted" style="margin-left:auto;font-size:11px" id="saved-count"></span>
+    </div>
+    <table>
+      <thead><tr>
+        <th class="sortable" onclick="savedSort('name')">Name</th>
+        <th class="sortable" onclick="savedSort('strategy')">Strategy</th>
+        <th>Params</th>
+        <th style="width:150px">Range</th>
+        <th class="sortable" style="width:70px" onclick="savedSort('n_trades')">Trades</th>
+        <th class="sortable" style="width:70px" onclick="savedSort('win_rate')">Win%</th>
+        <th class="sortable" style="width:60px" onclick="savedSort('profit_factor')">PF</th>
+        <th class="sortable" style="width:80px" onclick="savedSort('pnl_points')">PnL</th>
+        <th class="sortable" style="width:110px" onclick="savedSort('saved_at')">Saved</th>
+        <th style="width:190px">Action</th>
+      </tr></thead>
+      <tbody id="saved-body"><tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Loading…</td></tr></tbody>
+    </table>
+  </div>
+</div></div>
+
+<!-- ============ PARAMETER MODAL ============ -->
+<div class="overlay" id="pm-overlay">
+  <div class="mbox" id="pm-box">
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <strong style="font-size:14px">🚀 Run — <span id="pm-name"></span></strong>
+      <span class="verpill" id="pm-ver-btn" onclick="pmToggleVerDrop()">V? ▾</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" id="pm-code-btn" onclick="pmOpenCode()">📄 Code</button>
+    </div>
+    <div class="droppanel hide" id="pm-ver-drop"></div>
+
+    <div id="pm-sym-row">
+      <div class="mlabel" style="margin-top:8px">Instrument (multi)</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;background:#0b0f14;border:1px solid var(--border);border-radius:6px;padding:6px 8px" id="pm-sym-wrap">
+        <button class="chip-add" id="pm-sym-add" onclick="pmSymTogglePick()">＋ Add</button>
+      </div>
+      <div class="droppanel hide" id="pm-sym-pick">
+        <input type="search" id="pm-sym-search" placeholder="Search scrip master… (NIFTY / BANKNIFTY / stock)" style="width:100%;margin-bottom:6px" oninput="pmSymSearch(this.value)">
+        <div id="pm-sym-list" style="max-height:150px;overflow:auto"></div>
+      </div>
+    </div>
+
+    <div class="mrow" style="margin-top:10px">
+      <div><div class="mlabel">From</div><input type="date" id="pm-from" style="width:100%"></div>
+      <div><div class="mlabel">To</div><input type="date" id="pm-to" style="width:100%"></div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+      <span class="mlabel" style="margin-bottom:0">Config</span>
+      <span style="font-size:10px;color:var(--yellow)">single value = Backtest · comma list (1m, 5m) = Optimize sweep</span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" onclick="pmTogglePresets()">🔖 Presets ▾</button>
+    </div>
+    <div class="droppanel hide" id="pm-presets"></div>
+    <textarea id="pm-cfg" spellcheck="false"></textarea>
+
+    <div style="display:flex;gap:8px;margin-top:14px;align-items:center">
+      <button class="btn ghost" onclick="pmClose()">Cancel</button>
+      <button class="btn ghost sm" onclick="pmSaveCfg()" title="Config ko is version/strategy ke saath permanently save karo">💾 Save cfg</button>
+      <span style="flex:1"></span>
+      <button class="btn blue" onclick="pmBacktest()">📊 Backtest</button>
+      <button class="btn purple" onclick="pmOptimize()">🚀 Optimize</button>
+    </div>
+    <div id="pm-msg" style="font-size:11px;margin-top:8px;color:var(--muted)"></div>
+  </div>
+</div>
+
+<!-- ============ OPTIMIZE PROGRESS ============ -->
+<div class="overlay" id="op-overlay">
+  <div class="mbox" style="width:420px;text-align:center">
+    <strong>🚀 Optimize — <span id="op-name"></span></strong>
+    <div id="op-status" style="margin:14px 0 8px;font-size:12px;color:var(--muted)">Starting workers…</div>
+    <div class="progress-outer"><div class="progress-inner" id="op-bar"></div></div>
+    <div style="margin-top:14px"><button class="btn ghost" onclick="opCancel()">Cancel</button></div>
+  </div>
+</div>
+
+<!-- ============ OPTIMIZE RESULTS ============ -->
+<div class="overlay" id="or-overlay">
+  <div class="mbox wide">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <strong>🏁 Optimize Results — <span id="or-name"></span></strong>
+      <span class="muted" style="font-size:11px" id="or-meta"></span>
+      <span style="flex:1"></span>
+      <button class="btn ghost sm" onclick="orClose()">✕ Close</button>
+    </div>
+    <div style="max-height:65vh;overflow:auto">
+      <table id="or-table"><thead></thead><tbody></tbody></table>
+    </div>
+    <div class="muted" style="font-size:11px;margin-top:8px">Load = us param set ka backtest naye tab me · 🤍 = Saved Results me save</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+let _pine=[], _builtins=[], _allCfg={}, _langManual=false;
+let _saved=null, _optHist=null;   // lazy-loaded lists
+
+/* Friendly labels for built-in config keys (same source as backtest_chart.html) */
+const STRAT_DISPLAY_NAMES={ARS_CHAIN:'Range Chain',rsi:'RSI',ema:'EMA Crossover',vwap:'VWAP-EMA Failure',bb:'Bollinger Bounce'};
+function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,''); }
+function baseLabel(b){ return STRAT_DISPLAY_NAMES[b]||b; }
+const _BT_BASES=new Set(['ARS_CHAIN','rsi','ema','vwap','bb']);
+function symbolPickable(sid){ const t=baseType(sid); return _BT_BASES.has(t)||(sid||'').startsWith('user_'); }
+function _iso(d){ return d.toISOString().slice(0,10); }
+
+/* ---------- History ---------- */
+async function loadHistory(){
+  try{ const r=await fetch('/api/pine/history'); _pine=await r.json(); }catch(e){ _pine=[]; }
+  try{
+    _allCfg=await (await fetch('/api/config')).json();
+    const reserved=new Set(['_risk','_ui_config','webhooks']);
+    _builtins=Object.keys(_allCfg).filter(k=>!reserved.has(k)&&!k.startsWith('_')&&_BT_BASES.has(baseType(k)));
+  }catch(e){ _builtins=[]; _allCfg={}; }
+  renderHistory();
+}
+function renderHistory(){
+  const el=document.getElementById('history-body');
+  let builtinHtml='';
+  if(_builtins.length){
+    const rows=_builtins.map(k=>{
+      const base=baseType(k), suffix=k.slice(base.length).replace(/^_/,'').toUpperCase()||k;
+      return `<tr class="row">
+        <td><b style="color:#3fb950">${esc(suffix)}</b><br><span class="badge b-py">⚙️ Built-in</span></td>
+        <td>${esc(baseLabel(base))} <span class="muted" style="font-size:11px">(${esc(k)})</span></td>
+        <td class="muted">—</td><td class="muted">—</td>
+        <td><button class="btn green sm" onclick="pmOpenBuiltin('${esc(k)}')">▶ Run</button></td>
+        <td class="muted">—</td>
+      </tr>`;
+    }).join('');
+    builtinHtml=`<tr class="grp"><td colspan="6">⚙️ Built-in Strategies</td></tr>`+rows;
+  }
+  if(!_pine.length&&!_builtins.length){ el.innerHTML='<tr><td colspan="6" class="muted" style="text-align:center;padding:20px">Abhi koi version saved nahi hai</td></tr>'; return; }
+  const groups=[],seen={};
+  _pine.forEach(v=>{ if(!seen[v.name]){seen[v.name]=[];groups.push({name:v.name,items:seen[v.name]});} seen[v.name].push(v); });
+  el.innerHTML=groups.map(g=>{
+    const head=`<tr class="grp"><td colspan="6">📦 ${esc(g.name)}</td></tr>`;
+    const rows=g.items.map(v=>{
+      const sv=v.strat_version||v.version;
+      const lang=v.lang||(v.py_file&&v.py_file!=='none'?'python':'pine');
+      const chip={pine:['📌 Pine','b-pine'],python:['🐍 Py','b-py'],dsl:['⚙️ DSL','b-dsl']}[lang]||['?','b-pine'];
+      const acc=v.accuracy!=null?`<span class="accu" style="color:${v.accuracy>=85?'#3fb950':v.accuracy>=60?'#d29922':'#f85149'}">${v.accuracy}%</span>`:'<span class="muted">—</span>';
+      const runnable=!!v.script_id;
+      const runBtn=runnable
+        ? `<button class="btn green sm" onclick="pmOpenUser(${v.version})">▶ Run</button>`
+        : `<button class="btn sm" disabled title="Pine reference-only — Python me convert karke backtest hoga">▶ Run</button>`;
+      return `<tr class="row">
+        <td><b style="color:#3fb950">v${sv}</b><br><span class="badge ${chip[1]}">${chip[0]}</span></td>
+        <td>${esc(v.desc||'')||'<span class="muted">—</span>'}${v.py_file&&v.py_file!=='none'?`<div class="muted" style="font-size:11px;margin-top:3px;font-family:monospace">${esc(v.py_file)}</div>`:''}</td>
+        <td class="muted" style="font-size:12px">${esc(v.timestamp||'')}</td>
+        <td>${acc}</td>
+        <td>${runBtn}</td>
+        <td>
+          <button class="btn ghost sm" title="Copy code" onclick="copyCode(${v.version})">📋</button>
+          <button class="btn ghost sm" title="Delete" onclick="delVersion(${v.version})">🗑</button>
+        </td>
+      </tr>`;
+    }).join('');
+    return head+rows;
+  }).join('');
+  el.innerHTML=builtinHtml+el.innerHTML;
+}
+
+/* ============================================================
+   PARAMETER MODAL
+   PM = {kind:'user'|'builtin', sid, name (group/base label), version (pine ver),
+         stratVersion, symbols[], presetKey}
+   ============================================================ */
+let PM=null;
+
+function buildCfgText(cfg){
+  cfg=cfg||{};
+  const generalKeys=['active','allow_short','instrument','qty','max_trades_per_day'];
+  const entryKeys=['entry_long','entry_short','bb_std','bb_window'];
+  const exitKeys=['exit_long','exit_short','sl_pct','tp_pct'];
+  let g='// --- General ---\ntimeframe = '+(cfg.timeframe||'5m')+'\n';
+  if(cfg.max_trades_per_day===undefined) g+='max_trades_per_day = 0\n';
+  let en='\n// --- Entry ---\n', ex='\n// --- Exit ---\n', ot='\n// --- Other ---\n';
+  for(const k in cfg){
+    if(k==='symbol'||k==='symbols'||k==='timeframe') continue;
+    if(k.startsWith('_')) continue;
+    if(generalKeys.includes(k)) g+=`${k} = ${cfg[k]}\n`;
+    else if(entryKeys.includes(k)) en+=`${k} = ${cfg[k]}\n`;
+    else if(exitKeys.includes(k)) ex+=`${k} = ${cfg[k]}\n`;
+    else ot+=`${k} = ${cfg[k]}\n`;
+  }
+  let t=g+en+ex;
+  if(ot.trim()!=='// --- Other ---') t+=ot;
+  return t;
+}
+/* parse editor text → {scalars, grid, hasLists}
+   scalars: comma-list → FIRST value (Backtest); grid: every value as list (Optimize) */
+function parseCfgText(text){
+  const scalars={}, grid={}; let hasLists=false;
+  text.split('\n').forEach(line=>{
+    let l=line.trim();
+    if(!l||l.startsWith('#')||l.startsWith('//')) return;
+    const parts=l.split('=');
+    if(parts.length<2) return;
+    const key=parts[0].trim();
+    let val=parts.slice(1).join('=').trim();
+    const coerce=v=>{
+      v=v.trim();
+      if(v==='true') return true;
+      if(v==='false') return false;
+      if(!isNaN(v)&&v!=='') return Number(v);
+      return v;
+    };
+    if(val.includes(',')){
+      hasLists=true;
+      const arr=val.split(',').map(coerce);
+      grid[key]=arr; scalars[key]=arr[0];
+    }else{
+      const v=coerce(val);
+      grid[key]=[v]; scalars[key]=v;
+    }
+  });
+  return {scalars, grid, hasLists};
+}
+
+function pmOpenBuiltin(sid, preset){
+  PM={kind:'builtin', sid, name:baseLabel(baseType(sid)), version:null,
+      stratVersion:sid.slice(baseType(sid).length).replace(/^_/,'').toUpperCase()||sid,
+      presetKey:baseType(sid)};
+  _pmFill(_allCfg[sid]||{}, preset);
+}
+function pmOpenUser(version, preset){
+  const v=_pine.find(x=>x.version===version);
+  if(!v||!v.script_id){ toast('⚠ runnable version nahi mili'); return; }
+  PM={kind:'user', sid:v.script_id, name:v.name, version:v.version,
+      stratVersion:'V'+(v.strat_version||v.version), presetKey:'user:'+v.name};
+  // saved defaults (nifty_config) — attached config save-time pe yahin merge hota hai
+  _pmFill(_allCfg[v.script_id]||{}, preset);
+}
+function _pmFill(cfg, preset){
+  preset=preset||{};
+  document.getElementById('pm-name').textContent=PM.name+(PM.kind==='builtin'?' '+PM.stratVersion:'');
+  document.getElementById('pm-ver-btn').textContent=(PM.kind==='user'?PM.stratVersion:PM.stratVersion)+' ▾';
+  document.getElementById('pm-code-btn').disabled=(PM.kind!=='user');
+  document.getElementById('pm-ver-drop').classList.add('hide');
+  document.getElementById('pm-presets').classList.add('hide');
+  document.getElementById('pm-sym-pick').classList.add('hide');
+  document.getElementById('pm-msg').textContent='';
+  // symbols
+  const pickable=symbolPickable(PM.sid);
+  document.getElementById('pm-sym-row').style.display=pickable?'':'none';
+  PM.symbols=preset.symbols
+    || (cfg.symbol?[cfg.symbol]
+    : (Array.isArray(cfg.symbols)&&cfg.symbols.length?cfg.symbols.slice()
+    : (typeof cfg.symbols==='string'&&cfg.symbols.trim()?cfg.symbols.split(',').map(s=>s.trim()).filter(Boolean)
+    : ['NIFTY'])));
+  pmRenderSyms();
+  // dates — default last 30 days
+  document.getElementById('pm-from').value=preset.date_from||_iso(new Date(Date.now()-30*864e5));
+  document.getElementById('pm-to').value=preset.date_to||_iso(new Date());
+  // config text
+  document.getElementById('pm-cfg').value=preset.cfg_text||buildCfgText(preset.cfg||cfg);
+  document.getElementById('pm-overlay').classList.add('open');
+  // background data for version detail (runs count) — quiet lazy loads
+  if(_saved===null) loadSaved(true);
+  if(_optHist===null) loadOpts(true);
+}
+function pmClose(){ document.getElementById('pm-overlay').classList.remove('open'); }
+
+/* --- symbols (searchable picker — /api/symbols/search, scrip master) --- */
+function pmRenderSyms(){
+  const wrap=document.getElementById('pm-sym-wrap');
+  wrap.querySelectorAll('.chip').forEach(c=>c.remove());
+  const addBtn=document.getElementById('pm-sym-add');
+  PM.symbols.forEach(s=>{
+    const chip=document.createElement('span');
+    chip.className='chip';
+    chip.innerHTML=esc(s)+' <span class="x" title="remove">✕</span>';
+    chip.querySelector('.x').onclick=()=>{ PM.symbols=PM.symbols.filter(x=>x!==s); pmRenderSyms(); };
+    wrap.insertBefore(chip,addBtn);
+  });
+}
+function pmSymTogglePick(){
+  const p=document.getElementById('pm-sym-pick');
+  p.classList.toggle('hide');
+  if(!p.classList.contains('hide')){
+    document.getElementById('pm-sym-search').value='';
+    pmSymRenderList(['NIFTY','BANKNIFTY','TCS','RELIANCE','POLYCAB','INFY','HDFCBANK','ICICIBANK','SBIN']);
+    document.getElementById('pm-sym-search').focus();
+  }
+}
+let _pmSymTimer=null;
+function pmSymSearch(q){
+  clearTimeout(_pmSymTimer);
+  _pmSymTimer=setTimeout(async()=>{
+    if(!q.trim()){ pmSymRenderList(['NIFTY','BANKNIFTY','TCS','RELIANCE','POLYCAB','INFY','HDFCBANK','ICICIBANK','SBIN']); return; }
+    try{
+      const r=await fetch('/api/symbols/search?q='+encodeURIComponent(q.trim()));
+      const d=await r.json();
+      pmSymRenderList(Array.isArray(d)?d:[]);
+    }catch(e){ pmSymRenderList([]); }
+  },250);
+}
+function pmSymRenderList(list){
+  const el=document.getElementById('pm-sym-list');
+  if(!list.length){ el.innerHTML='<div class="muted" style="padding:4px">no match</div>'; return; }
+  el.innerHTML='';
+  list.slice(0,40).forEach(s=>{
+    const d=document.createElement('div');
+    d.className='verline';
+    d.textContent=s+(PM.symbols.includes(s)?' ✓':'');
+    d.onclick=()=>{
+      if(!PM.symbols.includes(s)) PM.symbols.push(s);
+      pmRenderSyms();
+      document.getElementById('pm-sym-pick').classList.add('hide');
+    };
+    el.appendChild(d);
+  });
+}
+
+/* --- version pill: is strategy ke versions + detail (code/desc/images/runs) --- */
+function pmToggleVerDrop(){
+  const d=document.getElementById('pm-ver-drop');
+  if(!d.classList.contains('hide')){ d.classList.add('hide'); return; }
+  d.classList.remove('hide');
+  d.innerHTML='<span class="muted">Loading…</span>';
+  if(PM.kind==='builtin'){
+    const base=baseType(PM.sid);
+    const sibs=_builtins.filter(k=>baseType(k)===base);
+    d.innerHTML='<div class="mlabel">Isi strategy ke versions (config keys)</div>'+
+      sibs.map(k=>`<div class="verline ${k===PM.sid?'cur':''}" onclick="pmOpenBuiltin('${esc(k)}')">${esc(k)}${k===PM.sid?' — current':''}</div>`).join('');
+    return;
+  }
+  // user script — same-name versions from pine history
+  const vers=_pine.filter(v=>v.name===PM.name);
+  const cur=_pine.find(v=>v.version===PM.version)||{};
+  let html='<div class="mlabel">Sirf isi strategy ke versions</div>';
+  html+=vers.map(v=>{
+    const run=v.script_id?'':' <span class="muted">(reference-only)</span>';
+    const cls=v.version===PM.version?'cur':'';
+    const click=v.script_id?`onclick="pmOpenUser(${v.version})"`:'';
+    return `<div class="verline ${cls}" ${click}>v${v.strat_version||v.version} · ${esc(v.timestamp||'')}${run}${v.version===PM.version?' — current':''}</div>`;
+  }).join('');
+  // detail: desc + runs + images
+  const nRuns=(_saved||[]).filter(e=>e.strategy===PM.sid).length;
+  const nOpt=(_optHist||[]).filter(h=>h.strat_type===PM.sid).length;
+  html+=`<div style="border-top:1px solid var(--border);margin-top:6px;padding-top:6px">
+    <div><b style="color:var(--blue2)">v${cur.strat_version||''}</b> — ${esc(cur.desc||'no description')}</div>
+    <div style="margin-top:3px">Runs: ${nRuns} saved result${nRuns===1?'':'s'} · ${nOpt} optimization${nOpt===1?'':'s'}</div>
+    <div id="pm-ver-imgs" style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap"></div>
+  </div>`;
+  d.innerHTML=html;
+  fetch('/api/pine/images/'+PM.version).then(r=>r.json()).then(urls=>{
+    const w=document.getElementById('pm-ver-imgs');
+    if(!w) return;
+    w.innerHTML=(urls||[]).map(u=>`<img class="vimg" src="${u}" onclick="window.open('${u}','_blank')">`).join('')||'<span class="muted">no images</span>';
+  }).catch(()=>{});
+}
+
+/* --- code button → Editor tab me is version ka code load --- */
+async function pmOpenCode(){
+  if(PM.kind!=='user') return;
+  try{
+    const r=await fetch('/api/pine/code/'+PM.version);
+    const code=await r.text();
+    const v=_pine.find(x=>x.version===PM.version)||{};
+    document.getElementById('ed-code').value=code;
+    document.getElementById('ed-name').value=PM.name;
+    document.getElementById('ed-lang').value=v.lang||'python';
+    document.getElementById('ed-desc').value='';
+    document.getElementById('ed-cfg').value=v.attached_cfg||'';
+    _langManual=true;
+    pmClose(); subtab('editor');
+    toast('📄 v'+(v.strat_version||PM.version)+' editor me — save karne pe NAYA version banega');
+  }catch(e){ toast('⚠ code load fail'); }
+}
+
+/* --- presets (per-strategy, full modal state) --- */
+async function pmTogglePresets(){
+  const p=document.getElementById('pm-presets');
+  if(!p.classList.contains('hide')){ p.classList.add('hide'); return; }
+  p.classList.remove('hide');
+  p.innerHTML='<span class="muted">Loading…</span>';
+  try{
+    const r=await fetch('/api/backtest/presets?strategy='+encodeURIComponent(PM.presetKey));
+    const list=await r.json();
+    let html='<div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">';
+    (list||[]).forEach(pr=>{
+      html+=`<span class="pchip" onclick='pmApplyPreset(${JSON.stringify(pr).replace(/'/g,"&#39;")})'>${esc(pr.name)} <span class="x" onclick="event.stopPropagation();pmDelPreset('${pr.id}')">✕</span></span>`;
+    });
+    html+=`<span class="pchip" style="border-style:dashed" onclick="pmSavePreset()">＋ save current as preset</span></div>`;
+    html+='<div class="muted" style="margin-top:5px;font-size:10px">Preset = poora modal state (instrument + dates + config) — is strategy ke liye.</div>';
+    p.innerHTML=html;
+  }catch(e){ p.innerHTML='<span class="muted">⚠ '+esc(e.message)+'</span>'; }
+}
+function pmApplyPreset(pr){
+  const st=pr.state||{};
+  if(st.symbols&&st.symbols.length){ PM.symbols=st.symbols.slice(); pmRenderSyms(); }
+  if(st.date_from) document.getElementById('pm-from').value=st.date_from;
+  if(st.date_to) document.getElementById('pm-to').value=st.date_to;
+  if(st.cfg_text) document.getElementById('pm-cfg').value=st.cfg_text;
+  toast('🔖 preset "'+pr.name+'" applied');
+}
+async function pmSavePreset(){
+  const name=prompt('Preset ka naam:','');
+  if(!name) return;
+  const body={strategy:PM.presetKey, name, state:{
+    symbols:PM.symbols.slice(),
+    date_from:document.getElementById('pm-from').value,
+    date_to:document.getElementById('pm-to').value,
+    cfg_text:document.getElementById('pm-cfg').value
+  }};
+  try{
+    const r=await fetch('/api/backtest/presets',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await r.json();
+    if(d.error){ toast('⚠ '+d.error); return; }
+    toast('🔖 preset saved');
+    document.getElementById('pm-presets').classList.add('hide'); pmTogglePresets();
+  }catch(e){ toast('⚠ '+e.message); }
+}
+async function pmDelPreset(id){
+  try{ await fetch('/api/backtest/presets/'+id,{method:'DELETE'}); }catch(e){}
+  document.getElementById('pm-presets').classList.add('hide'); pmTogglePresets();
+}
+
+/* --- save cfg permanently (version-attach / builtin save-config) --- */
+async function pmSaveCfg(){
+  const text=document.getElementById('pm-cfg').value;
+  try{
+    if(PM.kind==='user'){
+      const r=await fetch('/api/pine/attach-config/'+PM.version,{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({config:text})});
+      const d=await r.json();
+      if(d.error){ toast('⚠ '+d.error); return; }
+      toast('💾 config v'+PM.stratVersion.replace('V','')+' ke saath saved');
+    }else{
+      const {scalars}=parseCfgText(text);
+      const r=await fetch('/api/backtest/save-config',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({strategy:PM.sid,cfg:scalars})});
+      const d=await r.json();
+      if(d.error){ toast('⚠ '+d.error); return; }
+      toast('💾 config saved — '+PM.sid);
+    }
+    loadHistory();
+  }catch(e){ toast('⚠ '+e.message); }
+}
+
+/* --- BACKTEST → result naye browser tab me --- */
+function openRunTab(strategy, cfg, symbols, from, to){
+  localStorage.setItem('bt_autorun', JSON.stringify({strategy, cfg, symbols, date_from:from, date_to:to}));
+  window.open('/backtest-chart?autorun=1&t='+Date.now(), '_blank');
+}
+function pmBacktest(){
+  const {scalars, hasLists}=parseCfgText(document.getElementById('pm-cfg').value);
+  if(hasLists) toast('ℹ comma-list values me pehli value use hui (sweep sirf Optimize me)');
+  const syms=symbolPickable(PM.sid)?PM.symbols.slice():[];
+  openRunTab(PM.sid, scalars, syms,
+    document.getElementById('pm-from').value, document.getElementById('pm-to').value);
+  document.getElementById('pm-msg').textContent='📊 Result naye tab me khul raha hai…';
+}
+
+/* --- OPTIMIZE → progress → results --- */
+let _opES=null, _opRun=null;
+function pmOptimize(){
+  const {grid}=parseCfgText(document.getElementById('pm-cfg').value);
+  delete grid.active;   // sweep me active flag ka koi matlab nahi
+  const params={
+    strat_type:PM.sid,
+    date_from:document.getElementById('pm-from').value,
+    date_to:document.getElementById('pm-to').value,
+    symbols:(symbolPickable(PM.sid)?PM.symbols:['NIFTY']).join(','),
+    grid
+  };
+  _opRun={strat_type:PM.sid, name:PM.name+' '+PM.stratVersion, symbols:params.symbols,
+          date_from:params.date_from, date_to:params.date_to};
+  pmClose();
+  document.getElementById('op-name').textContent=_opRun.name;
+  document.getElementById('op-status').textContent='Starting workers…';
+  document.getElementById('op-bar').style.width='0%';
+  document.getElementById('op-overlay').classList.add('open');
+  _opES=new EventSource('/api/backtest/optimize?params='+encodeURIComponent(JSON.stringify(params)));
+  _opES.onmessage=e=>{
+    const data=JSON.parse(e.data);
+    if(data.error){
+      document.getElementById('op-status').textContent='⚠ '+data.error;
+      _opES.close(); _opES=null;
+      return;
+    }
+    if(data.progress!==undefined){
+      document.getElementById('op-bar').style.width=data.progress+'%';
+      document.getElementById('op-status').textContent=`Progress: ${data.progress}% (${data.completed||0}/${data.total||'?'})`;
+    }
+    if(data.results){
+      _opES.close(); _opES=null;
+      document.getElementById('op-overlay').classList.remove('open');
+      _optHist=null; if(document.getElementById('st-opts').classList.contains('active')) loadOpts();
+      openOptResults(Object.assign({}, _opRun, {results:data.results}));
+    }
+  };
+  _opES.onerror=()=>{
+    document.getElementById('op-status').textContent='⚠ connection error / disconnected';
+    if(_opES){ _opES.close(); _opES=null; }
+  };
+}
+function opCancel(){
+  if(_opES){ _opES.close(); _opES=null; }
+  document.getElementById('op-overlay').classList.remove('open');
+}
+
+/* ============ Optimize Results modal ============ */
+let OR=null, _orSortCol='net_pnl', _orSortAsc=false;
+function openOptResults(run){
+  OR=run;
+  _orSortCol='net_pnl'; _orSortAsc=false;
+  document.getElementById('or-name').textContent=run.name||run.strat_type;
+  document.getElementById('or-meta').textContent=`${run.symbols||''} · ${run.date_from||'?'} → ${run.date_to||'?'} · ${(run.results||[]).length} combos`;
+  renderOR();
+  document.getElementById('or-overlay').classList.add('open');
+}
+function orClose(){ document.getElementById('or-overlay').classList.remove('open'); }
+function orSort(col){
+  if(_orSortCol===col) _orSortAsc=!_orSortAsc; else { _orSortCol=col; _orSortAsc=false; }
+  renderOR();
+}
+function renderOR(){
+  const results=(OR.results||[]).slice();
+  const thead=document.querySelector('#or-table thead');
+  const tbody=document.querySelector('#or-table tbody');
+  if(!results.length){ thead.innerHTML=''; tbody.innerHTML='<tr><td class="muted" style="text-align:center;padding:20px">No results.</td></tr>'; return; }
+  const metric=['total_trades','win_rate','profit_factor','sharpe','net_pnl'];
+  results.sort((a,b)=>{
+    let va,vb;
+    if(metric.includes(_orSortCol)){ va=a[_orSortCol]||0; vb=b[_orSortCol]||0; }
+    else{
+      va=(a.cfg||{})[_orSortCol]||''; vb=(b.cfg||{})[_orSortCol]||'';
+      const fa=parseFloat(va), fb=parseFloat(vb);
+      if(!isNaN(fa)&&!isNaN(fb)){ va=fa; vb=fb; }
+    }
+    if(va<vb) return _orSortAsc?-1:1;
+    if(va>vb) return _orSortAsc?1:-1;
+    return 0;
+  });
+  const paramKeys=Object.keys(results[0].cfg||{}).filter(k=>!['instrument','symbols','active'].includes(k));
+  const ic=c=>_orSortCol===c?(_orSortAsc?' ▲':' ▼'):'';
+  thead.innerHTML='<tr><th>Rank</th>'+
+    paramKeys.map(k=>`<th class="sortable" onclick="orSort('${esc(k)}')">${esc(k)}${ic(k)}</th>`).join('')+
+    `<th class="sortable" onclick="orSort('total_trades')">Trades${ic('total_trades')}</th>
+     <th class="sortable" onclick="orSort('win_rate')">Win%${ic('win_rate')}</th>
+     <th class="sortable" onclick="orSort('profit_factor')">PF${ic('profit_factor')}</th>
+     <th class="sortable" onclick="orSort('sharpe')">Sharpe${ic('sharpe')}</th>
+     <th class="sortable" onclick="orSort('net_pnl')">PnL${ic('net_pnl')}</th>
+     <th>Action</th></tr>`;
+  tbody.innerHTML='';
+  results.forEach((r,i)=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${i+1}</td>`+
+      paramKeys.map(k=>`<td>${esc((r.cfg||{})[k]??'')}</td>`).join('')+
+      `<td>${r.total_trades??'—'}</td>
+       <td>${(r.win_rate||0).toFixed(1)}%</td>
+       <td>${(r.profit_factor||0).toFixed(2)}</td>
+       <td>${(r.sharpe||0).toFixed(2)}</td>
+       <td class="${(r.net_pnl||0)>=0?'green':'red'}">${(r.net_pnl||0).toFixed(2)}</td>
+       <td style="white-space:nowrap"></td>`;
+    const td=tr.lastElementChild;
+    const loadB=document.createElement('button');
+    loadB.className='btn green sm'; loadB.textContent='Load';
+    loadB.title='Is param set ka backtest naye tab me';
+    loadB.onclick=()=>orLoad(r);
+    const saveB=document.createElement('button');
+    saveB.className='btn ghost sm'; saveB.textContent='🤍'; saveB.style.marginLeft='4px';
+    saveB.title='Saved Results me save';
+    saveB.onclick=()=>orSave(saveB, r);
+    td.appendChild(loadB); td.appendChild(saveB);
+    tbody.appendChild(tr);
+  });
+}
+function orLoad(r){
+  const cfg=Object.assign({},r.cfg||{});
+  const syms=String(cfg.symbols||OR.symbols||'').split(',').map(s=>s.trim()).filter(Boolean);
+  delete cfg.symbols;
+  openRunTab(OR.strat_type, cfg, syms, OR.date_from, OR.date_to);
+}
+async function orSave(btn, r){
+  const desc=prompt('Is result ka naam:','Optimized Param Set');
+  if(!desc) return;
+  const syms=String((r.cfg||{}).symbols||OR.symbols||'').split(',').map(s=>s.trim()).filter(Boolean);
+  const body={
+    name:desc, strategy:OR.strat_type, cfg:r.cfg,
+    date_from:OR.date_from, date_to:OR.date_to,
+    summary:{n_trades:r.total_trades, win_rate:r.win_rate, profit_factor:r.profit_factor,
+             sharpe:r.sharpe, pnl_points:r.net_pnl},
+    symbols:syms.length?syms:null
+  };
+  try{
+    const res=await fetch('/api/backtest/saved',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d=await res.json();
+    if(d.error){ toast('⚠ '+d.error); return; }
+    btn.textContent='❤️';
+    _saved=null; if(document.getElementById('st-saved').classList.contains('active')) loadSaved();
+    toast('❤️ saved — "'+desc+'"');
+  }catch(e){ toast('⚠ '+e.message); }
+}
+
+/* ============ Past Optimizations tab ============ */
+let _optSel=false, _optSortCol='timestamp', _optSortAsc=false;
+async function loadOpts(quiet){
+  try{
+    const r=await fetch('/api/backtest/optimizations');
+    _optHist=await r.json();
+    if(!Array.isArray(_optHist)) _optHist=[];
+  }catch(e){ _optHist=[]; }
+  if(!quiet) renderOpts();
+}
+function optSort(col){
+  if(_optSortCol===col) _optSortAsc=!_optSortAsc; else { _optSortCol=col; _optSortAsc=false; }
+  renderOpts();
+}
+function renderOpts(){
+  const el=document.getElementById('opts-body');
+  if(_optHist===null){ el.innerHTML='<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">Loading…</td></tr>'; return; }
+  const q=(document.getElementById('opt-search').value||'').toLowerCase();
+  let rows=_optHist.filter(h=>!q||JSON.stringify([h.strat_type,h.symbols,h.timestamp,h.date_from,h.date_to]).toLowerCase().includes(q));
+  rows.sort((a,b)=>{
+    const va=a[_optSortCol]||'', vb=b[_optSortCol]||'';
+    if(va<vb) return _optSortAsc?-1:1;
+    if(va>vb) return _optSortAsc?1:-1;
+    return 0;
+  });
+  document.getElementById('opt-count').textContent=rows.length+' run'+(rows.length===1?'':'s');
+  document.querySelectorAll('.opt-cb-col').forEach(c=>c.classList.toggle('hide',!_optSel));
+  if(!rows.length){ el.innerHTML='<tr><td colspan="7" class="muted" style="text-align:center;padding:20px">No past optimizations.</td></tr>'; return; }
+  el.innerHTML='';
+  rows.forEach(h=>{
+    const tr=document.createElement('tr');
+    tr.className='row';
+    tr.innerHTML=`
+      <td class="opt-cb-col ${_optSel?'':'hide'}"><input type="checkbox" class="opt-cb" data-id="${h.id}" onchange="optUpdCount()"></td>
+      <td class="muted" style="font-size:12px">${esc(h.timestamp||'')}</td>
+      <td>${esc(h.strat_type||'')}</td>
+      <td style="font-size:12px">${esc(h.symbols||'')}</td>
+      <td class="muted" style="font-size:11px">${esc(h.date_from||'?')} → ${esc(h.date_to||'?')}</td>
+      <td>${(h.results||[]).length}</td>
+      <td></td>`;
+    const viewB=document.createElement('button');
+    viewB.className='btn blue sm'; viewB.textContent='⏵ Results';
+    viewB.onclick=()=>openOptResults(Object.assign({name:h.strat_type},h));
+    tr.lastElementChild.appendChild(viewB);
+    el.appendChild(tr);
+  });
+}
+function optToggleSelect(){
+  _optSel=!_optSel;
+  document.getElementById('opt-sel-btn').textContent=_optSel?'✕ Cancel':'☑ Select';
+  document.getElementById('opt-del-btn').classList.toggle('hide',!_optSel);
+  renderOpts(); optUpdCount();
+}
+function optUpdCount(){
+  document.getElementById('opt-del-count').textContent=document.querySelectorAll('.opt-cb:checked').length;
+}
+async function optDeleteSelected(){
+  const ids=[...document.querySelectorAll('.opt-cb:checked')].map(cb=>cb.dataset.id);
+  if(!ids.length){ toast('⚠ kuch select karo pehle'); return; }
+  if(!confirm(ids.length+' optimization run delete karein?')) return;
+  for(const id of ids){
+    try{ await fetch('/api/backtest/optimizations/'+id,{method:'DELETE'}); }catch(e){}
+  }
+  toast('🗑 '+ids.length+' deleted');
+  _optSel=false;
+  document.getElementById('opt-sel-btn').textContent='☑ Select';
+  document.getElementById('opt-del-btn').classList.add('hide');
+  loadOpts();
+}
+
+/* ============ Saved Results tab ============ */
+let _savedSortCol='saved_at', _savedSortAsc=false, _savedOpen={};
+async function loadSaved(quiet){
+  try{
+    const r=await fetch('/api/backtest/saved');
+    _saved=await r.json();
+    if(!Array.isArray(_saved)) _saved=[];
+  }catch(e){ _saved=[]; }
+  if(!quiet) renderSaved();
+}
+function savedSort(col){
+  if(_savedSortCol===col) _savedSortAsc=!_savedSortAsc; else { _savedSortCol=col; _savedSortAsc=false; }
+  renderSaved();
+}
+function _savedVal(e,col){
+  if(['n_trades','win_rate','profit_factor','pnl_points'].includes(col)) return (e.summary||{})[col]||0;
+  return e[col]||'';
+}
+function renderSaved(){
+  const el=document.getElementById('saved-body');
+  if(_saved===null){ el.innerHTML='<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">Loading…</td></tr>'; return; }
+  const q=(document.getElementById('saved-search').value||'').toLowerCase();
+  let rows=_saved.filter(e=>!q||JSON.stringify([e.name,e.strategy,e.symbols]).toLowerCase().includes(q));
+  rows.sort((a,b)=>{
+    const va=_savedVal(a,_savedSortCol), vb=_savedVal(b,_savedSortCol);
+    if(va<vb) return _savedSortAsc?-1:1;
+    if(va>vb) return _savedSortAsc?1:-1;
+    return String(b.saved_at||'').localeCompare(String(a.saved_at||''));
+  });
+  document.getElementById('saved-count').textContent=rows.length+' result'+(rows.length===1?'':'s');
+  if(!rows.length){ el.innerHTML='<tr><td colspan="10" class="muted" style="text-align:center;padding:20px">No saved results yet — backtest chala ke 💾 Save Result dabao, ya optimize results me 🤍.</td></tr>'; return; }
+  el.innerHTML='';
+  rows.forEach(e=>{
+    const s=e.summary||{};
+    const cfg=e.cfg||{};
+    const pStr=Object.entries(cfg).filter(([k])=>!['instrument','symbols','symbol','active'].includes(k)&&!k.startsWith('_')).map(([k,v])=>`${k}:${v}`).join(', ');
+    const hasPS=e.per_symbol&&Object.keys(e.per_symbol).length;
+    const open=!!_savedOpen[e.id];
+    const tr=document.createElement('tr');
+    tr.className='row';
+    tr.innerHTML=`
+      <td>${hasPS?`<span class="link" style="margin-right:4px" onclick="savedToggle('${e.id}')">${open?'▾':'▸'}</span>`:''}❤️ ${esc(e.name||'')}${e.symbols?` <span class="muted" style="font-size:10px">(${esc(e.symbols.join('+'))})</span>`:''}</td>
+      <td>${esc(e.strategy||'—')}</td>
+      <td class="muted" style="font-size:11px;max-width:200px;white-space:normal">${esc(pStr)}</td>
+      <td class="muted" style="font-size:11px">${esc(e.date_from||'?')} → ${esc(e.date_to||'?')}</td>
+      <td>${s.n_trades??'—'}</td>
+      <td>${s.win_rate!=null?s.win_rate+'%':'—'}</td>
+      <td>${s.profit_factor??'—'}</td>
+      <td class="${(s.pnl_points||0)>=0?'green':'red'}">${s.pnl_points??'—'}</td>
+      <td class="muted" style="font-size:11px">${esc(e.saved_at||'')}</td>
+      <td style="white-space:nowrap"></td>`;
+    const td=tr.lastElementChild;
+    const mk=(txt,cls,title,fn)=>{
+      const b=document.createElement('button');
+      b.className='btn '+cls+' sm'; b.textContent=txt; b.title=title; b.onclick=fn;
+      b.style.marginRight='4px';
+      return b;
+    };
+    td.appendChild(mk('▶','blue','Result — backtest naye tab me',()=>savedRun(e)));
+    td.appendChild(mk('🔁','ghost','Rerun — Parameter Modal me kholo',()=>savedRerun(e)));
+    td.appendChild(mk('🚀','green','Deploy — dashboard Run modal (Paper/Live wahi choose hoga)',()=>savedDeploy(e)));
+    td.appendChild(mk('🗑','ghost','Delete',()=>savedDel(e)));
+    el.appendChild(tr);
+    if(hasPS&&open){
+      Object.entries(e.per_symbol).forEach(([sym,ss])=>{
+        ss=ss||{};
+        const sub=document.createElement('tr');
+        sub.className='subrow';
+        sub.innerHTML=`<td colspan="4">↳ ${esc(sym)}</td>
+          <td>${ss.n_trades??'—'}</td>
+          <td>${ss.win_rate!=null?ss.win_rate+'%':'—'}</td>
+          <td>${ss.profit_factor??'—'}</td>
+          <td class="${(ss.pnl_points||0)>=0?'green':'red'}">${ss.pnl_points??'—'}</td>
+          <td colspan="2"></td>`;
+        el.appendChild(sub);
+      });
+    }
+  });
+}
+function savedToggle(id){ _savedOpen[id]=!_savedOpen[id]; renderSaved(); }
+function savedRun(e){
+  const cfg=Object.assign({},e.cfg||{});
+  const syms=(e.symbols&&e.symbols.length)?e.symbols.slice():(cfg.symbol?[cfg.symbol]:[]);
+  delete cfg.symbols;
+  openRunTab(e.strategy, cfg, syms, e.date_from, e.date_to);
+}
+function savedRerun(e){
+  const preset={symbols:(e.symbols&&e.symbols.length)?e.symbols.slice():null,
+                date_from:e.date_from, date_to:e.date_to, cfg:e.cfg||{}};
+  if(!preset.symbols) preset.symbols=(e.cfg&&e.cfg.symbol)?[e.cfg.symbol]:null;
+  const sid=e.strategy||'';
+  if(sid.startsWith('user_')){
+    const v=_pine.find(x=>x.script_id===sid);
+    if(v){ pmOpenUser(v.version, preset); return; }
+  }
+  if(_builtins.includes(sid)){ pmOpenBuiltin(sid, preset); return; }
+  // strategy ab config me nahi (deleted version?) — generic open
+  PM={kind:'builtin', sid, name:sid, version:null, stratVersion:'', presetKey:baseType(sid)};
+  _pmFill(e.cfg||{}, preset);
+}
+function savedDeploy(e){
+  const sym=(e.cfg&&e.cfg.symbol)||(e.symbols||[])[0]||'';
+  const params=new URLSearchParams({deploy:e.strategy||''});
+  if(sym) params.set('symbol',sym);
+  (window.top||window).location.href='/?'+params.toString();
+}
+async function savedDel(e){
+  if(!confirm(`"${e.name||'saved result'}" delete karein?`)) return;
+  try{ await fetch('/api/backtest/saved/'+e.id,{method:'DELETE'}); }catch(err){}
+  toast('🗑 deleted');
+  loadSaved();
+}
+
+/* ---------- Editor ---------- */
+function autoLang(){
+  if(_langManual) return;
+  const c=document.getElementById('ed-code').value;
+  let lang='pine';
+  if(/^\s*(def |import |from )/m.test(c)||/def\s+(evaluate|backtest)\s*\(/.test(c)) lang='python';
+  else if(/@version|strategy\s*\(|plotshape|ta\./.test(c)) lang='pine';
+  else if(/\b(when|and|then|cross(over|under)?)\b/i.test(c)) lang='dsl';
+  document.getElementById('ed-lang').value=lang;
+}
+let _edImgs=[];
+function edImgsChanged(){
+  const inp=document.getElementById('ed-imgs');
+  _edImgs=[..._edImgs, ...inp.files];
+  inp.value='';
+  renderEdImgThumbs();
+}
+function renderEdImgThumbs(){
+  const w=document.getElementById('ed-img-thumbs');
+  w.innerHTML='';
+  _edImgs.forEach((f,i)=>{
+    const box=document.createElement('span');
+    box.style.cssText='position:relative;display:inline-block';
+    const img=document.createElement('img');
+    img.className='vimg';
+    img.src=URL.createObjectURL(f);
+    const x=document.createElement('span');
+    x.textContent='✕';
+    x.style.cssText='position:absolute;top:-6px;right:-6px;background:#3d1214;border:1px solid #f85149;color:#f85149;border-radius:50%;width:16px;height:16px;font-size:10px;display:flex;align-items:center;justify-content:center;cursor:pointer';
+    x.onclick=()=>{ _edImgs.splice(i,1); renderEdImgThumbs(); };
+    box.appendChild(img); box.appendChild(x);
+    w.appendChild(box);
+  });
+}
+async function saveVersion(){
+  const code=document.getElementById('ed-code').value.trim();
+  if(!code){ toast('⚠️ Kuch paste karo pehle'); return; }
+  const lang=document.getElementById('ed-lang').value;
+  const name=document.getElementById('ed-name').value.trim();
+  if(lang!=='pine'&&!name){ toast('⚠️ Python/DSL ke liye name zaroori hai'); return; }
+  const desc=document.getElementById('ed-desc').value.trim();
+  const config=document.getElementById('ed-cfg').value.trim();
+  try{
+    const r=await fetch('/api/pine/save',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({code,desc,lang,name,config})});
+    const d=await r.json();
+    if(d.error){ toast('⚠ '+d.error); return; }
+    if(_edImgs.length){
+      const fd=new FormData();
+      _edImgs.forEach(f=>fd.append('images',f));
+      try{ await fetch('/api/pine/images/'+d.version,{method:'POST',body:fd}); }catch(e){}
+    }
+    toast(`✅ v${d.strat_version||d.version} saved — "${d.name}" [${(d.lang||lang).toUpperCase()}]${_edImgs.length?' +'+_edImgs.length+' img':''}`);
+    document.getElementById('ed-code').value='';
+    document.getElementById('ed-name').value='';
+    document.getElementById('ed-desc').value='';
+    document.getElementById('ed-cfg').value='';
+    _edImgs=[]; renderEdImgThumbs();
+    _langManual=false;
+    subtab('history'); loadHistory();
+  }catch(e){ toast('⚠ '+e.message); }
+}
+async function copyCode(version){
+  try{ const r=await fetch('/api/pine/code/'+version); const d=await r.text();
+    await navigator.clipboard.writeText(d||''); toast('📋 Copied'); }
+  catch(e){ toast('⚠ copy fail'); }
+}
+async function delVersion(version){
+  if(!confirm('Is version ko delete karein?')) return;
+  try{ await fetch('/api/pine/delete/'+version,{method:'DELETE'}); toast('🗑 Deleted'); loadHistory(); }
+  catch(e){ toast('⚠ '+e.message); }
+}
+
+/* ---------- misc ---------- */
+function subtab(which){
+  ['editor','history','opts','saved'].forEach(t=>{
+    document.getElementById('st-'+t).classList.toggle('active',which===t);
+    document.getElementById('panel-'+t).classList.toggle('hide',which!==t);
+  });
+  if(which==='opts'){ if(_optHist===null) loadOpts(); else renderOpts(); }
+  if(which==='saved'){ if(_saved===null) loadSaved(); else renderSaved(); }
+}
+function esc(s){ return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+let _tt; function toast(m){ const t=document.getElementById('toast'); t.textContent=m; t.style.display='block'; clearTimeout(_tt); _tt=setTimeout(()=>t.style.display='none',3000); }
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    pmClose(); orClose();
+    document.getElementById('op-overlay').classList.remove('open');
+  }
+});
+
+loadHistory();
+</script>
+</body>
+</html>
