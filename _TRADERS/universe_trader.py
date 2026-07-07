@@ -17,9 +17,14 @@ with the existing P&L parser.
 
 import argparse
 import json
+import os
 import socket
 import sys
 import time
+# Root-level modules (risk_gate/dhan_feed/execution_gateway/...) import karne ke
+# liye project root path pe chahiye — subprocess spawn me sys.path[0] = _TRADERS/
+# hota hai (same bootstrap jo range_trader/01_rsi_v1/nifty_ema_trader me hai).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import risk_gate
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -31,7 +36,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 import dhan_feed
-import smart_order
+import execution_gateway   # Task 3 (Rule 6B/ADR-001) — saare entry/exit isi se
 import strategies
 import universe
 from brokers import get_broker
@@ -271,27 +276,15 @@ def main(sid, once=False):
                 if st["position"] and st["open_inst"]:
                     s_id, seg, tsym, qty = st["open_inst"]
                     ex_side = "SELL" if st["position"] == "LONG" else "BUY"
-                    # P6 audit fix (2026-07-02): same fresh-flat guard as the
-                    # signal-driven EXIT branch below — this loop placed exit
-                    # orders unconditionally, racing pos_monitor_loop's own
-                    # EOD_315 squareoff (a separate process) with no check.
-                    if mode == "live":
-                        try:
-                            import broker_sync as _bs
-                            _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
-                            _bpos = broker.positions()
-                            if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
-                                log(f"[FLAT-CHECK] {sym} already flat at broker "
-                                    f"(EOD squareoff won the race elsewhere) — skipping 3:15 exit")
-                                st["position"] = None
-                                st["open_inst"] = None
-                                continue
-                        except Exception as _fe:
-                            log(f"[FLAT-CHECK] 3:15 pre-exit check failed ({_fe}) — proceeding (fail-open)")
-                    smart_order.execute(ex_side, sym, s_id, seg, qty, tsym, mode,
-                                        broker, cfg.get("limit_buffer_bps", 10),
-                                        log=log, tag="EXIT", source="strategy", strategy=sid,
-                                        is_exit=True)
+                    # Task 3 (Rule 6B/ADR-001): exit ab gateway se — fresh pre-exit
+                    # flat-check (P6 audit fix wala guard, ab strategy-aware Task 5)
+                    # + smart_order is_exit sab andar. skipped_flat ho ya order jaye,
+                    # dono mein state clear hota hai (purana behavior).
+                    execution_gateway.execute_exit(
+                        sid, sym, s_id, tsym, qty, exit_side=ex_side, seg=seg,
+                        mode=mode, broker_name=cfg.get("broker"), tag="EXIT",
+                        reason="EOD_315_SQUAREOFF",
+                        buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
                     st["position"] = None
                     st["open_inst"] = None
             log("[EXIT] 3:15 square-off done")
@@ -365,27 +358,13 @@ def main(sid, once=False):
             if sig == "EXIT" and st["position"] and st["open_inst"]:
                 s_id, seg, tsym, oq = st["open_inst"]
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
-                # Pre-exit broker-flat guard (manual-close protection) — live only.
-                # If already flat at the broker, firing this exit would open a
-                # phantom opposite position (1 trade -> 3 + extra tax). Fresh
-                # broker positions() check, not the 30s-lagged order_store/cache.
-                if mode == "live":
-                    try:
-                        import broker_sync as _bs
-                        _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
-                        _bpos = broker.positions()
-                        if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
-                            log(f"[FLAT-CHECK] {sym} already flat at broker (manual close?) "
-                                f"— skipping exit order, clearing state")
-                            st["position"] = None
-                            st["open_inst"] = None
-                            continue
-                    except Exception as _fe:
-                        log(f"[FLAT-CHECK] pre-exit check failed ({_fe}) — proceeding (fail-open)")
-                smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
-                                    broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="EXIT", source="strategy", strategy=sid,
-                                    is_exit=True)
+                # Task 3 (Rule 6B/ADR-001): gateway — fresh pre-exit flat-check
+                # (manual-close phantom-position guard, strategy-aware Task 5)
+                # + smart_order is_exit, sab EK call mein.
+                execution_gateway.execute_exit(
+                    sid, sym, s_id, tsym, oq, exit_side=ex_side, seg=seg,
+                    mode=mode, broker_name=cfg.get("broker"), tag="EXIT",
+                    buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
                 st["position"] = None
                 st["open_inst"] = None
                 continue
@@ -405,27 +384,14 @@ def main(sid, once=False):
             if st["position"] and st["open_inst"]:
                 s_id, seg, tsym, oq = st["open_inst"]
                 ex_side = "SELL" if st["position"] == "LONG" else "BUY"
-                # P6 audit fix (2026-07-02): same fresh-flat guard as the plain
-                # EXIT branch above — a flip fires a real closing order on the
-                # OLD leg from in-memory state alone; if that leg was already
-                # manually closed, this would open a phantom opposite position.
-                _flip_flat = False
-                if mode == "live":
-                    try:
-                        import broker_sync as _bs
-                        _bname = (cfg.get("broker") or risk_gate.default_broker() or "dhan").lower()
-                        _bpos = broker.positions()
-                        if _bpos is not None and _bs._check_flat(_bname, _bpos, tsym, str(s_id)):
-                            log(f"[FLAT-CHECK] {sym} already flat at broker (manual close?) "
-                                f"— skipping FLIP-close order, clearing state")
-                            _flip_flat = True
-                    except Exception as _fe:
-                        log(f"[FLAT-CHECK] FLIP pre-exit check failed ({_fe}) — proceeding (fail-open)")
-                if not _flip_flat:
-                    smart_order.execute(ex_side, sym, s_id, seg, oq, tsym, mode,
-                                        broker, cfg.get("limit_buffer_bps", 10),
-                                        log=log, tag="FLIP", source="strategy", strategy=sid,
-                                        is_exit=True)
+                # Task 3 (Rule 6B/ADR-001): gateway — P6 audit fix wala fresh-flat
+                # guard (flip apni OLD leg pe real closing order in-memory state se
+                # firta hai; manually closed ho to phantom opposite position banta)
+                # ab gateway ke andar hai (strategy-aware, Task 5).
+                execution_gateway.execute_exit(
+                    sid, sym, s_id, tsym, oq, exit_side=ex_side, seg=seg,
+                    mode=mode, broker_name=cfg.get("broker"), tag="FLIP",
+                    buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
                 st["position"] = None
                 st["open_inst"] = None
 
@@ -456,47 +422,38 @@ def main(sid, once=False):
                           f"skipping LTP calls for the rest of today")
                 continue
 
-            # ── risk gate (RMS Stage 1+2+3) — single shared gate, see
-            # strategy_safety.gate_entry() (LESSONS.md TRAP #15: this used to
-            # be hand-rolled separately per strategy file and silently
-            # drifted). gating_status short-circuit > drawdown breaker >
-            # concentration cap > capital allocation (size-down if
-            # configured) > real broker funds (live only). ──
-            import risk_gate, strategy_safety
+            # ── Entry ab execution_gateway.execute_signal() se — EK call (Task 3,
+            # Rule 6B/ADR-001). Andar wahi sequence jo pehle yahan inline tha:
+            # marketable_price → strategy_safety.gate_entry (RMS Stage 1+2+3,
+            # TRAP #15 wala shared gate, size-down included) → RMS default SL
+            # tags → smart_order.execute. gating_status short-circuit UPAR
+            # already hai (rate-limit saver — LTP call se pehle).
+            import risk_gate
             per_lot = int(cfg.get("qty", 1))
             lots = int(cfg.get("lots", 1))
-            est_price, _src = smart_order.marketable_price(o_side, sec_id, seg, broker)
-            gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
-                sid, sym, lots, per_lot, est_price, side=o_side,
-                sec_id=sec_id, seg=seg, mode=mode, broker=broker, log=log)
-            if not gate_ok:
-                log(f"[SKIP] {sym} {sig} — {gate_reason}")
-                if est_price and _once(f"block:{sid}:{sym}"):
+            r = execution_gateway.execute_signal(
+                sid, sym, o_side, lots, per_lot, sec_id, tsym, seg=seg,
+                mode=mode, broker_name=cfg.get("broker"), tag="UNIV",
+                instrument=("equity" if route == "equity" else "options"),
+                buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
+            if r["status"] == "blocked":
+                log(f"[SKIP] {sym} {sig} — {r['reason']}")
+                # CAPITAL_BLOCKED ghost row (dashboard "blocked entries" card) —
+                # din mein ek baar per symbol, sirf jab est_price mila tha
+                if r.get("price") and _once(f"block:{sid}:{sym}"):
                     try:
                         import order_store
-                        order_store.record(o_side, qty, est_price, source="strategy", strategy=sid,
+                        order_store.record(o_side, qty, r["price"], source="strategy", strategy=sid,
                                            mode=mode, broker=cfg.get("broker", risk_gate.default_broker()), symbol=sym,
                                            instrument=("equity" if route == "equity" else "options"),
                                            trad_sym=tsym, sec_id=sec_id, segment=seg,
-                                           status="blocked", tags=["CAPITAL_BLOCKED", gate_reason])
+                                           status="blocked", tags=["CAPITAL_BLOCKED", r["reason"]])
                     except Exception:
                         pass
                 continue
-            if gated_qty != qty:
-                log(f"[SIZE-DOWN] {sym} {sig} — qty {qty} -> {gated_qty} ({gate_reason})")
-                qty = gated_qty
-
-            try:
-                default_sl_tags = risk_gate.default_instrument_sl_tags(sid, sym)
-            except Exception:
-                default_sl_tags = []
-            r = smart_order.execute(o_side, sym, sec_id, seg, qty, tsym, mode,
-                                    broker, cfg.get("limit_buffer_bps", 10),
-                                    log=log, tag="UNIV", source="strategy", strategy=sid,
-                                    extra_tags=default_sl_tags)
             if r.get("ok"):
                 st["position"] = want
-                st["open_inst"] = (sec_id, seg, tsym, qty)
+                st["open_inst"] = (sec_id, seg, tsym, r["qty"])
                 st["trades_today"] += 1
 
         if once:

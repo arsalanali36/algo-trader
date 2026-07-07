@@ -35,6 +35,10 @@ import range_trader as rt
 import nifty_ema_trader as emat
 import validate_strategy as vs   # reuse backtest_day (range) + parse_log (TV)
 import dhan_master
+import execution_gateway         # Rule 6B/ADR-003: shared risk/order layer — backtest
+                                 # ka mode="backtest" gate (max-premium) isi se aata
+                                 # hai jab koi option-premium path use kare; result
+                                 # payload ka "risk_note" bhi isi contract ka hissa
 from strategies import vwap_ema_failure as vwapf
 from _CHARTING import zones as chzones
 from _CHARTING import patterns as chpatterns
@@ -1126,6 +1130,15 @@ def run_backtest(strategy_type, cfg, date_from, date_to, tv_log_path=None):
         "tv_summary": tv_summary,
         "accuracy": accuracy,
         "plot_spec": plot_spec,
+        # Rule 6B point 4 / ADR-003 — backtest LIVE RMS rules (daily-loss cap,
+        # concentration, capital allocation) enforce NAHI karta: wo checks aaj ke
+        # LIVE order_store/balance state se chalte hain, historical simulation se
+        # nahi. Jo live rules deterministic hain (max 2 trades/day, 3:15 squareoff)
+        # wo runners khud enforce karte hain. Chup-chaap alag risk-simulation
+        # likhna mana hai — isliye ye explicit flag har result ke saath jaata hai.
+        "risk_note": ("Backtest enforces max-trades/day + 3:15 squareoff only. "
+                      "Live RMS (daily-loss cap / concentration / capital) is NOT "
+                      "simulated — see execution_gateway + ADR-003."),
     }
     return result
 

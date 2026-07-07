@@ -111,12 +111,68 @@ def reconcile_if_due(log=print) -> None:
         log(f"[broker_sync] auto-reconcile failed: {e}", flush=True)
 
 
-def is_flat(broker_name: str, trad_sym: str, sec_id: str) -> bool:
+def _my_open_qty(strategy_id: str, sec_id: str, trad_sym: str = ""):
+    """Task 5 (per-strategy position isolation): order_store ke hisaab se IS
+    strategy ki is contract mein kitni qty AB BHI open hai. Broker ka net
+    position saari strategies ka joda hua hota hai — 2 strategies same
+    contract share karein to sirf broker-net dekhna galat jawaab deta hai
+    ("mera exit fail hua" jabki mera exit record ho chuka → over-sell risk).
+
+    Returns:
+      0    — CONFIDENT flat-for-me: koi open row nahi AUR aaj is contract pe
+             meri strategy ka closed round-trip EXISTS (mera exit record hua tha).
+      >0   — meri qty ab bhi open.
+      None — uncertain (order_store mein is contract ka mera koi record hi
+             nahi — TRAP #58 untracked gap ho sakta hai — ya query fail):
+             caller broker-level check pe fall through kare, kabhi "flat" na maane.
+    """
+    if not strategy_id:
+        return None
+    try:
+        import order_store
+        data = order_store.trades_for(_ist_today_str())
+
+        def _matches(p):
+            if (p.get("strategy") or "") != strategy_id:
+                return False
+            return str(p.get("sec_id") or "") == str(sec_id) or \
+                   (trad_sym and (p.get("sym") or p.get("trad_sym")) == trad_sym)
+
+        total = 0
+        for p in (data.get("open") or []):
+            if not _matches(p):
+                continue
+            if "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue  # kabhi broker tak gaya hi nahi — real position nahi
+            total += abs(int(p.get("qty") or 0))
+        if total > 0:
+            return total
+
+        # open==0 → tabhi confident-flat jab closed evidence maujood ho
+        # (warna "order_store ko pata hi nahi" bhi 0 dikhta — us case mein
+        # exit skip karna position ko unprotected chhod deta)
+        closed_evidence = any(_matches(p) for p in (data.get("details") or []))
+        return 0 if closed_evidence else None
+    except Exception:
+        return None
+
+
+def is_flat(broker_name: str, trad_sym: str, sec_id: str, strategy_id: str = None) -> bool:
     """
     Pre-exit check in _do_squareoff: is this position already flat at broker?
     Uses cached data (updated by sync_if_due / force_sync). Returns False if
     cache is stale / unavailable — FAIL OPEN so real exits are never blocked.
+
+    strategy_id (Task 5): diya ho to PEHLE order_store se poocho "kya MERI
+    strategy ki koi qty is contract mein ab bhi open hai" — 0 ho to flat=True
+    turant (broker-net doosri strategy ke lots se non-zero ho sakta hai, wo
+    MERE liye irrelevant hai). Meri qty >0 ho to broker-level evidence hi
+    decide karta hai (net==0 → manual close/ghost → True, pehle jaisa).
     """
+    if strategy_id:
+        mine = _my_open_qty(strategy_id, sec_id, trad_sym)
+        if mine == 0:
+            return True   # MY rows all closed — flat for me, broker-net irrelevant
     with _lock:
         entry = _cache.get(broker_name)
     if not entry:
@@ -127,7 +183,8 @@ def is_flat(broker_name: str, trad_sym: str, sec_id: str) -> bool:
     return _check_flat(broker_name, pos, trad_sym, sec_id)
 
 
-def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float = 5.0) -> bool:
+def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float = 5.0,
+                  strategy_id: str = None) -> bool:
     """
     Pre-exit check with a FRESH broker positions() call (TRAP #73 family, hedge-
     sibling path). Like is_flat(), but never trusts data older than max_age
@@ -136,7 +193,13 @@ def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float =
     the shared cache on fetch, so a burst of sibling/EOD checks within the same
     monitor tick reuses ONE API call instead of one per position. Fail-OPEN
     (False = "assume still open") on any error so a real exit is never blocked.
+
+    strategy_id (Task 5): same order_store-first semantics as is_flat() above.
     """
+    if strategy_id:
+        mine = _my_open_qty(strategy_id, sec_id, trad_sym)
+        if mine == 0:
+            return True   # MY rows all closed — flat for me, broker-net irrelevant
     with _lock:
         entry = _cache.get(broker_name)
     if entry and time.time() - entry["ts"] <= max_age:
@@ -476,29 +539,36 @@ def _ist_today_str() -> str:
     return (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 
 
-def _known_broker_keys(broker_name: str, open_for_broker: list) -> set:
+def _known_broker_keys(broker_name: str, open_for_broker: list) -> dict:
     """Identity keys order_store already has an OPEN row for, on this broker —
     sec_id for Dhan (exact match, no guessing needed), resolved kite_sym for
     Kite (forward-only Dhan-trad_sym -> Kite-symbol via KiteBroker.resolve_symbol,
-    same direction TRAP #44's ghost detection already trusts)."""
-    keys = set()
+    same direction TRAP #44's ghost detection already trusts).
+
+    Task 5 (2026-07-07): ab ek {key: total_known_qty} DICT hai, set nahi —
+    saari strategies ki order_store qty SUM hoti hai per contract. Pehle sirf
+    presence check tha (`if key in known: continue`), jo exactly tab fail
+    hota jab 2 strategies same contract share karein: Strategy A ka 1 lot
+    order_store mein hai (key "known"), broker pe 2 lots hain (B ka lot
+    untracked), aur scan poora contract SKIP kar deta tha — TRAP #58 ka
+    poora purpose usi scenario mein defeat. Ab caller qty compare karta hai."""
+    keys = {}
     kite_broker = None
     for p in open_for_broker:
+        key = ""
         if broker_name == "kite":
             try:
                 if kite_broker is None:
                     from brokers import get_broker
                     kite_broker = get_broker("kite")
-                ks = kite_broker.resolve_symbol(p.get("sym") or p.get("trad_sym") or "",
-                                                 sec_id=p.get("sec_id"))
-                if ks:
-                    keys.add(ks)
+                key = kite_broker.resolve_symbol(p.get("sym") or p.get("trad_sym") or "",
+                                                 sec_id=p.get("sec_id")) or ""
             except Exception:
-                pass
+                key = ""
         else:
-            sid = str(p.get("sec_id") or "")
-            if sid:
-                keys.add(sid)
+            key = str(p.get("sec_id") or "")
+        if key:
+            keys[key] = keys.get(key, 0) + abs(int(p.get("qty") or 0))
     return keys
 
 
@@ -532,9 +602,25 @@ def _run_untracked_scan(log=print) -> None:
         for pos in (live or []):
             key = pos.get("sec_id") if broker_name != "kite" else pos.get("kite_sym")
             key = str(key or "")
-            if not key or key in known:
+            if not key:
                 continue
-            _handle_untracked(broker_name, key, pos, log)
+            broker_qty = abs(int(pos.get("qty") or 0))
+            known_qty = known.get(key)
+            if known_qty is None:
+                # order_store is contract ko jaanta hi nahi — fully untracked
+                _handle_untracked(broker_name, key, pos, log)
+            elif broker_qty > known_qty:
+                # Task 5: PARTIALLY untracked — order_store kuch qty jaanta hai
+                # (e.g. Strategy A ka lot) par broker pe usse ZYADA hai (Strategy
+                # B ka lot record hone se reh gaya). Pehle presence-only check
+                # yahan poora contract skip kar deta tha (TRAP #58 defeat).
+                extra = dict(pos)
+                extra["qty"] = broker_qty - known_qty
+                log(f"[broker_sync] ⚠️ PARTIALLY untracked {pos.get('trad_sym') or key} "
+                    f"({broker_name}): broker qty {broker_qty} > order_store known "
+                    f"{known_qty} — treating the extra {extra['qty']} as untracked",
+                    flush=True)
+                _handle_untracked(broker_name, key, extra, log)
 
 
 def _handle_untracked(broker_name: str, key: str, pos: dict, log=print) -> None:

@@ -53,7 +53,8 @@ TC_FILE     = BASE_DIR / "nifty_config.json"          # strategy params
 # dhan_master root pe hai — import ke liye path add karo
 sys.path.insert(0, str(BASE_DIR))
 import dhan_master
-from brokers import kite_broker
+# (kite_broker import legacy place_order() ke saath gaya — orders ab
+#  execution_gateway → smart_order → brokers/ abstraction se jaate hain)
 # RSI ka SINGLE source of truth — _CHARTING/indicators.py (Rule 6B / ADR-002).
 # Wahi Wilder formula jo pehle yahin inline thi (com=period-1, Pine ta.rsi match) —
 # ab signal AUR dashboard chart dono isi se aate hain, mismatch possible hi nahi.
@@ -312,109 +313,34 @@ def _order_broker(cfg):
     return cfg.get("order_broker", "dhan").lower()   # "dhan" ya "kite"
 
 
-def place_order(side, trad_sym, sec_id, qty, token, cid, log, cfg=None):
-    """
-    Order bhejo — broker config ke hisaab se Dhan ya Kite pe.
-
-    order_broker = "dhan" (default) → Dhan REST API
-    order_broker = "kite"           → Zerodha Kite Connect
-
-    side     : "BUY" ya "SELL"
-    trad_sym : Dhan format "NIFTY-Jun2026-23950-CE"
-    sec_id   : Dhan internal ID (sirf Dhan ke liye chahiye)
-    qty      : actual shares (lots × lot_size — CSV se, kabhi hardcode nahi)
-    """
-    broker = _order_broker(cfg or {})
-
-    if broker == "kite":
-        # Dhan trad_sym → Kite format convert karo
-        kite_sym = kite_broker.dhan_sym_to_kite(trad_sym)
-        log.info(f"    [KITE→] {side} {kite_sym}  qty={qty}  (from {trad_sym})")
-        order_id = kite_broker.place_order(side, kite_sym, qty, log_ref=log)
-        return order_id is not None
-
-    # ── Default: Dhan ────────────────────────────────────────────────────────
-    payload = {
-        "dhanClientId":      cid,
-        "correlationId":     f"RSI_{trad_sym}_{int(time.time())}",
-        "transactionType":   side,
-        "exchangeSegment":   "NSE_FNO",
-        "productType":       "INTRADAY",
-        "orderType":         "MARKET",
-        "validity":          "DAY",
-        "tradingSymbol":     trad_sym,
-        "securityId":        sec_id,
-        "quantity":          qty,
-        "disclosedQuantity": 0,
-        "price":             0,
-        "triggerPrice":      0,
-        "afterMarketOrder":  False,
-        "amoTime":           "OPEN",
-    }
-    try:
-        r    = requests.post(ORDERS_URL, json=payload,
-                             headers=dhan_headers(token, cid), timeout=20)
-        resp = r.json() if r.content else {}
-        if r.status_code == 200:
-            log.info(f"    [DHAN] {side} {trad_sym}  qty={qty}  orderId={resp.get('orderId','?')}")
-            return True
-        log.error(f"    [ORDER ERR] {side} {trad_sym}: {resp.get('remarks') or r.text[:120]}")
-        return False
-    except Exception as e:
-        log.error(f"    [ORDER EXC] {e}")
-        return False
+# (Legacy raw place_order() — Dhan REST / kite_broker.place_order seedha —
+#  2026-07-07 ko DELETE hua: koi caller nahi bacha tha (entry/exit dono
+#  execution_gateway → smart_order.execute se jaate hain). Rule 6B: raw broker
+#  order-calls sirf smart_order.py/brokers/ mein. Task 3, ADR-001.)
 
 
 def close_position(sym, active_opts, token, cid, paper_mode, rsi_val, log, cfg=None, strategy_id="rsi_v1"):
     """Open option position band karo (EXIT order).
 
-    Ab smart_order.execute() ke through jaata hai — order_store recording (taaki
-    RMS + pos_monitor position dekhein aur SL/TP/EOD lagayein), async fill-confirm,
-    aur ₹0-price guard (TRAP #1) sab automatic milte hain. Live exit se PEHLE ek
-    fresh broker positions() flat-check: agar position broker pe already flat hai
-    (user ne manually close kiya / SL laga), to apna exit order phantom OPPOSITE
-    position khol dega (1 trade -> 3 + tax) — isliye skip karke state saaf karo."""
+    Ab execution_gateway.execute_exit() se — EK call (Task 3, Rule 6B/ADR-001).
+    Andar: fresh pre-exit flat-check (manual-close ke baad phantom OPPOSITE
+    position guard — ab strategy-aware bhi, Task 5: doosri strategy ka same-
+    contract lot MERI flat-check ko confuse nahi karta) + smart_order.execute
+    is_exit=True (order_store recording, extra chase rounds, ₹0-guard TRAP #1).
+    Exit-reason tag: rsi_val "3:15" (force-exit call site) → EOD_315_SQUAREOFF,
+    warna RSI_MIDLINE_EXIT — Completed Trades ka Exit Reason column isi se."""
     if sym not in active_opts:
         log.info(f"    [PAPER] EXIT {sym}  RSI={rsi_val}")
         return
-    o          = active_opts.pop(sym)
-    close_side = "SELL" if o["side"] == "BUY" else "BUY"
-    mode       = "paper" if paper_mode else "live"
-    _bname     = _order_broker(cfg or {})
+    o    = active_opts.pop(sym)
+    mode = "paper" if paper_mode else "live"
     try:
-        from brokers import get_broker
-        _bkr = get_broker(_bname)
-    except Exception as _be:
-        log.error(f"    [EXIT] broker init failed ({_be}) — {sym} exit skipped "
-                  f"(pos_monitor SL/EOD will still protect it via order_store)")
-        return
-
-    # Manual-close flat guard (live only) — fresh broker check, not 30s cache.
-    if not paper_mode:
-        try:
-            import broker_sync as _bs
-            _bpos = _bkr.positions()
-            if _bpos is not None and _bs._check_flat(_bname, _bpos, o["trad_sym"], str(o["sec_id"])):
-                log.info(f"    [FLAT-CHECK] {o['trad_sym']} already flat at broker "
-                         f"(manual close?) — skipping exit order to avoid a phantom "
-                         f"opposite position; state cleared")
-                return
-        except Exception as _fe:
-            log.warning(f"    [FLAT-CHECK] pre-exit check failed ({_fe}) — proceeding (fail-open)")
-
-    try:
-        import smart_order
-        # Tag the exit reason (same gap+fix as range_trader.py's ATR_TRAILING —
-        # this call had NO extra_tags at all, so the Completed Trades "Exit
-        # Reason" column stayed blank for every RSI exit, e.g. MARUTI 2026-07-03).
-        # rsi_val is the string "3:15" for the 3:15 force-exit call site, the
-        # actual RSI float for a real signal-driven exit.
+        import execution_gateway as _gw
         _reason = "EOD_315_SQUAREOFF" if rsi_val == "3:15" else "RSI_MIDLINE_EXIT"
-        smart_order.execute(close_side, sym, o["sec_id"], "NSE_FNO", o["qty"],
-                            o["trad_sym"], mode, _bkr,
-                            log=log.info, tag="RSI", source="strategy",
-                            strategy=strategy_id, instrument="options",
-                            broker_name=_bname, is_exit=True, extra_tags=[_reason])
+        _gw.execute_exit(strategy_id, sym, o["sec_id"], o["trad_sym"], o["qty"],
+                         entry_side=o["side"], seg="NSE_FNO", mode=mode,
+                         broker_name=_order_broker(cfg or {}), tag="RSI",
+                         instrument="options", reason=_reason, log=log.info)
     except Exception as _ee:
         log.error(f"    [EXIT] {sym} exit order failed: {_ee} "
                   f"(pos_monitor SL/EOD will retry via order_store)")
@@ -669,50 +595,21 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 sec_id, trad_sym, lot_size = result
                 actual_qty = lots * (lot_size or 1)   # lot_size CSV se, kabhi hardcode nahi
 
-                # ── Order ab smart_order.execute() ke through — RMS-safe ─────────
-                # Isse milta hai (CLAUDE.md Critical Rule 6/8): order_store
-                # recording (RMS + pos_monitor position dekhein → auto SL/TP/EOD),
-                # marketable-limit pricing (MARKET nahi — Zerodha options pe MARKET
-                # reject karta), async fill-confirm, ₹0-price guard (TRAP #1), aur
-                # correct Kite symbol resolve. Entry se pehle RMS gate_entry
-                # (capital/drawdown/concentration) — legacy raw path RMS-blind tha.
+                # ── Entry ab execution_gateway.execute_signal() se — EK call (Task 3,
+                # Rule 6B / ADR-001). Andar wahi sequence jo pehle yahan inline tha:
+                # marketable_price (no-premium → skip, TRAP #1) → strategy_safety.
+                # gate_entry (poora RMS, fail-closed) → RMS default SL tags →
+                # smart_order.execute (marketable-limit + order_store recording).
                 mode = "paper" if paper_mode else "live"
                 try:
-                    import smart_order as _so
-                    import risk_gate as _rg
-                    import strategy_safety as _ss
-                    from brokers import get_broker as _gb
-                    _bname = _order_broker(tc)
-                    _bkr   = _gb(_bname)
-
-                    est_price, _psrc = _so.marketable_price("BUY", sec_id, "NSE_FNO", _bkr)
-                    if not est_price or est_price <= 0:
-                        # premium na mile to entry SKIP (₹0 record mat karo — TRAP #1)
-                        log.warning(f"  {sym} — no option premium (rate-limit?) — entry skipped this cycle")
-                        continue
-
-                    gate_ok, gated_qty, gate_reason = _ss.gate_entry(
-                        strategy_id, sym, lots, (lot_size or 1), est_price, side="BUY",
-                        sec_id=sec_id, seg="NSE_FNO", mode=mode, broker=_bkr, log=log.info)
-                    if not gate_ok:
-                        log.info(f"  [SKIP] {sym} entry blocked — {gate_reason}")
-                        continue
-                    if gated_qty and gated_qty != actual_qty:
-                        log.info(f"  [SIZE-DOWN] {sym} qty {actual_qty} -> {gated_qty} ({gate_reason})")
-                        actual_qty = gated_qty
-
-                    try:
-                        default_sl_tags = _rg.default_instrument_sl_tags(strategy_id, sym)
-                    except Exception:
-                        default_sl_tags = []
-
-                    res = _so.execute("BUY", sym, sec_id, "NSE_FNO", actual_qty, trad_sym,
-                                      mode, _bkr, log=log.info, tag="RSI", source="strategy",
-                                      strategy=strategy_id, instrument="options",
-                                      broker_name=_bname, extra_tags=default_sl_tags)
-                    if res.get("ok"):
+                    import execution_gateway as _gw
+                    res = _gw.execute_signal(strategy_id, sym, "BUY", lots, (lot_size or 1),
+                                             sec_id, trad_sym, seg="NSE_FNO", mode=mode,
+                                             broker_name=_order_broker(tc), tag="RSI",
+                                             instrument="options", log=log.info)
+                    if res["ok"]:
                         active_opts[sym]  = {"sec_id": sec_id, "trad_sym": trad_sym,
-                                              "side": "BUY", "qty": actual_qty}
+                                              "side": "BUY", "qty": res["qty"]}
                         positions[sym]    = +1 if signal == "BUY" else -1
                         trades_today[sym] = t_count + 1
                     else:

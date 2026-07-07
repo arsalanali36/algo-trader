@@ -26,8 +26,10 @@ Yeh koi theory nahi — `01_rsi_v1.py` (rsi_v1) exactly isi wajah se mahino tak 
 aur `nifty_ema_trader.py` har loop crash karta raha, dono kisi ne notice nahi kiye kyunki paper
 mein "chal rahe the". **Live jaane se pehle order_store recording ZAROORI hai.**
 
-Sabse aasan tareeka RMS-safe hone ka: **saare orders `smart_order.execute()` ke through bhejo** —
-wo order_store recording khud kar deta hai (+ bahut saare aur guards, neeche).
+Sabse aasan tareeka RMS-safe hone ka (2026-07-07 se, Task 3/ADR-001): **saare orders
+`execution_gateway.execute_signal()` / `execute_exit()` ke through bhejo** — ye EK call
+mein deta hai: no-premium skip → RMS gate → default SL tags → smart_order.execute
+(order_store recording + saare guards). Neeche copy-paste template hai.
 
 ---
 
@@ -35,9 +37,9 @@ wo order_store recording khud kar deta hai (+ bahut saare aur guards, neeche).
 
 | # | Rule | Kyun (TRAP) |
 |---|------|-------------|
-| 1 | **Order `smart_order.execute()` se bhejo** (raw `requests.post` Dhan/Kite ko mat maaro) | Isse milta hai: order_store recording, rate-limit, async fill-confirm, ₹0-guard, correct Kite symbol. TRAP #14/#15/#26 |
-| 2 | **Entry se pehle `strategy_safety.gate_entry(...)`** — `ok=False` aaye to skip, `gated_qty` use karo | capital/drawdown/concentration/broker-funds — ek call. TRAP #15 |
-| 3 | **Exit se PEHLE fresh broker `positions()` flat-check** (live only) | Manual/broker-side close ke baad apna exit = phantom OPPOSITE position (1 trade → 3 + tax). TRAP #62/#73 |
+| 1 | **Entry `execution_gateway.execute_signal()` se, exit `execute_exit()` se** (raw `requests.post`/`broker.place_order()` kabhi nahi — pre-commit hook block karega) | Gateway ke andar: no-premium skip (TRAP #1), gate_entry RMS (TRAP #15), default SL tags, smart_order (order_store recording, rate-limit, fill-confirm, correct Kite symbol — TRAP #14/#26), pre-exit flat-check (TRAP #62/#73), Task-5 per-strategy isolation. ADR-001 |
+| 2 | **RMS gate/flat-check apne haath se dobara MAT likho** — gateway mein already hai | Duplicate = drift = TRAP #15/#75 wapas. Sirf hedge (protective) leg pe `gate=False` pass karo |
+| 3 | **Gateway ka RETURNED `qty` state mein rakho** (size-down ho sakta hai), aur exit pe `status=="skipped_flat"` aaye to state saaf karo — order nahi gaya hota | Sized qty ignore = capital breach; skipped_flat ignore = phantom position state |
 | 4 | **Premium na mile to entry SKIP** — ₹0 kabhi record mat karo | ₹0 fill P&L corrupt karta, RMS breaker trip. TRAP #1 |
 | 5 | **Naked option SELL hai to** `strategy_safety.compute_hedge_target(...)` se hedge | Hedge config RMS Risk tab se aata, per-strategy dobara mat likho. TRAP #15 |
 | 6 | **3:15 PM force-exit + 3:15 ke baad no-entry** har strategy mein | Intraday-only house rule, overnight gap risk zero. |
@@ -48,73 +50,49 @@ wo order_store recording khud kar deta hai (+ bahut saare aur guards, neeche).
 
 ---
 
-## 📋 COPY-PASTE — ENTRY (RMS-gated, order_store-recorded)
+## 📋 COPY-PASTE — ENTRY (Task 3/ADR-001: EK gateway call, sab andar)
 
 ```python
-import smart_order, risk_gate, strategy_safety
-from brokers import get_broker
+import execution_gateway as gw
 
-mode   = "paper" if paper_mode else "live"     # ya cfg.get("mode")
-bname  = (cfg.get("broker") or risk_gate.default_broker() or "dhan")
-broker = get_broker(bname)
+mode = "paper" if paper_mode else "live"     # ya cfg.get("mode")
 
-# 1) premium/marketable price — na mile to SKIP (₹0 mat record karo — TRAP #1)
-est_price, _src = smart_order.marketable_price(order_side, sec_id, seg, broker)
-if not est_price or est_price <= 0:
-    log(f"{sym} — no premium (rate-limit?) — entry skipped this cycle")
-    continue
-
-# 2) RMS gate — capital/drawdown/concentration/broker-funds (TRAP #15)
-gate_ok, gated_qty, reason = strategy_safety.gate_entry(
-    strategy_id, sym, lots, lot_size, est_price, side=order_side,
-    sec_id=sec_id, seg=seg, mode=mode, broker=broker, log=log)
-if not gate_ok:
-    log(f"[SKIP] {sym} — {reason}")
-    continue
-if gated_qty and gated_qty != qty:
-    qty = gated_qty          # sized-down — use returned qty
-
-# 3) default SL/TP tags so pos_monitor protects it
-try:    sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, sym)
-except Exception: sl_tags = []
-
-# 4) place via smart_order → order_store recording automatic (RMS sees it)
-res = smart_order.execute(order_side, sym, sec_id, seg, qty, trad_sym, mode, broker,
-                          log=log, tag="MYSTRAT", source="strategy", strategy=strategy_id,
-                          instrument="options", broker_name=bname, extra_tags=sl_tags)
-if res.get("ok"):
+# Andar automatic: marketable_price (no-premium → skipped, TRAP #1) →
+# strategy_safety.gate_entry (RMS: capital/drawdown/concentration/liquidity/
+# max-premium/broker-funds, fail-closed, TRAP #15) → RMS default SL tags →
+# smart_order.execute (order_store recording, marketable-limit, fill-confirm).
+res = gw.execute_signal(strategy_id, sym, order_side, lots, lot_size,
+                        sec_id, trad_sym, seg=seg, mode=mode,
+                        broker_name=cfg.get("broker"), tag="MYSTRAT",
+                        instrument="options", log=log)
+if res["ok"]:
+    qty = res["qty"]          # ⚠️ RETURNED qty — size-down ho sakta hai
     # update your in-memory state ONLY on success
     ...
+else:
+    log(f"[SKIP] {sym} — {res['status']}: {res['reason']}")
+    # status: "blocked" (RMS) | "skipped" (no premium) | "rejected"/"failed"
+
+# Naked SELL + hedge? Hedge BUY (protective leg) pe gate=False:
+# gw.execute_signal(..., side="BUY", gate=False, ...)  — RMS-block se
+# hedge rukna = naked SELL akela reh jaana. compute_hedge_target() se contract lo.
 ```
 
-## 📋 COPY-PASTE — EXIT (manual-close flat-guard, order_store-recorded)
+## 📋 COPY-PASTE — EXIT (flat-guard + exit-reason, EK call)
 
 ```python
-import smart_order, broker_sync
-from brokers import get_broker
+import execution_gateway as gw
 
-mode   = "paper" if paper_mode else "live"
-bname  = (cfg.get("broker") or "dhan")
-broker = get_broker(bname)
-
-# Manual-close phantom guard (LIVE only) — fresh broker check, NOT the 30s cache
-# (broker_sync's cache is per-process; empty inside a strategy's own process).
-if not paper_mode:
-    try:
-        bpos = broker.positions()
-        if bpos is not None and broker_sync._check_flat(bname, bpos, trad_sym, str(sec_id)):
-            log(f"[FLAT-CHECK] {trad_sym} already flat at broker (manual close?) "
-                f"— skipping exit to avoid a phantom opposite position; clearing state")
-            # clear in-memory state, do NOT place an order
-            ...
-            continue
-    except Exception as e:
-        log(f"[FLAT-CHECK] failed ({e}) — proceeding with exit (fail-open)")
-
-smart_order.execute(exit_side, sym, sec_id, seg, qty, trad_sym, mode, broker,
-                    log=log, tag="MYSTRAT", source="strategy", strategy=strategy_id,
-                    instrument="options", broker_name=bname, is_exit=True)
-# is_exit=True → 4 order-chase rounds with escalating LIMIT (TRAP #64). Entry = 2.
+res = gw.execute_exit(strategy_id, sym, sec_id, trad_sym, qty,
+                      entry_side="BUY",            # ya exit_side= seedha
+                      seg=seg, mode=mode, broker_name=cfg.get("broker"),
+                      tag="MYSTRAT", reason="MYSTRAT_SIGNAL_EXIT",  # Exit Reason column
+                      log=log)
+# status "skipped_flat" = broker pe already flat tha (manual close/SL) — order
+# NAHI gaya, bas apna in-memory state saaf karo (TRAP #62/#73 phantom guard).
+# Andar: fresh is_flat_fresh (strategy-aware — doosri strategy ka same-contract
+# lot tumhe confuse nahi karta, Task 5) + smart_order is_exit=True
+# (4 chase rounds escalating LIMIT, TRAP #64; entry = 2 rounds).
 ```
 
 ---

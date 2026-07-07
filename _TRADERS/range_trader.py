@@ -630,6 +630,12 @@ def _fetch_premium(sec_id, token, cid):
 
 
 def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id="", broker_override=None, product=None, is_exit=False):
+    """Thin file-local wrapper — asli kaam ab execution_gateway mein (Task 3,
+    Rule 6B / ADR-001). Entry-side gate_entry() is file mein place_order se
+    PEHLE alag se chalta hai (SELL+hedge pairing ki wajah se), isliye yahan
+    gate=False — RMS double-gate nahi hota, aur hedge BUY (protective leg)
+    kabhi RMS se block ho kar naked SELL nahi chhodta. Exits ko gateway ka
+    strategy-aware fresh flat-check free milta hai (Task 5)."""
     if not sec_id or not seg:
         info = DHAN_INFO.get(symbol)
         if not info:
@@ -643,21 +649,21 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
         _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
         if _root not in _s.path:
             _s.path.insert(0, _root)
-        import smart_order
-        import risk_gate
-        from brokers import get_broker
-        
-        broker_name = broker_override or risk_gate.default_broker()
-        broker = get_broker(broker_name)
-        
-        res = smart_order.execute(
-            side, symbol, sec_id, seg, qty, trad_sym, mode, broker,
-            buffer_bps=10, log=log.info, tag="ENTRY" if side=="BUY" else "EXIT",
-            source="strategy", strategy=_STRAT_ID,
-            instrument="options" if seg == "NSE_FNO" else "equity",
-            broker_name=broker_name, group_id=group_id, extra_tags=extra_tags,
-            product=product, is_exit=is_exit
-        )
+        import execution_gateway as gw
+
+        _tag = "ENTRY" if side == "BUY" else "EXIT"   # exactly purana tag logic
+        if is_exit:
+            res = gw.execute_exit(
+                _STRAT_ID, symbol, sec_id, trad_sym, qty, exit_side=side,
+                seg=seg, mode=mode, broker_name=broker_override, tag=_tag,
+                source="strategy", extra_tags=extra_tags, group_id=group_id,
+                product=product, log=log.info)
+        else:
+            res = gw.execute_signal(
+                _STRAT_ID, symbol, side, qty, 1, sec_id, trad_sym,
+                seg=seg, mode=mode, broker_name=broker_override, tag=_tag,
+                source="strategy", extra_tags=extra_tags, group_id=group_id,
+                product=product, gate=False, log=log.info)
         return res.get("ok", False)
     except Exception as e:
         log.error(f"ORDER ERR  {trad_sym}: {e}")

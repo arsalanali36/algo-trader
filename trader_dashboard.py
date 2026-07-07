@@ -1015,27 +1015,26 @@ def api_kite_test_order():
         if not trad_sym:
             return jsonify({"ok": False, "error": f"ATM CE contract nahi mila (NIFTY {atm} CE)"})
 
-        # Kite format mein convert karo
+        # Kite format mein convert karo (sirf response message ke liye)
         kite_sym = kite_broker.dhan_sym_to_kite(trad_sym)
 
-        # LTP Dhan se lo (Personal app mein Kite quotes nahi)
-        _rl.acquire("ltp")
-        r2 = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                           json={"NSE_FNO": [int(sec_id)]}, headers=headers, timeout=5)
-        ltp = float(r2.json()["data"]["NSE_FNO"][str(sec_id)]["last_price"])
-
-        order_id = kite.place_order(
-            variety=kite.VARIETY_REGULAR,
-            exchange=kite.EXCHANGE_NFO,
-            tradingsymbol=kite_sym,
-            transaction_type=kite.TRANSACTION_TYPE_BUY,
-            quantity=lot_size,  # 1 lot
-            product=kite.PRODUCT_MIS,
-            order_type=kite.ORDER_TYPE_LIMIT,
-            price=ltp,
-            tag="KITE_TEST",
-        )
-        return jsonify({"ok": True, "order_id": order_id, "symbol": kite_sym, "ltp": ltp, "lot_size": lot_size, "msg": f"{kite_sym} {lot_size}qty BUY LIMIT@{ltp} — orderId={order_id}"})
+        # Rule 6B (2026-07-07): raw kite.place_order() ki jagah smart_order.execute()
+        # — test order bhi order_store mein record hota hai, matlab pos_monitor ka
+        # SL/EOD use protect karta hai (pehle ek bhoola hua test order raat tak
+        # unprotected padha rehta tha), marketable-limit pricing + fill-confirm free.
+        import smart_order
+        from brokers import get_broker
+        _bkr = get_broker("kite")
+        res = smart_order.execute(
+            "BUY", "NIFTY", sec_id, "NSE_FNO", lot_size, trad_sym, "live", _bkr,
+            log=print, tag="KITE_TEST", source="manual", strategy="kite_test",
+            instrument="options", broker_name="kite", extra_tags=["KITE_TEST"])
+        if not res.get("ok"):
+            return jsonify({"ok": False, "error": f"order failed: {res.get('reason','?')}"})
+        return jsonify({"ok": True, "order_id": res.get("order_id"), "symbol": kite_sym,
+                        "ltp": res.get("price"), "lot_size": lot_size,
+                        "msg": f"{kite_sym} {lot_size}qty BUY LIMIT@{res.get('price')} — "
+                               f"orderId={res.get('order_id')} (order_store recorded — SL/EOD protected)"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
@@ -4085,8 +4084,7 @@ def pos_monitor_loop():
                             if _ltp <= 0:
                                 print(f"[TRAILING-LOCK] [PER-INSTRUMENT] ⚠️ {_p.get('sym')} — no price this "
                                       f"instant; queued for forced close next cycle", flush=True)
-                                _pending_group_close[str(_sid)] = "TRAILING_PROFIT_LOCK_PI"
-                                _save_pending_group_close()
+                                _pgc_queue(_p, _sid, "TRAILING_PROFIT_LOCK_PI")
                             elif _pre_exit_guard(_p, _sid, "TRAILING_PROFIT_LOCK_PI", _closed_ids, log=print):
                                 pass
                             else:
@@ -4212,8 +4210,7 @@ def pos_monitor_loop():
                                   f"SL ₹{_sl_lvl:.0f} (peak ₹{_tst.get('peak',0):.0f}, {_lots} lot) "
                                   f"— squaring off this position", flush=True)
                             if _ltp <= 0:
-                                _pending_group_close[str(_sid)] = _reason
-                                _save_pending_group_close()
+                                _pgc_queue(_p, _sid, _reason)
                             elif _pre_exit_guard(_p, _sid, _reason, _closed_ids, log=print):
                                 pass
                             else:
@@ -4307,8 +4304,7 @@ def pos_monitor_loop():
                             if _ltp2 <= 0:
                                 print(f"[KILL-FLOOR] ⚠️ {_p.get('sym')} — no price this instant; "
                                       f"queued for forced close next cycle", flush=True)
-                                _pending_group_close[str(_sid)] = "KILL_FLOOR"
-                                _save_pending_group_close()
+                                _pgc_queue(_p, _sid, "KILL_FLOOR")
                                 continue
                             if _pre_exit_guard(_p, _sid, "KILL_FLOOR", _closed_ids, log=print):
                                 continue
@@ -4459,6 +4455,32 @@ def _save_pending_group_close():
             {"day": _peak_day_str, "pending": _pending_group_close}))
     except Exception:
         pass
+
+
+# ── Task 5 (2026-07-07): per-strategy keying — "strategy:sec_id", sirf sec_id
+# nahi. 2 strategies same contract hold karein to bare-sec_id key ek doosre ka
+# queued close overwrite/steal kar leti thi (galat strategy ki position force-
+# close ho sakti thi). Pop backward-compat hai: restart-recovered purani bare
+# keys bhi match hoti hain (persisted file mein old-format entries ho sakti hain).
+
+def _pgc_key(p, sec_id):
+    return f"{(p.get('strategy') or '')}:{sec_id}"
+
+
+def _pgc_queue(p, sec_id, reason):
+    _pending_group_close[_pgc_key(p, sec_id)] = reason
+    _save_pending_group_close()
+
+
+def _pgc_pop(p, sec_id):
+    """Is position ka queued forced-close reason nikaalo (None = queued nahi).
+    New-format key pehle; old bare-sec_id key fallback (pre-Task-5 persisted)."""
+    for k in (_pgc_key(p, sec_id), str(sec_id)):
+        if k in _pending_group_close:
+            reason = _pending_group_close.pop(k)
+            _save_pending_group_close()
+            return reason
+    return None
 
 
 # ── Account-level KILL-FLOOR state (2026-07-02) — disk-persisted so a mid-day
@@ -4882,8 +4904,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     # the very next time THIS leg's own price resolves (it's
                     # still being polled normally), the close goes through
                     # immediately instead of waiting for EOD.
-                    _pending_group_close[str(sib_sec)] = exit_reason + "_GROUP"
-                    _save_pending_group_close()
+                    _pgc_queue(sib, sib_sec, exit_reason + "_GROUP")
                     print(f"[{exit_reason}_GROUP] ⚠️ sibling {sib.get('sym')} has NO price "
                           f"right now (feed+REST+stale-cache all empty) — queued for forced "
                           f"retry next cycle instead of being left open unprotected", flush=True)
@@ -4894,9 +4915,8 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     # above succeeded for it, force the close through immediately, ahead of
     # any other check. This leg is leaving regardless of its own SL/TP/EOD
     # state; its sibling is already gone.
-    if str(sec_id) in _pending_group_close:
-        reason = _pending_group_close.pop(str(sec_id))
-        _save_pending_group_close()
+    reason = _pgc_pop(p, sec_id)   # Task 5: strategy-aware key (old bare-key fallback inside)
+    if reason is not None:
         print(f"[{reason}] retry succeeded — {p.get('sym')} now has a price, forcing the "
               f"delayed group-close through", flush=True)
         _do_squareoff(p, ltp, reason, sec_id, seg)
