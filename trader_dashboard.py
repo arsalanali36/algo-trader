@@ -352,6 +352,18 @@ def backtest_chart():
     (same origin, so it's already there from the modal that opened this tab)."""
     return render_template("backtest_chart.html")
 
+@app.route('/mockup')
+def serve_mockup():
+    from flask import send_from_directory
+    return send_from_directory(BASE_DIR, 'ui_mockup_redesign.html')
+
+@app.route('/script3')
+def serve_script3():
+    """Script 3 redesign mockup (static, no wiring yet) — iframed body-only into
+    the main dashboard's 'Script 3' tab. Deliberately contains NO AlgoTrader nav/
+    header (real nav lives in index.html, this renders under it)."""
+    return render_template('script3.html')
+
 @app.route('/api/status')
 def api_status():
     st = {}
@@ -3196,6 +3208,43 @@ def api_rename_strategy():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)})
 
+@app.route('/api/tags-store', methods=['GET'])
+def get_tags_store():
+    tags_file = BASE_DIR / "data" / "tags_store.json"
+    if not tags_file.exists():
+        return jsonify([])
+    try:
+        with open(tags_file, "r") as f:
+            return jsonify(json.load(f))
+    except Exception as e:
+        return jsonify([])
+
+@app.route('/api/tags-store', methods=['POST'])
+def save_tags_store():
+    tags_file = BASE_DIR / "data" / "tags_store.json"
+    tags_file.parent.mkdir(exist_ok=True)
+    tags = request.get_json().get('tags', [])
+    try:
+        with open(tags_file, "w") as f:
+            json.dump(tags, f)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
+@app.route('/api/orders/update-tags', methods=['POST'])
+def update_order_tags():
+    data = request.get_json()
+    order_id = data.get('id')
+    tags = data.get('tags', [])
+    if not order_id:
+        return jsonify({"status": "error", "message": "Missing order ID"})
+    try:
+        import order_store
+        order_store.update_tags(order_id, tags)
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)})
+
 
 @app.route('/api/orders/update-sl-tp', methods=['POST'])
 def api_update_sl_tp():
@@ -3652,6 +3701,33 @@ def _save_pos_lock_state():
         pass
 
 
+# Default Target/SL exit profile per-position state (2026-07-04) — {pos_id:
+# {peak, prev_mtm, fired}}. Persisted like pos_lock_state so a mid-day restart
+# doesn't wipe a position's trailing peak (TRAP #38 shape).
+_tsl_state = {}
+_TSL_STATE_FILE = BASE_DIR / "data" / "tsl_state.json"
+try:
+    if _TSL_STATE_FILE.exists():
+        _tsl_init = json.loads(_TSL_STATE_FILE.read_text())
+        if _tsl_init.get("day") == _peak_day_str and isinstance(_tsl_init.get("state"), dict):
+            for _tk, _tv in _tsl_init["state"].items():
+                try:
+                    _tsl_state[int(_tk)] = _tv
+                except (ValueError, TypeError):
+                    _tsl_state[_tk] = _tv
+            if _tsl_state:
+                print(f"[DEFAULT-TSL] Restored {len(_tsl_state)} position state(s) after restart.", flush=True)
+except Exception as _e_tsl:
+    print(f"[DEFAULT-TSL] tsl_state restore failed (ok, starting fresh): {_e_tsl}", flush=True)
+
+
+def _save_tsl_state():
+    try:
+        _TSL_STATE_FILE.write_text(json.dumps({"day": _peak_day_str, "state": _tsl_state}))
+    except Exception:
+        pass
+
+
 def _trailing_lock_fired_today() -> bool:
     """Returns True if trailing squareoff already fired today — blocks new entries."""
     try:
@@ -3668,7 +3744,7 @@ def pos_monitor_loop():
     import order_store
     import dhan_feed
     from datetime import timedelta
-    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_lock_state, _kf_state
+    global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_lock_state, _kf_state, _tsl_state
 
     while True:
         try:
@@ -3804,8 +3880,10 @@ def pos_monitor_loop():
                     _trailing_peak_pnl = 0.0
                     _daily_peak_ever   = 0.0
                     _pos_lock_state    = {}
+                    _tsl_state         = {}
                     _peak_day_str      = _today_str
                     _save_pos_lock_state()
+                    _save_tsl_state()
                     _pending_group_close.clear()   # yesterday's queued closes are moot (EOD handled them)
                     _save_pending_group_close()
                     _kf_state.update({"day": _today_str, "armed": False, "peak": 0.0,
@@ -3960,6 +4038,114 @@ def pos_monitor_loop():
                         _save_pos_lock_state()
             except Exception as _trail_e:
                 print(f"[TRAILING-LOCK] check error (skipped): {_trail_e}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
+            # ── Default Target/SL exit profile (2026-07-04, user-designed) ─────
+            # Per-position rupee-based fixed-target + stepped-trailing SL +
+            # aggressive phase after X% of target + min_cushion whipsaw guard.
+            # Global default (RMS tab) on every active leg when enabled. Config ₹
+            # are PER-LOT → scaled by lots (=qty/lot_size, lot_size from scrip
+            # master, never guessed — unknown lot_size = skip, never assume).
+            # Fires squareoff of THAT position only (does NOT set the account-wide
+            # entry-block flag — per-instrument scope, TRAP #77). Reuses
+            # risk_gate.advance_target_sl (confirmed-peak spike guard); fire routes
+            # through _pre_exit_guard (fresh flat-check, TRAP #75). LTP reads the
+            # cycle-warm _peak_ltp_cache first → zero extra Dhan calls.
+            try:
+                import risk_gate as _rg_tsl
+                import dhan_master as _dm_tsl
+                _tslc = _rg_tsl.default_target_sl_config()
+                if _tslc["enabled"]:
+                    _tsl_dirty = False
+                    _active_tsl = [_p for _p in open_pos
+                                   if _p.get("status") != "blocked"
+                                   and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
+                    for _p in _active_tsl:
+                        _pid = _p.get("id")
+                        if not _pid or _pid in _closed_ids:
+                            continue
+                        _tst = _tsl_state.get(_pid) or {"peak": 0.0, "prev_mtm": None, "fired": False}
+                        if _tst.get("fired"):
+                            continue
+                        _sid = _p.get("sec_id")
+                        _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
+                        _qty = int(_p.get("qty") or 0)
+                        _lotsz = _dm_tsl.get_lot_size_by_sec_id(_sid)
+                        if not _lotsz or _qty <= 0:
+                            continue   # lot_size unknown → don't guess, skip this leg
+                        _lots = max(1, round(_qty / _lotsz))
+                        _ltp = _peak_ltp_cache.get(_sid, 0.0)
+                        if _ltp <= 0:
+                            _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                                   _rest_ltp_fallback(_sid, _seg) or 0.0
+                        _epx = float(_p.get("entry_price") or _p.get("price") or 0)
+                        _tsl_unreliable = False
+                        _unrl = 0.0
+                        if _ltp > 0 and _epx > 0 and _qty:
+                            _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
+                                     else (_epx - _ltp) * _qty
+                        else:
+                            _tsl_unreliable = True   # no price → freeze (never fire on bad data)
+                        _tst, _act, _sl_lvl = _rg_tsl.advance_target_sl(
+                            _tst, _unrl, _tslc, _lots, mtm_unreliable=_tsl_unreliable)
+                        _tsl_state[_pid] = _tst
+                        _tsl_dirty = True
+                        if _act:
+                            # Carry the ₹ level in the tag so the Exit Reason column
+                            # can show "kitna SL/target tha" (#6, 2026-07-07). TARGET
+                            # → the whole-position target ₹; SL → the signed SL level
+                            # (_sl_lvl: negative = loss stop e.g. -2000, positive =
+                            # locked-in profit). Prefix still matches _EXIT_REASON_PREFIXES.
+                            if _act == "TARGET":
+                                _reason = f"DEFAULT_TSL_TARGET:{_tslc['target_per_lot']*_lots:.0f}"
+                            else:
+                                _reason = f"DEFAULT_TSL_SL:{_sl_lvl:.0f}"
+                            print(f"[DEFAULT-TSL] 🎯 FIRED ({_act}) — {_p.get('sym')} (ID {_pid}) "
+                                  f"P&L ₹{_unrl:.0f} vs target ₹{_tslc['target_per_lot']*_lots:.0f} / "
+                                  f"SL ₹{_sl_lvl:.0f} (peak ₹{_tst.get('peak',0):.0f}, {_lots} lot) "
+                                  f"— squaring off this position", flush=True)
+                            if _ltp <= 0:
+                                _pending_group_close[str(_sid)] = _reason
+                                _save_pending_group_close()
+                            elif _pre_exit_guard(_p, _sid, _reason, _closed_ids, log=print):
+                                pass
+                            else:
+                                try:
+                                    import smart_order
+                                    from brokers import get_broker
+                                    _exit_side = "SELL" if _p.get("entry") == "BUY" else "BUY"
+                                    _bname = _p.get("broker") or "dhan"
+                                    if _p.get("mode") == "live":
+                                        _br = get_broker(_bname)
+                                        smart_order.execute(
+                                            _exit_side, _p["sym"], _sid, _seg, _p["qty"], _p["sym"],
+                                            _p["mode"], _br, log=print, tag="DEFAULT_TSL",
+                                            source=_p.get("source", ""), strategy=_p.get("strategy", ""),
+                                            instrument=_p.get("instrument", ""), broker_name=_bname,
+                                            extra_tags=[_reason], is_exit=True,
+                                        )
+                                    else:
+                                        import order_store as _os
+                                        _os.record(
+                                            side=_exit_side, qty=_p["qty"], price=_ltp,
+                                            source=_p.get("source", ""), strategy=_p.get("strategy", ""),
+                                            mode=_p.get("mode", "paper"), broker=_bname,
+                                            symbol=_p["sym"], instrument=_p.get("instrument", ""),
+                                            trad_sym=_p["sym"], sec_id=_sid, segment=_seg,
+                                            status="paper", tags=[_reason],
+                                        )
+                                    _closed_ids.add(_pid)
+                                except Exception as _tse:
+                                    print(f"[DEFAULT-TSL] squareoff failed for {_p.get('sym')}: {_tse}", flush=True)
+                    _active_tsl_ids = {_p.get("id") for _p in _active_tsl}
+                    for _k in list(_tsl_state.keys()):
+                        if _k not in _active_tsl_ids:
+                            del _tsl_state[_k]
+                            _tsl_dirty = True
+                    if _tsl_dirty:
+                        _save_tsl_state()
+            except Exception as _tsl_e:
+                print(f"[DEFAULT-TSL] check error (skipped): {_tsl_e}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
             # ── Account-level trailing KILL-FLOOR (2026-07-02, user-designed) ──

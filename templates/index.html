@@ -6828,6 +6828,38 @@
     // grep-audited against every real extra_tags/tag/reason= call site in
     // trader_dashboard.py / webhook_executor.py / broker_sync.py, matches
     // order_store.py's server-side _EXIT_REASON_PREFIXES 1:1.
+    // Pull the ₹ / % / pt amount out of an exit-reason tag so the badge can show
+    // "kitna SL tha" (#6, 2026-07-07). Tags carry it as a suffix:
+    //   DEFAULT_TSL_SL:-2000  DEFAULT_TSL_TARGET:4000  SL_HIT:rs:2000
+    //   SL_HIT:pct:5  SL_HIT:pt:15  SL_HIT:premium:120  SL_HIT:index:24000
+    // Returns '' if nothing parseable.
+    function _exitReasonAmt(r) {
+      let m = r.match(/^DEFAULT_TSL_(SL|TARGET):(-?\d+(?:\.\d+)?)/);
+      if (m) {
+        const v = parseFloat(m[2]);
+        if (m[1] === 'SL') return v < 0 ? '₹' + Math.abs(v).toLocaleString('en-IN')
+          : '+₹' + v.toLocaleString('en-IN') + ' locked';
+        return '₹' + Math.abs(v).toLocaleString('en-IN');
+      }
+      m = r.match(/^(?:SL|TP)_HIT:([a-z_]+):(-?\d+(?:\.\d+)?)/i);
+      if (m) {
+        const type = m[1].toLowerCase(), v = parseFloat(m[2]);
+        if (type === 'rs') return '₹' + v.toLocaleString('en-IN');
+        if (type === 'pct') return v + '%';
+        if (type === 'pt') return v + ' pt';
+        if (type === 'trailing_pt') return 'trail ' + v + ' pt';
+        if (type === 'premium') return '@₹' + v.toLocaleString('en-IN');
+        if (type === 'index') return 'idx ' + v.toLocaleString('en-IN');
+        return String(v);
+      }
+      // Legacy "SL_HIT:5%/₹2000"-style tags — grab first %/₹ number.
+      if (/SL_HIT|TP_HIT/.test(r)) {
+        m = r.match(/(\d+(?:\.\d+)?)\s*%/); if (m) return m[1] + '%';
+        m = r.match(/₹\s*(\d+(?:\.\d+)?)/); if (m) return '₹' + parseFloat(m[1]).toLocaleString('en-IN');
+      }
+      return '';
+    }
+
     function _exitReasonBadge(raw) {
       if (!raw) return '<span style="color:#6e7681">—</span>';
       const r = String(raw);
@@ -6860,6 +6892,10 @@
       // Manual / broker-detected
       else if (r.startsWith('MANUAL_CLOSE')) { label = '✋ Manual Close'; color = '#8b949e'; }
       else if (r.startsWith('EXTERNALLY_CLOSED') || r.startsWith('MANUAL_EXIT_BROKER')) { label = '🌐 Closed at Broker'; color = '#8b949e'; }
+
+      // Append the SL/TP threshold amount (#6) — e.g. "🛡️ Default SL ₹2,000".
+      const amt = _exitReasonAmt(r);
+      if (amt) label += ' ' + amt;
 
       const isGroup = /_GROUP$/.test(r);
       if (isGroup) label += ' (hedge pair)';
