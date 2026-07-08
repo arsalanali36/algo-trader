@@ -318,6 +318,29 @@ function baseType(sid){ return (sid||'').replace(/_v\d+$/i,'').replace(/_\d+$/,'
 function baseLabel(b){ return STRAT_DISPLAY_NAMES[b]||b; }
 const _BT_BASES=new Set(['ARS_CHAIN','rsi','ema','vwap','bb']);
 function symbolPickable(sid){ const t=baseType(sid); return _BT_BASES.has(t)||(sid||'').startsWith('user_'); }
+
+// Per-strategy REAL parameter keys (mirrors backtest_chart.html's STRAT_FIELDS).
+// A builtin strategy only reads these — anything else in its saved config is
+// dead noise the runner ignores. The Parameter Modal filters to this set so a
+// user can't accidentally "sweep" a param the strategy doesn't use (which just
+// yields identical results for every combo). User scripts (base not here) show
+// ALL their config — those keys are user-defined and all meaningful.
+const STRAT_KEYS={
+  ARS_CHAIN:['instrument','strike_offset','timeframe','max_candle_size','qty','max_trades_per_symbol','hawa_me_zone','fresh_zone_only','zone_exit','atr_exit','fib_exit','active'],
+  rsi:['instrument','strike_offset','timeframe','period','oversold','overbought','qty','max_trades_per_symbol','active'],
+  ema:['instrument','strike_offset','timeframe','qty','active'],
+  vwap:['timeframe','ema_len','sl_buffer_points','r1','r2','r3','max_sl_percent','partial1_pct','partial2_pct','use_partial_exits','use_daily_trend_filter','use_session_filter','active'],
+  bb:['instrument','timeframe','bb_window','bb_std','allow_short','qty','active']
+};
+const UNIVERSAL_KEYS=new Set(['timeframe','active','qty','symbols','symbol','mode','instrument','strike_offset','max_trades_per_day','max_trades_per_symbol']);
+function relevantCfg(cfg, sid){
+  const allow=STRAT_KEYS[baseType(sid)];
+  if(!allow) return cfg;   // user/custom script — show everything (all user-defined)
+  const ok=new Set([...allow, ...UNIVERSAL_KEYS]);
+  const out={};
+  for(const k in cfg){ if(k.startsWith('_')||ok.has(k)) out[k]=cfg[k]; }
+  return out;
+}
 function _iso(d){ return d.toISOString().slice(0,10); }
 
 /* ---------- History ---------- */
@@ -470,7 +493,7 @@ function _pmFill(cfg, preset){
   document.getElementById('pm-from').value=preset.date_from||_iso(new Date(Date.now()-30*864e5));
   document.getElementById('pm-to').value=preset.date_to||_iso(new Date());
   // config text
-  document.getElementById('pm-cfg').value=preset.cfg_text||buildCfgText(preset.cfg||cfg);
+  document.getElementById('pm-cfg').value=preset.cfg_text||buildCfgText(relevantCfg(preset.cfg||cfg, PM.sid));
   document.getElementById('pm-overlay').classList.add('open');
   // background data for version detail (runs count) — quiet lazy loads
   if(_saved===null) loadSaved(true);
