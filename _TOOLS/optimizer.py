@@ -59,9 +59,15 @@ def run_optimization_stream(strat_type, grid, date_from, date_to, symbols):
     tasks = []
     for p in permutations:
         cfg = {"instrument": "equity", "symbols": symbols}
-        # Add all param permutations into cfg
+        # Add all param permutations into cfg — keep the ORIGINAL type (int/
+        # float/bool), don't str() it. The builtin runners (_run_range/_run_rsi/
+        # _run_ema) do numeric comparisons on these (e.g. max_candle_size), so a
+        # stringified "25" crashed with "'>' not supported between float and str"
+        # — which is why range/rsi/ema optimize never produced results (only bb,
+        # whose custom_rule_engine parses strings, ever worked). Grid values
+        # already arrive correctly typed from the frontend's coercion.
         for k, v in p.items():
-            cfg[k] = str(v).strip()
+            cfg[k] = v.strip() if isinstance(v, str) else v
             
         tasks.append({
             "strat_type": strat_type,

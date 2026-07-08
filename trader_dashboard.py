@@ -2878,14 +2878,35 @@ def api_backtest_optimize():
         return jsonify({"error": "No params provided"}), 400
     try:
         p = json.loads(params_str)
-        strat_type = p["strat_type"]
+        sid = p["strat_type"]              # full variant id e.g. "ARS_CHAIN_V1"
         grid = p["grid"]
         date_from = p.get("date_from", "")
         date_to = p.get("date_to", "")
         symbols = p.get("symbols", "NIFTY")
     except Exception as e:
         return jsonify({"error": str(e)}), 400
-        
+
+    # The optimizer's `run_backtest(strat_type, ...)` dispatches off `_RUNNERS`,
+    # which is keyed by BASE type (range/rsi/ema/vwap/bb) — not the full variant
+    # id. Single-Backtest (`api_backtest_run`) already normalizes via `_base()`;
+    # the optimizer path never did, so ARS_CHAIN_V1/ema_v1 (bases not present as
+    # explicit _RUNNERS keys) errored "unsupported strategy type" on EVERY combo
+    # → 0 results. Normalize the same way here, and thread a custom user-script's
+    # `_module`/`_lang` markers into the grid so each combo's cfg can still
+    # dispatch to `_run_custom` (grid values must be lists — hence [value]).
+    strat_type = _base(sid)
+    try:
+        cfg_file = STRATEGIES.get(strat_type, {}).get("cfg", TC_FILE)
+        all_cfg = json.loads(Path(cfg_file).read_text()) if Path(cfg_file).exists() else {}
+        disk_cfg = all_cfg.get(sid) or {}
+        if not disk_cfg and Path(cfg_file) != TC_FILE:
+            disk_cfg = (json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}).get(sid, {})
+    except Exception:
+        disk_cfg = {}
+    for _mk in ("_module", "_lang"):
+        if disk_cfg.get(_mk) is not None and _mk not in grid:
+            grid[_mk] = [disk_cfg[_mk]]
+
     import sys as _s
     if str(BASE_DIR / "_TOOLS") not in _s.path:
         _s.path.insert(0, str(BASE_DIR / "_TOOLS"))
