@@ -15,29 +15,52 @@ def _run_single_worker(kwargs):
     cfg = kwargs['cfg']
     date_from = kwargs['date_from']
     date_to = kwargs['date_to']
-    
+
+    # CRITICAL: run_backtest's runners read the SINGLE `symbol` key (or fall back
+    # to "NIFTY"). The optimizer only ever set `symbols` (plural, a comma STRING)
+    # — which _run_range ignores outright and _cfg_symbol only honors as a LIST —
+    # so EVERY optimize combo silently ran on NIFTY regardless of the picked
+    # symbol. That's why an SBIN optimize showed different stats than "Load"
+    # (which runs on the real symbol): they were different symbols entirely.
+    # Fix: set `symbol` per run. Single symbol → use run_backtest's own summary
+    # (bit-identical to Load). Multi symbol → run each and combine trades via the
+    # SAME _compute_stats Load's _runMultiSymbol mirrors, so optimize == Load.
     try:
-        res = backtest_engine.run_backtest(strat_type, cfg, date_from, date_to)
-        
-        if "error" in res:
-            return {"cfg": cfg, "error": res["error"]}
-            
-        summary = res.get("summary", {})
-        net_pnl = summary.get("pnl_points", 0)
-        win_rate = summary.get("win_rate", 0)
-        total_trades = summary.get("n_trades", 0)
-        max_dd = summary.get("max_drawdown", 0)
-        profit_factor = summary.get("profit_factor", 0)
-        sharpe = summary.get("sharpe", 0)
-        
+        syms = [s.strip() for s in str(cfg.get("symbols", "")).split(",") if s.strip()]
+        if not syms:
+            syms = ["NIFTY"]
+
+        if len(syms) == 1:
+            csym = dict(cfg); csym["symbol"] = syms[0]
+            res = backtest_engine.run_backtest(strat_type, csym, date_from, date_to)
+            if "error" in res:
+                return {"cfg": cfg, "error": res["error"]}
+            summary = res.get("summary", {})
+        else:
+            all_trades = []
+            errors = []
+            for sym in syms:
+                csym = dict(cfg); csym["symbol"] = sym
+                res = backtest_engine.run_backtest(strat_type, csym, date_from, date_to)
+                if "error" in res:
+                    errors.append(f"{sym}: {res['error']}")
+                    continue
+                all_trades.extend(res.get("trades") or [])
+            if not all_trades and errors:
+                return {"cfg": cfg, "error": "; ".join(errors)}
+            # _trades_json rows carry side/entry_price/exit_price — exactly what
+            # _compute_stats needs — so the combined summary matches a Load-time
+            # multi-symbol run (which combines the same way, client-side).
+            summary = backtest_engine._compute_stats(all_trades)
+
         return {
             "cfg": cfg,
-            "net_pnl": net_pnl,
-            "win_rate": win_rate,
-            "total_trades": total_trades,
-            "max_dd": max_dd,
-            "profit_factor": profit_factor,
-            "sharpe": sharpe,
+            "net_pnl": summary.get("pnl_points", 0),
+            "win_rate": summary.get("win_rate", 0),
+            "total_trades": summary.get("n_trades", 0),
+            "max_dd": summary.get("max_drawdown", 0),
+            "profit_factor": summary.get("profit_factor", 0),
+            "sharpe": summary.get("sharpe", 0),
             "error": None
         }
     except Exception as e:
