@@ -76,6 +76,10 @@
   table.ttable td{padding:7px 10px;border-bottom:1px solid var(--bd2);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
   table.ttable td.l{text-align:left}
   table.ttable tr:hover td{background:var(--panel2)}
+  table.ttable tr.subrow td{background:#12161f;color:var(--mut);font-size:11.5px;text-align:left;border-top:1px solid var(--bd)}
+  table.ttable tr.subrow.grand td{background:#0c2a20;color:var(--tx);font-size:12.5px;border-top:2px solid var(--teal)}
+  table.ttable tr.subrow b{font-weight:700}
+  table.mon td.moclick{cursor:pointer} table.mon td.moclick:hover{outline:2px solid var(--blue);outline-offset:-2px}
   .pill.long{background:#0f2e1a;color:var(--pos);font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
   .pill.short{background:#3a1414;color:var(--neg);font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
   .chbtn{background:none;border:1px solid var(--bd);border-radius:6px;color:var(--blue);padding:3px 8px;cursor:pointer;font-size:13px}
@@ -163,6 +167,14 @@
   </div>
 </div>
 
+<!-- month day-wise breakdown modal -->
+<div id="mModal" class="tmodal">
+  <div class="tmbox" style="max-width:640px">
+    <div class="tmhdr"><span id="mmTitle"></span><button id="mmClose" class="tchbtn">✕ Close</button></div>
+    <div id="mmBody" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
 <script src="results_intraday.js"></script>
 <script>
 const R=window.RESULTS;
@@ -210,9 +222,11 @@ function renderMonthly(){const c=C(),mo=['Jan','Feb','Mar','Apr','May','Jun','Ju
     for(let i=1;i<=12;i++){let v=c.monthly[y][i];
       if(v===undefined){row+='<td style="background:#0e1218;color:#333">·</td>';continue}
       tot+=v;let a=Math.min(.55,Math.abs(v)/6+.10),col=v>=0?`rgba(47,180,120,${a})`:`rgba(230,80,70,${a})`;
-      row+=`<td style="background:${col}">${v>=0?'+':''}${v.toFixed(1)}</td>`}
+      row+=`<td class="moclick" data-ym="${y}-${String(i).padStart(2,'0')}" title="Click for day-wise breakdown" style="background:${col}">${v>=0?'+':''}${v.toFixed(1)}</td>`}
     row+=`<td class="yr ${tot>=0?'pos':'neg'}">${tot>=0?'+':''}${tot.toFixed(1)}</td></tr>`;h+=row}
-  h+='</table>';document.getElementById('monthly').innerHTML=h}
+  h+='</table><div class="mut" style="font-size:11px;margin-top:6px">💡 kisi month pe click karo → us month ke day-wise trades (Gross/Tax/Net) popup mein</div>';
+  const el=document.getElementById('monthly');el.innerHTML=h;
+  el.querySelectorAll('.moclick').forEach(td=>td.onclick=()=>openMonthModal(td.dataset.ym));}
 function renderCards(){const m=C().metrics;
   const cards=[['Sharpe Ratio',m.sharpe.toFixed(2),m.sharpe>=1?'pos':(m.sharpe>0.5?'':'neg'),'target ≥ 1.0'],
     ['Total Net Profit',(m.net_pct>=0?'+':'')+m.net_pct.toFixed(1)+'%',m.net_pct>=0?'pos':'neg',inr(m.final_cap)],
@@ -280,18 +294,29 @@ function renderOpt(){const c=C().opt_table;const panel=document.getElementById('
   document.getElementById('opt').innerHTML=h}
 /* ── Trades table (search + column toggle) + full-screen chart modal ── */
 const CANDLES=R.meta.candles||[]; const CDATE={}; CANDLES.forEach((c,i)=>CDATE[c[0]]=i);
+function durStr(bars){const m=(bars||0)*15;return m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;}
+function monthName(ym){const [y,mo]=ym.split('-');return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+' '+y;}
 const TCOLS=[
-  {k:'entry_dt',label:'Date / Time',l:true,get:t=>t.entry_dt,raw:t=>t.entry_dt},
+  {k:'entry_dt',label:'Date',l:true,get:t=>t.entry_dt.slice(0,10),raw:t=>t.entry_dt},
   {k:'side',label:'Side',l:true,get:t=>`<span class="pill ${t.side}">${t.side==='long'?'LONG':'SHORT'}</span>`,raw:t=>t.side},
-  {k:'entry',label:'Entry',get:t=>t.entry.toFixed(1),raw:t=>t.entry},
-  {k:'exit',label:'Exit',get:t=>t.exit.toFixed(1),raw:t=>t.exit},
+  {k:'in',label:'In',get:t=>t.entry_dt.slice(11),raw:t=>t.entry_dt},
+  {k:'out',label:'Out',get:t=>t.exit_dt.slice(11),raw:t=>t.exit_dt},
+  {k:'dur',label:'Dur',off:true,get:t=>durStr(t.bars),raw:t=>t.bars},
+  {k:'entry',label:'Entry (spot)',get:t=>t.entry.toFixed(1),raw:t=>t.entry},
+  {k:'exit',label:'Exit (spot)',get:t=>t.exit.toFixed(1),raw:t=>t.exit},
+  {k:'strike',label:'Strike',off:true,get:t=>t.strike!=null?`${t.strike} ${t.opt_type||''}`:'<span class="mut">—</span>',raw:t=>t.strike||0},
+  {k:'entry_prem',label:'Entry Prem ₹',off:true,get:t=>t.entry_prem!=null?t.entry_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.entry_prem||0},
+  {k:'exit_prem',label:'Exit Prem ₹',off:true,get:t=>t.exit_prem!=null?t.exit_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.exit_prem||0},
+  {k:'qty',label:'Qty',off:true,get:t=>(t.qty||0).toFixed(0),raw:t=>t.qty||0},
   {k:'points',label:'Points',get:t=>`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`,raw:t=>t.points},
-  {k:'pnl',label:'P&L ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
+  {k:'gross',label:'Gross ₹',off:true,get:t=>`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`,raw:t=>t.gross},
+  {k:'fee',label:'Tax ₹',off:true,get:t=>`<span class="mut">-${inr(Math.abs(t.fee||0))}</span>`,raw:t=>t.fee},
+  {k:'pnl',label:'Net ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
   {k:'ret',label:'% Move',get:t=>{const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.points/t.entry},
   {k:'reason',label:'Exit Reason',l:true,get:t=>`<span class="mut">${t.reason}</span>`,raw:t=>t.reason},
 ];
-let colVis=JSON.parse(localStorage.getItem('orb_tcols')||'null')||{};
-TCOLS.forEach(c=>{if(colVis[c.k]===undefined)colVis[c.k]=true;});
+let colVis=JSON.parse(localStorage.getItem('orb_tcols2')||'null')||{};
+TCOLS.forEach(c=>{if(colVis[c.k]===undefined)colVis[c.k]=!c.off;});
 let tSortKey='entry_dt',tSortDir=1,tQuery='',modalIdx=null;
 
 function tRows(){let tr=(C().all_trades||[]).map((t,i)=>({...t,_i:i}));
@@ -299,15 +324,25 @@ function tRows(){let tr=(C().all_trades||[]).map((t,i)=>({...t,_i:i}));
   const col=TCOLS.find(c=>c.k===tSortKey);
   if(col)tr.sort((a,b)=>{let x=col.raw(a),y=col.raw(b);if(typeof x==='string'){x=x.toLowerCase();y=y.toLowerCase();}return x<y?-tSortDir:(x>y?tSortDir:0);});
   return tr;}
+function fmtSum(v){return (v>=0?'+':'')+inr(v);}
 function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb=document.getElementById('ttable');
+  const ncol=vis.length+1;
   let h='<tr>'+vis.map(c=>`<th class="${c.l?'l':''}" data-k="${c.k}">${c.label}${tSortKey===c.k?(tSortDir<0?' ▼':' ▲'):''}</th>`).join('')+'<th>Chart</th></tr>';
-  h+=tr.map(t=>'<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`).join('');
-  tb.innerHTML=h;document.getElementById('tCount').textContent=`${tr.length} trades`;
+  const subRow=(label,s,cls)=>`<tr class="subrow ${cls}"><td colspan="${ncol}">${label} — <b>${s.n} trades</b> · Gross <b class="${s.gross>=0?'pos':'neg'}">${fmtSum(s.gross)}</b> · Tax <b class="mut">-${inr(Math.abs(s.fee))}</b> · Net <b class="${s.pnl>=0?'pos':'neg'}">${fmtSum(s.pnl)}</b></td></tr>`;
+  const byMonth=tSortKey==='entry_dt';
+  let curM=null,mS={n:0,gross:0,fee:0,pnl:0},G={n:0,gross:0,fee:0,pnl:0};
+  tr.forEach(t=>{const mo=t.entry_dt.slice(0,7);
+    if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0};}
+    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;
+    h+='<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`;});
+  if(byMonth&&curM!==null)h+=subRow(monthName(curM),mS,'msub');
+  h+=subRow('GRAND TOTAL',G,'grand');
+  tb.innerHTML=h;document.getElementById('tCount').textContent=`${tr.length} trades · Net ${fmtSum(G.pnl)}`;
   tb.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(tSortKey===k)tSortDir=-tSortDir;else{tSortKey=k;tSortDir=1;}renderTradeTable();});
   tb.querySelectorAll('.chbtn').forEach(b=>b.onclick=()=>openModal(+b.dataset.i));}
 function renderColMenu(){const m=document.getElementById('colMenu');
   m.innerHTML=TCOLS.map(c=>`<label><input type="checkbox" data-k="${c.k}" ${colVis[c.k]?'checked':''}> ${c.label}</label>`).join('');
-  m.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{colVis[cb.dataset.k]=cb.checked;localStorage.setItem('orb_tcols',JSON.stringify(colVis));renderTradeTable();});}
+  m.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{colVis[cb.dataset.k]=cb.checked;localStorage.setItem('orb_tcols2',JSON.stringify(colVis));renderTradeTable();});}
 function candleSVG(idx,W,H){const tr=C().all_trades||[],t=tr[idx],ci=CDATE[t.entry_dt.slice(0,10)];
   let lo=0,hi=CANDLES.length-1;if(ci!=null){lo=Math.max(0,ci-30);hi=Math.min(CANDLES.length-1,ci+30);}
   const seg=CANDLES.slice(lo,hi+1),n=seg.length,PAD=56,RP=12;
@@ -333,6 +368,16 @@ function openModal(idx){modalIdx=idx;const t=(C().all_trades||[])[idx];
   document.getElementById('tModal').classList.add('on');}
 function closeModal(){document.getElementById('tModal').classList.remove('on');}
 function modalNav(d){const tr=C().all_trades||[];if(!tr.length)return;openModal((modalIdx+d+tr.length)%tr.length);}
+function openMonthModal(ym){const tr=(C().all_trades||[]).filter(t=>t.entry_dt.slice(0,7)===ym);
+  document.getElementById('mmTitle').innerHTML=`📅 <b>${monthName(ym)}</b> — day-wise`;
+  const days={};tr.forEach(t=>{const d=t.entry_dt.slice(0,10);(days[d]=days[d]||{n:0,gross:0,fee:0,pnl:0});days[d].n++;days[d].gross+=t.gross;days[d].fee+=t.fee;days[d].pnl+=t.pnl;});
+  const G={n:tr.length,gross:0,fee:0,pnl:0};tr.forEach(t=>{G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;});
+  let h='<table class="ttable"><tr><th class="l">Day</th><th>Trades</th><th>Gross ₹</th><th>Tax ₹</th><th>Net ₹</th></tr>';
+  Object.keys(days).sort().forEach(d=>{const s=days[d];
+    h+=`<tr><td class="l">${d}</td><td>${s.n}</td><td class="${s.gross>=0?'pos':'neg'}">${s.gross>=0?'+':''}${inr(s.gross)}</td><td class="mut">-${inr(Math.abs(s.fee))}</td><td class="${s.pnl>=0?'pos':'neg'}">${s.pnl>=0?'+':''}${inr(s.pnl)}</td></tr>`;});
+  h+=`<tr class="subrow grand"><td class="l"><b>TOTAL</b></td><td><b>${G.n}</b></td><td class="${G.gross>=0?'pos':'neg'}"><b>${G.gross>=0?'+':''}${inr(G.gross)}</b></td><td class="mut"><b>-${inr(Math.abs(G.fee))}</b></td><td class="${G.pnl>=0?'pos':'neg'}"><b>${G.pnl>=0?'+':''}${inr(G.pnl)}</b></td></tr></table>`;
+  document.getElementById('mmBody').innerHTML=h;document.getElementById('mModal').classList.add('on');}
+function closeMonthModal(){document.getElementById('mModal').classList.remove('on');}
 function renderTrades(){renderColMenu();renderTradeTable();}
 function renderAll(){const m=C().metrics,s=C().significance;
   document.getElementById('infobar').innerHTML=
@@ -353,6 +398,8 @@ document.getElementById('tmClose').onclick=closeModal;
 document.getElementById('tmPrev').onclick=()=>modalNav(-1);
 document.getElementById('tmNext').onclick=()=>modalNav(1);
 document.getElementById('tModal').onclick=e=>{if(e.target.id==='tModal')closeModal();};
+document.getElementById('mmClose').onclick=closeMonthModal;
+document.getElementById('mModal').onclick=e=>{if(e.target.id==='mModal')closeMonthModal();};
 document.addEventListener('keydown',e=>{if(!document.getElementById('tModal').classList.contains('on'))return;
   if(e.key==='Escape')closeModal();else if(e.key==='ArrowLeft')modalNav(-1);else if(e.key==='ArrowRight')modalNav(1);});
 renderAll();

@@ -35,12 +35,15 @@ def view(d, label):
     all_tr = []
     if not tr.empty:
         for _, t in tr.iterrows():
+            qty = float(t.get("qty", 0)); pts = float(t["points"]); pnl = float(t["pnl"])
+            gross = pts * qty                      # index-points P&L before costs
             all_tr.append({
                 "side": t["side"], "entry_dt": str(pd.to_datetime(t["entry_dt"]))[:16],
                 "exit_dt": str(pd.to_datetime(t["exit_dt"]))[:16],
                 "entry": round(float(t["entry"]), 1), "exit": round(float(t["exit"]), 1),
-                "points": round(float(t["points"]), 1), "pnl": round(float(t["pnl"]), 1),
-                "reason": t.get("reason", "")})
+                "points": round(pts, 1), "pnl": round(pnl, 1),
+                "qty": round(qty, 1), "gross": round(gross, 0), "fee": round(gross - pnl, 0),
+                "bars": int(t.get("bars", 0)), "reason": t.get("reason", "")})
     md = {k: (round(v, 3) if isinstance(v, float) else v)
           for k, v in m.items() if k not in ("daily_returns", "underwater", "params")}
     return {
