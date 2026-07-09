@@ -15,6 +15,20 @@
 
 ---
 
+## 2026-07-09 — RMS single-source exit/no-entry time + 3:15 phantom-brokerage fix + local VPS-sync (#19/#20/#21)
+**Status:** DONE + **VPS DEPLOYED** (commit 2e5d95e; 0 open positions/0 traders during window; import-verify before restart; both services active, HTTP 200, no errors; RMS card + webhook-removal served).
+**Kya:**
+- **#19 (bug) "zabardasti tax":** range/rsi/ema/universe 15:15 pe exit karti thीं par general **no-entry-after gate nahi tha** (sirf expiry-2PM) → 15:15+ signal entry leta, phir 3:15 squareoff turant band → entry+exit ka ~₹50 brokerage bina trade ke. Root confirmed (range_trader entry-block sirf `EXPIRY_NO_ENTRY_AFTER_HM` check karta tha).
+- **#20 (feature) single-source:** naya `risk_gate.exit_time_config()` — `_risk.global.auto_squareoff_at` + `no_entry_after` (default 15:15). Saare 4 traders + webhook_executor + `pos_monitor_loop` yahi se time uthate hain (ab har file me hardcoded `(15,15)` nahi). Har trader me `_exit_times()`/`is_no_entry_time()` helper + entry-path me missing no-entry gate add.
+- Webhook config se apne `no_entry_after`/`squareoff_at` fields HATA diye (UI + load + save) — ab RMS single-source (user: "ek jagah se sab").
+- RMS tab: naya "⏰ Exit & no-entry time" card (2 time inputs, all-strategies).
+- **#21 local sync:** root = koi auto VPS→local sync nahi (local dashboard stale trades.db). Naya `/api/sync-from-vps` (LOCAL-only guard: `sys.platform=='win32'`, VPS Linux pe blocked) → `_ops/sync_vps_to_local.py`; header me "🔄 Sync from VPS" button + "Auto (10m)" toggle (localStorage) + last-synced, sirf LOCAL host pe dikhta.
+**Layer:** execution / config / ui / infra
+**Files:** `_core/risk_gate.py` (exit_time_config + _parse_hm), `_core/webhook_executor.py`, `trader_dashboard.py` (pos_monitor + sync route), `strategies/live/{range_trader,01_rsi_v1,nifty_ema_trader,universe_trader}.py`, `templates/index.html`.
+**Kyun:** User ne live pe ₹50 phantom brokerage baar-baar dekha (money-path bug) + exit-time control bikhra hua tha + local pe aaj ka data nahi aata. Verify: py_compile all, full dashboard import + route, RMS save/load round-trip (UI keys → exit_time_config → custom times MATCH), VPS import-verify before restart.
+
+---
+
 ## 2026-07-09 — Repo folder refactor: flat root → _core/_data/_ops + strategies/{backtest,live,lab} (via _paths bootstrap)
 **Status:** LOCAL DONE ✅ (5 commits: 73a213a·f308e64·9a59262·79aea41·docs) — **VPS deploy PENDING** (`VPS_MIGRATION.md`).
 **Kya:**
