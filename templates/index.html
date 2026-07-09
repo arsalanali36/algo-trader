@@ -5,10 +5,10 @@
   <meta charset="utf-8">
   <title>Algo Trader</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
-  <script src="https://unpkg.com/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
-  <script src="https://unpkg.com/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+  <script src="/static/vendor/jspdf.umd.min.js"></script>
+  <script src="/static/vendor/jspdf.plugin.autotable.min.js"></script>
+  <script src="/static/vendor/chart.umd.js"></script>
   <style>
     * {
       box-sizing: border-box;
@@ -1411,7 +1411,6 @@
       <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <div class="tab" onclick="switchTab('pine')">📜 Script</div>
-      <div class="tab" onclick="switchTab('script2')" style="color: #58a6ff;">✨ Script 2</div>
       <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">🧪 Script 3</div>
       <a href="/backtest-chart" target="_blank" class="tab" style="text-decoration: none;">📊 Results</a>
       <a href="#" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank');return false;" class="tab" style="text-decoration: none;">🎬 Video Journal</a>
@@ -2885,11 +2884,6 @@
     </div>
   </div>
 
-  <!-- SCRIPT 2 TAB -->
-  <div class="tab-body" id="tab-script2" style="padding:0; height: calc(100vh - 52px); overflow: hidden;">
-    <iframe src="/mockup" style="width: 100%; height: 100%; border: none;"></iframe>
-  </div>
-
   <!-- SCRIPT 3 TAB (redesign mockup — iframe body only, no header) -->
   <div class="tab-body" id="tab-script3" style="padding:0; height: calc(100vh - 52px); overflow: hidden;">
     <iframe src="/script3" style="width: 100%; height: 100%; border: none;"></iframe>
@@ -3245,6 +3239,10 @@
           <h2 style="color:#a371f7; font-size: 13px; margin-bottom: 10px;">Kite Token <span
               style="font-size:11px;color:#8b949e;font-weight:normal">(Zerodha — order placement)</span></h2>
 
+          <!-- API Key/Secret permanence status — key & secret ek baar save = permanent.
+               Roz sirf request_token daalo. (loadTokenStatus se populate hota hai) -->
+          <div id="kite-key-status" style="font-size:11px;margin-bottom:10px;color:#8b949e"></div>
+
           <!-- One-time Setup -->
           <details style="margin-bottom:10px">
             <summary style="font-size:11px;color:#8b949e;cursor:pointer">⚙️ One-time Setup — API Key &amp; Secret
@@ -3344,9 +3342,16 @@
     function switchTab(id) {
       document.querySelectorAll('.tab').forEach(e => e.classList.remove('active'));
       document.querySelectorAll('.tab-body').forEach(e => e.classList.remove('active'));
-      const tabEl = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
-      const bodyEl = document.getElementById('tab-' + id);
-      if (!tabEl || !bodyEl) return;
+      let tabEl = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
+      let bodyEl = document.getElementById('tab-' + id);
+      // Stored tab no longer exists (e.g. removed 'script2') → fall back to Orders
+      // instead of leaving the page blank (switchTab used to just return here).
+      if (!tabEl || !bodyEl) {
+        id = 'orders';
+        tabEl = document.querySelector(`.tab[onclick="switchTab('orders')"]`);
+        bodyEl = document.getElementById('tab-orders');
+        if (!tabEl || !bodyEl) return;
+      }
       tabEl.classList.add('active');
       bodyEl.classList.add('active');
       activeTab = id;
@@ -4684,14 +4689,36 @@
     }
 
     // ── ORDERS TAB (DB-backed, cross-day, tagged) ──
+    // Mode filter (All/Paper/Live) defaults to LIVE and is persisted — so paper
+    // data-collection strategies (e.g. ARS_CHAIN_V1_PAPER scanning 23 equities)
+    // never clutter the main live view as "stray orders". Strategy-agnostic: it
+    // filters on the `mode` column, so ANY future paper strategy is hidden too.
+    // RMS / peak-P&L / squareoff query order_store directly with their own mode
+    // logic, so this is purely a display default — paper is one click away.
+    function _ordApplyMode(val) {
+      document.querySelectorAll('#ord-mode span').forEach(s => {
+        const on = (s.dataset.v || '') === val;
+        s.classList.toggle('on', on);
+        s.style.color = on ? '#fff' : '#8b949e';
+      });
+    }
+    function _ordRestoreMode() {
+      let m = localStorage.getItem('ord_mode_filter');
+      if (m === null) m = 'live';          // first-ever load → Live-only, not All
+      _ordApplyMode(m === 'all' ? '' : m); // 'all' sentinel → the All span (data-v="")
+    }
     function ordersEnter() {
       const di = document.getElementById('ord-date');
       if (di && !di.value) { di.value = new Date().toISOString().slice(0, 10); }
+      _ordRestoreMode();
       ordersRender();
     }
     function ordSeg(segId, el) {
       document.querySelectorAll('#' + segId + ' span').forEach(s => { s.classList.remove('on'); s.style.color = '#8b949e'; });
       el.classList.add('on'); el.style.color = '#fff';
+      // Persist the Mode choice so it survives reloads ('all' sentinel for the
+      // empty-value All span, else getItem's '' would fall back to 'live').
+      if (segId === 'ord-mode') localStorage.setItem('ord_mode_filter', el.dataset.v || 'all');
       ordersRender();
     }
     function _ordSegVal(segId) {
@@ -4828,6 +4855,16 @@
       renderCachedOrders();
     }
 
+    // Run-Up / Run-Down cell: AMT (₹) | PT (points) | % — one shared formatter
+    // so Completed Trades and Open Positions render identically.
+    function _ruCell(pt, amt, pct) {
+      if (!isFinite(pt) || !isFinite(amt) || !isFinite(pct)) return '—';
+      const c = amt > 0 ? '#3fb950' : (amt < 0 ? '#f85149' : '#8b949e');
+      const sign = amt > 0 ? '+' : '';
+      return `<span style="color:${c};font-weight:600">${sign}${Math.round(amt).toLocaleString('en-IN')}</span>`
+        + `<span style="color:#8b949e;font-size:10px"> | ${sign}${pt.toFixed(1)} | ${sign}${pct.toFixed(1)}%</span>`;
+    }
+
     // One Completed-Trades <tr> — extracted so both flat mode and grouped mode
     // (see renderCachedOrders) render individual trade rows identically.
     // Returns {html, g, tx, n, pts, inv} so callers can accumulate totals.
@@ -4852,15 +4889,15 @@
           if (tg.startsWith('NOTE:')) note = tg.substring(5);
         });
 
-        if (max_ltp !== null && t.entry_price > 0) {
-          let pnl = (max_ltp - t.entry_price) * t.qty;
-          if (t.entry === 'SELL') pnl = (t.entry_price - min_ltp) * t.qty;
-          if (pnl > 0) max_pnl = `<span style="color:#3fb950">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
-        }
-        if (min_ltp !== null && t.entry_price > 0) {
-          let pnl = (min_ltp - t.entry_price) * t.qty;
-          if (t.entry === 'SELL') pnl = (t.entry_price - max_ltp) * t.qty;
-          if (pnl < 0) min_pnl = `<span style="color:#f85149">${Math.round(pnl).toLocaleString('en-IN')}</span>`;
+        const ep = t.entry_price || 0;
+        // Run-Up = best favourable excursion, Run-Down = worst adverse excursion,
+        // each shown as AMT (₹) | PT (points) | % (was ₹-only before).
+        // PT = per-unit premium move, AMT = PT × qty, % = PT / entry_price × 100.
+        if (ep > 0 && max_ltp !== null && min_ltp !== null) {
+          const upPt   = t.entry === 'SELL' ? (ep - min_ltp) : (max_ltp - ep);
+          const downPt = t.entry === 'SELL' ? (ep - max_ltp) : (min_ltp - ep);
+          max_pnl = _ruCell(upPt,   upPt   * t.qty, upPt   / ep * 100);
+          min_pnl = _ruCell(downPt, downPt * t.qty, downPt / ep * 100);
         }
       }
 
@@ -5957,17 +5994,26 @@
             blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
         <div style="font-weight:600;color:#f85149;margin-bottom:6px">🚫 Capital se Block hui Entries (${opnBlocked.length})</div>
         <table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">
-          <th style="padding:5px 6px">Date</th><th style="padding:5px 6px">Symbol</th><th style="padding:5px 6px">Strategy</th>
-          <th style="padding:5px 6px">Side</th><th style="padding:5px 6px;text-align:right">Qty @ Price</th><th style="padding:5px 6px">Reason</th></tr></thead><tbody>`
+          <th style="padding:5px 6px">Date</th><th style="padding:5px 6px">Time</th><th style="padding:5px 6px">Symbol</th><th style="padding:5px 6px">Strategy</th>
+          <th style="padding:5px 6px">Side</th><th style="padding:5px 6px;text-align:right">Qty @ Price</th><th style="padding:5px 6px">Reason</th><th style="padding:5px 6px;text-align:center">Chart</th></tr></thead><tbody>`
               + opnBlocked.map(t => {
                 const reason = (t.tags || []).filter(tg => tg !== 'CAPITAL_BLOCKED').join(', ') || 'capital cap hit';
+                const bDate = t.entry_date || ordDate;
+                // Chart the trigger point on the option's premium chart: pass the
+                // block/trigger time as entry (et), no exit (xt='') → single entry
+                // marker at the exact time capital blocked this entry.
+                const chartBtn = t.entry_time
+                  ? `<button onclick="openTradeChart('${(t.sym || '').replace(/'/g, '')}','${t.entry || ''}',${t.entry_price || 0},0,'${t.entry_time}','',${t.qty || 0},'${bDate}',null,null,-1,null,null,'${(t.strategy || '').replace(/'/g, '')}')" title="Trigger point chart" style="padding:2px 8px;font-size:12px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`
+                  : '—';
                 return '<tr style="border-bottom:1px solid #30363d;opacity:.85">'
-                  + '<td style="padding:6px">' + (t.entry_date || ordDate) + '</td>'
+                  + '<td style="padding:6px">' + bDate + '</td>'
+                  + '<td style="padding:6px;color:#8b949e;white-space:nowrap">' + (t.entry_time || '—') + '</td>'
                   + '<td style="padding:6px;color:#adbac7">' + t.sym + '</td>'
                   + '<td style="padding:6px;color:#8b949e">' + (t.strategy || '—') + '</td>'
                   + '<td style="padding:6px;color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + '">' + t.entry + '</td>'
-                  + '<td style="padding:6px;text-align:right;color:#8b949e">' + t.qty + ' @ ' + Number(t.entry_price || 0).toFixed(2) + '</td>'
-                  + '<td style="padding:6px;color:#f85149;font-size:10.5px">' + reason + '</td></tr>';
+                  + '<td style="padding:6px;text-align:right;color:#8b949e">' + t.qty + ' @ ' + (Number(t.entry_price) > 0 ? Number(t.entry_price).toFixed(2) : '<span style="color:#6e7681">premium N/A</span>') + '</td>'
+                  + '<td style="padding:6px;color:#f85149;font-size:10.5px">' + reason + '</td>'
+                  + '<td style="padding:6px;text-align:center">' + chartBtn + '</td></tr>';
               }).join('')
               + '</tbody></table></div>';
           }
@@ -6182,10 +6228,11 @@
                   if (tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
                 });
                 if (max_ltp != null && min_ltp != null) {
-                  let up = t.entry === 'BUY' ? (max_ltp - entry) * qty : (entry - min_ltp) * qty;
-                  let down = t.entry === 'BUY' ? (min_ltp - entry) * qty : (entry - max_ltp) * qty;
-                  runup = `<span style="color:${up >= 0 ? '#3fb950' : '#f85149'}">${up >= 0 ? '+' : ''}${Math.round(up).toLocaleString('en-IN')}</span>`;
-                  rundown = `<span style="color:${down <= 0 ? '#f85149' : '#3fb950'}">${down >= 0 ? '+' : ''}${Math.round(down).toLocaleString('en-IN')}</span>`;
+                  // AMT (₹) | PT (points) | % — same formatter as Completed Trades
+                  const upPt   = t.entry === 'BUY' ? (max_ltp - entry) : (entry - min_ltp);
+                  const downPt = t.entry === 'BUY' ? (min_ltp - entry) : (entry - max_ltp);
+                  runup   = _ruCell(upPt,   upPt   * qty, upPt   / entry * 100);
+                  rundown = _ruCell(downPt, downPt * qty, downPt / entry * 100);
                 }
               }
 
@@ -7554,6 +7601,27 @@
           msg.innerText = 'No token saved yet.';
         }
       } catch (e) { }
+      kiteLoadKeyStatus();
+    }
+
+    // Kite api_key + api_secret are PERMANENT (saved once in data/config.json, nothing
+    // wipes them). Only the daily access_token changes. This just reflects that so the
+    // user doesn't re-type key+secret every day out of habit — the form used to render
+    // blank, making it look like they were required daily.
+    async function kiteLoadKeyStatus() {
+      const el = document.getElementById('kite-key-status');
+      if (!el) return;
+      try {
+        const j = await fetch('/api/kite-key-status').then(r => r.json());
+        if (j.has_key) {
+          el.style.color = '#3fb950';
+          el.innerHTML = `✅ API Key &amp; Secret already saved (…${j.api_key_preview || ''}) — `
+            + `roz sirf niche <b>request_token</b> daalo, key/secret dobara nahi.`;
+        } else {
+          el.style.color = '#d29922';
+          el.innerHTML = `⚙️ API Key/Secret abhi save nahi — pehli baar niche "One-time Setup" me daalo (ek hi baar).`;
+        }
+      } catch (e) { }
     }
     async function saveToken() {
       let t = document.getElementById('token-input').value.trim();
@@ -7578,7 +7646,12 @@
       const msg = document.getElementById('kite-key-msg');
       if (!key || !sec) { msg.textContent = '⚠️ Key aur Secret dono chahiye'; msg.style.color = '#f85149'; return; }
       const r = await fetch('/api/kite-save-key', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ api_key: key, api_secret: sec }) }).then(r => r.json()).catch(() => ({}));
-      if (r.ok) { msg.textContent = '✅ Saved! Ab Step 1 se login karo'; msg.style.color = '#3fb950'; }
+      if (r.ok) {
+        msg.textContent = '✅ Saved (permanent)! Ab Step 1 se login karo';
+        msg.style.color = '#3fb950';
+        document.getElementById('kite-api-secret').value = '';
+        kiteLoadKeyStatus();
+      }
       else { msg.textContent = '❌ ' + (r.error || 'Error'); msg.style.color = '#f85149'; }
     }
 

@@ -1,0 +1,1750 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Trades MTM Analyzer</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- ApexCharts (self-hosted) -->
+  <script src="/static/vendor/apexcharts.min.js"></script>
+  
+  <style>
+    :root {
+      --bg-dark: #090d16;
+      --bg-panel: #0f1524;
+      --bg-card: #151c2e;
+      --bg-hover: #1e2942;
+      --border-color: #263554;
+      --text-main: #f0f4fc;
+      --text-muted: #8fa0c2;
+      --color-green: #2ecc71;
+      --color-red: #e74c3c;
+      --color-blue: #3498db;
+      --color-accent: #6c5ce7;
+      --font-sans: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header styling */
+    .hdr {
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-color);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .hdr-title {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .hdr-title h1 {
+      font-size: 20px;
+      font-weight: 600;
+      background: linear-gradient(135deg, #a29bfe, #74b9ff);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .hdr-filters {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .select-input {
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .select-input:hover, .select-input:focus {
+      border-color: var(--color-blue);
+      box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.2);
+    }
+
+    /* Main layout */
+    .main-container {
+      display: flex;
+      flex: 1;
+      height: calc(100vh - 66px);
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Left Sidebar: Trade selector */
+    .sidebar {
+      width: 380px;
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      flex-shrink: 0;
+      overflow: hidden;
+    }
+
+    .sidebar-header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border-color);
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .search-input {
+      width: 100%;
+      background: var(--bg-card);
+      color: var(--text-main);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-family: var(--font-sans);
+      font-size: 13px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+
+    .search-input:focus {
+      border-color: var(--color-blue);
+    }
+
+    .selection-controls {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+    }
+
+    .btn-text {
+      background: none;
+      border: none;
+      color: var(--color-blue);
+      cursor: pointer;
+      font-weight: 600;
+      padding: 2px 4px;
+      font-family: var(--font-sans);
+    }
+
+    .btn-text:hover {
+      text-decoration: underline;
+    }
+
+    .trades-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* Trade card in list */
+    .trade-item {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 12px;
+      cursor: pointer;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      user-select: none;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .trade-item:hover {
+      background: var(--bg-hover);
+      border-color: #3b4e7a;
+      transform: translateY(-1px);
+    }
+
+    .trade-item.selected {
+      border-color: var(--color-accent);
+      background: rgba(108, 92, 231, 0.05);
+    }
+
+    .trade-checkbox {
+      margin-top: 3px;
+      cursor: pointer;
+      width: 16px;
+      height: 16px;
+      accent-color: var(--color-accent);
+    }
+
+    .trade-details {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .trade-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .trade-sym {
+      font-weight: 600;
+      font-size: 13.5px;
+      color: var(--text-main);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 190px;
+    }
+
+    .badge {
+      font-size: 10px;
+      font-weight: 700;
+      padding: 2px 6px;
+      border-radius: 4px;
+      text-transform: uppercase;
+    }
+
+    .badge-buy {
+      background: rgba(46, 204, 113, 0.15);
+      color: var(--color-green);
+      border: 1px solid rgba(46, 204, 113, 0.3);
+    }
+
+    .badge-sell {
+      background: rgba(231, 76, 60, 0.15);
+      color: var(--color-red);
+      border: 1px solid rgba(231, 76, 60, 0.3);
+    }
+
+    .trade-mid {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .trade-strat {
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.05);
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+
+    .trade-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 4px;
+      font-size: 12px;
+    }
+
+    .trade-pnl {
+      font-weight: 700;
+    }
+
+    .pnl-pos {
+      color: var(--color-green);
+    }
+
+    .pnl-neg {
+      color: var(--color-red);
+    }
+
+    .pnl-zero {
+      color: var(--text-muted);
+    }
+
+    /* Right content panel */
+    .content-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow-y: auto;
+      padding: 24px;
+      background: var(--bg-dark);
+      gap: 24px;
+    }
+
+    /* Stats Overview Cards */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+    }
+
+    .stat-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 16px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .stat-card::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 3px;
+      background: transparent;
+    }
+
+    .stat-card.accent::after { background: var(--color-accent); }
+    .stat-card.green::after { background: var(--color-green); }
+    .stat-card.red::after { background: var(--color-red); }
+    .stat-card.blue::after { background: var(--color-blue); }
+
+    .stat-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .stat-val {
+      font-size: 24px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    /* Tab Layout inside content area */
+    .tabs-nav {
+      display: flex;
+      border-bottom: 1px solid var(--border-color);
+      gap: 16px;
+    }
+
+    .tab-nav-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      padding: 8px 16px 12px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font-sans);
+      position: relative;
+      transition: all 0.2s ease;
+    }
+
+    .tab-nav-btn:hover {
+      color: var(--text-main);
+    }
+
+    .tab-nav-btn.active {
+      color: var(--color-blue);
+    }
+
+    .tab-nav-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: var(--color-blue);
+    }
+
+    .tab-pane {
+      display: none;
+      flex-direction: column;
+      gap: 20px;
+    }
+
+    .tab-pane.active {
+      display: flex;
+    }
+
+    /* Main Chart Card */
+    .chart-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .chart-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .chart-title {
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .chart-container {
+      width: 100%;
+      min-height: 380px;
+      background: rgba(0, 0, 0, 0.1);
+      border-radius: 8px;
+    }
+
+    /* Individual Grid View */
+    .grid-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+      gap: 16px;
+    }
+
+    .ind-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 14px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      transition: all 0.2s ease;
+    }
+
+    .ind-card:hover {
+      border-color: #3b4e7a;
+    }
+
+    .ind-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+
+    .ind-card-title {
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-main);
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+
+    .ind-card-title:hover {
+      color: var(--color-blue);
+      text-decoration: underline;
+    }
+
+    .ind-card-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--text-muted);
+    }
+
+    .ind-card-stats {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.04);
+      border-radius: 8px;
+      padding: 8px;
+      text-align: center;
+    }
+
+    .ind-stat-lbl {
+      font-size: 9.5px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      margin-bottom: 2px;
+    }
+
+    .ind-stat-val {
+      font-size: 12px;
+      font-weight: 700;
+      font-family: var(--font-mono);
+    }
+
+    .ind-chart-container {
+      height: 140px;
+    }
+
+    /* Table View */
+    .table-container {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .metrics-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      text-align: left;
+    }
+
+    .metrics-table th {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 12px 16px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .metrics-table td {
+      padding: 12px 16px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+      font-family: var(--font-sans);
+    }
+
+    .metrics-table tr:hover td {
+      background: rgba(255, 255, 255, 0.01);
+    }
+
+    .metrics-table td.mono {
+      font-family: var(--font-mono);
+    }
+
+    /* Loading indicator and overlays */
+    .loading-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(9, 13, 22, 0.85);
+      z-index: 10;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid var(--border-color);
+      border-top: 4px solid var(--color-blue);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    .progress-bar-container {
+      width: 250px;
+      height: 6px;
+      background: var(--border-color);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0%;
+      background: var(--color-blue);
+      transition: width 0.15s ease-out;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 60px 20px;
+      color: var(--text-muted);
+      gap: 12px;
+      text-align: center;
+    }
+
+    .empty-icon {
+      font-size: 40px;
+      opacity: 0.5;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(0,0,0,0.1);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: var(--border-color);
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Top Header bar -->
+  <div class="hdr">
+    <div class="hdr-title">
+      <span>📈</span>
+      <h1>Trades MTM Analyzer</h1>
+    </div>
+    
+    <div class="hdr-filters">
+      <!-- Date selector -->
+      <select id="date-select" class="select-input" onchange="onDateChanged()">
+        <option value="">Select Date...</option>
+      </select>
+      
+      <!-- Strategy selector -->
+      <select id="strat-select" class="select-input" onchange="onFilterChanged()">
+        <option value="all">All Strategies</option>
+      </select>
+
+      <!-- Mode selector -->
+      <select id="mode-select" class="select-input" onchange="onFilterChanged()">
+        <option value="all">All Modes</option>
+        <option value="paper">Paper</option>
+        <option value="live">Live</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Main Body Section -->
+  <div class="main-container">
+    
+    <!-- Sidebar: Checklist of trades -->
+    <div class="sidebar">
+      <div class="sidebar-header">
+        <input type="text" id="symbol-search" class="search-input" placeholder="Search symbol..." oninput="onSearchChanged()">
+        <div class="selection-controls">
+          <span id="selected-count-lbl" style="color: var(--text-muted);">0 trades selected</span>
+          <div>
+            <button class="btn-text" onclick="selectAllTrades(true)">Select All</button>
+            <span style="color: var(--border-color);">|</span>
+            <button class="btn-text" onclick="selectAllTrades(false)">None</button>
+          </div>
+        </div>
+      </div>
+      
+      <div id="trades-list" class="trades-list">
+        <!-- Loaded dynamically -->
+      </div>
+    </div>
+
+    <!-- Right Side Content -->
+    <div class="content-area">
+      <!-- Loading Overlay -->
+      <div id="loading-overlay" class="loading-overlay" style="display: none;">
+        <div class="spinner"></div>
+        <div id="loading-txt" style="font-size: 14px; font-weight: 500;">Loading Trades...</div>
+        <div class="progress-bar-container">
+          <div id="loading-progress" class="progress-bar"></div>
+        </div>
+      </div>
+
+      <!-- Stats Overview Row -->
+      <div class="stats-row">
+        <div class="stat-card accent">
+          <div class="stat-label">Selected Trades</div>
+          <div class="stat-val" id="stat-selected-count">0</div>
+        </div>
+        <div class="stat-card blue">
+          <div class="stat-label">Net Realized P&L</div>
+          <div class="stat-val" id="stat-net-pnl">₹0.00</div>
+        </div>
+        <div class="stat-card green">
+          <div class="stat-label">Peak Run-up</div>
+          <div class="stat-val text-green" id="stat-peak-runup" style="color: var(--color-green);">₹0.00</div>
+        </div>
+        <div class="stat-card red">
+          <div class="stat-label">Max Drawdown</div>
+          <div class="stat-val text-red" id="stat-max-drawdown" style="color: var(--color-red);">₹0.00</div>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <div class="tabs-nav">
+        <button class="tab-nav-btn active" onclick="switchPane('pane-cumulative')">📊 Cumulative Daily MTM</button>
+        <button class="tab-nav-btn" onclick="switchPane('pane-individual')">🔲 Individual Trade MTMs</button>
+        <button class="tab-nav-btn" onclick="switchPane('pane-metrics')">📋 Metrics & Efficiency</button>
+      </div>
+
+      <!-- Pane 1: Cumulative Chart -->
+      <div id="pane-cumulative" class="tab-pane active">
+        <div class="chart-card">
+          <div class="chart-header">
+            <div style="display: flex; flex-direction: column; gap: 4px;">
+              <div class="chart-title">Intraday Equity Curve (Cumulative MTM)</div>
+              <div style="font-size: 12px; color: var(--text-muted);">Timeline: 09:15 to 15:30 IST</div>
+            </div>
+            <!-- Line/Candlestick toggle buttons -->
+            <div style="display: flex; gap: 6px; background: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; padding: 3px;">
+              <button id="toggle-view-line" onclick="setCumulativeViewType('line')" style="background: var(--color-blue); color: white; border: none; padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; font-family: var(--font-sans); transition: all 0.15s ease;">📈 Line</button>
+              <button id="toggle-view-candle" onclick="setCumulativeViewType('candle')" style="background: transparent; color: var(--text-muted); border: none; padding: 4px 10px; font-size: 11px; font-weight: 600; border-radius: 6px; cursor: pointer; font-family: var(--font-sans); transition: all 0.15s ease;">🕯️ Candlestick</button>
+            </div>
+          </div>
+          <div class="chart-container" id="cum-chart"></div>
+        </div>
+      </div>
+
+      <!-- Pane 2: Individual Charts Grid -->
+      <div id="pane-individual" class="tab-pane">
+        <div class="grid-container" id="ind-grid">
+          <!-- Populated dynamically -->
+        </div>
+      </div>
+
+      <!-- Pane 3: Metrics Table -->
+      <div id="pane-metrics" class="tab-pane">
+        <div class="table-container">
+          <table class="metrics-table">
+            <thead>
+              <tr>
+                <th>Symbol</th>
+                <th>Side</th>
+                <th>Qty</th>
+                <th>Times (IST)</th>
+                <th>Entry Price</th>
+                <th>Exit Price</th>
+                <th>Max Run-up</th>
+                <th>Max Run-down</th>
+                <th>Final P&L</th>
+                <th>Efficiency</th>
+              </tr>
+            </thead>
+            <tbody id="metrics-table-body">
+              <!-- Populated dynamically -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    let allTrades = [];        // Raw list of completed trades from API
+    let filteredTrades = [];   // List after strategy/mode/search filters are applied
+    let tradeDataCache = {};   // Map: tradeId -> { candles, entry_mk, exit_mk, mtmSeries, runUp, runDown }
+    let cumulativeChart = null;
+    let currentPaneId = 'pane-cumulative';
+    let cumulativeChartViewType = 'line'; // 'line' or 'candle'
+
+    // Set page title depending on server/local environment
+    (function() {
+      const h = location.hostname;
+      const isLocal = h==='127.0.0.1' || h==='localhost' || h.indexOf('192.168.')===0 || h.indexOf('10.')===0 || h.indexOf('172.')===0;
+      document.title = (isLocal ? '🖥️ LOCAL' : '☁️ VPS') + ' · MTM Analyzer';
+    })();
+
+    // Initialize Page
+    window.addEventListener('DOMContentLoaded', async () => {
+      await loadAvailableDates();
+    });
+
+    // 1. Fetch available dates from server
+    async function loadAvailableDates() {
+      try {
+        const res = await fetch('/api/orders/calendar-summary');
+        const data = await res.json();
+        
+        const dateSelect = document.getElementById('date-select');
+        dateSelect.innerHTML = '';
+        
+        if (data.summary && Object.keys(data.summary).length > 0) {
+          // Sort dates descending (latest first)
+          const dates = Object.keys(data.summary).sort().reverse();
+          
+          dates.forEach(date => {
+            const opt = document.createElement('option');
+            opt.value = date;
+            const pnl = data.summary[date].pnl;
+            const count = data.summary[date].count;
+            const pnlStr = (pnl >= 0 ? '+' : '') + Math.round(pnl);
+            opt.textContent = `${date} (${count} trades, P&L: ₹${pnlStr})`;
+            dateSelect.appendChild(opt);
+          });
+          
+          // Select the latest date by default
+          dateSelect.selectedIndex = 0;
+          await loadTradesForDate(dateSelect.value);
+        } else {
+          // No dates in db
+          const opt = document.createElement('option');
+          opt.textContent = "No trades found in DB";
+          dateSelect.appendChild(opt);
+          showEmptyState("No trade dates found in the database. Take some trades or backtest first!");
+        }
+      } catch (err) {
+        console.error("Failed to load dates:", err);
+        showEmptyState("Failed to load dates from server. Check console/logs.");
+      }
+    }
+
+    // 2. Load trades list for selected date
+    async function loadTradesForDate(date) {
+      if (!date) return;
+      showLoading("Loading trades checklist...", 0);
+      
+      try {
+        // Fetch all trades for the date from the API
+        const res = await fetch(`/api/orders?date=${date}`);
+        const data = await res.json();
+        
+        allTrades = data.details || [];
+        
+        // Populate strategy filters dynamically
+        const stratSelect = document.getElementById('strat-select');
+        stratSelect.innerHTML = '<option value="all">All Strategies</option>';
+        const strats = new Set();
+        allTrades.forEach(t => { if (t.strategy) strats.add(t.strategy); });
+        strats.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = s;
+          opt.textContent = s;
+          stratSelect.appendChild(opt);
+        });
+
+        // Apply filters & render sidebar list
+        applyFiltersAndRenderList();
+        
+        // Auto select all trades on initial load of a new date
+        selectAllTrades(true);
+      } catch (err) {
+        console.error("Failed to load trades:", err);
+        hideLoading();
+        showEmptyState("Failed to fetch trades for " + date);
+      }
+    }
+
+    // Filter logic
+    function applyFiltersAndRenderList() {
+      const strat = document.getElementById('strat-select').value;
+      const mode = document.getElementById('mode-select').value;
+      const search = document.getElementById('symbol-search').value.toLowerCase().trim();
+      
+      filteredTrades = allTrades.filter(t => {
+        const matchStrat = (strat === 'all' || t.strategy === strat);
+        const matchMode = (mode === 'all' || (t.mode || '').toLowerCase() === mode);
+        const matchSearch = (!search || t.sym.toLowerCase().includes(search));
+        return matchStrat && matchMode && matchSearch;
+      });
+      
+      renderSidebarList();
+    }
+
+    function renderSidebarList() {
+      const container = document.getElementById('trades-list');
+      container.innerHTML = '';
+      
+      if (filteredTrades.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-muted); text-align: center; padding: 20px; font-size: 13px;">No trades match filters.</div>';
+        return;
+      }
+      
+      filteredTrades.forEach(t => {
+        const isChecked = t.checked !== false; // default true if not set
+        const pts = t.side === 'SELL' ? (t.entry_price - t.exit_price) : (t.exit_price - t.entry_price);
+        const pnl = t.pnl || 0;
+        
+        const card = document.createElement('div');
+        card.className = `trade-item ${isChecked ? 'selected' : ''}`;
+        card.setAttribute('data-id', t.id);
+        
+        // Handle click on card (clicking anywhere on card, except checkbox, toggles selection)
+        card.addEventListener('click', (e) => {
+          if (e.target.tagName !== 'INPUT') {
+            const chk = card.querySelector('.trade-checkbox');
+            chk.checked = !chk.checked;
+            toggleTradeSelection(t.id, chk.checked);
+          }
+        });
+
+        const pnlClass = pnl > 0 ? 'pnl-pos' : (pnl < 0 ? 'pnl-neg' : 'pnl-zero');
+        const pnlStr = (pnl >= 0 ? '+' : '') + pnl.toFixed(2);
+        const ptsStr = (pts >= 0 ? '+' : '') + pts.toFixed(2) + ' pts';
+
+        card.innerHTML = `
+          <input type="checkbox" class="trade-checkbox" ${isChecked ? 'checked' : ''}>
+          <div class="trade-details">
+            <div class="trade-top">
+              <span class="trade-sym" title="${t.sym}">${t.sym}</span>
+              <span class="badge ${t.entry === 'SELL' ? 'badge-sell' : 'badge-buy'}">${t.entry}</span>
+            </div>
+            <div class="trade-mid">
+              <span>Qty: ${t.qty} · <span class="trade-strat" title="Strategy">${t.strategy || 'manual'}</span></span>
+              <span style="font-size: 10px;">${t.entry_time} → ${t.exit_time || '—'}</span>
+            </div>
+            <div class="trade-bottom">
+              <span style="color: var(--text-muted); font-size: 11px;">${t.entry_price.toFixed(2)} → ${(t.exit_price || 0).toFixed(2)}</span>
+              <span class="trade-pnl ${pnlClass}">₹${pnlStr} <span style="font-size: 10px; font-weight: 500;">(${ptsStr})</span></span>
+            </div>
+          </div>
+        `;
+        
+        // Listen to checkbox change directly
+        card.querySelector('.trade-checkbox').addEventListener('change', (e) => {
+          toggleTradeSelection(t.id, e.target.checked);
+        });
+        
+        container.appendChild(card);
+      });
+      
+      updateSelectionCounts();
+    }
+
+    function toggleTradeSelection(tradeId, isSelected) {
+      const idx = allTrades.findIndex(t => t.id === tradeId);
+      if (idx !== -1) {
+        allTrades[idx].checked = isSelected;
+      }
+      
+      // Update styling on the list card
+      const card = document.querySelector(`.trade-item[data-id="${tradeId}"]`);
+      if (card) {
+        if (isSelected) card.classList.add('selected');
+        else card.classList.remove('selected');
+        const chk = card.querySelector('.trade-checkbox');
+        if (chk) chk.checked = isSelected;
+      }
+      
+      updateSelectionCounts();
+      processAndDrawMTM();
+    }
+
+    function selectAllTrades(checked) {
+      filteredTrades.forEach(t => {
+        t.checked = checked;
+        const idx = allTrades.findIndex(at => at.id === t.id);
+        if (idx !== -1) allTrades[idx].checked = checked;
+      });
+      
+      renderSidebarList();
+      processAndDrawMTM();
+    }
+
+    function updateSelectionCounts() {
+      const selected = filteredTrades.filter(t => t.checked !== false);
+      document.getElementById('selected-count-lbl').textContent = `${selected.length} trades selected`;
+      document.getElementById('stat-selected-count').textContent = selected.length;
+    }
+
+    function onDateChanged() {
+      const date = document.getElementById('date-select').value;
+      // Clear cache on date change to load fresh candles
+      tradeDataCache = {};
+      loadTradesForDate(date);
+    }
+
+    // Handle strategy or mode dropdown change
+    function onFilterChanged() {
+      applyFiltersAndRenderList();
+      processAndDrawMTM();
+    }
+
+    function onSearchChanged() {
+      applyFiltersAndRenderList();
+    }
+
+    function setCumulativeViewType(type) {
+      cumulativeChartViewType = type;
+      const lineBtn = document.getElementById('toggle-view-line');
+      const candleBtn = document.getElementById('toggle-view-candle');
+      if (type === 'line') {
+        lineBtn.style.background = 'var(--color-blue)';
+        lineBtn.style.color = 'white';
+        candleBtn.style.background = 'transparent';
+        candleBtn.style.color = 'var(--text-muted)';
+      } else {
+        candleBtn.style.background = 'var(--color-blue)';
+        candleBtn.style.color = 'white';
+        lineBtn.style.background = 'transparent';
+        lineBtn.style.color = 'var(--text-muted)';
+      }
+      processAndDrawMTM();
+    }
+
+    // 3. Process checked trades, fetch missing candle data, and build MTM statistics
+    async function processAndDrawMTM() {
+      const selected = filteredTrades.filter(t => t.checked !== false);
+      
+      if (selected.length === 0) {
+        clearDashboardStats();
+        drawCumulativeChart([]);
+        document.getElementById('ind-grid').innerHTML = '<div class="empty-state"><span class="empty-icon">🔲</span><div>No trades selected. Select some trades on the sidebar checklist to see their individual MTM charts.</div></div>';
+        document.getElementById('metrics-table-body').innerHTML = '<tr><td colspan="10" style="text-align: center; color: var(--text-muted);">No trades selected.</td></tr>';
+        return;
+      }
+
+      // Check if we need to load candles for any selected trades
+      const toFetch = selected.filter(t => !tradeDataCache[t.id]);
+      
+      if (toFetch.length > 0) {
+        showLoading("Fetching intraday candle data...", 0);
+        let count = 0;
+        const date = document.getElementById('date-select').value;
+        
+        for (const t of toFetch) {
+          count++;
+          const progress = Math.round((count / toFetch.length) * 100);
+          updateLoadingMsg(`Fetching option premium candles for ${t.sym} (${count}/${toFetch.length})...`, progress);
+          
+          try {
+            // Fetch candles using the existing endpoint
+            const res = await fetch(`/api/trade-chart-data?trad_sym=${encodeURIComponent(t.sym)}&date=${date}&et=${t.entry_time}&xt=${t.exit_time || ''}`);
+            const data = await res.json();
+            
+            if (data.ok && data.candles && data.candles.length > 0) {
+              // Deduplicate and sort candles
+              const uniq = [];
+              const seen = new Set();
+              data.candles.forEach(c => {
+                if(!seen.has(c.time)){ seen.add(c.time); uniq.push(c); }
+              });
+              uniq.sort((a,b) => a.time - b.time);
+              
+              // Calculate specific MTM details for this trade
+              const calculated = calculateTradeMtmDetails(t, uniq);
+              tradeDataCache[t.id] = calculated;
+            } else {
+              console.warn(`Candles failed for ${t.sym}:`, data.msg);
+              // Store placeholder so we do not retry infinitely
+              tradeDataCache[t.id] = getFallbackMtmDetails(t);
+            }
+          } catch (err) {
+            console.error(`Error loading candles for trade ${t.id} (${t.sym}):`, err);
+            tradeDataCache[t.id] = getFallbackMtmDetails(t);
+          }
+          // small throttle to respect the server/rate limits slightly
+          await new Promise(r => setTimeout(r, 100));
+        }
+        hideLoading();
+      }
+
+      // At this point, all selected trades have data in cache. Let's build metrics and draw charts!
+      calculateAndDrawDashboard(selected);
+    }
+
+    // 4. Calculate individual MTM series, run-up, and run-down
+    function calculateTradeMtmDetails(trade, candles) {
+      const ep = trade.entry_price;
+      const qty = trade.qty;
+      const side = trade.entry; // BUY / SELL
+      
+      const mtmSeries = [];
+      let maxRunUp = -Infinity;
+      let minRunDown = Infinity;
+      let runUpTime = '—';
+      let runDownTime = '—';
+      
+      // Map candles to easily lookup by HH:MM
+      const candleMap = {};
+      
+      candles.forEach(c => {
+        const timeStr = formatISTTime(c.time);
+        candleMap[timeStr] = c;
+        
+        let mtm_open = 0;
+        let mtm_high = 0;
+        let mtm_low = 0;
+        let mtm_close = 0;
+        
+        if (side === 'BUY') {
+          mtm_open = (c.open - ep) * qty;
+          mtm_high = (c.high - ep) * qty;
+          mtm_low = (c.low - ep) * qty;
+          mtm_close = (c.close - ep) * qty;
+        } else {
+          mtm_open = (ep - c.open) * qty;
+          mtm_high = (ep - c.low) * qty; // low price is max profit for sell
+          mtm_low = (ep - c.high) * qty; // high price is max loss for sell
+          mtm_close = (ep - c.close) * qty;
+        }
+        
+        // Track peak run-up
+        if (mtm_high > maxRunUp) {
+          maxRunUp = mtm_high;
+          runUpTime = timeStr;
+        }
+        // Track lowest run-down
+        if (mtm_low < minRunDown) {
+          minRunDown = mtm_low;
+          runDownTime = timeStr;
+        }
+        
+        mtmSeries.push({
+          time: c.time,
+          timeStr: timeStr,
+          open: Math.round(mtm_open * 100) / 100,
+          high: Math.round(mtm_high * 100) / 100,
+          low: Math.round(mtm_low * 100) / 100,
+          close: Math.round(mtm_close * 100) / 100,
+          mtm: Math.round(mtm_close * 100) / 100
+        });
+      });
+      
+      // Edge case: if we got no wicks or max/min is standard unset, fallback to PnL
+      if (maxRunUp === -Infinity) maxRunUp = trade.pnl || 0;
+      if (minRunDown === Infinity) minRunDown = trade.pnl || 0;
+
+      // Ensure run-up is at least 0 (baseline) or final P&L (whichever is higher)
+      // and run-down is at most 0 or final P&L (whichever is lower)
+      maxRunUp = Math.max(0, maxRunUp, trade.pnl || 0);
+      minRunDown = Math.min(0, minRunDown, trade.pnl || 0);
+
+      return {
+        candles: candles,
+        candleMap: candleMap,
+        mtmSeries: mtmSeries,
+        runUp: maxRunUp,
+        runDown: minRunDown,
+        runUpTime: runUpTime,
+        runDownTime: runDownTime,
+        entryTime: trade.entry_time,
+        exitTime: trade.exit_time || '—',
+        qty: qty,
+        pnl: trade.pnl || 0,
+        sym: trade.sym,
+        side: side,
+        entryPrice: ep,
+        exitPrice: trade.exit_price || 0
+      };
+    }
+
+    // Fallback in case API fails
+    function getFallbackMtmDetails(trade) {
+      const pnl = trade.pnl || 0;
+      const runUp = Math.max(0, pnl);
+      const runDown = Math.min(0, pnl);
+      
+      return {
+        candles: [],
+        candleMap: {},
+        mtmSeries: [],
+        runUp: runUp,
+        runDown: runDown,
+        runUpTime: trade.exit_time || '—',
+        runDownTime: trade.exit_time || '—',
+        entryTime: trade.entry_time,
+        exitTime: trade.exit_time || '—',
+        qty: trade.qty,
+        pnl: pnl,
+        sym: trade.sym,
+        side: trade.entry,
+        entryPrice: trade.entry_price,
+        exitPrice: trade.exit_price || 0
+      };
+    }
+
+    // 5. Aggregate calculations and draw all charts
+    function calculateAndDrawDashboard(selected) {
+      // Top Stats
+      let netRealized = 0;
+      selected.forEach(t => { netRealized += t.pnl || 0; });
+      document.getElementById('stat-net-pnl').textContent = `₹${netRealized.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}`;
+      document.getElementById('stat-net-pnl').className = 'stat-val ' + (netRealized >= 0 ? 'pnl-pos' : 'pnl-neg');
+      
+      // Calculate Timeline from 09:15 to 15:30
+      const minutesOfDay = [];
+      let curr = 9 * 60 + 15;
+      const end = 15 * 60 + 30;
+      while (curr <= end) {
+        const h = Math.floor(curr / 60);
+        const m = curr % 60;
+        minutesOfDay.push(`${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`);
+        curr++;
+      }
+      
+      const cumulativeMTM = [];
+      const cumulativeOHLC = [];
+      let maxCumMtm = 0;
+      let minCumMtm = 0;
+      
+      minutesOfDay.forEach(tStr => {
+        let totalOpen = 0;
+        let totalHigh = 0;
+        let totalLow = 0;
+        let totalClose = 0;
+        
+        selected.forEach(t => {
+          const cache = tradeDataCache[t.id];
+          if (!cache) return;
+          
+          const entryMin = cache.entryTime;
+          const exitMin = cache.exitTime;
+          
+          if (tStr < entryMin) {
+            // Trade not entered yet
+            totalOpen += 0;
+            totalHigh += 0;
+            totalLow += 0;
+            totalClose += 0;
+          } else if (exitMin !== '—' && tStr > exitMin) {
+            // Trade completed, add realized PnL
+            totalOpen += cache.pnl;
+            totalHigh += cache.pnl;
+            totalLow += cache.pnl;
+            totalClose += cache.pnl;
+          } else {
+            // Trade active!
+            let candle = cache.candleMap[tStr];
+            if (!candle) {
+              // Fetch last known candle before this minute to avoid gaps
+              const pastTimes = Object.keys(cache.candleMap).filter(time => time <= tStr).sort();
+              if (pastTimes.length > 0) {
+                candle = cache.candleMap[pastTimes[pastTimes.length - 1]];
+              }
+            }
+            
+            let op = 0, hi = 0, lo = 0, cl = 0;
+            if (candle) {
+              if (cache.side === 'BUY') {
+                op = (candle.open - cache.entryPrice) * cache.qty;
+                hi = (candle.high - cache.entryPrice) * cache.qty;
+                lo = (candle.low - cache.entryPrice) * cache.qty;
+                cl = (candle.close - cache.entryPrice) * cache.qty;
+              } else {
+                op = (cache.entryPrice - candle.open) * cache.qty;
+                hi = (cache.entryPrice - candle.low) * cache.qty; // low price is max profit for sell
+                lo = (cache.entryPrice - candle.high) * cache.qty; // high price is max loss for sell
+                cl = (cache.entryPrice - candle.close) * cache.qty;
+              }
+            }
+            
+            totalOpen += op;
+            totalHigh += hi;
+            totalLow += lo;
+            totalClose += cl;
+          }
+        });
+        
+        // Track daily peak & trough
+        if (totalHigh > maxCumMtm) maxCumMtm = totalHigh;
+        if (totalLow < minCumMtm) minCumMtm = totalLow;
+        
+        cumulativeMTM.push({
+          time: tStr,
+          mtm: Math.round(totalClose * 100) / 100
+        });
+        
+        cumulativeOHLC.push({
+          time: tStr,
+          open: Math.round(totalOpen * 100) / 100,
+          high: Math.round(totalHigh * 100) / 100,
+          low: Math.round(totalLow * 100) / 100,
+          close: Math.round(totalClose * 100) / 100
+        });
+      });
+      
+      // Update top stats with portfolio peak and drawdown
+      document.getElementById('stat-peak-runup').textContent = `₹${maxCumMtm.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+      document.getElementById('stat-max-drawdown').textContent = `₹${minCumMtm.toLocaleString('en-IN', {maximumFractionDigits:0})}`;
+      
+      // Draw Cumulative Chart
+      if (cumulativeChartViewType === 'candle') {
+        drawCumulativeChart(cumulativeOHLC);
+      } else {
+        drawCumulativeChart(cumulativeMTM);
+      }
+      
+      // Draw Individual Cards Grid
+      drawIndividualGrid(selected);
+      
+      // Draw Metrics Table
+      drawMetricsTable(selected);
+    }
+
+    // 6. Draw Cumulative Daily MTM Curve
+    function drawCumulativeChart(data) {
+      const container = document.getElementById('cum-chart');
+      container.innerHTML = '';
+      
+      if (data.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding-top:160px;">No data to display.</div>';
+        return;
+      }
+      
+      const isCandle = (cumulativeChartViewType === 'candle');
+      let seriesData, chartType, strokeOpts, fillOpts, colorsOpts, plotOpts = {}, tooltipOpts;
+      
+      if (isCandle) {
+        chartType = 'candlestick';
+        seriesData = data.map(d => ({
+          x: d.time,
+          y: [d.open, d.high, d.low, d.close]
+        }));
+        strokeOpts = {
+          width: [1]
+        };
+        fillOpts = undefined;
+        colorsOpts = undefined;
+        plotOpts = {
+          candlestick: {
+            colors: {
+              upward: '#2ecc71',
+              downward: '#e74c3c'
+            },
+            wick: {
+              useFillColor: true
+            }
+          }
+        };
+        tooltipOpts = {
+          theme: 'dark',
+          style: { fontSize: '12px', fontFamily: 'Outfit, sans-serif' },
+          custom: function({ seriesIndex, dataPointIndex, w }) {
+            const ohlc = w.config.series[seriesIndex].data[dataPointIndex].y;
+            const time = w.config.series[seriesIndex].data[dataPointIndex].x;
+            const open = ohlc[0], high = ohlc[1], low = ohlc[2], close = ohlc[3];
+            const change = close - open;
+            const color = close >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+            return `
+              <div style="padding: 10px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 6px; font-family: var(--font-sans);">
+                <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 6px;">Time: <b>${time}</b></div>
+                <div style="display:grid; grid-template-columns: auto auto; gap: 4px 12px; font-size:12px; font-family: var(--font-mono);">
+                  <span>Open:</span><span style="font-weight:600;">₹${open.toLocaleString('en-IN')}</span>
+                  <span>High:</span><span style="font-weight:600; color:var(--color-green);">₹${high.toLocaleString('en-IN')}</span>
+                  <span>Low:</span><span style="font-weight:600; color:var(--color-red);">₹${low.toLocaleString('en-IN')}</span>
+                  <span>Close:</span><span style="font-weight:700; color:${color};">₹${close.toLocaleString('en-IN')}</span>
+                </div>
+              </div>
+            `;
+          }
+        };
+      } else {
+        chartType = 'area';
+        seriesData = data.map(d => d.mtm);
+        strokeOpts = {
+          curve: 'smooth',
+          width: 3
+        };
+        fillOpts = {
+          type: 'gradient',
+          gradient: {
+            shadeIntensity: 1,
+            opacityFrom: 0.45,
+            opacityTo: 0.05,
+            stops: [0, 95]
+          }
+        };
+        colorsOpts = ['#3498db'];
+        plotOpts = {};
+        tooltipOpts = {
+          theme: 'dark',
+          x: { show: true },
+          y: {
+            formatter: function(val) {
+              const sign = val >= 0 ? '+' : '';
+              const color = val >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+              return `<span style="color: ${color}; font-weight: bold; font-family: 'JetBrains Mono';">₹${sign}${val.toLocaleString('en-IN', {minimumFractionDigits: 2})}</span>`;
+            }
+          },
+          style: {
+            fontSize: '12px',
+            fontFamily: 'Outfit, sans-serif'
+          }
+        };
+      }
+      
+      const xCategories = isCandle ? undefined : data.map(d => d.time);
+      
+      const options = {
+        series: [{
+          name: isCandle ? 'Portfolio OHLC MTM' : 'Cumulative MTM',
+          data: seriesData
+        }],
+        chart: {
+          type: chartType,
+          height: 380,
+          background: 'transparent',
+          foreColor: '#8fa0c2',
+          toolbar: { show: false },
+          animations: { enabled: true }
+        },
+        theme: { mode: 'dark' },
+        dataLabels: {
+          enabled: false
+        },
+        stroke: strokeOpts,
+        fill: fillOpts,
+        colors: colorsOpts,
+        plotOptions: plotOpts,
+        grid: {
+          borderColor: '#263554',
+          strokeDashArray: 3,
+          xaxis: { lines: { show: false } },
+          yaxis: { lines: { show: true } }
+        },
+        xaxis: {
+          categories: xCategories,
+          type: isCandle ? 'category' : undefined,
+          tickAmount: 15,
+          axisBorder: { show: true, color: '#263554' },
+          axisTicks: { show: true, color: '#263554' },
+          labels: {
+            style: { fontFamily: 'Outfit, sans-serif', fontSize: '11px' }
+          }
+        },
+        yaxis: {
+          labels: {
+            formatter: function(val) {
+              return '₹' + Math.round(val).toLocaleString('en-IN');
+            },
+            style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '11px' }
+          }
+        },
+        // Draw the zero line
+        annotations: {
+          yaxis: [{
+            y: 0,
+            borderColor: '#5c6b8c',
+            borderWidth: 1.5,
+            dashArray: 4,
+            label: {
+              borderColor: 'transparent',
+              style: { color: '#8fa0c2', background: '#090d16', fontSize: '10px', fontWeight: 600 },
+              text: 'Neutral'
+            }
+          }]
+        },
+        tooltip: tooltipOpts
+      };
+
+      if (cumulativeChart) {
+        cumulativeChart.destroy();
+      }
+      cumulativeChart = new ApexCharts(container, options);
+      cumulativeChart.render();
+    }
+
+    // 7. Draw the Individual MTM Grid Cards
+    function drawIndividualGrid(selected) {
+      const container = document.getElementById('ind-grid');
+      container.innerHTML = '';
+      
+      selected.forEach(t => {
+        const cache = tradeDataCache[t.id];
+        if (!cache) return;
+        
+        const card = document.createElement('div');
+        card.className = 'ind-card';
+        
+        const pts = cache.side === 'SELL' ? (cache.entryPrice - cache.exitPrice) : (cache.exitPrice - cache.entryPrice);
+        const ptsStr = (pts >= 0 ? '+' : '') + pts.toFixed(2) + ' pts';
+        const pnlStr = (cache.pnl >= 0 ? '+' : '') + cache.pnl.toFixed(2);
+        
+        // Link to the main trade candlestick view for deeper investigation
+        const viewLink = `/trade-chart?sym=${encodeURIComponent(t.sym)}&side=${t.entry}&entry=${cache.entryPrice}&exit=${cache.exitPrice}&et=${t.entry_time}&xt=${t.exit_time || ''}&qty=${t.qty}&date=${document.getElementById('date-select').value}`;
+        
+        card.innerHTML = `
+          <div class="ind-card-header">
+            <div style="display:flex; flex-direction:column; gap:2px;">
+              <a href="${viewLink}" target="_blank" class="ind-card-title" title="Open full chart view">${cache.sym}</a>
+              <div class="ind-card-meta">
+                <span class="badge ${cache.side === 'SELL' ? 'badge-sell' : 'badge-buy'}">${cache.side}</span>
+                <span>Qty: ${cache.qty}</span>
+                <span class="trade-strat">${t.strategy || 'manual'}</span>
+              </div>
+            </div>
+            <div style="text-align: right;">
+              <div class="trade-pnl ${cache.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-size: 14px; font-weight: 700;">₹${pnlStr}</div>
+              <div style="font-size: 10px; color: var(--text-muted); font-weight:500;">${ptsStr}</div>
+            </div>
+          </div>
+          
+          <div class="ind-card-stats">
+            <div>
+              <div class="ind-stat-lbl">Run-up</div>
+              <div class="ind-stat-val pnl-pos" title="Peak MTM reached during trade">₹${Math.round(cache.runUp)}</div>
+            </div>
+            <div>
+              <div class="ind-stat-lbl">Drawdown</div>
+              <div class="ind-stat-val pnl-neg" title="Lowest MTM reached during trade">₹${Math.round(cache.runDown)}</div>
+            </div>
+            <div>
+              <div class="ind-stat-lbl">Duration</div>
+              <div class="ind-stat-val" style="color: var(--color-blue);">${calculateDuration(cache.entryTime, cache.exitTime)}</div>
+            </div>
+          </div>
+          
+          <div class="ind-chart-container" id="chart-ind-${t.id}"></div>
+        `;
+        
+        container.appendChild(card);
+        
+        // Render the small line chart inside this card
+        setTimeout(() => {
+          renderIndividualSparkline(t.id, cache);
+        }, 10);
+      });
+    }
+
+    function renderIndividualSparkline(tradeId, cache) {
+      const container = document.getElementById(`chart-ind-${tradeId}`);
+      if (!container) return;
+      
+      const mtmData = cache.mtmSeries;
+      if (mtmData.length === 0) {
+        container.innerHTML = '<div style="color: var(--text-muted); font-size: 11px; text-align: center; padding-top: 50px;">No intraday candles found</div>';
+        return;
+      }
+      
+      const seriesData = mtmData.map(d => {
+        return {
+          x: d.timeStr,
+          y: [d.open, d.high, d.low, d.close]
+        };
+      });
+      
+      const options = {
+        series: [{
+          name: 'Running OHLC MTM',
+          data: seriesData
+        }],
+        chart: {
+          type: 'candlestick',
+          height: 140,
+          toolbar: { show: false },
+          animations: { enabled: false },
+          sparkline: { enabled: false }
+        },
+        plotOptions: {
+          candlestick: {
+            colors: {
+              upward: '#2ecc71',
+              downward: '#e74c3c'
+            },
+            wick: {
+              useFillColor: true
+            }
+          }
+        },
+        dataLabels: {
+          enabled: false
+        },
+        stroke: {
+          width: [1]
+        },
+        grid: {
+          show: true,
+          borderColor: '#263554',
+          strokeDashArray: 2,
+          padding: { left: 10, right: 10, top: 0, bottom: 0 }
+        },
+        xaxis: {
+          type: 'category',
+          labels: {
+            show: true,
+            style: { fontFamily: 'Outfit, sans-serif', fontSize: '9px', colors: '#8fa0c2' },
+            tickAmount: 4
+          },
+          axisBorder: { show: false },
+          axisTicks: { show: false }
+        },
+        yaxis: {
+          labels: {
+            show: true,
+            formatter: function(val) {
+              return '₹' + Math.round(val).toLocaleString('en-IN');
+            },
+            style: { fontFamily: 'JetBrains Mono, monospace', fontSize: '9px', colors: '#8fa0c2' }
+          }
+        },
+        tooltip: {
+          theme: 'dark',
+          style: { fontSize: '11px', fontFamily: 'Outfit, sans-serif' },
+          custom: function({ seriesIndex, dataPointIndex, w }) {
+            const ohlc = w.config.series[seriesIndex].data[dataPointIndex].y;
+            const time = w.config.series[seriesIndex].data[dataPointIndex].x;
+            const open = ohlc[0], high = ohlc[1], low = ohlc[2], close = ohlc[3];
+            const change = close - open;
+            const color = close >= 0 ? 'var(--color-green)' : 'var(--color-red)';
+            return `
+              <div style="padding: 8px; background: var(--bg-panel); border: 1px solid var(--border-color); border-radius: 4px; font-family: var(--font-sans);">
+                <div style="font-size: 10px; color: var(--text-muted); margin-bottom: 4px;">Time: <b>${time}</b></div>
+                <div style="display:grid; grid-template-columns: auto auto; gap: 2px 8px; font-size:11px; font-family: var(--font-mono);">
+                  <span>Open:</span><span>₹${open.toFixed(1)}</span>
+                  <span>High:</span><span style="color:var(--color-green);">₹${high.toFixed(1)}</span>
+                  <span>Low:</span><span style="color:var(--color-red);">₹${low.toFixed(1)}</span>
+                  <span>Close:</span><span style="color:${color}; font-weight:bold;">₹${close.toFixed(1)}</span>
+                </div>
+              </div>
+            `;
+          }
+        }
+      };
+      
+      const chart = new ApexCharts(container, options);
+      chart.render();
+    }
+
+    // 8. Populate the Metrics comparison table
+    function drawMetricsTable(selected) {
+      const body = document.getElementById('metrics-table-body');
+      body.innerHTML = '';
+      
+      selected.forEach(t => {
+        const cache = tradeDataCache[t.id];
+        if (!cache) return;
+        
+        const tr = document.createElement('tr');
+        
+        const pts = cache.side === 'SELL' ? (cache.entryPrice - cache.exitPrice) : (cache.exitPrice - cache.entryPrice);
+        const ptsStr = (pts >= 0 ? '+' : '') + pts.toFixed(2);
+        const pnlStr = (cache.pnl >= 0 ? '+' : '') + cache.pnl.toFixed(2);
+        
+        // Efficiency = How close we exited relative to the peak run-up
+        // If runup was 1000, and final PnL was 800, efficiency is 80%.
+        // If final PnL is negative, efficiency is 0%.
+        let efficiency = 0;
+        if (cache.runUp > 0 && cache.pnl > 0) {
+          efficiency = Math.round((cache.pnl / cache.runUp) * 100);
+        }
+        let effColor = 'var(--text-muted)';
+        if (efficiency >= 80) effColor = 'var(--color-green)';
+        else if (efficiency >= 50) effColor = 'var(--color-blue)';
+        else if (efficiency > 0) effColor = '#fcd34d';
+
+        // Link to the main trade candlestick view
+        const viewLink = `/trade-chart?sym=${encodeURIComponent(t.sym)}&side=${t.entry}&entry=${cache.entryPrice}&exit=${cache.exitPrice}&et=${t.entry_time}&xt=${t.exit_time || ''}&qty=${t.qty}&date=${document.getElementById('date-select').value}`;
+
+        tr.innerHTML = `
+          <td><a href="${viewLink}" target="_blank" style="color:var(--text-main); font-weight:600; text-decoration:none;" title="View candlestick chart">${cache.sym}</a></td>
+          <td><span class="badge ${cache.side === 'SELL' ? 'badge-sell' : 'badge-buy'}">${cache.side}</span></td>
+          <td class="mono">${cache.qty}</td>
+          <td style="font-size: 11.5px; color: var(--text-muted);">${cache.entryTime} → ${cache.exitTime}</td>
+          <td class="mono">₹${cache.entryPrice.toFixed(2)}</td>
+          <td class="mono">₹${(cache.exitPrice || 0).toFixed(2)}</td>
+          <td class="mono pnl-pos" style="font-weight:600;">₹${Math.round(cache.runUp)} <span style="font-size:9.5px; color:var(--text-muted); font-weight:normal;">(${cache.runUpTime})</span></td>
+          <td class="mono pnl-neg" style="font-weight:600;">₹${Math.round(cache.runDown)} <span style="font-size:9.5px; color:var(--text-muted); font-weight:normal;">(${cache.runDownTime})</span></td>
+          <td class="mono ${cache.pnl >= 0 ? 'pnl-pos' : 'pnl-neg'}" style="font-weight:700;">₹${pnlStr} <span style="font-size:9.5px; font-weight:normal;">(${ptsStr} pts)</span></td>
+          <td>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-weight:700; color:${effColor};">${cache.pnl > 0 ? (efficiency + '%') : '—'}</span>
+              ${cache.pnl > 0 ? `<div style="flex:1; width:50px; height:4px; background:var(--border-color); border-radius:2px; overflow:hidden;"><div style="width:${efficiency}%; height:100%; background:${effColor};"></div></div>` : ''}
+            </div>
+          </td>
+        `;
+        
+        body.appendChild(tr);
+      });
+    }
+
+    // Helper functions
+    function formatISTTime(t) {
+      const d = new Date(t * 1000);
+      const h = String(d.getUTCHours()).padStart(2, '0');
+      const m = String(d.getUTCMinutes()).padStart(2, '0');
+      return `${h}:${m}`;
+    }
+
+    function calculateDuration(start, end) {
+      if (!start || !end || end === '—' || end === 'exit') return '—';
+      const sParts = start.split(':');
+      const eParts = end.split(':');
+      if (sParts.length < 2 || eParts.length < 2) return '—';
+      
+      const diffMins = (parseInt(eParts[0], 10) * 60 + parseInt(eParts[1], 10)) - 
+                       (parseInt(sParts[0], 10) * 60 + parseInt(sParts[1], 10));
+                       
+      if (diffMins < 60) return `${diffMins}m`;
+      const hrs = Math.floor(diffMins / 60);
+      const mins = diffMins % 60;
+      return `${hrs}h ${mins}m`;
+    }
+
+    function switchPane(paneId) {
+      // Toggle button states
+      const buttons = document.querySelectorAll('.tab-nav-btn');
+      buttons.forEach(btn => {
+        btn.classList.remove('active');
+        if (paneId === 'pane-cumulative' && btn.textContent.includes('Cumulative')) btn.classList.add('active');
+        if (paneId === 'pane-individual' && btn.textContent.includes('Individual')) btn.classList.add('active');
+        if (paneId === 'pane-metrics' && btn.textContent.includes('Metrics')) btn.classList.add('active');
+      });
+
+      // Toggle panels
+      document.querySelectorAll('.tab-pane').forEach(pane => {
+        pane.classList.remove('active');
+      });
+      document.getElementById(paneId).classList.add('active');
+      currentPaneId = paneId;
+
+      // Re-trigger window resize to let ApexCharts resize correctly inside active pane
+      setTimeout(() => {
+        window.dispatchEvent(new Event('resize'));
+      }, 50);
+    }
+
+    function clearDashboardStats() {
+      document.getElementById('stat-net-pnl').textContent = '₹0.00';
+      document.getElementById('stat-net-pnl').className = 'stat-val';
+      document.getElementById('stat-peak-runup').textContent = '₹0.00';
+      document.getElementById('stat-max-drawdown').textContent = '₹0.00';
+    }
+
+    function showLoading(txt, progress) {
+      document.getElementById('loading-overlay').style.display = 'flex';
+      document.getElementById('loading-txt').textContent = txt;
+      document.getElementById('loading-progress').style.width = `${progress}%`;
+    }
+
+    function updateLoadingMsg(txt, progress) {
+      document.getElementById('loading-txt').textContent = txt;
+      document.getElementById('loading-progress').style.width = `${progress}%`;
+    }
+
+    function hideLoading() {
+      document.getElementById('loading-overlay').style.display = 'none';
+    }
+
+    function showEmptyState(msg) {
+      hideLoading();
+      clearDashboardStats();
+      document.getElementById('cum-chart').innerHTML = `<div class="empty-state"><span class="empty-icon">📭</span><div>${msg}</div></div>`;
+      document.getElementById('ind-grid').innerHTML = `<div class="empty-state"><span class="empty-icon">📭</span><div>${msg}</div></div>`;
+      document.getElementById('metrics-table-body').innerHTML = `<tr><td colspan="10" style="text-align: center; color: var(--text-muted);">${msg}</td></tr>`;
+    }
+  </script>
+</body>
+</html>

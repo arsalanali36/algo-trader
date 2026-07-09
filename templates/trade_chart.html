@@ -2,7 +2,7 @@
 <html><head>
 <meta charset="utf-8"><title>Trade Chart</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="https://unpkg.com/lightweight-charts@4.1.3/dist/lightweight-charts.standalone.production.js"></script>
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
   body{margin:0;background:#0d1117;color:#e6edf3;font-family:-apple-system,Segoe UI,Roboto,sans-serif}
   .hdr{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:12px 18px;border-bottom:1px solid #21262d}
@@ -26,14 +26,20 @@
   #watchlist-title{padding:10px 14px; border-bottom:1px solid #21262d; font-size:11px; text-transform:uppercase; color:#8b949e; font-weight:700; letter-spacing:0.5px; display:flex; align-items:center; justify-content:space-between; flex-shrink:0}
   #wl-toggle{position:absolute; top:50%; right:230px; transform:translateY(-50%); width:18px; height:44px; background:#21262d; border:1px solid #30363d; border-right:none; border-radius:6px 0 0 6px; color:#8b949e; cursor:pointer; font-size:11px; z-index:5; display:flex; align-items:center; justify-content:center; transition:right .15s ease}
   #watchlist.collapsed ~ #wl-toggle{right:0}
+  #resetView,#autoRefresh{cursor:pointer;font-size:12px;padding:4px 12px;border-radius:12px;border:1px solid #30363d;background:#21262d;color:#e6edf3;font-weight:600}
+  #resetView:hover,#autoRefresh:hover{background:#30363d}
+  #autoRefresh.on{border-color:#238636;color:#3fb950}
 </style></head>
 <body>
   <div class="hdr">
     <h1 id="sym">Trade Chart</h1>
     <span class="pill" id="side">—</span>
+    <span class="pill" id="dir">—</span>
     <span class="muted" id="px">—</span>
     <span class="pill" id="pnl">—</span>
-    <span class="muted" id="date" style="margin-left:auto"></span>
+    <button id="autoRefresh" title="Live auto-refresh — data har 15s update hoti hai, view disturb nahi hota (analysis ke waqt band kar sakte ho)" style="margin-left:auto">🔄 Auto: ON</button>
+    <button id="resetView" title="Zoom/pan default view pe reset karo (normal refresh aapka view yaad rakhega)">⟲ Reset View</button>
+    <span class="muted" id="date"></span>
   </div>
   <div id="msg" style="display:none"></div>
   <div id="body-row" style="display:flex; height:calc(100vh - 110px); position:relative;">
@@ -61,6 +67,60 @@
     <button id="wl-toggle" title="Toggle watchlist">▶</button>
   </div>
 <script>
+// ── Chart-view persistence (per-trade pan/zoom memory) ─────────────────────
+// Normal refresh → restore the exact visible time-range the user left each pane
+// at (price scale stays auto, so it re-fits the same candles = same picture).
+// ⟲ Reset View button → clear the saved view + fitContent() (default behaviour).
+// Keyed per trade (sym+date+entry/exit time) so navigating to another trade
+// doesn't inherit a stale range.
+window.CVS = (function(){
+  const q = new URLSearchParams(location.search);
+  const key = 'tcv:' + [q.get('sym')||'', q.get('date')||'', q.get('et')||'', q.get('xt')||''].join('|');
+  const reg = {};
+  function _load(){ try { return JSON.parse(localStorage.getItem(key)||'{}'); } catch(e){ return {}; } }
+  function _save(o){ try { localStorage.setItem(key, JSON.stringify(o)); } catch(e){} }
+  function register(which, chart){
+    const ts = chart.timeScale();
+    const st = { restoring:false };
+    reg[which] = { chart, st };
+    // Persist any USER-driven pan/zoom (ignore our own programmatic restores).
+    ts.subscribeVisibleLogicalRangeChange(r => {
+      if (st.restoring || !r) return;
+      const o = _load(); o[which] = { from:r.from, to:r.to }; _save(o);
+    });
+    refit(which); // initial: restore saved range if present, else leave fitted
+  }
+  function refit(which){
+    const e = reg[which]; if(!e) return;
+    const saved = _load()[which];
+    e.st.restoring = true;
+    try {
+      if (saved) e.chart.timeScale().setVisibleLogicalRange(saved);
+      else e.chart.timeScale().fitContent();
+    } catch(err){}
+    setTimeout(()=>{ e.st.restoring = false; }, 250);
+  }
+  function reset(){
+    localStorage.removeItem(key);
+    Object.values(reg).forEach(e => {
+      e.st.restoring = true;
+      try {
+        e.chart.timeScale().fitContent();
+        e.chart.priceScale('right').applyOptions({ autoScale:true }); // undo any manual price drag
+      } catch(err){}
+      setTimeout(()=>{ e.st.restoring = false; }, 250);
+    });
+  }
+  // Temporarily ignore programmatic range changes (e.g. auto-refresh setData)
+  // so they don't get saved as if the user panned.
+  function pauseSave(ms){ Object.values(reg).forEach(e => { e.st.restoring = true; setTimeout(()=>{ e.st.restoring = false; }, ms||500); }); }
+  return { register, refit, reset, pauseSave };
+})();
+document.addEventListener('DOMContentLoaded', () => {
+  const b = document.getElementById('resetView');
+  if (b) b.addEventListener('click', () => window.CVS.reset());
+});
+
 (function(){
   const q = new URLSearchParams(location.search);
   const sym = q.get('sym')||'', side=(q.get('side')||'').toUpperCase();
@@ -70,6 +130,16 @@
   const sideEl=document.getElementById('side');
   sideEl.textContent = side||'—';
   sideEl.style.color = side==='SELL'?'#f85149':'#3fb950';
+  // Trade direction (bullish/bearish view): SELL PE / BUY CE = LONG ; SELL CE / BUY PE = SHORT
+  const optType = /-CE$/i.test(sym) ? 'CE' : (/-PE$/i.test(sym) ? 'PE' : '');
+  const tradeDir = optType ? (((side==='BUY') === (optType==='CE')) ? 'LONG' : 'SHORT') : '';
+  const dirEl = document.getElementById('dir');
+  if (tradeDir) {
+    dirEl.textContent = tradeDir==='LONG' ? '▲ LONG' : '▼ SHORT';
+    dirEl.style.color = tradeDir==='LONG' ? '#3fb950' : '#f85149';
+    dirEl.style.borderColor = tradeDir==='LONG' ? '#238636' : '#8b3a34';
+    dirEl.title = 'SELL PE / BUY CE = LONG (bullish) · SELL CE / BUY PE = SHORT (bearish)';
+  } else { dirEl.style.display = 'none'; }
   document.getElementById('px').textContent = (entry?entry.toFixed(2):'—')+'  →  '+(exit?exit.toFixed(2):'—')+(et?('   ('+et+' → '+xt+')'):'');
   // P&L: SELL = entry-exit, BUY = exit-entry
   const pts = side==='SELL' ? (entry-exit) : (exit-entry);
@@ -145,7 +215,8 @@
     return { sma, upper, lower };
   }
   
-  fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):'')+(tf?('&tf='+tf):''))
+  const strategy = q.get('strategy')||'';   // Task 8 — disambiguate the opening leg when 2 strategies traded the same contract same-day
+  fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):'')+(tf?('&tf='+tf):'')+(strategy?('&strategy='+encodeURIComponent(strategy)):''))
     .then(r=>r.json()).then(d=>{
       document.getElementById('date').textContent = d.date||'';
       if(!d.ok){ showMsg(d.msg||'Data nahi mila'); return; }
@@ -170,6 +241,7 @@
       const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(d.candles);
+      window._premSeries = s; // ref for live auto-refresh
       const mk=[];
       const isSell = side==='SELL';
       if(d.entry_mk) {
@@ -178,7 +250,7 @@
           position: isSell?'aboveBar':'belowBar',
           color: isSell?'#f85149':'#3fb950',
           shape: isSell?'arrowDown':'arrowUp',
-          text: 'Entry '+side+' ₹'+entry.toFixed(2)
+          text: 'Entry '+side+(tradeDir?(' · '+tradeDir):'')+' ₹'+entry.toFixed(2)
         });
       }
       if(d.exit_mk) {
@@ -245,9 +317,43 @@
       // plottable on this premium axis). Solid so they stand out from the
       // dashed entry/exit lines.
       const _slPx = parseFloat(q.get('sl')||''), _tpPx = parseFloat(q.get('tp')||'');
-      if(isFinite(_slPx) && _slPx>0) s.createPriceLine({price:_slPx, color:'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL'});
-      if(isFinite(_tpPx) && _tpPx>0) s.createPriceLine({price:_tpPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
+      // Task 8 — MOVING trailing/aggressive SL. When the server reconstructs a
+      // stepped SL path (aggressive Default-TSL or trailing-points), draw it as a
+      // live stepped line (blue = trailing, orange = aggressive-phase tail) instead
+      // of a single flat SL price-line. Static SL types still use the flat line.
+      const _slSeries = d.sl_series;
+      if(_slSeries && _slSeries.series && _slSeries.series.length){
+        const STEP = (LightweightCharts.LineType && LightweightCharts.LineType.WithSteps) || 1;
+        const pts = _slSeries.series;
+        // aggressive turns on once and stays on (peak only ratchets up) → contiguous
+        // tail. Split into a blue head + orange tail sharing the boundary point so
+        // the line stays continuous.
+        let firstAgg = pts.findIndex(p=>p.agg);
+        const bluePts = firstAgg === -1 ? pts : pts.slice(0, firstAgg+1);
+        const orangePts = firstAgg === -1 ? [] : pts.slice(firstAgg);
+        const mk = arr => arr.map(p=>({time:p.time, value:p.value}));
+        if(bluePts.length){
+          chart.addLineSeries({color:'#58a6ff', lineWidth:2, lineType:STEP,
+            crosshairMarkerVisible:false, title:'Trailing SL'}).setData(mk(bluePts));
+        }
+        if(orangePts.length){
+          chart.addLineSeries({color:'#e3a008', lineWidth:2, lineType:STEP,
+            crosshairMarkerVisible:false, title:'Aggressive SL'}).setData(mk(orangePts));
+        }
+        // current SL label at the last point
+        const last = pts[pts.length-1];
+        if(last) s.createPriceLine({price:last.value, color:last.agg?'#e3a008':'#58a6ff',
+          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'SL now'});
+        // target line (aggressive profile only)
+        if(isFinite(_slSeries.target) && _slSeries.target>0)
+          s.createPriceLine({price:_slSeries.target, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
+      } else {
+        // No reconstructed path → keep the original flat SL/Target price-lines.
+        if(isFinite(_slPx) && _slPx>0) s.createPriceLine({price:_slPx, color:'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL'});
+        if(isFinite(_tpPx) && _tpPx>0) s.createPriceLine({price:_tpPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
+      }
       chart.timeScale().fitContent();
+      window.CVS && window.CVS.register('right', chart); // restore saved view / enable pan-zoom memory
       window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
     }).catch(e=>showMsg('Error: '+e.message));
 })();
@@ -259,6 +365,9 @@
   const dt = q.get('date')||'';
   const et = q.get('et')||'', xt = q.get('xt')||'';
   const strategy = q.get('strategy')||'';
+  const side = (q.get('side')||'').toUpperCase();
+  const _ot = /-CE$/i.test(sym) ? 'CE' : (/-PE$/i.test(sym) ? 'PE' : '');
+  const tradeDir = _ot ? (((side==='BUY') === (_ot==='CE')) ? 'LONG' : 'SHORT') : '';
   if (!sym) return;
   const root = sym.split('-')[0];
   document.getElementById('left-pane-title').textContent = root || 'Instrument';
@@ -297,7 +406,12 @@
       const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(uniq);
-      if (d.entry_mk) s.setMarkers([{time:d.entry_mk, position:'belowBar', color:'#58a6ff', shape:'circle', text:'Entry'}]);
+      window._leftSeries = s; // ref for live auto-refresh
+      if (d.entry_mk) s.setMarkers([{time:d.entry_mk,
+        position: tradeDir==='SHORT' ? 'aboveBar' : 'belowBar',
+        color: tradeDir==='SHORT' ? '#f85149' : (tradeDir==='LONG' ? '#3fb950' : '#58a6ff'),
+        shape: tradeDir==='SHORT' ? 'arrowDown' : (tradeDir==='LONG' ? 'arrowUp' : 'circle'),
+        text: 'Entry' + (tradeDir ? (' · '+tradeDir) : '')}]);
 
       // Zone shown as two horizontal price lines (not a filled box) — this
       // pane covers the FULL trading day, so price legitimately trades both
@@ -345,14 +459,15 @@
 
       chart.timeScale().fitContent();
       window._leftChart = chart;
+      window.CVS && window.CVS.register('left', chart); // restore saved view / enable pan-zoom memory
       // Re-measure on the next two frames — covers the case where the
       // flex layout's height wasn't settled yet at createChart() time.
       requestAnimationFrame(() => {
         chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
-        chart.timeScale().fitContent();
+        window.CVS ? window.CVS.refit('left') : chart.timeScale().fitContent();
         requestAnimationFrame(() => {
           chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
-          chart.timeScale().fitContent();
+          window.CVS ? window.CVS.refit('left') : chart.timeScale().fitContent();
         });
       });
       window.addEventListener('resize', ()=>chart.applyOptions({width: el.clientWidth, height: el.clientHeight}));
@@ -519,6 +634,50 @@
   hint.style.marginLeft = '8px';
   hint.textContent = `← / → (${idx+1}/${list.length})`;
   document.querySelector('.hdr').appendChild(hint);
+})();
+
+// ── Live auto-refresh (in-place data update, no page reload / no view jump) ──
+// Re-fetches both panes' candles every INTERVAL and setData()s them onto the
+// existing series — pan/zoom, markers, SL lines and P&L header all stay put;
+// only the candle data grows as new bars form. Toggle via header 🔄 button
+// (state persisted). Pauses while the tab is hidden. Default ON.
+(function(){
+  const btn = document.getElementById('autoRefresh');
+  if (!btn) return;
+  const LS = 'tradeChartAutoRefresh', INTERVAL = 15000;
+  let timer = null;
+  const isOn = () => localStorage.getItem(LS) !== '0'; // unset = ON by default
+  const q = new URLSearchParams(location.search);
+  const p = k => q.get(k) || '';
+  const base = 'trad_sym=' + encodeURIComponent(p('sym')) + '&et=' + p('et') + '&xt=' + p('xt')
+    + (p('date') ? ('&date=' + p('date')) : '')
+    + (p('strategy') ? ('&strategy=' + encodeURIComponent(p('strategy'))) : '');
+  function _dedupe(cs){
+    const out = [], seen = new Set();
+    cs.forEach(c => { if (!seen.has(c.time)) { seen.add(c.time); out.push(c); } });
+    out.sort((a,b) => a.time - b.time);
+    return out;
+  }
+  function tick(){
+    if (document.hidden || !isOn()) return;
+    window.CVS && window.CVS.pauseSave(800); // don't let setData drift the saved view
+    fetch('/api/trade-chart-data?' + base + (p('tf') ? ('&tf=' + p('tf')) : ''))
+      .then(r => r.json()).then(d => {
+        if (d && d.ok && d.candles && d.candles.length && window._premSeries)
+          window._premSeries.setData(_dedupe(d.candles));
+      }).catch(()=>{});
+    fetch('/api/trade-chart-underlying-data?' + base)
+      .then(r => r.json()).then(d => {
+        if (d && d.ok && d.candles && d.candles.length && window._leftSeries)
+          window._leftSeries.setData(_dedupe(d.candles));
+      }).catch(()=>{});
+  }
+  function start(){ stop(); if (isOn()) timer = setInterval(tick, INTERVAL); }
+  function stop(){ if (timer) { clearInterval(timer); timer = null; } }
+  function paint(){ btn.textContent = isOn() ? '🔄 Auto: ON' : '⏸ Auto: OFF'; btn.classList.toggle('on', isOn()); }
+  btn.addEventListener('click', () => { localStorage.setItem(LS, isOn() ? '0' : '1'); paint(); start(); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden && isOn()) tick(); });
+  paint(); start();
 })();
 </script>
 </body></html>
