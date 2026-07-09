@@ -6546,9 +6546,10 @@
         const isActive = key === activeLogTab;
 
         let tabClassColor = '';
-        if (type === 'ema') { tabClassColor = 'blue-tab'; }
-        else if (type === 'rsi') { tabClassColor = 'active'; } // yellow/amber is standard active tab
-        else if (type === 'range') { tabClassColor = 'green-tab'; }
+        let emoji = '📄';   // content-panel header still uses a file-type icon
+        if (type === 'ema') { tabClassColor = 'blue-tab'; emoji = '📈'; }
+        else if (type === 'rsi') { tabClassColor = 'active'; emoji = '📉'; } // yellow/amber is standard active tab
+        else if (type === 'range') { tabClassColor = 'green-tab'; emoji = '↕️'; }
 
         // Status dot instead of a file-type icon: red = live, blue = paper,
         // grey = not active. Kept fresh by updateLogStatusDots() on the 5s poll.
