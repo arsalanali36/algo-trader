@@ -1618,13 +1618,11 @@
                 <option value="2">OTM+2 (+2)</option>
               </select></label>
             <label class="wh-f">Qty (lots/shares)<input id="wh-qty" type="number" min="1" value="1"></label>
-            <label class="wh-f">SL points<input id="wh-sl_points" type="number" min="0" value="30"></label>
-            <label class="wh-f">Target points<input id="wh-target_points" type="number" min="0" value="0"></label>
-            <label class="wh-f">Trail mode<select id="wh-trail_mode">
-                <option value="premium">Premium</option>
-                <option value="index">Index</option>
+            <label class="wh-f">SL Type — RMS Default-TSL govern<select id="wh-sl_type">
+                <option value="aggressive">Aggressive — trailing profit-lock</option>
+                <option value="legacy">Legacy — fixed ₹ SL</option>
+                <option value="dropdown">Dropdown — type + value</option>
               </select></label>
-            <label class="wh-f">Trail value<input id="wh-trail_value" type="number" min="0" value="20"></label>
             <label class="wh-f">Max trades/day<input id="wh-max_trades_per_day" type="number" min="1" value="2"></label>
             <label class="wh-f">No entry after<input id="wh-no_entry_after" value="15:15"></label>
             <label class="wh-f">Squareoff at<input id="wh-squareoff_at" value="15:15"></label>
@@ -4454,8 +4452,8 @@
     function _whDefaults() {
       return {
         active: true, broker: 'dhan', mode: 'paper', instrument: 'options', strike_offset: 0, qty: 1,
-        opt_action: 'SELL', long_opt_type: 'PE', short_opt_type: 'CE', sl_points: 30, target_points: 0,
-        trail_mode: 'premium', trail_value: 20, max_trades_per_day: 2, no_entry_after: '15:15', squareoff_at: '15:15'
+        opt_action: 'SELL', long_opt_type: 'PE', short_opt_type: 'CE', sl_type: 'aggressive',
+        max_trades_per_day: 2, no_entry_after: '15:15', squareoff_at: '15:15'
       };
     }
 
@@ -4504,10 +4502,7 @@
       set('wh-broker', c.broker || 'dhan');
       set('wh-strike_offset', String(c.strike_offset != null ? c.strike_offset : 0));
       set('wh-qty', c.qty != null ? c.qty : 1);
-      set('wh-sl_points', c.sl_points != null ? c.sl_points : 30);
-      set('wh-target_points', c.target_points != null ? c.target_points : 0);
-      set('wh-trail_mode', c.trail_mode || 'premium');
-      set('wh-trail_value', c.trail_value != null ? c.trail_value : 20);
+      set('wh-sl_type', c.sl_type || 'aggressive');
       set('wh-max_trades_per_day', c.max_trades_per_day != null ? c.max_trades_per_day : 2);
       set('wh-no_entry_after', c.no_entry_after || '15:15');
       set('wh-squareoff_at', c.squareoff_at || '15:15');
@@ -4557,10 +4552,7 @@
         broker: g('wh-broker'), mode: WH_MODE, instrument: g('wh-instrument'),
         strike_offset: parseInt(g('wh-strike_offset')),
         qty: parseInt(g('wh-qty')),
-        sl_points: parseFloat(g('wh-sl_points')),
-        target_points: parseFloat(g('wh-target_points')),
-        trail_mode: g('wh-trail_mode'),
-        trail_value: parseFloat(g('wh-trail_value')),
+        sl_type: g('wh-sl_type'),
         max_trades_per_day: parseInt(g('wh-max_trades_per_day')),
         no_entry_after: g('wh-no_entry_after'),
         squareoff_at: g('wh-squareoff_at'),

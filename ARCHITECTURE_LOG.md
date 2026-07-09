@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-07-09 — Webhook SL: fired-SL suppression root-fix + single-source consolidation (webhook SL → RMS Default-TSL, per-webhook SL-Type selector)
+**Status:** DONE + **VPS DEPLOYED** (algo-monitor + algo-dashboard restart; live strategy PIDs untouched (KillMode=process); 0 real open live positions during window; py_compile + logic-verify (mode_override tags + feature_on) PASS; SL Type dropdown served).
+**Kya:**
+Ek live webhook position ka DEFAULT-TSL SL FIRE hua par `_pre_exit_guard` ne "webhook already claimed/closed this leg" ke naam pe squareoff SKIP kar diya → position ~1hr unprotected (LESSONS.md TRAP #102). Do compounding bugs: (1) guard `release_position()==False` (webhook track nahi kar raha) ko "already closed" maan ke skip+blacklist kar raha tha → ab False pe skip nahi, authoritative `is_flat_fresh()` broker flat-check pe fall-through; (2) `_recover_wh_state()` sirf boot pe chalta tha → algo-monitor ki `_wh_state` me post-boot webhook entries kabhi nahi aati → `webhook_monitor_loop` se ab periodic (~30s, non-clobbering, `_lock`-guarded) recover.
+**+ Consolidation (user decision "sirf RMS Default-TSL"):** webhook ka apna `sl_points`/`target_points`/`trail_mode`/`trail_value` + `monitor_tick` ka premium/index trail HATA diya (dual-system overlap → chart-line ≠ real exit tha). Ab webhook config me ek **SL Type selector** (aggressive/legacy/dropdown); `_do_entry` → `default_instrument_sl_tags(..., mode_override=cfg["sl_type"])` chosen-type ke RMS tags stamp karta hai; `default_target_sl_config()` me naya `feature_on` (`=default_tsl_enabled`, global-mode-independent) + pos_monitor aggressive-firing gate `enabled`→`feature_on` (per-position AGGR_TSL — incl. per-webhook aggressive — global default se independent). Current config me `feature_on==enabled==True` → no-op, safe. `monitor_tick` sirf global-cap + 3:15 squareoff; TV-EXIT `handle_signal` se. Chart 3 lines waise hi (ab real enforced).
+**Layer:** execution / config / ui
+**Files:** `trader_dashboard.py` (`_pre_exit_guard` False→flat-check, `webhook_monitor_loop` periodic recover, aggressive gate feature_on), `webhook_executor.py` (`_do_entry` mode_override + own-SL removed, `monitor_tick` trail removed, `_recover_wh_state` non-clobber+lock, DEFAULTS/`_OVERRIDABLE` sl_type), `risk_gate.py` (`default_instrument_sl_tags` mode_override, `default_target_sl_config` feature_on), `templates/index.html` (webhook config SL Type dropdown).
+**Kyun:** User incident — SL line dikh rahi thi par exit nahi hua; dual SL system (webhook-own vs RMS) confusion + false-claim suppression. Goal: ek source-of-truth (RMS), chart-line = real exit, per-webhook SL-type choice. Safety: enforcement fix live-money-critical; deploy 0-open-position window me + no-op-under-current-config verify.
+**Depends on:** RMS Default-TSL (2026-07-04) + merged SL profile (2026-07-07); `is_flat_fresh` (TRAP #75).
+**Watch:** aggressive profit-lock trail webhook pe abhi live-observe nahi hui (stock-options pe pehle verified) — agli profit-then-reverse position pe confirm karna.
+
+---
+
 ## 2026-07-09 — Trade-chart viewer UX: Reset View + pan/zoom memory, self-hosted vendor libs, live auto-refresh, LONG/SHORT label
 **Status:** DONE + **VPS DEPLOYED** (`algo-dashboard` restart only — `KillMode=process` se child strategy PIDs untouched, `algo-monitor` position-guard separate service; har restart pe LIVE PIDs before==after + md5 local==VPS verified).
 **Kya:**

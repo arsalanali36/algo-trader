@@ -69,10 +69,8 @@ _DEFAULTS = {
     "instrument":      "options",     # "options" | "equity"
     "strike_offset":   0,             # ATM=0, ATM±N (options only)
     "qty":             1,             # options: lots (× lot_size); equity: shares
-    "trail_mode":      "premium",     # "premium" | "index"
-    "trail_value":     20,            # premium: points to trail; index: atr_mult
-    "target_points":   0,             # 0 = no fixed target (trail only)
-    "sl_points":       30,            # initial stop distance (premium points)
+    "sl_type":         "aggressive",  # RMS Default-TSL profile: aggressive|legacy|dropdown
+                                      # (own SL/Target/Trail consolidated into RMS, 2026-07-09)
     "max_trades_per_day": 2,          # per (strategy, symbol)
     "no_entry_after":  "15:15",       # IST — no new entry at/after this
     "squareoff_at":    "15:15",       # IST — force-exit all
@@ -90,8 +88,7 @@ _GLOBAL_DEFAULTS = {
 }
 
 # Execution params the Pine alert JSON may override per-signal.
-_OVERRIDABLE = ("strike_offset", "qty", "sl_points", "target_points",
-                "trail_value", "trail_mode", "opt_action",
+_OVERRIDABLE = ("strike_offset", "qty", "sl_type", "opt_action",
                 "long_opt_type", "short_opt_type", "instrument")
 
 # ── shared state ────────────────────────────────────────────────────────────────
@@ -421,7 +418,7 @@ def _recover_wh_state():
             direction  = "SHORT" if opt_action == "SELL" else "LONG"
             sl = (entry_px + sl_val if opt_action == "SELL" else entry_px - sl_val) if sl_val else None
             key = _key(strat, symbol)
-            _wh_state[key] = {
+            _entry = {
                 "strategy": strat, "symbol": symbol,
                 "position": direction, "direction": direction,
                 "opt_sec_id": str(p.get("sec_id") or ""),
@@ -438,6 +435,16 @@ def _recover_wh_state():
                 "instrument": p.get("instrument") or "options",
                 "_recovered": True,
             }
+            # Non-clobbering + thread-safe: _recover_wh_state() now also runs
+            # PERIODICALLY (not just at import) so webhook positions opened after
+            # this process booted get adopted into THIS process's monitor. If a
+            # key is already actively tracked, leave its live trailing state alone
+            # — only adopt positions we don't yet know. _lock guards against the
+            # pos_monitor thread reading _wh_state mid-mutation.
+            with _lock:
+                if _wh_state.get(key, {}).get("position"):
+                    continue
+                _wh_state[key] = _entry
             recovered += 1
         if recovered:
             _log(f"[RECOVER] {recovered} open webhook position(s) restored — SL at entry level, trail tightens as market moves")
@@ -650,7 +657,7 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         hedge_min_strikes = int(legacy_strikes)
     group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and (hedge_min_strikes or hedge_max_premium)) else ""
     try:
-        default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol)
+        default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol, mode_override=cfg.get("sl_type"))
     except Exception:
         default_sl_tags = []
     res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
@@ -669,34 +676,29 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
             min_strikes_override=legacy_strikes)
 
     entry_px = res["price"]
-    sl_pts   = float(cfg.get("sl_points", 0) or 0)
-    tgt_pts  = float(cfg.get("target_points", 0) or 0)
-    if opt_action == "BUY":
-        sl     = entry_px - sl_pts if sl_pts else None
-        target = entry_px + tgt_pts if tgt_pts else None
-    else:  # SELL (option selling): loss when premium rises
-        sl     = entry_px + sl_pts if sl_pts else None
-        target = entry_px - tgt_pts if tgt_pts else None
-
+    # SL / Target / Trailing consolidated into RMS Default-TSL (2026-07-09) — the
+    # webhook no longer runs its OWN premium/index trail. The chosen SL Type
+    # (cfg["sl_type"]: aggressive/legacy/dropdown) was stamped as RMS entry tags
+    # above (default_instrument_sl_tags mode_override), and pos_monitor_loop's
+    # DEFAULT-TSL / generic SL check enforces it — single source of truth, so the
+    # chart's SL line equals the real enforced exit. st keeps only position info
+    # for release_position() + TV-EXIT + 3:15 squareoff; sl/target stay None so
+    # monitor_tick never double-manages the stop.
     st = {
         "strategy": strat, "symbol": symbol,
         "position": direction, "direction": direction,
         "opt_sec_id": str(sec_id), "opt_trad_sym": trad_sym, "opt_qty": qty,
         "opt_action": opt_action, "entry_premium": entry_px,
-        "sl": sl, "target": target, "entry_spot": spot,
+        "sl": None, "target": None, "entry_spot": spot,
         "idx_sl": None, "idx_trail_dist": None,
         "entry_time": now.strftime("%H:%M"), "mode": mode,
         "broker": cfg.get("broker", risk_gate.default_broker()), "instrument": instrument,
     }
-    if cfg.get("trail_mode") == "index":
-        dist = _index_atr(symbol, mult=float(cfg.get("trail_value", 2) or 2)) or 30.0
-        st["idx_trail_dist"] = dist
-        st["idx_sl"] = spot - dist if direction == "LONG" else spot + dist
 
     _wh_state[key] = st
     _trades_today[key] = _ds.inc("webhook", key)
     _log(f"ENTRY {strat} {direction} {symbol} {opt_action} {qty} {trad_sym} @ {entry_px:.2f} "
-         f"(spot={spot:.2f} off={offset} SL={sl} TGT={target} mode={cfg.get('trail_mode')})")
+         f"(spot={spot:.2f} off={offset} SL=RMS:{cfg.get('sl_type','aggressive')})")
     return {"ok": True, "msg": f"{opt_action} {trad_sym} @ {entry_px:.2f}", "trade": st}
 
 
@@ -832,50 +834,12 @@ def monitor_tick():
                 _do_exit(strat, symbol, cfg, reason="SQUAREOFF_315")
                 continue
 
-            tv = float(cfg.get("trail_value", 0) or 0)
-            mode = cfg.get("trail_mode", "premium")
-
-            if mode == "index":
-                spot = _index_spot(symbol)
-                if spot is None:
-                    continue
-                dist = st.get("idx_trail_dist") or 30.0
-                if st["direction"] == "LONG":
-                    new = spot - dist
-                    if st.get("idx_sl") is None or new > st["idx_sl"]:
-                        st["idx_sl"] = new
-                    if spot <= st["idx_sl"]:
-                        _do_exit(strat, symbol, cfg, reason="IDX_TRAIL")
-                else:
-                    new = spot + dist
-                    if st.get("idx_sl") is None or new < st["idx_sl"]:
-                        st["idx_sl"] = new
-                    if spot >= st["idx_sl"]:
-                        _do_exit(strat, symbol, cfg, reason="IDX_TRAIL")
-                continue
-
-            # premium mode — trail on the option premium itself
-            prem = _current_premium(st["opt_sec_id"])
-            if prem is None:
-                continue
-            if st["opt_action"] == "BUY":      # long option: SL below, ratchet up
-                if tv:
-                    new = prem - tv
-                    if st.get("sl") is None or new > st["sl"]:
-                        st["sl"] = new
-                if st.get("sl") is not None and prem <= st["sl"]:
-                    _do_exit(strat, symbol, cfg, reason="TRAIL_SL")
-                elif st.get("target") and prem >= st["target"]:
-                    _do_exit(strat, symbol, cfg, reason="TARGET")
-            else:                              # short option: SL above, ratchet down
-                if tv:
-                    new = prem + tv
-                    if st.get("sl") is None or new < st["sl"]:
-                        st["sl"] = new
-                if st.get("sl") is not None and prem >= st["sl"]:
-                    _do_exit(strat, symbol, cfg, reason="TRAIL_SL")
-                elif st.get("target") and prem <= st["target"]:
-                    _do_exit(strat, symbol, cfg, reason="TARGET")
+            # SL / Target / Trailing are NOT handled here anymore — consolidated
+            # into RMS Default-TSL (2026-07-09). pos_monitor_loop enforces this
+            # position's chosen SL Type (aggressive/legacy/dropdown, stamped at
+            # entry) so there's a single source of truth and the chart's SL line
+            # equals the real enforced exit. monitor_tick keeps only the global
+            # cap + 3:15 squareoff above; TV-EXIT arrives via handle_signal.
 
 
 def status():

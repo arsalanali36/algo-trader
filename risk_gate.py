@@ -313,6 +313,12 @@ def default_target_sl_config():
     _en, _mode = default_sl_profile()
     return {
         "enabled": bool(_en and _mode == "aggressive"),
+        # feature_on = the aggressive TSL engine is switched on at all, regardless
+        # of whether 'aggressive' is the CURRENT global default mode. pos_monitor
+        # gates the aggressive firing on this + the per-position AGGR_TSL tag, so a
+        # position opened aggressive (incl. a per-webhook aggressive pick) keeps
+        # being managed even if the global default is later switched away.
+        "feature_on": bool(_en),
         "target_per_lot": _f("default_tsl_target_per_lot", 2000.0),
         "initial_sl_per_lot": _f("default_tsl_initial_sl_per_lot", 1000.0),
         "favour_step": _f("default_tsl_favour_step", 100.0),
@@ -902,7 +908,7 @@ def _strategy_day_pnl(strategy, unrealized_by_strat=None):
     return realized + float(unrealized_by_strat or 0)
 
 
-def default_instrument_sl_tags(strategy, symbol=None):
+def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
     """Default stop-loss & target tags, applied automatically to EVERY NEW position at entry time.
     Written/Modified by Antigravity AI.
     
@@ -920,6 +926,12 @@ def default_instrument_sl_tags(strategy, symbol=None):
     # → []. Applies to NEW positions only (existing open positions keep whatever
     # tags they already have — user's explicit call, mid-trade SL never changes).
     _en, _mode = default_sl_profile()
+    # Per-position mode override (2026-07-09) — a caller (e.g. a webhook config's
+    # own SL-Type selector) can make THIS position use a different one of the 3
+    # profiles (legacy/aggressive/dropdown) than the global RMS default, still
+    # using that profile's global ₹ values. None → follow the global default.
+    if mode_override in ("legacy", "aggressive", "dropdown"):
+        _en, _mode = True, mode_override
     if not _en:
         return []
     if _mode == "aggressive":

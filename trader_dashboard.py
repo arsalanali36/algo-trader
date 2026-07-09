@@ -4091,9 +4091,21 @@ def webhook_monitor_loop():
     """Trails SL / target / 3:15 squareoff for open TradingView-webhook positions."""
     import webhook_executor as wh
     import time
+    _cyc = 0
     while True:
         try:
             _ensure_feed_started()
+            # Periodically re-adopt webhook positions opened AFTER this process
+            # booted. _recover_wh_state() otherwise runs only once at import, so a
+            # webhook entry handled by the algo-dashboard process never reaches
+            # THIS (algo-monitor) process's _wh_state → its trailing SL never
+            # manages it AND release_position() falsely reports "not tracked",
+            # which made _pre_exit_guard suppress a real SL fire (root cause of the
+            # 2026-07-09 unenforced-SL incident). Non-clobbering — live trails are
+            # never reset. Fires immediately on start, then every ~30s (sleep 3s).
+            _cyc += 1
+            if _cyc % 10 == 1:
+                wh._recover_wh_state()
             wh.monitor_tick()
         except Exception as e:
             print("Webhook monitor error:", e)
@@ -4619,7 +4631,7 @@ def pos_monitor_loop():
                 import risk_gate as _rg_tsl
                 import dhan_master as _dm_tsl
                 _tslc = _rg_tsl.default_target_sl_config()
-                if _tslc["enabled"]:
+                if _tslc.get("feature_on"):
                     _tsl_dirty = False
                     # Only positions stamped AGGR_TSL at entry (opened while
                     # 'aggressive' was the chosen default SL mode) — so switching
@@ -5001,13 +5013,20 @@ def _pre_exit_guard(p, sec_id, exit_reason, _closed_ids, log=print):
     if (p.get("source") or "") == "webhook":
         try:
             import webhook_executor as _wh
-            claimed = _wh.release_position(sec_id=sec_id, trad_sym=p.get("sym"), reason=exit_reason)
-            if not claimed:
-                _closed_ids.add(p.get("id"))
-                log(f"[{exit_reason}] webhook already claimed/closed this leg — skipping", flush=True)
-                return True
+            # Tell the webhook monitor to back off (clears its in-memory state so
+            # it won't ALSO fire a closing order on this leg). release_position()
+            # returns True only if it WAS tracking this position; False means it
+            # simply doesn't know about it — most often because the position was
+            # opened AFTER this (algo-monitor) process booted, and _wh_state only
+            # recovered at import (cross-process gap → SL-suppressed-by-false-
+            # webhook-claim, root-fixed 2026-07-09). False is NOT evidence the leg
+            # is closed, so we must NOT skip on it — fall through to the
+            # authoritative fresh broker flat-check below (the real double-close
+            # guard). Previously this `return True` left a webhook position with a
+            # genuinely-fired SL completely unenforced.
+            _wh.release_position(sec_id=sec_id, trad_sym=p.get("sym"), reason=exit_reason)
         except Exception as _e:
-            log(f"[{exit_reason}] webhook claim failed: {_e}", flush=True)
+            log(f"[{exit_reason}] webhook release failed: {_e}", flush=True)
     if p.get("mode") != "live":
         return False
     try:
