@@ -1,0 +1,559 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Spec Builder — Master Prompt</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#12161f;--panel2:#171c27;--bd:#242c3a;--bd2:#1b2230;
+    --tx:#e6edf3;--mut:#8b949e;--pos:#3fb950;--neg:#f85149;--blue:#4f78ff;--teal:#2ee6a0;--yel:#f0c000;--vio:#a371f7}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.5}
+  .wrap{max-width:1100px;margin:0 auto;padding:18px 20px 70px}
+  .topbar{padding:12px 16px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;margin-bottom:14px}
+  .topbar h1{margin:0;font-size:17px}
+  .topbar p{margin:4px 0 0;color:var(--mut);font-size:12.5px}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:15px 17px;margin-bottom:14px}
+  .panel h3{margin:0 0 12px;font-size:13px;font-weight:700;color:var(--teal);text-transform:uppercase;letter-spacing:.5px}
+  .fld{margin-bottom:13px}
+  .fld label{display:block;font-size:12px;color:var(--mut);margin-bottom:5px;font-weight:600}
+  .fld .hint{color:var(--mut);font-weight:400;font-size:11px}
+  select,input[type=text],input[type=number]{width:100%;background:var(--panel2);border:1px solid var(--bd);
+    color:var(--tx);border-radius:7px;padding:8px 10px;font-size:13px;font-family:inherit}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chip{padding:6px 12px;border:1px solid var(--bd);border-radius:20px;background:var(--panel2);color:var(--mut);
+    font-size:12.5px;font-weight:600;cursor:pointer;user-select:none}
+  .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .chip.lock{background:#0c2a20;border-color:#124f3a;color:var(--teal);cursor:default}
+  .chip.dim{opacity:.4;cursor:not-allowed}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .toggle{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--tx);cursor:pointer}
+  .toggle input{width:auto}
+  .defbox{background:#0e1a17;border:1px solid #17402f;border-radius:8px;padding:10px 12px;font-size:11.5px;color:#9fdcc4;margin-bottom:12px}
+  .defbox b{color:var(--teal)}
+  .catgrp{margin-bottom:12px}
+  .catgrp .cattitle{font-size:11px;font-weight:700;color:var(--vio);text-transform:uppercase;letter-spacing:.4px;margin:0 0 6px}
+  .opt-item{display:block;padding:7px 11px;border:1px solid var(--bd);border-radius:8px;background:var(--panel2);
+    margin-bottom:5px;cursor:pointer;user-select:none}
+  .opt-item.on{background:#101c33;border-color:var(--blue)}
+  .opt-item .oi-name{font-size:12.5px;font-weight:700;color:var(--tx)}
+  .opt-item.on .oi-name{color:#9db8ff}
+  .opt-item .oi-desc{font-size:11px;color:var(--mut);margin-top:1px}
+  .exploreBox{background:#1a1330;border:1px solid #3a2a6a;border-radius:8px;padding:11px 13px;margin-bottom:12px}
+  .exploreBox .toggle b{color:var(--vio)}
+  .out{background:#0a0d13;border:1px solid var(--bd);border-radius:8px;padding:13px 14px;font-family:'Consolas',monospace;
+    font-size:12px;white-space:pre-wrap;color:#cbd5e1;max-height:560px;overflow:auto}
+  .btnrow{display:flex;gap:8px;margin-top:10px}
+  button.act{background:var(--blue);border:none;color:#fff;border-radius:7px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer}
+  button.act.ghost{background:var(--panel2);border:1px solid var(--bd);color:var(--tx)}
+  .tabs{display:flex;gap:6px;margin-bottom:10px}
+  .tab{padding:6px 12px;border-radius:7px 7px 0 0;background:var(--panel2);border:1px solid var(--bd);color:var(--mut);
+    font-size:12px;font-weight:600;cursor:pointer}
+  .tab.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  .engine{display:flex;gap:8px}
+  .engine .chip{flex:1;text-align:center}
+  @media(max-width:900px){.cols{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <h1>🧭 Strategy Spec Builder <span style="color:var(--mut);font-size:13px;font-weight:400">— master prompt generator</span></h1>
+    <p>Key cheezein choose karo → niche master-prompt + config auto-ban jayega. Ye Claude ko do (ya "use these settings" bolo) → strategy isi spec par banegi + validate hogi. Ab do engine hain: <b style="color:var(--blue)">Price-action</b> (spot signal → option) aur <b style="color:var(--vio)">Option-Chain</b> (OI / IV / straddle / strangle / VIX). Leverage locked OFF.</p>
+  </div>
+
+  <div class="cols">
+    <!-- LEFT: form -->
+    <div>
+      <div class="panel">
+        <h3>0 · Strategy engine</h3>
+        <div class="fld"><label>Kis kism ki strategy? <span class="hint">(dono ka prompt alag banega)</span></label>
+          <div class="chips engine" id="engine">
+            <span class="chip on" data-v="price">📈 Price-action → option exec</span>
+            <span class="chip" data-v="chain">⛓️ Option-Chain / structure</span></div>
+          <div class="hint" id="engineNote" style="margin-top:6px"></div></div>
+      </div>
+
+      <div class="panel">
+        <h3>1 · Instrument</h3>
+        <div class="fld"><label>Kis par trade? <span class="hint">(backtest surface bracket mein)</span></label>
+          <select id="inst">
+            <option value="nifty_index">NIFTY 50 — index (backtest: spot)</option>
+            <option value="banknifty_index">BANKNIFTY — index (backtest: spot)</option>
+            <option value="nifty_options">NIFTY ATM options (backtest: spot signal → ATM CE/PE)</option>
+            <option value="banknifty_options">BANKNIFTY ATM options (backtest: spot signal → ATM CE/PE)</option>
+            <option value="stock_options">Stock options (backtest: stock spot signal → ATM opt)</option>
+            <option value="equity">Equity / stock cash (backtest: stock)</option>
+          </select></div>
+        <div class="fld" id="symWrap"><label>Symbol(s) <span class="hint">(stock/equity ke liye)</span></label>
+          <input type="text" id="sym" placeholder="e.g. RELIANCE, TCS, HDFCBANK" value=""></div>
+      </div>
+
+      <!-- OPTION-CHAIN catalog (only in chain mode) -->
+      <div class="panel" id="chainPanel" style="display:none">
+        <h3>1B · Option-chain strategy catalog</h3>
+        <div class="exploreBox">
+          <label class="toggle"><input type="checkbox" id="optExplore" checked>
+            <span>🔍 <b>Explore ALL — ek-ek karke banao</b> (recommended)</span></label>
+          <div class="hint" style="margin-top:5px">ON = neeche saari families ka poora catalog prompt mein jaayega, Claude har ek strategy alag se banayega + validate karega, phir agli. OFF = sirf jo tumne select kiya wahi.</div>
+        </div>
+        <div id="optCatalog"></div>
+      </div>
+
+      <div class="panel">
+        <h3>2 · Trade style</h3>
+        <div class="fld"><label>Direction / bias</label>
+          <div class="chips" id="dir">
+            <span class="chip on" data-v="long+short">Long + Short</span>
+            <span class="chip" data-v="long">Long / bullish only</span>
+            <span class="chip" data-v="short">Short / bearish only</span>
+            <span class="chip" data-v="neutral">Neutral (non-directional)</span></div>
+          <div class="hint" style="margin-top:6px">Option sellers/condors ke liye "Neutral" theek hai.</div></div>
+        <div class="fld"><label>Mode</label>
+          <div class="chips" id="mode">
+            <span class="chip on" data-v="intraday">Intraday (3:15 exit)</span>
+            <span class="chip" data-v="positional">Positional (overnight)</span></div>
+          <div class="hint" id="modeNote" style="margin-top:6px"></div></div>
+        <div class="fld"><label>Timeframe / snapshot cadence <span class="hint">— ek ya zyada (multiple = Claude sab test karega)</span></label>
+          <div class="chips" id="tf">
+            <span class="chip" data-v="1m">1m</span><span class="chip" data-v="3m">3m</span>
+            <span class="chip on" data-v="5m">5m</span><span class="chip" data-v="15m">15m</span>
+            <span class="chip" data-v="1H">1H</span><span class="chip" data-v="1D">1D</span></div></div>
+      </div>
+
+      <div class="panel">
+        <h3>3 · Risk & sizing</h3>
+        <div class="fld"><label>Leverage</label>
+          <div class="chips"><span class="chip lock">🔒 NONE — 1x (notional ≤ capital)</span></div>
+          <div class="hint" style="margin-top:6px">Tumhari pref: no leverage. Position kabhi capital se bada nahi. Naked-sell = real Dhan margin se size hoga.</div></div>
+        <div class="row2">
+          <div class="fld"><label>Risk per trade</label>
+            <select id="risk"><option value="1.0">1.0% (safe)</option>
+              <option value="1.5" selected>1.5% (default)</option>
+              <option value="2.0">2.0%</option></select></div>
+          <div class="fld"><label>Starting capital</label>
+            <input type="text" id="cap" value="10,00,000"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>3B · Broker & real charges</h3>
+        <div class="fld"><label>Primary broker <span class="hint">(charges isi ke hisaab se simulate honge)</span></label>
+          <div class="chips" id="broker">
+            <span class="chip on" data-v="zerodha">🟦 Zerodha (primary)</span>
+            <span class="chip" data-v="dhan">🟧 Dhan</span></div></div>
+        <label class="toggle"><input type="checkbox" id="realCost" checked>
+          <span>💰 <b>Full real-cost simulation</b> — STT + exchange txn + GST + stamp + SEBI + brokerage per order (net P&L, not gross)</span></label>
+        <div class="defbox" style="margin-top:10px" id="chargeBox"></div>
+      </div>
+
+      <div class="panel">
+        <h3>4 · Exit logic</h3>
+        <div class="fld"><label>Exit style <span class="hint">— ek ya zyada (multiple = Claude sab compare karke best rakhega)</span></label>
+          <div class="chips" id="exit"></div></div>
+        <div class="fld" id="rrWrap"><label>Reward : Risk (RR) target <span class="hint">— win kam ho to bhi profit</span></label>
+          <select id="rr"><option value="1.5">1 : 1.5</option>
+            <option value="2.0" selected>1 : 2.0 (default — good)</option>
+            <option value="2.5">1 : 2.5</option><option value="3.0">1 : 3.0 (aggressive)</option></select></div>
+      </div>
+
+      <div class="panel" id="entryPanel">
+        <h3>5 · Entry idea (optional)</h3>
+        <div class="fld"><label>Entry approach <span class="hint">— khaali chhodo to Claude explore karega</span></label>
+          <select id="entry">
+            <option value="explore">Let Claude explore (recommended)</option>
+            <option value="trend">Trend-following (EMA / Supertrend)</option>
+            <option value="breakout">Breakout (Donchian / range)</option>
+            <option value="meanrev">Mean-reversion (RSI / BB fade)</option>
+            <option value="momentum">Momentum (ROC / ADX)</option>
+          </select></div>
+        <div class="fld"><label>Extra notes (freeform)</label>
+          <input type="text" id="notes" placeholder="e.g. only trade first 2 hours, avoid expiry day"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: targets + output -->
+    <div>
+      <div class="panel">
+        <h3>6 · Targets & validation gates</h3>
+        <div class="defbox">💡 <b>Good defaults:</b> Sharpe <b>≥ 1.0</b> good / ≥1.5 excellent · Max DD <b>≤ 20%</b> · min <b>100+ trades</b> (stats valid) · significance <b>p&lt;0.05</b> mandatory (warna sirf luck/beta). Option-sellers: win-rate high, RR low — RR gate lenient rakhna, DD + significance strict.</div>
+        <div class="row2">
+          <div class="fld"><label>Min Sharpe</label>
+            <select id="sh"><option value="1.0" selected>≥ 1.0 (good)</option>
+              <option value="1.5">≥ 1.5 (excellent)</option><option value="0.8">≥ 0.8 (lenient)</option></select></div>
+          <div class="fld"><label>Max Drawdown</label>
+            <select id="dd"><option value="15">≤ 15% (tight)</option>
+              <option value="20" selected>≤ 20% (default)</option><option value="30">≤ 30%</option></select></div>
+        </div>
+        <div class="row2">
+          <div class="fld"><label>Min trades</label>
+            <select id="mt"><option value="100" selected>≥ 100</option><option value="50">≥ 50</option><option value="200">≥ 200</option></select></div>
+          <div class="fld"><label>Min win-rate</label>
+            <select id="wr"><option value="0">any (RR covers it)</option><option value="40">≥ 40%</option><option value="50">≥ 50%</option><option value="65">≥ 65% (sellers)</option></select></div>
+        </div>
+        <label class="toggle"><input type="checkbox" id="gSig" checked> Statistical significance gate — <b>p &lt; 0.05</b> (mandatory)</label>
+        <label class="toggle" style="margin-top:7px"><input type="checkbox" id="gOpt" checked> Optimization (train / OOS split)</label>
+        <label class="toggle" style="margin-top:7px"><input type="checkbox" id="gMC" checked> Monte Carlo overfit check (original ≈ median)</label>
+        <div class="fld" style="margin-top:12px"><label>Data window</label>
+          <select id="data"><option value="max" selected>Max available (2022 → today, ~4.5yr)</option>
+            <option value="3y">Last 3 years</option><option value="2y">Last 2 years</option></select></div>
+      </div>
+
+      <div class="panel">
+        <h3>7 · Generated output</h3>
+        <div class="tabs"><span class="tab on" data-t="prompt">📝 Master Prompt</span><span class="tab" data-t="json">⚙️ Config JSON</span></div>
+        <div class="out" id="out"></div>
+        <div class="btnrow">
+          <button class="act" id="copy">📋 Copy</button>
+          <button class="act ghost" id="reset">↺ Reset defaults</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ---------- OPTION-CHAIN STRATEGY CATALOG ---------- */
+const OPT_FAMILIES = [
+  {cat:'A · Premium selling / VIX-crush (theta)', items:[
+    ['short_straddle','Short Straddle','ATM CE+PE dono sell — max theta, entry pe delta-neutral. High IV mein best.'],
+    ['short_strangle','Short Strangle','OTM CE+PE sell — straddle se wider, safer, kam credit.'],
+    ['iron_condor','Iron Condor','Short strangle + door OTM wings buy — defined risk, capped loss.'],
+    ['iron_fly','Iron Fly','Short straddle + wings — defined risk, condor se zyada credit.'],
+    ['calendar','Calendar / Time spread','Near-expiry sell + far-expiry buy (same strike) — theta + vega play.'],
+    ['iv_rank_sell','IV-rank / VIX-crush sell','Sirf tab sell karo jab India-VIX / IV-rank high ho; IV crush pe exit.'],
+    ['expiry_theta','Expiry-day theta (0DTE)','Expiry din decaying OTM sell, hard time-stops, ITM pe turant exit.'],
+  ]},
+  {cat:'B · Directional debit (buy premium)', items:[
+    ['long_straddle','Long Straddle','ATM CE+PE buy — big move / event se pehle, direction unknown.'],
+    ['long_strangle','Long Strangle','OTM CE+PE buy — straddle se sasta, bigger move chahiye.'],
+    ['bull_call','Bull Call Spread','ATM CE buy + OTM CE sell — bullish, defined risk/reward.'],
+    ['bear_put','Bear Put Spread','ATM PE buy + OTM PE sell — bearish, defined risk/reward.'],
+    ['ratio_spread','Ratio / Backspread','Unequal buy:sell legs — skew / directional-with-cushion.'],
+    ['long_butterfly','Long Butterfly','Pinning play — low cost, profit agar spot strike pe rahe.'],
+  ]},
+  {cat:'C · OI / PCR / data-driven', items:[
+    ['oi_sr','Max-OI Support/Resistance','Highest CE-OI strike = resistance, highest PE-OI = support; range trade.'],
+    ['pcr','PCR (Put-Call Ratio)','PCR extremes = contrarian; trend confirm; threshold-based signal.'],
+    ['oi_buildup','OI Buildup (4 states)','Long buildup / short buildup / short covering / long unwinding (price+OI ΔΔ).'],
+    ['max_pain','Max Pain','Expiry ke paas spot max-pain strike ki taraf drift — pin bias.'],
+    ['oi_momentum','Change-in-OI momentum','Sabse tez ΔOI wale strikes — smart-money direction follow.'],
+    ['oi_price_div','OI + Price divergence','Price up par OI gir raha = weak move → reversal signal.'],
+  ]},
+  {cat:'D · Greeks / delta-neutral', items:[
+    ['delta_neutral','Delta-neutral adjust','Net delta ~0 rakho, band toote to hedge/adjust (theta harvest).'],
+    ['gamma_scalp','Gamma scalping','Long gamma + spot ko dynamically hedge — realized>implied vol edge.'],
+  ]},
+];
+
+/* build catalog DOM */
+(function buildCatalog(){
+  const box=document.getElementById('optCatalog');
+  OPT_FAMILIES.forEach(fam=>{
+    const g=document.createElement('div'); g.className='catgrp';
+    const t=document.createElement('div'); t.className='cattitle'; t.textContent=fam.cat; g.appendChild(t);
+    fam.items.forEach(([key,name,desc])=>{
+      const it=document.createElement('div'); it.className='opt-item'; it.dataset.key=key; it.dataset.cat=fam.cat;
+      it.innerHTML='<div class="oi-name">'+name+'</div><div class="oi-desc">'+desc+'</div>';
+      it.onclick=()=>{ if(document.getElementById('optExplore').checked) return; it.classList.toggle('on'); render(); };
+      g.appendChild(it);
+    });
+    box.appendChild(g);
+  });
+})();
+
+function getOptStrategies(){
+  if(document.getElementById('optExplore').checked) return 'ALL';
+  const sel=[...document.querySelectorAll('#optCatalog .opt-item.on')].map(it=>{
+    const key=it.dataset.key;
+    for(const f of OPT_FAMILIES){const m=f.items.find(x=>x[0]===key); if(m) return {key,name:m[1],desc:m[2],cat:f.cat};}
+  }).filter(Boolean);
+  return sel.length?sel:'ALL';
+}
+
+/* ---------- chip groups ---------- */
+function chipGroup(id,multi){const g=document.getElementById(id);
+  g.querySelectorAll('.chip:not(.lock)').forEach(c=>c.onclick=()=>{
+    if(c.classList.contains('dim')) return;
+    if(multi){c.classList.toggle('on');
+      if(!g.querySelector('.chip.on'))c.classList.add('on');}   // keep at least one
+    else{g.querySelectorAll('.chip').forEach(x=>x.classList.remove('on'));c.classList.add('on');}
+    render()});
+  return ()=>multi?[...g.querySelectorAll('.chip.on')].map(x=>x.dataset.v)
+                  :(g.querySelector('.chip.on')||g.querySelector('.chip')).dataset.v}
+const getEngine=chipGroup('engine'), getDir=chipGroup('dir'), getMode=chipGroup('mode'),
+      getTf=chipGroup('tf',true), getBroker=chipGroup('broker');
+
+/* ---------- REAL INDIAN CHARGES (F&O options, current NSE rates) ---------- */
+const CHARGES={
+  zerodha:{name:'Zerodha', fno_brokerage:'₹20 flat per executed order (buy & sell each)', eq_delivery:'₹0 (free)'},
+  dhan:{name:'Dhan', fno_brokerage:'₹20 flat per executed order (buy & sell each)', eq_delivery:'₹0 (free)'},
+};
+/* statutory charges are IDENTICAL across brokers (regulatory) — only brokerage/DP differ */
+const STATUTORY_OPT=[
+  'STT: 0.10% on premium — SELL side only',
+  'Exchange txn (NSE): 0.03503% on premium — both sides',
+  'SEBI charges: ₹10 per crore (0.0001%) — both sides',
+  'Stamp duty: 0.003% on premium — BUY side only',
+  'GST: 18% on (brokerage + exchange txn + SEBI)',
+  'ITM options exercise/settlement: 0.125% STT on intrinsic — add if held to expiry ITM',
+];
+function chargeBoxHtml(){
+  const b=CHARGES[getBroker()];
+  return '<b>'+b.name+' — F&O options round-trip (real):</b><br>'+
+    '• Brokerage: '+b.fno_brokerage+'<br>'+
+    STATUTORY_OPT.map(x=>'• '+x).join('<br>')+
+    '<br>• Equity delivery brokerage: '+b.eq_delivery+' &nbsp;|&nbsp; rates change via NSE circulars — verify latest.';
+}
+
+/* exit chips differ by engine — build dynamically */
+const EXIT_PRICE=[
+  ['atr','ATR target + stop'],['trail','Trailing stop'],['rr','Fixed Reward:Risk'],['time','Time / signal exit'],
+];
+const EXIT_CHAIN=[
+  ['credit_tp','Profit-target % of credit (sellers: e.g. 50%)'],
+  ['prem_sl','Premium stop (2× credit / fixed ₹)'],
+  ['iv_exit','IV / VIX-crush exit'],
+  ['delta_breach','Delta breach / adjust-or-exit'],
+  ['spot_sl','Underlying (spot) SL — X pts move'],
+  ['time','Time / expiry-day exit'],
+];
+let getExit=()=>[];
+function buildExit(){
+  const g=document.getElementById('exit'); g.innerHTML='';
+  const list=getEngine()==='chain'?EXIT_CHAIN:EXIT_PRICE;
+  list.forEach(([v,lbl],i)=>{const c=document.createElement('span');
+    c.className='chip'+(i===0?' on':''); c.dataset.v=v; c.textContent=lbl; g.appendChild(c);});
+  getExit=chipGroup('exit',true);
+}
+buildExit();
+
+const EXITMAP={atr:'ATR-based target + stop',trail:'ATR trailing stop',rr:'fixed reward:risk bracket',
+  time:'time / opposite-signal / expiry exit',credit_tp:'profit-target as % of credit received',
+  prem_sl:'premium stop-loss (multiple of credit or fixed ₹/lot)',iv_exit:'IV / India-VIX crush exit',
+  delta_breach:'delta-breach → adjust or exit',spot_sl:'underlying spot stop (points move)'};
+
+['inst','sym','risk','cap','rr','entry','notes','sh','dd','mt','wr','data'].forEach(id=>
+  document.getElementById(id).addEventListener('input',render));
+['gSig','gOpt','gMC','realCost'].forEach(id=>document.getElementById(id).addEventListener('change',render));
+document.getElementById('optExplore').addEventListener('change',()=>{syncCatalogUI();render();});
+document.getElementById('broker').addEventListener('click',()=>setTimeout(render,0));
+
+function syncCatalogUI(){
+  const exploring=document.getElementById('optExplore').checked;
+  document.querySelectorAll('#optCatalog .opt-item').forEach(it=>{
+    it.classList.toggle('dim',exploring);
+    if(exploring) it.classList.remove('on');
+  });
+}
+
+const INST={
+  nifty_index:['NIFTY 50 index','spot (NIFTY)','ATM/OTM options as chosen structure'],
+  banknifty_index:['BANKNIFTY index','spot (BANKNIFTY)','ATM/OTM options as chosen structure'],
+  nifty_options:['NIFTY ATM options','NIFTY spot signal → execute ATM CE/PE','buy option only (no naked sell unless asked)'],
+  banknifty_options:['BANKNIFTY ATM options','BANKNIFTY spot signal → ATM CE/PE','buy option only'],
+  stock_options:['Stock options','stock spot signal → ATM option','from F&O stock universe'],
+  equity:['Equity / stock cash','stock spot','delivery/intraday cash'],
+};
+let TAB='prompt';
+document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>{
+  document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));t.classList.add('on');TAB=t.dataset.t;render()});
+
+function spec(){
+  const engine=getEngine();
+  const inst=document.getElementById('inst').value, I=INST[inst];
+  const mode=getMode(), dir=getDir(), exit=getExit();
+  const base={
+    engine: engine==='chain'?'option-chain / structure':'price-action → option execution',
+    instrument:I[0], backtest_surface:I[1], exec_note:I[2],
+    symbols:document.getElementById('sym').value.trim()||null,
+    direction:dir, mode:mode,
+    intraday_rules: mode==='intraday'?'force-exit 15:15, no entry after 15:15, max 2 trades/day, no overnight':null,
+    timeframe:getTf(),
+    leverage:'NONE (1x, notional <= capital)',
+    risk_per_trade_pct:parseFloat(document.getElementById('risk').value),
+    starting_capital:'₹'+document.getElementById('cap').value,
+    broker:CHARGES[getBroker()].name,
+    real_cost_sim:document.getElementById('realCost').checked,
+    exit_style:exit.map(e=>EXITMAP[e]||e),
+    reward_risk:parseFloat(document.getElementById('rr').value),
+    targets:{min_sharpe:parseFloat(document.getElementById('sh').value),
+      max_drawdown_pct:parseFloat(document.getElementById('dd').value),
+      min_trades:parseInt(document.getElementById('mt').value),
+      min_win_rate_pct:parseFloat(document.getElementById('wr').value)},
+    gates:{significance_p_lt_0_05:document.getElementById('gSig').checked,
+      optimization_train_oos:document.getElementById('gOpt').checked,
+      monte_carlo_overfit:document.getElementById('gMC').checked},
+    data_window:document.getElementById('data').value,
+  };
+  if(engine==='chain'){
+    const s=getOptStrategies();
+    base.option_strategies = s==='ALL' ? 'EXPLORE ALL — build one at a time' : s.map(x=>x.name);
+    base.explore_all = s==='ALL';
+  } else {
+    base.entry_idea=document.getElementById('entry').value;
+    base.extra_notes=document.getElementById('notes').value.trim()||null;
+  }
+  return base;
+}
+
+/* ---------- shared prompt sections ---------- */
+function riskLines(s,L){
+  L.push('RISK & SIZING');
+  L.push(`  • Leverage: ${s.leverage}  ← STRICT, no hidden leverage from position sizing`);
+  L.push(`  • Risk per trade: ${s.risk_per_trade_pct}% of capital`);
+  L.push(`  • Starting capital: ${s.starting_capital}`);
+  L.push('  • Naked option SELL legs sized on REAL Dhan margin (never notional); every naked short needs a defined hedge/wing.');
+  L.push('');
+}
+function styleLines(s,L){
+  L.push('TRADE STYLE');
+  L.push(`  • Direction / bias: ${s.direction}`);
+  L.push(`  • Mode: ${s.mode}`+(s.intraday_rules?` — ${s.intraday_rules}`:''));
+  L.push(`  • Timeframe / cadence: ${s.timeframe.join(', ')}`+(s.timeframe.length>1?' — test each, keep the best':''));
+  L.push('');
+}
+function costLines(s,L){
+  L.push('COSTS / CHARGES — simulate REAL Indian broker charges (net P&L, never gross)');
+  L.push(`  • Primary broker: ${s.broker}. Deduct full round-trip charges on EVERY leg of EVERY trade.`);
+  if(s.real_cost_sim){
+    L.push('  • F&O options per-order charges (current NSE rates):');
+    L.push('       – Brokerage: ₹20 flat per executed order (buy & sell each; Zerodha & Dhan same for F&O)');
+    L.push('       – STT: 0.10% on premium — SELL side only');
+    L.push('       – Exchange txn (NSE): 0.03503% on premium — both sides');
+    L.push('       – SEBI: ₹10 per crore (0.0001%) — both sides');
+    L.push('       – Stamp duty: 0.003% on premium — BUY side only');
+    L.push('       – GST: 18% on (brokerage + exchange txn + SEBI)');
+    L.push('       – ITM-at-expiry: add 0.125% STT on intrinsic (settlement) if a short/long is held ITM to expiry');
+    L.push('  • Multi-leg structures (straddle/strangle/condor/spreads): charge EACH leg separately — a condor = 4 legs in + 4 out = 8 orders of charges.');
+    L.push('  • Equity delivery brokerage = ₹0 (both); intraday/F&O = ₹20/order. Add DP charges only for delivery sells.');
+    L.push('  • Report Total Charges as its own line, and show BOTH gross and net equity curves. A strategy that only wins gross is a losing strategy.');
+    L.push('  • Rates change via NSE/SEBI circulars — note the assumed rate-date; verify if unsure.');
+  } else {
+    L.push('  • (Full-cost sim OFF) — at minimum deduct ₹20/order brokerage + STT; do NOT report gross-only P&L.');
+  }
+  L.push('');
+}
+function targetGateLines(s,L){
+  L.push('TARGETS (must meet ALL)');
+  L.push(`  • Sharpe ≥ ${s.targets.min_sharpe}   • Max Drawdown ≤ ${s.targets.max_drawdown_pct}%`);
+  L.push(`  • Trades ≥ ${s.targets.min_trades}`+(s.targets.min_win_rate_pct?`   • Win-rate ≥ ${s.targets.min_win_rate_pct}%`:''));
+  L.push('');
+  L.push('VALIDATION GATES');
+  if(s.gates.significance_p_lt_0_05) L.push('  • Statistical significance MANDATORY: p < 0.05 (permutation/rotation test). Fail = edge is just luck/beta — DO NOT ship, iterate.');
+  if(s.gates.optimization_train_oos) L.push('  • Optimize params with train / out-of-sample split (rank by OOS, not in-sample).');
+  if(s.gates.monte_carlo_overfit) L.push('  • Monte Carlo overfit check: original result must sit near the MEDIAN of simulations, not the best 5%.');
+  L.push('  • Result at 1x (no leverage) must still beat NIFTY buy & hold on a risk-adjusted basis.');
+  L.push('');
+}
+
+/* ---------- price-action prompt ---------- */
+function promptPrice(s){
+  const L=[];
+  L.push('Build me a trading strategy with these exact specs, and validate it before writing the final version:');
+  L.push('');
+  L.push('INSTRUMENT');
+  L.push(`  • Trade: ${s.instrument}`+(s.symbols?` (${s.symbols})`:''));
+  L.push(`  • Backtest on: ${s.backtest_surface}`);
+  L.push(`  • Execution: ${s.exec_note}`);
+  L.push('');
+  styleLines(s,L);
+  riskLines(s,L);
+  L.push('EXIT');
+  L.push(`  • Exit style: ${s.exit_style.join('  OR  ')}`+(s.exit_style.length>1?'  — compare all, keep the best':''));
+  L.push(`  • Reward:Risk target: 1 : ${s.reward_risk}`);
+  L.push('');
+  L.push('ENTRY');
+  L.push(`  • Approach: ${s.entry_idea==='explore'?'explore/compare a few ideas — pick the one with a genuine edge':s.entry_idea}`);
+  if(s.extra_notes) L.push(`  • Notes: ${s.extra_notes}`);
+  L.push('');
+  costLines(s,L);
+  targetGateLines(s,L);
+  L.push(`DATA: NIFTY/underlying 1-min data-lake (${s.data_window==='max'?'2022 → today':s.data_window}), reuse — no re-download.`);
+  L.push('');
+  L.push('Continue iterating strategy DESIGNS (not just params) until one genuinely passes the significance gate. Show me a Jesse-style dashboard of the winner.');
+  return L.join('\n');
+}
+
+/* ---------- option-chain prompt ---------- */
+function promptChain(s){
+  const L=[];
+  const explore = s.explore_all;
+  L.push('Build me OPTION-CHAIN / STRUCTURE trading strategies — ONE AT A TIME — and fully validate each before moving to the next. Do NOT try to build all of them in one shot.');
+  L.push('');
+  L.push('UNDERLYING & EXECUTION');
+  L.push(`  • Underlying: ${s.instrument.replace(' index','').replace(' ATM options','')} (options)`);
+  L.push('  • These strategies trade the OPTION CHAIN itself — OI, IV, greeks, premium structure — not just spot price.');
+  L.push(`  • Backtest surface: ${s.backtest_surface} + full option-chain snapshots.`);
+  L.push('');
+  L.push('DATA REQUIRED (check the data-lake FIRST)');
+  L.push('  • Per-timestamp option-chain snapshots: for each strike → CE/PE OI, change-in-OI, IV, LTP/premium, volume, greeks (delta/theta/vega/gamma).');
+  L.push('  • India VIX + underlying spot, aligned to the same timestamps.');
+  L.push('  • If this option-chain history is NOT already in the data-lake → build the snapshot COLLECTOR first (Dhan API only, no yfinance). NEVER fabricate/synthesize option-chain data — a fake chain silently invalidates every backtest below.');
+  L.push('  • Greeks: if not stored, compute via Black-Scholes from IV+spot+strike+t; state the assumption.');
+  L.push('');
+  styleLines(s,L);
+  riskLines(s,L);
+  L.push('EXIT (per structure)');
+  L.push(`  • Exit style: ${s.exit_style.join('  OR  ')}`+(s.exit_style.length>1?'  — compare all, keep the best per structure':''));
+  L.push('  • Sellers: book at % of credit + hard premium/spot stop + expiry-day time-stop + ITM-immediate-exit. Buyers: RR bracket + theta/time decay stop.');
+  L.push('');
+  L.push('STRATEGY CATALOG — build & validate EACH independently, in this order:');
+  if(explore){
+    L.push('  (Explore mode ON — cover the full catalog, one strategy at a time, skip only ones the data genuinely can\'t support and say why.)');
+    OPT_FAMILIES.forEach(f=>{
+      L.push('  '+f.cat);
+      f.items.forEach(([k,n,d])=>L.push(`     • ${n} — ${d}`));
+    });
+  } else {
+    (s.option_strategies||[]).forEach(n=>L.push(`     • ${n}`));
+  }
+  L.push('');
+  L.push('FOR EACH STRATEGY (repeat the loop, do not batch):');
+  L.push('  1. State exact entry trigger, strike selection rule, legs (buy/sell + offset), and exit.');
+  L.push('  2. Backtest on the option-chain data-lake at the chosen cadence.');
+  L.push('  3. Apply the SAME validation gates below. If it fails significance, iterate the DESIGN before moving on.');
+  L.push('  4. Show a Jesse-style dashboard (equity, DD, per-trade, greeks/IV context). THEN move to the next strategy.');
+  L.push('  5. Keep a running comparison table of every strategy tried (Sharpe / DD / trades / p-value / verdict).');
+  L.push('');
+  costLines(s,L);
+  targetGateLines(s,L);
+  L.push(`DATA WINDOW: ${s.data_window==='max'?'2022 → today (~4.5yr)':s.data_window} — reuse the data-lake, no re-download.`);
+  L.push('');
+  L.push('Start with the FIRST strategy in the catalog. Build it, validate it, show me the dashboard, and PAUSE for my go-ahead before starting the next one.');
+  return L.join('\n');
+}
+
+function render(){
+  const engine=getEngine();
+  const s=spec();
+  // engine-dependent panel visibility
+  document.getElementById('chainPanel').style.display = engine==='chain'?'block':'none';
+  document.getElementById('entryPanel').style.display = engine==='chain'?'none':'block';
+  document.getElementById('rrWrap').style.display = engine==='chain'?'none':'block';
+  document.getElementById('engineNote').textContent = engine==='chain'
+    ? '⛓️ Option-chain mode — catalog (straddle/strangle/condor/OI/PCR/VIX/greeks) niche aa gaya. Explore-ALL = ek-ek karke sab.'
+    : '📈 Price-action mode — spot signal se ATM option pe execute. Classic trend/breakout/mean-rev.';
+  // symbol field visibility
+  document.getElementById('symWrap').style.display=
+    (s.instrument.includes('index')||s.instrument.includes('ATM options'))?'none':'block';
+  document.getElementById('modeNote').textContent=getMode()==='intraday'
+    ?'⚠️ Intraday: 3:15 force-exit + no new entry after. Sellers ke liye expiry-day guards zaroori.'
+    :'Overnight hold — gap risk (tumne intraday-only rule set kiya tha, dhyaan rakhna).';
+  document.getElementById('chargeBox').innerHTML=chargeBoxHtml();
+  const p = engine==='chain'?promptChain(s):promptPrice(s);
+  document.getElementById('out').textContent = TAB==='prompt' ? p : JSON.stringify(s,null,2);
+}
+
+/* engine chip rebuilds exit chips too */
+document.getElementById('engine').addEventListener('click',()=>{setTimeout(()=>{buildExit();render();},0)});
+
+document.getElementById('copy').onclick=()=>{navigator.clipboard.writeText(document.getElementById('out').textContent);
+  const b=document.getElementById('copy');b.textContent='✅ Copied';setTimeout(()=>b.textContent='📋 Copy',1200)};
+document.getElementById('reset').onclick=()=>location.reload();
+syncCatalogUI();
+render();
+</script>
+</body>
+</html>

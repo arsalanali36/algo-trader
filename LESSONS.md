@@ -2311,3 +2311,44 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 **Fast-detect:** `journalctl -u algo-monitor | grep 'already claimed/closed this leg'` — agar ye line kisi genuinely-open position pe aa rahi hai (broker pe position abhi bhi hai) → SL suppress ho raha hai. Aur `data/tsl_state.json` empty hona + webhook position ka `source=webhook` tag + `release_position` False = cross-process gap.
 
 **Follow-up (2026-07-09) — smart-split candle-close on the aggressive profit-lock SL:** user asked whether the trailing SL only fires on a candle CLOSE above the line (whipsaw guard). It did NOT — `advance_target_sl`'s firing (`mtm <= sl_level`) is on the live LTP tick (the 2-reading confirm only spike-guards the PEAK/level, not the firing), so a wick could stop out a still-good trade. Fix (pos_monitor aggressive block, user's "smart split" choice): in the PROFIT-lock zone (`sl_level >= 0` — SL ratcheted into locked profit) require the last CLOSED **1-min** candle (`_last_closed_candle_close`) to confirm the breach before firing; the LOSS zone (`sl_level < 0`) still fires on the tick for immediate capital protection. On suppress, reset `state["fired"]=False` so it re-evaluates next cycle (advance_target_sl sets fired=True on a would-be SL). Candle unavailable → fail-safe fire on tick. TARGET unaffected (locks profit immediately). ~1 extra 30s-cached Dhan candle call only at a profit-zone stop moment.
+
+---
+
+## TRAP #103 — Optimizer ranking by OOS-Sharpe IS overfitting to the OOS window (silent "fake robustness")
+
+**Symptom:** A strategy's optimizer returned candidates with OOS Sharpe > 1.0 (1.06, 1.02) but **train Sharpe only 0.4-0.5** — OOS *higher* than in-sample. Looked like a great robust edge; wasn't.
+
+**Root pattern:** The optimizer (`optimize()`/`intraday_optimize.optimize()`) ranked candidates by **OOS Sharpe**. Over 250-400 random-search trials, "pick the config with the best OOS number" turns the out-of-sample split into a **second training set** — you cherry-pick whatever param combo happened to fit the recent (OOS) regime. Train<<OOS is the fingerprint: the config isn't robust in-sample, it just got lucky on the holdout. Ranking by OOS is NOT out-of-sample validation, it's OOS-fitting.
+
+**Permanent guard:** Select the winner by a **robustness metric across BOTH halves**, never by OOS alone. Concretely: filter to configs with `train_sharpe > 0.7 AND oos_sharpe > 0.7`, then rank by `min(train, oos)`. The genuine winner (tod_orb) had **train 0.95 ≈ OOS 0.96** — near-identical both halves, and 20 different configs cleared the both-halves gate (not one lucky point). That balance is what a real non-overfit edge looks like; a curve-fit collapses on one side.
+
+**Fast-detect:** In any optimize output, if `OOS_sharpe > train_sharpe` by a wide margin, distrust it — it's OOS-overfit, not robust. Count how many configs clear a both-halves threshold; one or two = luck, many = real.
+
+---
+
+## TRAP #104 — Backtest runs WITHOUT the RMS overlay; live runs WITH it → results diverge. (Two-stage validation, per-strategy override.)
+
+**Symptom:** A newly-researched strategy's clean backtest showed Sharpe 0.93 / +17.7%. But the account's global RMS caps (daily loss ₹5500, **daily profit-target ₹3000**) would square it off and block re-entry mid-day. Re-running the backtest WITH those caps applied: Sharpe crashed to **0.52**. The strategy would perform far worse live than its backtest promised — and the low profit-target was silently truncating winning days.
+
+**Root pattern:** Research/optimization backtests are (correctly) run unconstrained — you must NOT bake RMS caps into the strategy search or the master-prompt, or you cripple the hunt and never find the edge. But then the deployed strategy runs under the live RMS overlay (`risk_gate` daily-loss/profit-target/premium-cap + `pos_monitor` squareoff), which the backtest never modeled. Gap = live ≠ backtest.
+
+**Permanent guard — TWO-STAGE backtest:**
+1. **SEARCH (unconstrained):** find the raw edge. RMS never enters the master-prompt.
+2. **RMS-OVERLAY VALIDATION (before deploy):** re-run the winner under the real caps (`intraday_engine.backtest(..., rms_caps={loss_cap, profit_target})`). If the edge survives → deploy; if RMS destroys it → **per-strategy override** the conflicting rule (don't loosen the GLOBAL, which protects every other strategy); if it can't be reconciled → reject.
+- The strategy's own exits (ATR stop/target) must stay **authoritative**; RMS caps are the outer backstop (Critical Rule 6 shape). Set per-strategy caps ABOVE the strategy's natural per-day range so RMS never fires first in normal operation.
+
+**Per-strategy profit-target subtlety:** `effective_daily_profit_target(strat)` already resolves `per_strategy[strat].profit_target_rs → global → off` — but the Per-Strategy Override UI table had **no profit-target column** (only Max Loss), so it looked un-overridable. It was settable from the backend all along; also added a "Max Profit ₹" column to the UI. AND: `_strategy_day_pnl` (used by `daily_profit_target_hit`) does **NOT** filter paper trades (unlike `_today_realized_pnl`), so the global profit-target truncates even a PAPER strategy — the per-strategy override matters even before going live.
+
+**Fast-detect:** Before deploying any researched strategy, ask "what does the live RMS do to this that the backtest didn't?" Run the rms_caps overlay. If Sharpe drops materially, a global cap is truncating the edge → per-strategy override.
+
+---
+
+## TRAP #105 — A great backtest Sharpe can be pure leverage + beta, not a real edge. Gate on a significance test, not the headline number.
+
+**Symptom:** A positional NIFTY trend strategy showed Sharpe 1.1, +305% over 4.5yr, beating buy&hold ~3x. Looked shippable. It wasn't.
+
+**Root pattern:** Two hidden inflators. (1) **Hidden leverage** — 3%-risk sizing with tight ATR stops produced ~5.7x average notional (max 11x); at a true **1x cap the same strategy made only +22%, below buy&hold** (leverage scales returns, NOT Sharpe). (2) **Beta** — a rotation permutation test (shuffle the position series against forward returns ×1000) showed the entry timing was **not** distinguishable from random given the trend (p=0.13); the money was "be long in a bull market," not a timing edge.
+
+**Permanent guard:** For any researched strategy, gate on **statistical significance** (permutation/rotation test on the entry edge, controlling for beta), not raw Sharpe. Require p<0.05. Enforce a real **1x no-leverage** position cap (`leverage_cap=1.0`) so the number reflects the edge, not the bet size. A significant edge (like tod_orb, p=0.000) survives the rotation null; a beta-rider (positional trend) does not. **Spot-backtest → option-live gap:** signals backtested on NIFTY spot execute live via ATM options (delta/decay/premium-cap) — the rupee P&L scale and character differ, so paper-trade first and measure the execution gap before trusting live numbers.
+
+**Fast-detect:** If a backtest looks amazing, check: (a) what's the average notional/equity (leverage)? (b) does it still beat buy&hold at 1x? (c) does a permutation test on the entries clear p<0.05? If any fails, it's not a proven edge.

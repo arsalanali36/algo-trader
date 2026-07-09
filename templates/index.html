@@ -457,6 +457,30 @@
       font-weight: 600;
     }
 
+    /* Freeze the Strategy (first) column in the Per-Strategy Override table so
+       the name stays visible when scrolling right through the wide table. */
+    #risk-strategy-table .cfg-table th:first-child,
+    #risk-strategy-table .cfg-table td:first-child {
+      position: sticky;
+      left: 0;
+      z-index: 2;
+      background: #161b22;
+      box-shadow: 2px 0 0 #30363d;
+    }
+
+    /* Per-Strategy table: auto-size columns to their content (no cramped fixed
+       200px), keep headers on one line, and give inputs comfortable room so
+       "global" / numbers never get clipped. Scoped to this table only. */
+    #risk-strategy-table .cfg-table { table-layout: auto; }
+    #risk-strategy-table .cfg-table th,
+    #risk-strategy-table .cfg-table td { width: auto; white-space: nowrap; }
+    #risk-strategy-table .cfg-table input {
+      width: 110px; min-width: 100px;
+      background: transparent; border: 1px solid #21262d;
+    }
+    #risk-strategy-table .cfg-table input:focus { border-color: #388bfd; background: #0d1117; }
+    #risk-strategy-table .cfg-table select { min-width: 120px; }
+
     .cfg-table select,
     .cfg-table input {
       width: 100%;
@@ -1464,10 +1488,9 @@
       <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
       <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
-      <div class="tab" onclick="switchTab('pine')">📜 Script</div>
-      <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">🧪 Script 3</div>
-      <a href="/backtest-chart" target="_blank" class="tab" style="text-decoration: none;">📊 Results</a>
+      <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">📜 Script 3</div>
       <a href="#" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank');return false;" class="tab" style="text-decoration: none;">🎬 Video Journal</a>
+      <a href="/lab/hub.html" target="_blank" class="tab" style="text-decoration: none;">🧪 Strategy Lab</a>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
         <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More
           ▾</div>
@@ -1480,6 +1503,16 @@
             <div class="dropdown-item"
               style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
               📈 MTM Analyzer</div>
+          </a>
+          <a href="/spec-builder" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🧭 Strategy Spec Builder</div>
+          </a>
+          <a href="/backtest-chart" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              📊 Results</div>
           </a>
         </div>
       </div>
@@ -3893,6 +3926,19 @@
       // List every known strategy id from GLOBAL_CONFIG so future strategies show up automatically.
       let cfg = {};
       try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch (e) { }
+      // Pretty display name for a config-key strategy id (orb_v1 -> "ORB v1",
+      // ARS_CHAIN_V1_PAPER -> "Ars Chain v1 (Paper)"). Raw id kept in title attr.
+      function fmtStratName(id){
+        const ACR={orb:'ORB',ema:'EMA',rsi:'RSI',ars:'Ars',bb:'BB',vwap:'VWAP',ui:'UI',ml:'ML'};
+        return id.split(/[_\s]+/).map(w=>{
+          const lw=w.toLowerCase();
+          if(!w) return '';
+          if(ACR[lw]) return ACR[lw];
+          if(/^v\d+$/i.test(w)) return w.toLowerCase();
+          if(lw==='paper') return '(Paper)';
+          return w.charAt(0).toUpperCase()+w.slice(1).toLowerCase();
+        }).filter(Boolean).join(' ');
+      }
       const reserved = new Set(['_risk', 'webhooks']);
       const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
 
@@ -3918,26 +3964,29 @@
         return;
       }
       let html = '<table class="cfg-table"><tr><th>Strategy</th>'
-        + '<th colspan="2" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
+        + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
         + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th>'
         + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
-        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th></th><th></th><th></th><th></th><th></th>'
+        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th></th><th></th><th></th><th></th>'
         + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
       stratIds.forEach(id => {
         const ov = RISK_CFG.per_strategy[id] || {};
+        const dispName = fmtStratName(id);
         const curMode = ov.capital_mode || '';
         const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
-        html += `<tr><td>${id}</td>
-      <td><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global default"
+        html += `<tr><td title="${id}">${dispName}</td>
+      <td><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-rs-${id}" type="number" step="1" placeholder="global default"
+      <td><input id="risk-rs-${id}" type="number" step="1" placeholder="global"
             value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global default"
+      <td><input id="risk-profit-${id}" type="number" step="1" placeholder="global"
+            value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
+      <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
-      <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global default"
+      <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global default"
+      <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.margin_multiplier ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><select id="risk-mode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px">
             <option value="" ${curMode === '' ? 'selected' : ''}>global default</option>
@@ -3949,9 +3998,9 @@
             <option value="false" ${curShadow === 'false' ? 'selected' : ''}>OFF</option>
             <option value="true" ${curShadow === 'true' ? 'selected' : ''}>ON</option>
           </select></td>
-      <td><input id="risk-hedgestrikes-${id}" type="number" step="1" placeholder="global default"
+      <td><input id="risk-hedgestrikes-${id}" type="number" step="1" placeholder="global"
             value="${ov.hedge_offset_strikes ?? ''}" style="width:110px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
-      <td><input id="risk-hedgepremium-${id}" type="number" step="0.5" placeholder="global default"
+      <td><input id="risk-hedgepremium-${id}" type="number" step="0.5" placeholder="global"
             value="${ov.hedge_max_premium_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
       </tr>`;
       });
@@ -4210,6 +4259,7 @@
       stratIds.forEach(id => {
         const pEl = document.getElementById(`risk-pct-${id}`);
         const rEl = document.getElementById(`risk-rs-${id}`);
+        const ptEl = document.getElementById(`risk-profit-${id}`);
         const cEl = document.getElementById(`risk-capital-${id}`);
         const mEl = document.getElementById(`risk-margin-${id}`);
         const modeEl = document.getElementById(`risk-mode-${id}`);
@@ -4219,16 +4269,18 @@
         const hedgePremiumEl = document.getElementById(`risk-hedgepremium-${id}`);
         if (!pEl || !rEl) return;
         const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
+        const pt = ptEl ? ptEl.value : '';
         const mode = modeEl ? modeEl.value : '';
         const shadow = shadowEl ? shadowEl.value : '';
         const instLoss = instLossEl ? instLossEl.value : '';
         const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
-        if (p !== '' || r !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
+        if (p !== '' || r !== '' || pt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
           || hedgeStrikes !== '' || hedgePremium !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
+            profit_target_rs: pt !== '' ? parseFloat(pt) : null,
             capital_rs: c !== '' ? parseFloat(c) : null,
             margin_multiplier: m !== '' ? parseFloat(m) : null,
             capital_mode: mode || null,

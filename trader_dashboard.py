@@ -126,6 +126,7 @@ STRATEGIES = {
     "rsi_v1":   {"script": RSI_SCRIPT,    "log": BASE_DIR / "logs/rsi_v1.log", "cfg": TC_FILE, "grep": "01_rsi_v1"},
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
+    "orb":      {"script": str(TRADERS_DIR / "orb_trader.py"), "log": BASE_DIR / "logs/orb_v1.log", "cfg": TC_FILE, "grep": "orb_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
@@ -358,6 +359,26 @@ def backtest_chart():
 def serve_mockup():
     from flask import send_from_directory
     return send_from_directory(BASE_DIR, 'ui_mockup_redesign.html')
+
+@app.route('/spec-builder')
+def serve_spec_builder():
+    """Strategy Spec Builder — master-prompt generator (static tool page, no wiring).
+    Opened in a new tab from the 'More ▾' nav dropdown."""
+    from flask import send_from_directory
+    return send_from_directory(BASE_DIR, 'strategy_spec_builder.html')
+
+@app.route('/lab')
+@app.route('/lab/')
+def serve_lab_hub():
+    from flask import send_from_directory
+    return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', 'hub.html')
+
+@app.route('/lab/<path:fn>')
+def serve_lab_file(fn):
+    """Strategy Lab — serves the NIFTY research hub + its dashboards / results.js
+    (self-contained HTML in scratch/nifty_trend). Relative links resolve under /lab/."""
+    from flask import send_from_directory
+    return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', fn)
 
 @app.route('/script3')
 def serve_script3():

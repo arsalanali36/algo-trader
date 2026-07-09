@@ -113,7 +113,11 @@ def staged_files():
         return list(iter_repo_files())
     files = []
     for rel in out.splitlines():
-        if not rel.endswith(".py") or is_excluded(os.path.basename(rel)):
+        # Check BOTH the full repo-relative path (so path-anchored patterns like
+        # ^scratch.*\.py$ actually match staged files — they got only the
+        # basename before, silently defeating the scratch/ exclusion) AND the
+        # basename (so name patterns like ^patch_.*\.py$ still match anywhere).
+        if not rel.endswith(".py") or is_excluded(rel) or is_excluded(os.path.basename(rel)):
             continue
         full = os.path.join(REPO_ROOT, rel.replace("/", os.sep))
         if os.path.isfile(full):

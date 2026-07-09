@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIFTY Trend Backtest — Jesse-style Mockup</title>
+<style>
+  :root{
+    --bg:#0b0e14; --panel:#12161f; --panel2:#171c27; --bd:#242c3a; --bd2:#1b2230;
+    --tx:#e6edf3; --mut:#8b949e; --mut2:#5c6673; --pos:#3fb950; --neg:#f85149;
+    --blue:#4f78ff; --bench:#e3a008; --yel:#f0c000; --purp:#a371f7; --teal:#2ee6a0;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);
+    font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:13.5px;line-height:1.45}
+  .wrap{max-width:1320px;margin:0 auto;padding:16px 18px 70px}
+  /* topbar */
+  .topbar{display:flex;align-items:center;justify-content:space-between;
+    padding:11px 15px;background:var(--panel);border:1px solid var(--bd);
+    border-radius:10px;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+  .app-title{font-size:15px;font-weight:700}
+  .app-title .sub{color:var(--mut);font-weight:500;font-size:11.5px;margin-left:8px}
+  .mockchip{background:#3a2d0a;color:var(--yel);border:1px solid #5c470f;
+    padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  /* controls */
+  .controls{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .seg{display:flex;background:var(--panel);border:1px solid var(--bd);
+    border-radius:8px;overflow:hidden}
+  .seg .lbl{padding:7px 11px;color:var(--mut);font-size:10.5px;font-weight:700;
+    align-self:center;border-right:1px solid var(--bd);background:var(--bd2);letter-spacing:.4px}
+  .seg button{background:none;border:none;color:var(--mut);padding:7px 14px;
+    font-size:12.5px;font-weight:600;cursor:pointer;border-right:1px solid var(--bd2)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--blue);color:#fff}
+  .seg button:hover:not(.on){background:var(--panel2);color:var(--tx)}
+  /* layout */
+  .cols{display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;
+    padding:13px 15px;margin-bottom:14px}
+  .panel h3{margin:0 0 3px;font-size:13px;font-weight:700;display:flex;
+    align-items:center;gap:8px}
+  .panel h3 .tag{color:var(--mut);font-weight:500;font-size:11px}
+  .panel .desc{color:var(--mut);font-size:11px;margin:0 0 10px}
+  .dash{border:none;border-top:1px dashed var(--bd);margin:0 0 11px}
+  svg{display:block;width:100%;height:auto}
+  .legend{display:flex;gap:15px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:7px}
+  .legend .it{display:flex;align-items:center;gap:6px}
+  .legend .sw{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .legend .sw.d{height:0;border-top:2px dashed var(--bench);width:18px}
+  /* right sidebar metric list */
+  .side .sh{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--mut);
+    text-transform:uppercase;padding:2px 0 9px;border-bottom:1px solid var(--bd);margin-bottom:8px;
+    display:flex;justify-content:space-between;align-items:center}
+  .mrow{display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;
+    border-bottom:1px solid var(--bd2)}
+  .mrow:last-child{border-bottom:none}
+  .mrow .k{color:var(--mut)} .mrow .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .btnrow{display:flex;flex-direction:column;gap:7px;margin-bottom:14px}
+  .abtn{padding:9px;border-radius:8px;border:1px solid var(--bd);background:var(--panel2);
+    color:var(--tx);font-size:12.5px;font-weight:600;text-align:center;cursor:default}
+  .abtn.rerun{background:var(--blue);border-color:var(--blue);color:#fff}
+  .abtn.new{background:#0c2a20;border-color:#124f3a;color:var(--teal)}
+  /* metrics grid cards (top) */
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:9px;padding:10px 12px}
+  .card .k{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+  .card .v{font-size:20px;font-weight:700}
+  .card .sub{font-size:10.5px;color:var(--mut);margin-top:1px}
+  /* tables */
+  table.mon{border-collapse:collapse;width:100%;font-size:11px}
+  table.mon th,table.mon td{border:1px solid #0b0e14;padding:8px 3px;text-align:center;font-weight:600}
+  table.mon th{color:var(--mut);background:transparent;font-weight:600}
+  table.mon td.yr{color:var(--mut);font-weight:700;background:var(--bd2)}
+  table.tbl{border-collapse:collapse;width:100%;font-size:12px}
+  table.tbl th{color:var(--mut);font-weight:600;text-align:right;padding:8px 10px;
+    border-bottom:1px solid var(--bd);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  table.tbl th:first-child,table.tbl td:first-child{text-align:left}
+  table.tbl td{padding:8px 10px;border-bottom:1px solid var(--bd2);text-align:right;
+    font-variant-numeric:tabular-nums}
+  table.tbl tr.best td{background:#0f2e1a2b}
+  table.tbl tr.best td:first-child{border-left:2px solid var(--pos)}
+  .pill{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
+  .pill.long{background:#0f2e1a;color:var(--pos)} .pill.short{background:#3a1414;color:var(--neg)}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .mut{color:var(--mut)}
+  .mono{font-variant-numeric:tabular-nums;font-family:'Consolas',monospace}
+  /* significance verdict */
+  .verdict{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .vbox{background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+  .vbox .t{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+  .vbox .b{font-size:16px;font-weight:700}
+  .note{font-size:11px;color:var(--mut);margin-top:10px;line-height:1.55}
+  .dna .mrow .v{color:var(--teal)}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}
+    .verdict{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="app-title">📈 NIFTY Trend-Following — Backtest Report
+      <span class="sub" id="stratName">NiftyTrendTrail · NSE index spot · 1H · long+short · 3% risk/trade</span>
+    </div>
+    <span class="mockchip">MOCKUP · fake data · Jesse-style layout</span>
+  </div>
+
+  <div class="controls">
+    <div class="seg" id="segStrat">
+      <span class="lbl">STRATEGY</span>
+      <button data-s="0" class="on">① Trailing-Stop Exit</button>
+      <button data-s="1">② ATR-Target Exit</button>
+    </div>
+    <div class="seg" id="segMode">
+      <span class="lbl">MODE</span>
+      <button data-m="0" class="on">Intraday (3:15 exit)</button>
+      <button data-m="1">Positional (overnight)</button>
+    </div>
+  </div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="cols">
+    <!-- LEFT: charts -->
+    <div>
+      <div class="panel">
+        <h3>Cumulative Returns vs Benchmark</h3>
+        <hr class="dash">
+        <div id="equity"></div>
+        <div class="legend">
+          <div class="it"><span class="sw" style="background:var(--blue)"></span>Strategy</div>
+          <div class="it"><span class="sw d"></span>NIFTY Buy &amp; Hold</div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3>Cumulative Returns vs Benchmark <span class="tag">(Log Scaled)</span></h3>
+        <hr class="dash">
+        <div id="equityLog"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Drawdown <span class="tag">(Worst 5 Periods)</span></h3>
+        <hr class="dash">
+        <div id="ddPeriods"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Underwater Plot</h3>
+        <hr class="dash">
+        <div id="underwater"></div>
+      </div>
+
+      <div class="panel">
+        <h3>Monthly Returns Heatmap</h3>
+        <hr class="dash">
+        <div id="monthly" style="overflow-x:auto"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: sidebar -->
+    <div class="side">
+      <div class="btnrow">
+        <div class="abtn rerun">🔄 Rerun</div>
+        <div class="abtn new">↩ New session</div>
+        <div class="abtn">📊 View charts</div>
+      </div>
+
+      <div class="panel">
+        <div class="sh">Performance</div>
+        <div id="perf"></div>
+      </div>
+
+      <div class="panel dna">
+        <div class="sh">Hyperparameters — DNA</div>
+        <div id="dna"></div>
+      </div>
+
+      <div class="panel">
+        <div class="sh">Info</div>
+        <div id="info"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Monte Carlo -->
+  <div class="panel">
+    <h3>🎲 Monte Carlo Candles <span class="tag">— 1,000 reshuffled-trade equity paths</span></h3>
+    <p class="desc">Original backtest (yellow) vs 1,000 simulations (blue). If yellow tracks the
+      <b>median</b> — not the best 5% — the edge is genuine, not curve-fit.</p>
+    <hr class="dash">
+    <div id="mcfan"></div>
+    <div class="legend">
+      <div class="it"><span class="sw" style="background:var(--yel)"></span>Original backtest</div>
+      <div class="it"><span class="sw" style="background:#4f78ff55"></span>1,000 simulations</div>
+    </div>
+    <div style="overflow-x:auto;margin-top:14px">
+      <table class="tbl" id="mctbl"></table>
+    </div>
+  </div>
+
+  <!-- Significance -->
+  <div class="panel">
+    <h3>🧪 Statistical Significance <span class="tag">— entry edge vs random</span></h3>
+    <p class="desc">Permutation test: are entry rules genuinely better than random entries at the same trade frequency?</p>
+    <hr class="dash">
+    <div class="verdict" id="sig"></div>
+    <div class="note" id="signote"></div>
+  </div>
+
+  <!-- Optimization sweep -->
+  <div class="panel">
+    <h3>⚙️ Optimization Sweep <span class="tag">— top candidates (chosen for OOS robustness, ★ = winner DNA)</span></h3>
+    <hr class="dash">
+    <div style="overflow-x:auto"><table class="tbl" id="opt"></table></div>
+  </div>
+
+  <!-- Iteration log -->
+  <div class="panel">
+    <h3>📝 Iteration Log <span class="tag">— research trail (auto-written to report.md)</span></h3>
+    <hr class="dash">
+    <div style="overflow-x:auto"><table class="tbl" id="iter"></table></div>
+  </div>
+
+  <!-- Trades -->
+  <div class="panel">
+    <h3>Trade List <span class="tag">— sample</span></h3>
+    <hr class="dash">
+    <div style="overflow-x:auto"><table class="tbl" id="trades"></table></div>
+  </div>
+
+</div>
+
+<script>
+/* ---------- seeded RNG ---------- */
+function mulberry(s){return function(){s|=0;s=s+0x6D2B79F5|0;let t=Math.imul(s^s>>>15,1|s);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function gauss(R){return (R()+R()+R()+R()+R()+R()-3)/Math.sqrt(0.5)}
+/* Indian number format (lakh grouping) */
+function inr(n){n=Math.round(n);let s=(''+Math.abs(n)),neg=n<0;
+  let last3=s.slice(-3),rest=s.slice(0,-3);
+  if(rest)last3=','+last3;
+  rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');
+  return (neg?'-':'')+'₹'+rest+last3}
+
+const START_BAL=1000000; // ₹10,00,000
+
+/* ---------- per [strategy][mode] headline config ---------- */
+// [sharpe, netPct, maxDD, winRate, trades, wl, annualRet]
+const HEAD=[
+ [ {name:'NiftyTrendTrail',sh:1.34,net:52,dd:-8.6,win:38,tr:612,wl:2.28,ann:34,exit:'trailing SL'},
+   {name:'NiftyTrendTrail',sh:1.29,net:141,dd:-18.9,win:35,tr:372,wl:2.61,ann:58,exit:'trailing SL'} ],
+ [ {name:'NiftyTrendATR', sh:1.27,net:47,dd:-7.9,win:40,tr:566,wl:2.06,ann:31,exit:'ATR target/stop'},
+   {name:'NiftyTrendATR', sh:1.51,net:132,dd:-15.8,win:36,tr:328,wl:2.39,ann:53,exit:'ATR target/stop'} ],
+];
+const DNA=[
+ [ {bb_period:21,bb_dev:2.4,ema_period:180,trail_atr:2.6},
+   {bb_period:24,bb_dev:2.7,ema_period:160,trail_atr:3.1} ],
+ [ {bb_period:23,bb_dev:2.96,ema_period:194,atr_sl:2.3,atr_tp:4.1},
+   {bb_period:19,bb_dev:2.55,ema_period:210,atr_sl:2.6,atr_tp:4.6} ],
+];
+let S=0,M=0;
+
+/* ---------- build a full equity series ---------- */
+function series(seed,head){
+  const R=mulberry(seed), N=520;
+  const target=head.net/100, dailyDrift=Math.log(1+target)/N;
+  let eq=[START_BAL],peak=START_BAL,uw=[0];
+  const vol=Math.abs(head.dd)/100*0.9;
+  for(let i=1;i<N;i++){
+    let step=dailyDrift+gauss(R)*vol*0.14;
+    let v=eq[i-1]*(1+step);
+    v=Math.max(v,peak*(1+head.dd/100*1.02)); // don't blow past target maxDD much
+    eq.push(v); peak=Math.max(peak,v); uw.push((v/peak-1)*100);
+  }
+  // scale so final ~ target
+  const fscale=(START_BAL*(1+target))/eq[eq.length-1];
+  // (leave as-is; approximate is fine for mockup)
+  // benchmark: NIFTY buy&hold ~ +18% over window, choppier
+  let bh=[START_BAL],bv=START_BAL;
+  for(let i=1;i<N;i++){bv*=(1+0.16/N+gauss(R)*vol*0.20);bh.push(bv)}
+  return {eq,bh,uw,N};
+}
+function worstPeriods(uw){
+  // find 5 deepest troughs (rough): scan local minima
+  let items=[];
+  for(let i=2;i<uw.length-2;i++){
+    if(uw[i]<uw[i-1]&&uw[i]<=uw[i+1]&&uw[i]<-3) items.push({i,v:uw[i]});
+  }
+  items.sort((a,b)=>a.v-b.v);
+  // spread out
+  let chosen=[],used=[];
+  for(const it of items){ if(used.every(u=>Math.abs(u-it.i)>25)){chosen.push(it);used.push(it.i)} if(chosen.length>=5)break }
+  return chosen.map((c,k)=>({rank:k+1,x:c.i,dd:c.v}));
+}
+
+/* ---------- chart primitives ---------- */
+const W=760,H=210,PAD=42,RPAD=10;
+function xmap(i,n){return PAD+(i/(n-1))*(W-PAD-RPAD)}
+function line(arr,color,w,ymin,ymax,fill,dash){
+  const n=arr.length;
+  const y=v=>H-26-((v-ymin)/(ymax-ymin))*(H-26-14);
+  let d='M'+xmap(0,n).toFixed(1)+' '+y(arr[0]).toFixed(1);
+  for(let i=1;i<n;i++)d+='L'+xmap(i,n).toFixed(1)+' '+y(arr[i]).toFixed(1);
+  let s='';
+  if(fill){let f=d+`L${xmap(n-1,n).toFixed(1)} ${H-26}L${xmap(0,n).toFixed(1)} ${H-26}Z`;
+    s+=`<path d="${f}" fill="${fill}" stroke="none"/>`}
+  s+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="${w}"${dash?` stroke-dasharray="${dash}"`:''}/>`;
+  return s;
+}
+function yaxis(ymin,ymax,fmt){
+  let g='';
+  for(let k=0;k<=4;k++){let v=ymin+(ymax-ymin)*k/4,yy=H-26-((v-ymin)/(ymax-ymin))*(H-26-14);
+    g+=`<line x1="${PAD}" y1="${yy}" x2="${W-RPAD}" y2="${yy}" stroke="#1b2230"/>`;
+    g+=`<text x="${PAD-5}" y="${yy+3}" fill="#5c6673" font-size="9" text-anchor="end">${fmt(v)}</text>`}
+  return g;
+}
+function xlabels(dates){
+  let g='';const n=dates.length;
+  dates.forEach((d,k)=>{let x=PAD+(k/(dates.length-1))*(W-PAD-RPAD);
+    g+=`<text x="${x}" y="${H-8}" fill="#5c6673" font-size="9" text-anchor="middle">${d}</text>`});
+  return g;
+}
+const XD=['24-11','25-02','25-05','25-08','25-11','26-02','26-05'];
+
+let CUR=null;
+function build(){CUR=series((S*10+M)*97+13,HEAD[S][M])}
+
+function renderEquity(id,log){
+  const r=CUR,all=r.eq.concat(r.bh);
+  let ymin=Math.min(...all),ymax=Math.max(...all);
+  let ta=r.eq,tb=r.bh;
+  if(log){ta=r.eq.map(v=>Math.log10(v));tb=r.bh.map(v=>Math.log10(v));
+    ymin=Math.min(...ta.concat(tb));ymax=Math.max(...ta.concat(tb));}
+  const fmt=log?(v=>Math.round(Math.pow(10,v)/1000)+'k'):(v=>'₹'+(v/100000).toFixed(1)+'L');
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,fmt)+xlabels(XD);
+  svg+=line(tb,'#e3a008',1.4,ymin,ymax,null,'5 4');
+  svg+=line(ta,'#4f78ff',2,ymin,ymax,log?null:'#4f78ff14');
+  svg+='</svg>';
+  document.getElementById(id).innerHTML=svg;
+}
+function renderDDperiods(){
+  const r=CUR,ymin=Math.min(...r.eq),ymax=Math.max(...r.eq);
+  const wp=worstPeriods(r.uw);
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,v=>'₹'+(v/100000).toFixed(1)+'L')+xlabels(XD);
+  // shaded bands around each trough
+  for(const p of wp){
+    let x0=xmap(Math.max(0,p.x-14),r.N),x1=xmap(Math.min(r.N-1,p.x+14),r.N);
+    svg+=`<rect x="${x0.toFixed(0)}" y="14" width="${(x1-x0).toFixed(0)}" height="${H-40}" fill="#f8514918"/>`;
+    svg+=`<text x="${xmap(p.x,r.N).toFixed(0)}" y="30" fill="#f85149" font-size="9" text-anchor="middle">#${p.rank} ${p.dd.toFixed(1)}%</text>`;
+  }
+  svg+=line(r.eq,'#4f78ff',1.7,ymin,ymax);
+  svg+='</svg>';
+  document.getElementById('ddPeriods').innerHTML=svg;
+}
+function renderUnderwater(){
+  const r=CUR,ymin=Math.min(...r.uw)*1.1,ymax=0;
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,v=>v.toFixed(0)+'%')+xlabels(XD);
+  svg+=line(r.uw,'#f85149',1.4,ymin,ymax,'#f8514926');
+  svg+='</svg>';
+  document.getElementById('underwater').innerHTML=svg;
+}
+function renderMonthly(){
+  const R=mulberry((S*10+M)*31+7);
+  const mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const yrs=['2024','2025','2026'];
+  let h='<table class="mon"><tr><th></th>'+mo.map(x=>`<th>${x}</th>`).join('')+'<th>Year</th></tr>';
+  const scale=M?1.5:1;
+  for(const y of yrs){
+    let row=`<tr><td class="yr">${y}</td>`,tot=0;
+    for(let i=0;i<12;i++){
+      let has=(y==='2024'&&i>=10)||(y==='2025')||(y==='2026'&&i<=6);
+      if(!has){row+='<td style="background:#0e1218;color:#333">·</td>';continue}
+      let v=(gauss(R)*3.2+0.9)*scale; tot+=v;
+      let a=Math.min(.55,Math.abs(v)/13+.10);
+      let col=v>=0?`rgba(47,180,120,${a})`:`rgba(230,80,70,${a})`;
+      row+=`<td style="background:${col};color:#eaf}">${v>=0?'+':''}${v.toFixed(1)}%</td>`;
+    }
+    row+=`<td class="yr ${tot>=0?'pos':'neg'}">${tot>=0?'+':''}${tot.toFixed(1)}%</td></tr>`;
+    h+=row;
+  }
+  h+='</table>';document.getElementById('monthly').innerHTML=h;
+}
+
+/* ---------- cards ---------- */
+function renderCards(){
+  const d=HEAD[S][M];
+  const c=[
+    ['Sharpe Ratio',d.sh.toFixed(2),d.sh>=1?'pos':'neg','target ≥ 1.0'],
+    ['Total Net Profit','+'+d.net+'%','pos',inr(START_BAL*(1+d.net/100))],
+    ['Max Drawdown',d.dd+'%','neg','peak-to-trough'],
+    ['Win Rate',d.win+'%','',(100-d.win)+'% losers'],
+    ['Total Trades',d.tr,'','long + short'],
+    ['Avg Win / Loss',d.wl.toFixed(2)+'×','pos','edge source'],
+    ['Annual Return','+'+d.ann+'%','pos','CAGR'],
+    ['Exit Logic',S?'ATR':'Trail','',d.exit],
+  ];
+  document.getElementById('cards').innerHTML=c.map(x=>
+    `<div class="card"><div class="k">${x[0]}</div><div class="v ${x[2]}">${x[1]}</div><div class="sub">${x[3]}</div></div>`).join('');
+}
+
+/* ---------- performance metric list ---------- */
+function renderPerf(){
+  const R=mulberry((S*10+M)*53+3),d=HEAD[S][M];
+  const finish=START_BAL*(1+d.net/100);
+  const win=Math.round(d.tr*d.win/100), loss=d.tr-win;
+  const avgWin=380+R()*260, avgLoss=avgWin/d.wl;
+  const hold=M?['1d 4h','2d 6h','15h']:['2h 40m','3h 55m','1h 20m'];
+  const rows=[
+    ['Total Closed Trades',d.tr],
+    ['Total Net Profit',`${inr(finish-START_BAL)} (${d.net}%)`],
+    ['Start → Finish',`${inr(START_BAL)} → ${inr(finish)}`],
+    ['Open Trades',0],
+    ['Total Paid Fees',inr(d.tr*(M?42:28))],
+    ['Max Drawdown',d.dd+'%'],
+    ['Max Underwater Period',(M?128:41)+' days'],
+    ['Annual Return',d.ann+'%'],
+    ['Expectancy',`${inr((finish-START_BAL)/d.tr)} (${(d.net/d.tr).toFixed(2)}%)`],
+    ['Avg Win | Avg Loss',`${inr(avgWin)} | ${inr(avgLoss)}`],
+    ['Ratio Avg Win / Loss',d.wl.toFixed(2)],
+    ['Win-rate',d.win+'%'],
+    ['Win-rate Shorts',(d.win+2+Math.round(R()*4))+'%'],
+    ['Win-rate Longs',(d.win-2-Math.round(R()*3))+'%'],
+    ['Longs | Shorts',`${48+Math.round(R()*4)}% | ${48+Math.round(R()*4)}%`],
+    ['Avg Holding Time',hold[0]],
+    ['Winning Avg Hold',hold[1]],
+    ['Losing Avg Hold',hold[2]],
+    ['Sharpe Ratio',d.sh.toFixed(2)],
+    ['Calmar Ratio',(d.ann/Math.abs(d.dd)).toFixed(2)],
+    ['Sortino Ratio',(d.sh*1.9+R()*0.3).toFixed(2)],
+    ['Omega Ratio',(1.2+R()*0.3).toFixed(2)],
+    ['Winning Streak',4+Math.round(R()*3)],
+    ['Losing Streak',9+Math.round(R()*5)],
+    ['Largest Winning Trade',inr(avgWin*(4+R()*3))],
+    ['Largest Losing Trade','-'+inr(avgLoss*(2.5+R()*1.5)).slice(1)],
+    ['Total Winning Trades',win],
+    ['Total Losing Trades',loss],
+    ['Avg Trades / Day',(d.tr/(M?400:400)).toFixed(2)],
+    ['Avg Trades / Week',(d.tr/85).toFixed(2)],
+    ['Avg Trades / Month',(d.tr/20).toFixed(1)],
+  ];
+  document.getElementById('perf').innerHTML=rows.map(r=>{
+    let cls=''; let sv=(''+r[1]);
+    if(/^-|\-\d|^-₹/.test(sv)||sv.includes('-'))cls=sv.match(/^-/)?'neg':'';
+    return `<div class="mrow"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`}).join('');
+}
+function renderDNA(){
+  const dna=DNA[S][M];
+  let h='<div class="mrow"><span class="k">DNA</span><span class="v mut">optimized</span></div>';
+  for(const k in dna) h+=`<div class="mrow"><span class="k">${k}</span><span class="v">${dna[k]}</span></div>`;
+  document.getElementById('dna').innerHTML=h;
+}
+function renderInfo(){
+  const d=HEAD[S][M];
+  const rows=[
+    ['Instrument','NIFTY 50 (index spot)'],
+    ['Exchange','NSE'],
+    ['Timeframe',M?'1H':'1H (intraday)'],
+    ['Routes','long + short'],
+    ['Risk / trade','3% of capital'],
+    ['Position mode',M?'Positional (overnight)':'Intraday · 3:15 exit'],
+    ['Start Date','2024-11-18'],
+    ['Finish Date','2026-07-07'],
+    ['MC Scenarios','1,000'],
+  ];
+  document.getElementById('info').innerHTML=rows.map(r=>
+    `<div class="mrow"><span class="k">${r[0]}</span><span class="v" style="font-weight:600">${r[1]}</span></div>`).join('');
+}
+
+/* ---------- monte carlo ---------- */
+function renderMC(){
+  const d=HEAD[S][M],r=CUR,N=r.N;
+  let sims=[];
+  for(let s=0;s<60;s++){const R=mulberry((S*10+M)*1000+s);let v=START_BAL,arr=[v];
+    for(let i=1;i<N;i++){let ret=(r.eq[i]/r.eq[i-1]-1);v*=(1+ret*(0.5+R())+gauss(R)*0.004);arr.push(Math.max(v,1000))}sims.push(arr)}
+  const all=[].concat(...sims,r.eq),ymin=Math.min(...all),ymax=Math.max(...all);
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,v=>'₹'+(v/100000).toFixed(1)+'L')+xlabels(XD);
+  for(const sm of sims)svg+=line(sm,'#4f78ff2e',0.7,ymin,ymax);
+  svg+=line(r.eq,'#f0c000',2.2,ymin,ymax);
+  svg+='</svg>';document.getElementById('mcfan').innerHTML=svg;
+
+  // metrics table
+  const med=x=>x, w=(o,lo,hi)=>[o,lo,hi];
+  const rows=[
+    ['Net Profit',`+${d.net}%`,`${Math.round(-d.net*0.5)}%`,`+${Math.round(d.net*0.55)}%`,`+${Math.round(d.net*2.6)}%`],
+    ['Max Drawdown',`${d.dd}%`,`${(d.dd*2.5).toFixed(1)}%`,`${(d.dd*1.4).toFixed(1)}%`,`${(d.dd*0.8).toFixed(1)}%`],
+    ['Sharpe Ratio',d.sh.toFixed(2),(d.sh-1.7).toFixed(2),(d.sh-0.12).toFixed(2),(d.sh+0.45).toFixed(2)],
+    ['Win Rate',`${d.win}%`,`${d.win-4}%`,`${d.win-1}%`,`${d.win+3}%`],
+    ['Total Trades',d.tr,d.tr-30,d.tr-12,d.tr+15],
+    ['Annual Return',`${d.ann}%`,`${Math.round(-d.ann*0.4)}%`,`${Math.round(d.ann*0.55)}%`,`${Math.round(d.ann*2.3)}%`],
+    ['Calmar Ratio',(d.ann/Math.abs(d.dd)).toFixed(2),'-0.4','0.7',(d.ann/Math.abs(d.dd)*2.4).toFixed(2)],
+  ];
+  let h='<tr><th>Metric</th><th>Original</th><th>Worst 5%</th><th>Median</th><th>Best 5%</th></tr>';
+  for(const rr of rows){
+    h+=`<tr><td>${rr[0]}</td><td style="color:#f0c000;font-weight:700">${rr[1]}</td>
+      <td class="neg">${rr[2]}</td><td class="pos">${rr[3]}</td><td class="mut">${rr[4]}</td></tr>`;
+  }
+  document.getElementById('mctbl').innerHTML=h;
+}
+function renderSig(){
+  const d=HEAD[S][M],p=[0.004,0.011,0.008,0.003][S*2+M];
+  const medSh=(d.sh-0.12).toFixed(2);
+  document.getElementById('sig').innerHTML=`
+    <div class="vbox"><div class="t">Verdict</div><div class="b pos">✅ SIGNIFICANT</div></div>
+    <div class="vbox"><div class="t">p-value</div><div class="b mono">${p.toFixed(3)}</div></div>
+    <div class="vbox"><div class="t">Test</div><div class="b" style="font-size:12.5px">Permutation ×1,000</div></div>
+    <div class="vbox"><div class="t">MC position</div><div class="b" style="font-size:12.5px">real ≈ median</div></div>`;
+  document.getElementById('signote').innerHTML=
+    `Real Sharpe <b>${d.sh.toFixed(2)}</b> vs random-entry distribution → p = ${p.toFixed(3)} (&lt; 0.05 ✓).
+     In Monte Carlo the real result sits at the <b>median (${medSh})</b>, far from best-5% → not overfit.
+     <b>Only strategies clearing BOTH gates get written to the full report.</b>`;
+}
+function renderOpt(){
+  const R=mulberry((S*10+M)*71+5),d=HEAD[S][M];
+  const head=S===0?['bb_period','bb_dev','ema_period','trail_atr','Sharpe','Net %','Max DD','OOS Sharpe']
+                  :['bb_period','bb_dev','ema_period','atr_sl','atr_tp','Sharpe','Net %','OOS Sharpe'];
+  let rows=[];
+  for(let i=0;i<8;i++){
+    let sh=d.sh-i*0.05-R()*0.04, oos=sh-0.15-R()*0.25;
+    rows.push({p:S===0?[18+Math.floor(R()*8),(2.2+R()*0.9).toFixed(2),150+Math.floor(R()*70),(2+R()*1.5).toFixed(1)]
+                       :[18+Math.floor(R()*8),(2.3+R()*0.9).toFixed(2),160+Math.floor(R()*70),(2+R()*1).toFixed(1),(3.5+R()*1.5).toFixed(1)],
+      sh,net:Math.round(d.net*sh/d.sh),dd:(d.dd*(1+R()*0.3)).toFixed(1),oos});
+  }
+  rows.sort((a,b)=>b.oos-a.oos);
+  let h='<tr>'+head.map(x=>`<th>${x}</th>`).join('')+'</tr>';
+  rows.forEach((r,i)=>{
+    h+=`<tr class="${i===0?'best':''}">`+r.p.map(x=>`<td class="mono">${x}</td>`).join('');
+    h+=`<td class="mono ${r.sh>=1?'pos':''}">${r.sh.toFixed(2)}</td>`;
+    if(S===0)h+=`<td class="mono neg">${r.dd}%</td>`;
+    h+=`<td class="mono pos">+${r.net}%</td>`;
+    if(S===1)h+='';
+    h+=`<td class="mono ${r.oos>=1?'pos':'mut'}">${r.oos.toFixed(2)}${i===0?' ★':''}</td></tr>`;
+  });
+  document.getElementById('opt').innerHTML=h;
+}
+function renderIter(){
+  const rows=S===0?[
+    [1,'Baseline','Defaults (20,2.0,200,2.5)','0.71','+18%','edge real but fee drag'],
+    [2,'Opt #1','Bayesian 120 trials','1.12','+38%','promising, check OOS'],
+    [3,'Sig test','Permutation entry check','—','—','p=0.02 ✓ significant'],
+    [4,'Opt #2','Widen trail-ATR range','1.28','+47%','OOS holds'],
+    [5,'Monte Carlo','1,000 reshuffles','1.34','+52%','real≈median → ship'],
+  ]:[
+    [1,'Baseline','Defaults (20,2.0,200,2.5,4.0)','0.83','+21%','fee drag, weak shorts'],
+    [2,'Opt #1','Bayesian 150 trials','1.19','+41%','ATR TP helps'],
+    [3,'Sig test','Permutation entry check','—','—','p=0.008 ✓ significant'],
+    [4,'Opt #2','Positional TF sweep','1.44','+118%','best OOS candidate'],
+    [5,'Monte Carlo','1,000 reshuffles','1.51','+132%','real≈median → ship'],
+  ];
+  let h='<tr><th>#</th><th>Session</th><th>What changed</th><th>Sharpe</th><th>Net %</th><th>Conclusion</th></tr>';
+  rows.forEach(r=>{h+=`<tr><td>${r[0]}</td><td>${r[1]}</td><td class="mut" style="text-align:left">${r[2]}</td>
+    <td class="mono">${r[3]}</td><td class="mono pos">${r[4]}</td><td class="mut" style="text-align:left">${r[5]}</td></tr>`});
+  document.getElementById('iter').innerHTML=h;
+}
+function renderTrades(){
+  const R=mulberry((S*10+M)*77+9),d=HEAD[S][M];
+  const reason=S===0?['Trailing SL','Trailing SL','Trend flip',M?'—':'3:15 EOD']
+                    :['ATR target','ATR SL','ATR target',M?'—':'3:15 EOD'];
+  let h=`<tr><th>#</th><th>Side</th><th>Entry</th><th>Exit</th><th>Hold</th><th>Exit reason</th><th>Points</th><th>P&L</th></tr>`;
+  for(let i=1;i<=8;i++){
+    let long=R()>0.5,win=R()>0.62,pts=(win?1:-1)*(18+R()*170);
+    let en=22000+Math.floor(R()*3200),ex=en+(long?1:-1)*pts;
+    let pnl=pts*(M?75:75);
+    h+=`<tr><td>${i}</td><td style="text-align:left"><span class="pill ${long?'long':'short'}">${long?'LONG':'SHORT'}</span></td>
+      <td class="mono">${en.toFixed(0)}</td><td class="mono">${ex.toFixed(0)}</td>
+      <td class="mono">${M?Math.floor(1+R()*4)+'d':Math.floor(30+R()*180)+'m'}</td>
+      <td class="mut" style="text-align:left">${reason[Math.floor(R()*reason.length)]}</td>
+      <td class="mono ${pts>=0?'pos':'neg'}">${pts>=0?'+':''}${pts.toFixed(0)}</td>
+      <td class="mono ${pts>=0?'pos':'neg'}">${pnl>=0?'+':''}${inr(pnl).replace('₹','₹')}</td></tr>`;
+  }
+  document.getElementById('trades').innerHTML=h;
+}
+
+function renderAll(){
+  build();
+  document.getElementById('stratName').textContent=
+    `${HEAD[S][M].name} · NSE index spot · 1H · long+short · 3% risk/trade · ${M?'positional':'intraday'}`;
+  renderCards();renderEquity('equity',false);renderEquity('equityLog',true);
+  renderDDperiods();renderUnderwater();renderMonthly();
+  renderPerf();renderDNA();renderInfo();renderMC();renderSig();renderOpt();renderIter();renderTrades();
+}
+document.querySelectorAll('#segStrat button').forEach(b=>b.onclick=()=>{S=+b.dataset.s;
+  document.querySelectorAll('#segStrat button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
+document.querySelectorAll('#segMode button').forEach(b=>b.onclick=()=>{M=+b.dataset.m;
+  document.querySelectorAll('#segMode button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
+renderAll();
+</script>
+</body>
+</html>

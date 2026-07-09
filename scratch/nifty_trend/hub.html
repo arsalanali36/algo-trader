@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Strategy Lab — Hub</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#12161f;--panel2:#171c27;--bd:#242c3a;--bd2:#1b2230;
+    --tx:#e6edf3;--mut:#8b949e;--pos:#3fb950;--neg:#f85149;--blue:#4f78ff;--teal:#2ee6a0;--gold:#f5c518;--vio:#a371f7}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;font-size:13.5px;line-height:1.5}
+  .wrap{max-width:1280px;margin:0 auto;padding:18px 20px 60px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:13px 17px;background:var(--panel);border:1px solid var(--bd);border-radius:11px;margin-bottom:14px;flex-wrap:wrap;gap:12px}
+  .topbar h1{margin:0;font-size:18px}
+  .topbar p{margin:3px 0 0;color:var(--mut);font-size:12px}
+  .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+  .search{flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:13px}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:7px 13px;border:1px solid var(--bd);border-radius:8px;background:var(--panel2);color:var(--mut);font-size:12.5px;font-weight:600;cursor:pointer;user-select:none}
+  .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .tblwrap{background:var(--panel);border:1px solid var(--bd);border-radius:11px;overflow:hidden}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{background:var(--bd2);color:var(--mut);text-align:left;padding:10px 12px;font-size:11px;text-transform:uppercase;letter-spacing:.4px;font-weight:700;cursor:pointer;white-space:nowrap;user-select:none;border-bottom:1px solid var(--bd)}
+  thead th.num{text-align:right}
+  thead th:hover{color:var(--tx)}
+  thead th .arw{opacity:.5;font-size:10px}
+  tbody td{padding:10px 12px;border-bottom:1px solid var(--bd2);vertical-align:middle}
+  tbody tr.main{cursor:pointer}
+  tbody tr.main:hover{background:var(--panel2)}
+  tbody tr.win td:first-child{box-shadow:inset 3px 0 0 var(--teal)}
+  td.num{text-align:right;font-variant-numeric:tabular-nums;font-family:'Consolas',monospace}
+  .star{font-size:19px;cursor:pointer;filter:grayscale(1);opacity:.45;line-height:1}
+  .star.on{filter:none;opacity:1}
+  .star:hover{transform:scale(1.15)}
+  .nm{font-weight:700}
+  .nm .badge{font-size:9.5px;font-weight:700;padding:1px 6px;border-radius:10px;margin-left:7px;vertical-align:middle}
+  .badge.win{background:#0c2a20;color:var(--teal);border:1px solid #124f3a}
+  .badge.tool{background:#1a1330;color:#c4a7ff;border:1px solid #3a2a6a}
+  .badge.strat{background:#101c33;color:#9db8ff;border:1px solid #26406e}
+  .typ{color:var(--mut);font-size:12px}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .mut{color:var(--mut)}
+  .sig.pass{color:var(--pos);font-weight:700} .sig.fail{color:var(--neg);font-weight:700} .sig.na{color:var(--mut)}
+  .open{display:inline-block;padding:5px 12px;border-radius:7px;background:var(--blue);color:#fff;text-decoration:none;font-size:12px;font-weight:600}
+  .open.ghost{background:var(--panel2);border:1px solid var(--bd);color:var(--tx)}
+  .acts{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .deploy{display:inline-block;padding:5px 11px;border-radius:7px;background:#0c2a20;border:1px solid #124f3a;color:var(--teal);text-decoration:none;font-size:11.5px;font-weight:600}
+  .deploy:hover{background:#124f3a}
+  .deployed{font-size:11px;color:var(--teal);font-weight:600;white-space:nowrap}
+  .nmlink{color:var(--tx);text-decoration:none}
+  .nmlink:hover{color:#9db8ff;text-decoration:underline}
+  tr.detail td{background:var(--panel2);border-bottom:1px solid var(--bd);padding:0}
+  tr.detail .inner{padding:12px 16px;color:var(--mut);font-size:12.5px;line-height:1.6}
+  tr.detail .inner b.pos{color:var(--pos)} tr.detail .inner b.neg{color:var(--neg)} tr.detail .inner b.teal{color:var(--teal)}
+  .chev{display:inline-block;transition:transform .15s;color:var(--mut);margin-right:6px;font-size:10px}
+  .chev.open{transform:rotate(90deg)}
+  .note{color:var(--mut);font-size:11.5px;margin-top:16px;line-height:1.6;background:var(--panel);border:1px solid var(--bd);border-radius:9px;padding:11px 14px}
+  .note b{color:var(--tx)}
+  .count{color:var(--mut);font-size:12px;margin-left:auto}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>🧪 Strategy Lab — Hub</h1>
+      <p>App ka hissa (More → Strategy Lab). Sort ke liye column headers pe click karo · row pe click = description · ⭐ = favorite.</p></div>
+  </div>
+
+  <div class="toolbar">
+    <input class="search" id="search" placeholder="🔍 Search strategy…">
+    <div class="chips" id="filters">
+      <button class="chip on" data-f="all">All</button>
+      <button class="chip" data-f="star">⭐ Starred</button>
+      <button class="chip" data-f="strat">Strategies</button>
+      <button class="chip" data-f="tool">Tools</button>
+    </div>
+    <span class="count" id="count"></span>
+  </div>
+
+  <div class="tblwrap">
+    <table>
+      <thead><tr>
+        <th style="width:34px"></th>
+        <th data-s="name">Name <span class="arw"></span></th>
+        <th data-s="tf">TF <span class="arw"></span></th>
+        <th class="num" data-s="sharpe">Sharpe <span class="arw"></span></th>
+        <th class="num" data-s="maxdd">Max DD <span class="arw"></span></th>
+        <th class="num" data-s="win">Win% <span class="arw"></span></th>
+        <th class="num" data-s="trades">Trades <span class="arw"></span></th>
+        <th data-s="sig">Significance <span class="arw"></span></th>
+        <th style="width:170px">Actions</th>
+      </tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+
+  <div class="note" id="note"></div>
+</div>
+
+<script>
+const ITEMS=[
+  {id:'orb_midday', type:'strat', win:true, name:'Mid-Day ORB (11:00–13:00)', tf:'15m',
+   sharpe:0.95, maxdd:-4.4, win:54, trades:417, sig:'PASS', sigp:0.000, link:'dashboard_intraday.html', deployed:'orb_v1 · paper',
+   desc:'✅ <b class="teal">GENUINE EDGE</b> — significance PASS (p&lt;0.001). Train 0.95 ≈ OOS 0.96 (no decay). NIFTY spot, 1x no-leverage, long+short. Ultra-low DD. <b class="pos">Best result — deployed as orb_v1 (paper).</b> Caveat: CAGR 3.7% &lt; buy&hold at 1x.'},
+  {id:'positional_trend', type:'strat', win:false, name:'Positional Trend (BB+EMA)', tf:'1H',
+   sharpe:1.10, maxdd:-34, win:37, trades:243, sig:'FAIL', sigp:0.13, link:'dashboard.html',
+   desc:'⚠️ Big returns (+305%) BUT significance <b class="neg">FAIL</b> (p=0.13) — mostly leverage (5.7x) + beta, not a real timing edge. At 1x makes only +22% (below buy&hold). Honest: don’t ship as-is.'},
+  {id:'spec_builder', type:'tool', win:false, name:'Strategy Spec Builder', tf:'—',
+   sharpe:null, maxdd:null, win:null, trades:null, sig:'NA', sigp:null, link:'strategy_spec_builder.html',
+   desc:'🧭 Master-prompt generator. Pick instrument / mode / exit / targets → generates a master prompt + config JSON. Use before each new strategy hunt. Also in app: More → Strategy Spec Builder.'},
+  {id:'mockup', type:'tool', win:false, name:'Jesse-style Mockup', tf:'—',
+   sharpe:null, maxdd:null, win:null, trades:null, sig:'NA', sigp:null, link:'nifty_trend_mockup.html',
+   desc:'📐 The approved layout template all the real dashboards are built from (fake data).'},
+];
+
+const KEY='strat_lab_stars';
+let stars=JSON.parse(localStorage.getItem(KEY)||'null');
+if(!stars){stars={};ITEMS.forEach(i=>{if(i.win)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars))}
+let filt='all', sortKey='sharpe', sortDir=-1, query='', expanded={};
+
+function val(i,k){
+  if(k==='name')return i.name.toLowerCase();
+  if(k==='sig')return i.sig==='PASS'?2:(i.sig==='FAIL'?1:0);
+  if(k==='tf')return i.tf;
+  const v=i[k]; return v==null?-Infinity:v;
+}
+function fmt(v,suf,dec){return v==null?'<span class="mut">—</span>':(v>=0&&suf==='%'?'':'')+v.toFixed(dec)+(suf||'')}
+
+function render(){
+  let list=ITEMS.slice();
+  if(filt==='star')list=list.filter(i=>stars[i.id]);
+  else if(filt!=='all')list=list.filter(i=>i.type===filt);
+  if(query)list=list.filter(i=>i.name.toLowerCase().includes(query)||i.desc.toLowerCase().includes(query));
+  list.sort((a,b)=>{
+    const s=(stars[b.id]?1:0)-(stars[a.id]?1:0); if(s)return s;   // starred first always
+    let x=val(a,sortKey),y=val(b,sortKey);
+    if(x<y)return -sortDir; if(x>y)return sortDir; return 0;
+  });
+  const tb=document.getElementById('rows');
+  tb.innerHTML=list.map(i=>{
+    const badge=i.win?'<span class="badge win">🏆 WINNER</span>':(i.type==='tool'?'<span class="badge tool">TOOL</span>':'<span class="badge strat">STRATEGY</span>');
+    const sh=i.sharpe==null?'<span class="mut">—</span>':`<span class="${i.sharpe>=1?'pos':(i.sharpe>=0.5?'':'neg')}">${i.sharpe.toFixed(2)}</span>`;
+    const dd=i.maxdd==null?'<span class="mut">—</span>':`<span class="${i.maxdd>=-10?'pos':'neg'}">${i.maxdd.toFixed(1)}%</span>`;
+    const wn=i.win==null?'<span class="mut">—</span>':i.win+'%';
+    const tr=i.trades==null?'<span class="mut">—</span>':i.trades;
+    const sig=i.sig==='PASS'?`<span class="sig pass">✅ PASS</span> <span class="mut">p=${i.sigp.toFixed(3)}</span>`
+            :(i.sig==='FAIL'?`<span class="sig fail">⚠️ FAIL</span> <span class="mut">p=${i.sigp.toFixed(2)}</span>`:'<span class="sig na">—</span>');
+    const open=expanded[i.id];
+    let deployBtn = i.type==='tool' ? ''
+      : (i.deployed ? `<span class="deployed" title="Deployed as ${i.deployed}">✓ ${i.deployed}</span>`
+        : `<a class="deploy" href="/" target="_blank" onclick="event.stopPropagation()" title="Manage / deploy in the app">Deploy</a>`);
+    let row=`<tr class="main ${i.win?'win':''}" data-id="${i.id}">
+      <td><span class="star ${stars[i.id]?'on':''}" data-star="${i.id}">${stars[i.id]?'⭐':'☆'}</span></td>
+      <td class="nm"><span class="chev ${open?'open':''}">▶</span><a class="nmlink" href="${i.link}" target="_blank" onclick="event.stopPropagation()">${i.name}</a>${badge}</td>
+      <td class="typ">${i.tf}</td>
+      <td class="num">${sh}</td><td class="num">${dd}</td><td class="num">${wn}</td><td class="num">${tr}</td>
+      <td>${sig}</td>
+      <td class="acts"><a class="open ${i.type==='tool'?'ghost':''}" href="${i.link}" target="_blank" onclick="event.stopPropagation()">Open →</a>${deployBtn}</td></tr>`;
+    if(open)row+=`<tr class="detail"><td colspan="9"><div class="inner">${i.desc}</div></td></tr>`;
+    return row;
+  }).join('')||'<tr><td colspan="9" style="text-align:center;color:var(--mut);padding:30px">Kuch nahi mila.</td></tr>';
+  document.getElementById('count').textContent=`${list.length} / ${ITEMS.length}`;
+  // header arrows
+  document.querySelectorAll('thead th[data-s]').forEach(th=>{
+    const a=th.querySelector('.arw'); a.textContent=(th.dataset.s===sortKey)?(sortDir<0?'▼':'▲'):'';});
+  // wire
+  tb.querySelectorAll('.star').forEach(s=>s.onclick=e=>{e.stopPropagation();const id=s.dataset.star;
+    if(stars[id])delete stars[id];else stars[id]=1;localStorage.setItem(KEY,JSON.stringify(stars));render()});
+  tb.querySelectorAll('tr.main').forEach(r=>r.onclick=()=>{const id=r.dataset.id;expanded[id]=!expanded[id];render()});
+}
+document.querySelectorAll('thead th[data-s]').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.s; if(sortKey===k)sortDir=-sortDir;else{sortKey=k;sortDir=(k==='name'||k==='tf')?1:-1;}render()});
+document.querySelectorAll('#filters .chip').forEach(b=>b.onclick=()=>{
+  filt=b.dataset.f;document.querySelectorAll('#filters .chip').forEach(x=>x.classList.remove('on'));b.classList.add('on');render()});
+document.getElementById('search').oninput=e=>{query=e.target.value.toLowerCase();render()};
+document.getElementById('note').innerHTML=
+  `💾 <b>Note:</b> Ye hub app mein integrated hai (<b>More → 🧪 Strategy Lab</b>). Har row apna dashboard <b>nayi tab</b> mein kholta hai. `+
+  `⭐ favorites <b>isi browser</b> mein save hote hain (localStorage) — doosre browser/device pe reset ho jayenge. `+
+  `(Agar cross-device chahiye to server-side save add kar sakte hain — abhi zaroorat nahi.) Nayi strategy bane → \`ITEMS\` array mein ek entry = naya row.`;
+render();
+</script>
+</body>
+</html>

@@ -15,6 +15,29 @@
 
 ---
 
+## 2026-07-09 — NIFTY trend/ORB research pipeline → Mid-Day ORB strategy DEPLOYED (paper) + Strategy Lab + Spec Builder + RMS profit-target
+**Status:** DONE (research + orb_v1 paper-deployed; live fire-test pending market hours)
+**Layer:** strategy / backtest / RMS / UI / infra
+**Files:** `scratch/nifty_trend/*` (research pipeline, git force-added), `strategies/live/orb_trader.py` (NEW live trader), `trader_dashboard.py` (routes + STRATEGIES["orb"]), `templates/index.html` (nav + RMS table), `strategy_spec_builder.html` (root), `_risk.per_strategy.orb_v1` in nifty_config.json (gitignored)
+
+**Kya:** A YouTube video (Jesse framework + Claude) prompt-driven "find 2 trend strategies, validate with significance + Monte Carlo, don't ship overfit" — replicated for **NIFTY** inside CODE3B. Built a full standalone research pipeline, found ONE genuinely-significant edge, deployed it paper.
+
+**Research pipeline** (`scratch/nifty_trend/`, self-contained, force-tracked; big 1-min CSVs gitignored):
+- `data_fetch.py`+`datalake.py` — Dhan `/v2/charts/intraday` NIFTY (secId 13 IDX_I), **90-day max/call** (DH-905 beyond), serves 5+ yrs back. 4.5yr 1-min → per-day CSVs in canonical `._TRADING DATA/Index/NIFTY/` (reusable, zero re-download on re-run — forward-fill only, holidays skipped). `download_bnf.py` = BankNIFTY (secId 25).
+- `engine.py`/`intraday_engine.py` — event-driven backtester, `wilder_atr` from `_CHARTING.indicators` (Rule 6B, matches live), **1x leverage cap (no-leverage)**, intraday rules (3:15 exit, max 2/day, no-entry-after), 6+9 designs (rsi_rev/bb_fade/sess_rev/orb/donchian/supertrend/orb_st/gap_fade/tod_orb), fee ~₹240/round-trip (realistic futures).
+- `optimize.py`/`intraday_optimize.py` (train/OOS split), `significance.py` (rotation permutation ×1000, beta-controlled), `montecarlo.py` (trade bootstrap ×1000), `report.py`/`intraday_report.py` → `results*.js`.
+- Dashboards: `dashboard.html` (positional), `dashboard_intraday.html` (ORB winner, Full/Train/OOS toggle, Jesse-style trades table + full-screen candlestick chart modal, search + column-toggle), `hub.html` (Strategy Lab table — sortable/filterable/star/Deploy), `strategy_spec_builder.html` (master-prompt generator), `nifty_trend_mockup.html`.
+
+**Findings (honest):** Positional trend = Sharpe 1.1 but **significance FAIL** (mostly 5.7x leverage + beta; at 1x only +22%, below buy&hold). Intraday trend-following = weak. **WINNER = `tod_orb` Mid-Day ORB (entries only 11:00-13:00) @15m:** train Sharpe **0.95 ≈ OOS 0.96** (no decay), win 53-54%, maxDD **-4.4%**, p=0.000 significant, 20 robust-both-halves configs. Config: `{or_min:30, orb_k:1.0, h0:11, h1:13, atr_sl:2.5, rr:1.5}`.
+
+**Live-trader `orb_trader.py` (config `orb_v1`, paper, active=false):** follows NEW_STRATEGY_CHECKLIST — entry/exit via `execution_gateway.execute_signal/execute_exit` (RMS gate + order_store + no-premium-skip + fill-confirm), fetches NIFTY 15m spot (last 5 days for continuous ATR warmup, TRAP #85), OR 09:15-09:45 → 11:00-13:00 breakout+1×ATR → BUY ATM CE(long)/PE(short), **spot-based** stop(atr_sl×ATR)+target(RR×), 3:15 force-exit, max 2/day, disk state-persist + `_recover()` vs order_store (TRAP #28). Registered STRATEGIES["orb"]; `_base("orb_v1")`→"orb". Live compute_signal VERIFIED == backtest. VPS-deployed.
+
+**RMS two-stage validation (key concept — see LESSONS #103/#104):** search stays unconstrained (RMS NOT in master-prompt, else edge never found); before deploy, `intraday_engine.backtest(rms_caps=)` re-runs under real RMS caps. Found global ₹3000 profit-target degrades ORB 0.93→0.52. Fix: **per-strategy profit-target override** — backend `effective_daily_profit_target` already read `per_strategy[strat].profit_target_rs` (UI had no column); set `orb_v1 = {max_loss_rs:10000, profit_target_rs:15000}`; **added "Max Profit ₹" column** to Per-Strategy Override UI table (`profit_target_rs`, save/load wired). Caveat: thresholds were SPOT-P&L rupees; live 1-lot OPTION P&L scale differs — paper-measure.
+
+**App integrations (routes in trader_dashboard.py):** `/spec-builder` (Strategy Spec Builder), `/lab/<path>` (Strategy Lab hub + dashboards from scratch/nifty_trend). Nav (index.html): removed old "Script" tab (📜 icon → Script 3), Results → More dropdown, **Strategy Lab → top-nav**, Spec Builder in More. Per-Strategy table: **freeze Strategy column** (sticky) + auto-width columns (no cramp) + **pretty display names** (`fmtStratName`: orb_v1→"ORB v1"). Data-lake NIFTY 1-min now reusable project-wide.
+
+**Deploy:** all VPS-deployed (algo-dashboard restart, KillMode=process, market closed, live PIDs untouched); routes 200-verified. `nifty_config.json` gitignored so orb_v1 config + per_strategy override are VPS/local-only (not in git).
+
 ## 2026-07-09 — RMS single-source exit/no-entry time + 3:15 phantom-brokerage fix + local VPS-sync (#19/#20/#21)
 **Status:** DONE + **VPS DEPLOYED** (commit 2e5d95e; 0 open positions/0 traders during window; import-verify before restart; both services active, HTTP 200, no errors; RMS card + webhook-removal served).
 **Kya:**
