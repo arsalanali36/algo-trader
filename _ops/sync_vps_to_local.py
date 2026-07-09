@@ -28,30 +28,40 @@ if not os.path.exists(KEY):
             break
 
 print(f"Using SSH Key: {KEY}")
-SSH = ["ssh", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
-SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
+# BatchMode=yes + ConnectTimeout: kabhi interactive prompt (host-key/passphrase) pe
+# hang na ho — warna dashboard ka 180s route timeout ho jaata hai.
+_SSH_OPTS = ["-o", "StrictHostKeyChecking=no", "-o", "BatchMode=yes", "-o", "ConnectTimeout=12"]
+SSH = ["ssh", "-i", KEY] + _SSH_OPTS
+SCP = ["scp", "-i", KEY] + _SSH_OPTS
 
-# Files and directories to sync
-SYNC_ITEMS = [
+# FAST set (default, button ise pull karta) — "aaj ka data dikhne" ke liye jitna
+# chahiye utna hi: trades DB + config + light JSONs. Seconds me aa jaata hai.
+FAST_ITEMS = [
     "nifty_config.json",
     "data/config.json",
-    "data/trades.db",
-    "data/trades.db-shm",
-    "data/trades.db-wal",
+    "data/trades.db",   # -wal/-shm JAANBOOJH KE nahi: volatile SQLite files, local
+                        # dashboard unhe open/lock rakhta (Windows overwrite fail).
+                        # VPS pe pehle WAL checkpoint hota hai (neeche) → .db complete.
     "data/rsi_v1_watch.json",
     "data/downloader_alert.json",
     "data/downloader_log.json",
     "data/health_report.json",
     "data/sec_id_cache.json",
-    "data/shared_ltp_cache.json",
     "data/trade_log.json",
-    "data/trade_ohlc",
-    "data/backtest.db",
     "data/saved_backtests.json",
     "data/saved_optimizations.json",
-    "_TRADING_DATA",
-    "logs"
 ]
+
+# FULL set (--full flag) — sab kuch, incl. bhaari items (premium-chart OHLC,
+# poora F&O data-lake, logs). Ye GBs ho sakta hai → kabhi-kabhi hi, button se nahi.
+HEAVY_ITEMS = [
+    "data/shared_ltp_cache.json",
+    "data/trade_ohlc",
+    "data/backtest.db",
+    "_TRADING_DATA",
+    "logs",
+]
+SYNC_ITEMS = FAST_ITEMS + HEAVY_ITEMS   # back-compat (full)
 
 def run_cmd(cmd, check=True):
     r = subprocess.run(cmd, capture_output=True, text=True)
@@ -62,16 +72,27 @@ def run_cmd(cmd, check=True):
         sys.exit(1)
     return r
 
-def main():
+def main(items=None):
+    items = items or FAST_ITEMS
     print(f"\n[1/4] Checking remote files on VPS ({HOST})...")
     # Verify we can connect and the folder exists
     run_cmd(SSH + [HOST, f"ls -d '{REMOTE_DIR}'"])
-    
-    print("\n[2/4] Packaging data files on VPS into tarball...")
+
+    # WAL checkpoint: recent committed trades -wal me hote hain; sirf trades.db
+    # copy karne se woh chhut jaate. Checkpoint(TRUNCATE) -wal ko main .db me
+    # merge kar deta (safe, non-destructive, live dashboard ko disturb nahi karta).
+    if "data/trades.db" in items:
+        ckpt = (f"cd '{REMOTE_DIR}' && python3 -c \""
+                "import sqlite3; c=sqlite3.connect('data/trades.db'); "
+                "c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.commit(); c.close(); "
+                "print('wal checkpoint ok')\"")
+        run_cmd(SSH + [HOST, ckpt], check=False)
+
+    print(f"\n[2/4] Packaging {len(items)} data items on VPS into tarball...")
     # Build the list of files that actually exist remote to avoid tar errors
     remote_exists_cmd = (
         f"cd '{REMOTE_DIR}' && "
-        "python3 -c \"import os; items = [" + ", ".join(f"'{x}'" for x in SYNC_ITEMS) + "]; "
+        "python3 -c \"import os; items = [" + ", ".join(f"'{x}'" for x in items) + "]; "
         "print(' '.join([x for x in items if os.path.exists(x)]))\""
     )
     r = run_cmd(SSH + [HOST, remote_exists_cmd])
@@ -112,4 +133,6 @@ def main():
     print("\nSync completed successfully! Local host is now populated.")
 
 if __name__ == "__main__":
-    main()
+    # default = FAST (trades + config, seconds). --full = sab kuch (data-lake/logs, bhaari).
+    _full = "--full" in sys.argv
+    main(SYNC_ITEMS if _full else FAST_ITEMS)
