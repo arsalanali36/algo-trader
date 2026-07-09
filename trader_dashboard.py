@@ -106,6 +106,7 @@ UNIV_SCRIPT  = str(TRADERS_DIR / "universe_trader.py")
 UNIV_LOG     = BASE_DIR / "logs" / "universe_trader.log"
 CONFIG_FILE  = BASE_DIR / "data" / "config.json"
 NOTE_IMG_DIR = BASE_DIR / "data" / "note_images"
+RMS_AUDIT_FILE = BASE_DIR / "data" / "rms_audit_log.json"   # Task 13 — RMS value-change history
 NOTE_IMG_DIR.mkdir(parents=True, exist_ok=True)
 
 def _creds():
@@ -511,6 +512,56 @@ def resolve_trailing_step(entry_px, g_cfg=None):
 def api_get_risk_config():
     return jsonify(_risk_config())
 
+# ── Task 13 — RMS value-change audit log ────────────────────────────────────
+# Every Save on the ⚠️ Risk tab diffs the old _risk block against the new one and
+# appends only the fields that actually changed (with IST timestamp + scope) to
+# data/rms_audit_log.json. Answers "kab kaun si value change hui" without guessing.
+def _rms_flatten(risk):
+    """(_risk block) -> {(scope, field): value}. scope = 'global' or a strategy id."""
+    out = {}
+    for k, v in ((risk or {}).get("global") or {}).items():
+        out[("global", k)] = v
+    for sid, sc in ((risk or {}).get("per_strategy") or {}).items():
+        for k, v in (sc or {}).items():
+            out[(sid, k)] = v
+    return out
+
+def _rms_audit_record(old_risk, new_risk):
+    def _norm(x):
+        return "" if x is None else str(x).strip()
+    try:
+        of, nf = _rms_flatten(old_risk), _rms_flatten(new_risk)
+        ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+        ts = ist.strftime("%Y-%m-%d %H:%M:%S")
+        changes = []
+        for key in (set(of) | set(nf)):
+            scope, field = key
+            ov, nv = of.get(key), nf.get(key)
+            if _norm(ov) == _norm(nv):
+                continue   # unchanged (blank/None treated equal)
+            changes.append({"ts": ts, "scope": scope, "field": field,
+                            "old": ("" if ov is None else ov),
+                            "new": ("" if nv is None else nv)})
+        if not changes:
+            return
+        log = []
+        if RMS_AUDIT_FILE.exists():
+            try: log = json.loads(RMS_AUDIT_FILE.read_text())
+            except Exception: log = []
+        log.extend(changes)
+        RMS_AUDIT_FILE.write_text(json.dumps(log[-2000:], indent=2))   # cap history
+    except Exception as e:
+        print("rms audit record fail:", e, flush=True)
+
+@app.route('/api/rms-audit-log')
+def api_rms_audit_log():
+    """Newest-first list of RMS field changes for the Risk tab's Change History panel."""
+    try:
+        log = json.loads(RMS_AUDIT_FILE.read_text()) if RMS_AUDIT_FILE.exists() else []
+    except Exception:
+        log = []
+    return jsonify(list(reversed(log)))
+
 @app.route('/api/risk-config', methods=['POST'])
 def api_set_risk_config():
     data = request.get_json() or {}
@@ -518,7 +569,11 @@ def api_set_risk_config():
         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
     except Exception:
         cfg = {}
-    cfg["_risk"] = {"global": data.get("global") or {}, "per_strategy": data.get("per_strategy") or {}}
+    old_risk = {"global": (cfg.get("_risk") or {}).get("global") or {},
+                "per_strategy": (cfg.get("_risk") or {}).get("per_strategy") or {}}
+    new_risk = {"global": data.get("global") or {}, "per_strategy": data.get("per_strategy") or {}}
+    _rms_audit_record(old_risk, new_risk)   # Task 13 — log the diff before overwriting
+    cfg["_risk"] = new_risk
     TC_FILE.write_text(json.dumps(cfg, indent=2))
     return jsonify({"msg": "Risk settings saved!"})
 
@@ -1490,6 +1545,185 @@ def _load_premium_ohlc_candles(sec_id, date_str, entry_t="", exit_t=""):
         return None
 
 
+# ── Task 8 — moving trailing/aggressive SL, faithful to the live monitor ─────
+# The live monitor computes an option's SL each tick; nothing stores that SL per
+# timestamp. So for the chart we REPLAY the exact same rule over the premium
+# candles the chart already loads (reusing risk_gate.target_sl_level for the
+# aggressive profile — Rule 6B, no duplicated risk math), and for the live
+# Open-Positions row we surface the CURRENT SL the monitor will actually fire on.
+def _sl_premium_from_mtm(entry_px, side, qty, sl_mtm):
+    """Invert a signed ₹ MTM level (whole position) back to an option premium."""
+    if not qty or qty <= 0:
+        return None
+    return round(entry_px + sl_mtm / qty, 2) if side == "BUY" else round(entry_px - sl_mtm / qty, 2)
+
+def _tsl_peak_from_disk(pid):
+    """Confirmed peak MTM the algo-monitor process tracks for an aggressive
+    position (data/tsl_state.json) — read the file since this dashboard process
+    doesn't own that state (same pattern as api_kill_floor_status)."""
+    try:
+        raw = json.loads(_TSL_STATE_FILE.read_text())
+        st = raw.get("state") or {}
+        v = st.get(str(pid)) if str(pid) in st else st.get(pid)
+        if v:
+            return float(v.get("peak") or 0.0)
+    except Exception:
+        pass
+    return None
+
+def _trade_entry_row(trad_sym, date_str, entry_t=None, strategy=None):
+    """Opening leg (id/side/entry_px/qty/tags) for a trad_sym on date_str, skipping
+    blocked/rejected rows. When two strategies traded the same contract same-day,
+    entry_t (HH:MM) + strategy disambiguate WHICH trade's chart this is — else the
+    earliest leg wins (old behaviour). Progressive fallback so a near-miss on the
+    exact minute still resolves the right strategy's leg. None if not found."""
+    try:
+        import order_store
+        base = ("SELECT id, side, price, qty, tags FROM orders WHERE trad_sym=? AND substr(ts,1,10)=? "
+                "AND (status IS NULL OR status NOT IN ('blocked','rejected'))")
+        with order_store._lock, order_store._conn() as c:
+            row = None
+            # 1) exact: strategy + entry minute
+            if strategy and entry_t:
+                row = c.execute(base + " AND strategy=? AND substr(ts,12,5)=? ORDER BY id LIMIT 1",
+                                (trad_sym, date_str, strategy, entry_t)).fetchone()
+            # 2) strategy's earliest leg
+            if not row and strategy:
+                row = c.execute(base + " AND strategy=? ORDER BY id LIMIT 1",
+                                (trad_sym, date_str, strategy)).fetchone()
+            # 3) any leg at that minute
+            if not row and entry_t:
+                row = c.execute(base + " AND substr(ts,12,5)=? ORDER BY id LIMIT 1",
+                                (trad_sym, date_str, entry_t)).fetchone()
+            # 4) earliest leg (original behaviour)
+            if not row:
+                row = c.execute(base + " ORDER BY id LIMIT 1", (trad_sym, date_str)).fetchone()
+        if not row:
+            return None
+        return {"id": row[0], "side": row[1], "entry_px": float(row[2] or 0),
+                "qty": int(row[3] or 0), "tags": json.loads(row[4] or "[]")}
+    except Exception:
+        return None
+
+def _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=None, strategy=None):
+    """Replay the position's SL over the premium candles → stepped line for the
+    chart. Handles the two tag/config-driven SL systems the monitor tracks:
+    the aggressive Default-TSL profile (AGGR_TSL) and trailing-points (trailing_pt).
+    Static SL types keep their existing flat price-line (no series). None on any
+    gap so the chart always still renders."""
+    try:
+        import risk_gate, dhan_master
+        er = _trade_entry_row(trad_sym, date_str, entry_t=entry_t, strategy=strategy)
+        if not er:
+            return None
+        side, entry_px, qty, tags = er["side"], er["entry_px"], er["qty"], er["tags"]
+        if entry_px <= 0 or qty <= 0 or not candles:
+            return None
+        bars = [c for c in candles if (entry_mk is None or c["time"] >= entry_mk)]
+        if not bars:
+            return None
+        is_aggr = any(str(t).startswith("AGGR_TSL") for t in tags)
+        sl_type = next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_TYPE:")), None)
+
+        def mtm(prem):
+            return (prem - entry_px) * qty if side == "BUY" else (entry_px - prem) * qty
+
+        if is_aggr:
+            cfg = risk_gate.default_target_sl_config()
+            lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
+            lots = max(1, round(qty / lotsz)) if lotsz else 1
+            target_mtm = cfg["target_per_lot"] * lots
+            agg_at = target_mtm * cfg["aggressive_pct"] / 100.0
+            peak, prev, series = 0.0, None, []
+            for c in bars:
+                m = mtm(c["close"])
+                confirmed = m if prev is None else min(prev, m)   # 2-reading confirmed peak
+                if confirmed > peak:
+                    peak = confirmed
+                prev = m
+                sp = _sl_premium_from_mtm(entry_px, side, qty, risk_gate.target_sl_level(peak, cfg, lots))
+                if sp is not None:
+                    series.append({"time": c["time"], "value": sp, "agg": bool(peak > agg_at)})
+            if not series:
+                return None
+            return {"mode": "aggressive", "series": series,
+                    "target": _sl_premium_from_mtm(entry_px, side, qty, target_mtm)}
+
+        if sl_type == "trailing_pt":
+            gap = float(next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_VAL:")), 0) or 0)
+            step_tag = next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_TRAIL_STEP:")), None)
+            step = float(step_tag) if step_tag else resolve_trailing_step(entry_px)
+            if step <= 0:
+                step = 1.0
+            conf, prev, series = None, None, []
+            for c in bars:
+                px = c["close"]
+                if side == "BUY":
+                    two = px if prev is None else min(prev, px)   # confirmed high (monitor parity)
+                    conf = two if conf is None else max(conf, two)
+                    fav = conf - entry_px
+                    sl = round((entry_px - gap) + (int(fav / step) * step), 2) if fav > 0 else round(entry_px - gap, 2)
+                else:
+                    two = px if prev is None else max(prev, px)   # confirmed low
+                    conf = two if conf is None else min(conf, two)
+                    fav = entry_px - conf
+                    sl = round((entry_px + gap) - (int(fav / step) * step), 2) if fav > 0 else round(entry_px + gap, 2)
+                prev = px
+                series.append({"time": c["time"], "value": sl, "agg": False})
+            if not series:
+                return None
+            return {"mode": "trailing_pt", "series": series, "target": None}
+        return None
+    except Exception:
+        return None
+
+def _live_sl_for_open(p):
+    """Current SL/target premium the monitor will fire on for an open position
+    (Task 8 live row). Aggressive → tracked peak from tsl_state.json; trailing_pt
+    → CONF_MAX/MIN_LTP tags. None when the position uses neither trailing system."""
+    try:
+        import risk_gate, dhan_master
+        tags = p.get("tags") or []
+        side = p.get("entry")
+        entry_px = float(p.get("entry_price") or 0)
+        qty = int(p.get("qty") or 0)
+        sec_id = p.get("sec_id")
+        if entry_px <= 0 or qty <= 0:
+            return None
+        if any(str(t).startswith("AGGR_TSL") for t in tags):
+            cfg = risk_gate.default_target_sl_config()
+            if not cfg.get("enabled"):
+                return None   # profile off → monitor won't fire it; don't show a misleading live SL
+            lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
+            lots = max(1, round(qty / lotsz)) if lotsz else 1
+            peak = _tsl_peak_from_disk(p.get("id")) or 0.0
+            agg_at = cfg["target_per_lot"] * lots * cfg["aggressive_pct"] / 100.0
+            sl_mtm = risk_gate.target_sl_level(peak, cfg, lots)   # signed ₹ (whole position) if SL hits now
+            return {"sl": _sl_premium_from_mtm(entry_px, side, qty, sl_mtm),
+                    "sl_rs": round(sl_mtm),   # <0 = max loss, >=0 = locked-in profit
+                    "target": _sl_premium_from_mtm(entry_px, side, qty, cfg["target_per_lot"] * lots),
+                    "mode": "aggressive", "trailing": True, "aggressive": bool(peak > agg_at)}
+        sl_type = next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_TYPE:")), None)
+        if sl_type == "trailing_pt":
+            gap = float(next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_VAL:")), 0) or 0)
+            step_tag = next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("SL_TRAIL_STEP:")), None)
+            step = float(step_tag) if step_tag else resolve_trailing_step(entry_px)
+            if step <= 0:
+                step = 1.0
+            if side == "BUY":
+                conf = float(next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("CONF_MAX_LTP:")), entry_px) or entry_px)
+                fav = conf - entry_px
+                sl = round((entry_px - gap) + (int(fav / step) * step), 2) if fav > 0 else round(entry_px - gap, 2)
+            else:
+                conf = float(next((str(t).split(":", 1)[1] for t in tags if str(t).startswith("CONF_MIN_LTP:")), entry_px) or entry_px)
+                fav = entry_px - conf
+                sl = round((entry_px + gap) - (int(fav / step) * step), 2) if fav > 0 else round(entry_px + gap, 2)
+            sl_rs = round((sl - entry_px) * qty) if side == "BUY" else round((entry_px - sl) * qty)
+            return {"sl": sl, "sl_rs": sl_rs, "target": None, "mode": "trailing_pt", "trailing": True, "aggressive": False}
+        return None
+    except Exception:
+        return None
+
 @app.route('/api/trade-chart-data')
 def api_trade_chart_data():
     """Option premium 1-min candles for one completed trade + entry/exit marker times.
@@ -1504,6 +1738,7 @@ def api_trade_chart_data():
     entry_t  = request.args.get('et', '').strip()   # HH:MM IST
     exit_t   = request.args.get('xt', '').strip()
     tf       = request.args.get('tf', '').strip()
+    strategy = request.args.get('strategy', '').strip()   # Task 8 — disambiguate opening leg
 
     INDEX_UNDERLYINGS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"}
 
@@ -1572,6 +1807,7 @@ def api_trade_chart_data():
             if disk:
                 return jsonify({"ok": True, "candles": disk["candles"],
                                 "entry_mk": disk["entry_mk"], "exit_mk": disk["exit_mk"],
+                                "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, disk["candles"], disk["entry_mk"], entry_t=entry_t, strategy=strategy),
                                 "trad_sym": trad_sym, "date": date_str, "source": "disk"})
             return jsonify({"ok": False, "msg": f"{date_str} ka intraday data nahi (non-trading day / expired contract)"})
         candles, entry_mk, exit_mk = [], None, None
@@ -1588,6 +1824,7 @@ def api_trade_chart_data():
         if seg == "NSE_FNO" and _bars_by_epoch:
             _save_premium_ohlc(sec_id, date_str, _bars_by_epoch)
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
+                        "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=entry_t, strategy=strategy),
                         "trad_sym": trad_sym, "date": date_str})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -3333,12 +3570,21 @@ def api_webhook_tv():
         except Exception:
             return jsonify({"ok": False, "msg": "bad payload"}), 400
 
-    _ensure_feed_started()
-    try:
-        res = wh.handle_signal(payload)
-        return jsonify(res)
-    except Exception as e:
-        return jsonify({"ok": False, "msg": str(e)}), 500
+    # ── ASYNC: TradingView ka ~3s webhook timeout trip na ho. LIVE order
+    # placement (fill-poll 8s + chase rounds = 8-40s) sync request ke andar
+    # chalti thi → TV "delivery failed — request took too long and timed out"
+    # dikhata tha CHAHE order actually lag raha ho → TV/server/broker desync.
+    # Ab signal background thread me; TV ko turant 200. SAFE: handle_signal
+    # khud _lock leta hai (fully serialized) aur dedup (strat:id) TV ke retry/
+    # double-fire ko already sambhalta hai — thread-per-alert double-order nahi karega.
+    def _run_signal(p):
+        try:
+            _ensure_feed_started()
+            wh.handle_signal(p)
+        except Exception as e:
+            print("[WEBHOOK-ASYNC] handle_signal error:", e, flush=True)
+    _threading.Thread(target=_run_signal, args=(payload,), daemon=True).start()
+    return jsonify({"ok": True, "msg": "accepted"}), 200
 
 
 @app.route('/api/webhook/status')
@@ -3378,6 +3624,18 @@ def api_orders():
                 p['margin_used'] = round(notional, 2)
             except Exception:
                 p['margin_used'] = 0
+            # Task 8 — current trailing/aggressive SL the monitor will fire on
+            try:
+                _sli = _live_sl_for_open(p)
+                if _sli:
+                    p['sl_now'] = _sli.get('sl')
+                    p['sl_rs'] = _sli.get('sl_rs')   # signed ₹ if SL hits now (<0 loss, >=0 locked profit)
+                    p['tp_now'] = _sli.get('target')
+                    p['sl_mode'] = _sli.get('mode')
+                    p['sl_trailing'] = _sli.get('trailing')
+                    p['sl_aggressive'] = _sli.get('aggressive')
+            except Exception:
+                pass
     except Exception as _e:
         pass
     return jsonify(data)
@@ -4961,7 +5219,17 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             else:
                 return entry_px + val if is_sl else entry_px - val
         if typ == "rs":
-            per_unit = val / p["qty"]
+            # val is a PER-LOT ₹ amount (consistent with aggressive mode,
+            # risk_gate.target_sl_level) — divide by lot_size, NOT total qty,
+            # so the price-distance stays constant per lot regardless of how
+            # many lots are in the position. Resolve lot_size from the scrip
+            # master (same pattern as the aggressive-mode block in
+            # pos_monitor_loop); unknown lot_size = skip, never guess.
+            import dhan_master as _dm_rs
+            lot_size = _dm_rs.get_lot_size_by_sec_id(sec_id)
+            if not lot_size:
+                return None
+            per_unit = val / lot_size
             if side == "BUY":
                 return entry_px - per_unit if is_sl else entry_px + per_unit
             else:

@@ -111,8 +111,11 @@ def default_sl_profile():
     the "kaunsa default lag raha hai" confusion is gone). Returns (enabled, mode)
     with mode ∈ {'legacy','dropdown','aggressive'}:
 
-      legacy     — flat whole-position ₹ (Fixed Target / Fixed SL, no per-lot
-                   scaling) → stamped as SL_TYPE:rs/TP_TYPE:rs entry tags.
+      legacy     — per-lot ₹ (Fixed Target / Fixed SL) → stamped as
+                   SL_TYPE:rs/TP_TYPE:rs entry tags. SL_VAL/TP_VAL is a
+                   PER-LOT ₹ amount (price-distance stays constant per lot,
+                   consistent with aggressive mode — see _generic_px's "rs"
+                   branch, lot-scaled since 2026-07-09).
       dropdown   — separate SL type+value / Target type+value (the old 2️⃣ card)
                    → stamped as the chosen SL_TYPE/TP_TYPE entry tags.
       aggressive — per-lot rupee target + stepped/aggressive trailing (the old
@@ -930,8 +933,10 @@ def default_instrument_sl_tags(strategy, symbol=None):
 
     g0 = rc.get("global") or {}
     if _mode == "legacy":
-        # Flat whole-position ₹ (SL_TYPE:rs interprets val as the total-position
-        # ₹ loss/profit — see _generic_px). Fixed, does NOT scale with lots.
+        # Per-lot ₹ (SL_TYPE:rs interprets val as a PER-LOT ₹ amount — see
+        # _generic_px's "rs" branch, lot-scaled since 2026-07-09). The
+        # price-distance stays constant per lot and scales with lot count,
+        # consistent with aggressive mode.
         def _num(v):
             try:
                 return float(v)

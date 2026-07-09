@@ -2180,11 +2180,25 @@
             <option value="kite">Zerodha (Kite)</option>
           </select>
         </label>
+        <button class="rms-btn rms-btn-secondary" onclick="toggleRmsAudit()">📋 Change History</button>
         <button class="rms-btn rms-btn-secondary" onclick="renderRiskTab()">↺ Reload</button>
         <button class="rms-btn rms-btn-primary" onclick="saveRiskConfig()">💾 Save Configuration</button>
       </div>
     </div>
     <div id="risk-msg" style="font-size:12px;margin-bottom:12px;color:#8b949e"></div>
+
+    <!-- Task 13 — RMS value-change audit log -->
+    <div id="rms-audit-panel" style="display:none;margin-bottom:16px;background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid #21262d;background:#0d1117">
+        <div style="font-size:13px;font-weight:700;color:#e6edf3">📋 RMS Change History</div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input id="rms-audit-filter" oninput="renderRmsAudit()" placeholder="filter field / scope…"
+            style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;width:170px" />
+          <span onclick="toggleRmsAudit()" style="cursor:pointer;color:#8b949e;font-size:15px">✕</span>
+        </div>
+      </div>
+      <div id="rms-audit-body" style="max-height:340px;overflow-y:auto;font-size:11.5px"></div>
+    </div>
 
     <div class="folder-card">
       <div class="folder-sidebar">
@@ -2309,16 +2323,16 @@
                 </td>
               </tr>
               <tr id="sl-mode-legacy-row">
-                <td class="param-info" style="border-left:3px solid #30363d;padding-left:14px"><span>↳ Legacy — Fixed ₹ (whole position)</span>
-                  <span class="wavy-subtext">Flat ₹ Target aur SL, poori position pe — lots se scale nahi hota (2 lot ho
-                    ya 1, wahi ₹).</span>
+                <td class="param-info" style="border-left:3px solid #30363d;padding-left:14px"><span>↳ Legacy — Fixed ₹ per lot</span>
+                  <span class="wavy-subtext">Flat ₹ Target aur SL, per lot — lots ke hisaab se scale hota hai (2 lot =
+                    2× price-distance), aggressive mode jaisa.</span>
                 </td>
                 <td class="param-inputs">
                   <div class="inputs-grid">
-                    <div class="inputs-row"><label>Fixed Target ₹</label>
+                    <div class="inputs-row"><label>Fixed Target ₹ / lot</label>
                       <input id="risk-legacy-tp" type="number" step="100" placeholder="5000" />
                     </div>
-                    <div class="inputs-row"><label>Fixed SL ₹</label>
+                    <div class="inputs-row"><label>Fixed SL ₹ / lot</label>
                       <input id="risk-legacy-sl" type="number" step="100" placeholder="2000" />
                     </div>
                   </div>
@@ -2340,7 +2354,7 @@
                           <option value="pct">%</option>
                           <option value="pt">Points (premium)</option>
                           <option value="trailing_pt">Trailing Points (premium)</option>
-                          <option value="rs">Amount (₹)</option>
+                          <option value="rs">Amount (₹ per lot)</option>
                           <option value="premium">Premium level</option>
                           <option value="index">Index/Underlying level</option>
                         </select>
@@ -2401,7 +2415,7 @@
                           <option value="">(None)</option>
                           <option value="pct">%</option>
                           <option value="pt">Points (premium)</option>
-                          <option value="rs">Amount (₹)</option>
+                          <option value="rs">Amount (₹ per lot)</option>
                           <option value="premium">Premium level</option>
                           <option value="index">Index/Underlying level</option>
                         </select>
@@ -4153,9 +4167,68 @@
         const j = await res.json();
         document.getElementById('risk-msg').textContent = j.msg || 'Saved';
         RISK_CFG = payload;
+        // Task 13 — if the Change History panel is open, refresh it so a just-saved
+        // change shows up immediately.
+        const _ap = document.getElementById('rms-audit-panel');
+        if (_ap && _ap.style.display !== 'none') loadRmsAudit();
       } catch (e) {
         document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
       }
+    }
+
+    // ── Task 13 — RMS value-change audit log ──
+    let _rmsAuditData = [];
+    function toggleRmsAudit() {
+      const p = document.getElementById('rms-audit-panel');
+      if (!p) return;
+      const show = p.style.display === 'none';
+      p.style.display = show ? 'block' : 'none';
+      if (show) loadRmsAudit();
+    }
+    async function loadRmsAudit() {
+      const body = document.getElementById('rms-audit-body');
+      body.innerHTML = '<div style="padding:14px;color:#8b949e">Loading…</div>';
+      try {
+        const r = await fetch('/api/rms-audit-log');
+        _rmsAuditData = await r.json();
+      } catch (e) {
+        _rmsAuditData = [];
+        body.innerHTML = '<div style="padding:14px;color:#f85149">Load failed: ' + e + '</div>';
+        return;
+      }
+      renderRmsAudit();
+    }
+    function renderRmsAudit() {
+      const body = document.getElementById('rms-audit-body');
+      const q = (document.getElementById('rms-audit-filter').value || '').toLowerCase().trim();
+      const rows = (_rmsAuditData || []).filter(r =>
+        !q || (r.field || '').toLowerCase().includes(q) || (r.scope || '').toLowerCase().includes(q));
+      if (!rows.length) {
+        body.innerHTML = '<div style="padding:14px;color:#8b949e">' +
+          (_rmsAuditData.length ? 'No matches.' : 'No changes recorded yet. Save a Risk setting to start the history.') + '</div>';
+        return;
+      }
+      const fmtDate = ts => {
+        // "2026-07-08 11:42:03" → "08 Jul, 11:42"
+        try {
+          const [d, t] = ts.split(' ');
+          const [y, m, day] = d.split('-');
+          const mon = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][parseInt(m) - 1];
+          return `${day} ${mon}, ${t.slice(0, 5)}`;
+        } catch (e) { return ts; }
+      };
+      const esc = s => String(s == null || s === '' ? '—' : s).replace(/</g, '&lt;');
+      let h = '<div style="display:grid;grid-template-columns:120px 1fr 96px 96px 90px;gap:0;font-size:10.5px;color:#8b949e;font-weight:700;padding:8px 12px;border-bottom:1px solid #21262d;background:#0d1117;position:sticky;top:0">' +
+        '<div>Date / Time</div><div>Field</div><div style="text-align:right">Old</div><div style="text-align:right">New</div><div style="text-align:right">Scope</div></div>';
+      rows.forEach(r => {
+        h += '<div style="display:grid;grid-template-columns:120px 1fr 96px 96px 90px;padding:7px 12px;border-bottom:1px solid #161b22">' +
+          `<div style="color:#adbac7">${fmtDate(r.ts)}</div>` +
+          `<div style="color:#e6edf3">${esc(r.field)}</div>` +
+          `<div style="text-align:right;color:#f85149">${esc(r.old)}</div>` +
+          `<div style="text-align:right;color:#3fb950">${esc(r.new)}</div>` +
+          `<div style="text-align:right;color:#6e7681">${esc(r.scope)}</div></div>`;
+      });
+      body.innerHTML = h;
     }
 
     // ── Default Target/SL exit profile — live Graph/Table preview (2026-07-04) ──
@@ -6062,6 +6135,30 @@
               }
               // --- End Antigravity AI addition ---
 
+              // Task 8 — live trailing/aggressive SL, shown as the ₹ MAX LOSS if the
+              // stop hits right now (or locked-in profit once the SL has trailed past
+              // entry). Server-computed in /api/orders (sl_rs = signed ₹). Target keeps
+              // its premium price alongside.
+              let live_sl_disp = '';
+              if (t.sl_now != null && isFinite(t.sl_now)) {
+                const _aggr = !!t.sl_aggressive;
+                const _mode = _aggr ? 'Aggr' : 'Trail';
+                const _slPxTxt = Number(t.sl_now).toFixed(2);
+                let _slPart;
+                if (t.sl_rs != null && isFinite(t.sl_rs)) {
+                  if (t.sl_rs < 0)
+                    _slPart = `<span style="color:#f85149" title="${_mode} SL @ ${_slPxTxt} — max loss if stop hits now">Max loss ₹${Math.abs(Math.round(t.sl_rs)).toLocaleString('en-IN')} ▲</span>`;
+                  else
+                    _slPart = `<span style="color:#3fb950" title="${_mode} SL @ ${_slPxTxt} — profit now locked in (SL past entry)">Locked +₹${Math.round(t.sl_rs).toLocaleString('en-IN')} ▲</span>`;
+                } else {
+                  _slPart = `<span style="color:${_aggr ? '#e3a008' : '#58a6ff'}">${_mode} SL ${_slPxTxt} ▲</span>`;
+                }
+                live_sl_disp = `<div style="font-size:9px;margin-top:2px;white-space:nowrap">`
+                  + _slPart
+                  + (t.tp_now != null && isFinite(t.tp_now) ? ` <span style="color:#3fb950">Tgt ${Number(t.tp_now).toFixed(2)}</span>` : '')
+                  + `</div>`;
+              }
+
               let imgs = _imgTagsOf(t);
 
               const isNoteHidden = window._hiddenNotes.has(t.id) || localStorage.getItem('global_notes_show') !== 'true';
@@ -6124,7 +6221,7 @@
                     val = `<span class="ltp-cell" style="color:#e6edf3" data-sym="${t.sym}" data-entry="${entry}" data-side="${t.entry}" data-qty="${qty}">⏳</span>`;
                     break;
                   case 'entry_time':
-                    val = (t.entry_time || '') + sltp_disp;
+                    val = (t.entry_time || '') + sltp_disp + live_sl_disp;
                     colorStyle = 'color:#8b949e;';
                     break;
                   case 'points':
@@ -11137,7 +11234,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
             <option value="pct">%</option>
             <option value="pt">Points (premium)</option>
-            <option value="rs">Amount (₹)</option>
+            <option value="rs">Amount (₹ per lot)</option>
             <option value="premium">Premium level</option>
             <option value="index">Index/Underlying level</option>
             <option value="candle_close">Candle Close</option>
@@ -11158,7 +11255,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             style="flex:1; padding: 8px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; box-sizing: border-box;">
             <option value="pct">%</option>
             <option value="pt">Points (premium)</option>
-            <option value="rs">Amount (₹)</option>
+            <option value="rs">Amount (₹ per lot)</option>
             <option value="premium">Premium level</option>
             <option value="index">Index/Underlying level</option>
             <option value="candle_close">Candle Close</option>
@@ -11258,8 +11355,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
     function openSlTpModal(id, sl, tp, slType, tpType, entryPx, slCandle, tpCandle) {
       document.getElementById('edit-sltp-id').value = id;
-      document.getElementById('edit-sltp-sl-candle').checked = !!slCandle;
-      document.getElementById('edit-sltp-tp-candle').checked = !!tpCandle;
+      // Legacy candle-close checkboxes were removed from the modal (the
+      // "Candle Close" option in the SL/TP Type dropdown replaced them).
+      // Guard the refs so a missing element never crashes the modal open. (Task 2)
+      const _slCandleEl = document.getElementById('edit-sltp-sl-candle');
+      if (_slCandleEl) _slCandleEl.checked = !!slCandle;
+      const _tpCandleEl = document.getElementById('edit-sltp-tp-candle');
+      if (_tpCandleEl) _tpCandleEl.checked = !!tpCandle;
 
       function splitCandle(val, dirElId, valElId) {
         if (val && val.includes(':')) {
@@ -11317,8 +11419,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       if (slType === 'candle_close' && sl) sl = document.getElementById('edit-sltp-sl-dir').value + ':' + sl;
       if (tpType === 'candle_close' && tp) tp = document.getElementById('edit-sltp-tp-dir').value + ':' + tp;
 
-      const slCandle = document.getElementById('edit-sltp-sl-candle').checked;
-      const tpCandle = document.getElementById('edit-sltp-tp-candle').checked;
+      const _slCandleEl = document.getElementById('edit-sltp-sl-candle');
+      const _tpCandleEl = document.getElementById('edit-sltp-tp-candle');
+      const slCandle = _slCandleEl ? _slCandleEl.checked : false;
+      const tpCandle = _tpCandleEl ? _tpCandleEl.checked : false;
 
       try {
         const res = await fetch('/api/orders/update-sl-tp', {
