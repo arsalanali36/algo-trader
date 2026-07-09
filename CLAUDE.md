@@ -58,6 +58,17 @@ _DEV/tests/  _DEV/mockups/   ← test + mockup files       scratch/   ← gitign
 > (RMS-blind order_store gap, manual-close phantom BUY, ₹0-price fill, `symbols` string-parse,
 > default-arg `.keys()` crash, dashboard `STRATEGIES` grep-mismatch, restart-orphan). Critical
 > Rule 6/8 ka full practical version — ek galti do baar na ho.
+>
+> **📊 Koi strategy ka BACKTEST banao / uska RESULT dikhao? PEHLE YE 2 PADHO (MANDATORY):**
+> `scratch/nifty_trend/RESULTS_SCHEMA.md` + `scratch/nifty_trend/BS_OPTION_SIM.md`.
+> User chahta hai ki HAR strategy ka result **ek hi reusable dashboard** (`scratch/nifty_trend/
+> dashboard_intraday.html`) mein isi format mein dikhe — plain nayi HTML mat banao, `results.js`
+> is schema mein emit karo, wahi template render kar lega. Aur backtest ka P&L/tax **option-premium
+> based** hona chahiye (ATM CE/PE ka Black-Scholes premium at entry+exit + real Zerodha
+> `calc_charges`), **spot-notional nahi** — asli expired-weekly option data milta nahi (LESSONS
+> TRAP #100), isliye BS se simulate karo. 1x no-leverage default, significance-gate (p<0.05),
+> RMS-overlay validation deploy se pehle. Ye do docs = strategy-results ka permanent contract;
+> user ko baar-baar dena na pade — yahin se utha lo.
 
 | File | Kaam |
 |------|------|
