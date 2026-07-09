@@ -5,6 +5,7 @@ import os
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+import _paths  # refactor: adds _core/_data so order_store resolves
 
 from order_store import record, init_db
 

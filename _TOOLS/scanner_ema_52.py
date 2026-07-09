@@ -7,6 +7,7 @@ from datetime import datetime, timedelta
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if BASE_DIR not in sys.path:
     sys.path.insert(0, BASE_DIR)
+import _paths  # refactor: adds _core/_data so universe resolves
 
 import universe
 from _TOOLS.backtest_engine import ensure_and_load_symbol

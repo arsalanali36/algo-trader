@@ -25,7 +25,7 @@ import collections
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent
 EVENTS_FILE = BASE / "data" / "dhan_rate_limit_events.json"
 BANNER_FILE = BASE / "data" / "downloader_alert.json"
 LOG_DIR = BASE / "logs"

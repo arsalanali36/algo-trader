@@ -17,6 +17,7 @@ from pathlib import Path
 from flask import Flask, jsonify, render_template, request, Response, send_from_directory
 import time as _time
 import threading as _threading
+import _paths  # sys.path bootstrap — MUST precede flat imports of moved modules (_core/_data/_ops)
 import dhan_rate_limiter as _rl
 
 # IPv4 force — Dhan rejects IPv6 (DH-905). Must be here, not just in range_trader.

@@ -12,7 +12,7 @@ import tempfile
 
 HOST = "root@72.61.173.32"
 REMOTE_DIR = "/root/CODE3B- TV BACKTEST ENGINE"
-LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+LOCAL_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # Dynamically locate SSH key
 KEY = os.path.expanduser("~/.ssh/khazana_ed25519")

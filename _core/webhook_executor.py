@@ -55,7 +55,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
     return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 socket.getaddrinfo = _v4
 
-BASE_DIR   = Path(__file__).resolve().parent
+BASE_DIR   = Path(__file__).resolve().parent.parent
 TC_FILE    = BASE_DIR / "nifty_config.json"
 LOG_DIR    = BASE_DIR / "logs"
 LOG_DIR.mkdir(exist_ok=True)

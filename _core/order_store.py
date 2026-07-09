@@ -20,7 +20,7 @@ import threading
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "trades.db"
 _lock = threading.Lock()
 

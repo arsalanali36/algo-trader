@@ -36,7 +36,7 @@ _FUT_SUFFIX = re.compile(r"-[A-Za-z]{3}\d{4}-FUT$")
 # NSE test scrips (011NSETEST, ...) carry real FUTSTK+EQ rows but aren't stocks
 _TEST_SYM = re.compile(r"NSETEST|^\d+[A-Z]*TEST", re.I)
 
-BASE = Path(__file__).resolve().parent
+BASE = Path(__file__).resolve().parent.parent
 SCRIP_MASTER = BASE / "data" / "api-scrip-master.csv"
 OUT_FILE = BASE / "data" / "fno_universe.json"
 

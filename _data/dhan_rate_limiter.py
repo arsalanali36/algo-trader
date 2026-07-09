@@ -45,7 +45,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-_DB_FILE = Path(__file__).resolve().parent / "data" / "dhan_rate_limiter.db"
+_DB_FILE = Path(__file__).resolve().parent.parent / "data" / "dhan_rate_limiter.db"
 _DB_FILE.parent.mkdir(exist_ok=True)
 
 # ── Visibility: WHO is causing throttling/429s, not just THAT it happened ──
@@ -56,7 +56,7 @@ _DB_FILE.parent.mkdir(exist_ok=True)
 # one of the ~40 call sites across the codebase. Since each strategy runs as
 # its own OS process, a plain module-level var is enough (no cross-process
 # locking needed for the SETTING; only the EVENT LOG file is cross-process).
-_EVENTS_FILE = Path(__file__).resolve().parent / "data" / "dhan_rate_limit_events.json"
+_EVENTS_FILE = Path(__file__).resolve().parent.parent / "data" / "dhan_rate_limit_events.json"
 _MAX_EVENTS = 300
 _ctx = {"value": None}
 

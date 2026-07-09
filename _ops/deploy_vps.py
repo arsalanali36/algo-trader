@@ -36,39 +36,34 @@ if not os.path.exists(KEY):
 REMOTE_DIR = "/root/CODE3B- TV BACKTEST ENGINE"   # dir name me space hai — sab jagah quote
 SERVICE    = "algo-dashboard"
 PORT       = 5099
-HERE       = os.path.dirname(os.path.abspath(__file__))
+# this file now lives in _ops/, so project root is TWO levels up
+HERE       = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # pip deps jo VPS venv me honi chahiye (idempotent ensure)
 EXTRA_PIP  = ["ta"]
 
 # ---- Curated root-level files (tests/scratch/secrets/state NAHI) ----
+# 2026-07-09 refactor: core/data/ops modules ab _core/_data/_ops folders me
+# (see FOLDER_GLOBS). Root pe sirf entrypoints + path bootstrap bache.
 ROOT_FILES = [
     "trader_dashboard.py",
-    "smart_order.py",
-    "order_store.py",
-    "webhook_executor.py",
-    "dhan_master.py",
-    "dhan_feed.py",
-    "universe.py",
-    "mfe_routes.py",
-    "auto_data_downloader.py",
-    "optimize_strategy.py",
-    "download_nifty50.py",
-    "download_equity_history.py",
-    "sync_data.py",
-    "sync_pine.py",
-    "risk_gate.py",
-    "strategy_safety.py",
+    "monitor_daemon.py",
+    "health_check.py",
+    "_paths.py",
 ]
 
 # ---- Folder globs (relative paths preserve hote hain tar me) ----
 FOLDER_GLOBS = [
+    "_core/*.py",
+    "_data/*.py",
+    "_ops/*.py",
     "_CHARTING/*.py",
     "_TOOLS/*.py",
     "_TRADERS/*.py",
     "_TRADERS/*.json",
     "brokers/*.py",
     "strategies/*.py",
+    "strategies/*/*.py",      # backtest/ live/ lab/ subfolders (post Phase-4)
     "templates/*.html",
 ]
 

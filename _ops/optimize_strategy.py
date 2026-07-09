@@ -6,8 +6,9 @@ from datetime import datetime
 import sys
 import os
 
-# Ensure the root directory is in sys.path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Ensure the PROJECT ROOT is in sys.path (this file now lives in _ops/, so go up two levels)
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _paths  # refactor: adds _core/_data/_ops/_TOOLS to path
 
 from _TOOLS import backtest_engine
 from _TOOLS.backtest_engine import ensure_equity_data

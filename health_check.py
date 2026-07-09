@@ -35,6 +35,7 @@ Exit code: koi active strategy RED ho to 1 (cron/--loop/scheduler me use karne k
 import sys, os, json, re, time, base64, argparse
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
+import _paths  # sys.path bootstrap — moved modules (_core/_data) resolvable everywhere below
 
 # --- IPv4 force (project rule — VPS pe IPv6 se Dhan DH-905 deta) -------------
 import socket

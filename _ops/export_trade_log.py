@@ -19,6 +19,7 @@ import csv
 import datetime as _dt
 from pathlib import Path
 
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))); import _paths  # refactor: _ops/ → root+_core/_data on path
 import order_store
 
 

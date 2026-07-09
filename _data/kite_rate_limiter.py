@@ -23,7 +23,7 @@ import sqlite3
 import time
 from pathlib import Path
 
-_DB_FILE = Path(__file__).resolve().parent / "data" / "kite_rate_limiter.db"
+_DB_FILE = Path(__file__).resolve().parent.parent / "data" / "kite_rate_limiter.db"
 _DB_FILE.parent.mkdir(exist_ok=True)
 
 DEFAULT_CAP_PER_SEC = int(os.environ.get("KITE_RATE_LIMIT_PER_SEC", "3"))

@@ -23,6 +23,7 @@ import sys
 # this script is launched as a subprocess (sys.path[0] = _TRADERS/), so dhan_master
 # at the project root is otherwise not importable.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import dhan_master
 import dhan_rate_limiter as _rl
 import time

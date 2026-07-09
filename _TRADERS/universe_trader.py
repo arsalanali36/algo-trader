@@ -25,6 +25,7 @@ import time
 # liye project root path pe chahiye — subprocess spawn me sys.path[0] = _TRADERS/
 # hota hai (same bootstrap jo range_trader/01_rsi_v1/nifty_ema_trader me hai).
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import risk_gate
 from datetime import datetime, timedelta, timezone
 from pathlib import Path

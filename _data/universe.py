@@ -14,7 +14,7 @@ from pathlib import Path
 
 import dhan_master
 
-BASE_DIR     = Path(__file__).resolve().parent
+BASE_DIR     = Path(__file__).resolve().parent.parent
 SCRIP_MASTER = BASE_DIR / "data" / "api-scrip-master.csv"
 
 # Dhan index security ids (IDX_I segment)

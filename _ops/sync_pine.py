@@ -22,7 +22,7 @@ from pathlib import Path
 HOST = "root@72.61.173.32"
 KEY  = r"C:\Users\arsal\.ssh\khazana_ed25519"
 RDIR = "/root/CODE3B- TV BACKTEST ENGINE/_PINE"          # VPS _PINE (space ok — scp SFTP literal)
-LDIR = Path(__file__).resolve().parent / "_PINE"          # local _PINE
+LDIR = Path(__file__).resolve().parent.parent / "_PINE"          # local _PINE
 
 SCP = ["scp", "-i", KEY, "-o", "StrictHostKeyChecking=no"]
 SSH = ["ssh", "-i", KEY, "-o", "StrictHostKeyChecking=no", HOST]

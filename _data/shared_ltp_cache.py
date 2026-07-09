@@ -24,7 +24,7 @@ import json
 import time
 from pathlib import Path
 
-_FILE = Path(__file__).resolve().parent / "data" / "shared_ltp_cache.json"
+_FILE = Path(__file__).resolve().parent.parent / "data" / "shared_ltp_cache.json"
 _FILE.parent.mkdir(exist_ok=True)
 
 

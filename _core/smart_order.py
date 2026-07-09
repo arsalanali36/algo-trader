@@ -48,7 +48,7 @@ def _log_fill_delay(trad_sym, side, qty, price, order_id, attempts, resolved, re
         from pathlib import Path
         from datetime import datetime, timezone, timedelta
         if _DELAY_LOG_FILE is None:
-            _DELAY_LOG_FILE = Path(__file__).resolve().parent / "data" / "fill_confirm_delays.json"
+            _DELAY_LOG_FILE = Path(__file__).resolve().parent.parent / "data" / "fill_confirm_delays.json"
         existing = []
         try:
             existing = json.loads(_DELAY_LOG_FILE.read_text())

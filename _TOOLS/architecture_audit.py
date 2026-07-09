@@ -44,7 +44,8 @@ BASELINE_FILE = os.path.join(REPO_ROOT, "_TOOLS", "audit_baseline.json")
 
 # ---------------------------------------------------------------- scan scope
 
-SCAN_DIRS = ["", "_TRADERS", "_TOOLS", "_CHARTING", "strategies", "brokers"]
+SCAN_DIRS = ["", "_core", "_data", "_ops", "_TRADERS", "_TOOLS", "_CHARTING",
+             "strategies", "strategies/backtest", "strategies/live", "brokers"]
 
 # One-off/scratch scripts — not part of the live architecture, never audited.
 EXCLUDE_PATTERNS = [

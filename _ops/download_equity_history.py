@@ -37,9 +37,10 @@ from datetime import timezone, timedelta
 import requests
 import pandas as pd
 
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__)))); import _paths  # refactor: _ops/ → root+_core/_data on path
 import dhan_master
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ---- equity data root: same logic as _TOOLS/backtest_engine.py ----
 _WIN_EQUITY_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Equity"

@@ -30,6 +30,7 @@ TOOLS_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TRADERS_DIR)
 sys.path.insert(0, TOOLS_DIR)
 sys.path.insert(0, BASE_DIR)   # dhan_master.py lives at project root
+import _paths  # refactor: adds _core/_data/_ops so moved modules resolve when run standalone
 
 import range_trader as rt
 import nifty_ema_trader as emat

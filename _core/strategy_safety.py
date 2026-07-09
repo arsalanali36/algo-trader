@@ -221,7 +221,7 @@ def _rest_quote_fallback(sec_id, seg="NSE_FNO"):
         from pathlib import Path
         import dhan_rate_limiter as _rl
 
-        cfg_file = Path(__file__).resolve().parent / "data" / "config.json"
+        cfg_file = Path(__file__).resolve().parent.parent / "data" / "config.json"
         cfg = json.loads(cfg_file.read_text())
         headers = {"access-token": cfg["jwt_token"], "client-id": cfg["client_id"],
                    "Content-Type": "application/json"}

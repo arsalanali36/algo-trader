@@ -474,7 +474,7 @@ def _write_naked_alert(sym: str, row_id, log=print):
     try:
         import json as _j
         from pathlib import Path
-        _af = Path(__file__).resolve().parent / "data" / "downloader_alert.json"
+        _af = Path(__file__).resolve().parent.parent / "data" / "downloader_alert.json"
         existing = []
         try:
             existing = _j.loads(_af.read_text())
@@ -761,7 +761,7 @@ def _write_untracked_alert(broker_name, key, label, qty, side, avg, log=print):
     try:
         import json as _j
         from pathlib import Path
-        _af = Path(__file__).resolve().parent / "data" / "downloader_alert.json"
+        _af = Path(__file__).resolve().parent.parent / "data" / "downloader_alert.json"
         existing = []
         try:
             existing = _j.loads(_af.read_text())

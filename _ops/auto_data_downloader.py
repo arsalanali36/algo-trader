@@ -20,6 +20,7 @@ import socket
 import logging
 import requests
 from pathlib import Path
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))); import _paths  # refactor: _ops/ → root+_core/_data on path
 
 # IPv4 force — Dhan rejects IPv6 (DH-905)
 _orig_gai = socket.getaddrinfo
@@ -27,7 +28,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
     return _orig_gai(h, p, socket.AF_INET, t, pr, fl)
 socket.getaddrinfo = _v4
 
-BASE_DIR   = Path(__file__).resolve().parent
+BASE_DIR   = Path(__file__).resolve().parent.parent
 DATA_DIR   = BASE_DIR / "data"
 OHLC_DIR   = DATA_DIR / "trade_ohlc"
 LOG_FILE   = DATA_DIR / "downloader_log.json"

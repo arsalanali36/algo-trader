@@ -52,6 +52,7 @@ TC_FILE     = BASE_DIR / "nifty_config.json"          # strategy params
 
 # dhan_master root pe hai — import ke liye path add karo
 sys.path.insert(0, str(BASE_DIR))
+import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import dhan_master
 # (kite_broker import legacy place_order() ke saath gaya — orders ab
 #  execution_gateway → smart_order → brokers/ abstraction se jaate hain)

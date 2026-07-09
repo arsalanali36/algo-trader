@@ -23,7 +23,7 @@ import threading
 import time
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 
 POLL_INTERVAL = 1.5      # s between batched calls — leaves budget for orders/candles

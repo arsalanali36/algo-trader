@@ -21,7 +21,7 @@ for that strategy — NOT real margin. Margin-aware sizing is Stage 2.
 import json
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent
 TC_FILE = BASE_DIR / "nifty_config.json"
 
 
@@ -1247,7 +1247,7 @@ def is_expiry_day(trad_sym=None, sec_id=None):
     if sec_id:
         try:
             import sys as _s, os as _o
-            _root = _o.path.dirname(_o.path.abspath(__file__))
+            _root = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
             if _root not in _s.path:
                 _s.path.insert(0, _root)
             import dhan_master

@@ -1,4 +1,5 @@
 import datetime
+import os as _o, sys as _s; _s.path.insert(0, _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))); import _paths  # refactor: _ops/ → root+_core/_data/_TOOLS on path
 from _TOOLS.backtest_engine import ensure_equity_data
 from universe import NIFTY50
 

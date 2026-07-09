@@ -18,7 +18,7 @@ import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-_FILE = Path(__file__).parent / "data" / "daily_state.json"
+_FILE = Path(__file__).parent.parent / "data" / "daily_state.json"
 _lock = threading.Lock()
 
 

@@ -69,7 +69,7 @@ _pending_resub = False         # set True to make the loop rebuild cleanly
 # see TRAP #88). Heartbeat-based, not a clean release: this codebase has
 # no SIGTERM handlers anywhere (TRAP #58), so a killed owner's row simply
 # goes stale and another process takes over automatically.
-_OWNER_DB          = Path(__file__).resolve().parent / "data" / "dhan_feed_owner.db"
+_OWNER_DB          = Path(__file__).resolve().parent.parent / "data" / "dhan_feed_owner.db"
 _OWNER_STALE_SECS  = 30    # owner presumed dead if no heartbeat in this long — another process may take over
 _HEARTBEAT_EVERY   = 10    # seconds between heartbeat renewals while connected
 _NOT_OWNER_RETRY   = 5     # seconds between ownership-claim retries when not the owner
