@@ -34,3 +34,70 @@ data/downloader_log.json
 data/sec_id_cache.json
 data/trade_log.json
 data/rsi_v1_watch.json
+
+# ─────────────────────────────────────────────────────────────────────────
+# 2026-07-09 drift cleanup — runtime state + scratch that kept re-appearing
+# ─────────────────────────────────────────────────────────────────────────
+# Regenerated data (daily / per-run) — never belongs in git
+data/api-scrip-master.csv
+data/dhan_rate_limit_events.json
+data/master_*.flag
+data/daily_state.json
+data/dhan_feed_owner.db
+data/kite_trades_*.json
+data/peak_pnl_history*.json
+data/shared_candle_cache.json
+data/tags_store.json
+data/bt_presets.json
+data/fill_confirm_delays.json
+data/ltp_watch_extra.json
+data/nifty_daily.csv
+data/watch_*.json
+data/trailing_lock_fired_*.txt
+data/pos_lock_state.json
+data/tsl_state.json
+data/kill_floor_state.json
+data/rms_audit_log.json
+data/*.bak
+data/*.bak.*
+data/*.bak_*
+orders.db
+*.bak.split.*
+nifty_config.json.bak*
+
+# node / puppeteer experiments
+node_modules/
+package.json
+package-lock.json
+
+# one-off scratch / debug scripts (never deployed)
+scratch/
+IMG FOR CLAUD/
+check*.py
+clean.py
+delete_*.py
+fix_*.py
+patch_*.py
+recover_*.py
+find_block.py
+extract_base64.py
+scratch_tags.py
+verify.py
+test_*.js
+test_extract.py
+dump*.js
+dump*.html
+puppeteer_*.js
+real_missing.js
+live_cal_render.js
+cal_render.js
+badge.js
+missing.txt
+cols.txt
+old_index.html
+old_render.txt
+codebase_graph.html
+ui_mockup_redesign.html
+sl_visualizer*.html
+vps_screenshot.png
+vps_delete_script.py
