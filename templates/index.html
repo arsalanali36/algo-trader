@@ -6494,6 +6494,31 @@
 
     // LOG TAB
     const _logPaused = {};
+
+    // Status dot for a strategy in the Logs sidebar (replaces the old file-type
+    // icon): red = live, blue = paper, grey = not active (stopped). Reads the
+    // SAME RUNNING_PIDS (/api/status) state the Paper/Live/Stop badge uses.
+    function _logStatusDot(key) {
+      const pid = RUNNING_PIDS[key] || RUNNING_PIDS[key.toLowerCase()];
+      const mode = RUNNING_PIDS[key + '_mode'] || RUNNING_PIDS[key.toLowerCase() + '_mode'] || 'paper';
+      if (!pid) return { color: '#8b949e', title: 'Not active' };
+      if (mode === 'live') return { color: '#f85149', title: 'Live' };
+      return { color: '#58a6ff', title: 'Paper' };
+    }
+
+    // Refresh every sidebar dot in place (called on the 5s status poll via
+    // renderLogRunControls, so the dot tracks live status without a full rebuild).
+    function updateLogStatusDots() {
+      Object.keys(GLOBAL_CONFIG).forEach(key => {
+        if (key === '_risk' || key === 'webhooks' || key === '_ui_config') return;
+        const dot = document.getElementById(`${key}-log-statusdot`);
+        if (!dot) return;
+        const sd = _logStatusDot(key);
+        dot.style.background = sd.color;
+        dot.title = sd.title;
+      });
+    }
+
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
       if (!container) return;
@@ -6520,17 +6545,19 @@
         const color = getStratColor(type);
         const isActive = key === activeLogTab;
 
-        let emoji = '📄';
         let tabClassColor = '';
-        if (type === 'ema') { emoji = '📈'; tabClassColor = 'blue-tab'; }
-        else if (type === 'rsi') { emoji = '📉'; tabClassColor = 'active'; } // yellow/amber is standard active tab
-        else if (type === 'range') { emoji = '↕️'; tabClassColor = 'green-tab'; }
+        if (type === 'ema') { tabClassColor = 'blue-tab'; }
+        else if (type === 'rsi') { tabClassColor = 'active'; } // yellow/amber is standard active tab
+        else if (type === 'range') { tabClassColor = 'green-tab'; }
 
+        // Status dot instead of a file-type icon: red = live, blue = paper,
+        // grey = not active. Kept fresh by updateLogStatusDots() on the 5s poll.
+        const _sd = _logStatusDot(key);
         sidebarHtml += `
-      <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}" 
+      <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}"
            data-log-key="${key}"
            onclick="switchLogTab('${key}', this)">
-        <span>${emoji}</span> ${key.toUpperCase()}
+        <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${key.toUpperCase()}
       </div>
     `;
 
@@ -6609,6 +6636,7 @@
             + `<button class="btn btn-gray" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="openWatchlist('${key}')">👀 Watch</button></div>`;
         }
       });
+      updateLogStatusDots();   // keep the sidebar status dots in sync with the 5s poll
     }
 
     async function riskStartStopFromLog(s, action) {
