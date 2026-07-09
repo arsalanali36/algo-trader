@@ -67,6 +67,33 @@ def default_broker():
     return _risk_cfg().get("global", {}).get("default_broker", "dhan")
 
 
+def _parse_hm(s, default=(15, 15)):
+    """'15:15' -> (15, 15). Bad/blank input -> default."""
+    try:
+        h, m = str(s).strip().split(":")
+        h, m = int(h), int(m)
+        if 0 <= h <= 23 and 0 <= m <= 59:
+            return (h, m)
+    except Exception:
+        pass
+    return default
+
+
+def exit_time_config():
+    """SINGLE SOURCE OF TRUTH for intraday square-off + no-entry-after times.
+    Har strategy (range/rsi/ema/universe) + webhook + pos_monitor_loop yahi se
+    time uthaate hain — ab har file me alag hardcoded (15,15) nahi (RMS tab se
+    editable). nifty_config["_risk"]["global"]: auto_squareoff_at / no_entry_after
+    ("HH:MM" IST). Returns (squareoff_hm, no_entry_hm) as (H, M) tuples.
+
+    no_entry_after ka gate hi "3:15 ke baad entry -> turant squareoff -> ₹50
+    zabardasti brokerage" wale bug ko rokta hai (entry hi na ho)."""
+    g = _risk_cfg().get("global", {})
+    squareoff = _parse_hm(g.get("auto_squareoff_at", "15:15"))
+    no_entry  = _parse_hm(g.get("no_entry_after", "15:15"))
+    return squareoff, no_entry
+
+
 def max_premium_config():
     """Per-index max option-premium entry cap (₹), user-requested 2026-07-07.
     A new option entry is BLOCKED if its per-unit premium exceeds the cap for

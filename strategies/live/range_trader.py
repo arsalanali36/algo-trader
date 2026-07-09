@@ -162,9 +162,24 @@ def is_market_open():
     t = (ist_now().hour, ist_now().minute)
     return MARKET_OPEN <= t < MARKET_CLOSE
 
+def _exit_times():
+    """(squareoff_hm, no_entry_hm) — RMS single-source (risk_gate.exit_time_config,
+    editable in RMS tab). Fallback AUTO_EXIT_AT if RMS unreadable."""
+    try:
+        import risk_gate as _rg
+        return _rg.exit_time_config()
+    except Exception:
+        return AUTO_EXIT_AT, AUTO_EXIT_AT
+
 def is_exit_time():
     t = (ist_now().hour, ist_now().minute)
-    return t >= AUTO_EXIT_AT
+    return t >= _exit_times()[0]
+
+def is_no_entry_time():
+    """No new entry at/after RMS no_entry_after time — stops the '3:15 ke baad
+    entry -> turant squareoff -> ₹50 zabardasti tax' bug (entry hi na ho)."""
+    t = (ist_now().hour, ist_now().minute)
+    return t >= _exit_times()[1]
 
 def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
@@ -1087,6 +1102,14 @@ def main(strategy_id="range"):
                 signal = None
 
             if signal in ("BUY", "SELL") and signal != st["last_signal"]:
+                # ── No-entry-after gate (RMS single-source, risk_gate.exit_time_config)
+                # No NEW entry at/after the configured time — otherwise the 3:15
+                # squareoff instantly closes it = wasted entry+exit brokerage
+                # ("zabardasti tax" bug). Exits are never gated.
+                if is_no_entry_time():
+                    _ne = _exit_times()[1]
+                    log.info(f"ENTRY BLOCKED {symbol} — no entry after {_ne[0]:02d}:{_ne[1]:02d} (RMS)")
+                    continue
                 # ── Expiry-day entry block: no new positions after 2:00 PM
                 # on expiry day — last-hour chaos + ITM risk not worth it.
                 # (pos_monitor_loop fires EXPIRY_EOD at 2:55 to close existing

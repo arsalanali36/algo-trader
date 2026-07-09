@@ -109,9 +109,24 @@ def is_market_open():
     t = (ist_now().hour, ist_now().minute)
     return MARKET_OPEN <= t < MARKET_CLOSE
 
+def _exit_times():
+    """(squareoff_hm, no_entry_hm) — RMS single-source (risk_gate.exit_time_config,
+    RMS tab se editable). Fallback FORCE_EXIT."""
+    try:
+        import risk_gate as _rg
+        return _rg.exit_time_config()
+    except Exception:
+        return FORCE_EXIT, FORCE_EXIT
+
 def is_force_exit_time():
     t = (ist_now().hour, ist_now().minute)
-    return t >= FORCE_EXIT
+    return t >= _exit_times()[0]
+
+def is_no_entry_time():
+    """No new entry at/after RMS no_entry_after — stops '3:15 ke baad entry ->
+    turant squareoff -> ₹50 zabardasti tax' bug."""
+    t = (ist_now().hour, ist_now().minute)
+    return t >= _exit_times()[1]
 
 def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
@@ -581,6 +596,15 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
 
                 # Already in position / max trades hit / no signal
                 if pos != 0 or t_count >= max_t or signal is None:
+                    continue
+
+                # No-entry-after gate (RMS single-source) — no NEW entry at/after
+                # the configured time; else 3:15 squareoff instantly closes it =
+                # wasted entry+exit brokerage ("zabardasti tax"). Exits above are
+                # never gated.
+                if is_no_entry_time():
+                    _ne = _exit_times()[1]
+                    log.info(f"  ENTRY BLOCKED {sym} — no entry after {_ne[0]:02d}:{_ne[1]:02d} (RMS)")
                     continue
 
                 # ── ENTRY ───────────────────────────────────────────────────

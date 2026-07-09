@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Auto ATM Straddle Chart – Real Data</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/luxon@3.4.4/build/global/luxon.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-luxon@1.3.1/dist/chartjs-adapter-luxon.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0d0f14;--bg2:#13161e;--bg3:#181c26;--bg4:#1e2332;
+  --bdr:#252a38;--t1:#e8ecf4;--t2:#8891a8;--t3:#525c73;
+  --or:#f97316;--pu:#a855f7;--gr:#22c55e;--rd:#ef4444;--bl:#3b82f6;
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--t1);min-height:100vh;overflow-x:hidden}
+
+/* SERVER OFFLINE BANNER */
+#offlineBanner{display:none;position:fixed;top:0;left:0;right:0;z-index:999;
+  background:#7f1d1d;color:#fca5a5;text-align:center;padding:10px;font-size:13px;font-weight:600}
+#offlineBanner a{color:#fbbf24;margin-left:8px}
+
+.topnav{display:flex;align-items:center;gap:16px;padding:0 20px;height:52px;
+  background:var(--bg2);border-bottom:1px solid var(--bdr)}
+.logo{font-size:16px;font-weight:700;color:#fff}
+.logo span{color:var(--bl)}
+.badge{background:linear-gradient(135deg,#6366f1,#a855f7);color:#fff;
+  font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;letter-spacing:.5px}
+.live-badge{display:flex;align-items:center;gap:5px;background:rgba(34,197,94,.12);
+  border:1px solid rgba(34,197,94,.25);border-radius:20px;padding:3px 10px}
+.live-dot{width:7px;height:7px;border-radius:50%;background:var(--gr);animation:pulse 1.5s infinite}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.4;transform:scale(.8)}}
+
+.inst-bar{display:flex;align-items:center;gap:12px;padding:10px 20px;
+  background:var(--bg2);border-bottom:1px solid var(--bdr);flex-wrap:wrap}
+.chip{display:flex;align-items:center;gap:8px;background:var(--bg3);
+  border:1px solid var(--bdr);border-radius:8px;padding:6px 12px;cursor:pointer;transition:all .2s}
+.chip:hover{border-color:var(--bl);background:var(--bg4)}
+.chip.active{border-color:var(--bl);background:rgba(59,130,246,.12)}
+.chip-name{font-size:13px;font-weight:600}
+.chip-price{font-size:13px;color:var(--gr);font-weight:500}
+.chip-chg{font-size:11px;color:var(--t2)}
+
+.main{display:flex;height:calc(100vh - 104px)}
+
+/* LEFT PANEL */
+.lpanel{width:200px;min-width:180px;background:var(--bg2);border-right:1px solid var(--bdr);
+  overflow-y:auto;padding:14px 0}
+.sec{padding:0 14px 14px}
+.sec-title{font-size:11px;font-weight:600;color:var(--t3);text-transform:uppercase;
+  letter-spacing:.8px;margin-bottom:8px}
+.leg-row{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.leg-line{width:20px;height:2px;border-radius:2px}
+.leg-solid{background:var(--or)}
+.leg-dash{background:transparent;border-top:2px dashed var(--pu)}
+.leg-lbl{font-size:12px;color:var(--t2)}
+.chk-row{display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer}
+.chk-row input{accent-color:var(--bl);cursor:pointer}
+.chk-row label{font-size:12px;color:var(--t2);cursor:pointer}
+.divider{height:1px;background:var(--bdr);margin:12px 14px}
+.exp-list{display:flex;flex-direction:column;gap:2px}
+.exp-btn{padding:7px 10px;border-radius:6px;border:none;background:transparent;
+  color:var(--t2);font-size:13px;font-family:'Inter',sans-serif;cursor:pointer;
+  text-align:left;transition:all .15s;font-weight:500}
+.exp-btn:hover{background:var(--bg4);color:var(--t1)}
+.exp-btn.active{background:rgba(59,130,246,.15);color:var(--bl);font-weight:600}
+.exp-btn.weekly{color:#4ade80}
+.exp-btn.weekly.active{background:rgba(34,197,94,.12)}
+.strike-box{padding:8px 14px;background:var(--bg3);border-radius:8px;margin:0 14px 12px}
+.s-row{display:flex;justify-content:space-between;margin-bottom:4px}
+.s-key{font-size:11px;color:var(--t3)}
+.s-val{font-size:12px;font-weight:600;color:var(--t1)}
+
+/* CHART AREA */
+.carea{flex:1;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.ctbar{display:flex;align-items:center;gap:8px;padding:10px 16px;
+  border-bottom:1px solid var(--bdr);background:var(--bg2);flex-wrap:wrap}
+.tf-grp{display:flex;gap:2px}
+.tfb{padding:4px 10px;border-radius:5px;border:none;background:transparent;
+  color:var(--t2);font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s;font-weight:500}
+.tfb:hover{background:var(--bg4);color:var(--t1)}
+.tfb.active{background:var(--bl);color:#fff}
+.tsep{width:1px;height:20px;background:var(--bdr);margin:0 4px}
+.rnb{padding:4px 12px;border-radius:5px;border:1px solid var(--bdr);background:transparent;
+  color:var(--t2);font-size:12px;font-family:'Inter',sans-serif;cursor:pointer;transition:all .15s}
+.rnb.active,.rnb:hover{background:rgba(59,130,246,.15);color:var(--bl);border-color:var(--bl)}
+
+/* Loading overlay */
+.loading-overlay{position:absolute;inset:0;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;background:rgba(13,15,20,.85);z-index:50;
+  gap:12px;backdrop-filter:blur(4px)}
+.loading-overlay.hidden{display:none}
+.spinner{width:36px;height:36px;border:3px solid var(--bdr);
+  border-top-color:var(--bl);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.load-txt{font-size:13px;color:var(--t2)}
+.err-txt{font-size:13px;color:var(--rd);text-align:center;max-width:300px;line-height:1.5}
+
+.chart-wrap{flex:1;position:relative;padding:12px}
+canvas{width:100%!important;height:100%!important}
+
+/* Tooltip */
+.tip{position:absolute;background:rgba(19,22,30,.97);border:1px solid var(--bdr);
+  border-radius:10px;padding:10px 14px;pointer-events:none;display:none;z-index:100;
+  backdrop-filter:blur(12px);min-width:190px;box-shadow:0 8px 32px rgba(0,0,0,.5)}
+.tip-time{font-size:11px;color:var(--t3);margin-bottom:8px;
+  border-bottom:1px solid var(--bdr);padding-bottom:6px}
+.tip-row{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+.tip-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.tip-key{font-size:11px;color:var(--t2);flex:1}
+.tip-val{font-size:12px;font-weight:600;color:var(--t1)}
+
+/* Stats bar */
+.sbar{display:flex;gap:20px;padding:8px 16px;border-top:1px solid var(--bdr);
+  background:var(--bg2);flex-wrap:wrap;align-items:center}
+.si{display:flex;flex-direction:column;gap:2px}
+.sl{font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.6px}
+.sv{font-size:13px;font-weight:600}
+.up{color:var(--gr)}.down{color:var(--rd)}.neutral{color:var(--t1)}
+.orange{color:var(--or)}.purple{color:var(--pu)}
+
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--bdr);border-radius:4px}
+</style>
+</head>
+<body>
+
+<div id="offlineBanner">
+  &#9888; ATM Straddle Server offline &mdash; run: <code>python atm_straddle_server.py</code>
+  <a href="javascript:location.reload()">Retry</a>
+</div>
+
+<!-- NAV -->
+<nav class="topnav">
+  <div class="logo">&#9889; <span>ATM</span>Straddle</div>
+  <div style="width:1px;height:24px;background:var(--bdr)"></div>
+  <span style="font-size:13px;color:var(--t2)">Auto ATM Straddle Chart</span>
+  <span class="badge">REAL DATA</span>
+  <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+    <div class="live-badge"><div class="live-dot"></div>
+      <span style="font-size:12px;color:var(--gr);font-weight:600">LIVE</span></div>
+    <span id="clock" style="font-size:13px;color:var(--t2);font-variant-numeric:tabular-nums;font-weight:500"></span>
+  </div>
+</nav>
+
+<!-- INSTRUMENT BAR -->
+<div class="inst-bar">
+  <div class="chip active" id="chipNIFTY">
+    <span class="chip-name">NIFTY</span>
+    <span class="chip-price" id="spotNIFTY">—</span>
+    <span class="chip-chg" id="chgNIFTY"></span>
+  </div>
+  <div class="chip" id="chipBANKNIFTY">
+    <span class="chip-name">BANKNIFTY</span>
+    <span class="chip-price" id="spotBANKNIFTY">—</span>
+    <span class="chip-chg" id="chgBANKNIFTY"></span>
+  </div>
+  <div class="chip" id="chipFINNIFTY">
+    <span class="chip-name">FINNIFTY</span>
+    <span class="chip-price" id="spotFINNIFTY">—</span>
+    <span class="chip-chg" id="chgFINNIFTY"></span>
+  </div>
+  <div style="margin-left:auto;font-size:12px;color:var(--t2)">
+    ATM Strike: <strong id="atmDisplay" style="color:var(--t1)">—</strong>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+
+  <!-- LEFT PANEL -->
+  <div class="lpanel">
+    <div class="sec">
+      <div class="sec-title">Price Display</div>
+      <div class="leg-row"><div class="leg-line leg-solid"></div><span class="leg-lbl">LTP (Straddle)</span></div>
+      <div class="leg-row"><div class="leg-line leg-dash"></div><span class="leg-lbl">VWAP</span></div>
+    </div>
+    <div class="sec" style="padding-top:0">
+      <div class="chk-row"><input type="checkbox" id="ckNifty" checked/><label for="ckNifty">Show NIFTY Spot</label></div>
+      <div class="chk-row"><input type="checkbox" id="ckVwap" checked/><label for="ckVwap">Show VWAP</label></div>
+    </div>
+    <div class="divider"></div>
+    <div class="sec">
+      <div class="sec-title">Select Expiry</div>
+      <div class="exp-list" id="expList"><div style="font-size:12px;color:var(--t3);padding:8px 0">Loading...</div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="strike-box">
+      <div style="font-size:26px;font-weight:700;color:var(--or);text-align:center;margin-bottom:12px;transition:color 0.2s;" id="bigTotal">—</div>
+      <div class="s-row"><span class="s-key">ATM Strike</span><span class="s-val" id="sAtm">—</span></div>
+      <div class="s-row"><span class="s-key">CE Symbol</span><span class="s-val" id="sCeSym" style="font-size:10px;color:var(--gr)">—</span></div>
+      <div class="s-row"><span class="s-key">PE Symbol</span><span class="s-val" id="sPeSym" style="font-size:10px;color:var(--rd)">—</span></div>
+      <div class="s-row"><span class="s-key">CE LTP</span><span class="s-val" id="sCeLtp" style="color:var(--gr)">—</span></div>
+      <div class="s-row"><span class="s-key">PE LTP</span><span class="s-val" id="sPeLtp" style="color:var(--rd)">—</span></div>
+      <div class="s-row"><span class="s-key">Total Premium</span><span class="s-val" id="sTotal" style="color:var(--or)">—</span></div>
+    </div>
+  </div>
+
+  <!-- CHART AREA -->
+  <div class="carea">
+    <div class="ctbar">
+      <div class="tf-grp">
+        <button class="tfb active" id="tf1" onclick="setTf(1,this)">1m</button>
+        <button class="tfb" id="tf5" onclick="setTf(5,this)">5m</button>
+        <button class="tfb" id="tf15" onclick="setTf(15,this)">15m</button>
+        <button class="tfb" id="tf30" onclick="setTf(30,this)">30m</button>
+      </div>
+      <div class="tsep"></div>
+      <button class="rnb" id="btnRefresh" onclick="loadData()">&#8635; Refresh</button>
+      <div style="margin-left:auto;font-size:11px;color:var(--t3)" id="lastUpdate">—</div>
+    </div>
+
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <!-- Loading overlay -->
+      <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner"></div>
+        <div class="load-txt" id="loadTxt">Connecting to Dhan...</div>
+        <div class="err-txt" id="errTxt" style="display:none"></div>
+      </div>
+      <!-- Tooltip -->
+      <div class="tip" id="tip">
+        <div class="tip-time" id="tipTime"></div>
+        <div class="tip-row"><div class="tip-dot" style="background:#f97316"></div><span class="tip-key">LTP (Straddle)</span><span class="tip-val" id="tipLtp">—</span></div>
+        <div class="tip-row"><div class="tip-dot" style="background:#a855f7"></div><span class="tip-key">VWAP</span><span class="tip-val" id="tipVwap">—</span></div>
+        <div class="tip-row"><div class="tip-dot" style="background:#475569"></div><span class="tip-key">NIFTY Spot</span><span class="tip-val" id="tipNifty">—</span></div>
+        <div style="height:1px;background:var(--bdr);margin:6px 0"></div>
+        <div class="tip-row"><div class="tip-dot" style="background:#22c55e"></div><span class="tip-key">CE LTP</span><span class="tip-val" id="tipCe">—</span></div>
+        <div class="tip-row"><div class="tip-dot" style="background:#ef4444"></div><span class="tip-key">PE LTP</span><span class="tip-val" id="tipPe">—</span></div>
+      </div>
+    </div>
+
+    <div class="sbar">
+      <div class="si"><span class="sl">Open</span><span class="sv neutral" id="stOpen">—</span></div>
+      <div class="si"><span class="sl">High</span><span class="sv up" id="stHigh">—</span></div>
+      <div class="si"><span class="sl">Low</span><span class="sv down" id="stLow">—</span></div>
+      <div class="si"><span class="sl">LTP</span><span class="sv orange" id="stLtp">—</span></div>
+      <div class="si"><span class="sl">VWAP</span><span class="sv purple" id="stVwap">—</span></div>
+      <div class="si"><span class="sl">Change</span><span class="sv" id="stChg">—</span></div>
+      <div class="si"><span class="sl">Chg%</span><span class="sv" id="stChgP">—</span></div>
+      <div class="si" style="margin-left:auto"><span class="sl">Candles</span><span class="sv neutral" id="stCnt">—</span></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════
+let current_ce_id = null;
+let current_pe_id = null;
+
+//  CONFIG
+// ═══════════════════════════════════════════════════════════
+let current_ce_id = null;
+let current_pe_id = null;
+
+const API = '';
+let curIdx  = 'NIFTY';
+let curExp  = null;   // selected expiry date string YYYY-MM-DD
+let curTf   = 1;
+let showNifty = true, showVwap = true;
+let chartData = [];
+let expiries  = [];
+let spotBase  = {};   // idx -> first seen spot
+
+// ─── Chart ───────────────────────────────────────────────
+const ctx = document.getElementById('chart').getContext('2d');
+const myChart = new Chart(ctx, {
+  type: 'line',
+  data: { datasets: [] },
+  options: {
+    responsive: true, maintainAspectRatio: false,
+    animation: { duration: 400, easing: 'easeOutQuart' },
+    interaction: { mode: 'index', intersect: false },
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    scales: {
+      x: { type:'time',
+           time:{ tooltipFormat:'HH:mm', displayFormats:{ minute:'HH:mm', hour:'HH:mm' } },
+           grid:{ color:'rgba(37,42,56,.6)' },
+           ticks:{ color:'#525c73', font:{ size:11, family:'Inter' }, maxTicksLimit:8 },
+           border:{ color:'transparent' } },
+      y: { position:'right',
+           grid:{ color:'rgba(37,42,56,.4)' },
+           ticks:{ color:'#8891a8', font:{ size:11, family:'Inter' }, padding:8,
+                   callback: v => '\u20b9' + v.toFixed(0) },
+           border:{ color:'transparent' } },
+
+    }
+  }
+});
+
+// Crosshair
+Chart.register({ id:'xhair', afterDraw(chart){
+  if(chart._hx===undefined) return;
+  const {ctx, chartArea:ca} = chart;
+  ctx.save(); ctx.beginPath();
+  ctx.strokeStyle='rgba(136,145,168,.3)'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
+  ctx.moveTo(chart._hx, ca.top); ctx.lineTo(chart._hx, ca.bottom); ctx.stroke(); ctx.restore();
+}});
+
+// Tooltip mouse
+const cv = document.getElementById('chart');
+const tip = document.getElementById('tip');
+cv.addEventListener('mousemove', e => {
+  const pts = myChart.getElementsAtEventForMode(e,'index',{intersect:false},true);
+  if(!pts.length){ tip.style.display='none'; return; }
+  const i = pts[0].index, d = chartData[i];
+  if(!d) return;
+  const r = cv.getBoundingClientRect();
+  const x = e.clientX-r.left, y = e.clientY-r.top;
+  myChart._hx = x; myChart.draw();
+  document.getElementById('tipTime').textContent = new Date(d.t).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  document.getElementById('tipLtp').textContent  = '\u20b9 '+d.ltp.toFixed(2);
+  document.getElementById('tipVwap').textContent = '\u20b9 '+d.vwap.toFixed(2);
+  document.getElementById('tipNifty').textContent= d.nifty.toFixed(2);
+  document.getElementById('tipCe').textContent   = '\u20b9 '+d.ce.toFixed(2);
+  document.getElementById('tipPe').textContent   = '\u20b9 '+d.pe.toFixed(2);
+  let tx = x+18, ty = y-10;
+  if(tx+200>r.width)  tx = x-215;
+  if(ty+200>r.height) ty = y-205;
+  tip.style.left=tx+'px'; tip.style.top=ty+'px'; tip.style.display='block';
+});
+cv.addEventListener('mouseleave',()=>{ tip.style.display='none'; myChart._hx=undefined; myChart.draw(); });
+
+// ─── Overlay helpers ─────────────────────────────────────
+function showLoading(msg){ 
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('loadTxt').textContent = msg;
+  document.getElementById('errTxt').style.display='none';
+}
+function hideLoading(){ document.getElementById('loadingOverlay').classList.add('hidden'); }
+function showError(msg){
+  document.getElementById('loadingOverlay').classList.remove('hidden');
+  document.getElementById('loadTxt').style.display='none';
+  const e=document.getElementById('errTxt'); e.style.display='block'; e.textContent=msg;
+}
+
+// ─── API helpers ──────────────────────────────────────────
+async function apiFetch(path){
+  const r = await fetch(API+path, {mode:'cors'});
+  if(!r.ok) { const j=await r.json().catch(()=>{}); throw new Error((j&&j.error)||r.statusText); }
+  return r.json();
+}
+
+// ─── Load expiries ────────────────────────────────────────
+async function loadExpiries(){
+  try {
+    expiries = await apiFetch('/api/expiries?idx='+curIdx);
+    document.getElementById('offlineBanner').style.display='none';
+  } catch(e){
+    document.getElementById('offlineBanner').style.display='block';
+    expiries = [];
+  }
+  renderExpiries();
+  if(expiries.length){
+    curExp = expiries[0].date;
+    renderExpiries();
+    await loadData();
+  }
+}
+
+function renderExpiries(){
+  const el = document.getElementById('expList');
+  if(!expiries.length){ el.innerHTML='<div style="font-size:12px;color:#ef4444;padding:8px 0">Server offline</div>'; return; }
+  el.innerHTML='';
+  expiries.forEach((e,i)=>{
+    const b=document.createElement('button');
+    b.className='exp-btn '+(e.weekly?'weekly':'')+' '+(e.date===curExp?'active':'');
+    b.textContent=e.label+(e.weekly?' (W)':'');
+    b.onclick=()=>{ curExp=e.date; renderExpiries(); loadData(); };
+    el.appendChild(b);
+  });
+}
+
+// ─── Load straddle candle data ────────────────────────────
+async function loadData(){
+  if(!curExp){ showError('Select an expiry first'); return; }
+  showLoading('Fetching Dhan candles...');
+  document.getElementById('btnRefresh').disabled=true;
+  try {
+    const data = await apiFetch('/api/straddle?idx='+curIdx+'&expiry='+curExp+'&tf='+curTf);
+    chartData = data.candles;
+    if(!chartData.length){ showError('No candle data \u2014 market may be closed'); return; }
+    
+    // Update chart
+    buildChart(chartData);
+    updateStats(chartData);
+    updateSideInfo(data);
+    hideLoading();
+    
+    const now = new Date();
+    document.getElementById('lastUpdate').textContent = 
+      'Updated: '+now.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+  } catch(e){
+    showError('Error: '+e.message+'\n\nMake sure atm_straddle_server.py is running.');
+    document.getElementById('offlineBanner').style.display='block';
+  } finally {
+    document.getElementById('btnRefresh').disabled=false;
+  }
+}
+
+function buildChart(data){
+  myChart.data = {
+    datasets:[
+      { label:'LTP', data:data.map(d=>({x:new Date(d.t),y:d.ltp})),
+        borderColor:'#f97316', backgroundColor:'rgba(249,115,22,.07)',
+        borderWidth:2.2, pointRadius:0, pointHoverRadius:5, fill:true, tension:.3, yAxisID:'y' },
+      { label:'VWAP', data:data.map(d=>({x:new Date(d.t),y:d.vwap})),
+        borderColor:'#a855f7', backgroundColor:'transparent',
+        borderWidth:1.5, borderDash:[5,4], pointRadius:0, pointHoverRadius:4,
+        fill:false, tension:.3, yAxisID:'y', hidden:!showVwap },
+      { label:'NIFTY', data:data.map(d=>({x:new Date(d.t),y:d.nifty_scaled})),
+        borderColor:'#818cf8', backgroundColor:'transparent',
+        borderWidth:1.5, borderDash:[4,3], pointRadius:0, pointHoverRadius:3,
+        fill:false, tension:.3, yAxisID:'y', hidden:!showNifty },
+    ]
+  };
+  myChart.update('active');
+}
+
+function updateStats(data){
+  const ltps = data.map(d=>d.ltp), vwaps = data.map(d=>d.vwap);
+  const open=ltps[0], high=Math.max(...ltps), low=Math.min(...ltps);
+  const ltp=ltps[ltps.length-1], vwap=vwaps[vwaps.length-1];
+  const chg=ltp-open, pct=(chg/open*100);
+  document.getElementById('stOpen').textContent='\u20b9'+open.toFixed(2);
+  document.getElementById('stHigh').textContent='\u20b9'+high.toFixed(2);
+  document.getElementById('stLow').textContent ='\u20b9'+low.toFixed(2);
+  document.getElementById('stLtp').textContent ='\u20b9'+ltp.toFixed(2);
+  document.getElementById('stVwap').textContent='\u20b9'+vwap.toFixed(2);
+  document.getElementById('stCnt').textContent =data.length+' bars';
+  const ce=document.getElementById('stChg'), cp=document.getElementById('stChgP');
+  ce.textContent=(chg>=0?'+':'')+chg.toFixed(2);
+  cp.textContent=(pct>=0?'+':'')+pct.toFixed(2)+'%';
+  ce.className='sv '+(chg>=0?'up':'down');
+  cp.className='sv '+(chg>=0?'up':'down');
+}
+
+function updateSideInfo(data){
+  const last = data.candles[data.candles.length-1];
+  current_ce_id = data.ce_secid;
+  current_pe_id = data.pe_secid;
+  document.getElementById('atmDisplay').textContent=(data.atm_strike||'—')+' CE+PE';
+  document.getElementById('sAtm').textContent  = data.atm_strike||'—';
+  document.getElementById('sCeSym').textContent= data.ce_sym||'—';
+  document.getElementById('sPeSym').textContent= data.pe_sym||'—';
+  document.getElementById('sCeLtp').textContent= last?'\u20b9 '+last.ce.toFixed(2):'—';
+  document.getElementById('sPeLtp').textContent= last?'\u20b9 '+last.pe.toFixed(2):'—';
+  const tot = last?'\u20b9 '+last.ltp.toFixed(2):'—';
+  document.getElementById('sTotal').textContent= tot;
+  document.getElementById('bigTotal').textContent= tot;
+}
+
+// ─── Controls ─────────────────────────────────────────────
+function setTf(tf, btn){
+  curTf=tf;
+  document.querySelectorAll('.tfb').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
+  if(curExp) loadData();
+}
+
+function switchIdx(idx){
+  curIdx=idx; curExp=null;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('active'));
+  document.getElementById('chip'+idx).classList.add('active');
+  loadExpiries();
+}
+document.getElementById('chipNIFTY').onclick    = ()=>switchIdx('NIFTY');
+document.getElementById('chipBANKNIFTY').onclick = ()=>switchIdx('BANKNIFTY');
+document.getElementById('chipFINNIFTY').onclick  = ()=>switchIdx('FINNIFTY');
+
+document.getElementById('ckNifty').onchange = e=>{
+  showNifty=e.target.checked;
+  if(myChart.data.datasets[2]) { myChart.data.datasets[2].hidden=!showNifty; myChart.update(); }
+};
+document.getElementById('ckVwap').onchange = e=>{
+  showVwap=e.target.checked;
+  if(myChart.data.datasets[1]) { myChart.data.datasets[1].hidden=!showVwap; myChart.update(); }
+};
+
+// ─── Live spot polling every 5s ───────────────────────────
+async function pollSpot(){
+  for(const idx of ['NIFTY','BANKNIFTY','FINNIFTY']){
+    try {
+      const d = await apiFetch('/api/spot?idx='+idx);
+      if(!d.ltp) continue;
+      const el = document.getElementById('spot'+idx);
+      const prev = parseFloat(el.dataset.prev||d.ltp);
+      el.dataset.prev = d.ltp;
+      el.textContent = parseFloat(d.ltp).toLocaleString('en-IN',{minimumFractionDigits:2});
+      if(!spotBase[idx]) spotBase[idx]=d.ltp;
+      const chgPct = ((d.ltp-spotBase[idx])/spotBase[idx]*100).toFixed(2);
+      const chgEl = document.getElementById('chg'+idx);
+      chgEl.textContent=(chgPct>=0?'+':'')+chgPct+'%';
+      chgEl.style.color=chgPct>=0?'var(--gr)':'var(--rd)';
+      el.style.color=d.ltp>=prev?'var(--gr)':'var(--rd)';
+    } catch(e){ /* server offline */ }
+  }
+}
+
+// ─── Auto-refresh every 60s during market hours ───────────
+function isMarketHours(){
+  const now=new Date();
+  const h=now.getHours(), m=now.getMinutes();
+  const mins=h*60+m;
+  return mins>=9*60+15 && mins<=15*60+30 && now.getDay()>0 && now.getDay()<6;
+}
+setInterval(()=>{ if(isMarketHours() && curExp) loadData(); }, 60000);
+setInterval(pollSpot, 5000);
+
+// ─── Clock ────────────────────────────────────────────────
+function tick(){ document.getElementById('clock').textContent=new Date().toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}); }
+setInterval(tick,1000); tick();
+
+// ─── INIT ─────────────────────────────────────────────────
+loadExpiries();
+pollSpot();
+
+</script>
+</body>
+</html>
+// ─── LIVE POLLING ─────────────────────────────────────────
+setInterval(async () => {
+  if(!current_ce_id || !current_pe_id) return;
+  try {
+    const res = await fetch(`http://127.0.0.1:5001/api/premium?ce_secid=${current_ce_id}&pe_secid=${current_pe_id}`);
+    const r = await res.json();
+    if(r.ce_ltp){
+      document.getElementById('sCeLtp').textContent = '\u20b9 '+r.ce_ltp.toFixed(2);
+      document.getElementById('sPeLtp').textContent = '\u20b9 '+r.pe_ltp.toFixed(2);
+      const tot = '\u20b9 '+r.straddle_ltp.toFixed(2);
+      const big = document.getElementById('bigTotal');
+      if (big.textContent !== tot) {
+        document.getElementById('sTotal').textContent = tot;
+        big.textContent = tot;
+        big.style.color = '#fff';
+        setTimeout(() => big.style.color = 'var(--or)', 150);
+      }
+    }
+  }catch(e){}
+}, 1000);

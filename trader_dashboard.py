@@ -578,6 +578,29 @@ def api_set_risk_config():
     TC_FILE.write_text(json.dumps(cfg, indent=2))
     return jsonify({"msg": "Risk settings saved!"})
 
+@app.route('/api/sync-from-vps', methods=['POST'])
+def api_sync_from_vps():
+    """LOCAL-only: pull VPS trades.db + configs + logs to this local machine so
+    the local dashboard shows today's LIVE (VPS) data. Blocked on the VPS itself
+    (Linux) — it would scp from itself. Runs _ops/sync_vps_to_local.py."""
+    import sys as _sys, subprocess as _sp
+    if _sys.platform != 'win32':
+        return jsonify({"ok": False, "msg": "Sync sirf LOCAL (Windows dev) pe chalta hai — VPS pe nahi."}), 400
+    script = str(BASE_DIR / "_ops" / "sync_vps_to_local.py")
+    try:
+        r = _sp.run([_sys.executable, script], capture_output=True, text=True, timeout=180)
+        ok = (r.returncode == 0)
+        tail = (r.stdout or "")[-1200:]
+        if r.stderr:
+            tail += "\n[stderr] " + r.stderr[-400:]
+        return jsonify({"ok": ok,
+                        "msg": "Sync done — VPS ka aaj ka data local pe aa gaya." if ok else "Sync fail — output dekho.",
+                        "output": tail})
+    except _sp.TimeoutExpired:
+        return jsonify({"ok": False, "msg": "Sync timeout (180s) — VPS reachable hai?"}), 504
+    except Exception as e:
+        return jsonify({"ok": False, "msg": f"Sync error: {e}"}), 500
+
 @app.route('/api/kill-floor-status')
 def api_kill_floor_status():
     """Live kill-floor state for the RMS tab's big display (2026-07-02).
@@ -5492,7 +5515,8 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     # system, no option position should carry overnight regardless of
     # which strategy/source opened it. Takes priority over SL/TP so a
     # position with no SL/TP tags set still gets closed at EOD.
-    if (ist_now.hour > 15 or (ist_now.hour == 15 and ist_now.minute >= 15)) \
+    _sq_h, _sq_m = _rg.exit_time_config()[0]   # RMS single-source squareoff time (was hardcoded 15:15)
+    if (ist_now.hour > _sq_h or (ist_now.hour == _sq_h and ist_now.minute >= _sq_m)) \
        and _is_option:
         _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
         return

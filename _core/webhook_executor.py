@@ -520,9 +520,13 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     # naye signal ki direction — reversal detect karne ke liye pehle chahiye
     direction = "LONG" if action in ("buy", "long") else "SHORT"
 
-    # ── safety net (server-side) — entry cutoff ──
-    if (now.hour, now.minute) >= _hm(cfg.get("no_entry_after", "15:15")):
-        _log(f"ENTRY blocked {key} — after {cfg.get('no_entry_after')}")
+    # ── safety net (server-side) — entry cutoff (RMS single-source) ──
+    # exit/no-entry time ab RMS tab se aata hai (risk_gate.exit_time_config) —
+    # webhook config me alag field nahi. Sab strategies + webhook ek jagah se.
+    import risk_gate as _rg
+    _no_entry_hm = _rg.exit_time_config()[1]
+    if (now.hour, now.minute) >= _no_entry_hm:
+        _log(f"ENTRY blocked {key} — no entry after {_no_entry_hm[0]:02d}:{_no_entry_hm[1]:02d} (RMS)")
         return {"ok": False, "msg": "no entry after cutoff"}
 
     # ── trailing profit lock fired today → no new entries ──
@@ -829,7 +833,9 @@ def monitor_tick():
                 _do_exit(strat, symbol, cfg, reason="GLOBAL_CAP")
                 continue
 
-            force_sq = (now.hour, now.minute) >= _hm(cfg.get("squareoff_at", "15:15"))
+            import risk_gate as _rg_sq
+            _sq_hm = _rg_sq.exit_time_config()[0]   # RMS single-source squareoff time
+            force_sq = (now.hour, now.minute) >= _sq_hm
             if force_sq:
                 _do_exit(strat, symbol, cfg, reason="SQUAREOFF_315")
                 continue

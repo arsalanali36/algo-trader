@@ -1388,6 +1388,14 @@
     <h1>Algo Trader</h1>
     <span id="envBadge"
       style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px;border:1px solid #30363d;margin-left:2px">—</span>
+    <span id="vpsSyncBar" style="display:none;align-items:center;gap:8px;margin-left:8px">
+      <button id="vpsSyncBtn" onclick="syncFromVps(true)" title="VPS ka aaj ka data (trades + config) local pe kheencho"
+        style="font-size:12px;font-weight:600;padding:4px 10px;border-radius:6px;background:#21262d;border:1px solid #30363d;color:#e6edf3;cursor:pointer">🔄 Sync from VPS</button>
+      <label style="font-size:12px;color:#8b949e;display:inline-flex;align-items:center;gap:5px;cursor:pointer" title="Har 10 min me VPS se auto-pull">
+        <input type="checkbox" id="vpsAutoSync" style="cursor:pointer"> Auto (10m)
+      </label>
+      <span id="vpsSyncStatus" style="font-size:11px;color:#6e7681"></span>
+    </span>
     <script>
       (function () {
         var h = location.hostname;
@@ -1400,7 +1408,53 @@
           b.style.borderColor = isLocal ? '#1f6feb' : '#238636';
           document.title = (isLocal ? '🖥️ LOCAL · ' : '☁️ VPS · ') + 'Algo Trader';
         }
+        window._IS_LOCAL = isLocal;
+        var bar = document.getElementById('vpsSyncBar');
+        if (isLocal && bar) {
+          bar.style.display = 'inline-flex';
+          var last = localStorage.getItem('vps_last_sync');
+          if (last) document.getElementById('vpsSyncStatus').textContent = 'last: ' + last;
+          var auto = document.getElementById('vpsAutoSync');
+          auto.checked = localStorage.getItem('vps_auto_sync') === '1';
+          auto.addEventListener('change', function () {
+            localStorage.setItem('vps_auto_sync', auto.checked ? '1' : '0');
+            _setupVpsAuto();
+          });
+          _setupVpsAuto();
+        }
       })();
+
+      window._vpsAutoTimer = null;
+      function _setupVpsAuto() {
+        if (window._vpsAutoTimer) { clearInterval(window._vpsAutoTimer); window._vpsAutoTimer = null; }
+        var auto = document.getElementById('vpsAutoSync');
+        if (window._IS_LOCAL && auto && auto.checked) {
+          window._vpsAutoTimer = setInterval(function () { syncFromVps(false); }, 600000);
+        }
+      }
+      async function syncFromVps(manual) {
+        if (!window._IS_LOCAL) return;
+        var btn = document.getElementById('vpsSyncBtn'), st = document.getElementById('vpsSyncStatus');
+        if (btn) { btn.disabled = true; btn.textContent = '⏳ Syncing…'; }
+        if (st) st.textContent = 'syncing…';
+        try {
+          var r = await fetch('/api/sync-from-vps', { method: 'POST' });
+          var d = await r.json();
+          var t = new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+          if (d.ok) {
+            localStorage.setItem('vps_last_sync', t);
+            if (st) { st.textContent = '✓ synced ' + t; st.style.color = '#3fb950'; }
+            if (manual) setTimeout(function () { location.reload(); }, 700);
+          } else {
+            if (st) { st.textContent = '✗ ' + (d.msg || 'fail'); st.style.color = '#f85149'; }
+            if (manual) alert('Sync fail:\n' + (d.msg || '') + '\n\n' + (d.output || ''));
+          }
+        } catch (e) {
+          if (st) { st.textContent = '✗ ' + e; st.style.color = '#f85149'; }
+        } finally {
+          if (btn) { btn.disabled = false; btn.textContent = '🔄 Sync from VPS'; }
+        }
+      }
     </script>
 
     <div class="tabs">
@@ -1624,8 +1678,7 @@
                 <option value="dropdown">Dropdown — type + value</option>
               </select></label>
             <label class="wh-f">Max trades/day<input id="wh-max_trades_per_day" type="number" min="1" value="2"></label>
-            <label class="wh-f">No entry after<input id="wh-no_entry_after" value="15:15"></label>
-            <label class="wh-f">Squareoff at<input id="wh-squareoff_at" value="15:15"></label>
+            <label class="wh-f" style="flex:1;min-width:100%;color:#8b949e;font-size:11px;align-self:center">⏰ Exit &amp; No-entry time ab <b>RMS tab</b> se (single-source — sab strategies + webhook)</label>
           </div>
           <div style="display:flex;align-items:center;gap:12px;margin-top:14px">
             <button class="btn btn-green" onclick="whSaveStrat()">💾 Save</button>
@@ -2291,6 +2344,21 @@
                     </div>
                     <div class="inputs-row"><label>Stocks max premium ₹</label>
                       <input id="risk-maxprem-stock" type="number" step="10" placeholder="e.g. 300 (blank=off)" />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td class="param-info" style="border-left:3px solid #d29922"><span>⏰ Exit &amp; No-Entry Time (all strategies)</span>
+                  <span class="wavy-subtext">Intraday square-off + no-new-entry ka time — <b>saari strategies (Range / RSI / EMA / Universe / Webhook) yahi se uthengi</b>, ab har strategy me alag nahi. "No entry after" ke baad koi nayi entry nahi jaati — 3:15 ke turant baad entry+exit ka zabardasti brokerage (₹50 tax) rukta hai. IST 24-hr.</span>
+                </td>
+                <td class="param-inputs">
+                  <div class="inputs-grid">
+                    <div class="inputs-row"><label>Auto square-off</label>
+                      <input id="risk-exit-squareoff" type="time" value="15:15" />
+                    </div>
+                    <div class="inputs-row"><label>No entry after</label>
+                      <input id="risk-exit-noentry" type="time" value="15:15" />
                     </div>
                   </div>
                 </td>
@@ -3783,6 +3851,8 @@
       document.getElementById('risk-maxprem-nifty').value = RISK_CFG.global.max_premium_nifty != null ? RISK_CFG.global.max_premium_nifty : '';
       document.getElementById('risk-maxprem-banknifty').value = RISK_CFG.global.max_premium_banknifty != null ? RISK_CFG.global.max_premium_banknifty : '';
       document.getElementById('risk-maxprem-stock').value = RISK_CFG.global.max_premium_stock != null ? RISK_CFG.global.max_premium_stock : '';
+      document.getElementById('risk-exit-squareoff').value = RISK_CFG.global.auto_squareoff_at || '15:15';
+      document.getElementById('risk-exit-noentry').value = RISK_CFG.global.no_entry_after || '15:15';
       document.getElementById('risk-per-instrument-enabled').value = RISK_CFG.global.per_instrument_lock_enabled === true ? 'true' : 'false';
       document.getElementById('risk-per-instrument-arm').value = RISK_CFG.global.per_instrument_lock_arm_rs != null ? RISK_CFG.global.per_instrument_lock_arm_rs : '';
       document.getElementById('risk-per-instrument-gap').value = RISK_CFG.global.per_instrument_lock_gap_rs != null ? RISK_CFG.global.per_instrument_lock_gap_rs : '';
@@ -4104,6 +4174,10 @@
           max_premium_nifty: document.getElementById('risk-maxprem-nifty').value !== '' ? parseFloat(document.getElementById('risk-maxprem-nifty').value) : null,
           max_premium_banknifty: document.getElementById('risk-maxprem-banknifty').value !== '' ? parseFloat(document.getElementById('risk-maxprem-banknifty').value) : null,
           max_premium_stock: document.getElementById('risk-maxprem-stock').value !== '' ? parseFloat(document.getElementById('risk-maxprem-stock').value) : null,
+          // Exit & no-entry time (single-source for ALL strategies + webhook) — same
+          // wholesale-replace caveat: must be in every save payload.
+          auto_squareoff_at: document.getElementById('risk-exit-squareoff').value || '15:15',
+          no_entry_after: document.getElementById('risk-exit-noentry').value || '15:15',
           // Per-Trade Default SL merge (2026-07-07) — one mode drives Legacy /
           // Dropdown / Aggressive. Same wholesale-replace caveat as below.
           default_sl_mode: document.getElementById('risk-defsl-mode').value,
@@ -4504,8 +4578,6 @@
       set('wh-qty', c.qty != null ? c.qty : 1);
       set('wh-sl_type', c.sl_type || 'aggressive');
       set('wh-max_trades_per_day', c.max_trades_per_day != null ? c.max_trades_per_day : 2);
-      set('wh-no_entry_after', c.no_entry_after || '15:15');
-      set('wh-squareoff_at', c.squareoff_at || '15:15');
       document.getElementById('wh-active').checked = c.active !== false;
       whSetMode(c.mode || 'paper', true);
       whSetOptMode((c.opt_action || 'SELL').toUpperCase(), true);
@@ -4554,8 +4626,6 @@
         qty: parseInt(g('wh-qty')),
         sl_type: g('wh-sl_type'),
         max_trades_per_day: parseInt(g('wh-max_trades_per_day')),
-        no_entry_after: g('wh-no_entry_after'),
-        squareoff_at: g('wh-squareoff_at'),
         opt_action: WH_OPTMODE,
         long_opt_type: WH_OPTMODE === 'SELL' ? 'PE' : 'CE',
         short_opt_type: WH_OPTMODE === 'SELL' ? 'CE' : 'PE'

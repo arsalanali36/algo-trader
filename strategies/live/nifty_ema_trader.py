@@ -100,9 +100,24 @@ def is_market_open():
     t = (ist_now().hour, ist_now().minute)
     return MARKET_OPEN <= t < MARKET_CLOSE
 
+def _exit_times():
+    """(squareoff_hm, no_entry_hm) — RMS single-source (risk_gate.exit_time_config,
+    RMS tab se editable). Fallback AUTO_EXIT_AT."""
+    try:
+        import risk_gate as _rg
+        return _rg.exit_time_config()
+    except Exception:
+        return AUTO_EXIT_AT, AUTO_EXIT_AT
+
 def is_exit_time():
     t = (ist_now().hour, ist_now().minute)
-    return t >= AUTO_EXIT_AT
+    return t >= _exit_times()[0]
+
+def is_no_entry_time():
+    """No new entry at/after RMS no_entry_after — stops '3:15 ke baad entry ->
+    turant squareoff -> ₹50 zabardasti tax' bug."""
+    t = (ist_now().hour, ist_now().minute)
+    return t >= _exit_times()[1]
 
 def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
@@ -398,8 +413,10 @@ def run(paper_mode=True, strategy_id="ema"):
                 inst   = tc.get("instrument", "equity")
                 offset = int(tc.get("strike_offset", 0))
 
-                # max_trades hit but position open → only exit allowed, no new entry
-                allow_entry = (t_count < max_t)
+                # max_trades hit / no-entry-after time → only exit allowed, no new entry.
+                # is_no_entry_time() (RMS single-source) stops the '3:15 ke baad entry
+                # -> turant squareoff -> ₹50 zabardasti tax' bug. Exits below unaffected.
+                allow_entry = (t_count < max_t) and not is_no_entry_time()
 
                 if signal == "BUY":
                     if pos < 0:   # EXIT short (always, regardless of max_trades)

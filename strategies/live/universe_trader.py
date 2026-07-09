@@ -64,9 +64,24 @@ def is_market_open():
     return MARKET_OPEN <= (n.hour, n.minute) < MARKET_CLOSE
 
 
+def _exit_times():
+    """(squareoff_hm, no_entry_hm) — RMS single-source (risk_gate.exit_time_config,
+    RMS tab se editable). Fallback EXIT_TIME."""
+    try:
+        import risk_gate as _rg
+        return _rg.exit_time_config()
+    except Exception:
+        return EXIT_TIME, EXIT_TIME
+
 def is_exit_time():
     n = ist_now()
-    return (n.hour, n.minute) >= EXIT_TIME
+    return (n.hour, n.minute) >= _exit_times()[0]
+
+def is_no_entry_time():
+    """No new entry at/after RMS no_entry_after — stops '3:15 ke baad entry ->
+    turant squareoff -> ₹50 zabardasti tax' bug."""
+    n = ist_now()
+    return (n.hour, n.minute) >= _exit_times()[1]
 
 
 # ---------------- config / state ----------------
@@ -371,6 +386,15 @@ def main(sid, once=False):
                 continue
 
             if sig not in ("BUY", "SELL"):
+                continue
+
+            # No-entry-after gate (RMS single-source) — sig is now a NEW entry;
+            # block at/after the configured time (else 3:15 squareoff instantly
+            # closes it = wasted entry+exit brokerage, "zabardasti tax"). EXIT above
+            # is never gated.
+            if is_no_entry_time():
+                _ne = _exit_times()[1]
+                log(f"[NO-ENTRY] {sym} — no entry after {_ne[0]:02d}:{_ne[1]:02d} (RMS)")
                 continue
 
             want = "LONG" if sig == "BUY" else "SHORT"
