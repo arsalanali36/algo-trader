@@ -3472,8 +3472,8 @@
           const mode = RUNNING_PIDS[s.strategy + '_mode'] || RUNNING_PIDS[s.strategy.toLowerCase() + '_mode'] || 'paper';
           if (pid) {
             const modeBadge = mode === 'live'
-              ? '<span style="color:#58a6ff;font-weight:600;">🔵 Live</span>'
-              : '<span style="color:#3fb950;font-weight:600;">🟢 Paper</span>';
+              ? '<span style="color:#f85149;font-weight:600;">🔴 Live</span>'
+              : '<span style="color:#58a6ff;font-weight:600;">🔵 Paper</span>';
             runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap">${modeBadge} <span style="font-size:10px;color:#8b949e;margin-left:3px">(PID ${pid})</span>`
               + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskStopBot('${s.strategy}')">Stop</button></div>`;
           } else {
@@ -3488,8 +3488,8 @@
 
           if (isActive) {
             const modeBadge = mode === 'live'
-              ? '<span style="color:#58a6ff;font-weight:600;">🔵 Live</span>'
-              : '<span style="color:#3fb950;font-weight:600;">🟢 Paper</span>';
+              ? '<span style="color:#f85149;font-weight:600;">🔴 Live</span>'
+              : '<span style="color:#58a6ff;font-weight:600;">🔵 Paper</span>';
             runControlsHtml = `<div style="display:flex;align-items:center;white-space:nowrap">${modeBadge}`
               + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:8px;line-height:1;" onclick="riskToggleWebhook('${s.strategy}','stop')">Stop</button></div>`;
           } else {
@@ -6625,8 +6625,8 @@
         const mode = RUNNING_PIDS[key + '_mode'] || RUNNING_PIDS[key.toLowerCase() + '_mode'] || 'paper';
         if (pid) {
           const modeBadge = mode === 'live'
-            ? '<span style="color:#58a6ff;font-weight:600">🔵 Live</span>'
-            : '<span style="color:#3fb950;font-weight:600">🟢 Paper</span>';
+            ? '<span style="color:#f85149;font-weight:600">🔴 Live</span>'
+            : '<span style="color:#58a6ff;font-weight:600">🔵 Paper</span>';
           el.innerHTML = `<div style="display:flex;align-items:center;white-space:nowrap;font-size:11px">${modeBadge}`
             + `<button class="btn btn-red" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="riskStartStopFromLog('${key}','stop')">Stop</button>`
             + `<button class="btn btn-gray" style="padding:3px 7px;font-size:11px;margin-left:6px;line-height:1" onclick="openWatchlist('${key}')">👀 Watch</button></div>`;
