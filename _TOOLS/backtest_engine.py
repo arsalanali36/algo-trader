@@ -40,7 +40,7 @@ import execution_gateway         # Rule 6B/ADR-003: shared risk/order layer — 
                                  # ka mode="backtest" gate (max-premium) isi se aata
                                  # hai jab koi option-premium path use kare; result
                                  # payload ka "risk_note" bhi isi contract ka hissa
-from strategies import vwap_ema_failure as vwapf
+from strategies.backtest import vwap_ema_failure as vwapf
 from _CHARTING import zones as chzones
 from _CHARTING import patterns as chpatterns
 from _CHARTING import plot_spec as chspec
@@ -850,10 +850,12 @@ def _run_custom(date_from, date_to, cfg):
     Module must expose EITHER backtest(df, cfg) -> (trades, df[, plot_spec])
     OR evaluate(df, cfg, pos). Reloaded each run so re-saves take effect."""
     import importlib
+    import strategies
     mod_name = cfg.get("_module")
     if not mod_name:
         return [], pd.DataFrame(), None
-    mod = importlib.import_module(mod_name)
+    # backward-compatible: resolve legacy "strategies.<id>" -> "strategies.backtest.<id>"
+    mod = strategies.resolve(mod_name)
     importlib.reload(mod)
 
     df = _load_df_for_cfg(date_from, date_to, cfg)

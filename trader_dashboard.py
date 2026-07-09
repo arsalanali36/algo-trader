@@ -2861,11 +2861,11 @@ def api_pine_save():
         except Exception:
             all_cfg = {}
         if lang == "python":
-            py_rel = f"strategies/{script_id}.py"
+            py_rel = f"strategies/backtest/{script_id}.py"
             (BASE_DIR / py_rel).write_text(code, encoding='utf-8')
             entry["py_file"] = py_rel
             hdr = _script_header(code)
-            cfg_entry = {"_module": f"strategies.{script_id}", "_lang": "python",
+            cfg_entry = {"_module": f"strategies.backtest.{script_id}", "_lang": "python",
                          "symbol": hdr.get("symbol", "NIFTY"),
                          "timeframe": hdr.get("timeframe", "5m"),
                          "qty": int(hdr.get("qty", 1)) if str(hdr.get("qty", "1")).isdigit() else 1,
@@ -2956,7 +2956,7 @@ def api_backtest_pine_code():
     match = None
     for v in reversed(versions):
         py = v.get('py_file', '') or ''
-        stem = py.replace('strategies/', '').replace('.py', '')
+        stem = py.rsplit('/', 1)[-1].replace('.py', '')  # basename (handles strategies/ and strategies/backtest/)
         if stem and (stem == sid or strat_type in stem or stem in strat_type):
             match = v
             break
@@ -2991,9 +2991,10 @@ def api_pine_delete(version):
                 TC_FILE.write_text(_json.dumps(all_cfg, indent=2, ensure_ascii=False))
         except Exception:
             pass
-        pyf = BASE_DIR / 'strategies' / f'{sid}.py'
-        if pyf.exists():
-            pyf.unlink()
+        for pyf in (BASE_DIR / 'strategies' / 'backtest' / f'{sid}.py',
+                    BASE_DIR / 'strategies' / f'{sid}.py'):   # backtest/ (new) + legacy flat
+            if pyf.exists():
+                pyf.unlink()
     return jsonify({"ok": True})
 
 @app.route('/pine/report/<int:version>')
@@ -3110,8 +3111,8 @@ def api_pine_strategies():
         py = v.get('py_file', '')
         if not py:
             continue
-        # derive strategy id: "strategies/rsi_v1.py" → "rsi_v1"
-        sid = py.replace('strategies/', '').replace('.py', '')
+        # derive strategy id: "strategies/backtest/rsi_v1.py" → "rsi_v1"
+        sid = py.rsplit('/', 1)[-1].replace('.py', '')
         if sid in seen:
             continue
         seen.add(sid)
