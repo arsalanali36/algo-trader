@@ -4,6 +4,41 @@
 Multi-strategy live/paper algo trader jo Dhan API pe orders deta hai.
 Web dashboard se control hota hai — koi command line nahi.
 
+## Folder Structure (2026-07-09 refactor — PADHO)
+
+Root pe pehle 60+ flat `.py` the; ab logical folders me organized hain. **Imports NAHI
+badle** — `_paths.py` (root) har entrypoint me sabse pehle import hota hai aur har folder
+ko `sys.path` pe daal deta hai, to flat `import risk_gate` / `import dhan_master` /
+`import range_trader` waise hi kaam karta hai chahe file kahin bhi ho.
+
+```
+trader_dashboard.py  monitor_daemon.py  health_check.py   ← entrypoints (root, systemd yahin se)
+_paths.py            ← sys.path bootstrap (har directly-run file iske baad hi moved-module import kare)
+_core/    risk_gate order_store smart_order broker_sync execution_gateway webhook_executor
+          strategy_safety daily_state mfe_routes          ← RMS + order/execution money-path
+_data/    dhan_master dhan_feed dhan_rate_limiter kite_rate_limiter ltp_poller
+          shared_ltp_cache shared_candle_cache universe fno_universe   ← broker/data plumbing
+_ops/     auto_data_downloader download_equity_history download_nifty50 export_trade_log
+          rate_limit_verify optimize_strategy deploy_vps sync_*        ← standalone ops scripts
+strategies/
+  backtest/  pluggable backtest strategies (evaluate/backtest contract) + user_*_v{n}
+  live/      LIVE trader loops (range_trader, universe_trader, 01_rsi_v1, nifty_ema_trader)
+             + range_config.json + NEW_STRATEGY_CHECKLIST.md   ← (was _TRADERS/)
+  lab/       AI-built strategy lab (per-strategy folders + Monte-Carlo/optimize/reports — see lab/README.md)
+  base.py  custom_rule_engine.py  __init__.py   ← strategy infra (load() is backward-compat)
+_TOOLS/  _CHARTING/  _PINE/  _ADR/  _DEPLOY/  brokers/  templates/  static/  data/   ← unchanged
+_DEV/tests/  _DEV/mockups/   ← test + mockup files       scratch/   ← gitignored junk
+```
+
+**Rules:**
+- **Nayi strategy?** backtest logic → `strategies/backtest/`; live trader loop → `strategies/live/`;
+  AI experiment (build+optimize+MC) → `strategies/lab/<name>/`.
+- **Directly-run naya script** (subprocess/daemon/CLI) jo project module import kare → `import _paths`
+  add karo (root pe: `import _paths`; subfolder me: pehle root ko `sys.path` pe daalo, phir `import _paths`).
+- **Moved module me path banate waqt** `Path(__file__).parent...` mat maano ki root hai — folder-depth
+  ke hisaab se `.parent` count karo (data/config/db sab project ROOT ke neeche hain).
+- Full audit + phased plan: `REFACTOR_PLAN.md`. VPS deploy checklist: `VPS_MIGRATION.md`.
+
 ## Files
 
 > **🐞 Koi bug/weird-P&L diagnose karne se PEHLE: `LESSONS.md` padho.** Recurring traps ki
@@ -18,7 +53,7 @@ Web dashboard se control hota hai — koi command line nahi.
 > Tool: `validate_strategy.py` (`--signals <log>` to score, `--debug DATE` to trace).
 > Best result: **90.2% exact / 93% entry** (Range Chain vs TradingView, NIFTY).
 >
-> **🧭 Koi NAYI live strategy (`_TRADERS/*.py`) likhne se PEHLE: `_TRADERS/NEW_STRATEGY_CHECKLIST.md`
+> **🧭 Koi NAYI live strategy (`strategies/live/*.py`) likhne se PEHLE: `strategies/live/NEW_STRATEGY_CHECKLIST.md`
 > padho.** Copy-paste-ready RMS-safe entry/exit templates + har wo galti jo yahan bite kar chuki
 > (RMS-blind order_store gap, manual-close phantom BUY, ₹0-price fill, `symbols` string-parse,
 > default-arg `.keys()` crash, dashboard `STRATEGIES` grep-mismatch, restart-orphan). Critical
@@ -68,9 +103,10 @@ Web dashboard se control hota hai — koi command line nahi.
 
 ## Deploy Karna
 
-> ⚠️ `deploy_vps.py` abhi **STALE** hai (2026-06-21): REMOTE_DIR `/root/code4` galat,
-> FILES me root-level trader files hain jo ab `_TRADERS/` me hain, aur spaced dir ke liye
-> scp/ssh quoting nahi. Fix hone tak **manual SCP** use karo (dir name quote karke):
+> ✅ `_ops/deploy_vps.py` 2026-07-09 refactor me update ho gaya (ROOT_FILES/globs +
+> HERE=project-root + new folder layout). Pehli baar refactored structure deploy karne se
+> PEHLE **`VPS_MIGRATION.md` padho** (stale old-location files remove + `_ops` timer ExecStart
+> paths). Normal update ke liye `python "_ops/deploy_vps.py"` (ya manual SCP dir-name quote karke):
 
 ```bash
 # dir name me space hai — SFTP scp literal path leta hai, bas quote karo:

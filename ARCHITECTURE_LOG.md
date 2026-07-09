@@ -15,6 +15,20 @@
 
 ---
 
+## 2026-07-09 — Repo folder refactor: flat root → _core/_data/_ops + strategies/{backtest,live,lab} (via _paths bootstrap)
+**Status:** LOCAL DONE ✅ (5 commits: 73a213a·f308e64·9a59262·79aea41·docs) — **VPS deploy PENDING** (`VPS_MIGRATION.md`).
+**Kya:**
+Root pe 60+ flat `.py` + bahut scratch/junk tha. Logically reorganize kiya taaki future strategies/tools ka clear ghar bane. **Backup pehle:** git tag `backup-pre-refactor-20260709_154105` (GitHub) + local tarball (54M).
+- **P1 (junk):** 6 tracked junk delete, `_test_*`→`_DEV/tests/`, mockups→`_DEV/mockups/`, 58 gitignored scratch→`scratch/`. Top-level 118→49.
+- **P2+3 (packaging):** money-path modules→`_core/`, broker/data plumbing→`_data/`, standalone scripts→`_ops/`. Naya `_paths.py` har folder ko sys.path pe daalta hai → **koi import statement nahi badla**. **Critical catch:** 24 modules `Path(__file__).parent/"data"` se path banate the — 1 level neeche jaane pe ye `_core/data` point karne lage (config.json/trades.db/scrip-master galat jagah) → sabko project-root pe rebase kiya (`.parent.parent`), verify kiya sab `root/data` pe resolve.
+- **P4 (strategies):** backtest strategies→`strategies/backtest/`, live traders→`strategies/live/` (was `_TRADERS/`), naya `strategies/lab/` (AI-strategy-lab scaffold). Loader **leaf-based backward-compatible** (`strategies.<id>` → `strategies.backtest.<id>`) → **live nifty_config `_module` migration ki zaroorat NAHI**. Traders 2-level deep hone se unka `__file__` root-computation ek level upar rebase (BASE_DIR→ROOT verified).
+- **P5 (docs):** `strategies/lab/README.md` (per-strategy folder + Monte-Carlo/optimize/reports convention), CLAUDE.md Folder Structure section, `deploy_vps.py` fix, `VPS_MIGRATION.md`, `REFACTOR_PLAN.md`.
+**Layer:** infra
+**Files:** naye `_paths.py`, `_core/*` `_data/*` `_ops/*` `strategies/{backtest,live,lab}/*` (git mv), edits: `trader_dashboard.py` `health_check.py` `monitor_daemon.py`(transitive) `_TOOLS/backtest_engine.py` `_TOOLS/architecture_audit.py`(SCAN_DIRS) `strategies/__init__.py`(resolve/load) + har directly-run file me `import _paths` bootstrap.
+**Kyun:** Live prj, top-level unmanageable ho gaya tha; future strategies + optimization results ka clear ghar chahiye tha (user ka Jesse-style workflow). Safety: har phase alag commit + verify (py_compile, import-graph 18/18 clean, full dashboard import clean, architecture audit 0 FAIL, pre-commit hook pass). VPS deferred — market-closed window me `VPS_MIGRATION.md` follow karna (stale files remove + `_ops` timer ExecStart paths; entrypoints root pe → systemd unchanged).
+
+---
+
 ## 2026-07-09 — Webhook SL: fired-SL suppression root-fix + single-source consolidation (webhook SL → RMS Default-TSL, per-webhook SL-Type selector)
 **Status:** DONE + **VPS DEPLOYED** (algo-monitor + algo-dashboard restart; live strategy PIDs untouched (KillMode=process); 0 real open live positions during window; py_compile + logic-verify (mode_override tags + feature_on) PASS; SL Type dropdown served).
 **Kya:**
