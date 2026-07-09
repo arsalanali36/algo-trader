@@ -4671,6 +4671,28 @@ def pos_monitor_loop():
                             _tsl_unreliable = True   # no price → freeze (never fire on bad data)
                         _tst, _act, _sl_lvl = _rg_tsl.advance_target_sl(
                             _tst, _unrl, _tslc, _lots, mtm_unreliable=_tsl_unreliable)
+                        # Smart-split candle-close confirm (2026-07-09, user) — in
+                        # the PROFIT-lock zone (sl_level >= 0: the SL has ratcheted
+                        # into locked profit) don't stop out on an intraday WICK;
+                        # require the last CLOSED 1-min candle to confirm the breach
+                        # (wick-proof whipsaw guard — "line ke upar close hoga tabhi
+                        # exit"). The LOSS zone (sl_level < 0) still fires on the live
+                        # tick for immediate capital protection. Candle data
+                        # unavailable → fail-safe: fire on the tick (never leave a
+                        # real breach unhandled). TARGET is unaffected (locks profit
+                        # immediately). Only ~1 extra Dhan candle call at the moment
+                        # a profit-zone stop would fire, and it's 30s-cached.
+                        if _act == "SL" and _sl_lvl >= 0:
+                            _cc = _last_closed_candle_close(_sid, _seg)
+                            if _cc and _cc > 0:
+                                _cc_mtm = (_cc - _epx) * _qty if _p.get("entry") == "BUY" \
+                                          else (_epx - _cc) * _qty
+                                if _cc_mtm > _sl_lvl:   # last closed candle did NOT breach → wait
+                                    _act = None
+                                    _tst["fired"] = False   # re-evaluate next cycle / candle
+                                    print(f"[DEFAULT-TSL] profit-lock SL wick ignored — "
+                                          f"{_p.get('sym')} (ID {_pid}) candle-close ₹{_cc:.2f} "
+                                          f"(mtm ₹{_cc_mtm:.0f}) still above SL ₹{_sl_lvl:.0f}", flush=True)
                         _tsl_state[_pid] = _tst
                         _tsl_dirty = True
                         if _act:
