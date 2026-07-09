@@ -8,10 +8,10 @@ grp1 = "Day Selection"
 
 // 🔄 CHANGED: Single day → Multi-month date range
 startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Date", group="Day Selection")
-endDate     = input.time(timestamp("2026-06-30 15:15"), title="Backtest End Date",   group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 15:15"), title="Backtest End Date",   group="Day Selection")
 inDateRange = (time >= startDate and time <= endDate)
 
-maxTradesPerDay = input.int(4, "Max Trades Per Day", minval=1, group="Day Selection")
+maxTradesPerDay = input.int(2, "Max Trades Per Day", minval=1, group="Day Selection")
 
 // ===== GROUP ORDER FIX — Exit & Zone Logic ko upar lane ke liye =====
 // Pine Script mein jo group pehle declare hoga woh Settings mein upar dikhega
@@ -1200,7 +1200,7 @@ if ta.change(time("D")) != 0
     tradesToday := 0
 
 whSymbol   = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
-whStrategy = input.string("Auto_Rev_Chain_😎_5", "Webhook strategy name (dashboard se match karo)", group="🔗 Webhook")
+whStrategy = input.string("arschain", "Webhook strategy name (dashboard se match karo)", group="🔗 Webhook")
 
 if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Long", strategy.long)

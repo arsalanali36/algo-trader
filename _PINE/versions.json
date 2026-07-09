@@ -118,5 +118,16 @@
     "lang": "python",
     "py_file": "strategies/user_temp_52_week_gemni_v1.py",
     "script_id": "user_temp_52_week_gemni_v1"
+  },
+  {
+    "version": 17,
+    "name": "TEMP - 52 WEEK - GEmni",
+    "strat_version": 2,
+    "timestamp": "2026-07-07 18:59 IST",
+    "desc": "",
+    "author": "Arsalan",
+    "lang": "python",
+    "py_file": "strategies/user_temp_52_week_gemni_v2.py",
+    "script_id": "user_temp_52_week_gemni_v2"
   }
 ]

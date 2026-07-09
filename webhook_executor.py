@@ -780,7 +780,14 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
                               source="webhook", strategy=strat,
                               instrument=st.get("instrument", "options"),
                               broker_name=cfg.get("broker", st.get("broker", "dhan")),
-                              is_exit=True)
+                              is_exit=True,
+                              # Critical Rule 9 / TRAP #88/#91 — every exit must TAG its
+                              # reason on the order_store row, not just log it. Webhook
+                              # _do_exit was the one exit path still omitting extra_tags,
+                              # so every TV_EXIT/REVERSAL/TARGET/TRAIL_SL/etc. showed a
+                              # blank "Exit Reason" column. reason is already a recognized
+                              # prefix in order_store._EXIT_REASON_PREFIXES.
+                              extra_tags=[reason])
     if not res.get("ok"):
         _log(f"EXIT fail {key} — {res.get('reason')}")
         return {"ok": False, "msg": f"exit failed: {res.get('reason')}"}

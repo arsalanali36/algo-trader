@@ -1152,7 +1152,8 @@ def main(strategy_id="range"):
                         import risk_gate
                         import strategy_safety
                         from brokers import get_broker
-                        opt_prem = risk_gate._quick_option_ltp(sec_id, token, cid) or price
+                        opt_prem_ltp = risk_gate._quick_option_ltp(sec_id, token, cid)  # real premium, or None/0 if fetch failed
+                        opt_prem = opt_prem_ltp or price  # gate check only: conservative fallback to spot
                         _entry_broker_name = risk_gate.default_broker()
                         try:
                             _entry_broker = get_broker(_entry_broker_name)
@@ -1166,7 +1167,16 @@ def main(strategy_id="range"):
                             log.info(f"ENTRY blocked {symbol} — {gate_reason}")
                             try:
                                 import order_store
-                                order_store.record("SELL", actual_qty, price, source='strategy',
+                                # Record the OPTION PREMIUM (opt_prem_ltp, ~65.60), NOT the underlying
+                                # spot `price` (~3974.8). Using spot here recorded a blocked PE/CE
+                                # leg at the index level, so the dashboard's blocked-entries panel
+                                # showed a nonsensical entry price → wrong points/P&L. (Task 14)
+                                # NOTE: opt_prem falls back to spot when the premium LTP fetch fails
+                                # (DH-904), so use opt_prem_ltp directly — real premium or 0 (blocked
+                                # rows legitimately carry no price; order_store's ₹0 tripwire skips
+                                # 'blocked'). 0 shows honestly as "premium N/A", never a bogus ₹3974.
+                                # webhook_executor + universe_trader already record the premium.
+                                order_store.record("SELL", actual_qty, opt_prem_ltp or 0, source='strategy',
                                     strategy=strategy_id, mode=mode, broker=risk_gate.default_broker(), symbol=symbol,
                                     instrument='options', trad_sym=t_sym, sec_id=sec_id, segment='NSE_FNO',
                                     status='blocked', tags=["CAPITAL_BLOCKED", gate_reason])

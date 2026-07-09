@@ -239,6 +239,34 @@ def get_equity_info(symbol):
     return _equity_cache.get(symbol)
 
 
+_lot_by_secid = {}
+def get_lot_size_by_sec_id(sec_id):
+    """Lot size for an OPTION contract by its sec_id, straight from the scrip
+    master (never hardcode lot sizes — they differ per underlying and change over
+    time). Returns int lot_size, or None if not found — the caller MUST treat
+    None as 'unknown' and not guess (per no-hardcode rule). Memoized per sec_id."""
+    if sec_id is None:
+        return None
+    key = str(sec_id)
+    if key in _lot_by_secid:
+        return _lot_by_secid[key]
+    if not _options_cache:
+        build_cache()
+    found = None
+    for _sym_map in _options_cache.values():
+        for _contracts in _sym_map.values():
+            for _c in _contracts:
+                if str(_c.get("sec_id")) == key:
+                    found = int(_c.get("lot_size") or 0) or None
+                    break
+            if found:
+                break
+        if found:
+            break
+    _lot_by_secid[key] = found
+    return found
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     download_master_if_needed()

@@ -213,6 +213,8 @@ _EXIT_REASON_PREFIXES = (
     # 01_rsi_v1.py — strategy's own RSI-midline exit (same gap, same day:
     # close_position()'s smart_order.execute() call had no extra_tags at all)
     "RSI_MIDLINE_EXIT",
+    # pos_monitor_loop — Default Target/SL exit profile (2026-07-04)
+    "DEFAULT_TSL_TARGET", "DEFAULT_TSL_SL",
 )
 
 
@@ -297,8 +299,18 @@ def _net_rows(rows):
     # Netting would pair a SELL OPEN + hedge BUY OPEN (same trad_sym/strategy)
     # → phantom completed trade (LESSONS.md TRAP #32).
     _OPEN_ST = {"open"}
-    live_rows   = [r for r in rows if str(r.get("status") or "").lower() in _OPEN_ST]
-    closed_rows = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST]
+    # BLOCKED rows (CAPITAL_BLOCKED — RMS rejected the entry, it never executed)
+    # must ALSO be kept out of netting. Their price is often an index-level
+    # placeholder, and FIFO-pairing a blocked leg against an unrelated real leg of
+    # the same trad_sym produces a phantom ₹-lakh "completed trade" that further
+    # corrupts daily-P&L / RMS profit-target (LESSONS.md TRAP #101). They surface
+    # via `_as_open()` below so the "Capital se Block hui Entries" panel still sees
+    # them — but they are NEVER a real completed-trade leg.
+    _BLOCKED_ST = {"blocked"}
+    live_rows    = [r for r in rows if str(r.get("status") or "").lower() in _OPEN_ST]
+    blocked_rows = [r for r in rows if str(r.get("status") or "").lower() in _BLOCKED_ST]
+    closed_rows  = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST
+                    and str(r.get("status") or "").lower() not in _BLOCKED_ST]
 
     def _as_open(r):
         o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
@@ -337,6 +349,11 @@ def _net_rows(rows):
     for st in stacks.values():
         for r in st:
             opens.append(_as_open(r))
+
+    # ── Blocked (CAPITAL_BLOCKED) rows → surface directly, never netted ──
+    # (kept separate above so they can't FIFO-pair into a phantom completed trade)
+    for r in blocked_rows:
+        opens.append(_as_open(r))
 
     # ── Live OPEN-status rows → directly open positions ──
     # Among SELL+BUY OPEN pairs for same trad_sym: show only SELL (main leg).

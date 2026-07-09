@@ -6,6 +6,13 @@
       "runtimeExecutable": "python",
       "runtimeArgs": ["-X", "utf8", "trader_dashboard.py"],
       "port": 5099
+    },
+    {
+      "name": "code3b-mockup",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5199"],
+      "cwd": "templates",
+      "port": 5199
     }
   ]
 }

@@ -1,6 +1,6 @@
 # // --- General ---
 # symbol: NIFTY
-# timeframe: 1D
+# timeframe: 5m
 # qty: 1
 
 # // --- Entry ---

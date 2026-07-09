@@ -1045,6 +1045,23 @@ def api_kite_save_key():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route('/api/kite-key-status')
+def api_kite_key_status():
+    """Kite api_key/api_secret already saved hain ya nahi (permanent creds).
+    Sirf status + last-4 preview — kabhi raw secret return nahi karta.
+    UI isse dikhata hai ki roz sirf request_token chahiye, key/secret nahi."""
+    try:
+        cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+        api_key = (cfg.get("kite_api_key") or "").strip()
+        has_secret = bool((cfg.get("kite_api_secret") or "").strip())
+        return jsonify({
+            "has_key": bool(api_key) and has_secret,
+            "api_key_preview": api_key[-4:] if api_key else "",
+        })
+    except Exception as e:
+        return jsonify({"has_key": False, "error": str(e)})
+
+
 @app.route('/api/kite-test-order', methods=['POST'])
 def api_kite_test_order():
     """NIFTY ATM CE test order (1 lot) — Kite F&O permission verify karne ke liye."""
@@ -1511,27 +1528,45 @@ def _save_premium_ohlc(sec_id, date_str, bars_by_epoch):
 
 
 def _load_premium_ohlc_candles(sec_id, date_str, entry_t="", exit_t=""):
-    """Read saved epoch-keyed bars → lightweight-charts candles (+entry/exit
-    markers), or None if no usable file. Only epoch-numeric keys are read (raw
-    Dhan epoch, same +19800 transform as the live Dhan path); any legacy
-    non-numeric HH:MM keys from the old daemon format are skipped rather than
-    guessed at (ambiguous TZ)."""
+    """Read saved bars → lightweight-charts candles (+entry/exit markers), or None
+    if no usable file. Handles BOTH key formats found in data/trade_ohlc/:
+      • raw Dhan epoch (UTC) keys — chart write-through format (#5), +19800 transform;
+      • HH:MM keys — auto_data_downloader.py's daemon format. These are IST market
+        wall-clock and the file is per-date, so the timestamp is NOT ambiguous:
+        rebuild the same IST-as-UTC epoch from date_str + HH:MM. (Previously these
+        were skipped as 'ambiguous TZ', which silently blanked every daemon-captured
+        chart for a contract Dhan later stopped serving — e.g. expired NIFTY weeklies.)"""
     try:
-        import datetime as _dt2
+        import datetime as _dt2, calendar as _cal
         p = _premium_ohlc_path(sec_id, date_str)
         if not p.exists():
             return None
         bars = json.loads(p.read_text())
         if not bars:
             return None
-        epoch_keys = [k for k in bars.keys() if str(k).lstrip("-").isdigit()]
-        if not epoch_keys:
+        rows = []   # (t_ist, hhmm, [o,h,l,c])
+        for k, v in bars.items():
+            if not v or len(v) < 4:
+                continue
+            ks = str(k)
+            if ks.lstrip("-").isdigit():
+                t_ist = int(ks) + 19800   # raw Dhan epoch (UTC) → IST-as-UTC for the chart
+                hhmm = _dt2.datetime.utcfromtimestamp(t_ist).strftime("%H:%M")
+            elif ":" in ks:
+                try:
+                    t_ist = _cal.timegm(_dt2.datetime.strptime(
+                        date_str + " " + ks, "%Y-%m-%d %H:%M").timetuple())
+                except Exception:
+                    continue
+                hhmm = ks
+            else:
+                continue
+            rows.append((t_ist, hhmm, v[:4]))
+        if not rows:
             return None
         candles, entry_mk, exit_mk = [], None, None
-        for k in sorted(epoch_keys, key=lambda x: int(x)):
-            o, h, l, c = bars[k][:4]
-            t_ist = int(k) + 19800   # +5:30 → chart shows IST (treated as UTC by lightweight-charts)
-            hhmm = _dt2.datetime.utcfromtimestamp(t_ist).strftime("%H:%M")
+        for t_ist, hhmm, ohlc in sorted(rows, key=lambda r: r[0]):
+            o, h, l, c = ohlc
             candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
                             "low": round(float(l), 2), "close": round(float(c), 2)})
             if entry_t and hhmm == entry_t and entry_mk is None:
