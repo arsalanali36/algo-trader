@@ -24,7 +24,7 @@ import time
 # Root-level modules (risk_gate/dhan_feed/execution_gateway/...) import karne ke
 # liye project root path pe chahiye — subprocess spawn me sys.path[0] = _TRADERS/
 # hota hai (same bootstrap jo range_trader/01_rsi_v1/nifty_ema_trader me hai).
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import risk_gate
 from datetime import datetime, timedelta, timezone
@@ -42,7 +42,7 @@ import strategies
 import universe
 from brokers import get_broker
 
-BASE_DIR = Path(__file__).resolve().parent
+BASE_DIR = Path(__file__).resolve().parent.parent.parent
 TC_FILE  = BASE_DIR / "nifty_config.json"
 
 TF_INTERVAL = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}

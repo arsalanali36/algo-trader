@@ -22,7 +22,7 @@ import time
 # project root (parent of _TRADERS/) on path BEFORE importing root modules —
 # launched as a subprocess (sys.path[0] = _TRADERS/), so dhan_master at the
 # project root is otherwise not importable.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import dhan_master
 import dhan_rate_limiter as _rl
@@ -44,7 +44,7 @@ socket.getaddrinfo = _v4
 # ── Paths ──────────────────────────────────────────────────────────────────────
 # BASE_DIR = project root (parent of _TRADERS/) — creds, nifty_config.json and
 # logs/ live at the root, not inside _TRADERS/ (same as rsi_trader.py).
-BASE_DIR    = Path(__file__).resolve().parent.parent
+BASE_DIR    = Path(__file__).resolve().parent.parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 TC_FILE     = BASE_DIR / "nifty_config.json"
 LOG_FILE    = BASE_DIR / "nifty_trader.log"

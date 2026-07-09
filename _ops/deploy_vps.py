@@ -59,11 +59,10 @@ FOLDER_GLOBS = [
     "_ops/*.py",
     "_CHARTING/*.py",
     "_TOOLS/*.py",
-    "_TRADERS/*.py",
-    "_TRADERS/*.json",
     "brokers/*.py",
     "strategies/*.py",
-    "strategies/*/*.py",      # backtest/ live/ lab/ subfolders (post Phase-4)
+    "strategies/*/*.py",      # backtest/ live/ lab/ subfolders
+    "strategies/live/*.json", # range_config.json etc.
     "templates/*.html",
 ]
 

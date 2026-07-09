@@ -22,7 +22,7 @@ import sys
 # project root (parent of _TRADERS/) on path BEFORE importing root modules —
 # this script is launched as a subprocess (sys.path[0] = _TRADERS/), so dhan_master
 # at the project root is otherwise not importable.
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import _paths  # sys.path bootstrap — adds _core/_data/_ops so flat imports below resolve after refactor
 import dhan_master
 import dhan_rate_limiter as _rl
@@ -45,7 +45,7 @@ def _ensure_root_path():
     """Idempotent safety net so root-level modules (shared_ltp_cache, universe,
     order_store) stay importable from inside functions. Root is already inserted
     at import time above; this just re-adds it if something cleared sys.path."""
-    _root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     if _root not in sys.path:
         sys.path.insert(0, _root)
 
@@ -65,7 +65,7 @@ def _rt_once(key):
 # ── Paths ─────────────────────────────────────────────────────────────────────
 # BASE_DIR = project root (parent of _TRADERS/) — creds, nifty_config.json and
 # logs/ all live at the root, not inside _TRADERS/ (same as rsi_trader.py).
-BASE_DIR    = Path(__file__).resolve().parent.parent
+BASE_DIR    = Path(__file__).resolve().parent.parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 CFG_FILE    = BASE_DIR / "range_config.json"
 LOG_FILE    = BASE_DIR / "range_trader.log"

@@ -50,7 +50,7 @@ BASE_DIR    = Path(__file__).resolve().parent
 TC_FILE     = BASE_DIR / "nifty_config.json"
 CONFIG_FILE = BASE_DIR / "data" / "config.json"
 LOGS_DIR    = BASE_DIR / "logs"
-TRADERS_DIR = BASE_DIR / "_TRADERS"
+TRADERS_DIR = BASE_DIR / "strategies" / "live"   # was _TRADERS/ pre 2026-07-09
 IST         = timezone(timedelta(hours=5, minutes=30))
 TEST_SOURCE = "healthtest"     # --fire-test ke orders ka source (cleanup isse hota)
 HEALTH_REPORT = BASE_DIR / "data" / "health_report.json"

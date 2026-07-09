@@ -46,7 +46,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 # Paths — BASE_DIR = project root (parent of _TRADERS/)
-BASE_DIR    = Path(__file__).resolve().parent.parent
+BASE_DIR    = Path(__file__).resolve().parent.parent.parent
 CONFIG_FILE = BASE_DIR / "data" / "config.json"      # Dhan JWT token
 TC_FILE     = BASE_DIR / "nifty_config.json"          # strategy params
 

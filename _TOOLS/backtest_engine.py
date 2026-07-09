@@ -25,7 +25,7 @@ import pandas as pd
 import requests
 
 BASE_DIR    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-TRADERS_DIR = os.path.join(BASE_DIR, "_TRADERS")
+TRADERS_DIR = os.path.join(BASE_DIR, "strategies", "live")   # was _TRADERS/ pre 2026-07-09
 TOOLS_DIR   = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, TRADERS_DIR)
 sys.path.insert(0, TOOLS_DIR)

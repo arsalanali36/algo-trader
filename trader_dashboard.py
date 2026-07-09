@@ -27,7 +27,7 @@ def _v4(h, p, f=0, t=0, pr=0, fl=0):
 socket.getaddrinfo = _v4
 
 BASE_DIR      = Path(__file__).resolve().parent
-TRADERS_DIR   = BASE_DIR / "_TRADERS"   # actual trading runner scripts live here
+TRADERS_DIR   = BASE_DIR / "strategies" / "live"   # live trader runner scripts (was _TRADERS/ pre 2026-07-09)
 TC_FILE       = BASE_DIR / "nifty_config.json"
 LOG_FILE      = BASE_DIR / "nifty_trader.log"
 RESULTS_DIR   = BASE_DIR / "results"
