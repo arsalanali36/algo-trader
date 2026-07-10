@@ -1541,7 +1541,37 @@
           <div class="dropdown-item" onclick="switchTab('config'); closeAvatarDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
             Settings</div>
+          <div class="dropdown-item" onclick="openPwModal(); closeAvatarDropdown();"
+            style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
+            🔑 Change Password</div>
+          <div class="dropdown-item" onclick="closeAvatarDropdown(); location.href='/logout';"
+            style="padding: 8px 12px; font-size: 12px; color: #f85149; cursor: pointer; white-space: nowrap; transition: background 0.12s; border-top: 1px solid #30363d;">
+            🚪 Logout</div>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD MODAL -->
+  <div id="pw-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:10001; align-items:center; justify-content:center;">
+    <div style="background:#161b22; border:1px solid #30363d; border-radius:12px; padding:24px 22px; width:340px; box-shadow:0 8px 32px rgba(0,0,0,.5);">
+      <div style="font-size:16px; font-weight:700; margin-bottom:4px;">🔑 Change Password</div>
+      <div style="font-size:12px; color:#8b949e; margin-bottom:16px;">User: <b id="pw-user">arsalan</b></div>
+      <div id="pw-msg" style="display:none; font-size:12px; border-radius:6px; padding:8px 10px; margin-bottom:12px;"></div>
+      <label style="display:block; font-size:12px; color:#8b949e; margin-bottom:5px; font-weight:600;">Current password</label>
+      <input id="pw-cur" type="password" autocomplete="current-password"
+        style="width:100%; padding:9px 11px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:14px; outline:none; box-sizing:border-box;">
+      <label style="display:block; font-size:12px; color:#8b949e; margin:14px 0 5px; font-weight:600;">New password</label>
+      <input id="pw-new" type="password" autocomplete="new-password"
+        style="width:100%; padding:9px 11px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:14px; outline:none; box-sizing:border-box;">
+      <label style="display:block; font-size:12px; color:#8b949e; margin:14px 0 5px; font-weight:600;">Confirm new password</label>
+      <input id="pw-new2" type="password" autocomplete="new-password"
+        style="width:100%; padding:9px 11px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:14px; outline:none; box-sizing:border-box;">
+      <div style="display:flex; gap:10px; margin-top:20px;">
+        <button onclick="closePwModal()"
+          style="flex:1; padding:10px; background:#21262d; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+        <button id="pw-save" onclick="submitPwChange()"
+          style="flex:1; padding:10px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
       </div>
     </div>
   </div>
@@ -3468,6 +3498,53 @@
     }
     function closeCredentialsModal() {
       document.getElementById('credentials-modal').style.display = 'none';
+    }
+
+    function openPwModal() {
+      document.getElementById('pw-cur').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-new2').value = '';
+      var m = document.getElementById('pw-msg'); m.style.display = 'none';
+      document.getElementById('pw-modal').style.display = 'flex';
+      setTimeout(function () { document.getElementById('pw-cur').focus(); }, 50);
+    }
+    function closePwModal() {
+      document.getElementById('pw-modal').style.display = 'none';
+    }
+    function _pwMsg(text, ok) {
+      var m = document.getElementById('pw-msg');
+      m.textContent = text;
+      m.style.display = 'block';
+      m.style.background = ok ? '#23863622' : '#f8514922';
+      m.style.border = '1px solid ' + (ok ? '#238636' : '#f85149');
+      m.style.color = ok ? '#3fb950' : '#ff9b95';
+    }
+    async function submitPwChange() {
+      var cur = document.getElementById('pw-cur').value;
+      var nw = document.getElementById('pw-new').value;
+      var nw2 = document.getElementById('pw-new2').value;
+      if (!cur || !nw) { _pwMsg('Sab fields bharo.', false); return; }
+      if (nw.length < 4) { _pwMsg('Naya password kam se kam 4 characters.', false); return; }
+      if (nw !== nw2) { _pwMsg('Naya password aur confirm match nahi karte.', false); return; }
+      var btn = document.getElementById('pw-save');
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        var r = await fetch('/api/change-password', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ current_password: cur, new_password: nw })
+        });
+        var d = await r.json();
+        if (d.ok) {
+          _pwMsg('✅ Password badal gaya.', true);
+          setTimeout(closePwModal, 1200);
+        } else {
+          _pwMsg('❌ ' + (d.error || 'Failed'), false);
+        }
+      } catch (e) {
+        _pwMsg('❌ ' + e, false);
+      } finally {
+        btn.disabled = false; btn.textContent = 'Save';
+      }
     }
 
     async function riskStartBot(s, mode) {
@@ -6735,8 +6812,9 @@
           <div style="display:flex;align-items:center;gap:10px">
             <div id="${key}-log-runctl"><!-- run status/start/stop, synced w/ Risk tab --></div>
             <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
+              title="Auto-scroll freeze karta hai — log stream chalta rehta hai"
               style="padding:5px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;cursor:pointer;font-weight:500;transition:all 0.15s">
-              ⏸ Pause
+              ⏸ Freeze scroll
             </button>
           </div>
         </div>
@@ -6811,11 +6889,11 @@
       _logPaused[key] = !_logPaused[key];
       const btn = document.getElementById(`${key}-pause-btn`);
       if (_logPaused[key]) {
-        btn.textContent = '▶ Play';
+        btn.textContent = '▶ Resume scroll';
         btn.style.color = '#3fb950';
         btn.style.borderColor = '#3fb950';
       } else {
-        btn.textContent = '⏸ Pause';
+        btn.textContent = '⏸ Freeze scroll';
         btn.style.color = '#e6edf3';
         btn.style.borderColor = '#30363d';
         // scroll to bottom when resuming
@@ -7678,14 +7756,26 @@
     async function updateLogs() {
       if (activeTab !== 'log') return;
       for (let key of Object.keys(GLOBAL_CONFIG)) {
-        if (_logPaused[key]) continue;   // paused — don't update
         try {
           let r = await fetch(`/api/log?s=${key}`);
           let j = await r.json();
           let lines = (j.lines || []).slice(-120);
           let html = lines.map(formatLogLine).join('');
           let box = document.getElementById(`${key}-log`);
-          if (box) { box.innerHTML = html || '<div class="lb-dim">No logs yet.</div>'; box.scrollTop = box.scrollHeight; }
+          if (box) {
+            // "Stick to bottom" — only auto-scroll if the user is already near
+            // the bottom AND hasn't paused. If they've scrolled up (to read), we
+            // keep the log flowing but DON'T yank the viewport down. Pause = an
+            // explicit lock that freezes auto-scroll regardless of position.
+            const nearBottom = (box.scrollHeight - box.scrollTop - box.clientHeight) < 40;
+            const prevTop = box.scrollTop;
+            box.innerHTML = html || '<div class="lb-dim">No logs yet.</div>';
+            if (!_logPaused[key] && nearBottom) {
+              box.scrollTop = box.scrollHeight;   // follow new lines
+            } else {
+              box.scrollTop = prevTop;            // stay where the user is reading
+            }
+          }
           // Sound notification on new order lines
           const orderLines = lines.filter(l => /\[(PAPER|LIVE)\]\s+(BUY|SELL)/.test(l));
           if (orderLines.length > 0) {
@@ -10607,9 +10697,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
       let pointsHtml = '';
       let currentGroupDate = '';
+      let currentMonth = '';
 
       let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0 };
       let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+      let _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
 
       const renderDayTotalRow = () => {
         if (_dayTot.count === 0) return '';
@@ -10654,12 +10746,68 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         return row;
       };
 
+      const _monthLabel = (ym) => {
+        try {
+          const p = ym.split('-');
+          return new Date(p[0], p[1] - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+        } catch (e) { return ym; }
+      };
+
+      const renderMonthTotalRow = () => {
+        if (_monTot.count === 0) return '';
+        const _mRetPct = _monTot.inv > 0 ? ((_monTot.n / _monTot.inv) * 100).toFixed(2) + '%' : '—';
+        let row = '<tr style="border-top:2px solid #3d444d; background:#1c2333; font-weight:700;">';
+        cols.forEach((c, idx) => {
+          let val = '';
+          let colorStyle = '';
+          if (idx === 0) {
+            val = '🗓️ ' + _monthLabel(currentMonth) + ' Total';
+            colorStyle = 'color:#c9a227; text-align:right;';
+          } else {
+            switch (c.id) {
+              case 'points':
+                val = (_monTot.pts >= 0 ? '+' : '') + _monTot.pts.toFixed(2);
+                colorStyle = 'color:' + (_monTot.pts >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'gross':
+                val = Math.round(_monTot.g);
+                colorStyle = 'color:' + (_monTot.g >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'tax':
+                val = '−' + Math.round(_monTot.tx);
+                colorStyle = 'color:#8b949e;';
+                break;
+              case 'net':
+                val = (Math.round(_monTot.n) > 0 ? '+' : '') + Math.round(_monTot.n);
+                colorStyle = 'color:' + (_monTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              case 'ret_pct':
+                val = _mRetPct;
+                colorStyle = 'color:' + (_monTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+            }
+          }
+          let align = 'left';
+          if (c.a === 'center') align = 'center';
+          if (c.a === 'right') align = 'right';
+          row += `<td style="padding:7px 6px; text-align:${idx === 0 ? 'right' : align}; ${colorStyle}">${val}</td>`;
+        });
+        row += '</tr>';
+        return row;
+      };
+
       displayItems.forEach((item, itemIdx) => {
         const tradeDate = item.date;
         if (tradeDate !== currentGroupDate) {
           if (currentGroupDate !== '') {
             pointsHtml += renderDayTotalRow();
           }
+          const newMonth = (tradeDate || '').slice(0, 7);
+          if (currentMonth !== '' && newMonth !== currentMonth) {
+            pointsHtml += renderMonthTotalRow();
+            _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+          }
+          currentMonth = newMonth;
           currentGroupDate = tradeDate;
           _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
           let dateText = tradeDate;
@@ -10686,6 +10834,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           _tot.pts += p;
           _dayTot.g += t._gross || 0; _dayTot.tx += t._tax || 0; _dayTot.n += t._net || 0; _dayTot.inv += qt * ep;
           _dayTot.pts += p; _dayTot.count++;
+          _monTot.g += t._gross || 0; _monTot.tx += t._tax || 0; _monTot.n += t._net || 0; _monTot.inv += qt * ep;
+          _monTot.pts += p; _monTot.count++;
           pointsHtml += renderSingleTradeRow(item.trade, cols, sortedTrades);
         } else {
           const trades = item.trades;
@@ -10696,6 +10846,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             _tot.pts += p;
             _dayTot.g += t._gross || 0; _dayTot.tx += t._tax || 0; _dayTot.n += t._net || 0; _dayTot.inv += qt * ep;
             _dayTot.pts += p; _dayTot.count++;
+            _monTot.g += t._gross || 0; _monTot.tx += t._tax || 0; _monTot.n += t._net || 0; _monTot.inv += qt * ep;
+            _monTot.pts += p; _monTot.count++;
           });
           pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
         }
@@ -10704,9 +10856,15 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       if (currentGroupDate !== '') {
         pointsHtml += renderDayTotalRow();
       }
+      if (_monTot.count > 0) {
+        pointsHtml += renderMonthTotalRow();
+      }
 
       const _totRetPct = _tot.inv > 0 ? ((_tot.n / _tot.inv) * 100).toFixed(2) + '%' : '—';
-      pointsHtml += '<tr style="position:sticky;bottom:0;z-index:10;border-top:2px solid #30363d;font-weight:700;background:#161b22;box-shadow:0 -1px 0 #30363d;">';
+      // Grand TOTAL — frozen at the bottom. sticky must live on the <td>s (a sticky
+      // <tr> is ignored by browsers), so each cell carries position:sticky;bottom:0.
+      const _stick = 'position:sticky;bottom:0;z-index:10;background:#0f1620;box-shadow:0 -2px 0 #30363d;';
+      pointsHtml += '<tr style="font-weight:800;">';
 
       cols.forEach((c, idx) => {
         let val = '';
@@ -10714,7 +10872,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
 
         if (idx === 0) {
           val = 'TOTAL';
-          colorStyle = 'color:#8b949e;';
+          colorStyle = 'color:#c9d1d9;';
         } else {
           switch (c.id) {
             case 'points':
@@ -10743,7 +10901,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         let align = 'left';
         if (c.a === 'center') align = 'center';
         if (c.a === 'right') align = 'right';
-        pointsHtml += `<td style="padding:7px 6px;text-align:${align};${colorStyle}">${val}</td>`;
+        pointsHtml += `<td style="${_stick}padding:8px 6px;text-align:${align};${colorStyle}">${val}</td>`;
       });
       pointsHtml += '</tr>';
 
