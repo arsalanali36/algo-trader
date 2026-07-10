@@ -99,7 +99,7 @@
 <script>
 // Legacy/static entries (older research; kept for history).
 const STATIC_ITEMS=[
-  {id:'positional_trend', type:'strat', win:false, name:'Positional Trend (BB+EMA)', tf:'1H',
+  {id:'positional_trend', type:'strat', winner:false, name:'Positional Trend (BB+EMA)', tf:'1H',
    sharpe:1.10, maxdd:-34, win:37, trades:243, sig:'FAIL', sigp:0.13, link:'dashboard.html',
    desc:'⚠️ Big returns (+305%) BUT significance <b class="neg">FAIL</b> (p=0.13) — mostly leverage (5.7x) + beta, not a real timing edge. At 1x makes only +22% (below buy&hold). Honest: don’t ship as-is.'},
 ];
@@ -109,7 +109,7 @@ function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.sl
 function mapRun(r){
   const b=r.bs_full||{}, sig=r.significant;
   const net=(b.net_pct!=null)?(b.net_pct>=0?'+':'')+b.net_pct.toFixed(1)+'%':'—';
-  return {id:r.slug, type:'strat', win:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
+  return {id:r.slug, type:'strat', winner:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
     sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
     trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
     link:`runs/${r.slug}/index.html`, deployed:r.deployed||'',
@@ -127,13 +127,13 @@ async function loadRuns(){
     const dyn=runs.map(mapRun);
     const dynIds=new Set(dyn.map(d=>d.id));
     ITEMS=dyn.concat(STATIC_ITEMS.filter(s=>!dynIds.has(s.id)));
-    if(!localStorage.getItem(KEY)){stars={};ITEMS.forEach(i=>{if(i.win)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars));}
+    if(!localStorage.getItem(KEY)){stars={};ITEMS.forEach(i=>{if(i.winner)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars));}
   }catch(e){/* file:// or no runs yet — static only */}
 }
 
 const KEY='strat_lab_stars';
 let stars=JSON.parse(localStorage.getItem(KEY)||'null');
-if(!stars){stars={};ITEMS.forEach(i=>{if(i.win)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars))}
+if(!stars){stars={};ITEMS.forEach(i=>{if(i.winner)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars))}
 let filt='all', sortKey='sharpe', sortDir=-1, query='', expanded={};
 
 function val(i,k){
@@ -156,7 +156,7 @@ function render(){
   });
   const tb=document.getElementById('rows');
   tb.innerHTML=list.map(i=>{
-    const badge=i.win?'<span class="badge win">🏆 WINNER</span>':(i.type==='tool'?'<span class="badge tool">TOOL</span>':'<span class="badge strat">STRATEGY</span>');
+    const badge=i.winner?'<span class="badge win">🏆 WINNER</span>':(i.type==='tool'?'<span class="badge tool">TOOL</span>':'<span class="badge strat">STRATEGY</span>');
     const sh=i.sharpe==null?'<span class="mut">—</span>':`<span class="${i.sharpe>=1?'pos':(i.sharpe>=0.5?'':'neg')}">${i.sharpe.toFixed(2)}</span>`;
     const dd=i.maxdd==null?'<span class="mut">—</span>':`<span class="${i.maxdd>=-10?'pos':'neg'}">${i.maxdd.toFixed(1)}%</span>`;
     const wn=i.win==null?'<span class="mut">—</span>':i.win+'%';
@@ -167,7 +167,7 @@ function render(){
     let deployBtn = i.type==='tool' ? ''
       : (i.deployed ? `<span class="deployed" title="Deployed as ${i.deployed}">✓ ${i.deployed}</span>`
         : `<a class="deploy" href="/" target="_blank" onclick="event.stopPropagation()" title="Manage / deploy in the app">Deploy</a>`);
-    let row=`<tr class="main ${i.win?'win':''}" data-id="${i.id}">
+    let row=`<tr class="main ${i.winner?'win':''}" data-id="${i.id}">
       <td><span class="star ${stars[i.id]?'on':''}" data-star="${i.id}">${stars[i.id]?'⭐':'☆'}</span></td>
       <td class="nm"><span class="chev ${open?'open':''}">▶</span><a class="nmlink" href="${i.link}" target="_blank" onclick="event.stopPropagation()">${i.name}</a>${badge}</td>
       <td class="typ">${i.tf}</td>
