@@ -30,7 +30,7 @@ def opt(d, sig, struct, sm, grids):
     keys = list(grids)
     cands = []
     for vals in product(*[grids[k] for k in keys]):
-        p = dict(zip(keys, vals)); p["vrp_mult"] = 1.2
+        p = dict(zip(keys, vals)); p["vrp_mult"] = 1.2; p["skip_expiry"] = True
         m1, _ = engine.metrics(osx.backtest_structure(dtr, sig, struct, p, sm, lot, 1, charges=True))
         m2, _ = engine.metrics(osx.backtest_structure(doos, sig, struct, p, sm, lot, 1, charges=True))
         if m1["trades"] < 40 or m2["trades"] < 20:

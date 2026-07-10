@@ -24,6 +24,7 @@ import pandas as pd
 import engine
 import intraday_engine as ie
 import bs_option as bs
+import expiry_calendar as xcal   # official NIFTY weekly-expiry weekday schedule (KNOWN_ISSUES #1)
 
 START_CAP = engine.START_CAP
 LEV_CAP = 1.0
@@ -121,10 +122,14 @@ def _precomp(d, sigma_map):
     sm = sigma_map or {}
     dates = pd.to_datetime(d.Datetime).dt.date.values
     SIG = np.array([sm.get(dd_, 0.15) for dd_ in dates])
-    _PRECOMP[key] = (EOD, T_bar, SIG)
+    # expiry-day flag: True where the bar's date IS a weekly-expiry day per the official
+    # NSE/SEBI schedule (same weekday tte_years prices to T->0). Drives the 0DTE-inflation
+    # skip-expiry-entry guard (KNOWN_ISSUES #1, policy A). Date-only => param-independent => cached.
+    EXP = np.array([dd_.weekday() == xcal.weekly_expiry_weekday(dd_) for dd_ in dates])
+    _PRECOMP[key] = (EOD, T_bar, SIG, EXP)
     if len(_PRECOMP) > 24:            # keep memory bounded across many optimize slices
         _PRECOMP.pop(next(iter(_PRECOMP)))
-    return EOD, T_bar, SIG
+    return EOD, T_bar, SIG, EXP
 
 
 # ---------- structure backtest (option-premium P&L, engine-shaped res) ----------
@@ -146,6 +151,10 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     qty = int(lots) * int(lot)
     tp_frac = float(p.get("tp_frac", 0.5))
     sl_frac = float(p.get("sl_frac", 1.0))
+    # policy A (0DTE-inflation guard): skip NEW entries on the correct expiry day. Default ON —
+    # the standing decision for all Track-A structure strategies (user 2026-07-10). Pass
+    # skip_expiry=False to reproduce the pure weekday-fixed (expiry-allowed) numbers.
+    skip_exp = bool(p.get("skip_expiry", True))
     O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
     DAY = d.day.values
     DT = d.Datetime.values
@@ -154,7 +163,7 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     # per-bar time-to-expiry / EOD / sigma — CACHED by content key (these cost ~10s per call
     # on 5m data and are identical across the hundreds of optimize/permutation re-runs;
     # without the cache a 300-perm significance test takes 1.5h instead of minutes)
-    EOD, T_bar, SIG = _precomp(d, sigma_map)
+    EOD, T_bar, SIG, EXP = _precomp(d, sigma_map)
     LATE = EOD
     # variance-risk-premium stress: real-market IV ≈ realized + VRP, so long-vol pays MORE
     # premium than a realized-vol-priced BS world. vrp_mult>1 makes premium richer (honest
@@ -254,7 +263,8 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
 
         # ---- entry (fill at next bar open) ----
         if (pos is None and not day_locked and not LATE[i] and trades_today < 2
-                and i + 1 < n and not EOD[i] and entry[i]):
+                and i + 1 < n and not EOD[i] and entry[i]
+                and not (skip_exp and EXP[i])):
             spot = O[i + 1]
             if directional:
                 dirn = "long" if entry_l[i] else "short"

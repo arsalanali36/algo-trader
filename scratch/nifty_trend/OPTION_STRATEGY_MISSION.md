@@ -10,27 +10,33 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **▶ NEXT ACTION (do first):** #1 + #2 are now BOTH significant (final numbers below) → user
+  APPROVES/REJECTS each. Then move to **Strategy #3 — Long Strangle @ ORB** (single, clean, as the
+  proven-template run), via the structure path (`build_final`-style runner, struct=`long_strangle`) →
+  `runs/long_strangle_orb/`. After #3 lands one-shot clean → parallelize #4/#5 via subagents.
+  (Short strangle / iron condor / iron fly are SHORT-VOL → Track-B collector-gated, NOT now.)
 - **📕 Full methodology + glossary:** `OPTION_STRATEGY_PLAYBOOK.md` (read for the "why/how/terms" +
   fresh-clone resume steps). Dashboards now self-document (📖 Philosophy panel + Pass/term notes).
 - **DATA EXTENDED 2018→2026 (8.5yr, was 4.5yr).** Dhan serves NIFTY 1-min from 2018 (2017 = nothing).
   `nifty_1min.csv` merged (788,409 rows) + committed. `_extend_dl` (VPS) is the download method.
-- **Rebuild in progress (`build_final.py`):** both #1 (straddle) + #2 (debit vertical) re-optimize +
-  500-perm significance on the full 8.5yr window at vrp=1.2 → `runs/long_straddle_orb/` +
-  `runs/debit_vertical_orb/`. When done: commit results + present for approval.
-- **Current phase:** Phase 1 — Strategy #1 **Long Straddle @ ORB breakout (5m)** built (4.5yr:
-  Sharpe 4.54, p=0.043); rebuilding on 8.5yr. #2 **Debit Vertical @ ORB (15m, wide wing)** groundwork
-  done (robust 1.17), rebuilding on 8.5yr. 🧪 AWAITING USER APPROVAL after rebuild.
-- **Verdict (2026-07-10):** realistic-premium world (vrp_mult=1.2): Sharpe 4.54, net +59.1%,
-  maxDD −2.3%, win 51%, 1163 trades, fees ₹1,37,894, **p=0.0433 ✅ significant**; survives +40%
-  premium stress (Sharpe 2.47). Base cheap-premium world p=0.053 (boundary) — realistic world is
-  the honest benchmark. Params: tp=30% of premium, SL=100%, OR=15min, k=0.5 ATR, entry ≤13:00.
-- **Findings:** only LONG-vol structures positive on BS premium (short straddle/fly −95..−100% →
-  Track-B gated). Mid-day-timed straddles FAIL rotation test (p≈0.25 — cheap-premium artifact caught).
+- **✅ EXPIRY FIX + POLICY A DONE (2026-07-10, 8.5yr, vrp=1.2, 500-perm, skip-expiry ON).** Corrected
+  weekday (Thu→Tue eff 2025-09-01, official circulars) AND policy A applied = skip NEW entries on the
+  (correct) expiry day (0DTE-inflation guard). Removing the expiry-lottery trades LOWERED headline %
+  but IMPROVED honesty — and pushed the straddle over the significance line. Both `runs/<slug>/`
+  refreshed. BS pass = deployable numbers:
+  - **#2 Debit Vertical @ ORB (15m)** — Sharpe **1.67**, net **+38.6%**, maxDD −2.1%, win 51%,
+    trades 1227, fees ₹1,33,779, **p=0.0000 ✅ SIGNIFICANT**. params: tp=100%, SL=100%, OR=15, k=1.0,
+    wing_off=10, skip_expiry. STRONGEST/cleanest. 🧪 awaiting user approval.
+  - **#1 Long Straddle @ ORB (5m)** — Sharpe **3.55**, net **+81.7%**, maxDD −1.0%, win 43%,
+    trades 1625, fees ₹1,96,639, **p=0.0360 ✅ SIGNIFICANT (now passes — was 0.054 pre-policy-A)**.
+    params: tp=50%, SL=100%, OR=15, k=0.5, skip_expiry. LIVE paper trader running. 🧪 awaiting approval.
+- **Findings (unchanged):** only LONG-vol structures positive on BS premium; short straddle/fly
+  −95..−100% → Track-B gated. Mid-day straddles FAIL rotation (p≈0.25 — cheap-premium artifact).
 - **Infra built:** `option_structures.py` (multi-leg BS engine + `_precomp` cache 4x) +
   `run_structure.py` (structure hunt + `write_run()`) + `vrp_mult` honest premium stress +
   `verdict_straddle.py` / `build_straddle_run.py`.
-- **Blocked on user:** APPROVE/REJECT Strategy #1 → then Strategy #2.
-- **Strategies shipped:** 0 / 10 (1 built, pending approval)
+- **Blocked on user:** APPROVE/REJECT #2 Debit Vertical (strongest) + #1 Long Straddle (borderline).
+- **Strategies shipped:** 0 / 10 (2 built + validated, both pending approval)
 - **Collector:** ✅ LIVE on VPS (`algo-optionchain` systemd, 1-min, NIFTY+BNF ATM±10 + India VIX).
   Data → `_TRADING_DATA/OptionChain/<SYM>/<SYM>_YYYY-MM-DD.csv`. Verified 2026-07-10 11:20 IST:
   NIFTY spot 24172 / VIX 12.48 / 21 strikes, full OI+chgOI+IV+greeks. Accumulating forward.
@@ -153,8 +159,8 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 | Strategy | Best TF | Sharpe (bs\|full) | MaxDD | Trades | p-value | Net % | Verdict | Notes |
 |----------|---------|-------------------|-------|--------|---------|-------|---------|-------|
 | _ORB (reference, already shipped)_ | 15m | 2.37 | -1.8% | — | 0.000 | +39.2% | ✅ live | baseline bar to beat |
-| **#2 Debit Vertical @ ORB** | 15m | **2.04** | −1.8% | 1582 | **0.000** ✅ | +52.8% | ✅ significant, deployed | 8.5yr, vrp 1.2, wing 10. STRONGEST so far. **⚠️ expiry-day bug (KNOWN_ISSUES #1)** |
-| **#1 Long Straddle @ ORB** | 5m | 4.24 | −2.4% | 2159 | 0.052 ⚠️ | +119% | ⚠️ borderline-full, strong-recent | 8.5yr. 4.5yr was p=0.043; old-regime softened it. Judge on Recent toggle. LIVE paper trader running. **⚠️ expiry-day bug** |
+| **#2 Debit Vertical @ ORB** | 15m | **1.67** | −2.1% | 1227 | **0.000** ✅ | +38.6% | ✅ significant (policy-A) | 8.5yr, vrp 1.2, wing 10, skip-expiry. STRONGEST/cleanest. Pending approval. |
+| **#1 Long Straddle @ ORB** | 5m | **3.55** | −1.0% | 1625 | **0.036** ✅ | +81.7% | ✅ significant (policy-A; was 0.054) | 8.5yr, skip-expiry pushed it over the line. LIVE paper trader running. Pending approval. |
 | Long Straddle @ mid-day lull | 15m/5m | 5.57 raw | — | ~1100 | 0.25 ❌ | — | ❌ failed sig | cheap-premium artifact — rotation test caught it |
 | Short Straddle @ mid-day | 15m | −2.24 | −100% | 974 | — | −100% | ❌ dead on BS | short-vol needs real IV → Track B |
 | Iron Fly @ mid-day | 15m | −4.74 | −96% | 1111 | — | −95% | ❌ dead on BS | same — Track B |
@@ -163,9 +169,11 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 ---
 
 ## ⚠️ OPEN ISSUES — see `KNOWN_ISSUES.md`
-- 🔴 **Weekly-expiry day hardcoded Thursday** (bs_option `_next_weekly_expiry`) — SEBI/NSE changed it
-  many times (now TUESDAY). Mis-prices near-expiry premium/theta → 0DTE inflation. DEFERRED (home
-  machine): build the schedule from OFFICIAL NSE/SEBI circular dates, then skip-expiry-day + re-run.
+- ✅ **Weekly-expiry day FIXED (2026-07-10, home machine)** — `expiry_calendar.py` filled from official
+  circulars (NIFTY weekly Thu→**Tue eff 2025-09-01**; monthly same; Monday-2025 move was withheld/never
+  effective; BNF weekly discontinued 2024-11). `bs_option._next_weekly_expiry` wired to it, `build_final.py`
+  re-run. Only Sep-2025→present window changes (Thu→Tue). Live side (`risk_gate.is_expiry_day`) verified
+  already correct. **⬜ STILL open (user call):** skip-expiry-day entry POLICY (0DTE inflation guard).
 - Dashboard bugs fixed 2026-07-10: duration (bars×15→×tfMin, was 3× for 5m), Side label (long straddle
   showed "SHORT"→"LONG-VOL"). Deployed.
 

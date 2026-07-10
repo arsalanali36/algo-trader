@@ -57,11 +57,18 @@ def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
 
 
 # ---------------- weekly expiry (time-to-expiry) ----------------
-def _next_weekly_expiry(ts, weekday=3, hour=15, minute=30):
-    """That week's expiry datetime. NIFTY weekly = Thursday(3) 15:30 IST for the
-    2022-26 window (holidays ignored — sub-day T effect is negligible for
-    same-day intraday trades). Rolls to next week if already past this week's."""
+import expiry_calendar as _exp   # same folder: historical NIFTY expiry-weekday schedule (verified circulars)
+
+
+def _next_weekly_expiry(ts, weekday=None, hour=15, minute=30):
+    """That week's expiry datetime. The expiry WEEKDAY is looked up from the official
+    NSE/SEBI schedule in force on `ts` (Thursday pre-2025-09-01, Tuesday after) — NOT a
+    single hardcoded day, which mis-priced T across the 8.5yr window (KNOWN_ISSUES #1).
+    Holidays ignored — sub-day T effect is negligible for same-day intraday trades.
+    Rolls to next week if already past this week's. Pass `weekday` to override (tests)."""
     ts = pd.Timestamp(ts)
+    if weekday is None:
+        weekday = _exp.weekly_expiry_weekday(ts.date())
     days_ahead = (weekday - ts.weekday()) % 7
     exp = ts.normalize() + pd.Timedelta(days=days_ahead) + pd.Timedelta(hours=hour, minutes=minute)
     if ts > exp:
