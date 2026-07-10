@@ -10,8 +10,16 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
-- **Current phase:** Phase 1 — Strategy #1 **Long Straddle @ ORB breakout (5m)** BUILT + dashboard
-  ready at `runs/long_straddle_orb/` — 🧪 AWAITING USER APPROVAL.
+- **📕 Full methodology + glossary:** `OPTION_STRATEGY_PLAYBOOK.md` (read for the "why/how/terms" +
+  fresh-clone resume steps). Dashboards now self-document (📖 Philosophy panel + Pass/term notes).
+- **DATA EXTENDED 2018→2026 (8.5yr, was 4.5yr).** Dhan serves NIFTY 1-min from 2018 (2017 = nothing).
+  `nifty_1min.csv` merged (788,409 rows) + committed. `_extend_dl` (VPS) is the download method.
+- **Rebuild in progress (`build_final.py`):** both #1 (straddle) + #2 (debit vertical) re-optimize +
+  500-perm significance on the full 8.5yr window at vrp=1.2 → `runs/long_straddle_orb/` +
+  `runs/debit_vertical_orb/`. When done: commit results + present for approval.
+- **Current phase:** Phase 1 — Strategy #1 **Long Straddle @ ORB breakout (5m)** built (4.5yr:
+  Sharpe 4.54, p=0.043); rebuilding on 8.5yr. #2 **Debit Vertical @ ORB (15m, wide wing)** groundwork
+  done (robust 1.17), rebuilding on 8.5yr. 🧪 AWAITING USER APPROVAL after rebuild.
 - **Verdict (2026-07-10):** realistic-premium world (vrp_mult=1.2): Sharpe 4.54, net +59.1%,
   maxDD −2.3%, win 51%, 1163 trades, fees ₹1,37,894, **p=0.0433 ✅ significant**; survives +40%
   premium stress (Sharpe 2.47). Base cheap-premium world p=0.053 (boundary) — realistic world is

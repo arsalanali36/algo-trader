@@ -39,6 +39,67 @@ SIG_TITLE = {"orb_break": "ORB breakout", "tod_orb_break": "Mid-day ORB", "midda
 
 DEFAULT_P = dict(tp_frac=0.5, sl_frac=1.0, or_min=15, orb_k=1.0, h0=11, h1=13)
 
+# ---- self-documenting dashboard content (rendered in the Philosophy panel) ----
+GLOSSARY = [
+    ["Train (in-sample)", "earlier half of history where the strategy is tuned."],
+    ["OOS (out-of-sample)", "later half it has NEVER seen — if it still profits here the edge is real, not curve-fit. We rank by robust = min(train, OOS) Sharpe."],
+    ["Wing (short leg)", "in a spread, the far-OTM option we SELL against the ATM we BUY. Wider wing = more room for the move + defined risk + cheaper entry."],
+    ["vrp (variance risk premium)", "real-market IV is usually higher than realized vol, so real premium is richer than our BS-from-realized model. vrp=1.2 = premium 20% richer — an honest stress AGAINST a buyer. We judge long-vol at vrp=1.2, not 1.0."],
+    ["Sharpe", "risk-adjusted return. At 1 lot on 10L the number looks high (small size = low variance); the SHAPE (positive, low DD) is the signal."],
+    ["Significance (p<0.05)", "rotation test: re-run the SAME structure with entry timing shifted to 1000 random offsets. p = fraction of random-timed runs that beat the real one. p<0.05 = the timing carries a real edge, not luck."],
+    ["3-pass", "same strategy at 3 honesty levels: ① raw signal, ② + daily risk caps, ③ + real option premium & Zerodha charges (deployable)."],
+]
+
+_PHILO = {
+    "long_straddle": ("<b>Long Straddle @ breakout.</b> When price breaks its opening range, a real "
+        "move often follows — but the DIRECTION is a coin-flip. So instead of picking a side we buy "
+        "BOTH an ATM call and an ATM put: whichever way it runs, the winning leg pays for the loser "
+        "plus profit. Direction-agnostic breakout capture. Risk = the two premiums (defined). Edge = "
+        "NIFTY's breakouts move enough to beat the straddle's cost + theta, and the ORB timing "
+        "(vs random) is what makes it pay — confirmed by the significance test."),
+    "long_strangle": ("<b>Long Strangle @ breakout.</b> Same idea as the long straddle but the call "
+        "and put are bought OTM (cheaper) — needs a BIGGER move to pay, but risks less premium."),
+    "vertical_debit": ("<b>Debit Vertical (Bull-Call / Bear-Put) @ breakout.</b> On an upside breakout "
+        "we buy an ATM call and SELL a far-OTM call (bull call spread); on a downside breakout, the "
+        "mirror with puts (bear put spread). The sold wing funds part of the bought leg's time-decay "
+        "and caps risk — cheaper and steadier than a naked ATM buy. Directional: it needs the breakout "
+        "to keep running the way it broke."),
+    "short_straddle": ("<b>Short Straddle.</b> Sells ATM call+put to harvest theta in a quiet market. "
+        "NOTE: on MODELED premium this has no edge by construction (Track B — needs real IV data)."),
+}
+
+
+def philosophy_html(struct, sig_name, params):
+    base = _PHILO.get(struct, f"<b>{STRUCT_TITLE.get(struct, struct)}.</b>")
+    p = params or {}
+    bits = []
+    if p.get("or_min"):
+        bits.append(f"opening range = first {p['or_min']} min")
+    if p.get("orb_k") is not None:
+        bits.append(f"breakout must exceed it by {p['orb_k']}×ATR")
+    if p.get("wing_off"):
+        bits.append(f"short wing {int(p['wing_off'])} strikes (~{int(p['wing_off'])*50} pts) OTM")
+    if p.get("tp_frac") is not None:
+        bits.append(f"take profit at {int(p['tp_frac']*100)}% of premium")
+    if p.get("vrp_mult", 1.0) != 1.0:
+        bits.append(f"judged at vrp={p['vrp_mult']} (premium {int((p['vrp_mult']-1)*100)}% richer — realistic)")
+    cfg = ("<div style='margin-top:8px;font-size:11px;color:var(--mut)'><b>This run:</b> "
+           + "; ".join(bits) + ". Intraday, exit 15:15, max 2/day, 1x no-leverage, real Zerodha charges.</div>")
+    return base + cfg
+
+
+def pass_notes(struct):
+    kind = osx.STRUCT_KIND.get(struct, "directional")
+    prem = "long premium (buy)" if kind == "long_vol" else ("short premium (sell)" if kind == "short_vol" else "net-debit spread")
+    return {
+        "instrument": f"<b>① Signal</b> — gross option-premium P&amp;L of the {STRUCT_TITLE.get(struct, struct)} "
+                      f"({prem}), NO daily caps, NO charges. <i>Is there a premium edge before costs?</i>",
+        "rms": "<b>② + RMS</b> — same trades plus the account <b>daily loss/profit caps</b>. "
+               "<i>Does clamping days help or hurt?</i>",
+        "bs": "<b>③ + Charges</b> — same premium P&amp;L plus <b>real Zerodha per-leg F&amp;O charges</b> "
+              "(₹20/order/leg, STT, exchange, GST…). This is the <b>deployable</b> truth.",
+    }
+
 
 def _struct_trades(res):
     """all_trades[] in the dashboard schema for a structure pass."""
@@ -217,6 +278,8 @@ def write_run(slug, winner, d, dd, sigma_map, lot, lots=1):
         "instrument": "NIFTY 50 options", "lot_size": lot, "lots": lots,
         "rms_caps": RMS_CAPS, "dna": dna, "structure": struct, "signal": sig_name,
         "passes": ["instrument", "rms", "bs"], "periods": ["full", "train", "oos"],
+        "philosophy": philosophy_html(struct, sig_name, winner["params"]),
+        "glossary": GLOSSARY, "pass_notes": pass_notes(struct),
         "candles": candles},
         "dna_by_combo": {k: dna for k in combos},
         "combos": combos}

@@ -141,6 +141,7 @@
       <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
       <div class="panel dna"><div class="sh">Strategy — DNA (optimized)</div><div id="dna"></div></div>
       <div class="panel"><div class="sh">Info</div><div id="info"></div></div>
+      <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy &amp; Terms</div><div id="philo"></div></div>
     </div>
   </div>
 
@@ -201,6 +202,15 @@ const PASS_NOTE={
   rms:'<b>② + RMS</b> — same trades, plus the account <b>daily loss/profit caps</b> (spot-notional scale). <i>Does clamping bad/good days help or hurt the edge?</i>',
   bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
 };
+function passNote(pass){const M=R.meta||{};if(M.pass_notes&&M.pass_notes[pass])return M.pass_notes[pass];return PASS_NOTE[pass]||'';}
+function renderPhilosophy(){const M=R.meta||{},p=document.getElementById('philoPanel');
+  if(!M.philosophy&&!M.glossary){p.style.display='none';return;}
+  p.style.display='';let h='';
+  if(M.philosophy)h+='<div style="font-size:12px;line-height:1.55;color:var(--tx)">'+M.philosophy+'</div>';
+  if(M.glossary){h+='<div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">';
+    for(const g of M.glossary)h+='<div style="margin:5px 0;font-size:11.5px"><b style="color:var(--blue)">'+g[0]+'</b> — <span style="color:var(--mut)">'+g[1]+'</span></div>';
+    h+='</div>';}
+  document.getElementById('philo').innerHTML=h;}
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),neg=n<0,last3=s.slice(-3),rest=s.slice(0,-3);
   if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (neg?'-':'')+'₹'+rest+last3}
 function lakh(v){return '₹'+(v/100000).toFixed(1)+'L'}
@@ -477,7 +487,7 @@ function renderAll(){const m=C().metrics,s=C().significance;
     const cmp=PASS==='bs'?' <b>Real option-premium P&amp;L</b> (ATM CE/PE, Black-Scholes + real Zerodha tax).':(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
     document.getElementById('warnbar').innerHTML=
       `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
-    document.getElementById('passnote').innerHTML=PASS_NOTE[PASS]||'';
+    document.getElementById('passnote').innerHTML=passNote(PASS);
   } else {
     document.getElementById('warnbar').innerHTML= P==='oos'
       ? `✅ <b>Out-of-sample (2025-26):</b> Sharpe <b>${m.sharpe.toFixed(2)}</b> — held up on unseen recent data, no decay. Win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}%.`
@@ -486,7 +496,7 @@ function renderAll(){const m=C().metrics,s=C().significance;
         : `Full window: Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`);
   }
   renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
-  renderPerf();renderDNA();renderInfo();renderMC();renderSig();renderOpt();renderTrades()}
+  renderPerf();renderDNA();renderInfo();renderPhilosophy();renderMC();renderSig();renderOpt();renderTrades()}
 if(HAS_PASS){document.getElementById('segPass').style.display='';}
 document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
   document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});

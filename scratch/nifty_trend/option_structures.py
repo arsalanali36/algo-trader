@@ -46,6 +46,32 @@ STRUCT_KIND = {
     "long_straddle": "long_vol", "long_strangle": "long_vol",
 }
 
+# DIRECTIONAL structures: legs depend on the signal's direction (long vs short).
+# vertical_debit = bull call spread on a long signal / bear put spread on a short signal
+# (buy ATM, sell 2 steps OTM — defined risk, cheaper than naked ATM buy, less theta bleed).
+DIRECTIONAL = {
+    "vertical_debit": {
+        "long":  [("CE", 0, +1), ("CE", +2, -1)],   # bull call spread
+        "short": [("PE", 0, +1), ("PE", -2, -1)],   # bear put spread
+    },
+}
+DIR_TITLE = {"vertical_debit": "Debit Vertical (Bull-Call / Bear-Put)"}
+
+
+def entry_signal_dir(d, name, p):
+    """Directional (long_arr, short_arr) for DIRECTIONAL structures."""
+    if name == "_preset" and p.get("_entry") is not None:
+        lo, sh = p["_entry"]
+        return np.asarray(lo, dtype=bool), np.asarray(sh, dtype=bool)
+    if name == "orb_break":
+        return ie.design_signals(d, "orb", {"or_min": int(p.get("or_min", 15)),
+                                            "orb_k": p.get("orb_k", 1.0)})
+    if name == "tod_orb_break":
+        return ie.design_signals(d, "tod_orb", {"or_min": int(p.get("or_min", 30)),
+                                                "orb_k": p.get("orb_k", 1.0),
+                                                "h0": int(p.get("h0", 10)), "h1": int(p.get("h1", 13))})
+    raise ValueError(f"no directional form for signal {name}")
+
 
 # ---------- entry regime signals -> boolean array (direction-agnostic) ----------
 def entry_signal(d, name, p):
@@ -108,13 +134,18 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     tp_frac / sl_frac (params) are fractions of the entry net-premium magnitude:
       exit when position P&L >= tp_frac*ref*qty  or  <= -sl_frac*ref*qty  or  15:15 EOD."""
     p = dict(params or {})
-    legs = STRUCTURES[struct_name]
-    kind = STRUCT_KIND[struct_name]
+    directional = struct_name in DIRECTIONAL
+    if directional:
+        entry_l, entry_s = entry_signal_dir(d, sig_name, p)
+        entry = np.asarray(entry_l, dtype=bool) | np.asarray(entry_s, dtype=bool)
+        legs, kind = None, "directional"
+    else:
+        legs = STRUCTURES[struct_name]
+        kind = STRUCT_KIND[struct_name]
+        entry = entry_signal(d, sig_name, p)
     qty = int(lots) * int(lot)
     tp_frac = float(p.get("tp_frac", 0.5))
     sl_frac = float(p.get("sl_frac", 1.0))
-
-    entry = entry_signal(d, sig_name, p)
     O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
     DAY = d.day.values
     DT = d.Datetime.values
@@ -135,10 +166,10 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     LOSS_CAP = (rms_caps or {}).get("loss_cap")
     PROFIT_TGT = (rms_caps or {}).get("profit_target")
 
-    def leg_prices(spot, T, sig):
+    def leg_prices(spot, T, sig, legs_spec):
         atm = round(spot / STEP) * STEP
         out = []
-        for (ot, off, side) in legs:
+        for (ot, off, side) in legs_spec:
             K = atm + off * STEP
             out.append((K, ot, side, bs.bs_price(spot, K, T, sig, opt=ot)))
         return atm, out
@@ -175,7 +206,7 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
         equity += pnl
         day_realized += pnl
         trades.append(dict(
-            side=kind, entry=round(pos["entry_val"], 2), exit=round(exit_val, 2), qty=qty,
+            side=pos.get("side", kind), entry=round(pos["entry_val"], 2), exit=round(exit_val, 2), qty=qty,
             pnl=pnl, points=round(pnl_units, 2),
             entry_i=pos["entry_i"], exit_i=i, entry_dt=pos["entry_dt"], exit_dt=DT[i],
             reason=reason, bars=i - pos["entry_i"],
@@ -225,13 +256,22 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
         if (pos is None and not day_locked and not LATE[i] and trades_today < 2
                 and i + 1 < n and not EOD[i] and entry[i]):
             spot = O[i + 1]
-            atm, legstate = leg_prices(spot, T_bar[i + 1], SIG[i + 1])
+            if directional:
+                dirn = "long" if entry_l[i] else "short"
+                legs_spec = DIRECTIONAL[struct_name][dirn]
+                w = int(p.get("wing_off", 0))
+                if w:  # override short-leg distance (steps from ATM); wider = more room to run
+                    legs_spec = [(ot, (w if off > 0 else -w) if s < 0 else off, s)
+                                 for (ot, off, s) in legs_spec]
+            else:
+                dirn, legs_spec = kind, legs
+            atm, legstate = leg_prices(spot, T_bar[i + 1], SIG[i + 1], legs_spec)
             entry_val = sum(side * ep for (_K, _ot, side, ep) in legstate)
             ref = abs(entry_val) if abs(entry_val) > 1e-6 else 1.0
             # 1x / no-leverage guard: total premium notional must not exceed capital
             notional = sum(abs(ep) for (_K, _ot, _s, ep) in legstate) * qty
             if notional <= LEV_CAP * equity:
-                pos = dict(legs=legstate, entry_val=entry_val, ref=ref, atm=atm,
+                pos = dict(legs=legstate, entry_val=entry_val, ref=ref, atm=atm, side=dirn,
                            entry_i=i + 1, entry_dt=DT[i + 1], spot_in=spot)
                 trades_today += 1
 
@@ -257,17 +297,31 @@ def sig_test(d, sig_name, struct_name, params, sigma_map, lot, lots=1, n_perm=50
     base = backtest_structure(d, sig_name, struct_name, params, sigma_map, lot, lots, charges=True)
     real_m, _ = engine.metrics(base)
     real = real_m.get("sharpe", 0.0)
-    entry = entry_signal(d, sig_name, params)
-    idx = np.where(entry)[0]
+    directional = struct_name in DIRECTIONAL
+    if directional:
+        lo_arr, sh_arr = entry_signal_dir(d, sig_name, params)
+        lo_arr = np.asarray(lo_arr, dtype=bool); sh_arr = np.asarray(sh_arr, dtype=bool)
+        idx = np.where(lo_arr | sh_arr)[0]
+        n = len(lo_arr)
+    else:
+        entry = entry_signal(d, sig_name, params)
+        idx = np.where(entry)[0]
+        n = len(entry)
     if len(idx) < 10:
         return real, 1.0, 0.0
     rng = np.random.default_rng(seed)
-    n = len(entry)
     null = []
+    ilo = np.where(lo_arr)[0] if directional else None
+    ish = np.where(sh_arr)[0] if directional else None
     for j in range(n_perm):
         shift = int(rng.integers(50, n - 50))
-        rot = np.zeros(n, dtype=bool)
-        rot[(idx + shift) % n] = True
+        if directional:
+            rl = np.zeros(n, dtype=bool); rl[(ilo + shift) % n] = True
+            rs = np.zeros(n, dtype=bool); rs[(ish + shift) % n] = True
+            rot = (rl, rs)
+        else:
+            rot = np.zeros(n, dtype=bool)
+            rot[(idx + shift) % n] = True
         res = _backtest_with_entry(d, rot, struct_name, params, sigma_map, lot, lots)
         m, _ = engine.metrics(res)
         null.append(m.get("sharpe", 0.0))
