@@ -357,7 +357,8 @@ function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb
     let firstSum=vis.findIndex(c=>SUMCELL[c.k]); if(firstSum<0)firstSum=vis.length;
     const span=Math.max(1,firstSum);
     const stick=cls==='grand'?'position:sticky;bottom:0;z-index:5;background:#0d2018;':'';
-    let cells=`<td class="l" colspan="${span}" style="${stick}text-align:right;font-weight:700">${label} · <b>${s.n} trades</b></td>`;
+    const lblTxt=cls==='grand'?`GRAND TOTAL · <b>${s.n} trades</b>`:`<span style="color:var(--blue)">📅 ${label}</span> · ${s.n} trades`;
+    let cells=`<td class="l" colspan="${span}" style="${stick}text-align:left;font-weight:700">${lblTxt}</td>`;
     for(let i=span;i<vis.length;i++){const c=vis[i];cells+=`<td style="${stick}text-align:right;font-weight:700">${SUMCELL[c.k]?SUMCELL[c.k](s):''}</td>`;}
     cells+=`<td style="${stick}"></td>`;
     return `<tr class="subrow ${cls}">${cells}</tr>`;};
