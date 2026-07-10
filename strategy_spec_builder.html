@@ -60,7 +60,7 @@
 <div class="wrap">
   <div class="topbar">
     <h1>🧭 Strategy Spec Builder <span style="color:var(--mut);font-size:13px;font-weight:400">— master prompt generator</span></h1>
-    <p>Key cheezein choose karo → niche master-prompt + config auto-ban jayega. Ye Claude ko do (ya "use these settings" bolo) → strategy isi spec par banegi + validate hogi. Ab do engine hain: <b style="color:var(--blue)">Price-action</b> (spot signal → option) aur <b style="color:var(--vio)">Option-Chain</b> (OI / IV / straddle / strangle / VIX). Leverage locked OFF.</p>
+    <p>Key cheezein choose karo → niche master-prompt + config auto-ban jayega. Ye Claude ko do (ya "use these settings" bolo) → strategy isi spec par banegi + validate hogi. Ab do engine hain: <b style="color:var(--blue)">Price-action</b> (spot signal → option) aur <b style="color:var(--vio)">Option-Chain</b> (OI / IV / straddle / strangle / VIX). Leverage locked OFF. Har result <b>3 passes</b> mein dikhega — <b>① Instrument → ② + RMS → ③ + Black-Scholes</b> (asli ATM option-premium P&amp;L) — ek hi reusable dashboard mein, per-strategy folder mein save.</p>
   </div>
 
   <div class="cols">
@@ -442,9 +442,22 @@ function targetGateLines(s,L){
   L.push('');
   L.push('VALIDATION GATES');
   if(s.gates.significance_p_lt_0_05) L.push('  • Statistical significance MANDATORY: p < 0.05 (permutation/rotation test). Fail = edge is just luck/beta — DO NOT ship, iterate.');
-  if(s.gates.optimization_train_oos) L.push('  • Optimize params with train / out-of-sample split (rank by OOS, not in-sample).');
+  if(s.gates.optimization_train_oos) L.push('  • Optimize params with train / out-of-sample split — rank by min(train, OOS) Sharpe, NOT by OOS alone (ranking on OOS fits the OOS window; LESSONS TRAP #103).');
   if(s.gates.monte_carlo_overfit) L.push('  • Monte Carlo overfit check: original result must sit near the MEDIAN of simulations, not the best 5%.');
   L.push('  • Result at 1x (no leverage) must still beat NIFTY buy & hold on a risk-adjusted basis.');
+  L.push('');
+}
+function resultsPassLines(s,L){
+  L.push('RESULTS — 3-PASS PIPELINE (mandatory, read scratch/nifty_trend/RESULTS_SCHEMA.md + BS_OPTION_SIM.md first)');
+  L.push('  Show the SAME strategy through three separate, inspectable passes — each a toggle in the dashboard:');
+  L.push('    (1) Instrument — raw signal P&L on the underlying (spot). No daily ₹ caps, no options. "Is there an edge at all?"');
+  L.push('    (2) + RMS      — same trades + account daily loss/profit caps (the RMS overlay). "Does risk-management help or hurt?"');
+  L.push('    (3) + Black-Scholes — pass-2 trades repriced into the ATM CE/PE premium actually traded (delta+theta via Black-Scholes,');
+  L.push('        real Zerodha F&O charges). This is the DEPLOYABLE P&L — spot-notional numbers are misleading (no real expired-option data, TRAP #100).');
+  L.push('  • Emit results.js per RESULTS_SCHEMA.md with combos keyed "<pass>|<period>" (instrument|full, rms|full, bs|full, + train/oos).');
+  L.push('  • P&L / gross / tax in all_trades[] MUST be option-premium based (BS_OPTION_SIM.md). Lot size from the Dhan scrip master — NEVER hardcode.');
+  L.push('  • Reuse the SAME dashboard (scratch/nifty_trend/dashboard_intraday.html) — do NOT build new plain HTML. It has the Pass + Period toggles built in.');
+  L.push(`  • Save the whole run to its OWN folder: scratch/nifty_trend/runs/<slug>/ (results.js + index.html + meta.json) and append to runs/index.json so the Strategy Lab hub lists it. Easiest reuse: run scratch/nifty_trend/run_hunt.py --name <slug>.`);
   L.push('');
 }
 
@@ -470,9 +483,10 @@ function promptPrice(s){
   L.push('');
   costLines(s,L);
   targetGateLines(s,L);
+  resultsPassLines(s,L);
   L.push(`DATA: NIFTY/underlying 1-min data-lake (${s.data_window==='max'?'2022 → today':s.data_window}), reuse — no re-download.`);
   L.push('');
-  L.push('Continue iterating strategy DESIGNS (not just params) until one genuinely passes the significance gate. Show me a Jesse-style dashboard of the winner.');
+  L.push('Continue iterating strategy DESIGNS (not just params) until one genuinely passes the significance gate. Then show the winner in the SAME 3-pass dashboard (Instrument → RMS → Black-Scholes) saved under runs/<slug>/.');
   return L.join('\n');
 }
 
@@ -519,9 +533,10 @@ function promptChain(s){
   L.push('');
   costLines(s,L);
   targetGateLines(s,L);
+  resultsPassLines(s,L);
   L.push(`DATA WINDOW: ${s.data_window==='max'?'2022 → today (~4.5yr)':s.data_window} — reuse the data-lake, no re-download.`);
   L.push('');
-  L.push('Start with the FIRST strategy in the catalog. Build it, validate it, show me the dashboard, and PAUSE for my go-ahead before starting the next one.');
+  L.push('Start with the FIRST strategy in the catalog. Build it, validate it, show me the 3-pass dashboard (saved under runs/<slug>/), and PAUSE for my go-ahead before starting the next one.');
   return L.join('\n');
 }
 

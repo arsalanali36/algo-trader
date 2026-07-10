@@ -42,9 +42,12 @@ def optimize(d, name, trials=180, seed=1):
         if m2["trades"] < MIN_TRADES:
             continue
         cands.append(dict(params=p, exit=es, train_sharpe=m1["sharpe"], oos_sharpe=m2["sharpe"],
+                          robust=min(m1["sharpe"], m2["sharpe"]),
                           train_net=m1["net_pct"], oos_net=m2["net_pct"], oos_dd=m2["maxdd"],
                           oos_trades=m2["trades"]))
-    cands.sort(key=lambda c: c["oos_sharpe"], reverse=True)
+    # Rank by min(train, OOS) — NOT OOS alone. Ranking by OOS fits the OOS window
+    # (picks the candidate that got luckiest out-of-sample). LESSONS TRAP #103.
+    cands.sort(key=lambda c: c["robust"], reverse=True)
     return cands
 
 
@@ -80,7 +83,7 @@ if __name__ == "__main__":
               f"net={c['oos_net']:6.1f}% DD={c['oos_dd']:5.1f}% tr={c['oos_trades']:4d} "
               f"exit={c['exit']:6s} {c['params']}")
         best_overall.append((name, c))
-    best_overall.sort(key=lambda x: x[1]["oos_sharpe"], reverse=True)
+    best_overall.sort(key=lambda x: x[1]["robust"], reverse=True)
     print("\n--- significance test on top 3 (full window) ---")
     for name, c in best_overall[:3]:
         real, p, n95 = sig_test(d, name, c["params"], c["exit"])

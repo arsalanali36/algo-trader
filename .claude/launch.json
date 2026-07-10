@@ -13,6 +13,13 @@
       "runtimeArgs": ["-m", "http.server", "5199"],
       "cwd": "templates",
       "port": 5199
+    },
+    {
+      "name": "lab-static",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5299"],
+      "cwd": "scratch/nifty_trend",
+      "port": 5299
     }
   ]
 }

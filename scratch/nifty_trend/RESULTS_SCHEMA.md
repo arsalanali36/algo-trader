@@ -18,15 +18,31 @@ window.RESULTS = {
     tf:      "15m",
     candles: [["2022-01-03", 17392.3, 17646.1, 17392.3, 17635.3], ...]  // daily NIFTY OHLC (for the trade chart), [date, o, h, l, c]
   },
+  meta.passes:  ["instrument", "rms", "bs"],   // enables the 3-pass toggle
+  meta.periods: ["full", "train", "oos"],
+  meta.instrument: "NIFTY 50", meta.lot_size: 65, meta.lots: 1,   // for the info panel
+
   combos: {
-    // key = a view of the SAME strategy. Use "full"/"train"/"oos" for period splits,
-    // OR "<variant>|<mode>" (e.g. "trail|intraday") for design/mode toggles.
-    "full": { /* one combo object, schema below */ },
-    "train": { ... },
-    "oos": { ... }
+    // NEW schema — key = "<pass>|<period>". The dashboard shows a PASS toggle
+    // (① Instrument → ② +RMS → ③ +Black-Scholes) and a PERIOD toggle (full/train/oos).
+    //   instrument = raw signal P&L on spot (no RMS, no options)
+    //   rms        = same trades + account daily loss/profit caps
+    //   bs         = pass-2 trades repriced into ATM CE/PE premium (Black-Scholes,
+    //                real Zerodha charges) — the DEPLOYABLE truth (default view)
+    "instrument|full": { /* one combo object, schema below */ },
+    "rms|full": { ... }, "bs|full": { ... },
+    "instrument|train": { ... }, "rms|train": { ... }, "bs|train": { ... },
+    "instrument|oos": { ... },  "rms|oos": { ... },  "bs|oos": { ... }
+    // (LEGACY single-axis "full"/"train"/"oos" keys still render — the dashboard
+    //  auto-detects meta.passes and falls back, hiding the PASS toggle.)
   }
 };
 ```
+
+**Only the `bs|*` passes carry option fields** (`strike/opt_type/entry_prem/exit_prem`,
+and gross/fee/pnl on the premium). `instrument|*` and `rms|*` are spot-notional
+(gross = points × qty, rough fee) — the same strategy, one layer less realistic each.
+`run_hunt.py` is the reference producer; the cleanest reuse is just to run it.
 
 ## Combo object (one per view)
 

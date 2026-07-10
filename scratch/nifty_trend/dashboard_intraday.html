@@ -92,6 +92,9 @@
   .tmdetail b{color:var(--tx)}
   .infobar{background:#0e1a17;border:1px solid #17402f;color:#9fdcc4;border-radius:8px;padding:9px 13px;font-size:12px;margin-bottom:8px}
   .warnbar{background:#3a2d0a;border:1px solid #5c470f;color:#f0c000;border-radius:8px;padding:9px 13px;font-size:12px;margin-bottom:14px}
+  .passnote{background:var(--panel);border:1px solid var(--bd);border-left:3px solid var(--blue);color:var(--mut);border-radius:8px;padding:8px 12px;font-size:11.5px;margin:-6px 0 14px}
+  .passnote b{color:var(--tx)}
+  #segPass button.on{background:#7c3aed}
   @media(max-width:1000px){.cols{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.verdict{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -107,11 +110,16 @@
   <div class="warnbar" id="warnbar"></div>
 
   <div class="controls">
+    <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
+      <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
+      <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
+      <button data-pass="bs" class="on" title="Pass-2 trades repriced into the ATM CE/PE premium actually traded (Black-Scholes + real Zerodha tax). The deployable truth.">③ + Black-Scholes</button></div>
     <div class="seg" id="segP"><span class="lbl">PERIOD</span>
       <button data-p="full" class="on">Full 2022-26</button>
       <button data-p="train">In-sample 22-24</button>
       <button data-p="oos">Out-of-sample 25-26</button></div>
   </div>
+  <div class="passnote" id="passnote"></div>
 
   <div class="cards" id="cards"></div>
 
@@ -142,7 +150,7 @@
   <div class="panel"><h3>🧪 Statistical Significance <span class="tag">— entry edge vs random (rotation permutation ×1,000)</span></h3>
     <hr class="dash"><div class="verdict" id="sig"></div><div class="note" id="signote"></div></div>
 
-  <div class="panel" id="optPanel"><h3>⚙️ Optimization Sweep <span class="tag">— top ORB candidates by OOS Sharpe</span></h3>
+  <div class="panel" id="optPanel"><h3>⚙️ Optimization Sweep <span class="tag">— top candidates by min(train, OOS) Sharpe</span></h3>
     <hr class="dash"><div style="overflow-x:auto"><table class="tbl" id="opt"></table></div></div>
 
   <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · 📈 opens the trade chart full-screen</span></h3>
@@ -178,8 +186,16 @@
 <script src="results_intraday.js"></script>
 <script>
 const R=window.RESULTS;
+const HAS_PASS=!!(R.meta&&R.meta.passes);   // new 3-pass results.js vs old single-axis
 let P='full';
-function C(){return R.combos[P]}
+let PASS=HAS_PASS?'bs':null;                 // default view = ③ Black-Scholes (deployable truth)
+function comboKey(){return (HAS_PASS&&R.combos[PASS+'|'+P])?PASS+'|'+P:P;}
+function C(){return R.combos[comboKey()]}
+const PASS_NOTE={
+  instrument:'<b>① Instrument</b> — raw signal on <b>NIFTY spot</b>, spot-notional P&amp;L, house rules on (max 2/day, 3:15 exit). No daily ₹ caps, no options. <i>Question: is there an edge at all?</i>',
+  rms:'<b>② + RMS</b> — same trades, plus the account <b>daily loss/profit caps</b> (spot-notional scale). <i>Does clamping bad/good days help or hurt the edge?</i>',
+  bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
+};
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),neg=n<0,last3=s.slice(-3),rest=s.slice(0,-3);
   if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (neg?'-':'')+'₹'+rest+last3}
 function lakh(v){return '₹'+(v/100000).toFixed(1)+'L'}
@@ -258,8 +274,11 @@ function renderPerf(){const m=C().metrics;
 function renderDNA(){const d=C().dna;const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
   let h='';for(const k in d)h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${d[k]}</span></div>`;
   document.getElementById('dna').innerHTML=h}
-function renderInfo(){const rows=[['Instrument','NIFTY 50 (index spot)'],['Exchange','NSE'],['Timeframe','15m'],
-  ['Design','Mid-day ORB (11:00–13:00)'],['Routes','long + short'],['Risk / trade','1.5% of capital'],
+function renderInfo(){const M=R.meta||{};
+  const instr=(M.instrument||'NIFTY 50')+(HAS_PASS?' → ATM CE/PE options':' (index spot)');
+  const rows=[['Instrument',instr],['Exchange','NSE'],['Timeframe',M.tf||'15m'],
+  ['Design',M.design||'Mid-day ORB'],['Routes','long (CE) + short (PE)'],['Risk / trade','1.5% of capital'],
+  ['Lot size',HAS_PASS?((M.lot_size||'-')+' × '+(M.lots||1)+' lot'):'—'],
   ['Leverage','NONE (1x)'],['Rules','3:15 exit · max 2/day · no overnight'],
   ['Data window',R.meta.window[0]+' → '+R.meta.window[1]],['MC scenarios','1,000']];
   document.getElementById('info').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v" style="font-weight:600">${r[1]}</span></div>`).join('')}
@@ -380,15 +399,27 @@ function openMonthModal(ym){const tr=(C().all_trades||[]).filter(t=>t.entry_dt.s
 function closeMonthModal(){document.getElementById('mModal').classList.remove('on');}
 function renderTrades(){renderColMenu();renderTradeTable();}
 function renderAll(){const m=C().metrics,s=C().significance;
+  const dsg=(R.meta&&R.meta.design)||'Opening-Range Breakout, 15m';
   document.getElementById('infobar').innerHTML=
-    `✅ <b>Genuine edge:</b> entry passes the significance gate (p=${s.p_value.toFixed(3)} &lt; 0.05) — a REAL directional edge, not beta. Max drawdown just <b>${m.maxdd.toFixed(1)}%</b>. Design: Opening-Range Breakout, 15m, 1x no-leverage.`;
-  document.getElementById('warnbar').innerHTML= P==='oos'
-    ? `✅ <b>Out-of-sample (2025-26):</b> Sharpe <b>${m.sharpe.toFixed(2)}</b> — essentially the SAME as in-sample (0.95). The edge <b>held up on unseen recent data</b>, no decay. Win rate ${m.win_rate.toFixed(0)}%, DD only ${m.maxdd.toFixed(1)}%. This train≈OOS consistency is what a genuine, non-overfit edge looks like.`
-    : (P==='train'
-      ? `In-sample (2022-24): Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%. Toggle OOS — it stays ~0.95 (unlike a curve-fit strategy, which would collapse).`
-      : `Full window: Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%, DD only ${m.maxdd.toFixed(1)}% at 1x. Train 0.95 ≈ OOS 0.96 = robust real edge. One honest caveat: absolute CAGR ${m.annual_return.toFixed(1)}% is below buy&hold at 1x (ultra-safe, low-frequency) — modest leverage on this proven edge would close that gap.`);
+    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+  if(HAS_PASS){
+    const per=P==='oos'?'Out-of-sample (2025-26)':(P==='train'?'In-sample (2022-24)':'Full window');
+    const cmp=PASS==='bs'?' <b>Real option-premium P&amp;L</b> (ATM CE/PE, Black-Scholes + real Zerodha tax).':(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
+    document.getElementById('warnbar').innerHTML=
+      `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
+    document.getElementById('passnote').innerHTML=PASS_NOTE[PASS]||'';
+  } else {
+    document.getElementById('warnbar').innerHTML= P==='oos'
+      ? `✅ <b>Out-of-sample (2025-26):</b> Sharpe <b>${m.sharpe.toFixed(2)}</b> — held up on unseen recent data, no decay. Win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}%.`
+      : (P==='train'
+        ? `In-sample (2022-24): Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%. Toggle OOS — a genuine edge stays stable.`
+        : `Full window: Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`);
+  }
   renderCards();renderEquity('equity',false);renderEquity('equityLog',true);renderDD();renderUW();renderMonthly();
   renderPerf();renderDNA();renderInfo();renderMC();renderSig();renderOpt();renderTrades()}
+if(HAS_PASS){document.getElementById('segPass').style.display='';}
+document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
+  document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
 document.querySelectorAll('#segP button').forEach(b=>b.onclick=()=>{P=b.dataset.p;
   document.querySelectorAll('#segP button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
 document.getElementById('tSearch').oninput=e=>{tQuery=e.target.value;renderTradeTable();};

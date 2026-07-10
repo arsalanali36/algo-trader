@@ -97,14 +97,39 @@
 </div>
 
 <script>
-const ITEMS=[
-  {id:'orb_midday', type:'strat', win:true, name:'Mid-Day ORB (11:00–13:00)', tf:'15m',
-   sharpe:0.95, maxdd:-4.4, win:54, trades:417, sig:'PASS', sigp:0.000, link:'dashboard_intraday.html', deployed:'orb_v1 · paper',
-   desc:'✅ <b class="teal">GENUINE EDGE</b> — significance PASS (p&lt;0.001). Train 0.95 ≈ OOS 0.96 (no decay). NIFTY spot, 1x no-leverage, long+short. Ultra-low DD. <b class="pos">Best result — deployed as orb_v1 (paper).</b> Caveat: CAGR 3.7% &lt; buy&hold at 1x.'},
+// Legacy/static entries (older research; kept for history).
+const STATIC_ITEMS=[
   {id:'positional_trend', type:'strat', win:false, name:'Positional Trend (BB+EMA)', tf:'1H',
    sharpe:1.10, maxdd:-34, win:37, trades:243, sig:'FAIL', sigp:0.13, link:'dashboard.html',
    desc:'⚠️ Big returns (+305%) BUT significance <b class="neg">FAIL</b> (p=0.13) — mostly leverage (5.7x) + beta, not a real timing edge. At 1x makes only +22% (below buy&hold). Honest: don’t ship as-is.'},
 ];
+// Dynamic entries auto-loaded from runs/index.json (every run_hunt.py appends there).
+let ITEMS=STATIC_ITEMS.slice();
+function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.slice(0,-3);if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (n<0?'-':'')+'₹'+rest+last3}
+function mapRun(r){
+  const b=r.bs_full||{}, sig=r.significant;
+  const net=(b.net_pct!=null)?(b.net_pct>=0?'+':'')+b.net_pct.toFixed(1)+'%':'—';
+  return {id:r.slug, type:'strat', win:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
+    sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
+    trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
+    link:`runs/${r.slug}/index.html`, deployed:r.deployed||'',
+    desc:`${sig?'✅ <b class="teal">GENUINE EDGE</b>':'⚠️ <b class="neg">NOT SIGNIFICANT</b>'} — 3-pass (Instrument→RMS→Black-Scholes). `+
+      `Deployable ③ BS: Sharpe <b>${b.sharpe!=null?b.sharpe.toFixed(2):'—'}</b>, net <b class="${(b.net_pct||0)>=0?'pos':'neg'}">${net}</b>, `+
+      `maxDD <b>${b.maxdd!=null?b.maxdd.toFixed(1)+'%':'—'}</b>, PF ${b.profit_factor!=null?b.profit_factor.toFixed(2):'—'}, win ${b.win_rate!=null?b.win_rate.toFixed(0)+'%':'—'}. `+
+      `① Instrument Sharpe ${r.instrument_full_sharpe!=null?(+r.instrument_full_sharpe).toFixed(2):'—'} · ② +RMS ${r.rms_full_sharpe!=null?(+r.rms_full_sharpe).toFixed(2):'—'}. `+
+      `${r.instrument||'NIFTY 50'} ATM options, lot ${r.lot_size||'—'}, 1x. Window ${(r.window||['','']).join(' → ')}. p=${(r.p_value??0).toFixed(3)}.`};
+}
+async function loadRuns(){
+  try{
+    const res=await fetch('runs/index.json',{cache:'no-store'});
+    if(!res.ok)return;
+    const runs=await res.json();
+    const dyn=runs.map(mapRun);
+    const dynIds=new Set(dyn.map(d=>d.id));
+    ITEMS=dyn.concat(STATIC_ITEMS.filter(s=>!dynIds.has(s.id)));
+    if(!localStorage.getItem(KEY)){stars={};ITEMS.forEach(i=>{if(i.win)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars));}
+  }catch(e){/* file:// or no runs yet — static only */}
+}
 
 const KEY='strat_lab_stars';
 let stars=JSON.parse(localStorage.getItem(KEY)||'null');
@@ -169,8 +194,8 @@ document.getElementById('search').oninput=e=>{query=e.target.value.toLowerCase()
 document.getElementById('note').innerHTML=
   `💾 <b>Note:</b> Ye hub app mein integrated hai (<b>More → 🧪 Strategy Lab</b>). Har row apna dashboard <b>nayi tab</b> mein kholta hai. `+
   `⭐ favorites <b>isi browser</b> mein save hote hain (localStorage) — doosre browser/device pe reset ho jayenge. `+
-  `(Agar cross-device chahiye to server-side save add kar sakte hain — abhi zaroorat nahi.) Nayi strategy bane → \`ITEMS\` array mein ek entry = naya row.`;
-render();
+  `(Agar cross-device chahiye to server-side save add kar sakte hain — abhi zaroorat nahi.) Nayi strategy \`run_hunt.py --name <slug>\` se bane → <b>runs/index.json</b> mein auto-append → yahan naya row (3-pass dashboard) khud aa jayega.`;
+loadRuns().then(render);
 </script>
 </body>
 </html>

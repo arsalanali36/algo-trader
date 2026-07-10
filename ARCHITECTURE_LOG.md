@@ -15,6 +15,30 @@
 
 ---
 
+## 2026-07-10 — 3-PASS backtest pipeline (Instrument → RMS → Black-Scholes) + fresh NIFTY hunt + per-strategy folders
+**Status:** DONE (local-verified; scratch/research only, live order-path untouched)
+**Layer:** backtest / strategy / UI
+**Kya:** User request #35 — RMS ki tarah Black-Scholes ko bhi ek SEPARATE pass banaya, "instrument →
+RMS → Black-Scholes" funnel se har layer ka asar alag clear dikhe. Har strategy ka backtest ab apne
+`runs/<slug>/` folder mein; spec-builder master-prompt isko reflect karta hai.
+**Files:**
+- `scratch/nifty_trend/bs_option.py` (NEW) — modular BS pass: `bs_price` (erf, no ext data),
+  `calc_charges` (real Zerodha F&O), `tte_years` (weekly Thu expiry), `realised_vol_map` (σ proxy),
+  `get_nifty_lot` (scrip master → 65, no hardcode), `reprice` (spot trades → ATM CE/PE premium P&L).
+- `scratch/nifty_trend/run_hunt.py` (NEW) — screen×TF → optimize(min(train,oos), TRAP #103) →
+  significance(p<0.05) → 3 passes×3 periods (9 combos) → BS reprice → `runs/<slug>/`{results.js,
+  index.html, meta.json} + `runs/index.json` append.
+- `dashboard_intraday.html` — PASS toggle (①/②/③), combo key `"<pass>|<period>"`, meta-driven info;
+  BACKWARD-COMPATIBLE (old single-axis results.js still renders).
+- `hub.html` — auto-loads `runs/index.json`. `strategy_spec_builder.html` — 3-pass mandate + TRAP #103
+  ranking fix. `intraday_optimize.py`/`RESULTS_SCHEMA.md`/`CLAUDE.md` updated.
+**Result (winner = Mid-Day ORB @ 15m, p=0.000):** ① 0.97 / ② 0.97 / ③ BS Sharpe 2.37, net +39.2%,
+maxDD −1.8%, PF 1.93, real fees ₹32.8k (vs bogus spot ₹1.45L). ③ = deployable truth.
+**Kyun:** spot-notional P&L misleading (fake tax, linear payoff); ab asli ATM option-premium pe.
+**Depends on:** BS_OPTION_SIM.md/RESULTS_SCHEMA.md (2026-07-09).
+
+---
+
 ## 2026-07-09 — NIFTY trend/ORB research pipeline → Mid-Day ORB strategy DEPLOYED (paper) + Strategy Lab + Spec Builder + RMS profit-target
 **Status:** DONE (research + orb_v1 paper-deployed; live fire-test pending market hours)
 **Layer:** strategy / backtest / RMS / UI / infra
