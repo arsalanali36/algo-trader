@@ -153,7 +153,8 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 | Strategy | Best TF | Sharpe (bs\|full) | MaxDD | Trades | p-value | Net % | Verdict | Notes |
 |----------|---------|-------------------|-------|--------|---------|-------|---------|-------|
 | _ORB (reference, already shipped)_ | 15m | 2.37 | -1.8% | — | 0.000 | +39.2% | ✅ live | baseline bar to beat |
-| **Long Straddle @ ORB** | 5m | **4.54** | −2.3% | 1163 | **0.043** | +59.1% | 🧪 awaiting approval | vrp=1.2 realistic world; survives +40% stress (Sh 2.47) |
+| **#2 Debit Vertical @ ORB** | 15m | **2.04** | −1.8% | 1582 | **0.000** ✅ | +52.8% | ✅ significant, deployed | 8.5yr, vrp 1.2, wing 10. STRONGEST so far. **⚠️ expiry-day bug (KNOWN_ISSUES #1)** |
+| **#1 Long Straddle @ ORB** | 5m | 4.24 | −2.4% | 2159 | 0.052 ⚠️ | +119% | ⚠️ borderline-full, strong-recent | 8.5yr. 4.5yr was p=0.043; old-regime softened it. Judge on Recent toggle. LIVE paper trader running. **⚠️ expiry-day bug** |
 | Long Straddle @ mid-day lull | 15m/5m | 5.57 raw | — | ~1100 | 0.25 ❌ | — | ❌ failed sig | cheap-premium artifact — rotation test caught it |
 | Short Straddle @ mid-day | 15m | −2.24 | −100% | 974 | — | −100% | ❌ dead on BS | short-vol needs real IV → Track B |
 | Iron Fly @ mid-day | 15m | −4.74 | −96% | 1111 | — | −95% | ❌ dead on BS | same — Track B |
