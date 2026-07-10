@@ -10,11 +10,17 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
-- **▶ NEXT ACTION (do first):** #1 + #2 are now BOTH significant (final numbers below) → user
-  APPROVES/REJECTS each. Then move to **Strategy #3 — Long Strangle @ ORB** (single, clean, as the
-  proven-template run), via the structure path (`build_final`-style runner, struct=`long_strangle`) →
-  `runs/long_strangle_orb/`. After #3 lands one-shot clean → parallelize #4/#5 via subagents.
-  (Short strangle / iron condor / iron fly are SHORT-VOL → Track-B collector-gated, NOT now.)
+- **▶ NEXT ACTION (do first):** #1, #2 AND #3 are all significant (numbers below + table) → user
+  APPROVES/REJECTS each. On approval: build #3's live paper trader (`strategies/live/`,
+  NEW_STRATEGY_CHECKLIST) + VPS paper deploy, then parallelize #4/#5 hunts via subagents.
+  (Short strangle / iron condor / iron fly are SHORT-VOL → Track-B collector-gated, NOT now.
+  Long Strangle FAILED sig (p=0.072); mean-reversion family all negative — see table.)
+- **✅ #3 FOUND (2026-07-10 night): ORB + Supertrend confirm (15m, directional ATM long-option).**
+  BS pass: Sharpe **2.06**, net **+49.7%**, maxDD **−1.0%**, win 44%, trades 1024, **p=0.000** (1000
+  perms), robust 0.96 (both 15m AND 5m significant). Params: or_min=60, orb_k=1.0, ST(14,3.0),
+  atr_sl=1.5, rr=2.0, skip-expiry ON. Run: `runs/orb_supertrend/`. Builder: `build_s3_orbst.py`
+  (pins run_hunt to orb_st). Also: skip-expiry (policy A) now applied in the DIRECTIONAL path too
+  (`intraday_engine.backtest`, default ON) — parity with option_structures.
 - **📕 Full methodology + glossary:** `OPTION_STRATEGY_PLAYBOOK.md` (read for the "why/how/terms" +
   fresh-clone resume steps). Dashboards now self-document (📖 Philosophy panel + Pass/term notes).
 - **DATA EXTENDED 2018→2026 (8.5yr, was 4.5yr).** Dhan serves NIFTY 1-min from 2018 (2017 = nothing).
@@ -35,8 +41,8 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 - **Infra built:** `option_structures.py` (multi-leg BS engine + `_precomp` cache 4x) +
   `run_structure.py` (structure hunt + `write_run()`) + `vrp_mult` honest premium stress +
   `verdict_straddle.py` / `build_straddle_run.py`.
-- **Blocked on user:** APPROVE/REJECT #2 Debit Vertical (strongest) + #1 Long Straddle (borderline).
-- **Strategies shipped:** 0 / 10 (2 built + validated, both pending approval)
+- **Blocked on user:** APPROVE/REJECT #1 Long Straddle, #2 Debit Vertical, #3 ORB+Supertrend.
+- **Strategies shipped:** 0 / 10 (3 built + validated, all pending approval)
 - **Collector:** ✅ LIVE on VPS (`algo-optionchain` systemd, 1-min, NIFTY+BNF ATM±10 + India VIX).
   Data → `_TRADING_DATA/OptionChain/<SYM>/<SYM>_YYYY-MM-DD.csv`. Verified 2026-07-10 11:20 IST:
   NIFTY spot 24172 / VIX 12.48 / 21 strikes, full OI+chgOI+IV+greeks. Accumulating forward.
@@ -161,6 +167,10 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 | _ORB (reference, already shipped)_ | 15m | 2.37 | -1.8% | — | 0.000 | +39.2% | ✅ live | baseline bar to beat |
 | **#2 Debit Vertical @ ORB** | 15m | **1.67** | −2.1% | 1227 | **0.000** ✅ | +38.6% | ✅ significant (policy-A) | 8.5yr, vrp 1.2, wing 10, skip-expiry. STRONGEST/cleanest. Pending approval. |
 | **#1 Long Straddle @ ORB** | 5m | **3.55** | −1.0% | 1625 | **0.036** ✅ | +81.7% | ✅ significant (policy-A; was 0.054) | 8.5yr, skip-expiry pushed it over the line. LIVE paper trader running. Pending approval. |
+| **#3 ORB + Supertrend (ATM long-opt)** | 15m | **2.06** | −1.0% | 1024 | **0.000** ✅ | +49.7% | ✅ significant (policy-A) | 8.5yr, directional ATM CE/PE via BS. or_min=60, k=1.0, ST(14,3.0), SL 1.5×ATR, RR 2.0. `runs/orb_supertrend/`. Pending approval. |
+| Long Strangle @ ORB | 5m | 4.08 | −0.8% | 1686 | 0.072 ❌ | +90.0% | ❌ failed sig gate | OTM legs = lottery-ish; timing edge not distinguishable from random at 5%. `runs/long_strangle_orb/` kept for reference (significant:false). |
+| _Mid-Day ORB re-hunt (dup)_ | 15m | 1.99 | −1.4% | — | 0.000 ✅ | +38.9% | 🔁 duplicate of deployed `mid_orb_nifty` | 2026-07-10 hunt re-found it on 8.5yr+skip-expiry — good REVALIDATION of the deployed strategy, but not a new edge; run folder removed. |
+| _Mean-reversion family (rsi_rev/bb_fade/sess_rev/gap_fade)_ | all | <0 | — | — | — | — | ❌ negative robust on screen | NIFTY intraday edge lives in the ORB/breakout family only (2026-07-10 screen, 15m/5m/3m). |
 | Long Straddle @ mid-day lull | 15m/5m | 5.57 raw | — | ~1100 | 0.25 ❌ | — | ❌ failed sig | cheap-premium artifact — rotation test caught it |
 | Short Straddle @ mid-day | 15m | −2.24 | −100% | 974 | — | −100% | ❌ dead on BS | short-vol needs real IV → Track B |
 | Iron Fly @ mid-day | 15m | −4.74 | −96% | 1111 | — | −95% | ❌ dead on BS | same — Track B |

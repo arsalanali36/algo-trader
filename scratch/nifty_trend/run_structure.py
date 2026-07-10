@@ -312,7 +312,8 @@ def write_run(slug, winner, d, dd, sigma_map, lot, lots=1):
     meta = {"slug": slug, "design": f"{struct}/{sig_name}", "title": title,
             "tf": tf, "params": winner["params"], "exit": f"tp{winner['params']['tp_frac']}/sl{winner['params']['sl_frac']}",
             "instrument": "NIFTY 50 options", "lot_size": lot,
-            "window": out["meta"]["window"], "days": out["meta"]["days"], "significant": True,
+            "window": out["meta"]["window"], "days": out["meta"]["days"],
+            "significant": bool(winner["sig"].get("significant", winner["sig"]["p_value"] < 0.05)),
             "bs_full": {k: combos["bs|full"]["metrics"].get(k) for k in
                         ("sharpe", "net_pct", "maxdd", "win_rate", "trades", "profit_factor")},
             "instrument_full_sharpe": combos["instrument|full"]["metrics"].get("sharpe"),

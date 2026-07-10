@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import datetime as dt
 import engine  # reuse ema/atr/bollinger/metrics + load helpers
+import expiry_calendar as _xcal  # official NIFTY expiry-weekday schedule (policy-A skip-expiry)
 
 RISK_PCT = 0.015
 START_CAP = 1_000_000.0
@@ -189,6 +190,13 @@ def backtest(d, name, params=None, exit_style="atr_rr", rms_caps=None):
     O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
     DAY = d.day.values; LATE = d.late.values; EOD = d.is_eod.values; DT = d.Datetime.values
     n = len(d)
+    # policy A (0DTE-inflation guard, KNOWN_ISSUES #1): skip NEW entries on the correct
+    # weekly-expiry day. Default ON — same standing decision as option_structures. The BS
+    # reprice already prices T off the correct weekday (expiry_calendar); skipping the entry
+    # keeps the directional path consistent with #1/#2. Pass skip_expiry=False to disable.
+    skip_exp = bool(p.get("skip_expiry", True))
+    _dates = pd.to_datetime(d.Datetime).dt.date.values
+    EXP = np.array([dd_.weekday() == _xcal.weekly_expiry_weekday(dd_) for dd_ in _dates])
     warm = 60
     equity = START_CAP; pos = None; trades = []; eq_curve = []
     cur_day = None; trades_today = 0
@@ -262,7 +270,8 @@ def backtest(d, name, params=None, exit_style="atr_rr", rms_caps=None):
         if pos is not None and EOD[i]:
             close_pos(i, O[i], "EOD 3:15")
 
-        if pos is None and not day_locked and not LATE[i] and trades_today < 2 and i + 1 < n and not EOD[i]:
+        if (pos is None and not day_locked and not LATE[i] and trades_today < 2 and i + 1 < n
+                and not EOD[i] and not (skip_exp and EXP[i])):
             lo, sh = long_e[i], short_e[i]
             if lo or sh:
                 side = "long" if lo else "short"

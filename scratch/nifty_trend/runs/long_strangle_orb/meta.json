@@ -1,0 +1,35 @@
+{
+  "slug": "long_strangle_orb",
+  "design": "long_strangle/orb_break",
+  "title": "Long Strangle @ ORB breakout",
+  "tf": "5m",
+  "params": {
+    "tp_frac": 0.75,
+    "sl_frac": 1.0,
+    "or_min": 15,
+    "orb_k": 0.5,
+    "h0": 11,
+    "h1": 13
+  },
+  "exit": "tp0.75/sl1.0",
+  "instrument": "NIFTY 50 options",
+  "lot_size": 65,
+  "window": [
+    "2018-01-01",
+    "2026-07-09"
+  ],
+  "days": 2103,
+  "significant": false,
+  "bs_full": {
+    "sharpe": 4.085,
+    "net_pct": 90.026,
+    "maxdd": -0.771,
+    "win_rate": 48.695,
+    "trades": 1686,
+    "profit_factor": 4.283
+  },
+  "instrument_full_sharpe": 4.881,
+  "rms_full_sharpe": 4.881,
+  "p_value": 0.072,
+  "created": "2026-07-10 23:09"
+}

@@ -1,0 +1,35 @@
+{
+  "slug": "orb_supertrend",
+  "design": "orb_st",
+  "title": "ORB + Supertrend",
+  "tf": "15m",
+  "params": {
+    "or_min": 60,
+    "orb_k": 1.0,
+    "st_period": 14,
+    "st_mult": 3.0,
+    "atr_sl": 1.5,
+    "rr": 2.0
+  },
+  "exit": "stop_only",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+    "2018-01-01",
+    "2026-07-09"
+  ],
+  "days": 2103,
+  "significant": true,
+  "bs_full": {
+    "sharpe": 2.065,
+    "net_pct": 49.695,
+    "maxdd": -0.96,
+    "win_rate": 43.848,
+    "trades": 1024,
+    "profit_factor": 1.918
+  },
+  "instrument_full_sharpe": 1.287,
+  "rms_full_sharpe": 1.333,
+  "p_value": 0.0,
+  "created": "2026-07-10 23:40"
+}
