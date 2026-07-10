@@ -241,6 +241,15 @@ def main():
     for k in combos:
         combos[k]["dna"] = dna
 
+    # 5-min intraday candles per trade-day → trade-chart shows real entry/exit intraday
+    trade_dates = {t["entry_dt"][:10] for c in combos.values() for t in c.get("all_trades", [])}
+    try:
+        from add_intraday import build_intraday
+        out["meta"]["intraday"] = build_intraday("nifty_1min.csv", trade_dates)
+        print(f"  intraday: {len(out['meta']['intraday'])} trade-days (5-min)", flush=True)
+    except Exception as e:
+        print(f"  [intraday] skipped ({e})", flush=True)
+
     # ---- write to the strategy's OWN folder ----
     folder = os.path.join(RUNS, slug)
     os.makedirs(folder, exist_ok=True)
