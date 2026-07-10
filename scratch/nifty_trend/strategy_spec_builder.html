@@ -449,6 +449,23 @@ function targetGateLines(s,L){
 }
 
 /* ---------- price-action prompt ---------- */
+function expiryLines(s,L){
+  L.push('EXPIRY & CONTRACT SPEC (MANDATORY — Indian F&O, SEBI/NSE change this often)');
+  L.push('  • NIFTY/BANKNIFTY weekly + monthly EXPIRY DAY has been changed MULTIPLE times by SEBI/NSE');
+  L.push('    (Thursday → Tuesday → … over the years; current NIFTY weekly = Tuesday). A single hardcoded');
+  L.push('    weekday is WRONG for large stretches of any multi-year backtest and mis-prices time-to-expiry');
+  L.push('    (T) → the Black-Scholes premium + theta, worst near expiry (0DTE).');
+  L.push('  • Build the expiry-day schedule from the OFFICIAL NSE/SEBI circular day/dates — the effective');
+  L.push('    date each time the weekday changed. NO guessing: encode a date→weekday schedule and pick the');
+  L.push('    rule in force on each backtest timestamp. Do the same for the monthly expiry.');
+  L.push('  • Handle EXPIRY-DAY entries deliberately — 0DTE gamma makes cheap near-expiry premium explode,');
+  L.push('    do NOT let it silently inflate returns. State the policy (skip-expiry-day / min-days-to-expiry');
+  L.push('    / roll to the next expiry) and apply the SAME policy in backtest AND live.');
+  L.push('  • Lot size & strike step ALSO change via SEBI circulars — ALWAYS read them from the Dhan scrip');
+  L.push('    master, never hardcode. (Lot size only scales ₹; also report scale-free % / Sharpe.)');
+  L.push('');
+}
+
 function promptPrice(s){
   const L=[];
   L.push('Build me a trading strategy with these exact specs, and validate it before writing the final version:');
@@ -458,6 +475,7 @@ function promptPrice(s){
   L.push(`  • Backtest on: ${s.backtest_surface}`);
   L.push(`  • Execution: ${s.exec_note}`);
   L.push('');
+  expiryLines(s,L);
   styleLines(s,L);
   riskLines(s,L);
   L.push('EXIT');
@@ -470,7 +488,7 @@ function promptPrice(s){
   L.push('');
   costLines(s,L);
   targetGateLines(s,L);
-  L.push(`DATA: NIFTY/underlying 1-min data-lake (${s.data_window==='max'?'2022 → today':s.data_window}), reuse — no re-download.`);
+  L.push(`DATA: NIFTY/underlying 1-min data-lake (${s.data_window==='max'?'2018 → today (~8.5yr)':s.data_window}), reuse — no re-download. Judge PRIMARILY on the recent regime (OOS + "Recent 2023+"); older data = robustness context.`);
   L.push('');
   L.push('Continue iterating strategy DESIGNS (not just params) until one genuinely passes the significance gate. Show me a Jesse-style dashboard of the winner.');
   return L.join('\n');
@@ -493,6 +511,7 @@ function promptChain(s){
   L.push('  • If this option-chain history is NOT already in the data-lake → build the snapshot COLLECTOR first (Dhan API only, no yfinance). NEVER fabricate/synthesize option-chain data — a fake chain silently invalidates every backtest below.');
   L.push('  • Greeks: if not stored, compute via Black-Scholes from IV+spot+strike+t; state the assumption.');
   L.push('');
+  expiryLines(s,L);
   styleLines(s,L);
   riskLines(s,L);
   L.push('EXIT (per structure)');
@@ -519,7 +538,7 @@ function promptChain(s){
   L.push('');
   costLines(s,L);
   targetGateLines(s,L);
-  L.push(`DATA WINDOW: ${s.data_window==='max'?'2022 → today (~4.5yr)':s.data_window} — reuse the data-lake, no re-download.`);
+  L.push(`DATA WINDOW: ${s.data_window==='max'?'2018 → today (~8.5yr)':s.data_window} — reuse the data-lake, no re-download. Judge PRIMARILY on the recent regime (OOS + the "Recent 2023+" lens); older data is robustness context, not an override.`);
   L.push('');
   L.push('Start with the FIRST strategy in the catalog. Build it, validate it, show me the dashboard, and PAUSE for my go-ahead before starting the next one.');
   return L.join('\n');
