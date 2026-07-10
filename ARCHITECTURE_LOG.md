@@ -15,6 +15,40 @@
 
 ---
 
+## 2026-07-10 — Backtest chart INDICATOR OVERLAYS (opening range / breakout trigger / SL / target / entry-window) + ORB logger double-print fix
+**Status:** DONE (VPS-deployed + verified)
+**Kya:** User chahta hai ki jab wo koi strategy ka backtest result dekhe, chart pe sirf entry/exit
+arrows nahi, balki **strategy ne jo indicators use kiye** wo bhi dikhein — "tabhi samajh aayega ki
+signal bana kyun". Explicitly TradingView **nahi** — apni app ka `dashboard_intraday.html` chart use
+karo. Banaya ek **generic overlay mechanism**: producer per-trade levels emit karta hai, chart jo bhi
+present ho draw karta hai (strategy-agnostic). ORB reference implementation done.
+- **Chart** (`scratch/nifty_trend/dashboard_intraday.html` → `candleSVG()`, pure SVG): reads
+  `R.meta.overlays[entry_dt]={band,lines[]}` + `R.meta.overlay_spec.window` → draws opening-range
+  band, horizontal level lines (break trigger orange / SL red / target green dashed), entry-window
+  vertical shade. y-range overlay levels ko include karta hai (clip nahi hote). Koi bhi strategy jo
+  yeh fields populate kare, apne-aap render hoti hai.
+- **Producer** (`scratch/nifty_trend/add_overlays.py`, NEW): `build_overlays(design, params, tf, trades)`
+  → `meta.overlays` + `meta.overlay_spec`. `_orb_overlay()` OR-box + OR±k·ATR trigger + entry∓atr_sl·ATR
+  SL/target compute karta hai — **same formulas as intraday_engine** (engine.atr + ie.resample reuse,
+  Rule 6B, koi duplicate). `run_hunt.py` me `build_intraday` ke saath wire — ORB-family (orb/tod_orb/
+  orb_st) fresh hunts auto-overlay. Existing run patch: `python add_overlays.py <slug>`.
+- **ORB logger fix:** `strategies/live/orb_trader.py` `_make_logger()` — StreamHandler ab sirf
+  interactive TTY pe (systemd/Popen me stdout pehle se log-file me redirect → har line 2 baar aa rahi
+  thi). Console-cosmetic only, order/signal pe zero asar.
+**Layer:** ui (backtest chart) + strategy (live logger)
+**Files:** `scratch/nifty_trend/dashboard_intraday.html`, `add_overlays.py` (new), `run_hunt.py`,
+`runs/mid_orb_nifty/{results.js,index.html}`, `strategies/live/orb_trader.py`
+**Verified:** overlay levels backtest se EXACT match — SHORT trade (2022-02-01 13:15) ka computed SL line
+17387.2 == actual ATR-SL exit 17387.2. 567 overlays generated. Rendered SVG me Opening Range/Break
+trigger/SL/Target/entry-window sab present (browser DOM-verified; screenshot tool bade results.js pe
+timeout hua par overlay elements confirmed). VPS scp — md5 local==remote ×3 (results.js/index.html/
+template). `/lab` login-gated (2026-07-10 auth) → browser-logged-in user ko dikhta, curl 302.
+orb_v1 restart karke single-line logging confirm (paper+flat, koi position nahi).
+**LIMITATION:** abhi sirf ORB-family renderer. Naya non-ORB family → `add_overlays.py` me `<design>_overlays()`
+add karo (RSI/EMA/VWAP = per-bar series chahiye; chart abhi band+lines+vband handle karta hai, series-type future).
+
+---
+
 ## 2026-07-10 — Mode-wise capital pools: LIVE entry sirf LIVE in-use ke against, PAPER sirf PAPER ke against
 **Status:** DONE (VPS-deployed + live-verified same day)
 **Kya:** User ne poocha "₹10L cap ka kuch karna hai kya?" — breakdown nikala to asli culprit mila:

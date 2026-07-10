@@ -250,6 +250,23 @@ def main():
     except Exception as e:
         print(f"  [intraday] skipped ({e})", flush=True)
 
+    # per-trade indicator overlays → trade-chart shows WHY the signal fired (levels used)
+    try:
+        from add_overlays import build_overlays
+        _seen, _tr = set(), []
+        for c in combos.values():
+            for t in c.get("all_trades", []):
+                if t["entry_dt"] not in _seen:
+                    _seen.add(t["entry_dt"]); _tr.append(t)
+        _ov, _spec = build_overlays(design, dict(out["meta"].get("dna") or {}),
+                                    tf, _tr, "nifty_1min.csv")
+        out["meta"]["overlays"] = _ov
+        if _spec:
+            out["meta"]["overlay_spec"] = _spec
+        print(f"  overlays: {len(_ov)} trade-overlays", flush=True)
+    except Exception as e:
+        print(f"  [overlays] skipped ({e})", flush=True)
+
     # ---- write to the strategy's OWN folder ----
     folder = os.path.join(RUNS, slug)
     os.makedirs(folder, exist_ok=True)

@@ -68,8 +68,12 @@ def _make_logger(strategy_id):
     if not lg.handlers:
         fmt = logging.Formatter("%(asctime)s  %(levelname)-8s  %(message)s", "%Y-%m-%d %H:%M:%S")
         fh = logging.FileHandler(log_file); fh.setFormatter(fmt)
-        sh = logging.StreamHandler(); sh.setFormatter(fmt)
-        lg.addHandler(fh); lg.addHandler(sh)
+        lg.addHandler(fh)
+        # console handler ONLY on an interactive TTY. Under systemd/Popen, stdout is
+        # already redirected INTO log_file — a StreamHandler would double-write it.
+        if getattr(sys.stdout, "isatty", lambda: False)():
+            sh = logging.StreamHandler(); sh.setFormatter(fmt)
+            lg.addHandler(sh)
     return lg
 
 

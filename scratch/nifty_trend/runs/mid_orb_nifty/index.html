@@ -403,15 +403,33 @@ function candleSVG(idx,W,H){const tr=C().all_trades||[],t=tr[idx];
   if(intraday){seg=intr;}
   else{ci=CDATE[day];let hi=CANDLES.length-1;if(ci!=null){lo=Math.max(0,ci-30);hi=Math.min(CANDLES.length-1,ci+30);}seg=CANDLES.slice(lo,hi+1);}  // fallback: daily
   const n=seg.length;
-  const ymax=Math.max(...seg.map(c=>c[2])),ymin=Math.min(...seg.map(c=>c[3]));
+  // ── indicator overlays (generic: opening-range band + horizontal levels + entry-window shade).
+  // Producer emits R.meta.overlays[entry_dt]={band,lines[]} + R.meta.overlay_spec.window.
+  // Any strategy that populates these draws automatically — chart stays strategy-agnostic.
+  const ov=(intraday&&R.meta.overlays&&R.meta.overlays[t.entry_dt])||null;
+  const ospec=R.meta.overlay_spec||null;
+  const ovL=[]; if(ov){if(ov.band){ovL.push(ov.band.hi,ov.band.lo);}(ov.lines||[]).forEach(L=>ovL.push(L.v));}
+  const ymax=Math.max(...seg.map(c=>c[2]),...ovL),ymin=Math.min(...seg.map(c=>c[3]),...ovL);
   const x=i=>PAD+(i/((n-1)||1))*(W-PAD-RP),y=v=>H-26-((v-ymin)/(ymax-ymin||1))*(H-26-14);
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+  // background overlays: entry-window vertical shade + opening-range band (behind candles)
+  if(intraday&&ospec&&ospec.window){const wp=v=>('0'+v).slice(-2)+':00',ws=wp(ospec.window.h0),we=wp(ospec.window.h1);
+    let a=seg.findIndex(b=>b[0]>=ws);if(a<0)a=0;let bb=n-1;for(let j=n-1;j>=0;j--){if(seg[j][0]<=we){bb=j;break;}}
+    svg+=`<rect x="${x(a).toFixed(1)}" y="14" width="${Math.max(0,x(bb)-x(a)).toFixed(1)}" height="${H-40}" fill="#4f78ff" opacity="0.055"/>`;
+    svg+=`<text x="${((x(a)+x(bb))/2).toFixed(0)}" y="${H-30}" fill="#4f78ff" font-size="9" text-anchor="middle" opacity="0.55">entry window ${ws}–${we}</text>`;}
+  if(intraday&&ov&&ov.band){const yh=y(ov.band.hi),yl=y(ov.band.lo);
+    svg+=`<rect x="${PAD}" y="${yh.toFixed(1)}" width="${(W-PAD-RP).toFixed(1)}" height="${Math.max(1,yl-yh).toFixed(1)}" fill="${ov.band.color}" opacity="0.12"/>`;
+    svg+=`<text x="${PAD+4}" y="${(yh-3).toFixed(0)}" fill="${ov.band.color}" font-size="9">${ov.band.label} ${ov.band.hi}–${ov.band.lo}</text>`;}
   for(let k=0;k<=4;k++){let v=ymin+(ymax-ymin)*k/4,yy=y(v);svg+=`<line x1="${PAD}" y1="${yy}" x2="${W-RP}" y2="${yy}" stroke="#1b2230"/><text x="${PAD-6}" y="${yy+3}" fill="#5c6673" font-size="10" text-anchor="end">${v.toFixed(0)}</text>`;}
   const bw=Math.max(2,(W-PAD-RP)/n*0.6);
   seg.forEach((c,i)=>{const o=c[1],h=c[2],l=c[3],cl=c[4],col=cl>=o?'#3fb950':'#f85149';
     svg+=`<line x1="${x(i)}" y1="${y(h)}" x2="${x(i)}" y2="${y(l)}" stroke="${col}"/>`;
     const yo=y(o),yc=y(cl);svg+=`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${Math.min(yo,yc).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,Math.abs(yc-yo)).toFixed(1)}" fill="${col}"/>`;});
   for(let i=0;i<n;i+=Math.ceil(n/8))svg+=`<text x="${x(i)}" y="${H-8}" fill="#5c6673" font-size="10" text-anchor="middle">${intraday?seg[i][0]:seg[i][0].slice(5)}</text>`;
+  // overlay level lines (breakout trigger / SL / target) — on top of candles, below entry/exit markers
+  if(intraday&&ov)(ov.lines||[]).forEach(L=>{const yy=y(L.v),op=L.op!=null?L.op:0.9;
+    svg+=`<line x1="${PAD}" y1="${yy}" x2="${W-RP}" y2="${yy}" stroke="${L.color}" stroke-dasharray="${L.dash||'4 4'}" stroke-width="${L.w||1}" opacity="${op}"/>`;
+    if(L.label)svg+=`<text x="${W-RP-2}" y="${(yy-3).toFixed(0)}" fill="${L.color}" font-size="10" text-anchor="end" opacity="${op}">${L.label} ${L.v}</text>`;});
   const col=t.pnl>=0?'#3fb950':'#f85149';
   if(intraday){
     const et=t.entry_dt.slice(11),xt=t.exit_dt.slice(11);
