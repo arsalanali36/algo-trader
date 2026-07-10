@@ -95,6 +95,9 @@
   .passnote{background:var(--panel);border:1px solid var(--bd);border-left:3px solid var(--blue);color:var(--mut);border-radius:8px;padding:8px 12px;font-size:11.5px;margin:-6px 0 14px}
   .passnote b{color:var(--tx)}
   #segPass button.on{background:#7c3aed}
+  .stickyhead{position:sticky;top:0;z-index:50;background:var(--bg);padding:8px 0 6px;margin-bottom:6px;box-shadow:0 6px 10px -6px rgba(0,0,0,.7)}
+  .stickyhead .controls{margin-bottom:10px}
+  .stickyhead .infobar,.stickyhead .warnbar{margin-bottom:6px}
   @media(max-width:1000px){.cols{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.verdict{grid-template-columns:repeat(2,1fr)}}
 </style>
 </head>
@@ -106,18 +109,19 @@
     <span class="livechip" id="livechip">● GENUINE EDGE</span>
   </div>
 
-  <div class="infobar" id="infobar"></div>
-  <div class="warnbar" id="warnbar"></div>
-
-  <div class="controls">
-    <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
-      <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
-      <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
-      <button data-pass="bs" class="on" title="Pass-2 trades repriced into the ATM CE/PE premium actually traded (Black-Scholes + real Zerodha tax). The deployable truth.">③ + Black-Scholes</button></div>
-    <div class="seg" id="segP"><span class="lbl">PERIOD</span>
-      <button data-p="full" class="on">Full 2022-26</button>
-      <button data-p="train">In-sample 22-24</button>
-      <button data-p="oos">Out-of-sample 25-26</button></div>
+  <div class="stickyhead">
+    <div class="controls">
+      <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
+        <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
+        <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
+        <button data-pass="bs" class="on" title="Pass-2 trades repriced into the ATM CE/PE premium actually traded (Black-Scholes + real Zerodha tax). The deployable truth.">③ + Black-Scholes</button></div>
+      <div class="seg" id="segP"><span class="lbl">PERIOD</span>
+        <button data-p="full" class="on">Full 2022-26</button>
+        <button data-p="train">In-sample 22-24</button>
+        <button data-p="oos">Out-of-sample 25-26</button></div>
+    </div>
+    <div class="infobar" id="infobar"></div>
+    <div class="warnbar" id="warnbar"></div>
   </div>
   <div class="passnote" id="passnote"></div>
 
