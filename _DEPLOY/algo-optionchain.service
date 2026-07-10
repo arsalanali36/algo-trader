@@ -1,0 +1,15 @@
+[Unit]
+Description=Option-Chain + India-VIX snapshot collector (NIFTY + BANKNIFTY)
+After=network.target
+
+[Service]
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 "/root/CODE3B- TV BACKTEST ENGINE/_ops/option_chain_collector.py" --strikes 10 --interval 60
+Restart=always
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+StandardOutput=append:/root/CODE3B- TV BACKTEST ENGINE/logs/option_chain_collector.log
+StandardError=append:/root/CODE3B- TV BACKTEST ENGINE/logs/option_chain_collector.log
+
+[Install]
+WantedBy=multi-user.target
