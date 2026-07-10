@@ -116,9 +116,10 @@
         <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
         <button data-pass="bs" class="on" title="Pass-2 trades repriced into the ATM CE/PE premium actually traded (Black-Scholes + real Zerodha tax). The deployable truth.">③ + Black-Scholes</button></div>
       <div class="seg" id="segP"><span class="lbl">PERIOD</span>
-        <button data-p="full" class="on">Full 2022-26</button>
-        <button data-p="train">In-sample 22-24</button>
-        <button data-p="oos">Out-of-sample 25-26</button></div>
+        <button data-p="full" class="on">Full</button>
+        <button data-p="train">In-sample</button>
+        <button data-p="oos">Out-of-sample</button>
+        <button data-p="recent">Recent 2023+</button></div>
     </div>
   </div>
   <div class="infobar" id="infobar"></div>
@@ -203,6 +204,11 @@ const PASS_NOTE={
   bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
 };
 function passNote(pass){const M=R.meta||{};if(M.pass_notes&&M.pass_notes[pass])return M.pass_notes[pass];return PASS_NOTE[pass]||'';}
+function perLabel(p){const w=(R.meta&&R.meta.window)||['',''];const y=s=>String(s).slice(0,4);
+  if(p==='train')return 'In-sample (train)';
+  if(p==='oos')return 'Out-of-sample';
+  if(p==='recent')return 'Recent 2023+ (current regime)';
+  return w[0]?`Full ${y(w[0])}-${y(w[1]).slice(2)}`:'Full window';}
 function renderPhilosophy(){const M=R.meta||{},p=document.getElementById('philoPanel');
   if(!M.philosophy&&!M.glossary){p.style.display='none';return;}
   p.style.display='';let h='';
@@ -483,21 +489,23 @@ function renderAll(){const m=C().metrics,s=C().significance;
   document.getElementById('infobar').innerHTML=
     `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
   if(HAS_PASS){
-    const per=P==='oos'?'Out-of-sample (2025-26)':(P==='train'?'In-sample (2022-24)':'Full window');
+    const per=perLabel(P);
     const cmp=PASS==='bs'?' <b>Real option-premium P&amp;L</b> (ATM CE/PE, Black-Scholes + real Zerodha tax).':(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
     document.getElementById('warnbar').innerHTML=
       `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
     document.getElementById('passnote').innerHTML=passNote(PASS);
   } else {
-    document.getElementById('warnbar').innerHTML= P==='oos'
-      ? `✅ <b>Out-of-sample (2025-26):</b> Sharpe <b>${m.sharpe.toFixed(2)}</b> — held up on unseen recent data, no decay. Win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}%.`
-      : (P==='train'
-        ? `In-sample (2022-24): Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%. Toggle OOS — a genuine edge stays stable.`
-        : `Full window: Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`);
+    document.getElementById('warnbar').innerHTML=
+      `<b>${perLabel(P)}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, `+
+      `net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`+
+      (P==='oos'?' — held up on unseen recent data.':(P==='recent'?' — CURRENT market regime (2023+), post options-boom.':''));
   }
   renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
   renderPerf();renderDNA();renderInfo();renderPhilosophy();renderMC();renderSig();renderOpt();renderTrades()}
 if(HAS_PASS){document.getElementById('segPass').style.display='';}
+// hide the Recent button for older runs that don't have a recent combo (backward-compat)
+(function(){const has=Object.keys(R.combos||{}).some(k=>k.endsWith('|recent')||k==='recent');
+  const rb=document.querySelector('#segP button[data-p="recent"]');if(rb&&!has)rb.style.display='none';})();
 document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
   document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
 document.querySelectorAll('#segP button').forEach(b=>b.onclick=()=>{P=b.dataset.p;

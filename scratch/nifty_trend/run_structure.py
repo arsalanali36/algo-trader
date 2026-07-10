@@ -254,8 +254,15 @@ def write_run(slug, winner, d, dd, sigma_map, lot, lots=1):
     candles = [[str(ix.date()), round(r.Open, 1), round(r.High, 1), round(r.Low, 1), round(r.Close, 1)]
                for ix, r in dd.iterrows()]
 
+    # "recent" = current regime only (2023+, post options-boom) — the user's regime-change
+    # sanity lens. Judge a strategy PRIMARILY here + OOS; Full-2018 is robustness context.
+    d_recent = d[d.Datetime >= pd.Timestamp("2023-01-01")].reset_index(drop=True)
+    periods = [("full", d), ("train", dtr), ("oos", doos)]
+    if d_recent["day"].nunique() >= 60:
+        periods.append(("recent", d_recent))
+
     combos = {}
-    for period, dp in (("full", d), ("train", dtr), ("oos", doos)):
+    for period, dp in periods:
         views = build_views(dp, winner, sigma_map, lot, lots, dict(winner["sig"]))
         for pas, cobj in views.items():
             combos[f"{pas}|{period}"] = cobj
@@ -277,7 +284,8 @@ def write_run(slug, winner, d, dd, sigma_map, lot, lots=1):
         "design_key": f"{struct}/{sig_name}", "slug": slug, "tf": tf,
         "instrument": "NIFTY 50 options", "lot_size": lot, "lots": lots,
         "rms_caps": RMS_CAPS, "dna": dna, "structure": struct, "signal": sig_name,
-        "passes": ["instrument", "rms", "bs"], "periods": ["full", "train", "oos"],
+        "passes": ["instrument", "rms", "bs"],
+        "periods": [p for p, _ in periods],
         "philosophy": philosophy_html(struct, sig_name, winner["params"]),
         "glossary": GLOSSARY, "pass_notes": pass_notes(struct),
         "candles": candles},

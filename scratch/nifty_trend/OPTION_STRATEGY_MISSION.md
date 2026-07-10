@@ -37,6 +37,29 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ---
 
+## Per-strategy = validate + PAPER-deploy, FULLY done before the next (user 2026-07-10)
+No separate "Phase B" and no "pick after 10". EACH strategy is completed end-to-end in one go:
+  1. design → backtest → 3-pass dashboard (`runs/<slug>/`)
+  2. build its live trader (`strategies/live/<name>_trader.py`, execution_gateway + order_store,
+     NEW_STRATEGY_CHECKLIST) → deploy PAPER on VPS → appears in dashboard Log tab
+  3. user sees both → approve → NEXT strategy
+All 10 run on PAPER from Monday (user paper-trades them live, doesn't post-hoc select).
+Reference live trader: `strategies/live/orb_trader.py`. Long Straddle's = `straddle_trader.py`
+(config `straddle_v1`, `STRATEGIES["straddle"]`) — 2-leg ATM CE+PE, combined-premium % exit + 3:15 EOD,
+restart-recovery, half-open rollback. Deployed + running PAPER 2026-07-10.
+
+## Data-regime policy (user's sharp Q, 2026-07-10) — judge on the CURRENT regime
+Data now spans 2018-2026 (8.5yr) — includes very different regimes (pre-COVID, COVID crash, the
+2022+ retail-options boom). Two guardrails so old-regime data can't mislead:
+- **Lot-size / SEBI changes DON'T corrupt the edge:** we report % / Sharpe / DD / significance, all
+  INVARIANT to lot size (multiplying every trade's ₹ by a constant changes nothing). We apply TODAY's
+  lot size throughout → the ₹ + charge-drag are forward-realistic. (Real historical lot/premium only
+  matters for Track B, which is why we collect real chain data forward.)
+- **OOS = the RECENT window is the PRIMARY judge.** min(train,OOS) ranking already forces the params
+  to work recently; if a strategy is great on Full-2018 but weak on OOS-recent, we REJECT it. The
+  straddle's OOS Sharpe (4.51) BEAT its train (4.14) → it works BETTER in today's regime, not worse.
+  Full-2018 is stress/robustness context, never an override of a strong recent edge.
+
 ## Ground rules (locked with user 2026-07-10)
 
 - **One strategy at a time.** Design → mockup → user approves → backtest → 3-pass dashboard → user
