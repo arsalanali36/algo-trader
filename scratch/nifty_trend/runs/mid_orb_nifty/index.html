@@ -120,9 +120,9 @@
         <button data-p="train">In-sample 22-24</button>
         <button data-p="oos">Out-of-sample 25-26</button></div>
     </div>
-    <div class="infobar" id="infobar"></div>
-    <div class="warnbar" id="warnbar"></div>
   </div>
+  <div class="infobar" id="infobar"></div>
+  <div class="warnbar" id="warnbar"></div>
   <div class="passnote" id="passnote"></div>
 
   <div class="cards" id="cards"></div>
@@ -133,7 +133,6 @@
         <div id="equity"></div>
         <div class="legend"><div class="it"><span class="sw" style="background:var(--blue)"></span>Strategy (1x)</div>
           <div class="it"><span class="sw d"></span>NIFTY Buy &amp; Hold</div></div></div>
-      <div class="panel"><h3>Cumulative Returns <span class="tag">(Log Scaled)</span></h3><hr class="dash"><div id="equityLog"></div></div>
       <div class="panel"><h3>Drawdown <span class="tag">(Worst 5 Periods)</span></h3><hr class="dash"><div id="ddPeriods"></div></div>
       <div class="panel"><h3>Underwater Plot</h3><hr class="dash"><div id="underwater"></div></div>
       <div class="panel"><h3>Monthly Returns Heatmap</h3><hr class="dash"><div id="monthly" style="overflow-x:auto"></div></div>
@@ -465,7 +464,7 @@ function renderAll(){const m=C().metrics,s=C().significance;
         ? `In-sample (2022-24): Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%. Toggle OOS — a genuine edge stays stable.`
         : `Full window: Sharpe ${m.sharpe.toFixed(2)}, win ${m.win_rate.toFixed(0)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`);
   }
-  renderCards();renderEquity('equity',false);renderEquity('equityLog',true);renderDD();renderUW();renderMonthly();
+  renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
   renderPerf();renderDNA();renderInfo();renderMC();renderSig();renderOpt();renderTrades()}
 if(HAS_PASS){document.getElementById('segPass').style.display='';}
 document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
