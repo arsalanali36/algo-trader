@@ -28,8 +28,10 @@ NIFTY weekly expiry = TUESDAY**. So one fixed weekday is wrong for large stretch
 1. **Build a historical expiry-day schedule from OFFICIAL NSE/SEBI circulars** — the exact effective
    date(s) each time the expiry weekday changed (Thu→…→Tue). User's instruction: *"jo official
    document me day/date mile wo expiry lena."* No guessing — use the circular's own dates.
-   Likely shape: a small table `[(effective_from_date, weekday), …]` in `bs_option.py`, and
-   `_next_weekly_expiry(ts)` picks the weekday whose rule was in force on `ts`.
+   **→ A ready-to-fill skeleton already exists: `expiry_calendar.py`** (schema + `weekly_expiry_weekday(d)`
+   function + anchors + TODO markers). Just fill the verified circular dates into its lists, then wire
+   `bs_option._next_weekly_expiry(ts)` to call `weekly_expiry_weekday(ts.date())` instead of the
+   hardcoded `weekday=3`. So the research is captured ONCE — no redoing it.
 2. Also handle **monthly** expiry day if any structure uses monthly (same circular history).
 3. THEN re-run the affected strategies (`build_final.py`) so premium/theta are correct.
 
