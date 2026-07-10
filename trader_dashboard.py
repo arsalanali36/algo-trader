@@ -226,6 +226,7 @@ STRATEGIES = {
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
     "orb":      {"script": str(TRADERS_DIR / "orb_trader.py"), "log": BASE_DIR / "logs/orb_v1.log", "cfg": TC_FILE, "grep": "orb_trader"},
+    "straddle": {"script": str(TRADERS_DIR / "straddle_trader.py"), "log": BASE_DIR / "logs/straddle_v1.log", "cfg": TC_FILE, "grep": "straddle_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
