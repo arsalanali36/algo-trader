@@ -275,7 +275,8 @@ function renderCards(){const m=C().metrics;
     ['Calmar',(m.calmar||0).toFixed(2),m.calmar>=1?'pos':'','return/DD']];
   document.getElementById('cards').innerHTML=cards.map(x=>
     `<div class="card"><div class="k">${x[0]}</div><div class="v ${x[2]}">${x[1]}</div><div class="sub">${x[3]}</div></div>`).join('')}
-function hold(bars){return bars.toFixed(0)+' bars ('+(bars*15/60).toFixed(1)+'h)'}
+function tfMin(){const t=(R.meta&&R.meta.tf)||'15m';const m=parseInt(t);return m||15;}
+function hold(bars){return bars.toFixed(0)+' bars ('+(bars*tfMin()/60).toFixed(1)+'h)'}
 function renderPerf(){const m=C().metrics;
   const rows=[['Total Closed Trades',m.trades],['Total Net Profit',`${inr(m.net_abs)} (${m.net_pct.toFixed(1)}%)`],
     ['Start → Finish',`${inr(m.start_cap)} → ${inr(m.final_cap)}`],['Total Paid Fees',inr(m.fees)],
@@ -334,11 +335,11 @@ function renderOpt(){const c=C().opt_table;const panel=document.getElementById('
   document.getElementById('opt').innerHTML=h}
 /* ── Trades table (search + column toggle) + full-screen chart modal ── */
 const CANDLES=R.meta.candles||[]; const CDATE={}; CANDLES.forEach((c,i)=>CDATE[c[0]]=i);
-function durStr(bars){const m=(bars||0)*15;return m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;}
+function durStr(bars){const m=(bars||0)*tfMin();return m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;}
 function monthName(ym){const [y,mo]=ym.split('-');return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+' '+y;}
 const TCOLS=[
   {k:'entry_dt',label:'Date',l:true,get:t=>t.entry_dt.slice(0,10),raw:t=>t.entry_dt},
-  {k:'side',label:'Side',l:true,get:t=>`<span class="pill ${t.side}">${t.side==='long'?'LONG':'SHORT'}</span>`,raw:t=>t.side},
+  {k:'side',label:'Side',l:true,get:t=>{const s=t.side||'';const lbl={long:'LONG',short:'SHORT',long_vol:'LONG-VOL',short_vol:'SHORT-VOL',directional:'DIR'}[s]||String(s).toUpperCase();const cls=String(s).includes('long')?'long':'short';return `<span class="pill ${cls}">${lbl}</span>`;},raw:t=>t.side},
   {k:'in',label:'In',get:t=>t.entry_dt.slice(11),raw:t=>t.entry_dt},
   {k:'out',label:'Out',get:t=>t.exit_dt.slice(11),raw:t=>t.exit_dt},
   {k:'dur',label:'Dur',off:true,get:t=>durStr(t.bars),raw:t=>t.bars},

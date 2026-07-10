@@ -161,6 +161,13 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 
 ---
 
+## ⚠️ OPEN ISSUES — see `KNOWN_ISSUES.md`
+- 🔴 **Weekly-expiry day hardcoded Thursday** (bs_option `_next_weekly_expiry`) — SEBI/NSE changed it
+  many times (now TUESDAY). Mis-prices near-expiry premium/theta → 0DTE inflation. DEFERRED (home
+  machine): build the schedule from OFFICIAL NSE/SEBI circular dates, then skip-expiry-day + re-run.
+- Dashboard bugs fixed 2026-07-10: duration (bars×15→×tfMin, was 3× for 5m), Side label (long straddle
+  showed "SHORT"→"LONG-VOL"). Deployed.
+
 ## Process-gap log (things I flagged, keep honest)
 - 2026-07-10: BS reprice can't validate vol-arb (gamma/VIX-crush) — no independent implied-vol series.
   Those 4 moved to Track B (collector-gated). User approved "10 honest set".

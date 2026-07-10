@@ -4,33 +4,31 @@
   "title": "Long Straddle @ ORB breakout",
   "tf": "5m",
   "params": {
-    "tp_frac": 0.3,
+    "tp_frac": 0.5,
     "sl_frac": 1.0,
     "or_min": 15,
     "orb_k": 0.5,
-    "h0": 11,
-    "h1": 13,
     "vrp_mult": 1.2
   },
-  "exit": "tp0.3/sl1.0",
+  "exit": "tp0.5/sl1.0",
   "instrument": "NIFTY 50 options",
   "lot_size": 65,
   "window": [
-    "2022-01-03",
+    "2018-01-01",
     "2026-07-09"
   ],
-  "days": 1112,
+  "days": 2103,
   "significant": true,
   "bs_full": {
-    "sharpe": 4.543,
-    "net_pct": 59.092,
-    "maxdd": -2.277,
-    "win_rate": 51.419,
-    "trades": 1163,
-    "profit_factor": 2.468
+    "sharpe": 4.24,
+    "net_pct": 119.183,
+    "maxdd": -2.359,
+    "win_rate": 49.328,
+    "trades": 2159,
+    "profit_factor": 2.632
   },
-  "instrument_full_sharpe": 5.565,
-  "rms_full_sharpe": 5.565,
-  "p_value": 0.0433,
-  "created": "2026-07-10 13:49"
+  "instrument_full_sharpe": 5.112,
+  "rms_full_sharpe": 5.112,
+  "p_value": 0.052,
+  "created": "2026-07-10 15:03"
 }
