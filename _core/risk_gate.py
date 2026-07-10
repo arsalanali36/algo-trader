@@ -455,7 +455,12 @@ def get_broker_balance(broker_name):
     return out
 
 
-def _today_open(strategy=None):
+def _today_open(strategy=None, mode=None):
+    """Today's real open positions. mode='live'/'paper' filters to that pool —
+    paper strategies' simulated margins must not eat the LIVE capital budget
+    (found live 2026-07-10: ₹5.2L of paper stock-option margins consumed the
+    ₹10L global cap and sized a real webhook entry 2 lots → 1). mode=None =
+    all (backward compat for display/reconcile callers)."""
     from datetime import datetime, timedelta, timezone
     ist_now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
     date_str = ist_now.strftime("%Y-%m-%d")
@@ -465,6 +470,9 @@ def _today_open(strategy=None):
     except Exception:
         return []
     open_pos = data.get("open", [])
+    if mode is not None:
+        m = str(mode).lower().strip()
+        open_pos = [p for p in open_pos if str(p.get("mode") or "").lower() == m]
     # A CAPITAL_BLOCKED entry was REFUSED — never actually placed at the
     # broker — but order_store's netting has no "blocked" terminal status,
     # so it falls through as a phantom unmatched "open position" (exit_price
@@ -640,17 +648,22 @@ def _leg_capital(p, rc=None):
     return notional
 
 
-def capital_in_use(strategy=None):
+def capital_in_use(strategy=None, mode=None):
     """₹ capital currently deployed (margin-adjusted for SELL legs — see
     _margin_multiplier) over open positions. strategy=None → ALL strategies
-    (for the global cap check)."""
+    (for the global cap check). mode='live'/'paper' → only that pool
+    (see _today_open); None → all modes combined."""
     rc = _risk_cfg()
-    return sum(_leg_capital(p, rc) for p in _today_open(strategy))
+    return sum(_leg_capital(p, rc) for p in _today_open(strategy, mode=mode))
 
 
-def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO"):
+def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO", mode=None):
     """Would adding qty@price (side BUY/SELL) to `strategy` breach its allocation
     or the global ceiling? Returns (ok: bool, reason: str). reason='' when ok.
+
+    mode='live'/'paper': in-use is computed from THAT pool only — a live entry
+    checks against live positions, paper against paper (same ₹ cap value, two
+    separate pools). mode=None keeps the old combined behavior.
 
     SELL legs (option-selling, the common case for these strategies): if
     sec_id is given, tries the EXECUTING broker's real margin first (see
@@ -675,23 +688,24 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO")
     strat_cap = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("capital_rs")
     glob_cap = (rc.get("global", {}) or {}).get("capital_rs")
 
+    pool = f", {str(mode).lower()}-pool" if mode else ""
     if strat_cap is not None:
         try:
             strat_cap = float(strat_cap)
-            in_use = capital_in_use(strategy)
+            in_use = capital_in_use(strategy, mode=mode)
             if in_use + needed > strat_cap:
                 return False, (f"strategy capital cap ₹{_inr(strat_cap)} hit "
-                                f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)})")
+                                f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)}{pool})")
         except Exception:
             pass
 
     if glob_cap is not None:
         try:
             glob_cap = float(glob_cap)
-            in_use_all = capital_in_use(None)
+            in_use_all = capital_in_use(None, mode=mode)
             if in_use_all + needed > glob_cap:
                 return False, (f"global capital cap ₹{_inr(glob_cap)} hit "
-                                f"(in-use ₹{_inr(in_use_all)} + needed ₹{_inr(needed)})")
+                                f"(in-use ₹{_inr(in_use_all)} + needed ₹{_inr(needed)}{pool})")
         except Exception:
             pass
 
@@ -752,18 +766,19 @@ def sized_lots_option(strategy, lots, lot_size, sec_id, token, cid, fallback_pri
     return sized_lots(strategy, lots, lot_size, price, side=side, sec_id=sec_id)
 
 
-def sized_lots(strategy, lots, lot_size, price, side="SELL", sec_id=None, seg="NSE_FNO"):
+def sized_lots(strategy, lots, lot_size, price, side="SELL", sec_id=None, seg="NSE_FNO", mode=None):
     """For capital_mode='size_down': how many of the requested `lots` (each
     `lot_size` qty) actually fit in the remaining capital? Returns an int
     0..lots — 0 means even one lot doesn't fit (caller should still block).
     Respects lot boundaries (can't size into a fractional lot). Pass sec_id
-    for SELL legs to use the real Dhan margin-calculator (see check_capital)."""
+    for SELL legs to use the executing broker's real margin (see check_capital).
+    mode='live'/'paper' → size against that pool only (see check_capital)."""
     lots = int(lots or 0)
     if lots <= 0:
         return 0
     per_lot_qty = max(1, int(lot_size or 1))
     for try_lots in range(lots, 0, -1):
-        ok, _ = check_capital(strategy, try_lots * per_lot_qty, price, side=side, sec_id=sec_id, seg=seg)
+        ok, _ = check_capital(strategy, try_lots * per_lot_qty, price, side=side, sec_id=sec_id, seg=seg, mode=mode)
         if ok:
             return try_lots
     return 0
@@ -800,13 +815,14 @@ def _underlying(symbol_or_tradsym):
     return str(symbol_or_tradsym or "").split("-")[0].upper()
 
 
-def exposure_by_underlying(underlying=None):
+def exposure_by_underlying(underlying=None, mode=None):
     """₹ margin-adjusted capital currently deployed per underlying, across ALL
     strategies (this is the whole point — a per-strategy cap can't see another
-    strategy piling into the same name). underlying=None -> dict for all."""
+    strategy piling into the same name). underlying=None -> dict for all.
+    mode='live'/'paper' → only that pool (see _today_open); None → all."""
     rc = _risk_cfg()
     totals = {}
-    for p in _today_open(None):
+    for p in _today_open(None, mode=mode):
         u = _underlying(p.get("symbol") or p.get("sym"))
         totals[u] = totals.get(u, 0.0) + _leg_capital(p, rc)
     if underlying is not None:
@@ -814,7 +830,7 @@ def exposure_by_underlying(underlying=None):
     return totals
 
 
-def check_concentration(symbol, qty, price, side="SELL"):
+def check_concentration(symbol, qty, price, side="SELL", mode=None):
     """Would this entry push combined exposure to `symbol`'s underlying (across
     ALL strategies) past max_underlying_exposure_rs? Global-only setting (this
     is inherently a cross-strategy check) — nifty_config.json["_risk"]["global"]
@@ -833,10 +849,11 @@ def check_concentration(symbol, qty, price, side="SELL"):
     if needed <= 0:
         return True, ""
     u = _underlying(symbol)
-    in_use = exposure_by_underlying(u)
+    in_use = exposure_by_underlying(u, mode=mode)
     if in_use + needed > cap:
+        pool = f", {str(mode).lower()}-pool" if mode else ""
         return False, (f"underlying '{u}' concentration cap ₹{_inr(cap)} hit "
-                        f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)})")
+                        f"(in-use ₹{_inr(in_use)} + needed ₹{_inr(needed)}{pool})")
     return True, ""
 
 
@@ -1133,23 +1150,24 @@ def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=Non
     return False, ""
 
 
-def capital_headroom(strategy):
+def capital_headroom(strategy, mode=None):
     """Remaining ₹ capital for `strategy` before its own cap OR the global cap is
     hit (whichever is tighter). None = no cap configured (unlimited). Uses
     order_store entry prices + cached margin only — makes NO live LTP/quote call,
-    so it's safe to poll cheaply and to short-circuit a scan loop with."""
+    so it's safe to poll cheaply and to short-circuit a scan loop with.
+    mode='live'/'paper' → headroom within that pool only (see capital_in_use)."""
     rc = _risk_cfg()
     strat_cap = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("capital_rs")
     glob_cap = (rc.get("global", {}) or {}).get("capital_rs")
     rooms = []
     if strat_cap is not None:
         try:
-            rooms.append(float(strat_cap) - capital_in_use(strategy))
+            rooms.append(float(strat_cap) - capital_in_use(strategy, mode=mode))
         except Exception:
             pass
     if glob_cap is not None:
         try:
-            rooms.append(float(glob_cap) - capital_in_use(None))
+            rooms.append(float(glob_cap) - capital_in_use(None, mode=mode))
         except Exception:
             pass
     return min(rooms) if rooms else None
@@ -1189,7 +1207,7 @@ def gating_status(strategy, unrealized=0.0, mode=None, broker=None):
     dd_ok, dd_why = check_drawdown(unrealized_pnl=unrealized)
     if not dd_ok:
         return True, dd_why, True
-    room = capital_headroom(strategy)
+    room = capital_headroom(strategy, mode=mode)
     if room is not None and room <= 0:
         return True, "capital cap fully used (no headroom — frees up when a position closes)", False
     return False, "", False

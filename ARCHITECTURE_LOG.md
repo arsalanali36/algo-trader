@@ -15,6 +15,24 @@
 
 ---
 
+## 2026-07-10 — Mode-wise capital pools: LIVE entry sirf LIVE in-use ke against, PAPER sirf PAPER ke against
+**Status:** DONE (VPS-deployed + live-verified same day)
+**Kya:** User ne poocha "₹10L cap ka kuch karna hai kya?" — breakdown nikala to asli culprit mila:
+capital_in_use() me PAPER positions bhi ginti thi (LIVE ₹1.92L + PAPER ₹5.23L = ₹7.15L against ₹10L cap).
+Aaj ka live webhook 2-lot isi wajah se 1 lot me size-down hua — paper data-collection strategies real
+trading capital kha rahi thin. Fix: `_today_open`/`capital_in_use`/`check_capital`/`sized_lots`/
+`exposure_by_underlying`/`check_concentration`/`capital_headroom` sab me optional `mode` param —
+gate_entry (jo mode pehle se leta tha) ab use thread karta hai; range_trader ka equity direct-branch bhi.
+mode=None = purana combined behavior (display/reconcile routes untouched). Block-reason me ab
+"live-pool"/"paper-pool" tag bhi.
+**Layer:** execution (RMS money-path)
+**Files:** `_core/risk_gate.py`, `_core/strategy_safety.py`, `strategies/live/range_trader.py`
+**Verified:** VPS pe aaj ka exact scenario re-run — 2-lot LIVE pool = PASS + sized_lots=2; old combined =
+BLOCK (in-use ₹8.26L). Services restart, strategy PIDs unchanged (diff-verified), webhook position recovered.
+**Note:** live strategy PROCESSES (range_v1 etc.) abhi purana code chala rahe hain — unki paper entries
+tab tak combined pool (conservative) check karengi; kal 9:10 auto-start pe naya code load hoga.
+**Depends on:** gate_entry ka existing mode param; order_store rows ka mode field.
+
 ## 2026-07-10 — RMS margin estimate: executing-broker-first (Kite order_margins), Dhan calculator = fallback
 **Status:** DONE (VPS-deployed + live-verified: Kite ₹1,92,006 vs Dhan ₹1,92,102 on NIFTY-24250-PE 65qty SELL;
 md5 ×4 local==VPS; both services restarted mid-day with user go-ahead — all 6 strategy PIDs + live webhook

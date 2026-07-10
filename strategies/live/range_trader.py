@@ -1251,18 +1251,18 @@ def main(strategy_id="range"):
                         if not dd_ok:
                             cap_ok, cap_reason = False, dd_reason
                         else:
-                            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=signal)
+                            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=signal, mode=mode)
                             if not conc_ok:
                                 cap_ok, cap_reason = False, conc_reason
                             else:
-                                cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=signal)
+                                cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=signal, mode=mode)
                     except Exception as _e:
                         cap_ok, cap_reason = True, ""
                         log.warning(f"risk gate check failed (allowing entry): {_e}")
                     if not cap_ok:
                         fit_qty = 0
                         if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
-                            fit_qty = risk_gate.sized_lots(strategy_id, qty, 1, price, side=signal)
+                            fit_qty = risk_gate.sized_lots(strategy_id, qty, 1, price, side=signal, mode=mode)
                         if fit_qty > 0:
                             log.info(f"ENTRY sized down {symbol} — {qty} -> {fit_qty} ({cap_reason})")
                             qty = fit_qty

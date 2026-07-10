@@ -87,16 +87,21 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
                                   f"— expensive premium skipped (fixed-₹ SL would hit too fast)")
 
         price = float(est_price or 0)
+        # mode-wise capital pools (2026-07-10): a live entry is checked against
+        # LIVE in-use only, paper against PAPER — paper strategies' simulated
+        # margins must never shrink/block a real live order (₹5.2L of paper
+        # margin sized a live webhook entry 2 lots → 1 under the ₹10L cap).
+        _pool = str(mode or "").lower() or None
         if price > 0:
-            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=side)
+            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=side, mode=_pool)
             if not conc_ok:
                 return False, 0, conc_reason
 
-        cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=side, sec_id=sec_id, seg=seg)
+        cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=side, sec_id=sec_id, seg=seg, mode=_pool)
         if not cap_ok:
             fit_lots = 0
             if risk_gate.capital_mode(strategy_id) == "size_down":
-                fit_lots = risk_gate.sized_lots(strategy_id, lots, lot_size, price, side=side, sec_id=sec_id, seg=seg)
+                fit_lots = risk_gate.sized_lots(strategy_id, lots, lot_size, price, side=side, sec_id=sec_id, seg=seg, mode=_pool)
             if fit_lots > 0:
                 return True, fit_lots * lot_size, f"sized_down: {cap_reason}"
             return False, 0, cap_reason
