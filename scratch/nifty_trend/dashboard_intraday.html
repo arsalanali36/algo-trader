@@ -347,12 +347,25 @@ function fmtSum(v){return (v>=0?'+':'')+inr(v);}
 function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb=document.getElementById('ttable');
   const ncol=vis.length+1;
   let h='<tr>'+vis.map(c=>`<th class="${c.l?'l':''}" data-k="${c.k}">${c.label}${tSortKey===c.k?(tSortDir<0?' ▼':' ▲'):''}</th>`).join('')+'<th>Chart</th></tr>';
-  const subRow=(label,s,cls)=>`<tr class="subrow ${cls}"><td colspan="${ncol}">${label} — <b>${s.n} trades</b> · Gross <b class="${s.gross>=0?'pos':'neg'}">${fmtSum(s.gross)}</b> · Tax <b class="mut">-${inr(Math.abs(s.fee))}</b> · Net <b class="${s.pnl>=0?'pos':'neg'}">${fmtSum(s.pnl)}</b></td></tr>`;
+  // sums shown UNDER their own columns (not a merged text blob). Grand total = frozen (sticky bottom).
+  const SUMCELL={
+    points:s=>`<span class="${s.pts>=0?'pos':'neg'}">${(s.pts>=0?'+':'')+s.pts.toFixed(0)}</span>`,
+    gross:s=>`<span class="${s.gross>=0?'pos':'neg'}">${fmtSum(s.gross)}</span>`,
+    fee:s=>`<span class="mut">-${inr(Math.abs(s.fee))}</span>`,
+    pnl:s=>`<span class="${s.pnl>=0?'pos':'neg'}">${fmtSum(s.pnl)}</span>`};
+  const subRow=(label,s,cls)=>{
+    let firstSum=vis.findIndex(c=>SUMCELL[c.k]); if(firstSum<0)firstSum=vis.length;
+    const span=Math.max(1,firstSum);
+    const stick=cls==='grand'?'position:sticky;bottom:0;z-index:5;background:#0d2018;':'';
+    let cells=`<td class="l" colspan="${span}" style="${stick}text-align:right;font-weight:700">${label} · <b>${s.n} trades</b></td>`;
+    for(let i=span;i<vis.length;i++){const c=vis[i];cells+=`<td style="${stick}text-align:right;font-weight:700">${SUMCELL[c.k]?SUMCELL[c.k](s):''}</td>`;}
+    cells+=`<td style="${stick}"></td>`;
+    return `<tr class="subrow ${cls}">${cells}</tr>`;};
   const byMonth=tSortKey==='entry_dt';
-  let curM=null,mS={n:0,gross:0,fee:0,pnl:0},G={n:0,gross:0,fee:0,pnl:0};
+  let curM=null,mS={n:0,gross:0,fee:0,pnl:0,pts:0},G={n:0,gross:0,fee:0,pnl:0,pts:0};
   tr.forEach(t=>{const mo=t.entry_dt.slice(0,7);
-    if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0};}
-    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;
+    if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0,pts:0};}
+    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl;mS.pts+=t.points; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;G.pts+=t.points;
     h+='<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`;});
   if(byMonth&&curM!==null)h+=subRow(monthName(curM),mS,'msub');
   h+=subRow('GRAND TOTAL',G,'grand');
