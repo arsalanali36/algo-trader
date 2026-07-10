@@ -14,7 +14,7 @@ import signal
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from flask import Flask, jsonify, render_template, request, Response, send_from_directory
+from flask import Flask, jsonify, render_template, request, Response, send_from_directory, session, redirect
 import time as _time
 import threading as _threading
 import _paths  # sys.path bootstrap — MUST precede flat imports of moved modules (_core/_data/_ops)
@@ -51,6 +51,105 @@ import sys as _sys
 _sys.path.insert(0, str(TRADERS_DIR))
 
 app = Flask(__name__)
+
+# ── Login gate ────────────────────────────────────────────────────────────────
+# Whole dashboard is behind a single password (public internet + live trading).
+# Only /login, static assets, and the TradingView webhook (own token auth) are
+# open. Credentials + secret_key live in data/auth.json — set via set_password.py.
+import dashboard_auth as _auth
+from datetime import timedelta as _timedelta
+
+app.secret_key = _auth.get_secret_key()
+app.permanent_session_lifetime = _timedelta(days=30)
+
+# Paths that never require a browser login:
+#  - /login (the login page itself)
+#  - /static/ (CSS/JS — frontend code, no secrets)
+#  - /api/webhook/tv (TradingView POST receiver — authed by its own ?token=)
+_AUTH_OPEN_EXACT = {"/login", "/logout"}
+
+
+def _login_open(path: str) -> bool:
+    if path in _AUTH_OPEN_EXACT:
+        return True
+    if path.startswith("/static/"):
+        return True
+    if path.startswith("/api/webhook/tv"):
+        return True
+    return False
+
+
+# simple brute-force throttle: per-IP failed-attempt tracking (in-memory)
+_login_fails = {}   # ip -> [count, first_ts]
+
+
+@app.before_request
+def _require_login():
+    p = request.path
+    if _login_open(p):
+        return None
+    if session.get("auth_user"):
+        return None
+    # not logged in
+    if p.startswith("/api/"):
+        return jsonify({"error": "auth required", "login": "/login"}), 401
+    return redirect("/login")
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    configured = _auth.is_configured()
+    if request.method == "POST":
+        ip = request.headers.get("X-Forwarded-For", request.remote_addr or "?").split(",")[0].strip()
+        rec = _login_fails.get(ip, [0, _time.time()])
+        # reset the window after 15 min
+        if _time.time() - rec[1] > 900:
+            rec = [0, _time.time()]
+        if rec[0] >= 8:
+            return render_template("login.html", configured=configured,
+                                   error="Too many attempts — try again in a few minutes."), 429
+        u = request.form.get("username", "")
+        pw = request.form.get("password", "")
+        if _auth.verify(u, pw):
+            session.permanent = True
+            session["auth_user"] = _auth.username()
+            _login_fails.pop(ip, None)
+            return redirect("/")
+        rec[0] += 1
+        _login_fails[ip] = rec
+        _time.sleep(0.6)   # slow down guessing
+        err = "Invalid username or password." if configured else "No password set yet."
+        return render_template("login.html", configured=configured, error=err), 401
+    if session.get("auth_user"):
+        return redirect("/")
+    return render_template("login.html", configured=configured, error=None)
+
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect("/login")
+
+
+@app.route("/api/change-password", methods=["POST"])
+def change_password():
+    # behind the before_request gate → caller is already logged in
+    data = request.get_json(silent=True) or {}
+    cur = data.get("current_password", "")
+    new = data.get("new_password", "")
+    user = session.get("auth_user") or _auth.username()
+    if not _auth.verify(user, cur):
+        return jsonify(ok=False, error="Current password galat hai"), 403
+    if not new or len(new) < 4:
+        return jsonify(ok=False, error="Naya password kam se kam 4 characters"), 400
+    try:
+        _auth.set_credentials(user, new)
+    except ValueError as e:
+        return jsonify(ok=False, error=str(e)), 400
+    # keep the current session valid (secret_key unchanged) — no re-login needed
+    session["auth_user"] = user
+    return jsonify(ok=True, msg="Password badal gaya")
+
 
 # ── Dhan Feed (WebSocket real-time LTP) ───────────────────────────────────────
 _feed_started = False

@@ -1,5 +1,6 @@
 # Secrets — kabhi commit mat karo
 data/config.json
+data/auth.json
 *.env
 
 # Logs aur results — local only
