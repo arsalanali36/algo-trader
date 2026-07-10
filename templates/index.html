@@ -6768,9 +6768,31 @@
         return;
       }
 
-      let activeLogTab = localStorage.getItem('activeLogTab') || keys[0];
-      if (!keys.includes(activeLogTab)) {
-        activeLogTab = keys[0];
+      // --- logical ordering + grouping (was raw config-key / alphabetical order) ---
+      // A = option-strategy mission (numbered 01/02/03), B = other live traders + their
+      // paper shadows, C = webhook/infra. Unknown keys fall into a trailing "Other" group.
+      const _LOG_GROUPS = [
+        { title: 'Option Strategies', keys: ['straddle_v1', 'dvert_v1', 'orbst_v1'] },
+        { title: 'Other Strategies', keys: ['ars_chain_v1', 'ars_chain_v1_paper', 'range_v1', 'rsi_v1', 'rsi_v1_paper', 'ema_v1', 'orb_v1', 'universe_v1'] },
+        { title: 'Webhook / Infra', keys: ['webhook_v1'] },
+      ];
+      const _LOG_NUM = { straddle_v1: '01', dvert_v1: '02', orbst_v1: '03' };
+      const _lcKey = k => String(k).toLowerCase();
+      const _usedKeys = new Set();
+      const _logGroups = [];
+      _LOG_GROUPS.forEach(g => {
+        const present = keys.filter(k => g.keys.includes(_lcKey(k)))
+                            .sort((a, b) => g.keys.indexOf(_lcKey(a)) - g.keys.indexOf(_lcKey(b)));
+        present.forEach(k => _usedKeys.add(k));
+        if (present.length) _logGroups.push({ title: g.title, keys: present });
+      });
+      const _leftoverKeys = keys.filter(k => !_usedKeys.has(k)).sort();
+      if (_leftoverKeys.length) _logGroups.push({ title: 'Other', keys: _leftoverKeys });
+      const orderedKeys = _logGroups.reduce((a, g) => a.concat(g.keys), []);
+
+      let activeLogTab = localStorage.getItem('activeLogTab') || orderedKeys[0];
+      if (!orderedKeys.includes(activeLogTab)) {
+        activeLogTab = orderedKeys[0];
       }
 
       let sidebarHtml = '<div class="folder-sidebar">';
@@ -6778,7 +6800,9 @@
 
       let contentHtml = '<div class="folder-content" style="padding: 24px;">';
 
-      keys.forEach((key, index) => {
+      _logGroups.forEach(group => {
+        sidebarHtml += `<div style="padding:10px 12px 4px;font-size:10px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#6e7681">${group.title}</div>`;
+        group.keys.forEach((key) => {
         const type = key.split('_')[0];
         const color = getStratColor(type);
         const isActive = key === activeLogTab;
@@ -6792,11 +6816,13 @@
         // Status dot instead of a file-type icon: red = live, blue = paper,
         // grey = not active. Kept fresh by updateLogStatusDots() on the 5s poll.
         const _sd = _logStatusDot(key);
+        const _num = _LOG_NUM[_lcKey(key)];
+        const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center;vertical-align:middle">${_num}</span>` : '';
         sidebarHtml += `
       <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}"
            data-log-key="${key}"
            onclick="switchLogTab('${key}', this)">
-        <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${key.toUpperCase()}
+        <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${_numBadge}${key.toUpperCase()}
       </div>
     `;
 
@@ -6821,6 +6847,7 @@
         <div class="log-box" id="${key}-log" style="height: 550px; overflow-y: auto; font-family: monospace; font-size: 12.5px; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 12px; line-height: 1.7;">Loading...</div>
       </div>
     `;
+        });
       });
 
       sidebarHtml += '</div>';
