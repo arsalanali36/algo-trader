@@ -67,5 +67,40 @@
     "rms_full_sharpe": 5.112,
     "p_value": 0.052,
     "created": "2026-07-10 15:03"
+  },
+  {
+    "slug": "debit_vertical_orb",
+    "design": "vertical_debit/orb_break",
+    "title": "Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout",
+    "tf": "15m",
+    "params": {
+      "tp_frac": 1.0,
+      "sl_frac": 1.0,
+      "or_min": 15,
+      "orb_k": 1.0,
+      "wing_off": 10,
+      "vrp_mult": 1.2
+    },
+    "exit": "tp1.0/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 2.035,
+      "net_pct": 52.753,
+      "maxdd": -1.783,
+      "win_rate": 51.138,
+      "trades": 1582,
+      "profit_factor": 1.488
+    },
+    "instrument_full_sharpe": 2.671,
+    "rms_full_sharpe": 2.671,
+    "p_value": 0.0,
+    "created": "2026-07-10 15:12"
   }
 ]

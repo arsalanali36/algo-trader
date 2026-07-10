@@ -34,6 +34,7 @@ STRUCT_TITLE = {
     "short_straddle": "Short Straddle", "long_straddle": "Long Straddle",
     "short_strangle": "Short Strangle", "long_strangle": "Long Strangle",
     "iron_condor": "Iron Condor", "iron_fly": "Iron Fly",
+    "vertical_debit": "Debit Vertical (Bull-Call / Bear-Put)",
 }
 SIG_TITLE = {"orb_break": "ORB breakout", "tod_orb_break": "Mid-day ORB", "midday_lull": "Mid-day lull"}
 
