@@ -10,11 +10,19 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
-- **Current phase:** Phase 0 DONE (collector live). Phase 1 = Strategy #1 NEXT.
-- **Next action:** Run the Strategy-#1 quick screen (I pick the statistically-strongest premium
-  structure), present its design + 3-pass dashboard mockup, PAUSE for user approval before backtest.
-- **Blocked on user:** nothing right now.
-- **Strategies shipped:** 0 / 10
+- **Current phase:** Phase 1 — Strategy #1 **Long Straddle @ ORB breakout (5m)** BUILT + dashboard
+  ready at `runs/long_straddle_orb/` — 🧪 AWAITING USER APPROVAL.
+- **Verdict (2026-07-10):** realistic-premium world (vrp_mult=1.2): Sharpe 4.54, net +59.1%,
+  maxDD −2.3%, win 51%, 1163 trades, fees ₹1,37,894, **p=0.0433 ✅ significant**; survives +40%
+  premium stress (Sharpe 2.47). Base cheap-premium world p=0.053 (boundary) — realistic world is
+  the honest benchmark. Params: tp=30% of premium, SL=100%, OR=15min, k=0.5 ATR, entry ≤13:00.
+- **Findings:** only LONG-vol structures positive on BS premium (short straddle/fly −95..−100% →
+  Track-B gated). Mid-day-timed straddles FAIL rotation test (p≈0.25 — cheap-premium artifact caught).
+- **Infra built:** `option_structures.py` (multi-leg BS engine + `_precomp` cache 4x) +
+  `run_structure.py` (structure hunt + `write_run()`) + `vrp_mult` honest premium stress +
+  `verdict_straddle.py` / `build_straddle_run.py`.
+- **Blocked on user:** APPROVE/REJECT Strategy #1 → then Strategy #2.
+- **Strategies shipped:** 0 / 10 (1 built, pending approval)
 - **Collector:** ✅ LIVE on VPS (`algo-optionchain` systemd, 1-min, NIFTY+BNF ATM±10 + India VIX).
   Data → `_TRADING_DATA/OptionChain/<SYM>/<SYM>_YYYY-MM-DD.csv`. Verified 2026-07-10 11:20 IST:
   NIFTY spot 24172 / VIX 12.48 / 21 strikes, full OI+chgOI+IV+greeks. Accumulating forward.
@@ -114,6 +122,10 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 | Strategy | Best TF | Sharpe (bs\|full) | MaxDD | Trades | p-value | Net % | Verdict | Notes |
 |----------|---------|-------------------|-------|--------|---------|-------|---------|-------|
 | _ORB (reference, already shipped)_ | 15m | 2.37 | -1.8% | — | 0.000 | +39.2% | ✅ live | baseline bar to beat |
+| **Long Straddle @ ORB** | 5m | **4.54** | −2.3% | 1163 | **0.043** | +59.1% | 🧪 awaiting approval | vrp=1.2 realistic world; survives +40% stress (Sh 2.47) |
+| Long Straddle @ mid-day lull | 15m/5m | 5.57 raw | — | ~1100 | 0.25 ❌ | — | ❌ failed sig | cheap-premium artifact — rotation test caught it |
+| Short Straddle @ mid-day | 15m | −2.24 | −100% | 974 | — | −100% | ❌ dead on BS | short-vol needs real IV → Track B |
+| Iron Fly @ mid-day | 15m | −4.74 | −96% | 1111 | — | −95% | ❌ dead on BS | same — Track B |
 | | | | | | | | | |
 
 ---
