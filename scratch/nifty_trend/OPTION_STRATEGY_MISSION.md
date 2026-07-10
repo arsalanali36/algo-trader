@@ -17,11 +17,14 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   like the existing `01_rsi_v1.py` precedent) and dashboard display names. #01's deployed file
   stays `straddle_trader.py` (renaming a RUNNING trader's file/tag = orphan-position risk,
   LESSONS traps) — it is documented as **01** everywhere else.
-- **▶ NEXT ACTION:** build live PAPER traders for #02 (`02_debit_vertical_trader.py`, 2-leg
-  directional: buy ATM + sell wing) and #03 (`03_orbst_trader.py`, 1-leg directional ATM CE/PE)
-  per NEW_STRATEGY_CHECKLIST (templates: straddle_trader.py 2-leg, orb_trader.py directional) →
-  VPS paper deploy → all 3 visible in dashboard Logs → then parallelize #4/#5 hunts.
-  (Short-vol structures Track-B collector-gated; Long Strangle FAILED sig p=0.072;
+- **✅ ALL 3 DEPLOYED PAPER ON VPS (2026-07-11 00:06 IST):** 01 `straddle_trader.py` (was already
+  running), 02 `02_debit_vertical_trader.py` (dvert_v1), 03 `03_orbst_trader.py` (orbst_v1) — all
+  `--paper`, config keys active:true on VPS nifty_config.json, "Market closed" loop, will trade
+  from Monday 09:16. Dashboard STRATEGIES keys: straddle / dvert / orbst.
+- **▶ NEXT ACTION:** parallelize the #04/#05 hunts (subagents/worktrees) — candidate pool: Track-A
+  long/debit structures on NEW signals (donchian/supertrend/gap variants on structures, tod windows),
+  since plain-signal screen showed edge only in the ORB family. Monday: watch all 3 paper logs +
+  health_check 9:20. (Short-vol Track-B collector-gated; Long Strangle FAILED p=0.072;
   mean-reversion family negative — see table.)
 - **✅ #3 FOUND (2026-07-10 night): ORB + Supertrend confirm (15m, directional ATM long-option).**
   BS pass: Sharpe **2.06**, net **+49.7%**, maxDD **−1.0%**, win 44%, trades 1024, **p=0.000** (1000
