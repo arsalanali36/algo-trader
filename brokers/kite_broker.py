@@ -623,6 +623,29 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] trades() failed: {e}")
             return []
 
+    def margin_for_order(self, kite_tradingsymbol, exchange, side, qty, price, product="MIS"):
+        """Real Zerodha margin (SPAN+exposure) for ONE order via Kite Connect's
+        order_margins API — the exact ₹ Zerodha would block for this order.
+        Used by risk_gate.kite_real_margin() so RMS capital checks estimate
+        against the EXECUTING broker (TRAP #90), not a Dhan proxy.
+        Returns float ₹ or None on any failure — caller must fall back
+        (Dhan margin-calculator → multiplier), never treat None as 0."""
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            res = kite.order_margins([{
+                "exchange": exchange, "tradingsymbol": kite_tradingsymbol,
+                "transaction_type": str(side).upper(), "variety": "regular",
+                "product": product, "order_type": "LIMIT",
+                "quantity": int(qty), "price": float(price),
+            }])
+            total = (res or [{}])[0].get("total")
+            return float(total) if total is not None else None
+        except Exception as e:
+            log.warning(f"[KITE] margin_for_order({kite_tradingsymbol}) failed: {e}")
+            return None
+
     def funds(self) -> dict:
         import kite_rate_limiter as _krl
         try:

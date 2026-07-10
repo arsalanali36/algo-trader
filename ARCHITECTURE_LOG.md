@@ -15,6 +15,21 @@
 
 ---
 
+## 2026-07-10 — RMS margin estimate: executing-broker-first (Kite order_margins), Dhan calculator = fallback
+**Status:** DONE (VPS-deployed + live-verified: Kite ₹1,92,006 vs Dhan ₹1,92,102 on NIFTY-24250-PE 65qty SELL;
+md5 ×4 local==VPS; both services restarted mid-day with user go-ahead — all 6 strategy PIDs + live webhook
+position survived, [WEBHOOK][RECOVER] restored it, zero errors post-restart)
+**Kya:** RMS capital checks ka "needed ₹" ab Zerodha ke apne `order_margins` API se aayega jab
+default_broker=kite (jahan orders asli mein jaate hain) — Dhan margin-calculator ab fallback.
+TRAP #90 ka natural follow-up: user ne phir poocha "Dhan ka margin kyun jab order Zerodha pe gaya".
+**Layer:** broker / execution (RMS money-path)
+**Files:** `brokers/kite_broker.py` (new `margin_for_order()`), `_data/dhan_master.py` (new
+`get_trad_sym_for_sec_id()`), `_core/risk_gate.py` (new `kite_real_margin()` + `broker_real_margin()`
+wrapper; `_leg_capital`/`check_capital` switch), `_core/strategy_safety.py` (`gate_entry` funds-check switch).
+**Kyun:** Margin estimate executing broker ka hona chahiye (TRAP #90 lesson) — SPAN/exposure ~same
+hote hain par exactness + trust. Fallback chain: Kite → Dhan calculator → multiplier (kabhi fail-open nahi).
+**Depends on:** resolve_kite_symbol (TRAP #13/#59 safe resolver), kite_rate_limiter, dhan_master cache.
+
 ## 2026-07-10 — 3-PASS backtest pipeline (Instrument → RMS → Black-Scholes) + fresh NIFTY hunt + per-strategy folders
 **Status:** DONE (local-verified; scratch/research only, live order-path untouched)
 **Layer:** backtest / strategy / UI

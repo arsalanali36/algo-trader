@@ -267,6 +267,36 @@ def get_lot_size_by_sec_id(sec_id):
     return found
 
 
+_tradsym_by_secid = {}
+def get_trad_sym_for_sec_id(sec_id):
+    """Dhan trad_sym for an OPTION contract by its sec_id (reverse of
+    get_sec_id_for_trad_sym). Needed when only a sec_id is on hand — e.g.
+    risk_gate.kite_real_margin() resolving the Kite tradingsymbol via
+    kite_broker.resolve_kite_symbol(), which parses name/strike/type out of
+    the Dhan trad_sym string. Memoized per sec_id. Returns str or None —
+    caller must treat None as 'unknown' and fall back, never guess."""
+    if sec_id is None:
+        return None
+    key = str(sec_id)
+    if key in _tradsym_by_secid:
+        return _tradsym_by_secid[key]
+    if not _options_cache:
+        build_cache()
+    found = None
+    for _sym_map in _options_cache.values():
+        for _contracts in _sym_map.values():
+            for _c in _contracts:
+                if str(_c.get("sec_id")) == key:
+                    found = _c.get("trad_sym") or None
+                    break
+            if found:
+                break
+        if found:
+            break
+    _tradsym_by_secid[key] = found
+    return found
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     download_master_if_needed()

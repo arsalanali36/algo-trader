@@ -567,17 +567,73 @@ def dhan_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY"):
         return None
 
 
+_KITE_MARGIN_CACHE = {}  # same key shape + TTL as _MARGIN_CACHE above
+
+
+def kite_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY", trad_sym=None):
+    """Real Zerodha margin for ONE leg via Kite Connect's order_margins API —
+    the exact ₹ Zerodha (the EXECUTING broker when default_broker=kite) would
+    block for this order. Same 90s cache + same per-leg limitation as
+    dhan_real_margin (no cross-leg hedge benefit pre-trade). Symbol resolution
+    goes through kite_broker's structured-field resolver (TRAP #13/#59) —
+    never a string-guess. Returns None on any failure — caller must fall back
+    to dhan_real_margin, then _margin_multiplier."""
+    if not sec_id or qty <= 0 or price <= 0:
+        return None
+    key = (str(sec_id), seg, int(qty), str(side).upper(), round(float(price)))
+    now = __import__("time").time()
+    cached = _KITE_MARGIN_CACHE.get(key)
+    if cached and (now - cached[0]) < _MARGIN_CACHE_TTL:
+        return cached[1]
+    try:
+        from brokers import get_broker
+        import dhan_master
+        broker = get_broker("kite")
+        if not trad_sym:
+            trad_sym = dhan_master.get_trad_sym_for_sec_id(sec_id)
+        if not trad_sym:
+            return None
+        kite_sym = broker.resolve_symbol(trad_sym, sec_id=sec_id)
+        if not kite_sym:
+            return None
+        exchange = {"NSE_FNO": "NFO", "NSE_EQ": "NSE"}.get(seg, "NFO")
+        product = "NRML" if str(product_type).upper() in ("NRML", "MARGIN", "CNC") else "MIS"
+        margin = broker.margin_for_order(kite_sym, exchange, side, qty, price, product=product)
+        if margin is None:
+            return None
+        _KITE_MARGIN_CACHE[key] = (now, margin)
+        return margin
+    except Exception:
+        return None
+
+
+def broker_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY", trad_sym=None):
+    """Margin estimate from the EXECUTING broker (TRAP #90's lesson: when
+    orders go to broker B, capital checks must be validated against broker B's
+    numbers). default_broker=kite → real Zerodha order_margins first; anything
+    else / Kite failure → Dhan's margin-calculator; None → caller's
+    multiplier fallback. Single entry point for every RMS margin estimate —
+    don't call dhan_real_margin directly from capital checks anymore."""
+    if default_broker() == "kite":
+        m = kite_real_margin(sec_id, seg, qty, price, side, product_type, trad_sym=trad_sym)
+        if m is not None:
+            return m
+    return dhan_real_margin(sec_id, seg, qty, price, side, product_type)
+
+
 def _leg_capital(p, rc=None):
     """Margin-adjusted ₹ capital for one open-position dict from order_store.
-    SELL legs: try the real Dhan margin-calculator first (dhan_real_margin);
-    fall back to the configurable multiplier estimate only if that call fails."""
+    SELL legs: try the executing broker's real margin first (broker_real_margin
+    — Kite when default_broker=kite, else Dhan calculator); fall back to the
+    configurable multiplier estimate only if that call fails."""
     try:
         qty, price = float(p.get("qty") or 0), float(p.get("entry_price") or 0)
     except Exception:
         return 0.0
     notional = qty * price
     if str(p.get("entry") or "").upper() == "SELL":
-        real = dhan_real_margin(p.get("sec_id"), p.get("segment") or "NSE_FNO", qty, price, "SELL")
+        real = broker_real_margin(p.get("sec_id"), p.get("segment") or "NSE_FNO", qty, price, "SELL",
+                                  trad_sym=p.get("sym"))
         if real is not None:
             return real
         notional *= _margin_multiplier(p.get("strategy"), rc)
@@ -597,9 +653,10 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO")
     or the global ceiling? Returns (ok: bool, reason: str). reason='' when ok.
 
     SELL legs (option-selling, the common case for these strategies): if
-    sec_id is given, tries the REAL Dhan margin-calculator first (see
-    dhan_real_margin — actual SPAN+exposure for this exact order), falling
-    back to the configurable margin_multiplier estimate only if that call
+    sec_id is given, tries the EXECUTING broker's real margin first (see
+    broker_real_margin — Kite order_margins when default_broker=kite, else
+    Dhan's margin-calculator; actual SPAN+exposure for this exact order),
+    falling back to the configurable margin_multiplier estimate only if that
     fails or sec_id wasn't provided. BUY legs use the premium paid as-is
     (that IS the capital committed, no margin involved).
 
@@ -610,7 +667,7 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO")
     qty, price = float(qty or 0), float(price or 0)
     needed = qty * price
     if str(side or "SELL").upper() == "SELL":
-        real = dhan_real_margin(sec_id, seg, qty, price, "SELL") if sec_id else None
+        real = broker_real_margin(sec_id, seg, qty, price, "SELL") if sec_id else None
         needed = real if real is not None else needed * _margin_multiplier(strategy, rc)
     if needed <= 0:
         return True, ""

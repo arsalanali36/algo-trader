@@ -114,7 +114,7 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
             # _leg_capital()'s exact real-margin-first, multiplier-fallback
             # logic here too.
             if str(side).upper() == "SELL" and sec_id:
-                _real_margin = risk_gate.dhan_real_margin(sec_id, seg, qty, price, "SELL")
+                _real_margin = risk_gate.broker_real_margin(sec_id, seg, qty, price, "SELL")
                 needed_rs = _real_margin if _real_margin is not None else (qty * price * risk_gate._margin_multiplier(strategy_id))
             else:
                 needed_rs = qty * price
