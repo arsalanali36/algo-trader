@@ -408,7 +408,8 @@ function openMonthModal(ym){const tr=(C().all_trades||[]).filter(t=>t.entry_dt.s
   let h='<table class="ttable"><tr><th class="l">Day</th><th>Trades</th><th>Gross ₹</th><th>Tax ₹</th><th>Net ₹</th></tr>';
   Object.keys(days).sort().forEach(d=>{const s=days[d];
     h+=`<tr><td class="l">${d}</td><td>${s.n}</td><td class="${s.gross>=0?'pos':'neg'}">${s.gross>=0?'+':''}${inr(s.gross)}</td><td class="mut">-${inr(Math.abs(s.fee))}</td><td class="${s.pnl>=0?'pos':'neg'}">${s.pnl>=0?'+':''}${inr(s.pnl)}</td></tr>`;});
-  h+=`<tr class="subrow grand"><td class="l"><b>TOTAL</b></td><td><b>${G.n}</b></td><td class="${G.gross>=0?'pos':'neg'}"><b>${G.gross>=0?'+':''}${inr(G.gross)}</b></td><td class="mut"><b>-${inr(Math.abs(G.fee))}</b></td><td class="${G.pnl>=0?'pos':'neg'}"><b>${G.pnl>=0?'+':''}${inr(G.pnl)}</b></td></tr></table>`;
+  const _ra='style="text-align:right"';
+  h+=`<tr class="subrow grand"><td class="l"><b>TOTAL</b></td><td ${_ra}><b>${G.n}</b></td><td ${_ra} class="${G.gross>=0?'pos':'neg'}"><b>${G.gross>=0?'+':''}${inr(G.gross)}</b></td><td ${_ra} class="mut"><b>-${inr(Math.abs(G.fee))}</b></td><td ${_ra} class="${G.pnl>=0?'pos':'neg'}"><b>${G.pnl>=0?'+':''}${inr(G.pnl)}</b></td></tr></table>`;
   document.getElementById('mmBody').innerHTML=h;document.getElementById('mModal').classList.add('on');}
 function closeMonthModal(){document.getElementById('mModal').classList.remove('on');}
 function renderTrades(){renderColMenu();renderTradeTable();}
