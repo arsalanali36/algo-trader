@@ -1,7 +1,7 @@
 {
   "slug": "debit_vertical_orb",
   "design": "vertical_debit/orb_break",
-  "title": "Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout",
+  "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
   "tf": "15m",
   "params": {
     "tp_frac": 1.0,

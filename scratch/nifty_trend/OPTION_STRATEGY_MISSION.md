@@ -10,11 +10,19 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
-- **▶ NEXT ACTION (do first):** #1, #2 AND #3 are all significant (numbers below + table) → user
-  APPROVES/REJECTS each. On approval: build #3's live paper trader (`strategies/live/`,
-  NEW_STRATEGY_CHECKLIST) + VPS paper deploy, then parallelize #4/#5 hunts via subagents.
-  (Short strangle / iron condor / iron fly are SHORT-VOL → Track-B collector-gated, NOT now.
-  Long Strangle FAILED sig (p=0.072); mean-reversion family all negative — see table.)
+- **✅ USER APPROVED ALL THREE for PAPER (2026-07-10 night):** #01 Long Straddle, #02 Debit
+  Vertical, #03 ORB+Supertrend — "teeno hi ko paper trade karenge".
+- **📛 NUMBERING CONVENTION (user, 2026-07-10):** every mission strategy carries its number
+  everywhere — hub titles ("01 - …"), MISSION table, live-trader filenames (`02_…_trader.py`,
+  like the existing `01_rsi_v1.py` precedent) and dashboard display names. #01's deployed file
+  stays `straddle_trader.py` (renaming a RUNNING trader's file/tag = orphan-position risk,
+  LESSONS traps) — it is documented as **01** everywhere else.
+- **▶ NEXT ACTION:** build live PAPER traders for #02 (`02_debit_vertical_trader.py`, 2-leg
+  directional: buy ATM + sell wing) and #03 (`03_orbst_trader.py`, 1-leg directional ATM CE/PE)
+  per NEW_STRATEGY_CHECKLIST (templates: straddle_trader.py 2-leg, orb_trader.py directional) →
+  VPS paper deploy → all 3 visible in dashboard Logs → then parallelize #4/#5 hunts.
+  (Short-vol structures Track-B collector-gated; Long Strangle FAILED sig p=0.072;
+  mean-reversion family negative — see table.)
 - **✅ #3 FOUND (2026-07-10 night): ORB + Supertrend confirm (15m, directional ATM long-option).**
   BS pass: Sharpe **2.06**, net **+49.7%**, maxDD **−1.0%**, win 44%, trades 1024, **p=0.000** (1000
   perms), robust 0.96 (both 15m AND 5m significant). Params: or_min=60, orb_k=1.0, ST(14,3.0),
