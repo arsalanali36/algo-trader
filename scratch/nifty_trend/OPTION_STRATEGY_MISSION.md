@@ -237,6 +237,28 @@ IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a b
 - **▶ pending:** live paper trader (06_shortvol_trader.py) if user approves; optional ±10 re-opt; MONTH
   backfill finishing (~22m); Track-B OI/PCR strategies now unblocked on real OI data.
 
+## 🧾 VOL-SELLING FAMILY — EXHAUSTED (honest, real data). Do NOT re-tread.
+
+Tested comprehensively on REAL option premium+IV+OI (held-strike engine real_struct2, charges+slip):
+| Variant | Result |
+|---|---|
+| Intraday short straddle (naked) | −12% |
+| Intraday iron-fly ±8 | −54% (was the TRAP #109 phantom +61%) |
+| Intraday gamma-scalp / 0DTE | −50% / −35% |
+| Calendar (sell-weekly/buy-monthly) | +18% but Sharpe 0.12, −₹48.5k tail |
+| **Positional iron-fly (weekly, 4-5d hold, hedged)** | **−8%, Sh −0.47** |
+| **Positional iron-condor (weekly, hedged)** | **−7%, Sh −0.41** |
+| OI/PCR/max-OI-wall/ΔOI (5 designs) | all negative |
+
+**Conclusion:** systematic NIFTY option-PREMIUM SELLING has no edge accessible to a retail
+account at these costs — intraday OR positional, naked OR hedged, weekly OR calendar. The VRP is
+real in GROSS terms but 4-8-leg charges + slippage + the trend/gap weeks (short side blows through
+the credit even with wings) eat it. `positional_vol.py` / `real_struct2.py` / `oi_signals.py` keep
+the negatives documented. The REAL edges are DIRECTIONAL/big-winner (the 7 deployed: 00-05 + 07).
+Only revisit vol-selling if (a) real bid-ask from brother's DOM shows costs much lower than the
+0.5% slip assumed, or (b) a genuine IV-regime timing filter is found (not tried: sell ONLY when
+IV-rank extreme AND a directional-quiet forecast — needs a separate signal, not pure calendar-time).
+
 ## TRACK B — collector-gated (need REAL option-chain / VIX data first)
 
 Built now but NOT validated until the collector has accumulated data (weeks). No fabricated edge.
