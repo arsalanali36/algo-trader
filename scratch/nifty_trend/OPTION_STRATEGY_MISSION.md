@@ -216,8 +216,12 @@ IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a b
   BS pass Sharpe 1.46 / +23.6% / DD −3.0% / 342 trades / PF 1.64; train 1.50 ≈ OOS 1.47 (no decay);
   MC orig 1.55 ≈ median 1.56.** Honest rejects same hunt: BNF chain_zone negative screen; sess_rev
   p=0.399; orb_st p=0.052. `runs/banknifty_hunt/` (hub 13 rows, compare '07 BNF MidORB').
-  **NOT deployed — user will review dashboard + decide deploy** (live trader would clone
-  orb_trader.py with BNF contract + monthly-expiry handling).
+  **✅ DEPLOYED PAPER 2026-07-12** — `strategies/live/07_banknifty_trader.py` (config `banknifty_v1`
+  active:true paper, STRATEGIES key `banknifty`, broker kite). BANKNIFTY spot sec_id 25, atr_rr exit
+  (stop+target, unlike 03-05 stop_only), OR-cutoff `<=` + current-bar crossing threshold = **signal
+  parity 50/50 + 30/30** vs backtest. skip-expiry via risk_gate.is_expiry_day (monthly-era). Deploy:
+  0 open positions, KillMode=process restart (4 trader PIDs survived), run-test clean, 0 orphan.
+  **Monday paper-fauj now 7 strategies** (00-05 + 07; 06 stays OFF/retracted). Hub badge 🟢 banknifty_v1.
 - ~~✅ #06 BUILT~~ (RETRACTED — see above) = Short-Vol Iron-Fly ±8 (sell ATM CE+PE, buy ±8 wings), 10:00 entry, tp0.5/sl1.0, slip0.5%.**
   DEPLOYABLE (bs pass, real premium+IV+charges+slip): **Sharpe 8.9, +61%, maxDD −0.4%, worst day −₹2,469
   (−0.25% cap), win 78%, 991 trades.** Wing sweep: wider=better (±5→Sh5, ±8→Sh8.9); ±8 robust 7.33

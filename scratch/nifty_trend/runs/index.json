@@ -472,7 +472,7 @@
     "rms_full_sharpe": 0.516,
     "p_value": 0.011,
     "created": "2026-07-11 23:51",
-    "deploy_key": "",
-    "deployed": ""
+    "deploy_key": "banknifty_v1",
+    "deployed": "banknifty_v1"
   }
 ]

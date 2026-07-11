@@ -236,6 +236,8 @@ STRATEGIES = {
     "backspread": {"script": str(TRADERS_DIR / "05_backspread_trader.py"), "log": BASE_DIR / "logs/backspread_v1.log", "cfg": TC_FILE, "grep": "05_backspread_trader"},
     # 06 = Short-Vol Iron-Fly (REAL premium/IV, Sharpe 8.9, inverse leg) — theta harvest
     "shortvol": {"script": str(TRADERS_DIR / "06_shortvol_trader.py"), "log": BASE_DIR / "logs/shortvol_v1.log", "cfg": TC_FILE, "grep": "06_shortvol_trader"},
+    # 07 = Mid-Day ORB on BANKNIFTY (new underlying, p=0.011, Sharpe 1.46)
+    "banknifty": {"script": str(TRADERS_DIR / "07_banknifty_trader.py"), "log": BASE_DIR / "logs/banknifty_v1.log", "cfg": TC_FILE, "grep": "07_banknifty_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
