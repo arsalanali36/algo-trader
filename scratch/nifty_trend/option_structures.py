@@ -55,8 +55,16 @@ DIRECTIONAL = {
         "long":  [("CE", 0, +1), ("CE", +2, -1)],   # bull call spread
         "short": [("PE", 0, +1), ("PE", -2, -1)],   # bear put spread
     },
+    # Ratio Backspread — sell 1 ATM, buy 2 OTM (same type): small credit/debit at entry,
+    # ACCELERATES in a big move (2 longs overpower the 1 short), defined risk (max loss
+    # pinned at the long strike). Long-leg offset overridable via p["bs_off"] (strike steps).
+    "ratio_backspread": {
+        "long":  [("CE", 0, -1), ("CE", +2, +2)],   # call backspread (bullish)
+        "short": [("PE", 0, -1), ("PE", -2, +2)],   # put backspread (bearish)
+    },
 }
-DIR_TITLE = {"vertical_debit": "Debit Vertical (Bull-Call / Bear-Put)"}
+DIR_TITLE = {"vertical_debit": "Debit Vertical (Bull-Call / Bear-Put)",
+             "ratio_backspread": "Ratio Backspread (sell 1 ATM + buy 2 OTM)"}
 
 
 def entry_signal_dir(d, name, p):
@@ -71,6 +79,11 @@ def entry_signal_dir(d, name, p):
         return ie.design_signals(d, "tod_orb", {"or_min": int(p.get("or_min", 30)),
                                                 "orb_k": p.get("orb_k", 1.0),
                                                 "h0": int(p.get("h0", 10)), "h1": int(p.get("h1", 13))})
+    if name == "chain_zone":       # user's Auto Rev-Chain zone-breakout (validated p=0.000 @5m)
+        return ie.design_signals(d, "chain_zone", {
+            "touch_tol": p.get("touch_tol", 5.0), "zone_age": int(p.get("zone_age", 2)),
+            "max_cs": p.get("max_cs", 40.0), "hawa": bool(p.get("hawa", False)),
+            "chain_lookback": int(p.get("chain_lookback", 20))})
     raise ValueError(f"no directional form for signal {name}")
 
 
@@ -209,7 +222,10 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
             xp = bs.bs_price(spot, K, pos_T(i), ot_sig(i), opt=ot)
             exit_val += side * xp
             if charges:
-                fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if side > 0 else "SELL"))
+                # |side|>1 (ratio legs, e.g. buy 2 lots) → charges on the real 2x turnover;
+                # brokerage stays flat/leg-order (one 2-lot order = one ₹20 order) — calc_charges
+                # ka flat ₹40 round-trip yahi model karta hai. |side|=1 pe behaviour unchanged.
+                fee += bs.calc_charges(ep, xp, qty * abs(side), entry_side=("BUY" if side > 0 else "SELL"))
         pnl_units = (exit_val - pos["entry_val"])          # already sign-correct (side baked in)
         pnl = pnl_units * qty - fee
         equity += pnl
@@ -273,13 +289,21 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
                 if w:  # override short-leg distance (steps from ATM); wider = more room to run
                     legs_spec = [(ot, (w if off > 0 else -w) if s < 0 else off, s)
                                  for (ot, off, s) in legs_spec]
+                bo = int(p.get("bs_off", 0))
+                if bo:  # override LONG-leg distance for ratio backspreads (legs with s>0 and off!=0)
+                    legs_spec = [(ot, (bo if off > 0 else -bo) if (s > 0 and off != 0) else off, s)
+                                 for (ot, off, s) in legs_spec]
             else:
                 dirn, legs_spec = kind, legs
             atm, legstate = leg_prices(spot, T_bar[i + 1], SIG[i + 1], legs_spec)
             entry_val = sum(side * ep for (_K, _ot, side, ep) in legstate)
             ref = abs(entry_val) if abs(entry_val) > 1e-6 else 1.0
-            # 1x / no-leverage guard: total premium notional must not exceed capital
-            notional = sum(abs(ep) for (_K, _ot, _s, ep) in legstate) * qty
+            if struct_name == "ratio_backspread":
+                # net entry_val ~0 for a backspread (credit ≈ 2-long cost) → tp/sl as a
+                # fraction of that is unstable; anchor on the SOLD ATM leg's premium instead.
+                ref = max((ep for (_K, _ot, _s, ep) in legstate if _s < 0), default=ref)
+            # 1x / no-leverage guard: total premium notional (|side|-weighted) <= capital
+            notional = sum(abs(ep) * abs(_s) for (_K, _ot, _s, ep) in legstate) * qty
             if notional <= LEV_CAP * equity:
                 pos = dict(legs=legstate, entry_val=entry_val, ref=ref, atm=atm, side=dirn,
                            entry_i=i + 1, entry_dt=DT[i + 1], spot_in=spot)

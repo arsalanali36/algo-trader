@@ -174,5 +174,222 @@
     "rms_full_sharpe": 1.333,
     "p_value": 0.0,
     "created": "2026-07-10 23:40"
+  },
+  {
+    "slug": "chain_zone_longatm",
+    "design": "chain_zone",
+    "title": "Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.946,
+      "net_pct": 69.133,
+      "maxdd": -3.086,
+      "win_rate": 39.756,
+      "trades": 1806,
+      "profit_factor": 1.493
+    },
+    "instrument_full_sharpe": 0.566,
+    "rms_full_sharpe": 0.61,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:41"
+  },
+  {
+    "slug": "chain_zone_naked",
+    "design": "chain_zone",
+    "title": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live)",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": -0.625,
+      "net_pct": -16.192,
+      "maxdd": -18.168,
+      "win_rate": 43.3,
+      "trades": 1806,
+      "profit_factor": 0.896
+    },
+    "instrument_full_sharpe": 0.566,
+    "rms_full_sharpe": 0.61,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:40"
+  },
+  {
+    "slug": "chain_zone_credit",
+    "design": "chain_zone",
+    "title": "Auto Rev-Chain \u2014 Zone Breakout (credit spread)",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": -1.003,
+      "net_pct": -24.512,
+      "maxdd": -25.646,
+      "win_rate": 42.137,
+      "trades": 1806,
+      "profit_factor": 0.839
+    },
+    "instrument_full_sharpe": 0.566,
+    "rms_full_sharpe": 0.61,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:37"
+  },
+  {
+    "slug": "chain_zone_positional",
+    "design": "chain_zone",
+    "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
+    "tf": "15m",
+    "params": {
+      "touch_tol": 0.0,
+      "zone_age": 2,
+      "max_cs": 60.0,
+      "hawa": false,
+      "chain_lookback": 10,
+      "atr_sl": 1.5,
+      "rr": 2.0,
+      "max_hold_days": 3
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 0.974,
+      "net_pct": 52.073,
+      "maxdd": -6.949,
+      "win_rate": 22.036,
+      "trades": 717,
+      "profit_factor": 1.436
+    },
+    "instrument_full_sharpe": 1.202,
+    "rms_full_sharpe": 1.158,
+    "p_value": 0.008,
+    "created": "2026-07-11 10:59"
+  },
+  {
+    "slug": "ratio_backspread",
+    "design": "ratio_backspread/tod_orb_break",
+    "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+    "tf": "5m",
+    "params": {
+      "tp_frac": 1.5,
+      "sl_frac": 0.75,
+      "bs_off": 2,
+      "or_min": 30,
+      "orb_k": 1.0,
+      "h0": 10,
+      "h1": 13
+    },
+    "exit": "tp1.5/sl0.75",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.555,
+      "net_pct": 29.86,
+      "maxdd": -1.977,
+      "win_rate": 42.527,
+      "trades": 1124,
+      "profit_factor": 1.709
+    },
+    "instrument_full_sharpe": 2.231,
+    "rms_full_sharpe": 2.231,
+    "p_value": 0.002,
+    "created": "2026-07-11 12:33"
+  },
+  {
+    "slug": "shortvol_ironfly",
+    "design": "iron_fly/real",
+    "title": "Short-Vol Iron-Fly \u00b18 (REAL)",
+    "tf": "5m",
+    "params": {
+      "structure": "iron_fly",
+      "wing": 8,
+      "tp_frac": 0.5,
+      "sl_frac": 1.0,
+      "entry": "10:00 daily",
+      "slip": 0.005,
+      "signal": "time"
+    },
+    "exit": "tp0.5/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 8.915,
+      "net_pct": 60.969,
+      "maxdd": -0.432,
+      "win_rate": 78.103,
+      "trades": 991,
+      "profit_factor": 6.037
+    },
+    "instrument_full_sharpe": 13.828,
+    "rms_full_sharpe": 13.828,
+    "p_value": 0.0,
+    "created": "2026-07-11 20:00"
   }
 ]

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>⚖️ Strategy Compare — ek nazar me sab</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#12161f;--panel2:#171c27;--bd:#242c3a;--bd2:#1b2230;
+    --tx:#e6edf3;--mut:#8b949e;--pos:#3fb950;--neg:#f85149;--blue:#4f78ff;--teal:#2ee6a0;--gold:#f5c518;--vio:#a371f7}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;line-height:1.45}
+  .wrap{max-width:1700px;margin:0 auto;padding:16px 18px 60px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+    padding:12px 16px;background:var(--panel);border:1px solid var(--bd);border-radius:11px;margin-bottom:12px}
+  .topbar h1{margin:0;font-size:17px}
+  .topbar p{margin:2px 0 0;color:var(--mut);font-size:12px}
+  a.btn{background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;
+    padding:7px 13px;font-size:12.5px;font-weight:600;text-decoration:none}
+  a.btn:hover{border-color:var(--blue)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+  .chip{padding:6px 12px;border:1px solid var(--bd);border-radius:8px;background:var(--panel2);
+    color:var(--mut);font-size:12px;font-weight:600;cursor:pointer;user-select:none}
+  .chip.on{background:var(--blue);border-color:var(--blue);color:#fff}
+  .tblwrap{background:var(--panel);border:1px solid var(--bd);border-radius:11px;overflow:auto;max-height:78vh}
+  table{border-collapse:separate;border-spacing:0;font-size:12.5px;min-width:100%}
+  th,td{padding:7px 11px;border-bottom:1px solid var(--bd2);border-right:1px solid var(--bd2);white-space:nowrap}
+  thead th{position:sticky;top:0;z-index:3;background:var(--bd2);font-size:11px;font-weight:700;text-align:center;vertical-align:top;padding:9px 8px;max-width:118px;white-space:normal}
+  thead th a{color:var(--tx);text-decoration:none}
+  thead th a:hover{color:var(--blue)}
+  thead th .sub{display:block;color:var(--mut);font-weight:600;font-size:10px;margin-top:2px}
+  tbody td{text-align:center;font-variant-numeric:tabular-nums}
+  tbody th{position:sticky;left:0;z-index:2;background:var(--panel2);text-align:left;font-weight:600;
+    color:var(--tx);min-width:190px;max-width:230px;white-space:normal;font-size:12px}
+  thead th:first-child{left:0;z-index:4;background:var(--bd2)}
+  tbody th .hint{display:block;color:var(--mut);font-weight:500;font-size:10.5px;margin-top:1px}
+  tr.grp th{background:#0e1a2e;color:var(--blue);font-size:11.5px;text-transform:uppercase;letter-spacing:.5px;
+    border-top:2px solid var(--bd)}
+  tr.grp td{background:#0e1a2e;border-top:2px solid var(--bd)}
+  td.best{color:var(--teal);font-weight:700;background:rgba(46,230,160,.07)}
+  td.worst{color:var(--neg)}
+  td.pos{color:var(--pos)} td.neg{color:var(--neg)}
+  .pass{color:var(--teal);font-weight:700}.fail{color:var(--neg);font-weight:700}.warn{color:var(--gold);font-weight:700}
+  .legend{margin-top:14px;background:var(--panel);border:1px solid var(--bd);border-radius:11px;padding:14px 16px}
+  .legend h2{margin:0 0 8px;font-size:14px}
+  .legend div{margin:5px 0;font-size:12.3px;color:var(--mut)}
+  .legend b{color:var(--blue)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="topbar">
+    <div><h1>⚖️ Strategy Compare — ek nazar me sab</h1>
+      <p>Har strategy ek COLUMN, har parameter/metric ek ROW · column-title pe click = uska dashboard · 🟢 = us row me best</p></div>
+    <a class="btn" href="hub.html">← Hub</a>
+  </div>
+  <div class="chips" id="typeChips">
+    <span class="chip on" data-t="all">Sab</span>
+    <span class="chip" data-t="Intraday">Intraday</span>
+    <span class="chip" data-t="Positional">Positional</span>
+    <span class="chip" data-t="pass">✅ Sirf pass wali</span>
+  </div>
+  <div class="tblwrap"><table id="cmp"></table></div>
+
+  <div class="legend" id="corrPanel" style="display:none">
+    <h2>🔗 Correlation — kaun kiske saath chalti hai (daily net P&L, ③ BS pass)</h2>
+    <div style="margin-bottom:8px">+1 = bilkul saath chalti hain (diversification ZERO) · 0 = koi rishta nahi (best mix) · −ve = ek girti hai to doosri badhti hai (hedge). Portfolio ke liye 0 ke paas ya −ve jodi chahiye.</div>
+    <div style="overflow:auto"><table id="corrTbl" style="border-collapse:collapse;font-size:12px"></table></div>
+  </div>
+
+  <div class="legend">
+    <h2>📖 Terms — aasaan bhasha me</h2>
+    <div><b>Sharpe</b> — return ÷ risk. Jitna zyada utna smooth paisa. Gate: ≥ 1. (2+ = bahut achha)</div>
+    <div><b>p-value</b> — "ye edge LUCK to nahi?" 1000 random timings se compare. p &lt; 0.05 = luck nahi, asli edge. p = 0.000 matlab ek bhi random timing isse behtar nahi tha.</div>
+    <div><b>Train / OOS</b> — data ke 2 hisse: TRAIN (purana ~68%, jispe params optimize hue) aur OOS = Out-Of-Sample (recent ~32%, jo optimizer ne KABHI nahi dekha). OOS hi asli imtihaan hai — recent regime ka primary judge.</div>
+    <div><b>Robust</b> — train aur OOS Sharpe me se JO KAM ho. Ranking isi pe hoti hai taaki strategy dono jagah chale, sirf ek me nahi (overfit-guard).</div>
+    <div><b>Max DD (drawdown)</b> — equity peak se sabse bada gaddha. Gate: ≤ 20%. Chhota DD = raat ko neend achhi.</div>
+    <div><b>Win% + PF</b> — Win% = kitne trades jeete. PF (profit factor) = total jeet ÷ total haar (&gt;1 = profitable). Kam Win% + high PF = "kam baar jeeto, badi jeeto" (hamari chain strategies aisi hi hain).</div>
+    <div><b>Exit styles</b> — <b>stop_only</b>: sirf stop-loss, koi target nahi, winner ko chalne do. <b>atr_rr</b>: ATR stop + fixed target. <b>trail</b>: peeche-peeche chalta stop. <b>flip</b>: ulta signal aane pe exit.</div>
+    <div><b>hold (max_hold_days)</b> — positional me position max kitne DIN rakhni hai (e.g. hold 3 = teesre din tak zabardasti exit).</div>
+    <div><b>touch_tol / zone_age / max_cs / hawa / lookback</b> — chain-zone knobs: line-touch tolerance (pts) / key-candle ke baad kitne bars tak breakout valid / breakout candle max size (pts) / hawa-me zone on-off / chain kitne din peeche.</div>
+    <div><b>③ BS pass</b> — asli deployable P&L: option premium (Black-Scholes) + real Zerodha charges. Spot wala ① sirf "edge hai ya nahi" batata hai.</div>
+    <div><b>MC median</b> — 1000 baar trades ko shuffle karke dekha; original result median ke PAAS hona chahiye (best-5% me ho to overfit ka shak).</div>
+  </div>
+</div>
+<script>
+const F1=v=>v==null?'—':(+v).toFixed(2), P1=v=>v==null?'—':(+v).toFixed(1)+'%', I0=v=>v==null?'—':Math.round(+v).toLocaleString('en-IN');
+let DATA=[], FILT='all';
+const SHORT={
+  mid_orb_nifty:'Mid-Day ORB',
+  long_straddle_orb:'01 Straddle',
+  debit_vertical_orb:'02 DebitVert',
+  orb_supertrend:'03 ORB+ST',
+  long_strangle_orb:'Strangle',
+  chain_zone_longatm:'04 Chain-Zone',
+  chain_zone_naked:'CZ Naked',
+  chain_zone_credit:'CZ Credit',
+  chain_zone_positional:'CZ Positional',
+  ratio_backspread:'05 Backspread',
+  shortvol_ironfly:'06 ShortVol-Fly',
+};
+function shortTitle(r){
+  if(SHORT[r.slug])return SHORT[r.slug];
+  let t=(r.title||r.slug).replace('Auto Rev-Chain — Zone Breakout','Chain-Zone').replace(' — 3-pass','');
+  return t.length>16?t.slice(0,14)+'…':t;
+}
+function gate(r){ // all-gates verdict
+  const bf=r.m.bs_full||{}, sig=(r.p_value!=null&&r.p_value<0.05);
+  const sh=(bf.sharpe||-9), oosh=((r.m.bs_oos||{}).sharpe||-9);
+  if(!sig) return ['fail','❌ FAIL (p≥0.05)'];
+  if(sh>=1) return ['pass','✅ PASS'];
+  if(oosh>=1) return ['warn','⚠️ OOS-pass'];
+  return ['fail','❌ Sharpe<1'];
+}
+const ROWS=[
+ {g:'📌 Pehchaan'},
+ {l:'Type',h:'Intraday = same-day exit · Positional = multi-day hold',f:r=>r.type},
+ {l:'Timeframe',h:'signal candle ka size',f:r=>r.tf},
+ {l:'Option structure',h:'③ pass me kya trade hota hai',f:r=>{
+   const s=(r.slug||'').toLowerCase(), d=(r.design||'').toLowerCase();
+   if(s.includes('naked'))return 'ATM SELL naked ⚠️';
+   if(s.includes('credit'))return 'Credit spread SELL';
+   if(s.includes('positional')||d.includes('monthly'))return 'MONTHLY ATM BUY';
+   if(d.includes('straddle'))return 'ATM CE+PE BUY';
+   if(d.includes('strangle'))return 'OTM CE+PE BUY';
+   if(d.includes('vertical')||d.includes('debit'))return 'Debit spread BUY';
+   return 'ATM CE/PE BUY';}},
+ {l:'Exit style',h:'stop_only=no target · atr_rr=stop+target · trail=trailing · flip=ulta signal pe',f:r=>r.exit||'—'},
+ {l:'Data window',h:'kitne saal ka backtest',f:r=>r.window?r.window[0].slice(0,4)+'→'+r.window[1].slice(2,4):'—'},
+ {g:'✅ Gates — pass/fail'},
+ {l:'VERDICT',h:'saare gates ka nichod',f:r=>{const[c,t]=gate(r);return `<span class="${c}">${t}</span>`},html:1},
+ {l:'p-value (edge asli?)',h:'<0.05 = luck nahi. 0.000 sabse strong',f:r=>r.p_value==null?'—':(+r.p_value).toFixed(3),best:'min'},
+ {l:'Trades (≥100 chahiye)',f:r=>I0((r.m.bs_full||{}).trades),best:'max'},
+ {g:'💰 ③ Option P&L — FULL window (deployable sach)'},
+ {l:'Sharpe (gate ≥1)',h:'return÷risk',f:r=>F1((r.m.bs_full||{}).sharpe),best:'max',sign:1},
+ {l:'Net return %',h:'charges ke BAAD, poore window ka',f:r=>P1((r.m.bs_full||{}).net_pct),best:'max',sign:1},
+ {l:'Max DD (gate ≤20%)',h:'sabse bada gaddha',f:r=>P1((r.m.bs_full||{}).maxdd),best:'maxneg'},
+ {l:'Win %',f:r=>P1((r.m.bs_full||{}).win_rate),best:'max'},
+ {l:'Profit Factor',h:'total jeet ÷ total haar (>1 = profitable)',f:r=>F1((r.m.bs_full||{}).profit_factor),best:'max'},
+ {l:'Total charges ₹',h:'brokerage+STT+GST... (net me already minus)',f:r=>I0((r.m.bs_full||{}).fees),best:'min'},
+ {g:'🔭 ③ Option P&L — OOS (recent regime = PRIMARY judge)'},
+ {l:'OOS Sharpe',h:'optimizer ne ye data KABHI nahi dekha — asli imtihaan',f:r=>F1((r.m.bs_oos||{}).sharpe),best:'max',sign:1},
+ {l:'OOS Net %',f:r=>P1((r.m.bs_oos||{}).net_pct),best:'max',sign:1},
+ {l:'OOS Max DD',f:r=>P1((r.m.bs_oos||{}).maxdd),best:'maxneg'},
+ {l:'Train Sharpe',h:'train vs OOS same-ish = no decay, stable edge',f:r=>F1((r.m.bs_train||{}).sharpe)},
+ {l:'Robust = min(train,OOS)',h:'ranking isi pe — dono jagah chalna chahiye',f:r=>{
+   const a=(r.m.bs_train||{}).sharpe,b=(r.m.bs_oos||{}).sharpe;
+   return (a==null||b==null)?'—':F1(Math.min(a,b));},best:'max',sign:1},
+ {l:'MC: original vs median',h:'original ≈ median = overfit nahi',f:r=>r.mc?`${F1(r.mc.original)} vs ${F1(r.mc.median)}`:'—'},
+ {g:'🧭 ① Spot passes (edge-check, options se pehle)'},
+ {l:'Spot Sharpe (full)',f:r=>F1((r.m.instr_full||{}).sharpe),sign:1},
+ {l:'+RMS Sharpe (full)',f:r=>F1((r.m.rms_full||{}).sharpe),sign:1},
+ {g:'🎛 Strategy params (dna)'},
+];
+function paramRows(data){
+  const keys=[...new Set(data.flatMap(r=>Object.keys(r.dna||{})))].filter(k=>k!=='exit');
+  const HINT={touch_tol:'line-touch tolerance (pts)',zone_age:'zone kitne bars fresh',max_cs:'breakout candle max size (pts)',
+    hawa:'hawa-me zone on/off',chain_lookback:'chain kitne din peeche',atr_sl:'stop = itna × ATR',rr:'target = itna × risk (atr_rr me)',
+    max_hold_days:'position max itne DIN (positional)',or_min:'opening range ke minutes',orb_k:'breakout buffer × ATR',
+    st_period:'Supertrend period',st_mult:'Supertrend multiplier',tp_frac:'target = itna × credit',sl_frac:'stop = itna × credit',
+    wing_off:'hedge wing kitne strike door',h0:'entry window start (hour)',h1:'entry window end (hour)',vrp_mult:'premium stress ×',skip_expiry:'expiry-day entry skip'};
+  return keys.map(k=>({l:k,h:HINT[k]||'',f:r=>{const v=(r.dna||{})[k];return v==null?'—':(typeof v==='boolean'?(v?'ON':'off'):String(v));}}));
+}
+function render(){
+  let data=DATA;
+  if(FILT==='Intraday'||FILT==='Positional')data=DATA.filter(r=>r.type===FILT);
+  if(FILT==='pass')data=DATA.filter(r=>gate(r)[0]!=='fail');
+  const rows=[...ROWS,...paramRows(data)];
+  let h='<thead><tr><th>Parameter ↓ / Strategy →</th>';
+  for(const r of data)h+=`<th><a href="runs/${r.slug}/index.html" target="_blank">${shortTitle(r)}</a><span class="sub">${r.tf} · ${r.type}</span></th>`;
+  h+='</tr></thead><tbody>';
+  for(const row of rows){
+    if(row.g){h+=`<tr class="grp"><th>${row.g}</th><td colspan="${data.length}"></td></tr>`;continue;}
+    const vals=data.map(r=>row.f(r));
+    // best-cell detection on numeric rows
+    let bestIdx=-1;
+    if(row.best){
+      const nums=vals.map(v=>{const n=parseFloat(String(v).replace(/[%,]/g,''));return isNaN(n)?null:n;});
+      const cand=nums.map((n,i)=>n==null?null:(row.best==='min'?-Math.abs(n):(row.best==='maxneg'?-Math.abs(n):n)));
+      let bi=-1,bv=-Infinity;cand.forEach((c,i)=>{if(c!=null&&c>bv){bv=c;bi=i}});bestIdx=bi;
+    }
+    h+=`<tr><th>${row.l}${row.h?`<span class="hint">${row.h}</span>`:''}</th>`;
+    vals.forEach((v,i)=>{
+      let cls='';
+      if(i===bestIdx)cls='best';
+      else if(row.sign){const n=parseFloat(String(v).replace(/[%,]/g,''));if(!isNaN(n))cls=n>=0?'pos':'neg';}
+      h+=`<td class="${cls}">${row.html?v:String(v)}</td>`;
+    });
+    h+='</tr>';
+  }
+  h+='</tbody>';
+  document.getElementById('cmp').innerHTML=h;
+}
+document.querySelectorAll('#typeChips .chip').forEach(c=>c.onclick=()=>{
+  document.querySelectorAll('#typeChips .chip').forEach(x=>x.classList.remove('on'));
+  c.classList.add('on');FILT=c.dataset.t;render();});
+function renderCorr(corr){
+  if(!corr||!corr.slugs||corr.slugs.length<2)return;
+  const names=corr.slugs.map(s=>SHORT[s]||s.slice(0,12));
+  let h='<tr><th style="padding:5px 8px"></th>'+names.map(n=>`<th style="padding:5px 8px;color:var(--mut);font-size:10.5px">${n}</th>`).join('')+'</tr>';
+  corr.matrix.forEach((row,i)=>{
+    h+=`<tr><th style="padding:5px 8px;text-align:right;color:var(--mut);font-size:10.5px">${names[i]}</th>`;
+    row.forEach((v,j)=>{
+      let bg='transparent',tx='var(--mut)',txt=v==null?'—':(+v).toFixed(2);
+      if(v!=null&&i!==j){
+        const a=Math.abs(v);
+        if(v>0){bg=`rgba(248,81,73,${(a*0.55).toFixed(2)})`;tx=a>0.35?'#fff':'var(--tx)';}   // +ve corr = red (bad for diversification)
+        else{bg=`rgba(46,230,160,${(a*0.6).toFixed(2)})`;tx=a>0.3?'#04120c':'var(--tx)';}     // -ve = green (hedge)
+        if(a<0.15){bg='rgba(79,120,255,0.10)';tx='var(--tx)';}                                 // ~0 = neutral-good
+      }
+      if(i===j){txt='1';bg='var(--bd2)'}
+      h+=`<td style="padding:5px 10px;text-align:center;background:${bg};color:${tx};border:1px solid var(--bd2);font-variant-numeric:tabular-nums">${txt}</td>`;
+    });
+    h+='</tr>';
+  });
+  document.getElementById('corrTbl').innerHTML=h;
+  document.getElementById('corrPanel').style.display='';
+}
+fetch('runs/compare.json',{cache:'no-store'}).then(r=>r.json()).then(d=>{
+  const list=Array.isArray(d)?d:(d.strategies||[]);   // new {strategies,correlation} or legacy array
+  DATA=list.sort((a,b)=>((b.m.bs_full||{}).sharpe||-99)-((a.m.bs_full||{}).sharpe||-99));
+  render();
+  if(!Array.isArray(d))renderCorr(d.correlation);
+}).catch(e=>{document.getElementById('cmp').innerHTML='<tr><td style="padding:20px">compare.json load nahi hua — pehle <code>python build_compare.py</code> chalao ('+e+')</td></tr>';});
+</script>
+</body>
+</html>

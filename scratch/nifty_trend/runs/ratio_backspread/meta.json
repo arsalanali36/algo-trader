@@ -1,0 +1,36 @@
+{
+  "slug": "ratio_backspread",
+  "design": "ratio_backspread/tod_orb_break",
+  "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+  "tf": "5m",
+  "params": {
+    "tp_frac": 1.5,
+    "sl_frac": 0.75,
+    "bs_off": 2,
+    "or_min": 30,
+    "orb_k": 1.0,
+    "h0": 10,
+    "h1": 13
+  },
+  "exit": "tp1.5/sl0.75",
+  "instrument": "NIFTY 50 options",
+  "lot_size": 65,
+  "window": [
+    "2018-01-01",
+    "2026-07-09"
+  ],
+  "days": 2103,
+  "significant": true,
+  "bs_full": {
+    "sharpe": 1.555,
+    "net_pct": 29.86,
+    "maxdd": -1.977,
+    "win_rate": 42.527,
+    "trades": 1124,
+    "profit_factor": 1.709
+  },
+  "instrument_full_sharpe": 2.231,
+  "rms_full_sharpe": 2.231,
+  "p_value": 0.002,
+  "created": "2026-07-11 12:33"
+}

@@ -35,8 +35,10 @@ STRUCT_TITLE = {
     "short_strangle": "Short Strangle", "long_strangle": "Long Strangle",
     "iron_condor": "Iron Condor", "iron_fly": "Iron Fly",
     "vertical_debit": "Debit Vertical (Bull-Call / Bear-Put)",
+    "ratio_backspread": "Ratio Backspread (sell 1 ATM + buy 2 OTM)",
 }
-SIG_TITLE = {"orb_break": "ORB breakout", "tod_orb_break": "Mid-day ORB", "midday_lull": "Mid-day lull"}
+SIG_TITLE = {"orb_break": "ORB breakout", "tod_orb_break": "Mid-day ORB", "midday_lull": "Mid-day lull",
+             "chain_zone": "Chain-Zone breakout"}
 
 DEFAULT_P = dict(tp_frac=0.5, sl_frac=1.0, or_min=15, orb_k=1.0, h0=11, h1=13)
 
@@ -67,6 +69,13 @@ _PHILO = {
         "to keep running the way it broke."),
     "short_straddle": ("<b>Short Straddle.</b> Sells ATM call+put to harvest theta in a quiet market. "
         "NOTE: on MODELED premium this has no edge by construction (Track B — needs real IV data)."),
+    "ratio_backspread": ("<b>Ratio Backspread @ breakout.</b> On an upside signal: SELL 1 ATM call, "
+        "BUY 2 OTM calls (put mirror on a downside signal). Entry is near zero-cost (the sold ATM "
+        "funds the two longs). A BIG move in the signal's direction makes the two long legs "
+        "overpower the one short — profit accelerates, uncapped. A small adverse move keeps most of "
+        "the credit. The soft spot is a slow drift that PINS at the long strike — hence the "
+        "%-of-ATM-premium stop. Defined risk (2 longs > 1 short at every price beyond the strikes); "
+        "no naked exposure, no extra hedge needed."),
 }
 
 

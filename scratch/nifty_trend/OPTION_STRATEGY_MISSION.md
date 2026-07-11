@@ -21,7 +21,38 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   running), 02 `02_debit_vertical_trader.py` (dvert_v1), 03 `03_orbst_trader.py` (orbst_v1) — all
   `--paper`, config keys active:true on VPS nifty_config.json, "Market closed" loop, will trade
   from Monday 09:16. Dashboard STRATEGIES keys: straddle / dvert / orbst.
-- **▶ NEXT ACTION:** parallelize the #04/#05 hunts (subagents/worktrees) — candidate pool: Track-A
+- **✅ #04 = Chain-Zone (user's own Pine "Ars_Auto_Rev_Chain") BUILT + APPROVED for paper (2026-07-11).**
+  NIFTY 5m, ATM option BUY (long→CE, short→PE), stop_only ATR×2.5, p=0.000, Sharpe 1.95, +69.1%, DD −3.1%,
+  train 1.91≈OOS 2.04, MC orig 2.64≈median 2.66. `runs/chain_zone_longatm/` (dashboard has 5 PASS toggles:
+  ①Instr ②RMS ③BS-BUY ④Naked-SELL ⑤Credit-Spread — selling forms both LOSE, short-gamma caps winners).
+  Live trader `strategies/live/04_chainzone_trader.py` (config `chainzone_v1`, STRATEGIES key `chainzone`,
+  active:false paper) — compute_signal 40/40 parity vs backtest, py_compile OK. Pine-matched build:
+  `chain_zone_v1.pine`. FAQ system added (faq_lib.py → meta.faq, dashboard Philosophy panel, backfilled all runs).
+  **✅ VPS-DEPLOYED PAPER 2026-07-11 (holiday, 0 open positions):** 3 chain run-folders + runs/index.json merged
+  (hub shows 8 rows); 04_chainzone_trader.py scp'd (VPS py_compile + deps OK); chainzone_v1 surgically added to
+  VPS nifty_config.json (active:true paper, all 13 existing keys preserved + .bak); STRATEGIES "chainzone" line
+  surgically inserted into VPS trader_dashboard.py; algo-dashboard restarted (KillMode=process → straddle/dvert/
+  orbst PIDs survived); 20s run-test clean (banner+PAPER, no crash, 0 phantom orders). Monday 9:10 scheduler
+  auto-starts it paper. STRATEGIES key `chainzone`.
+- **✅ #05 APPROVED + VPS-DEPLOYED PAPER (2026-07-11 13:00):** `strategies/live/05_backspread_trader.py`
+  (config `backspread_v1` active:true paper, STRATEGIES key `backspread`, broker kite). 3-leg entry:
+  BUY 2×OTM FIRST (RMS-gated) → SELL 1×ATM (covered 2:1, gate=False) → SELL-fail = rollback longs;
+  exit closes SHORT first; exits at ±frac of sold-ATM premium; skip-expiry via risk_gate.is_expiry_day.
+  Signal parity 40/40 AFTER fixing OR-cutoff `<`→`<=` (backtest uses tt<=or_end — 02/03 traders may
+  have the same off-by-one, flagged as separate task). Deploy: 0 open positions, KillMode=process,
+  4 trader PIDs survived restart, run-test clean, 0 phantom orders. Monday 9:10 scheduler auto-starts
+  (5 paper strategies now: straddle/dvert/orbst/chainzone/backspread).
+- **✅ #05 = Ratio Backspread @ Mid-day ORB BUILT (2026-07-11), pending user approval.** BS Sharpe 1.55,
+  p=0.002, +29.9%, DD −2.0%, 1124 trades. `runs/ratio_backspread/` (build_s5_backspread.py; osx DIRECTIONAL
+  "ratio_backspread" + bs_off knob + |side|-scaled charges + sold-ATM-premium tp/sl ref + chain_zone as
+  directional signal). VPS hub 10 rows. **⚖️ Compare page + CORRELATION MATRIX added** (compare.html +
+  build_compare.py → runs/compare.json, wired into run_hunt): ORB-family inter-corr 0.32-0.66,
+  chain_zone_longatm 0.13-0.26 vs sab = best diversifier. **Brother's DOM data found:**
+  /root/order_book_deploy — June-9→today tick 20-level depth NIFTY FUT+ATM CE/PE (no OI/IV, 1 strike) —
+  usable for BS-model validation + real-spread slippage; analysis offered, pending user OK.
+- **▶ NEXT ACTION:** user approval on #05 (then live paper trader 05_backspread_trader.py); Monday watch
+  chainzone_v1 + other 3 paper logs; Track-B theta strategies when collector data matures (the true
+  inverse-correlation leg for the portfolio). Candidate pool for #06+: Track-A
   long/debit structures on NEW signals (donchian/supertrend/gap variants on structures, tod windows),
   since plain-signal screen showed edge only in the ORB family. Monday: watch all 3 paper logs +
   health_check 9:20. (Short-vol Track-B collector-gated; Long Strangle FAILED p=0.072;
@@ -142,6 +173,42 @@ Candidate pool (ship the 10 that pass gates; order by promise once screened):
 
 Legend: ⬜ not started · ⏳ in progress · 🧪 backtested (awaiting approval) · ✅ shipped+approved · ❌ failed gates (iterate)
 
+## 🚀 TRACK B UNLOCKED EARLY (2026-07-11) — Dhan PAID API serves REAL 5yr expired-option data!
+
+**User has Dhan's paid "Expired Options Data" add-on.** Endpoint `POST /v2/charts/rollingoption`
+(NOT in dhanhq 2.0.2 lib — REST only) returns REAL 5yr per-5min: premium OHLC + **IV + OI** +
+strike + spot, for rolling ATM±N CE/PE, weekly+monthly. Exact params + gotchas in memory
+[[dhan_rollingoption_data]]. This makes the whole "no historical chain, must BS-model / wait
+weeks for collector" premise OBSOLETE for this account. Track-B is backtestable NOW.
+
+**Infra built:** `optchain_dl.py` (downloader → `_TRADING_DATA/OptChainLake/NIFTY/<WEEK|MONTH>/
+<CE|PE>_<off>.csv`, resumable, rate-limited "account" priority, recent-first, ATM-outward) +
+`optlake_load.py` (loader: atm_frame / ironfly_frame / chain_frame / iv_rank_daily, epoch→IST,
+IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a bogus result**) +
+`real_struct.py` (REAL-premium multi-leg backtest, slippage knob, engine-shaped res) +
+`analyze_shortvol.py` (slippage sweep + tail).
+
+**BREAKTHROUGH RESULT — short-vol works on REAL premium (dead on BS):**
+- Short straddle: BS-modeled **−2.24 Sharpe / −100%** → REAL premium **+10.3 Sharpe / +120%**
+  (slip 0.5%, 991 trades, 5yr). The VRP (real IV > realized) is the edge BS-from-realized can't see.
+- **Tail is CONTAINED** (intraday + 10:00 entry after open + 3:15 exit avoids the overnight/gap
+  killer): worst day −0.75% capital, 0/991 days lose >1%. Crash day 2024-06-04 (NIFTY −8% intraday,
+  1557pt range) = **+₹11,550 PROFIT** (enter post-panic → IV crush).
+- **✅ #06 BUILT = Short-Vol Iron-Fly ±8 (sell ATM CE+PE, buy ±8 wings), 10:00 entry, tp0.5/sl1.0, slip0.5%.**
+  DEPLOYABLE (bs pass, real premium+IV+charges+slip): **Sharpe 8.9, +61%, maxDD −0.4%, worst day −₹2,469
+  (−0.25% cap), win 78%, 991 trades.** Wing sweep: wider=better (±5→Sh5, ±8→Sh8.9); ±8 robust 7.33
+  (train 9.78/OOS 7.33). `runs/shortvol_ironfly/` (build_shortvol.py). ±10 WEEK now complete → optional
+  re-opt for marginal gain.
+- **Significance — BOTH tests pass (surprised me honestly):** edge-p (daily-P&L bootstrap, mean>0)=0.000;
+  timing-p (rotation)=0.000 — I expected timing-p HIGH (VRP structural) but the 10:00 entry genuinely
+  beats random timing (post-open, full-day theta runway + elevated IV). So it's edge AND timing.
+- **✅ CORRELATION confirms it's the INVERSE leg** (daily net P&L vs): mid_orb −0.05, orb_st −0.11,
+  dvert −0.09, backspread −0.06, chain_zone −0.01, straddle +0.02. Slightly-negative to ALL breakout
+  strategies = ideal diversifier (smooths book, both make money). This is the direct answer to the
+  user's "we'll be stuck on ORB" worry.
+- **▶ pending:** live paper trader (06_shortvol_trader.py) if user approves; optional ±10 re-opt; MONTH
+  backfill finishing (~22m); Track-B OI/PCR strategies now unblocked on real OI data.
+
 ## TRACK B — collector-gated (need REAL option-chain / VIX data first)
 
 Built now but NOT validated until the collector has accumulated data (weeks). No fabricated edge.
@@ -176,6 +243,11 @@ Built now but NOT validated until the collector has accumulated data (weeks). No
 | Strategy | Best TF | Sharpe (bs\|full) | MaxDD | Trades | p-value | Net % | Verdict | Notes |
 |----------|---------|-------------------|-------|--------|---------|-------|---------|-------|
 | _ORB (reference, already shipped)_ | 15m | 2.37 | -1.8% | — | 0.000 | +39.2% | ✅ live | baseline bar to beat |
+| **Chain-Zone (user's Pine Auto-Rev-Chain) — ATM long option** | 5m | **1.95** | −3.1% | 1806 | **0.000** ✅ | +69.1% | ✅ significant, all gates pass | 2026-07-11. User's own strategy ported: PDH/L/C+pivots+chain-H/L → pattern zone → breakout. Train 1.91 / OOS 2.04 (no decay), MC orig 2.64 ≈ median 2.66. `runs/chain_zone_longatm/`. Entry sig on 5m/7m/1m independently. Pending approval. |
+| Chain-Zone — NAKED ATM sell | 5m | −0.62 | −18.2% | 1806 | 0.000 (entry) | −16.2% | ❌ structure kills the edge | Same trades; short-gamma caps winners (avg win 5398→1677 spot→prem). `runs/chain_zone_naked/`. |
+| Chain-Zone — credit spread (bull-put/bear-call, wing 10) | 5m | −1.00 | −25.6% | 1806 | 0.000 (entry) | −24.5% | ❌ structure kills the edge | Same trades; winner-cap + 4-leg charges. `runs/chain_zone_credit/`. LESSON: this edge = big-winner profile → BUY options, never SELL premium on it. |
+| **#05 Ratio Backspread @ Mid-day ORB** | 5m | **1.55** | −2.0% | 1124 | **0.002** ✅ | +29.9% | ✅ all gates pass | 2026-07-11. Sell 1 ATM + BUY 2 OTM (bs_off=2) — net long-gamma, defined risk, no hedge needed. tp=1.5×/sl=0.75× ATM-prem, OR=30 h0=10-13. orb_break also sig (p=0.008, robust 1.29); chain_zone-signal variant FAILED sig (robust 0.90/OOS 1.96 but p=0.378 — random-timed backspreads match it: the structure itself profits in a trending regime, timing adds nothing there; also would've correlated with #04 anyway). Fee model: 2-lot leg = 2× turnover charges. `runs/ratio_backspread/`. Corr vs chain-zone 0.21, vs ORB-family 0.41-0.60. Pending approval. |
+| **Chain-Zone POSITIONAL (monthly ATM long)** | 15m | 0.97 (OOS **1.10**) | −6.9% | 717 | **0.008** ✅ | +52.1% | ⚠️ pass-with-caveat | 2026-07-11. Multi-day hold (max 3d), gap-aware stops, MONTHLY option (weekly theta bleeds), monthly RMS overlay. Winner: touch_tol=0, max_cs=60, lookback=10, ATR×1.5 stop_only. Full-window BS Sharpe 0.97 (hair under gate) but OOS/recent 1.10 ✅ (primary judge per data-regime policy), MC orig 1.34≈median 1.31, win 22% big-winner profile, spot robust 1.14/OOS 1.44. Weaker than intraday (1.95) + overnight gap risk → intraday remains the primary form. `runs/chain_zone_positional/` (build_chain_positional.py, positional_engine.py, bs.reprice_positional). VPS hub pushed (9 rows). |
 | **#2 Debit Vertical @ ORB** | 15m | **1.67** | −2.1% | 1227 | **0.000** ✅ | +38.6% | ✅ significant (policy-A) | 8.5yr, vrp 1.2, wing 10, skip-expiry. STRONGEST/cleanest. Pending approval. |
 | **#1 Long Straddle @ ORB** | 5m | **3.55** | −1.0% | 1625 | **0.036** ✅ | +81.7% | ✅ significant (policy-A; was 0.054) | 8.5yr, skip-expiry pushed it over the line. LIVE paper trader running. Pending approval. |
 | **#3 ORB + Supertrend (ATM long-opt)** | 15m | **2.06** | −1.0% | 1024 | **0.000** ✅ | +49.7% | ✅ significant (policy-A) | 8.5yr, directional ATM CE/PE via BS. or_min=60, k=1.0, ST(14,3.0), SL 1.5×ATR, RR 2.0. `runs/orb_supertrend/`. Pending approval. |

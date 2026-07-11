@@ -1,0 +1,37 @@
+{
+  "slug": "chain_zone_positional",
+  "design": "chain_zone",
+  "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
+  "tf": "15m",
+  "params": {
+    "touch_tol": 0.0,
+    "zone_age": 2,
+    "max_cs": 60.0,
+    "hawa": false,
+    "chain_lookback": 10,
+    "atr_sl": 1.5,
+    "rr": 2.0,
+    "max_hold_days": 3
+  },
+  "exit": "stop_only",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+    "2018-01-01",
+    "2026-07-09"
+  ],
+  "days": 2103,
+  "significant": true,
+  "bs_full": {
+    "sharpe": 0.974,
+    "net_pct": 52.073,
+    "maxdd": -6.949,
+    "win_rate": 22.036,
+    "trades": 717,
+    "profit_factor": 1.436
+  },
+  "instrument_full_sharpe": 1.202,
+  "rms_full_sharpe": 1.158,
+  "p_value": 0.008,
+  "created": "2026-07-11 10:59"
+}

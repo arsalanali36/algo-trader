@@ -82,6 +82,34 @@ def tte_years(ts):
     return max(secs, 0.0) / (365.0 * 86400.0)
 
 
+def _next_monthly_expiry(ts, hour=15, minute=30):
+    """Last <expiry-weekday> of the month (rolls to next month if already past).
+    Positional trades hold multiple days → weekly options bleed theta fast, so the
+    positional option pass prices a MONTHLY ATM (realistic multi-day instrument)."""
+    ts = pd.Timestamp(ts)
+    wd = _exp.monthly_expiry_weekday(ts.date())
+
+    def _last_wd(year, month):
+        # last day of month
+        nxt = pd.Timestamp(year=year, month=month, day=1) + pd.offsets.MonthEnd(1)
+        d = nxt.normalize()
+        while d.weekday() != wd:
+            d -= pd.Timedelta(days=1)
+        return d + pd.Timedelta(hours=hour, minutes=minute)
+
+    exp = _last_wd(ts.year, ts.month)
+    if ts > exp:
+        nm = (ts + pd.offsets.MonthBegin(1))
+        exp = _last_wd(nm.year, nm.month)
+    return exp
+
+
+def tte_years_monthly(ts):
+    ts = pd.Timestamp(ts)
+    secs = (_next_monthly_expiry(ts) - ts).total_seconds()
+    return max(secs, 0.0) / (365.0 * 86400.0)
+
+
 # ---------------- implied vol (realised-vol proxy; plug real India VIX later) ----------------
 def realised_vol_map(daily_close):
     """date -> annualised sigma from 20-day rolling std of daily log-returns.
@@ -134,6 +162,125 @@ def reprice(trades, sigma_map, lot_size, lots=1, r=R_FREE):
             "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
             "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
             "points": round(float(t["points"]), 1),
+            "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
+            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
+            "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
+        })
+    return out
+
+
+# ---------- reprice a spot trade list into a CREDIT-SPREAD P&L (option SELLING) ----------
+def reprice_spread(trades, sigma_map, lot_size, lots=1, wing_steps=10,
+                   vrp_mult=1.0, r=R_FREE):
+    """Directional credit spread — the deployable form of the chain-zone SELL strategy:
+        long  signal -> BULL-PUT  spread  (SELL ATM PE + BUY OTM PE `wing_steps` below)
+        short signal -> BEAR-CALL spread  (SELL ATM CE + BUY OTM CE `wing_steps` above)
+    Defined risk (the bought wing is the hedge). We RECEIVE net credit at entry and pay
+    to close at exit -> gross = (credit_in - cost_out) * qty. Real Zerodha charges on all
+    4 legs (2 in + 2 out) via calc_charges per leg. vrp_mult>1 => richer premium (helps a
+    seller); use vrp_mult<1 as an HONEST stress (thinner credit) so the seller edge isn't
+    over-stated by a realised-vol-priced BS world. Output shape mirrors reprice()."""
+    qty = int(lots) * int(lot_size)
+    w = int(wing_steps) * STRIKE_STEP
+    out = []
+    for t in trades:
+        S_in, S_out = float(t["entry"]), float(t["exit"])
+        K = round(S_in / STRIKE_STEP) * STRIKE_STEP
+        if t["side"] == "long":
+            ot, Kw = "PE", K - w                      # bull-put: sell ATM PE, buy lower PE
+        else:
+            ot, Kw = "CE", K + w                      # bear-call: sell ATM CE, buy higher CE
+        e_ts, x_ts = pd.Timestamp(t["entry_dt"]), pd.Timestamp(t["exit_dt"])
+        sig_in = sigma_map.get(e_ts.date(), 0.15) * vrp_mult
+        sig_out = sigma_map.get(x_ts.date(), sig_in / vrp_mult if vrp_mult else 0.15) * vrp_mult
+        T_in, T_out = tte_years(e_ts), tte_years(x_ts)
+        atm_in = bs_price(S_in, K, T_in, sig_in, r, ot)
+        atm_out = bs_price(S_out, K, T_out, sig_out, r, ot)
+        wing_in = bs_price(S_in, Kw, T_in, sig_in, r, ot)
+        wing_out = bs_price(S_out, Kw, T_out, sig_out, r, ot)
+        credit_in = atm_in - wing_in                  # received at entry (>0)
+        cost_out = atm_out - wing_out                 # paid to close
+        gross = (credit_in - cost_out) * qty          # short the spread
+        fee = (calc_charges(atm_in, atm_out, qty, entry_side="SELL")     # short ATM leg
+               + calc_charges(wing_in, wing_out, qty, entry_side="BUY"))  # long wing leg
+        pnl = gross - fee
+        out.append({
+            "side": t["side"], "opt_type": ot + " spread", "strike": K, "wing": Kw,
+            "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
+            "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
+            "points": round(credit_in - cost_out, 1),
+            "entry_prem": round(credit_in, 2), "exit_prem": round(cost_out, 2), "qty": qty,
+            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
+            "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
+        })
+    return out
+
+
+# ---------- reprice a POSITIONAL spot trade list into MONTHLY ATM-BUY P&L ----------
+def reprice_positional(trades, sigma_map, lot_size, lots=1, r=R_FREE):
+    """Positional (multi-day) → BUY MONTHLY ATM (CE for long / PE for short).
+    Uses monthly time-to-expiry so a multi-day hold doesn't cross a weekly 0DTE.
+    Theta over the hold is still captured (T_exit < T_entry). Same all_trades[] shape."""
+    qty = int(lots) * int(lot_size)
+    out = []
+    for t in trades:
+        opt = "CE" if t["side"] == "long" else "PE"
+        S_in, S_out = float(t["entry"]), float(t["exit"])
+        K = round(S_in / STRIKE_STEP) * STRIKE_STEP
+        e_ts, x_ts = pd.Timestamp(t["entry_dt"]), pd.Timestamp(t["exit_dt"])
+        sig_in = sigma_map.get(e_ts.date(), 0.15)
+        sig_out = sigma_map.get(x_ts.date(), sig_in)
+        # if the hold crosses the entry-month expiry, the option is rolled → keep the
+        # SAME monthly cycle by pricing exit T against the entry's monthly expiry
+        # (bounded at 0 = expiry intrinsic); positional roll modeled as re-priced intrinsic.
+        exp = _next_monthly_expiry(e_ts)
+        T_in = max((exp - e_ts).total_seconds(), 0.0) / (365.0 * 86400.0)
+        T_out = max((exp - x_ts).total_seconds(), 0.0) / (365.0 * 86400.0)
+        ep = bs_price(S_in, K, T_in, sig_in, r, opt)
+        xp = bs_price(S_out, K, T_out, sig_out, r, opt)
+        gross = (xp - ep) * qty                       # bought option: long premium
+        fee = calc_charges(ep, xp, qty)
+        pnl = gross - fee
+        out.append({
+            "side": t["side"], "opt_type": opt, "strike": K,
+            "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
+            "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
+            "points": round(float(t["points"]), 1),
+            "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
+            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
+            "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
+        })
+    return out
+
+
+# ---------- reprice a spot trade list into a NAKED ATM SELL P&L ----------
+def reprice_naked(trades, sigma_map, lot_size, lots=1, vrp_mult=1.0, r=R_FREE):
+    """Naked ATM option SELL (no wing): long signal -> SELL ATM PE, short -> SELL ATM CE.
+    ⚠️ ENGINE-COMPARISON ONLY — undefined tail risk; live pe wings/hedge MANDATORY
+    (framework rule). 2 orders round-trip (vs 4 for the spread) -> lower charges,
+    higher credit. gross = (entry_prem - exit_prem) * qty (sold premium)."""
+    qty = int(lots) * int(lot_size)
+    out = []
+    for t in trades:
+        opt = "PE" if t["side"] == "long" else "CE"
+        S_in, S_out = float(t["entry"]), float(t["exit"])
+        K = round(S_in / STRIKE_STEP) * STRIKE_STEP
+        e_ts, x_ts = pd.Timestamp(t["entry_dt"]), pd.Timestamp(t["exit_dt"])
+        sig_in = sigma_map.get(e_ts.date(), 0.15) * vrp_mult
+        sig_out = sigma_map.get(x_ts.date(), 0.15) * vrp_mult
+        ep = bs_price(S_in, K, tte_years(e_ts), sig_in, r, opt)
+        xp = bs_price(S_out, K, tte_years(x_ts), sig_out, r, opt)
+        gross = (ep - xp) * qty                       # sold premium: profit when it decays
+        fee = calc_charges(ep, xp, qty, entry_side="SELL")
+        pnl = gross - fee
+        out.append({
+            "side": t["side"], "opt_type": opt + " naked", "strike": K,
+            "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
+            "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
+            "points": round(ep - xp, 1),
             "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
             "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
             "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),

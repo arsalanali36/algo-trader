@@ -241,6 +241,14 @@ def main():
     for k in combos:
         combos[k]["dna"] = dna
 
+    # FAQ (user request 2026-07-11) — reusable Q&A in the dashboard's Philosophy panel
+    try:
+        from faq_lib import build_faq
+        out["meta"]["sig_p"] = f'{winner["sig"]["p_value"]:.3f}'
+        out["meta"]["faq"] = build_faq(out["meta"])
+    except Exception as e:
+        print(f"  [faq] skipped ({e})", flush=True)
+
     # 5-min intraday candles per trade-day → trade-chart shows real entry/exit intraday
     trade_dates = {t["entry_dt"][:10] for c in combos.values() for t in c.get("all_trades", [])}
     try:
@@ -297,6 +305,13 @@ def main():
     idx = [x for x in idx if x.get("slug") != slug]
     idx.append(meta)
     json.dump(idx, open(idx_path, "w"), indent=2)
+
+    # refresh the all-strategies compare table (compare.html reads runs/compare.json)
+    try:
+        import build_compare
+        build_compare.main()
+    except Exception as e:
+        print(f"  [compare] skipped ({e})", flush=True)
 
     print(f"\nwrote runs/{slug}/  (results.js + index.html + meta.json)", flush=True)
     for pas in ("instrument", "rms", "bs"):

@@ -24,7 +24,9 @@ RISK_PCT = 0.015
 START_CAP = 1_000_000.0
 LEV_CAP = 1.0
 EXIT_HM = dt.time(15, 15)
-TF_RULE = {"1m": "1min", "3m": "3min", "5m": "5min", "15m": "15min"}
+TF_RULE = {"1m": "1min", "2m": "2min", "3m": "3min", "5m": "5min",
+           "7m": "7min", "10m": "10min", "15m": "15min",
+           "30m": "30min", "60m": "60min"}   # 30m/60m for positional (multi-day) hunts
 
 
 # ---------- data ----------
@@ -79,8 +81,154 @@ def supertrend(df, period, mult):
     return pd.Series(dir_, index=df.index)
 
 
+# =====================================================================
+# CHAIN-ZONE design — port of the Pine "Ars_Auto_Rev_Chain" strategy.
+#   LEVELS (3 colour-groups, from the PREVIOUS completed day):
+#     red  = PDH + pivot R1..R5 + chain-of-higher-highs (walk back <=20 daily
+#            bars, each higher high within max_jump% of the running threshold)
+#     green= PDL + pivot S1..S5 + chain-of-lower-lows
+#     blue = pivot P + prev-day close  (neutral — can seed either zone)
+#   ZONE: a candle that TOUCHES a level AND is a key pattern (engulf / hammer /
+#         harami) seeds a zone box (candle high..low). Bearish key candle on a
+#         red/neutral line = RED zone; bullish on green/neutral = GREEN zone.
+#   ENTRY: within `zone_age` bars, a same-colour candle BREAKS OUT of the zone
+#         (close below red-zone low = SHORT ; close above green-zone high = LONG),
+#         prev candle same colour, breakout candle size <= max_cs.
+#   Optimise knobs: touch_tol (zone size), zone_age (freshness), max_cs
+#         (breakout size), hawa (line-pe vs hawa-me), chain_lookback.
+# The engine then applies ATR sizing + the chosen exit (atr_rr / trail) and,
+# in pass 3, the trade windows are repriced into a CREDIT SPREAD
+# (long->bull-put sell, short->bear-call sell) — bs_option.reprice_spread.
+# =====================================================================
+_LEVEL_CACHE = {}
+
+
+def _daily_levels(d, lookback=20, max_jump=10.0):
+    """date -> dict(res=[...], sup=[...], neutral=[P, prevClose]).  Levels come
+    from the PREVIOUS completed day (no lookahead). Cached by (id(d),lookback,max_jump)."""
+    key = (id(d), int(lookback), float(max_jump))
+    hit = _LEVEL_CACHE.get(key)
+    if hit is not None:
+        return hit
+    daily = (d.groupby("day").agg(H=("High", "max"), L=("Low", "min"),
+                                  C=("Close", "last")).reset_index())
+    dates = list(daily["day"].values)
+    Hs, Ls, Cs = daily.H.values, daily.L.values, daily.C.values
+    out = {}
+    for j in range(len(dates)):
+        if j == 0:
+            out[dates[j]] = None
+            continue
+        ph, pl, pc = Hs[j - 1], Ls[j - 1], Cs[j - 1]          # previous day
+        P = (ph + pl + pc) / 3.0
+        rng = ph - pl
+        R1, S1 = 2 * P - pl, 2 * P - ph
+        R2, S2 = P + rng, P - rng
+        R3, S3 = ph + 2 * (P - pl), pl - 2 * (ph - P)
+        R4, S4 = R3 + rng, S3 - rng
+        R5, S5 = R4 + rng, S4 - rng
+        res = [ph, R1, R2, R3, R4, R5]
+        sup = [pl, S1, S2, S3, S4, S5]
+        thr = ph                                              # chain higher-highs
+        for k in range(2, min(lookback, j) + 1):
+            hh = Hs[j - k]
+            if hh > thr and (hh - thr) / thr * 100.0 <= max_jump:
+                res.append(hh); thr = hh
+        thr = pl                                              # chain lower-lows
+        for k in range(2, min(lookback, j) + 1):
+            ll = Ls[j - k]
+            if ll < thr and (thr - ll) / thr * 100.0 <= max_jump:
+                sup.append(ll); thr = ll
+        out[dates[j]] = dict(res=res, sup=sup, neutral=[P, pc])
+    _LEVEL_CACHE[key] = out
+    if len(_LEVEL_CACHE) > 12:
+        _LEVEL_CACHE.pop(next(iter(_LEVEL_CACHE)))
+    return out
+
+
+def _candle_patterns(d, min_body=0.5, wick_ratio=2.5):
+    """Vectorised bullish/bearish key-candle flags (engulf/hammer/harami), Pine parity."""
+    O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
+    n = len(d)
+    body = np.abs(C - O)
+    up_wick = H - np.maximum(O, C)
+    lo_wick = np.minimum(O, C) - L
+    green = C > O
+    red = C < O
+    grn_ham = green & (body >= min_body) & (lo_wick >= wick_ratio * body) & (up_wick <= body)
+    red_ham = red & (body >= min_body) & (lo_wick >= wick_ratio * body) & (up_wick <= body)
+    inv_red = red & (body >= min_body) & (up_wick >= wick_ratio * body) & (lo_wick <= body)
+    Op, Cp = np.roll(O, 1), np.roll(C, 1)
+    prev_red, prev_grn = Cp < Op, Cp > Op
+    body_p = np.abs(Cp - Op)
+    bull_eng = green & prev_red & (body_p >= min_body) & (O <= Cp) & (C >= Op)
+    bear_eng = red & prev_grn & (body_p >= min_body) & (O >= Cp) & (C <= Op)
+    lo_c, hi_c = np.minimum(O, C), np.maximum(O, C)
+    bull_har = green & prev_red & (lo_c >= Cp) & (hi_c <= Op)   # inside prev red body
+    bear_har = red & prev_grn & (lo_c >= Op) & (hi_c <= Cp)     # inside prev green body
+    bull_har[0] = bear_eng[0] = bull_eng[0] = False
+    bearish = bear_eng | bear_har | inv_red | red_ham
+    bullish = bull_eng | bull_har | grn_ham
+    return bullish, bearish
+
+
+def _chain_zone_signals(d, p):
+    lookback = int(p.get("chain_lookback", 20))
+    max_jump = float(p.get("max_jump", 10.0))
+    tol = float(p.get("touch_tol", 5.0))       # zone-size knob: touch tolerance (pts)
+    max_age = int(p.get("zone_age", 2))        # fresh-zone window (bars)
+    max_cs = float(p.get("max_cs", 40.0))      # breakout candle max size (pts)
+    hawa = bool(p.get("hawa", False))          # hawa-me (True) vs on-line (False)
+    hawa_k = int(p.get("hawa_k", 3))
+    levels = _daily_levels(d, lookback, max_jump)
+    O, H, L, C = d.Open.values, d.High.values, d.Low.values, d.Close.values
+    day = d.day.values
+    n = len(d)
+    bull, bear = _candle_patterns(d)
+    long_e = np.zeros(n, dtype=bool)
+    short_e = np.zeros(n, dtype=bool)
+    red_zone = None      # dict(lower, upper, bar)
+    green_zone = None
+    last_res_bar = -10 ** 9
+    last_sup_bar = -10 ** 9
+    for i in range(1, n):
+        lv = levels.get(day[i])
+        if lv is None:
+            continue
+        lo, hi = L[i] - tol, H[i] + tol
+        t_res = any(lo <= x <= hi for x in lv["res"])
+        t_sup = any(lo <= x <= hi for x in lv["sup"])
+        t_neu = any(lo <= x <= hi for x in lv["neutral"])
+        if t_res:
+            last_res_bar = i
+        if t_sup:
+            last_sup_bar = i
+        at_res = t_res or t_neu or (hawa and i - last_res_bar <= hawa_k)
+        at_sup = t_sup or t_neu or (hawa and i - last_sup_bar <= hawa_k)
+        # seed zones on a key (pattern) candle at the matching line
+        if bear[i] and at_res and not t_sup:
+            red_zone = dict(lower=L[i], upper=H[i], bar=i)
+        if bull[i] and at_sup and not t_res:
+            green_zone = dict(lower=L[i], upper=H[i], bar=i)
+        cs = H[i] - L[i]
+        # breakout confirmation (same-colour, within freshness, size-gated)
+        if (red_zone is not None and i > red_zone["bar"]
+                and i - red_zone["bar"] <= max_age and C[i] < red_zone["lower"]
+                and C[i] < O[i] and C[i - 1] < O[i - 1] and cs <= max_cs):
+            short_e[i] = True
+            red_zone = None
+        if (green_zone is not None and i > green_zone["bar"]
+                and i - green_zone["bar"] <= max_age and C[i] > green_zone["upper"]
+                and C[i] > O[i] and C[i - 1] > O[i - 1] and cs <= max_cs):
+            long_e[i] = True
+            green_zone = None
+    return long_e, short_e
+
+
 # ---------- designs: return (long_entry, short_entry) boolean arrays ----------
 def design_signals(d, name, p):
+    if name == "chain_zone":
+        return _chain_zone_signals(d, p)
     C, H, L, O = d.Close, d.High, d.Low, d.Open
     if name == "rsi_rev":
         r = rsi(C, int(p.get("rsi_len", 14)))
@@ -175,6 +323,9 @@ DESIGN_GRID = {
     "gap_fade":  dict(gap_k=[0.3, 0.5, 0.8, 1.2], atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),
     "tod_orb":   dict(or_min=[15, 30], orb_k=[0.5, 1.0, 1.5], h0=[10, 11], h1=[13, 14],
                       atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),
+    "chain_zone":dict(touch_tol=[0.0, 5.0, 10.0, 15.0], zone_age=[1, 2, 3],
+                      max_cs=[25.0, 40.0, 60.0, 100.0], hawa=[False, True],
+                      chain_lookback=[10, 20], atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),
 }
 DEFAULTS = {k: {kk: vv[len(vv)//2] for kk, vv in g.items()} for k, g in DESIGN_GRID.items()}
 

@@ -1,0 +1,1443 @@
+{
+ "strategies": [
+  {
+   "slug": "mid_orb_nifty",
+   "title": "Mid-Day ORB",
+   "design": "Mid-Day ORB \u2014 NIFTY 15m (ATM options)",
+   "tf": "15m",
+   "type": "Intraday",
+   "window": [
+    "2022-01-03",
+    "2026-07-09"
+   ],
+   "days": 1112,
+   "lot_size": 65,
+   "dna": {
+    "or_min": 30,
+    "orb_k": 1.0,
+    "h0": 11,
+    "h1": 14,
+    "atr_sl": 1.5,
+    "rr": 2.5,
+    "exit": "atr_rr"
+   },
+   "exit": "atr_rr",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 2.366,
+     "net_pct": 39.205,
+     "maxdd": -1.769,
+     "win_rate": 44.797,
+     "trades": 567,
+     "profit_factor": 1.927,
+     "fees": 32853.0,
+     "expectancy": 691.452,
+     "avg_win": 3208.388,
+     "avg_loss": -1351.045
+    },
+    "bs_train": {
+     "sharpe": 2.384,
+     "net_pct": 28.048,
+     "maxdd": -1.769,
+     "win_rate": 43.99,
+     "trades": 391,
+     "profit_factor": 1.952,
+     "fees": 22462.0,
+     "expectancy": 717.335,
+     "avg_win": 3344.129,
+     "avg_loss": -1345.717
+    },
+    "bs_oos": {
+     "sharpe": 2.465,
+     "net_pct": 11.328,
+     "maxdd": -0.889,
+     "win_rate": 46.243,
+     "trades": 173,
+     "profit_factor": 1.901,
+     "fees": 10219.0,
+     "expectancy": 654.802,
+     "avg_win": 2988.032,
+     "avg_loss": -1352.278
+    },
+    "instr_full": {
+     "sharpe": 0.973,
+     "net_pct": 19.463,
+     "maxdd": -6.035,
+     "win_rate": 47.09,
+     "trades": 567,
+     "profit_factor": 1.254,
+     "fees": 145130.231,
+     "expectancy": 343.259,
+     "avg_win": 3602.113,
+     "avg_loss": -2557.121
+    },
+    "instr_oos": {
+     "sharpe": 0.914,
+     "net_pct": 4.461,
+     "maxdd": -2.378,
+     "win_rate": 49.133,
+     "trades": 173,
+     "profit_factor": 1.231,
+     "fees": 42175.955,
+     "expectancy": 257.888,
+     "avg_win": 2801.07,
+     "avg_loss": -2198.594
+    },
+    "rms_full": {
+     "sharpe": 0.975,
+     "net_pct": 19.657,
+     "maxdd": -6.035,
+     "win_rate": 47.09,
+     "trades": 567,
+     "profit_factor": 1.256,
+     "fees": 145226.463,
+     "expectancy": 346.677,
+     "avg_win": 3611.353,
+     "avg_loss": -2558.885
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 2.364367606450298,
+    "best5": 2.9857982775773104,
+    "worst5": 1.7755373850314071,
+    "original": 2.3989345490522793
+   },
+   "created": "2026-07-10 09:13"
+  },
+  {
+   "slug": "long_straddle_orb",
+   "title": "01 - Long Straddle @ ORB breakout",
+   "design": "Long Straddle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "tp_frac": 0.5,
+    "sl_frac": 1.0,
+    "or_min": 15,
+    "orb_k": 0.5,
+    "vrp_mult": 1.2,
+    "skip_expiry": true,
+    "structure": "long_straddle",
+    "signal": "orb_break"
+   },
+   "exit": "tp0.5/sl1.0",
+   "p_value": 0.036,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 3.549,
+     "net_pct": 81.666,
+     "maxdd": -1.038,
+     "win_rate": 43.262,
+     "trades": 1625,
+     "profit_factor": 3.006,
+     "fees": 196639.0,
+     "expectancy": 502.559,
+     "avg_win": 1740.672,
+     "avg_loss": -441.469
+    },
+    "bs_train": {
+     "sharpe": 3.414,
+     "net_pct": 49.432,
+     "maxdd": -1.026,
+     "win_rate": 43.369,
+     "trades": 1116,
+     "profit_factor": 2.983,
+     "fees": 131219.0,
+     "expectancy": 442.938,
+     "avg_win": 1536.248,
+     "avg_loss": -394.343
+    },
+    "bs_oos": {
+     "sharpe": 3.866,
+     "net_pct": 32.234,
+     "maxdd": -1.48,
+     "win_rate": 43.026,
+     "trades": 509,
+     "profit_factor": 3.043,
+     "fees": 65420.0,
+     "expectancy": 633.279,
+     "avg_win": 2192.457,
+     "avg_loss": -544.169
+    },
+    "instr_full": {
+     "sharpe": 4.364,
+     "net_pct": 101.33,
+     "maxdd": -0.816,
+     "win_rate": 49.415,
+     "trades": 1625,
+     "profit_factor": 4.363,
+     "fees": 0,
+     "expectancy": 623.57,
+     "avg_win": 1637.126,
+     "avg_loss": -366.559
+    },
+    "instr_oos": {
+     "sharpe": 4.598,
+     "net_pct": 38.776,
+     "maxdd": -1.271,
+     "win_rate": 46.955,
+     "trades": 509,
+     "profit_factor": 4.187,
+     "fees": 0,
+     "expectancy": 761.809,
+     "avg_win": 2131.489,
+     "avg_loss": -450.612
+    },
+    "rms_full": {
+     "sharpe": 4.364,
+     "net_pct": 101.33,
+     "maxdd": -0.816,
+     "win_rate": 49.415,
+     "trades": 1625,
+     "profit_factor": 4.363,
+     "fees": 0,
+     "expectancy": 623.57,
+     "avg_win": 1637.126,
+     "avg_loss": -366.559
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 5.1971326447840305,
+    "best5": 5.713004779345381,
+    "worst5": 4.705136504179045,
+    "original": 5.178177556582366
+   },
+   "created": "2026-07-10 22:36"
+  },
+  {
+   "slug": "debit_vertical_orb",
+   "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
+   "design": "Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout \u2014 NIFTY 15m (option structure, BS premium)",
+   "tf": "15m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "tp_frac": 1.0,
+    "sl_frac": 1.0,
+    "or_min": 15,
+    "orb_k": 1.0,
+    "wing_off": 10,
+    "vrp_mult": 1.2,
+    "skip_expiry": true,
+    "structure": "vertical_debit",
+    "signal": "orb_break"
+   },
+   "exit": "tp1.0/sl1.0",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 1.671,
+     "net_pct": 38.648,
+     "maxdd": -2.053,
+     "win_rate": 50.693,
+     "trades": 1227,
+     "profit_factor": 1.449,
+     "fees": 133779.0,
+     "expectancy": 314.978,
+     "avg_win": 2006.244,
+     "avg_loss": -1423.811
+    },
+    "bs_train": {
+     "sharpe": 2.001,
+     "net_pct": 30.413,
+     "maxdd": -1.6,
+     "win_rate": 51.493,
+     "trades": 837,
+     "profit_factor": 1.578,
+     "fees": 89383.0,
+     "expectancy": 363.36,
+     "avg_win": 1927.437,
+     "avg_loss": -1297.027
+    },
+    "bs_oos": {
+     "sharpe": 0.986,
+     "net_pct": 8.235,
+     "maxdd": -2.616,
+     "win_rate": 48.974,
+     "trades": 390,
+     "profit_factor": 1.246,
+     "fees": 44396.0,
+     "expectancy": 211.143,
+     "avg_win": 2184.077,
+     "avg_loss": -1682.478
+    },
+    "instr_full": {
+     "sharpe": 2.231,
+     "net_pct": 52.027,
+     "maxdd": -1.394,
+     "win_rate": 53.301,
+     "trades": 1227,
+     "profit_factor": 1.651,
+     "fees": 0,
+     "expectancy": 424.014,
+     "avg_win": 2016.741,
+     "avg_loss": -1393.863
+    },
+    "instr_oos": {
+     "sharpe": 1.498,
+     "net_pct": 12.674,
+     "maxdd": -1.873,
+     "win_rate": 51.795,
+     "trades": 390,
+     "profit_factor": 1.405,
+     "fees": 0,
+     "expectancy": 324.981,
+     "avg_win": 2178.465,
+     "avg_loss": -1666.529
+    },
+    "rms_full": {
+     "sharpe": 2.231,
+     "net_pct": 52.027,
+     "maxdd": -1.394,
+     "win_rate": 53.301,
+     "trades": 1227,
+     "profit_factor": 1.651,
+     "fees": 0,
+     "expectancy": 424.014,
+     "avg_win": 2016.741,
+     "avg_loss": -1393.863
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 2.279682169837007,
+    "best5": 3.053227910675515,
+    "worst5": 1.4984245815177162,
+    "original": 2.292054522821221
+   },
+   "created": "2026-07-10 22:41"
+  },
+  {
+   "slug": "long_strangle_orb",
+   "title": "Long Strangle @ ORB breakout",
+   "design": "Long Strangle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "tp_frac": 0.75,
+    "sl_frac": 1.0,
+    "or_min": 15,
+    "orb_k": 0.5,
+    "h0": 11,
+    "h1": 13,
+    "structure": "long_strangle",
+    "signal": "orb_break"
+   },
+   "exit": "tp0.75/sl1.0",
+   "p_value": 0.072,
+   "significant": false,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 4.085,
+     "net_pct": 90.026,
+     "maxdd": -0.771,
+     "win_rate": 48.695,
+     "trades": 1686,
+     "profit_factor": 4.283,
+     "fees": 180254.0,
+     "expectancy": 533.96,
+     "avg_win": 1430.507,
+     "avg_loss": -316.982
+    },
+    "bs_train": {
+     "sharpe": 3.748,
+     "net_pct": 50.161,
+     "maxdd": -0.751,
+     "win_rate": 49.612,
+     "trades": 1161,
+     "profit_factor": 4.075,
+     "fees": 121149.0,
+     "expectancy": 432.05,
+     "avg_win": 1154.099,
+     "avg_loss": -278.89
+    },
+    "bs_oos": {
+     "sharpe": 4.817,
+     "net_pct": 39.865,
+     "maxdd": -1.119,
+     "win_rate": 46.667,
+     "trades": 525,
+     "profit_factor": 4.59,
+     "fees": 59105.0,
+     "expectancy": 759.326,
+     "avg_win": 2080.347,
+     "avg_loss": -396.567
+    },
+    "instr_full": {
+     "sharpe": 4.881,
+     "net_pct": 108.051,
+     "maxdd": -0.612,
+     "win_rate": 55.753,
+     "trades": 1686,
+     "profit_factor": 6.766,
+     "fees": 0,
+     "expectancy": 640.87,
+     "avg_win": 1348.823,
+     "avg_loss": -251.19
+    },
+    "instr_oos": {
+     "sharpe": 5.461,
+     "net_pct": 45.776,
+     "maxdd": -0.95,
+     "win_rate": 52.571,
+     "trades": 525,
+     "profit_factor": 6.651,
+     "fees": 0,
+     "expectancy": 871.919,
+     "avg_win": 1952.028,
+     "avg_loss": -325.311
+    },
+    "rms_full": {
+     "sharpe": 4.881,
+     "net_pct": 108.051,
+     "maxdd": -0.612,
+     "win_rate": 55.753,
+     "trades": 1686,
+     "profit_factor": 6.766,
+     "fees": 0,
+     "expectancy": 640.87,
+     "avg_win": 1348.823,
+     "avg_loss": -251.19
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 6.12988046078523,
+    "best5": 6.715691800444247,
+    "worst5": 5.608648513194566,
+    "original": 6.115136214644938
+   },
+   "created": "2026-07-10 23:09"
+  },
+  {
+   "slug": "orb_supertrend",
+   "title": "03 - ORB + Supertrend",
+   "design": "ORB + Supertrend \u2014 NIFTY 15m (ATM options)",
+   "tf": "15m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "or_min": 60,
+    "orb_k": 1.0,
+    "st_period": 14,
+    "st_mult": 3.0,
+    "atr_sl": 1.5,
+    "rr": 2.0,
+    "exit": "stop_only"
+   },
+   "exit": "stop_only",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 2.065,
+     "net_pct": 49.695,
+     "maxdd": -0.96,
+     "win_rate": 43.848,
+     "trades": 1024,
+     "profit_factor": 1.918,
+     "fees": 59684.0,
+     "expectancy": 485.298,
+     "avg_win": 2312.908,
+     "avg_loss": -941.826
+    },
+    "bs_train": {
+     "sharpe": 2.105,
+     "net_pct": 32.106,
+     "maxdd": -0.786,
+     "win_rate": 44.199,
+     "trades": 724,
+     "profit_factor": 1.944,
+     "fees": 41213.0,
+     "expectancy": 443.454,
+     "avg_win": 2066.487,
+     "avg_loss": -842.116
+    },
+    "bs_oos": {
+     "sharpe": 1.861,
+     "net_pct": 19.488,
+     "maxdd": -1.212,
+     "win_rate": 43.144,
+     "trades": 299,
+     "profit_factor": 1.973,
+     "fees": 18436.0,
+     "expectancy": 651.783,
+     "avg_win": 3062.968,
+     "avg_loss": -1177.881
+    },
+    "instr_full": {
+     "sharpe": 1.287,
+     "net_pct": 63.841,
+     "maxdd": -4.129,
+     "win_rate": 43.848,
+     "trades": 1024,
+     "profit_factor": 1.4,
+     "fees": 321509.551,
+     "expectancy": 623.449,
+     "avg_win": 4973.742,
+     "avg_loss": -2773.563
+    },
+    "instr_oos": {
+     "sharpe": 0.956,
+     "net_pct": 9.11,
+     "maxdd": -4.129,
+     "win_rate": 42.809,
+     "trades": 299,
+     "profit_factor": 1.285,
+     "fees": 75365.428,
+     "expectancy": 304.682,
+     "avg_win": 3205.045,
+     "avg_loss": -1866.351
+    },
+    "rms_full": {
+     "sharpe": 1.333,
+     "net_pct": 69.229,
+     "maxdd": -3.006,
+     "win_rate": 43.848,
+     "trades": 1024,
+     "profit_factor": 1.427,
+     "fees": 326115.935,
+     "expectancy": 676.066,
+     "avg_win": 5150.227,
+     "avg_loss": -2817.669
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 2.8181729042890686,
+    "best5": 3.339460451208133,
+    "worst5": 2.255264829218612,
+    "original": 2.8185042462787435
+   },
+   "created": "2026-07-10 23:40"
+  },
+  {
+   "slug": "chain_zone_longatm",
+   "title": "Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+   "design": "Auto Rev-Chain \u2014 Zone Breakout \u2014 NIFTY 5m (\u2462 BUY vs \u2463 NAKED vs \u2464 SPREAD)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "touch_tol": 5.0,
+    "zone_age": 2,
+    "max_cs": 40.0,
+    "hawa": false,
+    "chain_lookback": 20,
+    "atr_sl": 2.5,
+    "rr": 1.5,
+    "exit": "stop_only"
+   },
+   "exit": "stop_only",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs",
+    "bs_naked",
+    "bs_credit"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 1.946,
+     "net_pct": 69.133,
+     "maxdd": -3.086,
+     "win_rate": 39.756,
+     "trades": 1806,
+     "profit_factor": 1.493,
+     "fees": 104766.0,
+     "expectancy": 382.794,
+     "avg_win": 2917.8,
+     "avg_loss": -1290.124
+    },
+    "bs_train": {
+     "sharpe": 1.906,
+     "net_pct": 42.491,
+     "maxdd": -3.086,
+     "win_rate": 39.165,
+     "trades": 1269,
+     "profit_factor": 1.467,
+     "fees": 71967.0,
+     "expectancy": 334.837,
+     "avg_win": 2687.59,
+     "avg_loss": -1179.823
+    },
+    "bs_oos": {
+     "sharpe": 2.042,
+     "net_pct": 26.693,
+     "maxdd": -2.499,
+     "win_rate": 41.155,
+     "trades": 537,
+     "profit_factor": 1.542,
+     "fees": 32803.0,
+     "expectancy": 497.074,
+     "avg_win": 3437.829,
+     "avg_loss": -1559.593
+    },
+    "instr_full": {
+     "sharpe": 0.566,
+     "net_pct": 35.968,
+     "maxdd": -11.505,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.1,
+     "fees": 514378.236,
+     "expectancy": 199.159,
+     "avg_win": 5397.554,
+     "avg_loss": -3343.881
+    },
+    "instr_oos": {
+     "sharpe": 0.598,
+     "net_pct": 8.505,
+     "maxdd": -6.611,
+     "win_rate": 41.899,
+     "trades": 537,
+     "profit_factor": 1.114,
+     "fees": 133640.452,
+     "expectancy": 158.378,
+     "avg_win": 3708.203,
+     "avg_loss": -2401.592
+    },
+    "rms_full": {
+     "sharpe": 0.61,
+     "net_pct": 39.612,
+     "maxdd": -10.91,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.108,
+     "fees": 523004.402,
+     "expectancy": 219.333,
+     "avg_win": 5538.381,
+     "avg_loss": -3405.94
+    },
+    "bs_naked_full": {
+     "sharpe": -0.625,
+     "net_pct": -16.192,
+     "maxdd": -18.168,
+     "win_rate": 43.3,
+     "trades": 1806,
+     "profit_factor": 0.896,
+     "fees": 103078.0,
+     "expectancy": -89.655,
+     "avg_win": 1775.992,
+     "avg_loss": -1514.397
+    },
+    "bs_credit_full": {
+     "sharpe": -1.003,
+     "net_pct": -24.512,
+     "maxdd": -25.646,
+     "win_rate": 42.137,
+     "trades": 1806,
+     "profit_factor": 0.839,
+     "fees": 189262.0,
+     "expectancy": -135.727,
+     "avg_win": 1676.767,
+     "avg_loss": -1455.638
+    }
+   },
+   "mc": {
+    "median": 2.6583604312726496,
+    "best5": 3.313563309771059,
+    "worst5": 1.984307565419823,
+    "original": 2.638222962119287
+   },
+   "created": "2026-07-11 01:41"
+  },
+  {
+   "slug": "chain_zone_naked",
+   "title": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live)",
+   "design": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live) \u2014 NIFTY 5m",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "touch_tol": 5.0,
+    "zone_age": 2,
+    "max_cs": 40.0,
+    "hawa": false,
+    "chain_lookback": 20,
+    "atr_sl": 2.5,
+    "rr": 1.5,
+    "exit": "stop_only"
+   },
+   "exit": "stop_only",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": -0.625,
+     "net_pct": -16.192,
+     "maxdd": -18.168,
+     "win_rate": 43.3,
+     "trades": 1806,
+     "profit_factor": 0.896,
+     "fees": 103078.0,
+     "expectancy": -89.655,
+     "avg_win": 1775.992,
+     "avg_loss": -1514.397
+    },
+    "bs_train": {
+     "sharpe": -0.93,
+     "net_pct": -14.338,
+     "maxdd": -15.13,
+     "win_rate": 41.923,
+     "trades": 1269,
+     "profit_factor": 0.858,
+     "fees": 70924.0,
+     "expectancy": -112.987,
+     "avg_win": 1623.215,
+     "avg_loss": -1366.257
+    },
+    "bs_oos": {
+     "sharpe": -0.184,
+     "net_pct": -1.835,
+     "maxdd": -5.523,
+     "win_rate": 46.555,
+     "trades": 537,
+     "profit_factor": 0.966,
+     "fees": 32151.0,
+     "expectancy": -34.177,
+     "avg_win": 2101.832,
+     "avg_loss": -1894.813
+    },
+    "instr_full": {
+     "sharpe": 0.566,
+     "net_pct": 35.968,
+     "maxdd": -11.505,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.1,
+     "fees": 514378.236,
+     "expectancy": 199.159,
+     "avg_win": 5397.554,
+     "avg_loss": -3343.881
+    },
+    "instr_oos": {
+     "sharpe": 0.598,
+     "net_pct": 8.505,
+     "maxdd": -6.611,
+     "win_rate": 41.899,
+     "trades": 537,
+     "profit_factor": 1.114,
+     "fees": 133640.452,
+     "expectancy": 158.378,
+     "avg_win": 3708.203,
+     "avg_loss": -2401.592
+    },
+    "rms_full": {
+     "sharpe": 0.61,
+     "net_pct": 39.612,
+     "maxdd": -10.91,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.108,
+     "fees": 523004.402,
+     "expectancy": 219.333,
+     "avg_win": 5538.381,
+     "avg_loss": -3405.94
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": -0.8431930562049934,
+    "best5": -0.044707346170318615,
+    "worst5": -1.628920393460893,
+    "original": -0.8594036622541258
+   },
+   "created": "2026-07-11 01:40"
+  },
+  {
+   "slug": "chain_zone_credit",
+   "title": "Auto Rev-Chain \u2014 Zone Breakout (credit spread)",
+   "design": "Auto Rev-Chain \u2014 Zone Breakout (credit spread) \u2014 NIFTY 5m (ATM options)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "touch_tol": 5.0,
+    "zone_age": 2,
+    "max_cs": 40.0,
+    "hawa": false,
+    "chain_lookback": 20,
+    "atr_sl": 2.5,
+    "rr": 1.5,
+    "exit": "stop_only"
+   },
+   "exit": "stop_only",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": -1.003,
+     "net_pct": -24.512,
+     "maxdd": -25.646,
+     "win_rate": 42.137,
+     "trades": 1806,
+     "profit_factor": 0.839,
+     "fees": 189262.0,
+     "expectancy": -135.727,
+     "avg_win": 1676.767,
+     "avg_loss": -1455.638
+    },
+    "bs_train": {
+     "sharpe": -1.344,
+     "net_pct": -19.907,
+     "maxdd": -20.288,
+     "win_rate": 40.898,
+     "trades": 1269,
+     "profit_factor": 0.802,
+     "fees": 131208.0,
+     "expectancy": -156.871,
+     "avg_win": 1552.857,
+     "avg_loss": -1340.004
+    },
+    "bs_oos": {
+     "sharpe": -0.528,
+     "net_pct": -4.586,
+     "maxdd": -6.847,
+     "win_rate": 45.065,
+     "trades": 537,
+     "profit_factor": 0.911,
+     "fees": 58052.0,
+     "expectancy": -85.409,
+     "avg_win": 1943.284,
+     "avg_loss": -1749.625
+    },
+    "instr_full": {
+     "sharpe": 0.566,
+     "net_pct": 35.968,
+     "maxdd": -11.505,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.1,
+     "fees": 514378.236,
+     "expectancy": 199.159,
+     "avg_win": 5397.554,
+     "avg_loss": -3343.881
+    },
+    "instr_oos": {
+     "sharpe": 0.598,
+     "net_pct": 8.505,
+     "maxdd": -6.611,
+     "win_rate": 41.899,
+     "trades": 537,
+     "profit_factor": 1.114,
+     "fees": 133640.452,
+     "expectancy": 158.378,
+     "avg_win": 3708.203,
+     "avg_loss": -2401.592
+    },
+    "rms_full": {
+     "sharpe": 0.61,
+     "net_pct": 39.612,
+     "maxdd": -10.91,
+     "win_rate": 40.532,
+     "trades": 1806,
+     "profit_factor": 1.108,
+     "fees": 523004.402,
+     "expectancy": 219.333,
+     "avg_win": 5538.381,
+     "avg_loss": -3405.94
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": -1.3677679535047824,
+    "best5": -0.5724095419684005,
+    "worst5": -2.179729323963752,
+    "original": -1.387241904283478
+   },
+   "created": "2026-07-11 01:37"
+  },
+  {
+   "slug": "chain_zone_positional",
+   "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
+   "design": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option) \u2014 NIFTY 15m",
+   "tf": "15m",
+   "type": "Positional",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "touch_tol": 0.0,
+    "zone_age": 2,
+    "max_cs": 60.0,
+    "hawa": false,
+    "chain_lookback": 10,
+    "atr_sl": 1.5,
+    "rr": 2.0,
+    "max_hold_days": 3,
+    "exit": "stop_only"
+   },
+   "exit": "stop_only",
+   "p_value": 0.008,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 0.974,
+     "net_pct": 52.073,
+     "maxdd": -6.949,
+     "win_rate": 22.036,
+     "trades": 717,
+     "profit_factor": 1.436,
+     "fees": 49295.0,
+     "expectancy": 726.265,
+     "avg_win": 10862.906,
+     "avg_loss": -2138.832
+    },
+    "bs_train": {
+     "sharpe": 0.982,
+     "net_pct": 30.735,
+     "maxdd": -6.8,
+     "win_rate": 21.956,
+     "trades": 501,
+     "profit_factor": 1.423,
+     "fees": 33324.0,
+     "expectancy": 613.476,
+     "avg_win": 9399.465,
+     "avg_loss": -1858.285
+    },
+    "bs_oos": {
+     "sharpe": 1.105,
+     "net_pct": 27.966,
+     "maxdd": -8.949,
+     "win_rate": 21.399,
+     "trades": 243,
+     "profit_factor": 1.523,
+     "fees": 18138.0,
+     "expectancy": 1150.88,
+     "avg_win": 15660.71,
+     "avg_loss": -2799.44
+    },
+    "instr_full": {
+     "sharpe": 1.202,
+     "net_pct": 162.206,
+     "maxdd": -28.964,
+     "win_rate": 24.623,
+     "trades": 861,
+     "profit_factor": 1.398,
+     "fees": 331936.461,
+     "expectancy": 1883.924,
+     "avg_win": 26862.246,
+     "avg_loss": -6275.405
+    },
+    "instr_oos": {
+     "sharpe": 1.44,
+     "net_pct": 33.998,
+     "maxdd": -7.703,
+     "win_rate": 25.1,
+     "trades": 251,
+     "profit_factor": 1.509,
+     "fees": 68025.048,
+     "expectancy": 1354.508,
+     "avg_win": 15992.12,
+     "avg_loss": -3550.649
+    },
+    "rms_full": {
+     "sharpe": 1.158,
+     "net_pct": 116.341,
+     "maxdd": -15.654,
+     "win_rate": 24.407,
+     "trades": 717,
+     "profit_factor": 1.405,
+     "fees": 246950.526,
+     "expectancy": 1622.608,
+     "avg_win": 23063.214,
+     "avg_loss": -5300.097
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 1.3117511736134289,
+    "best5": 1.9556517257779373,
+    "worst5": 0.6137520943000224,
+    "original": 1.3377941233735682
+   },
+   "created": "2026-07-11 10:59"
+  },
+  {
+   "slug": "ratio_backspread",
+   "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+   "design": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB \u2014 NIFTY 5m (option structure, BS premium)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "tp_frac": 1.5,
+    "sl_frac": 0.75,
+    "bs_off": 2,
+    "or_min": 30,
+    "orb_k": 1.0,
+    "h0": 10,
+    "h1": 13,
+    "structure": "ratio_backspread",
+    "signal": "tod_orb_break"
+   },
+   "exit": "tp1.5/sl0.75",
+   "p_value": 0.002,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 1.555,
+     "net_pct": 29.86,
+     "maxdd": -1.977,
+     "win_rate": 42.527,
+     "trades": 1124,
+     "profit_factor": 1.709,
+     "fees": 134141.0,
+     "expectancy": 265.662,
+     "avg_win": 1505.552,
+     "avg_loss": -651.78
+    },
+    "bs_train": {
+     "sharpe": 1.355,
+     "net_pct": 16.103,
+     "maxdd": -1.52,
+     "win_rate": 41.645,
+     "trades": 766,
+     "profit_factor": 1.622,
+     "fees": 88410.0,
+     "expectancy": 210.217,
+     "avg_win": 1316.5,
+     "avg_loss": -579.278
+    },
+    "bs_oos": {
+     "sharpe": 1.951,
+     "net_pct": 13.758,
+     "maxdd": -2.251,
+     "win_rate": 44.413,
+     "trades": 358,
+     "profit_factor": 1.849,
+     "fees": 45731.0,
+     "expectancy": 384.295,
+     "avg_win": 1884.844,
+     "avg_loss": -814.636
+    },
+    "instr_full": {
+     "sharpe": 2.231,
+     "net_pct": 43.274,
+     "maxdd": -1.507,
+     "win_rate": 49.377,
+     "trades": 1124,
+     "profit_factor": 2.232,
+     "fees": 0,
+     "expectancy": 385.004,
+     "avg_win": 1412.354,
+     "avg_loss": -617.068
+    },
+    "instr_oos": {
+     "sharpe": 2.558,
+     "net_pct": 18.331,
+     "maxdd": -1.819,
+     "win_rate": 49.441,
+     "trades": 358,
+     "profit_factor": 2.319,
+     "fees": 0,
+     "expectancy": 512.048,
+     "avg_win": 1820.71,
+     "avg_loss": -767.693
+    },
+    "rms_full": {
+     "sharpe": 2.231,
+     "net_pct": 43.274,
+     "maxdd": -1.507,
+     "win_rate": 49.377,
+     "trades": 1124,
+     "profit_factor": 2.232,
+     "fees": 0,
+     "expectancy": 385.004,
+     "avg_win": 1412.354,
+     "avg_loss": -617.068
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 2.119065046238648,
+    "best5": 2.664621479644077,
+    "worst5": 1.4841511143007655,
+    "original": 2.1270973198237746
+   },
+   "created": "2026-07-11 12:33"
+  },
+  {
+   "slug": "shortvol_ironfly",
+   "title": "Short-Vol Iron-Fly \u00b18 (REAL)",
+   "design": "Short-Vol Iron-Fly (sell ATM + buy \u00b18 wings) \u2014 NIFTY 5m REAL premium/IV",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2021-07-01",
+    "2026-07-10"
+   ],
+   "days": 1242,
+   "lot_size": 65,
+   "dna": {
+    "structure": "iron_fly",
+    "wing": 8,
+    "tp_frac": 0.5,
+    "sl_frac": 1.0,
+    "entry": "10:00 daily",
+    "slip": 0.005,
+    "signal": "time"
+   },
+   "exit": "tp0.5/sl1.0",
+   "p_value": 0.0,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 8.915,
+     "net_pct": 60.969,
+     "maxdd": -0.432,
+     "win_rate": 78.103,
+     "trades": 991,
+     "profit_factor": 6.037,
+     "fees": 41928.149,
+     "expectancy": 615.225,
+     "avg_win": 944.103,
+     "avg_loss": -557.823
+    },
+    "bs_train": {
+     "sharpe": 9.752,
+     "net_pct": 42.232,
+     "maxdd": -0.426,
+     "win_rate": 80.684,
+     "trades": 673,
+     "profit_factor": 7.514,
+     "fees": 28402.677,
+     "expectancy": 627.516,
+     "avg_win": 897.148,
+     "avg_loss": -498.719
+    },
+    "bs_oos": {
+     "sharpe": 7.22,
+     "net_pct": 18.695,
+     "maxdd": -0.606,
+     "win_rate": 72.642,
+     "trades": 318,
+     "profit_factor": 4.301,
+     "fees": 13525.553,
+     "expectancy": 587.907,
+     "avg_win": 1054.475,
+     "avg_loss": -650.912
+    },
+    "instr_full": {
+     "sharpe": 13.828,
+     "net_pct": 99.677,
+     "maxdd": -0.3,
+     "win_rate": 90.716,
+     "trades": 991,
+     "profit_factor": 21.156,
+     "fees": 41928.149,
+     "expectancy": 1005.821,
+     "avg_win": 1163.76,
+     "avg_loss": -537.522
+    },
+    "instr_oos": {
+     "sharpe": 12.199,
+     "net_pct": 32.392,
+     "maxdd": -0.443,
+     "win_rate": 87.421,
+     "trades": 318,
+     "profit_factor": 13.879,
+     "fees": 13525.553,
+     "expectancy": 1018.63,
+     "avg_win": 1255.669,
+     "avg_loss": -628.794
+    },
+    "rms_full": {
+     "sharpe": 13.828,
+     "net_pct": 99.677,
+     "maxdd": -0.3,
+     "win_rate": 90.716,
+     "trades": 991,
+     "profit_factor": 21.156,
+     "fees": 41928.149,
+     "expectancy": 1005.821,
+     "avg_win": 1163.76,
+     "avg_loss": -537.522
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 9.73602302227168,
+    "best5": 10.558861941289122,
+    "worst5": 8.946770012146535,
+    "original": 9.721459569652222
+   },
+   "created": "2026-07-11 20:00"
+  }
+ ],
+ "correlation": {
+  "slugs": [
+   "mid_orb_nifty",
+   "long_straddle_orb",
+   "debit_vertical_orb",
+   "long_strangle_orb",
+   "orb_supertrend",
+   "chain_zone_longatm",
+   "chain_zone_naked",
+   "chain_zone_credit",
+   "chain_zone_positional",
+   "ratio_backspread",
+   "shortvol_ironfly"
+  ],
+  "matrix": [
+   [
+    1.0,
+    0.316,
+    0.385,
+    0.325,
+    0.441,
+    0.133,
+    0.073,
+    0.078,
+    0.01,
+    0.411,
+    -0.052
+   ],
+   [
+    0.316,
+    1.0,
+    0.449,
+    0.915,
+    0.611,
+    0.261,
+    0.068,
+    0.073,
+    -0.006,
+    0.436,
+    0.02
+   ],
+   [
+    0.385,
+    0.449,
+    1.0,
+    0.398,
+    0.656,
+    0.207,
+    0.129,
+    0.134,
+    0.037,
+    0.592,
+    -0.088
+   ],
+   [
+    0.325,
+    0.915,
+    0.398,
+    1.0,
+    0.551,
+    0.229,
+    0.078,
+    0.083,
+    -0.009,
+    0.422,
+    0.042
+   ],
+   [
+    0.441,
+    0.611,
+    0.656,
+    0.551,
+    1.0,
+    0.206,
+    0.081,
+    0.086,
+    0.004,
+    0.597,
+    -0.111
+   ],
+   [
+    0.133,
+    0.261,
+    0.207,
+    0.229,
+    0.206,
+    1.0,
+    0.878,
+    0.878,
+    -0.02,
+    0.206,
+    -0.008
+   ],
+   [
+    0.073,
+    0.068,
+    0.129,
+    0.078,
+    0.081,
+    0.878,
+    1.0,
+    0.994,
+    -0.012,
+    0.095,
+    -0.044
+   ],
+   [
+    0.078,
+    0.073,
+    0.134,
+    0.083,
+    0.086,
+    0.878,
+    0.994,
+    1.0,
+    -0.012,
+    0.096,
+    -0.043
+   ],
+   [
+    0.01,
+    -0.006,
+    0.037,
+    -0.009,
+    0.004,
+    -0.02,
+    -0.012,
+    -0.012,
+    1.0,
+    0.013,
+    -0.066
+   ],
+   [
+    0.411,
+    0.436,
+    0.592,
+    0.422,
+    0.597,
+    0.206,
+    0.095,
+    0.096,
+    0.013,
+    1.0,
+    -0.061
+   ],
+   [
+    -0.052,
+    0.02,
+    -0.088,
+    0.042,
+    -0.111,
+    -0.008,
+    -0.044,
+    -0.043,
+    -0.066,
+    -0.061,
+    1.0
+   ]
+  ],
+  "days": 1890
+ }
+}

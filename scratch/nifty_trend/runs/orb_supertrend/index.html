@@ -106,8 +106,8 @@
 <div class="wrap">
   <div class="stickyhead">
     <div class="topbar">
-      <div class="app-title">📈 NIFTY Intraday — Mid-Day Opening-Range Breakout
-        <span class="sub">NSE spot · 15m · 11:00–13:00 window · long+short · 3:15 exit · max 2/day · 1x NO leverage</span></div>
+      <div class="app-title"><span id="appTitleTxt">📈 NIFTY Intraday — Mid-Day Opening-Range Breakout</span>
+        <span class="sub" id="appTitleSub">NSE spot · 15m · 11:00–13:00 window · long+short · 3:15 exit · max 2/day · 1x NO leverage</span></div>
       <span class="livechip" id="livechip">● GENUINE EDGE</span>
     </div>
     <div class="controls">
@@ -142,7 +142,7 @@
       <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
       <div class="panel dna"><div class="sh">Strategy — DNA (optimized)</div><div id="dna"></div></div>
       <div class="panel"><div class="sh">Info</div><div id="info"></div></div>
-      <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy &amp; Terms</div><div id="philo"></div></div>
+      <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
     </div>
   </div>
 
@@ -210,11 +210,20 @@ function perLabel(p){const w=(R.meta&&R.meta.window)||['',''];const y=s=>String(
   if(p==='recent')return 'Recent 2023+ (current regime)';
   return w[0]?`Full ${y(w[0])}-${y(w[1]).slice(2)}`:'Full window';}
 function renderPhilosophy(){const M=R.meta||{},p=document.getElementById('philoPanel');
-  if(!M.philosophy&&!M.glossary){p.style.display='none';return;}
+  const faq=M.faq&&M.faq.length?M.faq:null;
+  if(!M.philosophy&&!M.glossary&&!faq){p.style.display='none';return;}
   p.style.display='';let h='';
   if(M.philosophy)h+='<div style="font-size:12px;line-height:1.55;color:var(--tx)">'+M.philosophy+'</div>';
   if(M.glossary){h+='<div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">';
     for(const g of M.glossary)h+='<div style="margin:5px 0;font-size:11.5px"><b style="color:var(--blue)">'+g[0]+'</b> — <span style="color:var(--mut)">'+g[1]+'</span></div>';
+    h+='</div>';}
+  if(faq){h+='<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:9px">';
+    h+='<div style="font-weight:700;font-size:12.5px;color:var(--tx);margin-bottom:6px">❓ FAQ — is strategy ke baare mein</div>';
+    faq.forEach((qa,i)=>{const q=qa[0],a=qa[1];
+      h+=`<details style="margin:4px 0;background:var(--bg2,#0d1117);border:1px solid var(--bd);border-radius:6px;padding:2px 0">`+
+         `<summary style="cursor:pointer;padding:7px 10px;font-size:12px;font-weight:600;color:var(--blue);list-style:none">`+
+         `<span style="color:var(--mut);margin-right:6px">Q${i+1}.</span>${q}</summary>`+
+         `<div style="padding:2px 12px 10px 12px;font-size:11.5px;line-height:1.6;color:var(--tx)">${a}</div></details>`;});
     h+='</div>';}
   document.getElementById('philo').innerHTML=h;}
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),neg=n<0,last3=s.slice(-3),rest=s.slice(0,-3);
@@ -487,11 +496,15 @@ function closeMonthModal(){document.getElementById('mModal').classList.remove('o
 function renderTrades(){renderColMenu();renderTradeTable();}
 function renderAll(){const m=C().metrics,s=C().significance;
   const dsg=(R.meta&&R.meta.design)||'Opening-Range Breakout, 15m';
+  const _tEl=document.getElementById('appTitleTxt'),_sEl=document.getElementById('appTitleSub');
+  if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
+    if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
   document.getElementById('infobar').innerHTML=
     `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
   if(HAS_PASS){
     const per=perLabel(P);
-    const cmp=PASS==='bs'?' <b>Real option-premium P&amp;L</b> (ATM CE/PE, Black-Scholes + real Zerodha tax).':(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
+    const _pl=(R.meta&&R.meta.pass_labels)||{};
+    const cmp=String(PASS).startsWith('bs')?` <b>Real option-premium P&amp;L</b> (${_pl[PASS+'_desc']||'ATM CE/PE, Black-Scholes + real Zerodha tax'}).`:(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
     document.getElementById('warnbar').innerHTML=
       `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
     document.getElementById('passnote').innerHTML=passNote(PASS);
@@ -503,7 +516,13 @@ function renderAll(){const m=C().metrics,s=C().significance;
   }
   renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
   renderPerf();renderDNA();renderInfo();renderPhilosophy();renderMC();renderSig();renderOpt();renderTrades()}
-if(HAS_PASS){document.getElementById('segPass').style.display='';}
+if(HAS_PASS){const seg=document.getElementById('segPass');seg.style.display='';
+  // extra passes beyond the standard 3 (e.g. execution-structure variants bs_naked / bs_credit)
+  const known=new Set(['instrument','rms','bs']);const labels=(R.meta&&R.meta.pass_labels)||{};
+  (R.meta.passes||[]).forEach(p=>{if(known.has(p))return;
+    const b=document.createElement('button');b.dataset.pass=p;
+    b.textContent=labels[p]||p;if(labels[p+'_title'])b.title=labels[p+'_title'];
+    seg.appendChild(b);});}
 // hide the Recent button for older runs that don't have a recent combo (backward-compat)
 (function(){const has=Object.keys(R.combos||{}).some(k=>k.endsWith('|recent')||k==='recent');
   const rb=document.querySelector('#segP button[data-p="recent"]');if(rb&&!has)rb.style.display='none';})();

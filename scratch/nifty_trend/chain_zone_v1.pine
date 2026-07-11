@@ -1,0 +1,197 @@
+//@version=5
+// ╔════════════════════════════════════════════════════════════════════════╗
+// ║  Chain-Zone v1 — Python-backtest-matched build of Ars_Auto_Rev_Chain    ║
+// ║  Purpose: TradingView pe wahi logic jo Python backtest ne validate kiya ║
+// ║  (runs/chain_zone_longatm, NIFTY 5m, p=0.000, Sharpe 1.95).             ║
+// ║                                                                         ║
+// ║  Ye aapke original Pine ka SIMPLIFIED + ALIGNED version hai — sirf wahi  ║
+// ║  rules jo Python me port + validate hue, taaki TV == Python == live.    ║
+// ║  Original (zone-exit, HH/LL tracking, hawa detail) ke muqable ye:        ║
+// ║   • levels: prevHLC + pivot R1-R5/S1-S5 + chain highs/lows (≤20d,≤10%)   ║
+// ║   • zone : key candle (engulf/hammer/harami) line touch (±touch_tol)     ║
+// ║   • entry: zone_age bars ke andar same-colour breakout, candle≤max_cs    ║
+// ║   • exit : stop_only — ATR(14)×atr_sl stop, NO target, 15:15 EOD         ║
+// ║  NOTE: signal NIFTY spot pe; live me LONG→BUY CE, SHORT→BUY PE (Python). ║
+// ╚════════════════════════════════════════════════════════════════════════╝
+strategy("Chain-Zone v1 (matched)", overlay=true, calc_on_every_tick=false,
+     pyramiding=0, default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+
+// ── params (Python winner defaults) ──
+tolIn      = input.float(5.0,  "Touch tolerance (pts)",      group="Zone")
+zoneAge    = input.int(2,      "Zone freshness (bars)",      group="Zone", minval=1)
+maxCs      = input.float(40.0, "Max breakout candle (pts)",  group="Zone")
+hawaOn     = input.bool(false, "Hawa-me zone",               group="Zone")
+hawaK      = input.int(3,      "Hawa lookback (bars)",       group="Zone")
+lookback   = input.int(20,     "Chain lookback (days)",      group="Chain")
+maxJump    = input.float(10.0, "Max chain jump % (index=10)",group="Chain")
+minBody    = input.float(0.5,  "Min body (pts)",             group="Pattern")
+wickRatio  = input.float(2.5,  "Wick ratio",                 group="Pattern")
+atrLen     = input.int(14,     "ATR length",                 group="Exit")
+atrSl      = input.float(2.5,  "ATR SL mult",                group="Exit")
+maxTrades  = input.int(2,      "Max trades/day",             group="Risk")
+exitH      = input.int(15,     "EOD exit hour",              group="Risk")
+exitM      = input.int(15,     "EOD exit min",               group="Risk")
+
+// ── previous-day daily OHLC (last 22 days) ──
+// NOTE: Pine me request.security LOOP/if ke andar nahi chal sakta → 22 calls unroll karni padti hain
+// (aapke original Pine ne bhi isiliye get_day(0..20) explicit likhe the).
+dHi = request.security(syminfo.tickerid, "D", high,  lookahead=barmerge.lookahead_on)
+dLo = request.security(syminfo.tickerid, "D", low,   lookahead=barmerge.lookahead_on)
+pc1 = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_on)
+
+var float[] DH = array.new_float(22, na)
+var float[] DL = array.new_float(22, na)
+// har naye DAILY bar pe chain ko shift karke aaj ka daily H/L push karo (loop-free security)
+newDay = ta.change(time("D")) != 0
+if newDay
+    array.pop(DH)
+    array.unshift(DH, dHi)
+    array.pop(DL)
+    array.unshift(DL, dLo)
+
+// ── build levels from PREVIOUS completed day (index 1) — no lookahead ──
+f_levels() =>
+    ph = array.get(DH, 1)
+    pl = array.get(DL, 1)
+    pc = pc1                            // prev-day close (top-level security call)
+    P  = (ph + pl + pc) / 3.0
+    rng = ph - pl
+    res = array.new_float()
+    sup = array.new_float()
+    neu = array.new_float()
+    // pivots
+    array.push(res, ph)
+    array.push(res, 2*P - pl)          // R1
+    array.push(res, P + rng)           // R2
+    r3 = ph + 2*(P - pl)
+    array.push(res, r3)                // R3
+    array.push(res, r3 + rng)          // R4
+    array.push(res, r3 + 2*rng)        // R5
+    array.push(sup, pl)
+    array.push(sup, 2*P - ph)          // S1
+    array.push(sup, P - rng)           // S2
+    s3 = pl - 2*(ph - P)
+    array.push(sup, s3)                // S3
+    array.push(sup, s3 - rng)          // S4
+    array.push(sup, s3 - 2*rng)        // S5
+    array.push(neu, P)
+    array.push(neu, pc)
+    // chain higher-highs
+    thr = ph
+    for k = 2 to lookback
+        hh = array.get(DH, k)
+        if not na(hh) and hh > thr and (hh - thr) / thr * 100.0 <= maxJump
+            array.push(res, hh)
+            thr := hh
+    // chain lower-lows
+    thr2 = pl
+    for k = 2 to lookback
+        ll = array.get(DL, k)
+        if not na(ll) and ll < thr2 and (thr2 - ll) / thr2 * 100.0 <= maxJump
+            array.push(sup, ll)
+            thr2 := ll
+    [res, sup, neu]
+
+[RES, SUP, NEU] = f_levels()
+
+f_touch(arr, lo, hi) =>
+    hit = false
+    if not na(arr)
+        for i = 0 to array.size(arr) - 1
+            x = array.get(arr, i)
+            if not na(x) and lo <= x and x <= hi
+                hit := true
+    hit
+
+lo = low - tolIn
+hi = high + tolIn
+tRes = f_touch(RES, lo, hi)
+tSup = f_touch(SUP, lo, hi)
+tNeu = f_touch(NEU, lo, hi)
+
+var int lastResBar = -1000000
+var int lastSupBar = -1000000
+if tRes
+    lastResBar := bar_index
+if tSup
+    lastSupBar := bar_index
+atRes = tRes or tNeu or (hawaOn and bar_index - lastResBar <= hawaK)
+atSup = tSup or tNeu or (hawaOn and bar_index - lastSupBar <= hawaK)
+
+// ── candle patterns (min_body / wick_ratio parity with Python) ──
+body   = math.abs(close - open)
+upWick = high - math.max(open, close)
+loWick = math.min(open, close) - low
+green  = close > open
+red    = close < open
+grnHam = green and body >= minBody and loWick >= wickRatio*body and upWick <= body
+redHam = red   and body >= minBody and loWick >= wickRatio*body and upWick <= body
+invRed = red   and body >= minBody and upWick >= wickRatio*body and loWick <= body
+bodyP  = math.abs(close[1] - open[1])
+pRed   = close[1] < open[1]
+pGrn   = close[1] > open[1]
+bullEng = green and pRed and bodyP >= minBody and open <= close[1] and close >= open[1]
+bearEng = red   and pGrn and bodyP >= minBody and open >= close[1] and close <= open[1]
+loC = math.min(open, close)
+hiC = math.max(open, close)
+bullHar = green and pRed and loC >= close[1] and hiC <= open[1]
+bearHar = red   and pGrn and loC >= open[1]  and hiC <= close[1]
+bullish = bullEng or bullHar or grnHam
+bearish = bearEng or bearHar or invRed or redHam
+
+// ── zone state machine (mirror Python _chain_zone_signals) ──
+var float redLo = na
+var float redHi = na
+var int   redBar = na
+var float grnLo = na
+var float grnHi = na
+var int   grnBar = na
+
+if bearish and atRes and not tSup
+    redLo := low
+    redHi := high
+    redBar := bar_index
+if bullish and atSup and not tRes
+    grnLo := low
+    grnHi := high
+    grnBar := bar_index
+
+cs = high - low
+longSig  = not na(grnBar) and bar_index > grnBar and bar_index - grnBar <= zoneAge and close > grnHi and close > open and close[1] > open[1] and cs <= maxCs
+shortSig = not na(redBar) and bar_index > redBar and bar_index - redBar <= zoneAge and close < redLo and close < open and close[1] < open[1] and cs <= maxCs
+if longSig
+    grnBar := na
+if shortSig
+    redBar := na
+
+// ── exit: stop_only (ATR stop, no target), max 2/day, 15:15 EOD ──
+atrVal = ta.atr(atrLen)
+var int tradesToday = 0
+if ta.change(time("D")) != 0
+    tradesToday := 0
+
+isEod = (hour == exitH and minute >= exitM)
+canEnter = not isEod and tradesToday < maxTrades and strategy.position_size == 0
+
+var float slLevel = na
+if canEnter and longSig
+    strategy.entry("L", strategy.long)
+    slLevel := close - atrSl * atrVal
+    tradesToday += 1
+if canEnter and shortSig
+    strategy.entry("S", strategy.short)
+    slLevel := close + atrSl * atrVal
+    tradesToday += 1
+
+// spot ATR stop (no target — ride to EOD)
+if strategy.position_size > 0 and not na(slLevel)
+    strategy.exit("L-sl", "L", stop=slLevel)
+if strategy.position_size < 0 and not na(slLevel)
+    strategy.exit("S-sl", "S", stop=slLevel)
+if isEod
+    strategy.close_all(comment="EOD 15:15")
+
+// ── plots ──
+plotshape(longSig,  title="LONG",  style=shape.triangleup,   location=location.belowbar, color=color.teal,  size=size.small)
+plotshape(shortSig, title="SHORT", style=shape.triangledown, location=location.abovebar, color=color.red,   size=size.small)
