@@ -32,7 +32,9 @@
     "instrument_full_sharpe": 0.973,
     "rms_full_sharpe": 0.975,
     "p_value": 0.0,
-    "created": "2026-07-10 09:13"
+    "created": "2026-07-10 09:13",
+    "deploy_key": "orb_v1",
+    "deployed": "orb_v1"
   },
   {
     "slug": "long_straddle_orb",
@@ -67,7 +69,9 @@
     "instrument_full_sharpe": 4.364,
     "rms_full_sharpe": 4.364,
     "p_value": 0.036,
-    "created": "2026-07-10 22:36"
+    "created": "2026-07-10 22:36",
+    "deploy_key": "straddle_v1",
+    "deployed": "straddle_v1"
   },
   {
     "slug": "debit_vertical_orb",
@@ -103,7 +107,9 @@
     "instrument_full_sharpe": 2.231,
     "rms_full_sharpe": 2.231,
     "p_value": 0.0,
-    "created": "2026-07-10 22:41"
+    "created": "2026-07-10 22:41",
+    "deploy_key": "dvert_v1",
+    "deployed": "dvert_v1"
   },
   {
     "slug": "long_strangle_orb",
@@ -173,7 +179,9 @@
     "instrument_full_sharpe": 1.287,
     "rms_full_sharpe": 1.333,
     "p_value": 0.0,
-    "created": "2026-07-10 23:40"
+    "created": "2026-07-10 23:40",
+    "deploy_key": "orbst_v1",
+    "deployed": "orbst_v1"
   },
   {
     "slug": "chain_zone_longatm",
@@ -209,7 +217,9 @@
     "instrument_full_sharpe": 0.566,
     "rms_full_sharpe": 0.61,
     "p_value": 0.0,
-    "created": "2026-07-11 01:41"
+    "created": "2026-07-11 01:41",
+    "deploy_key": "chainzone_v1",
+    "deployed": "chainzone_v1"
   },
   {
     "slug": "chain_zone_naked",
@@ -354,7 +364,9 @@
     "instrument_full_sharpe": 2.231,
     "rms_full_sharpe": 2.231,
     "p_value": 0.002,
-    "created": "2026-07-11 12:33"
+    "created": "2026-07-11 12:33",
+    "deploy_key": "backspread_v1",
+    "deployed": "backspread_v1"
   },
   {
     "slug": "gamma_scalp",
@@ -422,7 +434,9 @@
     "instrument_full_sharpe": -0.974,
     "rms_full_sharpe": -3.509,
     "p_value": 1.0,
-    "created": "2026-07-11 20:51"
+    "created": "2026-07-11 20:51",
+    "deploy_key": "shortvol_v1",
+    "deployed": "shortvol_v1"
   },
   {
     "slug": "banknifty_hunt",
@@ -457,6 +471,8 @@
     "instrument_full_sharpe": 0.509,
     "rms_full_sharpe": 0.516,
     "p_value": 0.011,
-    "created": "2026-07-11 23:51"
+    "created": "2026-07-11 23:51",
+    "deploy_key": "",
+    "deployed": ""
   }
 ]

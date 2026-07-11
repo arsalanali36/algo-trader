@@ -113,7 +113,7 @@ function mapRun(r){
   return {id:r.slug, type:'strat', winner:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
     sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
     trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
-    link:`runs/${r.slug}/index.html`, deployed:r.deployed||'',
+    link:`runs/${r.slug}/index.html`, deployed:r.deployed||'', deploy_key:r.deploy_key||'',
     desc:`${sig?'✅ <b class="teal">GENUINE EDGE</b>':'⚠️ <b class="neg">NOT SIGNIFICANT</b>'} — 3-pass (Instrument→RMS→Black-Scholes). `+
       `Deployable ③ BS: Sharpe <b>${b.sharpe!=null?b.sharpe.toFixed(2):'—'}</b>, net <b class="${(b.net_pct||0)>=0?'pos':'neg'}">${net}</b>, `+
       `maxDD <b>${b.maxdd!=null?b.maxdd.toFixed(1)+'%':'—'}</b>, PF ${b.profit_factor!=null?b.profit_factor.toFixed(2):'—'}, win ${b.win_rate!=null?b.win_rate.toFixed(0)+'%':'—'}. `+
@@ -130,6 +130,21 @@ async function loadRuns(){
     ITEMS=dyn.concat(STATIC_ITEMS.filter(s=>!dynIds.has(s.id)));
     if(!localStorage.getItem(KEY)){stars={};ITEMS.forEach(i=>{if(i.winner)stars[i.id]=1});localStorage.setItem(KEY,JSON.stringify(stars));}
   }catch(e){/* file:// or no runs yet — static only */}
+  // live deploy-state from the app config (same-origin; fails silently on file://)
+  try{
+    const rc=await fetch('/api/config',{cache:'no-store'});
+    if(rc.ok){
+      const cfg=await rc.json();
+      ITEMS.forEach(i=>{
+        if(!i.deploy_key)return;
+        const c=cfg[i.deploy_key];
+        if(!c){i.deployed='';return;}
+        const mode=(c.mode||'paper').toUpperCase();
+        i.deployed = c.active ? `${i.deploy_key} · ${mode} ON` : `${i.deploy_key} · OFF`;
+        i.deploy_on = !!c.active; i.deploy_mode = mode;
+      });
+    }
+  }catch(e){}
 }
 
 const KEY='strat_lab_stars';
@@ -166,7 +181,7 @@ function render(){
             :(i.sig==='FAIL'?`<span class="sig fail">⚠️ FAIL</span> <span class="mut">p=${i.sigp.toFixed(2)}</span>`:'<span class="sig na">—</span>');
     const open=expanded[i.id];
     let deployBtn = i.type==='tool' ? ''
-      : (i.deployed ? `<span class="deployed" title="Deployed as ${i.deployed}">✓ ${i.deployed}</span>`
+      : (i.deployed ? `<span class="deployed" style="${i.deploy_on===false?'color:var(--mut)':''}" title="config: ${i.deployed}">${i.deploy_on===true?'🟢':(i.deploy_on===false?'⏸':'✓')} ${i.deployed}</span>`
         : `<a class="deploy" href="/" target="_blank" onclick="event.stopPropagation()" title="Manage / deploy in the app">Deploy</a>`);
     let row=`<tr class="main ${i.winner?'win':''}" data-id="${i.id}">
       <td><span class="star ${stars[i.id]?'on':''}" data-star="${i.id}">${stars[i.id]?'⭐':'☆'}</span></td>
