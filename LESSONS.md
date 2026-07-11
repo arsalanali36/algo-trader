@@ -2394,3 +2394,17 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 ## TRAP #100 (tier-qualified addendum, 2026-07-11)
 
 The original TRAP #100 ("Dhan drops expired NIFTY-weekly intraday → 0 bars, must BS-model / collect forward") is **FREE-tier behaviour**. With Dhan's **paid "Expired Options Data" add-on**, `POST /v2/charts/rollingoption` serves REAL 5-year expired-option premium + IV + OI for rolling ATM±N CE/PE (weekly+monthly). So the "no historical option data, must simulate" premise is account-tier-dependent. On the paid tier: download real data (see [[dhan_rollingoption_data]] / ADR-004), don't BS-model sellers (TRAP #106). The standard `/charts/intraday` STILL returns 0 for an expired contract's own sec_id even on the paid tier — you must use `rollingoption` (relative-strike, expiryCode≥1), not the expired sec_id.
+
+---
+
+## TRAP #109 — Rolling-ATM data series marks the position at "whatever ATM is NOW", not the CONTRACT HELD — hides intrinsic losses and fabricated a Sharpe-8.9 strategy.
+
+**Symptom:** Short-Vol Iron-Fly (#06) backtested at Sharpe 8.9 / +61% / worst-day −0.25% on REAL rollingoption data; crash-day 2024-06-04 even showed +₹11,550 "profit". It was paper-DEPLOYED on that basis. The corrected engine shows **−54% / Sharpe −3.5** — the entire edge was a marking artifact.
+
+**Root pattern:** Dhan `rollingoption` series are RELATIVE-strike (rolling ATM±N): each column re-references to the CURRENT ATM every bar. `real_struct.py` valued open positions by re-reading the same column at exit — i.e. "what does the CURRENT ATM option cost", not "what does MY entry-strike contract cost". When spot trends away, the held short straddle bleeds INTRINSIC value that the always-ATM column never shows (a rolling-ATM straddle stays ~pure time-value). Sellers' losses (and buyers' gains) on trend days vanished from the backtest. The bigger the move, the bigger the hidden loss — so the model looked BEST exactly on the days the real position hurt most (crash day "+profit" = IV-crush on a strike we wouldn't have held).
+
+**Permanent guard:** With rolling/relative-strike data, ALWAYS track the HELD strike: record K at entry; each bar compute `off = (K − ATM_now)/step` and read that OFFSET column (the ±10 grid covers ±500 pts; beyond → intrinsic-floor mark). `real_struct2.py` is the reference held-strike engine — use it for ALL structure backtests on the lake; `real_struct.py` retained only as the cautionary tale. Fast sanity: re-price one known trend day (e.g. 2024-06-04) by hand — a short straddle "profiting" through a 1500-pt range day is impossible.
+
+**Corrected picture (held-strike, real data, charges+slip):** short straddle −12%, iron-fly ±8 −54%, long straddle −27%, gamma-scalp −50% (0DTE −35%, Sh −9.7), calendar (sell-weekly/buy-monthly) +18% but Sharpe 0.12 with a −₹48.5k single-day tail → **intraday vol-trading in BOTH directions dies to costs on honest data**. #06 deactivated same session; #01–#05 UNAFFECTED (BS engine prices the held contract by construction).
+
+**Fast-detect:** Any lake-based structure backtest whose worst-day loss looks *smaller* than a plain reading of that day's spot range implies (|move|×qty−credit), or a short-gamma strategy "profiting" on a crash day = marking bug. Cross-check one big-move day manually before trusting.

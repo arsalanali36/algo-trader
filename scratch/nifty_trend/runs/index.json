@@ -357,18 +357,50 @@
     "created": "2026-07-11 12:33"
   },
   {
-    "slug": "shortvol_ironfly",
-    "design": "iron_fly/real",
-    "title": "Short-Vol Iron-Fly \u00b18 (REAL)",
+    "slug": "gamma_scalp",
+    "design": "gamma_scalp",
+    "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
     "tf": "5m",
     "params": {
-      "structure": "iron_fly",
-      "wing": 8,
-      "tp_frac": 0.5,
-      "sl_frac": 1.0,
+      "structure": "long straddle + delta-hedge",
       "entry": "10:00 daily",
+      "hedge_band": 0.15,
+      "signal": "all"
+    },
+    "exit": "EOD 3:15",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": false,
+    "bs_full": {
+      "sharpe": 0.139,
+      "net_pct": -172.505,
+      "maxdd": -173.051,
+      "win_rate": 10.685,
+      "trades": 992,
+      "profit_factor": 0.067
+    },
+    "instrument_full_sharpe": -0.032,
+    "rms_full_sharpe": -0.032,
+    "p_value": 1.0,
+    "created": "2026-07-11 20:39"
+  },
+  {
+    "slug": "shortvol_ironfly",
+    "design": "iron_fly/held",
+    "title": "Short-Vol Iron-Fly \u274c CORRECTED (TRAP #109)",
+    "tf": "5m",
+    "params": {
+      "structure": "iron_fly \u00b18 (HELD-strike)",
+      "entry": "10:00",
+      "tp": 0.5,
+      "sl": 1.0,
       "slip": 0.005,
-      "signal": "time"
+      "note": "corrected engine"
     },
     "exit": "tp0.5/sl1.0",
     "instrument": "NIFTY 50 options",
@@ -378,18 +410,18 @@
       "2026-07-10"
     ],
     "days": 1242,
-    "significant": true,
+    "significant": false,
     "bs_full": {
-      "sharpe": 8.915,
-      "net_pct": 60.969,
-      "maxdd": -0.432,
-      "win_rate": 78.103,
+      "sharpe": -3.509,
+      "net_pct": -54.309,
+      "maxdd": -54.503,
+      "win_rate": 47.931,
       "trades": 991,
-      "profit_factor": 6.037
+      "profit_factor": 0.431
     },
-    "instrument_full_sharpe": 13.828,
-    "rms_full_sharpe": 13.828,
-    "p_value": 0.0,
-    "created": "2026-07-11 20:00"
+    "instrument_full_sharpe": -0.974,
+    "rms_full_sharpe": -3.509,
+    "p_value": 1.0,
+    "created": "2026-07-11 20:51"
   }
 ]

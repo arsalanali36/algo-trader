@@ -194,7 +194,19 @@ IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a b
 - **Tail is CONTAINED** (intraday + 10:00 entry after open + 3:15 exit avoids the overnight/gap
   killer): worst day −0.75% capital, 0/991 days lose >1%. Crash day 2024-06-04 (NIFTY −8% intraday,
   1557pt range) = **+₹11,550 PROFIT** (enter post-panic → IV crush).
-- **✅ #06 BUILT = Short-Vol Iron-Fly ±8 (sell ATM CE+PE, buy ±8 wings), 10:00 entry, tp0.5/sl1.0, slip0.5%.**
+- **❌❌ 2026-07-11 EVENING CORRECTION — #06 RETRACTED (LESSONS TRAP #109).** The Sharpe-8.9 result
+  below was a MARKING BUG: rolling-ATM columns valued the position at "current ATM premium", not the
+  HELD contract — hiding intrinsic losses on trend days (crash-day "+11,550" was impossible for a held
+  short straddle through a 1557-pt range). Corrected HELD-STRIKE engine (`real_struct2.py`, tracks entry
+  strikes through the ±10 offset grid): **iron-fly −54%/Sh −3.5, short straddle −12%, long straddle −27%,
+  gamma-scalp −50% (0DTE −35%), calendar +18% but Sh 0.12 with −₹48.5k tail.** Intraday vol-trading in
+  BOTH directions dies to costs on honest data. `shortvol_v1` **deactivated** same session (was paper,
+  zero trades taken); run rebuilt as ❌ CORRECTED in hub/compare. #01–#05 UNAFFECTED (BS engine prices
+  the held contract). **#07 outcome: gamma scalping REJECTED on both engines; C-family OI/PCR (5 designs
+  × sweeps) all negative; OI-wall filter degrades #06-style selling monotonically; calendar fails gates.
+  Honest result per mission rules: NO new edge to ship from the vol/OI family — engines corrected, negatives
+  documented (runs/gamma_scalp, runs/shortvol_ironfly), search won't re-tread this ground.**
+- ~~✅ #06 BUILT~~ (RETRACTED — see above) = Short-Vol Iron-Fly ±8 (sell ATM CE+PE, buy ±8 wings), 10:00 entry, tp0.5/sl1.0, slip0.5%.**
   DEPLOYABLE (bs pass, real premium+IV+charges+slip): **Sharpe 8.9, +61%, maxDD −0.4%, worst day −₹2,469
   (−0.25% cap), win 78%, 991 trades.** Wing sweep: wider=better (±5→Sh5, ±8→Sh8.9); ±8 robust 7.33
   (train 9.78/OOS 7.33). `runs/shortvol_ironfly/` (build_shortvol.py). ±10 WEEK now complete → optional

@@ -1,0 +1,33 @@
+{
+  "slug": "gamma_scalp",
+  "design": "gamma_scalp",
+  "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
+  "tf": "5m",
+  "params": {
+    "structure": "long straddle + delta-hedge",
+    "entry": "10:00 daily",
+    "hedge_band": 0.15,
+    "signal": "all"
+  },
+  "exit": "EOD 3:15",
+  "instrument": "NIFTY 50 options",
+  "lot_size": 65,
+  "window": [
+    "2021-07-01",
+    "2026-07-10"
+  ],
+  "days": 1242,
+  "significant": false,
+  "bs_full": {
+    "sharpe": 0.139,
+    "net_pct": -172.505,
+    "maxdd": -173.051,
+    "win_rate": 10.685,
+    "trades": 992,
+    "profit_factor": 0.067
+  },
+  "instrument_full_sharpe": -0.032,
+  "rms_full_sharpe": -0.032,
+  "p_value": 1.0,
+  "created": "2026-07-11 20:39"
+}

@@ -1166,9 +1166,9 @@
    "created": "2026-07-11 12:33"
   },
   {
-   "slug": "shortvol_ironfly",
-   "title": "Short-Vol Iron-Fly \u00b18 (REAL)",
-   "design": "Short-Vol Iron-Fly (sell ATM + buy \u00b18 wings) \u2014 NIFTY 5m REAL premium/IV",
+   "slug": "gamma_scalp",
+   "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
+   "design": "Gamma Scalping (long straddle + delta-hedge) \u2014 NIFTY 5m REAL \u2014 \u274c REJECTED (VRP loser)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -1178,17 +1178,14 @@
    "days": 1242,
    "lot_size": 65,
    "dna": {
-    "structure": "iron_fly",
-    "wing": 8,
-    "tp_frac": 0.5,
-    "sl_frac": 1.0,
+    "structure": "long straddle + delta-hedge",
     "entry": "10:00 daily",
-    "slip": 0.005,
-    "signal": "time"
+    "hedge_band": 0.15,
+    "signal": "all"
    },
-   "exit": "tp0.5/sl1.0",
-   "p_value": 0.0,
-   "significant": true,
+   "exit": "EOD 3:15",
+   "p_value": 1.0,
+   "significant": false,
    "passes": [
     "instrument",
     "rms",
@@ -1196,87 +1193,199 @@
    ],
    "m": {
     "bs_full": {
-     "sharpe": 8.915,
-     "net_pct": 60.969,
-     "maxdd": -0.432,
-     "win_rate": 78.103,
-     "trades": 991,
-     "profit_factor": 6.037,
-     "fees": 41928.149,
-     "expectancy": 615.225,
-     "avg_win": 944.103,
-     "avg_loss": -557.823
+     "sharpe": 0.139,
+     "net_pct": -172.505,
+     "maxdd": -173.051,
+     "win_rate": 10.685,
+     "trades": 992,
+     "profit_factor": 0.067,
+     "fees": 42405.642,
+     "expectancy": -1738.959,
+     "avg_win": 1164.186,
+     "avg_loss": -2086.288
     },
     "bs_train": {
-     "sharpe": 9.752,
-     "net_pct": 42.232,
-     "maxdd": -0.426,
-     "win_rate": 80.684,
-     "trades": 673,
-     "profit_factor": 7.514,
-     "fees": 28402.677,
-     "expectancy": 627.516,
-     "avg_win": 897.148,
-     "avg_loss": -498.719
+     "sharpe": -0.347,
+     "net_pct": -113.363,
+     "maxdd": -113.46,
+     "win_rate": 9.644,
+     "trades": 674,
+     "profit_factor": 0.053,
+     "fees": 28673.45,
+     "expectancy": -1681.941,
+     "avg_win": 967.748,
+     "avg_loss": -1964.749
     },
     "bs_oos": {
-     "sharpe": 7.22,
-     "net_pct": 18.695,
-     "maxdd": -0.606,
-     "win_rate": 72.642,
-     "trades": 318,
-     "profit_factor": 4.301,
-     "fees": 13525.553,
-     "expectancy": 587.907,
-     "avg_win": 1054.475,
-     "avg_loss": -650.912
+     "sharpe": -12.167,
+     "net_pct": -59.096,
+     "maxdd": -59.429,
+     "win_rate": 13.166,
+     "trades": 319,
+     "profit_factor": 0.094,
+     "fees": 13776.395,
+     "expectancy": -1852.55,
+     "avg_win": 1455.642,
+     "avg_loss": -2354.153
     },
     "instr_full": {
-     "sharpe": 13.828,
-     "net_pct": 99.677,
-     "maxdd": -0.3,
-     "win_rate": 90.716,
-     "trades": 991,
-     "profit_factor": 21.156,
-     "fees": 41928.149,
-     "expectancy": 1005.821,
-     "avg_win": 1163.76,
-     "avg_loss": -537.522
+     "sharpe": -0.032,
+     "net_pct": -150.032,
+     "maxdd": -150.532,
+     "win_rate": 12.601,
+     "trades": 992,
+     "profit_factor": 0.088,
+     "fees": 42405.642,
+     "expectancy": -1512.423,
+     "avg_win": 1151.334,
+     "avg_loss": -1896.471
     },
     "instr_oos": {
-     "sharpe": 12.199,
-     "net_pct": 32.392,
-     "maxdd": -0.443,
-     "win_rate": 87.421,
-     "trades": 318,
-     "profit_factor": 13.879,
-     "fees": 13525.553,
-     "expectancy": 1018.63,
-     "avg_win": 1255.669,
-     "avg_loss": -628.794
+     "sharpe": -11.099,
+     "net_pct": -52.546,
+     "maxdd": -52.919,
+     "win_rate": 15.987,
+     "trades": 319,
+     "profit_factor": 0.117,
+     "fees": 13776.395,
+     "expectancy": -1647.205,
+     "avg_win": 1364.339,
+     "avg_loss": -2220.298
     },
     "rms_full": {
-     "sharpe": 13.828,
-     "net_pct": 99.677,
-     "maxdd": -0.3,
-     "win_rate": 90.716,
-     "trades": 991,
-     "profit_factor": 21.156,
-     "fees": 41928.149,
-     "expectancy": 1005.821,
-     "avg_win": 1163.76,
-     "avg_loss": -537.522
+     "sharpe": -0.032,
+     "net_pct": -150.032,
+     "maxdd": -150.532,
+     "win_rate": 12.601,
+     "trades": 992,
+     "profit_factor": 0.088,
+     "fees": 42405.642,
+     "expectancy": -1512.423,
+     "avg_win": 1151.334,
+     "avg_loss": -1896.471
     },
     "bs_naked_full": null,
     "bs_credit_full": null
    },
    "mc": {
-    "median": 9.73602302227168,
-    "best5": 10.558861941289122,
-    "worst5": 8.946770012146535,
-    "original": 9.721459569652222
+    "median": 0.1311055095868058,
+    "best5": 0.9030386340891791,
+    "worst5": -0.6477023670978268,
+    "original": 0.12937740099188305
    },
-   "created": "2026-07-11 20:00"
+   "created": "2026-07-11 20:39"
+  },
+  {
+   "slug": "shortvol_ironfly",
+   "title": "Short-Vol Iron-Fly \u274c CORRECTED (TRAP #109)",
+   "design": "Short-Vol Iron-Fly \u00b18 \u2014 \u274c CORRECTED-REJECTED (TRAP #109 held-strike fix)",
+   "tf": "5m",
+   "type": "Intraday",
+   "window": [
+    "2021-07-01",
+    "2026-07-10"
+   ],
+   "days": 1242,
+   "lot_size": 65,
+   "dna": {
+    "structure": "iron_fly \u00b18 (HELD-strike)",
+    "entry": "10:00",
+    "tp": 0.5,
+    "sl": 1.0,
+    "slip": 0.005,
+    "note": "corrected engine"
+   },
+   "exit": "tp0.5/sl1.0",
+   "p_value": 1.0,
+   "significant": false,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": -3.509,
+     "net_pct": -54.309,
+     "maxdd": -54.503,
+     "win_rate": 47.931,
+     "trades": 991,
+     "profit_factor": 0.431,
+     "fees": 42159.64,
+     "expectancy": -548.018,
+     "avg_win": 866.629,
+     "avg_loss": -1850.262
+    },
+    "bs_train": {
+     "sharpe": -3.13,
+     "net_pct": -34.572,
+     "maxdd": -34.886,
+     "win_rate": 49.926,
+     "trades": 673,
+     "profit_factor": 0.437,
+     "fees": 28556.264,
+     "expectancy": -516.159,
+     "avg_win": 802.743,
+     "avg_loss": -1831.147
+    },
+    "bs_oos": {
+     "sharpe": -4.144,
+     "net_pct": -19.731,
+     "maxdd": -20.11,
+     "win_rate": 43.711,
+     "trades": 318,
+     "profit_factor": 0.42,
+     "fees": 13603.376,
+     "expectancy": -615.444,
+     "avg_win": 1021.059,
+     "avg_loss": -1886.248
+    },
+    "instr_full": {
+     "sharpe": -0.974,
+     "net_pct": -14.728,
+     "maxdd": -16.043,
+     "win_rate": 61.049,
+     "trades": 991,
+     "profit_factor": 0.807,
+     "fees": 42159.64,
+     "expectancy": -148.615,
+     "avg_win": 1018.496,
+     "avg_loss": -1977.894
+    },
+    "instr_oos": {
+     "sharpe": -1.211,
+     "net_pct": -5.702,
+     "maxdd": -8.963,
+     "win_rate": 57.547,
+     "trades": 318,
+     "profit_factor": 0.786,
+     "fees": 13603.376,
+     "expectancy": -175.847,
+     "avg_win": 1125.033,
+     "avg_loss": -1939.263
+    },
+    "rms_full": {
+     "sharpe": -3.509,
+     "net_pct": -54.309,
+     "maxdd": -54.503,
+     "win_rate": 47.931,
+     "trades": 991,
+     "profit_factor": 0.431,
+     "fees": 42159.64,
+     "expectancy": -548.018,
+     "avg_win": 866.629,
+     "avg_loss": -1850.262
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": -3.72214751628618,
+    "best5": -2.8374217185467416,
+    "worst5": -4.568348673063071,
+    "original": -3.695356437839533
+   },
+   "created": "2026-07-11 20:51"
   }
  ],
  "correlation": {
@@ -1291,6 +1400,7 @@
    "chain_zone_credit",
    "chain_zone_positional",
    "ratio_backspread",
+   "gamma_scalp",
    "shortvol_ironfly"
   ],
   "matrix": [
@@ -1305,7 +1415,8 @@
     0.078,
     0.01,
     0.411,
-    -0.052
+    -0.044,
+    -0.124
    ],
    [
     0.316,
@@ -1318,7 +1429,8 @@
     0.073,
     -0.006,
     0.436,
-    0.02
+    -0.082,
+    -0.29
    ],
    [
     0.385,
@@ -1331,7 +1443,8 @@
     0.134,
     0.037,
     0.592,
-    -0.088
+    0.08,
+    -0.268
    ],
    [
     0.325,
@@ -1344,7 +1457,8 @@
     0.083,
     -0.009,
     0.422,
-    0.042
+    -0.134,
+    -0.257
    ],
    [
     0.441,
@@ -1357,7 +1471,8 @@
     0.086,
     0.004,
     0.597,
-    -0.111
+    0.051,
+    -0.277
    ],
    [
     0.133,
@@ -1370,7 +1485,8 @@
     0.878,
     -0.02,
     0.206,
-    -0.008
+    0.03,
+    -0.201
    ],
    [
     0.073,
@@ -1383,7 +1499,8 @@
     0.994,
     -0.012,
     0.095,
-    -0.044
+    0.067,
+    -0.101
    ],
    [
     0.078,
@@ -1396,7 +1513,8 @@
     1.0,
     -0.012,
     0.096,
-    -0.043
+    0.063,
+    -0.105
    ],
    [
     0.01,
@@ -1409,7 +1527,8 @@
     -0.012,
     1.0,
     0.013,
-    -0.066
+    0.072,
+    -0.012
    ],
    [
     0.411,
@@ -1422,22 +1541,38 @@
     0.096,
     0.013,
     1.0,
-    -0.061
+    -0.011,
+    -0.201
    ],
    [
-    -0.052,
-    0.02,
-    -0.088,
-    0.042,
-    -0.111,
-    -0.008,
     -0.044,
-    -0.043,
-    -0.066,
-    -0.061,
+    -0.082,
+    0.08,
+    -0.134,
+    0.051,
+    0.03,
+    0.067,
+    0.063,
+    0.072,
+    -0.011,
+    1.0,
+    -0.195
+   ],
+   [
+    -0.124,
+    -0.29,
+    -0.268,
+    -0.257,
+    -0.277,
+    -0.201,
+    -0.101,
+    -0.105,
+    -0.012,
+    -0.201,
+    -0.195,
     1.0
    ]
   ],
-  "days": 1890
+  "days": 1891
  }
 }
