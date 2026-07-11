@@ -206,6 +206,18 @@ IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a b
   × sweeps) all negative; OI-wall filter degrades #06-style selling monotonically; calendar fails gates.
   Honest result per mission rules: NO new edge to ship from the vol/OI family — engines corrected, negatives
   documented (runs/gamma_scalp, runs/shortvol_ironfly), search won't re-tread this ground.**
+- **✅ #07 FOUND (take-3) = Mid-Day ORB on BANKNIFTY (new UNDERLYING = real diversification).**
+  After gamma ❌ / OI-family ❌ / calendar ❌ (all honestly documented), ran the full validated
+  pipeline on `bnf_1min.csv` (4.5yr) with BNF-correct market spec (`build_bnf.py`): strike step 100,
+  lot 30 (labelled fallback), weekly Thu→**Wed** (NSE cir 119/2023, eff 04-Sep-2023) → weekly
+  DISCONTINUED 2024-11-20 → monthly last-Thu/last-Tue — `expiry_calendar.banknifty_next_expiry()`
+  (+ exact `is_banknifty_expiry_day` for policy-A skip; T verified: Wed-expiry-day 0.23d, monthly-era 22d).
+  **WINNER: tod_orb @15m (OR=30, k=1.5, window 11:00–14:00, atr_sl=2.0, rr=1.5): p=0.011 ✅,
+  BS pass Sharpe 1.46 / +23.6% / DD −3.0% / 342 trades / PF 1.64; train 1.50 ≈ OOS 1.47 (no decay);
+  MC orig 1.55 ≈ median 1.56.** Honest rejects same hunt: BNF chain_zone negative screen; sess_rev
+  p=0.399; orb_st p=0.052. `runs/banknifty_hunt/` (hub 13 rows, compare '07 BNF MidORB').
+  **NOT deployed — user will review dashboard + decide deploy** (live trader would clone
+  orb_trader.py with BNF contract + monthly-expiry handling).
 - ~~✅ #06 BUILT~~ (RETRACTED — see above) = Short-Vol Iron-Fly ±8 (sell ATM CE+PE, buy ±8 wings), 10:00 entry, tp0.5/sl1.0, slip0.5%.**
   DEPLOYABLE (bs pass, real premium+IV+charges+slip): **Sharpe 8.9, +61%, maxDD −0.4%, worst day −₹2,469
   (−0.25% cap), win 78%, 991 trades.** Wing sweep: wider=better (±5→Sh5, ±8→Sh8.9); ±8 robust 7.33

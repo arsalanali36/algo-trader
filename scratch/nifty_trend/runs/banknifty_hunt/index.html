@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NIFTY Intraday ORB — Backtest</title>
+<style>
+  :root{--bg:#0b0e14;--panel:#12161f;--panel2:#171c27;--bd:#242c3a;--bd2:#1b2230;
+    --tx:#e6edf3;--mut:#8b949e;--mut2:#5c6673;--pos:#3fb950;--neg:#f85149;
+    --blue:#4f78ff;--bench:#e3a008;--yel:#f0c000;--purp:#a371f7;--teal:#2ee6a0}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;font-size:13.5px;line-height:1.45}
+  .wrap{max-width:1320px;margin:0 auto;padding:16px 18px 70px}
+  .topbar{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;background:var(--panel);border:1px solid var(--bd);border-radius:10px;margin-bottom:12px;flex-wrap:wrap;gap:10px}
+  .app-title{font-size:15px;font-weight:700}
+  .app-title .sub{color:var(--mut);font-weight:500;font-size:11.5px;margin-left:8px}
+  .livechip{background:#0c2a20;color:var(--teal);border:1px solid #124f3a;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+  .controls{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:14px}
+  .seg{display:flex;background:var(--panel);border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+  .seg .lbl{padding:7px 11px;color:var(--mut);font-size:10.5px;font-weight:700;align-self:center;border-right:1px solid var(--bd);background:var(--bd2);letter-spacing:.4px}
+  .seg button{background:none;border:none;color:var(--mut);padding:7px 16px;font-size:12.5px;font-weight:600;cursor:pointer;border-right:1px solid var(--bd2)}
+  .seg button:last-child{border-right:none}
+  .seg button.on{background:var(--blue);color:#fff}
+  .seg button:hover:not(.on){background:var(--panel2);color:var(--tx)}
+  .cols{display:grid;grid-template-columns:1fr 340px;gap:14px;align-items:start}
+  .panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:13px 15px;margin-bottom:14px}
+  .panel h3{margin:0 0 3px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px}
+  .panel h3 .tag{color:var(--mut);font-weight:500;font-size:11px}
+  .dash{border:none;border-top:1px dashed var(--bd);margin:0 0 11px}
+  svg{display:block;width:100%;height:auto}
+  .legend{display:flex;gap:15px;flex-wrap:wrap;font-size:11px;color:var(--mut);margin-top:7px}
+  .legend .it{display:flex;align-items:center;gap:6px}
+  .legend .sw{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .legend .sw.d{height:0;border-top:2px dashed var(--bench);width:18px}
+  .side .sh{font-size:11px;font-weight:700;letter-spacing:.6px;color:var(--mut);text-transform:uppercase;padding:2px 0 9px;border-bottom:1px solid var(--bd);margin-bottom:8px}
+  .mrow{display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;border-bottom:1px solid var(--bd2)}
+  .mrow:last-child{border-bottom:none}
+  .mrow .k{color:var(--mut)} .mrow .v{font-weight:700;font-variant-numeric:tabular-nums}
+  .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:14px}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:9px;padding:10px 12px}
+  .card .k{color:var(--mut);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+  .card .v{font-size:20px;font-weight:700}
+  .card .sub{font-size:10.5px;color:var(--mut);margin-top:1px}
+  table.mon{border-collapse:collapse;width:100%;font-size:11px}
+  table.mon th,table.mon td{border:1px solid #0b0e14;padding:8px 3px;text-align:center;font-weight:600}
+  table.mon th{color:var(--mut);font-weight:600}
+  table.mon td.yr{color:var(--mut);font-weight:700;background:var(--bd2)}
+  table.tbl{border-collapse:collapse;width:100%;font-size:12px}
+  table.tbl th{color:var(--mut);font-weight:600;text-align:right;padding:8px 10px;border-bottom:1px solid var(--bd);font-size:10.5px;text-transform:uppercase;letter-spacing:.4px}
+  table.tbl th:first-child,table.tbl td:first-child{text-align:left}
+  table.tbl td{padding:8px 10px;border-bottom:1px solid var(--bd2);text-align:right;font-variant-numeric:tabular-nums}
+  .pill{font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
+  .pill.long{background:#0f2e1a;color:var(--pos)} .pill.short{background:#3a1414;color:var(--neg)}
+  .pos{color:var(--pos)} .neg{color:var(--neg)} .mut{color:var(--mut)}
+  .mono{font-variant-numeric:tabular-nums;font-family:'Consolas',monospace}
+  .verdict{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+  .vbox{background:var(--panel2);border:1px solid var(--bd);border-radius:8px;padding:10px 12px}
+  .vbox .t{font-size:10.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+  .vbox .b{font-size:16px;font-weight:700}
+  .note{font-size:11px;color:var(--mut);margin-top:10px;line-height:1.55}
+  .dna .mrow .v{color:var(--teal)}
+  .tchbtn{background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:6px;padding:5px 11px;font-size:11.5px;font-weight:600;cursor:pointer}
+  .tchbtn:hover{background:var(--bd)}
+  .tbtoolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .tsearch{flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:7px;padding:7px 11px;font-size:12.5px}
+  .colwrap{position:relative}
+  .colmenu{display:none;position:absolute;right:0;top:110%;background:var(--panel);border:1px solid var(--bd);border-radius:8px;padding:8px 6px;z-index:50;min-width:150px;box-shadow:0 6px 18px rgba(0,0,0,.5)}
+  .colmenu.on{display:block}
+  .colmenu label{display:flex;align-items:center;gap:7px;padding:5px 8px;font-size:12px;color:var(--tx);cursor:pointer;border-radius:5px}
+  .colmenu label:hover{background:var(--panel2)}
+  table.ttable{border-collapse:collapse;width:100%;font-size:12px}
+  table.ttable th{position:sticky;top:0;background:var(--bd2);color:var(--mut);text-align:right;padding:8px 10px;font-size:10.5px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer;white-space:nowrap;z-index:1}
+  table.ttable th:first-child,table.ttable td:first-child{text-align:left}
+  table.ttable th.l{text-align:left}
+  table.ttable th:hover{color:var(--tx)}
+  table.ttable td{padding:7px 10px;border-bottom:1px solid var(--bd2);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  table.ttable td.l{text-align:left}
+  table.ttable tr:hover td{background:var(--panel2)}
+  table.ttable tr.subrow td{background:#12161f;color:var(--mut);font-size:11.5px;text-align:left;border-top:1px solid var(--bd)}
+  table.ttable tr.subrow.grand td{background:#0c2a20;color:var(--tx);font-size:12.5px;border-top:2px solid var(--teal)}
+  table.ttable tr.subrow b{font-weight:700}
+  table.mon td.moclick{cursor:pointer} table.mon td.moclick:hover{outline:2px solid var(--blue);outline-offset:-2px}
+  .pill.long{background:#0f2e1a;color:var(--pos);font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
+  .pill.short{background:#3a1414;color:var(--neg);font-size:10px;padding:1px 7px;border-radius:10px;font-weight:700}
+  .chbtn{background:none;border:1px solid var(--bd);border-radius:6px;color:var(--blue);padding:3px 8px;cursor:pointer;font-size:13px}
+  .chbtn:hover{background:var(--panel2)}
+  .tmodal{display:none;position:fixed;top:0;left:0;right:0;bottom:0;width:100%;height:100%;background:rgba(0,0,0,.85);z-index:99999;padding:24px}
+  .tmodal.on{display:flex;align-items:center;justify-content:center}
+  .tmbox{background:var(--panel);border:1px solid var(--bd);border-radius:12px;width:100%;max-width:1200px;padding:16px 18px}
+  .tmhdr{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:14px;font-weight:600}
+  .tmdetail{margin-top:12px;display:flex;gap:20px;flex-wrap:wrap;font-size:12.5px;color:var(--mut)}
+  .tmdetail b{color:var(--tx)}
+  .infobar{background:#0e1a17;border:1px solid #17402f;color:#9fdcc4;border-radius:8px;padding:9px 13px;font-size:12px;margin-bottom:8px}
+  .warnbar{background:#3a2d0a;border:1px solid #5c470f;color:#f0c000;border-radius:8px;padding:9px 13px;font-size:12px;margin-bottom:14px}
+  .passnote{background:var(--panel);border:1px solid var(--bd);border-left:3px solid var(--blue);color:var(--mut);border-radius:8px;padding:8px 12px;font-size:11.5px;margin:-6px 0 14px}
+  .passnote b{color:var(--tx)}
+  #segPass button.on{background:#7c3aed}
+  .stickyhead{position:sticky;top:0;z-index:50;background:var(--bg);padding:8px 0 6px;margin-bottom:8px;box-shadow:0 8px 12px -6px rgba(0,0,0,.75)}
+  .stickyhead .topbar{margin-bottom:8px}
+  .stickyhead .controls{margin-bottom:8px}
+  .stickyhead .infobar,.stickyhead .warnbar{margin-bottom:6px}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}.verdict{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="stickyhead">
+    <div class="topbar">
+      <div class="app-title"><span id="appTitleTxt">📈 NIFTY Intraday — Mid-Day Opening-Range Breakout</span>
+        <span class="sub" id="appTitleSub">NSE spot · 15m · 11:00–13:00 window · long+short · 3:15 exit · max 2/day · 1x NO leverage</span></div>
+      <span class="livechip" id="livechip">● GENUINE EDGE</span>
+    </div>
+    <div class="controls">
+      <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
+        <button data-pass="instrument" title="Raw signal on NIFTY spot — no RMS, no options. Is there an edge at all?">① Instrument</button>
+        <button data-pass="rms" title="Same trades + account daily loss/profit caps applied.">② + RMS</button>
+        <button data-pass="bs" class="on" title="Pass-2 trades repriced into the ATM CE/PE premium actually traded (Black-Scholes + real Zerodha tax). The deployable truth.">③ + Black-Scholes</button></div>
+      <div class="seg" id="segP"><span class="lbl">PERIOD</span>
+        <button data-p="full" class="on">Full</button>
+        <button data-p="train">In-sample</button>
+        <button data-p="oos">Out-of-sample</button>
+        <button data-p="recent">Recent 2023+</button></div>
+    </div>
+  </div>
+  <div class="infobar" id="infobar"></div>
+  <div class="warnbar" id="warnbar"></div>
+  <div class="passnote" id="passnote"></div>
+
+  <div class="cards" id="cards"></div>
+
+  <div class="cols">
+    <div>
+      <div class="panel"><h3>Cumulative Returns vs Benchmark</h3><hr class="dash">
+        <div id="equity"></div>
+        <div class="legend"><div class="it"><span class="sw" style="background:var(--blue)"></span>Strategy (1x)</div>
+          <div class="it"><span class="sw d"></span>NIFTY Buy &amp; Hold</div></div></div>
+      <div class="panel"><h3>Drawdown <span class="tag">(Worst 5 Periods)</span></h3><hr class="dash"><div id="ddPeriods"></div></div>
+      <div class="panel"><h3>Underwater Plot</h3><hr class="dash"><div id="underwater"></div></div>
+      <div class="panel"><h3>Monthly Returns Heatmap</h3><hr class="dash"><div id="monthly" style="overflow-x:auto"></div></div>
+    </div>
+    <div class="side">
+      <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
+      <div class="panel dna"><div class="sh">Strategy — DNA (optimized)</div><div id="dna"></div></div>
+      <div class="panel"><div class="sh">Info</div><div id="info"></div></div>
+      <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
+    </div>
+  </div>
+
+  <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month in the heatmap above to filter · 📈 full-screen chart</span></h3>
+    <hr class="dash">
+    <div class="tbtoolbar">
+      <input id="tSearch" class="tsearch" placeholder="🔍 Search side / date / reason…">
+      <span id="monthChip" style="display:none"></span>
+      <span class="mut" id="tCount" style="font-size:11.5px"></span>
+      <div class="colwrap"><button id="colBtn" class="tchbtn">⚙ Columns ▾</button>
+        <div id="colMenu" class="colmenu"></div></div>
+    </div>
+    <div style="overflow-x:auto;max-height:520px;overflow-y:auto"><table class="ttable" id="ttable"></table></div>
+  </div>
+
+  <div class="panel"><h3>🎲 Monte Carlo <span class="tag">— 1,000 bootstrap equity paths</span></h3>
+    <hr class="dash"><div id="mcfan"></div>
+    <div class="legend"><div class="it"><span class="sw" style="background:var(--yel)"></span>Original</div>
+      <div class="it"><span class="sw" style="background:#4f78ff55"></span>1,000 sims</div></div>
+    <div style="overflow-x:auto;margin-top:14px"><table class="tbl" id="mctbl"></table></div></div>
+
+  <div class="panel"><h3>🧪 Statistical Significance <span class="tag">— entry edge vs random (rotation permutation ×1,000)</span></h3>
+    <hr class="dash"><div class="verdict" id="sig"></div><div class="note" id="signote"></div></div>
+
+  <div class="panel" id="optPanel"><h3>⚙️ Optimization Sweep <span class="tag">— top candidates by min(train, OOS) Sharpe</span></h3>
+    <hr class="dash"><div style="overflow-x:auto"><table class="tbl" id="opt"></table></div></div>
+
+</div>
+
+<!-- full-screen trade chart modal -->
+<div id="tModal" class="tmodal">
+  <div class="tmbox">
+    <div class="tmhdr"><span id="tmTitle"></span>
+      <div><button id="tmPrev" class="tchbtn">‹ Prev</button> <button id="tmNext" class="tchbtn">Next ›</button> <button id="tmClose" class="tchbtn">✕ Close</button></div></div>
+    <div id="tmChart"></div>
+    <div id="tmDetail" class="tmdetail"></div>
+  </div>
+</div>
+
+<!-- month day-wise breakdown modal -->
+<div id="mModal" class="tmodal">
+  <div class="tmbox" style="max-width:640px">
+    <div class="tmhdr"><span id="mmTitle"></span><button id="mmClose" class="tchbtn">✕ Close</button></div>
+    <div id="mmBody" style="max-height:60vh;overflow-y:auto"></div>
+  </div>
+</div>
+
+<script src="results.js"></script>
+<script>
+const R=window.RESULTS;
+const HAS_PASS=!!(R.meta&&R.meta.passes);   // new 3-pass results.js vs old single-axis
+let P='full';
+let PASS=HAS_PASS?'bs':null;                 // default view = ③ Black-Scholes (deployable truth)
+function comboKey(){return (HAS_PASS&&R.combos[PASS+'|'+P])?PASS+'|'+P:P;}
+function C(){return R.combos[comboKey()]}
+const PASS_NOTE={
+  instrument:'<b>① Instrument</b> — raw signal on <b>NIFTY spot</b>, spot-notional P&amp;L, house rules on (max 2/day, 3:15 exit). No daily ₹ caps, no options. <i>Question: is there an edge at all?</i>',
+  rms:'<b>② + RMS</b> — same trades, plus the account <b>daily loss/profit caps</b> (spot-notional scale). <i>Does clamping bad/good days help or hurt the edge?</i>',
+  bs:'<b>③ + Black-Scholes</b> — pass-② trades repriced into the <b>ATM CE/PE premium actually traded</b> (delta+theta, real Zerodha F&amp;O charges). This is the <b>deployable</b> P&amp;L. ₹ scale &amp; fees here are real; ①② are on the underlying and not directly comparable in ₹.'
+};
+function passNote(pass){const M=R.meta||{};if(M.pass_notes&&M.pass_notes[pass])return M.pass_notes[pass];return PASS_NOTE[pass]||'';}
+function perLabel(p){const w=(R.meta&&R.meta.window)||['',''];const y=s=>String(s).slice(0,4);
+  if(p==='train')return 'In-sample (train)';
+  if(p==='oos')return 'Out-of-sample';
+  if(p==='recent')return 'Recent 2023+ (current regime)';
+  return w[0]?`Full ${y(w[0])}-${y(w[1]).slice(2)}`:'Full window';}
+function renderPhilosophy(){const M=R.meta||{},p=document.getElementById('philoPanel');
+  const faq=M.faq&&M.faq.length?M.faq:null;
+  if(!M.philosophy&&!M.glossary&&!faq){p.style.display='none';return;}
+  p.style.display='';let h='';
+  if(M.philosophy)h+='<div style="font-size:12px;line-height:1.55;color:var(--tx)">'+M.philosophy+'</div>';
+  if(M.glossary){h+='<div style="margin-top:10px;border-top:1px solid var(--bd);padding-top:8px">';
+    for(const g of M.glossary)h+='<div style="margin:5px 0;font-size:11.5px"><b style="color:var(--blue)">'+g[0]+'</b> — <span style="color:var(--mut)">'+g[1]+'</span></div>';
+    h+='</div>';}
+  if(faq){h+='<div style="margin-top:12px;border-top:1px solid var(--bd);padding-top:9px">';
+    h+='<div style="font-weight:700;font-size:12.5px;color:var(--tx);margin-bottom:6px">❓ FAQ — is strategy ke baare mein</div>';
+    faq.forEach((qa,i)=>{const q=qa[0],a=qa[1];
+      h+=`<details style="margin:4px 0;background:var(--bg2,#0d1117);border:1px solid var(--bd);border-radius:6px;padding:2px 0">`+
+         `<summary style="cursor:pointer;padding:7px 10px;font-size:12px;font-weight:600;color:var(--blue);list-style:none">`+
+         `<span style="color:var(--mut);margin-right:6px">Q${i+1}.</span>${q}</summary>`+
+         `<div style="padding:2px 12px 10px 12px;font-size:11.5px;line-height:1.6;color:var(--tx)">${a}</div></details>`;});
+    h+='</div>';}
+  document.getElementById('philo').innerHTML=h;}
+function inr(n){n=Math.round(n);let s=''+Math.abs(n),neg=n<0,last3=s.slice(-3),rest=s.slice(0,-3);
+  if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (neg?'-':'')+'₹'+rest+last3}
+function lakh(v){return '₹'+(v/100000).toFixed(1)+'L'}
+const W=760,H=210,PAD=46,RPAD=10;
+function xmap(i,n){return PAD+(i/(n-1))*(W-PAD-RPAD)}
+function line(arr,color,w,ymin,ymax,fill,dash){const n=arr.length;
+  const y=v=>H-26-((v-ymin)/(ymax-ymin||1))*(H-26-14);
+  let d='M'+xmap(0,n).toFixed(1)+' '+y(arr[0]).toFixed(1);
+  for(let i=1;i<n;i++)d+='L'+xmap(i,n).toFixed(1)+' '+y(arr[i]).toFixed(1);
+  let s='';if(fill){s+=`<path d="${d}L${xmap(n-1,n).toFixed(1)} ${H-26}L${xmap(0,n).toFixed(1)} ${H-26}Z" fill="${fill}" stroke="none"/>`}
+  s+=`<path d="${d}" fill="none" stroke="${color}" stroke-width="${w}"${dash?` stroke-dasharray="${dash}"`:''}/>`;return s}
+function yaxis(ymin,ymax,fmt){let g='';for(let k=0;k<=4;k++){let v=ymin+(ymax-ymin)*k/4,yy=H-26-((v-ymin)/(ymax-ymin||1))*(H-26-14);
+  g+=`<line x1="${PAD}" y1="${yy}" x2="${W-RPAD}" y2="${yy}" stroke="#1b2230"/>`;
+  g+=`<text x="${PAD-5}" y="${yy+3}" fill="#5c6673" font-size="9" text-anchor="end">${fmt(v)}</text>`}return g}
+function xlabels(labels){let g='',step=Math.max(1,Math.floor(labels.length/7));
+  for(let i=0;i<labels.length;i+=step){let x=xmap(i,labels.length);
+    g+=`<text x="${x}" y="${H-8}" fill="#5c6673" font-size="9" text-anchor="middle">${labels[i]}</text>`}return g}
+function renderEquity(id,log){const c=C(),a=c.equity,b=c.benchmark,L=c.labels;
+  let ta=a.slice(),tb=b.slice();
+  if(log){ta=a.map(v=>Math.log10(v));tb=b.map(v=>Math.log10(v))}
+  const all=ta.concat(tb),ymin=Math.min(...all),ymax=Math.max(...all);
+  const fmt=log?(v=>Math.round(Math.pow(10,v)/1000)+'k'):(v=>lakh(v));
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,fmt)+xlabels(L);
+  svg+=line(tb,'#e3a008',1.4,ymin,ymax,null,'5 4');
+  svg+=line(ta,'#4f78ff',2,ymin,ymax,log?null:'#4f78ff14')+'</svg>';
+  document.getElementById(id).innerHTML=svg}
+function renderDD(){const c=C(),a=c.equity,L=c.labels,ymin=Math.min(...a),ymax=Math.max(...a);
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,lakh)+xlabels(L);
+  for(const p of c.worst_periods){let xc=PAD+p.frac*(W-PAD-RPAD);
+    svg+=`<rect x="${(xc-14).toFixed(0)}" y="14" width="28" height="${H-40}" fill="#f8514918"/>`;
+    svg+=`<text x="${xc.toFixed(0)}" y="30" fill="#f85149" font-size="9" text-anchor="middle">#${p.rank} ${p.dd}%</text>`}
+  svg+=line(a,'#4f78ff',1.7,ymin,ymax)+'</svg>';document.getElementById('ddPeriods').innerHTML=svg}
+function renderUW(){const c=C(),u=c.underwater,L=c.labels,ymin=Math.min(...u)*1.1-0.5,ymax=0;
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,v=>v.toFixed(0)+'%')+xlabels(L);
+  svg+=line(u,'#f85149',1.4,ymin,ymax,'#f8514926')+'</svg>';document.getElementById('underwater').innerHTML=svg}
+function renderMonthly(){const c=C(),mo=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const yrs=Object.keys(c.monthly).sort();
+  let h='<table class="mon"><tr><th></th>'+mo.map(x=>`<th>${x}</th>`).join('')+'<th>Year</th></tr>';
+  for(const y of yrs){let row=`<tr><td class="yr">${y}</td>`,tot=0;
+    for(let i=1;i<=12;i++){let v=c.monthly[y][i];
+      if(v===undefined){row+='<td style="background:#0e1218;color:#333">·</td>';continue}
+      tot+=v;let a=Math.min(.55,Math.abs(v)/6+.10),col=v>=0?`rgba(47,180,120,${a})`:`rgba(230,80,70,${a})`;
+      row+=`<td class="moclick" data-ym="${y}-${String(i).padStart(2,'0')}" title="Click for day-wise breakdown" style="background:${col}">${v>=0?'+':''}${v.toFixed(1)}</td>`}
+    row+=`<td class="yr ${tot>=0?'pos':'neg'}">${tot>=0?'+':''}${tot.toFixed(1)}</td></tr>`;h+=row}
+  h+='</table><div class="mut" style="font-size:11px;margin-top:6px">💡 kisi month pe click karo → neeche Trades table usi month pe filter ho jayegi (dobara click / chip ✕ = clear)</div>';
+  const el=document.getElementById('monthly');el.innerHTML=h;
+  el.querySelectorAll('.moclick').forEach(td=>td.onclick=()=>setMonthFilter(td.dataset.ym));}
+function renderCards(){const m=C().metrics;
+  const cards=[['Sharpe Ratio',m.sharpe.toFixed(2),m.sharpe>=1?'pos':(m.sharpe>0.5?'':'neg'),'target ≥ 1.0'],
+    ['Total Net Profit',(m.net_pct>=0?'+':'')+m.net_pct.toFixed(1)+'%',m.net_pct>=0?'pos':'neg',inr(m.final_cap)],
+    ['Max Drawdown',m.maxdd.toFixed(1)+'%','pos','ultra-low ✓'],
+    ['Win Rate',m.win_rate.toFixed(1)+'%','',(100-m.win_rate).toFixed(0)+'% losers'],
+    ['Total Trades',m.trades,'','~'+(m.trades_per_day||0).toFixed(2)+'/day'],
+    ['Avg Win / Loss',(m.wl_ratio||0).toFixed(2)+'×','pos','edge source'],
+    ['CAGR',(m.annual_return>=0?'+':'')+m.annual_return.toFixed(1)+'%',m.annual_return>=0?'pos':'neg','annualised'],
+    ['Calmar',(m.calmar||0).toFixed(2),m.calmar>=1?'pos':'','return/DD']];
+  document.getElementById('cards').innerHTML=cards.map(x=>
+    `<div class="card"><div class="k">${x[0]}</div><div class="v ${x[2]}">${x[1]}</div><div class="sub">${x[3]}</div></div>`).join('')}
+function tfMin(){const t=(R.meta&&R.meta.tf)||'15m';const m=parseInt(t);return m||15;}
+function hold(bars){return bars.toFixed(0)+' bars ('+(bars*tfMin()/60).toFixed(1)+'h)'}
+function renderPerf(){const m=C().metrics;
+  const rows=[['Total Closed Trades',m.trades],['Total Net Profit',`${inr(m.net_abs)} (${m.net_pct.toFixed(1)}%)`],
+    ['Start → Finish',`${inr(m.start_cap)} → ${inr(m.final_cap)}`],['Total Paid Fees',inr(m.fees)],
+    ['Max Drawdown',m.maxdd.toFixed(1)+'%'],['Max Underwater Period',m.underwater_days+' days'],
+    ['CAGR',m.annual_return.toFixed(1)+'%'],['Expectancy',inr(m.expectancy)],
+    ['Avg Win | Avg Loss',`${inr(m.avg_win)} | ${inr(m.avg_loss)}`],['Ratio Avg Win/Loss',(m.wl_ratio||0).toFixed(2)],
+    ['Profit Factor',(m.profit_factor||0).toFixed(2)],
+    ['Win-rate',m.win_rate.toFixed(1)+'%'],['Win-rate Shorts',(m.win_short||0).toFixed(1)+'%'],['Win-rate Longs',(m.win_long||0).toFixed(1)+'%'],
+    ['Longs | Shorts',`${(m.pct_long||0).toFixed(0)}% | ${(m.pct_short||0).toFixed(0)}%`],
+    ['Avg Holding Time',hold(m.avg_bars||0)],
+    ['Sharpe Ratio',m.sharpe.toFixed(2)],['Calmar Ratio',(m.calmar||0).toFixed(2)],['Sortino Ratio',(m.sortino||0).toFixed(2)],
+    ['Winning Streak',m.win_streak],['Losing Streak',m.loss_streak],
+    ['Largest Winning Trade',inr(m.largest_win)],['Largest Losing Trade',inr(m.largest_loss)],
+    ['Total Winning Trades',m.total_wins],['Total Losing Trades',m.total_losses],
+    ['Avg Trades / Day',(m.trades_per_day||0).toFixed(2)]];
+  document.getElementById('perf').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join('')}
+function renderDNA(){const d=C().dna;const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
+  let h='';for(const k in d)h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${d[k]}</span></div>`;
+  document.getElementById('dna').innerHTML=h}
+function renderInfo(){const M=R.meta||{};
+  const instr=(M.instrument||'NIFTY 50')+(HAS_PASS?' → ATM CE/PE options':' (index spot)');
+  const rows=[['Instrument',instr],['Exchange','NSE'],['Timeframe',M.tf||'15m'],
+  ['Design',M.design||'Mid-day ORB'],['Routes','long (CE) + short (PE)'],['Risk / trade','1.5% of capital'],
+  ['Lot size',HAS_PASS?((M.lot_size||'-')+' × '+(M.lots||1)+' lot'):'—'],
+  ['Leverage','NONE (1x)'],['Rules','3:15 exit · max 2/day · no overnight'],
+  ['Data window',R.meta.window[0]+' → '+R.meta.window[1]],['MC scenarios','1,000']];
+  document.getElementById('info').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v" style="font-weight:600">${r[1]}</span></div>`).join('')}
+function renderMC(){const c=C().mc;if(!c){document.getElementById('mcfan').innerHTML='<p class="mut">n/a</p>';document.getElementById('mctbl').innerHTML='';return}
+  const all=[].concat(...c.paths,c.orig_path),ymin=Math.min(...all),ymax=Math.max(...all);
+  let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,lakh);
+  for(const p of c.paths)svg+=line(p,'#4f78ff2e',0.7,ymin,ymax);
+  svg+=line(c.orig_path,'#f0c000',2.2,ymin,ymax)+'</svg>';document.getElementById('mcfan').innerHTML=svg;
+  const t=c.table,fmtp=(v,suf)=>((v>=0&&suf==='%')?'+':'')+v.toFixed(suf==='%'?1:2)+(suf||'');
+  const rows=[['Net Profit',t.net,'%'],['Max Drawdown',t.maxdd,'%'],['Sharpe Ratio',t.sharpe,'']];
+  let h='<tr><th>Metric</th><th>Original</th><th>Worst 5%</th><th>Median</th><th>Best 5%</th></tr>';
+  for(const r of rows){const[lbl,v,suf]=r;
+    h+=`<tr><td>${lbl}</td><td style="color:#f0c000;font-weight:700">${fmtp(v[0],suf)}</td>
+      <td class="neg">${fmtp(v[1],suf)}</td><td class="pos">${fmtp(v[2],suf)}</td><td class="mut">${fmtp(v[3],suf)}</td></tr>`}
+  document.getElementById('mctbl').innerHTML=h}
+function renderSig(){const s=C().significance,ok=s.significant;
+  document.getElementById('sig').innerHTML=`
+    <div class="vbox"><div class="t">Verdict</div><div class="b ${ok?'pos':'neg'}">${ok?'✅ SIGNIFICANT':'⚠️ NOT SIGNIFICANT'}</div></div>
+    <div class="vbox"><div class="t">p-value</div><div class="b mono">${s.p_value.toFixed(3)}</div></div>
+    <div class="vbox"><div class="t">Entry edge Sharpe</div><div class="b mono">${s.real_sharpe.toFixed(2)}</div></div>
+    <div class="vbox"><div class="t">Null 95th pct</div><div class="b mono">${s.null_p95.toFixed(2)}</div></div>`;
+  document.getElementById('signote').innerHTML=ok
+    ?`Entry-edge Sharpe <b>${s.real_sharpe.toFixed(2)}</b> beats the rotated-null 95th pct <b>${s.null_p95.toFixed(2)}</b> → p=${s.p_value.toFixed(3)} (&lt; 0.05 ✓). <b>This is a REAL directional edge</b> — the breakout entries genuinely predict direction, not luck, not beta. (Unlike the positional-trend strategy, which failed this test.)`
+    :`p=${s.p_value.toFixed(3)} — not significant.`}
+function renderOpt(){const c=C().opt_table;const panel=document.getElementById('optPanel');
+  if(!c||!c.length){panel.style.display='none';return}panel.style.display='';
+  const keys=Object.keys(c[0].params);
+  let h='<tr>'+keys.map(k=>`<th>${k}</th>`).join('')+'<th>Train Sh</th><th>OOS Sh</th><th>OOS Net</th><th>OOS DD</th></tr>';
+  c.forEach((r,i)=>{h+=`<tr${i===0?' style="background:#0f2e1a2b"':''}>`+keys.map(k=>`<td class="mono">${r.params[k]}</td>`).join('');
+    h+=`<td class="mono">${r.train_sharpe.toFixed(2)}</td><td class="mono ${r.oos_sharpe>=1?'pos':''}">${r.oos_sharpe.toFixed(2)}${i===0?' ★':''}</td>
+      <td class="mono pos">+${r.net.toFixed(1)}%</td><td class="mono neg">${r.dd.toFixed(1)}%</td></tr>`});
+  document.getElementById('opt').innerHTML=h}
+/* ── Trades table (search + column toggle) + full-screen chart modal ── */
+const CANDLES=R.meta.candles||[]; const CDATE={}; CANDLES.forEach((c,i)=>CDATE[c[0]]=i);
+function durStr(bars){const m=(bars||0)*tfMin();return m>=60?`${Math.floor(m/60)}h ${m%60}m`:`${m}m`;}
+function monthName(ym){const [y,mo]=ym.split('-');return['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+mo-1]+' '+y;}
+const TCOLS=[
+  {k:'entry_dt',label:'Date',l:true,get:t=>t.entry_dt.slice(0,10),raw:t=>t.entry_dt},
+  {k:'side',label:'Side',l:true,get:t=>{const s=t.side||'';const lbl={long:'LONG',short:'SHORT',long_vol:'LONG-VOL',short_vol:'SHORT-VOL',directional:'DIR'}[s]||String(s).toUpperCase();const cls=String(s).includes('long')?'long':'short';return `<span class="pill ${cls}">${lbl}</span>`;},raw:t=>t.side},
+  {k:'in',label:'In',get:t=>t.entry_dt.slice(11),raw:t=>t.entry_dt},
+  {k:'out',label:'Out',get:t=>t.exit_dt.slice(11),raw:t=>t.exit_dt},
+  {k:'dur',label:'Dur',off:true,get:t=>durStr(t.bars),raw:t=>t.bars},
+  {k:'entry',label:'Entry (spot)',get:t=>t.entry.toFixed(1),raw:t=>t.entry},
+  {k:'exit',label:'Exit (spot)',get:t=>t.exit.toFixed(1),raw:t=>t.exit},
+  {k:'strike',label:'Strike',off:true,get:t=>t.strike!=null?`${t.strike} ${t.opt_type||''}`:'<span class="mut">—</span>',raw:t=>t.strike||0},
+  {k:'entry_prem',label:'Entry Prem ₹',off:true,get:t=>t.entry_prem!=null?t.entry_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.entry_prem||0},
+  {k:'exit_prem',label:'Exit Prem ₹',off:true,get:t=>t.exit_prem!=null?t.exit_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.exit_prem||0},
+  {k:'prem_pts',label:'Prem Pts',get:t=>{if(t.entry_prem==null)return'<span class="mut">—</span>';const p=t.exit_prem-t.entry_prem;return`<span class="${p>=0?'pos':'neg'}">${p>=0?'+':''}${p.toFixed(1)}</span>`},raw:t=>t.entry_prem!=null?(t.exit_prem-t.entry_prem):0},
+  {k:'qty',label:'Qty',off:true,get:t=>(t.qty||0).toFixed(0),raw:t=>t.qty||0},
+  {k:'points',label:'Index Pts',get:t=>`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`,raw:t=>t.points},
+  {k:'gross',label:'Gross ₹',off:true,get:t=>`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`,raw:t=>t.gross},
+  {k:'fee',label:'Tax ₹',off:true,get:t=>`<span class="mut">-${inr(Math.abs(t.fee||0))}</span>`,raw:t=>t.fee},
+  {k:'pnl',label:'Net ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
+  {k:'ret',label:'% Move',get:t=>{const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.points/t.entry},
+  {k:'reason',label:'Exit Reason',l:true,get:t=>`<span class="mut">${t.reason}</span>`,raw:t=>t.reason},
+];
+let colVis=JSON.parse(localStorage.getItem('orb_tcols2')||'null')||{};
+TCOLS.forEach(c=>{if(colVis[c.k]===undefined)colVis[c.k]=!c.off;});
+let tSortKey='entry_dt',tSortDir=1,tQuery='',modalIdx=null,monthFilter=null;
+function setMonthFilter(ym){
+  monthFilter=(monthFilter===ym)?null:ym;   // click same month again = clear
+  updateMonthChip();renderTradeTable();
+  const p=document.getElementById('ttable').closest('.panel');
+  if(monthFilter&&p)p.scrollIntoView({behavior:'smooth',block:'start'});}
+function updateMonthChip(){const chip=document.getElementById('monthChip');if(!chip)return;
+  if(monthFilter){chip.style.display='';chip.style.cursor='pointer';chip.title='Clear month filter';
+    chip.innerHTML=`<span style="background:#1f6feb22;border:1px solid var(--blue);color:#9db8ff;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">📅 ${monthName(monthFilter)} &nbsp;✕</span>`;
+    chip.onclick=()=>{monthFilter=null;updateMonthChip();renderTradeTable();};}
+  else{chip.style.display='none';chip.innerHTML='';}}
+
+function tRows(){let tr=(C().all_trades||[]).map((t,i)=>({...t,_i:i}));
+  if(monthFilter)tr=tr.filter(t=>t.entry_dt.slice(0,7)===monthFilter);
+  if(tQuery){const q=tQuery.toLowerCase();tr=tr.filter(t=>(t.side+' '+t.entry_dt+' '+t.reason).toLowerCase().includes(q));}
+  const col=TCOLS.find(c=>c.k===tSortKey);
+  if(col)tr.sort((a,b)=>{let x=col.raw(a),y=col.raw(b);if(typeof x==='string'){x=x.toLowerCase();y=y.toLowerCase();}return x<y?-tSortDir:(x>y?tSortDir:0);});
+  return tr;}
+function fmtSum(v){return (v>=0?'+':'')+inr(v);}
+function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb=document.getElementById('ttable');
+  const ncol=vis.length+1;
+  let h='<tr>'+vis.map(c=>`<th class="${c.l?'l':''}" data-k="${c.k}">${c.label}${tSortKey===c.k?(tSortDir<0?' ▼':' ▲'):''}</th>`).join('')+'<th>Chart</th></tr>';
+  // sums shown UNDER their own columns (not a merged text blob). Grand total = frozen (sticky bottom).
+  const SUMCELL={
+    points:s=>`<span class="${s.pts>=0?'pos':'neg'}">${(s.pts>=0?'+':'')+s.pts.toFixed(0)}</span>`,
+    prem_pts:s=>s.prempts?`<span class="${s.prempts>=0?'pos':'neg'}">${(s.prempts>=0?'+':'')+s.prempts.toFixed(1)}</span>`:'',
+    gross:s=>`<span class="${s.gross>=0?'pos':'neg'}">${fmtSum(s.gross)}</span>`,
+    fee:s=>`<span class="mut">-${inr(Math.abs(s.fee))}</span>`,
+    pnl:s=>`<span class="${s.pnl>=0?'pos':'neg'}">${fmtSum(s.pnl)}</span>`};
+  const subRow=(label,s,cls)=>{
+    let firstSum=vis.findIndex(c=>SUMCELL[c.k]); if(firstSum<0)firstSum=vis.length;
+    const span=Math.max(1,firstSum);
+    const stick=cls==='grand'?'position:sticky;bottom:0;z-index:5;background:#0d2018;':'';
+    const lblTxt=cls==='grand'?`GRAND TOTAL · <b>${s.n} trades</b>`:`<span style="color:var(--blue)">📅 ${label}</span> · ${s.n} trades`;
+    let cells=`<td class="l" colspan="${span}" style="${stick}text-align:left;font-weight:700">${lblTxt}</td>`;
+    for(let i=span;i<vis.length;i++){const c=vis[i];cells+=`<td style="${stick}text-align:right;font-weight:700">${SUMCELL[c.k]?SUMCELL[c.k](s):''}</td>`;}
+    cells+=`<td style="${stick}"></td>`;
+    return `<tr class="subrow ${cls}">${cells}</tr>`;};
+  const byMonth=tSortKey==='entry_dt';
+  let curM=null,mS={n:0,gross:0,fee:0,pnl:0,pts:0,prempts:0},G={n:0,gross:0,fee:0,pnl:0,pts:0,prempts:0};
+  tr.forEach(t=>{const mo=t.entry_dt.slice(0,7);
+    if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0,pts:0,prempts:0};}
+    const pp=t.entry_prem!=null?(t.exit_prem-t.entry_prem):0;
+    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl;mS.pts+=t.points;mS.prempts+=pp; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;G.pts+=t.points;G.prempts+=pp;
+    h+='<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`;});
+  if(byMonth&&curM!==null)h+=subRow(monthName(curM),mS,'msub');
+  h+=subRow('GRAND TOTAL',G,'grand');
+  tb.innerHTML=h;document.getElementById('tCount').textContent=`${tr.length} trades · Net ${fmtSum(G.pnl)}`;
+  tb.querySelectorAll('th[data-k]').forEach(th=>th.onclick=()=>{const k=th.dataset.k;if(tSortKey===k)tSortDir=-tSortDir;else{tSortKey=k;tSortDir=1;}renderTradeTable();});
+  tb.querySelectorAll('.chbtn').forEach(b=>b.onclick=()=>openModal(+b.dataset.i));}
+function renderColMenu(){const m=document.getElementById('colMenu');
+  m.innerHTML=TCOLS.map(c=>`<label><input type="checkbox" data-k="${c.k}" ${colVis[c.k]?'checked':''}> ${c.label}</label>`).join('');
+  m.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{colVis[cb.dataset.k]=cb.checked;localStorage.setItem('orb_tcols2',JSON.stringify(colVis));renderTradeTable();});}
+function candleSVG(idx,W,H){const tr=C().all_trades||[],t=tr[idx];
+  const day=t.entry_dt.slice(0,10);
+  const intr=(R.meta.intraday&&R.meta.intraday[day])||null;   // 5-min bars for THIS day (real intraday)
+  const PAD=56,RP=12;
+  let seg,intraday=!!intr,ci=null,lo=0;
+  if(intraday){seg=intr;}
+  else{ci=CDATE[day];let hi=CANDLES.length-1;if(ci!=null){lo=Math.max(0,ci-30);hi=Math.min(CANDLES.length-1,ci+30);}seg=CANDLES.slice(lo,hi+1);}  // fallback: daily
+  const n=seg.length;
+  // ── indicator overlays (generic: opening-range band + horizontal levels + entry-window shade).
+  // Producer emits R.meta.overlays[entry_dt]={band,lines[]} + R.meta.overlay_spec.window.
+  // Any strategy that populates these draws automatically — chart stays strategy-agnostic.
+  const ov=(intraday&&R.meta.overlays&&R.meta.overlays[t.entry_dt])||null;
+  const ospec=R.meta.overlay_spec||null;
+  const ovL=[]; if(ov){if(ov.band){ovL.push(ov.band.hi,ov.band.lo);}(ov.lines||[]).forEach(L=>ovL.push(L.v));}
+  const ymax=Math.max(...seg.map(c=>c[2]),...ovL),ymin=Math.min(...seg.map(c=>c[3]),...ovL);
+  const x=i=>PAD+(i/((n-1)||1))*(W-PAD-RP),y=v=>H-26-((v-ymin)/(ymax-ymin||1))*(H-26-14);
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+  // background overlays: entry-window vertical shade + opening-range band (behind candles)
+  if(intraday&&ospec&&ospec.window){const wp=v=>('0'+v).slice(-2)+':00',ws=wp(ospec.window.h0),we=wp(ospec.window.h1);
+    let a=seg.findIndex(b=>b[0]>=ws);if(a<0)a=0;let bb=n-1;for(let j=n-1;j>=0;j--){if(seg[j][0]<=we){bb=j;break;}}
+    svg+=`<rect x="${x(a).toFixed(1)}" y="14" width="${Math.max(0,x(bb)-x(a)).toFixed(1)}" height="${H-40}" fill="#4f78ff" opacity="0.055"/>`;
+    svg+=`<text x="${((x(a)+x(bb))/2).toFixed(0)}" y="${H-30}" fill="#4f78ff" font-size="9" text-anchor="middle" opacity="0.55">entry window ${ws}–${we}</text>`;}
+  if(intraday&&ov&&ov.band){const yh=y(ov.band.hi),yl=y(ov.band.lo);
+    svg+=`<rect x="${PAD}" y="${yh.toFixed(1)}" width="${(W-PAD-RP).toFixed(1)}" height="${Math.max(1,yl-yh).toFixed(1)}" fill="${ov.band.color}" opacity="0.12"/>`;
+    svg+=`<text x="${PAD+4}" y="${(yh-3).toFixed(0)}" fill="${ov.band.color}" font-size="9">${ov.band.label} ${ov.band.hi}–${ov.band.lo}</text>`;}
+  for(let k=0;k<=4;k++){let v=ymin+(ymax-ymin)*k/4,yy=y(v);svg+=`<line x1="${PAD}" y1="${yy}" x2="${W-RP}" y2="${yy}" stroke="#1b2230"/><text x="${PAD-6}" y="${yy+3}" fill="#5c6673" font-size="10" text-anchor="end">${v.toFixed(0)}</text>`;}
+  const bw=Math.max(2,(W-PAD-RP)/n*0.6);
+  seg.forEach((c,i)=>{const o=c[1],h=c[2],l=c[3],cl=c[4],col=cl>=o?'#3fb950':'#f85149';
+    svg+=`<line x1="${x(i)}" y1="${y(h)}" x2="${x(i)}" y2="${y(l)}" stroke="${col}"/>`;
+    const yo=y(o),yc=y(cl);svg+=`<rect x="${(x(i)-bw/2).toFixed(1)}" y="${Math.min(yo,yc).toFixed(1)}" width="${bw.toFixed(1)}" height="${Math.max(1,Math.abs(yc-yo)).toFixed(1)}" fill="${col}"/>`;});
+  for(let i=0;i<n;i+=Math.ceil(n/8))svg+=`<text x="${x(i)}" y="${H-8}" fill="#5c6673" font-size="10" text-anchor="middle">${intraday?seg[i][0]:seg[i][0].slice(5)}</text>`;
+  // overlay level lines (breakout trigger / SL / target) — on top of candles, below entry/exit markers
+  if(intraday&&ov)(ov.lines||[]).forEach(L=>{const yy=y(L.v),op=L.op!=null?L.op:0.9;
+    svg+=`<line x1="${PAD}" y1="${yy}" x2="${W-RP}" y2="${yy}" stroke="${L.color}" stroke-dasharray="${L.dash||'4 4'}" stroke-width="${L.w||1}" opacity="${op}"/>`;
+    if(L.label)svg+=`<text x="${W-RP-2}" y="${(yy-3).toFixed(0)}" fill="${L.color}" font-size="10" text-anchor="end" opacity="${op}">${L.label} ${L.v}</text>`;});
+  const col=t.pnl>=0?'#3fb950':'#f85149';
+  if(intraday){
+    const et=t.entry_dt.slice(11),xt=t.exit_dt.slice(11);
+    let ei=seg.findIndex(b=>b[0]>=et);if(ei<0)ei=0;
+    let xi=seg.findIndex(b=>b[0]>=xt);if(xi<0)xi=n-1;
+    // entry (blue) + exit (P&L-colored) vertical lines at their times
+    svg+=`<line x1="${x(ei)}" y1="14" x2="${x(ei)}" y2="${H-26}" stroke="#4f78ff" stroke-dasharray="4 3"/>`;
+    svg+=`<line x1="${x(xi)}" y1="14" x2="${x(xi)}" y2="${H-26}" stroke="${col}" stroke-dasharray="4 3"/>`;
+    // entry/exit spot horizontal lines
+    svg+=`<line x1="${PAD}" y1="${y(t.entry)}" x2="${W-RP}" y2="${y(t.entry)}" stroke="#4f78ff" stroke-dasharray="3 3" opacity=".7"/>`;
+    svg+=`<line x1="${PAD}" y1="${y(t.exit)}" x2="${W-RP}" y2="${y(t.exit)}" stroke="${col}" stroke-dasharray="3 3" opacity=".7"/>`;
+    svg+=`<text x="${(x(ei)+4).toFixed(0)}" y="26" fill="#4f78ff" font-size="11" font-weight="700">▲ ENTRY ${et}</text>`;
+    svg+=`<text x="${(x(xi)+4).toFixed(0)}" y="40" fill="${col}" font-size="11" font-weight="700">▼ EXIT ${xt}</text>`;
+  } else if(ci!=null){const xi=x(ci-lo),up=t.side==='long';
+    const my=up?y(t.entry)+12:y(t.entry)-12,tri=up?`${xi},${my-11} ${xi-6},${my} ${xi+6},${my}`:`${xi},${my+11} ${xi-6},${my} ${xi+6},${my}`;
+    svg+=`<polygon points="${tri}" fill="${col}"/><line x1="${xi}" y1="14" x2="${xi}" y2="${H-26}" stroke="#4f78ff" stroke-dasharray="4 3"/>`;
+    svg+=`<line x1="${PAD}" y1="${y(t.entry)}" x2="${W-RP}" y2="${y(t.entry)}" stroke="#4f78ff" stroke-dasharray="3 3" opacity=".7"/>`;
+    svg+=`<line x1="${PAD}" y1="${y(t.exit)}" x2="${W-RP}" y2="${y(t.exit)}" stroke="${col}" stroke-dasharray="3 3" opacity=".7"/>`;}
+  return svg+'</svg>';}
+function openModal(idx){modalIdx=idx;const t=(C().all_trades||[])[idx];
+  document.getElementById('tmTitle').innerHTML=`<b class="${t.pnl>=0?'pos':'neg'}">${t.side.toUpperCase()}</b> · ${t.entry_dt} → ${t.exit_dt}`;
+  document.getElementById('tmChart').innerHTML=candleSVG(idx,1120,470);
+  document.getElementById('tmDetail').innerHTML=`<span>Entry <b>${t.entry.toFixed(1)}</b></span><span>Exit <b>${t.exit.toFixed(1)}</b></span><span>Points <b class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(1)}</b></span><span>P&amp;L <b class="${t.pnl>=0?'pos':'neg'}">${inr(t.pnl)}</b></span><span>Exit reason <b>${t.reason}</b></span>`;
+  document.getElementById('tModal').classList.add('on');}
+function closeModal(){document.getElementById('tModal').classList.remove('on');}
+function modalNav(d){const tr=C().all_trades||[];if(!tr.length)return;openModal((modalIdx+d+tr.length)%tr.length);}
+function openMonthModal(ym){const tr=(C().all_trades||[]).filter(t=>t.entry_dt.slice(0,7)===ym);
+  document.getElementById('mmTitle').innerHTML=`📅 <b>${monthName(ym)}</b> — day-wise`;
+  const days={};tr.forEach(t=>{const d=t.entry_dt.slice(0,10);(days[d]=days[d]||{n:0,gross:0,fee:0,pnl:0});days[d].n++;days[d].gross+=t.gross;days[d].fee+=t.fee;days[d].pnl+=t.pnl;});
+  const G={n:tr.length,gross:0,fee:0,pnl:0};tr.forEach(t=>{G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;});
+  let h='<table class="ttable"><tr><th class="l">Day</th><th>Trades</th><th>Gross ₹</th><th>Tax ₹</th><th>Net ₹</th></tr>';
+  Object.keys(days).sort().forEach(d=>{const s=days[d];
+    h+=`<tr><td class="l">${d}</td><td>${s.n}</td><td class="${s.gross>=0?'pos':'neg'}">${s.gross>=0?'+':''}${inr(s.gross)}</td><td class="mut">-${inr(Math.abs(s.fee))}</td><td class="${s.pnl>=0?'pos':'neg'}">${s.pnl>=0?'+':''}${inr(s.pnl)}</td></tr>`;});
+  const _ra='style="text-align:right"';
+  h+=`<tr class="subrow grand"><td class="l"><b>TOTAL</b></td><td ${_ra}><b>${G.n}</b></td><td ${_ra} class="${G.gross>=0?'pos':'neg'}"><b>${G.gross>=0?'+':''}${inr(G.gross)}</b></td><td ${_ra} class="mut"><b>-${inr(Math.abs(G.fee))}</b></td><td ${_ra} class="${G.pnl>=0?'pos':'neg'}"><b>${G.pnl>=0?'+':''}${inr(G.pnl)}</b></td></tr></table>`;
+  document.getElementById('mmBody').innerHTML=h;document.getElementById('mModal').classList.add('on');}
+function closeMonthModal(){document.getElementById('mModal').classList.remove('on');}
+function renderTrades(){renderColMenu();renderTradeTable();}
+function renderAll(){const m=C().metrics,s=C().significance;
+  const dsg=(R.meta&&R.meta.design)||'Opening-Range Breakout, 15m';
+  const _tEl=document.getElementById('appTitleTxt'),_sEl=document.getElementById('appTitleSub');
+  if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
+    if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
+  document.getElementById('infobar').innerHTML=
+    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+  if(HAS_PASS){
+    const per=perLabel(P);
+    const _pl=(R.meta&&R.meta.pass_labels)||{};
+    const cmp=String(PASS).startsWith('bs')?` <b>Real option-premium P&amp;L</b> (${_pl[PASS+'_desc']||'ATM CE/PE, Black-Scholes + real Zerodha tax'}).`:(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
+    document.getElementById('warnbar').innerHTML=
+      `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
+    document.getElementById('passnote').innerHTML=passNote(PASS);
+  } else {
+    document.getElementById('warnbar').innerHTML=
+      `<b>${perLabel(P)}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, `+
+      `net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`+
+      (P==='oos'?' — held up on unseen recent data.':(P==='recent'?' — CURRENT market regime (2023+), post options-boom.':''));
+  }
+  renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
+  renderPerf();renderDNA();renderInfo();renderPhilosophy();renderMC();renderSig();renderOpt();renderTrades()}
+if(HAS_PASS){const seg=document.getElementById('segPass');seg.style.display='';
+  // extra passes beyond the standard 3 (e.g. execution-structure variants bs_naked / bs_credit)
+  const known=new Set(['instrument','rms','bs']);const labels=(R.meta&&R.meta.pass_labels)||{};
+  (R.meta.passes||[]).forEach(p=>{if(known.has(p))return;
+    const b=document.createElement('button');b.dataset.pass=p;
+    b.textContent=labels[p]||p;if(labels[p+'_title'])b.title=labels[p+'_title'];
+    seg.appendChild(b);});}
+// hide the Recent button for older runs that don't have a recent combo (backward-compat)
+(function(){const has=Object.keys(R.combos||{}).some(k=>k.endsWith('|recent')||k==='recent');
+  const rb=document.querySelector('#segP button[data-p="recent"]');if(rb&&!has)rb.style.display='none';})();
+document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
+  document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
+document.querySelectorAll('#segP button').forEach(b=>b.onclick=()=>{P=b.dataset.p;
+  document.querySelectorAll('#segP button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
+document.getElementById('tSearch').oninput=e=>{tQuery=e.target.value;renderTradeTable();};
+document.getElementById('colBtn').onclick=e=>{e.stopPropagation();document.getElementById('colMenu').classList.toggle('on');};
+document.addEventListener('click',e=>{if(!e.target.closest('.colwrap'))document.getElementById('colMenu').classList.remove('on');});
+document.getElementById('tmClose').onclick=closeModal;
+document.getElementById('tmPrev').onclick=()=>modalNav(-1);
+document.getElementById('tmNext').onclick=()=>modalNav(1);
+document.getElementById('tModal').onclick=e=>{if(e.target.id==='tModal')closeModal();};
+document.getElementById('mmClose').onclick=closeMonthModal;
+document.getElementById('mModal').onclick=e=>{if(e.target.id==='mModal')closeMonthModal();};
+document.addEventListener('keydown',e=>{if(!document.getElementById('tModal').classList.contains('on'))return;
+  if(e.key==='Escape')closeModal();else if(e.key==='ArrowLeft')modalNav(-1);else if(e.key==='ArrowRight')modalNav(1);});
+renderAll();
+</script>
+</body>
+</html>

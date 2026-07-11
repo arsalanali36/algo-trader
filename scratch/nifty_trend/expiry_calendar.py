@@ -72,6 +72,11 @@ NIFTY_MONTHLY_EXPIRY = [
 
 # BANKNIFTY: weeklies discontinued (SEBI 01-Oct-2024, single weekly/exchange -> NIFTY only).
 BANKNIFTY_WEEKLY_DISCONTINUED_FROM = "2024-11-20"   # last BNF weekly expiry was 2024-11-13
+BANKNIFTY_WEEKLY_EXPIRY = [
+    ("2018-01-01", THU, "inception default - BANKNIFTY weekly = Thursday"),
+    ("2023-09-04", WED, "NSE cir 119/2023 (12-Jul-2023): weekly Thu->Wed effective trade date "
+                        "04-Sep-2023; first Wednesday weekly 06-Sep-2023; monthly unchanged"),
+]
 BANKNIFTY_MONTHLY_EXPIRY = [
     ("2018-01-01", THU, "inception default — monthly = last Thursday"),
     ("2025-09-01", TUE, "SEBI cir 2025/76 + NSE cir 111/2025 — monthly = last Tuesday from Sep-2025"),
@@ -102,6 +107,39 @@ def monthly_expiry_weekday(d):
 
 def banknifty_monthly_expiry_weekday(d):
     return _weekday_in_force(BANKNIFTY_MONTHLY_EXPIRY, d)
+
+
+def banknifty_weekly_expiry_weekday(d):
+    """BNF weekly weekday in force on `d`; None once weeklies were discontinued (2024-11-20+)."""
+    if d >= _dt.date.fromisoformat(BANKNIFTY_WEEKLY_DISCONTINUED_FROM):
+        return None
+    return _weekday_in_force(BANKNIFTY_WEEKLY_EXPIRY, d)
+
+
+def _last_weekday_of_month(year, month, weekday):
+    import calendar as _cal
+    last = _dt.date(year, month, _cal.monthrange(year, month)[1])
+    off = (last.weekday() - weekday) % 7
+    return last - _dt.timedelta(days=off)
+
+
+def banknifty_next_expiry(d):
+    """Nearest BANKNIFTY option expiry DATE on/after `d`: weekly (Thu/Wed schedule) while
+    weeklies existed; the monthly last-<weekday> after discontinuation (2024-11-20+)."""
+    wd = banknifty_weekly_expiry_weekday(d)
+    if wd is not None:
+        ahead = (wd - d.weekday()) % 7
+        return d + _dt.timedelta(days=ahead)
+    mwd = banknifty_monthly_expiry_weekday(d)
+    exp = _last_weekday_of_month(d.year, d.month, mwd)
+    if exp < d:
+        y, m = (d.year + 1, 1) if d.month == 12 else (d.year, d.month + 1)
+        exp = _last_weekday_of_month(y, m, mwd)
+    return exp
+
+
+def is_banknifty_expiry_day(d):
+    return banknifty_next_expiry(d) == d
 
 
 def is_fully_filled():
