@@ -1,7 +1,7 @@
 {
   "slug": "chain_zone_positional",
   "design": "chain_zone",
-  "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
+  "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
   "tf": "15m",
   "params": {
     "touch_tol": 0.0,

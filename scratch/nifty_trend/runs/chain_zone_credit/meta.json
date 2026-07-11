@@ -1,7 +1,7 @@
 {
   "slug": "chain_zone_credit",
   "design": "chain_zone",
-  "title": "Auto Rev-Chain \u2014 Zone Breakout (credit spread)",
+  "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
   "tf": "5m",
   "params": {
     "touch_tol": 5.0,

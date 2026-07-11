@@ -2,8 +2,8 @@
  "strategies": [
   {
    "slug": "mid_orb_nifty",
-   "title": "Mid-Day ORB",
-   "design": "Mid-Day ORB \u2014 NIFTY 15m (ATM options)",
+   "title": "00 - Mid-Day ORB (reference, live)",
+   "design": "00 - Mid-Day ORB \u2014 NIFTY 15m (ATM options)",
    "tf": "15m",
    "type": "Intraday",
    "window": [
@@ -116,7 +116,7 @@
   {
    "slug": "long_straddle_orb",
    "title": "01 - Long Straddle @ ORB breakout",
-   "design": "Long Straddle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
+   "design": "01 - Long Straddle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -230,7 +230,7 @@
   {
    "slug": "debit_vertical_orb",
    "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
-   "design": "Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout \u2014 NIFTY 15m (option structure, BS premium)",
+   "design": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout \u2014 NIFTY 15m (option structure, BS premium)",
    "tf": "15m",
    "type": "Intraday",
    "window": [
@@ -344,8 +344,8 @@
   },
   {
    "slug": "long_strangle_orb",
-   "title": "Long Strangle @ ORB breakout",
-   "design": "Long Strangle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
+   "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
+   "design": "\u274c Long Strangle @ ORB \u2014 Long Strangle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -459,7 +459,7 @@
   {
    "slug": "orb_supertrend",
    "title": "03 - ORB + Supertrend",
-   "design": "ORB + Supertrend \u2014 NIFTY 15m (ATM options)",
+   "design": "03 - ORB + Supertrend \u2014 NIFTY 15m (ATM options)",
    "tf": "15m",
    "type": "Intraday",
    "window": [
@@ -571,8 +571,8 @@
   },
   {
    "slug": "chain_zone_longatm",
-   "title": "Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
-   "design": "Auto Rev-Chain \u2014 Zone Breakout \u2014 NIFTY 5m (\u2462 BUY vs \u2463 NAKED vs \u2464 SPREAD)",
+   "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+   "design": "04 - Auto Rev-Chain \u2014 Zone Breakout \u2014 NIFTY 5m (\u2462 BUY vs \u2463 NAKED vs \u2464 SPREAD)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -709,8 +709,8 @@
   },
   {
    "slug": "chain_zone_naked",
-   "title": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live)",
-   "design": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live) \u2014 NIFTY 5m",
+   "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
+   "design": "04-N - Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live) \u2014 NIFTY 5m",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -823,8 +823,8 @@
   },
   {
    "slug": "chain_zone_credit",
-   "title": "Auto Rev-Chain \u2014 Zone Breakout (credit spread)",
-   "design": "Auto Rev-Chain \u2014 Zone Breakout (credit spread) \u2014 NIFTY 5m (ATM options)",
+   "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
+   "design": "04-C - Auto Rev-Chain \u2014 Zone Breakout (credit spread) \u2014 NIFTY 5m (ATM options)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -937,8 +937,8 @@
   },
   {
    "slug": "chain_zone_positional",
-   "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
-   "design": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option) \u2014 NIFTY 15m",
+   "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
+   "design": "04-P - Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option) \u2014 NIFTY 15m",
    "tf": "15m",
    "type": "Positional",
    "window": [
@@ -1052,8 +1052,8 @@
   },
   {
    "slug": "ratio_backspread",
-   "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
-   "design": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB \u2014 NIFTY 5m (option structure, BS premium)",
+   "title": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+   "design": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB \u2014 NIFTY 5m (option structure, BS premium)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -1167,7 +1167,7 @@
   },
   {
    "slug": "gamma_scalp",
-   "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
+   "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
    "design": "Gamma Scalping (long straddle + delta-hedge) \u2014 NIFTY 5m REAL \u2014 \u274c REJECTED (VRP loser)",
    "tf": "5m",
    "type": "Intraday",
@@ -1277,8 +1277,8 @@
   },
   {
    "slug": "shortvol_ironfly",
-   "title": "Short-Vol Iron-Fly \u274c CORRECTED (TRAP #109)",
-   "design": "Short-Vol Iron-Fly \u00b18 \u2014 \u274c CORRECTED-REJECTED (TRAP #109 held-strike fix)",
+   "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
+   "design": "06 - Short-Vol Iron-Fly \u00b18 \u2014 \u274c CORRECTED-REJECTED (TRAP #109 held-strike fix)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -1389,8 +1389,8 @@
   },
   {
    "slug": "banknifty_hunt",
-   "title": "Mid-Day ORB [BANKNIFTY]",
-   "design": "Mid-Day ORB [BANKNIFTY] \u2014 BANKNIFTY 15m (ATM options)",
+   "title": "07 - Mid-Day ORB [BANKNIFTY]",
+   "design": "07 - Mid-Day ORB [BANKNIFTY] \u2014 BANKNIFTY 15m (ATM options)",
    "tf": "15m",
    "type": "Intraday",
    "window": [

@@ -2,7 +2,7 @@
   {
     "slug": "mid_orb_nifty",
     "design": "tod_orb",
-    "title": "Mid-Day ORB",
+    "title": "00 - Mid-Day ORB (reference, live)",
     "tf": "15m",
     "params": {
       "or_min": 30,
@@ -108,7 +108,7 @@
   {
     "slug": "long_strangle_orb",
     "design": "long_strangle/orb_break",
-    "title": "Long Strangle @ ORB breakout",
+    "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
     "tf": "5m",
     "params": {
       "tp_frac": 0.75,
@@ -178,7 +178,7 @@
   {
     "slug": "chain_zone_longatm",
     "design": "chain_zone",
-    "title": "Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+    "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
     "tf": "5m",
     "params": {
       "touch_tol": 5.0,
@@ -214,7 +214,7 @@
   {
     "slug": "chain_zone_naked",
     "design": "chain_zone",
-    "title": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live)",
+    "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
     "tf": "5m",
     "params": {
       "touch_tol": 5.0,
@@ -250,7 +250,7 @@
   {
     "slug": "chain_zone_credit",
     "design": "chain_zone",
-    "title": "Auto Rev-Chain \u2014 Zone Breakout (credit spread)",
+    "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
     "tf": "5m",
     "params": {
       "touch_tol": 5.0,
@@ -286,7 +286,7 @@
   {
     "slug": "chain_zone_positional",
     "design": "chain_zone",
-    "title": "Auto Rev-Chain \u2014 Zone Breakout POSITIONAL (monthly ATM long option)",
+    "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
     "tf": "15m",
     "params": {
       "touch_tol": 0.0,
@@ -323,7 +323,7 @@
   {
     "slug": "ratio_backspread",
     "design": "ratio_backspread/tod_orb_break",
-    "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+    "title": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
     "tf": "5m",
     "params": {
       "tp_frac": 1.5,
@@ -359,7 +359,7 @@
   {
     "slug": "gamma_scalp",
     "design": "gamma_scalp",
-    "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
+    "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
     "tf": "5m",
     "params": {
       "structure": "long straddle + delta-hedge",
@@ -392,7 +392,7 @@
   {
     "slug": "shortvol_ironfly",
     "design": "iron_fly/held",
-    "title": "Short-Vol Iron-Fly \u274c CORRECTED (TRAP #109)",
+    "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
     "tf": "5m",
     "params": {
       "structure": "iron_fly \u00b18 (HELD-strike)",
@@ -427,7 +427,7 @@
   {
     "slug": "banknifty_hunt",
     "design": "tod_orb",
-    "title": "Mid-Day ORB [BANKNIFTY]",
+    "title": "07 - Mid-Day ORB [BANKNIFTY]",
     "tf": "15m",
     "params": {
       "or_min": 30,

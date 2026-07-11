@@ -1,7 +1,7 @@
 {
   "slug": "shortvol_ironfly",
   "design": "iron_fly/held",
-  "title": "Short-Vol Iron-Fly \u274c CORRECTED (TRAP #109)",
+  "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
   "tf": "5m",
   "params": {
     "structure": "iron_fly \u00b18 (HELD-strike)",

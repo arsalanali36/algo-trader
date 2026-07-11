@@ -1,7 +1,7 @@
 {
   "slug": "mid_orb_nifty",
   "design": "tod_orb",
-  "title": "Mid-Day ORB",
+  "title": "00 - Mid-Day ORB (reference, live)",
   "tf": "15m",
   "params": {
     "or_min": 30,

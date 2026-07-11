@@ -1,7 +1,7 @@
 {
   "slug": "chain_zone_naked",
   "design": "chain_zone",
-  "title": "Auto Rev-Chain \u2014 Zone Breakout (NAKED ATM sell \u26a0\ufe0f wings reqd for live)",
+  "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
   "tf": "5m",
   "params": {
     "touch_tol": 5.0,

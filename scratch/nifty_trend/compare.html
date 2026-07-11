@@ -86,15 +86,15 @@
 const F1=v=>v==null?'—':(+v).toFixed(2), P1=v=>v==null?'—':(+v).toFixed(1)+'%', I0=v=>v==null?'—':Math.round(+v).toLocaleString('en-IN');
 let DATA=[], FILT='all';
 const SHORT={
-  mid_orb_nifty:'Mid-Day ORB',
+  mid_orb_nifty:'00 MidORB',
   long_straddle_orb:'01 Straddle',
   debit_vertical_orb:'02 DebitVert',
   orb_supertrend:'03 ORB+ST',
-  long_strangle_orb:'Strangle',
+  long_strangle_orb:'Strangle ❌',
   chain_zone_longatm:'04 Chain-Zone',
-  chain_zone_naked:'CZ Naked',
-  chain_zone_credit:'CZ Credit',
-  chain_zone_positional:'CZ Positional',
+  chain_zone_naked:'04-N Naked ⚠️',
+  chain_zone_credit:'04-C Credit ❌',
+  chain_zone_positional:'04-P Positional',
   ratio_backspread:'05 Backspread',
   shortvol_ironfly:'06 ShortVolFly ❌',
   gamma_scalp:'Gamma ❌',

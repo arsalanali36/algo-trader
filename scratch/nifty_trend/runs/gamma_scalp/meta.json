@@ -1,7 +1,7 @@
 {
   "slug": "gamma_scalp",
   "design": "gamma_scalp",
-  "title": "Gamma Scalping \u274c REJECTED (VRP loser)",
+  "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
   "tf": "5m",
   "params": {
     "structure": "long straddle + delta-hedge",
