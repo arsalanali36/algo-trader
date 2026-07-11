@@ -2352,3 +2352,45 @@ The bottom "persist to trade DB" block that previously ran unconditionally for e
 **Permanent guard:** For any researched strategy, gate on **statistical significance** (permutation/rotation test on the entry edge, controlling for beta), not raw Sharpe. Require p<0.05. Enforce a real **1x no-leverage** position cap (`leverage_cap=1.0`) so the number reflects the edge, not the bet size. A significant edge (like tod_orb, p=0.000) survives the rotation null; a beta-rider (positional trend) does not. **Spot-backtest → option-live gap:** signals backtested on NIFTY spot execute live via ATM options (delta/decay/premium-cap) — the rupee P&L scale and character differ, so paper-trade first and measure the execution gap before trusting live numbers.
 
 **Fast-detect:** If a backtest looks amazing, check: (a) what's the average notional/equity (leverage)? (b) does it still beat buy&hold at 1x? (c) does a permutation test on the entries clear p<0.05? If any fails, it's not a proven edge.
+
+---
+
+## TRAP #106 — Black-Scholes-from-realized-vol systematically HIDES the option seller's edge (VRP). Short-vol looks dead on BS, prints on real premium.
+
+**Symptom:** A short straddle / iron-fly priced with `bs_option.py` (BS premium from 20-day realized vol) showed **Sharpe −2.24, −95..−100%** — "no edge, Track-B." The SAME strategy on REAL Dhan expired-option premium showed **Sharpe +8.9, +61%** (iron-fly ±8, real charges + slippage).
+
+**Root pattern:** The option SELLER's edge is the **variance risk premium** — real implied vol is structurally *higher* than realized vol, so the market pays the seller more than a realized-vol model says the option is "worth." A BS-from-realized model prices that premium AWAY by construction, so any net-short-premium structure looks like it has no edge (or negative, after charges). BS-from-realized is fine for BUYERS/directional (delta dominates) but **cannot validate a seller** — it can't see the very thing the seller is paid for.
+
+**Permanent guard:** Never judge a **net-short-premium** structure (short straddle/strangle, iron condor/fly, credit spreads, ratio-net-credit) on BS-modeled-from-realized premium — the result is meaningless-to-pessimistic. Use REAL option premium+IV (Dhan `rollingoption`, see [[dhan_rollingoption_data]] / ADR-004) OR a BS priced off REAL implied vol (not realized). Net-LONG-premium / directional structures are still OK on BS-from-realized. Corollary: a short-vol strategy that's positive on BS-from-realized is *doubly* interesting (edge survives even the pessimistic model).
+
+**Fast-detect:** Backtest result depends on whether you're net-selling or net-buying premium AND on the σ source. If net-short + σ=realized → distrust; re-price on real IV before believing (either direction of surprise).
+
+---
+
+## TRAP #107 — A still-downloading data series silently truncates an inner-join → a real-looking but BOGUS backtest.
+
+**Symptom:** Mid-backfill, `optlake_load.ironfly_frame(wing=6)` gave iron-fly **net 0.1%, Sharpe 3.36** — internally inconsistent (near-zero net with a positive Sharpe). The complete wing=5 gave a coherent Sharpe 5 / +24%.
+
+**Root pattern:** The ±6 wing CSV had only its most-RECENT chunks downloaded (recent-first backfill order). `atm_frame.merge(wing, how="inner")` silently collapsed the whole 5-year frame down to the ~few-months overlap where the wing existed → the backtest ran on a tiny recent slice, producing numbers that look plausible until you check day-count. No error, no warning — the join just quietly shrank the sample.
+
+**Permanent guard:** Any join that pulls in an incrementally-populated source must **assert coverage** before use. `ironfly_frame` now checks each wing spans ≥90% of the ATM frame's day-count and returns `None` (with a loud log) otherwise, so a partial series can never masquerade as a full backtest. General rule: when reading from a data-lake that's still filling, verify span/row-count against the reference series, not just "file exists."
+
+**Fast-detect:** A backtest's `days`/`trades` far below the expected full-window count, or metrics that are internally inconsistent (tiny net + decent Sharpe), = truncated sample. Print `frame.day.nunique()` and compare to the reference before trusting any number.
+
+---
+
+## TRAP #108 — Live entry must mirror the backtest's EXACT boundary condition. An off-by-one on the opening-range cutoff (`<` vs `<=`) silently drops/moves signals.
+
+**Symptom:** `05_backspread_trader.compute_breakout` (and `02`/`03`) built the opening range with `tday["time"] < or_end` and gated entries with `bar_time < or_end`; the backtest (`intraday_engine` orb/tod_orb) uses `tt <= or_end`. Signal parity vs the backtest was **32/40** — 8 real signal bars silently missed.
+
+**Root pattern:** The backtest's OR cutoff INCLUDES the bar labelled `or_end` in the opening range (entries strictly AFTER it); the live code EXCLUDED that bar, shifting the OR high/low and the "after-OR" boundary by one bar. A one-character boundary mismatch → different OR levels → different (missed/extra) breakouts. Live and backtest are supposed to be the same strategy; a boundary off-by-one quietly makes them different.
+
+**Permanent guard:** When porting a backtest signal to a live trader, **parity-test it** — replay the backtest's `design_signals` vs the live `compute_*` on the same resampled bars and require ~40/40 match on both signal bars AND non-signal bars (the method: slice history so "last closed bar" == each candidate bar, call the live fn, compare). Match the exact comparison operators (`<` vs `<=`) at every boundary (OR cutoff, entry window, expiry). Fixing `<`→`<=` took 05 from 32/40 to 40/40; the same fix applied to 02/03.
+
+**Fast-detect:** New live trader? Run the parity harness before deploy. <100% parity on signal bars = a boundary/operator mismatch somewhere; diff the two implementations' comparisons.
+
+---
+
+## TRAP #100 (tier-qualified addendum, 2026-07-11)
+
+The original TRAP #100 ("Dhan drops expired NIFTY-weekly intraday → 0 bars, must BS-model / collect forward") is **FREE-tier behaviour**. With Dhan's **paid "Expired Options Data" add-on**, `POST /v2/charts/rollingoption` serves REAL 5-year expired-option premium + IV + OI for rolling ATM±N CE/PE (weekly+monthly). So the "no historical option data, must simulate" premise is account-tier-dependent. On the paid tier: download real data (see [[dhan_rollingoption_data]] / ADR-004), don't BS-model sellers (TRAP #106). The standard `/charts/intraday` STILL returns 0 for an expired contract's own sec_id even on the paid tier — you must use `rollingoption` (relative-strike, expiryCode≥1), not the expired sec_id.

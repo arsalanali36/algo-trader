@@ -230,6 +230,12 @@ STRATEGIES = {
     # mission numbering (user 2026-07-10): 01=straddle (above), 02=debit vertical, 03=ORB+Supertrend
     "dvert":    {"script": str(TRADERS_DIR / "02_debit_vertical_trader.py"), "log": BASE_DIR / "logs/dvert_v1.log", "cfg": TC_FILE, "grep": "02_debit_vertical_trader"},
     "orbst":    {"script": str(TRADERS_DIR / "03_orbst_trader.py"), "log": BASE_DIR / "logs/orbst_v1.log", "cfg": TC_FILE, "grep": "03_orbst_trader"},
+    # 04 = Auto Rev-Chain Zone Breakout (user's Pine, NIFTY 5m ATM-option BUY, p=0.000)
+    "chainzone": {"script": str(TRADERS_DIR / "04_chainzone_trader.py"), "log": BASE_DIR / "logs/chainzone_v1.log", "cfg": TC_FILE, "grep": "04_chainzone_trader"},
+    # 05 = Ratio Backspread @ Mid-day ORB (sell 1 ATM + buy 2 OTM, p=0.002)
+    "backspread": {"script": str(TRADERS_DIR / "05_backspread_trader.py"), "log": BASE_DIR / "logs/backspread_v1.log", "cfg": TC_FILE, "grep": "05_backspread_trader"},
+    # 06 = Short-Vol Iron-Fly (REAL premium/IV, Sharpe 8.9, inverse leg) — theta harvest
+    "shortvol": {"script": str(TRADERS_DIR / "06_shortvol_trader.py"), "log": BASE_DIR / "logs/shortvol_v1.log", "cfg": TC_FILE, "grep": "06_shortvol_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}

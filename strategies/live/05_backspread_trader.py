@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
 # ╔══════════════════════════════════════════════════════════════════════════╗
-# ║  02_debit_vertical_trader.py — Strategy #02: Debit Vertical @ ORB (V1)     ║
-# ║  Research : scratch/nifty_trend/runs/debit_vertical_orb/ (p=0.000)         ║
-# ║  Config   : ../../nifty_config.json  →  key: "dvert_v1"                    ║
+# ║  05_backspread_trader.py — Strategy #05: Ratio Backspread @ Mid-day ORB    ║
+# ║  Research : scratch/nifty_trend/runs/ratio_backspread/ (p=0.002, Sh 1.55)  ║
+# ║  Config   : ../../nifty_config.json  →  key: "backspread_v1"               ║
 # ╚══════════════════════════════════════════════════════════════════════════╝
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │  LOGIC (NIFTY spot signal → 2-leg directional debit spread)               │
+# │  LOGIC (NIFTY spot signal → 3-leg ratio backspread, net long-gamma)       │
 # │                                                                          │
-# │  Opening range : high/low of first `or_min` mins (from 09:15)            │
-# │  UP breakout   : close > OR_high + orb_k×ATR → BULL CALL spread:          │
-# │                  BUY ATM CE + SELL CE `wing_off` strikes OTM              │
-# │  DOWN breakout : close < OR_low − orb_k×ATR → BEAR PUT spread:            │
-# │                  BUY ATM PE + SELL PE `wing_off` strikes OTM              │
-# │  EXIT          : net-debit % — target at +tp_frac of the net debit paid,  │
-# │                  stop at −sl_frac; else 3:15 EOD. Defined risk = debit.   │
-# │  Max 2 trades/day. 1x. The SELL wing is COVERED by the long ATM leg —     │
-# │  BUY leg fills FIRST (short never naked); exit closes the SHORT first.    │
+# │  Opening range : high/low of first `or_min` mins (default 30: 09:15-09:45)│
+# │  Entry window  : h0:00–h1:00 (default 10:00–13:00, mid-day)               │
+# │  UP breakout   : close > OR_high + orb_k×ATR → CALL backspread:           │
+# │                  BUY 2×lots CE @(ATM + bs_off strikes) + SELL 1×lots ATM CE│
+# │  DOWN breakout : close < OR_low − orb_k×ATR → PUT backspread (mirror)     │
+# │  EXIT          : structure P&L as fraction of the SOLD ATM premium (ref): │
+# │                  TP at +tp_frac×ref, SL at −sl_frac×ref; else 3:15 EOD.   │
+# │  Max 2/day. 1x. skip-expiry (policy A): NO new entry on weekly-expiry day.│
 # │                                                                          │
-# │  Every leg via execution_gateway (RMS gate + order_store); wing leg      │
-# │  gate=False (protective/covered — blocking it would orphan the long).     │
-# │  Both legs share a group_id. NEW_STRATEGY_CHECKLIST compliant.            │
+# │  Short is NEVER naked: the 2 long legs fill FIRST (risk-carrier, gated);  │
+# │  the 1-lot ATM SELL is covered 2:1 (gate=False, protective-style). If the │
+# │  SELL fails, the longs roll back so we never hold an unvalidated shape.   │
+# │  All legs share a group_id. NEW_STRATEGY_CHECKLIST compliant.             │
 # └─────────────────────────────────────────────────────────────────────────┘
 
 import json
@@ -54,7 +54,7 @@ MARKET_CLOSE = (15, 25)
 FORCE_EXIT   = (15, 15)
 INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 NIFTY_SEC_ID, NIFTY_SEG, NIFTY_INST = "13", "IDX_I", "INDEX"
-_TF_MIN = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
+_TF_MIN = {"1m": 1, "3m": 3, "5m": 5, "15m": 15}
 
 STATE_FILE = lambda sid: BASE_DIR / "data" / f"{sid}_state.json"
 
@@ -101,9 +101,9 @@ def _order_broker(cfg):
 
 
 DEFAULTS = {
-    "active": False, "mode": "paper", "timeframe": "15m",
-    "or_min": 15, "orb_k": 1.0, "atr_period": 14,
-    "wing_off": 10, "tp_frac": 1.0, "sl_frac": 1.0,
+    "active": False, "mode": "paper", "timeframe": "5m",
+    "or_min": 30, "orb_k": 1.0, "h0": 10, "h1": 13, "atr_period": 14,
+    "bs_off": 2, "tp_frac": 1.5, "sl_frac": 0.75,
     "qty": 1, "max_trades_per_day": 2, "symbol": "NIFTY",
 }
 
@@ -170,8 +170,9 @@ def fetch_nifty(token, cid, tf_min, days=5):
 
 
 def compute_breakout(df, cfg):
-    """Directional ORB breakout on the last CLOSED bar. Returns dict(direction, spot, atr)
-    or None. Matches intraday_engine 'orb_break' used by the debit-vertical backtest."""
+    """Mid-day ORB breakout on the last CLOSED bar — matches intraday_engine 'tod_orb'
+    (design the backspread backtest validated): breakout beyond OR ± k×ATR AND the bar
+    inside the h0:00–h1:00 entry window. Returns dict(direction, spot, atr) or None."""
     p = cfg
     period = int(p["atr_period"])
     if len(df) < period + 3:
@@ -184,7 +185,7 @@ def compute_breakout(df, cfg):
         return None
     or_end = (datetime.combine(today, datetime.min.time())
               .replace(hour=9, minute=15) + timedelta(minutes=int(p["or_min"]))).time()
-    # backtest (intraday_engine 'orb') uses cutoff `tt <= or_end` — the bar LABELLED
+    # backtest (intraday_engine tod_orb) uses cutoff `tt <= or_end` — the bar LABELLED
     # or_end is part of the opening range, entries strictly after it. Match exactly.
     or_bars = tday[tday["time"].dt.time <= or_end]
     if or_bars.empty:
@@ -197,7 +198,12 @@ def compute_breakout(df, cfg):
     bar = df.iloc[i]
     if bar["time"].date() != today:
         return None
-    if bar["time"].time() <= or_end:
+    bt = bar["time"].time()
+    if bt <= or_end:
+        return None
+    # tod_orb entry window
+    if not (datetime(2000, 1, 1, int(p["h0"]), 0).time() <= bt
+            <= datetime(2000, 1, 1, int(p["h1"]), 0).time()):
         return None
 
     k = float(p["orb_k"]); atr_i = float(df["atr"].iloc[i]); atr_p = float(df["atr"].iloc[i - 1])
@@ -225,6 +231,15 @@ def _opt_ltp(broker, sec_id):
         return None
 
 
+def _is_expiry_day(trad_sym, sec_id):
+    """skip-expiry policy A — same guard as the backtest (no NEW entry on expiry day)."""
+    try:
+        import risk_gate
+        return bool(risk_gate.is_expiry_day(trad_sym, sec_id))
+    except Exception:
+        return False
+
+
 # ─────────────────────────── state persist / recover ───────────────────────
 def save_state(sid, pos):
     try:
@@ -242,8 +257,8 @@ def load_state(sid):
     return None
 
 def _recover(sid, log):
-    """Restore today's open spread from disk, but ONLY if order_store still shows
-    BOTH legs open at the broker (TRAP #28 — restart must not orphan/duplicate)."""
+    """Restore today's open backspread from disk, only if order_store still shows
+    ALL legs open (TRAP #28 — restart must not orphan/duplicate)."""
     pos = load_state(sid)
     if not pos or not pos.get("legs"):
         return None
@@ -253,19 +268,19 @@ def _recover(sid, log):
         open_secs = {str(p.get("sec_id")) for p in opens if p.get("strategy") == sid}
         want = {str(l["sec_id"]) for l in pos["legs"]}
         if want.issubset(open_secs):
-            log.info(f"[RECOVER] re-attached open spread {[l['trad_sym'] for l in pos['legs']]}")
+            log.info(f"[RECOVER] re-attached open backspread {[l['trad_sym'] for l in pos['legs']]}")
             return pos
-        log.info("[RECOVER] disk state had a spread but order_store shows leg(s) closed — clearing.")
+        log.info("[RECOVER] disk state had a position but order_store shows leg(s) closed — clearing.")
     except Exception as e:
         log.warning(f"[RECOVER] order_store check failed ({e}) — starting flat")
     return None
 
 
 # ─────────────────────────────── main loop ─────────────────────────────────
-def run(paper_mode=True, strategy_id="dvert_v1"):
+def run(paper_mode=True, strategy_id="backspread_v1"):
     log = _make_logger(strategy_id)
     log.info("=" * 62)
-    log.info(f"  02_debit_vertical_trader.py  |  {strategy_id}  |  {'PAPER' if paper_mode else '⚡ LIVE'}")
+    log.info(f"  05_backspread_trader.py  |  {strategy_id}  |  {'PAPER' if paper_mode else '⚡ LIVE'}")
     log.info("=" * 62)
 
     pos = _recover(strategy_id, log)
@@ -281,70 +296,71 @@ def run(paper_mode=True, strategy_id="dvert_v1"):
                 mode = "paper"
             bname = _order_broker(tc)
             sym = tc.get("symbol", "NIFTY")
-            tf_min = _TF_MIN.get(tc.get("timeframe", "15m"), 15)
+            tf_min = _TF_MIN.get(tc.get("timeframe", "5m"), 5)
 
             if last_date != now.date():
                 last_date = now.date(); pos = None; trades_today = 0
                 save_state(strategy_id, None); log.info(f"── New day: {last_date} ──")
 
             if not tc.get("active", False):
-                log.info("[DVERT] Paused — active=false"); time.sleep(60); continue
+                log.info("[BSPRD] Paused — active=false"); time.sleep(60); continue
             if not is_market_open():
-                log.info(f"[DVERT] Market closed ({now.strftime('%H:%M')} IST)"); time.sleep(60); continue
+                log.info(f"[BSPRD] Market closed ({now.strftime('%H:%M')} IST)"); time.sleep(60); continue
 
             token, cid = load_creds()
             df = fetch_nifty(token, cid, tf_min)
             if df is None or df.empty:
-                log.warning("[DVERT] no candle data"); time.sleep(30); continue
+                log.warning("[BSPRD] no candle data"); time.sleep(30); continue
             spot = float(df["close"].iloc[-1])
 
-            # ── manage OPEN spread: net-debit % exit ──
+            # ── manage OPEN backspread: %-of-sold-ATM-premium exit ──
             if pos is not None:
                 broker = _get_broker(bname)
-                l_long = next((l for l in pos["legs"] if l["side"] == "BUY"), None)
-                l_short = next((l for l in pos["legs"] if l["side"] == "SELL"), None)
                 reason = None
-                if broker and l_long and l_short:
-                    ltp_l = _opt_ltp(broker, l_long["sec_id"])
-                    ltp_s = _opt_ltp(broker, l_short["sec_id"])
-                    if ltp_l is not None and ltp_s is not None:
-                        net_now = ltp_l - ltp_s
-                        net_ent = pos["entry_net"]
-                        pnl_frac = (net_now - net_ent) / net_ent if net_ent > 0 else 0.0
-                        log.info(f"[DVERT] spread open  net {net_ent:.1f}→{net_now:.1f}  "
-                                 f"P&L {pnl_frac*100:+.0f}%  (tp +{int(pos['tp_frac']*100)}% / sl -{int(pos['sl_frac']*100)}%)")
+                if broker:
+                    vals = {}
+                    for l in pos["legs"]:
+                        vals[l["sec_id"]] = _opt_ltp(broker, l["sec_id"])
+                    if all(v is not None for v in vals.values()):
+                        # per-unit structure value with ratio weights (+2 longs / −1 short)
+                        cur = sum(l["w"] * vals[l["sec_id"]] for l in pos["legs"])
+                        ent = pos["entry_val"]
+                        ref = pos["ref"] or 1.0
+                        pnl_frac = (cur - ent) / ref
+                        log.info(f"[BSPRD] open  val {ent:+.1f}→{cur:+.1f}  P&L {pnl_frac*100:+.0f}% of ATM-prem "
+                                 f"(tp +{int(pos['tp_frac']*100)}% / sl -{int(pos['sl_frac']*100)}%)")
                         if pnl_frac >= pos["tp_frac"]:
-                            reason = "DVERT_TP"
+                            reason = "BSPRD_TP"
                         elif pnl_frac <= -pos["sl_frac"]:
-                            reason = "DVERT_SL"
+                            reason = "BSPRD_SL"
                 if is_force_exit_time():
                     reason = "EOD_315_SQUAREOFF"
                 if reason:
-                    log.info(f"[EXIT] spread — {reason}")
-                    _exit_spread(strategy_id, sym, pos, mode, bname, reason, log)
+                    log.info(f"[EXIT] backspread — {reason}")
+                    _exit_structure(strategy_id, sym, pos, mode, bname, reason, log)
                     pos = None; save_state(strategy_id, None)
 
             if is_force_exit_time():
                 time.sleep(60); continue
 
-            # ── ENTRY: on breakout, bull-call / bear-put spread ──
+            # ── ENTRY ──
             if pos is None and trades_today < int(tc.get("max_trades_per_day", 2)):
                 if is_no_entry_time():
                     time.sleep(30); continue
                 sig = compute_breakout(df, tc)
-                log.info(f"[DVERT] spot={spot:.1f}  pos=flat  trades={trades_today}  "
+                log.info(f"[BSPRD] spot={spot:.1f}  pos=flat  trades={trades_today}  "
                          f"breakout={sig['direction'] if sig else 'none'}")
                 if sig:
-                    pos = _enter_spread(strategy_id, sym, spot, sig["direction"], tc, mode, bname, log)
+                    pos = _enter_backspread(strategy_id, sym, spot, sig["direction"], tc, mode, bname, log)
                     if pos:
                         trades_today += 1; save_state(strategy_id, pos)
 
             _write_watch(strategy_id, sym, spot, pos, tc, now)
 
         except KeyboardInterrupt:
-            log.info("[DVERT] Stopped by user"); break
+            log.info("[BSPRD] Stopped by user"); break
         except Exception as e:
-            log.error(f"[DVERT] Loop error: {e}", exc_info=True)
+            log.error(f"[BSPRD] Loop error: {e}", exc_info=True)
         time.sleep(30)
 
 
@@ -357,109 +373,120 @@ def _get_broker(bname):
         return None
 
 
-def _enter_spread(strategy_id, sym, spot, direction, tc, mode, bname, log):
-    """Bull-call (up) / bear-put (down) debit spread via the gateway.
-    BUY ATM leg FIRST (gated) — only then SELL the wing (gate=False, covered by the
-    long; blocking the wing would leave a lone long, so on wing failure we roll the
-    long back). Returns pos dict or None."""
+def _enter_backspread(strategy_id, sym, spot, direction, tc, mode, bname, log):
+    """CALL (up) / PUT (down) ratio backspread via the gateway.
+    BUY the 2 OTM lots FIRST (risk-carrier, RMS-gated) — only then SELL 1 ATM lot
+    (covered 2:1, gate=False). SELL failure → roll the longs back. Returns pos/None."""
     import execution_gateway as gw
     lots = int(tc.get("qty", 1))
-    wing = int(tc.get("wing_off", 10))
+    off = int(tc.get("bs_off", 2))
     opt_type = "CE" if direction == "up" else "PE"
-    gid = f"DVERT_{int(time.time())}"
+    off_signed = off if direction == "up" else -off
+    gid = f"BSPRD_{int(time.time())}"
     legs = []
 
-    # leg 1 — BUY ATM (the risk carrier; RMS-gated)
-    res_c = dhan_master.get_option_contract(sym, spot, opt_type, 0)
-    if not res_c or not res_c[0]:
-        log.error(f"[DVERT] {sym} ATM {opt_type} contract not found — abort"); return None
-    sec_id, trad_sym, lot_size = res_c
-    try:
-        res = gw.execute_signal(strategy_id, sym, "BUY", lots, (lot_size or 1), sec_id, trad_sym,
-                                seg="NSE_FNO", mode=mode, broker_name=bname, tag="DVERT",
-                                instrument="options", group_id=gid, log=log.info)
-    except Exception as e:
-        log.error(f"[DVERT] ATM BUY error: {e}"); return None
-    if not res["ok"]:
-        log.info(f"[DVERT] ATM BUY not ok — {res.get('status')}: {res.get('reason')}"); return None
-    prem_l = res.get("price")
-    if not prem_l or prem_l <= 0:
-        prem_l = _opt_ltp(_get_broker(bname), sec_id) or 0.0
-    legs.append(dict(side="BUY", opt_type=opt_type, sec_id=sec_id, trad_sym=trad_sym,
-                     qty=res["qty"], entry_prem=round(float(prem_l), 2)))
+    # resolve BOTH contracts first (ATM for expiry-check + short leg; OTM for longs)
+    res_a = dhan_master.get_option_contract(sym, spot, opt_type, 0)
+    res_o = dhan_master.get_option_contract(sym, spot, opt_type, off_signed)
+    if not res_a or not res_a[0] or not res_o or not res_o[0] or str(res_a[0]) == str(res_o[0]):
+        log.error(f"[BSPRD] {sym} {opt_type} contracts not resolvable (ATM/OTM{off_signed:+d}) — abort")
+        return None
+    a_sec, a_sym, a_lot = res_a
+    o_sec, o_sym, o_lot = res_o
 
-    # leg 2 — SELL wing (covered by leg 1; gate=False like a protective leg,
-    # qty matched to the FILLED long qty so the short is never oversized)
-    res_w = dhan_master.get_option_contract(sym, spot, opt_type, wing)
-    if not res_w or not res_w[0] or str(res_w[0]) == str(sec_id):
-        log.error(f"[DVERT] wing {opt_type} (+{wing}) contract not found/same-strike — rollback")
-        _rollback(strategy_id, sym, legs, mode, bname, log); return None
-    wsec, wsym, wlot = res_w
-    wing_lots = max(1, int(legs[0]["qty"] // int(wlot or lot_size or 1)))
+    # skip-expiry policy A — same as backtest: no NEW entry on weekly-expiry day
+    if _is_expiry_day(a_sym, a_sec):
+        log.info("[BSPRD] expiry day — entry skipped (policy A, matches backtest)")
+        return None
+
+    # leg 1 — BUY 2×lots OTM (the risk carrier; RMS-gated)
     try:
-        resw = gw.execute_signal(strategy_id, sym, "SELL", wing_lots, (wlot or lot_size or 1),
-                                 wsec, wsym, seg="NSE_FNO", mode=mode, broker_name=bname,
-                                 tag="DVERT", instrument="options", group_id=gid,
+        res = gw.execute_signal(strategy_id, sym, "BUY", 2 * lots, (o_lot or a_lot or 1),
+                                o_sec, o_sym, seg="NSE_FNO", mode=mode, broker_name=bname,
+                                tag="BSPRD", instrument="options", group_id=gid, log=log.info)
+    except Exception as e:
+        log.error(f"[BSPRD] OTM BUY error: {e}"); return None
+    if not res["ok"]:
+        log.info(f"[BSPRD] OTM BUY not ok — {res.get('status')}: {res.get('reason')}"); return None
+    prem_o = res.get("price")
+    if not prem_o or prem_o <= 0:
+        prem_o = _opt_ltp(_get_broker(bname), o_sec) or 0.0
+    legs.append(dict(side="BUY", w=+2, opt_type=opt_type, sec_id=o_sec, trad_sym=o_sym,
+                     qty=res["qty"], entry_prem=round(float(prem_o), 2)))
+
+    # ratio guard: short lots derived from the FILLED long qty (2:1 always holds)
+    lot_size = int(o_lot or a_lot or 1)
+    short_lots = int(legs[0]["qty"] // (2 * lot_size))
+    if short_lots < 1:
+        log.info("[BSPRD] long fill too small to cover a short (RMS sized-down) — rollback to stay validated shape")
+        _rollback(strategy_id, sym, legs, mode, bname, log); return None
+
+    # leg 2 — SELL 1×lots ATM (covered 2:1 by leg 1; gate=False protective-style)
+    try:
+        ress = gw.execute_signal(strategy_id, sym, "SELL", short_lots, (a_lot or lot_size),
+                                 a_sec, a_sym, seg="NSE_FNO", mode=mode, broker_name=bname,
+                                 tag="BSPRD", instrument="options", group_id=gid,
                                  gate=False, log=log.info)
     except Exception as e:
-        log.error(f"[DVERT] wing SELL error: {e}")
+        log.error(f"[BSPRD] ATM SELL error: {e}")
         _rollback(strategy_id, sym, legs, mode, bname, log); return None
-    if not resw["ok"]:
-        log.info(f"[DVERT] wing SELL not ok — {resw.get('status')}: {resw.get('reason')}")
+    if not ress["ok"]:
+        log.info(f"[BSPRD] ATM SELL not ok — {ress.get('status')}: {ress.get('reason')}")
         _rollback(strategy_id, sym, legs, mode, bname, log); return None
-    prem_s = resw.get("price")
-    if not prem_s or prem_s <= 0:
-        prem_s = _opt_ltp(_get_broker(bname), wsec) or 0.0
-    legs.append(dict(side="SELL", opt_type=opt_type, sec_id=wsec, trad_sym=wsym,
-                     qty=resw["qty"], entry_prem=round(float(prem_s), 2)))
+    prem_a = ress.get("price")
+    if not prem_a or prem_a <= 0:
+        prem_a = _opt_ltp(_get_broker(bname), a_sec) or 0.0
+    legs.append(dict(side="SELL", w=-1, opt_type=opt_type, sec_id=a_sec, trad_sym=a_sym,
+                     qty=ress["qty"], entry_prem=round(float(prem_a), 2)))
 
-    net = round(legs[0]["entry_prem"] - legs[1]["entry_prem"], 2)
-    label = "BULL-CALL" if direction == "up" else "BEAR-PUT"
-    log.info(f"  ★ ENTRY {label} → BUY {legs[0]['trad_sym']} @{legs[0]['entry_prem']}  "
-             f"SELL {legs[1]['trad_sym']} @{legs[1]['entry_prem']}  net debit={net}")
-    return dict(legs=legs, entry_net=net if net > 0 else 1.0, group_id=gid,
-                direction=direction,
-                tp_frac=float(tc.get("tp_frac", 1.0)), sl_frac=float(tc.get("sl_frac", 1.0)),
+    entry_val = round(2 * legs[0]["entry_prem"] - legs[1]["entry_prem"], 2)   # per-unit, ratio-weighted
+    ref = legs[1]["entry_prem"] or 1.0                                        # sold ATM premium anchor
+    label = "CALL-BACKSPREAD" if direction == "up" else "PUT-BACKSPREAD"
+    log.info(f"  ★ ENTRY {label} → BUY 2x {legs[0]['trad_sym']} @{legs[0]['entry_prem']}  "
+             f"SELL 1x {legs[1]['trad_sym']} @{legs[1]['entry_prem']}  net/unit={entry_val:+.1f} ref={ref:.1f}")
+    return dict(legs=legs, entry_val=entry_val, ref=ref, group_id=gid, direction=direction,
+                tp_frac=float(tc.get("tp_frac", 1.5)), sl_frac=float(tc.get("sl_frac", 0.75)),
                 entry_spot=round(spot, 1))
 
 
 def _rollback(strategy_id, sym, legs, mode, bname, log):
-    """If the spread half-opened (long filled, wing failed), close the lone long so the
-    strategy never holds a different structure than it was validated on."""
+    """Half-open (longs filled, short failed) → close the longs so we never hold an
+    unvalidated structure."""
     for l in legs:
         try:
             import execution_gateway as gw
-            log.info(f"[DVERT] rollback — closing lone leg {l['trad_sym']}")
+            log.info(f"[BSPRD] rollback — closing {l['trad_sym']}")
             gw.execute_exit(strategy_id, sym, l["sec_id"], l["trad_sym"], l["qty"],
                             entry_side=l["side"], seg="NSE_FNO", mode=mode, broker_name=bname,
-                            tag="DVERT", instrument="options", reason="DVERT_ROLLBACK", log=log.info)
+                            tag="BSPRD", instrument="options", reason="BSPRD_ROLLBACK", log=log.info)
         except Exception as e:
-            log.error(f"[DVERT] rollback failed for {l['trad_sym']}: {e}")
+            log.error(f"[BSPRD] rollback failed for {l['trad_sym']}: {e}")
 
 
-def _exit_spread(strategy_id, sym, pos, mode, bname, reason, log):
-    """Close SHORT wing FIRST (so the long is never what covers a lingering short),
-    then the long ATM leg."""
+def _exit_structure(strategy_id, sym, pos, mode, bname, reason, log):
+    """Close the SHORT ATM leg FIRST (longs keep covering it till the last moment),
+    then the 2-lot long leg."""
     import execution_gateway as gw
     ordered = sorted(pos["legs"], key=lambda l: 0 if l["side"] == "SELL" else 1)
     for l in ordered:
         try:
             gw.execute_exit(strategy_id, sym, l["sec_id"], l["trad_sym"], l["qty"],
                             entry_side=l["side"], seg="NSE_FNO", mode=mode, broker_name=bname,
-                            tag="DVERT", instrument="options", reason=reason,
+                            tag="BSPRD", instrument="options", reason=reason,
                             group_id=pos.get("group_id", ""), log=log.info)
         except Exception as e:
-            log.error(f"[DVERT] exit leg {l['trad_sym']} err: {e} (pos_monitor EOD still protects)")
+            log.error(f"[BSPRD] exit leg {l['trad_sym']} err: {e} (pos_monitor EOD still protects)")
 
 
 def _write_watch(sid, sym, spot, pos, tc, now):
     try:
         data = {"updated": now.strftime("%Y-%m-%d %H:%M:%S"), "strategy": sid,
-                "tf": tc.get("timeframe", "15m"),
-                "levels": {"or_min": tc.get("or_min"), "wing_off": tc.get("wing_off")},
+                "tf": tc.get("timeframe", "5m"),
+                "levels": {"or_min": tc.get("or_min"), "window": f"{tc.get('h0')}:00-{tc.get('h1')}:00",
+                           "bs_off": tc.get("bs_off")},
                 "symbols": [{"sym": sym, "close": round(spot, 1),
                              "pos": 0 if pos is None else (1 if pos.get("direction") == "up" else -1),
-                             "signal": "" if pos is None else f"debit-{pos.get('direction')}",
+                             "signal": "" if pos is None else f"backspread-{pos.get('direction')}",
                              "stop": None, "target": None}]}
         (BASE_DIR / "data" / f"{sid}_watch.json").write_text(json.dumps(data, indent=2))
     except Exception:
@@ -468,10 +495,10 @@ def _write_watch(sid, sym, spot, pos, tc, now):
 
 if __name__ == "__main__":
     import argparse
-    ap = argparse.ArgumentParser(description="Strategy #02 — Debit Vertical @ ORB Trader")
+    ap = argparse.ArgumentParser(description="Strategy #05 — Ratio Backspread @ Mid-day ORB Trader")
     ap.add_argument("--paper", action="store_true")
     ap.add_argument("--live", action="store_true")
-    ap.add_argument("--id", default="dvert_v1")
+    ap.add_argument("--id", default="backspread_v1")
     args = ap.parse_args()
     if args.live:
         print("\n⚠️  LIVE MODE — REAL ORDERS!\nCtrl+C within 5s to cancel...\n"); time.sleep(5)
