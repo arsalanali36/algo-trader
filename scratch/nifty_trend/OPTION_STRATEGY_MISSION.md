@@ -27,8 +27,9 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   **Winner: NIFTY 3m, band(3,4,5), tol=5, atr_sl=2.5, rr=1.5, trail_atr=2, all-day.**
   Gates (bs|full): **p=0.014 ✅** (5m was 0.077 ✗), trades 400 ✅, maxDD −1.5% ✅, MC worst-5%
   Sharpe 1.06 (all-positive) ✅, train 0.70 / **OOS 1.94** (no decay — OOS stronger) ✅,
-  **Sharpe 0.967 = 3% short of the ≥1.0 gate ⚠️** → borderline pass, honesty says: user reviews
-  dashboard before any deploy. Net +23.4%, win 52%. `runs/pivot_continuation/` (build_pivot.py,
+  **Sharpe 0.967 = 3% short of the ≥1.0 gate ⚠️** → borderline. Net +23.4%, win 52%.
+  **USER DECISION 2026-07-12: REJECTED for deploy ("kisi kaam ki nahi") — stays in the hub as
+  a record only, no trader built.** `runs/pivot_continuation/` (build_pivot.py,
   designs in intraday_engine: pivot_rev + pivot_break via _daily_levels S/R arrays).
   **Claim-2 next-day variant TESTED (2026-07-12) — spot-REAL, option-UNSHIPPABLE.**
   Design: day-D pierces extreme S/R AND recovers by 15:00 (trap confirmed) → hold

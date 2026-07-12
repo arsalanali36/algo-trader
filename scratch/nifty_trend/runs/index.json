@@ -478,7 +478,7 @@
   {
     "slug": "pivot_continuation",
     "design": "pivot_break",
-    "title": "08 - Pivot-Extreme Continuation (S3-S5/R3-R5 breakdown)",
+    "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 \u2014 user pass, NOT deployed)",
     "tf": "3m",
     "params": {
       "tol": 5.0,

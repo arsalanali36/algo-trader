@@ -19,7 +19,7 @@ TITLES = {
     "ratio_backspread":     "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
     "shortvol_ironfly":     "06 - Short-Vol Iron-Fly ❌ CORRECTED-REJECTED (TRAP #109)",
     "banknifty_hunt":       "07 - Mid-Day ORB [BANKNIFTY]",
-    "pivot_continuation":   "08 - Pivot-Extreme Continuation (S3-S5/R3-R5 breakdown)",
+    "pivot_continuation":   "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 — user pass, NOT deployed)",
     "gamma_scalp":          "❌ Gamma Scalping (REJECTED — VRP loser)",
     "long_strangle_orb":    "❌ Long Strangle @ ORB (failed sig p=0.07)",
 }
