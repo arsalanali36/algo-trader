@@ -6773,11 +6773,25 @@
       // A = option-strategy mission (numbered 01/02/03), B = other live traders + their
       // paper shadows, C = webhook/infra. Unknown keys fall into a trailing "Other" group.
       const _LOG_GROUPS = [
-        { title: 'Option Strategies', keys: ['straddle_v1', 'dvert_v1', 'orbst_v1'] },
-        { title: 'Other Strategies', keys: ['ars_chain_v1', 'ars_chain_v1_paper', 'range_v1', 'rsi_v1', 'rsi_v1_paper', 'ema_v1', 'orb_v1', 'universe_v1'] },
+        { title: 'Option Strategies (mission)', keys: ['orb_v1', 'straddle_v1', 'dvert_v1', 'orbst_v1', 'chainzone_v1', 'backspread_v1', 'shortvol_v1', 'banknifty_v1'] },
+        { title: 'Other Strategies', keys: ['ars_chain_v1', 'ars_chain_v1_paper', 'range_v1', 'rsi_v1', 'rsi_v1_paper', 'ema_v1', 'universe_v1'] },
         { title: 'Webhook / Infra', keys: ['webhook_v1'] },
       ];
-      const _LOG_NUM = { straddle_v1: '01', dvert_v1: '02', orbst_v1: '03' };
+      // mission number badge (00-07, OPTION_STRATEGY_MISSION.md numbering)
+      const _LOG_NUM = {
+        orb_v1: '00', straddle_v1: '01', dvert_v1: '02', orbst_v1: '03',
+        chainzone_v1: '04', backspread_v1: '05', shortvol_v1: '06', banknifty_v1: '07',
+      };
+      // saaf padhne-layak naam (raw config-key ki jagah sidebar me dikhega; key title me rehti)
+      const _LOG_NAME = {
+        orb_v1: 'Mid-Day ORB', straddle_v1: 'Long Straddle', dvert_v1: 'Debit Vertical',
+        orbst_v1: 'ORB + Supertrend', chainzone_v1: 'Chain-Zone', backspread_v1: 'Ratio Backspread',
+        shortvol_v1: 'Short-Vol Iron-Fly (off)', banknifty_v1: 'BankNifty ORB',
+        ars_chain_v1: 'Ars Chain (live)', ars_chain_v1_paper: 'Ars Chain (paper)',
+        range_v1: 'Range Breakout', rsi_v1: 'RSI', rsi_v1_paper: 'RSI (paper)',
+        ema_v1: 'EMA Crossover', universe_v1: 'Universe Scan', webhook_v1: 'TradingView Webhook',
+      };
+      const _logName = k => _LOG_NAME[_lcKey(k)] || String(k).toUpperCase();
       const _lcKey = k => String(k).toLowerCase();
       const _usedKeys = new Set();
       const _logGroups = [];
@@ -6798,6 +6812,20 @@
 
       let sidebarHtml = '<div class="folder-sidebar">';
       sidebarHtml += '<div class="folder-sidebar-header">Strategies</div>';
+      // ── SAB EK SAATH — bulk start/stop (webhook/_risk skip; loops real traders) ──
+      sidebarHtml += `
+      <div style="padding:8px 10px;border-bottom:1px solid #21262d;background:#12161c">
+        <div style="font-size:9px;color:#6e7681;text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px">⚡ Sab ek saath</div>
+        <div style="display:flex;gap:5px">
+          <button onclick="bulkLogControl('paper')" title="Saari strategies PAPER me start"
+            style="flex:1;padding:5px 0;background:#12261a;border:1px solid #238636;color:#3fb950;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">▶ Paper</button>
+          <button onclick="bulkLogControl('live')" title="Saari strategies LIVE me start (asli paisa!)"
+            style="flex:1;padding:5px 0;background:#0d1f33;border:1px solid #1f6feb;color:#58a6ff;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">💰 Live</button>
+          <button onclick="bulkLogControl('stop')" title="Saari strategies STOP"
+            style="flex:1;padding:5px 0;background:#2a1416;border:1px solid #da3633;color:#f85149;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer">⏹ Stop</button>
+        </div>
+        <div id="bulk-log-status" style="font-size:10px;color:#8b949e;margin-top:5px;min-height:13px"></div>
+      </div>`;
 
       let contentHtml = '<div class="folder-content" style="padding: 24px;">';
 
@@ -6821,9 +6849,9 @@
         const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center;vertical-align:middle">${_num}</span>` : '';
         sidebarHtml += `
       <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}"
-           data-log-key="${key}"
+           data-log-key="${key}" title="${key}"
            onclick="switchLogTab('${key}', this)">
-        <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${_numBadge}${key.toUpperCase()}
+        <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${_numBadge}${_logName(key)}
       </div>
     `;
 
@@ -6832,7 +6860,8 @@
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;flex-wrap:wrap;gap:8px">
           <div>
             <h2 style="color:${color};margin:0;font-size:17px;font-weight:600;display:flex;align-items:center;gap:8px">
-              <span>${emoji}</span> ${key.toUpperCase()} LOG
+              <span>${emoji}</span> ${_num ? _num + ' · ' : ''}${_logName(key)} LOG
+              <span style="font-size:11px;color:#6e7681;font-weight:500">(${key})</span>
             </h2>
             <div style="font-size:11.5px;color:#8b949e;margin-top:4px">Strategy process log streaming.</div>
           </div>
@@ -6856,6 +6885,39 @@
 
       container.innerHTML = sidebarHtml + contentHtml;
       renderLogRunControls();
+    }
+
+    // ── Bulk start/stop all real strategies from the Logs sidebar ──
+    // webhook (dashboard-process, no PID) + _risk/webhooks/_ui_config (config-only) skip.
+    // Sequential (Dhan ~1 req/sec — parallel start rate-limit cascade karta, TRAP #2).
+    async function bulkLogControl(mode) {
+      const skip = new Set(['_risk', 'webhooks', '_ui_config']);
+      const keys = Object.keys(GLOBAL_CONFIG).filter(k =>
+        !skip.has(k) && !k.toLowerCase().startsWith('webhook'));
+      if (!keys.length) return;
+      const verb = mode === 'stop' ? 'STOP' : ('start in ' + mode.toUpperCase());
+      let msg = `Saari ${keys.length} strategies ko ${verb} karein?`;
+      if (mode === 'live') msg += '\n\n⚠️ LIVE = ASLI PAISA. Har strategy real order bhejegi. Pakka?';
+      if (!confirm(msg)) return;
+
+      const st = document.getElementById('bulk-log-status');
+      let done = 0, ok = 0;
+      for (const k of keys) {
+        if (st) st.textContent = `${verb}... ${done + 1}/${keys.length} (${k})`;
+        try {
+          const url = mode === 'stop' ? `/api/stop?s=${k}` : `/api/start?s=${k}&mode=${mode}`;
+          const r = await fetch(url, { method: 'POST' });
+          const j = await r.json();
+          if (!j.msg || j.msg.includes('✅') || mode === 'stop') ok++;
+        } catch (e) { /* ek fail baaki na roke */ }
+        done++;
+      }
+      await checkStatus();
+      renderLogRunControls();
+      updateLogStatusDots();
+      if (typeof renderRmsSummary === 'function') renderRmsSummary();
+      if (st) st.textContent = `✅ ${ok}/${keys.length} ${mode === 'stop' ? 'stopped' : mode}`;
+      if (typeof flash === 'function') flash(`Bulk ${verb}: ${ok}/${keys.length} done`, mode === 'stop' ? '#f85149' : '#3fb950');
     }
 
     function switchLogTab(key, el) {
