@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-07-12 — Real bid/ask spread slippage from brother's DOM order-book (ADR-005) — measured, wired into all BS pricing engines, borderline + vol strats re-tested
+**Status:** DONE (code local+git `62019ca`/`449f9b5`; vol-family re-run done on VPS)
+**Kya:** User ("Direction A") — brother's 20-level order-book (DOM) data (`C:\_SABHAI DATA - Copy`,
+21 days Jun-Jul'26, ATM CE/PE/FUT, ~8 snaps/sec, READ-ONLY) se pehli baar **real bid/ask spread
+MEASURE** kiya, aur backtest ke guessed cost knobs ko usse replace kiya. Motivation: `bs_option.reprice*`
+(sab directional ATM strats) spread ko ZERO maanti thi, `real_struct2` (vol family) flat 0.5%/leg —
+dono unvalidated (LESSONS TRAP #111).
+- **Measure:** `scratch/nifty_trend/dom_spread.py` — zips stream karke per-instrument/time-of-day/premium
+  real one-way half-spread + walk-the-book slippage (memory-bounded Reservoir sampling) → `dom_spread_calib.json`.
+  Result: NIFTY ATM ≈ **0.11-0.16%/leg** (median), OTM wings 0.24% (1.2% mean/2% p90), FUT 0.008%.
+- **Load:** `dom_cost.py` — calib ko per-premium per-leg fraction ke roop me expose karta hai (flat≈0.133%).
+- **Re-cost (no pipeline re-run):** `dom_recost.py` — kisi bhi recorded run ke bs trades (entry_prem/exit_prem/qty)
+  se spread subtract karke Sharpe recompute (`engine._annualize_sharpe` full daily grid pe — zero-slip
+  recorded Sharpe EXACTLY reproduce karta hai; verified pivot 0.967, straddle 3.549).
+- **Wired (durable, "future ke liye secure"):** single shared `bs_option.slip_cost_leg()` (DOM-calibrated,
+  `SLIP_ENABLED`/`SLIP_MULT` knobs, 0.15% fallback) → `bs_option.reprice*` (per leg) + `option_structures.
+  backtest_structure.close_pos` (per leg, qty×|side|) + `real_struct2` (`slip_mode`: "dom" default / "flat"=legacy).
+  Har future hunt ab real spread include karta hai; Sharpe≥1 gate honest numbers pe. Trade dict me `slip` field.
+- **Verified E2E:** pivot bs|full = 0.967 (`SLIP_ENABLED=False`) → 0.941 (True) == dom_recost; structure path
+  slip off=₹0/trade, on=₹39/trade per-leg.
+- **Findings:** deployed ATM-buy fauj (01 straddle 3.55→3.29, 00 mid-ORB 2.37→2.32, 03 orb_st 2.07→2.00,
+  04 chainzone 1.95→1.87) real spread pe 2× stress tak SURVIVE (haircut ~2-8%). Borderline confirmed marginal:
+  #08 pivot 0.97→0.94 (gate ke neeche, cost-artifact nahi), chain-zone positional 0.97→0.93 full / OOS 1.02→0.99.
+  Vol family (VPS-run, real lake): iron_fly −54%→−41% (dead), short_straddle −12%→−1.0% (~breakeven — VRP edge
+  spread se nahi marti, par naked=tail / hedged=wing-cost → koi vehicle nahi). Verdict same, diagnosis refined.
+- Docs: ADR-005, OPTION_STRATEGY_MISSION.md RESUME-HERE + vol-family section, LESSONS TRAP #111, CLAUDE.md.
+- **NOTE:** existing `runs/` abhi bhi zero-slip numbers dikhate hain jab tak re-run na ho (dom_recost on demand
+  gives honest; bulk-refresh deliberately NOT done — har documented Sharpe rewrite hota).
+
+---
+
 ## 2026-07-10 — Backtest chart INDICATOR OVERLAYS (opening range / breakout trigger / SL / target / entry-window) + ORB logger double-print fix
 **Status:** DONE (VPS-deployed + verified)
 **Kya:** User chahta hai ki jab wo koi strategy ka backtest result dekhe, chart pe sirf entry/exit
