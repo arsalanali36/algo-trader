@@ -2408,3 +2408,16 @@ The original TRAP #100 ("Dhan drops expired NIFTY-weekly intraday → 0 bars, mu
 **Corrected picture (held-strike, real data, charges+slip):** short straddle −12%, iron-fly ±8 −54%, long straddle −27%, gamma-scalp −50% (0DTE −35%, Sh −9.7), calendar (sell-weekly/buy-monthly) +18% but Sharpe 0.12 with a −₹48.5k single-day tail → **intraday vol-trading in BOTH directions dies to costs on honest data**. #06 deactivated same session; #01–#05 UNAFFECTED (BS engine prices the held contract by construction).
 
 **Fast-detect:** Any lake-based structure backtest whose worst-day loss looks *smaller* than a plain reading of that day's spot range implies (|move|×qty−credit), or a short-gamma strategy "profiting" on a crash day = marking bug. Cross-check one big-move day manually before trusting.
+
+
+---
+
+## TRAP #110 — Windows mkdir-lockfile: release-time `os.remove` can hit a transient PermissionError (another process reading the pid file), a silently-swallowed failure LEAKS the lock — and the owner then self-deadlocks on its own stale lock.
+
+**Symptom:** hunt_guard's cross-process `flock()` (atomic `os.mkdir` + owner-pid file) passed single-process tests, but the 2-process hammer test (2 × 50 locked increments) produced `TimeoutError: lock held by pid X for 120s` — where pid X was the WAITING process itself. Counter stopped at 25/100.
+
+**Root pattern:** Release did `os.remove(pidf); os.rmdir(path)` inside a bare `except OSError: pass`. On Windows, if the OTHER process is holding the pid file open (reading the owner) at that exact moment, `os.remove` raises PermissionError (sharing violation) → swallowed → lock directory left behind with the releasing process's pid still in it. That process's NEXT acquire sees "lock held by pid <me>, and I'm alive" → waits on itself forever. The classic shape: a cleanup path that "can't fail" (so its failure is silently ignored) actually CAN fail transiently on Windows file-sharing semantics, and the ignored failure converts into a deadlock one call later.
+
+**Permanent guard:** (1) Lock release must RETRY, never fire-and-forget — `_clear_lock()` loops (40 × 50ms) until the pid file + dir are gone; FileNotFoundError = already clear = success. (2) The acquire loop treats `owner == os.getpid()` as a stale lock and breaks it (a live process can never legitimately be waiting on a lock it owns — that state only means "I leaked it"). (3) Concurrency primitives get a REAL multi-process hammer test before use (2 procs × 50 locked read-modify-writes must equal exactly 100) — single-process tests cannot surface sharing-violation races. 5/5 tests in scratchpad test_guard.py pattern.
+
+**Fast-detect:** A `flock`-style TimeoutError whose reported owner pid equals the complainer's own pid = leaked-self lock. Any Windows file/dir cleanup inside `except OSError: pass` is a suspect — sharing violations are routine, not exceptional.
