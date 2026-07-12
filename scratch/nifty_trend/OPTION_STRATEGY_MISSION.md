@@ -54,6 +54,19 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   is now "hedge→wing-cost eats edge / naked→tail", NOT spread. (One faint thread: naked short-
   straddle ~breakeven + IV-rank gate — but tail + trades<100 gate remain; not worth chasing.)
   Scripts: `dom_spread.py`/`dom_cost.py`/`dom_recost.py`; ADR-005.
+  **▶ DOM ALPHA-SIGNAL PROBES = NEGATIVE — do NOT re-tread (2026-07-12, user asked "can we make a
+  strategy / option buy-sell from the book itself?"):** tested whether the order book yields a tradeable
+  SIGNAL (not just cost). `dom_probe.py` (FUT order-book imbalance → forward FUT return, 1.1M snaps) +
+  `dom_opt_probe.py` (option scalp + CE/PE book-asymmetry → underlying, 1.8M 1s grid-points, 8 days).
+  Result: only a weak **CONTRARIAN** book-imbalance signal, **IC ≈ −0.02 to −0.03**, STRONGEST at 1s
+  (hit-rate 30% = latency-locked, retail can't reach), decays to coin-flip by 15-60s; moves 4-8bps
+  barely clear cost. **Options WORSE:** CE-scalp IC ~0; PE-scalp IC −0.11 is just the directional-delta
+  proxy (not an independent edge); option books add NO signal beyond the FUT book but cost **14x** the
+  spread (0.11% vs FUT 0.008%) → options are the WORST vehicle for the micro-signal. Structural reason:
+  option books are derivative + thin + MM-quote-driven; real info lives in the underlying + TRADE flow
+  (prints), which this snapshot-only data lacks. **Conclusion: brother's DOM = COST/EXECUTION value only
+  (already captured), NO retail alpha-signal — naive "bids stack up → go long" is literally backwards.**
+  Probe scripts kept as the negative-result record.
 
 - **🔀 PARALLEL HUNTS = architecture now (user, 2026-07-12) — READ `MULTI_SESSION.md` BEFORE
   launching/killing ANY build.** 2-3 hunts / Claude sessions side-by-side: launch via
