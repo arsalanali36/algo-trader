@@ -1,0 +1,11 @@
+[Unit]
+Description=Run CODE3B EOD report weekday post-close (15:45 IST)
+
+[Timer]
+# 15:25 market close -> 15:30 scheduler stop -> 15:45 report (USI SHAAM zaroori:
+# Dhan intraday history chhoti hai, signal_replay baad me nahi chal sakta)
+OnCalendar=Mon..Fri 15:45:00
+Persistent=false
+
+[Install]
+WantedBy=timers.target

@@ -57,6 +57,7 @@ FOLDER_GLOBS = [
     "_core/*.py",
     "_data/*.py",
     "_ops/*.py",
+    "_ops/backtest_expectations.json",   # eod_digest ka reference (sirf yahi json — baaki _ops json state/secrets ho sakte)
     "_CHARTING/*.py",
     "_TOOLS/*.py",
     "brokers/*.py",

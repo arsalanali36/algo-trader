@@ -478,6 +478,70 @@ def serve_spec_builder():
     from flask import send_from_directory
     return send_from_directory(BASE_DIR, 'strategy_spec_builder.html')
 
+
+# ---- 📋 EOD Reports (data/reports/, _ops/eod_report.py se generate) ----------
+_REPORTS_DIR = BASE_DIR / "data" / "reports"
+_REPORT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+@app.route('/reports')
+def reports_list():
+    """Date-wise EOD report list — login-gated (before_request), self-contained page."""
+    try:
+        dates = json.loads((_REPORTS_DIR / "index.json").read_text(encoding="utf-8"))
+    except Exception:
+        dates = []
+    items = "".join(
+        f"<li><a href='/reports/{d}'>📋 {d}</a></li>" for d in dates) or \
+        "<li class='dim'>abhi koi report nahi — pehla report close ke baad banega</li>"
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>EOD Reports</title>
+<style>body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;
+max-width:640px;margin:40px auto;padding:0 16px}}h1{{font-size:20px}}
+a{{color:#58a6ff;text-decoration:none;font-size:16px}}a:hover{{text-decoration:underline}}
+li{{margin:10px 0;list-style:none}}.dim{{color:#8b949e}}
+button{{background:#238636;color:#fff;border:0;border-radius:8px;padding:8px 16px;
+cursor:pointer;font-size:14px}}#st{{color:#8b949e;font-size:13px;margin-left:10px}}</style>
+</head><body><h1>📋 EOD Reports</h1>
+<p><button onclick="gen()">⚡ Aaj ka report abhi banao</button><span id="st"></span></p>
+<ul>{items}</ul>
+<p><a href='/'>← Dashboard</a></p>
+<script>
+async function gen(){{
+  document.getElementById('st').textContent='ban raha hai... (replay ke saath ~1-2 min)';
+  const r=await fetch('/api/reports/generate',{{method:'POST'}});
+  const j=await r.json();
+  document.getElementById('st').textContent=j.msg||'done';
+  if(j.ok) setTimeout(()=>location.reload(), 90000);
+}}
+</script></body></html>"""
+
+@app.route('/reports/<date>')
+def reports_view(date):
+    from flask import send_file
+    if not _REPORT_DATE_RE.match(date):
+        return "invalid date", 400
+    f = _REPORTS_DIR / f"eod_{date}.html"
+    if not f.exists():
+        return f"<body style='background:#0d1117;color:#e6edf3;font-family:sans-serif'>" \
+               f"<p>{date} ka report nahi mila — /reports se generate karo.</p></body>", 404
+    return send_file(f)
+
+@app.route('/api/reports/generate', methods=['POST'])
+def api_reports_generate():
+    """Background me eod_report.py chalao (non-blocking) — page 90s me khud reload hota."""
+    import subprocess
+    date = (request.get_json(silent=True) or {}).get("date") or \
+        (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    if not _REPORT_DATE_RE.match(date):
+        return jsonify(ok=False, msg="invalid date"), 400
+    try:
+        subprocess.Popen([_sys.executable, "-X", "utf8",
+                          str(BASE_DIR / "_ops" / "eod_report.py"), "--date", date],
+                         cwd=str(BASE_DIR), start_new_session=True)
+        return jsonify(ok=True, msg=f"{date} ka report background me ban raha hai — "
+                                    f"1-2 min me /reports/{date} pe milega")
+    except Exception as e:
+        return jsonify(ok=False, msg=str(e)), 500
+
 @app.route('/lab')
 @app.route('/lab/')
 def serve_lab_hub():

@@ -64,6 +64,16 @@ TRADER_SCRIPTS = {
     "range":     TRADERS_DIR / "range_trader.py",
     "ARS_CHAIN": TRADERS_DIR / "range_trader.py",   # ARS_CHAIN = range engine
     "universe":  TRADERS_DIR / "universe_trader.py",
+    # ── option-mission strategies (paper Mon 2026-07-13) — bina in entries ke
+    #    9:20 health_check saaton pe jhootha "script nahi" RED deta tha ──
+    "orb":        TRADERS_DIR / "orb_trader.py",                 # 00 orb_v1
+    "straddle":   TRADERS_DIR / "straddle_trader.py",            # 01 straddle_v1
+    "dvert":      TRADERS_DIR / "02_debit_vertical_trader.py",   # 02 dvert_v1
+    "orbst":      TRADERS_DIR / "03_orbst_trader.py",            # 03 orbst_v1
+    "chainzone":  TRADERS_DIR / "04_chainzone_trader.py",        # 04 chainzone_v1
+    "backspread": TRADERS_DIR / "05_backspread_trader.py",       # 05 backspread_v1
+    "shortvol":   TRADERS_DIR / "06_shortvol_trader.py",         # 06 OFF (TRAP #109)
+    "banknifty":  TRADERS_DIR / "07_banknifty_trader.py",        # 07 banknifty_v1
 }
 def _base(strategy):
     if strategy.startswith("ARS_CHAIN"):

@@ -1,0 +1,94 @@
+{
+ "_note": "AUTO-GENERATED from scratch/nifty_trend/runs/*/meta.json (bs_full). eod_digest.py isse actuals compare karta hai. Paper P&L me charges nahi hote — backtest me hote hain, isliye paper thoda optimistic dikhega.",
+ "orb_v1": {
+  "run": "mid_orb_nifty",
+  "title": "00 - Mid-Day ORB (reference, live)",
+  "trades_per_day": 0.51,
+  "win_rate": 44.8,
+  "sharpe": 2.366,
+  "maxdd_pct": -1.769,
+  "profit_factor": 1.927,
+  "window": [
+   "2022-01-03",
+   "2026-07-09"
+  ]
+ },
+ "straddle_v1": {
+  "run": "long_straddle_orb",
+  "title": "01 - Long Straddle @ ORB breakout",
+  "trades_per_day": 0.77,
+  "win_rate": 43.3,
+  "sharpe": 3.549,
+  "maxdd_pct": -1.038,
+  "profit_factor": 3.006,
+  "window": [
+   "2018-01-01",
+   "2026-07-09"
+  ]
+ },
+ "dvert_v1": {
+  "run": "debit_vertical_orb",
+  "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
+  "trades_per_day": 0.58,
+  "win_rate": 50.7,
+  "sharpe": 1.671,
+  "maxdd_pct": -2.053,
+  "profit_factor": 1.449,
+  "window": [
+   "2018-01-01",
+   "2026-07-09"
+  ]
+ },
+ "orbst_v1": {
+  "run": "orb_supertrend",
+  "title": "03 - ORB + Supertrend",
+  "trades_per_day": 0.49,
+  "win_rate": 43.8,
+  "sharpe": 2.065,
+  "maxdd_pct": -0.96,
+  "profit_factor": 1.918,
+  "window": [
+   "2018-01-01",
+   "2026-07-09"
+  ]
+ },
+ "chainzone_v1": {
+  "run": "chain_zone_longatm",
+  "title": "04 - Auto Rev-Chain — Zone Breakout (ATM long option)",
+  "trades_per_day": 0.86,
+  "win_rate": 39.8,
+  "sharpe": 1.946,
+  "maxdd_pct": -3.086,
+  "profit_factor": 1.493,
+  "window": [
+   "2018-01-01",
+   "2026-07-09"
+  ]
+ },
+ "backspread_v1": {
+  "run": "ratio_backspread",
+  "title": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+  "trades_per_day": 0.53,
+  "win_rate": 42.5,
+  "sharpe": 1.555,
+  "maxdd_pct": -1.977,
+  "profit_factor": 1.709,
+  "window": [
+   "2018-01-01",
+   "2026-07-09"
+  ]
+ },
+ "banknifty_v1": {
+  "run": "banknifty_hunt",
+  "title": "07 - Mid-Day ORB [BANKNIFTY]",
+  "trades_per_day": 0.31,
+  "win_rate": 49.4,
+  "sharpe": 1.459,
+  "maxdd_pct": -2.981,
+  "profit_factor": 1.64,
+  "window": [
+   "2022-01-03",
+   "2026-07-09"
+  ]
+ }
+}

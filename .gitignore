@@ -102,3 +102,6 @@ ui_mockup_redesign.html
 sl_visualizer*.html
 vps_screenshot.png
 vps_delete_script.py
+
+# EOD reports — generated output (eod_report.py), commit nahi hote
+data/reports/
