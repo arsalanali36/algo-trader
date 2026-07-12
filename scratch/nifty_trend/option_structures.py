@@ -215,9 +215,10 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     def close_pos(i, spot, reason):
         nonlocal equity, pos, day_realized
         legstate = pos["legs"]
-        # per-unit exit value + per-leg charges
+        # per-unit exit value + per-leg charges + per-leg DOM spread slippage
         exit_val = 0.0
         fee = 0.0
+        slip = 0.0
         for (K, ot, side, ep) in legstate:
             xp = bs.bs_price(spot, K, pos_T(i), ot_sig(i), opt=ot)
             exit_val += side * xp
@@ -226,8 +227,11 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
                 # brokerage stays flat/leg-order (one 2-lot order = one ₹20 order) — calc_charges
                 # ka flat ₹40 round-trip yahi model karta hai. |side|=1 pe behaviour unchanged.
                 fee += bs.calc_charges(ep, xp, qty * abs(side), entry_side=("BUY" if side > 0 else "SELL"))
+            # real bid/ask spread per leg (DOM-calibrated by that leg's own premium band; ATM legs
+            # ≈0.11%, OTM wings ≈0.24%). Zero when bs.SLIP_ENABLED is False (reproduces old numbers).
+            slip += bs.slip_cost_leg(ep, xp, qty * abs(side))
         pnl_units = (exit_val - pos["entry_val"])          # already sign-correct (side baked in)
-        pnl = pnl_units * qty - fee
+        pnl = pnl_units * qty - fee - slip
         equity += pnl
         day_realized += pnl
         trades.append(dict(
@@ -236,7 +240,7 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
             entry_i=pos["entry_i"], exit_i=i, entry_dt=pos["entry_dt"], exit_dt=DT[i],
             reason=reason, bars=i - pos["entry_i"],
             atm=pos["atm"], struct=struct_name, entry_prem=round(abs(pos["entry_val"]), 2),
-            exit_prem=round(abs(exit_val), 2), fee=round(fee, 0),
+            exit_prem=round(abs(exit_val), 2), fee=round(fee, 0), slip=round(slip, 0),
             spot_in=round(float(pos["spot_in"]), 1), spot_out=round(float(spot), 1)))
         pos = None
 

@@ -56,6 +56,45 @@ def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
     return brokerage + stt + exch + sebi + stamp + gst
 
 
+# ---------------- DOM-measured spread slippage (brother's real order-book) ----------------
+# The BS price above is the option MID (fair value). A real fill crosses the bid/ask spread:
+# BUY at ask = mid*(1+h), SELL at bid = mid*(1-h). Extra round-trip cost per LEG = h*(|ep|+|xp|)*qty
+# where h = the DOM-measured per-leg one-way half-spread FRACTION for that premium band
+# (dom_cost.py / dom_spread_calib.json — NIFTY ATM ≈ 0.11-0.16%, OTM wings ≈ 0.24%). Prior to
+# 2026-07-12 the reprice* pass modeled ZERO spread; this makes every future hunt honest by default.
+# Measured on 21 recent days (Jun-Jul'26) → RECENT-regime; set SLIP_MULT>1 to stress older years.
+# See ADR-005. Set SLIP_ENABLED=False to reproduce the pre-2026-07-12 zero-slip numbers.
+SLIP_ENABLED = True     # global toggle
+SLIP_MULT    = 1.0      # >1 = regime/robustness stress
+_DOMC = None            # lazy-loaded dom_cost.DomCost (or False if calib missing)
+
+
+def _domc():
+    global _DOMC
+    if _DOMC is None:
+        try:
+            import dom_cost
+            _DOMC = dom_cost.load() or False
+        except Exception as e:
+            print(f"[bs] DOM slip calib not loaded ({e}) -> 0.15% conservative fallback", flush=True)
+            _DOMC = False
+    return _DOMC
+
+
+def slip_frac_for(premium):
+    """per-leg one-way half-spread FRACTION for an option at this premium (DOM-calibrated)."""
+    if not SLIP_ENABLED:
+        return 0.0
+    dc = _domc()
+    base = dc.slip_for(abs(premium)) if dc else 0.0015   # 0.15% fallback if calib missing
+    return base * SLIP_MULT
+
+
+def slip_cost_leg(entry_prem, exit_prem, qty):
+    """rupee spread cost for ONE option leg's round trip: h*(|ep|+|xp|)*qty (0 if disabled)."""
+    return slip_frac_for(entry_prem) * (abs(entry_prem) + abs(exit_prem)) * qty
+
+
 # ---------------- weekly expiry (time-to-expiry) ----------------
 import expiry_calendar as _exp   # same folder: historical NIFTY expiry-weekday schedule (verified circulars)
 
@@ -156,14 +195,15 @@ def reprice(trades, sigma_map, lot_size, lots=1, r=R_FREE):
         xp = bs_price(S_out, K, tte_years(x_ts), sig_out, r, opt)
         gross = (xp - ep) * qty                       # bought option: long premium
         fee = calc_charges(ep, xp, qty)
-        pnl = gross - fee
+        slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
+        pnl = gross - fee - slip
         out.append({
             "side": t["side"], "opt_type": opt, "strike": K,
             "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
             "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
             "points": round(float(t["points"]), 1),
             "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
-            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "gross": round(gross, 0), "fee": round(fee, 0), "slip": round(slip, 0), "pnl": round(pnl, 1),
             "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
             "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
         })
@@ -204,14 +244,16 @@ def reprice_spread(trades, sigma_map, lot_size, lots=1, wing_steps=10,
         gross = (credit_in - cost_out) * qty          # short the spread
         fee = (calc_charges(atm_in, atm_out, qty, entry_side="SELL")     # short ATM leg
                + calc_charges(wing_in, wing_out, qty, entry_side="BUY"))  # long wing leg
-        pnl = gross - fee
+        slip = (slip_cost_leg(atm_in, atm_out, qty)                       # per-LEG DOM spread
+                + slip_cost_leg(wing_in, wing_out, qty))                  # (wing = OTM, wider %)
+        pnl = gross - fee - slip
         out.append({
             "side": t["side"], "opt_type": ot + " spread", "strike": K, "wing": Kw,
             "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
             "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
             "points": round(credit_in - cost_out, 1),
             "entry_prem": round(credit_in, 2), "exit_prem": round(cost_out, 2), "qty": qty,
-            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "gross": round(gross, 0), "fee": round(fee, 0), "slip": round(slip, 0), "pnl": round(pnl, 1),
             "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
             "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
         })
@@ -242,14 +284,15 @@ def reprice_positional(trades, sigma_map, lot_size, lots=1, r=R_FREE):
         xp = bs_price(S_out, K, T_out, sig_out, r, opt)
         gross = (xp - ep) * qty                       # bought option: long premium
         fee = calc_charges(ep, xp, qty)
-        pnl = gross - fee
+        slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
+        pnl = gross - fee - slip
         out.append({
             "side": t["side"], "opt_type": opt, "strike": K,
             "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
             "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
             "points": round(float(t["points"]), 1),
             "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
-            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "gross": round(gross, 0), "fee": round(fee, 0), "slip": round(slip, 0), "pnl": round(pnl, 1),
             "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
             "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
         })
@@ -275,14 +318,15 @@ def reprice_naked(trades, sigma_map, lot_size, lots=1, vrp_mult=1.0, r=R_FREE):
         xp = bs_price(S_out, K, tte_years(x_ts), sig_out, r, opt)
         gross = (ep - xp) * qty                       # sold premium: profit when it decays
         fee = calc_charges(ep, xp, qty, entry_side="SELL")
-        pnl = gross - fee
+        slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
+        pnl = gross - fee - slip
         out.append({
             "side": t["side"], "opt_type": opt + " naked", "strike": K,
             "entry_dt": str(e_ts)[:16], "exit_dt": str(x_ts)[:16],
             "entry_spot": round(S_in, 1), "exit_spot": round(S_out, 1),
             "points": round(ep - xp, 1),
             "entry_prem": round(ep, 2), "exit_prem": round(xp, 2), "qty": qty,
-            "gross": round(gross, 0), "fee": round(fee, 0), "pnl": round(pnl, 1),
+            "gross": round(gross, 0), "fee": round(fee, 0), "slip": round(slip, 0), "pnl": round(pnl, 1),
             "bars": int(t.get("bars", 0)), "reason": t.get("reason", ""),
             "entry_i": int(t.get("entry_i", 0)), "exit_i": int(t.get("exit_i", 0)),
         })

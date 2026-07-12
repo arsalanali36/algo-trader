@@ -66,7 +66,10 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
     p = dict(params or {})
     h0 = int(p.get("h0", 10)); wing = int(p.get("wing_off", 8))
     tp = float(p.get("tp_frac", 0.5)); sl = float(p.get("sl_frac", 1.0))
+    # slip_mode: "dom" = DOM-measured per-leg half-spread (bs.slip_cost_leg, ATM≈0.11%/OTM-wing≈0.24%);
+    # "flat" = the legacy flat slip_frac (default 0.5%/leg) to reproduce the old retracted numbers.
     slip = float(p.get("slip_frac", 0.005))
+    slip_mode = p.get("slip_mode", "dom")
     skip_exp = bool(p.get("skip_expiry", True))
     qty = int(lots) * int(lot)
     g = grid(flag, tf)
@@ -92,14 +95,17 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
         nonlocal equity, pos, day_real
         cv = val(i)
         pnl_u = cv - pos["entry_val"]
-        fee = 0.0; slip_cost = 0.0
+        fee = 0.0; slip_rs = 0.0
         for (side, K, s) in pos["legs"]:
             ep = pos["eps"][(side, K)]
             xp = _px(g, i, side, K)
             if charges:
                 fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if s > 0 else "SELL"))
-            slip_cost += slip * (abs(ep) + abs(xp))
-        pnl = (pnl_u - slip_cost) * qty - fee
+            if slip_mode == "flat":
+                slip_rs += slip * (abs(ep) + abs(xp)) * qty     # legacy flat per-leg
+            else:
+                slip_rs += bs.slip_cost_leg(ep, xp, qty)        # DOM per-leg (premium-band aware)
+        pnl = pnl_u * qty - fee - slip_rs
         equity += pnl; day_real += pnl
         trades.append(dict(side="short-vol", entry=round(pos["entry_val"], 2), exit=round(cv, 2),
                            qty=qty, pnl=pnl, points=round(pnl_u, 2), entry_i=pos["i"], exit_i=i,
@@ -159,15 +165,20 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
 if __name__ == "__main__":
     import warnings; warnings.filterwarnings("ignore")
     lot = bs.get_nifty_lot()
-    print("HELD-STRIKE re-validation (the honest numbers):\n")
-    for struct, p in [("iron_fly", dict(h0=10, wing_off=8, tp_frac=0.5, sl_frac=1.0, slip_frac=0.005)),
-                      ("short_straddle", dict(h0=10, tp_frac=0.5, sl_frac=1.0, slip_frac=0.005))]:
-        res = backtest("WEEK", "5m", struct, p, lot=lot, charges=True)
-        mt, _ = engine.metrics(res)
-        tr = sorted(res["trades"], key=lambda t: t["pnl"])
-        print(f"{struct:16s} trades={mt['trades']:4d} net={mt['net_pct']:7.1f}% sharpe={mt['sharpe']:6.2f} "
-              f"maxDD={mt['maxdd']:6.1f}% win={mt['win_rate']:.0f}% worst={tr[0]['pnl']:.0f}")
-        # crash-day check
-        for t in res["trades"]:
-            if str(pd.to_datetime(t["entry_dt"]))[:10] == "2024-06-04":
-                print(f"   2024-06-04 (crash): pnl={t['pnl']:.0f} spot {t['spot_in']}->{t['spot_out']} {t['reason']}")
+    print("HELD-STRIKE vol family — flat 0.5% (old) vs DOM real per-leg spread vs DOM 2x:\n")
+    print(f"  {'struct':16s} {'slip':10s} {'trades':>7} {'net%':>8} {'sharpe':>7} {'maxDD%':>7} {'win%':>5} {'worst':>9}")
+    scenarios = [("flat_0.5%", dict(slip_mode="flat", slip_frac=0.005), 1.0),
+                 ("DOM_real",  dict(slip_mode="dom"), 1.0),
+                 ("DOM_2x",    dict(slip_mode="dom"), 2.0)]
+    for struct, base in [("iron_fly", dict(h0=10, wing_off=8, tp_frac=0.5, sl_frac=1.0)),
+                         ("short_straddle", dict(h0=10, tp_frac=0.5, sl_frac=1.0))]:
+        for name, extra, mult in scenarios:
+            bs.SLIP_MULT = mult; bs.SLIP_ENABLED = True
+            p = dict(base); p.update(extra)
+            res = backtest("WEEK", "5m", struct, p, lot=lot, charges=True)
+            mt, _ = engine.metrics(res)
+            tr = sorted(res["trades"], key=lambda t: t["pnl"])
+            print(f"  {struct:16s} {name:10s} {mt['trades']:>7d} {mt['net_pct']:>8.1f} {mt['sharpe']:>7.2f} "
+                  f"{mt['maxdd']:>7.1f} {mt['win_rate']:>5.0f} {tr[0]['pnl']:>9.0f}")
+        bs.SLIP_MULT = 1.0
+        print()

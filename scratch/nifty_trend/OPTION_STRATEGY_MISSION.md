@@ -10,6 +10,42 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **📏 REAL-SPREAD VALIDATION via brother's DOM data (2026-07-12, user "Direction A") — the BS
+  directional pass modeled ZERO spread; now measured + re-costed.** Brother's 20-level order-book
+  (`C:\_SABHAI DATA - Copy`, 21 days Jun-Jul'26, ATM CE/PE/FUT, ~8 snaps/sec, READ-ONLY) →
+  `dom_spread.py` measured the REAL one-way half-spread: **NIFTY ATM option ≈ 0.11-0.16%/leg**
+  (median; p_lt50 wings 0.24% median but 1.2% mean/2% p90; FUT ~0.008%). `dom_spread_calib.json`
+  = the calibration; `dom_cost.py` loads it (per-premium-band per-leg fraction, flat≈0.133%).
+  **Key discovery: two cost engines disagree — `bs_option.reprice*` (all directional ATM strats)
+  applies charges but ZERO slippage (optimistic); `real_struct2` uses flat 0.5%/leg (4x too harsh
+  for ATM).** `dom_recost.py` re-costs any run's recorded bs trades with the measured spread WITHOUT
+  re-running the pipeline (reads runs/<slug>/results.js entry_prem/exit_prem/qty, subtracts
+  h*(ep+xp)*qty per trade, recomputes Sharpe via engine._annualize_sharpe on the full daily grid —
+  zero-slip reproduces recorded Sharpe EXACTLY: pivot full 0.967, straddle 3.549, etc). EXACT for
+  single-leg ATM buys (pivot/chain-zone/ORB/straddle); multi-leg (debit-vert/backspread/iron-fly)
+  = net-premium understated, flagged. **RESULTS (full-window bs Sharpe: zero→real→2x_stress):**
+  01 straddle 3.55→3.29→3.02 ✅ · 00 mid-ORB 2.37→2.32→2.27 ✅ · 03 orb_st 2.07→2.00→1.94 ✅ ·
+  04 chainzone 1.95→1.87→1.80 ✅ — **all deployed ATM-buy strats survive real spread even at 2x
+  (haircut only ~2-8% of Sharpe; the whole live paper-fauj is robust to honest spread — good
+  pre-live signal).** BORDERLINE confirmed: **#08 pivot 0.97→0.94→0.92 = stays below the 1.0 gate,
+  user reject STANDS (not a cost-artifact)**; **chain-zone POSITIONAL 0.97→0.93→0.89 full, OOS
+  1.06→1.02→0.99 = genuinely marginal, OOS barely holds 1.0 at real cost + FAILS at 2x → "caveat"
+  validated, keep INTRADAY #04 (1.87 real) as the robust form, not the positional.**
+  **✅ NOW SECURED FOR THE FUTURE (user "ye dono, ainda ke liye secure", 2026-07-12) — ADR-005:**
+  (a) DONE — single shared `bs_option.slip_cost_leg()` (DOM-calibrated per-premium half-spread,
+  `SLIP_ENABLED`/`SLIP_MULT` knobs, 0.15% safe fallback) wired into ALL pricing engines:
+  `bs_option.reprice*` (per leg) + `option_structures.backtest_structure.close_pos` (per leg,
+  qty*|side|). **Every FUTURE hunt now bakes in real spread by default; the Sharpe≥1 gate applies
+  to honest numbers.** Verified END-TO-END: pivot bs|full = 0.967 with `SLIP_ENABLED=False`, 0.941
+  with it True (== dom_recost). Each trade dict now has a `slip` field. **Existing runs/ still show
+  OLD zero-slip numbers until re-run** (dom_recost gives honest on demand; re-run build_*.py to
+  refresh official numbers — NOT bulk-done, would rewrite every documented Sharpe). (b) WIRING DONE
+  — `real_struct2` got `slip_mode` ("dom" default = shared helper per-leg; "flat" = legacy 0.5% to
+  reproduce old retracted numbers). **BUT the vol-family RE-RUN needs the real OptChainLake
+  (`_TRADING_DATA/OptChainLake/NIFTY/`) which is on the VPS, NOT this laptop → run it on the VPS/
+  office machine.** Expected low upside (family died to directional blow-through + trade-count gate,
+  not spread). Scripts: `dom_spread.py`/`dom_cost.py`/`dom_recost.py`; ADR-005.
+
 - **🔀 PARALLEL HUNTS = architecture now (user, 2026-07-12) — READ `MULTI_SESSION.md` BEFORE
   launching/killing ANY build.** 2-3 hunts / Claude sessions side-by-side: launch via
   `python hunt.py build_X.py` (detached + log), `python hunt.py status` = who runs what.
