@@ -41,10 +41,19 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   OLD zero-slip numbers until re-run** (dom_recost gives honest on demand; re-run build_*.py to
   refresh official numbers — NOT bulk-done, would rewrite every documented Sharpe). (b) WIRING DONE
   — `real_struct2` got `slip_mode` ("dom" default = shared helper per-leg; "flat" = legacy 0.5% to
-  reproduce old retracted numbers). **BUT the vol-family RE-RUN needs the real OptChainLake
-  (`_TRADING_DATA/OptChainLake/NIFTY/`) which is on the VPS, NOT this laptop → run it on the VPS/
-  office machine.** Expected low upside (family died to directional blow-through + trade-count gate,
-  not spread). Scripts: `dom_spread.py`/`dom_cost.py`/`dom_recost.py`; ADR-005.
+  reproduce old retracted numbers). **RE-RAN ON VPS 2026-07-12 (user scp'd 4 files + ran, lake is
+  VPS-only): flat 0.5% → DOM real → DOM 2x (WEEK 5m, 991 trades) — iron_fly net −54.3%→−41.4%→−46.0%
+  (Sharpe −3.51→−2.72→−3.01); short_straddle net −12.3%→−1.0%→−4.6% (Sharpe −0.61→−0.03→−0.22).**
+  **KEY REFINEMENT: real spread does NOT rescue the family into shippability, but it CHANGES THE
+  DIAGNOSIS — the old "dies to costs" was partly a flat-0.5%-knob artifact.** iron_fly still DEAD
+  (−41% even at real spread — killed by wing-cost + trend-day blow-through, not spread).
+  short_straddle goes to ~BREAKEVEN at real spread (−1.0%, Sharpe −0.03) → **the ATM VRP premium
+  edge is REAL and survives honest spread** — BUT no retail vehicle keeps it: naked has undefined
+  tail (worst day −₹19,758, maxDD −9.4%; framework bars naked), and hedging it = iron_fly = −41%
+  (wings cost more than the edge). So verdict UNCHANGED (nothing shippable) but the precise reason
+  is now "hedge→wing-cost eats edge / naked→tail", NOT spread. (One faint thread: naked short-
+  straddle ~breakeven + IV-rank gate — but tail + trades<100 gate remain; not worth chasing.)
+  Scripts: `dom_spread.py`/`dom_cost.py`/`dom_recost.py`; ADR-005.
 
 - **🔀 PARALLEL HUNTS = architecture now (user, 2026-07-12) — READ `MULTI_SESSION.md` BEFORE
   launching/killing ANY build.** 2-3 hunts / Claude sessions side-by-side: launch via
@@ -315,8 +324,8 @@ IV-outlier clean, **coverage-guard so a mid-download partial wing can't give a b
 Tested comprehensively on REAL option premium+IV+OI (held-strike engine real_struct2, charges+slip):
 | Variant | Result |
 |---|---|
-| Intraday short straddle (naked) | −12% |
-| Intraday iron-fly ±8 | −54% (was the TRAP #109 phantom +61%) |
+| Intraday short straddle (naked) | flat-0.5% −12% → **DOM real spread −1.0% (~breakeven, Sh −0.03)** but naked tail −₹19,758 |
+| Intraday iron-fly ±8 | flat-0.5% −54% → **DOM real spread −41%** (still dead; was TRAP #109 phantom +61%) |
 | Intraday gamma-scalp / 0DTE | −50% / −35% |
 | Calendar (sell-weekly/buy-monthly) | +18% but Sharpe 0.12, −₹48.5k tail |
 | **Positional iron-fly (weekly, 4-5d hold, hedged)** | **−8%, Sh −0.47** |
@@ -333,9 +342,14 @@ ONE thing that flips positional short-vol from losing to non-losing. Sell only w
 iron-condor −7.1%→**+1.4% (Sh 0.20)**, iron-fly −8.0%→+0.9%; IV-rank ≥ 0.85 → iron-fly +1.1% (Sh 0.28).
 BUT it self-defeats on trade count: IV≥0.5 = only **36 trades/5yr**, IV≥0.7 = 19, IV≥0.85 = 10 — all
 FAR below the trades≥100 gate, Sharpe 0.2-0.28 (below 1), worst week still −₹6-10k. So the VRP edge is
-REAL but tiny + rare — not shippable standalone. Revisit only if: (a) brother's DOM shows real spread
-<< 0.5% slip, or (b) the IV-gate is COMBINED with more qualifying-day sources (shorter IV lookback /
-intraday IV spikes / IV-rich + directional-quiet) to raise trade count without killing the edge — a
+REAL but tiny + rare — not shippable standalone. **UPDATE 2026-07-12 — revisit-condition (a) now
+ANSWERED by brother's DOM (ADR-005): real ATM spread IS << 0.5% (≈0.11%/leg). Re-running the vol
+family at real spread moved intraday short-straddle −12%→−1.0% (breakeven) and iron-fly −54%→−41% —
+i.e. the flat 0.5% WAS over-penalizing, the VRP edge survives honest spread. But it STILL doesn't
+ship: naked = undefined tail (−₹19,758 worst day), hedged (wings) = iron-fly −41% (wings cost > edge).
+So the killer was never spread — it's the wing-cost-vs-tail tradeoff. Conclusion stands; diagnosis
+refined.** Revisit only if: (b) the IV-gate is COMBINED with more qualifying-day sources (shorter IV
+lookback / intraday IV spikes / IV-rich + directional-quiet) to raise trade count without killing the edge — a
 new signal-design, not a knob. `positional_vol.py` has the `iv_min` gate wired for that future work.
 
 ## TRACK B — collector-gated (need REAL option-chain / VIX data first)
