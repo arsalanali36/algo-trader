@@ -69,10 +69,12 @@ def collect(date, do_replay=True):
         lg = parsed[sid]
         st = dg.store_section(sid, date)
         mode_exp = dg.expected_mode_for(sid)
-        colour, reasons = dg.judge(sid, lg, st, mode_exp, market_day)
-        rp = sr.run_for(sid, date) if do_replay else dict(status="skip", note="replay skipped",
-                                                          signals=[], extra=[], miss=0,
-                                                          match=0, gated=0, err=0, entries=0)
+        colour, reasons = dg.judge(sid, lg, st, mode_exp, market_day,
+                                   date, dg.mode_is_explicit(sid))
+        # GREY (chali hi nahi) strategy pe replay chalane ka koi matlab nahi
+        rp = (sr.run_for(sid, date) if (do_replay and colour != "GREY")
+              else dict(status="skip", note="chali hi nahi / replay skipped",
+                        signals=[], extra=[], miss=0, match=0, gated=0, err=0, entries=0))
         wins = sum(1 for tr in st["completed"] if (tr.get("pnl") or 0) > 0)
         rows.append(dict(sid=sid, lg=lg, st=st, colour=colour, reasons=reasons,
                          mode_exp=mode_exp, replay=rp, wins=wins,
@@ -86,12 +88,18 @@ def collect(date, do_replay=True):
 def pos_neg(data):
     rows = data["rows"]
     pos, neg = [], []
+    grey = [r for r in rows if r["colour"] == "GREY"]           # chali hi nahi — count se bahar
+    active = [r for r in rows if r["colour"] != "GREY"]         # jo relevant hain
     ran = [r for r in rows if r["lg"]["exists"] and r["lg"]["lines"]]
     clean = [r for r in rows if r["colour"] == "GREEN"]
     reds = [r for r in rows if r["colour"] == "RED"]
 
     if ran:
-        pos.append(f"{len(ran)}/{len(rows)} strategies ka process din bhar log karta raha")
+        pos.append(f"{len(ran)}/{len(active)} chalti strategies ka process din bhar log karta raha")
+    if grey:
+        pos.append(f"{len(grey)} strategy is date ko chali hi nahi (deploy baad me / inactive) — "
+                   f"ye ERROR nahi: {', '.join(r['sid'] for r in grey[:6])}"
+                   + (" …" if len(grey) > 6 else ""))
     if clean:
         pos.append(f"{len(clean)} strategy bilkul clean (GREEN) — koi issue nahi")
     if not any(r["st"]["zero_price"] for r in rows):
@@ -111,12 +119,12 @@ def pos_neg(data):
         for reason in r["reasons"][:2]:
             neg.append(f"{r['sid']}: {reason}")
     for r in rows:
+        if r["colour"] == "GREY":
+            continue                              # chali hi nahi — replay bhi meaningless
         rp = r["replay"]
         if rp["miss"] or rp["extra"] or rp["err"]:
             neg.append(f"{r['sid']}: replay drift — {rp['miss']} MISS, "
                        f"{len(rp['extra'])} EXTRA, {rp['err']} ERROR (TRAP #108!)")
-        elif rp["status"] == "fail":
-            neg.append(f"{r['sid']}: replay nahi chala — {rp['note']}")
     for r in rows:
         if r["colour"] == "YELLOW":
             neg.append(f"{r['sid']} (yellow): {'; '.join(r['reasons'][:2])}")
@@ -201,29 +209,33 @@ def render(data):
     rows, date = data["rows"], data["date"]
     reds = sum(1 for r in rows if r["colour"] == "RED")
     yels = sum(1 for r in rows if r["colour"] == "YELLOW")
+    greens = sum(1 for r in rows if r["colour"] == "GREEN")
+    greys = sum(1 for r in rows if r["colour"] == "GREY")
+    active_n = len(rows) - greys                 # jo is date ko chali (relevant)
     tot = sum(r["st"]["pnl"] for r in rows)
     n_tr = sum(len(r["st"]["completed"]) for r in rows)
     n_ent = sum(len(r["lg"]["entries"]) for r in rows)
     pos, neg = pos_neg(data)
+    grey_note = f" · {greys} chali nahi (ignore)" if greys else ""
 
     if reds:
-        banner = f"<div class='banner b-red'>🔴 {reds} strategy RED — neeche Negatives + detail dekho</div>"
+        banner = f"<div class='banner b-red'>🔴 {reds} strategy RED — neeche Negatives + detail dekho{grey_note}</div>"
     elif yels:
-        banner = f"<div class='banner b-yellow'>🟡 sab critical clear, {yels} yellow (minor) — ek nazar maar lo</div>"
+        banner = f"<div class='banner b-yellow'>🟡 sab critical clear, {yels} yellow (minor) — ek nazar maar lo{grey_note}</div>"
     else:
-        banner = "<div class='banner b-green'>🟢 ALL CLEAR — aaj algo ki health achhi thi</div>"
+        banner = f"<div class='banner b-green'>🟢 ALL CLEAR — jo strategies chali, sab healthy{grey_note}</div>"
 
     tone = "g" if tot >= 0 else "r"
     score = f"""<div class='score'>
       <div class='pill'><div class='v {tone}'>₹{tot:+,.0f}</div><div class='k'>Net P&L (paper=gross)</div></div>
       <div class='pill'><div class='v'>{n_tr}</div><div class='k'>Completed trades</div></div>
       <div class='pill'><div class='v'>{n_ent}</div><div class='k'>Entries</div></div>
-      <div class='pill'><div class='v'>{len(rows)}</div><div class='k'>Strategies</div></div>
-      <div class='pill'><div class='v'><span class='r'>{reds}</span> / <span class='y'>{yels}</span> / <span class='g'>{len(rows) - reds - yels}</span></div><div class='k'>Red / Yellow / Green</div></div>
+      <div class='pill'><div class='v'>{active_n}<span class='dim' style='font-size:12px'> / {len(rows)}</span></div><div class='k'>Chali / Total</div></div>
+      <div class='pill'><div class='v'><span class='r'>{reds}</span> / <span class='y'>{yels}</span> / <span class='g'>{greens}</span></div><div class='k'>Red / Yellow / Green</div></div>
     </div>"""
 
     def tagc(c):
-        return {"GREEN": "t-g", "YELLOW": "t-y", "RED": "t-r"}[c]
+        return {"GREEN": "t-g", "YELLOW": "t-y", "RED": "t-r", "GREY": "t-d"}[c]
 
     def replay_cell(rp):
         if rp["status"] == "skip":
@@ -253,7 +265,10 @@ def render(data):
           <td>{len(r['reasons'])}</td></tr>""")
 
     details = []
+    grey_sids = [r["sid"] for r in rows if r["colour"] == "GREY"]
     for r in rows:
+        if r["colour"] == "GREY":
+            continue                              # chali hi nahi — detail dikhane ka matlab nahi
         st, lg, rp = r["st"], r["lg"], r["replay"]
         body = []
         if r["reasons"]:
@@ -297,7 +312,7 @@ def render(data):
                             f"live entry, offline signal nahi</div>")
         elif rp["status"] != "ok":
             body.append(f"<p class='dim'>Replay: {esc(rp['note'])}</p>")
-        icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}[r["colour"]]
+        icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴", "GREY": "⚪"}[r["colour"]]
         details.append(f"<details {'open' if r['colour'] == 'RED' else ''}>"
                        f"<summary>{icon} {esc(r['sid'])} — ₹{st['pnl']:+,.0f}, "
                        f"{len(st['completed'])} trades</summary>{''.join(body)}</details>")
@@ -315,9 +330,12 @@ def render(data):
 {''.join(trs)}</table></div>
 <h2 class='g'>✅ Positives</h2><ul>{''.join(f'<li>{esc(p)}</li>' for p in pos)}</ul>
 <h2 class='r'>❌ Negatives / dhyaan do</h2><ul>{''.join(f'<li>{esc(n)}</li>' for n in neg)}</ul>
-<h2>Per-strategy detail</h2>{''.join(details)}
+<h2>Per-strategy detail <span class='dim' style='font-size:12px;font-weight:400'>(sirf jo chali)</span></h2>{''.join(details)}
+{("<p class='dim' style='font-size:12px'>⚪ Is date ko chali hi nahi (deploy baad me / inactive, koi issue nahi): "
+  + esc(', '.join(grey_sids)) + "</p>") if grey_sids else ""}
 <div class='note'>paper fill = LTP (na slippage na charges) — backtest me costs the, isliye paper
-P&L thoda optimistic dikhega. | Generated {gen} | eod_report.py (digest + signal_replay engines)</div>
+P&L thoda optimistic dikhega. ⚪ = strategy us din chali hi nahi (error nahi).
+| Generated {gen} | eod_report.py (digest + signal_replay engines)</div>
 </body></html>"""
 
 

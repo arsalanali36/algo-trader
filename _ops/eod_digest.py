@@ -21,6 +21,7 @@ Exit code = number of RED strategies (cron/notification friendly).
 import argparse
 import json
 import re
+import statistics
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
@@ -86,7 +87,8 @@ def parse_log(sid, date, logs_dir):
     out = dict(exists=False, lines=0, first=None, last=None, mode_banner=None,
                entries=[], skips=[], exits=[], errors=[], warnings=0,
                recovers=[], signals=Counter(), paused=0, closed_loops=0,
-               loop_errors=0, gaps=[])
+               loop_errors=0, gaps=[], gap_red_th=GAP_RED_MIN,
+               log_first_date=None, log_last_date=None, cadence_min=None)
     f = logs_dir / f"{sid}.log"
     if not f.exists():
         return out
@@ -102,7 +104,14 @@ def parse_log(sid, date, logs_dir):
 
     for line in text.splitlines():
         m = LOG_LINE.match(line)
-        if not m or m.group(1) != date:
+        if not m:
+            continue
+        ld = m.group(1)                                  # log line ka date
+        if out["log_first_date"] is None or ld < out["log_first_date"]:
+            out["log_first_date"] = ld
+        if out["log_last_date"] is None or ld > out["log_last_date"]:
+            out["log_last_date"] = ld
+        if ld != date:
             continue
         t, lvl, msg = m.group(2), m.group(3), m.group(4)
         out["lines"] += 1
@@ -152,14 +161,32 @@ def parse_log(sid, date, logs_dir):
         return any(s <= a and b <= e for s, e in open_iv)
 
     hb = [t for t in times if MARKET_OPEN <= t[:5] <= MARKET_CLOSE]
+    deltas, pairs = [], []
     for a, b in zip(hb, hb[1:]):
         da = datetime.strptime(a, "%H:%M:%S")
         db = datetime.strptime(b, "%H:%M:%S")
         gap = (db - da).total_seconds() / 60
-        if a >= "15:14":        # 15:15 no-entry ke baad flat trader by-design chup (sleep-continue, no log)
+        if a >= "15:14":        # 15:15 no-entry ke baad flat trader by-design chup
             continue
-        if gap >= GAP_YELLOW_MIN and not _in_open(a, b):
-            out["gaps"].append((a, b, round(gap, 1)))
+        if _in_open(a, b):      # position-open window me heartbeat chup = OK
+            continue
+        deltas.append(gap)
+        pairs.append((a, b, round(gap, 1)))
+
+    # Cadence-aware: har strategy ka apna natural log-interval hota hai (orb ~5m,
+    # rsi ~2m). Us cadence ke around ka gap NORMAL hai — sirf "freeze/mar gaya"
+    # wale bade gap flag karo (median se kaafi bada). Warna 60-70 jhoothe alarm.
+    if deltas:
+        med = statistics.median(deltas)
+        out["cadence_min"] = round(med, 1)
+        # Asli "process froze/mar gaya" 7min+ hota hai; 3-6min ke chhote gaps
+        # (Dhan slow tick, ek-do loop late) actionable nahi — unhe noise mat banao.
+        yellow_th = max(7.0, med * 3)
+        red_th = max(GAP_RED_MIN, med * 5)      # 10min+ ya cadence-se-bahut-bada
+        out["gap_red_th"] = red_th
+        flagged = [(a, b, g) for (a, b, g) in pairs if g >= yellow_th]
+        flagged.sort(key=lambda x: x[2], reverse=True)
+        out["gaps"] = flagged[:4]           # sirf top-4 bade — wall-of-gaps nahi
     return out
 
 
@@ -184,30 +211,51 @@ def store_section(sid, date):
 # ──────────────────────────────────────────────────────────────────────────
 #  Verdict
 # ──────────────────────────────────────────────────────────────────────────
-def judge(sid, lg, st, expect_mode, market_day):
-    """Return (colour, [reasons]) — colour in RED/YELLOW/GREEN."""
+def judge(sid, lg, st, expect_mode, market_day, date, mode_explicit=False):
+    """Return (colour, [reasons]) — colour in GREY/RED/YELLOW/GREEN.
+    GREY = strategy is date ko chali hi nahi (deploy baad me / inactive) — issue nahi."""
     red, yellow = [], []
 
-    if not lg["exists"] or lg["lines"] == 0:
-        (red if market_day else yellow).append("koi log line nahi is date ki — process chala hi nahi?")
-        # store-only checks still below
-    if lg["mode_banner"] and lg["mode_banner"] != expect_mode.upper():
-        red.append(f"TRAP #57: banner {lg['mode_banner']} hai, expected {expect_mode.upper()}")
-    bad_mode = [r for r in st["rows"] if (r.get("mode") or "paper") != expect_mode]
-    if bad_mode:
-        red.append(f"order_store me {len(bad_mode)} row(s) mode≠{expect_mode} (TRAP #57)")
+    # ── "chali hi nahi" ko samajhdaari se handle karo ──
+    if lg["lines"] == 0:
+        if not st["rows"]:
+            # us date ka log bilkul nahi + store me kuch nahi. Asli problem TABHI hai
+            # jab strategy us waqt EXIST karti thi (log baaki dino ka hai) AND market day tha.
+            existed_then = (lg["log_first_date"] is not None
+                            and lg["log_first_date"] <= date)
+            if existed_then and market_day:
+                red.append("koi log line nahi is date ki — process chala hi nahi "
+                           f"(log to hai {lg['log_first_date']}→{lg['log_last_date']} ka)")
+            else:
+                return "GREY", ["is date ko ye strategy chali hi nahi "
+                                "(deploy baad me hua ya inactive) — normal, koi issue nahi"]
+        # store me rows hain par log line nahi — genuinely odd, checks chalein
+
+    # ── mode (TRAP #57) — sirf tab jab expected mode config me EXPLICIT ho ──
+    if mode_explicit:
+        if lg["mode_banner"] and lg["mode_banner"] != expect_mode.upper():
+            red.append(f"TRAP #57: banner {lg['mode_banner']} hai, expected {expect_mode.upper()}")
+        bad_mode = [r for r in st["rows"] if (r.get("mode") or "paper") != expect_mode]
+        if bad_mode:
+            red.append(f"order_store me {len(bad_mode)} row(s) mode≠{expect_mode} (TRAP #57)")
+
     if st["zero_price"]:
         red.append(f"TRAP #1: {len(st['zero_price'])} ₹0/None-price fill row(s)")
     if st["open_rows"]:
         red.append(f"{len(st['open_rows'])} position STILL OPEN in store (EOD flat nahi — TRAP #28/#36)")
     if lg["entries"] and not st["rows"]:
         red.append("log me ENTRY hai par order_store KHALI — recording gap")
-    if st["rows"] and not lg["entries"] and not lg["recovers"]:
-        red.append(f"store me {len(st['rows'])} row(s) par log me koi ★ ENTRY nahi — ghost?")
+    # "ghost" sirf tab jab store me rows hain, log me koi ENTRY/RECOVER nahi, AUR koi
+    # completed round-trip bhi nahi. Legacy trader (range/rsi) ka log '★ ENTRY' format
+    # nahi likhta par woh genuinely trade karte hain → completed trades = ghost nahi.
+    if st["rows"] and not lg["entries"] and not lg["recovers"] and not st["completed"]:
+        red.append(f"store me {len(st['rows'])} row(s) par log me koi ENTRY nahi — ghost?")
     if lg["loop_errors"]:
         red.append(f"{lg['loop_errors']} Loop error(s) — traceback log me")
     for a, b, g in lg["gaps"]:
-        (red if g >= GAP_RED_MIN else yellow).append(f"heartbeat gap {g} min ({a}→{b})")
+        (red if g >= lg.get("gap_red_th", GAP_RED_MIN) else yellow).append(
+            f"heartbeat gap {g} min ({a}→{b})"
+            + (f" — cadence ~{lg['cadence_min']}m" if lg.get("cadence_min") else ""))
     if lg["errors"] and not lg["loop_errors"]:
         yellow.append(f"{len(lg['errors'])} ERROR line(s)")
     if lg["paused"] and not lg["entries"]:
@@ -217,6 +265,15 @@ def judge(sid, lg, st, expect_mode, market_day):
 
     colour = "RED" if red else ("YELLOW" if yellow else "GREEN")
     return colour, red + yellow
+
+
+def mode_is_explicit(sid):
+    """config me is strategy ka `mode` key literally present hai?"""
+    try:
+        cfg = json.loads(TC_FILE.read_text(encoding="utf-8"))
+        return (cfg.get(sid) or {}).get("mode") in ("paper", "live")
+    except Exception:
+        return False
 
 
 def expected_mode_for(sid, fallback="paper"):
@@ -273,11 +330,12 @@ def main():
     for sid in ids:
         lg = parsed[sid]
         st = store_section(sid, date)
-        colour, reasons = judge(sid, lg, st, expected_mode(sid), market_day)
+        colour, reasons = judge(sid, lg, st, expected_mode(sid), market_day,
+                                date, mode_is_explicit(sid))
         summary.append((sid, colour, st["pnl"], len(lg["entries"]),
                         len(st["completed"]), reasons))
 
-        icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴"}[colour]
+        icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴", "GREY": "⚪"}[colour]
         print(f"\n{icon} {sid}  [{lg['mode_banner'] or '?'}]"
               f"  log {lg['first'] or '--'}→{lg['last'] or '--'}"
               f"  ({lg['lines']} lines)")
@@ -324,14 +382,17 @@ def main():
     print("\n" + "═" * 74)
     print(f"  {'strategy':<16}{'status':<9}{'entries':<9}{'trades':<8}{'P&L ₹':<12}issues")
     print("─" * 74)
-    reds = 0
+    reds = greys = 0
     for sid, colour, pnl, n_ent, n_tr, reasons in summary:
         reds += colour == "RED"
-        print(f"  {sid:<16}{colour:<9}{n_ent:<9}{n_tr:<8}{pnl:<+12,.0f}{len(reasons)}")
+        greys += colour == "GREY"
+        print(f"  {sid:<18}{colour:<9}{n_ent:<9}{n_tr:<8}{pnl:<+12,.0f}{len(reasons)}")
     tot = sum(s[2] for s in summary)
     print("─" * 74)
-    print(f"  {'TOTAL':<16}{'':<9}{'':<9}{'':<8}{tot:<+12,.0f}"
-          f"{'🔴 ' + str(reds) + ' RED — pehle inko dekho' if reds else 'sab clear'}")
+    tail = (f"🔴 {reds} RED — pehle inko dekho" if reds else "sab clear")
+    if greys:
+        tail += f"  ({greys} ⚪ chali hi nahi — ignore)"
+    print(f"  {'TOTAL':<18}{'':<9}{'':<9}{'':<8}{tot:<+12,.0f}{tail}")
     if args.expect_mode == "paper":
         print("  note: paper fill = LTP, na slippage na charges — backtest me costs THE,")
         print("        isliye paper P&L backtest se thoda BEHTAR dikhega. Utna discount karo.")
