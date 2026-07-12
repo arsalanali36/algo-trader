@@ -63,6 +63,13 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
     n = len(g["DT"]); DT, DAY, TT = g["DT"], g["DAY"], g["TT"]
     is_exp, tdte, _ = _cycle_info(g)
 
+    # optional IV-rank gate: only sell when premium is historically RICH (top of the range)
+    iv_min = float(p.get("iv_min", 0.0))
+    ivr = {}
+    if iv_min > 0:
+        import optlake_load as _ll
+        ivr = _ll.iv_rank_daily(flag, tf, int(p.get("iv_lb", 40)))
+
     equity = START_CAP; pos = None; trades = []; eqc = []
     entered_cycle = set()      # expiry-dates whose cycle we've already entered
 
@@ -123,7 +130,7 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
                 if dd >= d and is_exp.get(dd):
                     exp_key = dd; break
             if exp_key is not None and exp_key not in entered_cycle:
-                if (TT[i].hour, TT[i].minute) >= (h_entry, m_entry):
+                if (TT[i].hour, TT[i].minute) >= (h_entry, m_entry) and (iv_min <= 0 or ivr.get(d, 0.0) >= iv_min):
                     legs = legs_at(i)
                     eps = {(side, K): r2._px(g, i, side, K) for (side, K, s) in legs}
                     if all(v > 0 for v in eps.values()):

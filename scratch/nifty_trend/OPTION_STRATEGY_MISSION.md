@@ -255,9 +255,15 @@ account at these costs — intraday OR positional, naked OR hedged, weekly OR ca
 real in GROSS terms but 4-8-leg charges + slippage + the trend/gap weeks (short side blows through
 the credit even with wings) eat it. `positional_vol.py` / `real_struct2.py` / `oi_signals.py` keep
 the negatives documented. The REAL edges are DIRECTIONAL/big-winner (the 7 deployed: 00-05 + 07).
-Only revisit vol-selling if (a) real bid-ask from brother's DOM shows costs much lower than the
-0.5% slip assumed, or (b) a genuine IV-regime timing filter is found (not tried: sell ONLY when
-IV-rank extreme AND a directional-quiet forecast — needs a separate signal, not pure calendar-time).
+**IV-rank timing filter TESTED (2026-07-12, corrected engine):** it IS the right direction — the
+ONE thing that flips positional short-vol from losing to non-losing. Sell only when IV-rank ≥ 0.5:
+iron-condor −7.1%→**+1.4% (Sh 0.20)**, iron-fly −8.0%→+0.9%; IV-rank ≥ 0.85 → iron-fly +1.1% (Sh 0.28).
+BUT it self-defeats on trade count: IV≥0.5 = only **36 trades/5yr**, IV≥0.7 = 19, IV≥0.85 = 10 — all
+FAR below the trades≥100 gate, Sharpe 0.2-0.28 (below 1), worst week still −₹6-10k. So the VRP edge is
+REAL but tiny + rare — not shippable standalone. Revisit only if: (a) brother's DOM shows real spread
+<< 0.5% slip, or (b) the IV-gate is COMBINED with more qualifying-day sources (shorter IV lookback /
+intraday IV spikes / IV-rich + directional-quiet) to raise trade count without killing the edge — a
+new signal-design, not a knob. `positional_vol.py` has the `iv_min` gate wired for that future work.
 
 ## TRACK B — collector-gated (need REAL option-chain / VIX data first)
 
