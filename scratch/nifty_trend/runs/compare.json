@@ -345,7 +345,7 @@
   {
    "slug": "long_strangle_orb",
    "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
-   "design": "\u274c Long Strangle @ ORB \u2014 Long Strangle @ ORB breakout \u2014 NIFTY 5m (option structure, BS premium)",
+   "design": "\u274c Long Strangle @ ORB breakout \u2014 NIFTY 5m (failed sig p=0.07)",
    "tf": "5m",
    "type": "Intraday",
    "window": [
@@ -1499,6 +1499,123 @@
     "original": 1.5527236674728042
    },
    "created": "2026-07-11 23:51"
+  },
+  {
+   "slug": "pivot_continuation",
+   "title": "Pivot-Extreme Continuation (S/R breakdown)",
+   "design": "Pivot-Extreme Continuation (S/R breakdown) \u2014 NIFTY 3m (ATM options)",
+   "tf": "3m",
+   "type": "Intraday",
+   "window": [
+    "2018-01-01",
+    "2026-07-09"
+   ],
+   "days": 2103,
+   "lot_size": 65,
+   "dna": {
+    "tol": 5.0,
+    "band": [
+     3,
+     4,
+     5
+    ],
+    "h0": 0,
+    "atr_sl": 2.5,
+    "rr": 1.5,
+    "trail_atr": 2.0,
+    "exit": "atr_rr"
+   },
+   "exit": "atr_rr",
+   "p_value": 0.014,
+   "significant": true,
+   "passes": [
+    "instrument",
+    "rms",
+    "bs"
+   ],
+   "m": {
+    "bs_full": {
+     "sharpe": 0.967,
+     "net_pct": 23.36,
+     "maxdd": -1.487,
+     "win_rate": 52.0,
+     "trades": 400,
+     "profit_factor": 1.918,
+     "fees": 24089.0,
+     "expectancy": 583.993,
+     "avg_win": 2346.968,
+     "avg_loss": -1325.896
+    },
+    "bs_train": {
+     "sharpe": 0.699,
+     "net_pct": 12.08,
+     "maxdd": -1.487,
+     "win_rate": 48.016,
+     "trades": 252,
+     "profit_factor": 1.815,
+     "fees": 14674.0,
+     "expectancy": 479.38,
+     "avg_win": 2223.752,
+     "avg_loss": -1131.834
+    },
+    "bs_oos": {
+     "sharpe": 1.942,
+     "net_pct": 11.266,
+     "maxdd": -0.813,
+     "win_rate": 58.784,
+     "trades": 148,
+     "profit_factor": 2.058,
+     "fees": 9414.0,
+     "expectancy": 761.185,
+     "avg_win": 2518.337,
+     "avg_loss": -1744.916
+    },
+    "instr_full": {
+     "sharpe": 0.653,
+     "net_pct": 18.026,
+     "maxdd": -5.117,
+     "win_rate": 51.25,
+     "trades": 400,
+     "profit_factor": 1.31,
+     "fees": 103642.919,
+     "expectancy": 450.657,
+     "avg_win": 3714.714,
+     "avg_loss": -2980.789
+    },
+    "instr_oos": {
+     "sharpe": 1.226,
+     "net_pct": 8.497,
+     "maxdd": -1.784,
+     "win_rate": 58.108,
+     "trades": 148,
+     "profit_factor": 1.497,
+     "fees": 36929.147,
+     "expectancy": 574.091,
+     "avg_win": 2975.594,
+     "avg_loss": -2757.025
+    },
+    "rms_full": {
+     "sharpe": 0.691,
+     "net_pct": 18.826,
+     "maxdd": -4.477,
+     "win_rate": 51.25,
+     "trades": 400,
+     "profit_factor": 1.327,
+     "fees": 104008.977,
+     "expectancy": 470.654,
+     "avg_win": 3728.088,
+     "avg_loss": -2953.828
+    },
+    "bs_naked_full": null,
+    "bs_credit_full": null
+   },
+   "mc": {
+    "median": 1.5481408829021621,
+    "best5": 2.260414066355467,
+    "worst5": 1.0589592538271306,
+    "original": 1.465133252089974
+   },
+   "created": "2026-07-12 09:57"
   }
  ],
  "correlation": {
@@ -1515,7 +1632,8 @@
    "ratio_backspread",
    "gamma_scalp",
    "shortvol_ironfly",
-   "banknifty_hunt"
+   "banknifty_hunt",
+   "pivot_continuation"
   ],
   "matrix": [
    [
@@ -1531,7 +1649,8 @@
     0.411,
     -0.044,
     -0.124,
-    0.572
+    0.572,
+    0.015
    ],
    [
     0.316,
@@ -1546,7 +1665,8 @@
     0.436,
     -0.082,
     -0.29,
-    0.33
+    0.33,
+    0.135
    ],
    [
     0.385,
@@ -1561,7 +1681,8 @@
     0.592,
     0.08,
     -0.268,
-    0.315
+    0.315,
+    0.127
    ],
    [
     0.325,
@@ -1576,7 +1697,8 @@
     0.422,
     -0.135,
     -0.257,
-    0.341
+    0.341,
+    0.145
    ],
    [
     0.441,
@@ -1591,7 +1713,8 @@
     0.597,
     0.051,
     -0.277,
-    0.391
+    0.391,
+    0.14
    ],
    [
     0.133,
@@ -1606,7 +1729,8 @@
     0.206,
     0.029,
     -0.201,
-    0.152
+    0.152,
+    0.007
    ],
    [
     0.073,
@@ -1621,7 +1745,8 @@
     0.095,
     0.067,
     -0.1,
-    0.072
+    0.072,
+    -0.012
    ],
    [
     0.078,
@@ -1636,7 +1761,8 @@
     0.096,
     0.063,
     -0.105,
-    0.075
+    0.075,
+    -0.008
    ],
    [
     0.01,
@@ -1651,7 +1777,8 @@
     0.013,
     0.072,
     -0.012,
-    -0.017
+    -0.017,
+    0.065
    ],
    [
     0.411,
@@ -1666,7 +1793,8 @@
     1.0,
     -0.011,
     -0.201,
-    0.394
+    0.394,
+    0.114
    ],
    [
     -0.044,
@@ -1681,7 +1809,8 @@
     -0.011,
     1.0,
     -0.195,
-    -0.097
+    -0.097,
+    0.059
    ],
    [
     -0.124,
@@ -1696,7 +1825,8 @@
     -0.201,
     -0.195,
     1.0,
-    -0.076
+    -0.076,
+    -0.064
    ],
    [
     0.572,
@@ -1711,6 +1841,23 @@
     0.394,
     -0.097,
     -0.076,
+    1.0,
+    0.049
+   ],
+   [
+    0.015,
+    0.135,
+    0.127,
+    0.145,
+    0.14,
+    0.007,
+    -0.012,
+    -0.008,
+    0.065,
+    0.114,
+    0.059,
+    -0.064,
+    0.049,
     1.0
    ]
   ],

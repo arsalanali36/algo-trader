@@ -305,6 +305,61 @@ def design_signals(d, name, p):
         after = ~cutoff & win
         long = after & (C > orh) & (C.shift(1) <= orh)
         short = after & (C < orl) & (C.shift(1) >= orl)
+    elif name == "pivot_rev":                   # user's hypothesis: bounce off EXTREME pivots
+        # price pierces an extreme support (S3/S4/S5) then closes back above = trapped-seller
+        # exit squeeze → LONG; mirror at extreme resistance (R3/R4/R5) → SHORT. Optional EOD-only
+        # window (h0) since the "stuck-since-morning need to exit" pressure builds late.
+        lvls = _daily_levels(d, 20, 10.0)
+        tol = float(p.get("tol", 15.0))
+        band = p.get("band", (3, 4, 5))
+        h0 = int(p.get("h0", 0))
+        tt = pd.to_datetime(d.Datetime).dt.time
+        dayv = d.day.values
+        Lv, Hv, Cv, Ov = L.values, H.values, C.values, O.values
+        lg = np.zeros(len(d), dtype=bool); sh = np.zeros(len(d), dtype=bool)
+        for i in range(len(d)):
+            if tt.iloc[i].hour < h0:
+                continue
+            lv = lvls.get(dayv[i])
+            if lv is None:
+                continue
+            for idx in band:
+                if idx < len(lv["sup"]):
+                    s = lv["sup"][idx]
+                    if Lv[i] <= s + tol and Cv[i] > s and Cv[i] > Ov[i]:
+                        lg[i] = True
+                if idx < len(lv["res"]):
+                    r = lv["res"][idx]
+                    if Hv[i] >= r - tol and Cv[i] < r and Cv[i] < Ov[i]:
+                        sh[i] = True
+        return lg, sh
+    elif name == "pivot_break":                 # user's Claim-2: the bounce is a TRAP, trend continues.
+        # break DOWN through extreme support (close below S3/S4/S5, red) → SHORT continuation;
+        # break OUT above extreme resistance → LONG. (The opposite of naive pivot_rev, which lost.)
+        lvls = _daily_levels(d, 20, 10.0)
+        tol = float(p.get("tol", 5.0)); band = p.get("band", (3, 4, 5))
+        h0 = int(p.get("h0", 0))
+        tt = pd.to_datetime(d.Datetime).dt.time
+        dayv = d.day.values
+        Lv, Hv, Cv, Ov = L.values, H.values, C.values, O.values
+        Cp = np.roll(Cv, 1)
+        lg = np.zeros(len(d), dtype=bool); sh = np.zeros(len(d), dtype=bool)
+        for i in range(1, len(d)):
+            if tt.iloc[i].hour < h0:
+                continue
+            lv = lvls.get(dayv[i])
+            if lv is None:
+                continue
+            for idx in band:
+                if idx < len(lv["res"]):
+                    r = lv["res"][idx]
+                    if Cv[i] > r and Cp[i] <= r and Cv[i] > Ov[i]:      # fresh close-above extreme R
+                        lg[i] = True
+                if idx < len(lv["sup"]):
+                    s = lv["sup"][idx]
+                    if Cv[i] < s and Cp[i] >= s and Cv[i] < Ov[i]:      # fresh close-below extreme S
+                        sh[i] = True
+        return lg, sh
     else:
         raise ValueError(name)
     return long.fillna(False).values, short.fillna(False).values
@@ -323,6 +378,10 @@ DESIGN_GRID = {
     "gap_fade":  dict(gap_k=[0.3, 0.5, 0.8, 1.2], atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),
     "tod_orb":   dict(or_min=[15, 30], orb_k=[0.5, 1.0, 1.5], h0=[10, 11], h1=[13, 14],
                       atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),
+    "pivot_rev": dict(tol=[10.0, 15.0, 25.0], band=[(4, 5), (3, 4, 5), (3, 4)],
+                      h0=[0, 12, 13], atr_sl=[1.5, 2.0, 2.5], rr=[1.0, 1.5, 2.0]),
+    "pivot_break": dict(tol=[5.0], band=[(3, 4, 5), (4, 5), (2, 3, 4, 5)], h0=[0, 12, 13],
+                        atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5], trail_atr=[2.0, 3.0]),
     "chain_zone":dict(touch_tol=[0.0, 5.0, 10.0, 15.0], zone_age=[1, 2, 3],
                       max_cs=[25.0, 40.0, 60.0, 100.0], hawa=[False, True],
                       chain_lookback=[10, 20], atr_sl=[1.5, 2.0, 2.5], rr=[1.5, 2.0, 2.5]),

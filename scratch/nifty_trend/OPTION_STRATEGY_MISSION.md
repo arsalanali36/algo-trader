@@ -10,6 +10,21 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **🧪 #08 = Pivot-Extreme Continuation (USER'S OWN HYPOTHESIS, 2026-07-12) — VALIDATED, borderline
+  on the Sharpe gate, NOT yet deployed (user decision pending).** User's market-structure insight:
+  at extreme pivots (S3-S5/R3-R5) the intraday BOUNCE is a trap (trapped traders' exits get bought
+  into by the big seller for liquidity), the real edge is CONTINUATION in the fall/trend direction.
+  Data confirmed BOTH claims: `pivot_rev` (naive bounce) NEGATIVE every config (Sharpe −0.4..−1.6);
+  `pivot_break` (fresh close-through S3/S4/S5 or R3/R4/R5 in trend direction) POSITIVE.
+  **Winner: NIFTY 3m, band(3,4,5), tol=5, atr_sl=2.5, rr=1.5, trail_atr=2, all-day.**
+  Gates (bs|full): **p=0.014 ✅** (5m was 0.077 ✗), trades 400 ✅, maxDD −1.5% ✅, MC worst-5%
+  Sharpe 1.06 (all-positive) ✅, train 0.70 / **OOS 1.94** (no decay — OOS stronger) ✅,
+  **Sharpe 0.967 = 3% short of the ≥1.0 gate ⚠️** → borderline pass, honesty says: user reviews
+  dashboard before any deploy. Net +23.4%, win 52%. `runs/pivot_continuation/` (build_pivot.py,
+  designs in intraday_engine: pivot_rev + pivot_break via _daily_levels S/R arrays).
+  **NOT CODED YET (follow-up): Claim-2 next-day variant** — extreme-day trap-bounce ke baad
+  OVERNIGHT hold in fall direction (user's story ka momentum hissa) — alag design, alag test.
+
 - **✅ USER APPROVED ALL THREE for PAPER (2026-07-10 night):** #01 Long Straddle, #02 Debit
   Vertical, #03 ORB+Supertrend — "teeno hi ko paper trade karenge".
 - **📛 NUMBERING CONVENTION (user, 2026-07-10):** every mission strategy carries its number
