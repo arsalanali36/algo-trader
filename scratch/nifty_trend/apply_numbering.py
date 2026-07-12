@@ -28,13 +28,15 @@ NUM = {s: t.split(" - ")[0] for s, t in TITLES.items() if not t.startswith("❌"
 
 
 def main():
+    from hunt_guard import flock          # parallel hunts share index.json
     idxp = os.path.join(RUNS, "index.json")
-    idx = json.load(open(idxp))
-    for row in idx:
-        s = row.get("slug")
-        if s in TITLES:
-            row["title"] = TITLES[s]
-    json.dump(idx, open(idxp, "w"), indent=2)
+    with flock("runs_index"):
+        idx = json.load(open(idxp))
+        for row in idx:
+            s = row.get("slug")
+            if s in TITLES:
+                row["title"] = TITLES[s]
+        json.dump(idx, open(idxp, "w"), indent=2)
     print("index.json titles set")
 
     for s, t in TITLES.items():

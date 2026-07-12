@@ -10,6 +10,14 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **🔀 PARALLEL HUNTS = architecture now (user, 2026-07-12) — READ `MULTI_SESSION.md` BEFORE
+  launching/killing ANY build.** 2-3 hunts / Claude sessions side-by-side: launch via
+  `python hunt.py build_X.py` (detached + log), `python hunt.py status` = who runs what.
+  `hunt_guard.py` (wired inside run_hunt.main) = slug claim (duplicate refused), locked
+  `runs/index.json`/`compare.json` writes, dead-pid prune, Windows-safe locks (self-deadlock
+  race found+fixed in testing, 5/5 concurrency tests pass). **NEVER blanket-kill python —
+  kill only a pid from status that owns YOUR slug** (2026-07-10 cross-session kill incident).
+
 - **🧪 #08 = Pivot-Extreme Continuation (USER'S OWN HYPOTHESIS, 2026-07-12) — VALIDATED, borderline
   on the Sharpe gate, NOT yet deployed (user decision pending).** User's market-structure insight:
   at extreme pivots (S3-S5/R3-R5) the intraday BOUNCE is a trap (trapped traders' exits get bought

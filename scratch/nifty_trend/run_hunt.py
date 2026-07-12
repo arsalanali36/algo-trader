@@ -161,6 +161,13 @@ def main():
     args = ap.parse_args()
     tfs = [x.strip() for x in args.tf.split(",") if x.strip()]
 
+    # multi-session guard: claim the slug so a second session can't clobber this build
+    import hunt_guard
+    guard_slug = args.name or "hunt_" + time.strftime("%m%d_%H%M")
+    hunt_guard.register(guard_slug, script=os.path.basename(sys.argv[0]))
+    import atexit
+    atexit.register(hunt_guard.deregister, guard_slug)
+
     t0 = time.time()
     df1m = ie.load_1m()
     cache = {tf: ie.resample(df1m, tf) for tf in tfs}
@@ -299,17 +306,20 @@ def main():
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
-    # append to a runs index the hub reads
+    # append to a runs index the hub reads — LOCKED (parallel hunts share this file)
+    import hunt_guard
     idx_path = os.path.join(RUNS, "index.json")
-    idx = json.load(open(idx_path)) if os.path.exists(idx_path) else []
-    idx = [x for x in idx if x.get("slug") != slug]
-    idx.append(meta)
-    json.dump(idx, open(idx_path, "w"), indent=2)
+    with hunt_guard.flock("runs_index"):
+        idx = json.load(open(idx_path)) if os.path.exists(idx_path) else []
+        idx = [x for x in idx if x.get("slug") != slug]
+        idx.append(meta)
+        json.dump(idx, open(idx_path, "w"), indent=2)
 
     # refresh the all-strategies compare table (compare.html reads runs/compare.json)
     try:
         import build_compare
-        build_compare.main()
+        with hunt_guard.flock("compare"):
+            build_compare.main()
     except Exception as e:
         print(f"  [compare] skipped ({e})", flush=True)
 
