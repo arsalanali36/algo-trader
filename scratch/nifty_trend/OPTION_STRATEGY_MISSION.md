@@ -22,8 +22,21 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
   **Sharpe 0.967 = 3% short of the ≥1.0 gate ⚠️** → borderline pass, honesty says: user reviews
   dashboard before any deploy. Net +23.4%, win 52%. `runs/pivot_continuation/` (build_pivot.py,
   designs in intraday_engine: pivot_rev + pivot_break via _daily_levels S/R arrays).
-  **NOT CODED YET (follow-up): Claim-2 next-day variant** — extreme-day trap-bounce ke baad
-  OVERNIGHT hold in fall direction (user's story ka momentum hissa) — alag design, alag test.
+  **Claim-2 next-day variant TESTED (2026-07-12) — spot-REAL, option-UNSHIPPABLE.**
+  Design: day-D pierces extreme S/R AND recovers by 15:00 (trap confirmed) → hold
+  breach-direction overnight, exit next-day 15:00. Screen: plain breach = NO edge;
+  breach+bounce = positive BOTH directions (LONG avg +33pts win 67%, SHORT +16pts) —
+  the bounce is the essential ingredient, exactly the user's story. Full spot backtest
+  band(3,4,5)/eod-entry: +25.7%, p=0.034 ✅ SIGNIFICANT, tr 0.55/oos 0.63. BS-model
+  reprice looked great (Sharpe 2.34) **but REAL Dhan lake (held-strike, MONTH, charges+slip)
+  = −0.2%/5yr, Sharpe 0.00** — same window BS said +7.1%/1.63 → pure TRAP #106 gap.
+  Why: avg edge ~17 spot pts/trade vs ATM delta 0.5 (half the move) + overnight theta +
+  real VRP-rich premium + slippage. ITM offsets 0/2/4/6/8 all ≈ noise (best +1.1%/5yr).
+  **Conclusion: the phenomenon is REAL at spot (user's hypothesis right again) but no
+  option vehicle keeps the edge at retail costs; linear vehicle (futures) would keep it
+  but = uncapped overnight gap risk, out of mission scope.** Scripts: pivot_nextday.py
+  (screen), pivot_nextday_bt.py (full+sig), vps_pivot_real.py (real-lake check, VPS).
+  Intraday #08 (3m, same phenomenon, options-viable) remains the shippable expression.
 
 - **✅ USER APPROVED ALL THREE for PAPER (2026-07-10 night):** #01 Long Straddle, #02 Debit
   Vertical, #03 ORB+Supertrend — "teeno hi ko paper trade karenge".
