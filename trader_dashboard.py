@@ -483,6 +483,11 @@ def serve_spec_builder():
 _REPORTS_DIR = BASE_DIR / "data" / "reports"
 _REPORT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+@app.route('/registry')
+def strategy_registry_page():
+    """Unified Strategy Registry tree view — every strategy in one place (login-gated)."""
+    return render_template("strategy_registry.html")
+
 @app.route('/reports')
 def reports_list():
     """Date-wise EOD report list — login-gated (before_request), self-contained page."""
