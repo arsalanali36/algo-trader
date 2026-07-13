@@ -57,6 +57,9 @@
   .bd.win{background:#23863622;color:var(--green)} .bd.fail{background:#d2992222;color:var(--amber)}
   .now{font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;background:#23863622;color:var(--green)}
   .now.off{background:#6e768122;color:var(--dim)}
+  .mini{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--bd);background:var(--panel2);color:var(--tx);white-space:nowrap}
+  .mini+.mini{margin-left:4px} .mini:hover{filter:brightness(1.35)}
+  .mini.pa{border-color:#238636;color:var(--green)} .mini.lv{border-color:#1f6feb;color:var(--blue)} .mini.stop{border-color:#da3633;color:var(--red)}
   a.lnk{color:var(--blue);text-decoration:none;font-size:12px} a.lnk:hover{text-decoration:underline}
   .empty{color:var(--mut);padding:34px;text-align:center}
 </style></head>
@@ -91,6 +94,7 @@ const COLS=[
   {k:'verdict',label:'Verdict'},{k:'status',label:'Status'},{k:'tf',label:'TF'},
   {k:'sharpe',label:'Sharpe',num:1},{k:'maxdd',label:'Max DD',num:1},{k:'win',label:'Win%',num:1},
   {k:'trades',label:'Trades',num:1},{k:'sig',label:'Significance'},
+  {k:'deploy',label:'Deploy'},
   {k:'config',label:'Config key',def:0},{k:'file',label:'File',def:0},
   {k:'actions',label:'Open',always:1},
 ];
@@ -118,6 +122,17 @@ function colMenu(){
 function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]}));}
 function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
 function runOf(m){ return (m.slug&&RUNS[String(m.slug).toLowerCase()])||null; }
+async function regDeploy(e,k,mode){
+  e.stopPropagation();
+  if(mode==='live' && !confirm(`LIVE deploy "${k}" — ye ASLI orders lagayega (real paisa). Sure?`)) return;
+  const btn=e.target; const old=btn.textContent; btn.textContent='…'; btn.disabled=true;
+  try{
+    const url = mode==='stop' ? `/api/stop?s=${encodeURIComponent(k)}` : `/api/start?s=${encodeURIComponent(k)}&mode=${mode}`;
+    const r=await fetch(url,{method:'POST'}); if(!r.ok) throw new Error('HTTP '+r.status);
+    try{ CFG=await (await fetch('/api/config',{cache:'no-store'})).json(); }catch(e2){}
+    render();
+  }catch(err){ alert('Deploy failed: '+err.message); btn.textContent=old; btn.disabled=false; }
+}
 
 function setGroup(g){GROUP=g;document.getElementById('gFam').classList.toggle('on',g==='family');
   document.getElementById('gSt').classList.toggle('on',g==='status');render();}
@@ -149,6 +164,10 @@ function cell(m){
     win:`<td class="num">${num(b.win_rate,'%',0)}</td>`,
     trades:`<td class="num">${b.trades!=null?b.trades:'<span class="mut">—</span>'}</td>`,
     sig:`<td>${sig}</td>`,
+    deploy:`<td>${ !m.config_key ? '<span class="mut">—</span>'
+      : (live && live!=='off')
+        ? `<button class="mini stop" onclick="regDeploy(event,'${m.config_key}','stop')">⏹ Stop</button>`
+        : `<button class="mini pa" onclick="regDeploy(event,'${m.config_key}','paper')">▶ Paper</button><button class="mini lv" onclick="regDeploy(event,'${m.config_key}','live')">💰 Live</button>` }</td>`,
     config:`<td class="mono">${m.config_key||'—'}</td>`,
     file:`<td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>`,
     actions:`<td>${open}</td>`,
