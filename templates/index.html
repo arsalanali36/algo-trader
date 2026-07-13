@@ -6849,8 +6849,8 @@
         const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center;vertical-align:middle">${_num}</span>` : '';
         sidebarHtml += `
       <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}"
-           data-log-key="${key}" title="${key}"
-           onclick="switchLogTab('${key}', this)">
+           data-log-key="${key}" title="${key} — double-click: Strategy Lab page (naye tab me)"
+           onclick="switchLogTab('${key}', this)" ondblclick="openStratLab('${key}')">
         <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${_numBadge}${_logName(key)}
       </div>
     `;
@@ -6885,6 +6885,24 @@
 
       container.innerHTML = sidebarHtml + contentHtml;
       renderLogRunControls();
+    }
+
+    // Double-click a Logs-sidebar strategy → open its Strategy Lab (3-pass) page in
+    // a new tab. config-key → runs/<slug>/ (same 8 mission strategies as _LOG_NUM/
+    // _LOG_NAME). No mapped run → open the Lab hub so the user can pick.
+    const _LAB_SLUG = {
+      orb_v1: 'mid_orb_nifty', straddle_v1: 'long_straddle_orb', dvert_v1: 'debit_vertical_orb',
+      orbst_v1: 'orb_supertrend', chainzone_v1: 'chain_zone_longatm', backspread_v1: 'ratio_backspread',
+      shortvol_v1: 'shortvol_ironfly', banknifty_v1: 'banknifty_hunt',
+    };
+    function openStratLab(key) {
+      const slug = _LAB_SLUG[String(key).toLowerCase()];
+      if (slug) {
+        window.open('/lab/runs/' + slug + '/index.html', '_blank');
+      } else {
+        window.open('/lab/hub.html', '_blank');
+        if (typeof toast === 'function') toast('Is strategy ka apna Lab page nahi — hub khola', 'info');
+      }
     }
 
     // ── Bulk start/stop all real strategies from the Logs sidebar ──
