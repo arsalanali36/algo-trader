@@ -1857,18 +1857,32 @@
     <div class="card" style="margin-bottom:12px; padding:14px 18px;">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L</h3>
-        <button onclick="loadPeakGraph()"
-          style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻
-          Refresh</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <!-- task 66: flip this card body between the graph and the consolidated strategy table -->
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-tab-graph" onclick="togglePeakView('graph')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff">Graph</span>
+            <span id="peak-tab-summary" onclick="togglePeakView('summary')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e">Summary</span>
+          </div>
+          <button onclick="loadPeakGraph()"
+            style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻
+            Refresh</button>
+        </div>
       </div>
-      <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+      <div id="peak-graph-body">
+        <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+          <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
+          <span>— <span style="color:#3fb950">MTM P&amp;L</span></span>
+          <span>- - <span style="color:#f0883e">Trailing floor</span></span>
+          <span>- - <span style="color:#3fb950">🎯 Target</span></span>
+          <span>▲ <span style="color:#58a6ff">Entry</span></span>
+        </div>
+      </div>
+      <div id="peak-summary-body" style="display:none">
         <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
-      </div>
-      <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
-        <span>— <span style="color:#3fb950">MTM P&amp;L</span></span>
-        <span>- - <span style="color:#f0883e">Trailing floor</span></span>
-        <span>- - <span style="color:#3fb950">🎯 Target</span></span>
-        <span>▲ <span style="color:#58a6ff">Entry</span></span>
       </div>
     </div>
 
@@ -5924,22 +5938,15 @@
         srcTotals[s].opn++;
       });
 
-      let sh = '';
-      Object.keys(srcTotals).forEach(s => {
-        let st = srcTotals[s];
-        if (st.n === 0 && st.opn === 0) return;
-        const tc = st.net >= 0 ? '#3fb950' : '#f85149';
-        sh += `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
-      <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (${s})</div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net >= 0 ? '+' : ''}${Math.round(st.net).toLocaleString('en-IN')}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n - st.w}L · ${st.opn} open</div>
-    </div>`;
-      });
+      // ── CONSOLIDATED SUMMARY (task 66) ──
+      // The old per-strategy / per-source TILES are retired. Same data now goes
+      // into ONE table (renderSummaryTable) shown inside the Peak P&L card's
+      // "Summary" toggle view. Rows: each running/traded strategy + MANUAL +
+      // WEBHOOK, so nothing from the old pills is lost.
+      const summaryRows = [];
 
-      // ── STRATEGY-SPECIFIC PILLS ──
+      // per-strategy accumulation (data logic unchanged)
       const stratTotals = {};
-
-      // 1. Gather running strategies
       if (typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null) {
         Object.keys(RUNNING_PIDS).forEach(k => {
           if (!k.endsWith('_mode') && k !== '_risk' && k !== 'webhooks' && k !== '_ui_config') {
@@ -5947,67 +5954,44 @@
           }
         });
       }
-
-      // 2. Accumulate completed trades for strategies
       det.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) {
-            stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
-          }
+          if (!stratTotals[sName]) stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
           stratTotals[sName].net += t._net;
           stratTotals[sName].gross += t._gross;
           stratTotals[sName].n++;
           if (t._net > 0) stratTotals[sName].w++;
         }
       });
-
-      // 3. Accumulate open positions for strategies
       opnReal.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) {
-            stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
-          }
+          if (!stratTotals[sName]) stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
           stratTotals[sName].opn++;
         }
       });
 
-      // Render individual strategy cards sorted alphabetically
       Object.keys(stratTotals).sort().forEach(s => {
         const st = stratTotals[s];
         const isRunning = typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null && RUNNING_PIDS[s] !== undefined;
-
-        // Skip if it's not running and has no trades/positions today
         if (!isRunning && st.n === 0 && st.opn === 0) return;
-
-        const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : null;
-        let badge = '';
-        if (isRunning) {
-          if (mode === 'live') {
-            badge = '<span style="background:#238636;color:#fff;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Live</span>';
-          } else {
-            badge = '<span style="background:#d29922;color:#0d1117;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Paper</span>';
-          }
-        } else {
-          badge = '<span style="background:#30363d;color:#8b949e;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Stopped</span>';
-        }
-
-        const tc = st.net >= 0 ? '#3fb950' : '#f85149';
-        sh += `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span style="color:#8b949e">${s}</span>
-        ${badge}
-      </div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net >= 0 ? '+' : ''}${Math.round(st.net).toLocaleString('en-IN')}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n - st.w}L · ${st.opn} open</div>
-    </div>`;
+        const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : 'stopped';
+        summaryRows.push({ name: regLabel(s), mode: mode, net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn });
+      });
+      // MANUAL / WEBHOOK — not per-strategy, kept as their own rows
+      ['MANUAL', 'WEBHOOK'].forEach(s => {
+        const st = srcTotals[s];
+        if (st.n === 0 && st.opn === 0) return;
+        summaryRows.push({ name: s.charAt(0) + s.slice(1).toLowerCase(), mode: 'src', net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn });
       });
 
-      _setHtml(document.getElementById('ord-summary'), sh ||
-        '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
+      renderStratSummaryTable(summaryRows);
+      // retire the old tiles container
+      const _ordSum = document.getElementById('ord-summary');
+      if (_ordSum) { _ordSum.innerHTML = ''; _ordSum.style.display = 'none'; }
 
       // ── COMPLETED TRADES ──
       let sortedCompleted = det.slice();
@@ -6205,8 +6189,13 @@
         try { // catch render errors so blank section doesn't appear silently
           let blockedHtml = '';
           if (opnBlocked.length) {
-            blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
-        <div style="font-weight:600;color:#f85149;margin-bottom:6px">🚫 Capital se Block hui Entries (${opnBlocked.length})</div>
+            blockedHtml = `<details open style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
+        <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
+        <summary style="padding:10px 14px;cursor:pointer;font-weight:600;color:#f85149;display:flex;justify-content:space-between;align-items:center;border-radius:6px" onmouseover="this.style.background='#2d1f1f'" onmouseout="this.style.background='transparent'">
+          <span>🚫 Capital se Block hui Entries <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
+          <span style="font-size:12px;color:#8b949e">Toggle ▾</span>
+        </summary>
+        <div style="padding:0 14px 12px;overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">
           <th style="padding:5px 6px">Date</th><th style="padding:5px 6px">Time</th><th style="padding:5px 6px">Symbol</th><th style="padding:5px 6px">Strategy</th>
           <th style="padding:5px 6px">Side</th><th style="padding:5px 6px;text-align:right">Qty @ Price</th><th style="padding:5px 6px">Reason</th><th style="padding:5px 6px;text-align:center">Chart</th></tr></thead><tbody>`
@@ -6223,13 +6212,13 @@
                   + '<td style="padding:6px">' + bDate + '</td>'
                   + '<td style="padding:6px;color:#8b949e;white-space:nowrap">' + (t.entry_time || '—') + '</td>'
                   + '<td style="padding:6px;color:#adbac7">' + t.sym + '</td>'
-                  + '<td style="padding:6px;color:#8b949e">' + (t.strategy || '—') + '</td>'
+                  + '<td style="padding:6px;color:#8b949e">' + (t.strategy ? regLabel(t.strategy) : '—') + '</td>'
                   + '<td style="padding:6px;color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + '">' + t.entry + '</td>'
                   + '<td style="padding:6px;text-align:right;color:#8b949e">' + t.qty + ' @ ' + (Number(t.entry_price) > 0 ? Number(t.entry_price).toFixed(2) : '<span style="color:#6e7681">premium N/A</span>') + '</td>'
                   + '<td style="padding:6px;color:#f85149;font-size:10.5px">' + reason + '</td>'
                   + '<td style="padding:6px;text-align:center">' + chartBtn + '</td></tr>';
               }).join('')
-              + '</tbody></table></div>';
+              + '</tbody></table></div></details>';
           }
 
           let grouped = {};
@@ -6574,6 +6563,11 @@
             <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
           </div>
+          <div style="display:flex; align-items:baseline; gap:10px; margin-right:14px; white-space:nowrap;" title="Group unrealized total — ₹ / points / return %">
+            <span class="grp-tot-unrl" data-grp="${grpId}" style="font-size:13px;font-weight:700;color:#8b949e">—</span>
+            <span class="grp-tot-pts" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
+            <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
+          </div>
           <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
         </summary>
@@ -6727,6 +6721,81 @@
       // no-op — P&L rendering lives in ordersRender() (Orders & P&L tab)
     }
 
+    // ── Consolidated strategy summary table (task 66) ──
+    // Replaces the old #ord-summary tiles. Lives in the Peak P&L card's
+    // "Summary" view; each row = one strategy (or MANUAL/WEBHOOK) with a P&L
+    // magnitude bar (green right / red left of centre — like the lab's freq col).
+    function _summaryModeBadge(mode) {
+      const base = 'font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;';
+      if (mode === 'live') return `<span style="background:#238636;color:#fff;${base}">Live</span>`;
+      if (mode === 'paper') return `<span style="background:#d29922;color:#0d1117;${base}">Paper</span>`;
+      if (mode === 'stopped') return `<span style="background:#30363d;color:#8b949e;${base}">Stopped</span>`;
+      return '<span style="color:#6e7681;font-size:10px">—</span>';
+    }
+    function renderStratSummaryTable(rows) {
+      const el = document.getElementById('peak-summary-body');
+      if (!el) return;
+      if (!rows || !rows.length) {
+        el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:16px">Is din koi trade nahi</div>';
+        return;
+      }
+      const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.net)));
+      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; });
+      const bar = net => {
+        const w = Math.min(50, Math.abs(net) / maxAbs * 50), pos = net >= 0;
+        const col = pos ? '#3fb950' : '#f85149', bg = pos ? '#3fb95022' : '#f8514922';
+        return `<div style="height:14px;background:${bg};border-radius:3px;position:relative">`
+          + `<div style="position:absolute;${pos ? 'left:50%' : 'right:50%'};top:0;height:14px;width:${w.toFixed(1)}%;background:${col};border-radius:${pos ? '0 3px 3px 0' : '3px 0 0 3px'}"></div>`
+          + `<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#6e7681"></div></div>`;
+      };
+      const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
+      let h = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d;font-size:11px">
+          <th style="padding:6px 8px;font-weight:500">Strategy</th>
+          <th style="padding:6px 8px;font-weight:500">Mode</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Net</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Gross</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">Trades</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">W/L</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">Open</th>
+          <th style="padding:6px 8px;font-weight:500;width:150px">P&amp;L</th>
+        </tr></thead><tbody>`;
+      rows.forEach(r => {
+        h += `<tr style="border-bottom:1px solid #21262d">
+          <td style="padding:7px 8px;color:#adbac7">${r.name}</td>
+          <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
+          <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
+          <td style="padding:7px 8px;text-align:right;color:#8b949e">${Math.round(r.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:7px 8px;text-align:center;color:#adbac7">${r.n}</td>
+          <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.w}W ${r.n - r.w}L</td>
+          <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.opn}</td>
+          <td style="padding:7px 8px">${bar(r.net)}</td></tr>`;
+      });
+      h += `<tr style="border-top:2px solid #30363d;font-weight:600">
+          <td style="padding:8px" colspan="2"><span style="color:#8b949e;font-size:11px">TOTAL</span></td>
+          <td style="padding:8px;text-align:right">${netCell(tot.net)}</td>
+          <td style="padding:8px;text-align:right;color:#8b949e">${Math.round(tot.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:8px;text-align:center;color:#adbac7">${tot.n}</td>
+          <td style="padding:8px;text-align:center;color:#8b949e">${tot.w}W ${tot.n - tot.w}L</td>
+          <td style="padding:8px;text-align:center;color:#8b949e">${tot.opn}</td>
+          <td style="padding:8px"></td></tr>`;
+      h += '</tbody></table>';
+      el.innerHTML = h;
+    }
+    function togglePeakView(v) {
+      const g = document.getElementById('peak-graph-body'), s = document.getElementById('peak-summary-body');
+      const tg = document.getElementById('peak-tab-graph'), ts = document.getElementById('peak-tab-summary');
+      if (!g || !s || !tg || !ts) return;
+      const on = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e';
+      if (v === 'summary') { g.style.display = 'none'; s.style.display = 'block'; tg.style.cssText = off; ts.style.cssText = on; }
+      else { g.style.display = 'block'; s.style.display = 'none'; tg.style.cssText = on; ts.style.cssText = off; }
+      try { localStorage.setItem('peak_view', v); } catch (e) { }
+    }
+    // restore last-used view on load (elements are static in the DOM)
+    try { if (localStorage.getItem('peak_view') === 'summary') togglePeakView('summary'); } catch (e) { }
+
     // ── ORDER SOUND NOTIFICATION ──
     const _lastOrderLine = {};  // key → last seen order line to avoid duplicate beeps
     function _playOrderSound(isWin) {
@@ -6829,12 +6898,13 @@
     }
     loadStrategyRegistry();
 
-    // Canonical strategy label for ANY surface: "NN.MM - Name" from the registry
-    // (config-key -> id/name via the loaded maps). Falls back to the raw key.
+    // Canonical strategy label for ANY surface: the clean registry NAME (no
+    // NN.MM number prefix — task 70). Falls back to the raw key. Use regId()
+    // separately if the short numeric id is genuinely needed somewhere.
     function regLabel(key){
       if(!key) return key || '';
-      const k=String(key).toLowerCase(), id=MISSION_NUM[k];
-      return id ? (id + ' - ' + (MISSION_NAME[k]||key)) : String(key);
+      const k=String(key).toLowerCase();
+      return MISSION_NAME[k] || String(key);
     }
     // just the short canonical ID ("02.01") for compact spots (row tags) — raw key fallback.
     function regId(key){ if(!key) return key||''; return MISSION_NUM[String(key).toLowerCase()] || String(key); }
@@ -7495,6 +7565,12 @@
       // Strategy's own exit logic (not pos_monitor_loop-driven)
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
       else if (r.startsWith('RSI_MIDLINE_EXIT')) { label = '↩️ RSI Midline'; color = '#58a6ff'; }
+      // Option mission strategies' own TP/SL/rollback exits (task 71 — Straddle,
+      // Debit Vertical, Ratio Backspread, Short-Vol Iron-Fly, VRP)
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_TRAIL/.test(r)) { label = '📉 Profit Trail Lock'; color = '#f0883e'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_TP/.test(r)) { label = '🎯 Strategy Target'; color = '#3fb950'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_SL/.test(r)) { label = '🛡️ Strategy SL'; color = '#f0883e'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_ROLLBACK/.test(r)) { label = '↩️ Leg Rollback'; color = '#8b949e'; }
       // Webhook (TradingView-signal-driven strategies)
       else if (r.startsWith('IDX_TRAIL')) { label = '📉 Index Trail SL'; color = '#f0883e'; }
       else if (r.startsWith('TRAIL_SL')) { label = '📉 Trail SL'; color = '#f0883e'; }
@@ -8215,16 +8291,17 @@
           if (ptEl) totPts += parseFloat(ptEl.textContent.replace('+', '')) || 0;
         });
         const id = tbl.id;
-        const ptsFoot = document.querySelector(`.grp-tot-pts[data-grp="${id}"]`);
-        const unrlFoot = document.querySelector(`.grp-tot-unrl[data-grp="${id}"]`);
-        const retFoot = document.querySelector(`.grp-tot-ret[data-grp="${id}"]`);
         if (!any) return;
-        if (ptsFoot) { ptsFoot.textContent = (totPts >= 0 ? '+' : '') + totPts.toFixed(1); ptsFoot.style.color = totPts >= 0 ? '#3fb950' : '#f85149'; }
-        if (unrlFoot) { unrlFoot.textContent = (totUnrl >= 0 ? '+' : '') + Math.round(totUnrl).toLocaleString('en-IN'); unrlFoot.style.color = totUnrl >= 0 ? '#3fb950' : '#f85149'; }
-        if (retFoot) {
-          const retPct = totInv > 0 ? ((totUnrl / totInv) * 100).toFixed(2) + '%' : '—';
-          retFoot.textContent = retPct; retFoot.style.color = totUnrl >= 0 ? '#3fb950' : '#f85149';
-        }
+        // update EVERY matching cell (tfoot TOTAL row + the collapsed-group
+        // summary line — task 68 shows ₹/pts/% right in the summary), so use
+        // querySelectorAll not querySelector.
+        const ptCol = totPts >= 0 ? '#3fb950' : '#f85149';
+        const ptTxt = (totPts >= 0 ? '+' : '') + totPts.toFixed(1);
+        const unTxt = (totUnrl >= 0 ? '+' : '') + Math.round(totUnrl).toLocaleString('en-IN');
+        const retTxt = totInv > 0 ? ((totUnrl / totInv) * 100).toFixed(2) + '%' : '—';
+        document.querySelectorAll(`.grp-tot-pts[data-grp="${id}"]`).forEach(el => { el.textContent = ptTxt; el.style.color = ptCol; });
+        document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = ptCol; });
+        document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = ptCol; });
       });
       // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
       (function () {
