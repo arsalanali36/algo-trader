@@ -270,6 +270,29 @@ Task complete karte waqt khud check karo: "kya isme koi aisa decision tha jo
 future mein confusing lagega agar likha na jaye?" Agar haan, ADR likhna kaam
 ka hissa hai, extra step nahi.
 
+### 6D. Automation / `/loop` — LIVE-ORDER-PATH ko KABHI touch nahi (Task 5)
+
+Koi bhi recurring loop / scheduled agent / unattended automation (jaise
+`.claude/commands/architecture-audit-loop.md`, `eod-report-review.md`,
+`hunt-pipeline.md`) **kabhi bhi** in files ko edit / auto-fix / stage / deploy
+**nahi** kar sakta:
+
+`_core/execution_gateway.py`, `_core/webhook_executor.py`, `_core/smart_order.py`,
+`_core/risk_gate.py`, `_core/strategy_safety.py`, `_core/order_store.py` — aur
+aam taur pe `_core/` ka koi bhi order-path file, plus `nifty_config.json` ka koi
+bhi `active`/`mode` flag.
+
+Loops sirf **research / audit / reporting** ke liye hain — real order place kar
+sakne wale kisi bhi code ko chhoona **manual-only** hai: ek Claude Code session,
+ek waqt, explicit review + explicit approval commit se pehle. Loop ko aisa
+finding mile jo in files mein ho → sirf **draft/text** mein user ko batao, file
+mat likho. Ye rule tab bhi laagu hai jab loop "chhota sa safe fix" lagta ho.
+
+Har loop mein yeh rails bhi honi chahiye (dekho command files): idle-aware skip
+(active manual session ho to ruk jao), budget cap (`max_runtime_min`),
+`data/loop_activity.log` mein ek-line-per-run, `max_consecutive_failures=3`,
+aur kabhi auto-commit nahi.
+
 ### 7. Kabhi ₹0-price pe REAL fill record mat karo (LESSONS.md TRAP #1)
 Option premium fetch fail ho (DH-904 rate-limit) to `price = 0` record karna ek
 real fill ke roop me **P&L corrupt karta hai** (SELL@₹0 → close@real = jhootha bada
