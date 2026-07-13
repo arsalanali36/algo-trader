@@ -1,0 +1,188 @@
+{
+ "folds": 5,
+ "targets": {
+  "t1_dir15": {
+   "n_rows": 60558,
+   "base_rate": 0.5149,
+   "auc_by_fold": [
+    0.5192,
+    0.5117,
+    0.5243,
+    0.5234,
+    0.5091
+   ],
+   "auc_mean": 0.5175,
+   "top_decile_edge_by_fold": [
+    0.0088,
+    0.0265,
+    0.0223,
+    0.015,
+    0.0258
+   ],
+   "top_features": [
+    {
+     "f": "pcr_oi",
+     "shap": 0.06378,
+     "dir": "high->1"
+    },
+    {
+     "f": "gap_open_pct",
+     "shap": 0.05018,
+     "dir": "high->1"
+    },
+    {
+     "f": "ret_30m",
+     "shap": 0.04487,
+     "dir": "high->0"
+    },
+    {
+     "f": "ret_5m",
+     "shap": 0.04302,
+     "dir": "high->0"
+    },
+    {
+     "f": "bars_into_day",
+     "shap": 0.04127,
+     "dir": "high->1"
+    },
+    {
+     "f": "day_range_pos",
+     "shap": 0.04014,
+     "dir": "high->0"
+    },
+    {
+     "f": "atm_skew",
+     "shap": 0.03553,
+     "dir": "high->0"
+    },
+    {
+     "f": "iv_rank_60d",
+     "shap": 0.03433,
+     "dir": "high->0"
+    }
+   ]
+  },
+  "t2_decay1h": {
+   "n_rows": 72760,
+   "base_rate": 0.2581,
+   "auc_by_fold": [
+    0.8292,
+    0.848,
+    0.8092,
+    0.7699,
+    0.7717
+   ],
+   "auc_mean": 0.8056,
+   "top_decile_edge_by_fold": [
+    0.41,
+    0.4216,
+    0.4041,
+    0.3615,
+    0.3446
+   ],
+   "top_features": [
+    {
+     "f": "dte_days",
+     "shap": 0.72187,
+     "dir": "high->0"
+    },
+    {
+     "f": "opt_volume_proxy",
+     "shap": 0.25432,
+     "dir": "high->1"
+    },
+    {
+     "f": "decay_vs_linear",
+     "shap": 0.21906,
+     "dir": "high->0"
+    },
+    {
+     "f": "iv_rank_60d",
+     "shap": 0.15482,
+     "dir": "high->1"
+    },
+    {
+     "f": "iv_chg_today",
+     "shap": 0.13846,
+     "dir": "high->1"
+    },
+    {
+     "f": "bars_into_day",
+     "shap": 0.13529,
+     "dir": "high->1"
+    },
+    {
+     "f": "pcr_oi",
+     "shap": 0.11902,
+     "dir": "high->1"
+    },
+    {
+     "f": "straddle_norm",
+     "shap": 0.11836,
+     "dir": "high->0"
+    }
+   ]
+  },
+  "t3_orblong": {
+   "n_rows": 85544,
+   "base_rate": 0.2004,
+   "auc_by_fold": [
+    0.6106,
+    0.5923,
+    0.5594,
+    0.5848,
+    0.5961
+   ],
+   "auc_mean": 0.5886,
+   "top_decile_edge_by_fold": [
+    0.0864,
+    0.0658,
+    0.0133,
+    0.0259,
+    0.0755
+   ],
+   "top_features": [
+    {
+     "f": "bars_into_day",
+     "shap": 0.38124,
+     "dir": "high->0"
+    },
+    {
+     "f": "min_since_open",
+     "shap": 0.19847,
+     "dir": "high->0"
+    },
+    {
+     "f": "gap_open_pct",
+     "shap": 0.16368,
+     "dir": "high->1"
+    },
+    {
+     "f": "iv_chg_today",
+     "shap": 0.11356,
+     "dir": "high->1"
+    },
+    {
+     "f": "iv_rank_60d",
+     "shap": 0.11307,
+     "dir": "high->0"
+    },
+    {
+     "f": "atm_iv",
+     "shap": 0.10233,
+     "dir": "high->1"
+    },
+    {
+     "f": "decay_vs_linear",
+     "shap": 0.09592,
+     "dir": "high->0"
+    },
+    {
+     "f": "atr14_pct",
+     "shap": 0.09026,
+     "dir": "high->0"
+    }
+   ]
+  }
+ }
+}

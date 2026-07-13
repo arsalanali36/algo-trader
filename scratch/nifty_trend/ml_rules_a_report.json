@@ -1,0 +1,58 @@
+{
+ "t2_decay1h": {
+  "consensus_rule": "dte_days <= 0.2378",
+  "features": [
+   "dte_days",
+   "iv_rank_60d",
+   "iv_chg_today",
+   "bars_into_day"
+  ],
+  "trades": 234,
+  "mean_day_pnl": 131.394331,
+  "sharpe_full": 0.177,
+  "p_bootstrap": 0.528,
+  "dsr": {
+   "dsr_prob": 0.0009,
+   "pass": false,
+   "min_prob": 0.95,
+   "sr_daily": 0.0111,
+   "sr_annual": 0.177,
+   "sr_star_daily": 0.1044,
+   "sr_star_annual": 1.657,
+   "n_trials": 17,
+   "var_trial_sr": 0.00326055270997276,
+   "var_src": "cross_trial(5)",
+   "T_days": 1159,
+   "skew": -3.007,
+   "kurt": 32.961
+  },
+  "fold_oos_sharpes": [
+   0.324,
+   1.296,
+   -0.838,
+   0.293,
+   1.388
+  ],
+  "corr_vs_shipped": {
+   "mid_orb_nifty": -0.3,
+   "long_straddle_orb": -0.002,
+   "debit_vertical_orb": -0.001,
+   "long_strangle_orb": -0.003,
+   "orb_supertrend": -0.002,
+   "chain_zone_longatm": -0.001,
+   "chain_zone_naked": 0.0,
+   "chain_zone_credit": 0.001,
+   "chain_zone_positional": 0.033,
+   "ratio_backspread": -0.001,
+   "gamma_scalp": 0.009,
+   "shortvol_ironfly": 0.002,
+   "banknifty_hunt": -0.108,
+   "pivot_continuation": -0.002
+  },
+  "max_abs_corr": 0.3
+ },
+ "t3_orblong": {
+  "consensus": null,
+  "fold_oos_sharpes": []
+ }
+}
