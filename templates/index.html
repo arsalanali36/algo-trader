@@ -4963,6 +4963,7 @@
       sel.innerHTML = '<option value="">' + allLabel + '</option>' + filtered.map(v => {
         let display = v;
         if (isStratSel && v.includes(' | ')) display = v.split(' | ')[0];
+        if (isStratSel && typeof regLabel === 'function') display = regLabel(display);
         return '<option value="' + v + '">' + display + '</option>';
       }).join('');
       sel.value = cur || '';
@@ -6556,9 +6557,9 @@
                   case 'qty': val = grpQty; break;
                   case 'margin': val = Math.round(grpMargin).toLocaleString('en-IN'); break;
                   // live cells — updated by _patchLtpCells; put grand-total IDs on last (or only) group
-                  case 'points': val = isLastGrp ? `<b id="open-tot-pts">—</b>` : '—'; break;
-                  case 'pnl': val = isLastGrp ? `<b id="open-tot-unrl">—</b>` : '—'; break;
-                  case 'ret_pct': val = isLastGrp ? `<b id="open-tot-ret">—</b>` : '—'; break;
+                  case 'points': val = `<b class="grp-tot-pts" data-grp="${grpId}">—</b>`; break;
+                  case 'pnl': val = `<b class="grp-tot-unrl" data-grp="${grpId}">—</b>`; break;
+                  case 'ret_pct': val = `<b class="grp-tot-ret" data-grp="${grpId}">—</b>`; break;
                 }
               }
               tableHtml += `<td style="padding:7px 6px;${alignStyle}${colorStyle}">${val}</td>`;
@@ -6570,7 +6571,7 @@
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-            <span>📂 ${stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
+            <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
           </div>
           <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
@@ -8225,8 +8226,7 @@
       });
       // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
       (function () {
-        const unrlB = document.getElementById('open-tot-unrl');
-        if (!unrlB) return;
+        const unrlB = document.getElementById('open-tot-unrl');  // legacy grand-total cell (may be absent — per-group totals live on each group now)
         let totPts = 0, totUnrl = 0, totInv = 0, any = false;
         document.querySelectorAll('#ord-open table[id^="grp_"] tbody tr').forEach(tr => {
           const ltpCell = tr.querySelector('.ltp-cell');
@@ -8240,7 +8240,7 @@
           const ptEl = tr.querySelector('.pts-cell');
           if (ptEl) totPts += parseFloat(ptEl.textContent.replace('+', '')) || 0;
         });
-        if (any) {
+        if (any && unrlB) {
           const ptsB = document.getElementById('open-tot-pts');
           const retB = document.getElementById('open-tot-ret');
           if (ptsB) { ptsB.textContent = (totPts >= 0 ? '+' : '') + totPts.toFixed(1); ptsB.style.color = totPts >= 0 ? '#3fb950' : '#f85149'; }
