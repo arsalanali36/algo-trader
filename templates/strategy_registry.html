@@ -6,113 +6,166 @@
         --green:#3fb950;--red:#f85149;--blue:#58a6ff;--amber:#d29922;--dim:#6e7681}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-  .wrap{max-width:1200px;margin:0 auto;padding:20px 18px 70px}
+  .wrap{max-width:100%;margin:0 auto;padding:20px 18px 70px}
   h1{font-size:21px;margin:0 0 2px}
   .lead{color:var(--mut);font-size:12.5px;margin-bottom:2px}
   .lead .id{font-family:ui-monospace,Menlo,monospace;color:var(--blue);font-weight:700}
-  /* sticky control bar */
-  .bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;margin-top:8px;
+  .btn{background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 13px;font-size:12.5px;font-weight:600;cursor:pointer;text-decoration:none;white-space:nowrap}
+  .btn:hover{background:var(--bd)}
+  .btn.blue{background:#1f6feb;border-color:#1f6feb;color:#fff}
+  .bar{position:sticky;top:0;z-index:6;background:var(--bg);padding:14px 0 10px;margin-top:8px;
        border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   .bar input{background:var(--panel);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:13px;min-width:230px;flex:1}
   .seg{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
   .seg button{background:var(--panel);border:none;color:var(--mut);padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
   .seg button.on{background:#1f6feb;color:#fff}
+  .colwrap{position:relative}
+  .colmenu{position:absolute;right:0;top:38px;background:var(--panel);border:1px solid var(--bd);border-radius:9px;padding:8px;z-index:20;display:none;min-width:190px;box-shadow:0 8px 24px #0008}
+  .colmenu.on{display:block}
+  .colmenu label{display:flex;gap:8px;align-items:center;padding:5px 7px;font-size:12.5px;border-radius:6px;cursor:pointer}
+  .colmenu label:hover{background:var(--panel2)}
   .chips{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 4px}
   .chip{background:var(--panel2);border:1px solid var(--bd);color:var(--mut);border-radius:14px;padding:5px 12px;font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap}
   .chip.on{background:#1f6feb22;border-color:var(--blue);color:var(--blue)}
-  .chip b{color:var(--tx);font-weight:700}
-  .chip.on b{color:var(--blue)}
-  /* section card */
+  .chip b{color:var(--tx);font-weight:700} .chip.on b{color:var(--blue)}
   .card{background:var(--panel);border:1px solid var(--bd);border-radius:11px;margin-top:14px;overflow:hidden}
   .chd{display:flex;align-items:center;gap:11px;padding:12px 15px;cursor:pointer;user-select:none}
   .chd:hover{background:var(--panel2)}
   .chd .caret{color:var(--dim);font-size:12px;transition:transform .12s;width:12px}
   .chd.closed .caret{transform:rotate(-90deg)}
   .chd .fid{font-family:ui-monospace,Menlo,monospace;font-weight:800;color:var(--blue);font-size:15px}
-  .chd .fnm{font-weight:700;font-size:14.5px}
-  .chd .fds{color:var(--mut);font-size:12px;flex:1}
+  .chd .fnm{font-weight:700;font-size:14.5px} .chd .fds{color:var(--mut);font-size:12px;flex:1}
   .cnt{background:var(--panel2);border:1px solid var(--bd);color:var(--mut);border-radius:11px;padding:2px 9px;font-size:11px;font-weight:700}
   .cbody{overflow-x:auto}
   table{width:100%;border-collapse:collapse}
-  td,th{padding:9px 15px;border-top:1px solid var(--bd2);text-align:left;vertical-align:middle;white-space:nowrap}
+  td,th{padding:9px 13px;border-top:1px solid var(--bd2);text-align:left;vertical-align:middle;white-space:nowrap}
   th{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  td.num,th.num{text-align:right;font-variant-numeric:tabular-nums}
   tr.dep{background:#23863610}
   .id{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--blue)}
-  .nm{font-weight:600;white-space:normal}
+  .nm{font-weight:600;white-space:normal;min-width:170px}
   .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--mut)}
+  .pos{color:var(--green)} .neg{color:var(--red)} .mut{color:var(--mut)}
   .st{font-size:10px;font-weight:700;padding:2px 8px;border-radius:11px;text-transform:uppercase}
   .st.paper{background:#1f6feb22;color:var(--blue)} .st.live{background:#23863622;color:var(--green)}
   .st.research{background:#8b949e22;color:var(--mut)} .st.rejected{background:#da363322;color:var(--red)}
   .st.failed{background:#d2992222;color:var(--amber)} .st.legacy{background:#6e768122;color:var(--dim)}
+  .bd{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;white-space:nowrap}
+  .bd.win{background:#23863622;color:var(--green)} .bd.fail{background:#d2992222;color:var(--amber)}
   .now{font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;background:#23863622;color:var(--green)}
   .now.off{background:#6e768122;color:var(--dim)}
   a.lnk{color:var(--blue);text-decoration:none;font-size:12px} a.lnk:hover{text-decoration:underline}
   .empty{color:var(--mut);padding:34px;text-align:center}
 </style></head>
 <body><div class="wrap">
-  <h1>🗂️ Strategy Registry</h1>
-  <div class="lead">Every strategy in one place — deployed · research · legacy · backtest. Canonical
-    <span class="id">family.member</span> ID (same identity in Logs, RMS, Positions, Reports &amp; Lab).
-    New ones register via <span class="mono">strategy_registry.add()</span>.</div>
+  <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
+    <div style="flex:1;min-width:280px">
+      <h1>🗂️ Strategy Registry &amp; Lab</h1>
+      <div class="lead">Every strategy in one place — deployed · research · legacy · backtest — with its
+        3-pass Lab metrics. Canonical <span class="id">family.member</span> ID (same identity in Logs, RMS,
+        Positions, Reports). New ones register via <span class="mono">strategy_registry.add()</span>.</div>
+    </div>
+    <a class="btn blue" href="/lab/compare.html" target="_blank">⚖️ Compare — sab ek nazar me</a>
+  </div>
 
   <div class="bar">
     <input id="q" placeholder="🔍 search  id · name · config-key · file" oninput="render()">
-    <span class="lead" style="margin:0">Group by</span>
+    <span class="lead" style="margin:0">Group</span>
     <span class="seg"><button id="gFam" class="on" onclick="setGroup('family')">Family</button><button id="gSt" onclick="setGroup('status')">Status</button></span>
+    <div class="colwrap">
+      <button class="btn" onclick="document.getElementById('colmenu').classList.toggle('on')">⚙ Columns ▾</button>
+      <div class="colmenu" id="colmenu"></div>
+    </div>
   </div>
   <div class="chips" id="chips"></div>
   <div id="tree"></div>
 </div>
 <script>
-let REG={families:{},strategies:{}}, CFG={}, HIDE={}, GROUP='family', CLOSED={};
+let REG={families:{},strategies:{}}, CFG={}, RUNS={}, HIDE={}, GROUP='family', CLOSED={}, COLVIS={};
 const STATUSES=['paper','live','research','rejected','failed','legacy'];
+const COLS=[
+  {k:'id',label:'ID',always:1},{k:'name',label:'Name',always:1},
+  {k:'verdict',label:'Verdict'},{k:'status',label:'Status'},{k:'tf',label:'TF'},
+  {k:'sharpe',label:'Sharpe',num:1},{k:'maxdd',label:'Max DD',num:1},{k:'win',label:'Win%',num:1},
+  {k:'trades',label:'Trades',num:1},{k:'sig',label:'Significance'},
+  {k:'config',label:'Config key',def:0},{k:'file',label:'File',def:0},
+  {k:'actions',label:'Open',always:1},
+];
 try{CLOSED=JSON.parse(localStorage.getItem('reg_closed')||'{}')}catch(e){}
+try{COLVIS=JSON.parse(localStorage.getItem('reg_cols')||'null')||{}}catch(e){}
+COLS.forEach(c=>{ if(c.always){COLVIS[c.k]=true;} else if(COLVIS[c.k]===undefined){COLVIS[c.k]=(c.def!==0);} });
 function saveClosed(){try{localStorage.setItem('reg_closed',JSON.stringify(CLOSED))}catch(e){}}
+function saveCols(){try{localStorage.setItem('reg_cols',JSON.stringify(COLVIS))}catch(e){}}
+const on=k=>COLVIS[k]!==false;
 
 async function load(){
-  try{const r=await fetch('/api/strategy-registry',{cache:'no-store'});REG=await r.json();}catch(e){}
-  try{const r=await fetch('/api/config',{cache:'no-store'});CFG=await r.json();}catch(e){}
-  render();
+  const [a,b,c]=await Promise.allSettled([
+    fetch('/api/strategy-registry',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/api/config',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/lab/runs/index.json',{cache:'no-store'}).then(r=>r.json())]);
+  if(a.status==='fulfilled')REG=a.value||REG;
+  if(b.status==='fulfilled')CFG=b.value||{};
+  if(c.status==='fulfilled'&&Array.isArray(c.value)) c.value.forEach(r=>{ if(r&&r.slug)RUNS[String(r.slug).toLowerCase()]=r; });
+  colMenu(); render();
+}
+function colMenu(){
+  document.getElementById('colmenu').innerHTML=COLS.map(c=>
+    `<label><input type="checkbox" ${on(c.k)?'checked':''} ${c.always?'disabled':''} onchange="COLVIS['${c.k}']=this.checked;saveCols();render()"> ${c.label}</label>`).join('');
 }
 function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]}));}
 function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
+function runOf(m){ return (m.slug&&RUNS[String(m.slug).toLowerCase()])||null; }
 
 function setGroup(g){GROUP=g;document.getElementById('gFam').classList.toggle('on',g==='family');
   document.getElementById('gSt').classList.toggle('on',g==='status');render();}
 function tog(st){ if(st==='all'){HIDE={};}else{HIDE[st]=!HIDE[st];} render(); }
-
 function chipsBar(){
-  const all=allStrats(), by={};STATUSES.forEach(s=>by[s]=0);all.forEach(m=>{by[m.status]=(by[m.status]||0)+1;});
+  const all=allStrats(), by={};STATUSES.forEach(s=>by[s]=0);all.forEach(m=>by[m.status]=(by[m.status]||0)+1);
   const anyHidden=STATUSES.some(s=>HIDE[s]);
   let h=`<span class="chip ${!anyHidden?'on':''}" onclick="tog('all')">all <b>${all.length}</b></span>`;
   h+=STATUSES.map(s=>`<span class="chip ${!HIDE[s]?'on':''}" onclick="tog('${s}')"><span class="st ${s}" style="padding:1px 6px">${s}</span> <b>${by[s]||0}</b></span>`).join('');
   document.getElementById('chips').innerHTML=h;
 }
-function rowHTML(m){
-  const live=liveNow(m.config_key);
+function num(v,suf,dec,cls){ if(v==null||isNaN(v))return '<span class="mut">—</span>';
+  const c=cls?cls(v):''; return `<span class="${c}">${(+v).toFixed(dec)}${suf||''}</span>`; }
+function cell(m){
+  const r=runOf(m), b=(r&&r.bs_full)||{}, live=liveNow(m.config_key);
   const now=live?`<span class="now ${live==='off'?'off':''}">${live==='off'?'stopped':live+' now'}</span>`:'';
-  const link=m.slug?`<a class="lnk" href="/lab/runs/${m.slug}/index.html" target="_blank">Lab ↗</a>`:'—';
+  const verdict = r ? (r.significant?'<span class="bd win">🏆 WINNER</span>':'<span class="bd fail">⚠️ weak</span>') : '<span class="mut">—</span>';
+  const sig = r ? (r.significant?`<span class="pos">✅ PASS</span> <span class="mut">p=${(r.p_value??0).toFixed(3)}</span>`
+                                :`<span class="neg">⚠ FAIL</span> <span class="mut">p=${(r.p_value??0).toFixed(2)}</span>`) : '<span class="mut">—</span>';
+  const open = r ? `<a class="lnk" href="/lab/runs/${m.slug}/index.html" target="_blank">Lab ↗</a>` : '<span class="mut">—</span>';
+  const C={
+    id:`<td class="id">${m.id}</td>`,
+    name:`<td class="nm">${m.name||''}</td>`,
+    verdict:`<td>${verdict}</td>`,
+    status:`<td><span class="st ${m.status||'research'}">${m.status||'research'}</span>${now}</td>`,
+    tf:`<td>${r&&r.tf?r.tf:'<span class="mut">—</span>'}</td>`,
+    sharpe:`<td class="num">${num(b.sharpe,'',2,v=>v>=1?'pos':(v>=0.5?'':'neg'))}</td>`,
+    maxdd:`<td class="num">${num(b.maxdd,'%',1,v=>v>=-10?'pos':'neg')}</td>`,
+    win:`<td class="num">${num(b.win_rate,'%',0)}</td>`,
+    trades:`<td class="num">${b.trades!=null?b.trades:'<span class="mut">—</span>'}</td>`,
+    sig:`<td>${sig}</td>`,
+    config:`<td class="mono">${m.config_key||'—'}</td>`,
+    file:`<td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>`,
+    actions:`<td>${open}</td>`,
+  };
   const dep=(live&&live!=='off')?'dep':'';
-  return `<tr class="${dep}"><td class="id">${m.id}</td><td class="nm">${m.name||''}</td>
-    <td><span class="st ${m.status||'research'}">${m.status||'research'}</span>${now}</td>
-    <td class="mono">${m.config_key||'—'}</td>
-    <td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>
-    <td>${link}</td></tr>`;
+  return `<tr class="${dep}">`+COLS.filter(c=>on(c.k)).map(c=>C[c.k]).join('')+'</tr>';
 }
 function toggleCard(el,key){el.classList.toggle('closed');const c=el.classList.contains('closed');CLOSED[key]=c;el.nextElementSibling.style.display=c?'none':'';saveClosed();}
 function card(key,title,desc,rows,openDefault){
   const closed=CLOSED[key]!==undefined?CLOSED[key]:!openDefault;
+  const thead=COLS.filter(c=>on(c.k)).map(c=>`<th class="${c.num?'num':''}">${c.label}</th>`).join('');
   return `<div class="card"><div class="chd ${closed?'closed':''}" onclick="toggleCard(this,'${key}')">
       <span class="caret">▼</span>${title}<span class="fds">${desc||''}</span><span class="cnt">${rows.length}</span></div>
-    <div class="cbody" style="${closed?'display:none':''}"><table>
-      <tr><th>ID</th><th>Name</th><th>Status</th><th>Config key</th><th>File</th><th>Open</th></tr>
-      ${rows.map(rowHTML).join('')}</table></div></div>`;
+    <div class="cbody" style="${closed?'display:none':''}"><table><tr>${thead}</tr>${rows.map(cell).join('')}</table></div></div>`;
 }
 function render(){
   chipsBar();
   const q=(document.getElementById('q').value||'').toLowerCase();
   const match=m=>!HIDE[m.status] && (!q || (m.id+' '+(m.name||'')+' '+(m.config_key||'')+' '+(m.slug||'')+' '+(m.live_file||'')).toLowerCase().includes(q));
-  let html='', shown=0;
+  let html='',shown=0;
   if(GROUP==='family'){
     const fams=REG.families||{}, by={};allStrats().forEach(m=>{(by[m.fid]=by[m.fid]||[]).push(m);});
     Object.keys(fams).sort().forEach(fid=>{
@@ -120,16 +173,16 @@ function render(){
       const f=fams[fid]||{};
       html+=card('fam:'+fid,`<span class="fid">${fid}</span><span class="fnm">${f.name||fid}</span>`,f.desc,rows,true);
     });
-  }else{ // group by status (deployed/active order)
-    const order=['live','paper','research','failed','rejected','legacy'];
-    order.forEach(st=>{
+  }else{
+    ['live','paper','research','failed','rejected','legacy'].forEach(st=>{
       if(HIDE[st])return;
-      const rows=allStrats().filter(m=>m.status===st).filter(m=>!q||(m.id+' '+(m.name||'')+' '+(m.config_key||'')).toLowerCase().includes(q)).sort((a,b)=>a.id<b.id?-1:1);
+      const rows=allStrats().filter(m=>m.status===st).filter(match).sort((a,b)=>a.id<b.id?-1:1);
       if(!rows.length)return; shown+=rows.length;
       html+=card('st:'+st,`<span class="st ${st}" style="font-size:12px;padding:3px 10px">${st}</span>`,'',rows,st==='live'||st==='paper');
     });
   }
   document.getElementById('tree').innerHTML=shown?html:'<div class="empty">No strategies match.</div>';
 }
+document.addEventListener('click',e=>{ if(!e.target.closest('.colwrap'))document.getElementById('colmenu').classList.remove('on'); });
 load();
 </script></body></html>
