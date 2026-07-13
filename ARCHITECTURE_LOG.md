@@ -15,6 +15,22 @@
 
 ---
 
+## 2026-07-13 — Today's Peak: clickable per-strategy MTM + Margin Utilization view (tasks 73/74)
+**Status:** DONE (commit `2e5fd16`, VPS-deployed + verified, both services restarted clean, market closed / 0 strategy PIDs).
+**Layer:** ui + infra (display/observability only — NO entry/exit/risk decision changed)
+**Kya:**
+- **73 — clickable summary + per-strategy MTM.** "Today's Peak P&L" card renamed **Today's Peak**, ab 3-view toggle (`togglePeakView`): Graph | Summary | Margin.
+  - `pos_monitor_loop` snapshot me naya **v[4] = {key:[realized,unrealized]}** + `"__all"` (whole-account). Keyed same as Summary rows (strategy key, MANUAL/WEBHOOK by source). **Display-only + PAPER-incl**; kill-floor ka live-only `_realized` untouched (Critical Rule 6). ZERO extra Dhan calls (already-fetched `data` + existing LTP loop). Inside the existing `try…except _trail_e` so blast-radius unchanged.
+  - `/api/peak-pnl-history?strat=<key>` → aligned `strat_series` ({key:{r,u}}) for `__all` + requested strategy only (small payload). Pre-v4 archived dates → `{}` → frontend reconstructs a realised step-curve from that day's completed trades.
+  - Graph view: **Realised / Unrealised / Current** switch (`setPeakPMode`). `__all` Current = existing MTM line (no regression); real/unreal from snapshot (today) or reconstruct (past). Floor/target/entry-markers shown only on `__all`.
+  - Summary rows clickable (`peakPickStrat`) → Completed Trades **client-side** filter (`_peakTradeMatch`, Summary table stays full) + graph switches to that strategy. Faint P&L magnitude bar **removed** → **Run-Up / Run-Down** ₹ column (`_tradeRunAmts` from MAX_LTP/MIN_LTP tags). Registry **code prefix** (`regId`) before each name. Clearable filter chip in Completed Trades header (`peakClearStrat`).
+- **74 — Margin Utilization view.** New **`/api/margin-history?date=&mode=all|paper|live`** — reconstructs day margin timeline from `order_store` entry/exit times (event-driven step): SELL = executing-broker real margin (`risk_gate._leg_capital`, cached), BUY = premium notional. Stacked buy+sell area (`loadMarginGraph`), **All/Paper/Real** toggle (`setMarginMode`). Money-loop untouched (read-only).
+**Files:** `trader_dashboard.py` (pos_monitor v[4], peak route strat_series, new margin route), `templates/index.html` (3-view card, R/U/C + margin switches, clickable summary, run-up/down + code prefix, filter chip).
+**Verify:** audit 0 FAIL; py ast + JS parse clean; local smoke (2026-07-09 data) per-strategy realized + `_leg_capital` OK; VPS snapshot writing v[4] (`__all` `[8398.65,0]` == Gross TOTAL 8,399); new routes 401 (registered/gated); algo-monitor 0 errors.
+**Data note:** graph per-strategy series = GROSS realized (`pnl`), same basis as the existing account MTM line; Summary table shows Net (gross − charges) — consistent with prior behavior, different metric by design.
+
+---
+
 ## 2026-07-13 — Position-page organise (tasks 66-72) + backspread net-structure trailing lock + Critical Rule 10 (backtest-fidelity)
 **Status:** DONE (branch `feat/position-page-organise`, commit `104c46a`) — committed, NOT merged/deployed (user review-first).
 **Layer:** ui + strategy + config
