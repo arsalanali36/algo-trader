@@ -1853,42 +1853,81 @@
       </div>
     </div>
 
-    <!-- Today's Peak P&L Graph — moved from Calendar tab -->
+    <!-- Today's Peak — per-strategy MTM (task 73) + Summary + Margin (task 74) -->
     <div class="card" style="margin-bottom:12px; padding:14px 18px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L</h3>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak
+          <span id="peak-scope" style="font-size:11px;font-weight:400;color:#8b949e"></span></h3>
         <div style="display:flex;align-items:center;gap:8px">
-          <!-- task 66: flip this card body between the graph and the consolidated strategy table -->
+          <!-- flip the card body between per-strategy graph, the summary table, and margin -->
           <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
             <span id="peak-tab-graph" onclick="togglePeakView('graph')"
               style="font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff">Graph</span>
             <span id="peak-tab-summary" onclick="togglePeakView('summary')"
               style="font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e">Summary</span>
+            <span id="peak-tab-margin" onclick="togglePeakView('margin')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e">Margin</span>
           </div>
-          <button onclick="loadPeakGraph()"
+          <button onclick="peakRefresh()"
             style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻
             Refresh</button>
         </div>
       </div>
+
       <div id="peak-graph-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <span id="peak-graph-scope" style="font-size:11px;color:#8b949e"></span>
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-pm-real" onclick="setPeakPMode('real')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Realised</span>
+            <span id="peak-pm-unreal" onclick="setPeakPMode('unreal')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Unrealised</span>
+            <span id="peak-pm-cur" onclick="setPeakPMode('cur')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff">Current</span>
+          </div>
+        </div>
         <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
           <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
         </div>
         <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
-          <span>— <span style="color:#3fb950">MTM P&amp;L</span></span>
+          <span>— <span style="color:#3fb950">P&amp;L flow</span></span>
           <span>- - <span style="color:#f0883e">Trailing floor</span></span>
           <span>- - <span style="color:#3fb950">🎯 Target</span></span>
           <span>▲ <span style="color:#58a6ff">Entry</span></span>
         </div>
       </div>
+
       <div id="peak-summary-body" style="display:none">
         <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+      </div>
+
+      <div id="peak-margin-body" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <span style="font-size:11px;color:#8b949e">Din bhar capital utilization (buy + sell margin)</span>
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-mm-all" onclick="setMarginMode('all')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff">All</span>
+            <span id="peak-mm-paper" onclick="setMarginMode('paper')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Paper</span>
+            <span id="peak-mm-live" onclick="setMarginMode('live')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Real</span>
+          </div>
+        </div>
+        <div id="peak-margin-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+          <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
+          <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#1f6feb;margin-right:4px;vertical-align:middle"></span>Buy margin (premium)</span>
+          <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#d29922;margin-right:4px;vertical-align:middle"></span>Sell margin</span>
+          <span id="peak-margin-peak" style="color:#8b949e"></span>
+        </div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-        <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
+        <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades
+          <span id="ord-completed-filter"></span></div>
         <div style="display:flex;gap:6px;align-items:center">
           <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="toggleCompletedGrouping()"
@@ -4125,10 +4164,15 @@
       if (!container) return;
       // Pass selected date so graph works for any day, not just today
       const selDate = (document.getElementById('ord-date') || {}).value || '';
+      const _pk = window._peakStrat || '__all';       // selected strategy ('__all' = account)
+      const _pm = window._peakPMode || 'cur';          // realised | unreal | cur (task 73 switch)
+      const isAll = (_pk === '__all');
       let resp = {};
       try {
-        const url = '/api/peak-pnl-history' + (selDate ? '?date=' + selDate : '');
-        const r = await fetch(url);
+        const qs = new URLSearchParams();
+        if (selDate) qs.set('date', selDate);
+        qs.set('strat', _pk);
+        const r = await fetch('/api/peak-pnl-history?' + qs.toString());
         resp = await r.json();
       } catch (e) {
         container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
@@ -4149,8 +4193,21 @@
       const PAD = { t: 14, r: 100, b: 28, l: 60 };
       const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
 
-      // MTM line (pts[i][1] = cum_pnl), floor from pts[i][3] (monotonic peak)
-      const rawTotals = pts.map(p => p[1]);
+      // MTM line — pick the plotted series: snapshot per-strategy (r/u/cur) if the
+      // backend has it for this key+date, else reconstruct a realised step-curve
+      // from the currently-loaded completed trades (past dates / no snapshot).
+      const _ss = (resp.strat_series || {})[_pk];
+      const _ssHas = _ss && Array.isArray(_ss.r) && _ss.r.length === pts.length
+        && (_ss.r.some(v => v) || _ss.u.some(v => v));   // has real snapshot data (not a pre-v4 date)
+      let rawTotals;
+      if (isAll && _pm === 'cur') {
+        rawTotals = pts.map(p => p[1]);                  // account current = existing MTM line (always correct)
+      } else if (_ssHas) {
+        rawTotals = pts.map((_, i) => _pm === 'real' ? _ss.r[i] : _pm === 'unreal' ? _ss.u[i] : (_ss.r[i] + _ss.u[i]));
+      } else {
+        // no per-strategy snapshot (past date) → reconstruct realised; unrealised unknown
+        rawTotals = _pm === 'unreal' ? pts.map(() => 0) : _reconstructPeakSeries(pts);
+      }
       const totals = rawTotals.map((v, i, arr) => {
         const w = 5, half = Math.floor(w / 2);
         const sl = arr.slice(Math.max(0, i - half), Math.min(arr.length, i + half + 1));
@@ -4162,7 +4219,9 @@
         _runMax = Math.max(_runMax, v3);
         return _runMax;
       });
-      const floors = pts.map((_, i) => {
+      // Floor/target/entry markers are account-level (kill-floor + all entries) —
+      // only meaningful on the "__all" view; hidden when a single strategy is picked.
+      const floors = !isAll ? pts.map(() => null) : pts.map((_, i) => {
         const pk = dailyPeakEver[i];
         if (pk <= 0) return null;
         if (lockPct) return pk * (1 - lockPct / 100);
@@ -4203,9 +4262,9 @@
         inSeg = true;
       });
 
-      // 🎯 Daily Profit Target — dashed green horizontal line
+      // 🎯 Daily Profit Target — dashed green horizontal line (account view only)
       let targetLine = '';
-      if (profitTarget && profitTarget > 0) {
+      if (isAll && profitTarget && profitTarget > 0) {
         const ty = py(profitTarget);
         if (ty >= PAD.t && ty <= PAD.t + gH) {
           targetLine = `
@@ -4216,8 +4275,9 @@
       }
 
       // ▲ Entry markers — small green triangle at each entry_time on the P&L curve
+      // (account-level markers; shown only on the "__all" view)
       let entryMarkers = '';
-      entries.forEach(([etime, cumAtEntry, sym]) => {
+      if (isAll) entries.forEach(([etime, cumAtEntry, sym]) => {
         const ex = timeToX(etime);
         const ey = py(cumAtEntry);
         if (ey < PAD.t || ey > PAD.t + gH) return;
@@ -4250,8 +4310,7 @@
         xLabels += `<text x="${px(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
       }
 
-      const last = pts[pts.length - 1];
-      const lastMtm = last[1];
+      const lastMtm = rawTotals[rawTotals.length - 1];   // plotted series' last value
       const lastPk = dailyPeakEver[dailyPeakEver.length - 1];
       const lastFlr = floors[floors.length - 1];
       const mtmCol = lastMtm >= 0 ? '#3fb950' : '#f85149';
@@ -4267,7 +4326,7 @@
     <text x="${(W - PAD.r + 8).toFixed(1)}" y="${(py(lastFlr) + 4).toFixed(1)}" font-size="10" fill="#f0883e">${lockLabel} ₹${Math.round(lastFlr).toLocaleString('en-IN')}</text>`;
       }
 
-      const ddBadge = lastPk > 0
+      const ddBadge = (isAll && lastPk > 0)
         ? `<text x="${(W / 2).toFixed(1)}" y="${PAD.t - 2}" text-anchor="middle" font-size="10" fill="#8b949e">Peak ₹${Math.round(lastPk).toLocaleString('en-IN')}  |  DD ₹${Math.round(drawDown).toLocaleString('en-IN')}${entries.length ? '  |  ' + entries.length + ' entries' : ''}</text>`
         : '';
 
@@ -4280,6 +4339,33 @@
     ${entryMarkers}
     ${rightLabels}
   </svg>`;
+
+      // graph sub-header: which scope + which P&L mode is showing
+      const _gs = document.getElementById('peak-graph-scope');
+      if (_gs) {
+        const nm = isAll ? 'All strategies' : (regLabel(_pk) || _pk);
+        const pmL = { real: 'Realised', unreal: 'Unrealised', cur: 'Current (R+U)' }[_pm] || 'Current';
+        _gs.textContent = nm + ' — ' + pmL;
+      }
+    }
+
+    // Reconstruct a realised step-curve (cumulative net by exit_time) from the
+    // currently-loaded completed trades, aligned to the peak graph's time points.
+    // Used when the backend has no per-strategy snapshot for this key/date (past
+    // dates). Orders are already scoped to _peakStrat (picking a strategy filters
+    // them), so summing all loaded details gives that strategy's own curve.
+    function _reconstructPeakSeries(pts) {
+      const det = ((window._lastOrdersData || {}).details) || [];
+      const toMin = s => { const p = String(s).split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+      const comp = det.filter(t => t.exit_time && t._net != null && _peakTradeMatch(t))
+        .map(t => ({ x: toMin(t.exit_time), v: t._net }))
+        .sort((a, b) => a.x - b.x);
+      return pts.map(p => {
+        const tm = toMin(p[0]);
+        let cum = 0;
+        for (const c of comp) { if (c.x <= tm) cum += c.v; else break; }
+        return cum;
+      });
     }
 
     async function saveRiskConfig() {
@@ -5091,6 +5177,24 @@
       const sign = amt > 0 ? '+' : '';
       return `<span style="color:${c};font-weight:600">${sign}${Math.round(amt).toLocaleString('en-IN')}</span>`
         + `<span style="color:#8b949e;font-size:10px"> | ${sign}${pt.toFixed(1)} | ${sign}${pct.toFixed(1)}%</span>`;
+    }
+
+    // Run-Up (best favourable ₹) / Run-Down (worst adverse ₹) for one trade,
+    // from its MAX_LTP/MIN_LTP tags — shared by the summary table (task 73).
+    function _tradeRunAmts(t) {
+      let up = 0, down = 0;
+      const ep = t.entry_price || 0;
+      let maxL = null, minL = null;
+      (t.tags || []).forEach(tg => {
+        if (tg.startsWith('MAX_LTP:')) maxL = parseFloat(tg.split(':')[1]);
+        if (tg.startsWith('MIN_LTP:')) minL = parseFloat(tg.split(':')[1]);
+      });
+      if (ep > 0 && maxL !== null && minL !== null && !isNaN(maxL) && !isNaN(minL)) {
+        const upPt = t.entry === 'SELL' ? (ep - minL) : (maxL - ep);
+        const downPt = t.entry === 'SELL' ? (ep - maxL) : (minL - ep);
+        up = upPt * (t.qty || 0); down = downPt * (t.qty || 0);
+      }
+      return { up, down };
     }
 
     // One Completed-Trades <tr> — extracted so both flat mode and grouped mode
@@ -5924,12 +6028,15 @@
       const opnBlocked = opn.filter(isCapBlocked);
       const opnReal = opn.filter(t => !isCapBlocked(t));
 
-      // ── SOURCE SUMMARY PILLS (STRATEGY, MANUAL, WEBHOOK) ──
-      const srcTotals = { 'STRATEGY': { net: 0, gross: 0, n: 0, w: 0, opn: 0 }, 'MANUAL': { net: 0, gross: 0, n: 0, w: 0, opn: 0 }, 'WEBHOOK': { net: 0, gross: 0, n: 0, w: 0, opn: 0 } };
+      // ── SOURCE SUMMARY (STRATEGY, MANUAL, WEBHOOK) ──
+      const _z = () => ({ net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0 });
+      const srcTotals = { 'STRATEGY': _z(), 'MANUAL': _z(), 'WEBHOOK': _z() };
       det.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
+        const ru = _tradeRunAmts(t);
         srcTotals[s].net += t._net; srcTotals[s].gross += t._gross; srcTotals[s].n++;
+        srcTotals[s].ru += ru.up; srcTotals[s].rd += ru.down;
         if (t._net > 0) srcTotals[s].w++;
       });
       opnReal.forEach(t => {
@@ -5938,11 +6045,7 @@
         srcTotals[s].opn++;
       });
 
-      // ── CONSOLIDATED SUMMARY (task 66) ──
-      // The old per-strategy / per-source TILES are retired. Same data now goes
-      // into ONE table (renderSummaryTable) shown inside the Peak P&L card's
-      // "Summary" toggle view. Rows: each running/traded strategy + MANUAL +
-      // WEBHOOK, so nothing from the old pills is lost.
+      // ── CONSOLIDATED SUMMARY (task 66) — now clickable per strategy (task 73) ──
       const summaryRows = [];
 
       // per-strategy accumulation (data logic unchanged)
@@ -5950,7 +6053,7 @@
       if (typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null) {
         Object.keys(RUNNING_PIDS).forEach(k => {
           if (!k.endsWith('_mode') && k !== '_risk' && k !== 'webhooks' && k !== '_ui_config') {
-            stratTotals[k] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+            stratTotals[k] = _z();
           }
         });
       }
@@ -5958,10 +6061,12 @@
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+          if (!stratTotals[sName]) stratTotals[sName] = _z();
+          const ru = _tradeRunAmts(t);
           stratTotals[sName].net += t._net;
           stratTotals[sName].gross += t._gross;
           stratTotals[sName].n++;
+          stratTotals[sName].ru += ru.up; stratTotals[sName].rd += ru.down;
           if (t._net > 0) stratTotals[sName].w++;
         }
       });
@@ -5969,7 +6074,7 @@
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+          if (!stratTotals[sName]) stratTotals[sName] = _z();
           stratTotals[sName].opn++;
         }
       });
@@ -5979,13 +6084,15 @@
         const isRunning = typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null && RUNNING_PIDS[s] !== undefined;
         if (!isRunning && st.n === 0 && st.opn === 0) return;
         const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : 'stopped';
-        summaryRows.push({ name: regLabel(s), mode: mode, net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn });
+        summaryRows.push({ key: s, code: regId(s), name: regLabel(s), isSource: false, mode: mode,
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd });
       });
       // MANUAL / WEBHOOK — not per-strategy, kept as their own rows
       ['MANUAL', 'WEBHOOK'].forEach(s => {
         const st = srcTotals[s];
         if (st.n === 0 && st.opn === 0) return;
-        summaryRows.push({ name: s.charAt(0) + s.slice(1).toLowerCase(), mode: 'src', net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn });
+        summaryRows.push({ key: s, code: '', name: s.charAt(0) + s.slice(1).toLowerCase(), isSource: true, mode: 'src',
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd });
       });
 
       renderStratSummaryTable(summaryRows);
@@ -5994,7 +6101,17 @@
       if (_ordSum) { _ordSum.innerHTML = ''; _ordSum.style.display = 'none'; }
 
       // ── COMPLETED TRADES ──
-      let sortedCompleted = det.slice();
+      // Client-side scope filter: when a Summary row is picked (task 73), narrow
+      // the Completed Trades table to that strategy/source without touching the
+      // orders fetch (so the Summary table above stays full).
+      let sortedCompleted = det.filter(_peakTradeMatch);
+      // header chip showing the active per-strategy filter (clearable)
+      const _cf = document.getElementById('ord-completed-filter');
+      if (_cf) {
+        const _pkf = window._peakStrat || '__all';
+        _cf.innerHTML = (_pkf === '__all') ? '' :
+          `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="peakClearStrat()" title="Filter hatao (All)">▸ ${(_pkf === 'MANUAL' || _pkf === 'WEBHOOK') ? (_pkf.charAt(0) + _pkf.slice(1).toLowerCase()) : (regLabel(_pkf) || _pkf)} ✕</span>`;
+      }
       if (window._completedSortCol) {
         _sortData(sortedCompleted, window._completedSortCol, window._completedSortDir);
       } else {
@@ -6739,17 +6856,14 @@
         el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:16px">Is din koi trade nahi</div>';
         return;
       }
-      const maxAbs = Math.max(1, ...rows.map(r => Math.abs(r.net)));
-      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
-      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; });
-      const bar = net => {
-        const w = Math.min(50, Math.abs(net) / maxAbs * 50), pos = net >= 0;
-        const col = pos ? '#3fb950' : '#f85149', bg = pos ? '#3fb95022' : '#f8514922';
-        return `<div style="height:14px;background:${bg};border-radius:3px;position:relative">`
-          + `<div style="position:absolute;${pos ? 'left:50%' : 'right:50%'};top:0;height:14px;width:${w.toFixed(1)}%;background:${col};border-radius:${pos ? '0 3px 3px 0' : '3px 0 0 3px'}"></div>`
-          + `<div style="position:absolute;left:50%;top:0;bottom:0;width:1px;background:#6e7681"></div></div>`;
-      };
+      const sel = window._peakStrat || '__all';
+      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0 };
+      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); });
       const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
+      // Run-Up (favourable) / Run-Down (adverse) ₹ pair — replaces the old faint bar
+      const rudCell = (ru, rd) => `<span style="color:#3fb950;font-weight:600">+${Math.round(ru || 0).toLocaleString('en-IN')}</span>`
+        + `<span style="color:#6e7681"> / </span>`
+        + `<span style="color:#f85149;font-weight:600">${Math.round(rd || 0).toLocaleString('en-IN')}</span>`;
       let h = `<table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d;font-size:11px">
           <th style="padding:6px 8px;font-weight:500">Strategy</th>
@@ -6759,18 +6873,25 @@
           <th style="padding:6px 8px;font-weight:500;text-align:center">Trades</th>
           <th style="padding:6px 8px;font-weight:500;text-align:center">W/L</th>
           <th style="padding:6px 8px;font-weight:500;text-align:center">Open</th>
-          <th style="padding:6px 8px;font-weight:500;width:150px">P&amp;L</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Run-Up / Run-Down</th>
         </tr></thead><tbody>`;
       rows.forEach(r => {
-        h += `<tr style="border-bottom:1px solid #21262d">
-          <td style="padding:7px 8px;color:#adbac7">${r.name}</td>
+        const isSel = (r.key === sel);
+        const rowStyle = 'border-bottom:1px solid #21262d;cursor:pointer'
+          + (isSel ? ';background:#132030;box-shadow:inset 3px 0 0 #1f6feb' : '');
+        const codeHtml = r.code && r.code !== r.key
+          ? `<span style="color:#6e7681;font-variant-numeric:tabular-nums;margin-right:7px;font-size:10.5px">${r.code}</span>` : '';
+        h += `<tr style="${rowStyle}" onclick="peakPickStrat('${r.key}', ${r.isSource ? 'true' : 'false'})"
+            onmouseover="if('${r.key}'!=='${sel}')this.style.background='#1c2230'" onmouseout="if('${r.key}'!=='${sel}')this.style.background=''"
+            title="Click → is strategy ka MTM graph + Completed Trades filter">
+          <td style="padding:7px 8px">${codeHtml}<span style="color:#adbac7">${r.name}</span></td>
           <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
           <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
           <td style="padding:7px 8px;text-align:right;color:#8b949e">${Math.round(r.gross).toLocaleString('en-IN')}</td>
           <td style="padding:7px 8px;text-align:center;color:#adbac7">${r.n}</td>
           <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.w}W ${r.n - r.w}L</td>
           <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.opn}</td>
-          <td style="padding:7px 8px">${bar(r.net)}</td></tr>`;
+          <td style="padding:7px 8px;text-align:right">${rudCell(r.ru, r.rd)}</td></tr>`;
       });
       h += `<tr style="border-top:2px solid #30363d;font-weight:600">
           <td style="padding:8px" colspan="2"><span style="color:#8b949e;font-size:11px">TOTAL</span></td>
@@ -6779,22 +6900,153 @@
           <td style="padding:8px;text-align:center;color:#adbac7">${tot.n}</td>
           <td style="padding:8px;text-align:center;color:#8b949e">${tot.w}W ${tot.n - tot.w}L</td>
           <td style="padding:8px;text-align:center;color:#8b949e">${tot.opn}</td>
-          <td style="padding:8px"></td></tr>`;
+          <td style="padding:8px;text-align:right">${rudCell(tot.ru, tot.rd)}</td></tr>`;
       h += '</tbody></table>';
       el.innerHTML = h;
     }
+    // ── Today's Peak card state (tasks 73/74) ──
+    window._peakStrat = '__all';                                   // selected strategy for the Graph view
+    window._peakPMode = localStorage.getItem('peak_pmode') || 'cur';   // realised | unreal | cur
+    window._marginMode = localStorage.getItem('peak_margin_mode') || 'all'; // all | paper | live
+
     function togglePeakView(v) {
-      const g = document.getElementById('peak-graph-body'), s = document.getElementById('peak-summary-body');
-      const tg = document.getElementById('peak-tab-graph'), ts = document.getElementById('peak-tab-summary');
-      if (!g || !s || !tg || !ts) return;
+      const bodies = { graph: 'peak-graph-body', summary: 'peak-summary-body', margin: 'peak-margin-body' };
+      const tabs = { graph: 'peak-tab-graph', summary: 'peak-tab-summary', margin: 'peak-tab-margin' };
+      if (!['graph', 'summary', 'margin'].includes(v)) v = 'graph';
       const on = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff';
       const off = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e';
-      if (v === 'summary') { g.style.display = 'none'; s.style.display = 'block'; tg.style.cssText = off; ts.style.cssText = on; }
-      else { g.style.display = 'block'; s.style.display = 'none'; tg.style.cssText = on; ts.style.cssText = off; }
+      Object.keys(bodies).forEach(k => {
+        const b = document.getElementById(bodies[k]), t = document.getElementById(tabs[k]);
+        if (b) b.style.display = (k === v) ? 'block' : 'none';
+        if (t) t.style.cssText = (k === v) ? on : off;
+      });
       try { localStorage.setItem('peak_view', v); } catch (e) { }
+      if (v === 'graph') loadPeakGraph();
+      if (v === 'margin') loadMarginGraph();
     }
     // restore last-used view on load (elements are static in the DOM)
-    try { if (localStorage.getItem('peak_view') === 'summary') togglePeakView('summary'); } catch (e) { }
+    try { const _pv = localStorage.getItem('peak_view'); if (_pv && _pv !== 'graph') togglePeakView(_pv); } catch (e) { }
+    // sync sub-switch highlights to stored prefs (no data load — each view's own loader runs)
+    try {
+      const _on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const _off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['real', 'unreal', 'cur'].forEach(x => { const e = document.getElementById('peak-pm-' + x); if (e) e.style.cssText = (x === window._peakPMode) ? _on : _off; });
+      ['all', 'paper', 'live'].forEach(x => { const e = document.getElementById('peak-mm-' + x); if (e) e.style.cssText = (x === window._marginMode) ? _on : _off; });
+    } catch (e) { }
+
+    // Realised / Unrealised / Current switch (Graph view) — task 73
+    function setPeakPMode(m) {
+      window._peakPMode = m;
+      try { localStorage.setItem('peak_pmode', m); } catch (e) { }
+      const on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['real', 'unreal', 'cur'].forEach(x => { const e = document.getElementById('peak-pm-' + x); if (e) e.style.cssText = (x === m) ? on : off; });
+      loadPeakGraph();
+    }
+
+    // Click a Summary row → filter Completed Trades to that strategy (client-side,
+    // so the Summary table itself stays full) + show its MTM graph. Re-click the
+    // same row (or "clear") → back to All. isSource=true for MANUAL/WEBHOOK rows.
+    function peakPickStrat(key, isSource) {
+      window._peakStrat = (window._peakStrat === key) ? '__all' : key;   // toggle back to All on re-click
+      const picked = window._peakStrat;
+      const nm = isSource ? (key.charAt(0) + key.slice(1).toLowerCase()) : (regLabel(key) || key);
+      const sc = document.getElementById('peak-scope');
+      if (sc) sc.textContent = picked === '__all' ? '' : '— ' + nm;
+      renderCachedOrders();    // re-filter Completed Trades + re-highlight summary row
+      togglePeakView('graph'); // loadPeakGraph runs inside
+    }
+
+    function peakClearStrat() {
+      window._peakStrat = '__all';
+      const sc = document.getElementById('peak-scope'); if (sc) sc.textContent = '';
+      renderCachedOrders();
+      if ((localStorage.getItem('peak_view') || 'graph') === 'graph') loadPeakGraph();
+    }
+
+    // Does a completed/open trade belong to the currently-picked strategy scope?
+    function _peakTradeMatch(t) {
+      const pk = window._peakStrat || '__all';
+      if (pk === '__all') return true;
+      const src = String(t.source || 'STRATEGY').toUpperCase();
+      if (pk === 'MANUAL' || pk === 'WEBHOOK') return src === pk;
+      return (t.strategy || 'STRATEGY') === pk && src !== 'MANUAL' && src !== 'WEBHOOK';
+    }
+
+    function peakRefresh() {
+      const v = localStorage.getItem('peak_view') || 'graph';
+      if (v === 'margin') loadMarginGraph(); else loadPeakGraph();
+    }
+
+    // ── Margin Utilization graph (task 74) ──
+    function setMarginMode(m) {
+      window._marginMode = m;
+      try { localStorage.setItem('peak_margin_mode', m); } catch (e) { }
+      const on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['all', 'paper', 'live'].forEach(x => { const e = document.getElementById('peak-mm-' + x); if (e) e.style.cssText = (x === m) ? on : off; });
+      loadMarginGraph();
+    }
+
+    async function loadMarginGraph() {
+      const container = document.getElementById('peak-margin-graph');
+      if (!container) return;
+      const selDate = (document.getElementById('ord-date') || {}).value || '';
+      let resp = {};
+      try {
+        const qs = new URLSearchParams();
+        if (selDate) qs.set('date', selDate);
+        qs.set('mode', window._marginMode || 'all');
+        const r = await fetch('/api/margin-history?' + qs.toString());
+        resp = await r.json();
+      } catch (e) {
+        container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
+        return;
+      }
+      const T = resp.times || [], buy = resp.buy || [], sell = resp.sell || [];
+      const pk = document.getElementById('peak-margin-peak');
+      if (pk) pk.textContent = T.length ? ('Peak margin: ₹' + Math.round(resp.peak || 0).toLocaleString('en-IN') + '  (' + (window._marginMode || 'all') + ')') : '';
+      if (!T.length || Math.max(0, ...buy, ...sell) <= 0) {
+        container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Is din koi margin use nahi hua (' + (window._marginMode || 'all') + ').</div>';
+        return;
+      }
+      const W = container.clientWidth || 700, H = 200;
+      const PAD = { t: 14, r: 70, b: 26, l: 64 }, gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+      const tot = T.map((_, i) => (buy[i] || 0) + (sell[i] || 0));
+      const maxV = Math.max(1, ...tot);
+      const px = i => PAD.l + (T.length === 1 ? 0 : i / (T.length - 1) * gW);
+      const py = v => PAD.t + gH - (v / maxV) * gH;
+      const toMin = s => { const p = String(s).split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+      // x by real time so widths reflect how long margin was held
+      const t0 = toMin(T[0]), t1 = toMin(T[T.length - 1]) || t0 + 1;
+      const xAt = i => PAD.l + ((toMin(T[i]) - t0) / ((t1 - t0) || 1)) * gW;
+      const areaPath = (topArr, botArr) => {
+        let p = `M${xAt(0).toFixed(1)},${py(botArr[0]).toFixed(1)}`;
+        for (let i = 0; i < T.length; i++) p += ` L${xAt(i).toFixed(1)},${py(topArr[i]).toFixed(1)}`;
+        for (let i = T.length - 1; i >= 0; i--) p += ` L${xAt(i).toFixed(1)},${py(botArr[i]).toFixed(1)}`;
+        return p + ' Z';
+      };
+      const sellTop = sell.map(v => v || 0);
+      const buyTop = T.map((_, i) => (sell[i] || 0) + (buy[i] || 0));
+      const zeros = T.map(() => 0);
+      let yl = '';
+      for (let s = 0; s <= 4; s++) {
+        const v = maxV * s / 4, y = py(v);
+        yl += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22"/>`;
+        yl += `<text x="${PAD.l - 5}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="10" fill="#8b949e">₹${(v / 100000).toFixed(1)}L</text>`;
+      }
+      let xl = '';
+      const step = Math.max(1, Math.floor(T.length / 6));
+      for (let i = 0; i < T.length; i += step) xl += `<text x="${xAt(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#6e7681">${T[i]}</text>`;
+      const lastTot = tot[tot.length - 1];
+      container.innerHTML = `
+  <svg width="${W}" height="${H}" style="overflow:visible;display:block">
+    ${yl}${xl}
+    <path d="${areaPath(sellTop, zeros)}" fill="#d2992255" stroke="#d29922" stroke-width="1"/>
+    <path d="${areaPath(buyTop, sellTop)}" fill="#1f6feb55" stroke="#1f6feb" stroke-width="1"/>
+    <text x="${(W - PAD.r + 6).toFixed(1)}" y="${(py(lastTot) + 4).toFixed(1)}" font-size="11" fill="#adbac7" font-weight="600">₹${Math.round(lastTot).toLocaleString('en-IN')}</text>
+  </svg>`;
+    }
 
     // ── ORDER SOUND NOTIFICATION ──
     const _lastOrderLine = {};  // key → last seen order line to avoid duplicate beeps

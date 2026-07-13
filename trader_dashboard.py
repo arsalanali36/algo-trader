@@ -2558,6 +2558,25 @@ def api_peak_pnl_history():
     _ist_now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
     req_date = request.args.get("date") or _ist_now.strftime("%Y-%m-%d")
     is_today = (req_date == _ist_now.strftime("%Y-%m-%d"))
+    want_strat = request.args.get("strat") or ""   # task 73: per-strategy line ("__all" default)
+
+    def _build_strat_series(sd_list):
+        """From per-point {key:[real,unreal]} dicts (snapshot v[4]) → aligned
+        {key:{r:[...],u:[...]}} for '__all' + the requested strategy only (keeps
+        the payload small — one strategy at a time)."""
+        if not any(isinstance(sd, dict) and sd for sd in sd_list):
+            return {}   # pre-v4 date (no per-strategy snapshot) → frontend reconstructs
+        keys = {"__all"}
+        if want_strat and want_strat != "__all":
+            keys.add(want_strat)
+        out = {}
+        for k in keys:
+            r, u = [], []
+            for sd in sd_list:
+                v = (sd.get(k) if isinstance(sd, dict) else None) or [0, 0]
+                r.append(v[0]); u.append(v[1])
+            out[k] = {"r": r, "u": u}
+        return out
 
     try:
         # Graph's dashed floor line now mirrors the account-level KILL-FLOOR's
@@ -2653,16 +2672,22 @@ def api_peak_pnl_history():
             except Exception:
                 pass
             return None
-        mkt_pts = [e for p in daemon_pts for e in [_safe_norm(p)] if e is not None]
+        # Keep the raw daemon point aligned with its normalized form so v[4]
+        # (per-strategy dict) can be extracted for strat_series (task 73).
+        _kept = [(p, _safe_norm(p)) for p in daemon_pts]
+        _kept = [(rp, n) for (rp, n) in _kept if n is not None]
+        mkt_pts = [n for (_, n) in _kept]
 
         if mkt_pts:
             pts = mkt_pts
+            _sd = [(rp[4] if len(rp) > 4 and isinstance(rp[4], dict) else {}) for (rp, _) in _kept]
             # Prepend 09:15 anchor only if daemon started DURING market hours (not long after open)
             # If daemon started within 30 min of open, anchor at 09:15; otherwise skip anchor
             # (avoids fake flat-line when daemon started mid-day or later)
             first_min = _to_min(pts[0][0])
             if first_min > MARKET_OPEN and first_min <= MARKET_OPEN + 30:
                 pts = [["09:15", 0.0, 0.0, 0.0]] + pts
+                _sd = [{}] + _sd
             elif first_min == MARKET_OPEN:
                 pass  # already starts at open
             # else: daemon started mid-day — don't anchor at 09:15, show from where data begins
@@ -2673,9 +2698,11 @@ def api_peak_pnl_history():
             if pts[-1][0] < end_hm:
                 last = pts[-1]
                 pts = pts + [[end_hm, last[1], last[2], last[3]]]
+                _sd = _sd + [_sd[-1] if _sd else {}]   # carry final per-strategy values
             return jsonify({"data": pts, "entries": entries,
                             "lock_pct": lock_pct, "lock_rs": lock_rs,
-                            "profit_target_rs": profit_target_rs})
+                            "profit_target_rs": profit_target_rs,
+                            "strat_series": _build_strat_series(_sd)})
         # Daemon file existed but had no market-hours data → fall through to order_store
 
     # ── FALLBACK: reconstruct from order_store exits (no unrealized peaks) ──
@@ -2699,12 +2726,87 @@ def api_peak_pnl_history():
                 pts.append([end_hm, round(cum, 2), round(trail_peak, 2), round(peak_ever, 2)])
             return jsonify({"data": pts, "entries": entries,
                             "lock_pct": lock_pct, "lock_rs": lock_rs,
-                            "profit_target_rs": profit_target_rs})
+                            "profit_target_rs": profit_target_rs,
+                            "strat_series": {}})  # no snapshot → frontend reconstructs per-strategy
     except Exception:
         pass
 
     return jsonify({"data": [], "entries": [], "lock_pct": lock_pct,
-                    "lock_rs": lock_rs, "profit_target_rs": profit_target_rs})
+                    "lock_rs": lock_rs, "profit_target_rs": profit_target_rs,
+                    "strat_series": {}})
+
+
+@app.route('/api/margin-history')
+def api_margin_history():
+    """Day margin-utilization timeline (task 74) — reconstructed from order_store
+    entry/exit times, so it works for any date without touching the money loop.
+    Each position holds ₹ margin from its entry_time until its exit_time (open
+    positions → until 'now'): BUY leg = premium notional (qty×entry_price), SELL
+    leg = executing-broker real margin (risk_gate._leg_capital, cached; falls back
+    to the multiplier estimate for expired/failed lookups). Split buy vs sell,
+    filtered by ?mode=all|paper|live (position's own mode).
+    Response: {times:[HH:MM...], buy:[₹...], sell:[₹...], peak:₹}."""
+    from datetime import timedelta as _td
+    _now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+    req_date = request.args.get("date") or _now.strftime("%Y-%m-%d")
+    mode = (request.args.get("mode") or "all").lower()   # all | paper | live
+    is_today = (req_date == _now.strftime("%Y-%m-%d"))
+
+    def _to_min(hm):
+        try:
+            h, m = str(hm).split(":")[:2]
+            return int(h) * 60 + int(m)
+        except Exception:
+            return None
+
+    OPEN_M, CLOSE_M = 9 * 60 + 15, 15 * 60 + 30
+    now_m = _to_min(_now.strftime("%H:%M")) or CLOSE_M
+    end_m = min(CLOSE_M, now_m) if is_today else CLOSE_M
+
+    positions = []   # (start_min, end_min, side, margin_rs)
+    try:
+        import order_store
+        import risk_gate as _rg
+        data = order_store.trades_for(req_date)
+        rows = list(data.get("details", [])) + list(data.get("open", []))
+        for r in rows:
+            if "CAPITAL_BLOCKED" in (r.get("tags") or []):
+                continue
+            pmode = str(r.get("mode") or "paper").lower()
+            if mode != "all" and pmode != mode:
+                continue
+            s_m = _to_min(r.get("entry_time"))
+            if s_m is None:
+                continue
+            e_m = _to_min(r.get("exit_time"))
+            if e_m is None:            # still open ("—") → held to end of window
+                e_m = end_m
+            e_m = min(max(e_m, s_m), CLOSE_M)
+            side = str(r.get("entry") or "").upper()
+            try:
+                mgn = _rg._leg_capital(r) if side == "SELL" \
+                    else float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
+            except Exception:
+                mgn = float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
+            positions.append((s_m, e_m, side, float(mgn or 0)))
+    except Exception:
+        positions = []
+
+    # Event-driven step timeline: recompute the in-use sum at every entry/exit
+    # boundary (exact step function, no minute-grid rounding).
+    tset = {OPEN_M, end_m}
+    for (s_m, e_m, _s, _mg) in positions:
+        tset.add(s_m); tset.add(e_m)
+    tpoints = sorted(t for t in tset if OPEN_M <= t <= CLOSE_M)
+    times, buy, sell = [], [], []
+    peak = 0.0
+    for t in tpoints:
+        b = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "BUY" and s_m <= t < e_m)
+        s = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "SELL" and s_m <= t < e_m)
+        times.append(f"{t // 60:02d}:{t % 60:02d}")
+        buy.append(round(b, 2)); sell.append(round(s, 2))
+        peak = max(peak, b + s)
+    return jsonify({"times": times, "buy": buy, "sell": sell, "peak": round(peak, 2)})
 
 
 @app.route('/api/close-position', methods=['POST'])
@@ -4690,6 +4792,27 @@ def pos_monitor_loop():
                 _realized = _rg._today_realized_pnl()
                 _unrealized = 0.0
                 _mtm_unreliable = False   # any open position priced from nothing → kill-floor must not fire this cycle
+
+                # ── Per-strategy MTM snapshot (task 73) ──────────────────────────
+                # Feeds the Today's Peak "Graph" view's per-strategy line + the
+                # Realised/Unrealised/Current switch. Keyed the SAME way the
+                # dashboard's Summary rows are (strategy key, else MANUAL/WEBHOOK by
+                # source) so the frontend can look a row up directly. Each value =
+                # [realized, unrealized]. "__all" = whole-account display totals.
+                # DELIBERATELY display-only + includes PAPER (the account kill-floor's
+                # own _realized above stays live-only by design — Critical Rule 6);
+                # computed entirely from `data` already fetched + the LTP loop below,
+                # so ZERO extra Dhan calls.
+                def _mkey(_r):
+                    _s = str(_r.get("source") or "STRATEGY").upper()
+                    return _s if _s in ("MANUAL", "WEBHOOK") else (_r.get("strategy") or "STRATEGY")
+                _mtm_by_strat = {}
+                _disp_realized = 0.0
+                for _d in data.get("details", []):
+                    _pnl = float(_d.get("pnl") or 0)
+                    _disp_realized += _pnl
+                    _mtm_by_strat.setdefault(_mkey(_d), [0.0, 0.0])[0] += _pnl
+
                 _active_pos = [_p for _p in open_pos
                                if _p.get("status") != "blocked"
                                and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
@@ -4708,12 +4831,18 @@ def pos_monitor_loop():
                         _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
                                 else (_epx - _ltp) * _qty
                         _unrealized += _unrl
+                        _mtm_by_strat.setdefault(_mkey(_p), [0.0, 0.0])[1] += _unrl
                     else:
                         # this leg contributed NOTHING to MTM (no price anywhere) —
                         # total is understated; kill-floor treats this cycle as
                         # unreliable (never fire a kill-all on incomplete data)
                         _mtm_unreliable = True
                 _total_pnl = _realized + _unrealized
+
+                # finalize per-strategy dict: round + account rollup
+                for _k in list(_mtm_by_strat.keys()):
+                    _mtm_by_strat[_k] = [round(_mtm_by_strat[_k][0], 2), round(_mtm_by_strat[_k][1], 2)]
+                _mtm_by_strat["__all"] = [round(_disp_realized, 2), round(_unrealized, 2)]
 
                 # Day-rollover check — MUST run before the peak/history update below.
                 # trader_dashboard runs as a long-lived systemd service and is NOT
@@ -4759,6 +4888,7 @@ def pos_monitor_loop():
                     round(_trailing_peak_pnl, 2),
                     round(_total_pnl, 2),
                     round(_daily_peak_ever, 2),      # v[3]: floor line base (monotonic, never drops)
+                    _mtm_by_strat,                   # v[4]: {key: [realized, unrealized]}, "__all" = account (task 73)
                 ))
                 # Cap sized for a FULL trading day, not a rolling window. Loop cycles
                 # every ~5s (time.sleep(5) at the bottom, plus whatever the SL/TP/
