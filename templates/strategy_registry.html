@@ -2,99 +2,133 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Strategy Registry — CODE3B</title>
 <style>
-  :root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--bd:#30363d;--tx:#e6edf3;--mut:#8b949e;
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#21262d;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;
         --green:#3fb950;--red:#f85149;--blue:#58a6ff;--amber:#d29922;--dim:#6e7681}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 -apple-system,Segoe UI,Roboto,sans-serif}
-  .wrap{max-width:1180px;margin:0 auto;padding:22px 18px 60px}
-  .head{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px}
-  h1{font-size:22px;margin:0}
-  .sub{color:var(--mut);font-size:12.5px}
-  .bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin:16px 0 8px}
-  .bar input{background:var(--panel);border:1px solid var(--bd);color:var(--tx);border-radius:7px;padding:7px 11px;font-size:13px;min-width:220px}
-  .chip{background:var(--panel2);border:1px solid var(--bd);color:var(--mut);border-radius:14px;padding:4px 11px;font-size:11.5px;cursor:pointer;user-select:none}
+  .wrap{max-width:1200px;margin:0 auto;padding:20px 18px 70px}
+  h1{font-size:21px;margin:0 0 2px}
+  .lead{color:var(--mut);font-size:12.5px;margin-bottom:2px}
+  .lead .id{font-family:ui-monospace,Menlo,monospace;color:var(--blue);font-weight:700}
+  /* sticky control bar */
+  .bar{position:sticky;top:0;z-index:5;background:var(--bg);padding:14px 0 10px;margin-top:8px;
+       border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .bar input{background:var(--panel);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:13px;min-width:230px;flex:1}
+  .seg{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+  .seg button{background:var(--panel);border:none;color:var(--mut);padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
+  .seg button.on{background:#1f6feb;color:#fff}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;margin:12px 0 4px}
+  .chip{background:var(--panel2);border:1px solid var(--bd);color:var(--mut);border-radius:14px;padding:5px 12px;font-size:11.5px;cursor:pointer;user-select:none;white-space:nowrap}
   .chip.on{background:#1f6feb22;border-color:var(--blue);color:var(--blue)}
-  .fam{margin-top:20px}
-  .famhd{display:flex;align-items:baseline;gap:10px;padding:8px 2px 6px;border-bottom:1px solid var(--bd)}
-  .famhd .fid{font-weight:800;color:var(--blue);font-size:15px;letter-spacing:.4px}
-  .famhd .fnm{font-weight:700;font-size:14.5px}
-  .famhd .fds{color:var(--mut);font-size:12px}
-  table{width:100%;border-collapse:collapse;margin-top:4px}
-  td,th{padding:8px 10px;border-bottom:1px solid #21262d;text-align:left;vertical-align:top}
-  th{color:var(--dim);font-size:10.5px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
-  .id{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--blue);white-space:nowrap}
-  .nm{font-weight:600}
+  .chip b{color:var(--tx);font-weight:700}
+  .chip.on b{color:var(--blue)}
+  /* section card */
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:11px;margin-top:14px;overflow:hidden}
+  .chd{display:flex;align-items:center;gap:11px;padding:12px 15px;cursor:pointer;user-select:none}
+  .chd:hover{background:var(--panel2)}
+  .chd .caret{color:var(--dim);font-size:12px;transition:transform .12s;width:12px}
+  .chd.closed .caret{transform:rotate(-90deg)}
+  .chd .fid{font-family:ui-monospace,Menlo,monospace;font-weight:800;color:var(--blue);font-size:15px}
+  .chd .fnm{font-weight:700;font-size:14.5px}
+  .chd .fds{color:var(--mut);font-size:12px;flex:1}
+  .cnt{background:var(--panel2);border:1px solid var(--bd);color:var(--mut);border-radius:11px;padding:2px 9px;font-size:11px;font-weight:700}
+  .cbody{overflow-x:auto}
+  table{width:100%;border-collapse:collapse}
+  td,th{padding:9px 15px;border-top:1px solid var(--bd2);text-align:left;vertical-align:middle;white-space:nowrap}
+  th{color:var(--dim);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:700}
+  tr.dep{background:#23863610}
+  .id{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--blue)}
+  .nm{font-weight:600;white-space:normal}
   .mono{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--mut)}
-  .st{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:11px;white-space:nowrap;text-transform:uppercase}
+  .st{font-size:10px;font-weight:700;padding:2px 8px;border-radius:11px;text-transform:uppercase}
   .st.paper{background:#1f6feb22;color:var(--blue)} .st.live{background:#23863622;color:var(--green)}
   .st.research{background:#8b949e22;color:var(--mut)} .st.rejected{background:#da363322;color:var(--red)}
   .st.failed{background:#d2992222;color:var(--amber)} .st.legacy{background:#6e768122;color:var(--dim)}
+  .now{font-size:9.5px;font-weight:700;padding:1px 7px;border-radius:9px;margin-left:6px;background:#23863622;color:var(--green)}
+  .now.off{background:#6e768122;color:var(--dim)}
   a.lnk{color:var(--blue);text-decoration:none;font-size:12px} a.lnk:hover{text-decoration:underline}
-  .empty{color:var(--mut);padding:30px;text-align:center}
+  .empty{color:var(--mut);padding:34px;text-align:center}
 </style></head>
 <body><div class="wrap">
-  <div class="head"><h1>🗂️ Strategy Registry</h1><span class="sub" id="sub"></span></div>
-  <div class="sub">One place for every strategy — deployed, research, legacy, backtest. Canonical
-    <b>family.member</b> ID (e.g. <span class="id">00.01</span>) is the SAME identity shown in Logs,
-    RMS, Positions, Reports &amp; the Lab. New strategies register via <span class="mono">strategy_registry.add()</span>.</div>
+  <h1>🗂️ Strategy Registry</h1>
+  <div class="lead">Every strategy in one place — deployed · research · legacy · backtest. Canonical
+    <span class="id">family.member</span> ID (same identity in Logs, RMS, Positions, Reports &amp; Lab).
+    New ones register via <span class="mono">strategy_registry.add()</span>.</div>
+
   <div class="bar">
-    <input id="q" placeholder="🔍 search id / name / config-key / file…" oninput="render()">
-    <span id="filters"></span>
+    <input id="q" placeholder="🔍 search  id · name · config-key · file" oninput="render()">
+    <span class="lead" style="margin:0">Group by</span>
+    <span class="seg"><button id="gFam" class="on" onclick="setGroup('family')">Family</button><button id="gSt" onclick="setGroup('status')">Status</button></span>
   </div>
+  <div class="chips" id="chips"></div>
   <div id="tree"></div>
 </div>
 <script>
-let REG={families:{},strategies:{}}, CFG={}, HIDE={};
+let REG={families:{},strategies:{}}, CFG={}, HIDE={}, GROUP='family', CLOSED={};
 const STATUSES=['paper','live','research','rejected','failed','legacy'];
+try{CLOSED=JSON.parse(localStorage.getItem('reg_closed')||'{}')}catch(e){}
+function saveClosed(){try{localStorage.setItem('reg_closed',JSON.stringify(CLOSED))}catch(e){}}
+
 async function load(){
   try{const r=await fetch('/api/strategy-registry',{cache:'no-store'});REG=await r.json();}catch(e){}
   try{const r=await fetch('/api/config',{cache:'no-store'});CFG=await r.json();}catch(e){}
-  const strs=REG.strategies||{};
-  document.getElementById('sub').textContent=Object.keys(strs).length+' strategies · '+Object.keys(REG.families||{}).length+' families';
-  const fbox=document.getElementById('filters');
-  fbox.innerHTML='<span class="chip on" data-st="all" onclick="tog(this)">all</span>'+
-    STATUSES.map(s=>`<span class="chip on" data-st="${s}" onclick="tog(this)">${s}</span>`).join('');
   render();
 }
-function tog(el){const s=el.dataset.st;
-  if(s==='all'){HIDE={};document.querySelectorAll('.chip').forEach(c=>c.classList.add('on'));}
-  else{HIDE[s]=!HIDE[s];el.classList.toggle('on',!HIDE[s]);
-    const allon=STATUSES.every(x=>!HIDE[x]);const a=document.querySelector('.chip[data-st=all]');if(a)a.classList.toggle('on',allon);}
-  render();
+function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]}));}
+function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
+
+function setGroup(g){GROUP=g;document.getElementById('gFam').classList.toggle('on',g==='family');
+  document.getElementById('gSt').classList.toggle('on',g==='status');render();}
+function tog(st){ if(st==='all'){HIDE={};}else{HIDE[st]=!HIDE[st];} render(); }
+
+function chipsBar(){
+  const all=allStrats(), by={};STATUSES.forEach(s=>by[s]=0);all.forEach(m=>{by[m.status]=(by[m.status]||0)+1;});
+  const anyHidden=STATUSES.some(s=>HIDE[s]);
+  let h=`<span class="chip ${!anyHidden?'on':''}" onclick="tog('all')">all <b>${all.length}</b></span>`;
+  h+=STATUSES.map(s=>`<span class="chip ${!HIDE[s]?'on':''}" onclick="tog('${s}')"><span class="st ${s}" style="padding:1px 6px">${s}</span> <b>${by[s]||0}</b></span>`).join('');
+  document.getElementById('chips').innerHTML=h;
 }
-function liveStatus(ck){ // real live/paper/stopped from config, if this strategy has a config key
-  if(!ck||!CFG[ck])return null; const c=CFG[ck]||{};
-  return c.active?(c.mode||'paper'):'off';
+function rowHTML(m){
+  const live=liveNow(m.config_key);
+  const now=live?`<span class="now ${live==='off'?'off':''}">${live==='off'?'stopped':live+' now'}</span>`:'';
+  const link=m.slug?`<a class="lnk" href="/lab/runs/${m.slug}/index.html" target="_blank">Lab ↗</a>`:'—';
+  const dep=(live&&live!=='off')?'dep':'';
+  return `<tr class="${dep}"><td class="id">${m.id}</td><td class="nm">${m.name||''}</td>
+    <td><span class="st ${m.status||'research'}">${m.status||'research'}</span>${now}</td>
+    <td class="mono">${m.config_key||'—'}</td>
+    <td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>
+    <td>${link}</td></tr>`;
+}
+function toggleCard(el,key){el.classList.toggle('closed');const c=el.classList.contains('closed');CLOSED[key]=c;el.nextElementSibling.style.display=c?'none':'';saveClosed();}
+function card(key,title,desc,rows,openDefault){
+  const closed=CLOSED[key]!==undefined?CLOSED[key]:!openDefault;
+  return `<div class="card"><div class="chd ${closed?'closed':''}" onclick="toggleCard(this,'${key}')">
+      <span class="caret">▼</span>${title}<span class="fds">${desc||''}</span><span class="cnt">${rows.length}</span></div>
+    <div class="cbody" style="${closed?'display:none':''}"><table>
+      <tr><th>ID</th><th>Name</th><th>Status</th><th>Config key</th><th>File</th><th>Open</th></tr>
+      ${rows.map(rowHTML).join('')}</table></div></div>`;
 }
 function render(){
+  chipsBar();
   const q=(document.getElementById('q').value||'').toLowerCase();
-  const fams=REG.families||{}, strs=REG.strategies||{};
-  const byFam={};
-  for(const id in strs){const s=strs[id]; const fid=id.split('.')[0]; (byFam[fid]=byFam[fid]||[]).push({id,...s});}
+  const match=m=>!HIDE[m.status] && (!q || (m.id+' '+(m.name||'')+' '+(m.config_key||'')+' '+(m.slug||'')+' '+(m.live_file||'')).toLowerCase().includes(q));
   let html='', shown=0;
-  Object.keys(fams).sort().forEach(fid=>{
-    let mem=(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1)
-      .filter(m=>!HIDE[m.status])
-      .filter(m=>!q || (m.id+' '+(m.name||'')+' '+(m.config_key||'')+' '+(m.slug||'')+' '+(m.live_file||'')).toLowerCase().includes(q));
-    if(!mem.length)return; shown+=mem.length;
-    const f=fams[fid]||{};
-    html+=`<div class="fam"><div class="famhd"><span class="fid">${fid}</span><span class="fnm">${f.name||fid}</span><span class="fds">${f.desc||''}</span></div>
-      <table><tr><th>ID</th><th>Name</th><th>Status</th><th>Config key</th><th>File</th><th>Open</th></tr>`;
-    mem.forEach(m=>{
-      const live=liveStatus(m.config_key);
-      const liveTag=live?` <span class="st ${live==='off'?'legacy':(live==='live'?'live':'paper')}" title="running now">${live==='off'?'stopped':live+' now'}</span>`:'';
-      const links=[];
-      if(m.slug) links.push(`<a class="lnk" href="/lab/runs/${m.slug}/index.html" target="_blank">Lab ↗</a>`);
-      html+=`<tr>
-        <td class="id">${m.id}</td>
-        <td class="nm">${m.name||''}</td>
-        <td><span class="st ${m.status||'research'}">${m.status||'research'}</span>${liveTag}</td>
-        <td class="mono">${m.config_key||'—'}</td>
-        <td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>
-        <td>${links.join(' ')||'—'}</td></tr>`;
+  if(GROUP==='family'){
+    const fams=REG.families||{}, by={};allStrats().forEach(m=>{(by[m.fid]=by[m.fid]||[]).push(m);});
+    Object.keys(fams).sort().forEach(fid=>{
+      const rows=(by[fid]||[]).filter(match).sort((a,b)=>a.id<b.id?-1:1); if(!rows.length)return; shown+=rows.length;
+      const f=fams[fid]||{};
+      html+=card('fam:'+fid,`<span class="fid">${fid}</span><span class="fnm">${f.name||fid}</span>`,f.desc,rows,true);
     });
-    html+='</table></div>';
-  });
+  }else{ // group by status (deployed/active order)
+    const order=['live','paper','research','failed','rejected','legacy'];
+    order.forEach(st=>{
+      if(HIDE[st])return;
+      const rows=allStrats().filter(m=>m.status===st).filter(m=>!q||(m.id+' '+(m.name||'')+' '+(m.config_key||'')).toLowerCase().includes(q)).sort((a,b)=>a.id<b.id?-1:1);
+      if(!rows.length)return; shown+=rows.length;
+      html+=card('st:'+st,`<span class="st ${st}" style="font-size:12px;padding:3px 10px">${st}</span>`,'',rows,st==='live'||st==='paper');
+    });
+  }
   document.getElementById('tree').innerHTML=shown?html:'<div class="empty">No strategies match.</div>';
 }
 load();
