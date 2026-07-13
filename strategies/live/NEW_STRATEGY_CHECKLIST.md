@@ -47,6 +47,7 @@ mein deta hai: no-premium skip → RMS gate → default SL tags → smart_order.
 | 8 | **`dhan_feed.start(creds, [...])` startup pe** (agar liquidity filter / live LTP chahiye) | Sirf `add()` no-op hai jab tak feed thread na chale. TRAP #65 |
 | 9 | **Config `symbols` ko parse karo** — string bhi ho sakta hai (comma), list bhi | Raw string pe `for sym in ...` = character-by-character iterate, silently 0 symbols. TRAP #16 |
 | 10 | **Dashboard `STRATEGIES` dict mein sahi `script` + `grep` map karo** | Galat map = tumhari nayi file launch hi nahi hogi (rsi_trader.py vs 01_rsi_v1.py wala trap). |
+| 11 | **Startup pe** `from singleton_guard import acquire_singleton` + `if not acquire_singleton(strategy_id): return` (log ready hone ke turant baad, loop se pehle) | Do copy ek saath (scheduler/restart race, get_pid TOCTOU gap) = dono ka apna `pos=None` = ek signal pe DO order. EOD 2026-07-13 orbst/dvert. Pre-commit `SINGLETON` check bina iske block karega. |
 
 ---
 

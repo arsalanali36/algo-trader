@@ -234,6 +234,12 @@ def main(sid, once=False):
     feed_started = False
     log(f"[BOOT] universe_trader id={sid} mode={mode} once={once}")
 
+    if not once:
+        from singleton_guard import acquire_singleton
+        if not acquire_singleton(sid):
+            log(f"[SINGLETON] another {sid} process already live — exiting (duplicate-order guard)")
+            return
+
     _recover_state_from_order_store(sid, log)
     # Seed last_day to TODAY (not None) — recovery must never be immediately
     # undone by the loop's own "new day" check below. With last_day=None, the

@@ -762,6 +762,10 @@ def main(strategy_id="range"):
     _STRAT_ID = strategy_id
     mode = "live" if "--live" in sys.argv else "paper"
     log.info(f"Range Trader starting — mode={mode}")
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
     _recover_state_from_order_store(strategy_id)
 
     # TRAP #65: this process only ever called dhan_feed.add() to subscribe

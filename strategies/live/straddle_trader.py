@@ -261,6 +261,10 @@ def _recover(sid, log):
 # ─────────────────────────────── main loop ─────────────────────────────────
 def run(paper_mode=True, strategy_id="straddle_v1"):
     log = _make_logger(strategy_id)
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
     log.info("=" * 62)
     log.info(f"  straddle_trader.py  |  {strategy_id}  |  {'PAPER' if paper_mode else '⚡ LIVE'}")
     log.info("=" * 62)
