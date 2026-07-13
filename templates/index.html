@@ -4018,7 +4018,8 @@
         }).filter(Boolean).join(' ');
       }
       const reserved = new Set(['_risk', 'webhooks']);
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+      // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -4048,9 +4049,27 @@
         + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
         + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th></th><th></th><th></th><th></th>'
         + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
-      stratIds.forEach(id => {
+      // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
+      const _rlc = k => String(k).toLowerCase();
+      const _rUsed = new Set();
+      const _rOrdered = [];
+      STRAT_GROUPS.forEach(g => {
+        const inG = stratIds.filter(k => g.keys.includes(_rlc(k)))
+                            .sort((a, b) => g.keys.indexOf(_rlc(a)) - g.keys.indexOf(_rlc(b)));
+        if (inG.length) { _rOrdered.push({ h: g.title }); inG.forEach(k => { _rUsed.add(k); _rOrdered.push({ id: k }); }); }
+      });
+      const _rLeft = stratIds.filter(k => !_rUsed.has(k)).sort();
+      if (_rLeft.length) { _rOrdered.push({ h: 'Other' }); _rLeft.forEach(k => _rOrdered.push({ id: k })); }
+      _rOrdered.forEach(item => {
+        if (item.h) {
+          html += `<tr><td colspan="11" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
+          return;
+        }
+        const id = item.id;
         const ov = RISK_CFG.per_strategy[id] || {};
-        const dispName = fmtStratName(id);
+        const _num = MISSION_NUM[_rlc(id)];
+        const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center">${_num}</span>` : '';
+        const dispName = _numBadge + (MISSION_NAME[_rlc(id)] || fmtStratName(id));
         const curMode = ov.capital_mode || '';
         const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
         html += `<tr><td title="${id}">${dispName}</td>
@@ -4252,7 +4271,8 @@
       let cfg = {};
       try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch (e) { }
       const reserved = new Set(['_risk', 'webhooks']);
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+      // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
 
       const gPct = document.getElementById('risk-global-pct').value;
       const gRs = document.getElementById('risk-global-rs').value;
@@ -6758,6 +6778,26 @@
       });
     }
 
+    // Shared strategy display maps — used by BOTH the Logs sidebar (renderLogTab)
+    // and the Risk > Per-Strategy Override table so they stay in sync (Rule 6B).
+    const MISSION_NUM = {
+      orb_v1:'00', straddle_v1:'01', dvert_v1:'02', orbst_v1:'03',
+      chainzone_v1:'04', backspread_v1:'05', shortvol_v1:'06', banknifty_v1:'07',
+    };
+    const MISSION_NAME = {
+      orb_v1:'Mid-Day ORB', straddle_v1:'Long Straddle', dvert_v1:'Debit Vertical',
+      orbst_v1:'ORB + Supertrend', chainzone_v1:'Chain-Zone', backspread_v1:'Ratio Backspread',
+      shortvol_v1:'Short-Vol Iron-Fly (off)', banknifty_v1:'BankNifty ORB',
+      ars_chain_v1:'Ars Chain (live)', ars_chain_v1_paper:'Ars Chain (paper)',
+      range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
+      ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
+    };
+    const STRAT_GROUPS = [
+      { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
+      { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
+      { title:'Webhook / Infra', keys:['webhook_v1'] },
+    ];
+
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
       if (!container) return;
@@ -6772,25 +6812,10 @@
       // --- logical ordering + grouping (was raw config-key / alphabetical order) ---
       // A = option-strategy mission (numbered 01/02/03), B = other live traders + their
       // paper shadows, C = webhook/infra. Unknown keys fall into a trailing "Other" group.
-      const _LOG_GROUPS = [
-        { title: 'Option Strategies (mission)', keys: ['orb_v1', 'straddle_v1', 'dvert_v1', 'orbst_v1', 'chainzone_v1', 'backspread_v1', 'shortvol_v1', 'banknifty_v1'] },
-        { title: 'Other Strategies', keys: ['ars_chain_v1', 'ars_chain_v1_paper', 'range_v1', 'rsi_v1', 'rsi_v1_paper', 'ema_v1', 'universe_v1'] },
-        { title: 'Webhook / Infra', keys: ['webhook_v1'] },
-      ];
-      // mission number badge (00-07, OPTION_STRATEGY_MISSION.md numbering)
-      const _LOG_NUM = {
-        orb_v1: '00', straddle_v1: '01', dvert_v1: '02', orbst_v1: '03',
-        chainzone_v1: '04', backspread_v1: '05', shortvol_v1: '06', banknifty_v1: '07',
-      };
-      // saaf padhne-layak naam (raw config-key ki jagah sidebar me dikhega; key title me rehti)
-      const _LOG_NAME = {
-        orb_v1: 'Mid-Day ORB', straddle_v1: 'Long Straddle', dvert_v1: 'Debit Vertical',
-        orbst_v1: 'ORB + Supertrend', chainzone_v1: 'Chain-Zone', backspread_v1: 'Ratio Backspread',
-        shortvol_v1: 'Short-Vol Iron-Fly (off)', banknifty_v1: 'BankNifty ORB',
-        ars_chain_v1: 'Ars Chain (live)', ars_chain_v1_paper: 'Ars Chain (paper)',
-        range_v1: 'Range Breakout', rsi_v1: 'RSI', rsi_v1_paper: 'RSI (paper)',
-        ema_v1: 'EMA Crossover', universe_v1: 'Universe Scan', webhook_v1: 'TradingView Webhook',
-      };
+      // shared maps (defined once above — Rule 6B, same data drives the Risk table)
+      const _LOG_GROUPS = STRAT_GROUPS;
+      const _LOG_NUM = MISSION_NUM;
+      const _LOG_NAME = MISSION_NAME;
       const _logName = k => _LOG_NAME[_lcKey(k)] || String(k).toUpperCase();
       const _lcKey = k => String(k).toLowerCase();
       const _usedKeys = new Set();
