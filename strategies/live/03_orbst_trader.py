@@ -380,7 +380,7 @@ def _do_entry(strategy_id, sym, sec_id, trad_sym, lots, lot_size, mode, broker, 
         import execution_gateway as gw
         res = gw.execute_signal(strategy_id, sym, "BUY", lots, lot_size, sec_id, trad_sym,
                                 seg="NSE_FNO", mode=mode, broker_name=broker, tag="ORBST",
-                                instrument="options", log=log.info)
+                                instrument="options", own_exit=True, log=log.info)  # #63: own spot-ATR exit, no RMS default trailing
         if res["ok"]:
             return True, res["qty"]
         log.info(f"  [ENTRY SKIP] {sym} — {res.get('status')}: {res.get('reason')}")

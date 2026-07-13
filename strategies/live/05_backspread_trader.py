@@ -403,7 +403,7 @@ def _enter_backspread(strategy_id, sym, spot, direction, tc, mode, bname, log):
     try:
         res = gw.execute_signal(strategy_id, sym, "BUY", 2 * lots, (o_lot or a_lot or 1),
                                 o_sec, o_sym, seg="NSE_FNO", mode=mode, broker_name=bname,
-                                tag="BSPRD", instrument="options", group_id=gid, log=log.info)
+                                tag="BSPRD", instrument="options", group_id=gid, own_exit=True, log=log.info)  # #63: own premium tp-sl exit
     except Exception as e:
         log.error(f"[BSPRD] OTM BUY error: {e}"); return None
     if not res["ok"]:

@@ -64,11 +64,17 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                    seg="NSE_FNO", mode="paper", broker_name=None, tag="",
                    source="strategy", instrument=None, extra_tags=None,
                    group_id="", product=None, gate=True, est_price=None,
-                   buffer_bps=10, sl_type_override=None, log=print):
+                   buffer_bps=10, sl_type_override=None, own_exit=False, log=print):
     """Ek ENTRY leg — RMS-gated, order_store-recorded. `lots * lot_size` = qty
     (size-down ho sakta hai — RETURNED qty hi state mein rakho, apna calculation
     nahi). `gate=False` sirf protective legs ke liye (hedge BUY — jo SELL ke
-    saath jaana hi chahiye; use RMS se block karna naked SELL chhod deta)."""
+    saath jaana hi chahiye; use RMS se block karna naked SELL chhod deta).
+
+    `own_exit=True`: strategy apna exit khud manage karta hai (jaise ORB-family —
+    spot-ATR stop / premium tp-sl in-process) — is entry pe global RMS default
+    per-instrument SL profile (aggressive-trailing wagera) NAHI lagana. RMS ka
+    outer safety net (daily-loss cap + 3:15 EOD squareoff) phir bhi lagta hai
+    (wo per-position tag pe depend nahi karta). #63."""
     qty = int(lots) * int(lot_size or 1)
     instrument = instrument or _instrument_for(seg)
 
@@ -113,14 +119,20 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
         # off ho to khaali.
         # sl_type_override lets a caller (e.g. webhook, whose config carries a
         # per-signal SL-type selector) pick the RMS SL profile; None = global.
-        try:
-            _sl = (risk_gate.default_instrument_sl_tags(strategy_id, symbol,
-                                                        mode_override=sl_type_override)
-                   if sl_type_override is not None
-                   else risk_gate.default_instrument_sl_tags(strategy_id, symbol))
-            tags += [t for t in _sl if t not in tags]
-        except Exception:
-            pass
+        # own_exit strategies opt OUT — their own in-process exit governs, only the
+        # RMS outer net (daily cap + 3:15 EOD, both tag-independent) still applies (#63).
+        if own_exit:
+            log(f"[GATEWAY] {symbol} — own_exit: strategy manages its own SL/target "
+                f"(no RMS default trailing; daily-cap + 3:15 EOD still apply)")
+        else:
+            try:
+                _sl = (risk_gate.default_instrument_sl_tags(strategy_id, symbol,
+                                                            mode_override=sl_type_override)
+                       if sl_type_override is not None
+                       else risk_gate.default_instrument_sl_tags(strategy_id, symbol))
+                tags += [t for t in _sl if t not in tags]
+            except Exception:
+                pass
 
     res = smart_order.execute(side, symbol, sec_id, seg, qty, trad_sym, mode, broker,
                               buffer_bps=buffer_bps, log=log, tag=tag,

@@ -377,7 +377,7 @@ def _enter_spread(strategy_id, sym, spot, direction, tc, mode, bname, log):
     try:
         res = gw.execute_signal(strategy_id, sym, "BUY", lots, (lot_size or 1), sec_id, trad_sym,
                                 seg="NSE_FNO", mode=mode, broker_name=bname, tag="DVERT",
-                                instrument="options", group_id=gid, log=log.info)
+                                instrument="options", group_id=gid, own_exit=True, log=log.info)  # #63: own premium tp-sl exit
     except Exception as e:
         log.error(f"[DVERT] ATM BUY error: {e}"); return None
     if not res["ok"]:

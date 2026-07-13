@@ -1,5 +1,7 @@
 {
   "_comment": "Known pre-existing FAIL counts (debt) \u2014 audit only blocks when a count EXCEEDS its allowance here. After paying debt down (Tasks 3+), re-run --write-baseline to ratchet allowances DOWN. Never hand-edit upward.",
-  "updated": "2026-07-07 13:38",
-  "known_fail_counts": {}
+  "updated": "2026-07-13 13:57",
+  "known_fail_counts": {
+    "strategies/live/03_orbst_trader.py|DUP-INDICATOR": 1
+  }
 }

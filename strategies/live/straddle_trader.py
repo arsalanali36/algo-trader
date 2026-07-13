@@ -364,7 +364,7 @@ def _enter_straddle(strategy_id, sym, spot, tc, mode, bname, log):
         try:
             res = gw.execute_signal(strategy_id, sym, "BUY", lots, (lot_size or 1), sec_id, trad_sym,
                                     seg="NSE_FNO", mode=mode, broker_name=bname, tag="STRDL",
-                                    instrument="options", group_id=gid, log=log.info)
+                                    instrument="options", group_id=gid, own_exit=True, log=log.info)  # #63: own premium tp-sl exit
         except Exception as e:
             log.error(f"[STRDL] {opt_type} entry error: {e}")
             _rollback(strategy_id, sym, legs, mode, bname, log); return None
