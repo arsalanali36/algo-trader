@@ -35,7 +35,8 @@ import optlake_load as ol
 import bs_option as bs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = 1
+VERSION = 2   # v2 (2026-07-14): + rsi_14, ema20_dist_pct, ema50_dist_pct (spot 5m) —
+              # same vocabulary the hand-designed live strategies use (user request)
 OUT = os.path.join(HERE, "ml_features_v%d.csv.gz" % VERSION)
 MANIFEST = os.path.join(HERE, "ml_features_manifest.json")
 
@@ -147,6 +148,14 @@ def build(flag="WEEK"):
     s["gap_open_pct"] = s.day.map(gap)
     rv = s.ret_5m.rolling(RV_BARS).std() * np.sqrt(252.0 * BARS_PER_DAY) * 100.0
     s["rv_20b_ann"] = rv
+    # v2: classic indicator vocabulary (RSI/EMA) — same tools the live strategies use
+    delta = s.Close.diff()
+    gain = delta.clip(lower=0).ewm(alpha=1.0 / 14, adjust=False).mean()
+    loss = (-delta.clip(upper=0)).ewm(alpha=1.0 / 14, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    s["rsi_14"] = 100 - 100 / (1 + rs)
+    s["ema20_dist_pct"] = (s.Close / s.Close.ewm(span=20, adjust=False).mean() - 1) * 100
+    s["ema50_dist_pct"] = (s.Close / s.Close.ewm(span=50, adjust=False).mean() - 1) * 100
     f = f.merge(s.drop(columns=["day"]), on="Datetime", how="inner")
     f["rv_iv_ratio"] = f.rv_20b_ann / f.atm_iv
 
