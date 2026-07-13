@@ -486,7 +486,10 @@ _REPORT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 @app.route('/registry')
 def strategy_registry_page():
     """Unified Strategy Registry tree view — every strategy in one place (login-gated)."""
-    return render_template("strategy_registry.html")
+    from flask import make_response
+    resp = make_response(render_template("strategy_registry.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'  # always fresh (no stale-cache UI)
+    return resp
 
 @app.route('/reports')
 def reports_list():
