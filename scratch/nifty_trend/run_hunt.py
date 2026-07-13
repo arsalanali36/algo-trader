@@ -232,6 +232,22 @@ def main():
     for pas in ("instrument", "rms", "bs"):
         combos[f"{pas}|full"]["opt_table"] = opt_table
 
+    # ---- Task 1: data-integrity pre-check (TRAP #109 worst-day sanity) ----
+    # run_hunt's BS pass is directional long-ATM options; the worst-adverse-move
+    # bound applies. A significant-but-corrupt result is caught here.
+    import data_integrity
+    di = data_integrity.check(combos["bs|full"].get("all_trades", []),
+                              structure="long_option")
+    if not di["shippable"]:
+        print(f"\n🔴 DATA-INTEGRITY FAIL — {di['verdict']}", flush=True)
+        for name, c in di["checks"].items():
+            if not c.get("ok", True):
+                print(f"   [{name}] {c.get('note','')}", flush=True)
+        print("   Significance passed but data is not trustworthy — NOT marking shippable.",
+              flush=True)
+    else:
+        print("  data-integrity: worst-adverse-move sanity OK", flush=True)
+
     dna = {**winner["params"], "exit": winner["exit"]}
     out = {"meta": {
         "window": [str(d.Datetime.iloc[0])[:10], str(d.Datetime.iloc[-1])[:10]],
@@ -298,6 +314,7 @@ def main():
             "instrument": "NIFTY 50", "lot_size": lot,
             "window": out["meta"]["window"], "days": out["meta"]["days"],
             "significant": True,
+            "shippable": di["shippable"], "data_integrity": di,
             "bs_full": {k: combos["bs|full"]["metrics"].get(k) for k in
                         ("sharpe", "net_pct", "maxdd", "win_rate", "trades", "profit_factor")},
             "instrument_full_sharpe": combos["instrument|full"]["metrics"].get("sharpe"),

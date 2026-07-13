@@ -34,8 +34,15 @@ def grid(flag="WEEK", tf="5m"):
     if key in _G_CACHE:
         return _G_CACHE[key]
     ch = lake.chain_frame(flag, tf, offs=range(-10, 11))
-    atm = lake.atm_frame(flag, tf)[["Datetime", "strike", "atm_iv"]]
+    atm_full = lake.atm_frame(flag, tf)
+    atm = atm_full[["Datetime", "strike", "atm_iv"]]
     m = ch.merge(atm, on="Datetime", how="inner").reset_index(drop=True)
+    # coverage guard (TRAP #107): chain-lake still filling vs the ATM reference →
+    # inner-join truncates to the overlap and yields a bogus short-history backtest.
+    import data_integrity
+    _ok, _det = data_integrity.assert_coverage(m, atm_full, min_pct=0.9, label="chain⋈atm grid")
+    if not _ok:
+        print(f"[real_struct2] {_det['label']}: {_det['note']}", flush=True)
     offs = list(range(-10, 11))
     def col(side, off):
         tag = "ATM" if off == 0 else (f"ATMp{off}" if off > 0 else f"ATMm{abs(off)}")
