@@ -3890,12 +3890,11 @@ def api_orders():
             if (p.get('tags') or []) and 'CAPITAL_BLOCKED' in p['tags']:
                 continue
             try:
-                qty      = float(p.get("qty") or 0)
-                price    = float(p.get("entry_price") or 0)
-                notional = qty * price
-                if str(p.get("entry") or "").upper() == "SELL":
-                    notional *= _mult
-                p['margin_used'] = round(notional, 2)
+                # Real executing-broker margin: SELL → actual SPAN+exposure via
+                # broker_real_margin (Kite order_margins / Dhan calculator); BUY →
+                # premium paid. Falls back to the multiplier only if the API fails.
+                # (Was crude qty*price*multiplier, which under-showed SELL margin.)
+                p['margin_used'] = round(_rg._leg_capital(p, _rc), 2)
             except Exception:
                 p['margin_used'] = 0
             # Task 8 — current trailing/aggressive SL the monitor will fire on

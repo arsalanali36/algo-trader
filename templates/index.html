@@ -4974,7 +4974,7 @@
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
       let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode)
-        + (t.strategy ? _ordTag(regLabel(t.strategy.split(' | ')[0]), 'name') : '');
+        + (t.strategy ? _ordTag(regId(t.strategy.split(' | ')[0]), 'name') : '');
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -6836,6 +6836,8 @@
       const k=String(key).toLowerCase(), id=MISSION_NUM[k];
       return id ? (id + ' - ' + (MISSION_NAME[k]||key)) : String(key);
     }
+    // just the short canonical ID ("02.01") for compact spots (row tags) — raw key fallback.
+    function regId(key){ if(!key) return key||''; return MISSION_NUM[String(key).toLowerCase()] || String(key); }
 
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
