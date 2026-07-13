@@ -66,6 +66,14 @@ orders.db
 *.bak.split.*
 nifty_config.json.bak*
 
+# Bulletproof: NEVER commit any sqlite DB (live trade/runtime data — must never
+# reach the public GitHub repo, esp. now that VPS is also a git repo)
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
 # node / puppeteer experiments
 node_modules/
 package.json
