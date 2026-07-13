@@ -11,25 +11,36 @@ startDate   = input.time(timestamp("2026-01-01 09:15"), title="Backtest Start Da
 endDate     = input.time(timestamp("2026-12-31 15:15"), title="Backtest End Date",   group="Day Selection")
 inDateRange = (time >= startDate and time <= endDate)
 
-maxTradesPerDay = input.int(2, "Max Trades Per Day", minval=1, group="Day Selection")
+maxTradesPerDay = 2
+// maxTradesPerDay = input.int(4, "Max Trades Per Day", minval=1, group="Day Selection")
 
 // ===== GROUP ORDER FIX — Exit & Zone Logic ko upar lane ke liye =====
 // Pine Script mein jo group pehle declare hoga woh Settings mein upar dikhega
 // Isliye yahan pehle declare kar rahe hain — actual logic neeche same jagah hai
-MainExit_Toggle     = input.bool(true,  "Zone Exit", group="Exit ⏰")
-AtrExit_Toggle      = input.bool(true,  "ATR Exit",  group="Exit ⏰")
-SL_Blw_Fib_Exit_Tog = input.bool(true,  "Fib Exit",  group="Exit ⏰")
-maxCandleSize       = input.float(25.0, "Max Candle Size (Points)", minval=1.0, step=1.0, group="Exit ⏰", tooltip="Entry skip hoga agar candle ka size (High-Low) is value se zyada ho. Nifty ke liye 20-40 try karo.")
+MainExit_Toggle     = true
+AtrExit_Toggle      = true
+SL_Blw_Fib_Exit_Tog = true
 
-HawaME_toggle    = input.bool(false, "🌬️ Hawa Me Zone",      group="🧠 Zone Logic")
-useFreshZoneOnly = input.bool(true,  "✅ Use Fresh Zone Only", group="🧠 Zone Logic")
+// MainExit_Toggle     = input.bool(true,  "Zone Exit", group="Exit ⏰")
+// AtrExit_Toggle      = input.bool(true,  "ATR Exit",  group="Exit ⏰")
+// SL_Blw_Fib_Exit_Tog = input.bool(true,  "Fib Exit",  group="Exit ⏰")
+maxCandleSize       = 40
+// maxCandleSize       = input.float(25.0, "Max Candle Size (Points)", minval=1.0, step=1.0, group="Exit ⏰", tooltip="Entry skip hoga agar candle ka size (High-Low) is value se zyada ho. Nifty ke liye 20-40 try karo.")
+
+
+HawaME_toggle    = false
+useFreshZoneOnly = true
+
+// HawaME_toggle    = input.bool(false, "🌬️ Hawa Me Zone",      group="🧠 Zone Logic")
+// useFreshZoneOnly = input.bool(true,  "✅ Use Fresh Zone Only", group="🧠 Zone Logic")
 // ===== END GROUP ORDER FIX =====
 
 // 🔄 REMOVED: selected_bars_ago manual logic — ab always 1 (yesterday)
 // selected_bars_ago is now hardcoded to 1 (previous day always)
 
 lookback          = 20
-max_jump_pct_input = input.float(50.0, "Max Chain Jump % (Non-Index)", minval=1.0, maxval=500.0, step=5.0, group=grp1, tooltip="Index (Nifty/BankNifty) pe 10% fixed rahega, baaki instruments pe yeh value use hogi")
+max_jump_pct_input = 50
+// max_jump_pct_input = input.float(50.0, "Max Chain Jump % (Non-Index)", minval=1.0, maxval=500.0, step=5.0, group=grp1, tooltip="Index (Nifty/BankNifty) pe 10% fixed rahega, baaki instruments pe yeh value use hogi")
 
 grp2 = "High Chain"
 high_color  = color(color.red)
@@ -40,9 +51,14 @@ low_color   = color(color.green)
 grp4 = "Prev Chain Line Style"
 
 grpX = "KeyLines"
-show_chain_global  = input.bool(true,  "Show Chain Lines 🔗",        group=grpX)
-show_high          = show_chain_global and input.bool(true,  "  ↳ High Chain (H1/H2..)", group=grpX, inline="chain_toggle")
-show_low           = show_chain_global and input.bool(true,  "  ↳ Low Chain  (L1/L2..)", group=grpX, inline="chain_toggle")
+
+show_chain_global  = true
+show_high          = true
+show_low           = true
+
+// show_chain_global  = input.bool(true,  "Show Chain Lines 🔗",        group=grpX)
+// show_high          = show_chain_global and input.bool(true,  "  ↳ High Chain (H1/H2..)", group=grpX, inline="chain_toggle")
+// show_low           = show_chain_global and input.bool(true,  "  ↳ Low Chain  (L1/L2..)", group=grpX, inline="chain_toggle")
 show_chain_name    = show_high or show_low
 line_width    = 1
 line_style_in = "dashed"
@@ -51,7 +67,7 @@ show_labels   = false
 show_chain_price = false
 
 grp5 = "Yest H/L/C Lines💸💸"
-show_hlc        = false
+show_hlc        = true
 // show_hlc        = input.bool(true,         "Show PrevDay H/L/C Lines", group=grpX)
 
 hlc_high_color  = color.red
@@ -81,8 +97,10 @@ fc_fib_font        = size.small
 fc_fib_length      = 10
 
 grp_pd = "Prev Day Fibonacci 📅📅"
-show_pd_fib        = input.bool(false,         "Show Prev Day Fib",        group=grpX,inline = "x1")
-pd_fib_invert      = input.bool(false, "🔄 Invert fib ", group=grpX,inline = "x1")
+show_pd_fib        = false
+// show_pd_fib        = input.bool(false,         "Show Prev Day Fib",        group=grpX,inline = "x1")
+pd_fib_invert      = false
+// pd_fib_invert      = input.bool(false, "🔄 Invert fib ", group=grpX,inline = "x1")
 
 pd_fib_color_1     = color.new(color.blue,   10)
 pd_fib_color_236   = color.new(color.orange, 10)
@@ -574,7 +592,8 @@ labelSize = labelSizeInput == "tiny"  ? size.tiny  :
              labelSizeInput == "large" ? size.large :
              labelSizeInput == "huge"  ? size.huge  : size.auto
 
-enablePivotLines       = input.bool(true, title="Pivot Lines",group = grpX)
+enablePivotLines       = true
+// enablePivotLines       = input.bool(true, title="Pivot Lines",group = grpX)
 PIVOT_INLINE_PP        = "PP"
 PIVOT_INLINE_R         = "R"
 PIVOT_INLINE_S         = "S"
@@ -596,8 +615,8 @@ method delete(PivotGraphic graphic) =>
     graphic.pivotLine.delete()
     graphic.pivotLabel.delete()
 
-initGraphicSettings() => 
-     array.from( 
+initGraphicSettings() =>
+     array.from(
          GraphicSettings.new("P",  pivotColor,       showP),
          GraphicSettings.new("R1", resistanceColor,  showR1),
          GraphicSettings.new("S1", supportColor,     showS1),
@@ -646,7 +665,7 @@ var graphicSettingsArray = initGraphicSettings()
 var drawnGraphics        = matrix.new<PivotGraphic>()
 pivotYearMultiplier      = 1
 
-pivotTimeframeChangeCounter(condition) => 
+pivotTimeframeChangeCounter(condition) =>
     var count = 0
     if condition and bar_index > 0
         count += 1
@@ -658,7 +677,7 @@ securityTimeframeChange = timeframe.change(timeframe.period)
 localPivots      = ta.pivot_point_levels(pivotTypeInput, localTimeframeChange)
 securityPivotsArray = ta.pivot_point_levels(pivotTypeInput, securityTimeframeChange)
 
-[securityPivots, pivotDrawTrigger] = request.security(syminfo.tickerid, pivotTimeframe, [securityPivotsArray, pivotTimeframeChangeCounter(securityTimeframeChange)], 
+[securityPivots, pivotDrawTrigger] = request.security(syminfo.tickerid, pivotTimeframe, [securityPivotsArray, pivotTimeframeChangeCounter(securityTimeframeChange)],
  lookahead = barmerge.lookahead_on)
 
 pivotP  = array.get(securityPivots, 0)
@@ -697,32 +716,44 @@ includeOHLC = true
 useExtraLevels = false
 Extra    = 55510
 
-var selectedLines = array.new_float()
+// 🔄 FIX: float array → typed LevelInfo[] array
+// WAJAH: Pehle classification index-position pe based thi (i <= 4, i == 11, etc).
+// Jab koi toggle (includePIVOT/includeOHLC/useExtraLevels) on/off hota tha,
+// array ka SIZE badal jata tha → sab indices shift ho jate the →
+// same price level "RESISTANCE" se "SUPPORT" ban jata tha sirf position badalne se.
+// Ab har level apna type KHUD carry karta hai — value ke saath bandha hua,
+// array mein uska position kuch bhi ho, type kabhi nahi badlega.
+type LevelInfo
+    float  price
+    string ltype   // "RESISTANCE","SUPPORT","PD_H","PD_L","CP","PD_C"
 
+var LevelInfo[] selectedLines = array.new<LevelInfo>()
 array.clear(selectedLines)
 
 if includePIVOT
-    array.push(selectedLines, pivotR5)
-    array.push(selectedLines, pivotR4)
-    array.push(selectedLines, pivotR3)
-    array.push(selectedLines, pivotR2)
-    array.push(selectedLines, pivotR1)
-    array.push(selectedLines, pivotP)
-    array.push(selectedLines, pivotS1)
-    array.push(selectedLines, pivotS2)
-    array.push(selectedLines, pivotS3)
-    array.push(selectedLines, pivotS4)
-    array.push(selectedLines, pivotS5)
+    array.push(selectedLines, LevelInfo.new(pivotR5, "RESISTANCE"))
+    array.push(selectedLines, LevelInfo.new(pivotR4, "RESISTANCE"))
+    array.push(selectedLines, LevelInfo.new(pivotR3, "RESISTANCE"))
+    array.push(selectedLines, LevelInfo.new(pivotR2, "RESISTANCE"))
+    array.push(selectedLines, LevelInfo.new(pivotR1, "RESISTANCE"))
+    array.push(selectedLines, LevelInfo.new(pivotP,  "CP"))
+    array.push(selectedLines, LevelInfo.new(pivotS1, "SUPPORT"))
+    array.push(selectedLines, LevelInfo.new(pivotS2, "SUPPORT"))
+    array.push(selectedLines, LevelInfo.new(pivotS3, "SUPPORT"))
+    array.push(selectedLines, LevelInfo.new(pivotS4, "SUPPORT"))
+    array.push(selectedLines, LevelInfo.new(pivotS5, "SUPPORT"))
 
 if includeOHLC
-    array.push(selectedLines, prevHigh)
-    array.push(selectedLines, prevClose)
-    array.push(selectedLines, prevLow)
+    array.push(selectedLines, LevelInfo.new(prevHigh,  "PD_H"))
+    array.push(selectedLines, LevelInfo.new(prevClose, "PD_C"))
+    array.push(selectedLines, LevelInfo.new(prevLow,   "PD_L"))
 
 if useExtraLevels
-    array.push(selectedLines, Extra)
+    array.push(selectedLines, LevelInfo.new(Extra, "RESISTANCE"))
 
 // 🔄 CHANGED: selected_bars_ago = 1 (always yesterday)
+// Chain High levels → type "RESISTANCE", Chain Low levels → type "SUPPORT"
+// (pehle yeh sirf _baseCount/_chainHighEnd index-range se inferred hota tha)
 if true
     _ch_thresh = array.get(dh, 1)
     _ch_max_i  = math.min(1 + lookback, 20)
@@ -731,7 +762,7 @@ if true
         if not na(_cph) and _cph > _ch_thresh
             _jump = (_cph - _ch_thresh) / _ch_thresh * 100
             if _jump <= max_jump_pct
-                array.push(selectedLines, _cph)
+                array.push(selectedLines, LevelInfo.new(_cph, "RESISTANCE"))
                 _ch_thresh := _cph
     _cl_thresh = array.get(dl, 1)
     for _ci = 2 to _ch_max_i
@@ -739,7 +770,7 @@ if true
         if not na(_cpl) and _cpl < _cl_thresh
             _drop = (_cl_thresh - _cpl) / _cl_thresh * 100
             if _drop <= max_jump_pct
-                array.push(selectedLines, _cpl)
+                array.push(selectedLines, LevelInfo.new(_cpl, "SUPPORT"))
                 _cl_thresh := _cpl
 
 hline(
@@ -886,21 +917,10 @@ lineLength    = 25
 var float selectedLine = na
 var string lineType    = ""
 
-_baseCount = (includePIVOT ? 11 : 0) + (includeOHLC ? 3 : 0) + (useExtraLevels ? 1 : 0)
-
-_chainHighCount = 0
-if true
-    _tmp_thresh = array.get(dh, 1)
-    _tmp_max_i  = math.min(1 + lookback, 20)
-    for _ci = 2 to _tmp_max_i
-        _cph = array.get(dh, _ci)
-        if not na(_cph) and _cph > _tmp_thresh
-            _jump = (_cph - _tmp_thresh) / _tmp_thresh * 100
-            if _jump <= max_jump_pct
-                _chainHighCount += 1
-                _tmp_thresh := _cph
-
-_chainHighEnd = _baseCount + _chainHighCount - 1
+// 🔄 FIX: _baseCount aur _chainHighEnd (index-math) hata diye gaye.
+// Pehle yahan i<=4, i==11, i>=_baseCount etc. se type decide hota tha —
+// woh sab toggle-dependent index shifting ka root cause tha.
+// Ab seedha lvl.ltype (value ke saath bandha hua) check hota hai.
 
 // 🔒 Resistance-priority lock: ek baar RESISTANCE/PD_H match ho jaye to
 // baad mein loop mein aane wala SUPPORT-type match use overwrite nahi karega.
@@ -909,24 +929,22 @@ var bool _resistanceLocked = false
 _resistanceLocked := false
 
 for i = 0 to array.size(selectedLines) - 1
-    lineVal = array.get(selectedLines, i)
+    lvl = array.get(selectedLines, i)
+    lineVal = lvl.price
     if not na(lineVal) and (low <= lineVal and high >= lineVal)
-        _isResistanceType = (i <= 4) or (i == 11) or (i >= _baseCount and i <= _chainHighEnd)
-        _isSupportType    = (i >= 6 and i <= 10) or (i == 13) or (i > _chainHighEnd)
+        _isResistanceType = (lvl.ltype == "RESISTANCE") or (lvl.ltype == "PD_H")
+        _isSupportType    = (lvl.ltype == "SUPPORT")    or (lvl.ltype == "PD_L")
 
         if _isResistanceType
             selectedLine := lineVal
-            lineType := i == 11 ? "PD_H" : "RESISTANCE"
+            lineType := lvl.ltype
             _resistanceLocked := true
         else if _isSupportType and not _resistanceLocked
             selectedLine := lineVal
-            lineType := i == 13 ? "PD_L" : "SUPPORT"
+            lineType := lvl.ltype
         else if not _resistanceLocked
             selectedLine := lineVal
-            if i == 5
-                lineType := "CP"
-            else if i == 12
-                lineType := "PD_C"
+            lineType := lvl.ltype   // "CP" or "PD_C"
 
 var float trackedHigh  = na
 var float trackedLow   = na
@@ -1200,7 +1218,8 @@ if ta.change(time("D")) != 0
     tradesToday := 0
 
 whSymbol   = input.string("NIFTY", "Webhook symbol", options=["NIFTY","BANKNIFTY"], group="🔗 Webhook")
-whStrategy = input.string("arschain", "Webhook strategy name (dashboard se match karo)", group="🔗 Webhook")
+whStrategy = input.string("arschain_MAIN", "Webhook dashboard EXACT match)", group="🔗 Webhook")
+
 
 if Index_Long_Signal and inDateRange and tradesToday < maxTradesPerDay
     strategy.entry("Long", strategy.long)
