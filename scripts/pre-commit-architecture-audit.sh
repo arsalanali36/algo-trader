@@ -25,7 +25,8 @@ if [ ! -f "$AUDIT_SCRIPT" ]; then
 fi
 
 echo "🔍 Running architecture audit before commit..."
-python "$AUDIT_SCRIPT" --staged-only
+PY="$(command -v python3 || command -v python)"
+"$PY" "$AUDIT_SCRIPT" --staged-only
 AUDIT_EXIT=$?
 
 if [ $AUDIT_EXIT -ne 0 ]; then
