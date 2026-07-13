@@ -6780,11 +6780,14 @@
 
     // Shared strategy display maps — used by BOTH the Logs sidebar (renderLogTab)
     // and the Risk > Per-Strategy Override table so they stay in sync (Rule 6B).
-    const MISSION_NUM = {
+    // These are a hardcoded FALLBACK; loadStrategyRegistry() (below) overwrites them
+    // from the canonical Strategy Registry (family.member IDs like 00.01, grouped by
+    // family) once /api/strategy-registry loads — single source of truth (Phase 2).
+    let MISSION_NUM = {
       orb_v1:'00', straddle_v1:'01', dvert_v1:'02', orbst_v1:'03',
       chainzone_v1:'04', backspread_v1:'05', shortvol_v1:'06', banknifty_v1:'07',
     };
-    const MISSION_NAME = {
+    let MISSION_NAME = {
       orb_v1:'Mid-Day ORB', straddle_v1:'Long Straddle', dvert_v1:'Debit Vertical',
       orbst_v1:'ORB + Supertrend', chainzone_v1:'Chain-Zone', backspread_v1:'Ratio Backspread',
       shortvol_v1:'Short-Vol Iron-Fly (off)', banknifty_v1:'BankNifty ORB',
@@ -6792,11 +6795,37 @@
       range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
       ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
     };
-    const STRAT_GROUPS = [
+    let STRAT_GROUPS = [
       { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
       { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
       { title:'Webhook / Infra', keys:['webhook_v1'] },
     ];
+
+    // Phase 2: overwrite the maps above from the canonical Strategy Registry
+    // (/api/strategy-registry) — family.member IDs + family grouping. Graceful
+    // fallback to the hardcoded seed if unavailable; re-renders the active tab.
+    async function loadStrategyRegistry(){
+      try{
+        const r = await fetch('/api/strategy-registry'); const reg = await r.json();
+        const fams = reg.families||{}, strs = reg.strategies||{};
+        const num={}, name={}, byFam={};
+        for(const id in strs){ const s=strs[id]||{}; const ck=(s.config_key||'').toLowerCase();
+          if(!ck) continue; num[ck]=id; name[ck]=s.name||ck;
+          const fid=id.split('.')[0]; (byFam[fid]=byFam[fid]||[]).push({ck,id}); }
+        if(Object.keys(num).length){
+          MISSION_NUM=num; MISSION_NAME=name;
+          STRAT_GROUPS=Object.keys(fams).sort().map(fid=>({
+            title:(fams[fid]&&fams[fid].name)?(fid+' · '+fams[fid].name):fid,
+            keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck)
+          })).filter(g=>g.keys.length);
+        }
+      }catch(e){ /* registry unavailable -> keep hardcoded fallback */ }
+      try{ if(typeof activeTab!=='undefined'){
+        if(activeTab==='log' && document.getElementById('log-folder-card')) renderLogTab();
+        else if(activeTab==='risk' && document.getElementById('risk-strategy-table')) renderRiskTab();
+      } }catch(e){}
+    }
+    loadStrategyRegistry();
 
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');

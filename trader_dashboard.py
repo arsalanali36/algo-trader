@@ -648,6 +648,16 @@ def api_config():
     except Exception:
         return jsonify({})
 
+@app.route('/api/strategy-registry', methods=['GET'])
+def api_strategy_registry():
+    """Canonical Strategy ID registry (family.member IDs). Read-only; the frontend
+    uses it so every surface shows the same 'NN.MM - Name' label."""
+    try:
+        import strategy_registry as _sr
+        return jsonify(_sr.load(force=True))
+    except Exception as e:
+        return jsonify({"error": str(e), "families": {}, "strategies": {}})
+
 @app.route('/api/config', methods=['POST'])
 def api_set_config():
     data = request.get_json()
