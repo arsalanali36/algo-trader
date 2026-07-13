@@ -64,7 +64,7 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                    seg="NSE_FNO", mode="paper", broker_name=None, tag="",
                    source="strategy", instrument=None, extra_tags=None,
                    group_id="", product=None, gate=True, est_price=None,
-                   buffer_bps=10, log=print):
+                   buffer_bps=10, sl_type_override=None, log=print):
     """Ek ENTRY leg — RMS-gated, order_store-recorded. `lots * lot_size` = qty
     (size-down ho sakta hai — RETURNED qty hi state mein rakho, apna calculation
     nahi). `gate=False` sirf protective legs ke liye (hedge BUY — jo SELL ke
@@ -111,8 +111,14 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
         # pos_monitor se hedge ko independently SL-out karwa deta (hedge apne
         # SELL ke saath hi jaana chahiye, akele nahi). Best-effort — profile
         # off ho to khaali.
+        # sl_type_override lets a caller (e.g. webhook, whose config carries a
+        # per-signal SL-type selector) pick the RMS SL profile; None = global.
         try:
-            tags += [t for t in risk_gate.default_instrument_sl_tags(strategy_id, symbol) if t not in tags]
+            _sl = (risk_gate.default_instrument_sl_tags(strategy_id, symbol,
+                                                        mode_override=sl_type_override)
+                   if sl_type_override is not None
+                   else risk_gate.default_instrument_sl_tags(strategy_id, symbol))
+            tags += [t for t in _sl if t not in tags]
         except Exception:
             pass
 
