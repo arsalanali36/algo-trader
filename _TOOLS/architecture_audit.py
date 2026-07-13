@@ -12,6 +12,8 @@ staged files) and reports FAIL/WARN per Rule 6B:
   4. STATE-PERSIST  module-level {}/[] named peak/pending/lock/state with no json persistence (WARN)
   5. BACKTEST-RISK  backtest/simulation file simulates capital/risk itself without importing
                     risk_gate / strategy_safety / smart_order / execution_gateway
+  6. SINGLETON      live trader daemon (--id + while-True loop) missing acquire_singleton()
+                    guard — a 2nd copy (scheduler/restart race) places duplicate orders
 
 Usage:
   python _TOOLS/architecture_audit.py                   # full repo scan
@@ -207,6 +209,27 @@ def check_state_persistence(path, src, tree, findings):
                     f"restart will wipe it (see _pending_group_close/_kf_state pattern in trader_dashboard.py)"))
 
 
+def check_singleton_guard(path, src, findings):
+    """Every live trader DAEMON (its own --id CLI + a while-True order loop) must call
+    acquire_singleton() at startup. Without it, two copies of the same strategy
+    (scheduler/restart race — dashboard get_pid() has a TOCTOU gap) each keep their
+    OWN in-memory position (pos=None) and BOTH enter on one signal → duplicate live
+    orders + inflated trade count. EOD 2026-07-13: orbst_v1/dvert_v1 hit exactly this."""
+    r = rel(path).replace("\\", "/")
+    if not (r.startswith("strategies/live/") or r.startswith("_TRADERS/")):
+        return
+    if "--id" not in src or "while True" not in src:   # only entrypoint daemons
+        return
+    if "acquire_singleton" in src:
+        return
+    findings.append(Finding(
+        "FAIL", "SINGLETON", rel(path), 1,
+        "live trader daemon has no acquire_singleton() guard — a 2nd copy "
+        "(scheduler/restart race) will place DUPLICATE orders. Add at startup: "
+        "`from singleton_guard import acquire_singleton` + "
+        "`if not acquire_singleton(strategy_id): return`"))
+
+
 def check_backtest_risk_bypass(path, src, tree, findings):
     fname = os.path.basename(path)
     if not BACKTEST_FILE_RE.search(fname):
@@ -244,6 +267,7 @@ def audit(files):
         check_inline_risk(path, src, findings)
         check_dup_indicators(path, tree, findings)
         check_state_persistence(path, src, tree, findings)
+        check_singleton_guard(path, src, findings)
         check_backtest_risk_bypass(path, src, tree, findings)
     return findings
 

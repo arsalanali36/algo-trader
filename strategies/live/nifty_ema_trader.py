@@ -320,6 +320,11 @@ def run(paper_mode=True, strategy_id="ema"):
     log.info(f"EMA Trader  |  Mode: {mode_str}")
     log.info("=" * 60)
 
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
+
     # Per-symbol state
     positions    = {}   # symbol → +1 / -1 / 0
     active_options = {} # symbol → {'sec_id': id, 'trad_sym': sym}
