@@ -1876,10 +1876,16 @@
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
         <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
-            onclick="toggleCompletedGrouping()"
-            title="Zerodha ke Day's History jaisa — symbol-wise group karo, expand karke individual trades dekho">📁
-            Group by Symbol</button>
+          <div style="position:relative;display:inline-block;" id="ord-group-wrap">
+            <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px;display:flex;align-items:center;gap:4px"
+              onclick="var m=document.getElementById('ord-group-menu');m.style.display=m.style.display==='block'?'none':'block';event.stopPropagation()"
+              title="Completed trades ko group karo — symbol-wise ya strategy-wise (expand karke individual trades)">📁 <span id="ord-group-lbl">Group</span> <span style="font-size:9px;opacity:.7">▾</span></button>
+            <div id="ord-group-menu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:200;min-width:150px;box-shadow:0 4px 12px rgba(0,0,0,.5)">
+              <div onclick="setCompletedGroupMode('off')" style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3" onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">🚫 None</div>
+              <div onclick="setCompletedGroupMode('symbol')" style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3" onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📁 By Symbol</div>
+              <div onclick="setCompletedGroupMode('strategy')" style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3" onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">🎯 By Strategy</div>
+            </div>
+          </div>
           <button id="reconcile-manual-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="reconcileManualTrades(this)"
             title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾
@@ -1893,12 +1899,15 @@
           </label>
           <button class="btn btn-gray" style="padding:2px 8px; font-size:11px" onclick="openColModal()">⚙️
             Columns</button>
-          <button id="ord-csv-btn" class="btn btn-gray" style="padding:2px 8px; font-size:11px"
-            onclick="exportCompletedCsv(this)" title="Completed Trades ko CSV format mein export karo">📥 Export
-            CSV</button>
-          <button id="ord-pdf-btn" class="btn btn-gray" style="padding:2px 8px; font-size:11px"
-            onclick="exportCompletedPdf(this)"
-            title="Completed Trades ko PDF report (table + TOTAL) mein download karo">📄 Export PDF</button>
+          <div style="position:relative;display:inline-block;" id="ord-export-wrap">
+            <button class="btn btn-gray" style="padding:2px 8px;font-size:11px;display:flex;align-items:center;gap:4px"
+              onclick="var m=document.getElementById('ord-export-menu');m.style.display=m.style.display==='block'?'none':'block';event.stopPropagation()"
+              title="Completed Trades export karo (CSV ya PDF)">📥 Export <span style="font-size:9px;opacity:.7">▾</span></button>
+            <div id="ord-export-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:200;min-width:130px;box-shadow:0 4px 12px rgba(0,0,0,.5)">
+              <div onclick="exportCompletedCsv(null);document.getElementById('ord-export-menu').style.display='none'" style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3" onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📊 Export CSV</div>
+              <div onclick="exportCompletedPdf(null);document.getElementById('ord-export-menu').style.display='none'" style="padding:8px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3" onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">📄 Export PDF</div>
+            </div>
+          </div>
         </div>
       </div>
       <div id="ord-completed" style="overflow-x:auto"></div>
@@ -4974,7 +4983,7 @@
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
       let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode)
-        + (t.strategy ? _ordTag(regId(t.strategy.split(' | ')[0]), 'name') : '');
+        + (t.strategy ? _ordTag(regLabel(t.strategy.split(' | ')[0]), 'name') : '');  // #58: show "NN.MM - Name", not just the number
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -5049,17 +5058,28 @@
 
     // Completed-trades "Group by Symbol" — Zerodha Day's History style: one
     // collapsed summary row per symbol (totals), expand to see individual trades.
-    window._completedGroupBy = localStorage.getItem('ord_completed_group_by') === 'true';
-    window._completedGroupExpanded = new Set();   // symbol keys currently expanded — not persisted, resets per page load (matches Zerodha's own transient expand state)
+    // #65: group mode — 'off' | 'symbol' | 'strategy'. Migrates the legacy boolean flag.
+    window._completedGroupMode = localStorage.getItem('ord_completed_group_mode')
+      || (localStorage.getItem('ord_completed_group_by') === 'true' ? 'symbol' : 'off');
+    // legacy derived flag — kept so every existing `window._completedGroupBy` check still works
+    window._completedGroupBy = (window._completedGroupMode !== 'off');
+    window._completedGroupExpanded = new Set();   // group keys currently expanded — not persisted, resets per page load (matches Zerodha's own transient expand state)
 
-    function toggleCompletedGrouping() {
-      window._completedGroupBy = !window._completedGroupBy;
-      localStorage.setItem('ord_completed_group_by', window._completedGroupBy ? 'true' : 'false');
-      const btn = document.getElementById('ord-group-btn');
-      if (btn) {
-        btn.style.background = window._completedGroupBy ? '#1f6feb' : '';
-        btn.style.borderColor = window._completedGroupBy ? '#1f6feb' : '#30363d';
-      }
+    function _syncGroupBtn() {
+      const btn = document.getElementById('ord-group-btn'), lbl = document.getElementById('ord-group-lbl');
+      const on = window._completedGroupMode !== 'off';
+      if (btn) { btn.style.background = on ? '#1f6feb' : ''; btn.style.borderColor = on ? '#1f6feb' : '#30363d'; }
+      if (lbl) lbl.textContent = window._completedGroupMode === 'strategy' ? 'By Strategy'
+        : (window._completedGroupMode === 'symbol' ? 'By Symbol' : 'Group');
+    }
+    function setCompletedGroupMode(mode) {
+      window._completedGroupMode = mode;
+      window._completedGroupBy = (mode !== 'off');
+      localStorage.setItem('ord_completed_group_mode', mode);
+      localStorage.setItem('ord_completed_group_by', mode === 'symbol' ? 'true' : 'false'); // keep legacy key sane
+      window._completedGroupExpanded.clear();   // group keys differ across modes
+      const menu = document.getElementById('ord-group-menu'); if (menu) menu.style.display = 'none';
+      _syncGroupBtn();
       renderCachedOrders();
     }
 
@@ -5888,8 +5908,9 @@
 
     // Close export dropdown when clicking outside
     document.addEventListener('click', function () {
-      const m = document.getElementById('cal-export-menu');
-      if (m) m.style.display = 'none';
+      ['cal-export-menu', 'ord-export-menu', 'ord-group-menu'].forEach(function (id) {
+        const m = document.getElementById(id); if (m) m.style.display = 'none';
+      });
     });
 
     function renderCachedOrders() {
@@ -5900,11 +5921,7 @@
       const date = (document.getElementById('ord-date') || {}).value;
       const ordDate = date;
 
-      const _grpBtn = document.getElementById('ord-group-btn');
-      if (_grpBtn) {
-        _grpBtn.style.background = window._completedGroupBy ? '#1f6feb' : '';
-        _grpBtn.style.borderColor = window._completedGroupBy ? '#1f6feb' : '#30363d';
-      }
+      _syncGroupBtn();   // #65: reflect off / By Symbol / By Strategy on the group button
 
       const isCapBlocked = t => (t.tags || []).some(tg => tg === 'CAPITAL_BLOCKED');
       const opnBlocked = opn.filter(isCapBlocked);
@@ -6073,7 +6090,9 @@
           const groups = [];
           const groupIdx = {};
           sortedCompleted.forEach((t, i) => {
-            const key = t.sym || '—';
+            const key = window._completedGroupMode === 'strategy'
+              ? (t.strategy ? regLabel(t.strategy.split(' | ')[0]) : '— (no strategy)')   // #65 group by strategy
+              : (t.sym || '—');
             if (!(key in groupIdx)) { groupIdx[key] = groups.length; groups.push({ sym: key, trades: [], g: 0, tx: 0, n: 0, pts: 0, inv: 0, qty: 0 }); }
             groups[groupIdx[key]].trades.push({ t, idx: i });
           });
@@ -6569,7 +6588,7 @@
             oh += `
       <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
-        <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
+        <summary title="Right-click → open this strategy's Lab result page" data-strat="${stratKey.replace(/"/g, '&quot;')}" oncontextmenu="return openStrategyLab(this, event)" style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
             <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
@@ -6797,6 +6816,11 @@
       range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
       ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
     };
+    let MISSION_SLUG = {   // config-key -> Lab run slug (for #62 right-click → open result page)
+      orb_v1:'mid_orb_nifty', straddle_v1:'long_straddle_orb', dvert_v1:'debit_vertical_orb',
+      orbst_v1:'orb_supertrend', chainzone_v1:'chain_zone_longatm', backspread_v1:'ratio_backspread',
+      banknifty_v1:'banknifty_hunt',
+    };
     let STRAT_GROUPS = [
       { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
       { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
@@ -6810,12 +6834,12 @@
       try{
         const r = await fetch('/api/strategy-registry'); const reg = await r.json();
         const fams = reg.families||{}, strs = reg.strategies||{};
-        const num={}, name={}, byFam={};
+        const num={}, name={}, slug={}, byFam={};
         for(const id in strs){ const s=strs[id]||{}; const ck=(s.config_key||'').toLowerCase();
-          if(!ck) continue; num[ck]=id; name[ck]=s.name||ck;
+          if(!ck) continue; num[ck]=id; name[ck]=s.name||ck; if(s.slug) slug[ck]=s.slug;
           const fid=id.split('.')[0]; (byFam[fid]=byFam[fid]||[]).push({ck,id}); }
         if(Object.keys(num).length){
-          MISSION_NUM=num; MISSION_NAME=name;
+          MISSION_NUM=num; MISSION_NAME=name; MISSION_SLUG=Object.assign({}, MISSION_SLUG, slug);
           STRAT_GROUPS=Object.keys(fams).sort().map(fid=>({
             title:(fams[fid]&&fams[fid].name)?(fid+' · '+fams[fid].name):fid,
             keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck)
@@ -6838,6 +6862,22 @@
     }
     // just the short canonical ID ("02.01") for compact spots (row tags) — raw key fallback.
     function regId(key){ if(!key) return key||''; return MISSION_NUM[String(key).toLowerCase()] || String(key); }
+    // #62: right-click an open-position group → open that strategy's Lab result page.
+    function _miniToast(msg){
+      const d=document.createElement('div');
+      d.textContent=msg;
+      d.style.cssText='position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#21262d;border:1px solid #30363d;color:#e6edf3;padding:8px 14px;border-radius:8px;font-size:12px;z-index:99999;box-shadow:0 6px 20px #000a';
+      document.body.appendChild(d); setTimeout(()=>d.remove(),2200);
+    }
+    function openStrategyLab(el, ev){
+      if(ev) ev.preventDefault();
+      const raw=(el&&el.dataset&&el.dataset.strat)||'';
+      const ck=String(raw).split(' | ')[0].toLowerCase();
+      const slug=MISSION_SLUG[ck];
+      if(!slug){ _miniToast('Is strategy ka Lab result page nahi hai'); return false; }
+      window.open('/lab/runs/'+encodeURIComponent(slug)+'/index.html','_blank');
+      return false;
+    }
 
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
