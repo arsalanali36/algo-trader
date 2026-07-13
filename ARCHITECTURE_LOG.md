@@ -15,6 +15,25 @@
 
 ---
 
+## 2026-07-13 — Position-page organise (tasks 66-72) + backspread net-structure trailing lock + Critical Rule 10 (backtest-fidelity)
+**Status:** DONE (branch `feat/position-page-organise`, commit `104c46a`) — committed, NOT merged/deployed (user review-first).
+**Layer:** ui + strategy + config
+**Kya:**
+- **66** — `#ord-summary` tiles retire → 1 consolidated table (`renderStratSummaryTable`) inside Peak P&L card + `[Graph|Summary]` header toggle (`togglePeakView`, localStorage), P&L magnitude bar per row.
+- **68** — collapsed open-position group summary shows live ₹/points/% (`_patchLtpCells` querySelectorAll on `.grp-tot-*`).
+- **70** — `regLabel()` drops `NN.MM ` number prefix → clean registry names.
+- **71** — `STRADDLE/DVERT/BSPRD/SVOL/VRP` `_TP/_SL/_ROLLBACK/_TRAIL` exit reasons added to `order_store._EXIT_REASON_PREFIXES` + `_exitReasonBadge` (were tagged, never surfaced — Rule 9 gap).
+- **72** — "Capital se Block hui Entries" → collapsible `<details>`.
+- **67** — net-structure trailing profit lock in `05_backspread_trader.py` (reuses `risk_gate.advance_trailing_lock`; `trail_*` config; `pos["trail"]` persisted; ships DISABLED). Backspread had NO trailing → 8000+ rode back down.
+- **69 (audit)** — live VPS per-strategy caps already set (verified read-only ssh); real paper-corruptor = aggressive Default-TSL globally ON. User chose disable (`default_sl_enabled/default_tsl_enabled=false`), PENDING apply.
+- **Rule 10** — backtest-fidelity: any live tweak not in the backtest invalidates the validated number → STOP + tell user first, offer re-backtest vs leave-off, ship disabled if unsure.
+**Files:** `templates/index.html`, `_core/order_store.py`, `strategies/live/05_backspread_trader.py`, `CLAUDE.md` (Rule 10 + Update Log), `ARCHITECTURE_LOG.md`.
+**Kyun:** user request — position page too many tiles → consolidate; missing exit reasons; backspread gave back a big profit with no trailing protection; and a hard rule so future tweaks don't silently break backtest fidelity.
+**Verify:** JS `node --check` on new regions, py `ast.parse`, architecture audit 0 FAIL, backspread trail 5-scenario state-machine sim. Not run in live dashboard.
+**Depends on:** nothing (branch off master `2a62391`).
+
+---
+
 ## 2026-07-13 — VPS ab ek git repo hai — local↔VPS sync git-based (scp retired), root-cause of the drift fixed
 **Status:** DONE — VPS git repo live, bidirectional push/pull tested (local↔GitHub↔VPS all at same HEAD). Deploy-key add: user-done.
 **Layer:** infra
