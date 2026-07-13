@@ -240,7 +240,9 @@ Isliye har naya code (chahe khud likho ya AI se likhwao) is order mein jaaye:
 6. **Commit karne se pehle**: `_TOOLS/architecture_audit.py` khud chalao
    (ya commit karte hi pre-commit hook automatically chalayega). Agar FAIL
    aaye, commit se pehle fix karo — "chhota sa fix hai" soch kar skip mat
-   karo.
+   karo. **Fresh clone / nayi machine / VPS pe** hook install karna zaroori
+   hai (`.git/hooks/` tracked nahi hoti) — ek baar `bash scripts/setup_hooks.sh`
+   chalao, phir har commit pe audit khud chalega.
 
 **Kyun**: ye repo ka pura design intent hi yehi hai ki "signal generate karna"
 aur "signal ko safely execute/plot/backtest karna" do alag layers hon — pehli
