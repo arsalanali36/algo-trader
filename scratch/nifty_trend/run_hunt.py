@@ -27,6 +27,7 @@ import pandas as pd
 import engine
 import intraday_engine as ie
 import bs_option as bs
+import ml_gate
 from montecarlo import montecarlo
 from intraday_optimize import optimize, sig_test, split
 from report import downsample, monthly_returns, worst_periods, dates_labels
@@ -177,18 +178,42 @@ def main():
         print("no design passed the screen"); return
 
     print("\nOPTIMIZE + significance on top screened designs:", flush=True)
+    # Task 0b/0e (ml-strategy-mining): count EVERY candidate evaluated in this run —
+    # screen grid + optimizer trials — so the deflated-Sharpe bar reflects the true
+    # search breadth, not just the one winner. Conservative overcount (sampled dups
+    # inside optimize() still count) = stricter bar, never looser.
+    n_trials_deflation = len(ie.DESIGN_GRID) * len(tfs)
+    all_trial_sharpes = []
     winner = None
     for cand in ranked[:4]:
         d = cache[cand["tf"]]
         cs = optimize(d, cand["design"], trials=args.trials)
+        n_trials_deflation += args.trials
+        all_trial_sharpes += [c["oos_sharpe"] for c in cs]
+        ml_gate.log_trials(
+            [dict(candidate=f"{cand['design']}/{cand['tf']}", tf=cand["tf"],
+                  params=c["params"], train_sharpe=c["train_sharpe"],
+                  oos_sharpe=c["oos_sharpe"], verdict="optimize_candidate")
+             for c in cs],
+            run_id=guard_slug, approach="hand_hunt")
         if not cs:
             print(f"  {cand['design']}/{cand['tf']}: no optimize candidate"); continue
         c = cs[0]
         real, p, n95 = sig_test(d, cand["design"], c["params"], c["exit"], n_perm=1000)
         sig_ok = p < 0.05
+        # deflated-Sharpe gate (Task 0b) — must pass IN ADDITION to p<0.05 + MC
+        dsr = None
+        if sig_ok:
+            m_full, _ = engine.metrics(ie.backtest(d, cand["design"], c["params"], c["exit"]))
+            dsr = ml_gate.deflated_sharpe(m_full.get("daily_returns", []),
+                                          n_trials=n_trials_deflation,
+                                          trial_sharpes_annual=all_trial_sharpes)
+            sig_ok = sig_ok and dsr["pass"]
         print(f"  {cand['design']:10s}/{cand['tf']}: robust={c['robust']:.2f} "
               f"(tr {c['train_sharpe']:.2f}/oos {c['oos_sharpe']:.2f}) "
-              f"entry_sharpe={real:.2f} p={p:.3f} {'*** SIGNIFICANT ***' if sig_ok else 'not sig'}",
+              f"entry_sharpe={real:.2f} p={p:.3f}"
+              + (f" DSR={dsr['dsr_prob']:.3f}@N={dsr['n_trials']}" if dsr else "")
+              + f" {'*** SIGNIFICANT ***' if sig_ok else 'not sig'}",
               flush=True)
         if sig_ok and winner is None:
             winner = dict(design=cand["design"], tf=cand["tf"], exit=c["exit"],
@@ -196,7 +221,7 @@ def main():
                           train_sharpe=c["train_sharpe"], oos_sharpe=c["oos_sharpe"],
                           sig=dict(real_sharpe=round(real, 3), p_value=round(p, 4),
                                    null_p95=round(n95, 3), null_mean=0.0,
-                                   n_perm=1000, significant=True),
+                                   n_perm=1000, significant=True, deflated=dsr),
                           opt=cs[:8])
     if winner is None:
         print("\nNo design passed significance (p<0.05). Honest result: no edge to ship.")
@@ -298,6 +323,9 @@ def main():
             "instrument": "NIFTY 50", "lot_size": lot,
             "window": out["meta"]["window"], "days": out["meta"]["days"],
             "significant": True,
+            "deflated_sharpe": {k: winner["sig"]["deflated"][k] for k in
+                                ("dsr_prob", "pass", "n_trials", "sr_star_annual", "var_src")}
+                               if winner["sig"].get("deflated") else None,
             "bs_full": {k: combos["bs|full"]["metrics"].get(k) for k in
                         ("sharpe", "net_pct", "maxdd", "win_rate", "trades", "profit_factor")},
             "instrument_full_sharpe": combos["instrument|full"]["metrics"].get("sharpe"),
