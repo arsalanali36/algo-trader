@@ -118,8 +118,7 @@ function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.sl
 function mapRun(r){
   const b=r.bs_full||{}, sig=r.significant;
   const net=(b.net_pct!=null)?(b.net_pct>=0?'+':'')+b.net_pct.toFixed(1)+'%':'—';
-  const _rl=REG_BY_SLUG[String(r.slug).toLowerCase()];
-  return {id:r.slug, type:'strat', winner:!!sig, name:(_rl||r.title||r.slug)+' — 3-pass', tf:r.tf,
+  return {id:r.slug, type:'strat', winner:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
     sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
     trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
     link:`runs/${r.slug}/index.html`, deployed:r.deployed||'', deploy_key:r.deploy_key||'',
@@ -134,7 +133,6 @@ async function loadRuns(){
     const res=await fetch('runs/index.json',{cache:'no-store'});
     if(!res.ok)return;
     const runs=await res.json();
-    await loadRegistry();
     const dyn=runs.map(mapRun);
     const dynIds=new Set(dyn.map(d=>d.id));
     ITEMS=dyn.concat(STATIC_ITEMS.filter(s=>!dynIds.has(s.id)));
@@ -221,7 +219,16 @@ document.getElementById('note').innerHTML=
   `💾 <b>Note:</b> Ye hub app mein integrated hai (<b>More → 🧪 Strategy Lab</b>). Har row apna dashboard <b>nayi tab</b> mein kholta hai. `+
   `⭐ favorites <b>isi browser</b> mein save hote hain (localStorage) — doosre browser/device pe reset ho jayenge. `+
   `(Agar cross-device chahiye to server-side save add kar sakte hain — abhi zaroorat nahi.) Nayi strategy \`run_hunt.py --name <slug>\` se bane → <b>runs/index.json</b> mein auto-append → yahan naya row (3-pass dashboard) khud aa jayega.`;
-loadRuns().then(render);
+// Hub loads first (never blocked by the registry). Then apply canonical IDs as a
+// non-blocking enhancement: overwrite each row's name with its registry label + re-render.
+loadRuns().then(()=>{
+  render();
+  loadRegistry().then(()=>{
+    if(!Object.keys(REG_BY_SLUG).length) return;
+    ITEMS.forEach(i=>{ const rl=REG_BY_SLUG[String(i.id).toLowerCase()]; if(rl) i.name=rl+' — 3-pass'; });
+    render();
+  }).catch(()=>{});
+});
 </script>
 </body>
 </html>
