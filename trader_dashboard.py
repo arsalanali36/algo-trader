@@ -556,12 +556,52 @@ def serve_lab_hub():
     from flask import send_from_directory
     return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', 'hub.html')
 
+_LAB_GZIP_EXT = ('.js', '.html', '.htm', '.json', '.css', '.svg', '.csv')
+
+def _lab_gzip_response(full: Path):
+    """Serve a Lab text asset gzip-compressed (results.js is 3-13 MB uncompressed —
+    the whole reason the Lab page felt slow to load). A sidecar `<file>.gz` is cached
+    next to the source and only regenerated when the source's mtime changes, so repeat
+    requests cost ~0 CPU. Browser still revalidates via ETag/Last-Modified → 304 when
+    unchanged. Falls back to a plain stream if anything goes wrong. Read-only path —
+    no bearing on the live order flow."""
+    import gzip, hashlib
+    try:
+        src_mtime = full.stat().st_mtime
+        gz = full.with_name(full.name + '.gz')
+        if (not gz.exists()) or gz.stat().st_mtime < src_mtime:
+            raw = full.read_bytes()
+            with gzip.open(gz, 'wb', compresslevel=6) as f:
+                f.write(raw)
+            os.utime(gz, (src_mtime, src_mtime))   # tie the cache to the source's mtime
+        data = gz.read_bytes()
+        etag = hashlib.md5(f"{full.name}:{src_mtime}:{len(data)}".encode()).hexdigest()
+        if request.headers.get('If-None-Match') == etag:
+            return Response(status=304)
+        import mimetypes
+        ctype = mimetypes.guess_type(full.name)[0] or 'application/octet-stream'
+        resp = Response(data, mimetype=ctype)
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Vary'] = 'Accept-Encoding'
+        resp.headers['Cache-Control'] = 'no-cache'   # revalidate → 304, never blindly stale
+        resp.headers['ETag'] = etag
+        return resp
+    except Exception:
+        return send_from_directory(full.parent, full.name)
+
 @app.route('/lab/<path:fn>')
 def serve_lab_file(fn):
     """Strategy Lab — serves the NIFTY research hub + its dashboards / results.js
     (self-contained HTML in scratch/nifty_trend). Relative links resolve under /lab/."""
-    from flask import send_from_directory
-    return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', fn)
+    root = (BASE_DIR / 'scratch' / 'nifty_trend').resolve()
+    full = (root / fn).resolve()
+    # path-traversal guard (fn comes from the URL)
+    if root not in full.parents and full != root:
+        return Response('not found', status=404)
+    if (full.is_file() and full.suffix.lower() in _LAB_GZIP_EXT
+            and 'gzip' in request.headers.get('Accept-Encoding', '')):
+        return _lab_gzip_response(full)
+    return send_from_directory(root, fn)
 
 @app.route('/script3')
 def serve_script3():

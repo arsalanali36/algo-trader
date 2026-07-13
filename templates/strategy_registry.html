@@ -91,7 +91,7 @@ let REG={families:{},strategies:{}}, CFG={}, RUNS={}, HIDE={}, GROUP='family', C
 const STATUSES=['paper','live','research','rejected','failed','legacy'];
 const COLS=[
   {k:'id',label:'ID',always:1},{k:'name',label:'Name',always:1},
-  {k:'verdict',label:'Verdict'},{k:'status',label:'Status'},{k:'tf',label:'TF'},
+  {k:'verdict',label:'Verdict'},{k:'status',label:'Status'},{k:'legs',label:'Legs',num:1},{k:'tf',label:'TF'},
   {k:'sharpe',label:'Sharpe',num:1},{k:'maxdd',label:'Max DD',num:1},{k:'win',label:'Win%',num:1},
   {k:'trades',label:'Trades',num:1},{k:'sig',label:'Significance'},
   {k:'deploy',label:'Deploy'},
@@ -158,6 +158,7 @@ function cell(m){
     name:`<td class="nm">${m.name||''}</td>`,
     verdict:`<td>${verdict}</td>`,
     status:`<td><span class="st ${m.status||'research'}">${m.status||'research'}</span>${now}</td>`,
+    legs:`<td class="num">${m.legs!=null?m.legs:'<span class="mut">—</span>'}</td>`,
     tf:`<td>${r&&r.tf?r.tf:'<span class="mut">—</span>'}</td>`,
     sharpe:`<td class="num">${num(b.sharpe,'',2,v=>v>=1?'pos':(v>=0.5?'':'neg'))}</td>`,
     maxdd:`<td class="num">${num(b.maxdd,'%',1,v=>v>=-10?'pos':'neg')}</td>`,
