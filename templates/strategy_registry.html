@@ -15,7 +15,8 @@
   .btn.blue{background:#1f6feb;border-color:#1f6feb;color:#fff}
   .bar{position:sticky;top:0;z-index:6;background:var(--bg);padding:14px 0 10px;margin-top:8px;
        border-bottom:1px solid var(--bd);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-  .bar>input{background:var(--panel);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:13px;min-width:230px;flex:1}
+  .bar>input{background:var(--panel);border:1px solid var(--bd);color:var(--tx);border-radius:8px;padding:8px 12px;font-size:13px;width:200px;min-width:130px;flex:0 0 auto}
+  .bar .chips{flex:1 1 auto;margin:0}
   .seg{display:inline-flex;border:1px solid var(--bd);border-radius:8px;overflow:hidden}
   .seg button{background:var(--panel);border:none;color:var(--mut);padding:8px 13px;font-size:12px;font-weight:600;cursor:pointer}
   .seg button.on{background:#1f6feb;color:#fff}
@@ -64,18 +65,14 @@
   .empty{color:var(--mut);padding:34px;text-align:center}
 </style></head>
 <body><div class="wrap">
-  <div style="display:flex;align-items:flex-start;gap:14px;flex-wrap:wrap">
-    <div style="flex:1;min-width:280px">
-      <h1>🗂️ Strategy Registry &amp; Lab</h1>
-      <div class="lead">Every strategy in one place — deployed · research · legacy · backtest — with its
-        3-pass Lab metrics. Canonical <span class="id">family.member</span> ID (same identity in Logs, RMS,
-        Positions, Reports). New ones register via <span class="mono">strategy_registry.add()</span>.</div>
-    </div>
+  <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap">
+    <h1 style="flex:1;min-width:220px">🗂️ Strategy Registry &amp; Lab</h1>
     <a class="btn blue" href="/lab/compare.html" target="_blank">⚖️ Compare — sab ek nazar me</a>
   </div>
 
   <div class="bar">
-    <input id="q" placeholder="🔍 search  id · name · config-key · file" oninput="render()">
+    <input id="q" placeholder="🔍 search" title="search  id · name · config-key · file" oninput="render()">
+    <div class="chips" id="chips"></div>
     <span class="lead" style="margin:0">Group</span>
     <span class="seg"><button id="gFam" class="on" onclick="setGroup('family')">Family</button><button id="gSt" onclick="setGroup('status')">Status</button></span>
     <div class="colwrap">
@@ -83,7 +80,6 @@
       <div class="colmenu" id="colmenu"></div>
     </div>
   </div>
-  <div class="chips" id="chips"></div>
   <div id="tree"></div>
 </div>
 <script>
@@ -120,10 +116,16 @@ function colMenu(){
     `<label class="${c.always?'dis':''}"><input type="checkbox" ${on(c.k)?'checked':''} ${c.always?'disabled':''} onchange="COLVIS['${c.k}']=this.checked;saveCols();render()">${c.label}</label>`).join('');
 }
 function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]}));}
-function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
+// registry config_key can differ in CASE from the real nifty_config key (e.g. registry
+// 'ars_chain_v1_paper' vs config 'ARS_CHAIN_V1_PAPER') — resolve case-insensitively so the
+// live/paper state (and start/stop calls) hit the right config. Falls back to the given key.
+function cfgKey(ck){ if(!ck)return ck; if(CFG[ck]!==undefined)return ck;
+  const lc=String(ck).toLowerCase(); for(const k in CFG){ if(k.toLowerCase()===lc) return k; } return ck; }
+function liveNow(ck){ const c=CFG[cfgKey(ck)]; if(!c)return null; return c.active?(c.mode||'paper'):'off'; }
 function runOf(m){ return (m.slug&&RUNS[String(m.slug).toLowerCase()])||null; }
 async function regDeploy(e,k,mode){
   e.stopPropagation();
+  k=cfgKey(k);   // hit the real (correct-case) nifty_config key
   if(mode==='live' && !confirm(`LIVE deploy "${k}" — ye ASLI orders lagayega (real paisa). Sure?`)) return;
   const btn=e.target; const old=btn.textContent; btn.textContent='…'; btn.disabled=true;
   try{
@@ -176,11 +178,20 @@ function cell(m){
   const dep=(live&&live!=='off')?'dep':'';
   return `<tr class="${dep}">`+COLS.filter(c=>on(c.k)).map(c=>C[c.k]).join('')+'</tr>';
 }
-function toggleCard(el,key){el.classList.toggle('closed');const c=el.classList.contains('closed');CLOSED[key]=c;el.nextElementSibling.style.display=c?'none':'';saveClosed();}
+function toggleCard(el,key,ev){
+  if(ev&&(ev.ctrlKey||ev.metaKey)){   // ctrl/⌘+click any header → expand ALL (or collapse ALL if all already open)
+    const anyClosed=[...document.querySelectorAll('.chd')].some(h=>h.classList.contains('closed'));
+    const close=!anyClosed;
+    document.querySelectorAll('.chd').forEach(h=>{ h.classList.toggle('closed',close);
+      const body=h.nextElementSibling; if(body)body.style.display=close?'none':'';
+      const k=h.dataset.key; if(k)CLOSED[k]=close; });
+    saveClosed(); return;
+  }
+  el.classList.toggle('closed');const c=el.classList.contains('closed');CLOSED[key]=c;el.nextElementSibling.style.display=c?'none':'';saveClosed();}
 function card(key,title,desc,rows,openDefault){
   const closed=CLOSED[key]!==undefined?CLOSED[key]:!openDefault;
   const thead=COLS.filter(c=>on(c.k)).map(c=>`<th class="${c.num?'num':''}">${c.label}</th>`).join('');
-  return `<div class="card"><div class="chd ${closed?'closed':''}" onclick="toggleCard(this,'${key}')">
+  return `<div class="card"><div class="chd ${closed?'closed':''}" data-key="${key}" onclick="toggleCard(this,'${key}',event)">
       <span class="caret">▼</span>${title}<span class="fds">${desc||''}</span><span class="cnt">${rows.length}</span></div>
     <div class="cbody" style="${closed?'display:none':''}"><table><tr>${thead}</tr>${rows.map(cell).join('')}</table></div></div>`;
 }
