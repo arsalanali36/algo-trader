@@ -37,6 +37,26 @@ sys.path.insert(0, str(BASE_DIR))
 import _paths  # noqa: F401
 import eod_digest as dg
 import signal_replay as sr
+try:
+    import strategy_registry as _sr_reg  # canonical NN.MM - Name labels
+except Exception:
+    _sr_reg = None
+
+
+def _sid_id(sid):
+    """Compact registry ID (NN.MM) for a strategy sid, else the raw sid."""
+    try:
+        return _sr_reg.resolve(sid) or sid
+    except Exception:
+        return sid
+
+
+def _sid_lbl(sid):
+    """'NN.MM - Name' for a strategy sid, else the raw sid."""
+    try:
+        return _sr_reg.label(sid)
+    except Exception:
+        return sid
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -161,7 +181,7 @@ def pnl_bar_svg(rows):
         x = zero_x - w if v < 0 else zero_x
         col = "#f85149" if v < 0 else "#3fb950"
         parts.append(f"<text x='{label_w - 8}' y='{y + bar_h * 0.7}' text-anchor='end' "
-                     f"fill='#e6edf3' font-size='13'>{esc(r['sid'])}</text>")
+                     f"fill='#e6edf3' font-size='13'>{esc(_sid_id(r['sid']))}</text>")
         parts.append(f"<rect x='{x:.1f}' y='{y}' width='{max(w, 1):.1f}' height='{bar_h}' "
                      f"rx='4' fill='{col}' opacity='0.85'/>")
         tx = zero_x + w + 8 if v >= 0 else zero_x - w - 8
@@ -255,7 +275,7 @@ def render(data):
                    if exp else "—")
         pnl_cls = "g" if st["pnl"] >= 0 else "r"
         trs.append(f"""<tr>
-          <td><b>{esc(r['sid'])}</b></td>
+          <td><b title="{esc(r['sid'])}">{esc(_sid_lbl(r['sid']))}</b></td>
           <td><span class='tag {tagc(r['colour'])}'>{r['colour']}</span></td>
           <td>{esc(lg['mode_banner'] or '—')}<span class='dim'>/{esc(r['mode_exp'])}</span></td>
           <td>{len(lg['entries'])}</td><td>{got_t}</td>
@@ -314,7 +334,7 @@ def render(data):
             body.append(f"<p class='dim'>Replay: {esc(rp['note'])}</p>")
         icon = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴", "GREY": "⚪"}[r["colour"]]
         details.append(f"<details {'open' if r['colour'] == 'RED' else ''}>"
-                       f"<summary>{icon} {esc(r['sid'])} — ₹{st['pnl']:+,.0f}, "
+                       f"<summary>{icon} {esc(_sid_lbl(r['sid']))} — ₹{st['pnl']:+,.0f}, "
                        f"{len(st['completed'])} trades</summary>{''.join(body)}</details>")
 
     gen = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d %H:%M IST")

@@ -3686,7 +3686,7 @@
           : capLabel === 'paper'
             ? ' <span style="color:#8b949e;font-size:10px">paper</span>'
             : '';
-        html += `<tr><td>${s.strategy}</td>
+        html += `<tr><td title="${s.strategy}">${regLabel(s.strategy)}</td>
       <td>${runControlsHtml}</td>
       <td style="font-size:11px">${gateBadge(s)}</td>
       <td>${fmtRs(capDisplay)}${capPct !== null ? ` <span style="color:${capPct >= 90 ? '#f85149' : '#8b949e'};font-size:10px">(${capPct}%)</span>` : ''}${capLabelHtml}</td>
@@ -3750,7 +3750,7 @@
           if (w.maxed) { statusTxt = '🛑 Max trades reached — no further entries'; statusCol = '#f85149'; }
           else if (w.blocked) { statusTxt = (w.block_hard ? '🛑 ' : '⏸ ') + (w.block_reason || 'blocked'); statusCol = w.block_hard ? '#f85149' : '#d29922'; }
           else { statusTxt = '✅ Open'; statusCol = '#3fb950'; }
-          html += `<tr><td>${w.strategy}</td><td>${w.symbol || '—'}</td>
+          html += `<tr><td title="${w.strategy}">${regLabel(w.strategy)}</td><td>${w.symbol || '—'}</td>
         <td style="color:${limitHit ? '#f85149' : '#e6edf3'};font-weight:600">${w.trades_today}</td>
         <td>${w.max_trades || '—'}</td>
         <td style="font-size:11px;color:${statusCol}" title="${(w.block_reason || '').replace(/"/g, '&quot;')}">${statusTxt}</td></tr>`;
@@ -4972,7 +4972,7 @@
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
       let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode)
-        + (t.strategy ? _ordTag(t.strategy.split(' | ')[0], 'name') : '');
+        + (t.strategy ? _ordTag(regLabel(t.strategy.split(' | ')[0]), 'name') : '');
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -6826,6 +6826,14 @@
       } }catch(e){}
     }
     loadStrategyRegistry();
+
+    // Canonical strategy label for ANY surface: "NN.MM - Name" from the registry
+    // (config-key -> id/name via the loaded maps). Falls back to the raw key.
+    function regLabel(key){
+      if(!key) return key || '';
+      const k=String(key).toLowerCase(), id=MISSION_NUM[k];
+      return id ? (id + ' - ' + (MISSION_NAME[k]||key)) : String(key);
+    }
 
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');

@@ -106,11 +106,20 @@ const STATIC_ITEMS=[
 ];
 // Dynamic entries auto-loaded from runs/index.json (every run_hunt.py appends there).
 let ITEMS=STATIC_ITEMS.slice();
+// canonical Strategy Registry (same-origin; slug -> "NN.MM - Name"). Fails silently on file://.
+let REG_BY_SLUG={};
+async function loadRegistry(){
+  try{ const r=await fetch('/api/strategy-registry',{cache:'no-store'}); if(!r.ok)return;
+    const reg=await r.json(), strs=reg.strategies||{};
+    for(const id in strs){ const s=strs[id]||{}; if(s.slug) REG_BY_SLUG[String(s.slug).toLowerCase()]=id+' - '+(s.name||s.slug); }
+  }catch(e){}
+}
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.slice(0,-3);if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (n<0?'-':'')+'₹'+rest+last3}
 function mapRun(r){
   const b=r.bs_full||{}, sig=r.significant;
   const net=(b.net_pct!=null)?(b.net_pct>=0?'+':'')+b.net_pct.toFixed(1)+'%':'—';
-  return {id:r.slug, type:'strat', winner:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
+  const _rl=REG_BY_SLUG[String(r.slug).toLowerCase()];
+  return {id:r.slug, type:'strat', winner:!!sig, name:(_rl||r.title||r.slug)+' — 3-pass', tf:r.tf,
     sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
     trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
     link:`runs/${r.slug}/index.html`, deployed:r.deployed||'', deploy_key:r.deploy_key||'',
@@ -125,6 +134,7 @@ async function loadRuns(){
     const res=await fetch('runs/index.json',{cache:'no-store'});
     if(!res.ok)return;
     const runs=await res.json();
+    await loadRegistry();
     const dyn=runs.map(mapRun);
     const dynIds=new Set(dyn.map(d=>d.id));
     ITEMS=dyn.concat(STATIC_ITEMS.filter(s=>!dynIds.has(s.id)));
