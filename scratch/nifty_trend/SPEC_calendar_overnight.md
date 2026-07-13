@@ -2,7 +2,13 @@
 
 **Source:** "Undiscovered Traders" podcast w/ Ravish (delta-neutral + time-spread / theta machine).
 **Owner ask (2026-07-13):** "dono rasta explore karo, overnight bhi kar lo."
-**Status:** SPEC / mockup — awaiting approval before any code.
+**Status:** ❌ **REJECTED — tested 5yr real lake (2026-07-13).** Variant A (directional calendar,
+WEEK sell/MONTH buy, real premium+charges+DOM slip) full sweep run. Neutral form −30..−50% Sharpe
+−1.1..−2.1 (worst-day −₹75k); best directional cell = mom/signalbar/koff3/tp0.30/hold3d → +48.9%
+net 5yr but **Sharpe only 0.34**, maxDD −11%, 425 trades — FAILS mission Sharpe≥1. Fragile: same
+params hold 3d→5d flips +48%→−25/−35% (overfit/noise, not edge). Charges+slip eat the theta. Do
+NOT re-tread. next-week back-leg not in lake (only WEEK+MONTH) — untested but edge would be smaller,
+charges same → not worth the backfill. Variant B (overnight condor) NOT run — deprioritised.
 **Fits:** OPTION_STRATEGY_MISSION Track-B (real option-lake, `real_struct2` held-strike engine).
 
 ---

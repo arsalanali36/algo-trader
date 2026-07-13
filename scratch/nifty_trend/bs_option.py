@@ -41,6 +41,17 @@ def bs_price(S, K, T, sigma, r=R_FREE, opt="CE"):
     return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
 
 
+def bs_delta(S, K, T, sigma, r=R_FREE, opt="CE"):
+    """Option delta (dPrice/dSpot). CE in (0,1), PE in (-1,0). At/after expiry -> {0,±1}.
+    Needed for delta-neutral structures: net portfolio delta = Σ position_sign * bs_delta(leg)."""
+    if T <= 0 or sigma <= 0:
+        if opt == "CE":
+            return 1.0 if S > K else 0.0
+        return -1.0 if S < K else 0.0
+    d1 = (math.log(S / K) + (r + 0.5 * sigma * sigma) * T) / (sigma * math.sqrt(T))
+    return _norm_cdf(d1) if opt == "CE" else _norm_cdf(d1) - 1.0
+
+
 # ---------------- real Zerodha F&O charges (mirror index.html calcCharges) ----------------
 def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
     buy_px = entry_prem if entry_side == "BUY" else exit_prem
@@ -159,6 +170,49 @@ def realised_vol_map(daily_close):
     vol = lr.rolling(20).std() * math.sqrt(252)
     vol = vol.bfill().clip(VIX_FLOOR, VIX_CAP)
     return {d.date(): float(v) for d, v in vol.items()}
+
+
+# ---------------- REAL implied vol: India VIX (the market's actual 30-day IV) ----------------
+# The realised-vol proxy above carries NO volatility-risk-premium (implied == realised by
+# construction), which is exactly why every BS-modeled SHORT-vol structure showed -95..-100%
+# historically (TRAP #106 family) — it could not "see" the VRP that short-vol harvests.
+# India VIX is NSE's published 30-day annualised implied-vol index (in %); pricing legs at
+# VIX/100 finally lets a BS backtest capture the VRP (implied usually > realised) honestly,
+# AND injects real vega: a day VIX spikes marks a short position to a loss, a day it crushes
+# marks it to a gain — the single most important driver for delta-neutral / short-vol.
+VIX_REAL_FLOOR, VIX_REAL_CAP = 0.05, 1.20   # 5%..120% — wide enough to keep the COVID spike (VIX 83)
+_VIX_CSV = os.path.join(HERE, "india_vix_daily.csv")
+
+
+def vix_sigma_map(csv_path=None):
+    """date -> annualised sigma from REAL India VIX daily close (Dhan sec_id 21).
+    Falls back to raising if the file is missing — a short-vol backtest MUST NOT
+    silently run on the VRP-free realised proxy (would invalidate the whole result)."""
+    path = csv_path or _VIX_CSV
+    if not os.path.exists(path):
+        raise FileNotFoundError(
+            f"India VIX history not found: {path}. Run `python fetch_vix.py` first "
+            "(short-vol/delta-neutral backtests require REAL implied vol, not the proxy).")
+    df = pd.read_csv(path)
+    out = {}
+    for _, r in df.iterrows():
+        d = pd.Timestamp(r["Date"]).date()
+        sig = float(r["Close"]) / 100.0
+        out[d] = min(max(sig, VIX_REAL_FLOOR), VIX_REAL_CAP)
+    return out
+
+
+def sigma_map_forward_filled(base_map, all_dates):
+    """VIX is a DAILY series; a backtest bar's date may be a half-day/holiday-adjacent
+    session VIX didn't print. Return a map covering every date in `all_dates`, carrying
+    the last known VIX forward (never a guess — just the most recent real print)."""
+    filled, last = {}, None
+    for d in sorted(all_dates):
+        if d in base_map:
+            last = base_map[d]
+        if last is not None:
+            filled[d] = last
+    return filled
 
 
 # ---------------- lot size (never hardcode — scrip master) ----------------

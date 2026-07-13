@@ -116,3 +116,4 @@ data/reports/
 
 # Lab gzip cache — sidecar .gz for /lab static assets (serve_lab_file), auto-regen per-machine
 scratch/nifty_trend/**/*.gz
+data/audit_history/
