@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-13 — Registry Legs column + gzip Lab pages (LIVE) + full local↔VPS drift reconcile
+**Status:** DONE — features VPS-deployed; reconcile commits local-only, pushed to origin (`734be41`·`710fd67`·`fcfeb60`·`714c57f`·`784bd0c`)
+**Layer:** ui / infra
+**Kya / Kyun:** Do chhote user requests + unke deploy me nikla ek bada drift issue, poora reconcile kiya.
+- **Registry Legs column (#56):** `strategy_registry.json` me har strategy pe explicit `legs` field (canonical source — leg-counts `option_structures.py` se: naked/single=1, straddle/strangle/vertical/backspread/credit=2, iron_fly=4). `templates/strategy_registry.html` COLS + cell me toggle-able **Legs** column (Status ke baad). Loader raw-JSON pass karta hai, koi schema-filter nahi.
+- **Lab page gzip (#49):** `serve_lab_file` ab text assets (js/html/json/css…) gzip-serve karta hai — sidecar `<file>.gz` cache (mtime-tied) + ETag/304 + path-traversal guard. `results.js` 13.6MB→3.4MB (4×). Read-only path, order-flow untouched. `.gitignore`: `scratch/nifty_trend/**/*.gz`. Slowness = payload size thi (conditional-304 pehle se tha), compute nahi.
+- **VPS deploy — DRIFT PAKDA:** teeno files scp karne se pehle drift-check me mila `trader_dashboard.py`/`risk_gate.py` **bidirectionally diverged** — VPS pe **VRP positional / ADR-006 overnight lane** feature tha jo local git me kabhi aaya hi nahi. Blind overwrite = wo live logic wipe (positional position 3:15 pe force-close). So registry.json/html overwrite (safe, VPS==local minus legs), par `trader_dashboard.py` **surgical-merge** (sirf gzip hunk VPS-copy pe, vrp/ADR-006 preserve). Deploy verified: md5 match, 8 paper-strategy PIDs restart survive (KillMode=process), gzip live (4.8MB→1.38MB).
+- **Full drift reconcile:** poora scan (158 tracked, CRLF-noise strip karke 46 real). **Sirf genuine VPS-only kaam = VRP feature** → local me pull kiya: `risk_gate.allow_overnight()`, `trader_dashboard` vrp+overnight-skip, `health_check` vrp entry, + naye files `vrp_straddle_trader.py`, `vrp_signal.py`, `_ADR/ADR-006-*.md`. `risk_gate` ab 0/0 vs VPS. **4 order-path files (webhook_executor/range_trader/execution_gateway/universe_trader)** hunk-by-hunk padhe → **local-AHEAD** (worklist Tasks 3b/4/3c), VPS pe sirf purana superseded code, kuch bachana nahi. **Line-endings:** `.gitattributes` (force LF) — 55-file CRLF noise permanent-fix. **Dead leftover:** VPS `brokers/smart_order.py` (June-30, `_paths` `brokers/` ko path pe daalta nahi → kabhi import nahi hota) — optional cleanup.
+**Files:** strategy_registry.json, templates/strategy_registry.html, trader_dashboard.py, _core/risk_gate.py, health_check.py, strategies/live/vrp_straddle_trader.py, strategies/live/vrp_signal.py, _ADR/ADR-006-*.md, .gitattributes, .gitignore
+
 ## 2026-07-13 — claude-code-worklist.md: Tasks 0/1/3/4/5/6 (go-live check + data-integrity + gateway migrations + loop automation)
 **Status:** DONE (local commits `b68cdbe`·`85de33d`·`e32bf3e`·`1384058`·`d5b6a17`·`cbbe00e`; VPS deploy SCHEDULED post-market 15:35 IST via scheduled task, NOT yet pushed to origin)
 **Layer:** infra / execution / validation / config
