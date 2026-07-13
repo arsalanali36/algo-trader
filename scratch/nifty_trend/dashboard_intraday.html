@@ -159,11 +159,12 @@
     <hr class="dash"><div id="dist"></div>
     <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
 
-  <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month in the heatmap above to filter · 📈 full-screen chart</span></h3>
+  <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month heatmap cell OR a P&amp;L-distribution bar to filter · 📈 full-screen chart</span></h3>
     <hr class="dash">
     <div class="tbtoolbar">
       <input id="tSearch" class="tsearch" placeholder="🔍 Search side / date / reason…">
       <span id="monthChip" style="display:none"></span>
+      <span id="bucketChip" style="display:none"></span>
       <span class="mut" id="tCount" style="font-size:11.5px"></span>
       <div class="colwrap"><button id="colBtn" class="tchbtn">⚙ Columns ▾</button>
         <div id="colMenu" class="colmenu"></div></div>
@@ -310,15 +311,19 @@ function renderDist(){
   if(DIST_VIEW==='table'){
     let rows='';
     for(let i=0;i<NB;i++){const c0=lo+i*bw,c1=lo+(i+1)*bw,cnt=bins[i],pc=100*cnt/n,col=((c0+c1)/2>=0)?'#3fb950':'#f85149';
-      rows+=`<tr><td>${xf(c0)} … ${xf(c1)}</td><td style="text-align:right">${cnt}</td><td style="text-align:right">${pc.toFixed(1)}%</td><td style="min-width:130px"><div style="height:9px;width:${(100*cnt/maxc).toFixed(0)}%;min-width:1px;background:${col};opacity:.6;border-radius:2px"></div></td></tr>`;}
+      const active=pnlBucketFilter&&pnlBucketFilter.unit===DIST_UNIT&&Math.abs(pnlBucketFilter.lo-c0)<1e-6;
+      rows+=`<tr style="cursor:pointer;${active?'background:#f0c00018':''}" title="click → filter trades table" onclick="setPnlBucketFilter(${c0},${c1},${i===NB-1?1:0})"><td>${xf(c0)} … ${xf(c1)}</td><td style="text-align:right">${cnt}</td><td style="text-align:right">${pc.toFixed(1)}%</td><td style="min-width:130px"><div style="height:9px;width:${(100*cnt/maxc).toFixed(0)}%;min-width:1px;background:${col};opacity:.6;border-radius:2px"></div></td></tr>`;}
     el.innerHTML=`<table class="tbl" style="width:100%"><tr><th>Bucket (${DIST_UNIT==='rs'?'₹':'pts'})</th><th style="text-align:right">Trades</th><th style="text-align:right">% of ${n}</th><th>Frequency</th></tr>${rows}</table>`;
     return;
   }
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
   if(lo<0&&hi>0){const zx=px(0);svg+=`<line x1="${zx.toFixed(1)}" y1="${mt}" x2="${zx.toFixed(1)}" y2="${H-mb}" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3"/>`;}
-  for(let i=0;i<NB;i++){const x0=px(lo+i*bw)+1,x1=px(lo+(i+1)*bw)-1,y=py(bins[i]);
+  for(let i=0;i<NB;i++){const c0=lo+i*bw,c1=lo+(i+1)*bw,x0=px(c0)+1,x1=px(c1)-1,y=py(bins[i]);
     const col=(lo+(i+0.5)*bw)>=0?'#3fb950':'#f85149',pc=(100*bins[i]/n).toFixed(1);
-    svg+=`<rect x="${x0.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,x1-x0).toFixed(1)}" height="${(H-mb-y).toFixed(1)}" fill="${col}" opacity="0.5" rx="1"><title>${xf(lo+i*bw)} to ${xf(lo+(i+1)*bw)}\n${bins[i]} trades (${pc}%)</title></rect>`;}
+    const active=pnlBucketFilter&&pnlBucketFilter.unit===DIST_UNIT&&Math.abs(pnlBucketFilter.lo-c0)<1e-6;
+    svg+=`<rect x="${x0.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,x1-x0).toFixed(1)}" height="${(H-mb-y).toFixed(1)}" fill="${col}" opacity="${active?0.95:0.5}" rx="1"/>`;
+    // transparent full-height hit-target on top → easy click even for thin bars
+    svg+=`<rect x="${px(c0).toFixed(1)}" y="${mt}" width="${Math.max(1,px(c1)-px(c0)).toFixed(1)}" height="${(H-mb-mt).toFixed(1)}" fill="transparent" style="cursor:pointer" onclick="setPnlBucketFilter(${c0},${c1},${i===NB-1?1:0})"><title>${xf(c0)} to ${xf(c1)}\n${bins[i]} trades (${pc}%)\n▶ click: filter trades table</title></rect>`;}
   if(sd>0){let d='';for(let i=0;i<=120;i++){const v=lo+span*i/120;
       const cnt=Math.exp(-((v-mean)*(v-mean))/(2*sd*sd))/(sd*Math.sqrt(2*Math.PI))*bw*n;
       d+=(i?'L':'M')+px(v).toFixed(1)+' '+py(cnt).toFixed(1)+' ';}
@@ -329,8 +334,10 @@ function renderDist(){
   svg+='</svg>';el.innerHTML=svg;
 }
 (function(){const a=document.getElementById('distRs'),b=document.getElementById('distPt');
-  if(a)a.onclick=()=>{DIST_UNIT='rs';setDistBtns();renderDist();};
-  if(b)b.onclick=()=>{DIST_UNIT='points';setDistBtns();renderDist();};
+  // switching unit invalidates a ₹/pt bucket filter (different scale) → clear it
+  const setUnit=u=>{DIST_UNIT=u;if(pnlBucketFilter){pnlBucketFilter=null;updateBucketChip();renderTradeTable();}setDistBtns();renderDist();};
+  if(a)a.onclick=()=>setUnit('rs');
+  if(b)b.onclick=()=>setUnit('points');
   const vb=document.getElementById('distView');
   if(vb)vb.onclick=()=>{DIST_VIEW=(DIST_VIEW==='chart')?'table':'chart';vb.textContent=(DIST_VIEW==='chart')?'📋 Table':'📈 Chart';renderDist();};
   setDistBtns();})();
@@ -429,12 +436,26 @@ const TCOLS=[
 ];
 let colVis=JSON.parse(localStorage.getItem('orb_tcols2')||'null')||{};
 TCOLS.forEach(c=>{if(colVis[c.k]===undefined)colVis[c.k]=!c.off;});
-let tSortKey='entry_dt',tSortDir=1,tQuery='',modalIdx=null,monthFilter=null;
+let tSortKey='entry_dt',tSortDir=1,tQuery='',modalIdx=null,monthFilter=null,pnlBucketFilter=null;
 function setMonthFilter(ym){
   monthFilter=(monthFilter===ym)?null:ym;   // click same month again = clear
   updateMonthChip();renderTradeTable();
   const p=document.getElementById('ttable').closest('.panel');
   if(monthFilter&&p)p.scrollIntoView({behavior:'smooth',block:'start'});}
+// P&L-distribution bucket → filter trades table (same pattern as month heatmap above)
+function setPnlBucketFilter(lo,hi,last){
+  const same=pnlBucketFilter&&pnlBucketFilter.lo===lo&&pnlBucketFilter.hi===hi&&pnlBucketFilter.unit===DIST_UNIT;
+  pnlBucketFilter=same?null:{lo,hi,last:!!last,unit:DIST_UNIT};   // click same bucket = clear
+  updateBucketChip();renderDist();renderTradeTable();            // renderDist → re-highlight active bar
+  const p=document.getElementById('ttable').closest('.panel');
+  if(pnlBucketFilter&&p)p.scrollIntoView({behavior:'smooth',block:'start'});}
+function updateBucketChip(){const chip=document.getElementById('bucketChip');if(!chip)return;
+  if(pnlBucketFilter){const f=pnlBucketFilter,
+    fmt=f.unit==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1)+'pt');
+    chip.style.display='';chip.style.cursor='pointer';chip.title='Clear P&L bucket filter';
+    chip.innerHTML=`<span style="background:#f0c00022;border:1px solid #f0c000;color:#f0c000;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">📊 ${fmt(f.lo)} … ${fmt(f.hi)} &nbsp;✕</span>`;
+    chip.onclick=()=>{pnlBucketFilter=null;updateBucketChip();renderDist();renderTradeTable();};}
+  else{chip.style.display='none';chip.innerHTML='';}}
 function updateMonthChip(){const chip=document.getElementById('monthChip');if(!chip)return;
   if(monthFilter){chip.style.display='';chip.style.cursor='pointer';chip.title='Clear month filter';
     chip.innerHTML=`<span style="background:#1f6feb22;border:1px solid var(--blue);color:#9db8ff;padding:3px 9px;border-radius:6px;font-size:11px;font-weight:700">📅 ${monthName(monthFilter)} &nbsp;✕</span>`;
@@ -443,6 +464,9 @@ function updateMonthChip(){const chip=document.getElementById('monthChip');if(!c
 
 function tRows(){let tr=(C().all_trades||[]).map((t,i)=>({...t,_i:i}));
   if(monthFilter)tr=tr.filter(t=>t.entry_dt.slice(0,7)===monthFilter);
+  if(pnlBucketFilter){const f=pnlBucketFilter;
+    tr=tr.filter(t=>{const v=f.unit==='rs'?(+t.pnl||0):(+t.points||0);
+      return v>=f.lo&&(v<f.hi||(f.last&&v<=f.hi));});}
   if(tQuery){const q=tQuery.toLowerCase();tr=tr.filter(t=>(t.side+' '+t.entry_dt+' '+t.reason).toLowerCase().includes(q));}
   const col=TCOLS.find(c=>c.k===tSortKey);
   if(col)tr.sort((a,b)=>{let x=col.raw(a),y=col.raw(b);if(typeof x==='string'){x=x.toLowerCase();y=y.toLowerCase();}return x<y?-tSortDir:(x>y?tSortDir:0);});
