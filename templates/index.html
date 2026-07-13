@@ -6302,8 +6302,17 @@
             tableHtml += '</tr></thead><tbody>';
             let grpMargin = 0, grpQty = 0;
 
+            // #59: legs of a multi-leg spread share a group_id — mark them so the 2 rows
+            // read as ONE position (spread), not "2 separate entries / a broken 2nd entry".
+            const _legTotal = {}; items.forEach(x => { if (x.group_id) _legTotal[x.group_id] = (_legTotal[x.group_id] || 0) + 1; });
+            const _legSeen = {};
             items.forEach(t => {
               const entry = Number(t.entry_price || 0), qty = t.qty || 0;
+              let _legBadge = '';
+              if (t.group_id && _legTotal[t.group_id] > 1) {
+                _legSeen[t.group_id] = (_legSeen[t.group_id] || 0) + 1;
+                _legBadge = `<span title="Spread ka leg — ye ${_legTotal[t.group_id]} legs milke EK position banate hain (alag/duplicate entry nahi)" style="background:#8957e522;color:#bc8cff;padding:1px 5px;border-radius:4px;font-size:9px;margin-left:5px;white-space:nowrap">🔗 leg ${_legSeen[t.group_id]}/${_legTotal[t.group_id]}</span>`;
+              }
               const closeSide = t.entry === 'BUY' ? 'SELL' : 'BUY', cbc = t.entry === 'BUY' ? '#f85149' : '#3fb950';
               const bId = 'xo_' + (t.sym + '_' + (t.source || '') + '_' + (t.strategy || '')).replace(/[^a-z0-9]/gi, '_');
               const argEsc = s => String(s || '').replace(/'/g, '');
@@ -6483,7 +6492,7 @@
                     break;
                   case 'symbol':
                     const isNoteColOn = activeOpenCols.some(x => x.id === 'note');
-                    val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
+                    val = `<b>${t.sym}</b>${_legBadge}` + (isNoteColOn ? '' : dispNote);
                     colorStyle = 'color:#adbac7;';
                     break;
                   case 'tags':
