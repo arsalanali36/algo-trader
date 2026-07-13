@@ -154,7 +154,8 @@
   </div>
 
   <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
-      <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button></span></h3>
+      <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
+        <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
     <hr class="dash"><div id="dist"></div>
     <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
 
@@ -285,7 +286,7 @@ function renderMonthly(){const c=C(),mo=['Jan','Feb','Mar','Apr','May','Jun','Ju
   h+='</table><div class="mut" style="font-size:11px;margin-top:6px">💡 kisi month pe click karo → neeche Trades table usi month pe filter ho jayegi (dobara click / chip ✕ = clear)</div>';
   const el=document.getElementById('monthly');el.innerHTML=h;
   el.querySelectorAll('.moclick').forEach(td=>td.onclick=()=>setMonthFilter(td.dataset.ym));}
-let DIST_UNIT='rs';
+let DIST_UNIT='rs',DIST_VIEW='chart';
 function setDistBtns(){[['distRs','rs'],['distPt','points']].forEach(([id,u])=>{const b=document.getElementById(id);if(b){const on=DIST_UNIT===u;b.style.background=on?'#1f6feb':'';b.style.color=on?'#fff':'';}});}
 function renderDist(){
   const el=document.getElementById('dist'),sEl=document.getElementById('distStats');
@@ -304,6 +305,15 @@ function renderDist(){
   const W=760,H=240,ml=8,mr=8,mt=14,mb=26;
   const px=v=>ml+((v-lo)/span)*(W-ml-mr),py=c=>(H-mb)-(c/maxc)*(H-mt-mb);
   const xf=DIST_UNIT==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1));
+  const capF=DIST_UNIT==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1)+'pt');
+  if(sEl)sEl.innerHTML=`n=${n} trades · mean <b>${capF(mean)}</b> · median ${capF(median)} · std ${capF(sd)} · win ${winPct.toFixed(0)}% · best ${capF(hi)} · worst ${capF(lo)} &nbsp;<span class="mut">(gold = fitted normal/bell · blue = mean · dashed = zero)</span>`;
+  if(DIST_VIEW==='table'){
+    let rows='';
+    for(let i=0;i<NB;i++){const c0=lo+i*bw,c1=lo+(i+1)*bw,cnt=bins[i],pc=100*cnt/n,col=((c0+c1)/2>=0)?'#3fb950':'#f85149';
+      rows+=`<tr><td>${xf(c0)} … ${xf(c1)}</td><td style="text-align:right">${cnt}</td><td style="text-align:right">${pc.toFixed(1)}%</td><td style="min-width:130px"><div style="height:9px;width:${(100*cnt/maxc).toFixed(0)}%;min-width:1px;background:${col};opacity:.6;border-radius:2px"></div></td></tr>`;}
+    el.innerHTML=`<table class="tbl" style="width:100%"><tr><th>Bucket (${DIST_UNIT==='rs'?'₹':'pts'})</th><th style="text-align:right">Trades</th><th style="text-align:right">% of ${n}</th><th>Frequency</th></tr>${rows}</table>`;
+    return;
+  }
   let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
   if(lo<0&&hi>0){const zx=px(0);svg+=`<line x1="${zx.toFixed(1)}" y1="${mt}" x2="${zx.toFixed(1)}" y2="${H-mb}" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3"/>`;}
   for(let i=0;i<NB;i++){const x0=px(lo+i*bw)+1,x1=px(lo+(i+1)*bw)-1,y=py(bins[i]);
@@ -317,12 +327,12 @@ function renderDist(){
   const _xl=(v,a)=>`<text x="${px(v).toFixed(0)}" y="${H-8}" fill="#8b949e" font-size="10" text-anchor="${a}">${xf(v)}</text>`;
   svg+=_xl(lo,'start')+((lo<0&&hi>0)?_xl(0,'middle'):'')+_xl(hi,'end');
   svg+='</svg>';el.innerHTML=svg;
-  if(sEl){const f=DIST_UNIT==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1)+'pt');
-    sEl.innerHTML=`n=${n} trades · mean <b>${f(mean)}</b> · median ${f(median)} · std ${f(sd)} · win ${winPct.toFixed(0)}% · best ${f(hi)} · worst ${f(lo)} &nbsp;<span class="mut">(gold = fitted normal/bell · blue = mean · dashed = zero)</span>`;}
 }
 (function(){const a=document.getElementById('distRs'),b=document.getElementById('distPt');
   if(a)a.onclick=()=>{DIST_UNIT='rs';setDistBtns();renderDist();};
   if(b)b.onclick=()=>{DIST_UNIT='points';setDistBtns();renderDist();};
+  const vb=document.getElementById('distView');
+  if(vb)vb.onclick=()=>{DIST_VIEW=(DIST_VIEW==='chart')?'table':'chart';vb.textContent=(DIST_VIEW==='chart')?'📋 Table':'📈 Chart';renderDist();};
   setDistBtns();})();
 function renderCards(){const m=C().metrics;
   const cards=[['Sharpe Ratio',m.sharpe.toFixed(2),m.sharpe>=1?'pos':(m.sharpe>0.5?'':'neg'),'target ≥ 1.0'],
