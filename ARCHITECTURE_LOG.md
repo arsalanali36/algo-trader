@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-13 — VPS ab ek git repo hai — local↔VPS sync git-based (scp retired), root-cause of the drift fixed
+**Status:** DONE — VPS git repo live, bidirectional push/pull tested (local↔GitHub↔VPS all at same HEAD). Deploy-key add: user-done.
+**Layer:** infra
+**Kya / Kyun:** Aaj ke drift episode ki ASLI jad = do copies (local + VPS) bina kisi sync-system ke, VPS git repo tha hi nahi (scp-deployed), isliye VPS pe hua kaam (VRP) local me kabhi nahi aata tha aur silent-lose ho sakta tha. Permanent fix: VPS ko proper git repo banaya, GitHub `arsalanali36/algo-trader` = single source of truth dono side.
+- **Safety-first setup:** pehle confirm kiya sab live/runtime files gitignored hain (`nifty_config.json`/`data/config.json`/`data/auth.json`/all `*.db` — bulletproof `*.db`/`*.sqlite` catch-all add kiya + empty `data/orders.db` untrack, taaki live trade-DB kabhi public origin pe na jaaye). VPS repo REAL path `/root/ARSALAN/CODE3B- TV BACKTEST ENGINE` (`/root/CODE3B...` = symlink). `git init` → `git reset --mixed origin/master` (HEAD+index origin pe, **working tree UNTOUCHED** — running code byte-identical; 8 paper PIDs + dashboard/monitor verified zinda before==after).
+- **Bidirectional auth:** fetch = HTTPS anon (public repo, koi cred nahi); push = SSH via VPS deploy-key `~/.ssh/algo_deploy_ed25519` (`core.sshCommand` + `IdentitiesOnly`). User ne pubkey GitHub Deploy Keys me **write access** ke saath add ki. Test: VPS empty-commit push → GitHub → local pull → dono HEAD `4d5fb73` identical. **PASS.**
+- **Naya workflow (scp retired for CODE3B):** local kaam→`git push`; VPS deploy→VPS pe `git pull`; VPS live-fix→VPS pe `git commit && git push`→local `git pull`. Memory: [[project_code3b_vps_git_sync]].
+**Note:** VPS working tree abhi bhi origin se kuch files pe "behind"/dirty (`git status` me `M`=purana order-path, `D`=origin ke docs/tests jo VPS pe nahi) — worklist changes deploy karte waqt `git checkout`/`pull` (webhook Task-4 cutover pehle VPS paper signal-replay maangta).
+**Files:** .gitignore (+`*.db`/`*.sqlite` catch-all, -data/orders.db), VPS-side git init/remote/deploy-key (no repo files).
+
 ## 2026-07-13 — Registry Legs column + gzip Lab pages (LIVE) + full local↔VPS drift reconcile
 **Status:** DONE — features VPS-deployed; reconcile commits local-only, pushed to origin (`734be41`·`710fd67`·`fcfeb60`·`714c57f`·`784bd0c`)
 **Layer:** ui / infra

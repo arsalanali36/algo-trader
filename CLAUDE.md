@@ -128,16 +128,28 @@ _DEV/tests/  _DEV/mockups/   ← test + mockup files       scratch/   ← gitign
 
 ## Deploy Karna
 
-> ✅ `_ops/deploy_vps.py` 2026-07-09 refactor me update ho gaya (ROOT_FILES/globs +
-> HERE=project-root + new folder layout). Pehli baar refactored structure deploy karne se
-> PEHLE **`VPS_MIGRATION.md` padho** (stale old-location files remove + `_ops` timer ExecStart
-> paths). Normal update ke liye `python "_ops/deploy_vps.py"` (ya manual SCP dir-name quote karke):
+> **2026-07-13 se VPS ek git repo hai — deploy ab GIT-BASED, scp NAHI** (isse local↔VPS
+> silent-drift khatam; poora reason: `ARCHITECTURE_LOG.md` 2026-07-13 top + memory
+> `project_code3b_vps_git_sync`). GitHub `arsalanali36/algo-trader` = dono side ki single
+> source of truth. VPS repo REAL path `/root/ARSALAN/CODE3B- TV BACKTEST ENGINE`
+> (`/root/CODE3B...` = symlink). Runtime files (`nifty_config.json`/`data/config.json`/
+> `data/auth.json`/all `*.db`) gitignored — git ops inhe kabhi touch nahi karte.
 
+**Normal flow:**
 ```bash
-# dir name me space hai — SFTP scp literal path leta hai, bas quote karo:
-scp -i "C:/Users/arsal/.ssh/khazana_ed25519" -o StrictHostKeyChecking=no <file> "root@72.61.173.32:/root/CODE3B- TV BACKTEST ENGINE/<file>"
-ssh -i "C:/Users/arsal/.ssh/khazana_ed25519" root@72.61.173.32 "systemctl restart algo-dashboard"
+# LOCAL pe kaam kiya:
+git add <files> && git commit -m "..." && git push origin master
+
+# VPS pe deploy (scp ki jagah) — ssh karke:
+ssh -i "C:/Users/arsal/.ssh/khazana_ed25519" root@72.61.173.32 \
+  "cd '/root/ARSALAN/CODE3B- TV BACKTEST ENGINE' && git pull origin master && systemctl restart algo-dashboard"
 ```
+- **VPS working tree dirty ho (local modifications)?** poora upgrade: `git fetch && git reset --hard origin/master` (⚠️ VPS-side uncommitted changes uda dega — pehle `git status` dekho; gitignored config/DB safe rehte hain). Ya surgical: `git checkout origin/master -- <file>`.
+- **VPS pe live-fix kiya?** wahin `git commit && git push` (deploy-key se), phir LOCAL pe `git pull` — warna wahi drift wapas.
+- Deploy ke baad hamesha: strategy PIDs before==after check (`KillMode=process` → dashboard restart children ko nahi maarta), md5/`git log -1` local==VPS.
+
+> **Purana scp/`_ops/deploy_vps.py` tareeka** ab fallback-only (git down ho tabhi). VPS git repo
+> banne se pehle wahi standard tha — commit history me use dikhega.
 
 ## Strategy Variations & Options Trading
 
@@ -380,6 +392,7 @@ saboot, "code sahi lag raha hai" nahi.
 
 | Date | Kya bana |
 |------|----------|
+| 2026-07-13 | **🔗 VPS ab git repo — local↔VPS sync git-based (scp retired), drift ki asli jad fix.** Aaj ke drift episode ki root cause = VPS git repo tha hi nahi (scp-deployed) → VPS pe hua kaam (VRP) local me kabhi nahi aata, silent-lose ho sakta tha. Fix: VPS ko git repo banaya, GitHub = single source of truth. Safety: sab live files gitignored confirm (`nifty_config.json`/`config.json`/`auth.json`/**bulletproof `*.db`/`*.sqlite` catch-all** — trade-DB kabhi public origin pe na jaaye); VPS REAL path `/root/ARSALAN/CODE3B...` (`/root/CODE3B...`=symlink); `git init` + `git reset --mixed origin/master` = **working tree untouched** (8 paper PIDs + services zinda verified). Auth: fetch=HTTPS-anon, push=SSH deploy-key `~/.ssh/algo_deploy_ed25519` (user ne GitHub Deploy Keys me write-access ke saath add ki). **Bidirectional test PASS** — VPS push→local pull, dono HEAD `4d5fb73`. Naya workflow: local `git push` / VPS deploy `git pull` / VPS live-fix `git commit && git push`. Memory [[project_code3b_vps_git_sync]]. Commits `18d8497`·`4d5fb73`. |
 | 2026-07-13 | **🏷️ Registry Legs column + ⚡ gzip Lab pages (VPS-LIVE) + full local↔VPS drift reconcile (5 commits, pushed to origin).** Do chhote user requests, par unke deploy ne ek bada drift issue khola. **(#56 Legs):** `strategy_registry.json` me har strategy pe explicit `legs` field (canonical source; leg-count `option_structures.py` se — naked/single=1, straddle/strangle/vertical/backspread/credit=2, iron_fly=4), `strategy_registry.html` me toggle-able Legs column. **(#49 Lab speed):** `serve_lab_file` ab gzip serve karta hai (sidecar `.gz` mtime-cache + ETag/304 + traversal-guard) — `results.js` 13.6MB→3.4MB (4×); slowness payload-size thi, compute nahi. **DRIFT PAKDA (deploy se pehle drift-check me):** VPS pe **VRP positional / ADR-006 overnight lane** feature tha jo local git me kabhi nahi aaya — blind overwrite usay wipe kar deta (positional 3:15 force-close). So `trader_dashboard.py` **surgical-merge** (gzip hunk only, vrp/ADR-006 preserve), registry files overwrite (safe). Deploy verified — 8 paper PIDs restart-survive (KillMode=process), gzip live. **Full reconcile:** 158 tracked, CRLF-noise strip → 46 real; **sirf genuine VPS-only = VRP** → local me pull (`risk_gate.allow_overnight()`, td vrp+overnight-skip, health_check vrp, + `vrp_straddle_trader.py`/`vrp_signal.py`/`ADR-006`); `risk_gate` ab 0/0 vs VPS. **4 order-path files** (webhook_executor/range_trader/execution_gateway/universe_trader) hunk-by-hunk padhe → **local-AHEAD** (worklist Tasks), VPS pe purana code, kuch bachana nahi. `.gitattributes` (force LF) → 55-file CRLF noise permanent-fix. Dead VPS leftover: `brokers/smart_order.py` (never imported). Memory: [[project_code3b_local_vps_drift]]. Commits `734be41`·`710fd67`·`fcfeb60`·`714c57f`·`784bd0c`. |
 | 2026-07-13 | **📋 claude-code-worklist.md — Tasks 0/1/3/4/5/6 done (go-live check + data-integrity gate + 2 gateway migrations + loop automation), 6 local commits, VPS deploy scheduled post-market.** (0) Pre-market go/no-go: all active strategies `mode:paper` (₹0 real risk), #06 OFF ✅, global cap ₹10L, per-strategy caps null; **8 files deploy-drifted** (VPS older: 02-07 + execution_gateway + risk_gate) → post-market sync chosen (scheduled task 15:35 IST). (6) `dom_recost.py` real-slip on all 14 pre-ADR-005 runs → `scratch/nifty_trend/SLIP_RECOST_2026-07-13.md` (hub NOT overwritten; live fauj full-Sharpe >1 survives; dvert/chainzone-positional dip <1 in OOS only). (1) new `scratch/nifty_trend/data_integrity.py` — `worst_day_sanity` (TRAP #109) + `assert_coverage` (TRAP #107) → run_hunt meta `shippable` gate + ironfly_frame + real_struct2. (3a) `scripts/setup_hooks.sh` (hook installer, CLAUDE.md Rule 6B). (3b) range_trader equity route inline risk → `strategy_safety.gate_entry()` (Rule 6B; seg=NSE_EQ; fixed get_broker UnboundLocalError). (3c) universe_trader recovery-fail → loud WARN. (4) `execution_gateway.execute_signal` +`sl_type_override`; `webhook_executor._do_entry` main leg migrated to gateway (offline-parity PASS; **live cutover still needs VPS paper signal-replay**). (5) 3 `.claude/commands/*.md` loops + **CLAUDE.md Rule 6D** (loops never touch `_core/` live-path). New tasks logged: 9 (log rotation), 10 (03_orbst DUP-INDICATOR audit FAIL). Commits `b68cdbe`·`85de33d`·`e32bf3e`·`1384058`·`d5b6a17`·`cbbe00e`. |
 | 2026-07-12 | **📏 Real bid/ask spread slippage from brother's DOM order-book — measured + wired into all BS backtest engines (ADR-005, git `62019ca`/`449f9b5`).** User "Direction A": brother's 20-level order-book (`C:\_SABHAI DATA - Copy`, 21 days, ATM CE/PE/FUT, READ-ONLY) se real spread MEASURE karke backtest ke GUESSED cost knobs replace kiye (`bs_option.reprice*` spread=0 maanti thi, `real_struct2` flat 0.5% — dono unvalidated, LESSONS TRAP #111). New (scratch/nifty_trend): `dom_spread.py` (measure→`dom_spread_calib.json`; NIFTY ATM ≈**0.11-0.16%/leg**, wings 0.24%, FUT 0.008%), `dom_cost.py` (per-premium loader), `dom_recost.py` (recorded runs ko re-cost bina pipeline re-run — zero-slip recorded Sharpe EXACTLY reproduce). **Durable wiring:** single shared `bs_option.slip_cost_leg()` (DOM-calibrated, `SLIP_ENABLED`/`SLIP_MULT` knobs, 0.15% fallback) → `bs_option.reprice*` + `option_structures.backtest_structure` + `real_struct2` (`slip_mode` dom/flat) — har FUTURE hunt real spread include karta hai, Sharpe≥1 gate honest numbers pe. Verified E2E: pivot bs\|full 0.967 (SLIP off)→0.941 (on)==dom_recost. **Findings:** deployed ATM-buy fauj (01/00/03/04) 2× stress tak survive (haircut ~2-8%); borderline #08 pivot (0.94) + chain-zone positional confirmed marginal (cost-artifact NAHI); vol family VPS-run — iron_fly −54%→−41% (dead), short_straddle −12%→−1.0% (~breakeven, VRP edge spread se nahi marti, par naked=tail/hedged=wing-cost → koi vehicle nahi; verdict same, diagnosis refined). Existing runs/ zero-slip numbers dikhate hain jab tak re-run na ho. Docs: ADR-005, MISSION RESUME-HERE, LESSONS #111, ARCHITECTURE_LOG. |
