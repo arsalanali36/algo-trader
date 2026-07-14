@@ -1309,6 +1309,25 @@ def liquidity_filter_enabled(strategy):
     return True if v is None else bool(v)
 
 
+def allow_overnight(strategy):
+    """OPT-IN ONLY (default False) — whether THIS strategy's option positions may
+    be held past the blanket 3:15 EOD squareoff (i.e. a positional/overnight lane,
+    e.g. the VRP weekly-straddle held to expiry — see _ADR/ADR-006).
+
+    nifty_config.json["_risk"]["per_strategy"][<sid>]["allow_overnight"] = true.
+    There is NO global switch on purpose — this must be turned on per-strategy,
+    deliberately, never account-wide. Any config/parse problem → False (fail-safe:
+    the position gets squared off at 3:15 like everything else, never silently
+    left open overnight). Expiry-day squareoff, ITM guard and the RMS daily-loss
+    breaker still apply regardless of this flag."""
+    try:
+        rc = _risk_cfg()
+        v = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("allow_overnight")
+        return bool(v) if v is not None else False
+    except Exception:
+        return False
+
+
 # ── Expiry-day guards ────────────────────────────────────────────────────────
 
 # On expiry day, close ALL open option positions at this time (not 3:15)

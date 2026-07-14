@@ -238,6 +238,8 @@ STRATEGIES = {
     "shortvol": {"script": str(TRADERS_DIR / "06_shortvol_trader.py"), "log": BASE_DIR / "logs/shortvol_v1.log", "cfg": TC_FILE, "grep": "06_shortvol_trader"},
     # 07 = Mid-Day ORB on BANKNIFTY (new underlying, p=0.011, Sharpe 1.46)
     "banknifty": {"script": str(TRADERS_DIR / "07_banknifty_trader.py"), "log": BASE_DIR / "logs/banknifty_v1.log", "cfg": TC_FILE, "grep": "07_banknifty_trader"},
+    # VRP panic-fade — POSITIONAL (holds to expiry via allow_overnight, ADR-006)
+    "vrp":       {"script": str(TRADERS_DIR / "vrp_straddle_trader.py"), "log": BASE_DIR / "logs/vrp_v1.log", "cfg": TC_FILE, "grep": "vrp_straddle_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
@@ -5714,8 +5716,27 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     _sq_h, _sq_m = _rg.exit_time_config()[0]   # RMS single-source squareoff time (was hardcoded 15:15)
     if (ist_now.hour > _sq_h or (ist_now.hour == _sq_h and ist_now.minute >= _sq_m)) \
        and _is_option:
-        _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
-        return
+        # ── Positional/overnight lane (ADR-006) ─────────────────────────────
+        # A strategy EXPLICITLY flagged allow_overnight (opt-in, default False)
+        # may carry its option position PAST 3:15 (held to expiry — e.g. VRP
+        # weekly straddle). PURELY ADDITIVE: any strategy NOT flagged is squared
+        # off here exactly as before. NEVER skip on expiry day (must settle) —
+        # the expiry-day guard above already closes those earlier at 2:55. Any
+        # doubt/exception → square off (fail-safe, never left open silently).
+        _skip_eod = False
+        try:
+            _owner = p.get("strategy") or ""
+            _skip_eod = bool(_owner) and _rg.allow_overnight(_owner) and not _exp_day
+        except Exception:
+            _skip_eod = False
+        if _skip_eod:
+            print(f"[pos_monitor] {p.get('sym')} held OVERNIGHT — strategy "
+                  f"{p.get('strategy')} allow_overnight=True, non-expiry day "
+                  f"(EOD 3:15 squareoff skipped; expiry/ITM/RMS guards still active)",
+                  flush=True)
+        else:
+            _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)
+            return
 
     # ── SUPREME RMS daily-loss breaker — the one guardrail no strategy
     # can bypass. Once a strategy's cumulative P&L today (realized +
