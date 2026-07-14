@@ -1,36 +1,56 @@
 {
-  "slug": "chain_zone_longatm",
-  "design": "chain_zone",
-  "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
-  "tf": "5m",
-  "params": {
-    "touch_tol": 5.0,
-    "zone_age": 2,
-    "max_cs": 40.0,
-    "hawa": false,
-    "chain_lookback": 20,
-    "atr_sl": 2.5,
-    "rr": 1.5
+ "slug": "chain_zone_longatm",
+ "design": "chain_zone",
+ "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+ "tf": "5m",
+ "params": {
+  "touch_tol": 5.0,
+  "zone_age": 2,
+  "max_cs": 40.0,
+  "hawa": false,
+  "chain_lookback": 20,
+  "atr_sl": 2.5,
+  "rr": 1.5
+ },
+ "exit": "stop_only",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.946,
+  "net_pct": 69.133,
+  "maxdd": -3.086,
+  "win_rate": 39.756,
+  "trades": 1806,
+  "profit_factor": 1.493
+ },
+ "instrument_full_sharpe": 0.566,
+ "rms_full_sharpe": 0.61,
+ "p_value": 0.0,
+ "created": "2026-07-11 01:41",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": false,
+  "full": {
+   "sharpe": 1.871,
+   "net_pct": 66.38,
+   "maxdd": -3.2
   },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-    "sharpe": 1.946,
-    "net_pct": 69.133,
-    "maxdd": -3.086,
-    "win_rate": 39.756,
-    "trades": 1806,
-    "profit_factor": 1.493
+  "train": {
+   "sharpe": 1.83,
+   "net_pct": 40.73,
+   "maxdd": -3.2
   },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:41"
+  "oos": {
+   "sharpe": 1.959,
+   "net_pct": 25.7,
+   "maxdd": -2.61
+  }
+ }
 }

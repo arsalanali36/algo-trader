@@ -1,35 +1,55 @@
 {
-  "slug": "long_strangle_orb",
-  "design": "long_strangle/orb_break",
-  "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
-  "tf": "5m",
-  "params": {
-    "tp_frac": 0.75,
-    "sl_frac": 1.0,
-    "or_min": 15,
-    "orb_k": 0.5,
-    "h0": 11,
-    "h1": 13
+ "slug": "long_strangle_orb",
+ "design": "long_strangle/orb_break",
+ "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
+ "tf": "5m",
+ "params": {
+  "tp_frac": 0.75,
+  "sl_frac": 1.0,
+  "or_min": 15,
+  "orb_k": 0.5,
+  "h0": 11,
+  "h1": 13
+ },
+ "exit": "tp0.75/sl1.0",
+ "instrument": "NIFTY 50 options",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": false,
+ "bs_full": {
+  "sharpe": 4.085,
+  "net_pct": 90.026,
+  "maxdd": -0.771,
+  "win_rate": 48.695,
+  "trades": 1686,
+  "profit_factor": 4.283
+ },
+ "instrument_full_sharpe": 4.881,
+ "rms_full_sharpe": 4.881,
+ "p_value": 0.072,
+ "created": "2026-07-10 23:09",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": true,
+  "full": {
+   "sharpe": 3.96,
+   "net_pct": 86.81,
+   "maxdd": -0.79
   },
-  "exit": "tp0.75/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": false,
-  "bs_full": {
-    "sharpe": 4.085,
-    "net_pct": 90.026,
-    "maxdd": -0.771,
-    "win_rate": 48.695,
-    "trades": 1686,
-    "profit_factor": 4.283
+  "train": {
+   "sharpe": 3.636,
+   "net_pct": 48.4,
+   "maxdd": -0.62
   },
-  "instrument_full_sharpe": 4.881,
-  "rms_full_sharpe": 4.881,
-  "p_value": 0.072,
-  "created": "2026-07-10 23:09"
+  "oos": {
+   "sharpe": 4.666,
+   "net_pct": 38.41,
+   "maxdd": -1.14
+  }
+ }
 }

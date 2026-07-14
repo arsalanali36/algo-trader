@@ -1,35 +1,55 @@
 {
-  "slug": "banknifty_hunt",
-  "design": "tod_orb",
-  "title": "07 - Mid-Day ORB [BANKNIFTY]",
-  "tf": "15m",
-  "params": {
-    "or_min": 30,
-    "orb_k": 1.5,
-    "h0": 11,
-    "h1": 14,
-    "atr_sl": 2.0,
-    "rr": 1.5
+ "slug": "banknifty_hunt",
+ "design": "tod_orb",
+ "title": "07 - Mid-Day ORB [BANKNIFTY]",
+ "tf": "15m",
+ "params": {
+  "or_min": 30,
+  "orb_k": 1.5,
+  "h0": 11,
+  "h1": 14,
+  "atr_sl": 2.0,
+  "rr": 1.5
+ },
+ "exit": "atr_rr",
+ "instrument": "BANKNIFTY",
+ "lot_size": 30,
+ "window": [
+  "2022-01-03",
+  "2026-07-09"
+ ],
+ "days": 1111,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.459,
+  "net_pct": 23.552,
+  "maxdd": -2.981,
+  "win_rate": 49.415,
+  "trades": 342,
+  "profit_factor": 1.64
+ },
+ "instrument_full_sharpe": 0.509,
+ "rms_full_sharpe": 0.516,
+ "p_value": 0.011,
+ "created": "2026-07-11 23:51",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": true,
+  "full": {
+   "sharpe": 1.367,
+   "net_pct": 21.94,
+   "maxdd": -3.08
   },
-  "exit": "atr_rr",
-  "instrument": "BANKNIFTY",
-  "lot_size": 30,
-  "window": [
-    "2022-01-03",
-    "2026-07-09"
-  ],
-  "days": 1111,
-  "significant": true,
-  "bs_full": {
-    "sharpe": 1.459,
-    "net_pct": 23.552,
-    "maxdd": -2.981,
-    "win_rate": 49.415,
-    "trades": 342,
-    "profit_factor": 1.64
+  "train": {
+   "sharpe": 1.451,
+   "net_pct": 17.19,
+   "maxdd": -3.08
   },
-  "instrument_full_sharpe": 0.509,
-  "rms_full_sharpe": 0.516,
-  "p_value": 0.011,
-  "created": "2026-07-11 23:51"
+  "oos": {
+   "sharpe": 1.216,
+   "net_pct": 4.92,
+   "maxdd": -2.08
+  }
+ }
 }

@@ -117,14 +117,23 @@ async function loadRegistry(){
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.slice(0,-3);if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (n<0?'-':'')+'₹'+rest+last3}
 function mapRun(r){
   const b=r.bs_full||{}, sig=r.significant;
-  const net=(b.net_pct!=null)?(b.net_pct>=0?'+':'')+b.net_pct.toFixed(1)+'%':'—';
+  // real_cost = stt_recost --apply annotation (DOM slip + date-aware STT on recorded trades).
+  // When present it becomes the PRIMARY number (table + sort); recorded zero-slip shown beside.
+  const rcAll=r.real_cost||null, rc=rcAll&&rcAll.full?rcAll.full:null, rcoos=rcAll&&rcAll.oos?rcAll.oos:null;
+  const shp=rc?rc.sharpe:(b.sharpe??null);
+  const netv=rc?rc.net_pct:b.net_pct;
+  const net=(netv!=null)?(netv>=0?'+':'')+netv.toFixed(1)+'%':'—';
+  const ddv=rc?rc.maxdd:b.maxdd;
+  const rcNote=rc?`💰 <b class="teal">REAL-COST</b> (DOM spread + date-aware STT, ${rcAll.date}${rcAll.approx?', multi-leg approx':''}): `+
+      `Sharpe <b>${rc.sharpe.toFixed(2)}</b>${rcoos?` · OOS <b>${rcoos.sharpe.toFixed(2)}</b>`:''} — recorded zero-slip tha ${b.sharpe!=null?b.sharpe.toFixed(2):'—'}. `:'';
   return {id:r.slug, type:'strat', winner:!!sig, name:(r.title||r.slug)+' — 3-pass', tf:r.tf,
-    sharpe:b.sharpe??null, maxdd:b.maxdd??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
+    sharpe:shp, sharpe_rec:(rc&&b.sharpe!=null&&Math.abs(b.sharpe-rc.sharpe)>=0.005)?b.sharpe:null,
+    maxdd:ddv??null, win:b.win_rate!=null?Math.round(b.win_rate):null,
     trades:b.trades??null, sig:sig?'PASS':'FAIL', sigp:r.p_value??0,
     link:`runs/${r.slug}/index.html`, deployed:r.deployed||'', deploy_key:r.deploy_key||'',
-    desc:`${sig?'✅ <b class="teal">GENUINE EDGE</b>':'⚠️ <b class="neg">NOT SIGNIFICANT</b>'} — 3-pass (Instrument→RMS→Black-Scholes). `+
-      `Deployable ③ BS: Sharpe <b>${b.sharpe!=null?b.sharpe.toFixed(2):'—'}</b>, net <b class="${(b.net_pct||0)>=0?'pos':'neg'}">${net}</b>, `+
-      `maxDD <b>${b.maxdd!=null?b.maxdd.toFixed(1)+'%':'—'}</b>, PF ${b.profit_factor!=null?b.profit_factor.toFixed(2):'—'}, win ${b.win_rate!=null?b.win_rate.toFixed(0)+'%':'—'}. `+
+    desc:`${sig?'✅ <b class="teal">GENUINE EDGE</b>':'⚠️ <b class="neg">NOT SIGNIFICANT</b>'} — 3-pass (Instrument→RMS→Black-Scholes). `+rcNote+
+      `Deployable ③ BS: Sharpe <b>${shp!=null?shp.toFixed(2):'—'}</b>, net <b class="${(netv||0)>=0?'pos':'neg'}">${net}</b>, `+
+      `maxDD <b>${ddv!=null?ddv.toFixed(1)+'%':'—'}</b>, PF ${b.profit_factor!=null?b.profit_factor.toFixed(2):'—'}, win ${b.win_rate!=null?b.win_rate.toFixed(0)+'%':'—'}. `+
       `① Instrument Sharpe ${r.instrument_full_sharpe!=null?(+r.instrument_full_sharpe).toFixed(2):'—'} · ② +RMS ${r.rms_full_sharpe!=null?(+r.rms_full_sharpe).toFixed(2):'—'}. `+
       `${r.instrument||'NIFTY 50'} ATM options, lot ${r.lot_size||'—'}, 1x. Window ${(r.window||['','']).join(' → ')}. p=${(r.p_value??0).toFixed(3)}.`};
 }
@@ -181,7 +190,8 @@ function render(){
   const tb=document.getElementById('rows');
   tb.innerHTML=list.map(i=>{
     const badge=i.winner?'<span class="badge win">🏆 WINNER</span>':(i.type==='tool'?'<span class="badge tool">TOOL</span>':'<span class="badge strat">STRATEGY</span>');
-    const sh=i.sharpe==null?'<span class="mut">—</span>':`<span class="${i.sharpe>=1?'pos':(i.sharpe>=0.5?'':'neg')}">${i.sharpe.toFixed(2)}</span>`;
+    const sh=i.sharpe==null?'<span class="mut">—</span>':`<span class="${i.sharpe>=1?'pos':(i.sharpe>=0.5?'':'neg')}" ${i.sharpe_rec!=null?'title="real-cost (DOM spread + date-aware STT); recorded zero-slip = '+i.sharpe_rec.toFixed(2)+'"':''}>${i.sharpe.toFixed(2)}</span>`+
+      (i.sharpe_rec!=null?`<span class="mut" style="font-size:10px"> rec ${i.sharpe_rec.toFixed(2)}</span>`:'');
     const dd=i.maxdd==null?'<span class="mut">—</span>':`<span class="${i.maxdd>=-10?'pos':'neg'}">${i.maxdd.toFixed(1)}%</span>`;
     const wn=i.win==null?'<span class="mut">—</span>':i.win+'%';
     const tr=i.trades==null?'<span class="mut">—</span>':i.trades;

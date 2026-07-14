@@ -566,8 +566,13 @@ function renderAll(){const m=C().metrics,s=C().significance;
     const per=perLabel(P);
     const _pl=(R.meta&&R.meta.pass_labels)||{};
     const cmp=String(PASS).startsWith('bs')?` <b>Real option-premium P&amp;L</b> (${_pl[PASS+'_desc']||'ATM CE/PE, Black-Scholes + real Zerodha tax'}).`:(PASS==='rms'?' Spot-notional with account daily caps.':' Raw spot-notional signal, no caps/options.');
+    // real_cost = stt_recost --apply annotation (DOM spread + date-aware Budget-2026 STT on the
+    // SAME recorded trades) — the recorded bs numbers above are zero-slip/old-charges.
+    const _rc=(R.meta&&R.meta.real_cost)||null, _rcp=(_rc&&_rc[P])?_rc[P]:null;
+    const _rcLine=(String(PASS).startsWith('bs')&&_rcp)
+      ?` <span style="color:var(--teal,#2dd4bf)">💰 <b>REAL-COST (${_rc.date}${_rc.approx?', multi-leg approx':''}):</b> Sharpe <b>${_rcp.sharpe.toFixed(2)}</b>, net ${_rcp.net_pct.toFixed(1)}%, DD ${_rcp.maxdd.toFixed(1)}% — DOM bid/ask spread + date-aware STT applied to these same trades (recorded numbers upar zero-slip hain).</span>`:'';
     document.getElementById('warnbar').innerHTML=
-      `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
+      `<b>${per}:</b> Sharpe <b>${m.sharpe.toFixed(2)}</b>, win ${m.win_rate.toFixed(0)}%, net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}%.${cmp}${_rcLine} Toggle PASS ①→③ to see each layer's effect; toggle PERIOD to check the edge holds out-of-sample.`;
     document.getElementById('passnote').innerHTML=passNote(PASS);
   } else {
     document.getElementById('warnbar').innerHTML=

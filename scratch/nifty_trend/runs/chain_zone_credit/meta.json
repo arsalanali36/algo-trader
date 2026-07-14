@@ -1,36 +1,56 @@
 {
-  "slug": "chain_zone_credit",
-  "design": "chain_zone",
-  "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
-  "tf": "5m",
-  "params": {
-    "touch_tol": 5.0,
-    "zone_age": 2,
-    "max_cs": 40.0,
-    "hawa": false,
-    "chain_lookback": 20,
-    "atr_sl": 2.5,
-    "rr": 1.5
+ "slug": "chain_zone_credit",
+ "design": "chain_zone",
+ "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
+ "tf": "5m",
+ "params": {
+  "touch_tol": 5.0,
+  "zone_age": 2,
+  "max_cs": 40.0,
+  "hawa": false,
+  "chain_lookback": 20,
+  "atr_sl": 2.5,
+  "rr": 1.5
+ },
+ "exit": "stop_only",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": -1.003,
+  "net_pct": -24.512,
+  "maxdd": -25.646,
+  "win_rate": 42.137,
+  "trades": 1806,
+  "profit_factor": 0.839
+ },
+ "instrument_full_sharpe": 0.566,
+ "rms_full_sharpe": 0.61,
+ "p_value": 0.0,
+ "created": "2026-07-11 01:37",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": true,
+  "full": {
+   "sharpe": -1.096,
+   "net_pct": -26.89,
+   "maxdd": -27.8
   },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-    "sharpe": -1.003,
-    "net_pct": -24.512,
-    "maxdd": -25.646,
-    "win_rate": 42.137,
-    "trades": 1806,
-    "profit_factor": 0.839
+  "train": {
+   "sharpe": -1.446,
+   "net_pct": -21.48,
+   "maxdd": -21.75
   },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:37"
+  "oos": {
+   "sharpe": -0.635,
+   "net_pct": -5.39,
+   "maxdd": -7.29
+  }
+ }
 }

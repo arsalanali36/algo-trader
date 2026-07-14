@@ -1,36 +1,56 @@
 {
-  "slug": "chain_zone_naked",
-  "design": "chain_zone",
-  "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
-  "tf": "5m",
-  "params": {
-    "touch_tol": 5.0,
-    "zone_age": 2,
-    "max_cs": 40.0,
-    "hawa": false,
-    "chain_lookback": 20,
-    "atr_sl": 2.5,
-    "rr": 1.5
+ "slug": "chain_zone_naked",
+ "design": "chain_zone",
+ "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
+ "tf": "5m",
+ "params": {
+  "touch_tol": 5.0,
+  "zone_age": 2,
+  "max_cs": 40.0,
+  "hawa": false,
+  "chain_lookback": 20,
+  "atr_sl": 2.5,
+  "rr": 1.5
+ },
+ "exit": "stop_only",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": -0.625,
+  "net_pct": -16.192,
+  "maxdd": -18.168,
+  "win_rate": 43.3,
+  "trades": 1806,
+  "profit_factor": 0.896
+ },
+ "instrument_full_sharpe": 0.566,
+ "rms_full_sharpe": 0.61,
+ "p_value": 0.0,
+ "created": "2026-07-11 01:40",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": true,
+  "full": {
+   "sharpe": -0.722,
+   "net_pct": -18.74,
+   "maxdd": -20.24
   },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-    "sharpe": -0.625,
-    "net_pct": -16.192,
-    "maxdd": -18.168,
-    "win_rate": 43.3,
-    "trades": 1806,
-    "profit_factor": 0.896
+  "train": {
+   "sharpe": -1.034,
+   "net_pct": -15.98,
+   "maxdd": -16.45
   },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:40"
+  "oos": {
+   "sharpe": -0.296,
+   "net_pct": -2.75,
+   "maxdd": -5.97
+  }
+ }
 }

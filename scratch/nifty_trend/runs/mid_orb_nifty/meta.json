@@ -1,35 +1,55 @@
 {
-  "slug": "mid_orb_nifty",
-  "design": "tod_orb",
-  "title": "00 - Mid-Day ORB (reference, live)",
-  "tf": "15m",
-  "params": {
-    "or_min": 30,
-    "orb_k": 1.0,
-    "h0": 11,
-    "h1": 14,
-    "atr_sl": 1.5,
-    "rr": 2.5
+ "slug": "mid_orb_nifty",
+ "design": "tod_orb",
+ "title": "00 - Mid-Day ORB (reference, live)",
+ "tf": "15m",
+ "params": {
+  "or_min": 30,
+  "orb_k": 1.0,
+  "h0": 11,
+  "h1": 14,
+  "atr_sl": 1.5,
+  "rr": 2.5
+ },
+ "exit": "atr_rr",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2022-01-03",
+  "2026-07-09"
+ ],
+ "days": 1112,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 2.366,
+  "net_pct": 39.205,
+  "maxdd": -1.769,
+  "win_rate": 44.797,
+  "trades": 567,
+  "profit_factor": 1.927
+ },
+ "instrument_full_sharpe": 0.973,
+ "rms_full_sharpe": 0.975,
+ "p_value": 0.0,
+ "created": "2026-07-10 09:13",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": false,
+  "full": {
+   "sharpe": 2.319,
+   "net_pct": 38.33,
+   "maxdd": -1.81
   },
-  "exit": "atr_rr",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-    "2022-01-03",
-    "2026-07-09"
-  ],
-  "days": 1112,
-  "significant": true,
-  "bs_full": {
-    "sharpe": 2.366,
-    "net_pct": 39.205,
-    "maxdd": -1.769,
-    "win_rate": 44.797,
-    "trades": 567,
-    "profit_factor": 1.927
+  "train": {
+   "sharpe": 2.345,
+   "net_pct": 27.48,
+   "maxdd": -1.81
   },
-  "instrument_full_sharpe": 0.973,
-  "rms_full_sharpe": 0.975,
-  "p_value": 0.0,
-  "created": "2026-07-10 09:13"
+  "oos": {
+   "sharpe": 2.449,
+   "net_pct": 11.03,
+   "maxdd": -0.89
+  }
+ }
 }

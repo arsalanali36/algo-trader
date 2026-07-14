@@ -1,36 +1,56 @@
 {
-  "slug": "debit_vertical_orb",
-  "design": "vertical_debit/orb_break",
-  "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
-  "tf": "15m",
-  "params": {
-    "tp_frac": 1.0,
-    "sl_frac": 1.0,
-    "or_min": 15,
-    "orb_k": 1.0,
-    "wing_off": 10,
-    "vrp_mult": 1.2,
-    "skip_expiry": true
+ "slug": "debit_vertical_orb",
+ "design": "vertical_debit/orb_break",
+ "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
+ "tf": "15m",
+ "params": {
+  "tp_frac": 1.0,
+  "sl_frac": 1.0,
+  "or_min": 15,
+  "orb_k": 1.0,
+  "wing_off": 10,
+  "vrp_mult": 1.2,
+  "skip_expiry": true
+ },
+ "exit": "tp1.0/sl1.0",
+ "instrument": "NIFTY 50 options",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.671,
+  "net_pct": 38.648,
+  "maxdd": -2.053,
+  "win_rate": 50.693,
+  "trades": 1227,
+  "profit_factor": 1.449
+ },
+ "instrument_full_sharpe": 2.231,
+ "rms_full_sharpe": 2.231,
+ "p_value": 0.0,
+ "created": "2026-07-10 22:41",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": true,
+  "full": {
+   "sharpe": 1.593,
+   "net_pct": 36.75,
+   "maxdd": -2.01
   },
-  "exit": "tp1.0/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-    "sharpe": 1.671,
-    "net_pct": 38.648,
-    "maxdd": -2.053,
-    "win_rate": 50.693,
-    "trades": 1227,
-    "profit_factor": 1.449
+  "train": {
+   "sharpe": 1.928,
+   "net_pct": 29.21,
+   "maxdd": -1.47
   },
-  "instrument_full_sharpe": 2.231,
-  "rms_full_sharpe": 2.231,
-  "p_value": 0.0,
-  "created": "2026-07-10 22:41"
+  "oos": {
+   "sharpe": 0.925,
+   "net_pct": 7.54,
+   "maxdd": -2.54
+  }
+ }
 }

@@ -1,35 +1,55 @@
 {
-  "slug": "long_straddle_orb",
-  "design": "long_straddle/orb_break",
-  "title": "01 - Long Straddle @ ORB breakout",
-  "tf": "5m",
-  "params": {
-    "tp_frac": 0.5,
-    "sl_frac": 1.0,
-    "or_min": 15,
-    "orb_k": 0.5,
-    "vrp_mult": 1.2,
-    "skip_expiry": true
+ "slug": "long_straddle_orb",
+ "design": "long_straddle/orb_break",
+ "title": "01 - Long Straddle @ ORB breakout",
+ "tf": "5m",
+ "params": {
+  "tp_frac": 0.5,
+  "sl_frac": 1.0,
+  "or_min": 15,
+  "orb_k": 0.5,
+  "vrp_mult": 1.2,
+  "skip_expiry": true
+ },
+ "exit": "tp0.5/sl1.0",
+ "instrument": "NIFTY 50 options",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 3.549,
+  "net_pct": 81.666,
+  "maxdd": -1.038,
+  "win_rate": 43.262,
+  "trades": 1625,
+  "profit_factor": 3.006
+ },
+ "instrument_full_sharpe": 4.364,
+ "rms_full_sharpe": 4.364,
+ "p_value": 0.036,
+ "created": "2026-07-10 22:36",
+ "real_cost": {
+  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+  "date": "2026-07-14",
+  "approx": false,
+  "full": {
+   "sharpe": 3.284,
+   "net_pct": 74.96,
+   "maxdd": -1.1
   },
-  "exit": "tp0.5/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-    "2018-01-01",
-    "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-    "sharpe": 3.549,
-    "net_pct": 81.666,
-    "maxdd": -1.038,
-    "win_rate": 43.262,
-    "trades": 1625,
-    "profit_factor": 3.006
+  "train": {
+   "sharpe": 3.177,
+   "net_pct": 45.64,
+   "maxdd": -0.97
   },
-  "instrument_full_sharpe": 4.364,
-  "rms_full_sharpe": 4.364,
-  "p_value": 0.036,
-  "created": "2026-07-10 22:36"
+  "oos": {
+   "sharpe": 3.541,
+   "net_pct": 29.32,
+   "maxdd": -1.56
+  }
+ }
 }

@@ -23,8 +23,13 @@ Scenarios per period (bs|full/train/oos):
     +stt      + date-aware charges delta only     (isolates the STT-refresh effect)
     +both     + DOM + charges delta               (the new honest number)
 
-Usage:  python -X utf8 stt_recost.py            # all runs in runs/index.json
+Usage:  python -X utf8 stt_recost.py            # all runs in runs/index.json (report only)
         python -X utf8 stt_recost.py slug1 ...
+        python -X utf8 stt_recost.py --apply    # ALSO write a labeled `real_cost` block into
+                                                # runs/index.json rows + each run's meta.json +
+                                                # the meta inside results.js (recorded combos/
+                                                # trades untouched — provenance preserved).
+                                                # hub.html / dashboard_intraday.html render it.
 """
 import os
 import sys
@@ -121,9 +126,50 @@ def run(slug, dc):
     return out
 
 
+def apply_real_cost(res):
+    """Write a labeled real_cost block (dom slip + date-aware charges, '+both' scenario)
+    into runs/index.json + each run's meta.json + the meta embedded in results.js.
+    Recorded combos/metrics/trades are NOT touched — this is an annotation, not an
+    overwrite, so provenance survives and dom/stt deltas stay reproducible."""
+    stamp = "2026-07-14"
+    method = "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)"
+    idx_path = os.path.join(RUNS, "index.json")
+    idx = json.load(open(idx_path, encoding="utf-8"))
+    for row in idx:
+        slug = row.get("slug")
+        if slug not in res:
+            continue
+        periods = res[slug]
+        blk = {"method": method, "date": stamp, "approx": slug not in SINGLE_LEG_EXACT}
+        for period, m in periods.items():
+            b = m["+both"]
+            blk[period] = {"sharpe": round(b["sharpe"], 3), "net_pct": round(b["net_pct"], 2),
+                           "maxdd": round(b["maxdd"], 2)}
+        row["real_cost"] = blk
+        # meta.json next to the run
+        mpath = os.path.join(RUNS, slug, "meta.json")
+        if os.path.exists(mpath):
+            meta = json.load(open(mpath, encoding="utf-8"))
+            meta["real_cost"] = blk
+            json.dump(meta, open(mpath, "w", encoding="utf-8"), indent=1)
+        # meta inside results.js (the per-run dashboard reads THIS, not meta.json)
+        rpath = os.path.join(RUNS, slug, "results.js")
+        if os.path.exists(rpath):
+            raw = open(rpath, encoding="utf-8").read()
+            head = raw[:raw.index("{")]
+            obj, _ = json.JSONDecoder().raw_decode(raw[raw.index("{"):])
+            obj.setdefault("meta", {})["real_cost"] = blk
+            open(rpath, "w", encoding="utf-8").write(head + json.dumps(obj) + ";\n")
+        print(f"  [apply] {slug}: real_cost written (full {blk.get('full',{}).get('sharpe','—')})")
+    json.dump(idx, open(idx_path, "w", encoding="utf-8"), indent=1)
+    print(f"[apply] runs/index.json updated ({sum(1 for r in idx if 'real_cost' in r)} rows)")
+
+
 def main():
-    if len(sys.argv) > 1:
-        slugs = sys.argv[1:]
+    argv = [a for a in sys.argv[1:] if a != "--apply"]
+    do_apply = "--apply" in sys.argv[1:]
+    if argv:
+        slugs = argv
     else:
         slugs = [r["slug"] for r in json.load(open(os.path.join(RUNS, "index.json")))]
     dc = dom_cost.load()
@@ -148,6 +194,9 @@ def main():
                 print(f"  !! {slug} {period}: +dom {m['+dom']['sharpe']:.3f} -> +both {m['+both']['sharpe']:.3f}")
     if not any_flag:
         print("  none — no run that survived DOM-spread drops below 1.0 from the STT refresh alone")
+    if do_apply:
+        print(f"\n{'='*96}\nAPPLY — writing labeled real_cost blocks:")
+        apply_real_cost(res)
 
 
 if __name__ == "__main__":
