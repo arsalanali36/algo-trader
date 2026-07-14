@@ -43,6 +43,25 @@ except Exception:
 CONFIG = os.path.join(ROOT, "data", "config.json")
 TRADE_OHLC = os.path.join(ROOT, "data", "trade_ohlc")
 INDEX_UNDERLYINGS = {"NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "SENSEX", "BANKEX"}
+# EOD squareoff cap for the --hold-eod ("full day hold beyond actual exit") mode.
+EOD_HHMM = "15:15"
+
+
+def _window(bars, et, xt, hold_eod):
+    """Slice the day's bars to the sim window.
+
+    Default: the ACTUAL holding period (entry_time .. actual exit_time) — asks
+    'same entry/hold, different exit-rule, where would it exit?'.
+
+    hold_eod=True: entry_time .. EOD (15:15), IGNORING the actual exit — asks
+    'if I had NOT exited when I did and held to EOD, where would the legacy /
+    aggressive rule have taken me out?'. This is the only place the two modes
+    differ; everything downstream (replay, grid, train/OOS) is identical.
+    """
+    lo = (lambda b: (not et or b[0] >= et))
+    if hold_eod:
+        return [b for b in bars if lo(b) and b[0] <= EOD_HHMM]
+    return [b for b in bars if lo(b) and (not xt or xt == "—" or b[0] <= xt)]
 
 # ── Variations (per-lot ₹; target_sl_level scales by lots internally) ──
 # Legacy = fixed target / fixed initial SL, no trailing.
@@ -230,7 +249,7 @@ def _agg_cfg(target, init_sl, step):
                 sl_move=step, aggressive_pct=AGG_PCT, aggressive_mult=AGG_MULT, min_cushion=0)
 
 
-def _prep_covered(trades, allow_fetch):
+def _prep_covered(trades, allow_fetch, hold_eod=False):
     """Load + window bars once per trade; return list of covered replay inputs
     tagged with date (for the train/OOS split)."""
     cov = []
@@ -239,7 +258,7 @@ def _prep_covered(trades, allow_fetch):
         date_str = t.get("entry_date") or ""
         et, xt = t.get("entry_time", ""), t.get("exit_time", "")
         bars = load_bars(sec_id, trad_sym, date_str, allow_fetch=allow_fetch)
-        win = [b for b in bars if (not et or b[0] >= et) and (not xt or xt == "—" or b[0] <= xt)]
+        win = _window(bars, et, xt, hold_eod)
         if not win:
             continue
         lots = 1
@@ -250,16 +269,21 @@ def _prep_covered(trades, allow_fetch):
                     lots = max(1, round(t["qty"] / float(ls)))
             except Exception:
                 pass
+        # no-rule-fired fallback: in hold_eod mode the natural exit is the EOD
+        # (last-bar) close, NOT the actual early exit; otherwise it's the actual.
+        fb = float(t["pnl"])
+        if hold_eod and win:
+            fb = _mtm(t["entry"], t["entry_price"], win[-1][4], t["qty"])
         cov.append({"win": win, "side": t["entry"], "ep": t["entry_price"],
                     "qty": t["qty"], "lots": lots, "actual": float(t["pnl"]),
-                    "date": date_str})
+                    "fallback": fb, "date": date_str})
         if (i + 1) % 50 == 0:
             print(f"  bars {i+1}/{len(trades)}  covered={len(cov)}", flush=True)
     return cov
 
 
-def optimize(trades, allow_fetch):
-    cov = _prep_covered(trades, allow_fetch)
+def optimize(trades, allow_fetch, hold_eod=False):
+    cov = _prep_covered(trades, allow_fetch, hold_eod=hold_eod)
     n = len(cov)
     print(f"\nCovered trades for optimisation: {n}", flush=True)
     if n < 20:
@@ -274,11 +298,11 @@ def optimize(trades, allow_fetch):
 
     def eval_leg(subset, tgt, sl):
         return sum(replay_legacy(c["win"], c["side"], c["ep"], c["qty"],
-                                 tgt * c["lots"], sl * c["lots"], c["actual"])[1] for c in subset)
+                                 tgt * c["lots"], sl * c["lots"], c["fallback"])[1] for c in subset)
 
     def eval_agg(subset, tgt, isl, step):
         return sum(replay_aggr(c["win"], c["side"], c["ep"], c["qty"],
-                               _agg_cfg(tgt, isl, step), c["lots"], c["actual"])[1] for c in subset)
+                               _agg_cfg(tgt, isl, step), c["lots"], c["fallback"])[1] for c in subset)
 
     # ── LEGACY grid ──
     leg = []
@@ -334,14 +358,20 @@ def main():
     ap.add_argument("--to", dest="dto", default=ist.strftime("%Y-%m-%d"))
     ap.add_argument("--no-fetch", action="store_true", help="disk bars only, no Dhan calls")
     ap.add_argument("--optimize", action="store_true", help="grid-search best legacy + aggressive params")
+    ap.add_argument("--hold-eod", action="store_true",
+                    help="hold each trade to EOD (15:15) beyond its actual exit, "
+                         "then apply the legacy/aggressive rule")
     ap.add_argument("--csv", default=os.path.join(ROOT, "data", "path_aware_sl_sim.csv"))
     args = ap.parse_args()
+
+    mode_note = "HOLD-TO-EOD (beyond actual exit)" if args.hold_eod else "actual holding window"
+    print(f"Window mode: {mode_note}", flush=True)
 
     if args.optimize:
         trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
         trades = [t for t in trades if t.get("pnl") is not None]
         print(f"Completed trades {args.dfrom}..{args.dto}: {len(trades)}", flush=True)
-        optimize(trades, allow_fetch=not args.no_fetch)
+        optimize(trades, allow_fetch=not args.no_fetch, hold_eod=args.hold_eod)
         return
 
     trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
@@ -375,22 +405,26 @@ def main():
                 pass
 
         bars = load_bars(sec_id, trad_sym, date_str, allow_fetch=not args.no_fetch)
-        # window to the actual holding period (entry..exit HH:MM). If exit missing
-        # (shouldn't for a completed trade) keep everything to EOD.
-        win = [b for b in bars if (not et or b[0] >= et) and (not xt or xt == "—" or b[0] <= xt)]
+        # default: actual holding period (entry..exit). --hold-eod: entry..15:15.
+        win = _window(bars, et, xt, args.hold_eod)
         covered = len(win) >= 1
         if covered:
             n_cov += 1
 
+        # no-rule-fired fallback (see _prep_covered): EOD close in hold_eod mode.
+        fb = actual
+        if args.hold_eod and win:
+            fb = _mtm(side, ep, win[-1][4], qty)
+
         row = {"date": date_str, "time": f"{et}->{xt}", "sym": trad_sym,
                "side": side, "qty": qty, "lots": lots, "actual": round(actual, 2),
-               "bars": len(win), "covered": covered}
+               "eod_fallback": round(fb, 2), "bars": len(win), "covered": covered}
         for v in VARIATIONS:
             if covered:
                 ls_stat, ls_rs = replay_legacy(win, side, ep, qty,
                                                v["legacy"]["target"] * lots,
-                                               v["legacy"]["sl"] * lots, actual)
-                ag_stat, ag_rs = replay_aggr(win, side, ep, qty, v["aggr"], lots, actual)
+                                               v["legacy"]["sl"] * lots, fb)
+                ag_stat, ag_rs = replay_aggr(win, side, ep, qty, v["aggr"], lots, fb)
                 tot_cov[v["name"]]["legacy"] += ls_rs
                 tot_cov[v["name"]]["aggr"] += ag_rs
             else:
