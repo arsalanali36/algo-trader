@@ -15,6 +15,22 @@
 
 ---
 
+## 2026-07-14 — Path-aware Legacy-vs-Aggressive SL/Target sim + grid-search → Aggressive Default-TSL on 7 discretionary strategies
+**Status:** DONE
+**Layer:** validation + config
+**Kya:** Gemini ke peak-only (MAX_LTP/MIN_LTP) run-up/run-down SL/target sim ko path-aware banaya (actual 1-min bars chronological replay), grid-search se best legacy+aggressive params nikale (train/OOS split, min-of-both-halves rank), aur winner ko discretionary strategies pe live config mein set kiya.
+**Files:**
+- `scripts/path_aware_sl_sim.py` (NEW) — per-trade actual 1-min premium bars replay (disk `data/trade_ohlc/` → Dhan `/v2/charts/intraday` rate-limited + write-through cache); Legacy (fixed T/SL) + Aggressive (reuses `risk_gate.target_sl_level`, Rule 6B) bar-by-bar, conservative within-bar (SL before target); `--optimize` = grid-search (legacy 9×5, aggr 6×4×3) with date-based 65/35 train/OOS split ranked by min(train,OOS) (TRAP #103 overfit-guard); honest coverage report (68%, expired-weekly = NO-DATA fallback).
+- `nifty_config.json` `_risk.per_strategy` (VPS runtime, gitignored) — 7 sids set aggressive 6k/2.5k/100.
+**Result:** Best = Aggressive Target ₹6000 / Init SL ₹2500 / Step ₹100 per-lot (agg 30%×2×) — train ₹18,112 ≈ OOS ₹17,435 (no decay), ~4× covered-actual ₹8,846. Gemini's ₹1.09L aggressive was ~4× inflated (peak-only ignored order).
+**Applied to (Rule 10 — no validated Sharpe/DD):** ARS_CHAIN_V1(live), ARS_CHAIN_V1_PAPER, rsi_v1(live), rsi_v1_PAPER, range_v1, ema_v1, webhook_v1.
+**Skipped (validated backtest — aggressive TSL would break fidelity):** orb_v1 (mid_orb_nifty), vrp_condor_v1 (vrp_overnight_condor).
+**Deploy:** backup `nifty_config.json.bak.aggr_1784035885`, atomic write, existing caps merged; risk_gate 7-ON/2-OFF verified; effective next 9:10 auto-start (fresh processes stamp AGGR_TSL; market closed, no mid-day restart).
+**Kyun:** user ko real (not optimistic) SL/target comparison chahiye tha + best-fit numbers; aggressive TSL sirf non-backtested strategies pe taaki validated numbers na tootein (Critical Rule 10).
+**Depends on:** risk_gate Default-TSL engine (2026-07-04), per-strategy override (task 81), trade_ohlc write-through (#7 2026-07-07).
+
+---
+
 ## 2026-07-14 — Task 5 ML hunt (Fib + premium-divergence + gap, user-seeded)
 **Status:** DONE (research-only, nothing deployed — no candidate cleared the DSR gate, by design). Commit + push after.
 **Kya:** 3-part user-seeded hypothesis family. **5a** — `ml_features.py` v3: first-candle fib ladder + confirm-candle continuation/reversal + premium-divergence 6-class + OI-buildup 4-quadrant + expiry_regime flag. Data-reality adaptation documented: option lake is 5-min (no 1-min option data), so premium-div measured on the 09:15 option bar's own open→close (=candles 1-5, same contract) + OI on 09:15→09:20 snapshots; spot-side fib IS true 1-min; pre-open auction gap absent from all sources (documented). **5b** — `ml_grid5.py` exhaustive grid (25,200 evals): 58/60 top = short_straddle, best evo 1.75/val 2.45, ALL fail DSR. **5c** — `ml_gp_seed5.py` bounded GP seed: given the full IV/ATR vocab, GP dropped the fib structure and re-converged on the EXACT existing VRP overnight zone (ce_iv>21+ATR-high+OI-flat, val 2.24, DSR 0.017).
