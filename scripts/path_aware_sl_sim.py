@@ -357,6 +357,74 @@ def optimize(trades, allow_fetch, hold_eod=False):
     return lb, ab
 
 
+# ── RIDE cushion sweep ──────────────────────────────────────────────────────
+# Ride mode (no target cap) with cushion=0 makes the trailing SL hug the peak,
+# so any intrabar wick past the peak stops the position out — great in flat
+# demos, whipsaw-prone on real wicky 1-min bars. A larger min_cushion keeps the
+# SL further below the peak so noise doesn't cut a runner. This sweep answers
+# 'which cushion rides winners without dying to noise?' on the REAL bars.
+RIDE_BASE = dict(target_per_lot=6000, initial_sl_per_lot=2500, favour_step=100,
+                 sl_move=100, aggressive_pct=30, aggressive_mult=2.0)
+RIDE_CUSHIONS = [0, 250, 500, 1000, 1500, 2000, 3000]   # per-lot ₹
+
+
+def _ride_sweep_report(cov, base, cushions):
+    """cov = list of {win,side,ep,qty,lots,fallback,actual,date}. Prints a
+    per-cushion train/OOS/all table for RIDE mode + the capped baseline, ranked
+    by MIN(train,OOS) (TRAP #103 robust ranking)."""
+    n = len(cov)
+    if n < 20:
+        print(f"Too few covered trades ({n}) to sweep meaningfully."); return
+    cov.sort(key=lambda c: c["date"])
+    cut = int(n * 0.65)
+    train, oos = cov[:cut], cov[cut:]
+
+    def eval_ride(subset, cush):
+        cfg = dict(base, min_cushion=cush)
+        return sum(replay_aggr(c["win"], c["side"], c["ep"], c["qty"], cfg,
+                               c["lots"], c["fallback"], ride=True)[1] for c in subset)
+
+    def eval_cap(subset):   # current live: fixed target exit, base cushion 0
+        cfg = dict(base, min_cushion=0)
+        return sum(replay_aggr(c["win"], c["side"], c["ep"], c["qty"], cfg,
+                               c["lots"], c["fallback"], ride=False)[1] for c in subset)
+
+    def _inr(x): return f"{round(x):,}"
+    print(f"\n{'='*72}\nRIDE cushion sweep (no target cap; trail = only exit)\n{'='*72}")
+    print(f"Covered {n}  |  Train {len(train)} (..{train[-1]['date']})  |  "
+          f"OOS {len(oos)} ({oos[0]['date']}..)")
+    print(f"Actual net — train ₹{_inr(sum(c['actual'] for c in train))} | "
+          f"OOS ₹{_inr(sum(c['actual'] for c in oos))} | "
+          f"all ₹{_inr(sum(c['actual'] for c in cov))}")
+    cap = {"train": eval_cap(train), "oos": eval_cap(oos), "all": eval_cap(cov)}
+    print(f"\nAggr CAP (current live, target 6000): "
+          f"train ₹{_inr(cap['train'])} | OOS ₹{_inr(cap['oos'])} | all ₹{_inr(cap['all'])}")
+
+    rows = []
+    for cu in cushions:
+        rows.append({"cush": cu, "train": eval_ride(train, cu),
+                     "oos": eval_ride(oos, cu), "all": eval_ride(cov, cu)})
+    rows.sort(key=lambda r: min(r["train"], r["oos"]), reverse=True)
+    print(f"\nRIDE by MIN(train,OOS) — robust (both halves hold):")
+    print(f"  {'cushion/lot':>12} {'train':>10} {'oos':>10} {'all':>10} {'min':>10}")
+    for r in rows:
+        print(f"  ₹{r['cush']:>10,} {_inr(r['train']):>10} {_inr(r['oos']):>10} "
+              f"{_inr(r['all']):>10} {_inr(min(r['train'],r['oos'])):>10}")
+    best = rows[0]
+    vs_cap = best["all"] - cap["all"]
+    print(f"\n  → ROBUST ride cushion: ₹{best['cush']:,}/lot  "
+          f"(all ₹{_inr(best['all'])}, {'+' if vs_cap>=0 else ''}{_inr(vs_cap)} vs cap)")
+    print(f"  → In-sample best: ₹{max(rows, key=lambda r: r['all'])['cush']:,}/lot "
+          f"(all ₹{_inr(max(r['all'] for r in rows))}) — OVERFIT-prone")
+    return best, cap
+
+
+def ride_sweep(trades, allow_fetch, hold_eod=False, base=None, cushions=None):
+    cov = _prep_covered(trades, allow_fetch, hold_eod=hold_eod)
+    print(f"\nCovered trades for ride sweep: {len(cov)}", flush=True)
+    return _ride_sweep_report(cov, base or RIDE_BASE, cushions or RIDE_CUSHIONS)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
@@ -367,11 +435,25 @@ def main():
     ap.add_argument("--hold-eod", action="store_true",
                     help="hold each trade to EOD (15:15) beyond its actual exit, "
                          "then apply the legacy/aggressive rule")
+    ap.add_argument("--ride-sweep", action="store_true",
+                    help="RIDE mode (no target cap): sweep min_cushion to find the "
+                         "one that rides winners without whipsawing on noise. "
+                         "Implies hold-to-EOD (ride needs room past the old target).")
     ap.add_argument("--csv", default=os.path.join(ROOT, "data", "path_aware_sl_sim.csv"))
     args = ap.parse_args()
 
+    # ride only makes sense holding past the fixed target → force hold-eod for it.
+    if args.ride_sweep:
+        args.hold_eod = True
     mode_note = "HOLD-TO-EOD (beyond actual exit)" if args.hold_eod else "actual holding window"
     print(f"Window mode: {mode_note}", flush=True)
+
+    if args.ride_sweep:
+        trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
+        trades = [t for t in trades if t.get("pnl") is not None]
+        print(f"Completed trades {args.dfrom}..{args.dto}: {len(trades)}", flush=True)
+        ride_sweep(trades, allow_fetch=not args.no_fetch, hold_eod=True)
+        return
 
     if args.optimize:
         trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
