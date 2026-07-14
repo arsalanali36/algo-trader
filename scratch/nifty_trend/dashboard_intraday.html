@@ -147,7 +147,7 @@
     </div>
     <div class="side">
       <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
-      <div class="panel dna"><div class="sh">Strategy — DNA (optimized)</div><div id="dna"></div></div>
+      <div class="panel dna"><div class="sh" style="display:flex;align-items:center;justify-content:space-between">Strategy — DNA (optimized)<span id="dnaEye" onclick="dnaReveal(event)" title="DNA reveal (password) · Shift+click = password badlo" style="cursor:pointer;font-size:15px;user-select:none">👁️</span></div><div id="dna"></div></div>
       <div class="panel"><div class="sh">Info</div><div id="info"></div></div>
       <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
     </div>
@@ -363,8 +363,27 @@ function renderPerf(){const m=C().metrics;
     ['Total Winning Trades',m.total_wins],['Total Losing Trades',m.total_losses],
     ['Avg Trades / Day',(m.trades_per_day||0).toFixed(2)]];
   document.getElementById('perf').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v">${r[1]}</span></div>`).join('')}
+// ── DNA privacy (video-safe): masked by default; 👁 + password to reveal ──
+// NOTE: yeh sirf DISPLAY masking hai (video/screen-share ke liye) — asli values
+// underlying results.js me hain. Sachchi secrecy = repo private karo.
+const DNA_DEFAULT_HASH="b0f17dc75de72d4adb287fc452b05ac204b7697d7b29f75bc42790d2cdab1112"; // sha256('khazana')
+window._dnaRevealed=false;
+async function _dnaHash(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));
+  return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('');}
+async function dnaReveal(ev){
+  if(ev&&ev.shiftKey){ // Shift+click = naya password set karo (localStorage, is browser me)
+    const p1=prompt('Naya DNA password:'); if(!p1)return; const p2=prompt('Dobara likho:');
+    if(p1!==p2){alert('Match nahi hua');return;} localStorage.setItem('dna_pw_hash',await _dnaHash(p1));
+    alert('Password badal gaya (is browser ke liye).'); return;}
+  if(window._dnaRevealed){window._dnaRevealed=false;renderDNA();return;}
+  const pw=prompt('DNA dekhne ke liye password:'); if(pw==null)return;
+  const want=localStorage.getItem('dna_pw_hash')||DNA_DEFAULT_HASH;
+  if(await _dnaHash(pw)===want){window._dnaRevealed=true;renderDNA();}else alert('Galat password');
+}
 function renderDNA(){const d=C().dna;const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
-  let h='';for(const k in d)h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${d[k]}</span></div>`;
+  const eye=document.getElementById('dnaEye'); if(eye)eye.textContent=window._dnaRevealed?'🙈':'👁️';
+  let h='';for(const k in d){const v=window._dnaRevealed?d[k]:'••••';h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${v}</span></div>`;}
+  if(!window._dnaRevealed)h+='<div class="mut" style="font-size:11px;margin-top:6px">🔒 hidden — 👁️ se password daalo (Shift+click = badlo)</div>';
   document.getElementById('dna').innerHTML=h}
 function renderInfo(){const M=R.meta||{};
   const instr=(M.instrument||'NIFTY 50')+(HAS_PASS?' → ATM CE/PE options':' (index spot)');
