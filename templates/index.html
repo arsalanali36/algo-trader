@@ -2924,8 +2924,9 @@
             <button class="rms-btn rms-btn-secondary" onclick="runReconcile()">🔍 Reconcile Funds</button>
           </div>
           <div class="settings-section-subtitle">
-            Capital used/available, open unrealized P&amp;L, max-loss cap ke kitne paas ho — ek nazar me. LTP feed na
-            chal raha ho to unrealized P&amp;L "—" dikhega.
+            Broker balance + KILL-ALL/per-instrument live floors + webhook trades/day.
+            <b style="color:#d29922">Per-strategy detail (Run Controls / Status / Capital Used) ab neeche
+            ⚙ Per-Strategy Override table me merged hai.</b>
           </div>
           <div id="rms-summary-content" style="overflow-x:auto">
             <div style="color:#8b949e;font-size:12px;padding:6px">Loading…</div>
@@ -2958,7 +2959,9 @@
         <div class="settings-section" id="override-sec">
           <h2>⚙️ Per-Strategy Override</h2>
           <div class="settings-section-subtitle">
-            Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan automatically aa jayengi.
+            Har strategy ka control-center — <b>Run Controls / Status / Capital Used</b> (live, RMS summary yahan
+            merged) + overrides. Khali rakho to global default lagega. Naye banaye gaye strategy bhi yahan
+            automatically aa jayengi.
           </div>
           <div id="risk-strategy-table" style="overflow-x:auto"></div>
         </div>
@@ -3684,38 +3687,43 @@
       } catch (e) {
         el.innerHTML = '<div style="color:#f85149;font-size:12px;padding:6px">Load failed: ' + e + '</div>'; return;
       }
-      const rows = d.strategies || [];
-      const fmtRs = v => v === null || v === undefined ? '—' : Math.round(v);
-      const fmtPnl = v => v === null || v === undefined ? '—' : (v >= 0 ? '+' : '') + Math.round(v);
-      const pnlColor = v => v === null || v === undefined ? '#8b949e' : (v >= 0 ? '#3fb950' : '#f85149');
+      // 2026-07-14 (user request): per-strategy RMS table Per-Strategy Override table
+      // me MERGE ho gayi (Run Controls / Status / Capital Used LIVE cells wahan patch
+      // hote hain; Capital Cap / Open Pos / Unrealized P&L / Max-Loss Used columns
+      // RETIRED). Ye section ab sirf broker balance + webhook trades/day + floors.
+      window._lastRmsData = d;
+      _rmsPatchOverrideCells(d);
 
-      // Gating badge — "can this strategy take a new entry right now?"
+      const html = _renderRmsExtras(d);
+      el.innerHTML = html || '<div style="color:#8b949e;font-size:12px;padding:6px">Per-strategy detail ab ⚙ Per-Strategy Override table me hai (Run Controls / Status / Capital Used wahi dikhte hain).</div>';
+    }
+
+    // Live cells in the Per-Strategy Override table (.rms-run/.rms-gate/.rms-cap) —
+    // PATCH only, table kabhi re-render nahi (unsaved input edits safe rehte hain).
+    function _rmsPatchOverrideCells(d) {
+      if (!d) return;
+      const rows = d.strategies || [];
+      const fmtRs = v => v === null || v === undefined ? '—' : Math.round(v).toLocaleString('en-IN');
       const gateBadge = s => {
         if (!s.blocked) return '<span style="color:#3fb950">✅ Active</span>';
         const c = s.block_hard ? '#f85149' : '#d29922';
         const lbl = s.block_hard ? '🛑 No further entries today' : '⏸ Capital full';
         return `<span style="color:${c}" title="${(s.block_reason || '').replace(/"/g, '&quot;')}">${lbl}</span>`;
       };
-
-      let html = '<table class="cfg-table">'
-        + '<tr><th style="width:130px;">Strategy</th>'
-        + '<th style="width:175px;">Run Controls</th>'
-        + '<th style="width:130px;">Status</th>'
-        + '<th style="width:110px;">Capital Used</th>'
-        + '<th style="width:100px;">Capital Cap</th>'
-        + '<th style="width:80px;">Open Pos</th>'
-        + '<th style="width:110px;">Unrealized P&amp;L</th>'
-        + '<th style="width:110px;">Max-Loss Used</th></tr>';
-
       // Per-strategy: live → broker used_margin (split equally among live strategies);
       // paper/stopped → paper estimate. Broker total split: distribute broker_used_margin
       // proportionally across live strategies by their paper-estimate weight.
       const liveStrats = rows.filter(s => s.run_mode === 'live');
       const totalPaperEst = liveStrats.reduce((a, s) => a + (s.capital_used || 0), 0);
       const brokerUsed = (d.totals || {}).broker_used_margin;
-      const brokerTotal = (d.totals || {}).broker_total;  // hoisted — was inside forEach (TDZ bug)
+      const brokerTotal = (d.totals || {}).broker_total;
 
       rows.forEach(s => {
+        const key = (window.CSS && CSS.escape) ? CSS.escape(s.strategy) : s.strategy;
+        const runEl = document.querySelector(`.rms-run[data-rms="${key}"]`);
+        const gateEl = document.querySelector(`.rms-gate[data-rms="${key}"]`);
+        const capEl = document.querySelector(`.rms-cap[data-rms="${key}"]`);
+        if (!runEl && !gateEl && !capEl) return;   // strategy not in the override table (e.g. _ui_config)
         // Capital to display: live → actual broker margin (proportional share), paper → estimate
         let capDisplay, capLabel;
         if (s.run_mode === 'live' && brokerUsed != null) {
@@ -3727,8 +3735,6 @@
           capLabel = s.run_mode === 'paper' ? 'paper' : null;
         }
         const capCapDisplay = (s.run_mode === 'live' && brokerTotal) ? brokerTotal : s.capital_cap;
-        const capCapLabel = (s.run_mode === 'live' && brokerTotal)
-          ? ' <span style="color:#8b949e;font-size:10px">cash+col</span>' : '';
         const capPct = (capCapDisplay && capDisplay) ? Math.min(100, Math.round(capDisplay / capCapDisplay * 100)) : null;
 
         let runControlsHtml = '—';
@@ -3770,38 +3776,20 @@
           : capLabel === 'paper'
             ? ' <span style="color:#8b949e;font-size:10px">paper</span>'
             : '';
-        html += `<tr><td title="${s.strategy}">${regLabel(s.strategy)}</td>
-      <td>${runControlsHtml}</td>
-      <td style="font-size:11px">${gateBadge(s)}</td>
-      <td>${fmtRs(capDisplay)}${capPct !== null ? ` <span style="color:${capPct >= 90 ? '#f85149' : '#8b949e'};font-size:10px">(${capPct}%)</span>` : ''}${capLabelHtml}</td>
-      <td>${fmtRs(capCapDisplay)}${capCapLabel}</td>
-      <td>${s.priced}/${s.open_positions}${s.priced < s.open_positions ? ' <span style="color:#8b949e;font-size:10px">(unpriced)</span>' : ''}</td>
-      <td style="color:${pnlColor(s.unrealized_pnl)};font-weight:600">${fmtPnl(s.unrealized_pnl)}</td>
-      <td>${s.max_loss_pct_used !== null ? `<span style="color:${s.max_loss_pct_used >= 80 ? '#f85149' : '#d29922'}">${s.max_loss_pct_used}%</span>` : '—'}</td>
-      </tr>`;
+        if (runEl) { runEl.innerHTML = runControlsHtml; runEl.style.color = ''; }
+        if (gateEl) { gateEl.innerHTML = gateBadge(s); gateEl.style.color = ''; }
+        if (capEl) {
+          capEl.innerHTML = `${fmtRs(capDisplay)}${capPct !== null ? ` <span style="color:${capPct >= 90 ? '#f85149' : '#8b949e'};font-size:10px">(${capPct}%)</span>` : ''}${capLabelHtml}`;
+          capEl.style.color = '#e6edf3';
+        }
       });
+    }
 
+    // RMS section ka bacha hua (non-per-strategy) content — broker balance strip +
+    // webhook trades/day table. Built html return karta hai.
+    function _renderRmsExtras(d) {
       const t = d.totals || {};
-      // TOTAL row: if any strategy is live, show actual broker used_margin; else paper estimate
-      const anyLive = liveStrats.length > 0;
-      const tCapVal = (anyLive && t.broker_used_margin != null) ? t.broker_used_margin : t.capital_used;
-      const tCapBase = t.broker_total || t.capital_cap;
-      const tCapPct = (tCapBase && tCapVal) ? Math.min(100, Math.round(tCapVal / tCapBase * 100)) : null;
-      const tCapLabel = anyLive && t.broker_used_margin != null
-        ? ' <span style="color:#58a6ff;font-size:10px">live</span>'
-        : ' <span style="color:#8b949e;font-size:10px">paper</span>';
-      html += `<tr style="border-top:2px solid #30363d;font-weight:700"><td>TOTAL (all strategies)</td>
-    <td>—</td>
-    <td>—</td>
-    <td>${fmtRs(tCapVal)}${tCapPct !== null ? ` <span style="color:${tCapPct >= 90 ? '#f85149' : '#8b949e'};font-size:10px">(${tCapPct}%)</span>` : ''}${tCapLabel}</td>
-    <td>${fmtRs(t.capital_cap)}</td>
-    <td>${t.priced}/${t.open_positions}</td>
-    <td style="color:${pnlColor(t.unrealized_pnl)}">${fmtPnl(t.unrealized_pnl)}</td>
-    <td>—</td></tr>`;
-      html += '</table>';
-      if (!rows.length) {
-        html += '<div style="color:#8b949e;font-size:11px;padding:8px 2px">Koi strategy nifty_config.json me configured nahi hai — sirf TOTAL row (sab tags milake) dikh rahi hai.</div>';
-      }
+      let html = '';
 
       // ── Actual broker balance (Zerodha/Dhan real margin) ──
       if (t.broker_ok) {
@@ -3848,7 +3836,7 @@
         html += '</table>';
       }
 
-      el.innerHTML = html;
+      return html;
     }
 
     async function syncBrokerPositions(btn) {
@@ -4104,6 +4092,9 @@
       const reserved = new Set(['_risk', 'webhooks']);
       // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
       const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
+      // Webhook strategies (cfg.webhooks) bhi merged table me — Run Controls + overrides
+      // (2026-07-14: RMS Live Summary table is table me merge hui)
+      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w)) stratIds.push(w); });
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -4137,19 +4128,25 @@
         if (Object.keys(dv).length) window._dslVals[id] = dv;
       });
       // Excel-style collapsible "Advanced" column group (2026-07-14, user request) —
-      // Capital/Margin/Mode/Shadow-Live/Auto-Hedge columns collapse behind one toggle
-      // so the everyday view (Day Cap + SL + Default SL/Target) stays clean.
+      // Day Cap / Per-Trade SL / Capital / Margin / Mode / Shadow-Live / Auto-Hedge sab
+      // ek toggle ke peeche; everyday view = Run Controls + Status + Capital Used +
+      // Default SL/Target. Run/Status/Capital Used cells LIVE hain — renderRmsSummary
+      // unhe PATCH karta hai (table re-render nahi, warna unsaved edits udte).
       const _advC = localStorage.getItem('ps_adv_collapsed') !== '0';   // default: collapsed
       let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:6px">
           <button id="psadv-toggle" onclick="togglePsAdv()" style="padding:4px 10px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;font-size:11.5px;cursor:pointer"
-            title="Capital ₹ / Margin Mult. / Mode / Shadow-Live / Auto-Hedge columns">${_advC ? '⊞ Advanced columns dikhao' : '⊟ Advanced columns chhupao'}</button></div>`
+            title="Day Cap / Per-Trade SL / Capital ₹ / Margin Mult. / Mode / Shadow-Live / Auto-Hedge columns">${_advC ? '⊞ Advanced columns dikhao' : '⊟ Advanced columns chhupao'}</button></div>`
         + `<table id="ps-ovr-table" class="cfg-table${_advC ? ' advc' : ''}"><tr><th>Strategy</th>`
-        + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
-        + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
+        + '<th style="width:175px">Run Controls</th>'
+        + '<th>Status</th>'
+        + '<th>Capital Used</th>'
         + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe Default-SL lage ya nahi, kaunsa mode, aur ⚙ se uski values. Blank = global fallback.">🎯 Default SL/Target</th>'
+        + '<th class="psadv" colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
+        + '<th class="psadv" style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
         + '<th class="psadv">Capital ₹</th><th class="psadv">Margin Mult.</th><th class="psadv">Mode</th><th class="psadv" style="color:#f85149">Shadow-Live</th>'
         + '<th class="psadv" colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
-        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th>Enabled</th><th>Mode</th>'
+        + '<tr><th></th><th></th><th></th><th></th><th>Enabled</th><th>Mode</th>'
+        + '<th class="psadv">Max Loss %</th><th class="psadv">Max Loss ₹</th><th class="psadv" style="color:#3fb950">Max Profit ₹</th><th class="psadv"></th>'
         + '<th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th>'
         + '<th class="psadv">Min Strikes</th><th class="psadv">Max Premium ₹</th></tr>';
       // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
@@ -4165,7 +4162,7 @@
       if (_rLeft.length) { _rOrdered.push({ h: 'Other' }); _rLeft.forEach(k => _rOrdered.push({ id: k })); }
       _rOrdered.forEach(item => {
         if (item.h) {
-          html += `<tr><td colspan="13" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
+          html += `<tr><td colspan="16" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
           return;
         }
         const id = item.id;
@@ -4176,14 +4173,9 @@
         const curMode = ov.capital_mode || '';
         const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
         html += `<tr><td title="${id}">${dispName}</td>
-      <td><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global"
-            value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-rs-${id}" type="number" step="1" placeholder="global"
-            value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-profit-${id}" type="number" step="1" placeholder="global"
-            value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
-      <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
-            value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
+      <td class="rms-run" data-rms="${id}" style="white-space:nowrap;color:#8b949e">—</td>
+      <td class="rms-gate" data-rms="${id}" style="font-size:11px;color:#8b949e">—</td>
+      <td class="rms-cap" data-rms="${id}" style="white-space:nowrap;color:#8b949e">—</td>
       <td><select id="risk-dslen-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
             <option value="" ${ov.default_sl_enabled == null ? 'selected' : ''}>global (${(RISK_CFG.global || {}).default_sl_enabled ? 'ON' : 'OFF'})</option>
             <option value="false" ${ov.default_sl_enabled === false ? 'selected' : ''}>OFF</option>
@@ -4197,6 +4189,14 @@
           </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
             title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps + Aggressive graph preview) — blank = global fallback"
             style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></div></td>
+      <td class="psadv"><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global"
+            value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td class="psadv"><input id="risk-rs-${id}" type="number" step="1" placeholder="global"
+            value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td class="psadv"><input id="risk-profit-${id}" type="number" step="1" placeholder="global"
+            value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
+      <td class="psadv"><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
+            value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
@@ -4219,6 +4219,9 @@
       });
       html += '</table><button class="btn btn-amber" style="margin-top:10px" onclick="saveRiskConfig()">💾 Save</button>';
       tbl.innerHTML = html;
+      // merged RMS live cells — fill immediately from the last fetch (renderRmsSummary
+      // ka agla poll bhi inhe patch karta rahega)
+      if (window._lastRmsData) _rmsPatchOverrideCells(window._lastRmsData);
     }
 
     async function loadPeakGraph() {
@@ -4436,6 +4439,8 @@
       const reserved = new Set(['_risk', 'webhooks']);
       // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
       const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
+      // webhook strategies bhi (merged table me unki bhi override row hai)
+      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w)) stratIds.push(w); });
 
       const gPct = document.getElementById('risk-global-pct').value;
       const gRs = document.getElementById('risk-global-rs').value;
