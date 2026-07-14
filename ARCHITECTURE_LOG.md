@@ -16,7 +16,7 @@
 ---
 
 ## 2026-07-14 — Tasks 80/78/76/81 (Peak summary running+tax, dhan-tag Q, YT Presentations page, per-strategy Default SL override)
-**Status:** IN-PROGRESS
+**Status:** DONE (commit `724c919`, VPS git-pull + algo-dashboard restart mid-day — strategy PIDs before==after, routes 302-gated OK. algo-monitor/strategies purana code chalate rahenge aaj (Default SL globally OFF hai to no-op) — per-strategy SL override kal 9:10 auto-start se effective. VPS pe `scratch/nifty_trend/run_hunt.py` me UNCOMMITTED ml_gate work mila (ML-mining session ka) — preserve kiya, commit hona baaki.)
 **Kya:** (80) Today's Peak Summary view me open positions ka LIVE running P&L column + completed-trades Tax column; (78) paper trades pe `dhan` broker-tag investigation (answer-only — 13-July pre-deploy-sync rows, aaj se kite); (76) nav Reports → dropdown (📋 EOD Reports + naya 🎬 YT Presentations date-wise page, `data/presentations/`); (81) Per-Trade Default SL & Target ka Enabled + Mode ab Per-Strategy Override table me (blank=global inherit, per-strategy ON/OFF + legacy/dropdown/aggressive)
 **Layer:** ui + config (risk_gate config-resolution — firing logic untouched)
 **Files:** templates/index.html, trader_dashboard.py (presentations routes), _core/risk_gate.py (`default_sl_profile(strategy=)`, `default_target_sl_config` feature_on per-strategy aware)
