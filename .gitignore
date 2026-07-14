@@ -105,3 +105,4 @@ vps_delete_script.py
 
 # EOD reports — generated output (eod_report.py), commit nahi hote
 data/reports/
+scratch/nifty_trend/ml_mining_log.csv
