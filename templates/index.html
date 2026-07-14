@@ -1490,7 +1490,23 @@
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">📜 Script 3</div>
       <a href="/registry" target="_blank" class="tab" style="text-decoration: none;">🗂️ Strategies</a>
-      <a href="/reports" target="_blank" class="tab" style="text-decoration: none;">📋 Reports</a>
+      <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
+        <div class="tab" onclick="toggleReportsDropdown(event)" style="display: flex; align-items: center; gap: 4px;">
+          📋 Reports ▾</div>
+        <div class="dropdown-menu" id="reports-dropdown"
+          style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 170px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <a href="/reports" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              📋 EOD Reports</div>
+          </a>
+          <a href="/presentations" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🎬 YT Presentations</div>
+          </a>
+        </div>
+      </div>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
         <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More
           ▾</div>
@@ -2486,7 +2502,9 @@
                 <td class="param-info" style="border-left:3px solid #1f6feb"><span>🎯 Per-Trade Default SL & Target</span>
                   <span class="wavy-subtext">Har naye position pe ye default SL/Target lagta hai — sirf wahi ek leg exit
                     hoti hai. <b>Ek hi mode active rehta hai.</b> Purani open positions apne existing SL/TP pe chalti hain
-                    (mode change sirf naye trades pe).</span>
+                    (mode change sirf naye trades pe). <b style="color:#d29922">Per-Strategy Override</b> table me har
+                    strategy ka apna Enabled/Mode set kar sakte ho (blank = yahan ki global setting) — jo strategy ke
+                    backtest me ye SL nahi tha, wahan OFF rakho (Rule 10).</span>
                 </td>
                 <td class="param-inputs">
                   <div class="inputs-grid">
@@ -4100,9 +4118,10 @@
       let html = '<table class="cfg-table"><tr><th>Strategy</th>'
         + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
+        + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe global Default-SL lage ya nahi, aur kaunsa mode. Blank = global setting follow.">🎯 Default SL/Target</th>'
         + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th>'
         + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
-        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th></th><th></th><th></th><th></th>'
+        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th>Enabled</th><th>Mode</th><th></th><th></th><th></th><th></th>'
         + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
       // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
       const _rlc = k => String(k).toLowerCase();
@@ -4117,7 +4136,7 @@
       if (_rLeft.length) { _rOrdered.push({ h: 'Other' }); _rLeft.forEach(k => _rOrdered.push({ id: k })); }
       _rOrdered.forEach(item => {
         if (item.h) {
-          html += `<tr><td colspan="11" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
+          html += `<tr><td colspan="13" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
           return;
         }
         const id = item.id;
@@ -4136,6 +4155,17 @@
             value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
       <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
+      <td><select id="risk-dslen-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
+            <option value="" ${ov.default_sl_enabled == null ? 'selected' : ''}>global default</option>
+            <option value="false" ${ov.default_sl_enabled === false ? 'selected' : ''}>OFF</option>
+            <option value="true" ${ov.default_sl_enabled === true ? 'selected' : ''}>ON</option>
+          </select></td>
+      <td><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
+            <option value="" ${!ov.default_sl_mode ? 'selected' : ''}>global default</option>
+            <option value="legacy" ${ov.default_sl_mode === 'legacy' ? 'selected' : ''}>Legacy — fixed ₹</option>
+            <option value="dropdown" ${ov.default_sl_mode === 'dropdown' ? 'selected' : ''}>Dropdown — type+value</option>
+            <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
+          </select></td>
       <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
@@ -4465,6 +4495,8 @@
         const modeEl = document.getElementById(`risk-mode-${id}`);
         const shadowEl = document.getElementById(`risk-shadow-${id}`);
         const instLossEl = document.getElementById(`risk-instloss-${id}`);
+        const dslEnEl = document.getElementById(`risk-dslen-${id}`);
+        const dslModeEl = document.getElementById(`risk-dslmode-${id}`);
         const hedgeStrikesEl = document.getElementById(`risk-hedgestrikes-${id}`);
         const hedgePremiumEl = document.getElementById(`risk-hedgepremium-${id}`);
         if (!pEl || !rEl) return;
@@ -4473,10 +4505,12 @@
         const mode = modeEl ? modeEl.value : '';
         const shadow = shadowEl ? shadowEl.value : '';
         const instLoss = instLossEl ? instLossEl.value : '';
+        const dslEn = dslEnEl ? dslEnEl.value : '';
+        const dslMode = dslModeEl ? dslModeEl.value : '';
         const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
         if (p !== '' || r !== '' || pt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
-          || hedgeStrikes !== '' || hedgePremium !== '') {
+          || dslEn !== '' || dslMode !== '' || hedgeStrikes !== '' || hedgePremium !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
@@ -4486,6 +4520,8 @@
             capital_mode: mode || null,
             shadow_live: shadow === '' ? null : (shadow === 'true'),
             default_sl_rs: instLoss !== '' ? parseFloat(instLoss) : null,
+            default_sl_enabled: dslEn === '' ? null : (dslEn === 'true'),
+            default_sl_mode: dslMode || null,
             hedge_offset_strikes: hedgeStrikes !== '' ? parseInt(hedgeStrikes) : null,
             hedge_max_premium_rs: hedgePremium !== '' ? parseFloat(hedgePremium) : null,
           };
@@ -6030,7 +6066,7 @@
       const opnReal = opn.filter(t => !isCapBlocked(t));
 
       // ── SOURCE SUMMARY (STRATEGY, MANUAL, WEBHOOK) ──
-      const _z = () => ({ net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0 });
+      const _z = () => ({ net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0, orows: [] });
       const srcTotals = { 'STRATEGY': _z(), 'MANUAL': _z(), 'WEBHOOK': _z() };
       det.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
@@ -6038,12 +6074,14 @@
         const ru = _tradeRunAmts(t);
         srcTotals[s].net += t._net; srcTotals[s].gross += t._gross; srcTotals[s].n++;
         srcTotals[s].ru += ru.up; srcTotals[s].rd += ru.down;
+        srcTotals[s].tax += (t._tax || 0);
         if (t._net > 0) srcTotals[s].w++;
       });
       opnReal.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
         srcTotals[s].opn++;
+        srcTotals[s].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
       });
 
       // ── CONSOLIDATED SUMMARY (task 66) — now clickable per strategy (task 73) ──
@@ -6068,6 +6106,7 @@
           stratTotals[sName].gross += t._gross;
           stratTotals[sName].n++;
           stratTotals[sName].ru += ru.up; stratTotals[sName].rd += ru.down;
+          stratTotals[sName].tax += (t._tax || 0);
           if (t._net > 0) stratTotals[sName].w++;
         }
       });
@@ -6077,6 +6116,7 @@
           const sName = t.strategy || 'STRATEGY';
           if (!stratTotals[sName]) stratTotals[sName] = _z();
           stratTotals[sName].opn++;
+          stratTotals[sName].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
         }
       });
 
@@ -6086,15 +6126,19 @@
         if (!isRunning && st.n === 0 && st.opn === 0) return;
         const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : 'stopped';
         summaryRows.push({ key: s, code: regId(s), name: regLabel(s), isSource: false, mode: mode,
-          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd });
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd, tax: st.tax, orows: st.orows });
       });
       // MANUAL / WEBHOOK — not per-strategy, kept as their own rows
       ['MANUAL', 'WEBHOOK'].forEach(s => {
         const st = srcTotals[s];
         if (st.n === 0 && st.opn === 0) return;
         summaryRows.push({ key: s, code: '', name: s.charAt(0) + s.slice(1).toLowerCase(), isSource: true, mode: 'src',
-          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd });
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd, tax: st.tax, orows: st.orows });
       });
+      // task 80 — open rows per summary key, for the LIVE Running column
+      // (patched by _patchPeakRunCells from the same _ltpLive feed as Open Positions)
+      window._peakOpenMap = {};
+      summaryRows.forEach(r => { window._peakOpenMap[r.key] = r.orows || []; });
 
       renderStratSummaryTable(summaryRows);
       // retire the old tiles container
@@ -6858,9 +6902,12 @@
         return;
       }
       const sel = window._peakStrat || '__all';
-      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0 };
-      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); });
+      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0 };
+      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); tot.tax += (r.tax || 0); });
       const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
+      // task 80 — open positions ka LIVE unrealized (₹), _patchPeakRunCells se update hota hai
+      const runCell = key => `<span class="peak-run-cell" data-pk="${key}" style="color:#6e7681;font-weight:600">—</span>`;
+      const taxCell = tx => `<span style="color:#8b949e">${tx ? '-' + Math.round(tx).toLocaleString('en-IN') : '0'}</span>`;
       // Run-Up (favourable) / Run-Down (adverse) ₹ pair — replaces the old faint bar
       const rudCell = (ru, rd) => `<span style="color:#3fb950;font-weight:600">+${Math.round(ru || 0).toLocaleString('en-IN')}</span>`
         + `<span style="color:#6e7681"> / </span>`
@@ -6870,7 +6917,9 @@
           <th style="padding:6px 8px;font-weight:500">Strategy</th>
           <th style="padding:6px 8px;font-weight:500">Mode</th>
           <th style="padding:6px 8px;font-weight:500;text-align:right">Net</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Open positions ka live unrealized P&amp;L (₹) — LTP feed se">Running</th>
           <th style="padding:6px 8px;font-weight:500;text-align:right">Gross</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Completed trades ka total tax &amp; charges">Tax</th>
           <th style="padding:6px 8px;font-weight:500;text-align:center">Trades</th>
           <th style="padding:6px 8px;font-weight:500;text-align:center">W/L</th>
           <th style="padding:6px 8px;font-weight:500;text-align:center">Open</th>
@@ -6888,7 +6937,9 @@
           <td style="padding:7px 8px">${codeHtml}<span style="color:#adbac7">${r.name}</span></td>
           <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
           <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
+          <td style="padding:7px 8px;text-align:right">${runCell(r.key)}</td>
           <td style="padding:7px 8px;text-align:right;color:#8b949e">${Math.round(r.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:7px 8px;text-align:right">${taxCell(r.tax)}</td>
           <td style="padding:7px 8px;text-align:center;color:#adbac7">${r.n}</td>
           <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.w}W ${r.n - r.w}L</td>
           <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.opn}</td>
@@ -6897,13 +6948,51 @@
       h += `<tr style="border-top:2px solid #30363d;font-weight:600">
           <td style="padding:8px" colspan="2"><span style="color:#8b949e;font-size:11px">TOTAL</span></td>
           <td style="padding:8px;text-align:right">${netCell(tot.net)}</td>
+          <td style="padding:8px;text-align:right">${runCell('__tot')}</td>
           <td style="padding:8px;text-align:right;color:#8b949e">${Math.round(tot.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:8px;text-align:right">${taxCell(tot.tax)}</td>
           <td style="padding:8px;text-align:center;color:#adbac7">${tot.n}</td>
           <td style="padding:8px;text-align:center;color:#8b949e">${tot.w}W ${tot.n - tot.w}L</td>
           <td style="padding:8px;text-align:center;color:#8b949e">${tot.opn}</td>
           <td style="padding:8px;text-align:right">${rudCell(tot.ru, tot.rd)}</td></tr>`;
       h += '</tbody></table>';
       el.innerHTML = h;
+      _patchPeakRunCells();   // task 80 — fill Running from whatever LTPs are already cached
+    }
+
+    // task 80 — Summary "Running" column: per-strategy open-position unrealized ₹,
+    // computed from the SAME _ltpLive feed that patches the Open Positions table.
+    // Called on summary render + every _patchLtpCells tick.
+    function _patchPeakRunCells() {
+      const map = window._peakOpenMap || {};
+      if (typeof _ltpLive !== 'object') return;
+      let grand = 0, grandAny = false;
+      document.querySelectorAll('.peak-run-cell').forEach(el => {
+        const k = el.getAttribute('data-pk');
+        if (k === '__tot') return;
+        const rows = map[k] || [];
+        if (!rows.length) { el.textContent = '—'; el.style.color = '#6e7681'; return; }
+        let tot = 0, any = false;
+        rows.forEach(o => {
+          const raw = _ltpLive[o.sym];
+          const ltp = typeof raw === 'number' ? raw : (raw && raw.ltp);
+          if (ltp == null || !o.entry) return;
+          any = true;
+          const pts = o.side === 'BUY' ? (ltp - o.entry) : (o.entry - ltp);
+          tot += pts * o.qty;
+        });
+        if (!any) { el.textContent = '⏳'; el.style.color = '#6e7681'; return; }
+        grand += tot; grandAny = true;
+        el.textContent = (tot >= 0 ? '+' : '') + Math.round(tot).toLocaleString('en-IN');
+        el.style.color = tot >= 0 ? '#3fb950' : '#f85149';
+      });
+      const tEl = document.querySelector('.peak-run-cell[data-pk="__tot"]');
+      if (tEl) {
+        if (grandAny) {
+          tEl.textContent = (grand >= 0 ? '+' : '') + Math.round(grand).toLocaleString('en-IN');
+          tEl.style.color = grand >= 0 ? '#3fb950' : '#f85149';
+        } else { tEl.textContent = '—'; tEl.style.color = '#6e7681'; }
+      }
     }
     // ── Today's Peak card state (tasks 73/74) ──
     window._peakStrat = '__all';                                   // selected strategy for the Graph view
@@ -8431,6 +8520,7 @@
     window.toggleMoreDropdown = (event) => {
       event.stopPropagation();
       window.closeAvatarDropdown();
+      window.closeReportsDropdown();
       const dropdown = document.getElementById('more-dropdown');
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -8438,10 +8528,23 @@
       const dropdown = document.getElementById('more-dropdown');
       if (dropdown) dropdown.style.display = 'none';
     };
+    // 📋 Reports dropdown (task 76 — EOD Reports + YT Presentations)
+    window.toggleReportsDropdown = (event) => {
+      event.stopPropagation();
+      window.closeAvatarDropdown();
+      window.closeMoreDropdown();
+      const dropdown = document.getElementById('reports-dropdown');
+      if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+    window.closeReportsDropdown = () => {
+      const dropdown = document.getElementById('reports-dropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    };
 
     document.addEventListener('click', () => {
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
+      window.closeReportsDropdown();
     });
 
     setInterval(() => {
@@ -8582,6 +8685,7 @@
         // NET summary panel — always update (even when no open positions, show realized + 0 unrealized)
         _updateNetPanel(totUnrl);
       })();
+      _patchPeakRunCells();   // task 80 — Summary view "Running" column, same tick
     }
     function _updateNetPanel(unrealizedPnl) {
       const _realized = (window._realizedTot || {}).n || 0;

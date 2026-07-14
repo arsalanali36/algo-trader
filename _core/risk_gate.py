@@ -132,7 +132,7 @@ def max_premium_cap_for(symbol):
     return cfg["stock"]
 
 
-def default_sl_profile():
+def default_sl_profile(strategy=None):
     """Unified per-trade default SL/Target selector (2026-07-07 — merge of the
     old three overlapping systems into ONE mode, so only one is ever active and
     the "kaunsa default lag raha hai" confusion is gone). Returns (enabled, mode)
@@ -151,21 +151,40 @@ def default_sl_profile():
     Backward-compat: if the new default_sl_mode key isn't present (pre-merge
     config), infer the mode from the old separate flags so nothing silently
     changes behaviour on upgrade — default_tsl_enabled→aggressive, else a set
-    default_sl_type→dropdown, else off."""
-    g = _risk_cfg().get("global", {})
+    default_sl_type→dropdown, else off.
+
+    Per-strategy override (2026-07-14, task 81): pass strategy= to let
+    _risk.per_strategy[<sid>].default_sl_enabled (true/false, absent=inherit)
+    and .default_sl_mode ('legacy'/'dropdown'/'aggressive', absent=inherit)
+    override the global pick — the global Default-SL was applying to EVERY
+    strategy and silently diverging validated backtests (Critical Rule 10);
+    now each strategy can opt in/out or pick its own mode. ₹ values stay
+    global. strategy=None → pure global behaviour, unchanged."""
+    rc = _risk_cfg()
+    g = rc.get("global", {})
     mode = g.get("default_sl_mode")
     if mode in ("legacy", "dropdown", "aggressive"):
-        en = g.get("default_sl_enabled")
-        return (True if en is None else bool(en)), mode
-    if g.get("default_tsl_enabled"):
-        return True, "aggressive"
-    if g.get("default_sl_type"):
-        return True, "dropdown"
-    if g.get("default_sl_rs"):
+        en_raw = g.get("default_sl_enabled")
+        en, mode = (True if en_raw is None else bool(en_raw)), mode
+    elif g.get("default_tsl_enabled"):
+        en, mode = True, "aggressive"
+    elif g.get("default_sl_type"):
+        en, mode = True, "dropdown"
+    elif g.get("default_sl_rs"):
         # Old flat-₹ fallback SL was active (a live per-trade SL before this
         # merge) — infer legacy so it keeps applying until the user picks a mode.
-        return True, "legacy"
-    return False, "dropdown"
+        en, mode = True, "legacy"
+    else:
+        en, mode = False, "dropdown"
+    if strategy:
+        ps = (rc.get("per_strategy", {}).get(strategy, {}) or {})
+        ps_mode = ps.get("default_sl_mode")
+        if ps_mode in ("legacy", "dropdown", "aggressive"):
+            mode = ps_mode
+        ps_en = ps.get("default_sl_enabled")
+        if ps_en is not None and ps_en != "":
+            en = ps_en if isinstance(ps_en, bool) else str(ps_en).lower() == "true"
+    return en, mode
 
 
 def kill_floor_config():
@@ -338,6 +357,15 @@ def default_target_sl_config():
     # (2026-07-07 merge). Backward-compatible: default_sl_profile() falls back to
     # the old default_tsl_enabled flag when the new mode key isn't set yet.
     _en, _mode = default_sl_profile()
+    # Per-strategy override (task 81): a strategy with default_sl_enabled=true in
+    # its Per-Strategy Override keeps the aggressive engine available for ITS
+    # positions even when the global switch is OFF — firing is still gated
+    # per-position by the AGGR_TSL entry marker, which only that strategy's
+    # entries get stamped with.
+    _ps_any = any(
+        ((v or {}).get("default_sl_enabled") in (True, "true"))
+        for v in (_risk_cfg().get("per_strategy") or {}).values()
+    )
     return {
         "enabled": bool(_en and _mode == "aggressive"),
         # feature_on = the aggressive TSL engine is switched on at all, regardless
@@ -345,7 +373,7 @@ def default_target_sl_config():
         # gates the aggressive firing on this + the per-position AGGR_TSL tag, so a
         # position opened aggressive (incl. a per-webhook aggressive pick) keeps
         # being managed even if the global default is later switched away.
-        "feature_on": bool(_en),
+        "feature_on": bool(_en or _ps_any),
         "target_per_lot": _f("default_tsl_target_per_lot", 2000.0),
         "initial_sl_per_lot": _f("default_tsl_initial_sl_per_lot", 1000.0),
         "favour_step": _f("default_tsl_favour_step", 100.0),
@@ -1026,7 +1054,7 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
     # via default_target_sl_config) — it stamps NO entry tags, so return []. 'off'
     # → []. Applies to NEW positions only (existing open positions keep whatever
     # tags they already have — user's explicit call, mid-trade SL never changes).
-    _en, _mode = default_sl_profile()
+    _en, _mode = default_sl_profile(strategy)   # per-strategy override aware (task 81)
     # Per-position mode override (2026-07-09) — a caller (e.g. a webhook config's
     # own SL-Type selector) can make THIS position use a different one of the 3
     # profiles (legacy/aggressive/dropdown) than the global RMS default, still

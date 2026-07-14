@@ -535,6 +535,46 @@ def reports_view(date):
                f"<p>{date} ka report nahi mila — /reports se generate karo.</p></body>", 404
     return send_file(f)
 
+
+# ---- 🎬 YT Presentations (data/presentations/<date>.html — task 76) ----------
+# Daily workflow: user Claude session me din ke points deta hai → Claude poora
+# presentation HTML banata hai → yahan date-file me save + VPS deploy → is page
+# se date-wise khulta hai. App khud generate NAHI karta — sirf archive/viewer.
+_PRESENT_DIR = BASE_DIR / "data" / "presentations"
+
+@app.route('/presentations')
+def presentations_list():
+    """Date-wise YT presentation list — login-gated (before_request)."""
+    try:
+        dates = sorted((f.stem for f in _PRESENT_DIR.glob("*.html")
+                        if _REPORT_DATE_RE.match(f.stem)), reverse=True)
+    except Exception:
+        dates = []
+    items = "".join(
+        f"<li><a href='/presentations/{d}'>🎬 {d}</a></li>" for d in dates) or \
+        "<li class='dim'>abhi koi presentation nahi — Claude session me din ke points do, wahi banake yahan save karega</li>"
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>YT Presentations</title>
+<style>body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;
+max-width:640px;margin:40px auto;padding:0 16px}}h1{{font-size:20px}}
+a{{color:#58a6ff;text-decoration:none;font-size:16px}}a:hover{{text-decoration:underline}}
+li{{margin:10px 0;list-style:none}}.dim{{color:#8b949e}}p.hint{{color:#8b949e;font-size:13px}}</style>
+</head><body><h1>🎬 YT Presentations</h1>
+<p class="hint">Roz ka flow: Claude ko din ke points do → wo presentation banake yahan date-wise save karta hai.</p>
+<ul>{items}</ul>
+<p><a href='/'>← Dashboard</a> &nbsp;|&nbsp; <a href='/reports'>📋 EOD Reports</a></p>
+</body></html>"""
+
+@app.route('/presentations/<date>')
+def presentations_view(date):
+    from flask import send_file
+    if not _REPORT_DATE_RE.match(date):
+        return "invalid date", 400
+    f = _PRESENT_DIR / f"{date}.html"
+    if not f.exists():
+        return f"<body style='background:#0d1117;color:#e6edf3;font-family:sans-serif'>" \
+               f"<p>{date} ka presentation nahi mila.</p></body>", 404
+    return send_file(f)
+
 @app.route('/api/reports/generate', methods=['POST'])
 def api_reports_generate():
     """Background me eod_report.py chalao (non-blocking) — page 90s me khud reload hota."""

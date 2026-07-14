@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-07-14 — Tasks 80/78/76/81 (Peak summary running+tax, dhan-tag Q, YT Presentations page, per-strategy Default SL override)
+**Status:** IN-PROGRESS
+**Kya:** (80) Today's Peak Summary view me open positions ka LIVE running P&L column + completed-trades Tax column; (78) paper trades pe `dhan` broker-tag investigation (answer-only — 13-July pre-deploy-sync rows, aaj se kite); (76) nav Reports → dropdown (📋 EOD Reports + naya 🎬 YT Presentations date-wise page, `data/presentations/`); (81) Per-Trade Default SL & Target ka Enabled + Mode ab Per-Strategy Override table me (blank=global inherit, per-strategy ON/OFF + legacy/dropdown/aggressive)
+**Layer:** ui + config (risk_gate config-resolution — firing logic untouched)
+**Files:** templates/index.html, trader_dashboard.py (presentations routes), _core/risk_gate.py (`default_sl_profile(strategy=)`, `default_target_sl_config` feature_on per-strategy aware)
+**Kyun:** (80) open trade ka running/tax summary me nahi dikhta tha; (78) user confusion — paper orders kite pe jane chahiye; (76) roz ka YT-presentation workflow ab app me date-wise archive; (81) global Default-SL har strategy pe lag ke backtest-fidelity todta hai (Rule 10) — per-strategy enable/mode control
+**Depends on:** nothing
+
+---
+
 ## 2026-07-13 — Today's Peak: clickable per-strategy MTM + Margin Utilization view (tasks 73/74)
 **Status:** DONE (commit `2e5fd16`, VPS-deployed + verified, both services restarted clean, market closed / 0 strategy PIDs).
 **Layer:** ui + infra (display/observability only — NO entry/exit/risk decision changed)
