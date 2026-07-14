@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KHAZANA Dev Log — 14 July 2026 · ML Strategy Mining</title>
+<title>KHAZANA Dev Log — 14 July 2026 · ML Mining + Control Center</title>
 <style>
   :root{
     --bg:#080b11;
@@ -204,7 +204,9 @@
 
 <nav class="rail" aria-label="slides">
   <a href="#s0" class="on"></a><a href="#s1"></a><a href="#s2"></a><a href="#s3"></a>
-  <a href="#s4"></a><a href="#s5"></a><a href="#s6"></a><a href="#s7"></a><a href="#s8"></a><a href="#s9"></a>
+  <a href="#s4"></a><a href="#s5"></a><a href="#s6"></a><a href="#s7"></a>
+  <a href="#d1"></a><a href="#d2"></a><a href="#d3"></a>
+  <a href="#s8"></a><a href="#s9"></a>
 </nav>
 
 <div class="scroller">
@@ -217,7 +219,7 @@
         <span class="datechip">DEV LOG — 14 JUL 2026 · TUE</span>
       </div>
       <h1>Do din, machine se poochha:<br><span class="accent">koi nayi strategy hai?</span></h1>
-      <p class="lede">Ab tak har strategy humne khud design ki, phir validate ki. Is baar ulta kiya — ML ko apne 5 saal ke NIFTY option-chain data pe chhod diya, ki wo khud entry-conditions dhundhe jo humne socha bhi nahi. Aur upar se ek sakht scientific gate lagaya taaki luck ko edge samajhne ki galti na ho.</p>
+      <p class="lede">Ab tak har strategy humne khud design ki, phir validate ki. Is baar ulta kiya — ML ko apne 5 saal ke NIFTY option-chain data pe chhod diya, ki wo khud entry-conditions dhundhe jo humne socha bhi nahi. Aur upar se ek sakht scientific gate lagaya taaki luck ko edge samajhne ki galti na ho. <b style="color:var(--ink)">Din ka doosra half:</b> dashboard ko ek asli control-center bana diya.</p>
       <div class="stats">
         <div class="stat"><div class="n tnum" data-to="4.36" data-suf="M">0</div><div class="k">Rules mine kiye</div></div>
         <div class="stat green"><div class="n tnum" data-to="5">0</div><div class="k">Statistical guardrails bane</div></div>
@@ -387,6 +389,69 @@
     </div>
   </section>
 
+  <!-- D1 CONTROL CENTER — RMS + OVERRIDE MERGE -->
+  <section class="slide" id="d1">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px 1px var(--blue)"></span><span class="modno" style="color:var(--blue)">PART 2 · CONTROL CENTER</span> · RMS + OVERRIDE</div>
+          <div class="tickets"><span class="tk">#80</span><span class="tk">#81</span><span class="tk">#82</span><span class="tk">#83</span></div>
+        </div>
+        <h2>Ek hi table = poora control.</h2>
+        <p class="lede">Din ka doosra half research nahi, platform tha — bikhri hui RMS aur per-strategy settings ab ek jagah, saaf aur clutter-free.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">merge</span> RMS Summary → Override</div><div class="cd">Alag RMS Live Summary khatam — sab kuch <b>Per-Strategy Override</b> table mein. Run / Status / Capital <b>live cells</b>; Cap / Open-Pos / Unrl-P&amp;L / Max-Loss jaise extra columns <b>retire</b>.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">clean</span> ⊞ Advanced column group</div><div class="cd">Excel jaisa — Day Cap · Capital · Margin · Mode · Shadow · Hedge sab ek <b>collapsible group</b> mein. Default collapsed, chahiye to kholo.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">per-strat</span> ⚙ Values modal</div><div class="cd">Har strategy ke bagal <b>⚙</b> → usi mode ke SL/Target fields (Legacy / Dropdown / Aggressive). Aggressive ka live <b>graph preview</b> bhi modal mein.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">peak</span> Running + Tax</div><div class="cd">Today's Peak Summary mein 2 naye column — <b>Running</b> (open positions ka live unrealized ₹) + <b>Tax</b> (charges total). Ek nazar mein poori tasveer.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- D2 SL OPTIMISER (85) -->
+  <section class="slide" id="d2">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px 1px var(--blue)"></span><span class="modno" style="color:var(--blue)">CONTROL CENTER</span> · SL/TARGET OPTIMISER</div>
+          <div class="tickets"><span class="tk">#85</span></div>
+        </div>
+        <h2>SL/Target ke numbers guess nahi — nikaale.</h2>
+        <p class="lede">Har completed trade ke <b>asli 1-min premium bars</b> chronological replay kiye (SL pehle laga ya target — order maayne rakhta hai), phir grid-search se best Legacy aur Aggressive parameters. Train/OOS split, ranked by <b>min(dono halves)</b> — overfit guard.</p>
+      </div>
+      <div class="bignums">
+        <div class="bignum p reveal"><div class="bn tnum">6k / 2.5k / 100</div><div class="bl">Aggressive winner — Target / Init-SL / Step (per-lot)</div></div>
+        <div class="bignum g reveal"><div class="bn tnum">~4×</div><div class="bl">train ₹18k ≈ OOS ₹17k vs actual ₹8.8k (no decay)</div></div>
+        <div class="bignum b reveal"><div class="bn tnum">7</div><div class="bl">discretionary strategies pe apply (ARS Chain / RSI / Range / EMA / Webhook)</div></div>
+      </div>
+      <div class="callout amber">
+        <div class="ic">🛑</div>
+        <div class="txt"><b>Backtest-fidelity Rule:</b> <b>orb_v1</b> aur <b>vrp_condor</b> ko haath NAHI lagaya — inka validated Sharpe/DD ek backtest se aaya hai; aggressive trail chipka dete to wo number jhooth ho jaata. Optimised SL sirf discretionary strategies pe.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- D3 NEW PAGES (84/86) -->
+  <section class="slide" id="d3">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px 1px var(--blue)"></span><span class="modno" style="color:var(--blue)">CONTROL CENTER</span> · NEW PAGES</div>
+          <div class="tickets"><span class="tk">#84</span><span class="tk">#86</span></div>
+        </div>
+        <h2>Do nayi pages — sab ek nazar mein.</h2>
+        <p class="lede">Jo bhi strategies chal rahi hain, unka performance ab visual — na sirf tables.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">page</span> 📈 Strategy Equity</div><div class="cd">Har running strategy ka <b>equity curve</b> (combined + overlaid + mini cards) + neeche summary table. Charge-adjusted net.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">sort</span> Family / Trades / Profit</div><div class="cd">Graphs ko in-teen se <b>sort</b> karo — colour-stable rehte hain. Hover pe nearest point + <b>📅 date</b>.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">page</span> 💼 Portfolio — Deployed Book</div><div class="cd">Poore <b>deployed book</b> ka combined result ek jagah — jo bhi strategies live/paper hain, sab ka mila-jula picture.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">link</span> Registry se seedha</div><div class="cd">Portfolio page registry se linked — ek click mein poori fauj ka combined nazariya.</div></div>
+      </div>
+    </div>
+  </section>
+
   <!-- 08 COST REFRESH -->
   <section class="slide" id="s8">
     <div class="wrap">
@@ -411,13 +476,14 @@
   <section class="slide close" id="s9">
     <div class="wrap">
       <div class="ey" style="justify-content:center"><span class="dot"></span> END OF LOG</div>
-      <h2>Machine ne dhoondha. Gate ne roka.<br>Science jeeti.</h2>
-      <p class="lede" style="margin:0 auto">Ek "khaali haath" din jo asal mein sabse imaandaar din tha — kyunki jhooth ko strategy banne se rok liya.</p>
+      <h2>Machine ne dhoondha. Gate ne roka.<br>Aur platform tez ho gaya.</h2>
+      <p class="lede" style="margin:0 auto">Research side: ek "khaali haath" din jo asal mein sabse imaandaar tha. Platform side: dashboard ab ek asli control-center.</p>
       <div class="recap">
         <span>5 statistical guardrails</span><span>Deflated Sharpe gate</span><span>Purged walk-forward CV</span>
-        <span>Hard OOS lockbox</span><span>39-feature layer</span><span>SHAP rule extraction</span>
-        <span>4M-rule genetic search</span><span>TRAP #114 caught</span><span>VRP re-discovered</span>
-        <span>Zero overfit shipped</span><span>Budget-2026 charges</span><span>expiry_regime feature</span>
+        <span>Hard OOS lockbox</span><span>4M-rule genetic search</span><span>TRAP #114 caught</span>
+        <span>VRP re-discovered</span><span>Zero overfit shipped</span><span>Budget-2026 charges</span>
+        <span>RMS ↔ Override merge</span><span>⚙ Per-strategy SL values</span><span>ML-optimised SL params</span>
+        <span>Strategy Equity page</span><span>Portfolio — deployed book</span><span>Today's Peak: Running + Tax</span>
       </div>
       <div class="signoff">KHAZANA · ALGO TRADER · ML LAB · ARSALAN ALI</div>
     </div>
