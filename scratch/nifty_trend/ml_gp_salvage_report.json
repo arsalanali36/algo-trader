@@ -1,0 +1,602 @@
+[
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.7167",
+  "sr_evo": 3.51,
+  "sr_val": 0.25,
+  "trades_evo": 313,
+  "trades_val": 37,
+  "pnl_val": 1322,
+  "dsr": 0.0687,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.7167",
+  "sr_evo": 3.51,
+  "sr_val": 0.25,
+  "trades_evo": 313,
+  "trades_val": 37,
+  "pnl_val": 1322,
+  "dsr": 0.0687,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.7167",
+  "sr_evo": 3.51,
+  "sr_val": 0.25,
+  "trades_evo": 313,
+  "trades_val": 37,
+  "pnl_val": 1322,
+  "dsr": 0.0687,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND min_since_open > 205 AND straddle_norm > 0.9051 AND iv_rank_60d <= 0.7667",
+  "sr_evo": 3.62,
+  "sr_val": 0.23,
+  "trades_evo": 326,
+  "trades_val": 39,
+  "pnl_val": 1242,
+  "dsr": 0.0982,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9597 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.7667",
+  "sr_evo": 3.59,
+  "sr_val": 0.21,
+  "trades_evo": 298,
+  "trades_val": 26,
+  "pnl_val": 1030,
+  "dsr": 0.0967,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9597 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.7667",
+  "sr_evo": 3.59,
+  "sr_val": 0.21,
+  "trades_evo": 298,
+  "trades_val": 26,
+  "pnl_val": 1030,
+  "dsr": 0.0967,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= 0.003591 AND ema50_dist_pct > -0.4528 AND pcr_oi > 0.8641 AND atm_skew > -2.01",
+  "sr_evo": 3.47,
+  "sr_val": 0.14,
+  "trades_evo": 453,
+  "trades_val": 140,
+  "pnl_val": 3822,
+  "dsr": 0.0149,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF atm_skew > -2.01 AND pcr_oi > 0.8641 AND ema50_dist_pct <= 0.003591 AND ema50_dist_pct > -0.4528",
+  "sr_evo": 3.47,
+  "sr_val": 0.14,
+  "trades_evo": 453,
+  "trades_val": 140,
+  "pnl_val": 3822,
+  "dsr": 0.0149,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND iv_rank_60d <= 0.7667 AND gap_open_pct <= 0.3941 AND bars_into_day > 41",
+  "sr_evo": 3.62,
+  "sr_val": 0.0,
+  "trades_evo": 326,
+  "trades_val": 38,
+  "pnl_val": 9,
+  "dsr": 0.0901,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.7667",
+  "sr_evo": 3.62,
+  "sr_val": 0.0,
+  "trades_evo": 326,
+  "trades_val": 38,
+  "pnl_val": 9,
+  "dsr": 0.0901,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.7667",
+  "sr_evo": 3.62,
+  "sr_val": 0.0,
+  "trades_evo": 326,
+  "trades_val": 38,
+  "pnl_val": 9,
+  "dsr": 0.0901,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8641 AND atm_skew > -2.01 AND ema50_dist_pct > -0.3312 AND ema50_dist_pct <= -0.02702",
+  "sr_evo": 3.55,
+  "sr_val": -0.01,
+  "trades_evo": 408,
+  "trades_val": 129,
+  "pnl_val": -276,
+  "dsr": 0.0132,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8641 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.01 AND ema50_dist_pct > -0.3312",
+  "sr_evo": 3.55,
+  "sr_val": -0.01,
+  "trades_evo": 408,
+  "trades_val": 129,
+  "pnl_val": -276,
+  "dsr": 0.0132,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8641 AND ema50_dist_pct > -0.3312 AND atm_skew > -2.01",
+  "sr_evo": 3.55,
+  "sr_val": -0.01,
+  "trades_evo": 408,
+  "trades_val": 129,
+  "pnl_val": -276,
+  "dsr": 0.0132,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF bars_into_day > 41 AND straddle_norm > 0.9597 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.85",
+  "sr_evo": 3.61,
+  "sr_val": -0.03,
+  "trades_evo": 320,
+  "trades_val": 30,
+  "pnl_val": -217,
+  "dsr": 0.0749,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.01 AND ema50_dist_pct > -0.3312",
+  "sr_evo": 3.88,
+  "sr_val": -0.05,
+  "trades_evo": 447,
+  "trades_val": 138,
+  "pnl_val": -1344,
+  "dsr": 0.0434,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND atm_skew > -2.01",
+  "sr_evo": 3.88,
+  "sr_val": -0.05,
+  "trades_evo": 447,
+  "trades_val": 138,
+  "pnl_val": -1344,
+  "dsr": 0.0434,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.8501 AND bars_into_day > 41 AND iv_rank_60d <= 0.85",
+  "sr_evo": 3.51,
+  "sr_val": -0.07,
+  "trades_evo": 377,
+  "trades_val": 52,
+  "pnl_val": -568,
+  "dsr": 0.0483,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.8501 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.85",
+  "sr_evo": 3.51,
+  "sr_val": -0.07,
+  "trades_evo": 377,
+  "trades_val": 52,
+  "pnl_val": -568,
+  "dsr": 0.0483,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702 AND atm_skew > -1.701 AND ema50_dist_pct > -0.3312",
+  "sr_evo": 3.51,
+  "sr_val": -0.07,
+  "trades_evo": 423,
+  "trades_val": 135,
+  "pnl_val": -1912,
+  "dsr": 0.0101,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND atm_skew > -1.701",
+  "sr_evo": 3.51,
+  "sr_val": -0.07,
+  "trades_evo": 423,
+  "trades_val": 135,
+  "pnl_val": -1912,
+  "dsr": 0.0101,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.85",
+  "sr_evo": 3.69,
+  "sr_val": -0.17,
+  "trades_evo": 350,
+  "trades_val": 43,
+  "pnl_val": -1245,
+  "dsr": 0.0874,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.85",
+  "sr_evo": 3.69,
+  "sr_val": -0.17,
+  "trades_evo": 350,
+  "trades_val": 43,
+  "pnl_val": -1245,
+  "dsr": 0.0874,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF bars_into_day > 41 AND straddle_norm > 0.9051 AND iv_rank_60d <= 0.85 AND gap_open_pct <= 0.3452",
+  "sr_evo": 3.52,
+  "sr_val": -0.17,
+  "trades_evo": 328,
+  "trades_val": 43,
+  "pnl_val": -1245,
+  "dsr": 0.0476,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND pe_iv <= 26.57 AND gap_open_pct <= 0.3941 AND bars_into_day > 41",
+  "sr_evo": 3.52,
+  "sr_val": -0.17,
+  "trades_evo": 361,
+  "trades_val": 52,
+  "pnl_val": -1367,
+  "dsr": 0.0419,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF atm_skew > -2.01 AND pcr_oi > 0.8641 AND ema50_dist_pct <= -0.02702 AND ema50_dist_pct > -0.4528",
+  "sr_evo": 3.61,
+  "sr_val": -0.25,
+  "trades_evo": 427,
+  "trades_val": 131,
+  "pnl_val": -6634,
+  "dsr": 0.0166,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8641 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.01 AND ema50_dist_pct > -0.4528",
+  "sr_evo": 3.61,
+  "sr_val": -0.25,
+  "trades_evo": 427,
+  "trades_val": 131,
+  "pnl_val": -6634,
+  "dsr": 0.0166,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8641 AND ema50_dist_pct > -0.4528 AND atm_skew > -2.01",
+  "sr_evo": 3.61,
+  "sr_val": -0.25,
+  "trades_evo": 427,
+  "trades_val": 131,
+  "pnl_val": -6634,
+  "dsr": 0.0166,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND ema50_dist_pct > -0.4528 AND pcr_oi > 0.8461 AND atm_skew > -2.01",
+  "sr_evo": 3.76,
+  "sr_val": -0.27,
+  "trades_evo": 467,
+  "trades_val": 138,
+  "pnl_val": -7453,
+  "dsr": 0.0301,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.01 AND ema50_dist_pct > -0.4528",
+  "sr_evo": 3.76,
+  "sr_val": -0.27,
+  "trades_evo": 467,
+  "trades_val": 138,
+  "pnl_val": -7453,
+  "dsr": 0.0301,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.4528 AND atm_skew > -2.01",
+  "sr_evo": 3.76,
+  "sr_val": -0.27,
+  "trades_evo": 467,
+  "trades_val": 138,
+  "pnl_val": -7453,
+  "dsr": 0.0301,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.8501 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.9",
+  "sr_evo": 3.49,
+  "sr_val": -0.27,
+  "trades_evo": 389,
+  "trades_val": 56,
+  "pnl_val": -2277,
+  "dsr": 0.0355,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF bars_into_day > 41 AND iv_rank_60d <= 0.6333 AND straddle_norm > 0.9597 AND gap_open_pct <= 0.3941",
+  "sr_evo": 3.49,
+  "sr_val": -0.29,
+  "trades_evo": 245,
+  "trades_val": 19,
+  "pnl_val": -1209,
+  "dsr": 0.0387,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.347 AND ema50_dist_pct > -0.3312",
+  "sr_evo": 3.49,
+  "sr_val": -0.34,
+  "trades_evo": 474,
+  "trades_val": 140,
+  "pnl_val": -9829,
+  "dsr": 0.0083,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND atm_skew > -2.347",
+  "sr_evo": 3.49,
+  "sr_val": -0.34,
+  "trades_evo": 474,
+  "trades_val": 140,
+  "pnl_val": -9829,
+  "dsr": 0.0083,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.9",
+  "sr_evo": 3.65,
+  "sr_val": -0.36,
+  "trades_evo": 362,
+  "trades_val": 47,
+  "pnl_val": -2953,
+  "dsr": 0.0626,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.9",
+  "sr_evo": 3.65,
+  "sr_val": -0.36,
+  "trades_evo": 362,
+  "trades_val": 47,
+  "pnl_val": -2953,
+  "dsr": 0.0626,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.9",
+  "sr_evo": 3.65,
+  "sr_val": -0.36,
+  "trades_evo": 362,
+  "trades_val": 47,
+  "pnl_val": -2953,
+  "dsr": 0.0626,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3452 AND iv_rank_60d <= 0.9 AND straddle_norm > 0.9051 AND bars_into_day > 41",
+  "sr_evo": 3.57,
+  "sr_val": -0.36,
+  "trades_evo": 339,
+  "trades_val": 47,
+  "pnl_val": -2953,
+  "dsr": 0.0437,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702 AND atm_skew > -2.696 AND ema50_dist_pct > -0.3312",
+  "sr_evo": 3.56,
+  "sr_val": -0.57,
+  "trades_evo": 491,
+  "trades_val": 142,
+  "pnl_val": -16790,
+  "dsr": 0.0084,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF atm_skew > -2.696 AND ema50_dist_pct > -0.3312 AND pcr_oi > 0.8461 AND ema50_dist_pct <= -0.02702",
+  "sr_evo": 3.56,
+  "sr_val": -0.57,
+  "trades_evo": 491,
+  "trades_val": 142,
+  "pnl_val": -16790,
+  "dsr": 0.0084,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9597 AND bars_into_day > 41 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.61,
+  "sr_val": -0.6,
+  "trades_evo": 306,
+  "trades_val": 27,
+  "pnl_val": -3922,
+  "dsr": 0.0553,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.8 AND straddle_norm > 0.9597",
+  "sr_evo": 3.61,
+  "sr_val": -0.6,
+  "trades_evo": 306,
+  "trades_val": 27,
+  "pnl_val": -3922,
+  "dsr": 0.0553,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9597 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.61,
+  "sr_val": -0.6,
+  "trades_evo": 306,
+  "trades_val": 27,
+  "pnl_val": -3922,
+  "dsr": 0.0553,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF atm_skew > -3.076 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND ema50_dist_pct <= -0.02702",
+  "sr_evo": 3.54,
+  "sr_val": -0.66,
+  "trades_evo": 510,
+  "trades_val": 143,
+  "pnl_val": -19267,
+  "dsr": 0.008,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.02702 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND atm_skew > -3.076",
+  "sr_evo": 3.54,
+  "sr_val": -0.66,
+  "trades_evo": 510,
+  "trades_val": 143,
+  "pnl_val": -19267,
+  "dsr": 0.008,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 1.009 AND iv_rank_60d <= 0.8 AND gap_open_pct <= 0.3941 AND bars_into_day > 41",
+  "sr_evo": 3.47,
+  "sr_val": -0.66,
+  "trades_evo": 261,
+  "trades_val": 23,
+  "pnl_val": -4192,
+  "dsr": 0.0288,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF atm_skew > -2.01 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND ema50_dist_pct <= -0.06062",
+  "sr_evo": 3.71,
+  "sr_val": -0.71,
+  "trades_evo": 406,
+  "trades_val": 125,
+  "pnl_val": -18086,
+  "dsr": 0.0147,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.06062 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.3312 AND atm_skew > -2.01",
+  "sr_evo": 3.71,
+  "sr_val": -0.71,
+  "trades_evo": 406,
+  "trades_val": 125,
+  "pnl_val": -18086,
+  "dsr": 0.0147,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.66,
+  "sr_val": -0.72,
+  "trades_evo": 335,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.0591,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.66,
+  "sr_val": -0.72,
+  "trades_evo": 335,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.0591,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.66,
+  "sr_val": -0.72,
+  "trades_evo": 335,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.0591,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3452 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.49,
+  "sr_val": -0.72,
+  "trades_evo": 313,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.03,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3452 AND bars_into_day > 41 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.49,
+  "sr_val": -0.72,
+  "trades_evo": 313,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.03,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3452 AND iv_rank_60d <= 0.8",
+  "sr_evo": 3.49,
+  "sr_val": -0.72,
+  "trades_evo": 313,
+  "trades_val": 40,
+  "pnl_val": -4950,
+  "dsr": 0.03,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.6333",
+  "sr_evo": 3.52,
+  "sr_val": -0.73,
+  "trades_evo": 267,
+  "trades_val": 30,
+  "pnl_val": -3392,
+  "dsr": 0.0322,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF ema50_dist_pct <= -0.06062 AND atm_skew > -2.01 AND pcr_oi > 0.8461 AND ema50_dist_pct > -0.4528",
+  "sr_evo": 3.57,
+  "sr_val": -0.81,
+  "trades_evo": 426,
+  "trades_val": 125,
+  "pnl_val": -20371,
+  "dsr": 0.0097,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF gap_open_pct <= 0.3941 AND straddle_norm > 0.9051 AND bars_into_day > 41 AND iv_rank_60d <= 0.95",
+  "sr_evo": 3.53,
+  "sr_val": -0.87,
+  "trades_evo": 375,
+  "trades_val": 49,
+  "pnl_val": -7444,
+  "dsr": 0.026,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND gap_open_pct <= 0.3941 AND bars_into_day > 41 AND iv_rank_60d <= 0.95",
+  "sr_evo": 3.53,
+  "sr_val": -0.87,
+  "trades_evo": 375,
+  "trades_val": 49,
+  "pnl_val": -7444,
+  "dsr": 0.026,
+  "dsr_pass": false
+ },
+ {
+  "rule": "[short_straddle|eod] IF straddle_norm > 0.9051 AND bars_into_day > 41 AND gap_open_pct <= 0.3941 AND iv_rank_60d <= 0.95",
+  "sr_evo": 3.53,
+  "sr_val": -0.87,
+  "trades_evo": 375,
+  "trades_val": 49,
+  "pnl_val": -7444,
+  "dsr": 0.026,
+  "dsr_pass": false
+ }
+]
