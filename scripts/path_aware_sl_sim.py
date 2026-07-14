@@ -207,11 +207,17 @@ def replay_legacy(bars, side, entry_px, qty, target_rs, sl_rs, actual_rs):
     return "OPEN(actual)", actual_rs
 
 
-def replay_aggr(bars, side, entry_px, qty, cfg, lots, actual_rs):
+def replay_aggr(bars, side, entry_px, qty, cfg, lots, actual_rs, ride=False):
     """Bar-by-bar with the REAL live trail (risk_gate.target_sl_level).
     Conservative within a bar: check the SL (established from the peak up to the
     PRIOR bar) against this bar's adverse extreme first, then the fixed target,
-    then advance the peak with this bar's favourable extreme."""
+    then advance the peak with this bar's favourable extreme.
+
+    ride=True: the fixed target is NOT an exit — the position keeps riding and
+    the trailing SL is the ONLY thing that closes it (the user's "6000 fixed na
+    rakh ke badhta jaye jab tak SL na lage"). The cfg's target is still used for
+    the trail's aggressive-phase reference (agg_at = target*pct/100), so the
+    trail SHAPE is unchanged — only the target-hit exit is removed."""
     target_rs = cfg["target_per_lot"] * max(1, int(lots))
     peak = 0.0
     for (_hhmm, o, h, l, c) in bars:
@@ -225,7 +231,7 @@ def replay_aggr(bars, side, entry_px, qty, cfg, lots, actual_rs):
         if adv <= sl_level:
             tag = "TRAIL_SL" if sl_level >= 0 else "SL"
             return tag, round(sl_level, 2)
-        if target_rs > 0 and fav >= target_rs:
+        if not ride and target_rs > 0 and fav >= target_rs:
             return "TARGET", target_rs
         if fav > peak:
             peak = fav
@@ -381,8 +387,8 @@ def main():
     rows = []
     n_cov = 0
     tot_actual = 0.0
-    tot = {v["name"]: {"legacy": 0.0, "aggr": 0.0} for v in VARIATIONS}
-    tot_cov = {v["name"]: {"legacy": 0.0, "aggr": 0.0} for v in VARIATIONS}
+    tot = {v["name"]: {"legacy": 0.0, "aggr": 0.0, "ride": 0.0} for v in VARIATIONS}
+    tot_cov = {v["name"]: {"legacy": 0.0, "aggr": 0.0, "ride": 0.0} for v in VARIATIONS}
 
     for i, t in enumerate(trades):
         side = t["entry"]
@@ -425,17 +431,24 @@ def main():
                                                v["legacy"]["target"] * lots,
                                                v["legacy"]["sl"] * lots, fb)
                 ag_stat, ag_rs = replay_aggr(win, side, ep, qty, v["aggr"], lots, fb)
+                # RIDE: same aggressive trail, but NO target cap — rides until SL.
+                rd_stat, rd_rs = replay_aggr(win, side, ep, qty, v["aggr"], lots, fb, ride=True)
                 tot_cov[v["name"]]["legacy"] += ls_rs
                 tot_cov[v["name"]]["aggr"] += ag_rs
+                tot_cov[v["name"]]["ride"] += rd_rs
             else:
                 ls_stat, ls_rs = "NO_DATA", actual
                 ag_stat, ag_rs = "NO_DATA", actual
+                rd_stat, rd_rs = "NO_DATA", actual
             tot[v["name"]]["legacy"] += ls_rs
             tot[v["name"]]["aggr"] += ag_rs
+            tot[v["name"]]["ride"] += rd_rs
             row[v["name"] + " Leg"] = ls_stat
             row[v["name"] + " Leg₹"] = round(ls_rs, 2)
             row[v["name"] + " Aggr"] = ag_stat
             row[v["name"] + " Aggr₹"] = round(ag_rs, 2)
+            row[v["name"] + " Ride"] = rd_stat
+            row[v["name"] + " Ride₹"] = round(rd_rs, 2)
         rows.append(row)
         if (i + 1) % 50 == 0:
             print(f"  ...{i+1}/{len(trades)}  covered={n_cov}", flush=True)
@@ -460,14 +473,18 @@ def main():
     print("\n── COVERED SUBSET ONLY (apples-to-apples, path-aware) ──")
     cov_actual = sum(r["actual"] for r in rows if r["covered"])
     print(f"  Actual net (covered {n_cov}):  ₹{_inr(cov_actual)}")
+    print(f"  {'variation':34s} {'Legacy':>12} {'Aggr(cap)':>12} {'Aggr-RIDE':>12}")
     for v in VARIATIONS:
-        L = tot_cov[v["name"]]["legacy"]; A = tot_cov[v["name"]]["aggr"]
-        print(f"  {v['name']:34s}  Legacy ₹{_inr(L):>10}   Aggressive ₹{_inr(A):>10}")
+        L = tot_cov[v["name"]]["legacy"]; A = tot_cov[v["name"]]["aggr"]; R = tot_cov[v["name"]]["ride"]
+        print(f"  {v['name']:34s} ₹{_inr(L):>11} ₹{_inr(A):>11} ₹{_inr(R):>11}")
 
     print("\n── FULL SET (NO-DATA rows carry their actual P&L) ──")
+    print(f"  {'variation':34s} {'Legacy':>12} {'Aggr(cap)':>12} {'Aggr-RIDE':>12}")
     for v in VARIATIONS:
-        L = tot[v["name"]]["legacy"]; A = tot[v["name"]]["aggr"]
-        print(f"  {v['name']:34s}  Legacy ₹{_inr(L):>10}   Aggressive ₹{_inr(A):>10}")
+        L = tot[v["name"]]["legacy"]; A = tot[v["name"]]["aggr"]; R = tot[v["name"]]["ride"]
+        print(f"  {v['name']:34s} ₹{_inr(L):>11} ₹{_inr(A):>11} ₹{_inr(R):>11}")
+    print("\n  Aggr(cap) = fixed target exit (current live).  "
+          "Aggr-RIDE = no target cap, rides until trailing SL.")
     print(f"\nCSV: {args.csv}")
 
 
