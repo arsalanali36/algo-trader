@@ -128,17 +128,18 @@ def _hm(s):
         return (11, 0)
 
 
-def fetch_nifty_15m(token, cid, days=5):
+def fetch_nifty_15m(token, cid, days=5, use_cache=True):
     """Continuous 15m NIFTY spot bars for the last `days` (ATR warm-up, TRAP #85).
     Returns df[time, open, high, low, close] or None."""
-    try:
-        import shared_candle_cache
-        cached = shared_candle_cache.get(NIFTY_SEC_ID, 15, max_age=20.0)
-        if cached:
-            df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
-            return df.dropna() if not df.empty else None
-    except Exception:
-        pass
+    if use_cache:
+        try:
+            import shared_candle_cache
+            cached = shared_candle_cache.get(NIFTY_SEC_ID, 15, max_age=20.0)
+            if cached:
+                df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
+                return df.dropna() if not df.empty else None
+        except Exception:
+            pass
     try:
         to = ist_now().date(); fr = to - timedelta(days=days)
         body = {"securityId": NIFTY_SEC_ID, "exchangeSegment": NIFTY_SEG,
@@ -283,6 +284,10 @@ def _recover(sid, log):
 # ─────────────────────────────── main loop ─────────────────────────────────
 def run(paper_mode=True, strategy_id="orb_v1"):
     log = _make_logger(strategy_id)
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
     log.info("=" * 62)
     log.info(f"  orb_trader.py  |  {strategy_id}  |  {'PAPER' if paper_mode else '⚡ LIVE'}")
     log.info("=" * 62)
@@ -342,6 +347,23 @@ def run(paper_mode=True, strategy_id="orb_v1"):
                 if is_no_entry_time():
                     time.sleep(30); continue
                 sig = compute_signal(df, tc)
+                if sig:
+                    # TRAP #108 finalized-bar guard: df may come from shared_candle_cache
+                    # (intraday-built, <=20s stale, sometimes PRE-revision) so a marginal cross
+                    # on an unrevised bar can become a phantom entry the backtest never took
+                    # (proven 2026-07-13). Re-confirm on a FRESH cache-bypass Dhan pull first.
+                    _fresh = fetch_nifty_15m(token, cid, use_cache=False)
+                    if _fresh is not None and not _fresh.empty:
+                        _sig2 = compute_signal(_fresh, tc)
+                        _d1 = sig.get("direction") or sig.get("signal")
+                        _d2 = (_sig2.get("direction") or _sig2.get("signal")) if _sig2 else None
+                        if not _sig2 or _d2 != _d1:
+                            log.info("[ORB] signal "+str(_d1)+" NOT confirmed on fresh Dhan candle - skip (TRAP#108 guard)")
+                            sig = None
+                        else:
+                            sig = _sig2
+                    else:
+                        log.warning("[ORB] fresh Dhan candle unavailable - proceeding on cached signal (TRAP#108 fail-open)")
                 ws, we = _hm(tc["win_start"]), _hm(tc["win_end"])
                 log.info(f"[ORB] spot={spot:.1f}  window={tc['win_start']}-{tc['win_end']}  "
                          f"pos=flat  trades={trades_today}  signal={sig['signal'] if sig else 'none'}")

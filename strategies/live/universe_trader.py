@@ -165,7 +165,14 @@ def _recover_state_from_order_store(sid, log):
             log(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
                 f"exit/flip logic + concurrency cap will resume for them this session")
     except Exception as e:
-        log(f"[RECOVER] state recovery failed (continuing with fresh state): {e}")
+        # Task 3c: the fresh-empty fallback is a REAL risk, not a benign default —
+        # if a prior run had open positions, they're now UNMANAGED by this process
+        # (no exit/flip/EOD logic) until manual intervention. Fail LOUD, never silent.
+        log(f"⚠️ [RECOVER] WARN — state recovery from order_store FAILED: {e}")
+        log(f"⚠️ [RECOVER] WARN — continuing with FRESH-EMPTY state; any open "
+            f"position from a prior run of {sid} is now UNMANAGED here "
+            f"(pos_monitor SL/EOD still applies via order_store, but this "
+            f"strategy's own exit/flip logic will NOT act on it). Verify manually.")
 
 
 def log(msg):
@@ -226,6 +233,12 @@ def main(sid, once=False):
     creds = json.loads((BASE_DIR / "data" / "config.json").read_text())
     feed_started = False
     log(f"[BOOT] universe_trader id={sid} mode={mode} once={once}")
+
+    if not once:
+        from singleton_guard import acquire_singleton
+        if not acquire_singleton(sid):
+            log(f"[SINGLETON] another {sid} process already live — exiting (duplicate-order guard)")
+            return
 
     _recover_state_from_order_store(sid, log)
     # Seed last_day to TODAY (not None) — recovery must never be immediately

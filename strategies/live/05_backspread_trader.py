@@ -105,6 +105,19 @@ DEFAULTS = {
     "or_min": 30, "orb_k": 1.0, "h0": 10, "h1": 13, "atr_period": 14,
     "bs_off": 2, "tp_frac": 1.5, "sl_frac": 0.75,
     "qty": 1, "max_trades_per_day": 2, "symbol": "NIFTY",
+    # ── net-structure trailing profit lock (task 67) ──
+    # The fixed tp_frac/sl_frac band never locks in a peak — an 8000+ intraday
+    # gain rode all the way back down. This adds a trailing floor on the SAME
+    # net-structure P&L (`pnl_frac` = net value change / sold-ATM premium), using
+    # the shared arm+gap+confirm+2-reading-peak state machine (risk_gate.
+    # advance_trailing_lock — same one the KILL-ALL / per-instrument locks use).
+    # Ships DISABLED — enable + paper-test before trusting it live.
+    # arm_frac: peak must reach +this (× ATM prem) before the lock arms.
+    # gap_frac: floor sits this far below the confirmed peak; ratchets up only.
+    # confirm_secs: net P&L must stay below the floor this long before exit
+    #               (whipsaw guard — a single dip tick won't fire it).
+    "trail_enabled": False, "trail_arm_frac": 0.5, "trail_gap_frac": 0.3,
+    "trail_confirm_secs": 45,
 }
 
 def load_config(strategy_id):
@@ -115,16 +128,17 @@ def load_config(strategy_id):
         return dict(DEFAULTS)
 
 
-def fetch_nifty(token, cid, tf_min, days=5):
+def fetch_nifty(token, cid, tf_min, days=5, use_cache=True):
     """Continuous `tf_min` NIFTY spot bars for the last `days` (ATR warm-up, TRAP #85)."""
-    try:
-        import shared_candle_cache
-        cached = shared_candle_cache.get(NIFTY_SEC_ID, tf_min, max_age=20.0)
-        if cached:
-            df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
-            return df.dropna() if not df.empty else None
-    except Exception:
-        pass
+    if use_cache:
+        try:
+            import shared_candle_cache
+            cached = shared_candle_cache.get(NIFTY_SEC_ID, tf_min, max_age=20.0)
+            if cached:
+                df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
+                return df.dropna() if not df.empty else None
+        except Exception:
+            pass
     try:
         to = ist_now().date(); fr = to - timedelta(days=days)
         body = {"securityId": NIFTY_SEC_ID, "exchangeSegment": NIFTY_SEG,
@@ -279,6 +293,10 @@ def _recover(sid, log):
 # ─────────────────────────────── main loop ─────────────────────────────────
 def run(paper_mode=True, strategy_id="backspread_v1"):
     log = _make_logger(strategy_id)
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
     log.info("=" * 62)
     log.info(f"  05_backspread_trader.py  |  {strategy_id}  |  {'PAPER' if paper_mode else '⚡ LIVE'}")
     log.info("=" * 62)
@@ -333,6 +351,30 @@ def run(paper_mode=True, strategy_id="backspread_v1"):
                             reason = "BSPRD_TP"
                         elif pnl_frac <= -pos["sl_frac"]:
                             reason = "BSPRD_SL"
+                        # ── net-structure trailing profit lock (task 67) ──
+                        # Runs on the SAME net pnl_frac; only if the fixed band
+                        # hasn't already decided to exit. Reuses the shared
+                        # arm+gap+confirm+2-reading-peak machine so it can't drift
+                        # from the KILL-ALL / per-instrument locks (Rule 6B).
+                        if reason is None and tc.get("trail_enabled"):
+                            import risk_gate
+                            tstate = pos.setdefault("trail", {"armed": False, "peak": 0.0, "floor": None,
+                                                              "breach_since": None, "fired": False, "prev_mtm": None})
+                            tstate, changed = risk_gate.advance_trailing_lock(
+                                tstate, pnl_frac,
+                                float(tc.get("trail_arm_frac", 0.5)),
+                                float(tc.get("trail_gap_frac", 0.3)),
+                                float(tc.get("trail_confirm_secs", 45)),
+                                time.time())
+                            pos["trail"] = tstate
+                            if changed:
+                                save_state(strategy_id, pos)
+                            if tstate.get("armed"):
+                                log.info(f"[BSPRD] trail armed — peak {tstate['peak']:+.2f} "
+                                         f"floor {tstate.get('floor')}  cur {pnl_frac:+.2f} "
+                                         f"(× ATM-prem)")
+                            if tstate.get("fired"):
+                                reason = "BSPRD_TRAIL"
                 if is_force_exit_time():
                     reason = "EOD_315_SQUAREOFF"
                 if reason:
@@ -348,6 +390,23 @@ def run(paper_mode=True, strategy_id="backspread_v1"):
                 if is_no_entry_time():
                     time.sleep(30); continue
                 sig = compute_breakout(df, tc)
+                if sig:
+                    # TRAP #108 finalized-bar guard: df may come from shared_candle_cache
+                    # (intraday-built, <=20s stale, sometimes PRE-revision) so a marginal cross
+                    # on an unrevised bar can become a phantom entry the backtest never took
+                    # (proven 2026-07-13). Re-confirm on a FRESH cache-bypass Dhan pull first.
+                    _fresh = fetch_nifty(token, cid, tf_min, use_cache=False)
+                    if _fresh is not None and not _fresh.empty:
+                        _sig2 = compute_breakout(_fresh, tc)
+                        _d1 = sig.get("direction") or sig.get("signal")
+                        _d2 = (_sig2.get("direction") or _sig2.get("signal")) if _sig2 else None
+                        if not _sig2 or _d2 != _d1:
+                            log.info("[BSPRD] signal "+str(_d1)+" NOT confirmed on fresh Dhan candle - skip (TRAP#108 guard)")
+                            sig = None
+                        else:
+                            sig = _sig2
+                    else:
+                        log.warning("[BSPRD] fresh Dhan candle unavailable - proceeding on cached signal (TRAP#108 fail-open)")
                 log.info(f"[BSPRD] spot={spot:.1f}  pos=flat  trades={trades_today}  "
                          f"breakout={sig['direction'] if sig else 'none'}")
                 if sig:
@@ -446,7 +505,12 @@ def _enter_backspread(strategy_id, sym, spot, direction, tc, mode, bname, log):
              f"SELL 1x {legs[1]['trad_sym']} @{legs[1]['entry_prem']}  net/unit={entry_val:+.1f} ref={ref:.1f}")
     return dict(legs=legs, entry_val=entry_val, ref=ref, group_id=gid, direction=direction,
                 tp_frac=float(tc.get("tp_frac", 1.5)), sl_frac=float(tc.get("sl_frac", 0.75)),
-                entry_spot=round(spot, 1))
+                entry_spot=round(spot, 1),
+                # net-structure trailing-lock state (task 67) — owned + persisted
+                # here, restart-safe via save_state. Shape matches
+                # risk_gate.advance_trailing_lock's state contract.
+                trail={"armed": False, "peak": 0.0, "floor": None,
+                       "breach_since": None, "fired": False, "prev_mtm": None})
 
 
 def _rollback(strategy_id, sym, legs, mode, bname, log):

@@ -120,14 +120,17 @@ def ironfly_frame(flag="WEEK", tf="5m", wing=5):
     pew = load_series(flag, "PE", -wing, tf)
     if cew is None or pew is None:
         return None
-    # coverage guard: a still-downloading wing has only recent bars → inner-join would
-    # silently truncate to that overlap and produce a BOGUS (short-history) backtest.
+    # coverage guard (TRAP #107): a still-downloading wing has only recent bars →
+    # inner-join would silently truncate to that overlap and produce a BOGUS
+    # (short-history) backtest. Shared helper so every inner-join site guards the
+    # same way (Task 1b).
+    import data_integrity
     atm_days = m.day.nunique()
     for w, name in ((cew, "CE"), (pew, "PE")):
-        wdays = w.Datetime.dt.date.nunique()
-        if wdays < 0.9 * atm_days:
-            print(f"[optlake] wing {name}±{wing} only {wdays}/{atm_days} days — still downloading; "
-                  f"refusing partial frame (would give a wrong result)", flush=True)
+        ok, det = data_integrity.assert_coverage(w, atm_days, min_pct=0.9,
+                                                 label=f"wing {name}±{wing}")
+        if not ok:
+            print(f"[optlake] {det['label']}: {det['note']} — refusing partial frame", flush=True)
             return None
     cew = cew[["Datetime", "close"]].rename(columns={"close": f"CEATMp{wing}_c"})
     pew = pew[["Datetime", "close"]].rename(columns={"close": f"PEATMm{wing}_c"})

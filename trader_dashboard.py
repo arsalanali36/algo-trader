@@ -485,6 +485,14 @@ def serve_spec_builder():
 _REPORTS_DIR = BASE_DIR / "data" / "reports"
 _REPORT_DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 
+@app.route('/registry')
+def strategy_registry_page():
+    """Unified Strategy Registry tree view — every strategy in one place (login-gated)."""
+    from flask import make_response
+    resp = make_response(render_template("strategy_registry.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'  # always fresh (no stale-cache UI)
+    return resp
+
 @app.route('/reports')
 def reports_list():
     """Date-wise EOD report list — login-gated (before_request), self-contained page."""
@@ -527,6 +535,46 @@ def reports_view(date):
                f"<p>{date} ka report nahi mila — /reports se generate karo.</p></body>", 404
     return send_file(f)
 
+
+# ---- 🎬 YT Presentations (data/presentations/<date>.html — task 76) ----------
+# Daily workflow: user Claude session me din ke points deta hai → Claude poora
+# presentation HTML banata hai → yahan date-file me save + VPS deploy → is page
+# se date-wise khulta hai. App khud generate NAHI karta — sirf archive/viewer.
+_PRESENT_DIR = BASE_DIR / "data" / "presentations"
+
+@app.route('/presentations')
+def presentations_list():
+    """Date-wise YT presentation list — login-gated (before_request)."""
+    try:
+        dates = sorted((f.stem for f in _PRESENT_DIR.glob("*.html")
+                        if _REPORT_DATE_RE.match(f.stem)), reverse=True)
+    except Exception:
+        dates = []
+    items = "".join(
+        f"<li><a href='/presentations/{d}'>🎬 {d}</a></li>" for d in dates) or \
+        "<li class='dim'>abhi koi presentation nahi — Claude session me din ke points do, wahi banake yahan save karega</li>"
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>YT Presentations</title>
+<style>body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;
+max-width:640px;margin:40px auto;padding:0 16px}}h1{{font-size:20px}}
+a{{color:#58a6ff;text-decoration:none;font-size:16px}}a:hover{{text-decoration:underline}}
+li{{margin:10px 0;list-style:none}}.dim{{color:#8b949e}}p.hint{{color:#8b949e;font-size:13px}}</style>
+</head><body><h1>🎬 YT Presentations</h1>
+<p class="hint">Roz ka flow: Claude ko din ke points do → wo presentation banake yahan date-wise save karta hai.</p>
+<ul>{items}</ul>
+<p><a href='/'>← Dashboard</a> &nbsp;|&nbsp; <a href='/reports'>📋 EOD Reports</a></p>
+</body></html>"""
+
+@app.route('/presentations/<date>')
+def presentations_view(date):
+    from flask import send_file
+    if not _REPORT_DATE_RE.match(date):
+        return "invalid date", 400
+    f = _PRESENT_DIR / f"{date}.html"
+    if not f.exists():
+        return f"<body style='background:#0d1117;color:#e6edf3;font-family:sans-serif'>" \
+               f"<p>{date} ka presentation nahi mila.</p></body>", 404
+    return send_file(f)
+
 @app.route('/api/reports/generate', methods=['POST'])
 def api_reports_generate():
     """Background me eod_report.py chalao (non-blocking) — page 90s me khud reload hota."""
@@ -550,12 +598,52 @@ def serve_lab_hub():
     from flask import send_from_directory
     return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', 'hub.html')
 
+_LAB_GZIP_EXT = ('.js', '.html', '.htm', '.json', '.css', '.svg', '.csv')
+
+def _lab_gzip_response(full: Path):
+    """Serve a Lab text asset gzip-compressed (results.js is 3-13 MB uncompressed —
+    the whole reason the Lab page felt slow to load). A sidecar `<file>.gz` is cached
+    next to the source and only regenerated when the source's mtime changes, so repeat
+    requests cost ~0 CPU. Browser still revalidates via ETag/Last-Modified → 304 when
+    unchanged. Falls back to a plain stream if anything goes wrong. Read-only path —
+    no bearing on the live order flow."""
+    import gzip, hashlib
+    try:
+        src_mtime = full.stat().st_mtime
+        gz = full.with_name(full.name + '.gz')
+        if (not gz.exists()) or gz.stat().st_mtime < src_mtime:
+            raw = full.read_bytes()
+            with gzip.open(gz, 'wb', compresslevel=6) as f:
+                f.write(raw)
+            os.utime(gz, (src_mtime, src_mtime))   # tie the cache to the source's mtime
+        data = gz.read_bytes()
+        etag = hashlib.md5(f"{full.name}:{src_mtime}:{len(data)}".encode()).hexdigest()
+        if request.headers.get('If-None-Match') == etag:
+            return Response(status=304)
+        import mimetypes
+        ctype = mimetypes.guess_type(full.name)[0] or 'application/octet-stream'
+        resp = Response(data, mimetype=ctype)
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Vary'] = 'Accept-Encoding'
+        resp.headers['Cache-Control'] = 'no-cache'   # revalidate → 304, never blindly stale
+        resp.headers['ETag'] = etag
+        return resp
+    except Exception:
+        return send_from_directory(full.parent, full.name)
+
 @app.route('/lab/<path:fn>')
 def serve_lab_file(fn):
     """Strategy Lab — serves the NIFTY research hub + its dashboards / results.js
     (self-contained HTML in scratch/nifty_trend). Relative links resolve under /lab/."""
-    from flask import send_from_directory
-    return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', fn)
+    root = (BASE_DIR / 'scratch' / 'nifty_trend').resolve()
+    full = (root / fn).resolve()
+    # path-traversal guard (fn comes from the URL)
+    if root not in full.parents and full != root:
+        return Response('not found', status=404)
+    if (full.is_file() and full.suffix.lower() in _LAB_GZIP_EXT
+            and 'gzip' in request.headers.get('Accept-Encoding', '')):
+        return _lab_gzip_response(full)
+    return send_from_directory(root, fn)
 
 @app.route('/script3')
 def serve_script3():
@@ -649,6 +737,16 @@ def api_config():
         return jsonify(json.loads(TC_FILE.read_text()))
     except Exception:
         return jsonify({})
+
+@app.route('/api/strategy-registry', methods=['GET'])
+def api_strategy_registry():
+    """Canonical Strategy ID registry (family.member IDs). Read-only; the frontend
+    uses it so every surface shows the same 'NN.MM - Name' label."""
+    try:
+        import strategy_registry as _sr
+        return jsonify(_sr.load(force=True))
+    except Exception as e:
+        return jsonify({"error": str(e), "families": {}, "strategies": {}})
 
 @app.route('/api/config', methods=['POST'])
 def api_set_config():
@@ -1886,7 +1984,7 @@ def _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_
             return (prem - entry_px) * qty if side == "BUY" else (entry_px - prem) * qty
 
         if is_aggr:
-            cfg = risk_gate.default_target_sl_config()
+            cfg = risk_gate.default_target_sl_config(strategy)   # per-strategy ⚙ values (task 81)
             lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
             lots = max(1, round(qty / lotsz)) if lotsz else 1
             target_mtm = cfg["target_per_lot"] * lots
@@ -1948,7 +2046,7 @@ def _live_sl_for_open(p):
         if entry_px <= 0 or qty <= 0:
             return None
         if any(str(t).startswith("AGGR_TSL") for t in tags):
-            cfg = risk_gate.default_target_sl_config()
+            cfg = risk_gate.default_target_sl_config(p.get("strategy"))   # per-strategy ⚙ values (task 81)
             if not cfg.get("enabled"):
                 return None   # profile off → monitor won't fire it; don't show a misleading live SL
             lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
@@ -2500,6 +2598,25 @@ def api_peak_pnl_history():
     _ist_now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
     req_date = request.args.get("date") or _ist_now.strftime("%Y-%m-%d")
     is_today = (req_date == _ist_now.strftime("%Y-%m-%d"))
+    want_strat = request.args.get("strat") or ""   # task 73: per-strategy line ("__all" default)
+
+    def _build_strat_series(sd_list):
+        """From per-point {key:[real,unreal]} dicts (snapshot v[4]) → aligned
+        {key:{r:[...],u:[...]}} for '__all' + the requested strategy only (keeps
+        the payload small — one strategy at a time)."""
+        if not any(isinstance(sd, dict) and sd for sd in sd_list):
+            return {}   # pre-v4 date (no per-strategy snapshot) → frontend reconstructs
+        keys = {"__all"}
+        if want_strat and want_strat != "__all":
+            keys.add(want_strat)
+        out = {}
+        for k in keys:
+            r, u = [], []
+            for sd in sd_list:
+                v = (sd.get(k) if isinstance(sd, dict) else None) or [0, 0]
+                r.append(v[0]); u.append(v[1])
+            out[k] = {"r": r, "u": u}
+        return out
 
     try:
         # Graph's dashed floor line now mirrors the account-level KILL-FLOOR's
@@ -2595,16 +2712,22 @@ def api_peak_pnl_history():
             except Exception:
                 pass
             return None
-        mkt_pts = [e for p in daemon_pts for e in [_safe_norm(p)] if e is not None]
+        # Keep the raw daemon point aligned with its normalized form so v[4]
+        # (per-strategy dict) can be extracted for strat_series (task 73).
+        _kept = [(p, _safe_norm(p)) for p in daemon_pts]
+        _kept = [(rp, n) for (rp, n) in _kept if n is not None]
+        mkt_pts = [n for (_, n) in _kept]
 
         if mkt_pts:
             pts = mkt_pts
+            _sd = [(rp[4] if len(rp) > 4 and isinstance(rp[4], dict) else {}) for (rp, _) in _kept]
             # Prepend 09:15 anchor only if daemon started DURING market hours (not long after open)
             # If daemon started within 30 min of open, anchor at 09:15; otherwise skip anchor
             # (avoids fake flat-line when daemon started mid-day or later)
             first_min = _to_min(pts[0][0])
             if first_min > MARKET_OPEN and first_min <= MARKET_OPEN + 30:
                 pts = [["09:15", 0.0, 0.0, 0.0]] + pts
+                _sd = [{}] + _sd
             elif first_min == MARKET_OPEN:
                 pass  # already starts at open
             # else: daemon started mid-day — don't anchor at 09:15, show from where data begins
@@ -2615,9 +2738,11 @@ def api_peak_pnl_history():
             if pts[-1][0] < end_hm:
                 last = pts[-1]
                 pts = pts + [[end_hm, last[1], last[2], last[3]]]
+                _sd = _sd + [_sd[-1] if _sd else {}]   # carry final per-strategy values
             return jsonify({"data": pts, "entries": entries,
                             "lock_pct": lock_pct, "lock_rs": lock_rs,
-                            "profit_target_rs": profit_target_rs})
+                            "profit_target_rs": profit_target_rs,
+                            "strat_series": _build_strat_series(_sd)})
         # Daemon file existed but had no market-hours data → fall through to order_store
 
     # ── FALLBACK: reconstruct from order_store exits (no unrealized peaks) ──
@@ -2641,12 +2766,87 @@ def api_peak_pnl_history():
                 pts.append([end_hm, round(cum, 2), round(trail_peak, 2), round(peak_ever, 2)])
             return jsonify({"data": pts, "entries": entries,
                             "lock_pct": lock_pct, "lock_rs": lock_rs,
-                            "profit_target_rs": profit_target_rs})
+                            "profit_target_rs": profit_target_rs,
+                            "strat_series": {}})  # no snapshot → frontend reconstructs per-strategy
     except Exception:
         pass
 
     return jsonify({"data": [], "entries": [], "lock_pct": lock_pct,
-                    "lock_rs": lock_rs, "profit_target_rs": profit_target_rs})
+                    "lock_rs": lock_rs, "profit_target_rs": profit_target_rs,
+                    "strat_series": {}})
+
+
+@app.route('/api/margin-history')
+def api_margin_history():
+    """Day margin-utilization timeline (task 74) — reconstructed from order_store
+    entry/exit times, so it works for any date without touching the money loop.
+    Each position holds ₹ margin from its entry_time until its exit_time (open
+    positions → until 'now'): BUY leg = premium notional (qty×entry_price), SELL
+    leg = executing-broker real margin (risk_gate._leg_capital, cached; falls back
+    to the multiplier estimate for expired/failed lookups). Split buy vs sell,
+    filtered by ?mode=all|paper|live (position's own mode).
+    Response: {times:[HH:MM...], buy:[₹...], sell:[₹...], peak:₹}."""
+    from datetime import timedelta as _td
+    _now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+    req_date = request.args.get("date") or _now.strftime("%Y-%m-%d")
+    mode = (request.args.get("mode") or "all").lower()   # all | paper | live
+    is_today = (req_date == _now.strftime("%Y-%m-%d"))
+
+    def _to_min(hm):
+        try:
+            h, m = str(hm).split(":")[:2]
+            return int(h) * 60 + int(m)
+        except Exception:
+            return None
+
+    OPEN_M, CLOSE_M = 9 * 60 + 15, 15 * 60 + 30
+    now_m = _to_min(_now.strftime("%H:%M")) or CLOSE_M
+    end_m = min(CLOSE_M, now_m) if is_today else CLOSE_M
+
+    positions = []   # (start_min, end_min, side, margin_rs)
+    try:
+        import order_store
+        import risk_gate as _rg
+        data = order_store.trades_for(req_date)
+        rows = list(data.get("details", [])) + list(data.get("open", []))
+        for r in rows:
+            if "CAPITAL_BLOCKED" in (r.get("tags") or []):
+                continue
+            pmode = str(r.get("mode") or "paper").lower()
+            if mode != "all" and pmode != mode:
+                continue
+            s_m = _to_min(r.get("entry_time"))
+            if s_m is None:
+                continue
+            e_m = _to_min(r.get("exit_time"))
+            if e_m is None:            # still open ("—") → held to end of window
+                e_m = end_m
+            e_m = min(max(e_m, s_m), CLOSE_M)
+            side = str(r.get("entry") or "").upper()
+            try:
+                mgn = _rg._leg_capital(r) if side == "SELL" \
+                    else float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
+            except Exception:
+                mgn = float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
+            positions.append((s_m, e_m, side, float(mgn or 0)))
+    except Exception:
+        positions = []
+
+    # Event-driven step timeline: recompute the in-use sum at every entry/exit
+    # boundary (exact step function, no minute-grid rounding).
+    tset = {OPEN_M, end_m}
+    for (s_m, e_m, _s, _mg) in positions:
+        tset.add(s_m); tset.add(e_m)
+    tpoints = sorted(t for t in tset if OPEN_M <= t <= CLOSE_M)
+    times, buy, sell = [], [], []
+    peak = 0.0
+    for t in tpoints:
+        b = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "BUY" and s_m <= t < e_m)
+        s = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "SELL" and s_m <= t < e_m)
+        times.append(f"{t // 60:02d}:{t % 60:02d}")
+        buy.append(round(b, 2)); sell.append(round(s, 2))
+        peak = max(peak, b + s)
+    return jsonify({"times": times, "buy": buy, "sell": sell, "peak": round(peak, 2)})
 
 
 @app.route('/api/close-position', methods=['POST'])
@@ -3874,12 +4074,11 @@ def api_orders():
             if (p.get('tags') or []) and 'CAPITAL_BLOCKED' in p['tags']:
                 continue
             try:
-                qty      = float(p.get("qty") or 0)
-                price    = float(p.get("entry_price") or 0)
-                notional = qty * price
-                if str(p.get("entry") or "").upper() == "SELL":
-                    notional *= _mult
-                p['margin_used'] = round(notional, 2)
+                # Real executing-broker margin: SELL → actual SPAN+exposure via
+                # broker_real_margin (Kite order_margins / Dhan calculator); BUY →
+                # premium paid. Falls back to the multiplier only if the API fails.
+                # (Was crude qty*price*multiplier, which under-showed SELL margin.)
+                p['margin_used'] = round(_rg._leg_capital(p, _rc), 2)
             except Exception:
                 p['margin_used'] = 0
             # Task 8 — current trailing/aggressive SL the monitor will fire on
@@ -4633,6 +4832,27 @@ def pos_monitor_loop():
                 _realized = _rg._today_realized_pnl()
                 _unrealized = 0.0
                 _mtm_unreliable = False   # any open position priced from nothing → kill-floor must not fire this cycle
+
+                # ── Per-strategy MTM snapshot (task 73) ──────────────────────────
+                # Feeds the Today's Peak "Graph" view's per-strategy line + the
+                # Realised/Unrealised/Current switch. Keyed the SAME way the
+                # dashboard's Summary rows are (strategy key, else MANUAL/WEBHOOK by
+                # source) so the frontend can look a row up directly. Each value =
+                # [realized, unrealized]. "__all" = whole-account display totals.
+                # DELIBERATELY display-only + includes PAPER (the account kill-floor's
+                # own _realized above stays live-only by design — Critical Rule 6);
+                # computed entirely from `data` already fetched + the LTP loop below,
+                # so ZERO extra Dhan calls.
+                def _mkey(_r):
+                    _s = str(_r.get("source") or "STRATEGY").upper()
+                    return _s if _s in ("MANUAL", "WEBHOOK") else (_r.get("strategy") or "STRATEGY")
+                _mtm_by_strat = {}
+                _disp_realized = 0.0
+                for _d in data.get("details", []):
+                    _pnl = float(_d.get("pnl") or 0)
+                    _disp_realized += _pnl
+                    _mtm_by_strat.setdefault(_mkey(_d), [0.0, 0.0])[0] += _pnl
+
                 _active_pos = [_p for _p in open_pos
                                if _p.get("status") != "blocked"
                                and "CAPITAL_BLOCKED" not in (_p.get("tags") or [])]
@@ -4651,12 +4871,18 @@ def pos_monitor_loop():
                         _unrl = (_ltp - _epx) * _qty if _p.get("entry") == "BUY" \
                                 else (_epx - _ltp) * _qty
                         _unrealized += _unrl
+                        _mtm_by_strat.setdefault(_mkey(_p), [0.0, 0.0])[1] += _unrl
                     else:
                         # this leg contributed NOTHING to MTM (no price anywhere) —
                         # total is understated; kill-floor treats this cycle as
                         # unreliable (never fire a kill-all on incomplete data)
                         _mtm_unreliable = True
                 _total_pnl = _realized + _unrealized
+
+                # finalize per-strategy dict: round + account rollup
+                for _k in list(_mtm_by_strat.keys()):
+                    _mtm_by_strat[_k] = [round(_mtm_by_strat[_k][0], 2), round(_mtm_by_strat[_k][1], 2)]
+                _mtm_by_strat["__all"] = [round(_disp_realized, 2), round(_unrealized, 2)]
 
                 # Day-rollover check — MUST run before the peak/history update below.
                 # trader_dashboard runs as a long-lived systemd service and is NOT
@@ -4702,6 +4928,7 @@ def pos_monitor_loop():
                     round(_trailing_peak_pnl, 2),
                     round(_total_pnl, 2),
                     round(_daily_peak_ever, 2),      # v[3]: floor line base (monotonic, never drops)
+                    _mtm_by_strat,                   # v[4]: {key: [realized, unrealized]}, "__all" = account (task 73)
                 ))
                 # Cap sized for a FULL trading day, not a rolling window. Loop cycles
                 # every ~5s (time.sleep(5) at the bottom, plus whatever the SL/TP/
@@ -4854,6 +5081,16 @@ def pos_monitor_loop():
                 import risk_gate as _rg_tsl
                 import dhan_master as _dm_tsl
                 _tslc = _rg_tsl.default_target_sl_config()
+                # Per-strategy ⚙ values (task 81) — one config per strategy per
+                # cycle (cached, no extra I/O per position beyond first hit).
+                _tslc_by_strat = {}
+                def _tslc_for(_s):
+                    if _s not in _tslc_by_strat:
+                        try:
+                            _tslc_by_strat[_s] = _rg_tsl.default_target_sl_config(_s)
+                        except Exception:
+                            _tslc_by_strat[_s] = _tslc
+                    return _tslc_by_strat[_s]
                 if _tslc.get("feature_on"):
                     _tsl_dirty = False
                     # Only positions stamped AGGR_TSL at entry (opened while
@@ -4892,8 +5129,9 @@ def pos_monitor_loop():
                                      else (_epx - _ltp) * _qty
                         else:
                             _tsl_unreliable = True   # no price → freeze (never fire on bad data)
+                        _tslc_p = _tslc_for(_p.get("strategy") or "")
                         _tst, _act, _sl_lvl = _rg_tsl.advance_target_sl(
-                            _tst, _unrl, _tslc, _lots, mtm_unreliable=_tsl_unreliable)
+                            _tst, _unrl, _tslc_p, _lots, mtm_unreliable=_tsl_unreliable)
                         # Smart-split candle-close confirm (2026-07-09, user) — in
                         # the PROFIT-lock zone (sl_level >= 0: the SL has ratcheted
                         # into locked profit) don't stop out on an intraday WICK;
@@ -4925,11 +5163,11 @@ def pos_monitor_loop():
                             # (_sl_lvl: negative = loss stop e.g. -2000, positive =
                             # locked-in profit). Prefix still matches _EXIT_REASON_PREFIXES.
                             if _act == "TARGET":
-                                _reason = f"DEFAULT_TSL_TARGET:{_tslc['target_per_lot']*_lots:.0f}"
+                                _reason = f"DEFAULT_TSL_TARGET:{_tslc_p['target_per_lot']*_lots:.0f}"
                             else:
                                 _reason = f"DEFAULT_TSL_SL:{_sl_lvl:.0f}"
                             print(f"[DEFAULT-TSL] 🎯 FIRED ({_act}) — {_p.get('sym')} (ID {_pid}) "
-                                  f"P&L ₹{_unrl:.0f} vs target ₹{_tslc['target_per_lot']*_lots:.0f} / "
+                                  f"P&L ₹{_unrl:.0f} vs target ₹{_tslc_p['target_per_lot']*_lots:.0f} / "
                                   f"SL ₹{_sl_lvl:.0f} (peak ₹{_tst.get('peak',0):.0f}, {_lots} lot) "
                                   f"— squaring off this position", flush=True)
                             if _ltp <= 0:

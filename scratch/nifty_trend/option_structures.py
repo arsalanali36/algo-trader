@@ -145,6 +145,39 @@ def _precomp(d, sigma_map):
     return EOD, T_bar, SIG, EXP
 
 
+# ---------- net-structure trailing profit lock (task 67 / C) ----------
+# VERBATIM copy of _core/risk_gate.advance_trailing_lock — the exact shared state
+# machine the LIVE 05_backspread_trader.py trailing lock uses (arm + gap + confirm +
+# 2-reading peak). Copied (not imported) so the backtest carries ZERO dependency on
+# the live tree and can NEVER silently drift from it. Pure function; mutates `state`
+# in place; returns (state, changed). In the backtest `now_ts` = bar index and
+# `confirm_secs` = confirm_BARS (5m bars, coarser than the live ~30-60s loop).
+def _advance_trailing_lock(state, mtm, arm_rs, gap_rs, confirm_secs, now_ts, mtm_unreliable=False):
+    changed = False
+    confirmed = mtm if state.get("prev_mtm") is None else min(state["prev_mtm"], mtm)
+    if not mtm_unreliable and confirmed > state.get("peak", 0.0):
+        state["peak"] = round(confirmed, 4); changed = True
+    if not state.get("armed") and state.get("peak", 0.0) >= arm_rs:
+        state["armed"] = True; changed = True
+    if state.get("armed"):
+        new_floor = round(state["peak"] - gap_rs, 4)
+        if state.get("floor") is None or new_floor > state["floor"]:
+            state["floor"] = new_floor; changed = True
+        if mtm_unreliable:
+            pass
+        elif mtm < state["floor"]:
+            if state.get("breach_since") is None:
+                state["breach_since"] = now_ts; changed = True
+            elif now_ts - state["breach_since"] >= confirm_secs:
+                state["fired"] = True; changed = True
+        else:
+            if state.get("breach_since") is not None:
+                state["breach_since"] = None; changed = True
+    if not mtm_unreliable:
+        state["prev_mtm"] = mtm
+    return state, changed
+
+
 # ---------- structure backtest (option-premium P&L, engine-shaped res) ----------
 def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
                        lot=75, lots=1, charges=True, rms_caps=None):
@@ -164,6 +197,12 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
     qty = int(lots) * int(lot)
     tp_frac = float(p.get("tp_frac", 0.5))
     sl_frac = float(p.get("sl_frac", 1.0))
+    # net-structure trailing profit lock (task 67/C) — matches live 05_backspread_trader.py.
+    # Off by default so every existing run reproduces byte-for-byte.
+    trail_on = bool(p.get("trail_enabled", False))
+    trail_arm = float(p.get("trail_arm_frac", 0.5))
+    trail_gap = float(p.get("trail_gap_frac", 0.3))
+    trail_confirm = float(p.get("trail_confirm_bars", 1))
     # policy A (0DTE-inflation guard): skip NEW entries on the correct expiry day. Default ON —
     # the standing decision for all Track-A structure strategies (user 2026-07-10). Pass
     # skip_expiry=False to reproduce the pure weekday-fixed (expiry-allowed) numbers.
@@ -264,6 +303,15 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
                     close_pos(i, C[i], "Target %credit")
                 elif mtm <= -sl_frac * ref * qty:
                     close_pos(i, C[i], "Stop %credit")
+                elif trail_on:
+                    # trailing lock on the SAME net pnl_frac the live trader uses
+                    # (mtm/(ref*qty)); fires only if TP/SL didn't (priority order = live).
+                    denom = ref * qty
+                    if denom > 1e-9:
+                        st, _ = _advance_trailing_lock(pos["trail"], mtm / denom,
+                                                       trail_arm, trail_gap, trail_confirm, i)
+                        if st.get("fired"):
+                            close_pos(i, C[i], "Trail lock")
 
         # ---- account daily caps (RMS overlay) ----
         if rms_caps and pos is not None and not EOD[i]:
@@ -310,7 +358,9 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
             notional = sum(abs(ep) * abs(_s) for (_K, _ot, _s, ep) in legstate) * qty
             if notional <= LEV_CAP * equity:
                 pos = dict(legs=legstate, entry_val=entry_val, ref=ref, atm=atm, side=dirn,
-                           entry_i=i + 1, entry_dt=DT[i + 1], spot_in=spot)
+                           entry_i=i + 1, entry_dt=DT[i + 1], spot_in=spot,
+                           trail=dict(armed=False, peak=0.0, floor=None,
+                                      breach_since=None, fired=False, prev_mtm=None))
                 trades_today += 1
 
         # ---- mark equity ----

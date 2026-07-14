@@ -1489,14 +1489,32 @@
       <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">📜 Script 3</div>
-      <a href="#" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank');return false;" class="tab" style="text-decoration: none;">🎬 Video Journal</a>
-      <a href="/lab/hub.html" target="_blank" class="tab" style="text-decoration: none;">🧪 Strategy Lab</a>
-      <a href="/reports" target="_blank" class="tab" style="text-decoration: none;">📋 Reports</a>
+      <a href="/registry" target="_blank" class="tab" style="text-decoration: none;">🗂️ Strategies</a>
+      <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
+        <div class="tab" onclick="toggleReportsDropdown(event)" style="display: flex; align-items: center; gap: 4px;">
+          📋 Reports ▾</div>
+        <div class="dropdown-menu" id="reports-dropdown"
+          style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 170px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <a href="/reports" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              📋 EOD Reports</div>
+          </a>
+          <a href="/presentations" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🎬 YT Presentations</div>
+          </a>
+        </div>
+      </div>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
         <div class="tab" onclick="toggleMoreDropdown(event)" style="display: flex; align-items: center; gap: 4px;">More
           ▾</div>
         <div class="dropdown-menu" id="more-dropdown"
           style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 140px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <div class="dropdown-item" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank'); closeMoreDropdown();"
+            style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+            🎬 Video Journal</div>
           <div class="dropdown-item" onclick="watchToggle(); closeMoreDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
             👁 Watch List</div>
@@ -1852,28 +1870,81 @@
       </div>
     </div>
 
-    <!-- Today's Peak P&L Graph — moved from Calendar tab -->
+    <!-- Today's Peak — per-strategy MTM (task 73) + Summary + Margin (task 74) -->
     <div class="card" style="margin-bottom:12px; padding:14px 18px;">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
-        <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak P&amp;L</h3>
-        <button onclick="loadPeakGraph()"
-          style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻
-          Refresh</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;flex-wrap:wrap;gap:8px">
+        <h3 style="color:#e6edf3;font-size:13px;font-weight:600;margin:0">🏔️ Today's Peak
+          <span id="peak-scope" style="font-size:11px;font-weight:400;color:#8b949e"></span></h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <!-- flip the card body between per-strategy graph, the summary table, and margin -->
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-tab-graph" onclick="togglePeakView('graph')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff">Graph</span>
+            <span id="peak-tab-summary" onclick="togglePeakView('summary')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e">Summary</span>
+            <span id="peak-tab-margin" onclick="togglePeakView('margin')"
+              style="font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e">Margin</span>
+          </div>
+          <button onclick="peakRefresh()"
+            style="font-size:11px;padding:3px 8px;background:#21262d;border:1px solid #30363d;border-radius:4px;color:#8b949e;cursor:pointer">↻
+            Refresh</button>
+        </div>
       </div>
-      <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+
+      <div id="peak-graph-body">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <span id="peak-graph-scope" style="font-size:11px;color:#8b949e"></span>
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-pm-real" onclick="setPeakPMode('real')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Realised</span>
+            <span id="peak-pm-unreal" onclick="setPeakPMode('unreal')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Unrealised</span>
+            <span id="peak-pm-cur" onclick="setPeakPMode('cur')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff">Current</span>
+          </div>
+        </div>
+        <div id="peak-pnl-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+          <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
+          <span>— <span style="color:#3fb950">P&amp;L flow</span></span>
+          <span>- - <span style="color:#f0883e">Trailing floor</span></span>
+          <span>- - <span style="color:#3fb950">🎯 Target</span></span>
+          <span>▲ <span style="color:#58a6ff">Entry</span></span>
+        </div>
+      </div>
+
+      <div id="peak-summary-body" style="display:none">
         <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
       </div>
-      <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
-        <span>— <span style="color:#3fb950">MTM P&amp;L</span></span>
-        <span>- - <span style="color:#f0883e">Trailing floor</span></span>
-        <span>- - <span style="color:#3fb950">🎯 Target</span></span>
-        <span>▲ <span style="color:#58a6ff">Entry</span></span>
+
+      <div id="peak-margin-body" style="display:none">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:6px">
+          <span style="font-size:11px;color:#8b949e">Din bhar capital utilization (buy + sell margin)</span>
+          <div style="display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden">
+            <span id="peak-mm-all" onclick="setMarginMode('all')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff">All</span>
+            <span id="peak-mm-paper" onclick="setMarginMode('paper')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Paper</span>
+            <span id="peak-mm-live" onclick="setMarginMode('live')"
+              style="font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e">Real</span>
+          </div>
+        </div>
+        <div id="peak-margin-graph" style="position:relative;width:100%;height:210px;overflow:hidden;">
+          <div style="color:#8b949e;font-size:12px;padding:16px">Loading...</div>
+        </div>
+        <div style="display:flex;gap:16px;margin-top:4px;font-size:10px;color:#8b949e;flex-wrap:wrap">
+          <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#1f6feb;margin-right:4px;vertical-align:middle"></span>Buy margin (premium)</span>
+          <span><span style="display:inline-block;width:9px;height:9px;border-radius:2px;background:#d29922;margin-right:4px;vertical-align:middle"></span>Sell margin</span>
+          <span id="peak-margin-peak" style="color:#8b949e"></span>
+        </div>
       </div>
     </div>
 
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
-        <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades</div>
+        <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades
+          <span id="ord-completed-filter"></span></div>
         <div style="display:flex;gap:6px;align-items:center">
           <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="toggleCompletedGrouping()"
@@ -2431,7 +2502,9 @@
                 <td class="param-info" style="border-left:3px solid #1f6feb"><span>🎯 Per-Trade Default SL & Target</span>
                   <span class="wavy-subtext">Har naye position pe ye default SL/Target lagta hai — sirf wahi ek leg exit
                     hoti hai. <b>Ek hi mode active rehta hai.</b> Purani open positions apne existing SL/TP pe chalti hain
-                    (mode change sirf naye trades pe).</span>
+                    (mode change sirf naye trades pe). <b style="color:#d29922">Per-Strategy Override</b> table me har
+                    strategy ka apna Enabled/Mode set kar sakte ho (blank = yahan ki global setting) — jo strategy ke
+                    backtest me ye SL nahi tha, wahan OFF rakho (Rule 10).</span>
                 </td>
                 <td class="param-inputs">
                   <div class="inputs-grid">
@@ -3686,7 +3759,7 @@
           : capLabel === 'paper'
             ? ' <span style="color:#8b949e;font-size:10px">paper</span>'
             : '';
-        html += `<tr><td>${s.strategy}</td>
+        html += `<tr><td title="${s.strategy}">${regLabel(s.strategy)}</td>
       <td>${runControlsHtml}</td>
       <td style="font-size:11px">${gateBadge(s)}</td>
       <td>${fmtRs(capDisplay)}${capPct !== null ? ` <span style="color:${capPct >= 90 ? '#f85149' : '#8b949e'};font-size:10px">(${capPct}%)</span>` : ''}${capLabelHtml}</td>
@@ -3750,7 +3823,7 @@
           if (w.maxed) { statusTxt = '🛑 Max trades reached — no further entries'; statusCol = '#f85149'; }
           else if (w.blocked) { statusTxt = (w.block_hard ? '🛑 ' : '⏸ ') + (w.block_reason || 'blocked'); statusCol = w.block_hard ? '#f85149' : '#d29922'; }
           else { statusTxt = '✅ Open'; statusCol = '#3fb950'; }
-          html += `<tr><td>${w.strategy}</td><td>${w.symbol || '—'}</td>
+          html += `<tr><td title="${w.strategy}">${regLabel(w.strategy)}</td><td>${w.symbol || '—'}</td>
         <td style="color:${limitHit ? '#f85149' : '#e6edf3'};font-weight:600">${w.trades_today}</td>
         <td>${w.max_trades || '—'}</td>
         <td style="font-size:11px;color:${statusCol}" title="${(w.block_reason || '').replace(/"/g, '&quot;')}">${statusTxt}</td></tr>`;
@@ -4018,7 +4091,8 @@
         }).filter(Boolean).join(' ');
       }
       const reserved = new Set(['_risk', 'webhooks']);
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+      // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -4041,16 +4115,45 @@
         tbl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Koi strategy configured nahi hai abhi.</div>';
         return;
       }
+      // task 81 ⚙ values — per-strategy Default SL/Target VALUE overrides. Kept in
+      // window._dslVals (not table inputs) and merged into the save payload, so the
+      // table's own Save can't drop them. Rebuilt from RISK_CFG on every render.
+      window._dslVals = {};
+      stratIds.forEach(id => {
+        const ov = RISK_CFG.per_strategy[id] || {};
+        const dv = {};
+        DSL_VAL_KEYS.forEach(k => { if (ov[k] !== undefined && ov[k] !== null && ov[k] !== '') dv[k] = ov[k]; });
+        if (Object.keys(dv).length) window._dslVals[id] = dv;
+      });
       let html = '<table class="cfg-table"><tr><th>Strategy</th>'
         + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
+        + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe global Default-SL lage ya nahi, aur kaunsa mode. Blank = global setting follow.">🎯 Default SL/Target</th>'
         + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th>'
         + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
-        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th></th><th></th><th></th><th></th>'
+        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th>Enabled</th><th>Mode</th><th></th><th></th><th></th><th></th>'
         + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
-      stratIds.forEach(id => {
+      // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
+      const _rlc = k => String(k).toLowerCase();
+      const _rUsed = new Set();
+      const _rOrdered = [];
+      STRAT_GROUPS.forEach(g => {
+        const inG = stratIds.filter(k => g.keys.includes(_rlc(k)))
+                            .sort((a, b) => g.keys.indexOf(_rlc(a)) - g.keys.indexOf(_rlc(b)));
+        if (inG.length) { _rOrdered.push({ h: g.title }); inG.forEach(k => { _rUsed.add(k); _rOrdered.push({ id: k }); }); }
+      });
+      const _rLeft = stratIds.filter(k => !_rUsed.has(k)).sort();
+      if (_rLeft.length) { _rOrdered.push({ h: 'Other' }); _rLeft.forEach(k => _rOrdered.push({ id: k })); }
+      _rOrdered.forEach(item => {
+        if (item.h) {
+          html += `<tr><td colspan="13" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
+          return;
+        }
+        const id = item.id;
         const ov = RISK_CFG.per_strategy[id] || {};
-        const dispName = fmtStratName(id);
+        const _num = MISSION_NUM[_rlc(id)];
+        const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center">${_num}</span>` : '';
+        const dispName = _numBadge + (MISSION_NAME[_rlc(id)] || fmtStratName(id));
         const curMode = ov.capital_mode || '';
         const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
         html += `<tr><td title="${id}">${dispName}</td>
@@ -4062,6 +4165,19 @@
             value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
       <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
+      <td><select id="risk-dslen-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
+            <option value="" ${ov.default_sl_enabled == null ? 'selected' : ''}>global default</option>
+            <option value="false" ${ov.default_sl_enabled === false ? 'selected' : ''}>OFF</option>
+            <option value="true" ${ov.default_sl_enabled === true ? 'selected' : ''}>ON</option>
+          </select></td>
+      <td style="white-space:nowrap"><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
+            <option value="" ${!ov.default_sl_mode ? 'selected' : ''}>global default</option>
+            <option value="legacy" ${ov.default_sl_mode === 'legacy' ? 'selected' : ''}>Legacy — fixed ₹</option>
+            <option value="dropdown" ${ov.default_sl_mode === 'dropdown' ? 'selected' : ''}>Dropdown — type+value</option>
+            <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
+          </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
+            title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps) — blank = global card ki values"
+            style="margin-left:4px;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></td>
       <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
@@ -4091,10 +4207,15 @@
       if (!container) return;
       // Pass selected date so graph works for any day, not just today
       const selDate = (document.getElementById('ord-date') || {}).value || '';
+      const _pk = window._peakStrat || '__all';       // selected strategy ('__all' = account)
+      const _pm = window._peakPMode || 'cur';          // realised | unreal | cur (task 73 switch)
+      const isAll = (_pk === '__all');
       let resp = {};
       try {
-        const url = '/api/peak-pnl-history' + (selDate ? '?date=' + selDate : '');
-        const r = await fetch(url);
+        const qs = new URLSearchParams();
+        if (selDate) qs.set('date', selDate);
+        qs.set('strat', _pk);
+        const r = await fetch('/api/peak-pnl-history?' + qs.toString());
         resp = await r.json();
       } catch (e) {
         container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
@@ -4115,8 +4236,21 @@
       const PAD = { t: 14, r: 100, b: 28, l: 60 };
       const gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
 
-      // MTM line (pts[i][1] = cum_pnl), floor from pts[i][3] (monotonic peak)
-      const rawTotals = pts.map(p => p[1]);
+      // MTM line — pick the plotted series: snapshot per-strategy (r/u/cur) if the
+      // backend has it for this key+date, else reconstruct a realised step-curve
+      // from the currently-loaded completed trades (past dates / no snapshot).
+      const _ss = (resp.strat_series || {})[_pk];
+      const _ssHas = _ss && Array.isArray(_ss.r) && _ss.r.length === pts.length
+        && (_ss.r.some(v => v) || _ss.u.some(v => v));   // has real snapshot data (not a pre-v4 date)
+      let rawTotals;
+      if (isAll && _pm === 'cur') {
+        rawTotals = pts.map(p => p[1]);                  // account current = existing MTM line (always correct)
+      } else if (_ssHas) {
+        rawTotals = pts.map((_, i) => _pm === 'real' ? _ss.r[i] : _pm === 'unreal' ? _ss.u[i] : (_ss.r[i] + _ss.u[i]));
+      } else {
+        // no per-strategy snapshot (past date) → reconstruct realised; unrealised unknown
+        rawTotals = _pm === 'unreal' ? pts.map(() => 0) : _reconstructPeakSeries(pts);
+      }
       const totals = rawTotals.map((v, i, arr) => {
         const w = 5, half = Math.floor(w / 2);
         const sl = arr.slice(Math.max(0, i - half), Math.min(arr.length, i + half + 1));
@@ -4128,7 +4262,9 @@
         _runMax = Math.max(_runMax, v3);
         return _runMax;
       });
-      const floors = pts.map((_, i) => {
+      // Floor/target/entry markers are account-level (kill-floor + all entries) —
+      // only meaningful on the "__all" view; hidden when a single strategy is picked.
+      const floors = !isAll ? pts.map(() => null) : pts.map((_, i) => {
         const pk = dailyPeakEver[i];
         if (pk <= 0) return null;
         if (lockPct) return pk * (1 - lockPct / 100);
@@ -4169,9 +4305,9 @@
         inSeg = true;
       });
 
-      // 🎯 Daily Profit Target — dashed green horizontal line
+      // 🎯 Daily Profit Target — dashed green horizontal line (account view only)
       let targetLine = '';
-      if (profitTarget && profitTarget > 0) {
+      if (isAll && profitTarget && profitTarget > 0) {
         const ty = py(profitTarget);
         if (ty >= PAD.t && ty <= PAD.t + gH) {
           targetLine = `
@@ -4182,8 +4318,9 @@
       }
 
       // ▲ Entry markers — small green triangle at each entry_time on the P&L curve
+      // (account-level markers; shown only on the "__all" view)
       let entryMarkers = '';
-      entries.forEach(([etime, cumAtEntry, sym]) => {
+      if (isAll) entries.forEach(([etime, cumAtEntry, sym]) => {
         const ex = timeToX(etime);
         const ey = py(cumAtEntry);
         if (ey < PAD.t || ey > PAD.t + gH) return;
@@ -4216,8 +4353,7 @@
         xLabels += `<text x="${px(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="10" fill="#6e7681">${pts[i][0]}</text>`;
       }
 
-      const last = pts[pts.length - 1];
-      const lastMtm = last[1];
+      const lastMtm = rawTotals[rawTotals.length - 1];   // plotted series' last value
       const lastPk = dailyPeakEver[dailyPeakEver.length - 1];
       const lastFlr = floors[floors.length - 1];
       const mtmCol = lastMtm >= 0 ? '#3fb950' : '#f85149';
@@ -4233,7 +4369,7 @@
     <text x="${(W - PAD.r + 8).toFixed(1)}" y="${(py(lastFlr) + 4).toFixed(1)}" font-size="10" fill="#f0883e">${lockLabel} ₹${Math.round(lastFlr).toLocaleString('en-IN')}</text>`;
       }
 
-      const ddBadge = lastPk > 0
+      const ddBadge = (isAll && lastPk > 0)
         ? `<text x="${(W / 2).toFixed(1)}" y="${PAD.t - 2}" text-anchor="middle" font-size="10" fill="#8b949e">Peak ₹${Math.round(lastPk).toLocaleString('en-IN')}  |  DD ₹${Math.round(drawDown).toLocaleString('en-IN')}${entries.length ? '  |  ' + entries.length + ' entries' : ''}</text>`
         : '';
 
@@ -4246,13 +4382,41 @@
     ${entryMarkers}
     ${rightLabels}
   </svg>`;
+
+      // graph sub-header: which scope + which P&L mode is showing
+      const _gs = document.getElementById('peak-graph-scope');
+      if (_gs) {
+        const nm = isAll ? 'All strategies' : (regLabel(_pk) || _pk);
+        const pmL = { real: 'Realised', unreal: 'Unrealised', cur: 'Current (R+U)' }[_pm] || 'Current';
+        _gs.textContent = nm + ' — ' + pmL;
+      }
+    }
+
+    // Reconstruct a realised step-curve (cumulative net by exit_time) from the
+    // currently-loaded completed trades, aligned to the peak graph's time points.
+    // Used when the backend has no per-strategy snapshot for this key/date (past
+    // dates). Orders are already scoped to _peakStrat (picking a strategy filters
+    // them), so summing all loaded details gives that strategy's own curve.
+    function _reconstructPeakSeries(pts) {
+      const det = ((window._lastOrdersData || {}).details) || [];
+      const toMin = s => { const p = String(s).split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+      const comp = det.filter(t => t.exit_time && t._net != null && _peakTradeMatch(t))
+        .map(t => ({ x: toMin(t.exit_time), v: t._net }))
+        .sort((a, b) => a.x - b.x);
+      return pts.map(p => {
+        const tm = toMin(p[0]);
+        let cum = 0;
+        for (const c of comp) { if (c.x <= tm) cum += c.v; else break; }
+        return cum;
+      });
     }
 
     async function saveRiskConfig() {
       let cfg = {};
       try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch (e) { }
       const reserved = new Set(['_risk', 'webhooks']);
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k));
+      // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
 
       const gPct = document.getElementById('risk-global-pct').value;
       const gRs = document.getElementById('risk-global-rs').value;
@@ -4343,6 +4507,8 @@
         const modeEl = document.getElementById(`risk-mode-${id}`);
         const shadowEl = document.getElementById(`risk-shadow-${id}`);
         const instLossEl = document.getElementById(`risk-instloss-${id}`);
+        const dslEnEl = document.getElementById(`risk-dslen-${id}`);
+        const dslModeEl = document.getElementById(`risk-dslmode-${id}`);
         const hedgeStrikesEl = document.getElementById(`risk-hedgestrikes-${id}`);
         const hedgePremiumEl = document.getElementById(`risk-hedgepremium-${id}`);
         if (!pEl || !rEl) return;
@@ -4351,10 +4517,14 @@
         const mode = modeEl ? modeEl.value : '';
         const shadow = shadowEl ? shadowEl.value : '';
         const instLoss = instLossEl ? instLossEl.value : '';
+        const dslEn = dslEnEl ? dslEnEl.value : '';
+        const dslMode = dslModeEl ? dslModeEl.value : '';
         const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
+        const dslVals = (window._dslVals || {})[id] || {};
+        const hasDslVals = Object.keys(dslVals).length > 0;
         if (p !== '' || r !== '' || pt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
-          || hedgeStrikes !== '' || hedgePremium !== '') {
+          || dslEn !== '' || dslMode !== '' || hasDslVals || hedgeStrikes !== '' || hedgePremium !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
@@ -4364,8 +4534,11 @@
             capital_mode: mode || null,
             shadow_live: shadow === '' ? null : (shadow === 'true'),
             default_sl_rs: instLoss !== '' ? parseFloat(instLoss) : null,
+            default_sl_enabled: dslEn === '' ? null : (dslEn === 'true'),
+            default_sl_mode: dslMode || null,
             hedge_offset_strikes: hedgeStrikes !== '' ? parseInt(hedgeStrikes) : null,
             hedge_max_premium_rs: hedgePremium !== '' ? parseFloat(hedgePremium) : null,
+            ...dslVals,   // task 81 ⚙ — per-strategy Default SL/Target value overrides
           };
         }
       });
@@ -4381,6 +4554,130 @@
       } catch (e) {
         document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
       }
+    }
+
+    // ── task 81 ⚙ — per-strategy Default SL/Target VALUE overrides ──────────────
+    // Modal editor next to the Mode dropdown in Per-Strategy Override. Values live
+    // in window._dslVals[id] and merge into saveRiskConfig's payload (blank =
+    // inherit global card's value). Backend: risk_gate default_instrument_sl_tags /
+    // default_target_sl_config read per_strategy[<sid>] first.
+    const DSL_VAL_KEYS = ['default_legacy_tp_rs', 'default_legacy_sl_rs',
+      'default_sl_type', 'default_sl_val', 'default_sl_candle_close',
+      'default_tp_type', 'default_tp_val', 'default_tp_candle_close',
+      'default_tsl_target_per_lot', 'default_tsl_initial_sl_per_lot', 'default_tsl_favour_step',
+      'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult',
+      'default_tsl_min_cushion'];
+    const _DSL_TYPE_OPTS = [['', '(global default)'], ['pct', '%'], ['pt', 'Points (premium)'],
+      ['trailing_pt', 'Trailing Points (premium)'], ['rs', 'Amount (₹ per lot)'],
+      ['premium', 'Premium level'], ['index', 'Index/Underlying level']];
+    function _globalDslMode() {
+      const g = (RISK_CFG && RISK_CFG.global) || {};
+      if (['legacy', 'dropdown', 'aggressive'].includes(g.default_sl_mode)) return g.default_sl_mode;
+      if (g.default_tsl_enabled) return 'aggressive';
+      if (g.default_sl_type) return 'dropdown';
+      if (g.default_sl_rs) return 'legacy';
+      return 'dropdown';
+    }
+    function _dslField(k, label, ph, val, kind) {
+      const base = 'width:150px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px';
+      let inp;
+      if (kind === 'seltype') {
+        inp = `<select id="dslv-${k}" style="${base}">` + _DSL_TYPE_OPTS.map(o =>
+          `<option value="${o[0]}" ${String(val ?? '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('') + '</select>';
+      } else if (kind === 'tri') {
+        const cur = val === true || val === 'true' ? 'true' : (val === false || val === 'false' ? 'false' : '');
+        inp = `<select id="dslv-${k}" style="${base}">
+          <option value="" ${cur === '' ? 'selected' : ''}>global default</option>
+          <option value="true" ${cur === 'true' ? 'selected' : ''}>ON</option>
+          <option value="false" ${cur === 'false' ? 'selected' : ''}>OFF</option></select>`;
+      } else {
+        inp = `<input id="dslv-${k}" type="${kind === 'num' ? 'number' : 'text'}" step="any"
+          placeholder="global: ${ph}" value="${val ?? ''}" style="${base}">`;
+      }
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:7px 0">
+        <span style="color:#adbac7;font-size:12.5px">${label}</span>${inp}</div>`;
+    }
+    function openDslValModal(id) {
+      const g = (RISK_CFG && RISK_CFG.global) || {};
+      const rowModeEl = document.getElementById(`risk-dslmode-${id}`);
+      const mode = (rowModeEl && rowModeEl.value) || _globalDslMode();
+      const dv = (window._dslVals || {})[id] || {};
+      let fields = '';
+      if (mode === 'legacy') {
+        fields = _dslField('default_legacy_tp_rs', 'Fixed Target ₹ / lot', g.default_legacy_tp_rs ?? 5000, dv.default_legacy_tp_rs, 'num')
+          + _dslField('default_legacy_sl_rs', 'Fixed SL ₹ / lot', g.default_legacy_sl_rs ?? 2000, dv.default_legacy_sl_rs, 'num');
+      } else if (mode === 'aggressive') {
+        fields = _dslField('default_tsl_target_per_lot', 'Target ₹/lot', g.default_tsl_target_per_lot ?? 2000, dv.default_tsl_target_per_lot, 'num')
+          + _dslField('default_tsl_initial_sl_per_lot', 'Initial SL ₹/lot', g.default_tsl_initial_sl_per_lot ?? 1000, dv.default_tsl_initial_sl_per_lot, 'num')
+          + _dslField('default_tsl_favour_step', 'Favour step ₹/lot', g.default_tsl_favour_step ?? 100, dv.default_tsl_favour_step, 'num')
+          + _dslField('default_tsl_sl_move', 'SL move ₹/lot', g.default_tsl_sl_move ?? 100, dv.default_tsl_sl_move, 'num')
+          + _dslField('default_tsl_aggressive_pct', 'Aggressive @ %', g.default_tsl_aggressive_pct ?? 50, dv.default_tsl_aggressive_pct, 'num')
+          + _dslField('default_tsl_aggressive_mult', 'Aggressive mult', g.default_tsl_aggressive_mult ?? 2, dv.default_tsl_aggressive_mult, 'num')
+          + _dslField('default_tsl_min_cushion', 'Min cushion ₹/lot', g.default_tsl_min_cushion ?? 0, dv.default_tsl_min_cushion, 'num');
+      } else {
+        fields = _dslField('default_sl_type', 'SL Type', '', dv.default_sl_type, 'seltype')
+          + _dslField('default_sl_val', 'SL Value', g.default_sl_val ?? '', dv.default_sl_val, 'text')
+          + _dslField('default_sl_candle_close', 'SL — Candle Close only 🕯', dv.default_sl_candle_close, dv.default_sl_candle_close, 'tri')
+          + _dslField('default_tp_type', 'Target Type', '', dv.default_tp_type, 'seltype')
+          + _dslField('default_tp_val', 'Target Value', g.default_tp_val ?? '', dv.default_tp_val, 'text')
+          + _dslField('default_tp_candle_close', 'Target — Candle Close only 🕯', dv.default_tp_candle_close, dv.default_tp_candle_close, 'tri');
+      }
+      const modeName = { legacy: 'Legacy — fixed ₹', dropdown: 'Dropdown — type+value', aggressive: 'Aggressive — Per-lot trail' }[mode];
+      let m = document.getElementById('dsl-val-modal');
+      if (!m) { m = document.createElement('div'); m.id = 'dsl-val-modal'; document.body.appendChild(m); }
+      m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10001;display:flex;align-items:center;justify-content:center';
+      m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:420px;max-width:520px" onclick="event.stopPropagation()">
+        <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#e6edf3">🎯 ${(typeof regLabel === 'function' && regLabel(id)) || id} — Default SL/Target values</div>
+        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global card ki value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.</div>
+        ${fields}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="clearDslVals('${id}')" style="padding:6px 12px;background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:6px;cursor:pointer">Clear (global use karo)</button>
+          <button onclick="closeDslValModal()" style="padding:6px 12px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;cursor:pointer">Cancel</button>
+          <button onclick="applyDslVals('${id}','${mode}')" style="padding:6px 12px;background:#d29922;color:#0d1117;border:0;border-radius:6px;cursor:pointer;font-weight:700">Apply</button>
+        </div>
+        <div style="color:#6e7681;font-size:10.5px;margin-top:8px">Apply ke baad table ka 💾 Save dabana zaroori hai — tabhi VPS config me likhta hai.</div>
+      </div>`;
+      m.onclick = closeDslValModal;
+    }
+    function closeDslValModal() {
+      const m = document.getElementById('dsl-val-modal');
+      if (m) m.remove();
+    }
+    function clearDslVals(id) {
+      if (window._dslVals) delete window._dslVals[id];
+      _dslBtnRefresh(id);
+      closeDslValModal();
+      const msg = document.getElementById('risk-msg');
+      if (msg) msg.textContent = '⚙ values cleared — ab 💾 Save dabao';
+    }
+    function applyDslVals(id, mode) {
+      const keys = mode === 'legacy' ? ['default_legacy_tp_rs', 'default_legacy_sl_rs']
+        : mode === 'aggressive' ? ['default_tsl_target_per_lot', 'default_tsl_initial_sl_per_lot', 'default_tsl_favour_step',
+          'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult', 'default_tsl_min_cushion']
+        : ['default_sl_type', 'default_sl_val', 'default_sl_candle_close', 'default_tp_type', 'default_tp_val', 'default_tp_candle_close'];
+      window._dslVals = window._dslVals || {};
+      const dv = { ...(window._dslVals[id] || {}) };
+      keys.forEach(k => {
+        const el = document.getElementById(`dslv-${k}`);
+        if (!el) return;
+        const v = el.value;
+        if (v === '' || v == null) { delete dv[k]; return; }
+        if (k.endsWith('candle_close')) dv[k] = (v === 'true');
+        else if (k.endsWith('_type') || k === 'default_sl_val' || k === 'default_tp_val') dv[k] = v;   // val can be "gap:step" for trailing_pt
+        else dv[k] = parseFloat(v);
+      });
+      if (Object.keys(dv).length) window._dslVals[id] = dv; else delete window._dslVals[id];
+      _dslBtnRefresh(id);
+      closeDslValModal();
+      const msg = document.getElementById('risk-msg');
+      if (msg) msg.textContent = '⚙ values set — ab 💾 Save dabao';
+    }
+    function _dslBtnRefresh(id) {
+      const b = document.getElementById(`risk-dslvals-btn-${id}`);
+      if (!b) return;
+      const has = !!(window._dslVals && window._dslVals[id]);
+      b.style.background = has ? '#3a2b0a' : '#0d1117';
+      b.style.color = has ? '#e0a325' : '#8b949e';
     }
 
     // ── Task 13 — RMS value-change audit log ──
@@ -4942,6 +5239,7 @@
       sel.innerHTML = '<option value="">' + allLabel + '</option>' + filtered.map(v => {
         let display = v;
         if (isStratSel && v.includes(' | ')) display = v.split(' | ')[0];
+        if (isStratSel && typeof regLabel === 'function') display = regLabel(display);
         return '<option value="' + v + '">' + display + '</option>';
       }).join('');
       sel.value = cur || '';
@@ -4952,7 +5250,7 @@
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
       let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode)
-        + (t.strategy ? _ordTag(t.strategy.split(' | ')[0], 'name') : '');
+        + (t.strategy ? _ordTag(regId(t.strategy.split(' | ')[0]), 'name') : '');
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -5055,6 +5353,24 @@
       const sign = amt > 0 ? '+' : '';
       return `<span style="color:${c};font-weight:600">${sign}${Math.round(amt).toLocaleString('en-IN')}</span>`
         + `<span style="color:#8b949e;font-size:10px"> | ${sign}${pt.toFixed(1)} | ${sign}${pct.toFixed(1)}%</span>`;
+    }
+
+    // Run-Up (best favourable ₹) / Run-Down (worst adverse ₹) for one trade,
+    // from its MAX_LTP/MIN_LTP tags — shared by the summary table (task 73).
+    function _tradeRunAmts(t) {
+      let up = 0, down = 0;
+      const ep = t.entry_price || 0;
+      let maxL = null, minL = null;
+      (t.tags || []).forEach(tg => {
+        if (tg.startsWith('MAX_LTP:')) maxL = parseFloat(tg.split(':')[1]);
+        if (tg.startsWith('MIN_LTP:')) minL = parseFloat(tg.split(':')[1]);
+      });
+      if (ep > 0 && maxL !== null && minL !== null && !isNaN(maxL) && !isNaN(minL)) {
+        const upPt = t.entry === 'SELL' ? (ep - minL) : (maxL - ep);
+        const downPt = t.entry === 'SELL' ? (ep - maxL) : (minL - ep);
+        up = upPt * (t.qty || 0); down = downPt * (t.qty || 0);
+      }
+      return { up, down };
     }
 
     // One Completed-Trades <tr> — extracted so both flat mode and grouped mode
@@ -5888,107 +6204,98 @@
       const opnBlocked = opn.filter(isCapBlocked);
       const opnReal = opn.filter(t => !isCapBlocked(t));
 
-      // ── SOURCE SUMMARY PILLS (STRATEGY, MANUAL, WEBHOOK) ──
-      const srcTotals = { 'STRATEGY': { net: 0, gross: 0, n: 0, w: 0, opn: 0 }, 'MANUAL': { net: 0, gross: 0, n: 0, w: 0, opn: 0 }, 'WEBHOOK': { net: 0, gross: 0, n: 0, w: 0, opn: 0 } };
+      // ── SOURCE SUMMARY (STRATEGY, MANUAL, WEBHOOK) ──
+      const _z = () => ({ net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0, orows: [] });
+      const srcTotals = { 'STRATEGY': _z(), 'MANUAL': _z(), 'WEBHOOK': _z() };
       det.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
+        const ru = _tradeRunAmts(t);
         srcTotals[s].net += t._net; srcTotals[s].gross += t._gross; srcTotals[s].n++;
+        srcTotals[s].ru += ru.up; srcTotals[s].rd += ru.down;
+        srcTotals[s].tax += (t._tax || 0);
         if (t._net > 0) srcTotals[s].w++;
       });
       opnReal.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
         srcTotals[s].opn++;
+        srcTotals[s].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
       });
 
-      let sh = '';
-      Object.keys(srcTotals).forEach(s => {
-        let st = srcTotals[s];
-        if (st.n === 0 && st.opn === 0) return;
-        const tc = st.net >= 0 ? '#3fb950' : '#f85149';
-        sh += `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
-      <div style="color:#8b949e;font-size:11px;font-weight:700;margin-bottom:6px">TOTAL (${s})</div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net >= 0 ? '+' : ''}${Math.round(st.net).toLocaleString('en-IN')}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n - st.w}L · ${st.opn} open</div>
-    </div>`;
-      });
+      // ── CONSOLIDATED SUMMARY (task 66) — now clickable per strategy (task 73) ──
+      const summaryRows = [];
 
-      // ── STRATEGY-SPECIFIC PILLS ──
+      // per-strategy accumulation (data logic unchanged)
       const stratTotals = {};
-
-      // 1. Gather running strategies
       if (typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null) {
         Object.keys(RUNNING_PIDS).forEach(k => {
           if (!k.endsWith('_mode') && k !== '_risk' && k !== 'webhooks' && k !== '_ui_config') {
-            stratTotals[k] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
+            stratTotals[k] = _z();
           }
         });
       }
-
-      // 2. Accumulate completed trades for strategies
       det.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) {
-            stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
-          }
+          if (!stratTotals[sName]) stratTotals[sName] = _z();
+          const ru = _tradeRunAmts(t);
           stratTotals[sName].net += t._net;
           stratTotals[sName].gross += t._gross;
           stratTotals[sName].n++;
+          stratTotals[sName].ru += ru.up; stratTotals[sName].rd += ru.down;
+          stratTotals[sName].tax += (t._tax || 0);
           if (t._net > 0) stratTotals[sName].w++;
         }
       });
-
-      // 3. Accumulate open positions for strategies
       opnReal.forEach(t => {
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') {
           const sName = t.strategy || 'STRATEGY';
-          if (!stratTotals[sName]) {
-            stratTotals[sName] = { net: 0, gross: 0, n: 0, w: 0, opn: 0 };
-          }
+          if (!stratTotals[sName]) stratTotals[sName] = _z();
           stratTotals[sName].opn++;
+          stratTotals[sName].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
         }
       });
 
-      // Render individual strategy cards sorted alphabetically
       Object.keys(stratTotals).sort().forEach(s => {
         const st = stratTotals[s];
         const isRunning = typeof RUNNING_PIDS === 'object' && RUNNING_PIDS !== null && RUNNING_PIDS[s] !== undefined;
-
-        // Skip if it's not running and has no trades/positions today
         if (!isRunning && st.n === 0 && st.opn === 0) return;
-
-        const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : null;
-        let badge = '';
-        if (isRunning) {
-          if (mode === 'live') {
-            badge = '<span style="background:#238636;color:#fff;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Live</span>';
-          } else {
-            badge = '<span style="background:#d29922;color:#0d1117;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Paper</span>';
-          }
-        } else {
-          badge = '<span style="background:#30363d;color:#8b949e;font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;">Stopped</span>';
-        }
-
-        const tc = st.net >= 0 ? '#3fb950' : '#f85149';
-        sh += `<div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 16px;min-width:170px">
-      <div style="font-size:11px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;gap:8px;">
-        <span style="color:#8b949e">${s}</span>
-        ${badge}
-      </div>
-      <div style="font-size:20px;font-weight:700;color:${tc}">${st.net >= 0 ? '+' : ''}${Math.round(st.net).toLocaleString('en-IN')}</div>
-      <div style="color:#8b949e;font-size:11px;margin-top:4px">gross ${Math.round(st.gross).toLocaleString('en-IN')} · ${st.n} trades · ${st.w}W ${st.n - st.w}L · ${st.opn} open</div>
-    </div>`;
+        const mode = isRunning ? (RUNNING_PIDS[s + '_mode'] || 'paper') : 'stopped';
+        summaryRows.push({ key: s, code: regId(s), name: regLabel(s), isSource: false, mode: mode,
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd, tax: st.tax, orows: st.orows });
       });
+      // MANUAL / WEBHOOK — not per-strategy, kept as their own rows
+      ['MANUAL', 'WEBHOOK'].forEach(s => {
+        const st = srcTotals[s];
+        if (st.n === 0 && st.opn === 0) return;
+        summaryRows.push({ key: s, code: '', name: s.charAt(0) + s.slice(1).toLowerCase(), isSource: true, mode: 'src',
+          net: st.net, gross: st.gross, n: st.n, w: st.w, opn: st.opn, ru: st.ru, rd: st.rd, tax: st.tax, orows: st.orows });
+      });
+      // task 80 — open rows per summary key, for the LIVE Running column
+      // (patched by _patchPeakRunCells from the same _ltpLive feed as Open Positions)
+      window._peakOpenMap = {};
+      summaryRows.forEach(r => { window._peakOpenMap[r.key] = r.orows || []; });
 
-      _setHtml(document.getElementById('ord-summary'), sh ||
-        '<div style="color:#6e7681;font-size:12px;padding:6px">Is din koi trade nahi</div>');
+      renderStratSummaryTable(summaryRows);
+      // retire the old tiles container
+      const _ordSum = document.getElementById('ord-summary');
+      if (_ordSum) { _ordSum.innerHTML = ''; _ordSum.style.display = 'none'; }
 
       // ── COMPLETED TRADES ──
-      let sortedCompleted = det.slice();
+      // Client-side scope filter: when a Summary row is picked (task 73), narrow
+      // the Completed Trades table to that strategy/source without touching the
+      // orders fetch (so the Summary table above stays full).
+      let sortedCompleted = det.filter(_peakTradeMatch);
+      // header chip showing the active per-strategy filter (clearable)
+      const _cf = document.getElementById('ord-completed-filter');
+      if (_cf) {
+        const _pkf = window._peakStrat || '__all';
+        _cf.innerHTML = (_pkf === '__all') ? '' :
+          `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="peakClearStrat()" title="Filter hatao (All)">▸ ${(_pkf === 'MANUAL' || _pkf === 'WEBHOOK') ? (_pkf.charAt(0) + _pkf.slice(1).toLowerCase()) : (regLabel(_pkf) || _pkf)} ✕</span>`;
+      }
       if (window._completedSortCol) {
         _sortData(sortedCompleted, window._completedSortCol, window._completedSortDir);
       } else {
@@ -6183,8 +6490,13 @@
         try { // catch render errors so blank section doesn't appear silently
           let blockedHtml = '';
           if (opnBlocked.length) {
-            blockedHtml = `<div style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px;padding:10px 14px">
-        <div style="font-weight:600;color:#f85149;margin-bottom:6px">🚫 Capital se Block hui Entries (${opnBlocked.length})</div>
+            blockedHtml = `<details open style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
+        <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
+        <summary style="padding:10px 14px;cursor:pointer;font-weight:600;color:#f85149;display:flex;justify-content:space-between;align-items:center;border-radius:6px" onmouseover="this.style.background='#2d1f1f'" onmouseout="this.style.background='transparent'">
+          <span>🚫 Capital se Block hui Entries <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
+          <span style="font-size:12px;color:#8b949e">Toggle ▾</span>
+        </summary>
+        <div style="padding:0 14px 12px;overflow-x:auto">
         <table style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">
           <th style="padding:5px 6px">Date</th><th style="padding:5px 6px">Time</th><th style="padding:5px 6px">Symbol</th><th style="padding:5px 6px">Strategy</th>
           <th style="padding:5px 6px">Side</th><th style="padding:5px 6px;text-align:right">Qty @ Price</th><th style="padding:5px 6px">Reason</th><th style="padding:5px 6px;text-align:center">Chart</th></tr></thead><tbody>`
@@ -6201,13 +6513,13 @@
                   + '<td style="padding:6px">' + bDate + '</td>'
                   + '<td style="padding:6px;color:#8b949e;white-space:nowrap">' + (t.entry_time || '—') + '</td>'
                   + '<td style="padding:6px;color:#adbac7">' + t.sym + '</td>'
-                  + '<td style="padding:6px;color:#8b949e">' + (t.strategy || '—') + '</td>'
+                  + '<td style="padding:6px;color:#8b949e">' + (t.strategy ? regLabel(t.strategy) : '—') + '</td>'
                   + '<td style="padding:6px;color:' + (t.entry === 'BUY' ? '#3fb950' : '#f85149') + '">' + t.entry + '</td>'
                   + '<td style="padding:6px;text-align:right;color:#8b949e">' + t.qty + ' @ ' + (Number(t.entry_price) > 0 ? Number(t.entry_price).toFixed(2) : '<span style="color:#6e7681">premium N/A</span>') + '</td>'
                   + '<td style="padding:6px;color:#f85149;font-size:10.5px">' + reason + '</td>'
                   + '<td style="padding:6px;text-align:center">' + chartBtn + '</td></tr>';
               }).join('')
-              + '</tbody></table></div>';
+              + '</tbody></table></div></details>';
           }
 
           let grouped = {};
@@ -6535,9 +6847,9 @@
                   case 'qty': val = grpQty; break;
                   case 'margin': val = Math.round(grpMargin).toLocaleString('en-IN'); break;
                   // live cells — updated by _patchLtpCells; put grand-total IDs on last (or only) group
-                  case 'points': val = isLastGrp ? `<b id="open-tot-pts">—</b>` : '—'; break;
-                  case 'pnl': val = isLastGrp ? `<b id="open-tot-unrl">—</b>` : '—'; break;
-                  case 'ret_pct': val = isLastGrp ? `<b id="open-tot-ret">—</b>` : '—'; break;
+                  case 'points': val = `<b class="grp-tot-pts" data-grp="${grpId}">—</b>`; break;
+                  case 'pnl': val = `<b class="grp-tot-unrl" data-grp="${grpId}">—</b>`; break;
+                  case 'ret_pct': val = `<b class="grp-tot-ret" data-grp="${grpId}">—</b>`; break;
                 }
               }
               tableHtml += `<td style="padding:7px 6px;${alignStyle}${colorStyle}">${val}</td>`;
@@ -6549,8 +6861,13 @@
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-            <span>📂 ${stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
+            <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
+          </div>
+          <div style="display:flex; align-items:baseline; gap:10px; margin-right:14px; white-space:nowrap;" title="Group unrealized total — ₹ / points / return %">
+            <span class="grp-tot-unrl" data-grp="${grpId}" style="font-size:13px;font-weight:700;color:#8b949e">—</span>
+            <span class="grp-tot-pts" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
+            <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
           </div>
           <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
@@ -6705,6 +7022,261 @@
       // no-op — P&L rendering lives in ordersRender() (Orders & P&L tab)
     }
 
+    // ── Consolidated strategy summary table (task 66) ──
+    // Replaces the old #ord-summary tiles. Lives in the Peak P&L card's
+    // "Summary" view; each row = one strategy (or MANUAL/WEBHOOK) with a P&L
+    // magnitude bar (green right / red left of centre — like the lab's freq col).
+    function _summaryModeBadge(mode) {
+      const base = 'font-size:9px;font-weight:bold;padding:1.5px 5px;border-radius:3px;text-transform:uppercase;';
+      if (mode === 'live') return `<span style="background:#238636;color:#fff;${base}">Live</span>`;
+      if (mode === 'paper') return `<span style="background:#d29922;color:#0d1117;${base}">Paper</span>`;
+      if (mode === 'stopped') return `<span style="background:#30363d;color:#8b949e;${base}">Stopped</span>`;
+      return '<span style="color:#6e7681;font-size:10px">—</span>';
+    }
+    function renderStratSummaryTable(rows) {
+      const el = document.getElementById('peak-summary-body');
+      if (!el) return;
+      if (!rows || !rows.length) {
+        el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:16px">Is din koi trade nahi</div>';
+        return;
+      }
+      const sel = window._peakStrat || '__all';
+      const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0 };
+      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); tot.tax += (r.tax || 0); });
+      const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
+      // task 80 — open positions ka LIVE unrealized (₹), _patchPeakRunCells se update hota hai
+      const runCell = key => `<span class="peak-run-cell" data-pk="${key}" style="color:#6e7681;font-weight:600">—</span>`;
+      const taxCell = tx => `<span style="color:#8b949e">${tx ? '-' + Math.round(tx).toLocaleString('en-IN') : '0'}</span>`;
+      // Run-Up (favourable) / Run-Down (adverse) ₹ pair — replaces the old faint bar
+      const rudCell = (ru, rd) => `<span style="color:#3fb950;font-weight:600">+${Math.round(ru || 0).toLocaleString('en-IN')}</span>`
+        + `<span style="color:#6e7681"> / </span>`
+        + `<span style="color:#f85149;font-weight:600">${Math.round(rd || 0).toLocaleString('en-IN')}</span>`;
+      let h = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+        <thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d;font-size:11px">
+          <th style="padding:6px 8px;font-weight:500">Strategy</th>
+          <th style="padding:6px 8px;font-weight:500">Mode</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Net</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Open positions ka live unrealized P&amp;L (₹) — LTP feed se">Running</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Gross</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Completed trades ka total tax &amp; charges">Tax</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">Trades</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">W/L</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:center">Open</th>
+          <th style="padding:6px 8px;font-weight:500;text-align:right">Run-Up / Run-Down</th>
+        </tr></thead><tbody>`;
+      rows.forEach(r => {
+        const isSel = (r.key === sel);
+        const rowStyle = 'border-bottom:1px solid #21262d;cursor:pointer'
+          + (isSel ? ';background:#132030;box-shadow:inset 3px 0 0 #1f6feb' : '');
+        const codeHtml = r.code && r.code !== r.key
+          ? `<span style="color:#6e7681;font-variant-numeric:tabular-nums;margin-right:7px;font-size:10.5px">${r.code}</span>` : '';
+        h += `<tr style="${rowStyle}" onclick="peakPickStrat('${r.key}', ${r.isSource ? 'true' : 'false'})"
+            onmouseover="if('${r.key}'!=='${sel}')this.style.background='#1c2230'" onmouseout="if('${r.key}'!=='${sel}')this.style.background=''"
+            title="Click → is strategy ka MTM graph + Completed Trades filter">
+          <td style="padding:7px 8px">${codeHtml}<span style="color:#adbac7">${r.name}</span></td>
+          <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
+          <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
+          <td style="padding:7px 8px;text-align:right">${runCell(r.key)}</td>
+          <td style="padding:7px 8px;text-align:right;color:#8b949e">${Math.round(r.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:7px 8px;text-align:right">${taxCell(r.tax)}</td>
+          <td style="padding:7px 8px;text-align:center;color:#adbac7">${r.n}</td>
+          <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.w}W ${r.n - r.w}L</td>
+          <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.opn}</td>
+          <td style="padding:7px 8px;text-align:right">${rudCell(r.ru, r.rd)}</td></tr>`;
+      });
+      h += `<tr style="border-top:2px solid #30363d;font-weight:600">
+          <td style="padding:8px" colspan="2"><span style="color:#8b949e;font-size:11px">TOTAL</span></td>
+          <td style="padding:8px;text-align:right">${netCell(tot.net)}</td>
+          <td style="padding:8px;text-align:right">${runCell('__tot')}</td>
+          <td style="padding:8px;text-align:right;color:#8b949e">${Math.round(tot.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:8px;text-align:right">${taxCell(tot.tax)}</td>
+          <td style="padding:8px;text-align:center;color:#adbac7">${tot.n}</td>
+          <td style="padding:8px;text-align:center;color:#8b949e">${tot.w}W ${tot.n - tot.w}L</td>
+          <td style="padding:8px;text-align:center;color:#8b949e">${tot.opn}</td>
+          <td style="padding:8px;text-align:right">${rudCell(tot.ru, tot.rd)}</td></tr>`;
+      h += '</tbody></table>';
+      el.innerHTML = h;
+      _patchPeakRunCells();   // task 80 — fill Running from whatever LTPs are already cached
+    }
+
+    // task 80 — Summary "Running" column: per-strategy open-position unrealized ₹,
+    // computed from the SAME _ltpLive feed that patches the Open Positions table.
+    // Called on summary render + every _patchLtpCells tick.
+    function _patchPeakRunCells() {
+      const map = window._peakOpenMap || {};
+      if (typeof _ltpLive !== 'object') return;
+      let grand = 0, grandAny = false;
+      document.querySelectorAll('.peak-run-cell').forEach(el => {
+        const k = el.getAttribute('data-pk');
+        if (k === '__tot') return;
+        const rows = map[k] || [];
+        if (!rows.length) { el.textContent = '—'; el.style.color = '#6e7681'; return; }
+        let tot = 0, any = false;
+        rows.forEach(o => {
+          const raw = _ltpLive[o.sym];
+          const ltp = typeof raw === 'number' ? raw : (raw && raw.ltp);
+          if (ltp == null || !o.entry) return;
+          any = true;
+          const pts = o.side === 'BUY' ? (ltp - o.entry) : (o.entry - ltp);
+          tot += pts * o.qty;
+        });
+        if (!any) { el.textContent = '⏳'; el.style.color = '#6e7681'; return; }
+        grand += tot; grandAny = true;
+        el.textContent = (tot >= 0 ? '+' : '') + Math.round(tot).toLocaleString('en-IN');
+        el.style.color = tot >= 0 ? '#3fb950' : '#f85149';
+      });
+      const tEl = document.querySelector('.peak-run-cell[data-pk="__tot"]');
+      if (tEl) {
+        if (grandAny) {
+          tEl.textContent = (grand >= 0 ? '+' : '') + Math.round(grand).toLocaleString('en-IN');
+          tEl.style.color = grand >= 0 ? '#3fb950' : '#f85149';
+        } else { tEl.textContent = '—'; tEl.style.color = '#6e7681'; }
+      }
+    }
+    // ── Today's Peak card state (tasks 73/74) ──
+    window._peakStrat = '__all';                                   // selected strategy for the Graph view
+    window._peakPMode = localStorage.getItem('peak_pmode') || 'cur';   // realised | unreal | cur
+    window._marginMode = localStorage.getItem('peak_margin_mode') || 'all'; // all | paper | live
+
+    function togglePeakView(v) {
+      const bodies = { graph: 'peak-graph-body', summary: 'peak-summary-body', margin: 'peak-margin-body' };
+      const tabs = { graph: 'peak-tab-graph', summary: 'peak-tab-summary', margin: 'peak-tab-margin' };
+      if (!['graph', 'summary', 'margin'].includes(v)) v = 'graph';
+      const on = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:4px 12px;cursor:pointer;background:#21262d;color:#8b949e';
+      Object.keys(bodies).forEach(k => {
+        const b = document.getElementById(bodies[k]), t = document.getElementById(tabs[k]);
+        if (b) b.style.display = (k === v) ? 'block' : 'none';
+        if (t) t.style.cssText = (k === v) ? on : off;
+      });
+      try { localStorage.setItem('peak_view', v); } catch (e) { }
+      if (v === 'graph') loadPeakGraph();
+      if (v === 'margin') loadMarginGraph();
+    }
+    // restore last-used view on load (elements are static in the DOM)
+    try { const _pv = localStorage.getItem('peak_view'); if (_pv && _pv !== 'graph') togglePeakView(_pv); } catch (e) { }
+    // sync sub-switch highlights to stored prefs (no data load — each view's own loader runs)
+    try {
+      const _on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const _off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['real', 'unreal', 'cur'].forEach(x => { const e = document.getElementById('peak-pm-' + x); if (e) e.style.cssText = (x === window._peakPMode) ? _on : _off; });
+      ['all', 'paper', 'live'].forEach(x => { const e = document.getElementById('peak-mm-' + x); if (e) e.style.cssText = (x === window._marginMode) ? _on : _off; });
+    } catch (e) { }
+
+    // Realised / Unrealised / Current switch (Graph view) — task 73
+    function setPeakPMode(m) {
+      window._peakPMode = m;
+      try { localStorage.setItem('peak_pmode', m); } catch (e) { }
+      const on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['real', 'unreal', 'cur'].forEach(x => { const e = document.getElementById('peak-pm-' + x); if (e) e.style.cssText = (x === m) ? on : off; });
+      loadPeakGraph();
+    }
+
+    // Click a Summary row → filter Completed Trades to that strategy (client-side,
+    // so the Summary table itself stays full) + show its MTM graph. Re-click the
+    // same row (or "clear") → back to All. isSource=true for MANUAL/WEBHOOK rows.
+    function peakPickStrat(key, isSource) {
+      window._peakStrat = (window._peakStrat === key) ? '__all' : key;   // toggle back to All on re-click
+      const picked = window._peakStrat;
+      const nm = isSource ? (key.charAt(0) + key.slice(1).toLowerCase()) : (regLabel(key) || key);
+      const sc = document.getElementById('peak-scope');
+      if (sc) sc.textContent = picked === '__all' ? '' : '— ' + nm;
+      renderCachedOrders();    // re-filter Completed Trades + re-highlight summary row
+      togglePeakView('graph'); // loadPeakGraph runs inside
+    }
+
+    function peakClearStrat() {
+      window._peakStrat = '__all';
+      const sc = document.getElementById('peak-scope'); if (sc) sc.textContent = '';
+      renderCachedOrders();
+      if ((localStorage.getItem('peak_view') || 'graph') === 'graph') loadPeakGraph();
+    }
+
+    // Does a completed/open trade belong to the currently-picked strategy scope?
+    function _peakTradeMatch(t) {
+      const pk = window._peakStrat || '__all';
+      if (pk === '__all') return true;
+      const src = String(t.source || 'STRATEGY').toUpperCase();
+      if (pk === 'MANUAL' || pk === 'WEBHOOK') return src === pk;
+      return (t.strategy || 'STRATEGY') === pk && src !== 'MANUAL' && src !== 'WEBHOOK';
+    }
+
+    function peakRefresh() {
+      const v = localStorage.getItem('peak_view') || 'graph';
+      if (v === 'margin') loadMarginGraph(); else loadPeakGraph();
+    }
+
+    // ── Margin Utilization graph (task 74) ──
+    function setMarginMode(m) {
+      window._marginMode = m;
+      try { localStorage.setItem('peak_margin_mode', m); } catch (e) { }
+      const on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
+      const off = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#21262d;color:#8b949e';
+      ['all', 'paper', 'live'].forEach(x => { const e = document.getElementById('peak-mm-' + x); if (e) e.style.cssText = (x === m) ? on : off; });
+      loadMarginGraph();
+    }
+
+    async function loadMarginGraph() {
+      const container = document.getElementById('peak-margin-graph');
+      if (!container) return;
+      const selDate = (document.getElementById('ord-date') || {}).value || '';
+      let resp = {};
+      try {
+        const qs = new URLSearchParams();
+        if (selDate) qs.set('date', selDate);
+        qs.set('mode', window._marginMode || 'all');
+        const r = await fetch('/api/margin-history?' + qs.toString());
+        resp = await r.json();
+      } catch (e) {
+        container.innerHTML = '<div style="color:#f85149;font-size:12px;padding:20px">Load failed</div>';
+        return;
+      }
+      const T = resp.times || [], buy = resp.buy || [], sell = resp.sell || [];
+      const pk = document.getElementById('peak-margin-peak');
+      if (pk) pk.textContent = T.length ? ('Peak margin: ₹' + Math.round(resp.peak || 0).toLocaleString('en-IN') + '  (' + (window._marginMode || 'all') + ')') : '';
+      if (!T.length || Math.max(0, ...buy, ...sell) <= 0) {
+        container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Is din koi margin use nahi hua (' + (window._marginMode || 'all') + ').</div>';
+        return;
+      }
+      const W = container.clientWidth || 700, H = 200;
+      const PAD = { t: 14, r: 70, b: 26, l: 64 }, gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+      const tot = T.map((_, i) => (buy[i] || 0) + (sell[i] || 0));
+      const maxV = Math.max(1, ...tot);
+      const px = i => PAD.l + (T.length === 1 ? 0 : i / (T.length - 1) * gW);
+      const py = v => PAD.t + gH - (v / maxV) * gH;
+      const toMin = s => { const p = String(s).split(':'); return (+p[0] || 0) * 60 + (+p[1] || 0); };
+      // x by real time so widths reflect how long margin was held
+      const t0 = toMin(T[0]), t1 = toMin(T[T.length - 1]) || t0 + 1;
+      const xAt = i => PAD.l + ((toMin(T[i]) - t0) / ((t1 - t0) || 1)) * gW;
+      const areaPath = (topArr, botArr) => {
+        let p = `M${xAt(0).toFixed(1)},${py(botArr[0]).toFixed(1)}`;
+        for (let i = 0; i < T.length; i++) p += ` L${xAt(i).toFixed(1)},${py(topArr[i]).toFixed(1)}`;
+        for (let i = T.length - 1; i >= 0; i--) p += ` L${xAt(i).toFixed(1)},${py(botArr[i]).toFixed(1)}`;
+        return p + ' Z';
+      };
+      const sellTop = sell.map(v => v || 0);
+      const buyTop = T.map((_, i) => (sell[i] || 0) + (buy[i] || 0));
+      const zeros = T.map(() => 0);
+      let yl = '';
+      for (let s = 0; s <= 4; s++) {
+        const v = maxV * s / 4, y = py(v);
+        yl += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22"/>`;
+        yl += `<text x="${PAD.l - 5}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="10" fill="#8b949e">₹${(v / 100000).toFixed(1)}L</text>`;
+      }
+      let xl = '';
+      const step = Math.max(1, Math.floor(T.length / 6));
+      for (let i = 0; i < T.length; i += step) xl += `<text x="${xAt(i).toFixed(1)}" y="${H - 8}" text-anchor="middle" font-size="10" fill="#6e7681">${T[i]}</text>`;
+      const lastTot = tot[tot.length - 1];
+      container.innerHTML = `
+  <svg width="${W}" height="${H}" style="overflow:visible;display:block">
+    ${yl}${xl}
+    <path d="${areaPath(sellTop, zeros)}" fill="#d2992255" stroke="#d29922" stroke-width="1"/>
+    <path d="${areaPath(buyTop, sellTop)}" fill="#1f6feb55" stroke="#1f6feb" stroke-width="1"/>
+    <text x="${(W - PAD.r + 6).toFixed(1)}" y="${(py(lastTot) + 4).toFixed(1)}" font-size="11" fill="#adbac7" font-weight="600">₹${Math.round(lastTot).toLocaleString('en-IN')}</text>
+  </svg>`;
+    }
+
     // ── ORDER SOUND NOTIFICATION ──
     const _lastOrderLine = {};  // key → last seen order line to avoid duplicate beeps
     function _playOrderSound(isWin) {
@@ -6758,6 +7330,66 @@
       });
     }
 
+    // Shared strategy display maps — used by BOTH the Logs sidebar (renderLogTab)
+    // and the Risk > Per-Strategy Override table so they stay in sync (Rule 6B).
+    // These are a hardcoded FALLBACK; loadStrategyRegistry() (below) overwrites them
+    // from the canonical Strategy Registry (family.member IDs like 00.01, grouped by
+    // family) once /api/strategy-registry loads — single source of truth (Phase 2).
+    let MISSION_NUM = {
+      orb_v1:'00', straddle_v1:'01', dvert_v1:'02', orbst_v1:'03',
+      chainzone_v1:'04', backspread_v1:'05', shortvol_v1:'06', banknifty_v1:'07',
+    };
+    let MISSION_NAME = {
+      orb_v1:'Mid-Day ORB', straddle_v1:'Long Straddle', dvert_v1:'Debit Vertical',
+      orbst_v1:'ORB + Supertrend', chainzone_v1:'Chain-Zone', backspread_v1:'Ratio Backspread',
+      shortvol_v1:'Short-Vol Iron-Fly (off)', banknifty_v1:'BankNifty ORB',
+      ars_chain_v1:'Ars Chain (live)', ars_chain_v1_paper:'Ars Chain (paper)',
+      range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
+      ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
+    };
+    let STRAT_GROUPS = [
+      { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
+      { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
+      { title:'Webhook / Infra', keys:['webhook_v1'] },
+    ];
+
+    // Phase 2: overwrite the maps above from the canonical Strategy Registry
+    // (/api/strategy-registry) — family.member IDs + family grouping. Graceful
+    // fallback to the hardcoded seed if unavailable; re-renders the active tab.
+    async function loadStrategyRegistry(){
+      try{
+        const r = await fetch('/api/strategy-registry'); const reg = await r.json();
+        const fams = reg.families||{}, strs = reg.strategies||{};
+        const num={}, name={}, byFam={};
+        for(const id in strs){ const s=strs[id]||{}; const ck=(s.config_key||'').toLowerCase();
+          if(!ck) continue; num[ck]=id; name[ck]=s.name||ck;
+          const fid=id.split('.')[0]; (byFam[fid]=byFam[fid]||[]).push({ck,id}); }
+        if(Object.keys(num).length){
+          MISSION_NUM=num; MISSION_NAME=name;
+          STRAT_GROUPS=Object.keys(fams).sort().map(fid=>({
+            title:(fams[fid]&&fams[fid].name)?(fid+' · '+fams[fid].name):fid,
+            keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck)
+          })).filter(g=>g.keys.length);
+        }
+      }catch(e){ /* registry unavailable -> keep hardcoded fallback */ }
+      try{ if(typeof activeTab!=='undefined'){
+        if(activeTab==='log' && document.getElementById('log-folder-card')) renderLogTab();
+        else if(activeTab==='risk' && document.getElementById('risk-strategy-table')) renderRiskTab();
+      } }catch(e){}
+    }
+    loadStrategyRegistry();
+
+    // Canonical strategy label for ANY surface: the clean registry NAME (no
+    // NN.MM number prefix — task 70). Falls back to the raw key. Use regId()
+    // separately if the short numeric id is genuinely needed somewhere.
+    function regLabel(key){
+      if(!key) return key || '';
+      const k=String(key).toLowerCase();
+      return MISSION_NAME[k] || String(key);
+    }
+    // just the short canonical ID ("02.01") for compact spots (row tags) — raw key fallback.
+    function regId(key){ if(!key) return key||''; return MISSION_NUM[String(key).toLowerCase()] || String(key); }
+
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
       if (!container) return;
@@ -6772,25 +7404,10 @@
       // --- logical ordering + grouping (was raw config-key / alphabetical order) ---
       // A = option-strategy mission (numbered 01/02/03), B = other live traders + their
       // paper shadows, C = webhook/infra. Unknown keys fall into a trailing "Other" group.
-      const _LOG_GROUPS = [
-        { title: 'Option Strategies (mission)', keys: ['orb_v1', 'straddle_v1', 'dvert_v1', 'orbst_v1', 'chainzone_v1', 'backspread_v1', 'shortvol_v1', 'banknifty_v1'] },
-        { title: 'Other Strategies', keys: ['ars_chain_v1', 'ars_chain_v1_paper', 'range_v1', 'rsi_v1', 'rsi_v1_paper', 'ema_v1', 'universe_v1'] },
-        { title: 'Webhook / Infra', keys: ['webhook_v1'] },
-      ];
-      // mission number badge (00-07, OPTION_STRATEGY_MISSION.md numbering)
-      const _LOG_NUM = {
-        orb_v1: '00', straddle_v1: '01', dvert_v1: '02', orbst_v1: '03',
-        chainzone_v1: '04', backspread_v1: '05', shortvol_v1: '06', banknifty_v1: '07',
-      };
-      // saaf padhne-layak naam (raw config-key ki jagah sidebar me dikhega; key title me rehti)
-      const _LOG_NAME = {
-        orb_v1: 'Mid-Day ORB', straddle_v1: 'Long Straddle', dvert_v1: 'Debit Vertical',
-        orbst_v1: 'ORB + Supertrend', chainzone_v1: 'Chain-Zone', backspread_v1: 'Ratio Backspread',
-        shortvol_v1: 'Short-Vol Iron-Fly (off)', banknifty_v1: 'BankNifty ORB',
-        ars_chain_v1: 'Ars Chain (live)', ars_chain_v1_paper: 'Ars Chain (paper)',
-        range_v1: 'Range Breakout', rsi_v1: 'RSI', rsi_v1_paper: 'RSI (paper)',
-        ema_v1: 'EMA Crossover', universe_v1: 'Universe Scan', webhook_v1: 'TradingView Webhook',
-      };
+      // shared maps (defined once above — Rule 6B, same data drives the Risk table)
+      const _LOG_GROUPS = STRAT_GROUPS;
+      const _LOG_NUM = MISSION_NUM;
+      const _LOG_NAME = MISSION_NAME;
       const _logName = k => _LOG_NAME[_lcKey(k)] || String(k).toUpperCase();
       const _lcKey = k => String(k).toLowerCase();
       const _usedKeys = new Set();
@@ -6849,8 +7466,8 @@
         const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center;vertical-align:middle">${_num}</span>` : '';
         sidebarHtml += `
       <div class="folder-tab ${isActive ? 'active ' + tabClassColor : ''}"
-           data-log-key="${key}" title="${key}"
-           onclick="switchLogTab('${key}', this)">
+           data-log-key="${key}" title="${key} — double-click: Strategy Lab page (naye tab me)"
+           onclick="switchLogTab('${key}', this)" ondblclick="openStratLab('${key}')">
         <span class="log-status-dot" id="${key}-log-statusdot" title="${_sd.title}" style="display:inline-block;width:9px;height:9px;border-radius:50%;background:${_sd.color};margin-right:7px;vertical-align:middle;flex-shrink:0"></span>${_numBadge}${_logName(key)}
       </div>
     `;
@@ -6885,6 +7502,24 @@
 
       container.innerHTML = sidebarHtml + contentHtml;
       renderLogRunControls();
+    }
+
+    // Double-click a Logs-sidebar strategy → open its Strategy Lab (3-pass) page in
+    // a new tab. config-key → runs/<slug>/ (same 8 mission strategies as _LOG_NUM/
+    // _LOG_NAME). No mapped run → open the Lab hub so the user can pick.
+    const _LAB_SLUG = {
+      orb_v1: 'mid_orb_nifty', straddle_v1: 'long_straddle_orb', dvert_v1: 'debit_vertical_orb',
+      orbst_v1: 'orb_supertrend', chainzone_v1: 'chain_zone_longatm', backspread_v1: 'ratio_backspread',
+      shortvol_v1: 'shortvol_ironfly', banknifty_v1: 'banknifty_hunt',
+    };
+    function openStratLab(key) {
+      const slug = _LAB_SLUG[String(key).toLowerCase()];
+      if (slug) {
+        window.open('/lab/runs/' + slug + '/index.html', '_blank');
+      } else {
+        window.open('/lab/hub.html', '_blank');
+        if (typeof toast === 'function') toast('Is strategy ka apna Lab page nahi — hub khola', 'info');
+      }
     }
 
     // ── Bulk start/stop all real strategies from the Logs sidebar ──
@@ -7411,6 +8046,12 @@
       // Strategy's own exit logic (not pos_monitor_loop-driven)
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
       else if (r.startsWith('RSI_MIDLINE_EXIT')) { label = '↩️ RSI Midline'; color = '#58a6ff'; }
+      // Option mission strategies' own TP/SL/rollback exits (task 71 — Straddle,
+      // Debit Vertical, Ratio Backspread, Short-Vol Iron-Fly, VRP)
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_TRAIL/.test(r)) { label = '📉 Profit Trail Lock'; color = '#f0883e'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_TP/.test(r)) { label = '🎯 Strategy Target'; color = '#3fb950'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_SL/.test(r)) { label = '🛡️ Strategy SL'; color = '#f0883e'; }
+      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_ROLLBACK/.test(r)) { label = '↩️ Leg Rollback'; color = '#8b949e'; }
       // Webhook (TradingView-signal-driven strategies)
       else if (r.startsWith('IDX_TRAIL')) { label = '📉 Index Trail SL'; color = '#f0883e'; }
       else if (r.startsWith('TRAIL_SL')) { label = '📉 Trail SL'; color = '#f0883e'; }
@@ -8018,6 +8659,7 @@
     window.toggleMoreDropdown = (event) => {
       event.stopPropagation();
       window.closeAvatarDropdown();
+      window.closeReportsDropdown();
       const dropdown = document.getElementById('more-dropdown');
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -8025,10 +8667,23 @@
       const dropdown = document.getElementById('more-dropdown');
       if (dropdown) dropdown.style.display = 'none';
     };
+    // 📋 Reports dropdown (task 76 — EOD Reports + YT Presentations)
+    window.toggleReportsDropdown = (event) => {
+      event.stopPropagation();
+      window.closeAvatarDropdown();
+      window.closeMoreDropdown();
+      const dropdown = document.getElementById('reports-dropdown');
+      if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+    window.closeReportsDropdown = () => {
+      const dropdown = document.getElementById('reports-dropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    };
 
     document.addEventListener('click', () => {
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
+      window.closeReportsDropdown();
     });
 
     setInterval(() => {
@@ -8131,21 +8786,21 @@
           if (ptEl) totPts += parseFloat(ptEl.textContent.replace('+', '')) || 0;
         });
         const id = tbl.id;
-        const ptsFoot = document.querySelector(`.grp-tot-pts[data-grp="${id}"]`);
-        const unrlFoot = document.querySelector(`.grp-tot-unrl[data-grp="${id}"]`);
-        const retFoot = document.querySelector(`.grp-tot-ret[data-grp="${id}"]`);
         if (!any) return;
-        if (ptsFoot) { ptsFoot.textContent = (totPts >= 0 ? '+' : '') + totPts.toFixed(1); ptsFoot.style.color = totPts >= 0 ? '#3fb950' : '#f85149'; }
-        if (unrlFoot) { unrlFoot.textContent = (totUnrl >= 0 ? '+' : '') + Math.round(totUnrl).toLocaleString('en-IN'); unrlFoot.style.color = totUnrl >= 0 ? '#3fb950' : '#f85149'; }
-        if (retFoot) {
-          const retPct = totInv > 0 ? ((totUnrl / totInv) * 100).toFixed(2) + '%' : '—';
-          retFoot.textContent = retPct; retFoot.style.color = totUnrl >= 0 ? '#3fb950' : '#f85149';
-        }
+        // update EVERY matching cell (tfoot TOTAL row + the collapsed-group
+        // summary line — task 68 shows ₹/pts/% right in the summary), so use
+        // querySelectorAll not querySelector.
+        const ptCol = totPts >= 0 ? '#3fb950' : '#f85149';
+        const ptTxt = (totPts >= 0 ? '+' : '') + totPts.toFixed(1);
+        const unTxt = (totUnrl >= 0 ? '+' : '') + Math.round(totUnrl).toLocaleString('en-IN');
+        const retTxt = totInv > 0 ? ((totUnrl / totInv) * 100).toFixed(2) + '%' : '—';
+        document.querySelectorAll(`.grp-tot-pts[data-grp="${id}"]`).forEach(el => { el.textContent = ptTxt; el.style.color = ptCol; });
+        document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = ptCol; });
+        document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = ptCol; });
       });
       // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
       (function () {
-        const unrlB = document.getElementById('open-tot-unrl');
-        if (!unrlB) return;
+        const unrlB = document.getElementById('open-tot-unrl');  // legacy grand-total cell (may be absent — per-group totals live on each group now)
         let totPts = 0, totUnrl = 0, totInv = 0, any = false;
         document.querySelectorAll('#ord-open table[id^="grp_"] tbody tr').forEach(tr => {
           const ltpCell = tr.querySelector('.ltp-cell');
@@ -8159,7 +8814,7 @@
           const ptEl = tr.querySelector('.pts-cell');
           if (ptEl) totPts += parseFloat(ptEl.textContent.replace('+', '')) || 0;
         });
-        if (any) {
+        if (any && unrlB) {
           const ptsB = document.getElementById('open-tot-pts');
           const retB = document.getElementById('open-tot-ret');
           if (ptsB) { ptsB.textContent = (totPts >= 0 ? '+' : '') + totPts.toFixed(1); ptsB.style.color = totPts >= 0 ? '#3fb950' : '#f85149'; }
@@ -8169,6 +8824,7 @@
         // NET summary panel — always update (even when no open positions, show realized + 0 unrealized)
         _updateNetPanel(totUnrl);
       })();
+      _patchPeakRunCells();   // task 80 — Summary view "Running" column, same tick
     }
     function _updateNetPanel(unrealizedPnl) {
       const _realized = (window._realizedTot || {}).n || 0;

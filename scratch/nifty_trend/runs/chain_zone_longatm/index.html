@@ -61,6 +61,8 @@
   .dna .mrow .v{color:var(--teal)}
   .tchbtn{background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:6px;padding:5px 11px;font-size:11.5px;font-weight:600;cursor:pointer}
   .tchbtn:hover{background:var(--bd)}
+  #dist rect{cursor:crosshair;transition:opacity .1s}
+  #dist rect:hover{opacity:.85!important}
   .tbtoolbar{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
   .tsearch{flex:1;min-width:180px;background:var(--panel2);border:1px solid var(--bd);color:var(--tx);border-radius:7px;padding:7px 11px;font-size:12.5px}
   .colwrap{position:relative}
@@ -108,6 +110,11 @@
     <div class="topbar">
       <div class="app-title"><span id="appTitleTxt">📈 NIFTY Intraday — Mid-Day Opening-Range Breakout</span>
         <span class="sub" id="appTitleSub">NSE spot · 15m · 11:00–13:00 window · long+short · 3:15 exit · max 2/day · 1x NO leverage</span></div>
+      <div id="stratNav" style="display:flex;gap:6px;align-items:center;margin-left:auto;margin-right:12px">
+        <button class="tchbtn" id="navPrev" title="Previous strategy (← arrow key)">←</button>
+        <span class="mut" id="navPos" style="font-size:11px;min-width:34px;text-align:center"></span>
+        <button class="tchbtn" id="navNext" title="Next strategy (→ arrow key)">→</button>
+      </div>
       <span class="livechip" id="livechip">● GENUINE EDGE</span>
     </div>
     <div class="controls">
@@ -145,6 +152,12 @@
       <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
     </div>
   </div>
+
+  <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
+      <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
+        <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
+    <hr class="dash"><div id="dist"></div>
+    <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
 
   <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month in the heatmap above to filter · 📈 full-screen chart</span></h3>
     <hr class="dash">
@@ -273,6 +286,54 @@ function renderMonthly(){const c=C(),mo=['Jan','Feb','Mar','Apr','May','Jun','Ju
   h+='</table><div class="mut" style="font-size:11px;margin-top:6px">💡 kisi month pe click karo → neeche Trades table usi month pe filter ho jayegi (dobara click / chip ✕ = clear)</div>';
   const el=document.getElementById('monthly');el.innerHTML=h;
   el.querySelectorAll('.moclick').forEach(td=>td.onclick=()=>setMonthFilter(td.dataset.ym));}
+let DIST_UNIT='rs',DIST_VIEW='chart';
+function setDistBtns(){[['distRs','rs'],['distPt','points']].forEach(([id,u])=>{const b=document.getElementById(id);if(b){const on=DIST_UNIT===u;b.style.background=on?'#1f6feb':'';b.style.color=on?'#fff':'';}});}
+function renderDist(){
+  const el=document.getElementById('dist'),sEl=document.getElementById('distStats');
+  if(!el)return;
+  const tr=C().all_trades||[];
+  const vals=tr.map(t=>DIST_UNIT==='rs'?(+t.pnl||0):(+t.points||0)).filter(v=>isFinite(v));
+  if(vals.length<5){el.innerHTML='<p class="mut">Not enough trades for a distribution.</p>';if(sEl)sEl.innerHTML='';return;}
+  const n=vals.length,mean=vals.reduce((a,b)=>a+b,0)/n;
+  const sd=Math.sqrt(vals.reduce((a,b)=>a+(b-mean)*(b-mean),0)/n);
+  const sorted=[...vals].sort((a,b)=>a-b),median=sorted[Math.floor(n/2)],lo=sorted[0],hi=sorted[n-1];
+  const winPct=100*vals.filter(v=>v>0).length/n;
+  const NB=Math.min(31,Math.max(11,Math.round(Math.sqrt(n)))),span=(hi-lo)||1,bw=span/NB;
+  const bins=new Array(NB).fill(0);
+  vals.forEach(v=>{let bi=Math.floor((v-lo)/bw);if(bi>=NB)bi=NB-1;if(bi<0)bi=0;bins[bi]++;});
+  const maxc=Math.max(...bins,1);
+  const W=760,H=240,ml=8,mr=8,mt=14,mb=26;
+  const px=v=>ml+((v-lo)/span)*(W-ml-mr),py=c=>(H-mb)-(c/maxc)*(H-mt-mb);
+  const xf=DIST_UNIT==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1));
+  const capF=DIST_UNIT==='rs'?(v=>'₹'+Math.round(v).toLocaleString('en-IN')):(v=>v.toFixed(1)+'pt');
+  if(sEl)sEl.innerHTML=`n=${n} trades · mean <b>${capF(mean)}</b> · median ${capF(median)} · std ${capF(sd)} · win ${winPct.toFixed(0)}% · best ${capF(hi)} · worst ${capF(lo)} &nbsp;<span class="mut">(gold = fitted normal/bell · blue = mean · dashed = zero)</span>`;
+  if(DIST_VIEW==='table'){
+    let rows='';
+    for(let i=0;i<NB;i++){const c0=lo+i*bw,c1=lo+(i+1)*bw,cnt=bins[i],pc=100*cnt/n,col=((c0+c1)/2>=0)?'#3fb950':'#f85149';
+      rows+=`<tr><td>${xf(c0)} … ${xf(c1)}</td><td style="text-align:right">${cnt}</td><td style="text-align:right">${pc.toFixed(1)}%</td><td style="min-width:130px"><div style="height:9px;width:${(100*cnt/maxc).toFixed(0)}%;min-width:1px;background:${col};opacity:.6;border-radius:2px"></div></td></tr>`;}
+    el.innerHTML=`<table class="tbl" style="width:100%"><tr><th>Bucket (${DIST_UNIT==='rs'?'₹':'pts'})</th><th style="text-align:right">Trades</th><th style="text-align:right">% of ${n}</th><th>Frequency</th></tr>${rows}</table>`;
+    return;
+  }
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto">`;
+  if(lo<0&&hi>0){const zx=px(0);svg+=`<line x1="${zx.toFixed(1)}" y1="${mt}" x2="${zx.toFixed(1)}" y2="${H-mb}" stroke="#8b949e" stroke-width="1" stroke-dasharray="3 3"/>`;}
+  for(let i=0;i<NB;i++){const x0=px(lo+i*bw)+1,x1=px(lo+(i+1)*bw)-1,y=py(bins[i]);
+    const col=(lo+(i+0.5)*bw)>=0?'#3fb950':'#f85149',pc=(100*bins[i]/n).toFixed(1);
+    svg+=`<rect x="${x0.toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(0.5,x1-x0).toFixed(1)}" height="${(H-mb-y).toFixed(1)}" fill="${col}" opacity="0.5" rx="1"><title>${xf(lo+i*bw)} to ${xf(lo+(i+1)*bw)}\n${bins[i]} trades (${pc}%)</title></rect>`;}
+  if(sd>0){let d='';for(let i=0;i<=120;i++){const v=lo+span*i/120;
+      const cnt=Math.exp(-((v-mean)*(v-mean))/(2*sd*sd))/(sd*Math.sqrt(2*Math.PI))*bw*n;
+      d+=(i?'L':'M')+px(v).toFixed(1)+' '+py(cnt).toFixed(1)+' ';}
+    svg+=`<path d="${d}" fill="none" stroke="#f0c000" stroke-width="2"/>`;}
+  svg+=`<line x1="${px(mean).toFixed(1)}" y1="${mt}" x2="${px(mean).toFixed(1)}" y2="${H-mb}" stroke="#4f78ff" stroke-width="1.5"/>`;
+  const _xl=(v,a)=>`<text x="${px(v).toFixed(0)}" y="${H-8}" fill="#8b949e" font-size="10" text-anchor="${a}">${xf(v)}</text>`;
+  svg+=_xl(lo,'start')+((lo<0&&hi>0)?_xl(0,'middle'):'')+_xl(hi,'end');
+  svg+='</svg>';el.innerHTML=svg;
+}
+(function(){const a=document.getElementById('distRs'),b=document.getElementById('distPt');
+  if(a)a.onclick=()=>{DIST_UNIT='rs';setDistBtns();renderDist();};
+  if(b)b.onclick=()=>{DIST_UNIT='points';setDistBtns();renderDist();};
+  const vb=document.getElementById('distView');
+  if(vb)vb.onclick=()=>{DIST_VIEW=(DIST_VIEW==='chart')?'table':'chart';vb.textContent=(DIST_VIEW==='chart')?'📋 Table':'📈 Chart';renderDist();};
+  setDistBtns();})();
 function renderCards(){const m=C().metrics;
   const cards=[['Sharpe Ratio',m.sharpe.toFixed(2),m.sharpe>=1?'pos':(m.sharpe>0.5?'':'neg'),'target ≥ 1.0'],
     ['Total Net Profit',(m.net_pct>=0?'+':'')+m.net_pct.toFixed(1)+'%',m.net_pct>=0?'pos':'neg',inr(m.final_cap)],
@@ -514,7 +575,7 @@ function renderAll(){const m=C().metrics,s=C().significance;
       `net ${m.net_pct.toFixed(1)}%, DD ${m.maxdd.toFixed(1)}% at 1x.`+
       (P==='oos'?' — held up on unseen recent data.':(P==='recent'?' — CURRENT market regime (2023+), post options-boom.':''));
   }
-  renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();
+  renderCards();renderEquity('equity',false);renderDD();renderUW();renderMonthly();renderDist();
   renderPerf();renderDNA();renderInfo();renderPhilosophy();renderMC();renderSig();renderOpt();renderTrades()}
 if(HAS_PASS){const seg=document.getElementById('segPass');seg.style.display='';
   // extra passes beyond the standard 3 (e.g. execution-structure variants bs_naked / bs_credit)
@@ -541,6 +602,34 @@ document.getElementById('mmClose').onclick=closeMonthModal;
 document.getElementById('mModal').onclick=e=>{if(e.target.id==='mModal')closeMonthModal();};
 document.addEventListener('keydown',e=>{if(!document.getElementById('tModal').classList.contains('on'))return;
   if(e.key==='Escape')closeModal();else if(e.key==='ArrowLeft')modalNav(-1);else if(e.key==='ArrowRight')modalNav(1);});
+
+// Strategy prev/next nav — reads ../index.json (this page = /lab/runs/<slug>/index.html).
+// Ordered by mission number (00-07 first), wrap-around. Keyboard ← / → when no
+// modal open and no input focused (the trade-modal handler above owns arrows while open).
+(async function(){
+  try{
+    const m=location.pathname.match(/runs\/([^\/]+)\//); const cur=m?m[1]:null;
+    if(!cur) return;
+    const res=await fetch('../index.json',{cache:'no-store'}); const idx=await res.json();
+    const ord=(idx||[]).slice().sort((a,b)=>{
+      const na=parseInt(((a.title||'').match(/^\s*(\d+)/)||[])[1] ?? '999');
+      const nb=parseInt(((b.title||'').match(/^\s*(\d+)/)||[])[1] ?? '999');
+      return (isNaN(na)?999:na)-(isNaN(nb)?999:nb);
+    });
+    const slugs=ord.map(r=>r.slug).filter(Boolean);
+    const i=slugs.indexOf(cur);
+    const posEl=document.getElementById('navPos'),pv=document.getElementById('navPrev'),nx=document.getElementById('navNext');
+    if(i<0){ if(posEl)posEl.textContent=''; return; }
+    if(posEl)posEl.textContent=(i+1)+'/'+slugs.length;
+    const go=d=>{const j=(i+d+slugs.length)%slugs.length; location.href='../'+slugs[j]+'/index.html';};
+    if(pv)pv.onclick=()=>go(-1); if(nx)nx.onclick=()=>go(1);
+    document.addEventListener('keydown',e=>{
+      if(document.getElementById('tModal').classList.contains('on'))return;
+      if(/^(INPUT|TEXTAREA|SELECT)$/.test((e.target&&e.target.tagName)||''))return;
+      if(e.key==='ArrowLeft'){e.preventDefault();go(-1);} else if(e.key==='ArrowRight'){e.preventDefault();go(1);}
+    });
+  }catch(err){}
+})();
 renderAll();
 </script>
 </body>

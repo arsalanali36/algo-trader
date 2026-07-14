@@ -762,6 +762,10 @@ def main(strategy_id="range"):
     _STRAT_ID = strategy_id
     mode = "live" if "--live" in sys.argv else "paper"
     log.info(f"Range Trader starting — mode={mode}")
+    from singleton_guard import acquire_singleton
+    if not acquire_singleton(strategy_id):
+        log.warning(f"[SINGLETON] another {strategy_id} process already live — exiting (duplicate-order guard)")
+        return
     _recover_state_from_order_store(strategy_id)
 
     # TRAP #65: this process only ever called dhan_feed.add() to subscribe
@@ -1244,41 +1248,42 @@ def main(strategy_id="range"):
                     else:
                         log.error(f"Option contract not found for {symbol} {opt_type}")
                 else:
+                    # Task 3b (Rule 6B / ADR-001): equity-route ab inline
+                    # check_drawdown/concentration/capital ki jagah shared
+                    # strategy_safety.gate_entry() se jaata hai — wahi single gate
+                    # jo option branch + execution_gateway use karte hain
+                    # (gating_status + drawdown + concentration + capital size-down
+                    # + broker-funds; equity seg pe FNO-liquidity check skip). Isse
+                    # 3 extra guards free milte hain aur inline "risk-check fail →
+                    # allow entry" (fail-OPEN) gap band hota hai. place_order khud
+                    # execution_gateway ko delegate karta hai; CAPITAL_BLOCKED row
+                    # caller yahin record karta hai (gateway nahi karta).
+                    import risk_gate
+                    from brokers import get_broker  # local: option-branch's import may not have run on this path
+                    _entry_broker_name = risk_gate.default_broker()
                     try:
-                        import risk_gate
-                        dd_ok, dd_reason = risk_gate.check_drawdown()
-                        cap_ok, cap_reason = True, ""
-                        if not dd_ok:
-                            cap_ok, cap_reason = False, dd_reason
-                        else:
-                            conc_ok, conc_reason = risk_gate.check_concentration(symbol, qty, price, side=signal, mode=mode)
-                            if not conc_ok:
-                                cap_ok, cap_reason = False, conc_reason
-                            else:
-                                cap_ok, cap_reason = risk_gate.check_capital(strategy_id, qty, price, side=signal, mode=mode)
-                    except Exception as _e:
-                        cap_ok, cap_reason = True, ""
-                        log.warning(f"risk gate check failed (allowing entry): {_e}")
-                    if not cap_ok:
-                        fit_qty = 0
-                        if "capital cap" in cap_reason and risk_gate.capital_mode(strategy_id) == "size_down":
-                            fit_qty = risk_gate.sized_lots(strategy_id, qty, 1, price, side=signal, mode=mode)
-                        if fit_qty > 0:
-                            log.info(f"ENTRY sized down {symbol} — {qty} -> {fit_qty} ({cap_reason})")
-                            qty = fit_qty
-                        else:
-                            log.info(f"ENTRY blocked {symbol} — {cap_reason}")
-                            try:
-                                import order_store
-                                order_store.record(signal, qty, price, source='strategy',
-                                    strategy=strategy_id, mode=mode, broker=risk_gate.default_broker(), symbol=symbol,
-                                    instrument='equity', trad_sym=symbol, status='blocked',
-                                    tags=["CAPITAL_BLOCKED", cap_reason])
-                            except Exception:
-                                pass
-                            continue
+                        _entry_broker = get_broker(_entry_broker_name)
+                    except Exception as _be:
+                        log.warning(f"broker resolve failed for funds-check ({_be}) — gate proceeds without it")
+                        _entry_broker = None
+                    gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
+                        strategy_id, symbol, qty, 1, price, side=signal,
+                        sec_id=None, seg="NSE_EQ", mode=mode, broker=_entry_broker, log=log.info)
+                    if not gate_ok:
+                        log.info(f"ENTRY blocked {symbol} — {gate_reason}")
+                        try:
+                            import order_store
+                            order_store.record(signal, qty, price, source='strategy',
+                                strategy=strategy_id, mode=mode, broker=risk_gate.default_broker(), symbol=symbol,
+                                instrument='equity', trad_sym=symbol, status='blocked',
+                                tags=["CAPITAL_BLOCKED", gate_reason])
+                        except Exception:
+                            pass
+                        continue
+                    if gated_qty != qty:
+                        log.info(f"ENTRY sized down {symbol} — {qty} -> {gated_qty} ({gate_reason})")
+                        qty = gated_qty
                     try:
-                        import risk_gate
                         default_sl_tags = risk_gate.default_instrument_sl_tags(strategy_id, symbol)
                     except Exception:
                         default_sl_tags = []

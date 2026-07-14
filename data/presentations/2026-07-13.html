@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KHAZANA Dev Log — 13 July 2026</title>
+<style>
+  :root{
+    --bg:#080b11;
+    --bg2:#0b0f16;
+    --panel:#111823;
+    --panel2:#0e141d;
+    --border:#1e2836;
+    --border-soft:#232f3f;
+    --ink:#e8eef6;
+    --ink-mut:#8d9bb0;
+    --ink-dim:#5d6b80;
+    --green:#3fb950;
+    --green-soft:#2ea04326;
+    --blue:#4b93ff;
+    --blue-soft:#1f6feb22;
+    --amber:#e0a325;
+    --amber-soft:#d2992222;
+    --red:#f26d6d;
+    --red-soft:#f8514922;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code","Cascadia Mono","SF Mono",Consolas,Menlo,monospace;
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+    overflow-x:hidden;
+  }
+  /* faint terminal grid */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(var(--border-soft) 1px,transparent 1px),
+      linear-gradient(90deg,var(--border-soft) 1px,transparent 1px);
+    background-size:44px 44px;
+    opacity:.16;
+    mask-image:radial-gradient(ellipse 90% 70% at 50% 30%,#000 40%,transparent 100%);
+  }
+
+  .scroller{position:relative;z-index:1;scroll-snap-type:y proximity;}
+  section.slide{
+    min-height:100vh;
+    scroll-snap-align:start;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:88px 32px;
+    position:relative;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;width:100%}
+
+  /* eyebrow / labels */
+  .ey{
+    font-family:var(--font-mono);
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--ink-dim);
+    display:flex;align-items:center;gap:10px;
+  }
+  .ey .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px 1px var(--green)}
+  .ey .modno{color:var(--green);font-weight:600}
+
+  h1{font-size:clamp(38px,7vw,84px);font-weight:800;letter-spacing:-.03em;line-height:.98;text-wrap:balance}
+  h2{font-size:clamp(28px,4.4vw,50px);font-weight:800;letter-spacing:-.025em;line-height:1.02;text-wrap:balance}
+  .lede{color:var(--ink-mut);font-size:clamp(15px,1.7vw,19px);max-width:60ch;line-height:1.6}
+
+  .mono{font-family:var(--font-mono)}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  /* ---------- HERO ---------- */
+  .hero .wrap{display:flex;flex-direction:column;gap:30px}
+  .hero-top{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:baseline}
+  .brand{font-family:var(--font-mono);font-size:13px;letter-spacing:.16em;color:var(--ink-mut);text-transform:uppercase}
+  .brand b{color:var(--green)}
+  .datechip{
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;
+    padding:5px 11px;border:1px solid var(--border);border-radius:999px;color:var(--ink-mut);
+    background:var(--panel2);
+  }
+  .hero h1 .accent{
+    background:linear-gradient(180deg,#7fe28c,var(--green));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:6px;
+  }
+  .stat{
+    border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border-radius:14px;padding:20px 18px;position:relative;overflow:hidden;
+  }
+  .stat::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--green);opacity:.8}
+  .stat .n{font-family:var(--font-mono);font-size:clamp(30px,4.5vw,46px);font-weight:700;letter-spacing:-.02em;line-height:1}
+  .stat .k{font-size:12.5px;color:var(--ink-mut);margin-top:9px;letter-spacing:.02em}
+  .stat.blue::after{background:var(--blue)} .stat.amber::after{background:var(--amber)} .stat.red::after{background:var(--red)}
+  .scrollhint{margin-top:14px;font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);letter-spacing:.14em;display:flex;align-items:center;gap:9px}
+  .scrollhint .ar{animation:bob 1.8s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
+
+  /* ---------- MODULE SLIDES ---------- */
+  .mhead{display:flex;flex-direction:column;gap:14px;margin-bottom:30px}
+  .mhead .row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .tickets{display:flex;flex-wrap:wrap;gap:6px}
+  .tk{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-mut);border:1px solid var(--border);border-radius:6px;padding:3px 7px;background:var(--panel2)}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{
+    border:1px solid var(--border);border-radius:14px;padding:20px 20px 18px;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    display:flex;flex-direction:column;gap:9px;
+    transition:transform .5s cubic-bezier(.2,.7,.2,1),opacity .5s ease,border-color .3s;
+  }
+  .card:hover{border-color:var(--border-soft)}
+  .card .ct{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16.5px;letter-spacing:-.01em}
+  .card .cd{color:var(--ink-mut);font-size:14px;line-height:1.55}
+  .card .cd b{color:var(--ink);font-weight:600}
+  .badge{
+    font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;white-space:nowrap;
+  }
+  .b-ship{color:#9be5a6;background:var(--green-soft);border:1px solid #2ea04340}
+  .b-fix{color:#f7a5a5;background:var(--red-soft);border:1px solid #f8514940}
+  .b-infra{color:#9cc0ff;background:var(--blue-soft);border:1px solid #1f6feb44}
+  .b-money{color:#f0c765;background:var(--amber-soft);border:1px solid #d2992255}
+  .cta{margin-left:auto}
+
+  /* reveal */
+  .reveal{opacity:0;transform:translateY(14px)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* left progress rail */
+  .rail{position:fixed;left:20px;top:50%;transform:translateY(-50%);z-index:5;display:flex;flex-direction:column;gap:12px}
+  .rail a{width:9px;height:9px;border-radius:50%;background:var(--border);border:1px solid var(--border-soft);transition:all .3s;display:block}
+  .rail a.on{background:var(--green);box-shadow:0 0 9px 1px var(--green);transform:scale(1.25)}
+  .rail a:hover{background:var(--ink-mut)}
+
+  /* money-critical slide accent */
+  .slide.money{background:radial-gradient(ellipse 80% 60% at 50% 40%,#1a130622,transparent 70%)}
+  .money .ey .dot{background:var(--amber);box-shadow:0 0 10px 1px var(--amber)}
+  .money .ey .modno{color:var(--amber)}
+  .callout{
+    border:1px solid #d2992240;background:linear-gradient(180deg,#191307,#120e05);
+    border-left:3px solid var(--amber);border-radius:12px;padding:18px 20px;margin-bottom:16px;
+    display:flex;gap:14px;align-items:flex-start;
+  }
+  .callout .ic{font-size:20px;line-height:1}
+  .callout .txt{font-size:14.5px;color:#e9d9b6;line-height:1.55}
+  .callout .txt b{color:#f4e3bd}
+
+  /* closing */
+  .close{text-align:center;background:radial-gradient(ellipse 70% 55% at 50% 45%,#0d1b0f,transparent 70%)}
+  .close .wrap{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .recap{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:760px}
+  .recap span{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-mut);border:1px solid var(--border);border-radius:999px;padding:6px 13px;background:var(--panel2)}
+  .signoff{font-family:var(--font-mono);color:var(--ink-dim);font-size:12.5px;letter-spacing:.12em}
+
+  @media(max-width:720px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .cards{grid-template-columns:1fr}
+    .rail{display:none}
+    section.slide{padding:72px 20px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important}
+    .reveal{opacity:1;transform:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<nav class="rail" aria-label="slides">
+  <a href="#s0" class="on"></a><a href="#s1"></a><a href="#s2"></a><a href="#s3"></a>
+  <a href="#s4"></a><a href="#s5"></a><a href="#s6"></a><a href="#s7"></a><a href="#s8"></a>
+</nav>
+
+<div class="scroller">
+
+  <!-- HERO -->
+  <section class="slide hero" id="s0">
+    <div class="wrap">
+      <div class="hero-top">
+        <span class="brand"><b>KHAZANA</b> · ALGO TRADER</span>
+        <span class="datechip">DEV LOG — 13 JUL 2026 · MON</span>
+      </div>
+      <h1>Ek din, <span class="accent">poora platform</span><br>saaf-suthra ho gaya.</h1>
+      <p class="lede">Strategy identity, registry + lab merge, position page ka reorg, aur ek paisa-bachaane wala RMS fix — sab aaj. Yeh raha pura kaam, module-by-module.</p>
+      <div class="stats">
+        <div class="stat"><div class="n tnum" data-to="40" data-suf="+">0</div><div class="k">Git commits</div></div>
+        <div class="stat blue"><div class="n tnum" data-to="28">0</div><div class="k">Worklist items (#45–72)</div></div>
+        <div class="stat amber"><div class="n tnum" data-to="6">0</div><div class="k">Major modules shipped</div></div>
+        <div class="stat red"><div class="n tnum" data-to="3">0</div><div class="k">Core bugs killed</div></div>
+      </div>
+      <div class="scrollhint"><span class="ar">↓</span> SCROLL / ARROW KEYS — SLIDE BY SLIDE</div>
+    </div>
+  </section>
+
+  <!-- 01 STRATEGY ID -->
+  <section class="slide" id="s1">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 01</span> · STRATEGY IDENTITY</div>
+          <div class="tickets"><span class="tk">#48</span></div>
+        </div>
+        <h2>Har strategy ko ek permanent ID.</h2>
+        <p class="lede">Alag-alag naam yaad karne ka confusion khatam — ab sab ek numbering se pehchaani jaati hai, har page pe same.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Unique code system</div><div class="cd"><b class="mono">00.01 — Name</b> format. Ek hi family ho toh <b class="mono">00.05</b> jaise dots se — clear dikhe kya chal raha hai.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Ek jagah, sabke liye</div><div class="cd">Wahi ID ab <b>Registry · Logs · Position · RMS · Reports · Hub</b> — har surface pe same.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Single source of truth</div><div class="cd"><b class="mono">strategy_registry.json</b> = ek hi jagah identity define hoti hai. Naye strategy register karo, bas.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">unified</span> Alag ghar → ek chhat</div><div class="cd">Bikhri hui purani strategies ab ek hi system se track hoti hain.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 REGISTRY + LAB -->
+  <section class="slide" id="s2">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 02</span> · REGISTRY + LAB</div>
+          <div class="tickets"><span class="tk">#54</span><span class="tk">#49</span><span class="tk">#55</span><span class="tk">#56</span><span class="tk">#61</span></div>
+        </div>
+        <h2>Do page ab ek — /registry.</h2>
+        <p class="lede">Registry aur Lab merge — metrics, badges aur compare sab ek jagah. Aur 4× tez.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Sab metrics ek page</div><div class="cd">TF · Sharpe · MDD · Win% · Trades · significance · winner badge · compare — sab yahin.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> 4× faster load</div><div class="cd"><b class="mono">13MB → 3.4MB</b> gzip + cache no-store. Stale UI band, load ki wait khatam.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Column settings + Legs</div><div class="cd">Jo config chahiye wahi dikhao. Naya <b>Legs</b> column — kitne legs hain, ek nazar mein.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Clutter-free header</div><div class="cd">Search chhota, extra text hata. <b>Ctrl+click</b> = saare group expand/collapse.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 POSITION PAGE -->
+  <section class="slide" id="s3">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 03</span> · POSITION PAGE</div>
+          <div class="tickets"><span class="tk">#66</span><span class="tk">#50</span><span class="tk">#53</span><span class="tk">#58</span><span class="tk">#68</span><span class="tk">#72</span><span class="tk">#70</span><span class="tk">#71</span></div>
+        </div>
+        <h2>Bikhre tiles → ek clean table.</h2>
+        <p class="lede">Bahut saare khule panel consolidate — ab sab neatly ek table mein, group-wise.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Consolidated table</div><div class="cd">Details ab columns mein — P&L Distribution jaisa chart↔table toggle.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Per-group total</div><div class="cd">Har group ke neeche <b>uska apna total</b> — pehle sirf last mein grand-total dikhta tha.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Collapse = total + details</div><div class="cd">Open positions aur <b>capital-blocked</b> dono collapsible; collapsed row mein hi total.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Clean naam + exit reason</div><div class="cd">Tags mein <b>family ka naam</b> (number nahi). Har trade ka <b>exit reason</b> ab visible.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 CHARTS -->
+  <section class="slide" id="s4">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 04</span> · CHARTS &amp; DISTRIBUTION</div>
+          <div class="tickets"><span class="tk">#47</span><span class="tk">#60</span><span class="tk">#64</span><span class="tk">#46</span></div>
+        </div>
+        <h2>Data ab dikhta hai, batata hai.</h2>
+        <p class="lede">Real per-trade profit/loss ka distribution, aur strategy ka apna SL/Target seedha chart pe.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Bell curve distribution</div><div class="cd">Bar/bell chart — actual mein per-trade kitna profit/loss ho raha, clearly.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Bucket → filter</div><div class="cd">Distribution ke bucket pe click → wahi trades table mein filter (Heatmap jaisa).</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> SL/Target on chart</div><div class="cd">ORB family ka SL/Target ab chart pe overlay — baaki strategies jaisa.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Log → Lab, ek click</div><div class="cd">Logs mein strategy pe <b>double-click → uska Lab page</b> naye tab mein.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 RMS MONEY-CRITICAL -->
+  <section class="slide money" id="s5">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 05</span> · RMS vs STRATEGY</div>
+          <div class="tickets"><span class="tk">#45</span><span class="tk">#63</span><span class="tk">#69</span><span class="tk">#56</span></div>
+        </div>
+        <h2>Paisa-critical fix.</h2>
+      </div>
+      <div class="callout">
+        <div class="ic">⚠️</div>
+        <div class="txt"><b>Aapne pakda:</b> hardcoded RMS limit (₹5,500 / ₹3,000) strategy ke apne validated result ko chupchaap alter kar raha tha — jo backtest mein tha hi nahi, wo live pe lag raha tha.</div>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-money">fix</span> RMS opt-out</div><div class="cd">Mission ORB strategies ab <b>global aggressive-trailing RMS se opt-out</b> — har strategy apna backtest-wala SL/Target use kare.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-money">fix</span> Correct margin</div><div class="cd">2-lot SELL pe ab <b>real broker SPAN margin</b> — premium×multiplier ka galat number nahi.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-money">rule</span> Backtest-fidelity Rule</div><div class="cd">Koi bhi live tweak jo backtest mein nahi tha → result invalid maano, pehle warn karo.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-money">report</span> Thorough audit</div><div class="cd">Nayi backtested strategies pe purana RMS na lage — check + report deliver.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 DEPLOY + BACKSPREAD -->
+  <section class="slide" id="s6">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MODULE 06</span> · DEPLOY &amp; BACKSPREAD</div>
+          <div class="tickets"><span class="tk">#57</span><span class="tk">#67</span><span class="tk">#62</span><span class="tk">#65</span></div>
+        </div>
+        <h2>Registry se seedha control.</h2>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Deploy from Registry</div><div class="cd">Per-row <b>Paper / Live / Stop</b> button — Ars Chain paper ka Stop button ab aata hai.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">fix</span> Backspread trailing lock</div><div class="cd">8,000+ profit chhod dene wala gap fix — Ratio Backspread @ ORB ka net-structure trail.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Right-click → Lab</div><div class="cd">Chalti position ke group pe right-click → seedha uska result/Lab page.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">shipped</span> Group &amp; Export dropdowns</div><div class="cd">Group-by (Symbol/Strategy) aur Export (CSV/PDF) ab clean dropdown mein.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- BEHIND THE SCENES -->
+  <section class="slide" id="s7">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px 1px var(--blue)"></span><span class="modno" style="color:var(--blue)">BEHIND THE SCENES</span> · INFRA</div>
+        </div>
+        <h2>List ke alawa, andar-hi-andar.</h2>
+        <p class="lede">Jo UI mein nahi dikhta, par platform ko solid banata hai.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">infra</span> VPS ab git repo 🚀</div><div class="cd">Deploy/sync ab <b>git pull/push</b> se — purana scp retire. Line-ending noise (<span class="mono">.gitattributes</span> LF) permanently khatam.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">bug kill</span> Singleton guard</div><div class="cd">One-process-per-strategy OS lock — <b>duplicate-entry bug</b> jad se khatam.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">reconcile</span> Local ↔ VPS drift</div><div class="cd">VRP overnight lane + <span class="mono">vrp_signal</span> local mein pull — deploy landmine hata.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">fix</span> Signal-replay TF-aware</div><div class="cd">Multi-min timeframe pe false drift fix + directional Calendar engine &amp; VIX infra scaffold.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section class="slide close" id="s8">
+    <div class="wrap">
+      <div class="ey" style="justify-content:center"><span class="dot"></span> END OF LOG</div>
+      <h2>28 items. 6 modules.<br>Ek saaf platform.</h2>
+      <div class="recap">
+        <span>Strategy ID system</span><span>Registry + Lab merge</span><span>Position reorg</span>
+        <span>Bell-curve distribution</span><span>RMS fidelity fix</span><span>Real SPAN margin</span>
+        <span>Backspread trail</span><span>Deploy from registry</span><span>VPS git deploy</span>
+        <span>Singleton guard</span><span>Chart SL/Target overlay</span><span>Drift reconcile</span>
+      </div>
+      <div class="signoff">KHAZANA · ALGO TRADER · ARSALAN ALI</div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // count-up hero stats
+  (function(){
+    var reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+    document.querySelectorAll('.stat .n').forEach(function(el){
+      var to = +el.getAttribute('data-to'), suf = el.getAttribute('data-suf')||'';
+      if(reduce){ el.textContent = to+suf; return; }
+      var t0=null, dur=900;
+      function step(ts){ if(!t0)t0=ts; var p=Math.min((ts-t0)/dur,1);
+        el.textContent = Math.round(to*(1-Math.pow(1-p,3)))+ (p===1?suf:''); if(p<1)requestAnimationFrame(step);}
+      requestAnimationFrame(step);
+    });
+  })();
+
+  // reveal cards on scroll
+  (function(){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){
+        var cards=[].slice.call(e.target.querySelectorAll('.reveal'));
+        cards.forEach(function(c,i){ setTimeout(function(){c.classList.add('in')}, i*70); });
+        io.unobserve(e.target);
+      }});
+    },{threshold:.25});
+    document.querySelectorAll('section.slide').forEach(function(s){io.observe(s)});
+  })();
+
+  // rail active state
+  (function(){
+    var links=[].slice.call(document.querySelectorAll('.rail a'));
+    var secs=[].slice.call(document.querySelectorAll('section.slide'));
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){
+        var i=secs.indexOf(e.target);
+        links.forEach(function(l,j){l.classList.toggle('on',j===i)});
+      }});
+    },{threshold:.5});
+    secs.forEach(function(s){io.observe(s)});
+  })();
+</script>
+
+</body>
+</html>

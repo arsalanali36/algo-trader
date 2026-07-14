@@ -1,0 +1,65 @@
+{
+  "_meta": {
+    "scheme": "family.member  (ID = NN.MM ; family = NN)",
+    "rules": [
+      "An ID, once assigned, is PERMANENT — never renumber, never reuse, never re-map to a different strategy.",
+      "New strategy in an existing family -> next free member number (family.NM). Use strategy_registry.next_member(family).",
+      "Brand-new family -> next free family number (NN) + member .01. Use strategy_registry.next_family().",
+      "Rejected / failed / retired strategies KEEP their ID (status marks it); do NOT delete the row or reuse the number.",
+      "Internal keys (config_key / correlationId / order_store / files) are NOT the ID. The ID is a display + organization layer; the registry maps ID <-> every alias. Rename internals only via a deliberate, separately-approved migration.",
+      "status: paper | live | research | rejected | failed | legacy"
+    ]
+  },
+  "families": {
+    "00": {"name": "ORB", "desc": "Opening-range breakout (mid-day window)"},
+    "01": {"name": "Chain-Zone", "desc": "Auto Rev-Chain zone breakout"},
+    "02": {"name": "Volatility", "desc": "Short/long vol option structures"},
+    "03": {"name": "Pivot", "desc": "Pivot / key-level based"},
+    "04": {"name": "Range", "desc": "Ars Chain / range breakout"},
+    "05": {"name": "Indicator", "desc": "RSI / EMA / VWAP crossover-type"},
+    "06": {"name": "Scanner", "desc": "Universe / multi-symbol scanners"},
+    "07": {"name": "External", "desc": "Webhook / TradingView-driven"},
+    "08": {"name": "Bollinger", "desc": "Bollinger-band mean-reversion / bounce"},
+    "09": {"name": "Misc-Research", "desc": "Assorted backtest-only experiments"}
+  },
+  "strategies": {
+    "00.01": {"name": "Mid-Day ORB (NIFTY, naked ATM)", "config_key": "orb_v1", "slug": "mid_orb_nifty", "live_file": "strategies/live/orb_trader.py", "status": "paper", "legs": 1},
+    "00.02": {"name": "ORB + Supertrend", "config_key": "orbst_v1", "slug": "orb_supertrend", "live_file": "strategies/live/03_orbst_trader.py", "status": "paper", "legs": 1},
+    "00.03": {"name": "BankNifty ORB", "config_key": "banknifty_v1", "slug": "banknifty_hunt", "live_file": "strategies/live/07_banknifty_trader.py", "status": "paper", "legs": 1},
+    "00.04": {"name": "Long Straddle @ ORB", "config_key": "straddle_v1", "slug": "long_straddle_orb", "live_file": "strategies/live/straddle_trader.py", "status": "paper", "legs": 2},
+    "00.05": {"name": "Debit Vertical @ ORB", "config_key": "dvert_v1", "slug": "debit_vertical_orb", "live_file": "strategies/live/02_debit_vertical_trader.py", "status": "paper", "legs": 2},
+    "00.06": {"name": "Ratio Backspread @ ORB", "config_key": "backspread_v1", "slug": "ratio_backspread", "live_file": "strategies/live/05_backspread_trader.py", "status": "paper", "legs": 2},
+    "00.07": {"name": "Long Strangle @ ORB", "config_key": null, "slug": "long_strangle_orb", "live_file": null, "status": "failed", "legs": 2},
+
+    "01.01": {"name": "Chain-Zone — Long ATM", "config_key": "chainzone_v1", "slug": "chain_zone_longatm", "live_file": "strategies/live/04_chainzone_trader.py", "status": "paper", "legs": 1},
+    "01.02": {"name": "Chain-Zone — Credit spread", "config_key": null, "slug": "chain_zone_credit", "live_file": null, "status": "research", "legs": 2},
+    "01.03": {"name": "Chain-Zone — Naked sell", "config_key": null, "slug": "chain_zone_naked", "live_file": null, "status": "research", "legs": 1},
+    "01.04": {"name": "Chain-Zone — Positional (monthly)", "config_key": null, "slug": "chain_zone_positional", "live_file": null, "status": "research", "legs": 1},
+
+    "02.01": {"name": "Short-Vol Iron-Fly", "config_key": "shortvol_v1", "slug": "shortvol_ironfly", "live_file": "strategies/live/06_shortvol_trader.py", "status": "rejected", "legs": 4},
+    "02.02": {"name": "Gamma Scalp", "config_key": null, "slug": "gamma_scalp", "live_file": null, "status": "rejected", "legs": 2},
+
+    "03.01": {"name": "Pivot-Extreme Continuation", "config_key": null, "slug": "pivot_continuation", "live_file": null, "status": "research", "legs": 1},
+
+    "04.01": {"name": "Ars Chain (live)", "config_key": "ars_chain_v1", "slug": null, "live_file": "strategies/live/range_trader.py", "status": "legacy", "legs": 1},
+    "04.02": {"name": "Ars Chain (paper)", "config_key": "ars_chain_v1_paper", "slug": null, "live_file": "strategies/live/range_trader.py", "status": "legacy", "legs": 1},
+    "04.03": {"name": "Range Breakout", "config_key": "range_v1", "slug": null, "live_file": "strategies/live/range_trader.py", "status": "legacy", "legs": 1},
+
+    "05.01": {"name": "RSI (live)", "config_key": "rsi_v1", "slug": null, "live_file": "strategies/live/01_rsi_v1.py", "status": "legacy", "legs": 1},
+    "05.02": {"name": "RSI (paper)", "config_key": "rsi_v1_paper", "slug": null, "live_file": "strategies/live/01_rsi_v1.py", "status": "legacy", "legs": 1},
+    "05.03": {"name": "EMA Crossover", "config_key": "ema_v1", "slug": null, "live_file": "strategies/live/nifty_ema_trader.py", "status": "legacy", "legs": 1},
+    "05.04": {"name": "VWAP-EMA Failure", "config_key": null, "slug": null, "live_file": "strategies/backtest/vwap_ema_failure.py", "status": "research", "legs": 1},
+
+    "06.01": {"name": "Universe Scan", "config_key": "universe_v1", "slug": null, "live_file": "strategies/live/universe_trader.py", "status": "legacy", "legs": 1},
+
+    "07.01": {"name": "TradingView Webhook", "config_key": "webhook_v1", "slug": null, "live_file": "_core/webhook_executor.py", "status": "legacy", "legs": 1},
+
+    "08.01": {"name": "BB Bounce v1", "config_key": null, "slug": null, "live_file": "strategies/backtest/user_bb1_v1.py", "status": "research", "legs": 1},
+    "08.02": {"name": "BB Bounce v2", "config_key": null, "slug": null, "live_file": "strategies/backtest/user_bb2_v1.py", "status": "research", "legs": 1},
+    "08.03": {"name": "Bollinger Band Bounce (Gemini)", "config_key": "bb_v1", "slug": null, "live_file": "strategies/backtest/user_bollinger_band_bounce_strategy_v1.py", "status": "research", "legs": 1},
+
+    "09.01": {"name": "52-Week Breakout (Gemini)", "config_key": null, "slug": null, "live_file": "strategies/backtest/user_temp_52_week_gemni_v1.py", "status": "research", "legs": 1},
+    "09.02": {"name": "Sample EMA (test)", "config_key": null, "slug": null, "live_file": "strategies/backtest/sample_ema.py", "status": "research", "legs": 1},
+    "09.03": {"name": "Always-Buy (test)", "config_key": null, "slug": null, "live_file": "strategies/backtest/always_buy.py", "status": "research", "legs": 1}
+  }
+}

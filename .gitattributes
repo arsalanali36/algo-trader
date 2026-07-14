@@ -1,0 +1,33 @@
+# Normalize line endings so Windows (local) ↔ Linux (VPS) copies stop showing
+# spurious whole-file diffs. Text files stored as LF in the repo; checked out
+# native on each OS. This is what killed the "55 files differ but content same"
+# noise in the local↔VPS drift audit (2026-07-13).
+* text=auto eol=lf
+
+# Explicit text types
+*.py    text eol=lf
+*.js    text eol=lf
+*.json  text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.md    text eol=lf
+*.txt   text eol=lf
+*.csv   text eol=lf
+*.pine  text eol=lf
+*.sh    text eol=lf
+
+# Binary — never touch
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.tar   binary
+*.db    binary
+*.sqlite binary
+*.mp4   binary
+*.woff  binary
+*.woff2 binary

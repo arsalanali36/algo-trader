@@ -258,6 +258,21 @@ def run_for(sid, date_str, match_min=6):
     if df is None or getattr(df, "empty", True):
         res.update(status="fail", note="no candle data — token/API check karo"); return res
 
+    # match-window MUST span the strategy's own bar interval. The offline replay stamps
+    # a signal at the CLOSED bar's timestamp (i-1), but the live loop only ACTS on the
+    # NEXT forming bar (~1 bar later) + loop latency + fill lag — so a genuine matching
+    # live entry naturally lands ~timeframe minutes after the offline signal time. A
+    # fixed 6-min window splits ONE real signal into a false MISS(offline)+EXTRA(live)
+    # pair for any TF ≳ 3m (proven live: 15m orb signal stamped 11:00 vs entry logged
+    # 11:15, identical spot). Raise the floor to the bar interval + ~3m slack so a real
+    # 1-bar-later entry matches; genuine drift (no counterpart even in the wide window)
+    # still surfaces as MISS/EXTRA.
+    try:
+        _tf_min = int(re.sub(r"\D", "", str(cfg.get("timeframe", "5m"))) or 5)
+        match_min = max(match_min, _tf_min + 3)
+    except Exception:
+        pass
+
     ev = parse_log_events(sid, date_str)
     signals = replay_signals(mod, sig_fn, dir_key, cfg, df, target)
     if signals is None:

@@ -90,7 +90,7 @@ def build():
         eid = date_to_id.get(exp_by_day[day_id.iloc[i]])
         if eid is not None:
             u_exp[i] = last_bar[eid]
-    # CONTRACT-ROLL GUARD (TRAP #112, found 2026-07-14): the WEEK rolling series
+    # CONTRACT-ROLL GUARD (TRAP #114, found 2026-07-14): the WEEK rolling series
     # switches to the NEXT week's contract the day after expiry. Any hold whose
     # exit day is AFTER the entry's expiry date would price TWO DIFFERENT
     # contracts (buy the dying expiry-day straddle for pennies, "exit" into the

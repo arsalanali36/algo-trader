@@ -35,7 +35,7 @@ import ml_gate
 import bs_option as bs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUN_ID = "gp_v2"        # v2 = contract-roll-guarded P&L table (TRAP #112); the
+RUN_ID = "gp_v2"        # v2 = contract-roll-guarded P&L table (TRAP #114); the
                         # v1 overnight run (3.43M trials) converged on the roll
                         # artifact and is void — but its trials still count in N
 PNL_NPZ = os.path.join(HERE, "ml_gp_pnl.npz")

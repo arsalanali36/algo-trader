@@ -106,6 +106,14 @@ const STATIC_ITEMS=[
 ];
 // Dynamic entries auto-loaded from runs/index.json (every run_hunt.py appends there).
 let ITEMS=STATIC_ITEMS.slice();
+// canonical Strategy Registry (same-origin; slug -> "NN.MM - Name"). Fails silently on file://.
+let REG_BY_SLUG={};
+async function loadRegistry(){
+  try{ const r=await fetch('/api/strategy-registry',{cache:'no-store'}); if(!r.ok)return;
+    const reg=await r.json(), strs=reg.strategies||{};
+    for(const id in strs){ const s=strs[id]||{}; if(s.slug) REG_BY_SLUG[String(s.slug).toLowerCase()]=id+' - '+(s.name||s.slug); }
+  }catch(e){}
+}
 function inr(n){n=Math.round(n);let s=''+Math.abs(n),last3=s.slice(-3),rest=s.slice(0,-3);if(rest)last3=','+last3;rest=rest.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (n<0?'-':'')+'₹'+rest+last3}
 function mapRun(r){
   const b=r.bs_full||{}, sig=r.significant;
@@ -211,7 +219,16 @@ document.getElementById('note').innerHTML=
   `💾 <b>Note:</b> Ye hub app mein integrated hai (<b>More → 🧪 Strategy Lab</b>). Har row apna dashboard <b>nayi tab</b> mein kholta hai. `+
   `⭐ favorites <b>isi browser</b> mein save hote hain (localStorage) — doosre browser/device pe reset ho jayenge. `+
   `(Agar cross-device chahiye to server-side save add kar sakte hain — abhi zaroorat nahi.) Nayi strategy \`run_hunt.py --name <slug>\` se bane → <b>runs/index.json</b> mein auto-append → yahan naya row (3-pass dashboard) khud aa jayega.`;
-loadRuns().then(render);
+// Hub loads first (never blocked by the registry). Then apply canonical IDs as a
+// non-blocking enhancement: overwrite each row's name with its registry label + re-render.
+loadRuns().then(()=>{
+  render();
+  loadRegistry().then(()=>{
+    if(!Object.keys(REG_BY_SLUG).length) return;
+    ITEMS.forEach(i=>{ const rl=REG_BY_SLUG[String(i.id).toLowerCase()]; if(rl) i.name=rl+' — 3-pass'; });
+    render();
+  }).catch(()=>{});
+});
 </script>
 </body>
 </html>

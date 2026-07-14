@@ -632,20 +632,6 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         except Exception:
             pass
 
-    import strategy_safety
-    est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)
-    gate_ok, gated_qty, gate_reason = strategy_safety.gate_entry(
-        strat, symbol, lots, lot_size, est_price, side=opt_action,
-        sec_id=sec_id, mode=mode, broker=broker, log=_log)
-    if not gate_ok:
-        _log(f"ENTRY blocked {key} — {gate_reason}")
-        if est_price:
-            _record_blocked(est_price, qty, gate_reason)
-        return {"ok": False, "msg": gate_reason}
-    if gated_qty != qty:
-        _log(f"ENTRY sized down {key} — qty {qty} -> {gated_qty} ({gate_reason})")
-        lots, qty = gated_qty // lot_size, gated_qty
-
     import risk_gate
     instrument = cfg.get("instrument", "options")
     # group_id links this leg to its auto-hedge BUY — empty string if no
@@ -660,17 +646,33 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     if legacy_strikes:
         hedge_min_strikes = int(legacy_strikes)
     group_id = f"{strat}_{symbol}_{int(time.time())}" if (opt_action == "SELL" and (hedge_min_strikes or hedge_max_premium)) else ""
-    try:
-        default_sl_tags = risk_gate.default_instrument_sl_tags(strat, symbol, mode_override=cfg.get("sl_type"))
-    except Exception:
-        default_sl_tags = []
-    res = smart_order.execute(opt_action, symbol, sec_id, "NSE_FNO", qty,
-                              trad_sym, mode, broker, log=_log, tag="TVWH",
-                              source="webhook", strategy=strat, instrument=instrument,
-                              broker_name=cfg.get("broker", risk_gate.default_broker()), group_id=group_id,
-                              extra_tags=default_sl_tags)
+
+    # Task 4 (Rule 6B / ADR-001): the gated MAIN leg now routes through the shared
+    # execution_gateway instead of a hand-rolled gate_entry + smart_order.execute
+    # here (which had drifted from the other two live paths). Behavior preserved:
+    #  • sl_type_override carries this webhook's SL-type selector into the gateway's
+    #    default-SL tagging (the one thing the gateway didn't support before).
+    #  • blocked leg still recorded here (CAPITAL_BLOCKED, source="webhook").
+    #  • auto-hedge BUY stays a webhook step below (gateway does only the main leg).
+    # New (stricter, TRAP #1): a no-premium fetch now SKIPS instead of proceeding.
+    import execution_gateway as gw
+    est_price, _src = smart_order.marketable_price(opt_action, sec_id, "NSE_FNO", broker)
+    res = gw.execute_signal(
+        strat, symbol, opt_action, lots, lot_size, sec_id, trad_sym,
+        seg="NSE_FNO", mode=mode, broker_name=cfg.get("broker", risk_gate.default_broker()),
+        tag="TVWH", source="webhook", instrument=instrument, group_id=group_id,
+        est_price=est_price, sl_type_override=cfg.get("sl_type"), log=_log)
+    if res.get("status") == "blocked":
+        _log(f"ENTRY blocked {key} — {res.get('reason')}")
+        if res.get("price"):
+            _record_blocked(res.get("price"), qty, res.get("reason"))
+        return {"ok": False, "msg": res.get("reason")}
     if not res.get("ok"):
         return {"ok": False, "msg": f"execute failed: {res.get('reason')}"}
+    # gateway may have sized the leg down — reflect it locally for hedge + state
+    if res.get("qty") and res["qty"] != qty:
+        _log(f"ENTRY sized down {key} — qty {qty} -> {res['qty']}")
+        lots, qty = res["qty"] // lot_size, res["qty"]
 
     if group_id:
         smart_order.place_hedge_if_configured(

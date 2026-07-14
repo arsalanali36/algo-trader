@@ -215,6 +215,12 @@ _EXIT_REASON_PREFIXES = (
     "RSI_MIDLINE_EXIT",
     # pos_monitor_loop — Default Target/SL exit profile (2026-07-04)
     "DEFAULT_TSL_TARGET", "DEFAULT_TSL_SL",
+    # option mission strategies' own TP/SL/rollback exits (family prefixes —
+    # each covers _TP / _SL / _ROLLBACK). These were tagged on the exit order
+    # but never recognized here, so the Exit Reason column stayed blank for
+    # every Long Straddle / Debit Vertical / Ratio Backspread / Short-Vol
+    # Iron-Fly / VRP exit (task 71, same Critical-Rule-9 gap as ATR/RSI above).
+    "STRADDLE_", "DVERT_", "BSPRD_", "SVOL_", "VRP_",
 )
 
 

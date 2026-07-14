@@ -260,10 +260,10 @@ c) Do NOT auto-deploy anything from this file to paper or live — every
     Zerodha charges + DOM slip, single lot. Evolution 2021-07→2025-06 only; validation
     2025-07→2026-04 never seen by selection; ≤4 AND-conditions; per-gen checkpoints,
     per-wave milestones; every genome → ml_mining_log.csv (654MB, disk-only audit log).
-  - **v1 overnight run (511 waves, 3.43M rules) VOID — TRAP #112:** entire leaderboard
+  - **v1 overnight run (511 waves, 3.43M rules) VOID — TRAP #114:** entire leaderboard
     (val Sharpe 7.1!) was the WEEK-series contract-roll seam — buy dying expiry-afternoon
     straddle, "exit" into next week's contract (94.4% of signals = expiry-day bars; ~0
-    trades on the guarded table). Fixed: exit day must be ≤ entry's expiry. LESSONS #112.
+    trades on the guarded table). Fixed: exit day must be ≤ entry's expiry. LESSONS #114.
   - Salvage scan of v1's clean (eod/expiry) rules: best evo Sharpe 3.5-3.6 ALL collapsed
     to validation ~0 — textbook curve-fit, the train/validation split did its job.
   - **v2 run (roll-guarded, 115 waves, 900k rules):** top-50 distinct rules ALL converge
@@ -276,5 +276,5 @@ c) Do NOT auto-deploy anything from this file to paper or live — every
     (null std 0.739 ann); the evolved population's spread implied an unpassable sr*≈13.
 - [x] **Task 4 — integration/reporting** — 2026-07-14: nothing to add to runs/index.json
   (no candidate cleared the gate — by design); DONE LOG + LESSONS self-maintenance done
-  (TRAP #112); no-auto-deploy discipline held throughout (zero deploys without go-ahead).
+  (TRAP #114); no-auto-deploy discipline held throughout (zero deploys without go-ahead).
   Mechanism for future clears: run_hunt.py already writes runs/<slug>/ + index.json.

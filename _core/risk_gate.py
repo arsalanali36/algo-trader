@@ -132,7 +132,7 @@ def max_premium_cap_for(symbol):
     return cfg["stock"]
 
 
-def default_sl_profile():
+def default_sl_profile(strategy=None):
     """Unified per-trade default SL/Target selector (2026-07-07 — merge of the
     old three overlapping systems into ONE mode, so only one is ever active and
     the "kaunsa default lag raha hai" confusion is gone). Returns (enabled, mode)
@@ -151,21 +151,40 @@ def default_sl_profile():
     Backward-compat: if the new default_sl_mode key isn't present (pre-merge
     config), infer the mode from the old separate flags so nothing silently
     changes behaviour on upgrade — default_tsl_enabled→aggressive, else a set
-    default_sl_type→dropdown, else off."""
-    g = _risk_cfg().get("global", {})
+    default_sl_type→dropdown, else off.
+
+    Per-strategy override (2026-07-14, task 81): pass strategy= to let
+    _risk.per_strategy[<sid>].default_sl_enabled (true/false, absent=inherit)
+    and .default_sl_mode ('legacy'/'dropdown'/'aggressive', absent=inherit)
+    override the global pick — the global Default-SL was applying to EVERY
+    strategy and silently diverging validated backtests (Critical Rule 10);
+    now each strategy can opt in/out or pick its own mode. ₹ values stay
+    global. strategy=None → pure global behaviour, unchanged."""
+    rc = _risk_cfg()
+    g = rc.get("global", {})
     mode = g.get("default_sl_mode")
     if mode in ("legacy", "dropdown", "aggressive"):
-        en = g.get("default_sl_enabled")
-        return (True if en is None else bool(en)), mode
-    if g.get("default_tsl_enabled"):
-        return True, "aggressive"
-    if g.get("default_sl_type"):
-        return True, "dropdown"
-    if g.get("default_sl_rs"):
+        en_raw = g.get("default_sl_enabled")
+        en, mode = (True if en_raw is None else bool(en_raw)), mode
+    elif g.get("default_tsl_enabled"):
+        en, mode = True, "aggressive"
+    elif g.get("default_sl_type"):
+        en, mode = True, "dropdown"
+    elif g.get("default_sl_rs"):
         # Old flat-₹ fallback SL was active (a live per-trade SL before this
         # merge) — infer legacy so it keeps applying until the user picks a mode.
-        return True, "legacy"
-    return False, "dropdown"
+        en, mode = True, "legacy"
+    else:
+        en, mode = False, "dropdown"
+    if strategy:
+        ps = (rc.get("per_strategy", {}).get(strategy, {}) or {})
+        ps_mode = ps.get("default_sl_mode")
+        if ps_mode in ("legacy", "dropdown", "aggressive"):
+            mode = ps_mode
+        ps_en = ps.get("default_sl_enabled")
+        if ps_en is not None and ps_en != "":
+            en = ps_en if isinstance(ps_en, bool) else str(ps_en).lower() == "true"
+    return en, mode
 
 
 def kill_floor_config():
@@ -304,7 +323,7 @@ def advance_trailing_lock(state, mtm, arm_rs, gap_rs, confirm_secs, now_ts, mtm_
     return state, changed
 
 
-def default_target_sl_config():
+def default_target_sl_config(strategy=None):
     """Default Target/SL exit profile (2026-07-04, user-designed) — a GLOBAL,
     per-position, rupee-based exit manager applied to every open option leg when
     enabled. All ₹ values are PER-LOT and scale by the position's lot count, so
@@ -326,18 +345,38 @@ def default_target_sl_config():
                            the fix for the 'gap hits 0 → SL == live price' zone
                            the graph exposed (same class as TRAP #80-81).
     The trailing is driven by the CONFIRMED peak (2-reading min, spike-proof —
-    same technique as advance_trailing_lock), not a single raw tick."""
-    g = _risk_cfg().get("global", {})
+    same technique as advance_trailing_lock), not a single raw tick.
+
+    Per-strategy values (2026-07-14, task 81 follow-up): pass strategy= to let
+    _risk.per_strategy[<sid>] override any default_tsl_* ₹ value for THAT
+    strategy's positions (blank/absent = inherit the global value) — same
+    inherit semantics as the enabled/mode override."""
+    rc = _risk_cfg()
+    g = rc.get("global", {})
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
     def _f(key, default):
-        try:
-            v = g.get(key)
-            return default if v is None else float(v)
-        except (TypeError, ValueError):
-            return default
+        for src in (ps, g):
+            try:
+                v = src.get(key)
+                if v is not None and str(v).strip() != "":
+                    return float(v)
+            except (TypeError, ValueError):
+                pass
+        return default
     # Aggressive runs only when the unified per-trade SL mode is 'aggressive'
     # (2026-07-07 merge). Backward-compatible: default_sl_profile() falls back to
     # the old default_tsl_enabled flag when the new mode key isn't set yet.
-    _en, _mode = default_sl_profile()
+    # strategy= → the per-strategy enabled/mode override decides for THAT strategy.
+    _en, _mode = default_sl_profile(strategy)
+    # Per-strategy override (task 81): a strategy with default_sl_enabled=true in
+    # its Per-Strategy Override keeps the aggressive engine available for ITS
+    # positions even when the global switch is OFF — firing is still gated
+    # per-position by the AGGR_TSL entry marker, which only that strategy's
+    # entries get stamped with.
+    _ps_any = any(
+        ((v or {}).get("default_sl_enabled") in (True, "true"))
+        for v in (_risk_cfg().get("per_strategy") or {}).values()
+    )
     return {
         "enabled": bool(_en and _mode == "aggressive"),
         # feature_on = the aggressive TSL engine is switched on at all, regardless
@@ -345,7 +384,7 @@ def default_target_sl_config():
         # gates the aggressive firing on this + the per-position AGGR_TSL tag, so a
         # position opened aggressive (incl. a per-webhook aggressive pick) keeps
         # being managed even if the global default is later switched away.
-        "feature_on": bool(_en),
+        "feature_on": bool(_en or _ps_any),
         "target_per_lot": _f("default_tsl_target_per_lot", 2000.0),
         "initial_sl_per_lot": _f("default_tsl_initial_sl_per_lot", 1000.0),
         "favour_step": _f("default_tsl_favour_step", 100.0),
@@ -1026,7 +1065,7 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
     # via default_target_sl_config) — it stamps NO entry tags, so return []. 'off'
     # → []. Applies to NEW positions only (existing open positions keep whatever
     # tags they already have — user's explicit call, mid-trade SL never changes).
-    _en, _mode = default_sl_profile()
+    _en, _mode = default_sl_profile(strategy)   # per-strategy override aware (task 81)
     # Per-position mode override (2026-07-09) — a caller (e.g. a webhook config's
     # own SL-Type selector) can make THIS position use a different one of the 3
     # profiles (legacy/aggressive/dropdown) than the global RMS default, still
@@ -1045,6 +1084,15 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
         return ["AGGR_TSL:1"]
 
     g0 = rc.get("global") or {}
+    # Per-strategy VALUE overrides (2026-07-14, task 81 follow-up) — the
+    # Per-Strategy Override table's ⚙ values editor writes mode-value keys into
+    # per_strategy[<sid>]; blank/absent = inherit the global card's value.
+    ps0 = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
+    def _cv(key):
+        v = ps0.get(key)
+        if v is None or str(v).strip() == "":
+            return g0.get(key)
+        return v
     if _mode == "legacy":
         # Per-lot ₹ (SL_TYPE:rs interprets val as a PER-LOT ₹ amount — see
         # _generic_px's "rs" branch, lot-scaled since 2026-07-09). The
@@ -1055,15 +1103,16 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
                 return float(v)
             except (TypeError, ValueError):
                 return None
-        if g0.get("default_sl_mode") == "legacy":
-            # Explicitly chosen in the merged UI → user's 5000/2000 defaults.
-            sl_rs = _num(g0.get("default_legacy_sl_rs")) or 2000.0
-            tp_rs = _num(g0.get("default_legacy_tp_rs")) or 5000.0
+        if g0.get("default_sl_mode") == "legacy" or ps0.get("default_sl_mode") == "legacy":
+            # Explicitly chosen in the merged UI (globally or by this strategy's
+            # own override) → user's 5000/2000 defaults.
+            sl_rs = _num(_cv("default_legacy_sl_rs")) or 2000.0
+            tp_rs = _num(_cv("default_legacy_tp_rs")) or 5000.0
         else:
             # Inferred from the pre-merge default_sl_rs fallback → preserve the
             # OLD behaviour EXACTLY: that flat ₹ was an SL only, no target.
-            sl_rs = _num(g0.get("default_legacy_sl_rs")) or _num(g0.get("default_sl_rs")) or 0.0
-            _tp = g0.get("default_legacy_tp_rs")
+            sl_rs = _num(_cv("default_legacy_sl_rs")) or _num(g0.get("default_sl_rs")) or 0.0
+            _tp = _cv("default_legacy_tp_rs")
             tp_rs = _num(_tp) if _tp not in (None, "", 0, "0") else 0.0
         if sl_rs > 0:
             tags.extend([f"SL_TYPE:rs", f"SL_VAL:{sl_rs}"])
@@ -1082,11 +1131,20 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
         except Exception:
             pass
 
-    # 2. If no strategy legacy SL is set, check global/default SL
+    # 2. If no strategy legacy SL is set, check per-strategy (⚙ values) then global SL.
+    # The type+value PAIR comes from ONE source — this strategy's own pair if both
+    # its type and value are set, else the global pair (never mix the two).
     if not tags:
         g = rc.get("global") or {}
-        sl_type = g.get("default_sl_type")
-        sl_val = g.get("default_sl_val")
+        _ps_t, _ps_v = ps0.get("default_sl_type"), ps0.get("default_sl_val")
+        if _ps_t and _ps_v is not None and str(_ps_v).strip() != "":
+            sl_type, sl_val = _ps_t, _ps_v
+        else:
+            sl_type, sl_val = g.get("default_sl_type"), g.get("default_sl_val")
+        _sl_cc = ps0.get("default_sl_candle_close")
+        if _sl_cc is None or str(_sl_cc).strip() == "":
+            _sl_cc = g.get("default_sl_candle_close")
+        _sl_cc = (_sl_cc is True) or (str(_sl_cc).lower() == "true")
         if sl_type and sl_val is not None and str(sl_val).strip() != "":
             if sl_type == "trailing_pt":
                 if ":" in str(sl_val):
@@ -1099,7 +1157,7 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
                     tags.extend([f"SL_TYPE:trailing_pt", f"SL_VAL:{gap_val}"])
             else:
                 tags.extend([f"SL_TYPE:{sl_type}", f"SL_VAL:{sl_val}"])
-            if g.get("default_sl_candle_close") is True:
+            if _sl_cc:
                 tags.append("SL_CANDLE_CLOSE:true")
         else:
             # Fall back to legacy global default_sl_rs if type/val not configured
@@ -1109,15 +1167,22 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
                     val = float(gl_rs)
                     if val > 0:
                         tags.extend([f"SL_TYPE:rs", f"SL_VAL:{val}"])
-                        if g.get("default_sl_candle_close") is True:
+                        if _sl_cc:
                             tags.append("SL_CANDLE_CLOSE:true")
                 except Exception:
                     pass
 
-    # 3. Check and append global target (TP) if configured
+    # 3. Check and append target (TP) — per-strategy pair first, else global
     g = rc.get("global") or {}
-    tp_type = g.get("default_tp_type")
-    tp_val = g.get("default_tp_val")
+    _ps_tt, _ps_tv = ps0.get("default_tp_type"), ps0.get("default_tp_val")
+    if _ps_tt and _ps_tv is not None and str(_ps_tv).strip() != "":
+        tp_type, tp_val = _ps_tt, _ps_tv
+    else:
+        tp_type, tp_val = g.get("default_tp_type"), g.get("default_tp_val")
+    _tp_cc = ps0.get("default_tp_candle_close")
+    if _tp_cc is None or str(_tp_cc).strip() == "":
+        _tp_cc = g.get("default_tp_candle_close")
+    _tp_cc = (_tp_cc is True) or (str(_tp_cc).lower() == "true")
     if tp_type and tp_val is not None and str(tp_val).strip() != "":
         if tp_type == "trailing_pt":
             if ":" in str(tp_val):
@@ -1130,7 +1195,7 @@ def default_instrument_sl_tags(strategy, symbol=None, mode_override=None):
                 tags.extend([f"TP_TYPE:trailing_pt", f"TP_VAL:{gap_val}"])
         else:
             tags.extend([f"TP_TYPE:{tp_type}", f"TP_VAL:{tp_val}"])
-        if g.get("default_tp_candle_close") is True:
+        if _tp_cc:
             tags.append("TP_CANDLE_CLOSE:true")
 
     return tags

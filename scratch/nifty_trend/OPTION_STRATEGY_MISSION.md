@@ -10,6 +10,26 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **❌ #06 = DELTA-NEUTRAL ADJUST (intraday iron-fly) — BUILT, TESTED, REJECTED (2026-07-13, user "reject").**
+  User asked for option-chain/structure strategies, first = delta-neutral adjust, NIFTY, intraday-only,
+  no-futures (delta hedged via options-only re-centering, not futures/underlying). Built honestly on
+  BS priced at **REAL India VIX** (new: `fetch_vix.py` → `india_vix_daily.csv` 2018→today via Dhan
+  sec_id 21, ran on VPS; `bs_option.vix_sigma_map()`/`bs_delta()`/`sigma_map_forward_filled()`;
+  `delta_neutral_fly.py` = engine + 3-pass). VRP premise CONFIRMED real (implied VIX 17.0% vs realized
+  14.6%, +2.4 vol-pts on 80% of days). **Result: every config LOSES** — FULL 2018-26 net −127%,
+  RECENT 2023+ −48%, win rate ~7% across ALL variants (tp/sl sweeps, VIX-gate 0.16→0.30, wing 3/5/10);
+  re-centering (the novel element) does NOT rescue it. **Root cause: VRP/theta is a MULTI-DAY carry
+  edge; the intraday-only mandate (open+close same day, no overnight, 15:15 exit) forces paying the full
+  8-leg round-trip cost to harvest a sliver of ONE day's decay → cost > tiny-theta on ~93% of days.**
+  The intraday killer is cost-vs-tiny-theta, NOT trend-day blow-through, so delta-adjustment can't help.
+  Matches prior family findings (static intraday fly −41% real). **Implication: short-vol / delta-neutral /
+  theta structures are structurally incompatible with intraday-only** — to pursue this family needs either
+  a relaxed multi-day hold (breaks the no-overnight house rule) or a different IV-crush/event intraday play.
+  No hub run-folder kept (record-build hit a cosmetic negative-equity `annual_return→complex` crash;
+  finding stands regardless). Infra (real VIX + bs_delta/vega) KEPT — reusable for any future vol strategy.
+  **NEXT: user to pick the next option-chain strategy to design (fresh), or revisit the family's constraint.**
+  Memory: `project_code3b_delta_neutral_rejected`.
+
 - **📏 REAL-SPREAD VALIDATION via brother's DOM data (2026-07-12, user "Direction A") — the BS
   directional pass modeled ZERO spread; now measured + re-costed.** Brother's 20-level order-book
   (`C:\_SABHAI DATA - Copy`, 21 days Jun-Jul'26, ATM CE/PE/FUT, ~8 snaps/sec, READ-ONLY) →
