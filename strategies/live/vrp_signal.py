@@ -17,7 +17,7 @@ Two IV sources (config `iv_source`):
 History is persisted (data/vrp_iv_history.json) and appended once per trading day, so
 the trailing window survives restarts (TRAP #3 / restart-safe).
 """
-import os, json, glob
+import os, json, glob, math
 import numpy as np
 import pandas as pd
 
@@ -25,6 +25,60 @@ LOOKBACK = 60          # trailing days for the rank window
 MIN_DAYS = 20          # need at least this many before ranking (else no signal)
 ENTER_THR = 0.80       # IV-rank >= this → eligible to sell
 IV_LO, IV_HI = 3.0, 120.0
+R_FREE = 0.065         # risk-free (matches bs_option.R_FREE — keep in sync)
+
+
+# ── live ATM IV via Black-Scholes inversion (self-contained; no scratch dep) ─
+# The live Dhan/Kite quote returns only LTP (no IV field), so we BS-invert the
+# live ATM CE/PE premium to an implied vol — the SAME definition as scratch/
+# nifty_trend/bs_option.implied_vol, kept here so the live money-path never
+# imports research code. Returns IV in PERCENT (16.8), matching the lake seed.
+def _norm_cdf(x):
+    return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
+
+
+def _bs_price(S, K, T, sig, opt, r=R_FREE):
+    if T <= 0 or sig <= 0:
+        return max(0.0, S - K) if opt == "CE" else max(0.0, K - S)
+    d1 = (math.log(S / K) + (r + 0.5 * sig * sig) * T) / (sig * math.sqrt(T))
+    d2 = d1 - sig * math.sqrt(T)
+    if opt == "CE":
+        return S * _norm_cdf(d1) - K * math.exp(-r * T) * _norm_cdf(d2)
+    return K * math.exp(-r * T) * _norm_cdf(-d2) - S * _norm_cdf(-d1)
+
+
+def implied_vol_pct(market_price, S, K, T, opt, lo=0.005, hi=3.0, tol=1e-4):
+    """Annualised IV in PERCENT implied by a market premium, or None if the price
+    is outside model bounds / inputs degenerate (never guess an IV)."""
+    if not market_price or market_price <= 0 or T <= 0 or S <= 0 or K <= 0:
+        return None
+    intrinsic = max(S - K, 0.0) if opt == "CE" else max(K - S, 0.0)
+    if market_price < intrinsic - 1e-6:
+        return None
+    f = lambda sig: _bs_price(S, K, T, sig, opt) - market_price
+    if f(lo) > 0 or f(hi) < 0:
+        return None
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        fm = f(mid)
+        if abs(fm) < tol:
+            return mid * 100.0
+        if fm > 0:
+            hi = mid
+        else:
+            lo = mid
+    return 0.5 * (lo + hi) * 100.0
+
+
+def atm_iv_from_premiums(spot, k, ce_prem, pe_prem, tte_years):
+    """mean of BS-inverted CE/PE ATM IV (percent). None unless BOTH legs invert to a
+    sane IV — a one-sided or out-of-band read is not trustworthy enough to trade on."""
+    ivs = []
+    for prem, opt in ((ce_prem, "CE"), (pe_prem, "PE")):
+        iv = implied_vol_pct(prem, spot, k, tte_years, opt)
+        if iv is not None and IV_LO < iv < IV_HI:
+            ivs.append(iv)
+    return sum(ivs) / len(ivs) if len(ivs) == 2 else None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))

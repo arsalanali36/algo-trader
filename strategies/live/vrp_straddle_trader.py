@@ -152,22 +152,24 @@ def _live_iv(tc, sym, spot, broker, token, cid, log):
             return float(v) if v and 3 < float(v) < 120 else None
         except Exception as e:
             log.warning(f"[VRP] VIX read failed: {e}"); return None
-    # atm: mean of live ATM CE/PE IV
+    # atm: BS-invert the live ATM CE/PE premium to implied vol. The Dhan/Kite quote
+    # returns only LTP (no IV field), so we solve IV ourselves — the SAME definition
+    # as the lake seed's BS-inverted IV, so live rank matches the seeded history.
     if broker is None:
         return None
-    ivs = []
-    for ot in ("CE", "PE"):
-        res = dhan_master.get_option_contract(sym, spot, ot, 0)
-        if not (res and res[0]):
-            return None
-        try:
-            q = broker.quote(res[0], "NSE_FNO")
-            iv = q.get("iv") or q.get("implied_volatility") if isinstance(q, dict) else None
-            if iv and 3 < float(iv) < 120:
-                ivs.append(float(iv))
-        except Exception:
-            pass
-    return sum(ivs) / len(ivs) if len(ivs) == 2 else None
+    ce = dhan_master.get_option_contract(sym, spot, "CE", 0)
+    pe = dhan_master.get_option_contract(sym, spot, "PE", 0)
+    if not (ce and ce[0] and pe and pe[0]):
+        return None
+    k = _atm_strike(ce[1], spot)                      # exact strike from trad_sym
+    tte = _tte_years(ce[1])                            # yrs to this weekly expiry
+    if k is None or tte is None or tte <= 0:
+        return None
+    ce_prem, pe_prem = _opt_ltp(broker, ce[0]), _opt_ltp(broker, pe[0])
+    iv = vrp_signal.atm_iv_from_premiums(spot, k, ce_prem, pe_prem, tte)
+    if iv is None:
+        log.info(f"[VRP] ATM IV solve failed (ce={ce_prem} pe={pe_prem} K={k} tte={tte:.4f}) — no entry")
+    return iv
 
 
 def _this_expiry(sym, spot):
@@ -181,6 +183,33 @@ def _this_expiry(sym, spot):
     except Exception:
         pass
     return None
+
+
+def _atm_strike(trad_sym, spot):
+    """exact ATM strike from the resolved trad_sym (NIFTY-28Jun2026-23950-CE → 23950).
+    Falls back to nearest-50 of spot if the symbol can't be parsed."""
+    try:
+        parts = str(trad_sym).split("-")
+        if len(parts) >= 3 and parts[2].isdigit():
+            return float(parts[2])
+    except Exception:
+        pass
+    try:
+        return float(round(spot / 50.0) * 50)
+    except Exception:
+        return None
+
+
+def _tte_years(trad_sym):
+    """years to this weekly expiry (15:30 IST on the expiry date parsed from trad_sym).
+    None if unparseable — caller then skips (never solve IV against a guessed T)."""
+    try:
+        tok = str(trad_sym).split("-")[1]             # e.g. 28Jun2026
+        exp = datetime.strptime(tok, "%d%b%Y").replace(hour=15, minute=30)
+        secs = (exp - ist_now()).total_seconds()
+        return secs / (365.25 * 24 * 3600) if secs > 0 else None
+    except Exception:
+        return None
 
 
 # ─────────────────────────── state persist / recover ───────────────────────

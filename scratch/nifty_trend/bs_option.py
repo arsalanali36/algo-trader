@@ -52,6 +52,34 @@ def bs_delta(S, K, T, sigma, r=R_FREE, opt="CE"):
     return _norm_cdf(d1) if opt == "CE" else _norm_cdf(d1) - 1.0
 
 
+def implied_vol(market_price, S, K, T, r=R_FREE, opt="CE", lo=0.005, hi=3.0, tol=1e-4):
+    """Invert bs_price to the annualised sigma implied by a market premium (bisection,
+    no scipy). Returns sigma as a FRACTION (0.16 = 16%), or None when the price is
+    outside the model's arbitrage bounds (below intrinsic / above the hi-vol price) or
+    inputs are degenerate — callers must treat None as "no IV", never guess. Used live
+    (VRP reads ATM CE/PE premium and inverts) so the live IV definition matches this
+    engine exactly."""
+    if market_price is None or market_price <= 0 or T <= 0 or S <= 0 or K <= 0:
+        return None
+    intrinsic = max(S - K, 0.0) if opt == "CE" else max(K - S, 0.0)
+    if market_price < intrinsic - 1e-6:          # sub-intrinsic → no positive-vol root
+        return None
+    f = lambda sig: bs_price(S, K, T, sig, r, opt) - market_price
+    flo, fhi = f(lo), f(hi)
+    if flo > 0 or fhi < 0:                        # price below lo-vol / above hi-vol model
+        return None
+    for _ in range(64):
+        mid = 0.5 * (lo + hi)
+        fm = f(mid)
+        if abs(fm) < tol:
+            return mid
+        if fm > 0:
+            hi = mid
+        else:
+            lo = mid
+    return 0.5 * (lo + hi)
+
+
 # ---------------- real Zerodha F&O charges (mirror index.html calcCharges) ----------------
 def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
     buy_px = entry_prem if entry_side == "BUY" else exit_prem
