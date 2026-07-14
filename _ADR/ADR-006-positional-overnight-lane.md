@@ -1,5 +1,14 @@
 # ADR-006 — Positional (overnight-hold) execution lane for the VRP "panic-fade" strategy
 
+> **SHELVED 2026-07-14 (user decision).** VRP parked — only ~3 trades/yr, too infrequent
+> for the user's goal. Code stays (`active:false` both machines, trades nothing); the
+> `allow_overnight` lane + IV-source fix (commit 533cbd0) are kept as reusable infra.
+> KNOWN-UNFIXED if ever revived: live entry fires ~162x vs validated ~15x — must be
+> rewritten to sample IV-rank at dte_entry (not first-qualifying-day). Do not resume
+> unless the user revisits this strategy.
+
+# ADR-006 — Positional (overnight-hold) execution lane for the VRP "panic-fade" strategy
+
 Status: PROPOSED (design only — no live money-path code yet)
 Date: 2026-07-12
 
