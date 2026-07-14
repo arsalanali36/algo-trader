@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Portfolio — Deployed Book</title>
+<style>
+:root{--bg:#0b0e14;--panel:#12161f;--panel2:#171c27;--bd:#242c3a;--tx:#e6edf3;--mut:#8b949e;
+  --pos:#3fb950;--neg:#f85149;--blue:#4f78ff;--teal:#2dd4bf;--yel:#f0c000}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);
+  font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px;padding:18px 22px 60px}
+h1{font-size:19px;margin:0 0 2px}.sub{color:var(--mut);font-size:12px;margin-bottom:16px}
+.row{display:flex;gap:14px;flex-wrap:wrap;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:14px 16px;flex:1;min-width:150px}
+.card .k{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+.card .v{font-size:24px;font-weight:700;margin-top:4px}.card .s{color:var(--mut);font-size:11px;margin-top:3px}
+.pos{color:var(--pos)}.neg{color:var(--neg)}.teal{color:var(--teal)}
+.panel{background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:16px;margin-bottom:16px}
+.sh{font-size:13px;font-weight:600;color:var(--tx);margin-bottom:10px}
+table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--bd)}
+th{color:var(--mut);font-weight:600;font-size:11px;text-transform:uppercase}td.l,th.l{text-align:left}
+.badge{font-size:10px;padding:2px 7px;border-radius:5px;font-weight:700}
+.b-paper{background:#1f6feb22;color:#4f9fff}.b-live{background:#3fb95022;color:var(--pos)}
+.hm td{text-align:center;font-size:12px;font-weight:600;padding:6px 4px;border:1px solid var(--bg)}
+.note{color:var(--mut);font-size:12px;line-height:1.6;background:var(--panel2);border-radius:8px;padding:12px 14px}
+svg{width:100%;height:auto;display:block}
+</style></head><body>
+<h1>📦 Portfolio — Deployed Book</h1>
+<div class="sub" id="sub">loading…</div>
+<div class="row" id="cards"></div>
+<div class="panel"><div class="sh">Combined equity curve (all deployed strategies, 1 lot each, ₹10L start)</div>
+  <div id="curve"></div></div>
+<div class="panel"><div class="sh">Per-strategy breakdown</div><div id="tbl"></div></div>
+<div class="panel"><div class="sh">Correlation matrix — a diversified book has LOW / negative off-diagonals</div>
+  <div id="corr" style="overflow-x:auto"></div>
+  <div class="note" id="corrnote" style="margin-top:12px"></div></div>
+<div class="panel"><div class="note" id="why"></div></div>
+<script>
+const inr=n=>{n=Math.round(n);let s=''+Math.abs(n),l3=s.slice(-3),r=s.slice(0,-3);if(r)l3=','+l3;r=r.replace(/\B(?=(\d{2})+(?!\d))/g,',');return (n<0?'-₹':'₹')+r+l3};
+const cls=v=>v>=0?'pos':'neg';
+function heat(v){ // correlation cell color: green=neg(good diversify), red=high pos
+  if(v>=0.99) return '#171c27';
+  const t=Math.max(-1,Math.min(1,v));
+  if(t<0) return `rgba(63,185,80,${0.15+Math.abs(t)*0.5})`;
+  return `rgba(248,81,73,${0.10+t*0.55})`;
+}
+function line(pts,ymin,ymax){const W=1000,H=260,pad=6;
+  const xs=i=>pad+i*(W-2*pad)/(pts.length-1), ys=v=>H-pad-(v-ymin)/(ymax-ymin||1)*(H-2*pad);
+  let d=pts.map((p,i)=>(i?'L':'M')+xs(i).toFixed(1)+' '+ys(p[1]).toFixed(1)).join(' ');
+  const zero=ys(1000000);
+  return `<svg viewBox="0 0 ${W} ${H}"><line x1="${pad}" y1="${zero}" x2="${W-pad}" y2="${zero}" stroke="#2a3444" stroke-dasharray="4 4"/>
+    <path d="${d}" fill="none" stroke="var(--teal)" stroke-width="2"/></svg>`;
+}
+fetch('portfolio.json',{cache:'no-store'}).then(r=>r.json()).then(P=>{
+  const c=P.combined, el=c.equal_lot;
+  document.getElementById('sub').textContent=`${P.strategies.length} deployed strategies · ${P.window[0]} → ${P.window[1]} · ${P.days} trading days · 1 lot each`;
+  document.getElementById('cards').innerHTML=[
+    ['Combined Net (1 lot each)',inr(el.net),cls(el.net),`+${el.net_pct}% on ₹10L`],
+    ['Combined Sharpe',el.sharpe.toFixed(2),el.sharpe>=1?'pos':'neg',`risk-parity ${c.risk_parity.sharpe}`],
+    ['Max Drawdown',inr(el.maxdd),'neg','peak-to-trough'],
+    ['Diversification',`${c.risk_parity.sharpe} vs ${c.avg_single}`,'teal','book Sharpe vs avg-single'],
+  ].map(x=>`<div class="card"><div class="k">${x[0]}</div><div class="v ${x[2]}">${x[1]}</div><div class="s">${x[3]}</div></div>`).join('');
+  // equity curve
+  const ys=P.curve.map(p=>p[1]); line;
+  document.getElementById('curve').innerHTML=line(P.curve,Math.min(...ys),Math.max(...ys));
+  // per-strategy table
+  const rows=P.strategies.slice().sort((a,b)=>b.net-a.net);
+  document.getElementById('tbl').innerHTML=`<table><thead><tr>
+    <th class="l">ID</th><th class="l">Strategy</th><th>Status</th><th>Sharpe</th><th>Net</th><th>Trades</th><th>Max DD</th></tr></thead>
+    <tbody>${rows.map(s=>`<tr><td class="l" style="color:var(--mut)">${s.id}</td>
+      <td class="l"><a href="runs/${s.slug}/index.html" target="_blank" style="color:var(--blue);text-decoration:none">${s.name}</a></td>
+      <td><span class="badge b-${s.status}">${s.status.toUpperCase()}</span></td>
+      <td class="${s.sharpe>=1?'pos':''}">${s.sharpe.toFixed(2)}</td>
+      <td class="${cls(s.net)}">${inr(s.net)}</td><td>${s.trades??'—'}</td><td class="neg">${inr(s.maxdd)}</td></tr>`).join('')}</tbody></table>`;
+  // correlation heatmap
+  const ids=P.corr.ids, M=P.corr.matrix, nm=P.corr.names;
+  let h='<table class="hm"><thead><tr><th></th>'+ids.map(i=>`<th title="${nm[i]}">${i}</th>`).join('')+'</tr></thead><tbody>';
+  ids.forEach((a,ai)=>{h+=`<tr><td class="l" style="color:var(--mut);font-size:11px" title="${nm[a]}">${a} ${nm[a].slice(0,14)}</td>`+
+    M[ai].map(v=>`<td style="background:${heat(v)}">${v.toFixed(2)}</td>`).join('')+'</tr>';});
+  h+='</tbody></table>';
+  document.getElementById('corr').innerHTML=h;
+  // vrp vs rest note
+  const vrp=ids.find(i=>nm[i].toLowerCase().includes('vrp')||nm[i].toLowerCase().includes('condor'));
+  if(vrp){const vi=ids.indexOf(vrp); const others=ids.filter(i=>i!==vrp).map(i=>M[vi][ids.indexOf(i)]);
+    const avg=(others.reduce((a,b)=>a+b,0)/others.length).toFixed(2);
+    document.getElementById('corrnote').innerHTML=`🟢 <b>${nm[vrp]}</b> (short-vol) ka baaki sabse avg correlation = <b>${avg}</b> — yani ye poore book ka <b>uncorrelated stabilizer</b> hai. Directional strategies aapas me positively-correlated (laal cells) hain, VRP unse ulti (hari cells).`;}
+  document.getElementById('why').innerHTML=`💡 <b>Ye page kya batata hai:</b> har deployed strategy ka apna backtest ka 1-lot daily P&amp;L join karke poore book ka combined result. <b>Combined Sharpe ${c.risk_parity.sharpe} (risk-parity) &gt; average single ${c.avg_single}</b> — kyunki strategies alag-alag conditions me kamaati hain (kuch trend me, kuch range/short-vol me), inhe saath chalane se equity curve smooth hoti hai aur drawdown chhota (${inr(el.maxdd)}). <b>Kisi ek pe sab mat lagao — poora book chalao.</b> Numbers backtest ke hain (VRP-Condor ka standalone Sharpe flattered hai — isiliye risk-parity use usko kam weight deta hai); asli confirmation forward-paper se aayega.`;
+}).catch(e=>{document.getElementById('sub').textContent='portfolio.json load nahi hua: '+e;});
+</script></body></html>
