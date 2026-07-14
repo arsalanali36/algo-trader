@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="hi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KHAZANA Dev Log — 14 July 2026 · ML Strategy Mining</title>
+<style>
+  :root{
+    --bg:#080b11;
+    --bg2:#0b0f16;
+    --panel:#111823;
+    --panel2:#0e141d;
+    --border:#1e2836;
+    --border-soft:#232f3f;
+    --ink:#e8eef6;
+    --ink-mut:#8d9bb0;
+    --ink-dim:#5d6b80;
+    --green:#3fb950;
+    --green-soft:#2ea04326;
+    --blue:#4b93ff;
+    --blue-soft:#1f6feb22;
+    --amber:#e0a325;
+    --amber-soft:#d2992222;
+    --red:#f26d6d;
+    --red-soft:#f8514922;
+    --purple:#a371f7;
+    --purple-soft:#8957e522;
+    --font-sans:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    --font-mono:ui-monospace,"Cascadia Code","Cascadia Mono","SF Mono",Consolas,Menlo,monospace;
+    --maxw:1080px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--font-sans);
+    -webkit-font-smoothing:antialiased;
+    line-height:1.5;
+    overflow-x:hidden;
+  }
+  /* faint terminal grid */
+  body::before{
+    content:"";position:fixed;inset:0;z-index:0;pointer-events:none;
+    background-image:
+      linear-gradient(var(--border-soft) 1px,transparent 1px),
+      linear-gradient(90deg,var(--border-soft) 1px,transparent 1px);
+    background-size:44px 44px;
+    opacity:.16;
+    mask-image:radial-gradient(ellipse 90% 70% at 50% 30%,#000 40%,transparent 100%);
+  }
+
+  .scroller{position:relative;z-index:1;scroll-snap-type:y proximity;}
+  section.slide{
+    min-height:100vh;
+    scroll-snap-align:start;
+    display:flex;flex-direction:column;justify-content:center;
+    padding:88px 32px;
+    position:relative;
+  }
+  .wrap{max-width:var(--maxw);margin:0 auto;width:100%}
+
+  /* eyebrow / labels */
+  .ey{
+    font-family:var(--font-mono);
+    font-size:12px;letter-spacing:.22em;text-transform:uppercase;
+    color:var(--ink-dim);
+    display:flex;align-items:center;gap:10px;
+  }
+  .ey .dot{width:7px;height:7px;border-radius:50%;background:var(--green);box-shadow:0 0 10px 1px var(--green)}
+  .ey .modno{color:var(--green);font-weight:600}
+
+  h1{font-size:clamp(38px,7vw,84px);font-weight:800;letter-spacing:-.03em;line-height:.98;text-wrap:balance}
+  h2{font-size:clamp(28px,4.4vw,50px);font-weight:800;letter-spacing:-.025em;line-height:1.02;text-wrap:balance}
+  .lede{color:var(--ink-mut);font-size:clamp(15px,1.7vw,19px);max-width:62ch;line-height:1.6}
+
+  .mono{font-family:var(--font-mono)}
+  .tnum{font-variant-numeric:tabular-nums}
+
+  /* ---------- HERO ---------- */
+  .hero .wrap{display:flex;flex-direction:column;gap:30px}
+  .hero-top{display:flex;flex-wrap:wrap;gap:14px 26px;align-items:baseline}
+  .brand{font-family:var(--font-mono);font-size:13px;letter-spacing:.16em;color:var(--ink-mut);text-transform:uppercase}
+  .brand b{color:var(--green)}
+  .datechip{
+    font-family:var(--font-mono);font-size:12px;letter-spacing:.1em;
+    padding:5px 11px;border:1px solid var(--border);border-radius:999px;color:var(--ink-mut);
+    background:var(--panel2);
+  }
+  .hero h1 .accent{
+    background:linear-gradient(180deg,#c7a6ff,var(--purple));
+    -webkit-background-clip:text;background-clip:text;color:transparent;
+  }
+  .stats{
+    display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:6px;
+  }
+  .stat{
+    border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border-radius:14px;padding:20px 18px;position:relative;overflow:hidden;
+  }
+  .stat::after{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--purple);opacity:.85}
+  .stat .n{font-family:var(--font-mono);font-size:clamp(28px,4.2vw,44px);font-weight:700;letter-spacing:-.02em;line-height:1}
+  .stat .k{font-size:12.5px;color:var(--ink-mut);margin-top:9px;letter-spacing:.02em}
+  .stat.blue::after{background:var(--blue)} .stat.amber::after{background:var(--amber)} .stat.red::after{background:var(--red)} .stat.green::after{background:var(--green)}
+  .scrollhint{margin-top:14px;font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);letter-spacing:.14em;display:flex;align-items:center;gap:9px}
+  .scrollhint .ar{animation:bob 1.8s ease-in-out infinite}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(4px)}}
+
+  /* ---------- MODULE SLIDES ---------- */
+  .mhead{display:flex;flex-direction:column;gap:14px;margin-bottom:30px}
+  .mhead .row{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;flex-wrap:wrap}
+  .tickets{display:flex;flex-wrap:wrap;gap:6px}
+  .tk{font-family:var(--font-mono);font-size:11.5px;color:var(--ink-mut);border:1px solid var(--border);border-radius:6px;padding:3px 7px;background:var(--panel2)}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+  .card{
+    border:1px solid var(--border);border-radius:14px;padding:20px 20px 18px;
+    background:linear-gradient(180deg,var(--panel),var(--panel2));
+    display:flex;flex-direction:column;gap:9px;
+    transition:transform .5s cubic-bezier(.2,.7,.2,1),opacity .5s ease,border-color .3s;
+  }
+  .card:hover{border-color:var(--border-soft)}
+  .card .ct{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16.5px;letter-spacing:-.01em}
+  .card .cd{color:var(--ink-mut);font-size:14px;line-height:1.55}
+  .card .cd b{color:var(--ink);font-weight:600}
+  .badge{
+    font-family:var(--font-mono);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;white-space:nowrap;
+  }
+  .b-ship{color:#9be5a6;background:var(--green-soft);border:1px solid #2ea04340}
+  .b-fix{color:#f7a5a5;background:var(--red-soft);border:1px solid #f8514940}
+  .b-infra{color:#9cc0ff;background:var(--blue-soft);border:1px solid #1f6feb44}
+  .b-money{color:#f0c765;background:var(--amber-soft);border:1px solid #d2992255}
+  .b-ml{color:#c7a6ff;background:var(--purple-soft);border:1px solid #8957e555}
+  .cta{margin-left:auto}
+
+  /* big single-number callout row */
+  .bignums{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:18px}
+  .bignum{border:1px solid var(--border);border-radius:14px;padding:18px;background:linear-gradient(180deg,var(--panel),var(--panel2));text-align:center}
+  .bignum .bn{font-family:var(--font-mono);font-size:clamp(24px,3.6vw,38px);font-weight:700;line-height:1}
+  .bignum .bl{font-size:12px;color:var(--ink-mut);margin-top:8px}
+  .bignum.g .bn{color:var(--green)} .bignum.r .bn{color:var(--red)} .bignum.a .bn{color:var(--amber)} .bignum.p .bn{color:var(--purple)} .bignum.b .bn{color:var(--blue)}
+
+  /* reveal */
+  .reveal{opacity:0;transform:translateY(14px)}
+  .reveal.in{opacity:1;transform:none}
+
+  /* left progress rail */
+  .rail{position:fixed;left:20px;top:50%;transform:translateY(-50%);z-index:5;display:flex;flex-direction:column;gap:12px}
+  .rail a{width:9px;height:9px;border-radius:50%;background:var(--border);border:1px solid var(--border-soft);transition:all .3s;display:block}
+  .rail a.on{background:var(--purple);box-shadow:0 0 9px 1px var(--purple);transform:scale(1.25)}
+  .rail a:hover{background:var(--ink-mut)}
+
+  /* insight / verdict slide accent */
+  .slide.verdict{background:radial-gradient(ellipse 80% 60% at 50% 40%,#150b1e22,transparent 70%)}
+  .verdict .ey .dot{background:var(--purple);box-shadow:0 0 10px 1px var(--purple)}
+  .verdict .ey .modno{color:var(--purple)}
+  .callout{
+    border:1px solid #8957e544;background:linear-gradient(180deg,#150e1f,#0f0a17);
+    border-left:3px solid var(--purple);border-radius:12px;padding:18px 20px;margin-bottom:16px;
+    display:flex;gap:14px;align-items:flex-start;
+  }
+  .callout.amber{border-color:#d2992240;background:linear-gradient(180deg,#191307,#120e05);border-left-color:var(--amber)}
+  .callout .ic{font-size:20px;line-height:1}
+  .callout .txt{font-size:14.5px;color:#ddd3ee;line-height:1.55}
+  .callout.amber .txt{color:#e9d9b6}
+  .callout .txt b{color:#fff}
+
+  /* closing */
+  .close{text-align:center;background:radial-gradient(ellipse 70% 55% at 50% 45%,#120b1e,transparent 70%)}
+  .close .wrap{display:flex;flex-direction:column;align-items:center;gap:24px}
+  .recap{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:780px}
+  .recap span{font-family:var(--font-mono);font-size:12.5px;color:var(--ink-mut);border:1px solid var(--border);border-radius:999px;padding:6px 13px;background:var(--panel2)}
+  .signoff{font-family:var(--font-mono);color:var(--ink-dim);font-size:12.5px;letter-spacing:.12em}
+
+  /* flow strip (mission pipeline) */
+  .flow{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-top:6px}
+  .flow .step{
+    flex:1;min-width:150px;border:1px solid var(--border);background:linear-gradient(180deg,var(--panel),var(--panel2));
+    border-radius:12px;padding:16px 15px;position:relative;
+  }
+  .flow .step .sn{font-family:var(--font-mono);font-size:11px;color:var(--purple);letter-spacing:.12em}
+  .flow .step .st{font-weight:700;font-size:15px;margin-top:6px}
+  .flow .step .sd{font-size:12.5px;color:var(--ink-mut);margin-top:5px;line-height:1.45}
+  .flow .arr{display:flex;align-items:center;justify-content:center;color:var(--ink-dim);font-size:20px;padding:0 6px}
+
+  @media(max-width:720px){
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .cards{grid-template-columns:1fr}
+    .bignums{grid-template-columns:1fr}
+    .flow .arr{display:none}
+    .flow .step{min-width:100%}
+    .rail{display:none}
+    section.slide{padding:72px 20px}
+  }
+  @media(prefers-reduced-motion:reduce){
+    *{animation:none!important}
+    .reveal{opacity:1;transform:none}
+    html{scroll-behavior:auto}
+  }
+</style>
+</head>
+<body>
+
+<nav class="rail" aria-label="slides">
+  <a href="#s0" class="on"></a><a href="#s1"></a><a href="#s2"></a><a href="#s3"></a>
+  <a href="#s4"></a><a href="#s5"></a><a href="#s6"></a><a href="#s7"></a><a href="#s8"></a><a href="#s9"></a>
+</nav>
+
+<div class="scroller">
+
+  <!-- HERO -->
+  <section class="slide hero" id="s0">
+    <div class="wrap">
+      <div class="hero-top">
+        <span class="brand"><b>KHAZANA</b> · ALGO TRADER · ML LAB</span>
+        <span class="datechip">DEV LOG — 14 JUL 2026 · TUE</span>
+      </div>
+      <h1>Do din, machine se poochha:<br><span class="accent">koi nayi strategy hai?</span></h1>
+      <p class="lede">Ab tak har strategy humne khud design ki, phir validate ki. Is baar ulta kiya — ML ko apne 5 saal ke NIFTY option-chain data pe chhod diya, ki wo khud entry-conditions dhundhe jo humne socha bhi nahi. Aur upar se ek sakht scientific gate lagaya taaki luck ko edge samajhne ki galti na ho.</p>
+      <div class="stats">
+        <div class="stat"><div class="n tnum" data-to="4.36" data-suf="M">0</div><div class="k">Rules mine kiye</div></div>
+        <div class="stat green"><div class="n tnum" data-to="5">0</div><div class="k">Statistical guardrails bane</div></div>
+        <div class="stat amber"><div class="n tnum" data-to="1">0</div><div class="k">VRP zone re-discover hua</div></div>
+        <div class="stat red"><div class="n tnum" data-to="0">0</div><div class="k">Strategy deploy hui (imaandari)</div></div>
+      </div>
+      <div class="scrollhint"><span class="ar">↓</span> SCROLL / ARROW KEYS — SLIDE BY SLIDE</div>
+    </div>
+  </section>
+
+  <!-- 01 THE MISSION -->
+  <section class="slide" id="s1">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">MISSION</span> · DISCOVERY FLIP</div>
+          <div class="tickets"><span class="tk">Task 0–5</span></div>
+        </div>
+        <h2>Strategy "dhoondhne" wala kaam machine ko de do.</h2>
+        <p class="lede">Idea simple hai: jo cheez human ki intuition se aati thi, uska ek hissa ML kare — par certify wahi purana sakht gate kare. Discovery badla, standard nahi.</p>
+      </div>
+      <div class="flow">
+        <div class="step reveal"><div class="sn">STEP 1</div><div class="st">Real data</div><div class="sd">5 saal ka NIFTY option-chain — IV, OI, premium, PCR, ATR.</div></div>
+        <div class="arr">→</div>
+        <div class="step reveal"><div class="sn">STEP 2</div><div class="st">ML search</div><div class="sd">Features + trees + genetic search se candidate rules banao.</div></div>
+        <div class="arr">→</div>
+        <div class="step reveal"><div class="sn">STEP 3</div><div class="st">Same gate</div><div class="sd">Wahi p&lt;0.05 + Monte-Carlo + naya DSR — koi shortcut nahi.</div></div>
+        <div class="arr">→</div>
+        <div class="step reveal"><div class="sn">STEP 4</div><div class="st">Deploy?</div><div class="sd">Sirf tab jab gate clear ho AUR aap haan bolo.</div></div>
+      </div>
+      <div class="callout" style="margin-top:22px">
+        <div class="ic">⚠️</div>
+        <div class="txt"><b>Pehle se maloom khatra:</b> ML sau-hazaar candidate try karta hai. Itne mein se koi na koi "luck" se accha dikhega — plain p&lt;0.05 usko pakad nahi paata. Isiliye <b>Task 0 (guardrails) sabse pehle</b>, "fun part" (mining) baad mein.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 TASK 0 GUARDRAILS -->
+  <section class="slide" id="s2">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">TASK 0</span> · STATISTICAL GUARDRAILS</div>
+          <div class="tickets"><span class="tk">d2b8da5</span></div>
+        </div>
+        <h2>Pehle "jhooth pakadne wali" machine banai.</h2>
+        <p class="lede">Mining se ek line pehle — 5 rails, taaki scale pe luck edge ka bhes na badal sake.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">rail</span> Deflated Sharpe (DSR)</div><div class="cd">Bar ab isse tay hoti hai ki <b>kitne candidate try kiye</b> — jitne zyada attempts, utna hi ooncha proof chahiye. Winner-only nahi, poori search count hoti hai.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">rail</span> Purged walk-forward CV</div><div class="cd">Train/test mein <b>1-din purge + 5-din embargo</b> — ek hi market-move overlapping windows se future ka info "OOS" mein leak na ho.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">rail</span> Hard OOS lockbox</div><div class="cd">Last ~60 din (<b class="mono">≥ 15 Apr</b>) ka data <b>tijori mein band</b> — koi tuning use nahi kar sakti. Sirf gate-clear candidate ek baar test karta hai. Fail = maut, re-tune nahi.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">rail</span> Trials log</div><div class="cd">Har candidate — winners hi nahi, <b>sab</b> — <span class="mono">ml_mining_log.csv</span> mein. DSR ka number honest count pe bane, cherry-picked pe nahi.</div></div>
+      </div>
+      <div class="callout amber" style="margin-top:16px">
+        <div class="ic">🧪</div>
+        <div class="txt"><b>Calibration proof:</b> 1000 mein se best <b>pure random noise</b> (Sharpe 1.71 — purana gate isko pyaar karta) → DSR <b>0.34, reject</b>. Shipped strategies → DSR 0.87–0.90. Gate saaf-saaf farak karta hai — noise andar nahi aata.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 FEATURE LAYER -->
+  <section class="slide" id="s3">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">TASK 1</span> · FEATURE LAYER</div>
+          <div class="tickets"><span class="tk">cc4cbe4</span></div>
+        </div>
+        <h2>Option-chain → 39 saaf features.</h2>
+        <p class="lede">Raw data ko machine-readable banaya — 86,703 five-minute bars, 2021 se 2026 tak.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">feature</span> Vol &amp; skew</div><div class="cd">IV-Rank / IV-Percentile, put-skew, realized-vol vs IV ka ratio (VRP dikhta hai — 0.66).</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">feature</span> OI &amp; flow</div><div class="cd">PCR, max-OI strike distance, OI-imbalance, 30-min OI shift — buildup ka signal.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">feature</span> Time &amp; decay</div><div class="cd">ATR, time-of-day bucket, day-of-week, days-to-expiry, premium-decay curve ka shape.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">honesty</span> Jo data nahi hai</div><div class="cd">Lake <b>5-min</b> hai (1-min option data exist hi nahi karta), <b>bid-ask record nahi</b> hai. Synthetic ko real ki tarah kabhi nahi dikhaya.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 APPROACH A -->
+  <section class="slide" id="s4">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">TASK 2</span> · APPROACH A — TREES + SHAP</div>
+          <div class="tickets"><span class="tk">c0faae4</span></div>
+        </div>
+        <h2>"Kaunsa feature matter karta hai?" — machine se poochha.</h2>
+        <p class="lede">Gradient-boosted tree (LightGBM) train kiya, SHAP se top features nikaale, phir unko ek <b>readable rule</b> mein badla — black-box prediction nahi, aisa rule jo aankhon se samajh aaye.</p>
+      </div>
+      <div class="bignums">
+        <div class="bignum r reveal"><div class="bn tnum">0.518</div><div class="bl">15-min direction AUC = <b>koi edge nahi</b> (market efficient)</div></div>
+        <div class="bignum a reveal"><div class="bn tnum">3</div><div class="bl">alag targets — direction, decay, house SL/target</div></div>
+        <div class="bignum r reveal"><div class="bn tnum">0</div><div class="bl">candidate ne gate clear kiya</div></div>
+      </div>
+      <div class="callout amber">
+        <div class="ic">📉</div>
+        <div class="txt">Ek pattern <b>real</b> tha — expiry-afternoon straddle sell (DTE ≤ 0.24). Par bootstrap p=0.53, DSR 0.001 → <b>DEAD</b>. Pattern sach hai, trade gamma + costs mein mar jaata hai. "Intraday vol dies to costs" — jo LESSONS mein pehle likha tha, machine ne confirm kiya.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 05 APPROACH B GP -->
+  <section class="slide" id="s5">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">TASK 3</span> · APPROACH B — GENETIC PROGRAMMING</div>
+          <div class="tickets"><span class="tk">6b0cb4f</span><span class="tk">7fa8713</span><span class="tk">8286c4e</span></div>
+        </div>
+        <h2>4 million rules "evolve" kiye — raat bhar.</h2>
+        <p class="lede">Wave-based genetic search — entry/exit condition trees ko generation-dar-generation better banao, fitness = OOS Sharpe (in-sample nahi — warna sirf noise fit hoti).</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">TRAP #114</span> Fake 7.1 Sharpe pakda</div><div class="cd">Pehle run (3.43M rules) ka poora leaderboard = <b>contract-roll seam</b> ka dhoka — marte weekly straddle ko "agle hafte" ke contract mein exit dikha raha tha. Poora run VOID. Guard laga: exit expiry se aage nahi.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ml">converge</span> Ek hi basin</div><div class="cd">Roll-guarded v2 (900k rules): top-50 alag-alag rules, sab <b>ek zone</b> pe — <span class="mono">IV&gt;21 + ATR high + OI flat → short straddle overnight</span>.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-money">insight</span> Aapki VRP, dobara</div><div class="cd">Machine ne <b>khud</b> wahi hand-validated <b>VRP panic-fade zone</b> dhoond nikaali — val Sharpe 2.25, single-lot <b>+₹42,000</b>, corr sirf 0.15 vs shipped.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">gate</span> Phir bhi unprovable</div><div class="cd">DSR 0.02 vs ~3.9 bar @ N=4M. Real edge hai, par 4-million-rule search ke baad formally prove <b>nahi</b> ho sakta. Lockbox chhua tak nahi.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 TASK 5 FIB -->
+  <section class="slide" id="s6">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">TASK 5</span> · YOUR OWN HYPOTHESIS — FIB + PREMIUM + GAP</div>
+          <div class="tickets"><span class="tk">a0e7c3a</span><span class="tk">b713267</span></div>
+        </div>
+        <h2>Aapka apna idea — fib levels + premium divergence.</h2>
+        <p class="lede">Pehli candle ke Fibonacci levels, confirm-candle continuation/reversal, premium ka independent behaviour, OI-buildup — sab v3 features mein daale, phir grid + GP dono se search kiya.</p>
+      </div>
+      <div class="bignums">
+        <div class="bignum a reveal"><div class="bn tnum">25,200</div><div class="bl">grid evals — 58/60 top = short-straddle</div></div>
+        <div class="bignum g reveal"><div class="bn tnum">2.45</div><div class="bl">best val Sharpe — dikhta accha</div></div>
+        <div class="bignum r reveal"><div class="bn tnum">0.000</div><div class="bl">DSR — sab fail, jaisa expected</div></div>
+      </div>
+      <div class="callout">
+        <div class="ic">🧲</div>
+        <div class="txt"><b>Decisive moment:</b> jaise hi GP ko IV/ATR signals mile, usne <b>fib structure poori chhod di</b> aur bilkul <b>wahi VRP zone</b> pe re-converge kar gaya. Matlab fib/premium family koi naya edge nahi — same high-IV short-vol pattern ka kamzor intraday proxy hai. Asli driver IV level hai; wo milte hi search fib ko chhod deti hai.</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 07 VERDICT -->
+  <section class="slide verdict" id="s7">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot"></span><span class="modno">VERDICT</span> · HONEST NEGATIVE</div>
+        </div>
+        <h2>Kuch deploy nahi hua — aur yehi jeet hai.</h2>
+      </div>
+      <div class="callout">
+        <div class="ic">🎯</div>
+        <div class="txt"><b>4.36 million rules, zero shipped.</b> Har seed se machine ghoom-phir ke wahi <b>ek VRP basin</b> pe aati hai. NIFTY intraday/weekly short-vol <b>saturated</b> hai — yahan naya jaadu nahi bacha. Machine ne human intuition ko <b>confirm</b> kiya, replace nahi.</div>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">proof</span> Guardrails ne kaam kiya</div><div class="cd">Noise (Sharpe 1.71) reject, false positives block. Bina in rails ke, ye 4M-rule search dhadalle se overfit strategies "ship" kar deta.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">discipline</span> Lockbox untouched</div><div class="cd">Jab tak koi candidate earn na kare, final test-set kholte hi nahi. Poore 2 din mein ek baar bhi peek nahi.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">rule</span> No auto-deploy</div><div class="cd">ML-found ho ya hand-designed — har signal ko wahi human go-ahead chahiye. Zero silent deploys.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">permanent</span> Infra reusable</div><div class="cd">DSR gate, purged-CV, GP engine, trials-log — ab <span class="mono">run_hunt.py</span> mein baked. Agli hypothesis turant test hogi.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 08 COST REFRESH -->
+  <section class="slide" id="s8">
+    <div class="wrap">
+      <div class="mhead">
+        <div class="row">
+          <div class="ey"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px 1px var(--blue)"></span><span class="modno" style="color:var(--blue)">BEHIND THE SCENES</span> · COST MODEL</div>
+          <div class="tickets"><span class="tk">942a1b6</span><span class="tk">a41bb43</span></div>
+        </div>
+        <h2>Backtest ke numbers ab real fees pe.</h2>
+        <p class="lede">Mining ke saath-saath charges model ko Budget-2026 pe refresh kiya — taaki har result asli deployable P&amp;L dikhaye.</p>
+      </div>
+      <div class="cards">
+        <div class="card reveal"><div class="ct"><span class="badge b-infra">infra</span> Date-aware charges</div><div class="cd"><span class="mono">charges.py</span> = single source. Options STT sell 0.0625% → 0.10% → <b>0.15%</b> (regime by entry-date, Zerodha page pe verified). STT kabhi hardcode nahi.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">check</span> 14-run re-cost</div><div class="cd">Saare recorded runs pe STT-delta ₹62–₹455 — <b>koi strategy gate cross nahi karti</b>. Live fauj safe.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-ship">ML feature</span> expiry_regime</div><div class="cd">Thu-era vs Tue-era expiry ka flag — mined rules ki regime-stability check ke liye.</div></div>
+        <div class="card reveal"><div class="ct"><span class="badge b-fix">correction</span> Ek galat flag hataya</div><div class="cd">Ek din ka 🔴 flag darasal 2×-stress column ka bhram tha — real Sharpe 1.024, theek kiya.</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CLOSING -->
+  <section class="slide close" id="s9">
+    <div class="wrap">
+      <div class="ey" style="justify-content:center"><span class="dot"></span> END OF LOG</div>
+      <h2>Machine ne dhoondha. Gate ne roka.<br>Science jeeti.</h2>
+      <p class="lede" style="margin:0 auto">Ek "khaali haath" din jo asal mein sabse imaandaar din tha — kyunki jhooth ko strategy banne se rok liya.</p>
+      <div class="recap">
+        <span>5 statistical guardrails</span><span>Deflated Sharpe gate</span><span>Purged walk-forward CV</span>
+        <span>Hard OOS lockbox</span><span>39-feature layer</span><span>SHAP rule extraction</span>
+        <span>4M-rule genetic search</span><span>TRAP #114 caught</span><span>VRP re-discovered</span>
+        <span>Zero overfit shipped</span><span>Budget-2026 charges</span><span>expiry_regime feature</span>
+      </div>
+      <div class="signoff">KHAZANA · ALGO TRADER · ML LAB · ARSALAN ALI</div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // count-up hero stats
+  (function(){
+    var reduce = matchMedia('(prefers-reduced-motion:reduce)').matches;
+    document.querySelectorAll('.stat .n').forEach(function(el){
+      var to = +el.getAttribute('data-to'), suf = el.getAttribute('data-suf')||'';
+      var dec = (to % 1 !== 0) ? 2 : 0;
+      if(reduce){ el.textContent = to.toFixed(dec)+suf; return; }
+      var t0=null, dur=900;
+      function step(ts){ if(!t0)t0=ts; var p=Math.min((ts-t0)/dur,1);
+        var v = to*(1-Math.pow(1-p,3));
+        el.textContent = (dec?v.toFixed(dec):Math.round(v))+ (p===1?suf:''); if(p<1)requestAnimationFrame(step);}
+      requestAnimationFrame(step);
+    });
+  })();
+
+  // reveal cards on scroll
+  (function(){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){
+        var cards=[].slice.call(e.target.querySelectorAll('.reveal'));
+        cards.forEach(function(c,i){ setTimeout(function(){c.classList.add('in')}, i*70); });
+        io.unobserve(e.target);
+      }});
+    },{threshold:.2});
+    document.querySelectorAll('section.slide').forEach(function(s){io.observe(s)});
+  })();
+
+  // rail active state
+  (function(){
+    var links=[].slice.call(document.querySelectorAll('.rail a'));
+    var secs=[].slice.call(document.querySelectorAll('section.slide'));
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){ if(e.isIntersecting){
+        var i=secs.indexOf(e.target);
+        links.forEach(function(l,j){l.classList.toggle('on',j===i)});
+      }});
+    },{threshold:.5});
+    secs.forEach(function(s){io.observe(s)});
+  })();
+</script>
+
+</body>
+</html>
