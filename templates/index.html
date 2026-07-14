@@ -8046,8 +8046,11 @@
       const sellTurn = sellSide * qty;
       const totalTurn = buyTurn + sellTurn;
       const brokerage = 40;                       // 20 × 2 orders
-      const stt = 0.000625 * sellTurn;      // 0.0625% on sell premium
-      const exchCharges = 0.00053 * totalTurn;     // 0.053% both legs
+      // Budget-2026 rates (effective 2026-04-01, verified zerodha.com/charges 2026-07-14).
+      // Dashboard costs TODAY's trades only → current regime. Backtest-side date-aware
+      // regime table = scratch/nifty_trend/charges.py (keep the two in sync).
+      const stt = 0.0015 * sellTurn;        // 0.15% on sell premium (was 0.0625% pre-Oct-24, 0.10% to Mar-26)
+      const exchCharges = 0.0003553 * totalTurn;   // 0.03553% both legs (was 0.053%)
       const sebi = 0.0000001 * totalTurn;     // 10/crore
       const stampDuty = 0.00003 * buyTurn;       // 0.003% on buy side
       const gst = 0.18 * (brokerage + exchCharges + sebi);

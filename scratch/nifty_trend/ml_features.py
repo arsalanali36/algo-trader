@@ -33,9 +33,16 @@ import pandas as pd
 import ml_gate
 import optlake_load as ol
 import bs_option as bs
+import expiry_calendar as xcal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = 2   # v2 (2026-07-14): + rsi_14, ema20_dist_pct, ema50_dist_pct (spot 5m) —
+VERSION = 3   # v3 (2026-07-14): + expiry_regime (0=Thursday-expiry era, 1=Tuesday era
+              # from 2025-09-01, expiry_calendar.py verified schedule). dte_days was
+              # already calendar-aware; this makes the regime EXPLICIT so any mined
+              # rule leaning on dow/dte can be checked for pre-vs-post stability —
+              # "which weekday IS expiry" changed mid-dataset, a regime-boundary
+              # overfitting vector distinct from DSR/lockbox.
+              # v2 (2026-07-14): + rsi_14, ema20_dist_pct, ema50_dist_pct (spot 5m) —
               # same vocabulary the hand-designed live strategies use (user request)
 OUT = os.path.join(HERE, "ml_features_v%d.csv.gz" % VERSION)
 MANIFEST = os.path.join(HERE, "ml_features_manifest.json")
@@ -166,6 +173,12 @@ def build(flag="WEEK"):
     f["dte_days"] = [max((bs._next_weekly_expiry(ts) - ts).total_seconds(), 0.0) / 86400.0
                      for ts in edt]
     f["is_expiry_day"] = (f.dte_days < 0.3).astype(int)
+    # expiry_regime — 0 = Thursday-weekly era, 1 = Tuesday era (from 2025-09-01, NSE cir
+    # 111/2025; boundary lives ONLY in expiry_calendar.py, never re-hardcoded here).
+    # dow/dte seasonality may not transfer across this boundary even though dte_days
+    # itself is calendar-correct — mining must check any dow-leaning rule per-regime.
+    f["expiry_regime"] = np.array([int(xcal.weekly_expiry_weekday(d) == xcal.TUE)
+                                   for d in edt.dt.date], dtype=int)
 
     # ---- liquidity PROXIES (real bid-ask never recorded — see inventory) ----
     f["opt_volume_proxy"] = f.ce_volume + f.pe_volume

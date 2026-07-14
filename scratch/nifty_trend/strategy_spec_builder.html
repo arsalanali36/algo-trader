@@ -292,8 +292,8 @@ const CHARGES={
 };
 /* statutory charges are IDENTICAL across brokers (regulatory) — only brokerage/DP differ */
 const STATUTORY_OPT=[
-  'STT: 0.10% on premium — SELL side only',
-  'Exchange txn (NSE): 0.03503% on premium — both sides',
+  'STT: 0.15% on premium — SELL side only (Budget-2026, from 01-Apr-2026; was 0.10% Oct-24..Mar-26, 0.0625% before — backtests use the date-aware charges.py regime table)',
+  'Exchange txn (NSE): 0.03553% on premium — both sides',
   'SEBI charges: ₹10 per crore (0.0001%) — both sides',
   'Stamp duty: 0.003% on premium — BUY side only',
   'GST: 18% on (brokerage + exchange txn + SEBI)',
@@ -420,8 +420,8 @@ function costLines(s,L){
   if(s.real_cost_sim){
     L.push('  • F&O options per-order charges (current NSE rates):');
     L.push('       – Brokerage: ₹20 flat per executed order (buy & sell each; Zerodha & Dhan same for F&O)');
-    L.push('       – STT: 0.10% on premium — SELL side only');
-    L.push('       – Exchange txn (NSE): 0.03503% on premium — both sides');
+    L.push('       – STT: 0.15% on premium — SELL side only (from 01-Apr-2026; 0.10% Oct-24..Mar-26, 0.0625% before — cost each historical trade at ITS OWN regime, see charges.py)');
+    L.push('       – Exchange txn (NSE): 0.03553% on premium — both sides (0.03503% Oct-24..Mar-26, 0.053% before)');
     L.push('       – SEBI: ₹10 per crore (0.0001%) — both sides');
     L.push('       – Stamp duty: 0.003% on premium — BUY side only');
     L.push('       – GST: 18% on (brokerage + exchange txn + SEBI)');

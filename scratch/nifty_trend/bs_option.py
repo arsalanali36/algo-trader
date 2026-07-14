@@ -80,19 +80,17 @@ def implied_vol(market_price, S, K, T, r=R_FREE, opt="CE", lo=0.005, hi=3.0, tol
     return 0.5 * (lo + hi)
 
 
-# ---------------- real Zerodha F&O charges (mirror index.html calcCharges) ----------------
-def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
-    buy_px = entry_prem if entry_side == "BUY" else exit_prem
-    sell_px = exit_prem if entry_side == "BUY" else entry_prem
-    buy_turn, sell_turn = buy_px * qty, sell_px * qty
-    total = buy_turn + sell_turn
-    brokerage = 40.0                    # Rs 20 x 2 legs
-    stt = 0.000625 * sell_turn          # 0.0625% on SELL premium
-    exch = 0.00053 * total              # 0.053% both legs
-    sebi = 0.0000001 * total            # Rs 10 / crore
-    stamp = 0.00003 * buy_turn          # 0.003% on BUY
-    gst = 0.18 * (brokerage + exch + sebi)
-    return brokerage + stt + exch + sebi + stamp + gst
+# ---------------- real Zerodha F&O charges — DATE-AWARE (charges.py = single source) ----------------
+import charges as _chg   # same folder: verified STT/txn regime table (Oct-2024 + Apr-2026 hikes)
+
+
+def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY", when=None):
+    """Round-trip Zerodha F&O charge for ONE option leg. `when` = the trade's entry
+    timestamp — STT/txn rates changed 2024-10-01 (Budget-2024) and 2026-04-01
+    (Budget-2026), so a 4.5yr backtest MUST pass it (charges.py regime table).
+    when=None -> TODAY's rates (forward-looking callers only). Pre-2026-07-14 this
+    was a fixed pre-Oct-2024 formula (0.0625% STT / 0.053% txn) for all dates."""
+    return _chg.option_charges(entry_prem, exit_prem, qty, entry_side=entry_side, when=when)
 
 
 # ---------------- DOM-measured spread slippage (brother's real order-book) ----------------
@@ -276,7 +274,7 @@ def reprice(trades, sigma_map, lot_size, lots=1, r=R_FREE):
         ep = bs_price(S_in, K, tte_years(e_ts), sig_in, r, opt)
         xp = bs_price(S_out, K, tte_years(x_ts), sig_out, r, opt)
         gross = (xp - ep) * qty                       # bought option: long premium
-        fee = calc_charges(ep, xp, qty)
+        fee = calc_charges(ep, xp, qty, when=e_ts)
         slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
         pnl = gross - fee - slip
         out.append({
@@ -324,8 +322,8 @@ def reprice_spread(trades, sigma_map, lot_size, lots=1, wing_steps=10,
         credit_in = atm_in - wing_in                  # received at entry (>0)
         cost_out = atm_out - wing_out                 # paid to close
         gross = (credit_in - cost_out) * qty          # short the spread
-        fee = (calc_charges(atm_in, atm_out, qty, entry_side="SELL")     # short ATM leg
-               + calc_charges(wing_in, wing_out, qty, entry_side="BUY"))  # long wing leg
+        fee = (calc_charges(atm_in, atm_out, qty, entry_side="SELL", when=e_ts)     # short ATM leg
+               + calc_charges(wing_in, wing_out, qty, entry_side="BUY", when=e_ts))  # long wing leg
         slip = (slip_cost_leg(atm_in, atm_out, qty)                       # per-LEG DOM spread
                 + slip_cost_leg(wing_in, wing_out, qty))                  # (wing = OTM, wider %)
         pnl = gross - fee - slip
@@ -365,7 +363,7 @@ def reprice_positional(trades, sigma_map, lot_size, lots=1, r=R_FREE):
         ep = bs_price(S_in, K, T_in, sig_in, r, opt)
         xp = bs_price(S_out, K, T_out, sig_out, r, opt)
         gross = (xp - ep) * qty                       # bought option: long premium
-        fee = calc_charges(ep, xp, qty)
+        fee = calc_charges(ep, xp, qty, when=e_ts)
         slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
         pnl = gross - fee - slip
         out.append({
@@ -399,7 +397,7 @@ def reprice_naked(trades, sigma_map, lot_size, lots=1, vrp_mult=1.0, r=R_FREE):
         ep = bs_price(S_in, K, tte_years(e_ts), sig_in, r, opt)
         xp = bs_price(S_out, K, tte_years(x_ts), sig_out, r, opt)
         gross = (ep - xp) * qty                       # sold premium: profit when it decays
-        fee = calc_charges(ep, xp, qty, entry_side="SELL")
+        fee = calc_charges(ep, xp, qty, entry_side="SELL", when=e_ts)
         slip = slip_cost_leg(ep, xp, qty)             # DOM real bid/ask spread
         pnl = gross - fee - slip
         out.append({

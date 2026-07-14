@@ -135,8 +135,8 @@ def backtest(m, sig="all", params=None, lot=75, lots=1, charges=True, rms_caps=N
             hedge_pnl = hedge_pnl_u * qty
             fee = 0.0
             if charges:
-                fee += bs.calc_charges(CE[e], CE[xi], qty, entry_side="BUY")
-                fee += bs.calc_charges(PE[e], PE[xi], qty, entry_side="BUY")
+                fee += bs.calc_charges(CE[e], CE[xi], qty, entry_side="BUY", when=DT[e])
+                fee += bs.calc_charges(PE[e], PE[xi], qty, entry_side="BUY", when=DT[e])
                 fee += hedge_cost
             pnl = opt_pnl + hedge_pnl - fee
             equity += pnl; day_real += pnl

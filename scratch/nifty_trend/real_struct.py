@@ -119,7 +119,8 @@ def backtest(m, struct, sig, params=None, lot=75, lots=1, charges=True, rms_caps
         for (col, side, ep) in pos["legs"]:
             xp = float(rows[i].get(col) or ep)
             if charges:
-                fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if side > 0 else "SELL"))
+                fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if side > 0 else "SELL"),
+                                       when=pos["entry_dt"])
             slip_cost += slip * (abs(ep) + abs(xp))    # you cross the spread both legs, both sides
         pnl = (pnl_u - slip_cost) * qty - fee
         equity += pnl; day_real += pnl

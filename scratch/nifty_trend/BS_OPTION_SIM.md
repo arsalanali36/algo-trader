@@ -49,7 +49,7 @@ entry_prem = bs_price(entry_spot, K, T_entry, sigma_entry, opt=opt_type)
 exit_prem  = bs_price(exit_spot,  K, T_exit,  sigma_exit,  opt=opt_type)   # SAME K; T_exit < T_entry; sigma can update intraday but same-day ≈ same
 qty        = lots * lot_size
 gross      = (exit_prem - entry_prem) * qty          # we BUY the option, so long premium
-fee        = calc_charges(entry_prem, exit_prem, qty)   # see below
+fee        = calc_charges(entry_prem, exit_prem, qty, when=entry_ts)   # DATE-AWARE — see below
 pnl        = gross - fee
 ```
 
@@ -57,25 +57,21 @@ We **buy** the ATM option in both directions (CE for long, PE for short) — so 
 always `(exit_prem − entry_prem) × qty`, no sign flip. (If a strategy SELLS options instead,
 flip the sign and use SELL-side margin, but the default is buy-ATM.)
 
-## Real Zerodha F&O charges (mirror the app's `calcCharges`, index.html)
+## Real Zerodha F&O charges — DATE-AWARE since 2026-07-14 (`charges.py` = single source)
 
-```python
-def calc_charges(entry_prem, exit_prem, qty, entry_side="BUY"):
-    buy_px  = entry_prem if entry_side == "BUY" else exit_prem
-    sell_px = exit_prem  if entry_side == "BUY" else entry_prem
-    buy_turn, sell_turn = buy_px * qty, sell_px * qty
-    total = buy_turn + sell_turn
-    brokerage = 40.0                       # ₹20 × 2 orders
-    stt       = 0.000625 * sell_turn       # 0.0625% on SELL premium
-    exch      = 0.00053  * total           # 0.053% both legs
-    sebi      = 0.0000001 * total          # ₹10 / crore
-    stamp     = 0.00003  * buy_turn        # 0.003% on BUY
-    gst       = 0.18 * (brokerage + exch + sebi)
-    return brokerage + stt + exch + sebi + stamp + gst
-```
-1-lot NIFTY (premium ~₹100, lot 75) ⇒ ~₹60 round-trip — NOT the ₹240+ a spot-notional model
-gives. **This is the correct tax basis.** (User will also state cost assumptions in the prompt;
-honour those if given, else use this.)
+STT/txn changed **2024-10-01** (Budget-2024: options STT sell 0.0625%→0.10%, txn
+0.053%→0.03503%) and **2026-04-01** (Budget-2026: STT →0.15%, txn 0.03553% — verified live
+against zerodha.com/charges 2026-07-14). A 4.5yr backtest spans all three regimes, so
+`bs_option.calc_charges(entry_prem, exit_prem, qty, entry_side="BUY", when=entry_ts)` looks
+the rates up by the trade's ENTRY date (`charges.OPT_REGIMES`); `when=None` = today's rates.
+Formula shape (brokerage ₹20×2, SEBI ₹10/crore, stamp 0.003% buy, GST 18% on
+brokerage+txn+SEBI) is unchanged — only STT/txn are regime-looked-up. Full table + the ₹40
+cash-collateral-brokerage flag: `charges.py` docstring + `STT_RECOST_2026-07-14.md`.
+
+1-lot NIFTY (premium ~₹100, lot 75) ⇒ ~₹60-70 round-trip (regime-dependent) — NOT the ₹240+
+a spot-notional model gives. **This is the correct tax basis.** (User will also state cost
+assumptions in the prompt; honour those if given, else use this.) The app's live
+`calcCharges` (index.html) carries the CURRENT regime only — it costs today's trades.
 
 ## Why this makes the result realistic (vs spot)
 - **Delta (~0.5 ATM):** a 100-pt index win → premium moves ~50 pt → option P&L ≈ half the naive

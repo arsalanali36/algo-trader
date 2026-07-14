@@ -55,7 +55,7 @@ def run(flag="MONTH", tf="5m", band=(3, 4, 5), entry="eod"):
         if ep is None or xp is None or ep <= 0:
             eqc.append((DT[i1], eq)); continue
         gross = (xp - ep) * lot
-        fee = bs.calc_charges(ep, xp, lot, entry_side="BUY")
+        fee = bs.calc_charges(ep, xp, lot, entry_side="BUY", when=DT[i0])
         slip = SLIP * (ep + xp) * lot
         pnl = gross - fee - slip
         eq += pnl

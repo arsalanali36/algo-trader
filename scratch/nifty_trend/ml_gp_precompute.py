@@ -42,13 +42,22 @@ COMBOS = ["%s|%s" % (i, h) for i in INSTRUMENTS for h in HOLDS]
 LAST_ENTRY_MIN = 345          # no fresh entries in the final ~25 min of the day
 
 
-def charges_vec(buy_px, sell_px, qty=LOT):
-    """exact bs_option.calc_charges, vectorized (single option leg round-trip)."""
+def charges_vec(buy_px, sell_px, qty=LOT, dates=None):
+    """exact bs_option.calc_charges, vectorized (single option leg round-trip).
+    DATE-AWARE (2026-07-14): STT/txn changed 2024-10-01 + 2026-04-01 — pass the
+    per-bar entry-date array so each trade is costed at its own regime
+    (charges.opt_rates_vec). dates=None falls back to pre-Oct-2024 rates (the old
+    behaviour) — only for ad-hoc use, build() always passes dates."""
+    import charges as _chg
     buy_turn, sell_turn = buy_px * qty, sell_px * qty
     total = buy_turn + sell_turn
+    if dates is not None:
+        stt_r, txn_r = _chg.opt_rates_vec(dates)
+    else:
+        stt_r, txn_r = 0.000625, 0.00053
     brokerage = 40.0
-    stt = 0.000625 * sell_turn
-    exch = 0.00053 * total
+    stt = stt_r * sell_turn
+    exch = txn_r * total
     sebi = 0.0000001 * total
     stamp = 0.00003 * buy_turn
     gst = 0.18 * (brokerage + exch + sebi)
@@ -127,8 +136,8 @@ def build():
 
         slip_ce = SLIP_LEG * (ent_ce + x_ce) * LOT
         slip_pe = SLIP_LEG * (ent_pe + x_pe) * LOT
-        ch_ce_long = charges_vec(ent_ce, x_ce); ch_pe_long = charges_vec(ent_pe, x_pe)
-        ch_ce_short = charges_vec(x_ce, ent_ce); ch_pe_short = charges_vec(x_pe, ent_pe)
+        ch_ce_long = charges_vec(ent_ce, x_ce, dates=day); ch_pe_long = charges_vec(ent_pe, x_pe, dates=day)
+        ch_ce_short = charges_vec(x_ce, ent_ce, dates=day); ch_pe_short = charges_vec(x_pe, ent_pe, dates=day)
 
         base = {"long_ce": (x_ce - ent_ce) * LOT - ch_ce_long - slip_ce,
                 "long_pe": (x_pe - ent_pe) * LOT - ch_pe_long - slip_pe,

@@ -147,7 +147,7 @@ def backtest(m, name, params=None, lot=75, lots=1, charges=True, rms_caps=None, 
         if not xp or xp <= 0:
             xp = pos["ep"]
         gross = (xp - pos["ep"]) * qty
-        fee = bs.calc_charges(pos["ep"], xp, qty, entry_side="BUY") if charges else 0.0
+        fee = bs.calc_charges(pos["ep"], xp, qty, entry_side="BUY", when=pos["dt"]) if charges else 0.0
         pnl = gross - fee
         equity += pnl; day_real += pnl
         trades.append(dict(side=pos["side"], entry=round(pos["ep"], 2), exit=round(xp, 2), qty=qty,

@@ -41,7 +41,7 @@ def run(col, entry, flag="MONTH", tf="5m"):
         ep = r2._px(g, i0, side, K); xp = r2._px(g, i1, side, K)
         if ep is None or xp is None or ep <= 0:
             eqc.append((DT[i1], eq)); continue
-        pnl = (xp - ep) * lot - bs.calc_charges(ep, xp, lot, entry_side="BUY") - SLIP * (ep + xp) * lot
+        pnl = (xp - ep) * lot - bs.calc_charges(ep, xp, lot, entry_side="BUY", when=DT[i0]) - SLIP * (ep + xp) * lot
         eq += pnl
         trades.append(dict(side="long" if s > 0 else "short", entry=ep, exit=xp, qty=lot,
                            pnl=pnl, points=round(xp - ep, 2), entry_dt=str(DT[i0]),

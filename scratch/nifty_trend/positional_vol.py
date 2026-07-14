@@ -93,7 +93,8 @@ def backtest(flag="WEEK", tf="5m", struct="iron_fly", params=None, lot=75, lots=
         for (side, K, s) in pos["legs"]:
             ep = pos["eps"][(side, K)]; xp = r2._px(g, i, side, K)
             if charges:
-                fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if s > 0 else "SELL"))
+                fee += bs.calc_charges(ep, xp, qty, entry_side=("BUY" if s > 0 else "SELL"),
+                                       when=pos["dt"])
             slip_cost += slip * (abs(ep) + abs(xp))
         pnl = (pnl_u - slip_cost) * qty - fee
         equity += pnl

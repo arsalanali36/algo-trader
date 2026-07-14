@@ -142,7 +142,8 @@ def backtest(flagF="WEEK", flagB="MONTH", tf="5m", params=None, lot=75, lots=1,
         for (g_, i_, s_, ep_) in ((gF, iF, -1, pos["epF"]), (gB, iB, +1, pos["epB"])):
             xp_ = r2._px(g_, i_, side, K)
             if charges:
-                fee += bs.calc_charges(ep_, xp_, qty, entry_side=("BUY" if s_ > 0 else "SELL"))
+                fee += bs.calc_charges(ep_, xp_, qty, entry_side=("BUY" if s_ > 0 else "SELL"),
+                                       when=pos["dt"])
             if slip_mode == "flat":
                 slip_rs += slip * (abs(ep_) + abs(xp_)) * qty
             else:

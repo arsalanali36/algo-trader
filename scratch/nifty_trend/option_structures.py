@@ -265,7 +265,8 @@ def backtest_structure(d, sig_name, struct_name, params=None, sigma_map=None,
                 # |side|>1 (ratio legs, e.g. buy 2 lots) → charges on the real 2x turnover;
                 # brokerage stays flat/leg-order (one 2-lot order = one ₹20 order) — calc_charges
                 # ka flat ₹40 round-trip yahi model karta hai. |side|=1 pe behaviour unchanged.
-                fee += bs.calc_charges(ep, xp, qty * abs(side), entry_side=("BUY" if side > 0 else "SELL"))
+                fee += bs.calc_charges(ep, xp, qty * abs(side), entry_side=("BUY" if side > 0 else "SELL"),
+                                       when=pos["entry_dt"])
             # real bid/ask spread per leg (DOM-calibrated by that leg's own premium band; ATM legs
             # ≈0.11%, OTM wings ≈0.24%). Zero when bs.SLIP_ENABLED is False (reproduces old numbers).
             slip += bs.slip_cost_leg(ep, xp, qty * abs(side))
