@@ -108,8 +108,18 @@
     </div>
 
     <div class="chartcard">
-      <h3>Per-strategy equity — overlaid</h3>
-      <div class="sub">Click a legend item to toggle. Cumulative <span id="overlayMetric">net</span> P&amp;L per strategy.</div>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <h3>Per-strategy equity — overlaid</h3>
+        <div style="display:flex;align-items:center;gap:8px">
+          <label style="color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.4px">Sort</label>
+          <div class="seg" id="sortSeg">
+            <button data-s="profit" class="on">Profitability</button>
+            <button data-s="trades">Trades</button>
+            <button data-s="family">Family</button>
+          </div>
+        </div>
+      </div>
+      <div class="sub">Click a legend item to toggle. Cumulative <span id="overlayMetric">net</span> P&amp;L per strategy. Hover for date &amp; value.</div>
       <div class="legend" id="legend"></div>
       <div id="overlayChart"></div>
     </div>
@@ -143,8 +153,9 @@
 <script>
 const PALETTE=['#1f6feb','#3fb950','#d29922','#db61a2','#a371f7','#f0883e','#39c5cf',
   '#f85149','#8b949e','#e3b341','#56d364','#79c0ff','#ff7b72','#d2a8ff','#7ee787'];
-let DATA=null, METRIC='net', MODE='all';
+let DATA=null, METRIC='net', MODE='all', GRAPHSORT='profit';
 const off=new Set();               // strategies toggled off in overlay
+let COLOR={};                      // id -> colour, STABLE across sorts
 const $=id=>document.getElementById(id);
 const inr=n=>Math.round(n||0).toLocaleString('en-IN');
 const sign=n=>(n>0?'+':'')+'₹'+inr(n);
@@ -168,6 +179,27 @@ async function load(){
 function keyMetric(p){return METRIC==='net'?p.cum_net:p.cum_gross;}
 function statMetric(s){return METRIC==='net'?s.net:s.gross;}
 
+// STABLE colour per strategy — keyed off the backend (net-desc) order so the
+// Sort control never reshuffles which colour a strategy has.
+function buildColors(){
+  COLOR={};
+  (DATA.strategies||[]).forEach((s,i)=>{COLOR[s.id]=PALETTE[i%PALETTE.length];});
+}
+// Family key from the registry "NN.MM - Name" label; unregistered ones sort last.
+function famKey(s){
+  const m=String(s.label||s.id).match(/^(\d+)\.(\d+)/);
+  if(m) return '0_'+m[1].padStart(3,'0')+'.'+m[2].padStart(3,'0');
+  return '1_'+String(s.label||s.id).toLowerCase();
+}
+// Order for the overlay + mini cards (table has its own column sort).
+function sortedStrategies(){
+  const S=[...(DATA.strategies||[])];
+  if(GRAPHSORT==='family')      S.sort((a,b)=>famKey(a).localeCompare(famKey(b),undefined,{numeric:true}));
+  else if(GRAPHSORT==='trades') S.sort((a,b)=>(b.n_trades-a.n_trades)||(statMetric(b)-statMetric(a)));
+  else                          S.sort((a,b)=>statMetric(b)-statMetric(a));   // profitability
+  return S;
+}
+
 function render(){
   const S=DATA.strategies||[];
   $('overlayMetric').textContent=METRIC;
@@ -179,6 +211,7 @@ function render(){
     return;
   }
   $('empty').style.display='none';
+  buildColors();
   renderKpis();
   renderCombined();
   renderOverlay();
@@ -227,11 +260,16 @@ function lineChart(host, series, opts={}){
   // zero line emphasise
   if(mn<0&&mx>0){const zy=yv(0);
     svg+=`<line x1="${P.l}" y1="${zy}" x2="${W-P.r}" y2="${zy}" stroke="#484f58" stroke-dasharray="3 3"/>`;}
-  // series paths
+  // series paths (+ collect pixel positions for nearest-point hover)
+  const HP=[];   // {x,y,name,color,p}
   series.forEach(s=>{
     if(!s.points.length)return;
     let d='';
-    s.points.forEach((p,i)=>{d+=(i?'L':'M')+xi(i).toFixed(1)+' '+yv(p.y).toFixed(1)+' ';});
+    s.points.forEach((p,i)=>{
+      const px=xi(i), py=yv(p.y);
+      d+=(i?'L':'M')+px.toFixed(1)+' '+py.toFixed(1)+' ';
+      HP.push({x:px,y:py,name:s.name,color:s.color,p:p});
+    });
     // area for single/combined
     if(s.fill){
       const y0=yv(Math.max(mn,0));
@@ -245,21 +283,31 @@ function lineChart(host, series, opts={}){
   });
   svg+='</svg>';
   host.innerHTML=svg;
-  // hover tooltip on combined (single series with .t labels)
-  if(opts.hover&&series.length){
-    const s=series[0], node=host.querySelector('svg'), tip=$('tip');
+  // ── generic nearest-point hover: date + cumulative value (+series name if multi) ──
+  if(opts.hover!==false && HP.length){
+    const node=host.querySelector('svg'), tip=$('tip');
+    const NS='http://www.w3.org/2000/svg';
+    const hl=document.createElementNS(NS,'circle');
+    hl.setAttribute('r','4'); hl.setAttribute('fill','none');
+    hl.setAttribute('stroke-width','2'); hl.style.display='none';
+    node.appendChild(hl);
     node.addEventListener('mousemove',e=>{
       const rect=node.getBoundingClientRect();
-      const rel=(e.clientX-rect.left)/rect.width*W;
-      let idx=Math.round((rel-P.l)/((W-P.l-P.r)/Math.max(1,maxLen-1)));
-      idx=Math.max(0,Math.min(s.points.length-1,idx));
-      const p=s.points[idx]; if(!p)return;
+      const mx=(e.clientX-rect.left)*W/rect.width;
+      const my=(e.clientY-rect.top)*H/rect.height;
+      let best=null,bd=1e18;
+      for(const h of HP){const dx=h.x-mx,dy=h.y-my,dd=dx*dx+dy*dy; if(dd<bd){bd=dd;best=h;}}
+      if(!best){tip.style.display='none';hl.style.display='none';return;}
+      hl.setAttribute('cx',best.x); hl.setAttribute('cy',best.y);
+      hl.setAttribute('stroke',best.color); hl.style.display='';
+      const p=best.p;
       tip.style.display='block';
-      tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-10)+'px';
-      tip.innerHTML=`<b>${p.t||''}</b><br>Cum ${METRIC}: ${sign(p.y)}`+
+      tip.style.left=(e.clientX+14)+'px'; tip.style.top=(e.clientY-10)+'px';
+      tip.innerHTML=(opts.multi?`<b style="color:${best.color}">${best.name}</b><br>`:'')+
+        `📅 <b>${p.t||''}</b><br>Cum ${METRIC}: <b>${sign(p.y)}</b>`+
         (p.pnl!==undefined?`<br>Trade: ${sign(p.pnl)} ${p.sym||''}`:'');
     });
-    node.addEventListener('mouseleave',()=>tip.style.display='none');
+    node.addEventListener('mouseleave',()=>{tip.style.display='none';hl.style.display='none';});
   }
 }
 
@@ -272,31 +320,30 @@ function renderCombined(){
     `${c.n_trades} trades · Net ${sign(c.net)} · Gross ${sign(c.gross)} · Tax ₹${inr(c.tax)} · Max DD ₹${inr(c.max_dd)} · Sharpe ${c.sharpe}`;
 }
 
+function _mapPts(s){return s.points.map(p=>({t:p.t,y:keyMetric(p),pnl:p.pnl,sym:p.sym}));}
+
 function renderOverlay(){
-  const S=DATA.strategies||[];
-  const series=S.filter(s=>!off.has(s.id)).map((s,i)=>({
-    name:s.label, color:PALETTE[S.indexOf(s)%PALETTE.length],
-    points:s.points.map(p=>({t:p.t,y:keyMetric(p)}))
+  const S=sortedStrategies();
+  const series=S.filter(s=>!off.has(s.id)).map(s=>({
+    name:s.label, color:COLOR[s.id], points:_mapPts(s)
   }));
-  lineChart($('overlayChart'),series,{h:300});
-  // legend
-  $('legend').innerHTML=S.map((s,i)=>{
-    const col=PALETTE[i%PALETTE.length];
-    return `<span class="li ${off.has(s.id)?'off':''}" onclick="toggle('${s.id}')">
-      <span class="sw" style="background:${col}"></span>${s.label} <b class="${cls(statMetric(s))}">${sign(statMetric(s))}</b></span>`;
-  }).join('');
+  lineChart($('overlayChart'),series,{h:300,multi:true});
+  // legend (same order as sort)
+  $('legend').innerHTML=S.map(s=>
+    `<span class="li ${off.has(s.id)?'off':''}" onclick="toggle('${s.id}')">
+      <span class="sw" style="background:${COLOR[s.id]}"></span>${s.label} <b class="${cls(statMetric(s))}">${sign(statMetric(s))}</b></span>`
+  ).join('');
 }
 function toggle(id){off.has(id)?off.delete(id):off.add(id);renderOverlay();}
 
 function renderMinis(){
-  const S=DATA.strategies||[];
+  const S=sortedStrategies();
   $('miniGrid').innerHTML=S.map((s,i)=>{
-    const col=PALETTE[i%PALETTE.length];
     const badge=s.running
       ? `<span class="badge ${s.mode==='live'?'live':'paper'}">${s.mode||'paper'}</span>`
       : `<span class="badge stop">stopped</span>`;
     return `<div class="mini">
-      <div class="top"><div class="nm" title="${s.label}">${s.label}</div>${badge}</div>
+      <div class="top"><div class="nm" title="${s.label}"><span class="dot" style="background:${COLOR[s.id]}"></span>${s.label}</div>${badge}</div>
       <div class="net ${cls(statMetric(s))}">${sign(statMetric(s))}</div>
       <div class="row2">
         <span>${s.n_trades} trades</span><span>Win ${s.win_rate}%</span>
@@ -306,9 +353,7 @@ function renderMinis(){
     </div>`;
   }).join('');
   S.forEach((s,i)=>{
-    const col=PALETTE[i%PALETTE.length];
-    const pts=s.points.map(p=>({t:p.t,y:keyMetric(p)}));
-    lineChart($('mini_'+i),[{name:s.label,color:col,points:pts,fill:true,w:1.6}],{h:120});
+    lineChart($('mini_'+i),[{name:s.label,color:COLOR[s.id],points:_mapPts(s),fill:true,w:1.6}],{h:120});
   });
 }
 
@@ -322,7 +367,7 @@ function renderTable(){
     return ((x||0)-(y||0))*sortDir;
   });
   $('tbody').innerHTML=S.map((s,i)=>{
-    const col=PALETTE[(DATA.strategies).indexOf(s)%PALETTE.length];
+    const col=COLOR[s.id]||'#8b949e';
     const st=s.running
       ? `<span class="badge ${s.mode==='live'?'live':'paper'}">${s.mode||'paper'}</span>`
       : `<span class="badge stop">—</span>`;
@@ -357,6 +402,10 @@ document.querySelectorAll('#metricSeg button').forEach(b=>b.onclick=()=>{
 document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on'); MODE=b.dataset.mode; load();
+});
+document.querySelectorAll('#sortSeg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#sortSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); GRAPHSORT=b.dataset.s; renderOverlay(); renderMinis();
 });
 document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
   const k=th.dataset.k; if(!k)return;
