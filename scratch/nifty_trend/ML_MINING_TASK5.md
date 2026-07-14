@@ -84,6 +84,42 @@ to the same underlying pattern? Note in DONE LOG of ml-strategy-mining-tasklist.
 
 ---
 
+## POST-HUNT STRUCTURE EXPLORATION (2026-07-14, user-driven — all honest-negative, DO-NOT-REDO)
+
+After the grid/GP verdict, user asked to push the winning fib short-straddle rule
+(`short_straddle|eod, fibpos_3≤0.382`) through progressively better real-premium structures.
+Every one tested on the **trustworthy held-strike engine** (`real_struct2`, the one that fixed
+the rolling-ATM over-optimism — CLAUDE.md 2026-07-11), evo(<2025-07)/val split, date-aware
+charges + DOM slip. Scripts: `_sl_target_sweep.py`, `_spread_levelstop.py`, `_optimize_sr.py`
+(scratch, gitignored):
+
+1. **Fair-N DSR sensitivity:** the winning rule fails DSR even at N=100 (single-idea, zero
+   search penalty) — DSR 0.5, full Sharpe 1.86 vs bar 1.87. The 4.36M N was NOT the killer;
+   the rule's own numbers are coin-flip. The strong val 2.45 rests on only ~20 trades.
+2. **Drop OI, keep pure fib S/R:** more trades (20→88-108), Sharpe STABLE (val ~1.8-2.0) — so
+   OI was cherry-picking a thin slice. But full Sharpe honestly ~1.3-1.65 (weak), still fails.
+3. **Evolution-window optimize (+1 regime filter, 4,332 evals):** best `fibpos_3≤0.382 AND
+   atm_skew>-0.53` (drop crash-fear days) → full 2.11 / val 2.40, DSR@100 0.33→0.69 (real jump)
+   but still <0.95; at honest N~37k, 0.024. Optimization effort is counted → DSR barely moves.
+4. **⚠️ ENGINE DISCREPANCY (flag for future ML work):** the ML mining table (`ml_gp_pnl.npz`)
+   shows this short-straddle val-POSITIVE (~+2.0), but `real_struct2` (held-strike, honest)
+   shows **val NEGATIVE (−2.5)**. The mining P&L table is more optimistic than the trustworthy
+   engine → any future ML short-vol candidate must be re-checked on real_struct2 before trust.
+5. **SL/target as premium multiples (1x/2x/3x):** barely fires (premium stop too wide); val
+   stays −2.5 on the honest engine. No help.
+6. **Directional credit spread (bear-call / bull-put by candle-1 dir) + LEVEL stop** (exit when
+   a bar closes back through the entry level): tight level stop **backfired** — 89% whipsaw
+   stop-out, net −₹48k, full −1.35. Buffered "confirmed break" (0.2-0.6%) cut whipsaw to 24%
+   and lifted win% to 55%, but **every config net-negative** (full Sharpe −0.13 to −0.63); a
+   couple show positive VAL Sharpe (0.6-1.2) but on a net-LOSING strategy = small-sample noise.
+
+**Root market lesson:** the opening-range fib level is NOT a strong enough S/R to contain NIFTY
+(price re-touches the entry level same-day ~89% of the time). So any level stop whipsaws a thin
+premium credit to death; holding without one eats the trending-day tail. Premium-selling on this
+signal has **no positive expectancy after honest held-strike costs** — neutral or directional,
+stopped or unstopped. The only consistently-positive short-vol thing remains the existing VRP
+overnight zone (IV>21). **This whole fib × premium-selling branch = tested, exhausted, do-not-redo.**
+
 ## DONE LOG
 - [x] **Task 5a — features → ml_features_v3.csv.gz (2026-07-14).** Added: first-candle (09:15)
   fib retracement ladder (23.6/38.2/50/61.8/78.6%, from-high + from-low; continuous `fibpos_k`
