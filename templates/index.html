@@ -481,6 +481,10 @@
     #risk-strategy-table .cfg-table input:focus { border-color: #388bfd; background: #0d1117; }
     #risk-strategy-table .cfg-table select { min-width: 120px; }
 
+    /* task 81 — Excel-style collapsible "Advanced" column group (Capital / Margin /
+       Mode / Shadow-Live / Auto-Hedge). Table gets class 'advc' when collapsed. */
+    #ps-ovr-table.advc .psadv { display: none; }
+
     .cfg-table select,
     .cfg-table input {
       width: 100%;
@@ -2498,7 +2502,12 @@
                   </div>
                 </td>
               </tr>
-              <tr>
+              <!-- 2026-07-14 (user request): global Per-Trade Default SL & Target card RETIRED from
+                   this page — Per-Strategy Override table (Enabled/Mode + ⚙ values) is now the ONLY
+                   place. Rows kept hidden in the DOM (not deleted) because loadRiskConfig/
+                   saveRiskConfig still read these inputs by id (global values stay preserved as the
+                   inherit-fallback). Aggressive graph block moved into the ⚙ modal on demand. -->
+              <tr id="defsl-global-row" style="display:none">
                 <td class="param-info" style="border-left:3px solid #1f6feb"><span>🎯 Per-Trade Default SL & Target</span>
                   <span class="wavy-subtext">Har naye position pe ye default SL/Target lagta hai — sirf wahi ek leg exit
                     hoti hai. <b>Ek hi mode active rehta hai.</b> Purani open positions apne existing SL/TP pe chalti hain
@@ -2736,7 +2745,8 @@
                 </td>
               </tr>
               <tr id="sl-mode-aggressive-graph">
-                <td colspan="2" style="padding-top:4px">
+                <td colspan="2" style="padding-top:4px" id="tsl-preview-home">
+                  <div id="tsl-preview-block">
                   <div style="display:flex;gap:6px;align-items:center;margin-bottom:6px">
                     <button type="button" id="tsl-tab-graph" onclick="tslShowTab('graph')"
                       style="padding:4px 12px;background:#1f6feb20;border:1px solid #1f6feb;border-radius:6px;color:#58a6ff;font-size:12px;font-weight:600;cursor:pointer">📈 Graph</button>
@@ -2749,6 +2759,7 @@
                     <div id="tsl-svg-wrap"></div>
                   </div>
                   <div id="tsl-preview-table" style="display:none;max-height:240px;overflow:auto;border:1px solid #21262d;border-radius:8px"></div>
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -4125,14 +4136,22 @@
         DSL_VAL_KEYS.forEach(k => { if (ov[k] !== undefined && ov[k] !== null && ov[k] !== '') dv[k] = ov[k]; });
         if (Object.keys(dv).length) window._dslVals[id] = dv;
       });
-      let html = '<table class="cfg-table"><tr><th>Strategy</th>'
+      // Excel-style collapsible "Advanced" column group (2026-07-14, user request) —
+      // Capital/Margin/Mode/Shadow-Live/Auto-Hedge columns collapse behind one toggle
+      // so the everyday view (Day Cap + SL + Default SL/Target) stays clean.
+      const _advC = localStorage.getItem('ps_adv_collapsed') !== '0';   // default: collapsed
+      let html = `<div style="display:flex;justify-content:flex-end;margin-bottom:6px">
+          <button id="psadv-toggle" onclick="togglePsAdv()" style="padding:4px 10px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;font-size:11.5px;cursor:pointer"
+            title="Capital ₹ / Margin Mult. / Mode / Shadow-Live / Auto-Hedge columns">${_advC ? '⊞ Advanced columns dikhao' : '⊟ Advanced columns chhupao'}</button></div>`
+        + `<table id="ps-ovr-table" class="cfg-table${_advC ? ' advc' : ''}"><tr><th>Strategy</th>`
         + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
-        + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe global Default-SL lage ya nahi, aur kaunsa mode. Blank = global setting follow.">🎯 Default SL/Target</th>'
-        + '<th>Capital ₹</th><th>Margin Mult.</th><th>Mode</th><th style="color:#f85149">Shadow-Live</th>'
-        + '<th colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
-        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th>Enabled</th><th>Mode</th><th></th><th></th><th></th><th></th>'
-        + '<th>Min Strikes</th><th>Max Premium ₹</th></tr>';
+        + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe Default-SL lage ya nahi, kaunsa mode, aur ⚙ se uski values. Blank = global fallback.">🎯 Default SL/Target</th>'
+        + '<th class="psadv">Capital ₹</th><th class="psadv">Margin Mult.</th><th class="psadv">Mode</th><th class="psadv" style="color:#f85149">Shadow-Live</th>'
+        + '<th class="psadv" colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
+        + '<tr><th></th><th>Max Loss %</th><th>Max Loss ₹</th><th style="color:#3fb950">Max Profit ₹</th><th></th><th>Enabled</th><th>Mode</th>'
+        + '<th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th>'
+        + '<th class="psadv">Min Strikes</th><th class="psadv">Max Premium ₹</th></tr>';
       // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
       const _rlc = k => String(k).toLowerCase();
       const _rUsed = new Set();
@@ -4166,35 +4185,35 @@
       <td><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td><select id="risk-dslen-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
-            <option value="" ${ov.default_sl_enabled == null ? 'selected' : ''}>global default</option>
+            <option value="" ${ov.default_sl_enabled == null ? 'selected' : ''}>global (${(RISK_CFG.global || {}).default_sl_enabled ? 'ON' : 'OFF'})</option>
             <option value="false" ${ov.default_sl_enabled === false ? 'selected' : ''}>OFF</option>
             <option value="true" ${ov.default_sl_enabled === true ? 'selected' : ''}>ON</option>
           </select></td>
-      <td style="white-space:nowrap"><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
-            <option value="" ${!ov.default_sl_mode ? 'selected' : ''}>global default</option>
+      <td><div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap"><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px;max-width:150px">
+            <option value="" ${!ov.default_sl_mode ? 'selected' : ''}>global (${({ legacy: 'Legacy', dropdown: 'Dropdown', aggressive: 'Aggressive' })[_globalDslMode()] || 'Dropdown'})</option>
             <option value="legacy" ${ov.default_sl_mode === 'legacy' ? 'selected' : ''}>Legacy — fixed ₹</option>
             <option value="dropdown" ${ov.default_sl_mode === 'dropdown' ? 'selected' : ''}>Dropdown — type+value</option>
             <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
           </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
-            title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps) — blank = global card ki values"
-            style="margin-left:4px;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></td>
-      <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
+            title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps + Aggressive graph preview) — blank = global fallback"
+            style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></div></td>
+      <td class="psadv"><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
+      <td class="psadv"><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.margin_multiplier ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
-      <td><select id="risk-mode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px">
+      <td class="psadv"><select id="risk-mode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px">
             <option value="" ${curMode === '' ? 'selected' : ''}>global default</option>
             <option value="reject" ${curMode === 'reject' ? 'selected' : ''}>Reject</option>
             <option value="size_down" ${curMode === 'size_down' ? 'selected' : ''}>Size down</option>
           </select></td>
-      <td><select id="risk-shadow-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #f85149;border-radius:4px">
+      <td class="psadv"><select id="risk-shadow-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #f85149;border-radius:4px">
             <option value="" ${curShadow === '' ? 'selected' : ''}>global default</option>
             <option value="false" ${curShadow === 'false' ? 'selected' : ''}>OFF</option>
             <option value="true" ${curShadow === 'true' ? 'selected' : ''}>ON</option>
           </select></td>
-      <td><input id="risk-hedgestrikes-${id}" type="number" step="1" placeholder="global"
+      <td class="psadv"><input id="risk-hedgestrikes-${id}" type="number" step="1" placeholder="global"
             value="${ov.hedge_offset_strikes ?? ''}" style="width:110px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
-      <td><input id="risk-hedgepremium-${id}" type="number" step="0.5" placeholder="global"
+      <td class="psadv"><input id="risk-hedgepremium-${id}" type="number" step="0.5" placeholder="global"
             value="${ov.hedge_max_premium_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
       </tr>`;
       });
@@ -4626,10 +4645,11 @@
       let m = document.getElementById('dsl-val-modal');
       if (!m) { m = document.createElement('div'); m.id = 'dsl-val-modal'; document.body.appendChild(m); }
       m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10001;display:flex;align-items:center;justify-content:center';
-      m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:420px;max-width:520px" onclick="event.stopPropagation()">
+      m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:420px;max-width:${mode === 'aggressive' ? '760px' : '520px'};max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
         <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#e6edf3">🎯 ${(typeof regLabel === 'function' && regLabel(id)) || id} — Default SL/Target values</div>
-        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global card ki value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.</div>
+        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global fallback value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.</div>
         ${fields}
+        ${mode === 'aggressive' ? '<div id="dslv-graph-mount" style="margin-top:12px"></div>' : ''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
           <button onclick="clearDslVals('${id}')" style="padding:6px 12px;background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:6px;cursor:pointer">Clear (global use karo)</button>
           <button onclick="closeDslValModal()" style="padding:6px 12px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;cursor:pointer">Cancel</button>
@@ -4638,10 +4658,54 @@
         <div style="color:#6e7681;font-size:10.5px;margin-top:8px">Apply ke baad table ka 💾 Save dabana zaroori hai — tabhi VPS config me likhta hai.</div>
       </div>`;
       m.onclick = closeDslValModal;
+      if (mode === 'aggressive') {
+        // Live graph preview (the retired global card's own graph block, moved here
+        // on demand — same hover/Table tab, ids stay unique because it's ONE node).
+        const mount = document.getElementById('dslv-graph-mount');
+        const blk = document.getElementById('tsl-preview-block');
+        if (mount && blk) mount.appendChild(blk);
+        ['default_tsl_target_per_lot', 'default_tsl_initial_sl_per_lot', 'default_tsl_favour_step',
+          'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult',
+          'default_tsl_min_cushion'].forEach(k => {
+            const el = document.getElementById('dslv-' + k);
+            if (el) el.oninput = _dslvGraph;
+          });
+        _dslvGraph();
+      }
+    }
+    // Effective aggressive cfg for the modal graph: modal field → global → default
+    function _dslvGraph() {
+      const g = (RISK_CFG && RISK_CFG.global) || {};
+      const eff = (k, d) => {
+        const el = document.getElementById('dslv-' + k);
+        let v = el && el.value !== '' ? parseFloat(el.value) : NaN;
+        if (isNaN(v) && g[k] !== undefined && g[k] !== null && String(g[k]) !== '') v = parseFloat(g[k]);
+        return isNaN(v) ? d : v;
+      };
+      const cfg = {
+        tgt: eff('default_tsl_target_per_lot', 2000), initSL: eff('default_tsl_initial_sl_per_lot', 1000),
+        fav: Math.max(1, eff('default_tsl_favour_step', 100)), mov: eff('default_tsl_sl_move', 100),
+        aggpct: eff('default_tsl_aggressive_pct', 50), aggmult: eff('default_tsl_aggressive_mult', 2),
+        cushion: eff('default_tsl_min_cushion', 0)
+      };
+      try { renderTslPreview(cfg); } catch (e) { }
     }
     function closeDslValModal() {
+      // return the shared graph block to its (hidden) home before tearing the modal down
+      const home = document.getElementById('tsl-preview-home');
+      const blk = document.getElementById('tsl-preview-block');
+      if (home && blk && blk.parentElement !== home) home.appendChild(blk);
       const m = document.getElementById('dsl-val-modal');
       if (m) m.remove();
+    }
+    // Excel-style Advanced column-group toggle (Capital/Margin/Mode/Shadow/Hedge)
+    function togglePsAdv() {
+      const t = document.getElementById('ps-ovr-table');
+      const b = document.getElementById('psadv-toggle');
+      if (!t) return;
+      const collapsed = t.classList.toggle('advc');
+      try { localStorage.setItem('ps_adv_collapsed', collapsed ? '1' : '0'); } catch (e) { }
+      if (b) b.textContent = collapsed ? '⊞ Advanced columns dikhao' : '⊟ Advanced columns chhupao';
     }
     function clearDslVals(id) {
       if (window._dslVals) delete window._dslVals[id];
@@ -4763,20 +4827,19 @@
     // Per-Trade Default SL merge (2026-07-07) — show only the active mode's
     // fields (Legacy / Dropdown / Aggressive). Only one is ever applied.
     function setDefaultSlMode(mode) {
-      const rows = {
-        legacy: ['sl-mode-legacy-row'],
-        dropdown: ['sl-mode-dropdown-row'],
-        aggressive: ['sl-mode-aggressive-row', 'sl-mode-aggressive-graph'],
-      };
+      // 2026-07-14: global Per-Trade Default SL card RETIRED (user request) —
+      // Per-Strategy Override (Enabled/Mode + ⚙ values) is the only UI now. The
+      // mode sub-rows stay permanently hidden (inputs kept in DOM so load/save
+      // keep preserving the stored global fallback values).
       ['sl-mode-legacy-row', 'sl-mode-dropdown-row', 'sl-mode-aggressive-row', 'sl-mode-aggressive-graph']
         .forEach(id => { const el = document.getElementById(id); if (el) el.style.display = 'none'; });
-      (rows[mode] || []).forEach(id => { const el = document.getElementById(id); if (el) el.style.display = ''; });
-      if (mode === 'aggressive') { try { renderTslPreview(); } catch (e) { } }
     }
 
-    function renderTslPreview() {
+    function renderTslPreview(cfgOverride) {
+      // cfgOverride (task 81 ⚙ modal) — render with an explicit cfg (per-strategy
+      // effective values) instead of reading the retired global card's inputs.
       const wrap = document.getElementById('tsl-svg-wrap'); if (!wrap) return;
-      const c = _tslCfg(); if (c.tgt <= 0) { wrap.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Target ₹/lot 0 se bada rakho.</div>'; document.getElementById('tsl-preview-table').innerHTML = ''; return; }
+      const c = cfgOverride || _tslCfg(); if (c.tgt <= 0) { wrap.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Target ₹/lot 0 se bada rakho.</div>'; document.getElementById('tsl-preview-table').innerHTML = ''; return; }
       const d = _tslCompute(c);
       const L = 58, R = 650, T = 15, B = 205, PW = R - L, PH = B - T;
       const yMin = -d.initSL, yMax = d.tgt, span = (yMax - yMin) || 1;
