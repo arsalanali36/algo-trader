@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Strategy Equity Curves</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    :root{
+      --bg:#0d1117; --panel:#161b22; --card:#161b22; --border:#30363d;
+      --border2:#21262d; --tx:#e6edf3; --mut:#8b949e; --green:#3fb950;
+      --red:#f85149; --blue:#1f6feb; --yellow:#d29922;
+    }
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{background:var(--bg);color:var(--tx);
+      font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+      font-size:13px;padding:0 0 60px}
+    .header{display:flex;align-items:center;justify-content:space-between;
+      padding:12px 18px;border-bottom:1px solid var(--border);background:var(--panel);
+      position:sticky;top:0;z-index:20}
+    .app-title{font-size:15px;font-weight:700;letter-spacing:.3px}
+    .app-title span{color:var(--mut);font-weight:500;font-size:12px;margin-left:8px}
+    .hdr-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .hdr-btn{padding:5px 10px;background:#21262d;border:1px solid var(--border);
+      border-radius:6px;color:var(--tx);font-size:12px;font-weight:600;cursor:pointer;
+      white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center;gap:5px}
+    .hdr-btn:hover{background:#30363d}
+    .seg{display:inline-flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+    .seg button{background:#0d1117;border:none;color:var(--mut);padding:5px 11px;
+      font-size:12px;font-weight:600;cursor:pointer}
+    .seg button.on{background:var(--blue);color:#fff}
+    input[type=date]{background:#0d1117;border:1px solid var(--border);border-radius:6px;
+      color:var(--tx);padding:4px 8px;font-size:12px;font-family:inherit}
+    .wrap{padding:16px 18px;max-width:1500px;margin:0 auto}
+    .toolbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:14px}
+    .toolbar label{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.4px}
+    .kpis{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+    .kpi{background:var(--card);border:1px solid var(--border);border-radius:8px;
+      padding:9px 14px;min-width:120px}
+    .kpi .l{color:var(--mut);font-size:11px;margin-bottom:2px}
+    .kpi .v{font-size:18px;font-weight:700}
+    .chartcard{background:var(--card);border:1px solid var(--border);border-radius:10px;
+      padding:14px 16px 8px;margin-bottom:16px}
+    .chartcard h3{font-size:13px;font-weight:600;margin-bottom:2px}
+    .chartcard .sub{color:var(--mut);font-size:11px;margin-bottom:6px}
+    .legend{display:flex;gap:14px;flex-wrap:wrap;margin:8px 0 4px}
+    .legend .li{display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;
+      color:var(--mut);user-select:none}
+    .legend .li.off{opacity:.35;text-decoration:line-through}
+    .legend .sw{width:12px;height:3px;border-radius:2px;display:inline-block}
+    svg{display:block;width:100%}
+    .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+    .mini{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+    .mini .top{display:flex;align-items:center;justify-content:space-between;margin-bottom:2px}
+    .mini .nm{font-size:12.5px;font-weight:600;white-space:nowrap;overflow:hidden;
+      text-overflow:ellipsis;max-width:210px}
+    .mini .net{font-size:15px;font-weight:700}
+    .mini .row2{display:flex;gap:12px;color:var(--mut);font-size:11px;margin:3px 0 6px}
+    .badge{font-size:9.5px;font-weight:700;padding:2px 6px;border-radius:10px;
+      text-transform:uppercase;letter-spacing:.4px}
+    .badge.live{background:rgba(248,81,73,.16);color:var(--red)}
+    .badge.paper{background:rgba(31,111,235,.16);color:#58a6ff}
+    .badge.stop{background:#21262d;color:var(--mut)}
+    table{width:100%;border-collapse:collapse;font-size:12.5px}
+    .tablecard{background:var(--card);border:1px solid var(--border);border-radius:10px;
+      overflow:hidden;margin-top:18px}
+    .tablecard .th{padding:11px 15px;font-size:13px;font-weight:600;border-bottom:1px solid var(--border)}
+    th,td{padding:8px 12px;text-align:right;white-space:nowrap}
+    th{color:var(--mut);font-weight:500;border-bottom:1px solid var(--border);
+      cursor:pointer;font-size:11px;text-transform:uppercase;letter-spacing:.3px}
+    th:first-child,td:first-child{text-align:left}
+    tbody tr{border-bottom:1px solid var(--border2)}
+    tbody tr:hover{background:#1c2128}
+    tfoot td{border-top:2px solid var(--border);font-weight:700;padding-top:10px}
+    .pos{color:var(--green)}.neg{color:var(--red)}.mut{color:var(--mut)}
+    .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:7px;vertical-align:middle}
+    .empty{color:var(--mut);text-align:center;padding:50px;font-size:14px}
+    .tip{position:fixed;pointer-events:none;background:#0d1117;border:1px solid var(--border);
+      border-radius:6px;padding:6px 9px;font-size:11px;z-index:100;display:none;box-shadow:0 4px 14px rgba(0,0,0,.5)}
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="app-title">📈 Strategy Equity Curves <span id="rangeLbl"></span></div>
+    <div class="hdr-actions">
+      <div class="seg" id="metricSeg">
+        <button data-m="net" class="on">Net</button>
+        <button data-m="gross">Gross</button>
+      </div>
+      <div class="seg" id="modeSeg">
+        <button data-mode="all" class="on">All</button>
+        <button data-mode="paper">Paper</button>
+        <button data-mode="live">Live</button>
+      </div>
+      <label>From <input type="date" id="fromD"></label>
+      <label>To <input type="date" id="toD"></label>
+      <button class="hdr-btn" onclick="load()">↻ Refresh</button>
+      <a class="hdr-btn" href="/">← Dashboard</a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <div class="kpis" id="kpis"></div>
+
+    <div class="chartcard">
+      <h3>All strategies — combined equity</h3>
+      <div class="sub" id="combinedSub"></div>
+      <div id="combinedChart"></div>
+    </div>
+
+    <div class="chartcard">
+      <h3>Per-strategy equity — overlaid</h3>
+      <div class="sub">Click a legend item to toggle. Cumulative <span id="overlayMetric">net</span> P&amp;L per strategy.</div>
+      <div class="legend" id="legend"></div>
+      <div id="overlayChart"></div>
+    </div>
+
+    <div class="grid" id="miniGrid"></div>
+
+    <div class="tablecard">
+      <div class="th">Per-strategy summary</div>
+      <table id="tbl">
+        <thead><tr>
+          <th data-k="label">Strategy</th>
+          <th data-k="status">Status</th>
+          <th data-k="n_trades">Trades</th>
+          <th data-k="win_rate">Win %</th>
+          <th data-k="gross">Gross</th>
+          <th data-k="tax">Tax</th>
+          <th data-k="net">Net</th>
+          <th data-k="max_dd">Max DD</th>
+          <th data-k="profit_factor">PF</th>
+          <th data-k="sharpe">Sharpe</th>
+        </tr></thead>
+        <tbody id="tbody"></tbody>
+        <tfoot id="tfoot"></tfoot>
+      </table>
+    </div>
+    <div class="empty" id="empty" style="display:none">No completed trades in this range.</div>
+  </div>
+
+  <div class="tip" id="tip"></div>
+
+<script>
+const PALETTE=['#1f6feb','#3fb950','#d29922','#db61a2','#a371f7','#f0883e','#39c5cf',
+  '#f85149','#8b949e','#e3b341','#56d364','#79c0ff','#ff7b72','#d2a8ff','#7ee787'];
+let DATA=null, METRIC='net', MODE='all';
+const off=new Set();               // strategies toggled off in overlay
+const $=id=>document.getElementById(id);
+const inr=n=>Math.round(n||0).toLocaleString('en-IN');
+const sign=n=>(n>0?'+':'')+'₹'+inr(n);
+const cls=n=>n>=0?'pos':'neg';
+
+function initDates(){
+  const t=new Date(), f=new Date(); f.setDate(f.getDate()-30);
+  const fmt=d=>d.toISOString().slice(0,10);
+  $('toD').value=fmt(t); $('fromD').value=fmt(f);
+}
+
+async function load(){
+  const qs=`date_from=${$('fromD').value}&date_to=${$('toD').value}`+
+    (MODE!=='all'?`&mode=${MODE}`:'');
+  const r=await fetch('/api/strategy-equity?'+qs);
+  DATA=await r.json();
+  $('rangeLbl').textContent=`${DATA.date_from} → ${DATA.date_to}`;
+  render();
+}
+
+function keyMetric(p){return METRIC==='net'?p.cum_net:p.cum_gross;}
+function statMetric(s){return METRIC==='net'?s.net:s.gross;}
+
+function render(){
+  const S=DATA.strategies||[];
+  $('overlayMetric').textContent=METRIC;
+  if(!S.length){
+    $('empty').style.display='block';
+    ['kpis','legend','miniGrid','tbody','tfoot'].forEach(i=>$(i).innerHTML='');
+    $('combinedChart').innerHTML=''; $('overlayChart').innerHTML='';
+    $('combinedSub').textContent='';
+    return;
+  }
+  $('empty').style.display='none';
+  renderKpis();
+  renderCombined();
+  renderOverlay();
+  renderMinis();
+  renderTable();
+}
+
+function renderKpis(){
+  const c=DATA.combined||{};
+  const liveN=(DATA.strategies||[]).filter(s=>s.running).length;
+  const items=[
+    ['Strategies', (DATA.strategies||[]).length, ''],
+    ['Running now', liveN, ''],
+    ['Total Net', sign(c.net), cls(c.net)],
+    ['Total Gross', sign(c.gross), cls(c.gross)],
+    ['Trades', c.n_trades||0, ''],
+    ['Win %', (c.win_rate||0)+'%', ''],
+    ['Max DD', '₹'+inr(c.max_dd), 'neg'],
+  ];
+  $('kpis').innerHTML=items.map(([l,v,k])=>
+    `<div class="kpi"><div class="l">${l}</div><div class="v ${k}">${v}</div></div>`).join('');
+}
+
+// ── generic SVG line chart ──
+function lineChart(host, series, opts={}){
+  // series: [{name,color,points:[{t,y}]}]
+  const W=host.clientWidth||900, H=opts.h||260, P={l:58,r:14,t:14,b:26};
+  let all=[]; series.forEach(s=>s.points.forEach(p=>all.push(p.y)));
+  if(!all.length){host.innerHTML='<div class="mut" style="padding:20px">No data</div>';return;}
+  let mn=Math.min(0,...all), mx=Math.max(0,...all);
+  if(mn===mx){mx+=1;mn-=1;}
+  const pad=(mx-mn)*0.08; mx+=pad; mn-=pad;
+  // longest series drives x length
+  const maxLen=Math.max(...series.map(s=>s.points.length));
+  const xi=i=>P.l+(maxLen<=1?0:(i/(maxLen-1))*(W-P.l-P.r));
+  const yv=v=>P.t+(1-(v-mn)/(mx-mn))*(H-P.t-P.b);
+  const NS='http://www.w3.org/2000/svg';
+  let svg=`<svg viewBox="0 0 ${W} ${H}" height="${H}">`;
+  // grid + y labels
+  const ticks=5;
+  for(let i=0;i<=ticks;i++){
+    const v=mn+(mx-mn)*i/ticks, y=yv(v);
+    svg+=`<line x1="${P.l}" y1="${y}" x2="${W-P.r}" y2="${y}" stroke="#21262d"/>`;
+    svg+=`<text x="${P.l-6}" y="${y+3}" fill="#8b949e" font-size="10" text-anchor="end">${inr(v)}</text>`;
+  }
+  // zero line emphasise
+  if(mn<0&&mx>0){const zy=yv(0);
+    svg+=`<line x1="${P.l}" y1="${zy}" x2="${W-P.r}" y2="${zy}" stroke="#484f58" stroke-dasharray="3 3"/>`;}
+  // series paths
+  series.forEach(s=>{
+    if(!s.points.length)return;
+    let d='';
+    s.points.forEach((p,i)=>{d+=(i?'L':'M')+xi(i).toFixed(1)+' '+yv(p.y).toFixed(1)+' ';});
+    // area for single/combined
+    if(s.fill){
+      const y0=yv(Math.max(mn,0));
+      let a=d+`L${xi(s.points.length-1).toFixed(1)} ${y0} L${xi(0).toFixed(1)} ${y0} Z`;
+      svg+=`<path d="${a}" fill="${s.color}22"/>`;
+    }
+    svg+=`<path d="${d}" fill="none" stroke="${s.color}" stroke-width="${s.w||1.8}"/>`;
+    // last-point dot
+    const lp=s.points[s.points.length-1];
+    svg+=`<circle cx="${xi(s.points.length-1)}" cy="${yv(lp.y)}" r="3" fill="${s.color}"/>`;
+  });
+  svg+='</svg>';
+  host.innerHTML=svg;
+  // hover tooltip on combined (single series with .t labels)
+  if(opts.hover&&series.length){
+    const s=series[0], node=host.querySelector('svg'), tip=$('tip');
+    node.addEventListener('mousemove',e=>{
+      const rect=node.getBoundingClientRect();
+      const rel=(e.clientX-rect.left)/rect.width*W;
+      let idx=Math.round((rel-P.l)/((W-P.l-P.r)/Math.max(1,maxLen-1)));
+      idx=Math.max(0,Math.min(s.points.length-1,idx));
+      const p=s.points[idx]; if(!p)return;
+      tip.style.display='block';
+      tip.style.left=(e.clientX+12)+'px'; tip.style.top=(e.clientY-10)+'px';
+      tip.innerHTML=`<b>${p.t||''}</b><br>Cum ${METRIC}: ${sign(p.y)}`+
+        (p.pnl!==undefined?`<br>Trade: ${sign(p.pnl)} ${p.sym||''}`:'');
+    });
+    node.addEventListener('mouseleave',()=>tip.style.display='none');
+  }
+}
+
+function renderCombined(){
+  const c=DATA.combined; if(!c){$('combinedChart').innerHTML='';return;}
+  const pts=c.points.map(p=>({t:p.t,y:keyMetric(p),pnl:p.pnl,sym:p.sym}));
+  const col=c.net>=0?'#3fb950':'#f85149';
+  lineChart($('combinedChart'),[{name:'All',color:col,points:pts,fill:true,w:2.2}],{h:280,hover:true});
+  $('combinedSub').textContent=
+    `${c.n_trades} trades · Net ${sign(c.net)} · Gross ${sign(c.gross)} · Tax ₹${inr(c.tax)} · Max DD ₹${inr(c.max_dd)} · Sharpe ${c.sharpe}`;
+}
+
+function renderOverlay(){
+  const S=DATA.strategies||[];
+  const series=S.filter(s=>!off.has(s.id)).map((s,i)=>({
+    name:s.label, color:PALETTE[S.indexOf(s)%PALETTE.length],
+    points:s.points.map(p=>({t:p.t,y:keyMetric(p)}))
+  }));
+  lineChart($('overlayChart'),series,{h:300});
+  // legend
+  $('legend').innerHTML=S.map((s,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    return `<span class="li ${off.has(s.id)?'off':''}" onclick="toggle('${s.id}')">
+      <span class="sw" style="background:${col}"></span>${s.label} <b class="${cls(statMetric(s))}">${sign(statMetric(s))}</b></span>`;
+  }).join('');
+}
+function toggle(id){off.has(id)?off.delete(id):off.add(id);renderOverlay();}
+
+function renderMinis(){
+  const S=DATA.strategies||[];
+  $('miniGrid').innerHTML=S.map((s,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    const badge=s.running
+      ? `<span class="badge ${s.mode==='live'?'live':'paper'}">${s.mode||'paper'}</span>`
+      : `<span class="badge stop">stopped</span>`;
+    return `<div class="mini">
+      <div class="top"><div class="nm" title="${s.label}">${s.label}</div>${badge}</div>
+      <div class="net ${cls(statMetric(s))}">${sign(statMetric(s))}</div>
+      <div class="row2">
+        <span>${s.n_trades} trades</span><span>Win ${s.win_rate}%</span>
+        <span>DD ₹${inr(s.max_dd)}</span><span>PF ${s.profit_factor}</span>
+      </div>
+      <div id="mini_${i}"></div>
+    </div>`;
+  }).join('');
+  S.forEach((s,i)=>{
+    const col=PALETTE[i%PALETTE.length];
+    const pts=s.points.map(p=>({t:p.t,y:keyMetric(p)}));
+    lineChart($('mini_'+i),[{name:s.label,color:col,points:pts,fill:true,w:1.6}],{h:120});
+  });
+}
+
+let sortK='net', sortDir=-1;
+function renderTable(){
+  const S=[...(DATA.strategies||[])];
+  S.sort((a,b)=>{
+    let x=a[sortK],y=b[sortK];
+    if(typeof x==='string'){x=x.toLowerCase();y=(y||'').toLowerCase();
+      return x<y?-sortDir:x>y?sortDir:0;}
+    return ((x||0)-(y||0))*sortDir;
+  });
+  $('tbody').innerHTML=S.map((s,i)=>{
+    const col=PALETTE[(DATA.strategies).indexOf(s)%PALETTE.length];
+    const st=s.running
+      ? `<span class="badge ${s.mode==='live'?'live':'paper'}">${s.mode||'paper'}</span>`
+      : `<span class="badge stop">—</span>`;
+    return `<tr>
+      <td><span class="dot" style="background:${col}"></span>${s.label}</td>
+      <td>${st}</td>
+      <td>${s.n_trades}</td>
+      <td>${s.win_rate}%</td>
+      <td class="${cls(s.gross)}">${sign(s.gross)}</td>
+      <td class="mut">₹${inr(s.tax)}</td>
+      <td class="${cls(s.net)}"><b>${sign(s.net)}</b></td>
+      <td class="neg">₹${inr(s.max_dd)}</td>
+      <td>${s.profit_factor}</td>
+      <td>${s.sharpe}</td>
+    </tr>`;
+  }).join('');
+  const c=DATA.combined||{};
+  $('tfoot').innerHTML=`<tr>
+    <td>TOTAL</td><td></td><td>${c.n_trades||0}</td><td>${c.win_rate||0}%</td>
+    <td class="${cls(c.gross)}">${sign(c.gross)}</td>
+    <td class="mut">₹${inr(c.tax)}</td>
+    <td class="${cls(c.net)}">${sign(c.net)}</td>
+    <td class="neg">₹${inr(c.max_dd)}</td>
+    <td>${c.profit_factor||0}</td><td>${c.sharpe||0}</td></tr>`;
+}
+
+// ── events ──
+document.querySelectorAll('#metricSeg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#metricSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); METRIC=b.dataset.m; render();
+});
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{
+  document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); MODE=b.dataset.mode; load();
+});
+document.querySelectorAll('#tbl th').forEach(th=>th.onclick=()=>{
+  const k=th.dataset.k; if(!k)return;
+  if(sortK===k)sortDir*=-1; else{sortK=k;sortDir=(k==='label')?1:-1;}
+  renderTable();
+});
+window.addEventListener('resize',()=>{if(DATA)render();});
+initDates(); load();
+</script>
+</body>
+</html>

@@ -4180,6 +4180,142 @@ def api_orders_stats_summary():
     return jsonify({'ok': True, 'metrics': metrics, 'trades': details})
 
 
+def _zerodha_charges(entry_px, exit_px, qty, entry_side):
+    """Server-side mirror of templates/index.html calcCharges() — Budget-2026
+    option charges (effective 2026-04-01). Keep in sync with that JS + with
+    scratch/nifty_trend/charges.py (date-aware regime table). Returns ₹ charges."""
+    if not entry_px or not exit_px or not qty:
+        return 0.0
+    buy_side  = entry_px if entry_side == "BUY" else exit_px
+    sell_side = entry_px if entry_side == "SELL" else exit_px
+    buy_turn, sell_turn = buy_side * qty, sell_side * qty
+    total_turn = buy_turn + sell_turn
+    brokerage    = 40.0
+    stt          = 0.0015 * sell_turn
+    exch         = 0.0003553 * total_turn
+    sebi         = 0.0000001 * total_turn
+    stamp        = 0.00003 * buy_turn
+    gst          = 0.18 * (brokerage + exch + sebi)
+    return brokerage + stt + exch + sebi + stamp + gst
+
+
+@app.route('/api/strategy-equity')
+def api_strategy_equity():
+    """Per-strategy equity curves + summary table over a date range (Task 84).
+    For every strategy that has completed trades in the range, returns a
+    time-ordered cumulative-P&L series (gross + net) and headline stats. Also a
+    combined 'All strategies' series. Marks which strategies are live right now
+    (running PID) and their paper/live mode. Query: date_from, date_to, mode."""
+    import order_store
+    from datetime import datetime, timedelta, timezone
+    try:
+        import strategy_registry as _sr
+    except Exception:
+        _sr = None
+
+    ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+    date_to   = request.args.get('date_to')   or ist.strftime('%Y-%m-%d')
+    date_from = request.args.get('date_from') or (ist - timedelta(days=30)).strftime('%Y-%m-%d')
+    mode = request.args.get('mode')  # 'paper' | 'live' | None(all)
+    filt = {'mode': mode} if mode in ('paper', 'live') else {}
+
+    # Which strategies are running right now + their mode
+    running = {}
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        for s in cfg.keys():
+            pid = get_pid(s)
+            if pid:
+                running[s] = get_mode(s)
+    except Exception:
+        pass
+
+    details = order_store.trades_for_range(date_from, date_to, **filt)['details']
+
+    def _label(sid):
+        if _sr:
+            try:
+                lbl = _sr.label(sid)
+                if lbl and lbl != sid:
+                    return lbl
+            except Exception:
+                pass
+        return sid
+
+    # Bucket completed trades by strategy, ordered by exit datetime
+    buckets = {}
+    combined = []
+    for t in details:
+        if t.get('pnl') is None:
+            continue
+        sid = t.get('strategy') or 'unknown'
+        exit_dt = f"{t.get('exit_date','')} {t.get('exit_time','')}".strip()
+        gross = float(t.get('pnl') or 0)
+        tax = _zerodha_charges(t.get('entry_price'), t.get('exit_price'),
+                               t.get('qty'), t.get('entry'))
+        rec = {'t': exit_dt, 'gross': round(gross, 2), 'tax': round(tax, 2),
+               'net': round(gross - tax, 2), 'sym': t.get('sym', ''),
+               'reason': t.get('exit_reason', '')}
+        buckets.setdefault(sid, []).append(rec)
+        combined.append(rec)
+
+    def _series(trades):
+        trades = sorted(trades, key=lambda r: r['t'])
+        cg = cn = 0.0
+        peak = 0.0
+        maxdd = 0.0
+        pts = []
+        wins = 0
+        for r in trades:
+            cg += r['gross']; cn += r['net']
+            peak = max(peak, cn)
+            maxdd = max(maxdd, peak - cn)
+            if r['net'] > 0:
+                wins += 1
+            pts.append({'t': r['t'], 'cum_gross': round(cg, 2),
+                        'cum_net': round(cn, 2), 'pnl': r['net'], 'sym': r['sym']})
+        n = len(trades)
+        nets = [r['net'] for r in trades]
+        mean = (sum(nets) / n) if n else 0.0
+        var = (sum((x - mean) ** 2 for x in nets) / n) if n else 0.0
+        sd = var ** 0.5
+        sharpe = round((mean / sd) * (n ** 0.5), 2) if sd > 0 else 0.0
+        gross_win = sum(x for x in nets if x > 0)
+        gross_loss = abs(sum(x for x in nets if x <= 0))
+        pf = round(gross_win / gross_loss, 2) if gross_loss > 0 else (round(gross_win, 2) if gross_win else 0.0)
+        return {
+            'points': pts,
+            'n_trades': n, 'wins': wins, 'losses': n - wins,
+            'win_rate': round(wins / n * 100, 1) if n else 0.0,
+            'gross': round(cg, 2), 'tax': round(cg - cn, 2), 'net': round(cn, 2),
+            'max_dd': round(maxdd, 2), 'sharpe': sharpe, 'profit_factor': pf,
+        }
+
+    strategies = []
+    for sid, trades in buckets.items():
+        s = _series(trades)
+        s['id'] = sid
+        s['label'] = _label(sid)
+        s['running'] = sid in running
+        s['mode'] = running.get(sid, '')
+        strategies.append(s)
+    strategies.sort(key=lambda s: s['net'], reverse=True)
+
+    combined_series = _series(combined) if combined else None
+
+    return jsonify({
+        'date_from': date_from, 'date_to': date_to, 'mode': mode or 'all',
+        'strategies': strategies,
+        'combined': combined_series,
+        'running': running,
+    })
+
+
+@app.route('/strategy-equity')
+def strategy_equity_page():
+    return render_template('strategy_equity.html')
+
+
 @app.route('/api/orders/rename-strategy', methods=['POST'])
 def api_rename_strategy():
     data = request.get_json()
