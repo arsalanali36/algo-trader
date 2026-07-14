@@ -90,6 +90,16 @@ def build():
         eid = date_to_id.get(exp_by_day[day_id.iloc[i]])
         if eid is not None:
             u_exp[i] = last_bar[eid]
+    # CONTRACT-ROLL GUARD (TRAP #112, found 2026-07-14): the WEEK rolling series
+    # switches to the NEXT week's contract the day after expiry. Any hold whose
+    # exit day is AFTER the entry's expiry date would price TWO DIFFERENT
+    # contracts (buy the dying expiry-day straddle for pennies, "exit" into the
+    # fresh weekly at full premium = fake profit — the overnight GP run converged
+    # exactly onto this: 94% of its winning signals were expiry-day bars).
+    # -> overnight entries are INVALID when next trading day > entry's expiry.
+    exp_ok = np.array([exp_by_day[d] >= (days[d + 1] if d + 1 < len(days) else days[d])
+                       for d in day_id])
+    u_on = np.where(exp_ok, u_on, -1)
     U = {"eod": u_eod, "overnight": u_on, "expiry": u_exp}
 
     ent_ce, ent_pe = ce[:, off0], pe[:, off0]

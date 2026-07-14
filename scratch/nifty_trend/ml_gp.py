@@ -35,7 +35,9 @@ import ml_gate
 import bs_option as bs
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-RUN_ID = "gp_v1"
+RUN_ID = "gp_v2"        # v2 = contract-roll-guarded P&L table (TRAP #112); the
+                        # v1 overnight run (3.43M trials) converged on the roll
+                        # artifact and is void — but its trials still count in N
 PNL_NPZ = os.path.join(HERE, "ml_gp_pnl.npz")
 FEATS = os.path.join(HERE, "ml_features_v2.csv.gz")
 WAVES = os.path.join(HERE, "ml_gp_waves.json")
@@ -48,7 +50,8 @@ ELITE, TOURN = 12, 4
 P_CROSS, P_MUT = 0.6, 0.9
 MAX_CONDS = 4
 EVO_END = dt.date(2025, 7, 1)          # evolution < this; validation >= this
-STOP_AT = dt.datetime(2026, 7, 14, 7, 15)
+STOP_AT = (dt.datetime.fromisoformat(os.environ["ML_GP_STOP"])
+           if os.environ.get("ML_GP_STOP") else dt.datetime(2026, 7, 14, 7, 15))
 MIN_TRADES = {"eod": 120, "overnight": 80, "expiry": 40}
 FOCUS_CYCLE = [None, "short_straddle", "long_straddle", "long_ce", "long_pe"]
 
@@ -197,6 +200,32 @@ def fitness(g, D):
     return sr - 0.02 * (len(g["conds"]) - 1), len(dp), sr
 
 
+N_COUNTER = {"n": 0}                     # true cumulative GP trial count (set in main)
+NULL_CACHE = os.path.join(HERE, "ml_gp_null_%s.json" % RUN_ID)
+
+
+def null_sharpes(D, n=2000):
+    """full-window Sharpes of n RANDOM rules (with the same min-trade screen) —
+    the honest zero-selection null spread for the deflated-Sharpe variance."""
+    if os.path.exists(NULL_CACHE):
+        return json.load(open(NULL_CACHE))
+    rng = np.random.default_rng(424242)
+    all_bars = np.ones(len(D.X), dtype=bool)
+    all_days = np.unique(D.day_id)
+    out = []
+    while len(out) < n:
+        g = rand_genome(D, rng)
+        dp = day_pnl(g, D, all_bars)
+        hold = D.combos[g["combo"]].split("|")[1]
+        if len(dp) < MIN_TRADES[hold]:
+            continue
+        out.append(round(sharpe_of(dp, all_days), 4))
+    json.dump(out, open(NULL_CACHE, "w"))
+    print("null spread built: %d random rules, std=%.3f (annualized)"
+          % (len(out), float(np.std(out, ddof=1))), flush=True)
+    return out
+
+
 # ---------------- one wave ----------------
 def run_wave(D, wave, focus):
     rng0 = np.random.default_rng(1000 + wave)
@@ -227,6 +256,7 @@ def run_wave(D, wave, focus):
                                      verdict="evolved trades=%d" % ntr))
         if log_rows:
             ml_gate.log_trials(log_rows, run_id=RUN_ID, approach="gp")
+            N_COUNTER["n"] += len(log_rows)
         scored.sort(key=lambda t: -t[0])
         best = scored[0]
         nxt = [g for _, g in scored[:ELITE]]
@@ -248,16 +278,13 @@ def run_wave(D, wave, focus):
                   rule_str(best[1], D)[:110]), flush=True)
 
     # ---- wave-end evaluation of top unique rules ----
-    # read the trials log ONCE: true N + the cross-trial spread of the selection
-    # statistic (evolution-window Sharpe) for the deflation variance
-    n_trials = ml_gate.count_trials(run_id=RUN_ID)
-    try:
-        _lg = pd.read_csv(ml_gate.MINING_LOG)
-        _lg = _lg[_lg.run_id == RUN_ID]
-        trial_srs = pd.to_numeric(_lg.train_sharpe, errors="coerce").dropna()
-        trial_srs = trial_srs[trial_srs > -9].tolist()
-    except Exception:
-        trial_srs = None
+    # N = every GP trial ever (v1's 3.43M voided-table trials INCLUDED — conservative).
+    # Deflation variance = spread of RANDOM (unselected) rules' full-window Sharpes:
+    # using the evolved population's spread would double-count selection (evolution
+    # concentrates at the max, inflating V) and set an unpassable sr* — measured
+    # 2026-07-14 on the v1 log: post-selection spread implied sr*≈13 annualized.
+    n_trials = N_COUNTER["n"]
+    trial_srs = null_sharpes(D)
     uniq, out = set(), []
     for fit, g in sorted([(fitness(g, D)[0], g) for g in pop], key=lambda t: -t[0]):
         k = genome_key(g)
@@ -327,6 +354,8 @@ def main():
     if len(sys.argv) > 1 and sys.argv[1] == "report":
         report(); return
     D = Data()
+    N_COUNTER["n"] = ml_gate.count_trials(approach="gp")   # v1+v2 cumulative, read once
+    print("cumulative GP trials so far: %d" % N_COUNTER["n"], flush=True)
     done = {w["wave"] for w in (json.load(open(WAVES)) if os.path.exists(WAVES) else [])}
     wave = 0
     if os.path.exists(CKPT):
