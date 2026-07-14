@@ -902,9 +902,21 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
     conn = sqlite3.connect(str(order_store.DB_PATH))
     conn.row_factory = sqlite3.Row
     existing = conn.execute(
-        "SELECT trad_sym, symbol, side, qty, price FROM orders WHERE date=? AND broker=?",
+        "SELECT trad_sym, symbol, side, qty, price, broker_order_id FROM orders WHERE date=? AND broker=?",
         (date, broker_name)).fetchall()
     conn.close()
+
+    # Order-id ownership check FIRST (2026-07-14): a single app order can fill
+    # as MULTIPLE broker fills with different qty/price (e.g. webhook 130-qty
+    # SELL filled as 2×65 @ 63.30 — signature (qty=65) never matches the
+    # app's qty=130 row, so signature+count double-counted every multi-fill
+    # trade as "manual"). Broker order ids are unique per order — if an
+    # existing row already carries this fill's order_id, the app placed that
+    # order and ALL its fills belong to it, unconditionally. TRAP #67's
+    # concern was only rows with a MISSING order id; using the id when
+    # present is safe, and the signature+count fallback below still covers
+    # id-less legacy rows.
+    known_oids = {str(r["broker_order_id"]) for r in existing if r["broker_order_id"]}
 
     db_counts: dict = {}
     for r in existing:
@@ -913,6 +925,8 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
 
     manual_inserted = 0
     for f in fills:
+        if f["order_id"] and f["order_id"] in known_oids:
+            continue   # fill of an order this app itself placed — never manual
         sig = _reconcile_sig(f["sym"], f["type"], f["qty"], f["px"])
         have = db_counts.get(sig, 0)
         if have > 0:
