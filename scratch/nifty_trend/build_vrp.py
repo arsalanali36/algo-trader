@@ -141,7 +141,21 @@ def significance(g, lot, n_perm=300, seed=7):
                      "clamped P&L, so this is the honest bounded-loss number, not the raw flattered one.")
 
 
-def _combo(res, g, sig=None):
+CONDOR_DNA = {
+    "Structure": "OTM iron condor — defined-risk, 4 legs",
+    "Sell body": f"ATM ±{BODY} strikes (CE + PE)",
+    "Buy wings": f"ATM ±{BODY + WING} strikes (CE + PE) — the hedge",
+    "Entry": "~15:10 IST (near the close)",
+    "Hold": "1 night (overnight)",
+    "Exit": "next session ~15:10",
+    "Edge": "VRP — implied vol > realized vol (theta harvest)",
+    "Max loss / lot": f"~₹{WING*STEP*65:,} (wing-capped, defined)",
+    "Sizing": "1 lot, 1x (no leverage)",
+    "Roll guard": "no hold across weekly expiry (TRAP #114)",
+}
+
+
+def _combo(res, g, sig=None, dna=None):
     m, _ = engine.metrics(res)
     eq = res["equity"]
     mc = montecarlo(res, n_sims=1000)
@@ -158,7 +172,53 @@ def _combo(res, g, sig=None):
             "significance": sig, "mc": None if mc is None else {"table": mc["table"],
                 "sharpe_dist": mc["sharpe_dist"], "paths": [downsample(pp, 120) for pp in mc["paths"][:60]],
                 "orig_path": downsample(mc["orig_path"], 120)},
+            "dna": dna or CONDOR_DNA,
             "all_trades": at, "trades": at[-10:], "opt_table": []}
+
+
+def _condor_faq(bs_full, stress, dsr, sig):
+    sh = (bs_full or {}).get("sharpe")
+    return [
+        ["Ye strategy kya hai? Edge kahan se aata hai?",
+         "Har trading din, market close ke paas (~15:10) ek <b>OTM iron condor</b> BECHTE hain — "
+         "ATM±3 pe CE+PE sell, ATM±8 pe CE+PE BUY (wings = hedge). Ek raat hold karke <b>agle din</b> "
+         "close pe wapas kharid lete hain. Edge = <b>VRP (Volatility Risk Premium)</b>: options ki "
+         "<b>implied vol hamesha realized vol se zyada</b> hoti hai — yani market jitna dar bechta hai "
+         "utna asli move nahi hota. Us farak (theta/premium decay) ko roz harvest karte hain."],
+        ["Overnight kyun? Aapka to 'no overnight' rule tha na?",
+         "Haan — aur yehi is strategy ka SABSE deliberate exception hai. VRP ka premium <b>overnight decay</b> "
+         "me hi milta hai (intraday short-vol test kiya — cost > theta, fail). Isliye ye <b>jaan-boojh ke "
+         "defined-risk overnight bet</b> hai: gap risk lete hain, par <b>wings us gap ko cap kar deti hain</b> "
+         "(~₹15,000/lot max, chahe kitna bhi bada gap ho). ADR-006 allow_overnight lane se ye strategy 3:15 "
+         "squareoff se exempt hai — <b>par expiry-day 2:55 squareoff + ITM guard + RMS daily-loss cap STILL "
+         "lagte hain</b>. Naked kabhi nahi — wings mandatory."],
+        ["Sabse bada risk kya? Ek kharaab raat me kitna ja sakta hai?",
+         "<b>Defined risk</b> — har condor ka max loss wings tak <b>bounded</b> hai (~₹15,000/lot), chahe "
+         "COVID-jaisa crash ho. Backtest me worst night −₹7,353 tha (max ka aadha). Win rate ~89% — chhote "
+         "consistent wins, kabhi-kabhi ek bounded bite. Ye short-vol ka classic profile hai."],
+        [f"Sharpe {sh:.1f}?! Ye to bahut zyada hai — sach hai?" if sh else "Sharpe number real hai?",
+         "<b>NAHI — ye flattered hai, aur main saaf bata raha hoon.</b> Backtest ka data window (2021-26) me "
+         "<b>koi COVID-scale crash nahi tha</b>, aur lake ka premium data sabse volatile raaton pe hi "
+         "unreliable hai — isliye raw Sharpe artificially ऊncha hai. <b>Asli honest number: tail-stress "
+         f"(2% raatein zabardasti max-loss) ke baad Sharpe ≈ {stress['sharpe_2pct_maxloss_median'] if stress else '~4'}</b> "
+         f"(worst-case p05 ≈ {stress['sharpe_2pct_p05'] if stress else '~2.5'}). Yehi wo number hai jispe bharosa "
+         "karna chahiye, 15 pe nahi."],
+        ["Naked sell kyun nahi, wings kyun (defined-risk)?",
+         "Overnight naked option sell = <b>unlimited tail risk</b> (ek limit-move gap poora account uda "
+         "sakta hai). Wings thoda premium khaati hain par loss ko <b>hard-cap</b> karti hain — bina wings "
+         "ke ye strategy live chalana hi nahi chahiye (framework rule). Har naked short ke saath wing = mandatory."],
+        ["Edge asli hai ya luck/overfit?",
+         f"<b>Significance p={(sig or {}).get('p_value', 0)}</b> (nightly-edge bootstrap). "
+         f"<b>DSR = {(dsr or {}).get('dsr_prob', '?')}</b> @ N={(dsr or {}).get('n_trials', '?')} "
+         f"(<b>{'PASS' if (dsr or {}).get('pass') else 'fail'}</b>) — high-frequency (559 trades) + real "
+         "edge ki wajah se pass. Out-of-sample (2025-26) bhi positive (78 trades, win 89%). Frequency-robust "
+         "(ye wo test hai jo mean-reversion #09 fail kar gaya tha)."],
+        ["Abhi deploy kar sakte hain? Live paisa laga dein?",
+         "<b>Nahi — ye FORWARD-PAPER candidate hai, deploy-ready nahi.</b> Short-vol hamesha backtest me "
+         "amazing dikhta hai jab tak asli crash na aaye. Isliye: pehle <b>paper pe live</b> chalao (chhote "
+         "size), 2-3 mahine watch karo — <b>khaas kar gap nights pe</b> — tabhi asli tail pata chalega. "
+         "Config abhi <b>paper + active=false</b> hai. Verified live-firing ke baad hi real money."],
+    ]
 
 
 def tail_stress(res, lot, inject_rate=0.02, seed=3):
@@ -214,6 +274,7 @@ def main():
                     "lot_size": lot, "lots": 1, "rms_caps": RMS_CAPS, "dna": {"body": BODY, "wing": WING},
                     "passes": ["instrument", "rms", "bs"], "periods": ["full", "train", "oos"],
                     "candles": cand, "sig_p": sig["p_value"], "tail_stress": stress,
+                    "dna": CONDOR_DNA, "faq": _condor_faq(bs_full, stress, dsr, sig),
                     "deflated_sharpe": {k: dsr[k] for k in ("dsr_prob", "pass", "n_trials", "sr_star_annual")} if dsr else None},
            "combos": combos}
     folder = os.path.join(RUNS, SLUG); os.makedirs(folder, exist_ok=True)
