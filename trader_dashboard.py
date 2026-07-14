@@ -1984,7 +1984,7 @@ def _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_
             return (prem - entry_px) * qty if side == "BUY" else (entry_px - prem) * qty
 
         if is_aggr:
-            cfg = risk_gate.default_target_sl_config()
+            cfg = risk_gate.default_target_sl_config(strategy)   # per-strategy ⚙ values (task 81)
             lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
             lots = max(1, round(qty / lotsz)) if lotsz else 1
             target_mtm = cfg["target_per_lot"] * lots
@@ -2046,7 +2046,7 @@ def _live_sl_for_open(p):
         if entry_px <= 0 or qty <= 0:
             return None
         if any(str(t).startswith("AGGR_TSL") for t in tags):
-            cfg = risk_gate.default_target_sl_config()
+            cfg = risk_gate.default_target_sl_config(p.get("strategy"))   # per-strategy ⚙ values (task 81)
             if not cfg.get("enabled"):
                 return None   # profile off → monitor won't fire it; don't show a misleading live SL
             lotsz = dhan_master.get_lot_size_by_sec_id(sec_id) or qty
@@ -5081,6 +5081,16 @@ def pos_monitor_loop():
                 import risk_gate as _rg_tsl
                 import dhan_master as _dm_tsl
                 _tslc = _rg_tsl.default_target_sl_config()
+                # Per-strategy ⚙ values (task 81) — one config per strategy per
+                # cycle (cached, no extra I/O per position beyond first hit).
+                _tslc_by_strat = {}
+                def _tslc_for(_s):
+                    if _s not in _tslc_by_strat:
+                        try:
+                            _tslc_by_strat[_s] = _rg_tsl.default_target_sl_config(_s)
+                        except Exception:
+                            _tslc_by_strat[_s] = _tslc
+                    return _tslc_by_strat[_s]
                 if _tslc.get("feature_on"):
                     _tsl_dirty = False
                     # Only positions stamped AGGR_TSL at entry (opened while
@@ -5119,8 +5129,9 @@ def pos_monitor_loop():
                                      else (_epx - _ltp) * _qty
                         else:
                             _tsl_unreliable = True   # no price → freeze (never fire on bad data)
+                        _tslc_p = _tslc_for(_p.get("strategy") or "")
                         _tst, _act, _sl_lvl = _rg_tsl.advance_target_sl(
-                            _tst, _unrl, _tslc, _lots, mtm_unreliable=_tsl_unreliable)
+                            _tst, _unrl, _tslc_p, _lots, mtm_unreliable=_tsl_unreliable)
                         # Smart-split candle-close confirm (2026-07-09, user) — in
                         # the PROFIT-lock zone (sl_level >= 0: the SL has ratcheted
                         # into locked profit) don't stop out on an intraday WICK;
@@ -5152,11 +5163,11 @@ def pos_monitor_loop():
                             # (_sl_lvl: negative = loss stop e.g. -2000, positive =
                             # locked-in profit). Prefix still matches _EXIT_REASON_PREFIXES.
                             if _act == "TARGET":
-                                _reason = f"DEFAULT_TSL_TARGET:{_tslc['target_per_lot']*_lots:.0f}"
+                                _reason = f"DEFAULT_TSL_TARGET:{_tslc_p['target_per_lot']*_lots:.0f}"
                             else:
                                 _reason = f"DEFAULT_TSL_SL:{_sl_lvl:.0f}"
                             print(f"[DEFAULT-TSL] 🎯 FIRED ({_act}) — {_p.get('sym')} (ID {_pid}) "
-                                  f"P&L ₹{_unrl:.0f} vs target ₹{_tslc['target_per_lot']*_lots:.0f} / "
+                                  f"P&L ₹{_unrl:.0f} vs target ₹{_tslc_p['target_per_lot']*_lots:.0f} / "
                                   f"SL ₹{_sl_lvl:.0f} (peak ₹{_tst.get('peak',0):.0f}, {_lots} lot) "
                                   f"— squaring off this position", flush=True)
                             if _ltp <= 0:

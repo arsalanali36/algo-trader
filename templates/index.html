@@ -4115,6 +4115,16 @@
         tbl.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:10px">Koi strategy configured nahi hai abhi.</div>';
         return;
       }
+      // task 81 ⚙ values — per-strategy Default SL/Target VALUE overrides. Kept in
+      // window._dslVals (not table inputs) and merged into the save payload, so the
+      // table's own Save can't drop them. Rebuilt from RISK_CFG on every render.
+      window._dslVals = {};
+      stratIds.forEach(id => {
+        const ov = RISK_CFG.per_strategy[id] || {};
+        const dv = {};
+        DSL_VAL_KEYS.forEach(k => { if (ov[k] !== undefined && ov[k] !== null && ov[k] !== '') dv[k] = ov[k]; });
+        if (Object.keys(dv).length) window._dslVals[id] = dv;
+      });
       let html = '<table class="cfg-table"><tr><th>Strategy</th>'
         + '<th colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
@@ -4160,12 +4170,14 @@
             <option value="false" ${ov.default_sl_enabled === false ? 'selected' : ''}>OFF</option>
             <option value="true" ${ov.default_sl_enabled === true ? 'selected' : ''}>ON</option>
           </select></td>
-      <td><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
+      <td style="white-space:nowrap"><select id="risk-dslmode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px">
             <option value="" ${!ov.default_sl_mode ? 'selected' : ''}>global default</option>
             <option value="legacy" ${ov.default_sl_mode === 'legacy' ? 'selected' : ''}>Legacy — fixed ₹</option>
             <option value="dropdown" ${ov.default_sl_mode === 'dropdown' ? 'selected' : ''}>Dropdown — type+value</option>
             <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
-          </select></td>
+          </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
+            title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps) — blank = global card ki values"
+            style="margin-left:4px;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></td>
       <td><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
@@ -4509,8 +4521,10 @@
         const dslMode = dslModeEl ? dslModeEl.value : '';
         const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
+        const dslVals = (window._dslVals || {})[id] || {};
+        const hasDslVals = Object.keys(dslVals).length > 0;
         if (p !== '' || r !== '' || pt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
-          || dslEn !== '' || dslMode !== '' || hedgeStrikes !== '' || hedgePremium !== '') {
+          || dslEn !== '' || dslMode !== '' || hasDslVals || hedgeStrikes !== '' || hedgePremium !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
@@ -4524,6 +4538,7 @@
             default_sl_mode: dslMode || null,
             hedge_offset_strikes: hedgeStrikes !== '' ? parseInt(hedgeStrikes) : null,
             hedge_max_premium_rs: hedgePremium !== '' ? parseFloat(hedgePremium) : null,
+            ...dslVals,   // task 81 ⚙ — per-strategy Default SL/Target value overrides
           };
         }
       });
@@ -4539,6 +4554,130 @@
       } catch (e) {
         document.getElementById('risk-msg').textContent = 'Save failed: ' + e;
       }
+    }
+
+    // ── task 81 ⚙ — per-strategy Default SL/Target VALUE overrides ──────────────
+    // Modal editor next to the Mode dropdown in Per-Strategy Override. Values live
+    // in window._dslVals[id] and merge into saveRiskConfig's payload (blank =
+    // inherit global card's value). Backend: risk_gate default_instrument_sl_tags /
+    // default_target_sl_config read per_strategy[<sid>] first.
+    const DSL_VAL_KEYS = ['default_legacy_tp_rs', 'default_legacy_sl_rs',
+      'default_sl_type', 'default_sl_val', 'default_sl_candle_close',
+      'default_tp_type', 'default_tp_val', 'default_tp_candle_close',
+      'default_tsl_target_per_lot', 'default_tsl_initial_sl_per_lot', 'default_tsl_favour_step',
+      'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult',
+      'default_tsl_min_cushion'];
+    const _DSL_TYPE_OPTS = [['', '(global default)'], ['pct', '%'], ['pt', 'Points (premium)'],
+      ['trailing_pt', 'Trailing Points (premium)'], ['rs', 'Amount (₹ per lot)'],
+      ['premium', 'Premium level'], ['index', 'Index/Underlying level']];
+    function _globalDslMode() {
+      const g = (RISK_CFG && RISK_CFG.global) || {};
+      if (['legacy', 'dropdown', 'aggressive'].includes(g.default_sl_mode)) return g.default_sl_mode;
+      if (g.default_tsl_enabled) return 'aggressive';
+      if (g.default_sl_type) return 'dropdown';
+      if (g.default_sl_rs) return 'legacy';
+      return 'dropdown';
+    }
+    function _dslField(k, label, ph, val, kind) {
+      const base = 'width:150px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px';
+      let inp;
+      if (kind === 'seltype') {
+        inp = `<select id="dslv-${k}" style="${base}">` + _DSL_TYPE_OPTS.map(o =>
+          `<option value="${o[0]}" ${String(val ?? '') === o[0] ? 'selected' : ''}>${o[1]}</option>`).join('') + '</select>';
+      } else if (kind === 'tri') {
+        const cur = val === true || val === 'true' ? 'true' : (val === false || val === 'false' ? 'false' : '');
+        inp = `<select id="dslv-${k}" style="${base}">
+          <option value="" ${cur === '' ? 'selected' : ''}>global default</option>
+          <option value="true" ${cur === 'true' ? 'selected' : ''}>ON</option>
+          <option value="false" ${cur === 'false' ? 'selected' : ''}>OFF</option></select>`;
+      } else {
+        inp = `<input id="dslv-${k}" type="${kind === 'num' ? 'number' : 'text'}" step="any"
+          placeholder="global: ${ph}" value="${val ?? ''}" style="${base}">`;
+      }
+      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:7px 0">
+        <span style="color:#adbac7;font-size:12.5px">${label}</span>${inp}</div>`;
+    }
+    function openDslValModal(id) {
+      const g = (RISK_CFG && RISK_CFG.global) || {};
+      const rowModeEl = document.getElementById(`risk-dslmode-${id}`);
+      const mode = (rowModeEl && rowModeEl.value) || _globalDslMode();
+      const dv = (window._dslVals || {})[id] || {};
+      let fields = '';
+      if (mode === 'legacy') {
+        fields = _dslField('default_legacy_tp_rs', 'Fixed Target ₹ / lot', g.default_legacy_tp_rs ?? 5000, dv.default_legacy_tp_rs, 'num')
+          + _dslField('default_legacy_sl_rs', 'Fixed SL ₹ / lot', g.default_legacy_sl_rs ?? 2000, dv.default_legacy_sl_rs, 'num');
+      } else if (mode === 'aggressive') {
+        fields = _dslField('default_tsl_target_per_lot', 'Target ₹/lot', g.default_tsl_target_per_lot ?? 2000, dv.default_tsl_target_per_lot, 'num')
+          + _dslField('default_tsl_initial_sl_per_lot', 'Initial SL ₹/lot', g.default_tsl_initial_sl_per_lot ?? 1000, dv.default_tsl_initial_sl_per_lot, 'num')
+          + _dslField('default_tsl_favour_step', 'Favour step ₹/lot', g.default_tsl_favour_step ?? 100, dv.default_tsl_favour_step, 'num')
+          + _dslField('default_tsl_sl_move', 'SL move ₹/lot', g.default_tsl_sl_move ?? 100, dv.default_tsl_sl_move, 'num')
+          + _dslField('default_tsl_aggressive_pct', 'Aggressive @ %', g.default_tsl_aggressive_pct ?? 50, dv.default_tsl_aggressive_pct, 'num')
+          + _dslField('default_tsl_aggressive_mult', 'Aggressive mult', g.default_tsl_aggressive_mult ?? 2, dv.default_tsl_aggressive_mult, 'num')
+          + _dslField('default_tsl_min_cushion', 'Min cushion ₹/lot', g.default_tsl_min_cushion ?? 0, dv.default_tsl_min_cushion, 'num');
+      } else {
+        fields = _dslField('default_sl_type', 'SL Type', '', dv.default_sl_type, 'seltype')
+          + _dslField('default_sl_val', 'SL Value', g.default_sl_val ?? '', dv.default_sl_val, 'text')
+          + _dslField('default_sl_candle_close', 'SL — Candle Close only 🕯', dv.default_sl_candle_close, dv.default_sl_candle_close, 'tri')
+          + _dslField('default_tp_type', 'Target Type', '', dv.default_tp_type, 'seltype')
+          + _dslField('default_tp_val', 'Target Value', g.default_tp_val ?? '', dv.default_tp_val, 'text')
+          + _dslField('default_tp_candle_close', 'Target — Candle Close only 🕯', dv.default_tp_candle_close, dv.default_tp_candle_close, 'tri');
+      }
+      const modeName = { legacy: 'Legacy — fixed ₹', dropdown: 'Dropdown — type+value', aggressive: 'Aggressive — Per-lot trail' }[mode];
+      let m = document.getElementById('dsl-val-modal');
+      if (!m) { m = document.createElement('div'); m.id = 'dsl-val-modal'; document.body.appendChild(m); }
+      m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10001;display:flex;align-items:center;justify-content:center';
+      m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:420px;max-width:520px" onclick="event.stopPropagation()">
+        <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#e6edf3">🎯 ${(typeof regLabel === 'function' && regLabel(id)) || id} — Default SL/Target values</div>
+        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global card ki value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.</div>
+        ${fields}
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="clearDslVals('${id}')" style="padding:6px 12px;background:#21262d;color:#f85149;border:1px solid #30363d;border-radius:6px;cursor:pointer">Clear (global use karo)</button>
+          <button onclick="closeDslValModal()" style="padding:6px 12px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;cursor:pointer">Cancel</button>
+          <button onclick="applyDslVals('${id}','${mode}')" style="padding:6px 12px;background:#d29922;color:#0d1117;border:0;border-radius:6px;cursor:pointer;font-weight:700">Apply</button>
+        </div>
+        <div style="color:#6e7681;font-size:10.5px;margin-top:8px">Apply ke baad table ka 💾 Save dabana zaroori hai — tabhi VPS config me likhta hai.</div>
+      </div>`;
+      m.onclick = closeDslValModal;
+    }
+    function closeDslValModal() {
+      const m = document.getElementById('dsl-val-modal');
+      if (m) m.remove();
+    }
+    function clearDslVals(id) {
+      if (window._dslVals) delete window._dslVals[id];
+      _dslBtnRefresh(id);
+      closeDslValModal();
+      const msg = document.getElementById('risk-msg');
+      if (msg) msg.textContent = '⚙ values cleared — ab 💾 Save dabao';
+    }
+    function applyDslVals(id, mode) {
+      const keys = mode === 'legacy' ? ['default_legacy_tp_rs', 'default_legacy_sl_rs']
+        : mode === 'aggressive' ? ['default_tsl_target_per_lot', 'default_tsl_initial_sl_per_lot', 'default_tsl_favour_step',
+          'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult', 'default_tsl_min_cushion']
+        : ['default_sl_type', 'default_sl_val', 'default_sl_candle_close', 'default_tp_type', 'default_tp_val', 'default_tp_candle_close'];
+      window._dslVals = window._dslVals || {};
+      const dv = { ...(window._dslVals[id] || {}) };
+      keys.forEach(k => {
+        const el = document.getElementById(`dslv-${k}`);
+        if (!el) return;
+        const v = el.value;
+        if (v === '' || v == null) { delete dv[k]; return; }
+        if (k.endsWith('candle_close')) dv[k] = (v === 'true');
+        else if (k.endsWith('_type') || k === 'default_sl_val' || k === 'default_tp_val') dv[k] = v;   // val can be "gap:step" for trailing_pt
+        else dv[k] = parseFloat(v);
+      });
+      if (Object.keys(dv).length) window._dslVals[id] = dv; else delete window._dslVals[id];
+      _dslBtnRefresh(id);
+      closeDslValModal();
+      const msg = document.getElementById('risk-msg');
+      if (msg) msg.textContent = '⚙ values set — ab 💾 Save dabao';
+    }
+    function _dslBtnRefresh(id) {
+      const b = document.getElementById(`risk-dslvals-btn-${id}`);
+      if (!b) return;
+      const has = !!(window._dslVals && window._dslVals[id]);
+      b.style.background = has ? '#3a2b0a' : '#0d1117';
+      b.style.color = has ? '#e0a325' : '#8b949e';
     }
 
     // ── Task 13 — RMS value-change audit log ──

@@ -23,6 +23,8 @@
 **Kyun:** (80) open trade ka running/tax summary me nahi dikhta tha; (78) user confusion — paper orders kite pe jane chahiye; (76) roz ka YT-presentation workflow ab app me date-wise archive; (81) global Default-SL har strategy pe lag ke backtest-fidelity todta hai (Rule 10) — per-strategy enable/mode control
 **Depends on:** nothing
 
+**Follow-up (same day):** user request — Mode ke saath uski **VALUES bhi per-strategy** ("do jagah ka kaam ek jagah"): Per-Strategy Override ke Mode ke bagal ⚙ button → modal (mode-specific fields: Legacy Target/SL ₹-lot; Dropdown SL/TP type+value+candle-close; Aggressive ke 7 per-lot fields), values `per_strategy[<sid>]` me (blank=global inherit), `window._dslVals` → saveRiskConfig merge. Backend: `default_instrument_sl_tags` legacy/dropdown/TP branches ab ps-values first (pair kabhi mix nahi — type+value ek hi source se), `default_target_sl_config(strategy=)` ps-overlay, monitor per-position per-strategy cfg (`_tslc_for` cycle-cache), `_reconstruct_sl_series`/`_effective_sl_now` strategy pass. 10-check offline logic test PASS.
+
 ---
 
 ## 2026-07-13 — Today's Peak: clickable per-strategy MTM + Margin Utilization view (tasks 73/74)
