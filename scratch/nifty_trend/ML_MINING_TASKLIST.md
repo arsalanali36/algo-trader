@@ -278,3 +278,14 @@ c) Do NOT auto-deploy anything from this file to paper or live — every
   (no candidate cleared the gate — by design); DONE LOG + LESSONS self-maintenance done
   (TRAP #114); no-auto-deploy discipline held throughout (zero deploys without go-ahead).
   Mechanism for future clears: run_hunt.py already writes runs/<slug>/ + index.json.
+- [x] **Task 5 — Fib-retracement + premium-divergence + pre-open-gap (user-seeded), 2026-07-14.**
+  Spec: `ML_MINING_TASK5.md` (that file's DONE LOG has the per-subtask detail). 5a: `ml_features_v3`
+  (fib ladder + confirm-candle + premium-divergence + OI-buildup + expiry_regime; premium/OI mapped
+  to the lake's real 5-min resolution — 1-min option data doesn't exist; pre-open auction gap not in
+  any source, documented). 5b: exhaustive grid `ml_grid5.py` (25,200 evals) → **58/60 top rules =
+  short_straddle, best evo 1.75/val 2.45, ALL fail DSR 0.000**. 5c: GP seed `ml_gp_seed5.py` →
+  **GP discarded the fib structure and re-converged on the EXACT VRP overnight zone** (ce_iv>21 +
+  ATR-high + OI-flat, val 2.24, DSR 0.017). **VERDICT: same family as Task 3's VRP zone, not a new
+  edge — a weaker intraday proxy for the same high-IV short-vol signal; unprovable at N=4.36M.**
+  Nothing deployed, lockbox untouched. Confirms the DO-NOT-REDO intuition: NIFTY intraday/weekly
+  short-vol is saturated — the machine keeps rediscovering the one VRP basin from every seed.

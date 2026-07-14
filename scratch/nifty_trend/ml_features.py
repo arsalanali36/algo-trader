@@ -36,12 +36,19 @@ import bs_option as bs
 import expiry_calendar as xcal
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-VERSION = 3   # v3 (2026-07-14): + expiry_regime (0=Thursday-expiry era, 1=Tuesday era
-              # from 2025-09-01, expiry_calendar.py verified schedule). dte_days was
-              # already calendar-aware; this makes the regime EXPLICIT so any mined
-              # rule leaning on dow/dte can be checked for pre-vs-post stability —
-              # "which weekday IS expiry" changed mid-dataset, a regime-boundary
-              # overfitting vector distinct from DSR/lockbox.
+VERSION = 3   # v3 (2026-07-14, Task 5a): + expiry_regime (0=Thu-era, 1=Tue-era from
+              # 2025-09-01, expiry_calendar.py verified schedule) + the Task-5 user-seeded
+              # family from the day's FIRST FIVE 1-min candles (fib retracement of candle-1
+              # range, confirm-candle state at candles 2/3/5, ATM CE/PE premium-divergence
+              # classes, OI-buildup 4-quadrant at the nearest-fib strike). All candle-1..5
+              # features are FINAL at 09:20:00 and broadcast ONLY to 5m bars labeled >=09:20
+              # (the 09:15 bar closes at the same instant the info completes — excluded, so
+              # earliest entry = 09:20 bar's close = 09:25, strictly after the signal).
+              # PRE-OPEN GAP (Task 5a #5) VERIFIED: gap_open_pct = prev-day close vs the
+              # 09:15 bar OPEN (first tick). NSE's 09:08-09:12 pre-open indicative price is
+              # NOT in any data source here (spot 1m starts exactly 09:15 across 2018-2026;
+              # lake is market-hours only) -> no auction-gap column possible, coverage gap
+              # documented, gap_open_pct stays the gap feature.
               # v2 (2026-07-14): + rsi_14, ema20_dist_pct, ema50_dist_pct (spot 5m) —
               # same vocabulary the hand-designed live strategies use (user request)
 OUT = os.path.join(HERE, "ml_features_v%d.csv.gz" % VERSION)
@@ -74,6 +81,142 @@ def _atr(s, n=14):
     lc = (s.Low - s.Close.shift()).abs()
     tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     return tr.ewm(alpha=1.0 / n, adjust=False).mean()
+
+
+FIB_R = (0.236, 0.382, 0.5, 0.618, 0.786)
+CONFIRM_K = (2, 3, 5)          # 2nd / 3rd / 5th 1-min candle of the day
+STRIKE_STEP = 50
+
+
+def _sign(x, eps=1e-9):
+    return 0 if (x is None or not np.isfinite(x) or abs(x) <= eps) else (1 if x > 0 else -1)
+
+
+def _fib_day_features(flag="WEEK"):
+    """Task 5a — one row PER DAY from the day's first five 1-min candles.
+
+    Candle-1 (09:15) high/low range -> fib retracement levels (from-high AND from-low —
+    note from-high@r == from-low@(1-r), so the 10 levels are 2 mirrored views of the same
+    ladder; the CONTINUOUS `fibpos_k` = (close_k - low1)/range encodes every crossing).
+    Confirm candles k=2/3/5: fib position + continuation/reversal vs candle-1's own body
+    direction.
+
+    ⚠️ DATA-AVAILABILITY ADAPTATION (verified 2026-07-14): the option-chain lake is
+    5-MINUTE bars end-to-end (300s spacing 2021-2026; a "1m" resample returns the same
+    points) — per-1-min-candle premium windows DO NOT EXIST. Honest mapping:
+      * pm_class (ONE per day, not per-k): the 09:15 bar's own OPEN->CLOSE on the raw
+        CE_ATM/PE_ATM series = premium move over EXACTLY candles 1-5 (09:15->09:20),
+        same contract inside the bar (each row carries its own strike — no drift).
+        Spot move for the same window = candle-5 close - candle-1 open (1-min spot).
+        FINAL at 09:20:00.
+      * oi_bld_k: OI is one snapshot per 5m bar -> earliest intraday OI change =
+        oi(09:20-bar) - oi(09:15-bar) at the strike nearest the fib level nearest
+        candle-k's close (strike varies per k; window doesn't). Direction = chain spot
+        move over the same two bars. FINAL at 09:25:00 -> caller broadcasts oi_bld_*
+        one 5m bar later than the rest."""
+    # ---- spot: first 5 one-minute candles per day ----
+    sp = pd.read_csv(os.path.join(HERE, "nifty_1min.csv"), parse_dates=["Datetime"])
+    sp = ml_gate.trim_lockbox(sp)
+    sp["day"] = sp.Datetime.dt.date
+    sp["t"] = sp.Datetime.dt.time
+    first5 = sp[(sp.t >= dt.time(9, 15)) & (sp.t <= dt.time(9, 19))]
+
+    # ---- raw ATM series (per-bar open/close): premium move INSIDE the 09:15 bar ----
+    def _first_bar(side):
+        p = os.path.join(ol.LAKE, flag, "%s_ATM.csv" % side)
+        df = pd.read_csv(p, usecols=["timestamp", "open", "close"])
+        ts = (pd.to_datetime(df.timestamp, unit="s", utc=True)
+                .dt.tz_convert("Asia/Kolkata").dt.tz_localize(None))
+        df["day"] = ts.dt.date
+        df = df[ts.dt.time == dt.time(9, 15)]
+        df = df[[d < ml_gate.LOCKBOX_START for d in df.day]]        # belt+braces
+        return {r.day: (float(r.open), float(r.close)) for r in df.itertuples()}
+    ce_bar0 = _first_bar("CE")
+    pe_bar0 = _first_bar("PE")
+
+    # ---- chain 5m (OI ladder ±10): first two bars per day for the OI-buildup window ----
+    ch1 = ol.chain_frame(flag, "5m", offs=OI_OFFS)
+    ml_gate.assert_no_lockbox(ch1, what="chain_5m(task5)")
+    ch1 = ch1.copy()
+    ch1["day"] = pd.to_datetime(ch1.Datetime).dt.date
+    ch1["t"] = pd.to_datetime(ch1.Datetime).dt.time
+    ch1 = ch1[(ch1.t >= dt.time(9, 15)) & (ch1.t <= dt.time(9, 20))]
+    offs = list(OI_OFFS)
+
+    def chain_oi(row, K):
+        atmk = row.get("CEATM_k", np.nan)
+        if row is None or not np.isfinite(atmk):
+            return np.nan
+        off = int(round((K - atmk) / STRIKE_STEP))
+        if off not in offs:
+            return np.nan
+        tot, any_ = 0.0, False
+        for side in ("CE", "PE"):
+            col = "%s%s_oi" % (side, ol._off_tag(off))
+            v = row.get(col, np.nan)
+            if col in row.index and np.isfinite(v):
+                tot += v; any_ = True
+        return tot if any_ else np.nan
+
+    rows = []
+    lake_by_day = {d: g.sort_values("Datetime").reset_index(drop=True)
+                   for d, g in ch1.groupby("day")}
+    for d, g in first5.groupby("day"):
+        g = g.sort_values("Datetime").reset_index(drop=True)
+        if len(g) < 5 or g.t.iloc[0] != dt.time(9, 15):
+            continue                                   # partial open — skip day (honest)
+        o1, h1, l1, c1 = float(g.Open[0]), float(g.High[0]), float(g.Low[0]), float(g.Close[0])
+        rng = h1 - l1
+        if rng <= 0:
+            continue
+        rec = {"day": d, "c1_dir": _sign(c1 - o1), "c1_range_pct": rng / c1 * 100.0}
+        for r in FIB_R:                                # absolute levels (stored, NOT mined)
+            rec["fibp_h_%d" % int(r * 1000)] = h1 - r * rng   # retracement from high
+            rec["fibp_l_%d" % int(r * 1000)] = l1 + r * rng   # retracement from low
+        # premium-behavior class over candles 1-5 (09:15 bar OPEN->CLOSE, same contract)
+        pm = 0
+        if d in ce_bar0 and d in pe_bar0:
+            d_ce = ce_bar0[d][1] - ce_bar0[d][0]
+            d_pe = pe_bar0[d][1] - pe_bar0[d][0]
+            d_sp = float(g.Close[4]) - o1              # candle-1 open -> candle-5 close
+            sce, spe, ssp = _sign(d_ce), _sign(d_pe), _sign(d_sp)
+            if sce == 1 and spe == 1:      pm = 5      # co_expanding (IV-driven)
+            elif sce == -1 and spe == -1:  pm = 6      # co_contracting
+            elif ssp == 1 and sce == 1:    pm = 1      # index_up_ce_up
+            elif ssp == 1 and sce == -1:   pm = 2      # index_up_ce_down (divergence)
+            elif ssp == -1 and spe == 1:   pm = 3      # index_down_pe_up
+            elif ssp == -1 and spe == -1:  pm = 4      # index_down_pe_down (divergence)
+        rec["pm_class"] = pm
+        lk = lake_by_day.get(d)
+        lk0 = lk.iloc[0] if (lk is not None and len(lk) >= 2) else None
+        lk1 = lk.iloc[1] if (lk is not None and len(lk) >= 2) else None
+        d_sp2 = ((float(lk1["spot"]) - float(lk0["spot"]))
+                 if (lk0 is not None and np.isfinite(lk0.get("spot", np.nan))
+                     and np.isfinite(lk1.get("spot", np.nan))) else np.nan)
+        for k in CONFIRM_K:
+            ck = float(g.Close[k - 1])
+            rec["fibpos_%d" % k] = (ck - l1) / rng
+            sk = _sign(ck - c1)
+            rec["conf_%d" % k] = 0 if (sk == 0 or rec["c1_dir"] == 0) else (1 if sk == rec["c1_dir"] else -1)
+            # OI-buildup 4-quadrant at the strike nearest the fib level nearest candle-k close
+            ob = 0
+            if lk0 is not None and np.isfinite(d_sp2):
+                levels = [h1 - r * rng for r in FIB_R] + [l1 + r * rng for r in FIB_R]
+                L = min(levels, key=lambda x: abs(x - ck))
+                KL = round(L / STRIKE_STEP) * STRIKE_STEP
+                oi_a, oi_b = chain_oi(lk0, KL), chain_oi(lk1, KL)
+                if np.isfinite(oi_a) and np.isfinite(oi_b):
+                    sp_, oi_ = _sign(d_sp2), _sign(oi_b - oi_a)
+                    if sp_ == 1 and oi_ == 1:    ob = 1   # long buildup
+                    elif sp_ == -1 and oi_ == 1: ob = 2   # short buildup
+                    elif sp_ == 1 and oi_ == -1: ob = 3   # short covering
+                    elif sp_ == -1 and oi_ == -1: ob = 4  # long unwinding
+            rec["oi_bld_%d" % k] = ob
+        rows.append(rec)
+    out = pd.DataFrame(rows)
+    print("task5 day-features: %d days (fib/conf from 1m spot; pm from 09:15 option bar "
+          "open->close; OI from 5m chain bars 0->1)" % len(out))
+    return out
 
 
 def build(flag="WEEK"):
@@ -179,6 +322,20 @@ def build(flag="WEEK"):
     # itself is calendar-correct — mining must check any dow-leaning rule per-regime.
     f["expiry_regime"] = np.array([int(xcal.weekly_expiry_weekday(d) == xcal.TUE)
                                    for d in edt.dt.date], dtype=int)
+
+    # ---- Task 5a: fib / confirm-candle / premium-divergence / OI-buildup (per-day) ----
+    # Availability masks: fib/conf/pm complete at 09:20:00 -> bars labeled >= 09:20 (the
+    # 09:15 bar closes at that same instant = treated as unavailable). oi_bld_* needs the
+    # 09:20-bar's OI snapshot (final 09:25:00) -> bars labeled >= 09:25 only.
+    fib = _fib_day_features(flag)
+    tt_ = pd.to_datetime(f.Datetime).dt.time
+    late = tt_ >= dt.time(9, 20)
+    later = tt_ >= dt.time(9, 25)
+    for col in fib.columns:
+        if col == "day":
+            continue
+        f[col] = f.day.map(fib.set_index("day")[col]).where(
+            later if col.startswith("oi_bld_") else late)
 
     # ---- liquidity PROXIES (real bid-ask never recorded — see inventory) ----
     f["opt_volume_proxy"] = f.ce_volume + f.pe_volume
