@@ -240,6 +240,8 @@ STRATEGIES = {
     "banknifty": {"script": str(TRADERS_DIR / "07_banknifty_trader.py"), "log": BASE_DIR / "logs/banknifty_v1.log", "cfg": TC_FILE, "grep": "07_banknifty_trader"},
     # VRP panic-fade — POSITIONAL (holds to expiry via allow_overnight, ADR-006)
     "vrp":       {"script": str(TRADERS_DIR / "vrp_straddle_trader.py"), "log": BASE_DIR / "logs/vrp_v1.log", "cfg": TC_FILE, "grep": "vrp_straddle_trader"},
+    # 10 = VRP Overnight Condor — daily defined-risk short-vol, ONE-night hold (allow_overnight, ADR-006)
+    "vrp_condor": {"script": str(TRADERS_DIR / "vrp_condor_trader.py"), "log": BASE_DIR / "logs/vrp_condor_v1.log", "cfg": TC_FILE, "grep": "vrp_condor_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}

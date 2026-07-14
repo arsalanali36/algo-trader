@@ -75,6 +75,7 @@ TRADER_SCRIPTS = {
     "shortvol":   TRADERS_DIR / "06_shortvol_trader.py",         # 06 OFF (TRAP #109)
     "banknifty":  TRADERS_DIR / "07_banknifty_trader.py",        # 07 banknifty_v1
     "vrp":        TRADERS_DIR / "vrp_straddle_trader.py",        # VRP panic-fade (positional, ADR-006)
+    "vrp_condor": TRADERS_DIR / "vrp_condor_trader.py",         # 10 VRP overnight condor (positional, ADR-006)
 }
 def _base(strategy):
     if strategy.startswith("ARS_CHAIN"):
