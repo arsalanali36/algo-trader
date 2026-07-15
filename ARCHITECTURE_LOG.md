@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-07-15 — EOD report "errors" cleanup — 1 real crash + 3 observability false-positives (strategies theek)
+**Status:** DONE
+**Layer:** strategy (ema crash guard) + infra (EOD report/replay tooling)
+**Kya:** User ne EOD report ke 6 negatives + ORB ke 2-din 0-trade pe "koi gadbad to nahi?" poocha. Investigation: **5 flags me sirf 1 asli bug** (ema open-crash), baaki report/tool ke false-positives; strategies bilkul sahi. Sab root-cause fix + VPS-deployed.
+**Files:**
+- `strategies/live/nifty_ema_trader.py` — `last_close = df["close"].iloc[-2]` pe `len(df) < 2` guard add. Market-open 09:15 pe 1 candle → `.iloc[-2]` out-of-bounds → poora 24-symbol scan cycle crash (`Loop error: single positional indexer is out-of-bounds`). Exact TRAP #86 shape jo `01_rsi_v1` me fix hua tha, is file me chhut gaya tha.
+- `strategies/live/vrp_condor_trader.py` — loop me ~5-min throttled heartbeat log (`[VRPC] spot=... waiting entry HH:MM`). Condor sirf 15:10 entry-time pe act karta, beech me silent tha → eod_digest ~3hr "heartbeat gap" flag karta tha. Trading me zero change.
+- `_ops/eod_report.py` — overtrading check `got = len(st["completed"])` (LEG round-trips) → `len(lg["entries"]) or len(st["completed"])` (ENTRY count). Multi-leg strategy (straddle/condor) me 1 entry = 2-4 fills → hamesha jhoota "overtrading N vs 0.77/day". Straddle ne aaj 1 entry liya (validated params se, koi divergence nahi).
+- `_ops/signal_replay.py` — naya `gate_in_position()`: `[EXIT]` lines parse → `[entry → next-exit]` hold-intervals → un ke andar wale offline signals `GATED(in-position)` (opener strict `<` se ungated). Single-position-hold strategies (chainzone/straddle/condor/backspread) har din jhoota "replay drift 1 MISS" deti thi jab ek position hold karte hue doosra signal aata.
+**Result:** Regenerated report — #3 (straddle overtrading), #4/#5 (chainzone/straddle replay MISS) turant GONE (`miss=0` verified via `signal_replay.run_for`). #1 (ema) + #2 (vrp heartbeat) aaj ki already-likhi log lines hain → kal 09:10 fresh process pe clean (aaj history rewrite nahi kiya). ORB 0-trade = bug nahi: 149pt move khud opening range tha (OR 24069↔24218), price band ke andar raha, short trigger 27pt se reh gaya — correct skip.
+**Risk:** zero — ema/vrp changes market-band deploy (strategies force-exited 3:15), report/replay = read-only observability tools. Backtest-fidelity (Rule 10) safe: koi entry/exit/risk logic nahi badli, sirf ek crash-guard + tooling counting fixes.
+**Deploy:** local commits → `git push origin HEAD:master` (clean FF) → VPS `git pull` (FF, 4 files) → strategy processes kal 9:10 auto-start pe naya code lenge. Architecture-audit 0 FAIL dono commits pe.
+**Kyun:** user ne saare EOD errors "end to end clean" karne ko kaha, plus 2-din-no-trade ki gadbad confirm karni thi.
+**Depends on:** eod_digest (entries/exits parse), signal_replay verdict tally (`GATED` != MISS), auto-scheduler 9:10 fresh-start. LESSONS.md TRAP #117 (+ #86 recurrence). Commits `78ce97e`, `6e702e0`.
+
+---
+
 ## 2026-07-15 — VRP "no spot" spam fix (missing `shared_ltp_cache.get_index`) + VRP Overnight Condor routing fix (`_base` two-token shadow)
 **Status:** DONE
 **Layer:** broker (data plumbing) + config (strategy routing)

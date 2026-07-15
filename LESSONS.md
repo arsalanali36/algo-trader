@@ -2505,3 +2505,27 @@ if two in STRATEGIES and STRATEGIES[two].get("script") != STRATEGIES.get(one, {}
 The script-difference guard is what keeps `rsi_v1 → "rsi"` untouched (STRATEGIES has both `"rsi"` and `"rsi_v1"`, but both point to `01_rsi_v1` — no ambiguity to resolve, so it stays on the existing alias path). Verified: of 17 live config keys, exactly one (`vrp_condor_v1`) changes resolution.
 
 **Fast-detect:** when a strategy's log TAG (`[VRPC]`) disagrees with its dashboard LABEL, or the running `ps` cmdline's script basename doesn't match what STRATEGIES maps its base to — trace `_base(config_id)` by hand. Any base key containing `_` is a candidate for prefix-shadowing by a shorter key.
+
+---
+
+## TRAP #117 — EOD report ke "errors" me 3 FALSE-positive + 1 real crash; observability tool khud galat gin raha tha (not the strategies).
+
+**Symptom (2026-07-15):** user ne EOD report ke 6 negatives dekh ke poocha "koi gadbad to nahi?" — khaaskar ORB 2 din se 0-trade. Investigate karne pe: **5 me se sirf 1 asli bug tha**, baaki report/tool ke false-positives the aur strategies bilkul sahi chal rahi thi.
+
+**Har ek ka root + fix:**
+
+1. **`ema_v1: 1 Loop error` — ASLI bug (TRAP #86 ka teesra ghar).** `nifty_ema_trader.py` ka main loop `last_close = df["close"].iloc[-2]` karta tha sirf `df.empty` guard ke saath — market-open 09:15 pe jab ek hi candle hoti hai, `.iloc[-2]` out-of-bounds → **poora 24-symbol scan cycle crash** (per-symbol try/except nahi). Exact wahi shape jo `01_rsi_v1.py` me TRAP #86 pe fix hua tha, par ye file usme chhut gayi. Fix: `if df is None or df.empty or len(df) < 2: continue`.
+
+2. **`vrp_condor heartbeat gap 198min` — monitoring-only (trading theek).** Naya `vrp_condor_trader.py` sirf 15:10 entry-time pe act karta hai; beech me `fetch_spot` success hone pe bhi koi log nahi karta tha → `eod_digest` ko ~3hr silence = "heartbeat gap" flag. Fix: loop me ~5-min throttled heartbeat log (`[VRPC] spot=... waiting entry 15:10`). Trading me koi change nahi.
+
+3. **`straddle overtrading 4 vs 0.77/day` — REPORT ka miscount (leg ≠ entry).** `eod_report.py` `got = len(st["completed"])` = completed LEG round-trips ginta tha, aur usko per-ENTRY expectation (0.77) se compare karta tha. Multi-leg strategy (straddle CE+PE, condor 4-leg) me **1 entry = 2-4 fills** → hamesha jhoota "overtrading". Straddle ne aaj sirf **1 entry** liya (2 buy + 2 sell = 4 fills). Aur live config = validated backtest params bilkul same (`or_min=15/orb_k=0.5/tp_frac=0.5/sl_frac=1.0`) → koi divergence nahi. Fix: `got = len(lg["entries"]) or len(st["completed"])` (`★ ENTRY` log lines gino, legacy traders ke liye completed pe fallback).
+
+4. **`chainzone/straddle replay drift 1 MISS` — signal_replay ka false-positive (position-hold model nahi tha).** Single-position-hold strategies (chainzone ride-to-EOD, straddle, condor, backspread) ek position din-bhar hold karti hain; live loop ka `if flat` guard re-entry rokta hai. Par `signal_replay` ka offline bar-scan har bar signal generate karta hai — position hold karte hue doosra signal → MISS. chainzone 10:35 pe SHORT enter (15:15 tak hold) → 10:50 ka signal skip → jhoota MISS; straddle 13:00 enter → 13:05 skip → jhoota MISS. **Ye har din har hold-strategy pe aayega.** Fix: naya `gate_in_position()` — `[EXIT]` lines parse karke `[entry → next-exit]` hold-intervals banao, un ke ANDAR wale offline signals ko `GATED(in-position)` karo. Opener (bar-close < uske apne `★ ENTRY` log timestamp) strict `<` se ungated rehta → `diff()` use MATCH kar leta hai.
+
+5. **ORB 2-din 0-trade — bug HI NAHI (observability clarification).** Wo "149-point move" jo user ne chart pe dekha = **khud opening range tha** (9:15-9:45 me OR_high 24218 − OR_low 24069 = 149pt). ORB breakout thresholds usi range se bante hain (short ~24027, long ~24255); din-bhar price us range ke andar raha (sabse neeche bar-close 24054, trigger 24027 se 27pt door). Wide OR = no breakout = correct skip. Loop live, config active, zero error. **Same-day straddle ne isi drop pe trade liya** (uske sensitive params `or_min=15/orb_k=0.5` ne pakda) — proof ki dono strategies apne-apne design ke hisaab se sahi behave kar rahi thi.
+
+**Kahan-kahan kaata:** #1 nifty_ema_trader (open pe roz possible tha); #2/#3/#4 har din har relevant strategy pe (report/tool sensitivity, strategy behaviour theek).
+
+**Permanent guard:** teeno tool-fixes (`eod_report` entry-count, `signal_replay` in-position gate, ema `len<2`) deployed — kal 09:10 fresh process se ema clean, report tool turant clean. Commits `78ce97e` + `6e702e0`.
+
+**Fast-detect:** EOD "overtrading?"/"replay MISS" flag dekho to **pehle strategy ki actual ENTRY count aur position-hold state check karo** (log ke `★ ENTRY` / `[EXIT]`) — leg-count aur stateless bar-scan dono multi-leg / hold-strategies pe over-report karte hain. `<TF>-min tight range me 0-trade` = ORB pe normal (breakout strategy choppy din skip karti hai); asli bug tab jab window me spot ne OR±ATR band cross kiya ho phir bhi `signal=none`. General rule: **observability tool ka flag = "dekho", "bug confirmed" nahi — pehle tool ka mechanism strategy ke design ke against verify karo** (PRE-MORTEM shape #10).
