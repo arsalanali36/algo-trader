@@ -152,7 +152,6 @@ def main():
 
     rl = _rl
     filled = nodata = 0
-    filled_tids = []
     for (out_p, sec_id, date_str, sym, u_secid, instr, flags, side, dtype, strike, tid) in todo:
         bars = {}
         used_flag = None
@@ -173,30 +172,25 @@ def main():
             json.dump(bars, open(tmp, "w"))
             os.replace(tmp, out_p)
             filled += 1
-            if tid is not None:
-                filled_tids.append(tid)
             if filled <= 40 or filled % 25 == 0:
                 print("  +%-32s strike=%s %s %s (%s, %d bars)"
                       % (sym, strike, side.upper(), date_str, used_flag, len(bars)), flush=True)
         except Exception as e:
             print("  WRITE-FAIL %s: %s" % (out_p, e), flush=True)
 
-    # invalidate opt_pnl's what-if cache for the trades we just filled, so the
-    # dashboard's allow_fetch=False path recomputes them from the new disk bars
-    # (else the cached covered=False sticks and the '-' never clears).
-    if filled_tids:
+    # invalidate opt_pnl's what-if cache so the dashboard's allow_fetch=False path
+    # recomputes from the new disk bars. A cached covered=False is reused as-is when
+    # allow_fetch=False, so any entry computed BEFORE these bars landed would stick
+    # (the '-' never clears). Clearing the whole file is bulletproof vs a per-tid
+    # prune racing a concurrent compute; it rebuilds lazily + cheaply (disk-only).
+    if filled:
         cpath = os.path.join(ROOT, "data", "opt_pnl_cache.json")
         try:
-            cache = json.load(open(cpath))
-            removed = sum(1 for tid in filled_tids if cache.pop(str(tid), None) is not None)
-            tmp = cpath + ".tmp"
-            json.dump(cache, open(tmp, "w"))
-            os.replace(tmp, cpath)
-            print("  opt_pnl cache: pruned %d filled entries" % removed, flush=True)
-        except FileNotFoundError:
-            pass
+            if os.path.exists(cpath):
+                os.remove(cpath)
+                print("  opt_pnl cache cleared (rebuilds on next Stats load)", flush=True)
         except Exception as e:
-            print("  cache prune warn: %s" % e, flush=True)
+            print("  cache clear warn: %s" % e, flush=True)
 
     print("\nDONE  filled=%d  no-data=%d  (cache groups=%d)"
           % (filled, nodata, len(_map_cache)), flush=True)
