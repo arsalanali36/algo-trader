@@ -138,12 +138,12 @@ def main():
         side = "ce" if cp == "CE" else "pe"
         dtype = "CALL" if cp == "CE" else "PUT"
         todo.append((out_p, sec_id, date_str, sym, u_secid, instr, flags,
-                     side, dtype, round(strike)))
+                     side, dtype, round(strike), t.get("id")))
 
     print("backfill: %d completed trades in range, %d missing bars to fetch%s"
           % (len(trades), len(todo), "  [DRY RUN]" if dry else ""), flush=True)
     if dry:
-        for (out_p, sec_id, date_str, sym, u_secid, instr, flags, side, dtype, strike) in todo[:60]:
+        for (out_p, sec_id, date_str, sym, u_secid, instr, flags, side, dtype, strike, tid) in todo[:60]:
             print("  would fetch %-32s strike=%s %s flags=%s (u=%s %s)"
                   % (sym, strike, side.upper(), flags, u_secid, instr))
         if len(todo) > 60:
@@ -152,7 +152,8 @@ def main():
 
     rl = _rl
     filled = nodata = 0
-    for (out_p, sec_id, date_str, sym, u_secid, instr, flags, side, dtype, strike) in todo:
+    filled_tids = []
+    for (out_p, sec_id, date_str, sym, u_secid, instr, flags, side, dtype, strike, tid) in todo:
         bars = {}
         used_flag = None
         for flag in flags:
@@ -172,11 +173,30 @@ def main():
             json.dump(bars, open(tmp, "w"))
             os.replace(tmp, out_p)
             filled += 1
+            if tid is not None:
+                filled_tids.append(tid)
             if filled <= 40 or filled % 25 == 0:
                 print("  +%-32s strike=%s %s %s (%s, %d bars)"
                       % (sym, strike, side.upper(), date_str, used_flag, len(bars)), flush=True)
         except Exception as e:
             print("  WRITE-FAIL %s: %s" % (out_p, e), flush=True)
+
+    # invalidate opt_pnl's what-if cache for the trades we just filled, so the
+    # dashboard's allow_fetch=False path recomputes them from the new disk bars
+    # (else the cached covered=False sticks and the '-' never clears).
+    if filled_tids:
+        cpath = os.path.join(ROOT, "data", "opt_pnl_cache.json")
+        try:
+            cache = json.load(open(cpath))
+            removed = sum(1 for tid in filled_tids if cache.pop(str(tid), None) is not None)
+            tmp = cpath + ".tmp"
+            json.dump(cache, open(tmp, "w"))
+            os.replace(tmp, cpath)
+            print("  opt_pnl cache: pruned %d filled entries" % removed, flush=True)
+        except FileNotFoundError:
+            pass
+        except Exception as e:
+            print("  cache prune warn: %s" % e, flush=True)
 
     print("\nDONE  filled=%d  no-data=%d  (cache groups=%d)"
           % (filled, nodata, len(_map_cache)), flush=True)
