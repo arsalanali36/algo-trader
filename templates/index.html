@@ -169,8 +169,8 @@
     .tab-body {
       display: none;
       padding: 20px !important;
-      margin-top: 52px;
-      /* clear frozen header */
+      margin-top: calc(52px + var(--alertH, 0px));
+      /* clear frozen header + (when shown) the fixed alert banner below it */
     }
 
     .tab-body.active {
@@ -1352,48 +1352,65 @@
      token-expiry and health-check RED alerts were written to a JSON file
      nobody could see. This strip is their first actual surface. ── -->
   <div id="alertBanner"
-    style="display:none;background:#3d1214;border-bottom:2px solid #f85149;padding:8px 14px;font-size:13px;color:#ffb3ad;line-height:1.5">
+    style="display:none;position:fixed;top:52px;left:0;right:0;z-index:9997;background:#3d1214;border-bottom:2px solid #f85149;padding:8px 14px;font-size:13px;color:#ffb3ad;line-height:1.5;max-height:40vh;overflow:auto">
   </div>
   <script>
     (function () {
       var _dismissedHash = localStorage.getItem('alertBannerDismissed') || '';
       function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return String(h); }
+      function _setH(el) {
+        // Push page content down by exactly the banner's height (it's position:fixed
+        // under the frozen 52px header — without this it would overlap the content).
+        var h = (el && el.style.display !== 'none') ? el.offsetHeight : 0;
+        document.documentElement.style.setProperty('--alertH', h + 'px');
+      }
+      function _esc(s) { return String(s).replace(/[<>&]/g, function (c) { return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'; }); }
+      function _hide(el) { el.style.display = 'none'; _setH(el); }
       function _render(alerts) {
         var el = document.getElementById('alertBanner');
         if (!el) return;
-        if (!alerts || !alerts.length) { el.style.display = 'none'; return; }
+        if (!alerts || !alerts.length) { _hide(el); return; }
         var raw = JSON.stringify(alerts);
-        if (_hash(raw) === _dismissedHash) { el.style.display = 'none'; return; }
+        if (_hash(raw) === _dismissedHash) { _hide(el); return; }
         var untracked = alerts.filter(function (a) { return a && a.key === 'untracked_position'; });
-        var others = alerts.filter(function (a) { return !(a && a.key === 'untracked_position'); });
-        var html = '';
+        var rest = alerts.filter(function (a) { return !(a && a.key === 'untracked_position'); });
+        // Split the rest into SL/risk-relevant dict alerts (stale_feed, kill_floor,
+        // naked_leg…) vs plain informational strings (data-missing / token notices).
+        var risky = rest.filter(function (a) { return a && typeof a === 'object' && a.key; });
+        var infos = rest.filter(function (a) { return !(a && typeof a === 'object' && a.key); });
+        // ✕ first so it always sits clean top-right; text flows to its left.
+        var html = '<span onclick="alertBannerDismiss()" title="Dismiss (reappears if alerts change)" ' +
+          'style="float:right;cursor:pointer;font-weight:700;padding:0 6px;font-size:15px">✕</span>';
         if (untracked.length) {
           html += '<div style="font-weight:700;color:#ff7b72">🚨 ' + untracked.length +
             ' UNTRACKED live position(s) — broker has them, app does not. No SL/EOD protection.</div>';
           untracked.slice(0, 4).forEach(function (a) {
-            html += '<div>• ' + (a.msg || (a.broker + ': ' + a.sym)) + '</div>';
+            html += '<div>• ' + _esc(a.msg || (a.broker + ': ' + a.sym)) + '</div>';
           });
           html += '<button onclick="alertBannerReconcile(this)" style="margin:4px 8px 0 0;padding:4px 10px;' +
             'background:#f85149;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer">' +
             '🧾 Reconcile vs Broker now</button>';
         }
-        if (others.length) {
-          html += '<div style="margin-top:' + (untracked.length ? '6px' : '0') + '">' +
-            '⚠️ ' + others.length + ' alert(s): ' +
-            others.slice(-3).map(function (a) { return (typeof a === 'string') ? a : (a.msg || JSON.stringify(a)); }).join(' &nbsp;|&nbsp; ') +
+        risky.forEach(function (a) {
+          html += '<div style="font-weight:600;color:#ffb3ad;margin-top:4px">• ' + _esc(a.msg || JSON.stringify(a)) + '</div>';
+        });
+        if (infos.length) {
+          html += '<div style="margin-top:' + (untracked.length || risky.length ? '6px' : '0') + ';color:#c9a26b">' +
+            'ℹ️ ' + infos.length + ' info: ' +
+            infos.slice(-3).map(function (a) { return _esc((typeof a === 'string') ? a : (a.msg || JSON.stringify(a))); }).join(' &nbsp;|&nbsp; ') +
+            (infos.length > 3 ? ' …' : '') +
             '</div>';
         }
-        html += '<span onclick="alertBannerDismiss()" title="Dismiss (reappears if alerts change)" ' +
-          'style="float:right;cursor:pointer;font-weight:700;padding:0 6px">✕</span>';
         el.innerHTML = html;
         el.dataset.raw = raw;
         el.style.display = 'block';
+        _setH(el);
       }
       window.alertBannerDismiss = function () {
         var el = document.getElementById('alertBanner');
         _dismissedHash = _hash(el.dataset.raw || '');
         localStorage.setItem('alertBannerDismissed', _dismissedHash);
-        el.style.display = 'none';
+        _hide(el);
       };
       window.alertBannerReconcile = function (btn) {
         btn.disabled = true; btn.textContent = '⏳ Reconciling…';
@@ -1818,7 +1835,7 @@
   <!-- ORDERS TAB (DB-backed, cross-day, tagged) -->
   <div class="tab-body active" id="tab-orders" style="padding:16px 18px 24px">
     <div
-      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
+      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:calc(52px + var(--alertH, 0px)); z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Date</span>
       <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph();"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
@@ -2003,7 +2020,7 @@
   <div class="tab-body" id="tab-calendar" style="padding:16px 18px 24px">
     <!-- Filters (exact same as orders, named with cal-) -->
     <div
-      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:52px; z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
+      style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:calc(52px + var(--alertH, 0px)); z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Source</span>
       <span id="cal-src" class="cal-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
