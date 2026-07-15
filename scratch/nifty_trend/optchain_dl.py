@@ -1,19 +1,27 @@
-"""Dhan rollingoption downloader — REAL 5yr expired-option premium + IV + OI data-lake.
+"""Dhan rollingoption downloader — REAL expired-option premium + IV + OI data-lake.
 
 Endpoint: POST /v2/charts/rollingoption (paid "Expired Options Data" add-on).
 Per call returns, for ONE relative strike (rolling ATM±n) + ONE side (CE/PE), a 5-min
 series of open/high/low/close/volume/IV/OI/strike/spot. 30-day max per call.
 
-We build the full NIFTY chain: offsets ATM, ATM±1..±10 (21) × CE+PE × {WEEK,MONTH}.
+MULTI-UNDERLYING (2026-07-15): builds a per-underlying lake under
+_TRADING_DATA/OptChainLake/<SYM>/<WEEK|MONTH>/<CE|PE>_<off>.csv .
+  • Index  (NIFTY/BANKNIFTY): OPTIDX, WEEK+MONTH, ATM±10, ~5yr.
+  • Stocks (F&O liquid set):  OPTSTK, MONTH only (no weekly stock options), ATM±5, ~3yr.
+
+The rollingoption call/parse lives in _data/opt_hist.py (single source, Rule 6B) —
+this script only orchestrates task order, manifest/resume, append+dedup.
+
 Priority order so USABLE data lands first: WEEK before MONTH, RECENT before old,
-ATM outward (0,±1,±2…). Track-B (IV/OI) strategies can start on partial data.
+ATM outward (0,±1,±2…). Rate: lowest priority ("account") via dhan_rate_limiter so it
+NEVER starves live orders; hard backoff on DH-904. Token re-read each call. Resumable
+via a per-underlying manifest of done (series,chunk) keys.
 
-Rate: lowest priority ("account") via dhan_rate_limiter so it NEVER starves live
-orders; hard backoff on DH-904. Token re-read each call (survives a mid-run refresh).
-Resumable: a manifest of done (series,chunk) keys is skipped on restart.
-
-Store: optlake/NIFTY/<WEEK|MONTH>/<CE|PE>_<off>.csv  (append + dedup on timestamp).
-Run on the VPS (token lives there):  venv/bin/python scratch/nifty_trend/optchain_dl.py
+USAGE (run on the VPS — token + subscription live there):
+    venv/bin/python scratch/nifty_trend/optchain_dl.py                 # NIFTY (default, back-compat)
+    venv/bin/python scratch/nifty_trend/optchain_dl.py --underlying NIFTY,BANKNIFTY
+    venv/bin/python scratch/nifty_trend/optchain_dl.py --stocks        # ~liquid F&O stock set
+    venv/bin/python scratch/nifty_trend/optchain_dl.py --stocks TCS,RELIANCE
 """
 import os
 import sys
@@ -21,21 +29,30 @@ import csv
 import json
 import time
 import datetime as dt
-import requests
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
-LAKE = os.path.join(ROOT, "_TRADING_DATA", "OptChainLake", "NIFTY")
-MANIFEST = os.path.join(LAKE, "_done.json")
-CONFIG = os.path.join(ROOT, "data", "config.json")
-URL = "https://api.dhan.co/v2/charts/rollingoption"
+sys.path.insert(0, ROOT)
+import _paths  # noqa: F401  bootstrap so _data/opt_hist + universe import cleanly
+import opt_hist
+import universe
 
-START = dt.date(2021, 7, 1)      # ~5yr (Dhan expired-option depth)
+try:
+    import dhan_rate_limiter as _rl_mod
+except Exception:
+    _rl_mod = None
+
+LAKE_ROOT = os.path.join(ROOT, "_TRADING_DATA", "OptChainLake")
+CONFIG = os.path.join(ROOT, "data", "config.json")
+
 CHUNK_DAYS = 28                  # < 30-day API cap
 COLS = ["timestamp", "open", "high", "low", "close", "volume", "iv", "oi", "strike", "spot"]
-OFFSETS = [0] + [s * n for n in range(1, 11) for s in (+1, -1)]   # 0,+1,-1,+2,-2,...,+10,-10
 SIDES = [("CE", "CALL"), ("PE", "PUT")]
-FLAGS = ["WEEK", "MONTH"]
+
+INDEX_START = dt.date(2021, 7, 1)          # ~5yr expired-option depth
+STOCK_YEARS = 3
+INDEX_OFF_RANGE = 10
+STOCK_OFF_RANGE = 5
 
 
 def _tok():
@@ -44,59 +61,40 @@ def _tok():
             "Content-Type": "application/json"}
 
 
-def _rl_acquire():
-    try:
-        sys.path.insert(0, ROOT)
-        import dhan_rate_limiter as rl
-        for _ in range(60):
-            if rl.acquire("account"):     # lowest priority — yields to live orders/ltp
-                return rl
-            time.sleep(1.0)
-        return rl
-    except Exception:
-        return None
+def _rl_acquire_mod():
+    return _rl_mod
 
 
-def _strike_str(off):
-    return "ATM" if off == 0 else (f"ATM+{off}" if off > 0 else f"ATM{off}")
+def _offsets(off_range):
+    return [0] + [s * n for n in range(1, off_range + 1) for s in (+1, -1)]
 
 
-def _chunks():
+def _chunks(start):
     today = dt.date.today()
     out = []
-    d = START
+    d = start
     while d <= today:
         e = min(d + dt.timedelta(days=CHUNK_DAYS - 1), today)
         out.append((d, e)); d = e + dt.timedelta(days=1)
     return out[::-1]              # recent-first
 
 
-def _load_manifest():
+def _load_manifest(mpath):
     try:
-        return set(json.load(open(MANIFEST)))
+        return set(json.load(open(mpath)))
     except Exception:
         return set()
 
 
-def _save_manifest(done):
-    os.makedirs(LAKE, exist_ok=True)
-    json.dump(sorted(done), open(MANIFEST, "w"))
+def _save_manifest(mpath, done):
+    os.makedirs(os.path.dirname(mpath), exist_ok=True)
+    json.dump(sorted(done), open(mpath, "w"))
 
 
-def _series_path(flag, side, off):
-    d = os.path.join(LAKE, flag)
+def _series_path(lake, flag, side, off):
+    d = os.path.join(lake, flag)
     os.makedirs(d, exist_ok=True)
-    return os.path.join(d, f"{side}_{_strike_str(off).replace('+','p').replace('-','m')}.csv")
-
-
-def _fetch(flag, dtype, off, frm, to, headers):
-    body = {"exchangeSegment": "NSE_FNO", "securityId": 13, "instrument": "OPTIDX",
-            "interval": "5", "expiryFlag": flag, "expiryCode": 1, "strike": _strike_str(off),
-            "drvOptionType": dtype,
-            "requiredData": ["open", "high", "low", "close", "volume", "iv", "oi", "strike", "spot"],
-            "fromDate": str(frm), "toDate": str(to)}
-    r = requests.post(URL, json=body, headers=headers, timeout=30)
-    return r
+    return os.path.join(d, "%s_%s.csv" % (side, opt_hist.series_slug(off)))
 
 
 def _append(path, rows):
@@ -116,72 +114,116 @@ def _append(path, rows):
     return len(new)
 
 
-def main():
-    os.makedirs(LAKE, exist_ok=True)
-    done = _load_manifest()
-    chunks = _chunks()
-    # priority task order: WEEK first, ATM outward, recent chunks first
+def _build_specs(argv):
+    """Return list of (symbol, sec_id, instrument, flags, off_range, start).
+
+    Default (no selector) = NIFTY only (back-compat with the original script)."""
+    args = argv[1:]
+    want_stocks = "--stocks" in args
+    underlyings = None
+    stock_syms = None
+    for i, a in enumerate(args):
+        if a == "--underlying" and i + 1 < len(args):
+            underlyings = [x.strip().upper() for x in args[i + 1].split(",") if x.strip()]
+        if a == "--stocks" and i + 1 < len(args) and not args[i + 1].startswith("--"):
+            stock_syms = [x.strip().upper() for x in args[i + 1].split(",") if x.strip()]
+
+    specs = []
+    # index underlyings
+    idx = underlyings if underlyings else (None if want_stocks else ["NIFTY"])
+    if idx:
+        for sym in idx:
+            if sym not in opt_hist.INDEX_UNDERLYINGS:
+                print("  ! skip unknown index underlying:", sym, flush=True); continue
+            sid, instr = opt_hist.INDEX_UNDERLYINGS[sym]
+            specs.append((sym, sid, instr, ["WEEK", "MONTH"], INDEX_OFF_RANGE, INDEX_START))
+    # stocks
+    if want_stocks:
+        syms = stock_syms or sorted(set(universe.LIQUID_PREMIUM) |
+                                    set(getattr(universe, "NIFTY50", [])))
+        start = dt.date.today() - dt.timedelta(days=365 * STOCK_YEARS)
+        miss = []
+        for sym in syms:
+            sid = universe.equity_secid(sym)
+            if not sid:
+                miss.append(sym); continue
+            specs.append((sym, int(sid), "OPTSTK", ["MONTH"], STOCK_OFF_RANGE, start))
+        if miss:
+            print("  ! %d stocks unresolved (no NSE_EQ sec_id): %s"
+                  % (len(miss), ",".join(miss)), flush=True)
+    return specs
+
+
+def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl):
+    lake = os.path.join(LAKE_ROOT, sym)
+    mpath = os.path.join(lake, "_done.json")
+    os.makedirs(lake, exist_ok=True)
+    done = _load_manifest(mpath)
+    offsets = _offsets(off_range)
+    chunks = _chunks(start)
     tasks = [(flag, side, dtype, off, frm, to)
-             for flag in FLAGS
-             for off in OFFSETS
+             for flag in flags
+             for off in offsets
              for (side, dtype) in SIDES
              for (frm, to) in chunks]
     total = len(tasks)
-    print(f"optchain_dl: {total} calls  ({len(OFFSETS)} offsets x {len(SIDES)} sides x "
-          f"{len(FLAGS)} flags x {len(chunks)} chunks)  lake={LAKE}", flush=True)
-    rl = _rl_acquire()
+    print("\n=== %s (sec_id=%s %s) : %d calls  (%d offsets x %d sides x %d flags x %d chunks) ==="
+          % (sym, sec_id, instrument, total, len(offsets), len(SIDES), len(flags), len(chunks)),
+          flush=True)
     ok = skip = empty = err = 0
     t0 = time.time()
     for i, (flag, side, dtype, off, frm, to) in enumerate(tasks):
-        key = f"{flag}|{side}|{off}|{frm}"
+        key = "%s|%s|%s|%s" % (flag, side, off, frm)
         if key in done:
             skip += 1; continue
         try:
-            if rl:
-                for _ in range(120):
-                    if rl.acquire("account"):
-                        break
-                    time.sleep(1.0)
-            r = _fetch(flag, dtype, off, frm, to, _tok())
-            if r.status_code == 429:
-                if rl:
-                    rl.note_429()
-                print(f"  [{i+1}/{total}] 429 — backoff 20s ({key})", flush=True)
+            rows, status = opt_hist.fetch_rolling(_tok(), sec_id, instrument, flag, off,
+                                                  dtype, side.lower(), frm, to, rl=rl)
+            if status == 429:
+                print("  [%d/%d] 429 — backoff 20s (%s)" % (i + 1, total, key), flush=True)
                 time.sleep(20); continue
-            if r.status_code != 200:
+            if status not in (200, -1):
                 err += 1
                 if err <= 20:
-                    print(f"  [{i+1}/{total}] HTTP {r.status_code} {key}: {str(r.text)[:100]}", flush=True)
-                done.add(key); continue      # non-retryable input error → mark done, skip
-            d = r.json()
-            s = (d.get("data") or {}).get(side.lower()) or {}
-            n = len(s.get("close") or [])
+                    print("  [%d/%d] HTTP %s %s" % (i + 1, total, status, key), flush=True)
+                done.add(key); continue        # non-retryable input error → mark done
+            n = len(rows)
             if n == 0:
                 empty += 1; done.add(key)
-                if empty <= 10:
-                    print(f"  [{i+1}/{total}] empty {key}", flush=True)
+                if empty <= 5:
+                    print("  [%d/%d] empty %s" % (i + 1, total, key), flush=True)
             else:
-                rows = list(zip(s["timestamp"], s["open"], s["high"], s["low"], s["close"],
-                                s.get("volume", [0] * n), s.get("iv", [""] * n),
-                                s.get("oi", [""] * n), s.get("strike", [""] * n),
-                                s.get("spot", [""] * n)))
-                added = _append(_series_path(flag, side, off), rows)
+                added = _append(_series_path(lake, flag, side, off), rows)
                 ok += 1; done.add(key)
-                if ok % 25 == 0 or i < 5:
+                if ok % 25 == 0 or i < 3:
                     rate = (i + 1) / max(time.time() - t0, 1)
                     eta = (total - i - 1) / max(rate, 0.01) / 60
-                    print(f"  [{i+1}/{total}] {key}: +{added} rows (ok={ok} empty={empty} err={err}) "
-                          f"~{rate:.1f}/s ETA {eta:.0f}m", flush=True)
+                    print("  [%d/%d] %s: +%d rows (ok=%d empty=%d err=%d) ~%.1f/s ETA %.0fm"
+                          % (i + 1, total, key, added, ok, empty, err, rate, eta), flush=True)
             if (i + 1) % 40 == 0:
-                _save_manifest(done)
+                _save_manifest(mpath, done)
         except Exception as e:
             err += 1
             if err <= 20:
-                print(f"  [{i+1}/{total}] EXC {key}: {e}", flush=True)
+                print("  [%d/%d] EXC %s: %s" % (i + 1, total, key, e), flush=True)
             time.sleep(2)
         time.sleep(0.15)          # gentle base spacing on top of the limiter
-    _save_manifest(done)
-    print(f"\nDONE in {(time.time()-t0)/60:.0f}m  ok={ok} empty={empty} err={err} skip={skip}", flush=True)
+    _save_manifest(mpath, done)
+    print("--- %s DONE in %.0fm  ok=%d empty=%d err=%d skip=%d"
+          % (sym, (time.time() - t0) / 60, ok, empty, err, skip), flush=True)
+
+
+def main():
+    specs = _build_specs(sys.argv)
+    if not specs:
+        print("nothing to do — pass --underlying NIFTY,BANKNIFTY and/or --stocks [SYMS]", flush=True)
+        return
+    print("optchain_dl: %d underlying(s): %s" % (len(specs), ", ".join(s[0] for s in specs)),
+          flush=True)
+    rl = _rl_acquire_mod()
+    for (sym, sec_id, instrument, flags, off_range, start) in specs:
+        _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl)
+    print("\nALL DONE.", flush=True)
 
 
 if __name__ == "__main__":

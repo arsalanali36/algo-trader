@@ -94,7 +94,8 @@ def _strike_map(headers, u_secid, instr, flag, side, dtype, date_str, rl):
     for off in offs:
         rows, _status = opt_hist.fetch_rolling(headers, u_secid, instr, flag, off,
                                                dtype, side, date_str, date_str, rl=rl)
-        for (ts, o, h, l, c, strike, spot) in rows:
+        for row in rows:
+            ts, o, h, l, c, strike = row[0], row[1], row[2], row[3], row[4], row[8]
             if strike is None:
                 continue
             m.setdefault(round(strike), {})[str(int(ts))] = [

@@ -42,8 +42,8 @@ def fetch_rolling(headers, sec_id, instrument, flag, off, dtype, side,
                   frm, to, interval="5", timeout=30, rl=None):
     """One rollingoption call.
 
-    Returns (rows, status). rows = list of
-        (ts:int, o, h, l, c: float, strike: float|None, spot: float|None)
+    Returns (rows, status). rows = list of tuples in CSV/lake column order:
+        (ts:int, o, h, l, c: float, volume, iv, oi, strike: float|None, spot: float|None)
     status = HTTP code (200 ok; 429 rate-limited; -1 network exception).
     side='ce'|'pe'; dtype='CALL'|'PUT'; off=int; flag='WEEK'|'MONTH'.
     `rl` = optional dhan_rate_limiter module (acquire 'account' before the call).
@@ -94,6 +94,9 @@ def fetch_rolling(headers, sec_id, instrument, flag, off, dtype, side,
     o = s.get("open", []) or []
     h = s.get("high", []) or []
     lo = s.get("low", []) or []
+    vol = s.get("volume", []) or [0] * n
+    iv = s.get("iv", []) or [""] * n
+    oi = s.get("oi", []) or [""] * n
     st = s.get("strike", []) or [None] * n
     sp = s.get("spot", []) or [None] * n
     out = []
@@ -101,6 +104,9 @@ def fetch_rolling(headers, sec_id, instrument, flag, off, dtype, side,
         try:
             out.append((
                 int(ts[i]), float(o[i]), float(h[i]), float(lo[i]), float(close[i]),
+                (vol[i] if i < len(vol) else 0),
+                (iv[i] if i < len(iv) else ""),
+                (oi[i] if i < len(oi) else ""),
                 (float(st[i]) if st[i] not in (None, "") else None),
                 (float(sp[i]) if sp[i] not in (None, "") else None),
             ))
@@ -133,7 +139,8 @@ def held_strike_series(headers, sec_id, instrument, flag, side, dtype,
                                      side, date_str, date_str, interval=interval,
                                      timeout=30, rl=rl)
         hit_this = 0
-        for (ts, o, h, l, c, strike, spot) in rows:
+        for row in rows:
+            ts, o, h, l, c, strike = row[0], row[1], row[2], row[3], row[4], row[8]
             if strike is None:
                 continue
             if abs(round(strike) - tgt) <= tol:
