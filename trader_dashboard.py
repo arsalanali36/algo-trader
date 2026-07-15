@@ -4207,7 +4207,8 @@ def api_orders_optimized_pnl():
         'map': m,
         'covered': covered,
         'total': len(m),
-        'params': {'fixed': opt_pnl.FIX, 'aggr': opt_pnl.AGG_PARAMS}
+        'params': {'fixed': opt_pnl.FIX, 'aggr': opt_pnl.AGG_PARAMS,
+                   'aggr_eod': opt_pnl.AGG_EOD_PARAMS}
     })
 
 

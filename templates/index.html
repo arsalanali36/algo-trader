@@ -8212,8 +8212,9 @@
       { id: 'gross', l: 'Gross', a: 'right', on: true },
       { id: 'tax', l: 'Tax', a: 'right', on: true },
       { id: 'net', l: 'Net', a: 'right', on: true },
-      { id: 'opt_fixed', l: 'Opt Fixed', a: 'right', on: false, title: 'What-if NET P&L under best FIXED profile (grid-search): Target ₹4,000/lot · SL ₹1,000/lot. ~ = no bar data, actual P&L shown.' },
-      { id: 'opt_aggr', l: 'Opt Aggr', a: 'right', on: false, title: 'What-if NET P&L under best AGGRESSIVE trail (grid-search): Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100. ~ = no bar data, actual P&L shown.' },
+      { id: 'opt_fixed', l: 'Opt Fixed', a: 'right', on: false, title: 'What-if NET, SAME hold as actual: fixed Target ₹4,000/lot · SL ₹1,000/lot. — = no 1-min bar data.' },
+      { id: 'opt_aggr', l: 'Opt Aggr', a: 'right', on: false, title: 'What-if NET, SAME hold as actual: aggressive trail Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100. — = no bar data.' },
+      { id: 'opt_aggr_eod', l: 'Opt Aggr→EOD', a: 'right', on: false, title: 'What-if NET if the ATR SL were REPLACED by the aggressive trail RIDDEN to 15:15 (init SL ₹1,500/lot, no target cap). Directional — NOT a validated backtest. — = no bar data.' },
       { id: 'ret_pct', l: '% Ret', a: 'right', on: true },
       { id: 'run_up', l: 'Run-Up', a: 'right', on: true },
       { id: 'run_down', l: 'Run-Down', a: 'right', on: true },
@@ -10743,8 +10744,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         { id: 'm_dd', l: 'Drawdown', on: false },
         // optimised "what-if" net — best-fixed & best-aggressive SL/Target
         // (path-aware sim). Off by default; loaded async per range.
-        { id: 'm_optfix', l: 'Opt Fixed', on: false, title: 'What-if NET under best FIXED profile (grid-search): Target ₹4,000/lot · SL ₹1,000/lot' },
-        { id: 'm_optaggr', l: 'Opt Aggr', on: false, title: 'What-if NET under best AGGRESSIVE trail (grid-search): Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100' },
+        { id: 'm_optfix', l: 'Opt Fixed', on: false, title: 'What-if NET, SAME hold as actual: fixed Target ₹4,000/lot · SL ₹1,000/lot' },
+        { id: 'm_optaggr', l: 'Opt Aggr', on: false, title: 'What-if NET, SAME hold as actual: aggressive trail Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100' },
+        { id: 'm_optaggeod', l: 'Opt Aggr→EOD', on: false, title: 'What-if NET if ATR SL were REPLACED by the aggressive trail, RIDDEN to 15:15 (init SL ₹1,500/lot, no target cap). Directional — NOT a validated backtest.' },
+        { id: 'opt_cov', l: 'Opt Cov', on: false, title: 'How many trades in this row have 1-min bar data (the rest show — and are excluded from the Opt totals)' },
         // fixed-value metrics (mode-independent, single value per group)
         { id: 'exp', l: 'Expectancy', on: false },
         { id: 'maxdd', l: 'Max DD', on: false },
@@ -10850,10 +10853,17 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         window._optParams = d.params || null;
         (window.currentCalendarTrades || []).forEach(t => {
           const o = map[String(t.id)];
-          if (!o) { t._optFixNet = null; t._optAggrNet = null; t._optCov = false; return; }
-          t._optCov = !!o.covered;
+          // No-data (or not-yet-loaded) trades → null so they show '—' and are
+          // excluded from opt totals (never echo actual — that made 'no data'
+          // look like 'no benefit'). Coverage count tells you how many are real.
+          if (!o || !o.covered) {
+            t._optFixNet = null; t._optAggrNet = null; t._optAggEodNet = null;
+            t._optCov = false; return;
+          }
+          t._optCov = true;
           t._optFixNet = _optNetFromGross(t, o.fix);
           t._optAggrNet = _optNetFromGross(t, o.aggr);
+          t._optAggEodNet = _optNetFromGross(t, o.aggr_eod);
         });
         if (typeof renderSummaryTable === 'function') renderSummaryTable();
         if (typeof renderPointsPerTradeTable === 'function') renderPointsPerTradeTable();
@@ -10869,11 +10879,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const stratSet = new Set();
       // per-trade value arrays feeding the aggregation-mode switch
       // dd = per-trade adverse excursion magnitude (positive) — "kitna against gaya"
-      const _arr = { points: [], gross: [], net: [], tax: [], dur: [], runup: [], rundown: [], dd: [], optfix: [], optaggr: [] };
+      const _arr = { points: [], gross: [], net: [], tax: [], dur: [], runup: [], rundown: [], dd: [], optfix: [], optaggr: [], optaggeod: [] };
+      let optCovN = 0;
       trades.forEach(t => {
         // optimised "what-if" net (loaded async); null until /api/optimized-pnl returns
+        if (t._optCov) optCovN++;
         if (t._optFixNet != null) _arr.optfix.push(t._optFixNet);
         if (t._optAggrNet != null) _arr.optaggr.push(t._optAggrNet);
+        if (t._optAggEodNet != null) _arr.optaggeod.push(t._optAggEodNet);
         const ep = t.entry_price || 0, xp = t.exit_price || 0, qty = t.qty || 0;
         const side = t.entry || 'BUY';
         const pts = side === 'BUY' ? xp - ep : ep - xp;
@@ -10936,13 +10949,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         avgPts: count > 0 ? totalPts / count : 0, avgGross: count > 0 ? gross / count : 0, avgNet: count > 0 ? net / count : 0,
         best: best === Infinity ? 0 : best, worst: worst === Infinity ? 0 : worst,
         avgWin, avgLoss, maxRunUp, maxRunDown, exp,
-        stratCount: stratSet.size, avgDurMins, maxDD: _mdd,
+        stratCount: stratSet.size, avgDurMins, maxDD: _mdd, optCovN,
         // per-metric {sum,avg,min,max} — the aggregation switch reads m[base][mode]
         m: {
           points: _agg4(_arr.points), gross: _agg4(_arr.gross), net: _agg4(_arr.net),
           tax: _agg4(_arr.tax), dur: _agg4(_arr.dur), runup: _agg4(_arr.runup),
           rundown: _agg4(_arr.rundown), dd: _agg4(_arr.dd),
-          optfix: _agg4(_arr.optfix), optaggr: _agg4(_arr.optaggr)
+          optfix: _agg4(_arr.optfix), optaggr: _agg4(_arr.optaggr), optaggeod: _agg4(_arr.optaggeod)
         }
       };
     }
@@ -10998,6 +11011,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isBold ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
             case 'wl': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}"><span style="color:#3fb950;font-weight:600">${s.wins}</span> / <span style="color:#f85149;font-weight:600">${s.losses}</span></td>`;
             case 'winrate': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${wr}%</td>`;
+            case 'opt_cov': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.optCovN != null ? s.optCovN + '/' + s.count : '—'}</td>`;
             case 'exp': return `<td style="padding:8px;text-align:right;color:${s.exp >= 0 ? '#3fb950' : '#f85149'};${b}">${N(s.exp)}</td>`;
             case 'maxdd': return `<td style="padding:8px;text-align:right;color:#f0883e;${b}">${s.maxDD > 0 ? '-' + N(s.maxDD) : '—'}</td>`;
             default: return '<td></td>';
@@ -11024,7 +11038,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
       const aggPfx = _CAL_AGG_LBL[window._calSumAgg || 'sum'] || 'Σ';
       const sort = window._calSumSort || { col: 'label', dir: 1 };
-      const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'm_optfix', 'm_optaggr', 'maxdd', 'exp']);
+      const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'm_optfix', 'm_optaggr', 'm_optaggeod', 'maxdd', 'exp']);
       thead.innerHTML = cols.map(c => {
         const a = c.id === 'label' ? 'left' : (c.id === 'm_dur' ? 'center' : (rightAligned.has(c.id) ? 'right' : 'center'));
         const isSort = sort.col === c.id;
@@ -11570,15 +11584,17 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let currentGroupDate = '';
       let currentMonth = '';
 
-      let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, of: 0, oa: 0, oany: false };
-      let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
-      let _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
-      // accumulate optimised what-if into a totals bucket (opt where computed,
-      // else actual net — so the total is complete and comparable)
+      let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, of: 0, oa: 0, oe: 0, ocov: 0 };
+      let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oe: 0, ocov: 0 };
+      let _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oe: 0, ocov: 0 };
+      // accumulate optimised what-if — ONLY covered (simulate-able) trades; no-data
+      // legs are excluded (never echoed as net). ocov = how many were covered.
       const _accOpt = (bucket, t) => {
-        if (t._optFixNet != null) bucket.oany = true;
-        bucket.of += (t._optFixNet != null ? t._optFixNet : (t._net || 0));
-        bucket.oa += (t._optAggrNet != null ? t._optAggrNet : (t._net || 0));
+        if (!t._optCov) return;
+        bucket.ocov++;
+        bucket.of += (t._optFixNet || 0);
+        bucket.oa += (t._optAggrNet || 0);
+        bucket.oe += (t._optAggEodNet || 0);
       };
 
       const renderDayTotalRow = () => {
@@ -11610,9 +11626,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
                 colorStyle = 'color:' + (_dayTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
               case 'opt_fixed':
-              case 'opt_aggr': {
-                if (!_dayTot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
-                const ov = c.id === 'opt_fixed' ? _dayTot.of : _dayTot.oa;
+              case 'opt_aggr':
+              case 'opt_aggr_eod': {
+                if (!_dayTot.ocov) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+                const ov = c.id === 'opt_fixed' ? _dayTot.of : (c.id === 'opt_aggr' ? _dayTot.oa : _dayTot.oe);
                 val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
                 colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
@@ -11668,9 +11685,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
                 colorStyle = 'color:' + (_monTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
               case 'opt_fixed':
-              case 'opt_aggr': {
-                if (!_monTot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
-                const ov = c.id === 'opt_fixed' ? _monTot.of : _monTot.oa;
+              case 'opt_aggr':
+              case 'opt_aggr_eod': {
+                if (!_monTot.ocov) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+                const ov = c.id === 'opt_fixed' ? _monTot.of : (c.id === 'opt_aggr' ? _monTot.oa : _monTot.oe);
                 val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
                 colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
@@ -11699,11 +11717,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           const newMonth = (tradeDate || '').slice(0, 7);
           if (currentMonth !== '' && newMonth !== currentMonth) {
             pointsHtml += renderMonthTotalRow();
-            _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
+            _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oe: 0, ocov: 0 };
           }
           currentMonth = newMonth;
           currentGroupDate = tradeDate;
-          _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
+          _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oe: 0, ocov: 0 };
           let dateText = tradeDate;
           try {
             const parts = tradeDate.split('-');
@@ -11788,9 +11806,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
               colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
               break;
             case 'opt_fixed':
-            case 'opt_aggr': {
-              if (!_tot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
-              const ov = c.id === 'opt_fixed' ? _tot.of : _tot.oa;
+            case 'opt_aggr':
+            case 'opt_aggr_eod': {
+              if (!_tot.ocov) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+              const ov = c.id === 'opt_fixed' ? _tot.of : (c.id === 'opt_aggr' ? _tot.oa : _tot.oe);
               val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
               colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
               break;
@@ -11901,13 +11920,13 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
           case 'opt_fixed':
-          case 'opt_aggr': {
-            const ov = c.id === 'opt_fixed' ? t._optFixNet : t._optAggrNet;
-            if (ov == null) { v = '<span style="color:#6e7681">—</span>'; break; }
+          case 'opt_aggr':
+          case 'opt_aggr_eod': {
+            const ov = c.id === 'opt_fixed' ? t._optFixNet : (c.id === 'opt_aggr' ? t._optAggrNet : t._optAggEodNet);
+            if (ov == null) { v = '<span style="color:#6e7681" title="No 1-min bar data">—</span>'; break; }
             const oc = ov > 0 ? '#3fb950' : (ov < 0 ? '#f85149' : '#8b949e');
-            const mark = t._optCov ? '' : '<span title="No 1-min bar data — actual P&L used" style="color:#6e7681">~</span>';
-            v = mark + (ov > 0 ? '+' : '') + Math.round(ov).toLocaleString('en-IN');
-            colorStyle = 'color:' + oc + ';' + (t._optCov ? '' : 'opacity:0.6;');
+            v = (ov > 0 ? '+' : '') + Math.round(ov).toLocaleString('en-IN');
+            colorStyle = 'color:' + oc + ';';
             break;
           }
           case 'ret_pct': v = retPct; colorStyle = 'color:' + rc + ';'; break;
@@ -11964,7 +11983,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let totalGross = 0;
       let totalTax = 0;
       let totalNet = 0;
-      let totalOptFix = 0, totalOptAggr = 0, optAny = false, optAllCov = true;
+      let totalOptFix = 0, totalOptAggr = 0, totalOptAggEod = 0, optCovN = 0;
 
       let allBuy = true;
       let allSell = true;
@@ -11977,11 +11996,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         totalGross += t._gross || 0;
         totalTax += t._tax || 0;
         totalNet += t._net || 0;
-        // optimised what-if: use opt where computed, else fall back to actual net
-        if (t._optFixNet != null) optAny = true;
-        totalOptFix += (t._optFixNet != null ? t._optFixNet : (t._net || 0));
-        totalOptAggr += (t._optAggrNet != null ? t._optAggrNet : (t._net || 0));
-        if (!t._optCov) optAllCov = false;
+        // optimised what-if: sum only the trades we could simulate (covered);
+        // no-data legs are excluded (not echoed as net) — optCovN tracks how many
+        if (t._optCov) {
+          optCovN++;
+          totalOptFix += (t._optFixNet || 0);
+          totalOptAggr += (t._optAggrNet || 0);
+          totalOptAggEod += (t._optAggEodNet || 0);
+        }
         weightedEntrySum += (t.entry_price || 0) * qty;
         weightedExitSum += (t.exit_price || 0) * qty;
 
@@ -12067,13 +12089,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
           case 'opt_fixed':
-          case 'opt_aggr': {
-            if (!optAny) { v = '<span style="color:#6e7681">—</span>'; break; }
-            const ov = c.id === 'opt_fixed' ? totalOptFix : totalOptAggr;
+          case 'opt_aggr':
+          case 'opt_aggr_eod': {
+            if (!optCovN) { v = '<span style="color:#6e7681" title="No bar data in this group">—</span>'; break; }
+            const ov = c.id === 'opt_fixed' ? totalOptFix : (c.id === 'opt_aggr' ? totalOptAggr : totalOptAggEod);
             const oc = ov > 0 ? '#3fb950' : (ov < 0 ? '#f85149' : '#8b949e');
-            const mark = optAllCov ? '' : '<span title="Some legs had no bar data — actual P&L used" style="color:#6e7681">~</span>';
+            const mark = optCovN < count ? `<span title="${optCovN}/${count} legs have bar data" style="color:#6e7681">·</span>` : '';
             v = mark + (ov > 0 ? '+' : '') + Math.round(ov).toLocaleString('en-IN');
-            colorStyle = 'color:' + oc + ';' + (optAllCov ? '' : 'opacity:0.6;');
+            colorStyle = 'color:' + oc + ';';
             break;
           }
           case 'chart':
