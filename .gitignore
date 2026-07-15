@@ -118,3 +118,7 @@ scratch/nifty_trend/ml_mining_log.csv
 # Lab gzip cache — sidecar .gz for /lab static assets (serve_lab_file), auto-regen per-machine
 scratch/nifty_trend/**/*.gz
 data/audit_history/
+
+# SL/exit analysis script outputs — per-run generated artifacts, not source
+data/path_aware_sl_sim.csv
+data/exit_reason_analysis.csv
