@@ -4166,6 +4166,51 @@ def api_orders_calendar_summary():
     })
 
 
+@app.route('/api/orders/optimized-pnl')
+def api_orders_optimized_pnl():
+    """Per-trade "what-if" P&L under the two OPTIMISED SL/Target profiles
+    (best-fixed + best-aggressive from the grid-search). Display-only for the
+    Stats page — reuses the path-aware replay engine, no live-path change.
+    Same query params as calendar-summary so the trade id set matches 1:1.
+    Disk bars only by default (no Dhan hit on a dashboard load); ?fetch=1
+    backfills missing bars from Dhan (rate-limited)."""
+    import order_store
+    import opt_pnl
+    year = request.args.get('year')
+    month = request.args.get('month')
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    fetch = str(request.args.get('fetch') or '') in ('1', 'true', 'yes')
+    filt = {k: request.args.get(k) for k in
+            ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+
+    # Resolve the same date window calendar-summary uses.
+    if from_date and to_date:
+        d_from, d_to = from_date, to_date
+    elif year and month:
+        mm = month.zfill(2)
+        d_from, d_to = f"{year}-{mm}-01", f"{year}-{mm}-31"
+    elif year:
+        d_from, d_to = f"{year}-01-01", f"{year}-12-31"
+    else:
+        return jsonify({'map': {}, 'params': {}})
+
+    m = {}
+    try:
+        details = order_store.trades_for_range(d_from, d_to, **filt)['details']
+        m = opt_pnl.compute_for_trades(details, allow_fetch=fetch)
+    except Exception as e:
+        print("[optimized-pnl] fail:", e, flush=True)
+
+    covered = sum(1 for v in m.values() if v.get('covered'))
+    return jsonify({
+        'map': m,
+        'covered': covered,
+        'total': len(m),
+        'params': {'fixed': opt_pnl.FIX, 'aggr': opt_pnl.AGG_PARAMS}
+    })
+
+
 @app.route('/api/orders/stats-summary')
 def api_orders_stats_summary():
     """Profit Factor / Expectancy / Sharpe over a date range (live/paper data),
