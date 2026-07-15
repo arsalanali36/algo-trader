@@ -8212,6 +8212,8 @@
       { id: 'gross', l: 'Gross', a: 'right', on: true },
       { id: 'tax', l: 'Tax', a: 'right', on: true },
       { id: 'net', l: 'Net', a: 'right', on: true },
+      { id: 'opt_fixed', l: 'Opt Fixed', a: 'right', on: false, title: 'What-if NET P&L under best FIXED profile (grid-search): Target ₹4,000/lot · SL ₹1,000/lot. ~ = no bar data, actual P&L shown.' },
+      { id: 'opt_aggr', l: 'Opt Aggr', a: 'right', on: false, title: 'What-if NET P&L under best AGGRESSIVE trail (grid-search): Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100. ~ = no bar data, actual P&L shown.' },
       { id: 'ret_pct', l: '% Ret', a: 'right', on: true },
       { id: 'run_up', l: 'Run-Up', a: 'right', on: true },
       { id: 'run_down', l: 'Run-Down', a: 'right', on: true },
@@ -10739,6 +10741,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         { id: 'm_runup', l: 'Run-Up', on: false },
         { id: 'm_rundown', l: 'Run-Down', on: false },
         { id: 'm_dd', l: 'Drawdown', on: false },
+        // optimised "what-if" net — best-fixed & best-aggressive SL/Target
+        // (path-aware sim). Off by default; loaded async per range.
+        { id: 'm_optfix', l: 'Opt Fixed', on: false, title: 'What-if NET under best FIXED profile (grid-search): Target ₹4,000/lot · SL ₹1,000/lot' },
+        { id: 'm_optaggr', l: 'Opt Aggr', on: false, title: 'What-if NET under best AGGRESSIVE trail (grid-search): Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100' },
         // fixed-value metrics (mode-independent, single value per group)
         { id: 'exp', l: 'Expectancy', on: false },
         { id: 'maxdd', l: 'Max DD', on: false },
@@ -10754,7 +10760,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const menu = document.getElementById('cal-sum-col-menu');
       if (!menu) return;
       menu.innerHTML = window._calSumCols.filter(c => !c.fixed).map(c => `
-        <label style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;"
+        <label ${c.title ? `title="${c.title.replace(/"/g, '&quot;')}"` : ''} style="display:flex;align-items:center;gap:8px;padding:5px 12px;cursor:pointer;font-size:11.5px;color:#e6edf3;"
           onmouseenter="this.style.background='#21262d'" onmouseleave="this.style.background=''">
           <input type="checkbox" ${c.on ? 'checked' : ''}
             data-col-id="${c.id}"
@@ -10821,6 +10827,39 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       return { sum, avg: sum / a.length, min: Math.min.apply(null, a), max: Math.max.apply(null, a), n: a.length };
     }
 
+    // ── Optimised "what-if" P&L (Stats page) ────────────────────────────────
+    // Fetches per-trade P&L under the two grid-search-optimised SL/Target
+    // profiles (best-fixed + best-aggressive) and merges NET values onto each
+    // trade as t._optFixNet / t._optAggrNet, then re-renders the Summary + PPT
+    // tables. Display-only; loaded async so it never blocks first paint.
+    // Gross ₹ from the sim → implied optimised exit → net via the same charge
+    // model, so the columns are directly comparable to the Net column.
+    function _optNetFromGross(t, grossOpt) {
+      const ep = t.entry_price || 0, qty = t.qty || 0, side = t.entry || 'BUY';
+      if (!ep || !qty || grossOpt == null) return grossOpt;
+      const xp = side === 'SELL' ? ep - grossOpt / qty : ep + grossOpt / qty;
+      const tax = (typeof calcCharges === 'function') ? (calcCharges(ep, xp, qty, side) || 0) : 0;
+      return grossOpt - tax;
+    }
+
+    async function _loadOptimizedPnl(qStr) {
+      try {
+        const r = await fetch('/api/orders/optimized-pnl?' + qStr);
+        const d = await r.json();
+        const map = d.map || {};
+        window._optParams = d.params || null;
+        (window.currentCalendarTrades || []).forEach(t => {
+          const o = map[String(t.id)];
+          if (!o) { t._optFixNet = null; t._optAggrNet = null; t._optCov = false; return; }
+          t._optCov = !!o.covered;
+          t._optFixNet = _optNetFromGross(t, o.fix);
+          t._optAggrNet = _optNetFromGross(t, o.aggr);
+        });
+        if (typeof renderSummaryTable === 'function') renderSummaryTable();
+        if (typeof renderPointsPerTradeTable === 'function') renderPointsPerTradeTable();
+      } catch (e) { /* silent — columns just stay '—' */ }
+    }
+
     function _sumTrades(trades) {
       let count = 0, wins = 0, losses = 0, gross = 0, tax = 0, net = 0;
       let totalPts = 0, best = -Infinity, worst = Infinity;
@@ -10830,8 +10869,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const stratSet = new Set();
       // per-trade value arrays feeding the aggregation-mode switch
       // dd = per-trade adverse excursion magnitude (positive) — "kitna against gaya"
-      const _arr = { points: [], gross: [], net: [], tax: [], dur: [], runup: [], rundown: [], dd: [] };
+      const _arr = { points: [], gross: [], net: [], tax: [], dur: [], runup: [], rundown: [], dd: [], optfix: [], optaggr: [] };
       trades.forEach(t => {
+        // optimised "what-if" net (loaded async); null until /api/optimized-pnl returns
+        if (t._optFixNet != null) _arr.optfix.push(t._optFixNet);
+        if (t._optAggrNet != null) _arr.optaggr.push(t._optAggrNet);
         const ep = t.entry_price || 0, xp = t.exit_price || 0, qty = t.qty || 0;
         const side = t.entry || 'BUY';
         const pts = side === 'BUY' ? xp - ep : ep - xp;
@@ -10899,7 +10941,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         m: {
           points: _agg4(_arr.points), gross: _agg4(_arr.gross), net: _agg4(_arr.net),
           tax: _agg4(_arr.tax), dur: _agg4(_arr.dur), runup: _agg4(_arr.runup),
-          rundown: _agg4(_arr.rundown), dd: _agg4(_arr.dd)
+          rundown: _agg4(_arr.rundown), dd: _agg4(_arr.dd),
+          optfix: _agg4(_arr.optfix), optaggr: _agg4(_arr.optaggr)
         }
       };
     }
@@ -10981,13 +11024,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
       const aggPfx = _CAL_AGG_LBL[window._calSumAgg || 'sum'] || 'Σ';
       const sort = window._calSumSort || { col: 'label', dir: 1 };
-      const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'maxdd', 'exp']);
+      const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'm_optfix', 'm_optaggr', 'maxdd', 'exp']);
       thead.innerHTML = cols.map(c => {
         const a = c.id === 'label' ? 'left' : (c.id === 'm_dur' ? 'center' : (rightAligned.has(c.id) ? 'right' : 'center'));
         const isSort = sort.col === c.id;
         const arrow = isSort ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
         const hdr = c.id === 'label' ? labelHeader : (c.id.startsWith('m_') ? `${aggPfx} ${c.l}` : c.l);
-        return `<th style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
+        const titleAttr = c.title ? ` title="${c.title.replace(/"/g, '&quot;')}"` : '';
+        return `<th${titleAttr} style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
             onclick="calSumSortBy('${c.id}')"
             onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='${isSort ? '#58a6ff' : '#8b949e'}'"
           >${hdr}${arrow}</th>`;
@@ -11292,6 +11336,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         t._net = t._gross - t._tax;
       });
 
+      // Optimised "what-if" numbers (Opt Fixed / Opt Aggr columns) — async,
+      // same range/filter params as calendar-summary; re-renders when it lands.
+      _loadOptimizedPnl(q.toString());
+
       // Draw Equity Curve Chart
       drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades);
 
@@ -11472,7 +11520,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             sortIndicator = window._calPointsSortDir === 'desc' ? ' ▼' : ' ▲';
           }
           const onclickAttr = c.id !== 'actions' ? ` onclick="toggleCalPointsSort('${c.id}')"` : '';
-          return `<th style="padding:6px; font-weight:500; text-align:${align}; cursor:pointer; user-select:none;"${onclickAttr}>${c.l}${sortIndicator}</th>`;
+          const titleAttr = c.title ? ` title="${c.title.replace(/"/g, '&quot;')}"` : '';
+          return `<th style="padding:6px; font-weight:500; text-align:${align}; cursor:pointer; user-select:none;"${onclickAttr}${titleAttr}>${c.l}${sortIndicator}</th>`;
         }).join('');
       }
 
@@ -11521,9 +11570,16 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let currentGroupDate = '';
       let currentMonth = '';
 
-      let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0 };
-      let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
-      let _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+      let _tot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, of: 0, oa: 0, oany: false };
+      let _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
+      let _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
+      // accumulate optimised what-if into a totals bucket (opt where computed,
+      // else actual net — so the total is complete and comparable)
+      const _accOpt = (bucket, t) => {
+        if (t._optFixNet != null) bucket.oany = true;
+        bucket.of += (t._optFixNet != null ? t._optFixNet : (t._net || 0));
+        bucket.oa += (t._optAggrNet != null ? t._optAggrNet : (t._net || 0));
+      };
 
       const renderDayTotalRow = () => {
         if (_dayTot.count === 0) return '';
@@ -11553,6 +11609,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
                 val = (Math.round(_dayTot.n) > 0 ? '+' : '') + Math.round(_dayTot.n);
                 colorStyle = 'color:' + (_dayTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
+              case 'opt_fixed':
+              case 'opt_aggr': {
+                if (!_dayTot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+                const ov = c.id === 'opt_fixed' ? _dayTot.of : _dayTot.oa;
+                val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
+                colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              }
               case 'ret_pct':
                 val = _dTotRetPct;
                 colorStyle = 'color:' + (_dayTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
@@ -11603,6 +11667,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
                 val = (Math.round(_monTot.n) > 0 ? '+' : '') + Math.round(_monTot.n);
                 colorStyle = 'color:' + (_monTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
                 break;
+              case 'opt_fixed':
+              case 'opt_aggr': {
+                if (!_monTot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+                const ov = c.id === 'opt_fixed' ? _monTot.of : _monTot.oa;
+                val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
+                colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
+                break;
+              }
               case 'ret_pct':
                 val = _mRetPct;
                 colorStyle = 'color:' + (_monTot.n >= 0 ? '#3fb950' : '#f85149') + ';';
@@ -11627,11 +11699,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           const newMonth = (tradeDate || '').slice(0, 7);
           if (currentMonth !== '' && newMonth !== currentMonth) {
             pointsHtml += renderMonthTotalRow();
-            _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+            _monTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
           }
           currentMonth = newMonth;
           currentGroupDate = tradeDate;
-          _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0 };
+          _dayTot = { g: 0, tx: 0, n: 0, inv: 0, pts: 0, count: 0, of: 0, oa: 0, oany: false };
           let dateText = tradeDate;
           try {
             const parts = tradeDate.split('-');
@@ -11658,6 +11730,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           _dayTot.pts += p; _dayTot.count++;
           _monTot.g += t._gross || 0; _monTot.tx += t._tax || 0; _monTot.n += t._net || 0; _monTot.inv += qt * ep;
           _monTot.pts += p; _monTot.count++;
+          _accOpt(_tot, t); _accOpt(_dayTot, t); _accOpt(_monTot, t);
           pointsHtml += renderSingleTradeRow(item.trade, cols, sortedTrades);
         } else {
           const trades = item.trades;
@@ -11670,6 +11743,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             _dayTot.pts += p; _dayTot.count++;
             _monTot.g += t._gross || 0; _monTot.tx += t._tax || 0; _monTot.n += t._net || 0; _monTot.inv += qt * ep;
             _monTot.pts += p; _monTot.count++;
+            _accOpt(_tot, t); _accOpt(_dayTot, t); _accOpt(_monTot, t);
           });
           pointsHtml += renderGroupedRow(item, cols, sortedTrades, itemIdx);
         }
@@ -11713,6 +11787,14 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
               val = (Math.round(_tot.n) > 0 ? '+' : '') + Math.round(_tot.n);
               colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
               break;
+            case 'opt_fixed':
+            case 'opt_aggr': {
+              if (!_tot.oany) { val = '—'; colorStyle = 'color:#6e7681;'; break; }
+              const ov = c.id === 'opt_fixed' ? _tot.of : _tot.oa;
+              val = (Math.round(ov) > 0 ? '+' : '') + Math.round(ov);
+              colorStyle = 'color:' + (ov >= 0 ? '#3fb950' : '#f85149') + ';';
+              break;
+            }
             case 'ret_pct':
               val = _totRetPct;
               colorStyle = 'color:' + (_tot.n >= 0 ? '#3fb950' : '#f85149') + ';';
@@ -11818,6 +11900,16 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
+          case 'opt_fixed':
+          case 'opt_aggr': {
+            const ov = c.id === 'opt_fixed' ? t._optFixNet : t._optAggrNet;
+            if (ov == null) { v = '<span style="color:#6e7681">—</span>'; break; }
+            const oc = ov > 0 ? '#3fb950' : (ov < 0 ? '#f85149' : '#8b949e');
+            const mark = t._optCov ? '' : '<span title="No 1-min bar data — actual P&L used" style="color:#6e7681">~</span>';
+            v = mark + (ov > 0 ? '+' : '') + Math.round(ov).toLocaleString('en-IN');
+            colorStyle = 'color:' + oc + ';' + (t._optCov ? '' : 'opacity:0.6;');
+            break;
+          }
           case 'ret_pct': v = retPct; colorStyle = 'color:' + rc + ';'; break;
           case 'run_up': v = max_pnl; break;
           case 'run_down': v = min_pnl; break;
@@ -11872,6 +11964,7 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
       let totalGross = 0;
       let totalTax = 0;
       let totalNet = 0;
+      let totalOptFix = 0, totalOptAggr = 0, optAny = false, optAllCov = true;
 
       let allBuy = true;
       let allSell = true;
@@ -11884,6 +11977,11 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         totalGross += t._gross || 0;
         totalTax += t._tax || 0;
         totalNet += t._net || 0;
+        // optimised what-if: use opt where computed, else fall back to actual net
+        if (t._optFixNet != null) optAny = true;
+        totalOptFix += (t._optFixNet != null ? t._optFixNet : (t._net || 0));
+        totalOptAggr += (t._optAggrNet != null ? t._optAggrNet : (t._net || 0));
+        if (!t._optCov) optAllCov = false;
         weightedEntrySum += (t.entry_price || 0) * qty;
         weightedExitSum += (t.exit_price || 0) * qty;
 
@@ -11968,6 +12066,16 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
+          case 'opt_fixed':
+          case 'opt_aggr': {
+            if (!optAny) { v = '<span style="color:#6e7681">—</span>'; break; }
+            const ov = c.id === 'opt_fixed' ? totalOptFix : totalOptAggr;
+            const oc = ov > 0 ? '#3fb950' : (ov < 0 ? '#f85149' : '#8b949e');
+            const mark = optAllCov ? '' : '<span title="Some legs had no bar data — actual P&L used" style="color:#6e7681">~</span>';
+            v = mark + (ov > 0 ? '+' : '') + Math.round(ov).toLocaleString('en-IN');
+            colorStyle = 'color:' + oc + ';' + (optAllCov ? '' : 'opacity:0.6;');
+            break;
+          }
           case 'chart':
             v = `<button onclick="event.stopPropagation(); openTradeChart('${(latestT.sym || latestT.symbol || '').replace(/'/g, '')}','${latestT.entry || ''}',${latestT.entry_price || 0},${latestT.exit_price || 0},'${latestT.entry_time || ''}','${latestT.exit_time || ''}',${latestT.qty || 0},'${latestT.exit_date || latestT.entry_date || ''}',null,null,${_idx},'${sl}','${tp}','${(latestT.strategy || '').replace(/'/g, '')}')" title="Premium chart for latest trade" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
             break;
