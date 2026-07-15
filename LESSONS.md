@@ -2472,3 +2472,36 @@ The original TRAP #100 ("Dhan drops expired NIFTY-weekly intraday → 0 bars, mu
 **Permanent guard:** `ml_gp_precompute.py` invalidates any hold whose exit trading day > the entry day's weekly expiry date (verified `expiry_calendar` schedule, Thu→Tue switch included). Rule for ALL future lake-based backtests: **entry and exit must be provably the SAME contract** — same strike via offset re-mapping (#109) AND exit ≤ entry's expiry date (#114); crossing the roll requires an explicit roll trade (close old contract at its own price, open new at its own price, both legs charged).
 
 **Fast-detect:** any lake-based winner whose signals cluster on expiry day (check dte distribution of signal bars FIRST — one groupby), or whose entry premium is a tiny fraction of the exit premium's typical level. A validation-window Sharpe that ~equals the (overfit-prone) evolution Sharpe on a mined rule is also suspicious — real edges degrade OOS; data seams don't degrade because they're deterministic.
+
+---
+
+## TRAP #115 — A helper 3 live traders call every loop never existed; `AttributeError` swallowed by `except: pass` → strategy silently ran on its slow fallback path forever (built ≠ wired, PRE-MORTEM shape #2).
+
+**Symptom (2026-07-15):** `vrp_condor_v1`'s log flooded with `[VRP] no spot` WARNING every ~20-30s all session while NIFTY was clearly trading. Strategy never entered (fetch_spot returned None before the entry/position-management block, so a `continue` skipped everything).
+
+**Root pattern:** `vrp_straddle_trader.py` / `vrp_condor_trader.py` / `06_shortvol_trader.py` all start `fetch_spot()` with `v = shared_ltp_cache.get_index("NIFTY")` — but **`get_index` was never defined in `shared_ltp_cache.py`.** Every call raised `AttributeError`, caught by the function's own `except Exception: pass`, and fell through to the next tier: `dhan_rate_limiter.acquire("ltp")`, which returns None when other strategies are contending → `no spot`. So the "cache-first, zero-extra-Dhan-calls" design intent was 100% dead for these traders — they hit the rate-limiter on every single spot read, both spamming the log AND adding load that made the poller's own writes lag (25-30s stale, self-reinforcing). The poller (`ltp_poller.py`) writes NIFTY spot under sec_id key `"13"`; the traders were asking for `"NIFTY"` via a function that didn't exist. Classic build≠wire: the newer VRP/shortvol traders were written assuming a helper the cache never got.
+
+**Kahan-kahan kaata:** all 3 VRP/short-vol live traders, since the day each was written (2026-07-11 onward). Invisible because `except: pass` hid the AttributeError and the fallback "worked" often enough (whenever the rate-limiter wasn't busy) that it looked like intermittent rate-limiting, not a permanently-dead code path.
+
+**Permanent guard:** added `shared_ltp_cache.get_index(symbol, max_age=60.0)` — maps `NIFTY→"13"` / `BANKNIFTY→"25"` (the exact keys `ltp_poller._IDX_ALWAYS` warms every cycle) and reads the poller cache. `max_age` deliberately loose (60s) because under contention the poller's own writes lag 20-30s and these positional strategies only need a roughly-current index level, not a live tick. Returns None only if the symbol is unknown or the poller has genuinely gone silent (>60s) → caller's direct-call fallback still covers that.
+
+**Fast-detect:** any `except: pass` / `except Exception: pass` wrapping a call to a module function is a place where a *renamed or never-created* function fails silently. When a strategy's own diagnostic log ("no spot", "no data", "no depth") repeats at a fixed interval matching a `time.sleep()` in its fallback branch, the cache-first branch above it is almost certainly never returning — grep that the function it calls actually EXISTS in the target module (`grep "def <name>"`), don't assume.
+
+---
+
+## TRAP #116 — `_base()` took only `split('_')[0]`, so a two-token base (`vrp_condor`) was permanently shadowed by its one-token prefix (`vrp`) → the "VRP Overnight Condor" config ran the STRADDLE trader.
+
+**Symptom (2026-07-15):** dashboard showed `02.03 · VRP Overnight Condor (vrp_condor_v1)` but its log tagged `[VRP]` (straddle) not `[VRPC]` (condor); `ps` showed `vrp_straddle_trader.py --id vrp_condor_v1` running. The config had condor-only fields (`body_off`, `wing_off`) that the straddle ignores — so the 4-leg iron condor (the validated deployable lead) never actually traded; the paper data under that id was straddle behaviour.
+
+**Root pattern:** `_base(strategy)` did `first = strategy.split('_')[0]` → for `vrp_condor_v1` that's `"vrp"` → `STRATEGIES["vrp"]` = `vrp_straddle_trader.py`. A config id whose base is TWO tokens (`vrp_condor`) can never resolve, because the resolver only ever looks at the first token. `_base` is load-bearing everywhere (`get_pid`, `get_mode`, `/api/start` script selection, auto-scheduler start-all) — so the wrong script was launched at every 9:10 auto-start, silently.
+
+**Kahan-kahan kaata:** only `vrp_condor` is affected today (the only two-token base key). But the shape recurs for ANY future multi-word base (`x_y`) added alongside a shorter `x`.
+
+**Permanent guard:** `_base` now prefers a two-token base (`parts[0]_parts[1]`) over the one-token base **only when they route to DIFFERENT scripts**:
+```python
+if two in STRATEGIES and STRATEGIES[two].get("script") != STRATEGIES.get(one, {}).get("script"):
+    return two
+```
+The script-difference guard is what keeps `rsi_v1 → "rsi"` untouched (STRATEGIES has both `"rsi"` and `"rsi_v1"`, but both point to `01_rsi_v1` — no ambiguity to resolve, so it stays on the existing alias path). Verified: of 17 live config keys, exactly one (`vrp_condor_v1`) changes resolution.
+
+**Fast-detect:** when a strategy's log TAG (`[VRPC]`) disagrees with its dashboard LABEL, or the running `ps` cmdline's script basename doesn't match what STRATEGIES maps its base to — trace `_base(config_id)` by hand. Any base key containing `_` is a candidate for prefix-shadowing by a shorter key.

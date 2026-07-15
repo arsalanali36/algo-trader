@@ -15,6 +15,21 @@
 
 ---
 
+## 2026-07-15 — VRP "no spot" spam fix (missing `shared_ltp_cache.get_index`) + VRP Overnight Condor routing fix (`_base` two-token shadow)
+**Status:** DONE
+**Layer:** broker (data plumbing) + config (strategy routing)
+**Kya:** `vrp_condor_v1` ka log `[VRP] no spot` har ~20-30s spam kar raha tha; do alag root-cause the — (1) spot-fetch ka cache path AttributeError se dead tha, (2) config galat script chala raha tha. Dono fix + VPS-deployed + verified live.
+**Files:**
+- `_data/shared_ltp_cache.py` (NEW `get_index(symbol, max_age=60.0)`) — NIFTY→"13"/BANKNIFTY→"25" (ltp_poller `_IDX_ALWAYS` keys) poller-warmed cache se spot; function pehle exist hi nahi karta tha → `vrp_straddle`/`vrp_condor`/`06_shortvol` ka `fetch_spot()` har baar AttributeError (`except: pass`) → rate-limiter fallback → busy pe "no spot". max_age loose (60s) kyunki contention me poller ke writes 20-30s lag karte + positional VRP ko live-tick nahi chahiye. Commits `7f51df0`, `39bc6f4`.
+- `trader_dashboard.py` (`_base()`) — two-token base (`vrp_condor`) ko one-token (`vrp`) pe prefer karo SIRF jab script alag ho; `rsi_v1→rsi` untouched (dono same `01_rsi_v1`). Verified 17 config keys me sirf `vrp_condor_v1` badla (`vrp`→`vrp_condor`). Commit `0586012`.
+**Result:** condor process (`vrp_condor_trader.py --id vrp_condor_v1`, PID 1183721) ab sahi script pe, 0 `[VRPC] no spot`, spot cache se. Config already condor-ready tha (`body_off:3, wing_off:5`, `_risk.per_strategy.vrp_condor_v1.allow_overnight:true`) — sirf routing bug tha.
+**Risk:** zero — sab PAPER, entry 3:10 PM (switch ke waqt koi position nahi), koi order-path/entry-exit logic nahi badla. Backtest-fidelity (Rule 10) safe: get_index pure data-plumbing; condor ab woh strategy chala raha jo actually validate hui thi (pehle straddle chal raha tha).
+**Deploy:** git push → VPS `git pull` (clean FF) → straddle-as-condor process (1178302) killed → `vrp_condor_trader.py --paper --id vrp_condor_v1` launched (singleton_guard OK). Kal 9:10 auto-start bhi ab sahi script legi.
+**Kyun:** user ne spam band karne + "koi dikkat to nahi" confirm karne ko kaha; investigate karte waqt condor-label-runs-straddle mismatch nikla, user ne theek karne ko kaha.
+**Depends on:** ltp_poller (`_IDX_ALWAYS` "13"/"25"), STRATEGIES `vrp`/`vrp_condor` entries, allow_overnight (ADR-006). LESSONS.md TRAP #115 (get_index) + #116 (_base shadow).
+
+---
+
 ## 2026-07-14 — Path-aware Legacy-vs-Aggressive SL/Target sim + grid-search → Aggressive Default-TSL on 7 discretionary strategies
 **Status:** DONE
 **Layer:** validation + config
