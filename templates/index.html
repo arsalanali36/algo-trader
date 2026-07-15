@@ -5348,8 +5348,13 @@
         (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry === 'BUY') ||
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
-      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode)
-        + (t.strategy ? _ordTag(regId(t.strategy.split(' | ')[0]), 'name') : '');
+      const _sid = t.strategy ? t.strategy.split(' | ')[0] : '';
+      // Strategy id chip — show the actual id (ARS_CHAIN_V1 / rsi_v1 / chainzone_v1),
+      // registry code (04.02…) + friendly label as tooltip.
+      const _sidChip = _sid
+        ? '<span title="' + ((regLabel(_sid) || _sid) + (regId(_sid) !== _sid ? ' · ' + regId(_sid) : '')).replace(/"/g, '&quot;') + '" style="background:#8957e522;color:#bc8cff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:3px">' + _sid + '</span>'
+        : '';
+      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + _sidChip;
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
