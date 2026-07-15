@@ -52,6 +52,25 @@ def get_stale(sec_id, max_age=15.0):
     return get(sec_id, max_age=max_age)
 
 
+# Index spot sec_ids — same set ltp_poller._IDX_ALWAYS keeps warm every cycle
+# (risk_gate ITM checks, webhook index-trailing, strike resolution read these too).
+_INDEX_SEC = {"NIFTY": "13", "BANKNIFTY": "25", "BANKNIFTY_": "25"}
+
+
+def get_index(symbol, max_age=5.0):
+    """Cached index spot for NIFTY/BANKNIFTY, read from the poller-warmed cache.
+
+    ltp_poller writes index spot under its sec_id key ("13"/"25") every ~1.5s,
+    so this serves a fresh spot with ZERO extra Dhan calls. Returns None if the
+    symbol is unknown or the cache is stale — caller keeps its direct-call
+    fallback. (Was missing entirely, so every fetch_spot() cache-first read hit
+    AttributeError and fell through to the rate-limiter, spamming "no spot".)"""
+    sec = _INDEX_SEC.get(str(symbol).upper())
+    if not sec:
+        return None
+    return get(sec, max_age=max_age)
+
+
 def put(sec_id, ltp):
     """Record a freshly-fetched ltp so other processes can reuse it."""
     if not ltp:
