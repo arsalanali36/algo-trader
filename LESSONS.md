@@ -2472,3 +2472,23 @@ The original TRAP #100 ("Dhan drops expired NIFTY-weekly intraday → 0 bars, mu
 **Permanent guard:** `ml_gp_precompute.py` invalidates any hold whose exit trading day > the entry day's weekly expiry date (verified `expiry_calendar` schedule, Thu→Tue switch included). Rule for ALL future lake-based backtests: **entry and exit must be provably the SAME contract** — same strike via offset re-mapping (#109) AND exit ≤ entry's expiry date (#114); crossing the roll requires an explicit roll trade (close old contract at its own price, open new at its own price, both legs charged).
 
 **Fast-detect:** any lake-based winner whose signals cluster on expiry day (check dte distribution of signal bars FIRST — one groupby), or whose entry premium is a tiny fraction of the exit premium's typical level. A validation-window Sharpe that ~equals the (overfit-prone) evolution Sharpe on a mined rule is also suspicious — real edges degrade OOS; data seams don't degrade because they're deterministic.
+
+## TRAP #115 — "blank Exit Reason" recurred a 4th time (3 MORE untagged exit paths), because each recurrence was fixed one-site-at-a-time instead of one grep-audit of ALL exit call sites 🟡 (Fixed + permanent guard)
+
+**Symptom (2026-07-15, found while investigating "why do trades exit early"):** a per-exit-reason P&L breakdown showed 53 completed trades tagged `(blank)` — no exit reason at all. Same class as TRAP #88 (range_trader `ATR_TRAILING` computed+logged but never tagged on the order), TRAP #91 (`01_rsi_v1` `close_position` had no `extra_tags`), TRAP #92 (webhook/backfill). Each of those was fixed on the specific site that surfaced that day; nobody ever swept the WHOLE codebase for the pattern, so untagged paths kept hiding until a trade happened to hit them.
+
+**Root cause:** three more exit paths still recorded exits with no reason:
+1. `range_trader.py`'s **3:15 EOD force-exit** block (the main-loop one, separate from pos_monitor's own EOD_315) — called `place_order(..., is_exit=True)` with no `extra_tags`. Its SIGNAL-driven exit path (~L1348) was fixed in TRAP #88 to tag `ATR_TRAILING`, but this EOD branch right above it was never touched.
+2. `universe_trader.py`'s strategy **EXIT-signal** close (`execution_gateway.execute_exit(...)` with no `reason=`).
+3. `universe_trader.py`'s **flip-close** (closing the opposite leg before flipping) — same, no `reason=`.
+`execute_exit`/`_exit_reason` both correctly return blank when neither `reason` nor a recognized `extra_tags` prefix is present — the gap was purely the call sites.
+
+**The fix:** tagged all three — `EOD_315_SQUAREOFF` (already a recognized prefix) for range's EOD branch; two new prefixes `STRATEGY_EXIT` + `FLIP_CLOSE` for universe, added to `order_store._EXIT_REASON_PREFIXES` and given badges in `index.html` (`_exitReasonBadge` + the filter-map). Purely additive tags — no order/exit LOGIC changed. Going-forward only; the 53 historical blanks were NOT backfilled (they span the user's SL/target experimentation era — see note below — so the true cause per row is genuinely ambiguous, and TRAP #92's rule is "backfill only where confidently determinable, never guess").
+
+**Also learned this session (why the exit data looked "weird"):** the historical exit tags are a MIX of many different hand-tuned SL/target configs the user cycled through while experimenting (hence `DEFAULT_TSL_SL:-1000 / :800 / :1200 / :1600 / ...` — a single fixed config can't produce that many distinct levels). The now-fixed aggressive config (6000/2500/100) only went live 2026-07-14. So any "trades exit too early" pattern read off the raw historical tags is half about experiments already abandoned. The forward-clean read comes from re-running the analysis `--from 2026-07-14` after ~2-3 weeks (one config, all tagged), OR from `path_aware_sl_sim.py` which RE-APPLIES the fixed config to old bars regardless of what was actually used.
+
+**Permanent guard:** stop fixing this one site at a time. When ANY blank-exit-reason surfaces, run one sweep over every exit call site and fix them all together:
+```
+grep -rn "is_exit=True\|execute_exit(" strategies/ _core/ trader_dashboard.py
+```
+For each hit, confirm it passes `extra_tags=[reason]` (raw `place_order`) or `reason=` (`execute_exit`). A multi-line call may carry the tag on an adjacent line, so read the whole call, not just the `grep` line. Any new reason string MUST also be added to `order_store._EXIT_REASON_PREFIXES` (else it tags but still renders blank) and ideally a badge in `index.html` `_exitReasonBadge` + its filter-map. This is Critical Rule 9's practical audit — the reason kept recurring is that "fix the site that surfaced" never converges when new exit paths get added over time; only a full sweep does.
