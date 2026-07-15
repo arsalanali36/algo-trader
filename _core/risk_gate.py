@@ -985,6 +985,46 @@ def daily_profit_target_hit(strategy, unrealized=0.0, rc=None):
     return False, ""
 
 
+def effective_max_trades_per_day(strategy=None, rc=None):
+    """Max entries a strategy may take in one day. per_strategy overrides global;
+    None/blank/0 = OFF (no cap). Returns int or None."""
+    rc = rc or _risk_cfg()
+    ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
+    gl = rc.get("global", {}) or {}
+    for v in (ps.get("max_trades_per_day"), gl.get("max_trades_per_day")):
+        if v not in (None, "", 0, "0"):
+            try:
+                n = int(float(v))
+                if n > 0:
+                    return n
+            except Exception:
+                pass
+    return None
+
+
+def daily_max_trades_hit(strategy, rc=None):
+    """True if `strategy` has already taken its max entries today. Counts today's
+    netted trades (open + completed) for that strategy from order_store, excluding
+    CAPITAL_BLOCKED phantom rows (TRAP #86/#92). Returns (hit, reason).
+    Fail-open (never blocks) if the count can't be read — a bookkeeping read must
+    not silently halt a strategy."""
+    cap = effective_max_trades_per_day(strategy, rc=rc)
+    if not cap:
+        return False, ""
+    try:
+        import order_store, datetime as _dt
+        today = (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        det = (order_store.trades_for(today) or {}).get("details", [])
+        n = sum(1 for t in det
+                if t.get("strategy") == strategy
+                and "CAPITAL_BLOCKED" not in (t.get("tags") or ""))
+        if n >= cap:
+            return True, f"📋 Max trades/day reached ({n}/{cap}) for '{strategy}' — no further entries today"
+    except Exception:
+        return False, ""
+    return False, ""
+
+
 def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
     """The unified ₹ daily-loss cap for a strategy (always returns a positive
     number — RMS is mandatory).
@@ -1269,6 +1309,10 @@ def gating_status(strategy, unrealized=0.0, mode=None, broker=None):
     pt_hit, pt_why = daily_profit_target_hit(strategy, unrealized=unrealized)
     if pt_hit:
         return True, pt_why, True
+    # Max trades/day cap (per-strategy, off by default) — 2026-07-15
+    mt_hit, mt_why = daily_max_trades_hit(strategy)
+    if mt_hit:
+        return True, mt_why, True
     dd_ok, dd_why = check_drawdown(unrealized_pnl=unrealized)
     if not dd_ok:
         return True, dd_why, True

@@ -4167,12 +4167,12 @@
         + '<th>Status</th>'
         + '<th>Capital Used</th>'
         + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe Default-SL lage ya nahi, kaunsa mode, aur ⚙ se uski values. Blank = global fallback.">🎯 Default SL/Target</th>'
-        + '<th class="psadv" colspan="3" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
+        + '<th class="psadv" colspan="4" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th class="psadv" style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
         + '<th class="psadv">Capital ₹</th><th class="psadv">Margin Mult.</th><th class="psadv">Mode</th><th class="psadv" style="color:#f85149">Shadow-Live</th>'
         + '<th class="psadv" colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
         + '<tr><th></th><th></th><th></th><th></th><th>Enabled</th><th>Mode</th>'
-        + '<th class="psadv">Max Loss %</th><th class="psadv">Max Loss ₹</th><th class="psadv" style="color:#3fb950">Max Profit ₹</th><th class="psadv"></th>'
+        + '<th class="psadv">Max Loss %</th><th class="psadv">Max Loss ₹</th><th class="psadv" style="color:#3fb950">Max Profit ₹</th><th class="psadv" style="color:#d29922">Max Trades</th><th class="psadv"></th>'
         + '<th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th>'
         + '<th class="psadv">Min Strikes</th><th class="psadv">Max Premium ₹</th></tr>';
       // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
@@ -4221,6 +4221,8 @@
             value="${ov.max_loss_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-profit-${id}" type="number" step="1" placeholder="global"
             value="${ov.profit_target_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #3fb950;border-radius:4px"/></td>
+      <td class="psadv"><input id="risk-maxtrades-${id}" type="number" step="1" min="1" placeholder="off"
+            value="${ov.max_trades_per_day ?? ''}" style="width:80px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-instloss-${id}" type="number" step="1" placeholder="global"
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
@@ -4552,6 +4554,7 @@
         const pEl = document.getElementById(`risk-pct-${id}`);
         const rEl = document.getElementById(`risk-rs-${id}`);
         const ptEl = document.getElementById(`risk-profit-${id}`);
+        const mtEl = document.getElementById(`risk-maxtrades-${id}`);
         const cEl = document.getElementById(`risk-capital-${id}`);
         const mEl = document.getElementById(`risk-margin-${id}`);
         const modeEl = document.getElementById(`risk-mode-${id}`);
@@ -4564,6 +4567,7 @@
         if (!pEl || !rEl) return;
         const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
         const pt = ptEl ? ptEl.value : '';
+        const mt = mtEl ? mtEl.value : '';
         const mode = modeEl ? modeEl.value : '';
         const shadow = shadowEl ? shadowEl.value : '';
         const instLoss = instLossEl ? instLossEl.value : '';
@@ -4573,12 +4577,13 @@
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
         const dslVals = (window._dslVals || {})[id] || {};
         const hasDslVals = Object.keys(dslVals).length > 0;
-        if (p !== '' || r !== '' || pt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
+        if (p !== '' || r !== '' || pt !== '' || mt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
           || dslEn !== '' || dslMode !== '' || hasDslVals || hedgeStrikes !== '' || hedgePremium !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
             profit_target_rs: pt !== '' ? parseFloat(pt) : null,
+            max_trades_per_day: mt !== '' ? parseInt(mt) : null,
             capital_rs: c !== '' ? parseFloat(c) : null,
             margin_multiplier: m !== '' ? parseFloat(m) : null,
             capital_mode: mode || null,
