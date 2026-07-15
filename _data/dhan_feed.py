@@ -245,9 +245,24 @@ def add(sec_tuple):
         _pending_resub = True
 
 
-def get_quote(sec_id):
+def get_quote(sec_id, max_age=None):
+    """Latest WebSocket tick for sec_id, or {} if none.
+
+    max_age (seconds): if given, a tick older than max_age (or one with no
+    timestamp) is treated as STALE and {} is returned — so callers using the
+    `get_quote(...).get("ltp") or rest_fallback` pattern fall through to a
+    fresh price source instead of silently trusting a frozen last tick. This
+    is the guard for the class of bug where a contract's WS subscription dies
+    (429 throttle etc.) but the last tick stays in LIVE forever, non-zero,
+    short-circuiting the fallback and pinning a position's P&L/SL to a stale
+    price. Default None = unchanged (returns whatever is cached)."""
     with _lock:
-        return dict(LIVE.get(str(sec_id), {}))
+        q = dict(LIVE.get(str(sec_id), {}))
+    if max_age is not None and q:
+        ts = q.get("ts")
+        if not ts or (time.time() - ts) > max_age:
+            return {}
+    return q
 
 
 def best_bid(sec_id):

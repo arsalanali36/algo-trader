@@ -4835,6 +4835,15 @@ def _last_closed_candle_close(sec_id, seg):
 
 
 _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips when feed fails
+# Max age (sec) a dhan_feed WS tick may have before the monitor treats it as
+# stale and falls through to the fresh REST/shared_ltp_cache path. Guards the
+# "dead-subscription frozen tick pins SL to a stale price" bug (a contract whose
+# WS died on a 429 kept its last tick forever, non-zero, so get_quote()'s value
+# short-circuited the fallback → SL never saw the real loss). Falling through
+# costs nothing: ltp_poller keeps shared_ltp_cache warm every ~1.5s.
+_FEED_MAX_AGE      = 12
+_STALE_FEED_ALERTS = {}    # {sec_id: (first_unreliable_ts, sym)} — track how long a leg has had NO usable price
+_STALE_FEED_FIRED  = set() # {sec_id} — sids currently surfaced on the alert banner (write file only on change)
 _pos_lock_state    = {}    # {pos_id: {armed,peak,floor,breach_since,fired,prev_mtm}} — per-instrument trailing-lock state machine (2026-07-02 redesign)
 
 # Restore peak + history from file on startup — so restart mid-day doesn't reset the floor.
@@ -5053,12 +5062,18 @@ def pos_monitor_loop():
                 for _p in _active_pos:
                     _sid = _p.get("sec_id")
                     _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                    _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
-                           _rest_ltp_fallback(_sid, _seg) or 0.0
-                    if _ltp > 0:
+                    _live_ltp = float((dhan_feed.get_quote(_sid, max_age=_FEED_MAX_AGE) or {}).get("ltp") or 0) or \
+                                _rest_ltp_fallback(_sid, _seg) or 0.0
+                    if _live_ltp > 0:
+                        _ltp = _live_ltp
                         _peak_ltp_cache[_sid] = _ltp        # fresh — update cache
+                        _STALE_FEED_ALERTS.pop(_sid, None)  # live price back → clear stale-feed flag
                     else:
                         _ltp = _peak_ltp_cache.get(_sid, 0.0)  # stale feed — use last known
+                        # No live price from ANY source (feed stale + REST failed).
+                        # Track since-when so a persistently-blind leg (its SL can't
+                        # fire on a stale price) gets surfaced on the alert banner.
+                        _STALE_FEED_ALERTS.setdefault(_sid, (_time.time(), _p.get("sym") or _sid))
                     _epx = float(_p.get("entry_price") or _p.get("price") or 0)
                     _qty = int(_p.get("qty") or 0)
                     if _ltp > 0 and _epx > 0 and _qty:
@@ -5072,6 +5087,45 @@ def pos_monitor_loop():
                         # unreliable (never fire a kill-all on incomplete data)
                         _mtm_unreliable = True
                 _total_pnl = _realized + _unrealized
+
+                # ── Stale-feed alert reconcile (banner) ──────────────────────
+                # Any open leg that's had NO usable live price for > _STALE_ALERT_SECS
+                # is running blind — its per-position SL literally cannot fire on a
+                # frozen price. Surface it on the dashboard alert banner (dict entries
+                # keyed "stale_feed"), and clear them the moment price returns. Only
+                # rewrite the file when the alerted set actually changes.
+                try:
+                    _STALE_ALERT_SECS = 90
+                    _now_sf = _time.time()
+                    _cur_stale = {}   # sid -> msg
+                    for _sid_sf, _v_sf in list(_STALE_FEED_ALERTS.items()):
+                        _since, _sym_sf = _v_sf
+                        _age_sf = _now_sf - _since
+                        if _age_sf > _STALE_ALERT_SECS:
+                            _cur_stale[str(_sid_sf)] = (
+                                f"📡 {_sym_sf} — live feed {int(_age_sf)}s stale, "
+                                f"koi price source nahi. SL/target enforcement is leg pe PAUSED "
+                                f"(kill-floor bhi freeze). Token/feed check karo.")
+                    if set(_cur_stale) != _STALE_FEED_FIRED:
+                        _af_sf = BASE_DIR / "data" / "downloader_alert.json"
+                        try:
+                            _al_sf = json.loads(_af_sf.read_text())
+                            if not isinstance(_al_sf, list):
+                                _al_sf = []
+                        except Exception:
+                            _al_sf = []
+                        # drop our previous stale_feed entries, re-add current ones
+                        _al_sf = [a for a in _al_sf
+                                  if not (isinstance(a, dict) and a.get("key") == "stale_feed")]
+                        for _sid_sf, _msg_sf in _cur_stale.items():
+                            _al_sf.append({"key": "stale_feed", "level": "error",
+                                           "sec_id": _sid_sf, "msg": _msg_sf})
+                        _af_sf.write_text(json.dumps(_al_sf))
+                        _STALE_FEED_FIRED.clear()
+                        _STALE_FEED_FIRED.update(_cur_stale.keys())
+                except Exception as _sfe:
+                    print(f"[STALE-FEED] alert reconcile skipped: {_sfe}", flush=True)
+                # ─────────────────────────────────────────────────────────────
 
                 # finalize per-strategy dict: round + account rollup
                 for _k in list(_mtm_by_strat.keys()):
@@ -5158,7 +5212,7 @@ def pos_monitor_loop():
 
                         _sid = _p.get("sec_id")
                         _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                        _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                        _ltp = float((dhan_feed.get_quote(_sid, max_age=_FEED_MAX_AGE) or {}).get("ltp") or 0) or \
                                _rest_ltp_fallback(_sid, _seg) or 0.0
                         _pi_unreliable = False
                         if _ltp > 0:
@@ -5313,7 +5367,7 @@ def pos_monitor_loop():
                         _lots = max(1, round(_qty / _lotsz))
                         _ltp = _peak_ltp_cache.get(_sid, 0.0)
                         if _ltp <= 0:
-                            _ltp = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                            _ltp = float((dhan_feed.get_quote(_sid, max_age=_FEED_MAX_AGE) or {}).get("ltp") or 0) or \
                                    _rest_ltp_fallback(_sid, _seg) or 0.0
                         _epx = float(_p.get("entry_price") or _p.get("price") or 0)
                         _tsl_unreliable = False
@@ -5448,7 +5502,7 @@ def pos_monitor_loop():
                             if "CAPITAL_BLOCKED" in (_p.get("tags") or []): continue
                             if _p.get("id") in _closed_ids: continue
                             _seg = "NSE_EQ" if _p.get("instrument") == "EQUITY" else "NSE_FNO"
-                            _ltp2 = float((dhan_feed.get_quote(_sid) or {}).get("ltp") or 0) or \
+                            _ltp2 = float((dhan_feed.get_quote(_sid, max_age=_FEED_MAX_AGE) or {}).get("ltp") or 0) or \
                                     _rest_ltp_fallback(_sid, _seg) or 0.0
                             if _ltp2 <= 0:
                                 try:
