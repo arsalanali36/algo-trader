@@ -191,6 +191,8 @@ def run(paper_mode=True, strategy_id="vrp_condor_v1"):
 
     pos = _recover(strategy_id, log)
 
+    _last_hb = ""   # periodic heartbeat throttle — this trader only acts near entry_hm (15:10),
+                    # so without a heartbeat the EOD health-check saw a ~3hr "gap" and flagged it.
     while True:
         try:
             now = ist_now()
@@ -208,6 +210,15 @@ def run(paper_mode=True, strategy_id="vrp_condor_v1"):
             spot = fetch_spot(token, cid)
             if not spot:
                 log.warning("[VRPC] no spot"); time.sleep(20); continue
+
+            # heartbeat every ~5 min so health-check sees the process is alive between
+            # market-open and the 15:10 entry window (was silent → false "heartbeat gap").
+            _hb = f"{now.hour}:{now.minute // 5}"
+            if _hb != _last_hb:
+                _last_hb = _hb
+                eh0, em0 = tc.get("entry_hm", [15, 10])
+                log.info(f"[VRPC] spot={spot:.1f}  pos={'held' if pos else 'flat'}  "
+                         f"waiting entry {eh0:02d}:{em0:02d}")
 
             xh, xm = tc.get("exit_hm", [15, 10])
             eh, em = tc.get("entry_hm", [15, 10])

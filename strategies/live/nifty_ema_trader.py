@@ -406,8 +406,11 @@ def run(paper_mode=True, strategy_id="ema"):
                     continue
 
                 df = fetch_candles(sym, tf)
-                if df is None or df.empty:
-                    log.warning(f"  {sym:12s} no data")
+                # len<2 guard: at market-open only 1 bar exists → df["close"].iloc[-2]
+                # below is out-of-bounds and crashes the WHOLE 24-symbol scan cycle
+                # (no per-symbol try/except). Same shape as TRAP #86 (01_rsi_v1 iloc[-2]).
+                if df is None or df.empty or len(df) < 2:
+                    log.warning(f"  {sym:12s} no data / warming up")
                     continue
 
                 signal     = compute_signal(df, fast, slow)

@@ -150,9 +150,13 @@ def pos_neg(data):
             neg.append(f"{r['sid']} (yellow): {'; '.join(r['reasons'][:2])}")
     for r in rows:
         exp_t = (r["exp"] or {}).get("trades_per_day")
-        got = len(r["st"]["completed"])
+        # ENTRY count, not leg/fill count — multi-leg strategies (straddle/condor)
+        # log ONE '★ ENTRY' but produce 2-4 completed leg round-trips, which falsely
+        # tripped "overtrading" (e.g. 1 straddle = 4 fills vs 0.77 entries/day).
+        # Fall back to completed-leg count only for legacy traders that don't log '★ ENTRY'.
+        got = len(r["lg"]["entries"]) or len(r["st"]["completed"])
         if exp_t and got > max(3 * exp_t, exp_t + 2):
-            neg.append(f"{r['sid']}: trades {got} vs expected ~{exp_t}/day — overtrading? dekho")
+            neg.append(f"{r['sid']}: entries {got} vs expected ~{exp_t}/day — overtrading? dekho")
     if n_tr and tot < 0:
         neg.append(f"din ka net P&L negative: ₹{tot:+,.0f} — trades detail me dekho kaunsa duba")
     if not neg:
