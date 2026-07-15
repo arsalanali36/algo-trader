@@ -247,7 +247,17 @@ STRATEGIES = {
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
 
 def _base(strategy):
-    first = strategy.split('_')[0] if '_' in strategy else strategy
+    # Prefer a more-specific TWO-token base (e.g. "vrp_condor" over "vrp") when it
+    # exists AND routes to a DIFFERENT script than the one-token base — otherwise a
+    # config id like "vrp_condor_v1" silently runs the wrong trader, because
+    # split('_')[0] == "vrp" (the straddle). rsi_v1 stays -> "rsi": both bases share
+    # the SAME script (01_rsi_v1), so there is no ambiguity to resolve there.
+    parts = strategy.split('_')
+    if len(parts) >= 2:
+        two, one = f"{parts[0]}_{parts[1]}", parts[0]
+        if two in STRATEGIES and STRATEGIES[two].get("script") != STRATEGIES.get(one, {}).get("script"):
+            return two
+    first = parts[0] if '_' in strategy else strategy
     return STRATEGY_ALIASES.get(first, first)
 
 def _detect_lang(code):
