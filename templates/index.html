@@ -8122,6 +8122,8 @@
       // Strategy's own exit logic (not pos_monitor_loop-driven)
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
       else if (r.startsWith('RSI_MIDLINE_EXIT')) { label = '↩️ RSI Midline'; color = '#58a6ff'; }
+      else if (r.startsWith('STRATEGY_EXIT')) { label = '↩️ Strategy Exit'; color = '#58a6ff'; }
+      else if (r.startsWith('FLIP_CLOSE')) { label = '🔄 Flip Close'; color = '#8b949e'; }
       // Option mission strategies' own TP/SL/rollback exits (task 71 — Straddle,
       // Debit Vertical, Ratio Backspread, Short-Vol Iron-Fly, VRP)
       else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRP)_TRAIL/.test(r)) { label = '📉 Profit Trail Lock'; color = '#f0883e'; }
@@ -11133,6 +11135,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
           ['ATR_TRAILING', '📉 ATR Trailing'],
           ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'],
+          ['STRATEGY_EXIT', '↩️ Strategy Exit'],
+          ['FLIP_CLOSE', '🔄 Flip Close'],
           ['IDX_TRAIL', '📉 Index Trail SL'],
           ['TRAIL_SL', '📉 Trail SL'],
           ['TARGET', '🎯 Target'],

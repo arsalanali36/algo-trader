@@ -868,16 +868,21 @@ def main(strategy_id="range"):
                             except Exception as _fe:
                                 log.warning(f"[FLAT-CHECK] 3:15 pre-exit check failed "
                                             f"({_fe}) — proceeding with exit (fail-open)")
+                        # Critical Rule 9 — this 3:15 EOD force-exit path never
+                        # tagged a reason, so every exit it placed showed a BLANK
+                        # Exit Reason (the signal-driven exit path at ~L1348 already
+                        # tags ATR_TRAILING; only this EOD branch was missed).
+                        _eod_tag = ["EOD_315_SQUAREOFF"]
                         if st["position"] == "LONG":
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True, extra_tags=_eod_tag)
                             else:
-                                place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode, is_exit=True)
+                                place_order(sym, "SELL", cfg.get("qty", 1), token, cid, mode, is_exit=True, extra_tags=_eod_tag)
                         else:   # SHORT
                             if st.get("opt_sec_id"):
-                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True)
+                                place_order(sym, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True, extra_tags=_eod_tag)
                             else:
-                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True)
+                                place_order(sym, "BUY", cfg.get("qty", 1), token, cid, mode, is_exit=True, extra_tags=_eod_tag)
                         st["position"] = None
                         st["opt_sec_id"] = None
                 except Exception as e:

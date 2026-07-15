@@ -393,6 +393,7 @@ def main(sid, once=False):
                 execution_gateway.execute_exit(
                     sid, sym, s_id, tsym, oq, exit_side=ex_side, seg=seg,
                     mode=mode, broker_name=cfg.get("broker"), tag="EXIT",
+                    reason="STRATEGY_EXIT",   # Critical Rule 9 — was blank
                     buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
                 st["position"] = None
                 st["open_inst"] = None
@@ -429,6 +430,7 @@ def main(sid, once=False):
                 execution_gateway.execute_exit(
                     sid, sym, s_id, tsym, oq, exit_side=ex_side, seg=seg,
                     mode=mode, broker_name=cfg.get("broker"), tag="FLIP",
+                    reason="FLIP_CLOSE",   # Critical Rule 9 — was blank
                     buffer_bps=cfg.get("limit_buffer_bps", 10), log=log)
                 st["position"] = None
                 st["open_inst"] = None
