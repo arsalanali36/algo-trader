@@ -121,9 +121,9 @@ def fetch_day_df(mod, cfg, days_back):
 
 def parse_log_events(sid, date_str):
     """Return dict of log events + run window from logs/{sid}.log for date."""
-    ev = dict(entries=[], skips=[], expiry_skip=False, paused=False, ran=False,
+    ev = dict(entries=[], skips=[], exits=[], expiry_skip=False, paused=False, ran=False,
               first=None, last=None)
-    entries, skips = ev["entries"], ev["skips"]
+    entries, skips, exits = ev["entries"], ev["skips"], ev["exits"]
     f = BASE_DIR / "logs" / f"{sid}.log"
     if not f.exists():
         return ev
@@ -141,6 +141,8 @@ def parse_log_events(sid, date_str):
                                 spot=float(sm.group(1)) if sm else None))
         elif "[ENTRY SKIP]" in msg:
             skips.append(dict(time=t, msg=msg.strip()))
+        elif "[EXIT]" in msg:
+            exits.append(dict(time=t, msg=msg.strip()))
         elif "expiry day — entry skipped" in msg:
             ev["expiry_skip"] = True
         elif "Paused — active=false" in msg:
@@ -186,6 +188,32 @@ def replay_signals(mod, sig_fn, dir_key, cfg, df, target_date):
         if real_ist_now is not None:
             mod.ist_now = real_ist_now
     return signals
+
+
+def gate_in_position(signals, entries, exits):
+    """Single-position-hold strategies (chainzone/straddle/condor/backspread ride one
+    position at a time): while a logged position is open, the live loop's 'if flat'
+    guard blocks re-entry — so an offline signal INSIDE a [entry → next EXIT] window is
+    expected to be skipped, NOT a MISS (TRAP #108 false-positive otherwise). The opening
+    signal lands just before its own ★ ENTRY log line (bar-close < entry-log time) so the
+    strict `<` leaves it ungated for diff() to MATCH."""
+    if not entries:
+        return
+    ex_times = sorted(e["time"] for e in exits)
+    used = [False] * len(ex_times)
+    intervals = []
+    for en in sorted(e["time"] for e in entries):
+        xt = "23:59:59"                      # no exit logged → held to EOD (intraday)
+        for k, x in enumerate(ex_times):
+            if not used[k] and x >= en:
+                used[k] = True; xt = x; break
+        intervals.append((en, xt))
+    for s in signals:
+        if s["verdict"] or s["time"] is None:
+            continue
+        st = s["time"].strftime("%H:%M:%S")
+        if any(en < st <= xt for en, xt in intervals):
+            s["verdict"] = "GATED(in-position)"
 
 
 def apply_gates(signals, cfg, expiry_skip, paused):
@@ -280,6 +308,7 @@ def run_for(sid, date_str, match_min=6):
                    note=f"{date_str} ke bars fetch-window me nahi — replay USI SHAAM chalao")
         return res
 
+    gate_in_position(signals, ev["entries"], ev["exits"])   # in-position skips ≠ MISS
     apply_gates(signals, cfg, ev["expiry_skip"], ev["paused"])
     res["entries"] = len(ev["entries"])
 
