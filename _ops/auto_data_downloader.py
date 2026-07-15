@@ -262,32 +262,32 @@ def process_order_store_trades(dl_log: dict) -> bool:
 
 
 def gap_check(dl_log: dict) -> list:
-    """
-    Find trading days where some instruments have 'missing' status.
-    Returns list of human-readable alert strings for the dashboard banner.
-    """
+    """Dashboard banner alerts for GENUINELY-ACTIONABLE missing premium-chart data only.
+
+    Purana logic 60 din scan karke HAR date ka miss alert karta tha — aur expired option
+    contract ka intraday Dhan permanently drop kar deta hai (token refresh se WAPAS nahi
+    aata), toh wo alert kabhi clear hi nahi hota → 19-line ka wall banta tha, aur
+    "contract expire / token update karo" message bhi galat tha (unactionable). Ab sirf
+    last 2 din ke miss dikhte hain (jahan token-fresh se retry genuinely help kar sakta);
+    usse purana = expired = permanent = skip. Genuine full token-expiry alag path se
+    (fetch_orders None → 🔴) already handle hoti hai."""
     alerts = []
-    today  = datetime.date.today()
-    cutoff = today - datetime.timedelta(days=60)  # Dhan retains ~60 days
+    today = datetime.date.today()
+    RECENT_DAYS = 2                      # older gaps = expired contracts, not recoverable
 
     for date_str, instruments in sorted(dl_log.items(), reverse=True):
         date = datetime.date.fromisoformat(date_str)
-        if date < cutoff:
+        if (today - date).days > RECENT_DAYS:
             continue
 
         missing = [sid for sid, status in instruments.items() if status != "ok"]
         if not missing:
             continue
 
-        days_ago = (today - date).days
-        # Estimate if options from that date might expire soon (weekly = ~7 days)
-        urgent = days_ago >= 5
-
         label = date.strftime("%d %b")
-        if urgent:
-            alerts.append(f"🚨 {label} ka data missing ({len(missing)} instruments) — contract expire hone wala hai! Token update karo.")
-        else:
-            alerts.append(f"⚠️ {label} ka data missing ({len(missing)} instruments) — token update karein.")
+        alerts.append(
+            f"⚠️ {label}: {len(missing)} contract ka premium-chart data nahi mila — "
+            f"token fresh hai to Refresh, warna illiquid/expired strike hai (normal).")
 
     return alerts
 

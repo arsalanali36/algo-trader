@@ -37,10 +37,41 @@ sys.path.insert(0, str(BASE_DIR))
 import _paths  # noqa: F401
 import eod_digest as dg
 import signal_replay as sr
+import order_store as _os
 try:
     import strategy_registry as _sr_reg  # canonical NN.MM - Name labels
 except Exception:
     _sr_reg = None
+try:
+    sys.path.insert(0, str(BASE_DIR / "scratch" / "nifty_trend"))
+    import charges as _charges          # single-source date-aware charge model (Rule 6B)
+except Exception:
+    _charges = None
+
+
+def _authoritative_totals(date):
+    """Report headline = SAME trade set + SAME charges as the dashboard's Orders & P&L
+    TOTAL, so the two never disagree. eod_digest sums only DISCOVERED strategies (config
+    keys + log files) and skips webhook trades (no per-strategy log) — a real LIVE webhook
+    trade would silently vanish from the report. Here we sum ALL completed trades from
+    order_store (webhook/manual included) and net out charges via the shared model."""
+    try:
+        trades = _os.trades_for(date).get("details", [])
+    except Exception:
+        return None
+    gross = sum((t.get("pnl") or 0) for t in trades)
+    charge_tot = 0.0
+    if _charges is not None:
+        for t in trades:
+            try:
+                ep, xp, q = t.get("entry_price"), t.get("exit_price"), t.get("qty")
+                if ep and xp and q:
+                    charge_tot += _charges.option_charges(
+                        ep, xp, q, t.get("entry") or "BUY", when=t.get("entry_date"))
+            except Exception:
+                pass
+    return dict(gross=round(gross, 2), charges=round(charge_tot, 2),
+                net=round(gross - charge_tot, 2), n=len(trades))
 
 
 def _sid_id(sid):
@@ -130,8 +161,9 @@ def pos_neg(data):
               and not (r["replay"]["miss"] or r["replay"]["extra"] or r["replay"]["err"])]
     if rep_ok:
         pos.append(f"replay: {len(rep_ok)} strategy me live loop == signal code (TRAP #108 clear)")
-    tot = sum(r["st"]["pnl"] for r in rows)
-    n_tr = sum(len(r["st"]["completed"]) for r in rows)
+    _auth = _authoritative_totals(data["date"])       # match dashboard (all trades + charges)
+    tot = _auth["net"] if _auth else sum(r["st"]["pnl"] for r in rows)
+    n_tr = _auth["n"] if _auth else sum(len(r["st"]["completed"]) for r in rows)
     if n_tr and tot >= 0:
         pos.append(f"din ka net P&L positive: ₹{tot:+,.0f} ({n_tr} trades)")
 
@@ -249,10 +281,20 @@ def render(data):
     else:
         banner = f"<div class='banner b-green'>🟢 ALL CLEAR — jo strategies chali, sab healthy{grey_note}</div>"
 
-    tone = "g" if tot >= 0 else "r"
+    # Headline = authoritative all-trades total (webhook/manual included) + charges, so it
+    # matches the dashboard's Orders & P&L TOTAL exactly (was per-strategy paper-gross sum →
+    # missed the live webhook trade AND showed gross, disagreeing with the dashboard's net).
+    auth = _authoritative_totals(date)
+    if auth:
+        h_net, h_gross, h_ch, h_n = auth["net"], auth["gross"], auth["charges"], auth["n"]
+    else:
+        h_net = h_gross = tot; h_ch = 0.0; h_n = n_tr
+    tone = "g" if h_net >= 0 else "r"
+    _ch_note = (f"net (−₹{h_ch:,.0f} charges) · gross ₹{h_gross:+,.0f}"
+                if h_ch else "Net P&L")
     score = f"""<div class='score'>
-      <div class='pill'><div class='v {tone}'>₹{tot:+,.0f}</div><div class='k'>Net P&L (paper=gross)</div></div>
-      <div class='pill'><div class='v'>{n_tr}</div><div class='k'>Completed trades</div></div>
+      <div class='pill'><div class='v {tone}'>₹{h_net:+,.0f}</div><div class='k'>{_ch_note}</div></div>
+      <div class='pill'><div class='v'>{h_n}</div><div class='k'>Completed trades</div></div>
       <div class='pill'><div class='v'>{n_ent}</div><div class='k'>Entries</div></div>
       <div class='pill'><div class='v'>{active_n}<span class='dim' style='font-size:12px'> / {len(rows)}</span></div><div class='k'>Chali / Total</div></div>
       <div class='pill'><div class='v'><span class='r'>{reds}</span> / <span class='y'>{yels}</span> / <span class='g'>{greens}</span></div><div class='k'>Red / Yellow / Green</div></div>
