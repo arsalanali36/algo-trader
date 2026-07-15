@@ -405,6 +405,10 @@ def main():
     ap.add_argument("--from", dest="dfrom", default="2026-06-22")
     ap.add_argument("--to", dest="dto", default=ist.strftime("%Y-%m-%d"))
     ap.add_argument("--no-fetch", action="store_true")
+    ap.add_argument("--only", default="", help="comma underlyings filter, e.g. NIFTY or NIFTY,BANKNIFTY")
+    ap.add_argument("--breakdown", action="store_true",
+                    help="per-underlying net (naked ATR vs naked ride), split train/OOS — "
+                         "for portfolio pruning; robust = wins in BOTH halves (overfit guard)")
     ap.add_argument("--hedge-decay", type=float, default=None,
                     help="override HEDGE_DECAY (hedge premium fraction lost intraday)")
     ap.add_argument("--json", default=os.path.join(ROOT, "data", "capital_pool_sim.json"))
@@ -415,6 +419,12 @@ def main():
 
     print(f"Loading trades {args.dfrom}..{args.dto} …", flush=True)
     trades = prep_trades(args.dfrom, args.dto, allow_fetch=not args.no_fetch)
+    if args.only:
+        keep = set(x.strip().upper() for x in args.only.split(",") if x.strip())
+        before = len(trades)
+        trades = [t for t in trades if t["und"] in keep]
+        cov_only = sum(1 for t in trades if t["covered"])
+        print(f"  --only {sorted(keep)}: {len(trades)}/{before} trades ({cov_only} covered)", flush=True)
     dates = sorted(set(t["date"] for t in trades))
     cut = int(len(dates) * 0.65)
     train_dates = set(dates[:cut]); oos_dates = set(dates[cut:])
@@ -424,6 +434,45 @@ def main():
     cov_sample = [{"win": t["win"], "side": t["side"], "ep": t["ep"], "qty": t["qty"],
                    "lots": t["lots"], "fb": t["fb"]} for t in trades if t["covered"]][:80]
     _assert_equiv(cov_sample)
+
+    if args.breakdown:
+        # per-underlying raw edge (∞ capital, no pool), naked ATR vs naked ride,
+        # split train/OOS so lucky-in-sample winners are exposed (overfit guard).
+        ride_cfg = pas._agg_cfg(1500, 200, 200); ride_cfg["min_cushion"] = 500; ride_cfg["_ride"] = True
+        agg = {}
+        for t in trades:
+            u = t["und"]; half = "train" if t["date"] in train_dates else "oos"
+            a = agg.setdefault(u, {"n": 0, "cov": 0,
+                                   "atr_train": 0.0, "atr_oos": 0.0,
+                                   "ride_train": 0.0, "ride_oos": 0.0})
+            a["n"] += 1; a["cov"] += 1 if t["covered"] else 0
+            atr, _ = trade_pnl_exit(t, "atr", None, False)
+            rid, _ = trade_pnl_exit(t, "ride", ride_cfg, False)
+            a[f"atr_{half}"] += atr; a[f"ride_{half}"] += rid
+        rows = []
+        for u, a in agg.items():
+            atr_all = a["atr_train"] + a["atr_oos"]; ride_all = a["ride_train"] + a["ride_oos"]
+            robust_atr = min(a["atr_train"], a["atr_oos"])
+            rows.append((u, a["n"], a["cov"], a["atr_train"], a["atr_oos"], atr_all,
+                         a["ride_train"], a["ride_oos"], ride_all, robust_atr))
+        rows.sort(key=lambda r: r[5], reverse=True)   # by ATR all net
+        print(f"\n{'='*96}\nPER-UNDERLYING raw edge (∞ capital) — NAKED. "
+              f"'robust' = wins BOTH train & OOS\n{'='*96}")
+        print(f"  {'under':11s} {'n':>3} {'cov':>3} | {'ATRtr':>8} {'ATRoos':>8} {'ATRall':>8} | "
+              f"{'RIDEtr':>8} {'RIDEoos':>8} {'RIDEall':>8} | robust?")
+        tot = [0.0]*6
+        for (u, n, cov, at, ao, aa, rt, ro, ra, rob) in rows:
+            flag = "✓BOTH+" if (at > 0 and ao > 0) else ("~" if aa > 0 else "✗")
+            print(f"  {u:11s} {n:>3} {cov:>3} | {at:>8,.0f} {ao:>8,.0f} {aa:>8,.0f} | "
+                  f"{rt:>8,.0f} {ro:>8,.0f} {ra:>8,.0f} | {flag}")
+            for i, v in enumerate((at, ao, aa, rt, ro, ra)):
+                tot[i] += v
+        print(f"  {'TOTAL':11s} {'':>3} {'':>3} | {tot[0]:>8,.0f} {tot[1]:>8,.0f} {tot[2]:>8,.0f} | "
+              f"{tot[3]:>8,.0f} {tot[4]:>8,.0f} {tot[5]:>8,.0f} |")
+        # robust winners = positive in BOTH halves (ATR)
+        win = [r[0] for r in rows if r[3] > 0 and r[4] > 0]
+        print(f"\n  ROBUST winners (naked ATR, +ve BOTH train & OOS): {win}")
+        return
 
     out = {"meta": {"from": args.dfrom, "to": args.dto, "days": len(dates),
                     "n_trades": len(trades), "train_days": len(train_dates),
