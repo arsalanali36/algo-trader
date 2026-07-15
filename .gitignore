@@ -123,3 +123,6 @@ data/audit_history/
 # SL/exit analysis script outputs — per-run generated artifacts, not source
 data/path_aware_sl_sim.csv
 data/exit_reason_analysis.csv
+
+# ad-hoc API response dumps (debug artifacts)
+resp.json

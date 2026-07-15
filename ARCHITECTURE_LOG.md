@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-07-15 — Stats "what-if" P&L columns (Opt Fixed / Aggr / Aggr→EOD) + expired-options premium backfill
+**Status:** DONE
+**Layer:** ui + broker (display-only, no live order-path touch)
+**Kya:** Total Summary + Point-Per-Trade tables me har completed trade ka what-if NET P&L teen grid-search winners ke under (Opt Fixed = T4000/SL1000-lot; Opt Aggr = T6000/init-SL2500/step100-lot; Opt Aggr→EOD = aggressive trail 15:15 tak ridden, no target cap, init-SL1500-lot). Plus purane trades ke missing premium bars ka expired-options backfill taaki what-if columns `'—'` na dikhayein.
+**Files:** `_ops/opt_pnl.py` (NEW, `path_aware_sl_sim` replay reuse — Rule 6B), `/api/orders/optimized-pnl` route + `templates/index.html` columns; `_data/opt_hist.py` (NEW, shared Dhan `rollingoption` fetcher + held-strike reconstruction), `_ops/backfill_trade_ohlc.py` (NEW), `optchain_dl.py` (multi-underlying: BANKNIFTY + ~54 F&O stocks), `data/opt_pnl_cache.json`, `data/trade_ohlc/`.
+**Kyun:** Grid-search winners ka "future potential at a glance" chahiye tha; backfill isliye ki TRAP #100 (expired-weekly Dhan intraday drop) purane trades ko what-if se blank kar deta tha.
+**Findings/caveats:** Aggr→EOD covered data pe ~9× ATR-SL DIKHTA hai — par directional per-trade replay hai, validated backtest NAHI (tooltip warns, Rule 10 re-backtest before any live change). Baad me ₹11L shared-pool sim me confirm hua ye 9× **infinite-capital inflation** thi (see capital_pool_sim). GOTCHA: backfill ke baad `opt_pnl_cache.json` puri clear karni padti hai (per-tid prune concurrent-compute se race karta tha, `covered=False` stuck).
+**Commits:** e4f0f8b · 809b4d7 · 741af27 · 27275ae · 251b063 · 7ebacb8
+**Depends on:** path_aware_sl_sim (2026-07-14), optchain lake (ADR-004), charges.py
+
+---
+
 ## 2026-07-15 — EOD report headline P&L = dashboard TOTAL (reconciled) + downloader banner noise cap
 **Status:** DONE
 **Layer:** infra (EOD report + downloader observability)
