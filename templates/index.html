@@ -3038,9 +3038,9 @@
                   (Max Loss Protection → 1️⃣ Strategy Day Cap) — poori strategy squareoff</td>
               </tr>
               <tr>
-                <td class="param-info"><span>✅ RMS Profit Target</span></td>
+                <td class="param-info"><span>✅ RMS Daily Target</span></td>
                 <td class="param-inputs" style="font-size:11.5px;color:#8b949e">Din ka combined profit target hit (🎯
-                  Daily Profit Target) — poori strategy squareoff</td>
+                  Daily Profit Target) — poori strategy squareoff. Badge me set target + aaj ka P&L dono dikhta hai.</td>
               </tr>
               <tr>
                 <td class="param-info"><span>🔒 Kill-Floor</span></td>
@@ -8115,6 +8115,16 @@
         m = r.match(/(\d+(?:\.\d+)?)\s*%/); if (m) return m[1] + '%';
         m = r.match(/₹\s*(\d+(?:\.\d+)?)/); if (m) return '₹' + parseFloat(m[1]).toLocaleString('en-IN');
       }
+      // RMS daily target / max-loss carry the ₹ in free text, e.g.
+      //   "🎯 Daily profit target ₹3,000 hit for 'range_v1' (today's P&L ₹3,045)"
+      // Show BOTH: the target/limit that was SET + how much actually locked, so a
+      // setting you changed is self-documenting on the row (no need to remember it).
+      if (/^RMS_(PROFIT_TARGET|MAXLOSS)/.test(r)) {
+        const nums = r.match(/₹\s*[\d,]+(?:\.\d+)?/g) || [];
+        const clean = s => s.replace(/\s+/g, '');
+        if (nums.length >= 2) return clean(nums[0]) + ' · P&L ' + clean(nums[1]);
+        if (nums.length === 1) return clean(nums[0]);
+      }
       return '';
     }
 
@@ -8131,10 +8141,10 @@
       else if (r.startsWith('EOD_315_SQUAREOFF')) { label = '⏰ 3:15 EOD'; color = '#d29922'; }
       else if (r.startsWith('KILL_FLOOR')) { label = '🔒 Kill-Floor'; color = '#f85149'; }
       else if (r.startsWith('TRAILING_PROFIT_LOCK')) { label = '🔒 Trailing Lock'; color = '#f0883e'; }
-      else if (r.startsWith('DEFAULT_TSL_TARGET')) { label = '🎯 Default Target'; color = '#3fb950'; }
-      else if (r.startsWith('DEFAULT_TSL_SL')) { label = '🛡️ Default SL'; color = '#f0883e'; }
-      else if (r.startsWith('RMS_MAXLOSS')) { label = '⚠️ RMS Max-Loss'; color = '#f85149'; }
-      else if (r.startsWith('RMS_PROFIT_TARGET')) { label = '✅ RMS Profit Target'; color = '#3fb950'; }
+      else if (r.startsWith('DEFAULT_TSL_TARGET')) { label = '🎯 Aggr-Trail Target'; color = '#3fb950'; }
+      else if (r.startsWith('DEFAULT_TSL_SL')) { label = '🛡️ Aggr-Trail SL'; color = '#f0883e'; }
+      else if (r.startsWith('RMS_MAXLOSS')) { label = '⚠️ RMS Daily Max-Loss'; color = '#f85149'; }
+      else if (r.startsWith('RMS_PROFIT_TARGET')) { label = '✅ RMS Daily Target'; color = '#3fb950'; }
       else if (r.startsWith('NO_PRICE_EMERGENCY_EXIT')) { label = '🚨 No-Price Emergency'; color = '#f85149'; }
       // Strategy's own exit logic (not pos_monitor_loop-driven)
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
@@ -8886,13 +8896,17 @@
         // update EVERY matching cell (tfoot TOTAL row + the collapsed-group
         // summary line — task 68 shows ₹/pts/% right in the summary), so use
         // querySelectorAll not querySelector.
+        // each total cell colors by its OWN sign — P&L drives the money color,
+        // NOT the raw points sum (points across different-qty legs can't be summed
+        // meaningfully, so a −0.2 point-sum must never paint a +₹3,326 P&L red).
         const ptCol = totPts >= 0 ? '#3fb950' : '#f85149';
+        const unCol = totUnrl >= 0 ? '#3fb950' : '#f85149';
         const ptTxt = (totPts >= 0 ? '+' : '') + totPts.toFixed(1);
         const unTxt = (totUnrl >= 0 ? '+' : '') + Math.round(totUnrl).toLocaleString('en-IN');
         const retTxt = totInv > 0 ? ((totUnrl / totInv) * 100).toFixed(2) + '%' : '—';
         document.querySelectorAll(`.grp-tot-pts[data-grp="${id}"]`).forEach(el => { el.textContent = ptTxt; el.style.color = ptCol; });
-        document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = ptCol; });
-        document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = ptCol; });
+        document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = unCol; });
+        document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = unCol; });
       });
       // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
       (function () {
@@ -11201,10 +11215,10 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
           ['EOD_315_SQUAREOFF', '⏰ 3:15 EOD'],
           ['KILL_FLOOR', '🔒 Kill-Floor'],
           ['TRAILING_PROFIT_LOCK', '🔒 Trailing Lock'],
-          ['DEFAULT_TSL_TARGET', '🎯 Default Target'],
-          ['DEFAULT_TSL_SL', '🛡️ Default SL'],
-          ['RMS_MAXLOSS', '⚠️ RMS Max-Loss'],
-          ['RMS_PROFIT_TARGET', '✅ RMS Profit Target'],
+          ['DEFAULT_TSL_TARGET', '🎯 Aggr-Trail Target'],
+          ['DEFAULT_TSL_SL', '🛡️ Aggr-Trail SL'],
+          ['RMS_MAXLOSS', '⚠️ RMS Daily Max-Loss'],
+          ['RMS_PROFIT_TARGET', '✅ RMS Daily Target'],
           ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
           ['ATR_TRAILING', '📉 ATR Trailing'],
           ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'],
