@@ -11050,7 +11050,46 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         }).join('') + '</tr>';
     }
 
+    // ── Custom instant hover-tooltip (native title= is slow/easy-to-miss) ──
+    // Any element with a data-tip="..." attribute shows a styled box on hover.
+    function _initKhTooltip() {
+      if (window._khTipReady) return;
+      window._khTipReady = true;
+      const tip = document.createElement('div');
+      tip.id = 'khTooltip';
+      tip.style.cssText = 'position:fixed;z-index:99999;max-width:340px;padding:8px 11px;'
+        + 'background:#1c2333;border:1px solid #30363d;border-radius:7px;color:#e6edf3;'
+        + 'font-size:11.5px;line-height:1.5;box-shadow:0 6px 22px rgba(0,0,0,.55);'
+        + 'pointer-events:none;display:none;white-space:normal;';
+      document.body.appendChild(tip);
+      const show = (el) => {
+        const t = el.getAttribute('data-tip');
+        if (!t) return;
+        tip.textContent = t;
+        tip.style.display = 'block';
+      };
+      const place = (e) => {
+        if (tip.style.display !== 'block') return;
+        let x = e.clientX + 14, y = e.clientY + 16;
+        const w = tip.offsetWidth, h = tip.offsetHeight;
+        if (x + w > window.innerWidth - 8) x = e.clientX - w - 14;
+        if (y + h > window.innerHeight - 8) y = e.clientY - h - 16;
+        tip.style.left = Math.max(6, x) + 'px';
+        tip.style.top = Math.max(6, y) + 'px';
+      };
+      document.addEventListener('mouseover', (e) => {
+        const el = e.target.closest && e.target.closest('[data-tip]');
+        if (el) show(el);
+      });
+      document.addEventListener('mousemove', place);
+      document.addEventListener('mouseout', (e) => {
+        const el = e.target.closest && e.target.closest('[data-tip]');
+        if (el) tip.style.display = 'none';
+      });
+    }
+
     function renderSummaryTable() {
+      _initKhTooltip();
       _initCalSumCols();
       const cols = window._calSumCols.filter(c => c.on);
       const mode = window._calSumMode || 'day';
@@ -11075,8 +11114,8 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
         const isSort = sort.col === c.id;
         const arrow = isSort ? (sort.dir === 1 ? ' ▲' : ' ▼') : '';
         const hdr = c.id === 'label' ? labelHeader : (c.id.startsWith('m_') ? `${aggPfx} ${c.l}` : c.l);
-        const titleAttr = c.title ? ` title="${c.title.replace(/"/g, '&quot;')}"` : '';
-        return `<th${titleAttr} style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:pointer;user-select:none;white-space:nowrap;"
+        const titleAttr = c.title ? ` data-tip="${c.title.replace(/"/g, '&quot;')}"` : '';
+        return `<th${titleAttr} style="padding:6px 8px;font-weight:500;text-align:${a};color:${isSort ? '#58a6ff' : '#8b949e'};cursor:${c.title ? 'help' : 'pointer'};user-select:none;white-space:nowrap;"
             onclick="calSumSortBy('${c.id}')"
             onmouseover="this.style.color='#e6edf3'" onmouseout="this.style.color='${isSort ? '#58a6ff' : '#8b949e'}'"
           >${hdr}${arrow}</th>`;
@@ -11565,8 +11604,9 @@ Params: bb_window bb_std ema_52_period ema_100_period atr_len sl_pct tp_pct allo
             sortIndicator = window._calPointsSortDir === 'desc' ? ' ▼' : ' ▲';
           }
           const onclickAttr = c.id !== 'actions' ? ` onclick="toggleCalPointsSort('${c.id}')"` : '';
-          const titleAttr = c.title ? ` title="${c.title.replace(/"/g, '&quot;')}"` : '';
-          return `<th style="padding:6px; font-weight:500; text-align:${align}; cursor:pointer; user-select:none;"${onclickAttr}${titleAttr}>${c.l}${sortIndicator}</th>`;
+          const titleAttr = c.title ? ` data-tip="${c.title.replace(/"/g, '&quot;')}"` : '';
+          _initKhTooltip();
+          return `<th style="padding:6px; font-weight:500; text-align:${align}; cursor:${c.title ? 'help' : 'pointer'}; user-select:none;"${onclickAttr}${titleAttr}>${c.l}${sortIndicator}</th>`;
         }).join('');
       }
 
