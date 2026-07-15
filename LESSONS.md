@@ -2529,3 +2529,19 @@ The script-difference guard is what keeps `rsi_v1 → "rsi"` untouched (STRATEGI
 **Permanent guard:** teeno tool-fixes (`eod_report` entry-count, `signal_replay` in-position gate, ema `len<2`) deployed — kal 09:10 fresh process se ema clean, report tool turant clean. Commits `78ce97e` + `6e702e0`.
 
 **Fast-detect:** EOD "overtrading?"/"replay MISS" flag dekho to **pehle strategy ki actual ENTRY count aur position-hold state check karo** (log ke `★ ENTRY` / `[EXIT]`) — leg-count aur stateless bar-scan dono multi-leg / hold-strategies pe over-report karte hain. `<TF>-min tight range me 0-trade` = ORB pe normal (breakout strategy choppy din skip karti hai); asli bug tab jab window me spot ne OR±ATR band cross kiya ho phir bhi `signal=none`. General rule: **observability tool ka flag = "dekho", "bug confirmed" nahi — pehle tool ka mechanism strategy ke design ke against verify karo** (PRE-MORTEM shape #10).
+
+---
+
+## TRAP #118 — EOD report ka headline P&L dashboard se alag; do independent gaps (per-strategy discovery + gross-vs-net) + downloader banner ka expired-contract wall.
+
+**Symptom (2026-07-15):** user ne dekha ki EOD report Net P&L ₹7,747 dikha raha, par dashboard Orders&P&L TOTAL Net ₹5,753. Plus dashboard pe ~19-line ka red banner "🚨 21 Jun ka data missing — contract expire hone wala hai! Token update karo" hafton peeche tak.
+
+**P&L root — do alag gaps (add up to the difference):**
+1. **Coverage:** `eod_digest.discover_ids()` sirf config-keys (`active` present) + per-strategy log-files se strategies dhundhta hai, aur **`webhook_*` explicitly skip** karta hai ("uska apna monitor hai, per-strategy log nahi"). Par webhook ke REAL trades `order_store` me `strategy="arschain_MAIN"` (src=webhook, mode=**live**) ban ke aate hain — koi config-key/log nahi → report ke per-strategy sum me kabhi count nahi hue. Aaj ka live webhook trade (+₹1,059.5) report se poora gayab tha.
+2. **Gross vs net:** report `sum(per-strategy st["pnl"])` = paper-GROSS (label "paper=gross"), jabki dashboard har trade pe `calcCharges()` laga ke NET dikhata (aaj ₹3,053 charges). Toh 7747 (gross, webhook-miss) vs 5753 (net, all-trades) — do wajah se alag.
+
+**Permanent guard:** report headline ab `_authoritative_totals(date)` se aata — `order_store.trades_for(date)` ka SAARA completed set (webhook/manual incl) + shared `charges.option_charges()` (Rule 6B, wahi date-aware model jiska JS twin dashboard me hai) se net. Verified exact: gross ₹8,806.7 · charges ₹3,053.35 · **net ₹5,753.35 == dashboard ₹5,753**, 38 trades == 38. Per-strategy breakdown chart informational rehta hai; headline authoritative.
+
+**Banner root:** `auto_data_downloader.gap_check()` 60-din scan karke HAR date ka missing-instrument alert karta tha. Expired option contract ka intraday Dhan **permanently drop** kar deta hai (token refresh se WAPAS nahi aata) → wo "missing" kabhi "ok" nahi hota → har cycle re-alert → weeks-long wall. Aur `days_ago >= 5 = urgent 🚨 "contract expire / token update karo"` ULTA tha (purana = expired = kam actionable, zyada nahi) + misleading (token se recover hota hi nahi). **Guard:** sirf last 2 din ke gaps alert (jahan token-fresh retry genuinely help kare); usse purana skip; honest wording ("premium-chart data nahi mila — illiquid/expired strike normal hai"), jhoota token-blame hata. 19 → 3 lines. Genuine full-token-expiry alag path (`fetch_orders() None → 🔴`) se covered hai, wo untouched.
+
+**Fast-detect:** jab do jagah ka "same" total alag ho — **dono ka trade-SET aur charge-treatment alag-alag verify karo** (`order_store.trades_for(date)` all vs per-strategy-sum; gross vs net). Aksar ek side kisi source (webhook/manual/untagged-strategy) ko silently drop kar raha hota hai. Aur koi bhi "data missing / token update" perpetual alert dekho to check karo wo actually ACTIONABLE hai ya expired-resource ka permanent noise — unactionable alert = remove/cap, warna real alert usme dab jaata hai.

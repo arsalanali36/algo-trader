@@ -15,6 +15,21 @@
 
 ---
 
+## 2026-07-15 — EOD report headline P&L = dashboard TOTAL (reconciled) + downloader banner noise cap
+**Status:** DONE
+**Layer:** infra (EOD report + downloader observability)
+**Kya:** User ne 2 cheezein flag ki — (a) report Net P&L ₹7,747 vs dashboard Orders&P&L Net ₹5,753 (alag), (b) dashboard pe ~19-line "contract expire / token update karo" banner (hafton peeche tak). Dono root-fix + VPS-deployed + exact-verified.
+**Files:**
+- `_ops/eod_report.py` — naya `_authoritative_totals(date)`: headline ab `order_store.trades_for(date)` ka SAARA completed set (webhook/manual incl) + shared `charges.option_charges()` (Rule 6B) se net. Pehle `sum(per-strategy pnl)` = paper-gross tha jo (1) webhook trade `arschain_MAIN` (+₹1,059.5, live) miss karta (discover_ids webhook skip karta), (2) charges deduct nahi karta. `pos_neg()` "din ka net" line bhi authoritative se aligned.
+- `_ops/auto_data_downloader.py` — `gap_check()` 60-din wall → last 2 din cap + honest wording. Expired option ka intraday Dhan permanently drop karta (token refresh se recover nahi) → wo alert perpetual noise tha; `days_ago>=5=urgent` ULTA bhi tha. Genuine full-token-expiry alag path (`fetch_orders None → 🔴`) untouched.
+**Result:** Report headline **gross ₹8,806.7 · charges ₹3,053.35 · net ₹5,753.35 · 38 trades == dashboard TOTAL exact** (net 5753/gross 8807/tax 3053/38). Banner 19 → 3 honest lines. Stale `downloader_alert.json` naye capped logic se regenerate.
+**Risk:** zero — dono read-only observability tools, koi strategy/order/risk logic nahi chhui. charges.option_charges = wahi model jiska JS twin (`calcCharges`) dashboard me hai (current regime pe identical, exact-verified).
+**Deploy:** commits → `git push origin HEAD:master` (FF) → VPS `git pull` (FF, 2 files) → banner regenerate (existing dl_log se, zero Dhan call) → report regenerate verify.
+**Kyun:** user ne report-vs-dashboard mismatch + banner noise fix maanga.
+**Depends on:** order_store.trades_for, scratch/nifty_trend/charges.py, downloader dl_log. LESSONS.md TRAP #118. Commit `a4fa007`.
+
+---
+
 ## 2026-07-15 — EOD report "errors" cleanup — 1 real crash + 3 observability false-positives (strategies theek)
 **Status:** DONE
 **Layer:** strategy (ema crash guard) + infra (EOD report/replay tooling)
