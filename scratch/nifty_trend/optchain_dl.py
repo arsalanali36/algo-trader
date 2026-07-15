@@ -154,8 +154,9 @@ def _build_specs(argv):
     return specs
 
 
-def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl):
-    lake = os.path.join(LAKE_ROOT, sym)
+def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl,
+                    lake_root, interval):
+    lake = os.path.join(lake_root, sym)
     mpath = os.path.join(lake, "_done.json")
     os.makedirs(lake, exist_ok=True)
     done = _load_manifest(mpath)
@@ -178,7 +179,8 @@ def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl):
             skip += 1; continue
         try:
             rows, status = opt_hist.fetch_rolling(_tok(), sec_id, instrument, flag, off,
-                                                  dtype, side.lower(), frm, to, rl=rl)
+                                                  dtype, side.lower(), frm, to,
+                                                  interval=interval, rl=rl)
             if status == 429:
                 print("  [%d/%d] 429 — backoff 20s (%s)" % (i + 1, total, key), flush=True)
                 time.sleep(20); continue
@@ -213,16 +215,29 @@ def _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl):
           % (sym, (time.time() - t0) / 60, ok, empty, err, skip), flush=True)
 
 
+def _arg_val(flag, default):
+    a = sys.argv[1:]
+    for i, x in enumerate(a):
+        if x == flag and i + 1 < len(a):
+            return a[i + 1]
+    return default
+
+
 def main():
     specs = _build_specs(sys.argv)
     if not specs:
         print("nothing to do — pass --underlying NIFTY,BANKNIFTY and/or --stocks [SYMS]", flush=True)
         return
-    print("optchain_dl: %d underlying(s): %s" % (len(specs), ", ".join(s[0] for s in specs)),
-          flush=True)
+    interval = _arg_val("--interval", "5")
+    # keep the existing 5-min lake (ML pipeline reads it) untouched; 1-min etc. go
+    # to a sibling OptChainLake_<N>m so granularities never mix in one CSV/manifest.
+    lake_root = LAKE_ROOT if interval == "5" else "%s_%sm" % (LAKE_ROOT, interval)
+    print("optchain_dl: interval=%smin  lake=%s  %d underlying(s): %s"
+          % (interval, lake_root, len(specs), ", ".join(s[0] for s in specs)), flush=True)
     rl = _rl_acquire_mod()
     for (sym, sec_id, instrument, flags, off_range, start) in specs:
-        _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl)
+        _run_underlying(sym, sec_id, instrument, flags, off_range, start, rl,
+                        lake_root, interval)
     print("\nALL DONE.", flush=True)
 
 
