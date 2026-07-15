@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-07-15 — Exit-rule → Daily-Discipline research + per-strategy Max-Trades cap + what-if tooltips
+**Status:** DONE
+**Layer:** research + ui + config (Max-Trades = money-path gate, off-by-default)
+**Kya:** Poore din ka research — "trade se kaise nikalna" (per-trade SL/target) se asli jawab "din me kab rukna" (per-strategy daily discipline). Winner = `max 5 trades/day + ₹3000 realized profit-lock, actual exits` (baseline −₹1,878 → +₹23,617, OOS +12,547). 3× reject (tight-SL-trail / fixed-target / disaster-SL — sab uniform per-trade = adaptive exit todta). Feature: RMS Per-Strategy Override me **Max Trades column** + `risk_gate.daily_max_trades_hit()` gating_status hard-block (off-by-default). What-if column headers pe custom hover-tooltip.
+**Files:** `_core/risk_gate.py` (effective_max_trades_per_day/daily_max_trades_hit + gating_status wire), `templates/index.html` (Max Trades UI + save + tooltip), `scripts/{rr_sweep,trail_sweep,rotation,pool_fixed,daily_caps,combined,sl_caps,distribution,metrics_fw,mechanism_b,capital_pool_sim,capital_margin_table}.py` (research toolkit), `data/presentations/2026-07-16.html`.
+**Kyun:** Cost trades ke saath linear badhta, edge nahi → kam+achhe trade + profit-lock. Uniform per-trade SL/target adaptive strategy-exit todta hai (3× proven). Metrics honest: PF 1.24, **p=0.127 NOT significant** → paper only, live nahi.
+**Config (VPS runtime, gitignored):** ARS_CHAIN_V1_PAPER + rsi_v1_PAPER + range_v1 → max_trades=5 + profit_target=3000 (mode:paper); backup `nifty_config.json.bak.maxtrades_*`. LIVE + mission UNTOUCHED (Rule 10). Effective kal 9:10.
+**Depends on:** path_aware_sl_sim + capital_pool_sim + charges.py (real cost), risk_gate gating_status.
+**Commits:** 67eca6c (tooltip) · 5958993 (Max Trades) · a3e7588 (presentation) · 4e5ccf8 (scripts). Memory: [[project_code3b_rr_sweep_rode_lock]].
+
+---
+
 ## 2026-07-15 — Stats "what-if" P&L columns (Opt Fixed / Aggr / Aggr→EOD) + expired-options premium backfill
 **Status:** DONE
 **Layer:** ui + broker (display-only, no live order-path touch)
