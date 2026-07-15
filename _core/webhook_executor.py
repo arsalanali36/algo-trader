@@ -304,7 +304,10 @@ def _current_premium(sec_id):
     """Live option premium — WebSocket feed first, Dhan REST quote fallback."""
     try:
         import dhan_feed
-        q = dhan_feed.get_quote(sec_id) or {}
+        # max_age: a dead WS subscription keeps its last tick forever (non-zero),
+        # which would short-circuit the REST fallback below and pin the webhook's
+        # trailing-SL/exit to a stale premium. Reject a >12s-old tick → fresh REST.
+        q = dhan_feed.get_quote(sec_id, max_age=12) or {}
         if q.get("ltp"):
             return float(q["ltp"])
     except Exception:

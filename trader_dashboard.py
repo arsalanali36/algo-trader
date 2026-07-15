@@ -5781,7 +5781,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     seg = "NSE_EQ" if p.get("instrument") == "EQUITY" else "NSE_FNO"
     _feed_subscribe([(seg, sec_id)])
 
-    q = dhan_feed.get_quote(sec_id)
+    q = dhan_feed.get_quote(sec_id, max_age=_FEED_MAX_AGE)  # reject a stale WS tick → fresh fallback
     ltp = float(q.get("ltp") or 0) if q else 0.0
     if ltp <= 0:
         # WebSocket feed (dhan_feed) needs dhanhq's DhanContext/MarketFeed,
@@ -5940,7 +5940,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             return None
         u_sec, u_seg = info
         _feed_subscribe([(u_seg, u_sec)])
-        q = dhan_feed.get_quote(u_sec)
+        q = dhan_feed.get_quote(u_sec, max_age=_FEED_MAX_AGE)  # reject a stale WS tick → fresh fallback
         u_ltp = float(q.get("ltp") or 0) if q else 0.0
         if u_ltp <= 0:
             u_ltp = _rest_ltp_fallback(u_sec, u_seg) or 0.0
@@ -6108,7 +6108,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 if not sib_sec: continue
                 sib_seg = "NSE_EQ" if (sib.get("instrument") or "").upper() == "EQUITY" else "NSE_FNO"
                 _feed_subscribe([(sib_seg, sib_sec)])
-                qsib = dhan_feed.get_quote(sib_sec)
+                qsib = dhan_feed.get_quote(sib_sec, max_age=_FEED_MAX_AGE)  # reject a stale WS tick → fresh fallback
                 sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
                 if sib_ltp <= 0:
                     sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
