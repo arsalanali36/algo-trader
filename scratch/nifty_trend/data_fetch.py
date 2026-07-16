@@ -6,8 +6,16 @@ CSVs, so the second run downloads nothing. Then rebuilds the consolidated
 nifty_1min.csv + nifty_1h.csv the backtester reads.
 
     python data_fetch.py                 # fill store up to today, rebuild frames
-    python data_fetch.py 2022-01-01      # ensure history back to this date
-    python data_fetch.py --seed          # one-time: import existing nifty_1min.csv into store
+    python data_fetch.py 2018-01-01      # ensure history back to this date (DOWNLOAD depth only)
+    python data_fetch.py --seed          # nifty_1min.csv ke MISSING din store me daalo
+    python data_fetch.py --seed-overwrite  # ...aur maujood din bhi replace karo (soch ke)
+    python data_fetch.py --force         # rebuild kar do chahe CSV chhoti ho jaaye
+
+nifty_1min.csv / nifty_1h.csv **DERIVED** hain — per-day store hi source hai. Rebuild
+hamesha POORA store likhta hai; date argument sirf ye batata hai ki downloader ko kitna
+peeche jaana hai. Agar rebuild se CSV chhoti hoti hai to wo ruk jaata hai (--force se hi
+aage badhega) — 2026-07-16 ko ek chup rebuild ne 788,410 rows ko 416,673 kar diya tha aur
+4 saal ka NIFTY data sirf git ke committed blob me bacha tha.
 """
 import json, os, sys, time, datetime
 import requests
@@ -58,10 +66,50 @@ def _chunks(days, size=85):
     return out
 
 
-def rebuild_frames(start=None):
+SHRINK_TOLERANCE = 0.98   # naya frame purane ka 98% se kam = kuch gadbad hai
+
+
+def _existing_rows(path):
+    """Kitni data-rows abhi us CSV me hain (header chhod ke). Missing = 0."""
+    if not os.path.isfile(path):
+        return 0
+    with open(path, "rb") as f:
+        return max(0, sum(1 for _ in f) - 1)
+
+
+def rebuild_frames(start=None, force=False):
     raw = dl.load_all(start=start)
     if raw.empty:
         print("store empty — nothing to rebuild"); return
+
+    # ── SHRINK GUARD (2026-07-16) ───────────────────────────────────────────
+    # rebuild_frames() nifty_1min.csv ko store se DERIVE karke overwrite karta
+    # hai. Agar store adhoora ho, ye chupchaap saal ke saal kaat deta hai aur
+    # kisi ko pata nahi chalta — har baad wala backtest chhote period pe chalta
+    # hai, alag numbers deta hai, koi warning nahi.
+    #
+    # Exactly ye hua 2026-07-16 ko: local store 2022 se shuru hota hai, jabki
+    # commit 2c57074 ("extend NIFTY data to 8.5yr (2018)") ne CSV ko 2018 tak
+    # bhara tha — par 2018-2021 ke per-day files local store me kabhi aaye hi
+    # nahi (wo VPS pe bane the). Ek local run ne 788,410 rows ko 416,673 pe
+    # laakar 4 saal uda diye; wo data sirf git ke committed blob me bacha.
+    #
+    # Ab: chhota hona = ruko aur bolo. Jaan-boojh ke chhota karna ho to --force.
+    old = _existing_rows(RAW_CSV)
+    new = len(raw)
+    if old and new < old * SHRINK_TOLERANCE and not force:
+        print(f"\n  REFUSING to rebuild {os.path.basename(RAW_CSV)} — it would SHRINK.")
+        print(f"    on disk now : {old:,} rows")
+        print(f"    store gives : {new:,} rows   ({new/old:.0%})")
+        print(f"    store range : {raw.Datetime.min()}  ->  {raw.Datetime.max()}")
+        print(f"    store dir   : {dl.STORE}")
+        print("\n  Matlab store me wo din hain hi nahi jo CSV me hain — CSV store se")
+        print("  DERIVE hoti hai, source nahi. Aage badhne se pehle:")
+        print("    * store ko bharo:  python data_fetch.py --seed   (CSV se missing din wapas)")
+        print("    * ya poore din download karo:  python data_fetch.py 2018-01-01")
+        print("    * sach me chhota chahiye to:   python data_fetch.py --force")
+        print("  (nifty_1h.csv bhi nahi likhi — dono ek saath hi badalne chahiye)\n")
+        return
     raw.to_csv(RAW_CSV, index=False)
     s = raw.set_index("Datetime")
     h1 = (s.resample("1h").agg({"Open": "first", "High": "max", "Low": "min",
@@ -73,12 +121,31 @@ def rebuild_frames(start=None):
           f"({raw.Datetime.iloc[0].date()} .. {raw.Datetime.iloc[-1].date()})")
 
 
-def seed_from_local():
+def seed_from_local(overwrite=False):
+    """nifty_1min.csv ke din store me daalo — DEFAULT: sirf wo din jo store me nahi hain.
+
+    Pehle ye dl.write_days(df) tha, jo CSV ke HAR din ko overwrite kar deta tha.
+    Wo ulta chal sakta hai: CSV store se derive hoti hai aur purani ho sakti hai
+    (2026-07-16: committed CSV ka aakhri bar 2026-07-09 ka tha, jabki store me
+    07-16 tak ke din the), to blunt seed taaza din ko purane se replace kar deta.
+    Ab default = sirf missing din bharo (yahi ka yahi use-case hai: git ki CSV se
+    2018-2021 wapas laana, jo per-day store me kabhi aaye hi nahi).
+    """
     if not os.path.isfile(RAW_CSV):
         print("no local nifty_1min.csv to seed from"); return
     df = pd.read_csv(RAW_CSV)
-    n = dl.write_days(df)
+    df["Datetime"] = pd.to_datetime(df["Datetime"])
+    days = sorted(df["Datetime"].dt.date.unique())
+    todo = days if overwrite else [d for d in days if not dl.has_day(str(d))]
+    skipped = len(days) - len(todo)
+    if not todo:
+        print(f"store already has all {len(days)} days from the CSV — nothing to seed")
+        return
+    n = dl.write_days(df[df["Datetime"].dt.date.isin(set(todo))])
     print(f"seeded {n} per-day files into store: {dl.STORE}")
+    print(f"  range   : {min(todo)}  ->  {max(todo)}")
+    if skipped:
+        print(f"  skipped : {skipped} day(s) already present (use --seed-overwrite to replace)")
 
 
 def _forward_windows(start, end):
@@ -97,6 +164,12 @@ def _forward_windows(start, end):
 
 
 def main(start="2022-01-01", backfill=False):
+    """start = kahan tak PEECHE ka data DOWNLOAD karna hai — CSV me kya likhna hai
+    wo NAHI. Pehle dono ek hi the: main() `rebuild_frames(start=start)` bulata tha,
+    aur load_all(start=) us date se pehle ka sab kaat deta hai — to bina argument ke
+    ek `python data_fetch.py` (default 2022-01-01) CSV se 2018-2021 uda deta tha,
+    chahe store me wo din maujood hon. Ab rebuild hamesha POORA store likhta hai;
+    start sirf downloader ke liye hai."""
     end = datetime.date.today().isoformat()
     if backfill:
         windows = _chunks(dl.missing_weekdays(start, end))
@@ -106,7 +179,7 @@ def main(start="2022-01-01", backfill=False):
         windows = _forward_windows(start, end)
     if not windows:
         print(f"store: {dl.STORE}\nalready up to date ({start}..{end}) — 0 downloads")
-        rebuild_frames(start=start); return
+        rebuild_frames(); return
     print(f"store: {dl.STORE}\ndownloading {len(windows)} window(s)")
     for i, (fr, to) in enumerate(windows, 1):
         try:
@@ -121,8 +194,11 @@ def main(start="2022-01-01", backfill=False):
 
 if __name__ == "__main__":
     args = sys.argv[1:]
-    if "--seed" in args:
-        seed_from_local(); rebuild_frames()
+    if "--seed" in args or "--seed-overwrite" in args:
+        seed_from_local(overwrite="--seed-overwrite" in args)
+        rebuild_frames(force="--force" in args)
+    elif "--force" in args:
+        rebuild_frames(force=True)
     elif "--backfill" in args:
         start = next((a for a in args if a[0].isdigit()), "2022-01-01")
         main(start, backfill=True)
