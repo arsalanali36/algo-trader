@@ -14,6 +14,15 @@ staged files) and reports FAIL/WARN per Rule 6B:
                     risk_gate / strategy_safety / smart_order / execution_gateway
   6. SINGLETON      live trader daemon (--id + while-True loop) missing acquire_singleton()
                     guard — a 2nd copy (scheduler/restart race) places duplicate orders
+  7. RAW-HTTP-ORDER requests.post()/put()/delete() straight at a broker /orders endpoint
+                    (check 1 only sees SDK-shaped .place_order() — a raw POST walked past it)
+  8. CORE-IMPORTS-UI  _core/ importing trader_dashboard — money path depending on the UI
+
+  Checks 7-8 added 2026-07-16 after an audit found both blind spots being actively
+  exploited: /api/close-position raw-POSTs orders to Dhan while the algo trades on
+  Kite (invisible to check 1), and webhook_executor imports its ONLY kill-floor
+  check out of trader_dashboard inside a try/except that fails open. The enforcer
+  reported "0 FAIL" throughout. A check that can't see the money path isn't a check.
 
 Usage:
   python _TOOLS/architecture_audit.py                   # full repo scan
@@ -79,6 +88,22 @@ STATE_NAME_RE = re.compile(r"(peak|pending|lock|state)", re.IGNORECASE)
 BACKTEST_FILE_RE = re.compile(r"(backtest|simulat)", re.IGNORECASE)
 RISK_IMPORTS = {"risk_gate", "strategy_safety", "smart_order", "execution_gateway"}
 RISK_SIM_RE = re.compile(r"\b(capital|concentration|drawdown)\b", re.IGNORECASE)
+
+# Check 7: broker ORDER endpoints hit over raw HTTP. Check 1 only sees SDK-shaped
+# `.place_order()` calls, so a plain requests.post(<orders url>) walked straight
+# past it — that blind spot is exactly how /api/close-position kept a hardcoded
+# 'dhan' order POST while the algo moved to Kite (2026-07-16 audit).
+# Only WRITE verbs — GET /v2/orders is a status poll, not an order.
+BROKER_ORDER_URL_RE = re.compile(
+    r"https?://(api\.dhan\.co|api\.kite\.trade)[\w./-]*/orders?\b", re.IGNORECASE)
+HTTP_WRITE_VERBS = {"post", "put", "delete", "patch"}
+
+# Check 8: _core/ is the money path; trader_dashboard.py is the Flask UI monolith.
+# _core importing the UI inverts the layering, and every real instance so far sits
+# in a `try: ... except: pass` — so the day the import breaks, a risk check silently
+# stops running instead of failing loudly (webhook_executor's kill-floor check).
+CORE_DIR = "_core"
+UI_MODULE = "trader_dashboard"
 
 # ---------------------------------------------------------------- helpers
 
@@ -253,6 +278,76 @@ def check_backtest_risk_bypass(path, src, tree, findings):
             f"or be explicitly flagged to the user"))
 
 
+def _order_url_names(tree):
+    """Module-level names bound to a broker ORDER url.
+
+    Zaroori hai kyunki asli code `ORDERS_URL = "https://api.dhan.co/v2/orders"`
+    upar rakhta hai aur neeche `requests.post(ORDERS_URL, ...)` karta hai — sirf
+    literal-arg dekhne wala check use miss kar jaata.
+    """
+    names = set()
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant) \
+                and isinstance(node.value.value, str) \
+                and BROKER_ORDER_URL_RE.search(node.value.value):
+            for t in node.targets:
+                if isinstance(t, ast.Name):
+                    names.add(t.id)
+    return names
+
+
+def _hits_order_url(arg, url_names):
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return bool(BROKER_ORDER_URL_RE.search(arg.value))
+    if isinstance(arg, ast.Name):
+        return arg.id in url_names
+    if isinstance(arg, ast.JoinedStr):      # f"{BASE}/v2/orders"
+        return any(_hits_order_url(v, url_names) for v in arg.values)
+    if isinstance(arg, ast.FormattedValue):
+        return _hits_order_url(arg.value, url_names)
+    return False
+
+
+def check_raw_http_orders(path, tree, findings):
+    """Check 7 — RAW-HTTP-ORDER: broker order endpoint hit directly over HTTP."""
+    fname = os.path.basename(path)
+    if fname in RAW_ORDER_ALLOW or parent_dir(path) in RAW_ORDER_ALLOW_DIRS:
+        return
+    url_names = _order_url_names(tree)
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)):
+            continue
+        if node.func.attr.lower() not in HTTP_WRITE_VERBS:
+            continue
+        if not any(_hits_order_url(a, url_names) for a in node.args):
+            continue
+        findings.append(Finding(
+            "FAIL", "RAW-HTTP-ORDER", rel(path), node.lineno,
+            f"raw HTTP .{node.func.attr}() to a broker ORDER endpoint — bypasses "
+            f"smart_order/execution_gateway, so RMS gating, rate-limiting, "
+            f"async fill-confirm and order_store recording ALL skip. Route it "
+            f"through execution_gateway.execute_signal()/execute_exit()"))
+
+
+def check_core_imports_ui(path, tree, findings):
+    """Check 8 — CORE-IMPORTS-UI: _core/ must not depend on the Flask UI module."""
+    if parent_dir(path) != CORE_DIR:
+        return
+    for node in ast.walk(tree):
+        mods = []
+        if isinstance(node, ast.Import):
+            mods = [a.name.split(".")[0] for a in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            mods = [node.module.split(".")[0]]
+        if UI_MODULE in mods:
+            findings.append(Finding(
+                "FAIL", "CORE-IMPORTS-UI", rel(path), node.lineno,
+                f"{CORE_DIR}/ imports '{UI_MODULE}' — layering inversion: the money "
+                f"path must not depend on the UI. These imports live inside "
+                f"try/except and FAIL OPEN, so a risk check silently stops running. "
+                f"Move the shared function into {CORE_DIR}/ and import it from there"))
+
+
 # ---------------------------------------------------------------- main
 
 def audit(files):
@@ -269,6 +364,8 @@ def audit(files):
         check_state_persistence(path, src, tree, findings)
         check_singleton_guard(path, src, findings)
         check_backtest_risk_bypass(path, src, tree, findings)
+        check_raw_http_orders(path, tree, findings)
+        check_core_imports_ui(path, tree, findings)
     return findings
 
 
