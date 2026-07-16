@@ -3015,3 +3015,114 @@ karne se pehle bade size pe DOM slip (ADR-005) re-calibrate karna padega. P&L sc
 hai = jaan-boojh kar conservative (₹20/order flat brokerage se asli N-lot P&L thoda behtar
 hoga; `scripts/lot_scale.py` live fills pe asli cost-dilution naapta hai).
 
+
+---
+
+## TRAP #128 — "SELL matlab SHORT" — ek mapping jo har baar ulti thi, aur ek ghost jo 15 din pehle flag hua tha
+
+**Kab:** 2026-07-16 (live, arschain_MAIN, asli paisa)
+**Lakshan:** TradingView ne NIFTY pe 2 trade liye. Humne 1 liya. Pehla trade bhi
+wick se uda, doosra aaya hi nahi.
+
+User ka pehla hypothesis: *"wick se trade udd gaya, hamara logic tha ki trailing
+ke upar CLOSE ho tab cut ho"*. Wo lakshan sahi tha, **wajah nahi**. Teen alag
+bugs the, teeno alag.
+
+### 1. Live SL 2.5× tight chal rahi thi — ek missing config key
+
+Exit tag: `DEFAULT_TSL_SL:-1600`. Math exact match karta hai: 2 lot, peak ₹559
+(`MIN_LTP` tag se), initial SL `-2000` + 2 step × 200 → `-1600` → premium 152.31
+→ wick ne le liya.
+
+Par user ne RMS me **₹2,500/lot** set ki thi, ₹1,000 nahi. Kyun ₹1,000 chala?
+
+```python
+ps = rc.get("per_strategy", {}).get(strategy or "", {})   # miss -> {} -> global
+```
+
+RMS ka lookup **raw dict** hai. Live strategy ka id `arschain_MAIN` hai. Override
+`ARS_CHAIN_V1` aur `webhook_v1` pe tha. `arschain_MAIN` pe kuch nahi → `{}` →
+global (₹1,000). **Koi error nahi, koi log nahi.**
+
+14-July ka "7 discretionary + webhook" rollout `webhook_v1` pe land hua — generic,
+kabhi-na-chalne-wala config — asli live `arschain_MAIN` pe nahi. Rollout aadha
+landa aur kisi ko pata nahi chala.
+
+> `strategy_registry.resolve()` **pehle se maujood tha** aur ye bilkul isi kaam ke
+> liye bana tha (`ARS_CHAIN_V1` → `04.01`, case-insensitive). Paisa-wala code usse
+> poochta hi nahi tha. **Ek sahi abstraction likh dena kaafi nahi — jo code paisa
+> chalata hai use uske raste me DAALNA padta hai.**
+
+### 2. `direction` option ke order-side se nikalti thi — har sell-side config pe ulti
+
+```python
+opt_action = p.get("opt_action") or ("SELL" if p.get("entry") == "SELL" else "BUY")
+direction  = "SHORT" if opt_action == "SELL" else "LONG"     # _recover_wh_state
+```
+
+`arschain_MAIN` ka config: `long_opt_type: PE`, `short_opt_type: CE`,
+`opt_action: SELL`. Yaani **LONG pe bhi SELL, SHORT pe bhi SELL.**
+
+To ye mapping kabhi-kabhi galat nahi thi — **hamesha `SHORT` deti thi**, dono
+directions pe. Dashboard ~10:15 pe restart hua, 10:01 ki LONG position `SHORT`
+bankar wapas aayi.
+
+**Sabak:** `direction` (index-side signal) aur `opt_action` (option order side)
+do alag cheezein hain. Ek se doosri nikalna sirf tab chalta hai jab strategy
+long=BUY/short=SELL kare. Sell-side strategy pe wo ek **constant** hai — usme
+information hai hi nahi. Ek field se doosra derive karne se pehle poocho: *kya
+source field kabhi badalta bhi hai?*
+
+Sahi source: contract ka apna CE/PE, scrip master ke `SEM_OPTION_TYPE` se (naya
+`dhan_master.get_option_type_by_sec_id()` — structured field, `trad_sym` string
+kabhi mat kaato, TRAP #13/#79), aur strategy ke apne long/short opt-type config se
+match karo. Na nikle → **skip + loud log**, guess mat karo (wahi doctrine jo
+`get_lot_size_by_sec_id()` → None pe hai).
+
+### 3. Cross-process ghost — TRAP #62, 15 din pehle flag hua, kabhi band nahi hua
+
+`_wh_state` **per-process** hai. `algo-dashboard` aur `algo-monitor` dono
+`webhook_executor` import karte hain → **do alag dicts**. `release_position()`
+sirf apne process ki copy badalta hai.
+
+10:27 pe `DEFAULT_TSL_SL` `algo-monitor` me fire hua → uski copy saaf → dashboard
+ki copy me ghost hamesha ke liye. 11:15 pe: `ghost.direction == "SHORT"` ==
+incoming `"SHORT"` → **`ENTRY skip — already SHORT (pyramiding off)`**.
+
+TRAP #62 (2026-07-01) me likha tha: *"Account-level trailing-profit-lock squareoff
+doesn't inform the owning strategy process — flagged, not fixed."* Do direction
+diye the, dono me se koi liya nahi gaya. **15 din baad usi shape ne trade khaaya.**
+
+Ab: `handle_signal()` cached position ko `order_store` se verify karta hai
+(durable, cross-process) — skip ya reversal ka faisla lene se **pehle**. Error pe
+"still open" maano: **trade miss karna recoverable hai, live leg double karna
+nahi.**
+
+### 4. Aur wick? Wo bug tha hi nahi.
+
+Candle-close confirm **pehle se hai** (`trader_dashboard.py:5989`) — par sirf
+profit-lock zone me (`sl_level >= 0`). Yahan SL `-1600` thi = loss zone → live
+tick pe fire, **by design** ("immediate capital protection").
+
+Par RMS global me user ka `default_sl_candle_close: True` set hai. Wo flag sirf
+dropdown/legacy SL types pe `SL_CANDLE_CLOSE:true` stamp karta hai —
+**aggressive profile use karta hi nahi.** User ko laga candle-close ON hai. Tha
+nahi. Aur ye trade fir bhi nahi marta agar SL sahi ₹2,500/lot pe hoti (premium
+175.38, wick 155 se 20 point door).
+
+### Teen sabak
+
+1. **Lakshan wajah nahi hai.** "Wick se uda" sahi tha; wick ka fix kuch nahi
+   bachata. Asli wajah ek missing config key thi — do layer neeche.
+2. **Silent fallback = wo bug jo mahino zinda rehta hai.** `{}` → global, raw
+   alias → display, dono chup the. Ek `⚠ UNREGISTERED` line pehle din pakad leti.
+3. **"Flagged, not fixed" ek deadline hai, decision nahi.** TRAP #62 ka writeup
+   perfect tha. Usne kuch nahi bachaya.
+
+**Fix:** commit `cd77fd1` (dono code path + `TEST/test_wh_direction.py` — 13
+checks, asli scrip master + asli config pe incident replay), `99f29d7` +
+ADR-007 (identity/naming), aur `arschain_MAIN` ka RMS override (config).
+
+**Abhi khula:** `order_store.strategy` pe koi validation nahi — pichle mahine
+`''` ne **15 live orders** likhe, `unknown` ne 13, `default` ne 12. Jab tak sirf
+registered ID enforce nahi hoti, ye class band nahi hui.
