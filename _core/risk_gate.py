@@ -1220,6 +1220,33 @@ def daily_max_trades_hit(strategy, rc=None):
     return False, ""
 
 
+def _configured_lots(strategy):
+    """This strategy's configured LOTS per trade, or None if unresolvable.
+
+    `qty` means LOTS for options in both config shapes — webhook_executor's
+    _DEFAULTS documents it literally ("options: lots (x lot_size)") and
+    range_trader/01_rsi_v1 pass cfg['qty'] straight through as lots too.
+    Checks the webhooks map first (a webhook strategy id like arschain_MAIN
+    lives ONLY there, not at config top-level).
+
+    Returns None rather than guessing: this multiplies a risk cap, and a wrong
+    multiplier here is worse than not having the feature."""
+    if not strategy:
+        return None
+    try:
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        return None
+    src = (cfg.get("webhooks") or {}).get(strategy) or cfg.get(strategy) or {}
+    if not isinstance(src, dict):
+        return None
+    try:
+        n = int(src.get("qty"))
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
 def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
     """The unified ₹ daily-loss cap for a strategy (always returns a positive
     number — RMS is mandatory).
@@ -1241,6 +1268,34 @@ def effective_daily_loss_cap(strategy=None, rc=None, mode=None, broker=None):
     rc = rc or _risk_cfg()
     ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {})
     gl = (rc.get("global", {}) or {})
+
+    # ── Per-strategy PER-LOT cap — highest priority for THIS strategy, ahead of
+    # both the %-of-balance branch and the flat ₹ ones below. Opt-in: absent =
+    # nothing changes for any other strategy.
+    #
+    # Why (2026-07-16, user): every other cap here is a flat ₹ that does NOT
+    # scale with size, so doubling qty silently halves your per-lot risk. Live
+    # numbers that day: max_loss_pct=1 of a ₹11.79L Kite balance = ₹11,789/day,
+    # which at arschain_MAIN's 2 lots is ₹5,894/lot — WIDER than the worst single
+    # trade ever measured on it (₹10,588 whole / ₹5,294 per lot). The breaker
+    # could not actually fire on a bad trade. A per-lot number is the only shape
+    # that stays honest when lots change.
+    per_lot = ps.get("max_loss_per_lot_rs")
+    if per_lot is not None and str(per_lot).strip() != "":
+        try:
+            per_lot = float(per_lot)
+        except (TypeError, ValueError):
+            per_lot = None
+        if per_lot and per_lot > 0:
+            lots = _configured_lots(strategy)
+            if lots:
+                return per_lot * lots
+            # lots unresolvable → do NOT guess a multiplier (a wrong one silently
+            # mis-sizes a risk cap). Fall through to the flat caps below, which
+            # can never be "unlimited".
+            print(f"[risk_gate] ⚠ max_loss_per_lot_rs set for '{strategy}' but its "
+                  f"configured lots couldn't be resolved — using the flat cap instead",
+                  flush=True)
 
     if mode == "live" and broker:
         pct = ps.get("max_loss_pct") if ps.get("max_loss_pct") is not None else gl.get("max_loss_pct")
