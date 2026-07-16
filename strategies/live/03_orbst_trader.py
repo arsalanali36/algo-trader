@@ -300,7 +300,8 @@ def run(paper_mode=True, strategy_id="orbst_v1"):
     # restart that happened AFTER the position closed, handing the strategy its
     # whole max-trades quota again (seen live 2026-07-16 on orbst). None = can't
     # read -> fall back to the old in-memory guess rather than assume 0.
-    _et = risk_gate.entries_today(strategy_id)
+    import risk_gate as _rg_cnt   # local: not every trader imports risk_gate at module level
+    _et = _rg_cnt.entries_today(strategy_id)
     trades_today = _et if _et is not None else (0 if pos is None else 1)
     last_date = ist_now().date()
 

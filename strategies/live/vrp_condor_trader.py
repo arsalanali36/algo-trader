@@ -219,9 +219,12 @@ def run(paper_mode=True, strategy_id="vrp_condor_v1"):
             if not spot:
                 log.warning("[VRPC] no spot"); time.sleep(20); continue
 
-            # heartbeat every ~5 min so health-check sees the process is alive between
-            # market-open and the 15:10 entry window (was silent → false "heartbeat gap").
-            _hb = f"{now.hour}:{now.minute // 5}"
+            # Heartbeat so health-check sees the process is alive between market-open
+            # and the 15:10 entry window (was silent → false "heartbeat gap").
+            # MUST stay under health_check's floor of 180s (`hb_limit`, health_check.py)
+            # — at the original ~5 min this logged slower than that floor, so the 09:20
+            # preflight reported a false RED for a perfectly healthy condor.
+            _hb = f"{now.hour}:{now.minute // 2}"
             if _hb != _last_hb:
                 _last_hb = _hb
                 eh0, em0 = tc.get("entry_hm", [15, 10])
