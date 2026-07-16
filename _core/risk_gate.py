@@ -217,18 +217,46 @@ def kill_floor_config():
     }
 
 
+def kill_floor_flag_path():
+    """Today's kill-floor flag file — the ONE place this path is built.
+
+    Ye teen jagah alag-alag ban raha tha (writer + do readers), aur do alag date
+    maths pe: risk_gate IST se, trader_dashboard naive `datetime.now()` (server
+    clock) se. Market hours (09:15-15:30 IST = 03:45-10:00 UTC) me dono ka
+    calendar date same hota hai, isliye ye kabhi phata nahi — par ek hi flag ke
+    do sach rakhna wahi shape hai jo TRAP #77/#84 me kaat chuka hai. Ab path,
+    read aur write teeno yahin se.
+    """
+    from datetime import datetime, timedelta, timezone
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    return BASE_DIR / "data" / f"trailing_lock_fired_{ist.strftime('%Y-%m-%d')}.txt"
+
+
 def kill_floor_fired_today() -> bool:
     """True if the account-level kill-floor (or aggregate trailing lock — same
     flag file, deliberately: both are account-level 'day is done' events) has
     fired today. Checked by gating_status() so EVERY entry path (strategies via
-    strategy_safety.gate_entry AND webhook via its own flag check) is blocked —
-    previously only the webhook honored this flag, a gap found while building
-    the kill-floor (2026-07-02)."""
+    strategy_safety.gate_entry AND webhook) is blocked — previously only the
+    webhook honored this flag, a gap found while building the kill-floor
+    (2026-07-02); the webhook then kept its OWN copy of this check inside
+    trader_dashboard until 2026-07-16 (see kill_floor_flag_path)."""
     try:
-        from datetime import datetime, timedelta, timezone
-        ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
-        flag = BASE_DIR / "data" / f"trailing_lock_fired_{ist.strftime('%Y-%m-%d')}.txt"
-        return flag.exists()
+        return kill_floor_flag_path().exists()
+    except Exception:
+        return False
+
+
+def mark_kill_floor_fired(reason: str) -> bool:
+    """Raise today's account-level entry block. Returns True if written.
+
+    Caller (pos_monitor's kill-floor branch) ne pehle ye path khud banaya tha —
+    ab yahan, taaki writer aur dono readers hamesha ek hi file pe rahein.
+    """
+    try:
+        p = kill_floor_flag_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(reason)
+        return True
     except Exception:
         return False
 

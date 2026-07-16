@@ -5443,14 +5443,11 @@ def _save_tsl_state():
         pass
 
 
-def _trailing_lock_fired_today() -> bool:
-    """Returns True if trailing squareoff already fired today — blocks new entries."""
-    try:
-        from datetime import datetime as _dtc
-        _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-        return _flag.exists()
-    except Exception:
-        return False
+# _trailing_lock_fired_today() DELETED (2026-07-16) — it was risk_gate's
+# kill_floor_fired_today() with different date math (naive server clock vs IST),
+# and its only caller was _core/webhook_executor importing it back out of this UI
+# module inside a try/except: pass. LESSONS TRAP #56 already recorded that this
+# copy "fails PERMISSIVE, not safe". Use risk_gate.kill_floor_fired_today().
 
 
 def pos_monitor_loop():
@@ -6062,11 +6059,19 @@ def pos_monitor_loop():
                         # every strategy via risk_gate.gating_status (added 2026-07-02)
                         try:
                             from datetime import datetime as _dtc
-                            _flag = BASE_DIR / "data" / f"trailing_lock_fired_{_dtc.now().strftime('%Y-%m-%d')}.txt"
-                            _flag.write_text(f"KILL_FLOOR fired at {_dtc.now().strftime('%H:%M:%S')} — "
-                                             f"MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
-                                             f"for {_kfc['confirm_secs']:.0f}s (peak ₹{_kf_state['peak']:.0f})")
-                            print(f"[KILL-FLOOR] Flag written: {_flag.name} — ALL new entries blocked for today.", flush=True)
+                            import risk_gate as _rg_kf
+                            # risk_gate owns this flag's path now — the writer used
+                            # naive datetime.now() while risk_gate's reader (the one
+                            # that blocks every strategy) used IST. Same file, two
+                            # date maths. See risk_gate.kill_floor_flag_path().
+                            if _rg_kf.mark_kill_floor_fired(
+                                    f"KILL_FLOOR fired at {_dtc.now().strftime('%H:%M:%S')} — "
+                                    f"MTM ₹{_total_pnl:.0f} below floor ₹{_kf_state['floor']:.0f} "
+                                    f"for {_kfc['confirm_secs']:.0f}s (peak ₹{_kf_state['peak']:.0f})"):
+                                print(f"[KILL-FLOOR] Flag written: {_rg_kf.kill_floor_flag_path().name} — "
+                                      f"ALL new entries blocked for today.", flush=True)
+                            else:
+                                print("[KILL-FLOOR] Flag write FAILED — new entries are NOT blocked!", flush=True)
                         except Exception as _fe:
                             print(f"[KILL-FLOOR] Flag write failed: {_fe}", flush=True)
                         try:

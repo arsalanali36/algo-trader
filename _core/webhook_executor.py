@@ -532,14 +532,19 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
         _log(f"ENTRY blocked {key} — no entry after {_no_entry_hm[0]:02d}:{_no_entry_hm[1]:02d} (RMS)")
         return {"ok": False, "msg": "no entry after cutoff"}
 
-    # ── trailing profit lock fired today → no new entries ──
-    try:
-        from trader_dashboard import _trailing_lock_fired_today
-        if _trailing_lock_fired_today():
-            _log(f"ENTRY blocked {key} — trailing profit lock fired today (floor breached)")
-            return {"ok": False, "msg": "trailing profit lock fired today — no new entries"}
-    except Exception:
-        pass
+    # ── trailing profit lock / kill-floor fired today → no new entries ──
+    # Ye check pehle `from trader_dashboard import _trailing_lock_fired_today`
+    # tha, poore `try/except: pass` ke andar — yaani _core apni ekmatra kill-floor
+    # guard ke liye UI monolith pe depend kar raha tha, aur FAIL-OPEN tha: us
+    # import ke toot-te hi webhook entries floor fire hone ke baad bhi chalti
+    # rehtin, chupchaap. Chalta sirf process topology ki wajah se tha (dono hosts
+    # webhook_executor ko trader_dashboard ke andar se import karte hain, to
+    # circular import sys.modules cache se resolve ho jaata).
+    # Ab wahi risk_gate predicate jo har strategy ko block karta hai (gating_status
+    # ke through) — ek hi sach, aur module-level import, to fail bhi loud hoga.
+    if _rg.kill_floor_fired_today():
+        _log(f"ENTRY blocked {key} — trailing profit lock fired today (floor breached)")
+        return {"ok": False, "msg": "trailing profit lock fired today — no new entries"}
 
     # ── REVERSAL vs duplicate (TV ka strategy.entry auto-reverse mirror karo) ──
     # TV reverse karta hai par alert sirf naya ENTRY bhejta. Pehle hum "position
