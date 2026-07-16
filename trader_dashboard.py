@@ -4259,9 +4259,13 @@ def _ingest_downloader_alerts():
                 msg = a.get("msg") or json.dumps(a, ensure_ascii=False)
                 lvl = _ALERT_LEVEL_KEYS.get(a.get("key") or "", "error")
             elif isinstance(a, str):
-                # auto_data_downloader.py plain strings likhta hai — aam taur pe
-                # informational (data gap / token notice), hard error nahi.
-                key, msg, lvl = a, a, "warn"
+                # Plain-string alerts (downloader / health_check / rate-limit-verify).
+                # Inke writers pehle se emoji me severity bata dete hain — 🔴 = serious
+                # (jaise "Dhan token expire ho gaya", jispe data aana hi band ho jaata
+                # hai), ⚠️ = warning. Pehle sab ko "warn" maan liya jaata tha, jisse
+                # token-expiry ek data-gap notice jitna hi halka dikhta tha.
+                key, msg = a, a
+                lvl = "error" if a.lstrip().startswith("🔴") else "warn"
             else:
                 continue
             key = str(key)[:200]
