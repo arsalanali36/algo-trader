@@ -646,6 +646,32 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] margin_for_order({kite_tradingsymbol}) failed: {e}")
             return None
 
+    def basket_margin(self, orders, consider_positions=False):
+        """Real HEDGED margin for a multi-leg basket via Kite's
+        basket_order_margins API — the ₹ Zerodha actually blocks for the whole
+        structure, which for a hedged position is far below the sum of each
+        leg's standalone margin_for_order() (live-measured on a 4-leg NIFTY
+        condor: ₹82,334 basket vs ₹3,72,015 standalone-sum — 78% lower).
+
+        READ-ONLY: no order is placed. `orders` = list of Kite order dicts
+        (exchange/tradingsymbol/transaction_type/variety/product/order_type/
+        quantity/price).
+
+        Returns float ₹ (final total) or None on any failure — caller must
+        never treat None as 0.
+        """
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            res = kite.basket_order_margins(
+                orders, consider_positions=consider_positions, mode="compact")
+            total = ((res or {}).get("final") or {}).get("total")
+            return float(total) if total is not None else None
+        except Exception as e:
+            log.warning(f"[KITE] basket_margin({len(orders)} legs) failed: {e}")
+            return None
+
     def funds(self) -> dict:
         import kite_rate_limiter as _krl
         try:

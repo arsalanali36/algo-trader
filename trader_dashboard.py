@@ -2281,6 +2281,190 @@ def api_trade_chart_underlying_data():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+def _payoff_rows_for_ids(ids):
+    """Open order_store rows for the given ids, across a 7-day lookback so
+    carried-over positional legs (entered on a prior day) resolve too — same
+    lookback /api/orders' carry-over union uses."""
+    import order_store
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+    lb = (ist - _td(days=7)).strftime('%Y-%m-%d')
+    rows = order_store.trades_for_range(lb, ist.strftime('%Y-%m-%d')).get('open', [])
+    want = {str(i) for i in ids}
+    return [r for r in rows if str(r.get('id')) in want]
+
+
+def _payoff_attach_ltp(rows):
+    """Live premium per leg onto the order_store rows. order_store carries no
+    price beyond the ENTRY fill — but implied vol (and hence the today-curve /
+    POP / margin price) must come from the CURRENT premium, not the entry one.
+    Same 3-tier source pos_monitor uses: live feed → shared cache → REST."""
+    try:
+        import ltp_poller
+        ltp_poller.request_watch([(r.get('segment') or 'NSE_FNO', str(r.get('sec_id')))
+                                  for r in rows if r.get('sec_id')])
+    except Exception:
+        pass
+    for r in rows:
+        sid = r.get('sec_id')
+        if not sid:
+            continue
+        ltp = None
+        try:
+            import dhan_feed
+            q = dhan_feed.get_quote(str(sid), max_age=_FEED_MAX_AGE)
+            ltp = float(q.get('ltp') or 0) if q else 0
+        except Exception:
+            ltp = None
+        if not ltp:
+            try:
+                import shared_ltp_cache
+                ltp = float(shared_ltp_cache.get_stale(str(sid), max_age=180) or 0)
+            except Exception:
+                ltp = 0
+        if not ltp:
+            try:
+                ltp = float(_rest_ltp_fallback(sid, r.get('segment') or 'NSE_FNO') or 0)
+            except Exception:
+                ltp = 0
+        if ltp:
+            r['ltp'] = ltp
+    return rows
+
+
+def _payoff_spot(legs):
+    """Live underlying spot for the legs' root symbol — shared cache first
+    (ltp_poller keeps index spot warm; zero extra Dhan calls), REST fallback."""
+    if not legs:
+        return None
+    root = str(legs[0].get('trad_sym') or '').split('-')[0].strip().upper()
+    if not root:
+        return None
+    try:
+        import shared_ltp_cache
+        v = shared_ltp_cache.get_index(root, max_age=60)
+        if v:
+            return float(v)
+    except Exception:
+        pass
+    try:
+        if root in _EQ_IDX_SEC:
+            sid, seg = _EQ_IDX_SEC[root]
+        else:
+            import universe
+            sid, seg = universe.equity_secid(root), "NSE_EQ"
+        if sid:
+            return float(_rest_ltp_fallback(sid, seg) or 0) or None
+    except Exception:
+        pass
+    return None
+
+
+@app.route('/api/position-payoff')
+def api_position_payoff():
+    """Payoff / zone analytics for one open position GROUP (DISPLAY-ONLY —
+    describes an existing position, places nothing, gates nothing).
+    Query: ids=<comma-separated order_store ids>. Margin is a separate route
+    (5 Kite calls — slow), so the panel renders instantly."""
+    try:
+        import payoff
+        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
+        if not ids:
+            return jsonify({"ok": False, "msg": "no ids"})
+        rows = _payoff_attach_ltp(_payoff_rows_for_ids(ids))
+        if not rows:
+            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+        spot = _payoff_spot(payoff.build_legs(rows))
+        return jsonify(payoff.analyse(rows, spot))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/position-payoff-margin')
+def api_position_payoff_margin():
+    """Real HEDGED margin (Kite basket_order_margins, read-only) vs the
+    standalone per-leg sum the Margin column shows. Separate route because it
+    costs ~5 rate-limited Kite calls."""
+    try:
+        import payoff
+        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
+        rows = _payoff_attach_ltp(_payoff_rows_for_ids(ids))
+        if not rows:
+            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+        return jsonify(payoff.basket_margin(payoff.build_legs(rows)))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+def _leg_closes(sec_id, from_date, to_date):
+    """1-min closes {epoch: close} for one option leg over a date range."""
+    import requests as _req
+    token, cid = _creds()
+    _rl.acquire("candle")
+    r = _req.post("https://api.dhan.co/v2/charts/intraday",
+                  headers={"access-token": token, "client-id": cid,
+                           "Content-Type": "application/json"},
+                  json={"securityId": str(sec_id), "exchangeSegment": "NSE_FNO",
+                        "instrument": "OPTIDX", "expiryCode": 0,
+                        "fromDate": from_date, "toDate": to_date}, timeout=15)
+    d = r.json()
+    if not d.get("close"):
+        return {}
+    return {int(ts): round(float(c), 2) for ts, c in zip(d["timestamp"], d["close"])}
+
+
+@app.route('/api/position-legs-series')
+def api_position_legs_series():
+    """Per-leg premium series + the COMBINED (net-structure) P&L series for a
+    position group. Feeds both the 4-up per-leg grid and the combined-premium
+    chart. Spans entry-date -> today (positional legs are multi-day).
+    Query: ids=<comma ids>."""
+    try:
+        import payoff
+        from datetime import datetime as _d, timedelta as _td, timezone as _tz
+        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
+        rows = _payoff_rows_for_ids(ids)
+        if not rows:
+            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+        legs = payoff.build_legs(rows)
+        legs = [L for L in legs if L.get('sec_id')]
+        if not legs:
+            return jsonify({"ok": False, "msg": "legs have no sec_id"})
+
+        ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+        today = ist.strftime('%Y-%m-%d')
+        entry_dates = [r.get('entry_date') for r in rows if r.get('entry_date')]
+        frm = min(entry_dates) if entry_dates else today
+
+        out_legs, bars = [], {}
+        for L in legs:
+            b = _leg_closes(L['sec_id'], frm, today)
+            bars[L['trad_sym']] = (b, L)
+            out_legs.append({
+                "trad_sym": L['trad_sym'], "side": L['side'], "opt": L['opt'],
+                "strike": L['strike'], "qty": L['qty'], "entry": L['entry'],
+                "series": sorted([[t, c] for t, c in b.items()]),
+            })
+
+        # entry cash: SELL = credit (+), BUY = debit (-)
+        entry_net = sum((L['entry'] if L['side'] == 'SELL' else -L['entry']) for L in legs)
+        # combined P&L/unit at each bar both legs have a price for
+        common = None
+        for b, _L in bars.values():
+            ks = set(b.keys())
+            common = ks if common is None else (common & ks)
+        combined = []
+        for ts in sorted(common or []):
+            # value if closed now: short leg costs -ltp, long leg returns +ltp
+            net = sum((-b[ts] if L['side'] == 'SELL' else b[ts]) for b, L in bars.values())
+            combined.append([ts, round(net + entry_net, 2)])
+
+        return jsonify({"ok": True, "legs": out_legs, "combined": combined,
+                        "entry_net": round(entry_net, 2), "from": frm, "to": today})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 def _dhan_live_fate(resp, token, cid):
     """Live order ka asli anjaam pata karo. Dhan ka 200 = 'accepted', 'filled' NAHI.
     Price-band/freeze pe order accept hoke turant REJECT ho jaata (async). Return
