@@ -25,6 +25,22 @@ KAISE:
   trap nahi (wahi design jo `_core/singleton_guard.py` strategies ke liye karta
   hai, bas yahan file-mtime ki jagah explicit timestamp).
 
+SCOPE (2026-07-16, audit me pakda — ye guard KHUD is bug ka shikaar tha):
+  Hook do jagah register hai, aur dono zaroori hain:
+    - `CODE3B/.claude/settings.json`  → CODE3B se khuli session
+    - `<parent>/.claude/settings.json` → `D:\KHAZANA\KHAZANA\PYTHON` se khuli session
+  Kyun: hook ka command `$CLAUDE_PROJECT_DIR/.claude/session_guard.py` resolve hota
+  hai. Sirf CODE3B me register tha, to parent se khuli session ye script chalati hi
+  nahi thi — na lock leti, na deny hoti. Yaani jis cheez ko rokne ke liye guard bana
+  tha (do sessions, ek repo), guard usi ke against bekaar tha. Live pakda gaya: ek
+  session CODE3B me commit kar rahi thi jab parent-rooted session usi file pe kaam
+  karne ja rahi thi.
+
+  Isi wajah se `_targets_repo()` hai: parent se khuli session CODE7/CODE2 ka bhi kaam
+  karti hai, aur wo writes IS repo ka lock nahi maangne chahiye. LOCK/REPO dono
+  `__file__` se aate hain, to lock hamesha ISI repo ka lagta hai — chahe hook kahin
+  se bhi chale.
+
 FAIL-OPEN: koi bhi gadbad (JSON toota, disk fail, session_id nahi mila) → allow.
   Ek guard jo kaam rok de, us problem se bada masla hai jo ye rokta hai.
 """
@@ -36,7 +52,11 @@ import time
 HERE = os.path.dirname(os.path.abspath(__file__))
 LOCK = os.path.join(HERE, ".session_lock.json")
 
-# Itni der koi write na aaye to lock chhod do. Ek session jo 40 min soch raha hai
+# Is repo ki jad (.claude/ ka parent). LOCK aur REPO dono __file__ se aate hain,
+# isliye ye guard kahin se bhi register ho — lock hamesha ISI repo ka lagta hai.
+REPO = os.path.dirname(HERE)
+
+# Itni der koi write na aaye to lock chhod do. (Live-verified 2026-07-16.) Ek session jo 40 min soch raha hai
 # wo lock kho dega — theek hai: wo agla write karte hi wapas le lega (agar tab tak
 # koi aur na le chuka ho). Isse chhota rakha to sessions aapas me lock cheenenge;
 # bada rakha to ek band session doosre ko der tak rokega.
@@ -87,6 +107,51 @@ def _is_write(tool, tool_input):
     return False
 
 
+def _norm(p):
+    """Windows-safe path compare form: absolute, lowercase, forward slashes."""
+    try:
+        n = os.path.normcase(os.path.abspath(str(p)))
+    except Exception:
+        return ""
+    n = n.replace("\\", "/")
+    while "//" in n:
+        n = n.replace("//", "/")
+    return n
+
+
+_REPO_N = _norm(REPO)
+
+
+def _under_repo(p):
+    n = _norm(p)
+    return bool(n) and (n == _REPO_N or n.startswith(_REPO_N + "/"))
+
+
+def _targets_repo(tool, tool_input, cwd):
+    """Kya ye write SACH ME is repo ko chhu raha hai?
+
+    Guard ab parent-rooted session me bhi register hota hai (dekho module docstring
+    ka SCOPE note), isliye ye check zaroori hai — warna CODE7/CODE2 ka koi edit
+    CODE3B ka lock le leta aur CODE3B ki session ko bina wajah block kar deta.
+    Shak ho to True (guard lagao) — ek extra lock, chhoote hue lock se behtar hai.
+    """
+    ti = tool_input or {}
+    if tool in _WRITE_TOOLS:
+        fp = ti.get("file_path") or ti.get("notebook_path") or ""
+        return _under_repo(fp) if fp else False
+    if tool in ("Bash", "PowerShell"):
+        # `cd "<repo>" && git commit ...` — cwd payload me session ka hota hai,
+        # command ka nahi; isliye dono dekho.
+        cmd = str(ti.get("command") or "")
+        cmd_n = cmd.lower().replace("\\\\", "/").replace("\\", "/")
+        while "//" in cmd_n:
+            cmd_n = cmd_n.replace("//", "/")
+        if _REPO_N and _REPO_N in cmd_n:
+            return True
+        return _under_repo(cwd) if cwd else False
+    return False
+
+
 def main():
     try:
         payload = json.load(sys.stdin)
@@ -95,7 +160,12 @@ def main():
 
     sid = str(payload.get("session_id") or "")
     tool = payload.get("tool_name") or ""
-    if not sid or not _is_write(tool, payload.get("tool_input")):
+    tin = payload.get("tool_input")
+    if not sid or not _is_write(tool, tin):
+        _emit_allow()
+
+    # Doosre repo ka write → hamara lock isse koi matlab nahi rakhta.
+    if not _targets_repo(tool, tin, payload.get("cwd") or ""):
         _emit_allow()
 
     now = int(time.time())
