@@ -35,7 +35,7 @@
       set('wh-daily_cap', WH_GLOBAL.daily_amount_cap != null ? WH_GLOBAL.daily_amount_cap : 5000);
       set('wh-global_max', WH_GLOBAL.global_max_trades != null ? WH_GLOBAL.global_max_trades : 0);
       whRenderConn();
-      if (!WH_SEL || !WH_STRATS[WH_SEL]) WH_SEL = Object.keys(WH_STRATS)[0];
+      if (!WH_SEL || !WH_STRATS[WH_SEL]) WH_SEL = Object.keys(WH_STRATS).find(n => !regHidden(n)) || Object.keys(WH_STRATS)[0];
       whRenderStratList();
       whSelectStrat(WH_SEL);
     }
@@ -43,7 +43,11 @@
     function whRenderStratList() {
       const box = document.getElementById('wh-strat-list'); if (!box) return;
       box.innerHTML = '';
-      Object.keys(WH_STRATS).forEach(name => {
+      // Filter at RENDER, never at load: WH_STRATS must stay complete because
+      // _whSave() deletes any webhooks key absent from it, and `default` is a
+      // LIVE fallback (_strat_cfg() lands on it for an unknown strategy).
+      // Hiding must never become deleting.
+      Object.keys(WH_STRATS).filter(n => !regHidden(n) || n === WH_SEL).forEach(name => {
         const c = WH_STRATS[name]; const sel = name === WH_SEL;
         const dot = c.active !== false ? '#3fb950' : '#6e7681';
         const sub = [c.instrument || 'options', c.broker || 'dhan', c.mode || 'paper'].join(' · ');
@@ -51,7 +55,7 @@
         d.style.cssText = 'cursor:pointer;border-radius:6px;padding:7px 8px;border:1px solid ' + (sel ? '#1f6feb' : '#30363d') + ';background:' + (sel ? '#1f6feb22' : '#0d1117');
         d.onclick = () => whSelectStrat(name);
         d.innerHTML = '<div style="display:flex;align-items:center;gap:6px"><span style="width:7px;height:7px;border-radius:50%;background:' + dot + '"></span>'
-          + '<span style="font-size:12px;' + (sel ? 'font-weight:600' : '') + ';color:' + (c.active !== false ? '#e6edf3' : '#8b949e') + '">' + name + '</span></div>'
+          + '<span title="' + name.replace(/"/g, '&quot;') + '" style="font-size:12px;' + (sel ? 'font-weight:600' : '') + ';color:' + (c.active !== false ? '#e6edf3' : '#8b949e') + '">' + (regLabel(name) || name) + '</span></div>'
           + '<div style="font-size:10px;color:#8b949e;margin-top:2px">' + sub + '</div>';
         box.appendChild(d);
       });
@@ -60,7 +64,9 @@
     function whSelectStrat(name) {
       if (!WH_STRATS[name]) return;
       WH_SEL = name; const c = WH_STRATS[name];
-      document.getElementById('wh-sel-name').innerText = name;
+      const _hdr = document.getElementById('wh-sel-name');
+      _hdr.innerText = regLabel(name) || name;
+      _hdr.title = name;   // raw config_key on hover — never renamed (history)
       const set = (id, v) => { const el = document.getElementById(id); if (el != null && v != null) el.value = v; };
       set('wh-instrument', c.instrument || 'options');
       set('wh-broker', c.broker || 'dhan');
@@ -311,10 +317,13 @@
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
 
       const _sid = t.strategy ? t.strategy.split(' | ')[0] : '';
-      // Strategy id chip — show the actual id (ARS_CHAIN_V1 / rsi_v1 / chainzone_v1),
-      // registry code (04.02…) + friendly label as tooltip.
+      // Strategy chip — registry code + NAME (04.04 · Ars chain - DirectWebhook),
+      // raw config_key on hover. Was the other way round, which is why raw keys
+      // like arschain_MAIN / ARS_CHAIN_V1 / range_v1 kept being what you actually
+      // read — the registry exists so those never have to be recognised on sight.
+      const _sidTxt = regId(_sid) !== _sid ? (regId(_sid) + ' · ' + regLabel(_sid)) : (regLabel(_sid) || _sid);
       const _sidChip = _sid
-        ? '<span title="' + ((regLabel(_sid) || _sid) + (regId(_sid) !== _sid ? ' · ' + regId(_sid) : '')).replace(/"/g, '&quot;') + '" style="background:#8957e522;color:#bc8cff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:3px">' + _sid + '</span>'
+        ? '<span title="' + _sid.replace(/"/g, '&quot;') + '" style="background:#8957e522;color:#bc8cff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:3px">' + _sidTxt + '</span>'
         : '';
       let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + _sidChip;
 
