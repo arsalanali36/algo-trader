@@ -394,101 +394,113 @@ def run(paper_mode=True, strategy_id="ema"):
             log.info(f"── Scanning {len(sym_list)} symbols | EMA {fast}/{slow} ──")
 
             for sym in sym_list:
-                if sym not in SYMBOLS:
-                    continue
+                # Per-symbol isolation: pehle ek symbol ka koi bhi exception
+                # POORI 24-symbol scan cycle gira deta tha (sirf loop-level
+                # catch tha), yaani baaki 23 symbol chup-chaap skip — aur
+                # `Loop error: <msg>` me traceback na hone se ye pata bhi nahi
+                # chalta tha ki kaun sa symbol/kaunsi line tooti. Ab ek symbol
+                # ka error sirf usi symbol ko skip karta hai.
+                try:
+                    if sym not in SYMBOLS:
+                        continue
 
-                t_count = trades_today.get(sym, 0)
-                pos     = positions.get(sym, 0)
+                    t_count = trades_today.get(sym, 0)
+                    pos     = positions.get(sym, 0)
 
-                # max_trades hit + no open position → skip entirely
-                if t_count >= max_t and pos == 0:
-                    log.info(f"  {sym:12s} max trades ({max_t}) hit — skip")
-                    continue
+                    # max_trades hit + no open position → skip entirely
+                    if t_count >= max_t and pos == 0:
+                        log.info(f"  {sym:12s} max trades ({max_t}) hit — skip")
+                        continue
 
-                df = fetch_candles(sym, tf)
-                # len<2 guard: at market-open only 1 bar exists → df["close"].iloc[-2]
-                # below is out-of-bounds and crashes the WHOLE 24-symbol scan cycle
-                # (no per-symbol try/except). Same shape as TRAP #86 (01_rsi_v1 iloc[-2]).
-                if df is None or df.empty or len(df) < 2:
-                    log.warning(f"  {sym:12s} no data / warming up")
-                    continue
+                    df = fetch_candles(sym, tf)
+                    # len<2 guard: at market-open only 1 bar exists → df["close"].iloc[-2]
+                    # below is out-of-bounds and crashes the WHOLE 24-symbol scan cycle
+                    # (no per-symbol try/except). Same shape as TRAP #86 (01_rsi_v1 iloc[-2]).
+                    if df is None or df.empty or len(df) < 2:
+                        log.warning(f"  {sym:12s} no data / warming up")
+                        continue
 
-                signal     = compute_signal(df, fast, slow)
-                last_close = float(df["close"].iloc[-2])
+                    signal     = compute_signal(df, fast, slow)
+                    last_close = float(df["close"].iloc[-2])
 
-                log.info(f"  {sym:12s} close={last_close:.2f}  signal={signal or 'NONE':4s}  pos={pos:+d}  trades={t_count}/{max_t}")
+                    log.info(f"  {sym:12s} close={last_close:.2f}  signal={signal or 'NONE':4s}  pos={pos:+d}  trades={t_count}/{max_t}")
 
-                inst   = tc.get("instrument", "equity")
-                offset = int(tc.get("strike_offset", 0))
+                    inst   = tc.get("instrument", "equity")
+                    offset = int(tc.get("strike_offset", 0))
 
-                # max_trades hit / no-entry-after time → only exit allowed, no new entry.
-                # is_no_entry_time() (RMS single-source) stops the '3:15 ke baad entry
-                # -> turant squareoff -> ₹50 zabardasti tax' bug. Exits below unaffected.
-                allow_entry = (t_count < max_t) and not is_no_entry_time()
+                    # max_trades hit / no-entry-after time → only exit allowed, no new entry.
+                    # is_no_entry_time() (RMS single-source) stops the '3:15 ke baad entry
+                    # -> turant squareoff -> ₹50 zabardasti tax' bug. Exits below unaffected.
+                    allow_entry = (t_count < max_t) and not is_no_entry_time()
 
-                if signal == "BUY":
-                    if pos < 0:   # EXIT short (always, regardless of max_trades)
-                        if paper_mode:
-                            paper_trade(sym, "BUY", last_close)
-                        else:
-                            if inst == "options" and sym in active_options:
-                                place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
-                                del active_options[sym]
+                    if signal == "BUY":
+                        if pos < 0:   # EXIT short (always, regardless of max_trades)
+                            if paper_mode:
+                                paper_trade(sym, "BUY", last_close)
                             else:
-                                place_order(sym, "BUY", qty, token, cid)
-                        positions[sym]    = 0
-                        trades_today[sym] = trades_today.get(sym, 0) + 1
-
-                    if pos <= 0 and allow_entry:   # ENTRY long (only if trades left)
-                        if paper_mode:
-                            paper_trade(sym, "BUY", last_close)
-                        else:
-                            if inst == "options":
-                                sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "PE", offset)
-                                if sec_id:
-                                    place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
-                                    active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                if inst == "options" and sym in active_options:
+                                    place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
+                                    del active_options[sym]
                                 else:
-                                    log.error(f"  {sym} PE option not found")
-                            else:
-                                place_order(sym, "BUY", qty, token, cid)
-                        positions[sym]    = 1
-                        trades_today[sym] = trades_today.get(sym, 0) + 1
+                                    place_order(sym, "BUY", qty, token, cid)
+                            positions[sym]    = 0
+                            trades_today[sym] = trades_today.get(sym, 0) + 1
 
-                elif signal == "SELL":
-                    if pos > 0:   # EXIT long (always, regardless of max_trades)
-                        if paper_mode:
-                            paper_trade(sym, "SELL", last_close)
-                        else:
-                            if inst == "options" and sym in active_options:
-                                place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
-                                del active_options[sym]
+                        if pos <= 0 and allow_entry:   # ENTRY long (only if trades left)
+                            if paper_mode:
+                                paper_trade(sym, "BUY", last_close)
                             else:
-                                place_order(sym, "SELL", qty, token, cid)
-                        positions[sym]    = 0
-                        trades_today[sym] = trades_today.get(sym, 0) + 1
-
-                    if pos >= 0 and allow_entry:   # ENTRY short (only if trades left)
-                        if paper_mode:
-                            paper_trade(sym, "SELL", last_close)
-                        else:
-                            if inst == "options":
-                                sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "CE", offset)
-                                if sec_id:
-                                    place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
-                                    active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                if inst == "options":
+                                    sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "PE", offset)
+                                    if sec_id:
+                                        place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                        active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                    else:
+                                        log.error(f"  {sym} PE option not found")
                                 else:
-                                    log.error(f"  {sym} CE option not found")
+                                    place_order(sym, "BUY", qty, token, cid)
+                            positions[sym]    = 1
+                            trades_today[sym] = trades_today.get(sym, 0) + 1
+
+                    elif signal == "SELL":
+                        if pos > 0:   # EXIT long (always, regardless of max_trades)
+                            if paper_mode:
+                                paper_trade(sym, "SELL", last_close)
                             else:
-                                place_order(sym, "SELL", qty, token, cid)
-                        positions[sym]    = -1
-                        trades_today[sym] = trades_today.get(sym, 0) + 1
+                                if inst == "options" and sym in active_options:
+                                    place_order(sym, "BUY", qty, token, cid, active_options[sym]['sec_id'], "NFO_OPT", active_options[sym]['trad_sym'])
+                                    del active_options[sym]
+                                else:
+                                    place_order(sym, "SELL", qty, token, cid)
+                            positions[sym]    = 0
+                            trades_today[sym] = trades_today.get(sym, 0) + 1
+
+                        if pos >= 0 and allow_entry:   # ENTRY short (only if trades left)
+                            if paper_mode:
+                                paper_trade(sym, "SELL", last_close)
+                            else:
+                                if inst == "options":
+                                    sec_id, t_sym = dhan_master.get_option_contract(sym, last_close, "CE", offset)
+                                    if sec_id:
+                                        place_order(sym, "SELL", qty, token, cid, sec_id, "NFO_OPT", t_sym)
+                                        active_options[sym] = {'sec_id': sec_id, 'trad_sym': t_sym}
+                                    else:
+                                        log.error(f"  {sym} CE option not found")
+                                else:
+                                    place_order(sym, "SELL", qty, token, cid)
+                            positions[sym]    = -1
+                            trades_today[sym] = trades_today.get(sym, 0) + 1
+                except Exception as _e_sym:
+                    log.error(f"  {sym:12s} scan error: {_e_sym}", exc_info=True)
+                    continue
 
         except KeyboardInterrupt:
             log.info("Stopped")
             break
         except Exception as e:
-            log.error(f"Loop error: {e}")
+            # exc_info: bina traceback ke "Loop error: single positional indexer
+            # is out-of-bounds" jaisa message batata hi nahi ki kahan toota.
+            log.error(f"Loop error: {e}", exc_info=True)
 
         time.sleep(60)
 
