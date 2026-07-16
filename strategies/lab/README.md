@@ -32,7 +32,7 @@ strategies/lab/<strategy_name>/
 3. **Backtest** — reuses `_TOOLS/backtest_engine.py` → `reports/backtest.md`.
 4. **Monte Carlo** — trade-order shuffle / block bootstrap → distribution → `reports/monte_carlo.json`
    (batata hai: result luck tha ya edge — P5..P95 band).
-5. **Optimize** — reuses `_ops/optimize_strategy.py` param sweep → ranked candidates → `reports/optimization.json`.
+5. **Optimize** — reuses `_TOOLS/optimizer.py` param sweep → ranked candidates → `reports/optimization.json`.
 6. **Walk-forward** — in-sample tune → out-of-sample test → `reports/walk_forward.md` (overfit-check).
 7. **Dashboard** — `results/dashboard.html` (equity vs benchmark, drawdown periods, all metrics).
 
@@ -41,7 +41,7 @@ strategies/lab/<strategy_name>/
 | Kaam | Reuse / build |
 |------|---------------|
 | Backtest | `_TOOLS/backtest_engine.py` (already exists) |
-| Optimize | `_ops/optimize_strategy.py` (already exists) |
+| Optimize | `_TOOLS/optimizer.py` (already exists — the one the dashboard runs) |
 | Indicators | `_CHARTING/indicators.py` (single source — Rule 6B) |
 | Risk sim | `execution_gateway.execute_signal(mode="backtest")` (ADR-003 — apna risk-sim mat likho) |
 | Monte Carlo | **TO BUILD** — trade-resampler → percentile bands |

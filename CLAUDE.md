@@ -19,7 +19,7 @@ _core/    risk_gate order_store smart_order broker_sync execution_gateway webhoo
 _data/    dhan_master dhan_feed dhan_rate_limiter kite_rate_limiter ltp_poller
           shared_ltp_cache shared_candle_cache universe fno_universe   ← broker/data plumbing
 _ops/     auto_data_downloader download_equity_history download_nifty50 export_trade_log
-          rate_limit_verify optimize_strategy deploy_vps sync_*        ← standalone ops scripts
+          rate_limit_verify deploy_vps sync_*                          ← standalone ops scripts
 strategies/
   backtest/  pluggable backtest strategies (evaluate/backtest contract) + user_*_v{n}
   live/      LIVE trader loops (range_trader, universe_trader, 01_rsi_v1, nifty_ema_trader)
