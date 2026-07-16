@@ -3370,37 +3370,14 @@ def api_orders_book_close():
         return jsonify({'ok': False, 'msg': str(e)})
 
 
-@app.route('/api/debug-order')
-def api_debug_order():
-    """Test Dhan API call directly from Flask process — diagnose DH-905"""
-    try:
-        import range_trader, requests as req, socket as sk
-        # confirm IPv4 patch is active
-        ipv4_active = sk.getaddrinfo.__name__ == '_v4'
-        token, cid = _creds()
-        _hdrs_dbg = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-        _rl.acquire("ltp")
-        _qr_dbg   = req.post("https://api.dhan.co/v2/marketfeed/ltp",
-                             json={"IDX_I": [13]}, headers=_hdrs_dbg, timeout=5)
-        price = float(_qr_dbg.json()["data"]["IDX_I"]["13"]["last_price"])
-        body = {
-            'dhanClientId': cid, 'correlationId': 'DEBUG_001',
-            'transactionType': 'SELL', 'exchangeSegment': 'NSE_FNO',
-            'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
-            'securityId': '56376', 'tradingSymbol': 'NIFTY-Jun2026-24100-CE',
-            'quantity': 65, 'disclosedQuantity': 0, 'price': 0, 'triggerPrice': 0,
-            'afterMarketOrder': False,
-        }
-        hdrs = range_trader.hdrs(token, cid)
-        _rl.acquire("order")
-        r = req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
-        if r.status_code == 429:
-            _rl.note_429()
-        return jsonify({'ipv4_patch': ipv4_active, 'status': r.status_code,
-                        'dhan_response': r.text, 'body_sent': body,
-                        'token_preview': token[-10:] if token else 'NONE'})
-    except Exception as e:
-        return jsonify({'error': str(e)})
+# /api/debug-order DELETED (2026-07-16 audit). It was a one-off DH-905 probe from
+# June that outlived its investigation: zero callers anywhere, but it had no
+# methods= (so GET), no risk gate, and fired a real Dhan MARKET SELL of a
+# hardcoded, long-since-expired contract (NIFTY-Jun2026-24100-CE, secId 56376,
+# qty 65) — any authenticated browser navigation, prefetch or history-restore of
+# that URL was one real order attempt. It also returned the last 10 chars of the
+# JWT. Nothing to keep: health_check.py covers the IPv4/token/LTP diagnostics it
+# was written for, without placing an order.
 
 BACKTEST_DB_FILE = BASE_DIR / "backtest_db.json"
 
