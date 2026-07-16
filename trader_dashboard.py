@@ -5433,7 +5433,11 @@ _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips whe
 # Value lives in dhan_feed now — smart_order (order pricing) and strategy_safety
 # (liquidity gate) need the same number, and three copies of it is how the two
 # of them ended up with no guard at all.
-_FEED_MAX_AGE      = dhan_feed.FEED_MAX_AGE
+# The import is local because this file only ever imports dhan_feed lazily inside
+# functions; at module scope the name doesn't exist. dhan_feed itself pulls in
+# stdlib only (dhanhq is lazy inside its own thread), so importing it here is free.
+import dhan_feed as _dhan_feed_const
+_FEED_MAX_AGE      = _dhan_feed_const.FEED_MAX_AGE
 _STALE_FEED_ALERTS = {}    # {sec_id: (first_unreliable_ts, sym)} — track how long a leg has had NO usable price
 _STALE_FEED_FIRED  = set() # {sec_id} — sids currently surfaced on the alert banner (write file only on change)
 _pos_lock_state    = {}    # {pos_id: {armed,peak,floor,breach_since,fired,prev_mtm}} — per-instrument trailing-lock state machine (2026-07-02 redesign)
