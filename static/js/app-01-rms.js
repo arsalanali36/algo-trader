@@ -416,10 +416,10 @@
       }
       const reserved = new Set(['_risk', 'webhooks']);
       // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_') && !regHidden(k));
       // Webhook strategies (cfg.webhooks) bhi merged table me — Run Controls + overrides
       // (2026-07-14: RMS Live Summary table is table me merge hui)
-      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w)) stratIds.push(w); });
+      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w) && !regHidden(w)) stratIds.push(w); });
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -765,9 +765,9 @@
       try { const r2 = await fetch('/api/config'); cfg = await r2.json(); } catch (e) { }
       const reserved = new Set(['_risk', 'webhooks']);
       // drop internal _-prefixed keys (e.g. _ui_config) — they aren't strategies
-      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_'));
+      const stratIds = Object.keys(cfg).filter(k => !reserved.has(k) && !k.startsWith('_') && !regHidden(k));
       // webhook strategies bhi (merged table me unki bhi override row hai)
-      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w)) stratIds.push(w); });
+      Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w) && !regHidden(w)) stratIds.push(w); });
 
       const gPct = document.getElementById('risk-global-pct').value;
       const gRs = document.getElementById('risk-global-rs').value;

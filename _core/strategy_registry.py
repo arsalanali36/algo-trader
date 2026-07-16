@@ -79,6 +79,25 @@ def resolve(alias):
     return None
 
 
+def hidden_identifiers():
+    """Set of identifiers that must never be rendered AS a strategy (lowercased).
+
+    See `_meta.hidden` in the JSON for why each one is on the list. This is NOT
+    a delete and NOT a P&L exclusion — every order_store row stays put and still
+    counts in the money. It only stops dead configs (`vrp_v1`), non-strategies
+    (`global` — the webhooks shared-config block), superseded ones
+    (`webhook_v1`, `default`) and pure garbage (`''`, `unknown`, `ema920`, a
+    description someone wrote into the strategy field) from showing up in
+    strategy lists, pickers, the RMS table and the log sidebar."""
+    h = (load().get("_meta", {}) or {}).get("hidden", {}) or {}
+    return {str(k).lower() for k in (h.get("identifiers") or {})}
+
+
+def is_hidden(alias):
+    """True if this identifier should be kept out of strategy lists/pickers."""
+    return str(alias or "").lower() in hidden_identifiers()
+
+
 def label(alias, with_name=True):
     """"NN.MM - Name" for display. Falls back to the raw alias if unknown (so a
     brand-new strategy not yet registered still shows *something*)."""

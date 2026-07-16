@@ -19,6 +19,22 @@
    "mirrors": "ID this deployment is supposed to reproduce. A mirror's symbols + timeframe must match its reference; if they drift, the mirror is lying.",
    "never_live": "true = must never place real orders, whatever `mode` says. Intent that a name cannot enforce (see 2026-07-16 finding: /api/start takes mode straight off a query param — no guard exists yet).",
    "desc": "Why this is alive. Required for anything a future reader might mistake for a duplicate and switch off."
+  },
+  "hidden": {
+   "_why": "Identifiers that must NOT appear in any strategy list, picker, RMS table or log sidebar. NOT a delete and NOT a P&L exclusion — every order_store row stays exactly where it is and still counts in the money. This only stops dead/garbage names being rendered AS strategies. Single source: every surface reads this list, so a new one can't drift.",
+   "identifiers": {
+    "": "Blank strategy field — 65 orders (15 LIVE) with no owner. order_store.strategy has no validation; something writes empty. Source not yet found.",
+    "unknown": "13 orders, all LIVE. Same root as the blank one.",
+    "ema920": "42 orders. No such config key exists — an old/renamed id that kept writing.",
+    "52_Week_Breakout | Price closing above 52-week EMA with high volume": "A DESCRIPTION written into the strategy field. 1 order.",
+    "global": "The webhooks map's shared config block — not a strategy at all. Was rendering as a fake row in the RMS table.",
+    "default": "Webhook fallback config, superseded by named webhooks (arschain_MAIN). Its 22 orders (12 LIVE) are REAL history from before the named webhooks existed — they still count.",
+    "vrp_v1": "Dead config: present in config + RMS, zero orders, never registered. vrp_condor_v1 (02.03) is the live one.",
+    "webhook_v1": "The ORIGINAL single-webhook config (07.01), superseded by the per-strategy webhooks map. Zero orders. Kept because _all_webhooks() still falls back to it when the map is absent — so it stays FUNCTIONAL, just not shown. Hiding it removes the confusing second 'TradingView Webhook' row next to 04.04 DirectWebhook."
+   },
+   "_kept_visible": {
+    "manual": "Arsalan's own manual Zerodha trades, tagged deliberately by broker_sync.reconcile_manual_trades(). Real and wanted."
+   }
   }
  },
  "families": {

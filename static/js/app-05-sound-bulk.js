@@ -70,6 +70,14 @@
       range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
       ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
     };
+    // Identifiers that must never render AS a strategy — dead configs, the
+    // webhooks shared-config block, superseded webhook configs, and garbage that
+    // got written into order_store.strategy (it has no validation). Filled from
+    // the registry's _meta.hidden so there's ONE list, not one per surface.
+    // NOT a delete and NOT a P&L exclusion — every order row stays and still counts.
+    let REG_HIDDEN = new Set();
+    function regHidden(key){ return REG_HIDDEN.has(String(key==null?'':key).toLowerCase()); }
+
     let STRAT_GROUPS = [
       { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
       { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
@@ -83,6 +91,8 @@
       try{
         const r = await fetch('/api/strategy-registry'); const reg = await r.json();
         const fams = reg.families||{}, strs = reg.strategies||{};
+        const _hid = ((reg._meta||{}).hidden||{}).identifiers || {};
+        REG_HIDDEN = new Set(Object.keys(_hid).map(k=>String(k).toLowerCase()));
         const num={}, name={}, byFam={};
         for(const id in strs){ const s=strs[id]||{}; const ck=(s.config_key||'').toLowerCase();
           if(!ck) continue; num[ck]=id; name[ck]=s.name||ck;
@@ -91,7 +101,7 @@
           MISSION_NUM=num; MISSION_NAME=name;
           STRAT_GROUPS=Object.keys(fams).sort().map(fid=>({
             title:(fams[fid]&&fams[fid].name)?(fid+' · '+fams[fid].name):fid,
-            keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck)
+            keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck).filter(ck=>!regHidden(ck))
           })).filter(g=>g.keys.length);
         }
       }catch(e){ /* registry unavailable -> keep hardcoded fallback */ }
@@ -122,7 +132,7 @@
       if (!container) return;
       renderRateLimitEvents();   // Rate Limit Room lives in this tab now — first paint without waiting for the 5s interval
 
-      let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks' && key !== '_ui_config');
+      let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks' && key !== '_ui_config' && !regHidden(key));
       if (keys.length === 0) {
         container.innerHTML = '<div style="padding:20px;color:#8b949e">No active strategies found.</div>';
         return;
