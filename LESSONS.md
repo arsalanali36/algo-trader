@@ -2951,3 +2951,67 @@ do** — "output pehle se chhota hai" hamesha ek sawal hai, kabhi jawab nahi. Au
 
 **Fast detect:** `python data_fetch.py --seed` (CSV se missing din store me wapas — token nahi
 chahiye), phir dobara chalao: row count **badalna nahi chahiye**. Badle to store adhoora hai.
+## TRAP #127 — 4 saal ka `annual_return` padha ja raha tha jo CAGR tha hi nahi: sizing backtest ka hissa hi nahi thi
+
+**Kaise pakda:** user ne poocha "itni mehnat, itne backtest — par kisi bhi strategy ka CAGR
+10% ke upar nahi, ye to FD se bhi kam hua na?" Sawaal poori mission ke premise pe tha, code
+pe nahi. Numbers dekhe to premise nahi — **metric** toota hua nikla.
+
+**Root cause — do baatein, dono `results.js` ke andar chupi:**
+
+1. `engine.py:21` → `START_CAP = 1_000_000.0`. Ye number kahin se derive nahi hota, bas
+   type kiya hua hai. Har run ka `net_pct` / `annual_return` isi ke against nikalta hai.
+2. `bs_option.py:261` → `def reprice(trades, sigma_map, lot_size, lots=1, ...)`. **lots=1,
+   hamesha.** Equity ₹10L se ₹13.9L ho jaaye, agla trade phir bhi 1 lot ka.
+
+Matlab `metrics["annual_return"]` = *(1 lot ka rupee P&L / ek arbitrary ₹10L)* ko annualise
+kiya hua. Usme **compounding hai hi nahi**, aur denominator **capital-at-risk nahi** hai.
+Mid-Day ORB ka poore 4.5 saal ka sabse bura drawdown **₹17,690** tha — baaki ~₹9.8L kabhi
+kaam pe laga hi nahi, par CAGR ke divide me poora gina gaya. Isi liye 7.6% dikha.
+
+**FD se compare karna do alag sawaalon ko compare karna tha.** FD *hi* risk-free rate hai —
+uska excess return, by definition, zero hai. Sahi sawaal ye nahi ki "% zyada hai ya kam", ye
+hai ki **binding constraint kya hai** — aur wo capital nahi, **drawdown tolerance** hai.
+
+**Fix:** naya `scratch/nifty_trend/honest_sizing.py` — sizing ko strategy ka hissa banata
+hai. DD budget do, wo `runs/<slug>/results.js` ki asli trade sequence pe lots ko monthly
+re-size karke compound karta hai, aur us curve ka asli CAGR + realised DD deta hai.
+DD haircut **guess nahi** — har run ke apne Monte-Carlo ka **worst-5% trade-ordering**
+(`combos[..].mc.table.maxdd[1]`, rows = `[original, worst5, median, best5]`). ORB: realised
+DD ₹17,690 par MC worst-5% ₹29,431 → sizing ₹29,431 pe = bad-luck ordering ke against, us
+lucky ordering ke against nahi jo record ho gayi.
+
+**ORB (p=0.000, Sharpe 2.37, 567 trades, 4.5 yr) — wahi trades, wahi charges, wahi DOM slip,
+sirf sizing add:**
+
+| | purana | honest (10% DD budget) |
+|---|---|---|
+| CAGR | 7.6% | **29.1%** |
+| realised maxDD | −1.77% | −4.9% |
+| lots | 1 hamesha | 3 → 10 |
+| ₹10L → | ₹13.9L | **₹31,63,142** |
+
+**Sabak 1 — sizing ko backtest se bahar mat rakho.** Ek strategy = entry + exit + **sizing**.
+Teeno me se ek bhi hardcode kiya to jo metric nikalta hai wo strategy ka nahi, tumhare
+hardcode ka reflection hai. `lots=1` "neutral default" nahi tha, wo ek **chhupa hua sizing
+decision** tha — aur poore mission ka headline number wahi decide kar raha tha.
+
+**Sabak 2 — compounding chalu karte hi backtest ki jhoot pakdi jaati hai.** Bina capacity
+ceiling ke wahi script Long Strangle ko **₹25,000 crore** tak compound kar deti hai (lots
+12 → 3.15 lakh). Wo strategy ka statement nahi, **unbounded compounding ka** statement hai —
+par wo diagnostic **muft me** aata hai: jo bhi edge cap se takra ke absurd ho jaaye, uska
+backtest sach se zyada acha hai. Strangle ka p=0.072 (significant nahi) aur VRP Condor ka
+**Sharpe 15.33** dono isi tarah saamne aa gaye — Sharpe>4 = red flag wala apna hi rule.
+**Compounding sim ko truth-detector ki tarah use karo, projection ki tarah nahi.**
+
+**Sabak 3 — jab koi metric premise-level sawaal khade kare, metric ki definition pehle
+padho, jawab baad me do.** "Faayda hi kya hai" ka jawab dene se pehle `net_pct` ka
+denominator dekhna tha. Do line (`engine.py:21` + `lots=1`) me poora sawaal ghul gaya.
+
+**Bacha hua kaam (jaan-boojh kar khula):** capacity model nahi hai. `--max-lots` maine socha
+hai, measure nahi kiya. ORB ko farq nahi padta (10 lots pe khud ruk jaata hai), par
+straddle/strangle ke honest numbers poori tarah us arbitrary cap pe tike hain — unhe believe
+karne se pehle bade size pe DOM slip (ADR-005) re-calibrate karna padega. P&L scaling linear
+hai = jaan-boojh kar conservative (₹20/order flat brokerage se asli N-lot P&L thoda behtar
+hoga; `scripts/lot_scale.py` live fills pe asli cost-dilution naapta hai).
+

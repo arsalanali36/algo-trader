@@ -229,6 +229,30 @@ Data now spans 2018-2026 (8.5yr) — includes very different regimes (pre-COVID,
   straddle's OOS Sharpe (4.51) BEAT its train (4.14) → it works BETTER in today's regime, not worse.
   Full-2018 is stress/robustness context, never an override of a strong recent edge.
 
+## Return-metric policy (user's sharp Q, 2026-07-16) — `annual_return` is NOT a CAGR
+User asked the premise-level question: *"itni mehnat, itne backtest — par kisi bhi strategy ka
+CAGR 10% ke upar nahi, ye to FD se bhi kam hua na?"* The premise was not wrong; **the metric
+was.** Every number in every `runs/<slug>/results.js` is `lots=1` (`bs_option.reprice(...,
+lots=1)`) against a hardcoded `engine.py:21 → START_CAP = 1_000_000`. No compounding, and the
+denominator is not capital-at-risk — ORB's worst 4.5-year drawdown is **₹17,690**, so ~₹9.8L
+never worked yet is fully counted in the divide. That is the whole "3-8%, worse than an FD".
+- **`net_pct` / `annual_return` / `calmar` are for RANKING these strategies against each other**
+  (same denominator, same lot count). **Never quote them against an FD, an index, or anything
+  external.** FD *is* the risk-free rate — its excess return is zero by definition.
+- **Real number = `honest_sizing.py`** — takes a DD budget (the actual binding constraint), sizes
+  lots to the run's own Monte-Carlo **worst-5%** DD, compounds over the real `all_trades`
+  sequence. ORB: 7.6% → **29.1%** @ 10% DD budget (lots 3→10, realised DD −4.9%) — same trades,
+  same charges, same DOM slip, sizing added.
+- **Always `--max-lots`, and read the absurdity as a SIGNAL.** Uncapped it compounds Long Strangle
+  to ₹25,000 crore. Any strategy whose honest CAGR swings wildly with the cap has a backtest
+  better than the truth — this pass re-flagged Strangle (p=0.072, not significant) and
+  **VRP Condor's Sharpe 15.33** for free. Sharpe>4 = red flag, our own rule.
+- **Honest CAGR is NOT a new deploy gate.** Sharpe ≥1 + p<0.05 + min(train,OOS) still decide
+  what ships. This only fixes what the number MEANS once it has shipped. See LESSONS TRAP #127.
+- **Open gap (not modelled):** capacity. `--max-lots 50` is a guess, not a measurement. ORB is
+  unaffected (self-caps at 10 lots); straddle/strangle honest numbers rest entirely on it — they
+  need a large-size DOM slip re-calibration (ADR-005) before being believed.
+
 ## Ground rules (locked with user 2026-07-10)
 
 - **One strategy at a time.** Design → mockup → user approves → backtest → 3-pass dashboard → user

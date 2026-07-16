@@ -44,6 +44,40 @@ and gross/fee/pnl on the premium). `instrument|*` and `rms|*` are spot-notional
 (gross = points × qty, rough fee) — the same strategy, one layer less realistic each.
 `run_hunt.py` is the reference producer; the cleanest reuse is just to run it.
 
+## ⚠️ `annual_return` is NOT a CAGR — never quote it as one
+
+Every number in this file is produced at **`lots=1`** (`bs_option.reprice(..., lots=1)`)
+against a **hardcoded `engine.py:21` → `START_CAP = 1_000_000`**. So:
+
+```
+net_pct = (one lot's rupee P&L) / (an arbitrary 10L we typed into engine.py)
+```
+
+There is **no compounding** (equity doubles → the next trade is still 1 lot) and the
+denominator is **not capital-at-risk** (Mid-Day ORB's worst drawdown across 4.5 years is
+₹17,690 — the other ~₹9.8L never worked, but is fully counted in the divide). That is why
+every strategy here reads 3-8% "annual_return" and looks worse than an FD. It is the wrong
+question, not a bad edge.
+
+**These fields are comparable ACROSS strategies in this repo** (same denominator, same lot
+count) — that is all they are for. Do not compare them to an FD, an index, or any external
+return. For a real, sizing-aware CAGR + realised drawdown, run:
+
+```bash
+python honest_sizing.py --all --dd-budget 10,15 --max-lots 50
+python honest_sizing.py --slug <slug> --check     # lots=1 must reproduce real_cost net
+```
+
+It takes a **drawdown budget** (the actual binding constraint), sizes lots to the run's own
+Monte-Carlo **worst-5%** drawdown, compounds over the real `all_trades` sequence, and reports
+the CAGR and realised DD the same trades would have produced. ORB: 7.6% → **29.1%** at a 10%
+DD budget (lots 3→10, realised DD −4.9%), same trades / charges / DOM slip.
+
+**Always pass `--max-lots`.** Uncapped, the same math compounds a 1686-trade edge into
+four-figure crores. Treat that as a **free diagnostic**: any strategy whose honest CAGR
+swings wildly with the cap has a backtest that is better than the truth. Full reasoning:
+`LESSONS.md` TRAP #127.
+
 ## Combo object (one per view)
 
 ```js
@@ -52,6 +86,8 @@ and gross/fee/pnl on the premium). `instrument|*` and `rms|*` are spot-notional
 
   metrics: {
     // headline
+    // ⚠️ net_pct / annual_return / calmar are FIXED-1-LOT numbers measured against a
+    //    hardcoded start_cap. annual_return is NOT a CAGR — see the warning below.
     trades, net_pct, net_abs, final_cap, start_cap,
     sharpe, sortino, calmar, annual_return, maxdd, underwater_days, years,
     win_rate, wl_ratio, profit_factor, expectancy,
