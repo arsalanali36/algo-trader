@@ -3130,6 +3130,10 @@ def api_close_position():
     src_in   = data.get('source', '') or 'manual'
     strat_in = data.get('strategy', '') or ''
 
+    # Pre-seed: the lookup below sits in a try/except-pass, and this_leg is read
+    # again AFTER it for the single-leg close — an exception before the assignment
+    # would leave the name unbound and NameError the whole route (TRAP #56 shape).
+    this_leg = None
     try:
         import order_store
         from datetime import timedelta as _td
@@ -3143,7 +3147,8 @@ def api_close_position():
                 results = []
                 for leg in siblings:
                     r = _close_position_impl(leg['sym'], leg['entry'], leg['qty'], mode,
-                                              leg.get('source', 'manual'), leg.get('strategy', ''))
+                                              leg.get('source', 'manual'), leg.get('strategy', ''),
+                                              leg.get('broker', ''))
                     r['sym'] = leg['sym']
                     results.append(r)
                 all_ok = all(r.get('ok') for r in results)
@@ -3153,17 +3158,47 @@ def api_close_position():
     except Exception:
         pass  # best-effort group lookup — fall through to single-leg close on any failure
 
-    return jsonify(_close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in))
+    # broker of the OPEN leg — the row is already in hand above; without it this
+    # falls back to 'dhan' and can phantom-close a Kite leg (see _close_position_impl).
+    return jsonify(_close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
+                                        (this_leg or {}).get('broker', '')))
 
 
-def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
+def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
+                         broker_in=''):
     """Shared close-one-leg logic — used by /api/close-position and (looped per
     leg) by /api/close-position-group. Returns the same {ok, msg} dict shape
-    the route used to jsonify directly."""
+    the route used to jsonify directly.
+
+    broker_in — the OPEN leg's own broker, straight off its order_store row.
+    Until 2026-07-16 this whole function was hardcoded to 'dhan' while the algo
+    had moved to Kite (_risk.global.default_broker='kite', TRAP #90), and the
+    caller was already holding the leg's real broker without passing it. Both
+    branches were wrong for a Kite-held leg:
+
+      - Dhan answers with a position book that has no such symbol -> is_flat_fresh
+        says "flat" (a confident answer, not an error, so its fail-open guard
+        never engages) -> we mark_externally_closed() and send NO order. The real
+        Zerodha position stays open, and being externally_closed it also drops out
+        of pos_monitor's 3:15 squareoff — unprotected overnight.
+      - Dhan errors -> "not flat" -> we POST a real order to api.dhan.co for a leg
+        that lives on Kite: a NEW naked Dhan position, Kite leg still open. That
+        also breaks the standing Dhan-hands-off rule (TRAP #97 closed the
+        auto-adopt path; this manual one was missed).
+
+    The live order now goes through smart_order.execute(is_exit=True) exactly as
+    pos_monitor's own _do_squareoff does — which is the only broker-agnostic way
+    to place it anyway (the old body was a Dhan REST payload, and MARKET at that,
+    which Zerodha rejects outright on stock options). Also buys rate-limiting,
+    async fill-confirm, exit order-chasing and order_store recording.
+    """
     close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
+    broker_name = (broker_in or 'dhan').lower()
 
     try:
-        import range_trader, requests as _req, time as _time
+        # range_trader was imported here only for hdrs() on the raw Dhan order body
+        # — that body is gone (smart_order places the order now).
+        import requests as _req, time as _time
         token, cid = _creds()
 
         # Security ID from scrip master
@@ -3213,7 +3248,7 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
             try:
                 import order_store
                 order_store.record(close_side, qty_shares, option_ltp, source=src_in, strategy=strat_in,
-                    mode=m, broker='dhan', symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
+                    mode=m, broker=broker_name, symbol=t_sym.split('-')[0], instrument='options', trad_sym=t_sym,
                     sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
                     correlation_id=f'CLOSE_{t_sym}_{ts}', status=status_,
                     tags=['MANUAL_CLOSE'])
@@ -3236,7 +3271,9 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
         # a phantom opposite one instead of doing nothing.
         try:
             import broker_sync as _bs_close
-            if _bs_close.is_flat_fresh('dhan', t_sym, str(sec_id)):
+            # broker_name, NOT 'dhan': asking the wrong broker returns a confident
+            # "flat" for a leg it simply never held — see this function's docstring.
+            if _bs_close.is_flat_fresh(broker_name, t_sym, str(sec_id)):
                 try:
                     import order_store as _os_close
                     _today = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
@@ -3250,28 +3287,25 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in):
         except Exception as _fce:
             print(f"[close-position] pre-close flat-check failed ({_fce}) — proceeding (fail-open)", flush=True)
 
-        body = {
-            'dhanClientId': cid, 'correlationId': f'CLOSE_{t_sym}_{ts}',
-            'transactionType': close_side, 'exchangeSegment': 'NSE_FNO',
-            'productType': 'INTRADAY', 'orderType': 'MARKET', 'validity': 'DAY',
-            'securityId': sec_id, 'tradingSymbol': t_sym,
-            'quantity': qty_shares, 'disclosedQuantity': 0,
-            'price': 0, 'triggerPrice': 0, 'afterMarketOrder': False,
-        }
-        hdrs = range_trader.hdrs(token, cid)
-        _rl.acquire("order")
-        r = _req.post('https://api.dhan.co/v2/orders', json=body, headers=hdrs, timeout=10)
-        if r.status_code == 429:
-            _rl.note_429()
-        if r.status_code == 200:
-            ok_fill, ostatus, _oid = _dhan_live_fate(r, token, cid)
-            if not ok_fill:
-                return {'ok': False, 'msg': f'Dhan ne close order {ostatus} kiya — position band nahi hui (Dhan pe verify karo)'}
-            _write_log('LIVE')
-            _record_close('filled' if ostatus == 'TRADED' else 'pending', 'live', _oid)
-            return {'ok': True, 'msg': f'[LIVE] CLOSE {close_side} {qty_shares} {t_sym} ({ostatus})'}
-        else:
-            return {'ok': False, 'msg': f'Dhan {r.status_code}: {r.text[:200]}'}
+        # Same path pos_monitor's _do_squareoff takes — broker resolved from the
+        # leg, LIMIT + exit chase, order_store written by smart_order itself.
+        import smart_order
+        from brokers import get_broker
+        broker = get_broker(broker_name)
+        res = smart_order.execute(
+            close_side, t_sym, sec_id, 'NSE_FNO', qty_shares, t_sym,
+            'live', broker, log=print, tag='MANUAL-CLOSE',
+            source=src_in, strategy=strat_in, instrument='options',
+            broker_name=broker_name, extra_tags=['MANUAL_CLOSE'],
+            is_exit=True,
+        )
+        if not res.get('ok'):
+            return {'ok': False, 'msg':
+                    f"{broker_name} ne close order pura nahi kiya ({res.get('reason')}) — "
+                    f"position band NAHI hui, {broker_name} pe verify karo"}
+        # smart_order already recorded the fill — double-record mat karo.
+        return {'ok': True, 'msg': f"[LIVE] CLOSE {close_side} {qty_shares} {t_sym} "
+                                   f"@ {res.get('price')} ({res.get('status')}) via {broker_name}"}
     except Exception as e:
         return {'ok': False, 'msg': str(e)}
 
@@ -3298,7 +3332,8 @@ def api_close_position_group():
     results = []
     for leg in legs:
         r = _close_position_impl(leg['sym'], leg['entry'], leg['qty'], mode,
-                                  leg.get('source', 'manual'), leg.get('strategy', ''))
+                                  leg.get('source', 'manual'), leg.get('strategy', ''),
+                                  leg.get('broker', ''))
         r['sym'] = leg['sym']
         results.append(r)
 
