@@ -135,3 +135,7 @@ resp.json
 
 # Claude Code session write-lock (see .claude/session_guard.py) — per-machine, never commit
 .claude/.session_lock.json
+
+# Live VPS config snapshots — has webhooks.global.secret_token, NEVER commit
+# (algo-trader is a PUBLIC repo). Off-VPS backup only.
+_config_backups/
