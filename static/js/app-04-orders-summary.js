@@ -19,6 +19,7 @@
       Object.keys(GLOBAL_CONFIG).forEach(key => {
         const type = key.split('_')[0];
         if (_skipTypes.has(type) || key === '_risk' || key === 'webhooks') return;
+        if (regHidden(key)) return;   // dead/garbage ids — registry _meta.hidden
         const color = getStratColor(type);
         const pid = RUNNING_PIDS[key];
         const mode = pid ? `Running (PID ${pid})` : 'Stopped';
