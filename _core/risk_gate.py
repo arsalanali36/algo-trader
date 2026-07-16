@@ -1418,17 +1418,32 @@ def liquidity_filter_enabled(strategy):
     return True if v is None else bool(v)
 
 
+# Strategies whose DESIGN is a positional/overnight hold (ADR-006 lane). This is
+# a DURABLE code-level baseline: nifty_config.json gets rewritten by the app and
+# has repeatedly dropped the per_strategy["allow_overnight"] key (silently turning
+# a positional strategy back into an intraday one → it gets force-squared-off at
+# 3:15 / the next night). These IDs are always overnight-allowed regardless of
+# what the config currently holds. Config can still turn it ON for other strategies.
+# Add a new positional strategy's id here when you build one.
+_ALWAYS_OVERNIGHT = {"vrp_condor_v1", "vrp_v1"}
+
+
 def allow_overnight(strategy):
     """OPT-IN ONLY (default False) — whether THIS strategy's option positions may
     be held past the blanket 3:15 EOD squareoff (i.e. a positional/overnight lane,
     e.g. the VRP weekly-straddle held to expiry — see _ADR/ADR-006).
 
+    True if the id is in the durable `_ALWAYS_OVERNIGHT` set (code-level, can't be
+    wiped by a config rewrite) OR
     nifty_config.json["_risk"]["per_strategy"][<sid>]["allow_overnight"] = true.
     There is NO global switch on purpose — this must be turned on per-strategy,
-    deliberately, never account-wide. Any config/parse problem → False (fail-safe:
-    the position gets squared off at 3:15 like everything else, never silently
-    left open overnight). Expiry-day squareoff, ITM guard and the RMS daily-loss
-    breaker still apply regardless of this flag."""
+    deliberately, never account-wide. Any config/parse problem → the code-level
+    set still decides (fail-safe for the known positional strategies; unknown
+    strategies default False → squared off at 3:15 like everything else, never
+    silently left open overnight). Expiry-day squareoff, ITM guard and the RMS
+    daily-loss breaker still apply regardless of this flag."""
+    if (strategy or "") in _ALWAYS_OVERNIGHT:
+        return True
     try:
         rc = _risk_cfg()
         v = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("allow_overnight")

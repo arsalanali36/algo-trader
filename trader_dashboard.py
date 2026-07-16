@@ -4075,6 +4075,40 @@ def api_orders():
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
     data = order_store.trades_for(date, **filt)
+    # ── Positional/overnight carry-over (DISPLAY-ONLY) ───────────────────────
+    # A position entered on a prior day and still open must stay visible in
+    # "today's" view — the date-scoped query hides it the moment the day rolls
+    # over (the exact reason overnight/positional positions "disappeared" the
+    # next day). We union in any leg that is still open across a short recent
+    # lookback whose ENTRY date is before the selected date, tagged
+    # `carried_over` so the UI can badge it. pos_monitor stays today-scoped —
+    # this changes only what the dashboard SHOWS, never what RMS manages.
+    try:
+        if date == ist.strftime('%Y-%m-%d'):
+            import risk_gate as _rg_ov
+            _lb_from = (ist - timedelta(days=7)).strftime('%Y-%m-%d')
+            _carry = order_store.trades_for_range(_lb_from, date, **filt).get('open', [])
+            _seen = {(p.get('sym'), str(p.get('sec_id')), p.get('entry_date'))
+                     for p in data.get('open', [])}
+            for p in _carry:
+                if (p.get('entry_date') or date) >= date:
+                    continue  # today's own opens already in data['open']
+                # Only genuinely-positional (opt-in allow_overnight) strategies carry
+                # over — intraday strategies are flat by EOD, so a lingering prior-day
+                # "open" row for them is stale, not a live position to display.
+                try:
+                    if not _rg_ov.allow_overnight(p.get('strategy')):
+                        continue
+                except Exception:
+                    continue
+                k = (p.get('sym'), str(p.get('sec_id')), p.get('entry_date'))
+                if k in _seen:
+                    continue
+                p['carried_over'] = True
+                data.setdefault('open', []).append(p)
+                _seen.add(k)
+    except Exception:
+        pass
     data['date'] = date
     data['filters'] = {f: order_store.distinct(f, date)
                        for f in ('source', 'mode', 'strategy', 'broker')}
