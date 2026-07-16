@@ -120,7 +120,17 @@ function colMenu(){
   document.getElementById('colmenu').innerHTML='<div class="hdr">Show columns</div>'+COLS.map(c=>
     `<label class="${c.always?'dis':''}"><input type="checkbox" ${on(c.k)?'checked':''} ${c.always?'disabled':''} onchange="COLVIS['${c.k}']=this.checked;saveCols();render()">${c.label}</label>`).join('');
 }
-function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]}));}
+// _meta.hidden — dead configs / non-strategies / garbage ids. Same ONE list every
+// other surface reads (RMS table, Logs sidebar, webhook picker, Paper/Live grid).
+// This page was the 9th surface and the only one still rendering 07.01
+// TradingView Webhook, whose legacy fallback in _all_webhooks() is dead in
+// practice (it only fires when the `webhooks` map is absent — it never is).
+// The registry ID itself is permanent and stays in the JSON; it just isn't shown.
+function regHidden(ck){
+  const h=((REG._meta||{}).hidden||{}).identifiers||{};
+  return Object.keys(h).some(k=>k.toLowerCase()===String(ck==null?'':ck).toLowerCase());
+}
+function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]})).filter(m=>!regHidden(m.config_key));}
 function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
 function runOf(m){ return (m.slug&&RUNS[String(m.slug).toLowerCase()])||null; }
 async function regDeploy(e,k,mode){
