@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-07-16 (2) — Payoff & Zone panel + RMS basket-margin fix + 9:10 auto-start resurrection (TRAP #120)
+**Status:** DONE
+**Layer:** ui (payoff panel) + risk (basket margin) + infra (auto-start auth) — all deployed VPS master
+**Kya:** User ke "kal ka positional aaj update nahi ho raha" se shuru, 6 cheezein:
+1. **Run-Up/Run-Down frozen on carried-over legs** — Run-Up `MAX_LTP`/`MIN_LTP` tags se aata hai jo SIRF today-scoped `pos_monitor_loop` likhta hai; TRAP #119 ne display carry-over to kar diya par tags kal ki value pe jam gaye. Fix display-only: `_carryRunExt` client-side tracker, frozen tag = floor (kal ka run lose nahi hota), live LTP feed se aage extend. pos_monitor today-scoped hi rehta (positional pe EOD/default-SL nahi lagni chahiye — Rule 10).
+2. **Trade-chart single-day** — `/api/trade-chart-data` + underlying route `fromDate==toDate`; open + past-entry ho to ab entry-date→today span (dono panes), `to` param override, write-through cache sirf single-day pe (warna multi-day bars galat date file me).
+3. **📊 Payoff & Zone panel** (naya `_core/payoff.py`) — per position-group: expiry + today payoff (BS), per-leg IV live premium se, POP (lognormal over REAL profit zones — koi single-breakeven assumption nahi, kisi bhi structure pe chalta), breakevens, max P/L, real hedged margin, combined net-premium series, n-up per-leg grid. Rule 6B: `bs_option.py` (single BS source) + `dhan_master.get_expiry_for_sec_id` (expiry kabhi trad_sym string se parse nahi — index syms me din hota hi nahi) + risk_gate margin ke liye. Verified: today-curve spot pe dashboard ka asli MTM rupee-exact (−646.75 vs −647).
+4. **🔴 RMS basket-margin (money-path)** — `capital_in_use` har leg ka STANDALONE margin jodta tha; dono per-leg estimators khud likhte hain "no cross-leg hedge benefit pre-trade" par kabhi close nahi hua. Live-measured: dvert_v1 vertical ₹1,49,554 per-leg vs ₹37,813 real basket (75% over); 4-leg condor ₹3,72,015 vs ₹82,334 (78%). Naya `kite_basket_margin()` + `_group_capital()`; capital_in_use ab per-strategy group karke charge karta. Paper pool ₹1,92,750 → ₹80,247. **Safety (6/6 tested):** fail/None/0/absurd/non-kite/single-leg → per-leg sum; `min(basket, per_leg)` = pehle se zyada kabhi nahi; cross-STRATEGY netting jaanbhoojkar claim nahi (over-estimate rehta, under kabhi nahi); kill-switch `basket_margin_enabled`.
+5. **Exit-day vs Expiry POP** — expiry POP one-night strategy ke liye galat sawaal. `target_days` (default = aaj ka squareoff via `exit_time_config()`, 15:15 hardcode nahi). Live: expiry POP 66.1%/BE 24,260.6 vs exit-day 66.4%/BE 24,112.2 — expiry chart ~150pt zyada safe-zone dikha raha tha.
+6. **TRAP #120 — 9:10 auto-start 6 din se murda** — `auto_scheduler` bots ko `requests.post(127.0.0.1:5099/api/start)` se uthata hai; 2026-07-10 ka login gate har call ko 401 de raha tha, aur caller ne status code kabhi padha hi nahi (`except: pass` bhi zaroorat nahi padi — 401 raise nahi karta). Bots 6 din se roz HAATH se start ho rahe the. Mila tabhi jab risk_gate fix uthane ke liye strategies kill kiye aur wapas nahi uthi. Fix: `dashboard_auth.get_internal_token()` (get_secret_key pattern, dono processes shared, gitignored) + `_is_internal_call()` (sirf start/stop, loopback + token — token hi asli gate, Caddy bahar ka traffic bhi 127.0.0.1 se laata) + `_sched_post()` (token + status-check + loud 🔴). End-to-end proven: ema_v1 kill → monitor restart → `AUTO-RESTARTED BY SCHEDULER`.
+**Files:** `_core/payoff.py` (naya), `_core/risk_gate.py` (kite_basket_margin/_group_capital/capital_in_use/exit-day), `_core/dashboard_auth.py` (get_internal_token), `brokers/kite_broker.py` (basket_margin), `trader_dashboard.py` (3 payoff routes + LTP attach + multi-day chart + _is_internal_call + _sched_post), `templates/index.html` (Payoff button+panel, carried-over Run-Up), `LESSONS.md` (TRAP #120).
+**Kyun:** User ko Sensibull-jaisa "kis zone me safe, kis threshold ke bahar nahi jaana" chahiye tha — usi se RMS ka margin over-count aur auto-start ka murda hona dono nikle.
+**Deploy:** sab VPS-live; 12 strategies restart (recovery 4/5 clean re-attach — orbst ka leg kill se 1 min PEHLE apne ORBST_SL se legit exit hua tha, restart ne nahi maara); open positions before==after; live legs 0 (sab paper).
+**Note:** parallel session isi branch pe kaam kar rahi thi (Notification centre commits) — interleaved, koi conflict nahi.
+
+**Pending / flagged (fix nahi kiye):**
+- `_today_open` bhi today-scoped → positional legs RMS capital me ginte hi NAHI (under-count, over-count ka ulta). Alag issue.
+- `03_orbst_trader.py` exit pe reason tag nahi karta (Critical Rule 9 gap, TRAP #88/#91 shape) — log me `ORBST_SL`, order_store me `tags []`.
+- Restart strategy ka apna max-trades/day counter reset kar deta hai (orbst `trades=1` → `trades=0`) — `daily_state.py` (TRAP #49) sab strategies me wired nahi.
+
 ## 2026-07-16 — Positional/overnight strategy durability — allow_overnight code-set + prior-day carry-over display + range-recovery (TRAP #119)
 **Status:** DONE
 **Layer:** risk (allow_overnight) + ui (carry-over display) + strategy (recovery) — all deployed VPS master `ff8db9e`

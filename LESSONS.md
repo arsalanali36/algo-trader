@@ -2634,3 +2634,61 @@ box hi kaafi). Beech me ek galat conclusion (neeche #2) se bhi seekha.
 IPv4-force jo Hostinger pe already hai). Static IP genuinely usko chahiye jo **Dhan pe ORDER** kare
 (bhai). Single Hostinger box kaafi; bhai apne Dhan me Hostinger IP whitelist kare (try-add-first to
 dodge 7-day lock). Full detail: memory `project_code3b_new_server_migration`.
+
+---
+
+## TRAP #120 — App ne apni hi HTTP API pe auth laga di, aur apna hi background thread bahar lock ho gaya (9:10 auto-start 6 din chupchaap murda)
+
+**Symptom:** Koi nahi. **Bilkul koi nahi.** Yehi is TRAP ka pura point hai.
+
+Mila tabhi jab `risk_gate` ka fix uthane ke liye maine 12 strategy processes deliberately kill kiye,
+`algo-monitor` restart kiya (jisme `auto_scheduler` chalta hai), aur wo **wapas uthi hi nahi**.
+
+**Root cause:** `auto_scheduler` (algo-monitor process) bots ko HTTP se drive karta hai —
+`requests.post("http://127.0.0.1:5099/api/start?...")` → algo-dashboard. 2026-07-10 ko dashboard pe
+single-password **login gate** (`@app.before_request`) laga. Us din se har auto-start call ko
+**HTTP 401** mila. Aur caller aisa likha tha:
+
+```python
+requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode={saved_mode}", timeout=5)
+except Exception as e:
+    pass                    # ← 401 exception nahi hai. status code kabhi check hi nahi hua.
+```
+
+`requests.post` 401 pe **raise nahi karta** — 200 aur 401 dono "success" jaise dikhte hain jab tak
+`.status_code` dekho na. To `except: pass` bhi zaroorat nahi padi — bug ko chhupane ke liye
+**status-code na dekhna hi kaafi tha**. Log me "Auto-starting bots..." roz chhapta raha (wo print
+loop se PEHLE hai), aur ek bhi bot start nahi hua.
+
+Bots chal isliye rahe the kyunki **6 din se roz haath se start ho rahe the** — aur wo manual start
+itna normal lagne laga ki kisi ne poocha hi nahi ki auto-start kyun nahi chala. Ye wahi "roz ka
+firefight" hai jo 2026-06-23 me fix hua declare kiya gaya tha.
+
+**Fix:**
+* `dashboard_auth.get_internal_token()` — generate-once/persist token, bilkul `get_secret_key()` wale
+  pattern se (dono processes same gitignored `data/auth.json` padhte hain, restart-safe).
+* `_is_internal_call()` — sirf `/api/start`+`/api/stop`, loopback + valid token. **Token hi asli gate
+  hai** — loopback akela kaafi NAHI, kyunki Caddy bahar ka traffic bhi 127.0.0.1 se proxy karta hai;
+  peer-check sirf defence-in-depth hai.
+* `_sched_post()` — token bhejta hai **aur status code check karta hai**, kisi bhi failure pe
+  `flush=True` ke saath loud 🔴 line. Jo scheduler bots start nahi kar pa raha, wo dobara kabhi
+  chupchaap fail na ho.
+
+**Permanent guard — jab bhi kisi service pe auth/gate/firewall/proxy lagao:**
+> Sabse pehle likho ki **is service ko khud ke andar se kaun call karta hai**. Apne hi background
+> threads, schedulers, cron, health-checks, sibling processes — sab ka enumerate karo. Gate lagana
+> ek **client-visible contract change** hai; apne hi internal callers usi contract ke client hain.
+
+**Fast-detect (roz chal sakta hai):**
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST 'http://127.0.0.1:5099/api/start?s=<id>&mode=paper'
+# 401 = auto-start murda hai. 200 = zinda.
+```
+
+**Failure shapes:** PRE-MORTEM #2 (built ≠ wired ≠ verified) + #5 (silently fails). Ye #5 ka sabse
+saaf example hai: koi exception nahi, koi red log nahi, sirf ek int jo kisi ne padha hi nahi.
+
+**Aur ek sabak (isi session se):** SIGTERM turant nahi lagta. Kill ke turant baad `get_pid()` abhi
+bhi PID de sakta hai (process network call me blocked ho sakta hai) — pehle test me isi race ne
+"auto-restart fail" ka jhootha result diya. Kill karke restart-verify karo to **pehle maut confirm
+karo**, phir scheduler ko chalao.
