@@ -4238,17 +4238,19 @@ def _ingest_downloader_alerts():
     """
     try:
         alert_file = BASE_DIR / "data" / "downloader_alert.json"
+        try:
+            seen = set(json.loads(_ALERT_SEEN_FILE.read_text()))
+        except Exception:
+            seen = set()
+
         if not alert_file.exists():
+            for k in seen:
+                notify.resolve(k)          # saare alerts gaye = sab theek ho gaya
             _ALERT_SEEN_FILE.write_text("[]")
             return
         alerts = json.loads(alert_file.read_text())
         if not isinstance(alerts, list):
             return
-
-        try:
-            seen = set(json.loads(_ALERT_SEEN_FILE.read_text()))
-        except Exception:
-            seen = set()
 
         current = set()
         for a in alerts:
@@ -4266,6 +4268,13 @@ def _ingest_downloader_alerts():
             current.add(key)
             if key not in seen:
                 notify.push(msg, lvl, key=key, source="alert")
+
+        # File se gaayab = problem khatam. Uska notification apne aap read +
+        # "fixed" ho jaata hai — ek theek ho chuke error ka laal badge bethe
+        # rehna bell pe bharosa utna hi todta hai jitna error ka chhup jaana.
+        # Record delete nahi hota; dobara hua to push() usay phir se jagayega.
+        for gone in (seen - current):
+            notify.resolve(gone)
 
         if current != seen:
             _ALERT_SEEN_FILE.write_text(json.dumps(sorted(current)))

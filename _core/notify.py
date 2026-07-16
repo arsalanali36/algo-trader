@@ -133,6 +133,7 @@ def push(msg, level="error", key=None, source=None):
                     r["last_ts"] = now
                     r["msg"] = msg          # latest wording jeete
                     r["read"] = False       # dobara hua = phir se dikhao
+                    r["resolved"] = False   # "fixed" tha aur laut aaya → ab fixed nahi
                     if was_read:
                         # User ne isay padh liya tha aur problem PHIR hui — ye ek
                         # nayi ghatna hai, isliye nayi id: high-water mark se upar
@@ -240,6 +241,32 @@ def mark_read(ids=None):
             r["read"] = True
     _rewrite(recs)
     return len(want)
+
+
+def resolve(dedup_key):
+    """Problem khatam ho gayi → uske notifications ko read + `resolved` mark karo.
+
+    Jo error theek ho chuka hai uska laal badge bethe rehna utna hi bekaar hai
+    jitna error ka chhup jaana — dono soorat me bell pe bharosa khatam hota hai.
+    Row DELETE nahi hoti (history hamesha rehti hai), bas chup ho jaati hai aur
+    UI me "✓ fixed" dikhti hai.
+
+    Wapas: kitni rows resolve hui (0 = pehle se resolved/koi thi hi nahi).
+    """
+    try:
+        recs = _read_lines()
+        n = 0
+        for r in recs:
+            if r.get("dedup") == str(dedup_key)[:200] and not r.get("resolved"):
+                r["resolved"] = True
+                r["read"] = True
+                n += 1
+        if n:
+            _rewrite(recs)
+        return n
+    except Exception as e:
+        print(f"[notify] resolve fail: {e}", flush=True)
+        return 0
 
 
 def clear():
