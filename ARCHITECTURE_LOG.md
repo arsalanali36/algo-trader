@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-07-16 — Positional/overnight strategy durability — allow_overnight code-set + prior-day carry-over display + range-recovery (TRAP #119)
+**Status:** DONE
+**Layer:** risk (allow_overnight) + ui (carry-over display) + strategy (recovery) — all deployed VPS master `ff8db9e`
+**Kya:** VRP Overnight Condor ka paper trade Jul-15 raat 22:40 pe `EOD_315_SQUAREOFF` se force-close ho gaya (positional ko intraday samajh ke). 4 root gaps fix: (1) `allow_overnight` config-fragile tha (nifty_config rewrite baar-baar per_strategy key drop karta) → `risk_gate._ALWAYS_OVERNIGHT={"vrp_condor_v1","vrp_v1"}` DURABLE code-set. (2) Dashboard `/api/orders` today-scoped → positional next-day gayab → `allow_overnight` strategies ke prior-day open legs 7-din `trades_for_range` se carry-over (`carried_over` tag, display-only). (3) `vrp_condor/straddle_trader._recover()` bhi today-scoped → exit-day restart pe position CLEAR → range-lookback recovery. (4) User ki killed trade REVIVE ki (4 phantom exits delete; strategy in-memory hold kiye baithi thi — pos_monitor squareoff strategy ko inform nahi karta, TRAP #62). Position ENTRY-date pe rakhi (re-date pe ₹3k profit-lock trip hua = Rule 10 confirm: positional ko RMS caps mat lagao, entry-date = natural today-scope exemption).
+**Files:** `_core/risk_gate.py` (allow_overnight + _ALWAYS_OVERNIGHT), `trader_dashboard.py` (/api/orders carry-over), `strategies/live/vrp_condor_trader.py` + `vrp_straddle_trader.py` (range recovery), `strategies/live/NEW_STRATEGY_CHECKLIST.md` (🌙 POSITIONAL section, 6-point), `LESSONS.md` (TRAP #119).
+**Kyun:** Poora system intraday-assumed (sab "aaj ki date" scope) → positional multi-date position 4 jagah tootti thi. Ainda kisi bhi positional ke liye ye baaten skip na ho — checklist + TRAP me permanent.
+**Deploy:** dono services restart (KillMode verify — algo-monitor=control-group solo, algo-dashboard=process → strategy children survive); live arschain position before==after intact; VPS git clean on master (ek deploy-scar: local branch deploy/feed-fix tha, galti se VPS reset origin/master ne files revert kiye → FF push deploy/feed-fix:master + VPS reset se theek).
+**Depends on:** order_store.trades_for_range, risk_gate.allow_overnight, pos_monitor today-scope (deliberately untouched).
+**Commit:** ff8db9e (+ recovery follow-up). Memory: [[project_code3b_vrp_condor]].
+
+---
+
 ## 2026-07-15 — Exit-rule → Daily-Discipline research + per-strategy Max-Trades cap + what-if tooltips
 **Status:** DONE
 **Layer:** research + ui + config (Max-Trades = money-path gate, off-by-default)

@@ -235,7 +235,15 @@ def _recover(sid, log):
         return None, last_exp
     try:
         import order_store
-        opens = order_store.trades_for(ist_now().strftime("%Y-%m-%d")).get("open") or []
+        from datetime import timedelta as _td
+        # POSITIONAL: an overnight leg is dated its ENTRY day, so a restart on the
+        # exit-day (or any later day) must look back a few days — a plain today-only
+        # query would find nothing and wrongly CLEAR a genuinely-open overnight
+        # position on the very next session. trades_for_range pairs entry+exit across
+        # dates, so a leg still shows "open" only if it truly has no exit yet.
+        _t = ist_now()
+        opens = order_store.trades_for_range(
+            (_t - _td(days=7)).strftime("%Y-%m-%d"), _t.strftime("%Y-%m-%d")).get("open") or []
         open_secs = {str(p.get("sec_id")) for p in opens if p.get("strategy") == sid}
         want = {str(l["sec_id"]) for l in pos["legs"]}
         if want.issubset(open_secs):

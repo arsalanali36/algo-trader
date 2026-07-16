@@ -2545,3 +2545,59 @@ The script-difference guard is what keeps `rsi_v1 → "rsi"` untouched (STRATEGI
 **Banner root:** `auto_data_downloader.gap_check()` 60-din scan karke HAR date ka missing-instrument alert karta tha. Expired option contract ka intraday Dhan **permanently drop** kar deta hai (token refresh se WAPAS nahi aata) → wo "missing" kabhi "ok" nahi hota → har cycle re-alert → weeks-long wall. Aur `days_ago >= 5 = urgent 🚨 "contract expire / token update karo"` ULTA tha (purana = expired = kam actionable, zyada nahi) + misleading (token se recover hota hi nahi). **Guard:** sirf last 2 din ke gaps alert (jahan token-fresh retry genuinely help kare); usse purana skip; honest wording ("premium-chart data nahi mila — illiquid/expired strike normal hai"), jhoota token-blame hata. 19 → 3 lines. Genuine full-token-expiry alag path (`fetch_orders() None → 🔴`) se covered hai, wo untouched.
 
 **Fast-detect:** jab do jagah ka "same" total alag ho — **dono ka trade-SET aur charge-treatment alag-alag verify karo** (`order_store.trades_for(date)` all vs per-strategy-sum; gross vs net). Aksar ek side kisi source (webhook/manual/untagged-strategy) ko silently drop kar raha hota hai. Aur koi bhi "data missing / token update" perpetual alert dekho to check karo wo actually ACTIONABLE hai ya expired-resource ka permanent noise — unactionable alert = remove/cap, warna real alert usme dab jaata hai.
+
+---
+
+## TRAP #119 — Positional/overnight strategy ko INTRADAY-assumed system chupchaap 4 jagah maar deta hai
+
+**Symptom:** VRP Overnight Condor (positional, one-night hold) ka paper trade "kal liya tha, aaj
+dashboard pe dikh hi nahi raha." Investigate karne pe: trade Jul-15 15:10 pe hui, par **usi raat
+22:40 pe `EOD_315_SQUAREOFF` se force-close** ho gayi.
+
+**Root pattern — poora system "aaj ki date" assume karta hai; positional position multiple dates
+span karti hai, to 4 alag jagah tootti hai:**
+
+1. **`allow_overnight` config-fragile tha.** EOD 3:15 squareoff skip `risk_gate.allow_overnight()`
+   pe depend karta hai jo `nifty_config.json._risk.per_strategy[sid].allow_overnight` padhta tha.
+   Wo key config-rewrite (app khud nifty_config ko hot-write karta hai) me **do baar silently drop**
+   ho gayi (top-level block se bhi). Key gayab → `allow_overnight()` fail-safe False → raat ko monitor
+   restart pe overnight condor 3:15-past dekh ke squareoff. **FIX (durable):** `risk_gate.py` me
+   code-level `_ALWAYS_OVERNIGHT = {"vrp_condor_v1","vrp_v1"}` set; `allow_overnight()` id is-set-me
+   True, config-independent. Config override bhi rahe. **Config me positional flag daalna = fragile;
+   code-level set = durable.**
+
+2. **Dashboard/pos_monitor/recovery sab TODAY-scoped** (`order_store.trades_for(today)`):
+   - **Display:** Orders & P&L `/api/orders?date=today` sirf aaj ke legs dikhata → kal ki overnight
+     position agle din view se GAYAB (asli "dikh nahi raha" layer). **FIX:** `/api/orders` ab
+     `allow_overnight` strategies ke prior-day open legs 7-din lookback se carry-over karta hai
+     (`trades_for_range`, `carried_over` tag, display-only — pos_monitor untouched). `allow_overnight`
+     pe filter zaroori (warna 7-din lookback ~18 stale intraday open-rows surface kar deta hai).
+   - **Recovery:** positional trader ka `_recover()` bhi `trades_for(today)` use karta tha → exit-day
+     pe restart hua to entry-date (kal) ki legs aaj ki query me nahi → recovery position CLEAR kar
+     deti (kho deti). **FIX:** `vrp_condor_trader._recover()` + `vrp_straddle_trader._recover()` ab
+     `trades_for_range((today-7d), today)` use karte hain.
+
+3. **pos_monitor ka squareoff strategy ko INFORM nahi karta** (TRAP #62 shape): 22:40 wala squareoff
+   pos_monitor (alag process) ne kiya, par strategy ki in-memory `pos` + state-file me condor abhi
+   bhi "held" tha (strategy ko pata hi nahi) — uska apna 15:10 next-session exit pending tha.
+   Isiliye trade ko "wapas laana" bas order_store ke 4 phantom `EOD_315_SQUAREOFF` exits delete
+   karna tha; strategy pehle se hold kiye baithi thi.
+
+4. **Positional ko RMS profit-lock/caps se re-date karke MAT laao** (Rule 10): position ko visible
+   karne ke liye "aaj" ki date pe daalne ka test kiya to global **₹3,000 daily profit-lock turant
+   `RMS_PROFIT_TARGET` fire** (condor +₹3,978 pe tha) → 3 legs band. Undo kiya. **Insight:** positional
+   position ko apni ENTRY-date pe rakho — pos_monitor (today-scoped) usse manage hi nahi karta =
+   natural RMS-exemption = exactly Rule 10 (backtested strategy validated DNA pe chale, RMS caps
+   discretionary ke liye). Backtested/positional pe koi profit-lock/max-trades/default-SL mat lagao.
+
+**Cosmetic (real bug nahi):** VRP traders `symbol` field me underlying "NIFTY" record karte, exits
+full option-symbol — netting `trad_sym` pe key karti hai (sab legs pe sahi) to pairing/P&L theek.
+
+**Permanent guard:** naya positional strategy = `strategies/live/NEW_STRATEGY_CHECKLIST.md` ka
+"🌙 POSITIONAL / OVERNIGHT" section padho (6-point). Positional bug diagnose karne se pehle:
+`grep EOD_315_SQUAREOFF` exits in trades.db + `risk_gate.allow_overnight(sid)` check + confirm
+strategy ki in-memory `pos` order_store se sync hai.
+
+**Fast-detect:** positional trade "gayab" = pehle dekho wo genuinely closed hui (`EOD_315`/`RMS_*`
+exit rows) ya sirf display se (today-scoped view). Genuinely-closed = allow_overnight gap; display-only
+= carry-over gap. Fix `ff8db9e`.

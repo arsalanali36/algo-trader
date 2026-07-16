@@ -130,6 +130,44 @@ res = gw.execute_exit(strategy_id, sym, sec_id, trad_sym, qty,
 
 ---
 
+## 🌙 POSITIONAL / OVERNIGHT STRATEGY — 6 cheezein warna position raat ko marr jaayegi (TRAP #119)
+
+> Poora system INTRADAY assume karke bana hai (har cheez "aaj ki date" pe scope hoti hai).
+> Ek overnight/positional strategy (VRP condor/straddle jaise, ADR-006) in 6 jagah chupchaap
+> tootegi. **Naya positional strategy banao to ye 6 zaroor:**
+
+1. **`allow_overnight` = CODE me daalo, config me nahi.** `risk_gate._ALWAYS_OVERNIGHT` set me apni
+   strategy-id add karo. `nifty_config.json` ko app baar-baar rewrite karta hai aur
+   `per_strategy[...].allow_overnight` key ko **silently drop** kar deta hai → positional strategy
+   phir intraday ban jaati hai → 3:15 EOD squareoff usse maar deta hai (ya raat ko monitor restart pe).
+   Config override chalta hai par bharosa mat karo — code-level set durable hai.
+2. **Recovery `trades_for_range` se karo, `trades_for(today)` se NAHI.** Overnight leg apni ENTRY-date
+   pe dated hoti hai; exit-day pe restart hua to today-only query use nahi degi → recovery position
+   CLEAR kar degi (kho degi). `_recover()` me 7-din lookback: `trades_for_range((today-7d), today)`.
+   Reference: `vrp_condor_trader._recover()`.
+3. **Position apni ENTRY-date pe rehne do — "aaj" pe re-date MAT karo.** Tempting lagta hai (dashboard
+   sirf aaj dikhata) par re-date karte hi wo pos_monitor ke today-scope me aa jaati hai aur **RMS
+   ₹3k profit-lock / daily-caps turant fire** ho jaate hain (Rule 10 violation — backtested strategy
+   ko validated DNA pe chalna hai, RMS caps discretionary ke liye hain). Entry-date pe rehne se
+   pos_monitor (today-scoped) usse chhoota hi nahi = natural exemption. **Isliye positional ko
+   koi RMS profit-lock/max-trades/default-SL mat lagao** — uske apne backtested exits chalne do.
+4. **Dashboard display already handle ho chuka** — `/api/orders` `allow_overnight` strategies ke
+   prior-day open legs ko aaj ke view me carry-over karta hai (`carried_over` tag). Naya positional
+   strategy #1 (code-set) me add karte hi apne-aap next-day visible ho jayegi. (Dekhne ke liye
+   Mode filter=Paper/All rakho.)
+5. **pos_monitor ka squareoff strategy ko INFORM nahi karta** (TRAP #62 shape). Agar koi RMS/expiry
+   squareoff position band kare, strategy ki in-memory `pos` stale rahegi. Positional ke liye:
+   entry-date pe rakho (pos_monitor scope se bahar) + apna EXIT khud manage karo (next-session close).
+6. **Exit-day pe strategy khud exit kare** (`entry_date != today and now >= exit_hm`), koi 3:15
+   force-exit nahi (allow_overnight). Expiry-day 2:55 squareoff + ITM guard + RMS daily-LOSS breaker
+   phir bhi lagte hain (sirf profit-lock/caps exempt hain, loss-protection nahi).
+
+> **Bonus gotcha:** VRP traders `symbol` field me underlying ("NIFTY") record karte hain, exits full
+> option-symbol — netting `trad_sym` pe key karti hai (sab legs pe sahi) to ye sirf cosmetic hai,
+> P&L pairing theek rehti hai. Ghabrao mat.
+
+---
+
 ## 🔌 DASHBOARD REGISTRATION (warna file launch hi nahi hogi)
 
 `trader_dashboard.py` ke `STRATEGIES` dict mein entry add karo:
@@ -170,6 +208,7 @@ res = gw.execute_exit(strategy_id, sym, sec_id, trad_sym, qty,
 | #63/#64 | Provisional order_store row on accept; order-chasing unfilled limits |
 | #65 | `dhan_feed.start()` na call karne se liquidity filter andha |
 | #72 | Trailing-lock indentation → SL/TP/EOD silently band (block-wrap gotcha) |
+| #119 | **Positional/overnight:** allow_overnight code-set (config-fragile), recovery + display + RMS sab today-scoped — dekho "🌙 POSITIONAL / OVERNIGHT" section |
 
 ---
 
