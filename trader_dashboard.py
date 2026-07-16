@@ -4506,6 +4506,30 @@ def api_orders():
                     p['sl_aggressive'] = _sli.get('aggressive')
             except Exception:
                 pass
+
+        # ── Real HEDGED margin per strategy group ────────────────────────────
+        # `margin_used` above is each leg's STANDALONE margin — right for a leg,
+        # badly wrong when SUMMED across a hedged structure: that's not what the
+        # broker blocks. Live-measured 2026-07-16: a 2-leg vertical summed to
+        # ₹1,49,532 vs ₹37,813 really blocked; a 4-leg condor ₹3,77,337 vs
+        # ₹82,334. The UI groups by strategy, so give it that group's real basket
+        # margin to show as the group TOTAL instead of the sum.
+        # Uses the SAME cached _group_capital() the RMS capital check uses — the
+        # table, the payoff panel and the risk engine must never disagree about
+        # the same position.
+        try:
+            _grp = {}
+            for p in data.get('open', []):
+                if 'CAPITAL_BLOCKED' in (p.get('tags') or []):
+                    continue
+                _grp.setdefault(p.get('strategy') or '', []).append(p)
+            data['group_margin'] = {
+                s: {"hedged": round(_rg._group_capital(rows, _rc), 2),
+                    "standalone": round(sum(float(r.get('margin_used') or 0) for r in rows), 2)}
+                for s, rows in _grp.items()
+            }
+        except Exception:
+            data['group_margin'] = {}
     except Exception as _e:
         pass
     return jsonify(data)

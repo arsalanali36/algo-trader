@@ -5538,6 +5538,10 @@
       const broker = document.getElementById('ord-broker').value; if (broker) q.set('broker', broker);
       let d = {};
       try { const r = await fetch('/api/orders?' + q.toString()); d = await r.json(); } catch (e) { return; }
+      // per-strategy REAL hedged basket margin (backend: risk_gate._group_capital)
+      // — the Open Positions group TOTAL shows this instead of summing each
+      // leg's standalone margin, which overstates a hedged structure badly.
+      window._ordGroupMargin = d.group_margin || {};
 
       let det = d.details || [];
       if (src === 'hedge') {
@@ -7471,7 +7475,25 @@
               else {
                 switch (c.id) {
                   case 'qty': val = grpQty; break;
-                  case 'margin': val = Math.round(grpMargin).toLocaleString('en-IN'); break;
+                  case 'margin': {
+                    // Show what the broker REALLY blocks for this group, not the
+                    // sum of each leg's standalone margin — for a hedged structure
+                    // those differ hugely (live: condor sum ₹3,77,337 vs ₹82,334
+                    // actually blocked). Backend sends the basket figure from the
+                    // same risk_gate._group_capital() RMS itself uses.
+                    // key by stratKey (= t.strategy, exactly what the backend
+                    // grouped by), NOT stratName — that's the ' | '-split label.
+                    const gm = (window._ordGroupMargin || {})[stratKey];
+                    if (gm && gm.hedged != null && gm.standalone > gm.hedged + 1) {
+                      const saved = Math.round(gm.standalone - gm.hedged);
+                      val = `<span title="Real hedged margin Zerodha blocks for this structure — ₹${saved.toLocaleString('en-IN')} less than the sum of the legs' standalone margins (hedge benefit)">`
+                        + `${Math.round(gm.hedged).toLocaleString('en-IN')}`
+                        + `<br><span style="font-size:9px;color:#6e7681;font-weight:400"><s>${Math.round(gm.standalone).toLocaleString('en-IN')}</s> hedged</span></span>`;
+                    } else {
+                      val = Math.round(gm && gm.hedged != null ? gm.hedged : grpMargin).toLocaleString('en-IN');
+                    }
+                    break;
+                  }
                   // live cells — updated by _patchLtpCells; put grand-total IDs on last (or only) group
                   case 'points': val = `<b class="grp-tot-pts" data-grp="${grpId}">—</b>`; break;
                   case 'pnl': val = `<b class="grp-tot-unrl" data-grp="${grpId}">—</b>`; break;
