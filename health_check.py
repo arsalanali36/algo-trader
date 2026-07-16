@@ -78,11 +78,15 @@ TRADER_SCRIPTS = {
     "vrp_condor": TRADERS_DIR / "vrp_condor_trader.py",         # 10 VRP overnight condor (positional, ADR-006)
 }
 def _base(strategy):
-    if strategy.startswith("ARS_CHAIN"):
-        return "ARS_CHAIN"
-    if strategy.startswith("rsi_v1"):
-        return "rsi_v1"
-    return strategy.split("_")[0] if "_" in strategy else strategy
+    """Shared resolver (Rule 6B) — ye pehle apni alag copy thi jo `split("_")[0]`
+    karti thi, isliye `vrp_condor_v1` ke liye STRADDLE ka script check hota tha
+    (TRAP #116 ka fix sirf trader_dashboard me laga tha). Ab dono ek hi jagah se.
+    Purane ARS_CHAIN/rsi_v1 special-case yahan se hate hain — generic two-token
+    rule wahi jawab deta hai (ARS_CHAIN_V1_PAPER→ARS_CHAIN kyunki "ARS" map me
+    nahi; rsi_v1_PAPER→rsi kyunki dono bases ka script ek hi 01_rsi_v1 hai)."""
+    import strategy_registry
+    return strategy_registry.resolve_base(
+        strategy, lambda b: TRADER_SCRIPTS.get(b))
 
 _IDX = {"NIFTY": ("13", "IDX_I"), "BANKNIFTY": ("25", "IDX_I")}
 

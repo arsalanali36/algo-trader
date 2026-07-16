@@ -276,18 +276,13 @@ STRATEGIES = {
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
 
 def _base(strategy):
-    # Prefer a more-specific TWO-token base (e.g. "vrp_condor" over "vrp") when it
-    # exists AND routes to a DIFFERENT script than the one-token base — otherwise a
-    # config id like "vrp_condor_v1" silently runs the wrong trader, because
-    # split('_')[0] == "vrp" (the straddle). rsi_v1 stays -> "rsi": both bases share
-    # the SAME script (01_rsi_v1), so there is no ambiguity to resolve there.
-    parts = strategy.split('_')
-    if len(parts) >= 2:
-        two, one = f"{parts[0]}_{parts[1]}", parts[0]
-        if two in STRATEGIES and STRATEGIES[two].get("script") != STRATEGIES.get(one, {}).get("script"):
-            return two
-    first = parts[0] if '_' in strategy else strategy
-    return STRATEGY_ALIASES.get(first, first)
+    # TRAP #116's rule now lives in ONE place (strategy_registry.resolve_base) —
+    # health_check.py had its own split('_')[0] copy that never got this fix, so
+    # it resolved vrp_condor_v1 → "vrp" (straddle) and preflight-checked the wrong
+    # script. Behaviour here is unchanged; only the home moved.
+    import strategy_registry
+    return strategy_registry.resolve_base(
+        strategy, lambda b: (STRATEGIES.get(b) or {}).get("script"), STRATEGY_ALIASES)
 
 def _detect_lang(code):
     """Best-effort Pine vs Python vs DSL-rule-block detection (the UI also asks

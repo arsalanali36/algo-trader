@@ -135,6 +135,37 @@ def add(family, name, config_key=None, slug=None, live_file=None, status="resear
     return sid
 
 
+def resolve_base(strategy_id, script_of, aliases=None):
+    """config-id (e.g. "vrp_condor_v1") → uska trader BASE key (e.g. "vrp_condor").
+
+    Ye logic pehle DO jagah alag-alag likhi thi — `trader_dashboard._base()` aur
+    `health_check._base()` — aur TRAP #116 ka fix sirf pehli me laga. Doosri
+    `split("_")[0]` hi karti rahi, to `vrp_condor_v1` uske liye "vrp" (straddle)
+    resolve hota raha: 9:20 ka preflight condor ki jagah STRADDLE ka script
+    compile-check karta tha (aur `_ops/signal_replay.py`, jo isi ko import karta
+    hai, condor ka din-bhar ka verdict straddle ki signal-logic pe banata tha).
+    `vrp_condor` ki sahi entry TRADER_SCRIPTS me maujood thi — bas kabhi reach
+    nahi hoti thi. Isliye ab ek hi jagah: dono caller yahi bulate hain.
+
+    Rule: ZYADA-SPECIFIC two-token base ("vrp_condor") ko one-token ("vrp") pe
+    tabhi prefer karo jab wo ALAG script pe jaata ho. `rsi_v1` → "rsi" hi rehta
+    hai (dono bases ka script ek hi 01_rsi_v1 hai → koi ambiguity nahi), aur
+    `ARS_CHAIN_V1_PAPER` → "ARS_CHAIN" (two-token maujood, one-token "ARS" nahi).
+
+    script_of — callable: base → uska script path (ya None). Caller apna map deta
+                hai (dashboard ka STRATEGIES, health_check ka TRADER_SCRIPTS), to
+                ye function un dono maps se azad rehta hai.
+    aliases   — optional {first_token: base} map (dashboard ka STRATEGY_ALIASES).
+    """
+    parts = str(strategy_id).split('_')
+    if len(parts) >= 2:
+        two, one = f"{parts[0]}_{parts[1]}", parts[0]
+        if script_of(two) is not None and script_of(two) != script_of(one):
+            return two
+    first = parts[0] if '_' in str(strategy_id) else str(strategy_id)
+    return (aliases or {}).get(first, first)
+
+
 if __name__ == "__main__":
     import sys
     if len(sys.argv) > 1:
