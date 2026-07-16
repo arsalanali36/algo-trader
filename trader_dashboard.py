@@ -2436,9 +2436,23 @@ def api_position_legs_series():
         entry_dates = [r.get('entry_date') for r in rows if r.get('entry_date')]
         frm = min(entry_dates) if entry_dates else today
 
+        # Clip to the actual ENTRY moment — Dhan serves the whole entry day from
+        # 09:15, but bars before the position existed carry no P&L (a 15:10 entry
+        # would otherwise show 6 hours of meaningless "P&L" ahead of itself).
+        entry_epoch = 0
+        try:
+            _ed = min(entry_dates)
+            _et = min((r.get('entry_time') or '23:59') for r in rows
+                      if (r.get('entry_date') == _ed))
+            _dtm = _d.strptime(f"{_ed} {_et}", "%Y-%m-%d %H:%M")
+            entry_epoch = int((_dtm - _d(1970, 1, 1)).total_seconds()) - 19800  # IST -> Dhan epoch
+        except Exception:
+            entry_epoch = 0
+
         out_legs, bars = [], {}
         for L in legs:
             b = _leg_closes(L['sec_id'], frm, today)
+            b = {t: c for t, c in b.items() if t >= entry_epoch}
             bars[L['trad_sym']] = (b, L)
             out_legs.append({
                 "trad_sym": L['trad_sym'], "side": L['side'], "opt": L['opt'],
