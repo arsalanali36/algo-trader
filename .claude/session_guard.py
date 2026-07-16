@@ -60,7 +60,9 @@ REPO = os.path.dirname(HERE)
 # wo lock kho dega — theek hai: wo agla write karte hi wapas le lega (agar tab tak
 # koi aur na le chuka ho). Isse chhota rakha to sessions aapas me lock cheenenge;
 # bada rakha to ek band session doosre ko der tak rokega.
-TTL_SECS = 30 * 60
+TTL_SECS = 15 * 60   # 2026-07-16: 30 -> 15 (user). Ek band/idle session 30 min tak
+                     # doosre ko rok rahi thi; guard ka maqsad concurrent-overwrite
+                     # rokna hai, kaam rokna nahi.
 
 # Sirf ye cheezein lock maangti hain. Baaki sab (Read/Grep/Glob/git status/log/
 # diff, koi bhi read-only ssh) hamesha allow — doosra session dekh sakta hai.

@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KHAZANA Research — Exit & Daily-Discipline Framework</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#1c2333; --bd:#30363d; --bd2:#21262d;
+    --tx:#e6edf3; --mut:#8b949e; --grn:#3fb950; --red:#f85149; --blu:#58a6ff;
+    --ylw:#d29922; --pur:#bc8cff;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--tx);font-family:'Segoe UI',system-ui,sans-serif;
+    margin:0;padding:0 0 80px;line-height:1.55;font-size:15px}
+  .wrap{max-width:960px;margin:0 auto;padding:0 18px}
+  header{background:linear-gradient(135deg,#161b22,#1c2333);border-bottom:1px solid var(--bd);
+    padding:38px 0 30px;margin-bottom:8px}
+  header .wrap{display:block}
+  .eyebrow{color:var(--ylw);font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase}
+  h1{font-size:30px;margin:8px 0 6px;line-height:1.2}
+  .sub{color:var(--mut);font-size:15px;max-width:720px}
+  .date{color:var(--mut);font-size:13px;margin-top:12px}
+  section{background:var(--card);border:1px solid var(--bd);border-radius:12px;
+    padding:22px 24px;margin:22px 0}
+  h2{font-size:20px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .n{background:var(--bd2);color:var(--blu);font-size:13px;font-weight:700;border-radius:8px;
+    padding:2px 10px;min-width:30px;text-align:center}
+  h3{font-size:15px;color:var(--ylw);margin:20px 0 8px}
+  p{margin:10px 0}
+  .lead{color:var(--mut)}
+  .hl{color:var(--tx);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px;
+    display:block;overflow-x:auto;white-space:nowrap}
+  th,td{padding:8px 12px;text-align:right;border-bottom:1px solid var(--bd2)}
+  th:first-child,td:first-child{text-align:left}
+  thead th{color:var(--mut);font-weight:600;border-bottom:1px solid var(--bd);position:sticky;top:0;background:var(--card)}
+  tbody tr:hover{background:#1c2333}
+  .win{color:var(--grn)} .loss{color:var(--red)} .mut{color:var(--mut)}
+  .best td{background:rgba(63,185,80,.09)}
+  .worst td{background:rgba(248,81,73,.08)}
+  .pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 9px;border-radius:20px;vertical-align:middle}
+  .p-rej{background:rgba(248,81,73,.15);color:var(--red);border:1px solid rgba(248,81,73,.4)}
+  .p-win{background:rgba(63,185,80,.15);color:var(--grn);border:1px solid rgba(63,185,80,.4)}
+  .p-flag{background:rgba(210,153,34,.15);color:var(--ylw);border:1px solid rgba(210,153,34,.4)}
+  .callout{border-left:3px solid var(--blu);background:var(--card2);border-radius:0 8px 8px 0;
+    padding:12px 16px;margin:16px 0}
+  .callout.grn{border-color:var(--grn)} .callout.red{border-color:var(--red)}
+  .callout.ylw{border-color:var(--ylw)}
+  .callout b{color:var(--tx)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+  @media(max-width:640px){.grid2{grid-template-columns:1fr}}
+  .stat{background:var(--card2);border:1px solid var(--bd);border-radius:10px;padding:14px 16px}
+  .stat .v{font-size:24px;font-weight:700}
+  .stat .k{color:var(--mut);font-size:12px;margin-top:2px}
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:14px 0;color:var(--mut);font-size:13px}
+  .flow span{background:var(--card2);border:1px solid var(--bd);border-radius:8px;padding:6px 12px;color:var(--tx)}
+  .flow .arw{color:var(--mut);padding:0 2px}
+  .foot{color:var(--mut);font-size:12px;margin-top:8px}
+  a{color:var(--blu);text-decoration:none}
+  .toc{columns:2;font-size:13.5px;color:var(--mut)}
+  @media(max-width:640px){.toc{columns:1}}
+  .toc a{display:block;padding:3px 0}
+  .q{font-size:17px;color:var(--tx);font-style:italic;border-left:3px solid var(--ylw);padding-left:14px;margin:10px 0}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <div class="eyebrow">KHAZANA · Algo Research Log</div>
+  <h1>Exit-Rule se Daily-Discipline tak — ek din ka poora safar</h1>
+  <div class="sub">"Trade se kaise nikalna hai" (per-trade SL/target) dhoondhte-dhoondhte asli jawab
+    nikla "din me kab rukna hai" (per-strategy daily discipline). 9 backtests, kai ideas — kuch chune, zyada reject kiye. Ye us poori journey ka honest record hai.</div>
+  <div class="date">🗓️ 15 July 2026 · discretionary strategies · sab numbers real Zerodha charges + DOM slippage ke baad (deployable P&L)</div>
+</div></header>
+
+<div class="wrap">
+
+<section>
+  <h2><span class="n">TL;DR</span> Ek nazar me nateeja</h2>
+  <div class="grid2">
+    <div class="stat"><div class="v win">+₹23,617</div><div class="k">Winner framework (max-5 + ₹3k lock) — baseline −₹1,878 se</div></div>
+    <div class="stat"><div class="v" style="color:var(--red)">p = 0.127</div><div class="k">Statistically significant NAHI (abhi) — isliye paper pe, live nahi</div></div>
+    <div class="stat"><div class="v" style="color:var(--ylw)">3 × ❌</div><div class="k">Per-trade uniform SL/target/trail — teeno idea reject (adaptive exit jeeta)</div></div>
+    <div class="stat"><div class="v win">1 × ✅</div><div class="k">Sirf DIN-level discipline ne edge diya (kam trade + profit lock)</div></div>
+  </div>
+  <div class="callout ylw"><b>Ek line:</b> Per-trade pe kuch bhi uniform thopna = strategy ke apne adaptive exit ko todna = nuksan.
+    Kaam sirf <b>"kam trade karo, achhe wale karo, ₹3,000 ban jaaye to ruk jao"</b> ne kiya.</div>
+</section>
+
+<section>
+  <h2><span class="n">0</span> Kahan se shuru hua</h2>
+  <p class="lead">Stats page ke "what-if" columns (Opt Fixed / Aggr / Aggr→EOD) pe tooltip add karte-karte sawaal utha:
+    <span class="hl">jab humne ML se dekha tha, ₹4,000/lot ka target to kabhi hit hi nahi hota — sahi hai kya?</span>
+    Ye poore din ka research usi ek sawaal se khula.</p>
+  <div class="flow">
+    <span>What-if columns</span><span class="arw">→</span>
+    <span>Target hit-rate?</span><span class="arw">→</span>
+    <span>RR sweep</span><span class="arw">→</span>
+    <span>Rotation insight</span><span class="arw">→</span>
+    <span>₹11L pool reality</span><span class="arw">→</span>
+    <span>Daily discipline</span><span class="arw">→</span>
+    <span>Tail risk</span><span class="arw">→</span>
+    <span>Deploy (paper)</span>
+  </div>
+</section>
+
+<section>
+  <h2><span class="n">1</span> Pehla sach — wide target kabhi hit hi nahi hota</h2>
+  <p>428 covered trades pe check kiya. User ki baat 100% sahi nikli: premium itna move karta hi nahi.</p>
+  <table>
+    <thead><tr><th>Target (per lot)</th><th>Kitni baar HIT hua</th></tr></thead>
+    <tbody>
+      <tr><td>Fixed ₹1,000 (1:1)</td><td class="win">29%</td></tr>
+      <tr><td>Fixed ₹2,000 (1:2)</td><td>10%</td></tr>
+      <tr class="worst"><td>Fixed ₹4,000</td><td class="loss">2%</td></tr>
+      <tr class="worst"><td>Aggressive ₹6,000</td><td class="loss">~0%</td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><b>Matlab:</b> jitna wide target, utna kam hit. ₹4,000+ pe 98% trades target ko chhute bhi nahi —
+    woh apne actual exit pe hi nikalte hain. To wide fixed target sirf <b>winners ko cap</b> karta hai, kuch deta nahi.</div>
+</section>
+
+<section>
+  <h2><span class="n">2</span> RR Sweep — 1:1 / 1:2 / 1:3 (Fixed vs Aggressive)</h2>
+  <p class="lead">478 covered trades · <b>Actual (jo abhi live exits ho rahe) covered net = ₹68,747</b> — ye baseline hai.
+    "T-hit" = target laga, "rode" = na target na SL, actual exit tak gaya.</p>
+  <h3>Ratio 1:1 (Target = SL)</h3>
+  <table>
+    <thead><tr><th>SL/lot</th><th>FIXED net</th><th>Fix T-hit</th><th>AGGR net</th><th>Aggr T-hit</th></tr></thead>
+    <tbody>
+      <tr><td>1,000</td><td>23,505</td><td>29%</td><td>27,544</td><td>25%</td></tr>
+      <tr><td>1,500</td><td class="win">40,045</td><td>19%</td><td class="win">40,046</td><td>16%</td></tr>
+      <tr class="best"><td>2,000</td><td class="win">41,664</td><td>13%</td><td>28,953</td><td>10%</td></tr>
+      <tr><td>2,500</td><td>26,255</td><td>8%</td><td>25,407</td><td>6%</td></tr>
+    </tbody>
+  </table>
+  <h3>Ratio 1:2 &amp; 1:3 (target 2×/3× SL — aggr ka best zone)</h3>
+  <table>
+    <thead><tr><th>Config</th><th>FIXED net</th><th>AGGR net</th><th>Aggr T-hit</th></tr></thead>
+    <tbody>
+      <tr><td>1:2 · SL 1,000 (T 2,000)</td><td>27,896</td><td class="win">55,442</td><td>5%</td></tr>
+      <tr class="best"><td>1:3 · SL 1,000 (T 3,000)</td><td>28,979</td><td class="win">55,579</td><td>1%</td></tr>
+      <tr><td>1:3 · SL 1,500 (T 4,500)</td><td>16,965</td><td>46,224</td><td>0%</td></tr>
+    </tbody>
+  </table>
+  <div class="callout"><b>Nikla:</b> Fixed ka sweet spot = <b>1:1 pe SL 1,500–2,000</b> (₹40–42k). Aggressive ka best = <b>tight SL 1,000 + wide target</b> (₹55k) —
+    par yahan target 1% hi lagta, asli kaam <b>trail</b> karta hai. <span class="hl">Phir bhi: koi bhi combo abhi ke actual exit (₹68,747) ko beat nahi karta.</span></div>
+</section>
+
+<section>
+  <h2><span class="n">3</span> User ka bada insight — Rotation (net se bada point)</h2>
+  <p>Fixed 1:1 me target-hit &gt; SL-hit, aur trade <b>jaldi</b> nikalta → capital jaldi free → ₹11L me <b>zyada trades</b> fit.
+    Actual avg holding = 54 min.</p>
+  <table>
+    <thead><tr><th>SL 1:1</th><th>net (same set)</th><th>win%</th><th>avg hold</th><th>rotation</th></tr></thead>
+    <tbody>
+      <tr class="best"><td>1,000</td><td>23,505</td><td>48%</td><td>23 min</td><td class="win">2.32×</td></tr>
+      <tr><td>1,500</td><td>40,045</td><td>48%</td><td>29 min</td><td>1.85×</td></tr>
+      <tr><td>2,000</td><td>41,664</td><td>47%</td><td>35 min</td><td>1.55×</td></tr>
+      <tr><td>2,500</td><td>26,255</td><td>47%</td><td>40 min</td><td>1.34×</td></tr>
+    </tbody>
+  </table>
+  <div class="callout grn"><b>Yahi asli lever tha:</b> ₹11L pe pehle 38% signals CAPITAL_BLOCKED the. Agar trade 54 min ki jagah 23 min me nikle,
+    to capital 2.3× jaldi free → zyada trades → net ka net-effect badal jaata. Mere "net-only" comparison ne ye poori tarah miss kiya tha.</div>
+</section>
+
+<section>
+  <h2><span class="n">4</span> Reality-check — ₹11L pool + REAL cost</h2>
+  <p class="lead">Ab poore ₹11L shared-capital pool me, real Zerodha charges + DOM slippage ke saath (= deployable P&L).
+    Gross +₹66k tha → cost ne sab ~breakeven/negative kar diya.</p>
+  <table>
+    <thead><tr><th>Variant</th><th>NET</th><th>trades</th><th>blocked</th><th>maxDD</th></tr></thead>
+    <tbody>
+      <tr><td>ATR (actual live exits)</td><td class="loss">−17,327</td><td>371</td><td>156</td><td>−47,051</td></tr>
+      <tr class="worst"><td>RIDE 6k/2.5k <span class="pill p-flag">abhi deployed</span></td><td class="loss">−43,704</td><td>276</td><td>251</td><td>−50,810</td></tr>
+      <tr><td>FIX 1:1 SL 1,000</td><td class="loss">−14,096</td><td>357</td><td>170</td><td>−26,877</td></tr>
+      <tr class="best"><td>FIX 1:1 SL 2,000</td><td>−6,213</td><td>271</td><td>256</td><td>−30,213</td></tr>
+    </tbody>
+  </table>
+  <div class="callout red"><b>Bada khulasa:</b> abhi jo <b>RIDE (6k/2.5k) config 7 strategies pe LIVE hai — wahi sabse kharab</b> hai
+    (capital hog, 251 blocked, worst DD). Iska ₹2,500 init-SL matlab trail ko lock hone ke liye ₹2,500/lot profit chahiye — jo aata hi nahi — isliye 85% ride karke wapas de deta. Yehi "sab wapis chala jaata" ki jad.</div>
+</section>
+
+<section>
+  <h2><span class="n">5</span> 🏆 Turning point — Daily Discipline (asli edge)</h2>
+  <p>Insight: <b>cost trades ke saath linear badhta, edge nahi.</b> To exit-rule badalne ke bajaye —
+    har strategy ko din ka limit do: <b>max N trades</b> + <b>₹X profit ban gaye to stop</b>. Exit-rule bilkul nahi chheda.</p>
+  <div class="q">"Din ke pehle 3-5 trade sabse achhe hote — baad wale average pe maamuli, par charge pakka. Wo baad wale paisa khaate hain."</div>
+  <table>
+    <thead><tr><th>Config</th><th>NET</th><th>train</th><th>OOS</th><th>trades</th></tr></thead>
+    <tbody>
+      <tr class="worst"><td>Sab signal lo (baseline)</td><td class="loss">−1,878</td><td>18,165</td><td class="loss">−20,044</td><td>527</td></tr>
+      <tr><td>Sirf max 3 trades/din</td><td class="win">+17,749</td><td>3,823</td><td>13,926</td><td>177</td></tr>
+      <tr><td>Sirf max 5 trades/din</td><td class="win">+22,479</td><td>14,307</td><td>8,172</td><td>253</td></tr>
+      <tr><td>Sirf ₹2,000 profit-lock</td><td class="win">+12,257</td><td>6,078</td><td>6,180</td><td>387</td></tr>
+      <tr class="best"><td>max 5 + ₹3,000 lock ⭐</td><td class="win">+23,617</td><td>11,071</td><td class="win">12,547</td><td>236</td></tr>
+      <tr class="best"><td>max 3 + ₹3,000 lock</td><td class="win">+20,467</td><td>5,018</td><td class="win">15,449</td><td>171</td></tr>
+    </tbody>
+  </table>
+  <div class="callout grn"><b>Chamatkar:</b> baseline −₹1,878 (OOS −20k disaster) → max-5 + ₹3,000 lock = <b>+₹23,617, OOS +₹12,547</b>.
+    Same trades, sirf jaldi ruk gaye — ~₹25k ka swing, aur jo cheez har exit-rule fail kar raha tha (OOS) woh <b>fix</b> ho gaya.
+    Loss-cap akela kamzor nikla — asli jodi = <b>max-trades + tight profit-lock</b>.</div>
+</section>
+
+<section>
+  <h2><span class="n">6</span> max-3 vs max-5 — ek achhi behes</h2>
+  <p>User ne kaha max-3 lo (kam trade + OOS zyada). Maine max-5 argue kiya. Dono side ke asli point:</p>
+  <div class="grid2">
+    <div class="callout grn"><b>max-3 ke liye:</b> higher OOS (+15,449 vs 12,547), 65 kam trades (kam cost), "trade less" thesis ke saath, uncertain 4th-5th trade se door.</div>
+    <div class="callout"><b>max-5 ke liye:</b> net post-cost zyada (extra trades ne apni cost nikaali + profit diya); bade 11-din train pe solid; max-1 sabse kam (+9,750) = "kam hamesha behtar" GALAT, ek floor hai.</div>
+  </div>
+  <div class="callout ylw"><b>Faisla (user):</b> paper phase me goal = <b>max data collect</b> → max-5 zyada observations deta, aur 5 se aage edge nahi.
+    Data badhne pe khud 3-vs-5 settle ho jaayega, "bina emotion, pure logic pe." Chuna: <b>max 5</b>.</div>
+</section>
+
+<section>
+  <h2><span class="n">7</span> ❌ Jo ideas REJECT hue (aur kyun) — sabse zaroori table</h2>
+  <p class="lead">Har idea logical laga, par data ne mana kiya. Ye "kya nahi karna" ka record hai — utna hi keemti.</p>
+  <table>
+    <thead><tr><th>Idea</th><th>Umeed</th><th>Data ne kya kaha</th><th>Verdict</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Tight-SL trail</b><br><span class="mut">(rode→lock, init SL 500)</span></td>
+        <td class="mut">rode ghatao, peak lock karo</td>
+        <td>Gross ₹76k dikha, par cost+OOS pe negative. Combined caps ke saath sirf +2,506 (vs 23,617). Profit-lock ke bade winners ko chop kar deta.</td>
+        <td><span class="pill p-rej">REJECT</span></td>
+      </tr>
+      <tr>
+        <td><b>Fixed target</b><br><span class="mut">(1:1 / 1:2 / 1:3)</span></td>
+        <td class="mut">clean R:R, sukoon</td>
+        <td>Target 0–4% hi hit; winners cap; cost ke baad actual exit se peeche.</td>
+        <td><span class="pill p-rej">REJECT</span></td>
+      </tr>
+      <tr>
+        <td><b>Disaster-SL floor</b><br><span class="mut">(₹1,000–3,000/lot hard SL)</span></td>
+        <td class="mut">tail risk cap</td>
+        <td>Har level net GIRA diya; tight wala DD bhi badhaya. Dip-then-recover trades ko kaat deta (context-blind).</td>
+        <td><span class="pill p-rej">REJECT</span></td>
+      </tr>
+      <tr>
+        <td><b>Mechanism B</b><br><span class="mut">(hard-lock @₹3,000, open bhi close)</span></td>
+        <td class="mut">give-back se bacho</td>
+        <td>net ₹17,982 vs A ₹22,598; DD 17% kam par upside cost pe. MAR 1.29 vs 1.34.</td>
+        <td><span class="pill p-rej">REJECT</span></td>
+      </tr>
+      <tr>
+        <td><b>Daily loss-cap</b><br><span class="mut">(−₹2,000/3,000 pe stop)</span></td>
+        <td class="mut">bura din kaato</td>
+        <td>Akela kamzor (OOS abhi bhi −13k); per-trade strategy-SL already loss handle karta.</td>
+        <td><span class="pill p-rej">REJECT</span></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout red"><b>Common jad:</b> per-trade pe koi bhi <b>uniform</b> cheez = context-blind. Strategy ke apne exit (ATR-trail / RSI)
+    adaptive hain — woh dip ride kar lete hain. 3 baar (tight-trail, fixed-target, disaster-SL) yehi confirm hua.</div>
+</section>
+
+<section>
+  <h2><span class="n">8</span> ✅ Jo CHUNA (aur kyun)</h2>
+  <table>
+    <thead><tr><th>Layer</th><th>Chuna</th><th>Kyun</th></tr></thead>
+    <tbody>
+      <tr><td>Per-trade exit</td><td class="win">Strategy ka apna exit</td><td>Adaptive; koi uniform SL/target nahi (3× proven better)</td></tr>
+      <tr><td>Per-trade target</td><td class="win">Koi nahi</td><td>₹3k day-lock hi profit book karta — winner ko run karne deta</td></tr>
+      <tr><td>Per-day</td><td class="win">max 5 trades + ₹3,000 realized lock</td><td>Cost kaatta, marginal-late-trades skip, OOS positive</td></tr>
+      <tr><td>Lock mechanism</td><td class="win">A (chalu trade rides)</td><td>Naye trade band, par open ko apni exit tak jaane do — MAR 1.34</td></tr>
+      <tr><td>Daily loss-cap</td><td class="win">Nahi</td><td>Kamzor + achhe recovery-din kaat deta</td></tr>
+      <tr><td>Mission strategies</td><td class="win">Untouched</td><td>Rule 10 — validated Sharpe/PF; caps lagaye to number jhooth</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2><span class="n">9</span> Tail Risk — user ka valid dar (heat distribution)</h2>
+  <p>"No SL" achha lagta hai, par kya trade bahut neeche ja sakta hai? 236 taken trades pe dekha:</p>
+  <div class="grid2">
+    <div class="stat"><div class="v">43%</div><div class="k">win rate · avg win +₹1,207 / avg loss −₹742</div></div>
+    <div class="stat"><div class="v loss">₹8,054</div><div class="k">sabse gehra heat /lot (exit se pehle)</div></div>
+  </div>
+  <table>
+    <thead><tr><th>Heat &gt; (per lot)</th><th>trades</th><th>recover to WIN</th><th>net contribution</th></tr></thead>
+    <tbody>
+      <tr class="worst"><td>₹2,000</td><td>21</td><td class="loss">sirf 24%</td><td class="loss">−19,549</td></tr>
+      <tr><td>₹3,000</td><td>11</td><td>18%</td><td class="loss">−14,438</td></tr>
+      <tr><td>₹5,000</td><td>5</td><td>20%</td><td class="loss">−8,594</td></tr>
+    </tbody>
+  </table>
+  <div class="callout red"><b>Dar valid:</b> deep-heat trades (₹2,000+/lot) sirf 24% recover karte — group −₹19,549 ka loss.
+    <b>Par SL isko fix nahi karta</b> (proven — recoverers ko kaat deta). Sahi ilaaj = <b>position sizing</b> (₹8k/lot tail jhelne layak size) +
+    <b>3:15 EOD backstop</b> + <b>entry-filter</b> (deep-heat setups ko entry pe skip), exit-SL nahi.</div>
+</section>
+
+<section>
+  <h2><span class="n">10</span> Honest Metrics — number jhooth mat bolo</h2>
+  <div class="grid2">
+    <div class="stat"><div class="v">1.24</div><div class="k">Profit Factor — real par PATLA edge</div></div>
+    <div class="stat"><div class="v" style="color:var(--red)">0.127</div><div class="k">Significance p — <b>NOT significant</b> (&gt;0.05)</div></div>
+    <div class="stat"><div class="v mut">4.73 ⚠️</div><div class="k">Sharpe (annualised) = MIRAGE (17-din × √252). Real per-trade Sharpe 0.07</div></div>
+    <div class="stat"><div class="v">1.40</div><div class="k">MAR (net/maxDD ₹16,838) · expectancy ₹100/trade</div></div>
+  </div>
+  <div class="callout"><b>Imaandaar padhai:</b> framework relative sabse behtar + is sample pe profitable — <b>par statistically PROVEN nahi</b>
+    (p=0.127). Sharpe ka bada number sample-size artifact hai (aapka apna rule: "Sharpe&gt;4 = red flag"). Expectancy patli.
+    Isliye <b>paper pe, live nahi</b> — zyada din chahiye.</div>
+</section>
+
+<section>
+  <h2><span class="n">11</span> Kya BUILD + DEPLOY hua (paper)</h2>
+  <table>
+    <thead><tr><th>Kaam</th><th>Status</th></tr></thead>
+    <tbody>
+      <tr><td><b>Max Trades column</b> — RMS Per-Strategy Override me (gate_entry enforcement, off-by-default)</td><td><span class="pill p-win">LIVE</span></td></tr>
+      <tr><td>ARS_CHAIN_V1_PAPER → max 5 + ₹3,000 lock</td><td><span class="pill p-win">SET (paper)</span></td></tr>
+      <tr><td>rsi_v1_PAPER → max 5 + ₹3,000 lock</td><td><span class="pill p-win">SET (paper)</span></td></tr>
+      <tr><td>range_v1 → max 5 + ₹3,000 lock</td><td><span class="pill p-win">SET (paper)</span></td></tr>
+      <tr><td>Live (ARS_CHAIN_V1) + Mission (ORB/VRP)</td><td><span class="pill p-flag">UNTOUCHED (Rule 10)</span></td></tr>
+    </tbody>
+  </table>
+  <div class="callout grn"><b>Effective kal 9:10 auto-start se</b> — teeno paper strategies din me max 5 trade legi ya ₹3,000 profit pe ruk jaayengi.
+    Real-money risk = zero (sab paper). Sab RMS config hai — naya code sirf Max Trades gate.</div>
+</section>
+
+<section>
+  <h2><span class="n">12</span> Aage kya (PENDING)</h2>
+  <table>
+    <thead><tr><th>#</th><th>Task</th><th>Kyun</th></tr></thead>
+    <tbody>
+      <tr><td>1</td><td>Paper pe caps ON rakhke <b>zyada din data</b> jama karo</td><td>Phir p&lt;0.05 aata hai ki nahi — tab hi live decision</td></tr>
+      <tr><td>2</td><td><b>Per-strategy calibrate</b> (uniform 5/3000 ki jagah)</td><td>Kisi ka best 2, kisi ka 4 niklega</td></tr>
+      <tr><td>3</td><td><b>Deep-heat entry-filter</b> investigation</td><td>Kaunse setups ₹2k+/lot heat dete — entry pe skip (SL nahi)</td></tr>
+      <tr><td>4</td><td>Deployed <b>RIDE 6k/2.5k</b> config reconsider</td><td>Aaj ke analysis me consistent worst performer</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<section>
+  <h2>📌 Nichod</h2>
+  <p class="q" style="border-color:var(--grn)">Kam trade karo · achhe wale karo · ₹3,000 ban jaaye to ruk jao ·
+    per-trade exit strategy ka apna rehne do · number ko jhooth mat banao (p=0.127, isliye paper).</p>
+  <p class="foot">Sab backtests: <code>scripts/</code> — rr_sweep · trail_sweep · rotation · pool_fixed · daily_caps · combined · sl_caps · distribution · metrics_fw · mechanism_b.
+    Sample: 527 trades / 17 din (2026-06-22…07-15) / 65-35 train-OOS. Real Zerodha charges + DOM slippage (ADR-005).</p>
+</section>
+
+<p style="text-align:center;margin:30px 0"><a href="/presentations">← YT Presentations</a> &nbsp;·&nbsp; <a href="/">Dashboard</a></p>
+
+</div>
+</body>
+</html>

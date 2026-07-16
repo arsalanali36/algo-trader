@@ -577,13 +577,17 @@ def reports_view(date):
 # presentation HTML banata hai → yahan date-file me save + VPS deploy → is page
 # se date-wise khulta hai. App khud generate NAHI karta — sirf archive/viewer.
 _PRESENT_DIR = BASE_DIR / "data" / "presentations"
+# Presentations ka apna naam-pattern: date + optional suffix (2026-07-15b) — ek din
+# ka kaam do alag decks me bat sakta hai. Reports ka _REPORT_DATE_RE strict date hi
+# rehta hai (EOD report per-date generate hoti hai, suffix ka matlab nahi).
+_PRESENT_NAME_RE = re.compile(r"^\d{4}-\d{2}-\d{2}[a-z]?$")
 
 @app.route('/presentations')
 def presentations_list():
     """Date-wise YT presentation list — login-gated (before_request)."""
     try:
         dates = sorted((f.stem for f in _PRESENT_DIR.glob("*.html")
-                        if _REPORT_DATE_RE.match(f.stem)), reverse=True)
+                        if _PRESENT_NAME_RE.match(f.stem)), reverse=True)
     except Exception:
         dates = []
     items = "".join(
@@ -603,7 +607,7 @@ li{{margin:10px 0;list-style:none}}.dim{{color:#8b949e}}p.hint{{color:#8b949e;fo
 @app.route('/presentations/<date>')
 def presentations_view(date):
     from flask import send_file
-    if not _REPORT_DATE_RE.match(date):
+    if not _PRESENT_NAME_RE.match(date):
         return "invalid date", 400
     f = _PRESENT_DIR / f"{date}.html"
     if not f.exists():
