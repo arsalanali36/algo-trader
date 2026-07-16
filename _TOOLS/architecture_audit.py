@@ -56,11 +56,21 @@ BASELINE_FILE = os.path.join(REPO_ROOT, "_TOOLS", "audit_baseline.json")
 # ---------------------------------------------------------------- scan scope
 
 SCAN_DIRS = ["", "_core", "_data", "_ops", "_TOOLS", "_CHARTING",
-             "strategies", "strategies/backtest", "strategies/live", "brokers"]
+             "strategies", "strategies/backtest", "strategies/live", "brokers",
+             # scratch/nifty_trend is NOT scratch (2026-07-16): every shipped
+             # strategy's validated Sharpe/net comes out of it, _core/payoff.py
+             # imports bs_option from it, and 03_orbst_trader's _supertrend_dir is
+             # a hand-copy of its supertrend(). Excluding it meant the Rule 6B
+             # enforcer was blind to the biggest, most load-bearing folder in the
+             # repo — purely because of what it's named.
+             "scratch/nifty_trend"]
 
 # One-off/scratch scripts — not part of the live architecture, never audited.
 EXCLUDE_PATTERNS = [
-    r"^scratch.*\.py$", r"^patch_.*\.py$", r"^delete_.*\.py$", r"^fix_.*\.py$",
+    # scratch/ stays excluded EXCEPT nifty_trend (see SCAN_DIRS). Matched against
+    # the repo-relative path in staged_files(), so the pre-commit hook honours it.
+    r"^scratch[/\\](?!nifty_trend[/\\]).*\.py$",
+    r"^patch_.*\.py$", r"^delete_.*\.py$", r"^fix_.*\.py$",
     r"^check.*\.py$", r"^verify\.py$", r"^clean\.py$", r"^find_block\.py$",
     r"^extract_base64\.py$", r"^test_extract\.py$",
     r"^recover_default\.py$", r"^vps_delete_script\.py$", r"^_test_.*\.py$",

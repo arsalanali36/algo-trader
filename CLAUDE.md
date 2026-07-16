@@ -27,7 +27,16 @@ strategies/
   lab/       AI-built strategy lab (per-strategy folders + Monte-Carlo/optimize/reports — see lab/README.md)
   base.py  custom_rule_engine.py  __init__.py   ← strategy infra (load() is backward-compat)
 _TOOLS/  _CHARTING/  _PINE/  _ADR/  _DEPLOY/  brokers/  templates/  static/  data/   ← unchanged
-_DEV/tests/  _DEV/mockups/   ← test + mockup files       scratch/   ← gitignored junk
+_DEV/tests/  _DEV/mockups/   ← test + mockup files
+scratch/                ← .gitignore me hai, PAR do alag cheezein ek naam ke neeche:
+  scratch/nifty_trend/  ← 🔴 JUNK NAHI. Research engine — har shipped strategy ke validated
+                          Sharpe/net yahin se bante hain (run_hunt/bs_option/charges/
+                          intraday_engine), _core/payoff.py isi se bs_option import karta hai,
+                          RESULTS_SCHEMA.md + BS_OPTION_SIM.md ka ghar. git-tracked (force-add),
+                          aur 2026-07-16 se architecture_audit ke andar bhi.
+  scratch/<baaki>       ← asli junk (check_*.py, delete_*.py, one-off probes). Untracked.
+  ⚠️ Naya file scratch/nifty_trend/ me banao to `git add -f` karna padega — folder .gitignore
+     me hai, warna `git add` chupchaap kuch nahi karega aur wo file VPS tak kabhi nahi jaayegi.
 ```
 
 **Rules:**
