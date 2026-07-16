@@ -8623,6 +8623,18 @@
 
     // ── ZERODHA OPTIONS CHARGES ──────────────────────────────────────────────────
     // Ref: zerodha.com/charges (Options intraday/positional)
+    //
+    // ⚠️ DATE-BLIND, and knowingly so. The single source of truth is
+    // scratch/nifty_trend/charges.py, which looks STT/txn up by the trade's ENTRY
+    // date (options STT: 0.0625% → 0.10% on 2024-10-01 → 0.15% on 2026-04-01).
+    // These literals are the CURRENT regime only. The Python mirror
+    // (trader_dashboard._zerodha_charges) was pointed at charges.py on 2026-07-16;
+    // this JS copy still hardcodes, because the regime table would have to be
+    // ported client-side or the tax served from the backend.
+    // Consequence: correct for anything entered on/after 2026-04-01 (i.e. every
+    // trade in the DB today), OVERSTATED for anything older. If you ever render
+    // pre-April-2026 trades here, fix this first — a dashboard-vs-EOD-report tax
+    // mismatch is exactly what TRAP #118 cost a session to chase down.
     function calcCharges(entryPx, exitPx, qty, entrySide) {
       if (!entryPx || !exitPx || !qty) return null;
       const buySide = entrySide === 'BUY' ? entryPx : exitPx;

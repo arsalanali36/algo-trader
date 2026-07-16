@@ -4761,12 +4761,53 @@ def api_orders_stats_summary():
     return jsonify({'ok': True, 'metrics': metrics, 'trades': details})
 
 
-def _zerodha_charges(entry_px, exit_px, qty, entry_side):
-    """Server-side mirror of templates/index.html calcCharges() — Budget-2026
-    option charges (effective 2026-04-01). Keep in sync with that JS + with
-    scratch/nifty_trend/charges.py (date-aware regime table). Returns ₹ charges."""
+_charges_cache = None
+
+
+def _charges_mod():
+    """Lazy-import scratch/nifty_trend/charges.py — the declared single source of
+    truth for Zerodha charges (date-aware STT/txn regime table). Same local
+    sys.path-insert idiom _core/payoff.py uses for bs_option."""
+    global _charges_cache
+    if _charges_cache is not None:
+        return _charges_cache or None
+    d = str(BASE_DIR / "scratch" / "nifty_trend")
+    if os.path.isdir(d) and d not in sys.path:
+        sys.path.insert(0, d)
+    try:
+        import charges as _m
+        _charges_cache = _m
+    except Exception as e:
+        print(f"[charges] canonical charges.py unavailable ({e}) — "
+              f"falling back to hardcoded CURRENT-regime rates; tax on trades "
+              f"entered before 2026-04-01 will be overstated.", flush=True)
+        _charges_cache = False
+    return _charges_cache or None
+
+
+def _zerodha_charges(entry_px, exit_px, qty, entry_side, when=None):
+    """₹ round-trip charges for one option leg, at the rates in force on `when`
+    (the trade's ENTRY date).
+
+    Was a hand-copied mirror of scratch/nifty_trend/charges.py with the
+    Budget-2026 rates frozen in as literals, and a "keep in sync" comment — i.e.
+    the codebase knew it was a duplicate. Both agreed on today's numbers (that's
+    why TRAP #118's reconciliation matched to the rupee), but charges.py is
+    date-aware and this wasn't: STT on options was 0.0625% -> 0.10% (2024-10-01)
+    -> 0.15% (2026-04-01). Its docstring claimed "TODAY's trades only", which is
+    not true of its caller — /api/strategy-equity takes an arbitrary date_from.
+    The moment a range reached back past 2026-04-01, the dashboard and the EOD
+    report (which uses charges.py) would disagree on tax for the same trade —
+    exactly the shape TRAP #118 already cost a debugging session.
+
+    when=None -> today's rates, same as before.
+    """
     if not entry_px or not exit_px or not qty:
         return 0.0
+    _ch = _charges_mod()
+    if _ch is not None:
+        return _ch.option_charges(entry_px, exit_px, qty, entry_side, when=when)
+    # Degraded path only (charges.py unreachable) — current-regime literals.
     buy_side  = entry_px if entry_side == "BUY" else exit_px
     sell_side = entry_px if entry_side == "SELL" else exit_px
     buy_turn, sell_turn = buy_side * qty, sell_side * qty
@@ -4832,8 +4873,11 @@ def api_strategy_equity():
         sid = t.get('strategy') or 'unknown'
         exit_dt = f"{t.get('exit_date','')} {t.get('exit_time','')}".strip()
         gross = float(t.get('pnl') or 0)
+        # when = ENTRY date: this route accepts an arbitrary date_from, so a
+        # range reaching before 2026-04-01 must use that era's STT, not today's.
         tax = _zerodha_charges(t.get('entry_price'), t.get('exit_price'),
-                               t.get('qty'), t.get('entry'))
+                               t.get('qty'), t.get('entry'),
+                               when=t.get('entry_date'))
         rec = {'t': exit_dt, 'gross': round(gross, 2), 'tax': round(tax, 2),
                'net': round(gross - tax, 2), 'sym': t.get('sym', ''),
                'reason': t.get('exit_reason', '')}
