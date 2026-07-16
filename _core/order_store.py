@@ -206,6 +206,22 @@ _EXIT_REASON_PREFIXES = (
     "GLOBAL_CAP", "SQUAREOFF_315",
     # manual / broker-detected
     "MANUAL_CLOSE", "EXTERNALLY_CLOSED", "MANUAL_EXIT_BROKER",
+    # ── option-mission strategies (2026-07-16) ───────────────────────────────
+    # These all TAG their reason correctly (execute_exit puts it in extra_tags)
+    # — they were just never listed here, so _exit_reason() didn't recognise
+    # them and the column stayed blank for every mission exit. Third time this
+    # exact gap has bitten (TRAP #88 range/ATR_TRAILING, #91 rsi) — so these
+    # are FAMILY prefixes, matched by startswith: a new <FAM>_TRAIL / _ROLLBACK
+    # variant is covered the day it's written, without touching this list.
+    # Add the family prefix here when you add a new strategy family.
+    "ORB",        # orb_trader (ORB_SL/ORB_TARGET) + 03_orbst (ORBST_SL)
+    "BNF",        # 07_banknifty (BNF_SL/BNF_TARGET)
+    "CHAIN",      # 04_chainzone (CHAIN_SL)
+    "STRADDLE",   # straddle_trader (_SL/_TP/_ROLLBACK)
+    "DVERT",      # 02_debit_vertical (_SL/_TP/_ROLLBACK)
+    "BSPRD",      # 05_backspread (_SL/_TP/_TRAIL/_ROLLBACK)
+    "SVOL",       # 06_shortvol (_SL/_TP/_ROLLBACK)
+    "VRP",        # vrp_straddle (VRP_*) + vrp_condor (VRPC_*)
     # range_trader.py — strategy's own ATR-trailing exit (2026-07-03: this
     # reason was computed + logged but never tagged on the actual exit
     # order, so this column stayed blank for every ATR-driven exit)

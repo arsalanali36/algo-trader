@@ -494,6 +494,13 @@ def get_broker_balance(broker_name):
     return out
 
 
+# How far back to look for a positional strategy's still-open legs (see the
+# carry-over block in _today_open). Same window the dashboard's /api/orders
+# carry-over uses — long enough for a multi-day hold, short enough that ancient
+# rows can't creep in.
+_CARRY_LOOKBACK_DAYS = 7
+
+
 def _today_open(strategy=None, mode=None):
     """Today's real open positions. mode='live'/'paper' filters to that pool —
     paper strategies' simulated margins must not eat the LIVE capital budget
@@ -509,6 +516,34 @@ def _today_open(strategy=None, mode=None):
     except Exception:
         return []
     open_pos = data.get("open", [])
+    # ── Positional / overnight carry-over ────────────────────────────────────
+    # A positional strategy's legs were opened on a PRIOR day and are still
+    # live, but this query is date-scoped — so RMS could not see their capital
+    # at all (a real 4-leg NIFTY condor holding ~₹85k of margin counted as ₹0).
+    # That's the mirror of TRAP #119: the same today-scoping that HID positional
+    # positions from the dashboard also hid them from the risk engine.
+    #
+    # ONLY opt-in `allow_overnight` strategies carry over — an intraday
+    # strategy is flat by EOD, so a lingering prior-day "open" row for it is a
+    # STALE record, not live capital (this DB has ~38 such rows). Counting
+    # those would invent phantom capital and false-block every new entry —
+    # strictly worse than the under-count being fixed here.
+    try:
+        _lb = (ist_now - timedelta(days=_CARRY_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
+        _carry = order_store.trades_for_range(_lb, date_str).get("open", [])
+        _seen = {(p.get("sym"), str(p.get("sec_id")), p.get("entry_date")) for p in open_pos}
+        for p in _carry:
+            if (p.get("entry_date") or date_str) >= date_str:
+                continue                      # today's own opens already present
+            if not allow_overnight(p.get("strategy")):
+                continue                      # intraday leftovers = stale, not live
+            k = (p.get("sym"), str(p.get("sec_id")), p.get("entry_date"))
+            if k in _seen:
+                continue
+            open_pos.append(p)
+            _seen.add(k)
+    except Exception:
+        pass                                  # carry-over is additive; never break the base query
     if mode is not None:
         m = str(mode).lower().strip()
         open_pos = [p for p in open_pos if str(p.get("mode") or "").lower() == m]
@@ -1101,26 +1136,59 @@ def effective_max_trades_per_day(strategy=None, rc=None):
     return None
 
 
-def daily_max_trades_hit(strategy, rc=None):
-    """True if `strategy` has already taken its max entries today. Counts today's
-    netted trades (open + completed) for that strategy from order_store, excluding
-    CAPITAL_BLOCKED phantom rows (TRAP #86/#92). Returns (hit, reason).
-    Fail-open (never blocks) if the count can't be read — a bookkeeping read must
-    not silently halt a strategy."""
-    cap = effective_max_trades_per_day(strategy, rc=rc)
-    if not cap:
-        return False, ""
+def entries_today(strategy):
+    """How many entries `strategy` has ALREADY taken today, read from order_store
+    — the durable record — not from an in-memory counter.
+
+    THE point of this function: every strategy kept its own `trades_today` int,
+    seeded on startup as `0 if pos is None else 1`. That is wrong the moment a
+    strategy is restarted after its position CLOSED — the day's count silently
+    resets to 0 and the strategy can re-take its ENTIRE max-trades-per-day quota
+    (seen live 2026-07-16: orbst went trades=1 -> trades=0 across a restart,
+    having already taken and stopped out its trade). Restarts are routine here
+    (deploys, crashes, VPS reboots), so the cap was never really enforced.
+
+    Counts BOTH completed round-trips and still-open legs whose ENTRY is today,
+    minus CAPITAL_BLOCKED phantoms (TRAP #86/#92). Returns None if it can't be
+    read — callers must decide, never silently treat that as 0."""
     try:
         import order_store, datetime as _dt
         today = (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
-        det = (order_store.trades_for(today) or {}).get("details", [])
-        n = sum(1 for t in det
-                if t.get("strategy") == strategy
-                and "CAPITAL_BLOCKED" not in (t.get("tags") or ""))
-        if n >= cap:
-            return True, f"📋 Max trades/day reached ({n}/{cap}) for '{strategy}' — no further entries today"
+        data = order_store.trades_for(today) or {}
+        n = 0
+        for bucket in ("details", "open"):
+            for t in (data.get(bucket) or []):
+                if t.get("strategy") != strategy:
+                    continue
+                if "CAPITAL_BLOCKED" in (t.get("tags") or []):
+                    continue
+                if (t.get("entry_date") or today) != today:
+                    continue          # positional leg entered on a prior day
+                n += 1
+        return n
     except Exception:
+        return None
+
+
+def daily_max_trades_hit(strategy, rc=None):
+    """True if `strategy` has already taken its max entries today (RMS cap).
+    Returns (hit, reason). Fail-open (never blocks) if the count can't be read —
+    a bookkeeping read must not silently halt a strategy.
+
+    Counting is delegated to entries_today() so this and the strategies' own
+    per-day caps can never disagree. That also fixed a real undercount here:
+    this used to read order_store's "details" bucket only — i.e. COMPLETED
+    round-trips — so a still-OPEN entry didn't count toward the cap and a
+    strategy could exceed it (docstring already claimed "open + completed";
+    the code never did)."""
+    cap = effective_max_trades_per_day(strategy, rc=rc)
+    if not cap:
         return False, ""
+    n = entries_today(strategy)
+    if n is None:
+        return False, ""
+    if n >= cap:
+        return True, f"📋 Max trades/day reached ({n}/{cap}) for '{strategy}' — no further entries today"
     return False, ""
 
 

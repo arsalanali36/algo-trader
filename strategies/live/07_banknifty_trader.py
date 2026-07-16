@@ -288,7 +288,13 @@ def run(paper_mode=True, strategy_id="banknifty_v1"):
     log.info("=" * 62)
 
     pos = _recover(strategy_id, log)
-    trades_today = 0 if pos is None else 1
+    # Restart-safe day count: order_store is the durable record. The old
+    # `0 if pos is None else 1` silently reset the day's count to 0 on any
+    # restart that happened AFTER the position closed, handing the strategy its
+    # whole max-trades quota again (seen live 2026-07-16 on orbst). None = can't
+    # read -> fall back to the old in-memory guess rather than assume 0.
+    _et = risk_gate.entries_today(strategy_id)
+    trades_today = _et if _et is not None else (0 if pos is None else 1)
     last_date = ist_now().date()
 
     while True:
