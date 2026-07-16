@@ -654,6 +654,91 @@ def kite_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY", tra
         return None
 
 
+_BASKET_MARGIN_CACHE = {}   # key -> (ts, hedged_margin)
+
+
+def basket_margin_enabled():
+    """Kill-switch for the basket (hedge-benefit) capital estimate below.
+    _risk.global.basket_margin_enabled — default True. Turn OFF to fall back to
+    the old per-leg sum everywhere, without a redeploy."""
+    try:
+        v = (_risk_cfg().get("global", {}) or {}).get("basket_margin_enabled")
+        return True if v is None else bool(v)
+    except Exception:
+        return True
+
+
+def kite_basket_margin(rows, product_type="NRML"):
+    """Real Zerodha margin for a MULTI-LEG structure via Kite's
+    basket_order_margins — the ₹ actually blocked for the basket AS A WHOLE,
+    i.e. WITH cross-leg hedge benefit.
+
+    This closes the gap both per-leg estimators openly carry ("no cross-leg
+    hedge benefit pre-trade" — see kite_real_margin/dhan_real_margin): summing
+    per-leg margins massively overstates a hedged structure. Live-measured
+    2026-07-16: a 2-leg vertical = ₹37,813 basket vs ₹1,49,554 per-leg sum
+    (75% over); a 4-leg NIFTY condor = ₹82,334 vs ₹3,72,015 (78% over).
+
+    Same 90s cache as the per-leg estimators. Returns float, or None on ANY
+    failure — the caller must then fall back to the per-leg sum (the higher,
+    conservative number). Never treat None as 0.
+    """
+    legs = [p for p in (rows or []) if p.get("sec_id")]
+    if len(legs) < 2:
+        return None
+    key = tuple(sorted((str(p.get("sec_id")), str(p.get("entry")).upper(),
+                        int(float(p.get("qty") or 0)),
+                        round(float(p.get("entry_price") or 0)))
+                       for p in legs))
+    now = __import__("time").time()
+    cached = _BASKET_MARGIN_CACHE.get(key)
+    if cached and (now - cached[0]) < _MARGIN_CACHE_TTL:
+        return cached[1]
+    try:
+        from brokers import get_broker
+        broker = get_broker("kite")
+        product = "NRML" if str(product_type).upper() in ("NRML", "MARGIN", "CNC") else "MIS"
+        orders = []
+        for p in legs:
+            ksym = broker.resolve_symbol(p.get("sym"), sec_id=p.get("sec_id"))
+            if not ksym:
+                return None                      # one unresolved leg → whole basket unsafe
+            seg = p.get("segment") or "NSE_FNO"
+            orders.append({
+                "exchange": {"NSE_FNO": "NFO", "NSE_EQ": "NSE"}.get(seg, "NFO"),
+                "tradingsymbol": ksym,
+                "transaction_type": str(p.get("entry")).upper(),
+                "variety": "regular", "product": product, "order_type": "LIMIT",
+                "quantity": int(float(p.get("qty") or 0)),
+                "price": float(p.get("ltp") or p.get("entry_price") or 0),
+            })
+        m = broker.basket_margin(orders)
+        if m is None:
+            return None
+        _BASKET_MARGIN_CACHE[key] = (now, float(m))
+        return float(m)
+    except Exception:
+        return None
+
+
+def _group_capital(rows, rc=None):
+    """₹ capital for the open legs of ONE strategy. A multi-leg option structure
+    gets the broker's REAL basket margin (hedge benefit included); anything else
+    — single leg, non-F&O, basket disabled, or ANY failure — falls back to the
+    per-leg sum, which is the higher/conservative number. Capped by that sum so
+    this can never report MORE than the old behaviour did."""
+    per_leg = sum(_leg_capital(p, rc) for p in rows)
+    if not basket_margin_enabled() or default_broker() != "kite":
+        return per_leg
+    fno = [p for p in rows if (p.get("segment") or "NSE_FNO") == "NSE_FNO" and p.get("sec_id")]
+    if len(fno) < 2 or len(fno) != len(rows):
+        return per_leg                          # mixed/equity/single → no basket claim
+    b = kite_basket_margin(rows)
+    if b is None or b <= 0:
+        return per_leg
+    return min(b, per_leg)
+
+
 def broker_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY", trad_sym=None):
     """Margin estimate from the EXECUTING broker (TRAP #90's lesson: when
     orders go to broker B, capital checks must be validated against broker B's
@@ -691,9 +776,23 @@ def capital_in_use(strategy=None, mode=None):
     """₹ capital currently deployed (margin-adjusted for SELL legs — see
     _margin_multiplier) over open positions. strategy=None → ALL strategies
     (for the global cap check). mode='live'/'paper' → only that pool
-    (see _today_open); None → all modes combined."""
+    (see _today_open); None → all modes combined.
+
+    Legs are grouped BY STRATEGY and each group costed via _group_capital, so a
+    strategy's own hedged structure is charged the broker's real basket margin
+    instead of the sum of its legs' standalone margins (which overstates a
+    hedged position badly — a live 2-leg vertical measured ₹1.50L per-leg vs
+    ₹37.8k real). Cross-STRATEGY netting is deliberately NOT claimed even though
+    the broker would give it — that keeps this an over-estimate, never an
+    under-estimate, of what's really blocked."""
     rc = _risk_cfg()
-    return sum(_leg_capital(p, rc) for p in _today_open(strategy, mode=mode))
+    rows = _today_open(strategy, mode=mode)
+    if not rows:
+        return 0.0
+    by_strat = {}
+    for p in rows:
+        by_strat.setdefault(p.get("strategy") or "", []).append(p)
+    return sum(_group_capital(g, rc) for g in by_strat.values())
 
 
 def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO", mode=None):

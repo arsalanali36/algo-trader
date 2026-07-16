@@ -235,34 +235,23 @@ def prob_of_profit(zones, spot, T, sigma, lo, hi):
 
 
 def basket_margin(legs, product="NRML"):
-    """Real hedged margin for the whole structure via Kite's basket_order_margins
-    (read-only — no order is placed), plus the standalone per-leg sum for
-    comparison. The dashboard's Margin column is the STANDALONE sum, which
-    massively overstates a hedged structure's real blocked capital.
+    """Real hedged margin for the structure + the standalone per-leg sum, for
+    the panel's Margin card. Both numbers come from risk_gate — THE single
+    entry point for every margin estimate in this project (CLAUDE.md /
+    TRAP #90); this module must never call a broker's margin API itself, or
+    the panel and RMS could silently disagree about the same position.
     Returns {hedged, standalone, benefit, ok, msg}."""
     out = {"hedged": None, "standalone": None, "benefit": None, "ok": False, "msg": ""}
     try:
-        from brokers import get_broker
-        br = get_broker("kite")
-        orders, standalone = [], 0.0
-        for L in legs:
-            ksym = br.resolve_symbol(L["trad_sym"], sec_id=L.get("sec_id"))
-            if not ksym:
-                out["msg"] = f"kite symbol resolve failed: {L['trad_sym']}"
-                return out
-            px = L.get("ltp") or L.get("entry")
-            orders.append({
-                "exchange": "NFO", "tradingsymbol": ksym,
-                "transaction_type": L["side"], "variety": "regular",
-                "product": product, "order_type": "LIMIT",
-                "quantity": int(L["qty"]), "price": float(px),
-            })
-            m = br.margin_for_order(ksym, "NFO", L["side"], L["qty"], px, product=product)
-            standalone += float(m or 0)
-        hedged = br.basket_margin(orders)
+        import risk_gate as rg
+        rows = [{"sym": L["trad_sym"], "sec_id": L.get("sec_id"), "entry": L["side"],
+                 "qty": L["qty"], "entry_price": L["entry"], "ltp": L.get("ltp"),
+                 "segment": "NSE_FNO"} for L in legs]
+        standalone = sum(rg._leg_capital(p) for p in rows)
         out["standalone"] = round(standalone, 2)
+        hedged = rg.kite_basket_margin(rows, product_type=product)
         if hedged is None:
-            out["msg"] = "basket_order_margins failed"
+            out["msg"] = "basket margin unavailable (broker call failed)"
             return out
         out["hedged"] = round(float(hedged), 2)
         out["benefit"] = round(standalone - float(hedged), 2)
