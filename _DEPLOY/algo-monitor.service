@@ -4,6 +4,18 @@ After=network.target
 
 [Service]
 WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+# PYTHONUNBUFFERED=1 — is process ka stdout journald ko ek PIPE hai, yaani Python
+# use block-buffer karta hai (~8KB). Ye wahi daemon hai jo SL/TP/EOD squareoff
+# chalata hai, aur uske sabse zaroori messages — "LIVE square-off FAILED/EXCEPTION
+# ... leaving position open" — bina flush=True ke likhe hain. Ek chup loop me 8KB
+# bharne me ghante lag sakte hain, to ek position poore din square-off hone me fail
+# hoti rahe aur journalctl me kuch na dikhe.
+#
+# flush=True 3 baar reactively lagaya gaya (TRAP #56, #81) — TRAP #81 to likha hi
+# isliye tha ki #56 ne jis line ko naam diya wo kabhi patch hui hi nahi. Ye us
+# poori class ka structural fix hai: har print, aaj ka aur aane wala, turant
+# dikhega — kisi ko flush=True yaad rakhna nahi padega.
+Environment=PYTHONUNBUFFERED=1
 ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" "/root/CODE3B- TV BACKTEST ENGINE/monitor_daemon.py"
 Restart=always
 RestartSec=5

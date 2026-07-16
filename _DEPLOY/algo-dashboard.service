@@ -4,6 +4,11 @@ After=network.target
 
 [Service]
 WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+# PYTHONUNBUFFERED=1 — journald ko stdout ek pipe hai → Python block-buffer karta
+# hai. Is process me auto_scheduler chalta hai, aur uska catch-all
+# `print("Auto Scheduler Error:", e)` bina flush ke hai — theek wahi loop jo TRAP
+# #120 me 6 din chupchaap mara pada tha. Detail: algo-monitor.service me.
+Environment=PYTHONUNBUFFERED=1
 ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" "/root/CODE3B- TV BACKTEST ENGINE/trader_dashboard.py"
 Restart=always
 RestartSec=5
