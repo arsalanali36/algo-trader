@@ -4,5 +4,20 @@
       "Bash(scp:*72.61.173.32*)",
       "Bash(ssh:*72.61.173.32*)"
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|NotebookEdit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python \"$CLAUDE_PROJECT_DIR/.claude/session_guard.py\"",
+            "timeout": 10,
+            "statusMessage": "Checking session lock..."
+          }
+        ]
+      }
+    ]
   }
 }

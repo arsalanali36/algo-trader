@@ -126,3 +126,6 @@ data/exit_reason_analysis.csv
 
 # ad-hoc API response dumps (debug artifacts)
 resp.json
+
+# Claude Code session write-lock (see .claude/session_guard.py) — per-machine, never commit
+.claude/.session_lock.json
