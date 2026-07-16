@@ -2601,3 +2601,36 @@ strategy ki in-memory `pos` order_store se sync hai.
 **Fast-detect:** positional trade "gayab" = pehle dekho wo genuinely closed hui (`EOD_315`/`RMS_*`
 exit rows) ya sirf display se (today-scoped view). Genuinely-closed = allow_overnight gap; display-only
 = carry-over gap. Fix `ff8db9e`.
+
+## INFRA — Kite/Dhan IP-whitelist model (live-verified 2026-07-16)
+
+**Context:** Bhai ne naya VPS liya (2 static IP ke liye). Sawaal: CODE3B ko Zerodha orders ke liye
+static/whitelist IP chahiye hi kya? Poora **live-test** se resolve — answer **NAHI** (single Hostinger
+box hi kaafi). Beech me ek galat conclusion (neeche #2) se bhi seekha.
+
+**Verified facts (live, market-hours):**
+1. **Kite (Zerodha) ORDER placement = IP-whitelist REQUIRED** — Kite dev console → Allowed/static IP.
+   Non-whitelisted IP se → `PermissionException: IP (...) is not allowed to place orders for this app`.
+2. ⚠️ **Kite READ calls (profile/margins/`order_margins`) IP-gated NAHI** — aur `order_margins` ka pass
+   hona `place_order` ka pass hona **PROVE NAHI karta** (ek baar main is pe galat conclude kar gaya —
+   order_margins naye IP se pass hua par `place_order` reject). Order-readiness sirf asli order-path se
+   confirm karo, calc/read endpoint se nahi. (Same-shape gotcha jaise Kite/Dhan ke doosre read-vs-write.)
+3. **Kite order ko IPv4-force bhi chahiye** — VPS pe default IPv6 outbound se `PermissionException`
+   aata hai *chahe IPv4 whitelisted ho* (IPv6 `2a02:...` != whitelisted IPv4). Live app
+   `socket.getaddrinfo` AF_INET override globally karta hai — standalone script me daalna zaroori.
+   (Wahi fix Dhan ke DH-905 ke liye bhi — Dhan+Kite dono.)
+4. **Kite account pe market-DATA add-on NAHI** → `kite.ltp()`/`quote()` → `Insufficient permission for
+   that call`. Isiliye **data Dhan se, order Kite pe**. Kite LIMIT ka price Dhan candles se lo
+   (`charts/intraday`); Dhan `marketfeed/ltp` shared-account pe 429 de sakta.
+5. **Dhan DATA = NO whitelist** — LTP + `charts/intraday` + WebSocket `api-feed.dhan.co`, teeno
+   non-whitelisted IP se 200. Sirf **Dhan ORDER** IP-gated (DH-905). CODE3B Dhan = data-only.
+6. **Dhan static-IP change = 7-DIN LOCK** (Dhan profile: "you can re-set your IP in 7 days").
+   Casually reversible NAHI — hatane se pehle 100% pukka karo.
+7. **Kite ↔ Dhan whitelists independent** — network trace (`socket.getaddrinfo` logger during
+   `place_order`): order sirf `api.kite.trade` contact karta, Dhan ko **zero**. To Dhan whitelist
+   ka Kite orders pe koi asar nahi.
+
+**Bottom line:** CODE3B ko apna static IP ki majboori nahi (data whitelist-free, order = Kite-IP +
+IPv4-force jo Hostinger pe already hai). Static IP genuinely usko chahiye jo **Dhan pe ORDER** kare
+(bhai). Single Hostinger box kaafi; bhai apne Dhan me Hostinger IP whitelist kare (try-add-first to
+dodge 7-day lock). Full detail: memory `project_code3b_new_server_migration`.
