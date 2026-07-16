@@ -1268,12 +1268,11 @@ def api_stop():
     except Exception as e:
         return jsonify({"msg": f"Error: {e}"})
 
-@app.route('/api/pnl')
-def api_pnl():
-    s     = request.args.get('s', 'ema_v1')
-    today = datetime.now().strftime("%Y-%m-%d")
-    lf    = BASE_DIR / 'logs' / f"{s}.log"
-    return jsonify(parse_pnl(lf, today))
+# /api/pnl DELETED (2026-07-16) — no callers; log-scraped P&L, superseded by
+# order_store (the tagged, per-trade source of truth the whole Orders & P&L tab
+# reads). parse_pnl() itself STAYS: it is the spec for the log line format that
+# webhook_executor still writes (see its :196 "parse_pnl-compatible" writer) and
+# that order_store's docstring cites for backward-compat.
 
 @app.route('/api/token', methods=['GET'])
 def api_get_token():
@@ -1285,6 +1284,40 @@ def api_get_token():
         return jsonify({"has_token": True, "preview": tok[-12:], "saved_at": cfg.get('token_saved_at', '?')})
     except Exception:
         return jsonify({"has_token": False})
+
+@app.route('/api/token_check')
+def api_token_check():
+    """Control tab ka "Check" button — Dhan JWT abhi zinda hai ya nahi.
+
+    Ye route kabhi tha hi nahi. Button 2026-07-16 tak `fetch('/api/token_check')`
+    karta tha, Flask 404 ka HTML deta tha, `r.json()` throw karti thi, aur
+    `token-msg` kabhi likha hi nahi jaata — button dabao, kuch nahi hota, koi
+    error nahi. Aur ye theek us credential pe baitha hai jiski chupchaap expiry
+    baar-baar firefight ki jad rahi hai.
+
+    Checks health_check ke apne hain (Rule 6B — teesri copy nahi): JWT ka apna
+    exp claim + ek asli LTP call, kyunki decode-hone-wala token bhi broker ke
+    reject kiye jaane pe bekaar hai. 09:20 wala timer bhi yehi do use karta hai.
+    """
+    try:
+        token, cid = _creds()
+        if not token:
+            return jsonify({"ok": False, "msg": "❌ Koi Dhan token saved nahi — neeche paste karke Save karo"})
+        import health_check as _hc
+        exp_dt, hrs = _hc._jwt_expiry(token)
+        exp_txt = (f" · expiry {exp_dt.strftime('%d %b %H:%M')} ({hrs:.1f}h baaki)"
+                   if exp_dt is not None else " · expiry claim decode nahi hui")
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        price, err = _hc._dhan_ltp(headers, "IDX_I", "13")
+        if price is not None:
+            return jsonify({"ok": True, "msg": f"✅ Token zinda — NIFTY {price:,.2f}{exp_txt}"})
+        if (err or "").startswith("AUTH:"):
+            return jsonify({"ok": False, "msg": f"❌ Token expired/galat — Dhan ne reject kiya{exp_txt}"})
+        # rate-limit/network — health_check bhi ise WARN hi maanta, FAIL nahi
+        return jsonify({"ok": None, "msg": f"⚠️ Confirm nahi kar paye ({err}) — transient lag raha hai{exp_txt}"})
+    except Exception as e:
+        return jsonify({"ok": None, "msg": f"⚠️ Check fail: {e}"})
+
 
 @app.route('/api/token', methods=['POST'])
 def api_set_token():
@@ -4425,13 +4458,12 @@ def api_health_report():
         return jsonify({"error": str(e)})
 
 
-@app.route('/api/save-summary', methods=['POST'])
-def api_save_summary():
-    try:
-        subprocess.run([PYTHON, str(BASE_DIR / 'save_daily_summary.py')], cwd=str(BASE_DIR))
-        return jsonify({"msg": "✅ Summary saved to results/"})
-    except Exception as e:
-        return jsonify({"msg": f"Error: {e}"})
+# /api/save-summary DELETED (2026-07-16) — no callers anywhere, and broken since
+# the 2026-07-09 refactor moved the script: it ran BASE_DIR/'save_daily_summary.py'
+# while the file is now _TOOLS/save_daily_summary.py. subprocess.run() without
+# check= swallows the non-zero exit, so it returned "✅ Summary saved to results/"
+# on a guaranteed failure. (_paths.py puts _TOOLS on sys.path — that fixes imports,
+# not a filesystem path.) The script still works when run directly.
 
 
 # ── TradingView Webhook → auto order ──────────────────────────────────────────
