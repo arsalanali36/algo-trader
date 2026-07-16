@@ -100,7 +100,11 @@
         else if(activeTab==='risk' && document.getElementById('risk-strategy-table')) renderRiskTab();
       } }catch(e){}
     }
-    loadStrategyRegistry();
+    // Deferred like the other load-time bootstraps: this reaches renderRiskTab ->
+    // toggleGlobalTrailingInfo, which lives in sltp-modal.js — a later file. It
+    // happens to survive today only because loadStrategyRegistry awaits a fetch
+    // first, so the rest of the scripts win the race. That's luck, not a guarantee.
+    document.addEventListener('DOMContentLoaded', () => { loadStrategyRegistry(); });
 
     // Canonical strategy label for ANY surface: the clean registry NAME (no
     // NN.MM number prefix — task 70). Falls back to the raw key. Use regId()

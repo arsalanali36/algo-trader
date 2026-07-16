@@ -304,9 +304,19 @@
       }
     }
 
-    setTimeout(() => {
+    // DOMContentLoaded, NOT setTimeout(...,0) — this bit is why the split broke.
+    // Back when all of this was one 9.5k-line inline <script>, a 0ms timer queued
+    // here could only fire after that whole block had run, so everything it
+    // touches was already defined. As separate <script src> files the browser is
+    // free to run the timer BETWEEN two of them: switchTab('calendar') fired while
+    // app-13 (calendarRender) hadn't loaded yet — "Uncaught ReferenceError:
+    // calendarRender is not defined". DOMContentLoaded fires only once the parser
+    // and EVERY classic script are done, which is the guarantee this code always
+    // wanted. No readyState fallback needed: these are plain <script src> tags in
+    // the document, so they always execute while parsing, before this event.
+    document.addEventListener('DOMContentLoaded', () => {
       startLtpStream();
       loadAll();
       switchTab(activeTab);   // restore last active tab (saved in localStorage)
-    }, 0);
+    });
 

@@ -177,7 +177,13 @@
       if (v === 'margin') loadMarginGraph();
     }
     // restore last-used view on load (elements are static in the DOM)
-    try { const _pv = localStorage.getItem('peak_view'); if (_pv && _pv !== 'graph') togglePeakView(_pv); } catch (e) { }
+    // Deferred to DOMContentLoaded since the split: togglePeakView -> loadPeakGraph
+    // -> regLabel, which lives in app-05, i.e. a file that hasn't loaded when this
+    // line runs. The try/catch would have swallowed the ReferenceError whole and
+    // the view just wouldn't restore, with nothing in the console to say why.
+    document.addEventListener('DOMContentLoaded', () => {
+      try { const _pv = localStorage.getItem('peak_view'); if (_pv && _pv !== 'graph') togglePeakView(_pv); } catch (e) { }
+    });
     // sync sub-switch highlights to stored prefs (no data load — each view's own loader runs)
     try {
       const _on = 'font-size:11px;padding:3px 10px;cursor:pointer;background:#1f6feb;color:#fff';
