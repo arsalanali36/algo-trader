@@ -261,6 +261,25 @@ def process_order_store_trades(dl_log: dict) -> bool:
     return True
 
 
+# "Bars saved" ke DO naam hain: process_orders() "ok" likhta hai,
+# process_order_store_trades() "final" (= is din ke liye ek hi baar fetch hoga).
+# Dono ka matlab KAMYABI hai.
+_SUCCESS = ("ok", "final")
+
+
+def _bars_on_disk(sid: str, date_str: str) -> bool:
+    """Kya is contract ke bars sach me disk pe hain? dl_log purani KOSHISHON ka
+    record hai, asliyat ka nahi — `_ops/backfill_trade_ohlc.py` baad me data bhar
+    deta hai par log ko haath nahi lagata. Isliye alert bhejne se pehle asliyat
+    dekho, log pe bharosa mat karo."""
+    real = sid[3:] if sid.startswith("os_") else sid
+    p = DATA_DIR / "trade_ohlc" / f"{real}_{date_str}.json"
+    try:
+        return p.exists() and p.stat().st_size > 50
+    except Exception:
+        return False
+
+
 def gap_check(dl_log: dict) -> list:
     """Dashboard banner alerts for GENUINELY-ACTIONABLE missing premium-chart data only.
 
@@ -270,17 +289,37 @@ def gap_check(dl_log: dict) -> list:
     "contract expire / token update karo" message bhi galat tha (unactionable). Ab sirf
     last 2 din ke miss dikhte hain (jahan token-fresh se retry genuinely help kar sakta);
     usse purana = expired = permanent = skip. Genuine full token-expiry alag path se
-    (fetch_orders None → 🔴) already handle hoti hai."""
+    (fetch_orders None → 🔴) already handle hoti hai.
+
+    2026-07-16 — ye check `status != "ok"` se missing ginta tha, jabki
+    process_order_store_trades KAMYABI pe "final" likhta hai. Nateeja: har SAFAL
+    capture "missing" gina jaata tha (15 Jul: 37/37 contract "missing" bataye, jabki
+    saare 37 ke 375-375 bars disk pe maujood the), aur `_token` (metadata, contract
+    nahi) bhi ek "contract" gin liya jaata tha. Teen din se jo alert atka tha wo poora
+    jhootha tha — aur roz-roz ka jhootha alert bell pe bharosa khatam kar deta hai,
+    jo asli error ko chhupane jitna hi mehnga hai."""
     alerts = []
     today = datetime.date.today()
     RECENT_DAYS = 2                      # older gaps = expired contracts, not recoverable
+    healed = False
 
     for date_str, instruments in sorted(dl_log.items(), reverse=True):
         date = datetime.date.fromisoformat(date_str)
         if (today - date).days > RECENT_DAYS:
             continue
 
-        missing = [sid for sid, status in instruments.items() if status != "ok"]
+        missing = []
+        for sid, status in list(instruments.items()):
+            if sid.startswith("_"):
+                continue                 # _token = metadata, koi contract nahi
+            if status in _SUCCESS:
+                continue
+            if _bars_on_disk(sid, date_str):
+                instruments[sid] = "ok"  # baad me bhar gaya (backfill) — log stale tha
+                healed = True
+                continue
+            missing.append(sid)
+
         if not missing:
             continue
 
@@ -288,6 +327,9 @@ def gap_check(dl_log: dict) -> list:
         alerts.append(
             f"⚠️ {label}: {len(missing)} contract ka premium-chart data nahi mila — "
             f"token fresh hai to Refresh, warna illiquid/expired strike hai (normal).")
+
+    if healed:
+        _save_log(dl_log)                # self-heal permanent karo, har cycle nahi
 
     return alerts
 
