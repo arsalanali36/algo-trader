@@ -4286,6 +4286,31 @@ def _ingest_downloader_alerts():
         print(f"[notify] alert ingest fail: {e}", flush=True)
 
 
+def _error_watch_loop():
+    """App ke har error ko 🔔 tak laane wala loop — strategy logs, mari hui
+    strategies, aur gire hue services.
+
+    Dashboard ke andar (monitor_daemon me nahi) JAAN-BOOJH KAR: (a) bell isi
+    process se serve hoti hai, to ye gira to bell waise bhi nahi dikhegi — koi
+    naya blind spot nahi banta; (b) monitor = SL/TP/squareoff ka safety process,
+    usme log-scanning ka load/risk daalna galat hai. Restart-safe: sab state
+    (offsets) disk pe hai, to deploy ke 3 sec me kuch chhootta nahi.
+    """
+    import error_watch
+    while True:
+        try:
+            cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+            # Sirf wahi strategies jinka sach me process hota hai — webhook_v1
+            # dashboard ke andar chalta hai, uska PID kabhi nahi milega (wahi
+            # filter jo scheduler khud use karta hai).
+            actives = [k for k, v in cfg.items()
+                       if isinstance(v, dict) and v.get("active") and _base(k) in STRATEGIES]
+            error_watch.scan_once(get_pid=get_pid, actives=actives)
+        except Exception as e:
+            print(f"[error_watch] loop error: {e}", flush=True)
+        _time.sleep(20)
+
+
 @app.route('/api/notifications')
 def api_notifications():
     """History + unread count. ?after=<id> = sirf naye (frontend ka incremental poll)."""
@@ -6857,4 +6882,7 @@ if __name__ == '__main__':
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
     print("   (SL/TP/webhook-monitor/scheduler ab monitor_daemon.py mein — alag se chal rahe honge)\n")
+    # Har error 🔔 tak — strategy logs + mari hui strategies + gire services.
+    _threading.Thread(target=_error_watch_loop, daemon=True).start()
+    print("   🔔 error-watch chalu — logs/processes/services ke errors bell me aayenge\n")
     app.run(host='0.0.0.0', port=5099, debug=False)
