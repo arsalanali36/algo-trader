@@ -2160,11 +2160,20 @@ def api_trade_chart_data():
                     
             return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk, "date": date_str})
             
+        # Positional / carried-over open trade: entry was on a past day and the
+        # position is still open (no exit time) → span entry-date → today so the
+        # multi-day premium chart shows, not just the entry day. Same-day / closed
+        # trades stay single-day (unchanged). Explicit `to` param overrides.
+        _today_str = (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        to_date = request.args.get('to', '').strip() or date_str
+        if not request.args.get('to') and not exit_t and date_str and date_str < _today_str:
+            to_date = _today_str
+
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
             "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
-            "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
+            "expiryCode": 0, "fromDate": date_str, "toDate": to_date}, timeout=12)
         d = r.json()
         if not d.get("open"):
             # Dhan won't serve this contract (expired / non-trading day) — fall
@@ -2188,7 +2197,9 @@ def api_trade_chart_data():
             if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
             if exit_t  and hhmm == exit_t:  exit_mk = t_ist
         # Write-through: persist so this contract's chart survives its expiry (#5).
-        if seg == "NSE_FNO" and _bars_by_epoch:
+        # Only for a single-day fetch — a multi-day (positional) span would write
+        # today's bars into date_str's file (keyed per date) and corrupt it.
+        if seg == "NSE_FNO" and _bars_by_epoch and to_date == date_str:
             _save_premium_ohlc(sec_id, date_str, _bars_by_epoch)
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
                         "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=entry_t, strategy=strategy),
@@ -2241,11 +2252,18 @@ def api_trade_chart_underlying_data():
         if not sec_id:
             return jsonify({"ok": False, "msg": f"underlying sec_id not found: {root}"})
 
+        # Match the premium pane: span entry-date → today for an open positional
+        # (carried-over) trade so both panes show the same multi-day window.
+        _today_str = (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        to_date = request.args.get('to', '').strip() or date_str
+        if not request.args.get('to') and not exit_t and date_str and date_str < _today_str:
+            to_date = _today_str
+
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
             "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
-            "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=12)
+            "expiryCode": 0, "fromDate": date_str, "toDate": to_date}, timeout=12)
         d = r.json()
         if not d.get("open"):
             return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
