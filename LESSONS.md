@@ -2737,3 +2737,48 @@ cheez dekhi?*
 "STILL CRASHING" bataya — kyunki log append-mode hai aur **purani** traceback abhi bhi
 last-30 me thi. Post-fix health check hamesha **timestamp** ya fresh PID + latest log line
 se karo, "error string kahin hai ya nahi" se nahi.
+
+---
+
+## TRAP #122 — Positional ROLL ko day-scoped NETTING mis-pair kar deti hai (phantom P&L + live position gayab)
+
+**Symptom:** User ne kaha "margin abhi bhi galat dikha raha hai". Us ek shikayat ke peeche
+teen alag baatein thi — teesri sabse buri:
+
+1. Margin column har leg ka **standalone** margin jod raha tha (hedged structure pe 75-78%
+   zyada — RMS side pehle fix ho chuki thi, **display nahi**).
+2. Us group ki asli hedged margin `/api/orders` bhejta hi nahi tha.
+3. **Aur VRP condor us list me tha hi nahi — jabki uski 4 legs LIVE thi.**
+
+**Root cause (#3):** Aaj 15:10 pe condor ne **roll** kiya — kal ki 4 legs band ki, 4 nayi kholi
+(bilkul sahi one-night behaviour). `order_store.trades_for(today)` ki netting sirf **aaj ke**
+rows dekhti hai, to usne **aaj ke CLOSING legs ko aaj ke OPENING legs se pair** kar diya:
+
+```
+DAY-SCOPED (dashboard):        RANGE-NETTED (sach):
+  open      : NONE               open      : 4 legs
+  completed : 4 phantom, -71.50  completed : kal ki condor +598
+```
+
+Matlab dashboard ek **live position ka farzi P&L** dikha raha tha, aur position khud chhupi hui
+thi. TRAP #119 ka hi parivaar, par uska prior-day carry-over fix ise **kabhi pakad hi nahi
+sakta tha** — roll ke baad live legs ka `entry_date` **aaj** hi hota hai, to "carry over" karne
+ko kuch tha hi nahi. **Kharabi date-filter me nahi thi, NETTING KI WINDOW me thi.**
+
+**Fix:** `allow_overnight` strategies ke liye `open` AUR `details` dono **range netting** se lo
+(details ko us date pe jo sach me CLOSE hui usi pe filter karo), day-scoped rows drop kar do.
+Intraday strategies day-scoped hi rahen — wo EOD pe flat hoti hain, unki prior-day "open" rows
+**stale** hain (is DB me ~38) aur unhe range-net karna ghosts zinda kar dega.
+
+**Guard — positional/overnight strategy ka koi bhi naya consumer likho to poocho:**
+> Ye rows kis **netting window** se aa rahe hain? Ek entry aur uska exit **alag din** pad sakte
+> hain. Din-bhar ka slice liya to netting galat leg jodegi — chup-chaap, aur jawab
+> **plausible dikhega** (−₹71 bhi ek "normal" number lagta hai; +₹598 hona chahiye tha).
+
+**Yeh window-blindness ab teen jagah mil chuki hai** — display (#119), RMS capital (`_today_open`),
+aur netting (yahan). **Naya code positional ko touch kare to teeno check karo.**
+
+**Bonus sabak:** "margin galat hai" jaisi ek-line shikayat ke peeche ek se zyada bug ho sakte
+hain. Pehla milte hi mat ruko — maine margin display fix karke verify kiya, tabhi dikha ki
+condor group **hai hi nahi**. Agar sirf apne fix ka number check karke aage badh jaata, to
+farzi-P&L wala bug abhi bhi live hota.

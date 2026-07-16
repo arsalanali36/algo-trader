@@ -15,6 +15,17 @@
 
 ---
 
+## 2026-07-16 (3) — Margin display + positional ROLL netting (TRAP #122)
+**Status:** DONE
+**Layer:** ui (margin total) + data (netting window) — VPS-deployed
+**Kya:** User: "margin abhi bhi galat dikha raha hai". Ek shikayat, teen bugs:
+1. **Margin column standalone sum jod raha tha** — RMS side (`capital_in_use`) 2026-07-16 (2) me fix ho chuki thi par **display nahi**, to dashboard wo number dikha raha tha jise risk engine khud maanta hi nahi tha. `/api/orders` ab `group_margin{strategy:{hedged,standalone}}` bhejta hai — wahi cached `risk_gate._group_capital()` jo RMS use karta hai (table + payoff panel + RMS kabhi disagree na karein). TOTAL me hedged, neeche standalone struck-through, tooltip me hedge benefit.
+2. **Us group ki hedged margin API me thi hi nahi** → frontend ke paas dikhane ko kuch nahi tha.
+3. **🔴 TRAP #122 — VRP condor list me tha hi nahi jabki 4 legs LIVE thi.** Aaj 15:10 pe condor ne roll kiya (kal ki band, nayi kholi — sahi behaviour). Day-scoped netting ne aaj ke CLOSING legs ko aaj ke OPENING legs se pair kar diya → `open: NONE` + `completed: 4 phantom, −₹71.50`; sach: `open: 4 legs` + `completed: +₹598`. **Dashboard ek live position ka farzi P&L dikha raha tha.** TRAP #119 ka carry-over fix ise pakad hi nahi sakta tha — roll ke baad live legs ka entry_date AAJ hota hai. Kharabi date-filter me nahi, **netting ki WINDOW** me thi. Fix: `allow_overnight` strategies ke liye open AUR details dono range-netting se (details = jo us date pe sach me close hui), day-scoped rows drop; intraday day-scoped hi (unki prior-day open rows stale hain, ~38).
+**Files:** `trader_dashboard.py` (api_orders range-netting + group_margin), `templates/index.html` (margin TOTAL), `LESSONS.md` (TRAP #122).
+**Verify (live):** condor `open 4 legs` · `completed +598.00` (tha −71.50) · `group_margin hedged ₹86,096 vs standalone ₹3,74,356`; dvert `₹37,953 vs ₹1,49,536`.
+**Sabak:** window-blindness ab **teen** jagah mili — display (#119), RMS capital (`_today_open`), netting (#122). Positional ko touch karne wala naya code teeno check kare. Aur: ek-line shikayat ke peeche ek se zyada bug ho sakta hai — pehla fix karke verify kiya tabhi teesra dikha.
+
 ## 2026-07-16 (2) — Payoff & Zone panel + RMS basket-margin fix + 9:10 auto-start resurrection (TRAP #120)
 **Status:** DONE
 **Layer:** ui (payoff panel) + risk (basket margin) + infra (auto-start auth) — all deployed VPS master
