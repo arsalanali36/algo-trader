@@ -245,6 +245,13 @@ def add(sec_tuple):
         _pending_resub = True
 
 
+# Kitna purana tick "abhi ka" mana jaaye. Har wo caller jo is feed ke price pe
+# paisa lagata hai (order pricing, SL/TP, liquidity gate) isko pass kare — value
+# teen jagah alag-alag likhi thi (trader_dashboard._FEED_MAX_AGE, webhook me
+# hardcoded 12), ab yahin se.
+FEED_MAX_AGE = 12
+
+
 def get_quote(sec_id, max_age=None):
     """Latest WebSocket tick for sec_id, or {} if none.
 

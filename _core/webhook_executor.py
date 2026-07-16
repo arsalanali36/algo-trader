@@ -307,7 +307,7 @@ def _current_premium(sec_id):
         # max_age: a dead WS subscription keeps its last tick forever (non-zero),
         # which would short-circuit the REST fallback below and pin the webhook's
         # trailing-SL/exit to a stale premium. Reject a >12s-old tick → fresh REST.
-        q = dhan_feed.get_quote(sec_id, max_age=12) or {}
+        q = dhan_feed.get_quote(sec_id, max_age=dhan_feed.FEED_MAX_AGE) or {}
         if q.get("ltp"):
             return float(q["ltp"])
     except Exception:

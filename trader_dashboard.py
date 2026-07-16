@@ -5354,7 +5354,10 @@ _peak_ltp_cache    = {}    # {sec_id: last_known_ltp} — prevents fake dips whe
 # WS died on a 429 kept its last tick forever, non-zero, so get_quote()'s value
 # short-circuited the fallback → SL never saw the real loss). Falling through
 # costs nothing: ltp_poller keeps shared_ltp_cache warm every ~1.5s.
-_FEED_MAX_AGE      = 12
+# Value lives in dhan_feed now — smart_order (order pricing) and strategy_safety
+# (liquidity gate) need the same number, and three copies of it is how the two
+# of them ended up with no guard at all.
+_FEED_MAX_AGE      = dhan_feed.FEED_MAX_AGE
 _STALE_FEED_ALERTS = {}    # {sec_id: (first_unreliable_ts, sym)} — track how long a leg has had NO usable price
 _STALE_FEED_FIRED  = set() # {sec_id} — sids currently surfaced on the alert banner (write file only on change)
 _pos_lock_state    = {}    # {pos_id: {armed,peak,floor,breach_since,fired,prev_mtm}} — per-instrument trailing-lock state machine (2026-07-02 redesign)

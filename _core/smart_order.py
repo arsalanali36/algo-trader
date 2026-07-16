@@ -92,7 +92,14 @@ def _snap(p):
 def marketable_price(side, sec_id, seg, broker, buffer_bps=10):
     """Return (price, src). BUY=ask*(1+buf), SELL=bid*(1-buf); fallback LTP±buf.
     buffer_bps crosses the spread a touch so the limit fills immediately."""
-    q = dhan_feed.get_quote(sec_id)
+    # max_age is NOT optional here: this is the price the real order gets placed
+    # at. get_quote()'s own docstring names the failure — a contract's WS
+    # subscription dies (429 etc.) but its last tick stays in LIVE forever,
+    # non-zero — and non-zero is the whole problem: `ref` comes back truthy, so
+    # the `if not ref` REST fallback below never runs and the order goes out
+    # priced off a frozen quote. pos_monitor passes max_age at all 11 of its call
+    # sites; this one, the one that actually prices orders, was missed.
+    q = dhan_feed.get_quote(sec_id, max_age=dhan_feed.FEED_MAX_AGE)
     bid, ask, ltp = q.get("bid"), q.get("ask"), q.get("ltp")
     buf = buffer_bps / 10000.0
 

@@ -167,7 +167,12 @@ def check_contract_liquidity(sec_id, lot_size, now=None, log=print):
     Returns (ok: bool, reason: str, details: dict) — details always present
     (even on a pass, or when no data at all) for logging."""
     import dhan_feed
-    q = dhan_feed.get_quote(sec_id)
+    # max_age: bina iske ek frozen tick (mari hui WS subscription ka aakhri tick)
+    # poore bid/ask/volume/oi de deta hai — yaani "data hai" wala rasta, aur ye
+    # gate uspe 2-of-3 chala ke fail-CLOSED bhi kar sakta hai. Us case me neeche
+    # ka fail-OPEN-on-no-data branch chalta hi nahi, aur REST fallback bhi nahi:
+    # ghante purane numbers "live depth" ban jaate hain. Stale = koi data nahi.
+    q = dhan_feed.get_quote(sec_id, max_age=dhan_feed.FEED_MAX_AGE)
     bid, ask, ltp = q.get("bid"), q.get("ask"), q.get("ltp")
     volume, oi = q.get("volume"), q.get("oi")
 
