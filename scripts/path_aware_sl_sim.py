@@ -244,9 +244,19 @@ LEG_TARGETS = [1000, 1500, 2000, 2500, 3000, 4000, 5000, 6000, 8000]
 LEG_SLS     = [1000, 1500, 2000, 2500, 3000]
 # Aggressive = live trail engine; sweep target, initial SL, and step (favour_step
 # == sl_move). aggressive_pct/mult held at the deployed defaults.
-AGG_TARGETS = [2000, 2500, 3000, 4000, 5000, 6000]
-AGG_INIT_SL = [1000, 1500, 2000, 2500]
-AGG_STEPS   = [100, 200, 300]
+# 2026-07-16: floor dropped 2000 -> 750. A per-lot ₹ target is only meaningful
+# relative to that instrument's per-lot NOTIONAL (avg entry premium x lot size),
+# and this sim pools every symbol, so the winner is set by whatever dominates the
+# pool. Measured over 2026-06-15..07-16, notional/lot ranges 4.5x:
+#     NIFTY  ₹6,441   (smallest in the universe)
+#     ADANIENT ₹28,897, BANKNIFTY ₹27,017, AXISBANK ₹20,748 (largest)
+# So the old grid's 6000 winner means 20-30% of notional on the big names — and
+# 93% on NIFTY, i.e. the option must lose almost all its value. The grid could
+# never express "right for NIFTY" because it had no value low enough, and no way
+# to look at NIFTY alone (--symbol added below).
+AGG_TARGETS = [750, 1000, 1250, 1500, 2000, 2500, 3000, 4000, 5000, 6000]
+AGG_INIT_SL = [500, 750, 1000, 1500, 2000, 2500]
+AGG_STEPS   = [50, 100, 200, 300]
 AGG_PCT, AGG_MULT = 30, 2.0
 
 
@@ -425,6 +435,27 @@ def ride_sweep(trades, allow_fetch, hold_eod=False, base=None, cushions=None):
     return _ride_sweep_report(cov, base or RIDE_BASE, cushions or RIDE_CUSHIONS)
 
 
+def _load(args):
+    """Completed trades for the window, optionally ONE underlying only.
+
+    Pooling every symbol is how the deployed 6000/lot target got picked: the grid
+    optimised over a universe whose per-lot notional spans 4.5x (NIFTY ₹6,441 ..
+    ADANIENT ₹28,897), so the stock trades chose the number and NIFTY inherited it,
+    where it means 93% of notional. A per-lot ₹ parameter is only comparable within
+    ONE instrument."""
+    trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
+    trades = [t for t in trades if t.get("pnl") is not None]
+    if args.symbol:
+        want = args.symbol.strip().upper()
+        trades = [t for t in trades if (t.get("symbol") or "").strip().upper() == want]
+        print(f"Completed trades {args.dfrom}..{args.dto} [{want} only]: {len(trades)}", flush=True)
+    else:
+        print(f"Completed trades {args.dfrom}..{args.dto} [ALL symbols POOLED — a "
+              f"per-lot ₹ winner from this is not valid for any single instrument; "
+              f"use --symbol]: {len(trades)}", flush=True)
+    return trades
+
+
 def main():
     ap = argparse.ArgumentParser()
     ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
@@ -439,6 +470,13 @@ def main():
                     help="RIDE mode (no target cap): sweep min_cushion to find the "
                          "one that rides winners without whipsawing on noise. "
                          "Implies hold-to-EOD (ride needs room past the old target).")
+    ap.add_argument("--symbol", default=None,
+                    help="only trades on this underlying (e.g. NIFTY). A per-lot ₹ "
+                         "target is meaningless across a pooled universe whose "
+                         "per-lot notional varies 4.5x — pooling is how the deployed "
+                         "6000/lot got picked by the stock trades and then applied to "
+                         "NIFTY, where it means 93%% of notional. Size ONE instrument "
+                         "at a time.")
     ap.add_argument("--csv", default=os.path.join(ROOT, "data", "path_aware_sl_sim.csv"))
     args = ap.parse_args()
 
@@ -449,22 +487,16 @@ def main():
     print(f"Window mode: {mode_note}", flush=True)
 
     if args.ride_sweep:
-        trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
-        trades = [t for t in trades if t.get("pnl") is not None]
-        print(f"Completed trades {args.dfrom}..{args.dto}: {len(trades)}", flush=True)
+        trades = _load(args)
         ride_sweep(trades, allow_fetch=not args.no_fetch, hold_eod=True)
         return
 
     if args.optimize:
-        trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
-        trades = [t for t in trades if t.get("pnl") is not None]
-        print(f"Completed trades {args.dfrom}..{args.dto}: {len(trades)}", flush=True)
+        trades = _load(args)
         optimize(trades, allow_fetch=not args.no_fetch, hold_eod=args.hold_eod)
         return
 
-    trades = order_store.trades_for_range(args.dfrom, args.dto)["details"]
-    trades = [t for t in trades if t.get("pnl") is not None]
-    print(f"Completed trades {args.dfrom}..{args.dto}: {len(trades)}", flush=True)
+    trades = _load(args)
 
     rows = []
     n_cov = 0
