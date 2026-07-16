@@ -23,6 +23,12 @@ rsi_config.json
 # Health-check + alert runtime output (per-run, har baar badalta)
 data/health_report.json
 data/downloader_alert.json
+# Notification centre ka runtime state (b51cb21/5fc889b ke saath aaya, ignore
+# karna reh gaya tha — dashboard chalte hi ye untracked ban ke `git status` me
+# baithe rehte hain aur ek `git add -A` inhe commit kar deta)
+data/notifications.jsonl
+data/alert_ingest_seen.json
+data/error_watch_offsets.json
 
 # Runtime data — local/VPS only, code nahi (large, har run badalta)
 _TRADING_DATA/

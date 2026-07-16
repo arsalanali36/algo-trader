@@ -2782,3 +2782,172 @@ aur netting (yahan). **Naya code positional ko touch kare to teeno check karo.**
 hain. Pehla milte hi mat ruko — maine margin display fix karke verify kiya, tabhi dikha ki
 condor group **hai hi nahi**. Agar sirf apne fix ka number check karke aage badh jaata, to
 farzi-P&L wala bug abhi bhi live hota.
+
+---
+
+## TRAP #123 — Backend badla to AUTOMATED path migrate hui, MANUAL button purane broker pe hi reh gaya
+
+**Symptom:** Koi nahi. Yahi is trap ki khaas baat hai — 2026-07-16 ke audit tak ye chup baitha tha.
+
+**Root cause:** 2026-07-10 (TRAP #90) pe orders Dhan se **Kite** pe chale gaye
+(`_risk.global.default_broker='kite'`), aur `smart_order` har leg ki row me uska **asli broker**
+likhne laga. `pos_monitor` ka apna `_do_squareoff` shuru se sahi tha:
+
+```python
+broker = get_broker(p.get("broker") or "dhan")     # leg ka apna broker
+```
+
+Par dashboard ka **manual Close ✕** (`_close_position_impl`) me har broker-touchpoint ek
+hardcoded `'dhan'` literal tha — jabki route **upar hi** `this_leg` order_store se utha chuka
+tha (group_id ke liye) aur uske paas asli broker maujood tha. Kite-held leg pe dono raaste galat:
+
+| Dhan ka jawab | Kya hota |
+|---|---|
+| position-book milti hai, symbol nahi | `is_flat_fresh` **"FLAT"** — ye error nahi, **confident jawab** hai, isliye uska fail-open guard chalta hi nahi → `mark_externally_closed` → **koi order nahi jaata**. Zerodha pe position khuli, app usse band samajhta hai, aur `externally_closed` hone ki wajah se **3:15 squareoff bhi skip** → raat bhar unprotected. UI ka message asli flat se **bilkul same** dikhta hai. |
+| Dhan error deta hai | "flat nahi" → `api.dhan.co/v2/orders` pe **asli order** → Dhan pe **nayi naked position**, Kite wali bhi khuli. Aur ye "Dhan hands-off" rule bhi todta hai (TRAP #97 ne auto-adopt band kiya tha, **manual raasta chhoot gaya**). |
+
+**Permanent guard:** Jab bhi backend/broker/provider badlo — **automated aur manual dono raaste
+ginno**. Automated path pe sabki nazar hoti hai (wahi roz chalta hai); manual button mahine me
+ek baar dabta hai, isliye wahi peeche reh jaata hai. Aur agar kisi row me `broker`/`account`/
+`source` jaisa field hai, to **use padho** — hardcode karna matlab us field ka matlab hi khatam.
+Yahan asli fix `'dhan'` ko variable karna nahi tha (Kite ka API hi alag hai) — poora call
+`smart_order.execute(is_exit=True)` pe le jaana tha, wahi jo `_do_squareoff` karta hai.
+
+**Fast detect:** `grep -n "'dhan'" trader_dashboard.py` — jo bhi line `p.get("broker")` ke bina
+hai, wo shak ke daayre me hai.
+
+---
+
+## TRAP #124 — Enforcer "0 FAIL" bol raha tha jabki 6 money-path violations saamne padi thi
+
+**Symptom:** `architecture_audit.py` har commit pe pass ho raha tha. Bharosa tha ki Rule 6B
+enforce ho raha hai. **Nahi ho raha tha.**
+
+**Root cause:** Check ek **SHAPE** match karta tha, **kaam** nahi.
+`check_raw_orders` sirf `.place_order()` / `.cancel_order()` wale AST attribute-calls dekhta tha.
+Par order dene ka doosra roop bhi hai:
+
+```python
+r = requests.post("https://api.dhan.co/v2/orders", json=body, headers=hdrs)
+```
+
+Ye bilkul wahi kaam hai — par audit ke liye **invisible**. 6 asli sites: `/api/manual-order`,
+`/api/close-position` (TRAP #123 ka ghar), `/api/debug-order`, aur **`nifty_ema_trader.py` ki do
+lines** — yaani `ema_v1` raw REST se order deta hai, to RMS gating / rate-limiting / async
+fill-confirm / order_store recording **sab skip**. CLAUDE.md ka Rule 6 ispe shak already jata
+raha tha ("ema_v1 ka status verify na hone tak isi list me maano") — audit ise **kabhi bata hi
+nahi sakta tha**.
+
+Doosra andha kona: `_core/webhook_executor.py` apni **ekmatra** kill-floor guard
+`trader_dashboard` se import kar raha tha, `try/except: pass` ke andar — yaani money-path UI pe
+depend, aur **fail-OPEN**. Koi check is shape ko dekhta hi nahi tha.
+
+**Permanent guard:** Naya check likhte waqt poochho — "ye **kaam** pakad raha hai ya sirf ek
+**likhne ka tareeka**?" Har kaam ke 2-3 roop hote hain (SDK method, raw HTTP, subprocess, koi
+wrapper). Ab checks 7 (`RAW-HTTP-ORDER` — URL constants + f-strings + module-level names bhi
+resolve karta hai, aur sirf WRITE verbs, kyunki `GET /orders` status-poll hai) aur 8
+(`CORE-IMPORTS-UI`) us gap ko band karte hain. **Aur sabse zaroori:** ek clean audit ka matlab
+"sab theek hai" nahi — matlab "jo check likhe hain unme kuch nahi mila". Wo do alag baatein hain.
+
+**Fast detect:** Naya check add karo to pehle **jaanbhoojkar violation likh ke** dekho ki wo
+pakadta hai. Aur audit ka scope periodically poochho: "kya ye us file ko bhi dekh raha hai jahan
+asli kaam hota hai?" (`scratch/nifty_trend` isi sawal pe 12,558 LOC ke saath bahar mila — sirf
+apne NAAM ki wajah se.)
+
+**Family:** Wahi shape teesri jagah bhi tha — `session_guard.py` (do sessions ko ek repo pe
+likhne se rokta hai) sirf `CODE3B/.claude/settings.json` me register tha, to **parent se khuli
+session use chalati hi nahi thi** — na lock leti, na deny hoti. Guard theek us case ke against
+bekaar tha jiske liye bana tha. **Har protection se poochho: kya ye us raaste ko cover karta hai
+jiske liye bana tha, ya sirf us raaste ko jahan likha gaya tha?**
+
+---
+
+## TRAP #125 — Bade inline `<script>` ko files me toda: `setTimeout(...,0)` "sab scripts ke baad" NAHI hai
+
+**Symptom:** `templates/index.html` ke 9,569-line inline block ko 14 `static/js/*.js` me todne ke
+baad dashboard load pe hi:
+
+```
+Uncaught ReferenceError: calendarRender is not defined @ app-00-core.js:45
+```
+
+**Root cause:** Split se pehle maine hoisting-hazard analysis chalayi thi aur wo **clean** aayi.
+Do baar galat thi:
+
+1. **v1** ne function **body** ko "deferred, isliye safe" maana. Galat — agar function
+   **top-level pe CALL** ho jaye, uski body **usi waqt** chalti hai, aur uske andar ka har
+   reference bhi immediate ho jaata hai. (Transitive banana pada.)
+2. **v2** (transitive) ne bhi ise **pass** kar diya — kyunki call `setTimeout` ke andar tha:
+
+```js
+setTimeout(() => { startLtpStream(); loadAll(); switchTab(activeTab); }, 0);
+```
+
+`setTimeout(...,0)` ka matlab **"sab scripts ke baad"** nahi hai — uska matlab **"jaise hi stack
+khaali ho"**. Ek hi inline `<script>` me wo poore 9,569-line block ke baad hi chal sakta tha
+(isliye mahino chala). **Alag `<script src>` files me browser use DO scripts ke BEECH chala
+deta hai** → `switchTab('calendar')` chala jab `calendarRender` wali file load hui hi nahi thi.
+
+Do aur usi shape ke mile: `togglePeakView` restore (`try/catch` me tha → ReferenceError **poora
+nigal** jaata, view chupchaap restore hi na hota, console me kuch nahi) aur
+`loadStrategyRegistry` (sirf isliye bacha kyunki wo `await fetch` karta hai aur baaki scripts
+race jeet leti hain — **ittefaq, guarantee nahi**).
+
+**Permanent guard:** Ek script ko files me todte waqt asli khatra **hoisting nahi — load-time
+bootstraps** hain. Jo bhi load pe chalna hai aur doosri files ke functions chhuta hai, wo
+`document.addEventListener('DOMContentLoaded', ...)` me daalo — **wahi ekmatra cheez hai jo
+"parser + saari classic scripts done" guarantee karti hai**. (`readyState` fallback ki zaroorat
+nahi: document me likhi plain `<script src>` hamesha parse ke dauran chalti hai.) Analyzer me
+`setTimeout`/`queueMicrotask`/`requestAnimationFrame` ko **immediate maano**, `setInterval` ko
+nahi.
+
+**Fast detect:** Split ke baad har file me top-level pe koi bhi call/`setTimeout` dhundo — har ek
+ko `DOMContentLoaded` chahiye. Aur **browser me chala ke console dekho** — `node --check` sirf
+syntax batata hai, ye class usse kabhi nahi pakdegi. (Isi session me maine `ast.parse` pe bharosa
+karke dashboard ka startup `NameError` bhi introduce kiya tha — TRAP #121 ka wahi sabak, dobara:
+**jo cheez chalti hai use chala ke dekho**.)
+
+**Naya code:** naya UI JS ab `static/js/` me likho, `index.html` me inline **nahi**. Aur `{{ }}`
+wala JS static file me mat daalo (wahan Jinja chalti hi nahi) — TradingView ke `{{timenow}}`
+placeholders isi wajah se `{% raw %}` me the; static file me wo apne aap literal hain.
+
+---
+
+## TRAP #126 — DERIVED file ko source samajh liya: ek bare run ne 4 saal ka NIFTY data uda diya
+
+**Symptom:** `git status` me `scratch/nifty_trend/nifty_1min.csv` modified — 788,410 rows se
+**416,673**. Data 2018-01-01 ki jagah 2022-01-03 se shuru hone laga. Koi warning nahi, koi error
+nahi.
+
+**Root cause:** `nifty_1min.csv` **source nahi — DERIVED hai**. Asli source per-day store
+(`._TRADING DATA/Index/NIFTY/NIFTY_<date>.csv`) hai; `data_fetch.rebuild_frames()` store se CSV
+**overwrite** kar deta hai. Do alag tareeke se saal katte the:
+
+1. `main(start="2022-01-01")` wahi `start` `rebuild_frames(start=start)` → `dl.load_all(start=)`
+   me bhej deta tha, **jo us date se pehle ka sab filter kar deta hai**. Yaani **store poora
+   hota tab bhi**, bina argument ke `python data_fetch.py` CSV ko 2022+ kar deta.
+   `start` ka matlab "kitna peeche **DOWNLOAD** karna hai" tha, "kya **rakhna** hai" nahi —
+   dono ek variable me mila diye gaye the.
+2. Store me din na hon → CSV chhoti, chupchaap.
+
+Dono fire hue. Commit `2c57074` ("extend NIFTY data to 8.5yr") ne CSV 2018 tak bhari thi — par
+**2018-2021 ke per-day files local store me kabhi aaye hi nahi** (wo kaam VPS pe hua tha, git se
+sirf **tayyar CSV** aayi). Wo 4 saal **sirf git ke committed blob me** bache the — ek `git add`
+door, hamesha ke liye jaane se.
+
+**Aur ek:** `nifty_1h.csv` (usi function se banti hai) **hamesha se 4 saal chhoti thi** — 1-min
+extend hui, 1H peeche reh gayi. `engine.py` usi ko padhta hai, to **saara positional/1H research
+2022+ pe chal raha tha** jabki intraday 2018+ pe. Kisi ko pata nahi chala.
+
+**Permanent guard:** `rebuild_frames()` ab **REFUSE** karta hai agar CSV 98% se chhoti ho —
+dono row counts, store ka asli range, store path, aur ilaaj print karke (`--force` se hi aage).
+`rebuild` ab `start` leta hi nahi — CSV hamesha **poora store**. `seed_from_local()` sirf
+**missing** din likhta hai (pehle poori CSV se overwrite karta tha, jo **taaze store days ko
+purane CSV se replace** kar deta).
+
+**Sabak (generic):** Jo file derive hoti hai, uske rebuild ko **kabhi silently chhota mat hone
+do** — "output pehle se chhota hai" hamesha ek sawal hai, kabhi jawab nahi. Aur agar ek input
+(`start`) do matlab rakhta ho, wo kabhi na kabhi galat wale pe lagega.
+
+**Fast detect:** `python data_fetch.py --seed` (CSV se missing din store me wapas — token nahi
+chahiye), phir dobara chalao: row count **badalna nahi chahiye**. Badle to store adhoora hai.

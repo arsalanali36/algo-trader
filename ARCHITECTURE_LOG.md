@@ -15,6 +15,145 @@
 
 ---
 
+## 2026-07-16 (5) — index.html split (14,121 → 3,675) + NIFTY data bachaav (TRAP #125, #126)
+**Status:** DONE (local + pushed) · **VPS deploy PENDING**
+**Layer:** ui (JS split) + data (nifty_1min/1h + data_fetch guards)
+**Kya:**
+1. **JS split** — `templates/index.html` ke 10,447 lines inline JS (ek block akela **9,569 lines
+   / 508 KB**) → `static/js/` ki **18 files**, author ke apne section banners pe. **Code ek line
+   nahi badla**: 441,281 chars character-identical (comments/whitespace normalise karke), sirf 2
+   deliberate edits — `{% raw %}` markers (static .js Jinja-render hoti hi nahi; `{{timenow}}` TV
+   placeholders wahan apne aap literal) aur `pineLoadLatest()` preload (block ke top se aakhri
+   module me).
+2. **🔴 Split ne dashboard toda — user ne pakda (TRAP #125):**
+   `Uncaught ReferenceError: calendarRender is not defined @ app-00-core.js:45`.
+   app-08 ka `setTimeout(() => {...switchTab(activeTab)}, 0)` — **`setTimeout(...,0)` "sab
+   scripts ke baad" NAHI hai**, wo "stack khaali hote hi" hai. Ek inline block me wo poore 9,569
+   lines ke baad chal sakta tha; alag files me browser use **do scripts ke BEECH** chala deta hai.
+   Mera pre-split analyzer **do baar** miss kar gaya: v1 ne function body ko "deferred = safe"
+   maana (galat — top-level pe CALL hone se body immediate ho jaati hai), v2 transitive banane ke
+   baad bhi `setTimeout` ko safe maana. Ab setTimeout-aware + transitive → "NO hazard".
+   **Teen bootstraps `DOMContentLoaded` pe:** app-08 (crash), app-04 (`togglePeakView` restore —
+   `try/catch` me tha, ReferenceError **chupchaap nigal** raha tha, view restore hi nahi hota
+   tha), app-05 (`loadStrategyRegistry` — `await fetch` ki wajah se **ittefaqan** bach raha tha).
+3. **🔴 NIFTY data (TRAP #126)** — `nifty_1min.csv` **source nahi, DERIVED hai** (per-day store
+   se rebuild hoti hai). Ek bare `data_fetch.py` run ne 788,410 rows → **416,673** (2018 → 2022),
+   **4 saal uda diye**, aur wo 4 saal **sirf git ke committed blob me** bache the — ek `git add`
+   door. Do alag bug: (a) `main(start="2022-01-01")` wahi `start` `rebuild_frames()` me bhej deta
+   tha → `load_all(start=)` us date se pehle ka sab **filter** kar deta hai, yaani **store poora
+   hota tab bhi** CSV kat jaati; (b) local store me 2018-2021 kabhi aaye hi nahi (wo kaam VPS pe
+   hua tha, git se sirf tayyar CSV aayi).
+4. **Bonus jo khud nikla:** `nifty_1h.csv` **hamesha se 4 saal chhoti thi** (7,779 bars, 2022 se)
+   — 1-min extend hui thi, 1H peeche reh gayi. `engine.py` usi ko padhta hai → **saara
+   positional/1H research aadhi history pe** chal raha tha, kahin likha nahi tha.
+
+**Files:** `templates/index.html` (−10,447), `static/js/*.js` (18 naye),
+`scratch/nifty_trend/data_fetch.py` (shrink guard + `start` decouple + surgical `--seed`),
+`scratch/nifty_trend/nifty_1min.csv` (restore), `scratch/nifty_trend/nifty_1h.csv` (+6,926 bars),
+`.gitignore` (notification-centre runtime state).
+
+**Guards (naye):**
+- `rebuild_frames()` **REFUSE** karta hai agar CSV 98% se chhoti ho — dono row counts + store ka
+  asli range + store path + ilaaj print karke; `--force` se hi aage. `nifty_1h.csv` bhi nahi
+  likhta (dono saath chalne chahiye).
+- `rebuild_frames()` ab `start` leta hi nahi — CSV hamesha **poora store**.
+- `seed_from_local()` sirf **missing** din likhta hai (pehle poori CSV se overwrite karta tha, jo
+  **taaze store days ko purane CSV se replace** kar deta — committed CSV 2026-07-09 pe khatam
+  hoti hai, store usse aage jaata hai).
+
+**Verify:** extracted JS == committed inline JS **character-identical** (2 differing lines = usi
+ek move ke aadhe) · 18/18 `node --check` standalone · tag order == code order · vendor libs pehle
+· Jinja compile · 22/22 script URLs live app se 200 · `trader_dashboard` asli import + 127 routes
+· analyzer "NO hazard (direct or transitive)" · guard ne asli shrink refuse kiya (788,409 →
+416,672 = 53%) · `--seed` ne 991 din (2018-01-01..2021-12-31) likhe, 1,112 maujood skip kiye ·
+rebuild ab **idempotent** · store poora 2018→2026 (2,128 files).
+
+**⚠️ NOT verified:** logged-in dashboard aankh se — is machine pe dashboard password set hi nahi
+tha (user ne khud `set_password.py` chalaya, phir `calendarRender` crash isi tarah surface hua).
+Fix ke baad **user ka hard-refresh confirm pending**.
+
+**Aage:** (a) VPS deploy + logged-in eyeball; (b) **jo bhi 1H frame pe tika tha wo dobara chalane
+layak** — khaas kar wo positional trend hunt jiska significance fail hua tha (ab 4.5 nahi, **8.5
+saal**); (c) kuch modules abhi bhi 60-90 KB (`app-01-rms` 89 KB) — 30KB rule pura nahi hua kyunki
+ek-ek top-level function 1,200 lines ka hai, usse todna **asli refactor** hai (ye code-identical
+move tha).
+
+**Process note (imaandaari):** Is session me maine ye entry **kaam se PEHLE nahi likhi** — Rule
+kehta hai pehle likho. Session ek audit se shuru hua tha, aur kaam usi se nikalta gaya; par wo
+wajah nahi, bahana hai. Agli baar pehle entry.
+
+---
+
+## 2026-07-16 (4) — Full-codebase audit → 14 tasks (TRAP #123, #124)
+**Status:** DONE (local + pushed) · **VPS deploy PENDING**
+**Layer:** execution (close-position) + infra (audit checks, systemd) + ui (dead routes) + config
+**Kya:** User: *"errors kam ho gaye na? codebase bahut bada/cluttered to nahi ho gaya ki chupe
+error aate jayein?"* Audit ka jawab: **errors sach me kam hue** — 219 files compile, **saari 15
+live strategies asli module-import se OK** (grep se nahi — TRAP #121), `_TRADERS` ka duplicate
+sach me gaya, koi stale root-copy nahi, 13 claimed money-path functions sab genuinely wired.
+**Par 3 structural mechanism traps ko chhupa rahe the:**
+
+1. **🔴 `/api/close-position` (TRAP #123)** — manual Close ✕ har broker-touchpoint pe `'dhan'`
+   hardcode karta tha jabki algo **Kite** pe trade karta hai (`default_broker='kite'`, TRAP #90).
+   Route **upar hi** `this_leg` order_store se utha chuka tha — broker field haath me tha, padha
+   nahi. Kite leg pe: Dhan "flat" bolta (confident jawab, error nahi → fail-open guard chalta hi
+   nahi) → `mark_externally_closed`, **koi order nahi**, Zerodha pe position khuli + 3:15
+   squareoff bhi skip; ya Dhan error → **Dhan pe nayi naked position**. `pos_monitor` ka
+   `_do_squareoff` shuru se sahi tha — sirf manual button peeche reh gaya. Fix:
+   `smart_order.execute(is_exit=True)` (13/13 tested).
+2. **🔴 Enforcer andha tha (TRAP #124)** — audit "0 FAIL" bolta tha jabki **6 raw-HTTP order
+   sites** the. `check_raw_orders` sirf `.place_order()` **shape** dekhta tha,
+   `requests.post(<orders url>)` nahi. 2 naye checks (`RAW-HTTP-ORDER` + `CORE-IMPORTS-UI`, 14/14
+   tested) → **`ema_v1` raw REST se order deta mila** (Rule 6 ka purana shak = ab mechanical
+   proof), aur `_core/webhook_executor` apni **ekmatra** kill-floor guard `trader_dashboard` se
+   `try/except: pass` me import kar raha tha = **fail-OPEN**. Kill-floor ab `risk_gate` ka single
+   owner; UI ka duplicate predicate deleted (LESSONS ne use "fails PERMISSIVE" pehle hi likha tha).
+3. **Structural flush fix kabhi laga hi nahi** — `algo-monitor`/`algo-dashboard` me na `-u` na
+   `PYTHONUNBUFFERED` (sirf sabse kam-critical `algo-optionchain` pe tha) → 75 me se **39 prints
+   unflushed**, jinme "LIVE square-off FAILED — leaving position open" bhi. `flush=True` 3 baar
+   reactively patch hua (#56/#81) — ab ek line se poori class khatam (pipe pe measure karke proved).
+
+**Aur:** `/api/debug-order` = **GET route jo asli SELL fire karta tha** (zero callers, expired
+contract, JWT ke 10 chars leak) → deleted · `smart_order.marketable_price()` (jo **order ka price
+decide karta hai**) bina `max_age` ke tha — frozen tick ₹302 vs asli ₹50 (proved); `FEED_MAX_AGE`
+ab `dhan_feed` me single source · `_ops/optimize_strategy.py` me **TRAP #98 zinda** tha **aur
+`lab/README` future kaam usi pe bhejta tha** → deleted+repointed · `charges` date-blind mirror →
+canonical pe (aaj ke numbers bit-identical, 7/7) · dead routes (`mfe_routes` **din-1 se kabhi
+register hi nahi hua** jabki Index me ✅; `save-summary` refactor se toota par green ✅ deta tha;
+`/api/pnl`) → **60/60 UI paths ab resolve, zero 404** · token **"Check" button 404** karta tha →
+route banaya (health_check ke apne checks reuse, Rule 6B) · **1,544 lines dead code** deleted
+(par `validate_strategy.py` **bacha liya** — "zero imports" `_TOOLS` ke liye dead ka matlab nahi;
+`_TRADERS` `_paths._DIRS` + SCAN_DIRS se drop, 15/15 strategies re-import verified).
+
+**`scratch/` blind spot (sabse bada):** CLAUDE.md usko line 30 pe *"gitignored junk"* aur line 63
+pe *"permanent contract"* **dono** kehti thi. 163 files tracked, 12,558 LOC = **repo ka sabse bada
+folder**, `_core/payoff.py` uska `bs_option` import karta hai, aur audit use **sirf NAAM ki wajah
+se** skip karta tha → ab `SCAN_DIRS` me (exclusion sirf `scratch/<baaki>` pe, 11/11 boundary
+tests), 9 chhupe DUP-INDICATOR nikle, sab baselined.
+
+**Imaandaar:** RSI wala "fix" **jaanbhoojkar nahi kiya** — Pine ke `ta.rma` se compare karke **mera
+hypothesis GALAT nikla** (canonical `wilder_rsi` 2.92 vs research 5.55 — canonical Pine ke **zyada
+kareeb**), farq **seeding** ka hai recursion ka nahi, aur canonical 90.2% TV-validation pe khada
+hai. Validated indicator ko unproven hypothesis pe badalna divergence se bura hota. Ab baseline me
+**poore reasoning ke saath visible ticket**.
+
+**Session guard ka apna scope-hole:** hook sirf `CODE3B/.claude/settings.json` me tha → **parent se
+khuli session use chalati hi nahi thi** (na lock, na deny) — yaani guard theek us case ke against
+bekaar tha jiske liye bana tha. Fix: parent me bhi register + `_targets_repo()` (CODE7/CODE2 ka
+kaam CODE3B ka lock na le). 9/9 + live-verified.
+
+**Files:** `trader_dashboard.py`, `_core/{risk_gate,webhook_executor,smart_order,strategy_safety}.py`,
+`_data/dhan_feed.py`, `_TOOLS/{architecture_audit,audit_baseline}.*`, `_DEPLOY/*.service`,
+`.claude/session_guard.py` + parent `.claude/settings.json`, `CLAUDE.md`, `strategies/lab/README.md`.
+
+**Verify:** audit debt 7 → 4 real (+9 ab-dikhne-wale) · 15/15 live strategies + 8/8 `_core` modules
+asli import se OK · 60/60 UI `/api` paths resolve · har fix ka apna behaviour test (13/13, 14/14,
+11/11, 7/7, 9/9).
+
+**⚠️ VPS deploy PENDING** — `PYTHONUNBUFFERED` ke liye `daemon-reload` + dono units restart chahiye.
+
+---
+
 ## 2026-07-16 (3) — Margin display + positional ROLL netting (TRAP #122)
 **Status:** DONE
 **Layer:** ui (margin total) + data (netting window) — VPS-deployed
