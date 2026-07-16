@@ -128,10 +128,23 @@ def push(msg, level="error", key=None, source=None):
         for r in reversed(recs):
             if r.get("dedup") == dedup_key and r.get("level") == level:
                 if now - int(r.get("last_ts") or r.get("ts") or 0) <= _DEDUP_SECS * 1000:
+                    was_read = bool(r.get("read"))
                     r["count"] = int(r.get("count") or 1) + 1
                     r["last_ts"] = now
                     r["msg"] = msg          # latest wording jeete
                     r["read"] = False       # dobara hua = phir se dikhao
+                    if was_read:
+                        # User ne isay padh liya tha aur problem PHIR hui — ye ek
+                        # nayi ghatna hai, isliye nayi id: high-water mark se upar
+                        # jaaye (warna listing() usay dobara "read" bana deti aur
+                        # re-occurrence CHUP ho jaati), panel me top pe aaye, aur
+                        # frontend ka fresh-check toast+beep bajaye.
+                        r["id"] = now
+                        used = {x.get("id") for x in recs if x is not r}
+                        while r["id"] in used:
+                            r["id"] += 1
+                    # Agar abhi tak unread hai to id waisi hi rehti — user ke saamne
+                    # pehle se hai, har repeat pe dobara toast karna spam hoga.
                     _rewrite(recs)
                     return r["id"]
                 break

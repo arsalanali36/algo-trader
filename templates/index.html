@@ -1347,86 +1347,13 @@
 
 <body>
 
-  <!-- ── Alert banner (P5, 2026-07-02): /api/downloader-alerts existed since
-     2026-06-18 but NO UI ever fetched it — untracked-position, naked-leg,
-     token-expiry and health-check RED alerts were written to a JSON file
-     nobody could see. This strip is their first actual surface. ── -->
-  <div id="alertBanner"
-    style="display:none;position:fixed;top:52px;left:0;right:0;z-index:9997;background:#3d1214;border-bottom:2px solid #f85149;padding:8px 14px;font-size:13px;color:#ffb3ad;line-height:1.5;max-height:40vh;overflow:auto">
-  </div>
-  <script>
-    (function () {
-      var _dismissedHash = localStorage.getItem('alertBannerDismissed') || '';
-      function _hash(s) { var h = 0; for (var i = 0; i < s.length; i++) { h = (h * 31 + s.charCodeAt(i)) | 0; } return String(h); }
-      function _setH(el) {
-        // Push page content down by exactly the banner's height (it's position:fixed
-        // under the frozen 52px header — without this it would overlap the content).
-        var h = (el && el.style.display !== 'none') ? el.offsetHeight : 0;
-        document.documentElement.style.setProperty('--alertH', h + 'px');
-      }
-      function _esc(s) { return String(s).replace(/[<>&]/g, function (c) { return c === '<' ? '&lt;' : c === '>' ? '&gt;' : '&amp;'; }); }
-      function _hide(el) { el.style.display = 'none'; _setH(el); }
-      function _render(alerts) {
-        var el = document.getElementById('alertBanner');
-        if (!el) return;
-        if (!alerts || !alerts.length) { _hide(el); return; }
-        var raw = JSON.stringify(alerts);
-        if (_hash(raw) === _dismissedHash) { _hide(el); return; }
-        var untracked = alerts.filter(function (a) { return a && a.key === 'untracked_position'; });
-        var rest = alerts.filter(function (a) { return !(a && a.key === 'untracked_position'); });
-        // Split the rest into SL/risk-relevant dict alerts (stale_feed, kill_floor,
-        // naked_leg…) vs plain informational strings (data-missing / token notices).
-        var risky = rest.filter(function (a) { return a && typeof a === 'object' && a.key; });
-        var infos = rest.filter(function (a) { return !(a && typeof a === 'object' && a.key); });
-        // ✕ first so it always sits clean top-right; text flows to its left.
-        var html = '<span onclick="alertBannerDismiss()" title="Dismiss (reappears if alerts change)" ' +
-          'style="float:right;cursor:pointer;font-weight:700;padding:0 6px;font-size:15px">✕</span>';
-        if (untracked.length) {
-          html += '<div style="font-weight:700;color:#ff7b72">🚨 ' + untracked.length +
-            ' UNTRACKED live position(s) — broker has them, app does not. No SL/EOD protection.</div>';
-          untracked.slice(0, 4).forEach(function (a) {
-            html += '<div>• ' + _esc(a.msg || (a.broker + ': ' + a.sym)) + '</div>';
-          });
-          html += '<button onclick="alertBannerReconcile(this)" style="margin:4px 8px 0 0;padding:4px 10px;' +
-            'background:#f85149;color:#fff;border:0;border-radius:6px;font-weight:700;cursor:pointer">' +
-            '🧾 Reconcile vs Broker now</button>';
-        }
-        risky.forEach(function (a) {
-          html += '<div style="font-weight:600;color:#ffb3ad;margin-top:4px">• ' + _esc(a.msg || JSON.stringify(a)) + '</div>';
-        });
-        if (infos.length) {
-          html += '<div style="margin-top:' + (untracked.length || risky.length ? '6px' : '0') + ';color:#c9a26b">' +
-            'ℹ️ ' + infos.length + ' info: ' +
-            infos.slice(-3).map(function (a) { return _esc((typeof a === 'string') ? a : (a.msg || JSON.stringify(a))); }).join(' &nbsp;|&nbsp; ') +
-            (infos.length > 3 ? ' …' : '') +
-            '</div>';
-        }
-        el.innerHTML = html;
-        el.dataset.raw = raw;
-        el.style.display = 'block';
-        _setH(el);
-      }
-      window.alertBannerDismiss = function () {
-        var el = document.getElementById('alertBanner');
-        _dismissedHash = _hash(el.dataset.raw || '');
-        localStorage.setItem('alertBannerDismissed', _dismissedHash);
-        _hide(el);
-      };
-      window.alertBannerReconcile = function (btn) {
-        btn.disabled = true; btn.textContent = '⏳ Reconciling…';
-        fetch('/api/reconcile-manual-trades', { method: 'POST' })
-          .then(function (r) { return r.json(); })
-          .then(function (d) { btn.textContent = d.ok ? ('✅ ' + (d.manual_inserted != null ? d.manual_inserted + ' trade(s) added' : 'done')) : ('❌ ' + (d.msg || 'failed')); _poll(); })
-          .catch(function (e) { btn.textContent = '❌ failed: ' + e; btn.disabled = false; });
-      };
-      function _poll() {
-        fetch('/api/downloader-alerts').then(function (r) { return r.json(); })
-          .then(_render).catch(function () { /* dashboard down = other problems */ });
-      }
-      _poll();
-      setInterval(_poll, 30000);
-    })();
-  </script>
+  <!-- Alert banner REMOVED 2026-07-16 — superseded by the notification centre.
+     It surfaced /api/downloader-alerts as a strip whose ✕ hid the alert forever
+     (localStorage hash), so a real alert could be dismissed out of existence.
+     Same alerts now ingest into notify.py's permanent history; its ✕ only marks
+     read. The "Reconcile vs Broker" action it carried already exists as a button
+     on the Completed Trades panel. --alertH defaults to 0px at all 3 use sites,
+     so nothing needs re-layout. -->
 
   <!-- ── Notification centre (2026-07-16) ────────────────────────────────────
      Pehle har error do me se ek jagah marta tha: server log me (koi nahi dekhta)

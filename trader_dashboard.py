@@ -4225,26 +4225,55 @@ _ALERT_LEVEL_KEYS = {
 }
 
 
+_ALERT_SEEN_FILE = BASE_DIR / "data" / "alert_ingest_seen.json"
+
+
 def _ingest_downloader_alerts():
-    """downloader_alert.json ko notification history me mirror karo. Idempotent —
-    notify.push() ka dedup dobara-dobara same alert ko row nahi banane deta."""
+    """downloader_alert.json ko notification history me mirror karo — har alert ke
+    har APPEARANCE pe THEEK EK BAAR.
+
+    Ye file current STATE hai: ek alert jab tak zinda hai file me pada rehta hai.
+    Isliye "har poll pe push kar do, notify.push ka dedup sambhal lega" GALAT hai —
+    notify ka dedup time-window (5 min) wala hai, to har 5 min baad wahi purana
+    alert nayi unread row banata → toast + beep har 5 min, wahi spam jise rokna tha.
+
+    Sahi model: ek `seen` set disk pe rakho. File me naya key aaya → tabhi push.
+    Key file se HAT gayi (alert resolve ho gaya) → seen se bhi hatao, taaki agar
+    wo problem dobara ho to naya notification phir se aaye (chup na rahe).
+    """
     try:
         alert_file = BASE_DIR / "data" / "downloader_alert.json"
         if not alert_file.exists():
+            _ALERT_SEEN_FILE.write_text("[]")
             return
         alerts = json.loads(alert_file.read_text())
         if not isinstance(alerts, list):
             return
+
+        try:
+            seen = set(json.loads(_ALERT_SEEN_FILE.read_text()))
+        except Exception:
+            seen = set()
+
+        current = set()
         for a in alerts:
             if isinstance(a, dict):
-                key = a.get("key") or ""
+                key = a.get("key") or a.get("msg") or json.dumps(a, ensure_ascii=False)
                 msg = a.get("msg") or json.dumps(a, ensure_ascii=False)
-                lvl = _ALERT_LEVEL_KEYS.get(key, "error")
-                notify.push(msg, lvl, key=key or msg, source="alert")
+                lvl = _ALERT_LEVEL_KEYS.get(a.get("key") or "", "error")
             elif isinstance(a, str):
-                # auto_data_downloader.py plain strings likhta hai — ye aam taur pe
-                # informational hote hain (data gap / token notice), error nahi.
-                notify.push(a, "warn", key=a, source="downloader")
+                # auto_data_downloader.py plain strings likhta hai — aam taur pe
+                # informational (data gap / token notice), hard error nahi.
+                key, msg, lvl = a, a, "warn"
+            else:
+                continue
+            key = str(key)[:200]
+            current.add(key)
+            if key not in seen:
+                notify.push(msg, lvl, key=key, source="alert")
+
+        if current != seen:
+            _ALERT_SEEN_FILE.write_text(json.dumps(sorted(current)))
     except Exception as e:
         print(f"[notify] alert ingest fail: {e}", flush=True)
 
