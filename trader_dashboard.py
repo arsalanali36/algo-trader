@@ -4450,30 +4450,46 @@ def api_orders():
     # lookback whose ENTRY date is before the selected date, tagged
     # `carried_over` so the UI can badge it. pos_monitor stays today-scoped —
     # this changes only what the dashboard SHOWS, never what RMS manages.
+    # A day-scoped NETTING cannot correctly pair a positional ROLL, so for these
+    # strategies the multi-day netting is the only correct one and we take their
+    # rows from it wholesale. Proven live 2026-07-16: at 15:10 the VRP condor
+    # closed yesterday's 4 legs and opened 4 new ones. The day view paired
+    # today's CLOSING legs against today's OPENING legs — 4 phantom completed
+    # trades totalling -₹71.50, and today's real 4-leg position invisible. The
+    # truth (range-netted): yesterday's condor closed at +₹598, 4 legs still
+    # open. Merely carrying over prior-day legs (the earlier fix) could not see
+    # this at all: after a roll the live legs' entry_date IS today.
+    # Only opt-in allow_overnight strategies are re-netted this way — an
+    # intraday strategy is flat by EOD, so its lingering prior-day "open" rows
+    # are STALE (this DB has ~38) and range-netting them would resurrect ghosts.
     try:
-        if date == ist.strftime('%Y-%m-%d'):
-            import risk_gate as _rg_ov
-            _lb_from = (ist - timedelta(days=7)).strftime('%Y-%m-%d')
-            _carry = order_store.trades_for_range(_lb_from, date, **filt).get('open', [])
-            _seen = {(p.get('sym'), str(p.get('sec_id')), p.get('entry_date'))
-                     for p in data.get('open', [])}
-            for p in _carry:
-                if (p.get('entry_date') or date) >= date:
-                    continue  # today's own opens already in data['open']
-                # Only genuinely-positional (opt-in allow_overnight) strategies carry
-                # over — intraday strategies are flat by EOD, so a lingering prior-day
-                # "open" row for them is stale, not a live position to display.
-                try:
-                    if not _rg_ov.allow_overnight(p.get('strategy')):
-                        continue
-                except Exception:
+        import risk_gate as _rg_ov
+        _lb_from = (ist - timedelta(days=7)).strftime('%Y-%m-%d')
+        _rng = order_store.trades_for_range(_lb_from, date, **filt)
+        _pos = set()
+        for _r in (_rng.get('open') or []) + (_rng.get('details') or []):
+            try:
+                if _rg_ov.allow_overnight(_r.get('strategy')):
+                    _pos.add(_r.get('strategy'))
+            except Exception:
+                pass
+        if _pos:
+            # drop the day-scoped (mis-netted) rows for these strategies …
+            data['open'] = [p for p in data.get('open', []) if p.get('strategy') not in _pos]
+            data['details'] = [t for t in data.get('details', []) if t.get('strategy') not in _pos]
+            # … and replace them with the range-netted truth
+            for p in (_rng.get('open') or []):
+                if p.get('strategy') not in _pos:
                     continue
-                k = (p.get('sym'), str(p.get('sec_id')), p.get('entry_date'))
-                if k in _seen:
-                    continue
-                p['carried_over'] = True
+                if (p.get('entry_date') or date) < date:
+                    p['carried_over'] = True   # entered on a prior day, still live
                 data.setdefault('open', []).append(p)
-                _seen.add(k)
+            for t in (_rng.get('details') or []):
+                if t.get('strategy') not in _pos:
+                    continue
+                if (t.get('exit_date') or date) != date:
+                    continue                   # only what actually CLOSED on this date
+                data.setdefault('details', []).append(t)
     except Exception:
         pass
     data['date'] = date
