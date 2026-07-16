@@ -2,13 +2,24 @@
  "_meta": {
   "scheme": "family.member  (ID = NN.MM ; family = NN)",
   "rules": [
-   "An ID, once assigned, is PERMANENT \u2014 never renumber, never reuse, never re-map to a different strategy.",
+   "An ID, once assigned, is PERMANENT — never renumber, never reuse, never re-map to a different strategy.",
    "New strategy in an existing family -> next free member number (family.NM). Use strategy_registry.next_member(family).",
    "Brand-new family -> next free family number (NN) + member .01. Use strategy_registry.next_family().",
    "Rejected / failed / retired strategies KEEP their ID (status marks it); do NOT delete the row or reuse the number.",
    "Internal keys (config_key / correlationId / order_store / files) are NOT the ID. The ID is a display + organization layer; the registry maps ID <-> every alias. Rename internals only via a deliberate, separately-approved migration.",
    "status: paper | live | research | rejected | failed | legacy"
-  ]
+  ],
+  "field_guide": {
+   "_intro": "Naming convention locked 2026-07-16. The rule that matters: an ID identifies the IDEA. Mode, transport, version and symbol are PROPERTIES — they never live in the name.",
+   "name": "'<Family> - <Role>'. Sentence case. BANNED tokens: _PAPER / _LIVE (mode is runtime and it lies — rsi_v1's config says mode:live), _V1 (version belongs to the script library), MAIN / default (say nothing).",
+   "config_key": "The EXACT key in nifty_config.json (or webhooks.<key>). This is what order_store.strategy + _risk.per_strategy are keyed on. NEVER rename it — that breaks P&L history and every RMS override.",
+   "aliases": "Older/other names this strategy is known by. resolve() matches these.",
+   "role": "reference | mirror | canary | standalone — what this deployment is FOR.",
+   "transport": "pine | python — who produces the signal. NOT part of the name.",
+   "mirrors": "ID this deployment is supposed to reproduce. A mirror's symbols + timeframe must match its reference; if they drift, the mirror is lying.",
+   "never_live": "true = must never place real orders, whatever `mode` says. Intent that a name cannot enforce (see 2026-07-16 finding: /api/start takes mode straight off a query param — no guard exists yet).",
+   "desc": "Why this is alive. Required for anything a future reader might mistake for a duplicate and switch off."
+  }
  },
  "families": {
   "00": {
@@ -28,8 +39,8 @@
    "desc": "Pivot / key-level based"
   },
   "04": {
-   "name": "Range",
-   "desc": "Ars Chain / range breakout"
+   "name": "Ars chain",
+   "desc": "Auto Rev-Chain — ONE idea, four deployments (pine on TV + python). Was called 'Range', which is why range_v1 looked like it belonged to a different strategy for a month."
   },
   "05": {
    "name": "Indicator",
@@ -41,7 +52,7 @@
   },
   "07": {
    "name": "External",
-   "desc": "Webhook / TradingView-driven"
+   "desc": "The webhook ENGINE's own generic config. Individual TV-driven strategies live in their LOGIC family (e.g. Ars chain -> 04.04), not here — a family is an idea, not a transport."
   },
   "08": {
    "name": "Bollinger",
@@ -110,7 +121,7 @@
    "legs": 2
   },
   "01.01": {
-   "name": "Chain-Zone \u2014 Long ATM",
+   "name": "Chain-Zone — Long ATM",
    "config_key": "chainzone_v1",
    "slug": "chain_zone_longatm",
    "live_file": "strategies/live/04_chainzone_trader.py",
@@ -118,7 +129,7 @@
    "legs": 1
   },
   "01.02": {
-   "name": "Chain-Zone \u2014 Credit spread",
+   "name": "Chain-Zone — Credit spread",
    "config_key": null,
    "slug": "chain_zone_credit",
    "live_file": null,
@@ -126,7 +137,7 @@
    "legs": 2
   },
   "01.03": {
-   "name": "Chain-Zone \u2014 Naked sell",
+   "name": "Chain-Zone — Naked sell",
    "config_key": null,
    "slug": "chain_zone_naked",
    "live_file": null,
@@ -134,7 +145,7 @@
    "legs": 1
   },
   "01.04": {
-   "name": "Chain-Zone \u2014 Positional (monthly)",
+   "name": "Chain-Zone — Positional (monthly)",
    "config_key": null,
    "slug": "chain_zone_positional",
    "live_file": null,
@@ -166,28 +177,51 @@
    "legs": 1
   },
   "04.01": {
-   "name": "Ars Chain (live)",
-   "config_key": "ars_chain_v1",
+   "name": "Ars chain - Canary (NIFTY-BNF)",
+   "config_key": "ARS_CHAIN_V1",
+   "aliases": [
+    "ars_chain_v1",
+    "Ars Chain (live)"
+   ],
    "slug": null,
    "live_file": "strategies/live/range_trader.py",
    "status": "legacy",
-   "legs": 1
+   "role": "canary",
+   "transport": "python",
+   "legs": 1,
+   "desc": "1m, NIFTY+BANKNIFTY. The FIRST pine->python attempt. Its signal fidelity no longer matters — what it is kept alive FOR is volume: it fires constantly and keeps surfacing edge cases in the SHARED money path (execution_gateway / risk_gate / order_store / pos_monitor) that the mission strategies also run on. TRAP #76, #83 and #84 all came out of this family. Do NOT switch it off as a 'duplicate' — it is the early-warning system. NOTE: 1m != the TV pine's 5m, so watching this chart tells you nothing about 04.03's fidelity."
   },
   "04.02": {
-   "name": "Ars Chain (paper)",
-   "config_key": "ars_chain_v1_paper",
+   "name": "Ars chain - Canary (stocks)",
+   "config_key": "ARS_CHAIN_V1_PAPER",
+   "aliases": [
+    "ars_chain_v1_paper",
+    "Ars Chain (paper)"
+   ],
    "slug": null,
    "live_file": "strategies/live/range_trader.py",
    "status": "legacy",
-   "legs": 1
+   "role": "canary",
+   "transport": "python",
+   "never_live": true,
+   "legs": 1,
+   "desc": "1m, 23 F&O stocks. Same logic as 04.01, split off so NIFTY focus stays clean. never_live is the POINT of this split: these must never reach Zerodha. Today that is enforced by nothing but the `mode` flag — the _PAPER suffix is doing a job the code does not do."
   },
   "04.03": {
-   "name": "Range Breakout",
+   "name": "Ars chain - Pine2Python",
    "config_key": "range_v1",
+   "aliases": [
+    "range_v1",
+    "Range Breakout"
+   ],
    "slug": null,
    "live_file": "strategies/live/range_trader.py",
    "status": "legacy",
-   "legs": 1
+   "role": "mirror",
+   "mirrors": "04.04",
+   "transport": "python",
+   "legs": 1,
+   "desc": "THE ONE WITH A FUTURE. 5m NIFTY — the python twin of 04.04's pine, built to retire the webhook and its Rs 1,600/month TV subscription (Rs 19,200/yr). Offline fidelity is 90.2% exact / 93% entry (validate_strategy.py, VALIDATION_PLAYBOOK.md); live daily drift is not measured yet. The real question is not '1:1 exact?' but 'does the drift cost less than Rs 19,200/yr?' — a measurable question. 2026-07-16: its symbol list was the exact UNION of 04.01 + 04.02 (25 symbols), so stocks ate the capital and NIFTY got CAPITAL_BLOCKED — ONE NIFTY trade in a month. The mirror was not running. Must stay NIFTY-only: a mirror whose symbols do not match its reference is lying."
   },
   "05.01": {
    "name": "RSI (live)",
@@ -292,6 +326,21 @@
    "live_file": "strategies/live/vrp_condor_trader.py",
    "status": "paper",
    "legs": 4
+  },
+  "04.04": {
+   "name": "Ars chain - DirectWebhook",
+   "config_key": "arschain_MAIN",
+   "aliases": [
+    "arschain_MAIN"
+   ],
+   "slug": null,
+   "live_file": "_core/webhook_executor.py",
+   "pine_file": "_PINE/range_chain.pine",
+   "status": "live",
+   "role": "reference",
+   "transport": "pine",
+   "legs": 1,
+   "desc": "5m NIFTY. Pine on TradingView -> alert() JSON -> webhook -> Kite. The REFERENCE 04.03 is measured against. Registered 2026-07-16 after it cost real money by NOT being registered: unknown to the registry it rendered in the RMS table's 'OTHER' bucket, its per-strategy override silently fell back to global, and it traded all day on a Rs 1,000/lot stop instead of the Rs 2,500/lot the 14-July rollout intended (that rollout landed on webhook_v1 — the generic config — not on the live strategy). Retire once 04.03 is trusted."
   }
  }
 }

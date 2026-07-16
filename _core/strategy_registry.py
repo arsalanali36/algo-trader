@@ -54,7 +54,13 @@ def get(sid):
 
 def resolve(alias):
     """Return the canonical ID for anything a strategy is known by — its ID,
-    config_key, or hub slug (case-insensitive on keys/slugs). None if unknown."""
+    config_key, hub slug, or any entry in its `aliases` list (case-insensitive).
+    None if unknown.
+
+    `aliases` exists so a strategy can be RENAMED without ever renaming its
+    config_key: order_store rows, _risk.per_strategy keys and tsl_state keys are
+    all keyed on the old string and must keep resolving forever. Retiring a name
+    means moving it into aliases, never deleting it."""
     if alias is None:
         return None
     a = str(alias)
@@ -67,6 +73,9 @@ def resolve(alias):
             return sid
         if (r.get("slug") or "").lower() == al:
             return sid
+        for _alt in (r.get("aliases") or []):
+            if str(_alt).lower() == al:
+                return sid
     return None
 
 
