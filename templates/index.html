@@ -6828,7 +6828,7 @@
               grpMargin += margin || 0;
               grpQty += qty || 0;
 
-              let runup = '—', rundown = '—';
+              let runup = '—', rundown = '—', _runupLive = false;
               if (t.tags && entry > 0) {
                 let max_ltp = null, min_ltp = null;
                 t.tags.forEach(tg => {
@@ -6836,6 +6836,24 @@
                   if (tg.startsWith('MIN_LTP:')) min_ltp = parseFloat(tg.split(':')[1]);
                 });
                 if (max_ltp != null && min_ltp != null) {
+                  // Carried-over positional legs (yesterday's overnight positions,
+                  // trader_dashboard.py:4084) are NOT seen by today-scoped
+                  // pos_monitor_loop, so their MAX_LTP/MIN_LTP tags freeze at
+                  // yesterday's close. For these, track the day's live excursion
+                  // client-side (display-only) — seeded from the frozen tag as a
+                  // floor so we never lose yesterday's run, then extended by the
+                  // live LTP feed in _patchLtpCells.
+                  if (t.carried_over) {
+                    _runupLive = true;
+                    const prev = _carryRunExt[t.sym] || {};
+                    _carryRunExt[t.sym] = {
+                      maxL: Math.max(max_ltp, prev.maxL != null ? prev.maxL : -Infinity),
+                      minL: Math.min(min_ltp, prev.minL != null ? prev.minL : Infinity),
+                      entry: entry, side: t.entry, qty: qty
+                    };
+                    max_ltp = _carryRunExt[t.sym].maxL;
+                    min_ltp = _carryRunExt[t.sym].minL;
+                  }
                   // AMT (₹) | PT (points) | % — same formatter as Completed Trades
                   const upPt   = t.entry === 'BUY' ? (max_ltp - entry) : (entry - min_ltp);
                   const downPt = t.entry === 'BUY' ? (min_ltp - entry) : (entry - max_ltp);
@@ -6893,10 +6911,10 @@
                     colorStyle = 'color:#8b949e;';
                     break;
                   case 'run_up':
-                    val = runup;
+                    val = _runupLive ? `<span class="runup-cell" data-sym="${t.sym}">${runup}</span>` : runup;
                     break;
                   case 'run_down':
-                    val = rundown;
+                    val = _runupLive ? `<span class="rundown-cell" data-sym="${t.sym}">${rundown}</span>` : rundown;
                     break;
                   case 'qty':
                     val = qty;
@@ -8820,6 +8838,9 @@
 
     // ── Real-time LTP via SSE (dhan_feed WebSocket) ──
     let _ltpLive = {};  // trad_sym -> ltp  (populated by _fetchPositionLtp)
+    // sym -> {maxL,minL,entry,side,qty} — live Run-Up/Down tracker for carried-over
+    // positional legs whose frozen MAX_LTP/MIN_LTP tags pos_monitor no longer updates.
+    let _carryRunExt = {};
     let _sseSrc = null;
     function startLtpStream() {
       if (_sseSrc) return;
@@ -8889,6 +8910,23 @@
           retEl.textContent = retPct;
           retEl.style.color = unrl >= 0 ? '#3fb950' : '#f85149';
         }
+      });
+      // Carried-over positional legs — extend the day's Run-Up/Run-Down from the
+      // live LTP feed (their frozen tags are stale; pos_monitor is today-scoped).
+      document.querySelectorAll('.runup-cell[data-sym]').forEach(el => {
+        const sym = el.getAttribute('data-sym');
+        const ext = _carryRunExt[sym];
+        if (!ext) return;
+        const raw = _ltpLive[sym];
+        const ltp = typeof raw === 'number' ? raw : raw?.ltp;
+        if (ltp == null) return;
+        ext.maxL = Math.max(ext.maxL, ltp);
+        ext.minL = Math.min(ext.minL, ltp);
+        const upPt   = ext.side === 'BUY' ? (ext.maxL - ext.entry) : (ext.entry - ext.minL);
+        const downPt = ext.side === 'BUY' ? (ext.minL - ext.entry) : (ext.entry - ext.maxL);
+        el.innerHTML = _ruCell(upPt, upPt * ext.qty, upPt / ext.entry * 100);
+        const dEl = document.querySelector(`.rundown-cell[data-sym="${sym}"]`);
+        if (dEl) dEl.innerHTML = _ruCell(downPt, downPt * ext.qty, downPt / ext.entry * 100);
       });
       // per-strategy-table totals — sum pts/unrl/inv across each table's own rows
       document.querySelectorAll('table[id^="grp_"]').forEach(tbl => {
