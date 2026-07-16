@@ -2375,7 +2375,11 @@ def api_position_payoff():
         if not rows:
             return jsonify({"ok": False, "msg": "no open rows for those ids"})
         spot = _payoff_spot(payoff.build_legs(rows))
-        return jsonify(payoff.analyse(rows, spot))
+        try:
+            td = float(request.args.get('target_days')) if request.args.get('target_days') else None
+        except Exception:
+            td = None
+        return jsonify(payoff.analyse(rows, spot, target_days=td))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

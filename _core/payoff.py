@@ -189,14 +189,34 @@ def _grid(legs, spot):
     return lo - span * 1.2, hi + span * 1.2
 
 
-def profit_zones(legs, lo, hi, step):
-    """Contiguous [a, b] spot intervals where expiry P&L > 0. Handles ANY
-    structure (condor = 1-2 zones, straddle = 2 tails, etc.) — no assumption
-    that there's exactly one breakeven."""
+def exit_day_days(now_ist=None):
+    """Fractional days from now until TODAY's square-off time — i.e. when an
+    intraday/one-night position actually gets closed, which for those is the
+    date that matters, not expiry. Square-off time comes from
+    risk_gate.exit_time_config() (the project's single source — never hardcode
+    15:15). Returns None if that moment has already passed."""
+    now_ist = now_ist or (_dt.datetime.utcnow() + _dt.timedelta(hours=5, minutes=30))
+    try:
+        import risk_gate
+        (sh, sm), _ = risk_gate.exit_time_config()
+    except Exception:
+        return None
+    x = _dt.datetime.combine(now_ist.date(), _dt.time(sh, sm))
+    secs = (x - now_ist).total_seconds()
+    return (secs / 86400.0) if secs > 60 else None
+
+
+def profit_zones(legs, lo, hi, step, fn=None):
+    """Contiguous [a, b] spot intervals where P&L > 0. Handles ANY structure
+    (condor = 1-2 zones, straddle = 2 tails, etc.) — no assumption that there's
+    exactly one breakeven. `fn` defaults to the expiry payoff; pass a
+    Black-Scholes today/target-date payoff to get that date's zones instead
+    (same scan engine, so the two can't drift)."""
+    fn = fn or (lambda S: payoff_expiry(legs, S))
     zones, start, S = [], None, lo
     prev_S, prev_v = None, None
     while S <= hi:
-        v = payoff_expiry(legs, S)
+        v = fn(S)
         if prev_v is not None:
             if prev_v <= 0 < v:      # entering profit — interpolate the crossing
                 f = prev_v / (prev_v - v)
@@ -261,9 +281,17 @@ def basket_margin(legs, product="NRML"):
     return out
 
 
-def analyse(rows, spot, now_ist=None, with_margin=False):
+def analyse(rows, spot, now_ist=None, with_margin=False, target_days=None):
     """One call -> everything the Payoff panel needs. Never raises: any piece
-    that can't be computed comes back None and the panel just hides it."""
+    that can't be computed comes back None and the panel just hides it.
+
+    target_days: fractional days ahead to ALSO evaluate (defaults to today's
+    square-off — see exit_day_days). Expiry POP answers "if held to expiry",
+    which is the wrong question for an intraday / one-night-hold strategy that
+    closes long before then: at the target date the legs still carry time
+    value, so both the profit zone AND the probability window are different.
+    Returns pop_target / curve_target / breakevens_target alongside the
+    expiry ones — the panel toggles between them."""
     legs = build_legs(rows)
     if not legs:
         return {"ok": False, "msg": "no option legs in this group"}
@@ -310,6 +338,36 @@ def analyse(rows, spot, now_ist=None, with_margin=False):
     }
     pop = prob_of_profit(zones, spot, T, avg_iv, lo, hi)
     res["pop"] = round(pop, 4) if pop is not None else None
+
+    # ── target-date (exit-day) view ──────────────────────────────────────────
+    # For a one-night / intraday structure the expiry numbers are theoretical —
+    # it closes at today's square-off. Evaluate the SAME structure at that
+    # moment: legs priced with the time value still left (T - T_target), and
+    # the probability window is the short hop to the target, not to expiry.
+    res.update({"pop_target": None, "curve_target": None, "breakevens_target": None,
+                "target_days": None, "max_profit_target": None, "max_loss_target": None})
+    td = target_days if target_days is not None else exit_day_days(now_ist)
+    if td and avg_iv and T and spot:
+        T_t = td / 365.0
+        T_rem = T - T_t
+        if T_rem > 0:
+            fn = lambda S: payoff_today(legs, S, T_rem)   # noqa: E731
+            try:
+                ct = [[p[0], round(fn(p[0]), 2)] for p in curve]
+                zt = profit_zones(legs, lo, hi, step, fn=fn)
+                pt = prob_of_profit(zt, spot, T_t, avg_iv, lo, hi)
+                yt = [p[1] for p in ct]
+                res.update({
+                    "curve_target": ct,
+                    "breakevens_target": sorted({round(x, 1) for z in zt for x in z if lo < x < hi}),
+                    "pop_target": round(pt, 4) if pt is not None else None,
+                    "target_days": round(td, 4),
+                    "max_profit_target": round(max(yt), 2),
+                    "max_loss_target": round(min(yt), 2),
+                })
+            except Exception as e:
+                log.warning("[payoff] target-date view failed: %s", e)
+
     if with_margin:
         res["margin"] = basket_margin(legs)
     return res

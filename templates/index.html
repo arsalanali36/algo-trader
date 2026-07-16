@@ -1509,7 +1509,6 @@
       <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
       <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
-      <div class="tab" onclick="switchTab('script3')" style="color: #3fb950;">📜 Script 3</div>
       <a href="/registry" target="_blank" class="tab" style="text-decoration: none;">🗂️ Strategies</a>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
         <div class="tab" onclick="toggleReportsDropdown(event)" style="display: flex; align-items: center; gap: 4px;">
@@ -1533,6 +1532,9 @@
           ▾</div>
         <div class="dropdown-menu" id="more-dropdown"
           style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 140px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <div class="dropdown-item" data-hosts-tab="script3" onclick="switchTab('script3'); closeMoreDropdown();"
+            style="padding: 8px 12px; font-size: 12px; color: #3fb950; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+            📜 Script 3</div>
           <div class="dropdown-item" onclick="window.open(location.protocol+'//'+location.hostname+':5001/','_blank'); closeMoreDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
             🎬 Video Journal</div>
@@ -1564,10 +1566,6 @@
     </div>
 
     <div class="hdr-right" style="gap: 12px;">
-      <button id="pause-feed-btn" onclick="toggleFeedPause()"
-        style="background: #238636; border: 1px solid #2ea043; color: white; padding: 4px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; font-family: sans-serif; transition: all 0.2s;">
-        🟢 Feed Active
-      </button>
       <div
         style="display: flex; flex-direction: column; align-items: flex-end; justify-content: center; line-height: 1.2;">
         <span id="hdr-top-date"
@@ -1580,6 +1578,9 @@
           A</div>
         <div class="dropdown-menu" id="avatar-dropdown"
           style="display: none; position: absolute; top: 34px; right: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 120px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+          <div class="dropdown-item" id="pause-feed-btn" onclick="toggleFeedPause()"
+            style="padding: 8px 12px; font-size: 12px; color: #3fb950; cursor: pointer; white-space: nowrap; transition: background 0.12s; border-bottom: 1px solid #30363d;">
+            🟢 Feed Active</div>
           <div class="dropdown-item" onclick="openCredentialsModal(); closeAvatarDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
             Credentials</div>
@@ -3587,6 +3588,13 @@
       document.querySelectorAll('.tab-body').forEach(e => e.classList.remove('active'));
       let tabEl = document.querySelector(`.tab[onclick="switchTab('${id}')"]`);
       let bodyEl = document.getElementById('tab-' + id);
+      // Tabs that live inside a nav dropdown (e.g. Script 3 under More) have no
+      // top-level .tab of their own — highlight the dropdown that hosts them, so
+      // the tab stays reachable instead of falling through to the Orders default.
+      if (!tabEl) {
+        const hosted = document.querySelector(`[data-hosts-tab="${id}"]`);
+        if (hosted) tabEl = hosted.closest('.tab-dropdown-container')?.querySelector('.tab') || null;
+      }
       // Stored tab no longer exists (e.g. removed 'script2') → fall back to Orders
       // instead of leaving the page blank (switchTab used to just return here).
       if (!tabEl || !bodyEl) {
@@ -5500,6 +5508,7 @@
 
     function openPayoffPanel(idsCsv, name, ev) {
       if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      window._pfView = null; window._pfMargin = null; window._pfData = null;  // fresh per group
       let ov = document.getElementById('pfOverlay');
       if (!ov) {
         ov = document.createElement('div');
@@ -5535,22 +5544,65 @@
         + (d.expiry ? ` · expiry ${d.expiry} (${d.tte_days}d)` : '')
         + (d.avg_iv ? ` · IV ~${(d.avg_iv * 100).toFixed(1)}%` : '');
 
-      const be = (d.breakevens || [])[0];
+      window._pfData = d;
+      // Expiry vs exit-day: for a one-night / intraday structure the expiry
+      // numbers are theoretical — it closes at today's square-off. Default to
+      // whichever the position actually is.
+      if (window._pfView == null) window._pfView = d.pop_target != null ? 'target' : 'expiry';
+      if (d.pop_target == null) window._pfView = 'expiry';
+
       body.innerHTML = `
         <div id="pfCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px"></div>
-        <div style="font-size:11px;font-weight:600;color:#8b949e;margin:6px 0 4px;text-align:left">
-          Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
-          ${d.curve_today ? '<span style="color:#58a6ff;font-weight:700;margin-left:8px">━ Today</span>' : ''}
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px">
+          <span style="font-size:11px;font-weight:600;color:#8b949e">
+            Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
+            ${d.curve_today ? '<span style="color:#58a6ff;font-weight:700;margin-left:8px">━ Today</span>' : ''}
+            ${d.curve_target ? '<span style="color:#d29922;font-weight:700;margin-left:8px">╌ Exit day</span>' : ''}
+          </span>
+          <span id="pfViewTog"></span>
         </div>
         <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
         <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
         <div id="pfSeriesWrap"></div>`;
+      _pfRenderCards();
+      _pfDrawPayoff(d);
+      _pfLoadMargin(idsCsv);
+      _pfLoadSeries(idsCsv);
+    }
+
+    function _pfSetView(v) { window._pfView = v; _pfRenderCards(); _pfDrawPayoff(window._pfData); }
+
+    function _pfRenderCards() {
+      const d = window._pfData; if (!d) return;
+      const tgt = window._pfView === 'target' && d.pop_target != null;
+      const pop = tgt ? d.pop_target : d.pop;
+      const be = ((tgt ? d.breakevens_target : d.breakevens) || [])[0];
+      const mp = tgt ? d.max_profit_target : d.max_profit;
+      const ml = tgt ? d.max_loss_target : d.max_loss;
+      const hrs = d.target_days != null ? (d.target_days * 24) : null;
+      const when = tgt
+        ? `exit pe (${hrs != null ? (hrs < 1 ? Math.round(hrs * 60) + ' min' : hrs.toFixed(1) + ' hr') : 'aaj'} baad)`
+        : `expiry pe (${d.tte_days}d baad)`;
+
+      // toggle — only when the position genuinely closes before expiry
+      const tog = document.getElementById('pfViewTog');
+      if (tog) {
+        tog.innerHTML = d.pop_target == null ? '' :
+          ['target', 'expiry'].map(v => {
+            const on = (window._pfView === v);
+            return `<button onclick="_pfSetView('${v}')" style="padding:3px 9px;font-size:10px;font-weight:700;cursor:pointer;
+              background:${on ? '#1f6feb30' : '#161b22'};border:1px solid ${on ? '#1f6feb80' : '#30363d'};
+              color:${on ? '#58a6ff' : '#8b949e'};border-radius:5px;margin-left:4px">
+              ${v === 'target' ? 'Exit day' : 'Expiry'}</button>`;
+          }).join('');
+      }
 
       const cards = [
-        ['Probability of Profit', d.pop != null ? (d.pop * 100).toFixed(1) + '%' : '—', d.pop != null && d.pop >= .5 ? _PF.C.pos : _PF.C.amb, 'expiry pe profit ki sambhavna'],
-        ['Max Profit', '+' + _pfRs(d.max_profit), _PF.C.pos, 'capped'],
+        ['Probability of Profit', pop != null ? (pop * 100).toFixed(1) + '%' : '—',
+          pop != null && pop >= .5 ? _PF.C.pos : _PF.C.amb, when],
+        ['Max Profit', mp != null ? '+' + _pfRs(mp) : '—', _PF.C.pos, tgt ? 'exit-day best' : 'capped'],
         ['Breakeven', be != null ? _pfNf(be) : '—', _PF.C.amb, 'safe line'],
-        ['Max Loss', _pfRs(d.max_loss), _PF.C.neg, 'capped (defined risk)'],
+        ['Max Loss', ml != null ? _pfRs(ml) : '—', _PF.C.neg, tgt ? 'exit-day worst' : 'capped (defined risk)'],
         ['Margin — hedged', '<span id="pfMargin" style="color:#8b949e">⏳</span>', _PF.C.blu, '<span id="pfMarginSub">basket calc…</span>'],
       ];
       document.getElementById('pfCards').innerHTML = cards.map(c =>
@@ -5559,19 +5611,30 @@
           <span style="font-size:15px;font-weight:700;color:${c[2]}">${c[1]}</span>
           <span style="font-size:9px;color:#6e7681">${c[3]}</span>
         </div>`).join('');
+      // margin arrives async and this re-renders on every view toggle — repaint
+      // it from the cached result instead of dropping back to the ⏳ spinner.
+      if (window._pfMargin) _pfPaintMargin(window._pfMargin);
+    }
 
-      _pfDrawPayoff(d);
-      _pfLoadMargin(idsCsv);
-      _pfLoadSeries(idsCsv);
+    function _pfPaintMargin(m) {
+      const el = document.getElementById('pfMargin'), sub = document.getElementById('pfMarginSub');
+      if (!el || !sub) return;
+      if (!m || !m.ok) { el.textContent = '—'; sub.textContent = (m && m.msg) ? String(m.msg).slice(0, 40) : 'calc fail'; return; }
+      el.textContent = _pfRs(m.hedged); el.style.color = _PF.C.blu;
+      const pct = m.standalone ? (m.benefit / m.standalone * 100).toFixed(0) : 0;
+      sub.innerHTML = `standalone <s>${_pfRs(m.standalone)}</s> · <b style="color:${_PF.C.pos}">${pct}% kam</b>`;
     }
 
     function _pfDrawPayoff(d) {
       const svg = document.getElementById('pfChart'); if (!svg) return;
       const C = _PF.C, W = 940, H = 300, mL = 70, mR = 14, mT = 20, mB = 40;
       const pw = W - mL - mR, ph = H - mT - mB;
-      const ce = d.curve_expiry, ct = d.curve_today;
+      svg.innerHTML = '';   // redraw on view toggle
+      const ce = d.curve_expiry, ct = d.curve_today, cx = d.curve_target;
       const LO = ce[0][0], HI = ce[ce.length - 1][0];
-      let ys = ce.map(p => p[1]); if (ct) ys = ys.concat(ct.map(p => p[1]));
+      let ys = ce.map(p => p[1]);
+      if (ct) ys = ys.concat(ct.map(p => p[1]));
+      if (cx) ys = ys.concat(cx.map(p => p[1]));
       let yT = Math.max(...ys), yB = Math.min(...ys); const pad = (yT - yB) * .12; yT += pad; yB -= pad;
       const X = s => mL + (s - LO) / (HI - LO) * pw, Y = v => mT + (yT - v) / (yT - yB) * ph;
       const y0 = Y(0);
@@ -5599,16 +5662,23 @@
         const s = LO + (HI - LO) * i / 5;
         _pfEl(svg, 'text', { x: X(s), y: H - mB + 15, 'text-anchor': 'middle', 'font-size': 9.5, fill: C.mut }, _pfNf(s));
       }
-      (d.breakevens || []).forEach(b => {
+      // breakevens of the ACTIVE view — an exit-day BE sits somewhere else than
+      // the expiry BE (time value still in the legs), so showing expiry's line
+      // while the cards read exit-day would be a lie.
+      const tgtView = window._pfView === 'target' && cx;
+      ((tgtView ? d.breakevens_target : d.breakevens) || []).forEach(b => {
         _pfEl(svg, 'line', { x1: X(b), y1: mT, x2: X(b), y2: H - mB, stroke: C.amb, 'stroke-width': 1.6 });
         _pfEl(svg, 'text', { x: X(b), y: H - mB + 28, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: C.amb }, 'BE ' + _pfNf(b));
       });
-      const line = (arr, col, w) => {
+      const line = (arr, col, w, dash) => {
         let dd = ''; arr.forEach((p, i) => { dd += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1) + ' '; });
-        _pfEl(svg, 'path', { d: dd, fill: 'none', stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round' });
+        const o = { d: dd, fill: 'none', stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round' };
+        if (dash) o['stroke-dasharray'] = dash;
+        _pfEl(svg, 'path', o);
       };
       if (ct) line(ct, C.blu, 1.9);
-      line(ce, C.pos, 2.2);
+      if (cx) line(cx, C.amb, tgtView ? 2.2 : 1.5, '6 3');
+      line(ce, C.pos, tgtView ? 1.5 : 2.2);
       if (d.spot) {
         _pfEl(svg, 'line', { x1: X(d.spot), y1: mT, x2: X(d.spot), y2: H - mB, stroke: C.txt, 'stroke-width': 1.4, 'stroke-opacity': .6 });
         _pfEl(svg, 'text', { x: X(d.spot), y: mT - 5, 'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 700, fill: C.txt }, 'Spot ' + _pfNf(d.spot));
@@ -5622,21 +5692,18 @@
         hl.setAttribute('x1', X(s)); hl.setAttribute('x2', X(s)); hl.setAttribute('visibility', 'visible');
         const ve = at(ce, s);
         hb.innerHTML = `NIFTY <b>${_pfNf(s)}</b> → expiry <b style="color:${ve >= 0 ? C.pos : C.neg}">${ve >= 0 ? '+' : ''}${_pfRs(ve)}</b>`
-          + (ct ? ` · aaj <b style="color:${C.blu}">${(at(ct, s) >= 0 ? '+' : '') + _pfRs(at(ct, s))}</b>` : '');
+          + (ct ? ` · aaj <b style="color:${C.blu}">${(at(ct, s) >= 0 ? '+' : '') + _pfRs(at(ct, s))}</b>` : '')
+          + (cx ? ` · exit <b style="color:${C.amb}">${(at(cx, s) >= 0 ? '+' : '') + _pfRs(at(cx, s))}</b>` : '');
       });
       svg.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); hb.textContent = ''; });
     }
 
     async function _pfLoadMargin(idsCsv) {
-      const el = document.getElementById('pfMargin'), sub = document.getElementById('pfMarginSub');
       try {
         const rr = await fetch('/api/position-payoff-margin?ids=' + encodeURIComponent(idsCsv));
-        const m = await rr.json();
-        if (!m || !m.ok) { el.textContent = '—'; sub.textContent = (m && m.msg) ? String(m.msg).slice(0, 40) : 'calc fail'; return; }
-        el.textContent = _pfRs(m.hedged); el.style.color = _PF.C.blu;
-        const pct = m.standalone ? (m.benefit / m.standalone * 100).toFixed(0) : 0;
-        sub.innerHTML = `standalone <s>${_pfRs(m.standalone)}</s> · <b style="color:${_PF.C.pos}">${pct}% kam</b>`;
-      } catch (e) { el.textContent = '—'; sub.textContent = 'calc fail'; }
+        window._pfMargin = await rr.json();
+      } catch (e) { window._pfMargin = { ok: false, msg: 'calc fail' }; }
+      _pfPaintMargin(window._pfMargin);
     }
 
     async function _pfLoadSeries(idsCsv) {
@@ -7125,7 +7192,7 @@
               grpMargin += margin || 0;
               grpQty += qty || 0;
 
-              let runup = '—', rundown = '—', _runupLive = false;
+              let runup = '—', rundown = '—', _runupLive = false, _runKey = '';
               if (t.tags && entry > 0) {
                 let max_ltp = null, min_ltp = null;
                 t.tags.forEach(tg => {
@@ -7142,14 +7209,18 @@
                   // live LTP feed in _patchLtpCells.
                   if (t.carried_over) {
                     _runupLive = true;
-                    const prev = _carryRunExt[t.sym] || {};
-                    _carryRunExt[t.sym] = {
+                    // Keyed by sym+strategy, not sym alone — the same contract can be
+                    // open in two strategies with different entry/side/qty, and a
+                    // sym-only key would blend their excursions together.
+                    _runKey = t.sym + '|' + (t.strategy || t.source || '');
+                    const prev = _carryRunExt[_runKey] || {};
+                    _carryRunExt[_runKey] = {
                       maxL: Math.max(max_ltp, prev.maxL != null ? prev.maxL : -Infinity),
                       minL: Math.min(min_ltp, prev.minL != null ? prev.minL : Infinity),
                       entry: entry, side: t.entry, qty: qty
                     };
-                    max_ltp = _carryRunExt[t.sym].maxL;
-                    min_ltp = _carryRunExt[t.sym].minL;
+                    max_ltp = _carryRunExt[_runKey].maxL;
+                    min_ltp = _carryRunExt[_runKey].minL;
                   }
                   // AMT (₹) | PT (points) | % — same formatter as Completed Trades
                   const upPt   = t.entry === 'BUY' ? (max_ltp - entry) : (entry - min_ltp);
@@ -7208,10 +7279,10 @@
                     colorStyle = 'color:#8b949e;';
                     break;
                   case 'run_up':
-                    val = _runupLive ? `<span class="runup-cell" data-sym="${t.sym}">${runup}</span>` : runup;
+                    val = _runupLive ? `<span class="runup-cell" data-sym="${t.sym}" data-rk="${_runKey}">${runup}</span>` : runup;
                     break;
                   case 'run_down':
-                    val = _runupLive ? `<span class="rundown-cell" data-sym="${t.sym}">${rundown}</span>` : rundown;
+                    val = _runupLive ? `<span class="rundown-cell" data-sym="${t.sym}" data-rk="${_runKey}">${rundown}</span>` : rundown;
                     break;
                   case 'qty':
                     val = qty;
@@ -9155,14 +9226,16 @@
     function toggleFeedPause() {
       window.feedPaused = !window.feedPaused;
       const btn = document.getElementById('pause-feed-btn');
+      // The toggle now lives inside the avatar dropdown, so it styles as a menu
+      // item (text colour only). The avatar itself carries the paused state, so
+      // a paused feed is still visible without opening the menu.
+      const av = document.getElementById('avatar-btn');
       if (window.feedPaused) {
-        btn.innerHTML = '⏸️ Feed Paused';
-        btn.style.background = '#da3633';
-        btn.style.borderColor = '#f85149';
+        if (btn) { btn.innerHTML = '⏸️ Feed Paused'; btn.style.color = '#f85149'; }
+        if (av) { av.style.background = '#da3633'; av.title = 'Feed paused — LTP updates stopped'; }
       } else {
-        btn.innerHTML = '🟢 Feed Active';
-        btn.style.background = '#238636';
-        btn.style.borderColor = '#2ea043';
+        if (btn) { btn.innerHTML = '🟢 Feed Active'; btn.style.color = '#3fb950'; }
+        if (av) { av.style.background = '#1f6feb'; av.title = ''; }
         if (typeof _fetchPositionLtp === 'function') _fetchPositionLtp();
         if (typeof qoFetchLtp === 'function') qoFetchLtp();
       }
@@ -9197,9 +9270,15 @@
         const qty = parseFloat(el.getAttribute('data-qty')) || 1;
         const pts = side === 'BUY' ? ltp - entry : entry - ltp;
         const unrl = pts * qty;
-        const ptEl = document.querySelector(`.pts-cell[data-sym="${sym}"]`);
-        const unEl = document.querySelector(`.unrl-cell[data-sym="${sym}"]`);
-        const retEl = document.querySelector(`.ret-cell[data-sym="${sym}"]`);
+        // Scope to THIS row, not the document. The same contract can be open in
+        // two strategies at once (e.g. a leg shared by ORB+Supertrend and Debit
+        // Vertical) — a document-wide querySelector only ever returns the first
+        // match, so every later row's Points/P&L/%Ret stayed "—" and its group
+        // TOTAL silently dropped that leg.
+        const _row = el.closest('tr') || document;
+        const ptEl = _row.querySelector('.pts-cell');
+        const unEl = _row.querySelector('.unrl-cell');
+        const retEl = _row.querySelector('.ret-cell');
         if (ptEl) { ptEl.textContent = (pts >= 0 ? '+' : '') + pts.toFixed(1); ptEl.style.color = pts >= 0 ? '#3fb950' : '#f85149'; }
         if (unEl) { unEl.textContent = (unrl >= 0 ? '+' : '') + Math.round(unrl).toLocaleString('en-IN'); unEl.style.color = unrl >= 0 ? '#3fb950' : '#f85149'; }
         if (retEl) {
@@ -9213,7 +9292,7 @@
       // live LTP feed (their frozen tags are stale; pos_monitor is today-scoped).
       document.querySelectorAll('.runup-cell[data-sym]').forEach(el => {
         const sym = el.getAttribute('data-sym');
-        const ext = _carryRunExt[sym];
+        const ext = _carryRunExt[el.getAttribute('data-rk') || sym];
         if (!ext) return;
         const raw = _ltpLive[sym];
         const ltp = typeof raw === 'number' ? raw : raw?.ltp;
@@ -9223,7 +9302,9 @@
         const upPt   = ext.side === 'BUY' ? (ext.maxL - ext.entry) : (ext.entry - ext.minL);
         const downPt = ext.side === 'BUY' ? (ext.minL - ext.entry) : (ext.entry - ext.maxL);
         el.innerHTML = _ruCell(upPt, upPt * ext.qty, upPt / ext.entry * 100);
-        const dEl = document.querySelector(`.rundown-cell[data-sym="${sym}"]`);
+        // Same-row lookup — a sym-only document query would patch the wrong
+        // strategy's leg when one contract is open in two strategies.
+        const dEl = (el.closest('tr') || document).querySelector('.rundown-cell');
         if (dEl) dEl.innerHTML = _ruCell(downPt, downPt * ext.qty, downPt / ext.entry * 100);
       });
       // per-strategy-table totals — sum pts/unrl/inv across each table's own rows
