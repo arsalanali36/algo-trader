@@ -19,6 +19,7 @@ import time as _time
 import threading as _threading
 import _paths  # sys.path bootstrap — MUST precede flat imports of moved modules (_core/_data/_ops)
 import dhan_rate_limiter as _rl
+import notify  # notification centre — errors ki permanent history (dismiss != delete)
 
 # IPv4 force — Dhan rejects IPv6 (DH-905). Must be here, not just in range_trader.
 _orig_gai = socket.getaddrinfo
@@ -4181,6 +4182,100 @@ def api_downloader_alerts():
         return jsonify(json.loads(alert_file.read_text()))
     except Exception:
         return jsonify([])
+
+
+# ── Notification centre (2026-07-16) ──────────────────────────────────────────
+# downloader_alert.json = CURRENT state (alerts aate-jaate rehte hain, aur ek ✕
+# unhe hamesha ke liye dismiss kar deta tha). notifications.jsonl = HISTORY (kabhi
+# delete nahi hoti). Ye ingest dono ko jodta hai: har naya alert ek permanent
+# notification ban jaata hai, chahe banner ko baad me dismiss kar diya jaaye.
+_ALERT_LEVEL_KEYS = {
+    "untracked_position": "error",
+    "naked_leg": "error",
+    "kill_floor": "error",
+    "stale_feed": "warn",
+}
+
+
+def _ingest_downloader_alerts():
+    """downloader_alert.json ko notification history me mirror karo. Idempotent —
+    notify.push() ka dedup dobara-dobara same alert ko row nahi banane deta."""
+    try:
+        alert_file = BASE_DIR / "data" / "downloader_alert.json"
+        if not alert_file.exists():
+            return
+        alerts = json.loads(alert_file.read_text())
+        if not isinstance(alerts, list):
+            return
+        for a in alerts:
+            if isinstance(a, dict):
+                key = a.get("key") or ""
+                msg = a.get("msg") or json.dumps(a, ensure_ascii=False)
+                lvl = _ALERT_LEVEL_KEYS.get(key, "error")
+                notify.push(msg, lvl, key=key or msg, source="alert")
+            elif isinstance(a, str):
+                # auto_data_downloader.py plain strings likhta hai — ye aam taur pe
+                # informational hote hain (data gap / token notice), error nahi.
+                notify.push(a, "warn", key=a, source="downloader")
+    except Exception as e:
+        print(f"[notify] alert ingest fail: {e}", flush=True)
+
+
+@app.route('/api/notifications')
+def api_notifications():
+    """History + unread count. ?after=<id> = sirf naye (frontend ka incremental poll)."""
+    try:
+        after = int(request.args.get('after') or 0)
+    except Exception:
+        after = 0
+    _ingest_downloader_alerts()
+    return jsonify(notify.listing(after=after))
+
+
+@app.route('/api/notifications/read', methods=['POST'])
+def api_notifications_read():
+    """Mark read. {"ids": [...]} ya {} = sab. Record DELETE nahi hota — sirf
+    read flag lagta hai, taaki history hamesha bani rahe."""
+    body = request.get_json(silent=True) or {}
+    ids = body.get('ids')
+    notify.mark_read(ids if ids else None)
+    return jsonify({"ok": True})
+
+
+@app.route('/api/notifications/clear', methods=['POST'])
+def api_notifications_clear():
+    """Poori history wipe — sirf explicit user action se (banner ka ✕ nahi)."""
+    notify.clear()
+    return jsonify({"ok": True})
+
+
+@app.route('/api/notify', methods=['POST'])
+def api_notify():
+    """Frontend se error push karne ka raasta (window.onerror, failed apiFetch).
+    Browser-side crash bhi ab silently nahi marta."""
+    body = request.get_json(silent=True) or {}
+    msg = str(body.get('msg') or '').strip()
+    if not msg:
+        return jsonify({"ok": False, "msg": "msg required"}), 400
+    nid = notify.push(msg, body.get('level') or 'error',
+                      key=body.get('key'), source=body.get('source') or 'ui')
+    return jsonify({"ok": True, "id": nid})
+
+
+@app.errorhandler(Exception)
+def _notify_unhandled(e):
+    """Koi bhi unhandled route exception ab notification banti hai — pehle ye sirf
+    Flask ke stderr me jaati thi aur 500 chup-chaap frontend pe dikh jaata tha."""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e   # 404/401/403 = normal traffic, notification nahi
+    try:
+        notify.error(f"{request.path} → {type(e).__name__}: {e}",
+                     key=f"route:{request.path}", source="dashboard")
+    except Exception:
+        pass
+    print(f"[unhandled] {request.path}: {e}", flush=True)
+    return jsonify({"ok": False, "msg": str(e)}), 500
 
 
 @app.route('/api/fill-delays')
