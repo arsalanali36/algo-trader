@@ -5524,8 +5524,10 @@
     async function _pfLoad(idsCsv) {
       const body = document.getElementById('pfBody');
       let d;
-      try { d = await apiFetch('/api/position-payoff?ids=' + encodeURIComponent(idsCsv)); }
-      catch (e) { body.innerHTML = '<span style="color:#f85149">payoff fetch fail: ' + e.message + '</span>'; return; }
+      try {
+        const r = await fetch('/api/position-payoff?ids=' + encodeURIComponent(idsCsv));
+        d = await r.json();
+      } catch (e) { body.innerHTML = '<span style="color:#f85149">payoff fetch fail: ' + e.message + '</span>'; return; }
       if (!d || !d.ok) { body.innerHTML = '<span style="color:#f85149">' + ((d && d.msg) || 'payoff nahi bana') + '</span>'; return; }
 
       document.getElementById('pfSub').textContent =
@@ -5628,7 +5630,8 @@
     async function _pfLoadMargin(idsCsv) {
       const el = document.getElementById('pfMargin'), sub = document.getElementById('pfMarginSub');
       try {
-        const m = await apiFetch('/api/position-payoff-margin?ids=' + encodeURIComponent(idsCsv));
+        const rr = await fetch('/api/position-payoff-margin?ids=' + encodeURIComponent(idsCsv));
+        const m = await rr.json();
         if (!m || !m.ok) { el.textContent = '—'; sub.textContent = (m && m.msg) ? String(m.msg).slice(0, 40) : 'calc fail'; return; }
         el.textContent = _pfRs(m.hedged); el.style.color = _PF.C.blu;
         const pct = m.standalone ? (m.benefit / m.standalone * 100).toFixed(0) : 0;
@@ -5640,8 +5643,10 @@
       const wrap = document.getElementById('pfSeriesWrap');
       wrap.innerHTML = '<div style="font-size:11px;color:#8b949e;padding:10px;text-align:center">⏳ legs ke candles aa rahe…</div>';
       let s;
-      try { s = await apiFetch('/api/position-legs-series?ids=' + encodeURIComponent(idsCsv)); }
-      catch (e) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
+      try {
+        const r = await fetch('/api/position-legs-series?ids=' + encodeURIComponent(idsCsv));
+        s = await r.json();
+      } catch (e) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
       if (!s || !s.ok) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">' + ((s && s.msg) || 'series nahi mili') + '</div>'; return; }
       const n = s.legs.length, cols = n <= 2 ? n : (n <= 4 ? 2 : 3);
       wrap.innerHTML = `
