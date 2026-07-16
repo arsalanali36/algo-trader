@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""session_guard.py — ek waqt me ek hi Claude session is repo ko likh sake.
+r"""session_guard.py — ek waqt me ek hi Claude session is repo ko likh sake.
 
 KYUN (2026-07-16):
   Do Claude sessions ek saath is repo + VPS pe kaam kar rahe the. Dono ko pata
