@@ -20,10 +20,12 @@ import sys
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 
-# "" = project root. Order: root first, then flat-module source dirs. Both the
-# legacy (_TRADERS) and the post-refactor (strategies/live) trader homes are
-# listed so this works before AND after Phase 4 — non-existent dirs are skipped.
-_DIRS = ("", "_core", "_data", "_ops", "_TRADERS", "strategies/live", "_TOOLS")
+# "" = project root. Order: root first, then flat-module source dirs.
+# _TRADERS (the pre-2026-07-09 trader home) dropped 2026-07-16: Phase 4 finished
+# long ago and it holds zero .py files now — only pre-refactor logs. Keeping it
+# listed implied traders might still live there, which is how "which RSI file is
+# real" (TRAP #84) stayed confusing for so long.
+_DIRS = ("", "_core", "_data", "_ops", "strategies/live", "_TOOLS")
 
 
 def setup():
