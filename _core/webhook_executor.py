@@ -384,12 +384,50 @@ def _day_pnl():
     return _day_realized, unreal, _day_realized + unreal
 
 
+def _still_open_in_store(st):
+    """Is this cached webhook position STILL open according to order_store?
+
+    _wh_state is a per-PROCESS in-memory cache, and it goes stale by design:
+    algo-dashboard and algo-monitor each import this module and therefore each
+    hold their OWN _wh_state dict. release_position() only ever mutates the
+    caller's copy, so when pos_monitor (algo-monitor) squares a leg off, the
+    dashboard's copy keeps a ghost forever — TRAP #62, flagged 2026-07-01 and
+    never closed. On 2026-07-16 that ghost is exactly what ate a real trade:
+    the 10:27 DEFAULT_TSL_SL exit released the monitor's copy, the dashboard's
+    stayed "open", and the 11:15 ENTRY was skipped as "already SHORT".
+
+    order_store is the durable, cross-process truth — ask it before trusting the
+    cache. Returns True on ANY error: 'unknown' must degrade to "don't re-enter",
+    never to a phantom duplicate position (missing a trade is recoverable, a
+    stacked live leg is not)."""
+    try:
+        import order_store
+        from datetime import datetime as _dt, timedelta as _td
+        date = (_dt.now(timezone.utc) + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        sid = str(st.get("opt_sec_id") or "")
+        if not sid:
+            return True
+        for p in order_store.trades_for(date).get("open", []):
+            if (p.get("source") or "") != "webhook":
+                continue
+            if p.get("status") == "blocked" or "CAPITAL_BLOCKED" in (p.get("tags") or []):
+                continue
+            if str(p.get("sec_id") or "") == sid:
+                return True
+        return False
+    except Exception as e:
+        _log(f"[STORE-CHECK] failed ({e}) — treating position as STILL OPEN "
+             f"(fail-safe: never re-enter on unknown state)")
+        return True
+
+
 def _recover_wh_state():
     """On startup: rebuild _wh_state from today's open positions in order_store.
     SL restored conservatively to entry SL — monitor_tick tightens from there.
     Prevents ghost positions and SL blindness after a service restart."""
     try:
         import order_store
+        import dhan_master
         from datetime import datetime as _dt, timedelta as _td
         date = (_dt.now(timezone.utc) + _td(hours=5, minutes=30)).strftime("%Y-%m-%d")
         data = order_store.trades_for(date)
@@ -418,7 +456,36 @@ def _recover_wh_state():
             sl_val    = float(tags.get("SL_VAL", 0) or 0)
             entry_px  = float(p.get("entry_price") or 0)
             opt_action = p.get("opt_action") or ("SELL" if p.get("entry") == "SELL" else "BUY")
-            direction  = "SHORT" if opt_action == "SELL" else "LONG"
+            # `direction` is the INDEX-side signal (LONG/SHORT) — NOT the option
+            # order side. Deriving it from opt_action was silently inverted for
+            # every sell-side config: arschain_MAIN runs long_opt_type=PE /
+            # short_opt_type=CE / opt_action=SELL *always*, so BOTH directions
+            # recovered as "SHORT" and the next genuine signal hit the
+            # "already SHORT (pyramiding off)" skip and was dropped on the floor.
+            # Live cost 2026-07-16: TV took 2 trades, we took 1.
+            # Correct source = the contract's own CE/PE from the scrip master
+            # (structured field — never slice trad_sym, TRAP #13/#79) matched
+            # against THIS strategy's own long/short option-type config.
+            _cfg_r = _strat_cfg(strat)
+            _ot = dhan_master.get_option_type_by_sec_id(p.get("sec_id"))
+            _long_ot = (_cfg_r.get("long_opt_type") or "").strip().upper()
+            _short_ot = (_cfg_r.get("short_opt_type") or "").strip().upper()
+            if _ot and _long_ot and _ot == _long_ot:
+                direction = "LONG"
+            elif _ot and _short_ot and _ot == _short_ot:
+                direction = "SHORT"
+            else:
+                # Unknown → do NOT guess (same doctrine as get_lot_size_by_sec_id
+                # returning None → pos_monitor skips the leg). A wrong direction
+                # silently corrupts the reversal/skip decision; no state at all is
+                # safer, because handle_signal then falls through to the durable
+                # order_store check instead of trusting a fabricated one. The
+                # position's SL/EOD stay enforced by pos_monitor, which does not
+                # read _wh_state.
+                _log(f"[RECOVER] ⚠ SKIP {strat}|{symbol} — direction undecidable "
+                     f"(sec_id={p.get('sec_id')} opt_type={_ot or 'not-in-scrip-master'} "
+                     f"long={_long_ot or '?'} short={_short_ot or '?'}). Not guessing.")
+                continue
             sl = (entry_px + sl_val if opt_action == "SELL" else entry_px - sl_val) if sl_val else None
             key = _key(strat, symbol)
             _entry = {
@@ -552,6 +619,18 @@ def _do_entry(strat, symbol, action, cfg, payload=None):
     # Ab: opposite direction = reversal (purani exit, nayi enter); same = ignore.
     existing = _wh_state.get(key)
     reversing = False
+    # Cache ko andha-dhund mat maano — ye per-process hai aur baasi ho sakta hai
+    # (dusre process ka release_position yahan nahi pahunchta — TRAP #62). Skip ya
+    # reversal, dono ka faisla ek ghost pe lena = asli trade gawa dena.
+    # order_store durable + cross-process sach hai, usse pooch lo.
+    if existing and existing.get("position") and not _still_open_in_store(existing):
+        _log(f"ENTRY {key} — cached {existing.get('direction')} position is STALE "
+             f"(order_store says flat — closed by pos_monitor / manually / another "
+             f"process). Clearing ghost and continuing with this signal.")
+        with _lock:
+            if _wh_state.get(key) is existing:
+                existing["position"] = None
+        existing = None
     if existing and existing.get("position"):
         if existing.get("direction") == direction:
             _log(f"ENTRY skip {key} — already {direction} (pyramiding off)")

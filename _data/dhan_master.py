@@ -267,6 +267,38 @@ def get_lot_size_by_sec_id(sec_id):
     return found
 
 
+_opttype_by_secid = {}
+def get_option_type_by_sec_id(sec_id):
+    """'CE' / 'PE' for an OPTION contract by its sec_id, read from the scrip
+    master's own SEM_OPTION_TYPE column (cached as "type" by build_cache).
+
+    Structured-field lookup on purpose — callers must NOT infer the option type
+    by slicing a formatted trad_sym string (TRAP #13/#79). Memoized per sec_id.
+    Returns None when the sec_id isn't in the master; the caller MUST treat None
+    as 'unknown' and skip rather than guess (same contract as
+    get_lot_size_by_sec_id)."""
+    if sec_id is None:
+        return None
+    key = str(sec_id)
+    if key in _opttype_by_secid:
+        return _opttype_by_secid[key]
+    if not _options_cache:
+        build_cache()
+    found = None
+    for _sym_map in _options_cache.values():
+        for _contracts in _sym_map.values():
+            for _c in _contracts:
+                if str(_c.get("sec_id")) == key:
+                    found = (_c.get("type") or "").strip().upper() or None
+                    break
+            if found:
+                break
+        if found:
+            break
+    _opttype_by_secid[key] = found
+    return found
+
+
 _tradsym_by_secid = {}
 def get_trad_sym_for_sec_id(sec_id):
     """Dhan trad_sym for an OPTION contract by its sec_id (reverse of
