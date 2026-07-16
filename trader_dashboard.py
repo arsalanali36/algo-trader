@@ -84,12 +84,40 @@ def _login_open(path: str) -> bool:
 _login_fails = {}   # ip -> [count, first_ts]
 
 
+# Paths this app's own scheduler thread must reach from the algo-monitor
+# process (auto_scheduler's 9:10 start / 15:30 stop) — see _is_internal_call.
+_INTERNAL_PATHS = ("/api/start", "/api/stop")
+
+
+def _is_internal_call() -> bool:
+    """True only for auto_scheduler's own loopback call to /api/start|/api/stop,
+    proving itself with the shared internal token (dashboard_auth).
+
+    Why this exists: auto_scheduler runs in algo-monitor and drives the bots via
+    http://127.0.0.1:5099 — the login gate 401'd every one of those calls and
+    the caller's `except: pass` hid it, so the 9:10 auto-start was silently dead.
+    The TOKEN is the actual gate (loopback alone is not enough — Caddy proxies
+    external traffic from 127.0.0.1 too); the peer check is defence in depth."""
+    if request.path not in _INTERNAL_PATHS:
+        return False
+    if (request.remote_addr or "") not in ("127.0.0.1", "::1"):
+        return False
+    try:
+        import secrets as _s
+        sent = request.headers.get("X-Internal-Token", "")
+        return bool(sent) and _s.compare_digest(sent, _auth.get_internal_token())
+    except Exception:
+        return False
+
+
 @app.before_request
 def _require_login():
     p = request.path
     if _login_open(p):
         return None
     if session.get("auth_user"):
+        return None
+    if _is_internal_call():
         return None
     # not logged in
     if p.startswith("/api/"):
@@ -4989,6 +5017,28 @@ def _startup_healthcheck():
     except Exception as e:
         print("startup healthcheck error:", e)
 
+def _sched_post(path, key):
+    """auto_scheduler's own call into the dashboard's HTTP API, carrying the
+    internal token (the login gate 401s otherwise — that's what silently killed
+    the 9:10 auto-start for 6 days).
+
+    LOUD on failure, deliberately: the old code did a bare `requests.post(...)`
+    inside `except Exception: pass` and never looked at the status code, so a
+    401 on every single call looked exactly like success. A scheduler that
+    can't start the bots must never fail quietly again."""
+    try:
+        r = requests.post("http://127.0.0.1:5099" + path, timeout=5,
+                          headers={"X-Internal-Token": _auth.get_internal_token()})
+        if r.status_code != 200:
+            print(f"[SCHEDULER] 🔴 {key}: {path} -> HTTP {r.status_code} "
+                  f"{(r.text or '')[:120]}", flush=True)
+            return False
+        return True
+    except Exception as e:
+        print(f"[SCHEDULER] 🔴 {key}: {path} -> {e}", flush=True)
+        return False
+
+
 def auto_scheduler():
     from datetime import datetime, timedelta, timezone, timezone, timedelta
     import time
@@ -5025,9 +5075,9 @@ def auto_scheduler():
                                 # that was LIVE must come back LIVE, or it silently stops
                                 # placing real orders with zero alert. See LESSONS.md TRAP #57.
                                 saved_mode = cfg[key].get("mode", "paper")
-                                requests.post(f"http://127.0.0.1:5099/api/start?s={key}&mode={saved_mode}", timeout=5)
+                                _sched_post(f"/api/start?s={key}&mode={saved_mode}", key)
                     except Exception as e:
-                        pass
+                        print(f"[SCHEDULER] auto-start pass FAILED: {e}", flush=True)
                     has_started_today = True
                     # bots start hone ke baad auto health-check (90s baad, alag thread)
                     threading.Thread(target=_startup_healthcheck, daemon=True).start()
@@ -5042,9 +5092,9 @@ def auto_scheduler():
                                 continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict):
                                 # keep_active=1 -> intent rakho, kal auto-start phir chale
-                                requests.post(f"http://127.0.0.1:5099/api/stop?s={key}&keep_active=1", timeout=5)
+                                _sched_post(f"/api/stop?s={key}&keep_active=1", key)
                     except Exception as e:
-                        pass
+                        print(f"[SCHEDULER] auto-stop pass FAILED: {e}", flush=True)
                     has_stopped_today = True
 
         except Exception as e:

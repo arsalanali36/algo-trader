@@ -53,6 +53,26 @@ def get_secret_key() -> str:
     return key
 
 
+def get_internal_token() -> str:
+    """Loopback token for this app's OWN background threads to call its own HTTP
+    API. auto_scheduler (9:10 start / 15:30 stop) runs inside the algo-monitor
+    process and reaches algo-dashboard over http://127.0.0.1:5099 — once the
+    login gate landed, every one of those calls silently 401'd and the daily
+    auto-start was dead (the caller swallowed it with `except: pass`).
+
+    Generated once and persisted next to secret_key, so BOTH processes read the
+    same value and it survives restarts/deploys. Same trust model as the
+    webhook's own token: the secret is the gate, and it lives only in
+    gitignored data/auth.json."""
+    d = _load()
+    tok = d.get("internal_token")
+    if not tok:
+        tok = secrets.token_urlsafe(32)
+        d["internal_token"] = tok
+        _save(d)
+    return tok
+
+
 def set_credentials(username: str, password: str) -> None:
     """Create or overwrite the single login. Password is stored hashed."""
     username = (username or "").strip()
