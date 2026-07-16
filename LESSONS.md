@@ -2692,3 +2692,48 @@ saaf example hai: koi exception nahi, koi red log nahi, sirf ek int jo kisi ne p
 bhi PID de sakta hai (process network call me blocked ho sakta hai) — pehle test me isi race ne
 "auto-restart fail" ka jhootha result diya. Kill karke restart-verify karo to **pehle maut confirm
 karo**, phir scheduler ko chalao.
+
+---
+
+## TRAP #121 — `grep -c "import X"` se import verify mat karo: function-local imports jhoota PASS dete hain
+
+**Symptom:** 7 live traders ek saath startup pe mar gaye —
+`NameError: name 'risk_gate' is not defined`. Har log **healthy dikhta tha** apni
+`[RECOVER] re-attached ...` line tak, phir traceback.
+
+**Kya hua:** 8 traders me ek line add ki jo `risk_gate.entries_today(strategy_id)` call
+karti hai (module-function scope me). Deploy se pehle "verify" aise kiya:
+
+```bash
+grep -c "^import risk_gate\|import risk_gate" strategies/live/03_orbst_trader.py   # -> 1  ✅
+```
+
+Count 1 aaya, maine PASS maan liya. **Par wo import kisi DOOSRE function ke andar tha.**
+Python me function-local import sirf usi function ke scope me naam bind karta hai — mera
+call site usko dekh hi nahi sakta tha. grep ne "text file me maujood hai" batayaa;
+maine use "is line pe resolve hoga" samajh liya. **Do alag baatein hain.**
+
+**Guard — import/naam ka resolve hona SIRF asli import se verify karo:**
+```python
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location("probe", path)
+m = importlib.util.module_from_spec(spec); sys.modules["probe"] = m
+spec.loader.exec_module(m)          # module-level code sach me chalta hai
+```
+`ast.parse()` bhi kaafi NAHI — ye pura file parse kar lega, kyunki `NameError`
+**runtime** error hai, syntax error nahi. Same shape: audit/lint pass, process crash.
+
+**Fix:** call site pe hi local `import risk_gate as _rg_cnt`, aur verification grep se
+badal kar **8/8 modules ka asli import** (upar wala loop). Positions kabhi khatre me nahi
+the — sab paper, aur `pos_monitor` order_store se SL/EOD independently protect karta hai
+(strategy process se alag) — par live hota to 7 strategies chup-chaap band padi hoti.
+
+**Failure shape:** PRE-MORTEM #2 (built ≠ wired ≠ **verified**). Yahan "verified" hi
+jhoota tha — proxy check (grep) ko asli check samajh liya. Jab bhi kaho "verified", poocho:
+*maine SACH me wahi cheez chalayi jo production chalayega, ya uske jaisi dikhne wali koi
+cheez dekhi?*
+
+**Bonus (usi session se):** `tail -30 logs/x.log | grep NameError` ne fix ke BAAD bhi
+"STILL CRASHING" bataya — kyunki log append-mode hai aur **purani** traceback abhi bhi
+last-30 me thi. Post-fix health check hamesha **timestamp** ya fresh PID + latest log line
+se karo, "error string kahin hai ya nahi" se nahi.
