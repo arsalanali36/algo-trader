@@ -200,7 +200,7 @@ def fetch_candles(symbol, tf, token, cid):
     # SBIN DH-904 hits (LESSONS.md TRAP #2 v3). See shared_candle_cache.py.
     try:
         import shared_candle_cache
-        cached = shared_candle_cache.get(sec_id, interval, max_age=20.0)
+        cached = shared_candle_cache.get(sec_id, interval, 0, max_age=20.0)
         if cached:
             df = pd.DataFrame(cached)
             df["time"] = pd.to_datetime(df["time"])
@@ -252,7 +252,7 @@ def fetch_candles(symbol, tf, token, cid):
             import shared_candle_cache
             cache_df = df.copy()
             cache_df["time"] = cache_df["time"].astype(str)
-            shared_candle_cache.put(sec_id, interval, cache_df.to_dict("records"))
+            shared_candle_cache.put(sec_id, interval, 0, cache_df.to_dict("records"))
         except Exception:
             pass
         return df

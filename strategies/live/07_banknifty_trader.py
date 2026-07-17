@@ -126,7 +126,7 @@ def fetch_bnf_15m(token, cid, days=6):
     """Continuous 15m BANKNIFTY spot bars (ATR warm-up, TRAP #85)."""
     try:
         import shared_candle_cache
-        cached = shared_candle_cache.get(BNF_SEC_ID, 15, max_age=20.0)
+        cached = shared_candle_cache.get(BNF_SEC_ID, 15, days, max_age=20.0)
         if cached:
             df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
             return df.dropna() if not df.empty else None
@@ -167,7 +167,7 @@ def fetch_bnf_15m(token, cid, days=6):
         try:
             import shared_candle_cache
             c = df.copy(); c["time"] = c["time"].astype(str)
-            shared_candle_cache.put(BNF_SEC_ID, 15, c.to_dict("records"))
+            shared_candle_cache.put(BNF_SEC_ID, 15, days, c.to_dict("records"))
         except Exception:
             pass
         return df

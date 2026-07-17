@@ -349,11 +349,40 @@ def run_signal_engine(df_1m, key_levels, cfg):
     signal_bar   = -1
     trades_today = 0
     max_trades   = cfg.get("max_trades_per_symbol", 2)
+    cur_day      = None
 
     n = len(df_1m)
     for i in range(2, n):
         row   = df_1m.iloc[i]
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
+
+        # ── New day: reset the day-scoped state. This mirrors the Pine 1:1 —
+        #       var int tradesToday = 0
+        #       if ta.change(time("D")) != 0
+        #           tradesToday := 0
+        # Without it `trades_today` is a lie: it says "today" but counts every
+        # entry in whatever window df_1m happens to span. The window is 5 days
+        # (days_back, fetch_1m) and used to be up to 10 via a shared-cache key
+        # collision — so the 2-trade cap was spent days ago and every signal
+        # since was dropped at the `trades_today >= max_trades` guard. Proven
+        # live 2026-07-17: TV entered SHORT at 10:05; this engine produced the
+        # identical SELL on the same bar and the cap swallowed it. Same df,
+        # same bar, cap raised -> the signal reappears.
+        #
+        # position/atr_sl reset too: the Pine flattens daily (3:15 squareoff),
+        # so a simulated position must never survive into the next day — it
+        # would block the next day's entry via `position != "SHORT"`.
+        # Zone/touch state is deliberately NOT reset: Pine's zone vars are
+        # `var` and persist across the boundary. ATR stays continuous (Pine's
+        # ta.rma does too) — that's what the multi-day window is FOR.
+        bar_day = row["time"].date()
+        if bar_day != cur_day:
+            cur_day      = bar_day
+            trades_today = 0
+            position     = None
+            entry_price  = None
+            atr_sl_long  = None
+            atr_sl_short = None
         
         # ATR calculation for max_cs
         curr_atr = float(atr_series.iloc[i]) if not pd.isna(atr_series.iloc[i]) else 5.0
@@ -532,7 +561,7 @@ def fetch_1m(symbol, tf="1m"):
     # candle fetches across processes were. See shared_candle_cache.py.
     try:
         import shared_candle_cache
-        cached = shared_candle_cache.get(sec_id, interval, max_age=20.0)
+        cached = shared_candle_cache.get(sec_id, interval, days_back, max_age=20.0)
         if cached:
             df = pd.DataFrame(cached)
             df["time"] = pd.to_datetime(df["time"])
@@ -574,16 +603,28 @@ def fetch_1m(symbol, tf="1m"):
             "low":   d.get("low", []),
             "close": d.get("close", []),
         })
-        # Sirf aaj ke bars rakho
-        today_str = today.isoformat()
-        df = df[df["time"].dt.strftime("%Y-%m-%d") == today_str].reset_index(drop=True)
+        # Keep the whole `days_back` window — the earlier days are WARM-UP.
+        #
+        # This used to cut everything but today, which starved the engine of
+        # exactly what it needs: ATR(14) and zones both start cold at 09:15,
+        # and run_signal_engine returns nothing at all until 20 bars exist —
+        # on 5m that's ~10:55, so half the session was blind (TRAP #85). Every
+        # mission strategy already fetches days=5..10 for this reason and
+        # slices today afterwards.
+        #
+        # Safe now, and only now: the engine resets its day-scoped state on
+        # each date change (see run_signal_engine), so the extra days warm the
+        # indicators and cannot leak trades, positions or the daily cap into
+        # today. That is also precisely what the backtest does — continuous
+        # ATR (atr_all) + per-day state (backtest_day) — so live and backtest
+        # finally agree by construction rather than by luck.
         if df.empty:
             return None
         try:
             import shared_candle_cache
             cache_df = df.copy()
             cache_df["time"] = cache_df["time"].astype(str)
-            shared_candle_cache.put(sec_id, interval, cache_df.to_dict("records"))
+            shared_candle_cache.put(sec_id, interval, days_back, cache_df.to_dict("records"))
         except Exception:
             pass
         return df

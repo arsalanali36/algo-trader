@@ -134,7 +134,7 @@ def fetch_nifty_15m(token, cid, days=5, use_cache=True):
     if use_cache:
         try:
             import shared_candle_cache
-            cached = shared_candle_cache.get(NIFTY_SEC_ID, 15, max_age=20.0)
+            cached = shared_candle_cache.get(NIFTY_SEC_ID, 15, days, max_age=20.0)
             if cached:
                 df = pd.DataFrame(cached); df["time"] = pd.to_datetime(df["time"])
                 return df.dropna() if not df.empty else None
@@ -177,7 +177,7 @@ def fetch_nifty_15m(token, cid, days=5, use_cache=True):
         try:
             import shared_candle_cache
             c = df.copy(); c["time"] = c["time"].astype(str)
-            shared_candle_cache.put(NIFTY_SEC_ID, 15, c.to_dict("records"))
+            shared_candle_cache.put(NIFTY_SEC_ID, 15, days, c.to_dict("records"))
         except Exception:
             pass
         return df

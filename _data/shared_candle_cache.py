@@ -26,8 +26,27 @@ _FILE = Path(__file__).resolve().parent.parent / "data" / "shared_candle_cache.j
 _FILE.parent.mkdir(exist_ok=True)
 
 
-def _key(sec_id, interval):
-    return f"{sec_id}:{interval}"
+def _key(sec_id, interval, days):
+    """`days` is part of the identity, not a detail.
+
+    It used to be `sec_id:interval` — but the rows behind that key are NOT
+    interchangeable: every producer asks Dhan for a different window. On
+    NIFTY 5m alone, chainzone_v1 stores 10 days (its ATR warm-up), straddle_v1
+    and backspread_v1 store 5, and range_v1 wants today only. Same key, four
+    different meanings — so whoever wrote last decided what everyone else read,
+    and it flipped every 20s (the TTL).
+
+    That silently fed range_v1 chainzone_v1's 10-day window. Its engine has no
+    date awareness, so its 2-trade cap applied to the whole 10 days instead of
+    to today — the cap was spent days ago, and every real signal since was
+    dropped. Observed live 2026-07-17: TV entered SHORT at 10:05, range_v1's
+    engine had the identical signal and never acted on it.
+
+    Same window still shares (that's the whole point of this cache, TRAP #2) —
+    straddle_v1 and backspread_v1 both ask 5 days and still get one fetch
+    between them. Different windows now simply cannot collide.
+    """
+    return f"{sec_id}:{interval}:{days}d"
 
 
 def _read_all():
@@ -37,8 +56,8 @@ def _read_all():
         return {}
 
 
-def get(sec_id, interval, max_age=20.0):
-    """Return cached candle rows (list of dicts) for sec_id+interval if
+def get(sec_id, interval, days, max_age=20.0):
+    """Return cached candle rows (list of dicts) for sec_id+interval+days if
     fresher than max_age seconds — OR still bar-aligned-valid: a fetch made
     after the current bar opened contains every CLOSED bar there is (a 5-min
     candle set genuinely can't gain a new closed bar until the next 5-min
@@ -46,7 +65,7 @@ def get(sec_id, interval, max_age=20.0):
     per-loop refetches massively on the wider timeframes. The +3s grace after
     the boundary covers Dhan's own delay in publishing the just-closed bar."""
     data = _read_all()
-    entry = data.get(_key(sec_id, interval))
+    entry = data.get(_key(sec_id, interval, days))
     if not entry:
         return None
     rows, ts = entry
@@ -63,14 +82,16 @@ def get(sec_id, interval, max_age=20.0):
     return None
 
 
-def put(sec_id, interval, rows):
+def put(sec_id, interval, days, rows):
     """Record freshly-fetched candle rows so other processes/loops reuse them.
+    `days` = the window you asked Dhan for (0 = today only). It must describe
+    the rows you are actually storing — see _key().
     `rows` must be JSON-serializable (e.g. df.to_dict('records') with time
     columns already converted to ISO strings)."""
     if not rows:
         return
     data = _read_all()
-    data[_key(sec_id, interval)] = (rows, time.time())
+    data[_key(sec_id, interval, days)] = (rows, time.time())
     # keep the file small — drop anything older than 5 minutes
     cutoff = time.time() - 300
     data = {k: v for k, v in data.items() if v[1] >= cutoff}

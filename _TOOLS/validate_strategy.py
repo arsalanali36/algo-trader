@@ -40,7 +40,13 @@ CFG = {
     "hawa_me_zone": False,
     "exit_atr": True,
     "exit_main": True,            # Pine MainExit_Toggle (Zone Exit) = true
-    "max_trades_per_symbol": 4,   # Pine maxTradesPerDay
+    # Pine maxTradesPerDay. This CFG's entire job is to mirror the Pine, so it
+    # tracks it: the Pine moved 4 -> 2 on 2026-07-17 (house rule is 2 entries
+    # per day; Pine counts entries only, so entry+exit = 1 trade on both sides).
+    # NOTE: the recorded 90.2% exact / 93% entry score was measured at 4,
+    # against a TV export from a 4-trade run — it is NOT reproducible at 2.
+    # Re-score from a fresh TV export before quoting a fidelity number again.
+    "max_trades_per_symbol": 2,
 }
 ATR_LEN, ATR_MULT, ZONE_AGE = 14, 2.0, 2
 
