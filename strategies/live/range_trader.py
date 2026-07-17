@@ -384,11 +384,11 @@ def run_signal_engine(df_1m, key_levels, cfg):
             atr_sl_long  = None
             atr_sl_short = None
         
-        # ATR calculation for max_cs
-        curr_atr = float(atr_series.iloc[i]) if not pd.isna(atr_series.iloc[i]) else 5.0
-        ignore_max_cs = False
-        max_cs = 25.0 if not ignore_max_cs else 9999.0
-        
+        # `max_cs` is read from config once, before this loop. It used to be
+        # re-assigned here to a hardcoded 25.0 on every bar (`ignore_max_cs`
+        # was a constant False, so the 9999 branch was dead), silently throwing
+        # the configured value away — setting max_candle_size in the UI did
+        # nothing at all. Removed; the config value now survives.
         atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else 5.0
 
         # ── Touch detection ──────────────────────────────────────────────────
@@ -419,33 +419,37 @@ def run_signal_engine(df_1m, key_levels, cfg):
             not_on_red_line  = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
             not_on_grn_line  = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
 
+            # No candle-size gate here — the Pine has none on zone formation
+            # (Red_Zone/Green_Zone are set purely on touch + pattern + line
+            # type). This used to require `h - l <= 25`, so a wide bar could
+            # not create a zone at all, and every setup that followed from it
+            # was invisible. Live-verified 2026-06-02: TV formed a GREEN zone
+            # on a 78.5pt candle (hi=23350 lo=23271.45) and traded it; this
+            # engine formed no zone that day and took nothing. The gate belongs
+            # on the ENTRY's breakout candle instead — see below.
             if bearish and not_on_grn_line:
                 # Red zone: short setup
-                candle_size = h - l
-                if candle_size <= max_cs:
-                    if zone_upper is not None:
-                        zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
-                    zone_upper = h
-                    zone_lower = l
-                    zone_type  = "RED"
-                    zone_bar   = i
-                    tracked_high = None
-                    tracked_low  = None
-                    touch_active = False
+                if zone_upper is not None:
+                    zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
+                zone_upper = h
+                zone_lower = l
+                zone_type  = "RED"
+                zone_bar   = i
+                tracked_high = None
+                tracked_low  = None
+                touch_active = False
 
             elif bullish and not_on_red_line:
                 # Green zone: long setup
-                candle_size = h - l
-                if candle_size <= max_cs:
-                    if zone_upper is not None:
-                        zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
-                    zone_upper = h
-                    zone_lower = l
-                    zone_type  = "GREEN"
-                    zone_bar   = i
-                    tracked_high = None
-                    tracked_low  = None
-                    touch_active = False
+                if zone_upper is not None:
+                    zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
+                zone_upper = h
+                zone_lower = l
+                zone_type  = "GREEN"
+                zone_bar   = i
+                tracked_high = None
+                tracked_low  = None
+                touch_active = False
 
         # ── Exit: ATR trailing stop ──────────────────────────────────────────
         if exit_atr and position == "LONG" and atr_sl_long is not None:
@@ -485,10 +489,23 @@ def run_signal_engine(df_1m, key_levels, cfg):
         curr_green = c > o
         curr_red   = c < o
 
+        # The Pine blocks the ENTRY when the breakout candle is oversized:
+        #     candleSize = high - low
+        #     if close_Above_Green_zone
+        #         if candleSize > maxCandleSize
+        #             skipBigCandleZoneExit_Long := true
+        #     Index_Long_Signal = (... and not skipBigCandleZoneExit_Long)
+        # The name says "ZoneExit" but line 1226/1237 use it in the entry
+        # condition. This engine had no entry gate at all and put the size
+        # check on zone formation instead — the check existed, on the wrong
+        # bar. validate_strategy's copy already had it here and correct.
+        big_candle = (h - l) > max_cs
+
         # LONG entry
         if (zone_type == "GREEN" and use_zone and
                 c > zone_upper and
                 prev_green and curr_green and
+                not big_candle and
                 (tracked_high is None or c <= tracked_high) and
                 position != "LONG"):
             signal       = "BUY"
@@ -504,6 +521,7 @@ def run_signal_engine(df_1m, key_levels, cfg):
         elif (zone_type == "RED" and use_zone and
                 c < zone_lower and
                 prev_red and curr_red and
+                not big_candle and
                 (tracked_low is None or c >= tracked_low) and
                 position != "SHORT"):
             signal       = "SELL"
