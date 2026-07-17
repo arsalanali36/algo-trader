@@ -17,6 +17,18 @@ staged files) and reports FAIL/WARN per Rule 6B:
   7. RAW-HTTP-ORDER requests.post()/put()/delete() straight at a broker /orders endpoint
                     (check 1 only sees SDK-shaped .place_order() — a raw POST walked past it)
   8. CORE-IMPORTS-UI  _core/ importing trader_dashboard — money path depending on the UI
+  9. RAW-STRAT-LABEL raw strategy config-key rendered on a user-visible surface instead
+                    of regLabel()/regId() (JS) or strategy_registry.label() (Python)
+
+  Check 9 added 2026-07-17. The registry was always right — the names were IN it —
+  yet 25 places still printed raw config-keys (ARS_CHAIN_V1, arschain_MAIN,
+  vrp_condor_v1) straight at the user. Fixing them one by one fixes nothing
+  permanently; site #26 gets written next week. NOTE this check also scans
+  static/js/ + templates/ — checks 1-8 are .py-only, which is exactly why every
+  one of those leaks lived in a blind spot. An enforcer that can't see the
+  display layer can't enforce anything about the display layer.
+  Escape hatch: `raw-id-ok: <reason>` on the line (or its comment block) for
+  strings that are IDENTITY, not display — storage keys, fingerprints, dedup keys.
 
   Checks 7-8 added 2026-07-16 after an audit found both blind spots being actively
   exploited: /api/close-position raw-POSTs orders to Dhan while the algo trades on
@@ -138,6 +150,10 @@ def iter_repo_files():
             if not fname.endswith(".py") or is_excluded(fname):
                 continue
             yield os.path.join(full, fname)
+    # static/js + templates — RAW-STRAT-LABEL ke liye. Check 9 se pehle audit
+    # sirf .py dekhta tha, jabki har user-visible leak wahin (JS/HTML) tha.
+    for f in iter_display_files():
+        yield f
 
 
 def staged_files():
@@ -154,7 +170,10 @@ def staged_files():
         # ^scratch.*\.py$ actually match staged files — they got only the
         # basename before, silently defeating the scratch/ exclusion) AND the
         # basename (so name patterns like ^patch_.*\.py$ still match anywhere).
-        if not rel.endswith(".py") or is_excluded(rel) or is_excluded(os.path.basename(rel)):
+        _disp = (rel.endswith(".js") or rel.endswith(".html")) and                any(rel.replace("\\", "/").startswith(d + "/") for d in DISPLAY_SCAN_DIRS) and                os.path.basename(rel) not in DISPLAY_EXCLUDE
+        if not (rel.endswith(".py") or _disp):
+            continue
+        if is_excluded(rel) or is_excluded(os.path.basename(rel)):
             continue
         full = os.path.join(REPO_ROOT, rel.replace("/", os.sep))
         if os.path.isfile(full):
@@ -339,6 +358,111 @@ def check_raw_http_orders(path, tree, findings):
             f"through execution_gateway.execute_signal()/execute_exit()"))
 
 
+# ---------------------------------------------------- check 9: RAW-STRAT-LABEL
+#
+# 2026-07-17. Registry hamesha sahi tha — naam usme likhe the. Phir bhi ek audit
+# me 25 jagah mili jahan raw config-key (ARS_CHAIN_V1, arschain_MAIN,
+# vrp_condor_v1) seedha user ki screen pe chhap raha tha: Stats table, Payoff
+# modal ka title, bell ki notifications, CSV export, dropdowns, EOD report.
+#
+# Ye sab ek-ek karke theek karne se kuch permanent nahi hota — 26vi jagah kal
+# ban jaayegi. Isliye rule mechanical hai: user ko dikhne wali har jagah
+# regLabel()/regId() (JS) ya strategy_registry.label()/strat_label()/_sid_lbl()
+# (Python) se guzre. Raw id sirf plumbing me — order_store rows, API query
+# params, config keys, aur `title=` hover (wahan wo JAAN-BOOJH ke hai).
+#
+# Ye check regex hai, AST nahi (JS/HTML parse nahi kar sakte) — isliye
+# jaan-boojh ke conservative: sirf saaf-saaf render sites, aur neeche har wo
+# shape skip hai jo genuinely raw honi chahiye. Shak ho to chhod deta hai —
+# ek jhoota FAIL developer ko `--no-verify` sikha dega, aur phir har check bekaar.
+
+# JS/HTML: template-literal me strategy-ish variable interpolate ho raha hai.
+_JS_INTERP = re.compile(r"\$\{[^{}]*\}")
+_JS_STRATVAR = re.compile(r"\b(?:strategy|strat|stratName|stratId|sid|_sid)\b", re.I)
+_JS_LABELLED = re.compile(r"\b(?:regLabel|regId|regFull|_ordTag|_ordTags|_logName|_src)\s*\(")
+# Wo shapes jinme raw id HONA hi chahiye — inhe chhod do.
+_JS_SKIP_LINE = re.compile(
+    r"""title\s*=\s*["']\$\{           # title="${...}"  -> hover pe raw = by design
+      | \?\s*strategy=                  # URL query param
+      | ['"]strategy['"]\s*:            # JSON/dict key
+      | \.set\(\s*['"]strategy['"]      # URLSearchParams
+      | \bdata-                         # data-* attribute (machine-read)
+      | \.value\s*=                     # <option>.value — filter isi pe match karta hai
+      | onclick=                        # handler arg = raw key (callback ko chahiye)
+    """, re.I | re.X)
+# Poora `${...}` ek function-call hai → strategy var us call ka ARGUMENT hai,
+# rendered value nahi (`${_payoffBtn(items, stratName)}` = button banata hai,
+# `${encodeURIComponent(strategy)}` = URL). Labelling callee ki zimmedari hai.
+# Exception = ye pass-through wrappers: escape/stringify karte hain, label NAHI —
+# `${esc(t.strategy)}` utna hi raw chhapta hai jitna `${t.strategy}`.
+_JS_CALL = re.compile(r"^\$\{\s*([A-Za-z_$][\w$.]*)\s*\(")
+_JS_PASSTHRU = {"esc", "_esc", "String", "encodeURI"}
+# Escape hatch: kuch strings user ko dikhti hi nahi — wo IDENTITY hoti hain
+# (localStorage key, change-detect fingerprint, dedup key). Unhe label karna
+# sirf bekaar nahi, GALAT hai: do strategies ka label ek jaisa ho to fingerprint
+# collide karega aur storage key naam badalte hi purani settings kho jaayengi.
+# Aisi jagah `raw-id-ok: <wajah>` likho — chupchaap skip nahi, likhi hui wajah.
+_RAW_OK = re.compile(r"raw-id-ok")
+
+# Python: `notify.error(f"{sid}: ...", source=sid)` — raw id msg ke ANDAR.
+# `source=` alag field hai aur listing() usay label karta hai; msg ek jama hua
+# string hai, usme se naam nikaal ke label karna namumkin hai.
+_PY_NOTIFY_RAWID = re.compile(
+    r"""notify\.(?:error|warn|info|push)\s*\(\s*f["']\{\s*(\w+)\s*\}\s*:""", re.X)
+
+DISPLAY_SCAN_DIRS = ["static/js", "templates"]
+# registry.js khud labeller hai; notify.js server ka `source_label` render karti hai.
+DISPLAY_EXCLUDE = {"registry.js"}
+
+
+def iter_display_files():
+    for d in DISPLAY_SCAN_DIRS:
+        full = os.path.join(REPO_ROOT, d.replace("/", os.sep))
+        if not os.path.isdir(full):
+            continue
+        for fname in sorted(os.listdir(full)):
+            if fname in DISPLAY_EXCLUDE:
+                continue
+            if fname.endswith(".js") or fname.endswith(".html"):
+                yield os.path.join(full, fname)
+
+
+def check_raw_strategy_label(path, src, findings):
+    """Raw strategy id kisi user-visible surface pe ja raha hai?"""
+    is_py = path.endswith(".py")
+    lines = src.splitlines()
+    for i, line in enumerate(lines, 1):
+        # `raw-id-ok` usi line pe, ya upar ke comment-block me (3 line tak —
+        # wajah aksar ek line me nahi samati).
+        if _RAW_OK.search(line) or _RAW_OK.search("\n".join(lines[max(0, i - 4):i - 1])):
+            continue
+        st = line.strip()
+        if st.startswith("//") or st.startswith("#") or st.startswith("*"):
+            continue
+        if is_py:
+            m = _PY_NOTIFY_RAWID.search(line)
+            if m and "source=" in line + src[src.find(line):src.find(line) + 300]:
+                findings.append(Finding(
+                    "FAIL", "RAW-STRAT-LABEL", rel(path), i,
+                    f"notify msg me raw id '{{{m.group(1)}}}:' — prefix hatao, "
+                    f"source={m.group(1)} already carry karta hai (listing() usay label karta hai)"))
+            continue
+        if _JS_SKIP_LINE.search(line):
+            continue
+        for interp in _JS_INTERP.findall(line):
+            if not _JS_STRATVAR.search(interp):
+                continue
+            if _JS_LABELLED.search(interp):
+                continue
+            _c = _JS_CALL.match(interp)
+            if _c and _c.group(1) not in _JS_PASSTHRU:
+                continue
+            findings.append(Finding(
+                "FAIL", "RAW-STRAT-LABEL", rel(path), i,
+                f"raw strategy id render ho raha hai: {interp.strip()} — regLabel() se guzaro "
+                f"(raw chahiye to title= me daalo)"))
+
+
 def check_core_imports_ui(path, tree, findings):
     """Check 8 — CORE-IMPORTS-UI: _core/ must not depend on the Flask UI module."""
     if parent_dir(path) != CORE_DIR:
@@ -363,11 +487,17 @@ def check_core_imports_ui(path, tree, findings):
 def audit(files):
     findings = []
     for path in files:
+        # JS/HTML: AST nahi hai, sirf display-layer check (RAW-STRAT-LABEL).
+        if not path.endswith(".py"):
+            with open(path, encoding="utf-8-sig", errors="replace") as f:
+                check_raw_strategy_label(path, f.read(), findings)
+            continue
         src, tree = parse(path)
         if isinstance(tree, SyntaxError):
             findings.append(Finding("FAIL", "SYNTAX", rel(path), tree.lineno or 0,
                                     f"file does not parse: {tree.msg}"))
             continue
+        check_raw_strategy_label(path, src, findings)
         check_raw_orders(path, tree, findings)
         check_inline_risk(path, src, findings)
         check_dup_indicators(path, tree, findings)

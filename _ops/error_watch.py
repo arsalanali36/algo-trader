@@ -147,7 +147,7 @@ def scan_logs():
                     if m:
                         in_tb = False
                         msg = f"{m.group(1)}: {m.group(2)}".strip()[:300]
-                        notify.error(f"{src}: {msg}",
+                        notify.error(msg,
                                      key=f"log:{src}:{_signature(msg)}", source=src)
                         pushed += 1
                     continue                # traceback ki beech wali lines skip
@@ -155,7 +155,7 @@ def scan_logs():
                     msg = _PREFIX_RE.sub("", ln).strip()[:300]
                     if not msg:
                         continue
-                    notify.error(f"{src}: {msg}",
+                    notify.error(msg,
                                  key=f"log:{src}:{_signature(msg)}", source=src)
                     pushed += 1
         except Exception as e:
@@ -181,8 +181,8 @@ def check_strategies(get_pid, actives):
                 notify.resolve(key)         # wapas zinda → chup ho jao
             else:
                 notify.error(
-                    f"{sid}: strategy config me ACTIVE hai par process nahi chal raha "
-                    f"— koi order nahi lagega",
+                    "strategy config me ACTIVE hai par process nahi chal raha "
+                    "— koi order nahi lagega",
                     key=key, source=sid)
                 n += 1
         except Exception as e:

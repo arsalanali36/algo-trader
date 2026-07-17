@@ -32,6 +32,16 @@ USAGE:
 RULE: koi bhi naya `except:` block jo trading path pe hai — usme notify.error()
       lagao. `print()` akela kaafi nahi (koi log nahi dekhta jab tak kuch toot
       na jaaye).
+
+RULE 2 (2026-07-17): strategy ka raw id `msg` ke andar mat likho —
+      `source=` me do. Kyun: `msg` ek jama hua string hai, usme se baad me
+      naam nikaal ke label nahi kiya ja sakta — isi wajah se bell me
+      `ARS_CHAIN_V1_PAPER: ...` chhap raha tha jabki registry me uska naam
+      "Ars chain - Canary (stocks)" hai. `source` alag field hai, aur
+      `listing()` use PADHTE waqt label karta hai (`source_label`) — likhte
+      waqt nahi. Isliye kal naam badla to poori purani history bhi naye naam
+      pe dikhegi, aur raw id (jo debugging me chahiye) record me bacha rehta
+      hai.
 """
 import json
 import os
@@ -207,6 +217,23 @@ def _write_state(st):
         print(f"[notify] state write fail: {e}", flush=True)
 
 
+def _source_label(src):
+    """`source` ka display naam — registry se. Resolve na ho to raw hi wapas.
+
+    Label PADHTE waqt lagta hai, likhte waqt nahi: record me raw id rehta hai
+    (debugging/grep ke liye), aur naam badalne pe poori purani history apne aap
+    naye naam pe dikhne lagti hai. Registry na mile (koi standalone process)
+    to raw — kabhi crash nahi.
+    """
+    if not src:
+        return ""
+    try:
+        import strategy_registry as _sr
+        return _sr.label(src, with_name=True).split(" - ", 1)[-1] if _sr.resolve(src) else str(src)
+    except Exception:
+        return str(src)
+
+
 def listing(after=0, limit=_TAIL_LIMIT):
     """History do (nayi → purani) + unread count.
 
@@ -218,6 +245,8 @@ def listing(after=0, limit=_TAIL_LIMIT):
         # Explicit read flag ya high-water mark — dono me se koi bhi read maane.
         if int(r.get("id") or 0) <= seen:
             r["read"] = True
+        # UI `source_label` dikhata hai, `source` (raw) title/hover me rehta hai.
+        r["source_label"] = _source_label(r.get("source"))
     unread = sum(1 for r in recs if not r.get("read"))
     items = [r for r in recs if int(r.get("id") or 0) > int(after or 0)]
     items.sort(key=lambda r: int(r.get("id") or 0), reverse=True)

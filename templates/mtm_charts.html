@@ -10,6 +10,8 @@
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <!-- ApexCharts (self-hosted) -->
   <script src="/static/vendor/apexcharts.min.js"></script>
+  <!-- regLabel/regId — strategy ka naam registry se, raw config-key kabhi nahi -->
+  <script src="/static/js/registry.js"></script>
   
   <style>
     :root {
@@ -782,6 +784,19 @@
       await loadAvailableDates();
     });
 
+    // registry.js ka fetch async hai — agar wo is page ke apne render ke BAAD
+    // aayi to labels raw config-key pe atke reh jaate. Aane pe dobara paint.
+    regOnLoad(() => {
+      try {
+        // filter dropdown loadTradesForDate() me ek baar bharta hai — value raw
+        // hai, sirf dikhne wala text registry se refresh karo.
+        document.querySelectorAll('#strat-select option').forEach(o => {
+          if (o.value && o.value !== 'all') o.textContent = regLabel(o.value);
+        });
+        if (typeof allTrades !== 'undefined' && allTrades.length) applyFiltersAndRenderList();
+      } catch (e) {}
+    });
+
     // 1. Fetch available dates from server
     async function loadAvailableDates() {
       try {
@@ -840,8 +855,8 @@
         allTrades.forEach(t => { if (t.strategy) strats.add(t.strategy); });
         strats.forEach(s => {
           const opt = document.createElement('option');
-          opt.value = s;
-          opt.textContent = s;
+          opt.value = s;                  // value RAW rehti hai — filter isi pe match karta hai
+          opt.textContent = regLabel(s);  // dikhta sirf registry ka naam
           stratSelect.appendChild(opt);
         });
 
@@ -912,7 +927,7 @@
               <span class="badge ${t.entry === 'SELL' ? 'badge-sell' : 'badge-buy'}">${t.entry}</span>
             </div>
             <div class="trade-mid">
-              <span>Qty: ${t.qty} · <span class="trade-strat" title="Strategy">${t.strategy || 'manual'}</span></span>
+              <span>Qty: ${t.qty} · <span class="trade-strat" title="${t.strategy || 'manual'}">${regLabel(t.strategy || 'manual')}</span></span>
               <span style="font-size: 10px;">${t.entry_time} → ${t.exit_time || '—'}</span>
             </div>
             <div class="trade-bottom">
@@ -1483,7 +1498,7 @@
               <div class="ind-card-meta">
                 <span class="badge ${cache.side === 'SELL' ? 'badge-sell' : 'badge-buy'}">${cache.side}</span>
                 <span>Qty: ${cache.qty}</span>
-                <span class="trade-strat">${t.strategy || 'manual'}</span>
+                <span class="trade-strat" title="${t.strategy || 'manual'}">${regLabel(t.strategy || 'manual')}</span>
               </div>
             </div>
             <div style="text-align: right;">

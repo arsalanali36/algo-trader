@@ -55,77 +55,50 @@
 
     // Shared strategy display maps — used by BOTH the Logs sidebar (renderLogTab)
     // and the Risk > Per-Strategy Override table so they stay in sync (Rule 6B).
-    // These are a hardcoded FALLBACK; loadStrategyRegistry() (below) overwrites them
-    // from the canonical Strategy Registry (family.member IDs like 00.01, grouped by
-    // family) once /api/strategy-registry loads — single source of truth (Phase 2).
-    let MISSION_NUM = {
-      orb_v1:'00', straddle_v1:'01', dvert_v1:'02', orbst_v1:'03',
-      chainzone_v1:'04', backspread_v1:'05', shortvol_v1:'06', banknifty_v1:'07',
-    };
-    let MISSION_NAME = {
-      orb_v1:'Mid-Day ORB', straddle_v1:'Long Straddle', dvert_v1:'Debit Vertical',
-      orbst_v1:'ORB + Supertrend', chainzone_v1:'Chain-Zone', backspread_v1:'Ratio Backspread',
-      shortvol_v1:'Short-Vol Iron-Fly (off)', banknifty_v1:'BankNifty ORB',
-      ars_chain_v1:'Ars Chain (live)', ars_chain_v1_paper:'Ars Chain (paper)',
-      range_v1:'Range Breakout', rsi_v1:'RSI', rsi_v1_paper:'RSI (paper)',
-      ema_v1:'EMA Crossover', universe_v1:'Universe Scan', webhook_v1:'TradingView Webhook',
-    };
-    // Identifiers that must never render AS a strategy — dead configs, the
-    // webhooks shared-config block, superseded webhook configs, and garbage that
-    // got written into order_store.strategy (it has no validation). Filled from
-    // the registry's _meta.hidden so there's ONE list, not one per surface.
-    // NOT a delete and NOT a P&L exclusion — every order row stays and still counts.
-    let REG_HIDDEN = new Set();
-    function regHidden(key){ return REG_HIDDEN.has(String(key==null?'':key).toLowerCase()); }
+    //
+    // 2026-07-17: `regLabel`/`regId`/`regHidden` + the registry fetch ab
+    // `static/js/registry.js` me hain (har page pe load hoti hai, aur Python ke
+    // `strategy_registry.resolve()` ki tarah id+config_key+slug+aliases CHARON pe
+    // match karti hai). Yahan sirf usi data ke do VIEW bachte hain jo purane
+    // callers maangte hain. Do cheezein jaan-boojh ke GAYI:
+    //   - hardcoded seed maps: unme RETIRE ho chuke naam the ("Range Breakout",
+    //     "Ars Chain (live)") — registry fetch ek baar fail hoti to app purana
+    //     naam confidently dikha deti. Ab load na ho to raw key dikhega.
+    //   - duplicate fetch + duplicate lookup: dusra resolver = dusra sach.
+    // Ye maps ab HAR alias pe indexed hain (sirf config_key pe nahi) — isliye
+    // `MISSION_NAME[alias]` bhi wahi jawab deta hai jo regLabel(alias).
+    let MISSION_NUM = {};
+    let MISSION_NAME = {};
+    let STRAT_GROUPS = [];
 
-    let STRAT_GROUPS = [
-      { title:'Option Strategies (mission)', keys:['orb_v1','straddle_v1','dvert_v1','orbst_v1','chainzone_v1','backspread_v1','shortvol_v1','banknifty_v1'] },
-      { title:'Other Strategies', keys:['ars_chain_v1','ars_chain_v1_paper','range_v1','rsi_v1','rsi_v1_paper','ema_v1','universe_v1'] },
-      { title:'Webhook / Infra', keys:['webhook_v1'] },
-    ];
+    function _rebuildStratMaps(reg){
+      const fams = reg.families || {}, strs = reg.strategies || {};
+      const num = {}, name = {}, byFam = {};
+      for (const id in strs) {
+        const s = strs[id] || {};
+        const aliases = [id, s.config_key, s.slug].concat(s.aliases || []).filter(Boolean);
+        aliases.forEach(a => { const k = String(a).toLowerCase(); num[k] = id; name[k] = s.name || id; });
+        const fid = id.split('.')[0];
+        // group key = config_key (ye keys nifty_config ki keys se match hoti hain);
+        // jiska config_key nahi (research-only entries) wo kisi tab me nahi aati.
+        if (s.config_key) (byFam[fid] = byFam[fid] || []).push({ ck: String(s.config_key).toLowerCase(), id });
+      }
+      MISSION_NUM = num; MISSION_NAME = name;
+      STRAT_GROUPS = Object.keys(fams).sort().map(fid => ({
+        title: (fams[fid] && fams[fid].name) ? (fid + ' · ' + fams[fid].name) : fid,
+        keys: (byFam[fid] || []).sort((a, b) => a.id < b.id ? -1 : 1).map(x => x.ck).filter(ck => !regHidden(ck))
+      })).filter(g => g.keys.length);
+    }
 
-    // Phase 2: overwrite the maps above from the canonical Strategy Registry
-    // (/api/strategy-registry) — family.member IDs + family grouping. Graceful
-    // fallback to the hardcoded seed if unavailable; re-renders the active tab.
-    async function loadStrategyRegistry(){
-      try{
-        const r = await fetch('/api/strategy-registry'); const reg = await r.json();
-        const fams = reg.families||{}, strs = reg.strategies||{};
-        const _hid = ((reg._meta||{}).hidden||{}).identifiers || {};
-        REG_HIDDEN = new Set(Object.keys(_hid).map(k=>String(k).toLowerCase()));
-        const num={}, name={}, byFam={};
-        for(const id in strs){ const s=strs[id]||{}; const ck=(s.config_key||'').toLowerCase();
-          if(!ck) continue; num[ck]=id; name[ck]=s.name||ck;
-          const fid=id.split('.')[0]; (byFam[fid]=byFam[fid]||[]).push({ck,id}); }
-        if(Object.keys(num).length){
-          MISSION_NUM=num; MISSION_NAME=name;
-          STRAT_GROUPS=Object.keys(fams).sort().map(fid=>({
-            title:(fams[fid]&&fams[fid].name)?(fid+' · '+fams[fid].name):fid,
-            keys:(byFam[fid]||[]).sort((a,b)=>a.id<b.id?-1:1).map(x=>x.ck).filter(ck=>!regHidden(ck))
-          })).filter(g=>g.keys.length);
-        }
-      }catch(e){ /* registry unavailable -> keep hardcoded fallback */ }
+    // registry.js fetch khud kar chuki hoti hai — aa jaane pe maps bhar do + jo
+    // tab khula hai use dobara render kar do (pehli paint raw keys pe hui hogi).
+    regOnLoad(reg => {
+      _rebuildStratMaps(reg);
       try{ if(typeof activeTab!=='undefined'){
         if(activeTab==='log' && document.getElementById('log-folder-card')) renderLogTab();
         else if(activeTab==='risk' && document.getElementById('risk-strategy-table')) renderRiskTab();
       } }catch(e){}
-    }
-    // Deferred like the other load-time bootstraps: this reaches renderRiskTab ->
-    // toggleGlobalTrailingInfo, which lives in sltp-modal.js — a later file. It
-    // happens to survive today only because loadStrategyRegistry awaits a fetch
-    // first, so the rest of the scripts win the race. That's luck, not a guarantee.
-    document.addEventListener('DOMContentLoaded', () => { loadStrategyRegistry(); });
-
-    // Canonical strategy label for ANY surface: the clean registry NAME (no
-    // NN.MM number prefix — task 70). Falls back to the raw key. Use regId()
-    // separately if the short numeric id is genuinely needed somewhere.
-    function regLabel(key){
-      if(!key) return key || '';
-      const k=String(key).toLowerCase();
-      return MISSION_NAME[k] || String(key);
-    }
-    // just the short canonical ID ("02.01") for compact spots (row tags) — raw key fallback.
-    function regId(key){ if(!key) return key||''; return MISSION_NUM[String(key).toLowerCase()] || String(key); }
+    });
 
     function renderLogTab() {
       const container = document.getElementById('log-folder-card');
@@ -145,7 +118,7 @@
       const _LOG_GROUPS = STRAT_GROUPS;
       const _LOG_NUM = MISSION_NUM;
       const _LOG_NAME = MISSION_NAME;
-      const _logName = k => _LOG_NAME[_lcKey(k)] || String(k).toUpperCase();
+      const _logName = k => regLabel(k);   // ek hi labeller poori app me (registry.js)
       const _lcKey = k => String(k).toLowerCase();
       const _usedKeys = new Set();
       const _logGroups = [];

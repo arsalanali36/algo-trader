@@ -124,11 +124,11 @@
 
       const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
       if (res.ok) {
-        flash(`Webhook ${s} set to ${mode}`, mode === 'stop' ? '#f85149' : '#3fb950');
+        flash(`Webhook ${regLabel(s)} set to ${mode}`, mode === 'stop' ? '#f85149' : '#3fb950');
         if (typeof whLoadStrats === 'function') await whLoadStrats();
         renderRmsSummary();
       } else {
-        flash(`Failed to update ${s}`, '#f85149');
+        flash(`Failed to update ${regLabel(s)}`, '#f85149');
       }
     }
 

@@ -119,7 +119,11 @@
       if (tfoot) tfoot.innerHTML = '';
     } else {
       keys.forEach(key => {
-        bodyHtml += _sumRow(key, groupStats[key], key, false);
+        // Strategy mode me `key` = raw config-key (order_store se) — user ko
+        // registry ka naam dikhna chahiye. clickKey RAW hi rehta hai (filter/
+        // Compare-select usi se match karte hain), sirf label badalta hai.
+        const _lbl = (mode === 'strategy') ? regLabel(key) : key;
+        bodyHtml += _sumRow(_lbl, groupStats[key], key, false);
       });
       if (tfoot) {
         const sel = window._calSumSelected;

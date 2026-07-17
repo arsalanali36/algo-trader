@@ -179,9 +179,11 @@
     }
     // restore last-used view on load (elements are static in the DOM)
     // Deferred to DOMContentLoaded since the split: togglePeakView -> loadPeakGraph
-    // -> regLabel, which lives in app-05, i.e. a file that hasn't loaded when this
-    // line runs. The try/catch would have swallowed the ReferenceError whole and
-    // the view just wouldn't restore, with nothing in the console to say why.
+    // reaches functions that live in LATER files (hoisting files ke beech nahi
+    // chalti — TRAP #125). Yahan ka try/catch us ReferenceError ko poora nigal
+    // leta, aur view chupchaap restore na hota — console me ek lafz bhi nahi.
+    // (2026-07-17: regLabel ab registry.js me hai jo SABSE PEHLE load hoti hai,
+    // to wo iski wajah nahi rahi — par deferral apni jagah sahi hai.)
     document.addEventListener('DOMContentLoaded', () => {
       try { const _pv = localStorage.getItem('peak_view'); if (_pv && _pv !== 'graph') togglePeakView(_pv); } catch (e) { }
     });

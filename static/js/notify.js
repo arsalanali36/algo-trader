@@ -12,6 +12,12 @@
         info:  { c: '#58a6ff', bg: '#122b3d', bd: '#1f4a6e', icon: '🔵', hz: 640 }
       };
       function _lv(l) { return LV[l] || LV.error; }
+      // Source ka display naam. Backend (`notify.listing`) har record pe
+      // `source_label` bhejta hai — registry ka naam, read-time pe resolve hua.
+      // Yahan regLabel() nahi chalega: notify.js registry.js se pehle load hoti
+      // hai, aur ye page ke bahar (toast) bhi render hoti hai. Raw `source`
+      // title= me rehta hai — debugging ke liye ek hover door.
+      function _src(n) { return String(n.source_label || n.source || ''); }
       function _esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
       function _ago(ms) {
         var s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -55,7 +61,7 @@
         el.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-start">'
           + '<span style="font-size:12px">' + cfg.icon + '</span>'
           + '<div style="flex:1;min-width:0"><div style="word-break:break-word">' + _esc(n.msg) + '</div>'
-          + (n.source ? '<div style="font-size:10px;color:#8b949e;margin-top:3px">' + _esc(n.source) + '</div>' : '')
+          + (n.source ? '<div title="' + _esc(n.source) + '" style="font-size:10px;color:#8b949e;margin-top:3px">' + _esc(_src(n)) + '</div>' : '')
           + '</div><span style="color:#8b949e;font-weight:700;padding:0 2px">✕</span></div>';
         // Click = dismiss the toast only. The record stays in the bell's history —
         // this is the whole point: nothing an error does can be made to vanish.
@@ -139,7 +145,7 @@
           + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
           + (n.resolved ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
           + _ago(n.last_ts || n.ts)
-          + (n.source ? ' · ' + _esc(n.source) : '')
+          + (n.source ? ' · <span title="' + _esc(n.source) + '">' + _esc(_src(n)) + '</span>' : '')
           + (n.count > 1 ? ' · <span style="color:' + cfg.c + ';font-weight:700">×' + n.count + '</span>' : '')
           + '</div></div></div>';
       }
@@ -177,7 +183,7 @@
             + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
             + (fixed === g.length ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
             + _ago(head.last_ts || head.ts)
-            + (head.source ? ' · ' + _esc(head.source) : '')
+            + (head.source ? ' · <span title="' + _esc(head.source) + '">' + _esc(_src(head)) + '</span>' : '')
             + ' · <span style="color:' + cfg.c + ';font-weight:700">' + g.length + ' jaise</span>'
             + (hits > g.length ? ' <span style="color:#6e7681">(' + hits + ' hits)</span>' : '')
             + ' · <span style="color:#58a6ff">' + (open ? '▾ chhupao' : '▸ sab dekho') + '</span>'

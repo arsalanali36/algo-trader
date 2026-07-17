@@ -199,8 +199,8 @@
               // Strategy group header
               if (strat !== lastStrat) {
                 lastStrat = strat;
-                html += `<div style="color:#58a6ff;font-size:10px;font-weight:bold;letter-spacing:1px;
-                                 padding:6px 4px 2px;margin-top:${html ? '8px' : '0'}">${strat.toUpperCase()}</div>`;
+                html += `<div title="${strat}" style="color:#58a6ff;font-size:10px;font-weight:bold;letter-spacing:1px;
+                                 padding:6px 4px 2px;margin-top:${html ? '8px' : '0'}">${regLabel(strat)}</div>`;
               }
 
               html += `

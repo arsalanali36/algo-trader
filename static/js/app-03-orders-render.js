@@ -138,7 +138,7 @@
             case 'symbol': val = t.sym || ''; break;
             case 'source': val = t.source || ''; break;
             case 'mode': val = t.mode || ''; break;
-            case 'strategy': val = t.strategy || t.strat || t.strategy_type || ''; break;
+            case 'strategy': val = regLabel(t.strategy || t.strat || t.strategy_type || ''); break;
             case 'broker': val = t.broker || ''; break;
             case 'side': val = t.entry || ''; break;
             case 'entry_px': val = t.entry_price || 0; break;
@@ -248,7 +248,7 @@
             case 'symbol': val = t.sym || t.symbol || ''; break;
             case 'source': val = t.source || ''; break;
             case 'mode': val = t.mode || ''; break;
-            case 'strategy': val = t.strategy || t.strat || t.strategy_type || ''; break;
+            case 'strategy': val = regLabel(t.strategy || t.strat || t.strategy_type || ''); break;
             case 'broker': val = t.broker || ''; break;
             case 'side': val = t.entry || ''; break;
             case 'entry_px': val = t.entry_price || 0; break;
@@ -653,6 +653,8 @@
       // ── OPEN POSITIONS ──
       const ordOpenEl = document.getElementById('ord-open');
       const activeOpenColsStr = window._ordOpenCols.filter(c => c.on).map(c => c.id).join(',');
+      // raw-id-ok: ye fingerprint hai (re-render chahiye ya nahi), user ko dikhta nahi.
+      // Label lagana yahan galat hoga — do strategies ka naam ek jaisa ho to collide karega.
       const openFp = opnReal.map(t => `${t.sym}|${t.entry}|${t.entry_price}|${t.qty}|${t.mode}|${t.source}|${t.strategy}`).join(',')
         + '|blocked:' + opnBlocked.map(t => t.id).join(',')
         + '|sort:' + window._openSortCol + '|dir:' + window._openSortDir

@@ -149,7 +149,7 @@ def pos_neg(data):
         pos.append(f"{len(ran)}/{len(active)} chalti strategies ka process din bhar log karta raha")
     if grey:
         pos.append(f"{len(grey)} strategy is date ko chali hi nahi (deploy baad me / inactive) — "
-                   f"ye ERROR nahi: {', '.join(r['sid'] for r in grey[:6])}"
+                   f"ye ERROR nahi: {', '.join(_sid_lbl(r['sid']) for r in grey[:6])}"
                    + (" …" if len(grey) > 6 else ""))
     if clean:
         pos.append(f"{len(clean)} strategy bilkul clean (GREEN) — koi issue nahi")
@@ -169,17 +169,17 @@ def pos_neg(data):
 
     for r in reds:
         for reason in r["reasons"][:2]:
-            neg.append(f"{r['sid']}: {reason}")
+            neg.append(f"{_sid_lbl(r['sid'])}: {reason}")
     for r in rows:
         if r["colour"] == "GREY":
             continue                              # chali hi nahi — replay bhi meaningless
         rp = r["replay"]
         if rp["miss"] or rp["extra"] or rp["err"]:
-            neg.append(f"{r['sid']}: replay drift — {rp['miss']} MISS, "
+            neg.append(f"{_sid_lbl(r['sid'])}: replay drift — {rp['miss']} MISS, "
                        f"{len(rp['extra'])} EXTRA, {rp['err']} ERROR (TRAP #108!)")
     for r in rows:
         if r["colour"] == "YELLOW":
-            neg.append(f"{r['sid']} (yellow): {'; '.join(r['reasons'][:2])}")
+            neg.append(f"{_sid_lbl(r['sid'])} (yellow): {'; '.join(r['reasons'][:2])}")
     for r in rows:
         exp_t = (r["exp"] or {}).get("trades_per_day")
         # ENTRY count, not leg/fill count — multi-leg strategies (straddle/condor)
@@ -188,7 +188,7 @@ def pos_neg(data):
         # Fall back to completed-leg count only for legacy traders that don't log '★ ENTRY'.
         got = len(r["lg"]["entries"]) or len(r["st"]["completed"])
         if exp_t and got > max(3 * exp_t, exp_t + 2):
-            neg.append(f"{r['sid']}: entries {got} vs expected ~{exp_t}/day — overtrading? dekho")
+            neg.append(f"{_sid_lbl(r['sid'])}: entries {got} vs expected ~{exp_t}/day — overtrading? dekho")
     if n_tr and tot < 0:
         neg.append(f"din ka net P&L negative: ₹{tot:+,.0f} — trades detail me dekho kaunsa duba")
     if not neg:
@@ -331,7 +331,7 @@ def render(data):
           <td>{len(r['reasons'])}</td></tr>""")
 
     details = []
-    grey_sids = [r["sid"] for r in rows if r["colour"] == "GREY"]
+    grey_sids = [_sid_lbl(r["sid"]) for r in rows if r["colour"] == "GREY"]
     for r in rows:
         if r["colour"] == "GREY":
             continue                              # chali hi nahi — detail dikhane ka matlab nahi

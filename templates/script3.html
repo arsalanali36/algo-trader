@@ -126,6 +126,8 @@
     background:#132b1a;border:1px solid #1f7a37;color:#8ff0a8;padding:11px 18px;
     border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:300}
 </style>
+<!-- regLabel — strategy ka naam registry se, raw config-key kabhi nahi -->
+<script src="/static/js/registry.js"></script>
 </head>
 <body>
 
@@ -947,7 +949,7 @@ function renderSaved(){
     tr.className='row';
     tr.innerHTML=`
       <td>${hasPS?`<span class="link" style="margin-right:4px" onclick="savedToggle('${e.id}')">${open?'▾':'▸'}</span>`:''}❤️ ${esc(e.name||'')}${e.symbols?` <span class="muted" style="font-size:10px">(${esc(e.symbols.join('+'))})</span>`:''}</td>
-      <td>${esc(e.strategy||'—')}</td>
+      <td title="${esc(e.strategy||'')}">${e.strategy?esc(regLabel(e.strategy)):'—'}</td>
       <td class="muted" style="font-size:11px;max-width:200px;white-space:normal">${esc(pStr)}</td>
       <td class="muted" style="font-size:11px">${esc(e.date_from||'?')} → ${esc(e.date_to||'?')}</td>
       <td>${s.n_trades??'—'}</td>

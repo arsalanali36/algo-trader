@@ -1188,7 +1188,7 @@ def main(strategy_id="range"):
                             try:
                                 import notify
                                 notify.error(
-                                    f"{strategy_id}: {symbol} Dhan me exist hi nahi karta — "
+                                    f"{symbol} Dhan me exist hi nahi karta — "
                                     f"config ki symbols list se hatao (retry bekaar hai).",
                                     key=f"deadsym:{strategy_id}:{symbol}", source=strategy_id)
                             except Exception:
@@ -1201,7 +1201,7 @@ def main(strategy_id="range"):
                         try:
                             import notify
                             notify.error(
-                                f"{strategy_id}: {symbol} ke 0 key levels — daily data nahi mila, "
+                                f"{symbol} ke 0 key levels — daily data nahi mila, "
                                 f"tab tak ye symbol trade nahi karega. Retry chalu hai.",
                                 key=f"levels0:{strategy_id}:{symbol}", source=strategy_id)
                         except Exception:

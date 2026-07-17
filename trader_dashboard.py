@@ -284,6 +284,24 @@ def _base(strategy):
     return strategy_registry.resolve_base(
         strategy, lambda b: (STRATEGIES.get(b) or {}).get("script"), STRATEGY_ALIASES)
 
+def strat_label(strategy):
+    """Strategy ka DISPLAY naam — registry se. Unknown/registry-down → raw id.
+
+    Har wo backend string jo user ki aankh tak jaati hai (toast `msg`, report
+    text, banner) isse guzre. Raw config-key SIRF plumbing me rehta hai —
+    order_store rows, API query params, config keys, `?s=` — unhe kabhi mat
+    badlo (poori history unhi strings pe keyed hai).
+
+    Registry ka `resolve()` id/config_key/slug/aliases sab pe match karta hai,
+    isliye purane naam se aaya id bhi sahi label pe pahunchta hai.
+    """
+    try:
+        import strategy_registry as _sr
+        return _sr.label(strategy) if _sr.resolve(strategy) else str(strategy)
+    except Exception:
+        return str(strategy)
+
+
 def _detect_lang(code):
     """Best-effort Pine vs Python vs DSL-rule-block detection (the UI also asks
     the user to confirm). Pine: //@version / strategy()/indicator(). Python: a
@@ -1218,10 +1236,10 @@ def api_start():
         # No live trader script for this type yet (e.g. vwap — backtest-only
         # so far). Falling back to a different strategy's script here would
         # silently run the WRONG strategy under this config — refuse instead.
-        return jsonify({"msg": f"⚠ Live/paper trading not built yet for '{base_s}' — backtest only for now."}), 400
+        return jsonify({"msg": f"⚠ Live/paper trading not built yet for '{strat_label(s)}' — backtest only for now."}), 400
     pid  = get_pid(s)
     if pid:
-        return jsonify({"msg": f"{s.upper()} already running (PID {pid})"})
+        return jsonify({"msg": f"{strat_label(s)} already running (PID {pid})"})
     flag = '--live' if mode == 'live' else '--paper'
     log_file = BASE_DIR / 'logs' / f"{s}.log"
     log_file.parent.mkdir(parents=True, exist_ok=True)
@@ -1245,7 +1263,7 @@ def api_start():
         TC_FILE.write_text(json.dumps(cfg, indent=2))
     except Exception:
         pass
-    return jsonify({"msg": f"✅ {s.upper()} started — {mode.upper()} mode"})
+    return jsonify({"msg": f"✅ {strat_label(s)} started — {mode.upper()} mode"})
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
@@ -1256,7 +1274,7 @@ def api_stop():
     keep_active = request.args.get('keep_active') == '1'
     pid = get_pid(s)
     if not pid:
-        return jsonify({"msg": f"{s.upper()} not running"})
+        return jsonify({"msg": f"{strat_label(s)} not running"})
     try:
         os.kill(pid, signal.SIGTERM)
         if not keep_active:
@@ -1268,7 +1286,7 @@ def api_stop():
                 TC_FILE.write_text(json.dumps(cfg, indent=2))
             except Exception:
                 pass
-        return jsonify({"msg": f"⏹ {s.upper()} stopped"})
+        return jsonify({"msg": f"⏹ {strat_label(s)} stopped"})
     except Exception as e:
         return jsonify({"msg": f"Error: {e}"})
 

@@ -152,7 +152,8 @@
     async function runModalOpen(stratId, versionName, timestamp, pyFile) {
       stratId = stratId || versionName.toLowerCase().replace(/[^a-z0-9]/g, '_');
       _runStrategyId = stratId;
-      document.getElementById('run-modal-title').textContent = stratId;
+      document.getElementById('run-modal-title').textContent = regLabel(stratId);
+      document.getElementById('run-modal-title').title = stratId;   // raw key hover pe
       document.getElementById('run-modal-sub').textContent = versionName + (timestamp ? '  ·  ' + timestamp : '');
       document.getElementById('run-modal-msg').textContent = '';
       document.getElementById('run-modal-cfg-msg').textContent = '';

@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <title>Backtest Results — Full View</title>
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
+<!-- regLabel — strategy ka naam registry se, raw config-key kabhi nahi -->
+<script src="/static/js/registry.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;font-size:13px;height:100vh;display:flex;flex-direction:column;overflow:hidden}
@@ -578,7 +580,7 @@ function _renderSavedResultsList() {
   entries.forEach(e => {
     if (_savedSortCol === 'strategy' && e.strategy !== currentStrategy) {
        currentStrategy = e.strategy;
-       html += `<tr><td colspan="10" style="background:#1c2128; font-weight:bold; color:#58a6ff; font-size:13px; text-transform:uppercase; text-align:left; padding:10px 8px">${currentStrategy || 'Unknown Strategy'}</td></tr>`;
+       html += `<tr><td colspan="10" style="background:#1c2128; font-weight:bold; color:#58a6ff; font-size:13px; text-transform:uppercase; text-align:left; padding:10px 8px" title="${currentStrategy || ''}">${currentStrategy ? regLabel(currentStrategy) : 'Unknown Strategy'}</td></tr>`;
     }
 
     const s = e.summary || {};
@@ -588,7 +590,7 @@ function _renderSavedResultsList() {
 
     html += `<tr>
       <td><span style="margin-right:5px" title="Saved Result">❤️</span>${e.name || ''}${e.symbols ? ` <span class="gray" style="font-size:10px">(${e.symbols.join('+')})</span>` : ''}</td>
-      <td>${e.strategy || '—'}</td>
+      <td title="${e.strategy || ''}">${e.strategy ? regLabel(e.strategy) : '—'}</td>
       <td style="font-size:11px; max-width:200px; white-space:normal; color:#8b949e">${pStr}</td>
       <td style="font-size:11px;color:#8b949e">${e.date_from || '?'} to ${e.date_to || '?'}</td>
       <td>${s.n_trades ?? '—'}</td>
@@ -861,6 +863,8 @@ async function init() {
 let _indicatorRegistry = [];
 
 function _indicatorStorageKey() {
+  // raw-id-ok: localStorage key hai, dikhta nahi. Registry naam pe rakha to
+  // naam badalte hi user ki saved indicator settings kho jaayengi.
   return `bt_indicators_${D.strategy || 'unknown'}_${D.date_from || ''}_${D.date_to || ''}`;
 }
 
