@@ -3420,3 +3420,32 @@ Historical notification rows written before this fix keep the prefix inside `msg
 strategy answered to 4 different names across the app, and TRAP #128 already showed
 where naming confusion ends up — a live SL read from the wrong config key because the
 id in the money path wasn't the id anyone recognised.
+
+### Addendum, same day — the check couldn't see sentences, only templates
+
+After deploying, the user's EOD report still read `banknifty_v1: heartbeat gap...`.
+Two different things, worth separating:
+
+- **The report was generated 15:45; the fix landed 16:53.** It's a static HTML file —
+  it does not re-render. Regenerating produced the labels correctly. Not a bug. *Any
+  time a "fix didn't work" report involves a generated artifact, check its mtime against
+  the deploy before touching code.*
+- **But scanning the regenerated report found a leak class check 9 could not see:** ids
+  baked into user-facing **sentences**, not template literals — `risk_gate`'s three RMS
+  block-reasons (`"...hit for 'rsi_v1_PAPER'"`) and three dashboard error messages.
+
+So the check got the same treatment as the bug: **broaden the enforcer, don't patch the
+sites.** Added the Python reason-string shape — and it immediately surfaced the 3
+dashboard errors nobody had looked at. **Third time in one session** the same lesson
+landed: the leaks live exactly where the check isn't looking (TRAP #124 → check 9's own
+`.py`-only blind spot → this).
+
+`risk_gate._sname()` mirrors `_inr()`'s precedent (both exist because these reason
+strings are read by humans). **The asymmetry is deliberate and documented:** unlike
+`notify` and the UI, this label goes in at **WRITE** time — the reason is a joined
+sentence frozen into an `order_store` tag, with no separate field to carry the id, so a
+later rename leaves old tags on the old name. Acceptable: **a tag records an event, it
+isn't a live label.** Consequence to expect: tags written before this fix keep the raw
+id forever (today's 12:15 `RMS_PROFIT_TARGET` rows still say `rsi_v1_PAPER`). The trade
+DB was deliberately NOT backfilled — the notification log is a log, `trades.db` is the
+money record; different bar for editing.
