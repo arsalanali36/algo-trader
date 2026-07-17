@@ -809,6 +809,11 @@ def api_strategy_registry():
 @app.route('/api/config', methods=['POST'])
 def api_set_config():
     data = request.get_json()
+    try:
+        old = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+    except Exception:
+        old = {}
+    _config_audit_record(old, data)   # log BEFORE overwrite — every field, not just _risk
     TC_FILE.write_text(json.dumps(data, indent=2))
     return jsonify({"msg": "Config saved successfully!"})
 
@@ -867,34 +872,74 @@ def resolve_trailing_step(entry_px, g_cfg=None):
 def api_get_risk_config():
     return jsonify(_risk_config())
 
-# ── Task 13 — RMS value-change audit log ────────────────────────────────────
-# Every Save on the ⚠️ Risk tab diffs the old _risk block against the new one and
-# appends only the fields that actually changed (with IST timestamp + scope) to
-# data/rms_audit_log.json. Answers "kab kaun si value change hui" without guessing.
-def _rms_flatten(risk):
-    """(_risk block) -> {(scope, field): value}. scope = 'global' or a strategy id."""
+# ── Task 13 — config value-change audit log ─────────────────────────────────
+# Every Save (⚠️ Risk tab AND the Strategies config grid) diffs the OLD config against
+# the NEW one and appends only the fields that actually changed (IST timestamp + section
+# + scope) to data/rms_audit_log.json. Answers "kab kaun si value change hui" without
+# guessing.
+#
+# 2026-07-17 — widened from _risk-only to the WHOLE config. The _risk-only version was
+# blind to two whole classes of change: (a) every strategy-block field (qty/lot size,
+# symbols, timeframe, active, mode) — those aren't under _risk at all; (b) ANY field,
+# _risk included, saved via POST /api/config, which rewrites the entire file and never
+# called this. So a strategy's lot size could go 1->3 mid-sample and nothing recorded it.
+# That is not a cosmetic gap: any analysis that pools trades across an unrecorded change
+# is pooling two different strategies and calling the mush a result. It happened —
+# rsi_v1_PAPER's qty 1->3 + profit_target + max_trades were all invisible here, and 89
+# trades spanning three configs got read as one homogeneous sample.
+_AUDIT_SKIP_TOP = {"_ui_config"}   # UI-only prefs (column layout etc) — not a trading decision
+
+
+def _cfg_flatten(cfg):
+    """(whole config) -> {(section, scope, field): value}.
+
+    section = 'risk' | 'strategy' | 'webhook' | 'root'. It's load-bearing, not decoration:
+    scope+field alone are ambiguous — max_trades_per_day lives in BOTH _risk.per_strategy[X]
+    and the X strategy block, and they're different knobs."""
     out = {}
-    for k, v in ((risk or {}).get("global") or {}).items():
-        out[("global", k)] = v
-    for sid, sc in ((risk or {}).get("per_strategy") or {}).items():
-        for k, v in (sc or {}).items():
-            out[(sid, k)] = v
+    for top, v in (cfg or {}).items():
+        if top in _AUDIT_SKIP_TOP:
+            continue
+        if top == "_risk":
+            for k, gv in ((v or {}).get("global") or {}).items():
+                out[("risk", "global", k)] = gv
+            for sid, sc in ((v or {}).get("per_strategy") or {}).items():
+                for k, sv in (sc or {}).items():
+                    out[("risk", sid, k)] = sv
+        elif top == "webhooks":
+            for wid, wc in (v or {}).items():
+                if isinstance(wc, dict):
+                    for k, wv in wc.items():
+                        out[("webhook", wid, k)] = wv
+                else:
+                    out[("webhook", wid, "")] = wc
+        elif isinstance(v, dict):
+            for k, sv in v.items():
+                out[("strategy", top, k)] = sv
+        else:
+            out[("root", "", top)] = v
     return out
 
-def _rms_audit_record(old_risk, new_risk):
+
+def _config_audit_record(old_cfg, new_cfg):
+    """Append the old->new diff of the whole config. Never raises into the save path."""
     def _norm(x):
-        return "" if x is None else str(x).strip()
+        if x is None:
+            return ""
+        if isinstance(x, (dict, list)):
+            return json.dumps(x, sort_keys=True)
+        return str(x).strip()
     try:
-        of, nf = _rms_flatten(old_risk), _rms_flatten(new_risk)
+        of, nf = _cfg_flatten(old_cfg), _cfg_flatten(new_cfg)
         ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
         ts = ist.strftime("%Y-%m-%d %H:%M:%S")
         changes = []
         for key in (set(of) | set(nf)):
-            scope, field = key
+            section, scope, field = key
             ov, nv = of.get(key), nf.get(key)
             if _norm(ov) == _norm(nv):
                 continue   # unchanged (blank/None treated equal)
-            changes.append({"ts": ts, "scope": scope, "field": field,
+            changes.append({"ts": ts, "section": section, "scope": scope, "field": field,
                             "old": ("" if ov is None else ov),
                             "new": ("" if nv is None else nv)})
         if not changes:
@@ -904,9 +949,9 @@ def _rms_audit_record(old_risk, new_risk):
             try: log = json.loads(RMS_AUDIT_FILE.read_text())
             except Exception: log = []
         log.extend(changes)
-        RMS_AUDIT_FILE.write_text(json.dumps(log[-2000:], indent=2))   # cap history
+        RMS_AUDIT_FILE.write_text(json.dumps(log[-4000:], indent=2))   # cap history
     except Exception as e:
-        print("rms audit record fail:", e, flush=True)
+        print("config audit record fail:", e, flush=True)
 
 @app.route('/api/rms-audit-log')
 def api_rms_audit_log():
@@ -927,7 +972,7 @@ def api_set_risk_config():
     old_risk = {"global": (cfg.get("_risk") or {}).get("global") or {},
                 "per_strategy": (cfg.get("_risk") or {}).get("per_strategy") or {}}
     new_risk = {"global": data.get("global") or {}, "per_strategy": data.get("per_strategy") or {}}
-    _rms_audit_record(old_risk, new_risk)   # Task 13 — log the diff before overwriting
+    _config_audit_record({"_risk": old_risk}, {"_risk": new_risk})   # Task 13 — diff before overwrite
     cfg["_risk"] = new_risk
     TC_FILE.write_text(json.dumps(cfg, indent=2))
     return jsonify({"msg": "Risk settings saved!"})
