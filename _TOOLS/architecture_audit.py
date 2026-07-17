@@ -410,6 +410,18 @@ _RAW_OK = re.compile(r"raw-id-ok")
 _PY_NOTIFY_RAWID = re.compile(
     r"""notify\.(?:error|warn|info|push)\s*\(\s*f["']\{\s*(\w+)\s*\}\s*:""", re.X)
 
+# Python: user-facing sentence jisme raw `{strategy}` gundh diya gaya ho.
+# 2026-07-17 ko ye khud pakda nahi gaya tha — check ke pehle version ne sirf
+# notify dekha, aur EOD report me `risk_gate` ki teen RMS block-reason strings
+# ("...hit for 'rsi_v1_PAPER'") bach nikli. Wahi blind-spot sabak, chhote paimane pe.
+# `return`/`append` wali reason lines — sirf tab jab quote ke andar ho ('{strategy}'),
+# yaani jumle me chipka hua naam, na ki dict value ya query param.
+_PY_REASON_RAWID = re.compile(
+    r"""(?:return|append|reason\s*=|msg\s*=)[^\n]*f["'][^"'\n]*['"]\{\s*(strategy|sid|strategy_id)\s*\}['"]""")
+# Wo files jinme ye check bekaar hai: strategy_registry khud labeller hai; audit
+# me ye patterns bataur regex-source likhe hain.
+_PY_LABEL_ALLOW = {"strategy_registry.py", "architecture_audit.py"}
+
 DISPLAY_SCAN_DIRS = ["static/js", "templates"]
 # registry.js khud labeller hai; notify.js server ka `source_label` render karti hai.
 DISPLAY_EXCLUDE = {"registry.js"}
@@ -440,12 +452,20 @@ def check_raw_strategy_label(path, src, findings):
         if st.startswith("//") or st.startswith("#") or st.startswith("*"):
             continue
         if is_py:
+            if os.path.basename(path) in _PY_LABEL_ALLOW:
+                continue
             m = _PY_NOTIFY_RAWID.search(line)
             if m and "source=" in line + src[src.find(line):src.find(line) + 300]:
                 findings.append(Finding(
                     "FAIL", "RAW-STRAT-LABEL", rel(path), i,
                     f"notify msg me raw id '{{{m.group(1)}}}:' — prefix hatao, "
                     f"source={m.group(1)} already carry karta hai (listing() usay label karta hai)"))
+            m2 = _PY_REASON_RAWID.search(line)
+            if m2:
+                findings.append(Finding(
+                    "FAIL", "RAW-STRAT-LABEL", rel(path), i,
+                    f"user-facing reason me raw '{{{m2.group(1)}}}' — label karke daalo "
+                    f"(risk_gate._sname() / strat_label() / _sid_lbl())"))
             continue
         if _JS_SKIP_LINE.search(line):
             continue

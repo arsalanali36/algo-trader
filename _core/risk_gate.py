@@ -53,6 +53,30 @@ def _inr(n):
     return ("-" if neg else "") + out
 
 
+def _sname(strategy):
+    """Strategy ka DISPLAY naam block-reason strings ke liye. Unknown → raw id.
+
+    `_inr` jaisa hi — ye neeche wali reason strings user ko seedhi dikhti hain
+    (dashboard ka "Capital se Block hui Entries" table, exit-reason badge, EOD
+    report). Wahan `'rsi_v1_PAPER'` likha aata tha jabki registry me uska naam
+    "RSI (paper)" hai (2026-07-17, TRAP #132 ka wahi parivaar).
+
+    ⚠️ Ye reason string order_store ke TAG me jam ke baith jaati hai — yaani
+    label LIKHTE waqt lagta hai, padhte waqt nahi (notify/UI ke ulta, jahan
+    read-time labelling isliye mumkin hai ki id apni alag field me hota hai).
+    Yahan id ke liye alag field hai hi nahi — reason ek jama hua jumla hai.
+    Nateeja: strategy ka naam badla to PURANE tags purana naam dikhate rahenge.
+    Ye theek hai — tag us waqt ki GHATNA ka record hai, koi live label nahi.
+    Naya naam chahiye to `label()` ko read-time pe lagana padega, aur uske liye
+    id ko reason se alag field me nikalna hoga — aaj wo zaroori nahi laga.
+    """
+    try:
+        import strategy_registry as _sr
+        return _sr.label(strategy) if _sr.resolve(strategy) else str(strategy)
+    except Exception:
+        return str(strategy)
+
+
 def _risk_cfg():
     try:
         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
@@ -1143,7 +1167,7 @@ def daily_profit_target_hit(strategy, unrealized=0.0, rc=None):
         return False, ""
     pnl = _strategy_day_pnl(strategy, unrealized)
     if pnl >= abs(target):
-        return True, f"🎯 Daily profit target ₹{_inr(target)} hit for '{strategy}' (today's P&L ₹{_inr(pnl)})"
+        return True, f"🎯 Daily profit target ₹{_inr(target)} hit for '{_sname(strategy)}' (today's P&L ₹{_inr(pnl)})"
     return False, ""
 
 
@@ -1216,7 +1240,7 @@ def daily_max_trades_hit(strategy, rc=None):
     if n is None:
         return False, ""
     if n >= cap:
-        return True, f"📋 Max trades/day reached ({n}/{cap}) for '{strategy}' — no further entries today"
+        return True, f"📋 Max trades/day reached ({n}/{cap}) for '{_sname(strategy)}' — no further entries today"
     return False, ""
 
 
@@ -1501,7 +1525,7 @@ def daily_loss_breached(strategy, unrealized=0.0, rc=None, mode=None, broker=Non
     cap = effective_daily_loss_cap(strategy, rc=rc, mode=mode, broker=broker)
     pnl = _strategy_day_pnl(strategy, unrealized)
     if pnl <= -abs(cap):
-        return True, f"RMS daily loss cap ₹{_inr(cap)} hit for '{strategy}' (today's P&L ₹{_inr(pnl)})"
+        return True, f"RMS daily loss cap ₹{_inr(cap)} hit for '{_sname(strategy)}' (today's P&L ₹{_inr(pnl)})"
     return False, ""
 
 

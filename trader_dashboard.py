@@ -3713,7 +3713,7 @@ def api_backtest_pine_code():
             match = v
             break
     if not match:
-        return f'No Pine version mapped to strategy "{sid}"', 404
+        return f'No Pine version mapped to strategy "{strat_label(sid)}"', 404
 
     return api_pine_code(match['version'])
 
@@ -4042,7 +4042,7 @@ def api_backtest_run():
     elif strat_type in BUILTIN:
         engine_strat = strat_type
     else:
-        return jsonify({"error": f"backtest not supported for strategy '{sid}'"}), 400
+        return jsonify({"error": f"backtest not supported for strategy '{strat_label(sid)}'"}), 400
 
     # Save every uploaded TV file to temp, then prefer a Pine Logs export
     # (.log/.txt) over a List-of-Trades CSV — per VALIDATION_PLAYBOOK.md the
@@ -4228,7 +4228,7 @@ def api_deploy_variation():
         return jsonify({"error": "name + strategy required"}), 400
     base = _base(strategy)
     if STRATEGIES.get(base) is None:
-        return jsonify({"error": f"'{strategy}' live deploy nahi hoti — backtest-only strategy (koi live trader script nahi)."}), 400
+        return jsonify({"error": f"'{strat_label(strategy)}' live deploy nahi hoti — backtest-only strategy (koi live trader script nahi)."}), 400
     prefix = strategy.split('_')[0]   # rsi / ema / range / ARS / universe — casing preserve (_base ALIAS match)
     slug = _re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_') or 'run'
     newkey = f"{prefix}_{slug}"
