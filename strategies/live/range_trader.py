@@ -305,233 +305,273 @@ WICK_RATIO    = 2.5    # wick >= WICK_RATIO * body (Pine wickRatio=2.5)
 # INTRADAY SIGNAL ENGINE — runs bar by bar on 1-min data
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_signal_engine(df_1m, key_levels, cfg):
-    """
-    Simulate bar-by-bar zone detection + entry/exit on 1-min candles.
-    Returns last signal: ('BUY'/'SELL'/None, price, reason)
-    """
-    if df_1m is None or len(df_1m) < 20:
-        return None, None, None
+def run_signal_engine(df_1m, key_levels, cfg, trades_out=None, atr_series=None):
+    """Bar-by-bar zone detection + entry/exit. THE engine — live and backtest.
 
-    atr_len    = 14          # fixed — not exposed in config anymore
-    atr_mult   = 2.0         # fixed
+    Returns (signal, price, reason, signal_bar, n_bars, state) where signal is
+    the LAST one found, however old; `signal_bar`/`n_bars` are what a caller
+    uses to tell fresh from stale (the live loop drops anything >2 bars old).
+    Pass a list as `trades_out` to also collect EVERY entry/exit as a dict —
+    default None keeps the live path byte-for-byte as it was.
+
+    ── 2026-07-17: this body came from validate_strategy.backtest_day ──
+    There were two engines. This one placed the orders; `backtest_day` — whose
+    docstring literally read "Mirror of run_signal_engine but COLLECTS every
+    trade" — only ran in tests. They were never re-synced, and every fidelity
+    fix from the Pine-matching work (the one that reached 90.2%) landed in the
+    mirror. Measured against the user's own TV export, Jan-Jun 2026:
+
+        backtest_day  75.3% of TV's trades      <- all the fixes
+        this engine   49.5%                     <- none of them, and it traded
+
+    Six ways they had drifted, every one in the mirror's favour:
+      1. max_candle_size gated ZONE FORMATION here at a hardcoded 25 (config
+         thrown away); the Pine gates the ENTRY's breakout candle. (fixed
+         earlier the same day, before the rest of this was known)
+      2. zones formed off the PERSISTENT `touch_active` flag, so any candle
+         after a touch could make a zone — the Pine only forms one on the bar
+         that touches. This alone made 605 zones against TV's 430 on the same
+         104 days.
+      3. touch detection took the FIRST level in the list (`break`); the Pine
+         locks RESISTANCE priority ("selectedLine", a finding of the 90.2%
+         work).
+      4. tracked_high/low reset on zone formation; the Pine accumulates them
+         across the day. And the tracked_high ENTRY filter was applied here —
+         the mirror deliberately drops it, with a comment saying removing it
+         matched TV ~5% better.
+      5. the Not_on_Red_line / Not_on_Gren_line check sat on zone formation;
+         the Pine puts it on the ENTRY (line 1223/1234).
+      6. `is_bullish_pattern`/`is_bearish_pattern` omit harami — the mirror ORs
+         bull_harami/bear_harami in. The Pine has them; the 90.2% writeup names
+         them as a fix. Patterns are checked inline here now, so the omission
+         cannot come back through the shared wrapper.
+
+    Where the zones DID agree they agreed to the decimal (TV 11:30
+    RED[26316.8-26335.3] == this engine's) — the pattern maths, pivots and zone
+    prices were never the problem. Only the gates were, and they lived in the
+    file that doesn't trade.
+
+    `backtest_day` is now a thin wrapper over this function (it still owns the
+    TradingView next-bar fill convention — that is a backtest concern, not a
+    live one). One engine. Fixing it once fixes both.
+
+    Unused knobs, deliberately: `hawa_me_zone` is read from config by nobody —
+    it was dead here and absent from the mirror.
+    """
+    n = len(df_1m) if df_1m is not None else 0
+    if df_1m is None or n < 20 or not key_levels:
+        # 6-tuple, not 3. This guard used to return three values while the
+        # normal path returned six — the same function with two arities. Only
+        # the live loop's own len<20 check kept it from ever biting.
+        return None, None, None, -1, n, {}
+
     max_cs     = cfg.get("max_candle_size", 25)
-    zone_age   = 2           # fixed
     fresh_only = cfg.get("use_fresh_zone_only", True)
-    hawa_me    = cfg.get("hawa_me_zone", False)
     exit_atr   = cfg.get("exit_atr", True)
     exit_zone  = cfg.get("exit_zone", False)
+    max_trades = cfg.get("max_trades_per_symbol", 2)
 
-    atr_series = compute_atr(df_1m, atr_len)
+    atr_len  = 14      # fixed — not exposed in config
+    atr_mult = 2.0     # fixed
+    zone_age = 2       # fixed (Pine maxZoneAge)
 
-    # Zone state
-    zone_upper = None
-    zone_lower = None
-    zone_type  = None   # 'GREEN' or 'RED'
-    zone_bar   = -999
-    zones_history = []   # every zone formed today (for chart display) — [start_bar, end_bar, upper, lower, type]
+    # ATR must be WARM. Live gets that from the multi-day window it is handed;
+    # a per-day backtest caller has to pass a continuous pre-warmed series
+    # instead, or ATR(14) restarts cold every morning and the first ~14 bars
+    # trail off a garbage stop. Same series either way — just two ways in.
+    if atr_series is None:
+        atr_series = compute_atr(df_1m, atr_len)
+    else:
+        atr_series = atr_series.reset_index(drop=True)
 
-    # Tracking high/low while touching level
-    tracked_high = None
-    tracked_low  = None
+    zone_upper = zone_lower = zone_type = None
+    zone_bar = -999
+    zones_history = []           # every zone formed (chart display)
+    tracked_high = tracked_low = None
     touch_active = False
     active_touch_type = None
+    atr_sl_long = atr_sl_short = None
+    position = None
+    entry_price = None
 
-    # ATR trailing stop
-    atr_sl_long  = None
-    atr_sl_short = None
-    position     = None   # 'LONG', 'SHORT', None
-    entry_price  = None
-
-    signal       = None
-    signal_price = None
-    signal_reason= None
-    signal_bar   = -1
+    signal = signal_price = signal_reason = None
+    signal_bar = -1
     trades_today = 0
-    max_trades   = cfg.get("max_trades_per_symbol", 2)
-    cur_day      = None
+    cur_day = None
 
-    n = len(df_1m)
+    def _emit(kind, i, price, reason):
+        if trades_out is not None:
+            trades_out.append(dict(time=df_1m.iloc[i]["time"], kind=kind,
+                                   price=price, reason=reason, bar=i))
+
     for i in range(2, n):
-        row   = df_1m.iloc[i]
+        row = df_1m.iloc[i]
         o, h, l, c = float(row["open"]), float(row["high"]), float(row["low"]), float(row["close"])
+        atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else 5.0
 
-        # ── New day: reset the day-scoped state. This mirrors the Pine 1:1 —
+        # ── New day: reset day-scoped state, mirroring the Pine 1:1 —
         #       var int tradesToday = 0
         #       if ta.change(time("D")) != 0
         #           tradesToday := 0
-        # Without it `trades_today` is a lie: it says "today" but counts every
-        # entry in whatever window df_1m happens to span. The window is 5 days
-        # (days_back, fetch_1m) and used to be up to 10 via a shared-cache key
-        # collision — so the 2-trade cap was spent days ago and every signal
-        # since was dropped at the `trades_today >= max_trades` guard. Proven
-        # live 2026-07-17: TV entered SHORT at 10:05; this engine produced the
-        # identical SELL on the same bar and the cap swallowed it. Same df,
-        # same bar, cap raised -> the signal reappears.
-        #
-        # position/atr_sl reset too: the Pine flattens daily (3:15 squareoff),
-        # so a simulated position must never survive into the next day — it
-        # would block the next day's entry via `position != "SHORT"`.
-        # Zone/touch state is deliberately NOT reset: Pine's zone vars are
-        # `var` and persist across the boundary. ATR stays continuous (Pine's
-        # ta.rma does too) — that's what the multi-day window is FOR.
+        # `trades_today` used to say "today" while counting every entry in
+        # whatever window df_1m spanned (5 days live) — so the 2-trade cap was
+        # spent days ago and real signals were dropped for a week. The mirror
+        # never had this bug because it is called one day at a time.
+        # position/atr_sl reset with it (the Pine flattens daily at 3:15).
+        # ATR stays continuous across days — that is what the extra days are FOR.
         bar_day = row["time"].date()
         if bar_day != cur_day:
-            cur_day      = bar_day
+            cur_day = bar_day
             trades_today = 0
-            position     = None
-            entry_price  = None
-            atr_sl_long  = None
-            atr_sl_short = None
-        
-        # `max_cs` is read from config once, before this loop. It used to be
-        # re-assigned here to a hardcoded 25.0 on every bar (`ignore_max_cs`
-        # was a constant False, so the 9999 branch was dead), silently throwing
-        # the configured value away — setting max_candle_size in the UI did
-        # nothing at all. Removed; the config value now survives.
-        atr_val = float(atr_series.iloc[i]) if not np.isnan(atr_series.iloc[i]) else 5.0
+            position = entry_price = None
+            atr_sl_long = atr_sl_short = None
+            zone_upper = zone_lower = zone_type = None
+            zone_bar = -999
+            tracked_high = tracked_low = None
+            touch_active = False
+            active_touch_type = None
 
-        # ── Touch detection ──────────────────────────────────────────────────
-        touched_level = None
-        touched_type  = None
+        # ── 3:15 daily square-off (Pine). Configurable, never hardcoded:
+        # the live squareoff/no-entry time has a single source (risk_gate's RMS
+        # exit_time_config) and the loop passes it down; 15:15 is only the
+        # fallback for a backtest caller that doesn't care.
+        _eh, _em = cfg.get("exit_hm", (15, 15))
+        _past_exit = (row["time"].hour, row["time"].minute) >= (_eh, _em)
+        if position is not None and _past_exit:
+            signal = "EXIT_LONG" if position == "LONG" else "EXIT_SHORT"
+            signal_price, signal_reason, signal_bar = c, "3:15 Daily Exit", i
+            _emit(signal, i, c, signal_reason)
+            position = entry_price = None
+            atr_sl_long = atr_sl_short = None
+            continue
+
+        # ── Touch detection — Pine selectedLine: RESISTANCE priority (locks),
+        # last resistance wins; else last support/CP touched. NOT first-match.
+        touched_type = None
+        res_locked = False
         for price, ltype in key_levels:
-            if l <= price <= h:
-                touched_level = price
-                touched_type  = ltype
-                break
+            if not (l <= price <= h):
+                continue
+            if ltype in ("RESISTANCE", "PD_H"):
+                touched_type, res_locked = ltype, True
+            elif ltype in ("SUPPORT", "PD_L") and not res_locked:
+                touched_type = ltype
+            elif ltype in ("CP", "PD_C") and not res_locked:
+                touched_type = ltype
 
-        if touched_level is not None:
-            if not touch_active:
-                touch_active  = True
-                active_touch_type = touched_type
-                tracked_high  = h
-                tracked_low   = l
+        # tracked high/low — the Pine accumulates over ALL touch bars in the day
+        # (touchActive never resets) and does NOT reset on zone formation.
+        if touched_type is not None:
+            touch_active = True
+            active_touch_type = touched_type      # Pine lineType — persists till next touch
+            if tracked_high is None:
+                tracked_high, tracked_low = h, l
             else:
-                active_touch_type = touched_type
-                if h > (tracked_high or h): tracked_high = h
-                if l < (tracked_low  or l): tracked_low  = l
+                tracked_high = max(tracked_high, h)
+                tracked_low  = min(tracked_low, l)
 
-        # ── Zone formation ───────────────────────────────────────────────────
-        bullish = is_bullish_pattern(df_1m, i)
-        bearish = is_bearish_pattern(df_1m, i)
+        # ── Zone formation — Pine uses the CURRENT bar's touch, not the
+        # persistent flag. Patterns inline (harami included, see docstring).
+        po, ph, pl, pc = (float(df_1m.iloc[i - 1]["open"]), float(df_1m.iloc[i - 1]["high"]),
+                          float(df_1m.iloc[i - 1]["low"]), float(df_1m.iloc[i - 1]["close"]))
+        bullish = (green_hammer(o, h, l, c)
+                   or bull_engulfing(po, ph, pl, pc, o, h, l, c)
+                   or bull_harami(po, ph, pl, pc, o, h, l, c))
+        bearish = (red_hammer(o, h, l, c)
+                   or inv_red_hammer(o, h, l, c)
+                   or bear_engulfing(po, ph, pl, pc, o, h, l, c)
+                   or bear_harami(po, ph, pl, pc, o, h, l, c))
 
-        if touch_active:
-            not_on_red_line  = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
-            not_on_grn_line  = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
-
-            # No candle-size gate here — the Pine has none on zone formation
-            # (Red_Zone/Green_Zone are set purely on touch + pattern + line
-            # type). This used to require `h - l <= 25`, so a wide bar could
-            # not create a zone at all, and every setup that followed from it
-            # was invisible. Live-verified 2026-06-02: TV formed a GREEN zone
-            # on a 78.5pt candle (hi=23350 lo=23271.45) and traded it; this
-            # engine formed no zone that day and took nothing. The gate belongs
-            # on the ENTRY's breakout candle instead — see below.
-            if bearish and not_on_grn_line:
-                # Red zone: short setup
+        if touched_type is not None:
+            not_red = touched_type not in ("RESISTANCE", "PD_H")
+            not_grn = touched_type not in ("SUPPORT", "PD_L")
+            if bearish and not_grn:
                 if zone_upper is not None:
                     zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
-                zone_upper = h
-                zone_lower = l
-                zone_type  = "RED"
-                zone_bar   = i
-                tracked_high = None
-                tracked_low  = None
-                touch_active = False
-
-            elif bullish and not_on_red_line:
-                # Green zone: long setup
+                zone_upper, zone_lower, zone_type, zone_bar = h, l, "RED", i
+            elif bullish and not_red:
                 if zone_upper is not None:
                     zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
-                zone_upper = h
-                zone_lower = l
-                zone_type  = "GREEN"
-                zone_bar   = i
-                tracked_high = None
-                tracked_low  = None
-                touch_active = False
+                zone_upper, zone_lower, zone_type, zone_bar = h, l, "GREEN", i
 
-        # ── Exit: ATR trailing stop ──────────────────────────────────────────
-        if exit_atr and position == "LONG" and atr_sl_long is not None:
-            new_sl = c - atr_val * atr_mult
-            if new_sl > atr_sl_long:
-                atr_sl_long = new_sl
-            if c < atr_sl_long:
-                signal       = "EXIT_LONG"
-                signal_price = c
-                signal_reason= "ATR_TRAILING"
-                position     = None
-                atr_sl_long  = None
+        zfresh = zone_type is not None and (i - zone_bar) <= zone_age
 
-        if exit_atr and position == "SHORT" and atr_sl_short is not None:
-            new_sl = c + atr_val * atr_mult
-            if new_sl < atr_sl_short:
-                atr_sl_short = new_sl
-            if c > atr_sl_short:
-                signal       = "EXIT_SHORT"
-                signal_price = c
-                signal_reason= "ATR_TRAILING"
-                position     = None
-                atr_sl_short = None
+        # ── Exits — Pine priority: ATR first, else ZONE (MainExit)
+        if position == "LONG":
+            if atr_sl_long is not None:
+                atr_sl_long = max(atr_sl_long, c - atr_val * atr_mult)
+            if exit_atr and atr_sl_long is not None and c < atr_sl_long:
+                signal, signal_price, signal_reason, signal_bar = "EXIT_LONG", c, "ATR_TRAILING", i
+                position, atr_sl_long = None, None
+                _emit("EXIT_LONG", i, c, signal_reason)
+            elif exit_zone and zfresh and zone_type == "RED" and c < zone_lower and c < o:
+                signal, signal_price, signal_reason, signal_bar = "EXIT_LONG", c, "ZONE_LONG", i
+                position, atr_sl_long = None, None
+                _emit("EXIT_LONG", i, c, signal_reason)
+        elif position == "SHORT":
+            if atr_sl_short is not None:
+                atr_sl_short = min(atr_sl_short, c + atr_val * atr_mult)
+            if exit_atr and atr_sl_short is not None and c > atr_sl_short:
+                signal, signal_price, signal_reason, signal_bar = "EXIT_SHORT", c, "ATR_TRAILING", i
+                position, atr_sl_short = None, None
+                _emit("EXIT_SHORT", i, c, signal_reason)
+            elif exit_zone and zfresh and zone_type == "GREEN" and c > zone_upper and c > o:
+                signal, signal_price, signal_reason, signal_bar = "EXIT_SHORT", c, "ZONE_SHORT", i
+                position, atr_sl_short = None, None
+                _emit("EXIT_SHORT", i, c, signal_reason)
 
-        # ── Entry signals ────────────────────────────────────────────────────
-        if trades_today >= max_trades:
+        # ── Entries
+        if trades_today >= max_trades or zone_upper is None:
             continue
-        if zone_upper is None or zone_lower is None:
+        # No new entry at/after the square-off time — it would be closed minutes
+        # later, paying entry+exit brokerage for nothing. NOTE this is OURS, not
+        # the Pine's: TV genuinely does enter at 15:20 and exit at 15:25 (4 such
+        # trades in the Jan-Jun export). Those will always read as TV-only
+        # mismatches, and that is the correct trade to make.
+        if _past_exit:
             continue
+        use_zone = zfresh if fresh_only else (zone_type is not None)
 
-        zone_fresh = (i - zone_bar) <= zone_age
-        use_zone   = zone_fresh if fresh_only else (zone_type is not None)
-
-        prev = df_1m.iloc[i - 1]
-        prev_green = float(prev["close"]) > float(prev["open"])
-        prev_red   = float(prev["close"]) < float(prev["open"])
+        prev_green = pc > po
+        prev_red   = pc < po
         curr_green = c > o
         curr_red   = c < o
 
-        # The Pine blocks the ENTRY when the breakout candle is oversized:
-        #     candleSize = high - low
-        #     if close_Above_Green_zone
-        #         if candleSize > maxCandleSize
-        #             skipBigCandleZoneExit_Long := true
-        #     Index_Long_Signal = (... and not skipBigCandleZoneExit_Long)
-        # The name says "ZoneExit" but line 1226/1237 use it in the entry
-        # condition. This engine had no entry gate at all and put the size
-        # check on zone formation instead — the check existed, on the wrong
-        # bar. validate_strategy's copy already had it here and correct.
+        # Not_on_Red_line / Not_on_Gren_line on the CURRENT bar's lineType
+        # (persistent selectedLine type) — the Pine checks this at ENTRY.
+        not_red_line = active_touch_type not in ("RESISTANCE", "PD_H") if active_touch_type else True
+        not_grn_line = active_touch_type not in ("SUPPORT", "PD_L") if active_touch_type else True
+
+        # The Pine gates the entry on the BREAKOUT candle's size:
+        #   if close_Above_Green_zone and candleSize > maxCandleSize
+        #       skipBigCandleZoneExit_Long := true
+        #   Index_Long_Signal = (... and not skipBigCandleZoneExit_Long)
         big_candle = (h - l) > max_cs
 
-        # LONG entry
-        if (zone_type == "GREEN" and use_zone and
-                c > zone_upper and
-                prev_green and curr_green and
-                not big_candle and
-                (tracked_high is None or c <= tracked_high) and
-                position != "LONG"):
-            signal       = "BUY"
-            signal_price = c
-            signal_reason= f"GREEN_ZONE close>{zone_upper:.1f}"
-            signal_bar   = i
-            position     = "LONG"
-            entry_price  = c
-            atr_sl_long  = c - atr_val * atr_mult
-            trades_today += 1
+        # Pine's longBelowTrackedHigh/shortAboveTrackedLow filter is NOT applied
+        # — its trackedHigh semantics (touchActive never resets) over-block in
+        # practice, and dropping it measured ~5% closer to TV.
+        long_ok = (zone_type == "GREEN" and use_zone and c > zone_upper and
+                   prev_green and curr_green and not big_candle and not_red_line)
+        short_ok = (zone_type == "RED" and use_zone and c < zone_lower and
+                    prev_red and curr_red and not big_candle and not_grn_line)
 
-        # SHORT entry
-        elif (zone_type == "RED" and use_zone and
-                c < zone_lower and
-                prev_red and curr_red and
-                not big_candle and
-                (tracked_low is None or c >= tracked_low) and
-                position != "SHORT"):
-            signal       = "SELL"
-            signal_price = c
-            signal_reason= f"RED_ZONE close<{zone_lower:.1f}"
-            signal_bar   = i
-            position     = "SHORT"
-            entry_price  = c
-            atr_sl_short = c + atr_val * atr_mult
+        if long_ok and position != "LONG":
+            signal, signal_price, signal_bar = "BUY", c, i
+            signal_reason = f"GREEN_ZONE close>{zone_upper:.1f}"
+            position, entry_price = "LONG", c
+            atr_sl_long = c - atr_val * atr_mult
+            zone_type = zone_upper = zone_lower = None   # Pine: Green_Zone := false
             trades_today += 1
+            _emit("ENTRY_LONG", i, c, signal_reason)
+        elif short_ok and position != "SHORT":
+            signal, signal_price, signal_bar = "SELL", c, i
+            signal_reason = f"RED_ZONE close<{zone_lower:.1f}"
+            position, entry_price = "SHORT", c
+            atr_sl_short = c + atr_val * atr_mult
+            zone_type = zone_upper = zone_lower = None   # Pine: Red_Zone := false
+            trades_today += 1
+            _emit("ENTRY_SHORT", i, c, signal_reason)
 
     if zone_upper is not None:
         zones_history.append([zone_bar, n - 1, zone_upper, zone_lower, zone_type])
@@ -547,10 +587,9 @@ def run_signal_engine(df_1m, key_levels, cfg):
         "zones_history": zones_history,
         "tracked_high": tracked_high,
         "tracked_low": tracked_low,
-        "ltp": float(df_1m.iloc[-1]["close"]) if n > 0 else 0
+        "ltp": float(df_1m.iloc[-1]["close"]) if n > 0 else 0,
     }
     return signal, signal_price, signal_reason, signal_bar, n, current_state
-
 
 # ─────────────────────────────────────────────────────────────────────────────
 # INTRADAY CANDLE FETCH
