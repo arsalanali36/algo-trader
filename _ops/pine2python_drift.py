@@ -189,11 +189,68 @@ def align(tv, py):
     return rows
 
 
+def _totals(since, upto, as_json):
+    """Add the days up — one day proves nothing, the running total is the answer.
+
+    ⚠️ Only count from 2026-07-17. Before that 04.03 ran 25 symbols (the union of
+    04.01+04.02), so stocks ate its capital and NIFTY got CAPITAL_BLOCKED — one
+    NIFTY trade in a MONTH. The mirror was structurally handicapped, and a drift
+    number over that period would measure a config bug, not fidelity. The clean
+    sample starts the day it went NIFTY-only.
+    """
+    d0 = datetime.strptime(since, "%Y-%m-%d").date()
+    d1 = datetime.strptime(upto, "%Y-%m-%d").date()
+    days, tot = [], dict(match=0, tv_only=0, py_only=0, dir_mismatch=0)
+    d = d0
+    while d <= d1:
+        ds = d.isoformat()
+        tv, _ = tv_signals(ds)
+        py, err = py_signals(ds)
+        if not err and (tv or py):
+            rows = align(tv, py)
+            k = dict(date=ds,
+                     match=sum(1 for r in rows if r["v"].startswith("MATCH")),
+                     tv_only=sum(1 for r in rows if r["v"] == "TV-ONLY"),
+                     py_only=sum(1 for r in rows if r["v"] == "PY-ONLY"),
+                     dir_mismatch=sum(1 for r in rows if r["v"] == "DIR-MISMATCH"))
+            days.append(k)
+            for x in tot:
+                tot[x] += k[x]
+        d += timedelta(days=1)
+    n = sum(tot.values())
+    tot["signals"] = n
+    tot["fidelity_pct"] = round(100.0 * tot["match"] / n, 1) if n else None
+    if as_json:
+        print(json.dumps({"since": since, "upto": upto, "days": days, "total": tot}, indent=2))
+        return 0
+    print()
+    print("  Pine2Python drift — %s .. %s  (%d trading days ke saath)" % (since, upto, len(days)))
+    print("  " + "-" * 64)
+    print("  %-12s %6s %8s %8s %6s" % ("date", "match", "TV-only", "PY-only", "dir!="))
+    for k in days:
+        print("  %-12s %6d %8d %8d %6d" % (k["date"], k["match"], k["tv_only"], k["py_only"], k["dir_mismatch"]))
+    print("  " + "-" * 64)
+    print("  %-12s %6d %8d %8d %6d" % ("TOTAL", tot["match"], tot["tv_only"], tot["py_only"], tot["dir_mismatch"]))
+    print()
+    if n:
+        print("  %d signals me se %d match  ->  fidelity %s%%" % (n, tot["match"], tot["fidelity_pct"]))
+    else:
+        print("  Abhi tak koi signal nahi — aur data chahiye.")
+    print()
+    print("  Faisla fidelity%% se nahi hota — TV-only trades ka ASLI P&L jodo.")
+    print("  Wo saal me ₹19,200 se kam ho -> webhook band, wahi bachat hai.")
+    return 0
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=ist_today())
+    ap.add_argument("--since", help="YYYY-MM-DD — is din se aaj tak ka jod (roz ka jama)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
+
+    if a.since:
+        return _totals(a.since, a.date, a.json)
 
     tv, skips = tv_signals(a.date)
     py, err = py_signals(a.date)
