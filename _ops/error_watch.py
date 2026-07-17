@@ -10,7 +10,7 @@ KYUN (2026-07-16, user ki demand):
     1. `logs/<strategy>.log` — har trader `log.error(...)` / traceback yahin
        likhta hai aur koi nahi padhta. Aaj hi: ema_v1 ka "single positional
        indexer is out-of-bounds" 4 baar (wahi crash jo 15-Jul ko fix hua maana
-       gaya tha), aur "no Dhan info for TATAMOTORS" (jo symbol list se hata
+       gaya tha), aur "no Dhan info for <symbol>" (jo symbol list se hata
        diya gaya tha). Dono kisi ko nahi dikhe.
     2. Strategy PROCESS ka chup-chaap mar jaana — koi error report hi nahi hota,
        isliye bell khaali rehti hai (aaj ema_v1 ke saath exactly ye hua).

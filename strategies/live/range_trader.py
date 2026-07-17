@@ -1168,11 +1168,11 @@ def main(strategy_id="range"):
                     # opposites:
                     #
                     #   permanent — Dhan has no scrip-master entry for it at all
-                    #               (delisted/demerged name still in a config, e.g.
-                    #               TATAMOTORS). Retrying can never succeed; say it
+                    #               (a delisted/demerged name still sitting in a
+                    #               config). Retrying can never succeed; say it
                     #               once, then stay quiet. Without this the retry
                     #               above loops forever and rings the bell forever
-                    #               — spam this very fix caused on 2026-07-17.
+                    #               — see LESSONS.md TRAP #133 for the real case.
                     #   transient — the fetch failed (401 burst / network). Retry.
                     #
                     # Either way say it ONCE per day (_rt_once): the old INFO

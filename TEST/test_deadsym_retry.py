@@ -1,7 +1,12 @@
 """Transient fetch failure -> retry. Permanently-dead symbol -> say once, stay quiet.
 
-The retry fix (09:37) treated both the same, so TATAMOTORS — which Dhan has no
-scrip-master entry for at all — retried every loop and rang the bell every loop.
+The retry fix (09:37) treated both the same, so a delisted symbol left in a config
+— one Dhan has no scrip-master entry for at all — retried every loop and rang the
+bell every loop. Real case: LESSONS.md TRAP #133.
+
+Fixture is a SYNTHETIC name on purpose: a "not in scrip master" test must use a
+symbol that can never BE in it. Pointing it at a real company makes the premise
+expire the day that company gets (re)listed.
 """
 import sys
 fails = []
@@ -15,7 +20,7 @@ def check(name, got, want):
         fails.append(name)
 
 
-DHAN = {"NIFTY": ("13", "IDX_I", "INDEX")}      # TATAMOTORS jaan-boojh kar nahi hai
+DHAN = {"NIFTY": ("13", "IDX_I", "INDEX")}      # ZZ_NOT_IN_MASTER jaan-boojh kar nahi hai
 
 
 def loop(state, symbol, fetch_ok, variant):
@@ -47,9 +52,9 @@ def fresh():
 
 
 print('')
-print('=== TATAMOTORS (Dhan me hai hi nahi) — meri 09:37 wali fix ===')
+print('=== ZZ_NOT_IN_MASTER (Dhan me hai hi nahi) — meri 09:37 wali fix ===')
 s = fresh()
-r = [loop(s, 'TATAMOTORS', False, 'v1') for _ in range(4)]
+r = [loop(s, 'ZZ_NOT_IN_MASTER', False, 'v1') for _ in range(4)]
 check('v1: har loop fetch karta hai', [x[0] for x in r], [True] * 4)
 check('v1: har loop bell bajata hai', [x[1] for x in r], [True] * 4)
 print('  -> yahi spam aapko dikha')
@@ -57,10 +62,10 @@ print('  -> yahi spam aapko dikha')
 print('')
 print('=== wahi symbol — correction ===')
 s = fresh()
-r = [loop(s, 'TATAMOTORS', False, 'v2') for _ in range(4)]
+r = [loop(s, 'ZZ_NOT_IN_MASTER', False, 'v2') for _ in range(4)]
 check('v2: sirf pehli baar fetch', [x[0] for x in r], [True, False, False, False])
 check('v2: sirf pehli baar bell', [x[1] for x in r], [True, False, False, False])
-check('v2: dead_syms me chala gaya', 'TATAMOTORS' in s['dead'], True)
+check('v2: dead_syms me chala gaya', 'ZZ_NOT_IN_MASTER' in s['dead'], True)
 
 print('')
 print('=== NIFTY transient fail (401 burst) — retry ZINDA rehna chahiye ===')

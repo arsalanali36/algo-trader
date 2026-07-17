@@ -1,6 +1,6 @@
 // Auto-extracted from templates/index.html (2026-07-16). Classic script,
 // global scope — load order in index.html IS the original code order.
-    const NIFTY50 = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "BAJFINANCE", "WIPRO", "KOTAKBANK", "LT", "TATAMOTORS", "MARUTI", "HINDUNILVR", "ITC", "ADANIENT", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "POWERGRID", "NTPC", "ONGC"];
+    const NIFTY50 = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFCBANK", "ICICIBANK", "SBIN", "AXISBANK", "BAJFINANCE", "WIPRO", "KOTAKBANK", "LT", "MARUTI", "HINDUNILVR", "ITC", "ADANIENT", "SUNPHARMA", "TITAN", "ULTRACEMCO", "NESTLEIND", "POWERGRID", "NTPC", "ONGC"];
 
     let GLOBAL_CONFIG = {};
     let RUNNING_PIDS = {};
