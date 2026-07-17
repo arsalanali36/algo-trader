@@ -882,6 +882,45 @@ def capital_in_use(strategy=None, mode=None):
     return sum(_group_capital(g, rc) for g in by_strat.values())
 
 
+def strategy_tier(strategy, rc=None):
+    """'mission' (default — sees the full global cap) or 'discretionary' (a low-priority
+    "dessert" strategy capped at the discretionary pool so it can NEVER starve mission
+    strategies of capital). Set per-strategy via the RMS Per-Strategy Override table →
+    nifty_config._risk.per_strategy[<sid>].tier = 'discretionary'. Unmarked = 'mission'
+    (safe default: a new strategy is never accidentally restricted)."""
+    rc = rc or _risk_cfg()
+    t = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("tier")
+    return "discretionary" if str(t).lower() == "discretionary" else "mission"
+
+
+def discretionary_pool_cap():
+    """₹ cap on the TOTAL capital ALL discretionary-tier strategies may hold at once
+    (nifty_config._risk.global.discretionary_pool_rs, set in the RMS Risk tab). None/0/blank
+    = feature OFF (no tier gating). When set, mission strategies are always guaranteed
+    (global_cap − this) of headroom because discretionary use can never exceed this."""
+    v = (_risk_cfg().get("global", {}) or {}).get("discretionary_pool_rs")
+    try:
+        v = float(v)
+        return v if v > 0 else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _tier_in_use(tier, rc=None, mode=None):
+    """₹ capital currently in use across only the strategies of `tier`, grouped+basket-costed
+    exactly like capital_in_use (so a hedged discretionary structure isn't over-charged)."""
+    rc = rc or _risk_cfg()
+    rows = _today_open(None, mode=mode)
+    if not rows:
+        return 0.0
+    by_strat = {}
+    for p in rows:
+        s = p.get("strategy") or ""
+        if strategy_tier(s, rc) == tier:
+            by_strat.setdefault(s, []).append(p)
+    return sum(_group_capital(g, rc) for g in by_strat.values())
+
+
 def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO", mode=None):
     """Would adding qty@price (side BUY/SELL) to `strategy` breach its allocation
     or the global ceiling? Returns (ok: bool, reason: str). reason='' when ok.
@@ -931,6 +970,23 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO",
             if in_use_all + needed > glob_cap:
                 return False, (f"global capital cap ₹{_inr(glob_cap)} hit "
                                 f"(in-use ₹{_inr(in_use_all)} + needed ₹{_inr(needed)}{pool})")
+        except Exception:
+            pass
+
+    # Capital Priority Reservation: a 'discretionary' (dessert) strategy is capped at the
+    # discretionary pool so it can never eat capital reserved for 'mission' strategies (ORB
+    # etc.). Mission strategies skip this entirely and see only the caps above. OFF unless a
+    # discretionary_pool_rs is set AND this strategy is tagged tier=discretionary.
+    disc_pool = (rc.get("global", {}) or {}).get("discretionary_pool_rs")
+    if disc_pool is not None and strategy_tier(strategy, rc) == "discretionary":
+        try:
+            disc_pool = float(disc_pool)
+            if disc_pool > 0:
+                disc_in_use = _tier_in_use("discretionary", rc, mode=mode)
+                if disc_in_use + needed > disc_pool:
+                    return False, (f"discretionary pool ₹{_inr(disc_pool)} hit — mission "
+                                    f"capital protected (disc in-use ₹{_inr(disc_in_use)} + "
+                                    f"needed ₹{_inr(needed)}{pool})")
         except Exception:
             pass
 
