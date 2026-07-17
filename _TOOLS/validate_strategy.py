@@ -20,10 +20,21 @@ import os
 import re
 from datetime import time as dtime
 
+import sys
+
 import numpy as np
 import pandas as pd
 
-import range_trader as rt
+# _paths bootstrap (CLAUDE.md, "Directly-run naya script"): this file lives in
+# _TOOLS/, so put the project root on sys.path FIRST, then import _paths, which
+# puts strategies/live, _core, _data etc. on it too. Without this the very next
+# line dies with ModuleNotFoundError: range_trader — which is exactly what has
+# happened since the 2026-07-09 folder refactor. This harness produced the 90.2%
+# number everyone still quotes, and it has not been runnable since.
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+import _paths  # noqa: F401,E402
+
+import range_trader as rt  # noqa: E402
 
 _WIN_DATA_DIR = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\Index\NIFTY"
 if os.path.isdir(_WIN_DATA_DIR):
@@ -35,7 +46,15 @@ EXIT_HM  = dtime(15, 15)   # 3:15 daily square-off
 
 # Engine config — mirror the TradingView Pine settings
 CFG = {
-    "max_candle_size": 25,
+    # 40, not 25. Read off the user's ACTUAL script (Ars_Auto_Rev_Chain_common,
+    # 2026-07-17), where these are hardcoded rather than inputs:
+    #   maxCandleSize=40  maxTradesPerDay=2  MainExit_Toggle=true
+    #   AtrExit_Toggle=true  SL_Blw_Fib_Exit_Tog=false  HawaME_toggle=false
+    #   useFreshZoneOnly=true  max_jump_pct_input=50
+    # _PINE/range_chain.pine is NOT that script — it's an older variant whose
+    # input DEFAULTS were being read as if they were the live settings. Don't
+    # take Pine values from that file; take them from the running script.
+    "max_candle_size": 40,
     "use_fresh_zone_only": True,
     "hawa_me_zone": False,
     "exit_atr": True,
@@ -572,8 +591,15 @@ th{{color:#8b949e;font-weight:600;position:sticky;top:0;background:#0d1117}}
 <table><thead><tr><th>side</th><th>entry</th><th>exit</th><th>reason</th></tr></thead>
 <tbody>{extra_rows or '<tr><td colspan=4 style="color:#8b949e">none</td></tr>'}</tbody></table>
 </body></html>"""
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                       "ACCURACY SCORE CLAUD", "validation_report.html")
+    # Project ROOT, not this file's dir. "ACCURACY SCORE CLAUD/" sits at the
+    # root; the 2026-07-09 refactor moved this file into _TOOLS/ and the path
+    # followed it, so every run died here after doing all the work. Same shape
+    # as the import break above (CLAUDE.md: "Moved module me path banate waqt
+    # `Path(__file__).parent...` mat maano ki root hai").
+    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    out_dir = os.path.join(root, "ACCURACY SCORE CLAUD")
+    os.makedirs(out_dir, exist_ok=True)
+    out = os.path.join(out_dir, "validation_report.html")
     with open(out, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"\nHTML report: {out}")
