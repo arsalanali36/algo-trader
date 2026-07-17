@@ -3190,3 +3190,103 @@ however old — that's what `sig_bar`/`total_bars` are for, and the adapter was 
 this engine. No money was lost — but every "04.03 barely trades" observation for weeks was
 this, and the ₹19,200/yr decision it exists to inform was being measured on a strategy that
 could not trade.
+
+---
+
+## TRAP #130 — Ek mahine "kaise bechen" optimise kiya; "bechna chahiye bhi ya nahi" kabhi nahi pucha 🔴🔴🔴
+
+**Symptom.** User: *"profit ₹2,000 tak chala jaata single lot, fir fall back hota... do taraf
+gussa aati hai ki profit me aa kar loss hua"* → poochha: fixed target lagayein ya "peak se
+₹200-400 gir gaya to turant exit" (drop-lock)? *"iske liye hi itna aggressive trailing bana
+rahe they par uska apna hi masla ho raha tha."* Ye ek **exit-rule** ka sawaal lag raha tha.
+
+**Wo exit-rule ka sawaal tha hi nahi.** Ars chain **ATM options BECHTI hai**. 5m pe uski
+**average jeet = ₹1,806**. Wo bug nahi — wo **chhat** hai: bechne wale ki maximum kamai =
+jitna premium mila (`86.70 × 65 = ₹5,635`), aur realistically uska ek hissa. **Koi exit rule
+chhat nahi utha sakta.** User ka "₹2,000 wall" = structure, defect nahi. Aur usne ye khud
+pehle hi session me pooch liya tha (*"dono sell karen to decay hoga… is type ki strategy ko
+kya bolte hain"*) — bina jaane ki uski apni live strategy wahi kar rahi hai.
+
+**Root pattern.** Har session ne poochha **KAISE bechen**; kisi ne nahi poochha **BECHEN
+KYUN**. Ek mahine ka session log (sab Ars chain pe): exit ATR vs EOD · naked vs hedged ·
+SL kitna · lot kitna · capital pool · RMS override · webhook delivery · order rejection ·
+lot mismatch. **Har ek "how"**. Aur jo backtest jawab deta hai wo **6 din se disk pe pada
+tha** (`runs/chain_zone_naked` ⚠️ rejected, 2026-07-10) — poore session-history me **ek baar**
+zikr hua, wo bhi ek correlation table ki row ke roop me. **Kisi ne use live deployment se
+joda hi nahi.** "Naked vs hedged" wala backtest bhi bacha nahi saka: **dono bechne wale the.**
+
+**Numbers.** Ek hi signal, ek hi params (`touch_tol 5.0, zone_age 2, max_cs 40.0, hawa false,
+chain_lookback 20, atr_sl 2.5, rr 1.5`), ek hi exit (`stop_only`), ek hi trade set — **sirf
+structure badla** (`bs.reprice` = BUY ATM option vs `bs.reprice_naked` = SELL ATM option):
+
+| TF | trades | BUY option | Sharpe | SELL option | Sharpe |
+|----|-------:|-----------:|-------:|------------:|-------:|
+| 1m (04.01 Canary yahin) | 2,758 | **+₹4,43,539** | 1.17 | **−₹3,93,963** | −1.49 |
+| 3m | 2,174 | +₹4,37,343 | 1.22 | −₹3,86,012 | −1.49 |
+| 5m (04.03/04.04) | 1,806 | **+₹6,42,861** | 1.84 | **−₹1,53,004** | −0.58 |
+
+**Signal khud theek hai** — 1m p=0.04, 5m p=0.00 (significance structure-independent hai).
+**Ulta sirf rukh hai.** 9/9 combos: BUY jeeta, SELL haara.
+
+**Steelman bhi fail hua.** `reprice_naked` default `vrp_mult=1.0` = premium realised-vol pe
+priced = seller ko VRP **milta hi nahi** — wahi ek cheez jiske liye option bechte hain. Wo
+unfair test tha, to seller ko **+30% VRP tohfa** diya (IV >> RV, bahut generous):
+
+| seller ko diya VRP | 1m net | 5m net |
+|---|---:|---:|
+| 0% | −₹3,93,963 | −₹1,53,004 |
+| +20% | −₹2,77,320 | −₹31,497 |
+| **+30%** | **−₹2,28,057** | +₹20,108 → **train −₹26,905 = min(train,OOS) fail** |
+
+BUY +₹4.43L / +₹6.42L **bina kisi tohfe ke** banata hai.
+
+**Asymmetry jahan chhupi thi — tails me** (5m, per lot, real charges + DOM slip):
+
+| | win% | avg WIN | avg LOSS | W:L | biggest WIN | biggest LOSS | PF | per trade |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| BUY | 39.4% | **+₹2,898** | −₹1,295 | **2.24:1** | **+₹26,640** | −₹4,283 | 1.45 | **+₹356** |
+| SELL | **43.0%** | +₹1,806 | −₹1,513 | 1.19:1 | +₹9,227 | **−₹6,000** | 0.90 | **−₹85** |
+
+Bechne me **jeet pe chhat, nuksan pe nahi** (−₹6,000 bhi SL ne roka). Kharidne me ulta:
+nuksan premium pe ruk gaya, ek trade +₹26,640 de gayi. 1m pe farak aur tez: W:L **4.52:1**.
+
+**⚠️ ABHI PROVEN NAHI — act karne se pehle ye gate:** maine `intraday_engine.design_signals`
+ka `chain_zone` chalaya. **Live `range_trader.py` ek ALAG implementation hai.** 90.2% wala
+validation **Pine↔Python** tha (range_trader vs TV pine) — **`range_trader` vs `chain_zone`
+kabhi match nahi hua**. Live pe flat ₹5,000/lot SL hai, backtest me ATR stop. To ye ek bahut
+mazboot **ishara** hai, saboot nahi. Gate = `validate_strategy.py` wale tareeke se dono
+signals match karo, phir hi structure badlo (aur paper me pehle).
+
+**Exit-rule wala aadha hissa — ye BAND hai** (poora test ho chuka):
+- ORB pe **84 overlay settings** (₹ + %): ₹-sweep me 1/44 "jeeta" — `min(train,OOS)` pe
+  **₹909** se, 4.5 saal me = noise, aur total net **₹71,824 haara**. %-sweep: **0/40**, kisi
+  bhi metric pe nahi. chain_zone 5m pe: **0/40**.
+- **Cohort proof:** 216 ORB trades ne ₹2,000 chhua → **35 negative me khatam (−₹40,410)**,
+  **54 ₹5,000+ pe khatam (+₹4,31,032)**. ₹2,000 ka cut ₹40k dard bachata hai aur ₹3.23L
+  profit maarta hai = **8:1 ulta**. ₹2,000 pe wo 35 aur 54 **ek jaisi dikhti hain** — peak
+  hamesha **baad me** pata chalta hai. **Give-back defect nahi, fat tail ki fees hai.**
+- Drop-lock ko jitna "behtar" karo (confirm window, bada arm/gap) utna kam fire karta hai =
+  utna baseline ke paas. **Ek achhe drop-lock ki limit = koi drop-lock nahi.**
+
+**Permanent guard.**
+1. Kisi bhi strategy ke exit/SL/hedge/capital knob pe kaam shuru karne se **pehle** dekho:
+   `runs/` me **isi signal ka doosre structure wala variant** to nahi pada?
+   `chain_zone_{longatm,naked,credit}` teeno disk pe the.
+2. **Registry me structure likho, sirf signal nahi.** Chaaron 04.x rows "Auto Rev-Chain"
+   kehti hain; **ek bhi nahi kehti "ATM options BECHTI hai"** — jo iski sabse badi property
+   hai. ADR-007 kehta hai ID = idea; par *structure* idea ka hissa hai, mode/transport nahi.
+3. **⚠️/❌ rejected run apne aap me bekaar hai** — usme likho ki wo **kaun si LIVE deployment
+   ko invalid karta hai**, warna wo ek aisa sach rehta hai jispe koi amal nahi karta.
+
+**Fast detect.**
+- `order_store` me per-strategy side count: NIFTY pe **SELL 22 / BUY 12** → ye bechne wali
+  hai. Family ke `runs/*` variants ka verdict uthao aur milao.
+- **Symptom ki shakal:** *"profit hamesha ₹X ke aas-paas ruk jaata hai"* jahan
+  X ≈ entry premium × lot → **tu short hai; X chhat hai, bug nahi.**
+
+**Meta-sabak (sabse mehnga).** Is poore session me **win rate aur paisa ULTE the, har baar**:
+71.4%-win wala drop-lock baseline ka **23%** kamata tha; SELL 43% jeetti hai vs BUY 39.4% —
+aur **₹8 lakh** kam banati hai. **"Achha lagta hai" ek bharosemand signal hai ki tu haarne
+wale variant ko dekh raha hai.** Aur ek mahine ki firefighting (webhook plumbing, lot
+mismatch, RMS override, rejections) me **premise pe sawaal uthane ki jagah hi nahi bachti** —
+aag hamesha "kaise" ki hoti hai.
