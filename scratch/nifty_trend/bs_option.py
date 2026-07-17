@@ -258,16 +258,22 @@ def get_nifty_lot(default=75):
 
 
 # ---------------- reprice a spot trade list into ATM option premium P&L ----------------
-def reprice(trades, sigma_map, lot_size, lots=1, r=R_FREE):
+def reprice(trades, sigma_map, lot_size, lots=1, r=R_FREE, itm_steps=0):
     """trades: list of dicts from intraday_engine (side, entry, exit, entry_dt, exit_dt,
     points, bars, entry_i, exit_i). Returns a NEW list with option fields per
-    RESULTS_SCHEMA.all_trades. We BUY the ATM option (CE for long, PE for short)."""
+    RESULTS_SCHEMA.all_trades. We BUY the option (CE for long, PE for short).
+
+    itm_steps: how many STRIKE_STEPs IN the money to buy. 0 = ATM (default, unchanged).
+    1 = one strike ITM, i.e. CE strike BELOW spot / PE strike ABOVE spot. Deeper ITM =
+    more delta (premium tracks spot closer) but more capital per lot. Never guesses
+    liquidity — that is the caller's call, and only true for index strikes near spot."""
     qty = int(lots) * int(lot_size)
     out = []
     for t in trades:
         opt = "CE" if t["side"] == "long" else "PE"
         S_in, S_out = float(t["entry"]), float(t["exit"])
         K = round(S_in / STRIKE_STEP) * STRIKE_STEP
+        K -= itm_steps * STRIKE_STEP * (1 if opt == "CE" else -1)
         e_ts, x_ts = pd.Timestamp(t["entry_dt"]), pd.Timestamp(t["exit_dt"])
         sig_in = sigma_map.get(e_ts.date(), 0.15)
         sig_out = sigma_map.get(x_ts.date(), sig_in)
