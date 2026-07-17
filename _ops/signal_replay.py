@@ -54,6 +54,77 @@ except Exception:
 # sirf EXCEPTIONS ke liye: sid -> (script_path, fn_name). Normal case auto-resolve hota hai.
 OVERRIDES = {}
 
+# ── ADAPTERS ──────────────────────────────────────────────────────────────────
+# Engines whose contract this module can't speak natively, wrapped INTO the
+# (df, cfg) -> dict shape it does. Without this, resolve_strategy() refuses them
+# ("legacy engine, replay N/A") and they get no coverage at all — which is how
+# 04.03 Ars chain - Pine2Python, the one strategy with a future, ended up outside
+# every replay while being the ONE that must be compared against a TV pine.
+#
+# The old blanket refusal ("legacy engines me compute_* nahi hota, aur unka
+# module-level import heavy side-effects chalata hai ... unhe kabhi import mat
+# karo") banned range/rsi/ema together. Measured 2026-07-17 on the Ars-chain
+# engine: import = 0.64s, ZERO network connects, ZERO chars printed, no token
+# leak. The token-leak that motivated the ban was the EMA engine's. So the ban is
+# correct for that one and wrong for this one — hence a per-engine adapter, not a
+# blanket rule either way.
+ADAPTER_BASES = {"range"}
+
+
+def _range_adapter(mod, cfg, sid):
+    """04.03 Ars chain — Pine2Python. Three contract mismatches to translate:
+
+      signal fn — run_signal_engine(df, key_levels, cfg), not compute_signal(df, cfg).
+                  key_levels are per-symbol/per-day, so they're built once here and
+                  captured in the closure.
+      fetch     — fetch_1m(symbol, tf), not fetch(token, cid, ...).
+      return    — 6-tuple (signal, price, reason, signal_bar, n, state) on the normal
+                  path but a 3-tuple (None,None,None) on its len(df)<20 guard. Yes,
+                  the same function returns two different arities; the live loop only
+                  survives it by checking len(df)<20 itself before calling. Unpack
+                  defensively — never `a,b,c,d,e,f = ...`.
+
+    Returns (df, sig_fn, dir_key) — the shape run_for() wants.
+    """
+    from _CHARTING.zones import build_key_levels
+
+    syms = cfg.get("symbols")
+    if isinstance(syms, str):
+        syms = [x.strip() for x in re.split(r"[,\s]+", syms) if x.strip()]
+    syms = list(syms or [])
+    if not syms:
+        raise RuntimeError("config me koi symbol nahi")
+    symbol = syms[0]          # the mirror is single-symbol (NIFTY) by design
+
+    tf = str(cfg.get("timeframe", "5m"))
+    df = mod.fetch_1m(symbol, tf)
+    if df is None or getattr(df, "empty", True):
+        raise RuntimeError(f"{symbol}: candles nahi mile")
+
+    daily = mod.fetch_daily(symbol)
+    if daily is None or getattr(daily, "empty", True):
+        raise RuntimeError(f"{symbol}: daily data nahi mila — levels nahi ban sakte")
+    levels = build_key_levels(daily, is_index=symbol in ("NIFTY", "BANKNIFTY"),
+                              max_jump_pct=cfg.get("max_jump_pct", 50.0))
+    if not levels:
+        raise RuntimeError(f"{symbol}: 0 key levels — bina levels ke koi zone nahi banta")
+
+    def sig_fn(d, c):
+        out = mod.run_signal_engine(d, levels, c)
+        if not out:
+            return None
+        sig = out[0] if isinstance(out, (tuple, list)) else out
+        if not sig:
+            return None
+        price = out[1] if len(out) > 1 else None
+        reason = out[2] if len(out) > 2 else None
+        return {"signal": sig, "spot": price, "reason": reason}
+
+    return df, sig_fn, "signal"
+
+
+ADAPTERS = {"range": _range_adapter}
+
 LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\s+\w+\s+(.*)$")
 NO_ENTRY_FALLBACK = (15, 15)      # risk_gate default — late signals gated
 
@@ -75,9 +146,17 @@ def resolve_strategy(sid):
     # Import se PEHLE source-scan: legacy engines (range/rsi/ema) me compute_* nahi hota,
     # aur unka module-level import heavy side-effects chalata hai (equity cache, feed,
     # yahan tak ki token-print bug) — unhe kabhi import mat karo.
+    base = health_check._base(sid)
     src = Path(path).read_text(encoding="utf-8", errors="replace")
     if not fn_name and not re.search(r"^def compute_(signal|breakout)\(", src, re.M):
-        raise LookupError("compute_signal/compute_breakout nahi mila — legacy engine, replay N/A")
+        if base not in ADAPTER_BASES:
+            raise LookupError("compute_signal/compute_breakout nahi mila — legacy engine, replay N/A")
+        # adapter-backed: import is safe for these (measured), fn is built in run_for
+        spec = importlib.util.spec_from_file_location(f"replay_{sid}", path)
+        mod = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = mod
+        spec.loader.exec_module(mod)
+        return mod, None, None
     spec = importlib.util.spec_from_file_location(f"replay_{sid}", path)
     mod = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = mod
@@ -280,7 +359,10 @@ def run_for(sid, date_str, match_min=6):
         res.update(status="fail", note=f"module load fail: {e}"); return res
     try:
         cfg = mod.load_config(sid)
-        df = fetch_day_df(mod, cfg, days_back)
+        if sig_fn is None:                       # adapter-backed engine
+            df, sig_fn, dir_key = ADAPTERS[health_check._base(sid)](mod, cfg, sid)
+        else:
+            df = fetch_day_df(mod, cfg, days_back)
     except Exception as e:
         res.update(status="fail", note=f"fetch fail: {e}"); return res
     if df is None or getattr(df, "empty", True):

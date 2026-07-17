@@ -161,6 +161,42 @@ def py_signals(date_str):
     return out, None
 
 
+def py_replay(date_str):
+    """What 04.03's OWN engine says, bar-by-bar, on that day's real candles.
+
+    order_store answers WHETHER it entered. Only this answers WHY NOT — its entry
+    is `zone touch + bearish/bullish candle + close break + 2-candle confirm`, and
+    a missing order tells you none of which one failed.
+
+    Reuses signal_replay (Rule 6B). It refused this engine as "legacy, replay N/A"
+    until 2026-07-17 — the refusal was a blanket ban on range/rsi/ema whose real
+    cause (a token leak on import) belonged to the EMA engine. Measured on this
+    one: import = 0.64s, zero network, zero output. So it got an adapter instead of
+    a ban, and 04.03 — the only strategy with a future — finally has replay
+    coverage. eod_report gets it free.
+
+    Returns (signals, err). signals = engine-level, i.e. BEFORE any RMS gate.
+    """
+    try:
+        from _ops import signal_replay
+        res = signal_replay.run_for(MIR, date_str)
+    except Exception as e:
+        return None, "replay crash: %s" % e
+    if res.get("status") != "ok":
+        return None, res.get("note") or res.get("status")
+    out = []
+    for sg in res.get("signals", []):
+        t = str(sg.get("time") or "")[-8:][:5]
+        if not re.match(r"^\d\d:\d\d$", t):
+            continue
+        d = str(sg.get("dir") or "").upper()
+        out.append({"time": t, "bar": _bar(t), "kind": "ENTRY",
+                    "dir": "LONG" if d in ("BUY", "LONG") else ("SHORT" if d in ("SELL", "SHORT") else d),
+                    "verdict": sg.get("verdict") or ""})
+    out.sort(key=lambda x: x["bar"])
+    return out, None
+
+
 def align(tv, py):
     """Pair by bar (±TOL_BARS). Same bar + same direction = MATCH."""
     rows, used = [], set()
@@ -253,9 +289,11 @@ def main():
         return _totals(a.since, a.date, a.json)
 
     tv, skips = tv_signals(a.date)
-    py, err = py_signals(a.date)
+    py, err = py_signals(a.date)          # what 04.03 ORDERED (post-RMS)
+    eng, eng_err = py_replay(a.date)      # what 04.03's ENGINE said (pre-RMS)
 
     rep = {"date": a.date, "reference": REF, "mirror": MIR,
+           "engine_signals": None if eng is None else len(eng), "engine_error": eng_err,
            "tv_signals": len(tv), "py_signals": None if py is None else len(py),
            "replay_error": err, "skips": skips, "rows": []}
     if py is not None:
@@ -279,8 +317,12 @@ def main():
         print("  🔴 python side replay nahi hua: %s" % err)
         print("     (TV ne %d signal bheje the)" % len(tv))
         return 1
-    print("  TV ne bheje  : %d" % len(tv))
-    print("  Python ne diye: %d" % len(py))
+    print("  TV ne bheje       : %d" % len(tv))
+    print("  Python ne order kiye: %d" % len(py))
+    if eng_err:
+        print("  Python engine replay: 🔴 %s" % eng_err)
+    else:
+        print("  Python engine ne kaha: %d  (RMS se PEHLE — asli signal)" % len(eng))
     print()
     if not rep["rows"]:
         print("  Dono taraf koi signal nahi — aaj compare karne ko kuch nahi.")
@@ -297,6 +339,18 @@ def main():
         print("  MATCH %d | TV-only %d | PY-only %d | dir-mismatch %d  ->  fidelity %s%%"
               % (rep["match"], rep["tv_only"], rep["py_only"], rep["dir_mismatch"],
                  rep["fidelity_pct"]))
+    if not eng_err and eng is not None:
+        print()
+        print("  === Python ka ENGINE us din kya bola (RMS se pehle) ===")
+        if not eng:
+            print("    kuch nahi — matlab entry-condition hi nahi bani")
+            print("    (zone touch + candle + close break + 2-bar confirm — inme se koi choot gayi)")
+        else:
+            for e in eng:
+                print("    %s  %s %s" % (e["time"], e["kind"], e["dir"]))
+        print()
+        print("  ENGINE ne kaha par ORDER nahi -> hamari RMS ne roka (fidelity gap NAHI).")
+        print("  ENGINE ne bhi nahi kaha       -> ASLI fidelity gap.")
     if skips:
         print()
         print("  humne jo skip kiya (ye fidelity nahi — hamari RMS/dedup hai):")
