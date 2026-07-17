@@ -3449,3 +3449,54 @@ isn't a live label.** Consequence to expect: tags written before this fix keep t
 id forever (today's 12:15 `RMS_PROFIT_TARGET` rows still say `rsi_v1_PAPER`). The trade
 DB was deliberately NOT backfilled — the notification log is a log, `trades.db` is the
 money record; different bar for editing.
+
+---
+
+## TRAP #133 — "clear the alerts" is not the job; ask which ones are load-bearing
+
+**Symptom.** 70 unread notifications. User: *"jo solve ho gaya wo clear kar dijye, aur jo
+nahi hua usko bhi clear kijye… sabse zaroori baat — jo solve kar rahe wo bug fir se to
+nahi aayenge na?"*
+
+The second half is the whole ticket. `notify` is **append-only by design** — dismiss
+means *read*, not *deleted*, and a re-occurrence bumps the id so it re-toasts. So
+clearing a live problem doesn't remove it, it just resets the countdown. Triage first,
+clear last.
+
+**What 96 rows actually were** (grouped by `dedup` prefix, not eyeballed):
+
+| kind | hits | verdict |
+|---|---|---|
+| `proc` @ 13:30 | 550 | **REAL** — another session restarted both services mid-market; strategies down ~20 min. The alert did its job. |
+| `proc` @ 15:30 | 33 | **FALSE, daily** — see below. |
+| `log` 401 | 71 | Dhan token expiry (Critical Rule 4). Recurs daily *by design*, not a code bug. |
+| TATAMOTORS | 13 | **REAL config** — symbol doesn't exist in Dhan; would spam forever. |
+| `uip` scrollIntoView | 4 | **REAL UI bug.** |
+| `stale_feed` | 8 | auto-resolved. |
+
+**The 15:30 false alarm — an off-by-one-minute that fires every trading day.**
+`check_strategies` gated on `_market_hours()`, whose close is **inclusive**
+(`(15,30) <= (15,30)` → True). `auto_scheduler` stops every bot at exactly `t >= (15,30)`
+with `keep_active=1` (active stays true so tomorrow's 9:10 auto-start works — that's the
+2026-06-23 fix). So for that one minute: market "open", bots deliberately gone,
+`active:true` ⇒ 🔴 *"koi order nahi lagega"*. **The function's own docstring already said
+"bahar band hona normal hai (15:30 scheduled stop)"** — the intent was documented and
+correct; the boundary was one minute wide of it. Intent in a docstring is not a guard.
+
+Fix: separate `_proc_check_window()` ending at `SCHED_STOP`. `_market_hours()` left alone
+— the market genuinely IS open at 15:30; what changed is that *we* stopped the bots. Two
+different facts deserve two different predicates. Boundary-tested 09:14…16:00 + Saturday.
+
+⚠️ `SCHED_STOP` is now the **second** hardcoded copy of `(15,30)` (the other is in
+`trader_dashboard.auto_scheduler`). Commented on both sides. Change one, change the other,
+or this exact alarm returns.
+
+**`if (x)` doesn't guard `x.closest(...)`.** `sltp-modal.js`: `if (tableCard)
+tableCard.closest('.tv-card').scrollIntoView(...)` — the element existed, its `.tv-card`
+wrapper didn't. Guarding a non-null thing says nothing about its parent.
+
+**Lesson.** When someone asks to clear an alert queue, the useful answer is a triage
+table, not an empty bell. Three of these six kinds would have been back within 24 hours —
+two of them fixable in one line each. **An alert that cries wolf daily trains you to
+ignore the one that isn't crying wolf** (the 550-hit burst was a genuine 20-minute
+outage, sitting in the same list as a cosmetic off-by-one).
