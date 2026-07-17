@@ -25,12 +25,13 @@
    "identifiers": {
     "": "Blank strategy field — 65 orders (15 LIVE) with no owner. order_store.strategy has no validation; something writes empty. Source not yet found.",
     "unknown": "13 orders, all LIVE. Same root as the blank one.",
-    "ema920": "42 orders. No such config key exists — an old/renamed id that kept writing.",
+    "ema920": "Its TradingView pine's strategy id — 42 real fills on 2026-06-25, never registered. History stays, but it is not a strategy to show.",
     "52_Week_Breakout | Price closing above 52-week EMA with high volume": "A DESCRIPTION written into the strategy field. 1 order.",
     "global": "The webhooks map's shared config block — not a strategy at all. Was rendering as a fake row in the RMS table.",
     "default": "Webhook fallback config, superseded by named webhooks (arschain_MAIN). Its 22 orders (12 LIVE) are REAL history from before the named webhooks existed — they still count.",
     "vrp_v1": "Dead config: present in config + RMS, zero orders, never registered. vrp_condor_v1 (02.03) is the live one.",
-    "webhook_v1": "The ORIGINAL single-webhook config (07.01), superseded by the per-strategy webhooks map. Zero orders. Kept because _all_webhooks() still falls back to it when the map is absent — so it stays FUNCTIONAL, just not shown. Hiding it removes the confusing second 'TradingView Webhook' row next to 04.04 DirectWebhook."
+    "webhook_v1": "The ORIGINAL single-webhook config (07.01), superseded by the per-strategy webhooks map. Zero orders. Kept because _all_webhooks() still falls back to it when the map is absent — so it stays FUNCTIONAL, just not shown. Hiding it removes the confusing second 'TradingView Webhook' row next to 04.04 DirectWebhook.",
+    "ema_v1": "Retired 2026-07-17 — zero orders ever placed, 4 MB/day of log noise, and it was the SILENT DEFAULT of /api/start (s='ema_v1'), /api/stop and /api/log (s='ema'), so any call with a wrong param name started or killed it by accident. Config key deleted; hidden here so no surface lists it."
    },
    "_kept_visible": {
     "manual": "Arsalan's own manual Zerodha trades, tagged deliberately by broker_sync.reconcile_manual_trades(). Real and wanted."
@@ -260,8 +261,14 @@
    "config_key": "ema_v1",
    "slug": null,
    "live_file": "strategies/live/nifty_ema_trader.py",
-   "status": "legacy",
-   "legs": 1
+   "status": "retired",
+   "legs": 1,
+   "aliases": [
+    "ema_v1",
+    "ema920",
+    "EMA Crossover"
+   ],
+   "desc": "RETIRED 2026-07-17 (Arsalan: \"iska koi kaam nahi, pareshaan itna kiya hai\"). In its whole life it placed ZERO orders — order_store has not a single ema_v1 row — while writing a 4 MB log/day and carrying TATAMOTORS (delisted, not in Dhan's scrip master) in its 25-symbol list, which is where a chunk of the daily error noise came from. Its config key + RMS override are deleted (safe precisely BECAUSE there were no rows to attribute). The 42 'ema920' rows stay: those are real fills from its TradingView pine (_PINE/v17) on 2026-06-25, and a real fill is history whoever owned it. ID kept per _meta.rules — an ID is permanent, never reused. strategies/live/nifty_ema_trader.py is left on disk; wip/ema-per-symbol-isolation still branches off it."
   },
   "05.04": {
    "name": "VWAP-EMA Failure",
