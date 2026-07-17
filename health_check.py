@@ -542,12 +542,43 @@ def main():
         if args.report:           # report file + dashboard red-banner alert (cron/timer)
             try:
                 HEALTH_REPORT.write_text(json.dumps(rep, indent=2))
-                reds = [s["id"] for s in rep["strategies"] if s["red"]]
                 alerts = json.loads(ALERT_FILE.read_text()) if ALERT_FILE.exists() else []
-                alerts = [a for a in alerts if "Health" not in a]   # purana health alert hatao
-                if reds:
-                    alerts.append(f"⚠️ Health: {', '.join(reds)} order-ready NAHI — health_check report dekho")
-                ALERT_FILE.write_text(json.dumps(alerts))
+                # drop our own previous alerts (both the new dict form and the
+                # old lumped "Health: ..." string) — this file is STATE, and an
+                # entry disappearing is what marks it "✓ fixed" on the bell.
+                _mine = {"token:dhan", "token:kite", "health:strategies"}
+                alerts = [a for a in alerts
+                          if not (isinstance(a, dict) and str(a.get("key") or "") in _mine)
+                          and not (isinstance(a, str) and "Health:" in a)]
+
+                # ── One alert per PROBLEM, not one per symptom ──────────────
+                # A dead Kite token sets token_red, which marks EVERY strategy
+                # red (orders route through Kite) — so the old line named all 13
+                # and buried the one fact that mattered. Worse, the token row is
+                # never added to a strategy's own `checks`, so the report showed
+                # 13 strategies red with every visible check OK and no reason.
+                # 2026-07-17: that cost real time — the alert read as noise and
+                # the actual cause (an expired Kite token, on a live trading day)
+                # took a code read to find.
+                _tok = rep.get("token") or {}
+                if (_tok.get("kite") or {}).get("status") == "FAIL":
+                    alerts.append({"key": "token:kite",
+                                   "msg": "🔴 Kite token EXPIRED — koi LIVE order nahi jayega "
+                                          "(orders Kite se jaate hain). Control tab → Kite login."})
+                if _tok.get("status") == "FAIL":
+                    alerts.append({"key": "token:dhan",
+                                   "msg": "🔴 Dhan token EXPIRED — data + orders dono band. "
+                                          "Control tab → token daalo."})
+
+                # Only strategies red for their OWN reason — a strategy whose
+                # every check passed is not broken, the token is.
+                own = [s["id"] for s in rep["strategies"]
+                       if s["red"] and any(c.get("status") == "FAIL" for c in s.get("checks", []))]
+                if own:
+                    alerts.append({"key": "health:strategies",
+                                   "msg": f"⚠️ Health: {', '.join(own)} order-ready NAHI "
+                                          f"— health_check report dekho"})
+                ALERT_FILE.write_text(json.dumps(alerts, ensure_ascii=False))
             except Exception as e:
                 print(f"[report] write fail: {e}")
         if args.json:

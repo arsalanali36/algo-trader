@@ -1342,15 +1342,16 @@ def api_set_token():
         except Exception:
             pass
         CONFIG_FILE.write_text(json.dumps(cfg, indent=2))
-        # Clear any token-expiry alerts from downloader_alert.json
-        alert_file = BASE_DIR / "data" / "downloader_alert.json"
-        if alert_file.exists():
-            try:
-                alerts = json.loads(alert_file.read_text())
-                alerts = [a for a in alerts if 'token expire' not in a.lower()]
-                alert_file.write_text(json.dumps(alerts))
-            except Exception:
-                pass
+        # Token saved → the Dhan-token problem is over. Drop ONLY its alerts, so
+        # the next ingest poll marks them "✓ fixed" on the bell. `substr` covers
+        # auto_data_downloader's legacy plain-string token alerts; the key covers
+        # health_check's. Deliberately NOT touching token:kite — a Dhan token
+        # says nothing about Kite (the old inline filter matched 'token expire',
+        # which silently cleared "Kite token EXPIRED" too).
+        n = _clear_alerts("token:dhan", substr="dhan token")
+        n += _clear_alerts(substr="token expire")   # legacy downloader strings
+        if n:
+            print(f"[alerts] Dhan token saved — {n} alert(s) cleared", flush=True)
         return jsonify({"ok": True, "msg": "✅ Token saved!"})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -1415,7 +1416,14 @@ def api_kite_exchange_token():
         access_token, err = kite_broker.exchange_request_token(req_token)
         if err:
             return jsonify({"ok": False, "error": err})
-        return jsonify({"ok": True, "msg": "Kite access token saved"})
+        # Logged in → the Kite-token problem is over. This route cleared NOTHING
+        # before, so the 🔔 kept showing "Kite token EXPIRED" until health_check's
+        # next timer run (09:20 weekdays) — i.e. a morning login left a red bell
+        # sitting there all day, which is exactly how a bell stops being believed.
+        n = _clear_alerts("token:kite")
+        if n:
+            print(f"[alerts] Kite login OK — {n} alert(s) cleared", flush=True)
+        return jsonify({"ok": True, "msg": "Kite access token saved", "alerts_cleared": n})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
@@ -4266,7 +4274,60 @@ _ALERT_LEVEL_KEYS = {
     "naked_leg": "error",
     "kill_floor": "error",
     "stale_feed": "warn",
+    # health_check --report writes these as dict alerts with stable keys, so a
+    # login can clear exactly ONE of them (see _clear_alerts). Both tokens are
+    # 'error': a dead Dhan token stops data AND orders, a dead Kite token stops
+    # every LIVE order (orders route through Kite).
+    "token:dhan": "error",
+    "token:kite": "error",
+    "health:strategies": "warn",
 }
+
+
+def _clear_alerts(*keys, substr=None):
+    """Drop matching alerts from downloader_alert.json.
+
+    That file is current STATE — an alert lives in it while the problem lives.
+    Removing an entry is therefore how a problem gets marked fixed: the next
+    _ingest_downloader_alerts() poll sees the key gone and calls notify.resolve(),
+    which turns the bell row into "✓ fixed" without deleting any history.
+
+    keys   — exact dict-alert keys ("token:kite"). The robust path: a key can
+             only ever clear its own alert.
+    substr — case-insensitive substring, ONLY for legacy plain-string alerts
+             (auto_data_downloader still writes those). Kept narrow on purpose:
+             the old inline filter here matched 'token expire', which also
+             matches "Kite token EXPIRED" — so saving the DHAN token silently
+             marked the KITE problem fixed. It also called a.lower() on entries
+             that can be dicts, throwing straight into an `except: pass` so it
+             quietly cleared nothing at all.
+
+    Returns how many alerts were dropped.
+    """
+    f = BASE_DIR / "data" / "downloader_alert.json"
+    if not f.exists():
+        return 0
+    try:
+        alerts = json.loads(f.read_text())
+        if not isinstance(alerts, list):
+            return 0
+        kset = {str(k) for k in keys}
+
+        def _drop(a):
+            if isinstance(a, dict):
+                return str(a.get("key") or "") in kset
+            if isinstance(a, str):
+                return bool(substr) and substr.lower() in a.lower()
+            return False
+
+        kept = [a for a in alerts if not _drop(a)]
+        n = len(alerts) - len(kept)
+        if n:
+            f.write_text(json.dumps(kept, ensure_ascii=False))
+        return n
+    except Exception as e:
+        print(f"[alerts] clear fail ({keys}): {e}", flush=True)
+        return 0
 
 
 _ALERT_SEEN_FILE = BASE_DIR / "data" / "alert_ingest_seen.json"
