@@ -4827,6 +4827,57 @@ def api_orders_calendar_summary():
     })
 
 
+@app.route('/api/backtest/runs')
+def api_backtest_runs():
+    """List available backtest runs (from runs/index.json) for the Stats-tab
+    backtest-mode strategy dropdown. Display-only."""
+    import backtest_calendar
+    try:
+        return jsonify({'ok': True, 'runs': backtest_calendar.list_runs()})
+    except Exception as e:
+        print("[backtest/runs] fail:", e, flush=True)
+        return jsonify({'ok': False, 'runs': [], 'error': str(e)})
+
+
+@app.route('/api/backtest/calendar-summary')
+def api_backtest_calendar_summary():
+    """Same {summary, trades, filters} shape as /api/orders/calendar-summary,
+    but built from ONE backtest run's all_trades (bucketed by ENTRY date) so the
+    Stats calendar/table/charts render backtest results day-by-day. Also returns
+    `metrics` (the run's own report card) and `meta` (label/window/combo used).
+    Params: slug (required), pass=instrument|rms|bs, period=full|train|oos,
+    from_date/to_date (YYYY-MM-DD, optional)."""
+    import backtest_calendar
+    slug = request.args.get('slug')
+    if not slug:
+        return jsonify({'summary': {}, 'trades': [], 'filters': {},
+                        'metrics': {}, 'meta': {}, 'error': 'slug required'})
+    pass_ = request.args.get('pass') or 'bs'
+    period = request.args.get('period') or 'full'
+    from_date = request.args.get('from_date')
+    to_date = request.args.get('to_date')
+    # Month-mode (no explicit range): the frontend sends year/month — derive the
+    # date window so the calendar's top summary reflects THAT month only, exactly
+    # like the live calendar-summary route.
+    if not (from_date and to_date):
+        year = request.args.get('year')
+        month = request.args.get('month')
+        if year and month:
+            mm = month.zfill(2)
+            from_date, to_date = f"{year}-{mm}-01", f"{year}-{mm}-31"
+        elif year:
+            from_date, to_date = f"{year}-01-01", f"{year}-12-31"
+    try:
+        data = backtest_calendar.calendar_summary(
+            slug, pass_=pass_, period=period,
+            from_date=from_date, to_date=to_date)
+        return jsonify(data)
+    except Exception as e:
+        print("[backtest/calendar-summary] fail:", e, flush=True)
+        return jsonify({'summary': {}, 'trades': [], 'filters': {},
+                        'metrics': {}, 'meta': {}, 'error': str(e)})
+
+
 @app.route('/api/orders/optimized-pnl')
 def api_orders_optimized_pnl():
     """Per-trade "what-if" P&L under the two OPTIMISED SL/Target profiles

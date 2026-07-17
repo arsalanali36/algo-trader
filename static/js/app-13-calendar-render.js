@@ -179,29 +179,39 @@
         q.set('month', (calMonth + 1).toString());
       }
 
-      const src = _calSegVal('cal-src'); if (src && src !== 'hedge') q.set('source', src);
-      const mode = _calSegVal('cal-mode'); if (mode) q.set('mode', mode);
-      const strat = document.getElementById('cal-strat').value; if (strat) q.set('strategy', strat);
-      const broker = document.getElementById('cal-broker').value; if (broker) q.set('broker', broker);
-
+      // Backtest view uses a parallel endpoint (runs/<slug>/results.js) with the
+      // SAME {summary, trades, filters} shape — only the source switches.
+      const btMode = !!window.calBtMode;
+      let src = '', mode = '', broker = '';
+      const strat = (document.getElementById('cal-strat') || {}).value || '';
       let d = { summary: {}, filters: {} };
-      if (src === 'hedge') {
-        // For hedge in calendar, we actually need to intercept at the backend to filter it efficiently.
-        // So let's send source=hedge and update the backend too, because the backend processes the calendar summary
-        // across all days.
-        q.set('source', 'hedge');
-      }
 
-      try {
-        const r = await fetch('/api/orders/calendar-summary?' + q.toString());
-        d = await r.json();
-      } catch (e) {
-        console.error("Calendar load failed:", e);
+      if (btMode) {
+        if (strat) q.set('slug', strat);
+        q.set('pass', _calSegVal('cal-bt-pass') || 'bs');
+        q.set('period', _calSegVal('cal-bt-period') || 'full');
+        try {
+          const r = await fetch('/api/backtest/calendar-summary?' + q.toString());
+          d = await r.json();
+        } catch (e) { console.error("Backtest calendar load failed:", e); }
+      } else {
+        src = _calSegVal('cal-src'); if (src && src !== 'hedge') q.set('source', src);
+        mode = _calSegVal('cal-mode'); if (mode) q.set('mode', mode);
+        if (strat) q.set('strategy', strat);
+        broker = (document.getElementById('cal-broker') || {}).value || ''; if (broker) q.set('broker', broker);
+        if (src === 'hedge') {
+          // For hedge in calendar, we intercept at the backend to filter it
+          // efficiently (it processes the calendar summary across all days).
+          q.set('source', 'hedge');
+        }
+        try {
+          const r = await fetch('/api/orders/calendar-summary?' + q.toString());
+          d = await r.json();
+        } catch (e) { console.error("Calendar load failed:", e); }
+        // Populate filter dropdowns (strategy & broker) — live/paper only
+        _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
+        _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
       }
-
-      // Populate filter dropdowns (strategy & broker)
-      _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
-      _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
 
       // Populate exit reason dropdown from the trades — normalize raw reasons to short labels
       const exitReasonSel = document.getElementById('cal-exit-reason');
@@ -287,8 +297,17 @@
         cntEl.textContent = totalTrades.toString();
       }
 
-      // New: Profit Factor / Expectancy / Sharpe + grouped list + toggleable table
-      {
+      // Profit Factor / Expectancy / Sharpe + grouped list + toggleable table
+      if (btMode) {
+        // Backtest: fill pills from the run's OWN report card (full-run metrics);
+        // grouped list + closed table from this run's trades (so nothing stale).
+        _renderBtMetrics(d.metrics || {}, d.meta || {});
+        window._statsLastTrades = d.trades || [];
+        if (typeof renderStatsGroupedList === 'function') renderStatsGroupedList(d.trades || []);
+        if (typeof renderStatsClosedTable === 'function') renderStatsClosedTable(d.trades || []);
+      } else {
+        const h = document.getElementById('cal-metrics-heading');
+        if (h) h.textContent = '📐 Metrics (this month, filtered)';
         const mFrom = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-01`;
         const mTo = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(new Date(calYear, calMonth + 1, 0).getDate()).padStart(2, '0')}`;
         const sfilt = {};
@@ -376,15 +395,25 @@
       // Save trades in window object for resize events
       window.currentCalendarTrades = d.trades || [];
       window.currentCalendarTrades.forEach(t => {
-        const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
-        t._gross = ep && xp && qt ? (t.entry === 'BUY' ? xp - ep : ep - xp) * qt : (t.pnl || 0);
-        t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry) || 0) : 0;
-        t._net = t._gross - t._tax;
+        if (btMode) {
+          // Backtest pnl is already NET (real Zerodha charges baked in by the BS
+          // pass); use the run's own gross/fee/pnl so the tables match the grid
+          // exactly — no client-side charge re-estimate.
+          t._gross = (t.gross != null) ? t.gross : (t.pnl || 0);
+          t._tax = (t.fee != null) ? t.fee : 0;
+          t._net = (t.pnl != null) ? t.pnl : (t._gross - t._tax);
+        } else {
+          const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
+          t._gross = ep && xp && qt ? (t.entry === 'BUY' ? xp - ep : ep - xp) * qt : (t.pnl || 0);
+          t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry) || 0) : 0;
+          t._net = t._gross - t._tax;
+        }
       });
 
       // Optimised "what-if" numbers (Opt Fixed / Opt Aggr columns) — async,
       // same range/filter params as calendar-summary; re-renders when it lands.
-      _loadOptimizedPnl(q.toString());
+      // Live/paper only — backtest pnl is already the deployable number.
+      if (!btMode) _loadOptimizedPnl(q.toString());
 
       // Draw Equity Curve Chart
       drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades);

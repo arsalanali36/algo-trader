@@ -1,0 +1,222 @@
+"""backtest_calendar.py — surface backtest run results in the Stats calendar.
+
+DISPLAY-ONLY. Reads the same `runs/<slug>/results.js` files the /lab hub uses
+(`window.RESULTS = {...}`) and re-shapes ONE combo's `all_trades[]` into the
+EXACT `{summary, trades, filters}` shape that `/api/orders/calendar-summary`
+returns for live/paper trades — so the Stats page's calendar grid, summary
+table, points table and equity curve render backtest data unchanged.
+
+No order path, no risk path, no writes. Just parse + bucket-by-day.
+
+Combo selection: key = "<pass>|<period>" (pass ∈ instrument/rms/bs,
+period ∈ full/train/oos). `bs` is the deployable option-premium truth. Falls
+back to a legacy single-axis key, then any available combo, if the exact one
+is absent. See scratch/nifty_trend/RESULTS_SCHEMA.md.
+"""
+import json
+import math
+import os
+
+_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RUNS_DIR = os.path.join(_ROOT, "scratch", "nifty_trend", "runs")
+
+# Small (slug -> (mtime, parsed RESULTS)) cache so switching pass/period or
+# narrowing the date range doesn't re-parse the multi-MB results.js each time.
+_CACHE = {}
+_CACHE_MAX = 3
+
+
+def _fin(v):
+    """Non-finite floats (NaN/Inf) -> None so the JSON stays browser-parseable."""
+    if isinstance(v, float) and not math.isfinite(v):
+        return None
+    return v
+
+
+def _results_path(slug):
+    return os.path.join(RUNS_DIR, slug, "results.js")
+
+
+def _load_results(slug):
+    """Parse runs/<slug>/results.js -> dict, cached by file mtime."""
+    path = _results_path(slug)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"no results.js for run '{slug}'")
+    mtime = os.path.getmtime(path)
+    hit = _CACHE.get(slug)
+    if hit and hit[0] == mtime:
+        return hit[1]
+    with open(path, "r", encoding="utf-8") as f:
+        text = f.read()
+    # Strip the `window.RESULTS = ` prefix and trailing `;` — body is strict
+    # JSON (json.dumps output). json.loads accepts NaN/Infinity by default.
+    start = text.index("{")
+    end = text.rindex("}")
+    data = json.loads(text[start:end + 1])
+    if len(_CACHE) >= _CACHE_MAX:
+        # drop an arbitrary oldest-ish entry (dict preserves insertion order)
+        _CACHE.pop(next(iter(_CACHE)))
+    _CACHE[slug] = (mtime, data)
+    return data
+
+
+def _pick_combo(data, pass_, period):
+    """Return (combo_dict, key_used). Graceful fallback if exact combo absent."""
+    combos = data.get("combos", {}) or {}
+    want = f"{pass_}|{period}"
+    if want in combos:
+        return combos[want], want
+    # legacy single-axis key (old runs before the 3-pass split)
+    if period in combos:
+        return combos[period], period
+    # any bs|* then any *|full then anything
+    for k in (f"bs|{period}", f"{pass_}|full", "bs|full", "full"):
+        if k in combos:
+            return combos[k], k
+    if combos:
+        k = next(iter(combos))
+        return combos[k], k
+    return {}, ""
+
+
+def list_runs():
+    """All available backtest runs from runs/index.json, newest-config first.
+
+    Each -> {slug, label, deployed, significant, tf, instrument, window, days}.
+    label = human title (falls back to slug); the dropdown shows this.
+    """
+    idx_path = os.path.join(RUNS_DIR, "index.json")
+    out = []
+    try:
+        with open(idx_path, "r", encoding="utf-8") as f:
+            arr = json.load(f)
+    except Exception:
+        arr = []
+    for e in arr:
+        slug = e.get("slug")
+        if not slug:
+            continue
+        # only list runs that actually have a results.js on disk
+        if not os.path.isfile(_results_path(slug)):
+            continue
+        out.append({
+            "slug": slug,
+            "label": e.get("title") or e.get("design") or slug,
+            "deployed": bool(e.get("deployed") or e.get("deploy_key")),
+            "deploy_key": e.get("deploy_key") or "",
+            "significant": bool(e.get("significant")),
+            "tf": e.get("tf") or "",
+            "instrument": e.get("instrument") or "",
+            "window": e.get("window") or [],
+            "days": e.get("days") or 0,
+        })
+    return out
+
+
+def _map_trade(t, slug, instr, idx):
+    """One results.js all_trades[] row -> a Stats-page trade object."""
+    entry_dt = t.get("entry_dt") or ""
+    exit_dt = t.get("exit_dt") or entry_dt
+    side = t.get("side")
+    entry_side = "SELL" if side == "short" else "BUY"
+    strike = t.get("strike")
+    opt_type = t.get("opt_type")
+    # option-premium price if the pass has it (bs), else spot level
+    entry_price = t.get("entry_prem")
+    exit_price = t.get("exit_prem")
+    if entry_price is None:
+        entry_price = t.get("entry_spot")
+    if exit_price is None:
+        exit_price = t.get("exit_spot")
+    instr_short = (instr or "IDX").split()[0]
+    if strike is not None and opt_type:
+        try:
+            sym = f"{instr_short} {int(round(float(strike)))}{opt_type}"
+        except (TypeError, ValueError):
+            sym = f"{instr_short} {strike}{opt_type}"
+    else:
+        sym = instr_short
+    return {
+        "id": f"bt-{slug}-{idx}",
+        "sym": sym, "symbol": sym,
+        "entry": entry_side,
+        "qty": t.get("qty") or 0,
+        "entry_price": entry_price or 0,
+        "exit_price": exit_price or 0,
+        "entry_date": entry_dt[:10], "entry_time": entry_dt[11:16],
+        "exit_date": exit_dt[:10], "exit_time": exit_dt[11:16],
+        "pnl": _fin(t.get("pnl")),
+        "gross": _fin(t.get("gross")),
+        "fee": _fin(t.get("fee")),
+        "points": _fin(t.get("points")),
+        "strategy": slug, "mode": "backtest", "source": "backtest",
+        "broker": "backtest", "instrument": instr,
+        "exit_reason": t.get("reason") or "",
+        "tags": [],
+        "strike": strike, "opt_type": opt_type,
+        "bars": t.get("bars"),
+    }
+
+
+def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=None):
+    """`{summary, trades, filters, metrics, meta}` — same shape as the live
+    calendar-summary route, built from one backtest combo's all_trades.
+
+    summary  : { "YYYY-MM-DD": {pnl, count} }  bucketed by trade ENTRY date
+    trades   : mapped trade objects (all fields the Stats tables read)
+    metrics  : the run's OWN computed report card for this pass/period
+    meta     : run label, window, tf, instrument, which combo key was used
+    """
+    data = _load_results(slug)
+    meta = data.get("meta", {}) or {}
+    instr = meta.get("instrument") or ""
+    combo, key_used = _pick_combo(data, pass_, period)
+    all_trades = combo.get("all_trades") or []
+
+    trades = []
+    summary = {}
+    for i, t in enumerate(all_trades):
+        row = _map_trade(t, slug, instr, i)
+        d = row["entry_date"]
+        if not d:
+            continue
+        if from_date and d < from_date:
+            continue
+        if to_date and d > to_date:
+            continue
+        trades.append(row)
+        pnl = row["pnl"] or 0
+        bucket = summary.setdefault(d, {"pnl": 0.0, "count": 0})
+        bucket["pnl"] += pnl
+        bucket["count"] += 1
+    for d in summary:
+        summary[d]["pnl"] = round(summary[d]["pnl"], 2)
+
+    m = combo.get("metrics", {}) or {}
+    metrics = {
+        "profit_factor": _fin(m.get("profit_factor")),
+        "expectancy": _fin(m.get("expectancy")),
+        "sharpe": _fin(m.get("sharpe")),
+        "win_rate": _fin(m.get("win_rate")),
+        "n_trades": m.get("trades"),
+    }
+
+    return {
+        "summary": summary,
+        "trades": trades,
+        "filters": {"strategy": [], "broker": []},
+        "metrics": metrics,
+        "meta": {
+            "slug": slug,
+            "label": meta.get("design") or slug,
+            "instrument": instr,
+            "tf": meta.get("tf") or "",
+            "window": meta.get("window") or [],
+            "days": meta.get("days") or 0,
+            "pass": pass_, "period": period,
+            "combo_key_used": key_used,
+            "passes": meta.get("passes") or [],
+            "periods": meta.get("periods") or [],
+            "lot_size": meta.get("lot_size"), "lots": meta.get("lots"),
+        },
+    }

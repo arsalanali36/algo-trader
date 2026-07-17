@@ -40,6 +40,80 @@
       return el ? el.getAttribute('data-v') : '';
     }
 
+    // ── Backtest view mode ──────────────────────────────────────────────────
+    // The Stats calendar can show either live/paper trades (order_store) OR a
+    // backtest run's day-by-day results (runs/<slug>/results.js). Same grid,
+    // table, filters, range — only the data source switches. window.calBtMode
+    // is the flag every render branch reads.
+    function calSetView(v, el) {
+      const p = document.getElementById('cal-view');
+      p.querySelectorAll('span').forEach(x => { x.classList.remove('on'); x.style.color = '#8b949e'; });
+      el.classList.add('on'); el.style.color = '';
+      window.calBtMode = (v === 'bt');
+      const liveOnly = document.getElementById('cal-live-only');
+      const btOnly = document.getElementById('cal-bt-only');
+      const broker = document.getElementById('cal-broker');
+      if (liveOnly) liveOnly.style.display = window.calBtMode ? 'none' : 'inline-flex';
+      if (btOnly) btOnly.style.display = window.calBtMode ? 'inline-flex' : 'none';
+      if (broker) broker.style.display = window.calBtMode ? 'none' : '';
+      const strat = document.getElementById('cal-strat');
+      if (window.calBtMode) {
+        _calLoadBtRuns();   // fill cal-strat with runs, then calendarRender()
+      } else {
+        if (strat) { strat.innerHTML = '<option value="">All strategies</option>'; strat.value = ''; }
+        calendarRender();
+      }
+    }
+
+    // Segment click for the backtest Pass/Period controls (mirrors calSeg).
+    function calBtSeg(id, el) {
+      const p = document.getElementById(id);
+      p.querySelectorAll('span').forEach(x => { x.classList.remove('on'); x.style.color = '#8b949e'; });
+      el.classList.add('on'); el.style.color = '';
+      calendarRender();
+    }
+
+    // Populate the strategy dropdown with available backtest runs, then render.
+    async function _calLoadBtRuns() {
+      const strat = document.getElementById('cal-strat');
+      try {
+        const r = await fetch('/api/backtest/runs');
+        const j = await r.json();
+        const runs = j.runs || [];
+        window._calBtRuns = runs;
+        if (strat) {
+          const prev = strat.value;
+          strat.innerHTML = runs.map(rn => {
+            const badge = rn.deployed ? ' ✅' : (rn.significant ? '' : ' ⚠️');
+            const tf = rn.tf ? ` · ${rn.tf}` : '';
+            const lbl = `${rn.label}${badge}${tf}`.replace(/</g, '&lt;');
+            return `<option value="${rn.slug}">${lbl}</option>`;
+          }).join('');
+          if (prev && runs.some(rn => rn.slug === prev)) strat.value = prev;
+          else if (runs.length) strat.value = runs[0].slug;
+        }
+      } catch (e) { console.error('[bt runs] load failed', e); }
+      calendarRender();
+    }
+
+    // Fill the metric pills from a backtest run's OWN report card (combo
+    // metrics — real Sharpe/PF/etc. for the whole run window, not the visible
+    // date sub-range) and relabel the metrics card so the scope is honest.
+    function _renderBtMetrics(m, meta) {
+      const set = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      set('sm-pf', m.profit_factor == null ? '—' : Number(m.profit_factor).toFixed(2));
+      set('sm-exp', m.expectancy == null ? '—' : Math.round(m.expectancy).toLocaleString('en-IN'));
+      set('sm-sharpe', m.sharpe == null ? '—' : Number(m.sharpe).toFixed(2));
+      set('sm-wr', (m.win_rate == null ? 0 : Number(m.win_rate).toFixed(1)) + '%');
+      set('sm-n', m.n_trades == null ? 0 : m.n_trades);
+      const h = document.getElementById('cal-metrics-heading');
+      if (h) {
+        const key = meta.combo_key_used || '';
+        const nm = (meta.label || meta.slug || 'backtest');
+        h.textContent = `📐 Backtest report card — ${nm} (${key}, full run)`;
+      }
+    }
+
     function calPrevMonth() {
       calMonth--;
       if (calMonth < 0) { calMonth = 11; calYear--; }

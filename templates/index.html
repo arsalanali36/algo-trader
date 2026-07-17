@@ -1924,6 +1924,13 @@
     <!-- Filters (exact same as orders, named with cal-) -->
     <div
       style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:calc(52px + var(--alertH, 0px)); z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
+      <!-- View toggle: live/paper trades  ⟷  backtest results (same calendar/table) -->
+      <span id="cal-view" class="cal-seg"
+        style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;margin-right:2px">
+        <span data-v="live" class="on" onclick="calSetView('live',this)" style="padding:4px 10px;cursor:pointer">🟢 Live/Paper</span>
+        <span data-v="bt" onclick="calSetView('bt',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
+      </span>
+      <span id="cal-live-only" style="display:inline-flex;align-items:center;gap:8px">
       <span style="font-size:11px;color:#6e7681">Source</span>
       <span id="cal-src" class="cal-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
@@ -1946,10 +1953,28 @@
         <span data-v="live" onclick="calSeg('cal-mode',this)"
           style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
       </span>
+      </span><!-- /cal-live-only -->
       <select id="cal-strat" onchange="calendarRender()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px">
         <option value="">All strategies</option>
       </select>
+      <!-- Backtest-only controls: Pass (Instrument/+RMS/+BS) + Period (Full/Train/OOS) -->
+      <span id="cal-bt-only" style="display:none;align-items:center;gap:8px">
+        <span style="font-size:11px;color:#6e7681">Pass</span>
+        <span id="cal-bt-pass" class="cal-seg"
+          style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-v="instrument" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Instrument</span>
+          <span data-v="rms" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">+RMS</span>
+          <span data-v="bs" class="on" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 10px;cursor:pointer">+Black-Scholes</span>
+        </span>
+        <span style="font-size:11px;color:#6e7681;margin-left:4px">Period</span>
+        <span id="cal-bt-period" class="cal-seg"
+          style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-v="full" class="on" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 10px;cursor:pointer">Full</span>
+          <span data-v="train" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Train</span>
+          <span data-v="oos" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">OOS</span>
+        </span>
+      </span>
       <select id="cal-broker" onchange="calendarRender()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All brokers</option>
@@ -2016,7 +2041,7 @@
 
     <!-- Aggregate Metrics Card (Profit Factor / Expectancy / Sharpe) -->
     <div class="card" style="margin-top:16px; padding:16px 18px;">
-      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">📐 Metrics (this month, filtered)
+      <h3 id="cal-metrics-heading" style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px;">📐 Metrics (this month, filtered)
       </h3>
       <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px"
         id="stats-metric-pills">
