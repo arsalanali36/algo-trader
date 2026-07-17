@@ -148,7 +148,18 @@ def _range_adapter(mod, cfg, sid):
 
 ADAPTERS = {"range": _range_adapter}
 
-LOG_LINE = re.compile(r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})\s+\w+\s+(.*)$")
+# `(?:[.,]\d+)?` — the millis are OPTIONAL, and that is the whole point.
+# Two logger styles coexist here: the mission strategies use a custom formatter
+# ("10:37:47  INFO"), while everything on Python's default asctime emits
+# "10:32:15,325 INFO". Without this group the comma fails \s and the line never
+# matches — so parse_log_events returned ran=False, and run_for reported
+# "trader ran nahi" for a process that was alive, looping, and 48 lines deep
+# into today's log. It silently hit 6 of 18 logs: the ENTIRE Ars chain family
+# (04.01/04.02/04.03), 04.04 DirectWebhook, universe, ema. The EOD report shares
+# run_for(), so it has been quietly reporting the main live family as
+# never-ran. Accept both styles rather than restyle six loggers.
+LOG_LINE = re.compile(
+    r"^(\d{4}-\d{2}-\d{2}) (\d{2}:\d{2}:\d{2})(?:[.,]\d+)?\s+\w+\s+(.*)$")
 NO_ENTRY_FALLBACK = (15, 15)      # risk_gate default — late signals gated
 
 
