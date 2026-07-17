@@ -73,6 +73,77 @@
         setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 200);
       }
 
+      // ── Grouping ───────────────────────────────────────────────────────────
+      // 2026-07-17: a single Dhan 401 burst at market open produced 50 rows —
+      // 24 "ema_v1: <SYM> intraday 401" + 26 "ARS_CHAIN_V1_PAPER: fetch_daily
+      // <SYM>: HTTP 401", one per symbol. One problem, 50 rows, bell useless.
+      //
+      // Grouping lives HERE and not in _signature(): that function keeps symbols
+      // distinct on purpose ("INFY vs KOTAKBANK genuinely alag cheez hai") and
+      // it's right — when ONE symbol fails, you want to see which. The records
+      // stay granular; only the display collapses. Nothing is dropped or merged
+      // server-side, so count / resolve / history all behave exactly as before.
+      //
+      // The symbol list comes from the app's own config, never a regex guess at
+      // what "looks like" a ticker (HTTP, DH, ERROR are all-caps too).
+      var _symCache = null;
+      function _knownSyms() {
+        if (_symCache) return _symCache;
+        var s = { NIFTY: 1, BANKNIFTY: 1, FINNIFTY: 1, MIDCPNIFTY: 1, SENSEX: 1 };
+        var n = 5;
+        try {
+          var cfg = (typeof GLOBAL_CONFIG !== 'undefined' && GLOBAL_CONFIG) || {};
+          Object.keys(cfg).forEach(function (k) {
+            var v = cfg[k];
+            if (!v || typeof v !== 'object') return;
+            var sy = v.symbols, arr = [];
+            if (typeof sy === 'string') arr = sy.split(',');
+            else if (Array.isArray(sy)) arr = sy;
+            arr.forEach(function (x) {
+              x = String(x).trim().toUpperCase();
+              if (x && !s[x]) { s[x] = 1; n++; }
+            });
+          });
+        } catch (e) { }
+        if (n > 5) _symCache = s;   // only cache once the config has actually loaded
+        return s;
+      }
+      // Same shape as error_watch._signature (digits -> #), plus symbol masking.
+      function _famKey(n) {
+        var syms = _knownSyms();
+        var s = String(n.msg || '').replace(/0x[0-9a-fA-F]+/g, '#').replace(/\d+/g, '#');
+        s = s.split(/\s+/).map(function (w) {
+          var t = w.replace(/[^A-Za-z0-9&\-]/g, '').toUpperCase();
+          return (t && syms[t]) ? '<SYM>' : w;
+        }).join(' ');
+        return (n.source || '') + '|' + s.slice(0, 120);
+      }
+      var _openGroups = {};
+      function _toggleGroup(k) {
+        _openGroups[k] = !_openGroups[k];
+        _renderPanel(_cache);
+      }
+      window._notifToggleGroup = _toggleGroup;
+
+      function _row(n, indent) {
+        var cfg = _lv(n.level);
+        // resolved = uski asli wajah khatam ho chuki hai (alert file se hat gaya).
+        // Row rehti hai — history kabhi nahi jaati — bas chup + "fixed" ho jaati hai.
+        return '<div style="padding:8px 12px;border-bottom:1px solid #21262d;display:flex;gap:8px;align-items:flex-start;'
+          + (indent ? 'padding-left:30px;background:#0d1117;' : '')
+          + (n.read ? 'opacity:.55' : (indent ? '' : 'background:' + cfg.bg + '33')) + '">'
+          + '<span style="font-size:11px;margin-top:2px">' + (n.resolved ? '✅' : cfg.icon) + '</span>'
+          + '<div style="flex:1;min-width:0">'
+          + '<div style="font-size:12px;color:#e6edf3;word-break:break-word;line-height:1.4;'
+          + (n.resolved ? 'text-decoration:line-through;text-decoration-color:#6e7681' : '') + '">' + _esc(n.msg) + '</div>'
+          + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
+          + (n.resolved ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
+          + _ago(n.last_ts || n.ts)
+          + (n.source ? ' · ' + _esc(n.source) : '')
+          + (n.count > 1 ? ' · <span style="color:' + cfg.c + ';font-weight:700">×' + n.count + '</span>' : '')
+          + '</div></div></div>';
+      }
+
       function _renderPanel(items) {
         var list = document.getElementById('notif-list');
         if (!list) return;
@@ -80,22 +151,39 @@
           list.innerHTML = '<div style="padding:22px 12px;text-align:center;color:#6e7681;font-size:12px">Abhi tak koi notification nahi 🎉</div>';
           return;
         }
-        list.innerHTML = items.map(function (n) {
-          var cfg = _lv(n.level);
-          // resolved = uski asli wajah khatam ho chuki hai (alert file se hat gaya).
-          // Row rehti hai — history kabhi nahi jaati — bas chup + "fixed" ho jaati hai.
-          return '<div style="padding:8px 12px;border-bottom:1px solid #21262d;display:flex;gap:8px;align-items:flex-start;'
-            + (n.read ? 'opacity:.55' : 'background:' + cfg.bg + '33') + '">'
-            + '<span style="font-size:11px;margin-top:2px">' + (n.resolved ? '✅' : cfg.icon) + '</span>'
+        // group, newest-first order preserved by first appearance
+        var order = [], byKey = {};
+        items.forEach(function (n) {
+          var k = _famKey(n);
+          if (!byKey[k]) { byKey[k] = []; order.push(k); }
+          byKey[k].push(n);
+        });
+        list.innerHTML = order.map(function (k) {
+          var g = byKey[k];
+          if (g.length === 1) return _row(g[0], false);
+          var head = g[0], cfg = _lv(head.level);
+          var open = !!_openGroups[k];
+          var unread = g.filter(function (n) { return !n.read; }).length;
+          var fixed = g.filter(function (n) { return n.resolved; }).length;
+          var hits = g.reduce(function (a, n) { return a + (parseInt(n.count, 10) || 1); }, 0);
+          var esc = k.replace(/'/g, "\\'").replace(/"/g, '&quot;');
+          return '<div style="border-bottom:1px solid #21262d;'
+            + (unread ? 'background:' + cfg.bg + '33' : 'opacity:.55') + '">'
+            + '<div onclick="_notifToggleGroup(\'' + esc + '\')" style="padding:8px 12px;display:flex;gap:8px;align-items:flex-start;cursor:pointer">'
+            + '<span style="font-size:11px;margin-top:2px">' + (fixed === g.length ? '✅' : cfg.icon) + '</span>'
             + '<div style="flex:1;min-width:0">'
-            + '<div style="font-size:12px;color:#e6edf3;word-break:break-word;line-height:1.4;'
-            + (n.resolved ? 'text-decoration:line-through;text-decoration-color:#6e7681' : '') + '">' + _esc(n.msg) + '</div>'
+            + '<div style="font-size:12px;color:#e6edf3;word-break:break-word;line-height:1.4">'
+            + _esc(head.msg) + '</div>'
             + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
-            + (n.resolved ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
-            + _ago(n.last_ts || n.ts)
-            + (n.source ? ' · ' + _esc(n.source) : '')
-            + (n.count > 1 ? ' · <span style="color:' + cfg.c + ';font-weight:700">×' + n.count + '</span>' : '')
-            + '</div></div></div>';
+            + (fixed === g.length ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
+            + _ago(head.last_ts || head.ts)
+            + (head.source ? ' · ' + _esc(head.source) : '')
+            + ' · <span style="color:' + cfg.c + ';font-weight:700">' + g.length + ' jaise</span>'
+            + (hits > g.length ? ' <span style="color:#6e7681">(' + hits + ' hits)</span>' : '')
+            + ' · <span style="color:#58a6ff">' + (open ? '▾ chhupao' : '▸ sab dekho') + '</span>'
+            + '</div></div></div>'
+            + (open ? g.map(function (n) { return _row(n, true); }).join('') : '')
+            + '</div>';
         }).join('');
       }
 
