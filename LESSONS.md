@@ -3354,3 +3354,69 @@ program you don't run.**
 **Blast radius.** All three Ars chain configs are paper; 04.04 DirectWebhook (the live
 one) doesn't use this engine. No money lost — but the mirror project that exists to
 retire a ₹19,200/yr webhook was being judged on the wrong engine's numbers.
+
+---
+
+## TRAP #132 — the registry was right; nothing asked it properly
+
+**Symptom.** "Registry me jo naam likhe hain wahi dikhne chahiye — abhi bhi puri app
+me ye ajeeb naam leak ho rahe hain." Three screenshots: Stats table, Payoff modal
+title, notification bell. All showing `ARS_CHAIN_V1_PAPER` / `arschain_MAIN` /
+`vrp_condor_v1` instead of the names the registry has held all along.
+
+**The count.** Reported 3. An audit found **25**.
+
+**The shape.** Not one bug — three, and every one of them made the raw key the *only
+possible* output, so no amount of care at the call site would have helped:
+
+1. **Two resolvers, different rules.** `strategy_registry.resolve()` (Python) matches
+   id + config_key + slug + **aliases**. The JS copy indexed `config_key` ONLY.
+   Anything arriving by alias — old `order_store` rows, `ema920`, a log filename —
+   missed and fell through to raw. Two lookups = two truths (shape #4).
+2. **The labeller was trapped in one file.** `regLabel` lived in `app-05`.
+   `mtm_charts.html` / `backtest_chart.html` / `script3.html` never load it — on those
+   pages the function **did not exist**. Raw wasn't a mistake there, it was the only
+   thing that could happen (shape #2: built ≠ wired).
+3. **The fallback map held retired names.** `range_v1: 'Range Breakout'`,
+   `ars_chain_v1: 'Ars Chain (live)'` — names the registry had already moved into
+   `aliases`. One failed fetch and the app confidently rendered a **stale** name.
+   Worse than raw: raw looks broken, stale looks fine.
+
+**Why fixing 25 sites is not a fix.** Site #26 gets written next week. The only durable
+move was to make the leak *mechanically impossible to commit*.
+
+**Fix.**
+- `static/js/registry.js` — one labeller, 4-way alias index (parity with Python's
+  `resolve()`), loaded on **every** page that shows a strategy. **No hardcoded seed**:
+  registry down → raw key. A visible "not loaded" beats an invisible wrong name.
+- `notify` — the id no longer goes *into* `msg`. A joined string can't be re-labelled
+  afterwards; that's exactly why the bell read `ARS_CHAIN_V1_PAPER: ...`. It goes in
+  `source=`, and `listing()` labels it at **READ** time → rename a strategy and its
+  whole history relabels itself, while the raw id stays in the record for grep.
+  Same idea for dashboard toasts (`strat_label()`) and `eod_report` bullets.
+- Raw stays raw in plumbing: order_store rows, query params, config keys,
+  `option.value`, `title=` hovers. Labelling those would be **wrong**, not just noisy.
+
+**The permanent part — `architecture_audit` check 9 (RAW-STRAT-LABEL).**
+It also scans `static/js/` + `templates/`. Checks 1-8 are `.py`-only — which is
+*precisely* why all 25 leaks lived undisturbed. **An enforcer that can't see the
+display layer enforces nothing about the display layer** (same lesson as TRAP #124,
+where the audit reported "0 FAIL" while 6 raw-HTTP order sites were live).
+Escape hatch: `raw-id-ok: <reason>` for strings that are **identity, not display** —
+storage keys, change-detect fingerprints. Labelling those actively breaks things (two
+strategies sharing a name → fingerprint collision; renamed key → user's saved settings
+gone). The hatch requires a written reason; it is not a silent skip.
+
+**It paid for itself immediately.** The new check found **4 leaks the manual sweep had
+missed** (`backtest_chart.html` ×2, `script3.html`, `mtm_charts.html`) — i.e. the human
+pass, done carefully and on purpose, was already 4 short at the moment it declared done.
+
+**Fast-detect.** `python _TOOLS/architecture_audit.py` → any `RAW-STRAT-LABEL` line.
+Historical notification rows written before this fix keep the prefix inside `msg`
+(78/96 were stripped on VPS 2026-07-17, backup `data/notifications.jsonl.bak.prefix.*`;
+18 left alone because their prefix didn't exactly match `source` — no guessing).
+
+**Blast radius.** Display-only — no order path touched. But the cost was real: the same
+strategy answered to 4 different names across the app, and TRAP #128 already showed
+where naming confusion ends up — a live SL read from the wrong config key because the
+id in the money path wasn't the id anyone recognised.
