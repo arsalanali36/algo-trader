@@ -77,13 +77,23 @@ def live_trades(cont5, daily, date_from, date_to):
         rt.run_signal_engine(upto, levels, cfg, trades_out=raw)
         raw = [r for r in raw if r["time"].date() == d]
 
-        # pair entries with the next exit; force a 3:15 close like the Pine
+        # Pair entries with exits. An ENTRY arriving while a position is open is
+        # a REVERSAL — it closes the old side and opens the new one. Dropping it
+        # (the obvious `if pos is None:`) is not a small bug: on 2026-04-06 the
+        # engine went short 09:50, reversed long 11:20 and made +356; ignoring
+        # the reversal recorded the short as still open until 15:15 for -398.
+        # That single artifact WAS the "biggest missed trade" and the "-354 exit
+        # gap" in the first run of this tool — the same event, double-counted,
+        # ~710 of a reported 951-point gap. The engine had done it right.
+        # backtest_day's wrapper handles reversals; this didn't.
         pos = None
         for r in raw:
             if r["kind"].startswith("ENTRY"):
-                if pos is None:
-                    pos = dict(entry_time=r["time"], entry_price=r["price"],
-                               side="Long" if r["kind"] == "ENTRY_LONG" else "Short")
+                side = "Long" if r["kind"] == "ENTRY_LONG" else "Short"
+                if pos is not None:
+                    pos.update(exit_time=r["time"], exit_price=r["price"], exit_reason=side)
+                    out.append(pos)
+                pos = dict(entry_time=r["time"], entry_price=r["price"], side=side)
             elif pos is not None:
                 pos.update(exit_time=r["time"], exit_price=r["price"], exit_reason=r["reason"])
                 out.append(pos); pos = None
