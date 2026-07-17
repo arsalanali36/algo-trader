@@ -9,6 +9,45 @@
 
 ---
 
+## 🔴 FAISLA — significance test (jo poore din nahi hua tha)
+
+`arschain_significance.py` — repo ka apna rotation-permutation, 1000 perms, spot pass:
+
+```
+2018-2026 (poora)         1950 trades | Sharpe 0.50 | null p95 0.55 | p=0.072   FAIL
+2026 sirf (TV wala daur)   104 trades | Sharpe 0.66 | null p95 2.39 | p=0.371   FAIL
+```
+
+**User ne TV dikhaya: PF 2.024, +₹94,078 (+9.41%), 110 trades, Jan-Jul 2026.** Wo daur
+sach me achha hai — mere data me bhi (2026: 104 trades, spot +59,995; 2025: **−64,587**).
+**Par wo luck se alag NAHI hai.**
+
+`null p95 = 2.39` sabse ahem number hai: **usi position series ko RANDOM jagah ghuma do**
+— bilkul bekaar strategy — aur wo 6.5-mahine ki window me routinely **Sharpe 2.39** tak
+pahunchti hai. Asli **0.66** hai. Random usse **37% baar** hara deta hai.
+
+> **6.5 mahina / 110 trade itne chhote hain ki wahan sab kuch achha dikhta hai.**
+> PF 2.0 dekhkar deploy karna theek isi jaal me girna hai. Gate isi liye banaya tha.
+
+Poore 8.5 saal pe **p=0.072** — 0.05 ke kareeb, paar nahi. Signal me shayad kuch **dubla**
+hai, par sabit nahi hota.
+
+### ML se optimise kar sakte hain?
+**Nahi — ML ki kami se nahi, balki optimise karne ko kuch hai hi nahi.** ML maujood pattern
+dhoondhta hai; base p=0.371 hai. 104 trades pe mining = **noise me pattern** (wo hamesha
+mil jaata hai) → live me marega. **Is repo me ye ho chuka hai:** ML mining Tasks 0-4,
+**~4 million rules, ZERO ne gate paar kiya**; best GP rule val-Sharpe 2.25 par **DSR 0.02
+vs ~3.9 bar**; ek "golden rule" (val-Sharpe 7.1) **94% expiry-day artifact** nikla
+(TRAP #114). `ml_gate.py` ka deflated-Sharpe theek isi ke liye hai — aur wo sahi karega.
+**ML tab kaam ka hai jab edge maujood ho aur use sharpen karna ho. Pehle edge sabit karo.**
+
+### Bacha hua ek raasta
+p=0.072 wala dubla edge option ke kharche (1.06 pt/trade) me se nikalna lagbhag namumkin
+hai. **FUTURES** — DOM me spread **0.008%** naapa hua vs option 0.11-0.16% (**15x sasta**),
+na theta, na VRP, delta 1. **Aaj tak kabhi dekha nahi gaya. Agla kaam wahi hai.**
+
+---
+
 ## 🛑 Ek line me — aur ye wo NAHI hai jo is doc ne din bhar kaha
 
 **Is signal ka apna edge 1.2 point/trade hai. Use trade karne ka kharcha 1.06 point hai.
