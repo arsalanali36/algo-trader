@@ -425,6 +425,8 @@ def run_signal_engine(df_1m, key_levels, cfg, trades_out=None, atr_series=None):
             trades_today = 0
             position = entry_price = None
             atr_sl_long = atr_sl_short = None
+            if zone_upper is not None:      # shelve before wiping — see below
+                zones_history.append([zone_bar, i - 1, zone_upper, zone_lower, zone_type])
             zone_upper = zone_lower = zone_type = None
             zone_bar = -999
             tracked_high = tracked_low = None
@@ -561,6 +563,10 @@ def run_signal_engine(df_1m, key_levels, cfg, trades_out=None, atr_series=None):
             signal_reason = f"GREEN_ZONE close>{zone_upper:.1f}"
             position, entry_price = "LONG", c
             atr_sl_long = c - atr_val * atr_mult
+            # Shelve before clearing: the zone that CAUSED this entry is the one
+            # most worth seeing on a chart, and it used to vanish here without
+            # ever reaching zones_history.
+            zones_history.append([zone_bar, i, zone_upper, zone_lower, zone_type])
             zone_type = zone_upper = zone_lower = None   # Pine: Green_Zone := false
             trades_today += 1
             _emit("ENTRY_LONG", i, c, signal_reason)
@@ -569,6 +575,10 @@ def run_signal_engine(df_1m, key_levels, cfg, trades_out=None, atr_series=None):
             signal_reason = f"RED_ZONE close<{zone_lower:.1f}"
             position, entry_price = "SHORT", c
             atr_sl_short = c + atr_val * atr_mult
+            # Shelve before clearing: the zone that CAUSED this entry is the one
+            # most worth seeing on a chart, and it used to vanish here without
+            # ever reaching zones_history.
+            zones_history.append([zone_bar, i, zone_upper, zone_lower, zone_type])
             zone_type = zone_upper = zone_lower = None   # Pine: Red_Zone := false
             trades_today += 1
             _emit("ENTRY_SHORT", i, c, signal_reason)
