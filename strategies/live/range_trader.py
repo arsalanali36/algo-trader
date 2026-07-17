@@ -815,6 +815,13 @@ def main(strategy_id="range"):
     # fixed (confirmed via order_store before restarting).
     last_day        = ist_now().date()
     daily_levels    = {}   # symbol → [(price, type)]
+    # Symbols Dhan can't resolve AT ALL (not in the scrip master — e.g. a
+    # delisted/demerged name still sitting in someone's config). Retrying those
+    # is pointless: the level-build below retries a failed fetch every loop, and
+    # without this set a permanently-dead symbol would retry forever AND ring the
+    # bell forever. Transient failures (a 401 burst) are NOT in here — they must
+    # keep retrying. Cleared on the day rollover with daily_levels.
+    dead_syms       = set()
     pivot_labels    = {}   # symbol → {rounded_price: specific label, e.g. "R3"/"S1"/"P"/"PDH"} — display-only, never used in entry logic
 
     while True:
@@ -822,6 +829,7 @@ def main(strategy_id="range"):
 
         # Daily reset
         if now.date() != last_day:
+            dead_syms = set()
             log.info("New trading day — resetting state & reloading daily levels")
             reset_daily_state()
             daily_levels = {}
@@ -1014,6 +1022,8 @@ def main(strategy_id="range"):
             # `.get(symbol)` is falsy for BOTH missing and empty -> retry next
             # loop (~5m apart, and fetch_daily is rate-limiter gated, so this
             # can't turn into a hammer).
+            if symbol in dead_syms:
+                continue   # Dhan ise jaanta hi nahi — bola ja chuka, ab chup
             if not daily_levels.get(symbol):
                 _retry = symbol in daily_levels   # empty from an earlier failure
                 if _retry:
@@ -1045,21 +1055,49 @@ def main(strategy_id="range"):
                 if daily_levels[symbol]:
                     log.info(f"{symbol} levels: {len(daily_levels[symbol])} key levels loaded")
                 else:
-                    # Zero levels = this symbol CANNOT signal (no zones without
-                    # key levels). Say so loudly and ring the bell — the old
-                    # INFO "0 key levels loaded" read exactly like the success
-                    # line and scrolled past.
-                    log.error(f"{symbol}: 0 key levels — ye symbol aaj signal nahi de sakta "
-                              f"(daily fetch fail). Agle loop me retry hoga.")
-                    try:
-                        import notify
-                        notify.error(
-                            f"{strategy_id}: {symbol} ke 0 key levels — daily data nahi mila, "
-                            f"ye symbol tab tak trade nahi karega. Retry chalu hai.",
-                            key=f"levels0:{strategy_id}:{symbol}", source=strategy_id)
-                    except Exception:
-                        pass
-                    daily_levels.pop(symbol, None)   # don't cache the failure
+                    # Zero levels = this symbol CANNOT signal (no zones without key
+                    # levels). But WHY decides what to do, and the two cases are
+                    # opposites:
+                    #
+                    #   permanent — Dhan has no scrip-master entry for it at all
+                    #               (delisted/demerged name still in a config, e.g.
+                    #               TATAMOTORS). Retrying can never succeed; say it
+                    #               once, then stay quiet. Without this the retry
+                    #               above loops forever and rings the bell forever
+                    #               — spam this very fix caused on 2026-07-17.
+                    #   transient — the fetch failed (401 burst / network). Retry.
+                    #
+                    # Either way say it ONCE per day (_rt_once): the old INFO
+                    # "0 key levels loaded" was shaped exactly like the success line
+                    # and scrolled straight past.
+                    _permanent = _dhan_info(symbol) is None
+                    if _permanent:
+                        dead_syms.add(symbol)
+                        daily_levels.pop(symbol, None)
+                        if _rt_once(f"deadsym:{strategy_id}:{symbol}"):
+                            log.error(f"{symbol}: Dhan scrip master me hai hi nahi — ye symbol "
+                                      f"kabhi trade nahi karega. Config ki symbols list se hatao.")
+                            try:
+                                import notify
+                                notify.error(
+                                    f"{strategy_id}: {symbol} Dhan me exist hi nahi karta — "
+                                    f"config ki symbols list se hatao (retry bekaar hai).",
+                                    key=f"deadsym:{strategy_id}:{symbol}", source=strategy_id)
+                            except Exception:
+                                pass
+                        continue
+                    daily_levels.pop(symbol, None)   # transient → retry next loop
+                    if _rt_once(f"levels0:{strategy_id}:{symbol}"):
+                        log.error(f"{symbol}: 0 key levels — daily fetch fail. "
+                                  f"Agle loop me retry hoga.")
+                        try:
+                            import notify
+                            notify.error(
+                                f"{strategy_id}: {symbol} ke 0 key levels — daily data nahi mila, "
+                                f"tab tak ye symbol trade nahi karega. Retry chalu hai.",
+                                key=f"levels0:{strategy_id}:{symbol}", source=strategy_id)
+                        except Exception:
+                            pass
 
                 # Display-only specific labels (R1-R5/S1-S5/P/PDH/PDC/PDL) for the
                 # Watch chart — build_key_levels() collapses these to generic
