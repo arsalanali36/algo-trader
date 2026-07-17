@@ -2718,6 +2718,12 @@
                       <input id="risk-global-capital" type="number" step="1" placeholder="e.g. 200000" />
                     </div>
                     <div class="inputs-row"><label
+                        title="Capital Priority Reservation: 'Discretionary' (dessert) strategies MILKAR sirf itna capital le sakti hain — isse ORB/mission ka capital kabhi starve nahi hota (dessert 9:20 pe pehle enter karti hai). Blank/0 = OFF. Strategy ko Discretionary tier Per-Strategy Override table (Tier column) me set karo."
+                        style="color:#58a6ff">Discretionary Pool ₹ (mission-protect)</label>
+                      <input id="risk-global-disc-pool" type="number" step="1" placeholder="blank = OFF"
+                        style="border-color:#58a6ff" />
+                    </div>
+                    <div class="inputs-row"><label
                         title="Always-on per-position rule: any open position whose unrealized loss crosses 1% of THIS number gets force-squared-off, regardless of source/SL tags. Leave blank to keep this rule OFF."
                         style="color:#f85149">Total Capital ₹ (1% max-loss)</label>
                       <input id="risk-global-total-capital" type="number" step="1" placeholder="blank = rule OFF"

@@ -332,6 +332,7 @@
       document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';
       document.getElementById('risk-global-rs').value = RISK_CFG.global.max_loss_rs ?? '';
       document.getElementById('risk-global-capital').value = RISK_CFG.global.capital_rs ?? '';
+      { const _dp = document.getElementById('risk-global-disc-pool'); if (_dp) _dp.value = RISK_CFG.global.discretionary_pool_rs ?? ''; }
       document.getElementById('risk-global-total-capital').value = RISK_CFG.global.total_capital_rs ?? '';
       document.getElementById('risk-global-margin').value = RISK_CFG.global.margin_multiplier ?? '';
       document.getElementById('risk-global-mode').value = RISK_CFG.global.capital_mode || 'reject';
@@ -468,11 +469,11 @@
         + '<th colspan="2" style="text-align:center;color:#d29922" title="Per-Trade Default SL &amp; Target — is strategy ke NAYE trades pe Default-SL lage ya nahi, kaunsa mode, aur ⚙ se uski values. Blank = global fallback.">🎯 Default SL/Target</th>'
         + '<th class="psadv" colspan="4" style="text-align:center;color:#d29922">1️⃣ Strategy Day Cap</th>'
         + '<th class="psadv" style="color:#d29922">2️⃣ Per-Trade SL ₹</th>'
-        + '<th class="psadv">Capital ₹</th><th class="psadv">Margin Mult.</th><th class="psadv">Mode</th><th class="psadv" style="color:#f85149">Shadow-Live</th>'
+        + '<th class="psadv">Capital ₹</th><th class="psadv" style="color:#58a6ff" title="Mission = full capital (ORB etc.); Discretionary = capped at the Discretionary Pool (Risk tab) so it can never starve mission capital. Blank = Mission.">Tier</th><th class="psadv">Margin Mult.</th><th class="psadv">Mode</th><th class="psadv" style="color:#f85149">Shadow-Live</th>'
         + '<th class="psadv" colspan="2" style="text-align:center;color:#3fb950">🛡️ Auto-Hedge</th></tr>'
         + '<tr><th></th><th></th><th></th><th></th><th>Enabled</th><th>Mode</th>'
         + '<th class="psadv">Max Loss %</th><th class="psadv">Max Loss ₹</th><th class="psadv" style="color:#3fb950">Max Profit ₹</th><th class="psadv" style="color:#d29922">Max Trades</th><th class="psadv"></th>'
-        + '<th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th>'
+        + '<th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th><th class="psadv"></th>'
         + '<th class="psadv">Min Strikes</th><th class="psadv">Max Premium ₹</th></tr>';
       // group + order like the Logs sidebar (shared STRAT_GROUPS / MISSION_*)
       const _rlc = k => String(k).toLowerCase();
@@ -487,7 +488,7 @@
       if (_rLeft.length) { _rOrdered.push({ h: 'Other' }); _rLeft.forEach(k => _rOrdered.push({ id: k })); }
       _rOrdered.forEach(item => {
         if (item.h) {
-          html += `<tr><td colspan="16" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
+          html += `<tr><td colspan="17" style="padding:9px 8px 4px;font-size:10px;font-weight:700;letter-spacing:.5px;text-transform:uppercase;color:#6e7681;background:#0d1117;border-top:1px solid #21262d">${item.h}</td></tr>`;
           return;
         }
         const id = item.id;
@@ -526,6 +527,11 @@
             value="${ov.default_sl_rs ?? ''}" style="width:120px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #d29922;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-capital-${id}" type="number" step="1" placeholder="global"
             value="${ov.capital_rs ?? ''}" style="width:140px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
+      <td class="psadv"><select id="risk-tier-${id}" title="Discretionary = capped at the Discretionary Pool so it never starves Mission capital"
+            style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #58a6ff;border-radius:4px">
+            <option value="" ${(!ov.tier || ov.tier === 'mission') ? 'selected' : ''}>Mission</option>
+            <option value="discretionary" ${ov.tier === 'discretionary' ? 'selected' : ''}>Discretionary</option>
+          </select></td>
       <td class="psadv"><input id="risk-margin-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.margin_multiplier ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td class="psadv"><select id="risk-mode-${id}" style="background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px">
@@ -772,6 +778,7 @@
       const gPct = document.getElementById('risk-global-pct').value;
       const gRs = document.getElementById('risk-global-rs').value;
       const gCap = document.getElementById('risk-global-capital').value;
+      const gDiscPool = (document.getElementById('risk-global-disc-pool') || {}).value || '';
       const gTotalCap = document.getElementById('risk-global-total-capital').value;
       const gMar = document.getElementById('risk-global-margin').value;
       const gMode = document.getElementById('risk-global-mode').value;
@@ -788,6 +795,7 @@
           max_loss_pct: gPct !== '' ? parseFloat(gPct) : null,
           max_loss_rs: gRs !== '' ? parseFloat(gRs) : null,
           capital_rs: gCap !== '' ? parseFloat(gCap) : null,
+          discretionary_pool_rs: gDiscPool !== '' ? parseFloat(gDiscPool) : null,   // capital-priority pool cap
           total_capital_rs: gTotalCap !== '' ? parseFloat(gTotalCap) : null,
           margin_multiplier: gMar !== '' ? parseFloat(gMar) : null,
           capital_mode: gMode || 'reject',
@@ -863,6 +871,7 @@
         const dslModeEl = document.getElementById(`risk-dslmode-${id}`);
         const hedgeStrikesEl = document.getElementById(`risk-hedgestrikes-${id}`);
         const hedgePremiumEl = document.getElementById(`risk-hedgepremium-${id}`);
+        const tierEl = document.getElementById(`risk-tier-${id}`);
         if (!pEl || !rEl) return;
         const p = pEl.value, r = rEl.value, c = cEl ? cEl.value : '', m = mEl ? mEl.value : '';
         const pt = ptEl ? ptEl.value : '';
@@ -874,10 +883,11 @@
         const dslMode = dslModeEl ? dslModeEl.value : '';
         const hedgeStrikes = hedgeStrikesEl ? hedgeStrikesEl.value : '';
         const hedgePremium = hedgePremiumEl ? hedgePremiumEl.value : '';
+        const tier = tierEl ? tierEl.value : '';
         const dslVals = (window._dslVals || {})[id] || {};
         const hasDslVals = Object.keys(dslVals).length > 0;
         if (p !== '' || r !== '' || pt !== '' || mt !== '' || c !== '' || m !== '' || mode !== '' || shadow !== '' || instLoss !== ''
-          || dslEn !== '' || dslMode !== '' || hasDslVals || hedgeStrikes !== '' || hedgePremium !== '') {
+          || dslEn !== '' || dslMode !== '' || hasDslVals || hedgeStrikes !== '' || hedgePremium !== '' || tier !== '') {
           payload.per_strategy[id] = {
             max_loss_pct: p !== '' ? parseFloat(p) : null,
             max_loss_rs: r !== '' ? parseFloat(r) : null,
@@ -892,6 +902,7 @@
             default_sl_mode: dslMode || null,
             hedge_offset_strikes: hedgeStrikes !== '' ? parseInt(hedgeStrikes) : null,
             hedge_max_premium_rs: hedgePremium !== '' ? parseFloat(hedgePremium) : null,
+            tier: tier || null,   // capital-priority: 'discretionary' = pool-capped; null/'' = mission (full cap)
             ...dslVals,   // task 81 ⚙ — per-strategy Default SL/Target value overrides
           };
         }
