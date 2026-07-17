@@ -51,29 +51,45 @@ def at_315(b):
     return None, None
 
 
+STRAT = sys.argv[1] if len(sys.argv) > 1 else "arschain_MAIN"
+MODE = sys.argv[2] if len(sys.argv) > 2 else "live"
+
 c = sqlite3.connect("data/trades.db")
 cur = c.cursor()
-cur.execute("select ts, date(ts), side, trad_sym, sec_id, qty, price from orders "
-            "where strategy='arschain_MAIN' and mode='live' and status='filled' order by ts")
+cur.execute("select ts, date(ts), side, trad_sym, sec_id, qty, price, tags from orders "
+            "where strategy=? and mode=? and status='filled' order by ts", (STRAT, MODE))
 rows = cur.fetchall()
 
+def _reason(tags):
+    for p in (str(tags or "")).split(","):
+        p = p.strip()
+        for pre in ("DEFAULT_TSL_SL", "DEFAULT_TSL_TARGET", "RMS_MAXLOSS", "EXPIRY_",
+                    "EOD_315", "ATR_TRAILING", "ZONE_", "TV_EXIT", "REVERSAL",
+                    "MANUAL_CLOSE", "EXTERNALLY_CLOSED", "RMS_PROFIT"):
+            if p.startswith(pre):
+                return p[:26]
+    return ""
+
 open_leg, trades = {}, []
-for ts, d, side, sym, sec, qty, px in rows:
+for ts, d, side, sym, sec, qty, px, tags in rows:
     if side == "SELL" and sec not in open_leg:      # ye strategy BECHTI hai = entry
         open_leg[sec] = dict(ts=ts, d=d, sym=sym, sec=sec, qty=qty, entry=float(px))
     elif side == "BUY" and sec in open_leg:         # agla BUY usi contract pe = asli exit
         t = open_leg.pop(sec)
         t["exit"] = float(px)
+        t["exit_ts"] = ts
+        t["reason"] = _reason(tags)
         trades.append(t)
 for sec, t in open_leg.items():
     t["exit"] = None
     trades.append(t)
 
 print()
-print("%-11s %-22s %4s %8s %8s %10s | %8s %6s %10s | %9s" % (
-    "date", "contract", "qty", "entry", "exit", "ACTUAL", "3:15 px", "at",
-    "WHAT-IF", "farq"))
-print("-" * 118)
+print("  %s / %s" % (STRAT, MODE))
+print("%-11s %-22s %4s %7s %7s %9s | %7s %9s | %9s | %-5s %s" % (
+    "date", "contract", "qty", "entry", "exit", "ACTUAL", "3:15px",
+    "HOLD-315", "farq", "held", "actual exit reason"))
+print("-" * 132)
 ta = tw = 0.0
 n_act = 0
 for t in sorted(trades, key=lambda x: x["ts"]):
@@ -95,14 +111,19 @@ for t in sorted(trades, key=lambda x: x["ts"]):
         n_act += 1
     wi = ((t["entry"] - p315) * q
           - CH.option_charges(t["entry"], p315, q, "SELL", when=t["ts"]))
-    tw += wi
-    print("%-11s %-22s %4d %8.2f %8s %10s | %8.2f %6s %10s | %9s" % (
+    if act is not None:      # sirf paired trades tolo — warna OPEN leg total phula deta hai
+        tw += wi
+    held = ""
+    if t.get("exit_ts"):
+        held = str(t["exit_ts"])[11:16]
+    print("%-11s %-22s %4d %7.2f %7s %9s | %7.2f %9s | %9s | %-5s %s" % (
         t["d"], t["sym"][:22], q, t["entry"],
         ("%.2f" % t["exit"]) if t["exit"] is not None else "OPEN",
         format(act, ",.0f") if act is not None else "—",
-        p315, hm, format(wi, ",.0f"),
-        format(wi - act, ",.0f") if act is not None else "—"))
+        p315, format(wi, ",.0f"),
+        format(wi - act, ",.0f") if act is not None else "—",
+        held, t.get("reason", "")))
 print("-" * 118)
-print("  ACTUAL (%d trades): %s   |   3:15 tak hold: %s   |   farq: %s" % (
+print("  %d paired trades  |  ACTUAL %s  |  3:15 tak hold %s  |  farq %s" % (
     n_act, format(ta, ",.0f"), format(tw, ",.0f"), format(tw - ta, ",.0f")))
 print()
