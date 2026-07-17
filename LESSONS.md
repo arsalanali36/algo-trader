@@ -3290,3 +3290,67 @@ aur **₹8 lakh** kam banati hai. **"Achha lagta hai" ek bharosemand signal hai 
 wale variant ko dekh raha hai.** Aur ek mahine ki firefighting (webhook plumbing, lot
 mismatch, RMS override, rejections) me **premise pe sawaal uthane ki jagah hi nahi bachti** —
 aag hamesha "kaise" ki hoti hai.
+
+---
+
+## TRAP #131 — the fixes went in the copy; the copy didn't trade
+
+**Symptom.** "TV ne aaj 2 trade liye, python ne 1." Chasing that one bar led to a
+strategy with two engines, where the one placing orders had none of the work.
+
+**The shape.** `range_trader.run_signal_engine` traded. `validate_strategy.backtest_day`
+ran only in tests — its docstring said so outright: *"Mirror of run_signal_engine but
+COLLECTS every trade"*. It was copied for a real reason: the engine returns only the
+LAST signal, a backtest needs all of them. Nobody re-synced them, and the Pine-matching
+work that reached 90.2% — harami patterns, selectedLine RESISTANCE priority, the TV
+fill convention, dropping the tracked_high filter — all landed in the mirror. For
+months the quoted number came from code that never placed an order.
+
+Measured 2026-07-17 against the user's own TV export (Jan 6 – Jun 16):
+
+| | vs TV |
+|---|---|
+| `backtest_day` (mirror) | **75.3%** |
+| `run_signal_engine` (trades) | **49.5%** |
+
+Not merely less accurate — unprofitable on the same bars: 124 trades, net −439.7 pts,
+PF 0.89, Sharpe −0.46, while TV made +1,987.7.
+
+**Six drifts, every one in the mirror's favour.** max_candle_size on the wrong bar at a
+hardcoded value · zones formed off a PERSISTENT touch flag instead of the touching bar
+(605 zones vs TV's 430 — the big one) · touch took the first matching level instead of
+RESISTANCE-priority · tracked_high reset instead of accumulating, and its entry filter
+applied where the mirror deliberately drops it · the line-type check on zone formation
+instead of entry · harami missing from the pattern wrappers.
+
+**The tell that named the root cause.** Where the zones agreed, they agreed *to the
+decimal* — TV `11:30 RED[26316.8-26335.3]` == the engine's, exactly. Patterns, pivots
+and zone prices were never wrong; only the gates were. **When the maths matches
+perfectly and the count doesn't, it isn't a bug — it's a second version of the same
+code.**
+
+**Root pattern.** A copy made for a good reason is still a copy. The moment one gets a
+fix the other is wrong — and the one that keeps getting fixes is the one people TEST,
+never the one that RUNS, because testing is where you look. Rule 6B already says don't
+duplicate; the exception that feels justified ("I just need it to return something
+else") is exactly how this happens. **If the difference is the OUTPUT, add an optional
+output (a `trades_out` list), not a second brain.**
+
+**Permanent guard.** One engine: `run_signal_engine` holds the logic; `backtest_day` is
+a wrapper adding only TradingView's next-bar fill (a genuine backtest concern).
+Patterns inlined so the wrapper's omission can't return. `atr_series` param so a per-day
+caller passes a warm ATR instead of forking. `exit_hm` from cfg, not hardcoded.
+Verification: validate_strategy re-scored **75.3% / 80% entry-exact / 70 matched —
+identical to before the merge**, proving the move was behaviour-preserving; the live
+engine went 49.5% → 76.3%, −439.7 → +1,036.5 pts, PF 0.89 → 1.44, engine-only trades
+78 → 17.
+
+**Fast detect.** `_TOOLS/live_vs_tv.py` drives the LIVE engine (never a copy) against a
+TV export and puts every trade on one chart, TV orange vs engine blue. This was only
+found because both were finally looked at side by side. **If a strategy has a "backtest
+version" and a "live version", score the live one — the other number describes a
+program you don't run.**
+
+**Blast radius.** All three Ars chain configs are paper; 04.04 DirectWebhook (the live
+one) doesn't use this engine. No money lost — but the mirror project that exists to
+retire a ₹19,200/yr webhook was being judged on the wrong engine's numbers.
