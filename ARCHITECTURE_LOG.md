@@ -15,6 +15,37 @@
 
 ---
 
+## 2026-07-18 — Stats tab me backtest results ka day-by-day view (Live/Paper ⟷ Backtest toggle)
+**Status:** DONE (local + pushed master `b1ff86e` + VPS deployed + live-verified)
+**Layer:** ui + data (display-only, koi order/risk/execution path nahi)
+**Kya:** Backtest ka "sab ek number" ki jagah user ko day-on-day "human feel" chahiye tha
+("kaam kar raha hai ki nahi"). Stats tab (calendar) ab live/paper trades ke alawa **backtest
+run bhi din-wise** dikha sakta — wahi calendar grid / Total Summary table / filters / range,
+sirf data source switch.
+1. **`_ops/backtest_calendar.py` (NAYA, display-only):** `runs/<slug>/results.js` ka
+   `window.RESULTS` parse (mtime-cache, cap 3), `combos["<pass>|<period>"].all_trades` ko
+   **entry-date se din-wise bucket** → bilkul live `calendar-summary` jaisa
+   `{summary, trades, filters, metrics, meta}`. NaN/Inf → None (jsonify-safe). Combo fallback
+   (exact → legacy single-axis → bs|* → koi bhi). `list_runs()` = `runs/index.json` + ✅ deployed.
+2. **2 routes (`trader_dashboard.py`, additive):** `/api/backtest/runs` +
+   `/api/backtest/calendar-summary` (year/month ya from/to filtering).
+3. **Frontend (`app-12`, `app-13`, `index.html`):** 🟢 Live/Paper ⟷ 🧪 Backtest toggle
+   (`#cal-view`, `calSetView()`). bt mode → run dropdown (✅ + tf), Pass (Instrument/+RMS/+BS)
+   + Period (Full/Train/OOS) controls, Source/Mode/broker chhup. bs pass ka `pnl` already NET
+   (real Zerodha charges) → bt mode me client calcCharges skip, run ke gross/fee/pnl seedhe →
+   **grid total == table total exact**. Pills = run ka apna report-card (`combos[key].metrics`
+   Sharpe/PF). Live path bilkul unchanged (`window.calBtMode` branch).
+
+**Files:** `_ops/backtest_calendar.py` (naya), `trader_dashboard.py` (+2 routes),
+`static/js/app-12-calendar.js`, `static/js/app-13-calendar-render.js`, `templates/index.html`.
+**Kyun (build approach):** isolated worktree (`feat/backtest-in-stats`), doosri session ke
+capital-reservation (`73d90eb`) ke upar **conflict-free rebase** (index.html alag region) → koi
+revert nahi. Verified: standalone module (17 runs × 3 passes, grid-sum==trades-sum, month-filter),
+Flask jsonify NaN-safe, preview harness me asli `mid_orb_nifty` render. Audit 0 FAIL.
+**Depends on:** existing calendar (`calendar-summary` shape) + `runs/` 3-pass results (RESULTS_SCHEMA.md).
+
+---
+
 ## 2026-07-16 (5) — index.html split (14,121 → 3,675) + NIFTY data bachaav (TRAP #125, #126)
 **Status:** DONE (local + pushed) · **VPS deploy PENDING**
 **Layer:** ui (JS split) + data (nifty_1min/1h + data_fetch guards)
