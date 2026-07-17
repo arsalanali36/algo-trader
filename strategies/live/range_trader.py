@@ -998,8 +998,26 @@ def main(strategy_id="range"):
                              f"({cfg.get('max_trades_per_symbol', 2)}) — no further entries today for it")
                 continue
 
-            # Build daily levels once per day per symbol
-            if symbol not in daily_levels:
+            # Build daily levels once per day per symbol — but only CACHE a
+            # successful build. `symbol not in daily_levels` tested KEY presence,
+            # so a failed fetch (build_key_levels -> []) still created the key and
+            # the retry could never fire again that day.
+            #
+            # 2026-07-17 cost a whole trading day: at 09:15:36 every strategy woke
+            # at once, Dhan answered the daily-historical burst with a transient
+            # 401/DH-902, and range_v1 logged "NIFTY levels: 0 key levels loaded".
+            # The endpoint was fine seconds later — but 0 was cached until
+            # midnight. No zones, no signals, and it looked perfectly healthy the
+            # whole time: loop ticking, log fresh, heartbeat green. That was
+            # 04.03 Pine2Python's first NIFTY-only day.
+            #
+            # `.get(symbol)` is falsy for BOTH missing and empty -> retry next
+            # loop (~5m apart, and fetch_daily is rate-limiter gated, so this
+            # can't turn into a hammer).
+            if not daily_levels.get(symbol):
+                _retry = symbol in daily_levels   # empty from an earlier failure
+                if _retry:
+                    log.warning(f"{symbol}: levels khaali the (pichla fetch fail) — dobara try")
                 daily_df = fetch_daily(symbol)
                 time.sleep(0.4)  # Dhan DH-904: 25 symbols @ 0.4s = ~10s startup, well under rate limit
                 # build_key_levels()/pivot_labels below both assume iloc[-2] is
@@ -1024,7 +1042,24 @@ def main(strategy_id="range"):
                     daily_df, is_index=is_idx,
                     max_jump_pct=cfg.get("max_jump_pct", 50.0)
                 )
-                log.info(f"{symbol} levels: {len(daily_levels[symbol])} key levels loaded")
+                if daily_levels[symbol]:
+                    log.info(f"{symbol} levels: {len(daily_levels[symbol])} key levels loaded")
+                else:
+                    # Zero levels = this symbol CANNOT signal (no zones without
+                    # key levels). Say so loudly and ring the bell — the old
+                    # INFO "0 key levels loaded" read exactly like the success
+                    # line and scrolled past.
+                    log.error(f"{symbol}: 0 key levels — ye symbol aaj signal nahi de sakta "
+                              f"(daily fetch fail). Agle loop me retry hoga.")
+                    try:
+                        import notify
+                        notify.error(
+                            f"{strategy_id}: {symbol} ke 0 key levels — daily data nahi mila, "
+                            f"ye symbol tab tak trade nahi karega. Retry chalu hai.",
+                            key=f"levels0:{strategy_id}:{symbol}", source=strategy_id)
+                    except Exception:
+                        pass
+                    daily_levels.pop(symbol, None)   # don't cache the failure
 
                 # Display-only specific labels (R1-R5/S1-S5/P/PDH/PDC/PDL) for the
                 # Watch chart — build_key_levels() collapses these to generic
