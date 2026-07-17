@@ -20,14 +20,23 @@ WHAT IT COMPARES
                   That is what TradingView actually SENT, not what we did with it:
                   an RMS block or a dedup skip is our side's business, not the
                   pine's opinion. Skips are still surfaced separately.
-    Python side — _ops.signal_replay.run_for('range_v1', date), i.e. range_trader's
-                  OWN compute_signal replayed bar-by-bar over the same day's real
-                  candles. Deliberately NOT range_v1's order rows: an order can be
-                  blocked by capital/liquidity while the signal was perfectly fine,
-                  and that is our RMS talking, not a fidelity gap.
+    Python side — range_v1's own order_store rows for the day.
 
-    Rule 6B: the replay engine is signal_replay's, not a second copy. A drift tool
-    that re-implements the thing it measures can only ever measure itself.
+                  signal_replay.run_for() was the first choice (Rule 6B — reuse the
+                  replay engine, don't write a second one), but it can't take this
+                  strategy: it requires a compute_signal(df,cfg) contract and
+                  range_trader's engine is run_signal_engine(df_1m, key_levels, cfg).
+                  Its own comment is also explicit that importing these legacy
+                  engines is unsafe — "unka module-level import heavy side-effects
+                  chalata hai (equity cache, feed, yahan tak ki token-print bug) —
+                  unhe kabhi import mat karo". A drift tool must not start a feed.
+
+                  order_store answers the question anyway, and separates the two
+                  causes that matter:
+                      row filled/paper        -> signalled AND entered
+                      row blocked (+ reason)  -> signalled, our RMS stopped it
+                      no row                  -> never signalled  <- the real gap
+                  So an RMS block is never miscounted as a fidelity gap.
 
 MATCHING
     Both run 5m. TV stamps the bar close; the python loop wakes every 300s and acts
@@ -101,20 +110,54 @@ def tv_signals(date_str):
 
 
 def py_signals(date_str):
-    """range_trader's OWN signal logic, replayed over the same day's real candles."""
-    from _ops import signal_replay
-    res = signal_replay.run_for(MIR, date_str)
-    if res.get("status") != "ok":
-        return None, res.get("note") or res.get("status")
+    """What range_v1 actually decided that day, from its own order_store rows.
+
+    NIFTY only — 04.03 mirrors a NIFTY-only pine, and its other symbols (if any
+    creep back into the config) are not part of this comparison.
+
+    Direction is read from the CONTRACT's own CE/PE + the strategy's long/short
+    option-type config, never from the order side: this family sells for BOTH
+    directions (long -> sell PE, short -> sell CE), so `SELL` carries no direction
+    information at all. That exact inference is what cost a real trade on
+    2026-07-16 (TRAP #128).
+    """
+    import order_store
+    import dhan_master
+    import webhook_executor as _wh
+    try:
+        rows = order_store.trades_for(date_str)
+    except Exception as e:
+        return None, "order_store read fail: %s" % e
+
+    cfg = _wh._strat_cfg(REF)          # the pine's own long/short opt-type mapping
+    long_ot = (cfg.get("long_opt_type") or "").strip().upper()
+    short_ot = (cfg.get("short_opt_type") or "").strip().upper()
+
+    legs = list(rows.get("open") or []) + list(rows.get("blocked") or [])
+    for d in (rows.get("details") or []):
+        legs.append({"strategy": d.get("strategy"), "symbol": d.get("symbol"),
+                     "entry_time": d.get("entry_time"), "sec_id": d.get("sec_id"),
+                     "entry": d.get("entry"), "status": "filled", "tags": d.get("tags") or []})
+
     out = []
-    for s in res.get("signals", []):
-        t = str(s.get("time") or s.get("ts") or "")[-8:][:5]
+    for p in legs:
+        if (p.get("strategy") or "") != MIR or (p.get("symbol") or "").upper() != "NIFTY":
+            continue
+        t = str(p.get("entry_time") or p.get("ts") or "")[-8:][:5]
         if not re.match(r"^\d\d:\d\d$", t):
             continue
-        d = (s.get("dir") or s.get("side") or "").upper()
-        out.append({"time": t, "bar": _bar(t), "kind": "ENTRY",
-                    "dir": "LONG" if d in ("BUY", "LONG") else ("SHORT" if d in ("SELL", "SHORT") else d),
-                    "verdict": s.get("verdict") or ""})
+        ot = dhan_master.get_option_type_by_sec_id(p.get("sec_id"))
+        direction = ("LONG" if ot and ot == long_ot else
+                     "SHORT" if ot and ot == short_ot else "?")
+        blocked = (p.get("status") == "blocked" or
+                   any(str(x).startswith("CAPITAL_BLOCKED") for x in (p.get("tags") or [])))
+        why = ""
+        if blocked:
+            why = next((str(x)[:70] for x in (p.get("tags") or [])
+                        if not str(x).startswith(("MAX_LTP", "MIN_LTP", "CONF_", "PREV_"))), "blocked")
+        out.append({"time": t, "bar": _bar(t), "kind": "ENTRY", "dir": direction,
+                    "blocked": blocked, "why": why})
+    out.sort(key=lambda x: x["bar"])
     return out, None
 
 
@@ -135,7 +178,10 @@ def align(tv, py):
             used.add(hit)
             b = py[hit]
             same = (not a["dir"]) or (a["dir"] == b["dir"])
-            rows.append({"v": "MATCH" if same else "DIR-MISMATCH", "tv": a, "py": b})
+            v = "MATCH" if same else "DIR-MISMATCH"
+            if same and b.get("blocked"):
+                v = "MATCH (RMS-blocked)"   # pine agreed; our RMS stopped the order
+            rows.append({"v": v, "tv": a, "py": b})
     for i, b in enumerate(py):
         if i not in used:
             rows.append({"v": "PY-ONLY", "tv": None, "py": b})
@@ -158,7 +204,7 @@ def main():
     if py is not None:
         rows = align(tv, py)
         rep["rows"] = rows
-        rep["match"] = sum(1 for r in rows if r["v"] == "MATCH")
+        rep["match"] = sum(1 for r in rows if r["v"].startswith("MATCH"))
         rep["tv_only"] = sum(1 for r in rows if r["v"] == "TV-ONLY")
         rep["py_only"] = sum(1 for r in rows if r["v"] == "PY-ONLY")
         rep["dir_mismatch"] = sum(1 for r in rows if r["v"] == "DIR-MISMATCH")
