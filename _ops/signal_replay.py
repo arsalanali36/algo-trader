@@ -110,6 +110,16 @@ def _range_adapter(mod, cfg, sid):
         raise RuntimeError(f"{symbol}: 0 key levels — bina levels ke koi zone nahi banta")
 
     def sig_fn(d, c):
+        # replay_signals calls us with df[:i+1] meaning "bar i is FORMING, bar
+        # i-1 just closed", and stamps whatever we return at bar i-1's time.
+        # This engine has no such notion — every bar it is handed is a closed
+        # bar it may signal on. Left alone, a signal born at bar i gets stamped
+        # i-1, and since it stays returnable for 2 more bars (the staleness
+        # gate) the SAME signal reappears under a second stamp: today's two
+        # real signals showed up as four (09:55+10:00, 10:35+10:40).
+        # Dropping the forming bar aligns the two conventions — our last bar IS
+        # the closed bar replay is about to stamp.
+        d = d.iloc[:-1]
         out = mod.run_signal_engine(d, levels, c)
         if not out:
             return None
@@ -134,7 +144,11 @@ def _range_adapter(mod, cfg, sid):
         # isn't replaying the live strategy.
         sig_bar = out[3] if len(out) > 3 else None
         n_bars = out[4] if len(out) > 4 else None
-        if sig_bar is not None and n_bars is not None and (n_bars - sig_bar) > 2:
+        # Report a signal ONCE, on the bar that produced it: sig_bar must be the
+        # last (closed) bar we passed. Live tolerates a signal up to 2 bars old
+        # (range_trader.py:1177) because its loop can lag; the replay walks every
+        # bar in order, so anything older here is a repeat we already reported.
+        if sig_bar is not None and n_bars is not None and sig_bar != n_bars - 1:
             # EXIT is gated here too, though live gates only BUY/SELL — live
             # suppresses stale EXITs a different way (`if st["position"] is
             # None: continue`), and the replay has no position to check when
