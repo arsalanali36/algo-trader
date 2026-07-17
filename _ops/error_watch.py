@@ -77,6 +77,37 @@ def _market_hours():
     return MARKET_OPEN <= hm <= MARKET_CLOSE
 
 
+# `trader_dashboard.auto_scheduler` isi waqt saare bots band karta hai
+# (`t >= (15,30)` → `/api/stop?keep_active=1`). Wo `active` flag JAAN-BOOJH KE
+# true chhodta hai taaki kal 9:10 pe auto-start chale — matlab 15:30 ke baad
+# "ACTIVE hai par process nahi" bilkul NORMAL haalat hai, error nahi.
+#
+# ⚠️ Ye number `trader_dashboard.py` ke scheduler me bhi hardcoded hai. Wahan
+# badlo to yahan bhi badalna padega — warna ye jhootha alarm wapas aa jayega.
+SCHED_STOP = (15, 30)
+
+
+def _proc_check_window():
+    """Process-zinda-hai check ka apna window — market hours se ek minute chhota.
+
+    2026-07-17: `check_strategies` `_market_hours()` pe chal raha tha, jiska
+    close **inclusive** hai (`hm <= (15,30)`). Scheduler bots 15:30 pe hi band
+    karta hai → us poore minute error_watch ke liye market "khula" tha aur bots
+    ja chuke the → har trading din ek jhootha 🔴 "koi order nahi lagega"
+    (17 July: 33 hits). Function ka apna docstring pehle se kehta tha "bahar
+    band hona normal hai (15:30 scheduled stop)" — iraada theek tha, boundary
+    galat thi.
+
+    `_market_hours()` ko waisa hi chhoda — market 15:30 pe sach me khula hai;
+    badla sirf ye ki HAMARA scheduler tab tak bots band kar chuka hota hai.
+    """
+    n = _ist_now()
+    if n.weekday() >= 5:
+        return False
+    hm = (n.hour, n.minute)
+    return MARKET_OPEN <= hm < SCHED_STOP
+
+
 def _signature(msg):
     """Dedup identity: numbers/hex/quotes hata ke ek stable shape.
 
@@ -171,7 +202,7 @@ def check_strategies(get_pid, actives):
     kyunki marne pe koi error report hi nahi hota. Sirf market hours me — bahar
     band hona normal hai (15:30 scheduled stop). Wapas chalne pe khud resolve.
     """
-    if not _market_hours():
+    if not _proc_check_window():   # 15:30 = scheduler ka apna stop-minute, error nahi
         return 0
     n = 0
     for sid in actives:

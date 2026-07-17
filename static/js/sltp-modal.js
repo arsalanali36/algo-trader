@@ -469,8 +469,14 @@
               }
               if (typeof window.updateCalSelectedDateBadge === 'function') window.updateCalSelectedDateBadge();
               if (typeof window.renderPointsPerTradeTable === 'function') window.renderPointsPerTradeTable();
+              // `tableCard` ka guard tha, uske `.closest('.tv-card')` ka NAHI —
+              // aur null wahi se aata hai: tbody DOM me hai par uska `.tv-card`
+              // wrapper hamesha nahi hota (2026-07-17 bell: "Uncaught TypeError:
+              // Cannot read properties of null (reading 'scrollIntoView')").
+              // Ek non-null cheez ka bacha lena uski parent ka bach jaana nahi hai.
               const tableCard = document.getElementById('cal-points-per-trade-tbody');
-              if (tableCard) tableCard.closest('.tv-card').scrollIntoView({ behavior: 'smooth', block: 'start' });
+              const card = tableCard && tableCard.closest('.tv-card');
+              if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' });
             }
           },
           plugins: {
