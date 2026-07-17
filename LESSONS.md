@@ -3500,3 +3500,38 @@ table, not an empty bell. Three of these six kinds would have been back within 2
 two of them fixable in one line each. **An alert that cries wolf daily trains you to
 ignore the one that isn't crying wolf** (the 550-hit burst was a genuine 20-minute
 outage, sitting in the same list as a cosmetic off-by-one).
+
+---
+
+## TRAP #134 — a hide-list for garbage LABELS silently dropped legit unconfigured STRATEGIES
+
+**Symptom.** A newly-registered strategy (02.04 "Dessert Range Strangle", `config_key: null` —
+backtest-only, not configured yet) refused to appear on the `/registry` page. The registry file
+had it (`sr.load()` returned it), the API served it, `runs/index.json` had its metrics — yet the
+Family-02 count stayed 2. A second entry (02.02 Gamma Scalp, also `config_key: null`) was missing
+the same way.
+
+**Root pattern.** `strategy_registry.html`'s `allStrats()` filters `!regHidden(m.config_key)`, and
+`regHidden(ck)` checked membership against `_meta.hidden.identifiers`. That set — built in TRAP #132
+to suppress **raw garbage LABELS** in the notify/label layer (`'unknown'`, `'global'`, `'default'`,
+`'ema920'`, `''`) — contains an **empty-string `''`** key. A `null` config_key stringifies to `''`,
+so `regHidden(null)` matched `''` → **true** → every unconfigured (research/backtest) strategy got
+dropped from a hub whose stated purpose is literally "deployed · research · backtest". A control
+meant for one layer (labels) leaked into another (which rows exist) — same shape as TRAP #124/#132
+(*a check that can't see the layer it's guarding guards nothing about it*), just inverted: here the
+check saw **too much**.
+
+**Kahan-kahan kaata.** Only the registry page's row filter. The label layer (`registry.js`'s own
+`regHidden`, still `''`-hiding) is correct — an empty *label* should fall back to raw. Two different
+questions ("is this a garbage label?" vs "does this strategy exist enough to list?") were answered
+by one predicate.
+
+**Permanent guard.** `regHidden()` now returns **false** for a `null`/blank config_key up front — a
+missing config_key is a legit unconfigured strategy, not a garbage label. Such rows render with a
+`'—'` deploy cell (no config_key → no Paper/Live buttons), so no accidental-deploy footgun. The
+`''` identifier stays in the hide-set for the label layer where it belongs.
+
+**Fast detect.** Registered strategy (correct in `strategy_registry.json`, `sr.load()` returns it)
+but absent from `/registry` UI → check `config_key`. `null`/blank + `''` in
+`_meta.hidden.identifiers` = this. Don't chase caching/restart first: verify the client-side filter,
+not just the server payload.

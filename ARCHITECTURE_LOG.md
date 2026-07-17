@@ -15,6 +15,23 @@
 
 ---
 
+## 2026-07-18 — Range-Extreme Short Strangle (IV-filtered) + Capital Priority Reservation + registry 02.04
+**Status:** DONE — branch `feat/range-strangle-mission`, VPS-live master `3f14b39`, feature OFF-by-default
+**Layer:** strategy-research (scratch, display-only) + risk (money-path, OFF-inert) + ui + infra
+
+**Kya:** User ke idea (recent N-day high/low pe dono taraf option BECHO + "pukka extreme" filter) ko poore rig se guzaara. Journey `scratch/nifty_trend/RANGE_STRANGLE_RESEARCH.md` (research+FAQ doc, webhook-doc style).
+- **Research (scratch/nifty_trend/):** `probe_range_strangle*.py` (intraday/positional/orb/target probes), `probe_weekly_pivot_strangle.py` (R3/S3, rejected), `probe_bnf_strangle.py` (BANKNIFTY loader-repoint step-100), `correlate_strangle_orb.py` (ORB corr+portfolio+capital), `gate_softorb.py`, `build_range_strangle_intraday.py` (3-pass build w/ IV filter → `runs/range_strangle_intraday/`). Verdict = **forward-paper candidate**: IV-rank≥0.5 filter (VRP condition) ne PF 1.41→2.04, Sharpe 1.82→3.70, tail-stress 0.12→1.87 PASS kiya; train≈OOS; monotonic IV→PF (real structure). Naked-only (hedge edge maar deta); tail SL-bounded. BANKNIFTY cross-confirmed (PF 1.97 genuine-weekly). ORB diversifier (corr −0.50).
+- **Data:** VPS ka 1-min BANKNIFTY lake (complete, 2021-2026) → 5-min resample (loader-convention: 5min/label-left/closed-left) → local `_TRADING_DATA/OptChainLake/BANKNIFTY/` (junction into worktree). NSE ne BANKNIFTY weekly Nov-2024 me band kiya → forward doubling nahi.
+- **Capital Priority Reservation (ADR-008, `_core/risk_gate.py`):** `strategy_tier()` (mission default | discretionary) + `discretionary_pool_cap()` (`_risk.global.discretionary_pool_rs`, None=OFF) + `_tier_in_use()` + `check_capital()` nayi branch. Discretionary strategy pool-capped so mission (ORB) ka capital kabhi starve nahi (dessert 9:20 pe pehle enter karti). UI (`static/js/app-01-rms.js`+`templates/index.html`): Per-Strategy Override **Tier column** + RMS Risk tab **"Discretionary Pool ₹"** field, existing saveRiskConfig/load + `/api/risk-config` wholesale-save se wire. **OFF by default** (unmarked=mission, no pool). 7-scenario sim verified; live-verify `discretionary_pool_cap()`=None on VPS.
+- **Registry (`strategy_registry.json`):** **02.04 "Dessert Range Strangle"** (Family 02 Volatility, status=research, slug=range_strangle_intraday, config_key=null, role=dessert, desc me DSR-borderline caveat). Register-before-forward-paper (TRAP #128 safety).
+- **regHidden bug fix (`templates/strategy_registry.html`):** page ka `''` (empty) hidden-identifier — jo raw-garbage LABELS suppress karta — galti se **null-config research entries** (Gamma Scalp 02.02 + naya 02.04) hub se drop kar raha tha, jabki page ka maqsad hi "deployed·research·backtest" hai. Fix: null/blank config_key = show (deploy cell `'—'`, no button-footgun). LESSONS TRAP #134.
+
+**Deploy:** worktree me sab commit → parallel-session ke commits ke upar rebase (2× push-reject→re-rebase clean) → FF-push origin/master → VPS git-pull + `algo-dashboard`+`algo-monitor` restart → feature OFF-inert + registry+runs linkage verified. No live positions/strategies (weekend). Commits `0a3450b`·`4781a26`·`820533e`·`a18bd3e`·`3f14b39`.
+
+**Pending (user ke haath):** forward-paper wiring (actual live_file + nifty_config + tier=discretionary + pool ₹ set), worktree merge-cleanup.
+
+---
+
 ## 2026-07-18 — Stats tab me backtest results ka day-by-day view (Live/Paper ⟷ Backtest toggle)
 **Status:** DONE (local + pushed master `b1ff86e` + VPS deployed + live-verified)
 **Layer:** ui + data (display-only, koi order/risk/execution path nahi)
