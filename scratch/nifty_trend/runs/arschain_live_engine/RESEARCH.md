@@ -517,3 +517,73 @@ hua?" poochh kar, doosri baar "too good to be true" keh kar.
 | `engine.py` | `_annualize_sharpe()` = **asli Sharpe ka single source** — apna mat likhna |
 
 **Reproduce:** `python -X utf8 scratch/nifty_trend/arschain_exits.py --itm 0`
+
+---
+
+## 🔴 AGLA KAAM — live me strategy chal hi nahi rahi (2026-07-17 raat, user ne pakda)
+
+User: *"webhook long ko exit karke ulti position banata hi nahi — aaj tak ek trade nahi."*
+Aur phir, khud: *"entry mai webhook se leta hoon, baaki apna dimag, darr, algo me tricks
+laga kar nikalta hoon."*
+
+**Data poori tarah unke saath hai.** `arschain_MAIN` ke 10 LIVE trades ke exit reasons:
+
+```
+DEFAULT_TSL_SL:-2000 / 1200 / -1600   3   <-- RMS ka trailing SL
+RMS_MAXLOSS (daily cap ₹4,000)        2   <-- RMS
+EXPIRY_ITM_SQUAREOFF                  2   <-- RMS ka expiry guard
+EXTERNALLY_CLOSED                     2
+MANUAL_CLOSE                          1
+TV_EXIT / REVERSAL / ATR_TRAILING     0   <-- strategy ka apna exit: KABHI NAHI
+```
+
+**Strategy ne aaj tak ek bhi live trade band nahi kiya.** Live me DO trailing SL chal rahe
+hain — strategy ki apni ATR trail (Pine me) aur **RMS ka DEFAULT_TSL** (14-July ko 7
+strategies pe laga) — aur **RMS wala hamesha pehle pahunchta hai.**
+
+**Reversal isliye nahi hota:** ulta signal aane tak position zinda hi nahi bachti. Webhook
+ka reversal code (`webhook_executor.py:616-638`) bilkul theek hai — **use mauka hi nahi
+milta.** (Mera backtest bhi 8.5 saal me `REVERSAL = 0` deta hai — wahan strategy ki apni
+ATR trail pehle maarti hai. Live me RMS. Do alag wajah, ek hi natija.)
+
+### Isi se ₹1 lakh ka farq bhi khulta hai
+TV **+₹94,078** (Jan-Jul 2026, strategy apne exits pe) vs live **−₹5,164** (RMS ke exits
+pe). **Ye do alag strategy hain. TV jo dikha raha hai, wo chalayi hi nahi ja rahi.**
+= **Rule 10 apne sabse literal roop me.**
+
+### Aur mera poora backtest bhi is live strategy ka NAHI tha
+Maine strategy ke apne exits naape (ATR trail / zone / 3:15). Live me RMS kaatta hai.
+**Mere saare numbers us cheez ke hain jo chalayi hi nahi ja rahi.**
+
+### Judi hui baat — TRAP #128 abhi bhi kaat raha hai
+`DEFAULT_TSL_SL:-1600` dikha jabki user ki set ki hui SL **₹2,500/lot** thi → RMS override
+galat config key (`webhook_v1`) pe, live id `arschain_MAIN` hai → lookup fail → **chupchaap
+global ₹1,000/lot**. In 10 me se kuch trade **galat SL** pe mare.
+
+### Counterfactual feature — recover kiya, par wo ye sawaal nahi naapta
+`_counterfactual_RECOVERED.py` (254 lines, `a39e238^` se; 2026-07-01 ko user ne delete
+karwaya tha). **Waise ka waisa zinda mat karo — do wajah:**
+1. **Galat sawaal:** wo "algo vs manual panic" tolta hai. Yahan manual sirf **1/10** tha;
+   baaki 9 **RMS** ne mare — wo file un 9 ko "algo" hi maanti hai.
+2. **Maanyata ULTI ho chuki:** file maanti hai Dhan=algo / Kite=manual. Asliyat ab
+   **Kite=algo / Dhan=manual** ([[project_code3b_dhan_manual_kite_algo]]). Waise chalaya
+   to **ulta jawaab** dega.
+
+Reuse karne layak: `_fifo_match`, `_build_timeline`, `_entry_markers`. Dimag naya chahiye.
+
+### Jo asli me chahiye (naya analysis)
+Har live trade pe: (1) entry — `order_store` me hai ✅ · (2) **strategy ka apna exit kya
+hota** — engine ko us entry se aage chalana ❌ naya kaam · (3) us exit pe **asli premium** —
+lake me hai ⚠️ par lake **ATM±10** ka hai aur live **`strike_offset=-1`** pe chalti hai.
+
+### Faisla jo sabse pehle chahiye (futures se bhi pehle)
+**Live me strategy ke exits chalne dene hain, ya RMS ke?** Abhi dono hain aur RMS jeet raha
+hai — **aur us combination ka backtest kabhi kisi ne kiya hi nahi.** Jab tak ye tay nahi,
+har number (mera bhi, TV ka bhi) kisi aur strategy ka number hai.
+
+**User ka darr = design ka signal, kamzori nahi:** *"trail itni dheere khisakti hai ki
+lagta hai kuch karen."* Jo exit itni dheere chale ki insaan use pakad na sake, wo us
+insaan ke liye galat exit hai. (Aur 8.5 saal ka data bhi wahi kehta hai: `ATR_TRAILING`
+1,326 trades **−₹4.16L**, `3:15 Daily Exit` 359 trades **+₹4.68L**. Jis exit ko dekhna
+na pade, use todne ka mann bhi nahi karta. ⚠️ Ye BS-model se hai — asli premium pe verify
+zaroori.)
