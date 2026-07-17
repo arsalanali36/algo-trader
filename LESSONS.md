@@ -3126,3 +3126,67 @@ ADR-007 (identity/naming), aur `arschain_MAIN` ka RMS override (config).
 **Abhi khula:** `order_store.strategy` pe koi validation nahi — pichle mahine
 `''` ne **15 live orders** likhe, `unknown` ne 13, `default` ne 12. Jab tak sirf
 registered ID enforce nahi hoti, ye class band nahi hui.
+
+---
+
+## TRAP #129 — "trades_today" counted the whole fetch window, not today (and the cache decided how big that window was)
+
+**Symptom.** TV entered SHORT at 10:05. `range_v1` (04.03 Pine2Python — the mirror built to
+replace the ₹1,600/mo TV webhook) placed nothing. User: *"ab iska masla kya hai.. kun signal
+nahi aaya"*. Memory already blamed capital (`CAPITAL_BLOCKED`, "mahine me 1 NIFTY trade").
+
+**It wasn't capital, and the engine wasn't silent.** It produced the identical `SELL` on the
+identical bar and dropped it at its own cap guard. Three defects, stacked:
+
+1. **`run_signal_engine` had no concept of a day.** `trades_today = 0` is set once per CALL,
+   then the loop runs every bar in `df_1m`. `df_1m` is a 5-day window. So "max 2 trades per
+   day" was really "max 2 trades per window" — spent on Jul 8-9, and every signal for the
+   next 7 trading days hit `if trades_today >= max_trades: continue`. The window slides, so
+   there are almost always ≥2 older entries in it: the strategy could essentially never
+   trade. **The Pine had this right and the port lost it:**
+   `var int tradesToday = 0 / if ta.change(time("D")) != 0 / tradesToday := 0`.
+2. **`shared_candle_cache` keyed on `sec_id:interval`.** The rows behind that key are NOT
+   interchangeable — each producer asks Dhan for a different window. On NIFTY 5m alone:
+   chainzone_v1 stores 10 days (its ATR warm-up), straddle_v1/backspread_v1 store 5,
+   range_v1 wanted today only. Last writer won, and re-decided every 20s (the TTL).
+   `fetch_1m`'s own "keep only today" filter never runs on a cache hit.
+3. **`fetch_1m` cut everything but today**, starving ATR(14)+zones — the engine returns
+   nothing until 20 bars exist (~10:55 on 5m). TRAP #85, still open, in its worst form.
+
+**Root pattern.** A cache key must encode everything that changes the VALUE's meaning. This
+one encoded the instrument and the bar size but not the *window* — so four strategies with
+four different definitions of "NIFTY 5m" shared one bucket, and which one you got depended
+on who looped last. Compounding it, a variable named `trades_today` that never checks a date
+reads as correct at every review; the name did the lying, not the logic.
+
+**Fast detect.** Call the fetcher twice a few minutes apart and compare `len(df)` and
+`df.time.dt.date.nunique()`. Measured live within one hour: **618 bars / 10 days**, then
+**21 bars / today**. A strategy whose input window changes between loops is not a strategy.
+
+**Permanent guard.** `days` is part of `shared_candle_cache._key()`; all 9 callers pass the
+window they actually asked Dhan for (same window still shares — that's TRAP #2's whole
+point). `run_signal_engine` resets day-scoped state on each date change, mirroring the Pine;
+position/atr_sl reset with it (the Pine flattens daily), zone state does not (Pine's zone
+vars are `var`), ATR stays continuous. `fetch_1m` keeps its window — safe only because of
+the day reset, and it's what the backtest already did (continuous `atr_all` + per-day
+`backtest_day`), so live and backtest now agree by construction rather than by luck.
+
+**Found while fixing, worth its own line.** Live had `exit_zone` unset → default `False`,
+while the Pine has `MainExit_Toggle=true` and `validate_strategy` mirrors it
+(`"exit_main": True`). **The mirror was missing an exit TV has.** And `SL_Blw_Fib_Exit_Tog`
+(Fib Exit) is `true` in the Pine and absent from BOTH python engines — likely part of the
+old 9.8% validation gap nobody had itemised.
+
+**Two tool bugs surfaced on the way** (a diagnostic that lies is worse than none):
+`signal_replay`'s `LOG_LINE` regex demanded whitespace after `HH:MM:SS`, so Python's default
+asctime (`10:32:15,325`) never matched → it reported *"trader ran nahi"* for a process that
+was alive and 48 lines deep into today's log. It hit 6 of 18 logs — the entire Ars chain
+family, the webhook, universe, ema — and `eod_report` shares `run_for()`. Separately the
+adapter reported one signal N times (`run_signal_engine` returns the LAST signal found,
+however old — that's what `sig_bar`/`total_bars` are for, and the adapter was reading only
+`out[0..2]`).
+
+**Blast radius.** All three configs are paper; 04.04 DirectWebhook (the live one) doesn't use
+this engine. No money was lost — but every "04.03 barely trades" observation for weeks was
+this, and the ₹19,200/yr decision it exists to inform was being measured on a strategy that
+could not trade.
