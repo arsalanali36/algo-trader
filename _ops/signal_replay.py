@@ -118,6 +118,29 @@ def _range_adapter(mod, cfg, sid):
             return None
         price = out[1] if len(out) > 1 else None
         reason = out[2] if len(out) > 2 else None
+
+        # THE STALENESS GATE — without this the replay is pure fiction.
+        # run_signal_engine scans the whole df and returns the LAST signal it
+        # found, however old. So once a signal exists at bar 40, EVERY later
+        # call re-returns that same bar-40 signal — same dir, same spot, for
+        # the rest of the day. replay_signals stamps each one at its own
+        # closed-bar time, so its (closed_t, dir) dedupe can't collapse them:
+        # one real signal becomes N "signals". Measured before this gate:
+        # 15 identical EXIT_SHORTs, all spot=24119.8, 09:15→10:25.
+        #
+        # The live loop never sees those echoes because of range_trader.py:1177
+        #   if signal in ("BUY","SELL") and (total_bars - sig_bar) > 2: signal = None
+        # Mirrored here exactly — a replay that doesn't apply the live gate
+        # isn't replaying the live strategy.
+        sig_bar = out[3] if len(out) > 3 else None
+        n_bars = out[4] if len(out) > 4 else None
+        if sig_bar is not None and n_bars is not None and (n_bars - sig_bar) > 2:
+            # EXIT is gated here too, though live gates only BUY/SELL — live
+            # suppresses stale EXITs a different way (`if st["position"] is
+            # None: continue`), and the replay has no position to check when
+            # the trader never ran. Freshness is the honest stand-in: a signal
+            # from 20 bars ago is an echo, not a decision, either way.
+            return None
         return {"signal": sig, "spot": price, "reason": reason}
 
     return df, sig_fn, "signal"
