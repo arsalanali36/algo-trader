@@ -127,8 +127,13 @@ function colMenu(){
 // practice (it only fires when the `webhooks` map is absent — it never is).
 // The registry ID itself is permanent and stays in the JSON; it just isn't shown.
 function regHidden(ck){
+  // null/blank config_key = a LEGIT unconfigured research/backtest entry (Gamma Scalp,
+  // Dessert Range Strangle) — the page's whole point is "deployed · research · backtest",
+  // so show it (deploy cell renders '—', no buttons). The '' hidden-identifier is meant to
+  // suppress RAW garbage LABELS in the notify/label layer, not to drop unconfigured strategies.
+  if(ck==null||String(ck).trim()==='')return false;
   const h=((REG._meta||{}).hidden||{}).identifiers||{};
-  return Object.keys(h).some(k=>k.toLowerCase()===String(ck==null?'':ck).toLowerCase());
+  return Object.keys(h).some(k=>k.toLowerCase()===String(ck).toLowerCase());
 }
 function allStrats(){const s=REG.strategies||{};return Object.keys(s).map(id=>({id,fid:id.split('.')[0],...s[id]})).filter(m=>!regHidden(m.config_key));}
 function liveNow(ck){ if(!ck||!CFG[ck])return null; const c=CFG[ck]||{}; return c.active?(c.mode||'paper'):'off'; }
