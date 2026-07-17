@@ -237,7 +237,7 @@ def _totals(since, upto, as_json):
     else:
         print("  Abhi tak koi signal nahi — aur data chahiye.")
     print()
-    print("  Faisla fidelity%% se nahi hota — TV-only trades ka ASLI P&L jodo.")
+    print("  Faisla fidelity% se nahi hota — TV-only trades ka ASLI P&L jodo.")
     print("  Wo saal me ₹19,200 se kam ho -> webhook band, wahi bachat hai.")
     return 0
 
