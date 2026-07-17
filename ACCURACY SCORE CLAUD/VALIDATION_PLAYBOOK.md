@@ -164,6 +164,15 @@ a bar where harami failed by **0.05 points**.
 **21% of bars have a different open → ~21% of zones differ → ~21% of trades differ.**
 Our entry match: **78.3%**. That is not a coincidence — that is the wall.
 
+**Already tried, doesn't work — don't spend the hour again:** reconstructing our open
+from the previous bar's close. An index is continuous, so bar N's open "should" sit on
+bar N-1's close, and if TV's did and ours didn't we could copy the rule. Measured over
+432 bars: TV's open equals the previous close only **13.4%** of the time (ours 2.5%),
+median distance 0.40 vs our 0.50 — TV has no rule to copy, it just has different ticks.
+And TV-open vs our-open is **median 0.000**: identical on ~79% of bars, no pattern on
+the other 21%. There is nothing to reverse-engineer. The only way past this is buying
+TV's data.
+
 > **If a future Pine↔Python match sits near 78-80% on NIFTY, you are done.**
 > Chasing the rest means chasing a data feed, not a bug. To go higher you would have to
 > buy TV's data, not fix code.
