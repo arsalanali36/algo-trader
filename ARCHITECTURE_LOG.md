@@ -32,6 +32,39 @@
 
 ---
 
+## 2026-07-18 (2) — Stats tab me Saved Views (named strategy-group filters)
+**Status:** DONE (local + pushed master `9bb19f6` + VPS deployed + live)
+**Layer:** ui + config (display/config only, koi order/risk/execution path nahi)
+**Kya:** User ki bahut saari strategies chal rahi hain — multiple select karke unka
+combined net dekhna, aur us selection ko ek **named View** me save karna (rename/delete).
+Compare button transient tha (har baar dobara select). Ab: Total Summary → ☑ Compare
+→ strategies tick → 🗂 Views ▾ → "Save selection as View". Apply karte hi **poora Stats
+tab** us group ka COMBINED: calendar grid, overall gain (top Gross/WinRate/Trades),
+equity curve, points-per-trade, Total Summary, metric pills.
+1. **`_ops/stat_views.py` (NAYA, config-only):** CRUD on `data/stat_views.json`
+   (dedup + blank-drop, atomic write, thread-lock). Koi order/risk/Dhan path.
+2. **Routes (`trader_dashboard.py`):** `/api/stat-views` GET/POST/PUT/DELETE
+   (login-gate ke peeche).
+3. **`app-12`:** view state + menu (apply/rename/delete/save-from-Compare) +
+   `_renderViewMetrics` (view pills client-side — server stats route single-strategy
+   only). Backtest mode me Views hidden.
+4. **`app-13`:** `calendarRender()` me active-view filter — `d.trades` view.strategies
+   pe narrow + `d.summary` per-day recompute (entry_date bucket) → sab downstream
+   surfaces apne aap view ka combined. Live/paper only; single-strategy dropdown
+   chunne pe view auto-clear (`window.calActiveView`).
+5. **`index.html`:** 🗂 Views ▾ Total Summary header me (Compare ke paas).
+
+**Files:** `_ops/stat_views.py` (naya), `trader_dashboard.py` (+4 routes),
+`static/js/app-12-calendar.js`, `static/js/app-13-calendar-render.js`, `templates/index.html`.
+**Kyun (build approach):** isolated worktree (`feat/stat-views` off master `4cfe969`),
+clean fast-forward. Verified: stat_views CRUD (Flask test_client) + preview harness me
+real app-12/13 pe full flow — 3-strategy mock, Compare→tick orb+rsi→Save→Apply =
+Gross ₹4,800→₹2,000 (8 trades), grid cell 07-06 ₹2,950→₹950, pills client-side
+(PF 2.60/WR 63%), rename/delete/clear. Audit 0 FAIL.
+**Depends on:** existing Compare mechanism (`_calSumSelected`) + calendar render pipeline.
+
+---
+
 ## 2026-07-18 — Stats tab me backtest results ka day-by-day view (Live/Paper ⟷ Backtest toggle)
 **Status:** DONE (local + pushed master `b1ff86e` + VPS deployed + live-verified)
 **Layer:** ui + data (display-only, koi order/risk/execution path nahi)
