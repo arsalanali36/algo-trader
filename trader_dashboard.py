@@ -4920,6 +4920,9 @@ def api_bs_shadow():
         return True
 
     days = {}
+    bykey = {}      # join map: "<entry_date>|<sym>|<etime>|<xtime>|<side>" -> {bs_net,bs_gross,bs_ok}
+                    # lets the frontend attach BS to the calendar's already-filtered trades,
+                    # so ALL calendar filters (source/mode/broker/strategy/view/date) apply for free.
     try:
         for fp in _g.glob(_o.path.join(base, '*.json')):
             d = _o.path.basename(fp)[:-5]
@@ -4929,6 +4932,13 @@ def api_bs_shadow():
                 p = _j.load(open(fp))
             except Exception:
                 continue
+            for t in p.get('trades', []):
+                if not t.get('bs_ok'):
+                    continue
+                k = "|".join([str(t.get('entry_date', d)), str(t.get('sym', '')),
+                              str(t.get('entry_time', '')), str(t.get('exit_time', '')),
+                              str(t.get('side', ''))])
+                bykey[k] = {'bs_net': t.get('bs_net', 0), 'bs_gross': t.get('bs_gross', 0), 'bs_ok': True}
             bs_n = sum(1 for t in p.get('trades', []) if t.get('bs_ok'))
             bystrat = {}
             for sid, v in (p.get('by_strategy') or {}).items():
@@ -4959,7 +4969,7 @@ def api_bs_shadow():
     except Exception:
         pass
 
-    return jsonify({'days': days, 'available': sorted(days.keys()), 'missing': missing})
+    return jsonify({'days': days, 'bykey': bykey, 'available': sorted(days.keys()), 'missing': missing})
 
 
 @app.route('/api/backtest/runs')

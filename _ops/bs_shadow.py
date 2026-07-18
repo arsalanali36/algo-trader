@@ -211,6 +211,7 @@ def build_day(date):
                 bs_ok = True
 
         trades.append({"strategy": strat, "sym": sym, "side": side, "qty": qty,
+                       "entry_date": edate, "exit_date": xdate,
                        "entry_time": etime, "exit_time": xtime,
                        "real_gross": round(real_gross, 1), "real_tax": round(real_tax, 1),
                        "real_net": round(real_net, 1),

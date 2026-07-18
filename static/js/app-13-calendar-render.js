@@ -453,8 +453,7 @@
       }
 
       // Real vs BS premium overlay (bs/compare mode) — re-decorate after each render
-      if (!btMode && window.calPremiumMode && window.calPremiumMode !== 'real'
-          && typeof bsRefresh === 'function') { bsRefresh(); }
+      if (!btMode && typeof bsRefresh === 'function') { bsRefresh(); }
 
       // Save trades in window object for resize events
       window.currentCalendarTrades = d.trades || [];

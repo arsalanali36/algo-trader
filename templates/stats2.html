@@ -202,46 +202,7 @@
     </div>
   </div>
 
-  <!-- Real vs Black-Scholes divergence (shown only in BS / Compare premium mode) -->
-  <div id="bs-div-card" class="card" style="padding:12px 16px; display:none; border:1px solid #6f42c1; margin-bottom:12px;">
-    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
-      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin:0;">⚖️ Real vs Black-Scholes divergence
-        <span style="color:#8b949e;font-weight:400;font-size:11px">— same trades, BS-priced at their own entry/exit minute</span>
-      </h3>
-      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
-        <span id="bs-div-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
-          <span data-v="date" class="on" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;background:#6f42c1;color:#fff;">By Date</span>
-          <span data-v="strategy" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e;">By Strategy</span>
-        </span>
-        <span id="bs-div-basis" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
-          <span data-b="net" class="on" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff;">Net</span>
-          <span data-b="gross" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e;">Gross</span>
-        </span>
-      </div>
-    </div>
-    <div id="bs-div-cov" style="font-size:11px;color:#8b949e;margin-bottom:8px;"></div>
-    <div style="overflow-x:auto;">
-      <table style="width:100%;border-collapse:collapse;font-size:12px;">
-        <thead>
-          <tr id="bs-div-thead" style="border-bottom:1px solid #30363d;color:#8b949e;text-align:right;">
-            <th style="text-align:left;padding:5px 8px;font-weight:500;">Bucket</th>
-            <th style="padding:5px 8px;font-weight:500;">Legs</th>
-            <th style="padding:5px 8px;font-weight:500;">Real</th>
-            <th style="padding:5px 8px;font-weight:500;color:#a371f7;">BS model</th>
-            <th style="padding:5px 8px;font-weight:500;color:#d29922;">Δ (BS − Real)</th>
-            <th style="padding:5px 8px;font-weight:500;width:120px;">Divergence</th>
-          </tr>
-        </thead>
-        <tbody id="bs-div-tbody"></tbody>
-        <tfoot id="bs-div-tfoot"></tfoot>
-      </table>
-    </div>
-    <div style="font-size:10.5px;color:#6e7681;margin-top:8px;border-top:1px dashed #30363d;padding-top:6px;">
-      <span style="color:#d29922;">Amber Δ</span> = BS ne zyada bola (over-optimistic) · <span style="color:#388bfd;">Blue Δ</span> = BS ne kam bola. Real = asli paper/live fill (dashboard se exact). BS = Black-Scholes model us contract pe.
-    </div>
-  </div>
-
-  <!-- ============ BOTTOM: ④ Total Summary / ⑥ Point Per Trade / 📈 Performance ============ -->
+  <!-- ============ BOTTOM: ④ Total Summary / ⑥ Point Per Trade / 📈 Performance / ⚖️ Real vs BS ============ -->
   <div class="card" style="padding:12px 16px">
     <div class="s2flexb" style="margin-bottom:10px">
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
@@ -249,6 +210,7 @@
           <span class="s2tab on" data-p="tbl-ts"><span class="s2num">4</span>📊 Total Summary</span>
           <span class="s2tab" data-p="tbl-ppt"><span class="s2num">6</span>🎯 Point Per Trade</span>
           <span class="s2tab" data-p="tbl-perf">📈 Performance</span>
+          <span class="s2tab" data-p="tbl-bsdiv">⚖️ Real vs BS</span>
         </div>
         <span id="s2-fchip" style="display:none;align-items:center;background:#1f6feb20;border:1px solid #1f6feb80;border-radius:5px;color:#58a6ff;padding:3px 8px;font-size:11px"></span>
       </div>
@@ -285,6 +247,19 @@
         <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openCalPointsColModal()">⚙️ Columns</button>
       </div>
       <div id="s2-perf-ctrl" style="display:none;gap:8px;align-items:center;font-size:10.5px;color:#8b949e">Full performance stats</div>
+      <!-- Real vs BS controls: period grouping (own) + Net/Gross. All other filters inherited. -->
+      <div id="s2-bsdiv-ctrl" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+        <span id="bs-div-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-v="monthly" onclick="bsDivPeriod(this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">Monthly</span>
+          <span data-v="weekly" onclick="bsDivPeriod(this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">Weekly</span>
+          <span data-v="day" class="on" onclick="bsDivPeriod(this)" style="padding:4px 11px;cursor:pointer;background:#6f42c1;color:#fff">Day</span>
+          <span data-v="strategy" onclick="bsDivPeriod(this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">Strategy</span>
+        </span>
+        <span id="bs-div-basis" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-b="net" class="on" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff">Net</span>
+          <span data-b="gross" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Gross</span>
+        </span>
+      </div>
     </div>
 
     <div class="s2pane on" id="tbl-ts">
@@ -303,6 +278,24 @@
       </div>
     </div>
     <div class="s2pane" id="tbl-perf"><div id="s2-perf-body" class="s2perf" style="grid-template-columns:repeat(4,1fr);gap:0 28px"></div></div>
+    <div class="s2pane" id="tbl-bsdiv">
+      <div id="bs-div-cov" style="font-size:11px;color:#8b949e;margin-bottom:8px"></div>
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:right">
+        <thead><tr style="border-bottom:1px solid #30363d;color:#8b949e">
+          <th style="text-align:left;padding:6px 8px;font-weight:500">Bucket</th>
+          <th style="padding:6px 8px;font-weight:500">Legs</th>
+          <th style="padding:6px 8px;font-weight:500">Real</th>
+          <th style="padding:6px 8px;font-weight:500;color:#a371f7">BS model</th>
+          <th style="padding:6px 8px;font-weight:500;color:#d29922">Δ (BS − Real)</th>
+          <th style="padding:6px 8px;font-weight:500;width:120px">Divergence</th>
+        </tr></thead>
+        <tbody id="bs-div-tbody"></tbody>
+        <tfoot id="bs-div-tfoot"></tfoot>
+      </table></div>
+      <div style="font-size:10.5px;color:#6e7681;margin-top:8px;border-top:1px dashed #30363d;padding-top:6px">
+        <span style="color:#d29922">Amber Δ</span> = BS ne zyada bola (over-optimistic) · <span style="color:#388bfd">Blue Δ</span> = BS ne kam bola. Same trades, BS us contract pe uske apne entry/exit minute pe priced. Real = asli fill (dashboard se exact). Upar ke saare filter (Source/Mode/strategy/Views/date) is table pe bhi lagte hain.
+      </div>
+    </div>
   </div>
 
   <!-- ============ MODALS + hidden helpers (position-independent) ============ -->

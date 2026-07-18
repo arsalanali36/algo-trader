@@ -86,7 +86,10 @@
       document.getElementById('s2-ts-ctrl').style.display   = (pane === 'tbl-ts')   ? 'flex' : 'none';
       document.getElementById('s2-ppt-ctrl').style.display  = (pane === 'tbl-ppt')  ? 'flex' : 'none';
       document.getElementById('s2-perf-ctrl').style.display = (pane === 'tbl-perf') ? 'flex' : 'none';
+      var _bsc = document.getElementById('s2-bsdiv-ctrl');
+      if (_bsc) _bsc.style.display = (pane === 'tbl-bsdiv') ? 'flex' : 'none';
       if (pane === 'tbl-perf') _s2Perf();
+      if (pane === 'tbl-bsdiv' && typeof bsRenderDivergence === 'function') bsRenderDivergence();
     }
   };
 
@@ -144,7 +147,8 @@
   function _s2switchBottom(pane) {
     document.querySelectorAll('.s2tabs').forEach(function (tb) { if (tb.querySelector('[data-p^="tbl-"]')) tb.querySelectorAll('.s2tab').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-p') === pane); }); });
     document.querySelectorAll('.s2pane').forEach(function (p) { if (p.id.indexOf('tbl-') === 0) p.classList.toggle('on', p.id === pane); });
-    ['ts', 'ppt', 'perf'].forEach(function (k) { var e = document.getElementById('s2-' + k + '-ctrl'); if (e) e.style.display = (pane === 'tbl-' + k) ? 'flex' : 'none'; });
+    ['ts', 'ppt', 'perf', 'bsdiv'].forEach(function (k) { var e = document.getElementById('s2-' + k + '-ctrl'); if (e) e.style.display = (pane === 'tbl-' + k) ? 'flex' : 'none'; });
+    if (pane === 'tbl-bsdiv' && typeof bsRenderDivergence === 'function') bsRenderDivergence();
   }
   window.s2HeatClick = function (td) {
     var sel = td.getAttribute('data-sel');
