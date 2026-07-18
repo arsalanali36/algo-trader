@@ -57,8 +57,9 @@
       if (btOnly) btOnly.style.display = window.calBtMode ? 'inline-flex' : 'none';
       if (broker) broker.style.display = window.calBtMode ? 'none' : '';
       const viewsWrap = document.getElementById('cal-views-wrap');
-      if (viewsWrap) viewsWrap.style.display = window.calBtMode ? 'none' : '';
-      if (window.calBtMode) { window.calActiveView = null; if (typeof _renderViewsBtn === 'function') _renderViewsBtn(); }
+      if (viewsWrap) viewsWrap.style.display = '';   // Views dono modes me (live=strategies, bt=runs)
+      window.calActiveView = null;                    // active view mode-specific → switch pe clear
+      if (typeof _renderViewsBtn === 'function') _renderViewsBtn();
       const strat = document.getElementById('cal-strat');
       if (window.calBtMode) {
         _calLoadBtRuns();   // fill cal-strat with runs, then calendarRender()
@@ -161,16 +162,20 @@
     function _renderViewsMenu() {
       const m = document.getElementById('cal-views-menu');
       if (!m) return;
+      // views are mode-specific: live views hold strategies, bt views hold run slugs
+      const kind = window.calBtMode ? 'bt' : 'live';
+      const views = (window._calViews || []).filter(v => (v.kind || 'live') === kind);
+      const noun = window.calBtMode ? 'runs' : 'strategies';
       let html = '';
-      html += `<div onclick="openStatViewModal(null)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#3fb950;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">＋ New View…</div>`;
+      html += `<div onclick="openStatViewModal(null)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#3fb950;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">＋ New ${window.calBtMode ? 'Backtest ' : ''}View…</div>`;
       if (window.calActiveView) {
-        html += `<div onclick="clearCalView(event)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#8b949e;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">✕ Clear view (show all)</div>`;
+        html += `<div onclick="clearCalView(event)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#8b949e;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">✕ Clear view</div>`;
       }
       html += `<div style="border-top:1px solid #21262d;margin:4px 0;"></div>`;
-      if (!window._calViews.length) {
-        html += `<div style="padding:6px 12px;font-size:11px;color:#6e7681;line-height:1.5;">Koi view nahi.<br>"＋ New View" se strategies select karke banao.</div>`;
+      if (!views.length) {
+        html += `<div style="padding:6px 12px;font-size:11px;color:#6e7681;line-height:1.5;">Koi view nahi.<br>"＋ New View" se ${noun} select karke banao.</div>`;
       } else {
-        window._calViews.forEach(v => {
+        views.forEach(v => {
           const active = window.calActiveView && window.calActiveView.id === v.id;
           const tip = _viewEsc((v.strategies || []).map(s => (typeof regLabel === 'function' ? regLabel(s) : s)).join(', '));
           html += `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;${active ? 'background:#1f6feb22;' : ''}" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background='${active ? '#1f6feb22' : ''}'">
@@ -212,7 +217,10 @@
       if (!modal || !list) return;
       const view = viewId ? (window._calViews || []).find(v => v.id === viewId) : null;
       const checked = new Set(view ? (view.strategies || []) : []);
-      if (title) title.textContent = view ? '✏️ Edit View' : '＋ New View';
+      const bt = !!window.calBtMode;
+      if (title) title.textContent = (view ? '✏️ Edit ' : '＋ New ') + (bt ? 'Backtest View' : 'View');
+      const lbl = document.getElementById('stat-view-list-label');
+      if (lbl) lbl.textContent = bt ? 'Runs (jo combine karne hain tick karo)' : 'Strategies (jo view me chahiye tick karo)';
       if (nameI) nameI.value = view ? view.name : '';
       const strats = _allStrategiesForView();
       if (!strats.length) {
@@ -245,7 +253,9 @@
       const editId = window._statViewEditId;
       try {
         const url = editId ? ('/api/stat-views/' + editId) : '/api/stat-views';
-        const r = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, strategies: checked }) });
+        const payload = { name: name, strategies: checked };
+        if (!editId) payload.kind = window.calBtMode ? 'bt' : 'live';   // new view = current mode's kind
+        const r = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
         const j = await r.json();
         if (!j.ok) { if (typeof toast === 'function') toast('Save fail: ' + (j.error || '')); return; }
         await loadCalViews();
@@ -263,9 +273,10 @@
       const v = (window._calViews || []).find(x => x.id === id);
       if (!v) return;
       window.calActiveView = v;
-      // multi-strategy filter → clear single-strategy dropdown; server returns
-      // all (source/mode filtered), calendarRender narrows to the view's set.
-      const strat = document.getElementById('cal-strat'); if (strat) strat.value = '';
+      // Live: multi-strategy filter → clear single-strategy dropdown (server
+      // returns all, calendarRender narrows). Backtest: leave the run dropdown
+      // as-is (the view supplies its own comma-joined slugs; no 'All' option).
+      const strat = document.getElementById('cal-strat'); if (strat && !window.calBtMode) strat.value = '';
       const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
       _renderViewsBtn();
       calendarRender();

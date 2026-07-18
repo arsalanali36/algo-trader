@@ -4868,9 +4868,16 @@ def api_backtest_calendar_summary():
         elif year:
             from_date, to_date = f"{year}-01-01", f"{year}-12-31"
     try:
-        data = backtest_calendar.calendar_summary(
-            slug, pass_=pass_, period=period,
-            from_date=from_date, to_date=to_date)
+        if ',' in slug:
+            # portfolio-style: combine multiple runs (comma-separated slugs)
+            slugs = [s for s in slug.split(',') if s]
+            data = backtest_calendar.combined_summary(
+                slugs, pass_=pass_, period=period,
+                from_date=from_date, to_date=to_date)
+        else:
+            data = backtest_calendar.calendar_summary(
+                slug, pass_=pass_, period=period,
+                from_date=from_date, to_date=to_date)
         return jsonify(data)
     except Exception as e:
         print("[backtest/calendar-summary] fail:", e, flush=True)
@@ -4894,7 +4901,8 @@ def api_stat_views_create():
     import stat_views
     body = request.get_json(silent=True) or {}
     try:
-        v = stat_views.create_view(body.get('name'), body.get('strategies'))
+        v = stat_views.create_view(body.get('name'), body.get('strategies'),
+                                   kind=body.get('kind') or 'live')
         return jsonify({'ok': True, 'view': v})
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 400

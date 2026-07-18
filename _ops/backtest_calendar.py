@@ -220,3 +220,61 @@ def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=No
             "lot_size": meta.get("lot_size"), "lots": meta.get("lots"),
         },
     }
+
+
+def combined_summary(slugs, pass_="bs", period="full", from_date=None, to_date=None):
+    """Portfolio-style COMBINE of multiple backtest runs. Unions each run's
+    all_trades (each already tagged strategy=<slug> so Total Summary's Strategy
+    mode breaks it down per-run) and buckets the per-day summary across all.
+    Same {summary, trades, filters, metrics, meta} shape as a single run — so
+    the Stats calendar renders a multi-run backtest exactly like one run.
+
+    Metrics are computed from the combined trades (PF/expectancy/win-rate/N;
+    Sharpe left None — per-run Sharpes don't sum, and a combined-daily Sharpe
+    would need a shared calendar we don't assume here)."""
+    slugs = [s for s in (slugs or []) if s]
+    trades, summary, labels, missing = [], {}, [], []
+    for slug in slugs:
+        try:
+            d = calendar_summary(slug, pass_=pass_, period=period,
+                                 from_date=from_date, to_date=to_date)
+        except Exception as e:
+            missing.append(slug)
+            print("[backtest combined] skip", slug, e, flush=True)
+            continue
+        labels.append(d["meta"].get("label") or slug)
+        trades.extend(d["trades"])
+        for dt, b in d["summary"].items():
+            bb = summary.setdefault(dt, {"pnl": 0.0, "count": 0})
+            bb["pnl"] += b["pnl"]; bb["count"] += b["count"]
+    for dt in summary:
+        summary[dt]["pnl"] = round(summary[dt]["pnl"], 2)
+
+    g_win = g_loss = net = 0.0
+    wins = n = 0
+    for t in trades:
+        p = t.get("pnl") or 0
+        n += 1; net += p
+        if p > 0:
+            g_win += p; wins += 1
+        elif p < 0:
+            g_loss += -p
+    metrics = {
+        "profit_factor": round(g_win / g_loss, 3) if g_loss > 0 else None,
+        "expectancy": round(net / n, 2) if n else None,
+        "sharpe": None,
+        "win_rate": round(wins / n * 100, 2) if n else None,
+        "n_trades": n,
+    }
+    return {
+        "summary": summary,
+        "trades": trades,
+        "filters": {"strategy": list(slugs), "broker": []},
+        "metrics": metrics,
+        "meta": {
+            "combined": True, "slugs": list(slugs), "missing": missing,
+            "label": f"{len(slugs)} runs combined",
+            "pass": pass_, "period": period,
+            "combo_key_used": f"{pass_}|{period}",
+        },
+    }

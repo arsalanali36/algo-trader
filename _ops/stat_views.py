@@ -45,18 +45,23 @@ def _clean_strats(strategies):
 
 
 def list_views():
-    return _read()
+    views = _read()
+    for v in views:
+        v.setdefault("kind", "live")   # legacy views = live
+    return views
 
 
-def create_view(name, strategies):
+def create_view(name, strategies, kind="live"):
     name = (name or "").strip()
     if not name:
         raise ValueError("name required")
+    kind = "bt" if str(kind) == "bt" else "live"
     strategies = _clean_strats(strategies)
     with _lock:
         views = _read()
         new_id = (max((v.get("id", 0) for v in views), default=0) + 1)
-        view = {"id": new_id, "name": name, "strategies": strategies}
+        # kind='live' → strategies are strategy config-keys; 'bt' → run slugs
+        view = {"id": new_id, "name": name, "kind": kind, "strategies": strategies}
         views.append(view)
         _write(views)
         return view

@@ -188,7 +188,14 @@
       let d = { summary: {}, filters: {} };
 
       if (btMode) {
-        if (strat) q.set('slug', strat);
+        // Backtest view (portfolio) active → combine its runs (comma-joined
+        // slugs). Else the single selected run.
+        if (window.calActiveView && window.calActiveView.kind === 'bt') {
+          const sl = (window.calActiveView.strategies || []).join(',');
+          if (sl) q.set('slug', sl);
+        } else if (strat) {
+          q.set('slug', strat);
+        }
         q.set('pass', _calSegVal('cal-bt-pass') || 'bs');
         q.set('period', _calSegVal('cal-bt-period') || 'full');
         try {
