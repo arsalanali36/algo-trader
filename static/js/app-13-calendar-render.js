@@ -473,6 +473,9 @@
         }
       });
 
+      // Backtest heatmap = current run's own trades (live path fetches its own endpoint)
+      if (btMode && typeof window._s2Heat === 'function') window._s2Heat();
+
       // Optimised "what-if" numbers (Opt Fixed / Opt Aggr columns) — async,
       // same range/filter params as calendar-summary; re-renders when it lands.
       // Live/paper only — backtest pnl is already the deployable number.

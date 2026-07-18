@@ -151,13 +151,8 @@
 
   // 🔥 Heatmap — all-history month-wise NET ₹ (server), live/backtest same filters
   function _s2Heat() {
-    var qp = new URLSearchParams();
-    var mode = (typeof _calSegVal === 'function') ? _calSegVal('cal-mode') : '';
-    var src = (typeof _calSegVal === 'function') ? _calSegVal('cal-src') : '';
-    if (mode) qp.set('mode', mode); if (src && src !== 'hedge') qp.set('source', src);
-    var strat = (document.getElementById('cal-strat') || {}).value; if (strat && !window.calBtMode) qp.set('strategy', strat);
-    fetch('/api/orders/monthly-returns?' + qp.toString()).then(function (r) { return r.json(); }).then(function (j) {
-      var M = j.months || {}, years = Object.keys(M).sort();
+    function render(M) {
+      var years = Object.keys(M).sort();
       var body = document.getElementById('s2-heatbody'); if (!body) return;
       if (!years.length) { body.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:12px">Is filter pe koi data nahi</div>'; return; }
       var mx = 1; years.forEach(function (y) { for (var m = 1; m <= 12; m++) if (M[y][m] != null) mx = Math.max(mx, Math.abs(M[y][m])); });
@@ -175,8 +170,31 @@
         h += '<td style="padding:4px 5px;text-align:center;font-weight:700;white-space:nowrap;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
       });
       body.innerHTML = h + '</tbody></table>';
-    }).catch(function () {});
+    }
+    // BACKTEST: heatmap current run(s) ke apne trades se (live endpoint bt data nahi jaanta)
+    if (window.calBtMode) {
+      var Mb = {};
+      (window.currentCalendarTrades || []).forEach(function (t) {
+        var d = t.exit_date || t.entry_date || (t.exit_dt || t.entry_dt || '').slice(0, 10);
+        if (!d || d.length < 7) return;
+        var y = d.slice(0, 4), m = parseInt(d.slice(5, 7), 10);
+        if (!m) return;
+        var net = (t._net != null) ? t._net : (t.pnl || 0);
+        if (!Mb[y]) Mb[y] = {};
+        Mb[y][m] = (Mb[y][m] || 0) + net;
+      });
+      render(Mb); return;
+    }
+    // LIVE/PAPER: monthly-returns endpoint (mode/source/strategy filtered)
+    var qp = new URLSearchParams();
+    var mode = (typeof _calSegVal === 'function') ? _calSegVal('cal-mode') : '';
+    var src = (typeof _calSegVal === 'function') ? _calSegVal('cal-src') : '';
+    if (mode) qp.set('mode', mode); if (src && src !== 'hedge') qp.set('source', src);
+    var strat = (document.getElementById('cal-strat') || {}).value; if (strat) qp.set('strategy', strat);
+    fetch('/api/orders/monthly-returns?' + qp.toString()).then(function (r) { return r.json(); })
+      .then(function (j) { render(j.months || {}); }).catch(function () {});
   }
+  window._s2Heat = _s2Heat;
   function _s2switchBottom(pane) {
     document.querySelectorAll('.s2tabs').forEach(function (tb) { if (tb.querySelector('[data-p^="tbl-"]')) tb.querySelectorAll('.s2tab').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-p') === pane); }); });
     document.querySelectorAll('.s2pane').forEach(function (p) { if (p.id.indexOf('tbl-') === 0) p.classList.toggle('on', p.id === pane); });
