@@ -1,0 +1,8 @@
+[Unit]
+Description=BS-shadow — daily Black-Scholes reprice of the day's REAL trades (display-only)
+After=network.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 _ops/bs_shadow.py

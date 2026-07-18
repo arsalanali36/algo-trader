@@ -1,0 +1,9 @@
+[Unit]
+Description=Run bs_shadow daily after market close (Mon-Fri 15:50 IST)
+
+[Timer]
+OnCalendar=Mon..Fri 15:50:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
