@@ -50,23 +50,27 @@
       <span data-m="bt" onclick="s2Switch('bt',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
     </span>
 
-    <!-- reused live/bt + mode controls (HIDDEN — s2Switch toggles their .on state) -->
-    <span id="cal-view" class="cal-seg" style="display:none">
-      <span data-v="live" class="on" onclick="calSetView('live',this)">Live/Paper</span>
-      <span data-v="bt" onclick="calSetView('bt',this)">Backtest</span>
-    </span>
-    <span id="cal-live-only" style="display:none">
-      <span id="cal-src" class="cal-seg">
-        <span data-v="" class="on" onclick="calSeg('cal-src',this)">All</span>
-        <span data-v="webhook" onclick="calSeg('cal-src',this)">Webhook</span>
-        <span data-v="manual" onclick="calSeg('cal-src',this)">Manual</span>
-        <span data-v="strategy" onclick="calSeg('cal-src',this)">Strategy</span>
-        <span data-v="hedge" onclick="calSeg('cal-src',this)">Hedge</span>
+    <!-- reused live/bt + source + mode controls — HIDDEN parent (calSetView un-hides
+         #cal-live-only, but this wrapper stays display:none so nothing leaks; the
+         .on state is still readable by _calSegVal). s2Switch/s2Src drive these. -->
+    <span id="s2-hidden" style="display:none">
+      <span id="cal-view" class="cal-seg">
+        <span data-v="live" class="on" onclick="calSetView('live',this)">Live/Paper</span>
+        <span data-v="bt" onclick="calSetView('bt',this)">Backtest</span>
       </span>
-      <span id="cal-mode" class="cal-seg">
-        <span data-v="" class="on" onclick="calSeg('cal-mode',this)">All</span>
-        <span data-v="paper" onclick="calSeg('cal-mode',this)">Paper</span>
-        <span data-v="live" onclick="calSeg('cal-mode',this)">Live</span>
+      <span id="cal-live-only">
+        <span id="cal-src" class="cal-seg">
+          <span data-v="" class="on" onclick="calSeg('cal-src',this)">All</span>
+          <span data-v="webhook" onclick="calSeg('cal-src',this)">Webhook</span>
+          <span data-v="manual" onclick="calSeg('cal-src',this)">Manual</span>
+          <span data-v="strategy" onclick="calSeg('cal-src',this)">Strategy</span>
+          <span data-v="hedge" onclick="calSeg('cal-src',this)">Hedge</span>
+        </span>
+        <span id="cal-mode" class="cal-seg">
+          <span data-v="" class="on" onclick="calSeg('cal-mode',this)">All</span>
+          <span data-v="paper" onclick="calSeg('cal-mode',this)">Paper</span>
+          <span data-v="live" onclick="calSeg('cal-mode',this)">Live</span>
+        </span>
       </span>
     </span>
 
@@ -290,6 +294,7 @@
 <script src="{{ url_for('static', filename='js/app-12-calendar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app-13-calendar-render.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sltp-modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/tags.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stats2.js') }}"></script>
 </body>
 </html>
