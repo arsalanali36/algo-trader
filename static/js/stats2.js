@@ -146,28 +146,49 @@
 
   // ── NEW panels (REAL data) ─────────────────────────────────────────────────
   var _S2_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  // heatmap size presets (S/M/L) — user-selectable, localStorage-persisted
+  var _HEAT_SZ = {
+    s: { tf:'10px', sp:'2px', th:'4px 3px', thf:'10px', lbl:'5px 6px', lblf:'11px', cell:'5px 4px', cf:'10px', dot:'12px' },
+    m: { tf:'11px', sp:'3px', th:'5px 4px', thf:'11px', lbl:'7px 8px', lblf:'12px', cell:'7px 6px', cf:'11px', dot:'13px' },
+    l: { tf:'13px', sp:'4px', th:'9px 5px', thf:'12px', lbl:'13px 10px', lblf:'14px', cell:'13px 7px', cf:'12.5px', dot:'16px' }
+  };
+  try { window._heatSize = window._heatSize || localStorage.getItem('heat_size') || 'm'; } catch (e) { window._heatSize = window._heatSize || 'm'; }
+  window.s2HeatSize = function (sz, el) {
+    window._heatSize = sz;
+    try { localStorage.setItem('heat_size', sz); } catch (e) {}
+    if (el && el.parentElement) el.parentElement.querySelectorAll('span[data-sz]').forEach(function (s) {
+      var on = s.dataset.sz === sz; s.style.background = on ? '#1f6feb' : ''; s.style.color = on ? '#fff' : '#8b949e';
+    });
+    _s2Heat();
+  };
   function _s2inrShort(v) { var s = v < 0 ? '−' : '+'; var a = Math.abs(v); return a >= 1000 ? (s + '₹' + (a / 1000).toFixed(1) + 'k') : (s + '₹' + Math.round(a)); }
   function _s2net(t) { return t._net != null ? t._net : (t.pnl || 0); }
 
   // 🔥 Heatmap — all-history month-wise NET ₹ (server), live/backtest same filters
   function _s2Heat() {
+    // size buttons ka active state current size pe set karo
+    document.querySelectorAll('#calp-heat span[data-sz]').forEach(function (s) {
+      var on = s.dataset.sz === (window._heatSize || 'm');
+      s.style.background = on ? '#1f6feb' : ''; s.style.color = on ? '#fff' : '#8b949e';
+    });
     function render(M) {
       var years = Object.keys(M).sort();
       var body = document.getElementById('s2-heatbody'); if (!body) return;
       if (!years.length) { body.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:12px">Is filter pe koi data nahi</div>'; return; }
       var mx = 1; years.forEach(function (y) { for (var m = 1; m <= 12; m++) if (M[y][m] != null) mx = Math.max(mx, Math.abs(M[y][m])); });
-      var h = '<table style="font-size:11px;border-collapse:separate;border-spacing:3px;width:100%"><thead><tr><th></th>';
-      _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:5px 4px;color:#8b949e;font-size:11px">' + m + '</th>'; });
-      h += '<th style="text-align:center;color:#8b949e;font-size:11px;padding:5px 5px">Year</th></tr></thead><tbody>';
+      var P = _HEAT_SZ[window._heatSize || 'm'] || _HEAT_SZ.m;
+      var h = '<table style="font-size:' + P.tf + ';border-collapse:separate;border-spacing:' + P.sp + ';width:100%"><thead><tr><th></th>';
+      _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:' + P.th + ';color:#8b949e;font-size:' + P.thf + '">' + m + '</th>'; });
+      h += '<th style="text-align:center;color:#8b949e;font-size:' + P.thf + ';padding:' + P.th + '">Year</th></tr></thead><tbody>';
       years.forEach(function (y) {
-        h += '<tr><td style="color:#8b949e;font-weight:600;padding:7px 8px;font-size:12px">' + y + '</td>'; var tot = 0;
+        h += '<tr><td style="color:#8b949e;font-weight:600;padding:' + P.lbl + ';font-size:' + P.lblf + '">' + y + '</td>'; var tot = 0;
         for (var m = 1; m <= 12; m++) {
           var v = M[y][m];
-          if (v == null) { h += '<td style="padding:7px 4px;text-align:center;color:#30363d;font-size:13px">·</td>'; continue; }
+          if (v == null) { h += '<td style="padding:' + P.cell + ';text-align:center;color:#30363d;font-size:' + P.dot + '">·</td>'; continue; }
           tot += v; var a = Math.min(0.82, 0.12 + Math.abs(v) / mx * 0.7), bg = v >= 0 ? 'rgba(63,185,80,' + a + ')' : 'rgba(248,81,73,' + a + ')';
-          h += '<td onclick="s2HeatClick(this)" data-ym="' + y + '-' + String(m).padStart(2, '0') + '" title="' + y + ' ' + _S2_MON[m - 1] + '" style="padding:7px 6px;text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:4px;white-space:nowrap;font-weight:500">' + _s2inrShort(v) + '</td>';
+          h += '<td onclick="s2HeatClick(this)" data-ym="' + y + '-' + String(m).padStart(2, '0') + '" title="' + y + ' ' + _S2_MON[m - 1] + '" style="padding:' + P.cell + ';text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:4px;white-space:nowrap;font-weight:500;font-size:' + P.cf + '">' + _s2inrShort(v) + '</td>';
         }
-        h += '<td style="padding:7px 8px;text-align:center;font-weight:700;white-space:nowrap;font-size:12px;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
+        h += '<td style="padding:' + P.lbl + ';text-align:center;font-weight:700;white-space:nowrap;font-size:' + P.lblf + ';color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
       });
       body.innerHTML = h + '</tbody></table>';
     }
@@ -226,9 +247,18 @@
     document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; x.removeAttribute('data-sel'); });
     if (sel) { window.s2ClearChip(); return; }
     td.style.outline = '2px solid #58a6ff'; td.setAttribute('data-sel', '1');
-    var ym = td.getAttribute('data-ym');
-    window.calSelectedPeriodFilter = null;
-    if (typeof calSelectPeriod === 'function') calSelectPeriod('monthly', ym);   // filters points table + equity
+    var ym = td.getAttribute('data-ym');   // "2023-11"
+    // Us month pe calendar navigate karo → uske trades LOAD (bt me full-run ke months
+    // bhi jo visible range me nahi the) → points table + summary us month ke dikhaenge.
+    var f = document.getElementById('cal-range-from'), t = document.getElementById('cal-range-to');
+    if (f && t && ym && ym.length >= 7) {
+      var yy = parseInt(ym.slice(0, 4), 10), mm = parseInt(ym.slice(5, 7), 10);
+      var last = new Date(yy, mm, 0).getDate();
+      f.value = ym + '-01';
+      t.value = ym + '-' + String(last).padStart(2, '0');
+      window._calRangeMode = true;
+      if (typeof calendarRender === 'function') calendarRender();
+    }
     _s2switchBottom('tbl-ppt');
     var c = document.getElementById('s2-fchip');
     c.innerHTML = '📅 ' + td.getAttribute('title') + ' <span onclick="s2ClearChip(event)" style="cursor:pointer;color:#f85149;font-weight:bold;margin-left:6px">✕</span>';
@@ -238,7 +268,11 @@
     if (ev) ev.stopPropagation();
     document.getElementById('s2-fchip').style.display = 'none';
     document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; x.removeAttribute('data-sel'); });
+    var f = document.getElementById('cal-range-from'), t = document.getElementById('cal-range-to');
+    if (f) f.value = ''; if (t) t.value = '';
+    window._calRangeMode = false;
     if (typeof clearCalPeriodFilter === 'function') clearCalPeriodFilter();
+    if (typeof calendarRender === 'function') calendarRender();
   };
 
   // 📊 Distribution — real P&L histogram + table from the current trades

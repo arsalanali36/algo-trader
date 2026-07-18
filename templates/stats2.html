@@ -168,6 +168,14 @@
         <div class="cal-grid" id="cal-grid"></div>
       </div>
       <div class="s2pane" id="calp-heat">
+        <div style="display:flex;justify-content:flex-end;align-items:center;gap:6px;margin-bottom:6px">
+          <span style="font-size:10px;color:#6e7681">Size</span>
+          <span class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:5px;overflow:hidden;font-size:10px">
+            <span data-sz="s" onclick="s2HeatSize('s',this)" style="padding:3px 9px;cursor:pointer;color:#8b949e">S</span>
+            <span data-sz="m" onclick="s2HeatSize('m',this)" style="padding:3px 9px;cursor:pointer;color:#8b949e">M</span>
+            <span data-sz="l" onclick="s2HeatSize('l',this)" style="padding:3px 9px;cursor:pointer;color:#8b949e">L</span>
+          </span>
+        </div>
         <div id="s2-heatbody" style="overflow-x:auto"></div>
         <div style="font-size:10px;color:#6e7681;margin-top:8px">💡 Kisi month cell pe click → neeche table us period pe filter</div>
       </div>
