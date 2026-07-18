@@ -393,7 +393,7 @@ function renderInfo(){const M=R.meta||{};
   ['Leverage','NONE (1x)'],['Rules','3:15 exit · max 2/day · no overnight'],
   ['Data window',R.meta.window[0]+' → '+R.meta.window[1]],['MC scenarios','1,000']];
   document.getElementById('info').innerHTML=rows.map(r=>`<div class="mrow"><span class="k">${r[0]}</span><span class="v" style="font-weight:600">${r[1]}</span></div>`).join('')}
-function renderMC(){const c=C().mc;if(!c){document.getElementById('mcfan').innerHTML='<p class="mut">n/a</p>';document.getElementById('mctbl').innerHTML='';return}
+function renderMC(){const c=C().mc;const _p=document.getElementById('mcfan').closest('.panel');if(!c){if(_p)_p.style.display='none';return}if(_p)_p.style.display='';
   const all=[].concat(...c.paths,c.orig_path),ymin=Math.min(...all),ymax=Math.max(...all);
   let svg=`<svg viewBox="0 0 ${W} ${H}">`+yaxis(ymin,ymax,lakh);
   for(const p of c.paths)svg+=line(p,'#4f78ff2e',0.7,ymin,ymax);
@@ -405,7 +405,7 @@ function renderMC(){const c=C().mc;if(!c){document.getElementById('mcfan').inner
     h+=`<tr><td>${lbl}</td><td style="color:#f0c000;font-weight:700">${fmtp(v[0],suf)}</td>
       <td class="neg">${fmtp(v[1],suf)}</td><td class="pos">${fmtp(v[2],suf)}</td><td class="mut">${fmtp(v[3],suf)}</td></tr>`}
   document.getElementById('mctbl').innerHTML=h}
-function renderSig(){const s=C().significance,ok=s.significant;
+function renderSig(){const s=C().significance;const _p=document.getElementById('sig').closest('.panel');if(!s){if(_p)_p.style.display='none';return}if(_p)_p.style.display='';const ok=s.significant;
   document.getElementById('sig').innerHTML=`
     <div class="vbox"><div class="t">Verdict</div><div class="b ${ok?'pos':'neg'}">${ok?'✅ SIGNIFICANT':'⚠️ NOT SIGNIFICANT'}</div></div>
     <div class="vbox"><div class="t">p-value</div><div class="b mono">${s.p_value.toFixed(3)}</div></div>
@@ -432,8 +432,8 @@ const TCOLS=[
   {k:'in',label:'In',get:t=>t.entry_dt.slice(11),raw:t=>t.entry_dt},
   {k:'out',label:'Out',get:t=>t.exit_dt.slice(11),raw:t=>t.exit_dt},
   {k:'dur',label:'Dur',off:true,get:t=>durStr(t.bars),raw:t=>t.bars},
-  {k:'entry',label:'Entry (spot)',get:t=>t.entry.toFixed(1),raw:t=>t.entry},
-  {k:'exit',label:'Exit (spot)',get:t=>t.exit.toFixed(1),raw:t=>t.exit},
+  {k:'entry',label:'Entry (spot)',get:t=>t.entry!=null?t.entry.toFixed(1):'<span class="mut">—</span>',raw:t=>t.entry||0},
+  {k:'exit',label:'Exit (spot)',get:t=>t.exit!=null?t.exit.toFixed(1):'<span class="mut">—</span>',raw:t=>t.exit||0},
   {k:'strike',label:'Strike',off:true,get:t=>t.strike!=null?`${t.strike} ${t.opt_type||''}`:'<span class="mut">—</span>',raw:t=>t.strike||0},
   {k:'entry_prem',label:'Entry Prem ₹',off:true,get:t=>t.entry_prem!=null?t.entry_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.entry_prem||0},
   {k:'exit_prem',label:'Exit Prem ₹',off:true,get:t=>t.exit_prem!=null?t.exit_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.exit_prem||0},
@@ -443,7 +443,7 @@ const TCOLS=[
   {k:'gross',label:'Gross ₹',off:true,get:t=>`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`,raw:t=>t.gross},
   {k:'fee',label:'Tax ₹',off:true,get:t=>`<span class="mut">-${inr(Math.abs(t.fee||0))}</span>`,raw:t=>t.fee},
   {k:'pnl',label:'Net ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
-  {k:'ret',label:'% Move',get:t=>{const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.points/t.entry},
+  {k:'ret',label:'% Move',get:t=>{if(!t.entry)return'<span class="mut">—</span>';const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.entry?t.points/t.entry:0},
   {k:'reason',label:'Exit Reason',l:true,get:t=>`<span class="mut">${t.reason}</span>`,raw:t=>t.reason},
 ];
 let colVis=JSON.parse(localStorage.getItem('orb_tcols2')||'null')||{};

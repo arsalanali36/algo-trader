@@ -15,6 +15,7 @@ import os
 import sys
 import openpyxl
 import pandas as pd
+import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -81,6 +82,7 @@ def parse(path):
         date = str(r.get("Date") or "")[:10]
         tin = str(r.get("In") or "")
         tout = str(r.get("Out") or "")
+        e_spot, x_spot = _num(r.get("Entry Spot")), _num(r.get("Exit Spot"))
         trades.append({
             "side": str(r.get("Side") or "").lower(),
             "opt_type": r.get("Opt"), "strike": r.get("Strike"),
@@ -88,6 +90,8 @@ def parse(path):
             "exit_dt": (date + " " + tout).strip(),
             "entry_prem": _num(r.get("Entry Prem")), "exit_prem": _num(r.get("Exit Prem")),
             "points": _num(r.get("Index Pts")), "qty": _num(r.get("Qty")),
+            # spot levels (chart markers + Entry/Exit spot cols); alias to entry/exit
+            "entry_spot": e_spot, "exit_spot": x_spot, "entry": e_spot, "exit": x_spot,
             "gross": _num(r.get("Gross Rs")), "fee": _num(r.get("Fee Rs")),
             "pnl": _num(r.get("Net Rs")), "bars": int(_num(r.get("Bars")) or 0),
             "reason": r.get("Exit Reason") or "",
@@ -167,6 +171,57 @@ _CLAIMED = {
 }
 
 
+def _downsample(arr, n=120):
+    if len(arr) <= n:
+        return [round(float(x), 1) for x in arr]
+    idx = np.linspace(0, len(arr) - 1, n).astype(int)
+    return [round(float(arr[i]), 1) for i in idx]
+
+
+def monte_carlo(trades, meta_in, n_paths=1000, seed=7):
+    """Bootstrap the per-trade P&L sequence 1000x -> net%/maxDD/Sharpe spread + fan.
+    Genuinely trade-derived (unlike significance/opt-sweep which need the original
+    signal/param search). Seeded so re-uploading the same file is reproducible."""
+    pnl = np.array([float(t["pnl"]) for t in trades if t.get("pnl") is not None])
+    if len(pnl) < 20:
+        return None
+    N = len(pnl)
+    rng = np.random.default_rng(seed)
+    try:
+        win = str(meta_in.get("Window") or "").split(" -> ")
+        years = max((pd.to_datetime(win[1]) - pd.to_datetime(win[0])).days / 365.25, 0.1)
+    except Exception:
+        years = max(N / 250.0, 0.1)
+    tpy = N / years                                   # trades/year for annualisation
+    cap = engine.START_CAP
+
+    def _net(eq): return (eq[-1] - cap) / cap * 100.0
+    def _dd(eq):
+        peak = np.maximum.accumulate(eq)
+        return float(((eq / peak - 1) * 100).min())
+    def _sh(s):
+        sd = s.std()
+        return float(s.mean() / sd * np.sqrt(tpy)) if sd else 0.0
+
+    nets, dds, shs, paths = [], [], [], []
+    for i in range(n_paths):
+        s = pnl[rng.integers(0, N, N)]
+        eq = cap + np.cumsum(s)
+        nets.append(_net(eq)); dds.append(_dd(eq)); shs.append(_sh(s))
+        if i < 60:
+            paths.append(_downsample(eq))
+    orig_eq = cap + np.cumsum(pnl)
+
+    def tbl(orig, arr):
+        a = np.array(arr)
+        return [round(float(orig), 2), round(float(np.percentile(a, 5)), 2),
+                round(float(np.percentile(a, 50)), 2), round(float(np.percentile(a, 95)), 2)]
+
+    return {"table": {"net": tbl(_net(orig_eq), nets), "maxdd": tbl(_dd(orig_eq), dds),
+                      "sharpe": tbl(_sh(pnl), shs)},
+            "paths": paths, "orig_path": _downsample(orig_eq)}
+
+
 def to_results_payload(parsed, recomputed):
     """Build a minimal window.RESULTS-shaped dict the lab dashboard can render.
     Metrics = recompute (full set) with the run's CLAIMED headline values overlaid
@@ -203,7 +258,11 @@ def to_results_payload(parsed, recomputed):
             "candles": [], "passes": ["bs"], "periods": ["full"]}
     combo = {"dna": {}, "metrics": metrics, "all_trades": trades,
              "trades": trades[-10:], "equity": eq, "benchmark": eq, "labels": labels,
-             "underwater": [], "worst_periods": [], "monthly": monthly}
+             "underwater": [], "worst_periods": [], "monthly": monthly,
+             "mc": monte_carlo(trades, parsed.get("meta", {}))}
+    # significance + opt_table deliberately absent — they need the original run's
+    # signal/param search, not reproducible from the trade list; the dashboard now
+    # hides those two panels when absent.
     return {"meta": meta, "combos": {"bs|full": combo}}
 
 

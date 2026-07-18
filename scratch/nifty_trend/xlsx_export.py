@@ -138,6 +138,7 @@ def _trades_bs(wb, trades, meta):
     lot = int(meta.get("lot_size", 65) or 65)
     base = ["#", "Date", "Side", "Opt", "Strike", "In", "Out", "Bars",
             "Entry Prem", "Exit Prem", "Prem Pts", "Qty", "Index Pts",
+            "Entry Spot", "Exit Spot",
             "Gross Rs", "Fee Rs", "Net Rs", "Exit Reason"]
     wi_labels = [lbl for _, lbl in W.COLUMNS]
     header = base + wi_labels + ["Flag"]
@@ -157,6 +158,7 @@ def _trades_bs(wb, trades, meta):
             str(t.get("entry_dt", ""))[11:16], str(t.get("exit_dt", ""))[11:16],
             t.get("bars", ""), ep, xp,
             round((xp or 0) - (ep or 0), 2), t.get("qty", ""), t.get("points", ""),
+            t.get("entry_spot", ""), t.get("exit_spot", ""),
             round(t.get("gross", 0) or 0, 1), round(t.get("fee", 0) or 0, 1),
             round(net, 1) if net is not None else "", t.get("reason", ""),
         ]
@@ -176,7 +178,7 @@ def _trades_bs(wb, trades, meta):
         fl = ws.cell(r, flag_col).value
         if fl and fl != "OK":
             ws.cell(r, flag_col).font = Font(color="CF222E", bold=True)
-    widths = ([4, 11, 6, 5, 7, 6, 6, 5, 10, 10, 9, 6, 9, 9, 8, 9, 15]
+    widths = ([4, 11, 6, 5, 7, 6, 6, 5, 10, 10, 9, 6, 9, 10, 10, 9, 8, 9, 15]
               + [15] * len(wi_labels) + [11])
     for i, wd in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = wd
