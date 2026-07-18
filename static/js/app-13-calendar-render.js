@@ -193,6 +193,10 @@
         if (window.calActiveView && window.calActiveView.kind === 'bt') {
           const sl = (window.calActiveView.strategies || []).join(',');
           if (sl) q.set('slug', sl);
+        } else if (strat === '__ALL__') {
+          // "All runs" → combine every available run
+          const sl = (window._calBtRuns || []).map(r => r.slug).join(',');
+          if (sl) q.set('slug', sl);
         } else if (strat) {
           q.set('slug', strat);
         }

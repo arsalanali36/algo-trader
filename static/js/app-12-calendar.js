@@ -87,13 +87,16 @@
         window._calBtRuns = runs;
         if (strat) {
           const prev = strat.value;
-          strat.innerHTML = runs.map(rn => {
+          // "All runs" (like live's "All strategies") — combines EVERY run into
+          // one portfolio result. Sentinel value __ALL__ expanded in calendarRender.
+          const allOpt = `<option value="__ALL__">⚡ All runs (combined)</option>`;
+          strat.innerHTML = allOpt + runs.map(rn => {
             const badge = rn.deployed ? ' ✅' : (rn.significant ? '' : ' ⚠️');
             const tf = rn.tf ? ` · ${rn.tf}` : '';
             const lbl = `${rn.label}${badge}${tf}`.replace(/</g, '&lt;');
             return `<option value="${rn.slug}">${lbl}</option>`;
           }).join('');
-          if (prev && runs.some(rn => rn.slug === prev)) strat.value = prev;
+          if (prev === '__ALL__' || (prev && runs.some(rn => rn.slug === prev))) strat.value = prev;
           else if (runs.length) strat.value = runs[0].slug;
         }
       } catch (e) { console.error('[bt runs] load failed', e); }
