@@ -38,6 +38,12 @@ try:
     import dhan_master
 except Exception:
     dhan_master = None
+try:
+    import dhan_rate_limiter as _rl
+except Exception:
+    _rl = None
+
+import time as _time
 
 ROOT = _o.path.dirname(_o.path.dirname(_o.path.abspath(__file__)))
 OUT_DIR = _o.path.join(ROOT, "data", "bs_shadow")
@@ -56,9 +62,22 @@ SS, SE = datetime.time(9, 15), datetime.time(15, 29)
 def _fetch_index(sec, date):
     body = {"securityId": sec, "exchangeSegment": "IDX_I", "instrument": "INDEX",
             "expiryCode": 0, "fromDate": date, "toDate": date}
-    r = requests.post("https://api.dhan.co/v2/charts/intraday", headers=HDRS, json=body, timeout=40)
-    r.raise_for_status()
-    d = r.json()
+    d = None
+    for attempt in range(4):                     # backfill hits many dates → respect Dhan ~1 req/sec
+        if _rl:
+            try: _rl.acquire("candle")
+            except Exception: pass
+        r = requests.post("https://api.dhan.co/v2/charts/intraday", headers=HDRS, json=body, timeout=40)
+        if r.status_code == 429:
+            if _rl:
+                try: _rl.note_429()
+                except Exception: pass
+            _time.sleep(2.0 * (attempt + 1))     # backoff
+            continue
+        r.raise_for_status()
+        d = r.json()
+        break
+    _time.sleep(1.2)                             # base spacing between index fetches
     if not (isinstance(d, dict) and d.get("close")):
         return {}
     out = {}
