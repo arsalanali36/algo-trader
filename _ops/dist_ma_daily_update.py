@@ -130,14 +130,16 @@ def main():
     if a.symbols:
         syms = [s.strip().upper() for s in a.symbols.split(",") if s.strip()]
     else:
-        # existing lake symbols if any, else the full F&O universe
-        syms = dm.symbols()
-        if not syms:
-            try:
-                import fno_universe
-                syms = fno_universe.get_fno_symbols()
-            except Exception:
-                syms = []
+        # default = existing lake ∪ full F&O universe, so the daily timer always
+        # covers the whole universe (and auto-adds any new F&O name), never just
+        # whatever happens to already be on disk.
+        syms = set(dm.symbols())
+        try:
+            import fno_universe
+            syms |= set(fno_universe.get_fno_symbols())
+        except Exception:
+            pass
+        syms = sorted(syms)
     if not syms:
         print("no symbols to update"); return
 
