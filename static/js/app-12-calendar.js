@@ -443,7 +443,8 @@
       const t = document.getElementById('cal-range-to');
       if (f) f.value = `${y}-01-01`;
       if (t) t.value = to;
-      calYear = y; calMonth = 0;
+      // calMonth ko data-waale month pe rakho (range clear ho jaye to khaali January pe na atke)
+      calYear = y; calMonth = (y === now.getFullYear()) ? now.getMonth() : 11;
       window._calRangeMode = true;
       // saal chuna to Monthly summary sabse useful
       window._calSumMode = 'monthly';
