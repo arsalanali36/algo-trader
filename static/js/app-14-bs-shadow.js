@@ -127,10 +127,12 @@
 
     const groups = {};
     let exN = 0, incN = 0;                          // excluded (stock, no BS) vs included legs
+    const diffs = [];                               // per-leg Δ = BS − Real (for the bias/noise signal)
     (window.currentCalendarTrades || []).forEach(t => {
       const rb = _tradeRealBs(t, basis);
       if (!rb.ok) { exN += 1; return; }             // BS can't price stocks → out of BOTH columns (fair)
       incN += 1;
+      diffs.push(rb.bs - rb.real);
       const k = groupKey(t);
       const g = groups[k] || (groups[k] = { real: 0, bs: 0, n: 0 });
       g.real += rb.real; g.bs += rb.bs; g.n += 1;
@@ -175,7 +177,19 @@
     }
     if (cov) {
       const miss = (window._bsMissing || []).length;
-      cov.innerHTML = `Sirf <b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> — Real vs BS same legs pe (fair). `
+      // per-leg Δ signal: is the BS-vs-Real gap a real bias, or just noise?
+      const n = diffs.length;
+      const dm = n ? diffs.reduce((a, b) => a + b, 0) / n : 0;
+      const sd = n > 1 ? Math.sqrt(diffs.reduce((a, b) => a + (b - dm) * (b - dm), 0) / n) : 0;
+      const tstat = (n && sd) ? dm / (sd / Math.sqrt(n)) : 0;
+      const real = Math.abs(tstat) >= 2;
+      const verdict = real ? 'real bias' : 'abhi noise';
+      const vcol = real ? '#d29922' : '#3fb950';
+      const sig = n ? `<span style="border:1px solid ${vcol};border-radius:5px;padding:2px 8px;color:${vcol};font-weight:600">`
+        + `per-leg Δ ${inr(dm)} · t=${tstat.toFixed(1)} · ${verdict}</span> `
+        + `<span style="color:#6e7681">(signal — roz ke number = noise; ~1000 legs pe pakka pata)</span><br>` : '';
+      cov.innerHTML = sig
+        + `Sirf <b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> — Real vs BS same legs pe (fair). `
         + (exN ? `<span style="color:#8b949e">${exN} stock legs BS-model se bahar (BS sirf index options pe).</span> ` : '')
         + (miss ? `${miss} din shadow pending.` : '');
     }
