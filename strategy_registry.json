@@ -342,6 +342,22 @@
       "status": "research",
       "legs": 1
     },
+    "09.04": {
+      "name": "Momentum Breakout (NIFTY 50d)",
+      "config_key": null,
+      "slug": null,
+      "live_file": "_PINE/momentum_breakout_v1.pine",
+      "status": "rejected",
+      "legs": 1
+    },
+    "09.05": {
+      "name": "Markov Buy-the-Dip (NIFTY)",
+      "config_key": null,
+      "slug": null,
+      "live_file": "_PINE/markov_meanrev_v1.pine",
+      "status": "rejected",
+      "legs": 1
+    },
     "02.03": {
       "name": "VRP Overnight Condor",
       "config_key": "vrp_condor_v1",
