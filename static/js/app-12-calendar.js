@@ -131,7 +131,8 @@
           // "All runs" (like live's "All strategies") — combines EVERY run into
           // one portfolio result. Sentinel value __ALL__ expanded in calendarRender.
           const allOpt = `<option value="__ALL__">⚡ All runs (combined)</option>`;
-          strat.innerHTML = allOpt + runs.map(rn => {
+          const runsSorted = runs.slice().sort((a, b) => _regSortKey(a.slug).localeCompare(_regSortKey(b.slug)));
+          strat.innerHTML = allOpt + runsSorted.map(rn => {
             // registry ka canonical "ID · Naam" (apni label nahi) — resolve na ho to run label fallback
             const nm = (window.regId && String(regId(rn.slug)) !== String(rn.slug)) ? regFull(rn.slug) : rn.label;
             const tf = rn.tf ? ` · ${rn.tf}` : '';
@@ -186,6 +187,12 @@
         .replace(/[·•|\-\s]+$/g, '')             // trailing separators
         .replace(/\s{2,}/g, ' ')
         .trim();
+    }
+
+    // sort key = registry ID ("00.01") so lists order like /registry; unresolved go last
+    function _regSortKey(key) {
+      const id = (window.regId ? String(regId(key)) : String(key));
+      return (id !== String(key)) ? ('0_' + id) : ('1_' + String(key));
     }
 
     async function loadCalViews() {
@@ -282,7 +289,7 @@
       const lbl = document.getElementById('stat-view-list-label');
       if (lbl) lbl.textContent = bt ? 'Runs (jo combine karne hain tick karo)' : 'Strategies (jo view me chahiye tick karo)';
       if (nameI) nameI.value = view ? view.name : '';
-      const strats = _allStrategiesForView();
+      const strats = _allStrategiesForView().slice().sort((a, b) => _regSortKey(a.key).localeCompare(_regSortKey(b.key)));
       if (!strats.length) {
         list.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:10px">Strategies abhi load nahi hui — Stats tab ek baar refresh karo phir kholo.</div>';
       } else {
