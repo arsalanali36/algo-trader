@@ -271,6 +271,8 @@ STRATEGIES = {
     "vrp":       {"script": str(TRADERS_DIR / "vrp_straddle_trader.py"), "log": BASE_DIR / "logs/vrp_v1.log", "cfg": TC_FILE, "grep": "vrp_straddle_trader"},
     # 10 = VRP Overnight Condor — daily defined-risk short-vol, ONE-night hold (allow_overnight, ADR-006)
     "vrp_condor": {"script": str(TRADERS_DIR / "vrp_condor_trader.py"), "log": BASE_DIR / "logs/vrp_condor_v1.log", "cfg": TC_FILE, "grep": "vrp_condor_trader"},
+    # Distance-from-20EMA extreme-oversold BUY — POSITIONAL EQUITY (delivery/CNC), holds weeks (allow_overnight)
+    "distma":    {"script": str(TRADERS_DIR / "dist_ma_trader.py"), "log": BASE_DIR / "logs/distma_v1.log", "cfg": TC_FILE, "grep": "dist_ma_trader"},
 }
 # Aliases — custom variation names map to base strategy
 STRATEGY_ALIASES = {"ARS": "range", "rsi": "rsi"}
