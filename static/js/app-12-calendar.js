@@ -431,6 +431,30 @@
       calClearDateRange();
     }
 
+    // Poora saal dekho — From=Jan 1, To=Dec 31 (current year me = aaj tak). Total
+    // Summary auto Monthly grouping pe (saal ka month-by-month feel).
+    function calSetYear(y) {
+      y = parseInt(y, 10); if (!y) return;
+      const now = new Date();
+      const to = (y === now.getFullYear())
+        ? `${y}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+        : `${y}-12-31`;
+      const f = document.getElementById('cal-range-from');
+      const t = document.getElementById('cal-range-to');
+      if (f) f.value = `${y}-01-01`;
+      if (t) t.value = to;
+      calYear = y; calMonth = 0;
+      window._calRangeMode = true;
+      // saal chuna to Monthly summary sabse useful
+      window._calSumMode = 'monthly';
+      const seg = document.getElementById('cal-sum-mode');
+      if (seg) seg.querySelectorAll('span[data-v]').forEach(s => {
+        const on = s.dataset.v === 'monthly';
+        s.style.background = on ? '#1f6feb' : ''; s.style.color = on ? '#fff' : '#8b949e';
+      });
+      calendarRender();
+    }
+
     // Default date range: 21 Jun 2026 (go-live) → today (dynamic). Applied once
     // per page load; user can still change or clear it afterwards.
     const _CAL_DEFAULT_FROM = '2026-06-21';

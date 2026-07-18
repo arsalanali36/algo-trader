@@ -299,14 +299,20 @@
       const sel = document.getElementById(id); if (!sel) return;
       // Filter out junk strategy names from strategy dropdowns
       const isStratSel = (id === 'ord-strat' || id === 'cal-strat');
-      const filtered = isStratSel ? vals.filter(v => v && v.toLowerCase() !== 'unknown') : vals;
+      let filtered = isStratSel ? vals.filter(v => v && v.toLowerCase() !== 'unknown') : vals;
+      const _base = v => (isStratSel && v.includes(' | ')) ? v.split(' | ')[0] : v;
+      // registry ID se sort (00.01, 00.02… jaise /registry); unresolved last
+      if (isStratSel && typeof regId === 'function') {
+        const _sk = v => { const b = _base(v); const i = String(regId(b)); return (i !== b ? '0_' + i : '1_' + b); };
+        filtered = filtered.slice().sort((a, b) => _sk(a).localeCompare(_sk(b)));
+      }
       const want = JSON.stringify([''].concat(filtered));
       const have = JSON.stringify(Array.from(sel.options).map(o => o.value));
       if (have === want) return;
       sel.innerHTML = '<option value="">' + allLabel + '</option>' + filtered.map(v => {
-        let display = v;
-        if (isStratSel && v.includes(' | ')) display = v.split(' | ')[0];
-        if (isStratSel && typeof regLabel === 'function') display = regLabel(display);
+        let display = _base(v);
+        if (isStratSel && typeof regFull === 'function') display = regFull(display);     // "00.01 · Naam"
+        else if (isStratSel && typeof regLabel === 'function') display = regLabel(display);
         return '<option value="' + v + '">' + display + '</option>';
       }).join('');
       sel.value = cur || '';

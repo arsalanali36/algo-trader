@@ -148,6 +148,16 @@
           <span id="cal-month-label" style="font-size:14px;font-weight:700;min-width:96px;text-align:center">—</span>
           <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calNextMonth()">▶</button>
           <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calGoToday()">Today</button>
+          <select id="cal-year-jump" title="Poora saal dekho" onchange="calSetYear(this.value);this.value=''"
+            style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 5px;font-size:11px">
+            <option value="">📅 Year…</option>
+            <option value="2026">2026 (YTD)</option>
+            <option value="2025">2025</option>
+            <option value="2024">2024</option>
+            <option value="2023">2023</option>
+            <option value="2022">2022</option>
+            <option value="2021">2021</option>
+          </select>
           <label style="font-size:10px;color:#8b949e">From <input type="date" id="cal-range-from" onchange="calApplyDateRange()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 5px;font-size:10px"></label>
           <label style="font-size:10px;color:#8b949e">To <input type="date" id="cal-range-to" onchange="calApplyDateRange()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 5px;font-size:10px"></label>
           <button class="btn btn-gray" style="padding:3px 6px;font-size:10px;color:#f85149" onclick="calClearDateRange()">✕</button>
