@@ -3619,3 +3619,30 @@ exactly what BS hides. This VINDICATES the user's sell-side/theta instinct.
 
 **Fast-detect.** BS Sharpe ≥ ~1.5 on an option-BUYING strategy with no `real_lake`/`real_struct2`
 number next to it = almost certainly inflated. `bs_vs_reallake.py` settles it in seconds.
+
+---
+
+## TRAP #137 — `el.style.display = ''` element ko uske DEFAULT display pe le jaata hai, `<label>` ka default `inline` hai (flex layout tut jaata)
+
+**Symptom.** View-builder modal ki checklist theek khulti thi, par search box me type karte hi
+rows **jumble** ho jaati thi — multiple items ek line pe, checkboxes idhar-udhar. User ne 3-4 baar
+screenshot bheja "checkbox bad arranged". Isolated harness me EXACT same render-HTML **bilkul
+theek** dikhta tha (checkbox left, ek row per line) — isliye bahut der laga diagnose me.
+
+**Root.** Har `<label>` inline `style="display:flex;…"` ke saath render hoti hai (block-level flex
+row). Par `statViewFilter()` — jo search pe chalti hai — matched labels ko dikhane ke liye
+`l.style.display = '' ` set karta tha. **`style.display = ''` inline display property ko HATA deta
+hai**, aur element apne CSS-default display pe chala jaata hai. `<label>` ka HTML default =
+`display: inline`. Toh filter chalte hi har matched label `inline` ban jaata → flex khatam → rows
+inline flow karke wrap + jumble. Modal PEHLI baar (bina search) theek dikhta tha (inline flex intact);
+**sirf type karte hi tootta tha** — isliye screenshot me hamesha broken, harness me hamesha theek.
+
+**Fix.** Show karte waqt intended display **explicitly** set karo, `''` nahi:
+`l.style.display = match ? 'flex' : 'none';` (ek word).
+
+**Lesson.** Kisi element ko "wapas dikhane" ke liye `style.display = ''` sirf tab safe hai jab uska
+CSS-default display sahi ho. Jahan tumne inline `display:flex`/`grid`/`inline-flex` diya hai (ya
+element ka default us layout se alag hai — `<label>`/`<span>`/`<td>` sab inline/table-ish default),
+`''` us layout ko chupchaap gira dega. **Restore karte waqt asli display value likho.** Fast-detect:
+"toggle/filter/search ke BAAD hi layout tutta hai, pehle theek" = ye pattern. Isolated repro theek
+aaye to `style.display=''` wale show/hide code ko shak se dekho.

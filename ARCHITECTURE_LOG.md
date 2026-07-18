@@ -15,6 +15,40 @@
 
 ---
 
+## 2026-07-18 (4) — Real vs Black-Scholes premium tracker (bs_shadow) + Stats toolbar/view polish
+**Status:** DONE (all VPS-deployed, commits `cd24497`→`1ec50e2`)
+**Layer:** ui + ops (display-only; koi order/risk/execution path nahi — Rule 6D safe)
+**Kya:** User ne poochha "orb family real premium me fail hoti hai, BS me chalti hai — ye
+gap live-paper pe roz kaise track karun". Solution + uski poori UI-iteration:
+
+1. **`_ops/bs_shadow.py` (naya daily script)** — har din ke REAL order_store trades ko
+   **usi option ko uske apne entry/exit MINUTE pe** Black-Scholes se reprice karta hai →
+   `data/bs_shadow/<date>.json`. Spot = Dhan index intraday (NIFTY 13/BNF 25, per-day cache,
+   rate-limited + 429-retry), sigma = `bs_option.realised_vol_map` (nearest-prior day),
+   expiry sec_id se. **Real number dashboard se EXACT match** (validated: ORB 07-13..17 =
+   10,156/3,241/−2,338/−8,220/309); sirf BS column modelled. Non-NIFTY (stock) legs = `bs_ok=false`.
+   systemd `algo-bsshadow.timer` Mon..Fri **15:50 IST** (`_DEPLOY/`). Backfill 2026-06-22→07-18.
+2. **`/api/bs-shadow`** — cache se per-date + per-strategy + `bykey` (join map). Login-gated.
+3. **Stats tab (index + /stats2):** `💰 Real | 📐 BS | ⚖️ Compare` toggle → Compare mode har
+   calendar cell pe BS + Δ overlay; **"⚖️ Real vs BS" bottom tab** (stats2) with own period
+   toggle (Monthly/Weekly/Day/Strategy) + Net/Gross + per-leg **Δ signal line (mean + t-stat)**.
+4. **ALL filters apply** — divergence BS ko `window.currentCalendarTrades` (calendar ki apni
+   already-filtered list) se join karta hai (`bykey` = entry_date|sym|etime|xtime|side) →
+   source/mode/broker/strategy/view/date sab free; grouping `_calGroupKey` se. **FAIR-compare:**
+   sirf BS-able (NIFTY/BNF) legs dono columns me — stock legs bahar (warna Real>>BS jhoota, coverage-skew).
+5. **Honest finding:** short sample pe BS≈Real (noisy, t=0.80 = bias insignificant); comparable
+   NIFTY legs pe BS OVER-states (BS +15,272 vs Real +8,150) = buyers optimistic (theta) —
+   [[project_code3b_bs_vs_reallake]] confirm. Ye ek longer-track effect hai, roz ka number = noise.
+
+**Toolbar/view polish (same session):** Source filter → Point-Per-Trade ctrl me shifted; Views
+upar top-toolbar me; mode toggle **multi-select** (Paper+Live combine=All, Backtest solo, `s2Mode`);
+view-modal **searchable** checklist; naam **registry canonical** (`regFull` = "00.01 · Mid-Day ORB
+(NIFTY, naked ATM)", apni cleaning nahi) + **registry-ID sort** (regId). **TRAP #137** yahin — search
+filter `l.style.display=''` label ko default `inline` bana deta tha (flex tut ke rows jumble); `'flex'` fix.
+Memory: [[project_code3b_bs_shadow]].
+
+---
+
 ## 2026-07-18 (3) — Stats tab extensions: Views both-modes + All-runs + Monthly/Weekly + caching + equity-resolution + Week/Month filter + Points-sign FIX (TRAP #135)
 **Status:** DONE (all VPS-deployed, commits `9bb19f6`→`3dd4a6f`)
 **Layer:** ui + config (display/config only, koi order/risk/execution path nahi)
