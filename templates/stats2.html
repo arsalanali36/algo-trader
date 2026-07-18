@@ -93,6 +93,13 @@
       style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;max-width:260px">
       <option value="">All strategies</option>
     </select>
+    <!-- Premium basis: real market fill ⟷ Black-Scholes model (of the SAME real trades) -->
+    <span id="cal-prem" class="cal-seg" title="Real market premium vs Black-Scholes model — same trades, same entry/exit times"
+      style="display:inline-flex;border:1px solid #6f42c1;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="real" class="on" onclick="calSetPremium('real',this)" style="padding:4px 9px;cursor:pointer;background:#6f42c1;color:#fff">💰 Real</span>
+      <span data-v="bs" onclick="calSetPremium('bs',this)" style="padding:4px 9px;cursor:pointer;color:#8b949e">📐 BS</span>
+      <span data-v="compare" onclick="calSetPremium('compare',this)" style="padding:4px 9px;cursor:pointer;color:#8b949e">⚖️ Compare</span>
+    </span>
     <!-- backtest-only: gear → family/strategy (run) picker checklist -->
     <button id="s2-bt-gear" onclick="openStatViewModal()" title="Family / strategy select (runs combine)"
       style="display:none;padding:4px 9px;font-size:12px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">⚙</button>
@@ -192,6 +199,45 @@
         <div class="s2pane" id="chart-gl"><div id="cal-pnl-graph-card" style="width:100%;height:230px"><canvas id="pnlGraphCanvas"></canvas></div></div>
         <div class="s2pane" id="chart-dist"><div id="s2-dist-body"></div></div>
       </div>
+    </div>
+  </div>
+
+  <!-- Real vs Black-Scholes divergence (shown only in BS / Compare premium mode) -->
+  <div id="bs-div-card" class="card" style="padding:12px 16px; display:none; border:1px solid #6f42c1; margin-bottom:12px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+      <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin:0;">⚖️ Real vs Black-Scholes divergence
+        <span style="color:#8b949e;font-weight:400;font-size:11px">— same trades, BS-priced at their own entry/exit minute</span>
+      </h3>
+      <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+        <span id="bs-div-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+          <span data-v="date" class="on" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;background:#6f42c1;color:#fff;">By Date</span>
+          <span data-v="strategy" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e;">By Strategy</span>
+        </span>
+        <span id="bs-div-basis" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+          <span data-b="net" class="on" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff;">Net</span>
+          <span data-b="gross" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e;">Gross</span>
+        </span>
+      </div>
+    </div>
+    <div id="bs-div-cov" style="font-size:11px;color:#8b949e;margin-bottom:8px;"></div>
+    <div style="overflow-x:auto;">
+      <table style="width:100%;border-collapse:collapse;font-size:12px;">
+        <thead>
+          <tr id="bs-div-thead" style="border-bottom:1px solid #30363d;color:#8b949e;text-align:right;">
+            <th style="text-align:left;padding:5px 8px;font-weight:500;">Bucket</th>
+            <th style="padding:5px 8px;font-weight:500;">Legs</th>
+            <th style="padding:5px 8px;font-weight:500;">Real</th>
+            <th style="padding:5px 8px;font-weight:500;color:#a371f7;">BS model</th>
+            <th style="padding:5px 8px;font-weight:500;color:#d29922;">Δ (BS − Real)</th>
+            <th style="padding:5px 8px;font-weight:500;width:120px;">Divergence</th>
+          </tr>
+        </thead>
+        <tbody id="bs-div-tbody"></tbody>
+        <tfoot id="bs-div-tfoot"></tfoot>
+      </table>
+    </div>
+    <div style="font-size:10.5px;color:#6e7681;margin-top:8px;border-top:1px dashed #30363d;padding-top:6px;">
+      <span style="color:#d29922;">Amber Δ</span> = BS ne zyada bola (over-optimistic) · <span style="color:#388bfd;">Blue Δ</span> = BS ne kam bola. Real = asli paper/live fill (dashboard se exact). BS = Black-Scholes model us contract pe.
     </div>
   </div>
 
@@ -298,6 +344,7 @@
 <script src="{{ url_for('static', filename='js/app-07-columns-stats.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app-12-calendar.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app-13-calendar-render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-14-bs-shadow.js') }}"></script>
 <script src="{{ url_for('static', filename='js/sltp-modal.js') }}"></script>
 <script src="{{ url_for('static', filename='js/tags.js') }}"></script>
 <script src="{{ url_for('static', filename='js/stats2.js') }}"></script>
