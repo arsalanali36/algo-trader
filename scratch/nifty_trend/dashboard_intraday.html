@@ -442,8 +442,8 @@ const TCOLS=[
   {k:'exit_prem',label:'Exit Prem ₹',off:true,get:t=>t.exit_prem!=null?t.exit_prem.toFixed(2):'<span class="mut">—</span>',raw:t=>t.exit_prem||0},
   {k:'prem_pts',label:'Prem Pts',get:t=>{if(t.entry_prem==null)return'<span class="mut">—</span>';const p=t.exit_prem-t.entry_prem;return`<span class="${p>=0?'pos':'neg'}">${p>=0?'+':''}${p.toFixed(1)}</span>`},raw:t=>t.entry_prem!=null?(t.exit_prem-t.entry_prem):0},
   {k:'qty',label:'Qty',off:true,get:t=>(t.qty||0).toFixed(0),raw:t=>t.qty||0},
-  {k:'points',label:'Index Pts',get:t=>`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`,raw:t=>t.points},
-  {k:'gross',label:'Gross ₹',off:true,get:t=>`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`,raw:t=>t.gross},
+  {k:'points',label:'Index Pts',get:t=>t.points!=null?`<span class="${t.points>=0?'pos':'neg'}">${t.points>=0?'+':''}${t.points.toFixed(0)}</span>`:'<span class="mut">—</span>',raw:t=>t.points||0},
+  {k:'gross',label:'Gross ₹',off:true,get:t=>t.gross!=null?`<span class="${t.gross>=0?'pos':'neg'}">${t.gross>=0?'+':''}${inr(t.gross)}</span>`:'<span class="mut">—</span>',raw:t=>t.gross||0},
   {k:'fee',label:'Tax ₹',off:true,get:t=>`<span class="mut">-${inr(Math.abs(t.fee||0))}</span>`,raw:t=>t.fee},
   {k:'pnl',label:'Net ₹',get:t=>`<span class="${t.pnl>=0?'pos':'neg'}">${t.pnl>=0?'+':''}${inr(t.pnl)}</span>`,raw:t=>t.pnl},
   {k:'ret',label:'% Move',get:t=>{if(!t.entry)return'<span class="mut">—</span>';const r=t.points/t.entry*100;return`<span class="${r>=0?'pos':'neg'}">${r>=0?'+':''}${r.toFixed(2)}%</span>`},raw:t=>t.entry?t.points/t.entry:0},
@@ -494,7 +494,7 @@ function renderTradeTable(){const tr=tRows(),vis=TCOLS.filter(c=>colVis[c.k]),tb
   tr.forEach(t=>{const mo=t.entry_dt.slice(0,7);
     if(byMonth&&curM!==null&&mo!==curM){h+=subRow(monthName(curM),mS,'msub');mS={n:0,gross:0,fee:0,pnl:0,pts:0,prempts:0};}
     const pp=t.entry_prem!=null?(t.exit_prem-t.entry_prem):0;
-    curM=mo; mS.n++;mS.gross+=t.gross;mS.fee+=t.fee;mS.pnl+=t.pnl;mS.pts+=t.points;mS.prempts+=pp; G.n++;G.gross+=t.gross;G.fee+=t.fee;G.pnl+=t.pnl;G.pts+=t.points;G.prempts+=pp;
+    curM=mo; mS.n++;mS.gross+=t.gross||0;mS.fee+=t.fee||0;mS.pnl+=t.pnl||0;mS.pts+=t.points||0;mS.prempts+=pp; G.n++;G.gross+=t.gross||0;G.fee+=t.fee||0;G.pnl+=t.pnl||0;G.pts+=t.points||0;G.prempts+=pp;
     h+='<tr>'+vis.map(c=>`<td class="${c.l?'l':''}">${c.get(t)}</td>`).join('')+`<td><button class="chbtn" data-i="${t._i}" title="Full-screen chart">📈</button></td></tr>`;});
   if(byMonth&&curM!==null)h+=subRow(monthName(curM),mS,'msub');
   h+=subRow('GRAND TOTAL',G,'grand');
