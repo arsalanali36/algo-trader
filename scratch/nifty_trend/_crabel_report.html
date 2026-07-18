@@ -1,0 +1,50 @@
+<!doctype html><html><head><meta charset=utf-8><title>Crabel ORB — NIFTY</title>
+<style>
+body{background:#0d1117;color:#e6edf3;font:14px system-ui;margin:0;padding:24px}
+h1{font-size:18px;margin:0 0 4px}.sub{color:#8b949e;font-size:12px;margin-bottom:16px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:16px;max-width:920px}
+.legend{display:flex;gap:18px;margin:10px 0;font-size:12px}
+.legend b{font-weight:600}.g{color:#3fb950}.n{color:#d29922}.b{color:#8b949e}
+table{border-collapse:collapse;margin-top:16px;font-size:12px;width:100%}
+td,th{border:1px solid #30363d;padding:6px 10px;text-align:right}th{color:#8b949e;font-weight:600}
+td:first-child,th:first-child{text-align:left}
+.pos{color:#3fb950}.neg{color:#f85149}
+.note{color:#8b949e;font-size:12px;margin-top:14px;line-height:1.6}
+</style></head><body>
+<h1>Toby Crabel — Opening Range Breakout on NIFTY</h1>
+<div class=sub>1-min data-lake · 2018→2026 · 610 armed trades · fractional-risk 1%/trade equity curve</div>
+<div class=card>
+<div class=legend>
+<span class=g>■ <b>Gross</b> (no cost)</span>
+<span class=n>■ <b>Net</b> (1bp comm + 2bp slip / fill)</span>
+<span class=b>■ <b>Buy &amp; Hold NIFTY</b></span>
+</div>
+<canvas id=c width=880 height=340></canvas>
+<table>
+<tr><th>Version</th><th>avg R</th><th>sum R</th><th>Net %</th><th>CAGR</th><th>MaxDD</th><th>Sharpe</th><th>vs Buy-Hold</th></tr>
+<tr><td>Bidirectional — GROSS</td><td>0.202</td><td>123.2</td><td class=pos>+221.9%</td><td>14.8%</td><td>-15.2%</td><td>2.24</td><td class=pos>beats (+120%)</td></tr>
+<tr><td>Bidirectional — NET</td><td>0.045</td><td>27.7</td><td class=pos>+24.0%</td><td>2.6%</td><td>-33.0%</td><td>0.50</td><td class=neg>LOSES to +120%</td></tr>
+<tr><td>Trend-50 filter — GROSS</td><td>0.155</td><td>54.9</td><td class=pos>+67.2%</td><td>6.3%</td><td>-13.8%</td><td>1.74</td><td class=neg>loses</td></tr>
+<tr><td>Trend-50 filter — NET</td><td>-0.002</td><td>-0.6</td><td class=neg>-4.0%</td><td>-0.5%</td><td>-23.8%</td><td>-0.02</td><td class=neg>dead</td></tr>
+</table>
+<div class=note>
+<b>Cost breakeven ≈ 8 bp round-trip.</b> Gross avg 0.20R → cost eats ~0.15R.<br>
+Sweep: 0bp→0.202R · 4bp→0.098R · <b>6bp→0.045R</b> · 8bp→-0.007R · 10bp→-0.059R.<br>
+NIFTY <b>futures</b> ≈ 3-5bp → thin positive but still under buy-hold w/ worse DD.
+NIFTY <b>options</b> (ATM spread+theta) ≫ 8bp → strategy dies. Same verdict as the video.
+</div>
+</div>
+<script>
+const D=;
+const cv=document.getElementById('c'),x=cv.getContext('2d');
+const W=cv.width,H=cv.height,P=40;
+const all=[...D.gross,...D.net,...D.bh];const mx=Math.max(...all),mn=Math.min(...all);
+function px(i){return P+(W-2*P)*i/(D.days.length-1)}
+function py(v){return H-P-(H-2*P)*(v-mn)/(mx-mn)}
+function line(arr,col){x.strokeStyle=col;x.lineWidth=1.8;x.beginPath();arr.forEach((v,i)=>{i?x.lineTo(px(i),py(v)):x.moveTo(px(i),py(v))});x.stroke()}
+x.strokeStyle='#30363d';x.strokeRect(P,P,W-2*P,H-2*P);
+line(D.bh,'#8b949e');line(D.net,'#d29922');line(D.gross,'#3fb950');
+x.fillStyle='#8b949e';x.font='11px system-ui';
+x.fillText(D.days[0],P,H-P+16);x.fillText(D.days[D.days.length-1],W-P-70,H-P+16);
+x.fillText('₹'+(mx/1e6).toFixed(1)+'M',4,py(mx)+4);x.fillText('₹'+(mn/1e6).toFixed(1)+'M',4,py(mn)+4);
+</script></body></html>
