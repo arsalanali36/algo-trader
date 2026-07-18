@@ -31,6 +31,11 @@
     .s2perf{display:grid;grid-template-columns:repeat(2,1fr);gap:0 22px}
     .s2prow{display:flex;justify-content:space-between;gap:10px;padding:4.5px 0;border-bottom:1px solid #21262d;font-size:11.5px}
     .s2prow .pk{color:#8b949e}.s2prow .pv{font-weight:700;white-space:nowrap}
+    /* freeze first 2 columns (Date + Symbol) of Point Per Trade on horizontal scroll */
+    #tbl-ppt table th:nth-child(1),#tbl-ppt table td:nth-child(1){position:sticky;left:0;min-width:118px;max-width:160px}
+    #tbl-ppt table th:nth-child(2),#tbl-ppt table td:nth-child(2){position:sticky;left:118px}
+    #tbl-ppt table td:nth-child(1),#tbl-ppt table td:nth-child(2){background:#0d1117;z-index:2}
+    #tbl-ppt table th:nth-child(1),#tbl-ppt table th:nth-child(2){background:#161b22;z-index:11}
     /* fullscreen overlay */
     #s2fsov{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:500;padding:28px}
     #s2fsov>div{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:18px 20px;width:min(1150px,94vw);height:min(720px,88vh);display:flex;flex-direction:column}
@@ -85,9 +90,12 @@
     </span>
 
     <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
-      style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
+      style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;max-width:260px">
       <option value="">All strategies</option>
     </select>
+    <!-- backtest-only: gear → family/strategy (run) picker checklist -->
+    <button id="s2-bt-gear" onclick="openStatViewModal()" title="Family / strategy select (runs combine)"
+      style="display:none;padding:4px 9px;font-size:12px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">⚙</button>
 
     <!-- backtest-only Pass/Period -->
     <span id="cal-bt-only" style="display:none;align-items:center;gap:8px">
@@ -129,7 +137,7 @@
         </div>
       </div>
       <!-- date-range (Calendar tab only) -->
-      <div id="s2-cal-ctrls" class="s2flexb" style="margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #21262d;display:none">
+      <div id="s2-cal-ctrls" class="s2flexb" style="margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #21262d;display:flex">
         <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
           <span class="s2num">8</span>
           <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calPrevMonth()">◀</button>
@@ -141,11 +149,11 @@
           <button class="btn btn-gray" style="padding:3px 6px;font-size:10px;color:#f85149" onclick="calClearDateRange()">✕</button>
         </div>
       </div>
-      <div class="s2pane" id="calp-cal">
+      <div class="s2pane on" id="calp-cal">
         <div class="cal-weekdays"><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div></div>
         <div class="cal-grid" id="cal-grid"></div>
       </div>
-      <div class="s2pane on" id="calp-heat">
+      <div class="s2pane" id="calp-heat">
         <div id="s2-heatbody" style="overflow-x:auto"></div>
         <div style="font-size:10px;color:#6e7681;margin-top:8px">💡 Kisi month cell pe click → neeche table us period pe filter</div>
       </div>
@@ -170,7 +178,6 @@
             <span class="s2tab on" data-p="chart-eq"><span class="s2num">7</span>📈 Equity</span>
             <span class="s2tab" data-p="chart-gl"><span class="s2num">5</span>📊 Gain/Loss</span>
             <span class="s2tab" data-p="chart-dist">📊 Distribution</span>
-            <span class="s2tab" data-p="chart-tc">🕯️ Trade Chart</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
             <div id="s2-glseg" style="display:none;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:4px;overflow:hidden">
@@ -181,15 +188,9 @@
             <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
           </div>
         </div>
-        <div class="s2pane on" id="chart-eq"><div id="cal-equity-curve-container" style="width:100%;height:230px"></div></div>
+        <div class="s2pane on" id="chart-eq"><div id="cal-equity-curve-container" style="position:relative;width:100%;height:230px"></div></div>
         <div class="s2pane" id="chart-gl"><div id="cal-pnl-graph-card" style="width:100%;height:230px"><canvas id="pnlGraphCanvas"></canvas></div></div>
         <div class="s2pane" id="chart-dist"><div id="s2-dist-body"></div></div>
-        <div class="s2pane" id="chart-tc">
-          <div id="s2-tc-hint" style="height:230px;display:flex;align-items:center;justify-content:center;color:#6e7681;font-size:12px;text-align:center;line-height:1.7">
-            👆 Neeche <b style="color:#8b949e;margin:0 4px">🎯 Point Per Trade</b> me kisi trade pe click karo —<br>uska candlestick chart yahan khulega
-          </div>
-          <div id="s2-tc-body"></div>
-        </div>
       </div>
     </div>
   </div>

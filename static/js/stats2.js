@@ -41,11 +41,16 @@
     p.querySelectorAll('span').forEach(function (x) { x.classList.remove('on'); x.style.color = '#8b949e'; });
     el.classList.add('on'); el.style.color = '';
     var srcWrap = document.getElementById('s2-src'), srcLbl = document.getElementById('s2-src-lbl');
+    var gear = document.getElementById('s2-bt-gear'), strat = document.getElementById('cal-strat');
     if (mode === 'bt') {
       if (srcWrap) srcWrap.style.display = 'none'; if (srcLbl) srcLbl.style.display = 'none';
+      if (gear) gear.style.display = '';                       // family/strategy (run) picker
+      if (strat) strat.style.maxWidth = '190px';               // compact run selector in backtest
       calSetView('bt', document.querySelector('#cal-view span[data-v="bt"]'));   // shows bt controls + loads runs + renders
     } else {
       if (srcWrap) srcWrap.style.display = ''; if (srcLbl) srcLbl.style.display = '';
+      if (gear) gear.style.display = 'none';
+      if (strat) strat.style.maxWidth = '260px';
       _setSeg('cal-mode', mode === 'paper' ? 'paper' : mode === 'live' ? 'live' : '');
       calSetView('live', document.querySelector('#cal-view span[data-v="live"]'));  // resets + calendarRender (reads cal-mode)
     }
@@ -87,7 +92,7 @@
 
   // ── ⛶ full-screen the active chart ────────────────────────────────────────
   window.s2Fs = function () {
-    var pane = document.querySelector('#chart-eq.on, #chart-gl.on, #chart-dist.on, #chart-tc.on');
+    var pane = document.querySelector('#chart-eq.on, #chart-gl.on, #chart-dist.on');
     if (!pane) return;
     var titleTab = document.querySelector('.s2tabs .s2tab.on');
     document.getElementById('s2fstitle').textContent = titleTab ? titleTab.textContent.trim() : 'Chart';
@@ -100,26 +105,8 @@
     document.getElementById('s2fsov').style.display = 'none';
   };
 
-  // ── inline Trade Chart: reuse /trade-chart in an iframe (override openTradeChart) ──
-  var _origOpenTradeChart = window.openTradeChart;
-  window.openTradeChart = function (sym, side, entry, exit, et, xt, qty, date, tf, ind, idx, sl, tp, strategy) {
-    var params = { sym: sym, side: side, entry: entry, exit: exit, et: et, xt: xt, qty: qty };
-    if (date) params.date = date; if (tf) params.tf = tf; if (ind) params.ind = ind;
-    if (idx != null) params.idx = idx; if (sl != null && sl !== '') params.sl = sl;
-    if (tp != null && tp !== '') params.tp = tp; if (strategy) params.strategy = strategy;
-    params.embed = 1;
-    var q = new URLSearchParams(params).toString();
-    document.getElementById('s2-tc-hint').style.display = 'none';
-    document.getElementById('s2-tc-body').innerHTML =
-      '<div style="font-size:11px;color:#8b949e;margin-bottom:6px">🕯️ <b style="color:#e6edf3">' + (sym || '') + '</b> · ' + (date || '') + '</div>' +
-      '<iframe src="/trade-chart?' + q + '" style="width:100%;height:220px;border:0;border-radius:8px;background:#0d1117"></iframe>';
-    // switch chart panel to Trade Chart tab
-    document.querySelectorAll('.s2tabs').forEach(function (tb) {
-      if (tb.querySelector('[data-p^="chart-"]')) tb.querySelectorAll('.s2tab').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-p') === 'chart-tc'); });
-    });
-    document.querySelectorAll('.s2pane').forEach(function (p) { if (p.id.indexOf('chart-') === 0) p.classList.toggle('on', p.id === 'chart-tc'); });
-    var gl = document.getElementById('s2-glseg'); if (gl) gl.style.display = 'none';
-  };
+  // Trade Chart opens in a NEW TAB via the original window.openTradeChart (app-13) —
+  // no override here (reverted per user request; row 📈 button → new tab).
 
   // ── NEW panels (REAL data) ─────────────────────────────────────────────────
   var _S2_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -183,13 +170,28 @@
   function _s2Dist() {
     var tr = window.currentCalendarTrades || [];
     var edges = [-3000, -2000, -1000, 0, 1000, 2000, 3000];
-    var labels = ['< −3k', '−3k…−2k', '−2k…−1k', '−1k…0', '0…+1k', '+1k…+2k', '+2k…+3k', '> +3k'];
+    // full bucket-range labels (₹, Indian grouping)
+    var labels = [
+      '≤ −₹3,000', '−₹3,000 to −₹2,000', '−₹2,000 to −₹1,000', '−₹1,000 to ₹0',
+      '₹0 to +₹1,000', '+₹1,000 to +₹2,000', '+₹2,000 to +₹3,000', '> +₹3,000'
+    ];
+    // short axis captions under each bar
+    var axis = ['≤−3k', '−3k↔−2k', '−2k↔−1k', '−1k↔0', '0↔+1k', '+1k↔+2k', '+2k↔+3k', '>+3k'];
     var counts = new Array(8).fill(0);
     tr.forEach(function (t) { var p = _s2net(t), b = 0; while (b < edges.length && p >= edges[b]) b++; counts[b]++; });
     var tot = tr.length || 1, max = Math.max.apply(null, counts) || 1;
-    var W = 360, H = 118, pad = 6, bw = (W - 2 * pad) / 8, s = '<svg style="width:100%;height:118px" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
-    counts.forEach(function (c, i) { var bh = (c / max) * (H - 14), bx = pad + i * bw + 3; s += '<rect x="' + bx + '" y="' + (H - bh) + '" width="' + (bw - 6) + '" height="' + bh + '" fill="' + (i < 4 ? '#f85149' : '#3fb950') + '" opacity=".85" rx="2"/>'; });
-    s += '</svg><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:10.5px;text-align:left"><thead><tr><th style="padding:5px 8px;color:#8b949e">P&L bucket (net ₹)</th><th style="padding:5px 8px;color:#8b949e;text-align:right">Trades</th><th style="padding:5px 8px;color:#8b949e;text-align:right">%</th></tr></thead><tbody>';
+    // HTML bar chart (each column: count on top, bar, full-range axis caption below)
+    var bars = '<div style="display:flex;align-items:flex-end;gap:3px;height:132px;padding:2px 2px 0">';
+    counts.forEach(function (c, i) {
+      var bh = Math.round((c / max) * 96);
+      bars += '<div title="' + labels[i] + ': ' + c + ' trades" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">' +
+        '<div style="font-size:9px;color:#8b949e;margin-bottom:2px">' + (c || '') + '</div>' +
+        '<div style="width:100%;height:' + bh + 'px;background:' + (i < 4 ? '#f85149' : '#3fb950') + ';opacity:.85;border-radius:3px 3px 0 0"></div>' +
+        '<div style="font-size:7.5px;color:#6e7681;margin-top:3px;text-align:center;line-height:1.1;white-space:nowrap">' + axis[i] + '</div>' +
+        '</div>';
+    });
+    bars += '</div>';
+    var s = bars + '<div style="overflow-x:auto;margin-top:10px"><table style="width:100%;border-collapse:collapse;font-size:10.5px;text-align:left"><thead><tr><th style="padding:5px 8px;color:#8b949e">P&L bucket (net ₹)</th><th style="padding:5px 8px;color:#8b949e;text-align:right">Trades</th><th style="padding:5px 8px;color:#8b949e;text-align:right">%</th></tr></thead><tbody>';
     counts.forEach(function (c, i) { s += '<tr><td style="padding:5px 8px;color:' + (i < 4 ? '#f85149' : '#3fb950') + '">' + labels[i] + '</td><td style="padding:5px 8px;text-align:right">' + c + '</td><td style="padding:5px 8px;text-align:right;color:#8b949e">' + (c / tot * 100).toFixed(1) + '%</td></tr>'; });
     document.getElementById('s2-dist-body').innerHTML = s + '</tbody></table></div>';
   }
