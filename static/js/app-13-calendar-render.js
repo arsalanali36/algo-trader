@@ -1438,7 +1438,7 @@
       }
 
       const width = container.clientWidth || 600;
-      const height = 240;
+      const height = Math.max(240, container.clientHeight || 240);   // card fill (heatmap S/M/L pe balanced split)
       const paddingLeft = 60;
       const paddingRight = 20;
       const paddingTop = 20;

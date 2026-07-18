@@ -160,6 +160,13 @@
       var on = s.dataset.sz === sz; s.style.background = on ? '#1f6feb' : ''; s.style.color = on ? '#fff' : '#8b949e';
     });
     _s2Heat();
+    // heatmap ki nayi height se right column stretch hota hai → equity chart ko nayi
+    // height pe redraw karo (warna card ke andar jagah bachti/kam padti)
+    setTimeout(function () {
+      if (typeof drawEquityCurveChart === 'function') {
+        try { drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []); } catch (e) {}
+      }
+    }, 80);
   };
   function _s2inrShort(v) { var s = v < 0 ? '−' : '+'; var a = Math.abs(v); return a >= 1000 ? (s + '₹' + (a / 1000).toFixed(1) + 'k') : (s + '₹' + Math.round(a)); }
   function _s2net(t) { return t._net != null ? t._net : (t.pnl || 0); }

@@ -22,6 +22,9 @@
     .s2tab{padding:5px 12px;font-size:11.5px;color:#8b949e;border-radius:6px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap}
     .s2tab.on{background:#1f6feb;color:#fff}
     .s2pane{display:none}.s2pane.on{display:block}
+    /* equity card ki chart panes card ki poori height fill karein (heatmap S/M/L pe split balanced) */
+    #chart-eq.on,#chart-gl.on,#chart-dist.on{display:flex;flex-direction:column;flex:1;min-height:0}
+    #cal-equity-curve-container{flex:1;min-height:230px}
     .s2flexb{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
     .s2fs{padding:3px 8px;font-size:13px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer}
     /* compact calendar cells for the narrower left column */
@@ -194,7 +197,7 @@
         </div>
       </div>
 
-      <div class="card" style="padding:12px 14px;flex:1">
+      <div class="card" style="padding:12px 14px;flex:1;display:flex;flex-direction:column">
         <div class="s2flexb" style="margin-bottom:10px">
           <div class="s2tabs" onclick="s2Tab(event,'chart')">
             <span class="s2tab on" data-p="chart-eq"><span class="s2num">7</span>📈 Equity</span>
@@ -210,7 +213,7 @@
             <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
           </div>
         </div>
-        <div class="s2pane on" id="chart-eq"><div id="cal-equity-curve-container" style="position:relative;width:100%;height:230px"></div></div>
+        <div class="s2pane on" id="chart-eq"><div id="cal-equity-curve-container" style="position:relative;width:100%"></div></div>
         <div class="s2pane" id="chart-gl"><div id="cal-pnl-graph-card" style="width:100%;height:230px"><canvas id="pnlGraphCanvas"></canvas></div></div>
         <div class="s2pane" id="chart-dist"><div id="s2-dist-body"></div></div>
       </div>
