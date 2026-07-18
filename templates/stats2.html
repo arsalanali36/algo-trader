@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Stats V2 — Algo Trader</title>
+  <script src="{{ url_for('static', filename='vendor/chart.umd.js') }}"></script>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/stats2-base.css') }}">
+  <style>
+    /* ── Stats V2 compact layout (new; reuses base classes above) ── */
+    body{background:#0d1117;color:#e6edf3;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+         font-size:13px;margin:0;padding:12px 14px;font-variant-numeric:tabular-nums}
+    .s2 h3{margin:0;font-size:12.5px;font-weight:600;color:#e6edf3;display:flex;align-items:center;gap:7px}
+    .s2num{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:50%;
+           background:#1f6feb22;border:1px solid #1f6feb66;color:#58a6ff;font-size:9.5px;font-weight:700;flex:none}
+    .s2hdr{position:sticky;top:0;z-index:9997;background:#0d1117;display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+           padding:4px 0 12px;border-bottom:1px solid #21262d;margin-bottom:12px}
+    .s2mid{display:grid;grid-template-columns:1.12fr 0.88fr;gap:12px;margin-bottom:12px}
+    @media(max-width:960px){.s2mid{grid-template-columns:1fr}}
+    .s2rcol{display:flex;flex-direction:column;gap:12px}
+    .s2tabs{display:inline-flex;gap:2px;background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:3px}
+    .s2tab{padding:5px 12px;font-size:11.5px;color:#8b949e;border-radius:6px;cursor:pointer;font-weight:600;display:flex;align-items:center;gap:6px;white-space:nowrap}
+    .s2tab.on{background:#1f6feb;color:#fff}
+    .s2pane{display:none}.s2pane.on{display:block}
+    .s2flexb{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
+    .s2fs{padding:3px 8px;font-size:13px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer}
+    /* compact calendar cells for the narrower left column */
+    #tab-calendar-wrap .cal-day-cell{min-height:62px;padding:6px}
+    #tab-calendar-wrap .cal-day-pnl{font-size:12px}
+    /* performance grid */
+    .s2perf{display:grid;grid-template-columns:repeat(2,1fr);gap:0 22px}
+    .s2prow{display:flex;justify-content:space-between;gap:10px;padding:4.5px 0;border-bottom:1px solid #21262d;font-size:11.5px}
+    .s2prow .pk{color:#8b949e}.s2prow .pv{font-weight:700;white-space:nowrap}
+    /* fullscreen overlay */
+    #s2fsov{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:500;padding:28px}
+    #s2fsov>div{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:18px 20px;width:min(1150px,94vw);height:min(720px,88vh);display:flex;flex-direction:column}
+  </style>
+</head>
+<body>
+<div class="s2" id="tab-calendar-wrap">
+
+  <!-- ============ ① HEADER: unified switch + filters ============ -->
+  <div class="s2hdr">
+    <!-- Unified switch (Live/Paper · Paper · Live · Backtest) — built by stats2.js;
+         drives the reused #cal-view + #cal-mode controls (kept hidden below). -->
+    <span id="s2-switch" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-m="lp" class="on" onclick="s2Switch('lp',this)" style="padding:4px 10px;cursor:pointer">🟢 Live/Paper</span>
+      <span data-m="paper" onclick="s2Switch('paper',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Paper</span>
+      <span data-m="live" onclick="s2Switch('live',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
+      <span data-m="bt" onclick="s2Switch('bt',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
+    </span>
+
+    <!-- reused live/bt + mode controls (HIDDEN — s2Switch toggles their .on state) -->
+    <span id="cal-view" class="cal-seg" style="display:none">
+      <span data-v="live" class="on" onclick="calSetView('live',this)">Live/Paper</span>
+      <span data-v="bt" onclick="calSetView('bt',this)">Backtest</span>
+    </span>
+    <span id="cal-live-only" style="display:none">
+      <span id="cal-src" class="cal-seg">
+        <span data-v="" class="on" onclick="calSeg('cal-src',this)">All</span>
+        <span data-v="webhook" onclick="calSeg('cal-src',this)">Webhook</span>
+        <span data-v="manual" onclick="calSeg('cal-src',this)">Manual</span>
+        <span data-v="strategy" onclick="calSeg('cal-src',this)">Strategy</span>
+        <span data-v="hedge" onclick="calSeg('cal-src',this)">Hedge</span>
+      </span>
+      <span id="cal-mode" class="cal-seg">
+        <span data-v="" class="on" onclick="calSeg('cal-mode',this)">All</span>
+        <span data-v="paper" onclick="calSeg('cal-mode',this)">Paper</span>
+        <span data-v="live" onclick="calSeg('cal-mode',this)">Live</span>
+      </span>
+    </span>
+
+    <span class="lbl" style="font-size:11px;color:#6e7681;margin-left:4px" id="s2-src-lbl">Source</span>
+    <!-- visible Source segmented control (mirrors #cal-src via s2Src) -->
+    <span id="s2-src" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-v="" class="on" onclick="s2Src('',this)" style="padding:4px 10px;cursor:pointer">All</span>
+      <span data-v="webhook" onclick="s2Src('webhook',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
+      <span data-v="manual" onclick="s2Src('manual',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
+      <span data-v="strategy" onclick="s2Src('strategy',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+      <span data-v="hedge" onclick="s2Src('hedge',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
+    </span>
+
+    <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
+      style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
+      <option value="">All strategies</option>
+    </select>
+
+    <!-- backtest-only Pass/Period -->
+    <span id="cal-bt-only" style="display:none;align-items:center;gap:8px">
+      <span style="font-size:11px;color:#6e7681">Pass</span>
+      <span id="cal-bt-pass" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+        <span data-v="instrument" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 8px;cursor:pointer;color:#8b949e">Instr</span>
+        <span data-v="rms" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 8px;cursor:pointer;color:#8b949e">+RMS</span>
+        <span data-v="bs" class="on" onclick="calBtSeg('cal-bt-pass',this)" style="padding:4px 8px;cursor:pointer">+BS</span>
+      </span>
+      <span style="font-size:11px;color:#6e7681">Period</span>
+      <span id="cal-bt-period" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+        <span data-v="full" class="on" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 8px;cursor:pointer">Full</span>
+        <span data-v="train" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 8px;cursor:pointer;color:#8b949e">Train</span>
+        <span data-v="oos" onclick="calBtSeg('cal-bt-period',this)" style="padding:4px 8px;cursor:pointer;color:#8b949e">OOS</span>
+      </span>
+    </span>
+
+    <span style="flex:1"></span>
+    <select id="cal-broker" onchange="calendarRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All brokers</option></select>
+    <select id="cal-exit-reason" onchange="this.dataset.prefix=this.value;window.calExitReasonFilter=this.value;renderPointsPerTradeTable()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All Exit Reasons</option></select>
+    <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="calendarRender()">↻</button>
+    <a href="/" class="btn btn-gray" style="padding:4px 11px;font-size:12px;text-decoration:none">← Dashboard</a>
+  </div>
+
+  <!-- ============ MIDDLE 2-COLUMN ============ -->
+  <div class="s2mid">
+
+    <!-- LEFT: ② Calendar / 🔥 Heatmap tabs -->
+    <div class="card" style="padding:12px 14px">
+      <div class="s2flexb" style="margin-bottom:9px">
+        <div class="s2tabs" onclick="s2Tab(event,'calp')">
+          <span class="s2tab on" data-p="calp-cal"><span class="s2num">2</span>📅 Calendar</span>
+          <span class="s2tab" data-p="calp-heat">🔥 Heatmap</span>
+        </div>
+        <div style="display:flex;gap:12px;font-size:11px;color:#8b949e">
+          <span>Gross <b id="cal-stat-gross" style="color:#e6edf3">₹0</b></span>
+          <span>Win <b id="cal-stat-winrate" style="color:#e6edf3">0%</b></span>
+          <span>Trades <b id="cal-stat-count" style="color:#e6edf3">0</b></span>
+        </div>
+      </div>
+      <!-- date-range (Calendar tab only) -->
+      <div id="s2-cal-ctrls" class="s2flexb" style="margin-bottom:10px;padding-bottom:9px;border-bottom:1px solid #21262d;display:none">
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+          <span class="s2num">8</span>
+          <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calPrevMonth()">◀</button>
+          <span id="cal-month-label" style="font-size:14px;font-weight:700;min-width:96px;text-align:center">—</span>
+          <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calNextMonth()">▶</button>
+          <button class="btn btn-gray" style="padding:3px 8px;font-size:11px" onclick="calGoToday()">Today</button>
+          <label style="font-size:10px;color:#8b949e">From <input type="date" id="cal-range-from" onchange="calApplyDateRange()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 5px;font-size:10px"></label>
+          <label style="font-size:10px;color:#8b949e">To <input type="date" id="cal-range-to" onchange="calApplyDateRange()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:5px;padding:3px 5px;font-size:10px"></label>
+          <button class="btn btn-gray" style="padding:3px 6px;font-size:10px;color:#f85149" onclick="calClearDateRange()">✕</button>
+        </div>
+      </div>
+      <div class="s2pane" id="calp-cal">
+        <div class="cal-weekdays"><div>Mon</div><div>Tue</div><div>Wed</div><div>Thu</div><div>Fri</div></div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+      <div class="s2pane on" id="calp-heat">
+        <div id="s2-heatbody" style="overflow-x:auto"></div>
+        <div style="font-size:10px;color:#6e7681;margin-top:8px">💡 Kisi month cell pe click → neeche table us period pe filter</div>
+      </div>
+    </div>
+
+    <!-- RIGHT: ③ Report Card + charts tabs -->
+    <div class="s2rcol">
+      <div class="card" style="padding:12px 14px">
+        <h3 id="cal-metrics-heading" style="margin-bottom:10px"><span class="s2num">3</span>📐 Report Card</h3>
+        <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px" id="stats-metric-pills">
+          <div class="stat-pill"><div class="lbl">Profit Factor</div><div class="val" id="sm-pf">—</div></div>
+          <div class="stat-pill"><div class="lbl">Expectancy</div><div class="val" id="sm-exp">—</div></div>
+          <div class="stat-pill"><div class="lbl">Sharpe</div><div class="val" id="sm-sharpe">—</div></div>
+          <div class="stat-pill"><div class="lbl">Win Rate</div><div class="val" id="sm-wr">—</div></div>
+          <div class="stat-pill"><div class="lbl">Trades</div><div class="val" id="sm-n">—</div></div>
+        </div>
+      </div>
+
+      <div class="card" style="padding:12px 14px;flex:1">
+        <div class="s2flexb" style="margin-bottom:10px">
+          <div class="s2tabs" onclick="s2Tab(event,'chart')">
+            <span class="s2tab on" data-p="chart-eq"><span class="s2num">7</span>📈 Equity</span>
+            <span class="s2tab" data-p="chart-gl"><span class="s2num">5</span>📊 Gain/Loss</span>
+            <span class="s2tab" data-p="chart-dist">📊 Distribution</span>
+            <span class="s2tab" data-p="chart-tc">🕯️ Trade Chart</span>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px">
+            <div id="s2-glseg" style="display:none;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:4px;overflow:hidden">
+              <button id="pnl-btn-instrument" onclick="document.getElementById('pnl-graph-toggle').value='instrument';window.renderPnlGraph();this.style.background='#1f6feb';this.style.color='#fff';var o=document.getElementById('pnl-btn-symbol');o.style.background='transparent';o.style.color='#8b949e';" style="background:#1f6feb;color:#fff;border:none;padding:4px 9px;font-size:10.5px;cursor:pointer">By Instrument</button>
+              <button id="pnl-btn-symbol" onclick="document.getElementById('pnl-graph-toggle').value='symbol';window.renderPnlGraph();this.style.background='#1f6feb';this.style.color='#fff';var o=document.getElementById('pnl-btn-instrument');o.style.background='transparent';o.style.color='#8b949e';" style="background:transparent;color:#8b949e;border:none;padding:4px 9px;font-size:10.5px;cursor:pointer">By Symbol</button>
+              <input type="hidden" id="pnl-graph-toggle" value="instrument">
+            </div>
+            <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
+          </div>
+        </div>
+        <div class="s2pane on" id="chart-eq"><div id="cal-equity-curve-container" style="width:100%;height:230px"></div></div>
+        <div class="s2pane" id="chart-gl"><div id="cal-pnl-graph-card" style="width:100%;height:230px"><canvas id="pnlGraphCanvas"></canvas></div></div>
+        <div class="s2pane" id="chart-dist"><div id="s2-dist-body"></div></div>
+        <div class="s2pane" id="chart-tc">
+          <div id="s2-tc-hint" style="height:230px;display:flex;align-items:center;justify-content:center;color:#6e7681;font-size:12px;text-align:center;line-height:1.7">
+            👆 Neeche <b style="color:#8b949e;margin:0 4px">🎯 Point Per Trade</b> me kisi trade pe click karo —<br>uska candlestick chart yahan khulega
+          </div>
+          <div id="s2-tc-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ BOTTOM: ④ Total Summary / ⑥ Point Per Trade / 📈 Performance ============ -->
+  <div class="card" style="padding:12px 16px">
+    <div class="s2flexb" style="margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <div class="s2tabs" onclick="s2Tab(event,'tbl')">
+          <span class="s2tab on" data-p="tbl-ts"><span class="s2num">4</span>📊 Total Summary</span>
+          <span class="s2tab" data-p="tbl-ppt"><span class="s2num">6</span>🎯 Point Per Trade</span>
+          <span class="s2tab" data-p="tbl-perf">📈 Performance</span>
+        </div>
+        <span id="s2-fchip" style="display:none;align-items:center;background:#1f6feb20;border:1px solid #1f6feb80;border-radius:5px;color:#58a6ff;padding:3px 8px;font-size:11px"></span>
+      </div>
+      <!-- Total Summary controls (with Monthly/Weekly/Day/Strategy) -->
+      <div id="s2-ts-ctrl" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <span id="cal-sum-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-v="monthly" onclick="calSumSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e">Monthly</span>
+          <span data-v="weekly" onclick="calSumSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e">Weekly</span>
+          <span data-v="day" class="on" onclick="calSumSeg(this)" style="padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff">Day</span>
+          <span data-v="strategy" onclick="calSumSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e">Strategy</span>
+        </span>
+        <span id="cal-sum-agg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-a="sum" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff">Σ Total</span>
+          <span data-a="avg" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Avg</span>
+          <span data-a="min" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Min</span>
+          <span data-a="max" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Max</span>
+        </span>
+        <div style="position:relative" id="cal-views-wrap">
+          <button id="cal-views-btn" onclick="toggleViewsMenu(event)" style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">🗂 Views ▾</button>
+          <div id="cal-views-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:250px;max-width:320px;padding:6px 0;box-shadow:0 4px 12px rgba(0,0,0,.5)"></div>
+        </div>
+        <button id="cal-sum-select-btn" onclick="calSumToggleSelectMode()" style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">☑ Compare</button>
+        <div style="position:relative">
+          <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="var m=document.getElementById('cal-sum-col-menu');m.style.display=m.style.display==='block'?'none':'block';event.stopPropagation()">⚙️ Columns ▾</button>
+          <div id="cal-sum-col-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:170px;padding:8px 0;box-shadow:0 4px 12px rgba(0,0,0,.5)"></div>
+        </div>
+      </div>
+      <!-- Point Per Trade controls -->
+      <div id="s2-ppt-ctrl" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
+        <span id="cal-selected-date-badge" style="display:none;background:#1f6feb20;border:1px solid #1f6feb80;border-radius:4px;color:#58a6ff;padding:2px 6px;font-size:10.5px"></span>
+        <input type="text" id="cal-symbol-search" placeholder="Search Symbol…" onkeyup="renderPointsPerTradeTable()" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:4px 8px;font-size:11px;width:110px" autocomplete="off">
+        <input type="text" id="cal-tag-search" placeholder="Search Tags…" onkeyup="renderPointsPerTradeTable()" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:4px 8px;font-size:11px;width:100px" autocomplete="off">
+        <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8b949e;cursor:pointer"><input id="cal-group-symbol-toggle" type="checkbox" onchange="toggleCalGroupSymbol(this.checked)" style="accent-color:#1f6feb;width:13px;height:13px;margin:0">Group by Symbol</label>
+        <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="openCalPointsColModal()">⚙️ Columns</button>
+      </div>
+      <div id="s2-perf-ctrl" style="display:none;gap:8px;align-items:center;font-size:10.5px;color:#8b949e">Full performance stats</div>
+    </div>
+
+    <div class="s2pane on" id="tbl-ts">
+      <div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
+        <thead><tr id="cal-sum-thead" style="border-bottom:1px solid #30363d;color:#8b949e"></tr></thead>
+        <tbody id="cal-day-totals-tbody"></tbody>
+        <tfoot id="cal-day-totals-tfoot"></tfoot>
+      </table></div>
+    </div>
+    <div class="s2pane" id="tbl-ppt">
+      <div style="overflow-x:auto;max-height:520px;overflow-y:auto;border:1px solid #30363d;border-radius:6px">
+        <table style="width:100%;border-collapse:collapse;font-size:11.5px;text-align:left">
+          <thead style="position:sticky;top:0;background:#161b22;z-index:10"><tr id="cal-points-cols-thead" style="border-bottom:1px solid #30363d;color:#8b949e"></tr></thead>
+          <tbody id="cal-points-per-trade-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="s2pane" id="tbl-perf"><div id="s2-perf-body" class="s2perf" style="grid-template-columns:repeat(4,1fr);gap:0 28px"></div></div>
+  </div>
+
+  <!-- ============ MODALS + hidden helpers (position-independent) ============ -->
+  <div class="card" style="display:none"><div id="stats-grouped-list"></div><table><tr id="stats-cols-thead"></tr><tbody id="stats-closed-tbody"></tbody></table></div>
+
+  <!-- Saved View builder modal -->
+  <div id="stat-view-modal" style="position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:400">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;width:400px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><h3 id="stat-view-modal-title" style="font-size:14px;margin:0">＋ New View</h3><span onclick="closeStatViewModal()" style="cursor:pointer;color:#8b949e;font-size:16px">✕</span></div>
+      <input id="stat-view-name" placeholder="View ka naam…" autocomplete="off" style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:12.5px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px"><span id="stat-view-list-label" style="font-size:11px;color:#8b949e">Strategies</span><span style="font-size:11px"><span onclick="statViewCheckAll(true)" style="cursor:pointer;color:#58a6ff">✓ All</span> · <span onclick="statViewCheckAll(false)" style="cursor:pointer;color:#8b949e">✗ None</span></span></div>
+      <div id="stat-view-strat-list" style="overflow-y:auto;flex:1;min-height:120px;border:1px solid #21262d;border-radius:6px;padding:4px"></div>
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-blue" style="flex:1;padding:7px" onclick="saveStatViewModal()">Save</button><button class="btn btn-gray" style="flex:1;padding:7px" onclick="closeStatViewModal()">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Points columns modal -->
+  <div id="cal-points-col-modal" class="modal-overlay" style="position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:60">
+    <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:20px;width:340px">
+      <h2 style="font-size:14px;margin-bottom:12px">Toggle Columns</h2>
+      <div id="cal-points-col-list" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow-y:auto"></div>
+      <div style="display:flex;gap:8px;margin-top:14px"><button class="btn btn-blue" style="flex:1" onclick="saveCalPointsColPrefs()">Save</button><button class="btn btn-gray" style="flex:1" onclick="document.getElementById('cal-points-col-modal').style.display='none'">Cancel</button></div>
+    </div>
+  </div>
+
+  <!-- Full-screen chart overlay -->
+  <div id="s2fsov" onclick="s2FsClose(event)"><div><div class="s2flexb" style="margin-bottom:14px"><h3 id="s2fstitle" style="font-size:14px">Chart</h3><span class="btn btn-gray" style="padding:4px 10px" onclick="s2FsClose()">✕ Close</span></div><div id="s2fsbody" style="flex:1;min-height:0;display:flex"></div></div></div>
+</div>
+
+<!-- ============ reused dashboard logic (minimal set, no side effects) ============ -->
+<script src="{{ url_for('static', filename='js/registry.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-00-core.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-02-webhook-orders.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-06-config-tab.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-07-columns-stats.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-12-calendar.js') }}"></script>
+<script src="{{ url_for('static', filename='js/app-13-calendar-render.js') }}"></script>
+<script src="{{ url_for('static', filename='js/sltp-modal.js') }}"></script>
+<script src="{{ url_for('static', filename='js/stats2.js') }}"></script>
+</body>
+</html>

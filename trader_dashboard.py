@@ -510,6 +510,14 @@ def parse_pnl(log_path, today, qty=1):
 def index():
     return render_template("index.html")
 
+
+@app.route('/stats2')
+def stats2():
+    """Compact V2 redesign of the Stats page — reuses the same calendar/stats
+    JS logic (app-12/13 + deps) in a new 2-column tabbed layout. Original Stats
+    tab in index.html is untouched. Display-only."""
+    return render_template("stats2.html")
+
 @app.route('/backtest')
 def backtest():
     from flask import send_file
