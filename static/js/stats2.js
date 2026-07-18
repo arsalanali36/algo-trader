@@ -171,19 +171,39 @@
       });
       body.innerHTML = h + '</tbody></table>';
     }
-    // BACKTEST: heatmap current run(s) ke apne trades se (live endpoint bt data nahi jaanta)
+    // BACKTEST: heatmap = POORE run ke saare years (date-range se independent) — full-run
+    // calendar-summary fetch (bina year/month → route saare trades deta hai).
     if (window.calBtMode) {
-      var Mb = {};
-      (window.currentCalendarTrades || []).forEach(function (t) {
-        var d = t.exit_date || t.entry_date || (t.exit_dt || t.entry_dt || '').slice(0, 10);
-        if (!d || d.length < 7) return;
-        var y = d.slice(0, 4), m = parseInt(d.slice(5, 7), 10);
-        if (!m) return;
-        var net = (t._net != null) ? t._net : (t.pnl || 0);
-        if (!Mb[y]) Mb[y] = {};
-        Mb[y][m] = (Mb[y][m] || 0) + net;
-      });
-      render(Mb); return;
+      var sl = '';
+      if (window.calActiveView && window.calActiveView.kind === 'bt') sl = (window.calActiveView.strategies || []).join(',');
+      else {
+        var st = (document.getElementById('cal-strat') || {}).value;
+        if (st === '__ALL__') sl = (window._calBtRuns || []).map(function (r) { return r.slug; }).join(',');
+        else if (st) sl = st;
+      }
+      var body0 = document.getElementById('s2-heatbody');
+      if (!sl) { if (body0) render({}); return; }
+      var bq = 'slug=' + encodeURIComponent(sl)
+        + '&pass=' + ((typeof _calSegVal === 'function' ? _calSegVal('cal-bt-pass') : '') || 'bs')
+        + '&period=' + ((typeof _calSegVal === 'function' ? _calSegVal('cal-bt-period') : '') || 'full');
+      window._btHeatCache = window._btHeatCache || {};
+      function _buildBt(trades) {
+        var Mb = {};
+        (trades || []).forEach(function (t) {
+          var d = t.entry_date || t.exit_date || (t.entry_dt || t.exit_dt || '').slice(0, 10);
+          if (!d || d.length < 7) return;
+          var y = d.slice(0, 4), m = parseInt(d.slice(5, 7), 10); if (!m) return;
+          var net = (t.pnl != null) ? t.pnl : ((t._net != null) ? t._net : 0);  // bt pnl already NET
+          if (!Mb[y]) Mb[y] = {};
+          Mb[y][m] = (Mb[y][m] || 0) + net;
+        });
+        render(Mb);
+      }
+      if (window._btHeatCache[bq]) { _buildBt(window._btHeatCache[bq]); return; }
+      fetch('/api/backtest/calendar-summary?' + bq).then(function (r) { return r.json(); })
+        .then(function (j) { window._btHeatCache[bq] = j.trades || []; _buildBt(j.trades || []); })
+        .catch(function () { render({}); });
+      return;
     }
     // LIVE/PAPER: monthly-returns endpoint (mode/source/strategy filtered)
     var qp = new URLSearchParams();
