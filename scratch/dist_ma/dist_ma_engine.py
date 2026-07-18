@@ -87,6 +87,54 @@ def replay_symbol(sym, cfg=None):
     return trades
 
 
+def replay_upto(sym, upto_date=None, cfg=None):
+    """Live-facing: replay the engine over sym's daily bars up to `upto_date`
+    (inclusive; None = all). Returns (completed_trades, open_pos_or_None).
+    open_pos = {entry_date, entry, sl} for a position still held at upto_date.
+    The live trader calls this each new completed day and diffs against its book —
+    so LIVE decisions come from the SAME engine the backtest parity-check covers."""
+    import pandas as pd
+    cfg = {**DEFAULTS, **(cfg or {})}
+    d = m.prep(m.load(sym))
+    if upto_date is not None:
+        d = d[d.Date <= pd.Timestamp(upto_date)].reset_index(drop=True)
+    if len(d) < 2:
+        return [], None
+    O, H, L, C, A = d.Open.values, d.High.values, d.Low.values, d.Close.values, d.atr.values
+    DATE = d.Date.values
+    sig = m.signal_bars(d, cfg["thresh"], cfg["look"]).values
+    st = new_state()
+    trades, cur = [], None
+    for t in range(len(C)):
+        a = step(st, t, O, H, L, C, A, sig, cfg)
+        if not a:
+            continue
+        if a["act"] == "ENTER":
+            cur = {"sym": sym, "entry_date": str(pd.Timestamp(DATE[t]).date()),
+                   "entry": a["px"], "sl": a["sl"]}
+        elif a["act"] == "EXIT" and cur:
+            gross = a["px"] / cur["entry"] - 1.0
+            cur.update(exit_date=str(pd.Timestamp(DATE[t]).date()), exit=a["px"],
+                       gross=gross, net=gross - cfg["cost_pct"] / 100.0, reason=a["reason"])
+            trades.append(cur); cur = None
+    return trades, cur
+
+
+def latest_date():
+    """Newest completed daily-bar date available across the lake (the 'today' the
+    live trader acts on). Data-driven so a nightly lake update advances it."""
+    import pandas as pd
+    mx = None
+    for s in m.symbols()[:30]:          # 30 liquid names enough to find the max date
+        try:
+            d = m.load(s)
+            dt = pd.Timestamp(d.Date.iloc[-1])
+            mx = dt if mx is None or dt > mx else mx
+        except Exception:
+            pass
+    return str(mx.date()) if mx is not None else None
+
+
 def parity_check():
     """Prove the stateful engine reproduces dist_ma.backtest() trade-for-trade."""
     import numpy as np, pandas as pd
