@@ -751,12 +751,15 @@ def api_lab_upload_xlsx():
         (updir / 'crosscheck.json').write_text(_json.dumps(cc), encoding='utf-8')
     except Exception as e:
         return jsonify(ok=False, msg='mint run fail: ' + str(e)), 500
-    rcj = XI.jsonable(rc)
+    # headline cards use the CLAIMED (validated) metrics so they match the run's own
+    # dashboard — e.g. calendar-day Sharpe 2.37, not the trade-day recompute 3.44.
+    # The independent recompute stays visible in the cross-check table below.
+    disp = payload.get('combos', {}).get('bs|full', {}).get('metrics', {}) or rc
     n_mismatch = sum(1 for r in cc if r.get('status') == 'MISMATCH')
     return jsonify(ok=True, uid=uid,
                    view_url='/lab/runs/_uploads/%s/index.html' % uid,
                    crosscheck=cc, mismatches=n_mismatch,
-                   summary={k: rcj.get(k) for k in
+                   summary={k: XI.jsonable(disp.get(k)) for k in
                             ('trades', 'net_abs', 'net_pct', 'sharpe',
                              'profit_factor', 'win_rate', 'maxdd', 'expectancy', 'fees')})
 
