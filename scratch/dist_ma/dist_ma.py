@@ -33,7 +33,10 @@ _CANDIDATES = [
     r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\EquityDaily",
     os.path.join(os.path.dirname(__file__), "..", "..", "_TRADING_DATA", "EquityDaily"),
 ]
-EQ_DIR = next((p for p in _CANDIDATES if os.path.isdir(p)), _CANDIDATES[0])
+# fallback = repo-relative path (_CANDIDATES[-1]), NOT the Windows path — on a
+# fresh Linux/VPS box the Windows string isn't a dir, and using it as the default
+# would makedirs() a literal 'D:\...'-named junk folder. Repo path is correct there.
+EQ_DIR = next((p for p in _CANDIDATES if os.path.isdir(p)), _CANDIDATES[-1])
 
 
 def symbols():
