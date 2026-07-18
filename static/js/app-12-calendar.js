@@ -161,23 +161,21 @@
     function _renderViewsMenu() {
       const m = document.getElementById('cal-views-menu');
       if (!m) return;
-      const sel = window._calSumSelected;
-      const canSave = !!(window._calSumSelectMode && sel && sel.size > 0);
       let html = '';
-      html += `<div onclick="saveCalViewFromSelection()" style="padding:6px 12px;cursor:${canSave ? 'pointer' : 'not-allowed'};font-size:11.5px;color:${canSave ? '#3fb950' : '#6e7681'};" ${canSave ? 'onmouseover="this.style.background=\'#21262d\'" onmouseout="this.style.background=\'\'"' : ''}>＋ Save selection as View…${canSave ? ' (' + sel.size + ')' : ''}</div>`;
+      html += `<div onclick="openStatViewModal(null)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#3fb950;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">＋ New View…</div>`;
       if (window.calActiveView) {
         html += `<div onclick="clearCalView(event)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#8b949e;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">✕ Clear view (show all)</div>`;
       }
       html += `<div style="border-top:1px solid #21262d;margin:4px 0;"></div>`;
       if (!window._calViews.length) {
-        html += `<div style="padding:6px 12px;font-size:11px;color:#6e7681;line-height:1.5;">Koi view nahi.<br>Compare on karke strategies tick karo, phir "Save selection as View".</div>`;
+        html += `<div style="padding:6px 12px;font-size:11px;color:#6e7681;line-height:1.5;">Koi view nahi.<br>"＋ New View" se strategies select karke banao.</div>`;
       } else {
         window._calViews.forEach(v => {
           const active = window.calActiveView && window.calActiveView.id === v.id;
           const tip = _viewEsc((v.strategies || []).map(s => (typeof regLabel === 'function' ? regLabel(s) : s)).join(', '));
           html += `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;${active ? 'background:#1f6feb22;' : ''}" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background='${active ? '#1f6feb22' : ''}'">
             <span onclick="applyCalView(${v.id})" style="flex:1;cursor:pointer;color:${active ? '#58a6ff' : '#e6edf3'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${tip}">${_viewEsc(v.name)} <span style="color:#6e7681;font-size:10px">(${(v.strategies || []).length})</span></span>
-            <span onclick="renameCalView(${v.id},event)" style="cursor:pointer;color:#8b949e;" title="Rename">✏️</span>
+            <span onclick="openStatViewModal(${v.id})" style="cursor:pointer;color:#8b949e;" title="Edit (naam + strategies)">✏️</span>
             <span onclick="deleteCalView(${v.id},event)" style="cursor:pointer;color:#f85149;" title="Delete">🗑</span>
           </div>`;
         });
@@ -194,19 +192,70 @@
       m.style.display = show ? 'block' : 'none';
     }
 
-    async function saveCalViewFromSelection() {
-      const sel = window._calSumSelected;
-      if (!(window._calSumSelectMode && sel && sel.size)) {
-        if (typeof toast === 'function') toast('Pehle Compare on karke strategies tick karo'); return;
+    // Full strategy list for the view builder — same set as the top "All
+    // strategies" dropdown (order_store distinct strategies, registry-labeled).
+    function _allStrategiesForView() {
+      const sel = document.getElementById('cal-strat');
+      const out = [];
+      if (sel) [...sel.options].forEach(o => { if (o.value) out.push({ key: o.value, label: o.textContent }); });
+      return out;
+    }
+
+    // Open the New/Edit View builder: a checklist of ALL strategies + Select
+    // All, pre-checked for the strategies already in the view (edit mode).
+    function openStatViewModal(viewId) {
+      window._statViewEditId = viewId || null;
+      const modal = document.getElementById('stat-view-modal');
+      const title = document.getElementById('stat-view-modal-title');
+      const nameI = document.getElementById('stat-view-name');
+      const list = document.getElementById('stat-view-strat-list');
+      if (!modal || !list) return;
+      const view = viewId ? (window._calViews || []).find(v => v.id === viewId) : null;
+      const checked = new Set(view ? (view.strategies || []) : []);
+      if (title) title.textContent = view ? '✏️ Edit View' : '＋ New View';
+      if (nameI) nameI.value = view ? view.name : '';
+      const strats = _allStrategiesForView();
+      if (!strats.length) {
+        list.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:10px">Strategies abhi load nahi hui — Stats tab ek baar refresh karo phir kholo.</div>';
+      } else {
+        list.innerHTML = strats.map(s => `<label style="display:flex;align-items:center;gap:8px;padding:6px 6px;cursor:pointer;font-size:12px;color:#e6edf3;border-radius:4px;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
+          <input type="checkbox" value="${s.key.replace(/"/g, '&quot;')}" ${checked.has(s.key) ? 'checked' : ''} style="accent-color:#1f6feb;width:14px;height:14px;margin:0;flex:none;">
+          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_viewEsc(s.label)}</span>
+          <span style="color:#6e7681;font-size:9.5px;">${_viewEsc(s.key)}</span>
+        </label>`).join('');
       }
-      const name = prompt('View ka naam:');
-      if (!name || !name.trim()) return;
+      const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
+      modal.style.display = 'flex';
+    }
+
+    function closeStatViewModal() {
+      const m = document.getElementById('stat-view-modal'); if (m) m.style.display = 'none';
+      window._statViewEditId = null;
+    }
+
+    function statViewCheckAll(all) {
+      document.querySelectorAll('#stat-view-strat-list input[type=checkbox]').forEach(c => { c.checked = all; });
+    }
+
+    async function saveStatViewModal() {
+      const name = (document.getElementById('stat-view-name').value || '').trim();
+      if (!name) { if (typeof toast === 'function') toast('View ka naam do'); return; }
+      const checked = [...document.querySelectorAll('#stat-view-strat-list input[type=checkbox]:checked')].map(c => c.value);
+      if (!checked.length) { if (typeof toast === 'function') toast('Kam se kam ek strategy select karo'); return; }
+      const editId = window._statViewEditId;
       try {
-        const r = await fetch('/api/stat-views', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), strategies: [...sel] }) });
+        const url = editId ? ('/api/stat-views/' + editId) : '/api/stat-views';
+        const r = await fetch(url, { method: editId ? 'PUT' : 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, strategies: checked }) });
         const j = await r.json();
         if (!j.ok) { if (typeof toast === 'function') toast('Save fail: ' + (j.error || '')); return; }
         await loadCalViews();
-        if (typeof toast === 'function') toast('✅ View saved: ' + name.trim());
+        closeStatViewModal();
+        if (typeof toast === 'function') toast('✅ View ' + (editId ? 'updated' : 'saved') + ': ' + name);
+        if (editId) {
+          if (window.calActiveView && window.calActiveView.id === editId) { window.calActiveView = j.view; _renderViewsBtn(); calendarRender(); }
+        } else {
+          applyCalView(j.view.id);   // new view → auto-apply
+        }
       } catch (e) { if (typeof toast === 'function') toast('Save fail'); }
     }
 
@@ -228,21 +277,6 @@
       const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
       _renderViewsBtn();
       calendarRender();
-    }
-
-    async function renameCalView(id, ev) {
-      if (ev) ev.stopPropagation();
-      const v = (window._calViews || []).find(x => x.id === id);
-      if (!v) return;
-      const name = prompt('Naya naam:', v.name);
-      if (!name || !name.trim() || name.trim() === v.name) return;
-      try {
-        const r = await fetch('/api/stat-views/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
-        const j = await r.json();
-        if (!j.ok) { if (typeof toast === 'function') toast('Rename fail'); return; }
-        if (window.calActiveView && window.calActiveView.id === id) window.calActiveView.name = name.trim();
-        await loadCalViews();
-      } catch (e) { if (typeof toast === 'function') toast('Rename fail'); }
     }
 
     async function deleteCalView(id, ev) {

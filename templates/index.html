@@ -2228,6 +2228,33 @@
       </div>
     </div>
 
+    <!-- Saved View builder modal: checklist of ALL strategies + Select All -->
+    <div id="stat-view-modal"
+      style="position:fixed;inset:0;background:#000a;display:none;align-items:center;justify-content:center;z-index:400">
+      <div style="background:#161b22;border:1px solid #30363d;border-radius:10px;padding:18px;width:400px;max-width:92vw;max-height:82vh;display:flex;flex-direction:column">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h3 id="stat-view-modal-title" style="font-size:14px;margin:0;color:#e6edf3">＋ New View</h3>
+          <span onclick="closeStatViewModal()" style="cursor:pointer;color:#8b949e;font-size:16px">✕</span>
+        </div>
+        <input id="stat-view-name" placeholder="View ka naam…" autocomplete="off"
+          style="background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:12.5px;outline:none;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+          <span style="font-size:11px;color:#8b949e">Strategies (jo view me chahiye tick karo)</span>
+          <span style="font-size:11px;white-space:nowrap">
+            <span onclick="statViewCheckAll(true)" style="cursor:pointer;color:#58a6ff">✓ All</span>
+            <span style="color:#30363d">·</span>
+            <span onclick="statViewCheckAll(false)" style="cursor:pointer;color:#8b949e">✗ None</span>
+          </span>
+        </div>
+        <div id="stat-view-strat-list"
+          style="overflow-y:auto;flex:1;min-height:120px;border:1px solid #21262d;border-radius:6px;padding:4px"></div>
+        <div style="display:flex;gap:8px;margin-top:14px">
+          <button class="btn btn-blue" style="flex:1;padding:7px" onclick="saveStatViewModal()">Save</button>
+          <button class="btn btn-gray" style="flex:1;padding:7px" onclick="closeStatViewModal()">Cancel</button>
+        </div>
+      </div>
+    </div>
+
     <!-- Points Per Trade Graph Card -->
     <div class="card" style="margin-top:16px; padding:16px 18px;" id="cal-pnl-graph-card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
