@@ -144,6 +144,11 @@
       <div class="panel"><h3>Drawdown <span class="tag">(Worst 5 Periods)</span></h3><hr class="dash"><div id="ddPeriods"></div></div>
       <div class="panel"><h3>Underwater Plot</h3><hr class="dash"><div id="underwater"></div></div>
       <div class="panel"><h3>Monthly Returns Heatmap</h3><hr class="dash"><div id="monthly" style="overflow-x:auto"></div></div>
+      <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
+          <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
+            <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
+        <hr class="dash"><div id="dist"></div>
+        <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
     </div>
     <div class="side">
       <div class="panel"><div class="sh">Performance</div><div id="perf"></div></div>
@@ -152,12 +157,6 @@
       <div class="panel" id="philoPanel" style="display:none"><div class="sh">📖 Philosophy, Terms &amp; FAQ</div><div id="philo"></div></div>
     </div>
   </div>
-
-  <div class="panel"><h3>P&amp;L Distribution <span class="tag">— per-trade result spread (bell curve) · 1 lot · active pass/period</span>
-      <span style="float:right"><button class="tchbtn" id="distRs">₹</button> <button class="tchbtn" id="distPt">Points</button>
-        <button class="tchbtn" id="distView" style="margin-left:12px" title="Chart ⇄ Table — same data as a table">📋 Table</button></span></h3>
-    <hr class="dash"><div id="dist"></div>
-    <div class="mut" id="distStats" style="font-size:11.5px;margin-top:8px"></div></div>
 
   <div class="panel"><h3>Trades <span class="tag">— search · toggle columns · click a month in the heatmap above to filter · 📈 full-screen chart</span></h3>
     <hr class="dash">
@@ -380,10 +379,14 @@ async function dnaReveal(ev){
   const want=localStorage.getItem('dna_pw_hash')||DNA_DEFAULT_HASH;
   if(await _dnaHash(pw)===want){window._dnaRevealed=true;renderDNA();}else alert('Galat password');
 }
-function renderDNA(){const d=C().dna;const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
-  const eye=document.getElementById('dnaEye'); if(eye)eye.textContent=window._dnaRevealed?'🙈':'👁️';
-  let h='';for(const k in d){const v=window._dnaRevealed?d[k]:'••••';h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${v}</span></div>`;}
-  if(!window._dnaRevealed)h+='<div class="mut" style="font-size:11px;margin-top:6px">🔒 hidden — 👁️ se password daalo (Shift+click = badlo)</div>';
+function renderDNA(){const d=C().dna||{};const lbl={or_min:'Opening range (min)',orb_k:'Breakout strength (×ATR)',h0:'Entry window start (hr)',h1:'Entry window end (hr)',atr_sl:'Stop (×ATR)',rr:'Reward:Risk',exit:'Exit style'};
+  const panel=document.getElementById('dna').closest('.panel');
+  if(!Object.keys(d).length){if(panel)panel.style.display='none';return}if(panel)panel.style.display='';
+  // dna_open (uploaded Excel = user's own data) shows params directly, no password gate
+  const dnaOpen=!!(R.meta&&R.meta.dna_open),open=window._dnaRevealed||dnaOpen;
+  const eye=document.getElementById('dnaEye'); if(eye){eye.style.display=dnaOpen?'none':'';eye.textContent=open?'🙈':'👁️';}
+  let h='';for(const k in d){const v=open?d[k]:'••••';h+=`<div class="mrow"><span class="k">${lbl[k]||k}</span><span class="v">${v}</span></div>`;}
+  if(!open)h+='<div class="mut" style="font-size:11px;margin-top:6px">🔒 hidden — 👁️ se password daalo (Shift+click = badlo)</div>';
   document.getElementById('dna').innerHTML=h}
 function renderInfo(){const M=R.meta||{};
   const instr=(M.instrument||'NIFTY 50')+(HAS_PASS?' → ATM CE/PE options':' (index spot)');

@@ -13,6 +13,7 @@ Pure read/compute — no order/risk/live path.
 """
 import os
 import sys
+import json
 import openpyxl
 import pandas as pd
 import numpy as np
@@ -255,8 +256,14 @@ def to_results_payload(parsed, recomputed):
             "design": meta_in.get("Strategy") or "Uploaded Excel",
             "tf": meta_in.get("Timeframe") or "", "instrument": meta_in.get("Instrument") or "",
             "lot_size": _num(meta_in.get("Lot size")) or 65, "lots": _num(meta_in.get("Lots")) or 1,
-            "candles": [], "passes": ["bs"], "periods": ["full"]}
-    combo = {"dna": {}, "metrics": metrics, "all_trades": trades,
+            "candles": [], "passes": ["bs"], "periods": ["full"], "dna_open": True}
+    try:
+        dna = json.loads(meta_in.get("Params (dna)") or "{}")
+        if not isinstance(dna, dict):
+            dna = {}
+    except Exception:
+        dna = {}
+    combo = {"dna": dna, "metrics": metrics, "all_trades": trades,
              "trades": trades[-10:], "equity": eq, "benchmark": eq, "labels": labels,
              "underwater": [], "worst_periods": [], "monthly": monthly,
              "mc": monte_carlo(trades, parsed.get("meta", {}))}
