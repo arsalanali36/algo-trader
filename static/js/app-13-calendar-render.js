@@ -55,7 +55,7 @@
       sp.style.background = onNow ? '#1f6feb' : ''; sp.style.color = onNow ? '#fff' : '#8b949e';
     });
     if (thead) {
-      const labelHeader = mode === 'day' ? 'Date' : 'Strategy';
+      const labelHeader = mode === 'monthly' ? 'Month' : mode === 'weekly' ? 'Week' : mode === 'day' ? 'Date' : 'Strategy';
       const aggPfx = _CAL_AGG_LBL[window._calSumAgg || 'sum'] || 'Σ';
       const sort = window._calSumSort || { col: 'label', dir: 1 };
       const rightAligned = new Set(['m_points', 'm_gross', 'm_net', 'm_tax', 'm_runup', 'm_rundown', 'm_dd', 'm_optfix', 'm_optaggr', 'm_optaggeod', 'maxdd', 'exp']);
@@ -72,12 +72,10 @@
       }).join('');
     }
 
-    // Build grouped data
+    // Build grouped data (Monthly / Weekly / Day / Strategy — same for live & backtest)
     const groups = {};
     trades.forEach(t => {
-      const key = mode === 'day'
-        ? (t.exit_date || t.entry_date || '—')
-        : (t.strategy || t.strat || 'unknown');
+      const key = _calGroupKey(t, mode);
       if (!groups[key]) groups[key] = [];
       groups[key].push(t);
     });
@@ -106,9 +104,11 @@
       }
     };
 
+    // date-like modes (day/weekly/monthly) sort newest-first; strategy A→Z
+    const _dateMode = (mode === 'day' || mode === 'weekly' || mode === 'monthly');
     const keys = Object.keys(groups).sort((a, b) => {
       if (sort.col === 'label') {
-        return mode === 'day' ? b.localeCompare(a) * sort.dir : a.localeCompare(b) * sort.dir;
+        return _dateMode ? b.localeCompare(a) * sort.dir : a.localeCompare(b) * sort.dir;
       }
       return (sortVal(groupStats[a], sort.col) - sortVal(groupStats[b], sort.col)) * sort.dir;
     });
@@ -122,8 +122,13 @@
         // Strategy mode me `key` = raw config-key (order_store se) — user ko
         // registry ka naam dikhna chahiye. clickKey RAW hi rehta hai (filter/
         // Compare-select usi se match karte hain), sirf label badalta hai.
-        const _lbl = (mode === 'strategy') ? regLabel(key) : key;
-        bodyHtml += _sumRow(_lbl, groupStats[key], key, false);
+        // Monthly/Weekly = pretty period label; ye aggregation-only rows hain
+        // (clickKey null → non-clickable; day/strategy hi date/strat filter karte).
+        const _lbl = (mode === 'strategy') ? regLabel(key)
+          : (mode === 'monthly' || mode === 'weekly') ? _calPeriodLabel(key, mode)
+            : key;
+        const _clickKey = (mode === 'day' || mode === 'strategy') ? key : null;
+        bodyHtml += _sumRow(_lbl, groupStats[key], _clickKey, false);
       });
       if (tfoot) {
         const sel = window._calSumSelected;

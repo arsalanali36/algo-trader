@@ -2166,6 +2166,10 @@
           <!-- Day-wise / Strategy-wise toggle -->
           <span id="cal-sum-mode"
             style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+            <span data-v="monthly" onclick="calSumSeg(this)"
+              style="padding:4px 12px;cursor:pointer;color:#8b949e;">Monthly</span>
+            <span data-v="weekly" onclick="calSumSeg(this)"
+              style="padding:4px 12px;cursor:pointer;color:#8b949e;">Weekly</span>
             <span data-v="day" class="on" onclick="calSumSeg(this)"
               style="padding:4px 12px;cursor:pointer;background:#1f6feb;color:#fff;">Day</span>
             <span data-v="strategy" onclick="calSumSeg(this)"

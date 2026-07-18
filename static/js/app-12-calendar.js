@@ -40,6 +40,43 @@
       return el ? el.getAttribute('data-v') : '';
     }
 
+    // ── Total Summary period grouping (Monthly / Weekly) helpers ────────────
+    const _CAL_MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    // Week bucket key = the Monday of that trade's week (YYYY-MM-DD), so weekly
+    // grouping is calendar-week aligned and sorts correctly as a string.
+    function _calWeekKey(dateStr) {
+      if (!dateStr) return '—';
+      const d = new Date(dateStr + 'T00:00:00');
+      if (isNaN(d)) return '—';
+      const dow = (d.getDay() + 6) % 7;   // Mon=0 … Sun=6
+      d.setDate(d.getDate() - dow);
+      const p = n => String(n).padStart(2, '0');
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+    function _calPeriodLabel(key, mode) {
+      if (!key || key === '—') return key || '—';
+      if (mode === 'monthly') {
+        const [y, m] = key.split('-');
+        return `${_CAL_MON[(+m) - 1] || m} ${y}`;               // "Jul 2026"
+      }
+      if (mode === 'weekly') {
+        const d = new Date(key + 'T00:00:00');
+        if (isNaN(d)) return key;
+        const e = new Date(d); e.setDate(e.getDate() + 6);       // Mon → Sun
+        const p = n => String(n).padStart(2, '0');
+        return `${p(d.getDate())} ${_CAL_MON[d.getMonth()]} – ${p(e.getDate())} ${_CAL_MON[e.getMonth()]}`;
+      }
+      return key;
+    }
+    // Group key for a trade under the current Total-Summary mode.
+    function _calGroupKey(t, mode) {
+      const d = t.exit_date || t.entry_date || '';
+      if (mode === 'monthly') return d.slice(0, 7) || '—';       // YYYY-MM
+      if (mode === 'weekly') return _calWeekKey(d);
+      if (mode === 'day') return d || '—';
+      return t.strategy || t.strat || 'unknown';                 // strategy
+    }
+
     // ── Backtest view mode ──────────────────────────────────────────────────
     // The Stats calendar can show either live/paper trades (order_store) OR a
     // backtest run's day-by-day results (runs/<slug>/results.js). Same grid,
