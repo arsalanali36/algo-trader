@@ -582,8 +582,17 @@ function renderAll(){const m=C().metrics,s=C().significance;
   const _tEl=document.getElementById('appTitleTxt'),_sEl=document.getElementById('appTitleSub');
   if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
     if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
-  document.getElementById('infobar').innerHTML=
-    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+  const _lc=document.getElementById('livechip');
+  if(s){
+    document.getElementById('infobar').innerHTML=
+      `${s.significant?'✅':'⚠️'} <b>${s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s.significant?'passes':'fails'} the significance gate (p=${s.p_value.toFixed(3)} ${s.significant?'&lt;':'≥'} 0.05)${s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+    if(_lc){_lc.style.display='';_lc.textContent=s.significant?'● GENUINE EDGE':'⚠ NOT SIGNIFICANT';}
+  } else {
+    // significance test isn't in an uploaded Excel — don't fake a verdict either way
+    document.getElementById('infobar').innerHTML=
+      `ℹ️ <b>Significance test not in this file</b> — it needs the original signal run; check the original run for the p-value. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+    if(_lc)_lc.style.display='none';
+  }
   if(HAS_PASS){
     const per=perLabel(P);
     const _pl=(R.meta&&R.meta.pass_labels)||{};
