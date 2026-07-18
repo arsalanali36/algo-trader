@@ -10,6 +10,19 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **🚨 2026-07-18 — THE WHOLE "WINNER FAUJ" IS BS-INFLATED. 0 of 7 survive on the REAL lake (TRAP #136).**
+  User asked if the registry winners were real-lake or BS. Repriced each winner's OWN trades on the
+  real held-strike lake (`bs_vs_reallake.py`, `real_struct2._px` + real charges + DOM slip, 2021-26):
+  Mid-Day ORB **2.37→0.49**, ORB+ST 2.06→0.46, Chain-Zone 1.95→0.43, Long Straddle **3.55→−1.47**,
+  Debit Vertical 1.67→−0.07, Ratio Backspread 1.55→−0.84, Long Strangle **4.08→−1.75**. Single ATM-buys
+  drop below the ≥1.0 gate; every multi-leg BUY flips to a LOSS; the highest-BS-Sharpe (buy-2-leg vol)
+  are the WORST on real (double theta the model hid). **The ORB-family ATM-buys were never real-lake-
+  repriced — only DOM-slip-stressed — that was the hidden hole.** These are BS/research numbers, not
+  deployable. User's own theta-favours-the-SELLER instinct was right. **NEXT (open): real-lake reprice
+  the SELL / theta-COLLECTING side (defined-risk short-vol) — NOT assumed, must be measured the same way.**
+  Guard: `LESSONS.md` TRAP #136 + `RESULTS_SCHEMA.md` top warning.
+
+
 - **❌ #06 = DELTA-NEUTRAL ADJUST (intraday iron-fly) — BUILT, TESTED, REJECTED (2026-07-13, user "reject").**
   User asked for option-chain/structure strategies, first = delta-neutral adjust, NIFTY, intraday-only,
   no-futures (delta hedged via options-only re-centering, not futures/underlying). Built honestly on

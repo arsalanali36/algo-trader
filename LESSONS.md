@@ -3565,3 +3565,57 @@ sizes CAN legitimately diverge in sign — but never a single trade). When a sch
 an action (`side`, `type`, `dir`) confirm its DOMAIN (CE/PE? long/short-direction? buy/sell?) before
 mapping it to another axis. Money columns sourced directly (`gross`) stay correct while a *derived*
 display (points, badge) silently lies — trust the sourced number, re-derive the display from it.
+
+---
+
+## TRAP #136 — every registry "winner" Sharpe is BS-modeled, NOT real premium; the ATM-BUY fauj collapses on the real lake (theta the model never charged)
+
+**Symptom.** User celebrating a Strategy-Registry full of "WINNER" strategies (Mid-Day ORB
+Sharpe 2.37, Long Straddle 3.55, Long Strangle 4.08, Chain-Zone 1.95, all significance PASS
+p<0.05). User asked point-blank: *"ye winners real lake premium pe hain ya BS pe?"* — and, on
+being shown the collapse, rightly angry that this was never flagged **before** he trusted them,
+that the real lake data was there the whole time, and that his own instinct (theta favours the
+SELLER — which is why he was selling) had been over-ridden by a "hero" switch to BUYing.
+
+**Root pattern.** Every `runs/<slug>/results.js` number — the `bs|full` pass the registry/hub
+display — is **Black-Scholes-modeled option premium + DOM slip**, NOT real premium. BS underprices
+the theta an option **buyer** actually bleeds intraday. So any strategy that BUYS premium looks far
+better on BS than it trades on real data, and the more legs it buys the worse the gap. The vol
+family was caught on the real lake long ago (TRAP #106/#109 — iron-fly/straddle retracted), but the
+**directional ATM-BUY fauj (ORB single-leg, chain-zone, debit vertical, ratio backspread) was only
+ever DOM-slip-stressed, never repriced on real premium** — that was the hidden hole.
+
+Repricing each winner's OWN trades (same entry/exit times) leg-by-leg on the real held-strike lake
+(`real_struct2._px` + real Zerodha charges + `bs.slip_cost_leg`), 2021-26 covered:
+
+| Winner | struct | BS Sharpe | REAL Sharpe | BS net → REAL net |
+|---|---|---|---|---|
+| Mid-Day ORB | buy ATM | 2.37 | **0.49** | ₹3.9L → ₹82k |
+| ORB+Supertrend | buy ATM | 2.06 | **0.46** | ₹2.5L → ₹71k |
+| Chain-Zone Long ATM | buy ATM | 1.95 | **0.43** | ₹4.3L → ₹1.2L |
+| Long Straddle | buy 2 legs | 3.55 | **−1.47** | ₹4.8L → −₹3.0L |
+| Debit Vertical | 1 buy 1 sell | 1.67 | **−0.07** | ₹1.6L → −₹12k |
+| Ratio Backspread | sell1 buy2 | 1.55 | **−0.84** | ₹2.0L → −₹1.4L |
+| Long Strangle | buy 2 legs | 4.08 | **−1.75** | ₹6.0L → −₹3.0L |
+
+**0 of 7 deployable on real premium.** Single ATM-buys drop to ~0.45 Sharpe (below the ≥1.0 gate);
+every multi-leg BUY flips to a LOSS — and the ones with the *highest* BS Sharpe (Straddle 3.55,
+Strangle 4.08) are the *worst* on real (−1.47, −1.75), because buying two legs pays double theta,
+exactly what BS hides. This VINDICATES the user's sell-side/theta instinct.
+
+**Fix / permanent guard.**
+1. **Never present a BS `results.js` Sharpe/net as a deploy signal without the real-lake reprice.**
+   Run `scratch/nifty_trend/bs_vs_reallake.py <slug>` (reprices a run's trades on the NIFTY lake)
+   BEFORE trusting any 'winner'. The registry/hub number is a *research* figure, not a deployable one.
+2. **Flag the BS-vs-real gap up front**, at the moment a strategy is called a "winner" — not when the
+   user asks. The user having to ask is the failure.
+3. **Caveat honestly:** the reprice keeps the BS run's exit *timing* (premium tp/sl fired on BS
+   levels). For SPOT-exit single-leg buys (ORB/chain) the figure is solid; for premium-exit
+   multi-leg structures a full real re-backtest could shift the exact number, but the negative
+   direction is robust (double-theta is a real, measured effect). NIFTY lake only (BankNifty needs BNF lake).
+4. **Direction:** premium-BUYING intraday on NIFTY is a losing game once real theta is charged.
+   The honest edge, if any, is on the theta-COLLECTING (short-vol / defined-risk-that-sells) side —
+   and that side must itself be real-lake-repriced (SELL variants NOT yet tested here), not assumed.
+
+**Fast-detect.** BS Sharpe ≥ ~1.5 on an option-BUYING strategy with no `real_lake`/`real_struct2`
+number next to it = almost certainly inflated. `bs_vs_reallake.py` settles it in seconds.

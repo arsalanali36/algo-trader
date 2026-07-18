@@ -44,6 +44,19 @@ and gross/fee/pnl on the premium). `instrument|*` and `rms|*` are spot-notional
 (gross = points × qty, rough fee) — the same strategy, one layer less realistic each.
 `run_hunt.py` is the reference producer; the cleanest reuse is just to run it.
 
+## 🔴 Every Sharpe/net here is BS-MODELED premium — NOT real. Reprice before you trust it (TRAP #136)
+
+The `bs|full` pass (what the registry/hub display) prices option legs with **Black-Scholes +
+DOM slip**, not the REAL option lake. BS underprices the **theta an option BUYER bleeds**, so any
+BUY-premium strategy looks far better on BS than it trades — and more legs = bigger gap. Measured
+2021-26 on the winner fauj: **BS Sharpe → REAL Sharpe** — Mid-Day ORB 2.37→0.49, Chain-Zone 1.95→0.43,
+Long Straddle 3.55→**−1.47**, Long Strangle 4.08→**−1.75**. **0 of 7 survived.**
+
+**Rule:** never present a `results.js` Sharpe/net as a deploy signal without running
+`bs_vs_reallake.py <slug>` (reprices a run's own trades on the real held-strike lake). The number in
+this file is a **research** figure. Flag the BS-vs-real gap the moment a strategy is called a "winner",
+not when the user asks. Full writeup + table: `LESSONS.md` TRAP #136.
+
 ## ⚠️ `annual_return` is NOT a CAGR — never quote it as one
 
 Every number in this file is produced at **`lots=1`** (`bs_option.reprice(..., lots=1)`)
