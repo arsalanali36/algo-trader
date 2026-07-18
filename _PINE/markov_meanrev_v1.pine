@@ -1,0 +1,66 @@
+//@version=5
+// ============================================================================
+//  Markov Mean-Reversion (buy-the-dip)  —  v1
+//  Idea (from the Jim Simons / Medallion "Markov chain" video):
+//    ENTRY : N consecutive DOWN closes  -> go LONG
+//    EXIT  : first day that closes HIGHER than the previous close
+//            (+ max-hold and optional stop guards)
+//
+//  TIMEFRAME: DAILY chart, POSITIONAL (holds overnight by design).
+//  NOTE: the house intraday rule (3:15 squareoff / no overnight) is
+//        deliberately NOT applied here — this is a daily swing strategy,
+//        same registered-exception class as the VRP overnight condor.
+//        Date-range inputs + log.info SIGNAL/EXIT lines are kept (mandatory).
+//
+//  Python twins:  scratch/markov_meanrev/markov_backtest.py (backtest)
+//                 scratch/markov_meanrev/markov_analyzer.py  (transition matrix)
+//  Finding: profitable/mean-reverting on SPY-type indices; on NIFTY the edge
+//           INVERTS (daily closes show momentum) — see analyzer output.
+// ============================================================================
+strategy("Markov Mean-Reversion v1", overlay=true, pyramiding=0,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     commission_type=strategy.commission.percent, commission_value=0.03,
+     calc_on_every_tick=false)
+
+// ---- Params ----------------------------------------------------------------
+nDown    = input.int(3,  "Consecutive DOWN closes to enter", minval=1, maxval=10, group="Signal")
+maxHold  = input.int(10, "Max hold (bars)",                  minval=1,            group="Signal")
+useStop  = input.bool(false, "Use stop-loss",                                     group="Signal")
+stopPct  = input.float(3.0, "Stop-loss %",                   minval=0.1, step=0.1, group="Signal")
+
+// ---- Date range (mandatory) ------------------------------------------------
+startDate   = input.time(timestamp("2018-01-01 00:00"), title="Backtest Start", group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 23:59"), title="Backtest End",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+
+// ---- Signal: consecutive down-close streak ---------------------------------
+isDown  = close < close[1]
+var int downRun = 0
+downRun := isDown ? downRun + 1 : 0
+
+longEntry = inDateRange and strategy.position_size == 0 and downRun >= nDown
+
+// ---- Exit logic ------------------------------------------------------------
+var int entryBar = na
+upClose   = close > close[1]
+barsHeld  = strategy.position_size != 0 and not na(entryBar) ? bar_index - entryBar : 0
+hitMax    = barsHeld >= maxHold
+hitStop   = useStop and strategy.position_size > 0 and close <= strategy.position_avg_price * (1 - stopPct / 100)
+longExit  = strategy.position_size > 0 and (upClose or hitMax or hitStop)
+
+// ---- Orders ----------------------------------------------------------------
+if longEntry
+    strategy.entry("L", strategy.long)
+    entryBar := bar_index
+    log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " downRun=" + str.tostring(downRun) + " close=" + str.tostring(close, "#.##"))
+
+if longExit
+    reason = upClose ? "UP_CLOSE" : (hitStop ? "STOP" : "MAX_HOLD")
+    strategy.close("L")
+    log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + reason + " close=" + str.tostring(close, "#.##"))
+    entryBar := na
+
+// ---- Visuals ---------------------------------------------------------------
+plotshape(longEntry, title="Entry", style=shape.triangleup,   location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny)
+plotshape(longExit,  title="Exit",  style=shape.triangledown, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
+bgcolor(downRun >= nDown ? color.new(color.blue, 90) : na)
