@@ -1954,7 +1954,7 @@
           style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
       </span>
       </span><!-- /cal-live-only -->
-      <select id="cal-strat" onchange="calendarRender()"
+      <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px">
         <option value="">All strategies</option>
       </select>
@@ -2183,6 +2183,16 @@
             <span data-a="max" onclick="calSumAggSeg(this)"
               style="padding:4px 10px;cursor:pointer;color:#8b949e;">Max</span>
           </span>
+          <!-- Saved Views: named strategy-group filters (build via Compare) -->
+          <div style="position:relative;" id="cal-views-wrap">
+            <button id="cal-views-btn" onclick="toggleViewsMenu(event)"
+              title="Saved strategy-group views — Compare se strategies select karke Save karo; apply karne pe poora tab us group ka COMBINED dikhega"
+              style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer;white-space:nowrap;">🗂 Views ▾</button>
+            <div id="cal-views-menu"
+              style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:250px;max-width:320px;padding:6px 0;box-shadow:0 4px 12px rgba(0,0,0,.5);">
+              <!-- Populated by _renderViewsMenu() -->
+            </div>
+          </div>
           <!-- Compare combos: multi-select strategies → combined footer total -->
           <button id="cal-sum-select-btn" onclick="calSumToggleSelectMode()"
             title="Multiple strategies select karo → neeche unka COMBINED result dikhega (kaun sa combo kaam kar raha)"

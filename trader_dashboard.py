@@ -4878,6 +4878,54 @@ def api_backtest_calendar_summary():
                         'metrics': {}, 'meta': {}, 'error': str(e)})
 
 
+@app.route('/api/stat-views', methods=['GET'])
+def api_stat_views_list():
+    """Saved strategy-group Views for the Stats tab. Display/config only."""
+    import stat_views
+    try:
+        return jsonify({'ok': True, 'views': stat_views.list_views()})
+    except Exception as e:
+        print("[stat-views list] fail:", e, flush=True)
+        return jsonify({'ok': False, 'views': [], 'error': str(e)})
+
+
+@app.route('/api/stat-views', methods=['POST'])
+def api_stat_views_create():
+    import stat_views
+    body = request.get_json(silent=True) or {}
+    try:
+        v = stat_views.create_view(body.get('name'), body.get('strategies'))
+        return jsonify({'ok': True, 'view': v})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
+@app.route('/api/stat-views/<int:view_id>', methods=['PUT'])
+def api_stat_views_update(view_id):
+    import stat_views
+    body = request.get_json(silent=True) or {}
+    try:
+        v = stat_views.update_view(view_id, name=body.get('name'),
+                                   strategies=body.get('strategies'))
+        return jsonify({'ok': True, 'view': v})
+    except KeyError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
+@app.route('/api/stat-views/<int:view_id>', methods=['DELETE'])
+def api_stat_views_delete(view_id):
+    import stat_views
+    try:
+        stat_views.delete_view(view_id)
+        return jsonify({'ok': True})
+    except KeyError as e:
+        return jsonify({'ok': False, 'error': str(e)}), 404
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
 @app.route('/api/orders/optimized-pnl')
 def api_orders_optimized_pnl():
     """Per-trade "what-if" P&L under the two OPTIMISED SL/Target profiles

@@ -159,6 +159,7 @@
       }
       updateCalSelectedDateBadge();
       _ensureDefaultDateRange();   // first load → 21 Jun 2026 to today
+      if (!window._calViewsLoaded) { window._calViewsLoaded = true; if (typeof loadCalViews === 'function') loadCalViews(); }
 
       const monthLabel = document.getElementById('cal-month-label');
       if (monthLabel) {
@@ -211,6 +212,27 @@
         // Populate filter dropdowns (strategy & broker) — live/paper only
         _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
         _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
+      }
+
+      // ── Active saved-view filter (multi-strategy group) ──────────────────
+      // A saved view = a named set of strategies. When active, filter the whole
+      // tab to that set: narrow trades + recompute the per-day summary so the
+      // calendar grid, top gain, equity, points and Total Summary all reflect
+      // ONLY the view's strategies' COMBINED result. Live/paper only (backtest =
+      // one run at a time). Server already returned all trades (strat cleared on
+      // apply), so we filter client-side and re-bucket by entry date.
+      if (window.calActiveView && !btMode) {
+        const _vset = new Set(window.calActiveView.strategies || []);
+        d.trades = (d.trades || []).filter(t => _vset.has(t.strategy || t.strat || 'unknown'));
+        const _vsum = {};
+        d.trades.forEach(t => {
+          const dt = t.entry_date || t.exit_date;
+          if (!dt) return;
+          const b = _vsum[dt] || (_vsum[dt] = { pnl: 0, count: 0 });
+          b.pnl += (t.pnl || 0); b.count++;
+        });
+        Object.keys(_vsum).forEach(k => { _vsum[k].pnl = Math.round(_vsum[k].pnl * 100) / 100; });
+        d.summary = _vsum;
       }
 
       // Populate exit reason dropdown from the trades — normalize raw reasons to short labels
@@ -302,6 +324,12 @@
         // Backtest: fill pills from the run's OWN report card (full-run metrics);
         // grouped list + closed table from this run's trades (so nothing stale).
         _renderBtMetrics(d.metrics || {}, d.meta || {});
+        window._statsLastTrades = d.trades || [];
+        if (typeof renderStatsGroupedList === 'function') renderStatsGroupedList(d.trades || []);
+        if (typeof renderStatsClosedTable === 'function') renderStatsClosedTable(d.trades || []);
+      } else if (window.calActiveView) {
+        // Saved-view active → pills from the filtered (combined) trades.
+        _renderViewMetrics(d.trades || [], window.calActiveView);
         window._statsLastTrades = d.trades || [];
         if (typeof renderStatsGroupedList === 'function') renderStatsGroupedList(d.trades || []);
         if (typeof renderStatsClosedTable === 'function') renderStatsClosedTable(d.trades || []);

@@ -56,6 +56,9 @@
       if (liveOnly) liveOnly.style.display = window.calBtMode ? 'none' : 'inline-flex';
       if (btOnly) btOnly.style.display = window.calBtMode ? 'inline-flex' : 'none';
       if (broker) broker.style.display = window.calBtMode ? 'none' : '';
+      const viewsWrap = document.getElementById('cal-views-wrap');
+      if (viewsWrap) viewsWrap.style.display = window.calBtMode ? 'none' : '';
+      if (window.calBtMode) { window.calActiveView = null; if (typeof _renderViewsBtn === 'function') _renderViewsBtn(); }
       const strat = document.getElementById('cal-strat');
       if (window.calBtMode) {
         _calLoadBtRuns();   // fill cal-strat with runs, then calendarRender()
@@ -112,6 +115,174 @@
         const nm = (meta.label || meta.slug || 'backtest');
         h.textContent = `📐 Backtest report card — ${nm} (${key}, full run)`;
       }
+    }
+
+    // ── Saved Views (strategy-group filters) ────────────────────────────────
+    // A View = named set of strategy config-keys. Build from the Total Summary
+    // Compare selection → Save. Applying a view filters the WHOLE Stats tab
+    // (calendar grid / top gain / equity / points / Total Summary) to that
+    // set's COMBINED result. Server-persisted (data/stat_views.json). Live only.
+    window._calViews = window._calViews || [];
+    window.calActiveView = window.calActiveView || null;
+
+    function _viewEsc(s) { return String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+
+    async function loadCalViews() {
+      try {
+        const r = await fetch('/api/stat-views');
+        const j = await r.json();
+        window._calViews = j.views || [];
+      } catch (e) { window._calViews = []; }
+      // one-time outside-click close for the views menu
+      if (!window._calViewsClickInit) {
+        window._calViewsClickInit = true;
+        document.addEventListener('click', (e) => {
+          const wrap = document.getElementById('cal-views-wrap');
+          const menu = document.getElementById('cal-views-menu');
+          if (menu && wrap && !wrap.contains(e.target)) menu.style.display = 'none';
+        });
+      }
+      _renderViewsBtn();
+      _renderViewsMenu();
+    }
+
+    function _renderViewsBtn() {
+      const b = document.getElementById('cal-views-btn');
+      if (!b) return;
+      if (window.calActiveView) {
+        b.innerHTML = `🗂 ${_viewEsc(window.calActiveView.name)} <span onclick="clearCalView(event)" style="margin-left:6px;color:#f85149;font-weight:bold;cursor:pointer">✕</span>`;
+        b.style.background = '#1f6feb'; b.style.color = '#fff'; b.style.borderColor = '#1f6feb';
+      } else {
+        b.textContent = '🗂 Views ▾';
+        b.style.background = '#21262d'; b.style.color = '#8b949e'; b.style.borderColor = '#30363d';
+      }
+    }
+
+    function _renderViewsMenu() {
+      const m = document.getElementById('cal-views-menu');
+      if (!m) return;
+      const sel = window._calSumSelected;
+      const canSave = !!(window._calSumSelectMode && sel && sel.size > 0);
+      let html = '';
+      html += `<div onclick="saveCalViewFromSelection()" style="padding:6px 12px;cursor:${canSave ? 'pointer' : 'not-allowed'};font-size:11.5px;color:${canSave ? '#3fb950' : '#6e7681'};" ${canSave ? 'onmouseover="this.style.background=\'#21262d\'" onmouseout="this.style.background=\'\'"' : ''}>＋ Save selection as View…${canSave ? ' (' + sel.size + ')' : ''}</div>`;
+      if (window.calActiveView) {
+        html += `<div onclick="clearCalView(event)" style="padding:6px 12px;cursor:pointer;font-size:11.5px;color:#8b949e;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">✕ Clear view (show all)</div>`;
+      }
+      html += `<div style="border-top:1px solid #21262d;margin:4px 0;"></div>`;
+      if (!window._calViews.length) {
+        html += `<div style="padding:6px 12px;font-size:11px;color:#6e7681;line-height:1.5;">Koi view nahi.<br>Compare on karke strategies tick karo, phir "Save selection as View".</div>`;
+      } else {
+        window._calViews.forEach(v => {
+          const active = window.calActiveView && window.calActiveView.id === v.id;
+          const tip = _viewEsc((v.strategies || []).map(s => (typeof regLabel === 'function' ? regLabel(s) : s)).join(', '));
+          html += `<div style="display:flex;align-items:center;gap:6px;padding:5px 10px;font-size:11.5px;${active ? 'background:#1f6feb22;' : ''}" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background='${active ? '#1f6feb22' : ''}'">
+            <span onclick="applyCalView(${v.id})" style="flex:1;cursor:pointer;color:${active ? '#58a6ff' : '#e6edf3'};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${tip}">${_viewEsc(v.name)} <span style="color:#6e7681;font-size:10px">(${(v.strategies || []).length})</span></span>
+            <span onclick="renameCalView(${v.id},event)" style="cursor:pointer;color:#8b949e;" title="Rename">✏️</span>
+            <span onclick="deleteCalView(${v.id},event)" style="cursor:pointer;color:#f85149;" title="Delete">🗑</span>
+          </div>`;
+        });
+      }
+      m.innerHTML = html;
+    }
+
+    function toggleViewsMenu(ev) {
+      if (ev) ev.stopPropagation();
+      const m = document.getElementById('cal-views-menu');
+      if (!m) return;
+      const show = m.style.display !== 'block';
+      _renderViewsMenu();
+      m.style.display = show ? 'block' : 'none';
+    }
+
+    async function saveCalViewFromSelection() {
+      const sel = window._calSumSelected;
+      if (!(window._calSumSelectMode && sel && sel.size)) {
+        if (typeof toast === 'function') toast('Pehle Compare on karke strategies tick karo'); return;
+      }
+      const name = prompt('View ka naam:');
+      if (!name || !name.trim()) return;
+      try {
+        const r = await fetch('/api/stat-views', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim(), strategies: [...sel] }) });
+        const j = await r.json();
+        if (!j.ok) { if (typeof toast === 'function') toast('Save fail: ' + (j.error || '')); return; }
+        await loadCalViews();
+        if (typeof toast === 'function') toast('✅ View saved: ' + name.trim());
+      } catch (e) { if (typeof toast === 'function') toast('Save fail'); }
+    }
+
+    function applyCalView(id) {
+      const v = (window._calViews || []).find(x => x.id === id);
+      if (!v) return;
+      window.calActiveView = v;
+      // multi-strategy filter → clear single-strategy dropdown; server returns
+      // all (source/mode filtered), calendarRender narrows to the view's set.
+      const strat = document.getElementById('cal-strat'); if (strat) strat.value = '';
+      const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
+      _renderViewsBtn();
+      calendarRender();
+    }
+
+    function clearCalView(ev) {
+      if (ev) ev.stopPropagation();
+      window.calActiveView = null;
+      const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
+      _renderViewsBtn();
+      calendarRender();
+    }
+
+    async function renameCalView(id, ev) {
+      if (ev) ev.stopPropagation();
+      const v = (window._calViews || []).find(x => x.id === id);
+      if (!v) return;
+      const name = prompt('Naya naam:', v.name);
+      if (!name || !name.trim() || name.trim() === v.name) return;
+      try {
+        const r = await fetch('/api/stat-views/' + id, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name.trim() }) });
+        const j = await r.json();
+        if (!j.ok) { if (typeof toast === 'function') toast('Rename fail'); return; }
+        if (window.calActiveView && window.calActiveView.id === id) window.calActiveView.name = name.trim();
+        await loadCalViews();
+      } catch (e) { if (typeof toast === 'function') toast('Rename fail'); }
+    }
+
+    async function deleteCalView(id, ev) {
+      if (ev) ev.stopPropagation();
+      const v = (window._calViews || []).find(x => x.id === id);
+      if (!v) return;
+      if (!confirm(`View "${v.name}" delete karein?`)) return;
+      try {
+        const r = await fetch('/api/stat-views/' + id, { method: 'DELETE' });
+        const j = await r.json();
+        if (!j.ok) { if (typeof toast === 'function') toast('Delete fail'); return; }
+        if (window.calActiveView && window.calActiveView.id === id) { window.calActiveView = null; _renderViewsBtn(); calendarRender(); }
+        await loadCalViews();
+      } catch (e) { if (typeof toast === 'function') toast('Delete fail'); }
+    }
+
+    // View-scoped metric pills (server stats route is single-strategy only, so a
+    // multi-strategy view is computed client-side from the filtered trades).
+    function _renderViewMetrics(trades, view) {
+      const set = (id, v) => { const e = document.getElementById(id); if (e) e.textContent = v; };
+      let gWin = 0, gLoss = 0, wins = 0, n = 0, netSum = 0; const byDay = {};
+      (trades || []).forEach(t => {
+        const net = (t.pnl != null) ? t.pnl : 0; n++; netSum += net;
+        if (net > 0) { gWin += net; wins++; } else if (net < 0) { gLoss += -net; }
+        const d = t.entry_date || t.exit_date; if (d) byDay[d] = (byDay[d] || 0) + net;
+      });
+      const pf = gLoss > 0 ? gWin / gLoss : (gWin > 0 ? Infinity : 0);
+      const days = Object.values(byDay); let sharpe = null;
+      if (days.length > 1) {
+        const m = days.reduce((a, b) => a + b, 0) / days.length;
+        const sd = Math.sqrt(days.reduce((a, b) => a + (b - m) * (b - m), 0) / (days.length - 1));
+        if (sd > 0) sharpe = (m / sd) * Math.sqrt(252);
+      }
+      set('sm-pf', isFinite(pf) ? pf.toFixed(2) : '∞');
+      set('sm-exp', n > 0 ? Math.round(netSum / n).toLocaleString('en-IN') : '—');
+      set('sm-sharpe', sharpe == null ? '—' : sharpe.toFixed(2));
+      set('sm-wr', n > 0 ? Math.round(wins / n * 100) + '%' : '0%');
+      set('sm-n', n);
+      const h = document.getElementById('cal-metrics-heading');
+      if (h) h.textContent = `📐 Metrics — 🗂 ${view.name} (${(view.strategies || []).length} strategies, combined)`;
     }
 
     function calPrevMonth() {
