@@ -126,7 +126,6 @@ def _map_trade(t, slug, instr, idx):
     entry_dt = t.get("entry_dt") or ""
     exit_dt = t.get("exit_dt") or entry_dt
     side = t.get("side")
-    entry_side = "SELL" if side == "short" else "BUY"
     strike = t.get("strike")
     opt_type = t.get("opt_type")
     # option-premium price if the pass has it (bs), else spot level
@@ -136,6 +135,20 @@ def _map_trade(t, slug, instr, idx):
         entry_price = t.get("entry_spot")
     if exit_price is None:
         exit_price = t.get("exit_spot")
+    # BUY/SELL for display + the Stats "Points" calc (pts = BUY? exit-entry :
+    # entry-exit). results.js `side` = long(CE) / short(PE) — that's the OPTION
+    # DIRECTION, NOT buy-vs-sell, so mapping short->SELL flipped the Points sign
+    # for every bought-PE (~39% of trades: gross +ve, points showed -ve). Derive
+    # the side from the already-correct gross vs the price move so Points always
+    # agrees with Gross in sign (and the badge shows real buy/sell): a long
+    # option's gross moves WITH premium (BUY); a sold option's gross moves
+    # AGAINST it (SELL).
+    gross = t.get("gross")
+    prem_move = (exit_price or 0) - (entry_price or 0)
+    if gross is not None and prem_move:
+        entry_side = "BUY" if (gross * prem_move) >= 0 else "SELL"
+    else:
+        entry_side = "SELL" if side == "short" else "BUY"
     instr_short = (instr or "IDX").split()[0]
     if strike is not None and opt_type:
         try:

@@ -480,10 +480,16 @@
         html += `<span style="background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1; display:inline-flex; align-items:center; margin-right:4px;">📅 ${window.calSelectedDateFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalSelectedDateFilter(event)">✕</span></span>`;
       }
 
+      if (window.calSelectedPeriodFilter) {
+        const _pf = window.calSelectedPeriodFilter;
+        const _plbl = _calPeriodLabel(_pf.key, _pf.mode);
+        html += `<span style="background:#1f6feb20; border:1px solid #1f6feb80; border-radius:4px; color:#58a6ff; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1; display:inline-flex; align-items:center; margin-right:4px;">📅 ${_plbl} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalPeriodFilter(event)">✕</span></span>`;
+      }
+
       if (window.calPnlGraphFilter) {
         html += `<span style="background:#23863620; border:1px solid #23863680; border-radius:4px; color:#3fb950; padding:2px 6px; font-size:10.5px; font-weight:normal; line-height:1; display:inline-flex; align-items:center; margin-right:4px;">📊 ${window.calPnlGraphFilter} <span style="margin-left:6px; cursor:pointer; font-weight:bold; color:#f85149;" onclick="clearCalPnlGraphFilter(event)">✕</span></span>`;
       }
-      
+
       if (html) {
         badge.innerHTML = html;
         badge.style.display = 'inline-flex';
@@ -585,9 +591,13 @@
       parent.querySelectorAll('span[data-v]').forEach(s => { s.style.background = ''; s.style.color = '#8b949e'; });
       el.style.background = '#1f6feb'; el.style.color = '#fff';
       window._calSumMode = el.dataset.v;
-      // Clear strategy filter + compare selection when switching modes
+      // Clear strategy filter + compare selection + period/day drill-in when
+      // switching modes (period keys differ per mode → stale filter would hide all).
       window.calSumStrategyFilter = null;
       window._calSumSelected = new Set();
+      window.calSelectedPeriodFilter = null;
+      window.calSelectedDateFilter = null;
+      if (typeof updateCalSelectedDateBadge === 'function') updateCalSelectedDateBadge();
       if (typeof _updateCalSumSelectBtn === 'function') _updateCalSumSelectBtn();
       renderSummaryTable();
       if (typeof renderPointsPerTradeTable === 'function') renderPointsPerTradeTable();
@@ -660,6 +670,8 @@
       }
       if (mode === 'day') {
         calSelectDate(key);
+      } else if (mode === 'monthly' || mode === 'weekly') {
+        calSelectPeriod(mode, key);
       } else {
         // Strategy mode: filter Points Per Trade table by strategy
         if (window.calSumStrategyFilter === key) {
@@ -676,6 +688,35 @@
           : allTrades;
         drawEquityCurveChart('cal-equity-curve-container', filtered);
       }
+    }
+
+    // Click a Week/Month row → filter the Point-Per-Trade table (+ equity) to
+    // that period (toggle). Same idea as clicking a Day. Period key + mode go
+    // through _calGroupKey so it works identically in live & backtest.
+    function calSelectPeriod(mode, key) {
+      const cur = window.calSelectedPeriodFilter;
+      if (cur && cur.mode === mode && cur.key === key) window.calSelectedPeriodFilter = null;
+      else window.calSelectedPeriodFilter = { mode, key };
+      updateCalSelectedDateBadge();
+      window.calPointsCurrentPage = 1;
+      renderSummaryTable();               // reflect active-row highlight
+      renderPointsPerTradeTable();
+      const all = window.currentCalendarTrades || [];
+      const pf = window.calSelectedPeriodFilter;
+      const filtered = pf ? all.filter(t => _calGroupKey(t, pf.mode) === pf.key) : all;
+      drawEquityCurveChart('cal-equity-curve-container', filtered);
+      const c = document.getElementById('cal-points-per-trade-tbody');
+      if (c) { const card = c.closest('.card'); if (card) card.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+    }
+
+    function clearCalPeriodFilter(event) {
+      if (event) event.stopPropagation();
+      window.calSelectedPeriodFilter = null;
+      updateCalSelectedDateBadge();
+      window.calPointsCurrentPage = 1;
+      renderSummaryTable();
+      renderPointsPerTradeTable();
+      drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []);
     }
 
     // sum/avg/min/max over a value array; null-safe (empty → all null so the
@@ -835,7 +876,11 @@
       const isSel = selMode && selSet.has(clickKey);
       const anySel = selMode && selSet.size > 0;
       const dim = (anySel && !isSel) ? 'opacity:.32;' : '';
-      const isActive = !isBold && window.calSumStrategyFilter === clickKey && mode === 'strategy';
+      const _pfsel = window.calSelectedPeriodFilter;
+      const isActive = !isBold && (
+        (window.calSumStrategyFilter === clickKey && mode === 'strategy') ||
+        (!!_pfsel && (mode === 'monthly' || mode === 'weekly') && _pfsel.key === clickKey)
+      );
       const activeBg = (isSel || isActive) ? 'background:#1f6feb22;border-left:2px solid #1f6feb;' : '';
       const netC = s.net >= 0 ? '#3fb950' : '#f85149';
       const grossC = s.gross >= 0 ? '#3fb950' : '#f85149';

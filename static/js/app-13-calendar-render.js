@@ -127,8 +127,9 @@
         const _lbl = (mode === 'strategy') ? regLabel(key)
           : (mode === 'monthly' || mode === 'weekly') ? _calPeriodLabel(key, mode)
             : key;
-        const _clickKey = (mode === 'day' || mode === 'strategy') ? key : null;
-        bodyHtml += _sumRow(_lbl, groupStats[key], _clickKey, false);
+        // every mode clickable: day→date filter, week/month→period filter,
+        // strategy→strategy filter (calSumClickRow routes by mode).
+        bodyHtml += _sumRow(_lbl, groupStats[key], key, false);
       });
       if (tfoot) {
         const sel = window._calSumSelected;
@@ -585,6 +586,12 @@
 
       if (window.calSelectedDateFilter) {
         tradesList = tradesList.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter);
+      }
+
+      // Week/Month row click → filter to that period (via _calGroupKey)
+      if (window.calSelectedPeriodFilter && typeof _calGroupKey === 'function') {
+        const _pf = window.calSelectedPeriodFilter;
+        tradesList = tradesList.filter(t => _calGroupKey(t, _pf.mode) === _pf.key);
       }
 
       if (window.calExitReasonFilter) {
