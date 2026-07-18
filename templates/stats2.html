@@ -48,11 +48,12 @@
   <div class="s2hdr">
     <!-- Unified switch (Live/Paper · Paper · Live · Backtest) — built by stats2.js;
          drives the reused #cal-view + #cal-mode controls (kept hidden below). -->
-    <span id="s2-switch" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
-      <span data-m="lp" class="on" onclick="s2Switch('lp',this)" style="padding:4px 10px;cursor:pointer">🟢 Live/Paper</span>
-      <span data-m="paper" onclick="s2Switch('paper',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Paper</span>
-      <span data-m="live" onclick="s2Switch('live',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
-      <span data-m="bt" onclick="s2Switch('bt',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
+    <!-- Multi-select: Paper + Live (dono trade-modes) chunn sakte ho; Backtest alag data-source (solo). -->
+    <span id="s2-switch" class="cal-seg" title="Paper aur Live multi-select (dono = All). Backtest alag data-source hai."
+      style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+      <span data-m="paper" class="on" onclick="s2Mode('paper',this)" style="padding:4px 11px;cursor:pointer;background:#1f6feb;color:#fff">📝 Paper</span>
+      <span data-m="live" class="on" onclick="s2Mode('live',this)" style="padding:4px 11px;cursor:pointer;background:#1f6feb;color:#fff">🔴 Live</span>
+      <span data-m="bt" onclick="s2Mode('bt',this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
     </span>
 
     <!-- reused live/bt + source + mode controls — HIDDEN parent (calSetView un-hides
@@ -79,15 +80,11 @@
       </span>
     </span>
 
-    <span class="lbl" style="font-size:11px;color:#6e7681;margin-left:4px" id="s2-src-lbl">Source</span>
-    <!-- visible Source segmented control (mirrors #cal-src via s2Src) -->
-    <span id="s2-src" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
-      <span data-v="" class="on" onclick="s2Src('',this)" style="padding:4px 10px;cursor:pointer">All</span>
-      <span data-v="webhook" onclick="s2Src('webhook',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
-      <span data-v="manual" onclick="s2Src('manual',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
-      <span data-v="strategy" onclick="s2Src('strategy',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
-      <span data-v="hedge" onclick="s2Src('hedge',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
-    </span>
+    <!-- Views filter moved UP here (Source ne jagah khaali ki) — global strategy-group filter -->
+    <div style="position:relative" id="cal-views-wrap">
+      <button id="cal-views-btn" onclick="toggleViewsMenu(event)" style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">🗂 Views ▾</button>
+      <div id="cal-views-menu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:250px;max-width:320px;padding:6px 0;box-shadow:0 4px 12px rgba(0,0,0,.5)"></div>
+    </div>
 
     <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
       style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;max-width:260px">
@@ -228,10 +225,6 @@
           <span data-a="min" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Min</span>
           <span data-a="max" onclick="calSumAggSeg(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Max</span>
         </span>
-        <div style="position:relative" id="cal-views-wrap">
-          <button id="cal-views-btn" onclick="toggleViewsMenu(event)" style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">🗂 Views ▾</button>
-          <div id="cal-views-menu" style="display:none;position:absolute;right:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:250px;max-width:320px;padding:6px 0;box-shadow:0 4px 12px rgba(0,0,0,.5)"></div>
-        </div>
         <button id="cal-sum-select-btn" onclick="calSumToggleSelectMode()" style="padding:4px 10px;font-size:11px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer">☑ Compare</button>
         <div style="position:relative">
           <button class="btn btn-gray" style="padding:4px 10px;font-size:11px" onclick="var m=document.getElementById('cal-sum-col-menu');m.style.display=m.style.display==='block'?'none':'block';event.stopPropagation()">⚙️ Columns ▾</button>
@@ -241,6 +234,14 @@
       <!-- Point Per Trade controls -->
       <div id="s2-ppt-ctrl" style="display:none;gap:8px;align-items:center;flex-wrap:wrap">
         <span id="cal-selected-date-badge" style="display:none;background:#1f6feb20;border:1px solid #1f6feb80;border-radius:4px;color:#58a6ff;padding:2px 6px;font-size:10.5px"></span>
+        <span style="font-size:11px;color:#6e7681" id="s2-src-lbl">Source</span>
+        <span id="s2-src" class="cal-seg" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
+          <span data-v="" class="on" onclick="s2Src('',this)" style="padding:4px 10px;cursor:pointer">All</span>
+          <span data-v="webhook" onclick="s2Src('webhook',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
+          <span data-v="manual" onclick="s2Src('manual',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
+          <span data-v="strategy" onclick="s2Src('strategy',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
+          <span data-v="hedge" onclick="s2Src('hedge',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
+        </span>
         <input type="text" id="cal-symbol-search" placeholder="Search Symbol…" onkeyup="renderPointsPerTradeTable()" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:4px 8px;font-size:11px;width:110px" autocomplete="off">
         <input type="text" id="cal-tag-search" placeholder="Search Tags…" onkeyup="renderPointsPerTradeTable()" style="background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:4px 8px;font-size:11px;width:100px" autocomplete="off">
         <label style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:#8b949e;cursor:pointer"><input id="cal-group-symbol-toggle" type="checkbox" onchange="toggleCalGroupSymbol(this.checked)" style="accent-color:#1f6feb;width:13px;height:13px;margin:0">Group by Symbol</label>

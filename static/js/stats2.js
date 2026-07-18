@@ -56,6 +56,39 @@
     }
     _s2Heat();   // heatmap reflects the active mode/filters
   };
+
+  // Multi-select mode: Paper + Live (trade-modes, combine → All) · Backtest (separate data-source, solo).
+  window._s2sel = window._s2sel || new Set(['paper', 'live']);
+  window.s2Mode = function (m, el) {
+    var sel = window._s2sel;
+    if (m === 'bt') {
+      if (sel.has('bt')) return;                       // already backtest (avoid empty selection)
+      sel.clear(); sel.add('bt');
+    } else {
+      sel.delete('bt');                                // leaving backtest → live data
+      if (sel.has(m)) { if (sel.size > 1) sel.delete(m); }   // keep at least one live-mode
+      else sel.add(m);
+    }
+    document.querySelectorAll('#s2-switch span[data-m]').forEach(function (s) {
+      var on = sel.has(s.dataset.m);
+      s.classList.toggle('on', on);
+      s.style.background = on ? '#1f6feb' : '';
+      s.style.color = on ? '#fff' : '#8b949e';
+    });
+    var gear = document.getElementById('s2-bt-gear'), strat = document.getElementById('cal-strat');
+    if (sel.has('bt')) {
+      if (gear) gear.style.display = '';
+      if (strat) strat.style.maxWidth = '190px';
+      calSetView('bt', document.querySelector('#cal-view span[data-v="bt"]'));
+    } else {
+      if (gear) gear.style.display = 'none';
+      if (strat) strat.style.maxWidth = '260px';
+      var mode = (sel.has('paper') && sel.has('live')) ? '' : sel.has('paper') ? 'paper' : 'live';
+      _setSeg('cal-mode', mode);
+      calSetView('live', document.querySelector('#cal-view span[data-v="live"]'));
+    }
+    _s2Heat();
+  };
   // visible Source control mirrors the hidden #cal-src
   window.s2Src = function (val, el) {
     var p = document.getElementById('s2-src');
