@@ -93,6 +93,10 @@
       if (liveOnly) liveOnly.style.display = window.calBtMode ? 'none' : 'inline-flex';
       if (btOnly) btOnly.style.display = window.calBtMode ? 'inline-flex' : 'none';
       if (broker) broker.style.display = window.calBtMode ? 'none' : '';
+      const prem = document.getElementById('cal-prem');           // BS premium overlay: live-mode only
+      if (prem) prem.style.display = window.calBtMode ? 'none' : 'inline-flex';
+      const bsCard = document.getElementById('bs-div-card');
+      if (bsCard && window.calBtMode) bsCard.style.display = 'none';
       const viewsWrap = document.getElementById('cal-views-wrap');
       if (viewsWrap) viewsWrap.style.display = '';   // Views dono modes me (live=strategies, bt=runs)
       window.calActiveView = null;                    // active view mode-specific → switch pe clear

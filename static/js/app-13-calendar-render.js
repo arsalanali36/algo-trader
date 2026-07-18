@@ -409,6 +409,7 @@
 
         const cell = document.createElement('div');
         cell.className = 'cal-day-cell';
+        cell.dataset.date = dateStr;                 // bs-shadow overlay hook
         if (isToday) cell.classList.add('today');
         if (holidayName) cell.classList.add('holiday');
 
@@ -450,6 +451,10 @@
 
         grid.appendChild(cell);
       }
+
+      // Real vs BS premium overlay (bs/compare mode) — re-decorate after each render
+      if (!btMode && window.calPremiumMode && window.calPremiumMode !== 'real'
+          && typeof bsRefresh === 'function') { bsRefresh(); }
 
       // Save trades in window object for resize events
       window.currentCalendarTrades = d.trades || [];
