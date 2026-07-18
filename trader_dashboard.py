@@ -703,6 +703,63 @@ def serve_lab_file(fn):
         return _lab_gzip_response(full)
     return send_from_directory(root, fn)
 
+# ---- Excel Cross-Check: upload a backtest workbook, recompute + render ----
+@app.route('/lab/upload')
+def serve_lab_upload():
+    """Upload page for a backtest cross-check workbook (built by xlsx_export.py)."""
+    from flask import send_from_directory
+    return send_from_directory(BASE_DIR / 'scratch' / 'nifty_trend', 'lab_upload.html')
+
+@app.route('/api/lab/upload-xlsx', methods=['POST'])
+def api_lab_upload_xlsx():
+    """Parse an uploaded cross-check .xlsx -> recompute metrics with the canonical
+    engine (independent 2nd eye) -> mint a lab run (results.js + dashboard) so the
+    SAME lab dashboard renders it, and return the Claude-vs-lab cross-check.
+    Read-only research path — no order/risk/live code involved."""
+    import sys as _sys, json as _json, time as _time
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify(ok=False, msg='koi file nahi mili'), 400
+    if not f.filename.lower().endswith('.xlsx'):
+        return jsonify(ok=False, msg='.xlsx file chahiye'), 400
+    nt = (BASE_DIR / 'scratch' / 'nifty_trend').resolve()
+    if str(nt) not in _sys.path:
+        _sys.path.insert(0, str(nt))
+    try:
+        import xlsx_import as XI
+    except Exception as e:
+        return jsonify(ok=False, msg='lab import fail: ' + str(e)), 500
+    uid = _time.strftime('%Y%m%d_%H%M%S')
+    updir = nt / 'runs' / '_uploads' / uid
+    updir.mkdir(parents=True, exist_ok=True)
+    xlpath = updir / 'source.xlsx'
+    f.save(str(xlpath))
+    try:
+        parsed = XI.parse(str(xlpath))
+        rc = XI.recompute(parsed['trades'])
+        cc = XI.jsonable(XI.crosscheck(parsed['claude_summary'], rc))
+        payload = XI.jsonable(XI.to_results_payload(parsed, rc))
+    except Exception as e:
+        return jsonify(ok=False, msg='parse/recompute fail: ' + str(e)), 400
+    try:
+        (updir / 'results.js').write_text('window.RESULTS = ' + _json.dumps(payload) + ';',
+                                          encoding='utf-8')
+        # mint index.html the same way run_hunt does: point the dashboard at ./results.js
+        _dash = (nt / 'dashboard_intraday.html').read_text(encoding='utf-8').replace(
+            'src="results_intraday.js"', 'src="results.js"')
+        (updir / 'index.html').write_text(_dash, encoding='utf-8')
+        (updir / 'crosscheck.json').write_text(_json.dumps(cc), encoding='utf-8')
+    except Exception as e:
+        return jsonify(ok=False, msg='mint run fail: ' + str(e)), 500
+    rcj = XI.jsonable(rc)
+    n_mismatch = sum(1 for r in cc if r.get('status') == 'MISMATCH')
+    return jsonify(ok=True, uid=uid,
+                   view_url='/lab/runs/_uploads/%s/index.html' % uid,
+                   crosscheck=cc, mismatches=n_mismatch,
+                   summary={k: rcj.get(k) for k in
+                            ('trades', 'net_abs', 'net_pct', 'sharpe',
+                             'profit_factor', 'win_rate', 'maxdd', 'expectancy', 'fees')})
+
 @app.route('/script3')
 def serve_script3():
     """Script 3 redesign mockup (static, no wiring yet) — iframed body-only into
