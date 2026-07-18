@@ -156,18 +156,18 @@
       var body = document.getElementById('s2-heatbody'); if (!body) return;
       if (!years.length) { body.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:12px">Is filter pe koi data nahi</div>'; return; }
       var mx = 1; years.forEach(function (y) { for (var m = 1; m <= 12; m++) if (M[y][m] != null) mx = Math.max(mx, Math.abs(M[y][m])); });
-      var h = '<table style="font-size:13px;border-collapse:separate;border-spacing:4px;width:100%"><thead><tr><th></th>';
-      _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:9px 5px;color:#8b949e;font-size:12px">' + m + '</th>'; });
-      h += '<th style="text-align:center;color:#8b949e;font-size:12px;padding:9px 6px">Year</th></tr></thead><tbody>';
+      var h = '<table style="font-size:11px;border-collapse:separate;border-spacing:3px;width:100%"><thead><tr><th></th>';
+      _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:5px 4px;color:#8b949e;font-size:11px">' + m + '</th>'; });
+      h += '<th style="text-align:center;color:#8b949e;font-size:11px;padding:5px 5px">Year</th></tr></thead><tbody>';
       years.forEach(function (y) {
-        h += '<tr><td style="color:#8b949e;font-weight:600;padding:13px 10px;font-size:14px">' + y + '</td>'; var tot = 0;
+        h += '<tr><td style="color:#8b949e;font-weight:600;padding:7px 8px;font-size:12px">' + y + '</td>'; var tot = 0;
         for (var m = 1; m <= 12; m++) {
           var v = M[y][m];
-          if (v == null) { h += '<td style="padding:13px 4px;text-align:center;color:#30363d;font-size:16px">·</td>'; continue; }
+          if (v == null) { h += '<td style="padding:7px 4px;text-align:center;color:#30363d;font-size:13px">·</td>'; continue; }
           tot += v; var a = Math.min(0.82, 0.12 + Math.abs(v) / mx * 0.7), bg = v >= 0 ? 'rgba(63,185,80,' + a + ')' : 'rgba(248,81,73,' + a + ')';
-          h += '<td onclick="s2HeatClick(this)" data-ym="' + y + '-' + String(m).padStart(2, '0') + '" title="' + y + ' ' + _S2_MON[m - 1] + '" style="padding:13px 7px;text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:5px;white-space:nowrap;font-weight:500">' + _s2inrShort(v) + '</td>';
+          h += '<td onclick="s2HeatClick(this)" data-ym="' + y + '-' + String(m).padStart(2, '0') + '" title="' + y + ' ' + _S2_MON[m - 1] + '" style="padding:7px 6px;text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:4px;white-space:nowrap;font-weight:500">' + _s2inrShort(v) + '</td>';
         }
-        h += '<td style="padding:13px 10px;text-align:center;font-weight:700;white-space:nowrap;font-size:14px;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
+        h += '<td style="padding:7px 8px;text-align:center;font-weight:700;white-space:nowrap;font-size:12px;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
       });
       body.innerHTML = h + '</tbody></table>';
     }
