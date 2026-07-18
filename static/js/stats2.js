@@ -49,13 +49,14 @@
       _setSeg('cal-mode', mode === 'paper' ? 'paper' : mode === 'live' ? 'live' : '');
       calSetView('live', document.querySelector('#cal-view span[data-v="live"]'));  // resets + calendarRender (reads cal-mode)
     }
+    _s2Heat();   // heatmap reflects the active mode/filters
   };
   // visible Source control mirrors the hidden #cal-src
   window.s2Src = function (val, el) {
     var p = document.getElementById('s2-src');
     p.querySelectorAll('span').forEach(function (x) { x.classList.remove('on'); x.style.color = '#8b949e'; });
     el.classList.add('on'); el.style.color = '';
-    _setSeg('cal-src', val); calendarRender();
+    _setSeg('cal-src', val); calendarRender(); _s2Heat();
   };
 
   // ── tab wiring (calendar / chart / table groups) ───────────────────────────
@@ -120,60 +121,127 @@
     var gl = document.getElementById('s2-glseg'); if (gl) gl.style.display = 'none';
   };
 
-  // ── NEW panels (Phase-1 sample data; Phase-2 = real backend) ───────────────
+  // ── NEW panels (REAL data) ─────────────────────────────────────────────────
   var _S2_MON = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function _s2inrShort(v) { var s = v < 0 ? '−' : '+'; var a = Math.abs(v); return a >= 1000 ? (s + '₹' + (a / 1000).toFixed(1) + 'k') : (s + '₹' + Math.round(a)); }
+  function _s2net(t) { return t._net != null ? t._net : (t.pnl || 0); }
+
+  // 🔥 Heatmap — all-history month-wise NET ₹ (server), live/backtest same filters
   function _s2Heat() {
-    // TODO Phase-2: real monthly returns (order_store / backtest `monthly`). Sample for now.
-    var HD = { 2024:[2.8,3.2,2.2,1.0,1.7,-0.1,-1.2,1.3,0.4,0.9,1.6,0.6],
-               2025:[1.3,-1.3,-0.2,1.1,-1.5,1.3,1.5,1.3,-0.6,0.7,0.8,-0.9],
-               2026:[2.5,1.2,2.8,-0.9,3.2,1.1,-0.5,null,null,null,null,null] };
-    var h = '<table style="font-size:10.5px;border-collapse:separate;border-spacing:2px"><thead><tr><th></th>';
-    _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:3px 4px;color:#8b949e">' + m + '</th>'; });
-    h += '<th style="text-align:center;color:#8b949e">Year</th></tr></thead><tbody>';
-    Object.keys(HD).forEach(function (y) {
-      h += '<tr><td style="color:#8b949e;font-weight:600;padding:3px 6px">' + y + '</td>'; var tot = 0;
-      HD[y].forEach(function (v, mi) {
-        if (v == null) { h += '<td style="padding:4px 3px;text-align:center;color:#30363d">·</td>'; return; }
-        tot += v; var a = Math.min(0.8, 0.12 + Math.abs(v) / 5), bg = v >= 0 ? 'rgba(63,185,80,' + a + ')' : 'rgba(248,81,73,' + a + ')';
-        h += '<td onclick="s2HeatClick(this)" title="' + y + ' ' + _S2_MON[mi] + '" style="padding:4px 5px;text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:3px">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '</td>';
+    var qp = new URLSearchParams();
+    var mode = (typeof _calSegVal === 'function') ? _calSegVal('cal-mode') : '';
+    var src = (typeof _calSegVal === 'function') ? _calSegVal('cal-src') : '';
+    if (mode) qp.set('mode', mode); if (src && src !== 'hedge') qp.set('source', src);
+    var strat = (document.getElementById('cal-strat') || {}).value; if (strat && !window.calBtMode) qp.set('strategy', strat);
+    fetch('/api/orders/monthly-returns?' + qp.toString()).then(function (r) { return r.json(); }).then(function (j) {
+      var M = j.months || {}, years = Object.keys(M).sort();
+      var body = document.getElementById('s2-heatbody'); if (!body) return;
+      if (!years.length) { body.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:12px">Is filter pe koi data nahi</div>'; return; }
+      var mx = 1; years.forEach(function (y) { for (var m = 1; m <= 12; m++) if (M[y][m] != null) mx = Math.max(mx, Math.abs(M[y][m])); });
+      var h = '<table style="font-size:10px;border-collapse:separate;border-spacing:2px;width:100%"><thead><tr><th></th>';
+      _S2_MON.forEach(function (m) { h += '<th style="text-align:center;padding:3px 3px;color:#8b949e">' + m + '</th>'; });
+      h += '<th style="text-align:center;color:#8b949e">Year</th></tr></thead><tbody>';
+      years.forEach(function (y) {
+        h += '<tr><td style="color:#8b949e;font-weight:600;padding:3px 5px">' + y + '</td>'; var tot = 0;
+        for (var m = 1; m <= 12; m++) {
+          var v = M[y][m];
+          if (v == null) { h += '<td style="padding:4px 2px;text-align:center;color:#30363d">·</td>'; continue; }
+          tot += v; var a = Math.min(0.82, 0.12 + Math.abs(v) / mx * 0.7), bg = v >= 0 ? 'rgba(63,185,80,' + a + ')' : 'rgba(248,81,73,' + a + ')';
+          h += '<td onclick="s2HeatClick(this)" data-ym="' + y + '-' + String(m).padStart(2, '0') + '" title="' + y + ' ' + _S2_MON[m - 1] + '" style="padding:4px 3px;text-align:center;background:' + bg + ';color:#e6edf3;cursor:pointer;border-radius:3px;white-space:nowrap">' + _s2inrShort(v) + '</td>';
+        }
+        h += '<td style="padding:4px 5px;text-align:center;font-weight:700;white-space:nowrap;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + _s2inrShort(tot) + '</td></tr>';
       });
-      h += '<td style="padding:4px 6px;text-align:center;font-weight:700;color:' + (tot >= 0 ? '#3fb950' : '#f85149') + '">' + (tot >= 0 ? '+' : '') + tot.toFixed(1) + '</td></tr>';
-    });
-    document.getElementById('s2-heatbody').innerHTML = h + '</tbody></table>';
+      body.innerHTML = h + '</tbody></table>';
+    }).catch(function () {});
+  }
+  function _s2switchBottom(pane) {
+    document.querySelectorAll('.s2tabs').forEach(function (tb) { if (tb.querySelector('[data-p^="tbl-"]')) tb.querySelectorAll('.s2tab').forEach(function (x) { x.classList.toggle('on', x.getAttribute('data-p') === pane); }); });
+    document.querySelectorAll('.s2pane').forEach(function (p) { if (p.id.indexOf('tbl-') === 0) p.classList.toggle('on', p.id === pane); });
+    ['ts', 'ppt', 'perf'].forEach(function (k) { var e = document.getElementById('s2-' + k + '-ctrl'); if (e) e.style.display = (pane === 'tbl-' + k) ? 'flex' : 'none'; });
   }
   window.s2HeatClick = function (td) {
-    var was = td.style.outline;
-    document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; });
+    var sel = td.getAttribute('data-sel');
+    document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; x.removeAttribute('data-sel'); });
+    if (sel) { window.s2ClearChip(); return; }
+    td.style.outline = '2px solid #58a6ff'; td.setAttribute('data-sel', '1');
+    var ym = td.getAttribute('data-ym');
+    window.calSelectedPeriodFilter = null;
+    if (typeof calSelectPeriod === 'function') calSelectPeriod('monthly', ym);   // filters points table + equity
+    _s2switchBottom('tbl-ppt');
     var c = document.getElementById('s2-fchip');
-    if (was) { c.style.display = 'none'; return; }
-    td.style.outline = '2px solid #58a6ff';
     c.innerHTML = '📅 ' + td.getAttribute('title') + ' <span onclick="s2ClearChip(event)" style="cursor:pointer;color:#f85149;font-weight:bold;margin-left:6px">✕</span>';
     c.style.display = 'inline-flex';
-    // TODO Phase-2: actually filter the bottom table to this month
   };
   window.s2ClearChip = function (ev) {
     if (ev) ev.stopPropagation();
     document.getElementById('s2-fchip').style.display = 'none';
-    document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; });
+    document.querySelectorAll('#s2-heatbody td').forEach(function (x) { x.style.outline = ''; x.removeAttribute('data-sel'); });
+    if (typeof clearCalPeriodFilter === 'function') clearCalPeriodFilter();
   };
+
+  // 📊 Distribution — real P&L histogram + table from the current trades
   function _s2Dist() {
-    // TODO Phase-2: real P&L distribution from currentCalendarTrades. Sample for now.
-    var b = [{ l: '< −3k', c: 8, n: 1 }, { l: '−3k…−2k', c: 22, n: 1 }, { l: '−2k…−1k', c: 55, n: 1 }, { l: '−1k…0', c: 120, n: 1 },
-             { l: '0…+1k', c: 145, n: 0 }, { l: '+1k…+2k', c: 95, n: 0 }, { l: '+2k…+3k', c: 40, n: 0 }, { l: '> +3k', c: 15, n: 0 }];
-    var tot = b.reduce(function (a, x) { return a + x.c; }, 0), max = Math.max.apply(null, b.map(function (x) { return x.c; }));
-    var W = 360, H = 118, pad = 6, bw = (W - 2 * pad) / b.length, s = '<svg style="width:100%;height:118px" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
-    b.forEach(function (x, i) { var bh = (x.c / max) * (H - 14), bx = pad + i * bw + 3; s += '<rect x="' + bx + '" y="' + (H - bh) + '" width="' + (bw - 6) + '" height="' + bh + '" fill="' + (x.n ? '#f85149' : '#3fb950') + '" opacity=".85" rx="2"/>'; });
-    s += '</svg><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:10.5px;text-align:left"><thead><tr><th style="padding:5px 8px;color:#8b949e">P&L bucket</th><th style="padding:5px 8px;color:#8b949e;text-align:right">Trades</th><th style="padding:5px 8px;color:#8b949e;text-align:right">%</th></tr></thead><tbody>';
-    b.forEach(function (x) { s += '<tr><td style="padding:5px 8px;color:' + (x.n ? '#f85149' : '#3fb950') + '">' + x.l + '</td><td style="padding:5px 8px;text-align:right">' + x.c + '</td><td style="padding:5px 8px;text-align:right;color:#8b949e">' + (x.c / tot * 100).toFixed(1) + '%</td></tr>'; });
+    var tr = window.currentCalendarTrades || [];
+    var edges = [-3000, -2000, -1000, 0, 1000, 2000, 3000];
+    var labels = ['< −3k', '−3k…−2k', '−2k…−1k', '−1k…0', '0…+1k', '+1k…+2k', '+2k…+3k', '> +3k'];
+    var counts = new Array(8).fill(0);
+    tr.forEach(function (t) { var p = _s2net(t), b = 0; while (b < edges.length && p >= edges[b]) b++; counts[b]++; });
+    var tot = tr.length || 1, max = Math.max.apply(null, counts) || 1;
+    var W = 360, H = 118, pad = 6, bw = (W - 2 * pad) / 8, s = '<svg style="width:100%;height:118px" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
+    counts.forEach(function (c, i) { var bh = (c / max) * (H - 14), bx = pad + i * bw + 3; s += '<rect x="' + bx + '" y="' + (H - bh) + '" width="' + (bw - 6) + '" height="' + bh + '" fill="' + (i < 4 ? '#f85149' : '#3fb950') + '" opacity=".85" rx="2"/>'; });
+    s += '</svg><div style="overflow-x:auto;margin-top:8px"><table style="width:100%;border-collapse:collapse;font-size:10.5px;text-align:left"><thead><tr><th style="padding:5px 8px;color:#8b949e">P&L bucket (net ₹)</th><th style="padding:5px 8px;color:#8b949e;text-align:right">Trades</th><th style="padding:5px 8px;color:#8b949e;text-align:right">%</th></tr></thead><tbody>';
+    counts.forEach(function (c, i) { s += '<tr><td style="padding:5px 8px;color:' + (i < 4 ? '#f85149' : '#3fb950') + '">' + labels[i] + '</td><td style="padding:5px 8px;text-align:right">' + c + '</td><td style="padding:5px 8px;text-align:right;color:#8b949e">' + (c / tot * 100).toFixed(1) + '%</td></tr>'; });
     document.getElementById('s2-dist-body').innerHTML = s + '</tbody></table></div>';
   }
+
+  // 📈 Performance — real stats computed from the current trades
   function _s2Perf() {
-    // TODO Phase-2: real performance stats (backtest report / order_store stats). Sample for now.
-    var P = [['Total Closed Trades', '1,806'], ['Total Net Profit', '₹6,91,325 (69.1%)', 'p'], ['Start → Finish', '₹10.0L → ₹16.9L'],
-      ['Total Paid Fees', '₹1,04,766'], ['Max Drawdown', '−3.1%', 'n'], ['Max Underwater', '235 days'], ['CAGR', '6.4%', 'p'],
-      ['Expectancy', '₹383'], ['Avg Win | Loss', '₹2,918 | −₹1,290'], ['Ratio Win/Loss', '2.26'], ['Profit Factor', '1.49'],
-      ['Win-rate', '39.8%'], ['Win-rate L | S', '40.5% | 39.1%'], ['Longs | Shorts', '45% | 55%'], ['Avg Holding', '32 bars (2.7h)'],
-      ['Sharpe', '1.95'], ['Calmar', '2.06'], ['Sortino', '5.36'], ['Winning Streak', '10'], ['Losing Streak', '7']];
+    var tr = window.currentCalendarTrades || [];
+    var n = tr.length, net = 0, fees = 0, gWin = 0, gLoss = 0, wins = 0, losses = 0, best = -Infinity, worst = Infinity;
+    var lN = 0, lW = 0, sN = 0, sW = 0, wStreak = 0, lStreak = 0, curW = 0, curL = 0;
+    var byDay = {};
+    var ordered = tr.slice().sort(function (a, b) { return ((a.exit_date || '') + (a.exit_time || '')).localeCompare((b.exit_date || '') + (b.exit_time || '')); });
+    ordered.forEach(function (t) {
+      var p = _s2net(t); net += p; fees += (t._tax || t.fee || 0);
+      if (p > 0) { gWin += p; wins++; } else if (p < 0) { gLoss += -p; losses++; }
+      if (p > best) best = p; if (p < worst) worst = p;
+      var isLong = (t.entry === 'BUY'); if (isLong) { lN++; if (p > 0) lW++; } else { sN++; if (p > 0) sW++; }
+      if (p >= 0) { curW++; curL = 0; if (curW > wStreak) wStreak = curW; } else { curL++; curW = 0; if (curL > lStreak) lStreak = curL; }
+      var d = t.entry_date || t.exit_date; if (d) byDay[d] = (byDay[d] || 0) + p;
+    });
+    // equity peak-trough max drawdown (₹)
+    var eq = 0, peak = 0, mdd = 0; ordered.forEach(function (t) { eq += _s2net(t); if (eq > peak) peak = eq; var dd = peak - eq; if (dd > mdd) mdd = dd; });
+    // daily-net annualised Sharpe / Sortino
+    var days = Object.values(byDay), sharpe = null, sortino = null;
+    if (days.length > 1) {
+      var mean = days.reduce(function (a, b) { return a + b; }, 0) / days.length;
+      var sd = Math.sqrt(days.reduce(function (a, b) { return a + (b - mean) * (b - mean); }, 0) / (days.length - 1));
+      var dn = days.filter(function (x) { return x < 0; });
+      var dsd = dn.length ? Math.sqrt(dn.reduce(function (a, b) { return a + b * b; }, 0) / dn.length) : 0;
+      if (sd > 0) sharpe = (mean / sd) * Math.sqrt(252);
+      if (dsd > 0) sortino = (mean / dsd) * Math.sqrt(252);
+    }
+    var pf = gLoss > 0 ? (gWin / gLoss) : (gWin > 0 ? Infinity : 0);
+    var avgWin = wins ? gWin / wins : 0, avgLoss = losses ? gLoss / losses : 0;
+    var inr = function (v) { return (v < 0 ? '−₹' : '₹') + Math.abs(Math.round(v)).toLocaleString('en-IN'); };
+    var P = [
+      ['Total Trades', n.toLocaleString('en-IN')],
+      ['Net P&L', inr(net), net >= 0 ? 'p' : 'n'],
+      ['Total Fees', inr(fees)],
+      ['Max Drawdown', '−' + inr(mdd).replace('₹', '₹'), 'n'],
+      ['Profit Factor', isFinite(pf) ? pf.toFixed(2) : '∞'],
+      ['Win-rate', n ? (wins / n * 100).toFixed(1) + '%' : '—'],
+      ['W / L', wins + ' / ' + losses],
+      ['Expectancy', inr(n ? net / n : 0)],
+      ['Avg Win | Loss', inr(avgWin) + ' | −' + inr(avgLoss).replace('₹', '₹')],
+      ['Best | Worst', inr(best === -Infinity ? 0 : best) + ' | ' + inr(worst === Infinity ? 0 : worst)],
+      ['Win-rate L | S', (lN ? (lW / lN * 100).toFixed(0) : '—') + '% | ' + (sN ? (sW / sN * 100).toFixed(0) : '—') + '%'],
+      ['Longs | Shorts', (n ? (lN / n * 100).toFixed(0) : 0) + '% | ' + (n ? (sN / n * 100).toFixed(0) : 0) + '%'],
+      ['Sharpe (daily)', sharpe == null ? '—' : sharpe.toFixed(2)],
+      ['Sortino (daily)', sortino == null ? '—' : sortino.toFixed(2)],
+      ['Winning Streak', wStreak],
+      ['Losing Streak', lStreak]
+    ];
     document.getElementById('s2-perf-body').innerHTML = P.map(function (r) {
       var c = r[2] === 'p' ? 'color:#3fb950' : r[2] === 'n' ? 'color:#f85149' : '';
       return '<div class="s2prow"><span class="pk">' + r[0] + '</span><span class="pv" style="' + c + '">' + r[1] + '</span></div>';

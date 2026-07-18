@@ -4953,6 +4953,29 @@ def api_backtest_calendar_summary():
                         'metrics': {}, 'meta': {}, 'error': str(e)})
 
 
+@app.route('/api/orders/monthly-returns')
+def api_orders_monthly_returns():
+    """All-history month-wise NET ₹ (for the Stats V2 heatmap). Grouped by trade
+    entry month. Same source/mode/broker/strategy filters as calendar-summary.
+    Display-only — reuses order_store."""
+    import order_store
+    filt = {k: request.args.get(k) for k in
+            ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    out = {}
+    try:
+        details = order_store.trades_for_range('2015-01-01', '9999-12-31', **filt).get('details', [])
+        for t in details:
+            d = (t.get('entry_date') or t.get('exit_date') or '')
+            if len(d) < 7:
+                continue
+            y, m = d[:4], int(d[5:7])
+            out.setdefault(y, {})
+            out[y][m] = round(out[y].get(m, 0) + (t.get('pnl') or 0), 2)
+    except Exception as e:
+        print("[monthly-returns] fail:", e, flush=True)
+    return jsonify({'ok': True, 'months': out})
+
+
 @app.route('/api/stat-views', methods=['GET'])
 def api_stat_views_list():
     """Saved strategy-group Views for the Stats tab. Display/config only."""
