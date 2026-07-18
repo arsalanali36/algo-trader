@@ -4895,6 +4895,73 @@ def api_orders_calendar_summary():
     })
 
 
+@app.route('/api/bs-shadow')
+def api_bs_shadow():
+    """Black-Scholes shadow of the REAL trades, per day + per strategy, from the
+    cached data/bs_shadow/<date>.json files written daily by _ops/bs_shadow.py.
+    DISPLAY-ONLY. Real numbers reproduce the dashboard exactly; only BS is modelled.
+
+    Query: from_date/to_date OR year[/month]. Returns:
+      { days: {date: {real_net, bs_net, n, bs_n, by_strategy:{sid:{real_net,bs_net,n,bs_n}}}},
+        available: [...], missing: [...] }  (missing = date has trades but no shadow yet)
+    """
+    import os as _o, json as _j, glob as _g
+    year = request.args.get('year'); month = request.args.get('month')
+    from_date = request.args.get('from_date'); to_date = request.args.get('to_date')
+    base = _o.path.join(_o.path.dirname(_o.path.abspath(__file__)), 'data', 'bs_shadow')
+
+    def _in_range(d):
+        if from_date and to_date:
+            return from_date <= d <= to_date
+        if year and month:
+            return d.startswith(f"{year}-{str(month).zfill(2)}-")
+        if year:
+            return d.startswith(f"{year}-")
+        return True
+
+    days = {}
+    try:
+        for fp in _g.glob(_o.path.join(base, '*.json')):
+            d = _o.path.basename(fp)[:-5]
+            if len(d) != 10 or not _in_range(d):
+                continue
+            try:
+                p = _j.load(open(fp))
+            except Exception:
+                continue
+            bs_n = sum(1 for t in p.get('trades', []) if t.get('bs_ok'))
+            bystrat = {}
+            for sid, v in (p.get('by_strategy') or {}).items():
+                sbn = sum(1 for t in p.get('trades', [])
+                          if t.get('strategy') == sid and t.get('bs_ok'))
+                bystrat[sid] = {'real_gross': v.get('real_gross', 0), 'real_net': v.get('real_net', 0),
+                                'bs_gross': v.get('bs_gross', 0), 'bs_net': v.get('bs_net', 0),
+                                'n': v.get('n', 0), 'bs_n': sbn}
+            tot = p.get('totals') or {}
+            days[d] = {'real_gross': tot.get('real_gross', 0), 'real_net': tot.get('real_net', 0),
+                       'bs_gross': tot.get('bs_gross', 0), 'bs_net': tot.get('bs_net', 0),
+                       'n': tot.get('n', 0), 'bs_n': bs_n, 'by_strategy': bystrat}
+    except Exception as e:
+        print("[bs-shadow] fail:", e, flush=True)
+
+    missing = []
+    try:
+        import sqlite3, order_store
+        with order_store._lock, sqlite3.connect(str(order_store.DB_PATH), timeout=10) as c:
+            if from_date and to_date:
+                rows = c.execute("SELECT DISTINCT date FROM orders WHERE date>=? AND date<=?",
+                                 [from_date, to_date]).fetchall()
+            else:
+                pre = (f"{year}-{str(month).zfill(2)}-%" if year and month
+                       else f"{year}-%" if year else "%")
+                rows = c.execute("SELECT DISTINCT date FROM orders WHERE date LIKE ?", [pre]).fetchall()
+        missing = sorted(r[0] for r in rows if r[0] and r[0] not in days)
+    except Exception:
+        pass
+
+    return jsonify({'days': days, 'available': sorted(days.keys()), 'missing': missing})
+
+
 @app.route('/api/backtest/runs')
 def api_backtest_runs():
     """List available backtest runs (from runs/index.json) for the Stats-tab

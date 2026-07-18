@@ -1930,6 +1930,13 @@
         <span data-v="live" class="on" onclick="calSetView('live',this)" style="padding:4px 10px;cursor:pointer">🟢 Live/Paper</span>
         <span data-v="bt" onclick="calSetView('bt',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
       </span>
+      <!-- Premium basis: real market fill ⟷ Black-Scholes model (of the SAME real trades) -->
+      <span id="cal-prem" class="cal-seg" title="Real market premium vs Black-Scholes model — same trades, same entry/exit times"
+        style="display:inline-flex;border:1px solid #6f42c1;border-radius:6px;overflow:hidden;font-size:11px;margin-right:2px">
+        <span data-v="real" class="on" onclick="calSetPremium('real',this)" style="padding:4px 9px;cursor:pointer">💰 Real</span>
+        <span data-v="bs" onclick="calSetPremium('bs',this)" style="padding:4px 9px;cursor:pointer;color:#8b949e">📐 BS</span>
+        <span data-v="compare" onclick="calSetPremium('compare',this)" style="padding:4px 9px;cursor:pointer;color:#8b949e">⚖️ Compare</span>
+      </span>
       <span id="cal-live-only" style="display:inline-flex;align-items:center;gap:8px">
       <span style="font-size:11px;color:#6e7681">Source</span>
       <span id="cal-src" class="cal-seg"
@@ -2153,6 +2160,46 @@
       </h3>
       <div id="cal-equity-curve-container" style="position:relative; width:100%; height:260px;">
         <!-- SVG Equity Curve will be drawn here -->
+      </div>
+    </div>
+
+
+    <!-- Real vs Black-Scholes divergence (shown only in BS / Compare premium mode) -->
+    <div id="bs-div-card" class="card" style="margin-top:16px; padding:16px 18px; display:none; border:1px solid #6f42c1;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; flex-wrap:wrap; gap:8px;">
+        <h3 style="color:#e6edf3; font-size:13px; font-weight:600; margin:0;">⚖️ Real vs Black-Scholes divergence
+          <span style="color:#8b949e;font-weight:400;font-size:11px">— same trades, BS-priced at their own entry/exit minute</span>
+        </h3>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap;">
+          <span id="bs-div-mode" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+            <span data-v="date" class="on" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;background:#6f42c1;color:#fff;">By Date</span>
+            <span data-v="strategy" onclick="bsDivSeg(this)" style="padding:4px 12px;cursor:pointer;color:#8b949e;">By Strategy</span>
+          </span>
+          <span id="bs-div-basis" style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px;">
+            <span data-b="net" class="on" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;background:#1f6feb;color:#fff;">Net</span>
+            <span data-b="gross" onclick="bsDivBasis(this)" style="padding:4px 10px;cursor:pointer;color:#8b949e;">Gross</span>
+          </span>
+        </div>
+      </div>
+      <div id="bs-div-cov" style="font-size:11px;color:#8b949e;margin-bottom:8px;"></div>
+      <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:12px;">
+          <thead>
+            <tr id="bs-div-thead" style="border-bottom:1px solid #30363d;color:#8b949e;text-align:right;">
+              <th style="text-align:left;padding:5px 8px;font-weight:500;">Bucket</th>
+              <th style="padding:5px 8px;font-weight:500;">Legs</th>
+              <th style="padding:5px 8px;font-weight:500;">Real</th>
+              <th style="padding:5px 8px;font-weight:500;color:#a371f7;">BS model</th>
+              <th style="padding:5px 8px;font-weight:500;color:#d29922;">Δ (BS − Real)</th>
+              <th style="padding:5px 8px;font-weight:500;width:120px;">Divergence</th>
+            </tr>
+          </thead>
+          <tbody id="bs-div-tbody"></tbody>
+          <tfoot id="bs-div-tfoot"></tfoot>
+        </table>
+      </div>
+      <div style="font-size:10.5px;color:#6e7681;margin-top:8px;border-top:1px dashed #30363d;padding-top:6px;">
+        <span style="color:#d29922;">Amber Δ</span> = BS ne zyada bola (over-optimistic) · <span style="color:#388bfd;">Blue Δ</span> = BS ne kam bola. Real = asli paper/live fill (dashboard se exact). BS = Black-Scholes model us contract pe.
       </div>
     </div>
 
@@ -3557,6 +3604,7 @@
   <script src="/static/js/app-11-script-lab.js"></script>
   <script src="/static/js/app-12-calendar.js"></script>
   <script src="/static/js/app-13-calendar-render.js"></script>
+  <script src="/static/js/app-14-bs-shadow.js"></script>
   <div id="edit-strat-modal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
     <div
