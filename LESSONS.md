@@ -3535,3 +3535,33 @@ missing config_key is a legit unconfigured strategy, not a garbage label. Such r
 but absent from `/registry` UI → check `config_key`. `null`/blank + `''` in
 `_meta.hidden.identifiers` = this. Don't chase caching/restart first: verify the client-side filter,
 not just the server payload.
+
+---
+
+## TRAP #135 — a domain field named like buy/sell (`side` = CE vs PE) mapped straight to buy/sell → Points sign flipped on ~39% of trades
+
+**Symptom.** User on the Stats backtest calendar (All-runs combined): a week showed **Σ Points −267.9
+but Σ Gross +29,712** — and a single trade `NIFTY 24000PE` had **points −102, gross +6634**. "Ye kaise
+possible hai?" One trade, opposite signs, is not a mixed-lot aggregation artifact — it's a bug.
+
+**Root pattern.** `results.js`'s per-trade `side` is `"long"` / `"short"`, but in this schema that means
+**option DIRECTION** — `long` = *bought a CE*, `short` = *bought a PE* (both are BUYS; it's the bullish
+vs bearish leg). `_ops/backtest_calendar._map_trade` read it as buy/sell: `entry = "SELL" if side ==
+"short" else "BUY"`. The Stats "Points" calc is side-dependent (`pts = entry==='BUY' ? exit−entry :
+entry−exit`), so every bought-PE (tagged SELL) got its premium-points **sign inverted**. Gross came
+from `results.js` already-correct `gross`, so **Gross/Net were always right** — only the derived Points
+display (and the BUY/SELL badge) were wrong, on **6606/16873 (39%)** of trades. A field whose *name*
+looks like buy/sell ("side") but whose *domain meaning* is CE/PE was mapped 1:1 to buy/sell.
+
+**Fix.** Don't infer buy/sell from a direction field that doesn't encode it. Derive it from a quantity
+that DOES — the already-correct signed `gross` vs the price move: a **long** option's gross moves WITH
+the premium (`gross × prem_move ≥ 0` → BUY); a **sold** option's gross moves AGAINST it (→ SELL). Now
+Points always agrees with Gross in sign **and** the BUY/SELL badge is finally correct (bought PE shows
+BUY). Verified 0/16873 sign mismatches (was 6606); the flagged week −267.9 → +554.2.
+
+**Fast detect.** ANY single row where a "points"/"pts" column and its money column (gross/net) have
+**opposite signs** = a direction-mapping bug, not an aggregation quirk (aggregates across mixed lot
+sizes CAN legitimately diverge in sign — but never a single trade). When a schema field is named like
+an action (`side`, `type`, `dir`) confirm its DOMAIN (CE/PE? long/short-direction? buy/sell?) before
+mapping it to another axis. Money columns sourced directly (`gross`) stay correct while a *derived*
+display (points, badge) silently lies — trust the sourced number, re-derive the display from it.

@@ -15,6 +15,49 @@
 
 ---
 
+## 2026-07-18 (3) — Stats tab extensions: Views both-modes + All-runs + Monthly/Weekly + caching + equity-resolution + Week/Month filter + Points-sign FIX (TRAP #135)
+**Status:** DONE (all VPS-deployed, commits `9bb19f6`→`3dd4a6f`)
+**Layer:** ui + config (display/config only, koi order/risk/execution path nahi)
+**Kya:** Saved Views (2026-07-18 (2)) ke upar iterative user requests — sab shared
+render path me taaki **live ⟷ backtest ek jaisa** ([[feedback_stats_live_backtest_same]]).
+1. **Views builder = checklist of ALL strategies/runs** (Compare-row approach retired):
+   🗂 Views → New View → poori list (top dropdown wali) + ✓All/✗None → tick → save.
+2. **Views DONO modes me** (`kind`: live=strategies / bt=run-slugs). Backtest me
+   **portfolio-combine** — `combined_summary(slugs)` all_trades union (har trade
+   `strategy=<slug>` tagged → Total Summary Strategy-mode per-run breakdown);
+   `/api/backtest/calendar-summary` comma-slug pe combine. `_ops/stat_views.py` +
+   `/api/stat-views` CRUD (`data/stat_views.json`).
+3. **"⚡ All runs (combined)"** run-dropdown me top pe (live "All strategies" parity)
+   — sentinel `__ALL__` → sab slugs combine.
+4. **Total Summary: Monthly | Weekly | Day | Strategy** (shared `renderSummaryTable`,
+   `_calGroupKey`/`_calPeriodLabel`/`_calWeekKey` in app-12). Newest-first sort.
+5. **Backtest caching** (immutable data): backend `_RESULT_CACHE` (slug,pass,period)
+   →lightweight mapped result, mtime-keyed cap 200 (single 0.104s→0.0001s, ALL-17
+   2.42s→0.015s); frontend `window._btRespCache` (qs-keyed Map cap 24) = re-select
+   zero-network.
+6. **Equity curve resolution** = Total Summary mode (Day→per-day, Weekly→per-week,
+   Monthly→per-month, Strategy→per-trade); `drawEquityCurveChart` `_calGroupKey`
+   bucket, `calSumSeg` redraw.
+7. **Week/Month row click → Point-Per-Trade table filter** (Day jaisa):
+   `calSelectPeriod`/`clearCalPeriodFilter` + `window.calSelectedPeriodFilter`
+   {mode,key}, `renderPointsPerTradeTable` `_calGroupKey` filter + badge + active-row.
+8. **🐛 TRAP #135 — backtest Points SIGN flipped (~39%, 6606/16873).** `results.js`
+   `side`=long(CE)/short(PE) = OPTION DIRECTION, **buy/sell nahi**; `_map_trade`
+   short→SELL karta tha → Stats Points (`entry−exit`) ka sign har bought-PE pe ulta
+   → gross +ve par points −ve (user ne pakda: week Σpoints −267.9 / Σgross +29,712).
+   Fix: `entry` ab **gross×premium-move** se derive (long option gross premium ke
+   SAATH=BUY, sold option AGAINST=SELL) → Points hamesha Gross se sign-agree +
+   BUY/SELL badge sahi. Verified 0/16873 (tha 6606); us week −267.9→+554.2.
+   **Money (Gross/Net) hamesha sahi the — sirf Points display bug.**
+
+**Files:** `_ops/backtest_calendar.py`, `_ops/stat_views.py` (naya), `trader_dashboard.py`,
+`static/js/app-12-calendar.js`, `static/js/app-13-calendar-render.js`, `templates/index.html`.
+**Kyun:** isolated worktree `feat/stat-views`, har request conflict-free rebase+deploy.
+Verified har step preview-harness me (real 17 runs) + backend timing/sign checks. Audit 0 FAIL.
+**Depends on:** existing Compare (`_calSumSelected`) + calendar render pipeline + backtest-in-Stats.
+
+---
+
 ## 2026-07-18 — Range-Extreme Short Strangle (IV-filtered) + Capital Priority Reservation + registry 02.04
 **Status:** DONE — branch `feat/range-strangle-mission`, VPS-live master `3f14b39`, feature OFF-by-default
 **Layer:** strategy-research (scratch, display-only) + risk (money-path, OFF-inert) + ui + infra
