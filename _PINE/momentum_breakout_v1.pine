@@ -1,0 +1,57 @@
+//@version=5
+// ============================================================================
+//  Momentum Breakout (50-day high, hold N days)  —  v1
+//  The DATA-DERIVED result of the Markov study: Indian equities are MOMENTUM at
+//  the daily scale (transition matrix up->up 0.562), NOT mean-reverting. So we
+//  flip the Jim-Simons video's buy-the-dip and instead RIDE strength.
+//
+//    ENTRY : close makes a new `lookback`-day high  (breakout)
+//    EXIT  : after `holdDays` bars  (or first down close / stop guards)
+//
+//  Basket result (215 F&O stocks, python stock_universe_bt.py --momentum):
+//    50d breakout / hold 10d -> +16.1% vs Buy&Hold +11.9%, Sharpe 0.79 vs 0.48,
+//    lower drawdown, cost-robust. CAVEAT: train Sharpe 1.43 vs OOS 0.31 -> a
+//    promising lead, NOT deploy-grade. Paper / needs a longer sample.
+//
+//  DAILY chart, positional (holds overnight). Date-range + log.info kept
+//  (mandatory); intraday 3:15 rule N/A (daily swing, like the VRP condor).
+//  Python twin: scratch/markov_meanrev/stock_universe_bt.py
+// ============================================================================
+strategy("Momentum Breakout v1", overlay=true, pyramiding=0,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     commission_type=strategy.commission.percent, commission_value=0.05)
+
+lookback = input.int(50, "Breakout lookback (days)", minval=5, group="Signal")
+holdDays = input.int(10, "Hold (bars)",              minval=1, group="Signal")
+useStop  = input.bool(true,  "Use stop-loss",                  group="Signal")
+stopPct  = input.float(5.0, "Stop-loss %", minval=0.5, step=0.5, group="Signal")
+
+startDate   = input.time(timestamp("2018-01-01 00:00"), title="Backtest Start", group="Day Selection")
+endDate     = input.time(timestamp("2026-12-31 23:59"), title="Backtest End",   group="Day Selection")
+inDateRange = (time >= startDate and time <= endDate)
+
+// new N-day high (use the prior bar's window so the breakout bar itself qualifies)
+hiN       = ta.highest(close, lookback)[1]
+breakout  = inDateRange and strategy.position_size == 0 and close >= hiN
+
+var int entryBar = na
+barsHeld = strategy.position_size != 0 and not na(entryBar) ? bar_index - entryBar : 0
+downClose = close < close[1]
+hitHold  = barsHeld >= holdDays
+hitStop  = useStop and strategy.position_size > 0 and close <= strategy.position_avg_price * (1 - stopPct / 100)
+exitNow  = strategy.position_size > 0 and (hitHold or hitStop)
+
+if breakout
+    strategy.entry("L", strategy.long)
+    entryBar := bar_index
+    log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " brk50=" + str.tostring(hiN, "#.##") + " close=" + str.tostring(close, "#.##"))
+
+if exitNow
+    reason = hitStop ? "STOP" : "HOLD_" + str.tostring(holdDays)
+    strategy.close("L")
+    log.info("EXIT LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") + " reason=" + reason + " close=" + str.tostring(close, "#.##"))
+    entryBar := na
+
+plot(hiN, "50d high", color=color.new(color.teal, 40))
+plotshape(breakout, title="Breakout", style=shape.triangleup, location=location.belowbar, color=color.new(color.lime, 0), size=size.tiny)
+plotshape(exitNow,  title="Exit",     style=shape.triangledown, location=location.abovebar, color=color.new(color.orange, 0), size=size.tiny)
