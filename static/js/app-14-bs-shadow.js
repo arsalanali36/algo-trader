@@ -55,8 +55,9 @@
     // sum BS per date over the calendar's own (already-filtered) trades
     const byDate = {};
     (window.currentCalendarTrades || []).forEach(t => {
-      const d = t.exit_date || t.entry_date; if (!d) return;
       const rb = _tradeRealBs(t, 'gross');                 // cells are GROSS
+      if (!rb.ok) return;                                  // NIFTY/BNF only — BS can't price stocks
+      const d = t.exit_date || t.entry_date; if (!d) return;
       const a = byDate[d] || (byDate[d] = { bs: 0, real: 0, n: 0 });
       a.bs += rb.bs; a.real += rb.real; a.n += 1;
     });
@@ -125,11 +126,14 @@
       : (t) => (period === 'strategy' ? (t.strategy || 'unknown') : (t.exit_date || t.entry_date || '—'));
 
     const groups = {};
+    let exN = 0, incN = 0;                          // excluded (stock, no BS) vs included legs
     (window.currentCalendarTrades || []).forEach(t => {
-      const k = groupKey(t);
-      const g = groups[k] || (groups[k] = { real: 0, bs: 0, n: 0, ok: 0 });
       const rb = _tradeRealBs(t, basis);
-      g.real += rb.real; g.bs += rb.bs; g.n += 1; if (rb.ok) g.ok += 1;
+      if (!rb.ok) { exN += 1; return; }             // BS can't price stocks → out of BOTH columns (fair)
+      incN += 1;
+      const k = groupKey(t);
+      const g = groups[k] || (groups[k] = { real: 0, bs: 0, n: 0 });
+      g.real += rb.real; g.bs += rb.bs; g.n += 1;
     });
 
     let keys = Object.keys(groups);
@@ -140,8 +144,8 @@
       : (period === 'weekly' || period === 'monthly') && typeof _calPeriodLabel === 'function' ? _calPeriodLabel(k, period)
       : k;
 
-    let tReal = 0, tBs = 0, tN = 0, tOk = 0;
-    keys.forEach(k => { const g = groups[k]; tReal += g.real; tBs += g.bs; tN += g.n; tOk += g.ok; });
+    let tReal = 0, tBs = 0, tN = 0;
+    keys.forEach(k => { const g = groups[k]; tReal += g.real; tBs += g.bs; tN += g.n; });
     const maxDiv = Math.max(1, ...keys.map(k => Math.abs(groups[k].bs - groups[k].real)));
 
     tb.innerHTML = keys.map(k => {
@@ -151,7 +155,7 @@
       const rc = g.real >= 0 ? '#3fb950' : '#f85149';
       return `<tr style="border-top:1px solid #21262d;text-align:right;">
         <td style="text-align:left;padding:4px 8px;">${label(k)}</td>
-        <td style="padding:4px 8px;color:#8b949e;">${g.n}${g.ok < g.n ? '<span title="kuch legs non-NIFTY — BS nahi" style="color:#6e7681;">*</span>' : ''}</td>
+        <td style="padding:4px 8px;color:#8b949e;">${g.n}</td>
         <td style="padding:4px 8px;color:${rc};">${inr(g.real)}</td>
         <td style="padding:4px 8px;color:#a371f7;">${inr(g.bs)}</td>
         <td style="padding:4px 8px;color:${col};">${inr(d)}</td>
@@ -171,8 +175,9 @@
     }
     if (cov) {
       const miss = (window._bsMissing || []).length;
-      cov.innerHTML = (tOk < tN ? `<span style="color:#d29922">*</span> ${tN - tOk}/${tN} legs non-NIFTY (BS skip, Real me ginte). ` : '')
-        + (miss ? `${miss} din abhi shadow nahi bana (roz 15:50 pe banega).` : '');
+      cov.innerHTML = `Sirf <b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> — Real vs BS same legs pe (fair). `
+        + (exN ? `<span style="color:#8b949e">${exN} stock legs BS-model se bahar (BS sirf index options pe).</span> ` : '')
+        + (miss ? `${miss} din shadow pending.` : '');
     }
   };
 })();
