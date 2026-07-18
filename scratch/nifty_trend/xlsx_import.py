@@ -240,6 +240,28 @@ def to_results_payload(parsed, recomputed):
     run = engine.START_CAP
     for t in trades:
         run += t["pnl"]; eq.append(round(run, 1)); labels.append(t["exit_dt"][:10])
+    # underwater (drawdown %) + worst-5 drawdown episodes — both from the equity curve
+    uw, _pk = [], eq[0]
+    for v in eq:
+        _pk = max(_pk, v)
+        uw.append(round((v / _pk - 1) * 100, 3))
+    _eps, _pk, _tv, _ti, _in = [], eq[0], 0.0, 0, False
+    for i, v in enumerate(eq):
+        if v >= _pk:
+            if _in and _tv < 0:
+                _eps.append((_tv, _ti))
+            _pk, _tv, _in = v, 0.0, False
+        else:
+            _in = True
+            _d = (v / _pk - 1) * 100
+            if _d < _tv:
+                _tv, _ti = _d, i
+    if _in and _tv < 0:
+        _eps.append((_tv, _ti))
+    _eps.sort()
+    _n = len(eq)
+    worst = [{"rank": r, "x": idx, "dd": round(dd, 1), "frac": round(idx / max(1, _n - 1), 3)}
+             for r, (dd, idx) in enumerate(_eps[:5], 1)]
     # monthly returns %
     monthly = {}
     for t in trades:
@@ -265,7 +287,7 @@ def to_results_payload(parsed, recomputed):
         dna = {}
     combo = {"dna": dna, "metrics": metrics, "all_trades": trades,
              "trades": trades[-10:], "equity": eq, "benchmark": eq, "labels": labels,
-             "underwater": [], "worst_periods": [], "monthly": monthly,
+             "underwater": uw, "worst_periods": worst, "monthly": monthly,
              "mc": monte_carlo(trades, parsed.get("meta", {}))}
     # significance + opt_table deliberately absent — they need the original run's
     # signal/param search, not reproducible from the trade list; the dashboard now
