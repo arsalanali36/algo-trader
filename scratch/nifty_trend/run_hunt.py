@@ -351,6 +351,14 @@ def main():
     with open(os.path.join(folder, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=2)
 
+    # cross-check workbook: runs/<slug>/<slug>.xlsx (Trades + Claude_Summary + Flags +
+    # what-if). Display-only; a failure here must never break the hunt.
+    try:
+        import xlsx_export
+        xlsx_export.export_run(slug)
+    except Exception as e:
+        print(f"  [xlsx] skipped ({e})", flush=True)
+
     # append to a runs index the hub reads — LOCKED (parallel hunts share this file)
     import hunt_guard
     idx_path = os.path.join(RUNS, "index.json")

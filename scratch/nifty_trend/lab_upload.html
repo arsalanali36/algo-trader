@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Excel Cross-Check — Strategy Lab</title>
+<style>
+  :root{--bg:#0d1117;--card:#161b22;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;
+        --grn:#3fb950;--red:#f85149;--blu:#1f6feb;--pur:#a371f7;--yel:#d29922;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:14px}
+  .wrap{max-width:1100px;margin:0 auto;padding:20px}
+  .top{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+  h1{font-size:19px;font-weight:600;margin:0}
+  a.back{color:var(--mut);text-decoration:none;font-size:13px;border:1px solid var(--bd);padding:5px 10px;border-radius:6px}
+  a.back:hover{background:var(--bd2)}
+  .sub{color:var(--mut);font-size:13px;margin:2px 0 18px}
+  .drop{border:1.5px dashed var(--bd);border-radius:12px;background:var(--card);padding:30px;text-align:center;cursor:pointer;transition:.15s}
+  .drop:hover,.drop.hot{border-color:var(--blu);background:#161b2280}
+  .drop .ic{font-size:34px}
+  .drop b{color:var(--tx)}
+  .drop small{color:var(--mut)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin:18px 0}
+  .mc{background:var(--card);border-radius:8px;padding:12px 14px}
+  .mc .l{font-size:12px;color:var(--mut)}
+  .mc .v{font-size:21px;font-weight:600;margin-top:3px}
+  .pos{color:var(--grn)}.neg{color:var(--red)}
+  h3{font-size:14px;color:var(--mut);font-weight:600;margin:20px 0 8px;display:flex;align-items:center;gap:6px}
+  table{width:100%;border-collapse:collapse;font-size:13px;background:var(--card);border-radius:10px;overflow:hidden}
+  th,td{padding:9px 12px;text-align:left;border-top:1px solid var(--bd2)}
+  th{color:var(--mut);font-weight:600;background:#161b22}
+  td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
+  .badge{font-size:11px;font-weight:600;padding:3px 9px;border-radius:20px}
+  .b-ok{background:#3fb95022;color:var(--grn)}
+  .b-bad{background:#f8514922;color:var(--red)}
+  .b-info{background:#1f6feb22;color:#79c0ff}
+  .b-note{background:#a371f722;color:var(--pur)}
+  .banner{border-radius:10px;padding:12px 16px;margin:16px 0;font-weight:500;display:flex;align-items:center;gap:10px}
+  .banner.ok{background:#3fb95015;border:1px solid #3fb95040;color:var(--grn)}
+  .banner.bad{background:#f8514915;border:1px solid #f8514940;color:var(--red)}
+  #err{color:var(--red);margin-top:12px}
+  #busy{color:var(--mut);margin-top:12px}
+  iframe{width:100%;height:900px;border:1px solid var(--bd);border-radius:12px;margin-top:12px;background:#fff}
+  .viewbtn{display:inline-block;margin-top:6px;color:#79c0ff;text-decoration:none;font-size:13px}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>📊 Excel Cross-Check</h1>
+    <a class="back" href="/lab">← Lab hub</a>
+  </div>
+  <div class="sub">Backtest ka <b>.xlsx</b> (xlsx_export.py se bana) drop karo — lab trades se metrics <b>khud dobara</b> ginega, Claude ke claim se compare karega, aur poora dashboard render kar dega.</div>
+
+  <label class="drop" id="drop">
+    <div class="ic">⬆️</div>
+    <div><b>Excel drop karo ya click karke chuno</b></div>
+    <small>Sheet: Trades_BS + Claude_Summary + Meta (cross-check workbook)</small>
+    <input type="file" id="file" accept=".xlsx" class="hidden">
+  </label>
+  <div id="busy" class="hidden">⏳ parse + recompute ho raha hai…</div>
+  <div id="err" class="hidden"></div>
+
+  <div id="result" class="hidden">
+    <div id="banner"></div>
+    <div class="cards" id="cards"></div>
+    <h3>🔀 Cross-check — Claude claims vs lab recompute</h3>
+    <table id="cctab"><thead><tr>
+      <th>Metric</th><th class="n">Claude</th><th class="n">Lab</th><th class="n">Δ</th><th>Status</th>
+    </tr></thead><tbody id="ccbody"></tbody></table>
+    <h3>📈 Full dashboard (lab ne is Excel se render kiya)</h3>
+    <a class="viewbtn" id="viewbtn" href="#" target="_blank">↗ naye tab me kholo</a>
+    <iframe id="frame" src="about:blank"></iframe>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+const drop=$('drop'),fileIn=$('file');
+drop.addEventListener('click',()=>fileIn.click());
+['dragover','dragenter'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.add('hot');}));
+['dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();drop.classList.remove('hot');}));
+drop.addEventListener('drop',ev=>{if(ev.dataTransfer.files.length)upload(ev.dataTransfer.files[0]);});
+fileIn.addEventListener('change',()=>{if(fileIn.files.length)upload(fileIn.files[0]);});
+
+function inr(n){return n==null?'—':Number(n).toLocaleString('en-IN',{maximumFractionDigits:0});}
+function rnd(n,d){return (n==null||isNaN(n))?'—':Number(n).toFixed(d==null?2:d);}
+function card(l,v,cls){return `<div class="mc"><div class="l">${l}</div><div class="v ${cls||''}">${v}</div></div>`;}
+
+async function upload(f){
+  $('err').classList.add('hidden');$('result').classList.add('hidden');$('busy').classList.remove('hidden');
+  const fd=new FormData();fd.append('file',f);
+  let j;
+  try{const r=await fetch('/api/lab/upload-xlsx',{method:'POST',body:fd});j=await r.json();}
+  catch(e){return fail('network: '+e);}
+  $('busy').classList.add('hidden');
+  if(!j.ok)return fail(j.msg||'unknown error');
+  render(j);
+}
+function fail(m){$('busy').classList.add('hidden');const e=$('err');e.textContent='❌ '+m;e.classList.remove('hidden');}
+
+function render(j){
+  const s=j.summary||{};
+  $('cards').innerHTML=
+     card('Net ₹','₹'+inr(s.net_abs),s.net_abs>=0?'pos':'neg')
+    +card('Net % (1-lot)',rnd(s.net_pct,2)+'%')
+    +card('Profit factor',rnd(s.profit_factor,2))
+    +card('Win rate',rnd(s.win_rate,1)+'%')
+    +card('Max DD',rnd(s.maxdd,2)+'%','neg')
+    +card('Sharpe',rnd(s.sharpe,2))
+    +card('Trades',s.trades??'—');
+  const b=$('banner');
+  if(j.mismatches>0){b.className='banner bad';b.innerHTML=`⚠️ ${j.mismatches} metric mismatch — trades claimed numbers se match nahi kar rahe (hand-edit / double-count / definition gap). Neeche laal rows dekho.`;}
+  else{b.className='banner ok';b.innerHTML='✅ Sab hard metrics match — trades exactly claimed numbers banate hain.';}
+  const tb=$('ccbody');tb.innerHTML='';
+  (j.crosscheck||[]).forEach(r=>{
+    let bd='b-info',txt=r.status;
+    if(r.status==='match'){bd='b-ok';}
+    else if(r.status==='MISMATCH'){bd='b-bad';}
+    else if(r.kind==='note'){bd='b-note';}
+    const tr=document.createElement('tr');
+    const fmt=v=>v==null?'—':(Math.abs(v)>=1000?inr(v):rnd(v,3));
+    tr.innerHTML=`<td>${r.metric}</td><td class="n">${fmt(r.claude)}</td>`
+      +`<td class="n">${fmt(r.lab)}</td><td class="n">${r.delta==null?'':rnd(r.delta,3)}</td>`
+      +`<td><span class="badge ${bd}">${txt}</span></td>`;
+    tb.appendChild(tr);
+  });
+  $('viewbtn').href=j.view_url;
+  $('frame').src=j.view_url;
+  $('result').classList.remove('hidden');
+}
+</script>
+</body>
+</html>
