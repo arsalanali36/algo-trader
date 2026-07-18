@@ -289,7 +289,7 @@
 <!-- hidden host for reused modules that render into elements absent on this page -->
 <div id="tag-store-list" style="display:none"></div>
 <!-- stub cross-module init hooks that app-13 etc. call at parse time (script/pine tab not loaded here) -->
-<script>window.pineLoadLatest = window.pineLoadLatest || function(){};</script>
+<script>window.pineLoadLatest = window.pineLoadLatest || function(){}; window.pineLoadHistory = window.pineLoadHistory || function(){};</script>
 <!-- ============ reused dashboard logic (minimal set, no side effects) ============ -->
 <script src="{{ url_for('static', filename='js/registry.js') }}"></script>
 <script src="{{ url_for('static', filename='js/app-00-core.js') }}"></script>
