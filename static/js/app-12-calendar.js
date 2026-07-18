@@ -270,14 +270,24 @@
       if (!strats.length) {
         list.innerHTML = '<div style="color:#6e7681;font-size:11px;padding:10px">Strategies abhi load nahi hui — Stats tab ek baar refresh karo phir kholo.</div>';
       } else {
-        list.innerHTML = strats.map(s => `<label style="display:flex;align-items:center;gap:8px;padding:6px 6px;cursor:pointer;font-size:12px;color:#e6edf3;border-radius:4px;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
+        list.innerHTML = strats.map(s => `<label data-s="${(s.label + ' ' + s.key).toLowerCase().replace(/"/g, '&quot;')}" style="display:flex;align-items:center;gap:8px;padding:6px 6px;cursor:pointer;font-size:12px;color:#e6edf3;border-radius:4px;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
           <input type="checkbox" value="${s.key.replace(/"/g, '&quot;')}" ${checked.has(s.key) ? 'checked' : ''} style="accent-color:#1f6feb;width:14px;height:14px;margin:0;flex:none;">
           <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_viewEsc(s.label)}</span>
           <span style="color:#6e7681;font-size:9.5px;">${_viewEsc(s.key)}</span>
         </label>`).join('');
       }
+      const srch = document.getElementById('stat-view-search'); if (srch) { srch.value = ''; }
       const menu = document.getElementById('cal-views-menu'); if (menu) menu.style.display = 'none';
       modal.style.display = 'flex';
+      if (srch) setTimeout(() => srch.focus(), 30);
+    }
+
+    // filter the run/strategy checklist by typed text (matches label OR key)
+    function statViewFilter(q) {
+      const t = (q || '').trim().toLowerCase();
+      document.querySelectorAll('#stat-view-strat-list label').forEach(l => {
+        l.style.display = (!t || (l.dataset.s || '').indexOf(t) >= 0) ? '' : 'none';
+      });
     }
 
     function closeStatViewModal() {
