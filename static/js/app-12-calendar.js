@@ -591,6 +591,8 @@
       if (typeof _updateCalSumSelectBtn === 'function') _updateCalSumSelectBtn();
       renderSummaryTable();
       if (typeof renderPointsPerTradeTable === 'function') renderPointsPerTradeTable();
+      // Equity curve resolution follows this mode (Day/Weekly/Monthly) → redraw.
+      if (typeof drawEquityCurveChart === 'function') drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []);
     }
 
     // Aggregation-mode switch (Σ Total / Avg / Min / Max) — one switch drives

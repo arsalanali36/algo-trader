@@ -25,6 +25,14 @@ RUNS_DIR = os.path.join(_ROOT, "scratch", "nifty_trend", "runs")
 _CACHE = {}
 _CACHE_MAX = 3
 
+# Backtest data is IMMUTABLE — once a run's (slug, pass, period) is mapped we
+# never need to touch its multi-MB results.js again. This holds the lightweight
+# MAPPED result (trade dicts + per-day summary + metrics, NOT the 15MB parsed
+# RESULTS), keyed by (slug, pass, period) + file mtime. First access parses;
+# every later select/range/combine is instant. Big cap = safe to hold every run.
+_RESULT_CACHE = {}
+_RESULT_CACHE_MAX = 200
+
 
 def _fin(v):
     """Non-finite floats (NaN/Inf) -> None so the JSON stays browser-parseable."""
@@ -158,37 +166,35 @@ def _map_trade(t, slug, instr, idx):
     }
 
 
-def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=None):
-    """`{summary, trades, filters, metrics, meta}` — same shape as the live
-    calendar-summary route, built from one backtest combo's all_trades.
+def _full_result(slug, pass_, period):
+    """Mapped, UNFILTERED result for one run/pass/period — `{trades, summary,
+    metrics, meta}`. Cached by file mtime (bt data is immutable → computed once,
+    then reused instantly for every later select / range / combine)."""
+    path = _results_path(slug)
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"no results.js for run '{slug}'")
+    mtime = os.path.getmtime(path)
+    ck = (slug, pass_, period)
+    hit = _RESULT_CACHE.get(ck)
+    if hit and hit[0] == mtime:
+        return hit[1]
 
-    summary  : { "YYYY-MM-DD": {pnl, count} }  bucketed by trade ENTRY date
-    trades   : mapped trade objects (all fields the Stats tables read)
-    metrics  : the run's OWN computed report card for this pass/period
-    meta     : run label, window, tf, instrument, which combo key was used
-    """
     data = _load_results(slug)
     meta = data.get("meta", {}) or {}
     instr = meta.get("instrument") or ""
     combo, key_used = _pick_combo(data, pass_, period)
     all_trades = combo.get("all_trades") or []
 
-    trades = []
-    summary = {}
+    trades, summary = [], {}
     for i, t in enumerate(all_trades):
         row = _map_trade(t, slug, instr, i)
         d = row["entry_date"]
         if not d:
             continue
-        if from_date and d < from_date:
-            continue
-        if to_date and d > to_date:
-            continue
         trades.append(row)
-        pnl = row["pnl"] or 0
-        bucket = summary.setdefault(d, {"pnl": 0.0, "count": 0})
-        bucket["pnl"] += pnl
-        bucket["count"] += 1
+        b = summary.setdefault(d, {"pnl": 0.0, "count": 0})
+        b["pnl"] += (row["pnl"] or 0)
+        b["count"] += 1
     for d in summary:
         summary[d]["pnl"] = round(summary[d]["pnl"], 2)
 
@@ -200,12 +206,8 @@ def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=No
         "win_rate": _fin(m.get("win_rate")),
         "n_trades": m.get("trades"),
     }
-
-    return {
-        "summary": summary,
-        "trades": trades,
-        "filters": {"strategy": [], "broker": []},
-        "metrics": metrics,
+    full = {
+        "trades": trades, "summary": summary, "metrics": metrics,
         "meta": {
             "slug": slug,
             "label": meta.get("design") or slug,
@@ -219,6 +221,49 @@ def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=No
             "periods": meta.get("periods") or [],
             "lot_size": meta.get("lot_size"), "lots": meta.get("lots"),
         },
+    }
+    if len(_RESULT_CACHE) >= _RESULT_CACHE_MAX:
+        _RESULT_CACHE.pop(next(iter(_RESULT_CACHE)))
+    _RESULT_CACHE[ck] = (mtime, full)
+    return full
+
+
+def calendar_summary(slug, pass_="bs", period="full", from_date=None, to_date=None):
+    """`{summary, trades, filters, metrics, meta}` — same shape as the live
+    calendar-summary route, built from one backtest combo's all_trades.
+
+    summary  : { "YYYY-MM-DD": {pnl, count} }  bucketed by trade ENTRY date
+    trades   : mapped trade objects (all fields the Stats tables read)
+    metrics  : the run's OWN computed report card for this pass/period
+    meta     : run label, window, tf, instrument, which combo key was used
+    """
+    full = _full_result(slug, pass_, period)
+    if not (from_date or to_date):
+        # whole run — shallow copies so a caller can't mutate the cache
+        return {
+            "summary": dict(full["summary"]),
+            "trades": list(full["trades"]),
+            "filters": {"strategy": [], "broker": []},
+            "metrics": full["metrics"],
+            "meta": full["meta"],
+        }
+    trades = [t for t in full["trades"]
+              if (not from_date or t["entry_date"] >= from_date)
+              and (not to_date or t["entry_date"] <= to_date)]
+    summary = {}
+    for t in trades:
+        d = t["entry_date"]
+        b = summary.setdefault(d, {"pnl": 0.0, "count": 0})
+        b["pnl"] += (t["pnl"] or 0)
+        b["count"] += 1
+    for d in summary:
+        summary[d]["pnl"] = round(summary[d]["pnl"], 2)
+    return {
+        "summary": summary,
+        "trades": trades,
+        "filters": {"strategy": [], "broker": []},
+        "metrics": full["metrics"],
+        "meta": full["meta"],
     }
 
 

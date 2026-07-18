@@ -208,8 +208,22 @@
         q.set('pass', _calSegVal('cal-bt-pass') || 'bs');
         q.set('period', _calSegVal('cal-bt-period') || 'full');
         try {
-          const r = await fetch('/api/backtest/calendar-summary?' + q.toString());
-          d = await r.json();
+          const qs = q.toString();
+          // Backtest data is IMMUTABLE → cache each response for this session;
+          // re-selecting a run / pass / period / range is then instant (no
+          // refetch). Shallow-clone on hit so downstream d.trades/d.summary
+          // reassignment (view filter) can't corrupt the cached entry.
+          window._btRespCache = window._btRespCache || new Map();
+          if (window._btRespCache.has(qs)) {
+            d = Object.assign({}, window._btRespCache.get(qs));
+          } else {
+            const r = await fetch('/api/backtest/calendar-summary?' + qs);
+            d = await r.json();
+            window._btRespCache.set(qs, d);
+            if (window._btRespCache.size > 24) {   // bound memory
+              window._btRespCache.delete(window._btRespCache.keys().next().value);
+            }
+          }
         } catch (e) { console.error("Backtest calendar load failed:", e); }
       } else {
         src = _calSegVal('cal-src'); if (src && src !== 'hedge') q.set('source', src);
@@ -1368,38 +1382,46 @@
         return;
       }
 
-      // Calculate cumulative PnL
+      // Calculate cumulative PnL — resolution follows the Total Summary mode:
+      // Day → per-day, Weekly → per-week, Monthly → per-month; Strategy/other →
+      // per-trade (chronological). Same aggregation as the summary table.
       let cumPnL = 0;
-      const data = [];
+      const data = [{ xLabel: 'Start', pnl: 0, cumulative: 0, symbol: '', date: '', time: '' }];
+      const _eqMode = window._calSumMode || 'day';
 
-      // Start at 0 PnL
-      data.push({
-        xLabel: 'Start',
-        pnl: 0,
-        cumulative: 0,
-        symbol: '',
-        date: '',
-        time: ''
-      });
-
-      // Sort trades chronologically
-      const sorted = [...trades].sort((a, b) => {
-        const da = a.entry_date + ' ' + (a.entry_time || '00:00');
-        const db = b.entry_date + ' ' + (b.entry_time || '00:00');
-        return da.localeCompare(db);
-      });
-
-      sorted.forEach((t, i) => {
-        cumPnL += (t.pnl || 0);
-        data.push({
-          xLabel: `${i + 1}`,
-          pnl: t.pnl || 0,
-          cumulative: cumPnL,
-          symbol: t.sym || t.symbol,
-          date: t.exit_date || t.entry_date || '',
-          time: t.exit_time || t.entry_time || ''
+      if ((_eqMode === 'day' || _eqMode === 'weekly' || _eqMode === 'monthly')
+        && typeof _calGroupKey === 'function') {
+        const buckets = {};
+        trades.forEach(t => {
+          const k = _calGroupKey(t, _eqMode);
+          if (k === '—') return;
+          buckets[k] = (buckets[k] || 0) + (t.pnl || 0);
         });
-      });
+        Object.keys(buckets).sort((a, b) => a.localeCompare(b)).forEach(k => {
+          cumPnL += buckets[k];
+          data.push({
+            xLabel: _calPeriodLabel(k, _eqMode),
+            pnl: buckets[k], cumulative: cumPnL,
+            symbol: '', date: k, time: ''
+          });
+        });
+      } else {
+        const sorted = [...trades].sort((a, b) => {
+          const da = a.entry_date + ' ' + (a.entry_time || '00:00');
+          const db = b.entry_date + ' ' + (b.entry_time || '00:00');
+          return da.localeCompare(db);
+        });
+        sorted.forEach((t, i) => {
+          cumPnL += (t.pnl || 0);
+          data.push({
+            xLabel: `${i + 1}`,
+            pnl: t.pnl || 0, cumulative: cumPnL,
+            symbol: t.sym || t.symbol,
+            date: t.exit_date || t.entry_date || '',
+            time: t.exit_time || t.entry_time || ''
+          });
+        });
+      }
 
       const width = container.clientWidth || 600;
       const height = 240;
