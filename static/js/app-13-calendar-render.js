@@ -181,6 +181,11 @@
         q.set('to_date', toDate);
         const monthLabel = document.getElementById('cal-month-label');
         if (monthLabel) monthLabel.textContent = `${fromDate}  →  ${toDate}`;
+      } else if (window.calBtMode) {
+        // Backtest default (koi range/month click nahi) = POORA run — top summary +
+        // equity poore run ke (heatmap ke jaisa). Month cell click range set karke filter karta hai.
+        const monthLabel = document.getElementById('cal-month-label');
+        if (monthLabel) monthLabel.textContent = 'Full run';
       } else {
         q.set('year', calYear.toString());
         q.set('month', (calMonth + 1).toString());
