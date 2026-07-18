@@ -123,10 +123,52 @@ def _norm(p):
 
 _REPO_N = _norm(REPO)
 
+# Worktrees is repo ke andar yahan rehte hain: <REPO>/.claude/worktrees/<name>/.
+# Do alag worktrees ka apna-apna working-tree + git index hota hai — ek ka `git add`
+# doosre ki file kabhi sweep nahi kar sakta (jo asli bug tha, wo cross-worktree
+# possible hi nahi). Isliye lock ko WORKTREE ke hisaab se key karte hain: alag
+# worktrees ki sessions parallel likh sakti hain, ek hi worktree/main-tree ki
+# sessions abhi bhi serialize hoti hain.
+_WT_MARK = _REPO_N + "/.claude/worktrees/"
+
 
 def _under_repo(p):
     n = _norm(p)
     return bool(n) and (n == _REPO_N or n.startswith(_REPO_N + "/"))
+
+
+def _sanitize(name):
+    return "".join(c if (c.isalnum() or c in "_.-") else "_" for c in name)[:60]
+
+
+def _worktree_key(tool, ti, cwd):
+    """Is write ka target kaunsa worktree hai? 'main' ya 'wt_<name>'."""
+    ti = ti or {}
+    cand = ""
+    if tool in _WRITE_TOOLS:
+        cand = _norm(ti.get("file_path") or ti.get("notebook_path") or "")
+    elif tool in ("Bash", "PowerShell"):
+        cmd = str(ti.get("command") or "")
+        cmd_n = cmd.lower().replace("\\\\", "/").replace("\\", "/")
+        while "//" in cmd_n:
+            cmd_n = cmd_n.replace("//", "/")
+        # command me worktree-path (`cd ".../worktrees/<name>/..."`) ho to wahi,
+        # warna session ka cwd.
+        if _WT_MARK in cmd_n:
+            cand = _WT_MARK + cmd_n.split(_WT_MARK, 1)[1]
+        else:
+            cand = _norm(cwd or "")
+    if cand.startswith(_WT_MARK):
+        name = cand[len(_WT_MARK):].split("/", 1)[0]
+        if name:
+            return "wt_" + _sanitize(name)
+    return "main"
+
+
+def _lock_path(key):
+    # main-tree ka lock file naam original rakha (backward-compat); worktree ka alag.
+    return os.path.join(HERE, ".session_lock.json" if key == "main"
+                        else ".session_lock.%s.json" % key)
 
 
 def _targets_repo(tool, tool_input, cwd):
@@ -166,15 +208,21 @@ def main():
     if not sid or not _is_write(tool, tin):
         _emit_allow()
 
+    cwd = payload.get("cwd") or ""
     # Doosre repo ka write → hamara lock isse koi matlab nahi rakhta.
-    if not _targets_repo(tool, tin, payload.get("cwd") or ""):
+    if not _targets_repo(tool, tin, cwd):
         _emit_allow()
+
+    # Lock is WRITE ke target-worktree ka — alag worktrees aapas me block na karein.
+    key = _worktree_key(tool, tin, cwd)
+    lock_file = _lock_path(key)
+    where = "main tree" if key == "main" else key
 
     now = int(time.time())
     holder = None
     try:
-        if os.path.exists(LOCK):
-            holder = json.load(open(LOCK, encoding="utf-8"))
+        if os.path.exists(lock_file):
+            holder = json.load(open(lock_file, encoding="utf-8"))
     except Exception:
         holder = None          # corrupt lock = koi lock nahi
 
@@ -183,21 +231,22 @@ def main():
         other = str(holder.get("session_id") or "")
         if other and other != sid and age < TTL_SECS:
             _emit_deny(
-                f"Is repo ka write-lock doosre Claude session ke paas hai "
+                f"Is worktree ({where}) ka write-lock doosre Claude session ke paas hai "
                 f"(session {other[:8]}, {age // 60} min pehle tak active). "
-                f"Do sessions ek saath likhein to ek ka kaam doosre ke commit me "
+                f"Do sessions ek hi worktree me likhein to ek ka kaam doosre ke commit me "
                 f"chala jaata hai. Ye {tool} call block ki gayi. "
-                f"Padhna/khojna abhi bhi chalta hai — user ko batao ki doosra session "
-                f"band kare, ya {TTL_SECS // 60} min baad lock apne aap chhoot jaayega.",
+                f"Padhna/khojna abhi bhi chalta hai — doosra session band karo, ya alag "
+                f"worktree me kaam karo, ya {TTL_SECS // 60} min baad lock khud chhoot jaayega.",
                 age // 60,
             )
 
     # Lock apna hai / khaali hai / mar chuka hai → le lo + heartbeat refresh
     try:
-        tmp = LOCK + ".tmp"
+        tmp = lock_file + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
-            json.dump({"session_id": sid, "ts": now, "pid": os.getpid()}, f)
-        os.replace(tmp, LOCK)
+            json.dump({"session_id": sid, "ts": now, "pid": os.getpid(),
+                       "worktree": key}, f)
+        os.replace(tmp, lock_file)
     except Exception:
         pass                   # lock likh na paye to bhi kaam rokna nahi
 
