@@ -172,6 +172,17 @@
 
     function _viewEsc(s) { return String(s).replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
 
+    // clean run/strategy label for display — strip verdict emoji + timeframe + trailing separators
+    function _cleanViewLabel(s) {
+      return String(s)
+        .replace(/[✅❌⚠️🧪🏆🔴🟢]/g, '') // ✅❌⚠️🧪🏆🔴🟢
+        .replace(/[·•|]\s*\d+\s*m\b/gi, '')      // "· 15m" / "• 5m" timeframe tag
+        .replace(/\s+\d+\s*m\s*$/i, '')          // trailing " 15m"
+        .replace(/[·•|\-\s]+$/g, '')             // trailing separators
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+    }
+
     async function loadCalViews() {
       try {
         const r = await fetch('/api/stat-views');
@@ -272,8 +283,8 @@
       } else {
         list.innerHTML = strats.map(s => `<label data-s="${(s.label + ' ' + s.key).toLowerCase().replace(/"/g, '&quot;')}" style="display:flex;align-items:center;gap:8px;padding:6px 6px;cursor:pointer;font-size:12px;color:#e6edf3;border-radius:4px;" onmouseover="this.style.background='#21262d'" onmouseout="this.style.background=''">
           <input type="checkbox" value="${s.key.replace(/"/g, '&quot;')}" ${checked.has(s.key) ? 'checked' : ''} style="accent-color:#1f6feb;width:14px;height:14px;margin:0;flex:none;">
-          <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_viewEsc(s.label)}</span>
-          <span style="color:#6e7681;font-size:9.5px;">${_viewEsc(s.key)}</span>
+          <span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${_viewEsc(_cleanViewLabel(s.label))}</span>
+          <span style="flex:none;color:#6e7681;font-size:9.5px;white-space:nowrap;">${_viewEsc(s.key)}</span>
         </label>`).join('');
       }
       const srch = document.getElementById('stat-view-search'); if (srch) { srch.value = ''; }
