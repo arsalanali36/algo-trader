@@ -314,7 +314,7 @@
     function statViewFilter(q) {
       const t = (q || '').trim().toLowerCase();
       document.querySelectorAll('#stat-view-strat-list label').forEach(l => {
-        l.style.display = (!t || (l.dataset.s || '').indexOf(t) >= 0) ? '' : 'none';
+        l.style.display = (!t || (l.dataset.s || '').indexOf(t) >= 0) ? 'flex' : 'none';  // 'flex' restore karo, '' se label default inline ho jaata (layout tut jaata)
       });
     }
 
