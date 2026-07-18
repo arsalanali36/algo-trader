@@ -10,6 +10,28 @@ Har naye session mein: neeche **"RESUME HERE"** padho, current phase se aage bad
 
 ## 🔴 RESUME HERE (single source of truth for "where are we")
 
+- **🟢 DEBIT-SPREAD RESCUE (2026-07-18) — the STRUCTURE is the edge, not the signal. First real-premium
+  gate-passer found.** After the "0 of 7 registry winners deployable on real premium" finding (naked
+  BUYs die of theta — see BS-vs-real block below + memory `project_code3b_bs_vs_reallake`), the fix:
+  express the SAME directional signal as a **wing-10 (500pt OTM) DEBIT SPREAD** (BUY ATM + SELL 500pt-OTM
+  same type). The sold leg finances the theta bill → directional edge survives. Tested on the **1-MIN lake**
+  (`OptChainLake_1m/NIFTY`, VPS-only), exit on **1-min candle CLOSE** (not wick), fixed ₹1000/lot SL + 1:2
+  target, real charges + DOM slip. Every naked→spread flips loss→profit: Mid-ORB −77k→+20k, ORB+Supertrend
+  −4k→+94k, **Chain-Zone −68k→+139k**. **Why (all 3 needed):** directional (credit-mirror/butterfly bet
+  AGAINST the move → both die), debit SPREAD (theta financed), wing FAR enough (wing-5/250pt = −97k move
+  reaches it; wing-10/500pt = +96k; wing-15/20 = 0 trades, lake only stores ATM±10). **OOS gate
+  (65/35, Sharpe≥1 + p<0.05 + train>0 + OOS>0):** **Chain-Zone→debit PASSES** (FULL +139k, Sharpe 1.03,
+  p=0.005, train +38k / OOS +101k — OOS>train = not overfit); ORB+Supertrend→debit (Sh 0.95) + Debit
+  Vertical ORB own-legs (Sh 0.79) = borderline (significant, both halves +, Sharpe just under gate);
+  Mid-ORB→debit = luck (p=0.63). **Chain-Zone-as-debit = FIRST real-lake survivor.** Sharpe 1.03 = JUST
+  over the line (modest edge) → mission rule: gate-pass = **forward-paper first, NOT live**. Defined risk,
+  ~₹6,700/lot margin. Caveats: one train/OOS split (not walk-forward yet); wing-10/₹1000-SL/1:2 from a
+  small grid, not overfit-swept; entry times = each run's own signal (real), premium/exit = real-lake path.
+  Scripts (scratchpad, VPS-run): `why_dv.py` (wing sweep+credit+fly), `convert_debit.py` (naked vs debit
+  per signal), `oos_debit.py` (train/OOS/p). Memory `project_code3b_debit_spread_rescue`.
+  **NEXT:** forward-paper Chain-Zone debit spread; walk-forward (multiple splits) to confirm Sharpe≥1
+  isn't split-luck; a proper `run_hunt` run so it lands in `runs/` + registry with real-lake metrics.
+
 - **❌ #06 = DELTA-NEUTRAL ADJUST (intraday iron-fly) — BUILT, TESTED, REJECTED (2026-07-13, user "reject").**
   User asked for option-chain/structure strategies, first = delta-neutral adjust, NIFTY, intraday-only,
   no-futures (delta hedged via options-only re-centering, not futures/underlying). Built honestly on

@@ -3500,3 +3500,41 @@ table, not an empty bell. Three of these six kinds would have been back within 2
 two of them fixable in one line each. **An alert that cries wolf daily trains you to
 ignore the one that isn't crying wolf** (the 550-hit burst was a genuine 20-minute
 outage, sitting in the same list as a cosmetic off-by-one).
+
+---
+
+## TRAP #134 — a whole strategy family "failed" on cost; the STRUCTURE, not the signal, was the missing piece
+
+**Symptom.** On the real option lake, all 7 ORB-family "winners" lost money as naked
+directional buys — every one bled theta (BS underpriced it, so they looked great in the
+registry, terrible in reality; see the BS-vs-real finding + memory
+`project_code3b_bs_vs_reallake`). Easy, wrong conclusion: "directional intraday options
+don't work on NIFTY, abandon the family."
+
+**What actually happened.** The *signal* was fine — the *vehicle* was wrong. Expressing the
+SAME signal as a **wing-10 (500pt OTM) debit spread** (BUY ATM + SELL 500pt-OTM same type)
+financed the theta bill with the sold leg and flipped every signal loss→profit: Mid-ORB
+−77k→+20k, ORB+Supertrend −4k→+94k, Chain-Zone −68k→+139k. Chain-Zone-as-debit then PASSED
+the full gate (Sharpe 1.03, p=0.005, train+OOS both positive) — the first real-premium
+survivor after "0 of 7 deployable." Details: memory `project_code3b_debit_spread_rescue`,
+mission RESUME-HERE.
+
+**Why the structure and not just "less theta":** three things had to be true together —
+(1) directional in the move's direction (the credit-spread mirror and the butterfly both
+bet AGAINST the breakout → both lost badly, −284k / −363k); (2) a debit *spread*, not naked
+(theta financed); (3) wing far enough that the move rarely reaches it (wing-5/250pt = −97k
+because the breakout touches it; wing-10/500pt = +96k). Change any one and it dies.
+
+**Lesson.** When a family fails on **cost** (theta, spread, charges), before abandoning it,
+test whether a **cost-financing structure** rescues it — a spread can be the edge even when
+the naked trade can't be. And test the obvious mirror (sell-side / credit / butterfly)
+explicitly rather than assuming — here they lost the most, which itself *confirmed* the edge
+is genuinely directional, not a theta artifact. "The signal has no edge" and "the signal has
+an edge we're paying away in the wrong vehicle" look identical on the naked P&L; only
+re-expressing the same trades as a different structure tells them apart.
+
+**Guard for calling it a "winner":** structure-repriced numbers are still full-period until
+OOS-gated. Chain-Zone→debit's Sharpe 1.03 is *just* over the 1.0 line (modest, not a
+monster) and rests on ONE train/OOS split — gate-pass = forward-paper first, walk-forward
+next, never straight to live. Scripts (VPS-run, scratchpad): `convert_debit.py`,
+`why_dv.py`, `oos_debit.py`. Uses the 1-MIN lake, exit on 1-min candle CLOSE.
