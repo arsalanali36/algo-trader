@@ -15,7 +15,8 @@
   a.back{color:var(--mut);text-decoration:none;font-size:13px;border:1px solid var(--bd);padding:5px 10px;border-radius:6px}
   a.back:hover{background:var(--bd2)}
   .sub{color:var(--mut);font-size:13px;margin:2px 0 18px}
-  .drop{border:1.5px dashed var(--bd);border-radius:12px;background:var(--card);padding:30px;text-align:center;cursor:pointer;transition:.15s}
+  .drop{display:block;width:100%;border:1.5px dashed var(--bd);border-radius:12px;background:var(--card);padding:30px;text-align:center;cursor:pointer;transition:.15s}
+  .drop>*{pointer-events:none}
   .drop:hover,.drop.hot{border-color:var(--blu);background:#161b2280}
   .drop .ic{font-size:34px}
   .drop b{color:var(--tx)}

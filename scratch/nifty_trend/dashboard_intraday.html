@@ -611,6 +611,17 @@ if(HAS_PASS){const seg=document.getElementById('segPass');seg.style.display='';
 // hide the Recent button for older runs that don't have a recent combo (backward-compat)
 (function(){const has=Object.keys(R.combos||{}).some(k=>k.endsWith('|recent')||k==='recent');
   const rb=document.querySelector('#segP button[data-p="recent"]');if(rb&&!has)rb.style.display='none';})();
+// prune toggles to only the combos that actually exist — a partial results.js (e.g. an
+// uploaded Excel carrying just bs|full) must not offer dead PASS/PERIOD views. A full
+// 9-combo run keeps every button (all exist). Segment with <=1 live button hides itself.
+(function(){const keys=Object.keys(R.combos||{});
+  const passOK=p=>keys.some(k=>k===p+'|full'||k===p+'|'+P);
+  const perOK=p=>keys.some(k=>k.endsWith('|'+p))||keys.includes(p);
+  document.querySelectorAll('#segPass button').forEach(b=>{if(!passOK(b.dataset.pass))b.style.display='none';});
+  document.querySelectorAll('#segP button').forEach(b=>{if(!perOK(b.dataset.p))b.style.display='none';});
+  ['segPass','segP'].forEach(id=>{const seg=document.getElementById(id);if(!seg)return;
+    const vis=[...seg.querySelectorAll('button')].filter(b=>b.style.display!=='none');
+    if(vis.length<=1)seg.style.display='none';});})();
 document.querySelectorAll('#segPass button').forEach(b=>b.onclick=()=>{PASS=b.dataset.pass;
   document.querySelectorAll('#segPass button').forEach(x=>x.classList.remove('on'));b.classList.add('on');renderAll()});
 document.querySelectorAll('#segP button').forEach(b=>b.onclick=()=>{P=b.dataset.p;
