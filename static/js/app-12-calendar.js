@@ -132,13 +132,18 @@
           // one portfolio result. Sentinel value __ALL__ expanded in calendarRender.
           const allOpt = `<option value="__ALL__">⚡ All runs (combined)</option>`;
           strat.innerHTML = allOpt + runs.map(rn => {
-            const badge = rn.deployed ? ' ✅' : (rn.significant ? '' : ' ⚠️');
+            // registry ka canonical "ID · Naam" (apni label nahi) — resolve na ho to run label fallback
+            const nm = (window.regId && String(regId(rn.slug)) !== String(rn.slug)) ? regFull(rn.slug) : rn.label;
             const tf = rn.tf ? ` · ${rn.tf}` : '';
-            const lbl = `${rn.label}${badge}${tf}`.replace(/</g, '&lt;');
+            const lbl = `${nm}${tf}`.replace(/</g, '&lt;');
             return `<option value="${rn.slug}">${lbl}</option>`;
           }).join('');
           if (prev === '__ALL__' || (prev && runs.some(rn => rn.slug === prev))) strat.value = prev;
           else if (runs.length) strat.value = runs[0].slug;
+        }
+        // registry abhi load nahi hui to naam raw the — load hote hi ek baar dobara build
+        if (window.regReady && !window.regReady() && window.regOnLoad) {
+          window.regOnLoad(function () { if (window.calBtMode) _calLoadBtRuns(); });
         }
       } catch (e) { console.error('[bt runs] load failed', e); }
       calendarRender();
