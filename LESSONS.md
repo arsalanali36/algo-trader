@@ -3538,3 +3538,20 @@ OOS-gated. Chain-Zone→debit's Sharpe 1.03 is *just* over the 1.0 line (modest,
 monster) and rests on ONE train/OOS split — gate-pass = forward-paper first, walk-forward
 next, never straight to live. Scripts (VPS-run, scratchpad): `convert_debit.py`,
 `why_dv.py`, `oos_debit.py`. Uses the 1-MIN lake, exit on 1-min candle CLOSE.
+
+## TRAP #136 — VRP condor PE legs went ITM (offset sign double-negated the built-in PE inversion)
+**Symptom:** Live `vrp_condor_weekly_trader.py` entered a condor whose PUT legs were ITM (above spot),
+not OTM — capture (recorded actual strikes) exposed it; the CALL side was fine, so the structure was
+one-sided/wrong risk profile. The validated backtest (`vrp_ungated_backtest.backtest`, iron_condor)
+builds a PROPER OTM condor (sell K−short_off, buy K−(short_off+wing) on the put side).
+**Root:** `dhan_master.get_option_contract()` ALREADY inverts the offset for PE
+(`target_idx = atm_idx − offset`, so a POSITIVE offset = lower strike = OTM put). The live code passed
+`_resolve(sym, spot, "PE", -body)` / `-(body+wing)` — the extra minus double-negated the built-in
+inversion → `atm_idx + body` → ITM put. CE was correct (`+body` → OTM call) so only the put side broke.
+**Fix:** PE offsets must be POSITIVE (`+body`, `+(body+wing)`) — `get_option_contract` handles direction.
+Now live strikes == backtest strikes exactly (numeric proof: spot 24218 → sell 24050 / buy 23800 puts,
+sell 24350 / buy 24600 calls, matching iron_condor's `K∓short_off·STEP` / `∓(short_off+wing)·STEP`).
+**Guard:** when a helper already encodes direction/sign (like PE-OTM inversion), never re-apply the sign
+at the call site. For any option-leg strike selection, cross-check against the strategy's own backtest
+leg math (single source of the validated structure), not intuition about "puts go below."
+**Rule 10:** this makes live conform to the already-validated structure → NO re-backtest needed.
