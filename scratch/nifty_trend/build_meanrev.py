@@ -154,7 +154,7 @@ def reprice_roll(spot_trades, lot):
         if ed not in lb:
             continue
         opt = "CE" if side == "long" else "PE"
-        seg_start = ed; tot = 0.0; ep0 = None; xpN = None; nseg = 0
+        seg_start = ed; tot = 0.0; gtot = 0.0; ftot = 0.0; ep0 = None; xpN = None; nseg = 0
         while True:
             exp = _mexp(seg_start)
             seg_exit = xd if xd <= exp else max([d for d in days if d <= exp], default=seg_start)
@@ -167,7 +167,9 @@ def reprice_roll(spot_trades, lot):
                 break
             fee = bs.calc_charges(ep, xp, lot, entry_side="BUY", when=g["DT"][si])
             slip = bs.slip_cost_leg(ep, xp, lot)
-            tot += (xp - ep) * lot - fee - slip
+            gross_seg = (xp - ep) * lot
+            tot += gross_seg - fee - slip
+            gtot += gross_seg; ftot += fee + slip     # surface per-trade gross + charges (net = pnl unchanged)
             if ep0 is None: ep0 = ep
             xpN = xp; nseg += 1
             if seg_exit >= xd:
@@ -179,7 +181,8 @@ def reprice_roll(spot_trades, lot):
         if ep0 is None:
             continue
         out.append(dict(side=side, entry=round(ep0, 2), exit=round(xpN, 2), qty=lot,
-                        pnl=round(tot, 1), points=round((xpN - ep0), 1),
+                        pnl=round(tot, 1), gross=round(gtot, 1), fee=round(ftot, 1),
+                        points=round((xpN - ep0), 1),
                         entry_dt=str(ed), exit_dt=str(xd), reason=t.get("reason", "") + (f" +{nseg-1}roll" if nseg > 1 else ""),
                         entry_i=t["entry_i"], exit_i=t["exit_i"], bars=t.get("bars", 0),
                         entry_spot=round(float(t["entry"]), 1), exit_spot=round(float(t["exit"]), 1)))
