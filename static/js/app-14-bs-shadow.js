@@ -49,12 +49,7 @@
 
   window.bsDecorateCalendar = function () {
     document.querySelectorAll('.cal-day-cell .bs-ov').forEach(n => n.remove());
-    // restore each cell's main Real number to its ALL-legs value (undo any prior
-    // index-only swap) + reset styling — so toggling back to Real mode is exact.
-    document.querySelectorAll('.cal-day-cell .cal-day-pnl:not(.bs-ov)').forEach(n => {
-      n.style.opacity = ''; n.style.color = '';
-      if (n.dataset.allReal != null) n.textContent = n.dataset.allReal;
-    });
+    document.querySelectorAll('.cal-day-cell .cal-day-pnl:not(.bs-ov)').forEach(n => { n.style.opacity = ''; });
     const mode = window.calPremiumMode;
     if (mode === 'real') return;
     // sum index-only (gross) Real + BS per date over the calendar's own (already-
@@ -70,27 +65,21 @@
     document.querySelectorAll('.cal-day-cell[data-date]').forEach(cell => {
       const v = byDate[cell.dataset.date];
       if (!v || !v.n) return;
-      const realPnl = cell.querySelector('.cal-day-pnl:not(.bs-ov)');
-      // A (fair tile) — in BS/Compare the big Real number becomes INDEX-ONLY, the
-      // exact same legs BS covers, so Real vs BS is apples-to-apples (all-legs
-      // Real incl. stocks stays available in Real mode + the per-day drilldown).
-      if (realPnl) {
-        if (realPnl.dataset.allReal == null) realPnl.dataset.allReal = realPnl.textContent;
-        realPnl.textContent = inr(v.real) + ' ·idx';
-        realPnl.style.opacity = '';
-        realPnl.style.color = v.real >= 0 ? '#3fb950' : '#f85149';
-      }
+      // Tile's big number stays the ACTUAL all-legs Real (the day's real gain) in
+      // EVERY mode — never hide it. BS can only price index legs, so show it as a
+      // clearly-labeled secondary "BS(idx)" line; Compare adds the index-only-fair Δ.
+      // (The rigorous same-legs comparison lives in the per-day drilldown.)
       const bsDiv = document.createElement('div');
       bsDiv.className = 'bs-ov cal-day-pnl';
       bsDiv.style.cssText = 'color:#a371f7;font-size:11px;line-height:1.2;';
-      bsDiv.textContent = 'BS ' + inr(v.bs);
+      bsDiv.textContent = 'BS(idx) ' + inr(v.bs);
       cell.appendChild(bsDiv);
       if (mode === 'compare') {
-        const d = v.bs - v.real;
+        const d = v.bs - v.real;   // index-only (same legs) → fair divergence
         const dDiv = document.createElement('div');
         dDiv.className = 'bs-ov';
         dDiv.style.cssText = 'font-size:10px;line-height:1.2;color:' + (d >= 0 ? '#d29922' : '#388bfd') + ';';
-        dDiv.textContent = 'Δ ' + inr(d);
+        dDiv.textContent = 'Δidx ' + inr(d);
         cell.appendChild(dDiv);
       }
     });
