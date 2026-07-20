@@ -379,6 +379,8 @@
       "status": "paper",
       "legs": 1,
       "role": "standalone",
+      "deploy_kind": "timer",
+      "timer_unit": "momentum-paper.timer",
       "aliases": [
         "regime_momentum",
         "momentum_bot"

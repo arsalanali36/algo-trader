@@ -910,6 +910,43 @@ def api_strategy_registry():
     except Exception as e:
         return jsonify({"error": str(e), "families": {}, "strategies": {}})
 
+# --- Family-10 (Factor/Equity) PAPER-deploy toggle: these are standalone systemd-timer bots
+#     (monthly rebalance), NOT dashboard-Popen intraday loops. The registry "▶ Paper" button
+#     enables/disables the timer. PAPER-ONLY + whitelisted units (no arbitrary systemctl, no
+#     Live path — equity go-live is gated on GO_LIVE_CHECKLIST). No orders/broker here. ---
+_TIMER_STRATEGIES = {"momentum-paper.timer"}
+
+def _timer_state(unit):
+    import subprocess
+    try:
+        en = subprocess.run(["systemctl", "is-enabled", unit], capture_output=True, text=True, timeout=6).stdout.strip()
+        ac = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=6).stdout.strip()
+        return {"unit": unit, "enabled": en == "enabled", "active": ac == "active", "state": en or "unknown"}
+    except Exception as e:
+        return {"unit": unit, "enabled": False, "active": False, "state": "err", "err": str(e)}
+
+@app.route('/api/timer-status', methods=['GET'])
+def api_timer_status():
+    return jsonify({u: _timer_state(u) for u in _TIMER_STRATEGIES})
+
+@app.route('/api/timer-deploy', methods=['POST'])
+def api_timer_deploy():
+    import subprocess
+    d = request.get_json(silent=True) or {}
+    unit, action = d.get("unit"), d.get("action")
+    if unit not in _TIMER_STRATEGIES:
+        return jsonify({"ok": False, "err": "unknown/again-whitelisted timer"}), 400
+    if action == "paper":
+        cmd = ["systemctl", "enable", "--now", unit]
+    elif action == "stop":
+        cmd = ["systemctl", "disable", "--now", unit]
+    else:
+        return jsonify({"ok": False, "err": "action must be paper|stop"}), 400
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        return jsonify({"ok": False, "err": (r.stderr or r.stdout).strip()}), 500
+    return jsonify({"ok": True, "state": _timer_state(unit)})
+
 @app.route('/api/config', methods=['POST'])
 def api_set_config():
     data = request.get_json()
