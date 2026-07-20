@@ -236,6 +236,56 @@ def _dhan_info(symbol):
     _IDX = {"NIFTY": ("13", "IDX_I", "INDEX"), "BANKNIFTY": ("25", "IDX_I", "INDEX")}
     return _IDX.get(symbol)
 
+# ── Dhan token dead-detection + backoff ──────────────────────────────────────
+# JWT token har 24h me expire hota hai (Critical Rule 4). Expire hote hi HAR
+# symbol ki daily-fetch 401/DH-901 deti hai — 25 symbols × har loop = Dhan pe
+# 401 hammer + notification centre me cryptic "HTTP 401 {json}" spam (454 hits
+# jaisa). Root ek hi hai: token. Isliye (global rule "401 pe retry-spam mat karo"):
+#   • pehli auth-fail pe EK saaf actionable alert (stable key = ek hi bell row,
+#     saare strategy processes + saare symbols mila ke)
+#   • jab tak token dead lage, har _TOKEN_RETRY_SEC me sirf EK probe bhejo
+#     (refreshed token detect karne ko) — baaki calls turant skip, koi hammer nahi
+#   • koi bhi 200 = token wapas zinda → alert auto-resolve (bell me "✓ fixed")
+_TOKEN_STATE = {"dead": False, "last_probe": 0.0}
+_TOKEN_RETRY_SEC = 180   # dead hone par 3-min me ek hi probe (per-symbol/loop nahi)
+
+def _is_auth_fail(status, text):
+    """401/403 ya DH-901/DH-902 / 'invalid or expired' = token auth failure —
+    transient network/429 se alag, sirf isi pe hi token-dead maano."""
+    if status in (401, 403):
+        return True
+    t = (text or "").lower()
+    return "dh-901" in t or "dh-902" in t or "invalid or expired" in t
+
+def _mark_token_dead(symbol, status, text):
+    if _TOKEN_STATE["dead"]:
+        return                       # pehle se pata hai — na re-log, na re-notify
+    _TOKEN_STATE["dead"] = True
+    _TOKEN_STATE["last_probe"] = time.time()
+    # log.warning (log.error NAHI) — warna error_watch isko bhi tail karke ek aur
+    # bell row bana deta; niche ka single actionable notify.error hi kaafi hai.
+    log.warning(f"Dhan token EXPIRED/INVALID (DH-901) — {symbol} HTTP {status}. "
+                f"Control tab me naya token daaliye; tab tak koi data/signal nahi.")
+    try:
+        import notify
+        notify.error(
+            "🔴 Dhan token expire/invalid ho gaya (DH-901). Dashboard → Control tab "
+            "me naya token daaliye — tab tak kisi bhi strategy ko data/signal nahi milega.",
+            key="dhan_token_expired", source="dhan")
+    except Exception:
+        pass
+
+def _mark_token_ok():
+    if not _TOKEN_STATE["dead"]:
+        return
+    _TOKEN_STATE["dead"] = False
+    log.info("Dhan token wapas zinda — daily fetch resume.")
+    try:
+        import notify
+        notify.resolve("dhan_token_expired")   # bell row "✓ fixed" ho jaati hai
+    except Exception:
+        pass
+
 def fetch_daily(symbol, days=22):
     """Fetch daily OHLC from Dhan /v2/charts/historical."""
     from datetime import date as _date
@@ -244,6 +294,12 @@ def fetch_daily(symbol, days=22):
         log.error(f"fetch_daily: no Dhan info for {symbol}")
         return None
     sec_id, seg, inst = info
+    # Token dead? To har symbol/loop pe Dhan mat maaro — sirf har _TOKEN_RETRY_SEC
+    # me ek probe bhejo (refreshed token detect karne ko). Warna 401 hammer.
+    if _TOKEN_STATE["dead"]:
+        if (time.time() - _TOKEN_STATE["last_probe"]) < _TOKEN_RETRY_SEC:
+            return None
+        _TOKEN_STATE["last_probe"] = time.time()   # ye ek probe attempt hai
     today = _date.today()
     frm = (_date.fromordinal(today.toordinal() - max(days * 2, 60))).isoformat()
     token, cid = load_creds()
@@ -255,9 +311,13 @@ def fetch_daily(symbol, days=22):
             headers=hdrs(token, cid), timeout=10)
         if r.status_code == 429:
             _rl.note_429()
+        if _is_auth_fail(r.status_code, r.text):
+            _mark_token_dead(symbol, r.status_code, r.text)
+            return None
         if r.status_code != 200:
             log.error(f"fetch_daily {symbol}: HTTP {r.status_code} — {r.text[:200]}")
             return None
+        _mark_token_ok()   # 200 aaya = token zinda (dead flag tha to clear + resolve)
         d = r.json()
         ts  = d.get("start_Time") or d.get("timestamp") or []
         if not ts:
@@ -1195,7 +1255,11 @@ def main(strategy_id="range"):
                                 pass
                         continue
                     daily_levels.pop(symbol, None)   # transient → retry next loop
-                    if _rt_once(f"levels0:{strategy_id}:{symbol}"):
+                    # Jab token hi dead hai to per-symbol "0 key levels" spam mat
+                    # karo — root ek hi hai (Dhan token), uska single alert
+                    # (dhan_token_expired) already dikh raha hai. Sirf token-zinda
+                    # wale genuine single-symbol failure pe hi per-symbol batao.
+                    if not _TOKEN_STATE["dead"] and _rt_once(f"levels0:{strategy_id}:{symbol}"):
                         log.error(f"{symbol}: 0 key levels — daily fetch fail. "
                                   f"Agle loop me retry hoga.")
                         try:
