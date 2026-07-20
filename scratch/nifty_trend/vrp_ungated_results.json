@@ -1,0 +1,511 @@
+{
+  "meta": {
+    "lot": 65,
+    "span": "2021-07-01 \u2192 2026-07-10",
+    "cap": 1000000.0,
+    "evo_end": "2025-07-01",
+    "iv_lookback": 60,
+    "entry_time": "09:20"
+  },
+  "a": {
+    "cycle_start|iron_fly": {
+      "metrics": {
+        "n": 249,
+        "win_rate": 45.8,
+        "pf": 0.88,
+        "sharpe": -0.417,
+        "net_pct": -5.5,
+        "maxdd": -6.59,
+        "total": -54973.0,
+        "avg": -220.8,
+        "breach_rate": 100.0,
+        "loss_rate": 54.2
+      },
+      "sig": {
+        "p_value": 0.8182,
+        "sharpe": -0.417,
+        "significant": false
+      },
+      "mc": {
+        "net": [
+          -5.497319999999961,
+          -15.062025081754154,
+          -5.638136273929462,
+          4.409500794187684
+        ],
+        "maxdd": [
+          -6.588337878707174,
+          -16.74984497770454,
+          -9.25569675745615,
+          -4.528646655450841
+        ],
+        "sharpe": [
+          -0.4160832180874715,
+          -1.2578451673768107,
+          -0.4245230222975499,
+          0.34073582296787885
+        ],
+        "pct_profitable": 18.2,
+        "not_overfit": true
+      },
+      "dsr": {
+        "dsr_prob": 0.002,
+        "pass": false,
+        "n_trials": 24,
+        "sr_star_annual": 2.007
+      },
+      "train": {
+        "n": 199,
+        "win_rate": 44.7,
+        "pf": 0.86,
+        "sharpe": -0.468,
+        "net_pct": -5.0,
+        "maxdd": -5.67,
+        "total": -50002.0,
+        "avg": -251.3,
+        "breach_rate": 100.0,
+        "loss_rate": 55.3
+      },
+      "oos": {
+        "n": 50,
+        "win_rate": 50.0,
+        "pf": 0.94,
+        "sharpe": -0.198,
+        "net_pct": -0.5,
+        "maxdd": -2.85,
+        "total": -4971.0,
+        "avg": -99.4,
+        "breach_rate": 100.0,
+        "loss_rate": 50.0
+      }
+    },
+    "cycle_start|iron_condor": {
+      "metrics": {
+        "n": 249,
+        "win_rate": 64.3,
+        "pf": 0.95,
+        "sharpe": -0.152,
+        "net_pct": -2.48,
+        "maxdd": -4.74,
+        "total": -24797.0,
+        "avg": -99.6,
+        "breach_rate": 49.8,
+        "loss_rate": 35.7
+      },
+      "sig": {
+        "p_value": 0.6236,
+        "sharpe": -0.152,
+        "significant": false
+      },
+      "mc": {
+        "net": [
+          -2.4796599999999835,
+          -14.830326895263074,
+          -2.682342154478845,
+          8.861362100227447
+        ],
+        "maxdd": [
+          -4.744502229525061,
+          -17.247990025634902,
+          -8.822340006395564,
+          -4.550586847146431
+        ],
+        "sharpe": [
+          -0.14082503025940002,
+          -0.9536147681711412,
+          -0.15573696270888093,
+          0.5791285483463243
+        ],
+        "pct_profitable": 34.3,
+        "not_overfit": true
+      },
+      "dsr": {
+        "dsr_prob": 0.0103,
+        "pass": false,
+        "n_trials": 24,
+        "sr_star_annual": 1.979
+      },
+      "train": {
+        "n": 199,
+        "win_rate": 64.3,
+        "pf": 0.95,
+        "sharpe": -0.171,
+        "net_pct": -2.23,
+        "maxdd": -4.74,
+        "total": -22309.0,
+        "avg": -112.1,
+        "breach_rate": 50.8,
+        "loss_rate": 35.7
+      },
+      "oos": {
+        "n": 50,
+        "win_rate": 64.0,
+        "pf": 0.98,
+        "sharpe": -0.075,
+        "net_pct": -0.25,
+        "maxdd": -3.15,
+        "total": -2488.0,
+        "avg": -49.8,
+        "breach_rate": 46.0,
+        "loss_rate": 36.0
+      }
+    },
+    "dte4|iron_fly": {
+      "metrics": {
+        "n": 197,
+        "win_rate": 47.2,
+        "pf": 0.97,
+        "sharpe": -0.108,
+        "net_pct": -1.11,
+        "maxdd": -3.9,
+        "total": -11115.0,
+        "avg": -56.4,
+        "breach_rate": 100.0,
+        "loss_rate": 52.8
+      },
+      "sig": {
+        "p_value": 0.5838,
+        "sharpe": -0.108,
+        "significant": false
+      },
+      "mc": {
+        "net": [
+          -1.1114899999999484,
+          -9.851276854041668,
+          -1.7912627678460302,
+          7.816970316020599
+        ],
+        "maxdd": [
+          -3.899712301587377,
+          -11.915077864974814,
+          -6.378061573079196,
+          -3.129600773962953
+        ],
+        "sharpe": [
+          -0.08631726871411534,
+          -0.9167810763338864,
+          -0.1463956137346515,
+          0.6982043506714455
+        ],
+        "pct_profitable": 38.3,
+        "not_overfit": true
+      },
+      "dsr": {
+        "dsr_prob": 0.0143,
+        "pass": false,
+        "n_trials": 24,
+        "sr_star_annual": 2.245
+      },
+      "train": {
+        "n": 159,
+        "win_rate": 48.4,
+        "pf": 1.0,
+        "sharpe": -0.002,
+        "net_pct": -0.02,
+        "maxdd": -3.9,
+        "total": -182.0,
+        "avg": -1.1,
+        "breach_rate": 100.0,
+        "loss_rate": 51.6
+      },
+      "oos": {
+        "n": 38,
+        "win_rate": 42.1,
+        "pf": 0.81,
+        "sharpe": -0.64,
+        "net_pct": -1.09,
+        "maxdd": -2.91,
+        "total": -10933.0,
+        "avg": -287.7,
+        "breach_rate": 100.0,
+        "loss_rate": 57.9
+      }
+    },
+    "dte4|iron_condor": {
+      "metrics": {
+        "n": 197,
+        "win_rate": 65.5,
+        "pf": 0.99,
+        "sharpe": -0.032,
+        "net_pct": -0.42,
+        "maxdd": -3.89,
+        "total": -4179.0,
+        "avg": -21.2,
+        "breach_rate": 48.7,
+        "loss_rate": 34.5
+      },
+      "sig": {
+        "p_value": 0.5264,
+        "sharpe": -0.032,
+        "significant": false
+      },
+      "mc": {
+        "net": [
+          -0.41792999999989977,
+          -11.481850947626825,
+          -0.8420735009792957,
+          10.274304445352195
+        ],
+        "maxdd": [
+          -3.887749890865466,
+          -14.481984235674016,
+          -7.450844886048319,
+          -3.7034764187989038
+        ],
+        "sharpe": [
+          -0.014106023660501475,
+          -0.8020147365865875,
+          -0.04518894695359006,
+          0.7552228433237146
+        ],
+        "pct_profitable": 43.9,
+        "not_overfit": true
+      },
+      "dsr": {
+        "dsr_prob": 0.0205,
+        "pass": false,
+        "n_trials": 24,
+        "sr_star_annual": 2.241
+      },
+      "train": {
+        "n": 159,
+        "win_rate": 66.7,
+        "pf": 1.01,
+        "sharpe": 0.042,
+        "net_pct": 0.44,
+        "maxdd": -3.89,
+        "total": 4380.0,
+        "avg": 27.5,
+        "breach_rate": 47.8,
+        "loss_rate": 33.3
+      },
+      "oos": {
+        "n": 38,
+        "win_rate": 60.5,
+        "pf": 0.89,
+        "sharpe": -0.356,
+        "net_pct": -0.86,
+        "maxdd": -3.04,
+        "total": -8560.0,
+        "avg": -225.2,
+        "breach_rate": 52.6,
+        "loss_rate": 39.5
+      }
+    }
+  },
+  "b": {
+    "headline_key": "cycle_start|iron_condor",
+    "buckets": {
+      "0.0-0.2": {
+        "n": 126,
+        "win_rate": 62.7,
+        "pf": 0.71,
+        "sharpe": -1.01,
+        "net_pct": -8.34,
+        "maxdd": -8.83,
+        "total": -83450.0,
+        "avg": -662.3,
+        "breach_rate": 50.8,
+        "loss_rate": 37.3
+      },
+      "0.2-0.4": {
+        "n": 52,
+        "win_rate": 67.3,
+        "pf": 1.36,
+        "sharpe": 0.978,
+        "net_pct": 3.35,
+        "maxdd": -2.16,
+        "total": 33487.0,
+        "avg": 644.0,
+        "breach_rate": 40.4,
+        "loss_rate": 32.7
+      },
+      "0.4-0.6": {
+        "n": 34,
+        "win_rate": 64.7,
+        "pf": 0.87,
+        "sharpe": -0.43,
+        "net_pct": -0.93,
+        "maxdd": -2.48,
+        "total": -9333.0,
+        "avg": -274.5,
+        "breach_rate": 52.9,
+        "loss_rate": 35.3
+      },
+      "0.6-0.8": {
+        "n": 21,
+        "win_rate": 76.2,
+        "pf": 1.54,
+        "sharpe": 1.351,
+        "net_pct": 1.88,
+        "maxdd": -1.65,
+        "total": 18794.0,
+        "avg": 895.0,
+        "breach_rate": 42.9,
+        "loss_rate": 23.8
+      },
+      "0.8-1.0": {
+        "n": 12,
+        "win_rate": 50.0,
+        "pf": 1.81,
+        "sharpe": 1.703,
+        "net_pct": 1.52,
+        "maxdd": -1.14,
+        "total": 15202.0,
+        "avg": 1266.8,
+        "breach_rate": 83.3,
+        "loss_rate": 50.0
+      }
+    },
+    "no_rank": {
+      "n": 4,
+      "win_rate": 50.0,
+      "pf": 1.16,
+      "sharpe": 0.468,
+      "net_pct": 0.05,
+      "maxdd": -0.16,
+      "total": 504.0,
+      "avg": 125.9,
+      "breach_rate": 50.0,
+      "loss_rate": 50.0
+    },
+    "no_rank_n": 4
+  },
+  "c": {
+    "wing5": {
+      "metrics": {
+        "n": 249,
+        "win_rate": 45.8,
+        "pf": 0.88,
+        "sharpe": -0.417,
+        "net_pct": -5.5,
+        "maxdd": -6.59,
+        "total": -54973.0,
+        "avg": -220.8,
+        "breach_rate": 100.0,
+        "loss_rate": 54.2
+      },
+      "sig": {
+        "p_value": 0.8182,
+        "sharpe": -0.417,
+        "significant": false
+      }
+    },
+    "wing8": {
+      "metrics": {
+        "n": 249,
+        "win_rate": 53.8,
+        "pf": 0.92,
+        "sharpe": -0.273,
+        "net_pct": -6.23,
+        "maxdd": -9.56,
+        "total": -62253.0,
+        "avg": -250.0,
+        "breach_rate": 100.0,
+        "loss_rate": 46.2
+      },
+      "sig": {
+        "p_value": 0.7278,
+        "sharpe": -0.273,
+        "significant": false
+      }
+    },
+    "wing10": {
+      "metrics": {
+        "n": 249,
+        "win_rate": 56.2,
+        "pf": 0.92,
+        "sharpe": -0.251,
+        "net_pct": -6.92,
+        "maxdd": -11.0,
+        "total": -69209.0,
+        "avg": -277.9,
+        "breach_rate": 100.0,
+        "loss_rate": 43.8
+      },
+      "sig": {
+        "p_value": 0.7148,
+        "sharpe": -0.251,
+        "significant": false
+      }
+    }
+  },
+  "gated": {
+    "cycle_start|iron_fly": {
+      "metrics": {
+        "n": 12,
+        "win_rate": 33.3,
+        "pf": 1.12,
+        "sharpe": 0.303,
+        "net_pct": 0.23,
+        "maxdd": -1.19,
+        "total": 2315.0,
+        "avg": 192.9,
+        "breach_rate": 100.0,
+        "loss_rate": 66.7
+      },
+      "sig": {
+        "p_value": 0.478,
+        "sharpe": 0.303,
+        "significant": false
+      }
+    },
+    "cycle_start|iron_condor": {
+      "metrics": {
+        "n": 12,
+        "win_rate": 50.0,
+        "pf": 1.81,
+        "sharpe": 1.703,
+        "net_pct": 1.52,
+        "maxdd": -1.14,
+        "total": 15202.0,
+        "avg": 1266.8,
+        "breach_rate": 83.3,
+        "loss_rate": 50.0
+      },
+      "sig": {
+        "p_value": 0.2166,
+        "sharpe": 1.703,
+        "significant": false
+      }
+    },
+    "dte4|iron_fly": {
+      "metrics": {
+        "n": 13,
+        "win_rate": 38.5,
+        "pf": 1.43,
+        "sharpe": 0.956,
+        "net_pct": 0.73,
+        "maxdd": -0.78,
+        "total": 7268.0,
+        "avg": 559.1,
+        "breach_rate": 100.0,
+        "loss_rate": 61.5
+      },
+      "sig": {
+        "p_value": 0.3348,
+        "sharpe": 0.956,
+        "significant": false
+      }
+    },
+    "dte4|iron_condor": {
+      "metrics": {
+        "n": 13,
+        "win_rate": 61.5,
+        "pf": 1.27,
+        "sharpe": 0.641,
+        "net_pct": 0.55,
+        "maxdd": -0.93,
+        "total": 5498.0,
+        "avg": 422.9,
+        "breach_rate": 53.8,
+        "loss_rate": 38.5
+      },
+      "sig": {
+        "p_value": 0.3948,
+        "sharpe": 0.641,
+        "significant": false
+      }
+    }
+  }
+}
