@@ -44,12 +44,14 @@ def main(strategy_id="vrp_condor_v1"):
         print("[capture] no spot — abort (retry a bit later)", flush=True)
         return
 
-    # SAME strike geometry as _enter_condor(): SELL body ±body, BUY wings ±(body+wing)
+    # SAME strike geometry as _enter_condor(): SELL body ±body, BUY wings ±(body+wing).
+    # PE offsets are POSITIVE — get_option_contract() inverts the PE offset (positive =
+    # OTM / lower strike), so a minus would double-negate into an ITM put (TRAP #140).
     legdefs = [
         ("BUY",  "CE", +(body + wing), "wing"),
-        ("BUY",  "PE", -(body + wing), "wing"),
+        ("BUY",  "PE", +(body + wing), "wing"),
         ("SELL", "CE", +body,          "body"),
-        ("SELL", "PE", -body,          "body"),
+        ("SELL", "PE", +body,          "body"),
     ]
     broker = v._get_broker(bname)
     legs = []
