@@ -1385,7 +1385,7 @@
       <div class="tab" onclick="switchTab('log')">Logs</div>
       <div class="tab" onclick="switchTab('config')" style="display: none;">Config</div>
       <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
-      <div class="tab" onclick="switchTab('calendar')">📊 Stats</div>
+      <a href="/stats2" class="tab" style="text-decoration: none;">📊 Stats 2</a>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <a href="/registry" target="_blank" class="tab" style="text-decoration: none;">🗂️ Strategies</a>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
@@ -1415,6 +1415,9 @@
           ▾</div>
         <div class="dropdown-menu" id="more-dropdown"
           style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 140px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <div class="dropdown-item" data-hosts-tab="calendar" onclick="switchTab('calendar'); closeMoreDropdown();"
+            style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+            📊 Stats</div>
           <div class="dropdown-item" data-hosts-tab="script3" onclick="switchTab('script3'); closeMoreDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #3fb950; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
             📜 Script 3</div>
