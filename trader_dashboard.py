@@ -3053,6 +3053,212 @@ def api_manual_order():
     except Exception as e:
         return jsonify({'ok': False, 'msg': str(e)})
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# PRICE-TRIGGER conditional orders (NIFTY spot level → option order)
+# ─────────────────────────────────────────────────────────────────────────────
+# Koi broker index (NIFTY spot) pe order nahi deta. Par ltp_poller NIFTY/BANKNIFTY
+# spot har ~1.5s se shared_ltp_cache me warm rakhta hai, to ham khud watch karke
+# level-cross pe us waqt ki ATM ±offset CE/PE pe order fire kar dete hain —
+# execution_gateway (poora RMS) ke through. State: _ops/price_triggers.py
+# (day-scoped, EOD auto-cancel). Watch loop = trigger_watch_loop() (monitor_daemon).
+
+def _trigger_spot_now(symbol):
+    """Live index spot for arm-time validation: cache-first (zero Dhan call),
+    REST fallback (same path as api_manual_order). None if both fail."""
+    try:
+        import shared_ltp_cache
+        s = shared_ltp_cache.get_index(symbol)
+        if s:
+            return float(s)
+    except Exception:
+        pass
+    try:
+        token, cid = _creds()
+        _hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _idx = {"NIFTY": "13", "BANKNIFTY": "25"}.get(str(symbol).upper(), "13")
+        _rl.acquire("ltp")
+        r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                          json={"IDX_I": [int(_idx)]}, headers=_hdrs, timeout=5)
+        if r.status_code == 429:
+            _rl.note_429()
+        return float(r.json()["data"]["IDX_I"][_idx]["last_price"])
+    except Exception:
+        return None
+
+
+def _fire_price_trigger(t, spot, log=print):
+    """Fire ONE due price-trigger as an option order via execution_gateway
+    (full RMS — user's choice). ATM is resolved against the LIVE spot at fire
+    time (not arm time). Caller has already claim()'d it (one-shot). Fill uses
+    the gateway's own marketable-limit pricing. Returns (ok, msg)."""
+    import dhan_master
+    import execution_gateway as gw
+    symbol = t["symbol"]; opt_type = t["opt_type"]; offset = int(t.get("offset", 0))
+    side = t["side"]; lots = int(t["lots"]); mode = t["mode"]; broker = t["broker"]
+    sec_id, trad_sym, lot_size = dhan_master.get_option_contract(symbol, spot, opt_type, offset)
+    if not sec_id:
+        return False, f"Contract not mila ({symbol} {opt_type} off={offset})"
+    if not lot_size:
+        # never guess a lot size (feedback_no_assumptions) — abort loudly
+        return False, f"Lot size resolve nahi hua ({trad_sym}) — order NAHI bheja"
+    res = gw.execute_signal(
+        "manual_trigger", symbol, side, lots, int(lot_size), sec_id, trad_sym,
+        seg="NSE_FNO", mode=mode, broker_name=broker, tag="TRIGGER",
+        source="trigger", gate=True, log=log)
+    if res.get("ok"):
+        px = res.get("price")
+        pxs = f" @ {px:.2f}" if px else ""
+        return True, f"[{mode.upper()}/{broker.upper()}] {side} {lots}L {trad_sym}{pxs} ({res.get('status')})"
+    return False, f"blocked/failed — {res.get('reason') or res.get('status')}"
+
+
+# In-process double-fire guard — survives a cross-process file-clobber that
+# (very rarely) reverts a persisted fired flag. Lives in whichever process runs
+# the watch loop (monitor_daemon). Belt-and-suspenders with claim()'s persist.
+_trigger_fired_session = set()
+
+
+def trigger_watch_loop():
+    """Dedicated ~1s loop (started by monitor_daemon next to the poller). Reads
+    the already-warm index spot from shared_ltp_cache — ZERO extra Dhan calls —
+    and fires due price-triggers. ~1s latency (pos_monitor's 5s is too slow for a
+    price trigger). Respects market hours + no-entry time (single source:
+    risk_gate.exit_time_config); auto-cancels all pending at market close (EOD)."""
+    import time as _t
+    try:
+        import price_triggers as pt
+        import shared_ltp_cache as slc
+        import risk_gate as rg
+    except Exception as e:
+        print(f"[trigger] watch loop imports failed: {e}", flush=True)
+        return
+    print("[trigger] price-trigger watch loop started (~1s, cache-only spot)", flush=True)
+    _eod_cancelled_day = None
+    while True:
+        try:
+            ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+            hm = ist.hour * 60 + ist.minute
+            today = ist.strftime("%Y-%m-%d")
+            market_open = ist.weekday() < 5 and (9 * 60 + 8) <= hm <= (15 * 60 + 35)
+            if not market_open:
+                if _eod_cancelled_day != today:
+                    try:
+                        n = pt.cancel_all("eod")
+                        if n:
+                            print(f"[trigger] market closed — {n} pending trigger(s) auto-cancelled (EOD).", flush=True)
+                    except Exception:
+                        pass
+                    _eod_cancelled_day = today
+                _t.sleep(20)
+                continue
+            _eod_cancelled_day = None
+
+            # no-entry gate — after 3:15 (RMS-configurable) don't fire (leave pending;
+            # EOD-cancel at close). Same single source strategies use.
+            try:
+                _sq, (ne_h, ne_m) = rg.exit_time_config()
+            except Exception:
+                ne_h, ne_m = 15, 15
+            no_entry = hm >= (ne_h * 60 + ne_m)
+
+            spot_by = {}
+            for sym in ("NIFTY", "BANKNIFTY"):
+                s = slc.get_index(sym)
+                if s:
+                    spot_by[sym] = float(s)
+
+            if spot_by:
+                for t in pt.due_triggers(spot_by):
+                    tid = t["id"]
+                    if tid in _trigger_fired_session:
+                        continue
+                    if no_entry:
+                        continue  # past no-entry time — skip firing
+                    # ONE-SHOT: claim (persist fired) BEFORE placing the order.
+                    if not pt.claim(tid):
+                        continue  # already claimed / not armed
+                    _trigger_fired_session.add(tid)
+                    spot = spot_by[t["symbol"]]
+                    print(f"[trigger] FIRE {tid}: {t['symbol']} {t['direction']} {t['level']} "
+                          f"(spot {spot:.1f}) -> {t['side']} {t['lots']}L {t['opt_type']} "
+                          f"off={t['offset']} [{t['mode']}/{t['broker']}]", flush=True)
+                    try:
+                        ok, msg = _fire_price_trigger(t, spot, log=lambda m: print(m, flush=True))
+                    except Exception as fe:
+                        ok, msg = False, f"exception: {fe}"
+                    pt.set_result(tid, "fired" if ok else "fire_failed", msg)
+                    print(f"[trigger] {tid} result: {'OK' if ok else 'FAIL'} — {msg}", flush=True)
+                    try:
+                        import notify
+                        (notify.info if ok else notify.error)(
+                            f"Price trigger {'fired' if ok else 'FAILED'}: "
+                            f"{t['symbol']} {t['direction']} {t['level']:.0f} → {msg}",
+                            source="trigger")
+                    except Exception:
+                        pass
+            _t.sleep(1.0)
+        except Exception as e:
+            print(f"[trigger] watch loop error: {e}", flush=True)
+            _t.sleep(3)
+
+
+@app.route('/api/triggers', methods=['GET'])
+def api_triggers_list():
+    """Armed/fired price-triggers + live spot + distance-to-level for the UI."""
+    try:
+        import price_triggers as pt
+        triggers = pt.list_triggers()
+        want_sym = (request.args.get("symbol") or "NIFTY").upper()
+        spot_by = {}
+        for sym in set([t.get("symbol") for t in triggers] + ["NIFTY", want_sym]):
+            if sym:
+                spot_by[sym] = _trigger_spot_now(sym)
+        out = []
+        for t in triggers:
+            spot = spot_by.get(t.get("symbol"))
+            dist = None
+            if spot is not None:
+                dist = round(float(t["level"]) - spot, 1)  # +ve = above spot
+            out.append({**t, "dist": dist})
+        return jsonify({"ok": True, "triggers": out, "spot": spot_by})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "triggers": []})
+
+
+@app.route('/api/triggers', methods=['POST'])
+def api_triggers_add():
+    """Arm a new price-trigger. Validates + rejects an instantly-true condition."""
+    try:
+        import price_triggers as pt
+        data = request.get_json() or {}
+        symbol = str(data.get("symbol", "NIFTY")).upper()
+        arm_spot = _trigger_spot_now(symbol)
+        if arm_spot is None:
+            return jsonify({"ok": False, "msg": f"{symbol} spot abhi nahi mila — thodi der baad try karo"})
+        ok, res = pt.add_trigger(data, arm_spot)
+        if not ok:
+            return jsonify({"ok": False, "msg": res})
+        d = res["direction"]
+        return jsonify({"ok": True, "trigger": res,
+                        "msg": f"Armed: {symbol} {d} {res['level']:.0f} → "
+                               f"{res['side']} {res['lots']}L {res['opt_type']} "
+                               f"(spot {arm_spot:.0f})"})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/triggers/<tid>', methods=['DELETE'])
+def api_triggers_delete(tid):
+    """Cancel/remove one trigger (armed or a fired row from the list)."""
+    try:
+        import price_triggers as pt
+        found = pt.remove_trigger(tid)
+        return jsonify({"ok": found, "msg": "removed" if found else "not found"})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/peak-pnl-history')
 def api_peak_pnl_history():
     """Returns P&L history for any date. Accepts ?date=YYYY-MM-DD (defaults to today).

@@ -29,6 +29,10 @@ if __name__ == '__main__':
     threading.Thread(target=td.auto_scheduler, daemon=True).start()
     threading.Thread(target=td.webhook_monitor_loop, daemon=True).start()
     threading.Thread(target=td.pos_monitor_loop, daemon=True).start()
+    # Price-trigger watcher (~1s, cache-only spot) — NIFTY level cross → option
+    # order via execution_gateway. Lives here (same process as the poller that
+    # keeps index spot warm) so it reads spot with zero extra Dhan calls.
+    threading.Thread(target=td.trigger_watch_loop, daemon=True).start()
 
     # P7: one batched Dhan LTP call per cycle covers all open positions +
     # index spot, fanned out via shared_ltp_cache (pos_monitor / webhook /

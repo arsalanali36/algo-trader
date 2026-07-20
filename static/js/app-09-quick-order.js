@@ -20,6 +20,10 @@
   <span id="qo-close" style="color:#8b949e;font-size:16px;cursor:pointer;line-height:1">&#x2715;</span>
 </div>
 <div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:8px;gap:2px">
+  <button id="qo-tab-instant" onclick="qoSetTab('instant')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#21262d;color:#e6edf3">&#9889; Instant</button>
+  <button id="qo-tab-trigger" onclick="qoSetTab('trigger')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">&#127919; Trigger</button>
+</div>
+<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:8px;gap:2px">
   <button id="qo-paper" onclick="qoSetMode('paper')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#d29922;color:#0d1117">PAPER</button>
   <button id="qo-live"  onclick="qoSetMode('live')"  style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">LIVE</button>
 </div>
@@ -31,6 +35,17 @@
 <div style="display:flex;gap:6px;margin-bottom:10px">
   <button id="qo-sym-NIFTY"     onclick="qoSetSym('NIFTY')"     style="flex:1;padding:6px 0;border:1px solid #1f6feb;border-radius:5px;background:#1f6feb22;color:#58a6ff;font-size:12px;font-weight:bold;cursor:pointer">NIFTY</button>
   <button id="qo-sym-BANKNIFTY" onclick="qoSetSym('BANKNIFTY')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:12px;font-weight:bold;cursor:pointer">BANKNIFTY</button>
+</div>
+<div id="qo-trig-block" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+    <span style="font-size:10px;color:#8b949e">Trigger jab spot pahunche</span>
+    <span id="qo-trig-spot" style="font-size:10px;color:#58a6ff">spot —</span>
+  </div>
+  <input id="qo-trig-level" type="number" step="0.05" placeholder="e.g. 24300" oninput="qoTrigDirAuto()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:7px 8px;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px">
+  <div style="display:flex;gap:6px;margin-bottom:10px">
+    <button id="qo-dir-above" onclick="qoSetDir('above')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9650; upar cross (&#8805;)</button>
+    <button id="qo-dir-below" onclick="qoSetDir('below')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9660; neeche cross (&#8804;)</button>
+  </div>
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Strike offset (ATM)</div>
 <div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:10px">
@@ -58,20 +73,32 @@
   </div>
   <div id="qo-ts" style="font-size:9px;color:#484f58;text-align:right;margin-top:4px">fetching...</div>
 </div>
+<div id="qo-price-block">
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Limit Price <span style="color:#484f58">(blank = LTP par bhejo)</span></div>
 <div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
   <input id="qo-price" type="number" step="0.05" placeholder="auto (LTP)" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:6px 8px;font-size:13px;outline:none">
+</div>
 </div>
 <div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
 <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
   <input id="qo-lots" type="number" value="3" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
   <span style="font-size:11px;color:#8b949e">= <span id="qo-qty-num" style="color:#e6edf3;font-weight:bold">65</span> qty <span style="color:#444;font-size:10px">(1L=<span id="qo-ls">65</span>)</span></span>
 </div>
+<div id="qo-instant-actions">
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
   <button onclick="qoOrder('BUY')"  style="padding:11px;background:#3fb950;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">BUY <span id="qo-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
   <button onclick="qoOrder('SELL')" style="padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">SELL <span id="qo-sell-leg" style="font-size:11px;opacity:.85">CE</span></button>
 </div>
 <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">jo <b id="qo-leg-hint" style="color:#adbac7">CE</b> select hai usi pe BUY/SELL chalega</div>
+</div>
+<div id="qo-trigger-actions" style="display:none">
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
+  <button onclick="qoArm('BUY')"  style="padding:11px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm BUY <span id="qo-arm-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
+  <button onclick="qoArm('SELL')" style="padding:11px;background:#da3633;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm SELL <span id="qo-arm-sell-leg" style="font-size:11px;opacity:.85">CE</span></button>
+</div>
+<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:6px">fire = marketable-limit (auto) &middot; RMS-gated &middot; 3:15 ke baad no-fire</div>
+<div id="qo-armed-list"></div>
+</div>
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
       Object.assign(panel.style, {
@@ -362,7 +389,7 @@
         if (pe) { pe.style.borderColor = type === 'PE' ? '#f85149' : '#f8514940'; pe.style.background = type === 'PE' ? '#f8514928' : '#f8514915'; }
         if (tce) tce.style.visibility = type === 'CE' ? 'visible' : 'hidden';
         if (tpe) tpe.style.visibility = type === 'PE' ? 'visible' : 'hidden';
-        ['qo-buy-leg', 'qo-sell-leg', 'qo-leg-hint'].forEach(id => { const e = document.getElementById(id); if (e) { e.textContent = type; e.style.color = id === 'qo-leg-hint' ? (type === 'CE' ? '#3fb950' : '#f85149') : ''; } });
+        ['qo-buy-leg', 'qo-sell-leg', 'qo-leg-hint', 'qo-arm-buy-leg', 'qo-arm-sell-leg'].forEach(id => { const e = document.getElementById(id); if (e) { e.textContent = type; e.style.color = id === 'qo-leg-hint' ? (type === 'CE' ? '#3fb950' : '#f85149') : ''; } });
         // leg badla → stale custom price hata do, blank = live LTP par jaayega
         const _priceEl = document.getElementById('qo-price'); if (_priceEl) _priceEl.value = '';
         _qoSyncPricePlaceholder();
@@ -402,6 +429,113 @@
           st.textContent = j.msg || (j.ok ? 'Done' : 'Error');
           st.style.color = j.ok ? '#3fb950' : '#f85149';
         } catch (e) { st.textContent = 'Network error'; st.style.color = '#f85149'; }
+      };
+
+      // ── PRICE TRIGGER MODE ───────────────────────────────────────────────
+      window.qoTab = 'instant';
+      window.qoTrigDir = null;       // null = auto-suggest from spot vs level
+      window._qoTrigSpot = null;
+      let _qoTrigTimer = null;
+
+      window.qoSetTab = tab => {
+        window.qoTab = tab;
+        const ti = document.getElementById('qo-tab-instant'), tt = document.getElementById('qo-tab-trigger');
+        if (ti) { ti.style.background = tab === 'instant' ? '#21262d' : 'transparent'; ti.style.color = tab === 'instant' ? '#e6edf3' : '#8b949e'; }
+        if (tt) { tt.style.background = tab === 'trigger' ? '#1f6feb' : 'transparent'; tt.style.color = tab === 'trigger' ? '#fff' : '#8b949e'; }
+        const show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
+        show('qo-trig-block', tab === 'trigger');
+        show('qo-trigger-actions', tab === 'trigger');
+        show('qo-instant-actions', tab === 'instant');
+        show('qo-price-block', tab === 'instant');   // trigger fires marketable — no limit box
+        const st = document.getElementById('qo-status');
+        if (st && tab === 'trigger') { st.textContent = 'Trigger mode — level + direction do'; st.style.color = '#8b949e'; }
+        if (tab === 'trigger') { qoRefreshTriggers(); if (!_qoTrigTimer) _qoTrigTimer = setInterval(qoRefreshTriggers, 2000); }
+        else { clearInterval(_qoTrigTimer); _qoTrigTimer = null; }
+      };
+
+      window.qoSetDir = dir => {
+        window.qoTrigDir = dir;
+        const a = document.getElementById('qo-dir-above'), b = document.getElementById('qo-dir-below');
+        if (a) { const on = dir === 'above'; a.style.background = on ? '#238636' : '#21262d'; a.style.borderColor = on ? '#3fb950' : '#30363d'; a.style.color = on ? '#fff' : '#8b949e'; }
+        if (b) { const on = dir === 'below'; b.style.background = on ? '#da3633' : '#21262d'; b.style.borderColor = on ? '#f85149' : '#30363d'; b.style.color = on ? '#fff' : '#8b949e'; }
+      };
+
+      // auto-hint direction from typed level vs live spot (until user picks one)
+      window.qoTrigDirAuto = () => {
+        if (window.qoTrigDir) return;   // user chose explicitly — respect it
+        const lvl = parseFloat(document.getElementById('qo-trig-level')?.value);
+        const spot = window._qoTrigSpot;
+        if (!lvl || spot == null) return;
+        const dir = lvl > spot ? 'above' : 'below';
+        const a = document.getElementById('qo-dir-above'), b = document.getElementById('qo-dir-below');
+        if (a) { const on = dir === 'above'; a.style.borderColor = on ? '#3fb950' : '#30363d'; a.style.color = on ? '#3fb950' : '#8b949e'; }
+        if (b) { const on = dir === 'below'; b.style.borderColor = on ? '#f85149' : '#30363d'; b.style.color = on ? '#f85149' : '#8b949e'; }
+      };
+
+      window.qoArm = async side => {
+        const st = document.getElementById('qo-status');
+        const level = parseFloat(document.getElementById('qo-trig-level')?.value);
+        if (!level || level <= 0) { st.textContent = 'Level daalo (NIFTY price)'; st.style.color = '#f85149'; return; }
+        const optType = window._qoOptType || 'CE';
+        const lots = parseInt(document.getElementById('qo-lots').value) || 1;
+        let dir = window.qoTrigDir;
+        if (!dir && window._qoTrigSpot != null) dir = level > window._qoTrigSpot ? 'above' : 'below';
+        st.textContent = 'Arming...'; st.style.color = '#d29922';
+        try {
+          const r = await fetch('/api/triggers', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ symbol: qoSym, level, direction: dir, opt_type: optType, side, lots, offset: qoAtm, mode: qoMode, broker: qoBroker })
+          });
+          const j = await r.json();
+          st.textContent = j.msg || (j.ok ? 'Armed' : 'Error');
+          st.style.color = j.ok ? '#3fb950' : '#f85149';
+          if (j.ok) {
+            document.getElementById('qo-trig-level').value = '';
+            window.qoTrigDir = null;
+            ['qo-dir-above', 'qo-dir-below'].forEach(id => { const e = document.getElementById(id); if (e) e.style.background = '#21262d'; });
+            qoRefreshTriggers();
+          }
+        } catch (e) { st.textContent = 'Network error'; st.style.color = '#f85149'; }
+      };
+
+      async function qoRefreshTriggers() {
+        if (panel.style.display === 'none') return;   // panel band — server ko poll mat karo
+        try {
+          const r = await fetch('/api/triggers?symbol=' + encodeURIComponent(qoSym));
+          const j = await r.json();
+          const spot = (j.spot || {})[qoSym];
+          if (spot != null) window._qoTrigSpot = spot;
+          const se = document.getElementById('qo-trig-spot');
+          if (se) se.textContent = (window._qoTrigSpot != null) ? (qoSym + ' ' + window._qoTrigSpot.toFixed(1)) : 'spot —';
+          qoTrigDirAuto();
+          const box = document.getElementById('qo-armed-list');
+          if (!box) return;
+          const rows = (j.triggers || []);
+          if (!rows.length) { box.innerHTML = '<div style="font-size:10px;color:#6e7681;text-align:center;padding:6px">Koi armed trigger nahi</div>'; return; }
+          box.innerHTML = rows.map(t => {
+            const above = t.direction === 'above';
+            const armed = t.status === 'armed';
+            const col = armed ? (above ? '#3fb950' : '#f85149') : (t.status === 'fired' ? '#58a6ff' : '#d29922');
+            const arrow = above ? '▲' : '▼';
+            const cmp = above ? '≥' : '≤';
+            const dist = (t.dist != null && armed) ? `<span style="color:#d29922">${Math.abs(t.dist).toFixed(0)} pts door</span>` : '';
+            const statusTxt = armed ? '' : ` &middot; <span style="color:${col}">${t.status}</span>`;
+            const res = (t.result && !armed) ? `<div style="font-size:9px;color:#8b949e;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${(t.result || '').replace(/"/g, '&quot;')}">${t.result}</div>` : '';
+            return `<div style="background:#0d1117;border:1px solid #21262d;border-left:3px solid ${col};border-radius:0 6px 6px 0;padding:6px 8px;margin-bottom:4px">
+              <div style="display:flex;justify-content:space-between;align-items:center">
+                <span style="font-size:11px;font-weight:bold;color:#e6edf3">${t.symbol} ${cmp} ${(+t.level).toFixed(0)} <span style="color:${col}">${arrow}</span></span>
+                <span onclick="qoCancelTrigger('${t.id}')" title="Cancel" style="color:#8b949e;font-size:13px;cursor:pointer;padding:0 2px">&#x2715;</span>
+              </div>
+              <div style="font-size:9px;color:#8b949e;margin-top:2px">${t.side} ${t.lots}L ${t.opt_type} (off ${t.offset}) &middot; ${(t.mode || '').toUpperCase()}/${(t.broker || '').toUpperCase()} ${dist}${statusTxt}</div>
+              ${res}
+            </div>`;
+          }).join('');
+        } catch (e) { /* keep last render */ }
+      }
+
+      window.qoCancelTrigger = async tid => {
+        try { await fetch('/api/triggers/' + encodeURIComponent(tid), { method: 'DELETE' }); qoRefreshTriggers(); }
+        catch (e) { }
       };
 
       // initial CE selection highlight
