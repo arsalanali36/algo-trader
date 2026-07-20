@@ -285,6 +285,85 @@ def mark_kill_floor_fired(reason: str) -> bool:
         return False
 
 
+# ── Manual-close veto (2026-07-20) ────────────────────────────────────────────
+# When the USER manually closes a position (app close button, or an external/
+# manual broker close that broker_sync detects), the strategy/webhook must NOT
+# re-open that symbol for the rest of the day. A manual exit is an INTENT ("I
+# want out of this"), but every automated entry path treats a closed position as
+# just "position gone → re-evaluate fresh" and can re-enter (the vrp condor
+# re-created itself after a manual squareoff, 2026-07-20). Day-scoped file,
+# auto-resets next day — same shape as kill_floor above. A strategy's OWN
+# SL/target exit does NOT come here (only the manual/external paths call
+# mark_manual_closed), so normal re-entry after an automated exit is unaffected.
+
+def _manual_veto_path():
+    from datetime import datetime, timedelta, timezone
+    ist = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    return BASE_DIR / "data" / f"manual_close_veto_{ist.strftime('%Y-%m-%d')}.json"
+
+
+def _veto_key(strategy, symbol):
+    return f"{(strategy or '').strip()}|{(symbol or '').strip().upper()}"
+
+
+def mark_manual_closed(strategy, symbol) -> bool:
+    """Record that the user closed (strategy, symbol) today → block re-entry."""
+    try:
+        key = _veto_key(strategy, symbol)
+        if key.strip("|") == "":          # need at least a strategy or a symbol
+            return False
+        p = _manual_veto_path()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            cur = json.loads(p.read_text())
+            if not isinstance(cur, list):
+                cur = []
+        except Exception:
+            cur = []
+        if key not in cur:
+            cur.append(key)
+            p.write_text(json.dumps(cur))
+        return True
+    except Exception:
+        return False
+
+
+def is_manual_close_vetoed(strategy, symbol) -> bool:
+    """True if the user manually closed (strategy, symbol) today → no re-entry."""
+    try:
+        p = _manual_veto_path()
+        if not p.exists():
+            return False
+        cur = json.loads(p.read_text())
+        return _veto_key(strategy, symbol) in (cur if isinstance(cur, list) else [])
+    except Exception:
+        return False
+
+
+def clear_manual_veto(strategy=None, symbol=None) -> int:
+    """Remove one veto (or ALL today's if both None) — for a 'let it re-enter
+    again' dashboard control. Returns how many were removed."""
+    try:
+        p = _manual_veto_path()
+        if not p.exists():
+            return 0
+        cur = json.loads(p.read_text())
+        if not isinstance(cur, list):
+            return 0
+        if strategy is None and symbol is None:
+            n = len(cur)
+            p.write_text("[]")
+            return n
+        key = _veto_key(strategy, symbol)
+        if key in cur:
+            cur.remove(key)
+            p.write_text(json.dumps(cur))
+            return 1
+        return 0
+    except Exception:
+        return 0
+
+
 def per_instrument_lock_config():
     """Per-position trailing lock settings (2026-07-02) — same arm+gap+confirm
     design as kill_floor_config(), just scoped to ONE open position instead of

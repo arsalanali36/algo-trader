@@ -57,6 +57,16 @@ def gate_entry(strategy_id, symbol, lots, lot_size, est_price, side="SELL",
     import risk_gate
     qty = lots * lot_size
     try:
+        # Manual-close veto (2026-07-20) — FIRST gate. If the user manually closed
+        # this (strategy, symbol) today (app close button or an external/manual
+        # broker close broker_sync detected), respect that intent and do NOT let
+        # the strategy or webhook re-open it. Every entry funnels through here
+        # (execute_signal → gate_entry), so this one check covers all strategies +
+        # webhook. A strategy's OWN SL/target exit never marks the veto, so normal
+        # re-entry after an automated exit is unaffected. Clearable per-day.
+        if risk_gate.is_manual_close_vetoed(strategy_id, symbol):
+            return False, 0, f"manual-close veto — user closed {symbol} today (no re-entry)"
+
         # `broker` here is sometimes a broker NAME string (range_trader/webhook
         # callers don't always wrap it), sometimes a broker OBJECT (webhook_
         # executor passes one from its own _broker() factory) — risk_gate's

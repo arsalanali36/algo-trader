@@ -3375,6 +3375,16 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
     close_side = 'SELL' if entry_side == 'BUY' else 'BUY'
     broker_name = (broker_in or 'dhan').lower()
 
+    def _veto_mark():
+        # User closed this via the app → respect the intent: strategy/webhook must
+        # not re-open (strategy, symbol) today (Fix B, 2026-07-20). Only called on
+        # a CONFIRMED close below — never on a failed/rate-limited attempt.
+        try:
+            import risk_gate as _rg_v
+            _rg_v.mark_manual_closed(strat_in, t_sym.split('-')[0])
+        except Exception:
+            pass
+
     try:
         # range_trader was imported here only for hdrs() on the raw Dhan order body
         # — that body is gone (smart_order places the order now).
@@ -3438,6 +3448,7 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
         if mode == 'paper':
             _write_log('PAPER')
             _record_close('paper', 'paper')
+            _veto_mark()
             return {'ok': True, 'msg': f'[PAPER] CLOSE {close_side} {qty_shares} {t_sym} @ {option_ltp:.2f}'}
 
         if not sec_id:
@@ -3463,6 +3474,7 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
                         _os_close.mark_externally_closed(_leg.get('id'))
                 except Exception:
                     pass
+                _veto_mark()
                 return {'ok': True, 'msg': f'{t_sym} already FLAT at broker (manually closed / SL hit elsewhere) — no order sent, marked closed'}
         except Exception as _fce:
             print(f"[close-position] pre-close flat-check failed ({_fce}) — proceeding (fail-open)", flush=True)
@@ -3484,6 +3496,7 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
                     f"{broker_name} ne close order pura nahi kiya ({res.get('reason')}) — "
                     f"position band NAHI hui, {broker_name} pe verify karo"}
         # smart_order already recorded the fill — double-record mat karo.
+        _veto_mark()
         return {'ok': True, 'msg': f"[LIVE] CLOSE {close_side} {qty_shares} {t_sym} "
                                    f"@ {res.get('price')} ({res.get('status')}) via {broker_name}"}
     except Exception as e:

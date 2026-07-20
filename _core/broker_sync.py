@@ -283,6 +283,17 @@ def _run_sync(open_positions: list, log=print) -> set:
                     f"skipping (Pass-1 netting display artifact, not a real gap). TRAP #60.", flush=True)
                 continue
 
+            # Fix B (2026-07-20): this leg is flat at the broker but order_store
+            # still had it open → it was closed OUTSIDE the strategy's own recorded
+            # exit (a manual app/Kite close, or an unrecorded fill). Treat it as a
+            # user manual close → veto re-entry on (strategy, symbol) for the rest
+            # of the day, so the strategy/webhook doesn't re-open what the user shut.
+            try:
+                import risk_gate as _rg_v
+                _rg_v.mark_manual_closed(p.get("strategy") or "", p.get("symbol") or "")
+            except Exception:
+                pass
+
             if exit_px and exit_px > 0:
                 try:
                     import order_store
@@ -892,6 +903,7 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
             "ts":       ts[:19] if len(ts) >= 19 else ts,
             "type":     str(f.get("transaction_type") or "").upper(),
             "sym":      resolved_sym,
+            "kite_sym": raw_sym,          # broker-side key for the net-position lookup
             "sec_id":   resolved_sec_id,
             "qty":      int(f.get("quantity") or 0),
             "px":       float(f.get("average_price") or 0),
@@ -902,7 +914,7 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
     conn = sqlite3.connect(str(order_store.DB_PATH))
     conn.row_factory = sqlite3.Row
     existing = conn.execute(
-        "SELECT trad_sym, symbol, side, qty, price, broker_order_id FROM orders WHERE date=? AND broker=?",
+        "SELECT trad_sym, symbol, side, qty, price, broker_order_id, correlation_id FROM orders WHERE date=? AND broker=?",
         (date, broker_name)).fetchall()
     conn.close()
 
@@ -923,15 +935,66 @@ def reconcile_manual_trades(date: str = None, broker_name: str = "kite", log=pri
         sig = _reconcile_sig(r["trad_sym"] or r["symbol"], r["side"], r["qty"], r["price"])
         db_counts[sig] = db_counts.get(sig, 0) + 1
 
+    # Trade-ids already referenced by ANY existing row. A strategy ghost-exit
+    # records the broker's own trade_id as correlation_id; a manual row records
+    # it as MANUAL_TID_<tid>. Either way, that exact fill must never be recorded
+    # AGAIN — the cross-path duplicate that produced the phantom (live 2026-07-20:
+    # an arschain exit row corr=1822718 AND a manual row corr=MANUAL_TID_1822718
+    # were the SAME fill, counted twice).
+    consumed_tids = set()
+    for r in existing:
+        c = str(r["correlation_id"] or "")
+        if not c:
+            continue
+        consumed_tids.add(c)
+        if c.startswith("MANUAL_TID_"):
+            consumed_tids.add(c[len("MANUAL_TID_"):])
+
+    # ── NET-AWARE guard (2026-07-20) — reconcile to the broker's real net, not
+    # fill-by-fill. The signature match compares exact qty, so a strategy exit
+    # recorded as ONE 130-qty row never matched two real 65-qty fills and reconcile
+    # re-inserted them as "manual" → the same 130 counted twice → phantom open leg.
+    # Now a fill is inserted ONLY if it moves order_store's net for that contract
+    # TOWARD the broker's actual net; once they match, nothing more is added.
+    # Broker net (positions()) is the source of truth: +long / −short / 0 flat.
+    # TRADE-OFF: a purely manual round-trip that nets flat within a cycle is no
+    # longer auto-recorded (it changes no net) — acceptable, since a phantom OPEN
+    # position is dangerous while a missed flat round-trip is display-only and
+    # still visible on the broker.
+    broker_net_kite = broker.positions() or {}     # {kite_sym: signed_net_qty}
+    db_net: dict = {}
+    for p in (order_store.trades_for(date).get("open") or []):
+        s = p.get("sym") or ""
+        if not s:
+            continue
+        db_net[s] = db_net.get(s, 0) + (int(p.get("qty") or 0)
+                                        if p.get("entry") == "BUY" else -int(p.get("qty") or 0))
+    run_net = dict(db_net)
+
     manual_inserted = 0
     for f in fills:
         if f["order_id"] and f["order_id"] in known_oids:
             continue   # fill of an order this app itself placed — never manual
+        if f["trade_id"] and f["trade_id"] in consumed_tids:
+            continue   # exact fill already recorded (strategy exit / prior manual) — cross-path dup
         sig = _reconcile_sig(f["sym"], f["type"], f["qty"], f["px"])
         have = db_counts.get(sig, 0)
         if have > 0:
             db_counts[sig] = have - 1   # this fill already accounted for — consume one
             continue
+
+        # NET-AWARE gate: only record a fill that moves this contract's net TOWARD
+        # the broker's real net. target defaults to 0 (flat) when the broker holds
+        # no position on the contract. A fill that overshoots / moves away from the
+        # broker net is a duplicate of already-recorded activity → skip.
+        target = int(broker_net_kite.get(f.get("kite_sym") or "", 0) or 0)
+        cur = run_net.get(f["sym"], 0)
+        delta = f["qty"] if f["type"] == "BUY" else -f["qty"]
+        if abs((cur + delta) - target) > abs(cur - target):
+            log(f"[RECONCILE] skip {f['type']} {f['qty']} {f['sym']} — book net {cur} already "
+                f"matches broker {target}; recording it would create a phantom", flush=True)
+            continue
+        run_net[f["sym"]] = cur + delta
 
         instrument = "options" if ("CE" in f["sym"] or "PE" in f["sym"]) else "equity"
         order_store.record(
