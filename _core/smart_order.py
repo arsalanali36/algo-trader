@@ -155,6 +155,38 @@ def execute(side, sym, sec_id, seg, qty, trad_sym, mode, broker,
     an aggressively-priced LIMIT is the only broker-agnostic way to chase a
     fill harder without risking an outright reject on that leg.
     """
+    # ── UNIVERSAL GUARD (2026-07-20): never place an order with a BLANK symbol ──
+    # Every strategy's entry/exit funnels through here (Rule 6B — single order
+    # gate), so this one check protects ALL of them at once. A nameless order is
+    # rejected by the broker at best, and mid-reversal it can abort the paired
+    # leg (webhook incident 2026-07-20: a recovery field bug left opt_trad_sym
+    # blank). Self-heal from the reliable sec_id; if it still can't be named,
+    # REFUSE to place anything and alert — a missing symbol is never a tradeable
+    # order. (The webhook path also guards earlier; this is the universal floor.)
+    trad_sym = (trad_sym or "").strip()
+    if not trad_sym:
+        _sid = str(sec_id or "")
+        if _sid:
+            try:
+                import dhan_master as _dm
+                trad_sym = (_dm.get_trad_sym_for_sec_id(_sid) or "").strip()
+            except Exception:
+                trad_sym = ""
+        if trad_sym:
+            log(f"[SYMBOL-HEAL] {side} — blank trad_sym recovered from sec_id={_sid} → {trad_sym}")
+        else:
+            log(f"[BLOCKED] {side} qty={qty} sec_id={_sid or '?'} — no trad_sym; "
+                f"refusing to place a nameless order.")
+            try:
+                import notify as _nfy
+                _nfy.error(f"order blocked ({strategy or source or tag}): missing option "
+                           f"symbol (sec_id={_sid or '?'}, side={side})",
+                           key=f"order_nosym_{strategy or source}_{_sid}",
+                           source=(strategy or source or None))
+            except Exception:
+                pass
+            return {"ok": False, "reason": "no_symbol"}
+
     price, src = marketable_price(side, sec_id, seg, broker, buffer_bps)
     if price is None:
         log(f"[SKIP] {side} {trad_sym} — no price (feed+REST empty)")

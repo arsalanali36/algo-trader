@@ -193,6 +193,39 @@ check("E2 SILENT on the fixed p.get('sym')", len(_find(FIXED)), 0)
 check("E3 FIRES on p['trad_sym'] subscript form", len(_find(SUBSCRIPT)), 1)
 
 # ─────────────────────────────────────────────────────────────────────────────
+print("\n=== F. UNIVERSAL guard — smart_order.execute() blocks a nameless order (ALL strategies) ===")
+_orig_gts2 = dhan_master.get_trad_sym_for_sec_id
+_orig_mp = smart_order.marketable_price
+
+
+class _DummyBroker:
+    def place_order(self, *a, **k):
+        raise AssertionError("broker.place_order was called with a blank symbol!")
+
+
+try:
+    smart_order.marketable_price = lambda *a, **k: (None, None)   # no network in test
+    # (F1) sec_id also unresolvable → BLOCK, broker never touched
+    dhan_master.get_trad_sym_for_sec_id = lambda sid: ""
+    rf = smart_order.execute("BUY", "NIFTY", "999999", "NSE_FNO", 130, "", "live",
+                             _DummyBroker(), log=lambda *a, **k: None, strategy="tstrat")
+    check("F1 nameless order BLOCKED (ok=False)", rf.get("ok"), False)
+    check("F2 reason == no_symbol", rf.get("reason"), "no_symbol")
+    check("F3 broker.place_order NEVER called", True, True)
+    # (F4) blank symbol but sec_id RESOLVES → guard lets it past (fails later on
+    # price, NOT on symbol) — proves self-heal, not a false block
+    dhan_master.get_trad_sym_for_sec_id = lambda sid: SYM
+    rh = smart_order.execute("BUY", "NIFTY", SEC, "NSE_FNO", 130, "", "live",
+                             _DummyBroker(), log=lambda *a, **k: None, strategy="tstrat")
+    check("F4 self-heal lets it PAST the symbol guard (reason != no_symbol)",
+          rh.get("reason") != "no_symbol", True)
+except AssertionError as e:
+    check("F3 broker.place_order NEVER called", f"CALLED: {e}", "not-called")
+finally:
+    dhan_master.get_trad_sym_for_sec_id = _orig_gts2
+    smart_order.marketable_price = _orig_mp
+
+# ─────────────────────────────────────────────────────────────────────────────
 print()
 if fails:
     print(f"RESULT: {len(fails)} FAILED -> {fails}")
