@@ -15,6 +15,32 @@
 
 ---
 
+## 2026-07-20 — Stats Real-vs-BS drilldown + positional netting fix + weekend/holiday gate + nav
+**Status:** DONE (all VPS-deployed, commits `1d1f3d6`→`8088752`)
+**Layer:** ui + ops + execution + infra (display fixes + one money-path guard + strategy fix)
+**Kya:** User-driven chain across the Stats V2 (Real-vs-BS) tab:
+1. **Per-day per-strategy drilldown + fair tile** (`1d1f3d6`, `0f0cd5c`): calendar tile click →
+   `bsRenderDivergence` scopes to that day, per-strategy (stock "— stock", index-no-spot "— n/a",
+   footer index-only-fair + all-legs). Tile keeps the ACTUAL all-legs real gain in every mode; BS
+   shown as labeled "BS(idx)" secondary + Compare "Δidx" (index-only fair). `app-14`/`app-12`.
+2. **Positional netting fix** (`77f0566`) — TRAP #141: `trades_for(date)` mis-nets overnight positions;
+   `calendar-summary` + `bs_shadow` now range-net (`trades_for_range`) + bucket by EXIT date. VRP
+   −6,168 phantom → +4,934 real (== Orders). Data-verified.
+3. **Weekend + holiday trading-day gate** (`a9d5a82`, `458f7a4`) — TRAP #142: VRP condor rolled on a
+   Saturday (`is_market_open` was time-only). New `_core/market_calendar.py` (NSE holidays, single
+   source) + both VRP traders delegate + `execution_gateway.execute_signal` blocks entries on
+   non-trading days by DEFAULT (every future strategy protected) + `NEW_STRATEGY_CHECKLIST.md` #12.
+4. **Data hygiene:** voided the phantom Saturday legs (ids 1455-1462, `status='cancelled'`, DB backup
+   `trades.db.bak.*`) → 18th clears, Fri→Mon nets as one (+3,708), BS reprices; +₹91 phantom cost
+   removed, no ripple (backup-vs-live diff proven).
+5. **Nav** (`8088752`): Stats 2 (`/stats2`) promoted to top bar; old in-page Stats → More ▾.
+**Verify:** DOM harnesses on real 2026-07-20 data (drilldown/tile/label), market_calendar unit +
+integration (Fri/Sat/Sun/Mon + Republic Day/Holi/Christmas), gateway `skipped:market_closed`, bs_shadow
+regenerated (28 files), backup-vs-live VRP diff. Audit 0 FAIL throughout. Memory
+`project_code3b_stats_positional_netting`.
+
+---
+
 ## 2026-07-18 (4) — Real vs Black-Scholes premium tracker (bs_shadow) + Stats toolbar/view polish
 **Status:** DONE (all VPS-deployed, commits `cd24497`→`1ec50e2`)
 **Layer:** ui + ops (display-only; koi order/risk/execution path nahi — Rule 6D safe)

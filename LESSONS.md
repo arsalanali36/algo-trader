@@ -3750,3 +3750,43 @@ iron_condor's `K∓short_off·STEP` / `∓(short_off+wing)·STEP` exactly.
 at the call site. For any option-leg strike selection, cross-check against the strategy's own backtest
 leg math (single source of the validated structure), not intuition about "puts go below."
 **Rule 10:** this makes live conform to the already-validated structure → NO re-backtest needed.
+
+## TRAP #141 — per-day `trades_for(date)` mis-nets overnight/positional positions (phantom P&L)
+**Symptom:** Stats/Real-vs-BS showed VRP Overnight Condor as a −6,168 LOSS on 2026-07-20, but it was
+actually a +4,934 PROFIT (Orders "Today's Peak" correct — user caught the mismatch). Every other
+strategy reconciled; only the positional one diverged.
+**Root:** `order_store.trades_for(date)` filters legs by placement date (`WHERE date=d`). An overnight
+position's ENTRY leg is on an earlier day and its EXIT leg on `date`, so a single day's bucket can't
+pair them. On the exit day the close leg gets FIFO-netted against a SAME-DAY re-open on the same strike
+→ phantom round-trip (24500-PE: close-BUY 354.4 paired with a fresh short SELL 259.7 = −6,155) + a
+stranded close leg shown as a bogus "open". `calendar-summary` + `bs_shadow` both consumed per-day
+`trades_for` → wrong for every positional strategy (intraday safe: entry_date==exit_date).
+**Fix:** net across a lookback RANGE via the existing `order_store.trades_for_range` (pairs cross-day
+legs correctly — its own docstring says so) and attribute each completed round-trip to its EXIT date
+(day P&L is realized). Applied to `api_orders_calendar_summary` (400-day lookback + exit-date bucket)
+and `_ops/bs_shadow.build_day` (range-net, keep exit_date==date). Data-verified: day-20 gross 8054 ==
+Orders Gross TOTAL, VRP real_net +4,612.7 == Orders "VRP Net +4,613".
+**Guard:** any per-day P&L consumer MUST range-net + bucket by exit date for positional/overnight
+positions — never per-day `trades_for` for a multi-day hold. **BS-across-days:** repricing an overnight
+leg needs the ENTRY-day intraday spot; if that day has no spot (weekend/holiday) BS is honestly "n/a".
+
+## TRAP #142 — strategy `is_market_open()` was time-of-day only → VRP condor rolled on a SATURDAY
+**Symptom:** VRP paper condor placed 8 legs on Saturday 2026-07-18 (market closed) — the ONLY strategy
+to trade that weekend. Root of TRAP #141's confusion: the Saturday close+reopen at stale prices split
+the real Fri→Mon hold, so netting attributed the Monday exit to a Saturday "entry" and BS broke (no
+weekend spot). User: "entry Friday 17th thi, 18th nahi."
+**Root:** `is_market_open()` (in vrp_condor_trader.py + weekly) checked only `hour/minute`, not the day.
+On Saturday 15:10 it returned True → the daily 15:10 roll fired: EXITed Friday's held condor
+(`held_new_session` = entry_date != today) and re-ENTERed a fresh one.
+**Fix (shared + default):** new `_core/market_calendar.py` = single source of truth — NSE holiday list
+(ported from CODE7 `MARKET_HOLIDAYS`, update annually) + `is_trading_day` (weekday AND not holiday) +
+`is_market_open(now, open_hm, close_hm)`. Both VRP traders delegate to it (weekend + holiday). **Default
+enforcement:** `execution_gateway.execute_signal` blocks ENTRIES on any non-trading day
+(`skipped:market_closed`, mode!=backtest, fail-open) so EVERY current + future strategy gets it without
+remembering — loop-gate still covers exits/rolls. `NEW_STRATEGY_CHECKLIST.md` rule #12.
+**Data hygiene:** the already-placed Saturday legs (ids 1455-1462) were phantom historical records; marked
+`status='cancelled'` (reversible, `_dead_filtered` excludes; DB backup taken) so 18th clears and the
+Fri→Mon hold nets as one round-trip (+3,708, BS now reprices off Friday's spot). Diff proved only 18/20
+changed, +₹91 phantom-roll cost removed, no ripple.
+**Guard:** a market-open check that ignores the weekday/holiday is a latent "trades on a closed market"
+bug for ANY daily-acting strategy — gate every trader's loop on `market_calendar`, not a bare time window.
