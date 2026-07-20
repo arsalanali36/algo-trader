@@ -80,15 +80,11 @@ def ist_now():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
 
 def is_market_open():
-    # Trading-day + time-of-day gate. weekday()>=5 = Sat/Sun → market band, loop
-    # does nothing on weekends (no roll/entry/exit) — see vrp_condor_trader.py for
-    # the phantom weekend close+reopen this prevents. (NSE weekday holidays =
-    # separate follow-up, needs a holiday calendar.)
-    n = ist_now()
-    if n.weekday() >= 5:
-        return False
-    t = (n.hour, n.minute)
-    return MARKET_OPEN <= t < MARKET_CLOSE
+    # Trading-day (weekend + NSE holiday) + time-of-day gate — SINGLE SOURCE:
+    # market_calendar. Loop does nothing on any non-trading day (no roll/entry/
+    # exit) — see vrp_condor_trader.py for the phantom weekend close+reopen this prevents.
+    import market_calendar as mc
+    return mc.is_market_open(ist_now(), MARKET_OPEN, MARKET_CLOSE)
 
 def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())

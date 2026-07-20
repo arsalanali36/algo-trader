@@ -75,6 +75,20 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
     if mode == "backtest":
         return _backtest_gate(strategy_id, symbol, qty, est_price, seg)
 
+    # DEFAULT trading-day guard (weekend + NSE holiday) — no strategy should OPEN a
+    # position when the market is closed. This is the safety net so EVERY current and
+    # future strategy gets it without remembering (a strategy's own loop-gate is the
+    # first line; this is the last). Backtest is exempt (replays real trading days).
+    # Exits are NOT gated (a held position can't be closed on a holiday anyway).
+    # VRP condor once rolled on a Saturday for want of this — see market_calendar.
+    try:
+        import market_calendar as _mc
+        if not _mc.is_trading_day():
+            log(f"[GATEWAY] [SKIP] {symbol} entry — market band (weekend/holiday), koi entry nahi")
+            return _result(False, "skipped", "market_closed")
+    except Exception:
+        pass   # calendar unavailable → fail-open (loop-gate still applies)
+
     try:
         bname = str(broker_name or risk_gate.default_broker() or "dhan").lower()
         broker = get_broker(bname)

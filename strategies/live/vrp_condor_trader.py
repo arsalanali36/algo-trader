@@ -72,19 +72,15 @@ def ist_now():
     return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
 
 def is_market_open():
-    # Trading-day + time-of-day gate. weekday()>=5 = Sat/Sun → market band, so the
-    # loop does NOTHING on weekends (no roll/entry/exit). Without this the daily
-    # 15:10 roll fired on Saturday: it EXITed Friday's held condor (entry_date !=
-    # "today") and re-ENTERed a fresh one at stale weekend prices — a phantom
-    # close+reopen that split the real Fri→Mon hold, corrupted P&L day-attribution
-    # and broke BS (no weekend spot). Friday's condor now simply holds across the
-    # weekend and is managed on Monday (the next real session).
-    # (NSE weekday holidays would need a holiday calendar — separate follow-up.)
-    n = ist_now()
-    if n.weekday() >= 5:
-        return False
-    t = (n.hour, n.minute)
-    return MARKET_OPEN <= t < MARKET_CLOSE
+    # Trading-day (weekend + NSE holiday) + time-of-day gate — SINGLE SOURCE:
+    # market_calendar. Without the trading-day part the daily 15:10 roll fired on
+    # Saturday: it EXITed Friday's held condor (entry_date != "today") and
+    # re-ENTERed a fresh one at stale weekend prices — a phantom close+reopen that
+    # split the real Fri→Mon hold, corrupted P&L day-attribution and broke BS (no
+    # weekend spot). Now the loop does nothing on any non-trading day; a held
+    # condor simply carries to the next real session.
+    import market_calendar as mc
+    return mc.is_market_open(ist_now(), MARKET_OPEN, MARKET_CLOSE)
 
 def load_creds():
     cfg = json.loads(CONFIG_FILE.read_text())
