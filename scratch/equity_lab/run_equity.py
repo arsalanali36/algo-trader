@@ -156,8 +156,11 @@ def main():
     dna = {"strategy": args.strategy, "regime": args.regime, "freq": args.freq,
            "lookback_m": 12, "basket": "top-decile", "skip_days": 5, "rebalance": args.tf}
     results = ER.build_results(res["eq_net"], nifty, rebal, dna, sig, title, args.tf, meta["instrument"])
-    with open(os.path.join(rdir, "results.js"), "w", encoding="utf-8") as f:
-        f.write("window.RESULTS=" + json.dumps(results, default=str) + ";")
+    js = "window.RESULTS=" + json.dumps(results, default=str) + ";"
+    # the template's <script src> is results_intraday.js — write THAT (results.js too for parity)
+    for fn in ("results_intraday.js", "results.js"):
+        with open(os.path.join(rdir, fn), "w", encoding="utf-8") as f:
+            f.write(js)
     # index.html = the shared dashboard template (copied per run, exactly like the options lab)
     tpl = args.template or os.environ.get("EQ_TEMPLATE") or os.path.join(
         HERE, "..", "nifty_trend", "dashboard_intraday.html")
