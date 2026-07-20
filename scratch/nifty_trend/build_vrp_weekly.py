@@ -105,6 +105,14 @@ def main():
     sig = vu.significance(trades)
     m = vu.metrics(trades)
     dsr = vu.dsr_check(trades, N_TRIALS)
+    # HONEST override: raw p passes p<0.05 but the FULL gate (deflated-Sharpe) FAILS →
+    # the dashboard's "GENUINE EDGE" banner must NOT show green. significant=False so the
+    # lab page matches the registry (⚠️ weak / FAIL), with a note explaining why.
+    sig_display = {**sig, "significant": False,
+                   "note": (f"p={sig['p_value']} clears p<0.05, BUT deflated-Sharpe FAILS "
+                            f"({(dsr or {}).get('dsr_prob','?')} vs 0.95 bar) once the multi-combo "
+                            f"search + tiny sample (n={m['n']}, OOS n=10) are accounted for. "
+                            f"FORWARD-PAPER candidate, NOT a proven edge.")}
     print(f"  n={m['n']} PF={m['pf']} Sharpe={m['sharpe']} net={m['net_pct']}% p={sig['p_value']} "
           f"DSR={dsr['dsr_prob'] if dsr else '?'} (pass={dsr['pass'] if dsr else '?'})", flush=True)
 
@@ -112,7 +120,7 @@ def main():
     for pname, subset in (("full", trades), ("train", tr_train), ("oos", tr_oos)):
         for pas, gross in (("instrument", True), ("rms", False), ("bs", False)):
             res = _res_from_trades(subset, gross=gross)
-            combos[f"{pas}|{pname}"] = _combo(res, g, sig if (pas == "bs" and pname == "full") else None, DNA)
+            combos[f"{pas}|{pname}"] = _combo(res, g, sig_display if (pas == "bs" and pname == "full") else None, DNA)
 
     bs_full_m = engine.metrics(_res_from_trades(trades, gross=False))[0]
     bs_full = {k: bs_full_m.get(k) for k in ("sharpe", "net_pct", "maxdd", "win_rate", "trades", "profit_factor")}
@@ -131,6 +139,18 @@ def main():
         "window.RESULTS = " + json.dumps(out, default=float) + ";")
     dash = open(os.path.join(HERE, "dashboard_intraday.html"), encoding="utf-8").read().replace(
         'src="results_intraday.js"', 'src="results.js"')
+    # HONEST banner patches — this page ALWAYS fails the full DSR gate despite raw p<0.05, so the
+    # template's binary significant⟺p<0.05 assumption produces misleading text. Patch ONLY this run's
+    # copied HTML (shared template + other runs untouched): (1) the static "● GENUINE EDGE" pill →
+    # forward-paper label; (2) the infobar's not-significant branch says "p ≥ 0.05" (false here) →
+    # accurate "p<0.05 but deflated-Sharpe gate FAILS → forward-paper".
+    dash = dash.replace(
+        '<span class="livechip" id="livechip">● GENUINE EDGE</span>',
+        '<span class="livechip" id="livechip" style="background:#3a2e0c;color:#e8c14a;border-color:#5c4a12">● FORWARD-PAPER · fails DSR</span>')
+    _a = "'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}"
+    _b = "'&lt;':'&lt;'} 0.05, but the deflated-Sharpe gate FAILS)${s&&s.significant?'':' — forward-paper only, NOT a proven edge'}"
+    assert dash.count(_a) == 1, f"banner anchor not found (count={dash.count(_a)}) — template changed?"
+    dash = dash.replace(_a, _b)
     open(os.path.join(folder, "index.html"), "w", encoding="utf-8").write(dash)
 
     meta = {"slug": SLUG, "design": "vrp_condor_weekly",
