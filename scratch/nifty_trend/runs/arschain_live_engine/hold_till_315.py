@@ -41,6 +41,17 @@ def bars(sec, d):
     return out or None
 
 
+def span(b, from_hm, to_hm="15:15"):
+    """entry se 3:15 tak premium ka high/low + kab. SELL hai to: low = sabse achha
+    point (max profit), high = sabse bura (max loss)."""
+    ks = [k for k in sorted(b) if from_hm <= k <= to_hm]
+    if not ks:
+        return None
+    lo = min(ks, key=lambda k: b[k])
+    hi = max(ks, key=lambda k: b[k])
+    return b[lo], lo, b[hi], hi
+
+
 def at_315(b):
     """15:15 = strategy ka apna squareoff. Aas-paas chalega, par CHUPCHAAP aakhri bar
     pe girna mana — wo 15:29 hota hai aur number jhootha ho jaata hai."""
@@ -85,11 +96,11 @@ for sec, t in open_leg.items():
     trades.append(t)
 
 print()
-print("  %s / %s" % (STRAT, MODE))
-print("%-11s %-22s %4s %7s %7s %9s | %7s %9s | %9s | %-5s %s" % (
-    "date", "contract", "qty", "entry", "exit", "ACTUAL", "3:15px",
-    "HOLD-315", "farq", "held", "actual exit reason"))
-print("-" * 132)
+print("  %s / %s   — SELL hai: premium GIRE to faida, CHADHE to nuksan" % (STRAT, MODE))
+print("%-11s %-20s %4s %7s %5s %7s %8s | %8s | %9s %5s | %9s %5s" % (
+    "date", "contract", "qty", "entry", "exit", "@", "ACTUAL",
+    "HOLD-315", "BEST tha", "@", "WORST tha", "@"))
+print("-" * 128)
 ta = tw = 0.0
 n_act = 0
 for t in sorted(trades, key=lambda x: x["ts"]):
@@ -113,16 +124,20 @@ for t in sorted(trades, key=lambda x: x["ts"]):
           - CH.option_charges(t["entry"], p315, q, "SELL", when=t["ts"]))
     if act is not None:      # sirf paired trades tolo — warna OPEN leg total phula deta hai
         tw += wi
-    held = ""
-    if t.get("exit_ts"):
-        held = str(t["exit_ts"])[11:16]
-    print("%-11s %-22s %4d %7.2f %7s %9s | %7.2f %9s | %9s | %-5s %s" % (
-        t["d"], t["sym"][:22], q, t["entry"],
-        ("%.2f" % t["exit"]) if t["exit"] is not None else "OPEN",
+    held = str(t.get("exit_ts") or "")[11:16]
+    sp = span(b, str(t["ts"])[11:16])
+    best = worst = "—"
+    bt = wt = ""
+    if sp:
+        lo, lo_t, hi, hi_t = sp
+        best = format((t["entry"] - lo) * q, ",.0f")   # premium sabse neeche = max profit
+        worst = format((t["entry"] - hi) * q, ",.0f")  # premium sabse upar  = max loss
+        bt, wt = lo_t, hi_t
+    print("%-11s %-20s %4d %7.2f %5s %7s %8s | %8s | %9s %5s | %9s %5s" % (
+        t["d"], t["sym"][:20], q, t["entry"],
+        ("%.1f" % t["exit"]) if t["exit"] is not None else "OPEN", held,
         format(act, ",.0f") if act is not None else "—",
-        p315, format(wi, ",.0f"),
-        format(wi - act, ",.0f") if act is not None else "—",
-        held, t.get("reason", "")))
+        format(wi, ",.0f"), best, bt, worst, wt))
 print("-" * 118)
 print("  %d paired trades  |  ACTUAL %s  |  3:15 tak hold %s  |  farq %s" % (
     n_act, format(ta, ",.0f"), format(tw, ",.0f"), format(tw - ta, ",.0f")))
