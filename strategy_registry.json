@@ -374,7 +374,7 @@
     "10.01": {
       "name": "Regime-Momentum Basket (F&O stocks)",
       "config_key": null,
-      "slug": null,
+      "slug": "regime_momentum",
       "live_file": null,
       "status": "paper",
       "legs": 1,
