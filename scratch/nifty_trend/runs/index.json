@@ -874,5 +874,169 @@
     },
     "caveat": "Real VRP edge + defined-risk wings + high-frequency (survives frequency-robustness). Raw backtest Sharpe is FLATTERED by a benign 2021-26 sample (no COVID-scale crash) + lake premium-data unreliable on the highest-vol nights. P&L clamped to defined-risk bounds; tail-stress (2% forced max-loss nights) reported. FORWARD-PAPER before any live money.",
     "created": "2026-07-14"
+  },
+  {
+    "slug": "range_strangle",
+    "design": "range_strangle",
+    "verdict": "in-sample edge only, NOT deployable (DSR 0.86<0.95, tail-stress Sh 0.35)",
+    "title": "Range-Extreme Short Strangle \u2014 NAKED \u26a0\ufe0f in-sample edge only, NOT deployable (DSR 0.86<0.95, tail-stress Sh 0.35)",
+    "tf": "overnight",
+    "params": {
+      "lb": 5,
+      "dist": 0.5,
+      "age": 2,
+      "breach": false
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 3.996305013561615,
+      "net_pct": 8.96372111574558,
+      "maxdd": -1.2129619116365342,
+      "win_rate": 78.1456953642384,
+      "trades": 151,
+      "profit_factor": 1.9172369653775068
+    },
+    "p_value": 0.001,
+    "tail_stress": {
+      "sharpe_2pct_crash_median": 0.35,
+      "sharpe_2pct_p05": -1.26
+    },
+    "instrument_full_sharpe": 4.77,
+    "rms_full_sharpe": 4.77,
+    "deflated_sharpe": {
+      "dsr_prob": 0.8645,
+      "pass": false,
+      "n_trials": 8,
+      "sr_star_annual": 2.248
+    },
+    "caveat": "1-night positional; OOS holds (probe). Real lake premium + charges + DOM slip. Tail-stress reported; 2021-26 has no crash. NAKED tail unbounded \u2014 forward-paper + small size only.",
+    "created": "2026-07-17"
+  },
+  {
+    "slug": "range_strangle_condor",
+    "design": "range_strangle_condor",
+    "verdict": "REJECTED \u2014 loses net of cost",
+    "title": "Range-Extreme Short Strangle \u2014 Condor \u26a0\ufe0f REJECTED \u2014 loses net of cost",
+    "tf": "overnight",
+    "params": {
+      "lb": 5,
+      "dist": 0.5,
+      "age": 2,
+      "breach": false
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": false,
+    "bs_full": {
+      "sharpe": -2.1358589201031153,
+      "net_pct": -1.83320224640104,
+      "maxdd": -2.0795908606903724,
+      "win_rate": 60.0,
+      "trades": 115,
+      "profit_factor": 0.6549718485242509
+    },
+    "p_value": 0.935,
+    "tail_stress": {
+      "sharpe_2pct_crash_median": -3.01,
+      "sharpe_2pct_p05": -3.92
+    },
+    "instrument_full_sharpe": 0.783,
+    "rms_full_sharpe": 0.783,
+    "deflated_sharpe": {
+      "dsr_prob": 0.001,
+      "pass": false,
+      "n_trials": 8,
+      "sr_star_annual": 1.894
+    },
+    "caveat": "1-night positional; OOS holds (probe). Real lake premium + charges + DOM slip. Tail-stress reported; 2021-26 has no crash. Defined-risk condor; lower coverage (wings must fit lake window).",
+    "created": "2026-07-17"
+  },
+  {
+    "slug": "range_strangle_intraday",
+    "design": "range_strangle_intraday",
+    "verdict": "in-sample edge, borderline (DSR 0.54<0.95, tail-stress Sh 0.12)",
+    "title": "Range-Extreme Short Strangle \u2014 INTRADAY \u26a0\ufe0f in-sample edge, borderline (DSR 0.54<0.95, tail-stress Sh 0.12)",
+    "tf": "intraday",
+    "params": {
+      "lb": 10,
+      "dist": 0.5,
+      "age": 2,
+      "target": 40,
+      "sl": 40
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.8368091797996562,
+      "net_pct": 4.261129669790051,
+      "maxdd": -1.3740360347442193,
+      "win_rate": 72.58687258687259,
+      "trades": 259,
+      "profit_factor": 1.4105912825721105
+    },
+    "p_value": 0.032,
+    "tail_stress": {
+      "sharpe_2pct_crash_median": 0.12,
+      "sharpe_2pct_p05": -0.9
+    },
+    "instrument_full_sharpe": 3.057,
+    "rms_full_sharpe": 3.057,
+    "deflated_sharpe": {
+      "dsr_prob": 0.5435,
+      "pass": false,
+      "n_trials": 12,
+      "sr_star_annual": 1.712
+    },
+    "caveat": "9:20 entry, same-day exit, NO overnight \u2014 SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train\u2248OOS). Forward-paper first.",
+    "created": "2026-07-17"
+  },
+  {
+    "slug": "vrp_condor_weekly",
+    "design": "vrp_condor_weekly",
+    "title": "02.05 - VRP Weekly Condor (mild-IV) \u26a0\ufe0f FORWARD-PAPER (fails DSR)",
+    "tf": "weekly",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-09-24",
+      "2026-03-30"
+    ],
+    "days": 38,
+    "significant": false,
+    "bs_full": {
+      "sharpe": 4.500726305964645,
+      "net_pct": 4.5295000000000005,
+      "maxdd": -0.9721815057998073,
+      "win_rate": 73.68421052631578,
+      "trades": 38,
+      "profit_factor": 2.0964949441887826
+    },
+    "p_value": 0.032,
+    "deflated_sharpe": {
+      "dsr_prob": 0.3628,
+      "pass": false,
+      "n_trials": 24,
+      "sr_star_annual": 5.737
+    },
+    "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS \u2014 but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
+    "created": "2026-07-20"
   }
 ]
