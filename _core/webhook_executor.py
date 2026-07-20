@@ -92,7 +92,11 @@ _OVERRIDABLE = ("strike_offset", "qty", "sl_type", "opt_action",
                 "long_opt_type", "short_opt_type", "instrument")
 
 # ── shared state ────────────────────────────────────────────────────────────────
-_lock = threading.Lock()
+_lock = threading.RLock() # RLock (not Lock): handle_signal holds this and calls
+                          # _do_entry, whose stale-ghost branch re-acquires it
+                          # (~line 630). A plain Lock deadlocks the whole webhook
+                          # handler there — the exact reversal-of-recovered-ghost
+                          # path this file lives on (hardened 2026-07-20).
 _wh_state = {}            # "strat|symbol" -> position dict
 import daily_state as _ds  # persists across restarts
 _trades_today = _ds.get_all("webhook")  # loaded from disk on startup
@@ -488,11 +492,41 @@ def _recover_wh_state():
                 continue
             sl = (entry_px + sl_val if opt_action == "SELL" else entry_px - sl_val) if sl_val else None
             key = _key(strat, symbol)
+            _sec_id_r = str(p.get("sec_id") or "")
+            # order_store's open dict exposes the option symbol as "sym" (see
+            # order_store._as_open) — NOT "trad_sym". Reading the wrong key
+            # rebuilt every RECOVERED webhook position with a BLANK symbol, so a
+            # later exit/reversal sent the broker a nameless order → REJECTED
+            # ("no trad_sym"), aborting the reversal and leaving the position open
+            # (found live 2026-07-20). range_trader / rsi / universe recovery all
+            # read "sym" correctly — webhook was the lone drift. sec_id is the
+            # reliable key: self-heal from it if the symbol is somehow missing.
+            _trad_sym_r = (p.get("sym") or "").strip()
+            if not _trad_sym_r and _sec_id_r:
+                try:
+                    _trad_sym_r = (dhan_master.get_trad_sym_for_sec_id(_sec_id_r) or "").strip()
+                except Exception:
+                    _trad_sym_r = ""
+            if not _trad_sym_r:
+                # No usable option symbol → do NOT create an un-exitable ghost.
+                # pos_monitor (order_store-driven) still enforces SL/EOD; we just
+                # refuse to track a nameless position in _wh_state, where a later
+                # exit could fire a blank-symbol order at the broker.
+                _log(f"[RECOVER] ⚠ SKIP {strat}|{symbol} — no option symbol resolvable "
+                     f"(sec_id={_sec_id_r or '?'}). Not creating a nameless position.")
+                try:
+                    import notify as _nfy_r
+                    _nfy_r.error(f"webhook recover skip {strat}|{symbol}: option symbol "
+                                 f"missing (sec_id={_sec_id_r or '?'})",
+                                 key=f"wh_recover_nosym_{strat}_{symbol}", source=strat)
+                except Exception:
+                    pass
+                continue
             _entry = {
                 "strategy": strat, "symbol": symbol,
                 "position": direction, "direction": direction,
-                "opt_sec_id": str(p.get("sec_id") or ""),
-                "opt_trad_sym": p.get("trad_sym") or "",
+                "opt_sec_id": _sec_id_r,
+                "opt_trad_sym": _trad_sym_r,
                 "opt_qty": int(p.get("qty") or 0),
                 "opt_action": opt_action,
                 "entry_premium": entry_px,
@@ -555,7 +589,8 @@ def handle_signal(payload: dict) -> dict:
             return {"ok": False, "msg": f"webhook strategy '{strat}' inactive"}
 
         alert_id = str(payload.get("id") or "")
-        if _dedup(f"{strat}:{alert_id}"):
+        _dk = f"{strat}:{alert_id}"
+        if _dedup(_dk):
             _log(f"DEDUP skip strat={strat} id={alert_id}")
             return {"ok": True, "msg": "duplicate ignored"}
 
@@ -564,10 +599,22 @@ def handle_signal(payload: dict) -> dict:
         action = str(payload.get("action") or "buy").lower().strip()
 
         if signal == "EXIT":
-            return _do_exit(strat, symbol, cfg, reason="TV_EXIT")
-        if signal == "ENTRY":
-            return _do_entry(strat, symbol, action, cfg, payload)
-        return {"ok": False, "msg": f"unknown signal '{signal}'"}
+            res = _do_exit(strat, symbol, cfg, reason="TV_EXIT")
+        elif signal == "ENTRY":
+            res = _do_entry(strat, symbol, action, cfg, payload)
+        else:
+            res = {"ok": False, "msg": f"unknown signal '{signal}'"}
+
+        # If this signal FAILED, don't let dedup swallow TradingView's identical
+        # retry of the SAME id — a transient failure (broker reject, missing data,
+        # a failed reversal-exit) must get a second chance. Un-mark so the retry
+        # re-attempts; the position-state checks in _do_entry (already-<dir> skip /
+        # reversal) still prevent a double entry. (found live 2026-07-20: the
+        # reversal-exit failed on delivery #1, the identical retry #2 was
+        # DEDUP-skipped, so the miss became permanent.)
+        if not res.get("ok"):
+            _seen.pop(_dk, None)
+        return res
 
 
 def _merge_overrides(cfg, payload):
@@ -826,6 +873,37 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
         _log(f"EXIT skip {key} — no open position")
         return {"ok": True, "msg": "no open position"}
 
+    # ── HARD GUARD (2026-07-20): never send a NAMELESS close order ──────────────
+    # If opt_trad_sym is blank (e.g. a recovery field bug), a "close (blank)" order
+    # is REJECTED by the broker and — mid-reversal — aborts the new entry too,
+    # leaving the old position open (found live 2026-07-20). Self-heal from the
+    # reliable sec_id first; if it still can't be named, alert + skip rather than
+    # fire garbage at the broker (pos_monitor's order_store-driven SL/EOD still
+    # protects the leg either way). Belt-and-braces with the recovery fix above.
+    if not (st.get("opt_trad_sym") or "").strip():
+        _sid_x = str(st.get("opt_sec_id") or "")
+        _sym_x = ""
+        if _sid_x:
+            try:
+                import dhan_master as _dm_x
+                _sym_x = (_dm_x.get_trad_sym_for_sec_id(_sid_x) or "").strip()
+            except Exception:
+                _sym_x = ""
+        if _sym_x:
+            st["opt_trad_sym"] = _sym_x
+            _log(f"EXIT {key} — blank symbol self-healed from sec_id={_sid_x} → {_sym_x}")
+        else:
+            _log(f"EXIT BLOCKED {key} — no option symbol (sec_id={_sid_x or '?'}); "
+                 f"refusing to send a nameless close order.")
+            try:
+                import notify as _nfy_x
+                _nfy_x.error(f"webhook exit blocked {key}: option symbol missing "
+                             f"(sec_id={_sid_x or '?'})",
+                             key=f"wh_exit_nosym_{key}", source=strat)
+            except Exception:
+                pass
+            return {"ok": False, "msg": "exit blocked — option symbol missing"}
+
     # ── S7 guard: check if position was manually closed at broker ──────────────
     # broker_sync runs every 30s and marks externally_closed in order_store.
     # If the entry leg is already marked, placing a TV EXIT order would open a
@@ -841,7 +919,7 @@ def _do_exit(strat, symbol, cfg, reason="TV_EXIT"):
         _leg_dead = False
         for _leg in _open_legs:
             if (str(_leg.get("sec_id") or "") == _opt_sid or
-                    (_leg.get("sym") or _leg.get("trad_sym") or "") == _opt_sym):
+                    (_leg.get("sym") or "") == _opt_sym):   # order_store open row → 'sym'
                 if _leg.get("status") == "externally_closed":
                     _leg_dead = True
                     break

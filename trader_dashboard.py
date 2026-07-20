@@ -7160,7 +7160,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
     # On expiry day: (a) close 20 min earlier to avoid last-hour chaos and
     # physical-delivery margin blocks; (b) if a short option goes ITM, exit
     # immediately — don't wait for EOD, the loss only grows from here.
-    _trad_sym = p.get("trad_sym") or p.get("sym") or ""
+    _trad_sym = p.get("sym") or ""   # order_store open row → symbol is "sym", not "trad_sym" (always None)
     _is_option = (p.get("instrument") or "").upper() != "EQUITY"
     if _is_option:
         try:

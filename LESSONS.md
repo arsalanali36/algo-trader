@@ -3646,3 +3646,44 @@ element ka default us layout se alag hai — `<label>`/`<span>`/`<td>` sab inlin
 `''` us layout ko chupchaap gira dega. **Restore karte waqt asli display value likho.** Fast-detect:
 "toggle/filter/search ke BAAD hi layout tutta hai, pehle theek" = ye pattern. Isolated repro theek
 aaye to `style.display=''` wale show/hide code ko shak se dekho.
+
+## TRAP #138 — restart-recovery ne order_store ke open-row ko GALAT key se padha (`trad_sym` jabki dict `sym` deti hai) → NAAM-rahit position jo close hi nahi ho sakti
+
+**Symptom.** Live incident (2026-07-20): webhook (`arschain_MAIN`, NIFTY) ne SHORT li (09:35).
+10:00 pe TV ne reversal bheja (short exit + reverse long). **Na short exit hui, na reverse long
+bani.** User ne haath se band ki. Log: `[BROKER]  BUY 130 -> REJECTED (no trad_sym to resolve a
+Kite symbol from)` — close order ka **symbol khaali** gaya.
+
+**Root.** Do cheezon ka product: (1) dashboard 09:40 pe restart hua (user roz errors pakadne ke
+liye restart karta hai). (2) Restart ke baad position `_recover_wh_state()` ne order_store se
+rebuild ki, par symbol `p.get("trad_sym")` se padha — **order_store ka open-dict symbol ko `"sym"`
+key me deta hai** (`order_store._as_open`: `{"sym": r["trad_sym"], …}`), `trad_sym` key **hoti hi
+nahi** → `None` → recovered position ka `opt_trad_sym = ""`. Reversal ne blank-symbol close order
+broker ko bheja → REJECT → reversal-exit fail → atomic rule "purani exit fail to nayi entry nahi"
+ne long bhi rok di. **`range_trader` / `01_rsi_v1` / `universe_trader` teeno recovery `p.get("sym")`
+sahi padhti hain — webhook akela drift kar gaya** (16-July TRAP #128 ka direction-fix isi function me
+tha, tab `sym` ka pattern bagal ki file se copy nahi hua). Ye PRE-MORTEM shape #4 (duplicate logic,
+ek jagah alag se fix).
+
+**Fix.** (a) Recovery ab `p.get("sym")` padhti hai + `dhan_master.get_trad_sym_for_sec_id(sec_id)`
+backstop + symbol na milne pe position recover hi **nahi** karti (naam-rahit ghost nahi banati) +
+`notify.error`. (b) `_do_exit` HARD GUARD: blank symbol → pehle sec_id se resolve, warna order
+place hi **mat karo** — alert + skip (pos_monitor SL/EOD phir bhi protect karta). (c) dedup ab
+**fail hone pe** id ko "seen" mark nahi karta → TV ka identical retry dobara try kar sakta hai
+(pehle #1 fail + #2 dedup-skip = permanent drop). (d) `_lock` → `RLock` (handle_signal lock hold
+karke `_do_entry` ko bulata hai jo ghost-clear branch me `with _lock:` dobara leta — plain Lock
+wahan poora webhook handler deadlock kar deta). (e) **naya `architecture_audit` check #10
+`RECOVER-FIELD`**: order_store `.get("open"/"closed"/"details")` row pe `trad_sym` padhna = FAIL.
+
+**Guard ne turant 2 aur dead-reads pakde** (`broker_sync.py:139`, `webhook_executor` flat-check) —
+safe `sym`-first the par misleading dead `trad_sym` fallback; `sym`-only kar diye. Regression test:
+`TEST/test_wh_recover_symbol.py` (order_store ka asli `_net_rows` + asli `_recover_wh_state`/`_do_exit`/
+`handle_signal` chalata hai, koi DB write nahi; 12/12 pass).
+
+**Lesson.** Jab bhi state ko order_store se rebuild karo, uske **emitted open-dict schema** se field
+padho (`sym`, `symbol`, `sec_id`, `entry`, `qty`, `entry_price`, `tags` …) — raw DB column naam
+(`trad_sym`, `side`, `price`, `status`) mat maano; wo sirf `order_store.query()` ke raw rows me hote
+hain. Ek reliable alternate key (yahan `sec_id`) ho to usse **self-heal** karo, kisi ek field pe
+mat atko. Aur money-path pe: blank/adhura identifier lekar broker ko order **kabhi mat bhejo** —
+resolve karo ya ruk kar alert karo. Fast-detect: `no trad_sym` / blank-symbol reject log, ya
+recovered position jo exit pe REJECT hoti hai.

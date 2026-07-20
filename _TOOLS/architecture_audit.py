@@ -337,6 +337,81 @@ def _hits_order_url(arg, url_names):
     return False
 
 
+_OS_ROWLIST_KEYS = ("open", "closed", "details")
+
+
+def _subscript_const(node):
+    """Constant key of `x[...]` across py versions (3.8 ast.Index → 3.9+ direct)."""
+    sl = node.slice
+    if type(sl).__name__ == "Index":   # ast.Index (py<3.9; removed in 3.14)
+        sl = getattr(sl, "value", sl)
+    return sl.value if isinstance(sl, ast.Constant) else None
+
+
+def _is_os_rowlist(node):
+    """True if `node` is `<x>.get("open"/"closed"/"details")` or `<x>["open"...]`
+    — an order_store.trades_for(...) result's row list."""
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get" and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and node.args[0].value in _OS_ROWLIST_KEYS):
+        return True
+    return isinstance(node, ast.Subscript) and _subscript_const(node) in _OS_ROWLIST_KEYS
+
+
+def check_recover_field(path, src, tree, findings):
+    """Check 10 — RECOVER-FIELD: reading an order_store open/closed row via the
+    WRONG key. order_store.trades_for(...)['open'] rows expose the option symbol
+    as 'sym' (order_store._as_open), NOT 'trad_sym'. Reading 'trad_sym' off such a
+    row silently returns None → a nameless position that later can't be exited
+    (found live 2026-07-20: a webhook reversal-exit sent a BLANK symbol to the
+    broker, so the short never closed and the reverse-long never opened).
+    range_trader / rsi / universe recovery all read 'sym' correctly — webhook was
+    the lone drift. This static tripwire keeps the whole class from recurring."""
+    if "trades_for" not in src:
+        return
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        rowlist_names = set()   # locals bound to an order_store row-list expr
+        for n in ast.walk(fn):
+            if isinstance(n, ast.Assign):
+                v = n.value
+                if isinstance(v, ast.BoolOp) and v.values:   # `<expr> or []`
+                    v = v.values[0]
+                if _is_os_rowlist(v):
+                    rowlist_names.update(t.id for t in n.targets if isinstance(t, ast.Name))
+        row_vars = set()        # for-loop element vars over such a list
+        for n in ast.walk(fn):
+            if isinstance(n, ast.For):
+                it = n.iter
+                if isinstance(it, ast.BoolOp) and it.values:   # `(<expr> or [])`
+                    it = it.values[0]
+                if (isinstance(n.target, ast.Name)
+                        and (_is_os_rowlist(it)
+                             or (isinstance(it, ast.Name) and it.id in rowlist_names))):
+                    row_vars.add(n.target.id)
+        if not row_vars:
+            continue
+        for n in ast.walk(fn):
+            line = 0
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "get" and isinstance(n.func.value, ast.Name)
+                    and n.func.value.id in row_vars and n.args
+                    and isinstance(n.args[0], ast.Constant) and n.args[0].value == "trad_sym"):
+                line = n.lineno
+            elif (isinstance(n, ast.Subscript) and isinstance(n.value, ast.Name)
+                    and n.value.id in row_vars and _subscript_const(n) == "trad_sym"):
+                line = n.lineno
+            if line:
+                findings.append(Finding(
+                    "FAIL", "RECOVER-FIELD", rel(path), line,
+                    "reading 'trad_sym' off an order_store open/closed row — that dict "
+                    "exposes the symbol as 'sym' (order_store._as_open), so this is "
+                    "ALWAYS None → a nameless, un-exitable position. Use row.get('sym') "
+                    "and fall back to dhan_master.get_trad_sym_for_sec_id(sec_id)."))
+
+
 def check_raw_http_orders(path, tree, findings):
     """Check 7 — RAW-HTTP-ORDER: broker order endpoint hit directly over HTTP."""
     fname = os.path.basename(path)
@@ -526,6 +601,7 @@ def audit(files):
         check_backtest_risk_bypass(path, src, tree, findings)
         check_raw_http_orders(path, tree, findings)
         check_core_imports_ui(path, tree, findings)
+        check_recover_field(path, src, tree, findings)
     return findings
 
 

@@ -136,7 +136,7 @@ def _my_open_qty(strategy_id: str, sec_id: str, trad_sym: str = ""):
             if (p.get("strategy") or "") != strategy_id:
                 return False
             return str(p.get("sec_id") or "") == str(sec_id) or \
-                   (trad_sym and (p.get("sym") or p.get("trad_sym")) == trad_sym)
+                   (trad_sym and p.get("sym") == trad_sym)   # order_store open row → 'sym' (never 'trad_sym')
 
         total = 0
         for p in (data.get("open") or []):
