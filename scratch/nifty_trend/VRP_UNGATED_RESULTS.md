@@ -124,6 +124,28 @@ ADR-006's shelved status untouched. Backtest-only, negative result — no follow
 
 ---
 
+## Follow-up — can PF/Sharpe be lifted honestly? (`vrp_ungated_ideas.py`)
+
+User asked (after seeing 6b) whether PF/Sharpe can be raised. Tested three levers, each
+reported full + train + OOS (split EVO_END 2025-07-01), and DSR-haircut the winner. **The
+honest answer: yes in-sample, but the only lift that survives real scrutiny is one small
+structural change — everything else is just re-introducing ADR-006's IV gate.**
+
+| lever | full | OOS | status |
+|---|---|---|---|
+| **pre-expiry exit** (dte=1, NO IV filter) | PF 0.95→**1.02**, net −2.5%→**+0.9%** | PF 1.06 (holds) | ✅ **real** — expiry-day 0DTE gamma is a genuine drag; no data-snooping |
+| IV-rank gate ≥0.5 | PF 1.56, Sh 1.37 | PF 1.48 (holds) | ⚠️ robust-looking, but = a milder ADR-006 gate |
+| IV-rank gate ≥0.7 | PF 1.82, Sh 1.77 | PF 0.74 (**loses**) | 🔴 overfit — train 3.01 vs OOS 0.74 |
+| VRP-spread gate (IV>trailing-median) | PF 1.02 | PF 0.53 (**collapses**) | 🔴 fails OOS — percentile-rank is better |
+| **best combo** iv≥0.5 + dte4 + pre-exp | PF **2.10**, Sh **2.14**, p=0.032 | PF 1.37 / n=10 | 🔴 **DSR fails** (prob 0.29–0.39 @ N=20–40 vs 0.95 bar) — forward-paper candidate at best, NOT a proven edge |
+
+**Read:** PF/Sharpe do rise (up to 2.1/2.1 in-sample) via a mild IV gate + T-4 entry +
+pre-expiry exit, and it even survives a raw OOS split — but once the multi-combo search and
+the tiny sample (n=38, OOS n=10) are honestly accounted for via deflated-Sharpe, it **fails
+the formal bar**, same as every prior attempt to escape the high-IV short-vol basin. The one
+lift with no IV cherry-pick — **exit the day before expiry** — is small but genuine and OOS-
+robust; the rest is ADR-006's gate in disguise. Diagnostic/exploratory; nothing shipped.
+
 ## DONE LOG
 
 - **2026-07-20** — Task 6 complete (script `vrp_ungated_backtest.py`, artifacts

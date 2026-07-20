@@ -101,13 +101,17 @@ def _entry_bars(g, mode):
 
 # ─────────────────────────────────────── backtest ───────────────────────────────────────────
 def backtest(g, ivr, lot, mode="cycle_start", struct="iron_fly",
-             wing=5, short_off=3, tp_frac=0.5, sl_frac=None, iv_min=0.0):
+             wing=5, short_off=3, tp_frac=0.5, sl_frac=None, iv_min=0.0,
+             allow_days=None, exit_before_dte=None):
     """One defined-risk weekly structure per cycle, held to expiry. Real held-strike premium.
 
     struct: 'iron_fly'  = sell ATM CE+PE, buy ATM±wing        (ADR-006 straddle shape, defined-risk)
             'iron_condor'= sell ATM±short, buy ATM±(short+wing)
     iv_min > 0 applies the IV-rank gate (only for the GATED apples-to-apples comparison).
     sl_frac None = no % stop (wing IS the defined-risk floor; hold to expiry).
+    allow_days: optional set of dates — enter only if entry_day is in it (custom VRP-spread gate).
+    exit_before_dte: optional int — force-close at EOD of the day this-many trading-days before
+        expiry (e.g. 1 = exit day-before-expiry, avoiding expiry-day 0DTE gamma). None = hold to expiry.
     """
     qty = int(lot)
     n = len(g["DT"]); DT, DAY, TT = g["DT"], g["DAY"], g["TT"]
@@ -163,6 +167,9 @@ def backtest(g, ivr, lot, mode="cycle_start", struct="iron_fly",
                 hit = "Target %credit"
             elif sl_frac and mtm <= -sl_frac * ref * qty:
                 hit = "Stop %credit"
+            elif (exit_before_dte is not None and tdte.get(d, 999) <= exit_before_dte
+                  and not is_exp.get(d) and (TT[i].hour, TT[i].minute) >= EXPIRY_EOD):
+                hit = "Pre-expiry exit"                 # avoid expiry-day 0DTE gamma
             elif is_exp.get(d) and (spot > pos["k_hi"] or spot < pos["k_lo"]):
                 hit = "Expiry ITM guard"                   # ADR-006 expiry-day ITM guard
             elif is_exp.get(d) and (TT[i].hour, TT[i].minute) >= EXPIRY_EOD:
@@ -175,6 +182,8 @@ def backtest(g, ivr, lot, mode="cycle_start", struct="iron_fly",
             rank = ivr.get(entry_day)
             if iv_min > 0 and (rank is None or rank < iv_min):
                 continue                                   # GATED comparison only
+            if allow_days is not None and entry_day not in allow_days:
+                continue                                   # custom VRP-spread gate
             K0, legs = legs_at(i)
             eps = {(side, K): r2._px(g, i, side, K) for (side, K, s) in legs}
             if not all(v > 0 for v in eps.values()):
