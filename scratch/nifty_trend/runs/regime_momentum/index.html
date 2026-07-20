@@ -1,0 +1,30 @@
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>10 - Regime-Momentum Basket (F&O stocks)</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;margin:0;padding:24px}
+.wrap{max-width:820px;margin:0 auto} h1{font-size:20px;margin:0 0 4px} .sub{color:#8b949e;font-size:13px;margin-bottom:18px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 16px;margin-bottom:14px}
+.row{display:flex;flex-wrap:wrap;gap:12px} .row .card{flex:1;min-width:120px;text-align:center}
+.big{font-size:22px;font-weight:700} .lbl{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:.5px}
+table{width:100%;border-collapse:collapse;font-size:13px} td,th{padding:5px 8px;border-bottom:1px solid #30363d;text-align:right} th:first-child,td:first-child{text-align:left}
+.pos{color:#3fb950} .neg{color:#f85149} .note{color:#8b949e;font-size:12px;line-height:1.5} .warn{color:#d29922}</style></head>
+<body><div class="wrap">
+<h1>📊 10 - Regime-Momentum Basket (F&O stocks)</h1>
+<div class="sub">momentum · monthly · F&O stocks (210) · 2018-04-30..2026-07-20 · equity lab</div>
+<div class="row">
+ <div class="card"><div class="lbl">Sharpe</div><div class="big pos">1.23</div></div>
+ <div class="card"><div class="lbl">CAGR (net)</div><div class="big">24.12%</div></div>
+ <div class="card"><div class="lbl">Max DD</div><div class="big neg">-23.89%</div></div>
+ <div class="card"><div class="lbl">Win% (mo)</div><div class="big">54.55%</div></div>
+ <div class="card"><div class="lbl">PF</div><div class="big">1.27</div></div>
+</div>
+<div class="card"><div class="lbl">Equity (₹1L start, net of cost + STCG) → ₹568,001</div><svg width="680" height="170" style="max-width:100%"><polyline points="0.0,152.4 6.9,153.6 13.7,154.4 20.6,153.2 27.5,151.6 34.3,155.3 41.2,156.8 48.1,156.9 54.9,156.5 61.8,156.5 68.7,156.5 75.6,156.5 82.4,156.2 89.3,155.8 96.2,155.5 103.0,158.0 109.9,158.0 116.8,158.0 123.6,157.2 130.5,157.1 137.4,156.5 144.2,155.4 151.1,156.4 158.0,156.4 164.8,156.4 171.7,156.4 178.6,156.4 185.5,156.4 192.3,155.9 199.2,154.5 206.1,154.0 212.9,151.1 219.8,150.5 226.7,149.6 233.5,146.5 240.4,146.9 247.3,144.0 254.1,140.8 261.0,139.5 267.9,137.9 274.7,137.3 281.6,136.0 288.5,135.7 295.4,134.7 302.2,132.4 309.1,132.9 316.0,134.9 322.8,135.0 329.7,136.1 336.6,136.1 343.4,136.1 350.3,136.2 357.2,132.0 364.0,130.9 370.9,128.5 377.8,126.0 384.6,127.0 391.5,128.8 398.4,132.5 405.3,132.5 412.1,132.6 419.0,129.6 425.9,125.5 432.7,120.7 439.6,114.9 446.5,108.2 453.3,111.6 460.2,103.5 467.1,97.2 473.9,86.8 480.8,85.6 487.7,86.4 494.5,75.0 501.4,67.0 508.3,58.7 515.2,46.1 522.0,43.5 528.9,38.8 535.8,45.4 542.6,44.9 549.5,38.1 556.4,38.1 563.2,38.1 570.1,38.1 577.0,38.3 583.8,27.1 590.7,17.7 597.6,20.7 604.4,23.9 611.3,23.2 618.2,16.5 625.1,13.5 631.9,12.0 638.8,18.5 645.7,12.6 652.5,12.6 659.4,12.6 666.3,12.6 673.1,12.6 680.0,12.6" fill="none" stroke="#1f6feb" stroke-width="2"/></svg></div>
+<div class="card"><div class="lbl" style="margin-bottom:6px">Train / OOS (overfit guard)</div>
+ <table><tr><th>Period</th><th>Sharpe</th><th>CAGR</th><th>Max DD</th></tr>
+ <tr><td>Train</td><td>0.87</td><td>15.34%</td><td>-23.89%</td></tr>
+ <tr><td>OOS</td><td>1.49</td><td>31.58%</td><td>-15.29%</td></tr></table></div>
+<div class="card"><div class="lbl" style="margin-bottom:6px">Significance</div>
+ <div class="note">Permutation vs random baskets: real Sharpe 1.23 vs random 0.51 → <b>p = 0.0033222591362126247</b>
+ ✅ PASS (p<0.05). In-market 74% of rebalances · turnover 53%/mo.</div></div>
+<div class="card"><div class="lbl" style="margin-bottom:6px">⚠️ Survivorship haircut (drop top-20 all-time gainers — honest deployable estimate)</div><div class="note warn">Sharpe 0.87 · CAGR 16.6% · maxDD -23.9% · ₹1L→₹344,468. The headline above trades the full current F&O list (what the bot does), but that list is survivorship-biased; this is the more honest forward expectation.</div></div>
+<div class="note" style="text-align:center;margin-top:16px">Delivery-equity backtest · 10bps/side + STCG 20% · 1x no-leverage. Research; not investment advice.</div>
+</div></body></html>
