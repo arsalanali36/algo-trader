@@ -39,6 +39,8 @@
   // naamo se jaani jaati hai — permanent ID, config_key, hub slug, aur har
   // purana/retired alias — sab isi entry pe aane chahiye. Alias isliye hai ki
   // naam badalne pe order_store/RMS ki purani rows resolve hoti rahein.
+  var BUCKETS = {};        // lc(bucket-id) -> clean label (non-strategy P&L rows)
+
   function _index() {
     IDX = {};
     var strs = REG.strategies || {};
@@ -52,25 +54,57 @@
     }
     var hid = ((REG._meta || {}).hidden || {}).identifiers || {};
     HIDDEN = new Set(Object.keys(hid).map(_lc));
+    // Non-strategy buckets (unknown/default/manual/'') ke saaf naam — Python ka
+    // bucket_labels() ka mirror. Ye P&L rakhte hain (table hide nahi kar sakta),
+    // isliye raw ki jagah saaf naam. `_why` jaisi meta keys skip.
+    BUCKETS = {};
+    var bl = (REG._meta || {}).bucket_labels || {};
+    for (var bk in bl) { if (bk.charAt(0) !== '_') BUCKETS[_lc(bk)] = bl[bk]; }
   }
 
-  // Canonical display name — har surface ke liye yahi. Unknown/abhi-load-nahi
-  // hua -> raw key wapas (kabhi khaali nahi, kabhi purana naam nahi).
-  function regLabel(key) {
-    if (!key) return key || '';
+  // ID + config_key + slug + aliases pe match; "id | desc" pollution ho to id
+  // part pe. Mila to {id,name}, warna null.
+  function _rec(key) {
     var r = IDX[_lc(key)];
-    return r ? r.name : String(key);
+    if (r) return r;
+    var k = String(key == null ? '' : key);
+    if (k.indexOf(' | ') >= 0) { r = IDX[_lc(k.split(' | ')[0])]; if (r) return r; }
+    return null;
+  }
+  // Anjaana raw id -> padhne-layak Title Case (Python _beautify ka mirror) —
+  // taaki raw underscore/kebab kabhi na dikhe.
+  function _beautify(raw) {
+    var s = String(raw == null ? '' : raw).split(' | ')[0]
+      .replace(/[_\-]+/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .replace(/\s+/g, ' ').trim();
+    if (!s) return String(raw == null ? '' : raw);
+    return s.replace(/\S+/g, function (t) { return t.charAt(0).toUpperCase() + t.slice(1); });
+  }
+
+  // Canonical display name — har surface ka SINGLE gate. Registered -> Name.
+  // Non-strategy bucket -> saaf naam. Anjaana -> beautified. Raw sirf tab jab
+  // registry LOAD hi na hui ho (spasht "load nahi hua", TRAP #132) — warna kabhi
+  // raw ugly id leak nahi hota.
+  function regLabel(key) {
+    var r = _rec(key);
+    if (r) return r.name;
+    if (!LOADED) return String(key == null ? '' : key);   // load-fail: honest raw
+    var low = _lc(String(key == null ? '' : key).trim());
+    if (low in BUCKETS) return BUCKETS[low];
+    if (low === '') return 'Untagged';
+    return _beautify(key);
   }
   // Sirf chhota permanent ID ("04.04") — tang jagahon ke liye (row tags).
   function regId(key) {
-    if (!key) return key || '';
-    var r = IDX[_lc(key)];
-    return r ? r.id : String(key);
+    var r = _rec(key);
+    return r ? r.id : String(key == null ? '' : key);
   }
-  // "04.04 · Ars chain - DirectWebhook" — jahan dono chahiye.
+  // "04.04 · Ars chain - DirectWebhook" — jahan dono chahiye. Unresolved pe
+  // sirf saaf label (raw·raw nahi).
   function regFull(key) {
-    var id = regId(key), nm = regLabel(key);
-    return id !== String(key) ? (id + ' · ' + nm) : nm;
+    var r = _rec(key);
+    return r ? (r.id + ' · ' + r.name) : regLabel(key);
   }
   // Registry ke _meta.hidden se: mare hue config, non-strategy block (`global`),
   // aur order_store me likha kachra (`''`, `unknown`) — list/picker se bahar.

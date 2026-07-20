@@ -36,6 +36,14 @@
       "_kept_visible": {
         "manual": "Arsalan's own manual Zerodha trades, tagged deliberately by broker_sync.reconcile_manual_trades(). Real and wanted."
       }
+    },
+    "bucket_labels": {
+      "_why": "Non-strategy order_store.strategy values that legitimately carry P&L (so a P&L table CANNOT hide them) but are NOT strategies. label()/regLabel() render these CLEAN names instead of the raw id, so 'unknown'/'default'/'manual'/'' never leak as raw text. Single source: Python bucket_labels() + JS registry.js both read it.",
+      "": "Untagged",
+      "unknown": "Untagged (unknown)",
+      "default": "Untagged (old webhook)",
+      "manual": "Manual",
+      "global": "Global (shared config)"
     }
   },
   "families": {
@@ -320,11 +328,12 @@
     },
     "09.01": {
       "name": "52-Week Breakout (Gemini)",
-      "config_key": null,
+      "config_key": "52_Week_Breakout",
       "slug": null,
       "live_file": "strategies/backtest/user_temp_52_week_gemni_v1.py",
       "status": "research",
-      "legs": 1
+      "legs": 1,
+      "aliases": ["52_Week_Breakout | Price closing above 52-week EMA with high volume"]
     },
     "09.02": {
       "name": "Sample EMA (test)",

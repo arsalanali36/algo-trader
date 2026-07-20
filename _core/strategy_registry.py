@@ -63,7 +63,12 @@ def resolve(alias):
     means moving it into aliases, never deleting it."""
     if alias is None:
         return None
-    a = str(alias)
+    a = str(alias).strip()
+    # Empty = untagged; NEVER a strategy. Guard karo warna `("" or "").lower()`
+    # kisi bhi missing-config_key wale record se match kar jaata tha (`''` → 00.07
+    # "Long Strangle" mislabel — 65 blank orders galat strategy pe chip rahe the).
+    if not a:
+        return None
     st = strategies()
     if a in st:
         return a
@@ -76,6 +81,11 @@ def resolve(alias):
         for _alt in (r.get("aliases") or []):
             if str(_alt).lower() == al:
                 return sid
+    # Webhook/pine pollution: strategy field me "id | description" ghus jaata hai
+    # (order_store.strategy pe validation nahi — TRAP #128). "id" part pe resolve
+    # karo taaki "52_Week_Breakout | Price closing..." → 09.01 pahunche.
+    if " | " in a:
+        return resolve(a.split(" | ", 1)[0])
     return None
 
 
@@ -98,15 +108,42 @@ def is_hidden(alias):
     return str(alias or "").lower() in hidden_identifiers()
 
 
+def bucket_labels():
+    """Non-strategy order_store.strategy values (`unknown`/`default`/`manual`/'')
+    ke CLEAN display naam. Ye REAL P&L rakhte hain (P&L table inhe HIDE nahi kar
+    sakta), par strategy nahi hain — inhe `label()` raw ki jagah in saaf naamo se
+    dikhata hai. Single source: `_meta.bucket_labels` (Python + JS dono padhte)."""
+    m = (load().get("_meta", {}) or {}).get("bucket_labels", {}) or {}
+    return {str(k).lower(): v for k, v in m.items() if not str(k).startswith("_")}
+
+
+def _beautify(raw):
+    """Anjaana raw id → padhne-layak Title Case (aakhri fallback, taaki raw
+    underscore/kebab kabhi screen pe na aaye). `some_new_strat` → "Some New
+    Strat"; `CamelId` → "Camel Id". Pure transform — koi guess/stale naam nahi."""
+    import re
+    s = str(raw).split(" | ", 1)[0]                 # desc-pollution hatao
+    s = re.sub(r"[_\-]+", " ", s)                    # snake/kebab → spaces
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", s)    # CamelCase → spaces
+    s = re.sub(r"\s+", " ", s).strip()
+    return s.title() if s else str(raw)
+
+
 def label(alias, with_name=True):
-    """"NN.MM - Name" for display. Falls back to the raw alias if unknown (so a
-    brand-new strategy not yet registered still shows *something*)."""
+    """Har display surface ke liye SINGLE gate. Registered → "NN.MM - Name".
+    Non-strategy bucket → saaf naam (`manual`→"Manual"). Anjaana → beautified.
+    Raw sirf tab jab registry load hi na hui ho (spasht "load nahi hua", TRAP
+    #132) — warna kabhi raw ugly id leak nahi hota."""
     sid = resolve(alias)
-    if not sid:
+    if sid:
+        return sid if not with_name else f"{sid} - {get(sid).get('name', sid)}"
+    if not strategies():          # registry load fail — honest raw, na ki jhoota naam
         return str(alias)
-    if not with_name:
-        return sid
-    return f"{sid} - {get(sid).get('name', sid)}"
+    key = ("" if alias is None else str(alias).strip()).lower()
+    bl = bucket_labels()
+    if key in bl:
+        return bl[key]
+    return _beautify(alias)
 
 
 def family_of(sid):

@@ -124,7 +124,7 @@
         // Compare-select usi se match karte hain), sirf label badalta hai.
         // Monthly/Weekly = pretty period label; ye aggregation-only rows hain
         // (clickKey null → non-clickable; day/strategy hi date/strat filter karte).
-        const _lbl = (mode === 'strategy') ? regLabel(key)
+        const _lbl = (mode === 'strategy') ? regFull(key)
           : (mode === 'monthly' || mode === 'weekly') ? _calPeriodLabel(key, mode)
             : key;
         // every mode clickable: day→date filter, week/month→period filter,
