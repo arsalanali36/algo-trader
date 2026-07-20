@@ -527,6 +527,9 @@
         : allTrades;
       drawEquityCurveChart('cal-equity-curve-container', filteredForCurve);
 
+      // B — scope the Real-vs-BS divergence table to the clicked day (per-strategy)
+      if (typeof bsRenderDivergence === 'function') bsRenderDivergence();
+
       // Scroll smoothly to Point Per Trade Details card
       const container = document.getElementById('cal-points-per-trade-tbody');
       if (container) {
@@ -576,6 +579,7 @@
       updateCalSelectedDateBadge();
       window.calPointsCurrentPage = 1;
       renderPointsPerTradeTable();
+      if (typeof bsRenderDivergence === 'function') bsRenderDivergence();   // back to month/range scope
     }
 
     function clearCalPnlGraphFilter(event) {
@@ -668,6 +672,7 @@
       if (typeof _updateCalSumSelectBtn === 'function') _updateCalSumSelectBtn();
       renderSummaryTable();
       if (typeof renderPointsPerTradeTable === 'function') renderPointsPerTradeTable();
+      if (typeof bsRenderDivergence === 'function') bsRenderDivergence();   // date-scope cleared → back to month
       // Equity curve resolution follows this mode (Day/Weekly/Monthly) → redraw.
       if (typeof drawEquityCurveChart === 'function') drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []);
     }

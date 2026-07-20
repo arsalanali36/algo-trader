@@ -49,10 +49,16 @@
 
   window.bsDecorateCalendar = function () {
     document.querySelectorAll('.cal-day-cell .bs-ov').forEach(n => n.remove());
-    document.querySelectorAll('.cal-day-cell .cal-day-pnl').forEach(n => { n.style.opacity = ''; });
+    // restore each cell's main Real number to its ALL-legs value (undo any prior
+    // index-only swap) + reset styling — so toggling back to Real mode is exact.
+    document.querySelectorAll('.cal-day-cell .cal-day-pnl:not(.bs-ov)').forEach(n => {
+      n.style.opacity = ''; n.style.color = '';
+      if (n.dataset.allReal != null) n.textContent = n.dataset.allReal;
+    });
     const mode = window.calPremiumMode;
     if (mode === 'real') return;
-    // sum BS per date over the calendar's own (already-filtered) trades
+    // sum index-only (gross) Real + BS per date over the calendar's own (already-
+    // filtered) trades — BS can't price stocks, so this is the BS-comparable set.
     const byDate = {};
     (window.currentCalendarTrades || []).forEach(t => {
       const rb = _tradeRealBs(t, 'gross');                 // cells are GROSS
@@ -64,8 +70,16 @@
     document.querySelectorAll('.cal-day-cell[data-date]').forEach(cell => {
       const v = byDate[cell.dataset.date];
       if (!v || !v.n) return;
-      const realPnl = cell.querySelector('.cal-day-pnl');
-      if (mode === 'bs' && realPnl) realPnl.style.opacity = '0.35';
+      const realPnl = cell.querySelector('.cal-day-pnl:not(.bs-ov)');
+      // A (fair tile) — in BS/Compare the big Real number becomes INDEX-ONLY, the
+      // exact same legs BS covers, so Real vs BS is apples-to-apples (all-legs
+      // Real incl. stocks stays available in Real mode + the per-day drilldown).
+      if (realPnl) {
+        if (realPnl.dataset.allReal == null) realPnl.dataset.allReal = realPnl.textContent;
+        realPnl.textContent = inr(v.real) + ' ·idx';
+        realPnl.style.opacity = '';
+        realPnl.style.color = v.real >= 0 ? '#3fb950' : '#f85149';
+      }
       const bsDiv = document.createElement('div');
       bsDiv.className = 'bs-ov cal-day-pnl';
       bsDiv.style.cssText = 'color:#a371f7;font-size:11px;line-height:1.2;';
@@ -119,61 +133,86 @@
     const tf = document.getElementById('bs-div-tfoot');
     const cov = document.getElementById('bs-div-cov');
     const basis = window._bsDivBasis;
+    // B — when a single calendar day is clicked, scope the table to that day and
+    // group per-STRATEGY (jo us din chali + unka Real vs BS). Warna month/range +
+    // chosen period toggle.
+    const dateSel = window.calSelectedDateFilter || null;
     let period = window._bsDivPeriod || 'day';
     if (period === 'date') period = 'day';
+    if (dateSel) period = 'strategy';
     const groupKey = (typeof _calGroupKey === 'function')
       ? (t) => _calGroupKey(t, period)
       : (t) => (period === 'strategy' ? (t.strategy || 'unknown') : (t.exit_date || t.entry_date || '—'));
 
+    // Per group: realAll = every leg's Real (stocks incl.); realIdx/bs = ONLY the
+    // BS-priceable index legs (fair, same-legs Δ). bsN=0 → stock-only → "BS n/a".
+    // Per-STRATEGY view shows every strategy incl. stock-only ones (Real real,
+    // BS "n/a") — that's the "kaun si strategy chali + divergence" drilldown.
+    // Time buckets (day/weekly/monthly) stay index-only (stocks out) so each row's
+    // Real vs BS is same-legs fair, exactly like before (no regression).
+    const strat = (period === 'strategy');
     const groups = {};
     let exN = 0, incN = 0;                          // excluded (stock, no BS) vs included legs
-    const diffs = [];                               // per-leg Δ = BS − Real (for the bias/noise signal)
+    const diffs = [];                               // per-leg Δ = BS − Real (bias/noise signal, index legs)
     (window.currentCalendarTrades || []).forEach(t => {
+      if (dateSel && (t.exit_date || t.entry_date) !== dateSel) return;   // date-scope
       const rb = _tradeRealBs(t, basis);
-      if (!rb.ok) { exN += 1; return; }             // BS can't price stocks → out of BOTH columns (fair)
-      incN += 1;
-      diffs.push(rb.bs - rb.real);
+      if (!rb.ok && !strat) { exN += 1; return; }   // time buckets: BS-unpriceable stocks stay out (fair)
       const k = groupKey(t);
-      const g = groups[k] || (groups[k] = { real: 0, bs: 0, n: 0 });
-      g.real += rb.real; g.bs += rb.bs; g.n += 1;
+      const g = groups[k] || (groups[k] = { realAll: 0, realIdx: 0, bs: 0, n: 0, bsN: 0 });
+      g.realAll += rb.real; g.n += 1;
+      if (rb.ok) { incN += 1; diffs.push(rb.bs - rb.real); g.realIdx += rb.real; g.bs += rb.bs; g.bsN += 1; }
+      else exN += 1;
     });
 
     let keys = Object.keys(groups);
-    if (period === 'strategy') keys.sort((a, b) => Math.abs(groups[b].bs - groups[b].real) - Math.abs(groups[a].bs - groups[a].real));
+    if (period === 'strategy') keys.sort((a, b) => Math.abs(groups[b].bs - groups[b].realIdx) - Math.abs(groups[a].bs - groups[a].realIdx));
     else keys.sort((a, b) => b.localeCompare(a));
 
     const label = (k) => period === 'strategy' ? (window.regLabel ? regLabel(k) : k)
       : (period === 'weekly' || period === 'monthly') && typeof _calPeriodLabel === 'function' ? _calPeriodLabel(k, period)
       : k;
 
-    let tReal = 0, tBs = 0, tN = 0;
-    keys.forEach(k => { const g = groups[k]; tReal += g.real; tBs += g.bs; tN += g.n; });
-    const maxDiv = Math.max(1, ...keys.map(k => Math.abs(groups[k].bs - groups[k].real)));
+    let tRealAll = 0, tRealIdx = 0, tBs = 0, tN = 0, tBsN = 0;
+    keys.forEach(k => { const g = groups[k]; tRealAll += g.realAll; tRealIdx += g.realIdx; tBs += g.bs; tN += g.n; tBsN += g.bsN; });
+    const maxDiv = Math.max(1, ...keys.map(k => Math.abs(groups[k].bs - groups[k].realIdx)));
 
     tb.innerHTML = keys.map(k => {
-      const g = groups[k]; const d = g.bs - g.real;
+      const g = groups[k];
+      const hasBs = g.bsN > 0;
+      const d = g.bs - g.realIdx;
       const col = d >= 0 ? '#d29922' : '#388bfd';
-      const w = Math.round(Math.abs(d) / maxDiv * 100);
-      const rc = g.real >= 0 ? '#3fb950' : '#f85149';
+      const w = hasBs ? Math.round(Math.abs(d) / maxDiv * 100) : 0;
+      const rc = g.realAll >= 0 ? '#3fb950' : '#f85149';
+      const bsCell = hasBs ? `<span style="color:#a371f7;">${inr(g.bs)}</span>`
+        : `<span style="color:#6e7681;" title="BS sirf NIFTY/BankNifty index options pe">— <span style="font-size:9px;">stock</span></span>`;
+      const dCell = hasBs ? `<span style="color:${col};">${inr(d)}</span>` : `<span style="color:#6e7681;">—</span>`;
+      const bar = hasBs ? `<div style="height:8px;background:${col};width:${w}%;margin-left:auto;border-radius:2px;"></div>` : '';
       return `<tr style="border-top:1px solid #21262d;text-align:right;">
         <td style="text-align:left;padding:4px 8px;">${label(k)}</td>
         <td style="padding:4px 8px;color:#8b949e;">${g.n}</td>
-        <td style="padding:4px 8px;color:${rc};">${inr(g.real)}</td>
-        <td style="padding:4px 8px;color:#a371f7;">${inr(g.bs)}</td>
-        <td style="padding:4px 8px;color:${col};">${inr(d)}</td>
-        <td style="padding:4px 8px;"><div style="height:8px;background:${col};width:${w}%;margin-left:auto;border-radius:2px;"></div></td>
+        <td style="padding:4px 8px;color:${rc};">${inr(g.realAll)}</td>
+        <td style="padding:4px 8px;">${bsCell}</td>
+        <td style="padding:4px 8px;">${dCell}</td>
+        <td style="padding:4px 8px;">${bar}</td>
       </tr>`;
-    }).join('') || `<tr><td colspan="6" style="text-align:center;color:#6e7681;padding:12px;">Is filter/month me koi trade nahi</td></tr>`;
+    }).join('') || `<tr><td colspan="6" style="text-align:center;color:#6e7681;padding:12px;">${dateSel ? 'Is din koi trade nahi' : 'Is filter/month me koi trade nahi'}</td></tr>`;
 
     if (tf) {
-      const dT = tBs - tReal;
+      const dT = tBs - tRealIdx;
+      // two footer rows: index-only (BS-fair, same legs) + all-legs Real (stocks incl.)
       tf.innerHTML = keys.length ? `<tr style="border-top:2px solid #30363d;text-align:right;font-weight:700;">
-        <td style="text-align:left;padding:6px 8px;">TOTAL</td>
-        <td style="padding:6px 8px;">${tN}</td>
-        <td style="padding:6px 8px;color:${tReal >= 0 ? '#3fb950' : '#f85149'};">${inr(tReal)}</td>
+        <td style="text-align:left;padding:6px 8px;">Index-only (BS-fair)</td>
+        <td style="padding:6px 8px;color:#58a6ff;">${tBsN}</td>
+        <td style="padding:6px 8px;color:${tRealIdx >= 0 ? '#3fb950' : '#f85149'};">${inr(tRealIdx)}</td>
         <td style="padding:6px 8px;color:#a371f7;">${inr(tBs)}</td>
         <td style="padding:6px 8px;color:${dT >= 0 ? '#d29922' : '#388bfd'};">${inr(dT)}</td>
-        <td></td></tr>` : '';
+        <td></td></tr>`
+        + (strat && exN ? `<tr style="text-align:right;color:#8b949e;">
+        <td style="text-align:left;padding:4px 8px;">All legs Real (stocks incl.)</td>
+        <td style="padding:4px 8px;">${tN}</td>
+        <td style="padding:4px 8px;color:${tRealAll >= 0 ? '#3fb950' : '#f85149'};">${inr(tRealAll)}</td>
+        <td style="padding:4px 8px;">—</td><td style="padding:4px 8px;">—</td><td></td></tr>` : '') : '';
     }
     if (cov) {
       const miss = (window._bsMissing || []).length;
@@ -185,12 +224,13 @@
       const real = Math.abs(tstat) >= 2;
       const verdict = real ? 'real bias' : 'abhi noise';
       const vcol = real ? '#d29922' : '#3fb950';
+      const scope = dateSel ? `<span style="color:#58a6ff;font-weight:600">📅 ${dateSel} · per-strategy</span> — ` : '';
       const sig = n ? `<span style="border:1px solid ${vcol};border-radius:5px;padding:2px 8px;color:${vcol};font-weight:600">`
         + `per-leg Δ ${inr(dm)} · t=${tstat.toFixed(1)} · ${verdict}</span> `
         + `<span style="color:#6e7681">(signal — roz ke number = noise; ~1000 legs pe pakka pata)</span><br>` : '';
-      cov.innerHTML = sig
-        + `Sirf <b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> — Real vs BS same legs pe (fair). `
-        + (exN ? `<span style="color:#8b949e">${exN} stock legs BS-model se bahar (BS sirf index options pe).</span> ` : '')
+      cov.innerHTML = scope + sig
+        + `<b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> pe Real vs BS (fair, same legs). `
+        + (exN ? `<span style="color:#8b949e">${exN} stock legs BS-model se bahar (BS sirf index options pe) — "BS n/a" rows.</span> ` : '')
         + (miss ? `${miss} din shadow pending.` : '');
     }
   };
