@@ -3687,3 +3687,49 @@ hain. Ek reliable alternate key (yahan `sec_id`) ho to usse **self-heal** karo, 
 mat atko. Aur money-path pe: blank/adhura identifier lekar broker ko order **kabhi mat bhejo** —
 resolve karo ya ruk kar alert karo. Fast-detect: `no trad_sym` / blank-symbol reject log, ya
 recovered position jo exit pe REJECT hoti hai.
+
+## TRAP #139 — haath se band karne ke baad: phantom double-count + strategy ka dobara position banana
+
+**Symptom.** User ne (webhook exit fail hone pe) arschain SHORT 130 ko haath se 2 buy (65+65) se
+band kiya — Kite pe flat ho gaya, par app ne **2 jhoothi open long** dikhayi. Alag se, VRP condor
+manually square off kiya to strategy ne **dobara position bana di**.
+
+**Root (do alag jad, ek family).**
+- **Phantom double-count:** `broker_sync` ne short band karne ka exit **ek 130-qty row** me record
+  kiya; par asli fills **2×65** the. `reconcile_manual_trades` fill ko exact `(sym,side,qty,price)`
+  **signature** se match karta tha — `65 ≠ 130` → miss → dono 65-65 ko "manual" samajh ke daal diya
+  → **wahi 130 do baar gina** → 2 phantom long. Saboot: exit-row aur manual-row dono ka same Kite
+  trade-id (`1822718`). Yani reconcile **fill ki shakl** milaता tha, broker ke **asli net** se nahi.
+- **Re-entry:** har automated path (strategy ka agla entry-signal, `pos_monitor` ka profit-target
+  squareoff) manual close ko bilkul SL-hit jaisa treat karta tha — "position gayi, fresh socho." User
+  ka *intent* ("mujhe ISME nahi rehna") kahin yaad nahi tha → strategy ne dobara enter kiya, aur
+  `pos_monitor` ne already-band paper position ko dobara squareoff kar ke **4 phantom opposite legs**
+  bana diye (VRP mess).
+
+**Deeper "kyun baar-baar":** system **intraday-first + single-broker-first + single-path-first**
+bana tha. Manual (insaan) close + Kite-as-real-broker + positional-overnight — teen nayi haqeeqat
+in assumptions ke **seams** me todti hain. Reconcile fill-by-fill tha; state kai jagah alag-alag
+rebuild hoti hai (4 recovery fns + netting + reconcile + pos_monitor); insaan ke intent ki koi yaad
+nahi thi; din-scoped netting positional ko phantom bana deti hai.
+
+**Fix (jad se).**
+- **Net-aware reconcile:** ab fill tabhi record hota hai jab woh us contract ka book-net **broker ke
+  asli net (`positions()`) ki taraf** le jaaye. Broker flat + book flat → kuch nahi. + trade-id
+  cross-path dedup (jo fill kisi row ke `correlation_id`/`MANUAL_TID_` me hai, dobara nahi).
+- **Manual-close veto:** user band kare (app button ya `broker_sync` ka external-close detect) →
+  `risk_gate.mark_manual_closed(strategy, symbol)` → `strategy_safety.gate_entry()` **pehla gate**
+  block karta hai (har strategy+webhook wahin se guzarti). Strategy ka apna SL/target exit isse mark
+  nahi karta; din-scoped + `clear_manual_veto()` se hataya ja sakta.
+
+**Guard (taaki dobara na aaye).** 3 replay-test (`test_reconcile_net_aware` 7/7 = incident pe 0
+phantom + asli manual trade phir bhi record + idempotent; `test_manual_close_veto` 12/12 = asli
+`gate_entry` block; `test_wh_recover_symbol` 16/16). Poora `architecture_audit` 0 FAIL. Cleanup:
+WAL-safe backup (`trades.db.bak.<ts>`) → guarded delete (id + signature match) → dono contract flat
+verified → VRP disk-state clear. Poora "kyun + kya kiya": **ADR-009**.
+
+**Lesson.** (1) Reconcile hamesha **broker ke net se milao**, fill-ki-shakl se nahi — ek sauda alag
+qty/rows me aa sakta hai. (2) Insaan ke **manual close ko yaad rakho** — woh SL-hit se alag *intent*
+hai; automated re-entry usse override na kare. (3) Koi bhi state-rebuild/exit path banao to poochho:
+"manual close, Kite-real-broker, aur positional-overnight — teeno pe ye sahi rahega?" Fast-detect:
+book me open position par broker flat (`positions()` se check); ek hi trade-id do rows me; ya
+strategy `pos=held` par order_store flat.
