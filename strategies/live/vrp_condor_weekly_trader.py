@@ -353,8 +353,11 @@ def run(paper_mode=True, strategy_id="vrpw_v1"):
                 # ITM guard + RMS daily-LOSS breaker STILL apply (pos_monitor backstop).
                 save_state(strategy_id, pos, last_entry_expiry)
 
-            # ── ENTRY: once per expiry, at ~T-4 DTE, after entry_hm, if IV-rank ≥ thr ──
-            if pos is None and dte is not None and 1 <= dte <= entry_dte:
+            # ── ENTRY: once per expiry, EXACTLY at T-4 DTE, after entry_hm, if IV-rank ≥ thr ──
+            # dte == entry_dte (not a 1..4 window) — a cold-start mid-cycle (e.g. boot at dte=1)
+            # must NOT enter late; it missed the T-4 decision, exactly like the backtest skips
+            # a cycle whose tdte==4 day doesn't exist. Matches vrp_ungated_backtest dte4 exactly.
+            if pos is None and dte is not None and dte == entry_dte:
                 already = (cur_exp is not None and cur_exp == last_entry_expiry)
                 if (now.hour, now.minute) >= (eh, em) and not already and iv_today is not None:
                     elig, rank = vrp_signal.rank_for(today, iv_today, thr=float(tc.get("enter_thr", 0.50)))
