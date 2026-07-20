@@ -747,6 +747,33 @@ def serve_lab_file(fn):
         return _lab_gzip_response(full)
     return send_from_directory(root, fn)
 
+# ---- gzip the heavy static assets (vendor libs + app JS) ----------------------
+# A hard-refresh / first-load re-downloads ~2 MB of UNCOMPRESSED js (vendor ~1.4 MB +
+# app ~0.7 MB) because Flask's built-in /static/ handler doesn't gzip. These two
+# more-specific routes win over the built-in for /static/js and /static/vendor and
+# reuse the SAME sidecar-.gz cache (+ ETag/304) as the Lab pages → ~4× smaller, so
+# the "Loading…" on Ctrl+Shift+R is much shorter. Read-only, no order/live-path.
+def _serve_static_gz(sub, fn):
+    root = (BASE_DIR / 'static' / sub).resolve()
+    try:
+        full = (root / fn).resolve()
+    except Exception:
+        return Response('not found', status=404)
+    if (root not in full.parents and full != root) or not full.is_file():
+        return Response('not found', status=404)
+    if (full.suffix.lower() in _LAB_GZIP_EXT
+            and 'gzip' in request.headers.get('Accept-Encoding', '')):
+        return _lab_gzip_response(full)   # falls back to a plain stream on any error
+    return send_from_directory(full.parent, full.name)
+
+@app.route('/static/js/<path:fn>')
+def _gz_static_js(fn):
+    return _serve_static_gz('js', fn)
+
+@app.route('/static/vendor/<path:fn>')
+def _gz_static_vendor(fn):
+    return _serve_static_gz('vendor', fn)
+
 # ---- Excel Cross-Check: upload a backtest workbook, recompute + render ----
 @app.route('/lab/upload')
 def serve_lab_upload():
