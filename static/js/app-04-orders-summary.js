@@ -126,6 +126,7 @@
     // task 80 — Summary "Running" column: per-strategy open-position unrealized ₹,
     // computed from the SAME _ltpLive feed that patches the Open Positions table.
     // Called on summary render + every _patchLtpCells tick.
+    let _peakRunLast = {};   // key -> last computed Running ₹ (survive a transient feed gap)
     function _patchPeakRunCells() {
       const map = window._peakOpenMap || {};
       if (typeof _ltpLive !== 'object') return;
@@ -144,7 +145,18 @@
           const pts = o.side === 'BUY' ? (ltp - o.entry) : (o.entry - ltp);
           tot += pts * o.qty;
         });
-        if (!any) { el.textContent = '⏳'; el.style.color = '#6e7681'; return; }
+        if (!any) {
+          // No LTP for any leg THIS tick — keep the last known value (dimmed) instead
+          // of clobbering to ⏳, so a momentary feed gap doesn't blank the Running cell.
+          const last = _peakRunLast[k];
+          if (last != null) {
+            el.textContent = (last >= 0 ? '+' : '') + Math.round(last).toLocaleString('en-IN');
+            el.style.color = '#6e7681';
+            grand += last; grandAny = true;
+          } else { el.textContent = '⏳'; el.style.color = '#6e7681'; }
+          return;
+        }
+        _peakRunLast[k] = tot;
         grand += tot; grandAny = true;
         el.textContent = (tot >= 0 ? '+' : '') + Math.round(tot).toLocaleString('en-IN');
         el.style.color = tot >= 0 ? '#3fb950' : '#f85149';

@@ -317,7 +317,7 @@
       }).join('');
       sel.value = cur || '';
     }
-    function _ordTags(t) {
+    function _ordTags(t, skipStrat) {
       let isHedge = (t.group_id && t.group_id.startsWith('RANGE_') && t.entry === 'BUY') ||
         (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry === 'BUY') ||
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
@@ -331,7 +331,10 @@
       const _sidChip = _sid
         ? '<span title="' + _sid.replace(/"/g, '&quot;') + '" style="background:#8957e522;color:#bc8cff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:3px">' + _sidTxt + '</span>'
         : '';
-      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + _sidChip;
+      // skipStrat: Completed/Open tables now show the strategy in its OWN column
+      // (_stratCell) so the Tags chip no longer over-spills. Other surfaces (Stats
+      // Point-Per-Trade) keep the strategy chip inside Tags — pass no flag.
+      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + (skipStrat ? '' : _sidChip);
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -339,6 +342,23 @@
 
       h += _ordTag(t.broker, 'name');
       return h;
+    }
+    // Strategy as its OWN column — registry name + a STABLE per-strategy colour (hue
+    // derived from the registry serial, so every variant of one strategy shares a
+    // colour and different strategies are visually distinct). Raw config_key on hover.
+    function _stratHue(id) {
+      let s = String(id || ''), h = 0;
+      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+      return h;
+    }
+    function _stratCell(t) {
+      const raw = t.strategy ? t.strategy.split(' | ')[0] : '';
+      if (!raw) return '<span style="color:#6e7681">—</span>';
+      const label = regId(raw) !== raw ? (regId(raw) + ' · ' + regLabel(raw)) : (regLabel(raw) || raw);
+      const key = regId(raw) !== raw ? regId(raw) : raw;   // colour by registry serial (stable across variants)
+      const hue = _stratHue(key);
+      const bg = `hsl(${hue},55%,20%)`, fg = `hsl(${hue},80%,72%)`, bd = `hsl(${hue},45%,38%)`;
+      return `<span title="${raw.replace(/"/g, '&quot;')}" style="display:inline-block;background:${bg};color:${fg};border:1px solid ${bd};padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:600;white-space:nowrap">${label}</span>`;
     }
     function _imgTagsOf(t) { return (t.tags || []).filter(tg => tg.startsWith('IMG:')).map(tg => tg.slice(4)); }
     function _noteThumbs(id, imgs) {
@@ -878,8 +898,11 @@
             val = (subRow ? '<span style="color:#6e7681;margin-right:4px">↳</span>' : '') + `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
             colorStyle = 'color:#adbac7;';
             break;
+          case 'strategy':
+            val = _stratCell(t);
+            break;
           case 'tags':
-            val = _ordTags(t);
+            val = _ordTags(t, true);
             break;
           case 'side':
             val = t.entry;
