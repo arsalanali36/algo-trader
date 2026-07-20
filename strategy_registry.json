@@ -86,6 +86,10 @@
     "09": {
       "name": "Misc-Research",
       "desc": "Assorted backtest-only experiments"
+    },
+    "10": {
+      "name": "Factor / Equity",
+      "desc": "Cross-sectional / factor equity baskets — delivery, monthly rebalance (NOT the intraday options fleet)"
     }
   },
   "strategies": {
@@ -366,6 +370,20 @@
       "live_file": "_PINE/markov_meanrev_v1.pine",
       "status": "rejected",
       "legs": 1
+    },
+    "10.01": {
+      "name": "Regime-Momentum Basket (F&O stocks)",
+      "config_key": null,
+      "slug": null,
+      "live_file": null,
+      "status": "paper",
+      "legs": 1,
+      "role": "standalone",
+      "aliases": [
+        "regime_momentum",
+        "momentum_bot"
+      ],
+      "desc": "Monthly cross-sectional momentum: rank F&O stocks by 12-1 month return, long top-decile (~21 names) equal-weight, + NIFTY 200-DMA regime gate (all-cash when NIFTY < 200-DMA). DIFFERENT VEHICLE — delivery equity, monthly rebalance, NOT the intraday options fleet; runs STANDALONE on the VPS (/root/markov_analysis, momentum-paper.timer Mon-Fri 16:40), NOT dashboard start/stop-managed. Forward-paper since 2026-07-20. Survivorship decisive-check PASSED (winners-vs-losers long-short t=3.01, no OOS decay = real factor, not illusion); headline 24% CAGR inflated by survivor names, honest deployable ~Sharpe 1.0 / CAGR 15-18% / maxDD -16% (200-DMA regime filter halves the drawdown). Real money GATED on GO_LIVE_CHECKLIST.md (Kite CNC delivery path to be BUILT + months of forward-paper proof). Live status page: http://72.61.173.32:5200/momentum_status.html"
     },
     "02.03": {
       "name": "VRP Overnight Condor",
