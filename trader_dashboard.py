@@ -559,6 +559,38 @@ def strategy_registry_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'  # always fresh (no stale-cache UI)
     return resp
 
+@app.route('/sl-map')
+def sl_map_page():
+    """SL Map — every RMS stop-loss mechanism + which strategy has what, LIVE from
+    config (login-gated). The reference the user asked for so 'kaun sa SL kahan'
+    is never a mystery again."""
+    from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+    try:
+        cfg = json.loads(TC_FILE.read_text())
+    except Exception:
+        cfg = {}
+    per = (cfg.get("_risk", {}) or {}).get("per_strategy", {}) or {}
+    glob = (cfg.get("_risk", {}) or {}).get("global", {}) or {}
+    gcap = glob.get("max_loss_rs") or 5500
+    rows, disc, bt = [], [], []
+    for sid, v in sorted(per.items()):
+        v = v or {}
+        sl_on = v.get("default_sl_enabled") is True
+        initsl = int(v.get("default_tsl_initial_sl_per_lot") or 2500)
+        mlr = v.get("max_loss_rs")
+        daycap = f"₹{int(mlr):,}" if mlr else f"₹{int(gcap):,}"
+        if mlr and int(mlr) >= 1000000:
+            daycap = "₹10L (off)"
+        rows.append({"name": sid, "type": "Discretionary" if sl_on else "Backtested",
+                     "sl_on": sl_on, "initsl": initsl, "daycap": daycap})
+        (disc if sl_on else bt).append(sid)
+    ist = _dt.now(_tz.utc) + _td(hours=5, minutes=30)
+    # discretionary first in the table so the ON rows lead
+    rows.sort(key=lambda r: (not r["sl_on"], r["name"]))
+    return render_template("sl_map.html", rows=rows, disc=disc, bt=bt,
+                           updated=ist.strftime("%Y-%m-%d %H:%M"))
+
+
 @app.route('/reports')
 def reports_list():
     """Date-wise EOD report list — login-gated (before_request), self-contained page."""

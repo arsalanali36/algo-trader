@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SL Map — RMS</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#1c2128; --border:#30363d; --border-soft:#21262d;
+    --text:#e6edf3; --muted:#8b949e; --faint:#6e7681;
+    --green:#3fb950; --green-dim:#1f4429; --red:#f85149; --red-dim:#4a1f1f;
+    --amber:#d29922; --amber-dim:#4a3a12; --blue:#58a6ff; --blue-dim:#1f3a5c;
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box} html,body{margin:0;background:var(--bg)}
+  .wrap{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.55;
+    padding:clamp(18px,4vw,44px) clamp(14px,4vw,36px);-webkit-font-smoothing:antialiased;font-size:15px;min-height:100vh}
+  .inner{max-width:920px;margin:0 auto}
+  .back{display:inline-block;font-family:var(--mono);font-size:12px;color:var(--blue);text-decoration:none;margin-bottom:18px}
+  .back:hover{text-decoration:underline}
+  .eyebrow{font-family:var(--mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--blue);margin:0 0 10px}
+  h1{font-size:clamp(24px,4vw,34px);line-height:1.1;margin:0 0 14px;font-weight:700;letter-spacing:-.02em}
+  .lede{font-size:clamp(14px,2vw,16px);color:var(--muted);max-width:64ch;margin:0 0 6px}
+  .lede b{color:var(--text);font-weight:600}
+  section{margin-top:clamp(28px,5vw,44px)}
+  h2{font-size:12px;font-family:var(--mono);letter-spacing:.11em;text-transform:uppercase;color:var(--faint);
+    margin:0 0 16px;padding-bottom:9px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:9px}
+  h2 .n{color:var(--blue);font-weight:600}
+  .ladder{display:flex;flex-direction:column;gap:1px;background:var(--border-soft);border:1px solid var(--border);border-radius:12px;overflow:hidden}
+  .rung{background:var(--card);padding:14px 18px;display:flex;align-items:baseline;gap:14px}
+  .rung .lvl{font-family:var(--mono);font-size:11px;color:var(--faint);width:56px;flex:none;letter-spacing:.05em}
+  .rung .nm{font-weight:600;font-size:14px}
+  .rung .ds{color:var(--muted);font-size:13px;margin-left:auto;text-align:right;max-width:54%}
+  .rung.top{background:var(--blue-dim)} .rung.top .nm{color:var(--blue)}
+  .grp{margin-top:16px}
+  .grp-h{display:flex;align-items:center;gap:10px;margin:0 0 11px}
+  .grp-h .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;padding:3px 9px;border-radius:999px;font-weight:600}
+  .grp-h .ttl{font-size:13px;color:var(--muted)}
+  .tag.pos{background:var(--blue-dim);color:var(--blue)} .tag.day{background:var(--amber-dim);color:var(--amber)}
+  .tag.acc{background:var(--red-dim);color:var(--red)} .tag.ent{background:var(--border-soft);color:var(--muted)}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(255px,1fr));gap:11px}
+  .card{background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px 15px;display:flex;flex-direction:column;gap:5px}
+  .card .cn{font-weight:600;font-size:13.5px;display:flex;align-items:center;gap:8px}
+  .card .cd{color:var(--muted);font-size:12.5px} .card .cd b{color:var(--text)}
+  .card .cv{font-family:var(--mono);font-size:11.5px;color:var(--text);margin-top:auto;padding-top:4px}
+  .card .cv .k{color:var(--faint)} .star{color:var(--amber)}
+  .chip{font-family:var(--mono);font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap;display:inline-block}
+  .chip.on{background:var(--green-dim);color:var(--green)} .chip.off{background:var(--border-soft);color:var(--faint)}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:14px} @media(max-width:640px){.split{grid-template-columns:1fr}}
+  .mcard{border:1px solid var(--border);border-radius:12px;padding:17px;background:var(--card)}
+  .mcard.disc{border-color:color-mix(in srgb,var(--green) 40%,var(--border))}
+  .mcard.bt{border-color:color-mix(in srgb,var(--blue) 34%,var(--border))}
+  .mcard h3{margin:0 0 4px;font-size:15px;display:flex;align-items:center;gap:9px}
+  .mcard .sub{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+  .mcard ul{margin:0;padding:0;list-style:none;display:flex;flex-wrap:wrap;gap:6px}
+  .mcard li{font-family:var(--mono);font-size:11px;background:var(--card2);border:1px solid var(--border-soft);color:var(--muted);padding:3px 9px;border-radius:7px}
+  .rule{font-family:var(--mono);font-size:11.5px;margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);color:var(--text)}
+  .tbox{border:1px solid var(--border);border-radius:12px;overflow-x:auto;background:var(--card)}
+  table{border-collapse:collapse;width:100%;font-size:13px;min-width:520px}
+  th,td{text-align:left;padding:10px 15px;border-bottom:1px solid var(--border-soft)}
+  th{font-family:var(--mono);font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);font-weight:600}
+  tr:last-child td{border-bottom:none} td.s{font-family:var(--mono);font-size:12px}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted)}
+  .grpband td{background:var(--card2);font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);font-weight:600;padding:7px 15px}
+  .note{background:var(--card);border:1px solid var(--border);border-left:3px solid var(--amber);border-radius:10px;padding:14px 16px;margin-top:16px;font-size:13.5px}
+  .note b{color:var(--amber)} .note .fix{color:var(--green);font-weight:600}
+  .foot{margin-top:36px;padding-top:15px;border-top:1px solid var(--border-soft);color:var(--faint);font-family:var(--mono);font-size:11px;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px}
+</style></head><body>
+<div class="wrap"><div class="inner">
+  <a class="back" href="/">← Dashboard</a>
+  <p class="eyebrow">CODE3B · Risk Management</p>
+  <h1>Stop-Loss ka poora naksha</h1>
+  <p class="lede"><b>Backtested strategy</b> pe sirf uska apna backtest exit. <b>Discretionary strategy</b> pe <b>₹2,500/lot</b> ka stop. Kisi bhi khuli position pe <b>⚙ se manual SL</b> — jo hamesha sabse upar. Bas teen soch.</p>
+
+  <section>
+    <h2><span class="n">↕</span> Priority — upar wala jeetta</h2>
+    <div class="ladder">
+      <div class="rung top"><span class="lvl">TOP</span><span class="nm">Per-Trade manual ⚙</span><span class="ds">Ek position ke ⚙ modal se — sab ko override</span></div>
+      <div class="rung"><span class="lvl">MID</span><span class="nm">Per-Strategy override</span><span class="ds">Risk → Per-Strategy Override → Default SL toggle + ⚙</span></div>
+      <div class="rung"><span class="lvl">BASE</span><span class="nm">Global default</span><span class="ds">Risk → Max Loss Protection ki default setting</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">7</span> RMS me kitne SL — category ke hisaab se</h2>
+    <div class="grp"><div class="grp-h"><span class="tag pos">Per-position</span><span class="ttl">Ek SINGLE position ko kaatte hain</span></div>
+      <div class="cards">
+        <div class="card"><div class="cn"><span class="star">★</span>Default SL/Target (per-lot)</div><div class="cd">Yahi aapka <b>₹2,500/lot</b>. Aggressive = trail. Discretionary pe.</div><div class="cv"><span class="k">initSL:</span> ₹2500/lot · <span class="k">mode:</span> aggressive</div></div>
+        <div class="card"><div class="cn">Legacy Default SL (fallback)</div><div class="cd">Purana fixed-₹ stop — backup.</div><div class="cv"><span class="k">global:</span> ₹3,000</div></div>
+        <div class="card"><div class="cn">Per-Instrument Trailing Lock</div><div class="cd">Position ka <b>profit</b>-lock (loss stop nahi).</div><div class="cv"><span class="k">abhi:</span> OFF</div></div>
+        <div class="card"><div class="cn">Per-Trade manual ⚙</div><div class="cd">Aap khud kisi position pe SL — highest priority.</div><div class="cv"><span class="k">per position</span></div></div>
+      </div></div>
+    <div class="grp"><div class="grp-h"><span class="tag day">Per-day</span><span class="ttl">Poori STRATEGY ko din bhar rokte hain</span></div>
+      <div class="cards">
+        <div class="card"><div class="cn">Strategy Day Cap (Max Loss)</div><div class="cd">Din ka total loss cross → sab band + koi nayi entry nahi.</div><div class="cv"><span class="k">global:</span> ₹5,500 / 1%</div></div>
+        <div class="card"><div class="cn">Daily Profit Target</div><div class="cd">Din ka total profit cross → sab band + koi nayi entry nahi.</div><div class="cv"><span class="k">global:</span> ₹3,000</div></div>
+      </div></div>
+    <div class="grp"><div class="grp-h"><span class="tag acc">Account</span><span class="ttl">Poore account ko rokta hai</span></div>
+      <div class="cards"><div class="card"><div class="cn">KILL-ALL Trailing Floor</div><div class="cd">Account-wide profit lock — peak se gire to sab squareoff.</div><div class="cv"><span class="k">abhi:</span> OFF</div></div></div></div>
+    <div class="grp"><div class="grp-h"><span class="tag ent">Entry-filter · SL nahi</span><span class="ttl">Nayi entry rokte (position kaatte nahi)</span></div>
+      <div class="cards">
+        <div class="card"><div class="cn">Max Premium Entry Cap</div><div class="cd">Mehnga premium ho to entry nahi.</div><div class="cv"><span class="k">NIFTY</span> 300 · <span class="k">BNF</span> 600</div></div>
+        <div class="card"><div class="cn">Exit &amp; No-Entry Time</div><div class="cd">EOD squareoff + iske baad koi entry nahi.</div><div class="cv"><span class="k">time:</span> 15:15</div></div>
+      </div></div>
+  </section>
+
+  <section>
+    <h2><span class="n">◎</span> Aap ka clean model</h2>
+    <div class="split">
+      <div class="mcard bt"><h3>🧪 Backtested</h3><p class="sub">Jaise backtest hua waise — koi RMS per-position SL nahi.</p>
+        <ul>{% for s in bt %}<li>{{ s }}</li>{% endfor %}</ul>
+        <div class="rule">per-position SL <span class="chip off">OFF</span> — sahi ✓</div></div>
+      <div class="mcard disc"><h3>🎯 Discretionary</h3><p class="sub">Per-lot ₹2,500 SL — ek position din-cap se aage na bahe.</p>
+        <ul>{% for s in disc %}<li>{{ s }}</li>{% endfor %}</ul>
+        <div class="rule">₹2,500/lot SL <span class="chip on">ON</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2><span class="n">▤</span> Abhi kya laga hai — LIVE (config se)</h2>
+    <div class="tbox"><table>
+      <thead><tr><th>Strategy</th><th>Type</th><th>Per-position SL</th><th>Day cap</th></tr></thead>
+      <tbody>
+        {% for r in rows %}<tr>
+          <td class="s">{{ r.name }}</td>
+          <td>{{ r.type }}</td>
+          <td>{% if r.sl_on %}<span class="chip on">₹{{ r.initsl }}/lot ON</span>{% else %}<span class="chip off">OFF</span>{% endif %}</td>
+          <td class="num">{{ r.daycap }}</td>
+        </tr>{% endfor %}
+      </tbody>
+    </table></div>
+    <div class="note"><b>Kyun confusion hui thi:</b> ₹2,500/lot SL set to tha par switch discretionary strategies pe OFF pada tha. Isiliye MARUTI (RSI) bina ruke gayi — jabki ₹2,500/lot × 3 lot = <b>₹7,500 pe cut hona chahiye tha</b>. <span class="fix">Ab switch ON (Risk → Per-Strategy Override).</span></div>
+  </section>
+
+  <div class="foot"><span>RMS Stop-Loss Map · CODE3B</span><span>updated {{ updated }} · live config</span></div>
+</div></div></body></html>
