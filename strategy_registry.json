@@ -385,6 +385,14 @@
       "role": "dessert",
       "desc": "IV-filtered short strangle at recent range extremes (9:20 intraday, no overnight, SL-bounded). PF 2.04 / Sharpe 3.67 / tail-stress PASS — PAR DSR 0.62 borderline => forward-paper candidate, ORB ka diversifier (corr -0.50), standalone hero nahi."
     },
+    "02.05": {
+      "name": "VRP Weekly Condor (mild-IV, fwd-paper)",
+      "config_key": "vrpw_v1",
+      "slug": "vrp_condor_weekly",
+      "live_file": "strategies/live/vrp_condor_weekly_trader.py",
+      "status": "paper",
+      "legs": 4
+    },
     "04.04": {
       "name": "Ars chain - DirectWebhook",
       "config_key": "arschain_MAIN",

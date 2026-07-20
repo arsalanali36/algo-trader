@@ -76,6 +76,7 @@ TRADER_SCRIPTS = {
     "banknifty":  TRADERS_DIR / "07_banknifty_trader.py",        # 07 banknifty_v1
     "vrp":        TRADERS_DIR / "vrp_straddle_trader.py",        # VRP panic-fade (positional, ADR-006)
     "vrp_condor": TRADERS_DIR / "vrp_condor_trader.py",         # 10 VRP overnight condor (positional, ADR-006)
+    "vrpw":       TRADERS_DIR / "vrp_condor_weekly_trader.py",  # VRP weekly condor mild-IV gate (positional, fwd-paper)
     "distma":     TRADERS_DIR / "dist_ma_trader.py",            # Distance-from-20EMA positional equity (allow_overnight)
 }
 def _base(strategy):
