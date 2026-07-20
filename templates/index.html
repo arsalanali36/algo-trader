@@ -1969,7 +1969,7 @@
           style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
       </span>
       </span><!-- /cal-live-only -->
-      <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
+      <select id="cal-strat" onchange="calStratChanged(this)"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px">
         <option value="">All strategies</option>
       </select>
@@ -2208,7 +2208,7 @@
               <th style="padding:5px 8px;font-weight:500;">Legs</th>
               <th style="padding:5px 8px;font-weight:500;">Real</th>
               <th style="padding:5px 8px;font-weight:500;color:#a371f7;">BS model</th>
-              <th style="padding:5px 8px;font-weight:500;color:#d29922;">Δ (BS − Real)</th>
+              <th style="padding:5px 8px;font-weight:500;color:#8b949e;">Diff (Real − BS)</th>
               <th style="padding:5px 8px;font-weight:500;width:120px;">Divergence</th>
             </tr>
           </thead>

@@ -39,6 +39,7 @@
     #tbl-ppt table th:nth-child(2),#tbl-ppt table td:nth-child(2){position:sticky;left:118px}
     #tbl-ppt table td:nth-child(1),#tbl-ppt table td:nth-child(2){background:#0d1117;z-index:2}
     #tbl-ppt table th:nth-child(1),#tbl-ppt table th:nth-child(2){background:#161b22;z-index:11}
+    @keyframes s2spin{to{transform:rotate(360deg)}}
     /* fullscreen overlay */
     #s2fsov{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:500;padding:28px}
     #s2fsov>div{background:#161b22;border:1px solid #30363d;border-radius:12px;padding:18px 20px;width:min(1150px,94vw);height:min(720px,88vh);display:flex;flex-direction:column}
@@ -89,7 +90,7 @@
       <div id="cal-views-menu" style="display:none;position:absolute;left:0;top:calc(100% + 4px);background:#161b22;border:1px solid #30363d;border-radius:6px;z-index:300;min-width:250px;max-width:320px;padding:6px 0;box-shadow:0 4px 12px rgba(0,0,0,.5)"></div>
     </div>
 
-    <select id="cal-strat" onchange="window.calActiveView=null;if(typeof _renderViewsBtn==='function')_renderViewsBtn();calendarRender()"
+    <select id="cal-strat" onchange="calStratChanged(this)"
       style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;max-width:260px">
       <option value="">All strategies</option>
     </select>
@@ -121,6 +122,12 @@
     </span>
 
     <span style="flex:1"></span>
+    <!-- data-load indicator: bade backtest runs / mode switch pe fetch chalta hai;
+         freeze na lage isliye yahan spinner dikhta hai (calendarRender toggle karta) -->
+    <span id="cal-loading" style="display:none;align-items:center;gap:6px;font-size:11px;color:#d29922;font-weight:600;white-space:nowrap">
+      <span style="width:12px;height:12px;border:2px solid #d2992240;border-top-color:#d29922;border-radius:50%;display:inline-block;animation:s2spin .7s linear infinite"></span>
+      Loading…
+    </span>
     <select id="cal-broker" onchange="calendarRender()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All brokers</option></select>
     <select id="cal-exit-reason" onchange="this.dataset.prefix=this.value;window.calExitReasonFilter=this.value;renderPointsPerTradeTable()" style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px"><option value="">All Exit Reasons</option></select>
     <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="calendarRender()">↻</button>
@@ -308,7 +315,7 @@
           <th style="padding:6px 8px;font-weight:500">Legs</th>
           <th style="padding:6px 8px;font-weight:500">Real</th>
           <th style="padding:6px 8px;font-weight:500;color:#a371f7">BS model</th>
-          <th style="padding:6px 8px;font-weight:500;color:#d29922">Δ (BS − Real)</th>
+          <th style="padding:6px 8px;font-weight:500;color:#8b949e">Diff (Real − BS)</th>
           <th style="padding:6px 8px;font-weight:500;width:120px">Divergence</th>
         </tr></thead>
         <tbody id="bs-div-tbody"></tbody>

@@ -159,6 +159,12 @@
 
 
     async function calendarRender(keepState = false) {
+      // Data-load indicator (stats2 header): bade backtest run / mode-switch pe
+      // fetch + heavy render me app freeze lagta tha; spinner batata hai "load ho
+      // raha hai". Element sirf /stats2 pe hai → guard. Show ab (await fetch se
+      // pehle → browser paint kar leta hai), hide render ke baad.
+      const _clgEl = document.getElementById('cal-loading');
+      if (_clgEl) _clgEl.style.display = 'inline-flex';
       // Clear day filter on fresh month/filter render
       if (!keepState) {
         window.calSelectedDateFilter = null;
@@ -245,8 +251,13 @@
           const r = await fetch('/api/orders/calendar-summary?' + q.toString());
           d = await r.json();
         } catch (e) { console.error("Calendar load failed:", e); }
-        // Populate filter dropdowns (strategy & broker) — live/paper only
-        _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
+        // Populate filter dropdowns (strategy & broker) — live/paper only.
+        // Strategy = UNIFIED list (all serials, task 04): built from registry+runs,
+        // + this response's order_store buckets (manual/untagged). Runs loaded so
+        // research/bt-only serials also appear (consistent across modes).
+        if (window._calEnsureRuns) { try { await window._calEnsureRuns(); } catch (e) {} }
+        if (window._calFillStrat) window._calFillStrat((d.filters || {}).strategy || []);
+        else _ordFillSelect('cal-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
         _ordFillSelect('cal-broker', (d.filters || {}).broker || [], broker, 'All brokers');
       }
 
@@ -468,8 +479,13 @@
           // pass); use the run's own gross/fee/pnl so the tables match the grid
           // exactly — no client-side charge re-estimate.
           t._gross = (t.gross != null) ? t.gross : (t.pnl || 0);
-          t._tax = (t.fee != null) ? t.fee : 0;
-          t._net = (t.pnl != null) ? t.pnl : (t._gross - t._tax);
+          t._net = (t.pnl != null) ? t.pnl : (t._gross - (t.fee || 0));
+          // Tax = gross − net (always). Some runs record fee=0 or omit it even
+          // though gross≠net (vrp_condor: fee 0 but real charge = gross−net;
+          // meanrev: no gross/fee → gross falls back to pnl → tax 0, honest "no
+          // charge modelled"). Deriving from gross−net shows the real charge
+          // wherever gross is known and never breaks grid==table (net == pnl).
+          t._tax = t._gross - t._net;
         } else {
           const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
           t._gross = ep && xp && qt ? (t.entry === 'BUY' ? xp - ep : ep - xp) * qt : (t.pnl || 0);
@@ -544,6 +560,8 @@
       }
       // Render Point Per Trade table with pagination and grouping
       renderPointsPerTradeTable();
+
+      if (_clgEl) _clgEl.style.display = 'none';   // data + render done → spinner off
     }
 
 
@@ -1404,42 +1422,64 @@
       // Calculate cumulative PnL — resolution follows the Total Summary mode:
       // Day → per-day, Weekly → per-week, Monthly → per-month; Strategy/other →
       // per-trade (chronological). Same aggregation as the summary table.
-      let cumPnL = 0;
-      const data = [{ xLabel: 'Start', pnl: 0, cumulative: 0, symbol: '', date: '', time: '' }];
+      // COMPARE mode (Real ⟷ BS): also build a parallel BS cumulative on the SAME
+      // buckets (task 01). BS can only price NIFTY/BankNifty index legs, so both
+      // lines use ONLY those legs → apples-to-apples (fair, same legs).
+      const _eqCmp = (typeof window.bsCompareActive === 'function') && window.bsCompareActive();
+      const _rbOf = (t) => (_eqCmp && window.bsTradeRealBs)
+        ? window.bsTradeRealBs(t, 'net')
+        : { real: (t.pnl || 0), bs: 0, ok: false };
+      const _eqTrades = _eqCmp ? trades.filter(t => _rbOf(t).ok) : trades;
+
+      let cumPnL = 0, cumBs = 0;
+      const data = [{ xLabel: 'Start', pnl: 0, cumulative: 0, cumulativeBs: (_eqCmp ? 0 : null), symbol: '', date: '', time: '' }];
       const _eqMode = window._calSumMode || 'day';
 
       if ((_eqMode === 'day' || _eqMode === 'weekly' || _eqMode === 'monthly')
         && typeof _calGroupKey === 'function') {
-        const buckets = {};
-        trades.forEach(t => {
+        const buckets = {}, bucketsBs = {};
+        _eqTrades.forEach(t => {
           const k = _calGroupKey(t, _eqMode);
           if (k === '—') return;
-          buckets[k] = (buckets[k] || 0) + (t.pnl || 0);
+          const rb = _rbOf(t);
+          buckets[k] = (buckets[k] || 0) + rb.real;
+          if (_eqCmp) bucketsBs[k] = (bucketsBs[k] || 0) + rb.bs;
         });
         Object.keys(buckets).sort((a, b) => a.localeCompare(b)).forEach(k => {
           cumPnL += buckets[k];
+          if (_eqCmp) cumBs += (bucketsBs[k] || 0);
           data.push({
             xLabel: _calPeriodLabel(k, _eqMode),
             pnl: buckets[k], cumulative: cumPnL,
+            cumulativeBs: (_eqCmp ? cumBs : null),
             symbol: '', date: k, time: ''
           });
         });
       } else {
-        const sorted = [...trades].sort((a, b) => {
+        const sorted = [..._eqTrades].sort((a, b) => {
           const da = a.entry_date + ' ' + (a.entry_time || '00:00');
           const db = b.entry_date + ' ' + (b.entry_time || '00:00');
           return da.localeCompare(db);
         });
         sorted.forEach((t, i) => {
-          cumPnL += (t.pnl || 0);
+          const rb = _rbOf(t);
+          cumPnL += rb.real;
+          if (_eqCmp) cumBs += rb.bs;
           data.push({
             xLabel: `${i + 1}`,
-            pnl: t.pnl || 0, cumulative: cumPnL,
+            pnl: rb.real, cumulative: cumPnL,
+            cumulativeBs: (_eqCmp ? cumBs : null),
             symbol: t.sym || t.symbol,
             date: t.exit_date || t.entry_date || '',
             time: t.exit_time || t.entry_time || ''
           });
         });
+      }
+
+      // compare mode but no BS-priceable legs in view → nothing to compare
+      if (_eqCmp && data.length <= 1) {
+        container.innerHTML = `<div style="color:#6e7681;font-size:12px;text-align:center;padding:60px 0;">Compare: is filter me koi NIFTY/BankNifty (BS-priceable) leg nahi</div>`;
+        return;
       }
 
       const width = container.clientWidth || 600;
@@ -1452,9 +1492,12 @@
       const chartWidth = width - paddingLeft - paddingRight;
       const chartHeight = height - paddingTop - paddingBottom;
 
-      // Find min & max cumulative PnL
-      let minVal = Math.min(...data.map(d => d.cumulative));
-      let maxVal = Math.max(...data.map(d => d.cumulative));
+      // Find min & max cumulative PnL (include BS series in compare mode so both
+      // lines fit the same y-scale)
+      const _yVals = data.map(d => d.cumulative);
+      if (_eqCmp) data.forEach(d => { if (d.cumulativeBs != null) _yVals.push(d.cumulativeBs); });
+      let minVal = Math.min(..._yVals);
+      let maxVal = Math.max(..._yVals);
 
       // Add padding/buffer
       const diff = maxVal - minVal;
@@ -1535,6 +1578,25 @@
 
       // Draw the stroke line
       svg += `<path d="${linePath}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+
+      // COMPARE mode: BS line (dashed purple) over the same buckets + a legend.
+      if (_eqCmp) {
+        let bsPath = '';
+        data.forEach((d, i) => {
+          const x = getX(i);
+          const y = getY(d.cumulativeBs != null ? d.cumulativeBs : 0);
+          bsPath += (i === 0 ? 'M' : 'L') + ` ${x} ${y} `;
+        });
+        svg += `<path d="${bsPath}" fill="none" stroke="#a371f7" stroke-width="2" stroke-dasharray="5,4" stroke-linecap="round" stroke-linejoin="round" />`;
+        // legend (top-left of plot)
+        const lx = paddingLeft + 6, ly = paddingTop + 4;
+        svg += `<g font-size="10">
+          <line x1="${lx}" y1="${ly}" x2="${lx + 18}" y2="${ly}" stroke="${strokeColor}" stroke-width="2.5"/>
+          <text x="${lx + 23}" y="${ly + 3}" fill="#8b949e">Real</text>
+          <line x1="${lx + 62}" y1="${ly}" x2="${lx + 80}" y2="${ly}" stroke="#a371f7" stroke-width="2" stroke-dasharray="5,4"/>
+          <text x="${lx + 85}" y="${ly + 3}" fill="#8b949e">BS</text>
+        </g>`;
+      }
 
       // Draw X-axis labels (e.g. 6 labels max)
       const xLabelsCount = Math.min(data.length, 6);
@@ -1622,8 +1684,12 @@
         Date: ${pt.date} ${pt.time}<br>
         Symbol: <b>${pt.symbol}</b><br>
         Trade P&L: <span style="color:${pnlColor}; font-weight:600">${pt.pnl >= 0 ? '+' : ''}₹${Math.round(pt.pnl).toLocaleString('en-IN')}</span><br>
-        Cumulative: <span style="color:${cumColor}; font-weight:600">${pt.cumulative >= 0 ? '+' : ''}₹${Math.round(pt.cumulative).toLocaleString('en-IN')}</span>
-      `;
+        Cumulative: <span style="color:${cumColor}; font-weight:600">${pt.cumulative >= 0 ? '+' : ''}₹${Math.round(pt.cumulative).toLocaleString('en-IN')}</span>`;
+          if (_eqCmp && pt.cumulativeBs != null) {
+            const dCmp = pt.cumulative - pt.cumulativeBs;   // Real − BS
+            tooltipHtml += `<br>BS (model): <span style="color:#a371f7; font-weight:600">${pt.cumulativeBs >= 0 ? '+' : ''}₹${Math.round(pt.cumulativeBs).toLocaleString('en-IN')}</span>`
+              + `<br>Real − BS: <span style="color:${dCmp >= 0 ? '#3fb950' : '#f85149'}; font-weight:600">${dCmp >= 0 ? '+' : ''}₹${Math.round(dCmp).toLocaleString('en-IN')}</span>`;
+          }
         }
 
         tooltip.innerHTML = tooltipHtml;

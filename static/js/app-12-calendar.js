@@ -101,13 +101,10 @@
       if (viewsWrap) viewsWrap.style.display = '';   // Views dono modes me (live=strategies, bt=runs)
       window.calActiveView = null;                    // active view mode-specific → switch pe clear
       if (typeof _renderViewsBtn === 'function') _renderViewsBtn();
-      const strat = document.getElementById('cal-strat');
-      if (window.calBtMode) {
-        _calLoadBtRuns();   // fill cal-strat with runs, then calendarRender()
-      } else {
-        if (strat) { strat.innerHTML = '<option value="">All strategies</option>'; strat.value = ''; }
-        calendarRender();
-      }
+      // Unified strategy dropdown: SAME list (all strategies by serial) in every
+      // mode, selection kept across switch (by serial id). bt → options map to
+      // each serial's deployed/latest run; live → to its config_key. (task 04)
+      _calRebuildStrat();
     }
 
     // Segment click for the backtest Pass/Period controls (mirrors calSeg).
@@ -118,37 +115,126 @@
       calendarRender();
     }
 
-    // Populate the strategy dropdown with available backtest runs, then render.
-    async function _calLoadBtRuns() {
-      const strat = document.getElementById('cal-strat');
+    // ── Unified strategy dropdown (task 04) ─────────────────────────────────
+    // ONE list of ALL strategies (by serial no.) shown in every mode. Selection
+    // is tracked by serial id (window._calSelId) so switching Paper/Live/Backtest
+    // keeps the SAME strategy selected — the option's value auto-becomes the
+    // right config_key (live) or run slug (backtest) for that mode.
+    window._calSelId = window._calSelId || null;     // serial id of current selection
+
+    // Fetch runs/index.json once → window._calBtRuns + window._calRunsById map.
+    async function _calEnsureRuns() {
+      if (window._calBtRuns) return;
       try {
         const r = await fetch('/api/backtest/runs');
         const j = await r.json();
-        const runs = j.runs || [];
-        window._calBtRuns = runs;
-        if (strat) {
-          const prev = strat.value;
-          // "All runs" (like live's "All strategies") — combines EVERY run into
-          // one portfolio result. Sentinel value __ALL__ expanded in calendarRender.
-          const allOpt = `<option value="__ALL__">⚡ All runs (combined)</option>`;
-          const runsSorted = runs.slice().sort((a, b) => _regSortKey(a.slug).localeCompare(_regSortKey(b.slug)));
-          strat.innerHTML = allOpt + runsSorted.map(rn => {
-            // registry ka canonical "ID · Naam" (apni label nahi) — resolve na ho to run label fallback
-            const nm = (window.regId && String(regId(rn.slug)) !== String(rn.slug)) ? regFull(rn.slug) : rn.label;
-            const tf = rn.tf ? ` · ${rn.tf}` : '';
-            const lbl = `${nm}${tf}`.replace(/</g, '&lt;');
-            return `<option value="${rn.slug}">${lbl}</option>`;
-          }).join('');
-          if (prev === '__ALL__' || (prev && runs.some(rn => rn.slug === prev))) strat.value = prev;
-          else if (runs.length) strat.value = runs[0].slug;
+        window._calBtRuns = j.runs || [];
+      } catch (e) { window._calBtRuns = []; }
+      const m = {};
+      (window._calBtRuns || []).forEach(rn => {
+        const id = (window.regId ? String(regId(rn.slug)) : rn.slug);   // slug → serial (else raw)
+        (m[id] = m[id] || []).push(rn);
+      });
+      window._calRunsById = m;
+    }
+    window._calEnsureRuns = _calEnsureRuns;
+
+    function _calIsAll(id) { return id == null || id === '' || id === '__ALL__'; }
+
+    // Build the #cal-strat options for the CURRENT mode from registry + runs
+    // (+ live buckets), then restore the selection by serial id.
+    function _calFillStrat(liveExtraKeys) {
+      const sel = document.getElementById('cal-strat'); if (!sel) return;
+      window._calLastExtra = liveExtraKeys || [];
+      const bt = !!window.calBtMode;
+      const reg = (window.regRaw ? window.regRaw() : {}).strategies || {};
+      const runsById = window._calRunsById || {};
+
+      // registry abhi load nahi hui → list adhoori hogi; load hote hi ek baar rebuild
+      if (window.regReady && !window.regReady() && !window._calRegHook && window.regOnLoad) {
+        window._calRegHook = true;
+        window.regOnLoad(function () { _calFillStrat(window._calLastExtra || []); });
+      }
+
+      const entries = [], seen = new Set();
+      Object.keys(reg).forEach(id => {
+        const s = reg[id] || {};
+        if (s.hidden) return;
+        const runsFor = runsById[id] || [];
+        const hasRun = runsFor.length > 0;
+        const ck = s.config_key || '';
+        if (!ck && !hasRun) return;                    // pure placeholder → kuch dikhane ko nahi
+        let slug = null, tf = '';
+        if (hasRun) { const r = runsFor.find(x => x.deployed) || runsFor[0]; slug = r.slug; tf = r.tf || ''; }
+        entries.push({ id, label: (window.regFull ? regFull(id) : (s.name || id)), ck, slug, hasRun, tf });
+        seen.add(id);
+      });
+      // leftover runs (slug registry me nahi — e.g. meanrev_nifty) taaki gum na ho
+      Object.keys(runsById).forEach(id => {
+        if (seen.has(id)) return;
+        const r = runsById[id][0];
+        const nm = (window.regId && String(regId(r.slug)) !== String(r.slug)) ? regFull(r.slug) : (r.label || r.slug);
+        entries.push({ id, label: nm, ck: '', slug: r.slug, hasRun: true, tf: r.tf || '' });
+      });
+      entries.sort((a, b) => _regSortKey(a.id).localeCompare(_regSortKey(b.id)));
+
+      let html = bt ? `<option value="__ALL__" data-id="__ALL__">⚡ All runs (combined)</option>`
+                    : `<option value="" data-id="">All strategies</option>`;
+      entries.forEach(e => {
+        let val, lbl = String(e.label).replace(/</g, '&lt;');
+        if (bt) {
+          val = e.hasRun ? e.slug : ('norun:' + e.id);
+          if (e.tf) lbl += ' · ' + e.tf;
+          if (!e.hasRun) lbl += ' (no backtest)';
+        } else {
+          val = e.ck ? e.ck : ('id:' + e.id);
+          if (!e.ck) lbl += ' (no live)';
         }
-        // registry abhi load nahi hui to naam raw the — load hote hi ek baar dobara build
-        if (window.regReady && !window.regReady() && window.regOnLoad) {
-          window.regOnLoad(function () { if (window.calBtMode) _calLoadBtRuns(); });
-        }
-      } catch (e) { console.error('[bt runs] load failed', e); }
+        const grey = bt ? !e.hasRun : !e.ck;
+        html += `<option value="${val}" data-id="${e.id}"${grey ? ' style="color:#6e7681"' : ''}>${lbl}</option>`;
+      });
+      // live-only order_store buckets (manual/untagged/unknown) — registry me nahi,
+      // par unke trades filter ho saken isliye append (live mode only)
+      if (!bt && liveExtraKeys && liveExtraKeys.length) {
+        const knownCk = new Set(entries.map(e => e.ck).filter(Boolean));
+        liveExtraKeys.forEach(k => {
+          if (!k || knownCk.has(k)) return;
+          if (window.regId && String(regId(k)) !== String(k)) return;   // resolved config_key → already listed
+          html += `<option value="${k}" data-id="${k}">${(window.regLabel ? regLabel(k) : k).replace(/</g, '&lt;')}</option>`;
+        });
+      }
+      sel.innerHTML = html;
+
+      // restore selection by serial id (seamless across mode switch)
+      const want = window._calSelId;
+      if (_calIsAll(want)) {
+        sel.value = bt ? '__ALL__' : '';
+      } else {
+        let m = null;
+        for (const o of sel.options) { if (o.dataset.id === want) { m = o; break; } }
+        sel.value = m ? m.value : (bt ? '__ALL__' : '');
+      }
+      const cur = sel.options[sel.selectedIndex];
+      window._calSelId = cur ? (cur.dataset.id != null ? cur.dataset.id : cur.value) : (bt ? '__ALL__' : '');
+    }
+    window._calFillStrat = _calFillStrat;
+
+    // called from calSetView / s2Switch after mode change: ensure runs, rebuild, render
+    async function _calRebuildStrat() {
+      await _calEnsureRuns();
+      _calFillStrat(window.calBtMode ? [] : (window._calLastExtra || []));
       calendarRender();
     }
+    window._calRebuildStrat = _calRebuildStrat;
+
+    // dropdown onchange — track the serial then render
+    window.calStratChanged = function (sel) {
+      const o = sel.options[sel.selectedIndex];
+      window._calSelId = o ? (o.dataset.id != null ? o.dataset.id : o.value) : '';
+      window.calActiveView = null;
+      if (typeof _renderViewsBtn === 'function') _renderViewsBtn();
+      calendarRender();
+    };
 
     // Fill the metric pills from a backtest run's OWN report card (combo
     // metrics — real Sharpe/PF/etc. for the whole run window, not the visible
@@ -269,7 +355,13 @@
     function _allStrategiesForView() {
       const sel = document.getElementById('cal-strat');
       const out = [];
-      if (sel) [...sel.options].forEach(o => { if (o.value) out.push({ key: o.value, label: o.textContent }); });
+      if (sel) [...sel.options].forEach(o => {
+        const v = o.value;
+        // skip All + no-data sentinels (id:… / norun:…) — views hold real
+        // config_keys (live) or run slugs (bt), not placeholders
+        if (!v || v === '__ALL__' || v.indexOf('id:') === 0 || v.indexOf('norun:') === 0) return;
+        out.push({ key: v, label: o.textContent });
+      });
       return out;
     }
 

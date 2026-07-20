@@ -28,6 +28,12 @@
     const bs = hit ? (basis === 'gross' ? hit.bs_gross : hit.bs_net) : null;
     return { real, bs: bs == null ? 0 : bs, ok: hit != null };
   }
+  // shared for the equity curve (Compare mode) — same bsKey/lookup, one place.
+  window.bsTradeRealBs = _tradeRealBs;
+  window.bsCompareActive = function () {
+    return window.calPremiumMode === 'compare'
+      && window._bsByKey && Object.keys(window._bsByKey).length > 0;
+  };
 
   // ---- calendar cell overlay (Real | BS | Compare) ----
   window.calSetPremium = function (mode, el) {
@@ -45,6 +51,10 @@
     if (card) card.style.display = (mode === 'real') ? 'none' : '';
     bsDecorateCalendar();
     bsRenderDivergence();
+    // equity curve me BS line Compare mode pe turant dikhe (task 01)
+    if (typeof drawEquityCurveChart === 'function') {
+      try { drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []); } catch (e) {}
+    }
   };
 
   window.bsDecorateCalendar = function () {
@@ -142,7 +152,6 @@
     const strat = (period === 'strategy');
     const groups = {};
     let exN = 0, incN = 0;                          // excluded (stock, no BS) vs included legs
-    const diffs = [];                               // per-leg Δ = BS − Real (bias/noise signal, index legs)
     (window.currentCalendarTrades || []).forEach(t => {
       if (dateSel && (t.exit_date || t.entry_date) !== dateSel) return;   // date-scope
       const rb = _tradeRealBs(t, basis);
@@ -151,7 +160,7 @@
       const g = groups[k] || (groups[k] = { realAll: 0, realIdx: 0, bs: 0, n: 0, bsN: 0, idxN: 0 });
       g.realAll += rb.real; g.n += 1;
       if (/^(NIFTY|BANKNIFTY)/i.test(t.sym || '')) g.idxN += 1;   // index leg (stock vs "no spot" label)
-      if (rb.ok) { incN += 1; diffs.push(rb.bs - rb.real); g.realIdx += rb.real; g.bs += rb.bs; g.bsN += 1; }
+      if (rb.ok) { incN += 1; g.realIdx += rb.real; g.bs += rb.bs; g.bsN += 1; }
       else exN += 1;
     });
 
@@ -170,10 +179,15 @@
     tb.innerHTML = keys.map(k => {
       const g = groups[k];
       const hasBs = g.bsN > 0;
-      const d = g.bs - g.realIdx;
-      const col = d >= 0 ? '#d29922' : '#388bfd';
+      // Diff = Real − BS (real ke nazariye se): +ve = model se ZYADA kamaya,
+      // −ve = kam. (BS ne 2000 socha, maine 1500 kiya → −500.)
+      const d = g.realIdx - g.bs;
+      const col = d >= 0 ? '#3fb950' : '#f85149';   // zyada = green, kam = red
       const w = hasBs ? Math.round(Math.abs(d) / maxDiv * 100) : 0;
-      const rc = g.realAll >= 0 ? '#3fb950' : '#f85149';
+      // "Real" column = index-only jab BS available (taaki Real − BS = Diff exact
+      // reconcile ho); stock-only row pe poora real (BS n/a).
+      const realShown = hasBs ? g.realIdx : g.realAll;
+      const rc = realShown >= 0 ? '#3fb950' : '#f85149';
       const naLbl = g.idxN > 0 ? 'n/a' : 'stock';   // index-but-no-spot vs actual stock (BS can't price)
       const naTip = g.idxN > 0 ? 'index leg par BS reprice ke liye entry-din ka spot nahi mila' : 'BS sirf NIFTY/BankNifty index options pe';
       const bsCell = hasBs ? `<span style="color:#a371f7;">${inr(g.bs)}</span>`
@@ -183,7 +197,7 @@
       return `<tr style="border-top:1px solid #21262d;text-align:right;">
         <td style="text-align:left;padding:4px 8px;">${label(k)}</td>
         <td style="padding:4px 8px;color:#8b949e;">${g.n}</td>
-        <td style="padding:4px 8px;color:${rc};">${inr(g.realAll)}</td>
+        <td style="padding:4px 8px;color:${rc};">${inr(realShown)}</td>
         <td style="padding:4px 8px;">${bsCell}</td>
         <td style="padding:4px 8px;">${dCell}</td>
         <td style="padding:4px 8px;">${bar}</td>
@@ -191,14 +205,14 @@
     }).join('') || `<tr><td colspan="6" style="text-align:center;color:#6e7681;padding:12px;">${dateSel ? 'Is din koi trade nahi' : 'Is filter/month me koi trade nahi'}</td></tr>`;
 
     if (tf) {
-      const dT = tBs - tRealIdx;
+      const dT = tRealIdx - tBs;   // Real − BS (total)
       // two footer rows: index-only (BS-fair, same legs) + all-legs Real (stocks incl.)
       tf.innerHTML = keys.length ? `<tr style="border-top:2px solid #30363d;text-align:right;font-weight:700;">
         <td style="text-align:left;padding:6px 8px;">Index-only (BS-fair)</td>
         <td style="padding:6px 8px;color:#58a6ff;">${tBsN}</td>
         <td style="padding:6px 8px;color:${tRealIdx >= 0 ? '#3fb950' : '#f85149'};">${inr(tRealIdx)}</td>
         <td style="padding:6px 8px;color:#a371f7;">${inr(tBs)}</td>
-        <td style="padding:6px 8px;color:${dT >= 0 ? '#d29922' : '#388bfd'};">${inr(dT)}</td>
+        <td style="padding:6px 8px;color:${dT >= 0 ? '#3fb950' : '#f85149'};">${inr(dT)}</td>
         <td></td></tr>`
         + (strat && exN ? `<tr style="text-align:right;color:#8b949e;">
         <td style="text-align:left;padding:4px 8px;">All legs Real (stocks incl.)</td>
@@ -208,20 +222,12 @@
     }
     if (cov) {
       const miss = (window._bsMissing || []).length;
-      // per-leg Δ signal: is the BS-vs-Real gap a real bias, or just noise?
-      const n = diffs.length;
-      const dm = n ? diffs.reduce((a, b) => a + b, 0) / n : 0;
-      const sd = n > 1 ? Math.sqrt(diffs.reduce((a, b) => a + (b - dm) * (b - dm), 0) / n) : 0;
-      const tstat = (n && sd) ? dm / (sd / Math.sqrt(n)) : 0;
-      const real = Math.abs(tstat) >= 2;
-      const verdict = real ? 'real bias' : 'abhi noise';
-      const vcol = real ? '#d29922' : '#3fb950';
       const scope = dateSel ? `<span style="color:#58a6ff;font-weight:600">📅 ${dateSel} · per-strategy</span> — ` : '';
-      const sig = n ? `<span style="border:1px solid ${vcol};border-radius:5px;padding:2px 8px;color:${vcol};font-weight:600">`
-        + `per-leg Δ ${inr(dm)} · t=${tstat.toFixed(1)} · ${verdict}</span> `
-        + `<span style="color:#6e7681">(signal — roz ke number = noise; ~1000 legs pe pakka pata)</span><br>` : '';
-      cov.innerHTML = scope + sig
+      // Simple, plain-language caption: Diff = Real − BS (maine model se kitna
+      // zyada/kam kiya). Koi t-stat / noise line nahi.
+      cov.innerHTML = scope
         + `<b style="color:#a371f7">${incN} NIFTY/BankNifty legs</b> pe Real vs BS (fair, same legs). `
+        + `<span style="color:#8b949e">Diff = Real − BS: <span style="color:#3fb950">+</span> = model se zyada kamaya, <span style="color:#f85149">−</span> = kam.</span> `
         + (exN ? `<span style="color:#8b949e">${exN} stock legs BS-model se bahar (BS sirf index options pe) — "BS n/a" rows.</span> ` : '')
         + (miss ? `${miss} din shadow pending.` : '');
     }
