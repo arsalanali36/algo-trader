@@ -1,0 +1,31 @@
+{
+  "slug": "vrp_condor_weekly",
+  "design": "vrp_condor_weekly",
+  "title": "02.05 - VRP Weekly Condor (mild-IV) \u26a0\ufe0f FORWARD-PAPER (fails DSR)",
+  "tf": "weekly",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+    "2021-09-24",
+    "2026-03-30"
+  ],
+  "days": 38,
+  "significant": false,
+  "bs_full": {
+    "sharpe": 4.500726305964645,
+    "net_pct": 4.5295000000000005,
+    "maxdd": -0.9721815057998073,
+    "win_rate": 73.68421052631578,
+    "trades": 38,
+    "profit_factor": 2.0964949441887826
+  },
+  "p_value": 0.032,
+  "deflated_sharpe": {
+    "dsr_prob": 0.3628,
+    "pass": false,
+    "n_trials": 24,
+    "sr_star_annual": 5.737
+  },
+  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS \u2014 but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
+  "created": "2026-07-20"
+}
