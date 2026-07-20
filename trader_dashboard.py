@@ -5953,6 +5953,9 @@ def _save_tsl_state():
 # copy "fails PERMISSIVE, not safe". Use risk_gate.kill_floor_fired_today().
 
 
+_last_invariant_check = 0.0   # invariant_guard cooldown (read-only sentinel)
+
+
 def pos_monitor_loop():
     """Monitors open positions for SL_PCT, TP_PCT hits and tracks MAX/MIN LTP."""
     import time
@@ -6026,6 +6029,23 @@ def pos_monitor_loop():
                 _bsync3.reconcile_if_due(log=print)
             except Exception as _rce:
                 print(f"[broker_sync] auto-reconcile skipped (error): {_rce}", flush=True)
+            # ─────────────────────────────────────────────────────────────────
+
+            # ── Proactive invariant guard (2026-07-20) — READ-ONLY sentinel:
+            # "does the app still match reality + do the always-true rules hold?"
+            # Fires a LOUD alert (notify → dashboard banner) on ANY divergence:
+            # app-net ≠ broker-net (phantom/ghost/double-count), blank symbol, ₹0
+            # fill, one trade-id on two rows, insane MTM. Catches an UNKNOWN bug
+            # BEFORE it compounds — no bug-name needed, just detect app ≠ reality.
+            # Never places/cancels an order. ~120s cooldown. See _ops/invariant_guard.py.
+            try:
+                global _last_invariant_check
+                if _time.time() - _last_invariant_check >= 120:
+                    _last_invariant_check = _time.time()
+                    import invariant_guard as _ig
+                    _ig.run(alert=True, log=print)
+            except Exception as _ige:
+                print(f"[invariant_guard] skipped (error): {_ige}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
             # Tracks ids already squared-off THIS pass (e.g. as a hedge group
