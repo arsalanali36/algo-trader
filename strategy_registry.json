@@ -350,6 +350,14 @@
    "status": "paper",
    "legs": 4
   },
+  "02.04": {
+   "name": "VRP Weekly Condor (mild-IV, fwd-paper)",
+   "config_key": "vrpw_v1",
+   "slug": "vrp_condor_weekly",
+   "live_file": "strategies/live/vrp_condor_weekly_trader.py",
+   "status": "paper",
+   "legs": 4
+  },
   "04.04": {
    "name": "Ars chain - DirectWebhook",
    "config_key": "arschain_MAIN",
