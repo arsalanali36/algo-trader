@@ -159,8 +159,9 @@
       const rb = _tradeRealBs(t, basis);
       if (!rb.ok && !strat) { exN += 1; return; }   // time buckets: BS-unpriceable stocks stay out (fair)
       const k = groupKey(t);
-      const g = groups[k] || (groups[k] = { realAll: 0, realIdx: 0, bs: 0, n: 0, bsN: 0 });
+      const g = groups[k] || (groups[k] = { realAll: 0, realIdx: 0, bs: 0, n: 0, bsN: 0, idxN: 0 });
       g.realAll += rb.real; g.n += 1;
+      if (/^(NIFTY|BANKNIFTY)/i.test(t.sym || '')) g.idxN += 1;   // index leg (stock vs "no spot" label)
       if (rb.ok) { incN += 1; diffs.push(rb.bs - rb.real); g.realIdx += rb.real; g.bs += rb.bs; g.bsN += 1; }
       else exN += 1;
     });
@@ -184,8 +185,10 @@
       const col = d >= 0 ? '#d29922' : '#388bfd';
       const w = hasBs ? Math.round(Math.abs(d) / maxDiv * 100) : 0;
       const rc = g.realAll >= 0 ? '#3fb950' : '#f85149';
+      const naLbl = g.idxN > 0 ? 'n/a' : 'stock';   // index-but-no-spot vs actual stock (BS can't price)
+      const naTip = g.idxN > 0 ? 'index leg par BS reprice ke liye entry-din ka spot nahi mila' : 'BS sirf NIFTY/BankNifty index options pe';
       const bsCell = hasBs ? `<span style="color:#a371f7;">${inr(g.bs)}</span>`
-        : `<span style="color:#6e7681;" title="BS sirf NIFTY/BankNifty index options pe">— <span style="font-size:9px;">stock</span></span>`;
+        : `<span style="color:#6e7681;" title="${naTip}">— <span style="font-size:9px;">${naLbl}</span></span>`;
       const dCell = hasBs ? `<span style="color:${col};">${inr(d)}</span>` : `<span style="color:#6e7681;">—</span>`;
       const bar = hasBs ? `<div style="height:8px;background:${col};width:${w}%;margin-left:auto;border-radius:2px;"></div>` : '';
       return `<tr style="border-top:1px solid #21262d;text-align:right;">

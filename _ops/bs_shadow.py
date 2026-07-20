@@ -166,9 +166,26 @@ def _T(ts, exp):
 
 
 # ---------- reprice one day ----------
+_NET_LOOKBACK_DAYS = 400   # cover any realistic positional hold when netting cross-day round-trips
+
+
+def _minus_days(dstr, n):
+    try:
+        return (datetime.date.fromisoformat(dstr) - datetime.timedelta(days=n)).isoformat()
+    except Exception:
+        return dstr
+
+
 def build_day(date):
-    res = order_store.trades_for(date)
-    details = res["details"] if isinstance(res, dict) else res
+    # Net across a LOOKBACK range (not just `date`) so a positional trade whose
+    # ENTRY leg is on an earlier day still pairs correctly, then keep only the
+    # round-trips that EXITED on `date` — the day P&L is realized (matches the live
+    # Orders "Today's Peak"). Per-day trades_for(date) mis-nets an overnight
+    # position's close leg against a same-day re-open on the same strike → phantom
+    # P&L (VRP condor: -6155 phantom vs +4934 real). See order_store.trades_for_range.
+    res = order_store.trades_for_range(_minus_days(date, _NET_LOOKBACK_DAYS), date)
+    all_details = res["details"] if isinstance(res, dict) else res
+    details = [d for d in all_details if (d.get("exit_date") or date) == date]
     spot_cache = {}
     trades, by_strat = [], {}
     tot = {"real_gross": 0.0, "real_net": 0.0, "bs_gross": 0.0, "bs_net": 0.0, "n": 0}

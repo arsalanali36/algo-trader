@@ -5095,44 +5095,50 @@ def api_orders_calendar_summary():
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
     
-    import sqlite3
-    db_path = order_store.DB_PATH
-    dates = []
-    try:
-        with order_store._lock, sqlite3.connect(str(db_path), timeout=10) as c:
-            if from_date and to_date:
-                # Date range mode: fetch all dates between from_date and to_date inclusive
-                sql = "SELECT DISTINCT date FROM orders WHERE date >= ? AND date <= ? ORDER BY date ASC"
-                dates = [r[0] for r in c.execute(sql, [from_date, to_date]).fetchall() if r[0]]
-            else:
-                prefix = ""
-                if year and month:
-                    prefix = f"{year}-{month.zfill(2)}-%"
-                elif year:
-                    prefix = f"{year}-%"
-                sql = "SELECT DISTINCT date FROM orders"
-                args = []
-                if prefix:
-                    sql += " WHERE date LIKE ?"
-                    args.append(prefix)
-                sql += " ORDER BY date ASC"
-                dates = [r[0] for r in c.execute(sql, args).fetchall() if r[0]]
-    except Exception as e:
-        print("[calendar_summary] distinct dates fail:", e, flush=True)
-        
+    # Determine the requested [lo, hi] window = which EXIT dates to show.
+    lo = hi = None
+    if from_date and to_date:
+        lo, hi = from_date, to_date
+    elif year and month:
+        _mm = str(month).zfill(2)
+        lo, hi = f"{year}-{_mm}-01", f"{year}-{_mm}-31"
+    elif year:
+        lo, hi = f"{year}-01-01", f"{year}-12-31"
+
+    # Net across a LOOKBACK range (not per-day) so a positional trade whose ENTRY
+    # leg is on an earlier day still pairs correctly with its in-window EXIT, then
+    # attribute each completed round-trip to its EXIT date (the day the P&L is
+    # realized — matches the live Orders "Today's Peak" + reality). Per-day
+    # trades_for(d) filters WHERE date=d, so it can't pair an overnight position's
+    # entry (earlier day) with its exit — it mis-nets the close leg against a
+    # same-day re-open on the same strike → phantom P&L (VRP condor: -6155 phantom
+    # vs +4934 real). trades_for_range nets across dates correctly (its docstring).
+    def _minus_days(dstr, n):
+        try:
+            return (datetime.strptime(dstr, '%Y-%m-%d') - timedelta(days=n)).strftime('%Y-%m-%d')
+        except Exception:
+            return dstr
+    net_lo = _minus_days(lo, 400) if lo else '2000-01-01'   # 400d covers any realistic positional hold
+    net_hi = hi or '2099-12-31'
+
     summary = {}
     all_trades = []
-    for d in dates:
-        data = order_store.trades_for(d, **filt)
-        det = data.get('details', [])
-        if det:
-            pnl_sum = sum(t.get('pnl') or 0 for t in det)
-            summary[d] = {
-                'pnl': round(pnl_sum, 2),
-                'count': len(det)
-            }
-            for t in det:
-                all_trades.append(t)
+    try:
+        rng = order_store.trades_for_range(net_lo, net_hi, **filt)
+        for t in (rng.get('details') or []):
+            xd = t.get('exit_date')
+            if not xd:
+                continue
+            if lo and not (lo <= xd <= hi):
+                continue   # only round-trips REALIZED in the requested window
+            s = summary.setdefault(xd, {'pnl': 0.0, 'count': 0})
+            s['pnl'] += t.get('pnl') or 0
+            s['count'] += 1
+            all_trades.append(t)
+        for _d in summary:
+            summary[_d]['pnl'] = round(summary[_d]['pnl'], 2)
+    except Exception as e:
+        print("[calendar_summary] range-net fail:", e, flush=True)
             
     # Also include distinct filter options for the UI
     try:
