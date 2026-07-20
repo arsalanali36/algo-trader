@@ -157,23 +157,20 @@ def _resolve(sym, spot, opt_type, off):
 
 
 # ─────────────────── expiry / DTE + live IV (matches the backtest) ──────────────────
-def _this_expiry(sym, spot):
-    """expiry token of the current weekly ATM contract (dedup key). Read from the
-    broker's OWN trad_sym date field (NIFTY-28Jun2026-.. → '28Jun2026'), never guessed."""
+def _this_expiry_date(sym, spot):
+    """(exp_date, key) of the current weekly ATM contract. The expiry DATE comes from
+    dhan_master.get_expiry_for_sec_id(sec_id) — NIFTY index trad_syms carry NO day
+    (e.g. 'NIFTY-Jul2026-24200-CE'), so the day must NEVER be parsed from the string
+    (repo rule / payoff note). key = ISO date string, used as the once-per-cycle dedup."""
     try:
         res = dhan_master.get_option_contract(sym, spot, "CE", 0)
-        if res and res[1] and "-" in res[1]:
-            return res[1].split("-")[1]
+        if res and res[0]:
+            d = dhan_master.get_expiry_for_sec_id(res[0])
+            if d:
+                return d, d.isoformat()
     except Exception:
         pass
-    return None
-
-
-def _expiry_date(exp_tok):
-    try:
-        return datetime.strptime(exp_tok, "%d%b%Y").date()
-    except Exception:
-        return None
+    return None, None
 
 
 def _busdays_to_expiry(today_d, exp_d):
@@ -198,10 +195,12 @@ def _atm_strike(trad_sym, spot):
         return None
 
 
-def _tte_years(trad_sym):
+def _tte_years(exp_date):
+    """years to this weekly expiry (15:30 IST on exp_date). None if past/invalid.
+    exp_date is a datetime.date from dhan_master.get_expiry_for_sec_id (never parsed
+    from a trad_sym string — NIFTY index syms carry no day)."""
     try:
-        tok = str(trad_sym).split("-")[1]
-        exp = datetime.strptime(tok, "%d%b%Y").replace(hour=15, minute=30)
+        exp = datetime(exp_date.year, exp_date.month, exp_date.day, 15, 30)
         secs = (exp - ist_now()).total_seconds()
         return secs / (365.25 * 24 * 3600) if secs > 0 else None
     except Exception:
@@ -229,7 +228,11 @@ def _live_iv(tc, sym, spot, broker, token, cid, log):
     if not (ce and ce[0] and pe and pe[0]):
         return None
     k = _atm_strike(ce[1], spot)
-    tte = _tte_years(ce[1])
+    try:
+        ed = dhan_master.get_expiry_for_sec_id(ce[0])
+    except Exception:
+        ed = None
+    tte = _tte_years(ed) if ed else None
     if k is None or tte is None or tte <= 0:
         return None
     ce_prem, pe_prem = _opt_ltp(broker, ce[0]), _opt_ltp(broker, pe[0])
@@ -310,8 +313,7 @@ def run(paper_mode=True, strategy_id="vrpw_v1"):
                 log.warning("[VRPW] no spot"); time.sleep(20); continue
             broker = _get_broker(bname)
 
-            cur_exp = _this_expiry(sym, spot)
-            exp_d = _expiry_date(cur_exp) if cur_exp else None
+            exp_d, cur_exp = _this_expiry_date(sym, spot)
             dte = _busdays_to_expiry(now.date(), exp_d) if exp_d else None
             eh, em = tc.get("entry_hm", [9, 20]); xh, xm = tc.get("exit_hm", [15, 10])
             entry_dte = int(tc.get("entry_dte", 4)); exit_dte = int(tc.get("exit_dte", 1))
