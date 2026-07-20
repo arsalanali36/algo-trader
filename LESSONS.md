@@ -3750,6 +3750,18 @@ iron_condor's `K∓short_off·STEP` / `∓(short_off+wing)·STEP` exactly.
 at the call site. For any option-leg strike selection, cross-check against the strategy's own backtest
 leg math (single source of the validated structure), not intuition about "puts go below."
 **Rule 10:** this makes live conform to the already-validated structure → NO re-backtest needed.
+**Addendum (2026-07-20) — this shipped in 5 files, so it got a PERMANENT commit-guard.** The same
+`"PE", -offset` mistake was independently written in `vrp_condor_weekly_trader.py`, `vrp_condor_trader.py`,
+`vrp_straddle_trader.py`, `06_shortvol_trader.py`, AND `_ops/capture_vrp_condor.py` (the capture tool —
+found only because the guard flagged it after a manual sweep had already "finished"). Fixing 5 files is
+not permanent — the 6th new strategy repeats it. `_TOOLS/architecture_audit.py` **check 10 (PE-OFFSET-SIGN)**
+now blocks it at commit: flags any `"PE"` leg paired with a negative offset, in BOTH the call form
+(`_resolve(...,"PE",-off)`) and the tuple leg-def form (`("SELL","PE",-body,...)`). **Scoped to live-order
+dirs only** (`strategies/live/`, `_ops/`, `_core/`) — the backtest engines (`scratch/nifty_trend/`,
+`strategies/backtest|lab/`) build legs by DIRECT strike arithmetic where `("PE", -2)` legitimately means
+"2 steps below ATM = OTM put"; flagging those would be pure false-positive noise that gets baselined and
+ignored (TRAP #124/#132). Escape hatch for a deliberate ITM put: `# pe-offset-ok: <reason>` on the offset line.
+Commit `5a5f77f`.
 
 ## TRAP #141 — per-day `trades_for(date)` mis-nets overnight/positional positions (phantom P&L)
 **Symptom:** Stats/Real-vs-BS showed VRP Overnight Condor as a −6,168 LOSS on 2026-07-20, but it was
