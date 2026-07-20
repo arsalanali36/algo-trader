@@ -4,6 +4,7 @@
     const COMPLETED_COLS_DEF = [
       { id: 'date', l: 'Date', a: 'left', on: true, fixed: true },
       { id: 'symbol', l: 'Symbol', a: 'left', on: true, fixed: true },
+      { id: 'strategy', l: 'Strategy', a: 'left', on: true },
       { id: 'tags', l: 'Tags', a: 'left', on: true },
       { id: 'manual_tags', l: 'Manual Tags', a: 'left', on: true },
       { id: 'side', l: 'Side', a: 'center', on: true },
@@ -29,6 +30,7 @@
     const OPEN_COLS_DEF = [
       { id: 'date', l: 'Date', a: 'left', on: true, fixed: true },
       { id: 'symbol', l: 'Symbol', a: 'left', on: true, fixed: true },
+      { id: 'strategy', l: 'Strategy', a: 'left', on: true },
       { id: 'tags', l: 'Tags', a: 'left', on: true },
       { id: 'manual_tags', l: 'Manual Tags', a: 'left', on: true },
       { id: 'side', l: 'Side', a: 'center', on: true },

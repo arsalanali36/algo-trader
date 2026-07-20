@@ -134,7 +134,13 @@
       if (_sseSrc) return;
       _sseSrc = new EventSource('/api/ltp-stream');
       _sseSrc.onmessage = (e) => {
-        try { _ltpLive = JSON.parse(e.data); } catch (_) { return; }
+        // MERGE, don't replace. The SSE stream can omit carried-over positional legs
+        // (e.g. VRP condor) that only _fetchPositionLtp (/api/positions-ltp) knows
+        // about — a wholesale replace wiped their LTP every message, so the Today's
+        // Peak "Running" column kept resetting to ⏳. Merge keeps the last good LTP
+        // for any sym the stream doesn't carry this tick.
+        let _m; try { _m = JSON.parse(e.data); } catch (_) { return; }
+        if (_m && typeof _m === 'object') Object.assign(_ltpLive, _m);
         if (activeTab === 'orders') _patchLtpCells();
       };
       _sseSrc.onerror = () => { _sseSrc.close(); _sseSrc = null; setTimeout(startLtpStream, 5000); };

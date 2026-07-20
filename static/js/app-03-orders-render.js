@@ -1,5 +1,19 @@
 // Auto-extracted from templates/index.html (2026-07-16). Classic script,
 // global scope — load order in index.html IS the original code order.
+    // Open-Positions group collapse state persists across page reloads (localStorage).
+    // Default = open; the user's manual collapse survives F5 (both the render's
+    // fingerprint-guarded rebuild AND a full page reload emit `open` from here).
+    // Keyed by the stable grpId ('grp_<sanitized-strat>' / 'grp_blocked').
+    function _grpCollapsed() {
+      try { return JSON.parse(localStorage.getItem('ord_grp_collapsed') || '{}'); } catch (_) { return {}; }
+    }
+    function _grpOpenAttr(key) { return _grpCollapsed()[key] ? '' : 'open'; }
+    window._grpToggleSave = function (key, isOpen) {
+      const m = _grpCollapsed();
+      if (isOpen) delete m[key]; else m[key] = 1;
+      try { localStorage.setItem('ord_grp_collapsed', JSON.stringify(m)); } catch (_) { }
+    };
+
     // PDF me na aayein. Globals render ke time set hote hain (renderCachedOrders end).
     function exportCompletedPdf(btn) {
       try {
@@ -111,9 +125,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
+          // 'strategy' now has its own dedicated column (flows through the else branch);
+          // tags only explodes to Source/Mode/Broker to avoid a duplicate Strategy col.
           colsToExport.push({ id: 'source', l: 'Source' });
           colsToExport.push({ id: 'mode', l: 'Mode' });
-          colsToExport.push({ id: 'strategy', l: 'Strategy' });
           colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
@@ -223,9 +238,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
+          // 'strategy' now has its own dedicated column (flows through the else branch);
+          // tags only explodes to Source/Mode/Broker to avoid a duplicate Strategy col.
           colsToExport.push({ id: 'source', l: 'Source' });
           colsToExport.push({ id: 'mode', l: 'Mode' });
-          colsToExport.push({ id: 'strategy', l: 'Strategy' });
           colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
@@ -670,7 +686,7 @@
         try { // catch render errors so blank section doesn't appear silently
           let blockedHtml = '';
           if (opnBlocked.length) {
-            blockedHtml = `<details open style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
+            blockedHtml = `<details ${_grpOpenAttr('grp_blocked')} ontoggle="_grpToggleSave('grp_blocked', this.open)" style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding:10px 14px;cursor:pointer;font-weight:600;color:#f85149;display:flex;justify-content:space-between;align-items:center;border-radius:6px" onmouseover="this.style.background='#2d1f1f'" onmouseout="this.style.background='transparent'">
           <span>🚫 Capital se Block hui Entries <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
@@ -959,8 +975,11 @@
                     val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
                     colorStyle = 'color:#adbac7;';
                     break;
+                  case 'strategy':
+                    val = _stratCell(t);
+                    break;
                   case 'tags':
-                    val = _ordTags(t);
+                    val = _ordTags(t, true);
                     break;
                   case 'side':
                     val = t.entry;
@@ -1077,7 +1096,7 @@
             tableHtml += '</tr></tfoot></table>';
 
             oh += `
-      <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
+      <details ${_grpOpenAttr(grpId)} ontoggle="_grpToggleSave('${grpId}', this.open)" style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
