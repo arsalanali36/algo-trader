@@ -87,6 +87,7 @@ def main():
     ap.add_argument("--idle-rf", type=float, default=0.0, help="cash yield when regime OFF")
     ap.add_argument("--runs-dir", default=DEFAULT_RUNS)
     ap.add_argument("--panel-dir", default=DEFAULT_PANEL)
+    ap.add_argument("--template", default=None, help="path to dashboard_intraday.html")
     ap.add_argument("--sig-n", type=int, default=500)
     ap.add_argument("--honest-drop", type=int, default=0,
                     help="also compute a survivorship-haircut variant dropping top-K all-time gainers (context)")
@@ -143,16 +144,27 @@ def main():
                    "p_value": res.get("p_value"), "mc": res.get("mc"),
                    "in_market": res["in_market"], "turnover": res["turnover"],
                    "lakh": res["lakh"]}, f, indent=2, default=str)
-    # results.js (equity curve for a viewer)
-    eqn = res["eq_net"]
-    with open(os.path.join(rdir, "results.js"), "w") as f:
-        f.write("window.RESULTS=" + json.dumps({
-            "slug": slug, "kind": "equity", "metrics": m,
-            "equity": [[str(d.date()), round(float(v), 5)] for d, v in eqn.resample("ME").last().dropna().items()],
-        }, default=str) + ";")
-    # index.html (Lab ↗ target)
-    with open(os.path.join(rdir, "index.html"), "w", encoding="utf-8") as f:
-        f.write(_html(meta, res, extra))
+    # results.js in the SHARED options-lab schema -> the SAME rich dashboard template
+    # renders it (Performance/DD/Underwater/Monthly-heatmap/Distribution/Trades/MC/
+    # Significance/DNA/Info). Legacy full/train/oos combos, no meta.passes (no BS toggle).
+    import emit_results as ER
+    rebal = E.rebalance_dates(close.index, args.freq)
+    sig = dict(real_sharpe=round(m["sharpe"], 3), p_value=round(float(res.get("p_value", 1)), 4),
+               null_mean=round(float(res.get("null_sharpe", 0) or 0), 3),
+               null_p95=round(float(res.get("null_p95", 0) or 0), 3),
+               n_perm=args.sig_n, significant=bool(res.get("p_value", 1) < 0.05))
+    dna = {"strategy": args.strategy, "regime": args.regime, "freq": args.freq,
+           "lookback_m": 12, "basket": "top-decile", "skip_days": 5, "rebalance": args.tf}
+    results = ER.build_results(res["eq_net"], nifty, rebal, dna, sig, title, args.tf, meta["instrument"])
+    with open(os.path.join(rdir, "results.js"), "w", encoding="utf-8") as f:
+        f.write("window.RESULTS=" + json.dumps(results, default=str) + ";")
+    # index.html = the shared dashboard template (copied per run, exactly like the options lab)
+    tpl = args.template or os.environ.get("EQ_TEMPLATE") or os.path.join(
+        HERE, "..", "nifty_trend", "dashboard_intraday.html")
+    import shutil
+    shutil.copyfile(tpl, os.path.join(rdir, "index.html"))
+    # BS-full metrics for the registry entry come from the full combo
+    fm = results["combos"]["full"]["metrics"]
 
     # ---- append to runs/index.json (what the registry reads: bs_full + significant + tf) ----
     idx_path = os.path.join(args.runs_dir, "index.json")
@@ -164,9 +176,9 @@ def main():
                  instrument=meta["instrument"], window=res["window"],
                  significant=bool(res.get("p_value", 1) < 0.05),
                  p_value=round(float(res.get("p_value", 1)), 4),
-                 bs_full=dict(sharpe=round(m["sharpe"], 3), net_pct=round(m["total"] * 100, 2),
-                              maxdd=round(m["maxdd"] * 100, 3), win_rate=round(m["win_rate"], 2),
-                              trades=res["n_rebal"], profit_factor=round(m["pf"], 3)))
+                 bs_full=dict(sharpe=fm["sharpe"], net_pct=fm["net_pct"], maxdd=fm["maxdd"],
+                              win_rate=fm["win_rate"], trades=fm["trades"],
+                              profit_factor=fm["profit_factor"]))
     idx = [e for e in idx if e.get("slug") != slug] + [entry]
     with open(idx_path, "w") as f:
         json.dump(idx, f, indent=1, default=str)

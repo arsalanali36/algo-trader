@@ -6,7 +6,7 @@
   "tf": "15m",
   "params": {
    "or_min": 30,
-   "orb_k": 1,
+   "orb_k": 1.0,
    "h0": 11,
    "h1": 14,
    "atr_sl": 1.5,
@@ -31,7 +31,7 @@
   },
   "instrument_full_sharpe": 0.973,
   "rms_full_sharpe": 0.975,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-10 09:13",
   "deploy_key": "orb_v1",
   "deployed": "orb_v1",
@@ -63,7 +63,7 @@
   "tf": "5m",
   "params": {
    "tp_frac": 0.5,
-   "sl_frac": 1,
+   "sl_frac": 1.0,
    "or_min": 15,
    "orb_k": 0.5,
    "vrp_mult": 1.2,
@@ -119,10 +119,10 @@
   "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
   "tf": "15m",
   "params": {
-   "tp_frac": 1,
-   "sl_frac": 1,
+   "tp_frac": 1.0,
+   "sl_frac": 1.0,
    "or_min": 15,
-   "orb_k": 1,
+   "orb_k": 1.0,
    "wing_off": 10,
    "vrp_mult": 1.2,
    "skip_expiry": true
@@ -146,7 +146,7 @@
   },
   "instrument_full_sharpe": 2.231,
   "rms_full_sharpe": 2.231,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-10 22:41",
   "deploy_key": "dvert_v1",
   "deployed": "dvert_v1",
@@ -174,11 +174,11 @@
  {
   "slug": "long_strangle_orb",
   "design": "long_strangle/orb_break",
-  "title": "❌ Long Strangle @ ORB (failed sig p=0.07)",
+  "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
   "tf": "5m",
   "params": {
    "tp_frac": 0.75,
-   "sl_frac": 1,
+   "sl_frac": 1.0,
    "or_min": 15,
    "orb_k": 0.5,
    "h0": 11,
@@ -233,11 +233,11 @@
   "tf": "15m",
   "params": {
    "or_min": 60,
-   "orb_k": 1,
+   "orb_k": 1.0,
    "st_period": 14,
-   "st_mult": 3,
+   "st_mult": 3.0,
    "atr_sl": 1.5,
-   "rr": 2
+   "rr": 2.0
   },
   "exit": "stop_only",
   "instrument": "NIFTY 50",
@@ -258,7 +258,7 @@
   },
   "instrument_full_sharpe": 1.287,
   "rms_full_sharpe": 1.333,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-10 23:40",
   "deploy_key": "orbst_v1",
   "deployed": "orbst_v1",
@@ -286,12 +286,12 @@
  {
   "slug": "chain_zone_longatm",
   "design": "chain_zone",
-  "title": "04 - Auto Rev-Chain — Zone Breakout (ATM long option)",
+  "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
   "tf": "5m",
   "params": {
-   "touch_tol": 5,
+   "touch_tol": 5.0,
    "zone_age": 2,
-   "max_cs": 40,
+   "max_cs": 40.0,
    "hawa": false,
    "chain_lookback": 20,
    "atr_sl": 2.5,
@@ -316,7 +316,7 @@
   },
   "instrument_full_sharpe": 0.566,
   "rms_full_sharpe": 0.61,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-11 01:41",
   "deploy_key": "chainzone_v1",
   "deployed": "chainzone_v1",
@@ -344,12 +344,12 @@
  {
   "slug": "chain_zone_naked",
   "design": "chain_zone",
-  "title": "04-N - Auto Rev-Chain (NAKED sell variant ⚠️ rejected)",
+  "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
   "tf": "5m",
   "params": {
-   "touch_tol": 5,
+   "touch_tol": 5.0,
    "zone_age": 2,
-   "max_cs": 40,
+   "max_cs": 40.0,
    "hawa": false,
    "chain_lookback": 20,
    "atr_sl": 2.5,
@@ -374,7 +374,7 @@
   },
   "instrument_full_sharpe": 0.566,
   "rms_full_sharpe": 0.61,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-11 01:40",
   "real_cost": {
    "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
@@ -400,12 +400,12 @@
  {
   "slug": "chain_zone_credit",
   "design": "chain_zone",
-  "title": "04-C - Auto Rev-Chain (credit-spread variant ❌ rejected)",
+  "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
   "tf": "5m",
   "params": {
-   "touch_tol": 5,
+   "touch_tol": 5.0,
    "zone_age": 2,
-   "max_cs": 40,
+   "max_cs": 40.0,
    "hawa": false,
    "chain_lookback": 20,
    "atr_sl": 2.5,
@@ -430,7 +430,7 @@
   },
   "instrument_full_sharpe": 0.566,
   "rms_full_sharpe": 0.61,
-  "p_value": 0,
+  "p_value": 0.0,
   "created": "2026-07-11 01:37",
   "real_cost": {
    "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
@@ -459,13 +459,13 @@
   "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
   "tf": "15m",
   "params": {
-   "touch_tol": 0,
+   "touch_tol": 0.0,
    "zone_age": 2,
-   "max_cs": 60,
+   "max_cs": 60.0,
    "hawa": false,
    "chain_lookback": 10,
    "atr_sl": 1.5,
-   "rr": 2,
+   "rr": 2.0,
    "max_hold_days": 3
   },
   "exit": "stop_only",
@@ -520,7 +520,7 @@
    "sl_frac": 0.75,
    "bs_off": 2,
    "or_min": 30,
-   "orb_k": 1,
+   "orb_k": 1.0,
    "h0": 10,
    "h1": 13
   },
@@ -571,7 +571,7 @@
  {
   "slug": "gamma_scalp",
   "design": "gamma_scalp",
-  "title": "❌ Gamma Scalping (REJECTED — VRP loser)",
+  "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
   "tf": "5m",
   "params": {
    "structure": "long straddle + delta-hedge",
@@ -598,7 +598,7 @@
   },
   "instrument_full_sharpe": -0.032,
   "rms_full_sharpe": -0.032,
-  "p_value": 1,
+  "p_value": 1.0,
   "created": "2026-07-11 20:39",
   "real_cost": {
    "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
@@ -624,13 +624,13 @@
  {
   "slug": "shortvol_ironfly",
   "design": "iron_fly/held",
-  "title": "06 - Short-Vol Iron-Fly ❌ CORRECTED-REJECTED (TRAP #109)",
+  "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
   "tf": "5m",
   "params": {
-   "structure": "iron_fly ±8 (HELD-strike)",
+   "structure": "iron_fly \u00b18 (HELD-strike)",
    "entry": "10:00",
    "tp": 0.5,
-   "sl": 1,
+   "sl": 1.0,
    "slip": 0.005,
    "note": "corrected engine"
   },
@@ -653,7 +653,7 @@
   },
   "instrument_full_sharpe": -0.974,
   "rms_full_sharpe": -3.509,
-  "p_value": 1,
+  "p_value": 1.0,
   "created": "2026-07-11 20:51",
   "deploy_key": "shortvol_v1",
   "deployed": "shortvol_v1",
@@ -688,7 +688,7 @@
    "orb_k": 1.5,
    "h0": 11,
    "h1": 14,
-   "atr_sl": 2,
+   "atr_sl": 2.0,
    "rr": 1.5
   },
   "exit": "atr_rr",
@@ -738,10 +738,10 @@
  {
   "slug": "pivot_continuation",
   "design": "pivot_break",
-  "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 — user pass, NOT deployed)",
+  "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 \u2014 user pass, NOT deployed)",
   "tf": "3m",
   "params": {
-   "tol": 5,
+   "tol": 5.0,
    "band": [
     3,
     4,
@@ -750,7 +750,7 @@
    "h0": 0,
    "atr_sl": 2.5,
    "rr": 1.5,
-   "trail_atr": 2
+   "trail_atr": 2.0
   },
   "exit": "atr_rr",
   "instrument": "NIFTY 50",
@@ -765,7 +765,7 @@
    "sharpe": 0.967,
    "net_pct": 23.36,
    "maxdd": -1.487,
-   "win_rate": 52,
+   "win_rate": 52.0,
    "trades": 400,
    "profit_factor": 1.918
   },
@@ -797,7 +797,7 @@
  {
   "slug": "vrp_overnight_condor",
   "design": "vrp_condor",
-  "title": "10 - VRP Overnight Condor ⚠️ FORWARD-PAPER candidate (real VRP edge, defined risk)",
+  "title": "10 - VRP Overnight Condor \u26a0\ufe0f FORWARD-PAPER candidate (real VRP edge, defined risk)",
   "tf": "overnight",
   "params": {
    "body": 3,
@@ -819,7 +819,7 @@
    "trades": 559,
    "profit_factor": 19.194657123639328
   },
-  "p_value": 0,
+  "p_value": 0.0,
   "tail_stress": {
    "sharpe_2pct_maxloss_median": 4.18,
    "sharpe_2pct_p05": 2.53
@@ -827,7 +827,7 @@
   "instrument_full_sharpe": 18.677,
   "rms_full_sharpe": 18.677,
   "deflated_sharpe": {
-   "dsr_prob": 1,
+   "dsr_prob": 1.0,
    "pass": true,
    "n_trials": 120,
    "sr_star_annual": 2.828
@@ -839,7 +839,7 @@
   "slug": "range_strangle_intraday",
   "design": "range_strangle_intraday",
   "verdict": "in-sample edge, borderline (DSR 0.62<0.95)",
-  "title": "Range-Extreme Short Strangle — INTRADAY ⚠️ in-sample edge, borderline (DSR 0.62<0.95)",
+  "title": "Range-Extreme Short Strangle \u2014 INTRADAY \u26a0\ufe0f in-sample edge, borderline (DSR 0.62<0.95)",
   "tf": "intraday",
   "params": {
    "lb": 10,
@@ -877,13 +877,13 @@
    "n_trials": 30,
    "sr_star_annual": 3.233
   },
-  "caveat": "9:20 entry, same-day exit, NO overnight — SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train≈OOS). Forward-paper first.",
+  "caveat": "9:20 entry, same-day exit, NO overnight \u2014 SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train\u2248OOS). Forward-paper first.",
   "created": "2026-07-17"
  },
  {
   "slug": "vrp_condor_weekly",
   "design": "vrp_condor_weekly",
-  "title": "02.05 - VRP Weekly Condor (mild-IV) ⚠️ FORWARD-PAPER (fails DSR)",
+  "title": "02.05 - VRP Weekly Condor (mild-IV) \u26a0\ufe0f FORWARD-PAPER (fails DSR)",
   "tf": "weekly",
   "instrument": "NIFTY 50",
   "lot_size": 65,
@@ -908,7 +908,7 @@
    "n_trials": 24,
    "sr_star_annual": 5.737
   },
-  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS — but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
+  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS \u2014 but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
   "created": "2026-07-20"
  },
  {
@@ -919,7 +919,7 @@
   "params": {
    "w": 15,
    "k": 1.5,
-   "sl": 3,
+   "sl": 3.0,
    "rr": 1.5,
    "mh": 10
   },
@@ -939,7 +939,7 @@
    "trades": 83,
    "profit_factor": 2.0611275627343875
   },
-  "p_value": 0,
+  "p_value": 0.0,
   "instrument_full_sharpe": 1.099,
   "rms_full_sharpe": 1.021,
   "deflated_sharpe": {
@@ -963,12 +963,12 @@
   "significant": true,
   "p_value": 0.0033,
   "bs_full": {
-   "sharpe": 1.225,
-   "net_pct": 468,
-   "maxdd": -23.895,
-   "win_rate": 54.55,
-   "trades": 100,
-   "profit_factor": 1.275
+   "sharpe": 1.23,
+   "net_pct": 468.0,
+   "maxdd": -23.89,
+   "win_rate": 54.5,
+   "trades": 99,
+   "profit_factor": 4.09
   }
  }
 ]

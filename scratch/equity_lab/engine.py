@@ -158,7 +158,8 @@ def permutation_pvalue(close, rebal, real_sharpe, weight_fn_random, n=500, rng=N
             if m >= real_sharpe:
                 ge += 1
     p = (ge + 1) / (len(vals) + 1)
-    return p, (float(np.mean(vals)) if vals else np.nan)
+    return (p, (float(np.mean(vals)) if vals else np.nan),
+            (float(np.percentile(vals, 95)) if vals else np.nan))
 
 def bootstrap_mc(equity_net, n=1000, block=5, rng=None):
     rng = rng or np.random.default_rng(20260720)
@@ -207,8 +208,8 @@ def backtest(close, weight_fn, freq="M", regime_fn=None, rf_annual=0.0,
                eq_net=eq_net, window=[str(eq_net.index.min().date()), str(eq_net.index.max().date())],
                n_rebal=len(bnd), lakh=lakh_model(eq_net))
     if random_weight_fn is not None and not np.isnan(m["sharpe"]):
-        p, null_mean = permutation_pvalue(close, rebal, m["sharpe"], random_weight_fn, n=sig_n)
-        res["p_value"] = p; res["null_sharpe"] = null_mean
+        p, null_mean, null_p95 = permutation_pvalue(close, rebal, m["sharpe"], random_weight_fn, n=sig_n)
+        res["p_value"] = p; res["null_sharpe"] = null_mean; res["null_p95"] = null_p95
     if mc:
         res["mc"] = bootstrap_mc(eq_net)
     return res
