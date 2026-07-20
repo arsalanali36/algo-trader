@@ -115,7 +115,7 @@
         <span class="mut" id="navPos" style="font-size:11px;min-width:34px;text-align:center"></span>
         <button class="tchbtn" id="navNext" title="Next strategy (→ arrow key)">→</button>
       </div>
-      <span class="livechip" id="livechip">● GENUINE EDGE</span>
+      <span class="livechip" id="livechip" style="background:#3a2e0c;color:#e8c14a;border-color:#5c4a12">● FORWARD-PAPER · fails DSR</span>
     </div>
     <div class="controls">
       <div class="seg" id="segPass" style="display:none"><span class="lbl">PASS</span>
@@ -580,7 +580,7 @@ function renderAll(){const m=C().metrics,s=C().significance;
   if(_tEl&&R.meta&&R.meta.design){_tEl.textContent='📈 '+R.meta.design;document.title=R.meta.design+' — Backtest';
     if(_sEl)_sEl.textContent='NSE spot · '+(R.meta.tf||'')+' · long+short · 3:15 exit · max 2/day · 1x NO leverage';}
   document.getElementById('infobar').innerHTML=
-    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'≥'} 0.05)${s&&s.significant?' — a REAL directional edge, not beta':' — treat as noise'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
+    `${s&&s.significant?'✅':'⚠️'} <b>${s&&s.significant?'Genuine edge:':'Not significant:'}</b> entry ${s&&s.significant?'passes':'fails'} the significance gate (p=${(s?s.p_value:1).toFixed(3)} ${s&&s.significant?'&lt;':'&lt;'} 0.05, but the deflated-Sharpe gate FAILS)${s&&s.significant?'':' — forward-paper only, NOT a proven edge'}. Max drawdown <b>${m.maxdd.toFixed(1)}%</b> at 1x. ${dsg}.`;
   if(HAS_PASS){
     const per=perLabel(P);
     const _pl=(R.meta&&R.meta.pass_labels)||{};
