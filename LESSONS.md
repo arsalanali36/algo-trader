@@ -3802,3 +3802,26 @@ Fri→Mon hold nets as one round-trip (+3,708, BS now reprices off Friday's spot
 changed, +₹91 phantom-roll cost removed, no ripple.
 **Guard:** a market-open check that ignores the weekday/holiday is a latent "trades on a closed market"
 bug for ANY daily-acting strategy — gate every trader's loop on `market_calendar`, not a bare time window.
+
+## TRAP #143 — pos_monitor's full-list `update_tags()` clobbered gear-set SL/Target on manual/trigger positions
+**Symptom (user, 2 issues, same root):** (03) SL/Target set via the ⚙ modal on a manual/trigger position
+didn't show in the Open Positions row, and on modal reopen after refresh the fields were empty. (02) such a
+position's exit showed reason `-`. Strategy positions were unaffected — their SL "just worked".
+**Root:** `_pos_monitor_check_one` rebuilds a position's tag list from the **start-of-cycle snapshot**
+(`tags = p.get("tags")` at ~5s cadence) and writes the WHOLE array back via `order_store.update_tags(id, tags)`
+every cycle (PREV_LTP changes each tick → `changed=True` almost always). The ⚙ modal (`/api/orders/update-sl-tp`)
+writes SL_TYPE/SL_VAL to the DB **mid-cycle**; the next pos_monitor write-back — built from the pre-SL snapshot —
+**overwrites the row without the SL**. Strategy trades carry an entry-time default SL already present in the
+snapshot, so their write-back keeps it (old value shows, loss invisible); manual/trigger positions have NO entry
+SL, so the gear-set SL is wiped entirely → never displayed, and (since it never persisted) never fires via the
+`SL_HIT:{type}:{val}` path, so the position exits some other way with reason `-`. Not self-healing: the clobbered
+row is what the next cycle reads.
+**Fix:** new `order_store.update_tag_fields(order_id, {PREFIX: value})` — atomic read-modify-write under `_lock`
+that merges ONLY the given tag prefixes into the row's CURRENT DB tags, preserving everything a concurrent writer
+set. pos_monitor now persists just the LTP fields (`MAX/MIN/CONF_MAX/CONF_MIN/PREV_LTP`) through it instead of
+rewriting the whole array. Unit-tested (temp DB): OLD `update_tags` reproduces the clobber, NEW `update_tag_fields`
+keeps SL + writes LTP, idempotent, no dup.
+**Guard:** NEVER rewrite a whole shared tag array from a stale in-memory snapshot in a repeating loop — another
+process may have written to the same row since you read it. Merge specific fields under lock (`update_tag_fields`),
+or re-read immediately before writing. Same shape as the PRE-MORTEM "stale-state action" (#1) / "RAM-only vs DB"
+(#3) family — applies to any per-row JSON/blob a background loop updates alongside user edits.
