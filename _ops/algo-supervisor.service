@@ -1,0 +1,19 @@
+# CODE3B Fork Strategy Supervisor — systemd unit (canonical copy, VPS: /etc/systemd/system/)
+# Install:  cp _ops/algo-supervisor.service /etc/systemd/system/ && systemctl daemon-reload
+#           && systemctl enable --now algo-supervisor
+# NOTE: paths me spaces hain — QUOTES zaroori, warna 203/EXEC (2026-07-21 me haath se seekha).
+# Cutover flag: data/supervisor_mode.flag (hata do -> dashboard legacy Popen pe wapas).
+[Unit]
+Description=CODE3B Fork Strategy Supervisor (warm parent + COW forks)
+After=network.target
+
+[Service]
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 "/root/CODE3B- TV BACKTEST ENGINE/_ops/strategy_supervisor.py" --daemon
+Restart=always
+RestartSec=5
+TimeoutStopSec=25
+Environment=PYTHONUTF8=1
+
+[Install]
+WantedBy=multi-user.target
