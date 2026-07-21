@@ -133,6 +133,13 @@ def _post_patch_meta(slug, orig_meta, rmeta_window_before):
     idx_path = os.path.join(RUNS, "index.json")
     with hunt_guard.flock("runs_index"):
         idx = json.load(open(idx_path, encoding="utf-8"))
+        # index.json me kuch fields SIRF wahin hote hain (deployed, verdict, static
+        # instrument/hold/structure — meta.json me nahi). Un pe apna merged (jo meta.json
+        # base se bana) overwrite mat karo — existing index entry se preserve karo.
+        existing = next((x for x in idx if x.get("slug") == slug), {})
+        for k, v in existing.items():
+            if k not in merged:
+                merged[k] = v
         idx = [x for x in idx if x.get("slug") != slug]
         idx.append(merged)
         json.dump(idx, open(idx_path, "w", encoding="utf-8"), indent=2)
