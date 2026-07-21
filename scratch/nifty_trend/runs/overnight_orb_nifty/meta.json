@@ -1,0 +1,39 @@
+{
+ "slug": "overnight_orb_nifty",
+ "design": "overnight_orb",
+ "title": "00 - Overnight ORB (NIFTY, naked ATM, next-day exit)",
+ "tf": "15m",
+ "params": {
+  "or_min": 30,
+  "orb_k": 1.0,
+  "h0": 11,
+  "h1": 14,
+  "atr_sl": 1.5,
+  "rr": null,
+  "exit": "nextday_0920",
+  "hold": "overnight",
+  "option": "monthly_atm_buy"
+ },
+ "exit": "nextday_0920",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2018-01-01",
+  "2026-07-09"
+ ],
+ "days": 2103,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.661,
+  "net_pct": 68.777,
+  "maxdd": -2.406,
+  "win_rate": 37.557,
+  "trades": 1105,
+  "profit_factor": 1.57
+ },
+ "bs_train_sharpe": 1.781,
+ "bs_oos_sharpe": 1.376,
+ "p_value": 0.0,
+ "config_key": "orb_overnight_v1",
+ "note": "BS = Black-Scholes MONTHLY ATM buy. Option BUYER + OVERNIGHT hold => BS under-prices theta (TRAP #136). Validate on real lake / forward-paper Real-vs-BS."
+}

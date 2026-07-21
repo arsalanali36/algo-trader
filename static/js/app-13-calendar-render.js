@@ -302,6 +302,7 @@
           ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'],
           ['ATR_TRAILING', '📉 ATR Trailing'],
           ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'],
+          ['ORB_OVN_NEXTDAY', '🌅 Next-Day Exit (9:20)'],
           ['IDX_TRAIL', '📉 Index Trail SL'],
           ['TRAIL_SL', '📉 Trail SL'],
           ['TARGET', '🎯 Target'],

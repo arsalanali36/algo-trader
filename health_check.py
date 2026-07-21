@@ -67,6 +67,7 @@ TRADER_SCRIPTS = {
     # ── option-mission strategies (paper Mon 2026-07-13) — bina in entries ke
     #    9:20 health_check saaton pe jhootha "script nahi" RED deta tha ──
     "orb":        TRADERS_DIR / "orb_trader.py",                 # 00 orb_v1
+    "orb_overnight": TRADERS_DIR / "orb_overnight_trader.py",    # 00.08 overnight ORB (positional, next-day 09:20)
     "straddle":   TRADERS_DIR / "straddle_trader.py",            # 01 straddle_v1
     "dvert":      TRADERS_DIR / "02_debit_vertical_trader.py",   # 02 dvert_v1
     "orbst":      TRADERS_DIR / "03_orbst_trader.py",            # 03 orbst_v1

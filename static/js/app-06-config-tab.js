@@ -359,6 +359,7 @@
       // Strategy's own exit logic (not pos_monitor_loop-driven)
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
       else if (r.startsWith('RSI_MIDLINE_EXIT')) { label = '↩️ RSI Midline'; color = '#58a6ff'; }
+      else if (r.startsWith('ORB_OVN_NEXTDAY')) { label = '🌅 Next-Day Exit (9:20)'; color = '#58a6ff'; }
       // Option mission strategies' own TP/SL/rollback exits (task 71 — Straddle,
       // Debit Vertical, Ratio Backspread, Short-Vol Iron-Fly, VRP)
       // NOTE: keep this family list in sync with order_store._EXIT_REASON_PREFIXES —

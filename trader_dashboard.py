@@ -255,6 +255,8 @@ STRATEGIES = {
     "range":    {"script": RANGE_SCRIPT,  "log": RANGE_LOG, "cfg": RANGE_CFG, "grep": "range_trader"},
     "universe": {"script": UNIV_SCRIPT,   "log": UNIV_LOG,  "cfg": TC_FILE,   "grep": "universe_trader"},
     "orb":      {"script": str(TRADERS_DIR / "orb_trader.py"), "log": BASE_DIR / "logs/orb_v1.log", "cfg": TC_FILE, "grep": "orb_trader"},
+    # 00.08 = Overnight ORB — same Mid-Day ORB entry, hold overnight, exit next-day 09:20 (POSITIONAL, allow_overnight)
+    "orb_overnight": {"script": str(TRADERS_DIR / "orb_overnight_trader.py"), "log": BASE_DIR / "logs/orb_overnight_v1.log", "cfg": TC_FILE, "grep": "orb_overnight_trader"},
     "straddle": {"script": str(TRADERS_DIR / "straddle_trader.py"), "log": BASE_DIR / "logs/straddle_v1.log", "cfg": TC_FILE, "grep": "straddle_trader"},
     # mission numbering (user 2026-07-10): 01=straddle (above), 02=debit vertical, 03=ORB+Supertrend
     "dvert":    {"script": str(TRADERS_DIR / "02_debit_vertical_trader.py"), "log": BASE_DIR / "logs/dvert_v1.log", "cfg": TC_FILE, "grep": "02_debit_vertical_trader"},

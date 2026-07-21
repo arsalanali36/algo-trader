@@ -1834,7 +1834,7 @@ def liquidity_filter_enabled(strategy):
 # 3:15 / the next night). These IDs are always overnight-allowed regardless of
 # what the config currently holds. Config can still turn it ON for other strategies.
 # Add a new positional strategy's id here when you build one.
-_ALWAYS_OVERNIGHT = {"vrp_condor_v1", "vrp_v1", "distma_v1", "vrpw_v1"}
+_ALWAYS_OVERNIGHT = {"vrp_condor_v1", "vrp_v1", "distma_v1", "vrpw_v1", "orb_overnight_v1"}
 
 
 def allow_overnight(strategy):

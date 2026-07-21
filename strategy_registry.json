@@ -149,6 +149,14 @@
       "status": "failed",
       "legs": 2
     },
+    "00.08": {
+      "name": "Overnight ORB (NIFTY, next-day 09:20 exit)",
+      "config_key": "orb_overnight_v1",
+      "slug": "overnight_orb_nifty",
+      "live_file": "strategies/live/orb_overnight_trader.py",
+      "status": "paper",
+      "legs": 1
+    },
     "01.01": {
       "name": "Chain-Zone — Long ATM",
       "config_key": "chainzone_v1",
