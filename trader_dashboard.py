@@ -5227,6 +5227,52 @@ def api_orders():
     return jsonify(data)
 
 
+def _strategy_matcher(want):
+    """Resolve-aware strategy filter for the display/stats routes (read-only).
+
+    order_store rows raw strings pe hote hain — case-variants (`rsi_v1_PAPER` vs
+    registry ck), purane aliases (`ema920` = 05.03 ema_v1) aur "id | desc"
+    pollution (TRAP #128). Total Summary in sabko `strategy_registry.resolve()`
+    se EK strategy pe group karta hai, par single-strategy filter ab tak raw SQL
+    `=` exact-match tha → dropdown se strategy chunte hi calendar KHAALI (0
+    trades) jabki All-strategies summary me uske trades dikh rahe the (2026-07-21
+    user report: 05.02 RSI paper / 05.03 EMA / 09.01). Ye matcher filter ko usi
+    resolve() identity pe le aata hai — single-strategy view == All-strategies
+    grouping ka wahi attribution set. Unregistered buckets (manual/unknown/
+    default) sirf exact raw match karte hain (koi collapse nahi).
+    """
+    try:
+        import strategy_registry as _sr
+        wid = _sr.resolve(want)
+    except Exception:
+        _sr, wid = None, None
+    wl = str(want or '').lower()
+    _cache = {}
+
+    def _match(raw):
+        hit = _cache.get(raw)
+        if hit is None:
+            rs = str(raw or '')
+            hit = (rs == want) or (rs.lower() == wl)
+            if not hit and wid is not None and _sr is not None:
+                try:
+                    hit = _sr.resolve(rs) == wid
+                except Exception:
+                    hit = False
+            _cache[raw] = hit
+        return hit
+    return _match
+
+
+def _pop_strategy_matcher(filt):
+    """filt dict se 'strategy' nikaal kar resolve-aware matcher do (ya None).
+    SQL exact-match ki jagah netted trades ki attribution post-filter hoti hai —
+    netting All-strategies jaisi hi chalti hai, isliye single-strategy ke totals
+    All-view ke summary row se EXACT match karte hain."""
+    strat = filt.pop('strategy', None)
+    return _strategy_matcher(strat) if strat else None
+
+
 @app.route('/api/orders/calendar-summary')
 def api_orders_calendar_summary():
     """Returns daily P&L and trade count summary for a given year/month or from_date/to_date range."""
@@ -5237,7 +5283,8 @@ def api_orders_calendar_summary():
     to_date = request.args.get('to_date')      # YYYY-MM-DD
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
-    
+    _sm = _pop_strategy_matcher(filt)
+
     # Determine the requested [lo, hi] window = which EXIT dates to show.
     lo = hi = None
     if from_date and to_date:
@@ -5269,6 +5316,8 @@ def api_orders_calendar_summary():
     try:
         rng = order_store.trades_for_range(net_lo, net_hi, **filt)
         for t in (rng.get('details') or []):
+            if _sm and not _sm(t.get('strategy')):
+                continue   # resolve-aware single-strategy narrow (see _strategy_matcher)
             xd = t.get('exit_date')
             if not xd:
                 continue
@@ -5442,10 +5491,13 @@ def api_orders_monthly_returns():
     import order_store
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    _sm = _pop_strategy_matcher(filt)
     out = {}
     try:
         details = order_store.trades_for_range('2015-01-01', '9999-12-31', **filt).get('details', [])
         for t in details:
+            if _sm and not _sm(t.get('strategy')):
+                continue
             d = (t.get('entry_date') or t.get('exit_date') or '')
             if len(d) < 7:
                 continue
@@ -5523,6 +5575,7 @@ def api_orders_optimized_pnl():
     fetch = str(request.args.get('fetch') or '') in ('1', 'true', 'yes')
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
+    _sm = _pop_strategy_matcher(filt)   # calendar-summary ke saath 1:1 same filtering
 
     # Resolve the same date window calendar-summary uses.
     if from_date and to_date:
@@ -5538,6 +5591,8 @@ def api_orders_optimized_pnl():
     m = {}
     try:
         details = order_store.trades_for_range(d_from, d_to, **filt)['details']
+        if _sm:
+            details = [t for t in details if _sm(t.get('strategy'))]
         m = opt_pnl.compute_for_trades(details, allow_fetch=fetch)
     except Exception as e:
         print("[optimized-pnl] fail:", e, flush=True)
@@ -5563,8 +5618,12 @@ def api_orders_stats_summary():
     date_to = request.args.get('date_to')
     filt = {k: request.args.get(k) for k in
             ('source', 'mode', 'broker', 'strategy', 'instrument') if request.args.get(k)}
-    metrics = order_store.stats_summary(date_from=date_from, date_to=date_to, **filt)
+    _sm = _pop_strategy_matcher(filt)
     details = order_store.trades_for_range(date_from or "0000-00-00", date_to or "9999-12-31", **filt)['details']
+    if _sm:
+        details = [t for t in details if _sm(t.get('strategy'))]
+    # metrics usi (resolve-aware filtered) trade set se — pills == table, exact
+    metrics = order_store.stats_summary(trades=details)
     return jsonify({'ok': True, 'metrics': metrics, 'trades': details})
 
 

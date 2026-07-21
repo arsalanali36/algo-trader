@@ -327,7 +327,8 @@
     },
     "05.02": {
       "name": "RSI (paper)",
-      "config_key": "rsi_v1_paper",
+      "config_key": "rsi_v1_PAPER",
+      "aliases": ["rsi_v1_paper"],
       "slug": null,
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",

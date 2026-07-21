@@ -393,7 +393,7 @@ def _net_rows(rows):
     return {"details": details, "open": opens, "count": len(details)}
 
 
-def stats_summary(date_from=None, date_to=None, **filters):
+def stats_summary(date_from=None, date_to=None, trades=None, **filters):
     """Aggregate Profit Factor / Expectancy / Sharpe over closed trades in a
     date range (live/paper order_store data — companion to the backtest-only
     `_compute_stats()` in `_TOOLS/backtest_engine.py`, same formula style for
@@ -403,9 +403,16 @@ def stats_summary(date_from=None, date_to=None, **filters):
     expectancy    = win_rate*avg_win - loss_rate*avg_loss
     sharpe        = mean(pnl) / stdev(pnl) * sqrt(n)   — NOT annualized, same
                     non-annualized convention as backtest_engine's version.
+
+    trades= — caller apna (already netted+filtered) trade list de sakta hai;
+    tab date/filters ignore hote hain. Dashboard ka stats-summary route isi se
+    resolve-aware strategy filtering ke baad WAHI trade set metrics me bhejta
+    hai jo table dikhata hai (pills == table, exact). Display-only helper.
     """
     import statistics
-    if date_from or date_to:
+    if trades is not None:
+        details = trades
+    elif date_from or date_to:
         details = trades_for_range(date_from or "0000-00-00", date_to or "9999-12-31", **filters)["details"]
     else:
         details = trades_for_range("0000-00-00", "9999-12-31", **filters)["details"]

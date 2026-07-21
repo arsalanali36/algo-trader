@@ -269,8 +269,13 @@
       // one run at a time). Server already returned all trades (strat cleared on
       // apply), so we filter client-side and re-bucket by entry date.
       if (window.calActiveView && !btMode) {
-        const _vset = new Set(window.calActiveView.strategies || []);
-        d.trades = (d.trades || []).filter(t => _vset.has(t.strategy || t.strat || 'unknown'));
+        // Match by registry-resolved identity (regId), not raw string — view me
+        // saved key (config_key) aur order_store ki raw row alag case/alias ho
+        // sakte hain (rsi_v1_PAPER vs rsi_v1_paper, ema920 = ema_v1). Server-side
+        // single-strategy filter bhi ab yahi resolve-identity use karta hai.
+        const _vnorm = k => ((window.regId ? String(regId(k)) : String(k == null ? '' : k))).toLowerCase();
+        const _vset = new Set((window.calActiveView.strategies || []).map(_vnorm));
+        d.trades = (d.trades || []).filter(t => _vset.has(_vnorm(t.strategy || t.strat || 'unknown')));
         const _vsum = {};
         d.trades.forEach(t => {
           const dt = t.entry_date || t.exit_date;
