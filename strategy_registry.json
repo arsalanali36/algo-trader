@@ -94,7 +94,7 @@
   },
   "strategies": {
     "00.01": {
-      "name": "Mid-Day ORB (NIFTY, naked ATM)",
+      "name": "ORB @ Mid-Day (NIFTY, naked ATM)",
       "config_key": "orb_v1",
       "slug": "mid_orb_nifty",
       "live_file": "strategies/live/orb_trader.py",
@@ -105,7 +105,7 @@
       "structure": "Naked ATM"
     },
     "00.02": {
-      "name": "ORB + Supertrend",
+      "name": "ORB @ Supertrend",
       "config_key": "orbst_v1",
       "slug": "orb_supertrend",
       "live_file": "strategies/live/03_orbst_trader.py",
@@ -116,7 +116,7 @@
       "structure": "Naked ATM"
     },
     "00.03": {
-      "name": "BankNifty ORB",
+      "name": "ORB @ BankNifty",
       "config_key": "banknifty_v1",
       "slug": "banknifty_hunt",
       "live_file": "strategies/live/07_banknifty_trader.py",
@@ -127,7 +127,7 @@
       "structure": "Naked ATM"
     },
     "00.04": {
-      "name": "Long Straddle @ ORB",
+      "name": "ORB @ Long Straddle",
       "config_key": "straddle_v1",
       "slug": "long_straddle_orb",
       "live_file": "strategies/live/straddle_trader.py",
@@ -138,7 +138,7 @@
       "structure": "Straddle"
     },
     "00.05": {
-      "name": "Debit Vertical @ ORB",
+      "name": "ORB @ Debit Vertical",
       "config_key": "dvert_v1",
       "slug": "debit_vertical_orb",
       "live_file": "strategies/live/02_debit_vertical_trader.py",
@@ -149,7 +149,7 @@
       "structure": "Spread"
     },
     "00.06": {
-      "name": "Ratio Backspread @ ORB",
+      "name": "ORB @ Ratio Backspread",
       "config_key": "backspread_v1",
       "slug": "ratio_backspread",
       "live_file": "strategies/live/05_backspread_trader.py",
@@ -160,7 +160,7 @@
       "structure": "Backspread"
     },
     "00.07": {
-      "name": "Long Strangle @ ORB",
+      "name": "ORB @ Long Strangle",
       "config_key": null,
       "slug": "long_strangle_orb",
       "live_file": null,
@@ -171,7 +171,7 @@
       "structure": "Strangle"
     },
     "00.08": {
-      "name": "Overnight ORB (NIFTY, next-day 09:20 exit)",
+      "name": "ORB @ Overnight (NIFTY, next-day 09:20 exit)",
       "config_key": "orb_overnight_v1",
       "slug": "overnight_orb_nifty",
       "live_file": "strategies/live/orb_overnight_trader.py",
