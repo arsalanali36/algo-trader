@@ -574,14 +574,17 @@
           m.id = 'qo-tc-modal';
           Object.assign(m.style, { position: 'fixed', inset: '0', background: 'rgba(1,4,9,0.72)', zIndex: '10000', display: 'flex', alignItems: 'center', justifyContent: 'center' });
           m.innerHTML = `
-<div style="width:660px;max-width:94vw;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px;font-family:monospace;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+<div style="width:920px;max-width:95vw;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px;font-family:monospace;box-shadow:0 8px 40px rgba(0,0,0,.6)">
   <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
     <span style="color:#58a6ff;font-size:13px;font-weight:bold;letter-spacing:1px">&#127919; TRIGGERS + CHART &middot; <span id="qo-tc-sym">NIFTY</span></span>
-    <span onclick="qoCloseTrigChart()" style="color:#8b949e;font-size:18px;cursor:pointer;line-height:1">&#x2715;</span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="qoTcReset()" title="Zoom/pan reset" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:11px;font-weight:bold;padding:4px 10px;cursor:pointer">&#8635; Reset View</button>
+      <span onclick="qoCloseTrigChart()" style="color:#8b949e;font-size:18px;cursor:pointer;line-height:1">&#x2715;</span>
+    </div>
   </div>
-  <div id="qo-tc-chart" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px;margin-bottom:6px;min-height:312px"></div>
-  <div style="font-size:9px;color:#484f58;text-align:center;margin-bottom:12px">NIFTY 1-min candles &middot; blue = live spot &middot; green &#9650; upar-cross &middot; red &#9660; neeche-cross</div>
-  <div id="qo-tc-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
+  <div id="qo-tc-chart" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px;margin-bottom:6px;min-height:452px"></div>
+  <div style="font-size:9px;color:#484f58;text-align:center;margin-bottom:12px">NIFTY 1-min candles &middot; blue = live spot &middot; green &#9650; upar-cross &middot; red &#9660; neeche-cross &middot; zoom/pan preserve rehta hai</div>
+  <div id="qo-tc-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
 </div>`;
           m.addEventListener('click', e => { if (e.target === m) qoCloseTrigChart(); });
           document.body.appendChild(m);
@@ -635,15 +638,18 @@
           }
         }
         if (!chartEl) return;
-        if (!window.LightweightCharts) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:120px 0">chart library load nahi hui</div>'; return; }
-        const ohlc = (candles || []).filter(c => c && c.time != null && c.close != null)
-          .map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
-        if (!ohlc.length) { qoDestroyTcChart(); chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:120px 0">Chart data nahi — market band ya data missing</div>'; return; }
+        if (!window.LightweightCharts) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:180px 0">chart library load nahi hui</div>'; return; }
+        // Chart + candles ek hi baar bante hain. Har 6s refresh pe SIRF level/spot
+        // lines update hoti hain — setData/fitContent kabhi nahi, warna user ka
+        // zoom/pan har cycle reset ho jaata (default trade_chart wala hi fix).
         if (!_qoTcChart) {
+          const ohlc = (candles || []).filter(c => c && c.time != null && c.close != null)
+            .map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+          if (!ohlc.length) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:180px 0">Chart data nahi — market band ya data missing</div>'; return; }
           chartEl.innerHTML = '';
-          chartEl.style.height = '300px';
+          chartEl.style.height = '440px';
           _qoTcChart = LightweightCharts.createChart(chartEl, {
-            width: chartEl.clientWidth || 600, height: 300,
+            width: chartEl.clientWidth || 800, height: 440,
             layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
             grid: { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
             timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#30363d' },
@@ -651,8 +657,10 @@
             crosshair: { mode: 0 }
           });
           _qoTcSeries = _qoTcChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
+          _qoTcSeries.setData(ohlc);
+          _qoTcChart.timeScale().fitContent();
         }
-        _qoTcSeries.setData(ohlc);
+        if (!_qoTcSeries) return;
         _qoTcLines.forEach(l => { try { _qoTcSeries.removePriceLine(l); } catch (e) { } });
         _qoTcLines = [];
         if (spot != null) _qoTcLines.push(_qoTcSeries.createPriceLine({ price: +spot, color: '#58a6ff', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'spot' }));
@@ -663,8 +671,8 @@
           const col = armed ? (above ? '#3fb950' : '#f85149') : '#8b949e';
           _qoTcLines.push(_qoTcSeries.createPriceLine({ price: lv, color: col, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: lv.toFixed(0) + ' ' + (above ? '▲' : '▼') }));
         });
-        try { _qoTcChart.timeScale().fitContent(); } catch (e) { }
       }
+      window.qoTcReset = () => { if (_qoTcChart) { try { _qoTcChart.timeScale().fitContent(); } catch (e) { } } };
 
       // initial CE selection highlight
       qoSetOpt('CE');
