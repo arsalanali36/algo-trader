@@ -13,7 +13,7 @@
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--tx);
     font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:13px;line-height:1.4}
-  .wrap{padding:16px 20px 60px;max-width:1600px;margin:0 auto}
+  .wrap{padding:16px 20px 60px;max-width:100%;margin:0 auto}
   a{color:var(--blue);text-decoration:none}
   .mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
 
@@ -477,7 +477,9 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   thead th .th{padding:8px 9px}
   .frow .fcell{padding:4px 6px}
   td .name{display:inline-block;max-width:calc(var(--nameW) - 20px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-  .scroll{overflow:auto;max-height:calc(100vh - 158px)}
+  /* no inner vertical scroll — every strategy flows into the page (page itself scrolls);
+     only horizontal scroll if the table is wider than the window. Sticky header stays at top. */
+  .scroll{overflow-x:auto;overflow-y:visible}
   th.fz,td.fz{position:sticky;z-index:3;background:var(--panel)}
   thead th.fz{z-index:9;background:var(--panel2)}
   tbody tr:hover td.fz{background:#191e26}
