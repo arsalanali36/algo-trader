@@ -37,7 +37,7 @@ mein deta hai: no-premium skip → RMS gate → default SL tags → smart_order.
 
 | # | Rule | Kyun (TRAP) |
 |---|------|-------------|
-| 1 | **Entry `execution_gateway.execute_signal()` se, exit `execute_exit()` se** (raw `requests.post`/`broker.place_order()` kabhi nahi — pre-commit hook block karega) | Gateway ke andar: no-premium skip (TRAP #1), gate_entry RMS (TRAP #15), default SL tags, smart_order (order_store recording, rate-limit, fill-confirm, correct Kite symbol — TRAP #14/#26), pre-exit flat-check (TRAP #62/#73), Task-5 per-strategy isolation. ADR-001 |
+| 1 | **Entry `execution_gateway.execute_signal()` se, exit `execute_exit()` se** (raw `requests.post`/`broker.place_order()` kabhi nahi — pre-commit hook block karega) | Gateway ke andar: no-premium skip (TRAP #1), gate_entry RMS (TRAP #15), default SL tags, smart_order (order_store recording, rate-limit, fill-confirm, correct Kite symbol — TRAP #14/#26), pre-exit flat-check (TRAP #62/#73), Task-5 per-strategy isolation, **blocked-signal recording (`skipped_store`) — jo entry RMS-gate se block hoti hai wo apne-aap record hoti hai (entry-intent + premium), tumhe kuch nahi likhna**. ADR-001 |
 | 2 | **RMS gate/flat-check apne haath se dobara MAT likho** — gateway mein already hai | Duplicate = drift = TRAP #15/#75 wapas. Sirf hedge (protective) leg pe `gate=False` pass karo |
 | 3 | **Gateway ka RETURNED `qty` state mein rakho** (size-down ho sakta hai), aur exit pe `status=="skipped_flat"` aaye to state saaf karo — order nahi gaya hota | Sized qty ignore = capital breach; skipped_flat ignore = phantom position state |
 | 4 | **Premium na mile to entry SKIP** — ₹0 kabhi record mat karo | ₹0 fill P&L corrupt karta, RMS breaker trip. TRAP #1 |
