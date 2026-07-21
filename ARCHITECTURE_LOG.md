@@ -15,6 +15,32 @@
 
 ---
 
+## 2026-07-21 — Fork-based strategy supervisor (RAM 15-process → COW-shared) — module built, cutover PENDING
+**Status:** IN-PROGRESS (module + self-test + smoke-test DONE; live cutover deliberately NOT done)
+**Kya:** 15 paper strategy traders har ek apna interpreter + pandas + 26MB scrip-master cache alag-alag
+load karte the (~1.9GB peak, box 3.8GB — mutex live trader ke liye jagah nahi thi). Naya
+`_ops/strategy_supervisor.py`: EK single-threaded parent pandas + `dhan_master.build_cache()` warm
+karta hai, phir har strategy `os.fork()` — Linux COW se library+cache pages share. **Measured on the
+box (asli scrip master + pandas): 6 alag process = 521MB vs 1 parent + 6 fork = 127MB (~76% kam;
+12.9MB/child).** Har strategy AB BHI alag process — per-strategy restart/crash isolation unchanged
+(user ki explicit requirement). Children `runpy.run_path(run_name="__main__")` se chalte hain — har
+script ka apna argparse/logging/entry (run() ya main()) khud; supervisor script-internals ki koi
+assumption nahi. setproctitle → `code3b-strategy --paper --id <sid>` (dashboard `get_pid` grep
+compatible) + `data/supervisor_pids.json` fallback. Crash-respawn with backoff (5 quick-crash =
+stop respawning that one). `--self-test` (dummy children: COW RAM, isolation, respawn, pgrep
+visibility — zero live impact), `--dry-run` (14 active enumerate, dashboard STRATEGIES+_base se 1:1),
+`--only sid1,sid2` (staged rollout). Smoke-tested on VPS: real orb_v1 fork-child ran, logged, clean
+SIGTERM shutdown (child me inherited handler SIG_DFL reset zaroori tha — fix in).
+**Bonus同session:** 2GB swapfile + `vm.swappiness=10` (fstab persistent) — box pe swap 0 tha, OOM-kill
+window band.
+**Layer:** infra
+**Files:** `_ops/strategy_supervisor.py` (new), VPS: `/swapfile` + sysctl
+**Kyun:** RAM 81%→ mutex live trader ko room; par "sab ek process me" wala naive merge reliability
+todta — fork design se dono milte hain (RAM saving + isolation).
+**Depends on:** cutover design PENDING — supervisor market-hours awareness (traders 15:30 pe khud
+exit karte hain, respawn-churn nahi hona chahiye) + auto_scheduler/api_start-stop ke saath integration
+(stop→respawn fight na ho). Tab tak file INERT hai — koi service isse use nahi karti.
+
 ## 2026-07-20 — Stats Real-vs-BS drilldown + positional netting fix + weekend/holiday gate + nav
 **Status:** DONE (all VPS-deployed, commits `1d1f3d6`→`8088752`)
 **Layer:** ui + ops + execution + infra (display fixes + one money-path guard + strategy fix)
