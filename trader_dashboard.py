@@ -7268,7 +7268,17 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             changed = True
 
         if changed and p.get("id"):
-            order_store.update_tags(p["id"], tags)
+            # Merge ONLY the LTP-tracking fields into the row's CURRENT DB tags
+            # (atomic read-modify-write). The old full-list update_tags() rewrote
+            # the whole tag array from this cycle's start-of-loop snapshot, which
+            # clobbered any SL/TP/NOTE tag a user set via the ⚙ modal mid-cycle —
+            # so manual/trigger positions (no entry-time default SL) silently lost
+            # their gear-set SL/Target within ~5s (SL not shown + exit reason '-').
+            order_store.update_tag_fields(p["id"], {
+                "MAX_LTP": max_ltp, "MIN_LTP": min_ltp,
+                "CONF_MAX_LTP": conf_max_ltp, "CONF_MIN_LTP": conf_min_ltp,
+                "PREV_LTP": ltp,
+            })
 
     if p["qty"] <= 0 or entry_px <= 0: return
 

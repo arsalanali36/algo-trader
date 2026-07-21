@@ -474,3 +474,38 @@ def update_tags(order_id, tags):
             c.commit()
     except Exception as e:
         print("Error updating tags:", e)
+
+
+def update_tag_fields(order_id, set_fields):
+    """Atomically MERGE tag changes into an order's CURRENT DB tags (read-modify-
+    write under _lock) — the race-safe alternative to update_tags()' full-list
+    overwrite. `set_fields` = {PREFIX: value}: each writes 'PREFIX:value',
+    replacing any existing 'PREFIX:...'; value None drops that prefix.
+
+    Why this exists: pos_monitor rewrote a position's ENTIRE tag array every ~5s
+    from a start-of-cycle snapshot. If a user set SL/Target via the ⚙ modal
+    (update_tags) mid-cycle, that write-back clobbered it — so manual/trigger
+    positions (which carry no entry-time default SL) silently lost their gear-set
+    SL within seconds (SL not shown in row/modal + exit reason '-'). Merging only
+    the specific fields we own preserves everything else a concurrent writer set.
+    """
+    if not set_fields:
+        return
+    try:
+        with _lock, _conn() as c:
+            row = c.execute("SELECT tags FROM orders WHERE id=?", (order_id,)).fetchone()
+            if not row:
+                return
+            try:
+                tags = json.loads(row[0] or "[]")
+            except Exception:
+                tags = []
+            for pref, val in set_fields.items():
+                p2 = str(pref) + ":"
+                tags = [t for t in tags if not (isinstance(t, str) and t.startswith(p2))]
+                if val is not None:
+                    tags.append(f"{pref}:{val}")
+            c.execute("UPDATE orders SET tags=? WHERE id=?", (json.dumps(tags), order_id))
+            c.commit()
+    except Exception as e:
+        print("Error updating tag fields:", e)
