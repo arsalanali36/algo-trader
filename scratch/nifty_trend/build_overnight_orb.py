@@ -181,7 +181,12 @@ def build():
         f.write("window.RESULTS = " + json.dumps(RESULTS, ensure_ascii=False) + ";\n")
     tmpl = os.path.join(HERE, "dashboard_intraday.html")
     if os.path.exists(tmpl):
-        shutil.copyfile(tmpl, os.path.join(outdir, "index.html"))
+        # run_hunt does this exact swap — the template loads its own sample
+        # `results_intraday.js`; a run's index.html must load THIS run's `results.js`.
+        html = open(tmpl, encoding="utf-8").read().replace(
+            'src="results_intraday.js"', 'src="results.js"')
+        with open(os.path.join(outdir, "index.html"), "w", encoding="utf-8") as f:
+            f.write(html)
 
     bsf, bst, bso = (combos[f"bs|{k}"]["metrics"] for k in ("full", "train", "oos"))
     meta = {"slug": SLUG, "design": "overnight_orb", "title": TITLE, "tf": "15m",
