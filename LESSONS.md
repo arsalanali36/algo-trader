@@ -3825,3 +3825,28 @@ keeps SL + writes LTP, idempotent, no dup.
 process may have written to the same row since you read it. Merge specific fields under lock (`update_tag_fields`),
 or re-read immediately before writing. Same shape as the PRE-MORTEM "stale-state action" (#1) / "RAM-only vs DB"
 (#3) family — applies to any per-row JSON/blob a background loop updates alongside user edits.
+
+## TRAP #144 — `git checkout <branch>` on the VPS SILENTLY REVERTS surgically-deployed files (they're ahead of VPS HEAD)
+**Symptom (2026-07-22, caught mid-op):** while making a backup branch of the VPS's uncommitted WIP
+(`git checkout -b backup/... ; git add -u ; git commit ; git checkout master`), the just-deployed
+`skipped_store` feature **vanished from disk** — `_core/skipped_store.py` gone, `_core/execution_gateway.py`
+reverted to the no-recording version. Running services were unaffected (module already imported in memory), so
+nothing looked wrong until a `test -f` check — but the NEXT 9:10 fork/restart would have loaded the reverted code
+and the feature would be silently dead.
+**Root:** the standard VPS deploy is **surgical checkout** — `git checkout origin/master -- <files>` — which puts
+files into the working tree that are NOT in the VPS's own HEAD commit (VPS HEAD is routinely `behind N` from
+origin; runtime config/db are gitignored so a full `git pull` is avoided). Those deployed files therefore live
+ONLY in the working tree, ahead of HEAD. Any later `git checkout <branch>` / `checkout master` resets the working
+tree to that branch's tree → tracked-modified deployed files revert to the old version, and **NEW deployed files
+(not in HEAD) get DELETED** (checkout removes tracked-elsewhere files absent from the target). The backup branch
+dance (`checkout -b X ; commit ; checkout master`) hits this on the `checkout master` step.
+**Fix (what was done):** re-ran `git checkout origin/master -- <feature files>` to redeploy + `git checkout
+backup/<branch> -- <derived paths>` to restore the reverted daily-extend output, `git reset` to un-stage back to
+the pre-backup working state, `py_compile` + `md5/diff origin` verify. Non-destructive restore, services stayed up.
+**Guard:** on a live VPS whose working tree carries surgically-deployed files AHEAD of its own HEAD, do NOT switch
+branches in that working tree. To snapshot uncommitted tracked WIP to a backup branch WITHOUT touching the working
+tree, use `git stash create` (returns a commit SHA, no working-tree change) then `git branch backup/<name> <sha>`
++ `git push` — or just `tar` the files. Reserve `checkout -b ; commit ; checkout master` for CLEAN trees only.
+After ANY branch operation on the VPS, re-verify deployed files still exist + match origin (`test -f` + `git diff
+origin/master -- <file>`) before trusting the deploy. PRE-MORTEM shape #7 (deploy drift) — here caused by the
+backup itself, not a stale push.
