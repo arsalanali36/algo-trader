@@ -83,7 +83,29 @@
   .shot .cap b{color:var(--acc)}
   .split{display:grid;grid-template-columns:1.15fr .85fr;gap:16px;align-items:start}
 
-  .reveal{opacity:0;transform:translateY(14px)} .reveal.in{opacity:1;transform:none}
+  .reveal{opacity:0;transform:translateY(24px) scale(.985);transition:opacity .6s ease,transform .66s cubic-bezier(.2,.75,.25,1);transition-delay:var(--d,0s)}
+  .reveal.in{opacity:1;transform:none}
+  /* scroll progress bar */
+  .prog{position:fixed;top:0;left:0;height:3px;width:0;z-index:9;background:linear-gradient(90deg,var(--acc),var(--acc2));box-shadow:0 0 12px var(--acc);transition:width .08s linear}
+  /* card / bignum hover lift */
+  .card{will-change:transform}
+  .card:hover{transform:translateY(-5px);border-color:var(--acc);box-shadow:0 16px 36px -18px var(--acc)}
+  .bignum{transition:transform .5s cubic-bezier(.2,.75,.25,1),border-color .3s,box-shadow .3s}
+  .bignum:hover{transform:translateY(-4px);border-color:var(--acc);box-shadow:0 14px 30px -18px var(--acc)}
+  .stat{transition:transform .5s cubic-bezier(.2,.75,.25,1),border-color .3s}
+  .stat:hover{transform:translateY(-3px);border-color:var(--border-soft)}
+  /* RAM shrink viz (slide 1) */
+  .ramviz{display:flex;flex-direction:column;gap:11px;margin-bottom:16px}
+  .rambar{display:grid;grid-template-columns:150px 1fr 92px;gap:14px;align-items:center;font-family:var(--font-mono);font-size:12.5px}
+  .rambar .rl{color:var(--ink-mut);letter-spacing:.04em}
+  .rambar .track{height:24px;background:var(--panel2);border:1px solid var(--border);border-radius:7px;overflow:hidden}
+  .rambar .fill{height:100%;width:0;border-radius:6px;transition:width 1.35s cubic-bezier(.2,.75,.25,1)}
+  .rambar.before .fill{background:linear-gradient(90deg,#f26d6d40,#f26d6d)}
+  .rambar.after .fill{background:linear-gradient(90deg,#4ec96a40,#4ec96a)}
+  .rambar .rv{color:var(--ink);font-weight:700;font-size:15px;text-align:right}
+  .rambar.before .rv{color:var(--red)} .rambar.after .rv{color:var(--green)}
+  .ramnote{font-family:var(--font-mono);font-size:12px;color:var(--ink-dim);margin-top:3px;letter-spacing:.03em}
+  @media(max-width:720px){.rambar{grid-template-columns:96px 1fr 68px;gap:9px;font-size:11px}}
   .rail{position:fixed;left:18px;top:50%;transform:translateY(-50%);z-index:5;display:flex;flex-direction:column;gap:10px}
   .rail a{width:9px;height:9px;border-radius:50%;background:var(--border);border:1px solid var(--border-soft);transition:all .3s;display:block}
   .rail a.on{background:var(--acc);box-shadow:0 0 9px 1px var(--acc);transform:scale(1.25)}
@@ -109,10 +131,12 @@
     .stats{grid-template-columns:repeat(2,1fr)}.cards{grid-template-columns:1fr}.bignums{grid-template-columns:1fr}.split{grid-template-columns:1fr}
     .rail{display:none}section.slide{padding:70px 20px}
   }
-  @media(prefers-reduced-motion:reduce){*{animation:none!important}.reveal{opacity:1;transform:none}html{scroll-behavior:auto}}
+  @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}.reveal{opacity:1;transform:none}.prog{display:none}.rambar .fill{width:auto}html{scroll-behavior:auto}}
 </style>
 </head>
 <body>
+
+<div class="prog" id="prog"></div>
 
 <nav class="rail" aria-label="slides">
   <a href="#s0" class="on"></a><a href="#s1"></a><a href="#s2"></a><a href="#s3"></a><a href="#s4"></a><a href="#s5"></a>
@@ -151,10 +175,10 @@
         <h2>15 process the — 1.9 GB kha rahe the. Ab ek dimaag, sabki COW-copy.</h2>
         <p class="lede">Aapki maang saaf thi: <b style="color:var(--ink)">"sab ek process me mat karo — restart risky ho jaayega."</b> Toh ek-process-merge nahi kiya. Ek <b style="color:var(--ink)">single-threaded warm parent</b> pandas + scrip-cache load karta hai; har strategy <span class="mono">os.fork()</span> = Linux Copy-on-Write share. Har strategy PHIR BHI apna alag process — stop/crash isolation same.</p>
       </div>
-      <div class="bignums">
-        <div class="bignum g"><div class="bn">521 → 127 MB</div><div class="bl">6-proc measured (~76% kam)</div></div>
-        <div class="bignum a"><div class="bn">+2 GB swap</div><div class="bl">box pe swap 0 tha — OOM-kill hi jagah nahi de raha tha</div></div>
-        <div class="bignum b"><div class="bn">Isolation ✓</div><div class="bl">per-strategy stop/crash unchanged</div></div>
+      <div class="ramviz reveal">
+        <div class="rambar before"><span class="rl">PEHLE · 15 proc</span><div class="track"><div class="fill" data-w="100"></div></div><span class="rv" data-count="521" data-suf=" MB">0 MB</span></div>
+        <div class="rambar after"><span class="rl">AB · COW-shared</span><div class="track"><div class="fill" data-w="24" data-delay="420"></div></div><span class="rv" data-count="127" data-suf=" MB" data-delay="420">0 MB</span></div>
+        <div class="ramnote">6-proc measured · ~76% kam · +2 GB swap (box pe 0 tha) · per-strategy isolation intact</div>
       </div>
       <div class="callout green">
         <div class="ic">🧬</div>
@@ -396,6 +420,48 @@
     var nx=(e.key==='ArrowDown'||e.key==='ArrowRight')?cur+1:cur-1;
     if(nx>=0&&nx<secs.length){e.preventDefault();secs[nx].scrollIntoView({behavior:'smooth'})}
   });
+
+  var RM=matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // scroll progress bar
+  var prog=document.getElementById('prog');
+  function updProg(){var h=document.documentElement,mx=h.scrollHeight-h.clientHeight;if(prog)prog.style.width=(mx>0?(window.scrollY/mx*100):0)+'%'}
+  window.addEventListener('scroll',updProg,{passive:true});updProg();
+
+  // stagger reveals within each group
+  document.querySelectorAll('.cards, .bignums, .stats').forEach(function(g){
+    [].slice.call(g.children).forEach(function(c,i){if(c.classList.contains('reveal'))c.style.setProperty('--d',(i*0.075)+'s')});
+  });
+
+  // generic count-up (data-count) with optional suffix + delay
+  function runCount(el){
+    var to=+el.getAttribute('data-count'),suf=el.getAttribute('data-suf')||'',dl=+(el.getAttribute('data-delay')||0),dur=1150,st=null;
+    if(RM){el.textContent=to+suf;return}
+    function step(ts){if(!st)st=ts;var p=Math.min((ts-st)/dur,1);el.textContent=Math.round(ease(p)*to)+suf;if(p<1)requestAnimationFrame(step)}
+    setTimeout(function(){requestAnimationFrame(step)},dl);
+  }
+
+  // RAM shrink viz — fills grow + numbers count on first reveal
+  var ramSeen=false;
+  var ramObs=new IntersectionObserver(function(es){
+    es.forEach(function(e){
+      if(e.isIntersecting&&!ramSeen){ramSeen=true;
+        e.target.querySelectorAll('.fill').forEach(function(f){var dl=+(f.getAttribute('data-delay')||0);setTimeout(function(){f.style.width=f.getAttribute('data-w')+'%'},RM?0:dl)});
+        e.target.querySelectorAll('[data-count]').forEach(runCount);
+        ramObs.disconnect();
+      }
+    });
+  },{threshold:.55});
+  document.querySelectorAll('.ramviz').forEach(function(el){ramObs.observe(el)});
+
+  // hero parallax + fade
+  var heroWrap=document.querySelector('.hero .wrap');
+  if(heroWrap&&!RM){
+    window.addEventListener('scroll',function(){
+      var y=window.scrollY,vh=window.innerHeight;
+      if(y<vh){heroWrap.style.transform='translateY('+(y*0.16)+'px)';heroWrap.style.opacity=String(Math.max(0,1-y/(vh*0.82)))}
+    },{passive:true});
+  }
 })();
 </script>
 </body>
