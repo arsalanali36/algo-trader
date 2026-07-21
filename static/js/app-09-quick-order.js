@@ -122,7 +122,8 @@
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
       Object.assign(panel.style, {
-        position: 'fixed', bottom: '24px', right: '24px', width: '288px',
+        position: 'fixed', top: '16px', right: '16px', width: '288px',
+        maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxSizing: 'border-box',
         background: '#161b22', border: '1px solid #30363d', borderRadius: '12px',
         padding: '16px', fontFamily: 'monospace', zIndex: '9999',
         boxShadow: '0 4px 24px rgba(0,0,0,0.6)', userSelect: 'none', display: 'none'
@@ -560,7 +561,12 @@
       };
 
       // ── TRIGGERS + CHART — armed levels drawn on a NIFTY line-chart ────────
-      let _qoTcTimer = null, _qoTcCandles = null;
+      let _qoTcTimer = null, _qoTcCandles = null, _qoTcChart = null, _qoTcSeries = null, _qoTcLines = [];
+      function qoDestroyTcChart() {
+        if (_qoTcChart) { try { _qoTcChart.remove(); } catch (e) { } }
+        _qoTcChart = null; _qoTcSeries = null; _qoTcLines = [];
+        const el = document.getElementById('qo-tc-chart'); if (el) el.innerHTML = '';
+      }
       window.qoOpenTrigChart = () => {
         let m = document.getElementById('qo-tc-modal');
         if (!m) {
@@ -573,8 +579,8 @@
     <span style="color:#58a6ff;font-size:13px;font-weight:bold;letter-spacing:1px">&#127919; TRIGGERS + CHART &middot; <span id="qo-tc-sym">NIFTY</span></span>
     <span onclick="qoCloseTrigChart()" style="color:#8b949e;font-size:18px;cursor:pointer;line-height:1">&#x2715;</span>
   </div>
-  <div id="qo-tc-chart" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px;margin-bottom:6px;min-height:248px"></div>
-  <div style="font-size:9px;color:#484f58;text-align:center;margin-bottom:12px">NIFTY 1-min &middot; blue = live spot &middot; green &#9650; upar-cross &middot; red &#9660; neeche-cross</div>
+  <div id="qo-tc-chart" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px;margin-bottom:6px;min-height:312px"></div>
+  <div style="font-size:9px;color:#484f58;text-align:center;margin-bottom:12px">NIFTY 1-min candles &middot; blue = live spot &middot; green &#9650; upar-cross &middot; red &#9660; neeche-cross</div>
   <div id="qo-tc-list" style="display:grid;grid-template-columns:1fr 1fr;gap:8px"></div>
 </div>`;
           m.addEventListener('click', e => { if (e.target === m) qoCloseTrigChart(); });
@@ -583,12 +589,14 @@
         document.getElementById('qo-tc-sym').textContent = qoSym;
         m.style.display = 'flex';
         _qoTcCandles = null;
+        qoDestroyTcChart();
         qoLoadTrigChart();
         clearInterval(_qoTcTimer); _qoTcTimer = setInterval(qoLoadTrigChart, 6000);
       };
       window.qoCloseTrigChart = () => {
         const m = document.getElementById('qo-tc-modal'); if (m) m.style.display = 'none';
         clearInterval(_qoTcTimer); _qoTcTimer = null;
+        qoDestroyTcChart();
       };
       async function qoLoadTrigChart() {
         const chartEl = document.getElementById('qo-tc-chart'); if (!chartEl) return;
@@ -627,45 +635,35 @@
           }
         }
         if (!chartEl) return;
-        const W = 628, H = 248, padL = 46, padR = 74, padT = 16, padB = 22;
-        const closes = candles.map(c => c.close).filter(v => v != null);
-        const lvls = triggers.map(t => +t.level).filter(v => !isNaN(v));
-        const pool = closes.concat(lvls);
-        if (spot != null) pool.push(spot);
-        if (!pool.length) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:96px 0">Chart data nahi — market band ya data missing</div>'; return; }
-        let lo = Math.min.apply(null, pool), hi = Math.max.apply(null, pool);
-        if (hi === lo) { hi += 5; lo -= 5; }
-        const gap = (hi - lo) * 0.12; lo -= gap; hi += gap;
-        const plotW = W - padL - padR, plotH = H - padT - padB;
-        const X = i => padL + (closes.length <= 1 ? plotW : i / (closes.length - 1) * plotW);
-        const Y = v => padT + (hi - v) / (hi - lo) * plotH;
-        let svg = `<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`;
-        for (let k = 0; k <= 2; k++) {
-          const v = lo + (hi - lo) * (k / 2), y = Y(v);
-          svg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#21262d" stroke-width="1"/>`;
-          svg += `<text x="${padL - 6}" y="${(y + 3).toFixed(1)}" text-anchor="end" fill="#484f58" font-size="9">${Math.round(v)}</text>`;
+        if (!window.LightweightCharts) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:120px 0">chart library load nahi hui</div>'; return; }
+        const ohlc = (candles || []).filter(c => c && c.time != null && c.close != null)
+          .map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+        if (!ohlc.length) { qoDestroyTcChart(); chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:120px 0">Chart data nahi — market band ya data missing</div>'; return; }
+        if (!_qoTcChart) {
+          chartEl.innerHTML = '';
+          chartEl.style.height = '300px';
+          _qoTcChart = LightweightCharts.createChart(chartEl, {
+            width: chartEl.clientWidth || 600, height: 300,
+            layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+            grid: { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
+            timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#30363d' },
+            rightPriceScale: { borderColor: '#30363d' },
+            crosshair: { mode: 0 }
+          });
+          _qoTcSeries = _qoTcChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
         }
-        if (closes.length > 1) {
-          const pts = closes.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
-          svg += `<polyline points="${pts}" fill="none" stroke="#adbac7" stroke-width="1.6" stroke-linejoin="round"/>`;
-          svg += `<circle cx="${X(closes.length - 1).toFixed(1)}" cy="${Y(closes[closes.length - 1]).toFixed(1)}" r="3" fill="#388bfd"/>`;
-        }
-        if (spot != null) {
-          const y = Y(spot);
-          svg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="#388bfd" stroke-width="1.1" stroke-dasharray="2,2"/>`;
-          svg += `<rect x="${W - padR + 2}" y="${(y - 8).toFixed(1)}" width="66" height="16" rx="3" fill="#388bfd22" stroke="#388bfd66"/><text x="${W - padR + 35}" y="${(y + 3).toFixed(1)}" text-anchor="middle" fill="#58a6ff" font-size="9.5" font-weight="bold">${(+spot).toFixed(1)}</text>`;
-        }
-        triggers.forEach(t => {
+        _qoTcSeries.setData(ohlc);
+        _qoTcLines.forEach(l => { try { _qoTcSeries.removePriceLine(l); } catch (e) { } });
+        _qoTcLines = [];
+        if (spot != null) _qoTcLines.push(_qoTcSeries.createPriceLine({ price: +spot, color: '#58a6ff', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'spot' }));
+        (triggers || []).forEach(t => {
           const lv = +t.level; if (isNaN(lv)) return;
           const above = t.direction === 'above';
           const armed = t.status === 'armed';
-          const col = armed ? (above ? '#3fb950' : '#f85149') : '#6e7681';
-          const y = Y(lv);
-          svg += `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${W - padR}" y2="${y.toFixed(1)}" stroke="${col}" stroke-width="1.2" stroke-dasharray="4,3"/>`;
-          svg += `<rect x="${W - padR + 2}" y="${(y - 8).toFixed(1)}" width="66" height="16" rx="3" fill="${col}22" stroke="${col}66"/><text x="${W - padR + 35}" y="${(y + 3).toFixed(1)}" text-anchor="middle" fill="${col}" font-size="9.5" font-weight="bold">${lv.toFixed(0)} ${above ? '▲' : '▼'}</text>`;
+          const col = armed ? (above ? '#3fb950' : '#f85149') : '#8b949e';
+          _qoTcLines.push(_qoTcSeries.createPriceLine({ price: lv, color: col, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: lv.toFixed(0) + ' ' + (above ? '▲' : '▼') }));
         });
-        svg += `</svg>`;
-        chartEl.innerHTML = svg;
+        try { _qoTcChart.timeScale().fitContent(); } catch (e) { }
       }
 
       // initial CE selection highlight
