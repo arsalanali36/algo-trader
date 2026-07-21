@@ -99,7 +99,10 @@
       "slug": "mid_orb_nifty",
       "live_file": "strategies/live/orb_trader.py",
       "status": "paper",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "00.02": {
       "name": "ORB + Supertrend",
@@ -107,7 +110,10 @@
       "slug": "orb_supertrend",
       "live_file": "strategies/live/03_orbst_trader.py",
       "status": "paper",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "00.03": {
       "name": "BankNifty ORB",
@@ -115,7 +121,10 @@
       "slug": "banknifty_hunt",
       "live_file": "strategies/live/07_banknifty_trader.py",
       "status": "paper",
-      "legs": 1
+      "legs": 1,
+      "instrument": "BankNifty",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "00.04": {
       "name": "Long Straddle @ ORB",
@@ -123,7 +132,10 @@
       "slug": "long_straddle_orb",
       "live_file": "strategies/live/straddle_trader.py",
       "status": "paper",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Straddle"
     },
     "00.05": {
       "name": "Debit Vertical @ ORB",
@@ -131,7 +143,10 @@
       "slug": "debit_vertical_orb",
       "live_file": "strategies/live/02_debit_vertical_trader.py",
       "status": "paper",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Spread"
     },
     "00.06": {
       "name": "Ratio Backspread @ ORB",
@@ -139,7 +154,10 @@
       "slug": "ratio_backspread",
       "live_file": "strategies/live/05_backspread_trader.py",
       "status": "paper",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Backspread"
     },
     "00.07": {
       "name": "Long Strangle @ ORB",
@@ -147,7 +165,10 @@
       "slug": "long_strangle_orb",
       "live_file": null,
       "status": "failed",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Strangle"
     },
     "00.08": {
       "name": "Overnight ORB (NIFTY, next-day 09:20 exit)",
@@ -163,7 +184,10 @@
       "slug": "chain_zone_longatm",
       "live_file": "strategies/live/04_chainzone_trader.py",
       "status": "paper",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "01.02": {
       "name": "Chain-Zone — Credit spread",
@@ -171,7 +195,10 @@
       "slug": "chain_zone_credit",
       "live_file": null,
       "status": "research",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Spread"
     },
     "01.03": {
       "name": "Chain-Zone — Naked sell",
@@ -179,7 +206,10 @@
       "slug": "chain_zone_naked",
       "live_file": null,
       "status": "research",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "01.04": {
       "name": "Chain-Zone — Positional (monthly)",
@@ -187,7 +217,10 @@
       "slug": "chain_zone_positional",
       "live_file": null,
       "status": "research",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Positional",
+      "structure": "Naked ATM"
     },
     "02.01": {
       "name": "Short-Vol Iron-Fly",
@@ -195,7 +228,10 @@
       "slug": "shortvol_ironfly",
       "live_file": "strategies/live/06_shortvol_trader.py",
       "status": "rejected",
-      "legs": 4
+      "legs": 4,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Condor"
     },
     "02.02": {
       "name": "Gamma Scalp",
@@ -203,7 +239,10 @@
       "slug": "gamma_scalp",
       "live_file": null,
       "status": "rejected",
-      "legs": 2
+      "legs": 2,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Straddle"
     },
     "03.01": {
       "name": "Pivot-Extreme Continuation",
@@ -211,7 +250,10 @@
       "slug": "pivot_continuation",
       "live_file": null,
       "status": "research",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "04.01": {
       "name": "Ars chain - Canary (NIFTY-BNF)",
@@ -226,7 +268,10 @@
       "role": "canary",
       "transport": "python",
       "legs": 1,
-      "desc": "1m, NIFTY+BANKNIFTY. The FIRST pine->python attempt. Its signal fidelity no longer matters — what it is kept alive FOR is volume: it fires constantly and keeps surfacing edge cases in the SHARED money path (execution_gateway / risk_gate / order_store / pos_monitor) that the mission strategies also run on. TRAP #76, #83 and #84 all came out of this family. Do NOT switch it off as a 'duplicate' — it is the early-warning system. NOTE: 1m != the TV pine's 5m, so watching this chart tells you nothing about 04.03's fidelity."
+      "desc": "1m, NIFTY+BANKNIFTY. The FIRST pine->python attempt. Its signal fidelity no longer matters — what it is kept alive FOR is volume: it fires constantly and keeps surfacing edge cases in the SHARED money path (execution_gateway / risk_gate / order_store / pos_monitor) that the mission strategies also run on. TRAP #76, #83 and #84 all came out of this family. Do NOT switch it off as a 'duplicate' — it is the early-warning system. NOTE: 1m != the TV pine's 5m, so watching this chart tells you nothing about 04.03's fidelity.",
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "04.02": {
       "name": "Ars chain - Canary (stocks)",
@@ -242,7 +287,10 @@
       "transport": "python",
       "never_live": true,
       "legs": 1,
-      "desc": "1m, 23 F&O stocks. Same logic as 04.01, split off so NIFTY focus stays clean. never_live is the POINT of this split: these must never reach Zerodha. Today that is enforced by nothing but the `mode` flag — the _PAPER suffix is doing a job the code does not do."
+      "desc": "1m, 23 F&O stocks. Same logic as 04.01, split off so NIFTY focus stays clean. never_live is the POINT of this split: these must never reach Zerodha. Today that is enforced by nothing but the `mode` flag — the _PAPER suffix is doing a job the code does not do.",
+      "instrument": "Stocks",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "04.03": {
       "name": "Ars chain - Pine2Python",
@@ -258,7 +306,10 @@
       "mirrors": "04.04",
       "transport": "python",
       "legs": 1,
-      "desc": "THE ONE WITH A FUTURE. 5m NIFTY — the python twin of 04.04's pine, built to retire the webhook and its Rs 1,600/month TV subscription (Rs 19,200/yr). Offline fidelity is 90.2% exact / 93% entry (validate_strategy.py, VALIDATION_PLAYBOOK.md); live daily drift is not measured yet. The real question is not '1:1 exact?' but 'does the drift cost less than Rs 19,200/yr?' — a measurable question. 2026-07-16: its symbol list was the exact UNION of 04.01 + 04.02 (25 symbols), so stocks ate the capital and NIFTY got CAPITAL_BLOCKED — ONE NIFTY trade in a month. The mirror was not running. Must stay NIFTY-only: a mirror whose symbols do not match its reference is lying."
+      "desc": "THE ONE WITH A FUTURE. 5m NIFTY — the python twin of 04.04's pine, built to retire the webhook and its Rs 1,600/month TV subscription (Rs 19,200/yr). Offline fidelity is 90.2% exact / 93% entry (validate_strategy.py, VALIDATION_PLAYBOOK.md); live daily drift is not measured yet. The real question is not '1:1 exact?' but 'does the drift cost less than Rs 19,200/yr?' — a measurable question. 2026-07-16: its symbol list was the exact UNION of 04.01 + 04.02 (25 symbols), so stocks ate the capital and NIFTY got CAPITAL_BLOCKED — ONE NIFTY trade in a month. The mirror was not running. Must stay NIFTY-only: a mirror whose symbols do not match its reference is lying.",
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "05.01": {
       "name": "RSI (live)",
@@ -266,7 +317,10 @@
       "slug": null,
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "05.02": {
       "name": "RSI (paper)",
@@ -274,7 +328,10 @@
       "slug": null,
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "05.03": {
       "name": "EMA Crossover",
@@ -288,7 +345,10 @@
         "ema920",
         "EMA Crossover"
       ],
-      "desc": "RETIRED 2026-07-17 (Arsalan: \"iska koi kaam nahi, pareshaan itna kiya hai\"). In its whole life it placed ZERO orders — order_store has not a single ema_v1 row — while writing a 4 MB log/day and carrying TATAMOTORS (delisted, not in Dhan's scrip master) in its 25-symbol list, which is where a chunk of the daily error noise came from. Its config key + RMS override are deleted (safe precisely BECAUSE there were no rows to attribute). The 42 'ema920' rows stay: those are real fills from its TradingView pine (_PINE/v17) on 2026-06-25, and a real fill is history whoever owned it. ID kept per _meta.rules — an ID is permanent, never reused. strategies/live/nifty_ema_trader.py is left on disk; wip/ema-per-symbol-isolation still branches off it."
+      "desc": "RETIRED 2026-07-17 (Arsalan: \"iska koi kaam nahi, pareshaan itna kiya hai\"). In its whole life it placed ZERO orders — order_store has not a single ema_v1 row — while writing a 4 MB log/day and carrying TATAMOTORS (delisted, not in Dhan's scrip master) in its 25-symbol list, which is where a chunk of the daily error noise came from. Its config key + RMS override are deleted (safe precisely BECAUSE there were no rows to attribute). The 42 'ema920' rows stay: those are real fills from its TradingView pine (_PINE/v17) on 2026-06-25, and a real fill is history whoever owned it. ID kept per _meta.rules — an ID is permanent, never reused. strategies/live/nifty_ema_trader.py is left on disk; wip/ema-per-symbol-isolation still branches off it.",
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "05.04": {
       "name": "VWAP-EMA Failure",
@@ -296,7 +356,10 @@
       "slug": null,
       "live_file": "strategies/backtest/vwap_ema_failure.py",
       "status": "research",
-      "legs": 1
+      "legs": 1,
+      "instrument": "Stocks",
+      "hold": "Intraday",
+      "structure": "Cash Equity"
     },
     "06.01": {
       "name": "Universe Scan",
@@ -304,7 +367,10 @@
       "slug": null,
       "live_file": "strategies/live/universe_trader.py",
       "status": "legacy",
-      "legs": 1
+      "legs": 1,
+      "instrument": "Stocks",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "07.01": {
       "name": "TradingView Webhook",
@@ -312,7 +378,10 @@
       "slug": null,
       "live_file": "_core/webhook_executor.py",
       "status": "legacy",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     },
     "08.01": {
       "name": "BB Bounce v1",
@@ -345,7 +414,12 @@
       "live_file": "strategies/backtest/user_temp_52_week_gemni_v1.py",
       "status": "research",
       "legs": 1,
-      "aliases": ["52_Week_Breakout | Price closing above 52-week EMA with high volume"]
+      "aliases": [
+        "52_Week_Breakout | Price closing above 52-week EMA with high volume"
+      ],
+      "instrument": "Stocks",
+      "hold": "Positional",
+      "structure": "Cash Equity"
     },
     "09.02": {
       "name": "Sample EMA (test)",
@@ -393,7 +467,10 @@
         "regime_momentum",
         "momentum_bot"
       ],
-      "desc": "Monthly cross-sectional momentum: rank F&O stocks by 12-1 month return, long top-decile (~21 names) equal-weight, + NIFTY 200-DMA regime gate (all-cash when NIFTY < 200-DMA). DIFFERENT VEHICLE — delivery equity, monthly rebalance, NOT the intraday options fleet; runs STANDALONE on the VPS (/root/markov_analysis, momentum-paper.timer Mon-Fri 16:40), NOT dashboard start/stop-managed. Forward-paper since 2026-07-20. Survivorship decisive-check PASSED (winners-vs-losers long-short t=3.01, no OOS decay = real factor, not illusion); headline 24% CAGR inflated by survivor names, honest deployable ~Sharpe 1.0 / CAGR 15-18% / maxDD -16% (200-DMA regime filter halves the drawdown). Real money GATED on GO_LIVE_CHECKLIST.md (Kite CNC delivery path to be BUILT + months of forward-paper proof). Live status page: http://72.61.173.32:5200/momentum_status.html"
+      "desc": "Monthly cross-sectional momentum: rank F&O stocks by 12-1 month return, long top-decile (~21 names) equal-weight, + NIFTY 200-DMA regime gate (all-cash when NIFTY < 200-DMA). DIFFERENT VEHICLE — delivery equity, monthly rebalance, NOT the intraday options fleet; runs STANDALONE on the VPS (/root/markov_analysis, momentum-paper.timer Mon-Fri 16:40), NOT dashboard start/stop-managed. Forward-paper since 2026-07-20. Survivorship decisive-check PASSED (winners-vs-losers long-short t=3.01, no OOS decay = real factor, not illusion); headline 24% CAGR inflated by survivor names, honest deployable ~Sharpe 1.0 / CAGR 15-18% / maxDD -16% (200-DMA regime filter halves the drawdown). Real money GATED on GO_LIVE_CHECKLIST.md (Kite CNC delivery path to be BUILT + months of forward-paper proof). Live status page: http://72.61.173.32:5200/momentum_status.html",
+      "instrument": "Stocks",
+      "hold": "Positional",
+      "structure": "Cash Equity"
     },
     "02.03": {
       "name": "VRP Overnight Condor",
@@ -401,7 +478,10 @@
       "slug": "vrp_overnight_condor",
       "live_file": "strategies/live/vrp_condor_trader.py",
       "status": "paper",
-      "legs": 4
+      "legs": 4,
+      "instrument": "NIFTY",
+      "hold": "Overnight",
+      "structure": "Condor"
     },
     "02.04": {
       "name": "Dessert Range Strangle",
@@ -411,7 +491,10 @@
       "status": "research",
       "legs": 2,
       "role": "dessert",
-      "desc": "IV-filtered short strangle at recent range extremes (9:20 intraday, no overnight, SL-bounded). PF 2.04 / Sharpe 3.67 / tail-stress PASS — PAR DSR 0.62 borderline => forward-paper candidate, ORB ka diversifier (corr -0.50), standalone hero nahi."
+      "desc": "IV-filtered short strangle at recent range extremes (9:20 intraday, no overnight, SL-bounded). PF 2.04 / Sharpe 3.67 / tail-stress PASS — PAR DSR 0.62 borderline => forward-paper candidate, ORB ka diversifier (corr -0.50), standalone hero nahi.",
+      "instrument": "NIFTY",
+      "hold": "Positional",
+      "structure": "Strangle"
     },
     "02.05": {
       "name": "VRP Weekly Condor (mild-IV, fwd-paper)",
@@ -419,7 +502,10 @@
       "slug": "vrp_condor_weekly",
       "live_file": "strategies/live/vrp_condor_weekly_trader.py",
       "status": "paper",
-      "legs": 4
+      "legs": 4,
+      "instrument": "NIFTY",
+      "hold": "Overnight",
+      "structure": "Condor"
     },
     "04.04": {
       "name": "Ars chain - DirectWebhook",
@@ -434,7 +520,10 @@
       "role": "reference",
       "transport": "pine",
       "legs": 1,
-      "desc": "5m NIFTY. Pine on TradingView -> alert() JSON -> webhook -> Kite. The REFERENCE 04.03 is measured against. Registered 2026-07-16 after it cost real money by NOT being registered: unknown to the registry it rendered in the RMS table's 'OTHER' bucket, its per-strategy override silently fell back to global, and it traded all day on a Rs 1,000/lot stop instead of the Rs 2,500/lot the 14-July rollout intended (that rollout landed on webhook_v1 — the generic config — not on the live strategy). Retire once 04.03 is trusted."
+      "desc": "5m NIFTY. Pine on TradingView -> alert() JSON -> webhook -> Kite. The REFERENCE 04.03 is measured against. Registered 2026-07-16 after it cost real money by NOT being registered: unknown to the registry it rendered in the RMS table's 'OTHER' bucket, its per-strategy override silently fell back to global, and it traded all day on a Rs 1,000/lot stop instead of the Rs 2,500/lot the 14-July rollout intended (that rollout landed on webhook_v1 — the generic config — not on the live strategy). Retire once 04.03 is trusted.",
+      "instrument": "NIFTY",
+      "hold": "Intraday",
+      "structure": "Naked ATM"
     }
   }
 }

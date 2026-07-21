@@ -561,6 +561,16 @@ def strategy_registry_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'  # always fresh (no stale-cache UI)
     return resp
 
+@app.route('/registry2')
+def strategy_registry_page_v2():
+    """Strategy Registry v2 — one sortable/filterable table (same live data as /registry:
+    /api/strategy-registry + /api/config + /lab/runs/index.json + /api/timer-status).
+    instrument/hold/structure come from strategy_registry.json static fields. Login-gated."""
+    from flask import make_response
+    resp = make_response(render_template("strategy_registry2.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
+
 @app.route('/sl-map')
 def sl_map_page():
     """SL Map — every RMS stop-loss mechanism + which strategy has what, LIVE from
