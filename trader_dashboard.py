@@ -7532,7 +7532,13 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         except Exception:
             _exp_day = False
 
-        if _exp_day:
+        # EXPIRY auto-squareoffs (EXPIRY_EOD 2:55 + EXPIRY_ITM) — OFF by default
+        # (removed 2026-07-21, user: not in any backtest → live/paper diverged from
+        # validated numbers, Rule 10). Index options are cash-settled; overnight
+        # strategies hold to/through expiry like their backtests. Re-enable via
+        # _risk.global.expiry_auto_squareoff_enabled if a naked/stock short is ever
+        # held to expiry.
+        if _exp_day and _rg.expiry_auto_squareoff_enabled():
             # (a) Earlier EOD squareoff on expiry day
             _eod_h, _eod_m = _rg.EXPIRY_EOD_HM
             if ist_now.hour > _eod_h or (ist_now.hour == _eod_h and ist_now.minute >= _eod_m):
@@ -7575,15 +7581,18 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
        and _is_option:
         # ── Positional/overnight lane (ADR-006) ─────────────────────────────
         # A strategy EXPLICITLY flagged allow_overnight (opt-in, default False)
-        # may carry its option position PAST 3:15 (held to expiry — e.g. VRP
-        # weekly straddle). PURELY ADDITIVE: any strategy NOT flagged is squared
-        # off here exactly as before. NEVER skip on expiry day (must settle) —
-        # the expiry-day guard above already closes those earlier at 2:55. Any
-        # doubt/exception → square off (fail-safe, never left open silently).
+        # may carry its option position PAST 3:15 (held to/through expiry — e.g. VRP
+        # condor settles at expiry, overnight ORB exits next-day 09:20). PURELY
+        # ADDITIVE: any strategy NOT flagged (webhook, intraday) is squared off here
+        # at 3:15 exactly as before, so it never reaches settlement.
+        # NOTE: the old `and not _exp_day` — which force-closed overnight strategies
+        # on expiry day — was removed 2026-07-21 with the EXPIRY guards above (Rule 10,
+        # these weren't in their backtests). Index options are cash-settled and the
+        # overnight fleet is hedged/bounded, so holding to expiry is safe.
         _skip_eod = False
         try:
             _owner = p.get("strategy") or ""
-            _skip_eod = bool(_owner) and _rg.allow_overnight(_owner) and not _exp_day
+            _skip_eod = bool(_owner) and _rg.allow_overnight(_owner)
         except Exception:
             _skip_eod = False
         if _skip_eod:

@@ -834,6 +834,28 @@ def basket_margin_enabled():
         return True
 
 
+def expiry_auto_squareoff_enabled():
+    """Kill-switch for the EXPIRY-day auto-squareoffs (EXPIRY_EOD 2:55 + EXPIRY_ITM)
+    in pos_monitor_loop — _risk.global.expiry_auto_squareoff_enabled — DEFAULT FALSE.
+
+    Removed 2026-07-21 (user): these guards were NOT in any strategy's backtest, so
+    they made live/paper diverge from the validated numbers (Rule 10). On expiry day
+    the overnight ORB + VRP condor were getting force-closed even though their
+    backtests hold to/through expiry. Safe to drop for the current fleet: NIFTY/
+    BANKNIFTY options are CASH-settled (no physical delivery), the allow_overnight
+    option strategies are defined-risk (condor/vrpw wings) or bounded-risk BUYERS
+    (orb_overnight), and every non-overnight strategy (webhook, intraday) still
+    squares off at 3:15 so it never reaches settlement.
+
+    Set True to restore the guards — needed ONLY if a NAKED short index option OR a
+    STOCK option (physical delivery) is ever held to expiry."""
+    try:
+        v = (_risk_cfg().get("global", {}) or {}).get("expiry_auto_squareoff_enabled")
+        return False if v is None else bool(v)
+    except Exception:
+        return False
+
+
 def kite_basket_margin(rows, product_type="NRML"):
     """Real Zerodha margin for a MULTI-LEG structure via Kite's
     basket_order_margins — the ₹ actually blocked for the basket AS A WHOLE,
