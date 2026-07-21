@@ -169,9 +169,14 @@ def build():
         bres, bat, bfee = _bs_view(trades, dp, sigma_map, lot)
         combos[f"bs|{period}"] = rh._combo_from_res(bres, dp, bat, SIG, fees_override=bfee)
 
+    # DNA = the strategy's params, shown in the dashboard's "DNA" panel (renderDNA reads
+    # combo.dna). No `rr` — this variant has no target (exits next-day 09:20 or ATR stop).
+    dna = {"or_min": 30, "orb_k": 1.0, "h0": 11, "h1": 14, "atr_sl": 1.5, "exit": "nextday_0920"}
+    for k in combos:
+        combos[k]["dna"] = dna
     RESULTS = {"meta": {"window": [str(d15.Datetime.min())[:10], str(d15.Datetime.max())[:10]],
                         "days": int(d15.day.nunique()), "start_cap": int(engine.START_CAP),
-                        "design": DESIGN_HUMAN, "tf": "15m", "candles": candles,
+                        "design": DESIGN_HUMAN, "tf": "15m", "candles": candles, "dna": dna,
                         "passes": ["instrument", "rms", "bs"], "periods": ["full", "train", "oos"],
                         "instrument": "NIFTY 50", "lot_size": lot, "lots": 1},
                "combos": combos}
