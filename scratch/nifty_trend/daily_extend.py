@@ -256,6 +256,30 @@ def main():
     print(f"\n[daily_extend] {done}/{len(targets)} runs extended in {time.time()-t0:.0f}s",
           flush=True)
 
+    # After extending the backtests, verify each LIVE deployed config still matches its
+    # backtest params (Rule 10). orb_v1 drifted silently for ~2wk (2026-07-21) because
+    # nothing did this — now it runs daily + rings the dashboard bell on any drift.
+    try:
+        sys.path.insert(0, os.path.join(ROOT, "_ops"))
+        import config_drift_check as cdc
+        rows = cdc.check()
+        n = sum(len(r["mismatches"]) for r in rows)
+        print(f"[config-drift] {n} live-config-vs-backtest drift(s)", flush=True)
+        import notify
+        for r in rows:
+            key = f"config_drift:{r['config_key']}"
+            if r["mismatches"]:
+                parts = ", ".join(f"{m['param']} live={m['live']}!=bt={m['backtest']}"
+                                  for m in r["mismatches"])
+                notify.error(f"{r['config_key']}: live config backtest se alag — {parts}. "
+                             f"Deployed number ab valid nahi (Rule 10).",
+                             key=key, source=r["config_key"])
+                print(f"   ⚠️ {r['config_key']}: {parts}", flush=True)
+            else:
+                notify.resolve(key)
+    except Exception as e:
+        print(f"[config-drift] skipped ({e})", flush=True)
+
 
 if __name__ == "__main__":
     main()
