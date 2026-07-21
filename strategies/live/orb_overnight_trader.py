@@ -15,8 +15,17 @@
 #      config_key MUST be in risk_gate._ALWAYS_OVERNIGHT so pos_monitor's 3:15
 #      squareoff skips it.
 #
+#  INSTRUMENT — MONTHLY ATM (matches backtest, Rule 10): buys the near-month MONTHLY
+#  expiry via dhan_master.get_monthly_option_contract, NOT the nearest weekly. The
+#  backtest priced a monthly ATM buy (bs_option.reprice_positional / _next_monthly_expiry),
+#  so a 1-night hold never crosses a weekly 0DTE. A weekly held overnight would bleed
+#  far more theta AND die on its own expiry day; monthly sidesteps both. (Residual: on
+#  the ~1 monthly-expiry day/month, an entry can't hold a dead contract overnight —
+#  pos_monitor's EXPIRY squareoff force-closes it same-day; backtest models that as
+#  intrinsic roll. Rare, safe direction.)
+#
 #  BS-vs-real caveat (TRAP #136): backtest P&L is Black-Scholes monthly ATM BUY;
-#  an option BUYER holding overnight bleeds theta BS under-prices. Deployed PAPER —
+#  an option BUYER holding overnight still bleeds theta BS under-prices. Deployed PAPER —
 #  watch the dashboard Real-vs-BS compare on live fills before any real capital.
 
 import json
@@ -337,8 +346,12 @@ def run(paper_mode=True, strategy_id="orb_overnight_v1"):
                          f"pos=flat  trades={trades_today}  signal={sig['signal'] if sig else 'none'}")
                 if sig:
                     opt_type = "CE" if sig["signal"] == "long" else "PE"
-                    res = dhan_master.get_option_contract(sym, sig["entry_spot"], opt_type,
-                                                          int(tc.get("strike_offset", 0)))
+                    # MONTHLY ATM (not nearest weekly) — matches the backtest's
+                    # reprice_positional monthly-ATM pricing so live == validated numbers
+                    # (Rule 10). A weekly held overnight bleeds far more theta AND dies on
+                    # expiry day; monthly avoids both (see LESSONS / TRAP #136).
+                    res = dhan_master.get_monthly_option_contract(sym, sig["entry_spot"], opt_type,
+                                                                  int(tc.get("strike_offset", 0)))
                     if not res or not res[0]:
                         log.error(f"[ORBO] {sym} {opt_type} contract not found"); time.sleep(30); continue
                     sec_id, trad_sym, lot_size = res

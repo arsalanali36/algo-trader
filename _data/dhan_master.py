@@ -151,6 +151,75 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
 
     return None, None, None
 
+
+def _near_month_monthly_expiry_str(symbol):
+    """Cache key of the NEAR-MONTH MONTHLY expiry (not the nearest weekly).
+
+    Matches bs_option._next_monthly_expiry (last expiry-weekday of the month, roll
+    to next month if already past): the monthly contract is simply the LAST expiry
+    inside its calendar month, so we take the earliest such month-last expiry that
+    is still >= today. Cache-driven — reflects the actual listed monthly, so it
+    stays correct even if NSE shifts the expiry weekday. Returns the exp_str or None.
+    """
+    if symbol not in _options_cache:
+        return None
+    now = ist_now()
+    parsed = []
+    for exp in _options_cache[symbol].keys():
+        try:
+            parsed.append((datetime.strptime(exp, "%Y-%m-%d %H:%M:%S"), exp))
+        except Exception:
+            continue
+    if not parsed:
+        return None
+    parsed.sort(key=lambda x: x[0])
+    month_last = {}                      # (year, month) -> (exp_date, exp_str); sorted asc → last wins
+    for ed, exp in parsed:
+        month_last[(ed.year, ed.month)] = (ed, exp)
+    cands = sorted((v for v in month_last.values() if v[0].date() >= now.date()),
+                   key=lambda x: x[0])
+    return cands[0][1] if cands else None
+
+
+def get_monthly_option_contract(symbol, spot_price, option_type, offset=0):
+    """Same ATM±offset resolution as get_option_contract, but on the NEAR-MONTH
+    MONTHLY expiry instead of the nearest weekly. The Overnight-ORB strategy uses
+    this so its live instrument matches the backtest, which priced a monthly ATM
+    buy (bs_option.reprice_positional) — a weekly held overnight bleeds far more
+    theta AND dies on its expiry day; monthly avoids both. Rule 10 (backtest fidelity).
+    """
+    if not _options_cache:
+        build_cache()
+    if symbol not in _options_cache:
+        log.error(f"Symbol {symbol} not found in options cache")
+        return None, None, None
+
+    exp_str = _near_month_monthly_expiry_str(symbol)
+    if not exp_str:
+        log.error(f"No monthly expiry found for {symbol}")
+        return None, None, None
+
+    contracts = [c for c in _options_cache[symbol][exp_str] if c["type"] == option_type]
+    if not contracts:
+        return None, None, None
+
+    strikes = sorted(set(c["strike"] for c in contracts))
+    if not strikes:
+        return None, None, None
+
+    atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
+    atm_idx = strikes.index(atm_strike)
+    # same offset convention as get_option_contract (PE inverted so +offset = OTM)
+    target_idx = atm_idx - offset if option_type == "PE" else atm_idx + offset
+    target_idx = max(0, min(len(strikes) - 1, target_idx))
+    target_strike = strikes[target_idx]
+
+    for c in contracts:
+        if c["strike"] == target_strike:
+            return c["sec_id"], c["trad_sym"], c.get("lot_size", 1)
+    return None, None, None
+
+
 def get_sec_id_for_trad_sym(trad_sym):
     """Resolve sec_id for an exact trading symbol, picking the nearest NON-expired
     expiry. Same trading symbol (e.g. NIFTY-Jun2026-24050-CE) can map to multiple
