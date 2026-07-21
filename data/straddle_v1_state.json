@@ -1,0 +1,1 @@
+{"pos": {"legs": [{"opt_type": "CE", "sec_id": "57348", "trad_sym": "NIFTY-Jul2026-24200-CE", "qty": 65, "entry_prem": 37.4}, {"opt_type": "PE", "sec_id": "57349", "trad_sym": "NIFTY-Jul2026-24200-PE", "qty": 65, "entry_prem": 47.3}], "entry_prem_total": 84.7, "group_id": "STRDL_1784609706", "tp_frac": 0.5, "sl_frac": 1.0, "entry_spot": 24193.2}, "date": "2026-07-21"}

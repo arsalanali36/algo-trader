@@ -1,0 +1,188 @@
+{
+  "updated": "2026-07-21 12:13:38",
+  "strategy": "rsi_v1_PAPER",
+  "tf": "2m",
+  "levels": {
+    "oversold": 30.0,
+    "overbought": 70.0,
+    "exit": 50.0
+  },
+  "symbols": [
+    {
+      "sym": "POWERGRID",
+      "close": 285.9,
+      "rsi": 16.9,
+      "zone": "OVERSOLD",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "NTPC",
+      "close": 345.4,
+      "rsi": 26.6,
+      "zone": "OVERSOLD",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "ONGC",
+      "close": 249.0,
+      "rsi": 27.4,
+      "zone": "OVERSOLD",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "SBIN",
+      "close": 1049.2,
+      "rsi": 30.6,
+      "zone": "NEAR_OS",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "ITC",
+      "close": 281.4,
+      "rsi": 33.7,
+      "zone": "NEAR_OS",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "SUNPHARMA",
+      "close": 1959.0,
+      "rsi": 66.1,
+      "zone": "NEAR_OB",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "RELIANCE",
+      "close": 1311.5,
+      "rsi": 36.3,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "HDFCBANK",
+      "close": 766.1,
+      "rsi": 38.8,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "AXISBANK",
+      "close": 1253.7,
+      "rsi": 40.5,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "NESTLEIND",
+      "close": 1451.6,
+      "rsi": 41.1,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "WIPRO",
+      "close": 175.2,
+      "rsi": 42.5,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "TCS",
+      "close": 2228.0,
+      "rsi": 44.1,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "HINDUNILVR",
+      "close": 2133.5,
+      "rsi": 45.6,
+      "zone": "NEUTRAL",
+      "pos": 1,
+      "signal": ""
+    },
+    {
+      "sym": "LT",
+      "close": 3830.4,
+      "rsi": 46.2,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "ADANIENT",
+      "close": 3193.0,
+      "rsi": 46.6,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "BAJFINANCE",
+      "close": 1067.7,
+      "rsi": 48.0,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "INFY",
+      "close": 1077.0,
+      "rsi": 50.7,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "ULTRACEMCO",
+      "close": 12001.0,
+      "rsi": 53.7,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "ICICIBANK",
+      "close": 1465.1,
+      "rsi": 54.1,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "MARUTI",
+      "close": 13411.0,
+      "rsi": 56.8,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "TITAN",
+      "close": 4672.3,
+      "rsi": 59.8,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    },
+    {
+      "sym": "KOTAKBANK",
+      "close": 385.0,
+      "rsi": 62.8,
+      "zone": "NEUTRAL",
+      "pos": 0,
+      "signal": ""
+    }
+  ]
+}

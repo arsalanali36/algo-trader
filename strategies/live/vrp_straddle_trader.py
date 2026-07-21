@@ -356,7 +356,10 @@ def _enter_straddle(strategy_id, sym, spot, tc, mode, bname, cur_exp, log):
     lots = int(tc.get("qty", 1)); wing = int(tc.get("wing_off", 10))
     gid = f"VRP_{int(time.time())}"
     atm_ce = _resolve(sym, spot, "CE", 0); atm_pe = _resolve(sym, spot, "PE", 0)
-    w_ce = _resolve(sym, spot, "CE", +wing); w_pe = _resolve(sym, spot, "PE", -wing)
+    # get_option_contract() inverts the PE offset (positive = OTM/LOWER strike), so the
+    # OTM put wing needs a POSITIVE offset. -wing double-negated it → atm_idx+wing = ITM/
+    # upper put (wrong side). Same bug/fix as the condor. TRAP #140.
+    w_ce = _resolve(sym, spot, "CE", +wing); w_pe = _resolve(sym, spot, "PE", +wing)
     if not all([atm_ce, atm_pe, w_ce, w_pe]):
         log.error("[VRP] contract resolve failed — abort"); return None
     if len({str(atm_ce[0]), str(atm_pe[0]), str(w_ce[0]), str(w_pe[0])}) != 4:

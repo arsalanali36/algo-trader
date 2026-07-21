@@ -1,0 +1,18 @@
+{
+  "updated": "2026-07-21 12:16:03",
+  "strategy": "straddle_v1",
+  "tf": "5m",
+  "levels": {
+    "or_min": 15
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.8,
+      "pos": 1,
+      "signal": "straddle",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

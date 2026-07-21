@@ -1,0 +1,7 @@
+Rate-Limit Verify @ 2026-07-16 09:55 IST (last 40 min)
+VERDICT: ⚠️ YELLOW
+  429s: 17   timeouts: 39   throttles: 244   total events: 300
+  429 by priority: None×17
+  429 by context : Poller:BatchLTP×9, Monitor:PosLTP×4, unknown×2, Dashboard:IdxLTP×2
+  timeout by ctx : unknown×10, Poller:BatchLTP×6, Dashboard:PosLTP×5, Monitor:PosLTP×4, rsi_v1_PAPER:ONGC×1, ARS_CHAIN_V1_PAPER:LT×1
+  => Still elevated. Biggest offender: Poller:BatchLTP. Check that context's call path for a missing acquire()/cache-read.

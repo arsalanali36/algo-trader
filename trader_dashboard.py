@@ -747,6 +747,33 @@ def serve_lab_file(fn):
         return _lab_gzip_response(full)
     return send_from_directory(root, fn)
 
+# ---- gzip the heavy static assets (vendor libs + app JS) ----------------------
+# A hard-refresh / first-load re-downloads ~2 MB of UNCOMPRESSED js (vendor ~1.4 MB +
+# app ~0.7 MB) because Flask's built-in /static/ handler doesn't gzip. These two
+# more-specific routes win over the built-in for /static/js and /static/vendor and
+# reuse the SAME sidecar-.gz cache (+ ETag/304) as the Lab pages → ~4× smaller, so
+# the "Loading…" on Ctrl+Shift+R is much shorter. Read-only, no order/live-path.
+def _serve_static_gz(sub, fn):
+    root = (BASE_DIR / 'static' / sub).resolve()
+    try:
+        full = (root / fn).resolve()
+    except Exception:
+        return Response('not found', status=404)
+    if (root not in full.parents and full != root) or not full.is_file():
+        return Response('not found', status=404)
+    if (full.suffix.lower() in _LAB_GZIP_EXT
+            and 'gzip' in request.headers.get('Accept-Encoding', '')):
+        return _lab_gzip_response(full)   # falls back to a plain stream on any error
+    return send_from_directory(full.parent, full.name)
+
+@app.route('/static/js/<path:fn>')
+def _gz_static_js(fn):
+    return _serve_static_gz('js', fn)
+
+@app.route('/static/vendor/<path:fn>')
+def _gz_static_vendor(fn):
+    return _serve_static_gz('vendor', fn)
+
 # ---- Excel Cross-Check: upload a backtest workbook, recompute + render ----
 @app.route('/lab/upload')
 def serve_lab_upload():
@@ -909,6 +936,43 @@ def api_strategy_registry():
         return jsonify(_sr.load(force=True))
     except Exception as e:
         return jsonify({"error": str(e), "families": {}, "strategies": {}})
+
+# --- Family-10 (Factor/Equity) PAPER-deploy toggle: these are standalone systemd-timer bots
+#     (monthly rebalance), NOT dashboard-Popen intraday loops. The registry "▶ Paper" button
+#     enables/disables the timer. PAPER-ONLY + whitelisted units (no arbitrary systemctl, no
+#     Live path — equity go-live is gated on GO_LIVE_CHECKLIST). No orders/broker here. ---
+_TIMER_STRATEGIES = {"momentum-paper.timer"}
+
+def _timer_state(unit):
+    import subprocess
+    try:
+        en = subprocess.run(["systemctl", "is-enabled", unit], capture_output=True, text=True, timeout=6).stdout.strip()
+        ac = subprocess.run(["systemctl", "is-active", unit], capture_output=True, text=True, timeout=6).stdout.strip()
+        return {"unit": unit, "enabled": en == "enabled", "active": ac == "active", "state": en or "unknown"}
+    except Exception as e:
+        return {"unit": unit, "enabled": False, "active": False, "state": "err", "err": str(e)}
+
+@app.route('/api/timer-status', methods=['GET'])
+def api_timer_status():
+    return jsonify({u: _timer_state(u) for u in _TIMER_STRATEGIES})
+
+@app.route('/api/timer-deploy', methods=['POST'])
+def api_timer_deploy():
+    import subprocess
+    d = request.get_json(silent=True) or {}
+    unit, action = d.get("unit"), d.get("action")
+    if unit not in _TIMER_STRATEGIES:
+        return jsonify({"ok": False, "err": "unknown/again-whitelisted timer"}), 400
+    if action == "paper":
+        cmd = ["systemctl", "enable", "--now", unit]
+    elif action == "stop":
+        cmd = ["systemctl", "disable", "--now", unit]
+    else:
+        return jsonify({"ok": False, "err": "action must be paper|stop"}), 400
+    r = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    if r.returncode != 0:
+        return jsonify({"ok": False, "err": (r.stderr or r.stdout).strip()}), 500
+    return jsonify({"ok": True, "state": _timer_state(unit)})
 
 @app.route('/api/config', methods=['POST'])
 def api_set_config():
@@ -7204,7 +7268,17 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             changed = True
 
         if changed and p.get("id"):
-            order_store.update_tags(p["id"], tags)
+            # Merge ONLY the LTP-tracking fields into the row's CURRENT DB tags
+            # (atomic read-modify-write). The old full-list update_tags() rewrote
+            # the whole tag array from this cycle's start-of-loop snapshot, which
+            # clobbered any SL/TP/NOTE tag a user set via the ⚙ modal mid-cycle —
+            # so manual/trigger positions (no entry-time default SL) silently lost
+            # their gear-set SL/Target within ~5s (SL not shown + exit reason '-').
+            order_store.update_tag_fields(p["id"], {
+                "MAX_LTP": max_ltp, "MIN_LTP": min_ltp,
+                "CONF_MAX_LTP": conf_max_ltp, "CONF_MIN_LTP": conf_min_ltp,
+                "PREV_LTP": ltp,
+            })
 
     if p["qty"] <= 0 or entry_px <= 0: return
 

@@ -1,0 +1,19 @@
+{
+  "updated": "2026-07-21 12:16:20",
+  "strategy": "orbst_v1",
+  "tf": "15m",
+  "levels": {
+    "or_min": 60,
+    "st": "ST(14,3)"
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.3,
+      "pos": 0,
+      "signal": "",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

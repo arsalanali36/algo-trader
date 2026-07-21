@@ -139,3 +139,7 @@ resp.json
 # Live VPS config snapshots — has webhooks.global.secret_token, NEVER commit
 # (algo-trader is a PUBLIC repo). Off-VPS backup only.
 _config_backups/
+
+# gzip sidecars generated at runtime by the static-gzip routes (trader_dashboard.py)
+static/js/*.gz
+static/vendor/*.gz

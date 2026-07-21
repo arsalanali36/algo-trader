@@ -1,0 +1,19 @@
+{
+  "updated": "2026-07-21 12:16:15",
+  "strategy": "dvert_v1",
+  "tf": "15m",
+  "levels": {
+    "or_min": 15,
+    "wing_off": 10
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.6,
+      "pos": -1,
+      "signal": "debit-down",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

@@ -1,0 +1,118 @@
+[
+  {
+    "id": 1,
+    "name": "Ars Chain aur RSI PPR",
+    "strategies": [
+      "ARS_CHAIN_V1",
+      "rsi_v1_PAPER"
+    ]
+  },
+  {
+    "id": 2,
+    "name": "ORB FAMILY",
+    "strategies": [
+      "straddle_v1",
+      "dvert_v1",
+      "backspread_v1",
+      "orb_v1",
+      "orbst_v1",
+      "banknifty_v1"
+    ]
+  },
+  {
+    "id": 4,
+    "name": "00 ALL_ORB",
+    "kind": "bt",
+    "strategies": [
+      "mid_orb_nifty",
+      "orb_supertrend",
+      "banknifty_hunt",
+      "long_straddle_orb",
+      "debit_vertical_orb",
+      "ratio_backspread",
+      "long_strangle_orb"
+    ]
+  },
+  {
+    "id": 5,
+    "name": "O1 Chain zone",
+    "kind": "bt",
+    "strategies": [
+      "chain_zone_longatm",
+      "chain_zone_credit",
+      "chain_zone_naked",
+      "chain_zone_positional"
+    ]
+  },
+  {
+    "id": 6,
+    "name": "02",
+    "kind": "bt",
+    "strategies": [
+      "shortvol_ironfly",
+      "gamma_scalp",
+      "vrp_overnight_condor",
+      "range_strangle_intraday"
+    ]
+  },
+  {
+    "id": 7,
+    "name": "03",
+    "kind": "bt",
+    "strategies": [
+      "pivot_continuation"
+    ]
+  },
+  {
+    "id": 8,
+    "name": "09",
+    "kind": "bt",
+    "strategies": [
+      "meanrev_nifty"
+    ]
+  },
+  {
+    "id": 9,
+    "name": "-B1",
+    "kind": "bt",
+    "strategies": [
+      "long_straddle_orb",
+      "chain_zone_longatm",
+      "vrp_overnight_condor",
+      "pivot_continuation",
+      "meanrev_nifty"
+    ]
+  },
+  {
+    "id": 10,
+    "name": "-AiList",
+    "kind": "bt",
+    "strategies": [
+      "mid_orb_nifty",
+      "orb_supertrend",
+      "long_straddle_orb",
+      "ratio_backspread",
+      "chain_zone_longatm"
+    ]
+  },
+  {
+    "id": 11,
+    "name": "-Ai best 3",
+    "kind": "bt",
+    "strategies": [
+      "mid_orb_nifty",
+      "orb_supertrend",
+      "long_straddle_orb"
+    ]
+  },
+  {
+    "id": 12,
+    "name": "-Approx Same",
+    "kind": "live",
+    "strategies": [
+      "straddle_v1",
+      "chainzone_v1",
+      "vrp_condor_v1"
+    ]
+  }
+]

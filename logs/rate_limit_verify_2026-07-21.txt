@@ -1,0 +1,7 @@
+Rate-Limit Verify @ 2026-07-21 09:55 IST (last 40 min)
+VERDICT: ✅ GREEN
+  429s: 6   timeouts: 3   throttles: 291   total events: 300
+  429 by priority: None×6
+  429 by context : Poller:BatchLTP×3, Dashboard:OptionLTP×2, unknown×1
+  timeout by ctx : Poller:BatchLTP×2, ARS_CHAIN_V1_PAPER:NTPC×1
+  => TRAP #95 fix holding under live multi-strategy load.

@@ -1,0 +1,19 @@
+{
+  "updated": "2026-07-21 12:15:53",
+  "strategy": "orb_v1",
+  "tf": "15m",
+  "levels": {
+    "win_start": "11:00",
+    "win_end": "13:00"
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.6,
+      "pos": -1,
+      "signal": "short",
+      "stop": 24244.3,
+      "target": 24066.2
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "updated": "2026-07-21 12:16:05",
+  "strategy": "backspread_v1",
+  "tf": "5m",
+  "levels": {
+    "or_min": 30,
+    "window": "10:00-13:00",
+    "bs_off": 2
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.8,
+      "pos": 0,
+      "signal": "",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

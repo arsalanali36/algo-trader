@@ -1,0 +1,18 @@
+{
+  "updated": "2026-07-21 12:15:58",
+  "strategy": "vrp_condor_v1",
+  "levels": {
+    "body_off": 3,
+    "wing_off": 5
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.2,
+      "pos": 0,
+      "signal": "",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

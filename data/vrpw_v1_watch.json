@@ -1,0 +1,20 @@
+{
+  "updated": "2026-07-21 12:16:13",
+  "strategy": "vrpw_v1",
+  "levels": {
+    "body_off": 3,
+    "wing_off": 5,
+    "enter_thr": 0.5,
+    "dte": 0
+  },
+  "symbols": [
+    {
+      "sym": "NIFTY",
+      "close": 24174.5,
+      "pos": 0,
+      "signal": "",
+      "stop": null,
+      "target": null
+    }
+  ]
+}

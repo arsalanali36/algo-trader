@@ -275,8 +275,12 @@ def _enter_condor(strategy_id, sym, spot, tc, mode, bname, today, log):
     import risk_gate
     lots = int(tc.get("qty", 1)); body = int(tc.get("body_off", 3)); wing = int(tc.get("wing_off", 5))
     gid = f"VRPC_{int(time.time())}"
-    b_ce = _resolve(sym, spot, "CE", +body); b_pe = _resolve(sym, spot, "PE", -body)
-    w_ce = _resolve(sym, spot, "CE", +(body + wing)); w_pe = _resolve(sym, spot, "PE", -(body + wing))
+    # NOTE: get_option_contract() already inverts the offset for PE (positive offset = OTM,
+    # i.e. LOWER strike). So OTM puts need POSITIVE offsets here — passing -body/-(body+wing)
+    # double-negated it → atm_idx+body → ITM puts (wrong side), collapsing both bodies onto the
+    # same strike + losing a wing (only 3 legs land). Same bug/fix as the weekly condor. TRAP #140.
+    b_ce = _resolve(sym, spot, "CE", +body); b_pe = _resolve(sym, spot, "PE", +body)
+    w_ce = _resolve(sym, spot, "CE", +(body + wing)); w_pe = _resolve(sym, spot, "PE", +(body + wing))
     if not all([b_ce, b_pe, w_ce, w_pe]):
         log.error("[VRPC] contract resolve failed — abort"); return None
     if len({str(b_ce[0]), str(b_pe[0]), str(w_ce[0]), str(w_pe[0])}) != 4:

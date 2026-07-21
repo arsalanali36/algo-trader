@@ -577,6 +577,66 @@ def check_core_imports_ui(path, tree, findings):
                 f"Move the shared function into {CORE_DIR}/ and import it from there"))
 
 
+# Check 10: PE strike-offset sign — LIVE ORDER PATH ONLY.
+# dhan_master.get_option_contract() (and the live traders' `_resolve` wrapper
+# around it) ALREADY inverts the PE offset (positive = OTM / lower strike), so
+# passing a NEGATIVE offset alongside a "PE" leg double-negates into an ITM put
+# on the WRONG side. This exact sign bug shipped in 5 independent leg-builders
+# (weekly + daily VRP condor, straddle, shortvol, the capture tool) — TRAP #140,
+# the textbook "duplicate logic, half-fixed" shape (PRE-MORTEM #4).
+#
+# SCOPE: only the live-order dirs below. The backtest engines (scratch/,
+# strategies/backtest|lab/) build legs by DIRECT strike arithmetic — there
+# `("PE", -2, ...)` legitimately means "2 steps below ATM = OTM put", no inverting
+# resolver involved, so a minus there is CORRECT. Flagging those would be pure
+# false-positive noise → the guard gets baselined and ignored (TRAP #124/#132).
+#
+# A negative PE offset in a live builder is essentially never intended; if an ITM
+# put genuinely is, add a  # pe-offset-ok: <reason>  comment on the offset's line.
+_PE_LITERALS = {"pe"}
+# rel-path prefixes (forward-slash) where get_option_contract's inversion applies.
+PE_OFFSET_LIVE_PREFIXES = ("strategies/live/", "_ops/", "_core/")
+
+
+def _pe_and_neg_offset(elts):
+    """(has a "PE" string arg, the first negative UnaryOp arg or None) among siblings."""
+    has_pe = any(isinstance(e, ast.Constant) and isinstance(e.value, str)
+                 and e.value.strip().lower() in _PE_LITERALS for e in elts)
+    neg = next((e for e in elts
+                if isinstance(e, ast.UnaryOp) and isinstance(e.op, ast.USub)), None)
+    return has_pe, neg
+
+
+def check_pe_offset_sign(path, src, tree, findings):
+    rp = rel(path).replace(os.sep, "/")
+    if not any(rp.startswith(p) for p in PE_OFFSET_LIVE_PREFIXES):
+        return  # backtest/scratch use the direct-math convention — negative PE is fine there
+    lines = src.splitlines()
+    for node in ast.walk(tree):
+        # Call args (get_option_contract(...,"PE",-off)) AND tuple/list leg-defs
+        # (("SELL","PE",-body,...)) — the bug ships in both forms, so check both.
+        if isinstance(node, ast.Call):
+            elts = list(node.args) + [kw.value for kw in node.keywords]
+        elif isinstance(node, (ast.Tuple, ast.List)):
+            elts = list(node.elts)
+        else:
+            continue
+        has_pe, neg = _pe_and_neg_offset(elts)
+        if not (has_pe and neg):
+            continue
+        ln = getattr(neg, "lineno", node.lineno)
+        line_txt = lines[ln - 1] if 0 <= ln - 1 < len(lines) else ""
+        if "pe-offset-ok" in line_txt.lower():
+            continue
+        findings.append(Finding(
+            "FAIL", "PE-OFFSET-SIGN", rel(path), ln,
+            'negative offset paired with a "PE" leg — get_option_contract() '
+            "already inverts the PE offset (positive = OTM / lower strike), so a "
+            "minus double-negates into an ITM put on the wrong side (TRAP #140). "
+            "Use a POSITIVE offset for PE; if an ITM put is truly intended add "
+            "'# pe-offset-ok: <reason>' on that line"))
+
+
 # ---------------------------------------------------------------- main
 
 def audit(files):
@@ -602,6 +662,7 @@ def audit(files):
         check_raw_http_orders(path, tree, findings)
         check_core_imports_ui(path, tree, findings)
         check_recover_field(path, src, tree, findings)
+        check_pe_offset_sign(path, src, tree, findings)
     return findings
 
 

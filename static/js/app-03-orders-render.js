@@ -1,5 +1,19 @@
 // Auto-extracted from templates/index.html (2026-07-16). Classic script,
 // global scope — load order in index.html IS the original code order.
+    // Open-Positions group collapse state persists across page reloads (localStorage).
+    // Default = open; the user's manual collapse survives F5 (both the render's
+    // fingerprint-guarded rebuild AND a full page reload emit `open` from here).
+    // Keyed by the stable grpId ('grp_<sanitized-strat>' / 'grp_blocked').
+    function _grpCollapsed() {
+      try { return JSON.parse(localStorage.getItem('ord_grp_collapsed') || '{}'); } catch (_) { return {}; }
+    }
+    function _grpOpenAttr(key) { return _grpCollapsed()[key] ? '' : 'open'; }
+    window._grpToggleSave = function (key, isOpen) {
+      const m = _grpCollapsed();
+      if (isOpen) delete m[key]; else m[key] = 1;
+      try { localStorage.setItem('ord_grp_collapsed', JSON.stringify(m)); } catch (_) { }
+    };
+
     // PDF me na aayein. Globals render ke time set hote hain (renderCachedOrders end).
     function exportCompletedPdf(btn) {
       try {
@@ -111,9 +125,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
+          // 'strategy' now has its own dedicated column (flows through the else branch);
+          // tags only explodes to Source/Mode/Broker to avoid a duplicate Strategy col.
           colsToExport.push({ id: 'source', l: 'Source' });
           colsToExport.push({ id: 'mode', l: 'Mode' });
-          colsToExport.push({ id: 'strategy', l: 'Strategy' });
           colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
@@ -223,9 +238,10 @@
       COMPLETED_COLS_DEF.forEach(c => {
         if (c.id === 'chart' || c.id === 'actions') return;
         if (c.id === 'tags') {
+          // 'strategy' now has its own dedicated column (flows through the else branch);
+          // tags only explodes to Source/Mode/Broker to avoid a duplicate Strategy col.
           colsToExport.push({ id: 'source', l: 'Source' });
           colsToExport.push({ id: 'mode', l: 'Mode' });
-          colsToExport.push({ id: 'strategy', l: 'Strategy' });
           colsToExport.push({ id: 'broker', l: 'Broker' });
         } else {
           colsToExport.push(c);
@@ -466,13 +482,42 @@
       // Client-side scope filter: when a Summary row is picked (task 73), narrow
       // the Completed Trades table to that strategy/source without touching the
       // orders fetch (so the Summary table above stays full).
-      let sortedCompleted = det.filter(_peakTradeMatch);
-      // header chip showing the active per-strategy filter (clearable)
+      // Exit-reason dropdown (mirrors Stats' cal-exit-reason) — populate from this
+      // fetch's completed trades; shares window._ordExitFilter with the Ctrl+click.
+      const _erSel = document.getElementById('ord-exit-reason');
+      if (_erSel) {
+        const _erMap = [
+          ['SL_HIT', '🛑 Stop-Loss'], ['TP_HIT', '🎯 Target'], ['EXPIRY_ITM_SQUAREOFF', '📅 Expiry ITM'],
+          ['EXPIRY_EOD_SQUAREOFF', '📅 Expiry EOD (2:55)'], ['EOD_315_SQUAREOFF', '⏰ 3:15 EOD'],
+          ['KILL_FLOOR', '🔒 Kill-Floor'], ['TRAILING_PROFIT_LOCK', '🔒 Trailing Lock'],
+          ['DEFAULT_TSL_TARGET', '🎯 Aggr-Trail Target'], ['DEFAULT_TSL_SL', '🛡️ Aggr-Trail SL'],
+          ['RMS_MAXLOSS', '⚠️ RMS Daily Max-Loss'], ['RMS_PROFIT_TARGET', '✅ RMS Daily Target'],
+          ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'], ['ATR_TRAILING', '📉 ATR Trailing'],
+          ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'], ['IDX_TRAIL', '📉 Index Trail SL'], ['TRAIL_SL', '📉 Trail SL'],
+          ['TARGET', '🎯 Target'], ['GLOBAL_CAP', '🚫 Max Trades/Day'], ['SQUAREOFF_315', '⏰ 3:15 EOD (Webhook)'],
+          ['REVERSAL', '🔄 Reversal'], ['TV_EXIT', '📡 TV Exit Signal'], ['MANUAL_CLOSE', '✋ Manual Close'],
+          ['EXTERNALLY_CLOSED', '🌐 Closed at Broker'], ['MANUAL_EXIT_BROKER', '🌐 Closed at Broker'],
+        ];
+        const _pfxOf = raw => { if (!raw) return ''; for (const [p] of _erMap) { if (raw.startsWith(p)) return p; } return (raw.split(':')[0] || raw); };
+        const _lblOf = pfx => { for (const [p, l] of _erMap) { if (p === pfx) return l; } return pfx; };
+        const _seen = [...new Set(det.map(t => _pfxOf(t.exit_reason || '')).filter(Boolean))].sort();
+        const _cur = window._ordExitFilter || '';
+        _erSel.innerHTML = '<option value="">All Exit Reasons</option>' +
+          _seen.map(p => `<option value="${p}"${p === _cur ? ' selected' : ''}>${_lblOf(p)}</option>`).join('');
+        _erSel.value = _cur;
+      }
+      let sortedCompleted = det.filter(_peakTradeMatch)
+        .filter(t => !window._ordExitFilter || (t.exit_reason || '').split(':')[0] === window._ordExitFilter);
+      // header chip showing the active per-strategy + exit-reason filters (clearable)
       const _cf = document.getElementById('ord-completed-filter');
       if (_cf) {
         const _pkf = window._peakStrat || '__all';
-        _cf.innerHTML = (_pkf === '__all') ? '' :
+        let _cfHtml = (_pkf === '__all') ? '' :
           `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="peakClearStrat()" title="Filter hatao (All)">▸ ${(_pkf === 'MANUAL' || _pkf === 'WEBHOOK') ? (_pkf.charAt(0) + _pkf.slice(1).toLowerCase()) : (regLabel(_pkf) || _pkf)} ✕</span>`;
+        if (window._ordExitFilter) {
+          _cfHtml += `<span style="font-size:11px;font-weight:400;color:#d29922;margin-left:6px;cursor:pointer" onclick="_ordExitClear()" title="Exit-reason filter hatao (All)">▸ Exit: ${window._ordExitFilter} ✕</span>`;
+        }
+        _cf.innerHTML = _cfHtml;
       }
       if (window._completedSortCol) {
         _sortData(sortedCompleted, window._completedSortCol, window._completedSortDir);
@@ -670,10 +715,10 @@
         try { // catch render errors so blank section doesn't appear silently
           let blockedHtml = '';
           if (opnBlocked.length) {
-            blockedHtml = `<details open style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
+            blockedHtml = `<details ${_grpOpenAttr('grp_blocked')} ontoggle="_grpToggleSave('grp_blocked', this.open)" style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding:10px 14px;cursor:pointer;font-weight:600;color:#f85149;display:flex;justify-content:space-between;align-items:center;border-radius:6px" onmouseover="this.style.background='#2d1f1f'" onmouseout="this.style.background='transparent'">
-          <span>🚫 Capital se Block hui Entries <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
+          <span>🚫 Block hui Entries <span style="color:#8b949e;font-size:11px;font-weight:normal;margin-left:6px">RMS / capital / cap — reason per row</span><span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
           <span style="font-size:12px;color:#8b949e">Toggle ▾</span>
         </summary>
         <div style="padding:0 14px 12px;overflow-x:auto">
@@ -959,8 +1004,11 @@
                     val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
                     colorStyle = 'color:#adbac7;';
                     break;
+                  case 'strategy':
+                    val = _stratCell(t);
+                    break;
                   case 'tags':
-                    val = _ordTags(t);
+                    val = _ordTags(t, true);
                     break;
                   case 'side':
                     val = t.entry;
@@ -1077,7 +1125,7 @@
             tableHtml += '</tr></tfoot></table>';
 
             oh += `
-      <details open style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
+      <details ${_grpOpenAttr(grpId)} ontoggle="_grpToggleSave('${grpId}', this.open)" style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">

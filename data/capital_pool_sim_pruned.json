@@ -1,0 +1,438 @@
+{
+ "meta": {
+  "from": "2026-06-22",
+  "to": "2026-07-15",
+  "days": 17,
+  "n_trades": 230,
+  "train_days": 11,
+  "oos_days": 6,
+  "hedge_decay": 0.7,
+  "agg_pct": 30,
+  "agg_mult": 2.0,
+  "opt": {
+   "naked": {
+    "chosen": "SL1500/st100/ride/cu500",
+    "train": 34535,
+    "oos": 28196,
+    "all": 62732,
+    "insample_best": "SL1500/st100/ride/cu500",
+    "insample_all": 62732,
+    "top8": [
+     {
+      "p": "SL1500/st100/ride/cu500",
+      "train": 34535,
+      "oos": 28196,
+      "min": 28196
+     },
+     {
+      "p": "SL1500/st100/cap6k/cu500",
+      "train": 34535,
+      "oos": 28196,
+      "min": 28196
+     },
+     {
+      "p": "SL1500/st100/ride/cu1000",
+      "train": 33573,
+      "oos": 27480,
+      "min": 27480
+     },
+     {
+      "p": "SL1500/st100/cap6k/cu1000",
+      "train": 33573,
+      "oos": 27480,
+      "min": 27480
+     },
+     {
+      "p": "SL2000/st100/ride/cu0",
+      "train": 30850,
+      "oos": 26555,
+      "min": 26555
+     },
+     {
+      "p": "SL2000/st100/cap6k/cu0",
+      "train": 30850,
+      "oos": 26555,
+      "min": 26555
+     },
+     {
+      "p": "SL2000/st100/ride/cu500",
+      "train": 30475,
+      "oos": 26374,
+      "min": 26374
+     },
+     {
+      "p": "SL2000/st100/cap6k/cu500",
+      "train": 30475,
+      "oos": 26374,
+      "min": 26374
+     }
+    ]
+   },
+   "hedged": {
+    "chosen": "SL1000/st100/ride/cu0",
+    "train": -64146,
+    "oos": -50865,
+    "all": -115011,
+    "insample_best": "SL2000/st200/cap6k/cu500",
+    "insample_all": -91855,
+    "top8": [
+     {
+      "p": "SL1000/st100/ride/cu0",
+      "train": -64146,
+      "oos": -50865,
+      "min": -64146
+     },
+     {
+      "p": "SL1000/st100/cap6k/cu0",
+      "train": -64146,
+      "oos": -50865,
+      "min": -64146
+     },
+     {
+      "p": "SL1000/st100/ride/cu500",
+      "train": -64887,
+      "oos": -47405,
+      "min": -64887
+     },
+     {
+      "p": "SL1000/st100/cap6k/cu500",
+      "train": -64887,
+      "oos": -47405,
+      "min": -64887
+     },
+     {
+      "p": "SL1000/st200/ride/cu0",
+      "train": -65646,
+      "oos": -49965,
+      "min": -65646
+     },
+     {
+      "p": "SL1000/st200/cap6k/cu0",
+      "train": -65646,
+      "oos": -49965,
+      "min": -65646
+     },
+     {
+      "p": "SL1000/st200/ride/cu500",
+      "train": -66021,
+      "oos": -46880,
+      "min": -66021
+     },
+     {
+      "p": "SL1000/st200/cap6k/cu500",
+      "train": -66021,
+      "oos": -46880,
+      "min": -66021
+     }
+    ]
+   }
+  }
+ },
+ "cells": {
+  "A|5L": {
+   "pool": "5L",
+   "type": "naked",
+   "rule": "atr",
+   "net": 23267,
+   "sharpe": 6.4,
+   "maxdd": -6264,
+   "p_value": 0.063,
+   "significant": false,
+   "taken": 133,
+   "blocked": 97,
+   "peak_util": 495938,
+   "peak_util_pct": 99,
+   "max_concurrent": 4,
+   "hedge_cost": 0,
+   "fees": 13717,
+   "trail": "ATR(actual)"
+  },
+  "B|5L": {
+   "pool": "5L",
+   "type": "naked",
+   "rule": "ride",
+   "net": 30529,
+   "sharpe": 7.62,
+   "maxdd": -5556,
+   "p_value": 0.035,
+   "significant": true,
+   "taken": 121,
+   "blocked": 109,
+   "peak_util": 495938,
+   "peak_util_pct": 99,
+   "max_concurrent": 4,
+   "hedge_cost": 0,
+   "fees": 12468,
+   "trail": "SL1500/st100/ride/cu500"
+  },
+  "C|5L": {
+   "pool": "5L",
+   "type": "hedged",
+   "rule": "atr",
+   "net": -149834,
+   "sharpe": -17.95,
+   "maxdd": -148896,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 161,
+   "blocked": 69,
+   "peak_util": 495938,
+   "peak_util_pct": 99,
+   "max_concurrent": 6,
+   "hedge_cost": 170690,
+   "fees": 25650,
+   "trail": "ATR(actual)"
+  },
+  "D|5L": {
+   "pool": "5L",
+   "type": "hedged",
+   "rule": "ride",
+   "net": -148525,
+   "sharpe": -17.1,
+   "maxdd": -147586,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 159,
+   "blocked": 71,
+   "peak_util": 495938,
+   "peak_util_pct": 99,
+   "max_concurrent": 6,
+   "hedge_cost": 168275,
+   "fees": 25358,
+   "trail": "SL1000/st100/ride/cu0"
+  },
+  "A|8L": {
+   "pool": "8L",
+   "type": "naked",
+   "rule": "atr",
+   "net": 24325,
+   "sharpe": 5.97,
+   "maxdd": -8147,
+   "p_value": 0.074,
+   "significant": false,
+   "taken": 164,
+   "blocked": 66,
+   "peak_util": 779221,
+   "peak_util_pct": 97,
+   "max_concurrent": 5,
+   "hedge_cost": 0,
+   "fees": 17167,
+   "trail": "ATR(actual)"
+  },
+  "B|8L": {
+   "pool": "8L",
+   "type": "naked",
+   "rule": "ride",
+   "net": 29206,
+   "sharpe": 6.68,
+   "maxdd": -9597,
+   "p_value": 0.061,
+   "significant": false,
+   "taken": 153,
+   "blocked": 77,
+   "peak_util": 789215,
+   "peak_util_pct": 99,
+   "max_concurrent": 5,
+   "hedge_cost": 0,
+   "fees": 15724,
+   "trail": "SL1500/st100/ride/cu500"
+  },
+  "C|8L": {
+   "pool": "8L",
+   "type": "hedged",
+   "rule": "atr",
+   "net": -154736,
+   "sharpe": -18.95,
+   "maxdd": -153797,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 178,
+   "blocked": 52,
+   "peak_util": 789163,
+   "peak_util_pct": 99,
+   "max_concurrent": 6,
+   "hedge_cost": 167956,
+   "fees": 27931,
+   "trail": "ATR(actual)"
+  },
+  "D|8L": {
+   "pool": "8L",
+   "type": "hedged",
+   "rule": "ride",
+   "net": -152077,
+   "sharpe": -18.69,
+   "maxdd": -151139,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 169,
+   "blocked": 61,
+   "peak_util": 786779,
+   "peak_util_pct": 98,
+   "max_concurrent": 6,
+   "hedge_cost": 167524,
+   "fees": 26525,
+   "trail": "SL1000/st100/ride/cu0"
+  },
+  "A|11L": {
+   "pool": "11L",
+   "type": "naked",
+   "rule": "atr",
+   "net": 25904,
+   "sharpe": 5.93,
+   "maxdd": -5974,
+   "p_value": 0.081,
+   "significant": false,
+   "taken": 180,
+   "blocked": 50,
+   "peak_util": 1091837,
+   "peak_util_pct": 99,
+   "max_concurrent": 6,
+   "hedge_cost": 0,
+   "fees": 19064,
+   "trail": "ATR(actual)"
+  },
+  "B|11L": {
+   "pool": "11L",
+   "type": "naked",
+   "rule": "ride",
+   "net": 45204,
+   "sharpe": 9.06,
+   "maxdd": -3686,
+   "p_value": 0.013,
+   "significant": true,
+   "taken": 168,
+   "blocked": 62,
+   "peak_util": 1091837,
+   "peak_util_pct": 99,
+   "max_concurrent": 7,
+   "hedge_cost": 0,
+   "fees": 17527,
+   "trail": "SL1500/st100/ride/cu500"
+  },
+  "C|11L": {
+   "pool": "11L",
+   "type": "hedged",
+   "rule": "atr",
+   "net": -151503,
+   "sharpe": -18.25,
+   "maxdd": -150565,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 184,
+   "blocked": 46,
+   "peak_util": 1072375,
+   "peak_util_pct": 97,
+   "max_concurrent": 6,
+   "hedge_cost": 171094,
+   "fees": 28692,
+   "trail": "ATR(actual)"
+  },
+  "D|11L": {
+   "pool": "11L",
+   "type": "hedged",
+   "rule": "ride",
+   "net": -142562,
+   "sharpe": -16.73,
+   "maxdd": -141624,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 177,
+   "blocked": 53,
+   "peak_util": 1099779,
+   "peak_util_pct": 100,
+   "max_concurrent": 6,
+   "hedge_cost": 168679,
+   "fees": 27552,
+   "trail": "SL1000/st100/ride/cu0"
+  },
+  "A|INF": {
+   "pool": "INF",
+   "type": "naked",
+   "rule": "atr",
+   "net": 40691,
+   "sharpe": 8.0,
+   "maxdd": -8129,
+   "p_value": 0.029,
+   "significant": true,
+   "taken": 230,
+   "blocked": 0,
+   "peak_util": 11706925,
+   "peak_util_pct": 1064,
+   "max_concurrent": 10,
+   "hedge_cost": 0,
+   "fees": 24280,
+   "trail": "ATR(actual)"
+  },
+  "B|INF": {
+   "pool": "INF",
+   "type": "naked",
+   "rule": "ride",
+   "net": 62386,
+   "sharpe": 8.25,
+   "maxdd": -8950,
+   "p_value": 0.02,
+   "significant": true,
+   "taken": 230,
+   "blocked": 0,
+   "peak_util": 8929318,
+   "peak_util_pct": 812,
+   "max_concurrent": 10,
+   "hedge_cost": 0,
+   "fees": 24328,
+   "trail": "SL1500/st100/ride/cu500"
+  },
+  "C|INF": {
+   "pool": "INF",
+   "type": "hedged",
+   "rule": "atr",
+   "net": -141461,
+   "sharpe": -20.51,
+   "maxdd": -139895,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 230,
+   "blocked": 0,
+   "peak_util": 11260366,
+   "peak_util_pct": 1024,
+   "max_concurrent": 10,
+   "hedge_cost": 173026,
+   "fees": 33406,
+   "trail": "ATR(actual)"
+  },
+  "D|INF": {
+   "pool": "INF",
+   "type": "hedged",
+   "rule": "ride",
+   "net": -145324,
+   "sharpe": -20.05,
+   "maxdd": -143757,
+   "p_value": 1.0,
+   "significant": false,
+   "taken": 230,
+   "blocked": 0,
+   "peak_util": 6523620,
+   "peak_util_pct": 593,
+   "max_concurrent": 8,
+   "hedge_cost": 173026,
+   "fees": 33417,
+   "trail": "SL1000/st100/ride/cu0"
+  }
+ },
+ "hedge_decay_sensitivity": {
+  "0.5": {
+   "C_net": -102507,
+   "D_net": -94258,
+   "hedge_cost": 120485
+  },
+  "0.7": {
+   "C_net": -151503,
+   "D_net": -142562,
+   "hedge_cost": 168679
+  },
+  "1.0": {
+   "C_net": -224997,
+   "D_net": -215018,
+   "hedge_cost": 240970
+  }
+ }
+}

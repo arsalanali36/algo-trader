@@ -65,8 +65,23 @@
         return;
       }
       const sel = window._peakStrat || '__all';
+      window._peakSummaryRowsAll = rows;                          // cache so sort/filter can re-render without a full ordersRender
+      // "Traded only" → hide strategies with no completed trades AND no open positions.
+      let disp = window._peakTradedOnly ? rows.filter(r => (r.n || 0) > 0 || (r.opn || 0) > 0) : rows.slice();
+      // Optional column sort (click a header); default = incoming order.
+      const _ps = window._peakSort || {};
+      if (_ps.key) {
+        const F = {
+          strategy: r => (r.code || r.name || '').toString().toLowerCase(),
+          mode: r => (r.mode || '').toString(),
+          net: r => r.net || 0, running: r => (window._peakRunLast && window._peakRunLast[r.key]) || 0,
+          gross: r => r.gross || 0, tax: r => r.tax || 0, n: r => r.n || 0,
+          w: r => r.w || 0, opn: r => r.opn || 0, ru: r => r.ru || 0,
+        }[_ps.key];
+        if (F) disp.sort((a, b) => { const x = F(a), y = F(b); return (_ps.dir || -1) * (typeof x === 'string' ? x.localeCompare(y) : (x - y)); });
+      }
       const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0 };
-      rows.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); tot.tax += (r.tax || 0); });
+      disp.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); tot.tax += (r.tax || 0); });
       const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
       // task 80 — open positions ka LIVE unrealized (₹), _patchPeakRunCells se update hota hai
       const runCell = key => `<span class="peak-run-cell" data-pk="${key}" style="color:#6e7681;font-weight:600">—</span>`;
@@ -75,20 +90,25 @@
       const rudCell = (ru, rd) => `<span style="color:#3fb950;font-weight:600">+${Math.round(ru || 0).toLocaleString('en-IN')}</span>`
         + `<span style="color:#6e7681"> / </span>`
         + `<span style="color:#f85149;font-weight:600">${Math.round(rd || 0).toLocaleString('en-IN')}</span>`;
-      let h = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      const _arrow = k => (_ps.key === k ? (_ps.dir === 1 ? ' ▲' : ' ▼') : '');
+      const _th = (key, label, align, tip) => `<th onclick="peakSortBy('${key}')"${tip ? ' title="' + tip + '"' : ' title="Sort"'} style="padding:6px 8px;font-weight:500;cursor:pointer;user-select:none${align ? ';text-align:' + align : ''}">${label}<span style="color:#58a6ff">${_arrow(key)}</span></th>`;
+      const _to = window._peakTradedOnly;
+      const _tradedBtn = `<button onclick="peakToggleTraded()" title="Sirf wo strategies jinhone aaj trade ya position liya (0-activity chhupao)" style="padding:3px 9px;font-size:11px;font-weight:600;border-radius:5px;cursor:pointer;background:${_to ? '#1f6feb' : '#21262d'};border:1px solid ${_to ? '#1f6feb' : '#30363d'};color:${_to ? '#fff' : '#8b949e'}">${_to ? '☑' : '☐'} Traded only</button>`;
+      let h = `<div style="display:flex;justify-content:flex-end;margin-bottom:6px">${_tradedBtn}</div>`
+        + `<table style="width:100%;border-collapse:collapse;font-size:12px">
         <thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d;font-size:11px">
-          <th style="padding:6px 8px;font-weight:500">Strategy</th>
-          <th style="padding:6px 8px;font-weight:500">Mode</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:right">Net</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Open positions ka live unrealized P&amp;L (₹) — LTP feed se">Running</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:right">Gross</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:right" title="Completed trades ka total tax &amp; charges">Tax</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:center">Trades</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:center">W/L</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:center">Open</th>
-          <th style="padding:6px 8px;font-weight:500;text-align:right">Run-Up / Run-Down</th>
+          ${_th('strategy', 'Strategy', '')}
+          ${_th('mode', 'Mode', '')}
+          ${_th('net', 'Net', 'right')}
+          ${_th('running', 'Running', 'right', 'Open positions ka live unrealized P&amp;L (₹) — LTP feed se')}
+          ${_th('gross', 'Gross', 'right')}
+          ${_th('tax', 'Tax', 'right', 'Completed trades ka total tax &amp; charges')}
+          ${_th('n', 'Trades', 'center')}
+          ${_th('w', 'W/L', 'center')}
+          ${_th('opn', 'Open', 'center')}
+          ${_th('ru', 'Run-Up / Run-Down', 'right')}
         </tr></thead><tbody>`;
-      rows.forEach(r => {
+      disp.forEach(r => {
         const isSel = (r.key === sel);
         const rowStyle = 'border-bottom:1px solid #21262d;cursor:pointer'
           + (isSel ? ';background:#132030;box-shadow:inset 3px 0 0 #1f6feb' : '');
@@ -123,9 +143,24 @@
       _patchPeakRunCells();   // task 80 — fill Running from whatever LTPs are already cached
     }
 
+    // Summary table column sort (click a header) + "Traded only" toggle. Both
+    // re-render from the cached row set (window._peakSummaryRowsAll), no re-fetch.
+    try { window._peakTradedOnly = localStorage.getItem('peak_traded_only') === '1'; } catch (e) { }
+    window.peakSortBy = function (key) {
+      const ps = window._peakSort || {};
+      window._peakSort = { key, dir: (ps.key === key ? -(ps.dir || -1) : -1) };   // 1st click desc, then toggle
+      if (window._peakSummaryRowsAll) renderStratSummaryTable(window._peakSummaryRowsAll);
+    };
+    window.peakToggleTraded = function () {
+      window._peakTradedOnly = !window._peakTradedOnly;
+      try { localStorage.setItem('peak_traded_only', window._peakTradedOnly ? '1' : '0'); } catch (e) { }
+      if (window._peakSummaryRowsAll) renderStratSummaryTable(window._peakSummaryRowsAll);
+    };
+
     // task 80 — Summary "Running" column: per-strategy open-position unrealized ₹,
     // computed from the SAME _ltpLive feed that patches the Open Positions table.
     // Called on summary render + every _patchLtpCells tick.
+    let _peakRunLast = {};   // key -> last computed Running ₹ (survive a transient feed gap)
     function _patchPeakRunCells() {
       const map = window._peakOpenMap || {};
       if (typeof _ltpLive !== 'object') return;
@@ -144,7 +179,18 @@
           const pts = o.side === 'BUY' ? (ltp - o.entry) : (o.entry - ltp);
           tot += pts * o.qty;
         });
-        if (!any) { el.textContent = '⏳'; el.style.color = '#6e7681'; return; }
+        if (!any) {
+          // No LTP for any leg THIS tick — keep the last known value (dimmed) instead
+          // of clobbering to ⏳, so a momentary feed gap doesn't blank the Running cell.
+          const last = _peakRunLast[k];
+          if (last != null) {
+            el.textContent = (last >= 0 ? '+' : '') + Math.round(last).toLocaleString('en-IN');
+            el.style.color = '#6e7681';
+            grand += last; grandAny = true;
+          } else { el.textContent = '⏳'; el.style.color = '#6e7681'; }
+          return;
+        }
+        _peakRunLast[k] = tot;
         grand += tot; grandAny = true;
         el.textContent = (tot >= 0 ? '+' : '') + Math.round(tot).toLocaleString('en-IN');
         el.style.color = tot >= 0 ? '#3fb950' : '#f85149';

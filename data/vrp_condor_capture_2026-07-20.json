@@ -1,0 +1,53 @@
+{
+  "captured_at": "2026-07-20 15:13:21",
+  "date": "2026-07-20",
+  "strategy": "vrp_condor_v1",
+  "spot": 24239.4,
+  "body_off": 3,
+  "wing_off": 5,
+  "lots": 1,
+  "net_premium": 218.05,
+  "legs": [
+    {
+      "side": "BUY",
+      "kind": "wing",
+      "opt_type": "CE",
+      "strike_offset": 8,
+      "sec_id": "57369",
+      "trad_sym": "NIFTY-Jul2026-24650-CE",
+      "qty": 65,
+      "premium": 2.15
+    },
+    {
+      "side": "BUY",
+      "kind": "wing",
+      "opt_type": "PE",
+      "strike_offset": -8,
+      "sec_id": "57370",
+      "trad_sym": "NIFTY-Jul2026-24650-PE",
+      "qty": 65,
+      "premium": 408.15
+    },
+    {
+      "side": "SELL",
+      "kind": "body",
+      "opt_type": "CE",
+      "strike_offset": 3,
+      "sec_id": "57356",
+      "trad_sym": "NIFTY-Jul2026-24400-CE",
+      "qty": 65,
+      "premium": 19.35
+    },
+    {
+      "side": "SELL",
+      "kind": "body",
+      "opt_type": "PE",
+      "strike_offset": -3,
+      "sec_id": "57357",
+      "trad_sym": "NIFTY-Jul2026-24400-PE",
+      "qty": 65,
+      "premium": 172.9
+    }
+  ],
+  "note": "DRY-RUN \u2014 NO order placed. Intended VRP condor entry (15:10 window). Use to place manually / verify if the strategy is fixed after close."
+}

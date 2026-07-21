@@ -19,39 +19,66 @@
   <span style="color:#58a6ff;font-size:12px;font-weight:bold;letter-spacing:1px">QUICK ORDER</span>
   <span id="qo-close" style="color:#8b949e;font-size:16px;cursor:pointer;line-height:1">&#x2715;</span>
 </div>
-<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:8px;gap:2px">
-  <button id="qo-tab-instant" onclick="qoSetTab('instant')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#21262d;color:#e6edf3">&#9889; Instant</button>
-  <button id="qo-tab-trigger" onclick="qoSetTab('trigger')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">&#127919; Trigger</button>
+<div style="display:flex;background:#0d1117;border-radius:8px;padding:3px;margin-bottom:14px;gap:3px">
+  <button id="qo-tab-instant" onclick="qoSetTab('instant')" style="flex:1;padding:7px 0;border:none;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;background:#21262d;color:#e6edf3">&#9889; Instant</button>
+  <button id="qo-tab-trigger" onclick="qoSetTab('trigger')" style="flex:1;padding:7px 0;border:none;border-radius:6px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">&#127919; Trigger</button>
 </div>
-<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:8px;gap:2px">
-  <button id="qo-paper" onclick="qoSetMode('paper')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#d29922;color:#0d1117">PAPER</button>
-  <button id="qo-live"  onclick="qoSetMode('live')"  style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">LIVE</button>
-</div>
-<div style="display:flex;background:#0d1117;border-radius:6px;padding:2px;margin-bottom:12px;gap:2px">
-  <button id="qo-broker-dhan" onclick="qoSetBroker('dhan')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:#1f6feb;color:#fff">DHAN</button>
-  <button id="qo-broker-kite" onclick="qoSetBroker('kite')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:11px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">ZERODHA</button>
-</div>
-<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Symbol</div>
-<div style="display:flex;gap:6px;margin-bottom:10px">
-  <button id="qo-sym-NIFTY"     onclick="qoSetSym('NIFTY')"     style="flex:1;padding:6px 0;border:1px solid #1f6feb;border-radius:5px;background:#1f6feb22;color:#58a6ff;font-size:12px;font-weight:bold;cursor:pointer">NIFTY</button>
-  <button id="qo-sym-BANKNIFTY" onclick="qoSetSym('BANKNIFTY')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:12px;font-weight:bold;cursor:pointer">BANKNIFTY</button>
-</div>
-<div id="qo-trig-block" style="display:none">
-  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
-    <span style="font-size:10px;color:#8b949e">Trigger jab spot pahunche</span>
-    <span id="qo-trig-spot" style="font-size:10px;color:#58a6ff">spot —</span>
+<div style="display:flex;gap:10px;margin-bottom:14px">
+  <div style="flex:1">
+    <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:5px">MODE</div>
+    <div style="display:flex;background:#0d1117;border-radius:7px;padding:3px;gap:3px">
+      <button id="qo-paper" onclick="qoSetMode('paper')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:10px;font-weight:bold;cursor:pointer;background:#d29922;color:#0d1117">PAPER</button>
+      <button id="qo-live"  onclick="qoSetMode('live')"  style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:10px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">LIVE</button>
+    </div>
   </div>
-  <input id="qo-trig-level" type="number" step="0.05" placeholder="e.g. 24300" oninput="qoTrigDirAuto()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:7px 8px;font-size:14px;outline:none;box-sizing:border-box;margin-bottom:8px">
-  <div style="display:flex;gap:6px;margin-bottom:10px">
-    <button id="qo-dir-above" onclick="qoSetDir('above')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9650; upar cross (&#8805;)</button>
-    <button id="qo-dir-below" onclick="qoSetDir('below')" style="flex:1;padding:6px 0;border:1px solid #30363d;border-radius:5px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9660; neeche cross (&#8804;)</button>
+  <div style="flex:1">
+    <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:5px">ACCOUNT</div>
+    <div style="display:flex;background:#0d1117;border-radius:7px;padding:3px;gap:3px">
+      <button id="qo-broker-dhan" onclick="qoSetBroker('dhan')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:10px;font-weight:bold;cursor:pointer;background:#1f6feb;color:#fff">DHAN</button>
+      <button id="qo-broker-kite" onclick="qoSetBroker('kite')" style="flex:1;padding:5px 0;border:none;border-radius:5px;font-size:10px;font-weight:bold;cursor:pointer;background:transparent;color:#8b949e">ZERODHA</button>
+    </div>
   </div>
 </div>
-<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Strike offset (ATM)</div>
-<div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:10px">
-  ${[-3, -2, -1, 0, 1, 2, 3].map(v => `<button onclick="qoSetAtm(${v})" data-atm="${v}" style="flex:1;padding:4px 0;border:1px solid ${v === 0 ? '#1f6feb' : '#30363d'};border-radius:4px;background:${v === 0 ? '#1f6feb' : '#21262d'};color:${v === 0 ? '#fff' : '#8b949e'};font-size:10px;cursor:pointer">${v === 0 ? 'ATM' : v > 0 ? '+' + v : v}</button>`).join('')}
+<div style="border-top:1px solid #21262d;padding-top:12px">
+<div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:5px">INDEX</div>
+<div style="display:flex;gap:6px;margin-bottom:14px">
+  <button id="qo-sym-NIFTY"     onclick="qoSetSym('NIFTY')"     style="flex:1;padding:7px 0;border:1px solid #1f6feb;border-radius:6px;background:#1f6feb22;color:#58a6ff;font-size:12px;font-weight:bold;cursor:pointer">NIFTY</button>
+  <button id="qo-sym-BANKNIFTY" onclick="qoSetSym('BANKNIFTY')" style="flex:1;padding:7px 0;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;font-size:12px;font-weight:bold;cursor:pointer">BANKNIFTY</button>
 </div>
-<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Option — select karo, phir BUY/SELL</div>
+</div>
+<div style="display:flex;gap:12px;margin-bottom:12px;align-items:flex-end">
+  <div style="flex:1.4;min-width:0">
+    <div id="qo-trig-block" style="display:none">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+        <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px">TRIGGER LEVEL</span>
+        <span id="qo-trig-spot" style="font-size:10px;color:#58a6ff">spot —</span>
+      </div>
+      <input id="qo-trig-level" type="number" step="0.05" placeholder="e.g. 24300" oninput="qoTrigDirAuto()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:8px;font-size:14px;outline:none;box-sizing:border-box">
+    </div>
+    <div id="qo-price-block">
+      <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:5px">LIMIT PRICE <span style="color:#484f58;font-weight:400">(blank=LTP)</span></div>
+      <input id="qo-price" type="number" step="0.05" placeholder="auto (LTP)" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:8px;font-size:14px;outline:none;box-sizing:border-box">
+    </div>
+  </div>
+  <div style="flex:1;min-width:0">
+    <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:5px">LOTS</div>
+    <div style="display:flex;align-items:center;gap:6px">
+      <input id="qo-lots" type="number" value="3" min="1" oninput="updateQtyHint()" style="width:44px;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:8px 4px;font-size:14px;text-align:center;outline:none">
+      <span style="font-size:11px;color:#6e7681;white-space:nowrap"><span id="qo-qty-num" style="color:#adbac7;font-weight:bold">195</span> qty<span id="qo-ls" style="display:none">65</span></span>
+    </div>
+  </div>
+</div>
+<div id="qo-trig-dir" style="display:none;margin-bottom:12px">
+  <div style="display:flex;gap:6px">
+    <button id="qo-dir-above" onclick="qoSetDir('above')" style="flex:1;padding:7px 0;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9650; upar (&#8805;)</button>
+    <button id="qo-dir-below" onclick="qoSetDir('below')" style="flex:1;padding:7px 0;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;font-size:10px;font-weight:bold;cursor:pointer">&#9660; neeche (&#8804;)</button>
+  </div>
+</div>
+<div style="border-top:1px solid #21262d;padding-top:12px;font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">STRIKE OFFSET (ATM)</div>
+<div id="qo-atm-row" style="display:flex;gap:3px;margin-bottom:12px">
+  ${[-3, -2, -1, 0, 1, 2, 3].map(v => `<button onclick="qoSetAtm(${v})" data-atm="${v}" style="flex:1;padding:5px 0;border:1px solid ${v === 0 ? '#1f6feb' : '#30363d'};border-radius:5px;background:${v === 0 ? '#1f6feb' : '#21262d'};color:${v === 0 ? '#fff' : '#8b949e'};font-size:10px;cursor:pointer">${v === 0 ? 'ATM' : v > 0 ? '+' + v : v}</button>`).join('')}
+</div>
+<div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">OPTION &middot; SELECT LEG</div>
 <div id="qo-ltp-box" style="background:#0d1117;border:1px solid #21262d;border-radius:7px;padding:8px 10px;margin-bottom:10px">
   <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
     <div id="qo-opt-ce" onclick="qoSetOpt('CE')" title="Call select karo" style="background:#3fb95015;border:1px solid #3fb95040;border-radius:5px;padding:5px 7px;cursor:pointer">
@@ -73,17 +100,6 @@
   </div>
   <div id="qo-ts" style="font-size:9px;color:#484f58;text-align:right;margin-top:4px">fetching...</div>
 </div>
-<div id="qo-price-block">
-<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Limit Price <span style="color:#484f58">(blank = LTP par bhejo)</span></div>
-<div style="display:flex;align-items:center;gap:6px;margin-bottom:12px">
-  <input id="qo-price" type="number" step="0.05" placeholder="auto (LTP)" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:6px 8px;font-size:13px;outline:none">
-</div>
-</div>
-<div style="font-size:10px;color:#8b949e;margin-bottom:4px">Lots</div>
-<div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
-  <input id="qo-lots" type="number" value="3" min="1" oninput="updateQtyHint()" style="width:54px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;padding:5px 8px;font-size:13px;text-align:center;outline:none">
-  <span style="font-size:11px;color:#8b949e">= <span id="qo-qty-num" style="color:#e6edf3;font-weight:bold">65</span> qty <span style="color:#444;font-size:10px">(1L=<span id="qo-ls">65</span>)</span></span>
-</div>
 <div id="qo-instant-actions">
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
   <button onclick="qoOrder('BUY')"  style="padding:11px;background:#3fb950;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer">BUY <span id="qo-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
@@ -96,15 +112,20 @@
   <button onclick="qoArm('BUY')"  style="padding:11px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm BUY <span id="qo-arm-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
   <button onclick="qoArm('SELL')" style="padding:11px;background:#da3633;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm SELL <span id="qo-arm-sell-leg" style="font-size:11px;opacity:.85">CE</span></button>
 </div>
-<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:6px">fire = marketable-limit (auto) &middot; RMS-gated &middot; 3:15 ke baad no-fire</div>
+<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">fire = marketable-limit (auto) &middot; RMS-gated &middot; 3:15 ke baad no-fire</div>
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
+  <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px">ARMED</span>
+  <button onclick="qoOpenTrigChart()" title="Chart pe levels dekho" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:10px;font-weight:bold;padding:3px 9px;cursor:pointer">&#128202; Chart</button>
+</div>
 <div id="qo-armed-list"></div>
 </div>
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
       Object.assign(panel.style, {
-        position: 'fixed', bottom: '24px', right: '24px', width: '268px',
-        background: '#161b22', border: '1px solid #30363d', borderRadius: '10px',
-        padding: '14px', fontFamily: 'monospace', zIndex: '9999',
+        position: 'fixed', top: '16px', right: '16px', width: '288px',
+        maxHeight: 'calc(100vh - 32px)', overflowY: 'auto', boxSizing: 'border-box',
+        background: '#161b22', border: '1px solid #30363d', borderRadius: '12px',
+        padding: '16px', fontFamily: 'monospace', zIndex: '9999',
         boxShadow: '0 4px 24px rgba(0,0,0,0.6)', userSelect: 'none', display: 'none'
       });
       document.body.appendChild(panel);
@@ -444,6 +465,7 @@
         if (tt) { tt.style.background = tab === 'trigger' ? '#1f6feb' : 'transparent'; tt.style.color = tab === 'trigger' ? '#fff' : '#8b949e'; }
         const show = (id, on) => { const e = document.getElementById(id); if (e) e.style.display = on ? '' : 'none'; };
         show('qo-trig-block', tab === 'trigger');
+        show('qo-trig-dir', tab === 'trigger');
         show('qo-trigger-actions', tab === 'trigger');
         show('qo-instant-actions', tab === 'instant');
         show('qo-price-block', tab === 'instant');   // trigger fires marketable — no limit box
@@ -537,6 +559,120 @@
         try { await fetch('/api/triggers/' + encodeURIComponent(tid), { method: 'DELETE' }); qoRefreshTriggers(); }
         catch (e) { }
       };
+
+      // ── TRIGGERS + CHART — armed levels drawn on a NIFTY line-chart ────────
+      let _qoTcTimer = null, _qoTcCandles = null, _qoTcChart = null, _qoTcSeries = null, _qoTcLines = [];
+      function qoDestroyTcChart() {
+        if (_qoTcChart) { try { _qoTcChart.remove(); } catch (e) { } }
+        _qoTcChart = null; _qoTcSeries = null; _qoTcLines = [];
+        const el = document.getElementById('qo-tc-chart'); if (el) el.innerHTML = '';
+      }
+      window.qoOpenTrigChart = () => {
+        let m = document.getElementById('qo-tc-modal');
+        if (!m) {
+          m = document.createElement('div');
+          m.id = 'qo-tc-modal';
+          Object.assign(m.style, { position: 'fixed', inset: '0', background: 'rgba(1,4,9,0.72)', zIndex: '10000', display: 'flex', alignItems: 'center', justifyContent: 'center' });
+          m.innerHTML = `
+<div style="width:920px;max-width:95vw;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:16px;font-family:monospace;box-shadow:0 8px 40px rgba(0,0,0,.6)">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <span style="color:#58a6ff;font-size:13px;font-weight:bold;letter-spacing:1px">&#127919; TRIGGERS + CHART &middot; <span id="qo-tc-sym">NIFTY</span></span>
+    <div style="display:flex;align-items:center;gap:10px">
+      <button onclick="qoTcReset()" title="Zoom/pan reset" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:11px;font-weight:bold;padding:4px 10px;cursor:pointer">&#8635; Reset View</button>
+      <span onclick="qoCloseTrigChart()" style="color:#8b949e;font-size:18px;cursor:pointer;line-height:1">&#x2715;</span>
+    </div>
+  </div>
+  <div id="qo-tc-chart" style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:8px;margin-bottom:6px;min-height:452px"></div>
+  <div style="font-size:9px;color:#484f58;text-align:center;margin-bottom:12px">NIFTY 1-min candles &middot; blue = live spot &middot; green &#9650; upar-cross &middot; red &#9660; neeche-cross &middot; zoom/pan preserve rehta hai</div>
+  <div id="qo-tc-list" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+</div>`;
+          m.addEventListener('click', e => { if (e.target === m) qoCloseTrigChart(); });
+          document.body.appendChild(m);
+        }
+        document.getElementById('qo-tc-sym').textContent = qoSym;
+        m.style.display = 'flex';
+        _qoTcCandles = null;
+        qoDestroyTcChart();
+        qoLoadTrigChart();
+        clearInterval(_qoTcTimer); _qoTcTimer = setInterval(qoLoadTrigChart, 6000);
+      };
+      window.qoCloseTrigChart = () => {
+        const m = document.getElementById('qo-tc-modal'); if (m) m.style.display = 'none';
+        clearInterval(_qoTcTimer); _qoTcTimer = null;
+        qoDestroyTcChart();
+      };
+      async function qoLoadTrigChart() {
+        const chartEl = document.getElementById('qo-tc-chart'); if (!chartEl) return;
+        try {
+          if (!_qoTcCandles) {
+            const cr = await fetch('/api/trade-chart-underlying-data?trad_sym=' + encodeURIComponent(qoSym)).then(r => r.json()).catch(() => ({}));
+            _qoTcCandles = (cr && cr.candles) || [];
+          }
+          const tr = await fetch('/api/triggers?symbol=' + encodeURIComponent(qoSym)).then(r => r.json()).catch(() => ({}));
+          const triggers = (tr && tr.triggers) || [];
+          const spot = ((tr && tr.spot) || {})[qoSym];
+          qoRenderTrigChart(_qoTcCandles, triggers, spot);
+        } catch (e) { /* keep last render */ }
+      }
+      function qoRenderTrigChart(candles, triggers, spot) {
+        const chartEl = document.getElementById('qo-tc-chart');
+        const listEl = document.getElementById('qo-tc-list');
+        if (listEl) {
+          if (!triggers.length) {
+            listEl.innerHTML = '<div style="grid-column:1/-1;font-size:11px;color:#6e7681;text-align:center;padding:10px">Koi armed trigger nahi — Quick Order se arm karo</div>';
+          } else {
+            listEl.innerHTML = triggers.map(t => {
+              const above = t.direction === 'above';
+              const armed = t.status === 'armed';
+              const col = armed ? (above ? '#3fb950' : '#f85149') : (t.status === 'fired' ? '#58a6ff' : '#d29922');
+              const arrow = above ? '▲' : '▼', cmp = above ? '≥' : '≤';
+              const dist = (t.dist != null && armed) ? `<span style="color:#d29922">${Math.abs(t.dist).toFixed(0)} pts door</span>` : `<span style="color:${col}">${t.status}</span>`;
+              return `<div style="background:#0d1117;border:1px solid #21262d;border-left:3px solid ${col};border-radius:0 6px 6px 0;padding:7px 9px">
+                <div style="display:flex;justify-content:space-between;align-items:center">
+                  <span style="font-size:12px;font-weight:bold;color:#e6edf3">${t.symbol} ${cmp} ${(+t.level).toFixed(0)} <span style="color:${col}">${arrow}</span></span>
+                  <span onclick="qoCancelTrigger('${t.id}');qoLoadTrigChart()" title="Cancel" style="color:#8b949e;font-size:13px;cursor:pointer">&#x2715;</span>
+                </div>
+                <div style="font-size:9px;color:#8b949e;margin-top:3px">${t.side} ${t.lots}L ${t.opt_type} (off ${t.offset}) &middot; ${(t.mode || '').toUpperCase()}/${(t.broker || '').toUpperCase()} &middot; ${dist}</div>
+              </div>`;
+            }).join('');
+          }
+        }
+        if (!chartEl) return;
+        if (!window.LightweightCharts) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:180px 0">chart library load nahi hui</div>'; return; }
+        // Chart + candles ek hi baar bante hain. Har 6s refresh pe SIRF level/spot
+        // lines update hoti hain — setData/fitContent kabhi nahi, warna user ka
+        // zoom/pan har cycle reset ho jaata (default trade_chart wala hi fix).
+        if (!_qoTcChart) {
+          const ohlc = (candles || []).filter(c => c && c.time != null && c.close != null)
+            .map(c => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+          if (!ohlc.length) { chartEl.innerHTML = '<div style="font-size:12px;color:#6e7681;text-align:center;padding:180px 0">Chart data nahi — market band ya data missing</div>'; return; }
+          chartEl.innerHTML = '';
+          chartEl.style.height = '440px';
+          _qoTcChart = LightweightCharts.createChart(chartEl, {
+            width: chartEl.clientWidth || 800, height: 440,
+            layout: { background: { color: '#0d1117' }, textColor: '#8b949e' },
+            grid: { vertLines: { color: '#161b22' }, horzLines: { color: '#161b22' } },
+            timeScale: { timeVisible: true, secondsVisible: false, borderColor: '#30363d' },
+            rightPriceScale: { borderColor: '#30363d' },
+            crosshair: { mode: 0 }
+          });
+          _qoTcSeries = _qoTcChart.addCandlestickSeries({ upColor: '#3fb950', downColor: '#f85149', borderVisible: false, wickUpColor: '#3fb950', wickDownColor: '#f85149' });
+          _qoTcSeries.setData(ohlc);
+          _qoTcChart.timeScale().fitContent();
+        }
+        if (!_qoTcSeries) return;
+        _qoTcLines.forEach(l => { try { _qoTcSeries.removePriceLine(l); } catch (e) { } });
+        _qoTcLines = [];
+        if (spot != null) _qoTcLines.push(_qoTcSeries.createPriceLine({ price: +spot, color: '#58a6ff', lineWidth: 1, lineStyle: 1, axisLabelVisible: true, title: 'spot' }));
+        (triggers || []).forEach(t => {
+          const lv = +t.level; if (isNaN(lv)) return;
+          const above = t.direction === 'above';
+          const armed = t.status === 'armed';
+          const col = armed ? (above ? '#3fb950' : '#f85149') : '#8b949e';
+          _qoTcLines.push(_qoTcSeries.createPriceLine({ price: lv, color: col, lineWidth: 2, lineStyle: 2, axisLabelVisible: true, title: lv.toFixed(0) + ' ' + (above ? '▲' : '▼') }));
+        });
+      }
+      window.qoTcReset = () => { if (_qoTcChart) { try { _qoTcChart.timeScale().fitContent(); } catch (e) { } } };
 
       // initial CE selection highlight
       qoSetOpt('CE');

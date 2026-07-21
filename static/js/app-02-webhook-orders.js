@@ -317,7 +317,7 @@
       }).join('');
       sel.value = cur || '';
     }
-    function _ordTags(t) {
+    function _ordTags(t, skipStrat) {
       let isHedge = (t.group_id && t.group_id.startsWith('RANGE_') && t.entry === 'BUY') ||
         (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry === 'BUY') ||
         (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
@@ -331,7 +331,10 @@
       const _sidChip = _sid
         ? '<span title="' + _sid.replace(/"/g, '&quot;') + '" style="background:#8957e522;color:#bc8cff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:600;margin-right:3px">' + _sidTxt + '</span>'
         : '';
-      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + _sidChip;
+      // skipStrat: Completed/Open tables now show the strategy in its OWN column
+      // (_stratCell) so the Tags chip no longer over-spills. Other surfaces (Stats
+      // Point-Per-Trade) keep the strategy chip inside Tags — pass no flag.
+      let h = _ordTag(t.source, t.source) + _ordTag(t.mode, t.mode) + (skipStrat ? '' : _sidChip);
 
       if (isHedge) {
         h += _ordTag('hedge', 'hedge');
@@ -340,6 +343,65 @@
       h += _ordTag(t.broker, 'name');
       return h;
     }
+    // Strategy as its OWN column — registry name + a STABLE per-strategy colour (hue
+    // derived from the registry serial, so every variant of one strategy shares a
+    // colour and different strategies are visually distinct). Raw config_key on hover.
+    // Colour by the strategy's POSITION in the sorted registry (consecutive index
+    // -> golden-angle 137.5deg = sunflower spacing) so sibling variants like
+    // 04.01/02/03/04 get maximally-distinct hues instead of near-identical greens.
+    // (The old incremental `%360` hash only moved the last serial digit ~1deg, so
+    // every "04.xx" looked the same green.) Rebuilds when the registry loads/changes.
+    let _stratHueMap = null, _stratHueN = -1;
+    function _stratHue(id) {
+      const strs = ((window.regRaw && window.regRaw()) || {}).strategies || {};
+      const n = Object.keys(strs).length;
+      if (!_stratHueMap || n !== _stratHueN) {
+        const ids = Object.keys(strs).sort();
+        _stratHueMap = {};
+        for (let i = 0; i < ids.length; i++) _stratHueMap[ids[i]] = Math.round(i * 137.508) % 360;
+        _stratHueN = n;
+      }
+      if (_stratHueMap[id] != null) return _stratHueMap[id];
+      let s = String(id || ''), h = 0;                    // unregistered fallback (still golden-spread)
+      for (let i = 0; i < s.length; i++) h = (h * 131 + s.charCodeAt(i)) >>> 0;
+      return Math.round(h * 137.508) % 360;
+    }
+    function _stratCell(t) {
+      const raw = t.strategy ? t.strategy.split(' | ')[0] : '';
+      if (!raw) return '<span style="color:#6e7681">—</span>';
+      const label = regId(raw) !== raw ? (regId(raw) + ' · ' + regLabel(raw)) : (regLabel(raw) || raw);
+      const key = regId(raw) !== raw ? regId(raw) : raw;   // colour by registry serial (stable across variants)
+      const hue = _stratHue(key);
+      const bg = `hsl(${hue},55%,20%)`, fg = `hsl(${hue},80%,72%)`, bd = `hsl(${hue},45%,38%)`;
+      const arg = raw.replace(/\\/g, '').replace(/'/g, '');   // safe for the inline onclick
+      return `<span onclick="_ordStratChipClick(event,'${arg}')" title="Ctrl+click: is strategy pe filter (dobara Ctrl+click = All)&#10;${raw.replace(/"/g, '&quot;')}" style="cursor:pointer;display:inline-block;background:${bg};color:${fg};border:1px solid ${bd};padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:600;white-space:nowrap">${label}</span>`;
+    }
+    // Ctrl/Cmd+click a strategy chip → set the Orders strategy filter to that
+    // strategy (match the #ord-strat option by its base, robust to " | desc"
+    // pollution); Ctrl+click the SAME one again → back to All. Plain click = no-op.
+    window._ordStratChipClick = function (ev, base) {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const sel = document.getElementById('ord-strat'); if (!sel) return;
+      const opt = Array.from(sel.options).find(o => o.value &&
+        (o.value === base || o.value.split(' | ')[0] === base));
+      const val = opt ? opt.value : '';
+      sel.value = (val && sel.value === val) ? '' : val;   // toggle off if already active
+      if (typeof ordersRender === 'function') ordersRender();
+    };
+    // Ctrl/Cmd+click an exit-reason badge → filter Completed Trades to that reason
+    // (client-side, by prefix base — there is no server-side exit_reason filter);
+    // Ctrl+click the same one again → clear. Plain click = no-op.
+    window._ordExitChipClick = function (ev, base) {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      window._ordExitFilter = (window._ordExitFilter === base) ? '' : base;
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
+    window._ordExitClear = function () {
+      window._ordExitFilter = '';
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
     function _imgTagsOf(t) { return (t.tags || []).filter(tg => tg.startsWith('IMG:')).map(tg => tg.slice(4)); }
     function _noteThumbs(id, imgs) {
       if (!imgs || !imgs.length) return '';
@@ -365,7 +427,6 @@
       const date = (document.getElementById('ord-date') || {}).value;
       if (!date) return;
       const q = new URLSearchParams({ date });
-      const src = _ordSegVal('ord-src'); if (src && src !== 'hedge') q.set('source', src);
       const mode = _ordSegVal('ord-mode'); if (mode) q.set('mode', mode);
       const strat = document.getElementById('ord-strat').value; if (strat) q.set('strategy', strat);
       const broker = document.getElementById('ord-broker').value; if (broker) q.set('broker', broker);
@@ -878,8 +939,11 @@
             val = (subRow ? '<span style="color:#6e7681;margin-right:4px">↳</span>' : '') + `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
             colorStyle = 'color:#adbac7;';
             break;
+          case 'strategy':
+            val = _stratCell(t);
+            break;
           case 'tags':
-            val = _ordTags(t);
+            val = _ordTags(t, true);
             break;
           case 'side':
             val = t.entry;
@@ -901,9 +965,14 @@
             val = t.exit_time || '—';
             colorStyle = 'color:#6e7681;';
             break;
-          case 'exit_reason':
-            val = _exitReasonBadge(t.exit_reason);
+          case 'exit_reason': {
+            const _erB = (t.exit_reason || '').split(':')[0];
+            const _erBadge = _exitReasonBadge(t.exit_reason);
+            val = _erB
+              ? `<span onclick="_ordExitChipClick(event,'${_erB.replace(/'/g, '')}')" title="Ctrl+click: is exit reason pe filter (dobara Ctrl+click = All)" style="cursor:pointer">${_erBadge}</span>`
+              : _erBadge;
             break;
+          }
           case 'duration':
             val = _durFmt(t.entry_time, t.exit_time);
             colorStyle = 'color:#8b949e;';

@@ -108,15 +108,29 @@ function saveClosed(){try{localStorage.setItem('reg_closed',JSON.stringify(CLOSE
 function saveCols(){try{localStorage.setItem('reg_cols',JSON.stringify(COLVIS))}catch(e){}}
 const on=k=>COLVIS[k]!==false;
 
+let TIMERS={};   // family-10 systemd-timer strategy states (unit -> {active,enabled})
 async function load(){
-  const [a,b,c]=await Promise.allSettled([
+  const [a,b,c,d]=await Promise.allSettled([
     fetch('/api/strategy-registry',{cache:'no-store'}).then(r=>r.json()),
     fetch('/api/config',{cache:'no-store'}).then(r=>r.json()),
-    fetch('/lab/runs/index.json',{cache:'no-store'}).then(r=>r.json())]);
+    fetch('/lab/runs/index.json',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/api/timer-status',{cache:'no-store'}).then(r=>r.json())]);
   if(a.status==='fulfilled')REG=a.value||REG;
   if(b.status==='fulfilled')CFG=b.value||{};
   if(c.status==='fulfilled'&&Array.isArray(c.value)) c.value.forEach(r=>{ if(r&&r.slug)RUNS[String(r.slug).toLowerCase()]=r; });
+  if(d.status==='fulfilled'&&d.value&&typeof d.value==='object') TIMERS=d.value;
   colMenu(); render();
+}
+async function timerDeploy(e,unit,action){
+  e.stopPropagation();
+  const btn=e.target, old=btn.textContent; btn.textContent='…'; btn.disabled=true;
+  try{
+    const r=await fetch('/api/timer-deploy',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({unit,action})});
+    const j=await r.json(); if(!r.ok||!j.ok) throw new Error(j.err||('HTTP '+r.status));
+    if(j.state)TIMERS[unit]=j.state;
+  }catch(err){ alert('Timer deploy failed: '+err.message); }
+  btn.disabled=false; render();
 }
 function colMenu(){
   document.getElementById('colmenu').innerHTML='<div class="hdr">Show columns</div>'+COLS.map(c=>
@@ -183,7 +197,11 @@ function cell(m){
     win:`<td class="num">${num(b.win_rate,'%',0)}</td>`,
     trades:`<td class="num">${b.trades!=null?b.trades:'<span class="mut">—</span>'}</td>`,
     sig:`<td>${sig}</td>`,
-    deploy:`<td>${ !m.config_key ? '<span class="mut">—</span>'
+    deploy:`<td>${ m.deploy_kind==='timer'
+      ? ( (TIMERS[m.timer_unit]||{}).active
+          ? `<button class="mini stop" onclick="timerDeploy(event,'${m.timer_unit}','stop')">⏹ Stop</button> <span class="mut" title="monthly systemd timer">📅 paper</span>`
+          : `<button class="mini pa" onclick="timerDeploy(event,'${m.timer_unit}','paper')">▶ Paper</button>` )
+      : !m.config_key ? '<span class="mut">—</span>'
       : (live && live!=='off')
         ? `<button class="mini stop" onclick="regDeploy(event,'${m.config_key}','stop')">⏹ Stop</button>`
         : `<button class="mini pa" onclick="regDeploy(event,'${m.config_key}','paper')">▶ Paper</button><button class="mini lv" onclick="regDeploy(event,'${m.config_key}','live')">💰 Live</button>` }</td>`,
@@ -191,7 +209,7 @@ function cell(m){
     file:`<td class="mono">${(m.live_file||'—').replace('strategies/','').replace('_core/','')}</td>`,
     actions:`<td>${open}</td>`,
   };
-  const dep=(live&&live!=='off')?'dep':'';
+  const dep=((live&&live!=='off')||(m.deploy_kind==='timer'&&(TIMERS[m.timer_unit]||{}).active))?'dep':'';
   return `<tr class="${dep}">`+COLS.filter(c=>on(c.k)).map(c=>C[c.k]).join('')+'</tr>';
 }
 function toggleCard(el,key){el.classList.toggle('closed');const c=el.classList.contains('closed');CLOSED[key]=c;el.nextElementSibling.style.display=c?'none':'';saveClosed();}
