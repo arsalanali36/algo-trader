@@ -15,6 +15,33 @@
 
 ---
 
+## 2026-07-21 — Stats single-strategy filter resolve-aware (dropdown → khaali calendar fix)
+**Status:** DONE (master `1f4b3d1`, VPS-live, dashboard-only restart, PIDs 2→2 intact)
+**Kya:** Stats/Stats2 me strategy dropdown se 05.02 RSI (paper) chunte hi calendar/summary
+0 trades — jabki All-strategies ke Total Summary me usi ke 102 trades. Do sawaal the:
+**(A) Points −19.8 vs Gross +15,750 — BUG NAHI:** VPS data pe 102 trades me 0 sign-flip,
+0 missing price; Points qty-less premium-points ka sum hai, Gross qty-weighted ₹ — RSI
+paper 31 alag qty sizes (50..6,750, stock options) pe trade karta hai to dono sums ka
+sign alag ho sakta hai (mixed-lot artefact, per-trade sab consistent).
+**(B) Filter bug — 3 strategies khaali the:** 05.02 (registry ck `rsi_v1_paper` vs DB
+`rsi_v1_PAPER` case), 05.03 EMA (rows purane alias `ema920` me), 09.01 (rows "id | desc"
+polluted, TRAP #128). Jad: Total Summary `strategy_registry.resolve()` se group karta hai
+par single-strategy filter raw SQL `=` exact-match tha — wahi TRAP #132 family (do lookup,
+alag niyam).
+**Layer:** ui (display-only — koi order/risk path nahi)
+**Files:** `trader_dashboard.py` (`_strategy_matcher`/`_pop_strategy_matcher` → 4 routes:
+calendar-summary, monthly-returns, optimized-pnl, stats-summary), `_core/order_store.py`
+(`stats_summary(trades=)` — pills == table exact), `strategy_registry.json` (05.02 ck →
+`rsi_v1_PAPER`, lowercase aliases me), `static/js/app-13` (Saved-Views client-filter bhi
+regId-normalized). Netting All-strategies jaisi hi chalti hai, attribution post-filter →
+single-strategy totals == All-view summary row EXACT.
+**Verify:** matcher 13/13 (05.01/05.02 + 04.01/04.02 separate, buckets exact-only);
+seeded-temp-DB Flask route tests; VPS live: rsi_v1_PAPER/rsi_v1_paper dono (102, +15,750),
+ema_v1 (21, +2,902), rsi_v1 (56, +9,036 — koi paper leak nahi) == user screenshot exact.
+Audit 0 FAIL. Session note: main-repo write-lock doosri active session ke paas tha —
+worktree `wt/stats2-rsi-bugs` repo ke BAHAR (`D:\KHAZANA\_wt_stats2_rsi`) move karke kaam
+hua; deploy user go-ahead ke baad.
+
 ## 2026-07-21 — Fork-based strategy supervisor (RAM 15-process → COW-shared) — CUTOVER DONE (same session)
 **Status:** DONE (daemon `algo-supervisor` live on VPS, flag ON; kal 9:10 pehla real fleet-day)
 **Cutover (commit `51d88b8`):** `--daemon` mode = desired-state reconciler — dashboard `api_start`
