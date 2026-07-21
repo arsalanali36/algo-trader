@@ -389,6 +389,19 @@
       sel.value = (val && sel.value === val) ? '' : val;   // toggle off if already active
       if (typeof ordersRender === 'function') ordersRender();
     };
+    // Ctrl/Cmd+click an exit-reason badge → filter Completed Trades to that reason
+    // (client-side, by prefix base — there is no server-side exit_reason filter);
+    // Ctrl+click the same one again → clear. Plain click = no-op.
+    window._ordExitChipClick = function (ev, base) {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      window._ordExitFilter = (window._ordExitFilter === base) ? '' : base;
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
+    window._ordExitClear = function () {
+      window._ordExitFilter = '';
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
     function _imgTagsOf(t) { return (t.tags || []).filter(tg => tg.startsWith('IMG:')).map(tg => tg.slice(4)); }
     function _noteThumbs(id, imgs) {
       if (!imgs || !imgs.length) return '';
@@ -953,9 +966,14 @@
             val = t.exit_time || '—';
             colorStyle = 'color:#6e7681;';
             break;
-          case 'exit_reason':
-            val = _exitReasonBadge(t.exit_reason);
+          case 'exit_reason': {
+            const _erB = (t.exit_reason || '').split(':')[0];
+            const _erBadge = _exitReasonBadge(t.exit_reason);
+            val = _erB
+              ? `<span onclick="_ordExitChipClick(event,'${_erB.replace(/'/g, '')}')" title="Ctrl+click: is exit reason pe filter (dobara Ctrl+click = All)" style="cursor:pointer">${_erBadge}</span>`
+              : _erBadge;
             break;
+          }
           case 'duration':
             val = _durFmt(t.entry_time, t.exit_time);
             colorStyle = 'color:#8b949e;';

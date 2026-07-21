@@ -482,13 +482,18 @@
       // Client-side scope filter: when a Summary row is picked (task 73), narrow
       // the Completed Trades table to that strategy/source without touching the
       // orders fetch (so the Summary table above stays full).
-      let sortedCompleted = det.filter(_peakTradeMatch);
-      // header chip showing the active per-strategy filter (clearable)
+      let sortedCompleted = det.filter(_peakTradeMatch)
+        .filter(t => !window._ordExitFilter || (t.exit_reason || '').split(':')[0] === window._ordExitFilter);
+      // header chip showing the active per-strategy + exit-reason filters (clearable)
       const _cf = document.getElementById('ord-completed-filter');
       if (_cf) {
         const _pkf = window._peakStrat || '__all';
-        _cf.innerHTML = (_pkf === '__all') ? '' :
+        let _cfHtml = (_pkf === '__all') ? '' :
           `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="peakClearStrat()" title="Filter hatao (All)">▸ ${(_pkf === 'MANUAL' || _pkf === 'WEBHOOK') ? (_pkf.charAt(0) + _pkf.slice(1).toLowerCase()) : (regLabel(_pkf) || _pkf)} ✕</span>`;
+        if (window._ordExitFilter) {
+          _cfHtml += `<span style="font-size:11px;font-weight:400;color:#d29922;margin-left:6px;cursor:pointer" onclick="_ordExitClear()" title="Exit-reason filter hatao (All)">▸ Exit: ${window._ordExitFilter} ✕</span>`;
+        }
+        _cf.innerHTML = _cfHtml;
       }
       if (window._completedSortCol) {
         _sortData(sortedCompleted, window._completedSortCol, window._completedSortDir);
@@ -689,7 +694,7 @@
             blockedHtml = `<details ${_grpOpenAttr('grp_blocked')} ontoggle="_grpToggleSave('grp_blocked', this.open)" style="margin-bottom:12px;background:#21262d;border:1px solid #6e2c2c;border-radius:6px">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding:10px 14px;cursor:pointer;font-weight:600;color:#f85149;display:flex;justify-content:space-between;align-items:center;border-radius:6px" onmouseover="this.style.background='#2d1f1f'" onmouseout="this.style.background='transparent'">
-          <span>🚫 Capital se Block hui Entries <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
+          <span>🚫 Block hui Entries <span style="color:#8b949e;font-size:11px;font-weight:normal;margin-left:6px">RMS / capital / cap — reason per row</span><span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:6px">(${opnBlocked.length})</span></span>
           <span style="font-size:12px;color:#8b949e">Toggle ▾</span>
         </summary>
         <div style="padding:0 14px 12px;overflow-x:auto">
