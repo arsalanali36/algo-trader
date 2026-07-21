@@ -176,7 +176,10 @@
       "slug": "overnight_orb_nifty",
       "live_file": "strategies/live/orb_overnight_trader.py",
       "status": "paper",
-      "legs": 1
+      "legs": 1,
+      "instrument": "NIFTY",
+      "hold": "Overnight",
+      "structure": "Naked ATM"
     },
     "01.01": {
       "name": "Chain-Zone — Long ATM",
