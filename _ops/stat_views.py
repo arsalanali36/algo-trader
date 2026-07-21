@@ -16,13 +16,33 @@ _PATH = os.path.join(_ROOT, "data", "stat_views.json")
 _lock = threading.Lock()
 
 
+_BAK = _PATH + ".bak"
+
+
 def _read():
     try:
         with open(_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         return data if isinstance(data, list) else []
     except (FileNotFoundError, ValueError):
-        return []
+        pass
+    # Main file missing/corrupt → self-heal from the sibling backup if it has good
+    # data. stat_views.json is gitignored runtime data and was lost once to a VPS
+    # cleanup (2026-07-21, no backup existed then) — this makes a future loss recover.
+    try:
+        with open(_BAK, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, list) and data:
+            try:
+                os.makedirs(os.path.dirname(_PATH), exist_ok=True)
+                with open(_PATH, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+            return data
+    except (FileNotFoundError, ValueError):
+        pass
+    return []
 
 
 def _write(views):
@@ -31,6 +51,14 @@ def _write(views):
     with open(tmp, "w", encoding="utf-8") as f:
         json.dump(views, f, ensure_ascii=False, indent=2)
     os.replace(tmp, _PATH)
+    # Resilient backup — only when non-empty, so an empty write never clobbers a
+    # good backup. _read() restores from this if the main file ever vanishes.
+    if views:
+        try:
+            with open(_BAK, "w", encoding="utf-8") as f:
+                json.dump(views, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
 
 def _clean_strats(strategies):
