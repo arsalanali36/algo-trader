@@ -15,8 +15,22 @@
 
 ---
 
-## 2026-07-21 — Fork-based strategy supervisor (RAM 15-process → COW-shared) — module built, cutover PENDING
-**Status:** IN-PROGRESS (module + self-test + smoke-test DONE; live cutover deliberately NOT done)
+## 2026-07-21 — Fork-based strategy supervisor (RAM 15-process → COW-shared) — CUTOVER DONE (same session)
+**Status:** DONE (daemon `algo-supervisor` live on VPS, flag ON; kal 9:10 pehla real fleet-day)
+**Cutover (commit `51d88b8`):** `--daemon` mode = desired-state reconciler — dashboard `api_start`
+supervisor-flag (`data/supervisor_mode.flag`) pe `data/supervisor_desired.json` me {sid,mode,script}
+likhta hai (dashboard hi STRATEGIES ka single source; daemon kabhi dashboard import nahi karta =
+parent minimal/fork-safe), daemon ~2s me fork karta; `api_stop` desired=stopped (pid-check se PEHLE,
+stale-desired bhi saaf) + SIGTERM. **Parity:** crash-respawn OFF (legacy Popen bhi nahi karta tha) —
+cutover sirf spawn-mechanism badalta hai. **Fail-safe (tested):** daemon dead → api_start legacy
+Popen + 🔴 loud log — "kal subah start nahi hui" failure mode exist nahi karta. **Daily re-warm:**
+naye IST din ki pehli fork se pehle scrip master re-download+rebuild (stale-expiry COW bug block).
+**`_proc_cmdline` fix:** setproctitle title /proc/cmdline me single-token hota hai — joined-string
+token match (warna rsi_v1 vs rsi_v1_PAPER pgrep-substring ambiguity). **E2E on VPS:** start→fork
+(title+pidmap+desired sahi, get_pid match)→stop→clean, no respawn; fail-safe legacy path verified;
+orb_overnight legacy process untouched (daemon `_legacy_pid` duplicate-fork guard). Rollback = `rm
+data/supervisor_mode.flag` (turant legacy). systemd: `algo-supervisor.service` (quoted paths — 203/EXEC
+spaces trap). Test ke baad orb_v1 active:true restore kiya (15 active intact).
 **Kya:** 15 paper strategy traders har ek apna interpreter + pandas + 26MB scrip-master cache alag-alag
 load karte the (~1.9GB peak, box 3.8GB — mutex live trader ke liye jagah nahi thi). Naya
 `_ops/strategy_supervisor.py`: EK single-threaded parent pandas + `dhan_master.build_cache()` warm
