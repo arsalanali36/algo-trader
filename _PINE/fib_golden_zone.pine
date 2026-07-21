@@ -1,0 +1,302 @@
+// ╔══════════════════════════════════════════════════════════════════╗
+// ║  fib_golden_zone.pine  —  Fibonacci Golden-Zone Strategy         ║
+// ║  (Retracement = ENTRY  |  Extension = TARGET)                    ║
+// ║  Source: YouTube "Fibonacci retracement + extension" video       ║
+// ╚══════════════════════════════════════════════════════════════════╝
+//
+// STRATEGY LOGIC (video se nikala hua):
+//   1) Market ek clean SWING banata hai (pivot low -> pivot high = up-leg,
+//      ya pivot high -> pivot low = down-leg). Yeh swing pivots se auto detect.
+//   2) Us swing pe Fib RETRACEMENT: golden zone = 0.5 se 0.618 ke beech.
+//   3) UP-LEG ke baad price golden zone (0.5-0.618) mein PULLBACK aaye +
+//      bullish candle bane  -> LONG entry (trend ke saath).
+//      DOWN-LEG ke baad price golden zone mein pullback aaye + bearish
+//      candle bane -> SHORT entry.
+//   4) 61.8% sabse powerful. Agar price 61.8% ke PAAR CLOSE kar de ->
+//      setup INVALID (deep retracement / reversal sign) -> trade cancel.
+//   5) SL = 61.8% level ke just bahar (LONG me neeche, SHORT me upar) + buffer.
+//   6) TARGET = Fib EXTENSION (3-point: swing-low -> swing-high -> pullback-low):
+//        T1 = 61.8% ext , T2 = 100% ext , T3 = 161.8% ext (trail zone).
+//
+// HOUSE RULES (CODE3B mandatory defaults):
+//   - Max 2 trades/day (har din reset)
+//   - 15:15 IST force square-off + uske baad koi nayi entry nahi
+//   - Backtest date-range inputs (Strategy Tester + Pine Logs isi window ka)
+//   - log.info() SIGNAL/EXIT lines (validate_strategy.py --signals parser ke liye)
+//
+// NOTE: Yeh discretionary tool ka mechanical version hai. "Clean swing" ko
+//   pivotLen se approximate kiya gaya hai — bada pivotLen = bade/clean swings.
+//   Har market (NIFTY/Gold/BTC/Forex) pe same, sirf pivotLen/timeframe tune karo.
+
+//@version=6
+strategy("Fib Golden Zone [Retrace Entry + Ext Target]", overlay=true,
+     pyramiding=0, initial_capital=100000,
+     default_qty_type=strategy.fixed, default_qty_value=1,
+     commission_type=strategy.commission.percent, commission_value=0.03,
+     calc_on_every_tick=false)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INPUTS
+// ═══════════════════════════════════════════════════════════════════════════
+grpS = "Swing Detection"
+pivotLen = input.int(8, "Swing Pivot Length (bars each side)", minval=2, group=grpS,
+     tooltip="Bada = clean/bade swings (video ka 'clean swing'). Chhota = zyada swings.")
+
+grpF = "Fibonacci — Entry (Retracement)"
+zNear   = input.float(0.5,   "Golden Zone start (50%)",   step=0.001, group=grpF)
+zFar    = input.float(0.618, "Golden Zone end (61.8%)",   step=0.001, group=grpF)
+needConf= input.bool(true,   "Confirmation candle chahiye (bull/bear)", group=grpF)
+slBuf   = input.float(0.10,  "SL buffer beyond 61.8% (x range)", step=0.01, group=grpF,
+     tooltip="0.10 = swing range ka 10% extra, 61.8% ke bahar SL ke liye.")
+
+grpT = "Fibonacci — Target (Extension)"
+t1x   = input.float(0.618, "Target 1 (extension)", step=0.001, group=grpT)
+t2x   = input.float(1.0,   "Target 2 (extension)", step=0.001, group=grpT)
+t3x   = input.float(1.618, "Target 3 (extension)", step=0.001, group=grpT)
+t1pct = input.int(50, "Exit % @ T1", minval=0, maxval=100, group=grpT)
+t2pct = input.int(30, "Exit % @ T2", minval=0, maxval=100, group=grpT)
+// baaki position T3 tak trail
+
+grpD = "Direction"
+allowLong  = input.bool(true,  "Allow LONG (up-leg pullback)",   group=grpD)
+allowShort = input.bool(true,  "Allow SHORT (down-leg pullback)", group=grpD)
+reverse    = input.bool(true,  "REVERSE signals (long <-> short)", group=grpD,
+     tooltip="Seedhi direction consistent LOSER thi (PF 0.52). Reverse = opposite side lo. " +
+     "Reversed trade ka TARGET = original SL level, STOP = original T1 level = exact inverse. " +
+     "Reverse ON = single target (no scale-out).")
+
+grpDay = "Day Selection"
+startDate = input.time(timestamp("2026-01-01 09:15"), "Backtest Start Date", group=grpDay)
+endDate   = input.time(timestamp("2026-12-31 15:15"), "Backtest End Date",   group=grpDay)
+inDateRange = (time >= startDate and time <= endDate)
+
+grpR = "Risk / Session (House Rules)"
+maxTradesPerDay = input.int(2, "Max trades per day", minval=1, group=grpR)
+useSession = input.bool(true, "Intraday session + 15:15 squareoff", group=grpR)
+exitHH = input.int(15, "Square-off hour (IST)",   minval=0, maxval=23, group=grpR)
+exitMM = input.int(15, "Square-off minute (IST)", minval=0, maxval=59, group=grpR)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SESSION / DAY GATES  (IST via Asia/Kolkata — chart tz se independent)
+// ═══════════════════════════════════════════════════════════════════════════
+tH = hour(time, "Asia/Kolkata")
+tM = minute(time, "Asia/Kolkata")
+afterExit  = tH > exitHH or (tH == exitHH and tM >= exitMM)
+beforeOpen = tH < 9 or (tH == 9 and tM < 15)
+inSession  = not useSession or (not beforeOpen and not afterExit)
+
+var int tradesToday = 0
+if ta.change(time("D")) != 0
+    tradesToday := 0
+
+canEnter = inDateRange and inSession and tradesToday < maxTradesPerDay and strategy.position_size == 0
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  SWING PIVOTS
+// ═══════════════════════════════════════════════════════════════════════════
+ph = ta.pivothigh(high, pivotLen, pivotLen)
+pl = ta.pivotlow(low,  pivotLen, pivotLen)
+
+var float lastPH    = na
+var float lastPL    = na
+var int   lastPHbar = na
+var int   lastPLbar = na
+
+// ── LONG setup state (up-leg: A=swing low, B=swing high, C=pullback low) ──
+var bool  L_on = false
+var float L_A  = na
+var float L_B  = na
+var float L_C  = na
+// ── SHORT setup state (down-leg: A=swing high, B=swing low, C=pullback high) ──
+var bool  S_on = false
+var float S_A  = na
+var float S_B  = na
+var float S_C  = na
+
+// New pivot HIGH confirmed -> if a prior pivot LOW exists below it => UP-LEG
+if not na(ph)
+    if allowLong and not na(lastPL) and lastPLbar < (bar_index - pivotLen) and ph > lastPL
+        L_A := lastPL
+        L_B := ph
+        L_C := ph          // pullback-low tracker (min low se update hoga)
+        L_on := true
+        S_on := false      // opposite setup cancel
+    lastPH := ph
+    lastPHbar := bar_index - pivotLen
+
+// New pivot LOW confirmed -> if a prior pivot HIGH exists above it => DOWN-LEG
+if not na(pl)
+    if allowShort and not na(lastPH) and lastPHbar < (bar_index - pivotLen) and pl < lastPH
+        S_A := lastPH
+        S_B := pl
+        S_C := pl          // pullback-high tracker (max high se update hoga)
+        S_on := true
+        L_on := false
+    lastPL := pl
+    lastPLbar := bar_index - pivotLen
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  FIB LEVELS (active setup ke liye)
+// ═══════════════════════════════════════════════════════════════════════════
+// LONG
+L_range = L_B - L_A
+L_z1 = L_B - zNear * L_range     // 50%  (zone upper)
+L_z2 = L_B - zFar  * L_range     // 61.8% (zone lower / golden end)
+L_sl = L_z2 - slBuf * L_range    // SL just below 61.8%
+// SHORT
+S_range = S_A - S_B
+S_z1 = S_B + zNear * S_range     // 50%  (zone lower)
+S_z2 = S_B + zFar  * S_range     // 61.8% (zone upper / golden end)
+S_sl = S_z2 + slBuf * S_range    // SL just above 61.8%
+
+// pullback extreme track (extension base C)
+if L_on
+    L_C := math.min(nz(L_C, high), low)
+if S_on
+    S_C := math.max(nz(S_C, low), high)
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  INVALIDATION  (61.8% ke paar CLOSE = setup dead)
+// ═══════════════════════════════════════════════════════════════════════════
+if L_on and close < L_z2
+    L_on := false
+if S_on and close > S_z2
+    S_on := false
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  ENTRY TRIGGERS
+// ═══════════════════════════════════════════════════════════════════════════
+bull = close > open
+bear = close < open
+
+// LONG: low golden zone mein ghusa (<= 50%), close 61.8% ke upar ruka, bullish candle
+longTrig  = L_on and low  <= L_z1 and close >= L_z2 and (not needConf or bull)
+// SHORT: high golden zone mein pahunchа (>= 50%), close 61.8% ke neeche ruka, bearish candle
+shortTrig = S_on and high >= S_z1 and close <= S_z2 and (not needConf or bear)
+
+// trade-time targets/SL persist (position ke dauraan use)
+var float slPrice = na
+var float t1p = na
+var float t2p = na
+var float t3p = na
+
+// LONG-trigger (up-leg pullback). reverse=false -> LONG ; reverse=true -> SHORT.
+if canEnter and longTrig
+    rng = L_B - L_A
+    baseC = math.min(nz(L_C, low), low)      // pullback low
+    natSL = L_sl                             // niche (61.8% ke bahar)
+    natT1 = baseC + t1x * rng                // upar
+    natT2 = baseC + t2x * rng
+    natT3 = baseC + t3x * rng
+    if reverse
+        slPrice := natT1                     // stop UPAR (original T1)
+        t1p := natSL                         // target NICHE (original SL)
+        t2p := na
+        t3p := na
+        strategy.entry("Short", strategy.short)
+        log.info("SIGNAL SHORT [REV up-leg] " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") +
+             " entry=" + str.tostring(close, "#.##") + " sl=" + str.tostring(slPrice, "#.##") +
+             " t=" + str.tostring(t1p, "#.##"))
+    else
+        slPrice := natSL
+        t1p := natT1
+        t2p := natT2
+        t3p := natT3
+        strategy.entry("Long", strategy.long)
+        log.info("SIGNAL LONG " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") +
+             " entry=" + str.tostring(close, "#.##") + " sl=" + str.tostring(slPrice, "#.##") +
+             " t1=" + str.tostring(t1p, "#.##") + " t2=" + str.tostring(t2p, "#.##") +
+             " t3=" + str.tostring(t3p, "#.##"))
+    L_on := false
+
+// SHORT-trigger (down-leg pullback). reverse=false -> SHORT ; reverse=true -> LONG.
+if canEnter and shortTrig
+    rng = S_A - S_B
+    baseC = math.max(nz(S_C, high), high)    // pullback high
+    natSL = S_sl                             // upar (61.8% ke bahar)
+    natT1 = baseC - t1x * rng                // niche
+    natT2 = baseC - t2x * rng
+    natT3 = baseC - t3x * rng
+    if reverse
+        slPrice := natT1                     // stop NICHE (original T1)
+        t1p := natSL                         // target UPAR (original SL)
+        t2p := na
+        t3p := na
+        strategy.entry("Long", strategy.long)
+        log.info("SIGNAL LONG [REV down-leg] " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") +
+             " entry=" + str.tostring(close, "#.##") + " sl=" + str.tostring(slPrice, "#.##") +
+             " t=" + str.tostring(t1p, "#.##"))
+    else
+        slPrice := natSL
+        t1p := natT1
+        t2p := natT2
+        t3p := natT3
+        strategy.entry("Short", strategy.short)
+        log.info("SIGNAL SHORT " + str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") +
+             " entry=" + str.tostring(close, "#.##") + " sl=" + str.tostring(slPrice, "#.##") +
+             " t1=" + str.tostring(t1p, "#.##") + " t2=" + str.tostring(t2p, "#.##") +
+             " t3=" + str.tostring(t3p, "#.##"))
+    S_on := false
+
+// trade count (fresh fill detect)
+if strategy.position_size != 0 and strategy.position_size[1] == 0
+    tradesToday += 1
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  EXITS — 3 scale-out targets + SL (SL/T1/T2/T3), plus 15:15 squareoff
+// ═══════════════════════════════════════════════════════════════════════════
+if reverse
+    // single target (full qty): target=t1p, stop=slPrice
+    if strategy.position_size > 0
+        strategy.exit("L-X", from_entry="Long",  limit=t1p, stop=slPrice)
+    if strategy.position_size < 0
+        strategy.exit("S-X", from_entry="Short", limit=t1p, stop=slPrice)
+else
+    // original 3-target scale-out
+    if strategy.position_size > 0
+        strategy.exit("L-T1", from_entry="Long", qty_percent=t1pct, limit=t1p, stop=slPrice)
+        strategy.exit("L-T2", from_entry="Long", qty_percent=t2pct, limit=t2p, stop=slPrice)
+        strategy.exit("L-T3", from_entry="Long", limit=t3p, stop=slPrice)
+    if strategy.position_size < 0
+        strategy.exit("S-T1", from_entry="Short", qty_percent=t1pct, limit=t1p, stop=slPrice)
+        strategy.exit("S-T2", from_entry="Short", qty_percent=t2pct, limit=t2p, stop=slPrice)
+        strategy.exit("S-T3", from_entry="Short", limit=t3p, stop=slPrice)
+
+// 15:15 force square-off + no re-entry (position band karo)
+if useSession and afterExit and strategy.position_size != 0
+    strategy.close_all(comment="EOD 15:15")
+
+// flat hone pe EXIT log
+if strategy.position_size == 0 and strategy.position_size[1] != 0
+    log.info("EXIT " + (strategy.position_size[1] > 0 ? "LONG " : "SHORT ") +
+         str.format_time(time, "yyyy-MM-dd HH:mm", "Asia/Kolkata") +
+         " close=" + str.tostring(close, "#.##"))
+
+// ═══════════════════════════════════════════════════════════════════════════
+//  VISUALS — golden zone + SL/targets
+// ═══════════════════════════════════════════════════════════════════════════
+// golden zone plots (sirf active setup pe)
+Lz1v = L_on ? L_z1 : na
+Lz2v = L_on ? L_z2 : na
+Sz1v = S_on ? S_z1 : na
+Sz2v = S_on ? S_z2 : na
+p1 = plot(Lz1v, "L 50%",   color=color.new(color.orange, 0),  style=plot.style_linebr)
+p2 = plot(Lz2v, "L 61.8%", color=color.new(color.orange, 0),  style=plot.style_linebr)
+fill(p1, p2, color=color.new(color.orange, 80), title="LONG golden zone")
+p3 = plot(Sz1v, "S 50%",   color=color.new(color.fuchsia, 0), style=plot.style_linebr)
+p4 = plot(Sz2v, "S 61.8%", color=color.new(color.fuchsia, 0), style=plot.style_linebr)
+fill(p3, p4, color=color.new(color.fuchsia, 80), title="SHORT golden zone")
+
+// in-trade SL/target lines
+inTrade = strategy.position_size != 0
+plot(inTrade ? slPrice : na, "SL", color=color.red,    style=plot.style_linebr, linewidth=2)
+plot(inTrade ? t1p : na,     "T1", color=color.new(color.green, 0),  style=plot.style_linebr)
+plot(inTrade ? t2p : na,     "T2", color=color.new(color.teal, 20),  style=plot.style_linebr)
+plot(inTrade ? t3p : na,     "T3", color=color.new(color.lime, 0),   style=plot.style_linebr)
+
+doLong  = longTrig  and canEnter
+doShort = shortTrig and canEnter
+actBuy  = (doLong and not reverse) or (doShort and reverse)
+actSell = (doShort and not reverse) or (doLong and reverse)
+plotshape(actBuy,  "BUY",  shape.triangleup,   location.belowbar, color.green, size=size.small)
+plotshape(actSell, "SELL", shape.triangledown, location.abovebar, color.red,   size=size.small)
