@@ -113,6 +113,23 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
             side=side, sec_id=sec_id, seg=seg, mode=mode, broker=broker, log=log)
         if not gate_ok:
             log(f"[GATEWAY] [SKIP] {symbol} entry blocked — {gate_reason}")
+            # Record the would-be trade (entry-intent + is-second ka premium) so a
+            # later OFFLINE replay can price its hypothetical P&L — the only way to
+            # answer "block na hote to kya hota" (blocked signal order_store me
+            # kabhi nahi jaata). Ye SINGLE choke-point hai jahan se har strategy ki
+            # entry block hoti hai → recording yahan = abhi + future ki har strategy
+            # apne-aap covered. FAIL-SAFE: recording ki koi bhi dikkat order-decision
+            # ko kabhi na tode (skipped_store khud swallow karta hai; import bhi try
+            # me — VPS deploy-drift pe gate zinda rahe).
+            try:
+                import skipped_store
+                skipped_store.record_skip(
+                    strategy=strategy_id, symbol=symbol, side=side,
+                    trad_sym=trad_sym, sec_id=sec_id,
+                    intended_lots=lots, lot_size=lot_size,
+                    entry_premium=est_price, block_reason=gate_reason, mode=mode)
+            except Exception as _e:
+                log(f"[GATEWAY] skip-record failed (non-fatal): {_e}")
             # price = est_price: caller ko blocked-row recording (CAPITAL_BLOCKED
             # ghost row, universe pattern) ke liye chahiye hota hai
             return _result(False, "blocked", gate_reason, price=est_price)

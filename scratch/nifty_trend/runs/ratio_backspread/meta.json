@@ -1,56 +1,72 @@
 {
- "slug": "ratio_backspread",
- "design": "ratio_backspread/tod_orb_break",
- "title": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
- "tf": "5m",
- "params": {
-  "tp_frac": 1.5,
-  "sl_frac": 0.75,
-  "bs_off": 2,
-  "or_min": 30,
-  "orb_k": 1.0,
-  "h0": 10,
-  "h1": 13
- },
- "exit": "tp1.5/sl0.75",
- "instrument": "NIFTY 50 options",
- "lot_size": 65,
- "window": [
-  "2018-01-01",
-  "2026-07-09"
- ],
- "days": 2103,
- "significant": true,
- "bs_full": {
-  "sharpe": 1.555,
-  "net_pct": 29.86,
-  "maxdd": -1.977,
-  "win_rate": 42.527,
-  "trades": 1124,
-  "profit_factor": 1.709
- },
- "instrument_full_sharpe": 2.231,
- "rms_full_sharpe": 2.231,
- "p_value": 0.002,
- "created": "2026-07-11 12:33",
- "real_cost": {
-  "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-  "date": "2026-07-14",
-  "approx": true,
-  "full": {
-   "sharpe": 1.515,
-   "net_pct": 29.02,
-   "maxdd": -1.97
+  "slug": "ratio_backspread",
+  "design": "ratio_backspread/tod_orb_break",
+  "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+  "tf": "5m",
+  "params": {
+    "tp_frac": 1.5,
+    "sl_frac": 0.75,
+    "bs_off": 2,
+    "or_min": 30,
+    "orb_k": 1.0,
+    "h0": 10,
+    "h1": 13
   },
-  "train": {
-   "sharpe": 1.316,
-   "net_pct": 15.59,
-   "maxdd": -1.46
+  "exit": "tp1.5/sl0.75",
+  "instrument": "NIFTY 50 options",
+  "lot_size": 65,
+  "window": [
+    "2018-01-01",
+    "2026-07-21"
+  ],
+  "days": 2111,
+  "significant": true,
+  "bs_full": {
+    "sharpe": 1.322,
+    "net_pct": 25.159,
+    "maxdd": -2.558,
+    "win_rate": 40.853,
+    "trades": 1126,
+    "profit_factor": 1.564
   },
-  "oos": {
-   "sharpe": 1.917,
-   "net_pct": 13.43,
-   "maxdd": -2.24
+  "instrument_full_sharpe": 2.008,
+  "rms_full_sharpe": 2.008,
+  "p_value": 0.002,
+  "created": "2026-07-11 12:33",
+  "real_cost": {
+    "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+    "date": "2026-07-14",
+    "approx": true,
+    "full": {
+      "sharpe": 1.515,
+      "net_pct": 29.02,
+      "maxdd": -1.97
+    },
+    "train": {
+      "sharpe": 1.316,
+      "net_pct": 15.59,
+      "maxdd": -1.46
+    },
+    "oos": {
+      "sharpe": 1.917,
+      "net_pct": 13.43,
+      "maxdd": -2.24
+    }
+  },
+  "extended": {
+    "orig_window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "bs_full_at_hunt": {
+      "sharpe": 1.555,
+      "net_pct": 29.86,
+      "maxdd": -1.977,
+      "win_rate": 42.527,
+      "trades": 1124,
+      "profit_factor": 1.709
+    },
+    "first_extended": "2026-07-21",
+    "last_extended": "2026-07-21 21:10"
   }
- }
 }

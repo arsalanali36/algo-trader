@@ -1,1013 +1,1103 @@
 [
- {
-  "slug": "mid_orb_nifty",
-  "design": "tod_orb",
-  "title": "00 - Mid-Day ORB (reference, live)",
-  "tf": "15m",
-  "params": {
-   "or_min": 30,
-   "orb_k": 1.0,
-   "h0": 11,
-   "h1": 14,
-   "atr_sl": 1.5,
-   "rr": 2.5
+  {
+    "slug": "long_strangle_orb",
+    "design": "long_strangle/orb_break",
+    "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
+    "tf": "5m",
+    "params": {
+      "tp_frac": 0.75,
+      "sl_frac": 1.0,
+      "or_min": 15,
+      "orb_k": 0.5,
+      "h0": 11,
+      "h1": 13
+    },
+    "exit": "tp0.75/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": false,
+    "bs_full": {
+      "sharpe": 4.085,
+      "net_pct": 90.026,
+      "maxdd": -0.771,
+      "win_rate": 48.695,
+      "trades": 1686,
+      "profit_factor": 4.283
+    },
+    "instrument_full_sharpe": 4.881,
+    "rms_full_sharpe": 4.881,
+    "p_value": 0.072,
+    "created": "2026-07-10 23:09",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": 3.96,
+        "net_pct": 86.81,
+        "maxdd": -0.79
+      },
+      "train": {
+        "sharpe": 3.636,
+        "net_pct": 48.4,
+        "maxdd": -0.62
+      },
+      "oos": {
+        "sharpe": 4.666,
+        "net_pct": 38.41,
+        "maxdd": -1.14
+      }
+    }
   },
-  "exit": "atr_rr",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2022-01-03",
-   "2026-07-09"
-  ],
-  "days": 1112,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 2.366,
-   "net_pct": 39.205,
-   "maxdd": -1.769,
-   "win_rate": 44.797,
-   "trades": 567,
-   "profit_factor": 1.927
+  {
+    "slug": "chain_zone_naked",
+    "design": "chain_zone",
+    "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": -0.625,
+      "net_pct": -16.192,
+      "maxdd": -18.168,
+      "win_rate": 43.3,
+      "trades": 1806,
+      "profit_factor": 0.896
+    },
+    "instrument_full_sharpe": 0.566,
+    "rms_full_sharpe": 0.61,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:40",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": -0.722,
+        "net_pct": -18.74,
+        "maxdd": -20.24
+      },
+      "train": {
+        "sharpe": -1.034,
+        "net_pct": -15.98,
+        "maxdd": -16.45
+      },
+      "oos": {
+        "sharpe": -0.296,
+        "net_pct": -2.75,
+        "maxdd": -5.97
+      }
+    }
   },
-  "instrument_full_sharpe": 0.973,
-  "rms_full_sharpe": 0.975,
-  "p_value": 0.0,
-  "created": "2026-07-10 09:13",
-  "deploy_key": "orb_v1",
-  "deployed": "orb_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 2.319,
-    "net_pct": 38.33,
-    "maxdd": -1.81
-   },
-   "train": {
-    "sharpe": 2.345,
-    "net_pct": 27.48,
-    "maxdd": -1.81
-   },
-   "oos": {
-    "sharpe": 2.449,
-    "net_pct": 11.03,
-    "maxdd": -0.89
-   }
+  {
+    "slug": "chain_zone_credit",
+    "design": "chain_zone",
+    "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": -1.003,
+      "net_pct": -24.512,
+      "maxdd": -25.646,
+      "win_rate": 42.137,
+      "trades": 1806,
+      "profit_factor": 0.839
+    },
+    "instrument_full_sharpe": 0.566,
+    "rms_full_sharpe": 0.61,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:37",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": -1.096,
+        "net_pct": -26.89,
+        "maxdd": -27.8
+      },
+      "train": {
+        "sharpe": -1.446,
+        "net_pct": -21.48,
+        "maxdd": -21.75
+      },
+      "oos": {
+        "sharpe": -0.635,
+        "net_pct": -5.39,
+        "maxdd": -7.29
+      }
+    }
+  },
+  {
+    "slug": "chain_zone_positional",
+    "design": "chain_zone",
+    "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
+    "tf": "15m",
+    "params": {
+      "touch_tol": 0.0,
+      "zone_age": 2,
+      "max_cs": 60.0,
+      "hawa": false,
+      "chain_lookback": 10,
+      "atr_sl": 1.5,
+      "rr": 2.0,
+      "max_hold_days": 3
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 0.974,
+      "net_pct": 52.073,
+      "maxdd": -6.949,
+      "win_rate": 22.036,
+      "trades": 717,
+      "profit_factor": 1.436
+    },
+    "instrument_full_sharpe": 1.202,
+    "rms_full_sharpe": 1.158,
+    "p_value": 0.008,
+    "created": "2026-07-11 10:59",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 0.934,
+        "net_pct": 49.81,
+        "maxdd": -7.2
+      },
+      "train": {
+        "sharpe": 0.941,
+        "net_pct": 29.37,
+        "maxdd": -7.2
+      },
+      "oos": {
+        "sharpe": 1.024,
+        "net_pct": 26.9,
+        "maxdd": -9.1
+      }
+    }
+  },
+  {
+    "slug": "gamma_scalp",
+    "design": "gamma_scalp",
+    "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
+    "tf": "5m",
+    "params": {
+      "structure": "long straddle + delta-hedge",
+      "entry": "10:00 daily",
+      "hedge_band": 0.15,
+      "signal": "all"
+    },
+    "exit": "EOD 3:15",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": false,
+    "bs_full": {
+      "sharpe": 0.139,
+      "net_pct": -172.505,
+      "maxdd": -173.051,
+      "win_rate": 10.685,
+      "trades": 992,
+      "profit_factor": 0.067
+    },
+    "instrument_full_sharpe": -0.032,
+    "rms_full_sharpe": -0.032,
+    "p_value": 1.0,
+    "created": "2026-07-11 20:39",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": 0.004,
+        "net_pct": -176.8,
+        "maxdd": -177.15
+      },
+      "train": {
+        "sharpe": -0.29,
+        "net_pct": -115.95,
+        "maxdd": -116.01
+      },
+      "oos": {
+        "sharpe": -10.536,
+        "net_pct": -60.81,
+        "maxdd": -61.12
+      }
+    }
+  },
+  {
+    "slug": "shortvol_ironfly",
+    "design": "iron_fly/held",
+    "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
+    "tf": "5m",
+    "params": {
+      "structure": "iron_fly \u00b18 (HELD-strike)",
+      "entry": "10:00",
+      "tp": 0.5,
+      "sl": 1.0,
+      "slip": 0.005,
+      "note": "corrected engine"
+    },
+    "exit": "tp0.5/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": false,
+    "bs_full": {
+      "sharpe": -3.509,
+      "net_pct": -54.309,
+      "maxdd": -54.503,
+      "win_rate": 47.931,
+      "trades": 991,
+      "profit_factor": 0.431
+    },
+    "instrument_full_sharpe": -0.974,
+    "rms_full_sharpe": -3.509,
+    "p_value": 1.0,
+    "created": "2026-07-11 20:51",
+    "deploy_key": "shortvol_v1",
+    "deployed": "shortvol_v1",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": -3.71,
+        "net_pct": -57.73,
+        "maxdd": -57.88
+      },
+      "train": {
+        "sharpe": -3.321,
+        "net_pct": -36.89,
+        "maxdd": -36.9
+      },
+      "oos": {
+        "sharpe": -4.391,
+        "net_pct": -20.83,
+        "maxdd": -21.28
+      }
+    }
+  },
+  {
+    "slug": "banknifty_hunt",
+    "design": "tod_orb",
+    "title": "07 - Mid-Day ORB [BANKNIFTY]",
+    "tf": "15m",
+    "params": {
+      "or_min": 30,
+      "orb_k": 1.5,
+      "h0": 11,
+      "h1": 14,
+      "atr_sl": 2.0,
+      "rr": 1.5
+    },
+    "exit": "atr_rr",
+    "instrument": "BANKNIFTY",
+    "lot_size": 30,
+    "window": [
+      "2022-01-03",
+      "2026-07-09"
+    ],
+    "days": 1111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.459,
+      "net_pct": 23.552,
+      "maxdd": -2.981,
+      "win_rate": 49.415,
+      "trades": 342,
+      "profit_factor": 1.64
+    },
+    "instrument_full_sharpe": 0.509,
+    "rms_full_sharpe": 0.516,
+    "p_value": 0.011,
+    "created": "2026-07-11 23:51",
+    "deploy_key": "banknifty_v1",
+    "deployed": "banknifty_v1",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": 1.367,
+        "net_pct": 21.94,
+        "maxdd": -3.08
+      },
+      "train": {
+        "sharpe": 1.451,
+        "net_pct": 17.19,
+        "maxdd": -3.08
+      },
+      "oos": {
+        "sharpe": 1.216,
+        "net_pct": 4.92,
+        "maxdd": -2.08
+      }
+    }
+  },
+  {
+    "slug": "pivot_continuation",
+    "design": "pivot_break",
+    "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 \u2014 user pass, NOT deployed)",
+    "tf": "3m",
+    "params": {
+      "tol": 5.0,
+      "band": [
+        3,
+        4,
+        5
+      ],
+      "h0": 0,
+      "atr_sl": 2.5,
+      "rr": 1.5,
+      "trail_atr": 2.0
+    },
+    "exit": "atr_rr",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 0.967,
+      "net_pct": 23.36,
+      "maxdd": -1.487,
+      "win_rate": 52.0,
+      "trades": 400,
+      "profit_factor": 1.918
+    },
+    "instrument_full_sharpe": 0.653,
+    "rms_full_sharpe": 0.691,
+    "p_value": 0.014,
+    "created": "2026-07-12 09:57",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 0.941,
+        "net_pct": 22.67,
+        "maxdd": -1.55
+      },
+      "train": {
+        "sharpe": 0.68,
+        "net_pct": 11.71,
+        "maxdd": -1.55
+      },
+      "oos": {
+        "sharpe": 1.917,
+        "net_pct": 10.95,
+        "maxdd": -0.81
+      }
+    }
+  },
+  {
+    "slug": "vrp_overnight_condor",
+    "design": "vrp_condor",
+    "title": "10 - VRP Overnight Condor \u26a0\ufe0f FORWARD-PAPER candidate (real VRP edge, defined risk)",
+    "tf": "overnight",
+    "params": {
+      "body": 3,
+      "wing": 5
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-04-13"
+    ],
+    "days": 1182,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 15.32624165230887,
+      "net_pct": 57.33249823483888,
+      "maxdd": -0.42925839602571125,
+      "win_rate": 89.08765652951699,
+      "trades": 559,
+      "profit_factor": 19.194657123639328
+    },
+    "p_value": 0.0,
+    "tail_stress": {
+      "sharpe_2pct_maxloss_median": 4.18,
+      "sharpe_2pct_p05": 2.53
+    },
+    "instrument_full_sharpe": 18.677,
+    "rms_full_sharpe": 18.677,
+    "deflated_sharpe": {
+      "dsr_prob": 1.0,
+      "pass": true,
+      "n_trials": 120,
+      "sr_star_annual": 2.828
+    },
+    "caveat": "Real VRP edge + defined-risk wings + high-frequency (survives frequency-robustness). Raw backtest Sharpe is FLATTERED by a benign 2021-26 sample (no COVID-scale crash) + lake premium-data unreliable on the highest-vol nights. P&L clamped to defined-risk bounds; tail-stress (2% forced max-loss nights) reported. FORWARD-PAPER before any live money.",
+    "created": "2026-07-14"
+  },
+  {
+    "slug": "range_strangle_intraday",
+    "design": "range_strangle_intraday",
+    "verdict": "in-sample edge, borderline (DSR 0.62<0.95)",
+    "title": "Range-Extreme Short Strangle \u2014 INTRADAY \u26a0\ufe0f in-sample edge, borderline (DSR 0.62<0.95)",
+    "tf": "intraday",
+    "params": {
+      "lb": 10,
+      "dist": 0.5,
+      "age": 2,
+      "target": 40,
+      "sl": 40
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-10"
+    ],
+    "days": 1242,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 3.666076727368256,
+      "net_pct": 4.484079253254156,
+      "maxdd": -1.0945530283341776,
+      "win_rate": 80.48780487804879,
+      "trades": 123,
+      "profit_factor": 2.035671683152411
+    },
+    "p_value": 0.0075,
+    "tail_stress": {
+      "sharpe_2pct_crash_median": 1.87,
+      "sharpe_2pct_p05": 0.16
+    },
+    "instrument_full_sharpe": 4.741,
+    "rms_full_sharpe": 4.741,
+    "deflated_sharpe": {
+      "dsr_prob": 0.6173,
+      "pass": false,
+      "n_trials": 30,
+      "sr_star_annual": 3.233
+    },
+    "caveat": "9:20 entry, same-day exit, NO overnight \u2014 SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train\u2248OOS). Forward-paper first.",
+    "created": "2026-07-17"
+  },
+  {
+    "slug": "vrp_condor_weekly",
+    "design": "vrp_condor_weekly",
+    "title": "02.05 - VRP Weekly Condor (mild-IV) \u26a0\ufe0f FORWARD-PAPER (fails DSR)",
+    "tf": "weekly",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-09-24",
+      "2026-03-30"
+    ],
+    "days": 38,
+    "significant": false,
+    "bs_full": {
+      "sharpe": 4.500726305964645,
+      "net_pct": 4.5295000000000005,
+      "maxdd": -0.9721815057998073,
+      "win_rate": 73.68421052631578,
+      "trades": 38,
+      "profit_factor": 2.0964949441887826
+    },
+    "p_value": 0.032,
+    "deflated_sharpe": {
+      "dsr_prob": 0.3628,
+      "pass": false,
+      "n_trials": 24,
+      "sr_star_annual": 5.737
+    },
+    "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS \u2014 but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
+    "created": "2026-07-20"
+  },
+  {
+    "slug": "meanrev_nifty",
+    "design": "meanrev",
+    "title": "09 - Mean-Reversion Positional (NIFTY daily, monthly options)",
+    "tf": "1D",
+    "params": {
+      "w": 15,
+      "k": 1.5,
+      "sl": 3.0,
+      "rr": 1.5,
+      "mh": 10
+    },
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2021-07-01",
+      "2026-07-09"
+    ],
+    "days": 1241,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.0719605704292998,
+      "net_pct": 44.65540999999998,
+      "maxdd": -7.759627503805911,
+      "win_rate": 45.78313253012048,
+      "trades": 83,
+      "profit_factor": 2.0611275627343875
+    },
+    "p_value": 0.0,
+    "instrument_full_sharpe": 1.099,
+    "rms_full_sharpe": 1.021,
+    "deflated_sharpe": {
+      "dsr_prob": 0.4699,
+      "pass": false,
+      "n_trials": 250,
+      "sr_star_annual": 4.353
+    },
+    "created": "2026-07-14"
+  },
+  {
+    "slug": "regime_momentum",
+    "kind": "equity",
+    "title": "10 - Regime-Momentum Basket (F&O stocks)",
+    "tf": "monthly",
+    "instrument": "F&O stocks (210)",
+    "window": [
+      "2018-04-30",
+      "2026-07-20"
+    ],
+    "significant": true,
+    "p_value": 0.0033,
+    "bs_full": {
+      "sharpe": 1.23,
+      "net_pct": 468.0,
+      "maxdd": -23.89,
+      "win_rate": 54.5,
+      "trades": 99,
+      "profit_factor": 4.09
+    }
+  },
+  {
+    "slug": "overnight_orb_nifty",
+    "design": "overnight_orb",
+    "title": "00 - Overnight ORB (NIFTY, next-day 09:20 exit)",
+    "tf": "15m",
+    "params": {
+      "or_min": 30,
+      "orb_k": 1.0,
+      "h0": 11,
+      "h1": 14,
+      "atr_sl": 1.5,
+      "rr": null,
+      "exit": "nextday_0920",
+      "hold": "overnight",
+      "option": "monthly_atm_buy"
+    },
+    "exit": "nextday_0920",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-09"
+    ],
+    "days": 2103,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.661,
+      "net_pct": 68.777,
+      "maxdd": -2.406,
+      "win_rate": 37.557,
+      "trades": 1105,
+      "profit_factor": 1.57
+    },
+    "instrument_full_sharpe": 1.753,
+    "rms_full_sharpe": 1.753,
+    "p_value": 0.0,
+    "created": "2026-07-21 12:03",
+    "note": "BS = Black-Scholes MONTHLY ATM buy. Option BUYER + OVERNIGHT hold => BS under-prices theta (TRAP #136). Validate on real lake / forward-paper Real-vs-BS."
+  },
+  {
+    "slug": "mid_orb_nifty",
+    "design": "tod_orb",
+    "title": "Mid-Day ORB",
+    "tf": "15m",
+    "params": {
+      "or_min": 30,
+      "orb_k": 1.0,
+      "h0": 11,
+      "h1": 14,
+      "atr_sl": 1.5,
+      "rr": 2.5
+    },
+    "exit": "atr_rr",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 2.005,
+      "net_pct": 43.411,
+      "maxdd": -2.613,
+      "win_rate": 47.485,
+      "trades": 855,
+      "profit_factor": 1.753
+    },
+    "instrument_full_sharpe": 1.246,
+    "rms_full_sharpe": 1.24,
+    "p_value": 0.0,
+    "created": "2026-07-10 09:13",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 2.319,
+        "net_pct": 38.33,
+        "maxdd": -1.81
+      },
+      "train": {
+        "sharpe": 2.345,
+        "net_pct": 27.48,
+        "maxdd": -1.81
+      },
+      "oos": {
+        "sharpe": 2.449,
+        "net_pct": 11.03,
+        "maxdd": -0.89
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2022-01-03",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 2.366,
+        "net_pct": 39.205,
+        "maxdd": -1.769,
+        "win_rate": 44.797,
+        "trades": 567,
+        "profit_factor": 1.927
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:08"
+    },
+    "deployed": "orb_v1"
+  },
+  {
+    "slug": "long_straddle_orb",
+    "design": "long_straddle/orb_break",
+    "title": "Long Straddle @ ORB breakout",
+    "tf": "5m",
+    "params": {
+      "tp_frac": 0.5,
+      "sl_frac": 1.0,
+      "or_min": 15,
+      "orb_k": 0.5,
+      "vrp_mult": 1.2,
+      "skip_expiry": true
+    },
+    "exit": "tp0.5/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 3.257,
+      "net_pct": 74.827,
+      "maxdd": -1.172,
+      "win_rate": 41.84,
+      "trades": 1630,
+      "profit_factor": 2.654
+    },
+    "instrument_full_sharpe": 4.082,
+    "rms_full_sharpe": 4.082,
+    "p_value": 0.036,
+    "created": "2026-07-10 22:36",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 3.284,
+        "net_pct": 74.96,
+        "maxdd": -1.1
+      },
+      "train": {
+        "sharpe": 3.177,
+        "net_pct": 45.64,
+        "maxdd": -0.97
+      },
+      "oos": {
+        "sharpe": 3.541,
+        "net_pct": 29.32,
+        "maxdd": -1.56
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2018-01-01",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 3.549,
+        "net_pct": 81.666,
+        "maxdd": -1.038,
+        "win_rate": 43.262,
+        "trades": 1625,
+        "profit_factor": 3.006
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:08"
+    },
+    "deployed": "straddle_v1"
+  },
+  {
+    "slug": "debit_vertical_orb",
+    "design": "vertical_debit/orb_break",
+    "title": "Debit Vertical (Bull-Call / Bear-Put) @ ORB breakout",
+    "tf": "15m",
+    "params": {
+      "tp_frac": 1.0,
+      "sl_frac": 1.0,
+      "or_min": 15,
+      "orb_k": 1.0,
+      "wing_off": 10,
+      "vrp_mult": 1.2,
+      "skip_expiry": true
+    },
+    "exit": "tp1.0/sl1.0",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.545,
+      "net_pct": 35.633,
+      "maxdd": -2.521,
+      "win_rate": 50.081,
+      "trades": 1230,
+      "profit_factor": 1.406
+    },
+    "instrument_full_sharpe": 2.11,
+    "rms_full_sharpe": 2.11,
+    "p_value": 0.0,
+    "created": "2026-07-10 22:41",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": 1.593,
+        "net_pct": 36.75,
+        "maxdd": -2.01
+      },
+      "train": {
+        "sharpe": 1.928,
+        "net_pct": 29.21,
+        "maxdd": -1.47
+      },
+      "oos": {
+        "sharpe": 0.925,
+        "net_pct": 7.54,
+        "maxdd": -2.54
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2018-01-01",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 1.671,
+        "net_pct": 38.648,
+        "maxdd": -2.053,
+        "win_rate": 50.693,
+        "trades": 1227,
+        "profit_factor": 1.449
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:09"
+    },
+    "deployed": "dvert_v1"
+  },
+  {
+    "slug": "orb_supertrend",
+    "design": "orb_st",
+    "title": "ORB + Supertrend",
+    "tf": "15m",
+    "params": {
+      "or_min": 60,
+      "orb_k": 1.0,
+      "st_period": 14,
+      "st_mult": 3.0,
+      "atr_sl": 1.5,
+      "rr": 2.0
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.992,
+      "net_pct": 47.904,
+      "maxdd": -0.988,
+      "win_rate": 43.665,
+      "trades": 1026,
+      "profit_factor": 1.869
+    },
+    "instrument_full_sharpe": 1.277,
+    "rms_full_sharpe": 1.324,
+    "p_value": 0.0,
+    "created": "2026-07-10 23:40",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 2.003,
+        "net_pct": 48.11,
+        "maxdd": -0.99
+      },
+      "train": {
+        "sharpe": 2.045,
+        "net_pct": 31.09,
+        "maxdd": -0.77
+      },
+      "oos": {
+        "sharpe": 1.827,
+        "net_pct": 18.91,
+        "maxdd": -1.24
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2018-01-01",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 2.065,
+        "net_pct": 49.695,
+        "maxdd": -0.96,
+        "win_rate": 43.848,
+        "trades": 1024,
+        "profit_factor": 1.918
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:09"
+    },
+    "deployed": "orbst_v1"
+  },
+  {
+    "slug": "chain_zone_longatm",
+    "design": "chain_zone",
+    "title": "chain_zone",
+    "tf": "5m",
+    "params": {
+      "touch_tol": 5.0,
+      "zone_age": 2,
+      "max_cs": 40.0,
+      "hawa": false,
+      "chain_lookback": 20,
+      "atr_sl": 2.5,
+      "rr": 1.5
+    },
+    "exit": "stop_only",
+    "instrument": "NIFTY 50",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.865,
+      "net_pct": 66.333,
+      "maxdd": -3.2,
+      "win_rate": 39.349,
+      "trades": 1812,
+      "profit_factor": 1.466
+    },
+    "instrument_full_sharpe": 0.569,
+    "rms_full_sharpe": 0.613,
+    "p_value": 0.0,
+    "created": "2026-07-11 01:41",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": false,
+      "full": {
+        "sharpe": 1.871,
+        "net_pct": 66.38,
+        "maxdd": -3.2
+      },
+      "train": {
+        "sharpe": 1.83,
+        "net_pct": 40.73,
+        "maxdd": -3.2
+      },
+      "oos": {
+        "sharpe": 1.959,
+        "net_pct": 25.7,
+        "maxdd": -2.61
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2018-01-01",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 1.946,
+        "net_pct": 69.133,
+        "maxdd": -3.086,
+        "win_rate": 39.756,
+        "trades": 1806,
+        "profit_factor": 1.493
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:10"
+    },
+    "deployed": "chainzone_v1"
+  },
+  {
+    "slug": "ratio_backspread",
+    "design": "ratio_backspread/tod_orb_break",
+    "title": "Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
+    "tf": "5m",
+    "params": {
+      "tp_frac": 1.5,
+      "sl_frac": 0.75,
+      "bs_off": 2,
+      "or_min": 30,
+      "orb_k": 1.0,
+      "h0": 10,
+      "h1": 13
+    },
+    "exit": "tp1.5/sl0.75",
+    "instrument": "NIFTY 50 options",
+    "lot_size": 65,
+    "window": [
+      "2018-01-01",
+      "2026-07-21"
+    ],
+    "days": 2111,
+    "significant": true,
+    "bs_full": {
+      "sharpe": 1.322,
+      "net_pct": 25.159,
+      "maxdd": -2.558,
+      "win_rate": 40.853,
+      "trades": 1126,
+      "profit_factor": 1.564
+    },
+    "instrument_full_sharpe": 2.008,
+    "rms_full_sharpe": 2.008,
+    "p_value": 0.002,
+    "created": "2026-07-11 12:33",
+    "real_cost": {
+      "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
+      "date": "2026-07-14",
+      "approx": true,
+      "full": {
+        "sharpe": 1.515,
+        "net_pct": 29.02,
+        "maxdd": -1.97
+      },
+      "train": {
+        "sharpe": 1.316,
+        "net_pct": 15.59,
+        "maxdd": -1.46
+      },
+      "oos": {
+        "sharpe": 1.917,
+        "net_pct": 13.43,
+        "maxdd": -2.24
+      }
+    },
+    "extended": {
+      "orig_window": [
+        "2018-01-01",
+        "2026-07-09"
+      ],
+      "bs_full_at_hunt": {
+        "sharpe": 1.555,
+        "net_pct": 29.86,
+        "maxdd": -1.977,
+        "win_rate": 42.527,
+        "trades": 1124,
+        "profit_factor": 1.709
+      },
+      "first_extended": "2026-07-21",
+      "last_extended": "2026-07-21 21:10"
+    },
+    "deployed": "backspread_v1"
   }
- },
- {
-  "slug": "long_straddle_orb",
-  "design": "long_straddle/orb_break",
-  "title": "01 - Long Straddle @ ORB breakout",
-  "tf": "5m",
-  "params": {
-   "tp_frac": 0.5,
-   "sl_frac": 1.0,
-   "or_min": 15,
-   "orb_k": 0.5,
-   "vrp_mult": 1.2,
-   "skip_expiry": true
-  },
-  "exit": "tp0.5/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 3.549,
-   "net_pct": 81.666,
-   "maxdd": -1.038,
-   "win_rate": 43.262,
-   "trades": 1625,
-   "profit_factor": 3.006
-  },
-  "instrument_full_sharpe": 4.364,
-  "rms_full_sharpe": 4.364,
-  "p_value": 0.036,
-  "created": "2026-07-10 22:36",
-  "deploy_key": "straddle_v1",
-  "deployed": "straddle_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 3.284,
-    "net_pct": 74.96,
-    "maxdd": -1.1
-   },
-   "train": {
-    "sharpe": 3.177,
-    "net_pct": 45.64,
-    "maxdd": -0.97
-   },
-   "oos": {
-    "sharpe": 3.541,
-    "net_pct": 29.32,
-    "maxdd": -1.56
-   }
-  }
- },
- {
-  "slug": "debit_vertical_orb",
-  "design": "vertical_debit/orb_break",
-  "title": "02 - Debit Vertical (Bull-Call / Bear-Put) @ ORB",
-  "tf": "15m",
-  "params": {
-   "tp_frac": 1.0,
-   "sl_frac": 1.0,
-   "or_min": 15,
-   "orb_k": 1.0,
-   "wing_off": 10,
-   "vrp_mult": 1.2,
-   "skip_expiry": true
-  },
-  "exit": "tp1.0/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.671,
-   "net_pct": 38.648,
-   "maxdd": -2.053,
-   "win_rate": 50.693,
-   "trades": 1227,
-   "profit_factor": 1.449
-  },
-  "instrument_full_sharpe": 2.231,
-  "rms_full_sharpe": 2.231,
-  "p_value": 0.0,
-  "created": "2026-07-10 22:41",
-  "deploy_key": "dvert_v1",
-  "deployed": "dvert_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": 1.593,
-    "net_pct": 36.75,
-    "maxdd": -2.01
-   },
-   "train": {
-    "sharpe": 1.928,
-    "net_pct": 29.21,
-    "maxdd": -1.47
-   },
-   "oos": {
-    "sharpe": 0.925,
-    "net_pct": 7.54,
-    "maxdd": -2.54
-   }
-  }
- },
- {
-  "slug": "long_strangle_orb",
-  "design": "long_strangle/orb_break",
-  "title": "❌ Long Strangle @ ORB (failed sig p=0.07)",
-  "tf": "5m",
-  "params": {
-   "tp_frac": 0.75,
-   "sl_frac": 1.0,
-   "or_min": 15,
-   "orb_k": 0.5,
-   "h0": 11,
-   "h1": 13
-  },
-  "exit": "tp0.75/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": false,
-  "bs_full": {
-   "sharpe": 4.085,
-   "net_pct": 90.026,
-   "maxdd": -0.771,
-   "win_rate": 48.695,
-   "trades": 1686,
-   "profit_factor": 4.283
-  },
-  "instrument_full_sharpe": 4.881,
-  "rms_full_sharpe": 4.881,
-  "p_value": 0.072,
-  "created": "2026-07-10 23:09",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": 3.96,
-    "net_pct": 86.81,
-    "maxdd": -0.79
-   },
-   "train": {
-    "sharpe": 3.636,
-    "net_pct": 48.4,
-    "maxdd": -0.62
-   },
-   "oos": {
-    "sharpe": 4.666,
-    "net_pct": 38.41,
-    "maxdd": -1.14
-   }
-  }
- },
- {
-  "slug": "orb_supertrend",
-  "design": "orb_st",
-  "title": "03 - ORB + Supertrend",
-  "tf": "15m",
-  "params": {
-   "or_min": 60,
-   "orb_k": 1.0,
-   "st_period": 14,
-   "st_mult": 3.0,
-   "atr_sl": 1.5,
-   "rr": 2.0
-  },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 2.065,
-   "net_pct": 49.695,
-   "maxdd": -0.96,
-   "win_rate": 43.848,
-   "trades": 1024,
-   "profit_factor": 1.918
-  },
-  "instrument_full_sharpe": 1.287,
-  "rms_full_sharpe": 1.333,
-  "p_value": 0.0,
-  "created": "2026-07-10 23:40",
-  "deploy_key": "orbst_v1",
-  "deployed": "orbst_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 2.003,
-    "net_pct": 48.11,
-    "maxdd": -0.99
-   },
-   "train": {
-    "sharpe": 2.045,
-    "net_pct": 31.09,
-    "maxdd": -0.77
-   },
-   "oos": {
-    "sharpe": 1.827,
-    "net_pct": 18.91,
-    "maxdd": -1.24
-   }
-  }
- },
- {
-  "slug": "chain_zone_longatm",
-  "design": "chain_zone",
-  "title": "04 - Auto Rev-Chain — Zone Breakout (ATM long option)",
-  "tf": "5m",
-  "params": {
-   "touch_tol": 5.0,
-   "zone_age": 2,
-   "max_cs": 40.0,
-   "hawa": false,
-   "chain_lookback": 20,
-   "atr_sl": 2.5,
-   "rr": 1.5
-  },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.946,
-   "net_pct": 69.133,
-   "maxdd": -3.086,
-   "win_rate": 39.756,
-   "trades": 1806,
-   "profit_factor": 1.493
-  },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:41",
-  "deploy_key": "chainzone_v1",
-  "deployed": "chainzone_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 1.871,
-    "net_pct": 66.38,
-    "maxdd": -3.2
-   },
-   "train": {
-    "sharpe": 1.83,
-    "net_pct": 40.73,
-    "maxdd": -3.2
-   },
-   "oos": {
-    "sharpe": 1.959,
-    "net_pct": 25.7,
-    "maxdd": -2.61
-   }
-  }
- },
- {
-  "slug": "chain_zone_naked",
-  "design": "chain_zone",
-  "title": "04-N - Auto Rev-Chain (NAKED sell variant ⚠️ rejected)",
-  "tf": "5m",
-  "params": {
-   "touch_tol": 5.0,
-   "zone_age": 2,
-   "max_cs": 40.0,
-   "hawa": false,
-   "chain_lookback": 20,
-   "atr_sl": 2.5,
-   "rr": 1.5
-  },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": -0.625,
-   "net_pct": -16.192,
-   "maxdd": -18.168,
-   "win_rate": 43.3,
-   "trades": 1806,
-   "profit_factor": 0.896
-  },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:40",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": -0.722,
-    "net_pct": -18.74,
-    "maxdd": -20.24
-   },
-   "train": {
-    "sharpe": -1.034,
-    "net_pct": -15.98,
-    "maxdd": -16.45
-   },
-   "oos": {
-    "sharpe": -0.296,
-    "net_pct": -2.75,
-    "maxdd": -5.97
-   }
-  }
- },
- {
-  "slug": "chain_zone_credit",
-  "design": "chain_zone",
-  "title": "04-C - Auto Rev-Chain (credit-spread variant ❌ rejected)",
-  "tf": "5m",
-  "params": {
-   "touch_tol": 5.0,
-   "zone_age": 2,
-   "max_cs": 40.0,
-   "hawa": false,
-   "chain_lookback": 20,
-   "atr_sl": 2.5,
-   "rr": 1.5
-  },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": -1.003,
-   "net_pct": -24.512,
-   "maxdd": -25.646,
-   "win_rate": 42.137,
-   "trades": 1806,
-   "profit_factor": 0.839
-  },
-  "instrument_full_sharpe": 0.566,
-  "rms_full_sharpe": 0.61,
-  "p_value": 0.0,
-  "created": "2026-07-11 01:37",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": -1.096,
-    "net_pct": -26.89,
-    "maxdd": -27.8
-   },
-   "train": {
-    "sharpe": -1.446,
-    "net_pct": -21.48,
-    "maxdd": -21.75
-   },
-   "oos": {
-    "sharpe": -0.635,
-    "net_pct": -5.39,
-    "maxdd": -7.29
-   }
-  }
- },
- {
-  "slug": "chain_zone_positional",
-  "design": "chain_zone",
-  "title": "04-P - Auto Rev-Chain POSITIONAL (monthly ATM long)",
-  "tf": "15m",
-  "params": {
-   "touch_tol": 0.0,
-   "zone_age": 2,
-   "max_cs": 60.0,
-   "hawa": false,
-   "chain_lookback": 10,
-   "atr_sl": 1.5,
-   "rr": 2.0,
-   "max_hold_days": 3
-  },
-  "exit": "stop_only",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 0.974,
-   "net_pct": 52.073,
-   "maxdd": -6.949,
-   "win_rate": 22.036,
-   "trades": 717,
-   "profit_factor": 1.436
-  },
-  "instrument_full_sharpe": 1.202,
-  "rms_full_sharpe": 1.158,
-  "p_value": 0.008,
-  "created": "2026-07-11 10:59",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 0.934,
-    "net_pct": 49.81,
-    "maxdd": -7.2
-   },
-   "train": {
-    "sharpe": 0.941,
-    "net_pct": 29.37,
-    "maxdd": -7.2
-   },
-   "oos": {
-    "sharpe": 1.024,
-    "net_pct": 26.9,
-    "maxdd": -9.1
-   }
-  }
- },
- {
-  "slug": "ratio_backspread",
-  "design": "ratio_backspread/tod_orb_break",
-  "title": "05 - Ratio Backspread (sell 1 ATM + buy 2 OTM) @ Mid-day ORB",
-  "tf": "5m",
-  "params": {
-   "tp_frac": 1.5,
-   "sl_frac": 0.75,
-   "bs_off": 2,
-   "or_min": 30,
-   "orb_k": 1.0,
-   "h0": 10,
-   "h1": 13
-  },
-  "exit": "tp1.5/sl0.75",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.555,
-   "net_pct": 29.86,
-   "maxdd": -1.977,
-   "win_rate": 42.527,
-   "trades": 1124,
-   "profit_factor": 1.709
-  },
-  "instrument_full_sharpe": 2.231,
-  "rms_full_sharpe": 2.231,
-  "p_value": 0.002,
-  "created": "2026-07-11 12:33",
-  "deploy_key": "backspread_v1",
-  "deployed": "backspread_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": 1.515,
-    "net_pct": 29.02,
-    "maxdd": -1.97
-   },
-   "train": {
-    "sharpe": 1.316,
-    "net_pct": 15.59,
-    "maxdd": -1.46
-   },
-   "oos": {
-    "sharpe": 1.917,
-    "net_pct": 13.43,
-    "maxdd": -2.24
-   }
-  }
- },
- {
-  "slug": "gamma_scalp",
-  "design": "gamma_scalp",
-  "title": "❌ Gamma Scalping (REJECTED — VRP loser)",
-  "tf": "5m",
-  "params": {
-   "structure": "long straddle + delta-hedge",
-   "entry": "10:00 daily",
-   "hedge_band": 0.15,
-   "signal": "all"
-  },
-  "exit": "EOD 3:15",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-07-10"
-  ],
-  "days": 1242,
-  "significant": false,
-  "bs_full": {
-   "sharpe": 0.139,
-   "net_pct": -172.505,
-   "maxdd": -173.051,
-   "win_rate": 10.685,
-   "trades": 992,
-   "profit_factor": 0.067
-  },
-  "instrument_full_sharpe": -0.032,
-  "rms_full_sharpe": -0.032,
-  "p_value": 1.0,
-  "created": "2026-07-11 20:39",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": 0.004,
-    "net_pct": -176.8,
-    "maxdd": -177.15
-   },
-   "train": {
-    "sharpe": -0.29,
-    "net_pct": -115.95,
-    "maxdd": -116.01
-   },
-   "oos": {
-    "sharpe": -10.536,
-    "net_pct": -60.81,
-    "maxdd": -61.12
-   }
-  }
- },
- {
-  "slug": "shortvol_ironfly",
-  "design": "iron_fly/held",
-  "title": "06 - Short-Vol Iron-Fly ❌ CORRECTED-REJECTED (TRAP #109)",
-  "tf": "5m",
-  "params": {
-   "structure": "iron_fly ±8 (HELD-strike)",
-   "entry": "10:00",
-   "tp": 0.5,
-   "sl": 1.0,
-   "slip": 0.005,
-   "note": "corrected engine"
-  },
-  "exit": "tp0.5/sl1.0",
-  "instrument": "NIFTY 50 options",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-07-10"
-  ],
-  "days": 1242,
-  "significant": false,
-  "bs_full": {
-   "sharpe": -3.509,
-   "net_pct": -54.309,
-   "maxdd": -54.503,
-   "win_rate": 47.931,
-   "trades": 991,
-   "profit_factor": 0.431
-  },
-  "instrument_full_sharpe": -0.974,
-  "rms_full_sharpe": -3.509,
-  "p_value": 1.0,
-  "created": "2026-07-11 20:51",
-  "deploy_key": "shortvol_v1",
-  "deployed": "shortvol_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": -3.71,
-    "net_pct": -57.73,
-    "maxdd": -57.88
-   },
-   "train": {
-    "sharpe": -3.321,
-    "net_pct": -36.89,
-    "maxdd": -36.9
-   },
-   "oos": {
-    "sharpe": -4.391,
-    "net_pct": -20.83,
-    "maxdd": -21.28
-   }
-  }
- },
- {
-  "slug": "banknifty_hunt",
-  "design": "tod_orb",
-  "title": "07 - Mid-Day ORB [BANKNIFTY]",
-  "tf": "15m",
-  "params": {
-   "or_min": 30,
-   "orb_k": 1.5,
-   "h0": 11,
-   "h1": 14,
-   "atr_sl": 2.0,
-   "rr": 1.5
-  },
-  "exit": "atr_rr",
-  "instrument": "BANKNIFTY",
-  "lot_size": 30,
-  "window": [
-   "2022-01-03",
-   "2026-07-09"
-  ],
-  "days": 1111,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.459,
-   "net_pct": 23.552,
-   "maxdd": -2.981,
-   "win_rate": 49.415,
-   "trades": 342,
-   "profit_factor": 1.64
-  },
-  "instrument_full_sharpe": 0.509,
-  "rms_full_sharpe": 0.516,
-  "p_value": 0.011,
-  "created": "2026-07-11 23:51",
-  "deploy_key": "banknifty_v1",
-  "deployed": "banknifty_v1",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": true,
-   "full": {
-    "sharpe": 1.367,
-    "net_pct": 21.94,
-    "maxdd": -3.08
-   },
-   "train": {
-    "sharpe": 1.451,
-    "net_pct": 17.19,
-    "maxdd": -3.08
-   },
-   "oos": {
-    "sharpe": 1.216,
-    "net_pct": 4.92,
-    "maxdd": -2.08
-   }
-  }
- },
- {
-  "slug": "pivot_continuation",
-  "design": "pivot_break",
-  "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 — user pass, NOT deployed)",
-  "tf": "3m",
-  "params": {
-   "tol": 5.0,
-   "band": [
-    3,
-    4,
-    5
-   ],
-   "h0": 0,
-   "atr_sl": 2.5,
-   "rr": 1.5,
-   "trail_atr": 2.0
-  },
-  "exit": "atr_rr",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 0.967,
-   "net_pct": 23.36,
-   "maxdd": -1.487,
-   "win_rate": 52.0,
-   "trades": 400,
-   "profit_factor": 1.918
-  },
-  "instrument_full_sharpe": 0.653,
-  "rms_full_sharpe": 0.691,
-  "p_value": 0.014,
-  "created": "2026-07-12 09:57",
-  "real_cost": {
-   "method": "dom_slip + date-aware STT (stt_recost, read-only recost of recorded trades)",
-   "date": "2026-07-14",
-   "approx": false,
-   "full": {
-    "sharpe": 0.941,
-    "net_pct": 22.67,
-    "maxdd": -1.55
-   },
-   "train": {
-    "sharpe": 0.68,
-    "net_pct": 11.71,
-    "maxdd": -1.55
-   },
-   "oos": {
-    "sharpe": 1.917,
-    "net_pct": 10.95,
-    "maxdd": -0.81
-   }
-  }
- },
- {
-  "slug": "vrp_overnight_condor",
-  "design": "vrp_condor",
-  "title": "10 - VRP Overnight Condor ⚠️ FORWARD-PAPER candidate (real VRP edge, defined risk)",
-  "tf": "overnight",
-  "params": {
-   "body": 3,
-   "wing": 5
-  },
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-04-13"
-  ],
-  "days": 1182,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 15.32624165230887,
-   "net_pct": 57.33249823483888,
-   "maxdd": -0.42925839602571125,
-   "win_rate": 89.08765652951699,
-   "trades": 559,
-   "profit_factor": 19.194657123639328
-  },
-  "p_value": 0.0,
-  "tail_stress": {
-   "sharpe_2pct_maxloss_median": 4.18,
-   "sharpe_2pct_p05": 2.53
-  },
-  "instrument_full_sharpe": 18.677,
-  "rms_full_sharpe": 18.677,
-  "deflated_sharpe": {
-   "dsr_prob": 1.0,
-   "pass": true,
-   "n_trials": 120,
-   "sr_star_annual": 2.828
-  },
-  "caveat": "Real VRP edge + defined-risk wings + high-frequency (survives frequency-robustness). Raw backtest Sharpe is FLATTERED by a benign 2021-26 sample (no COVID-scale crash) + lake premium-data unreliable on the highest-vol nights. P&L clamped to defined-risk bounds; tail-stress (2% forced max-loss nights) reported. FORWARD-PAPER before any live money.",
-  "created": "2026-07-14"
- },
- {
-  "slug": "range_strangle_intraday",
-  "design": "range_strangle_intraday",
-  "verdict": "in-sample edge, borderline (DSR 0.62<0.95)",
-  "title": "Range-Extreme Short Strangle — INTRADAY ⚠️ in-sample edge, borderline (DSR 0.62<0.95)",
-  "tf": "intraday",
-  "params": {
-   "lb": 10,
-   "dist": 0.5,
-   "age": 2,
-   "target": 40,
-   "sl": 40
-  },
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-07-10"
-  ],
-  "days": 1242,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 3.666076727368256,
-   "net_pct": 4.484079253254156,
-   "maxdd": -1.0945530283341776,
-   "win_rate": 80.48780487804879,
-   "trades": 123,
-   "profit_factor": 2.035671683152411
-  },
-  "p_value": 0.0075,
-  "tail_stress": {
-   "sharpe_2pct_crash_median": 1.87,
-   "sharpe_2pct_p05": 0.16
-  },
-  "instrument_full_sharpe": 4.741,
-  "rms_full_sharpe": 4.741,
-  "deflated_sharpe": {
-   "dsr_prob": 0.6173,
-   "pass": false,
-   "n_trials": 30,
-   "sr_star_annual": 3.233
-  },
-  "caveat": "9:20 entry, same-day exit, NO overnight — SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train≈OOS). Forward-paper first.",
-  "created": "2026-07-17"
- },
- {
-  "slug": "vrp_condor_weekly",
-  "design": "vrp_condor_weekly",
-  "title": "02.05 - VRP Weekly Condor (mild-IV) ⚠️ FORWARD-PAPER (fails DSR)",
-  "tf": "weekly",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2021-09-24",
-   "2026-03-30"
-  ],
-  "days": 38,
-  "significant": false,
-  "bs_full": {
-   "sharpe": 4.500726305964645,
-   "net_pct": 4.5295000000000005,
-   "maxdd": -0.9721815057998073,
-   "win_rate": 73.68421052631578,
-   "trades": 38,
-   "profit_factor": 2.0964949441887826
-  },
-  "p_value": 0.032,
-  "deflated_sharpe": {
-   "dsr_prob": 0.3628,
-   "pass": false,
-   "n_trials": 24,
-   "sr_star_annual": 5.737
-  },
-  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS — but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
-  "created": "2026-07-20"
- },
- {
-  "slug": "meanrev_nifty",
-  "design": "meanrev",
-  "title": "09 - Mean-Reversion Positional (NIFTY daily, monthly options)",
-  "tf": "1D",
-  "params": {
-   "w": 15,
-   "k": 1.5,
-   "sl": 3.0,
-   "rr": 1.5,
-   "mh": 10
-  },
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2021-07-01",
-   "2026-07-09"
-  ],
-  "days": 1241,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.0719605704292998,
-   "net_pct": 44.65540999999998,
-   "maxdd": -7.759627503805911,
-   "win_rate": 45.78313253012048,
-   "trades": 83,
-   "profit_factor": 2.0611275627343875
-  },
-  "p_value": 0.0,
-  "instrument_full_sharpe": 1.099,
-  "rms_full_sharpe": 1.021,
-  "deflated_sharpe": {
-   "dsr_prob": 0.4699,
-   "pass": false,
-   "n_trials": 250,
-   "sr_star_annual": 4.353
-  },
-  "created": "2026-07-14"
- },
- {
-  "slug": "regime_momentum",
-  "kind": "equity",
-  "title": "10 - Regime-Momentum Basket (F&O stocks)",
-  "tf": "monthly",
-  "instrument": "F&O stocks (210)",
-  "window": [
-   "2018-04-30",
-   "2026-07-20"
-  ],
-  "significant": true,
-  "p_value": 0.0033,
-  "bs_full": {
-   "sharpe": 1.23,
-   "net_pct": 468.0,
-   "maxdd": -23.89,
-   "win_rate": 54.5,
-   "trades": 99,
-   "profit_factor": 4.09
-  }
- },
- {
-  "slug": "overnight_orb_nifty",
-  "design": "overnight_orb",
-  "title": "00 - Overnight ORB (NIFTY, next-day 09:20 exit)",
-  "tf": "15m",
-  "params": {
-   "or_min": 30,
-   "orb_k": 1.0,
-   "h0": 11,
-   "h1": 14,
-   "atr_sl": 1.5,
-   "rr": null,
-   "exit": "nextday_0920",
-   "hold": "overnight",
-   "option": "monthly_atm_buy"
-  },
-  "exit": "nextday_0920",
-  "instrument": "NIFTY 50",
-  "lot_size": 65,
-  "window": [
-   "2018-01-01",
-   "2026-07-09"
-  ],
-  "days": 2103,
-  "significant": true,
-  "bs_full": {
-   "sharpe": 1.661,
-   "net_pct": 68.777,
-   "maxdd": -2.406,
-   "win_rate": 37.557,
-   "trades": 1105,
-   "profit_factor": 1.57
-  },
-  "instrument_full_sharpe": 1.753,
-  "rms_full_sharpe": 1.753,
-  "p_value": 0.0,
-  "created": "2026-07-21 12:03",
-  "note": "BS = Black-Scholes MONTHLY ATM buy. Option BUYER + OVERNIGHT hold => BS under-prices theta (TRAP #136). Validate on real lake / forward-paper Real-vs-BS."
- }
 ]
