@@ -367,10 +367,10 @@
       // as unrecognised and the column shows blank, badge or no badge). That split
       // is exactly why every mission exit read blank until 2026-07-16: these badges
       // already existed, the backend prefixes didn't.
-      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_TRAIL/.test(r)) { label = '📉 Profit Trail Lock'; color = '#f0883e'; }
-      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_(TP|TARGET)/.test(r)) { label = '🎯 Strategy Target'; color = '#3fb950'; }
-      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_SL/.test(r)) { label = '🛡️ Strategy SL'; color = '#f0883e'; }
-      else if (/^(STRADDLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_ROLLBACK/.test(r)) { label = '↩️ Leg Rollback'; color = '#8b949e'; }
+      else if (/^(STRADDLE|STRANGLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_TRAIL/.test(r)) { label = '📉 Profit Trail Lock'; color = '#f0883e'; }
+      else if (/^(STRADDLE|STRANGLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_(TP|TARGET)/.test(r)) { label = '🎯 Strategy Target'; color = '#3fb950'; }
+      else if (/^(STRADDLE|STRANGLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_SL/.test(r)) { label = '🛡️ Strategy SL'; color = '#f0883e'; }
+      else if (/^(STRADDLE|STRANGLE|DVERT|BSPRD|SVOL|VRPC|VRP|ORBST|ORB|BNF|CHAIN)_ROLLBACK/.test(r)) { label = '↩️ Leg Rollback'; color = '#8b949e'; }
       // Webhook (TradingView-signal-driven strategies)
       else if (r.startsWith('IDX_TRAIL')) { label = '📉 Index Trail SL'; color = '#f0883e'; }
       else if (r.startsWith('TRAIL_SL')) { label = '📉 Trail SL'; color = '#f0883e'; }

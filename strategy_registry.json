@@ -161,14 +161,15 @@
     },
     "00.07": {
       "name": "ORB @ Long Strangle",
-      "config_key": null,
+      "config_key": "strangle_v1",
       "slug": "long_strangle_orb",
-      "live_file": null,
-      "status": "failed",
+      "live_file": "strategies/live/strangle_trader.py",
+      "status": "paper",
       "legs": 2,
       "instrument": "NIFTY",
       "hold": "Intraday",
-      "structure": "Strangle"
+      "structure": "Strangle",
+      "note": "FORWARD-PAPER watch-only: failed sig p=0.072 + loses on real premium (REAL Sharpe -2.28). Not deployable to real money."
     },
     "00.08": {
       "name": "ORB @ Overnight (NIFTY, next-day 09:20 exit)",
@@ -328,7 +329,9 @@
     "05.02": {
       "name": "RSI (paper)",
       "config_key": "rsi_v1_PAPER",
-      "aliases": ["rsi_v1_paper"],
+      "aliases": [
+        "rsi_v1_paper"
+      ],
       "slug": null,
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",

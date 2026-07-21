@@ -258,6 +258,9 @@ STRATEGIES = {
     # 00.08 = Overnight ORB — same Mid-Day ORB entry, hold overnight, exit next-day 09:20 (POSITIONAL, allow_overnight)
     "orb_overnight": {"script": str(TRADERS_DIR / "orb_overnight_trader.py"), "log": BASE_DIR / "logs/orb_overnight_v1.log", "cfg": TC_FILE, "grep": "orb_overnight_trader"},
     "straddle": {"script": str(TRADERS_DIR / "straddle_trader.py"), "log": BASE_DIR / "logs/straddle_v1.log", "cfg": TC_FILE, "grep": "straddle_trader"},
+    # 00.07 = Long Strangle @ ORB (OTM CE+PE buy, off=2, win 11-13). FORWARD-PAPER only —
+    # failed sig p=0.072 + loses on real premium (bs_vs_reallake). Watch-only.
+    "strangle": {"script": str(TRADERS_DIR / "strangle_trader.py"), "log": BASE_DIR / "logs/strangle_v1.log", "cfg": TC_FILE, "grep": "strangle_trader"},
     # mission numbering (user 2026-07-10): 01=straddle (above), 02=debit vertical, 03=ORB+Supertrend
     "dvert":    {"script": str(TRADERS_DIR / "02_debit_vertical_trader.py"), "log": BASE_DIR / "logs/dvert_v1.log", "cfg": TC_FILE, "grep": "02_debit_vertical_trader"},
     "orbst":    {"script": str(TRADERS_DIR / "03_orbst_trader.py"), "log": BASE_DIR / "logs/orbst_v1.log", "cfg": TC_FILE, "grep": "03_orbst_trader"},
