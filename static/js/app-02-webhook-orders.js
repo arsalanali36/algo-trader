@@ -373,8 +373,22 @@
       const key = regId(raw) !== raw ? regId(raw) : raw;   // colour by registry serial (stable across variants)
       const hue = _stratHue(key);
       const bg = `hsl(${hue},55%,20%)`, fg = `hsl(${hue},80%,72%)`, bd = `hsl(${hue},45%,38%)`;
-      return `<span title="${raw.replace(/"/g, '&quot;')}" style="display:inline-block;background:${bg};color:${fg};border:1px solid ${bd};padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:600;white-space:nowrap">${label}</span>`;
+      const arg = raw.replace(/\\/g, '').replace(/'/g, '');   // safe for the inline onclick
+      return `<span onclick="_ordStratChipClick(event,'${arg}')" title="Ctrl+click: is strategy pe filter (dobara Ctrl+click = All)&#10;${raw.replace(/"/g, '&quot;')}" style="cursor:pointer;display:inline-block;background:${bg};color:${fg};border:1px solid ${bd};padding:2px 7px;border-radius:5px;font-size:10.5px;font-weight:600;white-space:nowrap">${label}</span>`;
     }
+    // Ctrl/Cmd+click a strategy chip → set the Orders strategy filter to that
+    // strategy (match the #ord-strat option by its base, robust to " | desc"
+    // pollution); Ctrl+click the SAME one again → back to All. Plain click = no-op.
+    window._ordStratChipClick = function (ev, base) {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      const sel = document.getElementById('ord-strat'); if (!sel) return;
+      const opt = Array.from(sel.options).find(o => o.value &&
+        (o.value === base || o.value.split(' | ')[0] === base));
+      const val = opt ? opt.value : '';
+      sel.value = (val && sel.value === val) ? '' : val;   // toggle off if already active
+      if (typeof ordersRender === 'function') ordersRender();
+    };
     function _imgTagsOf(t) { return (t.tags || []).filter(tg => tg.startsWith('IMG:')).map(tg => tg.slice(4)); }
     function _noteThumbs(id, imgs) {
       if (!imgs || !imgs.length) return '';
