@@ -438,14 +438,10 @@
       window._ordGroupMargin = d.group_margin || {};
 
       let det = d.details || [];
-      if (src === 'hedge') {
-        det = det.filter(t => {
-          return (t.group_id && t.group_id.startsWith('RANGE_') && t.entry === 'BUY') ||
-            (t.correlation_id && t.correlation_id.startsWith('RANGE_') && t.entry === 'BUY') ||
-            (t.correlation_id && t.correlation_id.startsWith('HEDGE'));
-        });
-        d.details = det;
-      }
+      // (Source filter was removed from the Orders toolbar in ef9f3cc; the old
+      //  `src === 'hedge'` special-case filter went with it. Its orphaned reference
+      //  to the now-undeclared `src` threw "src is not defined" on every render,
+      //  freezing the Orders & P&L tab — removed here to complete that refactor.)
 
       _ordFillSelect('ord-strat', (d.filters || {}).strategy || [], strat, 'All strategies');
       _ordFillSelect('ord-broker', (d.filters || {}).broker || [], broker, 'All brokers');
