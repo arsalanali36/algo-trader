@@ -384,9 +384,15 @@ def _proc_cmdline(grep, strategy=None):
                 continue
             cl = ' '.join(parts)
             if want_id:   # exact token match — substring se 'rsi_v1' != 'rsi_v10'
+                # NOTE: split on the JOINED string, not `parts` — supervisor-forked
+                # children ka setproctitle title /proc/cmdline me EK single element
+                # hota hai ('code3b-strategy --paper --id X'), jisse parts-wise
+                # token match hamesha miss hota tha (pgrep substring-fallback pe
+                # girta, jo rsi_v1 ko rsi_v1_PAPER se confuse kar sakta hai).
+                toks = cl.split()
                 hit = any(t == f"--id={want_id}" or
-                          (t == "--id" and i + 1 < len(parts) and parts[i + 1] == want_id)
-                          for i, t in enumerate(parts))
+                          (t == "--id" and i + 1 < len(toks) and toks[i + 1] == want_id)
+                          for i, t in enumerate(toks))
                 if hit:
                     return p.info['pid'], cl
             elif grep and grep in cl:
@@ -1451,6 +1457,43 @@ def api_rms_reconcile():
                         "broker_available": None, "note": f"broker init failed: {e}"})
     return jsonify(risk_gate.reconcile_funds(broker))
 
+# ── Fork-supervisor mode (2026-07-21) ────────────────────────────────────────
+# data/supervisor_mode.flag maujood ho TO start/stop supervisor-daemon ke
+# through jaate hain (RAM: 15 interpreters -> 1 warm parent + COW forks,
+# measured ~76% kam). Flag hata do -> turant legacy Popen wapas. Daemon dead
+# ho to api_start LEGACY pe khud gir jaata hai (fail-safe, loud log) — "kal
+# subah strategies start nahi hui" wala failure mode exist nahi karta.
+SUPERVISOR_FLAG = BASE_DIR / 'data' / 'supervisor_mode.flag'
+
+def _supervisor_daemon_pid():
+    try:
+        from _ops.strategy_supervisor import daemon_alive
+        return daemon_alive()
+    except Exception:
+        return None
+
+def _supervisor_desired_set(sid, desired, mode=None, script=None):
+    """supervisor_desired.json me ek entry (atomic). Daemon ise ~2s me uthata hai."""
+    f = BASE_DIR / 'data' / 'supervisor_desired.json'
+    try:
+        cur = json.loads(f.read_text()) if f.exists() else {}
+        if not isinstance(cur, dict):
+            cur = {}
+    except Exception:
+        cur = {}
+    ent = cur.get(sid) if isinstance(cur.get(sid), dict) else {}
+    ent['desired'] = desired
+    if mode is not None:
+        ent['mode'] = mode
+    if script is not None:
+        ent['script'] = script
+    ent['ts'] = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    cur[sid] = ent
+    tmp = f.with_suffix('.tmp')
+    tmp.write_text(json.dumps(cur, indent=2))
+    os.replace(tmp, f)
+
+
 @app.route('/api/start', methods=['POST'])
 def api_start():
     s    = request.args.get('s', 'ema_v1')
@@ -1465,17 +1508,30 @@ def api_start():
     pid  = get_pid(s)
     if pid:
         return jsonify({"msg": f"{strat_label(s)} already running (PID {pid})"})
-    flag = '--live' if mode == 'live' else '--paper'
-    log_file = BASE_DIR / 'logs' / f"{s}.log"
-    log_file.parent.mkdir(parents=True, exist_ok=True)
-    lf   = open(log_file, 'a', encoding='utf-8')
-    # PYTHONUTF8=1 — traders ke log me unicode (→ ─ emoji) Windows cp1252 pe
-    # crash karta tha ("UnicodeEncodeError ... charmap"). UTF-8 force se khatam.
-    _env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
-    subprocess.Popen([PYTHON, st['script'], flag, '--id', s],
-                     stdout=lf, stderr=lf, env=_env,
-                     cwd=str(BASE_DIR),
-                     start_new_session=True)
+    launched_via = 'legacy'
+    if SUPERVISOR_FLAG.exists() and _supervisor_daemon_pid():
+        # Fork-supervisor path: desired-state likho, daemon ~2s me fork karega
+        # (RAM COW-shared). Script yahin se jaata hai — dashboard hi STRATEGIES
+        # ka single source hai, daemon kabhi dashboard import nahi karta.
+        _supervisor_desired_set(s, 'running', mode=mode, script=st['script'])
+        launched_via = 'supervisor'
+    else:
+        if SUPERVISOR_FLAG.exists():
+            # Flag on par daemon dead — FAIL-SAFE: legacy Popen se hi chalao,
+            # strategy start hona daemon ki sehat se zyada zaroori hai.
+            print(f"🔴 [SUPERVISOR] flag ON par daemon DEAD — {s} legacy Popen se "
+                  f"start kar raha hoon (systemctl status algo-supervisor dekho)", flush=True)
+        flag = '--live' if mode == 'live' else '--paper'
+        log_file = BASE_DIR / 'logs' / f"{s}.log"
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        lf   = open(log_file, 'a', encoding='utf-8')
+        # PYTHONUTF8=1 — traders ke log me unicode (→ ─ emoji) Windows cp1252 pe
+        # crash karta tha ("UnicodeEncodeError ... charmap"). UTF-8 force se khatam.
+        _env = dict(os.environ, PYTHONUTF8="1", PYTHONIOENCODING="utf-8")
+        subprocess.Popen([PYTHON, st['script'], flag, '--id', s],
+                         stdout=lf, stderr=lf, env=_env,
+                         cwd=str(BASE_DIR),
+                         start_new_session=True)
     # Mark active + remember mode, so a later auto-restart (crash recovery,
     # algo-monitor restart mid-day, VPS reboot) brings it back the same way
     # it was actually running — not silently downgraded to paper (TRAP #57).
@@ -1488,7 +1544,8 @@ def api_start():
         TC_FILE.write_text(json.dumps(cfg, indent=2))
     except Exception:
         pass
-    return jsonify({"msg": f"✅ {strat_label(s)} started — {mode.upper()} mode"})
+    via = " (supervisor)" if launched_via == 'supervisor' else ""
+    return jsonify({"msg": f"✅ {strat_label(s)} started — {mode.upper()} mode{via}"})
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
@@ -1497,6 +1554,16 @@ def api_stop():
     # scheduled-stop yeh bhejta hai taaki kal 9:10 auto-start phir chala de.
     # Manual stop (user ne click kiya) = keep_active nahi -> active:false (band hi rahe).
     keep_active = request.args.get('keep_active') == '1'
+    if SUPERVISOR_FLAG.exists():
+        # Supervisor mode: desired=stopped PEHLE likho (pid check se pehle) —
+        # process pehle hi mar chuka ho tab bhi stale desired=running saaf ho
+        # jaata hai, warna daemon use dobara fork kar deta. Daemon khud bhi
+        # SIGTERM bhejta hai (grace ke baad SIGKILL); neeche wala kill
+        # immediacy ke liye hai — dono same SIGTERM, koi conflict nahi.
+        try:
+            _supervisor_desired_set(s, 'stopped')
+        except Exception as _e:
+            print(f"🔴 [SUPERVISOR] desired=stopped write FAIL for {s}: {_e}", flush=True)
     pid = get_pid(s)
     if not pid:
         return jsonify({"msg": f"{strat_label(s)} not running"})

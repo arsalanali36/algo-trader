@@ -5,11 +5,10 @@ strategy_supervisor.py — fork-based launcher for CODE3B live/paper strategies.
 WHY
     Har strategy ab tak ek ALAG python interpreter thi (`subprocess.Popen`),
     isliye pandas + 26MB scrip-master ka parsed cache har process me DOBARA
-    load hota tha. 15 strategies = 15 copies = ~1.3-1.9 GB.
+    load hota tha. 15 strategies = 15 copies = ~1.9 GB.
     Maapa gaya (asli scrip master + pandas, is box pe):
         6 alag process   = 521 MB  (87 MB / strategy)
         1 parent + 6 fork = 127 MB  (13 MB / child)   -> ~76% kam
-    15 strategies pe extrapolate: ~1.3 GB -> ~285 MB.
 
 HOW
     EK parent pandas import karta hai + scrip cache EK BAAR build karta hai
@@ -18,25 +17,40 @@ HOW
     hai. Har child PHIR BHI ek asli, alag process hai — ek ko restart / kill
     karo to baaki ko koi farak nahi (yahi poora maqsad hai).
 
+ARCHITECTURE (cutover 2026-07-21)
+    daemon (systemd `algo-supervisor`) <—— data/supervisor_desired.json ——
+    trader_dashboard api_start/api_stop (jab data/supervisor_mode.flag maujood ho).
+
+    * Dashboard hi single source hai: api_start desired-entry me sid+mode+script
+      likhta hai (script woh apne STRATEGIES map se resolve karta hai). Daemon
+      trader_dashboard KABHI import nahi karta — parent minimal + single-threaded
+      rehta hai (fork + threads = deadlock trap).
+    * PARITY RULE: crash/exit pe auto-respawn NAHI (legacy Popen bhi nahi karta
+      tha). Cutover SIRF spawn-mechanism badalta hai, behavior nahi.
+      (RESPAWN_ON_CRASH flag rakha hai — future me deliberate enable ho sakta.)
+    * FAIL-SAFE: agar daemon zinda nahi (pidfile check) to api_start LEGACY
+      Popen pe gir jaata hai + loud log — "supervisor mara to kal subah
+      strategies start hi nahi hui" wala failure mode exist nahi karta.
+    * DAILY RE-WARM: naye IST din ki pehli fork se pehle scrip master
+      re-download + cache rebuild — warna hafte-purana COW cache children ko
+      STALE expiries deta (money-path bug, pehle hi block kiya).
+
 SAFETY — fork + threads = deadlock trap
-    Parent ko fork ke waqt SINGLE-THREADED rehna ZAROORI hai. Ye sirf pure code
-    import karta hai + scrip cache build karta hai. Ye Dhan feed, socket, DB
-    handle, ya logging-thread KABHI parent me nahi kholta. Har child ye sab
-    fork ke BAAD, strategy ke apne run() ke andar kholta hai. Parent-path me
-    koi thread-spawn karne wala import mat jodo.
+    Parent me sirf: stdlib + pandas + dhan_master. Koi feed/socket/DB/thread
+    nahi. Har child apna sab kuch fork ke BAAD kholta hai (runpy se script ka
+    apna __main__). Parent-path me thread-spawn karne wala import mat jodo.
 
 DASHBOARD COMPATIBILITY
-    Dashboard traders ko '--id <sid>' cmdline grep karke dhoondhta hai
-    (get_pid). Forked children parent ki cmdline share karte hain, isliye:
-      (a) har child ka process-title setproctitle se 'code3b-strategy --paper
-          --id <sid>' set karte hain (pgrep -f still finds it), AUR
-      (b) data/supervisor_pids.json me {sid: pid} likhte hain (reliable
-          fallback jab setproctitle na ho).
+    Children ka process-title: 'code3b-strategy --paper --id <sid>'
+    (setproctitle) -> dashboard get_pid() ka pgrep/psutil dono match karte hain
+    (psutil ke liye _proc_cmdline me single-token split fix bhi gaya hai).
+    data/supervisor_pids.json = {sid: pid} reliable fallback.
 
-CUTOVER
-    Ye file INERT hai jab tak koi ise chalaye na. Live fleet ko isme switch
-    karna ek alag, soch-samajh ke kiya jaane wala step hai (neeche checklist).
-    Abhi self-test se mechanics prove karo:  python3 _ops/strategy_supervisor.py --self-test
+USAGE
+    python3 _ops/strategy_supervisor.py --daemon      # systemd service (real)
+    python3 _ops/strategy_supervisor.py --self-test   # dummy children, 0 risk
+    python3 _ops/strategy_supervisor.py --dry-run     # kya fork hoga, list
+    python3 _ops/strategy_supervisor.py --only a,b    # manual staged run
 """
 
 import gc
@@ -45,21 +59,31 @@ import os
 import signal
 import sys
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 LOG_DIR = BASE_DIR / "logs"
-PIDMAP_FILE = BASE_DIR / "data" / "supervisor_pids.json"
+DATA_DIR = BASE_DIR / "data"
+PIDMAP_FILE = DATA_DIR / "supervisor_pids.json"
+DESIRED_FILE = DATA_DIR / "supervisor_desired.json"
+DAEMON_PIDFILE = DATA_DIR / "supervisor_daemon.pid"
 CONFIG_FILE = BASE_DIR / "nifty_config.json"   # repo root me hai (data/ me nahi)
 
-# Respawn backoff: agar ek strategy baar-baar crash kare to crash-loop na bane.
-RESPAWN_MIN_UPTIME = 20      # sec — itne se pehle mari to "crash" mano
-RESPAWN_BACKOFF = [2, 5, 15, 30, 60]  # consecutive-crash pe badhta wait
-MAX_QUICK_CRASHES = 5        # itni tez crashes ke baad strategy ko de-activate maano
+# PARITY: legacy Popen crash pe respawn nahi karta tha — hum bhi nahi.
+# (Deliberate future enable ke liye flag; tab RESPAWN_BACKOFF/MAX_QUICK_CRASHES
+#  wapas kaam aayenge.)
+RESPAWN_ON_CRASH = False
+KILL_GRACE_SECS = 10          # desired=stopped -> SIGTERM, itne baad SIGKILL
+POLL_SECS = 2                 # desired-file mtime poll
+
+
+def ist_now():
+    return datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
 
 
 def _log(msg):
-    print(f"[supervisor {time.strftime('%H:%M:%S')}] {msg}", flush=True)
+    print(f"[supervisor {ist_now().strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 def _set_title(sid, mode):
@@ -73,47 +97,107 @@ def _set_title(sid, mode):
         return False
 
 
+def _atomic_write(path, obj):
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj, indent=2))
+    os.replace(tmp, path)
+
+
 def _write_pidmap(children):
     """{sid: pid} disk pe — get_pid ke liye reliable fallback."""
     try:
         PIDMAP_FILE.parent.mkdir(parents=True, exist_ok=True)
-        data = {sid: c["pid"] for sid, c in children.items() if c["pid"]}
-        tmp = PIDMAP_FILE.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2))
-        os.replace(tmp, PIDMAP_FILE)
+        _atomic_write(PIDMAP_FILE, {sid: c["pid"] for sid, c in children.items() if c["pid"]})
     except Exception as e:
         _log(f"pidmap write failed (non-fatal): {e}")
 
 
+def _read_desired():
+    try:
+        if DESIRED_FILE.exists():
+            d = json.loads(DESIRED_FILE.read_text())
+            return d if isinstance(d, dict) else {}
+    except Exception as e:
+        _log(f"desired read failed: {e}")
+    return {}
+
+
+def _legacy_pid(sid, own_children_pids):
+    """Kya is sid ka koi PURANA (legacy Popen / doosra) process chal raha hai?
+    Duplicate fork rokne ke liye. Apne children exclude."""
+    try:
+        import subprocess as sp
+        out = sp.check_output(["pgrep", "-a", "-f", "--", f"--id {sid}"], text=True).strip()
+        for line in out.splitlines():
+            parts = line.split(maxsplit=1)
+            pid = int(parts[0])
+            cl = parts[1] if len(parts) > 1 else ""
+            if pid in own_children_pids or pid == os.getpid():
+                continue
+            # exact-token check: 'rsi_v1' pattern 'rsi_v1_PAPER' ko bhi substring-match
+            # karta hai — toks se confirm karo.
+            toks = cl.split()
+            for i, t in enumerate(toks):
+                if t == "--id" and i + 1 < len(toks) and toks[i + 1] == sid:
+                    return pid
+    except Exception:
+        pass
+    return None
+
+
 # ────────────────────────────────────────────────────────────────────────────
-# Strategy resolution — SIRF read-mostly, koi order/socket/thread nahi.
+# Parent warm (COW payload) + daily re-warm
 # ────────────────────────────────────────────────────────────────────────────
-def _active_strategies():
-    """
-    nifty_config.json se woh strategies jo active hain aur jinke paas live
-    trader script hai. Return: list of (sid, mode).
-    trader_dashboard ke STRATEGIES map + _base() ke saath 1:1 match.
-    """
-    sys.path.insert(0, str(BASE_DIR))
-    import _paths  # noqa: F401 — repo ka standard bootstrap (_core/_data/_ops sys.path pe)
-    # Dashboard ka STRATEGIES map + _base() hi single source hai (TRAP #116).
-    # Import verified single-threaded (fork-safe): sirf MainThread rehta hai.
-    from trader_dashboard import STRATEGIES, _base
-
-    cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
-    out = []
-    for key, v in cfg.items():
-        if not isinstance(v, dict):
-            continue
-        if not v.get("active", False):
-            continue
-        st = STRATEGIES.get(_base(key))
-        if not st:
-            continue
-        out.append((key, v.get("mode", "paper"), st["script"]))
-    return out
+def _warm_parent():
+    """pandas + scrip cache parent me load — children COW se share karenge.
+    SIRF yahi 2 heavy imports; aur kuch nahi (fork-safety)."""
+    import pandas  # noqa: F401
+    sys.path.insert(0, str(BASE_DIR / "_data"))
+    try:
+        import dhan_master
+        try:
+            dhan_master.download_master_if_needed()
+        except Exception as e:
+            _log(f"master download skip (cache purana chalega): {e}")
+        dhan_master.build_cache()
+        _log("scrip cache built in parent (children isko share karenge)")
+    except Exception as e:
+        _log(f"scrip cache warm skip (non-fatal — children khud build kar lenge): {e}")
+    gc.collect()
+    try:
+        gc.freeze()  # loaded objects GC young-gen se bahar -> kam page-dirtying
+    except Exception:
+        pass
 
 
+def _rewarm_if_new_day(state):
+    """Naye IST din ki pehli fork se PEHLE cache rebuild — STALE expiries children
+    me COW ho jaane wala money-path bug isi se block hota hai."""
+    today = ist_now().date().isoformat()
+    if state.get("cache_day") == today:
+        return
+    _log(f"naya din {today} — scrip master re-warm...")
+    try:
+        import dhan_master
+        try:
+            dhan_master.download_master_if_needed()
+        except Exception as e:
+            _log(f"master re-download fail (kal ka use hoga): {e}")
+        dhan_master.build_cache()
+        gc.collect()
+        try:
+            gc.freeze()
+        except Exception:
+            pass
+        _log("re-warm done")
+    except Exception as e:
+        _log(f"re-warm FAIL (children khud build karenge — RAM saving us din kam): {e}")
+    state["cache_day"] = today
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Child
+# ────────────────────────────────────────────────────────────────────────────
 def _run_strategy_in_child(sid, mode, script_path):
     """
     CHILD context. Fork ke baad yahan aate hain. Yahin — aur SIRF yahin —
@@ -121,7 +205,7 @@ def _run_strategy_in_child(sid, mode, script_path):
     """
     # Parent ke inherited signal-handlers ko DEFAULT pe reset karo — warna
     # child SIGTERM pe sirf parent-wala flag set karta hai aur kabhi exit
-    # nahi hota (smoke-test me pakda: kill ke baad bhi child zinda).
+    # nahi hota (smoke-test me pakda).
     signal.signal(signal.SIGTERM, signal.SIG_DFL)
     signal.signal(signal.SIGINT, signal.SIG_DFL)
     _set_title(sid, mode)
@@ -147,16 +231,14 @@ def _run_strategy_in_child(sid, mode, script_path):
 
 
 def _spawn(sid, mode, script_path):
-    """Ek strategy ke liye fork. Parent me child-pid return, child me kabhi return nahi."""
+    """Ek strategy ke liye fork. Parent me child-pid return, child kabhi return nahi."""
     pid = os.fork()
     if pid == 0:
-        # CHILD
         try:
             _run_strategy_in_child(sid, mode, script_path)
         except SystemExit:
             raise
         except BaseException as e:
-            # Child ka crash apne log me — supervisor respawn dekhega.
             try:
                 print(f"[{sid}] CRASH: {e!r}", flush=True)
             except Exception:
@@ -166,34 +248,184 @@ def _spawn(sid, mode, script_path):
     return pid
 
 
-# ────────────────────────────────────────────────────────────────────────────
-# Supervisor main loop
-# ────────────────────────────────────────────────────────────────────────────
-def supervise(strategies, warm=True):
-    """
-    strategies: list of (sid, mode, script_path)
-    warm=True  -> fork se pehle pandas + scrip cache parent me load (COW share).
-    """
-    if warm:
-        _log("warming parent (pandas + scrip cache) — single-threaded...")
-        import pandas  # noqa: F401  (parent me load, children COW share karenge)
-        sys.path.insert(0, str(BASE_DIR / "_data"))
-        try:
-            import dhan_master
-            dhan_master.build_cache()
-            _log("scrip cache built in parent (children isko share karenge)")
-        except Exception as e:
-            _log(f"scrip cache warm skip (non-fatal): {e}")
-        gc.collect()
-        try:
-            gc.freeze()  # loaded objects ko GC young-gen se hatao -> kam page-dirtying
-        except Exception:
-            pass
+def _script_ok(script_path):
+    """Sanity: script maujood ho aur strategies/live ke andar ho (desired-file
+    tamper hone pe bhi daemon manmaani file execute nahi karega)."""
+    try:
+        p = Path(script_path).resolve()
+        return p.is_file() and (BASE_DIR / "strategies" / "live") in p.parents
+    except Exception:
+        return False
 
-    children = {}   # sid -> {pid, mode, script, started, crashes}
+
+# ────────────────────────────────────────────────────────────────────────────
+# DAEMON — desired-state reconciler (systemd `algo-supervisor`)
+# ────────────────────────────────────────────────────────────────────────────
+def daemon_loop():
+    _log(f"daemon start, parent pid = {os.getpid()}")
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    DAEMON_PIDFILE.write_text(str(os.getpid()))
+    _warm_parent()
+    state = {"cache_day": ist_now().date().isoformat()}
+
+    children = {}       # sid -> {pid, mode, script, started}
+    kill_pending = {}   # sid -> SIGKILL deadline (graceful stop escalation)
     stopping = {"flag": False}
+    last_mtime = 0.0
 
+    def _shutdown(signum, frame):
+        stopping["flag"] = True
+        _log(f"signal {signum} (parent {os.getpid()}) — saare children ko SIGTERM")
+        for sid, c in children.items():
+            if c["pid"]:
+                try:
+                    os.kill(c["pid"], signal.SIGTERM)
+                except ProcessLookupError:
+                    pass
+
+    signal.signal(signal.SIGTERM, _shutdown)
+    signal.signal(signal.SIGINT, _shutdown)
+
+    while not stopping["flag"]:
+        # 1) reap dead children (PARITY: no respawn — legacy bhi nahi karta tha)
+        while True:
+            try:
+                pid, status = os.waitpid(-1, os.WNOHANG)
+            except ChildProcessError:
+                break
+            if pid == 0:
+                break
+            dead = next((s for s, c in children.items() if c["pid"] == pid), None)
+            if dead:
+                up = time.time() - children[dead]["started"]
+                _log(f"{dead} exit (pid {pid}, uptime {up:.0f}s)"
+                     + ("" if dead in kill_pending else " — respawn OFF (parity), "
+                        "agla /api/start hi dobara chalayega"))
+                children[dead]["pid"] = None
+                kill_pending.pop(dead, None)
+                _write_pidmap(children)
+
+        # 2) graceful-stop escalation
+        now = time.time()
+        for sid, deadline in list(kill_pending.items()):
+            c = children.get(sid)
+            if not c or not c["pid"]:
+                kill_pending.pop(sid, None)
+                continue
+            if now >= deadline:
+                _log(f"{sid} ne SIGTERM ignore kiya {KILL_GRACE_SECS}s — SIGKILL")
+                try:
+                    os.kill(c["pid"], signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+                kill_pending.pop(sid, None)
+
+        # 3) desired-file change? -> reconcile
+        try:
+            mtime = DESIRED_FILE.stat().st_mtime if DESIRED_FILE.exists() else 0.0
+        except Exception:
+            mtime = 0.0
+        if mtime != last_mtime:
+            last_mtime = mtime
+            desired = _read_desired()
+            own_pids = {c["pid"] for c in children.values() if c["pid"]}
+
+            for sid, want in desired.items():
+                if not isinstance(want, dict):
+                    continue
+                d = want.get("desired")
+                c = children.get(sid)
+                running = bool(c and c["pid"])
+
+                if d == "running" and not running:
+                    script = want.get("script", "")
+                    mode = want.get("mode", "paper")
+                    if not _script_ok(script):
+                        _log(f"⚠️  {sid}: script sanity FAIL ({script!r}) — fork refuse")
+                        continue
+                    lp = _legacy_pid(sid, own_pids)
+                    if lp:
+                        _log(f"{sid}: legacy process pid {lp} already chal raha — "
+                             f"duplicate fork nahi (woh khud exit hoga to agla start yahan aayega)")
+                        continue
+                    _rewarm_if_new_day(state)
+                    pid = _spawn(sid, mode, script)
+                    children[sid] = {"pid": pid, "mode": mode, "script": script,
+                                     "started": time.time()}
+                    own_pids.add(pid)
+                    _log(f"started {sid} (pid {pid}, {mode})")
+                    _write_pidmap(children)
+
+                elif d == "stopped" and running:
+                    _log(f"{sid}: desired=stopped — SIGTERM (pid {c['pid']})")
+                    try:
+                        os.kill(c["pid"], signal.SIGTERM)
+                    except ProcessLookupError:
+                        pass
+                    kill_pending[sid] = time.time() + KILL_GRACE_SECS
+
+        time.sleep(POLL_SECS)
+
+    # graceful drain
+    deadline = time.time() + 15
+    while any(c["pid"] for c in children.values()) and time.time() < deadline:
+        try:
+            pid, _ = os.waitpid(-1, os.WNOHANG)
+            if pid:
+                for c in children.values():
+                    if c["pid"] == pid:
+                        c["pid"] = None
+        except ChildProcessError:
+            break
+        time.sleep(0.5)
+    try:
+        DAEMON_PIDFILE.unlink()
+    except Exception:
+        pass
+    _log("daemon exit")
+
+
+def daemon_alive():
+    """Kya daemon chal raha hai? (dashboard fail-safe isko use karta hai)"""
+    try:
+        pid = int(DAEMON_PIDFILE.read_text().strip())
+        os.kill(pid, 0)
+        return pid
+    except Exception:
+        return None
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# Manual / inspection modes
+# ────────────────────────────────────────────────────────────────────────────
+def _active_strategies():
+    """--dry-run/--only ke liye: active strategies enumerate (dashboard import
+    ALAG throwaway subprocess me hota to aur saaf hota, par ye modes daemon
+    nahi hain — inka process fork ke liye reuse nahi hota, isliye theek hai)."""
+    sys.path.insert(0, str(BASE_DIR))
+    import _paths  # noqa: F401 — repo ka standard bootstrap (_core/_data/_ops sys.path pe)
+    from trader_dashboard import STRATEGIES, _base
+
+    cfg = json.loads(CONFIG_FILE.read_text()) if CONFIG_FILE.exists() else {}
+    out = []
+    for key, v in cfg.items():
+        if not isinstance(v, dict):
+            continue
+        if not v.get("active", False):
+            continue
+        st = STRATEGIES.get(_base(key))
+        if not st:
+            continue
+        out.append((key, v.get("mode", "paper"), st["script"]))
+    return out
+
+
+def supervise_manual(strategies):
+    """--only ka simple runner (staged rollout / smoke tests). Respawn nahi."""
+    _warm_parent()
     _log(f"parent pid = {os.getpid()}")
+    children = {}
+    stopping = {"flag": False}
 
     def _shutdown(signum, frame):
         stopping["flag"] = True
@@ -208,54 +440,23 @@ def supervise(strategies, warm=True):
     signal.signal(signal.SIGTERM, _shutdown)
     signal.signal(signal.SIGINT, _shutdown)
 
-    # initial spawn
     for sid, mode, script in strategies:
         pid = _spawn(sid, mode, script)
-        children[sid] = {"pid": pid, "mode": mode, "script": script,
-                         "started": time.time(), "crashes": 0}
+        children[sid] = {"pid": pid, "mode": mode, "script": script, "started": time.time()}
         _log(f"started {sid} (pid {pid}, {mode})")
     _write_pidmap(children)
 
-    # reap + respawn loop
-    while not stopping["flag"]:
+    while not stopping["flag"] and any(c["pid"] for c in children.values()):
         try:
-            pid, status = os.waitpid(-1, os.WNOHANG)
+            pid, _ = os.waitpid(-1, os.WNOHANG)
         except ChildProcessError:
-            if stopping["flag"]:
-                break
-            time.sleep(1)
-            continue
-        if pid == 0:
-            time.sleep(1)
-            continue
-        # kaunsi strategy mari?
-        dead = next((s for s, c in children.items() if c["pid"] == pid), None)
-        if dead is None:
-            continue
-        c = children[dead]
-        uptime = time.time() - c["started"]
-        c["pid"] = None
-        if stopping["flag"]:
-            continue
-        if uptime < RESPAWN_MIN_UPTIME:
-            c["crashes"] += 1
-        else:
-            c["crashes"] = 0  # der tak chali -> healthy restart, counter reset
-        if c["crashes"] >= MAX_QUICK_CRASHES:
-            _log(f"⚠️  {dead} ne {c['crashes']} baar tez crash kiya — respawn ROK raha "
-                 f"hoon (config/script dekho). Baaki strategies chal rahi hain.")
-            _write_pidmap(children)
-            continue
-        wait = RESPAWN_BACKOFF[min(c["crashes"], len(RESPAWN_BACKOFF) - 1)]
-        _log(f"{dead} exit (uptime {uptime:.0f}s, crash#{c['crashes']}) — "
-             f"{wait}s me respawn")
-        time.sleep(wait)
-        c["pid"] = _spawn(dead, c["mode"], c["script"])
-        c["started"] = time.time()
-        _write_pidmap(children)
-        _log(f"respawned {dead} (pid {c['pid']})")
-
-    # graceful drain
+            break
+        if pid:
+            dead = next((s for s, c in children.items() if c["pid"] == pid), None)
+            if dead:
+                children[dead]["pid"] = None
+                _log(f"{dead} exit")
+        time.sleep(1)
     deadline = time.time() + 15
     while any(c["pid"] for c in children.values()) and time.time() < deadline:
         try:
@@ -271,10 +472,7 @@ def supervise(strategies, warm=True):
 
 
 # ────────────────────────────────────────────────────────────────────────────
-# SELF-TEST — zero risk. Dummy sleeper children se mechanics prove karta hai:
-#   1) fork-COW se RAM sharing   2) ek child restart baaki ko chhue bina
-#   3) crash-respawn             4) setproctitle / pidmap visibility
-# Live traders ko HAATH NAHI LAGATA (koi run(), koi Dhan, koi order).
+# SELF-TEST — zero risk. Dummy sleeper children se mechanics prove karta hai.
 # ────────────────────────────────────────────────────────────────────────────
 def _self_test():
     import subprocess
@@ -293,26 +491,13 @@ def _self_test():
         return tot / 1024
 
     _log(f"SELF-TEST start (N={N} dummy children)")
-
-    # parent warm: pandas + ek bada read-mostly object (scrip cache jaisa)
-    import pandas  # noqa
-    sys.path.insert(0, str(BASE_DIR / "_data"))
-    try:
-        import dhan_master
-        dhan_master.build_cache()
-        _log("parent warm: scrip cache built")
-    except Exception as e:
-        _log(f"scrip cache skip: {e}")
-    gc.collect()
-    try:
-        gc.freeze()
-    except Exception:
-        pass
+    _warm_parent()
 
     kids = []
     for i in range(N):
         pid = os.fork()
         if pid == 0:
+            signal.signal(signal.SIGTERM, signal.SIG_DFL)
             _set_title(f"selftest_{i}", "paper")
             time.sleep(120)
             os._exit(0)
@@ -322,7 +507,6 @@ def _self_test():
     _log(f"[1] fork RAM: {N} children + parent = {fork_pss:.1f} MB total "
          f"({fork_pss / (N + 1):.1f} MB/proc via COW)")
 
-    # setproctitle / pidmap visibility check
     try:
         out = subprocess.run(["pgrep", "-af", "code3b-strategy"],
                              capture_output=True, text=True).stdout.strip()
@@ -330,12 +514,10 @@ def _self_test():
     except Exception:
         pass
 
-    # restart-one: ek child maaro, dekho baaki zinda
     victim = kids[2]
     _log(f"[2] restart test: child {victim} ko SIGTERM (baaki {N - 1} ko chhue bina)")
     os.kill(victim, signal.SIGTERM)
     time.sleep(2)
-    # victim ko reap karo (warna zombie reh ke 'zinda' dikhega), phir baaki ginо.
     try:
         os.waitpid(victim, os.WNOHANG)
     except ChildProcessError:
@@ -346,7 +528,6 @@ def _self_test():
     _log(f"[2] result: baaki {len(alive)}/{N - 1} zinda, victim gaya: {victim_gone} "
          f"-> isolation {'OK' if ok else 'FAIL'}")
 
-    # crash-respawn concept: naya child fork karke victim ki jagah
     newpid = os.fork()
     if newpid == 0:
         time.sleep(120)
@@ -354,7 +535,6 @@ def _self_test():
     kids = [p for p in kids if p != victim] + [newpid]
     _log(f"[3] respawn: naya child pid {newpid} victim ki jagah")
 
-    # cleanup
     for p in kids:
         try:
             os.kill(p, signal.SIGTERM)
@@ -390,17 +570,19 @@ if __name__ == "__main__":
         for sid, mode, script in _active_strategies():
             print(f"WOULD FORK  {sid:22} mode={mode:5} {script}")
         sys.exit(0)
-    # REAL run — cutover ke baad hi chalao. Abhi manual invoke se hi chalega.
-    # --only sid1,sid2  -> sirf in strategies ko chalao (smoke-test / staged rollout)
-    strategies = _active_strategies()
+    if "--daemon" in sys.argv:
+        daemon_loop()
+        sys.exit(0)
+    # --only sid1,sid2 -> manual staged run (smoke tests)
     only = None
     for i, a in enumerate(sys.argv):
         if a == "--only" and i + 1 < len(sys.argv):
             only = set(sys.argv[i + 1].split(","))
+    strategies = _active_strategies()
     if only:
         strategies = [t for t in strategies if t[0] in only]
         missing = only - {t[0] for t in strategies}
         if missing:
             _log(f"⚠️  --only me ye active/known nahi: {sorted(missing)}")
     _log(f"{len(strategies)} strategies — supervising: {[t[0] for t in strategies]}")
-    supervise(strategies, warm=True)
+    supervise_manual(strategies)
