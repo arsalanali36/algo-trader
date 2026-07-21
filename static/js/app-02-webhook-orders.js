@@ -346,10 +346,25 @@
     // Strategy as its OWN column — registry name + a STABLE per-strategy colour (hue
     // derived from the registry serial, so every variant of one strategy shares a
     // colour and different strategies are visually distinct). Raw config_key on hover.
+    // Colour by the strategy's POSITION in the sorted registry (consecutive index
+    // -> golden-angle 137.5deg = sunflower spacing) so sibling variants like
+    // 04.01/02/03/04 get maximally-distinct hues instead of near-identical greens.
+    // (The old incremental `%360` hash only moved the last serial digit ~1deg, so
+    // every "04.xx" looked the same green.) Rebuilds when the registry loads/changes.
+    let _stratHueMap = null, _stratHueN = -1;
     function _stratHue(id) {
-      let s = String(id || ''), h = 0;
-      for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
-      return h;
+      const strs = ((window.regRaw && window.regRaw()) || {}).strategies || {};
+      const n = Object.keys(strs).length;
+      if (!_stratHueMap || n !== _stratHueN) {
+        const ids = Object.keys(strs).sort();
+        _stratHueMap = {};
+        for (let i = 0; i < ids.length; i++) _stratHueMap[ids[i]] = Math.round(i * 137.508) % 360;
+        _stratHueN = n;
+      }
+      if (_stratHueMap[id] != null) return _stratHueMap[id];
+      let s = String(id || ''), h = 0;                    // unregistered fallback (still golden-spread)
+      for (let i = 0; i < s.length; i++) h = (h * 131 + s.charCodeAt(i)) >>> 0;
+      return Math.round(h * 137.508) % 360;
     }
     function _stratCell(t) {
       const raw = t.strategy ? t.strategy.split(' | ')[0] : '';
