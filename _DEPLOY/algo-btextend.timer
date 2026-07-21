@@ -1,0 +1,9 @@
+[Unit]
+Description=Extend deployed backtest runs to today (Mon-Fri 16:25 IST, after equity-daily 16:10)
+
+[Timer]
+OnCalendar=Mon..Fri 16:25:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

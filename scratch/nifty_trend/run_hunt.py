@@ -229,9 +229,17 @@ def main():
 
     design, tf = winner["design"], winner["tf"]
     slug = args.name or f"{design}_{tf}"
+    write_run(slug, winner, cache[tf], lots=args.lots)
+    print(f"\ndone in {time.time()-t0:.0f}s — open /lab/runs/{slug}/index.html", flush=True)
+
+
+def write_run(slug, winner, d, lots=1):
+    """Build 3-pass x 3-period combos for a spot-design winner and write runs/<slug>/.
+    Shared by main() and daily_extend.py (frozen-params daily extension) — same
+    pattern as run_structure.write_run, so the two producers can't drift."""
+    design, tf = winner["design"], winner["tf"]
     print(f"\nWINNER: {DESIGN_TITLE.get(design, design)} @ {tf}  {winner['params']}", flush=True)
 
-    d = cache[tf]
     dtr, doos = split(d)
     lot = bs.get_nifty_lot()
     dd = (d.set_index("Datetime").resample("1D")
@@ -245,7 +253,7 @@ def main():
     print("building 3 passes x 3 periods ...", flush=True)
     combos = {}
     for period, dp, sg in (("full", d, sig_full), ("train", dtr, sig_tr), ("oos", doos, sig_oos)):
-        views = build_views(dp, winner, sigma_map, lot, args.lots, sg)
+        views = build_views(dp, winner, sigma_map, lot, lots, sg)
         for pas, cobj in views.items():
             combos[f"{pas}|{period}"] = cobj
 
@@ -253,7 +261,7 @@ def main():
     opt_table = [{"params": c["params"], "exit": c["exit"],
                   "train_sharpe": round(c["train_sharpe"], 2), "oos_sharpe": round(c["oos_sharpe"], 2),
                   "net": round(c["oos_net"], 1), "dd": round(c["oos_dd"], 1),
-                  "trades": c["oos_trades"]} for c in winner["opt"]]
+                  "trades": c["oos_trades"]} for c in (winner.get("opt") or [])]
     for pas in ("instrument", "rms", "bs"):
         combos[f"{pas}|full"]["opt_table"] = opt_table
 
@@ -279,7 +287,7 @@ def main():
         "days": int(d.day.nunique()), "start_cap": engine.START_CAP,
         "design": f"{DESIGN_TITLE.get(design, design)} — NIFTY {tf} (ATM options)",
         "design_key": design, "slug": slug, "tf": tf,
-        "instrument": "NIFTY 50", "lot_size": lot, "lots": args.lots,
+        "instrument": "NIFTY 50", "lot_size": lot, "lots": lots,
         "rms_caps": RMS_CAPS, "dna": dna,
         "passes": ["instrument", "rms", "bs"], "periods": ["full", "train", "oos"],
         "candles": candles},
@@ -382,7 +390,6 @@ def main():
         print(f"  {pas:11s} sharpe={m['sharpe']:.2f} net={m['net_pct']:.1f}% "
               f"maxDD={m['maxdd']:.1f}% win={m['win_rate']:.0f}% fees={engine.START_CAP and m.get('fees',0):.0f}",
               flush=True)
-    print(f"\ndone in {time.time()-t0:.0f}s — open /lab/runs/{slug}/index.html", flush=True)
 
 
 if __name__ == "__main__":
