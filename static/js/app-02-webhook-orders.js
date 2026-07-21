@@ -427,7 +427,6 @@
       const date = (document.getElementById('ord-date') || {}).value;
       if (!date) return;
       const q = new URLSearchParams({ date });
-      const src = _ordSegVal('ord-src'); if (src && src !== 'hedge') q.set('source', src);
       const mode = _ordSegVal('ord-mode'); if (mode) q.set('mode', mode);
       const strat = document.getElementById('ord-strat').value; if (strat) q.set('strategy', strat);
       const broker = document.getElementById('ord-broker').value; if (broker) q.set('broker', broker);

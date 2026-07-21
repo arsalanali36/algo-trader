@@ -1750,19 +1750,6 @@
       <span style="font-size:11px;color:#6e7681">Date</span>
       <input type="date" id="ord-date" onchange="ordersRender(); loadPeakGraph();"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
-      <span style="font-size:11px;color:#6e7681;margin-left:4px">Source</span>
-      <span id="ord-src" class="ord-seg"
-        style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
-        <span data-v="" class="on" onclick="ordSeg('ord-src',this)" style="padding:4px 10px;cursor:pointer">All</span>
-        <span data-v="webhook" onclick="ordSeg('ord-src',this)"
-          style="padding:4px 10px;cursor:pointer;color:#8b949e">Webhook</span>
-        <span data-v="manual" onclick="ordSeg('ord-src',this)"
-          style="padding:4px 10px;cursor:pointer;color:#8b949e">Manual</span>
-        <span data-v="strategy" onclick="ordSeg('ord-src',this)"
-          style="padding:4px 10px;cursor:pointer;color:#8b949e">Strategy</span>
-        <span data-v="hedge" onclick="ordSeg('ord-src',this)"
-          style="padding:4px 10px;cursor:pointer;color:#8b949e">Hedge</span>
-      </span>
       <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
       <span id="ord-mode" class="ord-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
@@ -1779,6 +1766,11 @@
       <select id="ord-broker" onchange="ordersRender()"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
         <option value="">All brokers</option>
+      </select>
+      <select id="ord-exit-reason" title="Exit reason filter (Completed Trades)"
+        onchange="window._ordExitFilter=this.value; if(typeof renderCachedOrders==='function') renderCachedOrders()"
+        style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px">
+        <option value="">All Exit Reasons</option>
       </select>
       <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="ordersRender()">↻ Refresh</button>
       <button class="btn btn-blue" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="openBulkModal()">📝

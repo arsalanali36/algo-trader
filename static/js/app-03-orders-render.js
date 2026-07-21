@@ -482,6 +482,30 @@
       // Client-side scope filter: when a Summary row is picked (task 73), narrow
       // the Completed Trades table to that strategy/source without touching the
       // orders fetch (so the Summary table above stays full).
+      // Exit-reason dropdown (mirrors Stats' cal-exit-reason) — populate from this
+      // fetch's completed trades; shares window._ordExitFilter with the Ctrl+click.
+      const _erSel = document.getElementById('ord-exit-reason');
+      if (_erSel) {
+        const _erMap = [
+          ['SL_HIT', '🛑 Stop-Loss'], ['TP_HIT', '🎯 Target'], ['EXPIRY_ITM_SQUAREOFF', '📅 Expiry ITM'],
+          ['EXPIRY_EOD_SQUAREOFF', '📅 Expiry EOD (2:55)'], ['EOD_315_SQUAREOFF', '⏰ 3:15 EOD'],
+          ['KILL_FLOOR', '🔒 Kill-Floor'], ['TRAILING_PROFIT_LOCK', '🔒 Trailing Lock'],
+          ['DEFAULT_TSL_TARGET', '🎯 Aggr-Trail Target'], ['DEFAULT_TSL_SL', '🛡️ Aggr-Trail SL'],
+          ['RMS_MAXLOSS', '⚠️ RMS Daily Max-Loss'], ['RMS_PROFIT_TARGET', '✅ RMS Daily Target'],
+          ['NO_PRICE_EMERGENCY_EXIT', '🚨 No-Price Emergency'], ['ATR_TRAILING', '📉 ATR Trailing'],
+          ['RSI_MIDLINE_EXIT', '↩️ RSI Midline'], ['IDX_TRAIL', '📉 Index Trail SL'], ['TRAIL_SL', '📉 Trail SL'],
+          ['TARGET', '🎯 Target'], ['GLOBAL_CAP', '🚫 Max Trades/Day'], ['SQUAREOFF_315', '⏰ 3:15 EOD (Webhook)'],
+          ['REVERSAL', '🔄 Reversal'], ['TV_EXIT', '📡 TV Exit Signal'], ['MANUAL_CLOSE', '✋ Manual Close'],
+          ['EXTERNALLY_CLOSED', '🌐 Closed at Broker'], ['MANUAL_EXIT_BROKER', '🌐 Closed at Broker'],
+        ];
+        const _pfxOf = raw => { if (!raw) return ''; for (const [p] of _erMap) { if (raw.startsWith(p)) return p; } return (raw.split(':')[0] || raw); };
+        const _lblOf = pfx => { for (const [p, l] of _erMap) { if (p === pfx) return l; } return pfx; };
+        const _seen = [...new Set(det.map(t => _pfxOf(t.exit_reason || '')).filter(Boolean))].sort();
+        const _cur = window._ordExitFilter || '';
+        _erSel.innerHTML = '<option value="">All Exit Reasons</option>' +
+          _seen.map(p => `<option value="${p}"${p === _cur ? ' selected' : ''}>${_lblOf(p)}</option>`).join('');
+        _erSel.value = _cur;
+      }
       let sortedCompleted = det.filter(_peakTradeMatch)
         .filter(t => !window._ordExitFilter || (t.exit_reason || '').split(':')[0] === window._ordExitFilter);
       // header chip showing the active per-strategy + exit-reason filters (clearable)
