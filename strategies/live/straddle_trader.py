@@ -46,6 +46,7 @@ sys.path.insert(0, str(BASE_DIR))
 import _paths  # noqa: F401  — sys.path bootstrap (_core/_data/_ops flat imports)
 import dhan_master
 from _CHARTING.indicators import wilder_atr as _atr   # canonical (Rule 6B/ADR-002) — matches backtest
+from strategies.signals import orb as _orb            # SINGLE SOURCE — same orb_break signal as backtest
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
@@ -168,8 +169,12 @@ def fetch_nifty(token, cid, tf_min, days=5):
 
 
 def compute_breakout(df, cfg):
-    """Direction-agnostic ORB breakout on the last CLOSED bar. Returns
-    dict(direction, spot, atr) or None. Matches option_structures.entry_signal('orb_break')."""
+    """Direction-agnostic ORB breakout on the last CLOSED bar.
+
+    SIGNAL = the SINGLE-SOURCE `orb.orb_signal_last` (base orb / orb_break, NO window) —
+    the EXACT backtest signal, so a live entry fires iff the backtest fired on that bar
+    (removes the OR-boundary `<`-vs-`<=` and previous-vs-current-bar-ATR drift the port
+    had). Returns dict(direction 'up'/'down', spot, atr) or None."""
     p = cfg
     period = int(p["atr_period"])
     if len(df) < period + 3:
@@ -177,40 +182,19 @@ def compute_breakout(df, cfg):
     df = df.copy().reset_index(drop=True)
     df["atr"] = _atr(df, period)
     today = ist_now().date()
-    tday = df[df["time"].dt.date == today].reset_index(drop=True)
-    if len(tday) < 3:
+    sig_params = dict(or_min=int(p["or_min"]), orb_k=float(p["orb_k"]), atr_period=period)  # no h0/h1 → no window
+    side = _orb.orb_signal_last(df, sig_params, dt_col="time", hi="high", lo="low", cl="close")
+    if not side:
         return None
-    or_end = (datetime.combine(today, datetime.min.time())
-              .replace(hour=9, minute=15) + timedelta(minutes=int(p["or_min"]))).time()
-    or_bars = tday[tday["time"].dt.time < or_end]
-    if or_bars.empty:
+    i = len(df) - 2
+    if i < 1 or df.iloc[i]["time"].date() != today:
         return None
-    or_high = float(or_bars["high"].max()); or_low = float(or_bars["low"].min())
-
-    i = len(df) - 2   # last CLOSED bar (last row = forming)
-    if i < 1:
-        return None
-    bar = df.iloc[i]
-    if bar["time"].date() != today:
-        return None
-    # breakout must be on a bar AFTER the opening range
-    if bar["time"].time() < or_end:
-        return None
-
-    k = float(p["orb_k"]); atr_i = float(df["atr"].iloc[i]); atr_p = float(df["atr"].iloc[i - 1])
+    atr_i = float(df["atr"].iloc[i])
     if atr_i <= 0:
         return None
-    up_i, up_p = or_high + k * atr_i, or_high + k * atr_p
-    lo_i, lo_p = or_low - k * atr_i, or_low - k * atr_p
-    c_i, c_p = float(df["close"].iloc[i]), float(df["close"].iloc[i - 1])
-    direction = None
-    if c_i > up_i and c_p <= up_p:
-        direction = "up"
-    elif c_i < lo_i and c_p >= lo_p:
-        direction = "down"
-    if not direction:
-        return None
-    return dict(direction=direction, spot=c_i, atr=atr_i, bar_time=str(bar["time"]))
+    direction = "up" if side == "long" else "down"
+    return dict(direction=direction, spot=float(df["close"].iloc[i]), atr=atr_i,
+                bar_time=str(df.iloc[i]["time"]))
 
 
 def _opt_ltp(broker, sec_id):
