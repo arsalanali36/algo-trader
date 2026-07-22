@@ -1088,6 +1088,17 @@
           case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
+          case 'margin': {
+            if (t.margin == null) {
+              const _mt = String(t.entry).toUpperCase() === 'SELL'
+                ? 'SELL SPAN margin is a live-only number — not tracked for past trades (see RMS Margin on open positions)'
+                : 'No margin data';
+              v = '<span style="color:#6e7681" title="' + _mt + '">—</span>'; break;
+            }
+            v = '<span title="BUY debit = premium × qty (exact capital paid)">₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
+            colorStyle = 'color:#8b949e;';
+            break;
+          }
           case 'opt_fixed':
           case 'opt_aggr':
           case 'opt_aggr_eod': {
@@ -1257,6 +1268,17 @@
           case 'gross': v = Math.round(g); colorStyle = 'color:' + gc + ';'; break;
           case 'tax': v = '−' + Math.round(tx); colorStyle = 'color:#8b949e;'; break;
           case 'net': v = (n > 0 ? '+' : '') + Math.round(n); colorStyle = 'color:' + nc + ';font-weight:600;'; break;
+          case 'margin': {
+            if (t.margin == null) {
+              const _mt = String(t.entry).toUpperCase() === 'SELL'
+                ? 'SELL SPAN margin is a live-only number — not tracked for past trades (see RMS Margin on open positions)'
+                : 'No margin data';
+              v = '<span style="color:#6e7681" title="' + _mt + '">—</span>'; break;
+            }
+            v = '<span title="BUY debit = premium × qty (exact capital paid)">₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
+            colorStyle = 'color:#8b949e;';
+            break;
+          }
           case 'opt_fixed':
           case 'opt_aggr':
           case 'opt_aggr_eod': {

@@ -404,7 +404,8 @@
         if (typeof window.calcCharges === 'function') tax = window.calcCharges(ep, xp, qty, entrySide) || 0;
         net = gross - tax;
         
-        if (!aggregated[key]) aggregated[key] = { grossGain: 0, grossLoss: 0, net: 0, count: 0 };
+        if (!aggregated[key]) aggregated[key] = { grossGain: 0, grossLoss: 0, net: 0, count: 0, lot: null };
+        if (aggregated[key].lot == null && t.lot_size) aggregated[key].lot = t.lot_size;   // lot size (const per instrument)
         if (net >= 0) {
           aggregated[key].grossGain += net;
         } else {
@@ -492,7 +493,9 @@
                   const key = tooltipItems[0].label;
                   const count = aggregated[key].count;
                   const net = aggregated[key].net;
-                  return '\nTotal Trades: ' + count + '\nNet P&L: ₹ ' + net.toFixed(2);
+                  const lot = aggregated[key].lot;
+                  return (lot ? 'Lot size: ' + lot + '\n' : '')
+                    + 'Total Trades: ' + count + '\nNet P&L: ₹ ' + net.toFixed(2);
                 }
               }
             }

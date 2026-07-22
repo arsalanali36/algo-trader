@@ -5109,6 +5109,40 @@ def api_webhook_status():
     return jsonify(wh.status())
 
 
+def _enrich_trade_display(trades):
+    """Add DISPLAY-ONLY `lot_size` + `margin` (capital required to execute) to
+    each completed-trade dict — consumed by the trade table's Margin column and
+    the Gain/Loss By-Instrument hover's lot-size line. Never changes any order.
+
+    margin: a BUY option is a debit → margin = premium × qty (EXACT capital paid).
+    A SELL option's real SPAN+exposure margin is NOT recoverable historically
+    without a per-trade live broker call (too heavy for a table, and the contract
+    is usually expired — `_leg_capital` returns 0 for them, `premium×qty` is just
+    the credit received, ~10× under the real SPAN). So we set margin only for BUY
+    and leave SELL unset (UI shows "—"); real SELL margin is a live-only number,
+    visible on OPEN positions via the RMS Margin column."""
+    try:
+        import dhan_master as _dm
+    except Exception:
+        _dm = None
+    for t in (trades or []):
+        try:
+            lot = _dm.get_lot_size_by_sec_id(t.get('sec_id')) if _dm else None
+            if lot:
+                t['lot_size'] = int(lot)
+        except Exception:
+            pass
+        try:
+            ep = float(t.get('entry_price') or 0); q = float(t.get('qty') or 0)
+            if ep > 0 and q > 0 and str(t.get('entry')).upper() == 'BUY':
+                t['margin'] = round(ep * q, 2)   # BUY premium debit = exact capital
+                t['margin_est'] = False
+            # SELL: real SPAN not cheaply recoverable historically → leave unset
+        except Exception:
+            pass
+    return trades
+
+
 @app.route('/api/orders')
 def api_orders():
     """Trade DB (order_store) — completed trades + open positions for a date,
@@ -5227,6 +5261,7 @@ def api_orders():
             data['group_margin'] = {}
     except Exception as _e:
         pass
+    _enrich_trade_display(data.get('details'))   # lot_size + margin for the table
     return jsonify(data)
 
 
@@ -5344,6 +5379,7 @@ def api_orders_calendar_summary():
     except Exception:
         distinct_filters = {'strategy': [], 'broker': []}
         
+    _enrich_trade_display(all_trades)   # lot_size (Gain/Loss hover) + margin
     return jsonify({
         'summary': summary,
         'trades': all_trades,
