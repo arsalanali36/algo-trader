@@ -178,131 +178,38 @@ def fetch_nifty(token, cid, tf_min, days=10, use_cache=True):
         return None
 
 
-# ─────────── chain-zone signal (EXACT port of intraday_engine._chain_zone_signals) ───────────
-def _daily_levels(df, lookback=20, max_jump=10.0):
-    """date -> dict(res, sup, neutral) from the PREVIOUS completed day (no lookahead).
-    Mirrors scratch/nifty_trend/intraday_engine._daily_levels."""
-    dd = df.copy()
-    dd["day"] = dd["time"].dt.date
-    daily = dd.groupby("day").agg(H=("high", "max"), L=("low", "min"),
-                                  C=("close", "last")).reset_index()
-    dates = list(daily["day"].values)
-    Hs, Ls, Cs = daily.H.values, daily.L.values, daily.C.values
-    out = {}
-    for j in range(len(dates)):
-        if j == 0:
-            out[dates[j]] = None; continue
-        ph, pl, pc = Hs[j - 1], Ls[j - 1], Cs[j - 1]
-        P = (ph + pl + pc) / 3.0
-        rng = ph - pl
-        R1, S1 = 2 * P - pl, 2 * P - ph
-        R2, S2 = P + rng, P - rng
-        R3, S3 = ph + 2 * (P - pl), pl - 2 * (ph - P)
-        R4, S4 = R3 + rng, S3 - rng
-        R5, S5 = R4 + rng, S4 - rng
-        res = [ph, R1, R2, R3, R4, R5]
-        sup = [pl, S1, S2, S3, S4, S5]
-        thr = ph
-        for k in range(2, min(lookback, j) + 1):
-            hh = Hs[j - k]
-            if hh > thr and (hh - thr) / thr * 100.0 <= max_jump:
-                res.append(hh); thr = hh
-        thr = pl
-        for k in range(2, min(lookback, j) + 1):
-            ll = Ls[j - k]
-            if ll < thr and (thr - ll) / thr * 100.0 <= max_jump:
-                sup.append(ll); thr = ll
-        out[dates[j]] = dict(res=res, sup=sup, neutral=[P, pc])
-    return out
-
-
-def _candle_patterns(df, min_body=0.5, wick_ratio=2.5):
-    """Vectorised bullish/bearish key-candle flags — Pine parity (AA_CandlePatterns)."""
-    O, H, L, C = df["open"].values, df["high"].values, df["low"].values, df["close"].values
-    body = np.abs(C - O)
-    up_wick = H - np.maximum(O, C)
-    lo_wick = np.minimum(O, C) - L
-    green = C > O; red = C < O
-    grn_ham = green & (body >= min_body) & (lo_wick >= wick_ratio * body) & (up_wick <= body)
-    red_ham = red & (body >= min_body) & (lo_wick >= wick_ratio * body) & (up_wick <= body)
-    inv_red = red & (body >= min_body) & (up_wick >= wick_ratio * body) & (lo_wick <= body)
-    Op, Cp = np.roll(O, 1), np.roll(C, 1)
-    prev_red, prev_grn = Cp < Op, Cp > Op
-    body_p = np.abs(Cp - Op)
-    bull_eng = green & prev_red & (body_p >= min_body) & (O <= Cp) & (C >= Op)
-    bear_eng = red & prev_grn & (body_p >= min_body) & (O >= Cp) & (C <= Op)
-    lo_c, hi_c = np.minimum(O, C), np.maximum(O, C)
-    bull_har = green & prev_red & (lo_c >= Cp) & (hi_c <= Op)
-    bear_har = red & prev_grn & (lo_c >= Op) & (hi_c <= Cp)
-    if len(O):
-        bull_har[0] = bear_eng[0] = bull_eng[0] = False
-    bearish = bear_eng | bear_har | inv_red | red_ham
-    bullish = bull_eng | bull_har | grn_ham
-    return bullish, bearish
-
-
+# ─────────── chain-zone signal — SINGLE SOURCE (shared with the backtest) ───────────
+# The zone state machine + candle patterns + daily chain-levels now live in ONE place,
+# strategies/signals/chain_zone.py, which the backtest engine
+# (scratch/nifty_trend/intraday_engine._chain_zone_signals) ALSO calls — so live ==
+# backtest == Pine by construction (guard: _DEV/tests/test_chainzone_single_source.py).
+# This file's old private _daily_levels/_candle_patterns copies were deleted; the ATR
+# stop below is exit/order sizing (not signal) and stays here.
 def compute_signal(df, cfg):
-    """Replay the chain-zone state machine over the fetched bars; emit a signal only
-    if the LAST CLOSED bar (index -2, last row = forming) fired. stop_only exit."""
+    """Emit a signal only if the LAST CLOSED bar fired the chain-zone breakout.
+    Signal detection = the shared single-source chain_zone (same code the backtest runs).
+    stop_only exit: spot ATR stop, NO target, ride to 3:15."""
     p = cfg
     period = int(p["atr_period"])
     if len(df) < period + 5:
         return None
     df = df.copy().reset_index(drop=True)
-    atr = _atr(df, period).values
-    levels = _daily_levels(df, int(p["chain_lookback"]), float(p["max_jump"]))
-    bull, bear = _candle_patterns(df)
-    O, H, L, C = df["open"].values, df["high"].values, df["low"].values, df["close"].values
-    day = df["time"].dt.date.values
-    tol = float(p["touch_tol"]); max_age = int(p["zone_age"]); max_cs = float(p["max_cs"])
-    hawa = bool(p["hawa"]); hawa_k = int(p["hawa_k"])
-    n = len(df)
-    sig_bar = n - 2                       # last CLOSED bar
-    if sig_bar < 1:
-        return None
-
-    red_zone = green_zone = None
-    last_res_bar = last_sup_bar = -10 ** 9
-    fired = None
-    for i in range(1, sig_bar + 1):
-        lv = levels.get(day[i])
-        if lv is None:
-            continue
-        lo, hi = L[i] - tol, H[i] + tol
-        t_res = any(lo <= x <= hi for x in lv["res"])
-        t_sup = any(lo <= x <= hi for x in lv["sup"])
-        t_neu = any(lo <= x <= hi for x in lv["neutral"])
-        if t_res:
-            last_res_bar = i
-        if t_sup:
-            last_sup_bar = i
-        at_res = t_res or t_neu or (hawa and i - last_res_bar <= hawa_k)
-        at_sup = t_sup or t_neu or (hawa and i - last_sup_bar <= hawa_k)
-        if bear[i] and at_res and not t_sup:
-            red_zone = dict(lower=L[i], upper=H[i], bar=i)
-        if bull[i] and at_sup and not t_res:
-            green_zone = dict(lower=L[i], upper=H[i], bar=i)
-        cs = H[i] - L[i]
-        if (red_zone is not None and i > red_zone["bar"] and i - red_zone["bar"] <= max_age
-                and C[i] < red_zone["lower"] and C[i] < O[i] and C[i - 1] < O[i - 1] and cs <= max_cs):
-            if i == sig_bar:
-                fired = "short"
-            red_zone = None
-        if (green_zone is not None and i > green_zone["bar"] and i - green_zone["bar"] <= max_age
-                and C[i] > green_zone["upper"] and C[i] > O[i] and C[i - 1] > O[i - 1] and cs <= max_cs):
-            if i == sig_bar:
-                fired = "long"
-            green_zone = None
-
+    from strategies.signals import chain_zone as _cz
+    fired = _cz.chain_zone_signal_last(df, p, dt_col="time", op="open",
+                                       hi="high", lo="low", cl="close")
     if fired is None:
         return None
+    n = len(df)
+    sig_bar = n - 2                       # last CLOSED bar
+    day = df["time"].dt.date.values
     # only trade TODAY's closed bar (levels for older days are just warm-up)
     if day[sig_bar] != ist_now().date():
         return None
+    atr = _atr(df, period).values
     atr_i = float(atr[sig_bar])
     if atr_i <= 0 or np.isnan(atr_i):
         return None
-    entry = float(C[sig_bar])
+    entry = float(df["close"].values[sig_bar])
     stop_dist = float(p["atr_sl"]) * atr_i
     stop = entry - stop_dist if fired == "long" else entry + stop_dist
     return dict(signal=fired, entry_spot=entry, atr=atr_i, stop=stop,

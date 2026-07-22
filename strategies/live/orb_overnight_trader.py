@@ -53,6 +53,7 @@ sys.path.insert(0, str(BASE_DIR))
 import _paths  # noqa: F401  (sys.path bootstrap)
 import dhan_master
 from _CHARTING.indicators import wilder_atr as _atr   # canonical, matches backtest (ADR-002)
+from strategies.signals import orb as _orb   # SINGLE-SOURCE ORB signal (same code the backtest runs)
 
 MARKET_OPEN   = (9, 16)
 MARKET_CLOSE  = (15, 25)
@@ -183,7 +184,14 @@ def fetch_nifty_15m(token, cid, days=5, use_cache=True):
 
 def compute_signal(df, cfg):
     """ORB breakout on TODAY's opening range + mid-day window. Returns dict with
-    signal/entry_spot/atr/stop (NO target — overnight variant exits next-day 09:20)."""
+    signal/entry_spot/atr/stop (NO target — overnight variant exits next-day 09:20).
+
+    SIGNAL = the SINGLE-SOURCE `orb.orb_signal_last` (tod_orb — WITH the h0/h1 window) —
+    the EXACT backtest signal (build_overnight_orb.py runs
+    intraday_engine.design_signals('tod_orb'), which also calls this), so a live entry
+    fires iff the backtest fired on that bar. Removes the OR-boundary (`<` vs `<=`) and
+    previous-vs-current-bar-ATR crossover drift the old inline port had. Only the ATR
+    stop below is exit sizing (not signal)."""
     p = cfg
     period = int(p["atr_period"])
     if len(df) < period + 3:
@@ -191,42 +199,25 @@ def compute_signal(df, cfg):
     df = df.copy().reset_index(drop=True)
     df["atr"] = _atr(df, period)
     today = ist_now().date()
-    tday = df[df["time"].dt.date == today].reset_index(drop=True)
-    if len(tday) < 3:
-        return None
-    or_end = (datetime.combine(today, datetime.min.time())
-              .replace(hour=9, minute=15) + timedelta(minutes=int(p["or_min"]))).time()
-    or_bars = tday[tday["time"].dt.time < or_end]
-    if or_bars.empty:
-        return None
-    or_high = float(or_bars["high"].max()); or_low = float(or_bars["low"].min())
-    i = len(df) - 2                        # last CLOSED bar
-    if i < 1:
-        return None
-    bar = df.iloc[i]
-    if bar["time"].date() != today:
-        return None
+    # config → shared param names. Window hours from win_start/win_end (backtest tod_orb
+    # uses hour-granularity h0/h1; orb_overnight_v1 = 11:00/14:00).
     ws, we = _hm(p["win_start"]), _hm(p["win_end"])
-    bt = (bar["time"].hour, bar["time"].minute)
-    if not (ws <= bt <= we):
-        return None
-    k = float(p["orb_k"]); atr_i = float(df["atr"].iloc[i]); atr_p = float(df["atr"].iloc[i - 1])
-    if atr_i <= 0:
-        return None
-    up_i, up_p = or_high + k * atr_i, or_high + k * atr_p
-    lo_i, lo_p = or_low - k * atr_i, or_low - k * atr_p
-    c_i, c_p = float(df["close"].iloc[i]), float(df["close"].iloc[i - 1])
-    side = None
-    if c_i > up_i and c_p <= up_p:
-        side = "long"
-    elif c_i < lo_i and c_p >= lo_p:
-        side = "short"
+    sig_params = dict(or_min=int(p["or_min"]), orb_k=float(p["orb_k"]),
+                      atr_period=period, h0=ws[0], h1=we[0])
+    side = _orb.orb_signal_last(df, sig_params, dt_col="time", hi="high", lo="low", cl="close")
     if not side:
         return None
-    entry_spot = c_i
+    i = len(df) - 2                        # last CLOSED bar
+    if i < 1 or df.iloc[i]["time"].date() != today:
+        return None
+    atr_i = float(df["atr"].iloc[i])
+    if atr_i <= 0:
+        return None
+    entry_spot = float(df["close"].iloc[i])
     stop_dist = float(p["atr_sl"]) * atr_i
     stop = entry_spot - stop_dist if side == "long" else entry_spot + stop_dist
-    return dict(signal=side, entry_spot=entry_spot, atr=atr_i, stop=stop, bar_time=str(bar["time"]))
+    return dict(signal=side, entry_spot=entry_spot, atr=atr_i, stop=stop,
+                bar_time=str(df.iloc[i]["time"]))
 
 
 # ───────────── positional state (survives across days — TRAP #119) ─────────────
