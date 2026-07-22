@@ -3875,3 +3875,35 @@ order-path change. Real 2026-07-22 before/after: 2 phantoms → 0, backspread 1 
 overlapping ATM strikes), netting MUST respect strategy identity. A completed trade whose entry and exit legs came
 from different strategies on a shared contract is a phantom. `group_id` is NOT persisted to order_store yet (every
 row `group_id=''`) — a group-aware multi-leg atomic-exit fix needs that persisted first (flagged separately).
+**→ RESOLVED by TRAP #146 (2026-07-22):** `group_id` now persisted (`_COLS` was missing it); the two per-leg
+profit-lock exit paths now close group siblings atomically. See #146.
+
+## TRAP #146 — group_id built + column exists + readers surface it, but never WRITTEN (silent, disabled every group-aware feature) 🔴
+**Symptom (2026-07-22):** direct follow-up to TRAP #145's parting flag ("`group_id` is NOT persisted to order_store yet
+— every row `group_id=''`"). A latent multi-leg atomicity bug: two per-leg profit-lock exit paths in
+`pos_monitor_loop` (per-instrument trailing lock ~L6746, DEFAULT_TSL aggressive ~L6905) place their primary-leg exit
+DIRECTLY (not via the group-aware `_do_squareoff`), so if ever enabled on a leg of a multi-leg structure
+(straddle/strangle/condor/backspread/hedge) ONE leg would profit-lock out while its siblings stayed open — orphaning
+the structure into a naked SELL / broken hedge.
+**Root (failure shape #2 built≠wired + #4 half-fix):** `order_store.record()` BUILDS `row["group_id"]`, the DB column
+EXISTS (init_db ALTER), and every reader (`_meta`/`_as_open`) surfaces it — but `_COLS` (the INSERT column list)
+**omitted "group_id"**. So `INSERT (...) VALUES (...)` never wrote it, and every row got the column DEFAULT (NULL→'')
+no matter what the caller passed. EVERY multi-leg strategy already passed `group_id=gid` through the gateway
+(straddle/strangle/02/05/06/vrp condor×2/vrp straddle + range_trader hedge) — all silently dropped. This didn't just
+break the two profit-lock paths; it silently disabled ALL group-aware code that was already written and looked
+"done": `_do_squareoff`'s sibling-close (hedge-orphan protection / TRAP #30), `broker_sync` S5 naked-leg alert, and
+the UI's hedge marker + group-close button. `gid = p.get("group_id")` was always falsy → `if gid:` never ran.
+**Fix:** (1) add `"group_id"` to `order_store._COLS` (one line — the whole root cause). (2) new module-level
+`_queue_group_siblings(p, open_pos, closed_ids, reason)` — after a per-leg profit-lock fires, queue every still-open
+group sibling via the EXISTING `_pgc_queue` → same-cycle `for p in open_pos` → `_pgc_pop` → `_do_squareoff` machinery
+(the exact no-price-sibling pattern `_do_squareoff` itself uses), so NO order-placement logic is duplicated (Rule 6B).
+Called from both firing blocks. No-op when `group_id` is unset → inert for single-leg strategies and (since the
+profit-lock features are OFF by config) inert on the live system right now.
+**Rule 10:** features NOT enabled — this only makes the code SAFE if enabled; enabling any per-leg lock on a
+backtested multi-leg strategy still needs a re-backtest.
+**Guard / fast-detect:** a "built" feature that reads a field is worthless if the WRITE side silently drops it. When a
+column is added later (additive ALTER + a new kwarg), grep the INSERT column list (`_COLS`) too — a row-dict key with
+no matching INSERT column is written as DEFAULT forever, no error. Fast check: `record()` a row with a distinctive
+value, read it back, assert it survived (see `_DEV/tests/test_group_id_atomicity.py`, 12 assertions covering persist +
+2-leg/4-leg/no-group/closed/other-group/no-sec_id sibling selection). Any time you find a group/hedge/pairing feature
+"not working," check whether its linking id was ever actually persisted before debugging the consumer.

@@ -15,6 +15,26 @@
 
 ---
 
+## 2026-07-22 — Multi-leg atomicity: persist group_id + group-aware profit-lock exits (TRAP #146)
+**Status:** DONE (commit `606c39f`, rebased onto origin/master TRAP #145 netting fix)
+**Kya:** Latent bug — `order_store._COLS` (INSERT column list) me `"group_id"` chhoot gaya tha,
+jabki `record()` `row["group_id"]` banati thi + DB column maujood tha + readers surface karte the.
+Nateeja: har row `group_id=''` likhti thi (caller kuch bhi bheje), aur SAARE group-aware features
+chup-chaap dead the — `_do_squareoff` sibling-close (hedge-orphan/TRAP #30), `broker_sync` S5
+naked-leg alert, UI group-close button. Plus 2 per-leg profit-lock exit paths (`pos_monitor_loop`:
+per-instrument trailing lock + DEFAULT_TSL aggressive) apni primary leg seedha band karte the
+(group-aware `_do_squareoff` se nahi) → multi-leg structure pe enable hone par ek leg orphan.
+**Layer:** execution (order_store money-path) + ui (pos_monitor exit path)
+**Files:** `_core/order_store.py` (`_COLS` += `"group_id"` + load-bearing comment),
+`trader_dashboard.py` (naya module-level `_queue_group_siblings()` + dono firing blocks se call —
+existing `_pgc_queue`→`_do_squareoff` machinery reuse, koi placement duplicate nahi, Rule 6B),
+`_DEV/tests/test_group_id_atomicity.py` (naya, 12 assert).
+**Rule 10:** koi profit-lock feature ON nahi kiya — sirf code SAFE banaya taaki enable karne pe
+structure na toote; enable karne se pehle re-backtest chahiye.
+**Verify:** naya test 12/12 (persist end-to-end + real `_queue_group_siblings` body: 2-leg/4-leg
+condor/no-group/closed/other-group/no-sec_id), existing `_test_order_store.py` 11/11, audit 0 FAIL.
+**LESSONS:** TRAP #146 (TRAP #145 ke parting-flag ka resolution).
+
 ## 2026-07-21 — Stats single-strategy filter resolve-aware (dropdown → khaali calendar fix)
 **Status:** DONE (master `1f4b3d1`, VPS-live, dashboard-only restart, PIDs 2→2 intact)
 **Kya:** Stats/Stats2 me strategy dropdown se 05.02 RSI (paper) chunte hi calendar/summary
