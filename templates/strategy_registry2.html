@@ -142,6 +142,41 @@
   .foot{color:var(--mut2);font-size:11px;margin-top:10px;text-align:center}
   .hk{font-size:10.5px;color:var(--mut2);border:1px solid var(--bd);border-radius:5px;padding:3px 7px;letter-spacing:.3px}
   .hk>span{color:var(--mut);margin:0 1px}
+
+  /* ---- view switch (Quick / Detailed / Entry-Exit) ---- */
+  .viewseg{display:inline-flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .viewseg button{background:var(--panel);border:0;border-right:1px solid var(--bd);color:var(--mut);
+    font-size:11.5px;font-weight:700;padding:5px 11px;cursor:pointer;display:flex;align-items:center;gap:5px}
+  .viewseg button:last-child{border-right:0}
+  .viewseg button:hover{background:var(--bd2);color:var(--tx)}
+  .viewseg button.on{background:var(--blue);color:#fff}
+  .viewseg button.on.det{background:var(--equity);color:#04211d}
+  .viewseg button.on.ee{background:var(--org);color:#2b1600}
+  .viewhint{font-size:11.5px;color:var(--mut);margin:0 2px 8px;min-height:15px}
+  .viewhint b{color:var(--tx)}
+  /* ---- source chip: backtested vs discretionary ---- */
+  .src{font-size:10px;font-weight:700;border-radius:5px;padding:2px 8px;white-space:nowrap;
+    display:inline-flex;gap:4px;align-items:center;letter-spacing:.2px}
+  .src.bt{background:#2dd4bf1a;color:var(--equity);border:1px solid #2dd4bf44}
+  .src.disc{background:#d299221a;color:var(--yel);border:1px solid #d2992244}
+  .src.un{background:#6e768115;color:var(--mut2);border:1px solid #6e768130}
+  /* ---- entry/exit param zones + chips ---- */
+  .cellwrap{white-space:normal;max-width:380px}
+  .eebox{border-radius:7px;padding:5px 6px}
+  .eebox.in{background:#1f6feb10;border:1px solid #1f6feb30;box-shadow:inset 3px 0 0 var(--blue)}
+  .eebox.ex{background:#f0883e10;border:1px solid #f0883e30;box-shadow:inset 3px 0 0 var(--org)}
+  .eebox.empty{background:none;border:0;box-shadow:none;color:var(--mut2);padding-left:3px}
+  .chips{display:flex;flex-wrap:wrap;gap:4px}
+  .chip{font-size:10.5px;background:#0d1117cc;border:1px solid var(--bd);border-radius:5px;
+    padding:2px 7px;white-space:nowrap;display:inline-flex;gap:5px;align-items:baseline}
+  .chip b{color:var(--mut2);font-weight:600;font-size:9px;text-transform:uppercase;letter-spacing:.3px}
+  .chip .v{font-family:var(--mono);font-weight:600;color:var(--tx);font-variant-numeric:tabular-nums}
+  .chip.win .v{color:#79b8ff}
+  .chip.on2{border-color:#3fb95055}.chip.on2 .v{color:#56d364}
+  .chip.off2 b,.chip.off2 .v{color:var(--mut2)}
+  .slcell{font-size:11.5px}.slcell .slt{font-weight:700;color:var(--org)}.slcell .sep{color:var(--mut2);margin:0 3px}
+  .tgt{font-family:var(--mono);color:var(--grn);font-weight:600}
+  .off{color:var(--mut2)}
 </style></head>
 <body>
 <div class="wrap">
@@ -161,6 +196,12 @@
   <div class="toolbar">
     <div class="search"><span class="ic">🔍</span><input id="q" placeholder="Search id · name · key · file" oninput="render()"></div>
     <span style="flex:1"></span>
+    <span class="lbl">View</span>
+    <div class="viewseg" id="viewseg">
+      <button data-v="quick" onclick="setView('quick')">⚡ Quick</button>
+      <button data-v="det" onclick="setView('det')">📊 Detailed</button>
+      <button data-v="ee" onclick="setView('ee')">🎯 Entry / Exit</button>
+    </div>
     <span class="hk" title="Alt+R clears all filters">Alt<span>+</span>R = clear</span>
     <span class="lbl">Group</span>
     <div class="seg" id="grp">
@@ -180,6 +221,7 @@
   </div>
 
   <div class="fchips" id="fchips"></div>
+  <div class="viewhint" id="viewhint"></div>
 
   <div class="tablewrap"><div class="scroll">
     <table id="tbl"><thead id="thead"></thead><tbody id="tbody"></tbody></table>
@@ -204,6 +246,18 @@ const COLS=[
   {k:'win',t:'Win%',num:1,on:1,f:'rng'},
   {k:'trades',t:'Trades',num:1,on:1,f:'rng'},
   {k:'pval',t:'Signif',num:1,on:1,f:'rng'},
+  // ---- extra columns surfaced by the Detailed / Entry-Exit views (off in Quick) ----
+  {k:'source',t:'Source',on:0,f:'sel',opts:['Backtested','Discretionary','untested']},
+  {k:'net',t:'Net %',num:1,on:0,f:'rng'},
+  {k:'pf',t:'PF',num:1,on:0,f:'rng'},
+  {k:'oos_sharpe',t:'OOS Sharpe',num:1,on:0,f:'rng'},
+  {k:'oos_net',t:'OOS Net %',num:1,on:0,f:'rng'},
+  {k:'train_sharpe',t:'Train Sh',num:1,on:0,f:'rng'},
+  {k:'entry',t:'🔵 Entry conditions',on:0},
+  {k:'exit',t:'🟠 Exit rules',on:0},
+  {k:'sl',t:'Stop-loss',on:0},
+  {k:'target',t:'Target',num:1,on:0},
+  {k:'maxtd',t:'Max/day',num:1,on:0},
   {k:'created',t:'Created',on:1,f:'text'},
   {k:'config',t:'Config key',on:0,f:'text'},
   {k:'file',t:'File',on:0,f:'text'},
@@ -219,6 +273,67 @@ let SAVED=[]; try{SAVED=JSON.parse(localStorage.getItem('reg2_saved')||'[]')||[]
 try{const c=JSON.parse(localStorage.getItem('reg2_cols')||'null'); if(c)COLS.forEach(x=>{if(c[x.k]!==undefined)x.on=c[x.k]?1:0});}catch(e){}
 COLS.forEach(c=>c.vis=!!c.on);
 let collapsed={};
+
+// ---------- view modes: Quick (default cols) / Detailed (all metrics) / Entry-Exit (how it trades) ----------
+let VIEW=(()=>{try{return localStorage.getItem('reg2_view')||'quick'}catch(e){return 'quick'}})();
+const VIEWS={
+  det:['id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','oos_sharpe','oos_net','train_sharpe','pval'],
+  ee:['id','name','source','tf','structure','entry','exit','sl','target','maxtd'],
+};
+const VIEWHINT={
+  quick:'',
+  det:'<b>📊 Detailed</b> — full backtest card inline: full + out-of-sample Sharpe, net %, drawdown, win, profit factor, significance. Rows with no backtest (discretionary / research) show a dim —.',
+  ee:'<b>🎯 Entry / Exit</b> — how each strategy actually trades: timeframe, entry conditions, exit rules, stop-loss, target, trades/day — read live from each strategy\'s own config.',
+};
+function setView(v){VIEW=v;try{localStorage.setItem('reg2_view',v)}catch(e){}hlView();render();}
+function hlView(){
+  document.querySelectorAll('#viewseg button').forEach(b=>{
+    b.className=(b.dataset.v===VIEW)?('on '+(VIEW==='det'?'det':VIEW==='ee'?'ee':'')):'';});
+  const h=document.getElementById('viewhint'); if(h)h.innerHTML=VIEWHINT[VIEW]||'';
+}
+
+// entry/exit config → clean chips. Config schema differs per family, so classify keys and group them.
+const ENTRY_KEYS={win_start:'from',win_end:'to',h0:'from h',h1:'to h',entry_hm:'entry',entry_dte:'entry DTE',
+  or_min:'OR min',orb_k:'ORB k',st_period:'ST',st_mult:'ST×',chain_lookback:'chain LB',zone_age:'zone age',
+  touch_tol:'touch tol',max_cs:'max candle',max_candle_size:'max candle',max_jump:'max jump',
+  rsi_period:'RSI',overbought:'OB',oversold:'OS',strike_offset:'strike',body_off:'body',wing_off:'wing',
+  bs_off:'bs off',iv_source:'IV src',enter_thr:'IV thr',fresh_zone_only:'fresh zone',hawa_me_zone:'hawa zone'};
+const EXIT_KEYS={atr_sl:'ATR SL',rr:'RR',tp_frac:'TP frac',sl_frac:'SL frac',rsi_exit:'RSI exit',
+  exit_hm:'exit',exit_dte:'exit DTE',squareoff_at:'squareoff',no_entry_after:'no entry after',
+  sl_points:'SL pts',target_points:'target pts',trail_mode:'trail',trail_value:'trail val',
+  atr_exit:'ATR exit',zone_exit:'zone exit',fib_exit:'fib exit',exit_zone:'zone exit',exit_atr:'ATR exit'};
+const _FLAGS=['atr_exit','zone_exit','fib_exit','exit_zone','exit_atr','fresh_zone_only','hawa_me_zone'];
+function _isOn(v){return v===true||v==='true'||v===1}
+function chipsFor(cfg,keys,zone){
+  const out=[];
+  for(const k in keys){
+    if(!(k in cfg))continue; let v=cfg[k]; if(v==null||v==='')continue;
+    if(Array.isArray(v))v=v.join(',');
+    if(_FLAGS.includes(k)) out.push(`<span class="chip ${_isOn(v)?'on2':'off2'}"><b>${esc(keys[k])}</b><span class="v">${_isOn(v)?'ON':'off'}</span></span>`);
+    else{const isW=(k==='win_start'||k==='win_end'||k==='h0'||k==='h1'||k==='entry_hm'||k==='exit_hm');
+      out.push(`<span class="chip ${isW?'win':''}"><b>${esc(keys[k])}</b><span class="v">${esc(v)}</span></span>`);}
+  }
+  if(!out.length)return '<span class="eebox empty">—</span>';
+  return `<div class="eebox ${zone}"><div class="chips">${out.join('')}</div></div>`;
+}
+function srcCell(r){
+  if(r.source==='Backtested')return '<span class="src bt" title="Has a validated backtest run">🔬 Backtested</span>';
+  if(r.source==='Discretionary')return '<span class="src disc" title="Trading live/paper without a systematic backtest">✋ Discretionary</span>';
+  return '<span class="src un" title="No backtest, not deployed">· untested</span>';
+}
+function slDisplay(r){
+  if(!r._ck)return dash();
+  const risk=(CFG._risk)||{}, gl=risk.global||{}, ps=(risk.per_strategy&&risk.per_strategy[r._ck])||{};
+  const mode=ps.default_sl_mode||gl.default_sl_mode||'legacy';
+  let parts;
+  if(mode==='aggressive'){
+    const isl=(ps.default_tsl_initial_sl_per_lot!=null?ps.default_tsl_initial_sl_per_lot:gl.default_tsl_initial_sl_per_lot);
+    parts=['Aggressive TSL']; if(isl!=null)parts.push('init SL ₹'+Number(isl).toLocaleString('en-IN')+'/lot'); parts.push('trail');
+  }else{
+    const t=gl.default_sl_type,v=gl.default_sl_val; parts=[mode]; if(v)parts.push('SL '+v+(t?(' '+t):''));
+  }
+  return `<div class="slcell"><span class="slt">${esc(parts[0])}</span>${parts.slice(1).map(p=>`<span class="sep">·</span>${esc(p)}`).join('')}</div>`;
+}
 
 // _meta.hidden — dead configs / non-strategies / garbage ids. Same ONE list every
 // other surface reads. null/blank config_key = a LEGIT unconfigured research entry (show it).
@@ -236,6 +351,10 @@ function buildRows(){
   const strat=REG.strategies||{};
   ROWS=Object.keys(strat).map(id=>{
     const m=strat[id]||{}; const r=runOf(m.slug); const b=(r&&r.bs_full)||{};
+    const rc=(r&&r.real_cost)||{}; const c=(m.config_key&&CFG[m.config_key])||{};
+    const _risk=(CFG._risk)||{}; const _gl=_risk.global||{}; const _ps=(m.config_key&&_risk.per_strategy&&_risk.per_strategy[m.config_key])||{};
+    const source=(r?'Backtested':(((m.status==='live'||m.status==='legacy')||c.active)?'Discretionary':'untested'));
+    const _tgt=(_ps.profit_target_rs!=null?_ps.profit_target_rs:_gl.profit_target_rs);
     // Verdict from the run's OWN numbers (single source: significance + Sharpe).
     //   WINNER = significant (p<0.05) AND Sharpe>=1 (a real, deployable edge)
     //   weak   = a real edge (Sharpe>=1) that only just missed significance (p<0.10)
@@ -258,6 +377,15 @@ function buildRows(){
       win:(b.win_rate!=null?b.win_rate:undefined),
       trades:(b.trades!=null?b.trades:undefined),
       pval:(r&&r.p_value!=null?r.p_value:undefined),
+      net:(b.net_pct!=null?b.net_pct:undefined),
+      pf:(b.profit_factor!=null?b.profit_factor:undefined),
+      oos_sharpe:(rc.oos&&rc.oos.sharpe!=null?rc.oos.sharpe:undefined),
+      oos_net:(rc.oos&&rc.oos.net_pct!=null?rc.oos.net_pct:undefined),
+      train_sharpe:(rc.train&&rc.train.sharpe!=null?rc.train.sharpe:undefined),
+      source,
+      target:(_tgt!=null?_tgt:undefined),
+      maxtd:(_ps.max_trades_per_day!=null?_ps.max_trades_per_day:undefined),
+      _cfg:c,
       created:(r&&r.created?String(r.created).slice(0,10):undefined),
       config:m.config_key||'', file:(m.live_file||'').replace('strategies/','').replace('_core/',''),
       // raw refs for deploy/open
@@ -411,6 +539,17 @@ function cell(r,k){
     case 'created':return r.created?`<span class="mono" style="color:var(--mut)">${r.created}</span>`:dash();
     case 'config':return r.config?`<span class="mono" style="color:var(--mut)">${esc(r.config)}</span>`:dash();
     case 'file':return r.file?`<span class="mono" style="color:var(--mut)">${esc(r.file)}</span>`:dash();
+    case 'source':return srcCell(r);
+    case 'net':return fnum(r.net,1,'%',v=>v>=0?'pos':'neg');
+    case 'pf':return fnum(r.pf,2,'',v=>v>=1?'pos':'neg');
+    case 'oos_sharpe':return fnum(r.oos_sharpe,2,'',v=>v>=1?'pos':(v<0?'neg':''));
+    case 'oos_net':return fnum(r.oos_net,1,'%',v=>v>=0?'pos':'neg');
+    case 'train_sharpe':return fnum(r.train_sharpe,2,'',v=>v>=1?'pos':(v<0?'neg':''));
+    case 'entry':return `<div class="cellwrap">${chipsFor(r._cfg||{},ENTRY_KEYS,'in')}</div>`;
+    case 'exit':return `<div class="cellwrap">${chipsFor(r._cfg||{},EXIT_KEYS,'ex')}</div>`;
+    case 'sl':return slDisplay(r);
+    case 'target':return r.target==null?dash():(Number(r.target)>=1000000?'<span class="off">off</span>':`<span class="tgt">₹${Number(r.target).toLocaleString('en-IN')}</span>`);
+    case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
     case 'deploy':return deployCell(r);
     case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html" target="_blank">Lab ↗</a>`:dash();
   }
@@ -435,7 +574,9 @@ function fzc(k){return k==='id'?'fz fz-id':k==='name'?'fz fz-name':'';}
 function render(){
   renderSaved();renderColsMenu();renderChips();
   S.q=document.getElementById('q').value;
-  const vis=COLS.filter(c=>c.vis);
+  const vis = (VIEW!=='quick' && VIEWS[VIEW])
+    ? VIEWS[VIEW].map(k=>COLS.find(c=>c.k===k)).filter(Boolean)
+    : COLS.filter(c=>c.vis);
   let head=`<tr>`+vis.map(c=>{
     const sorted=S.sort.k===c.k;const ar=sorted?(S.sort.dir>0?'▲':'▼'):'⇅';
     const rz=c.k==='name'?'<span class="rz" title="drag to resize" onmousedown="startRz(event)"></span>':'';
@@ -497,6 +638,7 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   .rz{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:10}
   .rz:hover,.rz.drag{background:var(--blue)}
 </style>`);
+hlView();
 load();
 </script>
 </body></html>
