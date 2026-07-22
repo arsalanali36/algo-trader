@@ -40,6 +40,7 @@ import subprocess
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
+ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))   # project root (for _ops/ import — config_drift_check)
 RUNS = os.path.join(HERE, "runs")
 
 import pandas as pd  # noqa: E402
@@ -109,11 +110,14 @@ def _opt_rows_back(opt_table):
     return out
 
 
-def _post_patch_meta(slug, orig_meta, rmeta_window_before):
+def _post_patch_meta(slug, orig_meta, rmeta_window_before, orig_idx_entry=None):
     """Emitter ne meta.json/index.json fresh likhe — original identity wapas merge karo.
     Preserve: created/significant/p_value/deflated_sharpe/deployed/real_cost/shippable/
     data_integrity + koi bhi extra key jo original me thi. Update: window/days/bs_full/
-    *_sharpe (naye data ke). Add: extended block."""
+    *_sharpe (naye data ke). Add: extended block.
+    `orig_idx_entry` = the index.json entry as it was BEFORE write_run clobbered it
+    (captured by extend_one) — the ONLY reliable source for index-only fields like
+    `deployed`/`deploy_key`."""
     mpath = os.path.join(RUNS, slug, "meta.json")
     new_meta = json.load(open(mpath, encoding="utf-8"))
     merged = dict(orig_meta)          # original identity base
@@ -130,12 +134,17 @@ def _post_patch_meta(slug, orig_meta, rmeta_window_before):
     merged["extended"] = ext
     json.dump(merged, open(mpath, "w", encoding="utf-8"), indent=2)
 
+    # index-only identity fields (deployed/deploy_key/verdict/instrument/hold/structure)
+    # live ONLY in index.json → restore from the PRE-write snapshot. write_run already
+    # overwrote the live entry, so reading it back below (as this used to) would miss them.
+    for k, v in (orig_idx_entry or {}).items():
+        if k not in merged:
+            merged[k] = v
     idx_path = os.path.join(RUNS, "index.json")
     with hunt_guard.flock("runs_index"):
         idx = json.load(open(idx_path, encoding="utf-8"))
-        # index.json me kuch fields SIRF wahin hote hain (deployed, verdict, static
-        # instrument/hold/structure — meta.json me nahi). Un pe apna merged (jo meta.json
-        # base se bana) overwrite mat karo — existing index entry se preserve karo.
+        # belt-and-suspenders: also pick up anything write_run itself added to the live
+        # entry that we don't already have (never overwrite the pre-write identity above).
         existing = next((x for x in idx if x.get("slug") == slug), {})
         for k, v in existing.items():
             if k not in merged:
@@ -152,6 +161,18 @@ def extend_one(slug, d1m_cache):
         print(f"  [{slug}] SKIP — meta.json nahi mila", flush=True)
         return False
     orig_meta = json.load(open(mpath, encoding="utf-8"))
+    # Snapshot the ORIGINAL index.json entry BEFORE write_run runs. index-only identity
+    # fields (deployed / deploy_key / verdict / instrument / hold / structure) live ONLY
+    # in index.json, NOT in meta.json — and write_run (called below) overwrites the entry
+    # with a fresh meta that lacks them. If _post_patch_meta reads the entry back AFTER
+    # write_run (as it used to), those fields are already gone, so it silently drops
+    # `deployed` → the run falls out of the NEXT day's targets and never extends again
+    # (this is exactly why the deployed ORB runs were stuck at their last-extend date).
+    try:
+        _idx0 = json.load(open(os.path.join(RUNS, "index.json"), encoding="utf-8"))
+        orig_idx_entry = next((x for x in _idx0 if x.get("slug") == slug), {})
+    except Exception:
+        orig_idx_entry = {}
     rmeta, sig, opt_table = _load_results_meta(slug)
     window_before = list(orig_meta.get("window") or rmeta.get("window") or [])
 
@@ -203,7 +224,7 @@ def extend_one(slug, d1m_cache):
                       params=params, sig=dict(sig), opt=_opt_rows_back(opt_table))
         run_hunt.write_run(slug, winner, d, lots=lots)
 
-    merged = _post_patch_meta(slug, orig_meta, window_before)
+    merged = _post_patch_meta(slug, orig_meta, window_before, orig_idx_entry)
     print(f"  [{slug}] ✅ extended to {merged['window'][1]} "
           f"(bs_full sharpe {merged.get('bs_full', {}).get('sharpe')})", flush=True)
     return True
