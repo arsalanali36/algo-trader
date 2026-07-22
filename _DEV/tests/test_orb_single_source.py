@@ -26,6 +26,8 @@ CASES = [
      shared.orb_signals, shared.orb_signal_last),                     # orb_v1
     ("orb_st", dict(or_min=30, orb_k=1.0, atr_period=14, st_period=10, st_mult=3.0),
      shared.orb_st_signals, shared.orb_st_signal_last),               # orbst_v1
+    ("orb", dict(or_min=15, orb_k=0.5, atr_period=14),
+     shared.orb_signals, shared.orb_signal_last),                     # straddle_v1/dvert_v1 (orb_break, no window)
 ]
 
 

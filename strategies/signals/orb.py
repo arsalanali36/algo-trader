@@ -30,17 +30,15 @@ def wilder_atr(high, low, close, n=14):
     return tr.ewm(alpha=1.0 / n, adjust=False).mean()
 
 
-def orb_signals(dt, high, low, close, params):
-    """Vectorised ORB long/short over a (possibly multi-day) bar series.
-
-    dt/high/low/close : pandas Series (aligned index). params: or_min, orb_k,
-    atr_period, h0, h1 (window hours). Returns (long, short) bool Series."""
+def orb_signals(dt, high, low, close, params, open_=None):
+    """Vectorised ORB long/short over a (possibly multi-day) bar series. ONE function for
+    both `tod_orb` (mid-day window — pass h0/h1) and the base `orb`/`orb_break` (no window
+    — omit h0/h1). Optional `trend_filter` (needs open_) keeps only breakouts in the day's
+    direction. dt/high/low/close/open_ = pandas Series. Returns (long, short) bool Series."""
     p = params
     orm = int(p.get("or_min", 30))
     k = float(p.get("orb_k", 1.0))
     n = int(p.get("atr_period", 14))
-    h0 = int(p.get("h0", 11))
-    h1 = int(p.get("h1", 14))
 
     dts = pd.to_datetime(dt)
     day = dts.dt.date
@@ -53,10 +51,17 @@ def orb_signals(dt, high, low, close, params):
     orh = high.where(cutoff).groupby(day).transform("max") + k * a
     orl = low.where(cutoff).groupby(day).transform("min") - k * a
 
-    win = (tt >= _dt.time(h0, 0)) & (tt <= _dt.time(h1, 0))
-    after = (~cutoff) & win
+    if "h0" in p and "h1" in p:                            # tod_orb: entries only inside [h0,h1]
+        win = (tt >= _dt.time(int(p["h0"]), 0)) & (tt <= _dt.time(int(p["h1"]), 0))
+        after = (~cutoff) & win
+    else:                                                  # base orb / orb_break: any time after OR
+        after = ~cutoff
     long = after & (close > orh) & (close.shift(1) <= orh)
     short = after & (close < orl) & (close.shift(1) >= orl)
+    if p.get("trend_filter") and open_ is not None:
+        dopen = open_.groupby(day).transform("first")
+        long = long & (close > dopen)
+        short = short & (close < dopen)
     return long.fillna(False), short.fillna(False)
 
 

@@ -248,21 +248,15 @@ def design_signals(d, name, p):
         long = z < -zt
         short = z > zt
     elif name == "orb":
-        orm = int(p.get("or_min", 15))
-        k = p.get("orb_k", 0.0)          # breakout must exceed OR by k x ATR (strength)
-        a = engine.atr(d, 14)
-        cutoff = (pd.to_datetime(d.Datetime).dt.time <=
-                  (dt.datetime.combine(dt.date.today(), dt.time(9, 15)) +
-                   dt.timedelta(minutes=orm)).time())
-        orh = H.where(cutoff).groupby(d.day).transform("max") + k * a
-        orl = L.where(cutoff).groupby(d.day).transform("min") - k * a
-        after = ~cutoff
-        long = after & (C > orh) & (C.shift(1) <= orh)
-        short = after & (C < orl) & (C.shift(1) >= orl)
-        if p.get("trend_filter"):        # only breakouts in the day's direction
-            dopen = d.Open.groupby(d.day).transform("first")
-            long = long & (C > dopen)
-            short = short & (C < dopen)
+        # SINGLE SOURCE — base ORB (no window). Live straddle/dvert traders (orb_break) call
+        # the SAME orb.orb_signals (no h0/h1 → no window). Proven bit-identical; removes the
+        # OR-boundary (`<` vs `<=`) + crossover-ATR-ref drift the live ports had.
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.abspath(_o.path.join(_o.path.dirname(__file__), "..", "..")))
+        from strategies.signals import orb as _orb_shared
+        _op = {kk: vv for kk, vv in p.items() if kk not in ("h0", "h1")}   # base orb = NO window
+        _op.setdefault("or_min", 15); _op.setdefault("orb_k", 0.0)
+        long, short = _orb_shared.orb_signals(d.Datetime, d.High, d.Low, d.Close, _op, open_=d.Open)
     elif name == "donchian":
         n = int(p.get("dc", 20))
         hh = H.rolling(n).max().shift(1); ll = L.rolling(n).min().shift(1)
