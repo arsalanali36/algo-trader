@@ -261,8 +261,71 @@ summary{cursor:pointer;font-weight:600;font-size:14px}
 """
 
 
+_BT_TAGC = {"GREEN": "t-g", "YELLOW": "t-y", "RED": "t-r", "GREY": "t-d"}
+_BT_ICON = {"GREEN": "🟢", "YELLOW": "🟡", "RED": "🔴", "GREY": "⚪"}
+
+
+def bt_live_match(date, days=15):
+    """Per-strategy BACKTEST ↔ LIVE agreement over a trailing window (read-only —
+    backtest_live_recon). Returns (section_rows, warnings). A backtest is only
+    trustworthy if the live bot runs the SAME signal — this surfaces the gap every day
+    so any drift is caught immediately, not when someone happens to ask."""
+    try:
+        import backtest_live_recon as blr
+        hi = str(date)[:10]
+        lo = (datetime.strptime(hi, "%Y-%m-%d").date() - timedelta(days=days)).isoformat()
+        recon = blr.reconcile(lo, hi)
+    except Exception as e:
+        return [], [f"backtest-vs-live match compute fail: {e}"]
+    out, warn = [], []
+    for r in recon:
+        if r.get("error"):
+            continue
+        bt, lv = r["bt_total"], r["live_total"]
+        if not bt["count"]:
+            continue                     # backtest produced nothing in window → nothing to compare
+        score = r.get("presence_score")
+        same_sign = (bt["pnl"] >= 0) == (lv["pnl"] >= 0)
+        if score is None:
+            verdict = "GREY"
+        elif score < 50 or not same_sign:
+            verdict = "RED"
+        elif score < 80:
+            verdict = "YELLOW"
+        else:
+            verdict = "GREEN"
+        out.append({"ck": r["ck"], "score": score, "bt": bt["pnl"], "live": lv["pnl"],
+                    "same_sign": same_sign, "verdict": verdict})
+        if verdict == "RED":
+            warn.append(
+                f"{_sid_lbl(r['ck'])}: backtest se sirf {score}% match"
+                + ("" if same_sign else f" + P&L ULTA (BT ₹{bt['pnl']:+,.0f} vs Live ₹{lv['pnl']:+,.0f})")
+                + " — live signal backtest se DIVERGE kar raha (backtest pe trust tabhi jab live wahi chale)")
+    out.sort(key=lambda x: (x["score"] if x["score"] is not None else 999))
+    return out, warn
+
+
+def bt_live_html(bt_rows):
+    if not bt_rows:
+        return ""
+    trs = "".join(
+        f"<tr><td>{esc(_sid_lbl(r['ck']))}</td>"
+        f"<td class='{_BT_TAGC[r['verdict']]}'>{_BT_ICON[r['verdict']]} {r['score']}%</td>"
+        f"<td>₹{r['bt']:+,.0f}</td><td>₹{r['live']:+,.0f}</td>"
+        f"<td>{'' if r['same_sign'] else '⚠ ulta'}</td></tr>"
+        for r in bt_rows)
+    return (
+        "<h2>🎯 Backtest ↔ Live match <span class='dim' style='font-size:12px;font-weight:400'>"
+        "(last 15d — kitna live-result backtest se match karta. &lt;80% = signal diverge, "
+        "backtest pe utna hi kam bharosa. Tool: <code>_ops/backtest_live_recon.py</code>)</span></h2>"
+        "<div class='overflow'><table><tr><th>Strategy</th><th>Match %</th>"
+        "<th>Backtest P&L</th><th>Live P&L</th><th></th></tr>" + trs + "</table></div>")
+
+
 def render(data):
     rows, date = data["rows"], data["date"]
+    bt_rows, bt_warn = bt_live_match(date)
+    bt_reds = sum(1 for r in bt_rows if r["verdict"] == "RED")
     reds = sum(1 for r in rows if r["colour"] == "RED")
     yels = sum(1 for r in rows if r["colour"] == "YELLOW")
     greens = sum(1 for r in rows if r["colour"] == "GREEN")
@@ -272,10 +335,12 @@ def render(data):
     n_tr = sum(len(r["st"]["completed"]) for r in rows)
     n_ent = sum(len(r["lg"]["entries"]) for r in rows)
     pos, neg = pos_neg(data)
+    neg = list(neg) + list(bt_warn)              # backtest↔live divergence = loud, in Negatives
     grey_note = f" · {greys} chali nahi (ignore)" if greys else ""
+    bt_note = f" · 🎯 {bt_reds} strategy backtest se DIVERGE" if bt_reds else ""
 
-    if reds:
-        banner = f"<div class='banner b-red'>🔴 {reds} strategy RED — neeche Negatives + detail dekho{grey_note}</div>"
+    if reds or bt_reds:
+        banner = f"<div class='banner b-red'>🔴 {reds} strategy RED{bt_note} — neeche Negatives + detail dekho{grey_note}</div>"
     elif yels:
         banner = f"<div class='banner b-yellow'>🟡 sab critical clear, {yels} yellow (minor) — ek nazar maar lo{grey_note}</div>"
     else:
@@ -394,6 +459,7 @@ def render(data):
 <tr><th>Strategy</th><th>Status</th><th>Mode got/exp</th><th>Entries</th><th>Trades</th>
 <th>P&L</th><th>Win%</th><th>Backtest exp</th><th>Replay #108</th><th>Issues</th></tr>
 {''.join(trs)}</table></div>
+{bt_live_html(bt_rows)}
 <h2 class='g'>✅ Positives</h2><ul>{''.join(f'<li>{esc(p)}</li>' for p in pos)}</ul>
 <h2 class='r'>❌ Negatives / dhyaan do</h2><ul>{''.join(f'<li>{esc(n)}</li>' for n in neg)}</ul>
 <h2>Per-strategy detail <span class='dim' style='font-size:12px;font-weight:400'>(sirf jo chali)</span></h2>{''.join(details)}
@@ -437,6 +503,37 @@ def main():
     reds = sum(1 for r in data["rows"] if r["colour"] == "RED")
     print(f"[eod_report] written {out}  ({len(data['rows'])} strategies, {reds} RED)")
     print(f"[eod_report] dashboard link: /reports/{args.date}")
+
+    # 🎯 Backtest ↔ Live divergence — fire a dashboard notification the moment any
+    # deployed strategy's live result stops matching its backtest (user standing rule:
+    # "halka sa diversion aaya to fauran batao, chup mat baitho"). Fail-safe: never
+    # break the report if notify/recon is unavailable.
+    try:
+        _btr, _btw = bt_live_match(args.date)
+        for _w in _btw:
+            print(f"[eod_report] 🎯 DIVERGE: {_w}", flush=True)
+        _reds = [r for r in _btr if r["verdict"] == "RED"]
+        if _reds:
+            try:
+                import notify
+                worst = _reds[0]
+                notify.warn(
+                    f"🎯 {len(_reds)} strategy backtest se diverge kar rahi "
+                    f"(sabse kam: {_sid_lbl(worst['ck'])} {worst['score']}%) — "
+                    f"EOD report → Backtest↔Live match dekho",
+                    key="bt_live_diverge", source="eod")
+            except Exception as _e:
+                print(f"[eod_report] notify skip: {_e}", flush=True)
+        else:
+            # all aligned → clear any earlier divergence bell
+            try:
+                import notify
+                if hasattr(notify, "resolve"):
+                    notify.resolve("bt_live_diverge")
+            except Exception:
+                pass
+    except Exception as _e:
+        print(f"[eod_report] bt-live match skip: {_e}", flush=True)
     sys.exit(0)
 
 
