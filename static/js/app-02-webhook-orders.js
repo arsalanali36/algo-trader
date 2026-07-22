@@ -456,7 +456,66 @@
 
       window._lastOrdersData = d;
       renderCachedOrders();
+      renderOrderTriggers();
     }
+
+    // ── 🎯 Price Triggers panel (Orders tab) ─────────────────────────────────
+    // Armed price-triggers (Quick Order → Trigger tab) are otherwise only visible
+    // inside the floating panel — easy to forget what you armed. Surface them here
+    // next to positions: waiting ones show level+distance, fired ones show their
+    // result (e.g. a paper fill hidden by the Live-only Open Positions filter, so
+    // "trigger fired but no position" is explained right where you'd look).
+    async function renderOrderTriggers() {
+      const card = document.getElementById('ord-triggers-card');
+      const box = document.getElementById('ord-triggers');
+      if (!card || !box) return;
+      let j;
+      try { j = await (await fetch('/api/triggers')).json(); } catch (e) { return; }
+      const rows = (j && j.triggers) || [];
+      if (!rows.length) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      const nArmed = rows.filter(t => t.status === 'armed').length;
+      const cnt = document.getElementById('ord-trig-count');
+      if (cnt) cnt.textContent = '— ' + nArmed + ' armed'
+        + (rows.length > nArmed ? ', ' + (rows.length - nArmed) + ' fired/done today' : '');
+      const esc = s => String(s == null ? '' : s).replace(/"/g, '&quot;');
+      box.innerHTML = rows.map(t => {
+        const armed = t.status === 'armed';
+        const above = t.direction === 'above';
+        const dirTxt = above ? '↑ upar cross' : '↓ neeche cross';
+        const col = armed ? (above ? '#3fb950' : '#f85149') : (t.status === 'fired' ? '#58a6ff' : '#d29922');
+        const offTxt = t.offset ? (t.offset > 0 ? '+' + t.offset : '' + t.offset) : '';
+        const modeBadge = t.mode === 'live'
+          ? '<span style="color:#f85149;font-weight:600">LIVE</span>'
+          : '<span style="color:#58a6ff;font-weight:600">PAPER</span>';
+        const statusBadge = armed
+          ? '<span style="color:#3fb950">🟢 waiting</span>'
+          : '<span style="color:' + col + '">' + esc(t.status) + '</span>';
+        const dist = (t.dist != null && armed)
+          ? '<span style="color:#d29922">' + Math.abs(t.dist).toFixed(0) + ' pts door</span>' : '';
+        const res = (t.result && !armed)
+          ? '<div style="font-size:10px;color:#8b949e;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:460px" title="' + esc(t.result) + '">' + esc(t.result) + '</div>' : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;gap:10px;padding:7px 9px;border:1px solid #21262d;border-radius:6px;margin-bottom:5px;background:#0d1117">'
+          + '<div style="font-size:12px;color:#e6edf3;min-width:0">'
+          + '<b style="color:' + col + '">' + esc(t.symbol) + ' ' + Number(t.level).toLocaleString('en-IN') + '</b> ' + dirTxt
+          + ' → ' + esc(t.side) + ' ' + esc(t.lots) + 'L ATM' + offTxt + ' ' + esc(t.opt_type) + ' ' + modeBadge
+          + res + '</div>'
+          + '<div style="display:flex;align-items:center;gap:9px;font-size:11px;white-space:nowrap">'
+          + dist + ' ' + statusBadge
+          + (armed ? ' <span onclick="ordCancelTrigger(\'' + t.id + '\')" title="Cancel trigger" style="color:#8b949e;cursor:pointer;font-size:14px">✕</span>' : '')
+          + '</div></div>';
+      }).join('');
+    }
+    window.ordCancelTrigger = async tid => {
+      try { await fetch('/api/triggers/' + encodeURIComponent(tid), { method: 'DELETE' }); } catch (e) { }
+      renderOrderTriggers();
+    };
+    // Keep the panel live while the Orders tab is open (independent of a full
+    // orders refresh, so a trigger firing shows up within a few seconds).
+    setInterval(() => {
+      const tab = document.getElementById('tab-orders');
+      if (tab && tab.classList.contains('active')) renderOrderTriggers();
+    }, 3000);
 
     // Global state for sorting & hidden notes
     window._completedSortCol = localStorage.getItem('ord_completed_sort_col') || 'entry_time';

@@ -1907,6 +1907,13 @@
       </div>
       <div id="ord-completed" style="overflow-x:auto"></div>
     </div>
+    <div class="card" id="ord-triggers-card" style="display:none">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+        <div style="font-size:13px;font-weight:600;color:#adbac7">🎯 Price Triggers <span id="ord-trig-count" style="color:#8b949e;font-weight:400;font-size:11px"></span></div>
+        <div style="font-size:11px;color:#6e7681">Spot level cross → auto ATM option order — waiting for their level</div>
+      </div>
+      <div id="ord-triggers"></div>
+    </div>
     <div class="card">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
         <div style="font-size:13px;font-weight:600;color:#adbac7">⏳ Open Positions</div>
@@ -2520,7 +2527,7 @@
                       <input id="risk-global-profit-target" type="number" step="1"
                         placeholder="e.g. 5000 (blank=off)" />
                     </div>
-                    <div class="inputs-row"><label>Legacy Default SL ₹ (fallback)</label>
+                    <div class="inputs-row"><label>Legacy Default SL ₹ / lot (fallback)</label>
                       <input id="risk-global-instloss" type="number" step="1" placeholder="e.g. 3000 (blank=off)" />
                     </div>
                   </div>

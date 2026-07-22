@@ -30,6 +30,25 @@
       const rows = d.strategies || [];
       const fmtRs = v => v === null || v === undefined ? '—' : Math.round(v).toLocaleString('en-IN');
       const gateBadge = s => {
+        // Liveness FIRST: "✅ Active" (green) must mean the process is actually
+        // running, not just "RMS isn't blocking". A stopped/dead strategy can't
+        // trade regardless of the gate, so it must never show green here.
+        // (Same liveness source as the Run Controls column: RUNNING_PIDS.)
+        const sid = s.strategy;
+        const isWh = sid.toLowerCase().startsWith('webhook');
+        let live, cfgActive;
+        if (isWh) {
+          const whc = (GLOBAL_CONFIG.webhooks && GLOBAL_CONFIG.webhooks[sid]) || {};
+          live = cfgActive = whc.active === true;
+        } else {
+          live = !!(RUNNING_PIDS[sid] || RUNNING_PIDS[sid.toLowerCase()]);
+          cfgActive = !!((GLOBAL_CONFIG[sid] || {}).active);
+        }
+        if (!live) {
+          return cfgActive
+            ? '<span style="color:#f85149;font-weight:600" title="Config me active hai par process CHAL NAHI raha — koi trade nahi hoga. Run Controls se start karo (ya log check karo).">⚠️ DOWN</span>'
+            : '<span style="color:#8b949e" title="Band hai — trade nahi ho raha">⚪ Off</span>';
+        }
         if (!s.blocked) return '<span style="color:#3fb950">✅ Active</span>';
         const c = s.block_hard ? '#f85149' : '#d29922';
         const lbl = s.block_hard ? '🛑 No further entries today' : '⏸ Capital full';
@@ -943,8 +962,27 @@
       if (g.default_sl_rs) return 'legacy';
       return 'dropdown';
     }
-    function _dslField(k, label, ph, val, kind) {
+    // Live "= ₹total for N lots" hint under a per-lot ₹ field. The SL/Target
+    // value is enforced PER LOT (risk_gate _generic_px "rs" branch: distance =
+    // val/lot_size → rupee stop = val × lots), so "2500" on a 3-lot strategy is
+    // really a ₹7,500 stop. This spells that out so nobody reads per-lot as total.
+    function _dslUpdTot(inp) {
+      const k = inp.id.replace('dslv-', '');
+      const hint = document.getElementById('dslv-tot-' + k);
+      if (!hint) return;
+      const lots = Number(inp.dataset.totLots) || 0;
+      const raw = (inp.value || '').trim();
+      const g = inp.dataset.totG;
+      const perLot = raw !== '' ? parseFloat(raw) : (g !== '' && g != null ? parseFloat(g) : NaN);
+      const src = raw !== '' ? '' : ' (global)';
+      if (!isFinite(perLot) || perLot <= 0) { hint.textContent = ''; return; }
+      hint.textContent = lots > 0
+        ? '= ₹' + Math.round(perLot * lots).toLocaleString('en-IN') + ' total @ ' + lots + ' lot' + (lots > 1 ? 's' : '') + src
+        : '₹ per lot — total = value × lots' + src;
+    }
+    function _dslField(k, label, ph, val, kind, totLots) {
       const base = 'width:150px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px';
+      const wantsTot = kind === 'num' && totLots != null;
       let inp;
       if (kind === 'seltype') {
         inp = `<select id="dslv-${k}" style="${base}">` + _DSL_TYPE_OPTS.map(o =>
@@ -956,24 +994,31 @@
           <option value="true" ${cur === 'true' ? 'selected' : ''}>ON</option>
           <option value="false" ${cur === 'false' ? 'selected' : ''}>OFF</option></select>`;
       } else {
+        const totAttr = wantsTot
+          ? ` data-tot-lots="${totLots}" data-tot-g="${ph ?? ''}" oninput="_dslUpdTot(this)"` : '';
         inp = `<input id="dslv-${k}" type="${kind === 'num' ? 'number' : 'text'}" step="any"
-          placeholder="global: ${ph}" value="${val ?? ''}" style="${base}">`;
+          placeholder="global: ${ph}" value="${val ?? ''}" style="${base}"${totAttr}>`;
       }
-      return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:7px 0">
-        <span style="color:#adbac7;font-size:12.5px">${label}</span>${inp}</div>`;
+      const hint = wantsTot
+        ? `<div id="dslv-tot-${k}" style="text-align:right;color:#8b949e;font-size:11px;margin-top:2px"></div>` : '';
+      return `<div style="margin:7px 0">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+          <span style="color:#adbac7;font-size:12.5px">${label}</span>${inp}</div>
+        ${hint}</div>`;
     }
     function openDslValModal(id) {
       const g = (RISK_CFG && RISK_CFG.global) || {};
+      const lots = Number((GLOBAL_CONFIG[id] || {}).qty) || 0;   // strategy's configured lot count → effective-total hint
       const rowModeEl = document.getElementById(`risk-dslmode-${id}`);
       const mode = (rowModeEl && rowModeEl.value) || _globalDslMode();
       const dv = (window._dslVals || {})[id] || {};
       let fields = '';
       if (mode === 'legacy') {
-        fields = _dslField('default_legacy_tp_rs', 'Fixed Target ₹ / lot', g.default_legacy_tp_rs ?? 5000, dv.default_legacy_tp_rs, 'num')
-          + _dslField('default_legacy_sl_rs', 'Fixed SL ₹ / lot', g.default_legacy_sl_rs ?? 2000, dv.default_legacy_sl_rs, 'num');
+        fields = _dslField('default_legacy_tp_rs', 'Fixed Target ₹ / lot', g.default_legacy_tp_rs ?? 5000, dv.default_legacy_tp_rs, 'num', lots)
+          + _dslField('default_legacy_sl_rs', 'Fixed SL ₹ / lot', g.default_legacy_sl_rs ?? 2000, dv.default_legacy_sl_rs, 'num', lots);
       } else if (mode === 'aggressive') {
-        fields = _dslField('default_tsl_target_per_lot', 'Target ₹/lot', g.default_tsl_target_per_lot ?? 2000, dv.default_tsl_target_per_lot, 'num')
-          + _dslField('default_tsl_initial_sl_per_lot', 'Initial SL ₹/lot', g.default_tsl_initial_sl_per_lot ?? 1000, dv.default_tsl_initial_sl_per_lot, 'num')
+        fields = _dslField('default_tsl_target_per_lot', 'Target ₹/lot', g.default_tsl_target_per_lot ?? 2000, dv.default_tsl_target_per_lot, 'num', lots)
+          + _dslField('default_tsl_initial_sl_per_lot', 'Initial SL ₹/lot', g.default_tsl_initial_sl_per_lot ?? 1000, dv.default_tsl_initial_sl_per_lot, 'num', lots)
           + _dslField('default_tsl_favour_step', 'Favour step ₹/lot', g.default_tsl_favour_step ?? 100, dv.default_tsl_favour_step, 'num')
           + _dslField('default_tsl_sl_move', 'SL move ₹/lot', g.default_tsl_sl_move ?? 100, dv.default_tsl_sl_move, 'num')
           + _dslField('default_tsl_aggressive_pct', 'Aggressive @ %', g.default_tsl_aggressive_pct ?? 50, dv.default_tsl_aggressive_pct, 'num')
@@ -993,7 +1038,7 @@
       m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10001;display:flex;align-items:center;justify-content:center';
       m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:420px;max-width:${mode === 'aggressive' ? '760px' : '520px'};max-height:90vh;overflow:auto" onclick="event.stopPropagation()">
         <div style="font-weight:700;font-size:14px;margin-bottom:2px;color:#e6edf3">🎯 ${(typeof regLabel === 'function' && regLabel(id)) || id} — Default SL/Target values</div>
-        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global fallback value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.</div>
+        <div style="color:#8b949e;font-size:11.5px;margin-bottom:10px">Mode: <b style="color:#d29922">${modeName}</b> — blank = global fallback value. Yahan set karo to sirf IS strategy ke naye trades pe lagegi.<br><span style="color:#d29922">⚠️ Sab ₹ <b>PER LOT</b> hain — actual stop/target = value × lots${lots > 0 ? ` (ye strategy <b>${lots} lot${lots > 1 ? 's' : ''}</b> pe set hai → neeche total dekho)` : ''}.</span></div>
         ${fields}
         ${mode === 'aggressive' ? '<div id="dslv-graph-mount" style="margin-top:12px"></div>' : ''}
         <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
@@ -1004,6 +1049,7 @@
         <div style="color:#6e7681;font-size:10.5px;margin-top:8px">Apply ke baad table ka 💾 Save dabana zaroori hai — tabhi VPS config me likhta hai.</div>
       </div>`;
       m.onclick = closeDslValModal;
+      m.querySelectorAll('input[data-tot-lots]').forEach(_dslUpdTot);   // populate initial "= ₹total" hints
       if (mode === 'aggressive') {
         // Live graph preview (the retired global card's own graph block, moved here
         // on demand — same hover/Table tab, ids stay unique because it's ONE node).
@@ -1014,7 +1060,7 @@
           'default_tsl_sl_move', 'default_tsl_aggressive_pct', 'default_tsl_aggressive_mult',
           'default_tsl_min_cushion'].forEach(k => {
             const el = document.getElementById('dslv-' + k);
-            if (el) el.oninput = _dslvGraph;
+            if (el) el.oninput = function () { _dslvGraph(); _dslUpdTot(this); };
           });
         _dslvGraph();
       }

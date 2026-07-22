@@ -361,12 +361,38 @@ def _net_rows(rows):
     leftover.sort(key=lambda r: r["ts"])  # chronological for FIFO
 
     # ── Pass 2: net leftover opposite legs by (mode, trad_sym), FIFO ──
+    # Cross-STRATEGY netting here is intentional ONLY for a genuine manual close
+    # (Quick Order / reconcile, source='manual') that closes some strategy's leg
+    # on the same contract+account. Two INDEPENDENT positions that merely SHARE a
+    # contract — a straddle's long CE vs a price-trigger's short CE, or a
+    # straddle's long PE vs a backspread's short PE — must NOT net into each
+    # other; doing so produced phantom "exits" at the wrong time with blank
+    # reasons and hid real legs (cross-strategy netting bug, 2026-07-22). Every
+    # automated exit (SL/TP/EOD/lock/TSL + broker_sync ghost-close) records under
+    # the position's OWN source+strategy, so a legit round-trip is ALWAYS
+    # same-strategy — only a human/reconcile 'manual' leg ever crosses that line.
+    _MANUAL_CLOSERS = {"manual"}
     stacks, opens = {}, []
     for r in leftover:
         k2 = (r["mode"], r["trad_sym"])
         st = stacks.setdefault(k2, [])
-        if st and st[0]["side"] != r["side"]:
-            details.append(_complete(st.pop(0), r))   # oldest open leg = entry
+        # Oldest opposite-side leg we're ALLOWED to net against: prefer a
+        # same-strategy match, else fall back to a manual cross-close. Scan the
+        # whole stack (not just st[0]) so a same-strategy pair still nets even
+        # when a foreign leg happens to sit in front of it.
+        same_idx = manual_idx = None
+        for i, e in enumerate(st):
+            if e["side"] == r["side"]:
+                continue
+            if e["strategy"] == r["strategy"]:
+                same_idx = i
+                break
+            if manual_idx is None and (e["source"] in _MANUAL_CLOSERS
+                                       or r["source"] in _MANUAL_CLOSERS):
+                manual_idx = i
+        idx = same_idx if same_idx is not None else manual_idx
+        if idx is not None:
+            details.append(_complete(st.pop(idx), r))   # popped leg = entry (older)
         else:
             st.append(r)
     for st in stacks.values():
