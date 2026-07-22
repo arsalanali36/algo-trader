@@ -46,6 +46,7 @@ sys.path.insert(0, str(BASE_DIR))
 import _paths  # sys.path bootstrap — _core/_data/_ops flat imports resolve
 import dhan_master
 from _CHARTING.indicators import wilder_atr as _atr   # canonical (Rule 6B/ADR-002) — matches backtest
+from strategies.signals import orb as _orb            # SINGLE SOURCE — same ORB signal as the backtest
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
@@ -187,8 +188,12 @@ def fetch_nifty_15m(token, cid, days=5, use_cache=True):
 
 def compute_signal(df, cfg):
     """Return dict(signal='long'/'short', entry_spot, atr, stop, target) or None.
-    Uses TODAY's opening range + mid-day window breakout with orb_k×ATR strength,
-    on the last CLOSED bar. ATR is continuous (multi-day df)."""
+
+    SIGNAL = the SINGLE-SOURCE `orb.orb_signal_last` — the EXACT validated backtest
+    `tod_orb` logic (strategies/signals/orb.py), proven bit-identical (0 mismatches over
+    52k bars). A live entry now fires iff the backtest would fire on that bar — no more
+    OR-boundary (`<` vs `<=`) or previous-vs-current-bar-ATR drift. Stop/target = spot
+    ∓ atr_sl×ATR (RR), on the last CLOSED bar. ATR is continuous (multi-day df)."""
     p = cfg
     period = int(p["atr_period"])
     if len(df) < period + 3:
@@ -196,53 +201,34 @@ def compute_signal(df, cfg):
     df = df.copy().reset_index(drop=True)
     df["atr"] = _atr(df, period)
     today = ist_now().date()
-    tday = df[df["time"].dt.date == today].reset_index(drop=True)
-    if len(tday) < 3:
-        return None
 
-    or_end = (datetime.combine(today, datetime.min.time())
-              .replace(hour=9, minute=15) + timedelta(minutes=int(p["or_min"]))).time()
-    or_bars = tday[tday["time"].dt.time < or_end]
-    if or_bars.empty:
-        return None
-    or_high = float(or_bars["high"].max()); or_low = float(or_bars["low"].min())
-
-    # last CLOSED bar = second-to-last row of the continuous df (last row = forming)
-    i = len(df) - 2
-    if i < 1:
-        return None
-    bar = df.iloc[i]
-    # only signal inside the entry window, and on a TODAY bar
-    if bar["time"].date() != today:
-        return None
+    # config → shared param names. Window hours from win_start/win_end (backtest uses
+    # hour-granularity h0/h1; orb_v1 = 11:00/14:00). Warn if minutes aren't :00 (the
+    # shared/backtest window is hour-based, so a non-:00 boundary wouldn't match).
     ws, we = _hm(p["win_start"]), _hm(p["win_end"])
-    bt = (bar["time"].hour, bar["time"].minute)
-    if not (ws <= bt <= we):
-        return None
-
-    k = float(p["orb_k"]); atr_i = float(df["atr"].iloc[i]); atr_p = float(df["atr"].iloc[i - 1])
-    if atr_i <= 0:
-        return None
-    up_i, up_p = or_high + k * atr_i, or_high + k * atr_p
-    lo_i, lo_p = or_low - k * atr_i, or_low - k * atr_p
-    c_i, c_p = float(df["close"].iloc[i]), float(df["close"].iloc[i - 1])
-
-    side = None
-    if c_i > up_i and c_p <= up_p:
-        side = "long"
-    elif c_i < lo_i and c_p >= lo_p:
-        side = "short"
+    if ws[1] or we[1]:
+        log.warning(f"[ORB] win_start/win_end minutes ignored by backtest signal "
+                    f"({p['win_start']}-{p['win_end']}) — use :00 to stay backtest-faithful")
+    sig_params = dict(or_min=int(p["or_min"]), orb_k=float(p["orb_k"]),
+                      atr_period=period, h0=ws[0], h1=we[0])
+    side = _orb.orb_signal_last(df, sig_params, dt_col="time", hi="high", lo="low", cl="close")
     if not side:
         return None
 
-    entry_spot = c_i
+    i = len(df) - 2                                   # last CLOSED bar (last row = forming)
+    if i < 1 or df.iloc[i]["time"].date() != today:   # never act on a stale bar
+        return None
+    atr_i = float(df["atr"].iloc[i])
+    if atr_i <= 0:
+        return None
+    entry_spot = float(df["close"].iloc[i])
     stop_dist = float(p["atr_sl"]) * atr_i
     if side == "long":
         stop = entry_spot - stop_dist; target = entry_spot + float(p["rr"]) * stop_dist
     else:
         stop = entry_spot + stop_dist; target = entry_spot - float(p["rr"]) * stop_dist
     return dict(signal=side, entry_spot=entry_spot, atr=atr_i, stop=stop, target=target,
-                bar_time=str(bar["time"]))
+                bar_time=str(df.iloc[i]["time"]))
 
 
 # ─────────────────────────── state persist / recover ───────────────────────

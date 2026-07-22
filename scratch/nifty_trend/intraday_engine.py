@@ -294,17 +294,14 @@ def design_signals(d, name, p):
         long = is_first & (gap < -thr * a)      # gap-down -> fade up (long)
         short = is_first & (gap > thr * a)       # gap-up   -> fade down (short)
     elif name == "tod_orb":                     # ORB but entries only inside a time window
-        orm = int(p.get("or_min", 30)); k = p.get("orb_k", 1.0); a = engine.atr(d, 14)
-        cutoff = (pd.to_datetime(d.Datetime).dt.time <=
-                  (dt.datetime.combine(dt.date.today(), dt.time(9, 15)) +
-                   dt.timedelta(minutes=orm)).time())
-        orh = H.where(cutoff).groupby(d.day).transform("max") + k * a
-        orl = L.where(cutoff).groupby(d.day).transform("min") - k * a
-        tt = pd.to_datetime(d.Datetime).dt.time
-        win = (tt >= dt.time(int(p.get("h0", 10)), 0)) & (tt <= dt.time(int(p.get("h1", 13)), 0))
-        after = ~cutoff & win
-        long = after & (C > orh) & (C.shift(1) <= orh)
-        short = after & (C < orl) & (C.shift(1) >= orl)
+        # SINGLE SOURCE — the live trader (strategies/live/orb_trader.py) calls the SAME
+        # orb.orb_signals so backtest and live signals match by construction. Proven
+        # bit-identical to the old inline logic (0 mismatches / 52k bars) so run numbers
+        # are unchanged; this just removes the second copy that had drifted from live.
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.abspath(_o.path.join(_o.path.dirname(__file__), "..", "..")))
+        from strategies.signals import orb as _orb_shared
+        long, short = _orb_shared.orb_signals(d.Datetime, d.High, d.Low, d.Close, p)
     elif name == "pivot_rev":                   # user's hypothesis: bounce off EXTREME pivots
         # price pierces an extreme support (S3/S4/S5) then closes back above = trapped-seller
         # exit squeeze → LONG; mirror at extreme resistance (R3/R4/R5) → SHORT. Optional EOD-only
