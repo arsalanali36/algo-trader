@@ -3850,3 +3850,28 @@ tree, use `git stash create` (returns a commit SHA, no working-tree change) then
 After ANY branch operation on the VPS, re-verify deployed files still exist + match origin (`test -f` + `git diff
 origin/master -- <file>`) before trusting the deploy. PRE-MORTEM shape #7 (deploy drift) — here caused by the
 backup itself, not a stale push.
+
+## TRAP #145 — Pass-2 netting cross-nets INDEPENDENT strategies' legs on a shared contract (phantom exits, hidden legs)
+**Symptom (2026-07-22):** user reported "00.04 ORB Long Straddle exited at different times with no reason at 10:25"
+and "ORB Ratio Backspread showed only ONE leg at 10:45". In reality NOTHING had exited — all legs were still open.
+**Root:** `order_store._net_rows()` Pass-2 netted leftover legs by `(mode, trad_sym)` **BLIND to strategy** (a
+deliberate design for "Quick Order manual BUY closes a webhook/strategy SELL"). But three INDEPENDENT paper
+strategies traded the SAME two contracts that day — `straddle_v1` (BUY 24000-CE + BUY 24000-PE), `manual_trigger`
+(SELL 24000-CE @10:25), `backspread_v1` (SELL 24000-PE @10:45). Pass-2 FIFO-paired the straddle's long CE against
+the trigger's short CE and the straddle's long PE against the backspread's short PE → **2 phantom "completed trades"**
+(straddle "exited" at 10:25 and 10:45, blank/foreign reasons — the exit leg belonged to a different strategy) and the
+backspread's SELL leg was **consumed into the pairing → only 1 leg showed**. Same family as TRAP #84 (FIFO pairs by
+symbol alone, blind to causality) and TRAP #141 (per-day mis-net). This also HID real open legs from `pos_monitor`
+(`trades_for().get("open")`), so they'd miss generic SL/EOD management.
+**Why the blind pairing was ever "needed":** only for a genuine `source='manual'` close (Quick Order / reconcile).
+Verified: EVERY automated exit (SL/TP/EOD/lock/TSL via `_do_squareoff`, + `broker_sync` ghost-close) records under the
+position's OWN `source`+`strategy` (`p["source"]`/`p["strategy"]`), so a legit round-trip is ALWAYS same-strategy and
+pairs in Pass-1 (or Pass-2 same-strategy). Only a human/reconcile `manual` leg legitimately crosses the strategy line.
+**Fix:** Pass-2 now pairs two opposite legs ONLY if same strategy, OR one leg's `source == 'manual'`. And it SCANS the
+stack for a nettable opposite leg (prefer same-strategy, else manual-cross) instead of blindly taking `st[0]`, so a
+same-strategy pair never gets blocked by a foreign leg sitting in front of it. Display/attribution-only — no
+order-path change. Real 2026-07-22 before/after: 2 phantoms → 0, backspread 1 leg → 2, total completed 7 → 5.
+**Guard / fast-detect:** whenever multiple strategies can trade the SAME contract in the SAME mode (paper fleet,
+overlapping ATM strikes), netting MUST respect strategy identity. A completed trade whose entry and exit legs came
+from different strategies on a shared contract is a phantom. `group_id` is NOT persisted to order_store yet (every
+row `group_id=''`) — a group-aware multi-leg atomic-exit fix needs that persisted first (flagged separately).
