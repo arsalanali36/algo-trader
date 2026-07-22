@@ -37,6 +37,22 @@
       });
     }
 
+    // param-stability (days-since-core-params-last-changed) — loaded once; the Strategy
+    // summary table shows a "·Nd" chip + change-history hover per strategy (like registry).
+    window._paramStab = window._paramStab || {};
+    (function _loadParamStab() {
+      try {
+        fetch('/api/param-stability', { cache: 'no-store' }).then(r => r.json()).then(d => {
+          if (d && !d.error && typeof d === 'object') {
+            window._paramStab = d;
+            if ((window.currentCalendarTrades || []).length && typeof renderSummaryTable === 'function') {
+              try { renderSummaryTable(); } catch (e) {}
+            }
+          }
+        }).catch(() => {});
+      } catch (e) {}
+    })();
+
     function renderSummaryTable() {
       _initKhTooltip();
       _initCalSumCols();

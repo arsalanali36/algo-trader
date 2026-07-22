@@ -339,16 +339,25 @@ function srcCell(r){
 // target) me ched-chad nahi hui (config audit log se, /api/param-stability). Zyada din =
 // utna hi data SAME params pe collect hua = us data pe utna bharosa. Rang: din badhne pe
 // green (bharosa), naya change (kam din) pe amber.
+function _stabTip(s){
+  const head = s.ever_changed
+    ? `Core params (entry/exit + SL + target) ${s.days} din se unchanged — aakhri badlaav ${s.since}. Utne din ka data SAME params pe = utna bharosa.`
+    : `Config-audit tracking (${s.tracked_since||'?'}) se ab tak in params me KOI change nahi — kam se kam ${s.days} din stable (isse pehle ka record system me nahi).`;
+  const h = (s.history||[]);
+  if(!h.length) return head;
+  const lines = h.map(e=>{
+    const dt=String(e.ts||'').slice(0,16);
+    const ov=(e.old===''||e.old==null)?'∅':e.old, nv=(e.new===''||e.new==null)?'∅':e.new;
+    return `${dt}  ${e.field}: ${ov} → ${nv}`;
+  });
+  return head + '\n\nChange history (naya sabse upar):\n' + lines.join('\n');
+}
 function _untouchedCell(r){
   if(!r._ck) return dash();
   const s=r._stab; if(!s || s.days==null) return dash();
   const d=s.days;
   const col = d>=30?'#3fb950' : d>=14?'#56d364' : d>=7?'#e3b341' : '#f0883e';
-  const lbl = s.ever_changed ? (d+'d') : ('≥'+d+'d');
-  const tip = s.ever_changed
-    ? `Core params (entry/exit + SL + target) ${d} din se unchanged — aakhri badlaav ${s.since}. Yaani ${d} din ka data SAME params pe = utna bharosa.`
-    : `Config-audit tracking (${s.tracked_since||'?'}) se ab tak in params me KOI change nahi — kam se kam ${d} din stable (isse pehle ka record system me nahi → ≥).`;
-  return `<span class="mono" title="${esc(tip)}" style="color:${col};font-weight:600;cursor:help">⏳ ${lbl}</span>`;
+  return `<span class="mono" title="${esc(_stabTip(s))}" style="color:${col};font-weight:600;cursor:help">${d}d</span>`;
 }
 // mirror of risk_gate.default_sl_profile(strategy) → {enabled, mode}. The Stop-loss
 // column must reflect the SAME effective SL the engine applies (honoring

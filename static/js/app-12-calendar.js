@@ -1055,6 +1055,21 @@
       return h > 0 ? `${h}h ${m}m` : `${m}m`;
     }
 
+    // Strategy summary "·Nd" chip tooltip — days since core params changed + change history.
+    function _stabAttr(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+    function _stabSummaryTip(s) {
+      const head = s.ever_changed
+        ? `Core params (entry/exit + SL + target) ${s.days} din se unchanged — aakhri badlaav ${s.since}. Utne din ka data SAME params pe = utna bharosa.`
+        : `Config-audit tracking (${s.tracked_since || '?'}) se in params me KOI change nahi — kam se kam ${s.days} din stable (isse pehle ka record nahi).`;
+      const h = (s.history || []);
+      if (!h.length) return head;
+      const lines = h.map(e => {
+        const dt = String(e.ts || '').slice(0, 16);
+        const ov = (e.old === '' || e.old == null) ? '∅' : e.old, nv = (e.new === '' || e.new == null) ? '∅' : e.new;
+        return `${dt}  ${e.field}: ${ov} → ${nv}`;
+      });
+      return head + '\n\nChange history (naya sabse upar):\n' + lines.join('\n');
+    }
     function _sumRow(label, s, clickKey, isBold) {
       _initCalSumCols();
       const cols = window._calSumCols.filter(c => c.on);
@@ -1109,7 +1124,15 @@
               const cb = selMode
                 ? `<input type="checkbox" ${isSel ? 'checked' : ''} onclick="_calSumToggleSel('${clickKey.replace(/'/g, "\\'")}', event)" style="accent-color:#1f6feb;width:12px;height:12px;margin:0 7px 0 0;vertical-align:middle;cursor:pointer;">`
                 : '';
-              return `<td style="padding:8px;color:${(isSel || isActive) ? '#58a6ff' : '#adbac7'};${b}">${cb}${label}</td>`;
+              // strategy rows: append a "·Nd" untouched chip (days since core params changed)
+              // + change-history hover — same signal as the registry Untouched column.
+              let stab = '';
+              const _st = (mode === 'strategy' && !isBold && clickKey && window._paramStab) ? window._paramStab[clickKey] : null;
+              if (_st && _st.days != null) {
+                const sc = _st.days >= 30 ? '#3fb950' : _st.days >= 14 ? '#56d364' : _st.days >= 7 ? '#e3b341' : '#f0883e';
+                stab = ` <span title="${_stabAttr(_stabSummaryTip(_st))}" style="color:${sc};font-size:10px;font-weight:600;cursor:help;margin-left:5px" onclick="event.stopPropagation()">·${_st.days}d</span>`;
+              }
+              return `<td style="padding:8px;color:${(isSel || isActive) ? '#58a6ff' : '#adbac7'};${b}">${cb}${label}${stab}</td>`;
             }
             case 'count': return `<td style="padding:8px;text-align:center;color:#8b949e;${b}">${s.count}</td>`;
             case 'strat_count': return `<td style="padding:8px;text-align:center;${b}">${isBold ? (s.stratCount||'—') : (s.stratCount > 1 ? `<span style="background:#1f6feb33;color:#58a6ff;border:1px solid #1f6feb55;border-radius:10px;padding:1px 7px;font-size:10.5px;">${s.stratCount}</span>` : `<span style="color:#6e7681;font-size:10.5px;">${s.stratCount}</span>`)}</td>`;
