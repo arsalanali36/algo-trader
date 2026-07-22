@@ -183,24 +183,54 @@
     _loadOrdColPrefs();
     _loadCalPointsColPrefs();
 
+    // ── Column toggle + DRAG-REORDER modal (Point-Per-Trade table) ───────────
+    // Table renders columns in window._calPointsCols array order, so reordering
+    // the array (via drag) reorders the table; Save persists the array (order +
+    // on/off) to localStorage.
+    let _calColDragId = null;
+    function _calColSyncChecks() {   // pull current checkbox states into the array (survive a mid-edit drag)
+      document.querySelectorAll('#cal-points-col-list input[data-col]').forEach(inp => {
+        const c = window._calPointsCols.find(x => x.id === inp.dataset.col);
+        if (c && !c.fixed) c.on = inp.checked;
+      });
+    }
+    function _calColDragStart(ev, id) { _calColDragId = id; try { ev.dataTransfer.effectAllowed = 'move'; } catch (e) { } }
+    function _calColDragOver(ev) { ev.preventDefault(); try { ev.dataTransfer.dropEffect = 'move'; } catch (e) { } }
+    function _calColDrop(ev, targetId) {
+      ev.preventDefault();
+      if (!_calColDragId || _calColDragId === targetId) { _calColDragId = null; return; }
+      _calColSyncChecks();
+      const arr = window._calPointsCols;
+      const from = arr.findIndex(c => c.id === _calColDragId);
+      if (from < 0) { _calColDragId = null; return; }
+      const [moved] = arr.splice(from, 1);
+      const to = arr.findIndex(c => c.id === targetId);        // recompute after removal
+      arr.splice(to < 0 ? arr.length : to, 0, moved);          // drop BEFORE the target row
+      _calColDragId = null;
+      openCalPointsColModal();          // re-render list in the new order
+      renderPointsPerTradeTable();      // live preview in the table
+    }
     function openCalPointsColModal() {
       if (!window._calPointsCols) _loadCalPointsColPrefs();
       const el = document.getElementById('cal-points-col-list');
       el.innerHTML = window._calPointsCols.map(c => `
-    <label style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d1117;border-radius:6px;cursor:${c.fixed ? 'default' : 'pointer'};opacity:${c.fixed ? '.5' : '1'}">
-      <input type="checkbox" data-col="${c.id}" ${c.on ? 'checked' : ''} ${c.fixed ? 'disabled' : ''} style="accent-color:#1f6feb;width:14px;height:14px">
+    <label ondragover="_calColDragOver(event)" ondrop="_calColDrop(event,'${c.id}')"
+      style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#0d1117;border-radius:6px;opacity:${c.fixed ? '.5' : '1'}">
+      <span draggable="${c.fixed ? 'false' : 'true'}" ondragstart="_calColDragStart(event,'${c.id}')"
+        style="color:#6e7681;font-size:14px;line-height:1;cursor:${c.fixed ? 'default' : 'grab'};user-select:none" title="${c.fixed ? 'Fixed column' : 'Drag to reorder'}">${c.fixed ? '·' : '⠿'}</span>
+      <input type="checkbox" data-col="${c.id}" ${c.on ? 'checked' : ''} ${c.fixed ? 'disabled' : ''} style="accent-color:#1f6feb;width:14px;height:14px;cursor:pointer">
       <span style="font-size:12px;color:#e6edf3">${c.l}</span>
     </label>`).join('');
       document.getElementById('cal-points-col-modal').style.display = 'flex';
     }
 
     function saveCalPointsColPrefs() {
-      document.querySelectorAll('#cal-points-col-list input[data-col]').forEach(inp => {
-        const c = window._calPointsCols.find(x => x.id === inp.dataset.col);
-        if (c && !c.fixed) c.on = inp.checked;
-      });
+      _calColSyncChecks();
       localStorage.setItem('cal_points_cols', JSON.stringify(window._calPointsCols));
-      saveUiConfigToBackend('cal_points_cols', JSON.stringify(window._calPointsCols));
+      // backend sync is best-effort — it lives in app-03 which stats2 doesn't
+      // load, so guard it (was an unguarded ReferenceError that aborted Save on
+      // /stats2 after localStorage but before the modal closed → "Save nahi hota").
+      try { if (typeof saveUiConfigToBackend === 'function') saveUiConfigToBackend('cal_points_cols', JSON.stringify(window._calPointsCols)); } catch (e) { }
       document.getElementById('cal-points-col-modal').style.display = 'none';
       renderPointsPerTradeTable();
     }
