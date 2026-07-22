@@ -548,6 +548,33 @@
       calendarRender();
     }
 
+    // Ek mahina dekho — From=1st, To=aakhri din (current month me = aaj tak). Chuni hui
+    // year (calYear) use karta hai; Day-by-day summary (mahine ka din-wise feel).
+    function calSetMonth(m) {
+      m = parseInt(m, 10); if (isNaN(m) || m < 0 || m > 11) return;
+      const now = new Date();
+      const y = calYear;
+      const mm = String(m + 1).padStart(2, '0');
+      const isCur = (y === now.getFullYear() && m === now.getMonth());
+      const last = new Date(y, m + 1, 0).getDate();
+      const to = isCur
+        ? `${y}-${mm}-${String(now.getDate()).padStart(2, '0')}`
+        : `${y}-${mm}-${String(last).padStart(2, '0')}`;
+      const f = document.getElementById('cal-range-from');
+      const t = document.getElementById('cal-range-to');
+      if (f) f.value = `${y}-${mm}-01`;
+      if (t) t.value = to;
+      calMonth = m;
+      window._calRangeMode = true;
+      window._calSumMode = 'day';           // mahina chuna to Day summary sabse useful
+      const seg = document.getElementById('cal-sum-mode');
+      if (seg) seg.querySelectorAll('span[data-v]').forEach(s => {
+        const on = s.dataset.v === 'day';
+        s.style.background = on ? '#1f6feb' : ''; s.style.color = on ? '#fff' : '#8b949e';
+      });
+      calendarRender();
+    }
+
     // Default date range: 21 Jun 2026 (go-live) → today (dynamic). Applied once
     // per page load; user can still change or clear it afterwards.
     const _CAL_DEFAULT_FROM = '2026-06-21';

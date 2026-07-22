@@ -1526,32 +1526,55 @@
         const i = Math.round(1 + (j / nlab) * (M - 2)); if (i < 1 || i >= M) continue;
         svg += `<text x="${gx(i)}" y="${height - 8}" fill="#6e7681" font-size="9" text-anchor="middle">${_eqEsc(axisLabels[i])}</text>`;
       }
+      // interactive: each line + a wide transparent hit-path for easy hover. No always-on
+      // legend box (it covered the chart) — hover a line to identify it + read its value.
+      window._eqPsX = Array.from({ length: M }, (_, i) => gx(i));
+      window._eqPsLines = sids.map((sid, si) => ({ label: _perStratLabel(sid), color: _perStratColor(sid, si), fin: series[sid][M - 1], vals: series[sid] }));
       sids.forEach((sid, si) => {
         const col = _perStratColor(sid, si);
         let ln = '';
         series[sid].forEach((v, i) => { const x = gx(i), y = gy(v); ln += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' '; });
         const fin = series[sid][M - 1];
-        svg += `<path d="${ln}" fill="none" stroke="${col}" stroke-width="1.9" opacity="0.9"><title>${_eqEsc(_perStratLabel(sid))} — ₹${Math.round(fin).toLocaleString('en-IN')}</title></path>`;
+        svg += `<path class="eqline" data-i="${si}" d="${ln}" fill="none" stroke="${col}" stroke-width="1.9" opacity="0.9" style="transition:opacity .08s,stroke-width .08s"/>`;
+        svg += `<path d="${ln}" fill="none" stroke="transparent" stroke-width="14" style="cursor:pointer" onmousemove="_eqPsHover(event,${si})" onmouseleave="_eqPsOut(event)"/>`;
         svg += `<circle cx="${gx(M - 1)}" cy="${gy(fin)}" r="3" fill="${col}"/>`;
       });
       svg += `</svg>`;
 
-      const cap = 12;
-      let leg = `<div style="position:absolute;top:8px;left:66px;background:rgba(13,17,23,0.74);border:1px solid #30363d;border-radius:6px;padding:6px 9px;font-size:11px;max-width:52%;pointer-events:none;">`;
-      leg += `<div style="color:#8b949e;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Contribution</div>`;
-      sids.slice(0, cap).forEach((sid, si) => {
-        const fin = series[sid][M - 1];
-        leg += `<div style="display:flex;align-items:center;gap:6px;line-height:1.55;">`
-          + `<span style="width:12px;height:3px;border-radius:2px;background:${_perStratColor(sid, si)};flex:none;"></span>`
-          + `<span style="flex:1;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">${_eqEsc(_perStratLabel(sid))}</span>`
-          + `<b style="color:${fin >= 0 ? '#3fb950' : '#f85149'};">${fin >= 0 ? '+' : ''}₹${Math.round(fin).toLocaleString('en-IN')}</b></div>`;
-      });
-      if (sids.length > cap) leg += `<div style="color:#6e7681;margin-top:2px;">+${sids.length - cap} more</div>`;
-      leg += `</div>`;
-
+      const tip = `<div class="eqps-tip" style="position:absolute;display:none;background:rgba(13,17,23,0.95);border:1px solid #30363d;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#e6edf3;pointer-events:none;white-space:nowrap;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.5);"></div>`;
       container.style.position = container.style.position || 'relative';
-      container.innerHTML = svg + leg;
+      container.innerHTML = svg + tip;
     }
+    // hover a per-strategy line → highlight it (dim the rest) + tooltip (value at point + net)
+    window._eqPsHover = function (ev, i) {
+      const svg = ev.target.ownerSVGElement; if (!svg) return;
+      const cont = svg.parentElement;
+      cont.querySelectorAll('path.eqline').forEach(p => {
+        const on = (+p.getAttribute('data-i') === i);
+        p.setAttribute('opacity', on ? '1' : '0.15');
+        p.setAttribute('stroke-width', on ? '3' : '1.5');
+      });
+      const info = (window._eqPsLines || [])[i]; if (!info) return;
+      const r = cont.getBoundingClientRect();
+      const cx = ev.clientX - r.left;
+      let bi = 0, bd = 1e9; (window._eqPsX || []).forEach((xx, k) => { const dd = Math.abs(xx - cx); if (dd < bd) { bd = dd; bi = k; } });
+      const val = (info.vals && info.vals[bi] != null) ? info.vals[bi] : info.fin;
+      const money = v => (v < 0 ? '-' : '+') + '₹' + Math.round(Math.abs(v)).toLocaleString('en-IN');
+      const tip = cont.querySelector('.eqps-tip');
+      if (tip) {
+        tip.innerHTML = `<span style="display:inline-block;width:11px;height:3px;border-radius:2px;background:${info.color};margin-right:6px;vertical-align:middle"></span><b>${_eqEsc(info.label)}</b>`
+          + `<div style="margin-top:2px;color:#8b949e">point <b style="color:${val >= 0 ? '#3fb950' : '#f85149'}">${money(val)}</b> · net <b style="color:${info.fin >= 0 ? '#3fb950' : '#f85149'}">${money(info.fin)}</b></div>`;
+        let x = cx + 14, y = (ev.clientY - r.top) + 12;
+        if (x > r.width - 200) x = cx - 196;
+        tip.style.left = x + 'px'; tip.style.top = y + 'px'; tip.style.display = 'block';
+      }
+    };
+    window._eqPsOut = function (ev) {
+      const svg = ev.target.ownerSVGElement; if (!svg) return;
+      const cont = svg.parentElement;
+      cont.querySelectorAll('path.eqline').forEach(p => { p.setAttribute('opacity', '0.9'); p.setAttribute('stroke-width', '1.9'); });
+      const tip = cont.querySelector('.eqps-tip'); if (tip) tip.style.display = 'none';
+    };
 
     // toggle Combined ⟷ Per-strategy (persisted); redraws respecting the selected-day filter
     window.toggleEqPerStrategy = function (v) {
