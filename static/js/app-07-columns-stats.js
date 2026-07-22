@@ -65,7 +65,7 @@
       { id: 'gross', l: 'Gross', a: 'right', on: true },
       { id: 'tax', l: 'Tax', a: 'right', on: true },
       { id: 'net', l: 'Net', a: 'right', on: true },
-      { id: 'margin', l: 'Margin', a: 'right', on: true, title: 'Capital required to execute the trade. BUY option = premium × qty (EXACT debit paid). SELL option = — (real SPAN margin is a live-only number, not tracked for past trades; see RMS Margin on open positions). Drag next to Exit Reason via ⚙ Columns if you prefer.' },
+      { id: 'margin', l: 'Margin', a: 'right', on: true, title: 'Capital required to execute the trade. BUY option = premium × qty (EXACT debit). SELL option = ~real SPAN margin (Dhan calc, background-computed) — shows "—" for a moment on first view then fills in; "—" stays only for expired contracts. Drag next to Exit Reason via ⚙ Columns if you prefer.' },
       { id: 'opt_fixed', l: 'Opt Fixed', a: 'right', on: false, title: 'What-if NET, SAME hold as actual: fixed Target ₹4,000/lot · SL ₹1,000/lot. — = no 1-min bar data.' },
       { id: 'opt_aggr', l: 'Opt Aggr', a: 'right', on: false, title: 'What-if NET, SAME hold as actual: aggressive trail Target ₹6,000/lot · init SL ₹2,500/lot · step ₹100. — = no bar data.' },
       { id: 'opt_aggr_eod', l: 'Opt Aggr→EOD', a: 'right', on: false, title: 'What-if NET if the ATR SL were REPLACED by the aggressive trail RIDDEN to 15:15 (init SL ₹1,500/lot, no target cap). Directional — NOT a validated backtest. — = no bar data.' },

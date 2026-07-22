@@ -5109,22 +5109,72 @@ def api_webhook_status():
     return jsonify(wh.status())
 
 
-def _enrich_trade_display(trades):
-    """Add DISPLAY-ONLY `lot_size` + `margin` (capital required to execute) to
-    each completed-trade dict — consumed by the trade table's Margin column and
-    the Gain/Loss By-Instrument hover's lot-size line. Never changes any order.
+# ── SELL-margin cache (real Dhan SPAN, background-warmed so renders never block) ──
+# A BUY option's margin is the premium debit (exact, computed inline). A SELL
+# option's real SPAN+exposure margin needs a live Dhan margin-calculator call
+# (~0.1-0.3s, rate-limited) — too slow to run per-row inside a synchronous render.
+# So: the render reads a disk cache (data/margin_cache.json, keyed sec_id|qty) and
+# queues any cache-miss for a low-priority background thread to fill. First view of
+# a new contract shows "—", then real ₹ on the next refresh; cached forever after.
+_MARGIN_CACHE_FILE = os.path.join(BASE_DIR, 'data', 'margin_cache.json')
+_margin_cache = None
+_margin_lock = _threading.Lock()
+_margin_warm_q = []          # [(sec_id, seg, qty, price), ...]
+_margin_tried = set()        # keys attempted this process (avoid re-queuing failures/expired)
+_margin_warm_started = False
 
-    margin: a BUY option is a debit → margin = premium × qty (EXACT capital paid).
-    A SELL option's real SPAN+exposure margin is NOT recoverable historically
-    without a per-trade live broker call (too heavy for a table, and the contract
-    is usually expired — `_leg_capital` returns 0 for them, `premium×qty` is just
-    the credit received, ~10× under the real SPAN). So we set margin only for BUY
-    and leave SELL unset (UI shows "—"); real SELL margin is a live-only number,
-    visible on OPEN positions via the RMS Margin column."""
+def _margin_cache_load():
+    global _margin_cache
+    if _margin_cache is None:
+        try:
+            with open(_MARGIN_CACHE_FILE) as _f:
+                _margin_cache = json.load(_f)
+        except Exception:
+            _margin_cache = {}
+    return _margin_cache
+
+def _margin_warm_loop():
+    import risk_gate as _rg, time as _t
+    while True:
+        item = None
+        with _margin_lock:
+            if _margin_warm_q:
+                item = _margin_warm_q.pop(0)
+        if not item:
+            _t.sleep(6); continue
+        sid, seg, qty, price = item
+        key = "%s|%s" % (sid, qty)
+        try:
+            mv = _rg.dhan_real_margin(sid, seg or 'NSE_FNO', int(qty), float(price), 'SELL')
+        except Exception:
+            mv = None
+        if mv and mv > 0:
+            with _margin_lock:
+                _margin_cache[key] = round(float(mv), 2)
+                try:
+                    with open(_MARGIN_CACHE_FILE, 'w') as _f:
+                        json.dump(_margin_cache, _f)
+                except Exception:
+                    pass
+        _t.sleep(1.5)   # gentle: dhan_real_margin is low-priority on the rate-limiter; never starve trading
+
+def _margin_warm_start():
+    global _margin_warm_started
+    if not _margin_warm_started:
+        _margin_warm_started = True
+        _threading.Thread(target=_margin_warm_loop, daemon=True).start()
+
+def _enrich_trade_display(trades):
+    """Add DISPLAY-ONLY `lot_size` + `margin` to each completed-trade dict —
+    consumed by the trade table's Margin column and the Gain/Loss hover's lot-size
+    line. Never changes any order. BUY margin = premium × qty (exact); SELL margin =
+    real Dhan SPAN from the background-warmed cache (est ~), "—" until warmed."""
     try:
         import dhan_master as _dm
     except Exception:
         _dm = None
+    cache = _margin_cache_load()
+    _margin_warm_start()
     for t in (trades or []):
         try:
             lot = _dm.get_lot_size_by_sec_id(t.get('sec_id')) if _dm else None
@@ -5134,10 +5184,26 @@ def _enrich_trade_display(trades):
             pass
         try:
             ep = float(t.get('entry_price') or 0); q = float(t.get('qty') or 0)
-            if ep > 0 and q > 0 and str(t.get('entry')).upper() == 'BUY':
-                t['margin'] = round(ep * q, 2)   # BUY premium debit = exact capital
+            side = str(t.get('entry')).upper()
+            if ep <= 0 or q <= 0:
+                continue
+            if side == 'BUY':
+                t['margin'] = round(ep * q, 2)   # premium debit = exact capital
                 t['margin_est'] = False
-            # SELL: real SPAN not cheaply recoverable historically → leave unset
+            elif side == 'SELL':
+                sid = t.get('sec_id')
+                if not sid:
+                    continue
+                key = "%s|%s" % (sid, int(q))
+                m = cache.get(key)
+                if m and m > 0:
+                    t['margin'] = m
+                    t['margin_est'] = True       # Dhan SPAN calc (proxy for Kite)
+                elif key not in _margin_tried:   # queue once for the background warmer
+                    with _margin_lock:
+                        _margin_tried.add(key)
+                        if len(_margin_warm_q) < 800:
+                            _margin_warm_q.append((sid, t.get('segment') or 'NSE_FNO', int(q), ep))
         except Exception:
             pass
     return trades

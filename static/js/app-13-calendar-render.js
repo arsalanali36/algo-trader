@@ -1091,11 +1091,13 @@
           case 'margin': {
             if (t.margin == null) {
               const _mt = String(t.entry).toUpperCase() === 'SELL'
-                ? 'SELL SPAN margin is a live-only number — not tracked for past trades (see RMS Margin on open positions)'
+                ? 'SELL SPAN margin background me compute ho raha hai — thodi der me refresh karo (expired contract pe available nahi)'
                 : 'No margin data';
               v = '<span style="color:#6e7681" title="' + _mt + '">—</span>'; break;
             }
-            v = '<span title="BUY debit = premium × qty (exact capital paid)">₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
+            const _est = t.margin_est ? '~' : '';
+            v = '<span title="' + (t.margin_est ? 'SELL SPAN margin (Dhan calc — ~estimate of what the broker blocks)' : 'BUY debit = premium × qty (exact capital paid)') + '">'
+              + _est + '₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
             colorStyle = 'color:#8b949e;';
             break;
           }
@@ -1271,11 +1273,13 @@
           case 'margin': {
             if (t.margin == null) {
               const _mt = String(t.entry).toUpperCase() === 'SELL'
-                ? 'SELL SPAN margin is a live-only number — not tracked for past trades (see RMS Margin on open positions)'
+                ? 'SELL SPAN margin background me compute ho raha hai — thodi der me refresh karo (expired contract pe available nahi)'
                 : 'No margin data';
               v = '<span style="color:#6e7681" title="' + _mt + '">—</span>'; break;
             }
-            v = '<span title="BUY debit = premium × qty (exact capital paid)">₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
+            const _est = t.margin_est ? '~' : '';
+            v = '<span title="' + (t.margin_est ? 'SELL SPAN margin (Dhan calc — ~estimate of what the broker blocks)' : 'BUY debit = premium × qty (exact capital paid)') + '">'
+              + _est + '₹' + Math.round(t.margin).toLocaleString('en-IN') + '</span>';
             colorStyle = 'color:#8b949e;';
             break;
           }
