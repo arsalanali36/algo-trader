@@ -1441,6 +1441,133 @@
       wrap.appendChild(createBtn('Next', curr + 1, false, curr === totalPages));
     }
 
+    // ---- Per-strategy equity overlay (window._eqPerStrategy) --------------------
+    // One cumulative line per strategy instead of a single combined line — so it's
+    // clear at a glance which strategy is contributing and which is dragging.
+    function _eqEsc(s) { return (s == null ? '' : String(s)).replace(/[&<>"]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[m])); }
+    function _perStratColor(sid, i) {
+      if (typeof window._stratHue === 'function') {
+        try { const h = window._stratHue(sid); if (h != null && !isNaN(h)) return 'hsl(' + h + ' 68% 60%)'; } catch (e) {}
+      }
+      const PAL = ['#3fb950', '#e3b341', '#58a6ff', '#bc8cff', '#ff7b72', '#7ee787', '#f0883e', '#79c0ff', '#d2a8ff', '#ffa657', '#56d364', '#ff9bce'];
+      return PAL[i % PAL.length];
+    }
+    function _perStratLabel(sid) {
+      try { if (typeof window.regFull === 'function') { const l = window.regFull(sid); if (l) return l; } } catch (e) {}
+      try { if (typeof window.regLabel === 'function') { const l = window.regLabel(sid); if (l) return l; } } catch (e) {}
+      return sid || 'unknown';
+    }
+    function _drawPerStrategyEquity(container, trades) {
+      const byS = {};
+      trades.forEach(t => { const k = t.strategy || t.strat || 'unknown'; (byS[k] = byS[k] || []).push(t); });
+      let sids = Object.keys(byS);
+      if (!sids.length) { container.innerHTML = `<div style="color:#6e7681;font-size:12px;text-align:center;padding:60px 0;">No trades to display equity curve</div>`; return; }
+
+      const mode = window._calSumMode || 'day';
+      const useBuckets = (mode === 'day' || mode === 'weekly' || mode === 'monthly') && typeof _calGroupKey === 'function';
+      let bucketKeys = null;
+      if (useBuckets) {
+        const ks = new Set();
+        trades.forEach(t => { const k = _calGroupKey(t, mode); if (k !== '—') ks.add(k); });
+        bucketKeys = [...ks].sort((a, b) => a.localeCompare(b));
+      }
+
+      let axisLabels = [];       // [0]='Start', then one per x point
+      const series = {};         // sid -> [cumulative...] aligned to axisLabels
+      if (bucketKeys && bucketKeys.length >= 2) {
+        // multi-day/week/month: cumulative per bucket, carry forward
+        axisLabels = ['Start'].concat(bucketKeys.map(k => _calPeriodLabel(k, mode)));
+        sids.forEach(sid => {
+          const perB = {};
+          byS[sid].forEach(t => { const k = _calGroupKey(t, mode); if (k !== '—') perB[k] = (perB[k] || 0) + (t.pnl || 0); });
+          let cum = 0; const arr = [0];
+          bucketKeys.forEach(k => { cum += (perB[k] || 0); arr.push(cum); });
+          series[sid] = arr;
+        });
+      } else {
+        // single day (or per-trade mode): global chronological trade axis, each strategy
+        // carries forward and only steps on its own trades → intraday contribution.
+        const all = [...trades].sort((a, b) => {
+          const da = (a.entry_date || '') + ' ' + (a.entry_time || '00:00');
+          const db = (b.entry_date || '') + ' ' + (b.entry_time || '00:00');
+          return da.localeCompare(db);
+        });
+        axisLabels = ['Start'].concat(all.map((t, i) => (t.entry_time || String(i + 1))));
+        const cum = {}; sids.forEach(s => { cum[s] = 0; series[s] = [0]; });
+        all.forEach(t => {
+          const owner = t.strategy || t.strat || 'unknown';
+          cum[owner] = (cum[owner] || 0) + (t.pnl || 0);
+          sids.forEach(s => series[s].push(cum[s]));
+        });
+      }
+
+      const M = axisLabels.length;
+      sids = sids.sort((a, b) => (series[b][M - 1]) - (series[a][M - 1]));   // best contribution first
+
+      const width = container.clientWidth || 600;
+      const height = Math.max(240, container.clientHeight || 240);
+      const PL = 60, PR = 18, PT = 18, PB = 28;
+      const cw = width - PL - PR, chh = height - PT - PB;
+      let lo = 0, hi = 0;
+      sids.forEach(s => series[s].forEach(v => { lo = Math.min(lo, v); hi = Math.max(hi, v); }));
+      const dd = (hi - lo) || 2000; lo -= dd * 0.1; hi += dd * 0.1;
+      const gx = i => PL + (i / (M - 1)) * cw;
+      const gy = v => PT + chh - ((v - lo) / (hi - lo)) * chh;
+
+      let svg = `<svg width="100%" height="${height}" viewBox="0 0 ${width} ${height}" style="overflow:visible;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">`;
+      for (let i = 0; i <= 5; i++) {
+        const v = lo + (i / 5) * (hi - lo), y = gy(v);
+        svg += `<line x1="${PL}" y1="${y}" x2="${width - PR}" y2="${y}" stroke="#30363d" stroke-width="1" stroke-dasharray="${Math.abs(v) < 1 ? '0' : '3,3'}"/>`;
+        svg += `<text x="${PL - 10}" y="${y + 4}" fill="#8b949e" font-size="10" text-anchor="end">₹${Math.round(v).toLocaleString('en-IN')}</text>`;
+      }
+      if (lo < 0 && hi > 0) { const zy = gy(0); svg += `<line x1="${PL}" y1="${zy}" x2="${width - PR}" y2="${zy}" stroke="#8b949e" stroke-width="1.2" stroke-dasharray="4,4" opacity="0.6"/>`; }
+      const nlab = Math.min(6, M - 1);
+      for (let j = 0; nlab > 0 && j <= nlab; j++) {
+        const i = Math.round(1 + (j / nlab) * (M - 2)); if (i < 1 || i >= M) continue;
+        svg += `<text x="${gx(i)}" y="${height - 8}" fill="#6e7681" font-size="9" text-anchor="middle">${_eqEsc(axisLabels[i])}</text>`;
+      }
+      sids.forEach((sid, si) => {
+        const col = _perStratColor(sid, si);
+        let ln = '';
+        series[sid].forEach((v, i) => { const x = gx(i), y = gy(v); ln += (i ? 'L' : 'M') + x.toFixed(1) + ' ' + y.toFixed(1) + ' '; });
+        const fin = series[sid][M - 1];
+        svg += `<path d="${ln}" fill="none" stroke="${col}" stroke-width="1.9" opacity="0.9"><title>${_eqEsc(_perStratLabel(sid))} — ₹${Math.round(fin).toLocaleString('en-IN')}</title></path>`;
+        svg += `<circle cx="${gx(M - 1)}" cy="${gy(fin)}" r="3" fill="${col}"/>`;
+      });
+      svg += `</svg>`;
+
+      const cap = 12;
+      let leg = `<div style="position:absolute;top:8px;left:66px;background:rgba(13,17,23,0.74);border:1px solid #30363d;border-radius:6px;padding:6px 9px;font-size:11px;max-width:52%;pointer-events:none;">`;
+      leg += `<div style="color:#8b949e;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px;margin-bottom:3px;">Contribution</div>`;
+      sids.slice(0, cap).forEach((sid, si) => {
+        const fin = series[sid][M - 1];
+        leg += `<div style="display:flex;align-items:center;gap:6px;line-height:1.55;">`
+          + `<span style="width:12px;height:3px;border-radius:2px;background:${_perStratColor(sid, si)};flex:none;"></span>`
+          + `<span style="flex:1;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;">${_eqEsc(_perStratLabel(sid))}</span>`
+          + `<b style="color:${fin >= 0 ? '#3fb950' : '#f85149'};">${fin >= 0 ? '+' : ''}₹${Math.round(fin).toLocaleString('en-IN')}</b></div>`;
+      });
+      if (sids.length > cap) leg += `<div style="color:#6e7681;margin-top:2px;">+${sids.length - cap} more</div>`;
+      leg += `</div>`;
+
+      container.style.position = container.style.position || 'relative';
+      container.innerHTML = svg + leg;
+    }
+
+    // toggle Combined ⟷ Per-strategy (persisted); redraws respecting the selected-day filter
+    window.toggleEqPerStrategy = function (v) {
+      window._eqPerStrategy = (v === undefined) ? (window._eqPerStrategy ? 0 : 1) : (v ? 1 : 0);
+      try { localStorage.setItem('eq_per_strategy', window._eqPerStrategy ? '1' : '0'); } catch (e) {}
+      document.querySelectorAll('.eq-ps-btn').forEach(b => b.classList.toggle('on', !!window._eqPerStrategy));
+      const all = window.currentCalendarTrades || [];
+      const tr = window.calSelectedDateFilter ? all.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter) : all;
+      drawEquityCurveChart('cal-equity-curve-container', tr);
+    };
+    try { window._eqPerStrategy = (localStorage.getItem('eq_per_strategy') === '1') ? 1 : 0; } catch (e) { window._eqPerStrategy = 0; }
+    (function _eqPsBtnSync() {
+      const sync = () => { if (window._eqPerStrategy) document.querySelectorAll('.eq-ps-btn').forEach(b => b.classList.add('on')); };
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync); else sync();
+    })();
+
     function drawEquityCurveChart(containerId, trades) {
       const container = document.getElementById(containerId);
       if (!container) return;
@@ -1450,6 +1577,9 @@
         container.innerHTML = `<div style="color:#6e7681;font-size:12px;text-align:center;padding:60px 0;">No trades to display equity curve</div>`;
         return;
       }
+
+      // Per-strategy overlay branch (Real-only; Compare/BS ignored here to avoid clutter).
+      if (window._eqPerStrategy) { _drawPerStrategyEquity(container, trades); return; }
 
       // Calculate cumulative PnL — resolution follows the Total Summary mode:
       // Day → per-day, Weekly → per-week, Monthly → per-month; Strategy/other →

@@ -2179,9 +2179,12 @@
 
     <!-- Equity Curve Card -->
     <div class="card" style="margin-top:16px; padding:16px 18px;">
+      <style>.eq-ps-btn{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer;outline:none}.eq-ps-btn.on{background:#1f6feb;border-color:#1f6feb;color:#fff}</style>
       <h3
         style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
         📈 Equity Curve (Cumulative P&amp;L)
+        <span style="flex:1"></span>
+        <button class="eq-ps-btn" onclick="toggleEqPerStrategy()" title="Har strategy ki alag equity line (contribution) — All-strategies view me, aur day-tile select pe us din ka per-strategy">⑃ Per-strategy</button>
       </h3>
       <div id="cal-equity-curve-container" style="position:relative; width:100%; height:260px;">
         <!-- SVG Equity Curve will be drawn here -->

@@ -112,6 +112,8 @@
     if (group === 'chart') {
       var gl = document.getElementById('s2-glseg');
       if (gl) gl.style.display = (pane === 'chart-gl') ? 'flex' : 'none';
+      var eqs = document.getElementById('s2-eqseg');
+      if (eqs) { eqs.style.display = (pane === 'chart-eq') ? 'flex' : 'none'; eqs.classList.toggle('on', !!window._eqPerStrategy); }
       if (pane === 'chart-gl' && typeof window.renderPnlGraph === 'function') window.renderPnlGraph();
       if (pane === 'chart-dist') _s2Dist();
     }

@@ -25,6 +25,7 @@
     /* equity card ki chart panes card ki poori height fill karein (heatmap S/M/L pe split balanced) */
     #chart-eq.on,#chart-gl.on,#chart-dist.on{display:flex;flex-direction:column;flex:1;min-height:0}
     #cal-equity-curve-container{flex:1;min-height:230px}
+    .eq-ps-btn.on{background:#1f6feb!important;border-color:#1f6feb!important;color:#fff!important}
     .s2flexb{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
     .s2fs{padding:3px 8px;font-size:13px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer}
     /* compact calendar cells for the narrower left column */
@@ -219,6 +220,7 @@
                 <option value="exit_reason">By Exit Reason</option>
               </select>
             </div>
+            <button id="s2-eqseg" class="eq-ps-btn" onclick="toggleEqPerStrategy()" title="Har strategy ki alag equity line (contribution) — All-strategies view me, aur day-tile select pe us din ka per-strategy" style="display:flex;align-items:center;gap:5px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer;outline:none">⑃ Per-strategy</button>
             <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
           </div>
         </div>
