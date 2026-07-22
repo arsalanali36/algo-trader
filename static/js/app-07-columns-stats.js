@@ -84,12 +84,20 @@
     function _loadCalPointsColPrefs() {
       try {
         const s = localStorage.getItem('cal_points_cols');
-        if (s && (s.includes('entry_price') || s.includes('exit_price') || s.includes('pnl'))) {
+        let saved = null;
+        try { saved = s ? JSON.parse(s) : null; } catch (e) { saved = null; }
+        // Migration: the OLD points-table used ids entry_price/exit_price/pnl
+        // (now entry_px/exit_px/net). Reset ONLY if the saved cols actually use
+        // those old ids — check the real `id` fields, NOT a substring match on the
+        // whole JSON (a column TITLE containing e.g. "pnl" must not wipe the
+        // user's saved order/toggles).
+        const OLD_IDS = ['entry_price', 'exit_price', 'pnl'];
+        if (Array.isArray(saved) && saved.some(c => c && OLD_IDS.indexOf(c.id) !== -1)) {
           localStorage.removeItem('cal_points_cols');
           window._calPointsCols = JSON.parse(JSON.stringify(CAL_POINTS_COLS_DEF));
           return;
         }
-        window._calPointsCols = s ? JSON.parse(s) : JSON.parse(JSON.stringify(CAL_POINTS_COLS_DEF));
+        window._calPointsCols = Array.isArray(saved) ? saved : JSON.parse(JSON.stringify(CAL_POINTS_COLS_DEF));
         CAL_POINTS_COLS_DEF.forEach(def => {
           if (!window._calPointsCols.find(x => x.id === def.id)) {
             window._calPointsCols.push(JSON.parse(JSON.stringify(def)));
@@ -224,13 +232,30 @@
       document.getElementById('cal-points-col-modal').style.display = 'flex';
     }
 
+    // Persist the points-table column prefs to the backend `_ui_config` so they
+    // survive AND aren't clobbered when any page's fetchConfig() restores the
+    // backend value into the shared localStorage. saveUiConfigToBackend lives in
+    // app-03 (main dashboard only); on /stats2 it's absent, so we POST directly —
+    // otherwise the backend keeps a STALE cal_points_cols that overwrites every
+    // /stats2 save on the next config-restore ("reorder/uncheck reverts on refresh").
+    async function _calPersistBackend(jsonStr) {
+      try {
+        const r = await fetch('/api/config');
+        const cfg = await r.json();
+        if (!cfg._ui_config) cfg._ui_config = {};
+        cfg._ui_config['cal_points_cols'] = jsonStr;
+        await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+      } catch (e) { /* localStorage already saved; backend sync is best-effort */ }
+    }
     function saveCalPointsColPrefs() {
       _calColSyncChecks();
-      localStorage.setItem('cal_points_cols', JSON.stringify(window._calPointsCols));
-      // backend sync is best-effort — it lives in app-03 which stats2 doesn't
-      // load, so guard it (was an unguarded ReferenceError that aborted Save on
-      // /stats2 after localStorage but before the modal closed → "Save nahi hota").
-      try { if (typeof saveUiConfigToBackend === 'function') saveUiConfigToBackend('cal_points_cols', JSON.stringify(window._calPointsCols)); } catch (e) { }
+      const _j = JSON.stringify(window._calPointsCols);
+      localStorage.setItem('cal_points_cols', _j);
+      if (typeof saveUiConfigToBackend === 'function') {
+        try { saveUiConfigToBackend('cal_points_cols', _j); } catch (e) { }
+      } else {
+        _calPersistBackend(_j);   // /stats2 has no app-03 — keep the backend in sync
+      }
       document.getElementById('cal-points-col-modal').style.display = 'none';
       renderPointsPerTradeTable();
     }
