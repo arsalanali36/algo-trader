@@ -6775,6 +6775,12 @@ def pos_monitor_loop():
                                 except Exception as _te:
                                     print(f"[TRAILING-LOCK] [PER-INSTRUMENT] squareoff failed for "
                                           f"{_p.get('sym')}: {_te}", flush=True)
+                            # Multi-leg atomicity: this path places its primary-leg
+                            # exit directly (above), NOT through _do_squareoff, so it
+                            # would orphan a group'd structure's siblings. Queue them
+                            # for a group-aware forced close this same cycle (see
+                            # _queue_group_siblings). No-op if group_id unset.
+                            _queue_group_siblings(_p, open_pos, _closed_ids, "TRAILING_PROFIT_LOCK_PI")
                             # NOTE (2026-07-02, user decision, TRAP #77): deliberately does NOT
                             # write the day-level trailing_lock_fired flag. That flag blocks
                             # ALL new entries account-wide (webhook _do_entry + strategies via
@@ -6932,6 +6938,12 @@ def pos_monitor_loop():
                                     _closed_ids.add(_pid)
                                 except Exception as _tse:
                                     print(f"[DEFAULT-TSL] squareoff failed for {_p.get('sym')}: {_tse}", flush=True)
+                            # Multi-leg atomicity: primary-leg exit placed directly
+                            # above (not via _do_squareoff) → queue any group'd
+                            # siblings for a group-aware forced close this same cycle,
+                            # so a DEFAULT_TSL hit on one leg never orphans the
+                            # structure. No-op if group_id unset. (See _queue_group_siblings.)
+                            _queue_group_siblings(_p, open_pos, _closed_ids, _reason)
                     _active_tsl_ids = {_p.get("id") for _p in _active_tsl}
                     for _k in list(_tsl_state.keys()):
                         if _k not in _active_tsl_ids:
@@ -7180,6 +7192,42 @@ def _pgc_pop(p, sec_id):
             _save_pending_group_close()
             return reason
     return None
+
+
+def _queue_group_siblings(p, open_pos, closed_ids, reason):
+    """Multi-leg atomicity: when ONE leg of a group_id'd structure (straddle /
+    strangle / condor / backspread / a sold option + its hedge) is squared off
+    by a PER-LEG exit path that places its own primary-leg order DIRECTLY
+    instead of through _do_squareoff (the per-instrument trailing lock and the
+    DEFAULT_TSL aggressive profile), queue every still-open sibling sharing its
+    group_id for a forced close.
+
+    Without this, enabling a per-leg profit-lock on a multi-leg strategy would
+    orphan the structure — one leg locked out while its siblings stay open
+    (naked option SELL / broken hedge). The queued siblings are force-closed on
+    THIS same cycle's `for p in open_pos` pass (via _pgc_pop -> _do_squareoff,
+    which is the single group-aware exit path). This deliberately reuses the
+    EXACT no-price sibling pattern _do_squareoff itself uses (see its group
+    loop) rather than duplicating any order-placement logic (Rule 6B).
+
+    No-op unless group_id is actually set — so it's inert for single-leg
+    strategies and, when these profit-lock features are OFF (current default),
+    it never runs at all."""
+    gid = p.get("group_id")
+    if not gid:
+        return
+    for sib in open_pos:
+        if sib is p or sib.get("id") in closed_ids:
+            continue
+        if sib.get("group_id") != gid:
+            continue
+        sib_sec = sib.get("sec_id")
+        if not sib_sec:
+            continue
+        _pgc_queue(sib, sib_sec, reason + "_GROUP")
+        print(f"[GROUP-CLOSE] {sib.get('sym')} (group {gid}) queued for forced close — "
+              f"sibling {p.get('sym')} was profit-locked out; structure must exit together",
+              flush=True)
 
 
 # ── Account-level KILL-FLOOR state (2026-07-02) — disk-persisted so a mid-day

@@ -24,9 +24,17 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 DB_PATH = BASE_DIR / "data" / "trades.db"
 _lock = threading.Lock()
 
+# NOTE: "group_id" MUST stay in this INSERT list. It was silently omitted for a
+# long time even though record() builds row["group_id"], the DB column exists
+# (init_db migration), and _meta()/readers surface it — so every row was written
+# with the column's DEFAULT (NULL -> "") regardless of what the caller passed.
+# That silently disabled EVERY group-aware feature (multi-leg atomic close in
+# _do_squareoff, hedge-orphan protection / TRAP #30, broker_sync S5 naked-leg
+# alert, the UI's group-close button). If you ever trim this tuple, keep group_id.
 _COLS = ("ts", "date", "source", "strategy", "mode", "broker", "symbol",
          "instrument", "trad_sym", "sec_id", "segment", "side", "qty", "price",
-         "correlation_id", "broker_order_id", "status", "tags", "product_type")
+         "correlation_id", "broker_order_id", "status", "tags", "product_type",
+         "group_id")
 
 
 def ist_now_str():
