@@ -127,18 +127,41 @@
   };
 
   // ── ⛶ full-screen the active chart ────────────────────────────────────────
+  function _s2ReRender(id) {
+    if (id === 'chart-eq' && typeof drawEquityCurveChart === 'function') { try { drawEquityCurveChart('cal-equity-curve-container', window.currentCalendarTrades || []); } catch (e) {} }
+    else if (id === 'chart-gl' && typeof window.renderPnlGraph === 'function') { try { window.renderPnlGraph(); } catch (e) {} }
+    else if (id === 'chart-dist' && typeof _s2Dist === 'function') { try { _s2Dist(); } catch (e) {} }
+  }
   window.s2Fs = function () {
     var pane = document.querySelector('#chart-eq.on, #chart-gl.on, #chart-dist.on');
-    if (!pane) return;
+    if (!pane || window._s2fs) return;
     var titleTab = document.querySelector('.s2tabs .s2tab.on');
     document.getElementById('s2fstitle').textContent = titleTab ? titleTab.textContent.trim() : 'Chart';
     var body = document.getElementById('s2fsbody');
-    body.innerHTML = '<div style="width:100%;height:100%">' + pane.innerHTML + '</div>';
+    // MOVE the live pane into fullscreen (NOT innerHTML-clone): a Chart.js canvas
+    // clones BLANK (gain/loss) and an SVG clones as a FROZEN snapshot (equity
+    // "atka"). A placeholder marks the spot so we can put it back on close.
+    var ph = document.createComment('s2fs-slot');
+    pane.parentNode.insertBefore(ph, pane);
+    window._s2fs = { pane: pane, ph: ph };
+    var card = document.getElementById('cal-pnl-graph-card');   // gain/loss card has a fixed 230px height
+    if (card) { window._s2fs.cardH = card.style.height; card.style.height = '100%'; }
+    body.innerHTML = ''; body.appendChild(pane);
     document.getElementById('s2fsov').style.display = 'flex';
+    setTimeout(function () { _s2ReRender(pane.id); }, 60);   // re-render live at the new (larger) size
   };
   window.s2FsClose = function (ev) {
     if (ev && ev.target && ev.target.id !== 's2fsov' && !(ev.target.textContent || '').includes('Close')) return;
     document.getElementById('s2fsov').style.display = 'none';
+    var f = window._s2fs;
+    if (f && f.ph && f.ph.parentNode) {
+      var card = document.getElementById('cal-pnl-graph-card');
+      if (card && f.cardH != null) card.style.height = f.cardH;
+      f.ph.parentNode.insertBefore(f.pane, f.ph);   // put the pane back
+      f.ph.parentNode.removeChild(f.ph);
+      setTimeout(function () { _s2ReRender(f.pane.id); }, 60);   // re-render at normal size
+    }
+    window._s2fs = null;
   };
 
   // Trade Chart opens in a NEW TAB via the original window.openTradeChart (app-13) —

@@ -371,14 +371,17 @@
       
       const toggle = document.getElementById('pnl-graph-toggle');
       if (!toggle) return;
-      const mode = toggle.value; // 'instrument' or 'symbol'
-      
+      const mode = toggle.value; // 'instrument' | 'symbol' | 'exit_reason'
+
       const aggregated = {};
-      
+
       tradesList.forEach(t => {
         const sym = t.sym || t.symbol || 'UNKNOWN';
         let key = sym;
-        if (mode === 'instrument') {
+        if (mode === 'exit_reason') {
+          // group by the reason PREFIX (before ':') so DEFAULT_TSL_SL:-1600 etc collapse
+          key = (t.exit_reason || '').split(':')[0].trim() || 'unknown';
+        } else if (mode === 'instrument') {
           if (sym.includes('-')) {
             key = sym.split('-')[0];
           } else {

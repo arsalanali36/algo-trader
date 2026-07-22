@@ -212,10 +212,12 @@
             <span class="s2tab" data-p="chart-dist">📊 Distribution</span>
           </div>
           <div style="display:flex;align-items:center;gap:8px">
-            <div id="s2-glseg" style="display:none;align-items:center;background:#0d1117;border:1px solid #30363d;border-radius:4px;overflow:hidden">
-              <button id="pnl-btn-instrument" onclick="document.getElementById('pnl-graph-toggle').value='instrument';window.renderPnlGraph();this.style.background='#1f6feb';this.style.color='#fff';var o=document.getElementById('pnl-btn-symbol');o.style.background='transparent';o.style.color='#8b949e';" style="background:#1f6feb;color:#fff;border:none;padding:4px 9px;font-size:10.5px;cursor:pointer">By Instrument</button>
-              <button id="pnl-btn-symbol" onclick="document.getElementById('pnl-graph-toggle').value='symbol';window.renderPnlGraph();this.style.background='#1f6feb';this.style.color='#fff';var o=document.getElementById('pnl-btn-instrument');o.style.background='transparent';o.style.color='#8b949e';" style="background:transparent;color:#8b949e;border:none;padding:4px 9px;font-size:10.5px;cursor:pointer">By Symbol</button>
-              <input type="hidden" id="pnl-graph-toggle" value="instrument">
+            <div id="s2-glseg" style="display:none;align-items:center">
+              <select id="pnl-graph-toggle" onchange="window.renderPnlGraph()" title="Group Gain/Loss by" style="background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:11px;padding:4px 8px;cursor:pointer;outline:none">
+                <option value="instrument">By Instrument</option>
+                <option value="symbol">By Symbol</option>
+                <option value="exit_reason">By Exit Reason</option>
+              </select>
             </div>
             <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
           </div>
