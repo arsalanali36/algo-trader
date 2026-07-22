@@ -294,7 +294,10 @@
         d.trades = (d.trades || []).filter(t => _vset.has(_vnorm(t.strategy || t.strat || 'unknown')));
         const _vsum = {};
         d.trades.forEach(t => {
-          const dt = t.entry_date || t.exit_date;
+          // bucket by EXIT date — same as the server calendar-summary route (TRAP #141:
+          // positional/overnight P&L belongs to the day it CLOSES). Using entry_date here
+          // put a carried position's P&L on the wrong day → view-on vs view-off mismatch.
+          const dt = t.exit_date || t.entry_date;
           if (!dt) return;
           const b = _vsum[dt] || (_vsum[dt] = { pnl: 0, count: 0 });
           b.pnl += (t.pnl || 0); b.count++;
