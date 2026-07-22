@@ -197,9 +197,9 @@
     <span class="badge2">v2</span>
     <span class="sub">Every strategy in one sortable, filterable table — deployed · research · legacy · backtest.</span>
     <div class="quick">
-      <a class="qbtn" href="/lab" target="_blank">🧪 Lab hub</a>
-      <a class="qbtn" href="/lab/compare.html" target="_blank">⚖️ Compare</a>
-      <a class="qbtn" href="/lab/portfolio.html" target="_blank">📦 Portfolio</a>
+      <a class="qbtn" href="/lab">🧪 Lab hub</a>
+      <a class="qbtn" href="/lab/compare.html">⚖️ Compare</a>
+      <a class="qbtn" href="/lab/portfolio.html">📦 Portfolio</a>
       <a class="qbtn" href="/registry">🗂️ Classic</a>
       <a class="qbtn" href="/" style="margin-left:4px">← Dashboard</a>
     </div>
@@ -492,20 +492,24 @@ function renderSaved(){
     `<div class="mrow" onclick="applySaved(${i})">★ ${esc(s.name)}
        <span class="del" title="Rename" onclick="event.stopPropagation();renameSaved(${i})">✏️</span>
        <span class="del" title="Delete" onclick="event.stopPropagation();delSaved(${i})">🗑</span></div>`).join('')
-    : '<div class="mrow" style="color:var(--mut2);cursor:default">No saved filters yet</div>';
+    : '<div class="mrow" style="color:var(--mut2);cursor:default">No saved views yet</div>';
   document.getElementById('saved').innerHTML=
-    '<div class="mhead">My filters</div>'+list+'<div class="msep"></div>'+
-    '<div class="mrow mact" onclick="saveCurrent()">＋ Save current filters…</div>';
+    '<div class="mhead">My views</div>'+list+'<div class="msep"></div>'+
+    '<div class="mrow mact" onclick="saveCurrent()">＋ Save current view…</div>';
   document.getElementById('savedn').textContent=SAVED.length? '('+SAVED.length+') ▾':'▾';
 }
 function saveCurrent(){
-  if(!(Object.keys(S.colf).length||S.q)){alert('Set some filters first, then save them.');return;}
-  const n=prompt('Name this filter (e.g. "Deployable winners", "Equity only"):'); if(!n)return;
-  SAVED.push({name:n,colf:JSON.parse(JSON.stringify(S.colf)),q:S.q}); persistSaved(); renderSaved();
+  const hasFilter=Object.keys(S.colf).length||S.q;
+  const hasView=(S.group!=='family')||(VIEW!=='quick');   // grouping / view-mode also count
+  if(!hasFilter && !hasView){alert('Set some filters, a grouping (Family/Status/None), or a view (Quick/Detailed/Entry-Exit) first — then save.');return;}
+  const n=prompt('Name this view (saves filters + grouping + Quick/Detailed/Entry-Exit):'); if(!n)return;
+  SAVED.push({name:n,colf:JSON.parse(JSON.stringify(S.colf)),q:S.q,group:S.group,view:VIEW}); persistSaved(); renderSaved();
 }
-function applySaved(i){S.colf=JSON.parse(JSON.stringify(SAVED[i].colf));S.q=SAVED[i].q||'';
+function applySaved(i){const s=SAVED[i]||{};S.colf=JSON.parse(JSON.stringify(s.colf||{}));S.q=s.q||'';
   document.getElementById('q').value=S.q;
-  document.querySelectorAll('.menu').forEach(m=>m.classList.remove('open'));render();}
+  if(s.group){S.group=s.group;[...document.querySelectorAll('#grp button')].forEach(b=>b.classList.toggle('on',b.dataset.g===s.group));}
+  document.querySelectorAll('.menu').forEach(m=>m.classList.remove('open'));
+  if(s.view){setView(s.view);}else render();}   // setView() re-renders; else render explicitly
 function renameSaved(i){const n=prompt('Rename filter:',SAVED[i].name);if(n){SAVED[i].name=n;persistSaved();renderSaved();}}
 function delSaved(i){SAVED.splice(i,1);persistSaved();renderSaved();}
 function clearAll(){S.colf={};S.q='';const q=document.getElementById('q');if(q)q.value='';render();}
@@ -601,7 +605,7 @@ function cell(r,k){
     }
     case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
     case 'deploy':return deployCell(r);
-    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html" target="_blank">Lab ↗</a>`:dash();
+    case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html">Lab ↗</a>`:dash();
   }
   return '';
 }
@@ -621,7 +625,7 @@ function deployCell(r){
     : `<button class="mini pa" onclick="regDeploy(event,'${r._ck}','paper')">▶ Paper</button><span class="dlv" title="Deploy LIVE — real orders" onclick="regDeploy(event,'${r._ck}','live')">live ↗</span>`;
 }
 function isDep(r){ const live=liveNow(r._ck); return (live&&live!=='off')||(r._timer&&(TIMERS[r._timer]||{}).active); }
-function trow(r,vis){return `<tr class="${isDep(r)?'dep':''}">`+vis.map(c=>`<td class="${c.num?'num':''} ${fzc(c.k)}">${cell(r,c.k)}</td>`).join('')+`</tr>`;}
+function trow(r,vis,cls){return `<tr class="${isDep(r)?'dep':''} ${cls||''}">`+vis.map(c=>`<td class="${c.num?'num':''} ${fzc(c.k)}">${cell(r,c.k)}</td>`).join('')+`</tr>`;}
 function fzc(k){return k==='_idx'?'fz fz-idx':k==='id'?'fz fz-id':k==='name'?'fz fz-name':'';}
 
 function render(){
@@ -656,7 +660,10 @@ function render(){
     sts.forEach(s=>{const sr=rows.filter(r=>r.status===s);
       body+=`<tr class="grp" onclick="collapsed['st:${s}']=!collapsed['st:${s}'];render()"><td colspan="${vis.length}"><span class="caret">${collapsed['st:'+s]?'▶':'▼'}</span><span class="gname" style="text-transform:capitalize">${s}</span><span class="gcount">${sr.length}</span></td></tr>`;
       if(!collapsed['st:'+s])sr.forEach((r,i)=>{r._gidx=i+1;body+=trow(r,vis);});});
-  } else rows.forEach((r,i)=>{r._gidx=i+1;body+=trow(r,vis);});
+  } else {   // None: continuous count + a faint divider line where the family changes
+    let pf=null;
+    rows.forEach((r,i)=>{r._gidx=i+1; const nf=(i>0&&r.fam!==pf)?'famtop':''; body+=trow(r,vis,nf); pf=r.fam;});
+  }
   document.getElementById('tbody').innerHTML=body||`<tr><td colspan="${vis.length}" style="text-align:center;color:var(--mut2);padding:30px">No strategies match these filters.</td></tr>`;
   document.getElementById('foot').innerHTML=`${rows.length} of ${ROWS.length} strategies · sorted by ${(COLS.find(c=>c.k===S.sort.k)||{t:''}).t} ${S.sort.dir>0?'▲':'▼'}`;
 }
@@ -724,6 +731,8 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   .fz-name{left:calc(var(--idxW) + var(--idW));width:var(--nameW);min-width:var(--nameW);max-width:var(--nameW);border-right:1px solid var(--bd)}
   .rz{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:10}
   .rz:hover,.rz.drag{background:var(--blue)}
+  /* None-grouping: faint divider on the first row of each new family (visible family boundary) */
+  tr.famtop>td{border-top:1px solid var(--bd)}
 </style>`);
 hlView();
 load();
