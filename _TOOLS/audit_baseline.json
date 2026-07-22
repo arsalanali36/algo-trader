@@ -1,9 +1,10 @@
 {
-  "_comment": "Known pre-existing FAIL counts (debt) — audit only blocks when a count EXCEEDS its allowance here. After paying debt down (Tasks 3+), re-run --write-baseline to ratchet allowances DOWN. Never hand-edit upward.  || 2026-07-16: scratch/nifty_trend ab audit ke andar hai (wo scratch nahi hai — har shipped strategy ke validated numbers wahin se aate hain, _core/payoff.py uska bs_option import karta hai). Usse 9 chhupe DUP-INDICATOR nikle. INME SE EK ASLI HAI: intraday_engine.rsi (adjust=False) aur _CHARTING.wilder_rsi (adjust=True) warmup me 13.37 RSI points tak alag hain, aur bar-20 pe 7.43 — theek wahan jahan live RSI strategy trade karti hai (TRAP #85: 19-bar gate ~9:53 AM). Ise BINA SOCHE unify mat karo: 2026-07-16 ko Pine ke ta.rma se dono ko compare kiya gaya, kaun sahi hai ye SAABIT NAHI hua (farq recursion ka nahi, SEEDING ka hai), aur canonical wala 90.2%% TradingView validation pe khada hai. Pehle decide karo, phir badlo.",
-  "updated": "2026-07-16 16:37",
+  "_comment": "Known pre-existing FAIL counts (debt) \u2014 audit only blocks when a count EXCEEDS its allowance here. After paying debt down (Tasks 3+), re-run --write-baseline to ratchet allowances DOWN. Never hand-edit upward.",
+  "updated": "2026-07-22 19:50",
   "known_fail_counts": {
     "trader_dashboard.py|RAW-HTTP-ORDER": 1,
     "strategies/live/03_orbst_trader.py|DUP-INDICATOR": 1,
+    "strategies/live/07_banknifty_trader.py|INLINE-SIGNAL": 1,
     "strategies/live/nifty_ema_trader.py|RAW-HTTP-ORDER": 2,
     "scratch/nifty_trend/_positional_hunt.py|DUP-INDICATOR": 3,
     "scratch/nifty_trend/engine.py|DUP-INDICATOR": 3,

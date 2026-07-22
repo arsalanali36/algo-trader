@@ -315,6 +315,29 @@ Har loop mein yeh rails bhi honi chahiye (dekho command files): idle-aware skip
 `data/loop_activity.log` mein ek-line-per-run, `max_consecutive_failures=3`,
 aur kabhi auto-commit nahi.
 
+### 6E. SIGNAL ek hi jagah — backtest aur live WAHI code chalayein (ADR-010 / TRAP #153)
+
+Ek strategy live ISLIYE deploy hoti hai kyunki uska **backtest ka number trusted hai**.
+Wo trust tabhi valid hai jab **live wahi entry-signal fire kare jo backtest ne naapa**.
+Mahino tak aisa nahi tha: har strategy ke paas signal ki **do alag Python copy** thi —
+backtest engine (`scratch/nifty_trend/intraday_engine.design_signals`) aur har live trader
+ke andar apni **inline copy**. Wo silently drift kar gayin (`orb_v1` 33% match, `dvert`
+**opposite-sign P&L**; OR-boundary `<` vs `<=`, prev-bar vs current-bar ATR crossover).
+
+**Rule:** signal ki **ek hi implementation** `strategies/signals/*.py` mein rahegi
+(`orb.py`, `chain_zone.py`); backtest usse **delegate** kare, har live trader usse **call**
+kare (`orb.orb_signal_last` / `chain_zone.chain_zone_signal_last`). Sirf ATR-stop /
+order-sizing trader mein. **Live trader mein signal ki inline copy KABHI mat likho.**
+
+- Naya signal? → pehle `strategies/signals/<name>.py`, backtest + live dono usse call karein,
+  phir `_DEV/tests/test_<name>_single_source.py` guard (backtest==shared bit-identical +
+  live==backtest fired bars).
+- **Commit-time guard** `INLINE-SIGNAL` (`_TOOLS/architecture_audit.py`) inline ORB/zone ko
+  block karta hai; escape `# inline-signal-ok: <wajah>` sirf documented not-yet-migrated file.
+- **Honest boundary:** sirf spot-candle-series signal literally share ho sakta hai. VRP
+  (IV-rank live-premium vs lake), BankNifty (alag store), RSI/EMA (alag design), ARS_CHAIN
+  (Pine 90.2% validated) — alag situations, inpe zabardasti "100% match" mat banao.
+
 ### 7. Kabhi ₹0-price pe REAL fill record mat karo (LESSONS.md TRAP #1)
 Option premium fetch fail ho (DH-904 rate-limit) to `price = 0` record karna ek
 real fill ke roop me **P&L corrupt karta hai** (SELL@₹0 → close@real = jhootha bada

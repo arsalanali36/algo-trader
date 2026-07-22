@@ -637,6 +637,51 @@ def check_pe_offset_sign(path, src, tree, findings):
             "'# pe-offset-ok: <reason>' on that line"))
 
 
+# ---------------------------------------------------------------------------
+# INLINE-SIGNAL — a live trader must compute its ENTRY signal via the shared
+# strategies/signals/* module (the exact code the backtest engine runs), NOT an
+# inline private copy. Two independent implementations of "the same" signal is
+# the root of the backtest≠live divergence (TRAP #130/#153): orb_v1 lived at 33%
+# match, dvert had OPPOSITE-sign P&L, because the live port had drifted (OR-boundary
+# `<` vs backtest `<=`, prev-bar vs current-bar crossover ATR). Now that every ORB /
+# chain-zone trader calls the single source, a NEW inline copy is exactly the blunder
+# this guard must block at commit time.
+#
+# Tells of an inline copy (comment-stripped):
+#   ORB       : `or_high` AND `or_low`  (the opening-range breakout math)
+#   chain-zone: `red_zone` AND `green_zone`  (the zone state machine)
+# A migrated trader has neither (it calls orb.orb_signal_last / chain_zone.*).
+# Escape hatch (deliberate, e.g. a not-yet-migrated legacy file): put
+# `# inline-signal-ok: <reason>` anywhere in the file.
+_INLINE_LIVE_PREFIXES = ("strategies/live/", "_TRADERS/")
+
+
+def check_inline_signal(path, src, findings):
+    rp = rel(path).replace(os.sep, "/")
+    if not any(rp.startswith(p) for p in _INLINE_LIVE_PREFIXES):
+        return
+    if "inline-signal-ok" in src.lower():
+        return
+    # strip comments per line so a mention in a docstring/comment doesn't trip it
+    code_lines = [ln.split("#", 1)[0] for ln in src.splitlines()]
+    has = lambda tok: any(re.search(rf"\b{tok}\b", c) for c in code_lines)
+    first = lambda tok: next((i for i, c in enumerate(code_lines, 1)
+                              if re.search(rf"\b{tok}\b", c)), 1)
+    kind = None
+    if has("or_high") and has("or_low"):
+        kind, ln = "ORB opening-range", first("or_high")
+    elif has("red_zone") and has("green_zone"):
+        kind, ln = "chain-zone", first("red_zone")
+    if kind:
+        findings.append(Finding(
+            "FAIL", "INLINE-SIGNAL", rel(path), ln,
+            f"inline {kind} signal math in a live trader — call the shared "
+            "strategies/signals/* module (orb.orb_signal_last / chain_zone.*), the "
+            "SAME code the backtest runs, so live == backtest by construction "
+            "(TRAP #153). Do NOT keep a private copy; if this file is a deliberate "
+            "not-yet-migrated exception add '# inline-signal-ok: <reason>'"))
+
+
 # ---------------------------------------------------------------- main
 
 def audit(files):
@@ -663,6 +708,7 @@ def audit(files):
         check_core_imports_ui(path, tree, findings)
         check_recover_field(path, src, tree, findings)
         check_pe_offset_sign(path, src, tree, findings)
+        check_inline_signal(path, src, findings)
     return findings
 
 
