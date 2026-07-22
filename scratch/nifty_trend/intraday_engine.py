@@ -273,16 +273,12 @@ def design_signals(d, name, p):
         long = (dir_ == 1) & (dir_.shift(1) == -1)
         short = (dir_ == -1) & (dir_.shift(1) == 1)
     elif name == "orb_st":                      # ORB breakout confirmed by Supertrend direction
-        orm = int(p.get("or_min", 30)); k = p.get("orb_k", 1.0); a = engine.atr(d, 14)
-        cutoff = (pd.to_datetime(d.Datetime).dt.time <=
-                  (dt.datetime.combine(dt.date.today(), dt.time(9, 15)) +
-                   dt.timedelta(minutes=orm)).time())
-        orh = H.where(cutoff).groupby(d.day).transform("max") + k * a
-        orl = L.where(cutoff).groupby(d.day).transform("min") - k * a
-        after = ~cutoff
-        dir_ = supertrend(d, int(p.get("st_period", 10)), p.get("st_mult", 3.0))
-        long = after & (C > orh) & (C.shift(1) <= orh) & (dir_ == 1)
-        short = after & (C < orl) & (C.shift(1) >= orl) & (dir_ == -1)
+        # SINGLE SOURCE — live 03_orbst_trader calls the SAME orb.orb_st_signals. Proven
+        # bit-identical to this inline logic; removes the crossover-ATR-ref drift live had.
+        import sys as _s, os as _o
+        _s.path.insert(0, _o.path.abspath(_o.path.join(_o.path.dirname(__file__), "..", "..")))
+        from strategies.signals import orb as _orb_shared
+        long, short = _orb_shared.orb_st_signals(d.Datetime, d.High, d.Low, d.Close, p)
     elif name == "gap_fade":                    # fade a large opening gap back toward prev close
         a = engine.atr(d, 14)
         is_first = d.day != d.day.shift(1)
