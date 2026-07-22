@@ -271,6 +271,7 @@ const COLS=[
   {k:'sl',t:'Stop-loss',on:0},
   {k:'target',t:'Daily target',num:1,on:0},
   {k:'maxtd',t:'Max/day',num:1,on:0},
+  {k:'untouched',t:'⏳ Untouched',num:1,on:0,f:'rng'},
   {k:'created',t:'Created',on:1,f:'text'},
   {k:'config',t:'Config key',on:0,f:'text'},
   {k:'file',t:'File',on:0,f:'text'},
@@ -279,7 +280,7 @@ const COLS=[
 ];
 
 // ---------- live data ----------
-let REG={families:{},strategies:{}}, CFG={}, RUNS={}, TIMERS={};
+let REG={families:{},strategies:{}}, CFG={}, RUNS={}, TIMERS={}, STAB={};
 let ROWS=[], FAMDESC={};
 let S={q:'',group:'family',sort:{k:'id',dir:1},colf:{},showFilters:false};
 let SAVED=[]; try{SAVED=JSON.parse(localStorage.getItem('reg2_saved')||'[]')||[]}catch(e){}
@@ -291,7 +292,7 @@ let collapsed={};
 let VIEW=(()=>{try{return localStorage.getItem('reg2_view')||'quick'}catch(e){return 'quick'}})();
 const VIEWS={
   det:['_idx','id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','oos_sharpe','oos_net','train_sharpe','pval'],
-  ee:['_idx','id','name','source','tf','structure','entry','exit','sl','target','maxtd'],
+  ee:['_idx','id','name','source','tf','structure','entry','exit','sl','target','maxtd','untouched'],
 };
 const VIEWHINT={
   quick:'',
@@ -333,6 +334,21 @@ function srcCell(r){
   if(r.source==='Backtested')return '<span class="src bt" title="Has a validated backtest run">🔬 Backtested</span>';
   if(r.source==='Discretionary')return '<span class="src disc" title="Trading live/paper without a systematic backtest">✋ Discretionary</span>';
   return '<span class="src un" title="No backtest, not deployed">· untested</span>';
+}
+// ⏳ Untouched — kitne din se strategy ke CORE params (entry/exit conditions + SL +
+// target) me ched-chad nahi hui (config audit log se, /api/param-stability). Zyada din =
+// utna hi data SAME params pe collect hua = us data pe utna bharosa. Rang: din badhne pe
+// green (bharosa), naya change (kam din) pe amber.
+function _untouchedCell(r){
+  if(!r._ck) return dash();
+  const s=r._stab; if(!s || s.days==null) return dash();
+  const d=s.days;
+  const col = d>=30?'#3fb950' : d>=14?'#56d364' : d>=7?'#e3b341' : '#f0883e';
+  const lbl = s.ever_changed ? (d+'d') : ('≥'+d+'d');
+  const tip = s.ever_changed
+    ? `Core params (entry/exit + SL + target) ${d} din se unchanged — aakhri badlaav ${s.since}. Yaani ${d} din ka data SAME params pe = utna bharosa.`
+    : `Config-audit tracking (${s.tracked_since||'?'}) se ab tak in params me KOI change nahi — kam se kam ${d} din stable (isse pehle ka record system me nahi → ≥).`;
+  return `<span class="mono" title="${esc(tip)}" style="color:${col};font-weight:600;cursor:help">⏳ ${lbl}</span>`;
 }
 // mirror of risk_gate.default_sl_profile(strategy) → {enabled, mode}. The Stop-loss
 // column must reflect the SAME effective SL the engine applies (honoring
@@ -424,6 +440,8 @@ function buildRows(){
       source,
       target:(_tgt!=null?_tgt:undefined), _tgtsrc:_tgtSrc,
       maxtd:(_ps.max_trades_per_day!=null?_ps.max_trades_per_day:undefined),
+      untouched:((m.config_key&&STAB[m.config_key])?STAB[m.config_key].days:undefined),
+      _stab:((m.config_key&&STAB[m.config_key])?STAB[m.config_key]:null),
       _cfg:c,
       created:(r&&r.created?String(r.created).slice(0,10):undefined),
       config:m.config_key||'', file:(m.live_file||'').replace('strategies/','').replace('_core/',''),
@@ -435,15 +453,17 @@ function buildRows(){
 }
 
 async function load(){
-  const [a,b,c,d]=await Promise.allSettled([
+  const [a,b,c,d,e]=await Promise.allSettled([
     fetch('/api/strategy-registry',{cache:'no-store'}).then(r=>r.json()),
     fetch('/api/config',{cache:'no-store'}).then(r=>r.json()),
     fetch('/lab/runs/index.json',{cache:'no-store'}).then(r=>r.json()),
-    fetch('/api/timer-status',{cache:'no-store'}).then(r=>r.json())]);
+    fetch('/api/timer-status',{cache:'no-store'}).then(r=>r.json()),
+    fetch('/api/param-stability',{cache:'no-store'}).then(r=>r.json())]);
   if(a.status==='fulfilled'&&a.value)REG=a.value;
   if(b.status==='fulfilled'&&b.value)CFG=b.value||{};
   if(c.status==='fulfilled'&&Array.isArray(c.value)) c.value.forEach(r=>{ if(r&&r.slug)RUNS[String(r.slug).toLowerCase()]=r; });
   if(d.status==='fulfilled'&&d.value&&typeof d.value==='object')TIMERS=d.value;
+  if(e.status==='fulfilled'&&e.value&&typeof e.value==='object'&&!e.value.error)STAB=e.value;
   buildRows(); render();
 }
 
@@ -604,6 +624,7 @@ function cell(r,k){
         : `<span class="tgt" title="Per-strategy daily profit-lock (RMS)">₹${Number(r.target).toLocaleString('en-IN')}</span>`;
     }
     case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
+    case 'untouched':return _untouchedCell(r);
     case 'deploy':return deployCell(r);
     case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html">Lab ↗</a>`:dash();
   }

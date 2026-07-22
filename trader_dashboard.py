@@ -958,6 +958,31 @@ def api_strategy_registry():
     except Exception as e:
         return jsonify({"error": str(e), "families": {}, "strategies": {}})
 
+
+@app.route('/api/param-stability', methods=['GET'])
+def api_param_stability():
+    """Days since each strategy's CORE params (entry/exit/SL/target) were last changed,
+    from the config audit log (data/rms_audit_log.json). Powers the registry 'Untouched'
+    column — how many days of data were collected on the SAME params (= trust). Read-only."""
+    try:
+        import param_stability as ps
+        try:
+            cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        except Exception:
+            cfg = {}
+        cks = set()
+        for k, v in (cfg or {}).items():
+            if k in _AUDIT_SKIP_TOP or k in ("_risk", "webhooks"):
+                continue
+            if isinstance(v, dict):
+                cks.add(k)                       # strategy config blocks
+        for sid in ((cfg.get("_risk") or {}).get("per_strategy") or {}):
+            cks.add(sid)                          # RMS per-strategy overrides
+        ist = datetime.now(timezone.utc).replace(tzinfo=None) + timedelta(hours=5, minutes=30)
+        return jsonify(ps.compute(str(RMS_AUDIT_FILE), cks, today=ist.date()))
+    except Exception as e:
+        return jsonify({"error": str(e)})
+
 # --- Family-10 (Factor/Equity) PAPER-deploy toggle: these are standalone systemd-timer bots
 #     (monthly rebalance), NOT dashboard-Popen intraday loops. The registry "▶ Paper" button
 #     enables/disables the timer. PAPER-ONLY + whitelisted units (no arbitrary systemctl, no
