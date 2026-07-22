@@ -138,6 +138,8 @@
   .mini{font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:6px;cursor:pointer;border:1px solid var(--bd);background:var(--panel2);color:var(--tx);white-space:nowrap}
   .mini+.mini{margin-left:4px}.mini:hover{filter:brightness(1.35)}
   .mini.pa{border-color:#238636;color:var(--grn)}.mini.lv{border-color:#1f6feb;color:var(--blue)}.mini.stop{border-color:#da3633;color:var(--red)}
+  .dlv{font-size:9.5px;font-weight:600;color:var(--mut2);cursor:pointer;margin-left:7px;letter-spacing:.2px}
+  .dlv:hover{color:var(--blue)}
   .lnk{color:var(--blue);font-size:12px}
   .foot{color:var(--mut2);font-size:11px;margin-top:10px;text-align:center}
   .hk{font-size:10.5px;color:var(--mut2);border:1px solid var(--bd);border-radius:5px;padding:3px 7px;letter-spacing:.3px}
@@ -611,9 +613,12 @@ function deployCell(r){
   }
   if(!r._ck) return dash();
   const live=liveNow(r._ck);
+  // ONE primary button per row (consistent footprint). Running → Stop. Stopped → Paper (safe
+  // default); Live stays reachable as a subtle secondary link — a real-orders action shouldn't
+  // be an equal-weight one-click button.
   return (live && live!=='off')
     ? `<button class="mini stop" onclick="regDeploy(event,'${r._ck}','stop')">⏹ Stop</button>`
-    : `<button class="mini pa" onclick="regDeploy(event,'${r._ck}','paper')">▶ Paper</button><button class="mini lv" onclick="regDeploy(event,'${r._ck}','live')">💰 Live</button>`;
+    : `<button class="mini pa" onclick="regDeploy(event,'${r._ck}','paper')">▶ Paper</button><span class="dlv" title="Deploy LIVE — real orders" onclick="regDeploy(event,'${r._ck}','live')">live ↗</span>`;
 }
 function isDep(r){ const live=liveNow(r._ck); return (live&&live!=='off')||(r._timer&&(TIMERS[r._timer]||{}).active); }
 function trow(r,vis){return `<tr class="${isDep(r)?'dep':''}">`+vis.map(c=>`<td class="${c.num?'num':''} ${fzc(c.k)}">${cell(r,c.k)}</td>`).join('')+`</tr>`;}
