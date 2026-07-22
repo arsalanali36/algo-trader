@@ -177,6 +177,13 @@
   .slcell{font-size:11.5px}.slcell .slt{font-weight:700;color:var(--org)}.slcell .sep{color:var(--mut2);margin:0 3px}
   .tgt{font-family:var(--mono);color:var(--grn);font-weight:600}
   .off{color:var(--mut2)}
+  /* ---- multi-select checkbox filter ---- */
+  .fmulti{width:100%;background:var(--bg);border:1px solid var(--bd);color:var(--tx);font-size:11px;
+    padding:4px 6px;border-radius:5px;cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fmulti:hover{border-color:var(--blue)}
+  .fmulti.act{border-color:var(--blue);color:#79b8ff}
+  .selmenu{max-height:300px;overflow:auto;min-width:170px}
+  .selmenu .mrow{text-transform:capitalize}
 </style></head>
 <body>
 <div class="wrap">
@@ -235,7 +242,8 @@ const COLS=[
   {k:'id',t:'ID',on:1},
   {k:'name',t:'Name',on:1,f:'text'},
   {k:'verdict',t:'Verdict',on:1,f:'sel',opts:['WINNER','weak','—']},
-  {k:'status',t:'Status',on:1,f:'sel',opts:['paper','live','research','rejected','failed','legacy']},
+  {k:'status',t:'Status',on:1,f:'sel',opts:['paper','live','research','rejected','failed','legacy','retired']},
+  {k:'source',t:'Source',on:1,f:'sel',opts:['Backtested','Discretionary','untested']},
   {k:'instrument',t:'Instr',on:1,f:'sel',opts:['NIFTY','BankNifty','Stocks']},
   {k:'hold',t:'Hold',on:1,f:'sel',opts:['Intraday','Overnight','Positional']},
   {k:'structure',t:'Structure',on:1,f:'sel',opts:['Naked ATM','Straddle','Strangle','Spread','Backspread','Condor','Cash Equity']},
@@ -247,7 +255,6 @@ const COLS=[
   {k:'trades',t:'Trades',num:1,on:1,f:'rng'},
   {k:'pval',t:'Signif',num:1,on:1,f:'rng'},
   // ---- extra columns surfaced by the Detailed / Entry-Exit views (off in Quick) ----
-  {k:'source',t:'Source',on:0,f:'sel',opts:['Backtested','Discretionary','untested']},
   {k:'net',t:'Net %',num:1,on:0,f:'rng'},
   {k:'pf',t:'PF',num:1,on:0,f:'rng'},
   {k:'oos_sharpe',t:'OOS Sharpe',num:1,on:0,f:'rng'},
@@ -321,18 +328,37 @@ function srcCell(r){
   if(r.source==='Discretionary')return '<span class="src disc" title="Trading live/paper without a systematic backtest">✋ Discretionary</span>';
   return '<span class="src un" title="No backtest, not deployed">· untested</span>';
 }
+// mirror of risk_gate.default_sl_profile(strategy) → {enabled, mode}. The Stop-loss
+// column must reflect the SAME effective SL the engine applies (honoring
+// default_sl_enabled — a strategy can have mode:aggressive but the feature OFF).
+function slProfile(ck){
+  const risk=(CFG._risk)||{}, g=risk.global||{}, ps=(risk.per_strategy&&risk.per_strategy[ck])||{};
+  let mode=g.default_sl_mode, en;
+  if(['legacy','dropdown','aggressive'].includes(mode)) en=(g.default_sl_enabled==null)?true:!!g.default_sl_enabled;
+  else if(g.default_tsl_enabled){en=true;mode='aggressive';}
+  else if(g.default_sl_type){en=true;mode='dropdown';}
+  else if(g.default_sl_rs){en=true;mode='legacy';}
+  else {en=false;mode='dropdown';}
+  const pm=ps.default_sl_mode; if(['legacy','dropdown','aggressive'].includes(pm)) mode=pm;
+  const pe=ps.default_sl_enabled; if(pe!=null&&pe!=='') en=(typeof pe==='boolean')?pe:String(pe).toLowerCase()==='true';
+  return {en,mode,g,ps};
+}
+function _cv(ps,g,key){const v=ps[key]; return (v==null||String(v).trim()==='')?g[key]:v;}
 function slDisplay(r){
   if(!r._ck)return dash();
-  const risk=(CFG._risk)||{}, gl=risk.global||{}, ps=(risk.per_strategy&&risk.per_strategy[r._ck])||{};
-  const mode=ps.default_sl_mode||gl.default_sl_mode||'legacy';
-  let parts;
+  const {en,mode,g,ps}=slProfile(r._ck);
+  if(!en) return '<div class="slcell"><span class="off">— own exit</span></div>';  // RMS default SL off → strategy's own backtested exit (see Exit rules)
+  let label,val;
   if(mode==='aggressive'){
-    const isl=(ps.default_tsl_initial_sl_per_lot!=null?ps.default_tsl_initial_sl_per_lot:gl.default_tsl_initial_sl_per_lot);
-    parts=['Aggressive TSL']; if(isl!=null)parts.push('init SL ₹'+Number(isl).toLocaleString('en-IN')+'/lot'); parts.push('trail');
+    const isl=_cv(ps,g,'default_tsl_initial_sl_per_lot');
+    label='Aggressive TSL'; val=(isl!=null)?('SL ₹'+Number(isl).toLocaleString('en-IN')+'/lot · trail'):'trail';
+  }else if(mode==='legacy'){
+    let sl=_cv(ps,g,'default_legacy_sl_rs'); if(sl==null||sl==='')sl=_cv(ps,g,'default_sl_rs');
+    label='Fixed SL'; val=(sl!=null&&sl!=='')?('₹'+Number(sl).toLocaleString('en-IN')+'/lot'):'—';
   }else{
-    const t=gl.default_sl_type,v=gl.default_sl_val; parts=[mode]; if(v)parts.push('SL '+v+(t?(' '+t):''));
+    const t=g.default_sl_type,v=g.default_sl_val; label='SL'; val=(v?(v+(t?(' '+t):'')):'—');
   }
-  return `<div class="slcell"><span class="slt">${esc(parts[0])}</span>${parts.slice(1).map(p=>`<span class="sep">·</span>${esc(p)}`).join('')}</div>`;
+  return `<div class="slcell"><span class="slt">${esc(label)}</span><span class="sep">·</span>${esc(val)}</div>`;
 }
 
 // _meta.hidden — dead configs / non-strategies / garbage ids. Same ONE list every
@@ -365,9 +391,13 @@ function buildRows(){
       if(r.significant && _sh>=1) verdict='WINNER';
       else if(_sh>=1 && _p!=null && _p<0.10) verdict='weak';
     }
+    // "legacy" is a lifecycle label, but these ARE deployed and running in paper/live —
+    // show their actual runtime mode (like the rest of the fleet), not "legacy".
+    let _st=m.status||'research';
+    if(_st==='legacy' && (c.mode==='paper'||c.mode==='live')) _st=c.mode;
     return {
       id, fam:id.split('.')[0], name:m.name||'',
-      status:m.status||'research',
+      status:_st, _reg_status:(m.status||'research'),
       instrument:m.instrument, hold:m.hold, structure:m.structure,
       legs:(m.legs!=null?m.legs:undefined),
       verdict,
@@ -477,7 +507,10 @@ function pass(r){
   if(S.q){const q=S.q.toLowerCase(); if(!((r.id+' '+r.name+' '+r.config+' '+r.file).toLowerCase().includes(q))) return false;}
   for(const k in S.colf){const f=S.colf[k];const v=r[k];
     if(f==null||f==='') continue;
-    if(typeof f==='object'){ // range
+    if(Array.isArray(f)){ // multi-select checkbox
+      if(f.length===0) continue;
+      if(!f.some(x=>String(x).toLowerCase()===String(v==null?'':v).toLowerCase())) return false;
+    } else if(typeof f==='object'){ // range
       if(v==null||v===''||isNaN(v)) return false;
       if(f.min!=null && !(Number(v)>=f.min)) return false;
       if(f.max!=null && !(Number(v)<=f.max)) return false;
@@ -500,7 +533,8 @@ function renderChips(){
   const c=[];
   if(S.q)c.push(['Search','"'+S.q+'"']);
   for(const k in S.colf){const f=S.colf[k];if(f==null||f==='')continue;
-    let txt=typeof f==='object'?[f.min!=null?'≥'+f.min:'',f.max!=null?'≤'+f.max:''].filter(Boolean).join(' '):f;
+    let txt=Array.isArray(f)?f.join(', '):(typeof f==='object'?[f.min!=null?'≥'+f.min:'',f.max!=null?'≤'+f.max:''].filter(Boolean).join(' '):f);
+    if(Array.isArray(f)&&!f.length)continue;
     c.push([(COLS.find(x=>x.k===k)||{t:k}).t,txt,k]);}
   const el=document.getElementById('fchips');
   if(!c.length){el.innerHTML='';return;}
@@ -585,7 +619,7 @@ function render(){
   let frow=`<tr class="frow ${S.showFilters?'':'hide'}">`+vis.map(c=>{const z=fzc(c.k);
     if(!c.f)return `<th class="${z}"></th>`;
     if(c.f==='rng')return `<th class="${z}"><div class="fcell rng"><input placeholder="min" value="${S.colf[c.k]&&S.colf[c.k].min!=null?S.colf[c.k].min:''}" oninput="setRng('${c.k}','min',this.value)"><input placeholder="max" value="${S.colf[c.k]&&S.colf[c.k].max!=null?S.colf[c.k].max:''}" oninput="setRng('${c.k}','max',this.value)"></div></th>`;
-    if(c.f==='sel')return `<th class="${z}"><div class="fcell"><select onchange="setColf('${c.k}',this.value)"><option value="">All</option>${c.opts.map(o=>`<option ${S.colf[c.k]===o?'selected':''}>${o}</option>`).join('')}</select></div></th>`;
+    if(c.f==='sel')return `<th class="${z}">${selFilterCell(c)}</th>`;
     return `<th class="${z}"><div class="fcell"><input placeholder="filter…" value="${S.colf[c.k]||''}" oninput="setColf('${c.k}',this.value)"></div></th>`;
   }).join('')+`</tr>`;
   document.getElementById('thead').innerHTML=head+frow;
@@ -608,6 +642,33 @@ function render(){
   document.getElementById('foot').innerHTML=`${rows.length} of ${ROWS.length} strategies · sorted by ${(COLS.find(c=>c.k===S.sort.k)||{t:''}).t} ${S.sort.dir>0?'▲':'▼'}`;
 }
 function setColf(k,v){if(v==='')delete S.colf[k];else S.colf[k]=v;render();}
+// ---------- multi-select checkbox filter (sel columns: status/source/instr/hold/structure/verdict) ----------
+function selFilterCell(c){
+  const cur=S.colf[c.k]; const arr=Array.isArray(cur)?cur:(cur?[cur]:[]);
+  const lbl=arr.length?(arr.length+' selected'):'All';
+  return `<div class="fcell"><button type="button" class="fmulti ${arr.length?'act':''}" onclick="openSelFilter(event,'${c.k}')">${esc(lbl)} <span style="color:var(--mut2)">▾</span></button></div>`;
+}
+function openSelFilter(e,k){
+  e.stopPropagation();
+  document.querySelectorAll('.selmenu').forEach(m=>m.remove());
+  const c=COLS.find(x=>x.k===k); if(!c)return;
+  const cur=S.colf[k]; const arr=Array.isArray(cur)?cur.slice():(cur?[String(cur)]:[]);
+  const m=document.createElement('div'); m.className='menu selmenu open';
+  m.onclick=ev=>ev.stopPropagation();
+  m.innerHTML='<div class="mhead">'+esc(c.t)+' — pick any</div>'+
+    c.opts.map(o=>`<label class="mrow"><input type="checkbox" ${arr.includes(o)?'checked':''} onchange="toggleSel('${k}','${o.replace(/'/g,"\\'")}',this.checked)">${esc(o)}</label>`).join('')+
+    '<div class="msep"></div><div class="mrow mact" onclick="clearSel(\''+k+'\')">✕ Clear</div>';
+  document.body.appendChild(m);
+  const r=e.currentTarget.getBoundingClientRect();
+  m.style.position='fixed'; m.style.top=(r.bottom+4)+'px';
+  m.style.left=Math.max(6,Math.min(r.left,window.innerWidth-232))+'px'; m.style.zIndex='999';
+}
+function toggleSel(k,o,on){
+  const cur=S.colf[k]; let arr=Array.isArray(cur)?cur.slice():(cur?[String(cur)]:[]);
+  const i=arr.indexOf(o); if(on&&i<0)arr.push(o); else if(!on&&i>=0)arr.splice(i,1);
+  if(arr.length)S.colf[k]=arr; else delete S.colf[k]; render();
+}
+function clearSel(k){delete S.colf[k]; document.querySelectorAll('.selmenu').forEach(m=>m.remove()); render();}
 function setRng(k,which,v){S.colf[k]=S.colf[k]&&typeof S.colf[k]==='object'?S.colf[k]:{};
   if(v==='')delete S.colf[k][which];else S.colf[k][which]=Number(v);
   if(!Object.keys(S.colf[k]).length)delete S.colf[k];render();}
@@ -616,7 +677,10 @@ function startRz(e){e.preventDefault();e.stopPropagation();const h=e.target;h.cl
   const mv=ev=>{const w=Math.max(120,Math.min(520,w0+(ev.clientX-x0)));document.documentElement.style.setProperty('--nameW',w+'px');};
   const up=()=>{h.classList.remove('drag');document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);};
   document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);}
-function ctrlFilter(e,col,val){if(e.ctrlKey||e.metaKey){e.stopPropagation();S.colf[col]=val;
+function ctrlFilter(e,col,val){if(e.ctrlKey||e.metaKey){e.stopPropagation();
+  const cur=S.colf[col]; let arr=Array.isArray(cur)?cur.slice():(cur?[String(cur)]:[]);
+  const i=arr.indexOf(val); if(i<0)arr.push(val); else arr.splice(i,1);
+  if(arr.length)S.colf[col]=arr; else delete S.colf[col];
   if(!S.showFilters){S.showFilters=true;document.getElementById('fbtn').classList.add('on');}render();}}
 document.head.insertAdjacentHTML('beforeend',`<style>
   :root{--nameW:240px;--idW:54px}
@@ -624,9 +688,10 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   thead th .th{padding:8px 9px}
   .frow .fcell{padding:4px 6px}
   td .name{display:inline-block;max-width:calc(var(--nameW) - 20px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
-  /* no inner vertical scroll — every strategy flows into the page (page itself scrolls);
-     only horizontal scroll if the table is wider than the window. Sticky header stays at top. */
-  .scroll{overflow-x:auto;overflow-y:visible}
+  /* bounded near-fullscreen scroll box → the column header row (and the frozen id/name
+     columns) stay pinned while the list scrolls. Both axes scroll inside the box, so the
+     toolbar/filters above never scroll away either. */
+  .scroll{overflow:auto;max-height:calc(100vh - 150px)}
   th.fz,td.fz{position:sticky;z-index:3;background:var(--panel)}
   thead th.fz{z-index:9;background:var(--panel2)}
   tbody tr:hover td.fz{background:#191e26}
