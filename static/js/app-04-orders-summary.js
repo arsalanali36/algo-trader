@@ -327,10 +327,19 @@
       // x by real time so widths reflect how long margin was held
       const t0 = toMin(T[0]), t1 = toMin(T[T.length - 1]) || t0 + 1;
       const xAt = i => PAD.l + ((toMin(T[i]) - t0) / ((t1 - t0) || 1)) * gW;
+      // STEP-after: margin is a step function (constant between entry/exit events),
+      // so hold each level flat to the next x then jump vertically — NOT a diagonal
+      // ramp (which wrongly made margin look like it slopes toward the next value /
+      // down to zero). Both top and bottom edges step.
       const areaPath = (topArr, botArr) => {
-        let p = `M${xAt(0).toFixed(1)},${py(botArr[0]).toFixed(1)}`;
-        for (let i = 0; i < T.length; i++) p += ` L${xAt(i).toFixed(1)},${py(topArr[i]).toFixed(1)}`;
-        for (let i = T.length - 1; i >= 0; i--) p += ` L${xAt(i).toFixed(1)},${py(botArr[i]).toFixed(1)}`;
+        const N = T.length;
+        const X = i => xAt(i).toFixed(1);
+        const Yt = i => py(topArr[i]).toFixed(1);
+        const Yb = i => py(botArr[i]).toFixed(1);
+        let p = `M${X(0)},${Yb(0)} L${X(0)},${Yt(0)}`;
+        for (let i = 1; i < N; i++) p += ` L${X(i)},${Yt(i - 1)} L${X(i)},${Yt(i)}`;   // top edge L→R, step-after
+        p += ` L${X(N - 1)},${Yb(N - 1)}`;                                              // down the right edge
+        for (let i = N - 1; i >= 1; i--) p += ` L${X(i)},${Yb(i - 1)} L${X(i - 1)},${Yb(i - 1)}`;  // bottom edge R→L
         return p + ' Z';
       };
       const sellTop = sell.map(v => v || 0);

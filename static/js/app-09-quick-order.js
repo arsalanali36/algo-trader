@@ -108,16 +108,21 @@
 <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">jo <b id="qo-leg-hint" style="color:#adbac7">CE</b> select hai usi pe BUY/SELL chalega</div>
 </div>
 <div id="qo-trigger-actions" style="display:none">
+<div style="display:flex;gap:6px;margin-bottom:8px">
+  <div style="flex:1">
+    <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:4px">SL (pt)</div>
+    <input id="qo-trig-sl" type="number" step="0.5" value="20" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:13px;outline:none;box-sizing:border-box">
+  </div>
+  <div style="flex:1">
+    <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:4px">TARGET (pt)</div>
+    <input id="qo-trig-tp" type="number" step="0.5" value="30" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:13px;outline:none;box-sizing:border-box">
+  </div>
+</div>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px">
   <button onclick="qoArm('BUY')"  style="padding:11px;background:#238636;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm BUY <span id="qo-arm-buy-leg" style="font-size:11px;opacity:.85">CE</span></button>
   <button onclick="qoArm('SELL')" style="padding:11px;background:#da3633;border:none;border-radius:6px;color:#fff;font-size:13px;font-weight:bold;cursor:pointer">Arm SELL <span id="qo-arm-sell-leg" style="font-size:11px;opacity:.85">CE</span></button>
 </div>
-<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">fire = marketable-limit (auto) &middot; RMS-gated &middot; 3:15 ke baad no-fire</div>
-<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">
-  <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px">ARMED</span>
-  <button onclick="qoOpenTrigChart()" title="Chart pe levels dekho" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:10px;font-weight:bold;padding:3px 9px;cursor:pointer">&#128202; Chart</button>
-</div>
-<div id="qo-armed-list"></div>
+<div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">fire = marketable-limit &middot; RMS-gated &middot; auto SL/target &middot; armed list → Orders &middot; 🎯 Triggers</div>
 </div>
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
@@ -471,6 +476,9 @@
         show('qo-price-block', tab === 'instant');   // trigger fires marketable — no limit box
         const st = document.getElementById('qo-status');
         if (st && tab === 'trigger') { st.textContent = 'Trigger mode — level + direction do'; st.style.color = '#8b949e'; }
+        // Poll keeps the live SPOT + direction-hint fresh; the armed-trigger LIST now
+        // lives in Orders → 🎯 Price Triggers (app-02) — qoRefreshTriggers skips its
+        // render here since #qo-armed-list was removed (guarded).
         if (tab === 'trigger') { qoRefreshTriggers(); if (!_qoTrigTimer) _qoTrigTimer = setInterval(qoRefreshTriggers, 2000); }
         else { clearInterval(_qoTrigTimer); _qoTrigTimer = null; }
       };
@@ -502,11 +510,14 @@
         const lots = parseInt(document.getElementById('qo-lots').value) || 1;
         let dir = window.qoTrigDir;
         if (!dir && window._qoTrigSpot != null) dir = level > window._qoTrigSpot ? 'above' : 'below';
+        const slPt = parseFloat(document.getElementById('qo-trig-sl')?.value);
+        const tpPt = parseFloat(document.getElementById('qo-trig-tp')?.value);
         st.textContent = 'Arming...'; st.style.color = '#d29922';
         try {
           const r = await fetch('/api/triggers', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: qoSym, level, direction: dir, opt_type: optType, side, lots, offset: qoAtm, mode: qoMode, broker: qoBroker })
+            body: JSON.stringify({ symbol: qoSym, level, direction: dir, opt_type: optType, side, lots, offset: qoAtm, mode: qoMode, broker: qoBroker,
+              sl_pt: isFinite(slPt) ? slPt : 20, tp_pt: isFinite(tpPt) ? tpPt : 30 })
           });
           const j = await r.json();
           st.textContent = j.msg || (j.ok ? 'Armed' : 'Error');

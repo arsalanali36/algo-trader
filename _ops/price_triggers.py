@@ -132,6 +132,15 @@ def add_trigger(t, arm_spot):
         offset = int(t.get("offset", 0))
     except (TypeError, ValueError):
         offset = 0
+    # per-position SL / target in premium POINTS — default 20pt SL, 30pt target
+    try:
+        sl_pt = float(t.get("sl_pt", 20))
+    except (TypeError, ValueError):
+        sl_pt = 20.0
+    try:
+        tp_pt = float(t.get("tp_pt", 30))
+    except (TypeError, ValueError):
+        tp_pt = 30.0
 
     if symbol not in _VALID_SYMBOL:
         return False, f"Symbol {symbol} supported nahi"
@@ -165,6 +174,8 @@ def add_trigger(t, arm_spot):
         "offset": offset,
         "side": side,
         "lots": lots,
+        "sl_pt": sl_pt,
+        "tp_pt": tp_pt,
         "mode": mode,
         "broker": broker,
         "arm_spot": round(float(arm_spot), 2) if arm_spot is not None else None,

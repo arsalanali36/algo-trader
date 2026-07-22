@@ -44,6 +44,7 @@
       { id: 'run_up', l: 'Run-Up', a: 'right', on: true },
       { id: 'run_down', l: 'Run-Down', a: 'right', on: true },
       { id: 'qty', l: 'Qty', a: 'left', on: true },
+      { id: 'lots', l: 'Lots', a: 'left', on: true, title: 'Number of lots = qty ÷ lot size' },
       { id: 'chart', l: 'Chart', a: 'center', on: true },
       { id: 'actions', l: 'Actions', a: 'center', on: true, fixed: true }
     ];

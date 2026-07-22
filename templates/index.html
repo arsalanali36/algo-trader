@@ -1466,7 +1466,7 @@
           <span id="notif-badge"
             style="display:none; position:absolute; top:-2px; right:-4px; min-width:15px; height:15px; padding:0 3px; border-radius:8px; background:#f85149; color:#fff; font-size:9px; font-weight:700; line-height:15px; text-align:center; font-family:sans-serif;">0</span>
         </div>
-        <div id="notif-panel"
+        <div id="notif-panel" onclick="event.stopPropagation()"
           style="display:none; position:absolute; top:34px; right:0; width:400px; max-height:70vh; background:#161b22; border:1px solid #30363d; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.6); z-index:10000; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; flex-direction:column;">
           <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-bottom:1px solid #30363d;">
             <span style="font-size:13px; font-weight:700; color:#e6edf3;">Notifications</span>
@@ -1910,7 +1910,10 @@
     <div class="card" id="ord-triggers-card" style="display:none">
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
         <div style="font-size:13px;font-weight:600;color:#adbac7">🎯 Price Triggers <span id="ord-trig-count" style="color:#8b949e;font-weight:400;font-size:11px"></span></div>
-        <div style="font-size:11px;color:#6e7681">Spot level cross → auto ATM option order — waiting for their level</div>
+        <div style="display:flex;align-items:center;gap:10px">
+          <span style="font-size:11px;color:#6e7681">Spot level cross → auto ATM option order</span>
+          <button onclick="if(typeof qoOpenTrigChart==='function')qoOpenTrigChart()" title="Chart pe armed levels dekho" style="background:#21262d;border:1px solid #30363d;border-radius:5px;color:#adbac7;font-size:11px;font-weight:600;padding:3px 10px;cursor:pointer">📊 Chart</button>
+        </div>
       </div>
       <div id="ord-triggers"></div>
     </div>

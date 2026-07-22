@@ -1047,6 +1047,10 @@
                   case 'qty':
                     val = qty;
                     break;
+                  case 'lots':
+                    val = (t.lot_size && qty) ? Math.round(qty / t.lot_size) : '—';
+                    colorStyle = 'color:#adbac7;';
+                    break;
                   case 'chart':
                     val = `<button onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date || ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
                     break;
@@ -1124,6 +1128,11 @@
             });
             tableHtml += '</tr></tfoot></table>';
 
+            // group margin (real hedged basket if available, else summed) — shown
+            // in the COLLAPSED summary so you see capital-in-use without expanding.
+            const _gmObj = (window._ordGroupMargin || {})[stratKey];
+            const grpMarginDisp = Math.round((_gmObj && _gmObj.hedged != null ? _gmObj.hedged : grpMargin) || 0).toLocaleString('en-IN');
+
             oh += `
       <details ${_grpOpenAttr(grpId)} ontoggle="_grpToggleSave('${grpId}', this.open)" style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
@@ -1133,6 +1142,7 @@
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
           </div>
           <div style="display:flex; align-items:baseline; gap:10px; margin-right:14px; white-space:nowrap;" title="Group unrealized total — ₹ / points / return %">
+            <span style="font-size:11px;font-weight:400;color:#6e7681" title="Margin in use (real hedged basket)">💰 ₹${grpMarginDisp}</span>
             <span class="grp-tot-unrl" data-grp="${grpId}" style="font-size:13px;font-weight:700;color:#8b949e">—</span>
             <span class="grp-tot-pts" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
             <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>

@@ -3248,10 +3248,21 @@ def _fire_price_trigger(t, spot, log=print):
     if not lot_size:
         # never guess a lot size (feedback_no_assumptions) — abort loudly
         return False, f"Lot size resolve nahi hua ({trad_sym}) — order NAHI bheja"
+    # Auto per-position SL/target in premium POINTS (default 20pt SL / 30pt target,
+    # overridable per-trigger). pos_monitor reads these SL_TYPE:pt / TP_TYPE:pt tags.
+    xtags = []
+    try:
+        _slp = float(t.get("sl_pt", 20) or 0); _tpp = float(t.get("tp_pt", 30) or 0)
+        if _slp > 0:
+            xtags += ["SL_TYPE:pt", "SL_VAL:%s" % _slp]
+        if _tpp > 0:
+            xtags += ["TP_TYPE:pt", "TP_VAL:%s" % _tpp]
+    except Exception:
+        pass
     res = gw.execute_signal(
         "manual_trigger", symbol, side, lots, int(lot_size), sec_id, trad_sym,
         seg="NSE_FNO", mode=mode, broker_name=broker, tag="TRIGGER",
-        source="trigger", gate=True, log=log)
+        source="trigger", gate=True, extra_tags=xtags, log=log)
     if res.get("ok"):
         px = res.get("price")
         pxs = f" @ {px:.2f}" if px else ""
@@ -3638,9 +3649,9 @@ def api_margin_history():
             s_m = _to_min(r.get("entry_time"))
             if s_m is None:
                 continue
-            e_m = _to_min(r.get("exit_time"))
-            if e_m is None:            # still open ("—") → held to end of window
-                e_m = end_m
+            e_raw = _to_min(r.get("exit_time"))
+            is_open = e_raw is None    # still open ("—") → held to end of window
+            e_m = end_m if is_open else e_raw
             e_m = min(max(e_m, s_m), CLOSE_M)
             side = str(r.get("entry") or "").upper()
             try:
@@ -3648,21 +3659,26 @@ def api_margin_history():
                     else float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
             except Exception:
                 mgn = float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
-            positions.append((s_m, e_m, side, float(mgn or 0)))
+            positions.append((s_m, e_m, side, float(mgn or 0), is_open))
     except Exception:
         positions = []
 
     # Event-driven step timeline: recompute the in-use sum at every entry/exit
     # boundary (exact step function, no minute-grid rounding).
     tset = {OPEN_M, end_m}
-    for (s_m, e_m, _s, _mg) in positions:
+    for (s_m, e_m, _s, _mg, _op) in positions:
         tset.add(s_m); tset.add(e_m)
     tpoints = sorted(t for t in tset if OPEN_M <= t <= CLOSE_M)
+    # A closed leg drops OUT at its exit (exclusive: s_m<=t<e_m); a still-open leg
+    # is held THROUGH the terminal 'now' point (inclusive: s_m<=t<=e_m) so the line
+    # continues at the current margin-in-use instead of collapsing to 0 at 'now'.
+    def _active(s_m, e_m, op, t):
+        return (s_m <= t <= e_m) if op else (s_m <= t < e_m)
     times, buy, sell = [], [], []
     peak = 0.0
     for t in tpoints:
-        b = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "BUY" and s_m <= t < e_m)
-        s = sum(mg for (s_m, e_m, sd, mg) in positions if sd == "SELL" and s_m <= t < e_m)
+        b = sum(mg for (s_m, e_m, sd, mg, op) in positions if sd == "BUY" and _active(s_m, e_m, op, t))
+        s = sum(mg for (s_m, e_m, sd, mg, op) in positions if sd == "SELL" and _active(s_m, e_m, op, t))
         times.append(f"{t // 60:02d}:{t % 60:02d}")
         buy.append(round(b, 2)); sell.append(round(s, 2))
         peak = max(peak, b + s)
@@ -5164,17 +5180,20 @@ def _margin_warm_start():
         _margin_warm_started = True
         _threading.Thread(target=_margin_warm_loop, daemon=True).start()
 
-def _enrich_trade_display(trades):
-    """Add DISPLAY-ONLY `lot_size` + `margin` to each completed-trade dict —
-    consumed by the trade table's Margin column and the Gain/Loss hover's lot-size
-    line. Never changes any order. BUY margin = premium × qty (exact); SELL margin =
-    real Dhan SPAN from the background-warmed cache (est ~), "—" until warmed."""
+def _enrich_trade_display(trades, lot_only=False):
+    """Add DISPLAY-ONLY `lot_size` (+ `margin` for completed trades) to each row —
+    consumed by the trade table's Margin column, the Open Positions Lots column and
+    the Gain/Loss hover's lot-size line. Never changes any order. `lot_only=True`
+    (open positions) adds only lot_size — opens already carry `margin_used`.
+    BUY margin = premium × qty (exact); SELL margin = real Dhan SPAN from the
+    background-warmed cache (est ~), "—" until warmed."""
     try:
         import dhan_master as _dm
     except Exception:
         _dm = None
     cache = _margin_cache_load()
-    _margin_warm_start()
+    if not lot_only:
+        _margin_warm_start()
     for t in (trades or []):
         try:
             lot = _dm.get_lot_size_by_sec_id(t.get('sec_id')) if _dm else None
@@ -5182,6 +5201,8 @@ def _enrich_trade_display(trades):
                 t['lot_size'] = int(lot)
         except Exception:
             pass
+        if lot_only:
+            continue
         try:
             ep = float(t.get('entry_price') or 0); q = float(t.get('qty') or 0)
             side = str(t.get('entry')).upper()
@@ -5327,7 +5348,8 @@ def api_orders():
             data['group_margin'] = {}
     except Exception as _e:
         pass
-    _enrich_trade_display(data.get('details'))   # lot_size + margin for the table
+    _enrich_trade_display(data.get('details'))              # lot_size + margin for the table
+    _enrich_trade_display(data.get('open'), lot_only=True)  # lot_size for Open Positions Lots column
     return jsonify(data)
 
 
