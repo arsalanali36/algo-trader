@@ -176,14 +176,17 @@
   .chip.off2 b,.chip.off2 .v{color:var(--mut2)}
   .slcell{font-size:11.5px}.slcell .slt{font-weight:700;color:var(--org)}.slcell .sep{color:var(--mut2);margin:0 3px}
   .tgt{font-family:var(--mono);color:var(--grn);font-weight:600}
+  .tgt.gtgt{color:#8a9a8f;font-weight:500}
+  .gtag{font-size:8.5px;color:var(--mut2);border:1px solid var(--bd);border-radius:4px;padding:0 3px;font-family:system-ui;text-transform:uppercase;letter-spacing:.3px;vertical-align:middle}
   .off{color:var(--mut2)}
   /* ---- multi-select checkbox filter ---- */
   .fmulti{width:100%;background:var(--bg);border:1px solid var(--bd);color:var(--tx);font-size:11px;
     padding:4px 6px;border-radius:5px;cursor:pointer;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .fmulti:hover{border-color:var(--blue)}
   .fmulti.act{border-color:var(--blue);color:#79b8ff}
-  .selmenu{max-height:300px;overflow:auto;min-width:170px}
-  .selmenu .mrow{text-transform:capitalize}
+  .selmenu{max-height:320px;overflow:auto;min-width:132px;width:max-content;max-width:190px;padding:5px}
+  .selmenu .mhead{padding:3px 7px 4px}
+  .selmenu .mrow{text-transform:capitalize;padding:5px 7px;gap:7px}
 </style></head>
 <body>
 <div class="wrap">
@@ -239,6 +242,7 @@
 <script>
 // ---------- column defs ----------
 const COLS=[
+  {k:'_idx',t:'#',on:1},
   {k:'id',t:'ID',on:1},
   {k:'name',t:'Name',on:1,f:'text'},
   {k:'verdict',t:'Verdict',on:1,f:'sel',opts:['WINNER','weak','—']},
@@ -263,7 +267,7 @@ const COLS=[
   {k:'entry',t:'🔵 Entry conditions',on:0},
   {k:'exit',t:'🟠 Exit rules',on:0},
   {k:'sl',t:'Stop-loss',on:0},
-  {k:'target',t:'Target',num:1,on:0},
+  {k:'target',t:'Daily target',num:1,on:0},
   {k:'maxtd',t:'Max/day',num:1,on:0},
   {k:'created',t:'Created',on:1,f:'text'},
   {k:'config',t:'Config key',on:0,f:'text'},
@@ -284,8 +288,8 @@ let collapsed={};
 // ---------- view modes: Quick (default cols) / Detailed (all metrics) / Entry-Exit (how it trades) ----------
 let VIEW=(()=>{try{return localStorage.getItem('reg2_view')||'quick'}catch(e){return 'quick'}})();
 const VIEWS={
-  det:['id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','oos_sharpe','oos_net','train_sharpe','pval'],
-  ee:['id','name','source','tf','structure','entry','exit','sl','target','maxtd'],
+  det:['_idx','id','name','source','verdict','sharpe','net','maxdd','win','pf','trades','oos_sharpe','oos_net','train_sharpe','pval'],
+  ee:['_idx','id','name','source','tf','structure','entry','exit','sl','target','maxtd'],
 };
 const VIEWHINT={
   quick:'',
@@ -380,7 +384,10 @@ function buildRows(){
     const rc=(r&&r.real_cost)||{}; const c=(m.config_key&&CFG[m.config_key])||{};
     const _risk=(CFG._risk)||{}; const _gl=_risk.global||{}; const _ps=(m.config_key&&_risk.per_strategy&&_risk.per_strategy[m.config_key])||{};
     const source=(r?'Backtested':(((m.status==='live'||m.status==='legacy')||c.active)?'Discretionary':'untested'));
-    const _tgt=(_ps.profit_target_rs!=null?_ps.profit_target_rs:_gl.profit_target_rs);
+    // Daily RMS profit-lock (risk_gate.effective_daily_profit_target): per-strategy → global → off.
+    // Track whether it's the strategy's OWN value or just inherited from the global default.
+    let _tgt=_ps.profit_target_rs, _tgtSrc='strategy';
+    if(_tgt==null){_tgt=_gl.profit_target_rs; _tgtSrc='global';}
     // Verdict from the run's OWN numbers (single source: significance + Sharpe).
     //   WINNER = significant (p<0.05) AND Sharpe>=1 (a real, deployable edge)
     //   weak   = a real edge (Sharpe>=1) that only just missed significance (p<0.10)
@@ -413,7 +420,7 @@ function buildRows(){
       oos_net:(rc.oos&&rc.oos.net_pct!=null?rc.oos.net_pct:undefined),
       train_sharpe:(rc.train&&rc.train.sharpe!=null?rc.train.sharpe:undefined),
       source,
-      target:(_tgt!=null?_tgt:undefined),
+      target:(_tgt!=null?_tgt:undefined), _tgtsrc:_tgtSrc,
       maxtd:(_ps.max_trades_per_day!=null?_ps.max_trades_per_day:undefined),
       _cfg:c,
       created:(r&&r.created?String(r.created).slice(0,10):undefined),
@@ -550,6 +557,7 @@ function fnum(v,dec,suf,cls){ if(v==null||v===''||isNaN(v))return dash();
   const c=cls?cls(+v):''; return `<span class="${c}">${(+v).toFixed(dec)}${suf||''}</span>`; }
 function cell(r,k){
   switch(k){
+    case '_idx':return `<span class="idx">${r._gidx||''}</span>`;
     case 'id':return `<span class="id">${r.id}</span>`;
     case 'name':return `<span class="name" title="${esc(r.name)}">${esc(r.name)}</span>`;
     case 'verdict':{const cf=`title="Ctrl+click to filter" onclick="ctrlFilter(event,'verdict','${r.verdict}')"`;
@@ -582,7 +590,13 @@ function cell(r,k){
     case 'entry':return `<div class="cellwrap">${chipsFor(r._cfg||{},ENTRY_KEYS,'in')}</div>`;
     case 'exit':return `<div class="cellwrap">${chipsFor(r._cfg||{},EXIT_KEYS,'ex')}</div>`;
     case 'sl':return slDisplay(r);
-    case 'target':return r.target==null?dash():(Number(r.target)>=1000000?'<span class="off">off</span>':`<span class="tgt">₹${Number(r.target).toLocaleString('en-IN')}</span>`);
+    case 'target':{
+      if(r.target==null||Number(r.target)>=1000000)return '<span class="off">off</span>';
+      const glob=(r._tgtsrc==='global');
+      return glob
+        ? `<span class="tgt gtgt" title="Inherited from the global RMS daily profit-lock (₹${Number(r.target).toLocaleString('en-IN')}) — NOT set on this strategy, and NOT in its backtest. When the day's P&L hits this, RMS squares off + blocks new entries.">₹${Number(r.target).toLocaleString('en-IN')} <span class="gtag">global</span></span>`
+        : `<span class="tgt" title="Per-strategy daily profit-lock (RMS)">₹${Number(r.target).toLocaleString('en-IN')}</span>`;
+    }
     case 'maxtd':return r.maxtd!=null?`<span class="mono">${r.maxtd}</span>`:dash();
     case 'deploy':return deployCell(r);
     case 'open':return r._run?`<a class="lnk" href="/lab/runs/${r._slug}/index.html" target="_blank">Lab ↗</a>`:dash();
@@ -603,7 +617,7 @@ function deployCell(r){
 }
 function isDep(r){ const live=liveNow(r._ck); return (live&&live!=='off')||(r._timer&&(TIMERS[r._timer]||{}).active); }
 function trow(r,vis){return `<tr class="${isDep(r)?'dep':''}">`+vis.map(c=>`<td class="${c.num?'num':''} ${fzc(c.k)}">${cell(r,c.k)}</td>`).join('')+`</tr>`;}
-function fzc(k){return k==='id'?'fz fz-id':k==='name'?'fz fz-name':'';}
+function fzc(k){return k==='_idx'?'fz fz-idx':k==='id'?'fz fz-id':k==='name'?'fz fz-name':'';}
 
 function render(){
   renderSaved();renderColsMenu();renderChips();
@@ -630,14 +644,14 @@ function render(){
     const fams=[...new Set(rows.map(r=>r.fam))].sort();
     fams.forEach(f=>{const fr=rows.filter(r=>r.fam===f);const fd=FAMDESC[f]||{name:f,desc:''};
       body+=`<tr class="grp" onclick="collapsed['${f}']=!collapsed['${f}'];render()"><td colspan="${vis.length}"><span class="caret">${collapsed[f]?'▶':'▼'}</span><span class="gid">${f}</span><span class="gname">${esc(fd.name)}</span><span class="gdesc">${esc(fd.desc)}</span><span class="gcount">${fr.length}</span></td></tr>`;
-      if(!collapsed[f])fr.forEach(r=>body+=trow(r,vis));});
+      if(!collapsed[f])fr.forEach((r,i)=>{r._gidx=i+1;body+=trow(r,vis);});});
   } else if(S.group==='status'){
     const order=['live','paper','research','failed','rejected','legacy','retired'];
     const sts=[...new Set(rows.map(r=>r.status))].sort((a,b)=>{const ia=order.indexOf(a),ib=order.indexOf(b);return (ia<0?99:ia)-(ib<0?99:ib);});
     sts.forEach(s=>{const sr=rows.filter(r=>r.status===s);
       body+=`<tr class="grp" onclick="collapsed['st:${s}']=!collapsed['st:${s}'];render()"><td colspan="${vis.length}"><span class="caret">${collapsed['st:'+s]?'▶':'▼'}</span><span class="gname" style="text-transform:capitalize">${s}</span><span class="gcount">${sr.length}</span></td></tr>`;
-      if(!collapsed['st:'+s])sr.forEach(r=>body+=trow(r,vis));});
-  } else rows.forEach(r=>body+=trow(r,vis));
+      if(!collapsed['st:'+s])sr.forEach((r,i)=>{r._gidx=i+1;body+=trow(r,vis);});});
+  } else rows.forEach((r,i)=>{r._gidx=i+1;body+=trow(r,vis);});
   document.getElementById('tbody').innerHTML=body||`<tr><td colspan="${vis.length}" style="text-align:center;color:var(--mut2);padding:30px">No strategies match these filters.</td></tr>`;
   document.getElementById('foot').innerHTML=`${rows.length} of ${ROWS.length} strategies · sorted by ${(COLS.find(c=>c.k===S.sort.k)||{t:''}).t} ${S.sort.dir>0?'▲':'▼'}`;
 }
@@ -683,8 +697,10 @@ function ctrlFilter(e,col,val){if(e.ctrlKey||e.metaKey){e.stopPropagation();
   if(arr.length)S.colf[col]=arr; else delete S.colf[col];
   if(!S.showFilters){S.showFilters=true;document.getElementById('fbtn').classList.add('on');}render();}}
 document.head.insertAdjacentHTML('beforeend',`<style>
-  :root{--nameW:240px;--idW:54px}
+  :root{--nameW:240px;--idW:54px;--idxW:30px}
   tbody td{padding:6px 9px}
+  .idx{color:var(--mut2);font-family:var(--mono);font-size:11px}
+  th.fz-idx .th{padding-left:9px}
   thead th .th{padding:8px 9px}
   .frow .fcell{padding:4px 6px}
   td .name{display:inline-block;max-width:calc(var(--nameW) - 20px);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;vertical-align:middle}
@@ -698,8 +714,9 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   tr.grp td.fz{background:#0b0e13}
   tr.dep td.fz{background:#12251a}
   .frow th.fz{background:var(--panel);z-index:4}
-  .fz-id{left:0;width:var(--idW);min-width:var(--idW)}
-  .fz-name{left:var(--idW);width:var(--nameW);min-width:var(--nameW);max-width:var(--nameW);border-right:1px solid var(--bd)}
+  .fz-idx{left:0;width:var(--idxW);min-width:var(--idxW)}
+  .fz-id{left:var(--idxW);width:var(--idW);min-width:var(--idW)}
+  .fz-name{left:calc(var(--idxW) + var(--idW));width:var(--nameW);min-width:var(--nameW);max-width:var(--nameW);border-right:1px solid var(--bd)}
   .rz{position:absolute;right:0;top:0;bottom:0;width:7px;cursor:col-resize;z-index:10}
   .rz:hover,.rz.drag{background:var(--blue)}
 </style>`);
