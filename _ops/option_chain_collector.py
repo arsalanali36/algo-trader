@@ -246,25 +246,32 @@ def run_snapshot(token, cid, vix_sec_id, strikes, expiry_cache, force=False):
     got_any = False
     for i, u in enumerate(UNDERLYINGS):
         try:
-            # nearest expiry, cached per (underlying, day) — refetch each new day
+            # near + next expiry, cached per (underlying, day) — refetch each new day.
+            # (next expiry → the /curves IV term-structure panel; each expiry's rows
+            #  carry their own `expiry` column so downstream code separates them.)
             ck = (u["name"], day_str)
             if ck not in expiry_cache:
                 exps = fetch_expiry_list(token, cid, u["scrip"], u["seg"])
                 if not exps:
                     log(f"{u['name']}: no expiries returned, skip")
                     continue
-                expiry_cache[ck] = exps[0]
+                expiry_cache[ck] = exps[:2]   # nearest two
                 time.sleep(3.2)  # respect option-chain 1req/3s bucket before the chain call
-            expiry = expiry_cache[ck]
+            exp_list = expiry_cache[ck]
+            if isinstance(exp_list, str):     # backward-compat with an older single-value cache
+                exp_list = [exp_list]
 
-            rows, spot = snapshot_underlying(token, cid, u, expiry, strikes, vix, dt)
-            if rows:
-                path = write_rows(u["name"], day_str, rows)
-                got_any = True
-                log(f"{u['name']} spot={spot} vix={vix} exp={expiry} "
-                    f"strikes={len(rows)//2} -> {os.path.basename(path)}")
-            else:
-                log(f"{u['name']}: empty chain (spot={spot}), skip")
+            for ei, expiry in enumerate(exp_list):
+                if ei > 0:
+                    time.sleep(3.2)           # space the next-expiry chain call (1 req/3s)
+                rows, spot = snapshot_underlying(token, cid, u, expiry, strikes, vix, dt)
+                if rows:
+                    path = write_rows(u["name"], day_str, rows)
+                    got_any = True
+                    log(f"{u['name']} spot={spot} vix={vix} exp={expiry} "
+                        f"strikes={len(rows)//2} -> {os.path.basename(path)}")
+                else:
+                    log(f"{u['name']}: empty chain exp={expiry} (spot={spot}), skip")
         except requests.HTTPError as e:
             log(f"{u['name']} HTTP error: {e} — skip (no row written)")
         except Exception as e:
