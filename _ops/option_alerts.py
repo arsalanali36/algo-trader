@@ -59,6 +59,14 @@ DEFAULTS = {
     "decay_edge_pct": 5.0,     # actual-straddle vs theoretical gap % (decay edge/lag)
     "delta_drift": 0.25,       # |net straddle delta| threshold → directional
     "wall_shift_win": 15,      # lookback minutes for max-OI wall shift
+    "ivrank_high": 70.0,       # IV Rank ≥ → premium-selling attractive
+    "ivrank_low": 20.0,        # IV Rank ≤ → seller avoid (no edge)
+    "vrp_min": 0.0,            # atm_iv − realized_vol ≤ this → VRP edge gone
+    "term_gap": 1.5,           # near-IV − next-IV ≥ → backwardation (event priced)
+    "skew_thr": 3.0,           # put_skew (OTM put−call IV) level for a steepening alert
+    "skew_jump": 1.5,          # put_skew rise over skew_win to fire
+    "skew_win": 15,            # lookback minutes for skew steepening
+    "oi_bomb": 500000,         # single-strike 1-min OI add/unwind (units) → big-bet alert
     "cooldown_min": 12,        # per-alert-type cooldown
 }
 
@@ -239,6 +247,52 @@ def evaluate(underlying, date=None, cfg=None, points=None):
                            f"{int(cfg['wall_shift_win'])}m me. Resistance/support level khisak raha.",
                 })
 
+    # ── 🔥/🧊 IV Rank extremes (premium-selling context) ────────────────────
+    ivr = cur.get("iv_rank")
+    if ivr is not None:
+        if ivr >= cfg["ivrank_high"]:
+            out.append({"key": f"opt_ivrank_high_{U}", "level": "warn",
+                        "msg": f"🔥 {U} IV Rank {ivr:.0f} — IV pichhle dino ke top pe. Premium selling attractive (VRP setup)."})
+        elif ivr <= cfg["ivrank_low"]:
+            out.append({"key": f"opt_ivrank_low_{U}", "level": "warn",
+                        "msg": f"🧊 {U} IV Rank {ivr:.0f} — IV range ke neeche. Seller edge weak — naya short avoid."})
+
+    # ── ⚠️ VRP edge flip (implied ≤ realized = seller cushion gaya) ──────────
+    _iv0, _rv = cur.get("atm_iv"), cur.get("realized_vol")
+    if _iv0 is not None and _rv is not None and (_iv0 - _rv) <= cfg["vrp_min"]:
+        out.append({"key": f"opt_vrp_gone_{U}", "level": "warn",
+                    "msg": f"⚠️ {U} VRP edge gaya — IV {_iv0:.1f} ≤ realized {_rv:.1f} ({_iv0 - _rv:+.1f}). "
+                           f"Seller ka cushion khatam — short risky."})
+
+    # ── 📐 Term backwardation (near-week IV >> next-week = event priced) ─────
+    _nr, _nx = cur.get("iv_near"), cur.get("iv_next")
+    if _nr is not None and _nx is not None and (_nr - _nx) >= cfg["term_gap"]:
+        out.append({"key": f"opt_term_back_{U}", "level": "warn",
+                    "msg": f"📐 {U} term backwardation — near {_nr:.1f} > next {_nx:.1f} ({_nr - _nx:+.1f} vol). "
+                           f"Near-term event/uncertainty priced — crush setup."})
+
+    # ── 🩹 Put-skew steepening (OTM puts IV climbing = hidden hedging bid) ───
+    _ps = cur.get("put_skew")
+    _pspast = _at_or_before(pts, int(cfg["skew_win"]) * 60)
+    if _ps is not None and _ps >= cfg["skew_thr"]:
+        _prev = _pspast.get("put_skew") if _pspast else None
+        _jump = _ps - _prev if _prev is not None else _ps
+        if _jump >= cfg["skew_jump"] or _prev is None:
+            out.append({"key": f"opt_skew_steepen_{U}", "level": "warn",
+                        "msg": f"🩹 {U} put-skew steep — OTM puts IV calls se {_ps:.1f} vol upar (+{_jump:.1f} {int(cfg['skew_win'])}m). "
+                               f"Chhupi hedging / crash-protection buying — aksar spot girne se pehle."})
+
+    # ── 💣 OI bomb (big single-strike 1-min OI add / unwind) ─────────────────
+    _add, _cut = cur.get("oi_add_max") or 0, cur.get("oi_cut_max") or 0
+    if _add >= cfg["oi_bomb"] and _add >= _cut:
+        out.append({"key": f"opt_oi_bomb_{U}", "level": "warn",
+                    "msg": f"💣 {U} bada OI ADD — {cur.get('oi_add_strike'):.0f} strike pe +{_add:,.0f} OI 1-min me. "
+                           f"Institutional bet/hedge ban raha."})
+    elif _cut >= cfg["oi_bomb"]:
+        out.append({"key": f"opt_oi_unwind_{U}", "level": "warn",
+                    "msg": f"💣 {U} bada OI UNWIND — {cur.get('oi_cut_strike'):.0f} strike pe −{_cut:,.0f} OI 1-min me. "
+                           f"Badi position kat rahi."})
+
     # tag each alert with which chart panel + the triggering point's time, so the
     # /curves page can drop a hover-able marker on the right curve at that moment.
     _PANEL = {"gamma_spike": ("gamma", "⚡"), "straddle_crush": ("straddle", "📉"),
@@ -246,7 +300,10 @@ def evaluate(underlying, date=None, cfg=None, points=None):
               "iv_crush": ("iv", "📉"), "iv_pop": ("iv", "📈"),
               "decay_edge": ("decay", "🎯"), "decay_lag": ("decay", "⚠️"),
               "delta_drift": ("delta", "🧭"),
-              "call_wall_shift": ("walls", "🧱"), "put_wall_shift": ("walls", "🧱")}
+              "call_wall_shift": ("walls", "🧱"), "put_wall_shift": ("walls", "🧱"),
+              "ivrank_high": ("ivrank", "🔥"), "ivrank_low": ("ivrank", "🧊"),
+              "vrp_gone": ("rvivsp", "⚠️"), "term_back": ("term", "📐"),
+              "skew_steepen": ("skew", "🩹"), "oi_bomb": ("heatmap", "💣"), "oi_unwind": ("heatmap", "💣")}
     for a in out:
         typ = a["key"][4:].rsplit("_", 1)[0] if a["key"].startswith("opt_") else a["key"]
         panel, tag = _PANEL.get(typ, ("straddle", "•"))

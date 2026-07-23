@@ -753,7 +753,18 @@
     for(var i=0;i<strikes.length;i+=step){ s+='<text x="'+x(i).toFixed(1)+'" y="'+(H-7)+'" fill="#8b949e" text-anchor="middle">'+strikes[i]+'</text>'; }
     s+=poly(pe,'#f0883e')+poly(ce,'#39c5cf');
     var dt=new Date(snap.t*1000), hh=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0');
-    s+='<text x="'+(W-padR)+'" y="'+(padT-3)+'" fill="#8b949e" text-anchor="end">'+hh+' · CE cyan / PE orange · ATM '+snap.atm+'</text></svg>';
+    s+='<text x="'+(W-padR)+'" y="'+(padT-3)+'" fill="#8b949e" text-anchor="end">'+hh+' · CE cyan / PE orange · ATM '+snap.atm+'</text>';
+    // skew steepening alerts: list times (scrub to them) + prominent badge when the shown minute IS an alert
+    var skA=(window.rawAlerts||[]).filter(function(a){return a.panel==='skew';});
+    if(skA.length){
+      var tl=skA.map(function(a){var d=new Date(a.t*1000);return d.getUTCHours().toString().padStart(2,'0')+':'+d.getUTCMinutes().toString().padStart(2,'0');});
+      s+='<text x="'+padL+'" y="'+(padT-3)+'" fill="#f0883e" font-size="10">🩹 skew alerts: '+tl.join(', ')+'</text>';
+      if(skA.some(function(a){return Math.abs(a.t-snap.t)<=90;})){
+        s+='<rect x="'+(W/2-66)+'" y="'+(padT+2)+'" width="132" height="17" rx="3" fill="rgba(240,136,62,.92)"/>'
+          +'<text x="'+(W/2)+'" y="'+(padT+14)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#000">🩹 SKEW ALERT</text>';
+      }
+    }
+    s+='</svg>';
     e.host.innerHTML=s;
   }
 
@@ -788,6 +799,13 @@
     }
     var tstep=Math.max(1,Math.ceil(nT/8));
     for(var ti=0; ti<nT; ti+=tstep){ var dt=new Date(times[ti]*1000), hh=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'); s+='<text x="'+(padL+ti*cw).toFixed(1)+'" y="'+(H-5)+'" fill="#8b949e">'+hh+'</text>'; }
+    // alert markers (panel 'heatmap') at their nearest time column
+    (window.rawAlerts||[]).filter(function(a){return a.panel==='heatmap';}).forEach(function(a){
+      var bi=0,bd=Infinity; for(var ti=0;ti<nT;ti++){ var dd=Math.abs(times[ti]-a.t); if(dd<bd){bd=dd;bi=ti;} }
+      var mxp=padL+bi*cw+cw/2;
+      s+='<line x1="'+mxp.toFixed(1)+'" y1="'+padT+'" x2="'+mxp.toFixed(1)+'" y2="'+(H-padB)+'" stroke="#f0f0f0" stroke-opacity="0.35" stroke-dasharray="2 2"/>'
+        +'<text x="'+mxp.toFixed(1)+'" y="'+(padT+9)+'" text-anchor="middle" font-size="11">'+(a.tag||'💣')+'</text>';
+    });
     s+='</svg>';
     e.host.innerHTML=s;
   }

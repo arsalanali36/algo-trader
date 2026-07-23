@@ -176,6 +176,25 @@ def curves(u, date, expiry=None):
                 pe_oi_by[k] = o
         call_wall = max(ce_oi_by, key=ce_oi_by.get) if ce_oi_by else None
         put_wall = max(pe_oi_by, key=pe_oi_by.get) if pe_oi_by else None
+        # Put skew: avg OTM-put IV − avg OTM-call IV (positive = puts richer = fear/hedging).
+        put_ivs = [_f(l.get("iv")) for l in legs
+                   if l.get("opt_type") == "PE" and _f(l.get("strike")) is not None and _f(l.get("strike")) < atm]
+        call_ivs = [_f(l.get("iv")) for l in legs
+                    if l.get("opt_type") == "CE" and _f(l.get("strike")) is not None and _f(l.get("strike")) > atm]
+        put_ivs = [v for v in put_ivs if v is not None]
+        call_ivs = [v for v in call_ivs if v is not None]
+        put_skew = round(sum(put_ivs) / len(put_ivs) - sum(call_ivs) / len(call_ivs), 2) \
+            if (put_ivs and call_ivs) else None
+        # Biggest single-strike OI add / unwind this minute (heatmap "bomb" alert).
+        oi_add_max, oi_add_strike, oi_cut_max, oi_cut_strike = 0.0, None, 0.0, None
+        for l in legs:
+            c = _f(l.get("chg_oi"))
+            if c is None:
+                continue
+            if c > oi_add_max:
+                oi_add_max, oi_add_strike = c, _f(l.get("strike"))
+            if c < -oi_cut_max:
+                oi_cut_max, oi_cut_strike = -c, _f(l.get("strike"))
         ep = _epoch_ist(dt)
         if ep is None:
             continue
@@ -200,6 +219,9 @@ def curves(u, date, expiry=None):
             "iv_next": round(nmap[dt], 2) if nmap.get(dt) is not None else None,
             "realized_vol": None,    # filled in the realized-vol pass below
             "iv_rank": None,         # filled in the IV-rank pass below
+            "put_skew": put_skew,
+            "oi_add_max": oi_add_max, "oi_add_strike": oi_add_strike,
+            "oi_cut_max": oi_cut_max, "oi_cut_strike": oi_cut_strike,
         })
 
     # Theoretical decay reference: freeze the ATM IV at the day's FIRST reading and let
