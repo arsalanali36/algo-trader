@@ -247,7 +247,7 @@
     { id:'skew',    name:'IV Skew (smile)',  color:'#39c5cf', kind:'skew',    lbl:'IV SKEW — strike-wise CE (cyan) vs PE (orange) IV at crosshair · OTM puts steep = fear/hedging bid' },
     { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' },
     { id:'spread',  name:'Bid-Ask Spread',   color:'#39c5cf', get:function(p){return p.spread_pct;}, dec:3, lbl:'BID-ASK SPREAD % (ATM straddle) — neeche/green = tight = achhi entry (sasta fill) · upar/red = wide = fill mehnga, ruko',
-      guides:[{v:0.3,c:'#3fb950'},{v:0.7,c:'#f85149'}] }
+      guides:[{v:0.2,c:'#3fb950'},{v:0.45,c:'#f85149'}] }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [

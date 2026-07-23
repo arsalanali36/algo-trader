@@ -67,7 +67,7 @@ DEFAULTS = {
     "skew_jump": 1.5,          # put_skew rise over skew_win to fire
     "skew_win": 15,            # lookback minutes for skew steepening
     "oi_bomb": 500000,         # single-strike 1-min OI add/unwind (units) → big-bet alert
-    "spread_wide_pct": 0.6,    # ATM straddle bid-ask spread % ≥ → wide (avoid/limit)
+    "spread_wide_pct": 0.5,    # ATM straddle bid-ask spread % ≥ → wide (avoid/limit); NIFTY ~0.08-0.31% normal
     "cooldown_min": 12,        # per-alert-type cooldown
 }
 
