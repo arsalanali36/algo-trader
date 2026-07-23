@@ -216,9 +216,18 @@
       extra:{ get:function(p){return p.vix;}, color:'#d29922', axis:'right', style:0 } },
     { id:'decay', name:'Theo vs Actual decay', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'STRADDLE — actual (orange) vs theoretical @ open-IV (dotted) · actual below = faster decay = seller edge',
       extra:{ get:function(p){return p.straddle_theo;}, color:'#8b949e', axis:'right', style:2 } },
-    { id:'delta', name:'Net Straddle Delta', color:'#39c5cf', get:function(p){return p.net_delta;},  dec:3, lbl:'NET STRADDLE DELTA (0 = neutral · drift = directional → hedge / adjust)' },
+    { id:'delta', name:'Net Straddle Delta', color:'#39c5cf', get:function(p){return p.net_delta;},  dec:3, lbl:'NET STRADDLE DELTA (0 = neutral · |δ|>0.15 = directional → hedge / adjust)',
+      guides:[{v:0.15,c:'#d29922'},{v:-0.15,c:'#d29922'},{v:0.20,c:'#f85149'},{v:-0.20,c:'#f85149'},{v:0,c:'#484f58'}] },
     { id:'walls', name:'OI Walls (call/put)', color:'#f85149', get:function(p){return p.call_wall;}, dec:0, lbl:'MAX-OI STRIKE — call wall (red) vs put wall (green) · shift = wall moving',
-      extra:{ get:function(p){return p.put_wall;}, color:'#3fb950', axis:'right', style:0 } }
+      extra:{ get:function(p){return p.put_wall;}, color:'#3fb950', axis:'right', style:0 } },
+    { id:'ivrank', name:'IV Rank (0-100)', color:'#d2a8ff', get:function(p){return p.iv_rank;}, dec:1, lbl:'IV RANK — aaj ki ATM IV pichhle dino ki range me (>70 = selling attractive · <20 = avoid)',
+      guides:[{v:70,c:'#3fb950'},{v:20,c:'#f85149'},{v:50,c:'#484f58'}] },
+    { id:'rvivsp', name:'Realized vs Implied Vol', color:'#f0883e', get:function(p){return p.atm_iv;}, dec:2, lbl:'IMPLIED (orange) vs REALIZED (blue) VOL — IV upar = VRP edge live (seller favour) · converge/cross = edge gone',
+      extra:{ get:function(p){return p.realized_vol;}, color:'#58a6ff', axis:'right', style:0 } },
+    { id:'term', name:'IV Term Structure', color:'#f0883e', get:function(p){return p.iv_near;}, dec:2, lbl:'NEAR-week (orange) vs NEXT-week (purple) ATM IV — near >> next = backwardation = event priced (crush setup)',
+      extra:{ get:function(p){return p.iv_next;}, color:'#a371f7', axis:'right', style:0 } },
+    { id:'skew',    name:'IV Skew (smile)',  color:'#39c5cf', kind:'skew',    lbl:'IV SKEW — strike-wise CE (cyan) vs PE (orange) IV at crosshair · OTM puts steep = fear/hedging bid' },
+    { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [
@@ -280,7 +289,7 @@
     document.body.classList.toggle('ocpg', pg);
     setTimeout(relayout, 0);   // width/height changed → re-measure charts
   }
-  function relayout(){ panes.forEach(function(e){ e.chart.applyOptions({ width:e.el.clientWidth, height:e.el.clientHeight }); }); }
+  function relayout(){ panes.forEach(function(e){ if(e.chart) e.chart.applyOptions({ width:e.el.clientWidth, height:e.el.clientHeight }); }); }
   function toggleOverlay(id, show){
     overlayHidden[id]=!show; save('oc_overlay_hidden', overlayHidden);
     var e=panes.find(function(x){return x.id===id;}); if(e&&e.extra) e.extra.applyOptions({visible:!!show});
@@ -331,7 +340,7 @@
   function syncRange(src){
     if(_syncing) return; _syncing=true;
     var r=src.chart.timeScale().getVisibleLogicalRange();
-    if(r) panes.forEach(function(p){ if(p!==src) p.chart.timeScale().setVisibleLogicalRange(r); });
+    if(r) panes.forEach(function(p){ if(p!==src && p.chart) p.chart.timeScale().setVisibleLogicalRange(r); });
     _syncing=false;
   }
 
@@ -356,6 +365,7 @@
       } else { tip.style.display='none'; }
     }
     if(t==null) return;
+    updateSkewAt(t);
     var p=byTime[t]; if(!p) return;
     setv('v-str',fmt(p.straddle,2)); setv('v-gam',fmt(p.gamma,5)); setv('v-spot',fmt(p.spot,2));
     setv('v-atm',p.atm); setv('v-cepe',fmt(p.ce,2)+' | '+fmt(p.pe,2)); setv('v-vix',fmt(p.vix,2)); setv('v-pcr',fmt(p.pcr,3));
@@ -383,13 +393,13 @@
   // call this — it just setData()s, so the user's zoom/pan is never reset.
   function buildPanes(){
     var main=document.getElementById('main');
-    panes.forEach(function(p){ try{p.chart.remove();}catch(e){} });
+    panes.forEach(function(p){ try{ if(p.chart) p.chart.remove(); if(p._ro) p._ro.disconnect(); }catch(e){} });
     panes=[]; main.innerHTML='';
     var list=PANELS.filter(function(p){ return enabled[p.id]; });
     if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
     if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
-    var OVLBL={ oi:'PE', iv:'VIX', decay:'Theo', walls:'Put' };   // data-overlay (extra series) tick label
+    var OVLBL={ oi:'PE', iv:'VIX', decay:'Theo', walls:'Put', rvivsp:'RV', term:'Next' };   // data-overlay (extra series) tick label
     var stkC = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
     list.forEach(function(def, i){
       var el=document.createElement('div'); el.className='pane';
@@ -406,41 +416,56 @@
         el.innerHTML='<span class="lbl">'+def.lbl+'</span>'+ctrl;
       }
       main.appendChild(el);
-      var chart=mkChart(el); el._chart=chart;
-      if(def.id==='oi') chart.applyOptions({ localization:{ priceFormatter: fmtInr } });   // OI axis → Cr/L
-      var entry={ id:def.id, def:def, chart:chart, el:el };
-      if(def.kind==='combined'){
-        entry.comb=[];
-        COMBINED.forEach(function(m, mi){
-          var s=chart.addLineSeries({ color:m.color, lineWidth:2, priceScaleId:'c'+mi, priceLineVisible:false, lastValueVisible:false });
-          chart.priceScale('c'+mi).applyOptions({ visible:false, scaleMargins:{top:0.06, bottom:0.06} });
-          entry.comb.push({ s:s, get:m.get });
-        });
-        entry.main=entry.comb[0].s;   // for crosshair/markers reference
-      } else {
-        entry.main=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
-        if(def.extra){
-          entry.extra=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
-            priceScaleId:'right', priceLineVisible:false, lastValueVisible:false, visible: !overlayHidden[def.id] });
+      var entry={ id:def.id, def:def, el:el };
+      if(def.kind==='skew' || def.kind==='heatmap'){
+        // custom SVG pane (strike-axis snapshot / strike×time grid) — no LW chart
+        entry.kind=def.kind;
+        var host=document.createElement('div'); host.style.cssText='position:absolute;left:8px;right:8px;top:24px;bottom:6px;overflow:hidden';
+        el.appendChild(host); entry.host=host;
+        if(def.kind==='heatmap'){
+          var tgl=document.createElement('label'); tgl.className='ovtick'; tgl.style.cursor='pointer';
+          tgl.innerHTML='<span>CE ⇄ PE: <b id="hmSideLbl">'+(_hmSide.toUpperCase())+'</b></span>';
+          tgl.onclick=function(){ _hmSide=(_hmSide==='ce'?'pe':'ce'); var b=document.getElementById('hmSideLbl'); if(b) b.textContent=_hmSide.toUpperCase(); renderHeatmap(); };
+          el.appendChild(tgl);
         }
-        // INDEX overlay (all panes) — line or candles on a readable LEFT axis
-        entry.idxLine=chart.addLineSeries({ color:'#58a6ff', lineWidth:2, lineStyle:2, priceScaleId:'left',
-          priceLineVisible:false, lastValueVisible:idxOv==='line', visible:idxOv==='line' });
-        entry.idxCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
-          wickUpColor:'#3fb950', wickDownColor:'#f85149', priceScaleId:'left', visible:idxOv==='ohlc' });
-        chart.priceScale('left').applyOptions({ visible:idxOv!=='off', borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
-        // STRIKE overlay (all panes) — chosen strike premium on its own invisible scale.
-        // Candles are NORMAL green/red; the LINE carries the CE/PE colour (cyan/orange).
-        entry.stkLine=chart.addLineSeries({ color:stkC, lineWidth:2, priceScaleId:'ocstrike',
-          priceLineVisible:false, lastValueVisible:false, visible:strikeOv.on&&strikeOv.mode==='line' });
-        entry.stkCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', wickUpColor:'#3fb950', wickDownColor:'#f85149',
-          borderVisible:false, priceScaleId:'ocstrike', visible:strikeOv.on&&strikeOv.mode==='ohlc' });
-        chart.priceScale('ocstrike').applyOptions({ visible:false, scaleMargins:{top:0.15,bottom:0.15} });
+        if(window.ResizeObserver){ entry._ro=new ResizeObserver(function(){ if(def.kind==='skew') renderSkew(_skewT); else renderHeatmap(); }); entry._ro.observe(host); }
+        panes.push(entry);
+      } else {
+        var chart=mkChart(el); el._chart=chart; entry.chart=chart;
+        if(def.id==='oi') chart.applyOptions({ localization:{ priceFormatter: fmtInr } });   // OI axis → Cr/L
+        if(def.kind==='combined'){
+          entry.comb=[];
+          COMBINED.forEach(function(m, mi){
+            var s=chart.addLineSeries({ color:m.color, lineWidth:2, priceScaleId:'c'+mi, priceLineVisible:false, lastValueVisible:false });
+            chart.priceScale('c'+mi).applyOptions({ visible:false, scaleMargins:{top:0.06, bottom:0.06} });
+            entry.comb.push({ s:s, get:m.get });
+          });
+          entry.main=entry.comb[0].s;   // for crosshair/markers reference
+        } else {
+          entry.main=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
+          if(def.extra){
+            entry.extra=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
+              priceScaleId:'right', priceLineVisible:false, lastValueVisible:false, visible: !overlayHidden[def.id] });
+          }
+          if(def.guides){ def.guides.forEach(function(g){ entry.main.createPriceLine({ price:g.v, color:g.c, lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'' }); }); }
+          // INDEX overlay (all panes) — line or candles on a readable LEFT axis
+          entry.idxLine=chart.addLineSeries({ color:'#58a6ff', lineWidth:2, lineStyle:2, priceScaleId:'left',
+            priceLineVisible:false, lastValueVisible:idxOv==='line', visible:idxOv==='line' });
+          entry.idxCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
+            wickUpColor:'#3fb950', wickDownColor:'#f85149', priceScaleId:'left', visible:idxOv==='ohlc' });
+          chart.priceScale('left').applyOptions({ visible:idxOv!=='off', borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
+          // STRIKE overlay (all panes) — chosen strike premium on its own invisible scale.
+          entry.stkLine=chart.addLineSeries({ color:stkC, lineWidth:2, priceScaleId:'ocstrike',
+            priceLineVisible:false, lastValueVisible:false, visible:strikeOv.on&&strikeOv.mode==='line' });
+          entry.stkCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', wickUpColor:'#3fb950', wickDownColor:'#f85149',
+            borderVisible:false, priceScaleId:'ocstrike', visible:strikeOv.on&&strikeOv.mode==='ohlc' });
+          chart.priceScale('ocstrike').applyOptions({ visible:false, scaleMargins:{top:0.15,bottom:0.15} });
+        }
+        panes.push(entry);
+        chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
+        chart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); });
+        attachNoteMenu(entry);
       }
-      panes.push(entry);
-      chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
-      chart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); });
-      attachNoteMenu(entry);
       // resize handle (not after the last pane)
       if(i < list.length-1){
         var rh=document.createElement('div'); rh.className='rh'; main.appendChild(rh);
@@ -467,6 +492,8 @@
     var spotLine = view.map(function(p){ return {time:p.t, value:p.spot}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); });
     var sd = strikeSeriesData(tf);   // strike overlay line+candle computed ONCE (not per pane)
     panes.forEach(function(e){
+      if(e.kind==='skew'){ fetchSkew(); return; }
+      if(e.kind==='heatmap'){ fetchHeatmap(); return; }
       if(e.comb){
         e.comb.forEach(function(c){ c.s.setData(view.map(function(p){ return {time:p.t, value:c.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); })); });
       } else {
@@ -478,7 +505,8 @@
       }
       setPaneMarkers(e);
     });
-    if(fit && panes.length) panes[0].chart.timeScale().fitContent();
+    var fc=panes.find(function(p){return p.chart;});
+    if(fit && fc) fc.chart.timeScale().fitContent();
     if(view.length) onCross({ time: view[view.length-1].t });
   }
 
@@ -683,6 +711,85 @@
         _strikeFetching=false; _strikePts=(d&&d.points)||[]; _pushStrike();
       }).catch(function(){ _strikeFetching=false; _strikePts=[]; _pushStrike(); });
     });
+  }
+
+  // ---- IV Skew panel (strike-axis smile snapshot; follows crosshair) ----
+  var _skewSeries=[], _skewFetching=false, _skewT=null;
+  function fetchSkew(){
+    if(_skewFetching) return;
+    var qs='underlying='+U+'&date='+document.getElementById('date').value;
+    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    _skewFetching=true;
+    fetch('/api/option-skew?'+qs).then(function(r){return r.json();}).then(function(d){
+      _skewFetching=false; _skewSeries=(d&&d.series)||[]; renderSkew(_skewT);
+    }).catch(function(){ _skewFetching=false; _skewSeries=[]; renderSkew(); });
+  }
+  function _skewAt(t){
+    if(!_skewSeries.length) return null;
+    if(t==null) return _skewSeries[_skewSeries.length-1];
+    var best=_skewSeries[0], bd=Infinity;
+    for(var i=0;i<_skewSeries.length;i++){ var dd=Math.abs(_skewSeries[i].t-t); if(dd<bd){bd=dd;best=_skewSeries[i];} }
+    return best;
+  }
+  function updateSkewAt(t){ _skewT=t; if(panes.some(function(p){return p.kind==='skew';})) renderSkew(t); }
+  function renderSkew(t){
+    var e=panes.find(function(p){return p.kind==='skew';}); if(!e||!e.host) return;
+    var H=e.host.clientHeight||200, W=e.host.clientWidth||600;
+    var snap=_skewAt(t===undefined?_skewT:t);
+    if(!snap){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">skew data…</div>'; return; }
+    var strikes=snap.strikes, ce=snap.ce, pe=snap.pe, ivs=[];
+    ce.concat(pe).forEach(function(v){ if(v!=null&&!isNaN(v)) ivs.push(v); });
+    if(!ivs.length){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">no IV at this minute</div>'; return; }
+    var lo=Math.min.apply(null,ivs), hi=Math.max.apply(null,ivs); if(hi<=lo) hi=lo+1;
+    var padL=42,padR=8,padT=16,padB=24;
+    var x=function(i){ return padL+(strikes.length<2?0:i/(strikes.length-1))*(W-padL-padR); };
+    var y=function(v){ return padT+(1-(v-lo)/(hi-lo))*(H-padT-padB); };
+    function poly(arr,col){ var pts=[]; for(var i=0;i<arr.length;i++){ if(arr[i]!=null&&!isNaN(arr[i])) pts.push(x(i).toFixed(1)+','+y(arr[i]).toFixed(1)); } return pts.length?'<polyline fill="none" stroke="'+col+'" stroke-width="2" points="'+pts.join(' ')+'"/>':''; }
+    var s='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="font:10px sans-serif">';
+    var ai=strikes.indexOf(snap.atm); if(ai<0){ var bd=Infinity; for(var i=0;i<strikes.length;i++){ var dd=Math.abs(strikes[i]-snap.atm); if(dd<bd){bd=dd;ai=i;} } }
+    [lo,(lo+hi)/2,hi].forEach(function(v){ var yy=y(v); s+='<line x1="'+padL+'" y1="'+yy.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yy.toFixed(1)+'" stroke="#161b22"/><text x="3" y="'+(yy+3).toFixed(1)+'" fill="#8b949e">'+v.toFixed(1)+'</text>'; });
+    if(ai>=0) s+='<line x1="'+x(ai).toFixed(1)+'" y1="'+padT+'" x2="'+x(ai).toFixed(1)+'" y2="'+(H-padB)+'" stroke="#484f58" stroke-dasharray="3 3"/>';
+    var step=Math.ceil(strikes.length/7);
+    for(var i=0;i<strikes.length;i+=step){ s+='<text x="'+x(i).toFixed(1)+'" y="'+(H-7)+'" fill="#8b949e" text-anchor="middle">'+strikes[i]+'</text>'; }
+    s+=poly(pe,'#f0883e')+poly(ce,'#39c5cf');
+    var dt=new Date(snap.t*1000), hh=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0');
+    s+='<text x="'+(W-padR)+'" y="'+(padT-3)+'" fill="#8b949e" text-anchor="end">'+hh+' · CE cyan / PE orange · ATM '+snap.atm+'</text></svg>';
+    e.host.innerHTML=s;
+  }
+
+  // ---- OI Change Heatmap panel (strike × time grid) ----
+  var _hm=null, _hmFetching=false, _hmSide='ce';
+  function fetchHeatmap(){
+    if(_hmFetching) return;
+    var qs='underlying='+U+'&date='+document.getElementById('date').value;
+    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    _hmFetching=true;
+    fetch('/api/option-oi-heatmap?'+qs).then(function(r){return r.json();}).then(function(d){
+      _hmFetching=false; _hm=(d&&d.ok)?d:null; renderHeatmap();
+    }).catch(function(){ _hmFetching=false; _hm=null; renderHeatmap(); });
+  }
+  function renderHeatmap(){
+    var e=panes.find(function(p){return p.kind==='heatmap';}); if(!e||!e.host) return;
+    var H=e.host.clientHeight||200, W=e.host.clientWidth||600;
+    if(!_hm||!_hm.times.length){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">heatmap data…</div>'; return; }
+    var grid=_hm[_hmSide]||[], strikes=_hm.strikes, times=_hm.times, nT=times.length, nS=strikes.length;
+    var mx=1; grid.forEach(function(row){ (row||[]).forEach(function(v){ if(v!=null){ var a=Math.abs(v); if(a>mx) mx=a; } }); });
+    var padL=46,padT=6,padB=18,padR=4;
+    var cw=(W-padL-padR)/nT, ch=(H-padT-padB)/nS;
+    var s='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="font:9px sans-serif">';
+    for(var si=0; si<nS; si++){
+      var yy=padT+(nS-1-si)*ch;
+      for(var ti=0; ti<nT; ti++){
+        var v=grid[ti]?grid[ti][si]:null, col='#0d1117';
+        if(v!=null && v!==0){ var f=Math.min(1,Math.abs(v)/mx); col=(v>0?'rgba(63,185,80,':'rgba(248,81,73,')+(0.12+0.88*f).toFixed(2)+')'; }
+        s+='<rect x="'+(padL+ti*cw).toFixed(1)+'" y="'+yy.toFixed(1)+'" width="'+(cw+0.6).toFixed(1)+'" height="'+(ch+0.6).toFixed(1)+'" fill="'+col+'"/>';
+      }
+      if(si%Math.max(1,Math.ceil(nS/12))===0) s+='<text x="3" y="'+(yy+ch/2+3).toFixed(1)+'" fill="#8b949e">'+strikes[si]+'</text>';
+    }
+    var tstep=Math.max(1,Math.ceil(nT/8));
+    for(var ti=0; ti<nT; ti+=tstep){ var dt=new Date(times[ti]*1000), hh=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'); s+='<text x="'+(padL+ti*cw).toFixed(1)+'" y="'+(H-5)+'" fill="#8b949e">'+hh+'</text>'; }
+    s+='</svg>';
+    e.host.innerHTML=s;
   }
 
   var _lastOk=null, _structKey='';

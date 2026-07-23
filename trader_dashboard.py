@@ -617,6 +617,32 @@ def api_option_strike():
         print("[option-strike] fail:", e, flush=True)
         return jsonify({"ok": False, "strikes": [], "points": []})
 
+@app.route('/api/option-skew')
+def api_option_skew():
+    """Per-minute strike-wise IV smile (CE + PE across ATM±N) → /curves skew panel."""
+    import option_curves as oc
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date') or (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    try:
+        return jsonify(oc.skew_series(u, date, expiry))
+    except Exception as e:
+        print("[option-skew] fail:", e, flush=True)
+        return jsonify({"ok": False, "series": []})
+
+@app.route('/api/option-oi-heatmap')
+def api_option_oi_heatmap():
+    """OI-change heatmap grid (strike × time bucket) → /curves heatmap panel."""
+    import option_curves as oc
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date') or (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    try:
+        return jsonify(oc.oi_heatmap_series(u, date, expiry))
+    except Exception as e:
+        print("[option-oi-heatmap] fail:", e, flush=True)
+        return jsonify({"ok": False, "strikes": [], "times": [], "ce": [], "pe": []})
+
 @app.route('/api/option-alerts')
 def api_option_alerts():
     """Fired option-chain alerts for a day → chart markers on /curves. Display-only."""
