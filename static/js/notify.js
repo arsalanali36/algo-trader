@@ -18,6 +18,17 @@
       // hai, aur ye page ke bahar (toast) bhi render hoti hai. Raw `source`
       // title= me rehta hai — debugging ke liye ek hover door.
       function _src(n) { return String(n.source_label || n.source || ''); }
+      // Option-chain alerts (_ops/option_alerts.py, key opt_<type>_<UNDERLYING>,
+      // source "chain") are clickable → open the /curves chart for that underlying.
+      function _chainU(n) {
+        var k = String(n.dedup || n.key || '');
+        if (n.source === 'chain' || k.indexOf('opt_') === 0) {
+          var m = k.match(/(BANKNIFTY|FINNIFTY|NIFTY)$/);   // BANKNIFTY before NIFTY (substring)
+          return m ? m[1] : 'NIFTY';
+        }
+        return null;
+      }
+      function _openChart(u) { try { window.open('/curves?underlying=' + (u || 'NIFTY'), '_blank'); } catch (e) { } }
       function _esc(s) { return String(s == null ? '' : s).replace(/[<>&"]/g, function (c) { return { '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[c]; }); }
       function _ago(ms) {
         var s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
@@ -63,9 +74,12 @@
           + '<div style="flex:1;min-width:0"><div style="word-break:break-word">' + _esc(n.msg) + '</div>'
           + (n.source ? '<div title="' + _esc(n.source) + '" style="font-size:10px;color:#8b949e;margin-top:3px">' + _esc(_src(n)) + '</div>' : '')
           + '</div><span style="color:#8b949e;font-weight:700;padding:0 2px">✕</span></div>';
-        // Click = dismiss the toast only. The record stays in the bell's history —
-        // this is the whole point: nothing an error does can be made to vanish.
-        el.onclick = function () { _drop(el); };
+        // Click dismisses the toast (record stays in the bell's history). For an
+        // option-chain alert, the click ALSO opens the /curves chart for that
+        // underlying — one tap from "gamma spike" toast to the live curve.
+        var _cu = _chainU(n);
+        if (_cu) el.title = 'Click → open ' + _cu + ' curves';
+        el.onclick = function () { if (_cu) _openChart(_cu); _drop(el); };
         box.appendChild(el);
         requestAnimationFrame(function () { el.style.opacity = '1'; el.style.transform = 'none'; });
         // Errors stay until clicked; warn/info auto-fade.
@@ -133,9 +147,12 @@
 
       function _row(n, indent) {
         var cfg = _lv(n.level);
+        var cu = _chainU(n);
         // resolved = uski asli wajah khatam ho chuki hai (alert file se hat gaya).
         // Row rehti hai — history kabhi nahi jaati — bas chup + "fixed" ho jaati hai.
-        return '<div style="padding:8px 12px;border-bottom:1px solid #21262d;display:flex;gap:8px;align-items:flex-start;'
+        return '<div ' + (cu ? "onclick=\"window.open('/curves?underlying=" + cu + "','_blank')\" " : '')
+          + 'style="padding:8px 12px;border-bottom:1px solid #21262d;display:flex;gap:8px;align-items:flex-start;'
+          + (cu ? 'cursor:pointer;' : '')
           + (indent ? 'padding-left:30px;background:#0d1117;' : '')
           + (n.read ? 'opacity:.55' : (indent ? '' : 'background:' + cfg.bg + '33')) + '">'
           + '<span style="font-size:11px;margin-top:2px">' + (n.resolved ? '✅' : cfg.icon) + '</span>'
@@ -147,6 +164,7 @@
           + _ago(n.last_ts || n.ts)
           + (n.source ? ' · <span title="' + _esc(n.source) + '">' + _esc(_src(n)) + '</span>' : '')
           + (n.count > 1 ? ' · <span style="color:' + cfg.c + ';font-weight:700">×' + n.count + '</span>' : '')
+          + (cu ? ' · <span style="color:#58a6ff">📈 chart</span>' : '')
           + '</div></div></div>';
       }
 
