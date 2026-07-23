@@ -3530,6 +3530,17 @@ def _straddle_tp_sl(cfg, symbol):
     return float(ps.get("tp_pt", cfg.get("tp_pt", 30))), float(ps.get("sl_pt", cfg.get("sl_pt", 30)))
 
 
+def _straddle_strategy_id(source):
+    """A/B/C get DISTINCT strategy ids so Orders/Stats/RMS distinguish them
+    (registered 02.06/07/08). Same short-straddle execution, different entry idea."""
+    s = str(source or "")
+    if s.startswith("schedule"):
+        return "straddle_920"     # A — 9:20 auto
+    if s.startswith("alert"):
+        return "straddle_alert"   # C — option-alert fired
+    return "straddle_manual"      # B — Quick Order manual
+
+
 def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     """Sell ATM CE + ATM PE (short straddle) via execution_gateway (full RMS,
     order_store-recorded), group-tagged for a COMBINED-premium basket exit. PAPER.
@@ -3574,21 +3585,22 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     if not lot:
         return False, f"{symbol} lot size resolve nahi hua — order NAHI bheja"
     gid = "STRAD_" + uuid.uuid4().hex[:8]
+    sid = _straddle_strategy_id(source)   # straddle_920 / straddle_alert / straddle_manual
     xtags = ["STRADDLE", "STRAD_SRC:%s" % source]
-    res_ce = gw.execute_signal("auto_straddle", symbol, "SELL", lots, int(lot), sec_ce, t_ce,
+    res_ce = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_ce, t_ce,
                                seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
                                group_id=gid, extra_tags=xtags, log=log)
     if not res_ce.get("ok"):
         return False, f"CE leg blocked/failed — {res_ce.get('reason') or res_ce.get('status')}"
     ce_fill = res_ce.get("price") or 0
-    res_pe = gw.execute_signal("auto_straddle", symbol, "SELL", lots, int(lot), sec_pe, t_pe,
+    res_pe = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_pe, t_pe,
                                seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
                                group_id=gid, extra_tags=xtags, log=log)
     if not res_pe.get("ok"):
         log(f"[STRADDLE] {symbol} PE leg fail ({res_pe.get('reason') or res_pe.get('status')}) "
             f"— unwinding CE to avoid naked leg")
         try:
-            gw.execute_exit("auto_straddle", symbol, sec_ce, t_ce, lots * int(lot),
+            gw.execute_exit(sid, symbol, sec_ce, t_ce, lots * int(lot),
                             entry_side="SELL", mode=mode, group_id=gid,
                             reason="STRADDLE_ABORT_NAKED", tag="STRADDLE", source="straddle", log=log)
         except Exception as ue:
@@ -3604,7 +3616,7 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     pe_fill = res_pe.get("price") or 0
     entry_credit = round((ce_fill or 0) + (pe_fill or 0), 2)
     ast.add({
-        "symbol": symbol, "lots": lots, "mode": mode, "source": source, "group_id": gid,
+        "symbol": symbol, "lots": lots, "mode": mode, "source": source, "strategy_id": sid, "group_id": gid,
         "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_credit,
         "legs": [
             {"opt_type": "CE", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": lots * int(lot)},
@@ -3638,9 +3650,10 @@ def _close_straddle(strad, status, reason, log=print):
     symbol = strad.get("symbol")
     gid = strad.get("group_id", "")
     mode = strad.get("mode", "paper")
+    sid = strad.get("strategy_id", "auto_straddle")   # exit under the SAME id as entry
     for leg in strad.get("legs", []):
         try:
-            gw.execute_exit("auto_straddle", symbol, leg["sec_id"], leg["trad_sym"], leg["qty"],
+            gw.execute_exit(sid, symbol, leg["sec_id"], leg["trad_sym"], leg["qty"],
                             entry_side="SELL", mode=mode, group_id=gid, reason=reason,
                             tag="STRADDLE", source="straddle", log=log)
         except Exception as e:

@@ -397,8 +397,10 @@
           b.style.color = sel ? '#58a6ff' : '#8b949e';
         });
         updateQtyHint();
-        qoRefreshLtp();
-        if (window.qoTab === 'straddle') qoStradCfgLoad();   // reload per-index target/SL + label
+        // straddle tab has NO CE/PE LTP box → skip the slow Dhan option-LTP fetch (instant switch);
+        // just reload the per-index target/SL + label
+        if (window.qoTab === 'straddle') { qoStradCfgLoad(); }
+        else { qoRefreshLtp(); }
       };
 
       window.qoSetAtm = v => {

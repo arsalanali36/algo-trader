@@ -120,6 +120,7 @@ def add(strad):
         "lots": int(strad.get("lots", 1)),
         "mode": str(strad.get("mode", "paper")).lower(),
         "source": str(strad.get("source", "manual")),
+        "strategy_id": str(strad.get("strategy_id", "auto_straddle")),   # straddle_920/_alert/_manual
         "group_id": strad.get("group_id", ""),
         "tp_pt": float(strad.get("tp_pt", 30)),
         "sl_pt": float(strad.get("sl_pt", 30)),
