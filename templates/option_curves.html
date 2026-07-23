@@ -172,6 +172,9 @@
       <div class="ro"><span class="k">Straddle theo</span><span class="v" id="v-theo">—</span></div>
       <div class="ro"><span class="k">Net delta</span><span class="v" id="v-ndelta">—</span></div>
       <div class="ro"><span class="k">Call | Put wall</span><span class="v" id="v-walls">—</span></div>
+      <div class="ro"><span class="k">Bid-Ask spread</span><span class="v" id="v-spread">—</span></div>
+      <div class="ro"><span class="k">ATM CE bid/ask</span><span class="v" id="v-ceba">—</span></div>
+      <div class="ro"><span class="k">ATM PE bid/ask</span><span class="v" id="v-peba">—</span></div>
       <div class="ro"><span class="k">Overlay strike</span><span class="v" id="v-ovstk">—</span></div>
 
       <div class="divh"></div>
@@ -242,7 +245,9 @@
     { id:'term', name:'IV Term Structure', color:'#f0883e', get:function(p){return p.iv_near;}, dec:2, lbl:'NEAR-week (orange) vs NEXT-week (purple) ATM IV — near >> next = backwardation = event priced (crush setup)',
       extra:{ get:function(p){return p.iv_next;}, color:'#a371f7', axis:'right', style:0 } },
     { id:'skew',    name:'IV Skew (smile)',  color:'#39c5cf', kind:'skew',    lbl:'IV SKEW — strike-wise CE (cyan) vs PE (orange) IV at crosshair · OTM puts steep = fear/hedging bid' },
-    { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' }
+    { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' },
+    { id:'spread',  name:'Bid-Ask Spread',   color:'#39c5cf', get:function(p){return p.spread_pct;}, dec:3, lbl:'BID-ASK SPREAD % (ATM straddle) — neeche/green = tight = achhi entry (sasta fill) · upar/red = wide = fill mehnga, ruko',
+      guides:[{v:0.3,c:'#3fb950'},{v:0.7,c:'#f85149'}] }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [
@@ -424,6 +429,9 @@
     setv('v-oi', fmtInr(p.ce_oi)+' | '+fmtInr(p.pe_oi));
     setv('v-iv', fmt(p.atm_iv,2)); setv('v-theo', fmt(p.straddle_theo,2)); setv('v-ndelta', fmt(p.net_delta,3));
     setv('v-walls', (p.call_wall==null?'—':p.call_wall)+' | '+(p.put_wall==null?'—':p.put_wall));
+    setv('v-spread', p.spread_pct==null?'—':(fmt(p.spread_pct,2)+'% · ₹'+fmt(p.spread_abs,1)));
+    setv('v-ceba', (p.ce_bid==null?'—':fmt(p.ce_bid,2))+' / '+(p.ce_ask==null?'—':fmt(p.ce_ask,2)));
+    setv('v-peba', (p.pe_bid==null?'—':fmt(p.pe_bid,2))+' / '+(p.pe_ask==null?'—':fmt(p.pe_ask,2)));
     // straddle value lost since day-open (positive = premium decayed = seller gained)
     var open0 = view.length ? view[0].straddle : null;
     var el=document.getElementById('v-slost');

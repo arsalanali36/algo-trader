@@ -67,6 +67,7 @@ DEFAULTS = {
     "skew_jump": 1.5,          # put_skew rise over skew_win to fire
     "skew_win": 15,            # lookback minutes for skew steepening
     "oi_bomb": 500000,         # single-strike 1-min OI add/unwind (units) → big-bet alert
+    "spread_wide_pct": 0.6,    # ATM straddle bid-ask spread % ≥ → wide (avoid/limit)
     "cooldown_min": 12,        # per-alert-type cooldown
 }
 
@@ -293,6 +294,13 @@ def evaluate(underlying, date=None, cfg=None, points=None):
                     "msg": f"💣 {U} bada OI UNWIND — {cur.get('oi_cut_strike'):.0f} strike pe −{_cut:,.0f} OI 1-min me. "
                            f"Badi position kat rahi."})
 
+    # ── ↔️ Bid-ask spread wide (execution warning — fill mehnga) ────────────
+    _sp = cur.get("spread_pct")
+    if _sp is not None and _sp >= cfg["spread_wide_pct"]:
+        out.append({"key": f"opt_spread_wide_{U}", "level": "warn",
+                    "msg": f"↔️ {U} bid-ask spread wide — ATM straddle {_sp:.2f}% (₹{cur.get('spread_abs')}). "
+                           f"Fill mehnga / slippage — ruk jao ya limit order pe lo."})
+
     # tag each alert with which chart panel + the triggering point's time, so the
     # /curves page can drop a hover-able marker on the right curve at that moment.
     _PANEL = {"gamma_spike": ("gamma", "⚡"), "straddle_crush": ("straddle", "📉"),
@@ -303,7 +311,8 @@ def evaluate(underlying, date=None, cfg=None, points=None):
               "call_wall_shift": ("walls", "🧱"), "put_wall_shift": ("walls", "🧱"),
               "ivrank_high": ("ivrank", "🔥"), "ivrank_low": ("ivrank", "🧊"),
               "vrp_gone": ("rvivsp", "⚠️"), "term_back": ("term", "📐"),
-              "skew_steepen": ("skew", "🩹"), "oi_bomb": ("heatmap", "💣"), "oi_unwind": ("heatmap", "💣")}
+              "skew_steepen": ("skew", "🩹"), "oi_bomb": ("heatmap", "💣"), "oi_unwind": ("heatmap", "💣"),
+              "spread_wide": ("spread", "↔️")}
     for a in out:
         typ = a["key"][4:].rsplit("_", 1)[0] if a["key"].startswith("opt_") else a["key"]
         panel, tag = _PANEL.get(typ, ("straddle", "•"))

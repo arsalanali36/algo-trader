@@ -195,6 +195,16 @@ def curves(u, date, expiry=None):
                 oi_add_max, oi_add_strike = c, _f(l.get("strike"))
             if c < -oi_cut_max:
                 oi_cut_max, oi_cut_strike = -c, _f(l.get("strike"))
+        # Bid-ask spread (ATM straddle) — execution/opportunity signal (tight = good fill)
+        ce_bid, ce_ask = _f(ce.get("bid")), _f(ce.get("ask"))
+        pe_bid, pe_ask = _f(pe.get("bid")), _f(pe.get("ask"))
+        ce_sp = (ce_ask - ce_bid) if (ce_bid is not None and ce_ask is not None and ce_ask >= ce_bid) else None
+        pe_sp = (pe_ask - pe_bid) if (pe_bid is not None and pe_ask is not None and pe_ask >= pe_bid) else None
+        if ce_sp is not None and pe_sp is not None:
+            spread_abs = round(ce_sp + pe_sp, 2)
+            spread_pct = round(spread_abs / (ce_ltp + pe_ltp) * 100, 3) if (ce_ltp + pe_ltp) else None
+        else:
+            spread_abs, spread_pct = None, None
         ep = _epoch_ist(dt)
         if ep is None:
             continue
@@ -222,6 +232,8 @@ def curves(u, date, expiry=None):
             "put_skew": put_skew,
             "oi_add_max": oi_add_max, "oi_add_strike": oi_add_strike,
             "oi_cut_max": oi_cut_max, "oi_cut_strike": oi_cut_strike,
+            "spread_abs": spread_abs, "spread_pct": spread_pct,
+            "ce_bid": ce_bid, "ce_ask": ce_ask, "pe_bid": pe_bid, "pe_ask": pe_ask,
         })
 
     # Theoretical decay reference: freeze the ATM IV at the day's FIRST reading and let

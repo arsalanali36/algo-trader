@@ -86,7 +86,7 @@ UNDERLYINGS = [
 ]
 
 CSV_COLS = ["datetime", "underlying", "spot", "vix", "expiry", "strike", "opt_type",
-            "ltp", "oi", "prev_oi", "chg_oi", "volume", "iv",
+            "ltp", "bid", "ask", "oi", "prev_oi", "chg_oi", "volume", "iv",
             "delta", "theta", "gamma", "vega"]
 
 
@@ -176,7 +176,9 @@ def _leg_row(dt, uname, spot, vix, expiry, strike, opt_type, leg):
     return {
         "datetime": dt, "underlying": uname, "spot": spot, "vix": vix,
         "expiry": expiry, "strike": strike, "opt_type": opt_type,
-        "ltp": leg.get("last_price"), "oi": oi, "prev_oi": prev_oi, "chg_oi": chg,
+        "ltp": leg.get("last_price"),
+        "bid": leg.get("top_bid_price"), "ask": leg.get("top_ask_price"),
+        "oi": oi, "prev_oi": prev_oi, "chg_oi": chg,
         "volume": leg.get("volume"),
         "iv": leg.get("implied_volatility"),
         "delta": g.get("delta"), "theta": g.get("theta"),
