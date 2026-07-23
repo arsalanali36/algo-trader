@@ -286,6 +286,35 @@ def read_log(u, date):
     return out
 
 
+def replay_day(underlying, date, cfg=None):
+    """Regenerate the fired-alert log for a STORED day by replaying evaluate() minute
+    by minute (same per-key cooldown as the live loop, but measured in market-time).
+    The live watch_loop only fires during market hours, so this is how you get markers
+    onto a past / already-closed day's /curves chart. Overwrites the day's log (backs up
+    the existing one to .bak first). Display-only. Returns the number of markers written."""
+    cfg = cfg or _cfg()
+    d = oc.curves(underlying, date)
+    pts = d.get("points") or []
+    if len(pts) < 6:
+        return 0
+    fired, last = [], {}
+    cd = cfg["cooldown_min"] * 60
+    for i in range(6, len(pts) + 1):
+        for a in evaluate(underlying, date=date, cfg=cfg, points=pts[:i]):
+            k, t = a["key"], a["t"]
+            if t - last.get(k, -1e18) >= cd:   # cooldown in market-time
+                last[k] = t
+                fired.append(a)
+    path = os.path.join(_log_dir(), f"{underlying}_{date}.jsonl")
+    if os.path.exists(path):
+        os.replace(path, path + ".bak")
+    with open(path, "w", encoding="utf-8") as f:
+        for a in fired:
+            f.write(json.dumps({"t": a.get("t"), "panel": a.get("panel"), "tag": a.get("tag"),
+                                "key": a.get("key"), "msg": a.get("msg")}) + "\n")
+    return len(fired)
+
+
 def _fire(alert, cfg):
     """notify with per-key cooldown."""
     import notify
@@ -340,6 +369,15 @@ if __name__ == "__main__":
     args = sys.argv[1:]
     dry = "--dry" in args
     ul = [a for a in args if not a.startswith("-")] or ["NIFTY"]
+    # --replay [DATE]: rebuild a stored day's marker log (for showing markers on a
+    # closed day). e.g.  python _ops/option_alerts.py --replay 2026-07-23 NIFTY BANKNIFTY
+    if "--replay" in args:
+        rd = next((a for a in args if a[:1].isdigit() and "-" in a), None) or _today()
+        ul = [a for a in args if not a.startswith("-") and not (a[:1].isdigit() and "-" in a)] or ["NIFTY"]
+        for u in ul:
+            n = replay_day(u, rd)
+            print(f"[replay] {u} {rd} -> {n} markers written")
+        sys.exit(0)
     for u in ul:
         res = evaluate(u)
         print(f"=== {u} ({_today()}) — {len(res)} alert(s) now ===")
