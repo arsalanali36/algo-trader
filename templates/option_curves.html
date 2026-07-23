@@ -109,6 +109,13 @@
         <option value="30">30 min</option>
         <option value="60">1 hour</option>
       </select>
+      <label class="fld">Days (multi-day)</label>
+      <div class="seg" id="daysSeg">
+        <button data-d="1" onclick="setDays(1,this)" title="Sirf aaj ka">Today</button>
+        <button data-d="3" onclick="setDays(3,this)" title="Last 3 stored days">3d</button>
+        <button data-d="5" onclick="setDays(5,this)" title="Last 5 stored days">5d</button>
+        <button data-d="10" onclick="setDays(10,this)" title="Last 10 stored days">10d</button>
+      </div>
       <label class="fld">Auto-refresh</label>
       <div class="seg"><button id="autoBtn" class="on" onclick="toggleAuto()">🔄 ON</button><button onclick="refresh()">↻ Now</button></div>
 
@@ -226,6 +233,7 @@
   var VIEW = load('oc_view', 'fit');       // 'fit' (panes fit screen) | 'tall' (taller, scroll)
   var SCROLL = load('oc_scroll', 'panel'); // 'panel' (chart-area scroll) | 'page' (whole-page scroll)
   var TALL_H = 380;                        // fixed pane height in Tall mode
+  var DAYS = load('oc_days', 1);           // 1 = today only; N = last N stored days concatenated
 
   function load(k, d){ try{ var v=JSON.parse(localStorage.getItem(k)); return v||d; }catch(e){ return d; } }
   function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -253,6 +261,7 @@
 
   function setView(v, btn){ VIEW=v; save('oc_view',v); document.querySelectorAll('#viewSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.v===v);}); heights={}; save('oc_heights',heights); buildPanes(); }
   function setScroll(s, btn){ SCROLL=s; save('oc_scroll',s); document.querySelectorAll('#scrollSeg button').forEach(function(b){b.classList.toggle('on',b.dataset.s===s);}); applyScroll(); relayout(); }
+  function setDays(n, btn){ DAYS=n; save('oc_days',n); document.querySelectorAll('#daysSeg button').forEach(function(b){b.classList.toggle('on',+b.dataset.d===n);}); var ex=document.getElementById('expiry'); if(ex) ex.disabled=(n>1); onStructChange(); }
   function applyScroll(){
     var pg = SCROLL==='page';
     document.documentElement.classList.toggle('ocpg', pg);
@@ -663,14 +672,16 @@
   }
 
   var _lastOk=null, _structKey='';
-  function structKey(){ return U+'|'+document.getElementById('date').value+'|'+document.getElementById('expiry').value+'|'+document.getElementById('tf').value+'|'+PANELS.filter(function(p){return enabled[p.id];}).map(function(p){return p.id;}).join(','); }
+  function structKey(){ return U+'|'+document.getElementById('date').value+'|'+document.getElementById('expiry').value+'|'+document.getElementById('tf').value+'|'+DAYS+'|'+PANELS.filter(function(p){return enabled[p.id];}).map(function(p){return p.id;}).join(','); }
 
   function onStructChange(){ save('oc_tf', +document.getElementById('tf').value); refresh(true); }
 
   function refresh(forceBuild){
     var date=document.getElementById('date').value;
     var qs='underlying='+U+'&date='+date;
-    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    var ex=document.getElementById('expiry').value;
+    if(DAYS>1){ qs+='&days='+DAYS; }              // multi-day: per-day expiry, so no expiry filter
+    else if(ex){ qs+='&expiry='+encodeURIComponent(ex); }
     Promise.all([
       fetch('/api/option-curves?'+qs).then(function(r){return r.json();}),
       fetch('/api/option-alerts?underlying='+U+'&date='+date).then(function(r){return r.json();}).catch(function(){return {alerts:[]};})
@@ -712,6 +723,8 @@
   // init the View / Scroll segmented buttons to saved state
   document.querySelectorAll('#viewSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.v===VIEW); });
   document.querySelectorAll('#scrollSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.s===SCROLL); });
+  document.querySelectorAll('#daysSeg button').forEach(function(b){ b.classList.toggle('on', +b.dataset.d===DAYS); });
+  (function(){ var ex=document.getElementById('expiry'); if(ex) ex.disabled=(DAYS>1); })();
   applyScroll();
 
   // init index-overlay segmented + strike-overlay popup state

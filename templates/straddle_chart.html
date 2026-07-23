@@ -18,7 +18,11 @@
     .spacer{flex:1}
     a.back{color:var(--mut);text-decoration:none;font-weight:600}
     a.back:hover{color:var(--tx)}
+    .seg{display:flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
+    .seg button{border:none;background:#21262d;color:var(--mut);padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer}
+    .seg button.on{background:var(--blu);color:#fff}
     #chart{flex:1;min-height:0}
+    #payoffBox{flex:1;min-height:0;position:relative;display:none}
     .rd{display:flex;gap:16px;padding:6px 14px;border-top:1px solid var(--bd);background:var(--panel);font-size:12px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
     .rd b{color:var(--mut);font-weight:600;margin-right:4px}
   </style>
@@ -29,10 +33,15 @@
     <span class="sub" id="legs">—</span>
     <span class="pill" id="statusPill">—</span>
     <div class="spacer"></div>
+    <div class="seg" id="viewSeg">
+      <button id="v-premium" class="on" onclick="setStradView('premium')">📈 Premium</button>
+      <button id="v-payoff" onclick="setStradView('payoff')">📊 Payoff</button>
+    </div>
     <button onclick="load()" style="background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer">↻ Now</button>
     <a class="back" href="/">← Dashboard</a>
   </div>
   <div id="chart"></div>
+  <div id="payoffBox"></div>
   <div class="rd">
     <span><b>Entry credit</b><span id="v-ec">—</span></span>
     <span><b>Target</b><span id="v-tp" style="color:var(--grn)">—</span></span>
@@ -57,11 +66,46 @@
   function fmt(x,d){ return (x==null||isNaN(x))?'—':Number(x).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
   function setv(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
 
+  var _payoff=null, _spot=null, _view='premium';
+  function setStradView(v){
+    _view=v;
+    document.getElementById('v-premium').classList.toggle('on', v==='premium');
+    document.getElementById('v-payoff').classList.toggle('on', v==='payoff');
+    document.getElementById('chart').style.display = v==='premium'?'':'none';
+    document.getElementById('payoffBox').style.display = v==='payoff'?'':'none';
+    if(v==='premium'){ chart.applyOptions({ width:document.getElementById('chart').clientWidth, height:document.getElementById('chart').clientHeight }); }
+    else { drawPayoff(); }
+  }
+  function drawPayoff(){
+    var box=document.getElementById('payoffBox'); if(!box) return;
+    var pf=_payoff;
+    if(!pf || !pf.curve || !pf.curve.length){ box.innerHTML='<div style="padding:40px;color:var(--mut);text-align:center">Payoff data nahi (strike/credit missing)</div>'; return; }
+    var W=box.clientWidth||800, H=box.clientHeight||400, pad=48;
+    var xs=pf.curve.map(function(p){return p[0];}), ys=pf.curve.map(function(p){return p[1];});
+    var xmin=Math.min.apply(null,xs), xmax=Math.max.apply(null,xs);
+    var ymin=Math.min.apply(null,ys.concat([0])), ymax=Math.max.apply(null,ys.concat([0]));
+    var X=function(v){return pad+(v-xmin)/((xmax-xmin)||1)*(W-2*pad);};
+    var Y=function(v){return H-pad-(v-ymin)/((ymax-ymin)||1)*(H-2*pad);};
+    var pts=pf.curve.map(function(p){return X(p[0]).toFixed(1)+','+Y(p[1]).toFixed(1);}).join(' ');
+    var inr=function(n){return Math.round(n).toLocaleString('en-IN');};
+    var g=['<svg viewBox="0 0 '+W+' '+H+'" style="width:100%;height:100%;display:block">'];
+    g.push('<line x1="'+pad+'" y1="'+Y(0).toFixed(1)+'" x2="'+(W-pad)+'" y2="'+Y(0).toFixed(1)+'" stroke="#484f58" stroke-dasharray="4 4"/>');
+    g.push('<polyline points="'+pts+'" fill="none" stroke="#58a6ff" stroke-width="2"/>');
+    (pf.breakevens||[]).forEach(function(be){ g.push('<line x1="'+X(be).toFixed(1)+'" y1="'+pad+'" x2="'+X(be).toFixed(1)+'" y2="'+(H-pad)+'" stroke="#d29922" stroke-dasharray="3 3"/><text x="'+(X(be)+3).toFixed(1)+'" y="'+(H-pad-4)+'" fill="#d29922" font-size="11">BE '+Math.round(be)+'</text>'); });
+    g.push('<circle cx="'+X(pf.strike).toFixed(1)+'" cy="'+Y(pf.max_profit).toFixed(1)+'" r="4" fill="#3fb950"/><text x="'+(X(pf.strike)+5).toFixed(1)+'" y="'+(Y(pf.max_profit)-6).toFixed(1)+'" fill="#3fb950" font-size="11">max +'+inr(pf.max_profit)+' @ '+Math.round(pf.strike)+'</text>');
+    if(_spot){ g.push('<line x1="'+X(_spot).toFixed(1)+'" y1="'+pad+'" x2="'+X(_spot).toFixed(1)+'" y2="'+(H-pad)+'" stroke="#58a6ff" stroke-width="1.5"/><text x="'+(X(_spot)+4).toFixed(1)+'" y="'+(pad+12)+'" fill="#58a6ff" font-size="11">spot '+Math.round(_spot)+'</text>'); }
+    g.push('<text x="'+pad+'" y="'+(H-8)+'" fill="#8b949e" font-size="10">'+Math.round(xmin)+'</text><text x="'+(W-pad-40)+'" y="'+(H-8)+'" fill="#8b949e" font-size="10">'+Math.round(xmax)+'</text>');
+    g.push('<text x="6" y="'+(Y(ymax)+4).toFixed(1)+'" fill="#3fb950" font-size="10">+'+inr(ymax)+'</text><text x="6" y="'+(Y(ymin)-2).toFixed(1)+'" fill="#f85149" font-size="10">'+inr(ymin)+'</text>');
+    g.push('</svg>');
+    box.innerHTML=g.join('');
+  }
+
   function load(){
     if(!SID){ document.getElementById('legs').textContent='no straddle id'; return; }
     fetch('/api/straddle-chart-data?id='+encodeURIComponent(SID)).then(function(r){return r.json();}).then(function(d){
       if(!d.ok){ document.getElementById('legs').textContent = d.msg||'load fail'; return; }
       document.getElementById('legs').textContent = (d.symbol||'')+' · '+((d.legs||[]).join(' + '));
+      _payoff = d.payoff; _spot = d.spot;
       var sp=document.getElementById('statusPill'); sp.textContent=(d.status||'').toUpperCase();
       sp.className='pill'+(d.status==='target'?' grn':(d.status==='sl'?' red':''));
       var data=(d.combined||[]).map(function(p){return {time:p.t, value:p.v};}).filter(function(x){return x.value!=null&&!isNaN(x.value);});
@@ -87,10 +131,11 @@
       if(live!=null && d.entry_credit){ var p=d.entry_credit-live; pl2.textContent=(p>=0?'+':'')+fmt(p,1)+' pt'; pl2.style.color=p>=0?'var(--grn)':'var(--red)'; }
       else { pl2.textContent='—'; }
       if(!_fitted && data.length){ chart.timeScale().fitContent(); _fitted=true; }
+      if(_view==='payoff') drawPayoff();
     }).catch(function(e){ document.getElementById('legs').textContent='load fail: '+e; });
   }
 
-  window.addEventListener('resize', function(){ chart.applyOptions({ width:document.getElementById('chart').clientWidth, height:document.getElementById('chart').clientHeight }); });
+  window.addEventListener('resize', function(){ chart.applyOptions({ width:document.getElementById('chart').clientWidth, height:document.getElementById('chart').clientHeight }); if(_view==='payoff') drawPayoff(); });
   load();
   setInterval(load, 10000);   // live refresh (setData preserves zoom after first fit)
 </script>

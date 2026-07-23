@@ -588,6 +588,12 @@ def api_option_curves():
         date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
     expiry = request.args.get('expiry') or None
     try:
+        days = int(request.args.get('days') or 1)
+    except Exception:
+        days = 1
+    try:
+        if days > 1:
+            return jsonify(oc.curves_multi(u, date, days))   # multi-day concatenated
         return jsonify(oc.curves(u, date, expiry))
     except Exception as e:
         print("[option-curves] fail:", e, flush=True)
@@ -3888,12 +3894,32 @@ def api_straddle_chart_data():
             for t in sorted(set(maps[0]) & set(maps[1])):
                 combined.append({"t": t, "v": round(maps[0][t] + maps[1][t], 2)})
         ec = float(s.get("entry_credit", 0) or 0)
+        # Payoff diagram (short straddle: P&L = (credit − |S − K|) × qty) — computed from the
+        # straddle's OWN stored fields so it renders whether the position is open or closed.
+        payoff = None
+        try:
+            strike = float(str(lg[0].get("trad_sym", "")).split("-")[-2]) if lg else None
+            q = float(lg[0].get("qty") or 0) if lg else 0
+            if strike and ec > 0 and q > 0:
+                lo, hi, n = strike - 2 * ec, strike + 2 * ec, 120
+                stepp = (hi - lo) / n
+                curve = [[round(lo + i * stepp, 1), round((ec - abs((lo + i * stepp) - strike)) * q, 0)] for i in range(n + 1)]
+                payoff = {"strike": strike, "credit": ec, "qty": q, "max_profit": round(ec * q, 0),
+                          "breakevens": [round(strike - ec, 1), round(strike + ec, 1)], "curve": curve}
+        except Exception:
+            payoff = None
+        try:
+            import shared_ltp_cache as _slc
+            spot = _slc.get_index(s.get("symbol"), max_age=120)
+        except Exception:
+            spot = None
         return jsonify({
             "ok": True, "symbol": s.get("symbol"), "combined": combined,
             "entry_credit": ec, "tp_line": round(ec - float(s.get("tp_pt", 30)), 2),
             "sl_line": round(ec + float(s.get("sl_pt", 30)), 2),
             "entry_ts": s.get("created_ts"), "status": s.get("status"),
             "exit_credit": s.get("exit_credit"), "legs": [x.get("trad_sym") for x in lg],
+            "payoff": payoff, "spot": spot,
         })
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})

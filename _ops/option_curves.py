@@ -148,6 +148,34 @@ def curves(u, date, expiry=None):
     return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points}
 
 
+def available_dates(u):
+    """All dates with a stored option-chain CSV for this underlying (sorted)."""
+    out = set()
+    for d in _lake_dirs(u):
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                if f.startswith(u + "_") and f.endswith(".csv"):
+                    out.add(f[len(u) + 1:-4])
+    return sorted(out)
+
+
+def curves_multi(u, end_date, days):
+    """Concatenate the last `days` available option-chain days (<= end_date) into one
+    continuous series — the SAME per-day points as curves(), just across days (each day
+    auto-picks its own nearest expiry). Overnight gaps are natural on the time axis."""
+    ds = [d for d in available_dates(u) if d <= end_date][-int(days):]
+    pts, used, exps = [], [], []
+    for d in ds:
+        r = curves(u, d)
+        if r.get("points"):
+            pts.extend(r["points"])
+            used.append(d)
+            if r.get("expiry") and r["expiry"] not in exps:
+                exps.append(r["expiry"])
+    return {"ok": bool(pts), "underlying": u, "points": pts, "days_used": used,
+            "multi": True, "expiries": sorted(exps), "expiry": None}
+
+
 def strike_series(u, date, expiry, strike=None, opt_type=None):
     """Per-minute premium series for ONE strike+type (for the /curves right-click
     'Load strike chart'). Also returns the list of strikes available that day so the
