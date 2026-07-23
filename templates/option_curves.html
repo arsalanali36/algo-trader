@@ -56,6 +56,20 @@
     #notePop .row{display:flex;gap:6px;margin-top:8px}
     #notePop button{padding:5px 9px;font-size:12px;width:auto}
     #notePop .del{background:#3d1418;border-color:#5c1a1f;color:var(--red);margin-left:auto}
+    #ctxMenu{position:fixed;z-index:70;display:none;background:#161b22;border:1px solid var(--bd);border-radius:8px;padding:4px;min-width:172px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+    #ctxMenu .mih{font-size:10px;color:var(--mut);padding:4px 10px 2px;text-transform:uppercase;letter-spacing:.03em}
+    #ctxMenu .mi{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--tx)}
+    #ctxMenu .mi:hover{background:#1f6feb22}
+    #stkModal{position:fixed;inset:0;z-index:80;display:none;background:rgba(0,0,0,.55)}
+    #stkModal .box{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(920px,94vw);height:min(560px,88vh);background:var(--panel);border:1px solid var(--bd);border-radius:10px;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.6)}
+    #stkModal .hd{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
+    #stkModal .hd .ttl{font-weight:700;font-size:14px}
+    #stkModal select{width:auto;min-width:108px}
+    #stkModal .seg{width:auto}
+    #stkModal .body{flex:1;position:relative;min-height:0}
+    #stkModal .x{margin-left:auto;cursor:pointer;color:var(--mut);font-size:18px;font-weight:700;background:none;border:none;width:auto;padding:0 6px}
+    #stkModal .x:hover{color:var(--tx)}
+    #stkModal .rd{font-size:12px;color:var(--mut);padding:6px 12px;border-top:1px solid var(--bd);font-variant-numeric:tabular-nums}
   </style>
 </head>
 <body>
@@ -134,6 +148,26 @@
       <button onclick="saveNote()" style="background:var(--blu);color:#fff;border-color:var(--blu)">Save</button>
       <button onclick="closeNotePopup()">Cancel</button>
       <button class="del" id="noteDel" onclick="deleteNote()">Delete</button>
+    </div>
+  </div>
+  <div id="ctxMenu"></div>
+  <div id="stkModal">
+    <div class="box">
+      <div class="hd">
+        <span class="ttl">Strike Chart</span>
+        <select id="stkSel" onchange="loadStrikeChart()" title="Strike"></select>
+        <div class="seg" id="stkTypeSeg" style="display:flex">
+          <button data-ot="CE" class="on" onclick="setStkType('CE',this)">CE</button>
+          <button data-ot="PE" onclick="setStkType('PE',this)">PE</button>
+        </div>
+        <div class="seg" id="stkModeSeg" style="display:flex">
+          <button data-m="candle" class="on" onclick="setStkMode('candle',this)">OHLC</button>
+          <button data-m="line" onclick="setStkMode('line',this)">Line</button>
+        </div>
+        <button class="x" onclick="closeStrikeModal()" title="Close (Esc)">✕</button>
+      </div>
+      <div class="body" id="stkBody"></div>
+      <div class="rd" id="stkRead">—</div>
     </div>
   </div>
 
@@ -338,10 +372,11 @@
             priceScaleId:(def.extra.axis==='left'?'left':'right'), priceLineVisible:false, lastValueVisible:false,
             visible: !overlayHidden[def.id] });
         }
-        // master index/spot overlay on its own hidden scale — toggled globally by idxAllBtn
-        entry.spotOv=chart.addLineSeries({ color:'rgba(88,166,255,.55)', lineWidth:1, priceScaleId:'ocspot',
-          priceLineVisible:false, lastValueVisible:false, visible:indexAll });
-        chart.priceScale('ocspot').applyOptions({ scaleMargins:{top:0.12,bottom:0.12}, visible:false });
+        // master index/spot overlay — prominent dashed line on a readable LEFT axis, so
+        // the index shows clearly on EVERY option pane; toggled globally by idxAllBtn
+        entry.spotOv=chart.addLineSeries({ color:'#58a6ff', lineWidth:2, lineStyle:2, priceScaleId:'left',
+          priceLineVisible:false, lastValueVisible:indexAll, visible:indexAll });
+        chart.priceScale('left').applyOptions({ visible:indexAll, borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
       }
       panes.push(entry);
       chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
@@ -402,20 +437,21 @@
     Object.keys(alertMarkers).forEach(function(k){ alertMarkers[k].sort(function(a,b){return a.time-b.time;}); });
   }
 
-  // ---- Index panel: OHLC candles built from raw 1-min spot (per TF bucket) ----
-  function indexCandles(pts, tf){
-    var out=[];
-    if(tf<=1){ pts.forEach(function(p){ if(p.spot!=null&&!isNaN(p.spot)) out.push({time:p.t,open:p.spot,high:p.spot,low:p.spot,close:p.spot}); }); return out; }
+  // ---- OHLC candles from a per-minute value stream (Index panel + strike charts) ----
+  function ohlcFrom(pts, tf, get){
+    var out=[], val=function(p){ var v=get(p); return (v==null||isNaN(v))?null:v; };
+    if(tf<=1){ pts.forEach(function(p){ var v=val(p); if(v!=null) out.push({time:p.t,open:v,high:v,low:v,close:v}); }); return out; }
     var bucket=tf*60, key=null, cur=null;
     pts.forEach(function(p){
-      if(p.spot==null||isNaN(p.spot)) return;
+      var v=val(p); if(v==null) return;
       var k=Math.floor(p.t/bucket);
-      if(key===null||k!==key){ if(cur) out.push(cur); key=k; cur={time:p.t,open:p.spot,high:p.spot,low:p.spot,close:p.spot}; }
-      else { cur.high=Math.max(cur.high,p.spot); cur.low=Math.min(cur.low,p.spot); cur.close=p.spot; cur.time=p.t; }
+      if(key===null||k!==key){ if(cur) out.push(cur); key=k; cur={time:p.t,open:v,high:v,low:v,close:v}; }
+      else { cur.high=Math.max(cur.high,v); cur.low=Math.min(cur.low,v); cur.close=v; cur.time=p.t; }
     });
     if(cur) out.push(cur);
     return out;   // bar time = last t in bucket → aligns with resample() line times
   }
+  function indexCandles(pts, tf){ return ohlcFrom(pts, tf, function(p){return p.spot;}); }
   function toggleIndexMode(elm){
     indexMode = indexMode==='candle' ? 'line' : 'candle'; save('oc_index_mode', indexMode);
     panes.forEach(function(e){ if(e.def.kind==='index'){ e.candle.applyOptions({visible:indexMode==='candle'}); e.line.applyOptions({visible:indexMode==='line'}); }});
@@ -424,7 +460,7 @@
   }
   function toggleIndexAll(btn){
     indexAll=!indexAll; save('oc_index_all', indexAll);
-    panes.forEach(function(e){ if(e.spotOv) e.spotOv.applyOptions({visible:indexAll}); });
+    panes.forEach(function(e){ if(e.spotOv){ e.spotOv.applyOptions({visible:indexAll, lastValueVisible:indexAll}); try{ e.chart.priceScale('left').applyOptions({visible:indexAll}); }catch(x){} }});
     btn.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); btn.classList.toggle('on', indexAll);
   }
 
@@ -446,6 +482,7 @@
   function refreshMarkers(){ panes.forEach(setPaneMarkers); }
   function findNote(pane, t){ for(var i=0;i<notes.length;i++){ if(notes[i].pane===pane && notes[i].t===t) return notes[i]; } return null; }
 
+  var _ctx=null;
   function attachNoteMenu(entry){
     entry.el.addEventListener('contextmenu', function(e){
       e.preventDefault();
@@ -453,13 +490,27 @@
       var rect=entry.el.getBoundingClientRect();
       var x=e.clientX-rect.left, y=e.clientY-rect.top;
       var t=null; try{ t=entry.chart.timeScale().coordinateToTime(x); }catch(x2){}
-      if(t==null) return;
       var price=null; try{ price=entry.main.coordinateToPrice(y); }catch(x3){}
-      var vt=view.map(function(p){return p.t;}), best=vt[0], bd=Infinity;
-      for(var i=0;i<vt.length;i++){ var dd=Math.abs(vt[i]-t); if(dd<bd){bd=dd;best=vt[i];} }
-      openNotePopup(entry.id, best, price, e.clientX, e.clientY);
+      var best=null;
+      if(t!=null){ var vt=view.map(function(p){return p.t;}), bd=Infinity; for(var i=0;i<vt.length;i++){ var dd=Math.abs(vt[i]-t); if(dd<bd){bd=dd;best=vt[i];} } }
+      _ctx={ pane:entry.id, t:best, price:price, cx:e.clientX, cy:e.clientY };
+      showCtxMenu(e.clientX, e.clientY);
     });
   }
+  function showCtxMenu(cx, cy){
+    var m=document.getElementById('ctxMenu');
+    var hasNote = (_ctx && _ctx.t!=null) ? findNote(_ctx.pane, _ctx.t) : null;
+    m.innerHTML =
+      '<div class="mih">'+ (_ctx?_ctx.pane:'') +'</div>'
+      + '<div class="mi" onclick="ctxNote()">📝 '+(hasNote?'Edit note':'Add note')+'</div>'
+      + '<div class="mi" onclick="ctxStrike()">📈 Load strike chart</div>';
+    m.style.left=Math.min(cx, window.innerWidth-190)+'px';
+    m.style.top=Math.min(cy, window.innerHeight-120)+'px';
+    m.style.display='block';
+  }
+  function hideCtxMenu(){ var m=document.getElementById('ctxMenu'); if(m) m.style.display='none'; }
+  function ctxNote(){ hideCtxMenu(); if(_ctx && _ctx.t!=null) openNotePopup(_ctx.pane, _ctx.t, _ctx.price, _ctx.cx, _ctx.cy); }
+  function ctxStrike(){ hideCtxMenu(); openStrikeModal(); }
   var _noteCtx=null;
   function openNotePopup(pane, t, price, cx, cy){
     var pop=document.getElementById('notePop'), ta=document.getElementById('noteTxt'), del=document.getElementById('noteDel');
@@ -491,6 +542,61 @@
     if(!notes.length) return;
     if(!confirm('Is din ke saare notes hata dein?')) return;
     notes=[]; save(notesKey(), notes); buildNotes(); refreshMarkers();
+  }
+
+  // ---- Strike chart modal (right-click → Load strike chart) ----
+  var _stkChart=null, _stkCandle=null, _stkLine=null, _stkType='CE', _stkMode=load('oc_stk_mode','candle'), _stkPts=[];
+  function openStrikeModal(){
+    var m=document.getElementById('stkModal'); m.style.display='block';
+    document.querySelectorAll('#stkModeSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.m===_stkMode); });
+    var body=document.getElementById('stkBody');
+    if(!_stkChart){
+      _stkChart=mkChart(body);
+      _stkCandle=_stkChart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149', visible:_stkMode==='candle' });
+      _stkLine=_stkChart.addLineSeries({ color:'#f0883e', lineWidth:2, priceLineVisible:false, visible:_stkMode==='line' });
+      _stkChart.subscribeCrosshairMove(function(prm){ stkCross(prm); });
+    } else { _stkChart.applyOptions({ width:body.clientWidth, height:body.clientHeight }); }
+    // available strikes → picker (default to nearest ATM), then load
+    var qs='underlying='+U+'&date='+document.getElementById('date').value;
+    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    document.getElementById('stkRead').textContent='Loading strikes…';
+    fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){
+      var sel=document.getElementById('stkSel'), strikes=(d&&d.strikes)||[];
+      if(!strikes.length){ document.getElementById('stkRead').textContent='Is din ka chain data nahi mila.'; sel.innerHTML=''; return; }
+      var atm=(view.length && view[view.length-1].atm) ? view[view.length-1].atm : strikes[Math.floor(strikes.length/2)];
+      sel.innerHTML=strikes.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
+      sel.value=String(atm);
+      loadStrikeChart();
+    }).catch(function(){ document.getElementById('stkRead').textContent='Strike list load fail'; });
+  }
+  function closeStrikeModal(){ var m=document.getElementById('stkModal'); if(m) m.style.display='none'; }
+  function setStkType(t, btn){ _stkType=t; document.querySelectorAll('#stkTypeSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); loadStrikeChart(); }
+  function setStkMode(mo, btn){ _stkMode=mo; save('oc_stk_mode',mo); document.querySelectorAll('#stkModeSeg button').forEach(function(b){b.classList.toggle('on',b===btn);});
+    if(_stkCandle) _stkCandle.applyOptions({visible:mo==='candle'}); if(_stkLine) _stkLine.applyOptions({visible:mo==='line'}); }
+  function loadStrikeChart(){
+    var strike=document.getElementById('stkSel').value; if(!strike) return;
+    var tf=+document.getElementById('tf').value;
+    var qs='underlying='+U+'&date='+document.getElementById('date').value+'&strike='+strike+'&type='+_stkType;
+    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    document.querySelector('#stkModal .ttl').textContent=U+' '+strike+' '+_stkType;
+    document.getElementById('stkRead').textContent='Loading…';
+    fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){
+      _stkPts=(d&&d.points)||[];
+      var line=_stkPts.map(function(p){return {time:p.t,value:p.ltp};}).filter(function(x){return x.value!=null&&!isNaN(x.value);});
+      try{ _stkLine.setData(line); }catch(x){}
+      try{ _stkCandle.setData(ohlcFrom(_stkPts, tf, function(p){return p.ltp;})); }catch(x){}
+      try{ _stkChart.timeScale().fitContent(); }catch(x){}
+      if(_stkPts.length){ var last=_stkPts[_stkPts.length-1]; document.getElementById('stkRead').textContent='Last ₹'+fmt(last.ltp,2)+(last.oi?(' · OI '+fmtInr(last.oi)):'')+(last.iv?(' · IV '+fmt(last.iv,1)+'%'):''); }
+      else { document.getElementById('stkRead').textContent='Is strike ka data nahi (chain me ATM se door strike collect nahi hoti).'; }
+    }).catch(function(e){ document.getElementById('stkRead').textContent='Load fail: '+e; });
+  }
+  function stkCross(param){
+    if(!_stkPts.length) return;
+    var t=param&&param.time; if(t==null) return;
+    var p=null; for(var i=0;i<_stkPts.length;i++){ if(_stkPts[i].t===t){ p=_stkPts[i]; break; } }
+    if(!p) return;
+    var dt=new Date(t*1000);
+    document.getElementById('stkRead').textContent=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0')+'  ₹'+fmt(p.ltp,2)+(p.oi?(' · OI '+fmtInr(p.oi)):'')+(p.iv?(' · IV '+fmt(p.iv,1)+'%'):'')+(p.spot?(' · spot '+fmt(p.spot,1)):'');
   }
 
   var _lastOk=null, _structKey='';
@@ -546,7 +652,12 @@
 
   // init master index-overlay button + close note popup on outside click
   (function(){ var b=document.getElementById('idxAllBtn'); if(b){ b.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); b.classList.toggle('on', indexAll); } })();
-  document.addEventListener('mousedown', function(e){ var p=document.getElementById('notePop'); if(p && p.style.display==='block' && !p.contains(e.target)) closeNotePopup(); });
+  document.addEventListener('mousedown', function(e){
+    var p=document.getElementById('notePop'); if(p && p.style.display==='block' && !p.contains(e.target)) closeNotePopup();
+    var m=document.getElementById('ctxMenu'); if(m && m.style.display==='block' && !m.contains(e.target)) hideCtxMenu();
+  });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikeModal(); } });
+  document.getElementById('stkModal').addEventListener('mousedown', function(e){ if(e.target.id==='stkModal') closeStrikeModal(); });
 
   refresh(true);
 </script>

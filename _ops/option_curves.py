@@ -146,3 +146,46 @@ def curves(u, date, expiry=None):
         })
 
     return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points}
+
+
+def strike_series(u, date, expiry, strike=None, opt_type=None):
+    """Per-minute premium series for ONE strike+type (for the /curves right-click
+    'Load strike chart'). Also returns the list of strikes available that day so the
+    picker can offer them. Display-only."""
+    _, rows = _load_rows(u, date)
+    if not rows:
+        return {"ok": False, "expiry": expiry, "strikes": [], "points": []}
+
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if expiry not in exps:
+        expiry = exps[0] if exps else None
+
+    strikes = sorted({_f(r.get("strike")) for r in rows
+                      if r.get("expiry") == expiry and _f(r.get("strike")) is not None})
+
+    pts = []
+    want = _f(strike)
+    ot = (opt_type or "").upper()
+    if want is not None and ot in ("CE", "PE"):
+        for r in rows:
+            if r.get("expiry") != expiry or r.get("opt_type") != ot:
+                continue
+            if _f(r.get("strike")) != want:
+                continue
+            ep = _epoch_ist(r.get("datetime"))
+            ltp = _f(r.get("ltp"))
+            if ep is None or ltp is None:
+                continue
+            pts.append({
+                "t": ep,
+                "ltp": round(ltp, 2),
+                "oi": _f(r.get("oi")) or 0.0,
+                "iv": _f(r.get("iv")),
+                "spot": _f(r.get("spot")),
+            })
+        pts.sort(key=lambda x: x["t"])
+
+    return {
+        "ok": True, "underlying": u, "expiry": expiry, "strikes": strikes,
+        "strike": want, "opt_type": ot, "points": pts,
+    }

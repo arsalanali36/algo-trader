@@ -593,6 +593,24 @@ def api_option_curves():
         print("[option-curves] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "expiries": [], "points": []})
 
+@app.route('/api/option-strike')
+def api_option_strike():
+    """Per-strike premium series for /curves right-click 'Load strike chart'.
+    No strike given → just the available-strikes list (for the picker). Display-only."""
+    import option_curves as oc
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date')
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    strike = request.args.get('strike')
+    ot = request.args.get('type') or None
+    try:
+        return jsonify(oc.strike_series(u, date, expiry, strike, ot))
+    except Exception as e:
+        print("[option-strike] fail:", e, flush=True)
+        return jsonify({"ok": False, "strikes": [], "points": []})
+
 @app.route('/api/option-alerts')
 def api_option_alerts():
     """Fired option-chain alerts for a day → chart markers on /curves. Display-only."""
