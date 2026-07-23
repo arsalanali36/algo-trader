@@ -119,6 +119,60 @@ def plan(date, broker_name="kite", db_path=None, log=print):
             "broker_net": dict(broker_net), "app_net": dict(app_net)}
 
 
+def _open_live_strategy(con, date, broker_name, trad_sym):
+    """The single open LIVE strategy holding this contract (to attribute an external
+    close). Returns the strategy if exactly one has net!=0 on it, else None → 'manual'."""
+    con.row_factory = __import__("sqlite3").Row
+    rows = con.execute(
+        "select strategy, side, qty from orders where date=? and mode='live' and broker=? "
+        "and trad_sym=? and status in ('filled','open')",
+        (date, broker_name, trad_sym)).fetchall()
+    net = defaultdict(int)
+    for r in rows:
+        net[r["strategy"]] += _sign(r["side"]) * int(r["qty"] or 0)
+    live = [s for s, n in net.items() if n != 0]
+    return live[0] if len(live) == 1 else None
+
+
+def apply(date, broker_name="kite", dry_run=True, log=print):
+    """Make the app's LIVE ledger match the broker trade book, authoritatively.
+
+    Records each EXTERNAL broker order (one the app never recorded) EXACTLY ONCE,
+    aggregated per order_id → ONE row of matched qty (netting-safe: the whack-a-mole
+    came from split 65+65 fills a single SELL 130 couldn't pair; one order = one row
+    fixes that), attributed to the contract's single open live strategy (else 'manual').
+    Keyed by broker_order_id → idempotent (a re-run records nothing). LIVE only; PAPER
+    is never touched. dry_run=True (default) plans only, writes nothing.
+
+    Any net mismatch that REMAINS after recording externals (an app entry the broker
+    has no record of) is REPORTED, not auto-closed — that's a separate reviewed step.
+    """
+    import sqlite3
+    import order_store
+    db_path = str(order_store.DB_PATH)
+    p = plan(date, broker_name, db_path)
+    con = sqlite3.connect(db_path)
+    actions = []
+    for o in p["external_orders"]:
+        trad_sym = o.get("trad_sym")
+        if not trad_sym:
+            actions.append({"type": "skip", "reason": "unresolved-symbol", "order_id": o["order_id"]})
+            continue
+        strat = _open_live_strategy(con, date, broker_name, trad_sym) or "manual"
+        actions.append({"type": "record", "order_id": o["order_id"], "side": o["side"],
+                        "qty": o["qty"], "price": o["avg"], "trad_sym": trad_sym,
+                        "sec_id": o.get("sec_id"), "strategy": strat})
+        if not dry_run:
+            order_store.record(o["side"], o["qty"], o["avg"], source="broker_reconcile",
+                               strategy=strat, mode="live", broker=broker_name,
+                               trad_sym=trad_sym, sec_id=str(o.get("sec_id") or ""),
+                               correlation_id=str(o["order_id"]), broker_order_id=str(o["order_id"]),
+                               status="filled", tags=["EXTERNALLY_RECORDED", "BROKER_MIRROR"])
+    con.close()
+    after = plan(date, broker_name, db_path)   # re-check (post-write if applied)
+    return {"actions": actions, "residual_mismatch": after["mismatch"], "dry_run": dry_run}
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
