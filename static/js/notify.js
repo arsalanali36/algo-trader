@@ -285,8 +285,18 @@
       }
       window.addEventListener('error', function (e) {
         var m = e.message || (e.error && e.error.message) || 'unknown';
-        if (_isNoise(m)) { try { console.debug('[notify skip]', m); } catch (x) { } return; }
-        window.notifPush('UI crash: ' + m + ' @ ' + (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0),
+        var fn = e.filename || '';
+        // Inline onclick handlers in the HTML (nav tabs, header buttons) call
+        // global functions that live in app-*.js loaded at the very bottom of the
+        // page. A click during the page-load window — before those scripts run —
+        // throws "X is not defined" FROM the inline handler (filename = the page
+        // itself, not a .js file). That's a transient load-race: the control works
+        // fine once loaded, and a genuinely-missing function is self-evident in the
+        // UI, not something the trading-alert bell should carry. Real ReferenceErrors
+        // INSIDE a script (filename ends in .js) still notify.
+        var inlineRace = /is not defined/i.test(m) && !/\.js(\?|$)/i.test(fn);
+        if (_isNoise(m) || inlineRace) { try { console.debug('[notify skip]', m, fn); } catch (x) { } return; }
+        window.notifPush('UI crash: ' + m + ' @ ' + (fn || '?').split('/').pop() + ':' + (e.lineno || 0),
           'error', 'ui:' + String(m).slice(0, 80));
       });
       window.addEventListener('unhandledrejection', function (e) {
