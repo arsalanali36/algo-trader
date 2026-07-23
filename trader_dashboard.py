@@ -53,6 +53,35 @@ _sys.path.insert(0, str(TRADERS_DIR))
 
 app = Flask(__name__)
 
+# ── Static asset caching — versioned + immutable ────────────────────────────────
+# Flask serves /static/* with `Cache-Control: no-cache`, so the browser revalidates
+# EVERY js/css file on EVERY page load (conditional GET → 304). On a heavy page like
+# /stats2 (~13 JS files incl. chart.umd 208KB) over real home→VPS latency that's a
+# dozen serialized round-trips before the page even runs — the "slow open" the user
+# feels. Backend compute is already <35ms, so this — not a missing data cache — is
+# the bottleneck. Fix: stamp every url_for('static') URL with the file's mtime
+# (?v=<mtime>) and serve versioned assets `immutable` so the browser uses its DISK
+# copy with ZERO network round-trips. A deploy changes the mtime → new URL → fresh
+# fetch, so there's no stale-JS risk. Un-versioned raw /static paths (e.g. inline
+# <script src> in index.html) keep the old no-cache behaviour — no regression.
+@app.url_defaults
+def _static_cache_bust(endpoint, values):
+    if endpoint == 'static' and values.get('filename'):
+        try:
+            fp = os.path.join(app.static_folder, values['filename'])
+            values['v'] = int(os.path.getmtime(fp))
+        except OSError:
+            pass
+
+@app.after_request
+def _static_immutable(resp):
+    try:
+        if request.path.startswith('/static/') and request.args.get('v'):
+            resp.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    except Exception:
+        pass
+    return resp
+
 # ── Login gate ────────────────────────────────────────────────────────────────
 # Whole dashboard is behind a single password (public internet + live trading).
 # Only /login, static assets, and the TradingView webhook (own token auth) are
