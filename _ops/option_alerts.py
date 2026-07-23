@@ -54,6 +54,11 @@ DEFAULTS = {
     "straddle_pts": 12.0,      # AND min absolute points (ignore tiny %)
     "oi_win": 10,              # lookback minutes for OI unwind
     "oi_unwind_pct": 8.0,      # min % OI drop on a side
+    "iv_win": 10,              # lookback minutes for ATM-IV move
+    "iv_move_pct": 6.0,        # min % ATM-IV move (crush/pop)
+    "decay_edge_pct": 5.0,     # actual-straddle vs theoretical gap % (decay edge/lag)
+    "delta_drift": 0.25,       # |net straddle delta| threshold → directional
+    "wall_shift_win": 15,      # lookback minutes for max-OI wall shift
     "cooldown_min": 12,        # per-alert-type cooldown
 }
 
@@ -168,10 +173,80 @@ def evaluate(underlying, date=None, cfg=None, points=None):
                                f"{int(cfg['oi_win'])}m me. {side} writers/holders nikal rahe.",
                     })
 
+    # ── 📉/📈 ATM IV crush / pop (fast IV move; chart overlays it vs VIX) ────
+    ivpast = _at_or_before(pts, int(cfg["iv_win"]) * 60)
+    if ivpast and ivpast.get("atm_iv") and cur.get("atm_iv"):
+        a0, a1 = ivpast["atm_iv"], cur["atm_iv"]
+        ivpct = (a1 - a0) / a0 * 100.0
+        vixs = f" VIX {cur['vix']:.1f}." if cur.get("vix") is not None else ""
+        if -ivpct >= cfg["iv_move_pct"]:
+            out.append({
+                "key": f"opt_iv_crush_{U}",
+                "level": "warn",
+                "msg": f"📉 {U} ATM IV crush — {a0:.1f}→{a1:.1f}% ({ivpct:+.1f}%) {int(cfg['iv_win'])}m me.{vixs} "
+                       f"Premium tez bleed — seller-friendly.",
+            })
+        elif ivpct >= cfg["iv_move_pct"]:
+            out.append({
+                "key": f"opt_iv_pop_{U}",
+                "level": "warn",
+                "msg": f"📈 {U} ATM IV chadh rahi — {a0:.1f}→{a1:.1f}% ({ivpct:+.1f}%) {int(cfg['iv_win'])}m me.{vixs} "
+                       f"Vol/event sambhav — buyer-friendly.",
+            })
+
+    # ── 🎯 Theo-vs-actual decay edge (actual straddle vs BS pure-theta line) ──
+    if cur.get("straddle") and cur.get("straddle_theo"):
+        gap = cur["straddle_theo"] - cur["straddle"]
+        gpct = gap / cur["straddle_theo"] * 100.0
+        if gpct >= cfg["decay_edge_pct"]:
+            out.append({
+                "key": f"opt_decay_edge_{U}",
+                "level": "warn",
+                "msg": f"🎯 {U} decay edge — actual straddle {cur['straddle']:.0f} theoretical {cur['straddle_theo']:.0f} "
+                       f"se {gpct:.1f}% neeche. Decay schedule se aage = seller edge confirm.",
+            })
+        elif -gpct >= cfg["decay_edge_pct"]:
+            out.append({
+                "key": f"opt_decay_lag_{U}",
+                "level": "warn",
+                "msg": f"⚠️ {U} decay lag — actual straddle {cur['straddle']:.0f} theoretical {cur['straddle_theo']:.0f} "
+                       f"se {-gpct:.1f}% upar. IV expand / decay peeche — seller ke liye caution.",
+            })
+
+    # ── 🧭 Net straddle delta drift (spot ATM se door → directional) ─────────
+    nd = cur.get("net_delta")
+    if nd is not None and abs(nd) >= cfg["delta_drift"]:
+        dirn = "CE-heavy (spot upar)" if nd > 0 else "PE-heavy (spot neeche)"
+        out.append({
+            "key": f"opt_delta_drift_{U}",
+            "level": "warn",
+            "msg": f"🧭 {U} straddle directional ho gaya — net delta {nd:+.2f} ({dirn}) @ ATM {cur['atm']:.0f}. "
+                   f"Neutral nahi raha — hedge / roll / adjust.",
+        })
+
+    # ── 🧱 OI wall shift (call/put max-OI strike moved) ─────────────────────
+    wpast = _at_or_before(pts, int(cfg["wall_shift_win"]) * 60)
+    if wpast:
+        for side, field, key in (("Call", "call_wall", "call_wall_shift"),
+                                  ("Put", "put_wall", "put_wall_shift")):
+            a0, a1 = wpast.get(field), cur.get(field)
+            if a0 and a1 and a0 != a1:
+                arr = "↑" if a1 > a0 else "↓"
+                out.append({
+                    "key": f"opt_{key}_{U}",
+                    "level": "warn",
+                    "msg": f"🧱 {U} {side} wall shift {arr} — max-OI {side.lower()} strike {a0:.0f}→{a1:.0f} "
+                           f"{int(cfg['wall_shift_win'])}m me. Resistance/support level khisak raha.",
+                })
+
     # tag each alert with which chart panel + the triggering point's time, so the
     # /curves page can drop a hover-able marker on the right curve at that moment.
     _PANEL = {"gamma_spike": ("gamma", "⚡"), "straddle_crush": ("straddle", "📉"),
-              "straddle_pop": ("straddle", "📈"), "ce_unwind": ("oi", "🔄"), "pe_unwind": ("oi", "🔄")}
+              "straddle_pop": ("straddle", "📈"), "ce_unwind": ("oi", "🔄"), "pe_unwind": ("oi", "🔄"),
+              "iv_crush": ("iv", "📉"), "iv_pop": ("iv", "📈"),
+              "decay_edge": ("decay", "🎯"), "decay_lag": ("decay", "⚠️"),
+              "delta_drift": ("delta", "🧭"),
+              "call_wall_shift": ("walls", "🧱"), "put_wall_shift": ("walls", "🧱")}
     for a in out:
         typ = a["key"][4:].rsplit("_", 1)[0] if a["key"].startswith("opt_") else a["key"]
         panel, tag = _PANEL.get(typ, ("straddle", "•"))
