@@ -316,18 +316,18 @@
       "structure": "Naked ATM"
     },
     "05.01": {
-      "name": "RSI (live)",
+      "name": "RSI (Nifty + BNF)",
       "config_key": "rsi_v1",
       "slug": null,
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",
       "legs": 1,
-      "instrument": "NIFTY",
+      "instrument": "NIFTY, BANKNIFTY",
       "hold": "Intraday",
       "structure": "Naked ATM"
     },
     "05.02": {
-      "name": "RSI (paper)",
+      "name": "RSI (Stocks)",
       "config_key": "rsi_v1_PAPER",
       "aliases": [
         "rsi_v1_paper"
@@ -336,7 +336,7 @@
       "live_file": "strategies/live/01_rsi_v1.py",
       "status": "legacy",
       "legs": 1,
-      "instrument": "NIFTY",
+      "instrument": "Stocks",
       "hold": "Intraday",
       "structure": "Naked ATM"
     },
