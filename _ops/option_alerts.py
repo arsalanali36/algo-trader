@@ -236,8 +236,12 @@ def _market_open(cfg):
     return (9 * 60 + 15) <= hm <= (15 * 60 + 30)
 
 
-def watch_loop(interval=60):
-    """Daemon loop — evaluate every `interval`s during market hours, fire alerts."""
+def watch_loop(interval=60, on_fire=None):
+    """Daemon loop — evaluate every `interval`s during market hours, fire alerts.
+    `on_fire(alert)` (optional): called for each alert that actually fires (after
+    cooldown) — the auto-straddle feature (C) hooks in here to place an order.
+    This module stays pure/read-only; the order-firing decision lives entirely in
+    the caller's callback."""
     print("[option-alerts] watch loop started", flush=True)
     while True:
         try:
@@ -247,6 +251,11 @@ def watch_loop(interval=60):
                     for a in evaluate(u, cfg=cfg):
                         if _fire(a, cfg):
                             print(f"[option-alerts] {a['msg']}", flush=True)
+                            if on_fire:
+                                try:
+                                    on_fire(a)
+                                except Exception as e:
+                                    print(f"[option-alerts] on_fire err: {e}", flush=True)
         except Exception as e:
             print(f"[option-alerts] loop error: {e}", flush=True)
         time.sleep(interval)

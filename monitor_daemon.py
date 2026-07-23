@@ -34,14 +34,21 @@ if __name__ == '__main__':
     # keeps index spot warm) so it reads spot with zero extra Dhan calls.
     threading.Thread(target=td.trigger_watch_loop, daemon=True).start()
 
-    # Option-chain "unusual behaviour" watcher (~60s, READ-ONLY — reads the chain
-    # snapshots the /curves page uses, fires bell/toast alerts on gamma spike /
-    # straddle crush / fast OI unwind). No order path.
+    # Option-chain "unusual behaviour" watcher (~60s — reads the chain snapshots
+    # the /curves page uses, fires bell/toast alerts on gamma spike / straddle
+    # crush / fast OI unwind). `on_fire` hook lets the auto-straddle feature (C)
+    # place a PAPER straddle when a straddle-move/gamma alert fires.
     try:
         import option_alerts
-        threading.Thread(target=option_alerts.watch_loop, daemon=True).start()
+        threading.Thread(target=lambda: option_alerts.watch_loop(on_fire=td.on_option_alert),
+                         daemon=True).start()
     except Exception as _e:
         print(f"[monitor] option_alerts not started: {_e}", flush=True)
+
+    # Auto ATM straddle (short) — ~3s loop: 9:20 scheduled fire (A) + combined-
+    # premium 30/30 basket exit for every open auto-straddle. Lives here (same
+    # process as the poller that keeps both legs' LTP warm). All PAPER.
+    threading.Thread(target=td.auto_straddle_loop, daemon=True).start()
 
     # P7: one batched Dhan LTP call per cycle covers all open positions +
     # index spot, fanned out via shared_ltp_cache (pos_monitor / webhook /

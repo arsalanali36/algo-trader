@@ -3476,6 +3476,391 @@ def trigger_watch_loop():
             _t.sleep(3)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# AUTO ATM STRADDLE (short) — 3 entry sources, COMBINED-premium 30/30 basket exit.
+#   A) 9:20 scheduled   B) Quick Order (manual)   C) on an option-alert
+# ALL PAPER (mode hard-locked here). Reuses execution_gateway (RMS + order_store),
+# dhan_master ATM resolve, _trigger_spot_now for spot, ltp_poller/shared_ltp_cache
+# for the live combined premium, _pre_exit machinery via execute_exit. State +
+# pure basket-exit decision live in _ops/auto_straddle.py (standalone-tested).
+# ══════════════════════════════════════════════════════════════════════════════
+def _ast_ist_now():
+    from datetime import datetime as _d, timezone as _tz, timedelta as _td
+    return _d.now(_tz.utc) + _td(hours=5, minutes=30)
+
+
+def _parse_hm_pair(s, default=(9, 20)):
+    try:
+        h, m = str(s).split(":")
+        return int(h), int(m)
+    except Exception:
+        return default
+
+
+def _auto_straddle_cfg():
+    """nifty_config['_auto_straddle'] with defaults. mode is HARD-LOCKED to paper
+    (going live needs an explicit code change + user confirmation)."""
+    cfg = {
+        "enabled_920": False, "enabled_alert": False,
+        "symbols_920": ["NIFTY", "BANKNIFTY"],
+        "lots": 1, "tp_pt": 30.0, "sl_pt": 30.0,
+        "entry_920": "09:20", "entry_920_window_min": 6,
+        "alert_triggers": ["straddle_pop", "straddle_crush", "gamma_spike"],
+        "max_per_day": 2,
+    }
+    try:
+        raw = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        cfg.update(raw.get("_auto_straddle") or {})
+    except Exception:
+        pass
+    cfg["mode"] = "paper"   # hard paper-lock
+    return cfg
+
+
+def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
+    """Sell ATM CE + ATM PE (short straddle) via execution_gateway (full RMS,
+    order_store-recorded), group-tagged for a COMBINED-premium basket exit. PAPER.
+    Naked-leg guard: if the 2nd leg fails after the 1st fills, unwind the 1st
+    immediately (never leave a naked leg). Returns (ok, msg)."""
+    import dhan_master
+    import execution_gateway as gw
+    import auto_straddle as ast
+    try:
+        import ltp_poller
+    except Exception:
+        ltp_poller = None
+    symbol = str(symbol).upper()
+    if symbol not in ("NIFTY", "BANKNIFTY"):
+        return False, f"{symbol} supported nahi"
+    mode = "paper"   # hard paper-lock
+    lots = int(lots or 1)
+    tp_pt = float(tp_pt or 0)
+    sl_pt = float(sl_pt or 0)
+    if lots < 1:
+        return False, "lots >= 1 hona chahiye"
+    cfg = _auto_straddle_cfg()
+    if ast.has_open(symbol):
+        return False, f"{symbol} straddle already open — skip (ek waqt ek per index)"
+    if source != "manual" and ast.count_today(symbol) >= int(cfg.get("max_per_day", 2)):
+        return False, f"{symbol} max/day ({cfg.get('max_per_day')}) reached"
+    try:
+        import risk_gate as rg
+        _sq, no_entry = rg.exit_time_config()
+        now = _ast_ist_now()
+        if (now.hour, now.minute) >= (no_entry[0], no_entry[1]):
+            return False, f"no-entry window (after {no_entry[0]:02d}:{no_entry[1]:02d}) — straddle nahi khola"
+    except Exception:
+        pass
+    spot = _trigger_spot_now(symbol)
+    if not spot or spot <= 0:
+        return False, f"{symbol} spot abhi nahi mila (rate-limit?) — order NAHI bheja"
+    sec_ce, t_ce, lot = dhan_master.get_option_contract(symbol, spot, "CE", 0)
+    sec_pe, t_pe, _lot2 = dhan_master.get_option_contract(symbol, spot, "PE", 0)
+    if not sec_ce or not sec_pe:
+        return False, f"{symbol} ATM contract resolve fail"
+    if not lot:
+        return False, f"{symbol} lot size resolve nahi hua — order NAHI bheja"
+    gid = "STRAD_" + uuid.uuid4().hex[:8]
+    xtags = ["STRADDLE", "STRAD_SRC:%s" % source]
+    res_ce = gw.execute_signal("auto_straddle", symbol, "SELL", lots, int(lot), sec_ce, t_ce,
+                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
+                               group_id=gid, extra_tags=xtags, log=log)
+    if not res_ce.get("ok"):
+        return False, f"CE leg blocked/failed — {res_ce.get('reason') or res_ce.get('status')}"
+    ce_fill = res_ce.get("price") or 0
+    res_pe = gw.execute_signal("auto_straddle", symbol, "SELL", lots, int(lot), sec_pe, t_pe,
+                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
+                               group_id=gid, extra_tags=xtags, log=log)
+    if not res_pe.get("ok"):
+        log(f"[STRADDLE] {symbol} PE leg fail ({res_pe.get('reason') or res_pe.get('status')}) "
+            f"— unwinding CE to avoid naked leg")
+        try:
+            gw.execute_exit("auto_straddle", symbol, sec_ce, t_ce, lots * int(lot),
+                            entry_side="SELL", mode=mode, group_id=gid,
+                            reason="STRADDLE_ABORT_NAKED", tag="STRADDLE", source="straddle", log=log)
+        except Exception as ue:
+            log(f"[STRADDLE] {symbol} CE unwind FAILED: {ue} — MANUAL CHECK")
+            try:
+                import notify
+                notify.error("straddle_naked_%s" % symbol,
+                             f"⚠️ {symbol} straddle: PE fail + CE unwind fail — manual check karo",
+                             source="chain")
+            except Exception:
+                pass
+        return False, f"PE leg fail — CE unwound (koi straddle nahi bana). {res_pe.get('reason') or res_pe.get('status')}"
+    pe_fill = res_pe.get("price") or 0
+    entry_credit = round((ce_fill or 0) + (pe_fill or 0), 2)
+    ast.add({
+        "symbol": symbol, "lots": lots, "mode": mode, "source": source, "group_id": gid,
+        "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_credit,
+        "legs": [
+            {"opt_type": "CE", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": lots * int(lot)},
+            {"opt_type": "PE", "sec_id": str(sec_pe), "trad_sym": t_pe, "entry_price": pe_fill, "qty": lots * int(lot)},
+        ],
+    })
+    if ltp_poller:
+        try:
+            ltp_poller.request_watch([(str(sec_ce), "NSE_FNO"), (str(sec_pe), "NSE_FNO")])
+        except Exception:
+            pass
+    try:
+        import notify
+        notify.push(f"🩳 {symbol} ATM straddle SELL @ credit {entry_credit:.0f} "
+                    f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
+                    level="info", key="straddle_open_%s" % gid, source="chain")
+    except Exception:
+        pass
+    return True, f"[PAPER] {symbol} straddle sold @ {entry_credit:.0f} (CE {ce_fill:.1f} + PE {pe_fill:.1f})"
+
+
+def _close_straddle(strad, status, reason, log=print):
+    """Square off BOTH legs (basket exit). status ∈ target/sl/eod/manual.
+    execute_exit does the fresh pre-exit flat-check per leg. Records exit_credit."""
+    import execution_gateway as gw
+    import auto_straddle as ast
+    try:
+        import shared_ltp_cache as slc
+    except Exception:
+        slc = None
+    symbol = strad.get("symbol")
+    gid = strad.get("group_id", "")
+    mode = strad.get("mode", "paper")
+    for leg in strad.get("legs", []):
+        try:
+            gw.execute_exit("auto_straddle", symbol, leg["sec_id"], leg["trad_sym"], leg["qty"],
+                            entry_side="SELL", mode=mode, group_id=gid, reason=reason,
+                            tag="STRADDLE", source="straddle", log=log)
+        except Exception as e:
+            log(f"[STRADDLE] {symbol} leg close fail {leg.get('trad_sym')}: {e}")
+    exit_credit = None
+    if slc:
+        try:
+            lg = strad.get("legs", [])
+            ce = slc.get(lg[0]["sec_id"], max_age=20.0) if len(lg) > 0 else None
+            pe = slc.get(lg[1]["sec_id"], max_age=20.0) if len(lg) > 1 else None
+            if ce and pe:
+                exit_credit = ce + pe
+        except Exception:
+            pass
+    ast.set_status(strad["id"], status, reason, exit_credit=exit_credit)
+
+
+def on_option_alert(alert):
+    """C — option_alerts watcher callback. On a straddle-move / gamma-spike alert,
+    auto-sell that index's ATM straddle (if enabled_alert). PAPER."""
+    try:
+        cfg = _auto_straddle_cfg()
+        if not cfg.get("enabled_alert"):
+            return
+        key = str(alert.get("key", ""))
+        u = str(alert.get("u", "")).upper()
+        typ = key[4:].rsplit("_", 1)[0] if key.startswith("opt_") else ""
+        if typ not in cfg.get("alert_triggers", []):
+            return
+        if u not in ("NIFTY", "BANKNIFTY"):
+            return
+        try:
+            import market_calendar as mc
+            if not mc.is_trading_day():
+                return
+        except Exception:
+            pass
+        ok, msg = _fire_auto_straddle(u, cfg.get("lots", 1), cfg.get("tp_pt", 30),
+                                      cfg.get("sl_pt", 30), "alert:%s" % typ,
+                                      log=lambda m: print(m, flush=True))
+        print(f"[straddle] alert-fire {u} ({typ}): {msg}", flush=True)
+    except Exception as e:
+        print(f"[straddle] on_option_alert err: {e}", flush=True)
+
+
+def auto_straddle_loop():
+    """~3s loop (monitor_daemon): (A) 9:20 scheduled fire (one-shot/day, restart-safe,
+    short window) + COMBINED-premium 30/30 basket exit for every open auto-straddle.
+    Reads both legs' LTP from shared_ltp_cache (kept warm via ltp_poller). PAPER."""
+    import time as _t
+    import auto_straddle as ast
+    try:
+        import shared_ltp_cache as slc
+        import ltp_poller
+    except Exception as e:
+        print(f"[straddle] loop deps missing: {e}", flush=True)
+        return
+    print("[straddle] auto-straddle loop started", flush=True)
+    while True:
+        try:
+            cfg = _auto_straddle_cfg()
+            now = _ast_ist_now()
+            trading = True
+            try:
+                import market_calendar as mc
+                trading = mc.is_trading_day(now.date())
+            except Exception:
+                pass
+            # ── A) 9:20 scheduled fire (only within the entry window; one-shot/day) ──
+            if cfg.get("enabled_920") and trading:
+                eh, em = _parse_hm_pair(cfg.get("entry_920", "09:20"))
+                win = int(cfg.get("entry_920_window_min", 6))
+                delta = (now.hour * 60 + now.minute) - (eh * 60 + em)
+                if 0 <= delta <= win:
+                    for sym in cfg.get("symbols_920", []):
+                        sym = str(sym).upper()
+                        if ast.fired_920_today(sym) or ast.has_open(sym):
+                            continue
+                        ok, msg = _fire_auto_straddle(sym, cfg.get("lots", 1), cfg.get("tp_pt", 30),
+                                                      cfg.get("sl_pt", 30), "schedule_920",
+                                                      log=lambda m: print(m, flush=True))
+                        print(f"[straddle] 9:20 {sym}: {msg}", flush=True)
+            # ── COMBINED-premium 30/30 basket exit ──
+            opens = ast.list_open()
+            if opens:
+                watch = []
+                for s in opens:
+                    for lg in s.get("legs", []):
+                        watch.append((str(lg["sec_id"]), "NSE_FNO"))
+                try:
+                    ltp_poller.request_watch(watch)
+                except Exception:
+                    pass
+                for s in opens:
+                    lg = s.get("legs", [])
+                    if len(lg) < 2:
+                        continue
+                    ce = slc.get(lg[0]["sec_id"], max_age=8.0)
+                    pe = slc.get(lg[1]["sec_id"], max_age=8.0)
+                    reason, live, profit = ast.check_exit(s["entry_credit"], ce, pe, s["tp_pt"], s["sl_pt"])
+                    if reason in ("target", "sl"):
+                        _close_straddle(s, reason, "STRADDLE_%s" % reason.upper(),
+                                        log=lambda m: print(m, flush=True))
+                        try:
+                            import notify
+                            notify.push(f"{'🎯' if reason == 'target' else '🛑'} {s['symbol']} straddle "
+                                        f"{reason.upper()} — credit {s['entry_credit']:.0f}→{live:.0f} ({profit:+.0f}pt)",
+                                        level="info" if reason == "target" else "warn",
+                                        key="straddle_exit_%s" % s["id"], source="chain")
+                        except Exception:
+                            pass
+                        print(f"[straddle] {s['symbol']} {reason.upper()} @ {live:.0f} ({profit:+.0f}pt)", flush=True)
+        except Exception as e:
+            print(f"[straddle] loop error: {e}", flush=True)
+        _t.sleep(3)
+
+
+@app.route('/api/auto-straddle/fire', methods=['POST'])
+def api_auto_straddle_fire():
+    """B — Quick Order 'Sell ATM Straddle'. PAPER."""
+    try:
+        d = request.get_json(force=True) or {}
+        sym = str(d.get("symbol", "NIFTY")).upper()
+        lots = int(d.get("lots", 1) or 1)
+        tp = float(d.get("tp_pt", 30) or 30)
+        sl = float(d.get("sl_pt", 30) or 30)
+        ok, msg = _fire_auto_straddle(sym, lots, tp, sl, "manual", log=lambda m: print(m, flush=True))
+        return jsonify({"ok": ok, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/auto-straddle/list')
+def api_auto_straddle_list():
+    """Today's straddles + live combined premium + P&L points for the UI."""
+    try:
+        import auto_straddle as ast
+        import shared_ltp_cache as slc
+        out = []
+        for s in ast.list_today():
+            lg = s.get("legs", [])
+            ce = slc.get(lg[0]["sec_id"], max_age=15.0) if len(lg) > 0 else None
+            pe = slc.get(lg[1]["sec_id"], max_age=15.0) if len(lg) > 1 else None
+            live = round(ce + pe, 2) if (ce and pe) else None
+            prof = round(s["entry_credit"] - live, 1) if (live is not None and s.get("entry_credit")) else None
+            out.append({**s, "live_credit": live, "profit_pt": prof})
+        return jsonify({"ok": True, "straddles": out, "cfg": _auto_straddle_cfg()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "straddles": []})
+
+
+@app.route('/api/auto-straddle/close', methods=['POST'])
+def api_auto_straddle_close():
+    try:
+        import auto_straddle as ast
+        d = request.get_json(force=True) or {}
+        s = next((x for x in ast.list_open() if x.get("id") == d.get("id")), None)
+        if not s:
+            return jsonify({"ok": False, "msg": "straddle not found / already closed"})
+        _close_straddle(s, "manual", "STRADDLE_MANUAL_CLOSE", log=lambda m: print(m, flush=True))
+        return jsonify({"ok": True, "msg": "closing both legs"})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/auto-straddle/config', methods=['GET', 'POST'])
+def api_auto_straddle_config():
+    """Get/set nifty_config['_auto_straddle']. Live mode is NOT settable here — paper-locked."""
+    try:
+        if request.method == 'GET':
+            return jsonify({"ok": True, "cfg": _auto_straddle_cfg()})
+        d = request.get_json(force=True) or {}
+        cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        cur = cfg.get("_auto_straddle") or {}
+        for k in ("enabled_920", "enabled_alert"):
+            if k in d:
+                cur[k] = bool(d[k])
+        for k in ("lots", "max_per_day"):
+            if k in d:
+                cur[k] = int(d[k])
+        for k in ("tp_pt", "sl_pt"):
+            if k in d:
+                cur[k] = float(d[k])
+        if isinstance(d.get("symbols_920"), list):
+            cur["symbols_920"] = [str(x).upper() for x in d["symbols_920"] if str(x).upper() in ("NIFTY", "BANKNIFTY")]
+        if isinstance(d.get("alert_triggers"), list):
+            cur["alert_triggers"] = [str(x) for x in d["alert_triggers"]]
+        cur["mode"] = "paper"
+        cfg["_auto_straddle"] = cur
+        TC_FILE.write_text(json.dumps(cfg, indent=2))
+        return jsonify({"ok": True, "cfg": _auto_straddle_cfg()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/straddle-chart')
+def straddle_chart_page():
+    from flask import send_file
+    return send_file(BASE_DIR / 'templates' / 'straddle_chart.html')
+
+
+@app.route('/api/straddle-chart-data')
+def api_straddle_chart_data():
+    """Combined straddle premium (CE close + PE close) intraday + entry marker +
+    target/SL lines for the dedicated straddle chart. Sums the per-leg premium
+    candles (disk-captured) by timestamp."""
+    try:
+        import auto_straddle as ast
+        s = ast.get(request.args.get("id"))
+        if not s:
+            return jsonify({"ok": False, "msg": "straddle not found"})
+        date = _ast_ist_now().strftime("%Y-%m-%d")
+        lg = s.get("legs", [])
+        maps = []
+        for leg in lg:
+            c = _load_premium_ohlc_candles(str(leg["sec_id"]), date)
+            maps.append({row["time"]: row["close"] for row in (c or {}).get("candles", [])} if c else {})
+        combined = []
+        if len(maps) == 2 and maps[0] and maps[1]:
+            for t in sorted(set(maps[0]) & set(maps[1])):
+                combined.append({"t": t, "v": round(maps[0][t] + maps[1][t], 2)})
+        ec = float(s.get("entry_credit", 0) or 0)
+        return jsonify({
+            "ok": True, "symbol": s.get("symbol"), "combined": combined,
+            "entry_credit": ec, "tp_line": round(ec - float(s.get("tp_pt", 30)), 2),
+            "sl_line": round(ec + float(s.get("sl_pt", 30)), 2),
+            "entry_ts": s.get("created_ts"), "status": s.get("status"),
+            "exit_credit": s.get("exit_credit"), "legs": [x.get("trad_sym") for x in lg],
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/triggers', methods=['GET'])
 def api_triggers_list():
     """Armed/fired price-triggers + live spot + distance-to-level for the UI."""

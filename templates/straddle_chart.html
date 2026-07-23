@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Straddle Chart — Algo Trader</title>
+  <script src="{{ url_for('static', filename='vendor/lightweight-charts.standalone.production.js') }}"></script>
+  <style>
+    :root{--bg:#0d1117;--panel:#161b22;--bd:#30363d;--tx:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--org:#f0883e;--blu:#1f6feb}
+    *{box-sizing:border-box}
+    html,body{height:100%;margin:0}
+    body{background:var(--bg);color:var(--tx);font-family:-apple-system,'Segoe UI',Arial,sans-serif;font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+    .top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--bd);background:var(--panel);flex-wrap:wrap}
+    .top .ttl{font-size:15px;font-weight:700}
+    .top .sub{font-size:11px;color:var(--mut)}
+    .pill{font-size:11px;font-weight:700;padding:2px 8px;border-radius:5px;background:#21262d}
+    .pill.grn{background:#12261a;color:var(--grn)} .pill.red{background:#3d1418;color:var(--red)}
+    .spacer{flex:1}
+    a.back{color:var(--mut);text-decoration:none;font-weight:600}
+    a.back:hover{color:var(--tx)}
+    #chart{flex:1;min-height:0}
+    .rd{display:flex;gap:16px;padding:6px 14px;border-top:1px solid var(--bd);background:var(--panel);font-size:12px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+    .rd b{color:var(--mut);font-weight:600;margin-right:4px}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <span class="ttl">🩳 Straddle</span>
+    <span class="sub" id="legs">—</span>
+    <span class="pill" id="statusPill">—</span>
+    <div class="spacer"></div>
+    <button onclick="load()" style="background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 10px;font-weight:600;cursor:pointer">↻ Now</button>
+    <a class="back" href="/">← Dashboard</a>
+  </div>
+  <div id="chart"></div>
+  <div class="rd">
+    <span><b>Entry credit</b><span id="v-ec">—</span></span>
+    <span><b>Target</b><span id="v-tp" style="color:var(--grn)">—</span></span>
+    <span><b>SL</b><span id="v-sl" style="color:var(--red)">—</span></span>
+    <span><b>Live</b><span id="v-live">—</span></span>
+    <span><b>P&amp;L</b><span id="v-pl">—</span></span>
+  </div>
+
+<script>
+  var LC = window.LightweightCharts;
+  var q = new URLSearchParams(location.search);
+  var SID = q.get('id') || '';
+  var chart = LC.createChart(document.getElementById('chart'), {
+    layout:{ background:{color:'#0d1117'}, textColor:'#8b949e', fontSize:11 },
+    grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
+    timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
+    rightPriceScale:{ borderColor:'#30363d' },
+    crosshair:{ mode: LC.CrosshairMode.Normal }
+  });
+  var line = chart.addLineSeries({ color:'#f0883e', lineWidth:2, priceLineVisible:false, lastValueVisible:true });
+  var _pls = [], _fitted = false;
+  function fmt(x,d){ return (x==null||isNaN(x))?'—':Number(x).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+  function setv(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+
+  function load(){
+    if(!SID){ document.getElementById('legs').textContent='no straddle id'; return; }
+    fetch('/api/straddle-chart-data?id='+encodeURIComponent(SID)).then(function(r){return r.json();}).then(function(d){
+      if(!d.ok){ document.getElementById('legs').textContent = d.msg||'load fail'; return; }
+      document.getElementById('legs').textContent = (d.symbol||'')+' · '+((d.legs||[]).join(' + '));
+      var sp=document.getElementById('statusPill'); sp.textContent=(d.status||'').toUpperCase();
+      sp.className='pill'+(d.status==='target'?' grn':(d.status==='sl'?' red':''));
+      var data=(d.combined||[]).map(function(p){return {time:p.t, value:p.v};}).filter(function(x){return x.value!=null&&!isNaN(x.value);});
+      line.setData(data);
+      // target / SL / entry price lines (short straddle: target BELOW, SL ABOVE)
+      _pls.forEach(function(pl){ try{ line.removePriceLine(pl); }catch(e){} }); _pls=[];
+      function pl(price, color, title){ if(price==null) return; _pls.push(line.createPriceLine({ price:price, color:color, lineWidth:1, lineStyle:2, axisLabelVisible:true, title:title })); }
+      pl(d.entry_credit, '#8b949e', 'entry '+fmt(d.entry_credit,0));
+      pl(d.tp_line, '#3fb950', 'target '+fmt(d.tp_line,0));
+      pl(d.sl_line, '#f85149', 'SL '+fmt(d.sl_line,0));
+      // entry arrow marker (created_ts is real-UTC; chart uses IST-as-UTC → +19800)
+      if(d.entry_ts && data.length){
+        var et=d.entry_ts+19800, best=data[0].time, bd=Infinity;
+        data.forEach(function(x){ var dd=Math.abs(x.time-et); if(dd<bd){bd=dd;best=x.time;} });
+        line.setMarkers([{ time:best, position:'aboveBar', color:'#3fb950', shape:'arrowDown', text:'SELL @'+fmt(d.entry_credit,0) }]);
+      }
+      var live = data.length ? data[data.length-1].value : (d.exit_credit||null);
+      setv('v-ec', fmt(d.entry_credit,2));
+      setv('v-tp', fmt(d.tp_line,2)+' (−'+fmt(d.entry_credit-d.tp_line,0)+')');
+      setv('v-sl', fmt(d.sl_line,2)+' (+'+fmt(d.sl_line-d.entry_credit,0)+')');
+      setv('v-live', live!=null?fmt(live,2):'—');
+      var pl2=document.getElementById('v-pl');
+      if(live!=null && d.entry_credit){ var p=d.entry_credit-live; pl2.textContent=(p>=0?'+':'')+fmt(p,1)+' pt'; pl2.style.color=p>=0?'var(--grn)':'var(--red)'; }
+      else { pl2.textContent='—'; }
+      if(!_fitted && data.length){ chart.timeScale().fitContent(); _fitted=true; }
+    }).catch(function(e){ document.getElementById('legs').textContent='load fail: '+e; });
+  }
+
+  window.addEventListener('resize', function(){ chart.applyOptions({ width:document.getElementById('chart').clientWidth, height:document.getElementById('chart').clientHeight }); });
+  load();
+  setInterval(load, 10000);   // live refresh (setData preserves zoom after first fit)
+</script>
+</body>
+</html>
