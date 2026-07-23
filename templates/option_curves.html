@@ -800,24 +800,37 @@
     ce.concat(pe).forEach(function(v){ if(v!=null&&!isNaN(v)) ivs.push(v); });
     if(!ivs.length){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">no IV at this minute</div>'; return; }
     var lo=Math.min.apply(null,ivs), hi=Math.max.apply(null,ivs); if(hi<=lo) hi=lo+1;
-    var padL=42,padR=8,padT=16,padB=24;
+    // OTM put-IV avg vs OTM call-IV avg → the skew number
+    var pIV=[], cIV=[];
+    for(var i=0;i<strikes.length;i++){ if(pe[i]!=null && strikes[i]<snap.atm) pIV.push(pe[i]); if(ce[i]!=null && strikes[i]>snap.atm) cIV.push(ce[i]); }
+    var pAvg=pIV.length?pIV.reduce(function(a,b){return a+b;},0)/pIV.length:null;
+    var cAvg=cIV.length?cIV.reduce(function(a,b){return a+b;},0)/cIV.length:null;
+    var skew=(pAvg!=null&&cAvg!=null)?(pAvg-cAvg):null;
+    var padL=42,padR=8,padT=26,padB=26;
     var x=function(i){ return padL+(strikes.length<2?0:i/(strikes.length-1))*(W-padL-padR); };
     var y=function(v){ return padT+(1-(v-lo)/(hi-lo))*(H-padT-padB); };
     function poly(arr,col){ var pts=[]; for(var i=0;i<arr.length;i++){ if(arr[i]!=null&&!isNaN(arr[i])) pts.push(x(i).toFixed(1)+','+y(arr[i]).toFixed(1)); } return pts.length?'<polyline fill="none" stroke="'+col+'" stroke-width="2" points="'+pts.join(' ')+'"/>':''; }
     var s='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="font:10px sans-serif">';
     var ai=strikes.indexOf(snap.atm); if(ai<0){ var bd=Infinity; for(var i=0;i<strikes.length;i++){ var dd=Math.abs(strikes[i]-snap.atm); if(dd<bd){bd=dd;ai=i;} } }
+    // OTM zones: left of ATM = PUTS (downside), right = CALLS (upside)
+    var axc = ai>=0 ? x(ai) : (padL+(W-padR))/2;
+    s+='<rect x="'+padL+'" y="'+padT+'" width="'+Math.max(0,axc-padL).toFixed(1)+'" height="'+(H-padT-padB).toFixed(1)+'" fill="rgba(248,81,73,0.07)"/>'
+      +'<rect x="'+axc.toFixed(1)+'" y="'+padT+'" width="'+Math.max(0,W-padR-axc).toFixed(1)+'" height="'+(H-padT-padB).toFixed(1)+'" fill="rgba(63,185,80,0.06)"/>'
+      +'<text x="'+((padL+axc)/2).toFixed(1)+'" y="'+(padT+11)+'" fill="#f85149" opacity="0.8" text-anchor="middle" font-size="9">◄ OTM PUTS (spot ke neeche)</text>'
+      +'<text x="'+((axc+W-padR)/2).toFixed(1)+'" y="'+(padT+11)+'" fill="#3fb950" opacity="0.8" text-anchor="middle" font-size="9">OTM CALLS (spot ke upar) ►</text>';
     [lo,(lo+hi)/2,hi].forEach(function(v){ var yy=y(v); s+='<line x1="'+padL+'" y1="'+yy.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yy.toFixed(1)+'" stroke="#161b22"/><text x="3" y="'+(yy+3).toFixed(1)+'" fill="#8b949e">'+v.toFixed(1)+'</text>'; });
     if(ai>=0) s+='<line x1="'+x(ai).toFixed(1)+'" y1="'+padT+'" x2="'+x(ai).toFixed(1)+'" y2="'+(H-padB)+'" stroke="#484f58" stroke-dasharray="3 3"/>';
     var step=Math.ceil(strikes.length/7);
     for(var i=0;i<strikes.length;i+=step){ s+='<text x="'+x(i).toFixed(1)+'" y="'+(H-7)+'" fill="#8b949e" text-anchor="middle">'+strikes[i]+'</text>'; }
     s+=poly(pe,'#f0883e')+poly(ce,'#39c5cf');
     var dt=new Date(snap.t*1000), hh=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0');
-    s+='<text x="'+(W-padR)+'" y="'+(padT-3)+'" fill="#8b949e" text-anchor="end">'+hh+' · CE cyan / PE orange · ATM '+snap.atm+'</text>';
+    s+='<text x="'+(W-padR)+'" y="12" fill="#8b949e" text-anchor="end">'+hh+' · CE cyan / PE orange · ATM '+snap.atm+'</text>';
+    if(skew!=null){ var sc=skew>=0.5?'#f85149':(skew<=-0.5?'#3fb950':'#8b949e'), tg=skew>=0.5?'PUT skew — fear/hedging':(skew<=-0.5?'CALL skew — greed':'~flat (neutral)'); s+='<text x="'+padL+'" y="12" fill="'+sc+'" font-weight="bold" font-size="11">Skew '+(skew>=0?'+':'')+skew.toFixed(1)+' vol · '+tg+'</text>'; }
     // skew steepening alerts: list times (scrub to them) + prominent badge when the shown minute IS an alert
     var skA=(window.rawAlerts||[]).filter(function(a){return a.panel==='skew';});
     if(skA.length){
       var tl=skA.map(function(a){var d=new Date(a.t*1000);return d.getUTCHours().toString().padStart(2,'0')+':'+d.getUTCMinutes().toString().padStart(2,'0');});
-      s+='<text x="'+padL+'" y="'+(padT-3)+'" fill="#f0883e" font-size="10">🩹 skew alerts: '+tl.join(', ')+'</text>';
+      s+='<text x="'+(W-padR)+'" y="'+(H-4)+'" fill="#f0883e" text-anchor="end" font-size="10">🩹 skew alerts: '+tl.join(', ')+'</text>';
       if(skA.some(function(a){return Math.abs(a.t-snap.t)<=90;})){
         s+='<rect x="'+(W/2-66)+'" y="'+(padT+2)+'" width="132" height="17" rx="3" fill="rgba(240,136,62,.92)"/>'
           +'<text x="'+(W/2)+'" y="'+(padT+14)+'" text-anchor="middle" font-size="11" font-weight="bold" fill="#000">🩹 SKEW ALERT</text>';
