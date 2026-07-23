@@ -49,6 +49,13 @@
     .rh::after{content:'';position:absolute;left:50%;top:2px;width:26px;height:2px;margin-left:-13px;background:var(--mut);border-radius:2px}
     .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);padding:40px;text-align:center}
     .atip{position:fixed;z-index:50;display:none;background:#161b22;border:1px solid var(--bd);border-radius:6px;padding:7px 10px;font-size:11px;line-height:1.5;max-width:320px;color:var(--tx);pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.55)}
+    .ovtick .on{color:var(--blu)}
+    .imtick span{padding:0 2px}
+    #notePop{position:fixed;z-index:60;display:none;background:#161b22;border:1px solid var(--bd);border-radius:8px;padding:10px;width:250px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+    #notePop textarea{width:100%;height:68px;background:#0d1117;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:6px;font-size:12px;resize:vertical;font-family:inherit}
+    #notePop .row{display:flex;gap:6px;margin-top:8px}
+    #notePop button{padding:5px 9px;font-size:12px;width:auto}
+    #notePop .del{background:#3d1418;border-color:#5c1a1f;color:var(--red);margin-left:auto}
   </style>
 </head>
 <body>
@@ -91,6 +98,8 @@
         <button data-s="panel" onclick="setScroll('panel',this)" title="Sirf chart area scroll (sidebar/header pinned)">Panel</button>
         <button data-s="page" onclick="setScroll('page',this)" title="Poora page scroll">Page</button>
       </div>
+      <label class="fld">Index overlay</label>
+      <div class="seg"><button id="idxAllBtn" onclick="toggleIndexAll(this)" title="Spot/index line saare panes pe on/off">📈 Index line: OFF</button></div>
 
       <div class="divh"></div>
       <label class="fld">Panels</label>
@@ -108,11 +117,25 @@
       <div class="ro"><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
       <div class="ro"><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
       <div class="ro"><span class="k">CE|PE OI</span><span class="v" id="v-oi">—</span></div>
+
+      <div class="divh"></div>
+      <label class="fld">Notes</label>
+      <div style="font-size:11px;color:var(--mut);line-height:1.5">Kisi bhi chart pe <b>right-click</b> → note add. Marker pe hover → dikhega.</div>
+      <button style="margin-top:6px" onclick="clearNotes()">🗑 Clear notes (is din ke)</button>
     </div>
 
     <div class="main" id="main"></div>
   </div>
   <div class="atip" id="alertTip"></div>
+  <div id="notePop">
+    <div style="font-size:10px;color:var(--mut);margin-bottom:4px" id="noteWhen"></div>
+    <textarea id="noteTxt" placeholder="Is point pe note…"></textarea>
+    <div class="row">
+      <button onclick="saveNote()" style="background:var(--blu);color:#fff;border-color:var(--blu)">Save</button>
+      <button onclick="closeNotePopup()">Cancel</button>
+      <button class="del" id="noteDel" onclick="deleteNote()">Delete</button>
+    </div>
+  </div>
 
 <script>
   var LC = window.LightweightCharts;
@@ -122,19 +145,24 @@
   // Panel catalogue — checkbox picker decides which render. A panel can carry an
   // `extra` second line (own axis/colour): straddle→spot, OI→PE OI.
   var PANELS = [
-    { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →',
-      extra:{ get:function(p){return p.spot;}, color:'#1f6feb', axis:'left', style:2 } },
+    { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit)' },
+    { id:'index',    name:'Index (spot)', color:'#58a6ff', kind:'index', get:function(p){return p.spot;}, dec:2, lbl:'INDEX (SPOT) — direct chart (OHLC / line)' },
     { id:'gamma',    name:'ATM Gamma',    color:'#a371f7', get:function(p){return p.gamma;},    dec:5, lbl:'ATM STRADDLE GAMMA (spike watch)' },
     { id:'oi',       name:'OI (CE vs PE)', color:'#f85149', get:function(p){return p.ce_oi;},   dec:0, lbl:'OPEN INTEREST — CE (red) vs PE (green) · unwinding = OI girna',
       extra:{ get:function(p){return p.pe_oi;}, color:'#3fb950', axis:'right', style:0 } },
     { id:'vix',      name:'India VIX',    color:'#d29922', get:function(p){return p.vix;},      dec:2, lbl:'INDIA VIX' },
     { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' }
   ];
-  var enabled = load('oc_panels', { straddle:true, gamma:true, oi:true, vix:true, pcr:true });
+  var enabled = load('oc_panels', { straddle:true, index:true, gamma:true, oi:true, vix:true, pcr:true });
   if(!('oi' in enabled)){ enabled.oi = true; save('oc_panels', enabled); }   // new OI panel → default on
+  if(!('index' in enabled)){ enabled.index = true; save('oc_panels', enabled); }   // new Index panel → default on
   var heights = load('oc_heights', {});
   var rawAlerts = [], alertMarkers = {}, alertByTime = {};
-  var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = index/overlay line hidden
+  var notes = [], noteMarkers = {}, noteByTime = {};
+  var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay line hidden
+  var indexMode = load('oc_index_mode', 'candle');     // Index panel: 'candle' (OHLC) | 'line'
+  var indexAll  = load('oc_index_all', true);          // master: spot/index line overlaid on ALL panes
+  function notesKey(){ return 'oc_notes_'+U+'_'+document.getElementById('date').value; }
   var VIEW = load('oc_view', 'fit');       // 'fit' (panes fit screen) | 'tall' (taller, scroll)
   var SCROLL = load('oc_scroll', 'panel'); // 'panel' (chart-area scroll) | 'page' (whole-page scroll)
   var TALL_H = 380;                        // fixed pane height in Tall mode
@@ -232,9 +260,13 @@
     // alert marker hover → floating tooltip
     var tip=document.getElementById('alertTip');
     if(tip){
-      var al = (entry && t!=null && param.point) ? alertByTime[entry.id+'|'+t] : null;
-      if(al && al.length){
-        tip.innerHTML = al.map(function(a){ return _esc(a.msg); }).join('<br><br>');
+      var items=[];
+      if(entry && t!=null && param.point){
+        var al=alertByTime[entry.id+'|'+t]; if(al) items=items.concat(al.map(function(a){ return _esc(a.msg); }));
+        var nt=noteByTime[entry.id+'|'+t]; if(nt) items=items.concat(nt.map(function(n){ return '📝 '+_esc(n.text); }));
+      }
+      if(items.length){
+        tip.innerHTML = items.join('<br><br>');
         var r=entry.el.getBoundingClientRect();
         tip.style.left=Math.min(r.left+param.point.x+14, window.innerWidth-340)+'px';
         tip.style.top=(r.top+param.point.y+14)+'px';
@@ -273,29 +305,48 @@
     if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
     if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
-    var OVLBL={ straddle:'index', oi:'PE' };   // what the overlay line is (tick label)
+    var OVLBL={ oi:'PE' };   // data-overlay (extra series) tick label — NOT the index (index = master toggle)
     list.forEach(function(def, i){
       var el=document.createElement('div'); el.className='pane';
       el.style.height=paneHeight(def)+'px';
-      var ov = def.extra ? (OVLBL[def.id]||'overlay') : null;
-      el.innerHTML='<span class="lbl">'+def.lbl+'</span>'
-        + (ov ? '<label class="ovtick" title="'+ov+' line show/hide"><input type="checkbox" '
-                + (overlayHidden[def.id]?'':'checked') + ' onchange="toggleOverlay(\''+def.id+'\',this.checked)">'+ov+'</label>' : '');
+      var ctrl='';
+      if(def.kind==='index'){
+        ctrl='<span class="ovtick imtick" title="OHLC candles / line toggle" onclick="toggleIndexMode(this)">'
+           + '<span class="im-c'+(indexMode==='candle'?' on':'')+'">OHLC</span><span style="opacity:.4">·</span>'
+           + '<span class="im-l'+(indexMode==='line'?' on':'')+'">Line</span></span>';
+      } else if(def.extra){
+        var ov=OVLBL[def.id]||'overlay';
+        ctrl='<label class="ovtick" title="'+ov+' line show/hide"><input type="checkbox" '
+             + (overlayHidden[def.id]?'':'checked') + ' onchange="toggleOverlay(\''+def.id+'\',this.checked)">'+ov+'</label>';
+      }
+      el.innerHTML='<span class="lbl">'+def.lbl+'</span>'+ctrl;
       main.appendChild(el);
       var chart=mkChart(el); el._chart=chart;
       if(def.id==='oi') chart.applyOptions({ localization:{ priceFormatter: fmtInr } });   // OI axis → Cr/L
-      var main_s=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
-      var extra_s=null;
-      if(def.extra){
-        if(def.extra.axis==='left') chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
-        extra_s=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
-          priceScaleId:(def.extra.axis==='left'?'left':'right'), priceLineVisible:false, lastValueVisible:false,
-          visible: !overlayHidden[def.id] });
+      var entry={ id:def.id, def:def, chart:chart, el:el };
+      if(def.kind==='index'){
+        entry.candle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
+          wickUpColor:'#3fb950', wickDownColor:'#f85149', visible:indexMode==='candle' });
+        entry.line=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true,
+          visible:indexMode==='line' });
+        entry.main=entry.line;   // crosshair/note price reference (has data even when hidden)
+      } else {
+        entry.main=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
+        if(def.extra){
+          if(def.extra.axis==='left') chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
+          entry.extra=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
+            priceScaleId:(def.extra.axis==='left'?'left':'right'), priceLineVisible:false, lastValueVisible:false,
+            visible: !overlayHidden[def.id] });
+        }
+        // master index/spot overlay on its own hidden scale — toggled globally by idxAllBtn
+        entry.spotOv=chart.addLineSeries({ color:'rgba(88,166,255,.55)', lineWidth:1, priceScaleId:'ocspot',
+          priceLineVisible:false, lastValueVisible:false, visible:indexAll });
+        chart.priceScale('ocspot').applyOptions({ scaleMargins:{top:0.12,bottom:0.12}, visible:false });
       }
-      var entry={ id:def.id, def:def, chart:chart, main:main_s, extra:extra_s, el:el };
       panes.push(entry);
       chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
       chart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); });
+      attachNoteMenu(entry);
       // resize handle (not after the last pane)
       if(i < list.length-1){
         var rh=document.createElement('div'); rh.className='rh'; main.appendChild(rh);
@@ -317,10 +368,19 @@
   // auto-refresh passes fit=false → visible range (zoom) preserved.
   function applyData(fit){
     byTime={}; view.forEach(function(p){ byTime[p.t]=p; });
+    var tf=+document.getElementById('tf').value;
+    var idxC = indexCandles(raw, tf);
+    var spotLine = view.map(function(p){ return {time:p.t, value:p.spot}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); });
     panes.forEach(function(e){
-      e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
-      if(e.extra) e.extra.setData(view.map(function(p){ return {time:p.t, value:e.def.extra.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
-      try{ e.main.setMarkers(alertMarkers[e.id] || []); }catch(x){}
+      if(e.def.kind==='index'){
+        try{ e.candle.setData(idxC); }catch(x){}
+        try{ e.line.setData(spotLine); }catch(x){}
+      } else {
+        e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+        if(e.extra) e.extra.setData(view.map(function(p){ return {time:p.t, value:e.def.extra.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+        if(e.spotOv) e.spotOv.setData(spotLine);
+      }
+      setPaneMarkers(e);
     });
     if(fit && panes.length) panes[0].chart.timeScale().fitContent();
     if(view.length) onCross({ time: view[view.length-1].t });
@@ -340,6 +400,97 @@
       var k=panel+'|'+best; (alertByTime[k]=alertByTime[k]||[]).push(a);
     });
     Object.keys(alertMarkers).forEach(function(k){ alertMarkers[k].sort(function(a,b){return a.time-b.time;}); });
+  }
+
+  // ---- Index panel: OHLC candles built from raw 1-min spot (per TF bucket) ----
+  function indexCandles(pts, tf){
+    var out=[];
+    if(tf<=1){ pts.forEach(function(p){ if(p.spot!=null&&!isNaN(p.spot)) out.push({time:p.t,open:p.spot,high:p.spot,low:p.spot,close:p.spot}); }); return out; }
+    var bucket=tf*60, key=null, cur=null;
+    pts.forEach(function(p){
+      if(p.spot==null||isNaN(p.spot)) return;
+      var k=Math.floor(p.t/bucket);
+      if(key===null||k!==key){ if(cur) out.push(cur); key=k; cur={time:p.t,open:p.spot,high:p.spot,low:p.spot,close:p.spot}; }
+      else { cur.high=Math.max(cur.high,p.spot); cur.low=Math.min(cur.low,p.spot); cur.close=p.spot; cur.time=p.t; }
+    });
+    if(cur) out.push(cur);
+    return out;   // bar time = last t in bucket → aligns with resample() line times
+  }
+  function toggleIndexMode(elm){
+    indexMode = indexMode==='candle' ? 'line' : 'candle'; save('oc_index_mode', indexMode);
+    panes.forEach(function(e){ if(e.def.kind==='index'){ e.candle.applyOptions({visible:indexMode==='candle'}); e.line.applyOptions({visible:indexMode==='line'}); }});
+    var c=elm.querySelector('.im-c'), l=elm.querySelector('.im-l');
+    if(c) c.classList.toggle('on', indexMode==='candle'); if(l) l.classList.toggle('on', indexMode==='line');
+  }
+  function toggleIndexAll(btn){
+    indexAll=!indexAll; save('oc_index_all', indexAll);
+    panes.forEach(function(e){ if(e.spotOv) e.spotOv.applyOptions({visible:indexAll}); });
+    btn.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); btn.classList.toggle('on', indexAll);
+  }
+
+  // ---- Notes (right-click any chart point) ----
+  function buildNotes(){
+    noteMarkers={}; noteByTime={};
+    notes.forEach(function(n){
+      (noteMarkers[n.pane]=noteMarkers[n.pane]||[]).push({ time:n.t, position:'aboveBar', color:'#d29922', shape:'square', text:'📝', size:1.2 });
+      var k=n.pane+'|'+n.t; (noteByTime[k]=noteByTime[k]||[]).push(n);
+    });
+    Object.keys(noteMarkers).forEach(function(k){ noteMarkers[k].sort(function(a,b){return a.time-b.time;}); });
+  }
+  function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).sort(function(x,y){ return x.time-y.time; }); }
+  function setPaneMarkers(e){
+    var m=paneMarkers(e.id);
+    try{ (e.candle||e.main).setMarkers(m); }catch(x){}
+    if(e.line && e.line!==e.main){ try{ e.line.setMarkers(m); }catch(x){} }
+  }
+  function refreshMarkers(){ panes.forEach(setPaneMarkers); }
+  function findNote(pane, t){ for(var i=0;i<notes.length;i++){ if(notes[i].pane===pane && notes[i].t===t) return notes[i]; } return null; }
+
+  function attachNoteMenu(entry){
+    entry.el.addEventListener('contextmenu', function(e){
+      e.preventDefault();
+      if(!view.length) return;
+      var rect=entry.el.getBoundingClientRect();
+      var x=e.clientX-rect.left, y=e.clientY-rect.top;
+      var t=null; try{ t=entry.chart.timeScale().coordinateToTime(x); }catch(x2){}
+      if(t==null) return;
+      var price=null; try{ price=entry.main.coordinateToPrice(y); }catch(x3){}
+      var vt=view.map(function(p){return p.t;}), best=vt[0], bd=Infinity;
+      for(var i=0;i<vt.length;i++){ var dd=Math.abs(vt[i]-t); if(dd<bd){bd=dd;best=vt[i];} }
+      openNotePopup(entry.id, best, price, e.clientX, e.clientY);
+    });
+  }
+  var _noteCtx=null;
+  function openNotePopup(pane, t, price, cx, cy){
+    var pop=document.getElementById('notePop'), ta=document.getElementById('noteTxt'), del=document.getElementById('noteDel');
+    var existing=findNote(pane, t);
+    _noteCtx={ pane:pane, t:t, price:price, editing:existing };
+    ta.value = existing ? existing.text : '';
+    del.style.display = existing ? 'inline-block' : 'none';
+    var dt=new Date(t*1000);
+    document.getElementById('noteWhen').textContent = pane+' · '+dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0');
+    pop.style.left=Math.min(cx, window.innerWidth-270)+'px';
+    pop.style.top=Math.min(cy, window.innerHeight-180)+'px';
+    pop.style.display='block'; ta.focus();
+  }
+  function closeNotePopup(){ var p=document.getElementById('notePop'); if(p) p.style.display='none'; _noteCtx=null; }
+  function saveNote(){
+    if(!_noteCtx) return;
+    var txt=document.getElementById('noteTxt').value.trim();
+    if(!txt){ closeNotePopup(); return; }
+    if(_noteCtx.editing){ _noteCtx.editing.text=txt; }
+    else { notes.push({ id:'n'+_noteCtx.t+'_'+notes.length, pane:_noteCtx.pane, t:_noteCtx.t, price:_noteCtx.price, text:txt }); }
+    save(notesKey(), notes); buildNotes(); refreshMarkers(); closeNotePopup();
+  }
+  function deleteNote(){
+    if(!_noteCtx||!_noteCtx.editing){ closeNotePopup(); return; }
+    notes=notes.filter(function(n){ return n!==_noteCtx.editing; });
+    save(notesKey(), notes); buildNotes(); refreshMarkers(); closeNotePopup();
+  }
+  function clearNotes(){
+    if(!notes.length) return;
+    if(!confirm('Is din ke saare notes hata dein?')) return;
+    notes=[]; save(notesKey(), notes); buildNotes(); refreshMarkers();
   }
 
   var _lastOk=null, _structKey='';
@@ -365,6 +516,7 @@
       view=resample(raw, +document.getElementById('tf').value);
       rawAlerts=(ad&&ad.alerts)||[];
       buildAlerts();
+      notes=load(notesKey(),[]); buildNotes();
       var sk=structKey();
       if(forceBuild || sk!==_structKey || !panes.length){ _structKey=sk; buildPanes(); }
       else { applyData(false); }   // zoom preserved
@@ -391,6 +543,10 @@
   document.querySelectorAll('#viewSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.v===VIEW); });
   document.querySelectorAll('#scrollSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.s===SCROLL); });
   applyScroll();
+
+  // init master index-overlay button + close note popup on outside click
+  (function(){ var b=document.getElementById('idxAllBtn'); if(b){ b.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); b.classList.toggle('on', indexAll); } })();
+  document.addEventListener('mousedown', function(e){ var p=document.getElementById('notePop'); if(p && p.style.display==='block' && !p.contains(e.target)) closeNotePopup(); });
 
   refresh(true);
 </script>
