@@ -19,6 +19,7 @@ DISPLAY-ONLY: reads CSV, touches NO order/live path. mtime-cached.
 import os
 import sys
 import csv
+import math
 import calendar
 from datetime import datetime
 
@@ -121,6 +122,12 @@ def curves(u, date, expiry=None):
     if expiry not in exps:
         expiry = exps[0] if exps else None
 
+    # next expiry (term-structure panel): near-week vs next-week ATM IV. Populated only
+    # once the collector captures >1 expiry; single-expiry data → iv_next stays None.
+    _ni = (exps.index(expiry) + 1) if (expiry in exps) else len(exps)
+    next_expiry = exps[_ni] if _ni < len(exps) else None
+    nmap = _atm_iv_map(rows, next_expiry) if next_expiry else {}
+
     # group the chosen expiry's rows by timestamp
     bydt = {}
     for r in rows:
@@ -189,6 +196,10 @@ def curves(u, date, expiry=None):
             "call_wall": call_wall,
             "put_wall": put_wall,
             "straddle_theo": None,   # filled in the theoretical-decay pass below
+            "iv_near": atm_iv,       # this (near) expiry's ATM IV — term-structure panel
+            "iv_next": round(nmap[dt], 2) if nmap.get(dt) is not None else None,
+            "realized_vol": None,    # filled in the realized-vol pass below
+            "iv_rank": None,         # filled in the IV-rank pass below
         })
 
     # Theoretical decay reference: freeze the ATM IV at the day's FIRST reading and let
@@ -209,7 +220,33 @@ def curves(u, date, expiry=None):
             except Exception:
                 pass
 
-    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points}
+    # Realized vol (rolling, %): annualised std of 1-min spot log-returns over RV_WIN
+    # minutes. Pair vs atm_iv on the /curves RV-vs-IV panel → IV above RV = VRP edge live.
+    RV_WIN = 30
+    ANN = (252 * 375) ** 0.5   # ~375 trading minutes/day
+    for i, p in enumerate(points):
+        seg = points[max(0, i - RV_WIN):i + 1]
+        rets = []
+        for j in range(1, len(seg)):
+            s0, s1 = seg[j - 1]["spot"], seg[j]["spot"]
+            if s0 and s1 and s0 > 0:
+                rets.append(math.log(s1 / s0))
+        if len(rets) >= 5:
+            m = sum(rets) / len(rets)
+            sd = (sum((r - m) ** 2 for r in rets) / len(rets)) ** 0.5
+            p["realized_vol"] = round(sd * ANN * 100, 2)
+
+    # IV Rank (0-100): where today's ATM IV sits in the range of prior stored days'
+    # ATM IV. Uses however many days are on disk (labelled), improves as more accrue.
+    lo_iv, hi_iv, ndays = _iv_hist_range(u, date)
+    if hi_iv is not None and hi_iv > lo_iv:
+        for p in points:
+            iv = p.get("atm_iv")
+            if iv is not None:
+                p["iv_rank"] = round(max(0.0, min(100.0, (iv - lo_iv) / (hi_iv - lo_iv) * 100.0)), 1)
+
+    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points,
+            "iv_rank_days": ndays, "next_expiry": next_expiry}
 
 
 def available_dates(u):
@@ -281,3 +318,152 @@ def strike_series(u, date, expiry, strike=None, opt_type=None):
         "ok": True, "underlying": u, "expiry": expiry, "strikes": strikes,
         "strike": want, "opt_type": ot, "points": pts,
     }
+
+
+# ── term-structure + IV-rank helpers ────────────────────────────────────────
+def _atm_iv_map(rows, expiry):
+    """{datetime -> ATM (avg CE/PE) IV} for one expiry — for the next-week term line."""
+    bydt = {}
+    for r in rows:
+        if r.get("expiry") != expiry:
+            continue
+        bydt.setdefault(r.get("datetime"), []).append(r)
+    out = {}
+    for dt, legs in bydt.items():
+        spot = _f(legs[0].get("spot"))
+        if spot is None:
+            continue
+        strikes = sorted({_f(l.get("strike")) for l in legs if _f(l.get("strike")) is not None})
+        if not strikes:
+            continue
+        atm = min(strikes, key=lambda k: abs(k - spot))
+        ivs = [_f(l.get("iv")) for l in legs if _f(l.get("strike")) == atm]
+        ivs = [v for v in ivs if v is not None]
+        if ivs:
+            out[dt] = sum(ivs) / len(ivs)
+    return out
+
+
+_IVRANK_CACHE = {}   # (u, date) -> (lo, hi, ndays)
+
+
+def _day_rep_atm_iv(u, d):
+    """One representative ATM IV for a stored day (median of per-minute ATM IV)."""
+    _, rows = _load_rows(u, d)
+    if not rows:
+        return None
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    m = _atm_iv_map(rows, exps[0] if exps else None)
+    vals = sorted(v for v in m.values() if v is not None)
+    if not vals:
+        return None
+    return vals[len(vals) // 2]   # median
+
+
+def _iv_hist_range(u, date, lookback=60):
+    """(lo, hi, ndays) of prior stored days' representative ATM IV — the IV-Rank window.
+    Uses whatever days are on disk (up to `lookback`)."""
+    key = (u, date)
+    hit = _IVRANK_CACHE.get(key)
+    if hit:
+        return hit
+    prior = [d for d in available_dates(u) if d < date][-int(lookback):]
+    reps = [r for r in (_day_rep_atm_iv(u, d) for d in prior) if r is not None]
+    res = (min(reps), max(reps), len(reps)) if reps else (None, None, 0)
+    if len(_IVRANK_CACHE) > 16:
+        _IVRANK_CACHE.clear()
+    _IVRANK_CACHE[key] = res
+    return res
+
+
+def _near_strikes(legs, spot, each_side=7):
+    """Strikes within ±each_side steps of ATM (for skew/heatmap), sorted."""
+    strikes = sorted({_f(l.get("strike")) for l in legs if _f(l.get("strike")) is not None})
+    if not strikes:
+        return [], None
+    atm = min(strikes, key=lambda k: abs(k - spot))
+    i = strikes.index(atm)
+    return strikes[max(0, i - each_side):i + each_side + 1], atm
+
+
+def skew_series(u, date, expiry=None, each_side=7):
+    """Per-minute strike-wise IV smile: for each timestamp, CE-IV and PE-IV across ATM±N
+    strikes. The /curves skew panel picks the crosshair minute and draws two curves.
+    Display-only."""
+    _, rows = _load_rows(u, date)
+    if not rows:
+        return {"ok": False, "expiry": expiry, "series": []}
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if expiry not in exps:
+        expiry = exps[0] if exps else None
+    bydt = {}
+    for r in rows:
+        if r.get("expiry") != expiry:
+            continue
+        bydt.setdefault(r.get("datetime"), []).append(r)
+    series = []
+    for dt in sorted(k for k in bydt if k):
+        legs = bydt[dt]
+        spot = _f(legs[0].get("spot"))
+        ep = _epoch_ist(dt)
+        if spot is None or ep is None:
+            continue
+        strikes, atm = _near_strikes(legs, spot, each_side)
+        if not strikes:
+            continue
+        cem = {_f(l.get("strike")): _f(l.get("iv")) for l in legs if l.get("opt_type") == "CE"}
+        pem = {_f(l.get("strike")): _f(l.get("iv")) for l in legs if l.get("opt_type") == "PE"}
+        series.append({"t": ep, "atm": atm, "spot": round(spot, 2),
+                       "strikes": [int(k) for k in strikes],
+                       "ce": [cem.get(k) for k in strikes],
+                       "pe": [pem.get(k) for k in strikes]})
+    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "series": series}
+
+
+def oi_heatmap_series(u, date, expiry=None, bucket_min=5, each_side=7):
+    """OI-change heatmap grid: rows = strikes (ATM±N over the day), cols = `bucket_min`
+    buckets, cell = net chg_oi in that bucket (CE and PE separately). Display-only."""
+    _, rows = _load_rows(u, date)
+    if not rows:
+        return {"ok": False, "expiry": expiry, "strikes": [], "times": [], "ce": [], "pe": []}
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if expiry not in exps:
+        expiry = exps[0] if exps else None
+    bydt = {}
+    for r in rows:
+        if r.get("expiry") != expiry:
+            continue
+        bydt.setdefault(r.get("datetime"), []).append(r)
+    # strike axis = union of ATM±N strikes seen across the day
+    keep = set()
+    for dt, legs in bydt.items():
+        spot = _f(legs[0].get("spot"))
+        if spot is None:
+            continue
+        ns, _atm = _near_strikes(legs, spot, each_side)
+        keep.update(ns)
+    strikes = sorted(keep)
+    sidx = {k: i for i, k in enumerate(strikes)}
+    bsec = bucket_min * 60
+    buckets = {}   # bucket_epoch -> {"ce":[..], "pe":[..]}
+    for dt in sorted(k for k in bydt if k):
+        ep = _epoch_ist(dt)
+        if ep is None:
+            continue
+        bk = (ep // bsec) * bsec
+        b = buckets.setdefault(bk, {"ce": [None] * len(strikes), "pe": [None] * len(strikes)})
+        for l in bydt[dt]:
+            k = _f(l.get("strike"))
+            if k not in sidx:
+                continue
+            c = _f(l.get("chg_oi"))
+            if c is None:
+                continue
+            side = "ce" if l.get("opt_type") == "CE" else ("pe" if l.get("opt_type") == "PE" else None)
+            if side:
+                cur = b[side][sidx[k]]
+                b[side][sidx[k]] = (cur or 0.0) + c
+    times = sorted(buckets)
+    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps,
+            "strikes": [int(k) for k in strikes], "times": times,
+            "ce": [buckets[t]["ce"] for t in times], "pe": [buckets[t]["pe"] for t in times]}
