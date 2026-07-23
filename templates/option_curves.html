@@ -46,6 +46,7 @@
     .rh:hover{background:var(--blu)}
     .rh::after{content:'';position:absolute;left:50%;top:2px;width:26px;height:2px;margin-left:-13px;background:var(--mut);border-radius:2px}
     .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);padding:40px;text-align:center}
+    .atip{position:fixed;z-index:50;display:none;background:#161b22;border:1px solid var(--bd);border-radius:6px;padding:7px 10px;font-size:11px;line-height:1.5;max-width:320px;color:var(--tx);pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,.55)}
   </style>
 </head>
 <body>
@@ -92,25 +93,33 @@
       <div class="ro"><span class="k">CE | PE</span><span class="v" id="v-cepe">—</span></div>
       <div class="ro"><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
       <div class="ro"><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
+      <div class="ro"><span class="k">CE|PE OI</span><span class="v" id="v-oi">—</span></div>
     </div>
 
     <div class="main" id="main"></div>
   </div>
+  <div class="atip" id="alertTip"></div>
 
 <script>
   var LC = window.LightweightCharts;
   var U = 'NIFTY', AUTO = true, _timer = null, _syncing = false;
   var raw = [], view = [], byTime = {}, panes = [];   // panes: [{id, chart, main, spot, el}]
 
-  // Panel catalogue — checkbox picker decides which render
+  // Panel catalogue — checkbox picker decides which render. A panel can carry an
+  // `extra` second line (own axis/colour): straddle→spot, OI→PE OI.
   var PANELS = [
-    { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, overlay:'spot', lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →' },
+    { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →',
+      extra:{ get:function(p){return p.spot;}, color:'#1f6feb', axis:'left', style:2 } },
     { id:'gamma',    name:'ATM Gamma',    color:'#a371f7', get:function(p){return p.gamma;},    dec:5, lbl:'ATM STRADDLE GAMMA (spike watch)' },
+    { id:'oi',       name:'OI (CE vs PE)', color:'#f85149', get:function(p){return p.ce_oi;},   dec:0, lbl:'OPEN INTEREST — CE (red) vs PE (green) · unwinding = OI girna',
+      extra:{ get:function(p){return p.pe_oi;}, color:'#3fb950', axis:'right', style:0 } },
     { id:'vix',      name:'India VIX',    color:'#d29922', get:function(p){return p.vix;},      dec:2, lbl:'INDIA VIX' },
     { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' }
   ];
-  var enabled = load('oc_panels', { straddle:true, gamma:true, vix:true, pcr:true });
+  var enabled = load('oc_panels', { straddle:true, gamma:true, oi:true, vix:true, pcr:true });
+  if(!('oi' in enabled)){ enabled.oi = true; save('oc_panels', enabled); }   // new OI panel → default on
   var heights = load('oc_heights', {});
+  var rawAlerts = [], alertMarkers = {}, alertByTime = {};
 
   function load(k, d){ try{ var v=JSON.parse(localStorage.getItem(k)); return v||d; }catch(e){ return d; } }
   function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
@@ -175,11 +184,27 @@
     _syncing=false;
   }
 
-  function onCross(param){
-    var t=param&&param.time; if(t==null) return;
+  function _esc(s){ return String(s==null?'':s).replace(/[<>&]/g,function(c){return {'<':'&lt;','>':'&gt;','&':'&amp;'}[c];}); }
+
+  function onCross(param, entry){
+    var t=param&&param.time;
+    // alert marker hover → floating tooltip
+    var tip=document.getElementById('alertTip');
+    if(tip){
+      var al = (entry && t!=null && param.point) ? alertByTime[entry.id+'|'+t] : null;
+      if(al && al.length){
+        tip.innerHTML = al.map(function(a){ return _esc(a.msg); }).join('<br><br>');
+        var r=entry.el.getBoundingClientRect();
+        tip.style.left=Math.min(r.left+param.point.x+14, window.innerWidth-340)+'px';
+        tip.style.top=(r.top+param.point.y+14)+'px';
+        tip.style.display='block';
+      } else { tip.style.display='none'; }
+    }
+    if(t==null) return;
     var p=byTime[t]; if(!p) return;
     setv('v-str',fmt(p.straddle,2)); setv('v-gam',fmt(p.gamma,5)); setv('v-spot',fmt(p.spot,2));
     setv('v-atm',p.atm); setv('v-cepe',fmt(p.ce,2)+' | '+fmt(p.pe,2)); setv('v-vix',fmt(p.vix,2)); setv('v-pcr',fmt(p.pcr,3));
+    setv('v-oi', fmt(p.ce_oi,0)+' | '+fmt(p.pe_oi,0));
     var dt=new Date(t*1000);
     setv('v-time', dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'));
   }
@@ -204,15 +229,16 @@
       main.appendChild(el);
       var chart=mkChart(el); el._chart=chart;
       var main_s=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
-      var spot_s=null;
-      if(def.overlay==='spot'){
-        chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
-        spot_s=chart.addLineSeries({ color:'#1f6feb', lineWidth:1, lineStyle:2, priceScaleId:'left', priceLineVisible:false, lastValueVisible:false });
+      var extra_s=null;
+      if(def.extra){
+        if(def.extra.axis==='left') chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
+        extra_s=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
+          priceScaleId:(def.extra.axis==='left'?'left':'right'), priceLineVisible:false, lastValueVisible:false });
       }
-      var entry={ id:def.id, def:def, chart:chart, main:main_s, spot:spot_s, el:el };
+      var entry={ id:def.id, def:def, chart:chart, main:main_s, extra:extra_s, el:el };
       panes.push(entry);
       chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
-      chart.subscribeCrosshairMove(onCross);
+      chart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); });
       // resize handle (not after the last pane)
       if(i < list.length-1){
         var rh=document.createElement('div'); rh.className='rh'; main.appendChild(rh);
@@ -236,10 +262,27 @@
     byTime={}; view.forEach(function(p){ byTime[p.t]=p; });
     panes.forEach(function(e){
       e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
-      if(e.spot) e.spot.setData(view.filter(function(p){return p.spot!=null;}).map(function(p){ return {time:p.t, value:p.spot}; }));
+      if(e.extra) e.extra.setData(view.map(function(p){ return {time:p.t, value:e.def.extra.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+      try{ e.main.setMarkers(alertMarkers[e.id] || []); }catch(x){}
     });
     if(fit && panes.length) panes[0].chart.timeScale().fitContent();
     if(view.length) onCross({ time: view[view.length-1].t });
+  }
+
+  // Snap each fired alert to the nearest visible bar so its circle lands on the
+  // line, and index by panel|time for the hover tooltip.
+  function buildAlerts(){
+    alertMarkers={}; alertByTime={};
+    if(!view.length || !rawAlerts.length) return;
+    var vt=view.map(function(p){return p.t;});
+    rawAlerts.forEach(function(a){
+      var best=vt[0], bd=Infinity;
+      for(var i=0;i<vt.length;i++){ var dd=Math.abs(vt[i]-a.t); if(dd<bd){bd=dd;best=vt[i];} }
+      var panel=a.panel||'straddle';
+      (alertMarkers[panel]=alertMarkers[panel]||[]).push({ time:best, position:'aboveBar', color:'#f85149', shape:'circle', text:a.tag||'•', size:1.4 });
+      var k=panel+'|'+best; (alertByTime[k]=alertByTime[k]||[]).push(a);
+    });
+    Object.keys(alertMarkers).forEach(function(k){ alertMarkers[k].sort(function(a,b){return a.time-b.time;}); });
   }
 
   var _lastOk=null, _structKey='';
@@ -248,17 +291,23 @@
   function onStructChange(){ save('oc_tf', +document.getElementById('tf').value); refresh(true); }
 
   function refresh(forceBuild){
-    var qs='underlying='+U+'&date='+document.getElementById('date').value;
+    var date=document.getElementById('date').value;
+    var qs='underlying='+U+'&date='+date;
     var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
-    fetch('/api/option-curves?'+qs).then(function(r){return r.json();}).then(function(d){
+    Promise.all([
+      fetch('/api/option-curves?'+qs).then(function(r){return r.json();}),
+      fetch('/api/option-alerts?underlying='+U+'&date='+date).then(function(r){return r.json();}).catch(function(){return {alerts:[]};})
+    ]).then(function(res){
+      var d=res[0], ad=res[1];
       _lastOk = d && d.ok;
-      // expiry dropdown refresh (only rebuild <option>s if the set changed)
       var sel=document.getElementById('expiry'), exps=(d&&d.expiries)||[];
       var have=Array.from(sel.options).map(function(o){return o.value;}).join(',');
       if(exps.join(',')!==have){ sel.innerHTML=exps.map(function(e){return '<option value="'+e+'">'+e+'</option>';}).join(''); sel.value=(d&&d.expiry)||(exps[0]||''); }
       else if(d&&d.expiry){ sel.value=d.expiry; }
       raw=(d&&d.points)||[];
       view=resample(raw, +document.getElementById('tf').value);
+      rawAlerts=(ad&&ad.alerts)||[];
+      buildAlerts();
       var sk=structKey();
       if(forceBuild || sk!==_structKey || !panes.length){ _structKey=sk; buildPanes(); }
       else { applyData(false); }   // zoom preserved

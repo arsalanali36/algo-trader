@@ -593,6 +593,19 @@ def api_option_curves():
         print("[option-curves] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "expiries": [], "points": []})
 
+@app.route('/api/option-alerts')
+def api_option_alerts():
+    """Fired option-chain alerts for a day → chart markers on /curves. Display-only."""
+    import option_alerts as oa
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date')
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    try:
+        return jsonify({"ok": True, "alerts": oa.read_log(u, date)})
+    except Exception as e:
+        return jsonify({"ok": False, "alerts": [], "error": str(e)})
+
 @app.route('/backtest')
 def backtest():
     from flask import send_file

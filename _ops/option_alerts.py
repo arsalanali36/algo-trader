@@ -167,6 +167,47 @@ def evaluate(underlying, date=None, cfg=None, points=None):
                         "msg": f"🔄 {U} {side} OI tez unwind ho rahi — {lbl} OI −{drop_pct:.1f}% "
                                f"{int(cfg['oi_win'])}m me. {side} writers/holders nikal rahe.",
                     })
+
+    # tag each alert with which chart panel + the triggering point's time, so the
+    # /curves page can drop a hover-able marker on the right curve at that moment.
+    _PANEL = {"gamma_spike": ("gamma", "⚡"), "straddle_crush": ("straddle", "📉"),
+              "straddle_pop": ("straddle", "📈"), "ce_unwind": ("oi", "🔄"), "pe_unwind": ("oi", "🔄")}
+    for a in out:
+        typ = a["key"][4:].rsplit("_", 1)[0] if a["key"].startswith("opt_") else a["key"]
+        panel, tag = _PANEL.get(typ, ("straddle", "•"))
+        a.update({"u": U, "t": cur["t"], "panel": panel, "tag": tag})
+    return out
+
+
+def _log_dir():
+    d = os.path.join(_ROOT, "data", "option_alerts")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _log_alert(a):
+    """Append a fired alert to data/option_alerts/<U>_<date>.jsonl (chart markers)."""
+    try:
+        path = os.path.join(_log_dir(), f"{a.get('u', 'NIFTY')}_{_today()}.jsonl")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"t": a.get("t"), "panel": a.get("panel"), "tag": a.get("tag"),
+                                "key": a.get("key"), "msg": a.get("msg")}) + "\n")
+    except Exception as e:
+        print(f"[option-alerts] log write fail: {e}", flush=True)
+
+
+def read_log(u, date):
+    """Fired alerts for a day (for the /curves markers). Display-only."""
+    path = os.path.join(_ROOT, "data", "option_alerts", f"{u}_{date}.jsonl")
+    out = []
+    try:
+        with open(path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    out.append(json.loads(line))
+    except Exception:
+        pass
     return out
 
 
@@ -179,6 +220,7 @@ def _fire(alert, cfg):
         return False
     _last_fired[alert["key"]] = now
     notify.push(alert["msg"], level=alert.get("level", "warn"), key=alert["key"], source="chain")
+    _log_alert(alert)   # chart marker record
     return True
 
 
