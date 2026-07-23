@@ -216,6 +216,16 @@ def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float =
 
 def _run_sync(open_positions: list, log=print) -> set:
     closed_ids: set = set()
+    # PAPER positions are simulated — they never exist at the broker, so reconciling
+    # them against real broker positions is meaningless AND actively harmful: a paper
+    # leg on a contract a LIVE strategy ALSO trades gets seen as "flat at broker" and
+    # CONSUMES the live position's real close-fill (recording a bogus exit on the paper
+    # leg). That fill is then "already used", so the genuine LIVE ghost can never be
+    # closed → permanent phantom. (2026-07-23: paper orb_overnight_v1 ate arschain_MAIN's
+    # manual-close fill → arschain stuck open forever. LESSONS.md.) Only LIVE positions
+    # are ever compared against real broker state.
+    open_positions = [p for p in (open_positions or [])
+                      if (p.get("mode") or "live").lower() != "paper"]
     if not open_positions:
         return closed_ids
 
