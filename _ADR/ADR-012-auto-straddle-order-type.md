@@ -56,6 +56,15 @@ Three tensions to resolve:
   `_auto_straddle_cfg` / the config route. Going live is a deliberate one-line change + user
   confirmation, not a config toggle.
 
+- **Hedge wings (2026-07-23):** to cut margin (naked short straddle ~₹1.5-2L/lot), each ATM
+  SELL is paired with a cheap OTM BUY wing (~max_premium ₹2) → a hedged iron fly (basket margin
+  ~₹40-80k/lot, loss capped). Wings resolved via the existing `strategy_safety.compute_hedge_target`
+  (walk OTM to ≤ max_premium; added `max_premium_override` so the straddle supplies its own ₹ without
+  touching the RMS tab). Best-effort — a failed wing leaves the straddle standing + a loud
+  `notify.warn` (paper, so a naked leg is harmless; loud so it's visible). Legs carry `side`; the
+  basket-exit still monitors only the 2 SELL legs; `_close_straddle` closes each on its own side.
+  Config `_auto_straddle.hedge`.
+
 ## Consequence
 
 - A/B/C are one maintained execution path — a fix to the straddle applies to all three.
