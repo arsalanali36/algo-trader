@@ -405,6 +405,7 @@ def _proc_cmdline(grep, strategy=None):
     psutil cross-platform — Windows pe pgrep NAHI hota (us bug se get_pid hamesha None
     deta tha → restart pe DUPLICATE traders spawn). pgrep fallback Linux/VPS ke liye."""
     want_id = strategy if (strategy and '_' in strategy) else None
+    _psutil_scanned = False
     try:
         import psutil
         for p in psutil.process_iter(['pid', 'cmdline']):
@@ -415,12 +416,11 @@ def _proc_cmdline(grep, strategy=None):
             if not parts:
                 continue
             cl = ' '.join(parts)
-            if want_id:   # exact token match — substring se 'rsi_v1' != 'rsi_v10'
+            if want_id:   # exact token match — substring se 'rsi_v1' != 'rsi_v1_PAPER'
                 # NOTE: split on the JOINED string, not `parts` — supervisor-forked
                 # children ka setproctitle title /proc/cmdline me EK single element
                 # hota hai ('code3b-strategy --paper --id X'), jisse parts-wise
-                # token match hamesha miss hota tha (pgrep substring-fallback pe
-                # girta, jo rsi_v1 ko rsi_v1_PAPER se confuse kar sakta hai).
+                # token match hamesha miss hota tha.
                 toks = cl.split()
                 hit = any(t == f"--id={want_id}" or
                           (t == "--id" and i + 1 < len(toks) and toks[i + 1] == want_id)
@@ -429,10 +429,20 @@ def _proc_cmdline(grep, strategy=None):
                     return p.info['pid'], cl
             elif grep and grep in cl:
                 return p.info['pid'], cl
+        _psutil_scanned = True   # loop completed cleanly → result is AUTHORITATIVE
     except Exception:
-        pass
-    try:  # pgrep fallback (Linux/VPS jahan psutil na ho)
-        pat = f"--id {want_id}" if want_id else grep
+        _psutil_scanned = False
+    # psutil ne saare processes scan kar liye aur exact-token match nahi mila →
+    # AUTHORITATIVE "not running". pgrep substring-fallback pe MAT giro — wo
+    # '--id rsi_v1' ko '--id rsi_v1_PAPER' ke ANDAR match kar ke galat PID de deta
+    # (real-money footgun: idle rsi_v1 (05.01) ka Stop LIVE rsi_v1_PAPER (05.02)
+    # ko maar deta). LESSONS.md TRAP — rsi_v1 vs rsi_v1_PAPER.
+    if _psutil_scanned:
+        return None, None
+    try:  # pgrep fallback SIRF jab psutil available na ho (bare env)
+        # end-of-token anchored — '--id rsi_v1' ke baad space ya line-end hona zaroori,
+        # to '--id rsi_v1_PAPER' se kabhi match nahi hoga.
+        pat = f"--id {want_id}( |$)" if want_id else grep
         # '--' end-of-options — warna '--id ...' ko pgrep option samajh ke usage print karta
         out = subprocess.check_output(['pgrep', '-a', '-f', '--', pat], text=True).strip()
         if out:
