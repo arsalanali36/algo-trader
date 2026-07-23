@@ -260,13 +260,40 @@
           }).then(_poll);
         } catch (e) { }
       };
+      // Transient / non-actionable browser noise must NOT land in the persistent
+      // notification history — a network blip mid-poll ("Failed to fetch"), a
+      // cancelled request, or an opaque cross-origin "Script error." self-heal on
+      // the next cycle and only bury the real trading alerts. Genuine dashboard
+      // outages are already covered by _poll()'s catch + the liveness banner.
+      // Console still logs everything for debugging; genuine code bugs
+      // (ReferenceError/TypeError) still notify.
+      function _isNoise(text) {
+        var t = String(text == null ? '' : text).toLowerCase();
+        return !t
+          || t.indexOf('failed to fetch') >= 0          // network blip during a background fetch
+          || t.indexOf('networkerror') >= 0
+          || t.indexOf('load failed') >= 0              // Safari's "Failed to fetch"
+          || t.indexOf('err_network') >= 0
+          || t.indexOf('err_internet_disconnected') >= 0
+          || t.indexOf('err_connection') >= 0
+          || t.indexOf('the user aborted') >= 0
+          || t.indexOf('the operation was aborted') >= 0
+          || t.indexOf('aborterror') >= 0
+          || t.indexOf('signal is aborted') >= 0
+          || t === 'script error.'                      // opaque cross-origin, no detail
+          || t.indexOf('resizeobserver loop') >= 0;     // benign browser warning
+      }
       window.addEventListener('error', function (e) {
-        window.notifPush('UI crash: ' + (e.message || 'unknown') + ' @ ' + (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0),
-          'error', 'ui:' + (e.message || '').slice(0, 80));
+        var m = e.message || (e.error && e.error.message) || 'unknown';
+        if (_isNoise(m)) { try { console.debug('[notify skip]', m); } catch (x) { } return; }
+        window.notifPush('UI crash: ' + m + ' @ ' + (e.filename || '?').split('/').pop() + ':' + (e.lineno || 0),
+          'error', 'ui:' + String(m).slice(0, 80));
       });
       window.addEventListener('unhandledrejection', function (e) {
         var r = e.reason;
-        window.notifPush('UI promise fail: ' + ((r && (r.message || r)) || 'unknown'),
+        var m = (r && (r.message || r)) || 'unknown';
+        if (_isNoise(m)) { try { console.debug('[notify skip]', m); } catch (x) { } return; }
+        window.notifPush('UI promise fail: ' + m,
           'error', 'uip:' + String((r && r.message) || r).slice(0, 80));
       });
 
