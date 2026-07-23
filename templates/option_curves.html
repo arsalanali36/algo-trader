@@ -60,16 +60,16 @@
     #ctxMenu .mih{font-size:10px;color:var(--mut);padding:4px 10px 2px;text-transform:uppercase;letter-spacing:.03em}
     #ctxMenu .mi{display:flex;align-items:center;gap:8px;padding:7px 10px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;color:var(--tx)}
     #ctxMenu .mi:hover{background:#1f6feb22}
-    #stkModal{position:fixed;inset:0;z-index:80;display:none;background:rgba(0,0,0,.55)}
-    #stkModal .box{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:min(920px,94vw);height:min(560px,88vh);background:var(--panel);border:1px solid var(--bd);border-radius:10px;display:flex;flex-direction:column;box-shadow:0 10px 40px rgba(0,0,0,.6)}
-    #stkModal .hd{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid var(--bd);flex-wrap:wrap}
-    #stkModal .hd .ttl{font-weight:700;font-size:14px}
-    #stkModal select{width:auto;min-width:108px}
-    #stkModal .seg{width:auto}
-    #stkModal .body{flex:1;position:relative;min-height:0}
-    #stkModal .x{margin-left:auto;cursor:pointer;color:var(--mut);font-size:18px;font-weight:700;background:none;border:none;width:auto;padding:0 6px}
-    #stkModal .x:hover{color:var(--tx)}
-    #stkModal .rd{font-size:12px;color:var(--mut);padding:6px 12px;border-top:1px solid var(--bd);font-variant-numeric:tabular-nums}
+    #strikePop{position:fixed;z-index:75;display:none;background:#161b22;border:1px solid var(--bd);border-radius:8px;padding:10px;width:238px;box-shadow:0 6px 24px rgba(0,0,0,.6)}
+    #strikePop .hd{display:flex;align-items:center;margin-bottom:2px}
+    #strikePop .hd .ttl{font-weight:700;font-size:12px}
+    #strikePop .hd .x{margin-left:auto;background:none;border:none;color:var(--mut);font-size:15px;font-weight:700;cursor:pointer;width:auto;padding:0 4px}
+    #strikePop .hd .x:hover{color:var(--tx)}
+    #strikePop .fl{font-size:10px;color:var(--mut);font-weight:700;text-transform:uppercase;letter-spacing:.03em;margin:8px 0 4px}
+    #strikePop .offs{display:flex;flex-wrap:wrap;gap:3px}
+    #strikePop .offs button{width:auto;flex:1;min-width:26px;padding:4px 0;font-size:11px}
+    #strikePop .offs button.on,#strikePop .seg button.on{background:var(--blu);color:#fff}
+    #strikePop .res{margin-top:8px;background:#0d1117;border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-weight:600;font-size:12px}
   </style>
 </head>
 <body>
@@ -112,8 +112,13 @@
         <button data-s="panel" onclick="setScroll('panel',this)" title="Sirf chart area scroll (sidebar/header pinned)">Panel</button>
         <button data-s="page" onclick="setScroll('page',this)" title="Poora page scroll">Page</button>
       </div>
-      <label class="fld">Index overlay</label>
-      <div class="seg"><button id="idxAllBtn" onclick="toggleIndexAll(this)" title="Spot/index line saare panes pe on/off">📈 Index line: OFF</button></div>
+      <label class="fld">Index overlay (all charts)</label>
+      <div class="seg" id="idxOvSeg">
+        <button data-io="off" onclick="setIdxOv('off',this)" title="Index overlay off">Off</button>
+        <button data-io="line" onclick="setIdxOv('line',this)" title="Index as line (all panes)">Line</button>
+        <button data-io="ohlc" onclick="setIdxOv('ohlc',this)" title="Index as candles (all panes)">OHLC</button>
+      </div>
+      <div style="font-size:10px;color:var(--mut);margin-top:4px">Strike overlay → chart pe <b>right-click</b> → 📈 Strike overlay</div>
 
       <div class="divh"></div>
       <label class="fld">Panels</label>
@@ -131,6 +136,7 @@
       <div class="ro"><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
       <div class="ro"><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
       <div class="ro"><span class="k">CE|PE OI</span><span class="v" id="v-oi">—</span></div>
+      <div class="ro"><span class="k">Overlay strike</span><span class="v" id="v-ovstk">—</span></div>
 
       <div class="divh"></div>
       <label class="fld">Notes</label>
@@ -151,24 +157,22 @@
     </div>
   </div>
   <div id="ctxMenu"></div>
-  <div id="stkModal">
-    <div class="box">
-      <div class="hd">
-        <span class="ttl">Strike Chart</span>
-        <select id="stkSel" onchange="loadStrikeChart()" title="Strike"></select>
-        <div class="seg" id="stkTypeSeg" style="display:flex">
-          <button data-ot="CE" class="on" onclick="setStkType('CE',this)">CE</button>
-          <button data-ot="PE" onclick="setStkType('PE',this)">PE</button>
-        </div>
-        <div class="seg" id="stkModeSeg" style="display:flex">
-          <button data-m="candle" class="on" onclick="setStkMode('candle',this)">OHLC</button>
-          <button data-m="line" onclick="setStkMode('line',this)">Line</button>
-        </div>
-        <button class="x" onclick="closeStrikeModal()" title="Close (Esc)">✕</button>
-      </div>
-      <div class="body" id="stkBody"></div>
-      <div class="rd" id="stkRead">—</div>
+  <div id="strikePop">
+    <div class="hd"><span class="ttl">📈 Strike overlay</span><button class="x" onclick="closeStrikePop()" title="Close">✕</button></div>
+    <div class="fl">Form</div>
+    <div class="seg" id="spForm">
+      <button data-f="off" onclick="setStkForm('off',this)">Off</button>
+      <button data-f="line" onclick="setStkForm('line',this)">Line</button>
+      <button data-f="ohlc" onclick="setStkForm('ohlc',this)">OHLC</button>
     </div>
+    <div class="fl">Strike offset (ATM)</div>
+    <div class="offs" id="spOffs"></div>
+    <div class="fl">Leg</div>
+    <div class="seg" id="spLeg">
+      <button data-l="CE" onclick="setStkLeg('CE',this)">CE</button>
+      <button data-l="PE" onclick="setStkLeg('PE',this)">PE</button>
+    </div>
+    <div class="res" id="spRes">—</div>
   </div>
 
 <script>
@@ -180,22 +184,22 @@
   // `extra` second line (own axis/colour): straddle→spot, OI→PE OI.
   var PANELS = [
     { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit)' },
-    { id:'index',    name:'Index (spot)', color:'#58a6ff', kind:'index', get:function(p){return p.spot;}, dec:2, lbl:'INDEX (SPOT) — direct chart (OHLC / line)' },
     { id:'gamma',    name:'ATM Gamma',    color:'#a371f7', get:function(p){return p.gamma;},    dec:5, lbl:'ATM STRADDLE GAMMA (spike watch)' },
     { id:'oi',       name:'OI (CE vs PE)', color:'#f85149', get:function(p){return p.ce_oi;},   dec:0, lbl:'OPEN INTEREST — CE (red) vs PE (green) · unwinding = OI girna',
       extra:{ get:function(p){return p.pe_oi;}, color:'#3fb950', axis:'right', style:0 } },
     { id:'vix',      name:'India VIX',    color:'#d29922', get:function(p){return p.vix;},      dec:2, lbl:'INDIA VIX' },
     { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' }
   ];
-  var enabled = load('oc_panels', { straddle:true, index:true, gamma:true, oi:true, vix:true, pcr:true });
-  if(!('oi' in enabled)){ enabled.oi = true; save('oc_panels', enabled); }   // new OI panel → default on
-  if(!('index' in enabled)){ enabled.index = true; save('oc_panels', enabled); }   // new Index panel → default on
+  var enabled = load('oc_panels', { straddle:true, gamma:true, oi:true, vix:true, pcr:true });
+  if(!('oi' in enabled)){ enabled.oi = true; save('oc_panels', enabled); }   // OI panel → default on
   var heights = load('oc_heights', {});
   var rawAlerts = [], alertMarkers = {}, alertByTime = {};
   var notes = [], noteMarkers = {}, noteByTime = {};
-  var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay line hidden
-  var indexMode = load('oc_index_mode', 'candle');     // Index panel: 'candle' (OHLC) | 'line'
-  var indexAll  = load('oc_index_all', true);          // master: spot/index line overlaid on ALL panes
+  var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay (OI PE) line hidden
+  // OVERLAYS (all panes): index (Off/Line/OHLC) + one selected strike (Off/Line/OHLC via right-click)
+  var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
+  var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line' });
+  var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null;
   function notesKey(){ return 'oc_notes_'+U+'_'+document.getElementById('date').value; }
   var VIEW = load('oc_view', 'fit');       // 'fit' (panes fit screen) | 'tall' (taller, scroll)
   var SCROLL = load('oc_scroll', 'panel'); // 'panel' (chart-area scroll) | 'page' (whole-page scroll)
@@ -339,16 +343,13 @@
     if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
     if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
-    var OVLBL={ oi:'PE' };   // data-overlay (extra series) tick label — NOT the index (index = master toggle)
+    var OVLBL={ oi:'PE' };   // data-overlay (extra series) tick label (OI's PE line)
+    var stkC = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
     list.forEach(function(def, i){
       var el=document.createElement('div'); el.className='pane';
       el.style.height=paneHeight(def)+'px';
       var ctrl='';
-      if(def.kind==='index'){
-        ctrl='<span class="ovtick imtick" title="OHLC candles / line toggle" onclick="toggleIndexMode(this)">'
-           + '<span class="im-c'+(indexMode==='candle'?' on':'')+'">OHLC</span><span style="opacity:.4">·</span>'
-           + '<span class="im-l'+(indexMode==='line'?' on':'')+'">Line</span></span>';
-      } else if(def.extra){
+      if(def.extra){
         var ov=OVLBL[def.id]||'overlay';
         ctrl='<label class="ovtick" title="'+ov+' line show/hide"><input type="checkbox" '
              + (overlayHidden[def.id]?'':'checked') + ' onchange="toggleOverlay(\''+def.id+'\',this.checked)">'+ov+'</label>';
@@ -358,26 +359,23 @@
       var chart=mkChart(el); el._chart=chart;
       if(def.id==='oi') chart.applyOptions({ localization:{ priceFormatter: fmtInr } });   // OI axis → Cr/L
       var entry={ id:def.id, def:def, chart:chart, el:el };
-      if(def.kind==='index'){
-        entry.candle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
-          wickUpColor:'#3fb950', wickDownColor:'#f85149', visible:indexMode==='candle' });
-        entry.line=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true,
-          visible:indexMode==='line' });
-        entry.main=entry.line;   // crosshair/note price reference (has data even when hidden)
-      } else {
-        entry.main=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
-        if(def.extra){
-          if(def.extra.axis==='left') chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
-          entry.extra=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
-            priceScaleId:(def.extra.axis==='left'?'left':'right'), priceLineVisible:false, lastValueVisible:false,
-            visible: !overlayHidden[def.id] });
-        }
-        // master index/spot overlay — prominent dashed line on a readable LEFT axis, so
-        // the index shows clearly on EVERY option pane; toggled globally by idxAllBtn
-        entry.spotOv=chart.addLineSeries({ color:'#58a6ff', lineWidth:2, lineStyle:2, priceScaleId:'left',
-          priceLineVisible:false, lastValueVisible:indexAll, visible:indexAll });
-        chart.priceScale('left').applyOptions({ visible:indexAll, borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
+      entry.main=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
+      if(def.extra){
+        entry.extra=chart.addLineSeries({ color:def.extra.color, lineWidth:1, lineStyle:(def.extra.style||0),
+          priceScaleId:'right', priceLineVisible:false, lastValueVisible:false, visible: !overlayHidden[def.id] });
       }
+      // INDEX overlay (all panes) — line or candles on a readable LEFT axis
+      entry.idxLine=chart.addLineSeries({ color:'#58a6ff', lineWidth:2, lineStyle:2, priceScaleId:'left',
+        priceLineVisible:false, lastValueVisible:idxOv==='line', visible:idxOv==='line' });
+      entry.idxCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
+        wickUpColor:'#3fb950', wickDownColor:'#f85149', priceScaleId:'left', visible:idxOv==='ohlc' });
+      chart.priceScale('left').applyOptions({ visible:idxOv!=='off', borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
+      // STRIKE overlay (all panes) — chosen strike premium on its own invisible scale
+      entry.stkLine=chart.addLineSeries({ color:stkC, lineWidth:2, priceScaleId:'ocstrike',
+        priceLineVisible:false, lastValueVisible:false, visible:strikeOv.on&&strikeOv.mode==='line' });
+      entry.stkCandle=chart.addCandlestickSeries({ upColor:stkC, downColor:stkC, wickUpColor:stkC, wickDownColor:stkC,
+        borderVisible:false, priceScaleId:'ocstrike', visible:strikeOv.on&&strikeOv.mode==='ohlc' });
+      chart.priceScale('ocstrike').applyOptions({ visible:false, scaleMargins:{top:0.15,bottom:0.15} });
       panes.push(entry);
       chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
       chart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); });
@@ -407,14 +405,11 @@
     var idxC = indexCandles(raw, tf);
     var spotLine = view.map(function(p){ return {time:p.t, value:p.spot}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); });
     panes.forEach(function(e){
-      if(e.def.kind==='index'){
-        try{ e.candle.setData(idxC); }catch(x){}
-        try{ e.line.setData(spotLine); }catch(x){}
-      } else {
-        e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
-        if(e.extra) e.extra.setData(view.map(function(p){ return {time:p.t, value:e.def.extra.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
-        if(e.spotOv) e.spotOv.setData(spotLine);
-      }
+      e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+      if(e.extra) e.extra.setData(view.map(function(p){ return {time:p.t, value:e.def.extra.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+      if(e.idxLine) e.idxLine.setData(spotLine);
+      if(e.idxCandle) e.idxCandle.setData(idxC);
+      setStrikeSeries(e);
       setPaneMarkers(e);
     });
     if(fit && panes.length) panes[0].chart.timeScale().fitContent();
@@ -452,16 +447,16 @@
     return out;   // bar time = last t in bucket → aligns with resample() line times
   }
   function indexCandles(pts, tf){ return ohlcFrom(pts, tf, function(p){return p.spot;}); }
-  function toggleIndexMode(elm){
-    indexMode = indexMode==='candle' ? 'line' : 'candle'; save('oc_index_mode', indexMode);
-    panes.forEach(function(e){ if(e.def.kind==='index'){ e.candle.applyOptions({visible:indexMode==='candle'}); e.line.applyOptions({visible:indexMode==='line'}); }});
-    var c=elm.querySelector('.im-c'), l=elm.querySelector('.im-l');
-    if(c) c.classList.toggle('on', indexMode==='candle'); if(l) l.classList.toggle('on', indexMode==='line');
-  }
-  function toggleIndexAll(btn){
-    indexAll=!indexAll; save('oc_index_all', indexAll);
-    panes.forEach(function(e){ if(e.spotOv){ e.spotOv.applyOptions({visible:indexAll, lastValueVisible:indexAll}); try{ e.chart.priceScale('left').applyOptions({visible:indexAll}); }catch(x){} }});
-    btn.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); btn.classList.toggle('on', indexAll);
+
+  // ---- Index overlay (all panes): Off / Line / OHLC ----
+  function setIdxOv(v, btn){
+    idxOv=v; save('oc_index_ov', v);
+    document.querySelectorAll('#idxOvSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.io===v); });
+    panes.forEach(function(e){
+      if(e.idxLine) e.idxLine.applyOptions({ visible:v==='line', lastValueVisible:v==='line' });
+      if(e.idxCandle) e.idxCandle.applyOptions({ visible:v==='ohlc' });
+      try{ e.chart.priceScale('left').applyOptions({ visible:v!=='off' }); }catch(x){}
+    });
   }
 
   // ---- Notes (right-click any chart point) ----
@@ -474,11 +469,7 @@
     Object.keys(noteMarkers).forEach(function(k){ noteMarkers[k].sort(function(a,b){return a.time-b.time;}); });
   }
   function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).sort(function(x,y){ return x.time-y.time; }); }
-  function setPaneMarkers(e){
-    var m=paneMarkers(e.id);
-    try{ (e.candle||e.main).setMarkers(m); }catch(x){}
-    if(e.line && e.line!==e.main){ try{ e.line.setMarkers(m); }catch(x){} }
-  }
+  function setPaneMarkers(e){ try{ e.main.setMarkers(paneMarkers(e.id)); }catch(x){} }
   function refreshMarkers(){ panes.forEach(setPaneMarkers); }
   function findNote(pane, t){ for(var i=0;i<notes.length;i++){ if(notes[i].pane===pane && notes[i].t===t) return notes[i]; } return null; }
 
@@ -503,14 +494,14 @@
     m.innerHTML =
       '<div class="mih">'+ (_ctx?_ctx.pane:'') +'</div>'
       + '<div class="mi" onclick="ctxNote()">📝 '+(hasNote?'Edit note':'Add note')+'</div>'
-      + '<div class="mi" onclick="ctxStrike()">📈 Load strike chart</div>';
+      + '<div class="mi" onclick="ctxStrike()">📈 Strike overlay…</div>';
     m.style.left=Math.min(cx, window.innerWidth-190)+'px';
     m.style.top=Math.min(cy, window.innerHeight-120)+'px';
     m.style.display='block';
   }
   function hideCtxMenu(){ var m=document.getElementById('ctxMenu'); if(m) m.style.display='none'; }
   function ctxNote(){ hideCtxMenu(); if(_ctx && _ctx.t!=null) openNotePopup(_ctx.pane, _ctx.t, _ctx.price, _ctx.cx, _ctx.cy); }
-  function ctxStrike(){ hideCtxMenu(); openStrikeModal(); }
+  function ctxStrike(){ hideCtxMenu(); openStrikePop(_ctx?_ctx.cx:120, _ctx?_ctx.cy:120); }
   var _noteCtx=null;
   function openNotePopup(pane, t, price, cx, cy){
     var pop=document.getElementById('notePop'), ta=document.getElementById('noteTxt'), del=document.getElementById('noteDel');
@@ -544,59 +535,84 @@
     notes=[]; save(notesKey(), notes); buildNotes(); refreshMarkers();
   }
 
-  // ---- Strike chart modal (right-click → Load strike chart) ----
-  var _stkChart=null, _stkCandle=null, _stkLine=null, _stkType='CE', _stkMode=load('oc_stk_mode','candle'), _stkPts=[];
-  function openStrikeModal(){
-    var m=document.getElementById('stkModal'); m.style.display='block';
-    document.querySelectorAll('#stkModeSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.m===_stkMode); });
-    var body=document.getElementById('stkBody');
-    if(!_stkChart){
-      _stkChart=mkChart(body);
-      _stkCandle=_stkChart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149', visible:_stkMode==='candle' });
-      _stkLine=_stkChart.addLineSeries({ color:'#f0883e', lineWidth:2, priceLineVisible:false, visible:_stkMode==='line' });
-      _stkChart.subscribeCrosshairMove(function(prm){ stkCross(prm); });
-    } else { _stkChart.applyOptions({ width:body.clientWidth, height:body.clientHeight }); }
-    // available strikes → picker (default to nearest ATM), then load
-    var qs='underlying='+U+'&date='+document.getElementById('date').value;
-    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
-    document.getElementById('stkRead').textContent='Loading strikes…';
-    fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){
-      var sel=document.getElementById('stkSel'), strikes=(d&&d.strikes)||[];
-      if(!strikes.length){ document.getElementById('stkRead').textContent='Is din ka chain data nahi mila.'; sel.innerHTML=''; return; }
-      var atm=(view.length && view[view.length-1].atm) ? view[view.length-1].atm : strikes[Math.floor(strikes.length/2)];
-      sel.innerHTML=strikes.map(function(s){ return '<option value="'+s+'">'+s+'</option>'; }).join('');
-      sel.value=String(atm);
-      loadStrikeChart();
-    }).catch(function(){ document.getElementById('stkRead').textContent='Strike list load fail'; });
+  // ---- Strike overlay (right-click → 📈 Strike overlay): one chosen strike on ALL panes ----
+  function openStrikePop(cx, cy){
+    var pop=document.getElementById('strikePop');
+    pop.style.left=Math.min(cx, window.innerWidth-252)+'px';
+    pop.style.top=Math.min(Math.max(cy,8), window.innerHeight-268)+'px';
+    pop.style.display='block';
+    renderStrikePop();
+    ensureStrikes(function(){ renderStrikePop(); if(strikeOv.on) applyStrikeOv(); });
   }
-  function closeStrikeModal(){ var m=document.getElementById('stkModal'); if(m) m.style.display='none'; }
-  function setStkType(t, btn){ _stkType=t; document.querySelectorAll('#stkTypeSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); loadStrikeChart(); }
-  function setStkMode(mo, btn){ _stkMode=mo; save('oc_stk_mode',mo); document.querySelectorAll('#stkModeSeg button').forEach(function(b){b.classList.toggle('on',b===btn);});
-    if(_stkCandle) _stkCandle.applyOptions({visible:mo==='candle'}); if(_stkLine) _stkLine.applyOptions({visible:mo==='line'}); }
-  function loadStrikeChart(){
-    var strike=document.getElementById('stkSel').value; if(!strike) return;
+  function closeStrikePop(){ var p=document.getElementById('strikePop'); if(p) p.style.display='none'; }
+  function renderStrikePop(){
+    var cur = strikeOv.on ? strikeOv.mode : 'off';
+    document.querySelectorAll('#spForm button').forEach(function(b){ b.classList.toggle('on', b.dataset.f===cur); });
+    document.querySelectorAll('#spLeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.l===strikeOv.leg); });
+    var html=''; for(var o=-3;o<=3;o++){ html+='<button class="'+(o===strikeOv.offset?'on':'')+'" onclick="setStkOffset('+o+',this)">'+(o===0?'ATM':(o>0?('+'+o):o))+'</button>'; }
+    document.getElementById('spOffs').innerHTML=html;
+    var el=document.getElementById('spRes');
+    if(!strikeOv.on){ el.textContent='Overlay off'; el.style.color='var(--mut)'; }
+    else {
+      var last=_strikePts.length?_strikePts[_strikePts.length-1].ltp:null;
+      el.textContent=(_strikeResolved!=null ? (_strikeResolved+' '+strikeOv.leg+(last!=null?(' · ₹'+fmt(last,2)):'')) : 'Resolving…');
+      el.style.color=strikeOv.leg==='CE'?'var(--cyn)':'var(--org)';
+    }
+  }
+  function setStkForm(v, btn){ if(v==='off'){ strikeOv.on=false; } else { strikeOv.on=true; strikeOv.mode=v; } save('oc_strike_ov', strikeOv); renderStrikePop(); applyStrikeOv(); }
+  function setStkOffset(o, btn){ strikeOv.offset=o; save('oc_strike_ov', strikeOv); renderStrikePop(); if(strikeOv.on) applyStrikeOv(); }
+  function setStkLeg(l, btn){ strikeOv.leg=l; save('oc_strike_ov', strikeOv); panes.forEach(applyStrikeColor); renderStrikePop(); if(strikeOv.on) applyStrikeOv(); }
+
+  function ensureStrikes(cb){
+    var date=document.getElementById('date').value, ex=document.getElementById('expiry').value;
+    var key=U+'|'+date+'|'+ex;
+    if(key===_stkStrikesKey && _stkStrikes.length){ if(cb) cb(); return; }
+    var qs='underlying='+U+'&date='+date; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){ _stkStrikes=(d&&d.strikes)||[]; _stkStrikesKey=key; if(cb) cb(); }).catch(function(){ if(cb) cb(); });
+  }
+  function resolveStrike(){
+    if(!_stkStrikes.length) return null;
+    var spot = view.length ? view[view.length-1].spot : null;
+    var atmIdx=Math.floor(_stkStrikes.length/2), bd=Infinity;
+    if(spot!=null){ for(var i=0;i<_stkStrikes.length;i++){ var dd=Math.abs(_stkStrikes[i]-spot); if(dd<bd){bd=dd;atmIdx=i;} } }
+    var idx=Math.max(0, Math.min(_stkStrikes.length-1, atmIdx+strikeOv.offset));
+    return _stkStrikes[idx];
+  }
+  function applyStrikeColor(e){
+    var c = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
+    if(e.stkLine) e.stkLine.applyOptions({ color:c });
+    if(e.stkCandle) e.stkCandle.applyOptions({ upColor:c, downColor:c, wickUpColor:c, wickDownColor:c });
+  }
+  function setStrikeSeries(e){
+    if(!e.stkLine||!e.stkCandle) return;
     var tf=+document.getElementById('tf').value;
-    var qs='underlying='+U+'&date='+document.getElementById('date').value+'&strike='+strike+'&type='+_stkType;
-    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
-    document.querySelector('#stkModal .ttl').textContent=U+' '+strike+' '+_stkType;
-    document.getElementById('stkRead').textContent='Loading…';
-    fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){
-      _stkPts=(d&&d.points)||[];
-      var line=_stkPts.map(function(p){return {time:p.t,value:p.ltp};}).filter(function(x){return x.value!=null&&!isNaN(x.value);});
-      try{ _stkLine.setData(line); }catch(x){}
-      try{ _stkCandle.setData(ohlcFrom(_stkPts, tf, function(p){return p.ltp;})); }catch(x){}
-      try{ _stkChart.timeScale().fitContent(); }catch(x){}
-      if(_stkPts.length){ var last=_stkPts[_stkPts.length-1]; document.getElementById('stkRead').textContent='Last ₹'+fmt(last.ltp,2)+(last.oi?(' · OI '+fmtInr(last.oi)):'')+(last.iv?(' · IV '+fmt(last.iv,1)+'%'):''); }
-      else { document.getElementById('stkRead').textContent='Is strike ka data nahi (chain me ATM se door strike collect nahi hoti).'; }
-    }).catch(function(e){ document.getElementById('stkRead').textContent='Load fail: '+e; });
+    var on = strikeOv.on && _strikePts.length>0;
+    var line = on ? resample(_strikePts, tf).map(function(p){return {time:p.t, value:p.ltp};}).filter(function(x){return x.value!=null&&!isNaN(x.value);}) : [];
+    var cndl = on ? ohlcFrom(_strikePts, tf, function(p){return p.ltp;}) : [];
+    try{ e.stkLine.setData(line); }catch(x){}
+    try{ e.stkCandle.setData(cndl); }catch(x){}
+    e.stkLine.applyOptions({ visible: on && strikeOv.mode==='line' });
+    e.stkCandle.applyOptions({ visible: on && strikeOv.mode==='ohlc' });
   }
-  function stkCross(param){
-    if(!_stkPts.length) return;
-    var t=param&&param.time; if(t==null) return;
-    var p=null; for(var i=0;i<_stkPts.length;i++){ if(_stkPts[i].t===t){ p=_stkPts[i]; break; } }
-    if(!p) return;
-    var dt=new Date(t*1000);
-    document.getElementById('stkRead').textContent=dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0')+'  ₹'+fmt(p.ltp,2)+(p.oi?(' · OI '+fmtInr(p.oi)):'')+(p.iv?(' · IV '+fmt(p.iv,1)+'%'):'')+(p.spot?(' · spot '+fmt(p.spot,1)):'');
+  function updateStrikeReadout(){
+    var el=document.getElementById('v-ovstk'); if(!el) return;
+    if(!strikeOv.on || _strikeResolved==null){ el.textContent='—'; return; }
+    var last=_strikePts.length?_strikePts[_strikePts.length-1].ltp:null;
+    el.textContent=_strikeResolved+' '+strikeOv.leg+(last!=null?(' ₹'+fmt(last,2)):'');
+  }
+  function applyStrikeOv(){
+    if(!strikeOv.on){ _strikePts=[]; _strikeResolved=null; panes.forEach(setStrikeSeries); updateStrikeReadout(); renderStrikePop(); return; }
+    ensureStrikes(function(){
+      var strike=resolveStrike(); _strikeResolved=strike;
+      if(strike==null){ _strikePts=[]; panes.forEach(setStrikeSeries); updateStrikeReadout(); renderStrikePop(); return; }
+      var qs='underlying='+U+'&date='+document.getElementById('date').value+'&strike='+strike+'&type='+strikeOv.leg;
+      var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+      fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){
+        _strikePts=(d&&d.points)||[];
+        panes.forEach(function(e){ applyStrikeColor(e); setStrikeSeries(e); });
+        updateStrikeReadout(); renderStrikePop();
+      }).catch(function(){ _strikePts=[]; panes.forEach(setStrikeSeries); });
+    });
   }
 
   var _lastOk=null, _structKey='';
@@ -626,6 +642,7 @@
       var sk=structKey();
       if(forceBuild || sk!==_structKey || !panes.length){ _structKey=sk; buildPanes(); }
       else { applyData(false); }   // zoom preserved
+      if(strikeOv.on) applyStrikeOv();   // re-resolve + refetch strike overlay for the new context/minute
     }).catch(function(e){
       document.getElementById('main').innerHTML='<div class="empty">Load fail: '+e+'</div>';
     });
@@ -650,14 +667,15 @@
   document.querySelectorAll('#scrollSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.s===SCROLL); });
   applyScroll();
 
-  // init master index-overlay button + close note popup on outside click
-  (function(){ var b=document.getElementById('idxAllBtn'); if(b){ b.textContent='📈 Index line: '+(indexAll?'ON':'OFF'); b.classList.toggle('on', indexAll); } })();
+  // init index-overlay segmented + strike-overlay popup state
+  document.querySelectorAll('#idxOvSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.io===idxOv); });
+  renderStrikePop();
   document.addEventListener('mousedown', function(e){
     var p=document.getElementById('notePop'); if(p && p.style.display==='block' && !p.contains(e.target)) closeNotePopup();
     var m=document.getElementById('ctxMenu'); if(m && m.style.display==='block' && !m.contains(e.target)) hideCtxMenu();
+    var s=document.getElementById('strikePop'); if(s && s.style.display==='block' && !s.contains(e.target) && !(m&&m.contains(e.target))) closeStrikePop();
   });
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikeModal(); } });
-  document.getElementById('stkModal').addEventListener('mousedown', function(e){ if(e.target.id==='stkModal') closeStrikeModal(); });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikePop(); } });
 
   refresh(true);
 </script>
