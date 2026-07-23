@@ -398,6 +398,7 @@
         });
         updateQtyHint();
         qoRefreshLtp();
+        if (window.qoTab === 'straddle') qoStradCfgLoad();   // reload per-index target/SL + label
       };
 
       window.qoSetAtm = v => {
@@ -511,7 +512,7 @@
 
       // ── Auto ATM straddle (paper) — Quick Order "Straddle" tab ──
       window.qoSellStraddle = async () => {
-        const sym = window.qoSym || 'NIFTY';
+        const sym = qoSym || 'NIFTY';   // closure var (qoSetSym sets this), NOT window.qoSym
         const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
         const tp = parseFloat(document.getElementById('qo-strad-tp')?.value) || 30;
         const sl = parseFloat(document.getElementById('qo-strad-sl')?.value) || 30;
@@ -526,7 +527,7 @@
       };
       window.qoRefreshStraddles = async () => {
         const box = document.getElementById('qo-strad-list'); if (!box) return;
-        const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = window.qoSym || 'NIFTY';
+        const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = qoSym || 'NIFTY';
         try {
           const d = await (await fetch('/api/auto-straddle/list')).json();
           const rows = d.straddles || [];
@@ -551,18 +552,21 @@
       window.qoStradCfgLoad = async () => {
         try {
           const c = (await (await fetch('/api/auto-straddle/config')).json()).cfg || {};
+          const sym = qoSym || 'NIFTY';
           const a = document.getElementById('qo-strad-920'); if (a) a.checked = !!c.enabled_920;
           const b = document.getElementById('qo-strad-alert'); if (b) b.checked = !!c.enabled_alert;
-          if (c.lots) { const e = document.getElementById('qo-strad-lots'); if (e && !e._touched) e.value = c.lots; }
-          if (c.tp_pt) { const e = document.getElementById('qo-strad-tp'); if (e && !e._touched) e.value = c.tp_pt; }
-          if (c.sl_pt) { const e = document.getElementById('qo-strad-sl'); if (e && !e._touched) e.value = c.sl_pt; }
+          const ps = (c.per_symbol || {})[sym] || {};   // per-index target/SL (NIFTY 30/30, BANKNIFTY 60/60)
+          const tp = document.getElementById('qo-strad-tp'); if (tp) tp.value = ps.tp_pt != null ? ps.tp_pt : (c.tp_pt || 30);
+          const sl = document.getElementById('qo-strad-sl'); if (sl) sl.value = ps.sl_pt != null ? ps.sl_pt : (c.sl_pt || 30);
+          const lo = document.getElementById('qo-strad-lots'); if (lo && c.lots) lo.value = c.lots;
+          const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = sym;
         } catch (e) {}
       };
       window.qoStradCfgSave = async () => {
         const g = id => document.getElementById(id);
-        ['qo-strad-lots', 'qo-strad-tp', 'qo-strad-sl'].forEach(i => { const e = g(i); if (e) e._touched = true; });
         try {
           await fetch('/api/auto-straddle/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({
+            symbol: qoSym || 'NIFTY',   // tp/sl saved PER-INDEX
             enabled_920: !!g('qo-strad-920')?.checked, enabled_alert: !!g('qo-strad-alert')?.checked,
             lots: parseInt(g('qo-strad-lots')?.value) || 1, tp_pt: parseFloat(g('qo-strad-tp')?.value) || 30, sl_pt: parseFloat(g('qo-strad-sl')?.value) || 30,
           }) });

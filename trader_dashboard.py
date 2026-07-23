@@ -3513,8 +3513,21 @@ def _auto_straddle_cfg():
         cfg.update(raw.get("_auto_straddle") or {})
     except Exception:
         pass
+    # per-index target/SL — BANKNIFTY premium moves more per point → wider 60/60 default
+    ps = cfg.get("per_symbol") or {}
+    merged = {"NIFTY": {"tp_pt": 30.0, "sl_pt": 30.0}, "BANKNIFTY": {"tp_pt": 60.0, "sl_pt": 60.0}}
+    for k in merged:
+        if isinstance(ps.get(k), dict):
+            merged[k].update({kk: ps[k][kk] for kk in ("tp_pt", "sl_pt") if kk in ps[k]})
+    cfg["per_symbol"] = merged
     cfg["mode"] = "paper"   # hard paper-lock
     return cfg
+
+
+def _straddle_tp_sl(cfg, symbol):
+    """Per-index target/SL points (per_symbol override, else global tp_pt/sl_pt)."""
+    ps = (cfg.get("per_symbol") or {}).get(str(symbol).upper()) or {}
+    return float(ps.get("tp_pt", cfg.get("tp_pt", 30))), float(ps.get("sl_pt", cfg.get("sl_pt", 30)))
 
 
 def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
@@ -3665,8 +3678,8 @@ def on_option_alert(alert):
                 return
         except Exception:
             pass
-        ok, msg = _fire_auto_straddle(u, cfg.get("lots", 1), cfg.get("tp_pt", 30),
-                                      cfg.get("sl_pt", 30), "alert:%s" % typ,
+        _tp, _sl = _straddle_tp_sl(cfg, u)
+        ok, msg = _fire_auto_straddle(u, cfg.get("lots", 1), _tp, _sl, "alert:%s" % typ,
                                       log=lambda m: print(m, flush=True))
         print(f"[straddle] alert-fire {u} ({typ}): {msg}", flush=True)
     except Exception as e:
@@ -3706,8 +3719,8 @@ def auto_straddle_loop():
                         sym = str(sym).upper()
                         if ast.fired_920_today(sym) or ast.has_open(sym):
                             continue
-                        ok, msg = _fire_auto_straddle(sym, cfg.get("lots", 1), cfg.get("tp_pt", 30),
-                                                      cfg.get("sl_pt", 30), "schedule_920",
+                        _tp, _sl = _straddle_tp_sl(cfg, sym)
+                        ok, msg = _fire_auto_straddle(sym, cfg.get("lots", 1), _tp, _sl, "schedule_920",
                                                       log=lambda m: print(m, flush=True))
                         print(f"[straddle] 9:20 {sym}: {msg}", flush=True)
             # ── COMBINED-premium 30/30 basket exit ──
@@ -3808,9 +3821,21 @@ def api_auto_straddle_config():
         for k in ("lots", "max_per_day"):
             if k in d:
                 cur[k] = int(d[k])
-        for k in ("tp_pt", "sl_pt"):
-            if k in d:
-                cur[k] = float(d[k])
+        # tp/sl → per-index (per_symbol[symbol]) when a symbol is given, else global
+        _sym = str(d.get("symbol", "")).upper()
+        if _sym in ("NIFTY", "BANKNIFTY") and ("tp_pt" in d or "sl_pt" in d):
+            ps = cur.get("per_symbol") or {}
+            node = ps.get(_sym) or {}
+            if "tp_pt" in d:
+                node["tp_pt"] = float(d["tp_pt"])
+            if "sl_pt" in d:
+                node["sl_pt"] = float(d["sl_pt"])
+            ps[_sym] = node
+            cur["per_symbol"] = ps
+        else:
+            for k in ("tp_pt", "sl_pt"):
+                if k in d:
+                    cur[k] = float(d[k])
         if isinstance(d.get("symbols_920"), list):
             cur["symbols_920"] = [str(x).upper() for x in d["symbols_920"] if str(x).upper() in ("NIFTY", "BANKNIFTY")]
         if isinstance(d.get("alert_triggers"), list):
