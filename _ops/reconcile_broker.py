@@ -173,6 +173,62 @@ def apply(date, broker_name="kite", dry_run=True, log=print):
     return {"actions": actions, "residual_mismatch": after["mismatch"], "dry_run": dry_run}
 
 
+_last_mirror = 0.0
+_MIRROR_INTERVAL = 150.0   # ~2.5 min
+
+
+def _in_window():
+    """Market hours + a short tail (catch an end-of-day manual close). 09:15–15:50 IST."""
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)
+    if now.weekday() >= 5:
+        return False
+    hm = now.hour * 60 + now.minute
+    return (9 * 60 + 15) <= hm <= (15 * 60 + 50)
+
+
+def mirror_if_due(broker_name="kite", log=print):
+    """ROUTINE (called every pos_monitor tick, own ~2.5min cooldown): make the app's
+    LIVE ledger match the broker automatically. Replaces the heuristic auto-reconcile
+    that kept mis-recording manual closes. On each auto-reconcile it fires a bell notify
+    (transparency: 'app detected your manual close'); anything ambiguous is flagged, not
+    silently written. Fail-safe. LIVE only."""
+    global _last_mirror
+    import time
+    if time.time() - _last_mirror < _MIRROR_INTERVAL:
+        return
+    _last_mirror = time.time()
+    if not _in_window():
+        return
+    try:
+        from datetime import datetime, timezone, timedelta
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+        r = apply(date, broker_name, dry_run=False, log=log)
+        try:
+            import notify
+        except Exception:
+            notify = None
+        for a in r["actions"]:
+            if a.get("type") == "record":
+                log(f"[reconcile_broker] 🔁 auto-recorded external {a['side']} {a['qty']} "
+                    f"{a['trad_sym']} @ {a['price']} → {a['strategy']} (order {a['order_id']})", flush=True)
+                if notify:
+                    notify.warn(f"🔁 Auto-reconcile: {a['strategy']} me {a['side']} {a['qty']} "
+                                f"{a['trad_sym']} @ {a['price']} record kiya — ye Zerodha pe hua tha, "
+                                f"ab app broker se match karta hai.",
+                                key=f"recon_{a['order_id']}", source="reconcile")
+            elif a.get("type") == "skip" and notify:
+                notify.error(f"⚠️ Reconcile: broker order {a['order_id']} ka symbol resolve nahi hua — "
+                             f"manual dekho.", key=f"recon_skip_{a['order_id']}", source="reconcile")
+        for m in r.get("residual_mismatch", []):
+            if notify:
+                notify.error(f"⚠️ Reconcile: {m['contract']} app_net={m['app_net']} vs broker "
+                             f"{m['broker_net']} (app-side phantom — broker ke paas ye nahi) — manual dekho.",
+                             key=f"recon_resid_{m['contract']}", source="reconcile")
+    except Exception as e:
+        log(f"[reconcile_broker] mirror_if_due failed: {e}", flush=True)
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()

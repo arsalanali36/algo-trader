@@ -6664,12 +6664,17 @@ def pos_monitor_loop():
                 # during a capital-block, later "closed" at a real option
                 # premium — a ₹15L+ phantom profit). Same root gap as TRAP #86,
                 # just a different consumer of the same unfiltered "open" list.
-                _bsync_pos = [p for p in open_pos if "CAPITAL_BLOCKED" not in (p.get("tags") or [])]
-                _ghost_ids = _bsync.sync_if_due(_bsync_pos, log=print)
-                if _ghost_ids:
-                    # Re-fetch so this cycle runs on clean data
-                    data = order_store.trades_for(ist_now.strftime('%Y-%m-%d'))
-                    open_pos = data.get("open", [])
+                # SUPERSEDED (2026-07-23, B2): the heuristic ghost-sync recorded
+                # exits by fill-SIGNATURE/trade-id and could partial-record or hit
+                # the TRAP #60 "fill already used" skip (that's how the arschain
+                # phantom slipped through). reconcile_broker.mirror_if_due (below)
+                # now mirrors the broker's trade book by ORDER_ID authoritatively —
+                # ONE reconciler, no fill-signature guessing. Two reconcilers with
+                # different keys would fight (partial-record → residual), so this
+                # auto-call is disabled. The manual "🔄 Sync from Broker" button
+                # still calls force_sync on demand.
+                _ghost_ids = None
+                _ = _bsync   # keep import referenced for the on-demand button path
             except Exception as _bse:
                 print(f"[broker_sync] skipped (error): {_bse}", flush=True)
             # ─────────────────────────────────────────────────────────────────
@@ -6680,11 +6685,12 @@ def pos_monitor_loop():
             # before order_store.record() ran — no SIGTERM handler exists
             # anywhere to prevent that). Independent of open_pos on purpose —
             # must work even if the orphan is the ONLY position that exists.
-            try:
-                import broker_sync as _bsync2
-                _bsync2.untracked_scan_if_due(log=print)
-            except Exception as _use:
-                print(f"[broker_sync] untracked-scan skipped (error): {_use}", flush=True)
+            # SUPERSEDED (2026-07-23, B2): reconcile_broker.mirror_if_due (below)
+            # catches a broker position with no app row too — an external order in
+            # the trade book that the app never recorded → it records it. The full
+            # trade book is strictly more complete than diffing current positions,
+            # so this heuristic auto-scan is disabled to keep ONE authoritative
+            # reconciler. (Dhan auto-adopt was irrelevant — algo trades on Kite.)
             # ─────────────────────────────────────────────────────────────────
 
             # ── Auto manual-trade reconcile (2026-07-02) — same "🧾 Reconcile
@@ -6695,11 +6701,18 @@ def pos_monitor_loop():
             # order_store automatically. Button stays available for on-demand
             # use — this doesn't replace it, just removes the need to click it
             # every time. ──
+            # AUTHORITATIVE reconciler (2026-07-23, B2): replaces the heuristic
+            # reconcile_if_due (which kept mis-recording manual closes by fill-
+            # signature, causing the recurring phantom/whack-a-mole). This mirrors
+            # the broker's trade book by order_id — records each external order once,
+            # aggregated (netting-safe), idempotent; ambiguous cases are flagged, not
+            # written. invariant_guard (below) is the independent watchdog. See
+            # _ops/reconcile_broker.py + ADR.
             try:
-                import broker_sync as _bsync3
-                _bsync3.reconcile_if_due(log=print)
+                import reconcile_broker as _rb
+                _rb.mirror_if_due(broker_name="kite", log=print)
             except Exception as _rce:
-                print(f"[broker_sync] auto-reconcile skipped (error): {_rce}", flush=True)
+                print(f"[reconcile_broker] auto-reconcile skipped (error): {_rce}", flush=True)
             # ─────────────────────────────────────────────────────────────────
 
             # ── Proactive invariant guard (2026-07-20) — READ-ONLY sentinel:
