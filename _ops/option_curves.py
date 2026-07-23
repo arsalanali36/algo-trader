@@ -107,6 +107,38 @@ def _epoch_ist(dtstr):
         return None
 
 
+_EXTBA_CACHE = {}   # (u,date) -> (mtime, {HH:MM: (ce_bid,ce_ask,pe_bid,pe_ask,ce_ltp,pe_ltp)})
+
+
+def _ext_bidask(u, date):
+    """External per-minute ATM CE/PE bid/ask for a day the collector didn't capture
+    bid/ask (e.g. sourced once from the DOM/orderbook feed into
+    data/opt_bidask/<U>_<date>.csv). Keyed by HH:MM. Decoupled — curves() reads only
+    this clean file, never a foreign raw feed."""
+    p = os.path.join(PROJECT, "data", "opt_bidask", f"{u}_{date}.csv")
+    if not os.path.exists(p):
+        return {}
+    mt = os.path.getmtime(p)
+    key = (u, date)
+    hit = _EXTBA_CACHE.get(key)
+    if hit and hit[0] == mt:
+        return hit[1]
+    out = {}
+    try:
+        with open(p, newline="", encoding="utf-8") as f:
+            for r in csv.DictReader(f):
+                hm = (r.get("datetime") or "")[11:16]
+                vals = tuple(_f(r.get(k)) for k in ("ce_bid", "ce_ask", "pe_bid", "pe_ask", "ce_ltp", "pe_ltp"))
+                if hm and None not in vals[:4]:
+                    out[hm] = vals
+    except Exception:
+        return {}
+    if len(_EXTBA_CACHE) > 8:
+        _EXTBA_CACHE.clear()
+    _EXTBA_CACHE[key] = (mt, out)
+    return out
+
+
 def curves(u, date, expiry=None):
     """Return {ok, underlying, expiry, expiries[], points[]} for one expiry's day."""
     _, rows = _load_rows(u, date)
@@ -127,6 +159,7 @@ def curves(u, date, expiry=None):
     _ni = (exps.index(expiry) + 1) if (expiry in exps) else len(exps)
     next_expiry = exps[_ni] if _ni < len(exps) else None
     nmap = _atm_iv_map(rows, next_expiry) if next_expiry else {}
+    extmap = _ext_bidask(u, date)   # external bid/ask overlay (days collector didn't capture it)
 
     # group the chosen expiry's rows by timestamp
     bydt = {}
@@ -198,11 +231,18 @@ def curves(u, date, expiry=None):
         # Bid-ask spread (ATM straddle) — execution/opportunity signal (tight = good fill)
         ce_bid, ce_ask = _f(ce.get("bid")), _f(ce.get("ask"))
         pe_bid, pe_ask = _f(pe.get("bid")), _f(pe.get("ask"))
+        _sp_str = ce_ltp + pe_ltp   # straddle premium the spread% is relative to
+        if (ce_bid is None or pe_bid is None) and extmap:   # collector had no bid/ask → external overlay
+            ext = extmap.get(dt[11:16])
+            if ext:
+                ce_bid, ce_ask, pe_bid, pe_ask = ext[0], ext[1], ext[2], ext[3]
+                if ext[4] and ext[5]:
+                    _sp_str = ext[4] + ext[5]   # use the external source's own straddle for %
         ce_sp = (ce_ask - ce_bid) if (ce_bid is not None and ce_ask is not None and ce_ask >= ce_bid) else None
         pe_sp = (pe_ask - pe_bid) if (pe_bid is not None and pe_ask is not None and pe_ask >= pe_bid) else None
         if ce_sp is not None and pe_sp is not None:
             spread_abs = round(ce_sp + pe_sp, 2)
-            spread_pct = round(spread_abs / (ce_ltp + pe_ltp) * 100, 3) if (ce_ltp + pe_ltp) else None
+            spread_pct = round(spread_abs / _sp_str * 100, 3) if _sp_str else None
         else:
             spread_abs, spread_pct = None, None
         ep = _epoch_ist(dt)
