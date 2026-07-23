@@ -17,12 +17,33 @@ WHAT IT COMPUTES (per minute, for a chosen expiry):
 DISPLAY-ONLY: reads CSV, touches NO order/live path. mtime-cached.
 """
 import os
+import sys
 import csv
 import calendar
 from datetime import datetime
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)  # _ops/ -> project root
+
+_bs_mod = None
+
+
+def _bs():
+    """Lazy-import the project's SINGLE Black-Scholes source (scratch/nifty_trend/
+    bs_option.py — same one _core/payoff.py uses; Rule 6B, no second BS here).
+    Returns None if unavailable → the theoretical-decay line just stays empty."""
+    global _bs_mod
+    if _bs_mod is not None:
+        return _bs_mod or None
+    d = os.path.join(PROJECT, "scratch", "nifty_trend")
+    if os.path.isdir(d) and d not in sys.path:
+        sys.path.insert(0, d)
+    try:
+        import bs_option as _m
+        _bs_mod = _m
+    except Exception:
+        _bs_mod = False
+    return _bs_mod or None
 
 
 def _lake_dirs(u):
@@ -128,6 +149,26 @@ def curves(u, date, expiry=None):
         ce_g, pe_g = _f(ce.get("gamma")) or 0.0, _f(pe.get("gamma")) or 0.0
         ce_oi = sum(_f(l.get("oi")) or 0.0 for l in legs if l.get("opt_type") == "CE")
         pe_oi = sum(_f(l.get("oi")) or 0.0 for l in legs if l.get("opt_type") == "PE")
+        # ATM straddle IV (avg CE/PE — percent, so it plots directly against VIX) and
+        # net straddle delta (CE delta + PE delta; ~0 at ATM, drifts as spot moves).
+        ce_iv, pe_iv = _f(ce.get("iv")), _f(pe.get("iv"))
+        _ivs = [x for x in (ce_iv, pe_iv) if x is not None]
+        atm_iv = round(sum(_ivs) / len(_ivs), 2) if _ivs else None
+        ce_d, pe_d = _f(ce.get("delta")), _f(pe.get("delta"))
+        net_delta = round(ce_d + pe_d, 4) if (ce_d is not None and pe_d is not None) else None
+        # Max-OI strike (full captured chain, not just ATM): call wall vs put wall.
+        ce_oi_by, pe_oi_by = {}, {}
+        for l in legs:
+            k = _f(l.get("strike"))
+            if k is None:
+                continue
+            o = _f(l.get("oi")) or 0.0
+            if l.get("opt_type") == "CE":
+                ce_oi_by[k] = o
+            elif l.get("opt_type") == "PE":
+                pe_oi_by[k] = o
+        call_wall = max(ce_oi_by, key=ce_oi_by.get) if ce_oi_by else None
+        put_wall = max(pe_oi_by, key=pe_oi_by.get) if pe_oi_by else None
         ep = _epoch_ist(dt)
         if ep is None:
             continue
@@ -143,7 +184,30 @@ def curves(u, date, expiry=None):
             "pcr": round(pe_oi / ce_oi, 3) if ce_oi else None,
             "ce_oi": ce_oi,
             "pe_oi": pe_oi,
+            "atm_iv": atm_iv,
+            "net_delta": net_delta,
+            "call_wall": call_wall,
+            "put_wall": put_wall,
+            "straddle_theo": None,   # filled in the theoretical-decay pass below
         })
+
+    # Theoretical decay reference: freeze the ATM IV at the day's FIRST reading and let
+    # only time-to-expiry shrink (pure theta @ open-IV). actual straddle < theo = IV has
+    # crushed / decay ahead of schedule = edge for the option seller. Reuses bs_option.
+    bs = _bs()
+    iv0 = next((p["atm_iv"] for p in points if p.get("atm_iv")), None)
+    exp_ep = _epoch_ist(expiry + " 15:30:00") if expiry else None
+    if bs and iv0 and exp_ep:
+        sig = iv0 if iv0 < 1 else iv0 / 100.0   # accept fraction or percent IV
+        yr = 365.25 * 24 * 3600.0
+        for p in points:
+            T = max(exp_ep - p["t"], 0) / yr
+            try:
+                theo = (bs.bs_price(p["spot"], p["atm"], T, sig, opt="CE")
+                        + bs.bs_price(p["spot"], p["atm"], T, sig, opt="PE"))
+                p["straddle_theo"] = round(theo, 2)
+            except Exception:
+                pass
 
     return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points}
 

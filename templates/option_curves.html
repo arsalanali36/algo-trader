@@ -153,6 +153,10 @@
       <div class="ro"><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
       <div class="ro"><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
       <div class="ro"><span class="k">CE|PE OI</span><span class="v" id="v-oi">—</span></div>
+      <div class="ro"><span class="k">ATM IV</span><span class="v" id="v-iv">—</span></div>
+      <div class="ro"><span class="k">Straddle theo</span><span class="v" id="v-theo">—</span></div>
+      <div class="ro"><span class="k">Net delta</span><span class="v" id="v-ndelta">—</span></div>
+      <div class="ro"><span class="k">Call | Put wall</span><span class="v" id="v-walls">—</span></div>
       <div class="ro"><span class="k">Overlay strike</span><span class="v" id="v-ovstk">—</span></div>
 
       <div class="divh"></div>
@@ -206,7 +210,15 @@
     { id:'oi',       name:'OI (CE vs PE)', color:'#f85149', get:function(p){return p.ce_oi;},   dec:0, lbl:'OPEN INTEREST — CE (red) vs PE (green) · unwinding = OI girna',
       extra:{ get:function(p){return p.pe_oi;}, color:'#3fb950', axis:'right', style:0 } },
     { id:'vix',      name:'India VIX',    color:'#d29922', get:function(p){return p.vix;},      dec:2, lbl:'INDIA VIX' },
-    { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' }
+    { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' },
+    // ---- extra panels (default off — toggle from the picker) ----
+    { id:'iv',    name:'ATM IV vs VIX',  color:'#a371f7', get:function(p){return p.atm_iv;},        dec:2, lbl:'ATM STRADDLE IV (purple) vs INDIA VIX (yellow) · divergence = entry/exit signal',
+      extra:{ get:function(p){return p.vix;}, color:'#d29922', axis:'right', style:0 } },
+    { id:'decay', name:'Theo vs Actual decay', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, lbl:'STRADDLE — actual (orange) vs theoretical @ open-IV (dotted) · actual below = faster decay = seller edge',
+      extra:{ get:function(p){return p.straddle_theo;}, color:'#8b949e', axis:'right', style:2 } },
+    { id:'delta', name:'Net Straddle Delta', color:'#39c5cf', get:function(p){return p.net_delta;},  dec:3, lbl:'NET STRADDLE DELTA (0 = neutral · drift = directional → hedge / adjust)' },
+    { id:'walls', name:'OI Walls (call/put)', color:'#f85149', get:function(p){return p.call_wall;}, dec:0, lbl:'MAX-OI STRIKE — call wall (red) vs put wall (green) · shift = wall moving',
+      extra:{ get:function(p){return p.put_wall;}, color:'#3fb950', axis:'right', style:0 } }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [
@@ -348,6 +360,8 @@
     setv('v-str',fmt(p.straddle,2)); setv('v-gam',fmt(p.gamma,5)); setv('v-spot',fmt(p.spot,2));
     setv('v-atm',p.atm); setv('v-cepe',fmt(p.ce,2)+' | '+fmt(p.pe,2)); setv('v-vix',fmt(p.vix,2)); setv('v-pcr',fmt(p.pcr,3));
     setv('v-oi', fmtInr(p.ce_oi)+' | '+fmtInr(p.pe_oi));
+    setv('v-iv', fmt(p.atm_iv,2)); setv('v-theo', fmt(p.straddle_theo,2)); setv('v-ndelta', fmt(p.net_delta,3));
+    setv('v-walls', (p.call_wall==null?'—':p.call_wall)+' | '+(p.put_wall==null?'—':p.put_wall));
     // straddle value lost since day-open (positive = premium decayed = seller gained)
     var open0 = view.length ? view[0].straddle : null;
     var el=document.getElementById('v-slost');
@@ -375,7 +389,7 @@
     if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
     if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
-    var OVLBL={ oi:'PE' };   // data-overlay (extra series) tick label (OI's PE line)
+    var OVLBL={ oi:'PE', iv:'VIX', decay:'Theo', walls:'Put' };   // data-overlay (extra series) tick label
     var stkC = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
     list.forEach(function(def, i){
       var el=document.createElement('div'); el.className='pane';
