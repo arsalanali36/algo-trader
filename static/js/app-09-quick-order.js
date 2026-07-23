@@ -133,7 +133,8 @@
     <div style="flex:1"><div style="font-size:9px;color:#f85149;margin-bottom:4px">SL (pt)</div><input id="qo-strad-sl" type="number" value="30" step="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #5c1a1f;border-radius:6px;color:#f85149;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
   </div>
   <button onclick="qoSellStraddle()" style="width:100%;padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-bottom:6px">SELL ATM Straddle <span id="qo-strad-sym-lbl" style="font-size:11px;opacity:.85">NIFTY</span></button>
-  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:10px">ATM auto-pick @ fire &middot; dono leg &middot; RMS-gated &middot; combined 30/30 exit</div>
+  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">ATM auto-pick @ fire &middot; dono leg &middot; RMS-gated &middot; combined 30/30 exit</div>
+  <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#adbac7;margin-bottom:10px;cursor:pointer;flex-wrap:wrap"><input type="checkbox" id="qo-strad-hedge" onchange="qoStradCfgSave()"> &#128737; Hedge &mdash; sasti OTM wing (&le; &#8377;<input id="qo-strad-hedgemax" type="number" value="2" step="0.5" min="0.5" onchange="qoStradCfgSave()" style="width:42px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:3px;font-size:11px;text-align:center;outline:none">) &rarr; margin kam</label>
   <div style="border-top:1px solid #21262d;padding-top:10px;font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">AUTO (paper)</div>
   <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:5px;cursor:pointer"><input type="checkbox" id="qo-strad-920" onchange="qoStradCfgSave()"> 9:20 auto &middot; NIFTY + BANKNIFTY (roz)</label>
   <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:10px;cursor:pointer"><input type="checkbox" id="qo-strad-alert" onchange="qoStradCfgSave()"> Alert pe auto (straddle spike/crush/gamma)</label>
@@ -561,6 +562,9 @@
           const tp = document.getElementById('qo-strad-tp'); if (tp) tp.value = ps.tp_pt != null ? ps.tp_pt : (c.tp_pt || 30);
           const sl = document.getElementById('qo-strad-sl'); if (sl) sl.value = ps.sl_pt != null ? ps.sl_pt : (c.sl_pt || 30);
           const lo = document.getElementById('qo-strad-lots'); if (lo && c.lots) lo.value = c.lots;
+          const hg = c.hedge || {};
+          const he = document.getElementById('qo-strad-hedge'); if (he) he.checked = hg.enabled !== false;
+          const hm = document.getElementById('qo-strad-hedgemax'); if (hm && hg.max_premium != null) hm.value = hg.max_premium;
           const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = sym;
         } catch (e) {}
       };
@@ -571,6 +575,7 @@
             symbol: qoSym || 'NIFTY',   // tp/sl saved PER-INDEX
             enabled_920: !!g('qo-strad-920')?.checked, enabled_alert: !!g('qo-strad-alert')?.checked,
             lots: parseInt(g('qo-strad-lots')?.value) || 1, tp_pt: parseFloat(g('qo-strad-tp')?.value) || 30, sl_pt: parseFloat(g('qo-strad-sl')?.value) || 30,
+            hedge_enabled: !!g('qo-strad-hedge')?.checked, hedge_max_premium: parseFloat(g('qo-strad-hedgemax')?.value) || 2,
           }) });
         } catch (e) {}
       };

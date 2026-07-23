@@ -268,7 +268,8 @@ def _rest_quote_fallback(sec_id, seg="NSE_FNO"):
 
 
 def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offset,
-                          quote_fn=None, min_strikes_override=None, max_search=15, log=print):
+                          quote_fn=None, min_strikes_override=None, max_premium_override=None,
+                          max_search=15, log=print):
     """Resolve the auto-hedge BUY contract for a SELL leg that already went
     through (or is about to go through) gate_sell_entry — does NOT place
     anything, just answers "which contract, if any".
@@ -298,6 +299,8 @@ def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offs
     min_strikes, max_premium = risk_gate.hedge_config(strategy_id)
     if min_strikes_override:
         min_strikes = int(min_strikes_override)
+    if max_premium_override is not None:
+        max_premium = float(max_premium_override)   # caller-supplied (e.g. auto-straddle's own config)
     if not min_strikes and not max_premium:
         return None, None, None
 

@@ -3513,12 +3513,18 @@ def _auto_straddle_cfg():
         "entry_920": "09:20", "entry_920_window_min": 6,
         "alert_triggers": ["straddle_pop", "straddle_crush", "gamma_spike"],
         "max_per_day": 2,
+        # HEDGE: buy cheap OTM wings (~max_premium ₹) → hedged iron fly, low margin
+        "hedge": {"enabled": True, "max_premium": 2.0, "min_strikes": 3},
     }
     try:
         raw = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
         cfg.update(raw.get("_auto_straddle") or {})
     except Exception:
         pass
+    hd = cfg.get("hedge") or {}
+    cfg["hedge"] = {"enabled": bool(hd.get("enabled", True)),
+                    "max_premium": float(hd.get("max_premium", 2.0)),
+                    "min_strikes": int(hd.get("min_strikes", 3))}
     # per-index target/SL — BANKNIFTY premium moves more per point → wider 60/60 default
     ps = cfg.get("per_symbol") or {}
     merged = {"NIFTY": {"tp_pt": 30.0, "sl_pt": 30.0}, "BANKNIFTY": {"tp_pt": 60.0, "sl_pt": 60.0}}
@@ -3621,13 +3627,65 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
         return False, f"PE leg fail — CE unwound (koi straddle nahi bana). {res_pe.get('reason') or res_pe.get('status')}"
     pe_fill = res_pe.get("price") or 0
     entry_credit = round((ce_fill or 0) + (pe_fill or 0), 2)
+    q = lots * int(lot)
+    # SELL legs FIRST (indices 0/1 = the ATM straddle the basket-exit monitors)
+    legs = [
+        {"opt_type": "CE", "side": "SELL", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": q},
+        {"opt_type": "PE", "side": "SELL", "sec_id": str(sec_pe), "trad_sym": t_pe, "entry_price": pe_fill, "qty": q},
+    ]
+    # HEDGE — buy cheap OTM wings (~max_premium ₹) so the naked short straddle becomes a
+    # hedged iron fly → margin drops from naked (~₹1.5-2L/lot) to the basket. Reuses the
+    # SAME resolver range_trader uses (walk OTM to <= max_premium). Best-effort: if a wing
+    # can't be placed the straddle still stands (loud warn) — it's just less margin-efficient.
+    hcfg = cfg.get("hedge") or {}
+    hedge_fail = []
+    if hcfg.get("enabled"):
+        import strategy_safety as _ss
+        def _hq(_sec):
+            try:
+                import shared_ltp_cache as _s
+                v = _s.get(str(_sec), max_age=20)
+                if v:
+                    return float(v)
+            except Exception:
+                pass
+            try:
+                return float(_rest_ltp_fallback(_sec, "NSE_FNO") or 0) or None
+            except Exception:
+                return None
+        for ot in ("CE", "PE"):
+            try:
+                hsec, htsym, hlot = _ss.compute_hedge_target(
+                    sid, symbol, spot, ot, 0, quote_fn=_hq,
+                    min_strikes_override=int(hcfg.get("min_strikes", 3)),
+                    max_premium_override=float(hcfg.get("max_premium", 2)), max_search=25, log=log)
+            except Exception as he:
+                hsec = None
+                log(f"[STRADDLE] {symbol} {ot} hedge resolve err: {he}")
+            if not hsec:
+                hedge_fail.append(f"{ot} resolve")
+                continue
+            hres = gw.execute_signal(sid, symbol, "BUY", lots, int(hlot or lot), hsec, htsym,
+                                     seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE_HEDGE",
+                                     group_id=gid, gate=False,
+                                     extra_tags=["STRADDLE", "HEDGE", "STRAD_SRC:%s" % source], log=log)
+            if hres.get("ok"):
+                legs.append({"opt_type": ot, "side": "BUY", "sec_id": str(hsec), "trad_sym": htsym,
+                             "entry_price": hres.get("price") or 0, "qty": q})
+            else:
+                hedge_fail.append(f"{ot} order")
+        if hedge_fail:
+            log(f"[STRADDLE] {symbol} hedge incomplete: {', '.join(hedge_fail)} — margin poora kam nahi hua")
+            try:
+                import notify
+                notify.warn("straddle_hedge_%s" % gid,
+                            f"⚠️ {symbol} straddle hedge adhoora ({', '.join(hedge_fail)}) — naked margin reh sakta",
+                            source="chain")
+            except Exception:
+                pass
     ast.add({
         "symbol": symbol, "lots": lots, "mode": mode, "source": source, "strategy_id": sid, "group_id": gid,
-        "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_credit,
-        "legs": [
-            {"opt_type": "CE", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": lots * int(lot)},
-            {"opt_type": "PE", "sec_id": str(sec_pe), "trad_sym": t_pe, "entry_price": pe_fill, "qty": lots * int(lot)},
-        ],
+        "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_credit, "legs": legs,
     })
     if ltp_poller:
         try:
@@ -3660,7 +3718,7 @@ def _close_straddle(strad, status, reason, log=print):
     for leg in strad.get("legs", []):
         try:
             gw.execute_exit(sid, symbol, leg["sec_id"], leg["trad_sym"], leg["qty"],
-                            entry_side="SELL", mode=mode, group_id=gid, reason=reason,
+                            entry_side=leg.get("side", "SELL"), mode=mode, group_id=gid, reason=reason,
                             tag="STRADDLE", source="straddle", log=log)
         except Exception as e:
             log(f"[STRADDLE] {symbol} leg close fail {leg.get('trad_sym')}: {e}")
@@ -3859,6 +3917,13 @@ def api_auto_straddle_config():
             cur["symbols_920"] = [str(x).upper() for x in d["symbols_920"] if str(x).upper() in ("NIFTY", "BANKNIFTY")]
         if isinstance(d.get("alert_triggers"), list):
             cur["alert_triggers"] = [str(x) for x in d["alert_triggers"]]
+        if "hedge_enabled" in d or "hedge_max_premium" in d:
+            h = cur.get("hedge") or {}
+            if "hedge_enabled" in d:
+                h["enabled"] = bool(d["hedge_enabled"])
+            if "hedge_max_premium" in d:
+                h["max_premium"] = float(d["hedge_max_premium"])
+            cur["hedge"] = h
         cur["mode"] = "paper"
         cfg["_auto_straddle"] = cur
         TC_FILE.write_text(json.dumps(cfg, indent=2))
@@ -3898,14 +3963,43 @@ def api_straddle_chart_data():
         # straddle's OWN stored fields so it renders whether the position is open or closed.
         payoff = None
         try:
-            strike = float(str(lg[0].get("trad_sym", "")).split("-")[-2]) if lg else None
-            q = float(lg[0].get("qty") or 0) if lg else 0
-            if strike and ec > 0 and q > 0:
-                lo, hi, n = strike - 2 * ec, strike + 2 * ec, 120
+            def _lk(leg):
+                try:
+                    return float(str(leg.get("trad_sym", "")).split("-")[-2])
+                except Exception:
+                    return None
+            plegs = []
+            for leg in lg:
+                K = _lk(leg)
+                if K is None:
+                    continue
+                plegs.append({"K": K, "opt": leg.get("opt_type"), "side": leg.get("side", "SELL"),
+                              "entry": float(leg.get("entry_price") or 0), "qty": float(leg.get("qty") or 0)})
+            if plegs:
+                atmK = _lk(lg[0]) or plegs[0]["K"]
+                Ks = [p["K"] for p in plegs]
+                span = max(ec * 2, (max(Ks) - min(Ks)) or ec)
+                lo, hi, n = min(Ks) - span, max(Ks) + span, 160
                 stepp = (hi - lo) / n
-                curve = [[round(lo + i * stepp, 1), round((ec - abs((lo + i * stepp) - strike)) * q, 0)] for i in range(n + 1)]
-                payoff = {"strike": strike, "credit": ec, "qty": q, "max_profit": round(ec * q, 0),
-                          "breakevens": [round(strike - ec, 1), round(strike + ec, 1)], "curve": curve}
+
+                def _pnl(S):
+                    tot = 0.0
+                    for p in plegs:
+                        intr = max(S - p["K"], 0.0) if p["opt"] == "CE" else max(p["K"] - S, 0.0)
+                        tot += ((p["entry"] - intr) if p["side"] == "SELL" else (intr - p["entry"])) * p["qty"]
+                    return tot
+                curve = [[round(lo + i * stepp, 1), round(_pnl(lo + i * stepp), 0)] for i in range(n + 1)]
+                bes = []
+                for i in range(1, len(curve)):
+                    y0, y1 = curve[i - 1][1], curve[i][1]
+                    if (y0 <= 0 < y1) or (y0 >= 0 > y1):
+                        x0, x1 = curve[i - 1][0], curve[i][0]
+                        bes.append(round(x0 + (x1 - x0) * (0 - y0) / ((y1 - y0) or 1), 1))
+                ys = [c[1] for c in curve]
+                payoff = {"strike": atmK, "credit": ec, "qty": plegs[0]["qty"],
+                          "hedged": any(p["side"] == "BUY" for p in plegs),
+                          "max_profit": round(max(ys), 0), "max_loss": round(min(ys), 0),
+                          "breakevens": bes[:2], "curve": curve}
         except Exception:
             payoff = None
         try:
