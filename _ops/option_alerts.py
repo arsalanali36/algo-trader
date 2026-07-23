@@ -102,12 +102,17 @@ def _mean_std(xs):
     return m, var ** 0.5, n
 
 
-def evaluate(underlying, date=None, cfg=None):
-    """Pure: returns a list of {key, level, msg} for the current state. No side effects."""
+def evaluate(underlying, date=None, cfg=None, points=None):
+    """Pure: returns a list of {key, level, msg} for the current state. No side effects.
+    `points` (a curves() series) can be passed to evaluate an arbitrary window — used
+    for replay/calibration; otherwise today's live series is read."""
     cfg = cfg or _cfg()
     date = date or _today()
-    d = oc.curves(underlying, date)
-    pts = d.get("points") or []
+    if points is None:
+        d = oc.curves(underlying, date)
+        pts = d.get("points") or []
+    else:
+        pts = points
     if len(pts) < 6:
         return []
     cur = pts[-1]
