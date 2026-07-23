@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Option Curves — Algo Trader</title>
+  <script src="{{ url_for('static', filename='vendor/lightweight-charts.standalone.production.js') }}"></script>
+  <style>
+    :root{--bg:#0d1117;--panel:#161b22;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;
+          --grn:#3fb950;--red:#f85149;--blu:#1f6feb;--org:#f0883e;--pur:#a371f7;--cyn:#39c5cf;--yel:#d29922}
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px}
+    .top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--bd);background:var(--panel);flex-wrap:wrap}
+    .title{font-size:15px;font-weight:700}
+    .title .sub{font-size:11px;color:var(--mut);font-weight:500;margin-left:6px}
+    .spacer{flex:1}
+    select,input[type=date],button{background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer}
+    button:hover{background:#30363d}
+    .seg{display:inline-flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
+    .seg button{border:none;border-radius:0;background:transparent;padding:5px 11px}
+    .seg button.on{background:var(--blu);color:#fff}
+    .hdr-btn{padding:5px 10px}
+    .readout{display:flex;gap:16px;padding:6px 14px;border-bottom:1px solid var(--bd2);font-size:12px;flex-wrap:wrap;min-height:30px;align-items:center}
+    .ro{display:flex;gap:5px;align-items:center}
+    .ro .k{color:var(--mut)}
+    .ro .v{font-weight:700;font-variant-numeric:tabular-nums}
+    .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
+    .pane{position:relative;border-bottom:1px solid var(--bd2)}
+    .pane .lbl{position:absolute;top:6px;left:10px;z-index:3;font-size:11px;font-weight:700;color:var(--mut);pointer-events:none;background:rgba(13,17,23,.6);padding:1px 6px;border-radius:4px}
+    .empty{padding:40px;text-align:center;color:var(--mut)}
+    a.back{color:var(--mut);text-decoration:none;font-weight:600}
+    a.back:hover{color:var(--tx)}
+  </style>
+</head>
+<body>
+  <div class="top">
+    <span class="title">📈 Option Curves<span class="sub">ATM straddle + gamma · live chain</span></span>
+    <div class="seg" id="uSeg">
+      <button data-u="NIFTY" class="on" onclick="setU('NIFTY',this)">NIFTY</button>
+      <button data-u="BANKNIFTY" onclick="setU('BANKNIFTY',this)">BANKNIFTY</button>
+    </div>
+    <label class="ro"><span class="k">Expiry</span>
+      <select id="expiry" onchange="load()"></select></label>
+    <input type="date" id="date" onchange="load()">
+    <button class="hdr-btn" onclick="load()">↻ Refresh</button>
+    <div class="seg"><button id="autoBtn" class="on" onclick="toggleAuto()">🔄 Auto: ON</button></div>
+    <div class="spacer"></div>
+    <a class="back" href="/">← Dashboard</a>
+  </div>
+
+  <div class="readout" id="readout">
+    <div class="ro"><span class="dot" style="background:var(--org)"></span><span class="k">Straddle</span><span class="v" id="v-str">—</span></div>
+    <div class="ro"><span class="dot" style="background:var(--pur)"></span><span class="k">Gamma</span><span class="v" id="v-gam">—</span></div>
+    <div class="ro"><span class="dot" style="background:var(--blu)"></span><span class="k">Spot</span><span class="v" id="v-spot">—</span></div>
+    <div class="ro"><span class="k">ATM</span><span class="v" id="v-atm">—</span></div>
+    <div class="ro"><span class="k">CE|PE</span><span class="v" id="v-cepe">—</span></div>
+    <div class="ro"><span class="dot" style="background:var(--yel)"></span><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
+    <div class="ro"><span class="dot" style="background:var(--cyn)"></span><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
+    <div class="ro"><span class="k" id="v-time" style="color:var(--tx)"></span></div>
+  </div>
+
+  <div class="pane" id="p1"><span class="lbl">ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →</span></div>
+  <div class="pane" id="p2"><span class="lbl">ATM STRADDLE GAMMA (spike watch)</span></div>
+  <div class="pane" id="p3"><span class="lbl">INDIA VIX · PCR →</span></div>
+  <div class="empty" id="empty" style="display:none"></div>
+
+<script>
+  var LC = window.LightweightCharts;
+  var U = 'NIFTY', AUTO = true, charts = [], byTime = {}, _timer = null, _syncing = false;
+
+  (function initDate(){
+    var d = new Date();
+    document.getElementById('date').value =
+      d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  })();
+
+  function setU(u, btn){ U = u; document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on', b===btn);}); load(); }
+  function toggleAuto(){ AUTO = !AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 Auto: '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
+
+  function paneH(){ return Math.max(150, Math.floor((window.innerHeight - 90) / 3)); }
+
+  function mkChart(el, opts){
+    var c = LC.createChart(el, Object.assign({
+      width: el.clientWidth, height: paneH(),
+      layout:{ background:{color:'#0d1117'}, textColor:'#8b949e', fontSize:11 },
+      grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
+      timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
+      rightPriceScale:{ borderColor:'#30363d' },
+      crosshair:{ mode: LC.CrosshairMode.Normal, vertLine:{color:'#484f58',labelBackgroundColor:'#21262d'}, horzLine:{color:'#484f58',labelBackgroundColor:'#21262d'} }
+    }, opts||{}));
+    return c;
+  }
+
+  function fmt(x, d){ return (x==null||isNaN(x)) ? '—' : Number(x).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+
+  function syncRange(src){
+    if(_syncing) return; _syncing = true;
+    var r = src.timeScale().getVisibleLogicalRange();
+    if(r) charts.forEach(function(c){ if(c!==src) c.timeScale().setVisibleLogicalRange(r); });
+    _syncing = false;
+  }
+
+  function onCross(param){
+    // clear crosshair on the other charts + update readout
+    var t = param && param.time;
+    if(t==null){ return; }
+    var p = byTime[t];
+    if(!p) return;
+    set('v-str', fmt(p.straddle,2)); set('v-gam', fmt(p.gamma,5)); set('v-spot', fmt(p.spot,2));
+    set('v-atm', p.atm); set('v-cepe', fmt(p.ce,2)+' | '+fmt(p.pe,2));
+    set('v-vix', fmt(p.vix,2)); set('v-pcr', fmt(p.pcr,3));
+    var dt = new Date(t*1000);
+    set('v-time', dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'));
+  }
+  function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=(v==null?'—':v); }
+
+  function render(data){
+    charts.forEach(function(c){ c.remove(); }); charts = []; byTime = {};
+    var pts = (data && data.points) || [];
+    document.getElementById('empty').style.display = pts.length ? 'none' : 'block';
+    ['p1','p2','p3'].forEach(function(id){ var el=document.getElementById(id); el.style.display = pts.length ? 'block':'none'; });
+    if(!pts.length){
+      document.getElementById('empty').textContent = data && data.ok===false
+        ? 'Is din ka option-chain data nahi mila (collector us din chala tha?).'
+        : 'Koi data nahi — market band ya collector abhi warm ho raha.';
+      return;
+    }
+    pts.forEach(function(p){ byTime[p.t] = p; });
+
+    // Pane 1 — straddle (right) + spot (left)
+    var c1 = mkChart(document.getElementById('p1'), { leftPriceScale:{ visible:true, borderColor:'#30363d' } });
+    var sStr = c1.addLineSeries({ color:'#f0883e', lineWidth:2, priceScaleId:'right', title:'Straddle', priceLineVisible:false });
+    var sSpot = c1.addLineSeries({ color:'#1f6feb', lineWidth:1, priceScaleId:'left', lineStyle:2, title:'Spot', priceLineVisible:false });
+    sStr.setData(pts.map(function(p){ return {time:p.t, value:p.straddle}; }));
+    sSpot.setData(pts.filter(function(p){return p.spot!=null;}).map(function(p){ return {time:p.t, value:p.spot}; }));
+
+    // Pane 2 — gamma
+    var c2 = mkChart(document.getElementById('p2'));
+    var sGam = c2.addLineSeries({ color:'#a371f7', lineWidth:2, title:'Gamma', priceLineVisible:false });
+    sGam.setData(pts.filter(function(p){return p.gamma!=null;}).map(function(p){ return {time:p.t, value:p.gamma}; }));
+
+    // Pane 3 — VIX (left) + PCR (right)
+    var c3 = mkChart(document.getElementById('p3'), { leftPriceScale:{ visible:true, borderColor:'#30363d' } });
+    var sVix = c3.addLineSeries({ color:'#d29922', lineWidth:2, priceScaleId:'left', title:'VIX', priceLineVisible:false });
+    var sPcr = c3.addLineSeries({ color:'#39c5cf', lineWidth:1, priceScaleId:'right', title:'PCR', priceLineVisible:false });
+    sVix.setData(pts.filter(function(p){return p.vix!=null;}).map(function(p){ return {time:p.t, value:p.vix}; }));
+    sPcr.setData(pts.filter(function(p){return p.pcr!=null;}).map(function(p){ return {time:p.t, value:p.pcr}; }));
+
+    charts = [c1, c2, c3];
+    charts.forEach(function(c){
+      c.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(c); });
+      c.subscribeCrosshairMove(onCross);
+    });
+    c1.timeScale().fitContent();
+    // last point into the readout as a default
+    onCross({ time: pts[pts.length-1].t });
+  }
+
+  function load(){
+    var qs = 'underlying=' + U + '&date=' + document.getElementById('date').value;
+    var ex = document.getElementById('expiry').value;
+    if(ex) qs += '&expiry=' + encodeURIComponent(ex);
+    fetch('/api/option-curves?' + qs).then(function(r){ return r.json(); }).then(function(d){
+      // expiry dropdown
+      var sel = document.getElementById('expiry');
+      var cur = sel.value;
+      var exps = (d && d.expiries) || [];
+      if(exps.join(',') !== Array.from(sel.options).map(function(o){return o.value;}).join(',')){
+        sel.innerHTML = exps.map(function(e){ return '<option value="'+e+'">'+e+'</option>'; }).join('');
+        sel.value = (d && d.expiry) || (exps[0]||'');
+      } else if(d && d.expiry){ sel.value = d.expiry; }
+      render(d);
+    }).catch(function(e){
+      document.getElementById('empty').style.display='block';
+      document.getElementById('empty').textContent = 'Load fail: ' + e;
+    });
+    schedule();
+  }
+
+  function schedule(){ if(_timer) clearTimeout(_timer); if(AUTO) _timer = setTimeout(load, 30000); }
+
+  window.addEventListener('resize', function(){
+    charts.forEach(function(c){ c.applyOptions({ width: c.chartElement ? undefined : undefined }); });
+    ['p1','p2','p3'].forEach(function(id){ var el=document.getElementById(id); });
+    charts.forEach(function(c,i){ var el=document.getElementById(['p1','p2','p3'][i]); if(el) c.applyOptions({ width: el.clientWidth, height: paneH() }); });
+  });
+
+  load();
+</script>
+</body>
+</html>

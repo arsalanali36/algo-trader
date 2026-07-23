@@ -572,6 +572,27 @@ def stats2():
     tab in index.html is untouched. Display-only."""
     return render_template("stats2.html")
 
+@app.route('/curves')
+def option_curves_page():
+    """Sensibull-style intraday option curves — ATM straddle premium + ATM gamma
+    (real Dhan greeks) + spot/VIX/PCR, from the option-chain collector's per-minute
+    snapshots. Display-only."""
+    return render_template("option_curves.html")
+
+@app.route('/api/option-curves')
+def api_option_curves():
+    import option_curves as oc
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date')
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    try:
+        return jsonify(oc.curves(u, date, expiry))
+    except Exception as e:
+        print("[option-curves] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e), "expiries": [], "points": []})
+
 @app.route('/backtest')
 def backtest():
     from flask import send_file
