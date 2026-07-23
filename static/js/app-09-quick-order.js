@@ -564,7 +564,7 @@
           const lo = document.getElementById('qo-strad-lots'); if (lo && c.lots) lo.value = c.lots;
           const hg = c.hedge || {};
           const he = document.getElementById('qo-strad-hedge'); if (he) he.checked = hg.enabled !== false;
-          const hm = document.getElementById('qo-strad-hedgemax'); if (hm && hg.max_premium != null) hm.value = hg.max_premium;
+          const hm = document.getElementById('qo-strad-hedgemax'); if (hm && ps.hedge_max_premium != null) hm.value = ps.hedge_max_premium;  // per-index (NIFTY ~2, BNF ~5)
           const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = sym;
         } catch (e) {}
       };

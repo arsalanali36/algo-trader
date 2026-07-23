@@ -3523,14 +3523,15 @@ def _auto_straddle_cfg():
         pass
     hd = cfg.get("hedge") or {}
     cfg["hedge"] = {"enabled": bool(hd.get("enabled", True)),
-                    "max_premium": float(hd.get("max_premium", 2.0)),
-                    "min_strikes": int(hd.get("min_strikes", 3))}
-    # per-index target/SL — BANKNIFTY premium moves more per point → wider 60/60 default
+                    "min_strikes": int(hd.get("min_strikes", 3))}   # max_premium is PER-INDEX (per_symbol)
+    # per-index target/SL + hedge max-premium — BANKNIFTY premium moves more per point (wider
+    # 30/30→60/60) AND a ₹2 wing sits ~1500pt OTM (too wide) → default ₹5 for a tighter fly.
     ps = cfg.get("per_symbol") or {}
-    merged = {"NIFTY": {"tp_pt": 30.0, "sl_pt": 30.0}, "BANKNIFTY": {"tp_pt": 60.0, "sl_pt": 60.0}}
+    merged = {"NIFTY": {"tp_pt": 30.0, "sl_pt": 30.0, "hedge_max_premium": 2.0},
+              "BANKNIFTY": {"tp_pt": 60.0, "sl_pt": 60.0, "hedge_max_premium": 5.0}}
     for k in merged:
         if isinstance(ps.get(k), dict):
-            merged[k].update({kk: ps[k][kk] for kk in ("tp_pt", "sl_pt") if kk in ps[k]})
+            merged[k].update({kk: ps[k][kk] for kk in ("tp_pt", "sl_pt", "hedge_max_premium") if kk in ps[k]})
     cfg["per_symbol"] = merged
     cfg["mode"] = "paper"   # hard paper-lock
     return cfg
@@ -3540,6 +3541,12 @@ def _straddle_tp_sl(cfg, symbol):
     """Per-index target/SL points (per_symbol override, else global tp_pt/sl_pt)."""
     ps = (cfg.get("per_symbol") or {}).get(str(symbol).upper()) or {}
     return float(ps.get("tp_pt", cfg.get("tp_pt", 30))), float(ps.get("sl_pt", cfg.get("sl_pt", 30)))
+
+
+def _straddle_hedge_max(cfg, symbol):
+    """Per-index hedge wing max-premium ₹ (NIFTY ~2, BANKNIFTY ~5 — BNF ₹2 is too far OTM)."""
+    ps = (cfg.get("per_symbol") or {}).get(str(symbol).upper()) or {}
+    return float(ps.get("hedge_max_premium", 2.0))
 
 
 def _straddle_strategy_id(source):
@@ -3640,6 +3647,7 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     hcfg = cfg.get("hedge") or {}
     hedge_fail = []
     if hcfg.get("enabled"):
+        _hmax = _straddle_hedge_max(cfg, symbol)   # per-index (NIFTY ~2, BNF ~5)
         import strategy_safety as _ss
         def _hq(_sec):
             try:
@@ -3658,7 +3666,7 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
                 hsec, htsym, hlot = _ss.compute_hedge_target(
                     sid, symbol, spot, ot, 0, quote_fn=_hq,
                     min_strikes_override=int(hcfg.get("min_strikes", 3)),
-                    max_premium_override=float(hcfg.get("max_premium", 2)), max_search=25, log=log)
+                    max_premium_override=_hmax, max_search=30, log=log)
             except Exception as he:
                 hsec = None
                 log(f"[STRADDLE] {symbol} {ot} hedge resolve err: {he}")
@@ -3900,13 +3908,15 @@ def api_auto_straddle_config():
                 cur[k] = int(d[k])
         # tp/sl → per-index (per_symbol[symbol]) when a symbol is given, else global
         _sym = str(d.get("symbol", "")).upper()
-        if _sym in ("NIFTY", "BANKNIFTY") and ("tp_pt" in d or "sl_pt" in d):
+        if _sym in ("NIFTY", "BANKNIFTY") and ("tp_pt" in d or "sl_pt" in d or "hedge_max_premium" in d):
             ps = cur.get("per_symbol") or {}
             node = ps.get(_sym) or {}
             if "tp_pt" in d:
                 node["tp_pt"] = float(d["tp_pt"])
             if "sl_pt" in d:
                 node["sl_pt"] = float(d["sl_pt"])
+            if "hedge_max_premium" in d:
+                node["hedge_max_premium"] = float(d["hedge_max_premium"])   # per-index wing ₹
             ps[_sym] = node
             cur["per_symbol"] = ps
         else:
@@ -3917,12 +3927,9 @@ def api_auto_straddle_config():
             cur["symbols_920"] = [str(x).upper() for x in d["symbols_920"] if str(x).upper() in ("NIFTY", "BANKNIFTY")]
         if isinstance(d.get("alert_triggers"), list):
             cur["alert_triggers"] = [str(x) for x in d["alert_triggers"]]
-        if "hedge_enabled" in d or "hedge_max_premium" in d:
+        if "hedge_enabled" in d:
             h = cur.get("hedge") or {}
-            if "hedge_enabled" in d:
-                h["enabled"] = bool(d["hedge_enabled"])
-            if "hedge_max_premium" in d:
-                h["max_premium"] = float(d["hedge_max_premium"])
+            h["enabled"] = bool(d["hedge_enabled"])   # global on/off; max_premium is PER-INDEX above
             cur["hedge"] = h
         cur["mode"] = "paper"
         cfg["_auto_straddle"] = cur
