@@ -9,183 +9,261 @@
     :root{--bg:#0d1117;--panel:#161b22;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;
           --grn:#3fb950;--red:#f85149;--blu:#1f6feb;--org:#f0883e;--pur:#a371f7;--cyn:#39c5cf;--yel:#d29922}
     *{box-sizing:border-box}
-    body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px}
-    .top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--bd);background:var(--panel);flex-wrap:wrap}
+    html,body{height:100%}
+    body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;font-size:13px;display:flex;flex-direction:column}
+    .top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--bd);background:var(--panel)}
     .title{font-size:15px;font-weight:700}
     .title .sub{font-size:11px;color:var(--mut);font-weight:500;margin-left:6px}
     .spacer{flex:1}
-    select,input[type=date],button{background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer}
-    button:hover{background:#30363d}
-    .seg{display:inline-flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
-    .seg button{border:none;border-radius:0;background:transparent;padding:5px 11px}
-    .seg button.on{background:var(--blu);color:#fff}
-    .hdr-btn{padding:5px 10px}
-    .readout{display:flex;gap:16px;padding:6px 14px;border-bottom:1px solid var(--bd2);font-size:12px;flex-wrap:wrap;min-height:30px;align-items:center}
-    .ro{display:flex;gap:5px;align-items:center}
-    .ro .k{color:var(--mut)}
-    .ro .v{font-weight:700;font-variant-numeric:tabular-nums}
-    .dot{width:9px;height:9px;border-radius:2px;display:inline-block}
-    .pane{position:relative;border-bottom:1px solid var(--bd2)}
-    .pane .lbl{position:absolute;top:6px;left:10px;z-index:3;font-size:11px;font-weight:700;color:var(--mut);pointer-events:none;background:rgba(13,17,23,.6);padding:1px 6px;border-radius:4px}
-    .empty{padding:40px;text-align:center;color:var(--mut)}
     a.back{color:var(--mut);text-decoration:none;font-weight:600}
     a.back:hover{color:var(--tx)}
+    .wrap{flex:1;display:flex;min-height:0}
+    .side{width:210px;flex-shrink:0;border-right:1px solid var(--bd);background:var(--panel);padding:12px;overflow-y:auto}
+    .side label.fld{display:block;font-size:11px;color:var(--mut);font-weight:700;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.03em}
+    select,input[type=date],button{background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;width:100%}
+    button:hover{background:#30363d}
+    .seg{display:flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
+    .seg button{border:none;border-radius:0;background:transparent;padding:5px 8px}
+    .seg button.on{background:var(--blu);color:#fff}
+    .divh{height:1px;background:var(--bd);margin:14px 0}
+    .pk{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:5px;cursor:pointer;font-size:12px;font-weight:600}
+    .pk:hover{background:#21262d}
+    .pk input{width:auto;cursor:pointer}
+    .pk .dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+    .ro{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:2px 0}
+    .ro .k{color:var(--mut)}
+    .ro .v{font-weight:700;font-variant-numeric:tabular-nums}
+    .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden}
+    .pane{position:relative;min-height:100px}
+    .pane .lbl{position:absolute;top:6px;left:10px;z-index:3;font-size:11px;font-weight:700;color:var(--mut);pointer-events:none;background:rgba(13,17,23,.6);padding:1px 6px;border-radius:4px}
+    .rh{height:6px;cursor:row-resize;background:var(--bd2);flex-shrink:0;position:relative}
+    .rh:hover{background:var(--blu)}
+    .rh::after{content:'';position:absolute;left:50%;top:2px;width:26px;height:2px;margin-left:-13px;background:var(--mut);border-radius:2px}
+    .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--mut);padding:40px;text-align:center}
   </style>
 </head>
 <body>
   <div class="top">
     <span class="title">📈 Option Curves<span class="sub">ATM straddle + gamma · live chain</span></span>
-    <div class="seg" id="uSeg">
-      <button data-u="NIFTY" class="on" onclick="setU('NIFTY',this)">NIFTY</button>
-      <button data-u="BANKNIFTY" onclick="setU('BANKNIFTY',this)">BANKNIFTY</button>
-    </div>
-    <label class="ro"><span class="k">Expiry</span>
-      <select id="expiry" onchange="load()"></select></label>
-    <input type="date" id="date" onchange="load()">
-    <button class="hdr-btn" onclick="load()">↻ Refresh</button>
-    <div class="seg"><button id="autoBtn" class="on" onclick="toggleAuto()">🔄 Auto: ON</button></div>
     <div class="spacer"></div>
     <a class="back" href="/">← Dashboard</a>
   </div>
 
-  <div class="readout" id="readout">
-    <div class="ro"><span class="dot" style="background:var(--org)"></span><span class="k">Straddle</span><span class="v" id="v-str">—</span></div>
-    <div class="ro"><span class="dot" style="background:var(--pur)"></span><span class="k">Gamma</span><span class="v" id="v-gam">—</span></div>
-    <div class="ro"><span class="dot" style="background:var(--blu)"></span><span class="k">Spot</span><span class="v" id="v-spot">—</span></div>
-    <div class="ro"><span class="k">ATM</span><span class="v" id="v-atm">—</span></div>
-    <div class="ro"><span class="k">CE|PE</span><span class="v" id="v-cepe">—</span></div>
-    <div class="ro"><span class="dot" style="background:var(--yel)"></span><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
-    <div class="ro"><span class="dot" style="background:var(--cyn)"></span><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
-    <div class="ro"><span class="k" id="v-time" style="color:var(--tx)"></span></div>
-  </div>
+  <div class="wrap">
+    <div class="side">
+      <label class="fld">Underlying</label>
+      <div class="seg" id="uSeg">
+        <button data-u="NIFTY" class="on" onclick="setU('NIFTY',this)">NIFTY</button>
+        <button data-u="BANKNIFTY" onclick="setU('BANKNIFTY',this)">BANKNIFTY</button>
+      </div>
+      <label class="fld">Expiry</label>
+      <select id="expiry" onchange="onStructChange()"></select>
+      <label class="fld">Date</label>
+      <input type="date" id="date" onchange="onStructChange()">
+      <label class="fld">Timeframe</label>
+      <select id="tf" onchange="onStructChange()">
+        <option value="1">1 min</option>
+        <option value="3">3 min</option>
+        <option value="5" selected>5 min</option>
+        <option value="15">15 min</option>
+        <option value="30">30 min</option>
+        <option value="60">1 hour</option>
+      </select>
+      <label class="fld">Auto-refresh</label>
+      <div class="seg"><button id="autoBtn" class="on" onclick="toggleAuto()">🔄 ON</button><button onclick="refresh()">↻ Now</button></div>
 
-  <div class="pane" id="p1"><span class="lbl">ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →</span></div>
-  <div class="pane" id="p2"><span class="lbl">ATM STRADDLE GAMMA (spike watch)</span></div>
-  <div class="pane" id="p3"><span class="lbl">INDIA VIX · PCR →</span></div>
-  <div class="empty" id="empty" style="display:none"></div>
+      <div class="divh"></div>
+      <label class="fld">Panels</label>
+      <div id="panelPick"></div>
+
+      <div class="divh"></div>
+      <label class="fld">At crosshair <span id="v-time" style="color:var(--tx)"></span></label>
+      <div class="ro"><span class="k">Straddle</span><span class="v" id="v-str">—</span></div>
+      <div class="ro"><span class="k">Gamma</span><span class="v" id="v-gam">—</span></div>
+      <div class="ro"><span class="k">Spot</span><span class="v" id="v-spot">—</span></div>
+      <div class="ro"><span class="k">ATM</span><span class="v" id="v-atm">—</span></div>
+      <div class="ro"><span class="k">CE | PE</span><span class="v" id="v-cepe">—</span></div>
+      <div class="ro"><span class="k">VIX</span><span class="v" id="v-vix">—</span></div>
+      <div class="ro"><span class="k">PCR</span><span class="v" id="v-pcr">—</span></div>
+    </div>
+
+    <div class="main" id="main"></div>
+  </div>
 
 <script>
   var LC = window.LightweightCharts;
-  var U = 'NIFTY', AUTO = true, charts = [], byTime = {}, _timer = null, _syncing = false;
+  var U = 'NIFTY', AUTO = true, _timer = null, _syncing = false;
+  var raw = [], view = [], byTime = {}, panes = [];   // panes: [{id, chart, main, spot, el}]
+
+  // Panel catalogue — checkbox picker decides which render
+  var PANELS = [
+    { id:'straddle', name:'ATM Straddle', color:'#f0883e', get:function(p){return p.straddle;}, dec:2, overlay:'spot', lbl:'ATM STRADDLE PREMIUM (sell CE+PE credit) · SPOT →' },
+    { id:'gamma',    name:'ATM Gamma',    color:'#a371f7', get:function(p){return p.gamma;},    dec:5, lbl:'ATM STRADDLE GAMMA (spike watch)' },
+    { id:'vix',      name:'India VIX',    color:'#d29922', get:function(p){return p.vix;},      dec:2, lbl:'INDIA VIX' },
+    { id:'pcr',      name:'PCR',          color:'#39c5cf', get:function(p){return p.pcr;},      dec:3, lbl:'PUT-CALL RATIO' }
+  ];
+  var enabled = load('oc_panels', { straddle:true, gamma:true, vix:true, pcr:true });
+  var heights = load('oc_heights', {});
+
+  function load(k, d){ try{ var v=JSON.parse(localStorage.getItem(k)); return v||d; }catch(e){ return d; } }
+  function save(k, v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} }
 
   (function initDate(){
-    var d = new Date();
-    document.getElementById('date').value =
-      d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    var d=new Date();
+    document.getElementById('date').value = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    document.getElementById('tf').value = String(load('oc_tf', 5));
+    U = load('oc_u', 'NIFTY');
+    document.querySelectorAll('#uSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.u===U); });
+    renderPicker();
   })();
 
-  function setU(u, btn){ U = u; document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on', b===btn);}); load(); }
-  function toggleAuto(){ AUTO = !AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 Auto: '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
+  function renderPicker(){
+    document.getElementById('panelPick').innerHTML = PANELS.map(function(p){
+      return '<label class="pk"><input type="checkbox" '+(enabled[p.id]?'checked':'')+' onchange="togglePanel(\''+p.id+'\',this.checked)">'
+        + '<span class="dot" style="background:'+p.color+'"></span>'+p.name+'</label>';
+    }).join('');
+  }
+  function togglePanel(id, on){ enabled[id]=on; save('oc_panels', enabled); buildPanes(); }
 
-  function paneH(){ return Math.max(150, Math.floor((window.innerHeight - 90) / 3)); }
+  function setU(u, btn){ U=u; save('oc_u',u); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
+  function toggleAuto(){ AUTO=!AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
 
-  function mkChart(el, opts){
-    var c = LC.createChart(el, Object.assign({
-      width: el.clientWidth, height: paneH(),
+  // Resample 1-min snapshots to the chosen TF: take the LAST snapshot in each bucket.
+  function resample(pts, tfMin){
+    if(tfMin<=1) return pts.slice();
+    var bucket=tfMin*60, out=[], key=null, last=null;
+    pts.forEach(function(p){
+      var k=Math.floor(p.t/bucket);
+      if(key===null) key=k;
+      if(k!==key){ out.push(last); key=k; }
+      last=p;
+    });
+    if(last) out.push(last);
+    return out;
+  }
+
+  function fmt(x,d){ return (x==null||isNaN(x))?'—':Number(x).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
+  function setv(id,v){ var e=document.getElementById(id); if(e) e.textContent=(v==null?'—':v); }
+
+  function mkChart(el){
+    return LC.createChart(el, {
+      width: el.clientWidth, height: el.clientHeight,
       layout:{ background:{color:'#0d1117'}, textColor:'#8b949e', fontSize:11 },
       grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
       timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
       rightPriceScale:{ borderColor:'#30363d' },
+      leftPriceScale:{ visible:false, borderColor:'#30363d' },
       crosshair:{ mode: LC.CrosshairMode.Normal, vertLine:{color:'#484f58',labelBackgroundColor:'#21262d'}, horzLine:{color:'#484f58',labelBackgroundColor:'#21262d'} }
-    }, opts||{}));
-    return c;
+    });
   }
 
-  function fmt(x, d){ return (x==null||isNaN(x)) ? '—' : Number(x).toLocaleString('en-IN',{minimumFractionDigits:d,maximumFractionDigits:d}); }
-
   function syncRange(src){
-    if(_syncing) return; _syncing = true;
-    var r = src.timeScale().getVisibleLogicalRange();
-    if(r) charts.forEach(function(c){ if(c!==src) c.timeScale().setVisibleLogicalRange(r); });
-    _syncing = false;
+    if(_syncing) return; _syncing=true;
+    var r=src.chart.timeScale().getVisibleLogicalRange();
+    if(r) panes.forEach(function(p){ if(p!==src) p.chart.timeScale().setVisibleLogicalRange(r); });
+    _syncing=false;
   }
 
   function onCross(param){
-    // clear crosshair on the other charts + update readout
-    var t = param && param.time;
-    if(t==null){ return; }
-    var p = byTime[t];
-    if(!p) return;
-    set('v-str', fmt(p.straddle,2)); set('v-gam', fmt(p.gamma,5)); set('v-spot', fmt(p.spot,2));
-    set('v-atm', p.atm); set('v-cepe', fmt(p.ce,2)+' | '+fmt(p.pe,2));
-    set('v-vix', fmt(p.vix,2)); set('v-pcr', fmt(p.pcr,3));
-    var dt = new Date(t*1000);
-    set('v-time', dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'));
+    var t=param&&param.time; if(t==null) return;
+    var p=byTime[t]; if(!p) return;
+    setv('v-str',fmt(p.straddle,2)); setv('v-gam',fmt(p.gamma,5)); setv('v-spot',fmt(p.spot,2));
+    setv('v-atm',p.atm); setv('v-cepe',fmt(p.ce,2)+' | '+fmt(p.pe,2)); setv('v-vix',fmt(p.vix,2)); setv('v-pcr',fmt(p.pcr,3));
+    var dt=new Date(t*1000);
+    setv('v-time', dt.getUTCHours().toString().padStart(2,'0')+':'+dt.getUTCMinutes().toString().padStart(2,'0'));
   }
-  function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=(v==null?'—':v); }
 
-  function render(data){
-    charts.forEach(function(c){ c.remove(); }); charts = []; byTime = {};
-    var pts = (data && data.points) || [];
-    document.getElementById('empty').style.display = pts.length ? 'none' : 'block';
-    ['p1','p2','p3'].forEach(function(id){ var el=document.getElementById(id); el.style.display = pts.length ? 'block':'none'; });
-    if(!pts.length){
-      document.getElementById('empty').textContent = data && data.ok===false
-        ? 'Is din ka option-chain data nahi mila (collector us din chala tha?).'
-        : 'Koi data nahi — market band ya collector abhi warm ho raha.';
-      return;
-    }
-    pts.forEach(function(p){ byTime[p.t] = p; });
+  function defaultH(){ var on=PANELS.filter(function(p){return enabled[p.id];}).length||1; return Math.max(120, Math.floor((document.getElementById('main').clientHeight - (on-1)*6)/on)); }
 
-    // Pane 1 — straddle (right) + spot (left)
-    var c1 = mkChart(document.getElementById('p1'), { leftPriceScale:{ visible:true, borderColor:'#30363d' } });
-    var sStr = c1.addLineSeries({ color:'#f0883e', lineWidth:2, priceScaleId:'right', title:'Straddle', priceLineVisible:false });
-    var sSpot = c1.addLineSeries({ color:'#1f6feb', lineWidth:1, priceScaleId:'left', lineStyle:2, title:'Spot', priceLineVisible:false });
-    sStr.setData(pts.map(function(p){ return {time:p.t, value:p.straddle}; }));
-    sSpot.setData(pts.filter(function(p){return p.spot!=null;}).map(function(p){ return {time:p.t, value:p.spot}; }));
+  // (Re)build the panes for the currently-enabled panels. Called ONLY on structure
+  // change (panel toggle / TF / underlying / expiry / date). Auto-refresh does NOT
+  // call this — it just setData()s, so the user's zoom/pan is never reset.
+  function buildPanes(){
+    var main=document.getElementById('main');
+    panes.forEach(function(p){ try{p.chart.remove();}catch(e){} });
+    panes=[]; main.innerHTML='';
+    var list=PANELS.filter(function(p){ return enabled[p.id]; });
+    if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
+    if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
-    // Pane 2 — gamma
-    var c2 = mkChart(document.getElementById('p2'));
-    var sGam = c2.addLineSeries({ color:'#a371f7', lineWidth:2, title:'Gamma', priceLineVisible:false });
-    sGam.setData(pts.filter(function(p){return p.gamma!=null;}).map(function(p){ return {time:p.t, value:p.gamma}; }));
-
-    // Pane 3 — VIX (left) + PCR (right)
-    var c3 = mkChart(document.getElementById('p3'), { leftPriceScale:{ visible:true, borderColor:'#30363d' } });
-    var sVix = c3.addLineSeries({ color:'#d29922', lineWidth:2, priceScaleId:'left', title:'VIX', priceLineVisible:false });
-    var sPcr = c3.addLineSeries({ color:'#39c5cf', lineWidth:1, priceScaleId:'right', title:'PCR', priceLineVisible:false });
-    sVix.setData(pts.filter(function(p){return p.vix!=null;}).map(function(p){ return {time:p.t, value:p.vix}; }));
-    sPcr.setData(pts.filter(function(p){return p.pcr!=null;}).map(function(p){ return {time:p.t, value:p.pcr}; }));
-
-    charts = [c1, c2, c3];
-    charts.forEach(function(c){
-      c.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(c); });
-      c.subscribeCrosshairMove(onCross);
+    list.forEach(function(def, i){
+      var el=document.createElement('div'); el.className='pane';
+      el.style.height=(heights[def.id]||defaultH())+'px';
+      el.innerHTML='<span class="lbl">'+def.lbl+'</span>';
+      main.appendChild(el);
+      var chart=mkChart(el); el._chart=chart;
+      var main_s=chart.addLineSeries({ color:def.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true });
+      var spot_s=null;
+      if(def.overlay==='spot'){
+        chart.applyOptions({ leftPriceScale:{ visible:true, borderColor:'#30363d' } });
+        spot_s=chart.addLineSeries({ color:'#1f6feb', lineWidth:1, lineStyle:2, priceScaleId:'left', priceLineVisible:false, lastValueVisible:false });
+      }
+      var entry={ id:def.id, def:def, chart:chart, main:main_s, spot:spot_s, el:el };
+      panes.push(entry);
+      chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
+      chart.subscribeCrosshairMove(onCross);
+      // resize handle (not after the last pane)
+      if(i < list.length-1){
+        var rh=document.createElement('div'); rh.className='rh'; main.appendChild(rh);
+        (function(paneEl, id){
+          rh.addEventListener('mousedown', function(e){
+            e.preventDefault(); var sy=e.clientY, sh=paneEl.clientHeight;
+            document.body.style.userSelect='none';
+            function mv(ev){ var nh=Math.max(100, sh+(ev.clientY-sy)); paneEl.style.height=nh+'px'; if(paneEl._chart) paneEl._chart.applyOptions({height:nh, width:paneEl.clientWidth}); }
+            function up(){ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); document.body.style.userSelect=''; heights[id]=paneEl.clientHeight; save('oc_heights',heights); }
+            document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up);
+          });
+        })(el, def.id);
+      }
     });
-    c1.timeScale().fitContent();
-    // last point into the readout as a default
-    onCross({ time: pts[pts.length-1].t });
+    applyData(true);   // first paint → fit
   }
 
-  function load(){
-    var qs = 'underlying=' + U + '&date=' + document.getElementById('date').value;
-    var ex = document.getElementById('expiry').value;
-    if(ex) qs += '&expiry=' + encodeURIComponent(ex);
-    fetch('/api/option-curves?' + qs).then(function(r){ return r.json(); }).then(function(d){
-      // expiry dropdown
-      var sel = document.getElementById('expiry');
-      var cur = sel.value;
-      var exps = (d && d.expiries) || [];
-      if(exps.join(',') !== Array.from(sel.options).map(function(o){return o.value;}).join(',')){
-        sel.innerHTML = exps.map(function(e){ return '<option value="'+e+'">'+e+'</option>'; }).join('');
-        sel.value = (d && d.expiry) || (exps[0]||'');
-      } else if(d && d.expiry){ sel.value = d.expiry; }
-      render(d);
+  // Push current `view` into existing series. fit=true only on a structural rebuild;
+  // auto-refresh passes fit=false → visible range (zoom) preserved.
+  function applyData(fit){
+    byTime={}; view.forEach(function(p){ byTime[p.t]=p; });
+    panes.forEach(function(e){
+      e.main.setData(view.map(function(p){ return {time:p.t, value:e.def.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); }));
+      if(e.spot) e.spot.setData(view.filter(function(p){return p.spot!=null;}).map(function(p){ return {time:p.t, value:p.spot}; }));
+    });
+    if(fit && panes.length) panes[0].chart.timeScale().fitContent();
+    if(view.length) onCross({ time: view[view.length-1].t });
+  }
+
+  var _lastOk=null, _structKey='';
+  function structKey(){ return U+'|'+document.getElementById('date').value+'|'+document.getElementById('expiry').value+'|'+document.getElementById('tf').value+'|'+PANELS.filter(function(p){return enabled[p.id];}).map(function(p){return p.id;}).join(','); }
+
+  function onStructChange(){ save('oc_tf', +document.getElementById('tf').value); refresh(true); }
+
+  function refresh(forceBuild){
+    var qs='underlying='+U+'&date='+document.getElementById('date').value;
+    var ex=document.getElementById('expiry').value; if(ex) qs+='&expiry='+encodeURIComponent(ex);
+    fetch('/api/option-curves?'+qs).then(function(r){return r.json();}).then(function(d){
+      _lastOk = d && d.ok;
+      // expiry dropdown refresh (only rebuild <option>s if the set changed)
+      var sel=document.getElementById('expiry'), exps=(d&&d.expiries)||[];
+      var have=Array.from(sel.options).map(function(o){return o.value;}).join(',');
+      if(exps.join(',')!==have){ sel.innerHTML=exps.map(function(e){return '<option value="'+e+'">'+e+'</option>';}).join(''); sel.value=(d&&d.expiry)||(exps[0]||''); }
+      else if(d&&d.expiry){ sel.value=d.expiry; }
+      raw=(d&&d.points)||[];
+      view=resample(raw, +document.getElementById('tf').value);
+      var sk=structKey();
+      if(forceBuild || sk!==_structKey || !panes.length){ _structKey=sk; buildPanes(); }
+      else { applyData(false); }   // zoom preserved
     }).catch(function(e){
-      document.getElementById('empty').style.display='block';
-      document.getElementById('empty').textContent = 'Load fail: ' + e;
+      document.getElementById('main').innerHTML='<div class="empty">Load fail: '+e+'</div>';
     });
     schedule();
   }
 
-  function schedule(){ if(_timer) clearTimeout(_timer); if(AUTO) _timer = setTimeout(load, 30000); }
+  function schedule(){ if(_timer) clearTimeout(_timer); if(AUTO) _timer=setTimeout(function(){ refresh(false); }, 30000); }
 
   window.addEventListener('resize', function(){
-    charts.forEach(function(c){ c.applyOptions({ width: c.chartElement ? undefined : undefined }); });
-    ['p1','p2','p3'].forEach(function(id){ var el=document.getElementById(id); });
-    charts.forEach(function(c,i){ var el=document.getElementById(['p1','p2','p3'][i]); if(el) c.applyOptions({ width: el.clientWidth, height: paneH() }); });
+    panes.forEach(function(e){ e.chart.applyOptions({ width:e.el.clientWidth, height:e.el.clientHeight }); });
   });
 
-  load();
+  refresh(true);
 </script>
 </body>
 </html>
