@@ -141,6 +141,8 @@ def curves(u, date, expiry=None):
             "gamma": round(ce_g + pe_g, 6),
             "vix": round(vix, 2) if vix is not None else None,
             "pcr": round(pe_oi / ce_oi, 3) if ce_oi else None,
+            "ce_oi": ce_oi,
+            "pe_oi": pe_oi,
         })
 
     return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points}
