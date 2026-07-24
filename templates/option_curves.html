@@ -54,6 +54,8 @@
     .pane{position:relative;min-height:100px;flex-shrink:0}
     .pane .lbl{position:absolute;top:6px;left:10px;z-index:3;font-size:11px;font-weight:700;color:var(--mut);pointer-events:none;background:rgba(13,17,23,.6);padding:1px 6px;border-radius:4px}
     .ovtick{position:absolute;top:5px;right:64px;z-index:4;font-size:10px;font-weight:600;color:var(--mut);cursor:pointer;background:rgba(13,17,23,.7);padding:1px 6px;border-radius:4px;display:flex;align-items:center;gap:4px}
+    .solobtn{position:absolute;top:5px;right:8px;z-index:5;font-size:11px;color:var(--mut);cursor:pointer;background:rgba(13,17,23,.7);border:1px solid var(--bd);padding:1px 6px;border-radius:4px}
+    .solobtn:hover{background:var(--bd2);color:var(--tx)}
     .ovtick input{cursor:pointer;margin:0}
     .rh{height:7px;cursor:row-resize;background:var(--bd2);flex-shrink:0;position:relative;z-index:6}
     .rh:hover{background:var(--blu)}
@@ -217,6 +219,9 @@
 <script>
   var LC = window.LightweightCharts;
   var U = 'NIFTY', AUTO = true, _timer = null, _syncing = false;
+  var _solo = null;   // panel id shown solo (full-view); null = all panels
+  function _soloBtn(id){ return '<button class="solobtn" onclick="toggleSolo(\''+id+'\')" title="'+(_solo===id?'Wapas normal view':'Is panel ko full view')+'">'+(_solo===id?'⛶ exit':'⛶')+'</button>'; }
+  function toggleSolo(id){ _solo=(_solo===id?null:id); buildPanes(); }
   var raw = [], view = [], byTime = {}, panes = [];   // panes: [{id, chart, main, spot, el}]
 
   // Panel catalogue — checkbox picker decides which render. A panel can carry an
@@ -343,17 +348,21 @@
   function setU(u, btn){ U=u; save('oc_u',u); _ocTitle(); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
   function toggleAuto(){ AUTO=!AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
 
-  // Resample 1-min snapshots to the chosen TF: take the LAST snapshot in each bucket.
+  // Resample 1-min snapshots to the chosen TF: VALUE = last snapshot in each bucket,
+  // TIME = bucket START (so a 5-min bar shows at 09:15, market open — not the last
+  // minute 09:19). Markers/crosshair/index-candles all key off these view times, so
+  // shifting to bucket-start stays consistent everywhere.
   function resample(pts, tfMin){
     if(tfMin<=1) return pts.slice();
     var bucket=tfMin*60, out=[], key=null, last=null;
+    function flush(){ if(last!=null){ var b={}; for(var kk in last) b[kk]=last[kk]; b.t=key*bucket; out.push(b); } }
     pts.forEach(function(p){
       var k=Math.floor(p.t/bucket);
       if(key===null) key=k;
-      if(k!==key){ out.push(last); key=k; }
+      if(k!==key){ flush(); key=k; }
       last=p;
     });
-    if(last) out.push(last);
+    flush();
     return out;
   }
 
@@ -464,7 +473,8 @@
     panes.forEach(function(p){ try{ if(p.chart) p.chart.remove(); if(p._ro) p._ro.disconnect(); }catch(e){} });
     panes=[]; main.innerHTML='';
     var list=orderedPanels().filter(function(p){ return enabled[p.id]; });
-    main.classList.toggle('grid2', COLS===2 && list.length>0);
+    if(_solo && list.some(function(p){return p.id===_solo;})) list=list.filter(function(p){return p.id===_solo;});   // full-view: only the soloed panel
+    main.classList.toggle('grid2', COLS===2 && !_solo && list.length>0);
     if(!list.length){ main.innerHTML='<div class="empty">Koi panel selected nahi — left se choose karo.</div>'; return; }
     if(!view.length){ main.innerHTML='<div class="empty">'+ (_lastOk===false ? 'Is din ka option-chain data nahi mila.' : 'Data load ho raha…') +'</div>'; return; }
 
@@ -472,7 +482,7 @@
     var stkC = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
     list.forEach(function(def, i){
       var el=document.createElement('div'); el.className='pane';
-      el.style.height=paneHeight(def)+'px';
+      el.style.height=(_solo ? Math.max(360, window.innerHeight-150) : paneHeight(def))+'px';   // solo = fill screen
       var ctrl='';
       if(def.extra){
         var ov=OVLBL[def.id]||'overlay';
@@ -480,9 +490,9 @@
              + (overlayHidden[def.id]?'':'checked') + ' onchange="toggleOverlay(\''+def.id+'\',this.checked)">'+ov+'</label>';
       }
       if(def.kind==='combined'){
-        el.innerHTML='<div class="clg">'+COMBINED.map(function(m){return '<span><i style="background:'+m.color+'"></i>'+m.name+'</span>';}).join('')+'</div>';
+        el.innerHTML='<div class="clg">'+COMBINED.map(function(m){return '<span><i style="background:'+m.color+'"></i>'+m.name+'</span>';}).join('')+'</div>'+_soloBtn(def.id);
       } else {
-        el.innerHTML='<span class="lbl">'+def.lbl+'</span>'+ctrl;
+        el.innerHTML='<span class="lbl">'+def.lbl+'</span>'+ctrl+_soloBtn(def.id);
       }
       main.appendChild(el);
       var entry={ id:def.id, def:def, el:el };
@@ -604,11 +614,11 @@
     pts.forEach(function(p){
       var v=val(p); if(v==null) return;
       var k=Math.floor(p.t/bucket);
-      if(key===null||k!==key){ if(cur) out.push(cur); key=k; cur={time:p.t,open:v,high:v,low:v,close:v}; }
-      else { cur.high=Math.max(cur.high,v); cur.low=Math.min(cur.low,v); cur.close=v; cur.time=p.t; }
+      if(key===null||k!==key){ if(cur) out.push(cur); key=k; cur={time:k*bucket,open:v,high:v,low:v,close:v}; }
+      else { cur.high=Math.max(cur.high,v); cur.low=Math.min(cur.low,v); cur.close=v; }
     });
     if(cur) out.push(cur);
-    return out;   // bar time = last t in bucket → aligns with resample() line times
+    return out;   // bar time = bucket START → aligns with resample() line times
   }
   function indexCandles(pts, tf){ return ohlcFrom(pts, tf, function(p){return p.spot;}); }
 
