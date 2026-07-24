@@ -402,6 +402,29 @@
       window._ordExitFilter = '';
       if (typeof renderCachedOrders === 'function') renderCachedOrders();
     };
+    // Ctrl/Cmd+click an instrument chip → filter Completed Trades + Open Positions to that
+    // underlying (client-side, like the exit-reason filter). Same one again → clear.
+    window._ordInstrChipClick = function (ev, instr) {
+      if (!(ev.ctrlKey || ev.metaKey)) return;
+      ev.preventDefault(); ev.stopPropagation();
+      window._ordInstrFilter = (window._ordInstrFilter === instr) ? '' : instr;
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
+    window._ordInstrClear = function () {
+      window._ordInstrFilter = '';
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
+    // Collapse-all / Expand-all the Completed-trades groups (next to the Group dropdown).
+    // If every current group is already expanded → collapse all; otherwise expand all.
+    window.toggleAllGroups = function () {
+      const keys = window._completedGroupKeys || [];
+      if (!keys.length) return;
+      const set = window._completedGroupExpanded || (window._completedGroupExpanded = new Set());
+      const allOpen = keys.every(k => set.has(k));
+      if (allOpen) set.clear();
+      else keys.forEach(k => set.add(k));
+      if (typeof renderCachedOrders === 'function') renderCachedOrders();
+    };
     function _imgTagsOf(t) { return (t.tags || []).filter(tg => tg.startsWith('IMG:')).map(tg => tg.slice(4)); }
     function _noteThumbs(id, imgs) {
       if (!imgs || !imgs.length) return '';
@@ -561,7 +584,12 @@
     }
 
     // ── Instrument (underlying) — the root of a trad_sym: NIFTY / BANKNIFTY / stock ──
-    const _INDEX_UNDERLYINGS = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'SENSEX', 'BANKEX']);
+    // Distinct colours: NIFTY blue, BANKNIFTY amber, every stock (& minor index) one purple.
+    const _INSTR_CLR = {
+      NIFTY:     { bg: '#1f6feb20', bd: '#1f6feb60', fg: '#58a6ff' },
+      BANKNIFTY: { bg: '#d2992222', bd: '#d2992255', fg: '#e3b341' },
+    };
+    const _INSTR_STOCK = { bg: '#8957e520', bd: '#8957e555', fg: '#b083f0' };
     function _instrOf(t) {
       const s = String((t && t.sym) || '');
       const root = (s.split('-')[0] || '').trim().toUpperCase();
@@ -570,9 +598,9 @@
     function _instrCell(t) {
       const r = _instrOf(t);
       if (r === '—') return '<span style="color:#6e7681">—</span>';
-      const idx = _INDEX_UNDERLYINGS.has(r);
-      const bg = idx ? '#1f6feb20' : '#8957e520', bd = idx ? '#1f6feb60' : '#8957e560', fg = idx ? '#58a6ff' : '#b083f0';
-      return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:${bg};border:1px solid ${bd};color:${fg};font-size:10px;font-weight:600;white-space:nowrap">${r}</span>`;
+      const c = _INSTR_CLR[r] || _INSTR_STOCK;
+      const ring = (window._ordInstrFilter === r) ? ';box-shadow:0 0 0 1px ' + c.fg : '';
+      return `<span onclick="_ordInstrChipClick(event,'${r.replace(/'/g, '')}')" title="Ctrl+click: is instrument pe filter (dobara Ctrl+click = All)" style="cursor:pointer;display:inline-block;padding:1px 7px;border-radius:10px;background:${c.bg};border:1px solid ${c.bd};color:${c.fg};font-size:10px;font-weight:600;white-space:nowrap${ring}">${r}</span>`;
     }
 
     // ── Completed-trades grouping key/label per mode (none/symbol/strategy/pnl/hedge/exit) ──

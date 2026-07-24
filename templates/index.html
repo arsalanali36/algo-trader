@@ -1892,6 +1892,9 @@
             <option value="hedge">📁 Group: Hedge (hedge/main)</option>
             <option value="exit">📁 Group: Exit reason</option>
           </select>
+          <button id="ord-group-collapse-btn" onclick="toggleAllGroups()"
+            title="Sabhi groups ko collapse / expand karo"
+            style="display:none;padding:3px 8px;font-size:11px;border-radius:6px;background:#161b22;color:#adbac7;border:1px solid #30363d;cursor:pointer;white-space:nowrap">⊟ Collapse all</button>
           <button id="reconcile-manual-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="reconcileManualTrades(this)"
             title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾

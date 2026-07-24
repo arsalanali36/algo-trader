@@ -398,10 +398,28 @@
         _grpSel.style.color = _on ? '#fff' : '#adbac7';
         _grpSel.style.borderColor = _on ? '#1f6feb' : '#30363d';
       }
+      // Collapse/Expand-all button: shown whenever grouping is ON (visibility from the
+      // MODE, which is current here; _completedGroupKeys is set later during the grouped
+      // render so it's one cycle behind — fine for the label only).
+      const _grpColBtn = document.getElementById('ord-group-collapse-btn');
+      if (_grpColBtn) {
+        const _gm2 = window._completedGroupMode || 'none';
+        if (_gm2 === 'none') {
+          _grpColBtn.style.display = 'none';
+        } else {
+          _grpColBtn.style.display = '';
+          const _keys = window._completedGroupKeys || [];
+          const _set = window._completedGroupExpanded || new Set();
+          const _allOpen = _keys.length > 0 && _keys.every(k => _set.has(k));
+          _grpColBtn.textContent = _allOpen ? '⊟ Collapse all' : '⊞ Expand all';
+        }
+      }
 
+      // Instrument Ctrl+click filter applies to Open Positions too (same chip, same filter).
+      const _instrOk = t => !window._ordInstrFilter || _instrOf(t) === window._ordInstrFilter;
       const isCapBlocked = t => (t.tags || []).some(tg => tg === 'CAPITAL_BLOCKED');
-      const opnBlocked = opn.filter(isCapBlocked);
-      const opnReal = opn.filter(t => !isCapBlocked(t));
+      const opnBlocked = opn.filter(t => isCapBlocked(t) && _instrOk(t));
+      const opnReal = opn.filter(t => !isCapBlocked(t) && _instrOk(t));
 
       // ── SOURCE SUMMARY (STRATEGY, MANUAL, WEBHOOK) ──
       const _z = () => ({ net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0, orows: [] });
@@ -512,7 +530,8 @@
         _erSel.value = _cur;
       }
       let sortedCompleted = det.filter(_peakTradeMatch)
-        .filter(t => !window._ordExitFilter || (t.exit_reason || '').split(':')[0] === window._ordExitFilter);
+        .filter(t => !window._ordExitFilter || (t.exit_reason || '').split(':')[0] === window._ordExitFilter)
+        .filter(t => !window._ordInstrFilter || _instrOf(t) === window._ordInstrFilter);
       // header chip showing the active per-strategy + exit-reason filters (clearable)
       const _cf = document.getElementById('ord-completed-filter');
       if (_cf) {
@@ -521,6 +540,9 @@
           `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="peakClearStrat()" title="Filter hatao (All)">▸ ${(_pkf === 'MANUAL' || _pkf === 'WEBHOOK') ? (_pkf.charAt(0) + _pkf.slice(1).toLowerCase()) : (regLabel(_pkf) || _pkf)} ✕</span>`;
         if (window._ordExitFilter) {
           _cfHtml += `<span style="font-size:11px;font-weight:400;color:#d29922;margin-left:6px;cursor:pointer" onclick="_ordExitClear()" title="Exit-reason filter hatao (All)">▸ Exit: ${window._ordExitFilter} ✕</span>`;
+        }
+        if (window._ordInstrFilter) {
+          _cfHtml += `<span style="font-size:11px;font-weight:400;color:#b083f0;margin-left:6px;cursor:pointer" onclick="_ordInstrClear()" title="Instrument filter hatao (All)">▸ Instrument: ${window._ordInstrFilter} ✕</span>`;
         }
         _cf.innerHTML = _cfHtml;
       }
@@ -600,6 +622,7 @@
             });
             _tot.g += grp.g; _tot.tx += grp.tx; _tot.n += grp.n; _tot.pts += grp.pts; _tot.inv += grp.inv;
           });
+          window._completedGroupKeys = groups.map(g => g.key);   // for the Collapse/Expand-all button
 
           groups.forEach(grp => {
             const expanded = window._completedGroupExpanded.has(grp.key);
@@ -644,6 +667,7 @@
           });
         } else {
           // ── Flat (default) ──
+          window._completedGroupKeys = [];   // no groups → Collapse/Expand-all button hides
           sortedCompleted.forEach((t, _idx) => {
             const r = _completedRowHtml(t, _idx, activeCols, ordDate, false);
             _tot.g += r.g; _tot.tx += r.tx; _tot.n += r.n; _tot.inv += r.inv; _tot.pts += r.pts;
