@@ -8197,7 +8197,29 @@ def _pre_exit_guard(p, sec_id, exit_reason, _closed_ids, log=print):
             _wh.release_position(sec_id=sec_id, trad_sym=p.get("sym"), reason=exit_reason)
         except Exception as _e:
             log(f"[{exit_reason}] webhook release failed: {_e}", flush=True)
+    # PAPER positions have no broker book — order_store IS the authoritative
+    # flatness signal for them. Treat paper exactly like real: a manual close (or
+    # any earlier exit) that already netted a paper leg flat must suppress a
+    # redundant squareoff, else the closing order OPENS a phantom opposite
+    # position. (2026-07-24: RELIANCE paper was manual-closed at 09:21:35, the RMS
+    # daily-profit-target squareoff 20s later STILL fired a redundant BUY → phantom
+    # LONG → closed again 09:30, inflating P&L. Root: this guard early-returned
+    # False for every non-live position, skipping the flat-check entirely.)
+    # _my_open_qty==0 is CONFIDENT-flat (needs positive closed-round-trip evidence,
+    # never a bare "order_store doesn't know"), so a genuinely-open paper leg still
+    # exits normally. Do NOT mark_externally_closed here — the leg is already
+    # properly netted flat; marking the entry would unpair it into a new phantom.
     if p.get("mode") != "live":
+        try:
+            import broker_sync as _bsync
+            if _bsync._my_open_qty(p.get("strategy") or "", str(sec_id or ""),
+                                   p.get("sym") or "") == 0:
+                _closed_ids.add(p.get("id"))
+                log(f"[{exit_reason}] PRE-EXIT CHECK: {p.get('sym')} paper leg already "
+                    f"FLAT in order_store (manual close?) — skipping redundant exit.", flush=True)
+                return True
+        except Exception as _pe:
+            log(f"[{exit_reason}] paper pre-exit flat-check failed ({_pe}) — proceeding", flush=True)
         return False
     try:
         import broker_sync as _bsync
