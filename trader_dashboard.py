@@ -3925,7 +3925,7 @@ def _straddle_strategy_id(source):
     return "straddle_manual"      # B — Quick Order manual
 
 
-def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print, retries=0):
+def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print, acq_timeout=None):
     """One batched Dhan /v2/marketfeed/ltp call for a list of option sec_ids →
     warms shared_ltp_cache so a subsequent per-strike walk (compute_hedge_target)
     hits the cache (max_age) instead of doing N serial, rate-limited quote_fn
@@ -3951,18 +3951,13 @@ def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print, retries=0):
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _drl.set_context("Straddle:HedgePrewarm")
-        # the ltp slot is often held by pos_monitor's open-position polling (esp.
-        # with carried positions) → a single acquire frequently returns False and
-        # the whole prewarm bails, leaving the preview's LTPs blank. `retries` (used
-        # by the user-facing preview) spins briefly for the slot; ONE batched call
-        # then fills everything. retries=0 (fire path) keeps the old fail-fast.
-        _got = _drl.acquire("ltp")
-        _n = 0
-        while (not _got) and _n < int(retries or 0):
-            _time.sleep(0.5)
-            _got = _drl.acquire("ltp")
-            _n += 1
-        if not _got:
+        # acquire BLOCKS up to its timeout; during a Dhan 429 cooldown the non-order
+        # cap is 0 so it blocks the FULL timeout then fails. Callers that must fill
+        # before acting (fire path) use the default 8s; the user-facing preview
+        # passes a SHORT timeout (best-effort) and relies on ltp_poller for the rest
+        # so it never blocks the request. (A retry-loop of blocking acquires = a
+        # multi-minute hang — never do that.)
+        if not _drl.acquire("ltp", timeout=float(acq_timeout or 8.0)):
             return 0   # gate saturated / 429 cooldown — walk will REST-fallback per strike
         r = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                       json={seg: ids}, headers=headers, timeout=6)
@@ -4089,18 +4084,24 @@ def _straddle_preview(symbol, lots, spec):
             step = abs(_s1 - atm_strike)
     except Exception:
         pass
+    _sids = [lg["sec_id"] for lg in legs]
+    # LTP the SAME way /api/option-ltp does — via the ONE batched ltp_poller, NOT a
+    # per-request Dhan call. request_watch keeps these strikes warm (90s TTL); the
+    # poller fetches all watched sec_ids in one rate-limit-respecting call/cycle
+    # (TRAP #2 pattern). A short best-effort prewarm fills instantly when a slot is
+    # free; otherwise the poller warms them within a cycle or two (the 3s preview
+    # auto-refresh then shows them). Never blocks the request.
     try:
-        # ONE batched fetch fills every leg's LTP. retries persist through a Dhan
-        # 429 cooldown (~8s, common off-market when pos_monitor is polling open
-        # positions) — the slot frees when the cooldown clears; up to ~9s worst
-        # case, usually instant. This is the ONLY network fetch: legs then read
-        # cache-only below (a per-leg REST fallback would each block ~8s in the
-        # cooldown → 30s+ hang → the blank LTPs the user saw).
-        _prewarm_option_ltps([lg["sec_id"] for lg in legs], retries=18)
+        import ltp_poller
+        ltp_poller.request_watch([(s, "NSE_FNO") for s in _sids])
+    except Exception:
+        pass
+    try:
+        _prewarm_option_ltps(_sids, acq_timeout=1.5)   # short — best-effort immediate fill
     except Exception:
         pass
 
-    def _cache_ltp(sec):   # cache-only (prewarm just wrote) — never the slow REST path
+    def _cache_ltp(sec):   # cache-only (poller/prewarm warmed) — never the slow REST path
         try:
             import shared_ltp_cache as _s
             v = _s.get(str(sec), max_age=120)
