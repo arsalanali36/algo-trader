@@ -125,15 +125,21 @@
         window._ordCompletedCols = window._ordCompletedCols.filter(x => x.id !== 'note');
         window._ordOpenCols = window._ordOpenCols.filter(x => x.id !== 'note');
 
-        COMPLETED_COLS_DEF.forEach(def => {
-          if (!window._ordCompletedCols.find(x => x.id === def.id)) {
-            window._ordCompletedCols.push(JSON.parse(JSON.stringify(def)));
-          }
-        });
-        OPEN_COLS_DEF.forEach(def => {
-          if (!window._ordOpenCols.find(x => x.id === def.id)) {
-            window._ordOpenCols.push(JSON.parse(JSON.stringify(def)));
-          }
+        // Merge any NEW column from the DEF that the user's saved prefs lack — insert
+        // it at its DEF POSITION (after the nearest preceding DEF col that's present),
+        // not appended at the end, so e.g. a new 'instrument' lands right after 'symbol'
+        // even for existing users (preserving their other on/off + reorder choices).
+        [[window._ordCompletedCols, COMPLETED_COLS_DEF], [window._ordOpenCols, OPEN_COLS_DEF]].forEach(([saved, DEF]) => {
+          DEF.forEach((def, di) => {
+            if (saved.find(x => x.id === def.id)) return;
+            let insertAt = saved.length;
+            for (let j = di - 1; j >= 0; j--) {
+              const idx = saved.findIndex(x => x.id === DEF[j].id);
+              if (idx !== -1) { insertAt = idx + 1; break; }
+            }
+            if (di === 0) insertAt = 0;
+            saved.splice(insertAt, 0, JSON.parse(JSON.stringify(def)));
+          });
         });
       } catch (e) {
         window._ordCompletedCols = JSON.parse(JSON.stringify(COMPLETED_COLS_DEF));
