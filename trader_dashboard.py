@@ -2964,11 +2964,16 @@ def _payoff_spot(legs):
         return None
     try:
         import shared_ltp_cache
-        v = shared_ltp_cache.get_index(root, max_age=60)
+        v = shared_ltp_cache.get_index(root, max_age=60)          # fresh (market hours — poller-warm)
         if v:
             return float(v)
+        v = shared_ltp_cache.get_index(root, max_age=86400)       # any today value — INSTANT, covers
+        if v:                                                     # post-market (poller stops at EOD);
+            return float(v)                                       # a stale spot still positions the curve
     except Exception:
         pass
+    # last resort — REST (rate-limited, can be slow post-market): only when the
+    # cache never had this index at all (e.g. a fresh restart before any poll).
     try:
         if root in _EQ_IDX_SEC:
             sid, seg = _EQ_IDX_SEC[root]
@@ -2979,15 +2984,6 @@ def _payoff_spot(legs):
             v = float(_rest_ltp_fallback(sid, seg) or 0)
             if v:
                 return v
-    except Exception:
-        pass
-    # last resort — a stale index price (post-market / rate-limit) still positions
-    # the payoff curve; a None spot skips the today-curve + IV entirely.
-    try:
-        import shared_ltp_cache
-        v = shared_ltp_cache.get_index(root, max_age=1800)
-        if v:
-            return float(v)
     except Exception:
         pass
     return None
