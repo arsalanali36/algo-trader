@@ -291,8 +291,11 @@
     var uq=(q.get('underlying')||'').toUpperCase();
     U = (uq==='NIFTY'||uq==='BANKNIFTY') ? uq : load('oc_u', 'NIFTY');
     document.querySelectorAll('#uSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.u===U); });
+    _ocTitle();
     renderPicker();
   })();
+  // Browser-tab title: OC-Nifty / OC-BNF (so two curve tabs are tellable apart).
+  function _ocTitle(){ document.title = 'OC-' + (U==='BANKNIFTY' ? 'BNF' : 'Nifty'); }
 
   function orderedPanels(){
     if(!order || !order.length) return PANELS.slice();
@@ -337,7 +340,7 @@
     var e=panes.find(function(x){return x.id===id;}); if(e&&e.extra) e.extra.applyOptions({visible:!!show});
   }
 
-  function setU(u, btn){ U=u; save('oc_u',u); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
+  function setU(u, btn){ U=u; save('oc_u',u); _ocTitle(); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
   function toggleAuto(){ AUTO=!AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
 
   // Resample 1-min snapshots to the chosen TF: take the LAST snapshot in each bucket.
