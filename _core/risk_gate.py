@@ -1047,6 +1047,22 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO",
     if str(side or "SELL").upper() == "SELL":
         real = broker_real_margin(sec_id, seg, qty, price, "SELL") if sec_id else None
         needed = real if real is not None else needed * _margin_multiplier(strategy, rc)
+    return check_capital_needed(strategy, needed, mode=mode)
+
+
+def check_capital_needed(strategy, needed, mode=None):
+    """Cap-comparison core of check_capital(): would committing `needed` ₹ of
+    capital to `strategy` breach its per-strategy cap, the global cap, or the
+    discretionary-pool cap (mode-pool aware)? Returns (ok, reason).
+
+    check_capital() computes `needed` for ONE leg (per-leg naked margin for a
+    SELL). MULTI-LEG callers (a hedged straddle/condor) should instead pass the
+    structure's REAL basket margin (kite_basket_margin) here — that's the ₹
+    actually blocked WITH cross-leg hedge benefit, so the whole structure is
+    gated as one unit instead of the first leg squeezing in and the second
+    getting blocked on a standalone naked estimate."""
+    rc = _risk_cfg()
+    needed = float(needed or 0)
     if needed <= 0:
         return True, ""
 

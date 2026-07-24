@@ -53,27 +53,46 @@ def _read_raw():
             return d
     except Exception:
         pass
-    return {"day": _today_ist(), "straddles": []}
+    return {"day": _today_ist(), "straddles": [], "fired_920": []}
 
 
-def _write_raw(day, straddles):
+def _write_raw(day, straddles, fired_920=None):
+    """Persist straddles + the day's 9:20 attempt-markers. fired_920=None means
+    'preserve whatever's already stored for TODAY' (so the frequent add/set_status
+    writes don't drop the marker set); on a day rollover the old markers are stale
+    so they clear to []."""
+    if fired_920 is None:
+        raw = _read_raw()
+        fired_920 = raw.get("fired_920") if raw.get("day") == day else []
+        if not isinstance(fired_920, list):
+            fired_920 = []
     try:
-        _FILE.write_text(json.dumps({"day": day, "straddles": straddles}))
+        _FILE.write_text(json.dumps({"day": day, "straddles": straddles,
+                                     "fired_920": fired_920}))
     except Exception:
         pass
 
 
 def _load_today():
     """Today's straddle list. If stored day != today, the whole set is stale
-    (EOD auto-cancel) → return [] and rewrite. Caller holds _LOCK where mutation
-    follows."""
+    (EOD auto-cancel) → return [] and rewrite (also clears 9:20 markers). Caller
+    holds _LOCK where mutation follows."""
     raw = _read_raw()
     today = _today_ist()
     if raw.get("day") != today:
-        _write_raw(today, [])
+        _write_raw(today, [], fired_920=[])
         return []
     st = raw.get("straddles")
     return st if isinstance(st, list) else []
+
+
+def _load_fired_920():
+    """Today's 9:20 attempt-marker symbol list (day-reset applied)."""
+    raw = _read_raw()
+    if raw.get("day") != _today_ist():
+        return []
+    fl = raw.get("fired_920")
+    return fl if isinstance(fl, list) else []
 
 
 def list_today():
@@ -104,11 +123,36 @@ def count_today(symbol, source_prefix=None):
 
 
 def fired_920_today(symbol):
-    """Restart-safe one-shot guard for the 9:20 scheduled fire."""
+    """Restart-safe one-shot guard for the 9:20 scheduled fire. TRUE if we've
+    ATTEMPTED a 9:20 fire for this symbol today — success OR failure. Critical:
+    an attempt is marked (mark_920) BEFORE the fire, so a failed/partial fire
+    (RMS block, naked-abort, capital cap) can no longer trigger a re-fire storm
+    every loop cycle within the entry window. Also honours a genuinely-recorded
+    schedule_920 straddle (belt-and-suspenders / older state files)."""
     symbol = str(symbol).upper()
     with _LOCK:
+        if symbol in _load_fired_920():
+            return True
         return any(s.get("source") == "schedule_920" and s.get("symbol") == symbol
                    for s in _load_today())
+
+
+def mark_920(symbol):
+    """Record a 9:20 attempt marker for `symbol` (idempotent). Call this right
+    BEFORE _fire_auto_straddle so the one-shot guard holds regardless of outcome."""
+    symbol = str(symbol).upper()
+    with _LOCK:
+        raw = _read_raw()
+        today = _today_ist()
+        straddles = raw.get("straddles") if raw.get("day") == today else []
+        if not isinstance(straddles, list):
+            straddles = []
+        fired = raw.get("fired_920") if raw.get("day") == today else []
+        if not isinstance(fired, list):
+            fired = []
+        if symbol not in fired:
+            fired.append(symbol)
+        _write_raw(today, straddles, fired_920=fired)
 
 
 def add(strad):
@@ -167,7 +211,7 @@ def get(sid):
 
 def cancel_all():
     with _LOCK:
-        _write_raw(_today_ist(), [])
+        _write_raw(_today_ist(), [], fired_920=[])
 
 
 def check_exit(entry_credit, ce_ltp, pe_ltp, tp_pt, sl_pt):

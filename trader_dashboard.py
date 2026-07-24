@@ -3587,13 +3587,23 @@ def _straddle_strategy_id(source):
 
 
 def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
-    """Sell ATM CE + ATM PE (short straddle) via execution_gateway (full RMS,
-    order_store-recorded), group-tagged for a COMBINED-premium basket exit. PAPER.
-    Naked-leg guard: if the 2nd leg fails after the 1st fills, unwind the 1st
-    immediately (never leave a naked leg). Returns (ok, msg)."""
+    """HEDGE-FIRST short straddle. Order of operations (the fix for the 2026-07-24
+    naked-orphan storm):
+      1. resolve ATM CE/PE (the SELL legs) + BOTH OTM hedge wings up front;
+      2. if hedge is enabled and a wing can't resolve → ABORT (no naked straddle);
+      3. gate the WHOLE structure ONCE — RMS gating_status + a single basket-margin
+         capital check (kite_basket_margin, hedge benefit included). This replaces
+         the old per-leg gate where the CE squeezed into the cap and the PE then
+         got blocked on a standalone naked-margin estimate → partial/naked orphan;
+      4. BUY both hedge wings FIRST (so the margin is already reduced), then SELL
+         ATM CE + PE (gate=False — capital already vetted as a basket);
+      5. anything fails mid-way → unwind everything placed so far (verified), never
+         leave an untracked naked leg.
+    All PAPER. Returns (ok, msg)."""
     import dhan_master
     import execution_gateway as gw
     import auto_straddle as ast
+    import risk_gate as rg
     try:
         import ltp_poller
     except Exception:
@@ -3613,7 +3623,6 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     if source != "manual" and ast.count_today(symbol) >= int(cfg.get("max_per_day", 2)):
         return False, f"{symbol} max/day ({cfg.get('max_per_day')}) reached"
     try:
-        import risk_gate as rg
         _sq, no_entry = rg.exit_time_config()
         now = _ast_ist_now()
         if (now.hour, now.minute) >= (no_entry[0], no_entry[1]):
@@ -3631,92 +3640,139 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
         return False, f"{symbol} lot size resolve nahi hua — order NAHI bheja"
     gid = "STRAD_" + uuid.uuid4().hex[:8]
     sid = _straddle_strategy_id(source)   # straddle_920 / straddle_alert / straddle_manual
-    xtags = ["STRADDLE", "STRAD_SRC:%s" % source]
-    res_ce = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_ce, t_ce,
-                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
-                               group_id=gid, extra_tags=xtags, log=log)
-    if not res_ce.get("ok"):
-        return False, f"CE leg blocked/failed — {res_ce.get('reason') or res_ce.get('status')}"
-    ce_fill = res_ce.get("price") or 0
-    res_pe = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_pe, t_pe,
-                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
-                               group_id=gid, extra_tags=xtags, log=log)
-    if not res_pe.get("ok"):
-        log(f"[STRADDLE] {symbol} PE leg fail ({res_pe.get('reason') or res_pe.get('status')}) "
-            f"— unwinding CE to avoid naked leg")
-        try:
-            gw.execute_exit(sid, symbol, sec_ce, t_ce, lots * int(lot),
-                            entry_side="SELL", mode=mode, group_id=gid,
-                            reason="STRADDLE_ABORT_NAKED", tag="STRADDLE", source="straddle", log=log)
-        except Exception as ue:
-            log(f"[STRADDLE] {symbol} CE unwind FAILED: {ue} — MANUAL CHECK")
-            try:
-                import notify
-                notify.error("straddle_naked_%s" % symbol,
-                             f"⚠️ {symbol} straddle: PE fail + CE unwind fail — manual check karo",
-                             source="chain")
-            except Exception:
-                pass
-        return False, f"PE leg fail — CE unwound (koi straddle nahi bana). {res_pe.get('reason') or res_pe.get('status')}"
-    pe_fill = res_pe.get("price") or 0
-    entry_credit = round((ce_fill or 0) + (pe_fill or 0), 2)
     q = lots * int(lot)
-    # SELL legs FIRST (indices 0/1 = the ATM straddle the basket-exit monitors)
-    legs = [
-        {"opt_type": "CE", "side": "SELL", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": q},
-        {"opt_type": "PE", "side": "SELL", "sec_id": str(sec_pe), "trad_sym": t_pe, "entry_price": pe_fill, "qty": q},
-    ]
-    # HEDGE — buy cheap OTM wings (~max_premium ₹) so the naked short straddle becomes a
-    # hedged iron fly → margin drops from naked (~₹1.5-2L/lot) to the basket. Reuses the
-    # SAME resolver range_trader uses (walk OTM to <= max_premium). Best-effort: if a wing
-    # can't be placed the straddle still stands (loud warn) — it's just less margin-efficient.
+
+    def _lltp(_sec):
+        """Best-effort live premium (shared cache → REST). None on failure."""
+        try:
+            import shared_ltp_cache as _s
+            v = _s.get(str(_sec), max_age=20)
+            if v:
+                return float(v)
+        except Exception:
+            pass
+        try:
+            return float(_rest_ltp_fallback(_sec, "NSE_FNO") or 0) or None
+        except Exception:
+            return None
+
+    # ── 1/2. Resolve BOTH hedge wings up front (hedge enabled = mandatory) ──
     hcfg = cfg.get("hedge") or {}
-    hedge_fail = []
-    if hcfg.get("enabled"):
-        _hmax = _straddle_hedge_max(cfg, symbol)   # per-index (NIFTY ~2, BNF ~5)
+    hedge_on = bool(hcfg.get("enabled"))
+    hedges = []   # [{opt_type, sec, tsym, lot}]
+    if hedge_on:
         import strategy_safety as _ss
-        def _hq(_sec):
-            try:
-                import shared_ltp_cache as _s
-                v = _s.get(str(_sec), max_age=20)
-                if v:
-                    return float(v)
-            except Exception:
-                pass
-            try:
-                return float(_rest_ltp_fallback(_sec, "NSE_FNO") or 0) or None
-            except Exception:
-                return None
+        _hmax = _straddle_hedge_max(cfg, symbol)
         for ot in ("CE", "PE"):
             try:
                 hsec, htsym, hlot = _ss.compute_hedge_target(
-                    sid, symbol, spot, ot, 0, quote_fn=_hq,
+                    sid, symbol, spot, ot, 0, quote_fn=_lltp,
                     min_strikes_override=int(hcfg.get("min_strikes", 3)),
                     max_premium_override=_hmax, max_search=30, log=log)
             except Exception as he:
                 hsec = None
                 log(f"[STRADDLE] {symbol} {ot} hedge resolve err: {he}")
             if not hsec:
-                hedge_fail.append(f"{ot} resolve")
-                continue
-            hres = gw.execute_signal(sid, symbol, "BUY", lots, int(hlot or lot), hsec, htsym,
-                                     seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE_HEDGE",
-                                     group_id=gid, gate=False,
-                                     extra_tags=["STRADDLE", "HEDGE", "STRAD_SRC:%s" % source], log=log)
-            if hres.get("ok"):
-                legs.append({"opt_type": ot, "side": "BUY", "sec_id": str(hsec), "trad_sym": htsym,
-                             "entry_price": hres.get("price") or 0, "qty": q})
-            else:
-                hedge_fail.append(f"{ot} order")
-        if hedge_fail:
-            log(f"[STRADDLE] {symbol} hedge incomplete: {', '.join(hedge_fail)} — margin poora kam nahi hua")
+                # user rule: hedge fail ho to straddle hi mat lagao (no naked short)
+                try:
+                    import notify
+                    notify.warn("straddle_hedge_resolve_%s" % symbol,
+                                f"⚠️ {symbol} straddle skip — {ot} hedge wing resolve nahi hua (naked nahi lagate)",
+                                source="chain")
+                except Exception:
+                    pass
+                return False, f"{ot} hedge wing resolve fail — straddle NAHI khola (naked avoid)"
+            hedges.append({"opt_type": ot, "sec": str(hsec), "tsym": htsym, "lot": int(hlot or lot)})
+
+    # ── 3. Gate the WHOLE structure ONCE (RMS + basket-margin capital check) ──
+    try:
+        blocked, why, _hard = rg.gating_status(sid, mode=mode)
+        if blocked:
+            return False, f"RMS blocked — {why}"
+    except Exception:
+        pass
+    ce_ltp = _lltp(sec_ce) or 0
+    pe_ltp = _lltp(sec_pe) or 0
+    basket_rows = [
+        {"sec_id": str(sec_ce), "entry": "SELL", "qty": q, "entry_price": ce_ltp, "sym": t_ce, "segment": "NSE_FNO"},
+        {"sec_id": str(sec_pe), "entry": "SELL", "qty": q, "entry_price": pe_ltp, "sym": t_pe, "segment": "NSE_FNO"},
+    ]
+    for h in hedges:
+        basket_rows.append({"sec_id": h["sec"], "entry": "BUY", "qty": q,
+                            "entry_price": _lltp(h["sec"]) or 0, "sym": h["tsym"], "segment": "NSE_FNO"})
+    try:
+        basket = rg.kite_basket_margin(basket_rows)
+        if not basket or basket <= 0:
+            basket = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
+                                          "entry": r["entry"], "sec_id": r["sec_id"],
+                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
+        if not ok_cap:
+            log(f"[STRADDLE] {symbol} skip — basket margin ₹{basket:,.0f} fit nahi hua: {cap_why}")
+            return False, f"capital — {cap_why}"
+    except Exception as ce:
+        log(f"[STRADDLE] {symbol} basket capital check err: {ce}")
+
+    # ── 4. Place hedge wings FIRST, then the ATM SELL legs ──
+    placed = []   # [{sec, tsym, side}] — for unwinding on any later failure
+
+    def _unwind_all(reason):
+        for p in reversed(placed):
             try:
-                import notify
-                notify.warn("straddle_hedge_%s" % gid,
-                            f"⚠️ {symbol} straddle hedge adhoora ({', '.join(hedge_fail)}) — naked margin reh sakta",
-                            source="chain")
-            except Exception:
-                pass
+                gw.execute_exit(sid, symbol, p["sec"], p["tsym"], q,
+                                entry_side=p["side"], mode=mode, group_id=gid,
+                                reason=reason, tag="STRADDLE", source="straddle", log=log)
+            except Exception as ue:
+                log(f"[STRADDLE] {symbol} unwind FAIL {p['tsym']}: {ue}")
+                try:
+                    import notify
+                    notify.error("straddle_unwind_%s" % gid,
+                                 f"⚠️ {symbol} straddle unwind fail ({p['tsym']}) — MANUAL check",
+                                 source="chain")
+                except Exception:
+                    pass
+
+    hlegs = []
+    for h in hedges:
+        hres = gw.execute_signal(sid, symbol, "BUY", lots, h["lot"], h["sec"], h["tsym"],
+                                 seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE_HEDGE",
+                                 group_id=gid, gate=False,
+                                 extra_tags=["STRADDLE", "HEDGE", "STRAD_SRC:%s" % source], log=log)
+        if not hres.get("ok"):
+            log(f"[STRADDLE] {symbol} {h['opt_type']} hedge BUY fail "
+                f"({hres.get('reason') or hres.get('status')}) — unwinding, straddle abort")
+            _unwind_all("STRADDLE_ABORT_HEDGE")
+            return False, f"hedge {h['opt_type']} BUY fail — straddle abort (kuch nahi bacha)"
+        placed.append({"sec": h["sec"], "tsym": h["tsym"], "side": "BUY"})
+        hlegs.append({"opt_type": h["opt_type"], "side": "BUY", "sec_id": h["sec"],
+                      "trad_sym": h["tsym"], "entry_price": hres.get("price") or 0, "qty": q})
+
+    xtags = ["STRADDLE", "STRAD_SRC:%s" % source]
+    res_ce = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_ce, t_ce,
+                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
+                               group_id=gid, gate=False, extra_tags=xtags, log=log)
+    if not res_ce.get("ok"):
+        _unwind_all("STRADDLE_ABORT_NAKED")
+        return False, f"CE leg fail — hedges unwound. {res_ce.get('reason') or res_ce.get('status')}"
+    placed.append({"sec": str(sec_ce), "tsym": t_ce, "side": "SELL"})
+    ce_fill = res_ce.get("price") or 0
+
+    res_pe = gw.execute_signal(sid, symbol, "SELL", lots, int(lot), sec_pe, t_pe,
+                               seg="NSE_FNO", mode=mode, source="straddle", tag="STRADDLE",
+                               group_id=gid, gate=False, extra_tags=xtags, log=log)
+    if not res_pe.get("ok"):
+        log(f"[STRADDLE] {symbol} PE leg fail ({res_pe.get('reason') or res_pe.get('status')}) "
+            f"— unwinding CE + hedges (no naked leg)")
+        _unwind_all("STRADDLE_ABORT_NAKED")
+        return False, f"PE leg fail — sab unwound (koi straddle nahi bana). {res_pe.get('reason') or res_pe.get('status')}"
+    pe_fill = res_pe.get("price") or 0
+
+    entry_credit = round((ce_fill or 0) + (pe_fill or 0), 2)
+    # SELL legs FIRST (indices 0/1 = the ATM straddle the basket-exit monitors), then hedges
+    legs = [
+        {"opt_type": "CE", "side": "SELL", "sec_id": str(sec_ce), "trad_sym": t_ce, "entry_price": ce_fill, "qty": q},
+        {"opt_type": "PE", "side": "SELL", "sec_id": str(sec_pe), "trad_sym": t_pe, "entry_price": pe_fill, "qty": q},
+    ] + hlegs
     ast.add({
         "symbol": symbol, "lots": lots, "mode": mode, "source": source, "strategy_id": sid, "group_id": gid,
         "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_credit, "legs": legs,
@@ -3728,7 +3784,8 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
             pass
     try:
         import notify
-        notify.push(f"🩳 {symbol} ATM straddle SELL @ credit {entry_credit:.0f} "
+        _hnote = "" if not hedge_on else f" +{len(hlegs)}-leg hedge"
+        notify.push(f"🩳 {symbol} ATM straddle SELL @ credit {entry_credit:.0f}{_hnote} "
                     f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
                     level="info", key="straddle_open_%s" % gid, source="chain")
     except Exception:
@@ -3820,20 +3877,35 @@ def auto_straddle_loop():
                 trading = mc.is_trading_day(now.date())
             except Exception:
                 pass
-            # ── A) 9:20 scheduled fire (only within the entry window; one-shot/day) ──
+            # ── A) 9:20 scheduled fire (only within the entry window; ONE attempt/symbol/day) ──
             if cfg.get("enabled_920") and trading:
                 eh, em = _parse_hm_pair(cfg.get("entry_920", "09:20"))
                 win = int(cfg.get("entry_920_window_min", 6))
-                delta = (now.hour * 60 + now.minute) - (eh * 60 + em)
-                if 0 <= delta <= win:
-                    for sym in cfg.get("symbols_920", []):
-                        sym = str(sym).upper()
-                        if ast.fired_920_today(sym) or ast.has_open(sym):
-                            continue
-                        _tp, _sl = _straddle_tp_sl(cfg, sym)
-                        ok, msg = _fire_auto_straddle(sym, cfg.get("lots", 1), _tp, _sl, "schedule_920",
-                                                      log=lambda m: print(m, flush=True))
-                        print(f"[straddle] 9:20 {sym}: {msg}", flush=True)
+                for sym in cfg.get("symbols_920", []):
+                    sym = str(sym).upper()
+                    # fresh clock PER symbol — a slow _fire_auto_straddle (multi-minute hedge
+                    # resolve) used to leave `now` stale so the next symbol fired outside the
+                    # window; recompute the window gate right before each symbol's fire.
+                    now2 = _ast_ist_now()
+                    delta = (now2.hour * 60 + now2.minute) - (eh * 60 + em)
+                    if not (0 <= delta <= win):
+                        continue
+                    if ast.fired_920_today(sym) or ast.has_open(sym):
+                        continue
+                    # mark the attempt BEFORE firing → a failed/partial fire (RMS block,
+                    # capital cap, naked-abort) can NEVER re-trigger every 3s in the window.
+                    ast.mark_920(sym)
+                    _tp, _sl = _straddle_tp_sl(cfg, sym)
+                    ok, msg = _fire_auto_straddle(sym, cfg.get("lots", 1), _tp, _sl, "schedule_920",
+                                                  log=lambda m: print(m, flush=True))
+                    print(f"[straddle] 9:20 {sym}: {msg}", flush=True)
+                    if not ok:
+                        try:
+                            import notify
+                            notify.warn("straddle_920_fail_%s" % sym,
+                                        f"🩳 {sym} 9:20 straddle nahi laga: {msg}", source="chain")
+                        except Exception:
+                            pass
             # ── COMBINED-premium 30/30 basket exit ──
             opens = ast.list_open()
             if opens:
