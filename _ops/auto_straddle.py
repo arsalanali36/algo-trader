@@ -111,6 +111,62 @@ def has_open(symbol):
         return any(s.get("status") == _OPEN and s.get("symbol") == symbol for s in _load_today())
 
 
+def reconcile_open(symbol, leg_open_fn, log=None):
+    """has_open(symbol), but SELF-HEALS a stale-open record before answering.
+
+    has_open() alone trusts the stored status=="open". But an SL/target/EOD exit
+    (or an external/manual close) squares the legs at the broker AND records the
+    exit in order_store while THIS record can still lag "open" (the flip hasn't
+    run yet, or the process meant to flip it died) — that stale record then
+    FALSELY blocks a fresh straddle ("ek waqt ek per index") even though nothing
+    is actually open. Same class as TRAP #62 (stale in-memory/record state).
+
+    leg_open_fn(strategy_id, sec_id, trad_sym) -> int|None mirrors
+    broker_sync._my_open_qty: 0 = CONFIDENT flat (order_store has a closed
+    round-trip for this leg), >0 = still open, None = uncertain (no record /
+    query fail). A record is healed to "closed" ONLY when EVERY one of its SELL
+    legs is confidently flat (all == 0) — any >0 or any None keeps it open
+    (conservative: a false-block is far safer than firing a duplicate straddle
+    on top of one that might still be live). This module stays pure — the
+    order_store lookup is injected, not imported here.
+
+    Returns True if a genuinely-open straddle for `symbol` remains."""
+    symbol = str(symbol).upper()
+    with _LOCK:
+        rows = _load_today()
+        changed = False
+        still_open = False
+        for s in rows:
+            if s.get("status") != _OPEN or s.get("symbol") != symbol:
+                continue
+            sell_legs = [lg for lg in (s.get("legs") or [])
+                         if str(lg.get("side", "")).upper() == "SELL"]
+            if not sell_legs:
+                still_open = True   # can't verify legs — trust the record
+                continue
+            sid = s.get("strategy_id") or ""
+            verdicts = []
+            for lg in sell_legs:
+                try:
+                    verdicts.append(leg_open_fn(sid, str(lg.get("sec_id") or ""),
+                                                lg.get("trad_sym") or ""))
+                except Exception:
+                    verdicts.append(None)
+            if all(v == 0 for v in verdicts):
+                s["status"] = "closed"
+                s["result"] = "reconciled-flat"
+                s["closed_ts"] = int(time.time())
+                changed = True
+                if log:
+                    log(f"[STRADDLE] {symbol} stale-open record {s.get('id')} "
+                        f"reconciled → closed (order_store confirms all SELL legs flat)")
+            else:
+                still_open = True
+        if changed:
+            _write_raw(_today_ist(), rows)
+        return still_open
+
+
 def count_today(symbol, source_prefix=None):
     """How many straddles fired today for `symbol` (optionally only a given source
     prefix, e.g. 'alert' / 'schedule_920')."""

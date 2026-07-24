@@ -2442,6 +2442,51 @@ def _load_premium_ohlc_candles(sec_id, date_str, entry_t="", exit_t=""):
         return None
 
 
+_straddle_leg_cache = {}     # (sec_id, date) -> (candles_list, fetched_at)
+_STRADDLE_LEG_TTL = 45       # seconds — 1-min bars change once a minute; the chart polls every 10s
+
+def _leg_premium_candles(sec_id, date_str):
+    """1-min premium candles [{time, close}] for ONE straddle SELL leg.
+    Disk-captured bars first (auto_data_downloader / trade-chart write-through,
+    instant); live Dhan intraday fallback for fresh/paper legs the daemon never
+    captured — PAPER straddle legs don't hit the broker /v2/orders the daemon
+    polls, so their disk file is empty and the chart was blank (#6). The live
+    fetch is cached _STRADDLE_LEG_TTL s so the chart's 10s poll doesn't hammer
+    Dhan (rate-limited 'candle' priority either way). Returns [] on no data.
+    NIFTY/BANKNIFTY straddles only → instrument OPTIDX."""
+    disk = _load_premium_ohlc_candles(str(sec_id), date_str)
+    if disk and disk.get("candles"):
+        return [{"time": c["time"], "close": c["close"]} for c in disk["candles"]]
+    import time as _t
+    key = (str(sec_id), date_str)
+    hit = _straddle_leg_cache.get(key)
+    if hit and (_t.time() - hit[1]) < _STRADDLE_LEG_TTL:
+        return hit[0]
+    out = []
+    try:
+        import requests as _req
+        import dhan_rate_limiter as _drl
+        token, cid = _creds()
+        hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _drl.set_context("Straddle:ChartIntraday")
+        if _drl.acquire("candle"):
+            r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
+                "securityId": str(sec_id), "exchangeSegment": "NSE_FNO", "instrument": "OPTIDX",
+                "expiryCode": 0, "fromDate": date_str, "toDate": date_str}, timeout=10)
+            if r.status_code == 429:
+                _drl.note_429()
+            elif r.status_code == 200:
+                d = r.json()
+                if d.get("close") and d.get("timestamp"):
+                    for ts, c in zip(d["timestamp"], d["close"]):
+                        out.append({"time": int(ts) + 19800, "close": round(float(c), 2)})
+    except Exception:
+        out = []
+    if out:
+        _straddle_leg_cache[key] = (out, _t.time())
+    return out
+
+
 # ── Task 8 — moving trailing/aggressive SL, faithful to the live monitor ─────
 # The live monitor computes an option's SL each tick; nothing stores that SL per
 # timestamp. So for the chart we REPLAY the exact same rule over the premium
@@ -3586,6 +3631,69 @@ def _straddle_strategy_id(source):
     return "straddle_manual"      # B — Quick Order manual
 
 
+def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print):
+    """One batched Dhan /v2/marketfeed/ltp call for a list of option sec_ids →
+    warms shared_ltp_cache so a subsequent per-strike walk (compute_hedge_target)
+    hits the cache (max_age) instead of doing N serial, rate-limited quote_fn
+    REST calls. This is the fix for the 2026-07-24 auto-straddle 1:30+ min
+    "slow fire": hedge-first resolved BOTH wings by walking up to max_search OTM
+    strikes, fetching EACH strike's premium one-by-one (~1/sec) → 30-60 serial
+    fetches before a single order went out. Best-effort — any failure just
+    leaves the cache cold and the walk falls back to its own per-strike REST
+    (correctness unchanged, only speed). Returns count warmed."""
+    ids = []
+    for s in sec_ids:
+        try:
+            ids.append(int(s))
+        except (TypeError, ValueError):
+            continue
+    ids = sorted(set(ids))
+    if not ids:
+        return 0
+    try:
+        import requests as _req
+        import dhan_rate_limiter as _drl
+        import shared_ltp_cache as _slc
+        token, cid = _creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        _drl.set_context("Straddle:HedgePrewarm")
+        if not _drl.acquire("ltp"):
+            return 0   # gate saturated / 429 cooldown — walk will REST-fallback per strike
+        r = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
+                      json={seg: ids}, headers=headers, timeout=6)
+        if r.status_code == 429:
+            _drl.note_429()
+            return 0
+        if r.status_code != 200:
+            return 0
+        node = (r.json().get("data", {}) or {}).get(seg, {}) or {}
+        out = {}
+        for sid_str, q in node.items():
+            try:
+                ltp = float(q.get("last_price") or q.get("ltp") or 0)
+            except (TypeError, AttributeError):
+                continue
+            if ltp > 0:
+                out[str(sid_str)] = ltp
+        if out:
+            _slc.put_many(out)
+        return len(out)
+    except Exception as e:
+        log(f"[STRADDLE] hedge LTP prewarm fail (walk will REST-fallback): {e}")
+        return 0
+
+
+def _straddle_leg_open(strategy_id, sec_id, trad_sym):
+    """order_store openness for one straddle leg, for auto_straddle.reconcile_open's
+    stale-record self-heal. 0 = confident-flat (closed round-trip recorded), >0 =
+    still open, None = uncertain — exactly broker_sync._my_open_qty's contract."""
+    try:
+        import broker_sync
+        return broker_sync._my_open_qty(strategy_id, sec_id, trad_sym)
+    except Exception:
+        return None
+
+
 def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     """HEDGE-FIRST short straddle. Order of operations (the fix for the 2026-07-24
     naked-orphan storm):
@@ -3618,7 +3726,12 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     if lots < 1:
         return False, "lots >= 1 hona chahiye"
     cfg = _auto_straddle_cfg()
-    if ast.has_open(symbol):
+    # reconcile_open (not bare has_open): self-heals a stale-open record whose SELL
+    # legs are actually flat in order_store (SL/target/EOD/external close already
+    # squared them) before deciding — otherwise a lagging record false-blocks a
+    # genuine fresh straddle. Only clears when order_store CONFIRMS all SELL legs
+    # flat; uncertain/open stays blocked. (2026-07-24 #4, TRAP #62 class.)
+    if ast.reconcile_open(symbol, _straddle_leg_open, log=log):
         return False, f"{symbol} straddle already open — skip (ek waqt ek per index)"
     if source != "manual" and ast.count_today(symbol) >= int(cfg.get("max_per_day", 2)):
         return False, f"{symbol} max/day ({cfg.get('max_per_day')}) reached"
@@ -3663,12 +3776,36 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     if hedge_on:
         import strategy_safety as _ss
         _hmax = _straddle_hedge_max(cfg, symbol)
+        _hmin = int(hcfg.get("min_strikes", 3))
+        _hsearch = 30
+        # SLOW-FIRE FIX (2026-07-24): compute_hedge_target below walks up to
+        # _hsearch OTM strikes PER wing, fetching each strike's premium serially
+        # via _lltp (cache-miss → rate-limited REST ~1/sec) → up to 60 serial
+        # fetches → 1:30+ min before the first order. Pre-warm ALL candidate
+        # wing-strike premiums (both CE & PE, the offset range the walk visits)
+        # PLUS the ATM SELL legs in ONE batched Dhan LTP call, so every _lltp
+        # lookup below (and the basket-margin _lltp calls) hits shared_ltp_cache
+        # (max_age=20) instead of REST. compute_hedge_target's strike-selection
+        # logic is untouched — this only makes its lookups fast.
+        try:
+            _cand = [sec_ce, sec_pe]   # ATM legs → basket-margin _lltp hits cache too
+            _base = max(_hmin, 1)
+            for _ot in ("CE", "PE"):
+                for _off in range(_base, _base + _hsearch + 1):
+                    _cs, _ct, _cl = dhan_master.get_option_contract(symbol, spot, _ot, _off)
+                    if _cs:
+                        _cand.append(_cs)
+            _nw = _prewarm_option_ltps(_cand, log=log)
+            if _nw:
+                log(f"[STRADDLE] {symbol} pre-warmed {_nw} strike premiums (1 batched call) — fast hedge resolve")
+        except Exception as _pwe:
+            log(f"[STRADDLE] {symbol} wing pre-warm skipped ({_pwe}) — hedge resolve may be slower")
         for ot in ("CE", "PE"):
             try:
                 hsec, htsym, hlot = _ss.compute_hedge_target(
                     sid, symbol, spot, ot, 0, quote_fn=_lltp,
-                    min_strikes_override=int(hcfg.get("min_strikes", 3)),
-                    max_premium_override=_hmax, max_search=30, log=log)
+                    min_strikes_override=_hmin,
+                    max_premium_override=_hmax, max_search=_hsearch, log=log)
             except Exception as he:
                 hsec = None
                 log(f"[STRADDLE] {symbol} {ot} hedge resolve err: {he}")
@@ -4055,10 +4192,19 @@ def api_straddle_chart_data():
             return jsonify({"ok": False, "msg": "straddle not found"})
         date = _ast_ist_now().strftime("%Y-%m-%d")
         lg = s.get("legs", [])
+        # The chart's "straddle premium" = the SELL CE + SELL PE credit only
+        # (exactly what entry_credit / tp_line / sl_line track). The 2026-07-24
+        # hedge-first redesign made straddles 4-leg (2 SELL + 2 BUY hedge); the
+        # old `len(maps)==2` guard summed ALL legs and then never matched → the
+        # chart went permanently blank (#6). Sum ONLY the 2 SELL legs, and use
+        # _leg_premium_candles (disk-first, live-intraday fallback) so a fresh
+        # PAPER straddle — whose legs the broker-order daemon never captures —
+        # still renders instead of showing nothing.
+        sell_legs = [x for x in lg if str(x.get("side", "SELL")).upper() == "SELL"] or lg[:2]
         maps = []
-        for leg in lg:
-            c = _load_premium_ohlc_candles(str(leg["sec_id"]), date)
-            maps.append({row["time"]: row["close"] for row in (c or {}).get("candles", [])} if c else {})
+        for leg in sell_legs[:2]:
+            cands = _leg_premium_candles(str(leg["sec_id"]), date)
+            maps.append({row["time"]: row["close"] for row in cands})
         combined = []
         if len(maps) == 2 and maps[0] and maps[1]:
             for t in sorted(set(maps[0]) & set(maps[1])):

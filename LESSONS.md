@@ -4003,3 +4003,60 @@ value, read it back, assert it survived (see `_DEV/tests/test_group_id_atomicity
 **Why it hid:** the REST fallback *existed* (added in TRAP #115), so "it has a fallback" felt covered — but the fallback's first act is to ask the congested limiter for a slot and bail if denied, which is exactly the market-open condition it was meant to cover.
 **Fix:** after fresh-cache-miss + REST-slot-busy/fail, add a LAST-RESORT read of a **STALE** cache value (`get_index("NIFTY", max_age=600)`) instead of returning None. A positional/time-entry strategy that only acts at 15:10 doesn't need a fresh tick to hold/heartbeat; an older poller reading (≤10 min) is fine, and it's never fabricated. Applied to all 3 strategies sharing this `fetch_spot` (vrp_condor + vrp_straddle active, 06_shortvol deactivated → recurrence guard).
 **Rule:** a fallback whose FIRST step is to acquire a contended shared resource, and which returns "no data" when denied, provides no coverage in exactly the congested window it exists for. For a strategy that doesn't need a fresh tick (positional / time-entry), degrade to a bounded-stale cached value before returning None — "no data" from a transient rate-limit should never look like the strategy is broken.
+
+---
+
+## TRAP #159 — auto-straddle: slow hedge-first fire, stale-open false-block, blank 4-leg chart (2026-07-24)
+
+Three related auto-straddle defects, all rooted in the same shift: the 2026-07-24 hedge-first
+redesign made straddles **4-leg** (2 SELL ATM + 2 BUY hedge) and made both wings resolve by a
+premium-capped OTM **walk** — but three downstream consumers still assumed the old 2-leg,
+no-walk shape.
+
+**#1 — 1:30+ min slow fire ("saara price nikal jayega").** `compute_hedge_target` walks up to
+`max_search=30` OTM strikes per wing, calling `quote_fn(sec_id)` for EACH candidate's premium.
+The caller's `quote_fn` (`_lltp`) is cache-first but a fresh wing strike is never in
+`shared_ltp_cache` (the poller only warms open positions + index), so every candidate falls to
+`_rest_ltp_fallback` = one rate-limited (~1/sec) REST call. 2 wings × up to 30 = up to 60 serial
+fetches before the FIRST order goes out.
+- **Fix:** `_prewarm_option_ltps()` — pre-resolve every candidate wing strike (both CE & PE, the
+  exact offset range the walk visits) + the ATM SELL legs via `dhan_master.get_option_contract`
+  (cache-only, no network), fetch ALL premiums in ONE batched `/v2/marketfeed/ltp` call, warm
+  `shared_ltp_cache.put_many`. The existing walk then hits the cache (`max_age=20`) per strike.
+  `compute_hedge_target`'s strike-SELECTION logic is untouched — only its lookups are made fast.
+- **Guard/rule:** whenever a loop calls a rate-limited single-key fetch N times, the fix is to
+  **batch the N keys into one call up front**, not to optimise the loop. Same shape as
+  ltp_poller (TRAP #2 family) — pre-warm, don't serial-fetch. Fail-safe: if the batch fails the
+  walk simply REST-falls-back (correctness identical, just slow again — never worse).
+
+**#4 — "ek waqt ek per index" false-blocks after the position already closed.** `has_open()`
+trusted ONLY the record's `status=="open"`. An SL/target/EOD/external close squares the legs at
+the broker AND records the exit in order_store, but the auto_straddles.json record can lag "open"
+(the flip hasn't run, or the process meant to flip it died). That stale-open record then blocks a
+genuine fresh straddle. TRAP #62 class (stale in-memory/record state trusted without a fresh
+reconcile).
+- **Fix:** new pure `auto_straddle.reconcile_open(symbol, leg_open_fn, log)` — self-heals a
+  stale-open record to "closed" ONLY when order_store CONFIRMS every SELL leg flat
+  (`broker_sync._my_open_qty==0`; the lookup is INJECTED so the module stays broker-free). Any
+  leg `>0` (open) or `None` (uncertain — no record / query fail) keeps the record open
+  (conservative: a false-block is far safer than firing a duplicate straddle on top of a live
+  one). Hedge (BUY) legs are ignored — the SELL CE+PE define the straddle's openness.
+- **Guard/rule:** a "one at a time" gate must verify against the durable store (order_store),
+  not just its own status field — and self-heal conservatively (confirm flat, never assume it).
+
+**#6 — straddle chart blank + "slow".** (a) `combined` was only built when `len(maps)==2`, but
+the 4-leg record makes `len(maps)==4` → the guard never matched → the premium line was
+permanently empty. (b) `_load_premium_ohlc_candles` is disk-only; a PAPER straddle's legs never
+hit the broker `/v2/orders` the daemon polls → the disk file stays empty → blank even after (a).
+- **Fix:** (a) sum ONLY the 2 SELL legs (the CE+PE credit that entry_credit/tp_line/sl_line
+  track); (b) new `_leg_premium_candles()` = disk-first, **live Dhan intraday fallback** (cached
+  45s so the chart's 10s poll doesn't hammer Dhan). Payoff diagram left over ALL legs — a hedged
+  straddle's payoff SHOULD include the wings.
+- **Guard/rule:** when a structure's leg-count changes (2→4), grep every consumer that hard-codes
+  the old count (`len(...)==2`, `legs[:2]`, "sum both legs") — a display that assumes the old
+  shape fails silent-blank, not loud.
+
+**Fast-detect:** straddle fires but takes >30s → check for serial per-strike `_lltp`/REST in the
+hedge path. Straddle won't re-fire though flat → `reconcile_open` should have healed the record;
+check order_store `_my_open_qty` for the SELL legs. Chart blank on a hedged straddle → `combined`
+is summing/guarding on all legs instead of SELL-only.
