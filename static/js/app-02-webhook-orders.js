@@ -526,8 +526,12 @@
 
     // Completed-trades "Group by Symbol" — Zerodha Day's History style: one
     // collapsed summary row per symbol (totals), expand to see individual trades.
-    window._completedGroupBy = localStorage.getItem('ord_completed_group_by') === 'true';
-    window._completedGroupExpanded = new Set();   // symbol keys currently expanded — not persisted, resets per page load (matches Zerodha's own transient expand state)
+    // Group mode: none | symbol | strategy | pnl | hedge | exit | instrument. Migrates the
+    // old boolean (`ord_completed_group_by`) → 'symbol' so existing users keep their grouping.
+    window._completedGroupMode = localStorage.getItem('ord_completed_group_mode')
+      || (localStorage.getItem('ord_completed_group_by') === 'true' ? 'symbol' : 'none');
+    window._completedGroupBy = (window._completedGroupMode !== 'none');   // back-compat alias
+    window._completedGroupExpanded = new Set();   // group keys currently expanded — not persisted, resets per page load (matches Zerodha's own transient expand state)
 
     function toggleCompletedGrouping() {
       window._completedGroupBy = !window._completedGroupBy;
@@ -554,6 +558,57 @@
       const sign = amt > 0 ? '+' : '';
       return `<span style="color:${c};font-weight:600">${sign}${Math.round(amt).toLocaleString('en-IN')}</span>`
         + `<span style="color:#8b949e;font-size:10px"> | ${sign}${pt.toFixed(1)} | ${sign}${pct.toFixed(1)}%</span>`;
+    }
+
+    // ── Instrument (underlying) — the root of a trad_sym: NIFTY / BANKNIFTY / stock ──
+    const _INDEX_UNDERLYINGS = new Set(['NIFTY', 'BANKNIFTY', 'FINNIFTY', 'MIDCPNIFTY', 'NIFTYNXT50', 'SENSEX', 'BANKEX']);
+    function _instrOf(t) {
+      const s = String((t && t.sym) || '');
+      const root = (s.split('-')[0] || '').trim().toUpperCase();
+      return root || '—';
+    }
+    function _instrCell(t) {
+      const r = _instrOf(t);
+      if (r === '—') return '<span style="color:#6e7681">—</span>';
+      const idx = _INDEX_UNDERLYINGS.has(r);
+      const bg = idx ? '#1f6feb20' : '#8957e520', bd = idx ? '#1f6feb60' : '#8957e560', fg = idx ? '#58a6ff' : '#b083f0';
+      return `<span style="display:inline-block;padding:1px 7px;border-radius:10px;background:${bg};border:1px solid ${bd};color:${fg};font-size:10px;font-weight:600;white-space:nowrap">${r}</span>`;
+    }
+
+    // ── Completed-trades grouping key/label per mode (none/symbol/strategy/pnl/hedge/exit) ──
+    function _exitFamily(reason) {
+      const r = String(reason || '').trim();
+      if (!r || r === '-' || r === '—') return { key: 'z_none', label: '— no exit reason' };
+      const lo = r.toLowerCase();
+      if (lo.includes('manual_clear') || lo.includes('straddle_clear')) return { key: 'manual_clear', label: '🧹 Manual Clear' };
+      if (lo.includes('manual')) return { key: 'manual', label: '✋ Manual Close' };
+      if (lo.includes('daily target') || lo.includes('profit_target') || lo.includes('profit target')) return { key: 'rms_target', label: '🎯 RMS Daily Target' };
+      if (lo.includes('rms') && lo.includes('loss')) return { key: 'rms_loss', label: '🛑 RMS Max Loss' };
+      if (lo.includes('abort')) return { key: 'abort', label: '⚠️ Abort (naked)' };
+      if (lo.includes('eod') || lo.includes('squareoff') || lo.includes('3:15') || lo.includes('315')) return { key: 'eod', label: '⏰ EOD Squareoff' };
+      if (lo.includes('atr') || lo.includes('trail')) return { key: 'trail', label: '📉 Trailing / ATR' };
+      if (lo.includes('straddle_sl') || lo.includes('_sl') || lo.includes('stop')) return { key: 'sl', label: '🛑 Stop Loss' };
+      if (lo.includes('straddle_target') || lo.includes('_tp') || lo.includes('target')) return { key: 'target', label: '🎯 Target' };
+      const short = r.split(/[·:|]/)[0].trim().slice(0, 24);
+      return { key: 'x_' + short.toLowerCase(), label: short || 'Other' };
+    }
+    function _grpKeyLabel(t, mode) {
+      switch (mode) {
+        case 'strategy': { const k = t.strategy || '—'; return { key: 'S:' + k, label: (window.regFull ? regFull(k) : k) }; }
+        case 'pnl':      { const w = (t._net || 0) >= 0; return { key: w ? 'p' : 'l', label: w ? '✅ Profit' : '❌ Loss' }; }
+        case 'hedge':    { const h = (t.tags || []).includes('HEDGE') || /hedge/i.test(String(t.exit_reason || '')); return { key: h ? 'h' : 'm', label: h ? '🛡️ Hedge legs' : '🎯 Main legs' }; }
+        case 'exit':     { const f = _exitFamily(t.exit_reason); return { key: 'E:' + f.key, label: f.label }; }
+        case 'instrument': { const r = _instrOf(t); return { key: 'I:' + r, label: r }; }
+        case 'symbol':
+        default:         return { key: t.sym || '—', label: t.sym || '—' };
+      }
+    }
+    function setCompletedGroupMode(mode) {
+      window._completedGroupMode = mode || 'none';
+      window._completedGroupBy = (window._completedGroupMode !== 'none');   // back-compat alias
+      localStorage.setItem('ord_completed_group_mode', window._completedGroupMode);
+      window._completedGroupExpanded = new Set();   // reset expand state on mode change
+      renderCachedOrders();
     }
 
     // ── Payoff / Zone panel (DISPLAY-ONLY) ───────────────────────────────────
@@ -993,6 +1048,9 @@
             const isNoteColOn = activeCols.some(x => x.id === 'note');
             val = (subRow ? '<span style="color:#6e7681;margin-right:4px">↳</span>' : '') + `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
             colorStyle = 'color:#adbac7;';
+            break;
+          case 'instrument':
+            val = _instrCell(t);
             break;
           case 'strategy':
             val = _stratCell(t);

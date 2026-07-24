@@ -1881,10 +1881,17 @@
         <div style="font-size:13px;font-weight:600;color:#adbac7">✅ Completed Trades
           <span id="ord-completed-filter"></span></div>
         <div style="display:flex;gap:6px;align-items:center">
-          <button id="ord-group-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
-            onclick="toggleCompletedGrouping()"
-            title="Zerodha ke Day's History jaisa — symbol-wise group karo, expand karke individual trades dekho">📁
-            Group by Symbol</button>
+          <select id="ord-group-select" onchange="setCompletedGroupMode(this.value)"
+            title="Completed trades ko group karo — har group ka apna total (expand karke individual trades dekho)"
+            style="padding:3px 8px;font-size:11px;border-radius:6px;background:#161b22;color:#adbac7;border:1px solid #30363d;cursor:pointer;outline:none">
+            <option value="none">📁 No grouping</option>
+            <option value="symbol">📁 Group: Symbol</option>
+            <option value="instrument">📁 Group: Instrument</option>
+            <option value="strategy">📁 Group: Strategy</option>
+            <option value="pnl">📁 Group: P&amp;L (profit/loss)</option>
+            <option value="hedge">📁 Group: Hedge (hedge/main)</option>
+            <option value="exit">📁 Group: Exit reason</option>
+          </select>
           <button id="reconcile-manual-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
             onclick="reconcileManualTrades(this)"
             title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾

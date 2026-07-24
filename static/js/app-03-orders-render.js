@@ -151,6 +151,7 @@
           switch (c.id) {
             case 'date': val = t.entry_date || ''; break;
             case 'symbol': val = t.sym || ''; break;
+            case 'instrument': val = _instrOf(t); break;
             case 'source': val = t.source || ''; break;
             case 'mode': val = t.mode || ''; break;
             case 'strategy': val = regLabel(t.strategy || t.strat || t.strategy_type || ''); break;
@@ -388,10 +389,14 @@
       const date = (document.getElementById('ord-date') || {}).value;
       const ordDate = date;
 
-      const _grpBtn = document.getElementById('ord-group-btn');
-      if (_grpBtn) {
-        _grpBtn.style.background = window._completedGroupBy ? '#1f6feb' : '';
-        _grpBtn.style.borderColor = window._completedGroupBy ? '#1f6feb' : '#30363d';
+      const _grpSel = document.getElementById('ord-group-select');
+      if (_grpSel) {
+        const _gm = window._completedGroupMode || 'none';
+        if (_grpSel.value !== _gm) _grpSel.value = _gm;
+        const _on = _gm !== 'none';
+        _grpSel.style.background = _on ? '#1f6feb' : '#161b22';
+        _grpSel.style.color = _on ? '#fff' : '#adbac7';
+        _grpSel.style.borderColor = _on ? '#1f6feb' : '#30363d';
       }
 
       const isCapBlocked = t => (t.tags || []).some(tg => tg === 'CAPITAL_BLOCKED');
@@ -533,7 +538,7 @@
       // renders as a blank "—" rather than a misleading running total.
       const _cumEligible = window._completedSortCol === 'exit_time'
         && window._completedSortDir === 'asc'
-        && !window._completedGroupBy;
+        && (window._completedGroupMode || 'none') === 'none';
       sortedCompleted.forEach(t => { delete t._cumulative; });
       if (_cumEligible) {
         let _run = 0;
@@ -574,16 +579,18 @@
 
         ch += '</tr></thead><tbody>';
 
-        if (window._completedGroupBy) {
-          // ── Grouped by symbol (Zerodha Day's History style) ──
-          // Preserves sortedCompleted's current order for group POSITION (first-
-          // occurrence order) — respects whatever sort column is active.
+        const _grpMode = window._completedGroupMode || 'none';
+        if (_grpMode !== 'none') {
+          // ── Grouped (Zerodha Day's History style) — key/label by _grpMode ──
+          // (none/symbol/strategy/pnl/hedge/exit/instrument). Preserves
+          // sortedCompleted's current order for group POSITION (first-occurrence),
+          // respecting whatever sort column is active. Each group shows its own total.
           const groups = [];
           const groupIdx = {};
           sortedCompleted.forEach((t, i) => {
-            const key = t.sym || '—';
-            if (!(key in groupIdx)) { groupIdx[key] = groups.length; groups.push({ sym: key, trades: [], g: 0, tx: 0, n: 0, pts: 0, inv: 0, qty: 0 }); }
-            groups[groupIdx[key]].trades.push({ t, idx: i });
+            const kl = _grpKeyLabel(t, _grpMode);
+            if (!(kl.key in groupIdx)) { groupIdx[kl.key] = groups.length; groups.push({ key: kl.key, label: kl.label, trades: [], g: 0, tx: 0, n: 0, pts: 0, inv: 0, qty: 0 }); }
+            groups[groupIdx[kl.key]].trades.push({ t, idx: i });
           });
           groups.forEach(grp => {
             grp.trades.forEach(({ t }) => {
@@ -595,15 +602,15 @@
           });
 
           groups.forEach(grp => {
-            const expanded = window._completedGroupExpanded.has(grp.sym);
+            const expanded = window._completedGroupExpanded.has(grp.key);
             const gnc = grp.n > 0 ? '#3fb950' : (grp.n < 0 ? '#f85149' : '#e6edf3');
             const ggc = grp.g > 0 ? '#3fb950' : (grp.g < 0 ? '#f85149' : '#e6edf3');
             const gptsC = grp.pts > 0 ? '#3fb950' : (grp.pts < 0 ? '#f85149' : '#8b949e');
             const gRetPct = grp.inv > 0 ? ((grp.n / grp.inv) * 100).toFixed(2) + '%' : '—';
             const grc = grp.n > 0 ? '#3fb950' : (grp.n < 0 ? '#f85149' : '#8b949e');
-            const symKeySafe = grp.sym.replace(/'/g, "\\'");
+            const grpKeySafe = String(grp.key).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
-            ch += `<tr style="border-bottom:1px solid #21262d;background:#161b22;cursor:pointer" onclick="toggleCompletedGroupExpand('${symKeySafe}')">`;
+            ch += `<tr style="border-bottom:1px solid #21262d;background:#161b22;cursor:pointer" onclick="toggleCompletedGroupExpand('${grpKeySafe}')">`;
             activeCols.forEach(c => {
               let val = '', colorStyle = '';
               const isRight = ['entry_px', 'exit_px', 'points', 'gross', 'tax', 'net', 'ret_pct', 'run_up', 'run_down', 'cumulative'].includes(c.id);
@@ -611,7 +618,7 @@
               const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
               switch (c.id) {
                 case 'symbol':
-                  val = `<span style="display:inline-block;width:14px;color:#8b949e">${expanded ? '▼' : '▶'}</span><b>${grp.sym}</b> <span style="color:#6e7681;font-weight:400">(${grp.trades.length})</span>`;
+                  val = `<span style="display:inline-block;width:14px;color:#8b949e">${expanded ? '▼' : '▶'}</span><b>${grp.label}</b> <span style="color:#6e7681;font-weight:400">(${grp.trades.length})</span>`;
                   colorStyle = 'color:#adbac7;font-weight:600;';
                   break;
                 case 'qty': val = grp.qty; break;
@@ -1003,6 +1010,9 @@
                     const isNoteColOn = activeOpenCols.some(x => x.id === 'note');
                     val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
                     colorStyle = 'color:#adbac7;';
+                    break;
+                  case 'instrument':
+                    val = _instrCell(t);
                     break;
                   case 'strategy':
                     val = _stratCell(t);
