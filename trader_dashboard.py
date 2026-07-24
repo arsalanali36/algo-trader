@@ -2869,6 +2869,37 @@ def _payoff_rows_for_ids(ids):
     return [r for r in rows if str(r.get('id')) in want]
 
 
+def _payoff_resolve(args):
+    """Resolve payoff legs from request args — either `ids=` (open legs, the
+    original path) OR `group_id=` (a whole hedge/pair GROUP, open OR closed).
+    For a CLOSED group the legs are reconstructed from completed round-trips
+    (each carries entry side/price/strike/sec_id/group_id) so the payoff still
+    renders after the position has flattened (#01 — 'kaun sa leg kis pair ka').
+    Returns (rows, is_closed). build_legs reads the same fields off open rows and
+    completed-detail rows alike, so both feed payoff.analyse unchanged."""
+    import order_store
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+    lb = (ist - _td(days=7)).strftime('%Y-%m-%d')
+    data = order_store.trades_for_range(lb, ist.strftime('%Y-%m-%d'))
+    gid = (args.get('group_id') or '').strip()
+    if gid:
+        opens = [r for r in data.get('open', [])
+                 if (r.get('group_id') or '') == gid and 'CAPITAL_BLOCKED' not in (r.get('tags') or [])]
+        closed = [dict(d, status='closed') for d in data.get('details', [])
+                  if (d.get('group_id') or '') == gid]
+        rows = opens + closed
+        return rows, (len(opens) == 0 and len(closed) > 0)
+    ids = [i for i in (args.get('ids') or '').split(',') if i.strip()]
+    want = {str(i) for i in ids}
+    opens = [r for r in data.get('open', []) if str(r.get('id')) in want]
+    have = {str(r.get('id')) for r in opens}
+    closed = [dict(d, status='closed') for d in data.get('details', [])
+              if str(d.get('id')) in want and str(d.get('id')) not in have]
+    rows = opens + closed
+    return rows, (len(opens) == 0 and len(closed) > 0)
+
+
 def _payoff_attach_ltp(rows):
     """Live premium per leg onto the order_store rows. order_store carries no
     price beyond the ENTRY fill — but implied vol (and hence the today-curve /
@@ -2943,18 +2974,20 @@ def api_position_payoff():
     (5 Kite calls — slow), so the panel renders instantly."""
     try:
         import payoff
-        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
-        if not ids:
-            return jsonify({"ok": False, "msg": "no ids"})
-        rows = _payoff_attach_ltp(_payoff_rows_for_ids(ids))
+        rows, closed = _payoff_resolve(request.args)
         if not rows:
-            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+            return jsonify({"ok": False, "msg": "no legs for this group (open or recently-closed)"})
+        if not closed:
+            rows = _payoff_attach_ltp(rows)      # live IV/today-curve only for still-open legs
         spot = _payoff_spot(payoff.build_legs(rows))
         try:
             td = float(request.args.get('target_days')) if request.args.get('target_days') else None
         except Exception:
             td = None
-        return jsonify(payoff.analyse(rows, spot, target_days=td))
+        res = payoff.analyse(rows, spot, target_days=td)
+        if isinstance(res, dict):
+            res['closed'] = bool(closed)         # #01 → panel shows "reconstructed from entry"
+        return jsonify(res)
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
@@ -2966,10 +2999,11 @@ def api_position_payoff_margin():
     costs ~5 rate-limited Kite calls."""
     try:
         import payoff
-        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
-        rows = _payoff_attach_ltp(_payoff_rows_for_ids(ids))
+        rows, closed = _payoff_resolve(request.args)
         if not rows:
-            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+            return jsonify({"ok": False, "msg": "no legs for this group"})
+        if not closed:
+            rows = _payoff_attach_ltp(rows)
         return jsonify(payoff.basket_margin(payoff.build_legs(rows)))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -3001,10 +3035,9 @@ def api_position_legs_series():
     try:
         import payoff
         from datetime import datetime as _d, timedelta as _td, timezone as _tz
-        ids = [i for i in (request.args.get('ids') or '').split(',') if i.strip()]
-        rows = _payoff_rows_for_ids(ids)
+        rows, closed = _payoff_resolve(request.args)
         if not rows:
-            return jsonify({"ok": False, "msg": "no open rows for those ids"})
+            return jsonify({"ok": False, "msg": "no legs for this group"})
         legs = payoff.build_legs(rows)
         legs = [L for L in legs if L.get('sec_id')]
         if not legs:
@@ -3014,6 +3047,9 @@ def api_position_legs_series():
         today = ist.strftime('%Y-%m-%d')
         entry_dates = [r.get('entry_date') for r in rows if r.get('entry_date')]
         frm = min(entry_dates) if entry_dates else today
+        # a CLOSED group's premium path ends at its exit day, not today
+        exit_dates = [r.get('exit_date') for r in rows if r.get('exit_date')]
+        today = (max(exit_dates) if (closed and exit_dates) else today)
 
         # Clip to the actual ENTRY moment — Dhan serves the whole entry day from
         # 09:15, but bars before the position existed carry no P&L (a 15:10 entry
@@ -3056,6 +3092,76 @@ def api_position_legs_series():
                         "entry_net": round(entry_net, 2), "from": frm, "to": today})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/position-groups')
+def api_position_groups():
+    """Open + recently-closed option GROUPS (by group_id) for the payoff panel's
+    group selector (#01). DISPLAY-ONLY. Each group carries a leg summary + the ids
+    the payoff routes resolve, so a closed hedge/pair is reachable + its legs stay
+    grouped (kaun sa leg kis pair ka tha) instead of showing as loose flat rows."""
+    try:
+        import order_store
+        from datetime import datetime as _d, timedelta as _td, timezone as _tz
+        ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+        lb = (ist - _td(days=7)).strftime('%Y-%m-%d')
+        data = order_store.trades_for_range(lb, ist.strftime('%Y-%m-%d'))
+
+        def _opt(sym):
+            p = str(sym or '').split('-')
+            if len(p) < 3:
+                return None
+            opt = (p[-1] or '').upper()
+            try:
+                strike = float(p[-2])
+            except Exception:
+                return None
+            if opt not in ('CE', 'PE'):
+                return None
+            return p[0].upper(), strike, opt
+
+        G = {}
+
+        def _g(gid, underlying):
+            return G.setdefault(gid, {"group_id": gid, "status": "closed",
+                                      "underlying": underlying, "legs": [], "ids": [], "recent": ""})
+        for r in data.get('open', []):
+            if 'CAPITAL_BLOCKED' in (r.get('tags') or []):
+                continue
+            gid = r.get('group_id') or ''
+            info = _opt(r.get('sym'))
+            if not gid or not info:
+                continue
+            g = _g(gid, info[0]); g["status"] = "open"
+            g["legs"].append({"side": r.get('entry'), "opt": info[2], "strike": info[1],
+                              "entry": r.get('entry_price'), "flat": False})
+            g["ids"].append(str(r.get('id')))
+            g["recent"] = max(g["recent"], r.get('entry_date') or '')
+        for dtl in data.get('details', []):
+            gid = dtl.get('group_id') or ''
+            info = _opt(dtl.get('sym'))
+            if not gid or not info:
+                continue
+            g = _g(gid, info[0])
+            g["legs"].append({"side": dtl.get('entry'), "opt": info[2], "strike": info[1],
+                              "entry": dtl.get('entry_price'), "flat": True})
+            g["ids"].append(str(dtl.get('id')))
+            g["recent"] = max(g["recent"], dtl.get('exit_date') or dtl.get('entry_date') or '')
+        out = []
+        for gid, g in G.items():
+            if len([l for l in g["legs"] if l["strike"]]) < 2:
+                continue      # need a real multi-leg structure
+            sells = sum(1 for l in g["legs"] if l["side"] == "SELL")
+            buys = len(g["legs"]) - sells
+            g["label"] = (f"{g['underlying']} · {len(g['legs'])} legs"
+                          + (" · hedged" if buys and sells else "")
+                          + (" · OPEN" if g["status"] == "open" else " · closed"))
+            out.append(g)
+        out.sort(key=lambda x: x.get("recent", ""), reverse=True)     # newest first…
+        out.sort(key=lambda x: 0 if x["status"] == "open" else 1)      # …but open groups on top (stable)
+        return jsonify({"ok": True, "groups": out})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "groups": []})
 
 
 def _dhan_live_fate(resp, token, cid):

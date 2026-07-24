@@ -686,9 +686,15 @@
       return p(d.getUTCDate()) + '/' + p(d.getUTCMonth() + 1) + ' ' + p(d.getUTCHours()) + ':' + p(d.getUTCMinutes());
     }
 
+    // Open the panel for an OPEN group by its leg ids (called from the open-positions button).
     function openPayoffPanel(idsCsv, name, ev) {
+      openPayoffPanelQS('ids=' + idsCsv, name, ev);
+    }
+    // Open the panel for ANY group — open (ids=) or closed (group_id=) — with a group selector (#01).
+    function openPayoffPanelQS(qs, name, ev) {
       if (ev) { ev.preventDefault(); ev.stopPropagation(); }
-      window._pfView = null; window._pfMargin = null; window._pfData = null;  // fresh per group
+      window._pfView = null; window._pfMargin = null; window._pfData = null;   // fresh per group
+      window._pfInitName = name || '';
       let ov = document.getElementById('pfOverlay');
       if (!ov) {
         ov = document.createElement('div');
@@ -699,32 +705,96 @@
       }
       ov.style.display = 'flex';
       ov.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:1000px;width:100%;padding:16px">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
-          <div><div style="font-size:15px;font-weight:700;color:#e6edf3">📊 ${name} — Payoff &amp; Zone</div>
-          <div id="pfSub" style="font-size:11px;color:#8b949e;margin-top:2px">loading…</div></div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+            <span style="font-size:15px;font-weight:700;color:#e6edf3">📊 Payoff &amp; Zone</span>
+            <select id="pfGrpSel" onchange="_pfSelectGroup(this.value)" title="open / recently-closed group"
+              style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:600;cursor:pointer;max-width:340px"></select>
+            <span id="pfStatus" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px"></span>
+          </div>
           <button onclick="closePayoffPanel()" style="padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer">✕ Close</button>
         </div>
+        <div id="pfSub" style="font-size:11px;color:#8b949e;margin:-2px 0 8px">loading…</div>
+        <div id="pfLegStrip" style="display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:12px;padding:9px 11px;background:#161b22;border:1px solid #30363d;border-radius:8px"></div>
         <div id="pfBody" style="color:#8b949e;font-size:12px;padding:20px;text-align:center">⏳ computing…</div>
       </div>`;
-      _pfLoad(idsCsv);
+      _pfLoadGroups(qs);
+      _pfLoad(qs);
     }
     function closePayoffPanel() { const o = document.getElementById('pfOverlay'); if (o) o.style.display = 'none'; }
 
-    async function _pfLoad(idsCsv) {
+    // Launcher for when NOTHING is open — opens the most recent (open or closed) group (#01).
+    async function openPayoffLauncher(ev) {
+      if (ev) { ev.preventDefault(); ev.stopPropagation(); }
+      let g;
+      try { const r = await fetch('/api/position-groups'); g = await r.json(); } catch (e) { g = null; }
+      const groups = (g && g.groups) || [];
+      if (!groups.length) { try { toast('Koi option group nahi mila (open ya recently-closed 7 din).'); } catch (e) {} return; }
+      openPayoffPanelQS('group_id=' + groups[0].group_id, groups[0].label, ev);
+    }
+
+    async function _pfLoadGroups(currentQS) {
+      let g;
+      try { const r = await fetch('/api/position-groups'); g = await r.json(); } catch (e) { return; }
+      const sel = document.getElementById('pfGrpSel'); if (!sel) return;
+      const groups = (g && g.groups) || [];
+      window._pfGroups = groups;
+      const curIds = new Set((currentQS.indexOf('ids=') === 0 ? currentQS.slice(4) : '').split(',').filter(Boolean));
+      let curVal = currentQS, matched = false;
+      const opts = groups.map(gr => {
+        const val = 'group_id=' + gr.group_id;
+        if (currentQS === val || (gr.ids && gr.ids.some(i => curIds.has(String(i))))) { curVal = val; matched = true; }
+        return `<option value="${val}">${gr.label}</option>`;
+      });
+      // opened via legacy ids that don't map to a group_id group → keep a raw entry
+      if (!matched && curIds.size) opts.unshift(`<option value="${currentQS}">${(window._pfInitName || 'this position')} · open</option>`);
+      sel.innerHTML = opts.join('') || `<option value="${currentQS}">this position</option>`;
+      sel.value = curVal;
+    }
+    function _pfSelectGroup(val) { if (val) _pfLoad(val); }
+
+    function _pfRenderLegStrip(d) {
+      const el = document.getElementById('pfLegStrip'); if (!el) return;
+      if (!d || !d.legs || !d.legs.length) { el.innerHTML = '<span style="font-size:11px;color:#6e7681">—</span>'; return; }
+      const flat = !!window._pfClosed;
+      const chip = L => {
+        const sell = String(L.side).toUpperCase() === 'SELL';
+        return `<span style="font-family:ui-monospace,monospace;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:6px;`
+          + `background:${sell ? '#f8514915' : '#3fb95015'};color:${sell ? '#ff8b82' : '#7ee787'};border:1px solid ${sell ? '#f8514940' : '#3fb95040'};${flat ? 'opacity:.55;text-decoration:line-through' : ''}">`
+          + `<b style="font-size:9px;opacity:.85;margin-right:3px">${L.side}</b>${_pfNf(L.strike)} ${L.opt} @${(+L.entry).toFixed(0)}</span>`;
+      };
+      el.innerHTML = d.legs.map(chip).join('')
+        + (d.expiry ? `<span style="font-size:10px;color:#6e7681;border-left:1px solid #30363d;padding-left:8px;margin-left:2px">exp ${d.expiry}</span>` : '')
+        + (window._pfClosed ? `<span style="font-size:10px;color:#d29922;border-left:1px solid #30363d;padding-left:8px;margin-left:2px">reconstructed from entry</span>` : '');
+    }
+
+    async function _pfLoad(qs) {
+      window._pfQS = qs;                       // ids=… or group_id=… — for margin/series/exit-rule
       const body = document.getElementById('pfBody');
       let d;
       try {
-        const r = await fetch('/api/position-payoff?ids=' + encodeURIComponent(idsCsv));
+        const r = await fetch('/api/position-payoff?' + qs);
         d = await r.json();
-      } catch (e) { body.innerHTML = '<span style="color:#f85149">payoff fetch fail: ' + e.message + '</span>'; return; }
-      if (!d || !d.ok) { body.innerHTML = '<span style="color:#f85149">' + ((d && d.msg) || 'payoff nahi bana') + '</span>'; return; }
+      } catch (e) { body.innerHTML = '<span style="color:#f85149">payoff fetch fail: ' + e.message + '</span>'; _pfRenderLegStrip(null); return; }
+      if (!d || !d.ok) { body.innerHTML = '<span style="color:#f85149">' + ((d && d.msg) || 'payoff nahi bana') + '</span>'; _pfRenderLegStrip(null); return; }
 
+      window._pfClosed = !!d.closed;
+      const st = document.getElementById('pfStatus');
+      if (st) {
+        st.style.cssText = 'font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;'
+          + (d.closed ? 'background:#8b949e22;color:#adbac7;border:1px solid #8b949e55' : 'background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb55');
+        st.textContent = d.closed ? '● CLOSED' : '● OPEN';
+      }
       document.getElementById('pfSub').textContent =
         `${d.legs.length} legs · spot ${d.spot ? _pfNf(d.spot) : '—'}`
         + (d.expiry ? ` · expiry ${d.expiry} (${d.tte_days}d)` : '')
-        + (d.avg_iv ? ` · IV ~${(d.avg_iv * 100).toFixed(1)}%` : '');
+        + (d.avg_iv ? ` · IV ~${(d.avg_iv * 100).toFixed(1)}%` : '')
+        + (d.closed ? ' · position closed — reconstructed from entry' : '');
+      _pfRenderLegStrip(d);
 
       window._pfData = d;
+      window._pfZoom = { z: 1, c: null };    // #00 fresh zoom per group
+      window._pfExit = null;                  // #02 combined SL/target (set on first combined draw)
       // Expiry vs exit-day: for a one-night / intraday structure the expiry
       // numbers are theoretical — it closes at today's square-off. Default to
       // whichever the position actually is.
@@ -733,21 +803,27 @@
 
       body.innerHTML = `
         <div id="pfCards" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px;flex-wrap:wrap;gap:6px">
           <span style="font-size:11px;font-weight:600;color:#8b949e">
             Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
             ${d.curve_today ? '<span style="color:#58a6ff;font-weight:700;margin-left:8px">━ Today</span>' : ''}
             ${d.curve_target ? '<span style="color:#d29922;font-weight:700;margin-left:8px">╌ Exit day</span>' : ''}
+            <span style="color:#6e7681;font-weight:400;margin-left:8px">· <b style="color:#8b949e">Alt</b>+scroll = zoom · drag = pan</span>
           </span>
-          <span id="pfViewTog"></span>
+          <span style="display:flex;align-items:center;gap:5px">
+            <button onclick="_pfZoomBtn('in')" title="zoom in" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">＋</button>
+            <button onclick="_pfZoomBtn('out')" title="zoom out" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">−</button>
+            <button onclick="_pfZoomBtn('fit')" title="fit" style="height:24px;padding:0 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:11px;font-weight:600">⟲ Fit</button>
+            <span id="pfViewTog"></span>
+          </span>
         </div>
         <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
         <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
         <div id="pfSeriesWrap"></div>`;
       _pfRenderCards();
       _pfDrawPayoff(d);
-      _pfLoadMargin(idsCsv);
-      _pfLoadSeries(idsCsv);
+      _pfLoadMargin(qs);
+      _pfLoadSeries(qs);
     }
 
     function _pfSetView(v) { window._pfView = v; _pfRenderCards(); _pfDrawPayoff(window._pfData); }
@@ -806,19 +882,48 @@
       sub.innerHTML = `standalone <s>${_pfRs(m.standalone)}</s> · <b style="color:${_PF.C.pos}">${pct}% kam</b>`;
     }
 
+    // #00 zoom — window range from a zoom factor + center spot (Alt+wheel / drag / buttons).
+    // Display-only: re-slices the fixed server curves to a spot window; nothing re-fetched.
+    function _pfWin(d) {
+      const ce = d.curve_expiry;
+      const LO0 = ce[0][0], HI0 = ce[ce.length - 1][0], full = HI0 - LO0;
+      const Z = window._pfZoom || (window._pfZoom = { z: 1, c: null });
+      const center = Z.c != null ? Z.c
+        : (d.spot && d.spot >= LO0 && d.spot <= HI0 ? d.spot : (LO0 + HI0) / 2);
+      const half = (full / 2) / Math.max(Z.z, 0.4);
+      let lo = center - half, hi = center + half;
+      if (lo < LO0) { lo = LO0; hi = Math.min(HI0, lo + 2 * half); }
+      if (hi > HI0) { hi = HI0; lo = Math.max(LO0, hi - 2 * half); }
+      return { lo, hi, LO0, HI0 };
+    }
+    function _pfZoomBtn(f) {
+      const Z = window._pfZoom || (window._pfZoom = { z: 1, c: null });
+      if (f === 'fit') { Z.z = 1; Z.c = null; }
+      else { Z.z = Math.max(0.4, Math.min(8, Z.z * (f === 'in' ? 1.3 : 1 / 1.3))); }
+      _pfDrawPayoff(window._pfData);
+    }
+
     function _pfDrawPayoff(d) {
       const svg = document.getElementById('pfChart'); if (!svg) return;
       const C = _PF.C, W = 940, H = 300, mL = 70, mR = 14, mT = 20, mB = 40;
       const pw = W - mL - mR, ph = H - mT - mB;
-      svg.innerHTML = '';   // redraw on view toggle
+      svg.innerHTML = '';   // redraw on view toggle / zoom
       const ce = d.curve_expiry, ct = d.curve_today, cx = d.curve_target;
-      const LO = ce[0][0], HI = ce[ce.length - 1][0];
-      let ys = ce.map(p => p[1]);
-      if (ct) ys = ys.concat(ct.map(p => p[1]));
-      if (cx) ys = ys.concat(cx.map(p => p[1]));
-      let yT = Math.max(...ys), yB = Math.min(...ys); const pad = (yT - yB) * .12; yT += pad; yB -= pad;
+      const win = _pfWin(d), LO = win.lo, HI = win.hi;
+      const qtyLot = (d.legs && d.legs[0] && d.legs[0].qty) ? d.legs[0].qty : 1;
+      const ppt = v => v / qtyLot;                         // ₹ → premium points (#01 amt+pt)
+      // y-range from the VISIBLE slice only → real zoom (both axes tighten)
+      const inWin = arr => arr.filter(p => p[0] >= LO && p[0] <= HI);
+      let ys = inWin(ce).map(p => p[1]);
+      if (ct) ys = ys.concat(inWin(ct).map(p => p[1]));
+      if (cx) ys = ys.concat(inWin(cx).map(p => p[1]));
+      if (!ys.length) ys = ce.map(p => p[1]);
+      let yT = Math.max(...ys), yB = Math.min(...ys); const pad = (yT - yB) * .12 || 100; yT += pad; yB -= pad;
       const X = s => mL + (s - LO) / (HI - LO) * pw, Y = v => mT + (yT - v) / (yT - yB) * ph;
       const y0 = Y(0);
+      // clip so a curve running past the zoom window doesn't overflow the plot
+      const clip = _pfEl(svg, 'clipPath', { id: 'pfClip' });
+      _pfEl(clip, 'rect', { x: mL, y: mT, width: pw, height: ph });
       [Math.max(...ys), 0, Math.min(...ys)].forEach(v => {
         _pfEl(svg, 'line', { x1: mL, y1: Y(v), x2: W - mR, y2: Y(v), stroke: C.grid, 'stroke-width': 1 });
         _pfEl(svg, 'text', { x: mL - 7, y: Y(v) + 3.5, 'text-anchor': 'end', 'font-size': 9.5, fill: C.mut }, _pfRs(v));
@@ -831,8 +936,8 @@
         });
         return dd + 'L' + X(ce[ce.length - 1][0]).toFixed(1) + ' ' + y0.toFixed(1) + ' Z';
       };
-      _pfEl(svg, 'path', { d: area(1), fill: C.pos, 'fill-opacity': .15 });
-      _pfEl(svg, 'path', { d: area(-1), fill: C.neg, 'fill-opacity': .15 });
+      _pfEl(svg, 'path', { d: area(1), fill: C.pos, 'fill-opacity': .15, 'clip-path': 'url(#pfClip)' });
+      _pfEl(svg, 'path', { d: area(-1), fill: C.neg, 'fill-opacity': .15, 'clip-path': 'url(#pfClip)' });
       _pfEl(svg, 'line', { x1: mL, y1: y0, x2: W - mR, y2: y0, stroke: C.mut, 'stroke-width': 1, 'stroke-dasharray': '2 3' });
       [...new Set(d.legs.map(l => l.strike))].sort((a, b) => a - b).forEach(k => {
         if (k < LO || k > HI) return;
@@ -843,56 +948,90 @@
         const s = LO + (HI - LO) * i / 5;
         _pfEl(svg, 'text', { x: X(s), y: H - mB + 15, 'text-anchor': 'middle', 'font-size': 9.5, fill: C.mut }, _pfNf(s));
       }
-      // breakevens of the ACTIVE view — an exit-day BE sits somewhere else than
-      // the expiry BE (time value still in the legs), so showing expiry's line
-      // while the cards read exit-day would be a lie.
       const tgtView = window._pfView === 'target' && cx;
       ((tgtView ? d.breakevens_target : d.breakevens) || []).forEach(b => {
+        if (b < LO || b > HI) return;
         _pfEl(svg, 'line', { x1: X(b), y1: mT, x2: X(b), y2: H - mB, stroke: C.amb, 'stroke-width': 1.6 });
         _pfEl(svg, 'text', { x: X(b), y: H - mB + 28, 'text-anchor': 'middle', 'font-size': 10, 'font-weight': 700, fill: C.amb }, 'BE ' + _pfNf(b));
       });
       const line = (arr, col, w, dash) => {
         let dd = ''; arr.forEach((p, i) => { dd += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1) + ' '; });
-        const o = { d: dd, fill: 'none', stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round' };
+        const o = { d: dd, fill: 'none', stroke: col, 'stroke-width': w, 'stroke-linejoin': 'round', 'clip-path': 'url(#pfClip)' };
         if (dash) o['stroke-dasharray'] = dash;
         _pfEl(svg, 'path', o);
       };
       if (ct) line(ct, C.blu, 1.9);
       if (cx) line(cx, C.amb, tgtView ? 2.2 : 1.5, '6 3');
       line(ce, C.pos, tgtView ? 1.5 : 2.2);
-      if (d.spot) {
+      if (d.spot && d.spot >= LO && d.spot <= HI) {
         _pfEl(svg, 'line', { x1: X(d.spot), y1: mT, x2: X(d.spot), y2: H - mB, stroke: C.txt, 'stroke-width': 1.4, 'stroke-opacity': .6 });
         _pfEl(svg, 'text', { x: X(d.spot), y: mT - 5, 'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 700, fill: C.txt }, 'Spot ' + _pfNf(d.spot));
       }
+      if (window._pfZoom && Math.abs(window._pfZoom.z - 1) > 0.01)
+        _pfEl(svg, 'text', { x: W - mR, y: mT - 6, 'text-anchor': 'end', 'font-size': 9, 'font-weight': 700, fill: C.blu }, window._pfZoom.z.toFixed(1) + '×');
       const hl = _pfEl(svg, 'line', { x1: 0, y1: mT, x2: 0, y2: H - mB, stroke: C.txt, 'stroke-width': 1, 'stroke-opacity': .3, visibility: 'hidden' });
       const hb = document.getElementById('pfHover');
-      const at = (arr, s) => { const i = Math.round((s - LO) / (HI - LO) * (arr.length - 1)); return arr[Math.max(0, Math.min(arr.length - 1, i))][1]; };
+      const at = (arr, s) => { const lo = arr[0][0], hi = arr[arr.length - 1][0]; const i = Math.round((s - lo) / (hi - lo) * (arr.length - 1)); return arr[Math.max(0, Math.min(arr.length - 1, i))][1]; };
       svg.addEventListener('mousemove', e => {
+        if (window._pfDrag) return;
         const r = svg.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W;
         const s = Math.max(LO, Math.min(HI, LO + (px - mL) / pw * (HI - LO)));
         hl.setAttribute('x1', X(s)); hl.setAttribute('x2', X(s)); hl.setAttribute('visibility', 'visible');
         const ve = at(ce, s);
-        hb.innerHTML = `NIFTY <b>${_pfNf(s)}</b> → expiry <b style="color:${ve >= 0 ? C.pos : C.neg}">${ve >= 0 ? '+' : ''}${_pfRs(ve)}</b>`
+        hb.innerHTML = `NIFTY <b>${_pfNf(s)}</b> → expiry <b style="color:${ve >= 0 ? C.pos : C.neg}">${ve >= 0 ? '+' : ''}${_pfRs(ve)} · ${(ppt(ve) >= 0 ? '+' : '') + ppt(ve).toFixed(1)}pt</b>`
           + (ct ? ` · aaj <b style="color:${C.blu}">${(at(ct, s) >= 0 ? '+' : '') + _pfRs(at(ct, s))}</b>` : '')
           + (cx ? ` · exit <b style="color:${C.amb}">${(at(cx, s) >= 0 ? '+' : '') + _pfRs(at(cx, s))}</b>` : '');
       });
       svg.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); hb.textContent = ''; });
+
+      // ── zoom (Alt+wheel at cursor) + drag-pan — bound ONCE per svg element ──
+      if (!svg._pfZoomBound) {
+        svg._pfZoomBound = true;
+        svg.addEventListener('wheel', e => {
+          if (!e.altKey) return;                               // plain scroll = page scroll
+          e.preventDefault();
+          const r = svg.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W;
+          const wn = _pfWin(window._pfData); const s = wn.lo + (px - mL) / pw * (wn.hi - wn.lo);
+          const Z = window._pfZoom; Z.c = s; Z.z = Math.max(0.4, Math.min(8, Z.z * (e.deltaY < 0 ? 1.15 : 1 / 1.15)));
+          _pfDrawPayoff(window._pfData);
+        }, { passive: false });
+        svg.style.cursor = 'grab';
+        svg.addEventListener('mousedown', e => {
+          const wn = _pfWin(window._pfData);
+          window._pfDrag = { x0: e.clientX, c0: (window._pfZoom.c != null ? window._pfZoom.c : (wn.lo + wn.hi) / 2), pw, span: wn.hi - wn.lo };
+          svg.style.cursor = 'grabbing';
+        });
+      }
+      // global drag listeners — bound ONCE ever (no per-open leak)
+      if (!window._pfZoomWinBound) {
+        window._pfZoomWinBound = true;
+        window.addEventListener('mousemove', e => {
+          const M = window._pfDrag; if (!M) return;
+          const s = document.getElementById('pfChart'); if (!s) return;
+          const r = s.getBoundingClientRect(); const dpx = (e.clientX - M.x0) / r.width * 940;
+          window._pfZoom.c = M.c0 - dpx / M.pw * M.span;
+          _pfDrawPayoff(window._pfData);
+        });
+        window.addEventListener('mouseup', () => {
+          if (window._pfDrag) { window._pfDrag = null; const s = document.getElementById('pfChart'); if (s) s.style.cursor = 'grab'; }
+        });
+      }
     }
 
-    async function _pfLoadMargin(idsCsv) {
+    async function _pfLoadMargin(qs) {
       try {
-        const rr = await fetch('/api/position-payoff-margin?ids=' + encodeURIComponent(idsCsv));
+        const rr = await fetch('/api/position-payoff-margin?' + qs);
         window._pfMargin = await rr.json();
       } catch (e) { window._pfMargin = { ok: false, msg: 'calc fail' }; }
       _pfPaintMargin(window._pfMargin);
     }
 
-    async function _pfLoadSeries(idsCsv) {
+    async function _pfLoadSeries(qs) {
       const wrap = document.getElementById('pfSeriesWrap');
       wrap.innerHTML = '<div style="font-size:11px;color:#8b949e;padding:10px;text-align:center">⏳ legs ke candles aa rahe…</div>';
       let s;
       try {
-        const r = await fetch('/api/position-legs-series?ids=' + encodeURIComponent(idsCsv));
+        const r = await fetch('/api/position-legs-series?' + qs);
         s = await r.json();
       } catch (e) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
       if (!s || !s.ok) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">' + ((s && s.msg) || 'series nahi mili') + '</div>'; return; }
@@ -901,24 +1040,52 @@
         <div style="font-size:11px;font-weight:600;color:#8b949e;margin:16px 0 4px;text-align:left">
           Combined Premium — net structure P&amp;L <span style="color:#6e7681;font-weight:400">(entry ${s.from} → ${s.to}, real 1-min)</span>
         </div>
-        <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 190" style="width:100%;height:auto"></svg></div>
+        <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 220" style="width:100%;height:auto"></svg></div>
         <div id="pfCombHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
+        <div id="pfExitRow" style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:8px;padding-top:9px;border-top:1px solid #30363d">
+          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Target (book profit)</div><div id="pfExTgt" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#3fb950">—</div></div>
+          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div><div id="pfExSl" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#f85149">—</div></div>
+          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700">—</div></div>
+          <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
+          <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
+          <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
+          <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:180px">Green (Target) / red (SL) line ko drag karo — jaise hi combined MTM chhue, poori group ek saath square off.</span>
+        </div>
         <div style="font-size:11px;font-weight:600;color:#8b949e;margin:16px 0 6px;text-align:left">
           Legs — standalone (${n}-view) <span style="color:#6e7681;font-weight:400">· har leg ka apna premium · dashed = entry · colour = favour me hai ya nahi</span>
         </div>
         <div id="pfGrid" style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:10px"></div>`;
       _pfDrawCombined(s);
       _pfDrawGrid(s);
+      // a CLOSED group can't auto-exit — show the past premium path, disable Apply
+      if (window._pfClosed) {
+        const ab = document.getElementById('pfExApply'), cb = document.getElementById('pfExClear');
+        if (ab) { ab.disabled = true; ab.style.opacity = '.45'; ab.style.cursor = 'not-allowed'; ab.title = 'position already closed'; }
+        if (cb) { cb.style.display = 'none'; }
+        const note = document.getElementById('pfExNote');
+        if (note) note.textContent = 'Ye group band ho chuka — combined premium ka past path (auto-exit sirf open group pe).';
+      }
     }
 
     function _pfDrawCombined(s) {
       const svg = document.getElementById('pfComb'); if (!svg || !s.combined.length) return;
-      const C = _PF.C, W = 940, H = 190, mL = 70, mR = 14, mT = 12, mB = 26;
+      window._pfSeries = s;                                  // for drag-redraw
+      const C = _PF.C, W = 940, H = 220, mL = 70, mR = 14, mT = 12, mB = 26;
       const pw = W - mL - mR, ph = H - mT - mB;
+      svg.innerHTML = '';                                    // redraw on drag
       const D = s.combined, qty = s.legs[0] ? s.legs[0].qty : 1;
       const vals = D.map(p => p[1] * qty);
-      let yT = Math.max(...vals), yB = Math.min(...vals); const pad = (yT - yB) * .15 || 100; yT += pad; yB -= pad;
+      let yT = Math.max(...vals), yB = Math.min(...vals);
+      // #02 init the SL/Target levels (₹, whole position) so both lines sit on-chart
+      if (!window._pfExit) {
+        const mag = Math.max(Math.abs(yT), Math.abs(yB), 500);
+        window._pfExit = { tgt: Math.round(mag * 0.6 / 100) * 100, sl: -Math.round(mag * 0.6 / 100) * 100 };
+      }
+      const EX = window._pfExit;
+      yT = Math.max(yT, EX.tgt); yB = Math.min(yB, EX.sl);   // keep both lines visible
+      const pad = (yT - yB) * .15 || 100; yT += pad; yB -= pad;
       const X = i => mL + i / Math.max(D.length - 1, 1) * pw, Y = v => mT + (yT - v) / (yT - yB) * ph;
+      window._pfCombGeo = { mT, ph, yT, yB, qty, H };         // drag pixel → ₹ value
       const y0 = Y(0);
       [yT - pad, 0, yB + pad].forEach(v => {
         _pfEl(svg, 'line', { x1: mL, y1: Y(v), x2: W - mR, y2: Y(v), stroke: C.grid, 'stroke-width': 1 });
@@ -944,16 +1111,100 @@
       const lastV = vals[vals.length - 1];
       _pfEl(svg, 'circle', { cx: X(D.length - 1), cy: Y(lastV), r: 4, fill: lastV >= 0 ? C.pos : C.neg });
       _pfEl(svg, 'text', { x: X(D.length - 1) - 6, y: Y(lastV) - 8, 'text-anchor': 'end', 'font-size': 10, 'font-weight': 700, fill: lastV >= 0 ? C.pos : C.neg }, (lastV >= 0 ? '+' : '') + _pfRs(lastV));
+      // #02 Target + SL draggable lines
+      const drawLvl = (id, val, col, lab) => {
+        const y = Y(val);
+        _pfEl(svg, 'line', { x1: mL, y1: y, x2: W - mR, y2: y, stroke: col, 'stroke-width': 1.6, 'stroke-dasharray': '6 4' });
+        const band = _pfEl(svg, 'rect', { x: mL, y: y - 7, width: pw, height: 14, fill: 'transparent', style: 'cursor:ns-resize' });
+        band.dataset.lv = id;
+        const pt = val / qty;
+        const tag = lab + ' ' + (val >= 0 ? '+' : '') + Math.round(val / 1000) + 'k·' + (pt >= 0 ? '+' : '') + pt.toFixed(0) + 'p';
+        const tw = 10 + tag.length * 5.3;
+        _pfEl(svg, 'rect', { x: W - mR - tw, y: y - 9, width: tw, height: 18, rx: 4, fill: col });
+        _pfEl(svg, 'text', { x: W - mR - tw / 2, y: y + 4, 'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 700, fill: '#0d1117', 'font-family': 'ui-monospace,monospace' }, tag);
+      };
+      drawLvl('tgt', EX.tgt, C.pos, 'Target');
+      drawLvl('sl', EX.sl, C.neg, 'SL');
       const hl = _pfEl(svg, 'line', { x1: 0, y1: mT, x2: 0, y2: H - mB, stroke: C.txt, 'stroke-width': 1, 'stroke-opacity': .3, visibility: 'hidden' });
       const hb = document.getElementById('pfCombHover');
       svg.addEventListener('mousemove', e => {
+        if (window._pfCombDrag) return;
         const r = svg.getBoundingClientRect(); const px = (e.clientX - r.left) / r.width * W;
         let i = Math.round((px - mL) / pw * (D.length - 1)); i = Math.max(0, Math.min(D.length - 1, i));
         hl.setAttribute('x1', X(i)); hl.setAttribute('x2', X(i)); hl.setAttribute('visibility', 'visible');
         const v = D[i][1] * qty;
-        hb.innerHTML = `<b>${_pfIST(D[i][0])}</b> · net P&L <b style="color:${v >= 0 ? C.pos : C.neg}">${v >= 0 ? '+' : ''}${_pfRs(v)}</b> (${D[i][1].toFixed(2)}/unit)`;
+        hb.innerHTML = `<b>${_pfIST(D[i][0])}</b> · net P&L <b style="color:${v >= 0 ? C.pos : C.neg}">${v >= 0 ? '+' : ''}${_pfRs(v)} · ${(D[i][1] >= 0 ? '+' : '') + D[i][1].toFixed(1)}pt</b>`;
       });
       svg.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); hb.textContent = ''; });
+      _pfUpdExitRow(lastV);
+      // drag the SL/Target lines — svg-level bound once per element, window-level once ever
+      if (!svg._pfCombBound) {
+        svg._pfCombBound = true;
+        svg.addEventListener('mousedown', e => {
+          const t = e.target; if (t && t.dataset && t.dataset.lv) { window._pfCombDrag = t.dataset.lv; e.preventDefault(); }
+        });
+      }
+      if (!window._pfCombWinBound) {
+        window._pfCombWinBound = true;
+        window.addEventListener('mousemove', e => {
+          if (!window._pfCombDrag) return;
+          const g = window._pfCombGeo, sv = document.getElementById('pfComb'); if (!g || !sv) return;
+          const r = sv.getBoundingClientRect(); const py = (e.clientY - r.top) / r.height * g.H;
+          let val = g.yT - (py - g.mT) / g.ph * (g.yT - g.yB); val = Math.round(val / 100) * 100;
+          if (window._pfCombDrag === 'tgt') window._pfExit.tgt = Math.max(val, 100);
+          else window._pfExit.sl = Math.min(val, -100);
+          if (window._pfSeries) _pfDrawCombined(window._pfSeries);
+        });
+        window.addEventListener('mouseup', () => { window._pfCombDrag = null; });
+      }
+    }
+
+    function _pfUpdExitRow(liveVal) {
+      const EX = window._pfExit; if (!EX) return;
+      const qty = (window._pfCombGeo && window._pfCombGeo.qty) || 1;
+      const set = (id, v, col) => {
+        const e = document.getElementById(id); if (!e) return;
+        const pt = v / qty;
+        e.innerHTML = (v >= 0 ? '+' : '') + _pfRs(v) + ' · ' + (pt >= 0 ? '+' : '') + pt.toFixed(1) + 'p';
+        if (col) e.style.color = col;
+      };
+      set('pfExTgt', EX.tgt, _PF.C.pos);
+      set('pfExSl', EX.sl, _PF.C.neg);
+      const le = document.getElementById('pfExLive');
+      if (le && liveVal != null) {
+        const pt = liveVal / qty;
+        le.innerHTML = (liveVal >= 0 ? '+' : '') + _pfRs(liveVal) + ' · ' + (pt >= 0 ? '+' : '') + pt.toFixed(1) + 'p';
+        le.style.color = liveVal >= 0 ? _PF.C.pos : _PF.C.neg;
+      }
+    }
+
+    // #02 arm/clear the combined-MTM auto-exit rule for this group (PAPER; engine = trader_dashboard)
+    async function _pfExitApply() {
+      const EX = window._pfExit, qs = window._pfQS; if (!EX || !qs || window._pfClosed) return;
+      const btn = document.getElementById('pfExApply');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ applying…'; }
+      let j = null;
+      try {
+        const r = await fetch('/api/position-exit-rule', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ qs, target_rs: EX.tgt, sl_rs: EX.sl })
+        });
+        j = await r.json();
+      } catch (e) { j = { ok: false, msg: e.message }; }
+      if (btn) {
+        btn.disabled = false;
+        if (j && j.ok) { btn.textContent = '✓ Auto-exit armed (paper)'; btn.style.background = '#238636'; setTimeout(() => { btn.textContent = 'Apply auto-exit rule'; btn.style.background = '#1f6feb'; }, 2400); }
+        else btn.textContent = 'Apply auto-exit rule';
+      }
+      const note = document.getElementById('pfExNote');
+      if (note) note.innerHTML = (j && j.ok)
+        ? '✓ Rule armed — Target <b style="color:#3fb950">' + _pfRs(EX.tgt) + '</b> / SL <b style="color:#f85149">' + _pfRs(EX.sl) + '</b>. Combined MTM chhute hi poori group square off.'
+        : '<span style="color:#f85149">' + ((j && j.msg) || 'apply fail') + '</span>';
+    }
+    async function _pfExitClear() {
+      const qs = window._pfQS; if (!qs) return;
+      try { await fetch('/api/position-exit-rule?' + qs, { method: 'DELETE' }); } catch (e) {}
+      const note = document.getElementById('pfExNote'); if (note) note.textContent = 'Auto-exit rule cleared for this group.';
     }
 
     function _pfDrawGrid(s) {
