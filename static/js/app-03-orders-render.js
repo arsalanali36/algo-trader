@@ -544,6 +544,13 @@
         if (window._ordInstrFilter) {
           _cfHtml += `<span style="font-size:11px;font-weight:400;color:#b083f0;margin-left:6px;cursor:pointer" onclick="_ordInstrClear()" title="Instrument filter hatao (All)">▸ Instrument: ${window._ordInstrFilter} ✕</span>`;
         }
+        // Strategy filter (top #ord-strat dropdown — what a strategy-chip Ctrl+click sets):
+        // give it a clearable ✕ pill here too, same as instrument/exit.
+        const _stratSel = document.getElementById('ord-strat');
+        if (_stratSel && _stratSel.value) {
+          const _sTxt = String(((_stratSel.options[_stratSel.selectedIndex] || {}).text) || _stratSel.value).replace(/</g, '&lt;');
+          _cfHtml += `<span style="font-size:11px;font-weight:400;color:#58a6ff;margin-left:6px;cursor:pointer" onclick="_ordStratFilterClear()" title="Strategy filter hatao (All)">▸ Strategy: ${_sTxt} ✕</span>`;
+        }
         _cf.innerHTML = _cfHtml;
       }
       if (window._completedSortCol) {

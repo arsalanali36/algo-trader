@@ -414,6 +414,14 @@
       window._ordInstrFilter = '';
       if (typeof renderCachedOrders === 'function') renderCachedOrders();
     };
+    // Clear the #ord-strat (top) strategy filter — the one a strategy-chip Ctrl+click sets.
+    // Gives that filter the same ✕-pill clear affordance as instrument/exit, so it can be
+    // removed right from the Completed-trades header (not only via the top dropdown).
+    window._ordStratFilterClear = function () {
+      const s = document.getElementById('ord-strat');
+      if (s) s.value = '';
+      if (typeof ordersRender === 'function') ordersRender();
+    };
     // Collapse-all / Expand-all the Completed-trades groups (next to the Group dropdown).
     // If every current group is already expanded → collapse all; otherwise expand all.
     window.toggleAllGroups = function () {
