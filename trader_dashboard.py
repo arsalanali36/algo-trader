@@ -2976,7 +2976,18 @@ def _payoff_spot(legs):
             import universe
             sid, seg = universe.equity_secid(root), "NSE_EQ"
         if sid:
-            return float(_rest_ltp_fallback(sid, seg) or 0) or None
+            v = float(_rest_ltp_fallback(sid, seg) or 0)
+            if v:
+                return v
+    except Exception:
+        pass
+    # last resort — a stale index price (post-market / rate-limit) still positions
+    # the payoff curve; a None spot skips the today-curve + IV entirely.
+    try:
+        import shared_ltp_cache
+        v = shared_ltp_cache.get_index(root, max_age=1800)
+        if v:
+            return float(v)
     except Exception:
         pass
     return None

@@ -206,6 +206,8 @@ def payoff_today(legs, S, T):
 def attach_ivs(legs, spot, T):
     """Derive each leg's implied vol from its live LTP (falls back to entry px).
     Mutates legs (adds 'iv'). Returns the average IV, or None."""
+    for L in legs:
+        L.setdefault("iv", None)      # key must exist even if we early-return below
     bs = _bs()
     if not bs or not spot or T is None or T <= 0:
         return None
@@ -360,7 +362,10 @@ def analyse(rows, spot, now_ist=None, with_margin=False, target_days=None):
     ys = [p[1] for p in curve]
     res = {
         "ok": True,
-        "legs": [{k: L[k] for k in ("trad_sym", "sec_id", "strike", "opt", "side", "qty", "entry", "ltp", "iv")} for L in legs],
+        # L.get (not L[k]): if spot was None, attach_ivs was skipped so 'iv' is
+        # absent — L[k] would KeyError and break the whole panel (the docstring
+        # promises this never raises). Any missing key → None instead.
+        "legs": [{k: L.get(k) for k in ("trad_sym", "sec_id", "strike", "opt", "side", "qty", "entry", "ltp", "iv")} for L in legs],
         "spot": spot,
         "expiry": exp.strftime("%Y-%m-%d") if exp else None,
         "tte_days": round(T * 365, 2) if T else None,
