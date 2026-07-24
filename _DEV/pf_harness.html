@@ -1,0 +1,106 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Payoff harness</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;margin:0}#log{position:fixed;top:0;right:0;background:#161b22;border:1px solid #30363d;padding:6px;font:11px monospace;max-width:360px;z-index:99999;white-space:pre-wrap}</style>
+</head><body>
+<div id="log">harness booting…</div>
+<script>
+// ---- mock backend data (matches _core/payoff.analyse + /api/position-legs-series shapes) ----
+function mkCurve(fn){ var a=[],lo=22800,hi=25200; for(var i=0;i<=400;i++){var S=lo+(hi-lo)*i/400; a.push([Math.round(S*100)/100, Math.round(fn(S))]);} return a; }
+var QTY=75, K=24000, credit=163;
+function expiryPnL(S){ var t=0;
+  t += (128 - Math.max(S-K,0))*QTY;      // SELL 24000 CE @128
+  t += (115 - Math.max(K-S,0))*QTY;      // SELL 24000 PE @115
+  t += (Math.max(S-24200,0) - 42)*QTY;   // BUY 24200 CE @42
+  t += (Math.max(23800-S,0) - 38)*QTY;   // BUY 23800 PE @38
+  return t; }
+function todayPnL(S){ var n=9,sum=0,w=110; for(var i=0;i<n;i++){var d=(i/(n-1)-0.5)*2*w; sum+=expiryPnL(S+d);} return sum/n; }
+function exitPnL(S){ var n=9,sum=0,w=55; for(var i=0;i<n;i++){var d=(i/(n-1)-0.5)*2*w; sum+=expiryPnL(S+d);} return sum/n; }
+var MOCK_PAYOFF={ ok:true, legs:[
+    {trad_sym:'NIFTY-31Jul2026-24000-CE',sec_id:'111',strike:24000,opt:'CE',side:'SELL',qty:75,entry:128,ltp:120,iv:0.14},
+    {trad_sym:'NIFTY-31Jul2026-24000-PE',sec_id:'222',strike:24000,opt:'PE',side:'SELL',qty:75,entry:115,ltp:110,iv:0.15},
+    {trad_sym:'NIFTY-31Jul2026-24200-CE',sec_id:'333',strike:24200,opt:'CE',side:'BUY',qty:75,entry:42,ltp:38,iv:0.13},
+    {trad_sym:'NIFTY-31Jul2026-23800-PE',sec_id:'444',strike:23800,opt:'PE',side:'BUY',qty:75,entry:38,ltp:34,iv:0.16}],
+  spot:24035, expiry:'2026-07-31', tte_days:7, avg_iv:0.145,
+  curve_expiry:mkCurve(expiryPnL), curve_today:mkCurve(todayPnL), curve_target:mkCurve(exitPnL),
+  breakevens:[23840,24170], breakevens_target:[23880,24140],
+  max_profit:12225, max_loss:-2775, pop:0.61, pop_target:0.58,
+  max_profit_target:6800, max_loss_target:-2600, target_days:0.05, total_tax:359, scan:[22800,25200],
+  pnl_now_today:448, pnl_now_expiry:520 };
+function mkSeries(){ var legs=MOCK_PAYOFF.legs.map(function(l){
+    var n=90, ser=[], t0=1785000000; for(var i=0;i<n;i++){ var drift=(i/n)*(l.side==='SELL'?-0.22:0.16);
+      var v=l.entry*(1+Math.sin(i/13+l.strike/50)*0.14+drift); ser.push([t0+i*60, Math.round(Math.max(v,1)*100)/100]); }
+    return {trad_sym:l.trad_sym, side:l.side, opt:l.opt, strike:l.strike, qty:l.qty, entry:l.entry, series:ser}; });
+  // combined = net per-unit at shared timestamps
+  var n=90, comb=[], t0=1785000000, en=0; legs.forEach(function(l){ en += (l.side==='SELL'?l.entry:-l.entry); });
+  for(var i=0;i<n;i++){ var net=en; legs.forEach(function(l){ net += (l.side==='SELL'?-1:1)*l.series[i][1]; }); comb.push([t0+i*60, Math.round(net*100)/100]); }
+  return { ok:true, legs:legs, combined:comb, entry_net:en, from:'2026-07-24', to:'2026-07-24' }; }
+var MOCK_SERIES=mkSeries();
+var MOCK_MARGIN={ ok:true, hedged:81250, standalone:192000, benefit:110750 };
+var MOCK_CLOSED=JSON.parse(JSON.stringify(MOCK_PAYOFF));
+MOCK_CLOSED.closed=true; MOCK_CLOSED.curve_today=null; MOCK_CLOSED.curve_target=null; MOCK_CLOSED.pop_target=null; MOCK_CLOSED.avg_iv=null;
+var MOCK_GROUPS={ ok:true, groups:[
+  {group_id:'STRAD_open1', status:'open', underlying:'NIFTY', label:'NIFTY · 4 legs · hedged · OPEN',
+    legs:[{side:'SELL',opt:'CE',strike:24000,entry:128,flat:false},{side:'SELL',opt:'PE',strike:24000,entry:115,flat:false},{side:'BUY',opt:'CE',strike:24200,entry:42,flat:false},{side:'BUY',opt:'PE',strike:23800,entry:38,flat:false}], ids:['1','2','3','4']},
+  {group_id:'COND_closed1', status:'closed', underlying:'NIFTY', label:'NIFTY · 4 legs · hedged · closed',
+    legs:[{side:'SELL',opt:'CE',strike:24200,entry:52,flat:true},{side:'BUY',opt:'CE',strike:24400,entry:22,flat:true},{side:'SELL',opt:'PE',strike:23800,entry:48,flat:true},{side:'BUY',opt:'PE',strike:23600,entry:20,flat:true}], ids:['9','10','11','12']}
+]};
+
+// ---- stub fetch ----
+var _origFetch=window.fetch;
+window.fetch=function(url,opts){
+  var u=String(url);
+  var isClosed = u.indexOf('group_id=COND_closed1')>=0;
+  var data = u.indexOf('position-groups')>=0 ? MOCK_GROUPS
+    : u.indexOf('position-payoff-margin')>=0 ? MOCK_MARGIN
+    : u.indexOf('position-payoff')>=0 ? (isClosed?MOCK_CLOSED:MOCK_PAYOFF)
+    : u.indexOf('position-legs-series')>=0 ? MOCK_SERIES
+    : u.indexOf('position-exit-rule')>=0 ? {ok:true, msg:'armed'}
+    : {ok:false,msg:'no stub'};
+  return Promise.resolve({ json:function(){return Promise.resolve(data);} });
+};
+var errs=[]; window.addEventListener('error',function(e){errs.push(e.message);});
+</script>
+<script src="/static/js/app-02-webhook-orders.js"></script>
+<script>
+setTimeout(function(){
+  var L=document.getElementById('log');
+  try{
+    openPayoffPanel('1,2,3,4','Test Iron Fly',null);
+    setTimeout(function(){
+      var chk=[];
+      // ---- 2-col layout ----
+      var tc=document.querySelector('.pf-2col');
+      chk.push('[LAYOUT] .pf-2col present: '+!!tc);
+      chk.push('2col cols: '+(tc?getComputedStyle(tc).gridTemplateColumns.split(' ').length:0));
+      chk.push('left has cards: '+!!document.querySelector('.pf-2col .pf-col:nth-child(1) #pfCards'));
+      chk.push('left has payoff: '+!!document.querySelector('.pf-2col .pf-col:nth-child(1) #pfChart'));
+      chk.push('right has combo: '+!!document.querySelector('.pf-2col .pf-col:nth-child(2) #pfComb'));
+      chk.push('legSlot OUTSIDE 2col (full width): '+ (document.getElementById('pfLegSlot') && !document.getElementById('pfLegSlot').closest('.pf-2col')));
+      chk.push('leg cards: '+document.querySelectorAll('#pfGrid svg').length);
+      chk.push('legGrid autofit cols: '+getComputedStyle(document.getElementById('pfGrid')).gridTemplateColumns.split(' ').length);
+      // ---- header extras ----
+      chk.push('prev/next btns: '+document.querySelectorAll('[onclick^="_pfNav"]').length);
+      chk.push('header P&L: '+(document.getElementById('pfHdrPnl')||{}).textContent);
+      chk.push('sub-line: '+(document.getElementById('pfSub')||{}).textContent);
+      chk.push('SL/Tgt bands: '+document.querySelectorAll('#pfComb rect[data-lv]').length);
+      chk.push('leg strip chips: '+document.querySelectorAll('#pfLegStrip span').length);
+      chk.push('status: '+(document.getElementById('pfStatus')||{}).textContent);
+      chk.push('apply disabled(open): '+!!document.getElementById('pfExApply').disabled);
+      try{ _pfZoomBtn('in'); chk.push('zoom z: '+window._pfZoom.z.toFixed(2)); }catch(e){chk.push('ZOOM ERR:'+e.message);}
+      // ---- Next › nav → CLOSED group ----
+      try{ _pfNav(1); }catch(e){chk.push('NAV ERR:'+e.message);}
+      setTimeout(function(){
+        chk.push('--- after Next › ---');
+        chk.push('sel value: '+document.getElementById('pfGrpSel').value);
+        chk.push('status: '+(document.getElementById('pfStatus')||{}).textContent);
+        chk.push('closed flag: '+window._pfClosed);
+        chk.push('header P&L (closed): '+(document.getElementById('pfHdrPnl')||{}).textContent);
+        chk.push('apply disabled(closed): '+!!document.getElementById('pfExApply').disabled);
+        chk.push('errors: '+(errs.length?errs.join('|'):'none'));
+        L.textContent=chk.join('\n');
+        L.style.color=errs.length?'#f85149':'#3fb950';
+      },450);
+    },450);
+  }catch(e){ L.textContent='THROW: '+e.message+'\n'+e.stack; L.style.color='#f85149'; }
+},300);
+</script>
+</body></html>

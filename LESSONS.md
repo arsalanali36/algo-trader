@@ -4060,3 +4060,60 @@ hit the broker `/v2/orders` the daemon polls → the disk file stays empty → b
 hedge path. Straddle won't re-fire though flat → `reconcile_open` should have healed the record;
 check order_store `_my_open_qty` for the SELL legs. Chart blank on a hedged straddle → `combined`
 is summing/guarding on all legs instead of SELL-only.
+
+---
+
+## TRAP #160 — payoff panel "stuck loading" was a backend KeyError, not the layout I'd just changed (2026-07-24)
+
+**Symptom (user, live):** the Orders 📊 Payoff panel opened for an OPEN 4-leg group but sat on
+"loading…" forever. I had JUST shipped a 2-column layout refactor of that panel, so the obvious
+suspect was my frontend change.
+
+**It wasn't the frontend.** Diagnosis that actually found it:
+1. VPS log: `/api/position-payoff?group_id=…` returned **200** — so the server responded.
+2. Reproduced the route server-side in Python → `payoff.analyse` returned **ok:True valid JSON**
+   (checked with Flask's own serializer: no NaN/Infinity, strict-parseable). So the response was fine.
+3. Fed the **REAL response JSON** into the CURRENT app-02 in a repro harness → it rendered
+   **perfectly, 0 errors**. So the frontend code was fine too.
+4. Only when I measured the FULL route path with a cache-clear did it throw: **`KeyError: 'iv'`**
+   in `payoff.analyse`.
+
+**Root:** `analyse` does `avg_iv = attach_ivs(legs, spot, T) if spot else None`. When `spot` is
+None (post-market the index-LTP fetch intermittently fails), `attach_ivs` is **skipped entirely**,
+so no leg ever gets an `'iv'` key — and the return line `{k: L[k] for k in (…, "iv")}` then does
+`L["iv"]` → **KeyError** → analyse throws → the route's `except` returns `{ok:false}` → the
+frontend's fetch branch leaves the panel on "loading…". **Intermittent by design:** when the index
+spot resolved, every leg got an iv and it rendered fine (that's why my repro worked); when spot was
+None it crashed. A **pre-existing** bug (the payoff module, untouched by the layout work) that only
+surfaced now because OPEN groups post-market hit the None-spot path (closed groups skip LTP attach
+and had a spot). The docstring even promised "Never raises" — and then did `L[key]`.
+
+**Fixes:** (a) serialization uses `L.get(k)` (missing key → None, honouring "never raises");
+(b) `attach_ivs` `setdefault`s `iv=None` on every leg BEFORE any early-return; (c) `_payoff_spot`
+tries a wide-stale index cache (`get_index(max_age=86400)`) BEFORE the slow rate-limited REST, so
+post-market a spot is (almost) always available and the today-curve/IV don't silently vanish.
+
+**Guards / lessons:**
+- A function documented "never raises / returns None for anything it can't compute" MUST use
+  `dict.get`, not `dict[key]`, for any key that another branch sets optionally. The promise has to
+  be enforced in code, not trusted.
+- **Don't assume the most-recently-changed layer is the culprit.** The layout was the newest change,
+  but the bug was in an untouched backend module. The decisive move was proving each layer in
+  isolation (route returns valid JSON ✓, frontend renders the real response ✓ → therefore the fault
+  is *between* them, intermittently) rather than editing the suspect.
+- **Reproduce with the REAL payload, not a clean mock.** The mock had every field populated so it
+  rendered; the real intermittent case (spot=None → no iv) is exactly what a hand-written mock
+  won't capture.
+
+**Same-session non-bug:** the user then reported the whole page "shifted right / cut off"
+(horizontal overflow) as another regression. It wasn't — the panel's injected `<style>` is
+`.pf-*`/`#pfGrid`-scoped (grep confirmed zero collisions with the main page), the one button I'd
+added to the Completed-Trades header was already present in an earlier working screenshot, and every
+recent change since then was backend-only. Cause was browser state (DevTools device-mode "Responsive
+320" + Slow-4G throttling left on). **Lesson: verify a reported regression against the actual diff +
+scope before touching more code** — "it broke right after your change" is a hypothesis, not a fact.
+
+**Also fixed this session (payoff perf, same class as legs-series):** OPEN-group payoff took ~8s
+because `_payoff_attach_ltp` fetched each leg's LTP with a serial rate-limited REST call — now feed
++ cache first, then ONE batched `/v2/marketfeed/ltp` (reuses `_prewarm_option_ltps`, Rule 6B); plus
+a 30s `_payoff_cache` and 120s legs-series cache so rapid group-switching is instant.
