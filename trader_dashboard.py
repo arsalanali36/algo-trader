@@ -3925,7 +3925,7 @@ def _straddle_strategy_id(source):
     return "straddle_manual"      # B — Quick Order manual
 
 
-def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print):
+def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print, retries=0):
     """One batched Dhan /v2/marketfeed/ltp call for a list of option sec_ids →
     warms shared_ltp_cache so a subsequent per-strike walk (compute_hedge_target)
     hits the cache (max_age) instead of doing N serial, rate-limited quote_fn
@@ -3951,7 +3951,18 @@ def _prewarm_option_ltps(sec_ids, seg="NSE_FNO", log=print):
         token, cid = _creds()
         headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _drl.set_context("Straddle:HedgePrewarm")
-        if not _drl.acquire("ltp"):
+        # the ltp slot is often held by pos_monitor's open-position polling (esp.
+        # with carried positions) → a single acquire frequently returns False and
+        # the whole prewarm bails, leaving the preview's LTPs blank. `retries` (used
+        # by the user-facing preview) spins briefly for the slot; ONE batched call
+        # then fills everything. retries=0 (fire path) keeps the old fail-fast.
+        _got = _drl.acquire("ltp")
+        _n = 0
+        while (not _got) and _n < int(retries or 0):
+            _time.sleep(0.5)
+            _got = _drl.acquire("ltp")
+            _n += 1
+        if not _got:
             return 0   # gate saturated / 429 cooldown — walk will REST-fallback per strike
         r = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
                       json={seg: ids}, headers=headers, timeout=6)
@@ -4079,7 +4090,10 @@ def _straddle_preview(symbol, lots, spec):
     except Exception:
         pass
     try:
-        _prewarm_option_ltps([lg["sec_id"] for lg in legs])
+        # retries: user-facing preview waits briefly for the rate-limit slot (held
+        # by pos_monitor's open-position LTP polling) so the batched fetch fills
+        # every leg's LTP instead of showing blanks.
+        _prewarm_option_ltps([lg["sec_id"] for lg in legs], retries=4)
     except Exception:
         pass
     lot = int(legs[0]["lot"] or 0)
