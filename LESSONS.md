@@ -4117,3 +4117,50 @@ scope before touching more code** — "it broke right after your change" is a hy
 because `_payoff_attach_ltp` fetched each leg's LTP with a serial rate-limited REST call — now feed
 + cache first, then ONE batched `/v2/marketfeed/ltp` (reuses `_prewarm_option_ltps`, Rule 6B); plus
 a 30s `_payoff_cache` and 120s legs-series cache so rapid group-switching is instant.
+
+---
+
+## TRAP #161 — straddle leg-window LTP blank/hung: `acquire()` BLOCKS, a retry-loop of them = multi-minute hang; off-market LTP is a platform limit (2026-07-24)
+
+**Symptom:** new Quick-Order straddle **leg-builder** preview showed strikes + hedged margin fine,
+but every leg's **LTP was `—`**, and stepping a wing sometimes froze the panel. Deployed a "bounded
+retry for the rate-limit slot" fix → made it WORSE (panel hung).
+
+**Root — four compounding things, none of them my new code being "wrong":**
+1. **`dhan_rate_limiter.acquire(priority, timeout=8.0)` BLOCKS** up to its timeout, polling for a
+   slot — it does NOT return False immediately. During a Dhan **429 cooldown** the non-order cap is
+   **0**, so `acquire("ltp")` blocks the FULL 8s then returns False. My "retry" fix looped
+   `acquire()` 18× → **18 × 8s = ~144s hang**. A retry-loop around a blocking acquire is a
+   time-bomb. (Reverted.)
+2. **Per-leg REST fallback multiplied it.** `_straddle_lltp` did a cache read then a per-leg
+   `_rest_ltp_fallback` — each of those *also* blocks ~8s in the cooldown and returns None → 4 legs
+   × 8s = ~32s per preview even without my retry loop. That was the ORIGINAL blank-LTP hang.
+3. **`ltp_poller` is market-hours-gated** (`if _market_hours()` in its loop) → it does NOT poll
+   off-market, so `request_watch` warms nothing off-market (the cache stays cold for arbitrary
+   preview strikes).
+4. **Persistent off-market cooldown, self-inflicted by the open dashboard.** With the Orders page
+   open, positions-LTP + the straddle preview each hit Dhan every ~3s; off-market (poller idle)
+   these go straight to REST → 429 → `note_429()` → the 8s cooldown is continuously *re-extended*,
+   so `acquire("ltp", 8s)` stayed False even 30s after any single 429. Off-market LTP is therefore
+   genuinely un-fetchable while the dashboard is polling — **a platform limit, not a code bug.**
+
+**Fix (money-path-adjacent display path):** preview gets LTP the SAME way `/api/option-ltp` does —
+register the leg sec_ids with the ONE batched **`ltp_poller.request_watch`** (rate-limit-respecting,
+TRAP #2 pattern) + read **cache-only** (`shared_ltp_cache.get`, no per-leg REST) + a **short 1.5s
+best-effort** `_prewarm_option_ltps(acq_timeout=1.5)` for an instant fill when a slot is free.
+Result: preview NEVER blocks; **during market hours** the active poller warms the strikes and LTP
+shows live (the real use-case); **off-market** LTP degrades to `—` but strikes + margin + net still
+render and the request returns fast. Strike itself is computed client-side (`ATM ± offset×step`, atm/
+step from the scrip master via the preview) so `+/-` always updates the strike regardless of LTP.
+
+**Guards / lessons:**
+- **Know whether a gate BLOCKS or returns immediately before you loop on it.** Read
+  `dhan_rate_limiter.acquire` — it blocks to `timeout`. Never wrap a blocking acquire in a retry
+  loop; pass a SHORT timeout for best-effort paths, the default for must-succeed paths.
+- **For any repeated per-strike LTP need, use `ltp_poller.request_watch` + cache, not a per-request
+  Dhan call.** The batched poller is THE answer to "many callers hitting the same endpoint" (TRAP #2
+  family). A per-request fetch competes with the poller and loses.
+- **Off-market LTP is a platform limit** (poller market-gated + Dhan cooldown from the app's own
+  polling). Don't chase it as a bug; make the path fast + honest (`—`), and rely on market-hours.
+- **When a "fix" makes the symptom worse, suspect a blocking primitive.** The retry made it hang —
+  the tell that `acquire` wasn't the fast no-op I assumed.
