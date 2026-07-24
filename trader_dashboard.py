@@ -3988,7 +3988,222 @@ def _straddle_leg_open(strategy_id, sec_id, trad_sym):
         return None
 
 
-def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
+def _strike_of(tsym):
+    """Best-effort strike int from a Dhan trad_sym (e.g. NIFTY-Jul2026-24050-CE)."""
+    try:
+        return int(float(str(tsym).split("-")[-2]))
+    except Exception:
+        return None
+
+
+def _resolve_straddle_legs(symbol, spot, legs_spec):
+    """Resolve a UI leg spec → concrete contracts. Each spec leg:
+        {side: SELL|BUY, opt_type: CE|PE, offset: int>=0 (OTM strikes from ATM)}
+    `offset` is ALWAYS a non-negative OTM magnitude — dhan_master.get_option_contract
+    handles direction per opt_type (CE up, PE down); we NEVER pass a negative PE
+    offset (TRAP #140 / architecture_audit PE-OFFSET-SIGN). Returns (legs, err),
+    legs = [{opt_type, side, offset, sec_id, trad_sym, lot}]  err=None on success."""
+    import dhan_master
+    out, lot0 = [], None
+    for sp in (legs_spec or []):
+        side = str(sp.get("side", "")).upper()
+        ot = str(sp.get("opt_type", "")).upper()
+        off = abs(int(sp.get("offset", 0)))   # OTM magnitude — never negative (pe-offset-ok: magnitude only)
+        if side not in ("SELL", "BUY") or ot not in ("CE", "PE"):
+            return None, f"bad leg {side}/{ot}"
+        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, ot, off)
+        if not sec:
+            return None, f"{ot} {'+' if ot == 'CE' else '-'}{off} contract resolve fail"
+        if lot:
+            lot0 = int(lot)
+        out.append({"opt_type": ot, "side": side, "offset": off,
+                    "sec_id": str(sec), "trad_sym": tsym, "lot": int(lot or 0)})
+    if not out:
+        return None, "koi leg select nahi hua"
+    if not lot0:
+        return None, "lot size resolve nahi hua"
+    for lg in out:                     # backfill any leg whose own lot came back 0
+        lg["lot"] = lg["lot"] or lot0
+    return out, None
+
+
+def _straddle_lltp(sec):
+    """Best-effort live premium for one option (shared cache → REST). None on fail."""
+    try:
+        import shared_ltp_cache as _s
+        v = _s.get(str(sec), max_age=20)
+        if v:
+            return float(v)
+    except Exception:
+        pass
+    try:
+        return float(_rest_ltp_fallback(sec, "NSE_FNO") or 0) or None
+    except Exception:
+        return None
+
+
+def _straddle_preview(symbol, lots, spec):
+    """Read-only preview for the leg-window: per-leg strike/LTP + net credit +
+    real hedged basket margin. NO order placed. Returns a dict for jsonify."""
+    import risk_gate as rg
+    symbol = str(symbol).upper()
+    lots = max(1, int(lots or 1))
+    if symbol not in ("NIFTY", "BANKNIFTY"):
+        return {"ok": False, "msg": f"{symbol} supported nahi"}
+    spot = _trigger_spot_now(symbol)
+    if not spot or spot <= 0:
+        return {"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"}
+    legs, err = _resolve_straddle_legs(symbol, spot, spec)
+    if err:
+        return {"ok": False, "msg": err}
+    try:
+        _prewarm_option_ltps([lg["sec_id"] for lg in legs])
+    except Exception:
+        pass
+    lot = int(legs[0]["lot"] or 0)
+    q = lots * lot
+    out_legs, rows, net, all_ltp = [], [], 0.0, True
+    for lg in legs:
+        ltp = _straddle_lltp(lg["sec_id"])
+        out_legs.append({"side": lg["side"], "opt_type": lg["opt_type"], "offset": lg["offset"],
+                         "trad_sym": lg["trad_sym"], "strike": _strike_of(lg["trad_sym"]), "ltp": ltp})
+        if ltp and ltp > 0:
+            net += ltp if lg["side"] == "SELL" else -ltp
+        else:
+            all_ltp = False
+        rows.append({"sec_id": lg["sec_id"], "entry": lg["side"], "qty": q,
+                     "entry_price": ltp or 0, "sym": lg["trad_sym"], "segment": "NSE_FNO"})
+    net = round(net, 2) if all_ltp else None
+    margin = None
+    try:
+        margin = rg.kite_basket_margin(rows)
+        if not margin or margin <= 0:
+            margin = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
+                                          "entry": r["entry"], "sec_id": r["sec_id"],
+                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in rows)
+    except Exception:
+        margin = None
+    return {"ok": True, "spot": round(spot, 1), "lot": lot, "lots": lots, "legs": out_legs,
+            "net_credit": net,
+            "net_credit_total": (round(net * q) if net is not None else None),
+            "margin": (round(margin) if margin else None),
+            "margin_lot": (round(margin / lots) if margin else None)}
+
+
+def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=print):
+    """User-picked flexible multi-leg (the leg-window). Same safety spine as the
+    legacy hedge path: resolve ALL legs up front, gate the WHOLE basket ONCE
+    (RMS + hedged basket-margin), place BUY legs FIRST (margin already reduced)
+    then SELL legs, and UNWIND everything on any mid-way failure (never leave an
+    untracked/naked leg). Exit is monitored on the NET combined premium of the
+    whole structure (net_exit=True). PAPER. Returns (ok, msg)."""
+    import execution_gateway as gw
+    import auto_straddle as ast
+    import risk_gate as rg
+    try:
+        import ltp_poller
+    except Exception:
+        ltp_poller = None
+    mode = "paper"
+    legs, err = _resolve_straddle_legs(symbol, spot, legs_spec)
+    if err:
+        return False, f"legs resolve fail — {err}"
+    lot = int(legs[0]["lot"] or 0)
+    if lot < 1:
+        return False, f"{symbol} lot size resolve nahi hua — order NAHI bheja"
+    gid = "STRAD_" + uuid.uuid4().hex[:8]
+    sid = _straddle_strategy_id(source)
+    q = lots * lot
+    # BUY legs FIRST (reduce margin), then SELL — deterministic, unwind-safe order
+    ordered = sorted(legs, key=lambda l: 0 if l["side"] == "BUY" else 1)
+
+    # ── gate the WHOLE structure ONCE (RMS + basket-margin capital) ──
+    try:
+        blocked, why, _hard = rg.gating_status(sid, mode=mode)
+        if blocked:
+            return False, f"RMS blocked — {why}"
+    except Exception:
+        pass
+    try:
+        _prewarm_option_ltps([lg["sec_id"] for lg in ordered], log=log)
+    except Exception:
+        pass
+    basket_rows = [{"sec_id": lg["sec_id"], "entry": lg["side"], "qty": q,
+                    "entry_price": _straddle_lltp(lg["sec_id"]) or 0,
+                    "sym": lg["trad_sym"], "segment": "NSE_FNO"} for lg in ordered]
+    try:
+        basket = rg.kite_basket_margin(basket_rows)
+        if not basket or basket <= 0:
+            basket = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
+                                          "entry": r["entry"], "sec_id": r["sec_id"],
+                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
+        if not ok_cap:
+            log(f"[STRADDLE] {symbol} flex skip — basket margin ₹{basket:,.0f} fit nahi: {cap_why}")
+            return False, f"capital — {cap_why}"
+    except Exception as ce:
+        log(f"[STRADDLE] {symbol} flex basket capital err: {ce}")
+
+    # ── place, unwind-safe ──
+    placed = []          # [{sec, tsym, side}]
+    out_legs = []        # stored legs (with fills)
+
+    def _unwind_all(reason):
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(sid, symbol, p["sec"], p["tsym"], q, entry_side=p["side"],
+                                mode=mode, group_id=gid, reason=reason, tag="STRADDLE",
+                                source="straddle", log=log)
+            except Exception as ue:
+                log(f"[STRADDLE] {symbol} flex unwind FAIL {p['tsym']}: {ue}")
+                try:
+                    import notify
+                    notify.error("straddle_unwind_%s" % gid,
+                                 f"⚠️ {symbol} straddle unwind fail ({p['tsym']}) — MANUAL check",
+                                 source="chain")
+                except Exception:
+                    pass
+
+    for lg in ordered:
+        tag = "STRADDLE_HEDGE" if lg["side"] == "BUY" else "STRADDLE"
+        xtra = ["STRADDLE", "STRAD_SRC:%s" % source] + (["HEDGE"] if lg["side"] == "BUY" else [])
+        res = gw.execute_signal(sid, symbol, lg["side"], lots, lot, lg["sec_id"], lg["trad_sym"],
+                                seg="NSE_FNO", mode=mode, source="straddle", tag=tag,
+                                group_id=gid, gate=False, extra_tags=xtra, log=log)
+        if not res.get("ok"):
+            log(f"[STRADDLE] {symbol} flex {lg['side']} {lg['opt_type']} fail "
+                f"({res.get('reason') or res.get('status')}) — unwinding, abort")
+            _unwind_all("STRADDLE_ABORT_FLEX")
+            return False, f"{lg['side']} {lg['opt_type']} leg fail — sab unwound (koi leg nahi bacha)"
+        placed.append({"sec": lg["sec_id"], "tsym": lg["trad_sym"], "side": lg["side"]})
+        out_legs.append({"opt_type": lg["opt_type"], "side": lg["side"], "offset": lg["offset"],
+                         "sec_id": lg["sec_id"], "trad_sym": lg["trad_sym"],
+                         "entry_price": res.get("price") or 0, "qty": q})
+
+    entry_net = round(sum((l["entry_price"] if l["side"] == "SELL" else -l["entry_price"])
+                          for l in out_legs), 2)
+    ast.add({"symbol": symbol, "lots": lots, "mode": mode, "source": source, "strategy_id": sid,
+             "group_id": gid, "tp_pt": tp_pt, "sl_pt": sl_pt, "entry_credit": entry_net,
+             "legs": out_legs, "net_exit": True})
+    if ltp_poller:
+        try:
+            ltp_poller.request_watch([(l["sec_id"], "NSE_FNO") for l in out_legs])
+        except Exception:
+            pass
+    nS = sum(1 for l in out_legs if l["side"] == "SELL")
+    nB = len(out_legs) - nS
+    try:
+        import notify
+        notify.push(f"🩳 {symbol} {len(out_legs)}-leg ({nS}S/{nB}B) @ net {entry_net:.0f} "
+                    f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
+                    level="info", key="straddle_open_%s" % gid, source="chain")
+    except Exception:
+        pass
+    _kind = "credit" if entry_net >= 0 else "debit"
+    return True, f"[PAPER] {symbol} {len(out_legs)}-leg placed @ net {entry_net:.0f} ({_kind})"
+
+
+def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec=None):
     """HEDGE-FIRST short straddle. Order of operations (the fix for the 2026-07-24
     naked-orphan storm):
       1. resolve ATM CE/PE (the SELL legs) + BOTH OTM hedge wings up front;
@@ -4039,6 +4254,11 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print):
     spot = _trigger_spot_now(symbol)
     if not spot or spot <= 0:
         return False, f"{symbol} spot abhi nahi mila (rate-limit?) — order NAHI bheja"
+    # ── flexible leg-builder path: user picked exactly which legs (SELL ATM + BUY
+    #    wings by offset, any combo). Resolves+places THOSE legs and returns; the
+    #    legacy premium-pick hedge path below is only for legs_spec=None. ──
+    if legs_spec:
+        return _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=log)
     sec_ce, t_ce, lot = dhan_master.get_option_contract(symbol, spot, "CE", 0)
     sec_pe, t_pe, _lot2 = dhan_master.get_option_contract(symbol, spot, "PE", 0)
     if not sec_ce or not sec_pe:
@@ -4247,11 +4467,16 @@ def _close_straddle(strad, status, reason, log=print):
     exit_credit = None
     if slc:
         try:
+            import auto_straddle as _ast
             lg = strad.get("legs", [])
-            ce = slc.get(lg[0]["sec_id"], max_age=20.0) if len(lg) > 0 else None
-            pe = slc.get(lg[1]["sec_id"], max_age=20.0) if len(lg) > 1 else None
-            if ce and pe:
-                exit_credit = ce + pe
+            if strad.get("net_exit"):
+                net, ok_net = _ast.net_credit(lg, lambda l: slc.get(l["sec_id"], max_age=20.0))
+                exit_credit = net if ok_net else None
+            else:
+                ce = slc.get(lg[0]["sec_id"], max_age=20.0) if len(lg) > 0 else None
+                pe = slc.get(lg[1]["sec_id"], max_age=20.0) if len(lg) > 1 else None
+                if ce and pe:
+                    exit_credit = ce + pe
         except Exception:
             pass
     ast.set_status(strad["id"], status, reason, exit_credit=exit_credit)
@@ -4350,11 +4575,20 @@ def auto_straddle_loop():
                     pass
                 for s in opens:
                     lg = s.get("legs", [])
-                    if len(lg) < 2:
-                        continue
-                    ce = slc.get(lg[0]["sec_id"], max_age=8.0)
-                    pe = slc.get(lg[1]["sec_id"], max_age=8.0)
-                    reason, live, profit = ast.check_exit(s["entry_credit"], ce, pe, s["tp_pt"], s["sl_pt"])
+                    if s.get("net_exit"):
+                        # flexible structure — exit on NET premium of ALL legs (SELL−BUY)
+                        if not lg:
+                            continue
+                        live, ok_net = ast.net_credit(lg, lambda l: slc.get(l["sec_id"], max_age=8.0))
+                        if not ok_net:
+                            continue   # a leg's LTP missing → freeze, never fire
+                        reason, profit = ast.check_exit_net(s["entry_credit"], live, s["tp_pt"], s["sl_pt"])
+                    else:
+                        if len(lg) < 2:
+                            continue
+                        ce = slc.get(lg[0]["sec_id"], max_age=8.0)
+                        pe = slc.get(lg[1]["sec_id"], max_age=8.0)
+                        reason, live, profit = ast.check_exit(s["entry_credit"], ce, pe, s["tp_pt"], s["sl_pt"])
                     if reason in ("target", "sl"):
                         _close_straddle(s, reason, "STRADDLE_%s" % reason.upper(),
                                         log=lambda m: print(m, flush=True))
@@ -4387,8 +4621,21 @@ def api_auto_straddle_fire():
         lots = int(d.get("lots", 1) or 1)
         tp = float(d.get("tp_pt", 30) or 30)
         sl = float(d.get("sl_pt", 30) or 30)
-        ok, msg = _fire_auto_straddle(sym, lots, tp, sl, "manual", log=lambda m: print(m, flush=True))
+        legs = d.get("legs") or None   # flexible leg-window spec (None = legacy ATM+hedge)
+        ok, msg = _fire_auto_straddle(sym, lots, tp, sl, "manual",
+                                      log=lambda m: print(m, flush=True), legs_spec=legs)
         return jsonify({"ok": ok, "msg": msg})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/auto-straddle/preview', methods=['POST'])
+def api_auto_straddle_preview():
+    """Live preview for the Quick Order straddle LEG WINDOW: per-leg strike/LTP +
+    net credit + real hedged basket margin. Read-only — NO order placed."""
+    try:
+        d = request.get_json(force=True) or {}
+        return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1), d.get("legs") or []))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
@@ -4402,10 +4649,14 @@ def api_auto_straddle_list():
         out = []
         for s in ast.list_today():
             lg = s.get("legs", [])
-            ce = slc.get(lg[0]["sec_id"], max_age=15.0) if len(lg) > 0 else None
-            pe = slc.get(lg[1]["sec_id"], max_age=15.0) if len(lg) > 1 else None
-            live = round(ce + pe, 2) if (ce and pe) else None
-            prof = round(s["entry_credit"] - live, 1) if (live is not None and s.get("entry_credit")) else None
+            if s.get("net_exit"):
+                net, ok_net = ast.net_credit(lg, lambda l: slc.get(l["sec_id"], max_age=15.0))
+                live = net if ok_net else None
+            else:
+                ce = slc.get(lg[0]["sec_id"], max_age=15.0) if len(lg) > 0 else None
+                pe = slc.get(lg[1]["sec_id"], max_age=15.0) if len(lg) > 1 else None
+                live = round(ce + pe, 2) if (ce and pe) else None
+            prof = round(s["entry_credit"] - live, 1) if (live is not None and s.get("entry_credit") is not None) else None
             out.append({**s, "live_credit": live, "profit_pt": prof})
         return jsonify({"ok": True, "straddles": out, "cfg": _auto_straddle_cfg()})
     except Exception as e:

@@ -126,20 +126,36 @@
 <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">fire = marketable-limit &middot; RMS-gated &middot; auto SL/target &middot; armed list → Orders &middot; 🎯 Triggers</div>
 </div>
 <div id="qo-straddle-block" style="display:none">
-  <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">SELL ATM STRADDLE (paper) &middot; target/SL = combined credit</div>
+  <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">STRADDLE / MULTI-LEG (paper) &middot; target/SL = combined NET credit</div>
   <div style="display:flex;gap:8px;margin-bottom:10px">
-    <div style="flex:1"><div style="font-size:9px;color:#6e7681;margin-bottom:4px">LOTS</div><input id="qo-strad-lots" type="number" value="1" min="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
+    <div style="flex:1"><div style="font-size:9px;color:#6e7681;margin-bottom:4px">LOTS</div><input id="qo-strad-lots" type="number" value="1" min="1" onchange="qoStradCfgSave();qoStradPreview()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
     <div style="flex:1"><div style="font-size:9px;color:#3fb950;margin-bottom:4px">TARGET (pt)</div><input id="qo-strad-tp" type="number" value="30" step="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #1a7f37;border-radius:6px;color:#3fb950;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
     <div style="flex:1"><div style="font-size:9px;color:#f85149;margin-bottom:4px">SL (pt)</div><input id="qo-strad-sl" type="number" value="30" step="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #5c1a1f;border-radius:6px;color:#f85149;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
   </div>
-  <button onclick="qoSellStraddle()" style="width:100%;padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-bottom:6px">SELL ATM Straddle <span id="qo-strad-sym-lbl" style="font-size:11px;opacity:.85">NIFTY</span></button>
-  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">ATM auto-pick @ fire &middot; dono leg &middot; RMS-gated &middot; combined 30/30 exit</div>
-  <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#adbac7;margin-bottom:10px;cursor:pointer;flex-wrap:wrap"><input type="checkbox" id="qo-strad-hedge" onchange="qoStradCfgSave()"> &#128737; Hedge &mdash; sasti OTM wing (&le; &#8377;<input id="qo-strad-hedgemax" type="number" value="2" step="0.5" min="0.5" onchange="qoStradCfgSave()" style="width:42px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:3px;font-size:11px;text-align:center;outline:none">) &rarr; margin kam</label>
-  <div style="border-top:1px solid #21262d;padding-top:10px;font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">AUTO (paper)</div>
+  <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:4px 0 3px;margin-bottom:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px">
+      <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.5px">LEGS &mdash; chuno kaunsi banegi</span>
+      <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#8b949e;cursor:pointer"><input type="checkbox" id="qo-strad-sym" checked onchange="qoStradSym()" style="accent-color:#1f6feb;width:12px;height:12px"> symmetric</label>
+    </div>
+    <div id="qo-strad-legs"></div>
+    <div id="qo-strad-warn" style="display:none;padding:2px 10px 5px;font-size:10px;color:#d29922"></div>
+    <div style="display:flex;justify-content:space-between;padding:7px 10px 3px;border-top:1px dashed #30363d;margin-top:3px">
+      <span style="font-size:10px;color:#8b949e">Net credit &times; <span id="qo-strad-lotslbl">1</span> lot</span>
+      <span id="qo-strad-net" style="font-size:12px;color:#3fb950">&mdash;</span>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:0 10px 7px">
+      <span id="qo-strad-marlbl" style="font-size:10px;color:#d29922">&#128176; Margin (hedged)</span>
+      <span style="text-align:right"><span id="qo-strad-mar" style="font-size:12px;color:#e6edf3">&mdash;</span><span id="qo-strad-marlot" style="font-size:9px;color:#8b949e;display:block"></span></span>
+    </div>
+  </div>
+  <button onclick="qoSellStraddle()" style="width:100%;padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-bottom:6px">Place selected legs <span style="font-size:11px;opacity:.85">(<span id="qo-strad-legcount">4</span>-leg)</span></button>
+  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">&#9745; leg = banegi &middot; BUY rows +/&minus; se wing &middot; RMS-gated &middot; PAPER</div>
+  <div style="border-top:1px solid #21262d;padding-top:10px;font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">AUTO (paper) &middot; ATM+hedge auto-pick</div>
   <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:5px;cursor:pointer"><input type="checkbox" id="qo-strad-920" onchange="qoStradCfgSave()"> 9:20 auto &middot; NIFTY + BANKNIFTY (roz)</label>
-  <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:10px;cursor:pointer"><input type="checkbox" id="qo-strad-alert" onchange="qoStradCfgSave()"> Alert pe auto (straddle spike/crush/gamma)</label>
+  <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:5px;cursor:pointer"><input type="checkbox" id="qo-strad-alert" onchange="qoStradCfgSave()"> Alert pe auto (straddle spike/crush/gamma)</label>
+  <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#adbac7;margin-bottom:10px;cursor:pointer;flex-wrap:wrap"><input type="checkbox" id="qo-strad-hedge" onchange="qoStradCfgSave()"> &#128737; auto-hedge &mdash; sasti OTM wing (&le; &#8377;<input id="qo-strad-hedgemax" type="number" value="2" step="0.5" min="0.5" onchange="qoStradCfgSave()" style="width:42px;background:#0d1117;border:1px solid #30363d;border-radius:4px;color:#e6edf3;padding:3px;font-size:11px;text-align:center;outline:none">)</label>
   <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">ACTIVE / TODAY</div>
-  <div id="qo-strad-list" style="font-size:11px;color:#8b949e">—</div>
+  <div id="qo-strad-list" style="font-size:11px;color:#8b949e">&mdash;</div>
 </div>
 <div id="qo-status" style="font-size:11px;color:#8b949e;text-align:center;min-height:16px">Mode: PAPER</div>`;
 
@@ -400,7 +416,7 @@
         updateQtyHint();
         // straddle tab has NO CE/PE LTP box → skip the slow Dhan option-LTP fetch (instant switch);
         // just reload the per-index target/SL + label
-        if (window.qoTab === 'straddle') { qoStradCfgLoad(); }
+        if (window.qoTab === 'straddle') { qoStradCfgLoad(); window.qoStradState.prev = {}; qoStradRenderLegs(); qoStradPreview(); }
         else { qoRefreshLtp(); }
       };
 
@@ -509,21 +525,122 @@
         if (st && strad) { st.textContent = 'Straddle — SELL ATM CE+PE, combined 30/30 (paper)'; st.style.color = '#8b949e'; }
         if (tab === 'trigger') { qoRefreshTriggers(); if (!_qoTrigTimer) _qoTrigTimer = setInterval(qoRefreshTriggers, 2000); }
         else { clearInterval(_qoTrigTimer); _qoTrigTimer = null; }
-        if (strad) { qoStradCfgLoad(); qoRefreshStraddles(); if (!window._qoStradTimer) window._qoStradTimer = setInterval(qoRefreshStraddles, 3000); }
+        if (strad) { qoStradCfgLoad(); qoStradRenderLegs(); qoStradPreview(); qoRefreshStraddles(); if (!window._qoStradTimer) window._qoStradTimer = setInterval(() => { qoRefreshStraddles(); qoStradPreview(); }, 3000); }
         else { clearInterval(window._qoStradTimer); window._qoStradTimer = null; }
       };
 
-      // ── Auto ATM straddle (paper) — Quick Order "Straddle" tab ──
+      const _qoInr = n => '₹' + Math.round(n).toLocaleString('en-IN');
+
+      // ── Straddle / multi-leg builder (paper) — Quick Order "Straddle" tab ──
+      // Each leg has its own checkbox (include/exclude); BUY wings pick strike by
+      // OTM offset. Preview shows per-leg LTP + net credit + real hedged margin.
+      window.qoStradState = {
+        sym: true,
+        legs: [
+          { key: 'ceS', side: 'SELL', ot: 'CE', off: 0, on: true },
+          { key: 'peS', side: 'SELL', ot: 'PE', off: 0, on: true },
+          { key: 'ceB', side: 'BUY',  ot: 'CE', off: 2, on: true },
+          { key: 'peB', side: 'BUY',  ot: 'PE', off: 2, on: true },
+        ],
+        prev: {},   // key -> {strike, ltp}
+      };
+      const _qsLeg = k => window.qoStradState.legs.find(l => l.key === k);
+      const _qsEnabled = () => window.qoStradState.legs.filter(l => l.on);
+      const _qsSpec = () => _qsEnabled().map(l => ({ side: l.side, opt_type: l.ot, offset: l.off }));
+
+      window.qoStradRenderLegs = () => {
+        const box = document.getElementById('qo-strad-legs'); if (!box) return;
+        const S = window.qoStradState, pv = S.prev || {};
+        box.innerHTML = S.legs.map(l => {
+          const p = pv[l.key] || {}, on = l.on;
+          const col = l.side === 'SELL' ? '#f85149' : '#3fb950';
+          const strike = p.strike ? (p.strike + ' ' + l.ot) : (l.ot + ' ' + (l.side === 'SELL' ? 'ATM' : ((l.ot === 'CE' ? '+' : '−') + l.off)));
+          const ltp = (p.ltp != null && p.ltp > 0) ? p.ltp.toFixed(2) : '—';
+          const tag = l.side === 'SELL' ? '<span style="font-size:9px;color:#8b949e;background:#21262d;border-radius:4px;padding:1px 5px">ATM</span>' : '';
+          const steps = l.side === 'BUY' ? (
+            `<button ${on ? '' : 'disabled'} onclick="qoStradStep('${l.key}',-1)" style="width:20px;height:20px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-size:12px;line-height:1;opacity:${on ? 1 : .35}">−</button>` +
+            `<span style="font-size:10px;color:#8b949e;width:24px;text-align:center">${l.ot === 'CE' ? '+' : '−'}${l.off}</span>` +
+            `<button ${on ? '' : 'disabled'} onclick="qoStradStep('${l.key}',1)" style="width:20px;height:20px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-size:12px;line-height:1;opacity:${on ? 1 : .35}">+</button>`
+          ) : tag;
+          return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;${l.side === 'BUY' ? 'background:#1b2028;' : ''}opacity:${on ? 1 : .4}">
+            <span style="display:flex;align-items:center;gap:7px">
+              <input type="checkbox" ${on ? 'checked' : ''} onchange="qoStradToggle('${l.key}')" style="accent-color:${col};width:14px;height:14px;cursor:pointer">
+              <span style="font-size:10px;font-weight:bold;color:${col};width:28px">${l.side}</span>
+              <span style="font-size:12px;color:#e6edf3">${strike}</span></span>
+            <span style="display:flex;align-items:center;gap:7px">${steps}
+              <span style="font-size:11px;color:#e6edf3;width:66px;text-align:right">LTP <b style="color:#c9d1d9">${ltp}</b></span></span></div>`;
+        }).join('');
+        const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
+        const lc = document.getElementById('qo-strad-legcount'); if (lc) lc.textContent = _qsEnabled().length;
+        const ll = document.getElementById('qo-strad-lotslbl'); if (ll) ll.textContent = lots;
+        // naked-side warning (a SELL with no matching BUY wing on that side)
+        const en = _qsEnabled();
+        const has = (side, ot) => en.some(l => l.side === side && l.ot === ot);
+        const callNaked = has('SELL', 'CE') && !has('BUY', 'CE');
+        const putNaked = has('SELL', 'PE') && !has('BUY', 'PE');
+        const w = document.getElementById('qo-strad-warn');
+        const ml = document.getElementById('qo-strad-marlbl');
+        if (callNaked || putNaked) {
+          if (w) { w.style.display = 'block'; w.textContent = '⚠️ ek side ka hedge wing off hai → naked SELL, margin bahut zyada'; }
+          if (ml) { ml.innerHTML = '💰 Margin (naked side!)'; ml.style.color = '#f85149'; }
+        } else {
+          if (w) w.style.display = 'none';
+          if (ml) { ml.innerHTML = '💰 Margin (hedged)'; ml.style.color = '#d29922'; }
+        }
+      };
+      window.qoStradToggle = k => { const l = _qsLeg(k); if (l) l.on = !l.on; qoStradRenderLegs(); qoStradPreview(); };
+      window.qoStradStep = (k, d) => {
+        const S = window.qoStradState, l = _qsLeg(k); if (!l) return;
+        l.off = Math.max(1, Math.min(20, l.off + d));
+        if (S.sym && l.side === 'BUY') { const o = _qsLeg(l.key === 'ceB' ? 'peB' : 'ceB'); if (o) o.off = l.off; }
+        qoStradRenderLegs(); qoStradPreview();
+      };
+      window.qoStradSym = () => {
+        const S = window.qoStradState;
+        S.sym = !!document.getElementById('qo-strad-sym')?.checked;
+        if (S.sym) { const c = _qsLeg('ceB'), p = _qsLeg('peB'); if (c && p) p.off = c.off; }
+        qoStradRenderLegs(); qoStradPreview();
+      };
+      window.qoStradPreview = async () => {
+        if (document.hidden) return;
+        const spec = _qsSpec();
+        const net = document.getElementById('qo-strad-net'), mar = document.getElementById('qo-strad-mar'), marlot = document.getElementById('qo-strad-marlot');
+        if (!spec.length) { if (net) net.textContent = '—'; if (mar) mar.textContent = '—'; if (marlot) marlot.textContent = ''; return; }
+        if (window._qoStradPrevBusy) return; window._qoStradPrevBusy = true;
+        const sym = qoSym || 'NIFTY';
+        const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
+        try {
+          const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec }) })).json();
+          if (d.ok) {
+            // response legs are in the SAME order as the enabled spec → zip back to keys
+            const en = _qsEnabled(), pv = {};
+            (d.legs || []).forEach((rl, i) => { if (en[i]) pv[en[i].key] = { strike: rl.strike, ltp: rl.ltp }; });
+            window.qoStradState.prev = pv;
+            if (net) net.innerHTML = d.net_credit_total != null ? (`<b>${_qoInr(d.net_credit_total)}</b>` + (d.net_credit != null ? ` <span style="color:#6e7681">(${d.net_credit.toFixed(1)}pt)</span>` : '')) : '—';
+            if (net) net.style.color = (d.net_credit_total >= 0) ? '#3fb950' : '#f85149';
+            if (mar) mar.innerHTML = d.margin != null ? `<b>${_qoInr(d.margin)}</b>` : '—';
+            if (marlot) marlot.textContent = d.margin_lot != null ? (_qoInr(d.margin_lot) + ' / lot') : '';
+            qoStradRenderLegs();
+          } else {
+            if (net) net.textContent = d.msg || 'preview fail';
+          }
+        } catch (e) { if (net) net.textContent = 'net —'; }
+        finally { window._qoStradPrevBusy = false; }
+      };
+
       window.qoSellStraddle = async () => {
         const sym = qoSym || 'NIFTY';   // closure var (qoSetSym sets this), NOT window.qoSym
+        const spec = _qsSpec();
+        if (!spec.length) { alert('kam se kam ek leg select karo'); return; }
         const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
         const tp = parseFloat(document.getElementById('qo-strad-tp')?.value) || 30;
         const sl = parseFloat(document.getElementById('qo-strad-sl')?.value) || 30;
         const st = document.getElementById('qo-status');
-        if (!confirm(`SELL ${sym} ATM straddle — ${lots} lot, target −${tp} / SL +${sl} (paper)?`)) return;
-        if (st) { st.textContent = 'straddle place ho raha…'; st.style.color = '#d29922'; }
+        const desc = spec.map(l => l.side[0] + ' ' + l.ot + (l.side === 'BUY' ? ((l.ot === 'CE' ? '+' : '−') + l.offset) : '')).join(', ');
+        if (!confirm(`${sym} ${spec.length}-leg — ${lots} lot\n${desc}\ntarget −${tp} / SL +${sl} (paper)?`)) return;
+        if (st) { st.textContent = 'legs place ho rahe…'; st.style.color = '#d29922'; }
         try {
-          const d = await (await fetch('/api/auto-straddle/fire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, tp_pt: tp, sl_pt: sl }) })).json();
+          const d = await (await fetch('/api/auto-straddle/fire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, tp_pt: tp, sl_pt: sl, legs: spec }) })).json();
           if (st) { st.textContent = d.msg || (d.ok ? 'placed' : 'fail'); st.style.color = d.ok ? '#3fb950' : '#f85149'; }
           qoRefreshStraddles();
         } catch (e) { if (st) { st.textContent = 'fail: ' + e; st.style.color = '#f85149'; } }

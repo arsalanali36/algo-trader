@@ -226,6 +226,9 @@ def add(strad):
         "sl_pt": float(strad.get("sl_pt", 30)),
         "entry_credit": float(strad.get("entry_credit", 0)),
         "legs": strad.get("legs", []),
+        # flexible leg-builder structures monitor exit on NET premium of ALL legs
+        # (SELL−BUY) via check_exit_net; legacy ATM straddles use the CE+PE path.
+        "net_exit": bool(strad.get("net_exit", False)),
         "status": _OPEN,
         "result": "",
         "created_ts": int(time.time()),
@@ -290,6 +293,48 @@ def check_exit(entry_credit, ce_ltp, pe_ltp, tp_pt, sl_pt):
     return None, live, profit
 
 
+def net_credit(legs, price_of):
+    """NET premium of an ARBITRARY multi-leg structure:
+        Σ(SELL leg premium) − Σ(BUY leg premium)
+    `price_of(leg) -> float|None` supplies each leg's price (entry_price for the
+    entry net, live LTP for the live net). Returns (net|None, all_ok):
+      all_ok is False (net None) if ANY leg's price is missing/<=0 — the caller
+      must FREEZE, never act on a partial structure (TRAP #1 shape).
+    Sign convention (SELL−BUY) makes the SAME profit formula work for a net-credit
+    (short) OR net-debit (long) structure — see check_exit_net."""
+    total = 0.0
+    for lg in (legs or []):
+        try:
+            p = float(price_of(lg) or 0)
+        except (TypeError, ValueError):
+            p = 0.0
+        if p <= 0:
+            return None, False
+        side = str(lg.get("side", "")).upper()
+        total += p if side == "SELL" else -p
+    return round(total, 2), True
+
+
+def check_exit_net(entry_net, live_net, tp_pt, sl_pt):
+    """Generic basket-exit for a flexible structure (any legs, any sides).
+    profit_pt = entry_net − live_net — POSITIVE = the structure moved your way,
+    and it holds for BOTH a net-credit and a net-debit basket because live_net is
+    Σ(SELL)−Σ(BUY) (a long structure's premium RISING makes live_net fall below
+    entry_net → still +profit). tp_pt/sl_pt are premium points either way.
+    Returns (reason|None, profit_pt|None). None inputs → freeze (never fire)."""
+    try:
+        en = float(entry_net); ln = float(live_net)
+        tp = float(tp_pt); sl = float(sl_pt)
+    except (TypeError, ValueError):
+        return None, None
+    profit = round(en - ln, 2)
+    if tp > 0 and profit >= tp:
+        return "target", profit
+    if sl > 0 and profit <= -sl:
+        return "sl", profit
+    return None, profit
+
+
 if __name__ == "__main__":
     # quick self-test of the pure basket-exit decision (entry credit 300)
     assert check_exit(300, 130, 140, 30, 30)[0] == "target"   # live 270, profit +30 -> target
@@ -299,3 +344,22 @@ if __name__ == "__main__":
     assert check_exit(300, 160, 160, 30, 30)[0] is None       # live 320, profit -20 -> hold
     assert check_exit(300, 0, 140, 30, 30)[0] is None         # bad leg (<=0) -> freeze, never fire
     print("check_exit ok — all 6 pass")
+
+    # net-structure exit (flexible legs) — SELL−BUY sign convention
+    # pure straddle reduces to check_exit exactly (entry 230, live 200 -> +30)
+    assert check_exit_net(230, 200, 30, 30)[0] == "target"
+    assert check_exit_net(230, 205, 30, 30)[0] is None        # +25 hold
+    assert check_exit_net(230, 261, 30, 30)[0] == "sl"        # -31 sl
+    # net-DEBIT long structure (entry_net -100, premium rises -> live_net -150 -> +50 profit)
+    assert check_exit_net(-100, -150, 30, 30)[0] == "target"
+    assert check_exit_net(-100, -70, 30, 30)[0] == "sl"       # premium fell -> -30 sl
+    # net_credit(): iron fly SELL118+SELL112 - BUY62 - BUY81 = 87 ; each leg carries its own px
+    _fly = [{"side": "SELL", "px": 118}, {"side": "SELL", "px": 112},
+            {"side": "BUY", "px": 62}, {"side": "BUY", "px": 81}]
+    n, ok = net_credit(_fly, lambda l: l["px"])
+    assert ok and n == 87.0
+    _n2, ok2 = net_credit([{"side": "SELL", "px": 0}], lambda l: l["px"])   # zero px -> freeze
+    assert not ok2 and _n2 is None
+    n3, ok3 = net_credit([{"side": "BUY", "px": 90}, {"side": "BUY", "px": 90}], lambda l: l["px"])
+    assert ok3 and n3 == -180.0                              # 2 BUY -> -180
+    print("check_exit_net + net_credit ok — all 8 pass")
