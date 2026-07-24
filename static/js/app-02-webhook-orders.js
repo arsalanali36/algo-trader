@@ -704,15 +704,29 @@
         document.body.appendChild(ov);
       }
       ov.style.display = 'flex';
-      ov.innerHTML = `<div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:1000px;width:100%;padding:16px">
+      ov.innerHTML = `<style>
+        .pf-2col{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:12px;align-items:start}
+        .pf-col{display:flex;flex-direction:column;gap:12px;min-width:0}
+        .pf-panel{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px}
+        #pfGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px}
+        .pf-navbtn{width:24px;height:28px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#e6edf3;cursor:pointer;font-size:16px;font-weight:700;line-height:1}
+        .pf-navbtn:hover{background:#21262d;border-color:#1f6feb}
+        @media(max-width:900px){.pf-2col{grid-template-columns:1fr}}
+      </style>
+      <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:1280px;width:100%;padding:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">
-          <div style="display:flex;align-items:center;gap:9px;flex-wrap:wrap">
+          <div style="display:flex;align-items:center;gap:7px;flex-wrap:wrap">
             <span style="font-size:15px;font-weight:700;color:#e6edf3">📊 Payoff &amp; Zone</span>
+            <button class="pf-navbtn" onclick="_pfNav(-1)" title="Previous group">‹</button>
             <select id="pfGrpSel" onchange="_pfSelectGroup(this.value)" title="open / recently-closed group"
-              style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:600;cursor:pointer;max-width:340px"></select>
+              style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:600;cursor:pointer;max-width:320px"></select>
+            <button class="pf-navbtn" onclick="_pfNav(1)" title="Next group">›</button>
             <span id="pfStatus" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px"></span>
           </div>
-          <button onclick="closePayoffPanel()" style="padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer">✕ Close</button>
+          <div style="display:flex;align-items:center;gap:14px">
+            <span id="pfHdrPnl" style="font-family:ui-monospace,monospace;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap"></span>
+            <button onclick="closePayoffPanel()" style="padding:4px 10px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer">✕ Close</button>
+          </div>
         </div>
         <div id="pfSub" style="font-size:11px;color:#8b949e;margin:-2px 0 8px">loading…</div>
         <div id="pfLegStrip" style="display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin-bottom:12px;padding:9px 11px;background:#161b22;border:1px solid #30363d;border-radius:8px"></div>
@@ -752,6 +766,28 @@
       sel.value = curVal;
     }
     function _pfSelectGroup(val) { if (val) _pfLoad(val); }
+    // ‹ Prev / Next › — cycle the group selector without opening it (wrap-around)
+    function _pfNav(dir) {
+      const sel = document.getElementById('pfGrpSel');
+      if (!sel || !sel.options.length) return;
+      const n = sel.options.length;
+      sel.selectedIndex = (sel.selectedIndex + dir + n) % n;
+      _pfSelectGroup(sel.value);
+    }
+    // Header P&L — the group's ACTUAL number: live Net MTM (open) / Realized (closed), ₹·pt·%
+    function _pfSetHdrPnl(val, d) {
+      const el = document.getElementById('pfHdrPnl'); if (!el) return;
+      if (val == null || isNaN(val)) { el.textContent = ''; return; }
+      const qty = (d && d.legs && d.legs[0] && d.legs[0].qty) ? d.legs[0].qty : 1;
+      const pt = val / qty;
+      const mgn = (window._pfMargin && window._pfMargin.ok && window._pfMargin.hedged) ? window._pfMargin.hedged : 0;
+      const pct = mgn ? (val / mgn * 100) : null;
+      const lab = window._pfClosed ? 'Realized P&L' : 'Net MTM';
+      el.innerHTML = `<span style="font-size:9.5px;color:#8b949e;font-weight:600;text-transform:uppercase;letter-spacing:.03em;margin-right:5px">${lab}</span>`
+        + (val >= 0 ? '+' : '') + _pfRs(val) + ' · ' + (pt >= 0 ? '+' : '') + pt.toFixed(1) + 'pt'
+        + (pct != null ? ` · <span style="font-size:12px">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</span>` : '');
+      el.style.color = val >= 0 ? _PF.C.pos : _PF.C.neg;
+    }
 
     function _pfRenderLegStrip(d) {
       const el = document.getElementById('pfLegStrip'); if (!el) return;
@@ -795,6 +831,7 @@
       window._pfData = d;
       window._pfZoom = { z: 1, c: null };    // #00 fresh zoom per group
       window._pfExit = null;                  // #02 combined SL/target (set on first combined draw)
+      _pfSetHdrPnl(d.pnl_now_today != null ? d.pnl_now_today : d.pnl_now_expiry, d);  // immediate; refined by combined
       // Expiry vs exit-day: for a one-night / intraday structure the expiry
       // numbers are theoretical — it closes at today's square-off. Default to
       // whichever the position actually is.
@@ -802,24 +839,34 @@
       if (d.pop_target == null) window._pfView = 'expiry';
 
       body.innerHTML = `
-        <div id="pfCards" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px"></div>
-        <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px;flex-wrap:wrap;gap:6px">
-          <span style="font-size:11px;font-weight:600;color:#8b949e">
-            Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
-            ${d.curve_today ? '<span style="color:#58a6ff;font-weight:700;margin-left:8px">━ Today</span>' : ''}
-            ${d.curve_target ? '<span style="color:#d29922;font-weight:700;margin-left:8px">╌ Exit day</span>' : ''}
-            <span style="color:#6e7681;font-weight:400;margin-left:8px">· <b style="color:#8b949e">Alt</b>+scroll = zoom · drag = pan</span>
-          </span>
-          <span style="display:flex;align-items:center;gap:5px">
-            <button onclick="_pfZoomBtn('in')" title="zoom in" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">＋</button>
-            <button onclick="_pfZoomBtn('out')" title="zoom out" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">−</button>
-            <button onclick="_pfZoomBtn('fit')" title="fit" style="height:24px;padding:0 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:11px;font-weight:600">⟲ Fit</button>
-            <span id="pfViewTog"></span>
-          </span>
+        <div class="pf-2col">
+         <div class="pf-col"><!-- LEFT: cards + payoff -->
+          <div id="pfCards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+          <div class="pf-panel">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 4px;flex-wrap:wrap;gap:6px">
+              <span style="font-size:11px;font-weight:600;color:#8b949e">
+                Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
+                ${d.curve_today ? '<span style="color:#58a6ff;font-weight:700;margin-left:8px">━ Today</span>' : ''}
+                ${d.curve_target ? '<span style="color:#d29922;font-weight:700;margin-left:8px">╌ Exit day</span>' : ''}
+                <span style="color:#6e7681;font-weight:400;margin-left:8px">· <b style="color:#8b949e">Alt</b>+scroll = zoom · drag = pan</span>
+              </span>
+              <span style="display:flex;align-items:center;gap:5px">
+                <button onclick="_pfZoomBtn('in')" title="zoom in" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">＋</button>
+                <button onclick="_pfZoomBtn('out')" title="zoom out" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">−</button>
+                <button onclick="_pfZoomBtn('fit')" title="fit" style="height:24px;padding:0 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:11px;font-weight:600">⟲ Fit</button>
+                <span id="pfViewTog"></span>
+              </span>
+            </div>
+            <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
+            <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
+          </div>
+         </div>
+         <div class="pf-col"><!-- RIGHT: combined premium + SL/target -->
+          <div id="pfComboSlot"></div>
+         </div>
         </div>
-        <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
-        <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
-        <div id="pfSeriesWrap"></div>`;
+        <!-- full-width per-leg row (below the two columns, for balance) -->
+        <div id="pfLegSlot" style="margin-top:12px"></div>`;
       _pfRenderCards();
       _pfDrawPayoff(d);
       _pfLoadMargin(qs);
@@ -1027,36 +1074,44 @@
     }
 
     async function _pfLoadSeries(qs) {
-      const wrap = document.getElementById('pfSeriesWrap');
-      wrap.innerHTML = '<div style="font-size:11px;color:#8b949e;padding:10px;text-align:center">⏳ legs ke candles aa rahe…</div>';
+      const combo = document.getElementById('pfComboSlot');   // RIGHT column
+      const legSlot = document.getElementById('pfLegSlot');   // full-width below
+      if (!combo) return;
+      combo.innerHTML = '<div class="pf-panel" style="font-size:11px;color:#8b949e;padding:24px 10px;text-align:center">⏳ legs ke candles aa rahe…</div>';
+      if (legSlot) legSlot.innerHTML = '';
       window._pfSeriesToken = qs;    // only the LATEST selected group renders (drop stale slow responses)
       let s;
       try {
         const r = await fetch('/api/position-legs-series?' + qs);
         s = await r.json();
-      } catch (e) { if (window._pfSeriesToken === qs) wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
+      } catch (e) { if (window._pfSeriesToken === qs) combo.innerHTML = '<div class="pf-panel" style="color:#f85149;font-size:11px;padding:12px">series fail: ' + e.message + '</div>'; return; }
       if (window._pfSeriesToken !== qs) return;   // user switched to a newer group mid-fetch — ignore this one
-      if (!s || !s.ok) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">' + ((s && s.msg) || 'series nahi mili') + '</div>'; return; }
-      const n = s.legs.length, cols = n <= 2 ? n : (n <= 4 ? 2 : 3);
-      wrap.innerHTML = `
-        <div style="font-size:11px;font-weight:600;color:#8b949e;margin:16px 0 4px;text-align:left">
-          Combined Premium — net structure P&amp;L <span style="color:#6e7681;font-weight:400">(entry ${s.from} → ${s.to}, real 1-min)</span>
-        </div>
-        <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 220" style="width:100%;height:auto"></svg></div>
-        <div id="pfCombHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
-        <div id="pfExitRow" style="display:flex;flex-wrap:wrap;align-items:center;gap:14px;margin-top:8px;padding-top:9px;border-top:1px solid #30363d">
-          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Target (book profit)</div><div id="pfExTgt" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#3fb950">—</div></div>
-          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div><div id="pfExSl" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#f85149">—</div></div>
-          <div style="min-width:104px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700">—</div></div>
-          <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
-          <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
-          <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
-          <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:180px">Green (Target) / red (SL) line ko drag karo — jaise hi combined MTM chhue, poori group ek saath square off.</span>
-        </div>
-        <div style="font-size:11px;font-weight:600;color:#8b949e;margin:16px 0 6px;text-align:left">
-          Legs — standalone (${n}-view) <span style="color:#6e7681;font-weight:400">· har leg ka apna premium · dashed = entry · colour = favour me hai ya nahi</span>
-        </div>
-        <div id="pfGrid" style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:10px"></div>`;
+      if (!s || !s.ok) { combo.innerHTML = '<div class="pf-panel" style="color:#f85149;font-size:11px;padding:12px">' + ((s && s.msg) || 'series nahi mili') + '</div>'; return; }
+      const n = s.legs.length;
+      combo.innerHTML = `
+        <div class="pf-panel">
+          <div style="font-size:11px;font-weight:600;color:#8b949e;margin:0 0 4px;text-align:left">
+            Combined Premium — net structure P&amp;L <span style="color:#6e7681;font-weight:400">(entry ${s.from} → ${s.to}, real 1-min)</span>
+          </div>
+          <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 220" style="width:100%;height:auto"></svg></div>
+          <div id="pfCombHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
+          <div id="pfExitRow" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:8px;padding-top:9px;border-top:1px solid #30363d">
+            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Target (book profit)</div><div id="pfExTgt" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#3fb950">—</div></div>
+            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div><div id="pfExSl" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#f85149">—</div></div>
+            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700">—</div></div>
+            <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
+            <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
+            <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
+            <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:170px">Green (Target) / red (SL) line ko drag karo — jaise hi combined MTM chhue, poori group ek saath square off.</span>
+          </div>
+        </div>`;
+      if (legSlot) legSlot.innerHTML = `
+        <div class="pf-panel">
+          <div style="font-size:11px;font-weight:600;color:#8b949e;margin:0 0 6px;text-align:left">
+            Legs — standalone (${n}) <span style="color:#6e7681;font-weight:400">· har leg ka apna premium · dashed = entry · colour = favour me hai ya nahi</span>
+          </div>
+          <div id="pfGrid"></div>
+        </div>`;
       _pfDrawCombined(s);
       _pfDrawGrid(s);
       // a CLOSED group can't auto-exit — show the past premium path, disable Apply
@@ -1139,6 +1194,7 @@
       });
       svg.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); hb.textContent = ''; });
       _pfUpdExitRow(lastV);
+      _pfSetHdrPnl(lastV, window._pfData);   // refine header P&L with real-premium net MTM
       // drag the SL/Target lines — svg-level bound once per element, window-level once ever
       if (!svg._pfCombBound) {
         svg._pfCombBound = true;
