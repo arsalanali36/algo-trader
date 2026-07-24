@@ -4090,17 +4090,29 @@ def _straddle_preview(symbol, lots, spec):
     except Exception:
         pass
     try:
-        # retries: user-facing preview waits briefly for the rate-limit slot (held
-        # by pos_monitor's open-position LTP polling) so the batched fetch fills
-        # every leg's LTP instead of showing blanks.
-        _prewarm_option_ltps([lg["sec_id"] for lg in legs], retries=4)
+        # ONE batched fetch fills every leg's LTP. retries persist through a Dhan
+        # 429 cooldown (~8s, common off-market when pos_monitor is polling open
+        # positions) — the slot frees when the cooldown clears; up to ~9s worst
+        # case, usually instant. This is the ONLY network fetch: legs then read
+        # cache-only below (a per-leg REST fallback would each block ~8s in the
+        # cooldown → 30s+ hang → the blank LTPs the user saw).
+        _prewarm_option_ltps([lg["sec_id"] for lg in legs], retries=18)
     except Exception:
         pass
+
+    def _cache_ltp(sec):   # cache-only (prewarm just wrote) — never the slow REST path
+        try:
+            import shared_ltp_cache as _s
+            v = _s.get(str(sec), max_age=120)
+            return float(v) if v else None
+        except Exception:
+            return None
+
     lot = int(legs[0]["lot"] or 0)
     q = lots * lot
     out_legs, rows, net, all_ltp = [], [], 0.0, True
     for lg in legs:
-        ltp = _straddle_lltp(lg["sec_id"])
+        ltp = _cache_ltp(lg["sec_id"])
         out_legs.append({"side": lg["side"], "opt_type": lg["opt_type"], "offset": lg["offset"],
                          "trad_sym": lg["trad_sym"], "strike": _strike_of(lg["trad_sym"]), "ltp": ltp})
         if ltp and ltp > 0:
