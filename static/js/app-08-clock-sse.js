@@ -167,7 +167,7 @@
     }
 
     async function _fetchPositionLtp() {
-      if (window.feedPaused) return;
+      if (window.feedPaused || document.hidden) return;   // background tab — skip positions LTP poll (load-trim)
       const cells = document.querySelectorAll('.ltp-cell[data-sym]');
       if (!cells.length) return;
       const syms = [...new Set([...cells].map(el => el.getAttribute('data-sym')))];

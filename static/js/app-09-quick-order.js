@@ -333,7 +333,7 @@
 
       let _qoLtpTimer = null;
       async function qoFetchLtp() {
-        if (window.feedPaused) return;
+        if (window.feedPaused || document.hidden) return;   // background tab — skip Dhan LTP poll (load-trim)
         try {
           const r = await fetch(`/api/option-ltp?symbol=${qoSym}&offset=${qoAtm}`);
           const j = await r.json();
@@ -529,6 +529,7 @@
         } catch (e) { if (st) { st.textContent = 'fail: ' + e; st.style.color = '#f85149'; } }
       };
       window.qoRefreshStraddles = async () => {
+        if (document.hidden) return;   // background tab — skip poll (load-trim)
         const box = document.getElementById('qo-strad-list'); if (!box) return;
         const lbl = document.getElementById('qo-strad-sym-lbl'); if (lbl) lbl.textContent = qoSym || 'NIFTY';
         try {
@@ -629,6 +630,7 @@
       };
 
       async function qoRefreshTriggers() {
+        if (document.hidden) return;                   // background tab — skip poll (load-trim)
         if (panel.style.display === 'none') return;   // panel band — server ko poll mat karo
         try {
           const r = await fetch('/api/triggers?symbol=' + encodeURIComponent(qoSym));
@@ -860,6 +862,7 @@
         }
 
         async function fetchLtp() {
+          if (document.hidden) return;   // background tab — skip watchlist LTP poll (load-trim)
           if (!syms.length || collapsed) { renderRows({}); return; }
           try {
             const r = await fetch('/api/positions-ltp?syms=' + syms.map(encodeURIComponent).join(','));

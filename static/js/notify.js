@@ -213,6 +213,7 @@
 
       var _cache = [];
       function _poll() {
+        if (document.hidden) return;   // background tab — skip poll, resume on focus (load-trim)
         fetch('/api/notifications').then(function (r) { return r.json(); }).then(function (d) {
           _cache = d.items || [];
           var badge = document.getElementById('notif-badge');
