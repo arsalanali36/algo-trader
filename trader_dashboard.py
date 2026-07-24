@@ -2904,37 +2904,53 @@ def _payoff_attach_ltp(rows):
     """Live premium per leg onto the order_store rows. order_store carries no
     price beyond the ENTRY fill — but implied vol (and hence the today-curve /
     POP / margin price) must come from the CURRENT premium, not the entry one.
-    Same 3-tier source pos_monitor uses: live feed → shared cache → REST."""
+    Feed + shared cache first (no network); whatever's still missing gets ONE
+    BATCHED /v2/marketfeed/ltp call (via _prewarm_option_ltps) instead of a
+    per-leg rate-limited REST fetch. The OPEN-group payoff used to take ~8s
+    (N legs each doing a serial ~1/sec REST call, post-market) — the user saw it
+    "stuck loading"; batching turns N serial calls into 1."""
     try:
         import ltp_poller
         ltp_poller.request_watch([(r.get('segment') or 'NSE_FNO', str(r.get('sec_id')))
                                   for r in rows if r.get('sec_id')])
     except Exception:
         pass
+    # pass 1 — feed + shared cache (no network)
+    missing = []
     for r in rows:
         sid = r.get('sec_id')
         if not sid:
             continue
-        ltp = None
+        ltp = 0
         try:
             import dhan_feed
             q = dhan_feed.get_quote(str(sid), max_age=_FEED_MAX_AGE)
             ltp = float(q.get('ltp') or 0) if q else 0
         except Exception:
-            ltp = None
+            ltp = 0
         if not ltp:
             try:
                 import shared_ltp_cache
                 ltp = float(shared_ltp_cache.get_stale(str(sid), max_age=180) or 0)
             except Exception:
                 ltp = 0
-        if not ltp:
-            try:
-                ltp = float(_rest_ltp_fallback(sid, r.get('segment') or 'NSE_FNO') or 0)
-            except Exception:
-                ltp = 0
         if ltp:
             r['ltp'] = ltp
+        else:
+            missing.append(r)
+    # pass 2 — ONE batched LTP call for the rest, then re-read the warmed cache
+    if missing:
+        try:
+            _prewarm_option_ltps([str(r.get('sec_id')) for r in missing if r.get('sec_id')])
+            import shared_ltp_cache
+            for r in missing:
+                sid = r.get('sec_id')
+                if sid:
+                    ltp = float(shared_ltp_cache.get_stale(str(sid), max_age=60) or 0)
+                    if ltp:
+                        r['ltp'] = ltp
+        except Exception:
+            pass
     return rows
 
 
@@ -2966,14 +2982,23 @@ def _payoff_spot(legs):
     return None
 
 
+_payoff_cache = {}      # qs -> (res, ts) — LTP-attach + analyse is a few-second op;
+_PAYOFF_TTL = 30        # rapid group-switching would re-run it each time.
+
 @app.route('/api/position-payoff')
 def api_position_payoff():
-    """Payoff / zone analytics for one open position GROUP (DISPLAY-ONLY —
-    describes an existing position, places nothing, gates nothing).
-    Query: ids=<comma-separated order_store ids>. Margin is a separate route
-    (5 Kite calls — slow), so the panel renders instantly."""
+    """Payoff / zone analytics for one position GROUP (DISPLAY-ONLY — describes
+    an existing position, places nothing, gates nothing). Query: ids=/group_id=.
+    CACHED (_PAYOFF_TTL): switching between groups re-hits the same group instantly
+    instead of re-attaching LTP + re-running analyse each time. Margin is a
+    separate route (5 Kite calls — slow), so the panel renders instantly."""
     try:
         import payoff
+        import time as _tm
+        _ck = request.query_string.decode()
+        _hit = _payoff_cache.get(_ck)
+        if _hit and (_tm.time() - _hit[1]) < _PAYOFF_TTL:
+            return jsonify(_hit[0])
         rows, closed = _payoff_resolve(request.args)
         if not rows:
             return jsonify({"ok": False, "msg": "no legs for this group (open or recently-closed)"})
@@ -2987,6 +3012,7 @@ def api_position_payoff():
         res = payoff.analyse(rows, spot, target_days=td)
         if isinstance(res, dict):
             res['closed'] = bool(closed)         # #01 → panel shows "reconstructed from entry"
+        _payoff_cache[_ck] = (res, _tm.time())
         return jsonify(res)
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
