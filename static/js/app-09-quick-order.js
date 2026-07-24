@@ -576,7 +576,7 @@
               <span style="font-size:10px;font-weight:bold;color:${col};width:28px">${l.side}</span>
               <span style="font-size:12px;color:#e6edf3">${strike}</span></span>
             <span style="display:flex;align-items:center;gap:7px">${steps}
-              <span style="font-size:11px;color:#e6edf3;width:66px;text-align:right">LTP <b style="color:#c9d1d9">${ltp}</b></span></span></div>`;
+              <span style="font-size:12px;font-weight:bold;color:#c9d1d9;width:50px;text-align:right">${ltp}</span></span></div>`;
         }).join('');
         const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
         const lc = document.getElementById('qo-strad-legcount'); if (lc) lc.textContent = _qsEnabled().length;

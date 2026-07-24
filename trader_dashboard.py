@@ -4052,6 +4052,16 @@ def _straddle_preview(symbol, lots, spec):
         return {"ok": False, "msg": f"{symbol} supported nahi"}
     spot = _trigger_spot_now(symbol)
     if not spot or spot <= 0:
+        # PREVIEW is display-only → off-market use last-known spot (wide stale) so
+        # strikes resolve + last-close LTPs still show. FIRING stays strict: it uses
+        # _trigger_spot_now (fresh only) and blocks off-market — this fallback is
+        # never on the order path.
+        try:
+            import shared_ltp_cache as _slc
+            spot = _slc.get_index(symbol, max_age=86400) or None
+        except Exception:
+            spot = None
+    if not spot or spot <= 0:
         return {"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"}
     legs, err = _resolve_straddle_legs(symbol, spot, spec)
     if err:
