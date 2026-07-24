@@ -536,6 +536,7 @@
       // OTM offset. Preview shows per-leg LTP + net credit + real hedged margin.
       window.qoStradState = {
         sym: true,
+        atm: null, step: null,   // from last preview (scrip master) — strike computed client-side
         legs: [
           { key: 'ceS', side: 'SELL', ot: 'CE', off: 0, on: true },
           { key: 'peS', side: 'SELL', ot: 'PE', off: 0, on: true },
@@ -543,6 +544,11 @@
           { key: 'peB', side: 'BUY',  ot: 'PE', off: 2, on: true },
         ],
         prev: {},   // key -> {strike, ltp}
+      };
+      const _qsStrike = l => {   // compute this leg's strike from ATM+step (instant on +/-, off-market safe)
+        const S = window.qoStradState;
+        if (S.atm == null || S.step == null) return (S.prev[l.key] || {}).strike || null;
+        return l.side === 'SELL' ? S.atm : (l.ot === 'CE' ? S.atm + l.off * S.step : S.atm - l.off * S.step);
       };
       const _qsLeg = k => window.qoStradState.legs.find(l => l.key === k);
       const _qsEnabled = () => window.qoStradState.legs.filter(l => l.on);
@@ -554,8 +560,10 @@
         box.innerHTML = S.legs.map(l => {
           const p = pv[l.key] || {}, on = l.on;
           const col = l.side === 'SELL' ? '#f85149' : '#3fb950';
-          const strike = p.strike ? (p.strike + ' ' + l.ot) : (l.ot + ' ' + (l.side === 'SELL' ? 'ATM' : ((l.ot === 'CE' ? '+' : '−') + l.off)));
-          const ltp = (p.ltp != null && p.ltp > 0) ? p.ltp.toFixed(2) : '—';
+          const stk = _qsStrike(l);
+          const strike = stk != null ? (stk + ' ' + l.ot) : (l.ot + ' ' + (l.side === 'SELL' ? 'ATM' : ((l.ot === 'CE' ? '+' : '−') + l.off)));
+          // last preview's LTP only applies if it was for THIS strike (else stale after a +/-)
+          const ltp = (p.ltp != null && p.ltp > 0 && (p.strike == null || stk == null || p.strike === stk)) ? p.ltp.toFixed(2) : '—';
           const tag = l.side === 'SELL' ? '<span style="font-size:9px;color:#8b949e;background:#21262d;border-radius:4px;padding:1px 5px">ATM</span>' : '';
           const steps = l.side === 'BUY' ? (
             `<button ${on ? '' : 'disabled'} onclick="qoStradStep('${l.key}',-1)" style="width:20px;height:20px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-size:12px;line-height:1;opacity:${on ? 1 : .35}">−</button>` +
@@ -612,6 +620,8 @@
         try {
           const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec }) })).json();
           if (d.ok) {
+            if (d.atm != null) window.qoStradState.atm = d.atm;
+            if (d.step != null) window.qoStradState.step = d.step;
             // response legs are in the SAME order as the enabled spec → zip back to keys
             const en = _qsEnabled(), pv = {};
             (d.legs || []).forEach((rl, i) => { if (en[i]) pv[en[i].key] = { strike: rl.strike, ltp: rl.ltp }; });
@@ -622,9 +632,12 @@
             if (marlot) marlot.textContent = d.margin_lot != null ? (_qoInr(d.margin_lot) + ' / lot') : '';
             qoStradRenderLegs();
           } else {
-            if (net) net.textContent = d.msg || 'preview fail';
+            // off-market / no live spot → keep last net+margin (don't wipe with an error);
+            // strikes still update from atm/step, LTP shows — for changed legs
+            if (net && (net.textContent === '—' || net.textContent === '')) net.textContent = d.msg || 'spot —';
+            qoStradRenderLegs();
           }
-        } catch (e) { if (net) net.textContent = 'net —'; }
+        } catch (e) { qoStradRenderLegs(); }
         finally { window._qoStradPrevBusy = false; }
       };
 

@@ -4056,6 +4056,18 @@ def _straddle_preview(symbol, lots, spec):
     legs, err = _resolve_straddle_legs(symbol, spot, spec)
     if err:
         return {"ok": False, "msg": err}
+    # ATM strike + strike-step (from scrip master, NOT hardcoded) so the UI can
+    # compute any wing's strike client-side instantly on +/- — even off-market
+    # when live LTP won't refresh. Two cheap local get_option_contract lookups.
+    atm_strike = step = None
+    try:
+        import dhan_master as _dm
+        atm_strike = _strike_of(_dm.get_option_contract(symbol, spot, "CE", 0)[1])
+        _s1 = _strike_of(_dm.get_option_contract(symbol, spot, "CE", 1)[1])
+        if atm_strike and _s1:
+            step = abs(_s1 - atm_strike)
+    except Exception:
+        pass
     try:
         _prewarm_option_ltps([lg["sec_id"] for lg in legs])
     except Exception:
@@ -4083,8 +4095,8 @@ def _straddle_preview(symbol, lots, spec):
                                           "sym": r["sym"], "segment": "NSE_FNO"}) for r in rows)
     except Exception:
         margin = None
-    return {"ok": True, "spot": round(spot, 1), "lot": lot, "lots": lots, "legs": out_legs,
-            "net_credit": net,
+    return {"ok": True, "spot": round(spot, 1), "atm": atm_strike, "step": step,
+            "lot": lot, "lots": lots, "legs": out_legs, "net_credit": net,
             "net_credit_total": (round(net * q) if net is not None else None),
             "margin": (round(margin) if margin else None),
             "margin_lot": (round(margin / lots) if margin else None)}
