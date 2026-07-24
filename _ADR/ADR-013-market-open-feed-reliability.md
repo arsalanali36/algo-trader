@@ -1,7 +1,35 @@
 # ADR-013 — Market-open price-feed reliability (WebSocket-first) + REST-burst reduction
 
-Status: PROPOSED (plan for review — nothing built yet)
+Status: PROPOSED — **original premise REFUTED by measurement 2026-07-24; see MEASUREMENT UPDATE below. Nothing built. RESUME here later.**
 Date: 2026-07-24
+
+---
+
+## ⚠️ MEASUREMENT UPDATE (2026-07-24) — read THIS first; the Context/Decision below was written on a WRONG premise
+
+We suspected "market-open saturates Dhan's ~1/sec REST limit". **Measured — it's false.** Then chased 2-3 more wrong theories before grounding it. Real findings:
+
+**What the data actually shows (VPS logs + live probe):**
+- **Strategies are NOT REST-rate-limited.** Total REST `DH-904` across ALL strategies TODAY ≈ **0**. (My "range_v1 hammers candles" claim was WRONG — range_v1 trades NIFTY only, 0 DH-904; its log's 1866 "429" were the dhan_feed WebSocket lines, since range_v1 is the feed leader pid.)
+- **All 234 journal 429s are the WebSocket handshake being rejected** — concentrated at **startup 09:07-09:10** + a burst at 09:30. NOT strategy REST calls. So the WS 429 is NOT from REST congestion.
+- **The poller updates each open leg only every ~5-15s** (live probe: 14 open legs all in the "5-15s" band, NONE "<5s"), *despite* 0 rate-limiting. So the internal rate-gate is yielding the poller's `"ltp"` slot to other traffic (candle/margin) even without 429s — the poller runs slower than its 1.5s target.
+
+**Real root of the "BANKNIFTY-56200-PE 145s stale — SL/target PAUSED" alert:**
+- `pos_monitor_loop`'s exit-price fetch (`trader_dashboard.py:~7448`) order is: **`dhan_feed.get_quote` (WebSocket) → `_rest_ltp_fallback` (which is cache-FIRST: `shared_ltp_cache` fresh ≤~5s → direct REST → `get_stale` ≤15s)**. (Correction: I twice mis-stated this — the exit DOES try WS first, and the REST fallback IS cache-first.)
+- **The WebSocket is DOWN** (429) → the primary, real-time source is gone → everything leans on the poller-cache + REST.
+- The poller updates legs at **5-15s = right at the 15s stale-cache fallback edge**. When WS-down + a poller slip past 15s + a momentary direct-REST fail all coincide → the leg goes **blind** → alert fires after `_STALE_ALERT_SECS=90` (`trader_dashboard.py:~7481`).
+- So **Problem 1 (WS won't connect) and Problem 2 (leg stale) are ONE connected issue**, not two — WS-down removes the primary source, and the 5-15s poller cadence is too close to the 15s threshold to safely backstop it.
+
+**Candidate fixes (with trade-offs) — NOT decided, needs Arsalan's explicit OK (money-path):**
+- **C (safest, immediate):** widen `_rest_ltp_fallback`'s stale-cache last resort (`get_stale(max_age=15.0)` at `trader_dashboard.py:~7127`) to ~30s. The poller HAS the price (5-15s old); pos_monitor rejects it at 15s. Using a ≤30s price = SL fires slightly late vs today's *blind (no fire at all)* → **strictly better**; straddle isn't tick-sensitive. One-line, low blast-radius. **Needs user OK — it changes exit behaviour.**
+- **B (deeper):** give the poller `"ltp"` priority over candle/margin so it updates <5s → cache always fresh. Now **data-justified** (poller measured at 5-15s). Blast radius = shared rate-limiter (affects all).
+- **A (root):** make `dhan_feed` WebSocket reliably connect + stay connected. Hardest (WS fragile history TRAP #11/#87/#88/#89). The 09:07-09:10 429 storm ≠ REST congestion → likely a **startup leader-race** (many procs connecting) or a **stale/uncleanly-closed connection** Dhan still holds. Needs its own diagnosis.
+
+**RESUME PLAN:** (1) get Arsalan's OK on **C** and ship it (immediate safety) → (2) diagnose WHY the WS won't connect (leader-race vs stale-connection) for A → (3) reconsider B only if still needed. **Everything below this line was the pre-measurement plan — treat as superseded.**
+
+**Meta-lesson (logged):** measure-before-build saved us from building the wrong thing; I jumped to a conclusion 3× in this thread — verify every claim against data. See [[feedback_technical_peer_not_servant]].
+
+---
 
 ## Context
 
