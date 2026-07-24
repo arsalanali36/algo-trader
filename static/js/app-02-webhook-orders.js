@@ -1029,11 +1029,13 @@
     async function _pfLoadSeries(qs) {
       const wrap = document.getElementById('pfSeriesWrap');
       wrap.innerHTML = '<div style="font-size:11px;color:#8b949e;padding:10px;text-align:center">⏳ legs ke candles aa rahe…</div>';
+      window._pfSeriesToken = qs;    // only the LATEST selected group renders (drop stale slow responses)
       let s;
       try {
         const r = await fetch('/api/position-legs-series?' + qs);
         s = await r.json();
-      } catch (e) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
+      } catch (e) { if (window._pfSeriesToken === qs) wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">series fail: ' + e.message + '</div>'; return; }
+      if (window._pfSeriesToken !== qs) return;   // user switched to a newer group mid-fetch — ignore this one
       if (!s || !s.ok) { wrap.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px">' + ((s && s.msg) || 'series nahi mili') + '</div>'; return; }
       const n = s.legs.length, cols = n <= 2 ? n : (n <= 4 ? 2 : 3);
       wrap.innerHTML = `

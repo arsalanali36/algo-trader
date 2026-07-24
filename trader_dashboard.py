@@ -3026,13 +3026,24 @@ def _leg_closes(sec_id, from_date, to_date):
     return {int(ts): round(float(c), 2) for ts, c in zip(d["timestamp"], d["close"])}
 
 
+_legs_series_cache = {}      # qs -> (payload, ts) — one full-day per-leg fetch is N
+_LEGS_SERIES_TTL = 120       # rate-limited candle calls; rapid group-switching backlogs them.
+
 @app.route('/api/position-legs-series')
 def api_position_legs_series():
     """Per-leg premium series + the COMBINED (net-structure) P&L series for a
     position group. Feeds both the 4-up per-leg grid and the combined-premium
     chart. Spans entry-date -> today (positional legs are multi-day).
-    Query: ids=<comma ids>."""
+    Query: ids=/group_id=. CACHED (_LEGS_SERIES_TTL): each call fetches every
+    leg's full-day candles serially through the ~1/sec candle rate-limiter, so
+    re-opening / switching between groups would otherwise queue a big backlog —
+    the cache makes a revisited group instant and cuts total Dhan calls."""
     try:
+        import time as _tm
+        _ck = request.query_string.decode()
+        _hit = _legs_series_cache.get(_ck)
+        if _hit and (_tm.time() - _hit[1]) < _LEGS_SERIES_TTL:
+            return jsonify(_hit[0])
         import payoff
         from datetime import datetime as _d, timedelta as _td, timezone as _tz
         rows, closed = _payoff_resolve(request.args)
@@ -3088,8 +3099,10 @@ def api_position_legs_series():
             net = sum((-b[ts] if L['side'] == 'SELL' else b[ts]) for b, L in bars.values())
             combined.append([ts, round(net + entry_net, 2)])
 
-        return jsonify({"ok": True, "legs": out_legs, "combined": combined,
-                        "entry_net": round(entry_net, 2), "from": frm, "to": today})
+        _payload = {"ok": True, "legs": out_legs, "combined": combined,
+                    "entry_net": round(entry_net, 2), "from": frm, "to": today}
+        _legs_series_cache[_ck] = (_payload, _tm.time())
+        return jsonify(_payload)
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
