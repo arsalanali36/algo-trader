@@ -111,28 +111,40 @@ def fetch_spot(token, cid):
     """last NIFTY spot via index LTP (marketfeed) — cheap, no candle needed for a time-entry."""
     try:
         import shared_ltp_cache
-        v = shared_ltp_cache.get_index("NIFTY")
+        v = shared_ltp_cache.get_index("NIFTY")   # fresh (default staleness)
         if v and v > 0:
             return float(v)
     except Exception:
         pass
+    # REST fallback — only if the shared rate-limiter grants an ltp slot
+    _slot = True
     try:
         import dhan_rate_limiter as _rl
-        if not _rl.acquire("ltp"):
-            return None
+        _slot = _rl.acquire("ltp")
     except ImportError:
         pass
+    if _slot:
+        try:
+            r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                              json={"IDX_I": [13]},
+                              headers={"access-token": token, "client-id": cid,
+                                       "Content-Type": "application/json"}, timeout=8)
+            if r.status_code == 200:
+                return float(r.json()["data"]["IDX_I"]["13"]["last_price"])
+        except Exception:
+            pass
+    # LAST RESORT — accept a STALE cached spot rather than "no spot" (same fix as
+    # vrp_condor/vrp_straddle). Time-entry strategy: the morning poller-congestion
+    # window is where the 60s cache + busy ltp slot produced "no spot" spam; an
+    # older poller reading (≤10 min) is fine to hold/heartbeat on.
     try:
-        r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                          json={"IDX_I": [13]},
-                          headers={"access-token": token, "client-id": cid,
-                                   "Content-Type": "application/json"}, timeout=8)
-        if r.status_code != 200:
-            return None
-        d = r.json()
-        return float(d["data"]["IDX_I"]["13"]["last_price"])
+        import shared_ltp_cache
+        v = shared_ltp_cache.get_index("NIFTY", max_age=600)
+        if v and v > 0:
+            return float(v)
     except Exception:
-        return None
+        pass
+    return None
 
 
 def _opt_ltp(broker, sec_id):
