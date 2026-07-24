@@ -29,6 +29,7 @@ _R_FREE = 0.065
 _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 _bs_mod = None
+_ch_mod = None
 
 
 def _bs():
@@ -50,6 +51,46 @@ def _bs():
         log.warning("[payoff] bs_option unavailable (%s) — today-curve/POP disabled", e)
         _bs_mod = False
     return _bs_mod or None
+
+
+def _charges():
+    """Lazy-import the single-source charges module (same scratch/nifty_trend dir as
+    bs_option). Used for the payoff panel's total round-trip transaction cost. Returns
+    None if unavailable (tax line just shows '—')."""
+    global _ch_mod
+    if _ch_mod is not None:
+        return _ch_mod or None
+    d = os.path.join(_ROOT, "scratch", "nifty_trend")
+    if os.path.isdir(d) and d not in sys.path:
+        sys.path.insert(0, d)
+    try:
+        import charges as _c
+        _ch_mod = _c
+    except Exception as e:
+        log.warning("[payoff] charges module unavailable (%s) — tax line disabled", e)
+        _ch_mod = False
+    return _ch_mod or None
+
+
+def structure_tax(rows):
+    """Total Zerodha round-trip transaction cost (brokerage+STT+txn+SEBI+stamp+GST) to
+    trade this whole multi-leg structure, estimated at CURRENT premiums (exit premium is
+    forward-unknown, so entry premium is used both ways). Returns float, or None if the
+    charges module isn't available. Display-only — never gates anything."""
+    ch = _charges()
+    if not ch:
+        return None
+    total = 0.0
+    for r in (rows or []):
+        try:
+            prem = float(r.get("entry_price") or r.get("price") or 0)
+            qty = int(float(r.get("qty") or 0))
+            side = str(r.get("entry") or r.get("side") or "BUY").upper()
+            if prem > 0 and qty > 0:
+                total += ch.option_charges(prem, prem, qty, entry_side=side)
+        except Exception:
+            continue
+    return round(total, 2)
 
 
 def _norm_cdf(x):
@@ -370,4 +411,5 @@ def analyse(rows, spot, now_ist=None, with_margin=False, target_days=None):
 
     if with_margin:
         res["margin"] = basket_margin(legs)
+    res["total_tax"] = structure_tax(rows)   # round-trip transaction cost for the structure
     return res

@@ -732,7 +732,7 @@
       if (d.pop_target == null) window._pfView = 'expiry';
 
       body.innerHTML = `
-        <div id="pfCards" style="display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:12px"></div>
+        <div id="pfCards" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:12px"></div>
         <div style="display:flex;justify-content:space-between;align-items:center;margin:6px 0 4px">
           <span style="font-size:11px;font-weight:600;color:#8b949e">
             Payoff — <span style="color:#3fb950;font-weight:700">━ On Expiry</span>
@@ -784,6 +784,7 @@
         ['Breakeven', be != null ? _pfNf(be) : '—', _PF.C.amb, 'safe line'],
         ['Max Loss', ml != null ? _pfRs(ml) : '—', _PF.C.neg, tgt ? 'exit-day worst' : 'capped (defined risk)'],
         ['Margin — hedged', '<span id="pfMargin" style="color:#8b949e">⏳</span>', _PF.C.blu, '<span id="pfMarginSub">basket calc…</span>'],
+        ['Total Tax', d.total_tax != null ? '−' + _pfRs(d.total_tax) : '—', _PF.C.neg, 'round-trip, ' + (d.legs ? d.legs.length : 0) + ' legs'],
       ];
       document.getElementById('pfCards').innerHTML = cards.map(c =>
         `<div style="border:1px solid #30363d;border-radius:7px;padding:7px 9px;display:flex;flex-direction:column;gap:2px;text-align:left">
