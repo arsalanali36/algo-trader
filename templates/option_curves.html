@@ -220,6 +220,7 @@
   var LC = window.LightweightCharts;
   var U = 'NIFTY', AUTO = true, _timer = null, _syncing = false;
   var _solo = null;   // panel id shown solo (full-view); null = all panels
+  var _daysUsed = null;   // dates in the current multi-day view (from curves_multi) — for cross-day notes/alerts
   function _soloBtn(id){ return '<button class="solobtn" onclick="toggleSolo(\''+id+'\')" title="'+(_solo===id?'Wapas normal view':'Is panel ko full view')+'">'+(_solo===id?'⛶ exit':'⛶')+'</button>'; }
   function toggleSolo(id){ _solo=(_solo===id?null:id); buildPanes(); }
   var raw = [], view = [], byTime = {}, panes = [];   // panes: [{id, chart, main, spot, el}]
@@ -634,9 +635,18 @@
   }
 
   // ---- Notes (right-click any chart point) ----
+  // In a multi-day view (3d/5d/10d), show notes from EVERY visible day, not just the
+  // end date — each day's notes live under its own localStorage key, note times are
+  // absolute epochs so they land on the right day. Single-day view = current date only.
+  function mergedNotes(){
+    if(DAYS<=1 || !_daysUsed || !_daysUsed.length) return notes;
+    var out=[];
+    _daysUsed.forEach(function(dt){ var arr=load('oc_notes_'+U+'_'+dt, []); if(arr && arr.length) out=out.concat(arr); });
+    return out;
+  }
   function buildNotes(){
     noteMarkers={}; noteByTime={};
-    notes.forEach(function(n){
+    mergedNotes().forEach(function(n){
       (noteMarkers[n.pane]=noteMarkers[n.pane]||[]).push({ time:n.t, position:'aboveBar', color:'#d29922', shape:'square', text:'📝', size:1.2 });
       var k=n.pane+'|'+n.t; (noteByTime[k]=noteByTime[k]||[]).push(n);
     });
@@ -926,9 +936,21 @@
       else if(d&&d.expiry){ sel.value=d.expiry; }
       raw=(d&&d.points)||[];
       view=resample(raw, +document.getElementById('tf').value);
+      _daysUsed = (DAYS>1 && d && d.days_used && d.days_used.length) ? d.days_used : null;
       rawAlerts=(ad&&ad.alerts)||[];
       buildAlerts();
       notes=load(notesKey(),[]); buildNotes();
+      // Multi-day view: also pull each EARLIER visible day's auto-alerts so their markers
+      // show across the whole range (notes already merged via mergedNotes()).
+      if(_daysUsed && _daysUsed.length>1){
+        var _others=_daysUsed.filter(function(dt){ return dt!==date; });
+        Promise.all(_others.map(function(dt){
+          return fetch('/api/option-alerts?underlying='+U+'&date='+dt).then(function(r){return r.json();}).catch(function(){return {alerts:[]};});
+        })).then(function(arr){
+          arr.forEach(function(a){ if(a && a.alerts && a.alerts.length) rawAlerts=rawAlerts.concat(a.alerts); });
+          buildAlerts(); refreshMarkers();
+        });
+      }
       var sk=structKey();
       if(forceBuild || sk!==_structKey || !panes.length){ _structKey=sk; buildPanes(); }
       else { applyData(false); }   // zoom preserved
