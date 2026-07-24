@@ -353,6 +353,8 @@
       else if (r.startsWith('TRAILING_PROFIT_LOCK')) { label = '🔒 Trailing Lock'; color = '#f0883e'; }
       else if (r.startsWith('DEFAULT_TSL_TARGET')) { label = '🎯 Aggr-Trail Target'; color = '#3fb950'; }
       else if (r.startsWith('DEFAULT_TSL_SL')) { label = '🛡️ Aggr-Trail SL'; color = '#f0883e'; }
+      else if (r.startsWith('GROUP_TARGET')) { label = '🎯 Group Target'; color = '#3fb950'; }
+      else if (r.startsWith('GROUP_SL')) { label = '🛑 Group SL'; color = '#f85149'; }
       else if (r.startsWith('RMS_MAXLOSS')) { label = '⚠️ RMS Daily Max-Loss'; color = '#f85149'; }
       else if (r.startsWith('RMS_PROFIT_TARGET')) { label = '✅ RMS Daily Target'; color = '#3fb950'; }
       else if (r.startsWith('NO_PRICE_EMERGENCY_EXIT')) { label = '🚨 No-Price Emergency'; color = '#f85149'; }

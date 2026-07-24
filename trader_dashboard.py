@@ -3164,6 +3164,148 @@ def api_position_groups():
         return jsonify({"ok": False, "msg": str(e), "groups": []})
 
 
+def _exit_rule_identity(args):
+    """Resolve a payoff request (ids= / group_id=) to (key, group_id, ids, mode,
+    rows, closed) so POST-arm and DELETE-clear derive the SAME rule key. mode =
+    'live' if ANY leg is live (a live leg means a live square-off), else paper."""
+    import position_exit_rules as per
+    rows, closed = _payoff_resolve(args)
+    gid, ids, modes = "", [], set()
+    for r in rows:
+        ids.append(str(r.get('id')))
+        if r.get('group_id'):
+            gid = r.get('group_id')
+        modes.add(str(r.get('mode') or 'paper').lower())
+    mode = "live" if "live" in modes else "paper"
+    return per.rule_key(gid, ids), gid, ids, mode, rows, closed
+
+
+@app.route('/api/position-exit-rule', methods=['POST'])
+def api_position_exit_rule_set():
+    """Arm a combined-MTM auto-exit rule for a position GROUP (#02). When the
+    group's live combined MTM crosses target_rs (>=) or sl_rs (<=), the whole
+    group squares off — in the group's OWN mode (paper→paper, live→REAL order).
+    Body: {qs:'ids=..'|'group_id=..', target_rs, sl_rs}."""
+    try:
+        import position_exit_rules as per
+        from urllib.parse import parse_qs
+        d = request.get_json(force=True) or {}
+        pq = parse_qs(str(d.get("qs") or ""))
+        args = {"ids": pq.get("ids", [""])[0], "group_id": pq.get("group_id", [""])[0]}
+        key, gid, ids, mode, rows, closed = _exit_rule_identity(args)
+        if closed or not rows:
+            return jsonify({"ok": False, "msg": "group open nahi hai — auto-exit sirf live/open group pe lag sakta"})
+        target_rs = float(d.get("target_rs") or 0)
+        sl_rs = float(d.get("sl_rs") or 0)
+        if target_rs <= 0 and sl_rs >= 0:
+            return jsonify({"ok": False, "msg": "Target (>0) ya SL (<0) me se kam se kam ek set karo"})
+        rule = per.set_rule(key, gid, ids, target_rs, sl_rs, mode)
+        return jsonify({"ok": True, "rule": rule, "mode": mode})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/position-exit-rule', methods=['DELETE'])
+def api_position_exit_rule_clear():
+    """Clear a group's armed auto-exit rule. Query: ids=… or group_id=…."""
+    try:
+        import position_exit_rules as per
+        key, gid, ids, mode, rows, closed = _exit_rule_identity(request.args)
+        # even if the group is gone, still try clearing by the resolved key
+        found = per.clear_rule(key)
+        return jsonify({"ok": True, "cleared": found})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+def _run_position_exit_rules(log=print):
+    """Evaluate each armed combined-MTM GROUP rule against LIVE MTM and square
+    off the whole group on target/SL (#02). Runs inside auto_straddle_loop
+    (monitor_daemon, ~3s) so it shares the ltp_poller-warmed cache. Safety:
+      • legs re-resolved FRESH from order_store each cycle (no stale snapshot);
+      • FREEZE — never fire — if ANY leg's LTP is missing/stale (TRAP #1 shape);
+      • square-off reuses execution_gateway.execute_exit (its own fresh flat-
+        check per leg), recorded under each leg's OWN strategy/source/mode —
+        so a paper group exits paper, a live group fires a REAL exit;
+      • any error → skip (never fire on an exception);
+      • a rule whose group is already flat auto-clears."""
+    import position_exit_rules as per
+    rules = per.list_rules()
+    if not rules:
+        return
+    import execution_gateway as gw
+    try:
+        import shared_ltp_cache as slc
+        import ltp_poller
+        import order_store
+    except Exception:
+        return
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+    lb = (ist - _td(days=7)).strftime('%Y-%m-%d')
+    open_rows = [r for r in order_store.trades_for_range(lb, ist.strftime('%Y-%m-%d')).get('open', [])
+                 if 'CAPITAL_BLOCKED' not in (r.get('tags') or [])]
+    for rule in rules:
+        try:
+            key = rule.get("key")
+            gid = rule.get("group_id") or ""
+            want = set(rule.get("ids") or [])
+            if gid:
+                legs = [r for r in open_rows if (r.get('group_id') or '') == gid]
+            else:
+                legs = [r for r in open_rows if str(r.get('id')) in want]
+            if not legs:
+                per.clear_rule(key)          # group flat → rule fulfilled/stale
+                continue
+            try:
+                ltp_poller.request_watch([(str(r.get('sec_id')), r.get('segment') or 'NSE_FNO')
+                                          for r in legs if r.get('sec_id')])
+            except Exception:
+                pass
+            combined, ok_data = 0.0, True
+            for r in legs:
+                sid = str(r.get('sec_id') or '')
+                ltp = slc.get(sid, max_age=20.0) if sid else None
+                if not ltp or float(ltp) <= 0:
+                    ok_data = False
+                    break
+                qty = abs(float(r.get('qty') or 0))
+                entry = float(r.get('entry_price') or 0)
+                side = str(r.get('entry') or '').upper()
+                combined += ((entry - float(ltp)) if side == 'SELL' else (float(ltp) - entry)) * qty
+            if not ok_data:
+                continue                     # FREEZE — incomplete data, never fire
+            reason = per.check_exit(combined, rule.get("target_rs"), rule.get("sl_rs"))
+            if reason not in ("target", "sl"):
+                continue
+            log(f"[exit-rule] {key} {reason.upper()} @ combined MTM ₹{combined:,.0f} — "
+                f"squaring off {len(legs)} legs ({rule.get('mode')})")
+            for r in legs:
+                try:
+                    gw.execute_exit(
+                        r.get('strategy') or 'manual',
+                        r.get('symbol') or str(r.get('sym') or '').split('-')[0],
+                        str(r.get('sec_id')), r.get('sym'),
+                        abs(int(float(r.get('qty') or 0))),
+                        entry_side=str(r.get('entry') or 'SELL').upper(),
+                        mode=str(r.get('mode') or 'paper').lower(),
+                        group_id=gid, reason="GROUP_%s" % reason.upper(),
+                        source=r.get('source') or 'manual', log=log)
+                except Exception as e:
+                    log(f"[exit-rule] leg exit FAIL {r.get('sym')}: {e}")
+            per.clear_rule(key)
+            try:
+                import notify
+                notify.push(f"{'🎯' if reason == 'target' else '🛑'} Group auto-exit "
+                            f"{reason.upper()} — combined MTM ₹{combined:,.0f} ({len(legs)} legs, {rule.get('mode')})",
+                            level="info" if reason == "target" else "warn",
+                            key="grpexit_%s" % key, source="chain")
+            except Exception:
+                pass
+        except Exception as e:
+            log(f"[exit-rule] rule err ({rule.get('key')}): {e}")
+
+
 def _dhan_live_fate(resp, token, cid):
     """Live order ka asli anjaam pata karo. Dhan ka 200 = 'accepted', 'filled' NAHI.
     Price-band/freeze pe order accept hoke turant REJECT ho jaata (async). Return
@@ -4179,6 +4321,12 @@ def auto_straddle_loop():
                         except Exception:
                             pass
                         print(f"[straddle] {s['symbol']} {reason.upper()} @ {live:.0f} ({profit:+.0f}pt)", flush=True)
+            # ── generic per-GROUP combined-MTM auto-exit rules (#02) — runs every
+            #    cycle regardless of straddles, shares this loop's warm LTP cache ──
+            try:
+                _run_position_exit_rules(log=lambda m: print(m, flush=True))
+            except Exception as _pe:
+                print(f"[exit-rule] loop err: {_pe}", flush=True)
         except Exception as e:
             print(f"[straddle] loop error: {e}", flush=True)
         _t.sleep(3)
