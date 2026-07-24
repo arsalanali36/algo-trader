@@ -81,3 +81,36 @@ Three tensions to resolve:
 
 Related: ADR-007 (identity/naming), option-alerts (drives C), price_triggers (same
 fire-via-gateway pattern). Memory: `project_code3b_auto_straddle`.
+
+---
+
+## Addendum (2026-07-24) — HEDGE-FIRST + basket-margin gate + one-shot attempt marker
+
+**Context:** first live paper run exposed a naked-orphan storm (LESSONS TRAP #156). At the
+9:20 market-open squeeze the paper pool was ~₹9.2L/₹10L; the original fire sold the ATM CE,
+then the ATM PE was blocked because `check_capital` estimated each SELL leg's **standalone
+naked margin** (₹1.6-1.77L) rather than the hedged basket. A blocked/aborted fire recorded
+nothing, so the "fire once at 9:20" guard (which only counted RECORDED straddles) re-fired
+every 3s; a CE unwind that couldn't fetch a price left an untracked naked leg.
+
+**Decision — the fire is now HEDGE-FIRST and gated as ONE basket:**
+
+1. Resolve ATM CE/PE **and both OTM wings up front**; if hedge is enabled and a wing can't
+   resolve → **ABORT** (never sell naked). Hedge is no longer best-effort-after-the-sell.
+2. Gate the WHOLE structure **once**: `risk_gate.gating_status` (RMS) + a single
+   `check_capital_needed(sid, kite_basket_margin(rows), mode)` — real hedged basket margin,
+   not a sum of per-leg naked estimates. No more "CE squeezes in, PE blocks".
+3. **BUY both wings first**, then SELL ATM CE + PE with `gate=False` (capital already vetted
+   as a basket). Never hold a naked short even momentarily.
+4. Any mid-way failure → `_unwind_all` (verified, loud `notify.error`) — no untracked orphan.
+5. One-shot guard armed by the ATTEMPT: `auto_straddle.mark_920(sym)` (day-scoped `fired_920`)
+   is set BEFORE the fire, so a failed/partial fire can't re-arm the 3s loop. Loop also
+   re-checks the entry window with a fresh per-symbol `now`.
+
+**Consequence:** the straddle now behaves like real money — it fires as one unit if the
+hedged basket fits the (unchanged, hard) capital cap, else it **cleanly skips once** with a
+"capital cap" reason (no storm, no orphan, no one-sided hedge). Tighter wings (higher
+`per_symbol.hedge_max_premium`) reduce the basket margin so it fits a smaller headroom;
+raising the cap is a separate lever (declined — paper is treated as real). New knob:
+`risk_gate.check_capital_needed` is the reusable basket-capital entry point for any future
+multi-leg structure. See LESSONS TRAP #156.
