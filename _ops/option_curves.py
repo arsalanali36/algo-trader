@@ -66,6 +66,13 @@ def _csv_path(u, date):
 
 _CACHE = {}  # (u, date) -> (mtime, rows)
 
+# the collector's fixed schema (option_chain_collector.CSV_COLS) — applied when a
+# day's file is missing its header row (a collector restart occasionally wrote one
+# header-less file, e.g. 2026-07-22), so DictReader doesn't mistake row 1 for headers.
+_COLS = ["datetime", "underlying", "spot", "vix", "expiry", "strike", "opt_type",
+         "ltp", "bid", "ask", "oi", "prev_oi", "chg_oi", "volume", "iv",
+         "delta", "theta", "gamma", "vega"]
+
 
 def _load_rows(u, date):
     p = _csv_path(u, date)
@@ -79,7 +86,10 @@ def _load_rows(u, date):
     rows = []
     try:
         with open(p, newline="", encoding="utf-8") as f:
-            for r in csv.DictReader(f):
+            first = f.readline()
+            f.seek(0)
+            rd = csv.DictReader(f) if first.startswith("datetime,") else csv.DictReader(f, fieldnames=_COLS)
+            for r in rd:
                 rows.append(r)
     except Exception:
         return p, []
