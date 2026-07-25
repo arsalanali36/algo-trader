@@ -96,7 +96,11 @@
       <table id="legtbl"><thead><tr><th>Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
       <div class="brkt">Profit kahan se aaya</div>
       <div class="bars" id="bars"></div>
-      <button class="save" id="save">💾 Save is run to journal</button>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
+        <button class="save" id="save">💾 Save this run</button>
+        <button class="save" id="marginBtn">💰 Margin &amp; live LTP</button>
+      </div>
+      <div id="marginCard"></div>
     </div>
 
     <div class="journal" id="journal" style="display:none">
@@ -140,7 +144,9 @@ $('run').addEventListener('click',async ()=>{
 
 function render(r){
   $('out').style.display='block';
-  $('rhd').innerHTML=`<b>${r.underlying}</b> · ${r.date} · entry <b>${r.entry_hm}</b> → exit <b>${r.exit_hm}</b> · <b>${r.lots} lot</b>${r.expiry?' · exp '+r.expiry:''}`;
+  const cr = r.credit||0;
+  $('rhd').innerHTML=`<b>${r.underlying}</b> · ${r.date} · entry <b>${r.entry_hm}</b> → exit <b>${r.exit_hm}</b> · <b>${r.lots} lot</b>${r.expiry?' · exp '+r.expiry:''} · entry <b style="color:${cr>=0?'var(--green)':'var(--amber)'}">${cr>=0?'credit':'debit'} ₹${Math.abs(cr).toLocaleString('en-IN')}</b>`;
+  $('marginCard').innerHTML='';   // reset margin card on each new run
   const tv=$('totv'); tv.textContent=fmt(r.total); tv.style.color=r.total>=0?'var(--green)':'var(--red)';
   $('totbox').className='tot'+(r.total<0?' neg':'');
   const up=(r.move||0)>=0, mv=$('mv');
@@ -179,6 +185,27 @@ $('save').addEventListener('click',()=>{
   jsave(a); renderJournal();
 });
 $('jlist').addEventListener('click',e=>{if(e.target.classList.contains('del')){const a=jload();a.splice(+e.target.dataset.i,1);jsave(a);renderJournal();}});
+
+// ---- live margin + LTP for the entered legs (current market) ----
+$('marginBtn').addEventListener('click',async ()=>{
+  const mc=$('marginCard');
+  mc.innerHTML='<div style="color:var(--mut);padding:12px 0">💰 Live margin le raha… (sirf market hours me)</div>';
+  const body={underlying:INST,lots:+$('lots').value,legs:collectLegs()};
+  let r; try{ r=await (await fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(); }catch(e){ r={ok:false,msg:'network'}; }
+  if(!r.ok){ mc.innerHTML='<div style="color:var(--amber);padding:12px 0">⚠ '+(r.msg||'margin nahi mila')+'</div>'; return; }
+  const f=v=>v==null?'—':'₹'+Math.round(v).toLocaleString('en-IN');
+  const legrows=r.legs.map(l=>`<div style="display:flex;justify-content:space-between;padding:5px 0;font-variant-numeric:tabular-nums;border-top:1px solid var(--bd2)"><span style="font-weight:600">${l.label}</span><span>live LTP <b>${l.ltp!=null?'₹'+l.ltp:'—'}</b></span></div>`).join('');
+  mc.innerHTML=`<div style="border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-top:12px;background:var(--panel)">
+    <div style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💰 Live margin &amp; LTP <span style="color:var(--dim);text-transform:none;letter-spacing:0">· current market · spot ${r.spot}</span></div>
+    ${legrows}
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;text-align:center">
+      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedged margin</div><div style="font-size:20px;font-weight:800;color:var(--green)">${f(r.hedged)}</div></div>
+      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Naked (leg-sum)</div><div style="font-size:20px;font-weight:800;color:var(--red)">${f(r.standalone)}</div></div>
+      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedge benefit</div><div style="font-size:20px;font-weight:800;color:var(--blue)">${f(r.benefit)}</div></div>
+    </div>
+    <div style="color:var(--dim);font-size:11px;margin-top:11px">Hedge (BUY wing) add karke dobara dabao — hedged margin girega, benefit = naked − hedged. Ye <b>LIVE current-market</b> margin hai (backtest-date ka nahi). ${r.msg?'<span style="color:var(--amber)">('+r.msg+')</span>':''}</div>
+  </div>`;
+});
 $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?')){jsave([]);renderJournal();}});
 
 // init

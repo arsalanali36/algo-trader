@@ -598,6 +598,65 @@ def api_whatif():
         print("[whatif] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "legs": []})
 
+@app.route('/api/whatif-margin', methods=['POST'])
+def api_whatif_margin():
+    """LIVE margin + current LTP for the entered legs (current market — resolves
+    each strike to its live contract). Shows hedged basket margin vs the naked
+    per-leg sum, so a hedge's benefit is visible. Market-hours only."""
+    import dhan_master, requests as _req, payoff
+    d = request.get_json(force=True, silent=True) or {}
+    u = (d.get('underlying') or 'NIFTY').upper()
+    lots = max(1, int(d.get('lots') or 1))
+    legs = d.get('legs', [])
+    step = 100 if u == 'BANKNIFTY' else 50
+    try:
+        token, cid = _creds()
+        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        idx_id = {"NIFTY": "13", "BANKNIFTY": "25"}.get(u, "13")
+        # live index spot (cache-first, then REST)
+        spot = None
+        try:
+            import shared_ltp_cache as _slc
+            spot = _slc.get(idx_id, max_age=15) or None
+        except Exception:
+            pass
+        if not spot:
+            _rl.set_context("WhatifMargin:Idx"); _rl.acquire("ltp")
+            r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json={"IDX_I": [int(idx_id)]}, headers=headers, timeout=6)
+            if r.status_code == 200:
+                spot = float(r.json()["data"]["IDX_I"][idx_id]["last_price"])
+        if not spot:
+            return jsonify({"ok": False, "msg": "Live spot nahi mila — market band ho to margin/LTP off-hours nahi milte."})
+        atm = round(spot / step) * step
+        rows, out_legs, sec_ids = [], [], []
+        for lg in legs:
+            K = float(lg['strike']); typ = lg['type']; side = lg['side'].upper()
+            off = round((K - atm) / step) if typ == 'CE' else round((atm - K) / step)
+            sec, tsym, lotsz = dhan_master.get_option_contract(u, spot, typ, off)
+            if not sec:
+                return jsonify({"ok": False, "msg": f"{int(K)} {typ} ka current contract resolve nahi hua (spot {spot:.0f} se door?)."})
+            qty = int(lotsz or (65 if u == 'NIFTY' else 30)) * lots
+            rows.append({"trad_sym": tsym, "sec_id": sec, "side": side, "qty": qty, "entry": 0, "ltp": 0})
+            out_legs.append({"label": f"{side.title()} {int(K)} {typ}", "sec": sec, "trad_sym": tsym})
+            sec_ids.append(int(sec))
+        # live LTP for the legs (one batched call)
+        _rl.set_context("WhatifMargin:Legs"); _rl.acquire("ltp")
+        rq = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json={"NSE_FNO": sec_ids}, headers=headers, timeout=6)
+        ltpmap = {}
+        if rq.status_code == 200:
+            ltpmap = {k: (v or {}).get("last_price") for k, v in (rq.json().get("data", {}).get("NSE_FNO", {}) or {}).items()}
+        for r, ol in zip(rows, out_legs):
+            lp = ltpmap.get(str(r["sec_id"]))
+            r["entry"] = r["ltp"] = lp or 0
+            ol["ltp"] = round(lp, 1) if lp else None
+        m = payoff.basket_margin(rows)
+        return jsonify({"ok": True, "underlying": u, "lots": lots, "spot": round(spot, 2),
+                        "legs": out_legs, "hedged": m.get("hedged"), "standalone": m.get("standalone"),
+                        "benefit": m.get("benefit"), "msg": m.get("msg") or ""})
+    except Exception as e:
+        print("[whatif-margin] fail:", e, flush=True)
+        return jsonify({"ok": False, "msg": str(e)})
+
 @app.route('/api/option-curves')
 def api_option_curves():
     import option_curves as oc

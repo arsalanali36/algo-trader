@@ -285,12 +285,15 @@ def run(u, date, entry_hm, exit_hm, lots, legs):
             "x_iv": round(d["x_iv"], 1) if d["x_iv"] is not None else None,
         })
     decay = tot - tot_price - tot_iv       # residual = theta + higher-order → three sum to total
+    # net credit collected at entry (SELL premium in, BUY premium out) × lot
+    credit = sum(((d["e_prem"] if lg["side"].upper() == "SELL" else -d["e_prem"]))
+                 for lg, d in zip(legs, data["legs"])) * lot
     return {
         "ok": True, "underlying": u, "date": date, "lots": int(lots or 1),
         "entry_hm": data["legs"][0]["e_t"], "exit_hm": data["legs"][0]["x_t"],
         "expiry": data.get("expiry"), "source": src,
         "spot_e": round(e_spot, 2) if e_spot else None, "spot_x": round(x_spot, 2) if x_spot else None,
         "move": round((x_spot - e_spot)) if (e_spot and x_spot) else None,
-        "legs": out_legs, "total": round(tot),
+        "legs": out_legs, "total": round(tot), "credit": round(credit),
         "decay": round(decay), "price": round(tot_price), "iv": round(tot_iv),
     }
