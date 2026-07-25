@@ -599,6 +599,31 @@ def api_option_curves():
         print("[option-curves] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "expiries": [], "points": []})
 
+@app.route('/gex')
+def gex_profile_page():
+    """QuantTradingApp-style Gamma-Exposure (GEX) profile — per-strike Net GEX
+    (green +/red −), call/put volume walls, spot, max-pain, abs-GEX/flip, from the
+    option-chain collector's per-minute snapshots. Scrub/play through the day.
+    Display-only (no order/risk path); GEX = context/level map, not a signal."""
+    return render_template("gex.html")
+
+@app.route('/api/gex')
+def api_gex():
+    import gex_profile as gp
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date')
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    latest_only = (request.args.get('latest') or '') in ('1', 'true', 'yes')
+    try:
+        if latest_only:
+            return jsonify(gp.latest(u, date, expiry))       # newest snapshot (live refresh)
+        return jsonify(gp.profile(u, date, expiry))          # full day (scrub/play)
+    except Exception as e:
+        print("[gex] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e), "expiries": [], "snaps": []})
+
 @app.route('/api/option-strike')
 def api_option_strike():
     """Per-strike premium series for /curves right-click 'Load strike chart'.

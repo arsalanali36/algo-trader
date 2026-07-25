@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GEX Profile</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --bd:#30363d; --bd2:#21262d;
+    --tx:#e6edf3; --mut:#8b949e; --dim:#6e7681;
+    --green:#3fb950; --red:#f85149; --blue:#1f6feb; --amber:#d29922;
+    --spot:#f0883e; --purple:#a371f7;
+    --greenA:rgba(63,185,80,.16); --redA:rgba(248,81,73,.16);
+    --callA:rgba(88,166,255,.14); --putA:rgba(240,136,62,.13);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--tx);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:13px;-webkit-font-smoothing:antialiased}
+  .num{font-variant-numeric:tabular-nums}
+  a{color:var(--blue);text-decoration:none}
+  .top{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--bd);
+    background:linear-gradient(180deg,#11161d,#0d1117);flex-wrap:wrap}
+  .brand{display:flex;align-items:baseline;gap:9px}
+  .brand b{font-size:15px;letter-spacing:.2px}
+  .brand span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .top .sp{flex:1}
+  .seg{display:inline-flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .seg button{background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:5px 12px;cursor:pointer}
+  .seg button.on{background:var(--blue);color:#fff}
+  .ctl{border:1px solid var(--bd);background:var(--bd2);border-radius:7px;padding:5px 9px;color:var(--tx);font:inherit}
+  .ctl small{color:var(--mut);font-weight:500;margin-right:6px;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+  select.ctl,input.ctl{cursor:pointer}
+  input[type=date].ctl{color-scheme:dark}
+  .kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--bd);border-bottom:1px solid var(--bd)}
+  .kpi{background:var(--panel);padding:10px 14px}
+  .kpi .lab{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.6px;margin-bottom:4px}
+  .kpi .val{font-size:19px;font-weight:700}
+  .kpi .val small{font-size:11px;color:var(--mut);font-weight:500}
+  .regime{display:flex;align-items:center;gap:12px;padding:9px 16px;font-size:12.5px;border-bottom:1px solid var(--bd)}
+  .badge{font-weight:700;padding:3px 10px;border-radius:20px;font-size:11px;letter-spacing:.3px}
+  .badge.pos{background:var(--greenA);color:var(--green);border:1px solid rgba(63,185,80,.4)}
+  .badge.neg{background:var(--redA);color:var(--red);border:1px solid rgba(248,81,73,.4)}
+  .regime .txt{color:var(--mut)}
+  .regime .txt b{color:var(--tx)}
+  .wrap{padding:14px 16px}
+  .card{background:var(--panel);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+  .clhead{display:flex;align-items:center;gap:16px;padding:9px 14px;border-bottom:1px solid var(--bd2);font-size:11.5px;color:var(--mut);flex-wrap:wrap}
+  .lg{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
+  canvas{display:block;width:100%}
+  .scrub{display:flex;align-items:center;gap:14px;padding:12px 16px;border-top:1px solid var(--bd2)}
+  .play{width:38px;height:38px;border-radius:50%;border:1px solid var(--bd);background:var(--bd2);color:var(--tx);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
+  .play:hover{background:var(--blue);border-color:var(--blue);color:#fff}
+  input[type=range]{-webkit-appearance:none;appearance:none;height:5px;border-radius:4px;background:var(--bd);flex:1;outline:none;cursor:pointer}
+  input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:15px;height:15px;border-radius:50%;background:var(--spot);border:2px solid #1a1f27;cursor:pointer}
+  input[type=range]::-moz-range-thumb{width:15px;height:15px;border-radius:50%;background:var(--spot);border:2px solid #1a1f27;cursor:pointer}
+  .tlab{font-variant-numeric:tabular-nums;font-weight:700;font-size:15px;min-width:74px;text-align:center}
+  .tlab small{display:block;font-size:9px;color:var(--mut);font-weight:500;letter-spacing:.5px;text-transform:uppercase}
+  .speed{display:inline-flex;border:1px solid var(--bd);border-radius:6px;overflow:hidden}
+  .speed button{background:none;border:0;color:var(--mut);font:inherit;padding:4px 8px;cursor:pointer;font-size:11px}
+  .speed button.on{background:var(--bd2);color:var(--tx)}
+  .live{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--bd);border-radius:6px;padding:4px 9px;cursor:pointer;color:var(--mut);font-weight:600;font-size:11px}
+  .live.on{color:var(--green);border-color:rgba(63,185,80,.4)}
+  .live .dot{width:7px;height:7px;border-radius:50%;background:var(--dim)}
+  .live.on .dot{background:var(--green);animation:pulse 1.6s infinite}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+  .note{color:var(--dim);font-size:11px;padding:12px 16px 22px;line-height:1.6}
+  .empty{padding:60px 16px;text-align:center;color:var(--mut)}
+  @media(max-width:820px){.kpis{grid-template-columns:repeat(3,1fr)}}
+</style>
+</head>
+<body>
+
+<div class="top">
+  <div class="brand"><b>📊 GEX Profile</b><span id="subttl">gamma exposure · live chain</span></div>
+  <div class="sp"></div>
+  <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
+  <input type="date" class="ctl" id="datePick">
+  <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
+  <div class="live" id="liveBtn"><span class="dot"></span><span id="liveTxt">Live: off</span></div>
+  <a class="ctl" href="/curves" title="Sensibull-style curves">📈 Curves</a>
+  <a class="ctl" href="/" title="Back to dashboard">← Dashboard</a>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><div class="lab">Spot</div><div class="val num" id="kSpot">—</div></div>
+  <div class="kpi"><div class="lab">Net GEX</div><div class="val num" id="kNet">—</div></div>
+  <div class="kpi"><div class="lab">Regime</div><div class="val" id="kReg" style="font-size:14px">—</div></div>
+  <div class="kpi"><div class="lab">Abs GEX (wall)</div><div class="val num" id="kAbs">—</div></div>
+  <div class="kpi"><div class="lab">Max Pain</div><div class="val num" id="kMp">—</div></div>
+  <div class="kpi"><div class="lab">PCR (OI)</div><div class="val num" id="kPcr">—</div></div>
+  <div class="kpi"><div class="lab">India VIX</div><div class="val num" id="kVix">—</div></div>
+</div>
+
+<div class="regime">
+  <span class="badge" id="rBadge">—</span>
+  <span class="txt" id="rTxt"></span>
+</div>
+
+<div class="wrap">
+  <div class="card">
+    <div class="clhead">
+      <span class="lg"><i class="sw" style="background:var(--green)"></i> Positive GEX (call-heavy · vol-suppressing)</span>
+      <span class="lg"><i class="sw" style="background:var(--red)"></i> Negative GEX (put-heavy · vol-amplifying)</span>
+      <span class="lg"><i class="sw" style="background:var(--callA);border:1px solid #58a6ff"></i> Call vol</span>
+      <span class="lg"><i class="sw" style="background:var(--putA);border:1px solid var(--spot)"></i> Put vol</span>
+      <span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>
+      <span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>
+      <span class="lg"><i class="sw" style="background:var(--blue);width:3px"></i> γ-Flip</span>
+    </div>
+    <canvas id="cv" height="440"></canvas>
+    <div class="empty" id="empty" style="display:none">No option-chain snapshots for this day / expiry yet.</div>
+    <div class="scrub" id="scrubRow">
+      <button class="play" id="play">▶</button>
+      <div class="tlab"><span id="tNow">—</span><small id="tDate">IST</small></div>
+      <input type="range" id="rng" min="0" max="0" value="0" step="1">
+      <div class="speed"><button data-s="1">1×</button><button data-s="2" class="on">2×</button><button data-s="4">4×</button></div>
+    </div>
+  </div>
+  <div class="note">
+    Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks, from the algo-optionchain collector). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let S = [], cur = 0, spd = 2, timer = null, liveTimer = null;
+let gMax = 1, vMax = 1;                       // fixed scales across the loaded day
+let U = 'NIFTY', DATE = '', EXP = '';
+
+function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
+const CR = 1e7;
+function fmtCr(v){const c=v/CR,a=Math.abs(c);return (c<0?'-':'')+'₹'+(a>=1000?(a/1000).toFixed(2)+'k':Math.round(a))+' Cr';}
+
+const cv = $('cv'), ctx = cv.getContext('2d');
+function size(){
+  const w = cv.clientWidth, dpr = Math.min(2, window.devicePixelRatio||1);
+  cv.width = w*dpr; cv.height = 440*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+}
+
+function computeScales(){
+  gMax = 1; vMax = 1;
+  for(const s of S){ for(const st of s.strikes){
+    gMax = Math.max(gMax, Math.abs(st.gex)); vMax = Math.max(vMax, st.vce, st.vpe);
+  }}
+}
+
+function draw(i){
+  const s = S[i]; if(!s) return;
+  const W = cv.clientWidth, H = 440;
+  const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
+  const zeroY = mT+ph*0.46;
+  ctx.clearRect(0,0,W,H);
+  const ks = s.strikes.map(d=>d.k), n = ks.length, slot = pw/n;
+  const xOf = idx => mL + slot*(idx+0.5);
+  const lo = ks[0], hi = ks[n-1];
+  const xk = k => mL + ((k-lo)/(hi-lo||1))*(pw-slot) + slot/2;
+
+  const vBot = mT+ph, vTop = mT+6, vh = vBot-vTop;
+  function area(key, fill, stroke){
+    ctx.beginPath();
+    s.strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.lineTo(xOf(n-1),vBot); ctx.lineTo(xOf(0),vBot); ctx.closePath();
+    ctx.fillStyle=fill; ctx.fill();
+    ctx.beginPath();
+    s.strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.globalAlpha=.5; ctx.stroke(); ctx.globalAlpha=1;
+  }
+  area('vpe', css('--putA'), css('--spot'));
+  area('vce', css('--callA'), '#58a6ff');
+
+  const gUp = zeroY-mT-4, gDn = (mT+ph)-zeroY-4, bw = Math.min(slot*0.56,26);
+  s.strikes.forEach((d,idx)=>{
+    const x=xOf(idx), up=d.gex>=0, h=Math.abs(d.gex)/gMax*(up?gUp:gDn);
+    ctx.fillStyle = up?css('--green'):css('--red');
+    ctx.fillRect(x-bw/2, up?zeroY-h:zeroY, bw, h);
+  });
+  ctx.strokeStyle=css('--bd'); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(mL,zeroY); ctx.lineTo(mL+pw,zeroY); ctx.stroke();
+
+  ctx.fillStyle=css('--mut'); ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
+  s.strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
+  ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle=css('--dim'); ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText('◄ PUT GEX   ·   GEX   ·   CALL GEX ►',0,0); ctx.restore();
+
+  function vline(k, color, label, top){
+    if(k==null) return;
+    const x = xk(k);
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,mT-2); ctx.lineTo(x,mT+ph); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font='bold 11px sans-serif';
+    const tw = ctx.measureText(label).width+12;
+    const ly = top?mT+9:mT+ph-8, tx = Math.min(Math.max(x,mL+tw/2),mL+pw-tw/2);
+    ctx.fillStyle=color; ctx.fillRect(tx-tw/2,ly-11,tw,16);
+    ctx.fillStyle='#0d1117'; ctx.textAlign='center'; ctx.fillText(label,tx,ly+1);
+  }
+  vline(s.flip, css('--blue'), 'γ '+(s.flip!=null?s.flip:''), false);
+  vline(s.mp, css('--purple'), 'Max Pain '+s.mp, false);
+  vline(s.spot, css('--spot'), 'SPOT '+s.spot.toFixed(0), true);
+
+  ctx.fillStyle=css('--dim'); ctx.font='9px sans-serif'; ctx.textAlign='left';
+  ctx.fillText((vMax/1e7).toFixed(1)+'Cr vol', mL+pw+6, vTop+6);
+}
+
+function kpi(i){
+  const s = S[i]; if(!s) return;
+  const pos = s.net>=0;
+  $('kSpot').textContent = s.spot.toFixed(2);
+  const net = $('kNet'); net.innerHTML = fmtCr(s.net); net.style.color = pos?'var(--green)':'var(--red)';
+  $('kAbs').textContent = s.ag; $('kMp').textContent = s.mp;
+  $('kPcr').textContent = s.pcr==null?'—':s.pcr; $('kVix').textContent = s.vix==null?'—':s.vix;
+  $('kReg').innerHTML = pos ? '<span style="color:var(--green)">Positive γ</span>' : '<span style="color:var(--red)">Negative γ</span>';
+  const b = $('rBadge'), t = $('rTxt');
+  if(pos){ b.className='badge pos'; b.textContent='POSITIVE GAMMA';
+    t.innerHTML='Dealers long gamma → dips get bought, moves compress. Fade extremes toward the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> flip; watch <b>'+s.mp+'</b> pin.'; }
+  else{ b.className='badge neg'; b.textContent='NEGATIVE GAMMA';
+    t.innerHTML='Dealers short gamma → moves amplify, trend-friendly. A break past the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> flip can accelerate.'; }
+  $('tNow').textContent = s.dt.slice(11,16);
+}
+
+function show(i){ cur=i; draw(i); kpi(i); $('rng').value=i; }
+
+// Draw once the canvas actually has a layout width (guards hidden/background-tab
+// loads where clientWidth is 0 at first paint — resize alone doesn't always fire).
+function renderReady(i){
+  if(cv.clientWidth > 0){ size(); show(i); return; }
+  requestAnimationFrame(()=>renderReady(i));
+}
+
+$('rng').addEventListener('input', e => { stop(); show(+e.target.value); });
+function step(){ cur=(cur+1)%S.length; show(cur); }
+function start(){ $('play').textContent='⏸'; timer=setInterval(step, 320/spd); }
+function stop(){ clearInterval(timer); timer=null; $('play').textContent='▶'; }
+$('play').addEventListener('click', ()=> timer?stop():start());
+document.querySelectorAll('.speed button').forEach(b=>b.addEventListener('click', ()=>{
+  document.querySelectorAll('.speed button').forEach(x=>x.classList.remove('on'));
+  b.classList.add('on'); spd=+b.dataset.s; if(timer){stop();start();}
+}));
+window.addEventListener('resize', ()=>{ size(); draw(cur); });
+
+// ---- data ----
+async function load(keepPos){
+  const url = `/api/gex?underlying=${U}&date=${DATE}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
+  let d;
+  try{ d = await (await fetch(url)).json(); }catch(e){ d = {ok:false}; }
+  // expiry dropdown
+  const es = d.expiries||[]; const sel=$('expSel');
+  if(es.join(',') !== [...sel.options].map(o=>o.value).join(',')){
+    sel.innerHTML = es.map(e=>`<option value="${e}">${e}</option>`).join('');
+  }
+  if(d.expiry){ EXP=d.expiry; sel.value=d.expiry; }
+  S = d.snaps||[];
+  if(!S.length){ $('empty').style.display='block'; $('scrubRow').style.display='none'; cv.style.display='none';
+    $('kSpot').textContent='—'; return; }
+  $('empty').style.display='none'; $('scrubRow').style.display='flex'; cv.style.display='block';
+  computeScales();
+  $('rng').max = S.length-1;
+  $('tDate').textContent = 'IST · '+(d.date||DATE).slice(5);
+  const pos = keepPos ? Math.min(cur, S.length-1) : Math.floor(S.length*0.55);
+  renderReady(pos);
+}
+
+// underlying toggle
+$('uSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b) return;
+  [...$('uSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  U=b.dataset.u; $('subttl').textContent = U+' · gamma exposure · live chain';
+  stop(); EXP=''; load(false);
+});
+$('datePick').addEventListener('change', e=>{ DATE=e.target.value; stop(); EXP=''; load(false); });
+$('expSel').addEventListener('change', e=>{ EXP=e.target.value; stop(); load(true); });
+
+// live auto-refresh (re-pull full day, keep scrub position, jump to newest if at end)
+$('liveBtn').addEventListener('click', ()=>{
+  const on = $('liveBtn').classList.toggle('on');
+  $('liveTxt').textContent = 'Live: '+(on?'on':'off');
+  if(on){ liveTimer=setInterval(async ()=>{
+    const atEnd = cur>=S.length-1;
+    await load(true); if(atEnd) show(S.length-1);
+  }, 20000); } else { clearInterval(liveTimer); liveTimer=null; }
+});
+document.addEventListener('visibilitychange', ()=>{ if(document.hidden && timer) stop(); });
+
+// init: today (IST)
+const now = new Date(Date.now()+ (330+new Date().getTimezoneOffset())*60000);
+DATE = now.toISOString().slice(0,10);
+$('datePick').value = DATE;
+load(false);
+</script>
+</body>
+</html>
