@@ -242,17 +242,25 @@ document.querySelectorAll('.speed button').forEach(b=>b.addEventListener('click'
 window.addEventListener('resize', ()=>{ size(); draw(cur); });
 
 // ---- data ----
+let _loadSeq = 0;
 async function load(keepPos){
+  const seq = ++_loadSeq;
   const url = `/api/gex?underlying=${U}&date=${DATE}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
   let d;
   try{ d = await (await fetch(url)).json(); }catch(e){ d = {ok:false}; }
+  if(seq !== _loadSeq) return;   // a newer load started while we awaited — drop this stale response
+  const snaps = d.snaps||[];
+  // Refresh (live/expiry) that comes back empty/errored — a transient network hiccup on a
+  // slow link — must NOT wipe a chart that's already showing good data. Only a FRESH
+  // navigation (date/underlying change, keepPos=false) may legitimately show the empty state.
+  if(!snaps.length && keepPos && S.length) return;
   // expiry dropdown
   const es = d.expiries||[]; const sel=$('expSel');
   if(es.join(',') !== [...sel.options].map(o=>o.value).join(',')){
     sel.innerHTML = es.map(e=>`<option value="${e}">${e}</option>`).join('');
   }
   if(d.expiry){ EXP=d.expiry; sel.value=d.expiry; }
-  S = d.snaps||[];
+  S = snaps;
   if(!S.length){ $('empty').style.display='block'; $('scrubRow').style.display='none'; cv.style.display='none';
     $('kSpot').textContent='—'; return; }
   $('empty').style.display='none'; $('scrubRow').style.display='flex'; cv.style.display='block';
@@ -271,8 +279,7 @@ $('uSeg').addEventListener('click', e=>{
   stop(); EXP=''; load(false);
 });
 function onDateChange(){ const v=$('datePick').value; if(!v || v===DATE) return; DATE=v; stop(); EXP=''; load(false); }
-$('datePick').addEventListener('change', onDateChange);
-$('datePick').addEventListener('input', onDateChange);   // fires even if native pick doesn't commit a 'change'
+$('datePick').addEventListener('change', onDateChange);   // calendar pick fires 'change' on commit
 $('expSel').addEventListener('change', e=>{ EXP=e.target.value; stop(); load(true); });
 
 // live auto-refresh (re-pull full day, keep scrub position, jump to newest if at end)
