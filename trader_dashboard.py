@@ -616,7 +616,11 @@ def api_gex():
         date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
     expiry = request.args.get('expiry') or None
     latest_only = (request.args.get('latest') or '') in ('1', 'true', 'yes')
+    want_list = (request.args.get('list') or '') in ('1', 'true', 'yes')
     try:
+        if want_list:
+            ds = gp.available_dates(u)
+            return jsonify({"ok": bool(ds), "underlying": u, "dates": ds})  # date picker default
         if latest_only:
             return jsonify(gp.latest(u, date, expiry))       # newest snapshot (live refresh)
         return jsonify(gp.profile(u, date, expiry))          # full day (scrub/play)

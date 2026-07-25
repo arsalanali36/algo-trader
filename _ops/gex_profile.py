@@ -156,6 +156,26 @@ def profile(u, date, expiry=None):
             "expiries": exps, "snaps": snaps}
 
 
+def available_dates(u):
+    """Sorted (oldest->newest) list of dates that have a captured chain CSV for
+    this underlying. Lets the UI default to the most recent day WITH data instead
+    of blindly today (blank on weekends / pre-market)."""
+    import glob
+    seen = set()
+    for d in _oc._lake_dirs(u):
+        for p in glob.glob(os.path.join(d, f"{u}_*.csv")):
+            b = os.path.basename(p)
+            dt = b[len(u) + 1:].replace(".csv", "")
+            if len(dt) == 10 and dt[4] == "-":
+                seen.add(dt)
+    return sorted(seen)
+
+
+def latest_date(u):
+    ds = available_dates(u)
+    return ds[-1] if ds else None
+
+
 def latest(u, date, expiry=None):
     """Just the most recent snapshot (live auto-refresh)."""
     p = profile(u, date, expiry)

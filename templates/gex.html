@@ -220,13 +220,14 @@ function kpi(i){
   $('tNow').textContent = s.dt.slice(11,16);
 }
 
-function show(i){ cur=i; draw(i); kpi(i); $('rng').value=i; }
+function show(i){ cur=i; kpi(i); $('rng').value=i; drawReady(i); }
 
-// Draw once the canvas actually has a layout width (guards hidden/background-tab
-// loads where clientWidth is 0 at first paint — resize alone doesn't always fire).
-function renderReady(i){
-  if(cv.clientWidth > 0){ size(); show(i); return; }
-  requestAnimationFrame(()=>renderReady(i));
+// KPIs update immediately (above); the canvas draw waits for a real layout width
+// (guards hidden/background-tab loads where clientWidth is 0 at first paint — resize
+// alone doesn't always fire). Decoupled so the numbers never wait on the chart.
+function drawReady(i){
+  if(cv.clientWidth > 0){ size(); draw(i); return; }
+  requestAnimationFrame(()=>drawReady(i));
 }
 
 $('rng').addEventListener('input', e => { stop(); show(+e.target.value); });
@@ -259,7 +260,7 @@ async function load(keepPos){
   $('rng').max = S.length-1;
   $('tDate').textContent = 'IST · '+(d.date||DATE).slice(5);
   const pos = keepPos ? Math.min(cur, S.length-1) : Math.floor(S.length*0.55);
-  renderReady(pos);
+  show(pos);
 }
 
 // underlying toggle
@@ -269,7 +270,9 @@ $('uSeg').addEventListener('click', e=>{
   U=b.dataset.u; $('subttl').textContent = U+' · gamma exposure · live chain';
   stop(); EXP=''; load(false);
 });
-$('datePick').addEventListener('change', e=>{ DATE=e.target.value; stop(); EXP=''; load(false); });
+function onDateChange(){ const v=$('datePick').value; if(!v || v===DATE) return; DATE=v; stop(); EXP=''; load(false); }
+$('datePick').addEventListener('change', onDateChange);
+$('datePick').addEventListener('input', onDateChange);   // fires even if native pick doesn't commit a 'change'
 $('expSel').addEventListener('change', e=>{ EXP=e.target.value; stop(); load(true); });
 
 // live auto-refresh (re-pull full day, keep scrub position, jump to newest if at end)
@@ -283,11 +286,16 @@ $('liveBtn').addEventListener('click', ()=>{
 });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && timer) stop(); });
 
-// init: today (IST)
-const now = new Date(Date.now()+ (330+new Date().getTimezoneOffset())*60000);
-DATE = now.toISOString().slice(0,10);
-$('datePick').value = DATE;
-load(false);
+// init: default to the most recent day that HAS data (weekend / pre-market → the
+// last trading day) instead of blindly today, which is blank when nothing's collected yet.
+(async function initDate(){
+  let latest = null;
+  try{ const r = await (await fetch(`/api/gex?list=1&underlying=${U}`)).json(); const ds = r.dates||[]; latest = ds.length ? ds[ds.length-1] : null; }catch(e){}
+  const now = new Date(Date.now()+ (330+new Date().getTimezoneOffset())*60000);
+  DATE = latest || now.toISOString().slice(0,10);
+  $('datePick').value = DATE;
+  load(false);
+})();
 </script>
 </body>
 </html>
