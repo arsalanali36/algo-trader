@@ -127,11 +127,13 @@ let S = [], cur = 0, spd = 2, timer = null, liveTimer = null;
 let gMax = 1, vMax = 1;                       // fixed scales across the loaded day
 let U = 'NIFTY', DATE = '', EXP = '';
 let VIEW = localStorage.getItem('gex_view') || 'profile';   // 'profile' | 'engine'
+let SRC = 'collector';   // 'collector' (recent, real gamma-GEX) | 'lake' (historical, real OI)
 let _candles = [], eT0 = 0, eT1 = 1, ePMin = 0, ePMax = 1;  // engine: candles + axis ranges
 
 function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 const CR = 1e7;
 function fmtCr(v){const c=v/CR,a=Math.abs(c);return (c<0?'-':'')+'₹'+(a>=1000?(a/1000).toFixed(2)+'k':Math.round(a))+' Cr';}
+function fmtCount(v){if(v>=1e7)return (v/1e7).toFixed(2)+' Cr';if(v>=1e5)return (v/1e5).toFixed(1)+' L';if(v>=1e3)return (v/1e3).toFixed(0)+'K';return ''+Math.round(v);}
 
 const cv = $('cv'), ctx = cv.getContext('2d');
 function chartH(){ return VIEW==='engine' ? 560 : 440; }   // engine gets more vertical room
@@ -275,7 +277,7 @@ function drawProfile(i){
   s.strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
   ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
   ctx.fillStyle=css('--dim'); ctx.font='10px sans-serif'; ctx.textAlign='center';
-  ctx.fillText('◄ PUT GEX   ·   GEX   ·   CALL GEX ►',0,0); ctx.restore();
+  ctx.fillText(SRC==='lake'?'◄ PUT OI   ·   NET OI   ·   CALL OI ►':'◄ PUT GEX   ·   GEX   ·   CALL GEX ►',0,0); ctx.restore();
 
   function vline(k, color, label, top){
     if(k==null) return;
@@ -288,7 +290,7 @@ function drawProfile(i){
     ctx.fillStyle=color; ctx.fillRect(tx-tw/2,ly-11,tw,16);
     ctx.fillStyle='#0d1117'; ctx.textAlign='center'; ctx.fillText(label,tx,ly+1);
   }
-  vline(s.flip, css('--blue'), 'γ '+(s.flip!=null?s.flip:''), false);
+  vline(s.flip, css('--blue'), (SRC==='lake'?'OI-flip ':'γ ')+(s.flip!=null?s.flip:''), false);
   vline(s.mp, css('--purple'), 'Max Pain '+s.mp, false);
   vline(s.spot, css('--spot'), 'SPOT '+s.spot.toFixed(0), true);
 
@@ -298,23 +300,28 @@ function drawProfile(i){
 
 function kpi(i){
   const s = S[i]; if(!s) return;
-  const pos = s.net>=0;
+  const pos = s.net>=0, oi = SRC==='lake';
   $('kSpot').textContent = s.spot.toFixed(2);
   $('kMp').textContent = s.mp;
-  $('kReg').innerHTML = pos ? '<span style="color:var(--green)">Positive γ</span>' : '<span style="color:var(--red)">Negative γ</span>';
+  $('kReg').innerHTML = oi
+    ? (pos ? '<span style="color:var(--green)">Call-heavy</span>' : '<span style="color:var(--red)">Put-heavy</span>')
+    : (pos ? '<span style="color:var(--green)">Positive γ</span>' : '<span style="color:var(--red)">Negative γ</span>');
   if(VIEW==='engine'){
     $('k2').textContent = s.flip==null?'—':s.flip;
     $('k4').textContent = s.cw==null?'—':s.cw;
     $('k6').textContent = s.pw==null?'—':s.pw;
     $('k7').textContent = (s.eml!=null && s.emh!=null) ? (s.eml.toFixed(0)+' – '+s.emh.toFixed(0)) : '—';
   } else {
-    const n=$('k2'); n.innerHTML=fmtCr(s.net); n.style.color=pos?'var(--green)':'var(--red)';
+    const n=$('k2'); n.innerHTML = oi ? ((s.net>=0?'+':'−')+fmtCount(Math.abs(s.net))) : fmtCr(s.net);
+    n.style.color=pos?'var(--green)':'var(--red)';
     $('k4').textContent = s.ag;
     $('k6').textContent = s.pcr==null?'—':s.pcr;
     $('k7').textContent = s.vix==null?'—':s.vix;
   }
   const b = $('rBadge'), t = $('rTxt');
-  if(pos){ b.className='badge pos'; b.textContent='POSITIVE GAMMA';
+  if(oi){ b.className='badge '+(pos?'pos':'neg'); b.textContent=pos?'CALL-HEAVY OI':'PUT-HEAVY OI';
+    t.innerHTML='Historical · real OI. Put wall (support) <b>'+(s.pw??'')+'</b> · call wall (resistance) <b>'+(s.cw??'')+'</b> · max-pain pin <b>'+s.mp+'</b>. Lake me gamma/IV nahi → OI map, GEX nahi.'; }
+  else if(pos){ b.className='badge pos'; b.textContent='POSITIVE GAMMA';
     t.innerHTML='Dips get bought, range compresses toward the <b>'+s.mp+'</b> pin; fade the edges of <b>'+(s.pw??'')+'</b>–<b>'+(s.cw??'')+'</b>.'; }
   else{ b.className='badge neg'; b.textContent='NEGATIVE GAMMA';
     t.innerHTML='Moves amplify, trend-friendly. A break past the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> γ-flip can accelerate — walls <b>'+(s.pw??'')+'</b>/<b>'+(s.cw??'')+'</b> are the rails.'; }
@@ -341,20 +348,39 @@ const _NOTE = {
   profile: 'Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.',
   engine: 'Candles = the collector\'s per-minute spot (5-min, zero extra Dhan calls, time-synced with the levels). Scrub / ▶ play: the playhead walks the day and every level (γ-flip · max-pain · call/put wall · ±1σ EM) re-computes to that minute — watch how price interacts with the walls as they shift. Faded candles are the future. Context map, not a signal.'
 };
+const _LEGEND_OI = {
+  profile: '<span class="lg"><i class="sw" style="background:var(--green)"></i> Call-heavy OI (call wall)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put-heavy OI (put wall)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--callA);border:1px solid #58a6ff"></i> Call vol</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--putA);border:1px solid var(--spot)"></i> Put vol</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI only — no gamma/IV</span>',
+  engine: '<span class="lg"><i class="sw" style="background:var(--blue)"></i> OI-flip</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple)"></i> Max Pain (pin)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put wall (support)</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI, no ±1σ EM (no IV)</span>'
+};
+const _NOTE_OI = {
+  profile: 'Historical date — expired-options lake (real OI + volume, ~2021→). Bars = <b>Net OI</b> (OI<sub>CE</sub> − OI<sub>PE</sub>): green = call-heavy (resistance), red = put-heavy (support). Walls / max-pain / PCR are the REAL OI ones. Lake me greeks/IV nahi → OI map hai, gamma-GEX nahi; ±1σ EM unavailable. <b>Kuch derive nahi kiya.</b>',
+  engine: 'Historical date — real per-minute spot candles + real OI walls / max-pain / OI-flip (expired-options lake). Lake me gamma/IV nahi → OI-based (gamma-GEX nahi), ±1σ EM band off. Scrub / ▶ play: price vs OI walls dekho.'
+};
 function applyView(){
   [...$('vSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.v===VIEW));
-  const eng = VIEW==='engine';
-  $('lab2').textContent = eng?'γ-Flip':'Net GEX';
-  $('lab4').textContent = eng?'Call wall ↑':'Abs GEX (wall)';
+  const eng = VIEW==='engine', oi = SRC==='lake';
+  $('subttl').textContent = oi ? (U+' · OI PROFILE · historical (no gamma)') : (U+' · gamma exposure · live chain');
+  $('lab2').textContent = eng?'γ-Flip':(oi?'Net OI':'Net GEX');
+  $('lab4').textContent = eng?'Call wall ↑':(oi?'Abs OI (wall)':'Abs GEX (wall)');
   $('lab6').textContent = eng?'Put wall ↓':'PCR (OI)';
-  $('lab7').textContent = eng?'±1σ Exp. move':'India VIX';
+  $('lab7').textContent = eng?(oi?'±1σ EM (n/a)':'±1σ Exp. move'):'India VIX';
   $('k2').style.color = eng?'var(--blue)':'';
   $('k4').style.color = eng?'var(--green)':'';
   $('k6').style.color = eng?'var(--red)':'';
   $('k7').style.color = eng?'var(--amber)':'';
   if(eng) $('k7').style.fontSize='13px'; else $('k7').style.fontSize='';
-  $('legend').innerHTML = _LEGEND[VIEW];
-  $('chartNote').innerHTML = _NOTE[VIEW];
+  $('legend').innerHTML = oi ? _LEGEND_OI[VIEW] : _LEGEND[VIEW];
+  $('chartNote').innerHTML = oi ? _NOTE_OI[VIEW] : _NOTE[VIEW];
 }
 
 function show(i){ cur=i; kpi(i); $('rng').value=i; drawReady(i); }
@@ -428,8 +454,10 @@ async function load(keepPos){
   }
   if(d.expiry){ EXP=d.expiry; sel.value=d.expiry; }
   S = snaps;
+  SRC = d.source || 'collector';
   if(!S.length){ $('empty').style.display='block'; $('scrubRow').style.display='none'; cv.style.display='none';
     $('kSpot').textContent='—'; return; }
+  applyView();   // relabel bars/legend/subtitle for the source (gamma-GEX vs OI)
   $('empty').style.display='none'; $('scrubRow').style.display='flex'; cv.style.display='block';
   computeScales();
   computeEngine();

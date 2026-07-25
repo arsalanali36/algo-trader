@@ -147,37 +147,132 @@ def _snapshot(legs):
     }
 
 
-def profile(u, date, expiry=None):
-    """Return {ok, underlying, date, expiry, expiries[], snaps[]} for one day.
-    snaps = every captured minute of the chosen expiry (oldest -> newest)."""
-    _, rows = _oc._load_rows(u, date)
-    if not rows:
-        return {"ok": False, "underlying": u, "date": date, "expiry": expiry,
-                "expiries": [], "snaps": []}
+# ---------------------------------------------------------------- historical (lake, OI-only)
+import datetime as _dt
+_IST = _dt.timezone(_dt.timedelta(hours=5, minutes=30))
+_LAKE_CACHE = {}   # (u, date) -> snaps  (historical data is immutable)
 
-    exps = []
-    for r in rows:
-        e = r.get("expiry")
-        if e and e not in exps:
-            exps.append(e)
-    exps = sorted(exps)
-    if expiry not in exps:
-        expiry = exps[0] if exps else None
 
-    bydt = {}
-    for r in rows:
-        if r.get("expiry") != expiry:
-            continue
-        bydt.setdefault(r.get("datetime"), []).append(r)
+def _lake_root(u):
+    for base in (os.path.join(os.path.dirname(PROJECT), "._TRADING DATA"),
+                 os.path.join(PROJECT, "_TRADING_DATA")):
+        p = os.path.join(base, "OptChainLake_1m", u, "WEEK")
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def _lake_profile(u, date):
+    """Historical profile from the expired-options lake (OptChainLake_1m). The lake
+    has REAL per-strike OI + volume + spot but NO greeks/IV — so the bars are Net OI
+    (OI_CE − OI_PE = call-heavy / put-heavy), NOT gamma-GEX; walls / max-pain / PCR
+    are the real OI ones; EM / IV / VIX are absent (None). Nothing is BS-derived."""
+    root = _lake_root(u)
+    if not root:
+        return None
+    key = (u, date)
+    if key in _LAKE_CACHE:
+        return _LAKE_CACHE[key]
+    import pandas as pd
+    try:
+        d0 = _dt.datetime.strptime(date, "%Y-%m-%d").replace(tzinfo=_IST)
+    except Exception:
+        return None
+    start = int(d0.timestamp()); end = start + 86400
+    bymin = {}    # ts -> {"spot":x, "ce":{strike:(oi,vol)}, "pe":{strike:(oi,vol)}}
+    for side in ("CE", "PE"):
+        for off in range(-10, 11):
+            fn = f"{side}_ATM.csv" if off == 0 else f"{side}_ATM{'p' if off > 0 else 'm'}{abs(off)}.csv"
+            p = os.path.join(root, fn)
+            if not os.path.exists(p):
+                continue
+            try:
+                df = pd.read_csv(p, usecols=["timestamp", "volume", "oi", "strike", "spot"])
+                df = df[(df["timestamp"] >= start) & (df["timestamp"] < end)]
+            except Exception:
+                continue
+            sk = "ce" if side == "CE" else "pe"
+            for ts, vol, oi, strike, spot in zip(df["timestamp"], df["volume"], df["oi"], df["strike"], df["spot"]):
+                m = bymin.setdefault(int(ts), {"spot": None, "ce": {}, "pe": {}})
+                if spot == spot:
+                    m["spot"] = float(spot)
+                m[sk][float(strike)] = (float(oi) if oi == oi else 0.0, float(vol) if vol == vol else 0.0)
+    if not bymin:
+        return None
 
     snaps = []
-    for dt in sorted(k for k in bydt.keys() if k):
-        snap = _snapshot(bydt[dt])
-        if snap:
-            snaps.append(snap)
+    for ts in sorted(bymin):
+        m = bymin[ts]
+        spot = m["spot"]
+        strikes = sorted(set(m["ce"]) | set(m["pe"]))
+        if not strikes or spot is None:
+            continue
+        out, pain_rows, tce, tpe = [], [], 0.0, 0.0
+        for k in strikes:
+            oi_ce, v_ce = m["ce"].get(k, (0.0, 0.0))
+            oi_pe, v_pe = m["pe"].get(k, (0.0, 0.0))
+            out.append({"k": k, "gex": round(oi_ce - oi_pe), "vce": round(v_ce), "vpe": round(v_pe)})
+            pain_rows.append((k, oi_ce, oi_pe)); tce += oi_ce; tpe += oi_pe
+        max_pain = min(strikes, key=lambda P: sum(max(0.0, P - kk) * oc + max(0.0, kk - P) * op for kk, oc, op in pain_rows))
+        call_wall = max(pain_rows, key=lambda r: r[1])[0]
+        put_wall = max(pain_rows, key=lambda r: r[2])[0]
+        abs_g = max(out, key=lambda s: abs(s["gex"]))["k"]
+        flip, cum, prev, prevk = None, 0.0, 0.0, None
+        for s in out:
+            prev = cum; cum += s["gex"]
+            if prevk is not None and ((prev <= 0 <= cum) or (prev >= 0 >= cum)):
+                flip = prevk if abs(prev) <= abs(cum) else s["k"]; break
+            prevk = s["k"]
+        if flip is None:
+            flip = abs_g
+        snaps.append({
+            "dt": _dt.datetime.fromtimestamp(ts, _IST).strftime("%Y-%m-%d %H:%M:%S"),
+            "spot": round(spot, 2), "vix": None, "net": round(sum(s["gex"] for s in out)),
+            "mp": max_pain, "ag": abs_g, "flip": flip, "cw": call_wall, "pw": put_wall,
+            "emh": None, "eml": None, "iv": None,
+            "pcr": round(tpe / tce, 2) if tce else None, "strikes": out,
+        })
+    if len(_LAKE_CACHE) > 8:
+        _LAKE_CACHE.clear()
+    _LAKE_CACHE[key] = snaps
+    return snaps
 
-    return {"ok": bool(snaps), "underlying": u, "date": date, "expiry": expiry,
-            "expiries": exps, "snaps": snaps}
+
+def profile(u, date, expiry=None):
+    """Return {ok, underlying, date, expiry, expiries[], snaps[], source} for one day.
+    snaps = every captured minute (oldest -> newest). source='collector' (recent, real
+    greeks → gamma-GEX) or 'lake' (historical, real OI → Net-OI bars, no greeks)."""
+    _, rows = _oc._load_rows(u, date)
+    if rows:
+        exps = []
+        for r in rows:
+            e = r.get("expiry")
+            if e and e not in exps:
+                exps.append(e)
+        exps = sorted(exps)
+        if expiry not in exps:
+            expiry = exps[0] if exps else None
+        bydt = {}
+        for r in rows:
+            if r.get("expiry") != expiry:
+                continue
+            bydt.setdefault(r.get("datetime"), []).append(r)
+        snaps = []
+        for dt in sorted(k for k in bydt.keys() if k):
+            snap = _snapshot(bydt[dt])
+            if snap:
+                snaps.append(snap)
+        if snaps:
+            return {"ok": True, "underlying": u, "date": date, "expiry": expiry,
+                    "expiries": exps, "snaps": snaps, "source": "collector"}
+
+    # collector empty (older than the ~2-week live window) → historical lake, OI-based
+    snaps = _lake_profile(u, date)
+    if snaps:
+        return {"ok": True, "underlying": u, "date": date, "expiry": "weekly",
+                "expiries": ["weekly"], "snaps": snaps, "source": "lake"}
+    return {"ok": False, "underlying": u, "date": date, "expiry": expiry,
+            "expiries": [], "snaps": [], "source": None}
 
 
 def available_dates(u):
