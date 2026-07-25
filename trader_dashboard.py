@@ -579,6 +579,25 @@ def option_curves_page():
     snapshots. Display-only."""
     return render_template("option_curves.html")
 
+@app.route('/whatif')
+def whatif_page():
+    """Manual options what-if backtest — pick instrument/date/entry-exit time/legs,
+    see real-premium P&L split into price-move / IV-crush / decay. Collector data for
+    recent days (real greeks), OptChainLake for historical (BS-derived). Display-only."""
+    return render_template("whatif.html")
+
+@app.route('/api/whatif', methods=['POST'])
+def api_whatif():
+    import opt_whatif as w
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        return jsonify(w.run(d.get('underlying', 'NIFTY'), d.get('date'),
+                             d.get('entry', '09:20'), d.get('exit', '15:30'),
+                             d.get('lots', 1), d.get('legs', [])))
+    except Exception as e:
+        print("[whatif] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e), "legs": []})
+
 @app.route('/api/option-curves')
 def api_option_curves():
     import option_curves as oc

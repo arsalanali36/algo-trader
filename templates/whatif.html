@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Options What-If</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141b;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;--dim:#6e7681;
+    --green:#3fb950;--red:#f85149;--blue:#58a6ff;--amber:#d29922;--spot:#f0883e;--purple:#a371f7;--acc:#1f6feb;}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
+  a{color:var(--blue);text-decoration:none}
+  .num{font-variant-numeric:tabular-nums}
+  .top{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--bd);background:linear-gradient(180deg,#11161d,#0d1117);position:sticky;top:0;z-index:40}
+  .brand{display:flex;align-items:baseline;gap:9px}.brand b{font-size:15px}.brand span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .top .sp{flex:1}
+  .lnk{border:1px solid var(--bd);background:var(--bd2);border-radius:7px;padding:5px 10px;color:var(--tx);font-weight:600;font-size:12px}
+  .wrap{display:grid;grid-template-columns:330px 1fr;min-height:calc(100vh - 46px)}
+  @media(max-width:840px){.wrap{grid-template-columns:1fr}}
+  .form{border-right:1px solid var(--bd);padding:15px 16px;background:var(--panel2)}
+  .fg{margin-bottom:13px}
+  .fg label{display:block;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px;margin-bottom:5px}
+  .ctl,select,input{width:100%;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;padding:7px 9px;outline:none}
+  input[type=time],input[type=date]{color-scheme:dark}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:9px}
+  .seg{display:flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .seg button{flex:1;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:7px;cursor:pointer}
+  .seg button.on{background:var(--acc);color:#fff}
+  .legs{border:1px solid var(--bd);border-radius:8px;overflow:hidden}
+  .leg{display:grid;grid-template-columns:62px 1fr 54px 24px;gap:6px;align-items:center;padding:6px 7px;border-bottom:1px solid var(--bd2)}
+  .leg:last-child{border-bottom:0}.leg select,.leg input{padding:5px 6px;font-size:12px}
+  .del{background:none;border:0;color:var(--dim);cursor:pointer;font-size:14px}.del:hover{color:var(--red)}
+  .addleg{width:100%;margin-top:7px;background:var(--bd2);border:1px dashed var(--bd);border-radius:7px;color:var(--mut);padding:6px;cursor:pointer;font:inherit;font-weight:600}
+  .run{width:100%;margin-top:14px;background:var(--acc);border:0;border-radius:8px;color:#fff;font:inherit;font-weight:700;font-size:14px;padding:11px;cursor:pointer}
+  .run:hover{background:#388bfd}.run:disabled{opacity:.6;cursor:default}
+  .hint{color:var(--dim);font-size:11px;margin-top:11px;line-height:1.5}
+  .res{padding:16px 20px}
+  .empty{color:var(--mut);text-align:center;padding:70px 20px}
+  .spin{display:none;text-align:center;padding:60px 20px;color:var(--mut)}
+  .spin.on{display:block}
+  .dot{display:inline-block;width:26px;height:26px;border:3px solid var(--bd);border-top-color:var(--acc);border-radius:50%;animation:sp 0.8s linear infinite;margin-bottom:12px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  .rhd{color:var(--mut);font-size:12px;margin-bottom:12px}.rhd b{color:var(--tx)}
+  .badge{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px}
+  .up{background:rgba(63,185,80,.14);color:var(--green)}.dn{background:rgba(248,81,73,.14);color:var(--red)}
+  .src{font-size:10px;color:var(--dim);border:1px solid var(--bd);border-radius:12px;padding:2px 8px}
+  .tot{display:flex;align-items:center;gap:14px;background:linear-gradient(180deg,#12331d,#0d1117);border:1px solid rgba(63,185,80,.4);border-radius:12px;padding:14px 18px;margin-bottom:16px}
+  .tot.neg{background:linear-gradient(180deg,#3a1518,#0d1117);border-color:rgba(248,81,73,.4)}
+  .tot .l{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+  .tot .b{font-size:28px;font-weight:800}
+  table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin-bottom:18px}
+  th{text-align:right;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;padding:2px 0 7px;font-weight:600}th:first-child{text-align:left}
+  td{padding:7px 0;border-top:1px solid var(--bd2);text-align:right}td:first-child{text-align:left;font-weight:600}
+  .pos{color:var(--green)}.neg2{color:var(--red)}
+  .brkt{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+  .bars{display:flex;gap:16px;align-items:flex-end;height:120px;border-bottom:1px solid var(--bd);position:relative;margin-bottom:8px}
+  .save{margin-top:6px;background:var(--bd2);border:1px solid var(--bd);border-radius:8px;color:var(--tx);font:inherit;font-weight:600;padding:8px 14px;cursor:pointer}
+  .save:hover{border-color:var(--acc)}
+  /* saved journal */
+  .journal{border-top:1px solid var(--bd);margin-top:22px;padding-top:16px}
+  .jh{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+  .jh b{font-size:14px}.jh .gt{margin-left:auto;font-weight:800;font-size:18px}
+  .jrow{display:grid;grid-template-columns:1fr auto 26px;gap:10px;align-items:center;padding:8px 10px;border:1px solid var(--bd2);border-radius:8px;margin-bottom:6px;background:var(--panel)}
+  .jrow .m{color:var(--mut);font-size:11px}
+  .jrow .p{font-weight:700;font-variant-numeric:tabular-nums}
+</style></head><body>
+
+<div class="top">
+  <div class="brand"><b>🧪 Options What-If</b><span>manual backtest · real chain data</span></div>
+  <div class="sp"></div>
+  <a class="lnk" href="/gex">📊 GEX</a>
+  <a class="lnk" href="/curves">📈 Curves</a>
+  <a class="lnk" href="/">← Dashboard</a>
+</div>
+
+<div class="wrap">
+  <div class="form">
+    <div class="fg"><label>Instrument</label>
+      <div class="seg" id="inst"><button class="on" data-i="NIFTY">NIFTY</button><button data-i="BANKNIFTY">BANKNIFTY</button></div></div>
+    <div class="fg"><label>Date</label><input type="date" id="date"></div>
+    <div class="row2">
+      <div class="fg"><label>Entry</label><input type="time" id="et" value="09:20"></div>
+      <div class="fg"><label>Exit</label><input type="time" id="xt" value="15:30"></div></div>
+    <div class="fg"><label>Lots</label><input type="number" id="lots" value="1" min="1"></div>
+    <div class="fg"><label>Legs</label><div class="legs" id="legs"></div>
+      <button class="addleg" id="addleg">＋ Add leg</button></div>
+    <button class="run" id="run">▶ Run backtest</button>
+    <div class="hint">Recent din = live collector (real Dhan greeks, instant). Purane din = OptChainLake (~2021→, 1-min, real premium; greeks BS-derived, IV lake me nahi hai). Purane din ka pehla run ~15 sec (reconstruct), phir same date instant.</div>
+  </div>
+
+  <div class="res">
+    <div class="empty" id="empty">Legs set karke <b>▶ Run backtest</b> dabao.</div>
+    <div class="spin" id="spin"><div class="dot"></div><div>Reconstructing from lake… (~15 sec pehli baar)</div></div>
+    <div id="out" style="display:none">
+      <div class="rhd" id="rhd"></div>
+      <div class="tot" id="totbox"><div><div class="l">Net P&amp;L (gross)</div><div class="b" id="totv">—</div></div>
+        <span class="badge" id="mv"></span><span class="src" id="src"></span></div>
+      <table id="legtbl"><thead><tr><th>Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
+      <div class="brkt">Profit kahan se aaya</div>
+      <div class="bars" id="bars"></div>
+      <button class="save" id="save">💾 Save is run to journal</button>
+    </div>
+
+    <div class="journal" id="journal" style="display:none">
+      <div class="jh"><b>📓 Saved runs</b><span class="m" id="jcount"></span>
+        <span class="gt" id="gtot"></span></div>
+      <div id="jlist"></div>
+      <button class="save" id="clearj" style="margin-top:6px">Clear all</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let INST='NIFTY', last=null;
+function step(){return INST==='BANKNIFTY'?100:50;}
+function legRow(side,strike,type){
+  const d=document.createElement('div');d.className='leg';
+  d.innerHTML=`<select class="s"><option ${side==='SELL'?'selected':''}>SELL</option><option ${side==='BUY'?'selected':''}>BUY</option></select>`
+    +`<input class="k" type="number" step="${step()}" value="${strike}">`
+    +`<select class="t"><option ${type==='CE'?'selected':''}>CE</option><option ${type==='PE'?'selected':''}>PE</option></select>`
+    +`<button class="del">✕</button>`;
+  return d;
+}
+function seedLegs(){ $('legs').innerHTML=''; $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?57000:24000,'CE')); $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56000:23600,'PE')); }
+$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();});
+$('addleg').addEventListener('click',()=>$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE')));
+$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1)e.target.closest('.leg').remove();});
+
+function collectLegs(){return [...$('legs').children].map(r=>({side:r.querySelector('.s').value,strike:+r.querySelector('.k').value,type:r.querySelector('.t').value}));}
+function fmt(v){return (v>=0?'+':'−')+'₹'+Math.abs(v).toLocaleString('en-IN');}
+
+$('run').addEventListener('click',async ()=>{
+  const body={underlying:INST,date:$('date').value,entry:$('et').value,exit:$('xt').value,lots:+$('lots').value,legs:collectLegs()};
+  if(!body.date){alert('Date chuno');return;}
+  $('empty').style.display='none'; $('out').style.display='none'; $('spin').classList.add('on'); $('run').disabled=true;
+  let r; try{ r=await (await fetch('/api/whatif',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(); }catch(e){ r={ok:false,error:'network'}; }
+  $('spin').classList.remove('on'); $('run').disabled=false;
+  if(!r.ok){ $('empty').style.display='block'; $('empty').innerHTML='❌ '+(r.error||'kuch nahi mila')+' — doosri date/strike try karo.'; return; }
+  last=r; render(r);
+});
+
+function render(r){
+  $('out').style.display='block';
+  $('rhd').innerHTML=`<b>${r.underlying}</b> · ${r.date} · entry <b>${r.entry_hm}</b> → exit <b>${r.exit_hm}</b> · <b>${r.lots} lot</b>${r.expiry?' · exp '+r.expiry:''}`;
+  const tv=$('totv'); tv.textContent=fmt(r.total); tv.style.color=r.total>=0?'var(--green)':'var(--red)';
+  $('totbox').className='tot'+(r.total<0?' neg':'');
+  const up=(r.move||0)>=0, mv=$('mv');
+  if(r.spot_e!=null){ mv.className='badge '+(up?'up':'dn'); mv.textContent=`Spot ${r.spot_e.toLocaleString('en-IN')} → ${r.spot_x.toLocaleString('en-IN')} (${up?'+':'−'}${Math.abs(r.move)})`; } else mv.textContent='';
+  $('src').textContent = r.source==='lake'?'historical · BS greeks':'live collector · real greeks';
+  $('legtbl').querySelector('tbody').innerHTML=r.legs.map(l=>{const c=l.pnl>=0?'pos':'neg2';
+    return `<tr><td>${l.label}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—'}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
+  const items=[['Decay',r.decay,'var(--green)'],['Price move',r.price,'var(--blue)'],['IV crush',r.iv,'var(--amber)']];
+  const MAX=Math.max(1,...items.map(i=>Math.abs(i[1])))*1.18, mid=60;
+  $('bars').innerHTML='<div style="position:absolute;left:0;right:0;top:'+mid+'px;height:1px;background:var(--bd)"></div>'+
+    items.map(([n,v,c])=>{const h=Math.abs(v)/MAX*54, up=v>=0;
+      return `<div style="flex:1;position:relative;height:100%">
+        <div style="position:absolute;left:0;right:0;top:${up?mid-h:mid}px;height:${h}px;width:56%;margin:0 auto;background:${c};border-radius:${up?'3px 3px 0 0':'0 0 3px 3px'}"></div>
+        <div style="position:absolute;left:0;right:0;top:${up?mid-h-17:mid+h+3}px;text-align:center;font-size:12px;font-weight:700;color:${c}">${fmt(v)}</div>
+        <div style="position:absolute;left:0;right:0;bottom:-22px;text-align:center;font-size:11px;color:var(--mut)">${n}</div></div>`;}).join('');
+}
+
+// ---- journal (localStorage): save runs + combined total across dates ----
+const JK='whatif_journal';
+function jload(){try{return JSON.parse(localStorage.getItem(JK))||[];}catch(e){return [];}}
+function jsave(a){localStorage.setItem(JK,JSON.stringify(a));}
+function renderJournal(){
+  const a=jload(); const j=$('journal');
+  if(!a.length){ j.style.display='none'; return; }
+  j.style.display='block';
+  const tot=a.reduce((s,x)=>s+x.total,0);
+  $('jcount').textContent=a.length+' run'+(a.length>1?'s':'');
+  const gt=$('gtot'); gt.textContent=fmt(tot); gt.style.color=tot>=0?'var(--green)':'var(--red)';
+  $('jlist').innerHTML=a.map((x,i)=>`<div class="jrow"><div><div>${x.underlying} · ${x.date}</div><div class="m">${x.summary} · ${x.entry_hm}→${x.exit_hm} · ${x.lots}L</div></div>`
+    +`<div class="p" style="color:${x.total>=0?'var(--green)':'var(--red)'}">${fmt(x.total)}</div><button class="del" data-i="${i}">✕</button></div>`).join('');
+}
+$('save').addEventListener('click',()=>{
+  if(!last)return; const a=jload();
+  a.push({underlying:last.underlying,date:last.date,entry_hm:last.entry_hm,exit_hm:last.exit_hm,lots:last.lots,total:last.total,
+    summary:last.legs.map(l=>l.label).join(' + ')});
+  jsave(a); renderJournal();
+});
+$('jlist').addEventListener('click',e=>{if(e.target.classList.contains('del')){const a=jload();a.splice(+e.target.dataset.i,1);jsave(a);renderJournal();}});
+$('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?')){jsave([]);renderJournal();}});
+
+// init
+const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
+$('date').value=now.toISOString().slice(0,10);
+seedLegs(); renderJournal();
+</script>
+</body></html>
