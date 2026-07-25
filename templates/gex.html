@@ -49,6 +49,10 @@
   .lg{display:inline-flex;align-items:center;gap:6px}
   .sw{width:11px;height:11px;border-radius:2px;display:inline-block}
   canvas{display:block;width:100%}
+  #tip{position:fixed;display:none;pointer-events:none;z-index:60;background:#0d1117;border:1px solid var(--bd);
+    border-radius:8px;padding:8px 12px;box-shadow:0 6px 20px rgba(0,0,0,.55)}
+  #tip .k{font-size:20px;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.3px}
+  #tip .r{font-size:12px;margin-top:3px;font-variant-numeric:tabular-nums;color:var(--mut)}
   .scrub{display:flex;align-items:center;gap:14px;padding:12px 16px;border-top:1px solid var(--bd2)}
   .play{width:38px;height:38px;border-radius:50%;border:1px solid var(--bd);background:var(--bd2);color:var(--tx);font-size:15px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex:0 0 auto}
   .play:hover{background:var(--blue);border-color:var(--blue);color:#fff}
@@ -113,6 +117,7 @@
   </div>
   <div class="note" id="chartNote"></div>
 </div>
+<div id="tip"></div>
 
 <script>
 const $ = id => document.getElementById(id);
@@ -127,10 +132,12 @@ const CR = 1e7;
 function fmtCr(v){const c=v/CR,a=Math.abs(c);return (c<0?'-':'')+'₹'+(a>=1000?(a/1000).toFixed(2)+'k':Math.round(a))+' Cr';}
 
 const cv = $('cv'), ctx = cv.getContext('2d');
+function chartH(){ return VIEW==='engine' ? 560 : 440; }   // engine gets more vertical room
 function size(){
-  const w = cv.clientWidth, dpr = Math.min(2, window.devicePixelRatio||1);
-  cv.width = w*dpr; cv.height = 440*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const w = cv.clientWidth, h = chartH(), dpr = Math.min(2, window.devicePixelRatio||1);
+  cv.width = w*dpr; cv.height = h*dpr; cv.style.height = h+'px'; ctx.setTransform(dpr,0,0,dpr,0,0);
 }
+let _pLay = null;   // profile view layout {mL, slot, n} for hover mapping
 
 function computeScales(){
   gMax = 1; vMax = 1;
@@ -151,21 +158,33 @@ function computeEngine(){
     const a=buck[b]; return {t:b, o:a[0], h:Math.max(...a), l:Math.min(...a), c:a[a.length-1]};
   });
   eT0 = _mins(S[0].dt); eT1 = _mins(S[S.length-1].dt);
-  ePMin = 1e9; ePMax = -1e9;
-  for(const c of _candles){ ePMin=Math.min(ePMin,c.l); ePMax=Math.max(ePMax,c.h); }
-  for(const s of S){ for(const k of ['flip','mp','cw','pw','emh','eml']){ const v=s[k]; if(v!=null){ ePMin=Math.min(ePMin,v); ePMax=Math.max(ePMax,v); } } }
-  const pad=(ePMax-ePMin)*0.04||10; ePMin-=pad; ePMax+=pad;
+  // Y-range is driven by the CANDLES (price action stays big); levels extend the axis
+  // only up to ~1.3x the candle range on each side — anything further (a wide EM band /
+  // far wall) clamps to the chart edge instead of squashing the candles into a strip.
+  let cLo=1e9, cHi=-1e9;
+  for(const c of _candles){ cLo=Math.min(cLo,c.l); cHi=Math.max(cHi,c.h); }
+  const cR = (cHi-cLo) || 20;
+  // range = candles + the key walls/pins (flip/mp/cw/pw), capped ~1.2x candle range each side.
+  // The ±1σ EM band is the WIDEST level and would squash the candles — it's excluded here and
+  // just clamps to the chart edge when it falls outside (its label still shows the real price).
+  let lLo=cLo, lHi=cHi;
+  for(const s of S){ for(const k of ['flip','mp','cw','pw']){ const v=s[k]; if(v!=null){ lLo=Math.min(lLo,v); lHi=Math.max(lHi,v); } } }
+  const lo = Math.max(lLo, cLo - cR*0.7), hi = Math.min(lHi, cHi + cR*0.7);
+  const pad = cR*0.10;
+  ePMin = lo - pad; ePMax = hi + pad;
 }
 function drawEngine(i){
   const s = S[i]; if(!s || !_candles.length) return;
-  const W = cv.clientWidth, H = 440;
+  const W = cv.clientWidth, H = chartH();
   const mL=8,mR=80,mT=14,mB=30, pw=W-mL-mR, ph=H-mT-mB;
   ctx.clearRect(0,0,W,H);
   const tx = t => mL + (t-eT0)/(eT1-eT0||1)*pw;
   const py = p => mT + (ePMax-p)/(ePMax-ePMin||1)*ph;
+  const clampY = y => Math.max(mT+8, Math.min(mT+ph-8, y));
   const nowT = _mins(s.dt);
-  // ±1σ EM band at current snapshot
-  if(s.emh!=null && s.eml!=null){ ctx.fillStyle='rgba(210,153,34,.10)'; ctx.fillRect(mL, py(s.emh), pw, py(s.eml)-py(s.emh)); }
+  // ±1σ EM band at current snapshot (clamped to the plot area)
+  if(s.emh!=null && s.eml!=null){ const yt=Math.max(mT,py(s.emh)), yb=Math.min(mT+ph,py(s.eml));
+    ctx.fillStyle='rgba(210,153,34,.10)'; ctx.fillRect(mL, yt, pw, Math.max(0,yb-yt)); }
   // grid + price labels
   const step = Math.max(10, Math.round((ePMax-ePMin)/6/10)*10);
   ctx.font='10px sans-serif';
@@ -176,7 +195,7 @@ function drawEngine(i){
   ctx.fillStyle=css('--dim'); ctx.textAlign='center';
   for(let t=Math.ceil(eT0/60)*60; t<=eT1; t+=60){ ctx.fillText(String(t/60|0).padStart(2,'0')+':00', tx(t), H-10); }
   // candles: solid up to playhead, faded ahead
-  const bw = Math.max(2, pw/_candles.length*0.62);
+  const bw = Math.max(3, pw/_candles.length*0.72);
   for(const c of _candles){ const x=tx(c.t+2.5), up=c.c>=c.o;
     ctx.globalAlpha = c.t>nowT ? 0.26 : 1;
     ctx.strokeStyle=ctx.fillStyle = up?css('--green'):css('--red');
@@ -185,7 +204,7 @@ function drawEngine(i){
     ctx.globalAlpha=1;
   }
   // horizontal levels at current snapshot
-  function lvl(p,color,label,dash){ if(p==null)return; const y=py(p);
+  function lvl(p,color,label,dash){ if(p==null)return; const y=clampY(py(p));
     ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash(dash?[5,4]:[]);
     ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.setLineDash([]);
     ctx.fillStyle=color; ctx.fillRect(mL+pw+2, y-7, mR-4, 14);
@@ -206,11 +225,12 @@ function drawEngine(i){
 
 function drawProfile(i){
   const s = S[i]; if(!s) return;
-  const W = cv.clientWidth, H = 440;
+  const W = cv.clientWidth, H = chartH();
   const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
   const zeroY = mT+ph*0.46;
   ctx.clearRect(0,0,W,H);
   const ks = s.strikes.map(d=>d.k), n = ks.length, slot = pw/n;
+  _pLay = {mL, slot, n};   // for hover tooltip mapping
   const xOf = idx => mL + slot*(idx+0.5);
   const lo = ks[0], hi = ks[n-1];
   const xk = k => mL + ((k-lo)/(hi-lo||1))*(pw-slot) + slot/2;
@@ -343,6 +363,26 @@ document.querySelectorAll('.speed button').forEach(b=>b.addEventListener('click'
   b.classList.add('on'); spd=+b.dataset.s; if(timer){stop();start();}
 }));
 window.addEventListener('resize', ()=>{ size(); draw(cur); });
+
+// ---- profile-view hover: strike readout (big) ----
+function fmtVol(v){ v=v||0; if(v>=1e7) return (v/1e7).toFixed(2)+' Cr'; if(v>=1e5) return (v/1e5).toFixed(1)+' L'; if(v>=1e3) return (v/1e3).toFixed(0)+'K'; return ''+Math.round(v); }
+cv.addEventListener('mousemove', e=>{
+  const tip=$('tip'), s=S[cur];
+  if(VIEW!=='profile' || !s || !_pLay){ tip.style.display='none'; return; }
+  const rect=cv.getBoundingClientRect(), x=e.clientX-rect.left;
+  const idx=Math.round((x-_pLay.mL)/_pLay.slot - 0.5), st=s.strikes[idx];
+  if(idx<0 || idx>=_pLay.n || !st){ tip.style.display='none'; return; }
+  const gcr=st.gex/1e7, sign=gcr>=0?'+':'-', a=Math.abs(gcr);
+  tip.innerHTML='<div class="k">'+st.k.toFixed(0)+'</div>'
+    +'<div class="r" style="color:'+(gcr>=0?'var(--green)':'var(--red)')+'">Net GEX '+sign+'₹'+(a>=1000?(a/1000).toFixed(2)+'k':a.toFixed(0))+' Cr</div>'
+    +'<div class="r">Call vol '+fmtVol(st.vce)+' · Put vol '+fmtVol(st.vpe)+'</div>';
+  tip.style.display='block';
+  let tx=e.clientX+16, ty=e.clientY+16;
+  if(tx+tip.offsetWidth>window.innerWidth-8) tx=e.clientX-tip.offsetWidth-16;
+  if(ty+tip.offsetHeight>window.innerHeight-8) ty=e.clientY-tip.offsetHeight-16;
+  tip.style.left=tx+'px'; tip.style.top=ty+'px';
+});
+cv.addEventListener('mouseleave', ()=>{ $('tip').style.display='none'; });
 
 // ---- data ----
 let _loadSeq = 0;
