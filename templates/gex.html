@@ -243,12 +243,22 @@ window.addEventListener('resize', ()=>{ size(); draw(cur); });
 
 // ---- data ----
 let _loadSeq = 0;
+const _dayCache = {};   // "U|date|expiry" -> response (past days are immutable → re-switch is instant)
 async function load(keepPos){
   const seq = ++_loadSeq;
-  const url = `/api/gex?underlying=${U}&date=${DATE}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
+  const key = `${U}|${DATE}|${EXP||''}`;
   let d;
-  try{ d = await (await fetch(url)).json(); }catch(e){ d = {ok:false}; }
-  if(seq !== _loadSeq) return;   // a newer load started while we awaited — drop this stale response
+  if(!keepPos && _dayCache[key]){
+    d = _dayCache[key];                                  // cache hit → no fetch, instant switch
+  } else {
+    const url = `/api/gex?underlying=${U}&date=${DATE}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
+    try{ d = await (await fetch(url)).json(); }catch(e){ d = {ok:false}; }
+    if(seq !== _loadSeq) return;   // a newer load started while we awaited — drop this stale response
+    if((d.snaps||[]).length){      // cache good days only (live-refresh keeps re-fetching fresh)
+      _dayCache[key] = d;
+      const ks = Object.keys(_dayCache); if(ks.length > 20) delete _dayCache[ks[0]];
+    }
+  }
   const snaps = d.snaps||[];
   // Refresh (live/expiry) that comes back empty/errored — a transient network hiccup on a
   // slow link — must NOT wipe a chart that's already showing good data. Only a FRESH

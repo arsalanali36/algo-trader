@@ -609,7 +609,7 @@ def gex_profile_page():
 
 @app.route('/api/gex')
 def api_gex():
-    import gex_profile as gp
+    import gex_profile as gp, json as _json, gzip as _gzip
     u = (request.args.get('underlying') or 'NIFTY').upper()
     date = request.args.get('date')
     if not date:
@@ -617,16 +617,28 @@ def api_gex():
     expiry = request.args.get('expiry') or None
     latest_only = (request.args.get('latest') or '') in ('1', 'true', 'yes')
     want_list = (request.args.get('list') or '') in ('1', 'true', 'yes')
+
+    def _out(obj):
+        # compact JSON + gzip (a day's profile is ~1MB raw, ~8x smaller gzipped)
+        payload = _json.dumps(obj, separators=(',', ':'))
+        if 'gzip' in (request.headers.get('Accept-Encoding') or '') and len(payload) > 2000:
+            body = _gzip.compress(payload.encode('utf-8'), 6)
+            resp = app.response_class(body, mimetype='application/json')
+            resp.headers['Content-Encoding'] = 'gzip'
+            resp.headers['Vary'] = 'Accept-Encoding'
+            return resp
+        return app.response_class(payload, mimetype='application/json')
+
     try:
         if want_list:
             ds = gp.available_dates(u)
-            return jsonify({"ok": bool(ds), "underlying": u, "dates": ds})  # date picker default
+            return _out({"ok": bool(ds), "underlying": u, "dates": ds})   # date picker default
         if latest_only:
-            return jsonify(gp.latest(u, date, expiry))       # newest snapshot (live refresh)
-        return jsonify(gp.profile(u, date, expiry))          # full day (scrub/play)
+            return _out(gp.latest(u, date, expiry))          # newest snapshot (live refresh)
+        return _out(gp.profile(u, date, expiry))             # full day (scrub/play)
     except Exception as e:
         print("[gex] fail:", e, flush=True)
-        return jsonify({"ok": False, "error": str(e), "expiries": [], "snaps": []})
+        return _out({"ok": False, "error": str(e), "expiries": [], "snaps": []})
 
 @app.route('/api/option-strike')
 def api_option_strike():

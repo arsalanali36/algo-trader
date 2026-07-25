@@ -61,7 +61,11 @@ def _snapshot(legs):
     if not strikes:
         return None
 
+    # `out` = the LEAN per-strike payload the chart actually draws (k / gex / vce / vpe);
+    # OI is kept only in `pain_rows` for the max-pain calc, never serialised (keeps the
+    # per-day JSON ~half the size — the strikes array dominates it).
     out = []
+    pain_rows = []           # (k, oi_ce, oi_pe) — max-pain only
     tot_ce_oi = tot_pe_oi = 0.0
     for k in strikes:
         ce = next((l for l in legs if _f(l.get("strike")) == k and l.get("opt_type") == "CE"), None)
@@ -74,22 +78,14 @@ def _snapshot(legs):
         v_pe = (_f(pe.get("volume")) or 0.0) if pe else 0.0
         ce_gex = g_ce * oi_ce * spot * spot * _GEX_K
         pe_gex = g_pe * oi_pe * spot * spot * _GEX_K
-        out.append({
-            "k": k,
-            "gex": round(ce_gex - pe_gex),
-            "ce_gex": round(ce_gex),
-            "pe_gex": round(pe_gex),
-            "vce": v_ce,
-            "vpe": v_pe,
-            "oi_ce": oi_ce,
-            "oi_pe": oi_pe,
-        })
+        out.append({"k": k, "gex": round(ce_gex - pe_gex), "vce": round(v_ce), "vpe": round(v_pe)})
+        pain_rows.append((k, oi_ce, oi_pe))
         tot_ce_oi += oi_ce
         tot_pe_oi += oi_pe
 
     # Max-Pain: settle P that minimises total intrinsic payout to option buyers.
     def _pain(P):
-        return sum(max(0.0, P - s["k"]) * s["oi_ce"] + max(0.0, s["k"] - P) * s["oi_pe"] for s in out)
+        return sum(max(0.0, P - kk) * oc + max(0.0, kk - P) * op for (kk, oc, op) in pain_rows)
     max_pain = min(strikes, key=_pain)
 
     # Abs-GEX wall (largest |GEX|) + zero-gamma flip (cumulative net sign change).
