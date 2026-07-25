@@ -75,6 +75,7 @@
 <div class="top">
   <div class="brand"><b>📊 GEX Profile</b><span id="subttl">gamma exposure · live chain</span></div>
   <div class="sp"></div>
+  <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="engine">Trade Engine</button></div>
   <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
   <input type="date" class="ctl" id="datePick">
   <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
@@ -85,12 +86,12 @@
 
 <div class="kpis">
   <div class="kpi"><div class="lab">Spot</div><div class="val num" id="kSpot">—</div></div>
-  <div class="kpi"><div class="lab">Net GEX</div><div class="val num" id="kNet">—</div></div>
+  <div class="kpi"><div class="lab" id="lab2">Net GEX</div><div class="val num" id="k2">—</div></div>
   <div class="kpi"><div class="lab">Regime</div><div class="val" id="kReg" style="font-size:14px">—</div></div>
-  <div class="kpi"><div class="lab">Abs GEX (wall)</div><div class="val num" id="kAbs">—</div></div>
+  <div class="kpi"><div class="lab" id="lab4">Abs GEX (wall)</div><div class="val num" id="k4">—</div></div>
   <div class="kpi"><div class="lab">Max Pain</div><div class="val num" id="kMp">—</div></div>
-  <div class="kpi"><div class="lab">PCR (OI)</div><div class="val num" id="kPcr">—</div></div>
-  <div class="kpi"><div class="lab">India VIX</div><div class="val num" id="kVix">—</div></div>
+  <div class="kpi"><div class="lab" id="lab6">PCR (OI)</div><div class="val num" id="k6">—</div></div>
+  <div class="kpi"><div class="lab" id="lab7">India VIX</div><div class="val num" id="k7">—</div></div>
 </div>
 
 <div class="regime">
@@ -100,15 +101,7 @@
 
 <div class="wrap">
   <div class="card">
-    <div class="clhead">
-      <span class="lg"><i class="sw" style="background:var(--green)"></i> Positive GEX (call-heavy · vol-suppressing)</span>
-      <span class="lg"><i class="sw" style="background:var(--red)"></i> Negative GEX (put-heavy · vol-amplifying)</span>
-      <span class="lg"><i class="sw" style="background:var(--callA);border:1px solid #58a6ff"></i> Call vol</span>
-      <span class="lg"><i class="sw" style="background:var(--putA);border:1px solid var(--spot)"></i> Put vol</span>
-      <span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>
-      <span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>
-      <span class="lg"><i class="sw" style="background:var(--blue);width:3px"></i> γ-Flip</span>
-    </div>
+    <div class="clhead" id="legend"></div>
     <canvas id="cv" height="440"></canvas>
     <div class="empty" id="empty" style="display:none">No option-chain snapshots for this day / expiry yet.</div>
     <div class="scrub" id="scrubRow">
@@ -118,9 +111,7 @@
       <div class="speed"><button data-s="1">1×</button><button data-s="2" class="on">2×</button><button data-s="4">4×</button></div>
     </div>
   </div>
-  <div class="note">
-    Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks, from the algo-optionchain collector). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.
-  </div>
+  <div class="note" id="chartNote"></div>
 </div>
 
 <script>
@@ -128,6 +119,8 @@ const $ = id => document.getElementById(id);
 let S = [], cur = 0, spd = 2, timer = null, liveTimer = null;
 let gMax = 1, vMax = 1;                       // fixed scales across the loaded day
 let U = 'NIFTY', DATE = '', EXP = '';
+let VIEW = localStorage.getItem('gex_view') || 'profile';   // 'profile' | 'engine'
+let _candles = [], eT0 = 0, eT1 = 1, ePMin = 0, ePMax = 1;  // engine: candles + axis ranges
 
 function css(v){return getComputedStyle(document.documentElement).getPropertyValue(v).trim();}
 const CR = 1e7;
@@ -146,7 +139,72 @@ function computeScales(){
   }}
 }
 
-function draw(i){
+function draw(i){ return VIEW==='engine' ? drawEngine(i) : drawProfile(i); }
+
+// ---- engine view: candles (from per-minute spot) + moving GEX levels ----
+function _mins(dt){ return (+dt.slice(11,13))*60 + (+dt.slice(14,16)); }
+function computeEngine(){
+  // 5-min OHLC from each snapshot's spot; axis ranges span candles + all levels for the day
+  const buck = {};
+  for(const s of S){ const b = Math.floor(_mins(s.dt)/5)*5; (buck[b]=buck[b]||[]).push(s.spot); }
+  _candles = Object.keys(buck).map(b=>+b).sort((a,z)=>a-z).map(b=>{
+    const a=buck[b]; return {t:b, o:a[0], h:Math.max(...a), l:Math.min(...a), c:a[a.length-1]};
+  });
+  eT0 = _mins(S[0].dt); eT1 = _mins(S[S.length-1].dt);
+  ePMin = 1e9; ePMax = -1e9;
+  for(const c of _candles){ ePMin=Math.min(ePMin,c.l); ePMax=Math.max(ePMax,c.h); }
+  for(const s of S){ for(const k of ['flip','mp','cw','pw','emh','eml']){ const v=s[k]; if(v!=null){ ePMin=Math.min(ePMin,v); ePMax=Math.max(ePMax,v); } } }
+  const pad=(ePMax-ePMin)*0.04||10; ePMin-=pad; ePMax+=pad;
+}
+function drawEngine(i){
+  const s = S[i]; if(!s || !_candles.length) return;
+  const W = cv.clientWidth, H = 440;
+  const mL=8,mR=80,mT=14,mB=30, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const tx = t => mL + (t-eT0)/(eT1-eT0||1)*pw;
+  const py = p => mT + (ePMax-p)/(ePMax-ePMin||1)*ph;
+  const nowT = _mins(s.dt);
+  // ±1σ EM band at current snapshot
+  if(s.emh!=null && s.eml!=null){ ctx.fillStyle='rgba(210,153,34,.10)'; ctx.fillRect(mL, py(s.emh), pw, py(s.eml)-py(s.emh)); }
+  // grid + price labels
+  const step = Math.max(10, Math.round((ePMax-ePMin)/6/10)*10);
+  ctx.font='10px sans-serif';
+  for(let p=Math.ceil(ePMin/step)*step; p<ePMax; p+=step){ const y=py(p);
+    ctx.strokeStyle=css('--bd2'); ctx.globalAlpha=.5; ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.globalAlpha=1;
+    ctx.fillStyle=css('--dim'); ctx.textAlign='left'; ctx.fillText(p.toFixed(0), mL+pw+42, y+3); }
+  // time axis (hourly)
+  ctx.fillStyle=css('--dim'); ctx.textAlign='center';
+  for(let t=Math.ceil(eT0/60)*60; t<=eT1; t+=60){ ctx.fillText(String(t/60|0).padStart(2,'0')+':00', tx(t), H-10); }
+  // candles: solid up to playhead, faded ahead
+  const bw = Math.max(2, pw/_candles.length*0.62);
+  for(const c of _candles){ const x=tx(c.t+2.5), up=c.c>=c.o;
+    ctx.globalAlpha = c.t>nowT ? 0.26 : 1;
+    ctx.strokeStyle=ctx.fillStyle = up?css('--green'):css('--red');
+    ctx.beginPath();ctx.moveTo(x,py(c.h));ctx.lineTo(x,py(c.l));ctx.stroke();
+    const yo=py(c.o),yc=py(c.c); ctx.fillRect(x-bw/2, Math.min(yo,yc), bw, Math.max(1.5,Math.abs(yc-yo)));
+    ctx.globalAlpha=1;
+  }
+  // horizontal levels at current snapshot
+  function lvl(p,color,label,dash){ if(p==null)return; const y=py(p);
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash(dash?[5,4]:[]);
+    ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle=color; ctx.fillRect(mL+pw+2, y-7, mR-4, 14);
+    ctx.fillStyle='#0d1117'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left'; ctx.fillText(label, mL+pw+5, y+3); }
+  lvl(s.emh, css('--amber'), '+1σ '+(s.emh!=null?s.emh.toFixed(0):''), true);
+  lvl(s.eml, css('--amber'), '-1σ '+(s.eml!=null?s.eml.toFixed(0):''), true);
+  lvl(s.cw, css('--green'), 'Call '+s.cw, false);
+  lvl(s.pw, css('--red'), 'Put '+s.pw, false);
+  lvl(s.mp, css('--purple'), 'MP '+s.mp, true);
+  lvl(s.flip, css('--blue'), 'γ '+s.flip, true);
+  // playhead + spot dot + tag
+  const xN=tx(nowT), yS=py(s.spot);
+  ctx.strokeStyle=css('--spot'); ctx.lineWidth=1; ctx.setLineDash([3,3]);
+  ctx.beginPath();ctx.moveTo(xN,mT);ctx.lineTo(xN,mT+ph);ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=css('--spot'); ctx.beginPath();ctx.arc(xN,yS,4,0,7);ctx.fill();
+  ctx.fillRect(mL+pw+2, yS-8, mR-4, 16); ctx.fillStyle='#0d1117'; ctx.font='bold 11px sans-serif'; ctx.textAlign='left'; ctx.fillText(s.spot.toFixed(0), mL+pw+5, yS+3);
+}
+
+function drawProfile(i){
   const s = S[i]; if(!s) return;
   const W = cv.clientWidth, H = 440;
   const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
@@ -208,16 +266,61 @@ function kpi(i){
   const s = S[i]; if(!s) return;
   const pos = s.net>=0;
   $('kSpot').textContent = s.spot.toFixed(2);
-  const net = $('kNet'); net.innerHTML = fmtCr(s.net); net.style.color = pos?'var(--green)':'var(--red)';
-  $('kAbs').textContent = s.ag; $('kMp').textContent = s.mp;
-  $('kPcr').textContent = s.pcr==null?'—':s.pcr; $('kVix').textContent = s.vix==null?'—':s.vix;
+  $('kMp').textContent = s.mp;
   $('kReg').innerHTML = pos ? '<span style="color:var(--green)">Positive γ</span>' : '<span style="color:var(--red)">Negative γ</span>';
+  if(VIEW==='engine'){
+    $('k2').textContent = s.flip==null?'—':s.flip;
+    $('k4').textContent = s.cw==null?'—':s.cw;
+    $('k6').textContent = s.pw==null?'—':s.pw;
+    $('k7').textContent = (s.eml!=null && s.emh!=null) ? (s.eml.toFixed(0)+' – '+s.emh.toFixed(0)) : '—';
+  } else {
+    const n=$('k2'); n.innerHTML=fmtCr(s.net); n.style.color=pos?'var(--green)':'var(--red)';
+    $('k4').textContent = s.ag;
+    $('k6').textContent = s.pcr==null?'—':s.pcr;
+    $('k7').textContent = s.vix==null?'—':s.vix;
+  }
   const b = $('rBadge'), t = $('rTxt');
   if(pos){ b.className='badge pos'; b.textContent='POSITIVE GAMMA';
-    t.innerHTML='Dealers long gamma → dips get bought, moves compress. Fade extremes toward the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> flip; watch <b>'+s.mp+'</b> pin.'; }
+    t.innerHTML='Dips get bought, range compresses toward the <b>'+s.mp+'</b> pin; fade the edges of <b>'+(s.pw??'')+'</b>–<b>'+(s.cw??'')+'</b>.'; }
   else{ b.className='badge neg'; b.textContent='NEGATIVE GAMMA';
-    t.innerHTML='Dealers short gamma → moves amplify, trend-friendly. A break past the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> flip can accelerate.'; }
+    t.innerHTML='Moves amplify, trend-friendly. A break past the <b>'+(s.flip!=null?s.flip:s.ag)+'</b> γ-flip can accelerate — walls <b>'+(s.pw??'')+'</b>/<b>'+(s.cw??'')+'</b> are the rails.'; }
   $('tNow').textContent = s.dt.slice(11,16);
+}
+
+// ---- view toggle: labels / legend / note / tile colors, then redraw ----
+const _LEGEND = {
+  profile: '<span class="lg"><i class="sw" style="background:var(--green)"></i> Positive GEX (call-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Negative GEX (put-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--callA);border:1px solid #58a6ff"></i> Call vol</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--putA);border:1px solid var(--spot)"></i> Put vol</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--blue);width:3px"></i> γ-Flip</span>',
+  engine: '<span class="lg"><i class="sw" style="background:var(--blue)"></i> γ-Flip (regime)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple)"></i> Max Pain (pin)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put wall (support)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--amber)"></i> ±1σ expected move</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--dim)">▮ candles = NIFTY spot (5-min)</span>'
+};
+const _NOTE = {
+  profile: 'Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.',
+  engine: 'Candles = the collector\'s per-minute spot (5-min, zero extra Dhan calls, time-synced with the levels). Scrub / ▶ play: the playhead walks the day and every level (γ-flip · max-pain · call/put wall · ±1σ EM) re-computes to that minute — watch how price interacts with the walls as they shift. Faded candles are the future. Context map, not a signal.'
+};
+function applyView(){
+  [...$('vSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.v===VIEW));
+  const eng = VIEW==='engine';
+  $('lab2').textContent = eng?'γ-Flip':'Net GEX';
+  $('lab4').textContent = eng?'Call wall ↑':'Abs GEX (wall)';
+  $('lab6').textContent = eng?'Put wall ↓':'PCR (OI)';
+  $('lab7').textContent = eng?'±1σ Exp. move':'India VIX';
+  $('k2').style.color = eng?'var(--blue)':'';
+  $('k4').style.color = eng?'var(--green)':'';
+  $('k6').style.color = eng?'var(--red)':'';
+  $('k7').style.color = eng?'var(--amber)':'';
+  if(eng) $('k7').style.fontSize='13px'; else $('k7').style.fontSize='';
+  $('legend').innerHTML = _LEGEND[VIEW];
+  $('chartNote').innerHTML = _NOTE[VIEW];
 }
 
 function show(i){ cur=i; kpi(i); $('rng').value=i; drawReady(i); }
@@ -275,11 +378,19 @@ async function load(keepPos){
     $('kSpot').textContent='—'; return; }
   $('empty').style.display='none'; $('scrubRow').style.display='flex'; cv.style.display='block';
   computeScales();
+  computeEngine();
   $('rng').max = S.length-1;
   $('tDate').textContent = 'IST · '+(d.date||DATE).slice(5);
   const pos = keepPos ? Math.min(cur, S.length-1) : Math.floor(S.length*0.55);
   show(pos);
 }
+
+// view toggle (Profile <-> Trade Engine) — shares the same data + scrubber
+$('vSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b || b.dataset.v===VIEW) return;
+  VIEW=b.dataset.v; localStorage.setItem('gex_view', VIEW);
+  applyView(); if(S.length) show(cur);
+});
 
 // underlying toggle
 $('uSeg').addEventListener('click', e=>{
@@ -302,6 +413,8 @@ $('liveBtn').addEventListener('click', ()=>{
   }, 20000); } else { clearInterval(liveTimer); liveTimer=null; }
 });
 document.addEventListener('visibilitychange', ()=>{ if(document.hidden && timer) stop(); });
+
+applyView();   // set labels/legend/note for the persisted view before first paint
 
 // init: default to the most recent day that HAS data (weekend / pre-market → the
 // last trading day) instead of blindly today, which is blank when nothing's collected yet.

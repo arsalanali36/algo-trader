@@ -106,6 +106,29 @@ def _snapshot(legs):
         flip = abs_gex
 
     net = sum(s["gex"] for s in out)
+
+    # Trade-engine levels (Phase 2 candle overlay): OI walls + ±1σ expected-move band.
+    call_wall = max(pain_rows, key=lambda r: r[1])[0] if pain_rows else None   # highest CE OI
+    put_wall = max(pain_rows, key=lambda r: r[2])[0] if pain_rows else None    # highest PE OI
+    em_hi = em_lo = None
+    atm = min(strikes, key=lambda k: abs(k - spot))
+    ce_a = next((l for l in legs if _f(l.get("strike")) == atm and l.get("opt_type") == "CE"), None)
+    pe_a = next((l for l in legs if _f(l.get("strike")) == atm and l.get("opt_type") == "PE"), None)
+    ivs = [v for v in ((_f(ce_a.get("iv")) if ce_a else None), (_f(pe_a.get("iv")) if pe_a else None)) if v]
+    atm_iv = (sum(ivs) / len(ivs)) if ivs else None
+    if atm_iv:
+        try:
+            from datetime import date as _date
+            ey, em_, ed = (int(x) for x in (legs[0].get("expiry") or "").split("-"))
+            dy, dm, dd = (int(x) for x in (dt or "")[:10].split("-"))
+            dte = (_date(ey, em_, ed) - _date(dy, dm, dd)).days
+        except Exception:
+            dte = 1
+        dte = max(dte, 0) + 0.3   # floor so an expiry-day band isn't literally zero-width
+        move = spot * (atm_iv / 100.0) * (dte / 365.0) ** 0.5
+        em_hi = round(spot + move, 1)
+        em_lo = round(spot - move, 1)
+
     return {
         "dt": dt,
         "spot": round(spot, 2),
@@ -114,6 +137,11 @@ def _snapshot(legs):
         "mp": max_pain,
         "ag": abs_gex,
         "flip": flip,
+        "cw": call_wall,       # call wall (highest CE OI — resistance)
+        "pw": put_wall,        # put wall (highest PE OI — support)
+        "emh": em_hi,          # +1σ expected-move (ATM IV to expiry)
+        "eml": em_lo,          # -1σ expected-move
+        "iv": round(atm_iv, 2) if atm_iv else None,
         "pcr": round(tot_pe_oi / tot_ce_oi, 2) if tot_ce_oi else None,
         "strikes": out,
     }
