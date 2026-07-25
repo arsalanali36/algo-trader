@@ -205,17 +205,29 @@ function drawEngine(i){
     ctx.globalAlpha=1;
   }
   // horizontal levels at current snapshot
-  function lvl(p,color,label,dash){ if(p==null)return; const y=clampY(py(p));
-    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash(dash?[5,4]:[]);
-    ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle=color; ctx.fillRect(mL+pw+2, y-7, mR-4, 14);
-    ctx.fillStyle='#0d1117'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left'; ctx.fillText(label, mL+pw+5, y+3); }
-  lvl(s.emh, css('--amber'), '+1σ '+(s.emh!=null?s.emh.toFixed(0):''), true);
-  lvl(s.eml, css('--amber'), '-1σ '+(s.eml!=null?s.eml.toFixed(0):''), true);
-  lvl(s.cw, css('--green'), 'Call '+s.cw, false);
-  lvl(s.pw, css('--red'), 'Put '+s.pw, false);
-  lvl(s.mp, css('--purple'), 'MP '+s.mp, true);
-  lvl(s.flip, css('--blue'), 'γ '+s.flip, true);
+  // levels: draw each line at its true price, then de-overlap the right-edge LABELS so
+  // coinciding levels (e.g. put wall == γ-flip at the same strike) both stay readable.
+  const lvls = [
+    {p:s.emh, c:css('--amber'),  t:'+1σ '+(s.emh!=null?s.emh.toFixed(0):''), d:1},
+    {p:s.eml, c:css('--amber'),  t:'-1σ '+(s.eml!=null?s.eml.toFixed(0):''), d:1},
+    {p:s.cw,  c:css('--green'),  t:'Call '+s.cw, d:0},
+    {p:s.pw,  c:css('--red'),    t:'Put '+s.pw, d:0},
+    {p:s.mp,  c:css('--purple'), t:'MP '+s.mp, d:1},
+    {p:s.flip,c:css('--blue'),   t:'γ '+s.flip, d:1},
+  ].filter(l=>l.p!=null);
+  for(const l of lvls){ const y=clampY(py(l.p)); l.y=y; l.ly=y;
+    ctx.strokeStyle=l.c; ctx.lineWidth=1.5; ctx.setLineDash(l.d?[5,4]:[]);
+    ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.setLineDash([]); }
+  // push labels apart (14px boxes → ≥15px gap), then lift the group up if it runs past the bottom
+  const bySort=[...lvls].sort((a,b)=>a.y-b.y);
+  for(let j=1;j<bySort.length;j++){ if(bySort[j].ly - bySort[j-1].ly < 15) bySort[j].ly = bySort[j-1].ly + 15; }
+  const bottom=mT+ph-8;
+  for(let j=bySort.length-1;j>0;j--){ if(bySort[j].ly > bottom){ bySort[j].ly = bottom; if(bySort[j-1].ly > bySort[j].ly-15) bySort[j-1].ly = bySort[j].ly-15; } }
+  for(const l of lvls){
+    if(Math.abs(l.ly-l.y)>1){ ctx.strokeStyle=l.c; ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(mL+pw,l.y);ctx.lineTo(mL+pw+2,l.ly);ctx.stroke(); }
+    ctx.fillStyle=l.c; ctx.fillRect(mL+pw+2, l.ly-7, mR-4, 14);
+    ctx.fillStyle='#0d1117'; ctx.font='bold 10px sans-serif'; ctx.textAlign='left'; ctx.fillText(l.t, mL+pw+5, l.ly+3);
+  }
   // playhead + spot dot + tag
   const xN=tx(nowT), yS=py(s.spot);
   ctx.strokeStyle=css('--spot'); ctx.lineWidth=1; ctx.setLineDash([3,3]);
