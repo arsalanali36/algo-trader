@@ -195,15 +195,22 @@ $('marginBtn').addEventListener('click',async ()=>{
   if(!r.ok){ mc.innerHTML='<div style="color:var(--amber);padding:12px 0">⚠ '+(r.msg||'margin nahi mila')+'</div>'; return; }
   const f=v=>v==null?'—':'₹'+Math.round(v).toLocaleString('en-IN');
   const legrows=r.legs.map(l=>`<div style="display:flex;justify-content:space-between;padding:5px 0;font-variant-numeric:tabular-nums;border-top:1px solid var(--bd2)"><span style="font-weight:600">${l.label}</span><span>live LTP <b>${l.ltp!=null?'₹'+l.ltp:'—'}</b></span></div>`).join('');
+  const marginBlock = (r.hedged!=null)
+    ? `<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;text-align:center">
+        <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedged margin</div><div style="font-size:20px;font-weight:800;color:var(--green)">${f(r.hedged)}</div></div>
+        <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Naked (leg-sum)</div><div style="font-size:20px;font-weight:800;color:var(--red)">${f(r.standalone)}</div></div>
+        <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedge benefit</div><div style="font-size:20px;font-weight:800;color:var(--blue)">${f(r.benefit)}</div></div>
+       </div>
+       <div style="color:var(--dim);font-size:11px;margin-top:11px">Hedge (BUY wing) add kar ke aur dabao — hedged margin girega, benefit = naked − hedged. Ye <b>LIVE current-market</b> margin hai (backtest-date ka nahi).</div>`
+    : `<div style="margin-top:14px;text-align:center">
+        <div style="font-size:10px;color:var(--mut);text-transform:uppercase">Margin (naked — koi hedge nahi)</div>
+        <div style="font-size:24px;font-weight:800;color:var(--red)">${f(r.standalone)}</div>
+       </div>
+       <div style="color:var(--amber);font-size:11px;margin-top:10px">➕ Hedged margin + benefit dekhne ke liye ek <b>BUY wing (2nd leg)</b> add karo — basket margin 2+ legs pe banta hai.${r.msg&&!r.msg.includes('basket')?' <span style="color:var(--dim)">('+r.msg+')</span>':''}</div>`;
   mc.innerHTML=`<div style="border:1px solid var(--bd);border-radius:10px;padding:14px 16px;margin-top:12px;background:var(--panel)">
     <div style="font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">💰 Live margin &amp; LTP <span style="color:var(--dim);text-transform:none;letter-spacing:0">· current market · spot ${r.spot}</span></div>
     ${legrows}
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:14px;text-align:center">
-      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedged margin</div><div style="font-size:20px;font-weight:800;color:var(--green)">${f(r.hedged)}</div></div>
-      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Naked (leg-sum)</div><div style="font-size:20px;font-weight:800;color:var(--red)">${f(r.standalone)}</div></div>
-      <div><div style="font-size:10px;color:var(--mut);text-transform:uppercase">Hedge benefit</div><div style="font-size:20px;font-weight:800;color:var(--blue)">${f(r.benefit)}</div></div>
-    </div>
-    <div style="color:var(--dim);font-size:11px;margin-top:11px">Hedge (BUY wing) add karke dobara dabao — hedged margin girega, benefit = naked − hedged. Ye <b>LIVE current-market</b> margin hai (backtest-date ka nahi). ${r.msg?'<span style="color:var(--amber)">('+r.msg+')</span>':''}</div>
+    ${marginBlock}
   </div>`;
 });
 $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?')){jsave([]);renderJournal();}});
