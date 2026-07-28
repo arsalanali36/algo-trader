@@ -80,7 +80,7 @@
 <div class="top">
   <div class="brand"><b>📊 GEX Profile</b><span id="subttl">gamma exposure · live chain</span></div>
   <div class="sp"></div>
-  <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="engine">Trade Engine</button></div>
+  <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="line">Line</button><button data-v="engine">Trade Engine</button></div>
   <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
   <input type="date" class="ctl" id="datePick">
   <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
@@ -153,7 +153,7 @@ function computeScales(){
   }}
 }
 
-function draw(i){ return VIEW==='engine' ? drawEngine(i) : drawProfile(i); }
+function draw(i){ return VIEW==='engine' ? drawEngine(i) : VIEW==='line' ? drawLine(i) : drawProfile(i); }
 
 // ---- engine view: candles (from per-minute spot) + moving GEX levels ----
 function _mins(dt){ return (+dt.slice(11,13))*60 + (+dt.slice(14,16)); }
@@ -310,6 +310,65 @@ function drawProfile(i){
   ctx.fillText((vMax/1e7).toFixed(1)+'Cr vol', mL+pw+6, vTop+6);
 }
 
+// ---- line view: Net GEX per strike as a CURVE (sign-split area + line) ----
+function drawLine(i){
+  const s = S[i]; if(!s) return;
+  const W = cv.clientWidth, H = chartH();
+  const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
+  const zeroY = mT+ph*0.5;
+  ctx.clearRect(0,0,W,H);
+  const ks = s.strikes.map(d=>d.k), n = ks.length, slot = pw/n;
+  _pLay = {mL, slot, n};                                  // hover tooltip mapping (same as bars)
+  const xOf = idx => mL + slot*(idx+0.5);
+  const lo = ks[0], hi = ks[n-1];
+  const xk = k => mL + ((k-lo)/(hi-lo||1))*(pw-slot) + slot/2;
+  const gUp = zeroY-mT-6, gDn = (mT+ph)-zeroY-6;
+  const gy = g => zeroY - (g>=0 ? (g/gMax)*gUp : (g/gMax)*gDn);   // GEX → y
+
+  function curveToZero(){                                 // closed path: curve + back along zero line
+    ctx.beginPath();
+    s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    ctx.lineTo(xOf(n-1),zeroY); ctx.lineTo(xOf(0),zeroY); ctx.closePath();
+  }
+  // green fill above zero (call-heavy), red fill below (put-heavy) — clip by side
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,zeroY-mT); ctx.clip();
+  curveToZero(); ctx.fillStyle='rgba(63,185,80,.22)'; ctx.fill(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,zeroY,pw,(mT+ph)-zeroY); ctx.clip();
+  curveToZero(); ctx.fillStyle='rgba(248,81,73,.22)'; ctx.fill(); ctx.restore();
+  // zero line
+  ctx.strokeStyle=css('--bd'); ctx.lineWidth=1;
+  ctx.beginPath(); ctx.moveTo(mL,zeroY); ctx.lineTo(mL+pw,zeroY); ctx.stroke();
+  // the GEX curve
+  ctx.beginPath();
+  s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  ctx.strokeStyle=css('--purple'); ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
+  // dot per strike (colour by sign)
+  s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex);
+    ctx.fillStyle = d.gex>=0?css('--green'):css('--red');
+    ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill(); });
+  // strike labels + axis label
+  ctx.fillStyle=css('--mut'); ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
+  s.strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
+  ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle=css('--dim'); ctx.font='10px sans-serif'; ctx.textAlign='center';
+  ctx.fillText(SRC==='lake'?'◄ PUT OI   ·   NET OI   ·   CALL OI ►':'◄ PUT GEX   ·   NET GEX   ·   CALL GEX ►',0,0); ctx.restore();
+  // spot / max-pain / γ-flip vertical lines (same as bars)
+  function vline(k, color, label, top){
+    if(k==null) return;
+    const x = xk(k);
+    ctx.strokeStyle=color; ctx.lineWidth=1.5; ctx.setLineDash([5,4]);
+    ctx.beginPath(); ctx.moveTo(x,mT-2); ctx.lineTo(x,mT+ph); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font='bold 11px sans-serif';
+    const tw = ctx.measureText(label).width+12;
+    const ly = top?mT+9:mT+ph-8, tx = Math.min(Math.max(x,mL+tw/2),mL+pw-tw/2);
+    ctx.fillStyle=color; ctx.fillRect(tx-tw/2,ly-11,tw,16);
+    ctx.fillStyle='#0d1117'; ctx.textAlign='center'; ctx.fillText(label,tx,ly+1);
+  }
+  vline(s.flip, css('--blue'), (SRC==='lake'?'OI-flip ':'γ ')+(s.flip!=null?s.flip:''), false);
+  vline(s.mp, css('--purple'), 'Max Pain '+s.mp, false);
+  vline(s.spot, css('--spot'), 'SPOT '+s.spot.toFixed(0), true);
+}
+
 function kpi(i){
   const s = S[i]; if(!s) return;
   const pos = s.net>=0, oi = SRC==='lake';
@@ -349,6 +408,12 @@ const _LEGEND = {
     +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
     +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
     +'<span class="lg"><i class="sw" style="background:var(--blue);width:3px"></i> γ-Flip</span>',
+  line: '<span class="lg"><i class="sw" style="background:var(--purple)"></i> Net GEX curve</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Positive (call-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Negative (put-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--blue);width:3px"></i> γ-Flip</span>',
   engine: '<span class="lg"><i class="sw" style="background:var(--blue)"></i> γ-Flip (regime)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--purple)"></i> Max Pain (pin)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
@@ -358,6 +423,7 @@ const _LEGEND = {
 };
 const _NOTE = {
   profile: 'Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.',
+  line: 'Same Net GEX per strike as the Profile bars, drawn as a CURVE — the shape shows where GEX flips positive↔negative and how the peaks sit around spot. Green above zero = call-heavy, red below = put-heavy. Scrub / ▶ play to watch the curve reshape minute-by-minute. Context map, not a signal.',
   engine: 'Candles = the collector\'s per-minute spot (5-min, zero extra Dhan calls, time-synced with the levels). Scrub / ▶ play: the playhead walks the day and every level (γ-flip · max-pain · call/put wall · ±1σ EM) re-computes to that minute — watch how price interacts with the walls as they shift. Faded candles are the future. Context map, not a signal.'
 };
 const _LEGEND_OI = {
@@ -368,6 +434,12 @@ const _LEGEND_OI = {
     +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
     +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
     +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI only — no gamma/IV</span>',
+  line: '<span class="lg"><i class="sw" style="background:var(--purple)"></i> Net OI curve</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call-heavy</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put-heavy</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--purple);width:3px"></i> Max Pain</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI only</span>',
   engine: '<span class="lg"><i class="sw" style="background:var(--blue)"></i> OI-flip</span>'
     +'<span class="lg"><i class="sw" style="background:var(--purple)"></i> Max Pain (pin)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
@@ -376,6 +448,7 @@ const _LEGEND_OI = {
 };
 const _NOTE_OI = {
   profile: 'Historical date — expired-options lake (real OI + volume, ~2021→). Bars = <b>Net OI</b> (OI<sub>CE</sub> − OI<sub>PE</sub>): green = call-heavy (resistance), red = put-heavy (support). Walls / max-pain / PCR are the REAL OI ones. Lake me greeks/IV nahi → OI map hai, gamma-GEX nahi; ±1σ EM unavailable. <b>Kuch derive nahi kiya.</b>',
+  line: 'Historical — <b>Net OI</b> per strike (OI<sub>CE</sub> − OI<sub>PE</sub>) drawn as a CURVE. Green above zero = call-heavy, red below = put-heavy; the shape shows where OI flips around spot/max-pain. Lake me gamma/IV nahi → OI map, GEX nahi.',
   engine: 'Historical date — real per-minute spot candles + real OI walls / max-pain / OI-flip (expired-options lake). Lake me gamma/IV nahi → OI-based (gamma-GEX nahi), ±1σ EM band off. Scrub / ▶ play: price vs OI walls dekho.'
 };
 function applyView(){
@@ -422,7 +495,7 @@ window.addEventListener('resize', ()=>{ size(); draw(cur); });
 function fmtVol(v){ v=v||0; if(v>=1e7) return (v/1e7).toFixed(2)+' Cr'; if(v>=1e5) return (v/1e5).toFixed(1)+' L'; if(v>=1e3) return (v/1e3).toFixed(0)+'K'; return ''+Math.round(v); }
 cv.addEventListener('mousemove', e=>{
   const tip=$('tip'), s=S[cur];
-  if(VIEW!=='profile' || !s || !_pLay){ tip.style.display='none'; return; }
+  if((VIEW!=='profile' && VIEW!=='line') || !s || !_pLay){ tip.style.display='none'; return; }
   const rect=cv.getBoundingClientRect(), x=e.clientX-rect.left;
   const idx=Math.round((x-_pLay.mL)/_pLay.slot - 0.5), st=s.strikes[idx];
   if(idx<0 || idx>=_pLay.n || !st){ tip.style.display='none'; return; }
