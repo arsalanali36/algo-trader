@@ -784,6 +784,12 @@ def api_option_legs():
         k, ot = tok.rsplit('-', 1)
         legs.append({"strike": k, "opt_type": ot})
     try:
+        days = int(request.args.get('days') or 1)
+    except Exception:
+        days = 1
+    try:
+        if days > 1:
+            return jsonify(oc.legs_series_multi(u, date, days, legs))
         return jsonify(oc.legs_series(u, date, expiry, legs))
     except Exception as e:
         print("[option-legs] fail:", e, flush=True)

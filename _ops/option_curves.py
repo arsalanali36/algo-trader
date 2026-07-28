@@ -498,6 +498,21 @@ def legs_series(u, date, expiry, legs):
             "points": pts}
 
 
+def legs_series_multi(u, end_date, days, legs):
+    """Multi-day legs_series — concatenate the last `days` stored days' held straddle/
+    strangle premium (each day auto-picks its own nearest expiry, theo resets per day),
+    so the /curves Fixed pane spans the SAME window as the multi-day main charts. Uses the
+    same day-list as curves_multi(). Display-only."""
+    ds = [d for d in available_dates(u) if d <= end_date][-int(days):]
+    pts, strikes = [], []
+    for d in ds:
+        r = legs_series(u, d, None, legs)
+        if r.get("points"):
+            pts.extend(r["points"])
+            strikes = r.get("strikes") or strikes
+    return {"ok": bool(pts), "underlying": u, "multi": True, "strikes": strikes, "points": pts}
+
+
 # ── term-structure + IV-rank helpers ────────────────────────────────────────
 def _atm_iv_map(rows, expiry):
     """{datetime -> ATM (avg CE/PE) IV} for one expiry — for the next-week term line."""

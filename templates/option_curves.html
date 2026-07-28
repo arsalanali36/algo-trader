@@ -872,6 +872,7 @@
   function fetchFixed(s, cb){
     var qs='underlying='+U+'&date='+document.getElementById('date').value
       +'&expiry='+encodeURIComponent(document.getElementById('expiry').value||'')
+      +(DAYS>1?'&days='+DAYS:'')                       // multi-day: span same window as main charts
       +'&legs='+s.legs.map(function(l){return l.strike+'-'+l.opt_type;}).join(',');
     fetch('/api/option-legs?'+qs).then(function(r){return r.json();}).then(function(d){
       fixedData[s.id]=(d&&d.points)||[]; if(cb)cb();
@@ -1097,7 +1098,7 @@
     var date=document.getElementById('date').value;
     var qs='underlying='+U+'&date='+date;
     var ex=document.getElementById('expiry').value;
-    var fk=U+'|'+date+'|'+ex;                         // date/underlying/expiry changed → held strikes differ
+    var fk=U+'|'+date+'|'+ex+'|'+DAYS;                // date/underlying/expiry/days changed → refetch held strikes
     if(fk!==_fixKey){ _fixKey=fk; fixedData={}; renderFixPicker(); }
     if(DAYS>1){ qs+='&days='+DAYS; }              // multi-day: per-day expiry, so no expiry filter
     else if(ex){ qs+='&expiry='+encodeURIComponent(ex); }
@@ -1173,6 +1174,17 @@
     var s=document.getElementById('strikePop'); if(s && s.style.display==='block' && !s.contains(e.target) && !(m&&m.contains(e.target))) closeStrikePop();
   });
   document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikePop(); closePanelModal(); if(_solo) toggleSolo(_solo); } });
+
+  // Shift + wheel over any chart → scroll the panels up/down (bypass chart zoom). Capture
+  // phase + stopPropagation intercepts the wheel BEFORE the lightweight-chart canvas gets it.
+  (function(){ var mn=document.getElementById('main'); if(!mn) return;
+    mn.addEventListener('wheel', function(e){
+      if(!e.shiftKey) return;
+      e.stopPropagation(); e.preventDefault();
+      var d = e.deltaY || e.deltaX;                    // shift may report deltaX
+      if(SCROLL==='page'){ window.scrollBy(0, d); } else { mn.scrollTop += d; }
+    }, {capture:true, passive:false});
+  })();
 
   refresh(true);
 </script>
