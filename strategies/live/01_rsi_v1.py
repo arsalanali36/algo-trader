@@ -73,6 +73,15 @@ INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 # Timeframe string → minutes
 TF_MAP = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
 
+# Index underlyings — CASH-settled, no physical delivery. Stock F&O (everything
+# NOT in this set) is PHYSICALLY settled, so Zerodha blocks fresh stock-option
+# MIS BUYs in the near-month's expiry week. The next-month-expiry switch below
+# applies to STOCKS ONLY; index options must never be rolled.
+INDEX_UNDERLYINGS = {
+    "NIFTY", "BANKNIFTY", "FINNIFTY", "MIDCPNIFTY", "NIFTYNXT50",
+    "SENSEX", "BANKEX", "SENSEX50",
+}
+
 # Fallback symbol list (asli list config se aati hai)
 DEFAULT_SYMBOLS = [
     "NIFTY", "BANKNIFTY",
@@ -436,6 +445,7 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
     positions    = {}   # sym → +1 (CE open) / -1 (PE open) / 0 (flat)
     active_opts  = {}   # sym → {sec_id, trad_sym, side, qty}
     trades_today = {}   # sym → int (aaj kitni baar trade hua)
+    phys_skip    = set()  # sym → physical-settlement rejection aaya, aaj skip (anti-spam)
 
     _recover_rsi_state(strategy_id, positions, active_opts, trades_today, log)
     # Seed last_date to TODAY (not None) — recovery must never be immediately
@@ -455,6 +465,7 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 positions    = {}
                 active_opts  = {}
                 trades_today = {}
+                phys_skip    = set()
                 log.info(f"── New day: {last_date} ──")
 
             # Paused check
@@ -481,6 +492,12 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
             sym_list   = tc.get("symbols", DEFAULT_SYMBOLS)
             if isinstance(sym_list, str):
                 sym_list = [s.strip() for s in sym_list.split(",") if s.strip()]
+
+            # Physical-settlement handling (STOCK options only — see
+            # INDEX_UNDERLYINGS): inside the near-month's expiry window Zerodha
+            # rejects fresh stock-option MIS buys, so roll to next-month expiry.
+            roll_enabled = bool(tc.get("next_month_on_physical_settlement", True))
+            switch_days  = int(tc.get("next_month_switch_days", 4))
 
             token, cid = load_creds()
             tf_secs    = TF_MAP.get(tf, 5) * 60     # sleep = 1 candle duration
@@ -612,11 +629,37 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                     continue
 
                 # ── ENTRY ───────────────────────────────────────────────────
+                # Anti-spam: agar aaj is symbol pe physical-settlement rejection
+                # aa chuka hai, dobara mat aazmao (100-reject spam se bachao).
+                if sym in phys_skip:
+                    continue
+
                 opt_type = "CE" if signal == "BUY" else "PE"
                 log.info(f"  ★ {signal} on {sym} → BUY {opt_type}")
 
-                # Option contract: sec_id + trad_sym + lot_size from Dhan CSV
-                result = dhan_master.get_option_contract(sym, last_close, opt_type, offset)
+                # Option contract: sec_id + trad_sym + lot_size from Dhan CSV.
+                # Physical-settlement guard: STOCK options (index nahi) ke liye,
+                # jab near-month expiry <= switch_days trading-din door ho, to
+                # NEXT-month contract lo — Zerodha stock-option MIS BUY reject
+                # karta hai us window me ("Try next month's expiry"). Index
+                # options cash-settled = kabhi switch nahi.
+                use_next_month = False
+                _dte = None
+                if roll_enabled and sym not in INDEX_UNDERLYINGS:
+                    _dte = dhan_master.trading_days_to_near_monthly_expiry(sym)
+                    if _dte is not None and _dte <= switch_days:
+                        use_next_month = True
+
+                if use_next_month:
+                    result = dhan_master.get_next_monthly_option_contract(sym, last_close, opt_type, offset)
+                    if result and result[0]:
+                        log.info(f"  ⤳ {sym} physical-settlement window (~{_dte}d to expiry) — NEXT-month {opt_type}")
+                    else:
+                        log.info(f"  {sym} next-month {opt_type} not listed — falling back to nearest")
+                        result = dhan_master.get_option_contract(sym, last_close, opt_type, offset)
+                else:
+                    result = dhan_master.get_option_contract(sym, last_close, opt_type, offset)
+
                 if not result or not result[0]:
                     log.error(f"  {sym} {opt_type} — contract not found in master CSV")
                     continue
@@ -642,7 +685,14 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                         positions[sym]    = +1 if signal == "BUY" else -1
                         trades_today[sym] = t_count + 1
                     else:
-                        log.info(f"  [ENTRY SKIP] {sym} — {res.get('reason','order not ok')}")
+                        _reason = res.get('reason', 'order not ok')
+                        log.info(f"  [ENTRY SKIP] {sym} — {_reason}")
+                        # Physical-settlement rejection (window estimate off, ya
+                        # next-month bhi block) → us symbol ko aaj skip = no spam.
+                        _rl = _reason.lower()
+                        if "physical delivery" in _rl or "next month" in _rl:
+                            phys_skip.add(sym)
+                            log.info(f"  ⛔ {sym} physical-settlement reject — skipping rest of today")
                 except Exception as _ent:
                     log.error(f"  [ENTRY ERR] {sym}: {_ent}")
                     continue

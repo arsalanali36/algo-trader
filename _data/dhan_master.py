@@ -220,6 +220,114 @@ def get_monthly_option_contract(symbol, spot_price, option_type, offset=0):
     return None, None, None
 
 
+def _monthly_expiry_strs(symbol):
+    """Sorted list of month-last MONTHLY expiry cache-keys that are still >= today.
+    Index 0 = near month, 1 = next month, 2 = far month, ...  (Same month-last
+    logic as _near_month_monthly_expiry_str — the monthly contract is the LAST
+    expiry inside its calendar month.) Empty list if none / symbol unknown."""
+    if symbol not in _options_cache:
+        return []
+    now = ist_now()
+    parsed = []
+    for exp in _options_cache[symbol].keys():
+        try:
+            parsed.append((datetime.strptime(exp, "%Y-%m-%d %H:%M:%S"), exp))
+        except Exception:
+            continue
+    if not parsed:
+        return []
+    parsed.sort(key=lambda x: x[0])
+    month_last = {}                      # (year, month) -> (exp_date, exp_str); sorted asc => last wins
+    for ed, exp in parsed:
+        month_last[(ed.year, ed.month)] = (ed, exp)
+    cands = sorted((v for v in month_last.values() if v[0].date() >= now.date()),
+                   key=lambda x: x[0])
+    return [c[1] for c in cands]
+
+
+def _next_month_monthly_expiry_str(symbol):
+    """Cache key of the NEXT-MONTH monthly expiry (skips the near month).
+    None if only the near month is listed."""
+    strs = _monthly_expiry_strs(symbol)
+    return strs[1] if len(strs) >= 2 else None
+
+
+def get_next_monthly_option_contract(symbol, spot_price, option_type, offset=0):
+    """Same ATM±offset resolution as get_monthly_option_contract, but on the
+    NEXT-MONTH monthly expiry (skips the near month).
+
+    Purpose: stock F&O is PHYSICALLY settled — Zerodha blocks fresh stock-option
+    MIS BUYs in the near-month's expiry week ("Fresh buy orders are not allowed
+    ... compulsory physical delivery. Try next month's expiry."). Rolling the
+    contract to next month sidesteps that block. Index options are cash-settled
+    and never need this — callers must gate on stock-vs-index themselves.
+    Returns (None,None,None) if no next-month contract is listed."""
+    if not _options_cache:
+        build_cache()
+    if symbol not in _options_cache:
+        log.error(f"Symbol {symbol} not found in options cache")
+        return None, None, None
+
+    exp_str = _next_month_monthly_expiry_str(symbol)
+    if not exp_str:
+        log.error(f"No next-month monthly expiry found for {symbol}")
+        return None, None, None
+
+    contracts = [c for c in _options_cache[symbol][exp_str] if c["type"] == option_type]
+    if not contracts:
+        return None, None, None
+
+    strikes = sorted(set(c["strike"] for c in contracts))
+    if not strikes:
+        return None, None, None
+
+    atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
+    atm_idx = strikes.index(atm_strike)
+    # same offset convention as get_option_contract (PE inverted so +offset = OTM)
+    target_idx = atm_idx - offset if option_type == "PE" else atm_idx + offset
+    target_idx = max(0, min(len(strikes) - 1, target_idx))
+    target_strike = strikes[target_idx]
+
+    for c in contracts:
+        if c["strike"] == target_strike:
+            return c["sec_id"], c["trad_sym"], c.get("lot_size", 1)
+    return None, None, None
+
+
+def trading_days_to_near_monthly_expiry(symbol):
+    """NSE trading days from TODAY up to (and including) the near-month monthly
+    expiry for `symbol`. Today itself counts as 0 (i.e. today IS expiry -> 0).
+    Returns None if the near-month expiry can't be resolved.
+
+    Used to decide the physical-settlement 'switch to next month' window for
+    stock options. Uses market_calendar (weekend + NSE holiday aware); if that
+    import is unavailable, falls back to a plain calendar-day count."""
+    exp_str = _near_month_monthly_expiry_str(symbol)
+    if not exp_str:
+        return None
+    try:
+        exp_date = datetime.strptime(exp_str, "%Y-%m-%d %H:%M:%S").date()
+    except Exception:
+        return None
+    today = ist_now().date()
+    if exp_date < today:
+        return None
+    if exp_date == today:
+        return 0
+    try:
+        import market_calendar as _mc
+        _is_td = _mc.is_trading_day
+    except Exception:
+        return (exp_date - today).days      # calendar-day fallback
+    n = 0
+    d = today
+    while d < exp_date:
+        d = d + timedelta(days=1)
+        if _is_td(d):
+            n += 1
+    return n
+
+
 def get_sec_id_for_trad_sym(trad_sym):
     """Resolve sec_id for an exact trading symbol, picking the nearest NON-expired
     expiry. Same trading symbol (e.g. NIFTY-Jun2026-24050-CE) can map to multiple
