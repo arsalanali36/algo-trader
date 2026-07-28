@@ -59,6 +59,14 @@
     .ovtick{position:absolute;top:5px;right:64px;z-index:4;font-size:10px;font-weight:600;color:var(--mut);cursor:pointer;background:rgba(13,17,23,.7);padding:1px 6px;border-radius:4px;display:flex;align-items:center;gap:4px}
     .solobtn{position:absolute;top:5px;right:8px;z-index:5;font-size:11px;color:var(--mut);cursor:pointer;background:rgba(13,17,23,.7);border:1px solid var(--bd);padding:1px 6px;border-radius:4px}
     .solobtn:hover{background:var(--bd2);color:var(--tx)}
+    .pane.focused{box-shadow:inset 0 0 0 2px var(--blu)}
+    .topbtn{background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--tx);padding:6px 12px;font-size:13px;font-weight:600;cursor:pointer;margin-right:10px}
+    .topbtn:hover{background:#30363d}
+    #panelModalBg{position:fixed;inset:0;z-index:89;display:none}
+    #panelModal{position:fixed;z-index:90;display:none;top:48px;right:16px;background:#161b22;border:1px solid var(--bd);border-radius:8px;padding:12px 14px;width:264px;max-height:82vh;overflow:auto;box-shadow:0 8px 30px rgba(0,0,0,.6)}
+    #panelModal .pmh{display:flex;align-items:center;margin-bottom:8px}
+    #panelModal .pmh b{font-size:13px}
+    #panelModal .pmh .x{margin-left:auto;cursor:pointer;color:var(--mut);font-weight:700;font-size:16px}
     .ovtick input{cursor:pointer;margin:0}
     .rh{height:7px;cursor:row-resize;background:var(--bd2);flex-shrink:0;position:relative;z-index:6}
     .rh:hover{background:var(--blu)}
@@ -102,6 +110,7 @@
   <div class="top">
     <span class="title">📈 Option Curves<span class="sub">ATM straddle + gamma · live chain</span></span>
     <div class="spacer"></div>
+    <button class="topbtn" onclick="togglePanelModal(event)" title="Panels select karo">▤ Panels</button>
     <div class="topseg" id="colsSeg">
       <button data-c="1" onclick="setCols(1,this)" title="Single column — panels stacked (horizontal)">▭ 1 View</button>
       <button data-c="2" onclick="setCols(2,this)" title="Two-column split — crosshair synced (TradingView style)">◫ 2 Split</button>
@@ -175,11 +184,6 @@
       <label class="pk" style="margin-top:6px" title="Frozen entry-IV BS decay reference (dotted). Actual below theo = IV crushed = seller edge."><input type="checkbox" id="fxTheo" onchange="toggleFixTheo(this.checked)"> Theoretical decay (dotted)</label>
 
       <div class="divh"></div>
-      <label class="fld">Panels</label>
-      <div id="panelPick"></div>
-      <button style="margin-top:8px" onclick="resetPanes()" title="Sab panes barabar height (Alt+R)">⤢ Auto-size panes (Alt+R)</button>
-
-      <div class="divh"></div>
       <label class="fld">At crosshair <span id="v-time" style="color:var(--tx)"></span></label>
       <div class="ro"><span class="k">Straddle</span><span class="v" id="v-str">—</span></div>
       <div class="ro"><span class="k">↳ lost (from open)</span><span class="v" id="v-slost">—</span></div>
@@ -207,6 +211,12 @@
 
     <div class="side-rs" id="sideRs" title="Drag to resize sidebar"></div>
     <div class="main" id="main"></div>
+  </div>
+  <div id="panelModalBg" onclick="closePanelModal()"></div>
+  <div id="panelModal">
+    <div class="pmh"><b>Panels</b><span class="x" onclick="closePanelModal()" title="Close">✕</span></div>
+    <div id="panelPick"></div>
+    <button style="margin-top:8px;width:100%" onclick="resetPanes()" title="Sab panes barabar height (Alt+R)">⤢ Auto-size panes (Alt+R)</button>
   </div>
   <div class="atip" id="alertTip"></div>
   <div id="notePop">
@@ -244,6 +254,10 @@
   var _daysUsed = null;   // dates in the current multi-day view (from curves_multi) — for cross-day notes/alerts
   function _soloBtn(id){ return '<button class="solobtn" onclick="toggleSolo(\''+id+'\')" title="'+(_solo===id?'Wapas normal view':'Is panel ko full view')+'">'+(_solo===id?'⛶ exit':'⛶')+'</button>'; }
   function toggleSolo(id){ _solo=(_solo===id?null:id); buildPanes(); }
+  var _focus = null;   // currently focused pane id (border + F=fullscreen target)
+  function setFocus(id){ _focus=id; panes.forEach(function(p){ if(p.el) p.el.classList.toggle('focused', p.id===id); }); }
+  function togglePanelModal(e){ if(e) e.stopPropagation(); var m=document.getElementById('panelModal'), bg=document.getElementById('panelModalBg'); var open=m.style.display==='block'; if(open){ closePanelModal(); } else { renderPicker(); m.style.display='block'; bg.style.display='block'; } }
+  function closePanelModal(){ document.getElementById('panelModal').style.display='none'; document.getElementById('panelModalBg').style.display='none'; }
   var raw = [], view = [], byTime = {}, panes = [];   // panes: [{id, chart, main, spot, el}]
 
   // Panel catalogue — checkbox picker decides which render. A panel can carry an
@@ -528,7 +542,8 @@
     var OVLBL={ oi:'PE', iv:'VIX', decay:'Theo', walls:'Put', rvivsp:'RV', term:'Next' };   // data-overlay (extra series) tick label
     var stkC = strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e';
     list.forEach(function(def, i){
-      var el=document.createElement('div'); el.className='pane';
+      var el=document.createElement('div'); el.className='pane'+(def.id===_focus?' focused':'');
+      el.addEventListener('mousedown', (function(id){ return function(){ setFocus(id); }; })(def.id));
       el.style.height=(_solo ? Math.max(360, window.innerHeight-150) : paneHeight(def))+'px';   // solo = fill screen
       var ctrl='';
       if(def.extra){
@@ -614,6 +629,7 @@
       }
     });
     applyData(true);   // first paint → fit
+    if(!_focus || !panes.some(function(p){return p.id===_focus;})){ if(panes[0]) setFocus(panes[0].id); }
     setTimeout(relayout, 0);   // re-measure once (grid column widths settle)
   }
 
@@ -1133,6 +1149,11 @@
       if(VIEW==='tall'){ panes.forEach(function(p){ try{ p.chart.timeScale().fitContent(); }catch(x){} }); }
       else { resetPanes(); }
     }
+    // F = fullscreen the focused pane (toggle). Ignore while typing in a field.
+    if((e.key==='f'||e.key==='F') && !e.altKey && !e.ctrlKey && !e.metaKey){
+      var ae=document.activeElement; if(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName)) return;
+      var tgt=_solo||_focus; if(tgt){ e.preventDefault(); toggleSolo(tgt); }
+    }
   });
 
   // init the View / Scroll segmented buttons to saved state
@@ -1151,7 +1172,7 @@
     var m=document.getElementById('ctxMenu'); if(m && m.style.display==='block' && !m.contains(e.target)) hideCtxMenu();
     var s=document.getElementById('strikePop'); if(s && s.style.display==='block' && !s.contains(e.target) && !(m&&m.contains(e.target))) closeStrikePop();
   });
-  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikePop(); } });
+  document.addEventListener('keydown', function(e){ if(e.key==='Escape'){ hideCtxMenu(); closeNotePopup(); closeStrikePop(); closePanelModal(); if(_solo) toggleSolo(_solo); } });
 
   refresh(true);
 </script>
