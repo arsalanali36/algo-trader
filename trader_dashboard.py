@@ -5323,7 +5323,12 @@ def api_margin_history():
         import order_store
         import risk_gate as _rg
         data = order_store.trades_for(req_date)
-        rows = list(data.get("details", [])) + list(data.get("open", []))
+        # current-open: for TODAY use _today_open() — it RANGE-nets positional /
+        # overnight legs, so a closed overnight position's exit-leg is NOT counted
+        # as a phantom open (same source as capital_in_use → chart 'current' now
+        # matches the RMS number). Past dates: the day's own open snapshot.
+        _open = _rg._today_open() if is_today else data.get("open", [])
+        rows = list(data.get("details", [])) + list(_open)
         # Group legs by (mode, strategy, group_id) so a MULTI-LEG structure gets ONE
         # hedged BASKET margin (kite_basket_margin via _group_capital) held over the
         # group's time span — NOT a per-leg NAKED-SELL sum, which over-counts a
