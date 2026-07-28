@@ -333,6 +333,48 @@ def curves(u, date, expiry=None):
             "iv_rank_days": ndays, "next_expiry": next_expiry}
 
 
+def chain_snapshot(u, date, expiry=None):
+    """LATEST per-minute snapshot as a per-strike CE/PE map — the Quick Order
+    chain's OI/IV/greeks source (real Dhan greeks from the collector lake, ~1min
+    fresh; the route overlays live batched LTP on top). Display-only, mtime-cached
+    via _load_rows.
+
+    Returns {ok, underlying, expiry, expiries[], datetime, spot, atm, step,
+             strikes: {K(int): {ce:{ltp,oi,iv,delta}, pe:{...}}}}."""
+    _, rows = _load_rows(u, date)
+    if not rows:
+        return {"ok": False, "underlying": u, "expiry": expiry, "expiries": [], "strikes": {}}
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if expiry not in exps:
+        expiry = exps[0] if exps else None
+    # latest timestamp that has this expiry's legs
+    dts = sorted({r.get("datetime") for r in rows
+                  if r.get("expiry") == expiry and r.get("datetime")})
+    if not dts:
+        return {"ok": False, "underlying": u, "expiry": expiry, "expiries": exps, "strikes": {}}
+    last = dts[-1]
+    legs = [r for r in rows if r.get("expiry") == expiry and r.get("datetime") == last]
+    spot = _f(legs[0].get("spot")) if legs else None
+    out = {}
+    for l in legs:
+        k = _f(l.get("strike"))
+        ot = (l.get("opt_type") or "").upper()
+        if k is None or ot not in ("CE", "PE"):
+            continue
+        d = out.setdefault(int(k), {})
+        d[ot.lower()] = {"ltp": _f(l.get("ltp")), "oi": _f(l.get("oi")),
+                         "iv": _f(l.get("iv")), "delta": _f(l.get("delta"))}
+    strikes = sorted(out.keys())
+    step = None
+    if len(strikes) >= 2:
+        diffs = sorted(strikes[i + 1] - strikes[i] for i in range(len(strikes) - 1))
+        step = diffs[len(diffs) // 2] or None   # median gap = strike step
+    atm = min(strikes, key=lambda x: abs(x - spot)) if (strikes and spot) else None
+    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps,
+            "datetime": last, "spot": round(spot, 2) if spot else None,
+            "atm": atm, "step": step, "strikes": out}
+
+
 def available_dates(u):
     """All dates with a stored option-chain CSV for this underlying (sorted)."""
     out = set()

@@ -162,7 +162,7 @@
         if (btn) { btn.innerHTML = '🟢 Feed Active'; btn.style.color = '#3fb950'; }
         if (av) { av.style.background = '#1f6feb'; av.title = ''; }
         if (typeof _fetchPositionLtp === 'function') _fetchPositionLtp();
-        if (typeof qoFetchLtp === 'function') qoFetchLtp();
+        if (typeof qoLoadChain === 'function') qoLoadChain();   // Quick Order chain (was qoFetchLtp pre-2026-07-28 redesign)
       }
     }
 

@@ -4225,20 +4225,28 @@ def _straddle_resolver(expiry):
     return dhan_master.get_option_contract
 
 
-def _resolve_straddle_legs(symbol, spot, legs_spec, expiry="near"):
+def _resolve_straddle_legs(symbol, spot, legs_spec, expiry="near", signed=False):
     """Resolve a UI leg spec → concrete contracts. Each spec leg:
-        {side: SELL|BUY, opt_type: CE|PE, offset: int>=0 (OTM strikes from ATM)}
-    `offset` is ALWAYS a non-negative OTM magnitude — dhan_master.get_option_contract
-    handles direction per opt_type (CE up, PE down); we NEVER pass a negative PE
-    offset (TRAP #140 / architecture_audit PE-OFFSET-SIGN). `expiry`='near' (weekly)
-    or 'nextmonth' (next monthly). Returns (legs, err),
+        {side: SELL|BUY, opt_type: CE|PE, offset: int}
+    Default (signed=False, the auto/straddle path): `offset` is a non-negative OTM
+    magnitude — dhan_master.get_option_contract handles direction per opt_type
+    (CE up, PE down); we NEVER pass a negative PE offset (TRAP #140 /
+    architecture_audit PE-OFFSET-SIGN, magnitude only).
+    signed=True (the Quick Order CHAIN path): `offset` is the SIGNED index offset
+    from ATM as the frontend computed it per opt_type (CE leg at strike K →
+    (K-atm)/step; PE leg at K → (atm-K)/step). get_option_contract's own index math
+    (CE atm_idx+off, PE atm_idx-off) then lands on the exact strike K — reaching ITM
+    AND OTM for both types. Offset is a runtime-computed variable, never a literal
+    negative, so the PE-OFFSET-SIGN static guard doesn't trip; correctness is the
+    strike-lands-on-K property, verified in tests.
+    `expiry`='near' (weekly) or 'nextmonth' (next monthly). Returns (legs, err),
     legs = [{opt_type, side, offset, sec_id, trad_sym, lot}]  err=None on success."""
     _resolve = _straddle_resolver(expiry)
     out, lot0 = [], None
     for sp in (legs_spec or []):
         side = str(sp.get("side", "")).upper()
         ot = str(sp.get("opt_type", "")).upper()
-        off = abs(int(sp.get("offset", 0)))   # OTM magnitude — never negative (pe-offset-ok: magnitude only)
+        off = int(sp.get("offset", 0)) if signed else abs(int(sp.get("offset", 0)))  # pe-offset-ok: chain=signed index (lands on exact strike), auto=OTM magnitude
         if side not in ("SELL", "BUY") or ot not in ("CE", "PE"):
             return None, f"bad leg {side}/{ot}"
         sec, tsym, lot = _resolve(symbol, spot, ot, off)
@@ -4272,12 +4280,13 @@ def _straddle_lltp(sec):
         return None
 
 
-def _straddle_preview(symbol, lots, spec, quick=False, expiry="near"):
-    """Read-only preview for the leg-window: per-leg strike/LTP + net credit +
-    real hedged basket margin. NO order placed. Returns a dict for jsonify.
+def _straddle_preview(symbol, lots, spec, quick=False, expiry="near", signed=False):
+    """Read-only preview for the leg-window / Quick Order chain: per-leg strike/LTP +
+    net credit + real hedged basket margin. NO order placed. Returns a dict for jsonify.
     quick=True skips the slow Kite basket-margin call (net+LTP stay snappy on
     every +/- ; the UI trails a full preview once the user stops adjusting).
-    expiry='near' (weekly) or 'nextmonth' (next monthly)."""
+    expiry='near' (weekly) or 'nextmonth' (next monthly).
+    signed=True → leg offsets are signed index offsets (chain path, ITM+OTM)."""
     import risk_gate as rg
     symbol = str(symbol).upper()
     lots = max(1, int(lots or 1))
@@ -4296,7 +4305,7 @@ def _straddle_preview(symbol, lots, spec, quick=False, expiry="near"):
             spot = None
     if not spot or spot <= 0:
         return {"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"}
-    legs, err = _resolve_straddle_legs(symbol, spot, spec, expiry=expiry)
+    legs, err = _resolve_straddle_legs(symbol, spot, spec, expiry=expiry, signed=signed)
     if err:
         return {"ok": False, "msg": err}
     # ATM strike + strike-step (from scrip master, NOT hardcoded) so the UI can
@@ -4363,13 +4372,14 @@ def _straddle_preview(symbol, lots, spec, quick=False, expiry="near"):
             "margin_lot": (round(margin / lots) if margin else None)}
 
 
-def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=print, expiry="near"):
-    """User-picked flexible multi-leg (the leg-window). Same safety spine as the
-    legacy hedge path: resolve ALL legs up front, gate the WHOLE basket ONCE
-    (RMS + hedged basket-margin), place BUY legs FIRST (margin already reduced)
-    then SELL legs, and UNWIND everything on any mid-way failure (never leave an
-    untracked/naked leg). Exit is monitored on the NET combined premium of the
-    whole structure (net_exit=True). PAPER. `expiry`='near'|'nextmonth'. Returns (ok, msg)."""
+def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=print, expiry="near", signed=False):
+    """User-picked flexible multi-leg (the leg-window / Quick Order chain basket).
+    Same safety spine as the legacy hedge path: resolve ALL legs up front, gate the
+    WHOLE basket ONCE (RMS + hedged basket-margin), place BUY legs FIRST (margin
+    already reduced) then SELL legs, and UNWIND everything on any mid-way failure
+    (never leave an untracked/naked leg). Exit is monitored on the NET combined
+    premium of the whole structure (net_exit=True). PAPER. `expiry`='near'|'nextmonth'.
+    signed=True → leg offsets are signed index offsets (chain path). Returns (ok, msg)."""
     import execution_gateway as gw
     import auto_straddle as ast
     import risk_gate as rg
@@ -4378,7 +4388,7 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
     except Exception:
         ltp_poller = None
     mode = "paper"
-    legs, err = _resolve_straddle_legs(symbol, spot, legs_spec, expiry=expiry)
+    legs, err = _resolve_straddle_legs(symbol, spot, legs_spec, expiry=expiry, signed=signed)
     if err:
         return False, f"legs resolve fail — {err}"
     lot = int(legs[0]["lot"] or 0)
@@ -4916,13 +4926,153 @@ def api_auto_straddle_fire():
 
 @app.route('/api/auto-straddle/preview', methods=['POST'])
 def api_auto_straddle_preview():
-    """Live preview for the Quick Order straddle LEG WINDOW: per-leg strike/LTP +
-    net credit + real hedged basket margin. Read-only — NO order placed."""
+    """Live preview for the Quick Order straddle LEG WINDOW / chain multi-leg:
+    per-leg strike/LTP + net credit + real hedged basket margin. Read-only — NO
+    order placed. signed=True → chain path (signed index offsets, ITM+OTM)."""
     try:
         d = request.get_json(force=True) or {}
         _exp = _norm_expiry(d.get("expiry"))   # near | nextmonth | YYYY-MM-DD
         return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1),
-                                         d.get("legs") or [], quick=bool(d.get("quick")), expiry=_exp))
+                                         d.get("legs") or [], quick=bool(d.get("quick")),
+                                         expiry=_exp, signed=bool(d.get("signed"))))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/option-chain', methods=['POST'])
+def api_option_chain():
+    """Quick Order CHAIN — ATM±N strikes for one expiry: per strike CE/PE
+    {ltp, oi, iv, delta} + signed index offsets for firing. Fast: OI/IV/greeks
+    come INSTANTLY from the collector lake snapshot (one file read, real Dhan
+    greeks, ~1min fresh); live LTP is overlaid via ONE batched marketfeed call
+    (ltp_poller.request_watch + short best-effort prewarm, TRAP #2 pattern) — never
+    per-leg, never blocking. Display-only (no order/risk path). Offsets are relative
+    to the resolved ATM, the SAME semantics /api/manual-order + /api/triggers use."""
+    try:
+        d = request.get_json(force=True) or {}
+        sym = str(d.get("symbol", "NIFTY")).upper()
+        if sym not in ("NIFTY", "BANKNIFTY"):
+            return jsonify({"ok": False, "msg": f"{sym} supported nahi"})
+        n = max(1, min(20, int(d.get("n", 12))))
+        expiry = _norm_expiry(d.get("expiry"))
+        # spot: fresh warm cache first (poller), then wide-stale for off-market display
+        spot = _trigger_spot_now(sym)
+        if not spot or spot <= 0:
+            try:
+                import shared_ltp_cache as _slc
+                spot = _slc.get_index(sym, max_age=86400) or None
+            except Exception:
+                spot = None
+        if not spot or spot <= 0:
+            return jsonify({"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"})
+        import dhan_master
+        _res = _straddle_resolver(expiry)
+        # Resolve each strike by SIGNED index offset i (CE atm+i, PE atm-i land on the
+        # same strike K) — get_option_contract's own index math (never a literal
+        # negative → PE-OFFSET-SIGN guard safe; pe-offset-ok: signed chain index).
+        rows, sids, lot0, atm_strike, step = [], [], None, None, None
+        for i in range(-n, n + 1):
+            sec_ce, t_ce, lot = _res(sym, spot, "CE", i)     # CE strike = atm + i*step
+            sec_pe, t_pe, _lp = _res(sym, spot, "PE", -i)    # PE at SAME strike = atm - (-i)
+            k = _strike_of(t_ce)
+            if k is None:
+                continue
+            if i == 0:
+                atm_strike = k
+            if lot:
+                lot0 = int(lot)
+            if sec_ce:
+                sids.append(str(sec_ce))
+            if sec_pe:
+                sids.append(str(sec_pe))
+            rows.append({"strike": k, "off_ce": i, "off_pe": -i,
+                         "ce_sec": str(sec_ce) if sec_ce else None, "ce_sym": t_ce,
+                         "pe_sec": str(sec_pe) if sec_pe else None, "pe_sym": t_pe})
+        if not rows:
+            return jsonify({"ok": False, "msg": "chain resolve fail"})
+        strikes_sorted = sorted(r["strike"] for r in rows)
+        if len(strikes_sorted) >= 2:
+            step = strikes_sorted[1] - strikes_sorted[0]
+        # live LTP overlay — ONE batched call, warm the poller, read cache-only
+        try:
+            import ltp_poller
+            ltp_poller.request_watch([(s, "NSE_FNO") for s in sids])
+        except Exception:
+            pass
+        try:
+            _prewarm_option_ltps(sids, acq_timeout=1.2)   # short — best-effort, never blocks
+        except Exception:
+            pass
+
+        def _cl(sec):
+            if not sec:
+                return None
+            try:
+                import shared_ltp_cache as _s
+                v = _s.get(str(sec), max_age=120)
+                return round(float(v), 2) if v else None
+            except Exception:
+                return None
+
+        # collector lake snapshot (OI/IV/delta + ~1min LTP fallback), matched by strike
+        from datetime import timedelta as _td
+        _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+        snap = {}
+        snap_dt = snap_exp = None
+        try:
+            import option_curves as _oc
+            _sn = _oc.chain_snapshot(sym, _ist.strftime("%Y-%m-%d"))
+            if _sn.get("ok"):
+                snap = _sn.get("strikes") or {}
+                snap_dt, snap_exp = _sn.get("datetime"), _sn.get("expiry")
+        except Exception:
+            pass
+
+        out_rows = []
+        for r in rows:
+            lk = snap.get(r["strike"], {})
+            ce_l, pe_l = lk.get("ce") or {}, lk.get("pe") or {}
+            ce_ltp = _cl(r["ce_sec"])
+            pe_ltp = _cl(r["pe_sec"])
+            out_rows.append({
+                "strike": r["strike"], "off_ce": r["off_ce"], "off_pe": r["off_pe"],
+                "ce": {"ltp": ce_ltp if ce_ltp is not None else ce_l.get("ltp"),
+                       "oi": ce_l.get("oi"), "iv": ce_l.get("iv"), "delta": ce_l.get("delta"),
+                       "sym": r["ce_sym"]},
+                "pe": {"ltp": pe_ltp if pe_ltp is not None else pe_l.get("ltp"),
+                       "oi": pe_l.get("oi"), "iv": pe_l.get("iv"), "delta": pe_l.get("delta"),
+                       "sym": r["pe_sym"]},
+            })
+        return jsonify({"ok": True, "symbol": sym, "spot": round(spot, 1),
+                        "atm": atm_strike, "step": step, "lot": lot0, "expiry": expiry,
+                        "snap_dt": snap_dt, "snap_expiry": snap_exp, "rows": out_rows})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/chain/fire-basket', methods=['POST'])
+def api_chain_fire_basket():
+    """Quick Order chain MULTI-LEG basket (PAPER). Legs carry SIGNED index offsets
+    (ITM+OTM, per opt_type). Reuses the flex-straddle unwind-safe placement spine
+    (_fire_flex_straddle, signed=True) — same RMS gate + basket margin + BUY-first
+    + full unwind-on-fail. Single-leg orders go through /api/manual-order instead."""
+    try:
+        d = request.get_json(force=True) or {}
+        sym = str(d.get("symbol", "NIFTY")).upper()
+        lots = int(d.get("lots", 1) or 1)
+        tp = float(d.get("tp_pt", 30) or 30)
+        sl = float(d.get("sl_pt", 30) or 30)
+        legs = d.get("legs") or []
+        expiry = _norm_expiry(d.get("expiry"))
+        if len(legs) < 2:
+            return jsonify({"ok": False, "msg": "basket ke liye 2+ legs chahiye"})
+        spot = _trigger_spot_now(sym)   # FIRING = fresh spot only (never stale)
+        if not spot or spot <= 0:
+            return jsonify({"ok": False, "msg": f"{sym} live spot nahi (market band / rate-limit) — order NAHI"})
+        ok, msg = _fire_flex_straddle(sym, spot, lots, tp, sl, "chain",
+                                      legs, log=lambda m: print(m, flush=True),
+                                      expiry=expiry, signed=True)
+        return jsonify({"ok": ok, "msg": msg})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
