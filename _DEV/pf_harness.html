@@ -67,25 +67,38 @@ setTimeout(function(){
     openPayoffPanel('1,2,3,4','Test Iron Fly',null);
     setTimeout(function(){
       var chk=[];
-      // ---- 2-col layout ----
-      var tc=document.querySelector('.pf-2col');
-      chk.push('[LAYOUT] .pf-2col present: '+!!tc);
-      chk.push('2col cols: '+(tc?getComputedStyle(tc).gridTemplateColumns.split(' ').length:0));
-      chk.push('left has cards: '+!!document.querySelector('.pf-2col .pf-col:nth-child(1) #pfCards'));
-      chk.push('left has payoff: '+!!document.querySelector('.pf-2col .pf-col:nth-child(1) #pfChart'));
-      chk.push('right has combo: '+!!document.querySelector('.pf-2col .pf-col:nth-child(2) #pfComb'));
-      chk.push('legSlot OUTSIDE 2col (full width): '+ (document.getElementById('pfLegSlot') && !document.getElementById('pfLegSlot').closest('.pf-2col')));
-      chk.push('leg cards: '+document.querySelectorAll('#pfGrid svg').length);
-      chk.push('legGrid autofit cols: '+getComputedStyle(document.getElementById('pfGrid')).gridTemplateColumns.split(' ').length);
+      var vis=function(id){var e=document.getElementById(id);return e&&e.style.display!=='none';};
+      // ---- KEY STATS row (top) ----
+      chk.push('[KPI] #pfCards present + top-level (no .pf-2col): '+(!!document.getElementById('pfCards')&&!document.querySelector('.pf-2col')));
+      chk.push('KPI cols: '+(document.getElementById('pfCards')?getComputedStyle(document.getElementById('pfCards')).gridTemplateColumns.split(' ').length:0)+' (want 6)');
+      chk.push('KPI tiles: '+document.querySelectorAll('#pfCards > div').length);
+      chk.push('viewTog at top (before tabs): '+!!document.getElementById('pfViewTog'));
+      // ---- 3 tabs ----
+      chk.push('[TABS] 3 tab buttons: '+document.querySelectorAll('.pf-tab').length);
+      chk.push('tab0 label: '+(document.getElementById('pfTabBtn0')||{}).textContent);
+      chk.push('DEFAULT tab = SL/Target (body0 visible, body1/2 hidden): '+(vis('pfTabBody0')&&!vis('pfTabBody1')&&!vis('pfTabBody2')));
+      chk.push('tab0 btn active: '+document.getElementById('pfTabBtn0').classList.contains('pf-tab-on'));
+      chk.push('SL/Target tab has #pfComb: '+!!document.querySelector('#pfTabBody0 #pfComb'));
+      chk.push('Payoff tab has #pfChart: '+!!document.querySelector('#pfTabBody1 #pfChart'));
+      chk.push('Charts tab has #pfLegSlot: '+!!document.querySelector('#pfTabBody2 #pfLegSlot'));
+      chk.push('SL/Tgt bands (default tab): '+document.querySelectorAll('#pfComb rect[data-lv]').length);
+      chk.push('apply disabled(open): '+!!document.getElementById('pfExApply').disabled);
+      // ---- switch to Payoff tab ----
+      try{ _pfTab(1); }catch(e){chk.push('TAB1 ERR:'+e.message);}
+      chk.push('after _pfTab(1): body1 visible + body0 hidden: '+(vis('pfTabBody1')&&!vis('pfTabBody0')));
+      chk.push('tab1 btn active: '+document.getElementById('pfTabBtn1').classList.contains('pf-tab-on'));
+      try{ _pfZoomBtn('in'); chk.push('zoom z: '+window._pfZoom.z.toFixed(2)); }catch(e){chk.push('ZOOM ERR:'+e.message);}
+      // ---- switch to Charts tab ----
+      try{ _pfTab(2); }catch(e){chk.push('TAB2 ERR:'+e.message);}
+      chk.push('after _pfTab(2): body2 visible: '+vis('pfTabBody2'));
+      chk.push('leg cards (charts tab): '+document.querySelectorAll('#pfGrid svg').length);
       // ---- header extras ----
       chk.push('prev/next btns: '+document.querySelectorAll('[onclick^="_pfNav"]').length);
       chk.push('header P&L: '+(document.getElementById('pfHdrPnl')||{}).textContent);
-      chk.push('sub-line: '+(document.getElementById('pfSub')||{}).textContent);
-      chk.push('SL/Tgt bands: '+document.querySelectorAll('#pfComb rect[data-lv]').length);
       chk.push('leg strip chips: '+document.querySelectorAll('#pfLegStrip span').length);
       chk.push('status: '+(document.getElementById('pfStatus')||{}).textContent);
-      chk.push('apply disabled(open): '+!!document.getElementById('pfExApply').disabled);
-      try{ _pfZoomBtn('in'); chk.push('zoom z: '+window._pfZoom.z.toFixed(2)); }catch(e){chk.push('ZOOM ERR:'+e.message);}
+      // back to default tab for the closed-group nav test
+      try{ _pfTab(0); }catch(e){}
       // ---- Next › nav → CLOSED group ----
       try{ _pfNav(1); }catch(e){chk.push('NAV ERR:'+e.message);}
       setTimeout(function(){

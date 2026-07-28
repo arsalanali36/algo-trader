@@ -711,7 +711,11 @@
         #pfGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px}
         .pf-navbtn{width:24px;height:28px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#e6edf3;cursor:pointer;font-size:16px;font-weight:700;line-height:1}
         .pf-navbtn:hover{background:#21262d;border-color:#1f6feb}
-        @media(max-width:900px){.pf-2col{grid-template-columns:1fr}}
+        #pfCards{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
+        .pf-tab{flex:0 0 auto;padding:8px 15px;background:#0d1117;border:1px solid #30363d;border-radius:7px;color:#8b949e;font-size:12.5px;font-weight:700;cursor:pointer}
+        .pf-tab:hover{color:#e6edf3;border-color:#1f6feb}
+        .pf-tab-on{background:#1f6feb22;color:#58a6ff;border-color:#1f6feb80}
+        @media(max-width:900px){.pf-2col{grid-template-columns:1fr}#pfCards{grid-template-columns:repeat(3,1fr)}}
       </style>
       <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:1280px;width:100%;padding:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">
@@ -839,9 +843,25 @@
       if (d.pop_target == null) window._pfView = 'expiry';
 
       body.innerHTML = `
-        <div class="pf-2col">
-         <div class="pf-col"><!-- LEFT: cards + payoff -->
-          <div id="pfCards" style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px"></div>
+        <!-- KEY STATS row (top) -->
+        <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 7px;gap:8px;flex-wrap:wrap">
+          <span style="font-size:11px;font-weight:700;color:#8b949e;text-transform:uppercase;letter-spacing:.05em">Key stats</span>
+          <span id="pfViewTog"></span>
+        </div>
+        <div id="pfCards"></div>
+
+        <!-- TABS -->
+        <div style="display:flex;gap:7px;margin-bottom:10px;flex-wrap:wrap">
+          <button class="pf-tab pf-tab-on" id="pfTabBtn0" onclick="_pfTab(0)">🎯 SL / Target</button>
+          <button class="pf-tab" id="pfTabBtn1" onclick="_pfTab(1)">📈 Payoff diagram</button>
+          <button class="pf-tab" id="pfTabBtn2" onclick="_pfTab(2)">📊 Charts (${d.legs.length} legs)</button>
+        </div>
+
+        <!-- TAB 0 · SL / Target (combined premium) -->
+        <div id="pfTabBody0"><div id="pfComboSlot"></div></div>
+
+        <!-- TAB 1 · Payoff diagram -->
+        <div id="pfTabBody1" style="display:none">
           <div class="pf-panel">
             <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 4px;flex-wrap:wrap;gap:6px">
               <span style="font-size:11px;font-weight:600;color:#8b949e">
@@ -854,23 +874,35 @@
                 <button onclick="_pfZoomBtn('in')" title="zoom in" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">＋</button>
                 <button onclick="_pfZoomBtn('out')" title="zoom out" style="width:26px;height:24px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-weight:700">−</button>
                 <button onclick="_pfZoomBtn('fit')" title="fit" style="height:24px;padding:0 8px;background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;font-size:11px;font-weight:600">⟲ Fit</button>
-                <span id="pfViewTog"></span>
               </span>
             </div>
             <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
             <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
           </div>
-         </div>
-         <div class="pf-col"><!-- RIGHT: combined premium + SL/target -->
-          <div id="pfComboSlot"></div>
-         </div>
         </div>
-        <!-- full-width per-leg row (below the two columns, for balance) -->
-        <div id="pfLegSlot" style="margin-top:12px"></div>`;
+
+        <!-- TAB 2 · Per-leg charts -->
+        <div id="pfTabBody2" style="display:none"><div id="pfLegSlot"></div></div>`;
+      window._pfTabIdx = 0;
       _pfRenderCards();
       _pfDrawPayoff(d);
       _pfLoadMargin(qs);
       _pfLoadSeries(qs);
+    }
+
+    // 3-tab switch — SL/Target(0) · Payoff(1) · Charts(2). Redraw the shown tab so
+    // its SVG sizes correctly after the display change (harmless if already sized).
+    function _pfTab(i) {
+      window._pfTabIdx = i;
+      for (let j = 0; j < 3; j++) {
+        const b = document.getElementById('pfTabBody' + j); if (b) b.style.display = j === i ? '' : 'none';
+        const t = document.getElementById('pfTabBtn' + j); if (t) t.classList.toggle('pf-tab-on', j === i);
+      }
+      try {
+        if (i === 0 && window._pfSeries) _pfDrawCombined(window._pfSeries);
+        else if (i === 1 && window._pfData) _pfDrawPayoff(window._pfData);
+        else if (i === 2 && window._pfSeries) _pfDrawGrid(window._pfSeries);
+      } catch (e) {}
     }
 
     function _pfSetView(v) { window._pfView = v; _pfRenderCards(); _pfDrawPayoff(window._pfData); }
