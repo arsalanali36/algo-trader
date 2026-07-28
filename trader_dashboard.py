@@ -3422,6 +3422,13 @@ def _run_position_exit_rules(log=print):
             if not legs:
                 per.clear_rule(key)          # group flat → rule fulfilled/stale
                 continue
+            # Same stale-LTP guard as the straddle auto-exit: a 20s warm-up grace
+            # after the rule was ARMED + only act on a tick timestamped AFTER arm
+            # (get_after) — a pre-arm/stale cache value can't drive a phantom
+            # target/SL square-off. (The group is usually warm, but be safe.)
+            armed_ts = rule.get("created_ts", 0)
+            if (_time.time() - armed_ts) < 20:
+                continue
             try:
                 ltp_poller.request_watch([(str(r.get('sec_id')), r.get('segment') or 'NSE_FNO')
                                           for r in legs if r.get('sec_id')])
@@ -3430,7 +3437,7 @@ def _run_position_exit_rules(log=print):
             combined, ok_data = 0.0, True
             for r in legs:
                 sid = str(r.get('sec_id') or '')
-                ltp = slc.get(sid, max_age=20.0) if sid else None
+                ltp = slc.get_after(sid, armed_ts, max_age=20.0) if sid else None
                 if not ltp or float(ltp) <= 0:
                     ok_data = False
                     break
