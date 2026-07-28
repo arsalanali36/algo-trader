@@ -25,6 +25,9 @@
     a.back:hover{color:var(--tx)}
     .wrap{flex:1;display:flex;min-height:0}
     .side{width:210px;flex-shrink:0;border-right:1px solid var(--bd);background:var(--panel);padding:12px;overflow-y:auto}
+    .side-rs{flex-shrink:0;width:5px;cursor:ew-resize;background:transparent}
+    .side-rs:hover,.side-rs.drag{background:var(--blu)}
+    .pk .pknm{overflow-wrap:anywhere}
     .side label.fld{display:block;font-size:11px;color:var(--mut);font-weight:700;margin:10px 0 4px;text-transform:uppercase;letter-spacing:.03em}
     select,input[type=date],button{background:#21262d;color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 9px;font-size:12px;font-weight:600;cursor:pointer;width:100%}
     button:hover{background:#30363d}
@@ -187,6 +190,7 @@
       <button style="margin-top:6px" onclick="clearNotes()">🗑 Clear notes (is din ke)</button>
     </div>
 
+    <div class="side-rs" id="sideRs" title="Drag to resize sidebar"></div>
     <div class="main" id="main"></div>
   </div>
   <div class="atip" id="alertTip"></div>
@@ -272,7 +276,7 @@
   if(!('combined' in enabled)){ enabled.combined = false; save('oc_panels', enabled); }
   var heights = load('oc_heights', {});
   var rawAlerts = [], alertMarkers = {}, alertByTime = {};
-  var notes = [], noteMarkers = {}, noteByTime = {}, atmMarkers = {};
+  var notes = [], noteMarkers = {}, noteByTime = {}, atmMk = [];
   var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay (OI PE) line hidden
   // OVERLAYS (all panes): index (Off/Line/OHLC) + one selected strike (Off/Line/OHLC via right-click)
   var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
@@ -301,6 +305,23 @@
     document.querySelectorAll('#uSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.u===U); });
     _ocTitle();
     renderPicker();
+  })();
+  // Draggable sidebar width — panel names wrap at the default 210px making the list
+  // long; drag the right edge to widen (persisted). Clamp 160-560px.
+  (function initSideResize(){
+    var side=document.querySelector('.side'), rs=document.getElementById('sideRs'); if(!side||!rs) return;
+    var w=load('oc_side_w', 0); if(w && w>=160 && w<=560) side.style.width=w+'px';
+    var drag=false;
+    rs.addEventListener('mousedown', function(e){ drag=true; rs.classList.add('drag'); document.body.style.userSelect='none'; e.preventDefault(); });
+    window.addEventListener('mousemove', function(e){
+      if(!drag) return;
+      var nw=Math.max(160, Math.min(560, e.clientX - side.getBoundingClientRect().left));
+      side.style.width=nw+'px';
+    });
+    window.addEventListener('mouseup', function(){
+      if(!drag) return; drag=false; rs.classList.remove('drag'); document.body.style.userSelect='';
+      save('oc_side_w', parseInt(side.style.width,10)||210);
+    });
   })();
   // Browser-tab title: OC-Nifty / OC-BNF (so two curve tabs are tellable apart).
   function _ocTitle(){ document.title = 'OC-' + (U==='BANKNIFTY' ? 'BNF' : 'Nifty'); }
@@ -426,8 +447,9 @@
     if(tip){
       var items=[];
       if(entry && t!=null && param.point){
-        // straddle pane: always show which ATM strike this bar's straddle is built from
-        if(entry.id==='straddle'){ var _pp=byTime[t]; if(_pp && _pp.atm!=null) items.push('🎯 ATM '+_pp.atm+(_pp.spot!=null?(' · spot '+fmt(_pp.spot,0)):'')); }
+        // ANY pane: always show which ATM strike this bar's straddle is built from (the
+        // straddle pane is often hidden, so surface ATM on whatever pane is hovered)
+        var _pp=byTime[t]; if(_pp && _pp.atm!=null) items.push('🎯 ATM '+_pp.atm+(_pp.spot!=null?(' · spot '+fmt(_pp.spot,0)):''));
         var al=alertByTime[entry.id+'|'+t]; if(al) items=items.concat(al.map(function(a){ return _esc(a.msg); }));
         var nt=noteByTime[entry.id+'|'+t]; if(nt) items=items.concat(nt.map(function(n){ return '📝 '+_esc(n.text); }));
       }
@@ -662,21 +684,23 @@
   // series jumps to a different contract. Mark each roll on the straddle pane (cyan
   // arrow + the new strike) so it's clear which strike the premium reflects at any time.
   function buildAtmMarkers(){
-    atmMarkers={};
+    atmMk=[];
     if(!view.length) return;
-    var prev=null, list=[];
+    var prev=null;
     view.forEach(function(p){
       if(p.atm==null) return;
       if(prev==null){ prev=p.atm; return; }          // first known ATM = baseline, not a change
       if(p.atm!==prev){
-        list.push({ time:p.t, position:'belowBar', color:'#39c5cf',
-                    shape:(p.atm>prev?'arrowUp':'arrowDown'), text:String(p.atm), size:1 });
+        atmMk.push({ time:p.t, position:'belowBar', color:'#39c5cf',
+                     shape:(p.atm>prev?'arrowUp':'arrowDown'), text:String(p.atm), size:1 });
         prev=p.atm;
       }
     });
-    if(list.length){ list.sort(function(a,b){ return a.time-b.time; }); atmMarkers['straddle']=list; }
+    atmMk.sort(function(a,b){ return a.time-b.time; });
   }
-  function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).concat(atmMarkers[id]||[]).sort(function(x,y){ return x.time-y.time; }); }
+  // ATM-roll markers go on EVERY pane (the ATM strike is a property of the whole chain,
+  // and the straddle pane may be hidden) so the roll is visible on whatever pane is shown.
+  function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).concat(atmMk).sort(function(x,y){ return x.time-y.time; }); }
   function setPaneMarkers(e){ try{ e.main.setMarkers(paneMarkers(e.id)); }catch(x){} }
   function refreshMarkers(){ panes.forEach(setPaneMarkers); }
   // tolerance = half the typical bar spacing in the current view, so a note matches the
