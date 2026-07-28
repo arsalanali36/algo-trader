@@ -289,7 +289,8 @@
     { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' },
     { id:'spread',  name:'Bid-Ask Spread',   color:'#39c5cf', get:function(p){return p.spread_pct;}, dec:3, lbl:'BID-ASK SPREAD % (ATM straddle) — neeche/green = tight = achhi entry (sasta fill) · upar/red = wide = fill mehnga, ruko',
       guides:[{v:0.2,c:'#3fb950'},{v:0.45,c:'#f85149'}] },
-    { id:'fixed',   name:'🎯 Fixed Straddle/Strangle', kind:'fixed', color:'#1dd1a1', lbl:'FIXED STRIKE straddle/strangle — held to EOD (real premium), NOT rolling ATM · add strikes from the left picker' }
+    { id:'fixed',   name:'🎯 Fixed Straddle/Strangle', kind:'fixed', color:'#1dd1a1', lbl:'FIXED STRIKE straddle/strangle — held to EOD (real premium), NOT rolling ATM · add strikes from the left picker' },
+    { id:'split',   name:'💰 Value Split (juice)', kind:'split', color:'#1dd1a1', lbl:'VALUE SPLIT — each fixed straddle/strangle = INTRINSIC (grey = udhaar, settles) + TIME VALUE (colour = juice, decays, seller ko yehi milta) · crosshair pe update' }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [
@@ -495,7 +496,7 @@
       } else { tip.style.display='none'; }
     }
     if(t==null) return;
-    updateSkewAt(t);
+    updateSkewAt(t); updateSplitAt(t);
     var p=byTime[t]; if(!p) return;
     setv('v-str',fmt(p.straddle,2)); setv('v-gam',fmt(p.gamma,5)); setv('v-spot',fmt(p.spot,2));
     setv('v-atm',p.atm); setv('v-cepe',fmt(p.ce,2)+' | '+fmt(p.pe,2)); setv('v-vix',fmt(p.vix,2)); setv('v-pcr',fmt(p.pcr,3));
@@ -558,7 +559,7 @@
       }
       main.appendChild(el);
       var entry={ id:def.id, def:def, el:el };
-      if(def.kind==='skew' || def.kind==='heatmap'){
+      if(def.kind==='skew' || def.kind==='heatmap' || def.kind==='split'){
         // custom SVG pane (strike-axis snapshot / strike×time grid) — no LW chart
         entry.kind=def.kind;
         var host=document.createElement('div'); host.style.cssText='position:absolute;left:8px;right:8px;top:24px;bottom:6px;overflow:hidden';
@@ -569,7 +570,7 @@
           tgl.onclick=function(){ _hmSide=(_hmSide==='ce'?'pe':'ce'); var b=document.getElementById('hmSideLbl'); if(b) b.textContent=_hmSide.toUpperCase(); renderHeatmap(); };
           el.appendChild(tgl);
         }
-        if(window.ResizeObserver){ entry._ro=new ResizeObserver(function(){ if(def.kind==='skew') renderSkew(_skewT); else renderHeatmap(); }); entry._ro.observe(host); }
+        if(window.ResizeObserver){ entry._ro=new ResizeObserver(function(){ if(def.kind==='skew') renderSkew(_skewT); else if(def.kind==='split') renderSplit(_splitT); else renderHeatmap(); }); entry._ro.observe(host); }
         panes.push(entry);
       } else if(def.kind==='fixed'){
         // Fixed straddle/strangle pane — held-strike premium line per selected strategy
@@ -645,6 +646,7 @@
       if(e.kind==='skew'){ fetchSkew(); return; }
       if(e.kind==='heatmap'){ fetchHeatmap(); return; }
       if(e.kind==='fixed'){ renderFixed(e); return; }
+      if(e.kind==='split'){ renderSplit(); return; }
       if(e.comb){
         e.comb.forEach(function(c){ c.s.setData(view.map(function(p){ return {time:p.t, value:c.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); })); });
       } else {
@@ -998,6 +1000,44 @@
     return best;
   }
   function updateSkewAt(t){ _skewT=t; if(panes.some(function(p){return p.kind==='skew';})) renderSkew(t); }
+
+  // ── Value Split pane: intrinsic (udhaar) + time value (juice) stacked bars ──
+  var _splitT = null;
+  function updateSplitAt(t){ _splitT=t; if(panes.some(function(p){return p.kind==='split';})) renderSplit(t); }
+  function _legIntrinsic(spot, leg){ return leg.opt_type==='CE' ? Math.max(0, spot-leg.strike) : Math.max(0, leg.strike-spot); }
+  function _splitFor(s, t){
+    if(fixedData[s.id]==null) return null;
+    var rs=resample(fixedData[s.id]||[], +document.getElementById('tf').value); if(!rs.length) return null;
+    var pt=null; if(t!=null){ for(var i=0;i<rs.length;i++){ if(rs[i].t===t){ pt=rs[i]; break; } } }
+    if(!pt) pt=rs[rs.length-1];
+    if(pt.prem==null || pt.spot==null) return null;
+    var intr=0; (s.legs||[]).forEach(function(l){ intr+=_legIntrinsic(pt.spot, l); });
+    return { intrinsic: Math.max(0,intr), tv: Math.max(0, pt.prem-intr), prem: pt.prem };
+  }
+  function renderSplit(t){
+    var e=panes.find(function(p){return p.kind==='split';}); if(!e||!e.host) return;
+    var H=e.host.clientHeight||200, W=e.host.clientWidth||600;
+    function msg(m){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">'+m+'</div>'; }
+    if(!fixedStrats.length){ return msg('Left picker se fixed straddle/strangle add karo'); }
+    var rows=[], mx=1;
+    fixedStrats.forEach(function(s){ var d=_splitFor(s, t===undefined?_splitT:t); if(d){ rows.push({s:s,d:d}); mx=Math.max(mx, d.prem); } });
+    if(!rows.length){ return msg('data…'); }
+    var padT=32,padB=22,padL=8,padR=8, n=rows.length, base=H-padB;
+    var slot=(W-padL-padR)/n, bw=Math.min(64, slot*0.6);
+    var y=function(v){ return padT+(1-v/mx)*(base-padT); };
+    var s='<svg width="100%" height="100%" viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" style="font:10px sans-serif">';
+    s+='<text x="'+padL+'" y="13" fill="#8b949e" font-size="10">Bar = poori straddle value · <tspan fill="#adbac7">grey = intrinsic (udhaar, settle hota)</tspan> · <tspan fill="#1dd1a1">colour = time value (JUICE, seller ko yehi)</tspan></text>';
+    rows.forEach(function(r,i){
+      var bx=padL+slot*i+(slot-bw)/2, yI=y(r.d.intrinsic), yF=y(r.d.prem);
+      s+='<rect x="'+bx.toFixed(1)+'" y="'+yI.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(0,base-yI).toFixed(1)+'" fill="#6e7681"/>';               // udhaar
+      s+='<rect x="'+bx.toFixed(1)+'" y="'+yF.toFixed(1)+'" width="'+bw.toFixed(1)+'" height="'+Math.max(0,yI-yF).toFixed(1)+'" fill="'+r.s.color+'"/>';          // juice
+      s+='<text x="'+(bx+bw/2).toFixed(1)+'" y="'+(yF-4).toFixed(1)+'" fill="#e6edf3" text-anchor="middle" font-size="11">'+Math.round(r.d.prem)+'</text>';
+      if(yI-yF>13) s+='<text x="'+(bx+bw/2).toFixed(1)+'" y="'+((yF+yI)/2+3).toFixed(1)+'" fill="#0d1117" text-anchor="middle" font-size="9">'+Math.round(r.d.tv)+'</text>';
+      if(base-yI>13) s+='<text x="'+(bx+bw/2).toFixed(1)+'" y="'+((yI+base)/2+3).toFixed(1)+'" fill="#0d1117" text-anchor="middle" font-size="9">'+Math.round(r.d.intrinsic)+'</text>';
+      s+='<text x="'+(bx+bw/2).toFixed(1)+'" y="'+(base+14).toFixed(1)+'" fill="#adbac7" text-anchor="middle" font-size="9">'+String(r.s.label).replace(' straddle','').replace(' strangle',' str')+'</text>';
+    });
+    s+='</svg>'; e.host.innerHTML=s;
+  }
   function renderSkew(t){
     var e=panes.find(function(p){return p.kind==='skew';}); if(!e||!e.host) return;
     var H=e.host.clientHeight||200, W=e.host.clientWidth||600;
