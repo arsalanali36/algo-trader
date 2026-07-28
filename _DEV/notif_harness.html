@@ -1,0 +1,92 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Notif harness</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;margin:0;padding:12px}
+#log{position:fixed;left:8px;bottom:8px;background:#161b22;border:1px solid #30363d;padding:8px;font:11px monospace;max-width:520px;max-height:60vh;overflow:auto;white-space:pre-wrap;z-index:99999}</style>
+</head><body>
+<div id="log">booting…</div>
+<!-- panel DOM (mirrors index.html) -->
+<div id="notif-toasts" style="position:fixed;top:10px;right:10px;width:340px;z-index:9998;display:flex;flex-direction:column;gap:8px"></div>
+<div id="notif-bell" style="position:relative">🔔<span id="notif-badge" style="display:none">0</span></div>
+<div id="notif-panel" style="display:none;position:absolute;top:40px;left:10px;width:400px;max-height:80vh;background:#161b22;border:1px solid #30363d;border-radius:8px;flex-direction:column;">
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;border-bottom:1px solid #30363d">
+    <span style="font-size:13px;font-weight:700">Notifications</span>
+    <span style="display:flex;gap:9px;align-items:center">
+      <span onclick="notifToggleSearch(event)" style="cursor:pointer">🔍</span>
+      <span onclick="notifToggleSettings(event)" style="cursor:pointer">⚙</span>
+      <span onclick="notifMarkAllRead()" style="font-size:11px;color:#58a6ff;cursor:pointer">✓ Read</span>
+      <span onclick="notifClear()" style="font-size:11px;color:#8b949e;cursor:pointer">🗑</span>
+    </span>
+  </div>
+  <div id="notif-searchwrap" style="display:none;padding:8px 12px;border-bottom:1px solid #21262d">
+    <input id="notif-search" oninput="notifSearch(this.value)" placeholder="search…" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px 10px;font-size:12px;box-sizing:border-box">
+  </div>
+  <div id="notif-settings" style="display:none;overflow-y:auto;flex:1"></div>
+  <div id="notif-list" style="overflow-y:auto;flex:1;padding:4px 0"></div>
+</div>
+
+<script>
+  try{Object.defineProperty(document,'hidden',{get:function(){return false;},configurable:true});}catch(e){}
+  try{Object.defineProperty(document,'visibilityState',{get:function(){return 'visible';},configurable:true});}catch(e){}
+  localStorage.removeItem('notifCatCfg'); localStorage.setItem('notifSeenMax','0');
+  var errs=[]; window.addEventListener('error',function(e){errs.push(e.message);});
+  var T0=1785200000000;
+  var MOCK={ max_id:6, unread:6, items:[
+    {id:6,msg:'NIFTY bada OI ADD — 24000 strike pe +500,000 OI 1-min me. Institutional bet ban raha.',level:'warn',key:'opt_oi_bomb_NIFTY',dedup:'opt_oi_bomb_NIFTY',source:'chain',source_label:'Curves alert',ts:T0,last_ts:T0,read:false,count:1},
+    {id:5,msg:'BANKNIFTY bada OI UNWIND — 57100 strike pe −12,000,000 OI 1-min me. Badi position kat rahi.',level:'warn',key:'opt_oi_unwind_BANKNIFTY',dedup:'opt_oi_unwind_BANKNIFTY',source:'chain',source_label:'Curves alert',ts:T0-60000,last_ts:T0-60000,read:false,count:1},
+    {id:4,msg:'BANKNIFTY ATM straddle tez tut raha — 466→441 (−5.4%) 10m me. Theta crush.',level:'warn',key:'opt_straddle_crush_BANKNIFTY',dedup:'opt_straddle_crush_BANKNIFTY',source:'chain',source_label:'Curves alert',ts:T0-120000,last_ts:T0-120000,read:false,count:3},
+    {id:3,msg:'NIFTY ATM straddle tez chadh raha — 300→330 (+10%) 10m me.',level:'warn',key:'opt_straddle_pop_NIFTY',dedup:'opt_straddle_pop_NIFTY',source:'chain',source_label:'Curves alert',ts:T0-180000,last_ts:T0-180000,read:false,count:1},
+    {id:2,msg:'NIFTY ATM gamma spike — 0.00042 (z=2.8). Pin ho raha.',level:'warn',key:'opt_gamma_spike_NIFTY',dedup:'opt_gamma_spike_NIFTY',source:'chain',source_label:'Curves alert',ts:T0-240000,last_ts:T0-240000,read:false,count:1},
+    {id:1,msg:'Kite order reject: DH-905 missing field',level:'error',key:'kite_order',dedup:'kite_order',source:'range_v1',source_label:'Ars chain (live)',ts:T0-300000,last_ts:T0-300000,read:false,count:2}
+  ]};
+  window.fetch=function(u){u=String(u);
+    if(u.indexOf('/api/notifications')>=0 && u.indexOf('read')<0 && u.indexOf('clear')<0) return Promise.resolve({json:function(){return Promise.resolve(MOCK);}});
+    return Promise.resolve({json:function(){return Promise.resolve({ok:true});}});
+  };
+</script>
+<script src="/static/js/notify.js"></script>
+<script>
+  var L=document.getElementById('log');
+  function vis(id){var e=document.getElementById(id);return e&&e.style.display!=='none';}
+  function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+  function catLabels(){return [...document.querySelectorAll('#notif-settings div[style*="grid-template-columns"]')].map(function(r){var d=r.querySelector('div > div');return d?d.textContent.trim():'';}).filter(function(x){return x&&x.indexOf('Alert type')<0;});}
+  (async function(){
+    var chk=[];
+    try{
+      localStorage.removeItem('notifCatCfg'); notifSetAll(true); await sleep(150);
+      notifToggle();                       // open panel
+      var listHtml=document.getElementById('notif-list').innerHTML;
+      chk.push('[FMT] OI +5L in list: '+(listHtml.indexOf('+5L')>=0));
+      chk.push('OI −1.2Cr in list: '+(listHtml.indexOf('1.2Cr')>=0));
+      chk.push('strike 24000 intact: '+(listHtml.indexOf('24000')>=0));
+      chk.push('list has rows: '+(document.querySelectorAll('#notif-list > div').length>0));
+      // settings
+      notifToggleSettings();
+      chk.push('[SETTINGS] settings visible, list hidden: '+(vis('notif-settings')&&!vis('notif-list')));
+      var labels=catLabels();
+      var crushRows=labels.filter(function(l){return l.indexOf('ATM straddle crush/pop')>=0;}).length;
+      chk.push('crush+pop MERGED (1 category row): '+(crushRows===1));
+      chk.push('OI bomb+unwind MERGED (1 row): '+(labels.filter(function(l){return l.indexOf('OI bomb')>=0;}).length===1));
+      chk.push('strategy category (Ars chain) present: '+labels.some(function(l){return l.indexOf('Ars chain')>=0;}));
+      chk.push('Tone selects present: '+(document.querySelectorAll('#notif-settings select').length>0));
+      // toggle a category OFF → hidden + badge drops by its item count (2)
+      var b0=document.getElementById('notif-badge').textContent;
+      notifSetCat('chain:OI bomb (big add/unwind)','show'); await sleep(180);
+      var b1=document.getElementById('notif-badge').textContent;
+      chk.push('[TOGGLE] badge dropped 2 ('+b0+'→'+b1+'): '+((parseInt(b0)-parseInt(b1))===2));
+      notifToggleSettings();               // back to list
+      chk.push('OI bomb hidden from list: '+(document.getElementById('notif-list').innerHTML.indexOf('bada OI')<0));
+      notifSetCat('chain:OI bomb (big add/unwind)','show'); await sleep(120);  // re-enable
+      // search
+      notifSearch('gamma');
+      var lh3=document.getElementById('notif-list').innerHTML;
+      chk.push('[SEARCH] only gamma shows: '+(lh3.indexOf('gamma spike')>=0 && lh3.indexOf('OI ADD')<0));
+      notifSearch('');
+      // tone
+      try{ notifTestTone('chime','warn'); chk.push('[SOUND] test tone no-throw: true'); }catch(e){chk.push('SOUND ERR:'+e.message);}
+      chk.push('errors: '+(errs.length?errs.join('|'):'none'));
+    }catch(e){chk.push('THROW: '+e.message+'\n'+e.stack);}
+    L.textContent=chk.join('\n');
+    L.style.color=(errs.length||chk.join().indexOf(': false')>=0||chk.join().indexOf('ERR')>=0||chk.join().indexOf('THROW')>=0)?'#f85149':'#3fb950';
+    window.__done=chk.join('\n');
+  })();
+</script>
+</body></html>

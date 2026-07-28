@@ -40,18 +40,30 @@
 
       // Alert sound — WebAudio se generate hota hai, koi asset file nahi (ek
       // missing .mp3 se alert chup ho jaana theek isi bug ka doosra roop hota).
-      function _beep(level) {
-        if (_muted) return;
+      // Tones — har alert-type ko alag sound de sakte ho (kaan se pehchano). ''
+      // = level-based default (purana behaviour).
+      var TONES = {
+        '':    null,
+        beep:  { hz: 480, n: 2, type: 'square',   gap: 0.16 },
+        chime: { hz: 660, n: 3, type: 'sine',     gap: 0.13 },
+        ping:  { hz: 900, n: 1, type: 'sine',     gap: 0.16 },
+        buzz:  { hz: 190, n: 2, type: 'sawtooth', gap: 0.18 },
+        alarm: { hz: 720, n: 4, type: 'square',   gap: 0.14 }
+      };
+      var TONE_LIST = ['', 'beep', 'chime', 'ping', 'buzz', 'alarm'];
+      var TONE_NAME = { '': 'Default', beep: 'Beep', chime: 'Chime', ping: 'Ping', buzz: 'Buzz', alarm: 'Alarm' };
+      function _beep(level, tone, force) {
+        if (_muted && !force) return;
         try {
           _actx = _actx || new (window.AudioContext || window.webkitAudioContext)();
           if (_actx.state === 'suspended') _actx.resume();
-          var cfg = _lv(level);
-          // error = 3 urgent beeps, warn = 2, info = 1
-          var n = level === 'error' ? 3 : (level === 'warn' ? 2 : 1);
+          var t = TONES[tone || ''], hz, n, type, gap;
+          if (t) { hz = t.hz; n = t.n; type = t.type; gap = t.gap; }
+          else { var cfg = _lv(level); hz = cfg.hz; type = 'square'; gap = 0.18; n = level === 'error' ? 3 : (level === 'warn' ? 2 : 1); }
           for (var i = 0; i < n; i++) {
-            var t0 = _actx.currentTime + i * 0.18;
+            var t0 = _actx.currentTime + i * gap;
             var o = _actx.createOscillator(), g = _actx.createGain();
-            o.type = 'square'; o.frequency.value = cfg.hz;
+            o.type = type; o.frequency.value = hz;
             g.gain.setValueAtTime(0.0001, t0);
             g.gain.exponentialRampToValueAtTime(0.16, t0 + 0.01);
             g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.14);
@@ -61,9 +73,51 @@
         } catch (e) { /* audio blocked (no user gesture yet) — toast still shows */ }
       }
 
+      // ── Big-number formatting: OI etc. ko 8.5L / 1.2Cr dikhao (≥1 lakh). Strikes/
+      //    prices safe (5-digit / decimals ko haath nahi lagata). Display-only.
+      function _fmtBig(s) {
+        return String(s == null ? '' : s).replace(/\b\d{1,3}(?:,\d{2,3})+\b|\b\d{6,}\b/g, function (m) {
+          var v = parseInt(m.replace(/,/g, ''), 10);
+          if (isNaN(v) || v < 100000) return m;
+          if (v >= 10000000) return (v / 10000000).toFixed(v % 10000000 ? 1 : 0).replace(/\.0$/, '') + 'Cr';
+          return (v / 100000).toFixed(v % 100000 ? 1 : 0).replace(/\.0$/, '') + 'L';
+        });
+      }
+
+      // ── Category — har notification ka stable bucket (settings + filter ke liye).
+      //    chain/opt_ alerts → alert TYPE (crush+pop jaisi jodi ek label me merge);
+      //    baaki → source (strategy/module). id se localStorage config bind hota hai.
+      var _CATM = {
+        oi_bomb: { e: '💣', l: 'OI bomb (big add/unwind)' }, oi_unwind: { e: '💣', l: 'OI bomb (big add/unwind)' },
+        straddle_crush: { e: '📉', l: 'ATM straddle crush/pop' }, straddle_pop: { e: '📈', l: 'ATM straddle crush/pop' },
+        gamma_spike: { e: '⚡', l: 'Gamma spike' }, ce_unwind: { e: '🔄', l: 'Call/Put OI unwind' }, pe_unwind: { e: '🔄', l: 'Call/Put OI unwind' },
+        iv_crush: { e: '📉', l: 'ATM IV crush/pop' }, iv_pop: { e: '📈', l: 'ATM IV crush/pop' },
+        decay_edge: { e: '🎯', l: 'Theo decay edge/lag' }, decay_lag: { e: '⚠️', l: 'Theo decay edge/lag' },
+        delta_drift: { e: '🧭', l: 'Straddle delta drift' }, call_wall_shift: { e: '🧱', l: 'OI wall shift' }, put_wall_shift: { e: '🧱', l: 'OI wall shift' },
+        ivrank_high: { e: '🔥', l: 'IV Rank extreme' }, ivrank_low: { e: '🧊', l: 'IV Rank extreme' },
+        vrp_gone: { e: '⚠️', l: 'VRP edge gone' }, term_back: { e: '📐', l: 'Term backwardation' },
+        skew_steepen: { e: '🩹', l: 'Put-skew steepen' }, spread_wide: { e: '↔️', l: 'Spread wide' }
+      };
+      function _cat(n) {
+        var k = String(n.dedup || n.key || '');
+        if (n.source === 'chain' || k.indexOf('opt_') === 0) {
+          var typ = k.replace(/^opt_/, '').replace(/_(BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|NIFTY)$/, '');
+          var m = _CATM[typ];
+          if (m) return { id: 'chain:' + m.l, e: m.e, l: m.l, g: 'Curves' };
+          return { id: 'chain:' + typ, e: '📊', l: (typ || 'chain').replace(/_/g, ' '), g: 'Curves' };
+        }
+        var s = n.source || 'other';
+        return { id: 'src:' + s, e: _lv(n.level).icon, l: _src(n) || s, g: 'strategy' };
+      }
+      function _catCfg() { try { return JSON.parse(localStorage.getItem('notifCatCfg') || '{}'); } catch (e) { return {}; } }
+      function _catSet(id) { var c = _catCfg()[id] || {}; return { show: c.show !== false, sound: c.sound !== false, tone: c.tone || '' }; }
+      function _catSave(id, patch) { var c = _catCfg(); c[id] = Object.assign(_catSet(id), patch); localStorage.setItem('notifCatCfg', JSON.stringify(c)); }
+      var _searchQ = '';
+
       function _toast(n) {
         var box = document.getElementById('notif-toasts');
         if (!box) return;
+        if (!_catSet(_cat(n).id).show) return;   // is category ka toast off hai
         var cfg = _lv(n.level);
         var el = document.createElement('div');
         el.style.cssText = 'background:' + cfg.bg + ';border:1px solid ' + cfg.bd + ';border-left:3px solid ' + cfg.c
@@ -71,7 +125,7 @@
           + 'box-shadow:0 4px 16px rgba(0,0,0,.5);cursor:pointer;opacity:0;transform:translateX(20px);transition:opacity .2s,transform .2s;';
         el.innerHTML = '<div style="display:flex;gap:8px;align-items:flex-start">'
           + '<span style="font-size:12px">' + cfg.icon + '</span>'
-          + '<div style="flex:1;min-width:0"><div style="word-break:break-word">' + _esc(n.msg) + '</div>'
+          + '<div style="flex:1;min-width:0"><div style="word-break:break-word">' + _fmtBig(_esc(n.msg)) + '</div>'
           + (n.source ? '<div title="' + _esc(n.source) + '" style="font-size:10px;color:#8b949e;margin-top:3px">' + _esc(_src(n)) + '</div>' : '')
           + '</div><span style="color:#8b949e;font-weight:700;padding:0 2px">✕</span></div>';
         // Click dismisses the toast (record stays in the bell's history). For an
@@ -158,7 +212,7 @@
           + '<span style="font-size:11px;margin-top:2px">' + (n.resolved ? '✅' : cfg.icon) + '</span>'
           + '<div style="flex:1;min-width:0">'
           + '<div style="font-size:12px;color:#e6edf3;word-break:break-word;line-height:1.4;'
-          + (n.resolved ? 'text-decoration:line-through;text-decoration-color:#6e7681' : '') + '">' + _esc(n.msg) + '</div>'
+          + (n.resolved ? 'text-decoration:line-through;text-decoration-color:#6e7681' : '') + '">' + _fmtBig(_esc(n.msg)) + '</div>'
           + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
           + (n.resolved ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
           + _ago(n.last_ts || n.ts)
@@ -171,8 +225,23 @@
       function _renderPanel(items) {
         var list = document.getElementById('notif-list');
         if (!list) return;
+        var settingsOn = window._notifSettingsOn;
+        var setEl = document.getElementById('notif-settings');
+        if (setEl) setEl.style.display = settingsOn ? 'block' : 'none';
+        list.style.display = settingsOn ? 'none' : 'block';
+        if (settingsOn) { _renderSettings(); return; }
+        // filter: hidden categories out + live search
+        var q = _searchQ.trim().toLowerCase();
+        items = items.filter(function (n) {
+          if (!_catSet(_cat(n).id).show) return false;
+          if (q) {
+            var hay = (String(n.msg || '') + ' ' + _src(n) + ' ' + _cat(n).l).toLowerCase();
+            if (hay.indexOf(q) < 0) return false;
+          }
+          return true;
+        });
         if (!items.length) {
-          list.innerHTML = '<div style="padding:22px 12px;text-align:center;color:#6e7681;font-size:12px">Abhi tak koi notification nahi 🎉</div>';
+          list.innerHTML = '<div style="padding:22px 12px;text-align:center;color:#6e7681;font-size:12px">' + (q ? 'Kuch nahi mila "' + _esc(q) + '"' : 'Abhi tak koi notification nahi 🎉') + '</div>';
           return;
         }
         // group, newest-first order preserved by first appearance
@@ -197,7 +266,7 @@
             + '<span style="font-size:11px;margin-top:2px">' + (fixed === g.length ? '✅' : cfg.icon) + '</span>'
             + '<div style="flex:1;min-width:0">'
             + '<div style="font-size:12px;color:#e6edf3;word-break:break-word;line-height:1.4">'
-            + _esc(head.msg) + '</div>'
+            + _fmtBig(_esc(head.msg)) + '</div>'
             + '<div style="font-size:10px;color:#6e7681;margin-top:3px">'
             + (fixed === g.length ? '<span style="color:#3fb950;font-weight:700">✓ fixed</span> · ' : '')
             + _ago(head.last_ts || head.ts)
@@ -216,21 +285,31 @@
         if (document.hidden) return;   // background tab — skip poll, resume on focus (load-trim)
         fetch('/api/notifications').then(function (r) { return r.json(); }).then(function (d) {
           _cache = d.items || [];
+          // Badge = VISIBLE unread only — a category turned off in settings is
+          // fully muted (no toast, no sound, no count, no list row).
+          var vu = _cache.filter(function (n) { return !n.read && _catSet(_cat(n).id).show; }).length;
           var badge = document.getElementById('notif-badge');
           var bell = document.getElementById('notif-bell');
           if (badge) {
-            badge.textContent = d.unread > 99 ? '99+' : d.unread;
-            badge.style.display = d.unread ? 'block' : 'none';
+            badge.textContent = vu > 99 ? '99+' : vu;
+            badge.style.display = vu ? 'block' : 'none';
           }
-          if (bell) bell.style.color = d.unread ? '#f85149' : '#8b949e';
-          // Fresh (id > last seen) unread → toast + sound. First poll after a page
-          // load is backlog, so it only seeds the mark — no alarm for old news.
-          var fresh = _cache.filter(function (n) { return n.id > _seenMax && !n.read; });
+          if (bell) bell.style.color = vu ? '#f85149' : '#8b949e';
+          // Fresh (id > last seen) unread + SHOWN → toast + sound. First poll after a
+          // page load is backlog, so it only seeds the mark — no alarm for old news.
+          var fresh = _cache.filter(function (n) { return n.id > _seenMax && !n.read && _catSet(_cat(n).id).show; });
           if (_booted && fresh.length) {
             fresh.slice().reverse().forEach(_toast);
-            var worst = fresh.some(function (n) { return n.level === 'error'; }) ? 'error'
-              : (fresh.some(function (n) { return n.level === 'warn'; }) ? 'warn' : 'info');
-            _beep(worst);
+            // per-category tone — play each DISTINCT (tone,level) once, cap 2 (no cacophony)
+            var seen = {}, order = [];
+            fresh.forEach(function (n) {
+              var cs = _catSet(_cat(n).id); if (!cs.sound) return;
+              var key = cs.tone + '|' + n.level;
+              if (!seen[key]) { seen[key] = { tone: cs.tone, level: n.level }; order.push(key); }
+            });
+            order.slice(0, 2).forEach(function (k, i) {
+              setTimeout(function () { _beep(seen[k].level, seen[k].tone); }, i * 420);
+            });
           }
           if (d.max_id > _seenMax) {
             _seenMax = d.max_id;
@@ -249,6 +328,68 @@
         var open = p.style.display === 'none';
         p.style.display = open ? 'flex' : 'none';
         if (open) _renderPanel(_cache);
+      };
+
+      // ── Settings view (⚙) — per-category show / sound / tone ─────────────────
+      function _renderSettings() {
+        var el = document.getElementById('notif-settings'); if (!el) return;
+        var cats = {}, order = [];
+        _cache.forEach(function (n) {
+          var c = _cat(n);
+          if (!cats[c.id]) { cats[c.id] = { c: c, n: 0 }; order.push(c.id); }
+          cats[c.id].n += (parseInt(n.count, 10) || 1);
+        });
+        order.sort(function (a, b) { var A = cats[a], B = cats[b]; if (A.c.g !== B.c.g) return A.c.g === 'Curves' ? -1 : 1; return B.n - A.n; });
+        var GC = 'grid-template-columns:1fr 46px 52px 92px;gap:8px';
+        var bar = '<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:#12161d;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e">'
+          + '<span>Har type ka <b style="color:#e6edf3">show</b> / <b style="color:#e6edf3">sound</b> tick karo</span>'
+          + '<span><span onclick="notifSetAll(true)" style="color:#58a6ff;cursor:pointer">✓ sab on</span> · <span onclick="notifSetAll(false)" style="color:#8b949e;cursor:pointer">✗ off</span></span></div>';
+        if (!order.length) { el.innerHTML = bar + '<div style="padding:22px 12px;text-align:center;color:#6e7681;font-size:12px">Abhi koi category nahi — notifications aane pe yahan dikhengi.</div>'; return; }
+        var colhead = '<div style="display:grid;' + GC + ';padding:6px 12px;background:#0f141b;border-bottom:1px solid #21262d">'
+          + '<span style="font-size:9px;color:#6e7681;text-transform:uppercase">Alert type</span>'
+          + '<span style="font-size:9px;color:#6e7681;text-align:center">Show</span>'
+          + '<span style="font-size:9px;color:#6e7681;text-align:center">Sound</span>'
+          + '<span style="font-size:9px;color:#6e7681;text-align:center">Tone</span></div>';
+        var toneOpts = function (sel) { return TONE_LIST.map(function (t) { return '<option value="' + t + '"' + (t === sel ? ' selected' : '') + '>' + TONE_NAME[t] + '</option>'; }).join(''); };
+        var cbox = function (on, dim, id, field) {
+          return '<div onclick="notifSetCat(\'' + id.replace(/'/g, "\\'") + '\',\'' + field + '\')" title="' + field + '" '
+            + 'style="width:17px;height:17px;border:1.5px solid ' + (on ? '#1f6feb' : '#30363d') + ';border-radius:4px;cursor:pointer;justify-self:center;'
+            + 'display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;'
+            + 'background:' + (on ? '#1f6feb' : 'transparent') + ';color:' + (on ? '#fff' : 'transparent') + ';' + (dim ? 'opacity:.4' : '') + '">✓</div>';
+        };
+        var rows = order.map(function (id) {
+          var c = cats[id].c, s = _catSet(id), esc = id.replace(/'/g, "\\'");
+          var soundOn = s.show && s.sound;
+          return '<div style="display:grid;' + GC + ';align-items:center;padding:8px 12px;border-bottom:1px solid #21262d' + (s.show ? '' : ';opacity:.6') + '">'
+            + '<div style="font-size:12px;display:flex;align-items:center;gap:6px;min-width:0"><span>' + c.e + '</span>'
+            + '<div style="min-width:0"><div style="color:#e6edf3;overflow:hidden;text-overflow:ellipsis">' + _esc(c.l) + '</div>'
+            + '<div style="font-size:9.5px;color:#6e7681">' + c.g + ' · ' + cats[id].n + '×</div></div></div>'
+            + cbox(s.show, false, id, 'show')
+            + cbox(soundOn, !s.show, id, 'sound')
+            + '<div style="display:flex;align-items:center;gap:4px">'
+            + '<select onchange="notifSetTone(\'' + esc + '\',this.value)"' + (soundOn ? '' : ' disabled')
+            + ' style="flex:1;min-width:0;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#e6edf3;font-size:11px;padding:3px 4px;cursor:pointer;' + (soundOn ? '' : 'opacity:.4') + '">' + toneOpts(s.tone) + '</select>'
+            + '<span onclick="notifTestTone(\'' + s.tone + '\',\'' + (c.g === 'Curves' ? 'warn' : 'error') + '\')" style="font-size:12px;cursor:pointer;color:#8b949e" title="test">▶</span>'
+            + '</div></div>';
+        }).join('');
+        el.innerHTML = bar + colhead + '<div>' + rows + '</div>';
+      }
+      window.notifToggleSettings = function (e) { if (e) e.stopPropagation(); window._notifSettingsOn = !window._notifSettingsOn; _renderPanel(_cache); };
+      window.notifToggleSearch = function (e) {
+        if (e) e.stopPropagation();
+        var w = document.getElementById('notif-searchwrap'); if (!w) return;
+        var on = w.style.display === 'none'; w.style.display = on ? 'block' : 'none';
+        var i = document.getElementById('notif-search');
+        if (on) { if (i) i.focus(); } else { _searchQ = ''; if (i) i.value = ''; _renderPanel(_cache); }
+      };
+      window.notifSearch = function (v) { _searchQ = v || ''; _renderPanel(_cache); };
+      window.notifSetCat = function (id, field) { var s = _catSet(id); var p = {}; p[field] = !s[field]; _catSave(id, p); _renderSettings(); _poll(); };
+      window.notifSetTone = function (id, tone) { _catSave(id, { tone: tone }); };
+      window.notifTestTone = function (tone, level) { _beep(level || 'warn', tone, true); };
+      window.notifSetAll = function (on) {
+        var c = _catCfg();
+        _cache.forEach(function (n) { var id = _cat(n).id; c[id] = Object.assign(_catSet(id), { show: !!on, sound: !!on }); });
+        localStorage.setItem('notifCatCfg', JSON.stringify(c)); _renderSettings(); _poll();
       };
       window.notifMarkAllRead = function () {
         fetch('/api/notifications/read', {

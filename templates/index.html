@@ -1471,13 +1471,22 @@
           style="display:none; position:absolute; top:34px; right:0; width:400px; max-height:70vh; background:#161b22; border:1px solid #30363d; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.6); z-index:10000; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; flex-direction:column;">
           <div style="display:flex; align-items:center; justify-content:space-between; padding:9px 12px; border-bottom:1px solid #30363d;">
             <span style="font-size:13px; font-weight:700; color:#e6edf3;">Notifications</span>
-            <span style="display:flex; gap:10px;">
+            <span style="display:flex; gap:9px; align-items:center;">
+              <span onclick="notifToggleSearch(event)" title="Search"
+                style="font-size:13px; color:#8b949e; cursor:pointer;">🔍</span>
+              <span onclick="notifToggleSettings(event)" title="Settings — kaunsa alert + sound aaye"
+                style="font-size:13px; color:#8b949e; cursor:pointer;">⚙</span>
               <span onclick="notifMarkAllRead()" title="Sab read mark karo (history rehti hai)"
-                style="font-size:11px; color:#58a6ff; cursor:pointer;">✓ Mark all read</span>
+                style="font-size:11px; color:#58a6ff; cursor:pointer;">✓ Read</span>
               <span onclick="notifClear()" title="Poori history delete — wapas nahi aayegi"
-                style="font-size:11px; color:#8b949e; cursor:pointer;">🗑 Clear</span>
+                style="font-size:11px; color:#8b949e; cursor:pointer;">🗑</span>
             </span>
           </div>
+          <div id="notif-searchwrap" style="display:none; padding:8px 12px; border-bottom:1px solid #21262d;">
+            <input id="notif-search" oninput="notifSearch(this.value)" placeholder="🔍 search — msg / strategy / type…"
+              style="width:100%; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; padding:7px 10px; font-size:12px; outline:none; box-sizing:border-box;">
+          </div>
+          <div id="notif-settings" style="display:none; overflow-y:auto; flex:1;"></div>
           <div id="notif-list" style="overflow-y:auto; flex:1; padding:4px 0;"></div>
         </div>
       </div>
