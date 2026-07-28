@@ -4164,3 +4164,46 @@ step from the scrip master via the preview) so `+/-` always updates the strike r
   polling). Don't chase it as a bug; make the path fast + honest (`—`), and rely on market-hours.
 - **When a "fix" makes the symptom worse, suspect a blocking primitive.** The retry made it hang —
   the tell that `acquire` wasn't the fast no-op I assumed.
+
+## TRAP #162 — three surfaces showed three different "capital-in-use" for the SAME positions: no common margin gate (2026-07-28)
+
+**Symptom (user-reported):** Total capital-in-use disagreed across the app — RMS said ~₹2.8L,
+the Open-Positions display said something else, and the Today's-Peak margin chart peaked ~₹21.8L,
+all for the SAME open positions. A VRP condor "used" more capital in one place than another; new
+straddle entries got false-blocked "capital" even though the shown number looked fine.
+
+**Root — margin was computed inline at three different levels, and each feature picked one:**
+- per-leg NAKED — `sum(_leg_capital(leg))` (each SELL leg's standalone SPAN, no hedge benefit)
+- hedged BASKET — `_group_capital(legs)` (real broker basket margin, capped at per-leg sum)
+- raw — `kite_basket_margin(legs)` directly
+
+There was a single gate for **orders** (`execution_gateway`) and for **risk** (`strategy_safety.gate_entry`),
+but **none for margin** — so the margin chart summed per-leg naked (5–10× over for a hedged condor),
+RMS used the basket, and per-position display used yet another. Classic Rule 6B: three "truths" that
+diverge. This is the *shape* behind the condor "used ₹X here, ₹Y there" and the false capital-block.
+
+**Fix — one public margin gate in `risk_gate.py` (ADR-015), mirroring the order/risk gates:**
+- `position_margin(legs)` = THE canonical capital-in-use (broker basket for multi-leg F&O, per-leg
+  sum otherwise, **never > per-leg sum**; single leg = `position_margin([leg])`; same value
+  `capital_in_use` sums). `margin_breakdown(legs)` = `{hedged, standalone, benefit}` for the payoff
+  panel's naked-vs-hedged display.
+- `_leg_capital` / `kite_basket_margin` made **PRIVATE to risk_gate.py**; all 6 external callers
+  migrated (payoff.basket_margin, straddle preview, 2 fire-capital blocks, margin chart, per-position
+  display, RMS summary).
+- **New commit-time `architecture_audit` MARGIN-GATE check** FAILs any `_leg_capital(` /
+  `kite_basket_margin(` outside risk_gate.py (escape `# margin-gate-ok: <reason>`, audit file
+  self-exempt). This is the durable part — the 26th offender can't be *written*, not just the 25
+  existing ones cleaned up.
+
+**Guards / lessons:**
+- **When two+ surfaces show a different number for the same underlying quantity, look for a missing
+  single-source gate, not N separate display bugs.** Fixing each display would have left the 4th one
+  to drift next.
+- **A cleanup is only permanent with an enforcer.** The audit rule (like RAW-ORDER / INLINE-RISK /
+  RAW-STRAT-LABEL before it) is what stops the divergence reappearing — same lesson as TRAP #124/#132
+  (an enforcer that can't see the layer can't protect it; here the layer is any file that shows money).
+- **Consolidation should be conservative** — `position_margin` caps at the per-leg naked sum, so it
+  can only ever tighten a capital estimate, never loosen one, vs the old worst case. Single-leg =
+  byte-identical no-op; only multi-leg groups change (the intended fix).
+- Verified: audit 0 FAIL, guard self-tested (flags both fns, honors escape, risk_gate exempt),
+  md5 local==VPS ×4, PIDs 16==16. See ADR-015 + memory `project_code3b_capital_overcount_phantom_exit`.
