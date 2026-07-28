@@ -4141,12 +4141,32 @@ def _strike_of(tsym):
         return None
 
 
+def _norm_expiry(v):
+    """Straddle expiry choice → one of: 'near' | 'nextmonth' | a specific date
+    'YYYY-MM-DD'. Anything unrecognised → 'near' (safe default). Used by the
+    fire/preview routes so a user-picked specific expiry (weekly/monthly, to match
+    Sensibull etc.) passes through instead of being squeezed to near/nextmonth."""
+    s = str(v or "").strip()
+    if s == "nextmonth":
+        return "nextmonth"
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", s):
+        return s
+    return "near"
+
+
 def _straddle_resolver(expiry):
-    """Contract resolver by expiry choice: 'nextmonth' → next-month monthly
-    (get_next_monthly_option_contract), else nearest (weekly/near). Same ATM±offset
-    signature (symbol, spot, opt_type, offset)."""
+    """Contract resolver by expiry choice, all with the same (symbol, spot,
+    opt_type, offset) signature + PE-inverted offset:
+      'nextmonth'   → next-month monthly (get_next_monthly_option_contract)
+      'YYYY-MM-DD'  → that specific listed expiry (get_option_contract_for_expiry)
+      else          → nearest listed (weekly/current, get_option_contract)."""
     import dhan_master
-    return dhan_master.get_next_monthly_option_contract if str(expiry) == "nextmonth" else dhan_master.get_option_contract
+    e = str(expiry or "near")
+    if e == "nextmonth":
+        return dhan_master.get_next_monthly_option_contract
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", e):
+        return lambda sym, spot, ot, off: dhan_master.get_option_contract_for_expiry(sym, spot, ot, off, e)
+    return dhan_master.get_option_contract
 
 
 def _resolve_straddle_legs(symbol, spot, legs_spec, expiry="near"):
@@ -4830,7 +4850,7 @@ def api_auto_straddle_fire():
         tp = float(d.get("tp_pt", 30) or 30)
         sl = float(d.get("sl_pt", 30) or 30)
         legs = d.get("legs") or None   # flexible leg-window spec (None = legacy ATM+hedge)
-        expiry = "nextmonth" if str(d.get("expiry")) == "nextmonth" else "near"
+        expiry = _norm_expiry(d.get("expiry"))   # near | nextmonth | YYYY-MM-DD
         ok, msg = _fire_auto_straddle(sym, lots, tp, sl, "manual",
                                       log=lambda m: print(m, flush=True), legs_spec=legs, expiry=expiry)
         return jsonify({"ok": ok, "msg": msg})
@@ -4844,11 +4864,24 @@ def api_auto_straddle_preview():
     net credit + real hedged basket margin. Read-only — NO order placed."""
     try:
         d = request.get_json(force=True) or {}
-        _exp = "nextmonth" if str(d.get("expiry")) == "nextmonth" else "near"
+        _exp = _norm_expiry(d.get("expiry"))   # near | nextmonth | YYYY-MM-DD
         return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1),
                                          d.get("legs") or [], quick=bool(d.get("quick")), expiry=_exp))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/option-expiries')
+def api_option_expiries():
+    """Listed option expiries (weeklies + monthlies, >= today) for a symbol, so the
+    Quick-Order straddle builder can pick a SPECIFIC expiry (e.g. match Sensibull's
+    04 Aug) instead of only nearest/next-month. Read-only display — no order path."""
+    try:
+        import dhan_master
+        sym = str(request.args.get("symbol", "NIFTY")).upper()
+        return jsonify({"ok": True, "expiries": dhan_master.list_expiries(sym)})
+    except Exception as e:
+        return jsonify({"ok": False, "expiries": [], "msg": str(e)})
 
 
 @app.route('/api/auto-straddle/list')

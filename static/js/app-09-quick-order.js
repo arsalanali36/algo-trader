@@ -425,7 +425,7 @@
         updateQtyHint();
         // straddle tab has NO CE/PE LTP box → skip the slow Dhan option-LTP fetch (instant switch);
         // just reload the per-index target/SL + label
-        if (window.qoTab === 'straddle') { qoStradCfgLoad(); window.qoStradState.prev = {}; qoStradRenderLegs(); qoStradPreview(); }
+        if (window.qoTab === 'straddle') { qoStradCfgLoad(); window.qoStradState.prev = {}; qoStradRenderLegs(); qoStradLoadExpiries(); qoStradPreview(); }
         else { qoRefreshLtp(); }
       };
 
@@ -534,7 +534,7 @@
         if (st && strad) { st.textContent = 'Straddle — SELL ATM CE+PE, combined 30/30 (paper)'; st.style.color = '#8b949e'; }
         if (tab === 'trigger') { qoRefreshTriggers(); if (!_qoTrigTimer) _qoTrigTimer = setInterval(qoRefreshTriggers, 2000); }
         else { clearInterval(_qoTrigTimer); _qoTrigTimer = null; }
-        if (strad) { qoStradCfgLoad(); qoStradRenderLegs(); qoStradPreview(); qoRefreshStraddles(); if (!window._qoStradTimer) window._qoStradTimer = setInterval(() => { qoRefreshStraddles(); qoStradPreview(); }, 3000); }
+        if (strad) { qoStradCfgLoad(); qoStradRenderLegs(); qoStradLoadExpiries(); qoStradPreview(); qoRefreshStraddles(); if (!window._qoStradTimer) window._qoStradTimer = setInterval(() => { qoRefreshStraddles(); qoStradPreview(); }, 3000); }
         else { clearInterval(window._qoStradTimer); window._qoStradTimer = null; }
       };
 
@@ -627,13 +627,42 @@
         if (S.sym) { const c = _qsLeg('ceB'), p = _qsLeg('peB'); if (c && p) p.off = c.off; }
         qoStradRenderLegs(); qoStradPreviewNow();
       };
-      // Expiry: near (weekly) vs next-month (monthly). Next-month contracts differ →
-      // clear ATM/step/LTP cache so strikes+premiums re-resolve for that expiry.
+      // Expiry: near (weekly) vs next-month (monthly) vs a SPECIFIC listed expiry
+      // (YYYY-MM-DD). Contracts differ → clear ATM/step/LTP cache so strikes+premiums
+      // re-resolve for the chosen expiry.
       window.qoStradExpiry = () => {
         const S = window.qoStradState;
         S.expiry = document.getElementById('qo-strad-expiry')?.value || 'near';
         S.atm = null; S.step = null; S.prev = {};
         qoStradRenderLegs(); qoStradPreview();
+      };
+      // Populate the expiry dropdown with every listed expiry (weeklies + monthlies)
+      // for the current symbol, on top of the two convenience shortcuts. Lets the user
+      // pick a specific expiry (e.g. Sensibull's 04 Aug), not just nearest/next-month.
+      window.qoStradLoadExpiries = async () => {
+        const sel = document.getElementById('qo-strad-expiry'); if (!sel) return;
+        const sym = qoSym || 'NIFTY';
+        const cur = window.qoStradState.expiry;
+        try {
+          const j = await (await fetch('/api/option-expiries?symbol=' + sym)).json();
+          const exps = (j && j.expiries) || [];
+          let html = '<option value="near">Near (weekly / current)</option>'
+                   + '<option value="nextmonth">Next month (monthly)</option>';
+          if (exps.length) {
+            html += '<option disabled>──── pick a specific expiry ────</option>'
+                  + exps.map(e => `<option value="${e.date}">${e.label}${e.monthly ? ' · monthly' : ''}</option>`).join('');
+          }
+          sel.innerHTML = html;
+          const valid = ['near', 'nextmonth'].concat(exps.map(e => e.date));
+          if (valid.indexOf(cur) >= 0) {
+            sel.value = cur;                       // keep the user's / persisted choice
+          } else {                                 // stale (expired) date → fall back + re-resolve
+            sel.value = 'near';
+            window.qoStradState.expiry = 'near';
+            window.qoStradState.atm = null; window.qoStradState.step = null; window.qoStradState.prev = {};
+            qoStradRenderLegs(); qoStradPreview();
+          }
+        } catch (e) {}
       };
       // Snap SELL legs back to ATM (off 0) — the "auto ATM" button.
       window.qoStradAtmReset = () => {

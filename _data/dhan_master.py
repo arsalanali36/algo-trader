@@ -294,6 +294,84 @@ def get_next_monthly_option_contract(symbol, spot_price, option_type, offset=0):
     return None, None, None
 
 
+def list_expiries(symbol):
+    """Every listed option expiry for `symbol` that is still >= today, each with
+    display metadata — so a UI can offer a SPECIFIC expiry (weekly OR monthly),
+    not just 'nearest' / 'next-month'. Sorted ascending. Each item:
+        {"key": "<cache key>", "date": "YYYY-MM-DD", "label": "04 Aug", "monthly": bool}
+    monthly = the LAST listed expiry inside its calendar month (same month-last
+    rule as _monthly_expiry_strs). Empty list if symbol unknown."""
+    if not _options_cache:
+        build_cache()
+    if symbol not in _options_cache:
+        return []
+    now = ist_now()
+    parsed = []
+    for exp in _options_cache[symbol].keys():
+        try:
+            d = datetime.strptime(exp, "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            continue
+        if d.date() >= now.date():
+            parsed.append((d, exp))
+    if not parsed:
+        return []
+    parsed.sort(key=lambda x: x[0])
+    month_last = {}                        # (year, month) -> exp key; sorted asc => last wins
+    for d, exp in parsed:
+        month_last[(d.year, d.month)] = exp
+    monthly_keys = set(month_last.values())
+    return [{"key": exp, "date": d.strftime("%Y-%m-%d"),
+             "label": d.strftime("%d %b"), "monthly": exp in monthly_keys}
+            for d, exp in parsed]
+
+
+def get_option_contract_for_expiry(symbol, spot_price, option_type, offset, expiry):
+    """ATM±offset contract resolution on a SPECIFIC expiry. `expiry` = a full cache
+    key ("YYYY-MM-DD HH:MM:SS") or a date ("YYYY-MM-DD"); matched by exact key
+    first, then date-prefix. SAME PE-inverted offset convention as
+    get_option_contract (+offset = OTM for both CE and PE — offset is a
+    non-negative OTM magnitude; never pass a negative PE offset). Returns
+    (None,None,None) if the expiry or the target contract can't be resolved."""
+    if not _options_cache:
+        build_cache()
+    if symbol not in _options_cache:
+        log.error(f"Symbol {symbol} not found in options cache")
+        return None, None, None
+    keys = list(_options_cache[symbol].keys())
+    exp_key = None
+    if expiry in keys:
+        exp_key = expiry
+    else:
+        ed = str(expiry)[:10]              # YYYY-MM-DD prefix
+        for k in keys:
+            if k[:10] == ed:
+                exp_key = k
+                break
+    if not exp_key:
+        log.error(f"Expiry {expiry} not listed for {symbol}")
+        return None, None, None
+
+    contracts = [c for c in _options_cache[symbol][exp_key] if c["type"] == option_type]
+    if not contracts:
+        return None, None, None
+    strikes = sorted(set(c["strike"] for c in contracts))
+    if not strikes:
+        return None, None, None
+
+    atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
+    atm_idx = strikes.index(atm_strike)
+    # PE inverted so +offset = OTM (matches get_option_contract). offset is a
+    # non-negative magnitude — the sign is applied HERE (pe-offset-ok: resolver).
+    target_idx = atm_idx - offset if option_type == "PE" else atm_idx + offset
+    target_idx = max(0, min(len(strikes) - 1, target_idx))
+    target_strike = strikes[target_idx]
+    for c in contracts:
+        if c["strike"] == target_strike:
+            return c["sec_id"], c["trad_sym"], c.get("lot_size", 1)
+    return None, None, None
+
+
 def trading_days_to_near_monthly_expiry(symbol):
     """NSE trading days from TODAY up to (and including) the near-month monthly
     expiry for `symbol`. Today itself counts as 0 (i.e. today IS expiry -> 0).
