@@ -4744,21 +4744,35 @@ def auto_straddle_loop():
                     ltp_poller.request_watch(watch)
                 except Exception:
                     pass
+                # Warm-up grace: don't let target/SL fire in the first _STRAD_GRACE
+                # seconds after entry. Freshly-placed legs aren't poller-warmed yet,
+                # so the cache can still hold a pre-entry/preview tick → a phantom
+                # target/SL fired within ~10s of entry (e.g. live read 88 vs real 376
+                # → +289pt "target"). get_after() below also rejects any non-post-entry
+                # tick; the grace is belt-and-suspenders for a transient early misread.
+                _STRAD_GRACE = 20
                 for s in opens:
                     lg = s.get("legs", [])
+                    entry_ts = s.get("created_ts", 0)
+                    if (_t.time() - entry_ts) < _STRAD_GRACE:
+                        continue   # still warming up — don't fire on not-yet-warm cache
+                    # Only act on a tick that is BOTH fresh AND from after this straddle's
+                    # entry — a stale pre-entry value can never drive the exit (root of the
+                    # instant-hit bug).
+                    _pof = lambda l, ets=entry_ts: slc.get_after(str(l["sec_id"]), ets, max_age=8.0)
                     if s.get("net_exit"):
                         # flexible structure — exit on NET premium of ALL legs (SELL−BUY)
                         if not lg:
                             continue
-                        live, ok_net = ast.net_credit(lg, lambda l: slc.get(l["sec_id"], max_age=8.0))
+                        live, ok_net = ast.net_credit(lg, _pof)
                         if not ok_net:
-                            continue   # a leg's LTP missing → freeze, never fire
+                            continue   # a leg's fresh post-entry LTP missing → freeze, never fire
                         reason, profit = ast.check_exit_net(s["entry_credit"], live, s["tp_pt"], s["sl_pt"])
                     else:
                         if len(lg) < 2:
                             continue
-                        ce = slc.get(lg[0]["sec_id"], max_age=8.0)
-                        pe = slc.get(lg[1]["sec_id"], max_age=8.0)
+                        ce = slc.get_after(str(lg[0]["sec_id"]), entry_ts, max_age=8.0)
+                        pe = slc.get_after(str(lg[1]["sec_id"]), entry_ts, max_age=8.0)
                         reason, live, profit = ast.check_exit(s["entry_credit"], ce, pe, s["tp_pt"], s["sl_pt"])
                     if reason in ("target", "sl"):
                         _close_straddle(s, reason, "STRADDLE_%s" % reason.upper(),

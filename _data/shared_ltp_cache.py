@@ -52,6 +52,23 @@ def get_stale(sec_id, max_age=15.0):
     return get(sec_id, max_age=max_age)
 
 
+def get_after(sec_id, after_ts, max_age=8.0):
+    """Like get(), but ALSO requires the cached tick to be timestamped strictly
+    after `after_ts` (e.g. a position's entry time). A pre-entry / preview / stale
+    value can therefore NEVER drive an exit decision — a fresh leg whose cache hasn't
+    been re-warmed since entry reads as None (caller freezes, never fires on it).
+    None if missing, older than max_age, or not newer than after_ts."""
+    entry = _read_all().get(str(sec_id))
+    if not entry:
+        return None
+    ltp, ts = entry
+    if time.time() - ts > max_age:
+        return None
+    if ts <= (after_ts or 0):
+        return None
+    return ltp
+
+
 # Index spot sec_ids — same set ltp_poller._IDX_ALWAYS keeps warm every cycle
 # (risk_gate ITM checks, webhook index-trailing, strike resolution read these too).
 _INDEX_SEC = {"NIFTY": "13", "BANKNIFTY": "25", "BANKNIFTY_": "25"}
