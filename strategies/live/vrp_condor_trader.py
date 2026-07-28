@@ -307,6 +307,22 @@ def _enter_condor(strategy_id, sym, spot, tc, mode, bname, today, log):
     except Exception:
         pass
 
+    # Gate the WHOLE structure UP FRONT — BEFORE any leg goes out. This condor
+    # places BUY wings first (hedge-first), then SELLs the body; if the body is
+    # then blocked, the wings are left naked. Live 2026-07-27: user manually
+    # closed NIFTY → the manual-close veto blocked the SELL body AFTER both wings
+    # were placed, and the rollback then failed on no-price → 2 orphan BUY wings.
+    # The veto lives in strategy_safety.gate_entry (NOT gating_status), so check
+    # it + the account gates explicitly here so a blocked entry places ZERO legs.
+    try:
+        if risk_gate.is_manual_close_vetoed(strategy_id, sym):
+            log.info(f"[VRPC] {sym} manual-close veto — user closed it today, no fresh condor (0 legs)"); return None
+        _blk, _why, _h = risk_gate.gating_status(strategy_id, mode=mode)
+        if _blk:
+            log.info(f"[VRPC] entry gated up front — {_why} (0 legs placed)"); return None
+    except Exception as _ge:
+        log.info(f"[VRPC] upfront gate check err (continuing): {_ge}")
+
     placed = []
     def place(res, side, w, gate):
         sec, tsym, lot = res

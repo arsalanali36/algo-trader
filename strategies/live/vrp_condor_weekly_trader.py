@@ -408,6 +408,18 @@ def _enter_condor(strategy_id, sym, spot, tc, mode, bname, today, cur_exp, log):
     except Exception:
         pass
 
+    # Gate the WHOLE structure UP FRONT (before any leg) so a blocked SELL body
+    # can never leave naked BUY wings (manual-close veto lives in gate_entry, not
+    # gating_status — check it explicitly). Same fix as the daily condor.
+    try:
+        if risk_gate.is_manual_close_vetoed(strategy_id, sym):
+            log.info(f"[VRPW] {sym} manual-close veto — no fresh condor (0 legs)"); return None
+        _blk, _why, _h = risk_gate.gating_status(strategy_id, mode=mode)
+        if _blk:
+            log.info(f"[VRPW] entry gated up front — {_why} (0 legs placed)"); return None
+    except Exception as _ge:
+        log.info(f"[VRPW] upfront gate check err (continuing): {_ge}")
+
     placed = []
     def place(res, side, w, gate):
         sec, tsym, lot = res

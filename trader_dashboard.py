@@ -5318,12 +5318,18 @@ def api_margin_history():
     now_m = _to_min(_now.strftime("%H:%M")) or CLOSE_M
     end_m = min(CLOSE_M, now_m) if is_today else CLOSE_M
 
-    positions = []   # (start_min, end_min, side, margin_rs)
+    positions = []   # (start_min, end_min, side, margin_rs, is_open)
     try:
         import order_store
         import risk_gate as _rg
         data = order_store.trades_for(req_date)
         rows = list(data.get("details", [])) + list(data.get("open", []))
+        # Group legs by (mode, strategy, group_id) so a MULTI-LEG structure gets ONE
+        # hedged BASKET margin (kite_basket_margin via _group_capital) held over the
+        # group's time span — NOT a per-leg NAKED-SELL sum, which over-counts a
+        # hedged condor/straddle 5-10x. Live 2026-07-28: chart peaked ₹21.8L for a
+        # ~₹2.79L real basket. Same margin source as capital_in_use now.
+        groups = {}
         for r in rows:
             if "CAPITAL_BLOCKED" in (r.get("tags") or []):
                 continue
@@ -5335,15 +5341,22 @@ def api_margin_history():
                 continue
             e_raw = _to_min(r.get("exit_time"))
             is_open = e_raw is None    # still open ("—") → held to end of window
-            e_m = end_m if is_open else e_raw
-            e_m = min(max(e_m, s_m), CLOSE_M)
-            side = str(r.get("entry") or "").upper()
+            e_m = min(max(end_m if is_open else e_raw, s_m), CLOSE_M)
+            gid = r.get("group_id") or ""
+            key = (pmode, str(r.get("strategy") or ""), gid or ("solo:%s" % r.get("id")))
+            g = groups.get(key)
+            if g is None:
+                groups[key] = {"legs": [r], "s": s_m, "e": e_m, "op": is_open}
+            else:
+                g["legs"].append(r); g["s"] = min(g["s"], s_m); g["e"] = max(g["e"], e_m); g["op"] = g["op"] or is_open
+        for key, g in groups.items():
             try:
-                mgn = _rg._leg_capital(r) if side == "SELL" \
-                    else float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
+                mgn = _rg._group_capital(g["legs"])           # hedged basket (or per-leg fallback)
             except Exception:
-                mgn = float(r.get("qty") or 0) * float(r.get("entry_price") or 0)
-            positions.append((s_m, e_m, side, float(mgn or 0), is_open))
+                mgn = sum(float(l.get("qty") or 0) * float(l.get("entry_price") or 0) for l in g["legs"])
+            # buy-only group (long premium) vs anything with a SELL leg (basket margin)
+            side = "BUY" if all(str(l.get("entry") or "").upper() == "BUY" for l in g["legs"]) else "SELL"
+            positions.append((g["s"], g["e"], side, float(mgn or 0), g["op"]))
     except Exception:
         positions = []
 
