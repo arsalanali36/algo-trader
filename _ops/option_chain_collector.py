@@ -80,9 +80,20 @@ except Exception:
     _rl = None
 
 # Underlyings: NIFTY sec_id 13, BANKNIFTY sec_id 25, both IDX_I (per CLAUDE.md Critical Rule 2).
+# Stock underlyings: option-chain underlying = the EQUITY (cash) instrument → seg NSE_EQ,
+# scrip = equity sec_id (dhan_master), step = that stock's option strike interval (scrip
+# master). "expiries":1 = collect only the NEAR (current-month) chain — stocks are monthly
+# so 1 is all GEX needs, and it keeps the optionchain 1req/3s bucket well inside the 60s
+# cycle (2 index×2 + 5 stock×1 = 9 chain calls ≈ 32s). Optionchain is a SEPARATE Dhan rate
+# bucket from LTP/orders — adding these does NOT touch the live-trading budget.
 UNDERLYINGS = [
-    {"name": "NIFTY",     "scrip": 13, "seg": "IDX_I", "step": 50},
-    {"name": "BANKNIFTY", "scrip": 25, "seg": "IDX_I", "step": 100},
+    {"name": "NIFTY",     "scrip": 13,   "seg": "IDX_I",  "step": 50},
+    {"name": "BANKNIFTY", "scrip": 25,   "seg": "IDX_I",  "step": 100},
+    {"name": "RELIANCE",  "scrip": 2885, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
+    {"name": "HDFCBANK",  "scrip": 1333, "seg": "NSE_EQ", "step": 5,   "expiries": 1},
+    {"name": "ICICIBANK", "scrip": 4963, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
+    {"name": "SBIN",      "scrip": 3045, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
+    {"name": "INFY",      "scrip": 1594, "seg": "NSE_EQ", "step": 5,   "expiries": 1},
 ]
 
 CSV_COLS = ["datetime", "underlying", "spot", "vix", "expiry", "strike", "opt_type",
@@ -257,7 +268,7 @@ def run_snapshot(token, cid, vix_sec_id, strikes, expiry_cache, force=False):
                 if not exps:
                     log(f"{u['name']}: no expiries returned, skip")
                     continue
-                expiry_cache[ck] = exps[:2]   # nearest two
+                expiry_cache[ck] = exps[:u.get("expiries", 2)]   # index=2, stocks=1 (near only)
                 time.sleep(3.2)  # respect option-chain 1req/3s bucket before the chain call
             exp_list = expiry_cache[ck]
             if isinstance(exp_list, str):     # backward-compat with an older single-value cache

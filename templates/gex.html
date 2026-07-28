@@ -82,6 +82,7 @@
   <div class="sp"></div>
   <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="line">Line</button><button data-v="engine">Trade Engine</button></div>
   <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
+  <select class="ctl" id="uStock" title="RSI-strategy stocks (option chain collected live)"><option value="">Stocks ▾</option><option>RELIANCE</option><option>HDFCBANK</option><option>ICICIBANK</option><option>SBIN</option><option>INFY</option></select>
   <input type="date" class="ctl" id="datePick">
   <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
   <div class="live" id="liveBtn"><span class="dot"></span><span id="liveTxt">Live: off</span></div>
@@ -611,7 +612,15 @@ $('vSeg').addEventListener('click', e=>{
 $('uSeg').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;
   [...$('uSeg').children].forEach(x=>x.classList.remove('on')); b.classList.add('on');
+  $('uStock').value = '';                    // picking an index clears the stock dropdown
   U=b.dataset.u; $('subttl').textContent = U+' · gamma exposure · live chain';
+  stop(); EXP=''; load(false).then(autoLiveOrOff);
+});
+// stock dropdown → same underlying-change path as the index buttons
+$('uStock').addEventListener('change', e=>{
+  const v=e.target.value; if(!v) return;
+  [...$('uSeg').children].forEach(x=>x.classList.remove('on'));   // deselect index buttons
+  U=v; $('subttl').textContent = U+' · gamma exposure · live chain';
   stop(); EXP=''; load(false).then(autoLiveOrOff);
 });
 function onDateChange(){ const v=$('datePick').value; if(!v || v===DATE) return; DATE=v; stop(); EXP=''; load(false).then(autoLiveOrOff); }
