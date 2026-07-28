@@ -55,6 +55,17 @@ def _ist_today():
             + datetime.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
 
 
+def _slabel(strategy):
+    """Registry display name ("NN.MM - Name") for a config key — the SAME name the
+    user reads in the strategy registry (TRAP #132 single labeller). Raw fallback
+    only if the registry can't load."""
+    try:
+        import strategy_registry as sr
+        return sr.label(strategy)
+    except Exception:
+        return str(strategy or "")
+
+
 def _rows_for(date, mode=None):
     """Raw order rows for a date (NO dead-filter — we WANT externally_closed cuts)."""
     import sqlite3
@@ -381,7 +392,8 @@ def analyze(date=None, mode=None):
         day_actual += act
         kind, reason = _classify_exit(p["exit"], p["entry"])
         base = {
-            "strategy": p["strategy"], "symbol": p["symbol"],
+            "strategy": p["strategy"], "strategy_label": _slabel(p["strategy"]),
+            "symbol": p["symbol"],
             "instrument": str(p["entry"].get("trad_sym") or ""),
             "mode": p["entry"].get("mode"),
             "entry_price": _f(p["entry"]["price"]), "entry_hm": (p["entry"]["ts"] or "")[11:16],
@@ -440,12 +452,132 @@ def trend(n=8, mode=None):
     return out
 
 
+# ── multi-date overview (all dates in one view, live/paper/both, day/week/month) ──
+def available_trade_dates():
+    """Distinct dates that have any order_store rows (candidate report dates)."""
+    import sqlite3
+    db = os.path.join(PROJECT, "data", "trades.db")
+    if not os.path.exists(db):
+        return []
+    try:
+        c = sqlite3.connect(db)
+        rows = c.execute("SELECT DISTINCT date FROM orders WHERE side IN ('BUY','SELL') ORDER BY date").fetchall()
+        c.close()
+        return [r[0] for r in rows if r[0]]
+    except Exception:
+        return []
+
+
+def _stored_path(date):
+    return os.path.join(STORE_DIR, f"{date}.json")
+
+
+def _load_or_build(date, force=False):
+    """Stored report json for a date (compute+store if missing/forced). Stores the
+    ALL-mode analyse so the overview can filter live/paper/both from the cuts."""
+    p = _stored_path(date)
+    if not force and os.path.exists(p):
+        try:
+            return json.load(open(p))
+        except Exception:
+            pass
+    return build_and_store(date, mode=None)
+
+
+def _period_key(date, group):
+    """(sort_key, label) for grouping a YYYY-MM-DD into day / week / month."""
+    if group == "month":
+        return date[:7], date[:7]                       # 2026-07
+    if group == "week":
+        try:
+            d = datetime.datetime.strptime(date, "%Y-%m-%d").date()
+            monday = d - datetime.timedelta(days=d.weekday())
+            iso = d.isocalendar()
+            return monday.strftime("%Y-%m-%d"), f"{iso[0]}-W{iso[1]:02d}"
+        except Exception:
+            return date, date
+    return date, date                                    # day
+
+
+def overview(mode=None, group="day", warm=True):
+    """Per-period intervention aggregate across ALL available dates, filtered by
+    mode (None=both). Reads stored jsons (builds missing when warm=True — the
+    pre-warm). Returns {ok, mode, group, series:[{period,label,net_impact,day_actual,
+    if_never_cut,n_cut,helped,hurt,dates}], totals}."""
+    dates = available_trade_dates()
+    buckets = {}
+    order = []
+    for d in dates:
+        data = _load_or_build(d) if warm else (
+            json.load(open(_stored_path(d))) if os.path.exists(_stored_path(d)) else None)
+        if not data:
+            continue
+        cuts = [c for c in (data.get("cuts") or []) if mode is None or c.get("mode") == mode]
+        strat = [s for s in (data.get("strategy_exits") or []) if mode is None or s.get("mode") == mode]
+        scored = [c for c in cuts if c.get("impact") is not None]
+        net = sum(c["impact"] for c in scored)
+        day_actual = sum((c.get("actual_pnl") or 0) for c in cuts) + \
+                     sum((s.get("actual_pnl") or 0) for s in strat)
+        k, label = _period_key(d, group)
+        b = buckets.get(k)
+        if b is None:
+            b = {"period": k, "label": label, "net_impact": 0, "day_actual": 0,
+                 "n_cut": 0, "helped": 0, "hurt": 0, "dates": []}
+            buckets[k] = b
+            order.append(k)
+        b["net_impact"] += net
+        b["day_actual"] += day_actual
+        b["n_cut"] += len(cuts)
+        b["helped"] += sum(1 for c in scored if c["impact"] > 0)
+        b["hurt"] += sum(1 for c in scored if c["impact"] < 0)
+        b["dates"].append(d)
+    series = []
+    for k in sorted(order):
+        b = buckets[k]
+        b["net_impact"] = round(b["net_impact"])
+        b["day_actual"] = round(b["day_actual"])
+        b["if_never_cut"] = b["day_actual"] - b["net_impact"]
+        series.append(b)
+    totals = {
+        "net_impact": round(sum(b["net_impact"] for b in series)),
+        "day_actual": round(sum(b["day_actual"] for b in series)),
+        "n_cut": sum(b["n_cut"] for b in series),
+        "helped": sum(b["helped"] for b in series),
+        "hurt": sum(b["hurt"] for b in series),
+    }
+    totals["if_never_cut"] = totals["day_actual"] - totals["net_impact"]
+    return {"ok": True, "mode": mode or "both", "group": group,
+            "series": series, "totals": totals}
+
+
+def build_all(force=False):
+    """Pre-warm: compute + store every available date (idempotent). For the EOD
+    timer's first run + manual backfill so the overview loads instantly."""
+    done = 0
+    for d in available_trade_dates():
+        try:
+            _load_or_build(d, force=force)
+            done += 1
+        except Exception as e:
+            print(f"[intervention] build_all {d} fail: {e}")
+    return done
+
+
 if __name__ == "__main__":
     import argparse
     ap = argparse.ArgumentParser()
     ap.add_argument("--date")
     ap.add_argument("--mode", choices=["live", "paper"])
     ap.add_argument("--store", action="store_true")
+    ap.add_argument("--all", action="store_true", help="pre-warm+store every available date")
+    ap.add_argument("--force", action="store_true")
+    ap.add_argument("--overview", action="store_true")
     a = ap.parse_args()
-    r = (build_and_store if a.store else analyze)(a.date, a.mode)
-    print(json.dumps(r, indent=1, default=str))
+    if a.all:
+        n = build_all(force=a.force)
+        print(f"pre-warmed {n} dates -> {STORE_DIR}")
+    elif a.overview:
+        print(json.dumps(overview(a.mode, "day"), indent=1, default=str))
+    else:
+        r = (build_and_store if a.store else analyze)(a.date, a.mode)
+        print(json.dumps(r, indent=1, default=str))

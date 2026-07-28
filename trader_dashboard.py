@@ -5149,6 +5149,22 @@ def api_intervention_rerun():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/api/intervention/overview')
+def api_intervention_overview():
+    """All-dates intervention aggregate (live/paper/both, day/week/month) — one
+    graph for the whole history so the user needn't open each date. Pre-warmed
+    (builds+stores any missing date on first read)."""
+    try:
+        import intervention_report as ir
+        mode = request.args.get('mode')
+        mode = mode if mode in ('live', 'paper') else None
+        group = request.args.get('group')
+        group = group if group in ('day', 'week', 'month') else 'day'
+        return jsonify(ir.overview(mode, group))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/option-expiries')
 def api_option_expiries():
     """Listed option expiries (weeklies + monthlies, >= today) for a symbol, so the

@@ -22,17 +22,21 @@
   th{font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.03em;border-bottom:1px solid var(--bd2)}
   td:first-child,th:first-child{text-align:left}
   tr+tr td{border-top:1px solid #12161d}
+  .clk{cursor:pointer}
+  .clk:hover{background:#161b22}
 </style>
 </head>
 <body>
-  <div style="max-width:1000px;margin:0 auto">
+  <div style="max-width:1040px;margin:0 auto">
     <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px;flex-wrap:wrap">
       <a href="/" style="font-size:13px">&larr; Dashboard</a>
       <span style="font-size:18px;font-weight:500">&#128400; Manual intervention report</span>
-      <span style="color:var(--dim);font-size:12px">agar haath se cut na karte to kya hota</span>
+      <span style="color:var(--dim);font-size:12px">haath se cut na karte to kya hota</span>
       <div style="margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-        <input id="iv-date" type="date" class="btn" style="color-scheme:dark">
+        <div class="seg" id="iv-view"><span data-v="overview" class="on">&#128202; Overview</span><span data-v="day">&#128196; Day</span></div>
         <div class="seg" id="iv-mode"><span data-v="live" class="on">Live</span><span data-v="paper">Paper</span><span data-v="both">Both</span></div>
+        <input id="iv-date" type="date" class="btn" style="color-scheme:dark;display:none">
+        <div class="seg" id="iv-group"><span data-v="day" class="on">Day</span><span data-v="week">Week</span><span data-v="month">Month</span></div>
         <button class="btn" onclick="ivRerun()">&#8635; Re-run</button>
       </div>
     </div>
@@ -40,92 +44,151 @@
     <div id="iv-body"><div style="padding:40px;text-align:center;color:var(--mut)">loading&hellip;</div></div>
 
     <div style="margin-top:14px;font-size:10px;color:var(--dim);line-height:1.7">
-      <b style="color:var(--mut)">Counterfactual kaise:</b> har manual cut ki jagah strategy ka apna exit replay hota hai &mdash; RSI-50 midline (underlying 2m candles), RMS SL/target (trade ke apne tags se), ya 3:15 EOD / expiry &mdash; jo pehle fire kare, usi option ke asli premium bars pe priced.
-      <b style="color:var(--mut)">impact = actual &minus; counterfactual</b> (per cut): + = aapke cut ne madad ki, &minus; = nuksan.
-      RSI-midline ka exact time &plusmn;kuch min naazuk; RMS SL bound + EOD-decay pakke. Sab gross (charges alag). Ek din ka number nahi, <b style="color:var(--mut)">trend dekho</b>.
+      <b style="color:var(--mut)">Counterfactual:</b> har manual cut ki jagah strategy ka apna exit replay &mdash; RSI-50 midline (2m candles) / RMS SL/target / 3:15 EOD / expiry &mdash; jo pehle fire kare, usi option ke asli premium bars pe priced. <b style="color:var(--mut)">impact = actual &minus; counterfactual</b> (+ = cut ne madad ki, &minus; = nuksan). RSI-midline time &plusmn;kuch min naazuk; ek din nahi, TREND dekho. Sab gross (charges alag). Bars/rows click karo &rarr; wo din khulega.
     </div>
   </div>
 
 <script>
-var IVMODE='live';
+var IVVIEW='overview', IVMODE='live', IVGROUP='day';
 function inr(n){n=Math.round(n||0);return (n<0?'−₹':'+₹')+Math.abs(n).toLocaleString('en-IN');}
-function inrp(n){n=Math.round(n||0);return '₹'+n.toLocaleString('en-IN');}
+function inrp(n){n=Math.round(n||0);return (n<0?'−₹':'₹')+Math.abs(n).toLocaleString('en-IN');}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});}
+function modeQS(){return IVMODE==='both'?'':('&mode='+IVMODE);}
 
 function ivLoad(){
-  var d=document.getElementById('iv-date').value;
-  var q='/api/intervention?mode='+IVMODE+(d?('&date='+d):'');
-  document.getElementById('iv-body').innerHTML='<div style="padding:40px;text-align:center;color:var(--mut)">loading…</div>';
-  fetch(q).then(function(r){return r.json();}).then(render).catch(function(){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">load fail</div>';});
+  document.getElementById('iv-body').innerHTML='<div style="padding:40px;text-align:center;color:var(--mut)">loading… (pehli baar saare din warm ho rahe, thoda ruko)</div>';
+  if(IVVIEW==='overview') return ivLoadOverview();
+  return ivLoadDay();
 }
 function ivRerun(){
-  var d=document.getElementById('iv-date').value;
-  fetch('/api/intervention/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:d||null})})
-    .then(function(r){return r.json();}).then(render).catch(function(){});
+  if(IVVIEW==='day'){
+    var d=document.getElementById('iv-date').value;
+    fetch('/api/intervention/rerun',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({date:d||null})}).then(function(r){return r.json();}).then(renderDay).catch(function(){});
+  } else { ivLoad(); }
 }
 
-function render(R){
-  if(!R || R.ok===false){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">'+esc(R&&R.msg||'error')+'</div>';return;}
-  var net=R.net_impact||0, netC=net>0?'var(--g)':(net<0?'var(--r)':'var(--mut)');
-  var verdict = net>0?'aapke '+R.n_cut+' cuts ne strategy se '+inrp(net)+' <b>zyada</b> diya':
-                net<0?'aapke '+R.n_cut+' cuts ne strategy se '+inrp(-net)+' <b>kam</b> diya':'intervention ~neutral raha';
+// ── OVERVIEW (all dates) ──────────────────────────────────────────────
+function ivLoadOverview(){
+  fetch('/api/intervention/overview?group='+IVGROUP+modeQS())
+    .then(function(r){return r.json();}).then(renderOverview)
+    .catch(function(){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">load fail</div>';});
+}
+function renderOverview(R){
+  if(!R||R.ok===false){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">'+esc(R&&R.msg||'error')+'</div>';return;}
+  var S=R.series||[], T=R.totals||{};
   var h='';
-  // hero row
-  h+='<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px;margin-bottom:12px">';
-  h+='<div class="card" style="padding:14px;border-color:'+(net<0?'#5c1a1f':(net>0?'#1a7f37':'var(--bd)'))+'">'
-    +'<div class="lbl">Is din ka intervention impact</div>'
-    +'<div class="mono" style="font-size:30px;font-weight:600;color:'+netC+';margin:4px 0">'+inr(net).replace('+','+')+'</div>'
-    +'<div style="font-size:12px;color:var(--mut)">'+verdict+'</div></div>';
-  h+='<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Aapka actual din</div><div class="mono" style="font-size:22px;font-weight:600;color:'+(R.day_actual<0?'var(--r)':'var(--g)')+'">'+inrp(R.day_actual)+'</div></div>';
-  h+='<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Agar kuch cut na karte</div><div class="mono" style="font-size:22px;font-weight:600;color:var(--y)">'+inrp(R.if_never_cut)+'</div></div>';
+  // headline — intervention impact focused (day P&L aggregate across modes/days = misleading, so per-period only)
+  var net=T.net_impact||0, netC=net>0?'var(--g)':(net<0?'var(--r)':'var(--mut)');
+  var scored=(T.helped||0)+(T.hurt||0);
+  h+='<div style="display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:12px;margin-bottom:14px">'
+    +'<div class="card" style="padding:14px;border-color:'+(net<0?'#5c1a1f':(net>0?'#1a7f37':'var(--bd)'))+'"><div class="lbl">Total intervention impact &middot; '+esc(R.mode)+' &middot; all dates</div>'
+      +'<div class="mono" style="font-size:26px;font-weight:600;color:'+netC+'">'+inr(net)+'</div>'
+      +'<div style="font-size:11px;color:var(--mut)">'+(net<0?'cutting ne overall <b>nuksan</b> kiya (strategy behtar karti)':net>0?'cutting ne overall <b>faayda</b> (aap strategy se behtar)':'~neutral')+'</div></div>'
+    +'<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Cuts · helped / hurt</div><div style="font-size:17px;font-weight:600">'+(T.n_cut||0)+' · <span style="color:var(--g)">'+(T.helped||0)+'</span> / <span style="color:var(--r)">'+(T.hurt||0)+'</span></div></div>'
+    +'<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Cut hit-rate</div><div class="mono" style="font-size:17px;font-weight:600;color:var(--y)">'+(scored?Math.round((T.helped||0)/scored*100):0)+'%</div><div style="font-size:9px;color:var(--dim)">cuts jo strategy se behtar nikle</div></div>'
+    +'</div>';
+  // bar chart (net impact per period), clickable
+  var mx=1; S.forEach(function(b){mx=Math.max(mx,Math.abs(b.net_impact||0));});
+  h+='<div class="card" style="padding:14px;margin-bottom:14px"><div class="lbl" style="margin-bottom:10px">Intervention impact per '+IVGROUP+' &middot; <span style="color:var(--dim);text-transform:none">bar click karo &rarr; us din/period ka detail</span></div>';
+  if(!S.length){ h+='<div style="text-align:center;color:var(--dim);padding:20px">koi data nahi</div>'; }
+  else {
+    h+='<div style="display:flex;align-items:stretch;gap:6px;height:180px;overflow-x:auto;padding-bottom:4px">';
+    S.forEach(function(b){
+      var v=b.net_impact||0, up=v>=0, ht=Math.max(3,Math.abs(v)/mx*70);
+      var lastDate=(b.dates&&b.dates[b.dates.length-1])||b.period;
+      h+='<div class="clk" onclick="ivDrill(\''+lastDate+'\')" title="'+esc(b.label)+' — '+b.n_cut+' cuts" style="min-width:34px;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;border-radius:5px">'
+        +'<div class="mono" style="font-size:8px;color:'+(up?'var(--g)':'var(--r)')+';margin-bottom:2px">'+(Math.abs(v)>=1000?((up?'+':'−')+Math.round(Math.abs(v)/1000)+'k'):(v?inr(v).replace('₹',''):'0'))+'</div>'
+        +'<div style="width:78%;height:'+ht+'px;background:'+(up?'#238636':'#da3633')+';border-radius:3px"></div>'
+        +'<div style="width:100%;height:1px;background:var(--bd)"></div>'
+        +'<div style="font-size:8px;color:var(--dim);margin-top:3px;white-space:nowrap;transform:rotate(-35deg);transform-origin:center;height:26px">'+esc(IVGROUP==='month'?b.label:b.label.slice(5))+'</div></div>';
+    });
+    h+='</div>';
+  }
   h+='</div>';
-  // chips
+  // table
+  h+='<div class="card" style="overflow:hidden"><table><thead><tr><th>'+IVGROUP+'</th><th>Cuts</th><th>Helped/Hurt</th><th>Actual</th><th>If never cut</th><th>Impact</th></tr></thead><tbody>';
+  S.slice().reverse().forEach(function(b){
+    var ic=(b.net_impact>0?'var(--g)':(b.net_impact<0?'var(--r)':'var(--mut)'));
+    var lastDate=(b.dates&&b.dates[b.dates.length-1])||b.period;
+    h+='<tr class="clk" onclick="ivDrill(\''+lastDate+'\')"><td style="color:var(--tx)">'+esc(b.label)+'</td>'
+      +'<td>'+b.n_cut+'</td><td><span style="color:var(--g)">'+b.helped+'</span>/<span style="color:var(--r)">'+b.hurt+'</span></td>'
+      +'<td class="mono" style="color:'+(b.day_actual<0?'var(--r)':'var(--g)')+'">'+inrp(b.day_actual)+'</td>'
+      +'<td class="mono" style="color:var(--y)">'+inrp(b.if_never_cut)+'</td>'
+      +'<td class="mono" style="color:'+ic+';font-weight:600">'+inr(b.net_impact)+'</td></tr>';
+  });
+  if(!S.length) h+='<tr><td colspan="6" style="text-align:center;color:var(--dim);padding:16px">koi manual cut nahi mila</td></tr>';
+  h+='</tbody></table></div>';
+  document.getElementById('iv-body').innerHTML=h;
+}
+function ivDrill(date){
+  document.getElementById('iv-date').value=date;
+  setView('day'); ivLoad();
+}
+
+// ── DAY (single date detail) ──────────────────────────────────────────
+function ivLoadDay(){
+  var d=document.getElementById('iv-date').value;
+  fetch('/api/intervention?mode='+(IVMODE==='both'?'':IVMODE)+(d?('&date='+d):''))
+    .then(function(r){return r.json();}).then(renderDay)
+    .catch(function(){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">load fail</div>';});
+}
+function renderDay(R){
+  if(!R||R.ok===false){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">'+esc(R&&R.msg||'error')+'</div>';return;}
+  if(!document.getElementById('iv-date').value && R.date) document.getElementById('iv-date').value=R.date;
+  var net=R.net_impact||0, netC=net>0?'var(--g)':(net<0?'var(--r)':'var(--mut)');
+  var verdict=net>0?R.n_cut+' cuts ne strategy se '+inrp(net).replace('₹','₹')+' <b>zyada</b> diya':net<0?R.n_cut+' cuts ne '+inrp(-net).replace('₹','₹')+' <b>kam</b> diya':'intervention ~neutral';
+  var h='';
+  h+='<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:12px;margin-bottom:12px">'
+    +'<div class="card" style="padding:14px;border-color:'+(net<0?'#5c1a1f':(net>0?'#1a7f37':'var(--bd)'))+'"><div class="lbl">'+esc(R.date)+' · intervention impact</div>'
+      +'<div class="mono" style="font-size:28px;font-weight:600;color:'+netC+'">'+inr(net)+'</div><div style="font-size:12px;color:var(--mut)">'+verdict+'</div></div>'
+    +'<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Actual din</div><div class="mono" style="font-size:20px;font-weight:600;color:'+(R.day_actual<0?'var(--r)':'var(--g)')+'">'+inrp(R.day_actual)+'</div></div>'
+    +'<div class="card" style="padding:14px;display:flex;flex-direction:column;justify-content:center"><div class="lbl">Kuch cut na karte</div><div class="mono" style="font-size:20px;font-weight:600;color:var(--y)">'+inrp(R.if_never_cut)+'</div></div></div>';
   h+='<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">'
     +'<span class="card" style="padding:5px 12px;font-size:12px;border-radius:20px">Cuts: <b>'+R.n_cut+'</b></span>'
-    +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#12341f30;border:1px solid #1a7f37;color:var(--g)">&#10003; Helped: '+R.helped_n+' (+'+inrp(R.helped_sum).slice(1)+')</span>'
-    +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#3d151830;border:1px solid #5c1a1f;color:var(--r)">&#10007; Hurt: '+R.hurt_n+' ('+inrp(R.hurt_sum)+')</span>'
-    +'<span class="card" style="padding:5px 12px;font-size:12px;border-radius:20px">Cut hit-rate: '+(R.n_scored?Math.round(R.helped_n/R.n_scored*100):0)+'%</span></div>';
-  // table
-  h+='<div class="card" style="overflow:hidden;margin-bottom:14px"><table><thead><tr>'
-    +'<th>Position &middot; strategy</th><th>Aap ne cut</th><th>Strategy karti</th><th>Impact</th></tr></thead><tbody>';
+    +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#12341f30;border:1px solid #1a7f37;color:var(--g)">&#10003; Helped '+R.helped_n+' (+'+inrp(R.helped_sum).slice(1)+')</span>'
+    +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#3d151830;border:1px solid #5c1a1f;color:var(--r)">&#10007; Hurt '+R.hurt_n+' ('+inrp(R.hurt_sum)+')</span></div>';
+  h+='<div class="card" style="overflow:hidden;margin-bottom:14px"><table><thead><tr><th>Position · strategy</th><th>Aap ne cut</th><th>Strategy karti</th><th>Impact</th></tr></thead><tbody>';
   (R.cuts||[]).forEach(function(c){
-    var imp=c.impact, help=imp>0, nod=(imp==null);
-    var ic=nod?'var(--mut)':(help?'var(--g)':'var(--r)');
+    var imp=c.impact, help=imp>0, nod=(imp==null), ic=nod?'var(--mut)':(help?'var(--g)':'var(--r)');
     var chip=nod?'&mdash;':(help?'&#10003;':'&#10007;');
-    var actc=c.actual_pnl>=0?'var(--g)':'var(--r)';
-    h+='<tr><td><div style="color:var(--tx)">'+esc(c.symbol||c.instrument)+'</div>'
-      +'<div style="font-size:9px;color:var(--dim)">'+esc(c.strategy)+' &middot; '+esc(c.exit_reason||'')+'</div></td>'
-      +'<td class="mono" style="color:'+actc+'">'+inr(c.actual_pnl).replace('+₹','₹').replace('−₹','−₹')+' <span style="color:var(--dim);font-size:9px">'+esc(c.exit_hm)+'</span></td>'
+    h+='<tr><td><div style="color:var(--tx)">'+esc(c.symbol||c.instrument)+'</div><div style="font-size:9px;color:var(--dim)">'+esc(c.strategy_label||c.strategy)+' &middot; '+esc(c.exit_reason||'')+'</div></td>'
+      +'<td class="mono" style="color:'+(c.actual_pnl>=0?'var(--g)':'var(--r)')+'">'+inrp(c.actual_pnl)+' <span style="color:var(--dim);font-size:9px">'+esc(c.exit_hm)+'</span></td>'
       +'<td class="mono" style="color:#adb6c0">'+(c.cf_pnl==null?'<span style="color:var(--dim)">no data</span>':inrp(c.cf_pnl))+' <span style="color:var(--dim);font-size:9px">'+esc(c.cf_method||'')+(c.cf_exit_hm?(' '+esc(c.cf_exit_hm)):'')+'</span></td>'
       +'<td class="mono" style="color:'+ic+';font-weight:600">'+chip+' '+(nod?'':inr(imp))+'</td></tr>';
   });
   if(!(R.cuts||[]).length) h+='<tr><td colspan="4" style="text-align:center;color:var(--dim);padding:20px">is din/filter me koi manual cut nahi</td></tr>';
   h+='</tbody></table></div>';
-  // strategy exits (not cut) — reference
   if((R.strategy_exits||[]).length){
     h+='<div style="font-size:10px;color:var(--dim);margin-bottom:14px"><b style="color:var(--mut)">Strategy ne khud exit kiye (cut nahi):</b> '
       +R.strategy_exits.map(function(s){return esc(s.symbol||s.instrument)+' '+inr(s.actual_pnl)+' ('+esc(s.exit_reason)+')';}).join(' &middot; ')+'</div>';
   }
-  // trend
   var TR=R.trend||[];
   if(TR.length){
     var mx=Math.max.apply(null,TR.map(function(t){return Math.abs(t.net_impact)||1;}))||1;
-    h+='<div class="card" style="padding:14px"><div class="lbl" style="margin-bottom:8px">Intervention trend &middot; last '+TR.length+' sessions (net/din)</div>'
+    h+='<div class="card" style="padding:14px"><div class="lbl" style="margin-bottom:8px">Trend · last '+TR.length+' sessions <span style="color:var(--dim);text-transform:none">(bar click &rarr; wo din)</span></div>'
       +'<div style="display:flex;align-items:flex-end;gap:8px;height:70px">';
     TR.forEach(function(t){var up=(t.net_impact||0)>=0,ht=Math.max(4,Math.abs(t.net_impact||0)/mx*46);
-      h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">'
+      h+='<div class="clk" onclick="ivDrill(\''+t.date+'\')" style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%">'
         +'<div class="mono" style="font-size:8px;color:'+(up?'var(--g)':'var(--r)')+'">'+(up?'+':'−')+Math.round(Math.abs(t.net_impact||0)/1000)+'k</div>'
         +'<div style="width:70%;height:'+ht+'px;background:'+(up?'#238636':'#da3633')+';border-radius:3px"></div>'
-        +'<div style="font-size:9px;color:var(--dim);margin-top:3px">'+esc(t.date.slice(8))+'</div></div>';
+        +'<div style="font-size:9px;color:var(--dim);margin-top:3px">'+esc(t.date.slice(5))+'</div></div>';
     });
-    var cum=TR.reduce(function(a,t){return a+(t.net_impact||0);},0);
-    h+='</div><div style="font-size:11px;color:var(--mut);margin-top:8px">Cumulative: <b class="mono" style="color:'+(cum>=0?'var(--g)':'var(--r)')+'">'+inr(cum)+'</b></div></div>';
+    h+='</div></div>';
   }
   document.getElementById('iv-body').innerHTML=h;
 }
 
+function setView(v){
+  IVVIEW=v;
+  document.querySelectorAll('#iv-view span').forEach(function(x){x.classList.toggle('on',x.dataset.v===v);});
+  document.getElementById('iv-date').style.display=(v==='day')?'':'none';
+  document.getElementById('iv-group').style.display=(v==='overview')?'':'none';
+}
+document.querySelectorAll('#iv-view span').forEach(function(s){s.onclick=function(){setView(s.dataset.v);ivLoad();};});
 document.querySelectorAll('#iv-mode span').forEach(function(s){s.onclick=function(){document.querySelectorAll('#iv-mode span').forEach(function(x){x.classList.toggle('on',x===s);});IVMODE=s.dataset.v;ivLoad();};});
-ivLoad();
+document.querySelectorAll('#iv-group span').forEach(function(s){s.onclick=function(){document.querySelectorAll('#iv-group span').forEach(function(x){x.classList.toggle('on',x===s);});IVGROUP=s.dataset.v;if(IVVIEW==='overview')ivLoad();};});
+document.getElementById('iv-date').addEventListener('change',function(){if(IVVIEW==='day')ivLoad();});
+setView('overview'); ivLoad();
 </script>
 </body>
 </html>
