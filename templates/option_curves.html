@@ -866,7 +866,14 @@
     fixedStrats.forEach(function(s){
       if(!have[s.id]) have[s.id]=entry.chart.addLineSeries({ color:s.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true, title:s.label });
       if(fixedData[s.id]==null){ have[s.id].setData([]); fetchFixed(s, function(){ var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }); return; }
-      have[s.id].setData((fixedData[s.id]||[]).map(function(p){return {time:p.t, value:p.prem};}).filter(function(d){return d.value!=null && !isNaN(d.value);}));
+      // Resample to the current TF + align to the MAIN `view` timeline (whitespace for
+      // gaps) so this pane's bar-set == the other panes' → the shared logical-range zoom
+      // sync (syncRange) stays time-aligned instead of drifting on a shorter bar-set.
+      var tf=+document.getElementById('tf').value;
+      var rs=resample(fixedData[s.id]||[], tf), m={};
+      rs.forEach(function(p){ if(p.prem!=null && !isNaN(p.prem)) m[p.t]=p.prem; });
+      var base=view.length?view:rs;
+      have[s.id].setData(base.map(function(p){ return (m[p.t]!=null) ? {time:p.t, value:m[p.t]} : {time:p.t}; }));
     });
   }
   function fixAdd(legs, label){
