@@ -166,6 +166,7 @@
         <button data-io="line" onclick="setIdxOv('line',this)" title="Index as line (all panes)">Line</button>
         <button data-io="ohlc" onclick="setIdxOv('ohlc',this)" title="Index as candles (all panes)">OHLC</button>
       </div>
+      <label class="pk" style="margin-top:5px" title="GEX walls (call/put), γ-flip, max-pain, ±1σ — sabhi panes ke left (NIFTY-price) axis pe, spot ke saath. Index overlay ON hona chahiye."><input type="checkbox" id="gexOvChk" onchange="toggleGexOv(this.checked)"> GEX levels (walls / γ-flip / ±1σ)</label>
       <div style="font-size:10px;color:var(--mut);margin-top:4px">Strike overlay → chart pe <b>right-click</b> → 📈 Strike overlay</div>
 
       <div class="divh"></div>
@@ -311,6 +312,7 @@
   var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay (OI PE) line hidden
   // OVERLAYS (all panes): index (Off/Line/OHLC) + one selected strike (Off/Line/OHLC via right-click)
   var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
+  var gexOv    = load('oc_gex_ov', false), _gexLevels = null, _gexLvlKey = '';   // GEX walls/flip/±1σ overlay (left/NIFTY-price axis)
   var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line' });
   var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null, _strikeFetching = false;
   var fixedStrats = load('oc_fixed', []), fixedData = {}, _fixKey = '';   // Fixed straddle/strangle (held strikes)
@@ -602,7 +604,12 @@
             priceLineVisible:false, lastValueVisible:idxOv==='line', visible:idxOv==='line' });
           entry.idxCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', borderVisible:false,
             wickUpColor:'#3fb950', wickDownColor:'#f85149', priceScaleId:'left', visible:idxOv==='ohlc' });
-          chart.priceScale('left').applyOptions({ visible:idxOv!=='off', borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
+          chart.priceScale('left').applyOptions({ visible:(idxOv!=='off')||gexOv, borderColor:'#30363d', scaleMargins:{top:0.1,bottom:0.1} });
+          // GEX levels (walls / γ-flip / max-pain / ±1σ) as horizontal lines on the same
+          // left (NIFTY-price) axis as the index overlay.
+          if(gexOv && _gexLevels){
+            _gexLevelDefs().forEach(function(L){ if(L.v!=null && !isNaN(L.v)) try{ entry.idxLine.createPriceLine({ price:L.v, color:L.c, lineWidth:1, lineStyle:2, axisLabelVisible:true, title:L.t }); }catch(x){} });
+          }
           // STRIKE overlay (all panes) — chosen strike premium on its own invisible scale.
           entry.stkLine=chart.addLineSeries({ color:stkC, lineWidth:2, priceScaleId:'ocstrike',
             priceLineVisible:false, lastValueVisible:false, visible:strikeOv.on&&strikeOv.mode==='line' });
@@ -868,6 +875,36 @@
     if(key===_stkStrikesKey && _stkStrikes.length){ if(cb) cb(); return; }
     var qs='underlying='+U+'&date='+date; if(ex) qs+='&expiry='+encodeURIComponent(ex);
     fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){ _stkStrikes=(d&&d.strikes)||[]; _stkStrikesKey=key; if(cb) cb(); }).catch(function(){ if(cb) cb(); });
+  }
+
+  // ── GEX levels overlay (walls / γ-flip / max-pain / ±1σ) on the left NIFTY axis ──
+  function _gexLevelDefs(){ var g=_gexLevels||{}; return [
+    {v:g.cw,   c:'#3fb950', t:'Call wall '+(g.cw||'')},
+    {v:g.pw,   c:'#f85149', t:'Put wall '+(g.pw||'')},
+    {v:g.flip, c:'#1f6feb', t:'γ-flip '+(g.flip||'')},
+    {v:g.mp,   c:'#a371f7', t:'Max-pain '+(g.mp||'')},
+    {v:g.emh,  c:'#d29922', t:'+1σ '+(g.emh||'')},
+    {v:g.eml,  c:'#d29922', t:'-1σ '+(g.eml||'')}
+  ]; }
+  function fetchGexLevels(cb){
+    if(DAYS>1){ _gexLevels=null; if(cb)cb(); return; }        // GEX overlay = single-day only
+    var date=document.getElementById('date').value, ex=document.getElementById('expiry').value;
+    _gexLvlKey=U+'|'+date+'|'+ex;
+    fetch('/api/gex?underlying='+U+'&date='+date+'&expiry='+encodeURIComponent(ex||''))
+      .then(function(r){return r.json();}).then(function(d){
+        var sn=(d&&d.snaps)||[], last=sn.length?sn[sn.length-1]:null;
+        _gexLevels=last?{cw:last.cw,pw:last.pw,flip:last.flip,mp:last.mp,emh:last.emh,eml:last.eml,spot:last.spot}:null;
+        if(cb)cb();
+      }).catch(function(){ _gexLevels=null; if(cb)cb(); });
+  }
+  function toggleGexOv(on){
+    gexOv=on; save('oc_gex_ov', gexOv);
+    var done=function(){
+      if(on && idxOv==='off'){ idxOv='line'; save('oc_index_ov','line');
+        document.querySelectorAll('#idxOvSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.io==='line'); }); }
+      buildPanes();
+    };
+    if(on) fetchGexLevels(done); else done();
   }
 
   // ── Fixed straddle/strangle (held strikes, Sensibull-style multi) ──────────
@@ -1140,6 +1177,7 @@
     var ex=document.getElementById('expiry').value;
     var fk=U+'|'+date+'|'+ex+'|'+DAYS;                // date/underlying/expiry/days changed → refetch held strikes
     if(fk!==_fixKey){ _fixKey=fk; fixedData={}; renderFixPicker(); }
+    if(gexOv && (U+'|'+date+'|'+ex)!==_gexLvlKey){ fetchGexLevels(function(){ buildPanes(); }); }   // GEX levels for this day
     if(DAYS>1){ qs+='&days='+DAYS; }              // multi-day: per-day expiry, so no expiry filter
     else if(ex){ qs+='&expiry='+encodeURIComponent(ex); }
     Promise.all([
@@ -1207,6 +1245,7 @@
 
   // init index-overlay segmented + strike-overlay popup state
   document.querySelectorAll('#idxOvSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.io===idxOv); });
+  (function(){ var gc=document.getElementById('gexOvChk'); if(gc) gc.checked=gexOv; })();
   renderStrikePop();
   document.addEventListener('mousedown', function(e){
     var p=document.getElementById('notePop'); if(p && p.style.display==='block' && !p.contains(e.target)) closeNotePopup();
