@@ -593,10 +593,22 @@ def api_whatif():
     try:
         return jsonify(w.run(d.get('underlying', 'NIFTY'), d.get('date'),
                              d.get('entry', '09:20'), d.get('exit', '15:30'),
-                             d.get('lots', 1), d.get('legs', [])))
+                             d.get('lots', 1), d.get('legs', []), expiry=d.get('expiry') or None))
     except Exception as e:
         print("[whatif] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "legs": []})
+
+
+@app.route('/api/whatif-expiries')
+def api_whatif_expiries():
+    """Stored expiries for a date so the What-If page can simulate on a specific expiry
+    (recent/collector dates). Historical lake is weekly-only → empty list."""
+    try:
+        import opt_whatif as w
+        u = str(request.args.get('underlying', 'NIFTY')).upper()
+        return jsonify({"ok": True, "expiries": w.list_expiries(u, request.args.get('date'))})
+    except Exception as e:
+        return jsonify({"ok": False, "expiries": [], "msg": str(e)})
 
 @app.route('/api/whatif-margin', methods=['POST'])
 def api_whatif_margin():

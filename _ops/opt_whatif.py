@@ -74,16 +74,17 @@ def _greeks_bs(S, K, T, sigma, opt):
 
 
 # ---------------------------------------------------------------- collector source
-def _collector_legs(u, date, entry_hm, exit_hm, legs):
+def _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=None):
     """Return per-leg entry/exit dicts from the live collector CSV, or None if that
-    day/those strikes aren't in the collector lake."""
+    day/those strikes aren't in the collector lake. `expiry` picks a specific stored
+    expiry (real-like simulation); default = nearest weekly."""
     _, rows = _oc._load_rows(u, date)
     if not rows:
         return None
     exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
     if not exps:
         return None
-    expiry = exps[0]                      # nearest weekly
+    expiry = expiry if (expiry and expiry in exps) else exps[0]   # chosen expiry, else nearest weekly
     day = [r for r in rows if r.get("expiry") == expiry]
 
     def at(strike, ot, hm, last=False):
@@ -252,11 +253,25 @@ def available_dates(u):
     return sorted(ds, reverse=True)
 
 
-def run(u, date, entry_hm, exit_hm, lots, legs):
-    """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. Returns full result."""
+def list_expiries(u, date):
+    """Expiries stored for this date in the collector lake (recent dates) — lets the
+    user pick which expiry to simulate on, like the Quick Order straddle. Historical
+    (OptChainLake) is WEEKLY-only, so it returns [] there (nearest weekly is implied)."""
+    try:
+        _, rows = _oc._load_rows(u.upper(), date)
+    except Exception:
+        rows = None
+    if not rows:
+        return []
+    return sorted({r.get("expiry") for r in rows if r.get("expiry")})
+
+
+def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None):
+    """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. `expiry` = a specific
+    stored expiry (default nearest weekly). Returns full result."""
     u = u.upper()
     lot = LOT.get(u, 1) * max(1, int(lots or 1))
-    data = _collector_legs(u, date, entry_hm, exit_hm, legs) or _lake_legs(u, date, entry_hm, exit_hm, legs)
+    data = _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=expiry) or _lake_legs(u, date, entry_hm, exit_hm, legs)
     if not data:
         return {"ok": False, "error": "is date/strike ka data nahi mila (collector ya lake me).",
                 "legs": [], "date": date, "underlying": u}
