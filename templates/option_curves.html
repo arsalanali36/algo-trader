@@ -160,6 +160,20 @@
       <div style="font-size:10px;color:var(--mut);margin-top:4px">Strike overlay → chart pe <b>right-click</b> → 📈 Strike overlay</div>
 
       <div class="divh"></div>
+      <label class="fld">🎯 Fixed Straddle/Strangle</label>
+      <div style="font-size:10px;color:var(--mut);margin-bottom:5px">Held strike, end tak (rolling ATM nahi). Enable "🎯 Fixed" panel neeche.</div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
+        <select id="fxK" style="flex:1"></select>
+        <button onclick="fixAddStraddle()" title="Add straddle at this strike" style="width:auto;padding:5px 8px;white-space:nowrap">＋ Straddle</button>
+      </div>
+      <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
+        <span style="font-size:10px;color:var(--mut)">PE</span><select id="fxPE" style="flex:1"></select>
+        <span style="font-size:10px;color:var(--mut)">CE</span><select id="fxCE" style="flex:1"></select>
+        <button onclick="fixAddStrangle()" title="Add strangle (PE strike + CE strike)" style="width:auto;padding:5px 8px">＋</button>
+      </div>
+      <div id="fixList"></div>
+
+      <div class="divh"></div>
       <label class="fld">Panels</label>
       <div id="panelPick"></div>
       <button style="margin-top:8px" onclick="resetPanes()" title="Sab panes barabar height (Alt+R)">⤢ Auto-size panes (Alt+R)</button>
@@ -259,7 +273,8 @@
     { id:'skew',    name:'IV Skew (smile)',  color:'#39c5cf', kind:'skew',    lbl:'IV SKEW — strike-wise CE (cyan) vs PE (orange) IV at crosshair · OTM puts steep = fear/hedging bid' },
     { id:'heatmap', name:'OI Change Heatmap', color:'#f85149', kind:'heatmap', lbl:'OI CHANGE HEATMAP — strike × time · green = OI added, red = unwound · dark far-OTM cell = big bet/hedge' },
     { id:'spread',  name:'Bid-Ask Spread',   color:'#39c5cf', get:function(p){return p.spread_pct;}, dec:3, lbl:'BID-ASK SPREAD % (ATM straddle) — neeche/green = tight = achhi entry (sasta fill) · upar/red = wide = fill mehnga, ruko',
-      guides:[{v:0.2,c:'#3fb950'},{v:0.45,c:'#f85149'}] }
+      guides:[{v:0.2,c:'#3fb950'},{v:0.45,c:'#f85149'}] },
+    { id:'fixed',   name:'🎯 Fixed Straddle/Strangle', kind:'fixed', color:'#1dd1a1', lbl:'FIXED STRIKE straddle/strangle — held to EOD (real premium), NOT rolling ATM · add strikes from the left picker' }
   ];
   // Combined pane = all metrics overlaid on ONE chart, each on its own (invisible) scale
   var COMBINED = [
@@ -282,6 +297,8 @@
   var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
   var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line' });
   var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null, _strikeFetching = false;
+  var fixedStrats = load('oc_fixed', []), fixedData = {}, _fixKey = '';   // Fixed straddle/strangle (held strikes)
+  var FIXCOL = ['#1dd1a1','#a371f7','#58a6ff','#f778ba','#e3b341'];
   function notesKey(){ return 'oc_notes_'+U+'_'+document.getElementById('date').value; }
   var VIEW = load('oc_view', 'fit');       // 'fit' (panes fit screen) | 'tall' (taller, scroll)
   var SCROLL = load('oc_scroll', 'panel'); // 'panel' (chart-area scroll) | 'page' (whole-page scroll)
@@ -537,6 +554,13 @@
         }
         if(window.ResizeObserver){ entry._ro=new ResizeObserver(function(){ if(def.kind==='skew') renderSkew(_skewT); else renderHeatmap(); }); entry._ro.observe(host); }
         panes.push(entry);
+      } else if(def.kind==='fixed'){
+        // Fixed straddle/strangle pane — held-strike premium line per selected strategy
+        var fchart=mkChart(el); el._chart=fchart; entry.chart=fchart; entry.kind='fixed'; entry.fx={};
+        panes.push(entry);
+        fchart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
+        fchart.subscribeCrosshairMove(function(prm){ onCross(prm, entry); syncCross(entry, prm); });
+        attachNoteMenu(entry);
       } else {
         var chart=mkChart(el); el._chart=chart; entry.chart=chart;
         if(def.id==='oi') chart.applyOptions({ localization:{ priceFormatter: fmtInr } });   // OI axis → Cr/L
@@ -602,6 +626,7 @@
     panes.forEach(function(e){
       if(e.kind==='skew'){ fetchSkew(); return; }
       if(e.kind==='heatmap'){ fetchHeatmap(); return; }
+      if(e.kind==='fixed'){ renderFixed(e); return; }
       if(e.comb){
         e.comb.forEach(function(c){ c.s.setData(view.map(function(p){ return {time:p.t, value:c.get(p)}; }).filter(function(d){ return d.value!=null && !isNaN(d.value); })); });
       } else {
@@ -824,6 +849,54 @@
     var qs='underlying='+U+'&date='+date; if(ex) qs+='&expiry='+encodeURIComponent(ex);
     fetch('/api/option-strike?'+qs).then(function(r){return r.json();}).then(function(d){ _stkStrikes=(d&&d.strikes)||[]; _stkStrikesKey=key; if(cb) cb(); }).catch(function(){ if(cb) cb(); });
   }
+
+  // ── Fixed straddle/strangle (held strikes, Sensibull-style multi) ──────────
+  function fetchFixed(s, cb){
+    var qs='underlying='+U+'&date='+document.getElementById('date').value
+      +'&expiry='+encodeURIComponent(document.getElementById('expiry').value||'')
+      +'&legs='+s.legs.map(function(l){return l.strike+'-'+l.opt_type;}).join(',');
+    fetch('/api/option-legs?'+qs).then(function(r){return r.json();}).then(function(d){
+      fixedData[s.id]=(d&&d.points)||[]; if(cb)cb();
+    }).catch(function(){ fixedData[s.id]=[]; if(cb)cb(); });
+  }
+  function renderFixed(entry){
+    if(!entry||!entry.chart) return;
+    var have=entry.fx||(entry.fx={});
+    Object.keys(have).forEach(function(id){ if(!fixedStrats.some(function(s){return s.id===id;})){ try{entry.chart.removeSeries(have[id]);}catch(e){} delete have[id]; } });
+    fixedStrats.forEach(function(s){
+      if(!have[s.id]) have[s.id]=entry.chart.addLineSeries({ color:s.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true, title:s.label });
+      if(fixedData[s.id]==null){ have[s.id].setData([]); fetchFixed(s, function(){ var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }); return; }
+      have[s.id].setData((fixedData[s.id]||[]).map(function(p){return {time:p.t, value:p.prem};}).filter(function(d){return d.value!=null && !isNaN(d.value);}));
+    });
+  }
+  function fixAdd(legs, label){
+    if(fixedStrats.length>=5){ alert('Max 5 strategies'); return; }
+    var s={ id:'fx'+(Date.now()), legs:legs, label:label, color:FIXCOL[fixedStrats.length%FIXCOL.length] };
+    fixedStrats.push(s); save('oc_fixed', fixedStrats);
+    if(!enabled['fixed']){ enabled['fixed']=true; save('oc_panels', enabled); }
+    fetchFixed(s, function(){ renderPicker(); buildPanes(); renderFixList(); });
+  }
+  function fixAddStraddle(){ var k=+document.getElementById('fxK').value; if(k) fixAdd([{strike:k,opt_type:'CE'},{strike:k,opt_type:'PE'}], k+' straddle'); }
+  function fixAddStrangle(){ var pk=+document.getElementById('fxPE').value, ck=+document.getElementById('fxCE').value; if(pk&&ck) fixAdd([{strike:pk,opt_type:'PE'},{strike:ck,opt_type:'CE'}], pk+'P / '+ck+'C strangle'); }
+  function removeFix(id){ fixedStrats=fixedStrats.filter(function(s){return s.id!==id;}); delete fixedData[id]; save('oc_fixed', fixedStrats); renderFixList(); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
+  function renderFixList(){
+    var el=document.getElementById('fixList'); if(!el) return;
+    if(!fixedStrats.length){ el.innerHTML='<div style="font-size:10px;color:var(--mut)">none — pick strikes above</div>'; return; }
+    el.innerHTML=fixedStrats.map(function(s){
+      return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0">'
+        +'<span style="width:9px;height:9px;border-radius:2px;background:'+s.color+'"></span>'
+        +'<span style="color:var(--tx)">'+s.label+'</span>'
+        +'<span onclick="removeFix(\''+s.id+'\')" title="Remove" style="margin-left:auto;cursor:pointer;color:var(--mut);font-weight:700">✕</span></div>';
+    }).join('');
+  }
+  function renderFixPicker(){
+    ensureStrikes(function(){
+      var opts=_stkStrikes.map(function(k){return '<option value="'+k+'">'+k+'</option>';}).join('');
+      var atm=_stkStrikes.length?_stkStrikes[Math.floor(_stkStrikes.length/2)]:'';
+      ['fxK','fxPE','fxCE'].forEach(function(id){ var s=document.getElementById(id); if(s){ var v=s.value; s.innerHTML=opts; if(v&&_stkStrikes.indexOf(+v)>-1) s.value=v; else if(atm) s.value=atm; } });
+      renderFixList();
+    });
+  }
   function resolveStrike(){
     if(!_stkStrikes.length) return null;
     var spot = view.length ? view[view.length-1].spot : null;
@@ -992,6 +1065,8 @@
     var date=document.getElementById('date').value;
     var qs='underlying='+U+'&date='+date;
     var ex=document.getElementById('expiry').value;
+    var fk=U+'|'+date+'|'+ex;                         // date/underlying/expiry changed → held strikes differ
+    if(fk!==_fixKey){ _fixKey=fk; fixedData={}; renderFixPicker(); }
     if(DAYS>1){ qs+='&days='+DAYS; }              // multi-day: per-day expiry, so no expiry filter
     else if(ex){ qs+='&expiry='+encodeURIComponent(ex); }
     Promise.all([

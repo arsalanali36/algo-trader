@@ -446,6 +446,37 @@ def strike_series(u, date, expiry, strike=None, opt_type=None):
     }
 
 
+def legs_series(u, date, expiry, legs):
+    """Combined per-minute premium for a FIXED-STRIKE straddle/strangle held all day
+    (the /curves 'Fixed strike' mode — Sensibull-style multi straddle-strangle).
+    `legs` = list of {strike, opt_type} (a straddle = same-K CE+PE; strangle = two Ks).
+    Reuses strike_series() per leg (Rule 6B), sums their ltp on the epochs present in
+    ALL legs (so the combined line only shows where every leg has a real print). Held
+    strike → no ATM rolling; runs to the last bar of `date`. Display-only."""
+    legs = [l for l in (legs or []) if _f(l.get("strike")) is not None
+            and (l.get("opt_type") or "").upper() in ("CE", "PE")]
+    if not legs:
+        return {"ok": False, "expiry": expiry, "strikes": [], "points": []}
+    per, strikes = [], []
+    exp_used = expiry
+    for l in legs:
+        s = strike_series(u, date, expiry, l.get("strike"), l.get("opt_type"))
+        exp_used = s.get("expiry") or exp_used
+        strikes = s.get("strikes") or strikes
+        per.append({p["t"]: p for p in s.get("points", [])})
+    common = set(per[0])
+    for m in per[1:]:
+        common &= set(m)
+    pts = []
+    for t in sorted(common):
+        prem = sum(per[i][t]["ltp"] for i in range(len(per)))
+        spot = per[0][t].get("spot")
+        pts.append({"t": t, "prem": round(prem, 2), "spot": spot})
+    return {"ok": True, "underlying": u, "expiry": exp_used, "strikes": strikes,
+            "legs": [{"strike": _f(l.get("strike")), "opt_type": (l.get("opt_type") or "").upper()} for l in legs],
+            "points": pts}
+
+
 # ── term-structure + IV-rank helpers ────────────────────────────────────────
 def _atm_iv_map(rows, expiry):
     """{datetime -> ATM (avg CE/PE) IV} for one expiry — for the next-week term line."""

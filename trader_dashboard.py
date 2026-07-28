@@ -764,6 +764,31 @@ def api_option_strike():
         print("[option-strike] fail:", e, flush=True)
         return jsonify({"ok": False, "strikes": [], "points": []})
 
+
+@app.route('/api/option-legs')
+def api_option_legs():
+    """Combined held-strike premium for a /curves 'Fixed strike' straddle/strangle.
+    `legs` = comma list of STRIKE-TYPE (e.g. 23950-CE,23950-PE = straddle;
+    23800-PE,24100-CE = strangle). One strategy per call. Display-only."""
+    import option_curves as oc
+    u = (request.args.get('underlying') or 'NIFTY').upper()
+    date = request.args.get('date')
+    if not date:
+        date = (datetime.now(timezone.utc) + timedelta(hours=5, minutes=30)).strftime('%Y-%m-%d')
+    expiry = request.args.get('expiry') or None
+    legs = []
+    for tok in (request.args.get('legs') or '').split(','):
+        tok = tok.strip()
+        if '-' not in tok:
+            continue
+        k, ot = tok.rsplit('-', 1)
+        legs.append({"strike": k, "opt_type": ot})
+    try:
+        return jsonify(oc.legs_series(u, date, expiry, legs))
+    except Exception as e:
+        print("[option-legs] fail:", e, flush=True)
+        return jsonify({"ok": False, "strikes": [], "points": []})
+
 @app.route('/api/option-skew')
 def api_option_skew():
     """Per-minute strike-wise IV smile (CE + PE across ATM±N) → /curves skew panel."""
