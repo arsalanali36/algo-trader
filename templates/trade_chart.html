@@ -381,6 +381,19 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       el.innerHTML = '';
       const BG = '#0d1117';
+      // RSI (if any) goes in a SEPARATE bottom panel. LWC v4 has no native panes, so
+      // it's a 2nd chart stacked below, time-synced to share the x-axis (TradingView-
+      // style sub-pane). Price chart on top; RSI panel below with its own 0-100 axis.
+      const hasRsi = !!(d.rsi && d.rsi.series && d.rsi.series.length);
+      const priceEl = document.createElement('div');
+      priceEl.id = 'tc-price'; priceEl.style.cssText = 'width:100%;height:' + (hasRsi ? '68%' : '100%');
+      el.appendChild(priceEl);
+      let rsiEl = null;
+      if (hasRsi) {
+        rsiEl = document.createElement('div');
+        rsiEl.id = 'tc-rsi'; rsiEl.style.cssText = 'width:100%;height:32%;border-top:1px solid #30363d';
+        el.appendChild(rsiEl);
+      }
       // lightweight-charts measures the container's clientWidth/clientHeight
       // AT createChart() call time. This pane sits inside a multi-level flex
       // layout (split-wrap > pane > chart-left) and on first paint the
@@ -390,12 +403,12 @@ document.addEventListener('DOMContentLoaded', () => {
       // time-axis never rendered, while the right price-scale's own labels
       // (a separately-sized sub-element) still showed. Explicit width/height
       // here + a deferred re-apply on the next frame is the fix.
-      const chart = LightweightCharts.createChart(el, {
-        width: el.clientWidth, height: el.clientHeight,
+      const chart = LightweightCharts.createChart(priceEl, {
+        width: priceEl.clientWidth, height: priceEl.clientHeight,
         layout:{ background:{color:BG}, textColor:'#8b949e' },
         grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
-        timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
-        rightPriceScale:{ borderColor:'#30363d' },
+        timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d', visible: !hasRsi },
+        rightPriceScale:{ borderColor:'#30363d', minimumWidth: 56 },
         crosshair:{ mode:0 }
       });
 
@@ -408,21 +421,30 @@ document.addEventListener('DOMContentLoaded', () => {
       s.setData(uniq);
       window._leftSeries = s; // ref for live auto-refresh
 
-      // RSI overlay (RSI strategies) — the strategy's own Wilder RSI on a separate
-      // LEFT scale in the bottom band (candles keep the top). Shows the OB/OS entry
-      // levels + the midline (50) EXIT line, so you can see WHY entry/exit fired.
-      if (d.rsi && d.rsi.series && d.rsi.series.length) {
-        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.06, bottom: 0.30 } });
-        const rsiS = chart.addLineSeries({ priceScaleId: 'left', color: '#a371f7', lineWidth: 2,
-          crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
-          title: 'RSI('+d.rsi.period+') '+d.rsi.tf });
-        chart.priceScale('left').applyOptions({ visible: true, borderColor: '#30363d',
-          scaleMargins: { top: 0.72, bottom: 0.03 } });
+      // RSI in the SEPARATE bottom panel (2nd chart, x-axis synced with the candles) —
+      // the strategy's own Wilder RSI with OB/OS entry levels + the midline (50) EXIT line.
+      let rsiChart = null;
+      if (hasRsi) {
+        rsiChart = LightweightCharts.createChart(rsiEl, {
+          width: rsiEl.clientWidth, height: rsiEl.clientHeight,
+          layout:{ background:{color:BG}, textColor:'#8b949e' },
+          grid:{ vertLines:{color:'#161b22'}, horzLines:{color:'#161b22'} },
+          timeScale:{ timeVisible:true, secondsVisible:false, borderColor:'#30363d' },
+          rightPriceScale:{ borderColor:'#30363d', minimumWidth: 56 },
+          crosshair:{ mode:0 }
+        });
+        const rsiS = rsiChart.addLineSeries({ color:'#a371f7', lineWidth:2, priceLineVisible:false,
+          lastValueVisible:true, title:'RSI('+d.rsi.period+') '+d.rsi.tf });
         rsiS.setData(d.rsi.series);
-        rsiS.createPriceLine({ price: d.rsi.mid, color: '#e3a008', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'exit '+d.rsi.mid });
-        rsiS.createPriceLine({ price: d.rsi.ob,  color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'OB '+d.rsi.ob });
-        rsiS.createPriceLine({ price: d.rsi.os,  color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'OS '+d.rsi.os });
-      }
+        rsiS.createPriceLine({ price:d.rsi.mid, color:'#e3a008', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'exit '+d.rsi.mid });
+        rsiS.createPriceLine({ price:d.rsi.ob,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'OB '+d.rsi.ob });
+        rsiS.createPriceLine({ price:d.rsi.os,  color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'OS '+d.rsi.os });
+        // share the x-axis: sync visible range both ways (TradingView-style sub-pane)
+        let _sy=false;
+        const link=(a,b)=>a.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(_sy||!r) return; _sy=true; try{ b.timeScale().setVisibleLogicalRange(r); }catch(e){} _sy=false; });
+        link(chart, rsiChart); link(rsiChart, chart);
+        window._leftRsiChart = rsiChart;
+      } else { window._leftRsiChart = null; }
       if (d.entry_mk) s.setMarkers([{time:d.entry_mk,
         position: tradeDir==='SHORT' ? 'aboveBar' : 'belowBar',
         color: tradeDir==='SHORT' ? '#f85149' : (tradeDir==='LONG' ? '#3fb950' : '#58a6ff'),
@@ -476,17 +498,23 @@ document.addEventListener('DOMContentLoaded', () => {
       chart.timeScale().fitContent();
       window._leftChart = chart;
       window.CVS && window.CVS.register('left', chart); // restore saved view / enable pan-zoom memory
+      // resize BOTH stacked charts (price + RSI panel) to their own containers
+      window._resizeLeftPane = function(){
+        const p = document.getElementById('tc-price'), rq = document.getElementById('tc-rsi');
+        if (window._leftChart && p) window._leftChart.applyOptions({ width: p.clientWidth, height: p.clientHeight });
+        if (window._leftRsiChart && rq) window._leftRsiChart.applyOptions({ width: rq.clientWidth, height: rq.clientHeight });
+      };
       // Re-measure on the next two frames — covers the case where the
       // flex layout's height wasn't settled yet at createChart() time.
       requestAnimationFrame(() => {
-        chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
+        window._resizeLeftPane();
         window.CVS ? window.CVS.refit('left') : chart.timeScale().fitContent();
         requestAnimationFrame(() => {
-          chart.applyOptions({width: el.clientWidth, height: el.clientHeight});
+          window._resizeLeftPane();
           window.CVS ? window.CVS.refit('left') : chart.timeScale().fitContent();
         });
       });
-      window.addEventListener('resize', ()=>chart.applyOptions({width: el.clientWidth, height: el.clientHeight}));
+      window.addEventListener('resize', () => window._resizeLeftPane());
     }).catch(()=>{
       document.getElementById('chart-left').innerHTML = '<div class="muted" style="padding:20px;text-align:center">Error loading underlying chart</div>';
     });
@@ -507,12 +535,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const pct = Math.max(20, Math.min(80, ((e.clientX - rect.left) / rect.width) * 100));
     left.style.flex = `1 1 ${pct}%`;
     right.style.flex = `1 1 ${100 - pct}%`;
-    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+    if (window._resizeLeftPane) window._resizeLeftPane();
   });
   document.addEventListener('mouseup', () => { dragging = false; });
 
   function resizeCharts(){
-    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+    if (window._resizeLeftPane) window._resizeLeftPane();
     window.dispatchEvent(new Event('resize'));
   }
 
@@ -548,7 +576,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const btn = document.getElementById('wl-toggle');
   if (!wl || !btn) return;
   function resizeCharts(){
-    if (window._leftChart) window._leftChart.applyOptions({width: document.getElementById('chart-left').clientWidth});
+    if (window._resizeLeftPane) window._resizeLeftPane();
     window.dispatchEvent(new Event('resize'));
   }
   btn.addEventListener('click', () => {
