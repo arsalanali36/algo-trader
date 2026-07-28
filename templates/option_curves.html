@@ -73,6 +73,15 @@
     #shModal .shrow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
     #shModal .shcard{background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:9px 11px}
     #shModal .shbtn{border:0;border-radius:6px;padding:8px;font-size:12px;font-weight:600;cursor:pointer}
+    #shModal .shchain{max-height:158px;overflow:auto;border:1px solid var(--bd);border-radius:8px;margin-bottom:10px}
+    #shModal .shchain table{width:100%;border-collapse:collapse;font-size:11px}
+    #shModal .shchain td{padding:3px 5px}
+    #shModal .shbs{opacity:0;white-space:nowrap;text-align:center}
+    #shModal .shcr:hover{background:#1f6feb14}
+    #shModal .shcr:hover .shbs{opacity:1}
+    #shModal .shbs span{display:inline-block;width:17px;text-align:center;cursor:pointer;border-radius:3px;font-weight:700;font-size:10px;margin:0 1px;line-height:16px}
+    #shModal .shs{background:#f8514922;color:#f85149;border:1px solid #f8514955}
+    #shModal .shb{background:#3fb95022;color:#3fb950;border:1px solid #3fb95055}
     .ovtick input{cursor:pointer;margin:0}
     .rh{height:7px;cursor:row-resize;background:var(--bd2);flex-shrink:0;position:relative;z-index:6}
     .rh:hover{background:var(--blu)}
@@ -234,7 +243,9 @@
       <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shPreset('fly')">Iron Fly</button>
       <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shPreset('naked')">Naked strangle</button>
     </div>
-    <div style="font-size:11px;color:var(--mut);margin-bottom:4px">Legs — side / type / strike (har leg editable)</div>
+    <div style="font-size:11px;color:var(--mut);margin-bottom:4px">Chain — row pe hover → <b style="color:#f85149">S</b>ell / <b style="color:#3fb950">B</b>uy (Quick Order jaisa)</div>
+    <div class="shchain" id="shChain"><div style="font-size:10px;color:var(--mut);padding:6px">…</div></div>
+    <div style="font-size:11px;color:var(--mut);margin-bottom:4px">Legs — chain se aaye ya khud edit (side / type / strike)</div>
     <div id="shLegs"></div>
     <button class="shbtn" style="background:#161b22;border:1px solid var(--bd);color:var(--mut);margin-top:2px" onclick="shAddLeg()">＋ leg</button>
     <div class="shrow" style="margin-top:11px"><span style="font-size:12px;color:var(--mut);width:52px">Lots</span><input id="shLots" type="number" min="1" value="1" style="width:64px" oninput="shDirty()"><span style="font-size:11px;color:var(--mut)" id="shQty"></span></div>
@@ -946,8 +957,27 @@
   function _shLotQty(){ return U==='BANKNIFTY'?30:65; }
   function _shAtm(){ var p=view.length?view[view.length-1]:null; if(p&&p.atm) return p.atm; if(p&&p.spot){ var s=_shStep(); return Math.round(p.spot/s)*s; } return 0; }
   function ctxSellHedge(){ hideCtxMenu(); openSH(); }
-  function openSH(){ if(!_shLegs.length) shPreset('condor'); else renderSHLegs(); document.getElementById('shWho').textContent=U+' · '+document.getElementById('date').value; document.getElementById('shBg').style.display='block'; document.getElementById('shModal').style.display='block'; }
+  function openSH(){ if(!_shLegs.length) shPreset('condor'); else renderSHLegs(); document.getElementById('shWho').textContent=U+' · '+document.getElementById('date').value; document.getElementById('shBg').style.display='block'; document.getElementById('shModal').style.display='block'; shLoadChain(); }
   function closeSH(){ document.getElementById('shBg').style.display='none'; document.getElementById('shModal').style.display='none'; }
+  function shAdd(K, type, side){ _shLegs.push({side:side, type:type, strike:K}); renderSHLegs(); shDirty(); }
+  function shLoadChain(){
+    var el=document.getElementById('shChain'); if(!el) return;
+    el.innerHTML='<div style="font-size:10px;color:var(--mut);padding:6px">chain load ho rahi…</div>';
+    fetch('/api/option-chain',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:U,n:9,expiry:'near'})})
+      .then(function(r){return r.json();}).then(function(d){
+        if(!d.ok || !(d.rows&&d.rows.length)){ el.innerHTML='<div style="font-size:10px;color:var(--mut);padding:6px">'+(d.msg||'chain nahi mili')+'</div>'; return; }
+        var atm=d.atm;
+        el.innerHTML='<table><tbody>'+d.rows.map(function(row){
+          var K=row.strike, ce=(row.ce||{}).ltp, pe=(row.pe||{}).ltp, isAtm=K===atm;
+          return '<tr class="shcr">'
+            +'<td style="color:#3fb950">'+(ce!=null?(+ce).toFixed(1):'—')+'</td>'
+            +'<td class="shbs"><span class="shs" title="Sell CE" onclick="shAdd('+K+',\'CE\',\'SELL\')">S</span><span class="shb" title="Buy CE" onclick="shAdd('+K+',\'CE\',\'BUY\')">B</span></td>'
+            +'<td style="text-align:center;font-weight:500;color:'+(isAtm?'#e3b341':'#adbac7')+'">'+K+'</td>'
+            +'<td class="shbs"><span class="shb" title="Buy PE" onclick="shAdd('+K+',\'PE\',\'BUY\')">B</span><span class="shs" title="Sell PE" onclick="shAdd('+K+',\'PE\',\'SELL\')">S</span></td>'
+            +'<td style="text-align:right;color:#f85149">'+(pe!=null?(+pe).toFixed(1):'—')+'</td></tr>';
+        }).join('')+'</tbody></table>';
+      }).catch(function(){ el.innerHTML='<div style="font-size:10px;color:var(--mut);padding:6px">⚠ chain load fail</div>'; });
+  }
   function shPreset(p){ var a=_shAtm(), s=_shStep(); if(!a){ document.getElementById('shStatus').textContent='ATM nahi mila — chart load hone do'; return; }
     if(p==='condor') _shLegs=[{side:'SELL',type:'CE',strike:a+2*s},{side:'SELL',type:'PE',strike:a-2*s},{side:'BUY',type:'CE',strike:a+6*s},{side:'BUY',type:'PE',strike:a-6*s}];
     else if(p==='fly') _shLegs=[{side:'SELL',type:'CE',strike:a},{side:'SELL',type:'PE',strike:a},{side:'BUY',type:'CE',strike:a+6*s},{side:'BUY',type:'PE',strike:a-6*s}];
