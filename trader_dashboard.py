@@ -599,6 +599,20 @@ def api_whatif():
         return jsonify({"ok": False, "error": str(e), "legs": []})
 
 
+@app.route('/api/whatif-legprice', methods=['POST'])
+def api_whatif_legprice():
+    """Per-leg REAL premium AT the entry time on the selected date (backtest price, not
+    live LTP) — for the What-If leg rows. Recent/collector dates only; historical → null."""
+    try:
+        import opt_whatif as w
+        d = request.get_json(force=True, silent=True) or {}
+        r = w.leg_prices_at(d.get('underlying', 'NIFTY'), d.get('date'), d.get('entry', '09:20'),
+                            d.get('legs', []), expiry=d.get('expiry') or None)
+        return jsonify({"ok": bool(r), **(r or {"legs": []})})
+    except Exception as e:
+        return jsonify({"ok": False, "legs": [], "msg": str(e)})
+
+
 @app.route('/api/whatif-expiries')
 def api_whatif_expiries():
     """Stored expiries for a date so the What-If page can simulate on a specific expiry

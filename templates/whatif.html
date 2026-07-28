@@ -125,7 +125,7 @@ function legRow(side,strike,type){
   d.innerHTML=`<select class="s"><option ${side==='SELL'?'selected':''}>SELL</option><option ${side==='BUY'?'selected':''}>BUY</option></select>`
     +`<input class="k" type="number" step="${step()}" value="${strike}">`
     +`<select class="t"><option ${type==='CE'?'selected':''}>CE</option><option ${type==='PE'?'selected':''}>PE</option></select>`
-    +`<span class="ltp" title="current live LTP">—</span>`
+    +`<span class="ltp" title="premium at entry time (backtest price)">—</span>`
     +`<button class="del">✕</button>`;
   return d;
 }
@@ -145,20 +145,24 @@ async function loadExpiries(){
 }
 $('date').addEventListener('change', loadExpiries);
 
-// inline live LTP per leg (current market — same live feed as Quick Order), debounced.
-// Backtest premium (at the chosen date/time) still comes on Run; this is a live reference.
+// inline per-leg price = the REAL premium AT the entry time on the selected date (the
+// BACKTEST price at that moment, NOT the current live LTP) — this IS a backtest tool.
+// Recent/collector dates only; historical → "—" (Run gives it). Debounced.
 let _ltpT=null;
 function scheduleLegLtp(){ clearTimeout(_ltpT); _ltpT=setTimeout(fetchLegLtp, 500); }
 async function fetchLegLtp(){
   const rows=[...$('legs').children]; if(!rows.length) return;
-  rows.forEach(el=>{ const s=el.querySelector('.ltp'); if(s && s.textContent==='—') s.textContent='…'; });
-  let r; try{ r=await (await fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:INST,lots:1,legs:collectLegs(),ltp_only:true})})).json(); }catch(e){ r=null; }
+  const dt=$('date').value, et=$('et').value; if(!dt) return;
+  rows.forEach(el=>{ const s=el.querySelector('.ltp'); if(s && (s.textContent==='—'||s.textContent==='')) s.textContent='…'; });
+  let r; try{ r=await (await fetch('/api/whatif-legprice',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:INST,date:dt,entry:et,legs:collectLegs(),expiry:$('exp').value||''})})).json(); }catch(e){ r=null; }
   const ok=r&&r.ok, ls=(r&&r.legs)||[];
   rows.forEach((el,i)=>{ const s=el.querySelector('.ltp'); if(!s) return;
-    const lp=ok?(ls[i]&&ls[i].ltp):null; s.textContent = lp!=null ? '₹'+lp : (ok?'—':'—'); s.style.color = lp!=null?'var(--tx)':'var(--mut)'; });
+    const lp=ok?(ls[i]&&ls[i].ltp):null; s.textContent = lp!=null ? '₹'+lp : '—'; s.style.color = lp!=null?'var(--tx)':'var(--mut)'; });
 }
 $('legs').addEventListener('input', scheduleLegLtp);
 $('legs').addEventListener('change', scheduleLegLtp);
+$('et').addEventListener('change', scheduleLegLtp);    // entry-time price → refetch on entry-time / date change
+$('date').addEventListener('change', scheduleLegLtp);
 
 function collectLegs(){return [...$('legs').children].map(r=>({side:r.querySelector('.s').value,strike:+r.querySelector('.k').value,type:r.querySelector('.t').value}));}
 function fmt(v){return (v>=0?'+':'−')+'₹'+Math.abs(v).toLocaleString('en-IN');}

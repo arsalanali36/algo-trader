@@ -153,6 +153,23 @@ function computeScales(){
   }}
 }
 
+// Trim the flat far-OTM strikes (tiny GEX) so the meaningful bars near spot are bigger.
+// Window = the index range that holds any strike with |GEX| >= 2% of the day's max,
+// plus the strike nearest each snapshot's spot, padded 1 each side. Stable across scrub.
+let _strikeWin = null;   // {lo, hi} into s.strikes, or null = show all
+function computeStrikeWindow(){
+  _strikeWin = null;
+  if(!S.length || !S[0] || !S[0].strikes || !S[0].strikes.length) return;
+  const N = S[0].strikes.length, gm = Math.max(gMax, 1), thr = 0.02;
+  let lo = N, hi = -1;
+  for(const s of S){ for(let i=0;i<s.strikes.length;i++){ if(Math.abs(s.strikes[i].gex)/gm >= thr){ if(i<lo)lo=i; if(i>hi)hi=i; } } }
+  if(hi < lo) return;                              // nothing significant → keep all
+  for(const s of S){ let bi=0,bd=Infinity; for(let i=0;i<s.strikes.length;i++){ const dd=Math.abs(s.strikes[i].k - s.spot); if(dd<bd){bd=dd;bi=i;} } if(bi<lo)lo=bi; if(bi>hi)hi=bi; }
+  lo = Math.max(0, lo-1); hi = Math.min(N-1, hi+1);
+  if(hi-lo+1 < N) _strikeWin = {lo, hi};          // only when it actually trims
+}
+function _visStrikes(s){ return _strikeWin ? s.strikes.slice(_strikeWin.lo, _strikeWin.hi+1) : s.strikes; }
+
 function draw(i){ return VIEW==='engine' ? drawEngine(i) : VIEW==='line' ? drawLine(i) : drawProfile(i); }
 
 // ---- engine view: candles (from per-minute spot) + moving GEX levels ----
@@ -257,8 +274,9 @@ function drawProfile(i){
   const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
   const zeroY = mT+ph*0.46;
   ctx.clearRect(0,0,W,H);
-  const ks = s.strikes.map(d=>d.k), n = ks.length, slot = pw/n;
-  _pLay = {mL, slot, n};   // for hover tooltip mapping
+  const strikes = _visStrikes(s);
+  const ks = strikes.map(d=>d.k), n = ks.length, slot = pw/n;
+  _pLay = {mL, slot, n, lo: _strikeWin?_strikeWin.lo:0};   // for hover tooltip mapping
   const xOf = idx => mL + slot*(idx+0.5);
   const lo = ks[0], hi = ks[n-1];
   const xk = k => mL + ((k-lo)/(hi-lo||1))*(pw-slot) + slot/2;
@@ -266,18 +284,18 @@ function drawProfile(i){
   const vBot = mT+ph, vTop = mT+6, vh = vBot-vTop;
   function area(key, fill, stroke){
     ctx.beginPath();
-    s.strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
     ctx.lineTo(xOf(n-1),vBot); ctx.lineTo(xOf(0),vBot); ctx.closePath();
     ctx.fillStyle=fill; ctx.fill();
     ctx.beginPath();
-    s.strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
+    strikes.forEach((d,idx)=>{const x=xOf(idx),y=vBot-(d[key]/vMax)*vh; idx?ctx.lineTo(x,y):ctx.moveTo(x,y);});
     ctx.strokeStyle=stroke; ctx.lineWidth=1; ctx.globalAlpha=.5; ctx.stroke(); ctx.globalAlpha=1;
   }
   area('vpe', css('--putA'), css('--spot'));
   area('vce', css('--callA'), '#58a6ff');
 
   const gUp = zeroY-mT-4, gDn = (mT+ph)-zeroY-4, bw = Math.min(slot*0.56,26);
-  s.strikes.forEach((d,idx)=>{
+  strikes.forEach((d,idx)=>{
     const x=xOf(idx), up=d.gex>=0, h=Math.abs(d.gex)/gMax*(up?gUp:gDn);
     ctx.fillStyle = up?css('--green'):css('--red');
     ctx.fillRect(x-bw/2, up?zeroY-h:zeroY, bw, h);
@@ -286,7 +304,7 @@ function drawProfile(i){
   ctx.beginPath(); ctx.moveTo(mL,zeroY); ctx.lineTo(mL+pw,zeroY); ctx.stroke();
 
   ctx.fillStyle=css('--mut'); ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
-  s.strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
+  strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
   ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
   ctx.fillStyle=css('--dim'); ctx.font='10px sans-serif'; ctx.textAlign='center';
   ctx.fillText(SRC==='lake'?'◄ PUT OI   ·   NET OI   ·   CALL OI ►':'◄ PUT GEX   ·   GEX   ·   CALL GEX ►',0,0); ctx.restore();
@@ -317,8 +335,9 @@ function drawLine(i){
   const mL=64,mR=58,mT=20,mB=42, pw=W-mL-mR, ph=H-mT-mB;
   const zeroY = mT+ph*0.5;
   ctx.clearRect(0,0,W,H);
-  const ks = s.strikes.map(d=>d.k), n = ks.length, slot = pw/n;
-  _pLay = {mL, slot, n};                                  // hover tooltip mapping (same as bars)
+  const strikes = _visStrikes(s);
+  const ks = strikes.map(d=>d.k), n = ks.length, slot = pw/n;
+  _pLay = {mL, slot, n, lo: _strikeWin?_strikeWin.lo:0};                                  // hover tooltip mapping (same as bars)
   const xOf = idx => mL + slot*(idx+0.5);
   const lo = ks[0], hi = ks[n-1];
   const xk = k => mL + ((k-lo)/(hi-lo||1))*(pw-slot) + slot/2;
@@ -327,7 +346,7 @@ function drawLine(i){
 
   function curveToZero(){                                 // closed path: curve + back along zero line
     ctx.beginPath();
-    s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+    strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
     ctx.lineTo(xOf(n-1),zeroY); ctx.lineTo(xOf(0),zeroY); ctx.closePath();
   }
   // green fill above zero (call-heavy), red fill below (put-heavy) — clip by side
@@ -340,15 +359,15 @@ function drawLine(i){
   ctx.beginPath(); ctx.moveTo(mL,zeroY); ctx.lineTo(mL+pw,zeroY); ctx.stroke();
   // the GEX curve
   ctx.beginPath();
-  s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
+  strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex); idx?ctx.lineTo(x,y):ctx.moveTo(x,y); });
   ctx.strokeStyle=css('--purple'); ctx.lineWidth=2; ctx.lineJoin='round'; ctx.stroke();
   // dot per strike (colour by sign)
-  s.strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex);
+  strikes.forEach((d,idx)=>{ const x=xOf(idx), y=gy(d.gex);
     ctx.fillStyle = d.gex>=0?css('--green'):css('--red');
     ctx.beginPath(); ctx.arc(x,y,2,0,7); ctx.fill(); });
   // strike labels + axis label
   ctx.fillStyle=css('--mut'); ctx.font='10px -apple-system,sans-serif'; ctx.textAlign='center';
-  s.strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
+  strikes.forEach((d,idx)=>{ if(idx%2)return; ctx.fillText(d.k, xOf(idx), H-14); });
   ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
   ctx.fillStyle=css('--dim'); ctx.font='10px sans-serif'; ctx.textAlign='center';
   ctx.fillText(SRC==='lake'?'◄ PUT OI   ·   NET OI   ·   CALL OI ►':'◄ PUT GEX   ·   NET GEX   ·   CALL GEX ►',0,0); ctx.restore();
@@ -497,7 +516,7 @@ cv.addEventListener('mousemove', e=>{
   const tip=$('tip'), s=S[cur];
   if((VIEW!=='profile' && VIEW!=='line') || !s || !_pLay){ tip.style.display='none'; return; }
   const rect=cv.getBoundingClientRect(), x=e.clientX-rect.left;
-  const idx=Math.round((x-_pLay.mL)/_pLay.slot - 0.5), st=s.strikes[idx];
+  const idx=Math.round((x-_pLay.mL)/_pLay.slot - 0.5), st=s.strikes[idx + (_pLay.lo||0)];
   if(idx<0 || idx>=_pLay.n || !st){ tip.style.display='none'; return; }
   const gcr=st.gex/1e7, sign=gcr>=0?'+':'-', a=Math.abs(gcr);
   tip.innerHTML='<div class="k">'+st.k.toFixed(0)+'</div>'
@@ -572,6 +591,7 @@ async function load(keepPos){
   applyView();   // relabel bars/legend/subtitle for the source (gamma-GEX vs OI)
   $('empty').style.display='none'; $('scrubRow').style.display='flex'; cv.style.display='block';
   computeScales();
+  computeStrikeWindow();
   computeEngine();
   $('rng').max = S.length-1;
   $('tDate').textContent = 'IST · '+(d.date||DATE).slice(5);

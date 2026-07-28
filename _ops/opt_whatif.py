@@ -276,6 +276,37 @@ def list_expiries(u, date):
     return [{"date": e, "monthly": e in monthly} for e in exps]
 
 
+def leg_prices_at(u, date, hm, legs, expiry=None):
+    """Per-leg REAL premium AT time `hm` on `date` (the BACKTEST price at that moment,
+    NOT the current live LTP) — for the What-If leg rows. Recent dates = collector
+    (instant); historical lake reconstruction is too slow for an inline lookup, so it
+    returns None there (the user Runs the backtest for those). {legs:[{ltp}], expiry}."""
+    u = u.upper()
+    try:
+        _, rows = _oc._load_rows(u, date)
+    except Exception:
+        rows = None
+    if not rows:
+        return None                                  # historical / not in collector → use Run
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if not exps:
+        return None
+    exp = expiry if (expiry and expiry in exps) else exps[0]
+    day = [r for r in rows if r.get("expiry") == exp]
+    out = []
+    for lg in legs:
+        cands = sorted((r for r in day if _f(r.get("strike")) == float(lg["strike"]) and r.get("opt_type") == lg["type"]),
+                       key=lambda r: r.get("datetime") or "")
+        px = None
+        for r in cands:
+            if (r.get("datetime") or "")[11:16] >= hm:
+                px = _f(r.get("ltp")); break
+        if px is None and cands:
+            px = _f(cands[-1].get("ltp"))            # after last snapshot → last known
+        out.append({"ltp": round(px, 2) if px is not None else None})
+    return {"legs": out, "expiry": exp}
+
+
 def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None):
     """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. `expiry` = a specific
     stored expiry (default nearest weekly). Returns full result."""
