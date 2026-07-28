@@ -9,6 +9,32 @@
     let activeCfgTab = 'ema';
     let currentModalTarget = null; // store the config key (e.g. ema_v1) being edited
 
+    // ── Auto-reload every 10 min ──────────────────────────────────────────────
+    // A long-lived dashboard slowly leaks browser memory and Chrome eventually
+    // crashes the tab ("Aw, Snap!"); a periodic reload clears it (same as opening a
+    // fresh tab). The active tab is remembered (localStorage 'activeMainTab'), so the
+    // reload lands back where you were. NEVER interrupts: if a modal / Quick-Order
+    // panel is open, or you're typing in a field, it defers and reloads the moment
+    // it's safe. Root memory-leak fix is separate (heap-snapshot pending).
+    (function _autoReloadDashboard() {
+      const EVERY = 10 * 60 * 1000;
+      let pending = false;
+      function _busy() {
+        const open = [].some.call(
+          document.querySelectorAll('.modal-overlay, #qo-panel, #run-modal-overlay'),
+          el => el && getComputedStyle(el).display !== 'none');
+        if (open) return true;
+        const a = document.activeElement;
+        return !!(a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName));
+      }
+      function _attempt() {
+        if (!pending) return;
+        if (!_busy()) { location.reload(); return; }
+        setTimeout(_attempt, 20000);   // busy → re-check in 20s, reload as soon as free
+      }
+      setInterval(() => { pending = true; _attempt(); }, EVERY);
+    })();
+
     function flash(msg, color = '#3fb950') {
       const f = document.getElementById('flash');
       f.style.color = color; f.innerText = msg;
