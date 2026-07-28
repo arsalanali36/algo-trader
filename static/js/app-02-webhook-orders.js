@@ -834,7 +834,17 @@
 
       window._pfData = d;
       window._pfZoom = { z: 1, c: null };    // #00 fresh zoom per group
-      window._pfExit = null;                  // #02 combined SL/target (set on first combined draw)
+      window._pfExit = null;                  // #02 combined SL/target — armed rule below, else default on draw
+      // Reopen fix: load the group's ARMED exit rule so its SL/Target lines show the
+      // SAVED values (earlier it always reset to a fresh default → looked like it
+      // "forgot"). Open group only (a closed group's rule auto-clears).
+      if (!d.closed) {
+        try {
+          const rr = await (await fetch('/api/position-exit-rule?' + qs)).json();
+          if (rr && rr.ok && rr.rule && (rr.rule.target_rs || rr.rule.sl_rs))
+            window._pfExit = { tgt: rr.rule.target_rs || 0, sl: rr.rule.sl_rs || 0 };
+        } catch (e) {}
+      }
       _pfSetHdrPnl(d.pnl_now_today != null ? d.pnl_now_today : d.pnl_now_expiry, d);  // immediate; refined by combined
       // Expiry vs exit-day: for a one-night / intraday structure the expiry
       // numbers are theoretical — it closes at today's square-off. Default to

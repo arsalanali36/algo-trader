@@ -3370,6 +3370,19 @@ def api_position_exit_rule_set():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/api/position-exit-rule', methods=['GET'])
+def api_position_exit_rule_get():
+    """Currently-armed combined-MTM auto-exit rule for a group — so the payoff
+    panel shows the SAVED target/SL on reopen (not a fresh default). Query:
+    ids= / group_id=. Returns {ok, rule} where rule is null if nothing armed."""
+    try:
+        import position_exit_rules as per
+        key, gid, ids, mode, rows, closed = _exit_rule_identity(request.args)
+        return jsonify({"ok": True, "rule": per.get_rule(key)})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/position-exit-rule', methods=['DELETE'])
 def api_position_exit_rule_clear():
     """Clear a group's armed auto-exit rule. Query: ids=… or group_id=…."""
@@ -4128,14 +4141,23 @@ def _strike_of(tsym):
         return None
 
 
-def _resolve_straddle_legs(symbol, spot, legs_spec):
+def _straddle_resolver(expiry):
+    """Contract resolver by expiry choice: 'nextmonth' → next-month monthly
+    (get_next_monthly_option_contract), else nearest (weekly/near). Same ATM±offset
+    signature (symbol, spot, opt_type, offset)."""
+    import dhan_master
+    return dhan_master.get_next_monthly_option_contract if str(expiry) == "nextmonth" else dhan_master.get_option_contract
+
+
+def _resolve_straddle_legs(symbol, spot, legs_spec, expiry="near"):
     """Resolve a UI leg spec → concrete contracts. Each spec leg:
         {side: SELL|BUY, opt_type: CE|PE, offset: int>=0 (OTM strikes from ATM)}
     `offset` is ALWAYS a non-negative OTM magnitude — dhan_master.get_option_contract
     handles direction per opt_type (CE up, PE down); we NEVER pass a negative PE
-    offset (TRAP #140 / architecture_audit PE-OFFSET-SIGN). Returns (legs, err),
+    offset (TRAP #140 / architecture_audit PE-OFFSET-SIGN). `expiry`='near' (weekly)
+    or 'nextmonth' (next monthly). Returns (legs, err),
     legs = [{opt_type, side, offset, sec_id, trad_sym, lot}]  err=None on success."""
-    import dhan_master
+    _resolve = _straddle_resolver(expiry)
     out, lot0 = [], None
     for sp in (legs_spec or []):
         side = str(sp.get("side", "")).upper()
@@ -4143,7 +4165,7 @@ def _resolve_straddle_legs(symbol, spot, legs_spec):
         off = abs(int(sp.get("offset", 0)))   # OTM magnitude — never negative (pe-offset-ok: magnitude only)
         if side not in ("SELL", "BUY") or ot not in ("CE", "PE"):
             return None, f"bad leg {side}/{ot}"
-        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, ot, off)
+        sec, tsym, lot = _resolve(symbol, spot, ot, off)
         if not sec:
             return None, f"{ot} {'+' if ot == 'CE' else '-'}{off} contract resolve fail"
         if lot:
@@ -4174,11 +4196,12 @@ def _straddle_lltp(sec):
         return None
 
 
-def _straddle_preview(symbol, lots, spec, quick=False):
+def _straddle_preview(symbol, lots, spec, quick=False, expiry="near"):
     """Read-only preview for the leg-window: per-leg strike/LTP + net credit +
     real hedged basket margin. NO order placed. Returns a dict for jsonify.
     quick=True skips the slow Kite basket-margin call (net+LTP stay snappy on
-    every +/- ; the UI trails a full preview once the user stops adjusting)."""
+    every +/- ; the UI trails a full preview once the user stops adjusting).
+    expiry='near' (weekly) or 'nextmonth' (next monthly)."""
     import risk_gate as rg
     symbol = str(symbol).upper()
     lots = max(1, int(lots or 1))
@@ -4197,17 +4220,17 @@ def _straddle_preview(symbol, lots, spec, quick=False):
             spot = None
     if not spot or spot <= 0:
         return {"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"}
-    legs, err = _resolve_straddle_legs(symbol, spot, spec)
+    legs, err = _resolve_straddle_legs(symbol, spot, spec, expiry=expiry)
     if err:
         return {"ok": False, "msg": err}
     # ATM strike + strike-step (from scrip master, NOT hardcoded) so the UI can
     # compute any wing's strike client-side instantly on +/- — even off-market
-    # when live LTP won't refresh. Two cheap local get_option_contract lookups.
+    # when live LTP won't refresh. Uses the SAME expiry's contracts as the legs.
     atm_strike = step = None
     try:
-        import dhan_master as _dm
-        atm_strike = _strike_of(_dm.get_option_contract(symbol, spot, "CE", 0)[1])
-        _s1 = _strike_of(_dm.get_option_contract(symbol, spot, "CE", 1)[1])
+        _res = _straddle_resolver(expiry)
+        atm_strike = _strike_of(_res(symbol, spot, "CE", 0)[1])
+        _s1 = _strike_of(_res(symbol, spot, "CE", 1)[1])
         if atm_strike and _s1:
             step = abs(_s1 - atm_strike)
     except Exception:
@@ -4268,13 +4291,13 @@ def _straddle_preview(symbol, lots, spec, quick=False):
             "margin_lot": (round(margin / lots) if margin else None)}
 
 
-def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=print):
+def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=print, expiry="near"):
     """User-picked flexible multi-leg (the leg-window). Same safety spine as the
     legacy hedge path: resolve ALL legs up front, gate the WHOLE basket ONCE
     (RMS + hedged basket-margin), place BUY legs FIRST (margin already reduced)
     then SELL legs, and UNWIND everything on any mid-way failure (never leave an
     untracked/naked leg). Exit is monitored on the NET combined premium of the
-    whole structure (net_exit=True). PAPER. Returns (ok, msg)."""
+    whole structure (net_exit=True). PAPER. `expiry`='near'|'nextmonth'. Returns (ok, msg)."""
     import execution_gateway as gw
     import auto_straddle as ast
     import risk_gate as rg
@@ -4283,7 +4306,7 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
     except Exception:
         ltp_poller = None
     mode = "paper"
-    legs, err = _resolve_straddle_legs(symbol, spot, legs_spec)
+    legs, err = _resolve_straddle_legs(symbol, spot, legs_spec, expiry=expiry)
     if err:
         return False, f"legs resolve fail — {err}"
     lot = int(legs[0]["lot"] or 0)
@@ -4385,7 +4408,7 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
     return True, f"[PAPER] {symbol} {len(out_legs)}-leg placed @ net {entry_net:.0f} ({_kind})"
 
 
-def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec=None):
+def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec=None, expiry="near"):
     """HEDGE-FIRST short straddle. Order of operations (the fix for the 2026-07-24
     naked-orphan storm):
       1. resolve ATM CE/PE (the SELL legs) + BOTH OTM hedge wings up front;
@@ -4440,7 +4463,7 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec
     #    wings by offset, any combo). Resolves+places THOSE legs and returns; the
     #    legacy premium-pick hedge path below is only for legs_spec=None. ──
     if legs_spec:
-        return _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=log)
+        return _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log=log, expiry=expiry)
     sec_ce, t_ce, lot = dhan_master.get_option_contract(symbol, spot, "CE", 0)
     sec_pe, t_pe, _lot2 = dhan_master.get_option_contract(symbol, spot, "PE", 0)
     if not sec_ce or not sec_pe:
@@ -4819,8 +4842,9 @@ def api_auto_straddle_fire():
         tp = float(d.get("tp_pt", 30) or 30)
         sl = float(d.get("sl_pt", 30) or 30)
         legs = d.get("legs") or None   # flexible leg-window spec (None = legacy ATM+hedge)
+        expiry = "nextmonth" if str(d.get("expiry")) == "nextmonth" else "near"
         ok, msg = _fire_auto_straddle(sym, lots, tp, sl, "manual",
-                                      log=lambda m: print(m, flush=True), legs_spec=legs)
+                                      log=lambda m: print(m, flush=True), legs_spec=legs, expiry=expiry)
         return jsonify({"ok": ok, "msg": msg})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -4832,8 +4856,9 @@ def api_auto_straddle_preview():
     net credit + real hedged basket margin. Read-only — NO order placed."""
     try:
         d = request.get_json(force=True) or {}
+        _exp = "nextmonth" if str(d.get("expiry")) == "nextmonth" else "near"
         return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1),
-                                         d.get("legs") or [], quick=bool(d.get("quick"))))
+                                         d.get("legs") or [], quick=bool(d.get("quick")), expiry=_exp))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

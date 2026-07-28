@@ -53,7 +53,7 @@ window.fetch=function(url,opts){
     : u.indexOf('position-payoff-margin')>=0 ? MOCK_MARGIN
     : u.indexOf('position-payoff')>=0 ? (isClosed?MOCK_CLOSED:MOCK_PAYOFF)
     : u.indexOf('position-legs-series')>=0 ? MOCK_SERIES
-    : u.indexOf('position-exit-rule')>=0 ? {ok:true, msg:'armed'}
+    : u.indexOf('position-exit-rule')>=0 ? {ok:true, rule:{target_rs:6000, sl_rs:-4000, mode:'paper'}, msg:'armed'}
     : {ok:false,msg:'no stub'};
   return Promise.resolve({ json:function(){return Promise.resolve(data);} });
 };
@@ -83,6 +83,9 @@ setTimeout(function(){
       chk.push('Charts tab has #pfLegSlot: '+!!document.querySelector('#pfTabBody2 #pfLegSlot'));
       chk.push('SL/Tgt bands (default tab): '+document.querySelectorAll('#pfComb rect[data-lv]').length);
       chk.push('apply disabled(open): '+!!document.getElementById('pfExApply').disabled);
+      // reopen fix: armed rule (tgt 6000 / sl -4000) loaded into _pfExit, not a default
+      chk.push('[REOPEN] armed rule loaded tgt=6000: '+(window._pfExit && window._pfExit.tgt===6000));
+      chk.push('armed rule loaded sl=-4000: '+(window._pfExit && window._pfExit.sl===-4000));
       // ---- switch to Payoff tab ----
       try{ _pfTab(1); }catch(e){chk.push('TAB1 ERR:'+e.message);}
       chk.push('after _pfTab(1): body1 visible + body0 hidden: '+(vis('pfTabBody1')&&!vis('pfTabBody0')));

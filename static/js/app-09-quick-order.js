@@ -127,6 +127,13 @@
 </div>
 <div id="qo-straddle-block" style="display:none">
   <div style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">STRADDLE / MULTI-LEG (paper) &middot; target/SL = combined NET credit</div>
+  <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+    <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.5px">EXPIRY</span>
+    <select id="qo-strad-expiry" onchange="qoStradExpiry()" style="flex:1;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:6px 8px;font-size:12px;cursor:pointer;outline:none">
+      <option value="near">Near (weekly / current)</option>
+      <option value="nextmonth">Next month (monthly)</option>
+    </select>
+  </div>
   <div style="display:flex;gap:8px;margin-bottom:10px">
     <div style="flex:1"><div style="font-size:9px;color:#6e7681;margin-bottom:4px">LOTS</div><input id="qo-strad-lots" type="number" value="1" min="1" onchange="qoStradCfgSave();qoStradPreview()" style="width:100%;background:#0d1117;border:1px solid #30363d;border-radius:6px;color:#e6edf3;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
     <div style="flex:1"><div style="font-size:9px;color:#3fb950;margin-bottom:4px">TARGET (pt)</div><input id="qo-strad-tp" type="number" value="30" step="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #1a7f37;border-radius:6px;color:#3fb950;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
@@ -538,6 +545,7 @@
       // OTM offset. Preview shows per-leg LTP + net credit + real hedged margin.
       window.qoStradState = {
         sym: true,
+        expiry: 'near',          // 'near' (weekly/current) | 'nextmonth' (monthly)
         atm: null, step: null,   // from last preview (scrip master) — strike computed client-side
         legs: [
           { key: 'ceS', side: 'SELL', ot: 'CE', off: 0, on: true },
@@ -619,6 +627,14 @@
         if (S.sym) { const c = _qsLeg('ceB'), p = _qsLeg('peB'); if (c && p) p.off = c.off; }
         qoStradRenderLegs(); qoStradPreviewNow();
       };
+      // Expiry: near (weekly) vs next-month (monthly). Next-month contracts differ →
+      // clear ATM/step/LTP cache so strikes+premiums re-resolve for that expiry.
+      window.qoStradExpiry = () => {
+        const S = window.qoStradState;
+        S.expiry = document.getElementById('qo-strad-expiry')?.value || 'near';
+        S.atm = null; S.step = null; S.prev = {};
+        qoStradRenderLegs(); qoStradPreview();
+      };
       // Snap SELL legs back to ATM (off 0) — the "auto ATM" button.
       window.qoStradAtmReset = () => {
         window.qoStradState.legs.forEach(l => { if (l.side === 'SELL') l.off = 0; });
@@ -658,7 +674,7 @@
         const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
         if (quick && mar && mar.textContent !== '—' && mar.textContent !== '') mar.innerHTML = '<span style="color:#6e7681">…</span>';   // margin recomputing
         try {
-          const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec, quick: !!quick }) })).json();
+          const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec, quick: !!quick, expiry: window.qoStradState.expiry }) })).json();
           if (tok !== window._qsTok) return;   // stale — a newer preview already fired
           if (d.ok) {
             if (d.atm != null) window.qoStradState.atm = d.atm;
@@ -695,7 +711,7 @@
         if (!confirm(`${sym} ${spec.length}-leg — ${lots} lot\n${desc}\ntarget −${tp} / SL +${sl} (paper)?`)) return;
         if (st) { st.textContent = 'legs place ho rahe…'; st.style.color = '#d29922'; }
         try {
-          const d = await (await fetch('/api/auto-straddle/fire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, tp_pt: tp, sl_pt: sl, legs: spec }) })).json();
+          const d = await (await fetch('/api/auto-straddle/fire', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, tp_pt: tp, sl_pt: sl, legs: spec, expiry: window.qoStradState.expiry }) })).json();
           if (st) { st.textContent = d.msg || (d.ok ? 'placed' : 'fail'); st.style.color = d.ok ? '#3fb950' : '#f85149'; }
           qoRefreshStraddles();
         } catch (e) { if (st) { st.textContent = 'fail: ' + e; st.style.color = '#f85149'; } }
