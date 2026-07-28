@@ -5115,6 +5115,40 @@ def api_chain_fire_basket():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/intervention')
+def intervention_page():
+    """Manual Intervention Report — 'agar haath se cut na karte to kya hota'."""
+    return render_template('intervention.html')
+
+
+@app.route('/api/intervention')
+def api_intervention():
+    """Counterfactual for the day's manually-cut positions (display-only)."""
+    try:
+        import intervention_report as ir
+        date = request.args.get('date') or None
+        mode = request.args.get('mode')
+        mode = mode if mode in ('live', 'paper') else None
+        res = ir.analyze(date, mode)
+        res['trend'] = ir.trend(8, mode)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/intervention/rerun', methods=['POST'])
+def api_intervention_rerun():
+    """Recompute + persist today's (or a given date's) intervention report."""
+    try:
+        import intervention_report as ir
+        d = request.get_json(silent=True) or {}
+        res = ir.build_and_store(d.get('date') or None)
+        res['trend'] = ir.trend(8)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/option-expiries')
 def api_option_expiries():
     """Listed option expiries (weeklies + monthlies, >= today) for a symbol, so the

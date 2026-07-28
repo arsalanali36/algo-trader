@@ -1,0 +1,451 @@
+"""
+intervention_report.py — "manual cut" counterfactual: for each position the USER
+closed by hand, what would the STRATEGY's own exit have given? Quantifies whether
+manual intervention was net + or − for the day (live AND paper).
+
+DISPLAY-ONLY. Reads order_store + the captured 1-min premium bars (data/trade_ohlc/)
++ the equity candle lake for the RSI-midline replay. Touches NO order/risk path.
+
+A "manual cut" = an exit leg the STRATEGY did not decide:
+  - source == 'manual', or tags include MANUAL_EXIT_BROKER / MANUAL_CLOSE
+  - status externally_closed (broker showed flat — user closed on Kite)
+  - a broker-mirror exit (source broker_reconcile/broker_sync, BROKER_MIRROR) with
+    no strategy-exit tag — the app didn't place it → external = manual
+Strategy exits (RSI_MIDLINE_EXIT / SL_HIT / *_TARGET / *_SQUAREOFF / GROUP_* /
+ATR_TRAILING / DEFAULT_TSL_* / EXPIRY_*) are NOT cuts.
+
+Counterfactual per cut = the strategy's own exit, priced on the option's REAL
+1-min premium bars:
+  - RSI strategies (rsi_v1*): RSI-50 midline on the underlying's 2m candles
+    (equity lake; falls back to the SL/TP/EOD bound + label if candles unavailable).
+  - everything else: the trade's own RMS SL/target (from its entry tags) + 3:15 EOD
+    + expiry-worthless — whichever fires first.
+
+impact = actual − counterfactual  (per cut). >0 = your cut HELPED (you did better
+than the strategy would have); <0 = your cut HURT.
+"""
+import os
+import sys
+import json
+import csv
+import datetime
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT = os.path.dirname(HERE)
+if PROJECT not in sys.path:
+    sys.path.insert(0, PROJECT)
+
+STORE_DIR = os.path.join(PROJECT, "data", "intervention")
+
+_STRAT_EXIT = ("RSI_MIDLINE_EXIT", "SL_HIT", "EOD_315_SQUAREOFF", "EOD_SQUAREOFF",
+               "ATR_TRAILING", "GROUP_SL", "GROUP_TARGET", "DEFAULT_TSL",
+               "EXPIRY_", "_TARGET", "STRADDLE_TARGET", "STRADDLE_SL", "RMS_")
+_MANUAL_TAG = ("MANUAL_EXIT_BROKER", "MANUAL_CLOSE")
+
+
+def _f(x):
+    try:
+        return float(x)
+    except (TypeError, ValueError):
+        return None
+
+
+def _ist_today():
+    return (datetime.datetime.now(datetime.timezone.utc)
+            + datetime.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+
+
+def _rows_for(date, mode=None):
+    """Raw order rows for a date (NO dead-filter — we WANT externally_closed cuts)."""
+    import sqlite3
+    db = os.path.join(PROJECT, "data", "trades.db")
+    if not os.path.exists(db):
+        return []
+    c = sqlite3.connect(db)
+    c.row_factory = sqlite3.Row
+    q = "SELECT id,ts,strategy,mode,source,side,symbol,trad_sym,sec_id,qty,price,status,tags FROM orders WHERE date=?"
+    args = [date]
+    if mode in ("live", "paper"):
+        q += " AND mode=?"
+        args.append(mode)
+    out = [dict(r) for r in c.execute(q + " ORDER BY id", args)]
+    c.close()
+    return out
+
+
+def _tags(r):
+    try:
+        t = json.loads(r.get("tags") or "[]")
+        return t if isinstance(t, list) else []
+    except Exception:
+        return []
+
+
+def _is_entry(r):
+    """Opening leg = carries the entry SL/target stamp (SL_TYPE/SL_VAL) or an
+    entry marker. Exits carry an exit reason instead."""
+    t = " ".join(_tags(r))
+    return ("SL_TYPE" in t or "SL_VAL" in t) and not any(x in t for x in _MANUAL_TAG)
+
+
+def _classify_exit(exit_row, entry_row):
+    """('cut'|'strategy'|'unknown', reason_label)."""
+    t = _tags(exit_row)
+    tj = " ".join(t)
+    src = str(exit_row.get("source") or "")
+    st = str(exit_row.get("status") or "").lower()
+    if any(m in tj for m in _MANUAL_TAG) or src == "manual":
+        return "cut", "manual close"
+    if any(s in tj for s in _STRAT_EXIT):
+        # a genuine strategy exit reason present → strategy, even if broker-mirrored
+        return "strategy", next((s for s in _STRAT_EXIT if s in tj), "strategy")
+    if st == "externally_closed" or str(entry_row.get("status") or "").lower() == "externally_closed":
+        return "cut", "external close (broker flat)"
+    if src in ("broker_reconcile", "broker_sync") or "BROKER_MIRROR" in tj:
+        return "cut", "external close (broker mirror)"
+    return "unknown", "unknown exit"
+
+
+def _pairs(rows):
+    """FIFO-pair opposite legs per (strategy, sec_id). Returns list of
+    {entry, exit, strategy, sec_id, symbol}. Handles BUY-open (RSI) and SELL-open
+    (range/straddle). Legs with side 'BUY'/'SELL' only."""
+    from collections import defaultdict
+    byk = defaultdict(list)
+    for r in rows:
+        if r.get("side") in ("BUY", "SELL"):
+            byk[(r.get("strategy"), str(r.get("sec_id")))].append(r)
+    pairs = []
+    for (strat, sid), legs in byk.items():
+        legs.sort(key=lambda x: x["id"])
+        # entry = first leg that looks like an opening leg; else first leg
+        opens = [l for l in legs if _is_entry(l)]
+        entry = opens[0] if opens else legs[0]
+        # exit = first opposite-side leg after the entry
+        ex = next((l for l in legs if l["id"] > entry["id"] and l["side"] != entry["side"]), None)
+        if ex is None:
+            continue
+        pairs.append({"entry": entry, "exit": ex, "strategy": strat,
+                      "sec_id": sid, "symbol": entry.get("symbol")})
+    return pairs
+
+
+# All epochs are normalised to IST-as-UTC (utcfromtimestamp → IST wall-clock), the
+# same convention the OptionChain lake / entry timestamps use. trade_ohlc is stored
+# in REAL UTC (Dhan intraday), so add the IST offset; the lake is already IST-as-UTC.
+_IST = 19800  # 5h30m
+
+
+# ── premium bars + lot ───────────────────────────────────────────────────────
+def _bars(sec_id, date):
+    p = os.path.join(PROJECT, "data", "trade_ohlc", f"{sec_id}_{date}.json")
+    if not os.path.exists(p):
+        return []
+    try:
+        d = json.load(open(p))
+    except Exception:
+        return []
+    out = []
+    for k in sorted(d.keys(), key=lambda x: int(x)):
+        v = d[k]
+        vals = v if isinstance(v, list) else [v.get("open"), v.get("high"), v.get("low"), v.get("close")]
+        try:
+            out.append((int(k) + _IST, float(vals[1]), float(vals[2]), float(vals[3])))  # real-UTC → IST-as-UTC
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _lake_bars(symbol, trad_sym, date):
+    """Premium bars for a NIFTY/BANKNIFTY option from the OptionChain lake
+    (option_curves) when data/trade_ohlc/ didn't capture it (index options live in
+    the chain lake, not always in trade_ohlc). Parses strike+CE/PE from trad_sym."""
+    su = str(symbol or "").upper()
+    if su not in ("NIFTY", "BANKNIFTY"):
+        return []
+    ts = str(trad_sym or "")
+    if not (ts.endswith("CE") or ts.endswith("PE")):
+        return []
+    ot = ts[-2:]
+    try:
+        strike = int(float(ts.split("-")[-2]))
+    except Exception:
+        return []
+    try:
+        import option_curves as oc
+        r = oc.strike_series(su, date, None, strike, ot)   # expiry=None → day's nearest
+        out = []
+        for p in (r.get("points") or []):
+            v = _f(p.get("ltp"))
+            ep = p.get("t")
+            if v is not None and ep is not None:
+                out.append((int(ep), v, v, v))   # per-minute ltp as high/low/close
+        return out
+    except Exception:
+        return []
+
+
+def _lot(sec_id):
+    try:
+        import dhan_master as dm
+        return int(float(dm.get_lot_size_by_sec_id(str(sec_id)) or 0))
+    except Exception:
+        return 0
+
+
+def _hm(ep):
+    return datetime.datetime.utcfromtimestamp(ep).strftime("%H:%M")
+
+
+# ── RSI-midline exit (underlying) ────────────────────────────────────────────
+def _equity_candles_2m(symbol, date):
+    """Underlying 2-min close series (list of (dt_naive_IST, close)). Lake first
+    (post-close, no Dhan call); falls back to a single Dhan intraday fetch (display
+    engine, rate-limited, best-effort) so the RSI-midline replay works for an
+    on-demand run before the lake is filled. None if both fail."""
+    import pandas as pd
+    for base in (os.path.join(os.path.dirname(PROJECT), "._TRADING DATA", "Equity", symbol),
+                 os.path.join(PROJECT, "_TRADING_DATA", "Equity", symbol)):
+        p = os.path.join(base, f"{symbol}_{date}.csv")
+        if os.path.exists(p):
+            try:
+                df = pd.read_csv(p)
+                tcol = next((c for c in df.columns if c.lower() in ("datetime", "date", "timestamp", "time")), None)
+                ccol = next((c for c in df.columns if c.lower() == "close"), None)
+                if tcol and ccol:
+                    df["dt"] = pd.to_datetime(df[tcol])
+                    s = df.set_index("dt")[ccol].resample("2min").last().dropna()
+                    if len(s):
+                        return list(s.items())
+            except Exception:
+                pass
+    return _fetch_equity_2m(symbol, date)
+
+
+def _fetch_equity_2m(symbol, date):
+    """One Dhan intraday call → 2-min close series (IST index). Best-effort fallback
+    for _equity_candles_2m. Display-only, rate-limited. None on any failure."""
+    try:
+        import pandas as pd, requests, dhan_master as dm
+        cfgp = os.path.join(PROJECT, "data", "config.json")
+        cfg = json.load(open(cfgp))
+        token = cfg.get("jwt_token") or cfg.get("access_token")
+        cid = str(cfg.get("client_id") or cfg.get("dhanClientId") or "")
+        if not token:
+            return None
+        sid = dm.get_equity_info(symbol)[0]
+        try:
+            import dhan_rate_limiter as _drl
+            _drl.set_context("Intervention:Candles")
+            _drl.acquire("candle", timeout=3.0)
+        except Exception:
+            pass
+        b = {"securityId": str(sid), "exchangeSegment": "NSE_EQ", "instrument": "EQUITY",
+             "interval": "1", "fromDate": date, "toDate": date}
+        r = requests.post("https://api.dhan.co/v2/charts/intraday", json=b,
+                          headers={"access-token": token, "client-id": cid,
+                                   "Content-Type": "application/json"}, timeout=8)
+        d = r.json()
+        if "timestamp" not in d:
+            return None
+        df = pd.DataFrame({"t": d["timestamp"], "c": d["close"]})
+        df["dt"] = pd.to_datetime(df["t"], unit="s") + pd.Timedelta(hours=5, minutes=30)
+        s = df.set_index("dt")["c"].resample("2min").last().dropna()
+        return list(s.items()) if len(s) else None
+    except Exception:
+        return None
+
+
+def _midline_exit_time(symbol, entry_ts, pos, date, exit_level=50, period=14):
+    """First 2m bar AFTER entry where RSI crosses the exit level (pos +1 long CE:
+    RSI>=50; pos -1 short PE: RSI<=50). Returns (exit_dt_epoch, 'RSI50') or None
+    if candles unavailable / no cross."""
+    ser = _equity_candles_2m(symbol, date)
+    if not ser:
+        return None
+    try:
+        import pandas as pd
+        from _CHARTING.indicators import wilder_rsi
+        idx = [t for t, _ in ser]
+        close = pd.Series([c for _, c in ser], index=idx)
+        rsi = wilder_rsi(close, period)
+        ent = pd.to_datetime(entry_ts[:19])
+        for t, rv in rsi.items():
+            if t < ent or pd.isna(rv):
+                continue
+            if (pos == 1 and rv >= exit_level) or (pos == -1 and rv <= exit_level):
+                ep = int(t.replace(tzinfo=datetime.timezone.utc).timestamp())
+                return ep, "RSI50"
+    except Exception:
+        return None
+    return None
+
+
+def _price_at(bars, target_ep):
+    if not bars:
+        return None
+    best, bd = None, 1e18
+    for ep, h, l, cl in bars:
+        if abs(ep - target_ep) < bd:
+            bd, best = abs(ep - target_ep), cl
+    return best
+
+
+# ── counterfactual for one cut ───────────────────────────────────────────────
+def _sl_tp_from_tags(entry_row, lot):
+    """(sl_pts, tp_pts) premium-point bounds from the entry's RMS tags (per-lot ₹).
+    None if not set."""
+    t = _tags(entry_row)
+    sl_val = tp_val = None
+    for x in t:
+        if x.startswith("SL_VAL:"):
+            sl_val = _f(x.split(":", 1)[1])
+        elif x.startswith("TP_VAL:"):
+            tp_val = _f(x.split(":", 1)[1])
+    sl_pts = (sl_val / lot) if (sl_val and lot) else None
+    tp_pts = (tp_val / lot) if (tp_val and lot) else None
+    return sl_pts, tp_pts
+
+
+def _counterfactual(pair, date):
+    """Return {cf_price, cf_pnl, method, exit_hm} or method='no-data'."""
+    e, x = pair["entry"], pair["exit"]
+    side = e["side"]                          # BUY-open (long) or SELL-open (short)
+    entry = _f(e["price"]) or 0.0
+    qty = int(e["qty"] or 0)
+    sid = pair["sec_id"]
+    strat = str(pair["strategy"] or "")
+    bars = _bars(sid, date) or _lake_bars(pair.get("symbol"), e.get("trad_sym"), date)
+    if not bars:
+        return {"method": "no-data"}
+    lot = _lot(sid)
+    ent_ep = int(datetime.datetime.strptime(e["ts"][:19], "%Y-%m-%d %H:%M:%S")
+                 .replace(tzinfo=datetime.timezone.utc).timestamp())
+    after = [b for b in bars if b[0] >= ent_ep - 60]
+    if not after:
+        return {"method": "no-data"}
+    sl_pts, tp_pts = _sl_tp_from_tags(e, lot)
+
+    # RSI-midline (rsi strategies) — the strategy's PRIMARY exit
+    rsi_exit = None
+    if strat.lower().startswith("rsi") and pair.get("symbol"):
+        pos = 1 if str(e["trad_sym"]).endswith("CE") else -1
+        rsi_exit = _midline_exit_time(pair["symbol"], e["ts"], pos, date)
+
+    exit_ep = exit_px = None
+    method = ""
+    for (ep, h, l, cl) in after:
+        # SL/TP bounds (from entry tags). long: SL=price falls; short: SL=price rises.
+        if side == "BUY":
+            if sl_pts and l <= entry - sl_pts:
+                exit_ep, exit_px, method = ep, entry - sl_pts, "RMS SL"; break
+            if tp_pts and h >= entry + tp_pts:
+                exit_ep, exit_px, method = ep, entry + tp_pts, "RMS target"; break
+        else:
+            if sl_pts and h >= entry + sl_pts:
+                exit_ep, exit_px, method = ep, entry + sl_pts, "RMS SL"; break
+            if tp_pts and l <= entry - tp_pts:
+                exit_ep, exit_px, method = ep, entry - tp_pts, "RMS target"; break
+        # RSI-midline (if it fires at/after this bar and before SL/TP)
+        if rsi_exit and ep >= rsi_exit[0]:
+            exit_ep, exit_px, method = ep, cl, "RSI-50 midline"; break
+        if _hm(ep) >= "15:15":
+            exit_ep, exit_px, method = ep, cl, "3:15 EOD"; break
+    if exit_px is None:
+        exit_ep, exit_px, method = after[-1][0], after[-1][3], "EOD / last"
+        if rsi_exit is None and strat.lower().startswith("rsi"):
+            method = "EOD (RSI candles pending)"
+    pnl = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
+    return {"cf_price": round(exit_px, 2), "cf_pnl": round(pnl),
+            "method": method, "exit_hm": _hm(exit_ep)}
+
+
+def _actual_pnl(pair):
+    e, x = pair["entry"], pair["exit"]
+    entry = _f(e["price"]) or 0.0
+    ex = _f(x["price"]) or 0.0
+    qty = int(e["qty"] or 0)
+    return round((ex - entry) * qty if e["side"] == "BUY" else (entry - ex) * qty)
+
+
+# ── main analysis ────────────────────────────────────────────────────────────
+def analyze(date=None, mode=None):
+    """{ok, date, mode, cuts:[...], strategy_exits:[...], net_impact, helped, hurt,
+        day_actual, if_never_cut, n_cut}."""
+    date = date or _ist_today()
+    rows = _rows_for(date, mode)
+    pairs = _pairs(rows)
+    cuts, strat_exits, day_actual = [], [], 0
+    for p in pairs:
+        act = _actual_pnl(p)
+        day_actual += act
+        kind, reason = _classify_exit(p["exit"], p["entry"])
+        base = {
+            "strategy": p["strategy"], "symbol": p["symbol"],
+            "instrument": str(p["entry"].get("trad_sym") or ""),
+            "mode": p["entry"].get("mode"),
+            "entry_price": _f(p["entry"]["price"]), "entry_hm": (p["entry"]["ts"] or "")[11:16],
+            "exit_price": _f(p["exit"]["price"]), "exit_hm": (p["exit"]["ts"] or "")[11:16],
+            "qty": int(p["entry"].get("qty") or 0), "side": p["entry"].get("side"),
+            "actual_pnl": act, "exit_reason": reason,
+        }
+        if kind == "cut":
+            cf = _counterfactual(p, date)
+            base.update({"cf_pnl": cf.get("cf_pnl"), "cf_price": cf.get("cf_price"),
+                         "cf_method": cf.get("method"), "cf_exit_hm": cf.get("exit_hm")})
+            base["impact"] = (act - cf["cf_pnl"]) if cf.get("cf_pnl") is not None else None
+            cuts.append(base)
+        elif kind == "strategy":
+            strat_exits.append(base)
+        # 'unknown' → skip (neither list) to avoid guessing
+    scored = [c for c in cuts if c.get("impact") is not None]
+    net = sum(c["impact"] for c in scored)
+    helped = [c for c in scored if c["impact"] > 0]
+    hurt = [c for c in scored if c["impact"] < 0]
+    return {
+        "ok": True, "date": date, "mode": mode or "all",
+        "cuts": cuts, "strategy_exits": strat_exits,
+        "n_cut": len(cuts), "n_scored": len(scored),
+        "net_impact": round(net),
+        "helped_n": len(helped), "helped_sum": round(sum(c["impact"] for c in helped)),
+        "hurt_n": len(hurt), "hurt_sum": round(sum(c["impact"] for c in hurt)),
+        "day_actual": round(day_actual),
+        "if_never_cut": round(day_actual - net),
+    }
+
+
+def build_and_store(date=None, mode=None):
+    """Compute + persist data/intervention/<date>.json (for the EOD timer + trend)."""
+    date = date or _ist_today()
+    res = analyze(date, mode)
+    os.makedirs(STORE_DIR, exist_ok=True)
+    with open(os.path.join(STORE_DIR, f"{date}.json"), "w") as f:
+        json.dump(res, f, indent=1)
+    return res
+
+
+def trend(n=8, mode=None):
+    """Last n stored days' net_impact (for the report's trend strip)."""
+    if not os.path.isdir(STORE_DIR):
+        return []
+    files = sorted(f for f in os.listdir(STORE_DIR) if f.endswith(".json"))[-int(n):]
+    out = []
+    for f in files:
+        try:
+            d = json.load(open(os.path.join(STORE_DIR, f)))
+            out.append({"date": f[:-5], "net_impact": d.get("net_impact", 0),
+                        "n_cut": d.get("n_cut", 0)})
+        except Exception:
+            continue
+    return out
+
+
+if __name__ == "__main__":
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--date")
+    ap.add_argument("--mode", choices=["live", "paper"])
+    ap.add_argument("--store", action="store_true")
+    a = ap.parse_args()
+    r = (build_and_store if a.store else analyze)(a.date, a.mode)
+    print(json.dumps(r, indent=1, default=str))

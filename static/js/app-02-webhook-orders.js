@@ -1860,3 +1860,27 @@
 
     // ── 📄 Export Completed Trades → PDF report ──────────────────────────────────
     // Data se banata hai (DOM scrape nahi) taaki actions/sort-arrows/expand-arrows
+
+    // ── 🖐 Manual-intervention summary card (Orders tab top) ─────────────────────
+    // Fills #iv-card with today's live intervention net (agar haath se cut na karte
+    // to kya hota). Display-only; links to /intervention. Reads /api/intervention.
+    (function () {
+      function paint() {
+        if (document.hidden) return;
+        var card = document.getElementById('iv-card');
+        if (!card) return;
+        fetch('/api/intervention?mode=live').then(function (r) { return r.json(); }).then(function (R) {
+          var t = document.getElementById('iv-card-txt');
+          if (!R || R.ok === false || !R.n_cut) { card.style.display = 'none'; return; }
+          card.style.display = 'flex';
+          var net = R.net_impact || 0;
+          var col = net > 0 ? '#3fb950' : (net < 0 ? '#f85149' : '#8b949e');
+          var word = net > 0 ? 'faayda' : (net < 0 ? 'nuksan' : 'neutral');
+          var inr = function (n) { n = Math.round(n || 0); return (n < 0 ? '−₹' : '+₹') + Math.abs(n).toLocaleString('en-IN'); };
+          if (t) t.innerHTML = R.n_cut + ' cut · impact <b style="color:' + col + '">' + inr(net) + '</b> (' + word + ') · '
+            + R.helped_n + ' helped, ' + R.hurt_n + ' hurt';
+        }).catch(function () { });
+      }
+      if (document.readyState !== 'loading') paint(); else document.addEventListener('DOMContentLoaded', paint);
+      setInterval(paint, 60000);
+    })();

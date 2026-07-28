@@ -1399,6 +1399,11 @@
               style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
               📋 EOD Reports</div>
           </a>
+          <a href="/intervention" target="_blank" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🖐 Intervention</div>
+          </a>
           <a href="/presentations" target="_blank" style="text-decoration: none;">
             <div class="dropdown-item"
               style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
@@ -1791,6 +1796,14 @@
       <button class="btn btn-blue" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="openBulkModal()">📝
         Bulk Order</button>
     </div>
+
+    <!-- Manual intervention summary card (agar haath se cut na karte to kya hota) -->
+    <a id="iv-card" href="/intervention" target="_blank" style="display:none;text-decoration:none;align-items:center;gap:12px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:9px 13px;margin-bottom:12px">
+      <span style="font-size:15px">🖐</span>
+      <div><div style="font-size:9px;color:#6e7681;text-transform:uppercase;letter-spacing:.04em">Aaj ka manual intervention</div>
+        <div id="iv-card-txt" style="font-size:13px;color:#8b949e">—</div></div>
+      <span style="margin-left:auto;font-size:11px;color:#58a6ff">report →</span>
+    </a>
 
     <div id="ord-summary" style="display:flex;gap:12px;margin-bottom:14px;flex-wrap:wrap"></div>
 
