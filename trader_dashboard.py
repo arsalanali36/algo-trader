@@ -661,6 +661,8 @@ def api_whatif_margin():
             lp = ltpmap.get(str(r["sec_id"]))
             r["entry"] = r["ltp"] = lp or 0
             ol["ltp"] = round(lp, 1) if lp else None
+        if d.get("ltp_only"):   # inline per-leg live LTP only — skip the heavy basket-margin Kite call
+            return jsonify({"ok": True, "underlying": u, "spot": round(spot, 2), "legs": out_legs, "ltp_only": True})
         m = payoff.basket_margin(rows)
         return jsonify({"ok": True, "underlying": u, "lots": lots, "spot": round(spot, 2),
                         "legs": out_legs, "hedged": m.get("hedged"), "standalone": m.get("standalone"),

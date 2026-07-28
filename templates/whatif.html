@@ -25,7 +25,8 @@
   .seg button{flex:1;background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:7px;cursor:pointer}
   .seg button.on{background:var(--acc);color:#fff}
   .legs{border:1px solid var(--bd);border-radius:8px;overflow:hidden}
-  .leg{display:grid;grid-template-columns:62px 1fr 54px 24px;gap:6px;align-items:center;padding:6px 7px;border-bottom:1px solid var(--bd2)}
+  .leg{display:grid;grid-template-columns:62px 1fr 54px 58px 24px;gap:6px;align-items:center;padding:6px 7px;border-bottom:1px solid var(--bd2)}
+  .leg .ltp{font-size:11px;color:var(--mut);text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden}
   .leg:last-child{border-bottom:0}.leg select,.leg input{padding:5px 6px;font-size:12px}
   .del{background:none;border:0;color:var(--dim);cursor:pointer;font-size:14px}.del:hover{color:var(--red)}
   .addleg{width:100%;margin-top:7px;background:var(--bd2);border:1px dashed var(--bd);border-radius:7px;color:var(--mut);padding:6px;cursor:pointer;font:inherit;font-weight:600}
@@ -124,13 +125,14 @@ function legRow(side,strike,type){
   d.innerHTML=`<select class="s"><option ${side==='SELL'?'selected':''}>SELL</option><option ${side==='BUY'?'selected':''}>BUY</option></select>`
     +`<input class="k" type="number" step="${step()}" value="${strike}">`
     +`<select class="t"><option ${type==='CE'?'selected':''}>CE</option><option ${type==='PE'?'selected':''}>PE</option></select>`
+    +`<span class="ltp" title="current live LTP">—</span>`
     +`<button class="del">✕</button>`;
   return d;
 }
 function seedLegs(){ $('legs').innerHTML=''; $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?57000:24000,'CE')); $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56000:23600,'PE')); }
-$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();});
-$('addleg').addEventListener('click',()=>$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE')));
-$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1)e.target.closest('.leg').remove();});
+$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();scheduleLegLtp();});
+$('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();});
+$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();}});
 
 // expiry dropdown: stored expiries for the date (recent/collector); historical lake = weekly-only → just "Nearest"
 async function loadExpiries(){
@@ -138,10 +140,25 @@ async function loadExpiries(){
   const cur=sel.value, d=$('date').value; if(!d) return;
   let exps=[];
   try{ const r=await (await fetch(`/api/whatif-expiries?underlying=${INST}&date=${d}`)).json(); exps=(r&&r.expiries)||[]; }catch(e){}
-  sel.innerHTML='<option value="">Nearest (weekly)</option>'+exps.map(x=>`<option value="${x}">${x}</option>`).join('');
-  sel.value = exps.indexOf(cur)>=0 ? cur : '';   // keep pick if still valid, else Nearest
+  sel.innerHTML='<option value="">Nearest (weekly)</option>'+exps.map(x=>`<option value="${x.date}">${x.date} · ${x.monthly?'monthly':'weekly'}</option>`).join('');
+  sel.value = exps.some(x=>x.date===cur) ? cur : '';   // keep pick if still valid, else Nearest
 }
 $('date').addEventListener('change', loadExpiries);
+
+// inline live LTP per leg (current market — same live feed as Quick Order), debounced.
+// Backtest premium (at the chosen date/time) still comes on Run; this is a live reference.
+let _ltpT=null;
+function scheduleLegLtp(){ clearTimeout(_ltpT); _ltpT=setTimeout(fetchLegLtp, 500); }
+async function fetchLegLtp(){
+  const rows=[...$('legs').children]; if(!rows.length) return;
+  rows.forEach(el=>{ const s=el.querySelector('.ltp'); if(s && s.textContent==='—') s.textContent='…'; });
+  let r; try{ r=await (await fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:INST,lots:1,legs:collectLegs(),ltp_only:true})})).json(); }catch(e){ r=null; }
+  const ok=r&&r.ok, ls=(r&&r.legs)||[];
+  rows.forEach((el,i)=>{ const s=el.querySelector('.ltp'); if(!s) return;
+    const lp=ok?(ls[i]&&ls[i].ltp):null; s.textContent = lp!=null ? '₹'+lp : (ok?'—':'—'); s.style.color = lp!=null?'var(--tx)':'var(--mut)'; });
+}
+$('legs').addEventListener('input', scheduleLegLtp);
+$('legs').addEventListener('change', scheduleLegLtp);
 
 function collectLegs(){return [...$('legs').children].map(r=>({side:r.querySelector('.s').value,strike:+r.querySelector('.k').value,type:r.querySelector('.t').value}));}
 function fmt(v){return (v>=0?'+':'−')+'₹'+Math.abs(v).toLocaleString('en-IN');}
@@ -232,6 +249,6 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
 // init
 const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
 $('date').value=now.toISOString().slice(0,10);
-seedLegs(); renderJournal(); loadExpiries();
+seedLegs(); renderJournal(); loadExpiries(); fetchLegLtp();
 </script>
 </body></html>

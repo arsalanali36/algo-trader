@@ -254,16 +254,26 @@ def available_dates(u):
 
 
 def list_expiries(u, date):
-    """Expiries stored for this date in the collector lake (recent dates) — lets the
-    user pick which expiry to simulate on, like the Quick Order straddle. Historical
-    (OptChainLake) is WEEKLY-only, so it returns [] there (nearest weekly is implied)."""
+    """Expiries with STORED backtest data for this date, each {date, monthly}. What-If is
+    a backtest so it can only offer expiries it has real chain data for — the collector
+    stores the 2 near weeklies (this + next), NOT the far monthlies (that's why the list
+    is shorter than the Quick Order's live scrip-master list). Historical (OptChainLake)
+    is WEEKLY-only → [] (nearest weekly implied). weekly/monthly tag from the scrip
+    master so the user can tell them apart (e.g. '28 Jul · monthly' vs '04 Aug · weekly')."""
     try:
         _, rows = _oc._load_rows(u.upper(), date)
     except Exception:
         rows = None
     if not rows:
         return []
-    return sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    monthly = set()
+    try:
+        import dhan_master as dm
+        monthly = {e["date"] for e in dm.list_expiries(u.upper()) if e.get("monthly")}
+    except Exception:
+        pass
+    return [{"date": e, "monthly": e in monthly} for e in exps]
 
 
 def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None):
