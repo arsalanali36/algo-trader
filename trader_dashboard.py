@@ -4955,97 +4955,135 @@ def api_option_chain():
             return jsonify({"ok": False, "msg": f"{sym} supported nahi"})
         n = max(1, min(20, int(d.get("n", 12))))
         expiry = _norm_expiry(d.get("expiry"))
-        # spot: fresh warm cache first (poller), then wide-stale for off-market display
-        spot = _trigger_spot_now(sym)
-        if not spot or spot <= 0:
-            try:
-                import shared_ltp_cache as _slc
-                spot = _slc.get_index(sym, max_age=86400) or None
-            except Exception:
-                spot = None
-        if not spot or spot <= 0:
-            return jsonify({"ok": False, "msg": "spot abhi nahi mila (rate-limit?)"})
-        import dhan_master
-        _res = _straddle_resolver(expiry)
-        # Resolve each strike by SIGNED index offset i (CE atm+i, PE atm-i land on the
-        # same strike K) — get_option_contract's own index math (never a literal
-        # negative → PE-OFFSET-SIGN guard safe; pe-offset-ok: signed chain index).
-        rows, sids, lot0, atm_strike, step = [], [], None, None, None
-        for i in range(-n, n + 1):
-            sec_ce, t_ce, lot = _res(sym, spot, "CE", i)     # CE strike = atm + i*step
-            sec_pe, t_pe, _lp = _res(sym, spot, "PE", -i)    # PE at SAME strike = atm - (-i)
-            k = _strike_of(t_ce)
-            if k is None:
-                continue
-            if i == 0:
-                atm_strike = k
-            if lot:
-                lot0 = int(lot)
-            if sec_ce:
-                sids.append(str(sec_ce))
-            if sec_pe:
-                sids.append(str(sec_pe))
-            rows.append({"strike": k, "off_ce": i, "off_pe": -i,
-                         "ce_sec": str(sec_ce) if sec_ce else None, "ce_sym": t_ce,
-                         "pe_sec": str(sec_pe) if sec_pe else None, "pe_sym": t_pe})
-        if not rows:
-            return jsonify({"ok": False, "msg": "chain resolve fail"})
-        strikes_sorted = sorted(r["strike"] for r in rows)
-        if len(strikes_sorted) >= 2:
-            step = strikes_sorted[1] - strikes_sorted[0]
-        # live LTP overlay — ONE batched call, warm the poller, read cache-only
-        try:
-            import ltp_poller
-            ltp_poller.request_watch([(s, "NSE_FNO") for s in sids])
-        except Exception:
-            pass
-        try:
-            _prewarm_option_ltps(sids, acq_timeout=1.2)   # short — best-effort, never blocks
-        except Exception:
-            pass
+        import shared_ltp_cache as _slc
 
-        def _cl(sec):
-            if not sec:
-                return None
-            try:
-                import shared_ltp_cache as _s
-                v = _s.get(str(sec), max_age=120)
-                return round(float(v), 2) if v else None
-            except Exception:
-                return None
-
-        # collector lake snapshot (OI/IV/delta + ~1min LTP fallback), matched by strike
+        # LAKE-FIRST: the collector snapshot (OI/IV/greeks + ~1min LTP) is the display
+        # source — one file read, ZERO Dhan calls, so the chain shows off-market too.
         from datetime import timedelta as _td
         _ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
-        snap = {}
-        snap_dt = snap_exp = None
+        snap, snap_dt, snap_exp = {}, None, None
+        lake_atm = lake_step = lake_spot = None
         try:
             import option_curves as _oc
             _sn = _oc.chain_snapshot(sym, _ist.strftime("%Y-%m-%d"))
             if _sn.get("ok"):
                 snap = _sn.get("strikes") or {}
                 snap_dt, snap_exp = _sn.get("datetime"), _sn.get("expiry")
+                lake_atm, lake_step, lake_spot = _sn.get("atm"), _sn.get("step"), _sn.get("spot")
         except Exception:
             pass
 
+        # spot: FRESH cache = market open (→ live LTP overlay). Fall back to wide-stale
+        # cache, then the lake's own captured spot. All cache-only — NEVER the blocking
+        # REST fallback (that made the endpoint hang ~15s off-market). Firing uses fresh
+        # spot separately; this is display.
+        def _idx(age):
+            try:
+                v = _slc.get_index(sym, max_age=age)
+                return float(v) if v else None
+            except Exception:
+                return None
+        spot_live = _idx(45)                       # <45s old = poller active = market open
+        spot = spot_live or _idx(86400) or lake_spot
+        if not spot or spot <= 0:
+            return jsonify({"ok": False, "msg": "spot cache me nahi (market band + koi stored data nahi)"})
+
+        # Grid: prefer the lake's ATM/step (matches the OI/IV data exactly). Only when
+        # the lake is empty (collector didn't run today) fall back to live resolution.
+        import dhan_master
+        _res = _straddle_resolver(expiry)
+        rows, sids, lot0 = [], [], None
+        if lake_atm and lake_step:
+            atm_strike, step = int(lake_atm), int(lake_step)
+            for i in range(-n, n + 1):
+                K = atm_strike + i * step
+                # off-market: only rows the collector actually captured (no blank strikes);
+                # market open: full ±n (outer strikes get live LTP, OI/IV may be blank).
+                if K not in snap and not spot_live:
+                    continue
+                lk = snap.get(K, {})
+                ce_sec = pe_sec = ce_sym = pe_sym = None
+                if spot_live:                       # resolve for live LTP overlay only when open
+                    sc, tc, lot = _res(sym, spot, "CE", i)
+                    sp, tp, _lp = _res(sym, spot, "PE", -i)
+                    ce_sec, ce_sym = (str(sc) if sc else None), tc
+                    pe_sec, pe_sym = (str(sp) if sp else None), tp
+                    if lot:
+                        lot0 = int(lot)
+                    if sc:
+                        sids.append(str(sc))
+                    if sp:
+                        sids.append(str(sp))
+                rows.append({"strike": K, "off_ce": i, "off_pe": -i,
+                             "ce_sec": ce_sec, "ce_sym": ce_sym, "lk_ce": lk.get("ce") or {},
+                             "pe_sec": pe_sec, "pe_sym": pe_sym, "lk_pe": lk.get("pe") or {}})
+        else:
+            # no lake — live resolution (needs a spot; works with stale but LTP only live-open)
+            atm_strike = None
+            for i in range(-n, n + 1):
+                sc, tc, lot = _res(sym, spot, "CE", i)
+                sp, tp, _lp = _res(sym, spot, "PE", -i)
+                k = _strike_of(tc)
+                if k is None:
+                    continue
+                if i == 0:
+                    atm_strike = k
+                if lot:
+                    lot0 = int(lot)
+                if sc:
+                    sids.append(str(sc))
+                if sp:
+                    sids.append(str(sp))
+                rows.append({"strike": k, "off_ce": i, "off_pe": -i,
+                             "ce_sec": str(sc) if sc else None, "ce_sym": tc, "lk_ce": {},
+                             "pe_sec": str(sp) if sp else None, "pe_sym": tp, "lk_pe": {}})
+            step = None
+            _ss = sorted(r["strike"] for r in rows)
+            if len(_ss) >= 2:
+                step = _ss[1] - _ss[0]
+        if not rows:
+            return jsonify({"ok": False, "msg": "chain data nahi (collector aaj chala?)"})
+
+        # live LTP overlay — market open only: warm poller + ONE short best-effort batched
+        # call, then read cache-only. Off-market this whole block is skipped (sids empty).
+        if spot_live and sids:
+            try:
+                import ltp_poller
+                ltp_poller.request_watch([(s, "NSE_FNO") for s in sids])
+            except Exception:
+                pass
+            try:
+                _prewarm_option_ltps(sids, acq_timeout=1.2)
+            except Exception:
+                pass
+
+        def _cl(sec):
+            if not sec:
+                return None
+            try:
+                v = _slc.get(str(sec), max_age=120)
+                return round(float(v), 2) if v else None
+            except Exception:
+                return None
+
         out_rows = []
         for r in rows:
-            lk = snap.get(r["strike"], {})
-            ce_l, pe_l = lk.get("ce") or {}, lk.get("pe") or {}
-            ce_ltp = _cl(r["ce_sec"])
-            pe_ltp = _cl(r["pe_sec"])
+            ce_l, pe_l = r["lk_ce"], r["lk_pe"]
+            ce_live = _cl(r["ce_sec"]) if r["ce_sec"] else None
+            pe_live = _cl(r["pe_sec"]) if r["pe_sec"] else None
             out_rows.append({
                 "strike": r["strike"], "off_ce": r["off_ce"], "off_pe": r["off_pe"],
-                "ce": {"ltp": ce_ltp if ce_ltp is not None else ce_l.get("ltp"),
+                "ce": {"ltp": ce_live if ce_live is not None else ce_l.get("ltp"),
                        "oi": ce_l.get("oi"), "iv": ce_l.get("iv"), "delta": ce_l.get("delta"),
                        "sym": r["ce_sym"]},
-                "pe": {"ltp": pe_ltp if pe_ltp is not None else pe_l.get("ltp"),
+                "pe": {"ltp": pe_live if pe_live is not None else pe_l.get("ltp"),
                        "oi": pe_l.get("oi"), "iv": pe_l.get("iv"), "delta": pe_l.get("delta"),
                        "sym": r["pe_sym"]},
             })
         return jsonify({"ok": True, "symbol": sym, "spot": round(spot, 1),
                         "atm": atm_strike, "step": step, "lot": lot0, "expiry": expiry,
-                        "snap_dt": snap_dt, "snap_expiry": snap_exp, "rows": out_rows})
+                        "live": bool(spot_live), "snap_dt": snap_dt, "snap_expiry": snap_exp,
+                        "rows": out_rows})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

@@ -361,7 +361,7 @@
 
       let _qoChainTimer = null, _qoChainTok = 0;
       window.qoLoadChain = async () => {
-        if (window.feedPaused || document.hidden) return;
+        if (document.hidden) return;   // background tab skip (feed pause doesn't apply — chain uses lake+REST, not the WS feed)
         if (panel.style.display === 'none') return;
         const box = document.getElementById('qo-chain'); if (!box) return;
         const tok = ++_qoChainTok;
