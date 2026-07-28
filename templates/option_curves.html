@@ -172,6 +172,7 @@
         <button onclick="fixAddStrangle()" title="Add strangle (PE strike + CE strike)" style="width:auto;padding:5px 8px">＋</button>
       </div>
       <div id="fixList"></div>
+      <label class="pk" style="margin-top:6px" title="Frozen entry-IV BS decay reference (dotted). Actual below theo = IV crushed = seller edge."><input type="checkbox" id="fxTheo" onchange="toggleFixTheo(this.checked)"> Theoretical decay (dotted)</label>
 
       <div class="divh"></div>
       <label class="fld">Panels</label>
@@ -299,6 +300,7 @@
   var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null, _strikeFetching = false;
   var fixedStrats = load('oc_fixed', []), fixedData = {}, _fixKey = '';   // Fixed straddle/strangle (held strikes)
   var FIXCOL = ['#1dd1a1','#a371f7','#58a6ff','#f778ba','#e3b341'];
+  var fixTheo = load('oc_fixtheo', true);   // show theoretical-decay (frozen entry-IV) dotted line
   function notesKey(){ return 'oc_notes_'+U+'_'+document.getElementById('date').value; }
   var VIEW = load('oc_view', 'fit');       // 'fit' (panes fit screen) | 'tall' (taller, scroll)
   var SCROLL = load('oc_scroll', 'panel'); // 'panel' (chart-area scroll) | 'page' (whole-page scroll)
@@ -862,20 +864,26 @@
   function renderFixed(entry){
     if(!entry||!entry.chart) return;
     var have=entry.fx||(entry.fx={});
-    Object.keys(have).forEach(function(id){ if(!fixedStrats.some(function(s){return s.id===id;})){ try{entry.chart.removeSeries(have[id]);}catch(e){} delete have[id]; } });
+    Object.keys(have).forEach(function(id){ if(!fixedStrats.some(function(s){return s.id===id;})){ try{ entry.chart.removeSeries(have[id].a); if(have[id].th) entry.chart.removeSeries(have[id].th); }catch(e){} delete have[id]; } });
+    var tf=+document.getElementById('tf').value;
     fixedStrats.forEach(function(s){
-      if(!have[s.id]) have[s.id]=entry.chart.addLineSeries({ color:s.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true, title:s.label });
-      if(fixedData[s.id]==null){ have[s.id].setData([]); fetchFixed(s, function(){ var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }); return; }
+      if(!have[s.id]) have[s.id]={
+        a: entry.chart.addLineSeries({ color:s.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true, title:s.label }),
+        th: entry.chart.addLineSeries({ color:s.color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })  // dotted = theoretical decay (frozen entry-IV)
+      };
+      var h=have[s.id]; h.th.applyOptions({ visible: fixTheo });
+      if(fixedData[s.id]==null){ h.a.setData([]); h.th.setData([]); fetchFixed(s, function(){ var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }); return; }
       // Resample to the current TF + align to the MAIN `view` timeline (whitespace for
       // gaps) so this pane's bar-set == the other panes' → the shared logical-range zoom
       // sync (syncRange) stays time-aligned instead of drifting on a shorter bar-set.
-      var tf=+document.getElementById('tf').value;
-      var rs=resample(fixedData[s.id]||[], tf), m={};
-      rs.forEach(function(p){ if(p.prem!=null && !isNaN(p.prem)) m[p.t]=p.prem; });
-      var base=view.length?view:rs;
-      have[s.id].setData(base.map(function(p){ return (m[p.t]!=null) ? {time:p.t, value:m[p.t]} : {time:p.t}; }));
+      var rs=resample(fixedData[s.id]||[], tf), ma={}, mt={};
+      rs.forEach(function(p){ if(p.prem!=null&&!isNaN(p.prem)) ma[p.t]=p.prem; if(p.theo!=null&&!isNaN(p.theo)) mt[p.t]=p.theo; });
+      var base=(view&&view.length)?view:rs;
+      h.a.setData(base.map(function(p){ return (ma[p.t]!=null) ? {time:p.t, value:ma[p.t]} : {time:p.t}; }));
+      h.th.setData(fixTheo ? base.map(function(p){ return (mt[p.t]!=null) ? {time:p.t, value:mt[p.t]} : {time:p.t}; }) : []);
     });
   }
+  function toggleFixTheo(on){ fixTheo=on; save('oc_fixtheo', fixTheo); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
   function fixAdd(legs, label){
     if(fixedStrats.length>=5){ alert('Max 5 strategies'); return; }
     var s={ id:'fx'+(Date.now()), legs:legs, label:label, color:FIXCOL[fixedStrats.length%FIXCOL.length] };
@@ -901,6 +909,7 @@
       var opts=_stkStrikes.map(function(k){return '<option value="'+k+'">'+k+'</option>';}).join('');
       var atm=_stkStrikes.length?_stkStrikes[Math.floor(_stkStrikes.length/2)]:'';
       ['fxK','fxPE','fxCE'].forEach(function(id){ var s=document.getElementById(id); if(s){ var v=s.value; s.innerHTML=opts; if(v&&_stkStrikes.indexOf(+v)>-1) s.value=v; else if(atm) s.value=atm; } });
+      var tc=document.getElementById('fxTheo'); if(tc) tc.checked=fixTheo;
       renderFixList();
     });
   }

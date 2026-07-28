@@ -457,21 +457,42 @@ def legs_series(u, date, expiry, legs):
             and (l.get("opt_type") or "").upper() in ("CE", "PE")]
     if not legs:
         return {"ok": False, "expiry": expiry, "strikes": [], "points": []}
-    per, strikes = [], []
+    per, strikes, meta = [], [], []
     exp_used = expiry
     for l in legs:
-        s = strike_series(u, date, expiry, l.get("strike"), l.get("opt_type"))
+        K = _f(l.get("strike")); ot = (l.get("opt_type") or "").upper()
+        s = strike_series(u, date, expiry, K, ot)
         exp_used = s.get("expiry") or exp_used
         strikes = s.get("strikes") or strikes
         per.append({p["t"]: p for p in s.get("points", [])})
+        meta.append((K, ot))
     common = set(per[0])
     for m in per[1:]:
         common &= set(m)
+    # Theoretical decay: freeze each leg's ENTRY IV, keep the real spot + fixed strike,
+    # let only time-to-expiry shrink (same pure-theta+moneyness reference as the ATM
+    # "Theo vs Actual decay" panel). actual < theo = IV crushed = seller edge. Reuses bs.
+    bs = _bs()
+    exp_ep = _epoch_ist((exp_used + " 15:30:00")) if exp_used else None
+    sigs = []
+    for m in per:
+        iv0 = next((m[t].get("iv") for t in sorted(m) if m[t].get("iv")), None)
+        sigs.append((iv0 if iv0 < 1 else iv0 / 100.0) if iv0 else None)
+    theo_ok = bool(bs and exp_ep and all(s is not None for s in sigs))
+    yr = 365.25 * 24 * 3600.0
     pts = []
     for t in sorted(common):
         prem = sum(per[i][t]["ltp"] for i in range(len(per)))
         spot = per[0][t].get("spot")
-        pts.append({"t": t, "prem": round(prem, 2), "spot": spot})
+        rec = {"t": t, "prem": round(prem, 2), "spot": spot}
+        if theo_ok and spot:
+            try:
+                T = max(exp_ep - t, 0) / yr
+                rec["theo"] = round(sum(bs.bs_price(spot, meta[i][0], T, sigs[i], opt=meta[i][1])
+                                        for i in range(len(per))), 2)
+            except Exception:
+                pass
+        pts.append(rec)
     return {"ok": True, "underlying": u, "expiry": exp_used, "strikes": strikes,
             "legs": [{"strike": _f(l.get("strike")), "opt_type": (l.get("opt_type") or "").upper()} for l in legs],
             "points": pts}
