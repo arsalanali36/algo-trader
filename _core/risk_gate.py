@@ -646,7 +646,6 @@ def _today_open(strategy=None, mode=None):
         data = order_store.trades_for(date_str)
     except Exception:
         return []
-    open_pos = data.get("open", [])
     # ── Positional / overnight carry-over ────────────────────────────────────
     # A positional strategy's legs were opened on a PRIOR day and are still
     # live, but this query is date-scoped — so RMS could not see their capital
@@ -659,13 +658,21 @@ def _today_open(strategy=None, mode=None):
     # STALE record, not live capital (this DB has ~38 such rows). Counting
     # those would invent phantom capital and false-block every new entry —
     # strictly worse than the under-count being fixed here.
+    #
+    # allow_overnight legs are DROPPED from the today-scoped base and re-added
+    # ONLY from the RANGE-netted view below — because today-scoping nets an
+    # exit-leg that CLOSES a prior-day entry as a phantom OPEN (the entry isn't
+    # in today's window to pair against). Live 2026-07-28: an orb_overnight
+    # position entered 07-27 and exited today 09:20 left its exit-SELL counted
+    # as a FRESH ₹2L SELL → capital_in_use over-counted → false-blocked new
+    # entries. Range-netting nets that round-trip to flat; a genuinely-open
+    # positional (entered any day, no exit yet) still appears exactly once.
+    open_pos = [p for p in data.get("open", []) if not allow_overnight(p.get("strategy"))]
     try:
         _lb = (ist_now - timedelta(days=_CARRY_LOOKBACK_DAYS)).strftime("%Y-%m-%d")
         _carry = order_store.trades_for_range(_lb, date_str).get("open", [])
         _seen = {(p.get("sym"), str(p.get("sec_id")), p.get("entry_date")) for p in open_pos}
         for p in _carry:
-            if (p.get("entry_date") or date_str) >= date_str:
-                continue                      # today's own opens already present
             if not allow_overnight(p.get("strategy")):
                 continue                      # intraday leftovers = stale, not live
             k = (p.get("sym"), str(p.get("sec_id")), p.get("entry_date"))
