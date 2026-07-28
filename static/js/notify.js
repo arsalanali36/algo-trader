@@ -96,15 +96,25 @@
         delta_drift: { e: '🧭', l: 'Straddle delta drift' }, call_wall_shift: { e: '🧱', l: 'OI wall shift' }, put_wall_shift: { e: '🧱', l: 'OI wall shift' },
         ivrank_high: { e: '🔥', l: 'IV Rank extreme' }, ivrank_low: { e: '🧊', l: 'IV Rank extreme' },
         vrp_gone: { e: '⚠️', l: 'VRP edge gone' }, term_back: { e: '📐', l: 'Term backwardation' },
-        skew_steepen: { e: '🩹', l: 'Put-skew steepen' }, spread_wide: { e: '↔️', l: 'Spread wide' }
+        skew_steepen: { e: '🩹', l: 'Put-skew steepen' }, spread_wide: { e: '↔️', l: 'Spread wide' },
+        // per-instance events (unique group-id in key) — normalized to one TYPE below
+        straddle_open: { e: '🩳', l: 'Straddle placed' }, straddle_exit: { e: '🩳', l: 'Straddle exit (target/SL)' },
+        straddle_920_fail: { e: '⚠️', l: 'Straddle fire fail' }, straddle_unwind: { e: '⚠️', l: 'Straddle unwind' },
+        straddle_hedge_resolve: { e: '⚠️', l: 'Straddle hedge fail' }
       };
       function _cat(n) {
         var k = String(n.dedup || n.key || '');
-        if (n.source === 'chain' || k.indexOf('opt_') === 0) {
-          var typ = k.replace(/^opt_/, '').replace(/_(BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|NIFTY)$/, '');
-          var m = _CATM[typ];
+        // Strip a trailing unique id (STRAD_xxxx / strad_xxxx / hex hash / numeric)
+        // so per-instance notifications (straddle open/exit, each with its own group
+        // id) collapse into ONE category by TYPE — warna har ek apni row banati hai.
+        var base = k.replace(/^opt_/, '')
+          .replace(/_(BANKNIFTY|FINNIFTY|MIDCPNIFTY|SENSEX|NIFTY)$/, '')
+          .replace(/_strad_?[0-9a-f]{4,}$/i, '').replace(/_STRAD_?[0-9a-f]{4,}$/i, '')
+          .replace(/_[0-9a-f]{6,}$/i, '').replace(/_\d{3,}$/, '');
+        if (n.source === 'chain' || k.indexOf('opt_') === 0 || base.indexOf('straddle') === 0) {
+          var m = _CATM[base];
           if (m) return { id: 'chain:' + m.l, e: m.e, l: m.l, g: 'Curves' };
-          return { id: 'chain:' + typ, e: '📊', l: (typ || 'chain').replace(/_/g, ' '), g: 'Curves' };
+          return { id: 'chain:' + base, e: '📊', l: (base || 'chain').replace(/_/g, ' '), g: 'Curves' };
         }
         var s = n.source || 'other';
         return { id: 'src:' + s, e: _lv(n.level).icon, l: _src(n) || s, g: 'strategy' };

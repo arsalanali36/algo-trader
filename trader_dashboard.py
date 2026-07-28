@@ -4372,9 +4372,13 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
     nB = len(out_legs) - nS
     try:
         import notify
-        notify.push(f"🩳 {symbol} {len(out_legs)}-leg ({nS}S/{nB}B) @ net {entry_net:.0f} "
-                    f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
-                    level="info", key="straddle_open_%s" % gid, source="chain")
+        # Manual straddle = user ne khud placed (Open Positions me turant dikhta) —
+        # uska info-notify faltu spam tha. Sirf AUTO (9:20/alert) ka notify (jo bina
+        # user-action fire hua, wo jaanna zaroori). Grouped category "Straddle placed".
+        if "manual" not in str(source).lower():
+            notify.push(f"🩳 {symbol} {len(out_legs)}-leg ({nS}S/{nB}B) @ net {entry_net:.0f} "
+                        f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
+                        level="info", key="straddle_open_%s" % gid, source="chain")
     except Exception:
         pass
     _kind = "credit" if entry_net >= 0 else "debit"
@@ -4614,9 +4618,10 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec
     try:
         import notify
         _hnote = "" if not hedge_on else f" +{len(hlegs)}-leg hedge"
-        notify.push(f"🩳 {symbol} ATM straddle SELL @ credit {entry_credit:.0f}{_hnote} "
-                    f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
-                    level="info", key="straddle_open_%s" % gid, source="chain")
+        if "manual" not in str(source).lower():   # manual = user-placed, faltu notify skip (auto only)
+            notify.push(f"🩳 {symbol} ATM straddle SELL @ credit {entry_credit:.0f}{_hnote} "
+                        f"(tgt −{tp_pt:.0f} / SL +{sl_pt:.0f}) [{source}]",
+                        level="info", key="straddle_open_%s" % gid, source="chain")
     except Exception:
         pass
     return True, f"[PAPER] {symbol} straddle sold @ {entry_credit:.0f} (CE {ce_fill:.1f} + PE {pe_fill:.1f})"
