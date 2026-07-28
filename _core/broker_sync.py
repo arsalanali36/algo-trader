@@ -214,6 +214,29 @@ def is_flat_fresh(broker_name: str, trad_sym: str, sec_id: str, max_age: float =
 # Core reconciliation
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _reconcile_mirrored(trad_sym, broker_name):
+    """True if reconcile_broker (the ADR-011 AUTHORITATIVE mirror) has already
+    recorded a leg for this contract today (BROKER_MIRROR tag). When it has,
+    _run_sync must DEFER — recording a second exit here double-counts (broker_sync
+    keys off the fill TRADE-id while reconcile keys off the ORDER-id, so the TRAP #60
+    'fill already used' guard misses it → the KOTAKBANK 2026-07-28 phantom: a real
+    manual close became an extra 'open' position). ONE reconciler owns the exit."""
+    try:
+        import order_store
+        date = order_store.ist_now_str()[:10]
+        con = order_store._conn()
+        rows = con.execute(
+            "select tags from orders where date=? and broker=? and trad_sym=? and status='filled'",
+            (date, broker_name, trad_sym)).fetchall()
+        con.close()
+        for (tags,) in rows:
+            if "BROKER_MIRROR" in (tags or ""):
+                return True
+    except Exception:
+        pass
+    return False
+
+
 def _run_sync(open_positions: list, log=print) -> set:
     closed_ids: set = set()
     # PAPER positions are simulated — they never exist at the broker, so reconciling
@@ -303,6 +326,15 @@ def _run_sync(open_positions: list, log=print) -> set:
                 _rg_v.mark_manual_closed(p.get("strategy") or "", p.get("symbol") or "")
             except Exception:
                 pass
+
+            # DEFER to reconcile_broker (ADR-011 authoritative mirror): if it has
+            # already mirrored this contract today, do NOT record a second, conflicting
+            # exit (the KOTAKBANK 2026-07-28 double-record). Veto above is kept; the
+            # ghost is considered handled (reconcile owns the exit leg by order-id).
+            if _reconcile_mirrored(sym, broker_name):
+                closed_ids.add(row_id)
+                log(f"[broker_sync] {sym} already mirrored by reconcile_broker — defer, no re-record. ADR-011.", flush=True)
+                continue
 
             if exit_px and exit_px > 0:
                 try:

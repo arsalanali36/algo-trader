@@ -63,23 +63,33 @@ def broker_orders(broker):
 
 
 def app_live_rows(con, date, broker_name):
-    """order_store LIVE rows for date/broker: broker_order_id, correlation_id, net per contract."""
+    """order_store LIVE rows for date/broker: known broker_order_ids / trade_ids (from
+    ANY status) + net per contract (from filled/open only).
+
+    known_* is collected from EVERY status on purpose: a broker order the app has
+    ALREADY recorded — even one whose row was later marked externally_closed /
+    cancelled — must never be seen as 'external' and re-recorded. Excluding
+    externally_closed here is exactly what let the reconciler re-adopt a manually-
+    closed entry's OWN broker order as a phantom open position (KOTAKBANK 2026-07-28:
+    entry row externally_closed → its order_id dropped from known → the broker's
+    original BUY looked external → recorded again → app_net +6000 vs broker 0)."""
     con.row_factory = __import__("sqlite3").Row
     rows = con.execute(
         "select id,strategy,side,qty,price,trad_sym,sec_id,status,correlation_id,broker_order_id "
-        "from orders where date=? and mode='live' and broker=? and status in ('filled','open')",
+        "from orders where date=? and mode='live' and broker=?",
         (date, broker_name)).fetchall()
     known_oids = set()
     known_tids = set()
-    net = defaultdict(int)   # contract -> signed qty
+    net = defaultdict(int)   # contract -> signed qty (filled/open only)
     for r in rows:
         d = dict(r)
         if d.get("broker_order_id"):
-            known_oids.add(str(d["broker_order_id"]))
+            known_oids.add(str(d["broker_order_id"]))       # any status → known
         cid = str(d.get("correlation_id") or "")
         if cid.isdigit():
-            known_tids.add(cid)
-        net[d.get("trad_sym")] += _sign(d.get("side")) * int(d.get("qty") or 0)
+            known_tids.add(cid)                             # any status → known
+        if d.get("status") in ("filled", "open"):
+            net[d.get("trad_sym")] += _sign(d.get("side")) * int(d.get("qty") or 0)
     return known_oids, known_tids, net
 
 
