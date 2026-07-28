@@ -4,22 +4,44 @@
     {
       "name": "algo-dashboard",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-X", "utf8", "trader_dashboard.py"],
+      "runtimeArgs": [
+        "-X",
+        "utf8",
+        "trader_dashboard.py"
+      ],
       "port": 5099
     },
     {
       "name": "code3b-mockup",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5199"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5199"
+      ],
       "cwd": "templates",
       "port": 5199
     },
     {
       "name": "lab-static",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5299"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5299"
+      ],
       "cwd": "scratch/nifty_trend",
       "port": 5299
+    },
+    {
+      "name": "code3b-root",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5399"
+      ],
+      "port": 5399
     }
   ]
 }

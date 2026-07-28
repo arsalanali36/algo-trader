@@ -1,0 +1,124 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Straddle leg-builder harness</title>
+<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui;margin:0;padding:16px}
+#out{white-space:pre-wrap;font:12px monospace;padding:10px;border:1px solid #30363d;border-radius:6px;margin-top:12px;max-width:520px}
+.p{color:#3fb950}.f{color:#f85149}</style></head>
+<body>
+<h3 style="margin:0 0 8px">Quick Order · Straddle leg-builder — harness</h3>
+<div id="out">running…</div>
+
+<script>
+  // harness tab is backgrounded in the pane → document.hidden=true would trip the
+  // load-trim guard in qoStradPreview. Force visible so previews actually run.
+  try { Object.defineProperty(document, 'hidden', { get: () => false, configurable: true }); } catch (e) {}
+  try { Object.defineProperty(document, 'visibilityState', { get: () => 'visible', configurable: true }); } catch (e) {}
+
+  // ---- console error capture ----
+  window.__errs = [];
+  window.addEventListener('error', e => window.__errs.push(String(e.message)));
+  const _ce = console.error; console.error = (...a) => { window.__errs.push(a.join(' ')); _ce.apply(console, a); };
+
+  // ---- stub fetch BEFORE app-09 loads ----
+  window.__prevCalls = [];
+  const jr = o => ({ ok: true, status: 200, json: async () => o, text: async () => JSON.stringify(o) });
+  const _atm = 24000, _step = 50;
+  window.fetch = async (url, opts) => {
+    const u = String(url);
+    if (u.includes('/api/lot-sizes')) return jr({ NIFTY: 65, BANKNIFTY: 30 });
+    if (u.includes('/api/auto-straddle/config')) return jr({ ok: true, cfg: {} });
+    if (u.includes('/api/auto-straddle/list')) return jr({ ok: true, straddles: [] });
+    if (u.includes('/api/triggers')) return jr({ ok: true, triggers: [] });
+    if (u.includes('/api/gex')) return jr({ ok: true, snap: { cw: 24300, pw: 23600, mp: 24000, flip: 24100 } });
+    if (u.includes('/api/auto-straddle/preview')) {
+      const b = JSON.parse(opts.body);
+      window.__prevCalls.push({ quick: !!b.quick, n: (b.legs || []).length });
+      const legs = (b.legs || []).map(l => {
+        const strike = l.opt_type === 'CE' ? _atm + l.offset * _step : _atm - l.offset * _step;
+        return { side: l.side, opt_type: l.opt_type, offset: l.offset, strike, ltp: Math.max(2, 80 - l.offset * 5) };
+      });
+      let net = 0; legs.forEach(l => { net += l.side === 'SELL' ? l.ltp : -l.ltp; });
+      const lots = b.lots || 1;
+      return jr({ ok: true, spot: 24012, atm: _atm, step: _step, lot: 65, lots,
+        legs, net_credit: Math.round(net * 10) / 10, quick: !!b.quick,
+        net_credit_total: Math.round(net * 65 * lots),
+        margin: b.quick ? null : 123580 * lots, margin_lot: b.quick ? null : 123580 });
+    }
+    return jr({ ok: true });
+  };
+  window.regLabel = s => s;
+</script>
+<script src="/static/js/app-09-quick-order.js"></script>
+<script>
+  const out = document.getElementById('out');
+  let pass = 0, fail = 0, lines = [];
+  const ok = (c, m) => { if (c) { pass++; lines.push('<span class=p>PASS</span> ' + m); } else { fail++; lines.push('<span class=f>FAIL</span> ' + m); } };
+  const $ = id => document.getElementById(id);
+  const legTxt = () => ($('qo-strad-legs') || {}).innerHTML || '';
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+  (async () => {
+    try {
+      // show the straddle window
+      if (window.qoSetTab) qoSetTab('straddle');
+      // make panel visible + in-flow for a clean screenshot
+      const p = $('qo-panel'); if (p) Object.assign(p.style, { display: '', position: 'static', right: 'auto', bottom: 'auto', margin: '10px 0' });
+      if (window.qoStradCfgLoad) await qoStradCfgLoad();
+      qoStradRenderLegs();
+      await qoStradPreview(false);
+      await sleep(60);
+
+      // 1. all 4 legs have +/- steppers now (SELL too) — count qoStradStep buttons
+      const stepBtns = (legTxt().match(/qoStradStep/g) || []).length;
+      ok(stepBtns === 8, '4 legs × 2 steppers = 8 (got ' + stepBtns + ') — SELL legs adjustable now');
+
+      // 2. SELL rows show ATM label at off 0
+      ok((legTxt().match(/ATM/g) || []).length >= 2, 'both SELL legs show ATM at off 0');
+
+      // 3. GEX + ATM buttons present in header
+      ok(!!window.qoStradGexWalls && !!window.qoStradAtmReset, 'qoStradGexWalls + qoStradAtmReset defined');
+
+      // 4. step a SELL leg up → strike moves OTM
+      qoStradStep('ceS', 1); await sleep(20);
+      ok(window.qoStradState.legs.find(l => l.key === 'ceS').off === 1, 'SELL CE stepped to +1');
+      qoStradStep('ceS', -1); qoStradStep('ceS', -1); await sleep(20);
+      ok(window.qoStradState.legs.find(l => l.key === 'ceS').off === 0, 'SELL CE clamps at 0 (cannot go negative)');
+
+      // 5. GEX button → SELL CE to call-wall (24300→+6), SELL PE to put-wall (23600→+8)
+      await window.qoStradGexWalls(); await sleep(60);
+      const ceS = window.qoStradState.legs.find(l => l.key === 'ceS');
+      const peS = window.qoStradState.legs.find(l => l.key === 'peS');
+      ok(ceS.off === 6, 'GEX: SELL CE → call-wall +6 (got ' + ceS.off + ')');
+      ok(peS.off === 8, 'GEX: SELL PE → put-wall +8 (got ' + peS.off + ')');
+
+      // 6. wing-inside warning now shows (BUY +2 inside SELL +6/+8)
+      const warn = $('qo-strad-warn');
+      ok(warn && warn.style.display !== 'none' && /wing/.test(warn.textContent), 'wing-inside warning shown (BUY inside SELL)');
+
+      // 7. Auto-ATM button → SELL back to 0
+      window.qoStradAtmReset(); await sleep(60);
+      ok(window.qoStradState.legs.find(l => l.key === 'ceS').off === 0 &&
+         window.qoStradState.legs.find(l => l.key === 'peS').off === 0, 'ATM button snapped both SELL to 0');
+      ok(warn.style.display === 'none', 'warning cleared after ATM reset (valid hedge)');
+
+      // 8. lag-fix: qoStradPreviewNow fires a QUICK preview (no margin) then a FULL
+      window.__prevCalls = [];
+      window.qoStradPreviewNow();
+      await sleep(900);  // fast (150ms) + full (650ms) both should have fired
+      const hadQuick = window.__prevCalls.some(c => c.quick === true);
+      const hadFull = window.__prevCalls.some(c => c.quick === false);
+      ok(hadQuick && hadFull, 'PreviewNow → quick(no-margin)+full(margin) both fired (' + JSON.stringify(window.__prevCalls) + ')');
+
+      // 9. margin renders on full preview
+      await qoStradPreview(false); await sleep(40);
+      ok(/₹/.test(($('qo-strad-mar').textContent || '')), 'margin ₹ shown after full preview');
+
+      // 10. no console/runtime errors
+      ok(window.__errs.length === 0, 'zero console errors' + (window.__errs.length ? ': ' + window.__errs.join(' | ') : ''));
+    } catch (e) {
+      ok(false, 'harness threw: ' + e.message + '\n' + (e.stack || ''));
+    }
+    out.innerHTML = 'RESULT: ' + pass + ' pass, ' + fail + ' fail\n\n' + lines.join('\n');
+    window.__done = { pass, fail };
+  })();
+</script>
+</body></html>

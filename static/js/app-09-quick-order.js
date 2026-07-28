@@ -133,9 +133,11 @@
     <div style="flex:1"><div style="font-size:9px;color:#f85149;margin-bottom:4px">SL (pt)</div><input id="qo-strad-sl" type="number" value="30" step="1" onchange="qoStradCfgSave()" style="width:100%;background:#0d1117;border:1px solid #5c1a1f;border-radius:6px;color:#f85149;padding:7px;font-size:13px;text-align:center;outline:none;box-sizing:border-box"></div>
   </div>
   <div style="background:#161b22;border:1px solid #30363d;border-radius:8px;padding:4px 0 3px;margin-bottom:10px">
-    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px">
-      <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.5px">LEGS &mdash; chuno kaunsi banegi</span>
-      <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#8b949e;cursor:pointer"><input type="checkbox" id="qo-strad-sym" checked onchange="qoStradSym()" style="accent-color:#1f6feb;width:12px;height:12px"> symmetric</label>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;gap:6px">
+      <span style="font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.5px;flex:1">LEGS &mdash; SELL/BUY strike +/&minus;</span>
+      <button onclick="qoStradGexWalls()" title="SELL ko GEX call-wall (CE) / put-wall (PE) pe set karo" style="font-size:9px;padding:3px 7px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;white-space:nowrap">&#128202; GEX</button>
+      <button onclick="qoStradAtmReset()" title="SELL wapas ATM pe" style="font-size:9px;padding:3px 7px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#8b949e;cursor:pointer;white-space:nowrap">&#9678; ATM</button>
+      <label style="display:flex;align-items:center;gap:4px;font-size:10px;color:#8b949e;cursor:pointer" title="dono BUY wings ka offset barabar rakho"><input type="checkbox" id="qo-strad-sym" checked onchange="qoStradSym()" style="accent-color:#1f6feb;width:12px;height:12px"> sym</label>
     </div>
     <div id="qo-strad-legs"></div>
     <div id="qo-strad-warn" style="display:none;padding:2px 10px 5px;font-size:10px;color:#d29922"></div>
@@ -149,7 +151,7 @@
     </div>
   </div>
   <button onclick="qoSellStraddle()" style="width:100%;padding:11px;background:#f85149;border:none;border-radius:6px;color:#fff;font-size:14px;font-weight:bold;cursor:pointer;margin-bottom:6px">Place selected legs <span style="font-size:11px;opacity:.85">(<span id="qo-strad-legcount">4</span>-leg)</span></button>
-  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">&#9745; leg = banegi &middot; BUY rows +/&minus; se wing &middot; RMS-gated &middot; PAPER</div>
+  <div style="font-size:9px;color:#6e7681;text-align:center;margin-bottom:8px">&#9745; leg = banegi &middot; SELL/BUY +/&minus; strike &middot; GEX=walls, ATM=reset &middot; RMS-gated &middot; PAPER</div>
   <div style="border-top:1px solid #21262d;padding-top:10px;font-size:9px;color:#6e7681;font-weight:600;letter-spacing:.6px;margin-bottom:6px">AUTO (paper) &middot; ATM+hedge auto-pick</div>
   <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:5px;cursor:pointer"><input type="checkbox" id="qo-strad-920" onchange="qoStradCfgSave()"> 9:20 auto &middot; NIFTY + BANKNIFTY (roz)</label>
   <label style="display:flex;align-items:center;gap:7px;font-size:11px;color:#adbac7;margin-bottom:5px;cursor:pointer"><input type="checkbox" id="qo-strad-alert" onchange="qoStradCfgSave()"> Alert pe auto (straddle spike/crush/gamma)</label>
@@ -545,10 +547,10 @@
         ],
         prev: {},   // key -> {strike, ltp}
       };
-      const _qsStrike = l => {   // compute this leg's strike from ATM+step (instant on +/-, off-market safe)
+      const _qsStrike = l => {   // strike from ATM+step (instant on +/-, off-market safe) — CE up, PE down, both sides
         const S = window.qoStradState;
         if (S.atm == null || S.step == null) return (S.prev[l.key] || {}).strike || null;
-        return l.side === 'SELL' ? S.atm : (l.ot === 'CE' ? S.atm + l.off * S.step : S.atm - l.off * S.step);
+        return l.ot === 'CE' ? S.atm + l.off * S.step : S.atm - l.off * S.step;
       };
       const _qsLeg = k => window.qoStradState.legs.find(l => l.key === k);
       const _qsEnabled = () => window.qoStradState.legs.filter(l => l.on);
@@ -561,15 +563,16 @@
           const p = pv[l.key] || {}, on = l.on;
           const col = l.side === 'SELL' ? '#f85149' : '#3fb950';
           const stk = _qsStrike(l);
-          const strike = stk != null ? (stk + ' ' + l.ot) : (l.ot + ' ' + (l.side === 'SELL' ? 'ATM' : ((l.ot === 'CE' ? '+' : '−') + l.off)));
+          const offlbl = l.off === 0 ? 'ATM' : ((l.ot === 'CE' ? '+' : '−') + l.off);
+          const strike = stk != null ? (stk + ' ' + l.ot) : (l.ot + ' ' + offlbl);
           // last preview's LTP only applies if it was for THIS strike (else stale after a +/-)
           const ltp = (p.ltp != null && p.ltp > 0 && (p.strike == null || stk == null || p.strike === stk)) ? p.ltp.toFixed(2) : '—';
-          const tag = l.side === 'SELL' ? '<span style="font-size:9px;color:#8b949e;background:#21262d;border-radius:4px;padding:1px 5px">ATM</span>' : '';
-          const steps = l.side === 'BUY' ? (
+          // every leg (SELL + BUY) gets +/- steppers now — SELL can move to GEX walls, BUY sets the wing
+          const steps = (
             `<button ${on ? '' : 'disabled'} onclick="qoStradStep('${l.key}',-1)" style="width:20px;height:20px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-size:12px;line-height:1;opacity:${on ? 1 : .35}">−</button>` +
-            `<span style="font-size:10px;color:#8b949e;width:24px;text-align:center">${l.ot === 'CE' ? '+' : '−'}${l.off}</span>` +
+            `<span style="font-size:10px;color:#8b949e;width:30px;text-align:center">${offlbl}</span>` +
             `<button ${on ? '' : 'disabled'} onclick="qoStradStep('${l.key}',1)" style="width:20px;height:20px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#e6edf3;cursor:pointer;font-size:12px;line-height:1;opacity:${on ? 1 : .35}">+</button>`
-          ) : tag;
+          );
           return `<div style="display:flex;align-items:center;justify-content:space-between;padding:5px 10px;${l.side === 'BUY' ? 'background:#1b2028;' : ''}opacity:${on ? 1 : .4}">
             <span style="display:flex;align-items:center;gap:7px">
               <input type="checkbox" ${on ? 'checked' : ''} onchange="qoStradToggle('${l.key}')" style="accent-color:${col};width:14px;height:14px;cursor:pointer">
@@ -584,41 +587,79 @@
         // naked-side warning (a SELL with no matching BUY wing on that side)
         const en = _qsEnabled();
         const has = (side, ot) => en.some(l => l.side === side && l.ot === ot);
+        const legOf = (side, ot) => en.find(l => l.side === side && l.ot === ot);
         const callNaked = has('SELL', 'CE') && !has('BUY', 'CE');
         const putNaked = has('SELL', 'PE') && !has('BUY', 'PE');
+        // BUY wing must sit FURTHER OTM than the SELL it protects (off_buy > off_sell) — else no loss cap
+        const wingIn = ['CE', 'PE'].some(ot => { const s = legOf('SELL', ot), b = legOf('BUY', ot); return s && b && b.off <= s.off; });
         const w = document.getElementById('qo-strad-warn');
         const ml = document.getElementById('qo-strad-marlbl');
         if (callNaked || putNaked) {
           if (w) { w.style.display = 'block'; w.textContent = '⚠️ ek side ka hedge wing off hai → naked SELL, margin bahut zyada'; }
           if (ml) { ml.innerHTML = '💰 Margin (naked side!)'; ml.style.color = '#f85149'; }
+        } else if (wingIn) {
+          if (w) { w.style.display = 'block'; w.textContent = '⚠️ BUY wing SELL ke barabar/andar hai → loss cap nahi hoga, wing ko aur OTM karo'; }
+          if (ml) { ml.innerHTML = '💰 Margin (wing inside!)'; ml.style.color = '#f85149'; }
         } else {
           if (w) w.style.display = 'none';
           if (ml) { ml.innerHTML = '💰 Margin (hedged)'; ml.style.color = '#d29922'; }
         }
       };
-      window.qoStradToggle = k => { const l = _qsLeg(k); if (l) l.on = !l.on; qoStradRenderLegs(); qoStradPreview(); };
+      window.qoStradToggle = k => { const l = _qsLeg(k); if (l) l.on = !l.on; qoStradRenderLegs(); qoStradPreviewNow(); };
       window.qoStradStep = (k, d) => {
         const S = window.qoStradState, l = _qsLeg(k); if (!l) return;
-        l.off = Math.max(1, Math.min(20, l.off + d));
+        const minOff = l.side === 'SELL' ? 0 : 1;   // SELL can sit at ATM (0); BUY wing stays >=1
+        l.off = Math.max(minOff, Math.min(20, l.off + d));
         if (S.sym && l.side === 'BUY') { const o = _qsLeg(l.key === 'ceB' ? 'peB' : 'ceB'); if (o) o.off = l.off; }
-        qoStradRenderLegs(); qoStradPreview();
+        qoStradRenderLegs(); qoStradPreviewNow();
       };
       window.qoStradSym = () => {
         const S = window.qoStradState;
         S.sym = !!document.getElementById('qo-strad-sym')?.checked;
         if (S.sym) { const c = _qsLeg('ceB'), p = _qsLeg('peB'); if (c && p) p.off = c.off; }
-        qoStradRenderLegs(); qoStradPreview();
+        qoStradRenderLegs(); qoStradPreviewNow();
       };
-      window.qoStradPreview = async () => {
+      // Snap SELL legs back to ATM (off 0) — the "auto ATM" button.
+      window.qoStradAtmReset = () => {
+        window.qoStradState.legs.forEach(l => { if (l.side === 'SELL') l.off = 0; });
+        qoStradRenderLegs(); qoStradPreviewNow();
+      };
+      // Sell at GEX walls: SELL CE -> call-wall, SELL PE -> put-wall (from /api/gex latest snap).
+      window.qoStradGexWalls = async () => {
+        const S = window.qoStradState;
+        if (S.atm == null || S.step == null) { try { await qoStradPreview(false); } catch (e) {} }
+        if (S.atm == null || S.step == null) { alert('ATM/step abhi nahi mila — thoda ruk ke phir'); return; }
+        const sym = qoSym || 'NIFTY';
+        try {
+          const g = await (await fetch('/api/gex?latest=1&underlying=' + encodeURIComponent(sym))).json();
+          const snap = (g && g.snap) || (g && g.cw != null ? g : null);
+          const cw = snap && snap.cw, pw = snap && snap.pw;
+          if (cw == null || pw == null) { alert('GEX walls abhi nahi mile (data window ke bahar?)'); return; }
+          const ceOff = Math.max(0, Math.min(20, Math.round((cw - S.atm) / S.step)));
+          const peOff = Math.max(0, Math.min(20, Math.round((S.atm - pw) / S.step)));
+          const ce = _qsLeg('ceS'), pe = _qsLeg('peS');
+          if (ce) ce.off = ceOff; if (pe) pe.off = peOff;
+          qoStradRenderLegs(); qoStradPreviewNow();
+        } catch (e) { alert('GEX fetch fail'); }
+      };
+      // Fast update (net+LTP) on every change; a full preview (with margin) trails once you stop.
+      window.qoStradPreviewNow = () => {
+        clearTimeout(window._qsFastT); window._qsFastT = setTimeout(() => qoStradPreview(true), 150);
+        clearTimeout(window._qsFullT); window._qsFullT = setTimeout(() => qoStradPreview(false), 650);
+      };
+      window.qoStradPreview = async (quick) => {
         if (document.hidden) return;
         const spec = _qsSpec();
         const net = document.getElementById('qo-strad-net'), mar = document.getElementById('qo-strad-mar'), marlot = document.getElementById('qo-strad-marlot');
         if (!spec.length) { if (net) net.textContent = '—'; if (mar) mar.textContent = '—'; if (marlot) marlot.textContent = ''; return; }
-        if (window._qoStradPrevBusy) return; window._qoStradPrevBusy = true;
+        // latest-wins token: a newer change (or its trailing full preview) supersedes this one
+        window._qsTok = (window._qsTok || 0) + 1; const tok = window._qsTok;
         const sym = qoSym || 'NIFTY';
         const lots = parseInt(document.getElementById('qo-strad-lots')?.value) || 1;
+        if (quick && mar && mar.textContent !== '—' && mar.textContent !== '') mar.innerHTML = '<span style="color:#6e7681">…</span>';   // margin recomputing
         try {
-          const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec }) })).json();
+          const d = await (await fetch('/api/auto-straddle/preview', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ symbol: sym, lots, legs: spec, quick: !!quick }) })).json();
+          if (tok !== window._qsTok) return;   // stale — a newer preview already fired
           if (d.ok) {
             if (d.atm != null) window.qoStradState.atm = d.atm;
             if (d.step != null) window.qoStradState.step = d.step;
@@ -628,8 +669,10 @@
             window.qoStradState.prev = pv;
             if (net) net.innerHTML = d.net_credit_total != null ? (`<b>${_qoInr(d.net_credit_total)}</b>` + (d.net_credit != null ? ` <span style="color:#6e7681">(${d.net_credit.toFixed(1)}pt)</span>` : '')) : '—';
             if (net) net.style.color = (d.net_credit_total >= 0) ? '#3fb950' : '#f85149';
-            if (mar) mar.innerHTML = d.margin != null ? `<b>${_qoInr(d.margin)}</b>` : '—';
-            if (marlot) marlot.textContent = d.margin_lot != null ? (_qoInr(d.margin_lot) + ' / lot') : '';
+            if (!quick) {   // margin only on the full (trailing) preview — the fast path skips the slow Kite call
+              if (mar) mar.innerHTML = d.margin != null ? `<b>${_qoInr(d.margin)}</b>` : '—';
+              if (marlot) marlot.textContent = d.margin_lot != null ? (_qoInr(d.margin_lot) + ' / lot') : '';
+            }
             qoStradRenderLegs();
           } else {
             // off-market / no live spot → keep last net+margin (don't wipe with an error);
@@ -638,7 +681,6 @@
             qoStradRenderLegs();
           }
         } catch (e) { qoStradRenderLegs(); }
-        finally { window._qoStradPrevBusy = false; }
       };
 
       window.qoSellStraddle = async () => {

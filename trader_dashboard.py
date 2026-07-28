@@ -4167,9 +4167,11 @@ def _straddle_lltp(sec):
         return None
 
 
-def _straddle_preview(symbol, lots, spec):
+def _straddle_preview(symbol, lots, spec, quick=False):
     """Read-only preview for the leg-window: per-leg strike/LTP + net credit +
-    real hedged basket margin. NO order placed. Returns a dict for jsonify."""
+    real hedged basket margin. NO order placed. Returns a dict for jsonify.
+    quick=True skips the slow Kite basket-margin call (net+LTP stay snappy on
+    every +/- ; the UI trails a full preview once the user stops adjusting)."""
     import risk_gate as rg
     symbol = str(symbol).upper()
     lots = max(1, int(lots or 1))
@@ -4243,16 +4245,17 @@ def _straddle_preview(symbol, lots, spec):
                      "entry_price": ltp or 0, "sym": lg["trad_sym"], "segment": "NSE_FNO"})
     net = round(net, 2) if all_ltp else None
     margin = None
-    try:
-        margin = rg.kite_basket_margin(rows)
-        if not margin or margin <= 0:
-            margin = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
-                                          "entry": r["entry"], "sec_id": r["sec_id"],
-                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in rows)
-    except Exception:
-        margin = None
+    if not quick:   # quick=fast path: skip the slow Kite basket-margin call
+        try:
+            margin = rg.kite_basket_margin(rows)
+            if not margin or margin <= 0:
+                margin = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
+                                              "entry": r["entry"], "sec_id": r["sec_id"],
+                                              "sym": r["sym"], "segment": "NSE_FNO"}) for r in rows)
+        except Exception:
+            margin = None
     return {"ok": True, "spot": round(spot, 1), "atm": atm_strike, "step": step,
-            "lot": lot, "lots": lots, "legs": out_legs, "net_credit": net,
+            "lot": lot, "lots": lots, "legs": out_legs, "net_credit": net, "quick": bool(quick),
             "net_credit_total": (round(net * q) if net is not None else None),
             "margin": (round(margin) if margin else None),
             "margin_lot": (round(margin / lots) if margin else None)}
@@ -4803,7 +4806,8 @@ def api_auto_straddle_preview():
     net credit + real hedged basket margin. Read-only — NO order placed."""
     try:
         d = request.get_json(force=True) or {}
-        return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1), d.get("legs") or []))
+        return jsonify(_straddle_preview(d.get("symbol", "NIFTY"), d.get("lots", 1),
+                                         d.get("legs") or [], quick=bool(d.get("quick"))))
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
