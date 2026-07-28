@@ -449,10 +449,11 @@ def strike_series(u, date, expiry, strike=None, opt_type=None):
 def legs_series(u, date, expiry, legs):
     """Combined per-minute premium for a FIXED-STRIKE straddle/strangle held all day
     (the /curves 'Fixed strike' mode — Sensibull-style multi straddle-strangle).
-    `legs` = list of {strike, opt_type} (a straddle = same-K CE+PE; strangle = two Ks).
-    Reuses strike_series() per leg (Rule 6B), sums their ltp on the epochs present in
-    ALL legs (so the combined line only shows where every leg has a real print). Held
-    strike → no ATM rolling; runs to the last bar of `date`. Display-only."""
+    `legs` = list of {strike, opt_type, sign?} (a straddle = same-K CE+PE; strangle =
+    two Ks). `sign` (default +1) lets a SELL+HEDGE structure chart its NET premium:
+    SELL legs +1, BUY hedge legs -1 → line = net credit (sold − bought). Plain long
+    straddle/strangle omit sign → +1 → sum (unchanged). Reuses strike_series() per leg
+    (Rule 6B) on the epochs present in ALL legs. Held strike → no ATM rolling. Display-only."""
     legs = [l for l in (legs or []) if _f(l.get("strike")) is not None
             and (l.get("opt_type") or "").upper() in ("CE", "PE")]
     if not legs:
@@ -461,11 +462,12 @@ def legs_series(u, date, expiry, legs):
     exp_used = expiry
     for l in legs:
         K = _f(l.get("strike")); ot = (l.get("opt_type") or "").upper()
+        sign = 1 if int(l.get("sign", 1) or 1) >= 0 else -1
         s = strike_series(u, date, expiry, K, ot)
         exp_used = s.get("expiry") or exp_used
         strikes = s.get("strikes") or strikes
         per.append({p["t"]: p for p in s.get("points", [])})
-        meta.append((K, ot))
+        meta.append((K, ot, sign))
     common = set(per[0])
     for m in per[1:]:
         common &= set(m)
@@ -482,19 +484,20 @@ def legs_series(u, date, expiry, legs):
     yr = 365.25 * 24 * 3600.0
     pts = []
     for t in sorted(common):
-        prem = sum(per[i][t]["ltp"] for i in range(len(per)))
+        prem = sum(meta[i][2] * per[i][t]["ltp"] for i in range(len(per)))
         spot = per[0][t].get("spot")
         rec = {"t": t, "prem": round(prem, 2), "spot": spot}
         if theo_ok and spot:
             try:
                 T = max(exp_ep - t, 0) / yr
-                rec["theo"] = round(sum(bs.bs_price(spot, meta[i][0], T, sigs[i], opt=meta[i][1])
+                rec["theo"] = round(sum(meta[i][2] * bs.bs_price(spot, meta[i][0], T, sigs[i], opt=meta[i][1])
                                         for i in range(len(per))), 2)
             except Exception:
                 pass
         pts.append(rec)
     return {"ok": True, "underlying": u, "expiry": exp_used, "strikes": strikes,
-            "legs": [{"strike": _f(l.get("strike")), "opt_type": (l.get("opt_type") or "").upper()} for l in legs],
+            "legs": [{"strike": _f(l.get("strike")), "opt_type": (l.get("opt_type") or "").upper(),
+                      "sign": (1 if int(l.get("sign", 1) or 1) >= 0 else -1)} for l in legs],
             "points": pts}
 
 

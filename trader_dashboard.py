@@ -778,11 +778,11 @@ def api_option_legs():
     expiry = request.args.get('expiry') or None
     legs = []
     for tok in (request.args.get('legs') or '').split(','):
-        tok = tok.strip()
-        if '-' not in tok:
+        p = tok.strip().split('-')          # STRIKE-TYPE (sign +1) | STRIKE-TYPE-B (buy hedge, sign -1)
+        if len(p) < 2:
             continue
-        k, ot = tok.rsplit('-', 1)
-        legs.append({"strike": k, "opt_type": ot})
+        legs.append({"strike": p[0], "opt_type": p[1],
+                     "sign": (-1 if (len(p) > 2 and p[2].upper() == 'B') else 1)})
     try:
         days = int(request.args.get('days') or 1)
     except Exception:

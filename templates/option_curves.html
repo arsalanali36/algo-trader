@@ -67,6 +67,12 @@
     #panelModal .pmh{display:flex;align-items:center;margin-bottom:8px}
     #panelModal .pmh b{font-size:13px}
     #panelModal .pmh .x{margin-left:auto;cursor:pointer;color:var(--mut);font-weight:700;font-size:16px}
+    #shBg{position:fixed;inset:0;z-index:91;display:none;background:rgba(0,0,0,.45)}
+    #shModal{position:fixed;z-index:92;display:none;top:50%;left:50%;transform:translate(-50%,-50%);background:#161b22;border:1px solid var(--bd);border-radius:10px;padding:15px 16px;width:452px;max-height:90vh;overflow:auto;box-shadow:0 12px 44px rgba(0,0,0,.7)}
+    #shModal select,#shModal input{background:#0d1117;border:1px solid var(--bd);border-radius:5px;color:var(--tx);padding:5px 7px;font-size:12px;outline:none}
+    #shModal .shrow{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+    #shModal .shcard{background:#0d1117;border:1px solid var(--bd);border-radius:8px;padding:9px 11px}
+    #shModal .shbtn{border:0;border-radius:6px;padding:8px;font-size:12px;font-weight:600;cursor:pointer}
     .ovtick input{cursor:pointer;margin:0}
     .rh{height:7px;cursor:row-resize;background:var(--bd2);flex-shrink:0;position:relative;z-index:6}
     .rh:hover{background:var(--blu)}
@@ -218,6 +224,32 @@
     <div class="pmh"><b>Panels</b><span class="x" onclick="closePanelModal()" title="Close">✕</span></div>
     <div id="panelPick"></div>
     <button style="margin-top:8px;width:100%" onclick="resetPanes()" title="Sab panes barabar height (Alt+R)">⤢ Auto-size panes (Alt+R)</button>
+  </div>
+  <div id="shBg" onclick="closeSH()"></div>
+  <div id="shModal">
+    <div style="display:flex;align-items:center;margin-bottom:10px"><b style="font-size:14px">📉 Sell + Hedge builder</b><span style="margin-left:auto;font-size:11px;color:var(--mut)" id="shWho"></span><span style="cursor:pointer;color:var(--mut);font-size:16px;margin-left:10px" onclick="closeSH()">✕</span></div>
+    <div style="font-size:11px;color:var(--mut);margin-bottom:5px">Preset (baad me legs khud edit kar sakte)</div>
+    <div style="display:flex;gap:6px;margin-bottom:11px">
+      <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shPreset('condor')">Iron Condor</button>
+      <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shPreset('fly')">Iron Fly</button>
+      <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shPreset('naked')">Naked strangle</button>
+    </div>
+    <div style="font-size:11px;color:var(--mut);margin-bottom:4px">Legs — side / type / strike (har leg editable)</div>
+    <div id="shLegs"></div>
+    <button class="shbtn" style="background:#161b22;border:1px solid var(--bd);color:var(--mut);margin-top:2px" onclick="shAddLeg()">＋ leg</button>
+    <div class="shrow" style="margin-top:11px"><span style="font-size:12px;color:var(--mut);width:52px">Lots</span><input id="shLots" type="number" min="1" value="1" style="width:64px" oninput="shDirty()"><span style="font-size:11px;color:var(--mut)" id="shQty"></span></div>
+    <div class="shcard" style="margin:11px 0;display:grid;grid-template-columns:1fr 1fr;gap:9px">
+      <div><div style="font-size:10px;color:var(--mut)">NET CREDIT</div><div id="shCredit" style="font-size:16px;font-weight:600;color:#3fb950">—</div></div>
+      <div><div style="font-size:10px;color:var(--mut)">HEDGED MARGIN</div><div id="shMargin" style="font-size:16px;font-weight:600;color:#58a6ff">—</div><div id="shBenefit" style="font-size:10px;color:var(--mut)"></div></div>
+      <div><div style="font-size:10px;color:var(--mut)">MAX LOSS</div><div id="shMaxL" style="font-size:16px;font-weight:600;color:#f85149">—</div></div>
+      <div><div style="font-size:10px;color:var(--mut)">SPOT</div><div id="shSpot" style="font-size:14px">—</div></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="shbtn" style="background:#21262d;border:1px solid var(--bd);color:var(--tx);flex:1" onclick="shComputeMargin()">💰 Margin + LTP</button>
+      <button class="shbtn" style="background:#1f6feb;color:#fff;flex:1" onclick="shChartIt()">📈 Chart it</button>
+      <button class="shbtn" style="background:#238636;color:#fff;flex:1" onclick="shPaperFire()">🔫 Paper sell</button>
+    </div>
+    <div id="shStatus" style="font-size:11px;color:var(--mut);margin-top:9px;min-height:15px"></div>
   </div>
   <div class="atip" id="alertTip"></div>
   <div id="notePop">
@@ -799,6 +831,7 @@
     var hasNote = (_ctx && _ctx.t!=null) ? findNote(_ctx.pane, _ctx.t) : null;
     m.innerHTML =
       '<div class="mih">'+ (_ctx?_ctx.pane:'') +'</div>'
+      + '<div class="mi" onclick="ctxSellHedge()">📉 Sell + hedge builder…</div>'
       + '<div class="mi" onclick="ctxNote()">📝 '+(hasNote?'Edit note':'Add note')+'</div>'
       + '<div class="mi" onclick="ctxStrike()">📈 Strike overlay…</div>';
     m.style.left=Math.min(cx, window.innerWidth-190)+'px';
@@ -907,12 +940,93 @@
     if(on) fetchGexLevels(done); else done();
   }
 
+  // ── Sell + Hedge builder (right-click → margin + chart + PAPER fire) ──────
+  var _shLegs = [];
+  function _shStep(){ return U==='BANKNIFTY'?100:50; }
+  function _shLotQty(){ return U==='BANKNIFTY'?30:65; }
+  function _shAtm(){ var p=view.length?view[view.length-1]:null; if(p&&p.atm) return p.atm; if(p&&p.spot){ var s=_shStep(); return Math.round(p.spot/s)*s; } return 0; }
+  function ctxSellHedge(){ hideCtxMenu(); openSH(); }
+  function openSH(){ if(!_shLegs.length) shPreset('condor'); else renderSHLegs(); document.getElementById('shWho').textContent=U+' · '+document.getElementById('date').value; document.getElementById('shBg').style.display='block'; document.getElementById('shModal').style.display='block'; }
+  function closeSH(){ document.getElementById('shBg').style.display='none'; document.getElementById('shModal').style.display='none'; }
+  function shPreset(p){ var a=_shAtm(), s=_shStep(); if(!a){ document.getElementById('shStatus').textContent='ATM nahi mila — chart load hone do'; return; }
+    if(p==='condor') _shLegs=[{side:'SELL',type:'CE',strike:a+2*s},{side:'SELL',type:'PE',strike:a-2*s},{side:'BUY',type:'CE',strike:a+6*s},{side:'BUY',type:'PE',strike:a-6*s}];
+    else if(p==='fly') _shLegs=[{side:'SELL',type:'CE',strike:a},{side:'SELL',type:'PE',strike:a},{side:'BUY',type:'CE',strike:a+6*s},{side:'BUY',type:'PE',strike:a-6*s}];
+    else _shLegs=[{side:'SELL',type:'CE',strike:a+2*s},{side:'SELL',type:'PE',strike:a-2*s}];
+    renderSHLegs(); shDirty();
+  }
+  function renderSHLegs(){ var el=document.getElementById('shLegs'); if(!el) return; var s=_shStep();
+    el.innerHTML=_shLegs.map(function(l,i){
+      return '<div class="shrow">'
+        +'<select onchange="_shLegs['+i+'].side=this.value;shDirty()" style="width:66px"><option'+(l.side==='SELL'?' selected':'')+'>SELL</option><option'+(l.side==='BUY'?' selected':'')+'>BUY</option></select>'
+        +'<select onchange="_shLegs['+i+'].type=this.value;shDirty()" style="width:56px"><option'+(l.type==='CE'?' selected':'')+'>CE</option><option'+(l.type==='PE'?' selected':'')+'>PE</option></select>'
+        +'<input type="number" step="'+s+'" value="'+l.strike+'" oninput="_shLegs['+i+'].strike=+this.value;shDirty()" style="width:84px">'
+        +'<span style="cursor:pointer;color:var(--mut);margin-left:auto;font-weight:700" onclick="_shLegs.splice('+i+',1);renderSHLegs();shDirty()">✕</span></div>';
+    }).join('');
+    var lots=+document.getElementById('shLots').value||1; document.getElementById('shQty').textContent='· '+(lots*_shLotQty())+'q';
+  }
+  function shAddLeg(){ _shLegs.push({side:'SELL',type:'CE',strike:_shAtm()}); renderSHLegs(); shDirty(); }
+  function shDirty(){ ['shCredit','shMargin','shMaxL','shSpot'].forEach(function(id){ var e=document.getElementById(id); if(e) e.textContent='—'; }); var b=document.getElementById('shBenefit'); if(b) b.textContent=''; var q=document.getElementById('shQty'); if(q){ var lots=+document.getElementById('shLots').value||1; q.textContent='· '+(lots*_shLotQty())+'q'; } }
+  function _shLegsPayload(){ return _shLegs.map(function(l){ return {strike:l.strike, type:l.type, side:l.side}; }); }
+  function _shMaxLoss(qty, credit){
+    var ces=_shLegs.filter(function(l){return l.type==='CE';}), pes=_shLegs.filter(function(l){return l.type==='PE';});
+    function wing(arr, up){ var sl=arr.filter(function(l){return l.side==='SELL';}), by=arr.filter(function(l){return l.side==='BUY';}); if(!sl.length) return 0; if(!by.length) return null;
+      var w=0; sl.forEach(function(sL){ by.forEach(function(bL){ var dd=up?(bL.strike-sL.strike):(sL.strike-bL.strike); if(dd>w)w=dd; }); }); return w>0?w:null; }
+    var wc=wing(ces,true), wp=wing(pes,false);
+    if(wc==null||wp==null) return 'UNCAPPED ⚠';
+    var pts=Math.max(wc,wp)*qty, ml=pts-(credit||0);
+    return (credit==null? '~₹'+Math.round(pts).toLocaleString('en-IN') : '₹'+Math.round(Math.max(0,ml)).toLocaleString('en-IN'))+' (capped)';
+  }
+  function shComputeMargin(){
+    if(!_shLegs.length) return;
+    var lots=+document.getElementById('shLots').value||1;
+    document.getElementById('shStatus').textContent='margin + LTP nikaal rahe… (market band ho to nahi milega)';
+    fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:U,lots:lots,legs:_shLegsPayload()})})
+      .then(function(r){return r.json();}).then(function(d){
+        if(!d.ok){ document.getElementById('shStatus').textContent='⚠ '+(d.msg||'fail'); return; }
+        document.getElementById('shSpot').textContent=d.spot;
+        var qty=lots*_shLotQty(), credit=0, haveLtp=true;
+        (d.legs||[]).forEach(function(ol,i){ var l=_shLegs[i], lp=(ol&&ol.ltp)||0; if(!lp) haveLtp=false; credit+=(l&&l.side==='SELL'?lp:-lp); });
+        credit*=qty;
+        document.getElementById('shCredit').textContent=(haveLtp? ((credit>=0?'₹':'-₹')+Math.round(Math.abs(credit)).toLocaleString('en-IN')) : '—');
+        document.getElementById('shMargin').textContent=(d.hedged!=null)?('~₹'+Math.round(d.hedged).toLocaleString('en-IN')):'—';
+        document.getElementById('shBenefit').textContent=(d.standalone!=null&&d.benefit)?('naked ₹'+Math.round(d.standalone).toLocaleString('en-IN')+' · bacha ₹'+Math.round(d.benefit).toLocaleString('en-IN')):'';
+        document.getElementById('shMaxL').textContent=_shMaxLoss(qty, haveLtp?credit:null);
+        document.getElementById('shStatus').textContent='✓ live @ spot '+d.spot;
+      }).catch(function(){ document.getElementById('shStatus').textContent='⚠ network'; });
+  }
+  function shChartIt(){
+    if(!_shLegs.length) return;
+    if(fixedStrats.length>=5){ document.getElementById('shStatus').textContent='max 5 chart strategies — koi hatao'; return; }
+    var label=_shLegs.map(function(l){return (l.side==='SELL'?'-':'+')+l.strike+l.type[0];}).join(' ');
+    var strat={id:'fx'+(Date.now()), color:FIXCOL[fixedStrats.length%FIXCOL.length], label:label,
+      legs:_shLegs.map(function(l){ return {strike:l.strike, opt_type:l.type, sign:(l.side==='SELL'?1:-1)}; })};
+    fixedStrats.push(strat); save('oc_fixed', fixedStrats);
+    if(!enabled['fixed']){ enabled['fixed']=true; save('oc_panels', enabled); }
+    fetchFixed(strat, function(){ renderPicker(); buildPanes(); renderFixList(); });
+    document.getElementById('shStatus').textContent='✓ Fixed pane me add ho gaya (net premium line)';
+  }
+  function shPaperFire(){
+    if(_shLegs.length<2){ document.getElementById('shStatus').textContent='fire ke liye 2+ legs chahiye'; return; }
+    if(!confirm('PAPER order fire karein?\n'+_shLegs.map(function(l){return l.side+' '+l.strike+l.type;}).join('\n'))) return;
+    document.getElementById('shStatus').textContent='live spot le rahe…';
+    fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:U,lots:1,legs:_shLegsPayload(),ltp_only:true})})
+      .then(function(r){return r.json();}).then(function(d){
+        if(!d.ok||!d.spot){ document.getElementById('shStatus').textContent='⚠ '+(d.msg||'live spot nahi (market band?) — order NAHI'); return; }
+        var s=_shStep(), atm=Math.round(d.spot/s)*s, lots=+document.getElementById('shLots').value||1;
+        var legs=_shLegs.map(function(l){ var off=(l.type==='CE')?Math.round((l.strike-atm)/s):Math.round((atm-l.strike)/s); return {side:l.side, opt_type:l.type, offset:off}; });
+        document.getElementById('shStatus').textContent='paper order bhej rahe…';
+        fetch('/api/chain/fire-basket',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({symbol:U,lots:lots,tp_pt:30,sl_pt:30,legs:legs,expiry:'near'})})
+          .then(function(r){return r.json();}).then(function(f){ document.getElementById('shStatus').textContent=(f.ok?'✅ ':'⚠ ')+(f.msg||(f.ok?'fired (paper)':'fail')); })
+          .catch(function(){ document.getElementById('shStatus').textContent='⚠ network (fire)'; });
+      }).catch(function(){ document.getElementById('shStatus').textContent='⚠ network (spot)'; });
+  }
+
   // ── Fixed straddle/strangle (held strikes, Sensibull-style multi) ──────────
   function fetchFixed(s, cb){
     var qs='underlying='+U+'&date='+document.getElementById('date').value
       +'&expiry='+encodeURIComponent(document.getElementById('expiry').value||'')
       +(DAYS>1?'&days='+DAYS:'')                       // multi-day: span same window as main charts
-      +'&legs='+s.legs.map(function(l){return l.strike+'-'+l.opt_type;}).join(',');
+      +'&legs='+s.legs.map(function(l){return l.strike+'-'+l.opt_type+(l.sign===-1?'-B':'');}).join(',');
     fetch('/api/option-legs?'+qs).then(function(r){return r.json();}).then(function(d){
       fixedData[s.id]=(d&&d.points)||[]; if(cb)cb();
     }).catch(function(){ fixedData[s.id]=[]; if(cb)cb(); });
@@ -1048,8 +1162,9 @@
     var pt=null; if(t!=null){ for(var i=0;i<rs.length;i++){ if(rs[i].t===t){ pt=rs[i]; break; } } }
     if(!pt) pt=rs[rs.length-1];
     if(pt.prem==null || pt.spot==null) return null;
-    var intr=0; (s.legs||[]).forEach(function(l){ intr+=_legIntrinsic(pt.spot, l); });
-    return { intrinsic: Math.max(0,intr), tv: Math.max(0, pt.prem-intr), prem: pt.prem };
+    var intr=0; (s.legs||[]).forEach(function(l){ intr+=(l.sign===-1?-1:1)*_legIntrinsic(pt.spot, l); });
+    intr=Math.max(0,intr);
+    return { intrinsic: intr, tv: Math.max(0, pt.prem-intr), prem: pt.prem };
   }
   function renderSplit(t){
     var e=panes.find(function(p){return p.kind==='split';}); if(!e||!e.host) return;
