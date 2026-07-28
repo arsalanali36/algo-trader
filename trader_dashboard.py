@@ -2983,8 +2983,36 @@ def api_trade_chart_underlying_data():
                             "low": round(float(l), 2), "close": round(float(c), 2)})
             if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
             if exit_t and hhmm == exit_t: exit_mk = t_ist
+        # RSI overlay — if this trade's strategy trades on RSI, compute the SAME Wilder
+        # RSI it uses (its own timeframe from config) so the OB/OS entry levels + the
+        # midline (50) EXIT line are visible on the chart. Uses _CHARTING.indicators.
+        # wilder_rsi (the exact formula the live strategy runs). Best-effort — a failure
+        # just omits the overlay, the candle chart still renders.
+        rsi = None
+        try:
+            scfg = json.loads(TC_FILE.read_text()).get(strategy_id) or {}
+            if (scfg.get('rsi_period') or scfg.get('rsi_exit') or 'rsi' in strategy_id.lower()) and len(candles) > 20:
+                period = int(scfg.get('rsi_period') or 14)
+                tf_min = int(''.join(ch for ch in str(scfg.get('timeframe') or '2m') if ch.isdigit()) or 2) or 2
+                ob = float(scfg.get('overbought') or 70)
+                oss = float(scfg.get('oversold') or 30)
+                mid = float(scfg.get('rsi_exit') or 50)
+                buck = {}                                    # strategy-TF resample: bucket's last (time, close)
+                for c in candles:
+                    b = (c['time'] // (tf_min * 60)) * (tf_min * 60)
+                    buck[b] = (c['time'], c['close'])
+                bts = sorted(buck)
+                import pandas as pd
+                from _CHARTING import indicators as _ind
+                rv = _ind.wilder_rsi(pd.Series([buck[b][1] for b in bts]), period)
+                series = [{"time": buck[bts[i]][0], "value": round(float(rv.iloc[i]), 2)}
+                          for i in range(len(bts)) if rv.iloc[i] == rv.iloc[i]]
+                if series:
+                    rsi = {"series": series, "ob": ob, "mid": mid, "os": oss, "period": period, "tf": f"{tf_min}m"}
+        except Exception:
+            rsi = None
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
-                        "symbol": root, "date": date_str, "zone": zone})
+                        "symbol": root, "date": date_str, "zone": zone, "rsi": rsi})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 

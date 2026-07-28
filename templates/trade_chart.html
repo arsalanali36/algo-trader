@@ -407,6 +407,22 @@ document.addEventListener('DOMContentLoaded', () => {
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(uniq);
       window._leftSeries = s; // ref for live auto-refresh
+
+      // RSI overlay (RSI strategies) — the strategy's own Wilder RSI on a separate
+      // LEFT scale in the bottom band (candles keep the top). Shows the OB/OS entry
+      // levels + the midline (50) EXIT line, so you can see WHY entry/exit fired.
+      if (d.rsi && d.rsi.series && d.rsi.series.length) {
+        chart.priceScale('right').applyOptions({ scaleMargins: { top: 0.06, bottom: 0.30 } });
+        const rsiS = chart.addLineSeries({ priceScaleId: 'left', color: '#a371f7', lineWidth: 2,
+          crosshairMarkerVisible: false, priceLineVisible: false, lastValueVisible: false,
+          title: 'RSI('+d.rsi.period+') '+d.rsi.tf });
+        chart.priceScale('left').applyOptions({ visible: true, borderColor: '#30363d',
+          scaleMargins: { top: 0.72, bottom: 0.03 } });
+        rsiS.setData(d.rsi.series);
+        rsiS.createPriceLine({ price: d.rsi.mid, color: '#e3a008', lineWidth: 2, lineStyle: 0, axisLabelVisible: true, title: 'exit '+d.rsi.mid });
+        rsiS.createPriceLine({ price: d.rsi.ob,  color: '#f85149', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'OB '+d.rsi.ob });
+        rsiS.createPriceLine({ price: d.rsi.os,  color: '#3fb950', lineWidth: 1, lineStyle: 2, axisLabelVisible: true, title: 'OS '+d.rsi.os });
+      }
       if (d.entry_mk) s.setMarkers([{time:d.entry_mk,
         position: tradeDir==='SHORT' ? 'aboveBar' : 'belowBar',
         color: tradeDir==='SHORT' ? '#f85149' : (tradeDir==='LONG' ? '#3fb950' : '#58a6ff'),
