@@ -1138,13 +1138,23 @@
           <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 220" style="width:100%;height:auto"></svg></div>
           <div id="pfCombHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
           <div id="pfExitRow" style="display:flex;flex-wrap:wrap;align-items:center;gap:12px;margin-top:8px;padding-top:9px;border-top:1px solid #30363d">
-            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Target (book profit)</div><div id="pfExTgt" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#3fb950">—</div></div>
-            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div><div id="pfExSl" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;color:#f85149">—</div></div>
-            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700">—</div></div>
+            <div style="min-width:150px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Target (book profit)</div>
+              <div style="display:flex;align-items:center;gap:3px;margin-top:3px">
+                <span style="color:#3fb950;font-size:11px;font-weight:700">₹</span>
+                <input id="pfExTgtRs" type="number" step="100" oninput="_pfExitInput('tgt','rs',this.value)" title="Target in ₹ (whole group)" style="width:62px;background:#0d1117;border:1px solid #238636;border-radius:5px;color:#3fb950;padding:3px 5px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
+                <input id="pfExTgtPt" type="number" step="1" oninput="_pfExitInput('tgt','pt',this.value)" title="Target in points" style="width:44px;background:#0d1117;border:1px solid #238636;border-radius:5px;color:#3fb950;padding:3px 4px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
+                <span style="color:#6e7681;font-size:10px">pt</span></div></div>
+            <div style="min-width:150px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div>
+              <div style="display:flex;align-items:center;gap:3px;margin-top:3px">
+                <span style="color:#f85149;font-size:11px;font-weight:700">₹</span>
+                <input id="pfExSlRs" type="number" step="100" oninput="_pfExitInput('sl','rs',this.value)" title="Stop-loss in ₹ (negative)" style="width:62px;background:#0d1117;border:1px solid #8b2e2e;border-radius:5px;color:#f85149;padding:3px 5px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
+                <input id="pfExSlPt" type="number" step="1" oninput="_pfExitInput('sl','pt',this.value)" title="Stop-loss in points (negative)" style="width:44px;background:#0d1117;border:1px solid #8b2e2e;border-radius:5px;color:#f85149;padding:3px 4px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
+                <span style="color:#6e7681;font-size:10px">pt</span></div></div>
+            <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:3px">—</div></div>
             <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
             <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
             <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
-            <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:170px">Green (Target) / red (SL) line ko drag karo — jaise hi combined MTM chhue, poori group ek saath square off.</span>
+            <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:170px">Target/SL line ko drag karo <b>ya ₹/pt box me type karo</b> — jaise hi combined MTM chhue, poori group ek saath square off.</span>
           </div>
         </div>`;
       if (legSlot) legSlot.innerHTML = `
@@ -1262,14 +1272,17 @@
     function _pfUpdExitRow(liveVal) {
       const EX = window._pfExit; if (!EX) return;
       const qty = (window._pfCombGeo && window._pfCombGeo.qty) || 1;
-      const set = (id, v, col) => {
-        const e = document.getElementById(id); if (!e) return;
-        const pt = v / qty;
-        e.innerHTML = (v >= 0 ? '+' : '') + _pfRs(v) + ' · ' + (pt >= 0 ? '+' : '') + pt.toFixed(1) + 'p';
-        if (col) e.style.color = col;
+      // sync the Target/SL input boxes to the current ₹/pt — but NEVER overwrite a
+      // field the user is actively typing in (drag/redraw would otherwise clobber it).
+      const setIn = (id, val) => {
+        const el = document.getElementById(id);
+        if (!el || el === document.activeElement) return;
+        el.value = val;
       };
-      set('pfExTgt', EX.tgt, _PF.C.pos);
-      set('pfExSl', EX.sl, _PF.C.neg);
+      setIn('pfExTgtRs', Math.round(EX.tgt));
+      setIn('pfExTgtPt', (EX.tgt / qty).toFixed(1));
+      setIn('pfExSlRs', Math.round(EX.sl));
+      setIn('pfExSlPt', (EX.sl / qty).toFixed(1));
       const le = document.getElementById('pfExLive');
       if (le && liveVal != null) {
         const pt = liveVal / qty;
@@ -1277,6 +1290,19 @@
         le.style.color = liveVal >= 0 ? _PF.C.pos : _PF.C.neg;
       }
     }
+
+    // #02 type Target/SL in ₹ OR points — mirror of dragging the line. Updates
+    // _pfExit (whole-group ₹) + redraws the chart line & syncs the other unit.
+    window._pfExitInput = (which, unit, value) => {
+      const EX = window._pfExit; if (!EX) return;
+      const qty = (window._pfCombGeo && window._pfCombGeo.qty) || 1;
+      const v = parseFloat(value);
+      if (isNaN(v)) return;                                  // blank/partial → leave as-is
+      const rs = Math.round(unit === 'pt' ? v * qty : v);
+      if (which === 'tgt') EX.tgt = Math.max(rs, 100);       // target stays positive
+      else EX.sl = Math.min(rs, -100);                       // SL stays negative
+      if (window._pfSeries) _pfDrawCombined(window._pfSeries); // redraw line + labels + sync other unit
+    };
 
     // #02 arm/clear the combined-MTM auto-exit rule for this group (PAPER; engine = trader_dashboard)
     async function _pfExitApply() {
