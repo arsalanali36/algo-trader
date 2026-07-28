@@ -272,7 +272,7 @@
   if(!('combined' in enabled)){ enabled.combined = false; save('oc_panels', enabled); }
   var heights = load('oc_heights', {});
   var rawAlerts = [], alertMarkers = {}, alertByTime = {};
-  var notes = [], noteMarkers = {}, noteByTime = {};
+  var notes = [], noteMarkers = {}, noteByTime = {}, atmMarkers = {};
   var overlayHidden = load('oc_overlay_hidden', {});   // panelId → true = data-overlay (OI PE) line hidden
   // OVERLAYS (all panes): index (Off/Line/OHLC) + one selected strike (Off/Line/OHLC via right-click)
   var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
@@ -420,11 +420,14 @@
 
   function onCross(param, entry){
     var t=param&&param.time;
+    if(entry && t!=null) entry._lastT = t;   // remember the crosshair time — used for right-click note placement (reliable, = what the user sees), not a pixel→time guess
     // alert marker hover → floating tooltip
     var tip=document.getElementById('alertTip');
     if(tip){
       var items=[];
       if(entry && t!=null && param.point){
+        // straddle pane: always show which ATM strike this bar's straddle is built from
+        if(entry.id==='straddle'){ var _pp=byTime[t]; if(_pp && _pp.atm!=null) items.push('🎯 ATM '+_pp.atm+(_pp.spot!=null?(' · spot '+fmt(_pp.spot,0)):'')); }
         var al=alertByTime[entry.id+'|'+t]; if(al) items=items.concat(al.map(function(a){ return _esc(a.msg); }));
         var nt=noteByTime[entry.id+'|'+t]; if(nt) items=items.concat(nt.map(function(n){ return '📝 '+_esc(n.text); }));
       }
@@ -654,10 +657,48 @@
     });
     Object.keys(noteMarkers).forEach(function(k){ noteMarkers[k].sort(function(a,b){return a.time-b.time;}); });
   }
-  function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).sort(function(x,y){ return x.time-y.time; }); }
+  // ATM roll markers: the ATM straddle is always built from the CURRENT ATM strike, so
+  // whenever spot moves enough to shift the ATM to a new strike the whole "straddle"
+  // series jumps to a different contract. Mark each roll on the straddle pane (cyan
+  // arrow + the new strike) so it's clear which strike the premium reflects at any time.
+  function buildAtmMarkers(){
+    atmMarkers={};
+    if(!view.length) return;
+    var prev=null, list=[];
+    view.forEach(function(p){
+      if(p.atm==null) return;
+      if(prev==null){ prev=p.atm; return; }          // first known ATM = baseline, not a change
+      if(p.atm!==prev){
+        list.push({ time:p.t, position:'belowBar', color:'#39c5cf',
+                    shape:(p.atm>prev?'arrowUp':'arrowDown'), text:String(p.atm), size:1 });
+        prev=p.atm;
+      }
+    });
+    if(list.length){ list.sort(function(a,b){ return a.time-b.time; }); atmMarkers['straddle']=list; }
+  }
+  function paneMarkers(id){ return (alertMarkers[id]||[]).concat(noteMarkers[id]||[]).concat(atmMarkers[id]||[]).sort(function(x,y){ return x.time-y.time; }); }
   function setPaneMarkers(e){ try{ e.main.setMarkers(paneMarkers(e.id)); }catch(x){} }
   function refreshMarkers(){ panes.forEach(setPaneMarkers); }
-  function findNote(pane, t){ for(var i=0;i<notes.length;i++){ if(notes[i].pane===pane && notes[i].t===t) return notes[i]; } return null; }
+  // tolerance = half the typical bar spacing in the current view, so a note matches the
+  // nearest bar even after a timeframe/resample change (min 30s). Fixes "note edit/del
+  // nahi hota" — exact-time equality broke whenever the resolved click time drifted.
+  function _noteTol(){
+    if(view.length<2) return 90;
+    var gaps=[]; for(var i=1;i<view.length;i++){ var g=view[i].t-view[i-1].t; if(g>0) gaps.push(g); }
+    if(!gaps.length) return 90;
+    gaps.sort(function(a,b){ return a-b; });
+    return Math.max(30, gaps[Math.floor(gaps.length/2)]/2 + 1);
+  }
+  function findNote(pane, t){
+    if(t==null) return null;
+    var tol=_noteTol(), best=null, bd=Infinity;
+    for(var i=0;i<notes.length;i++){
+      if(notes[i].pane!==pane) continue;
+      var d=Math.abs(notes[i].t-t);
+      if(d<=tol && d<bd){ bd=d; best=notes[i]; }
+    }
+    return best;
+  }
 
   var _ctx=null;
   function attachNoteMenu(entry){
@@ -665,9 +706,12 @@
       e.preventDefault();
       if(!view.length) return;
       var rect=entry.el.getBoundingClientRect();
-      var x=e.clientX-rect.left, y=e.clientY-rect.top;
-      var t=null; try{ t=entry.chart.timeScale().coordinateToTime(x); }catch(x2){}
+      var y=e.clientY-rect.top;
       var price=null; try{ price=entry.main.coordinateToPrice(y); }catch(x3){}
+      // time = where the crosshair currently is (exactly what the user sees under the
+      // cursor) — reliable. Only fall back to a pixel→time guess if there's no crosshair.
+      var t = (entry._lastT!=null) ? entry._lastT : null;
+      if(t==null){ try{ t=entry.chart.timeScale().coordinateToTime(e.clientX-rect.left); }catch(x2){} }
       var best=null;
       if(t!=null){ var vt=view.map(function(p){return p.t;}), bd=Infinity; for(var i=0;i<vt.length;i++){ var dd=Math.abs(vt[i]-t); if(dd<bd){bd=dd;best=vt[i];} } }
       _ctx={ pane:entry.id, t:best, price:price, cx:e.clientX, cy:e.clientY };
@@ -941,7 +985,7 @@
       _daysUsed = (DAYS>1 && d && d.days_used && d.days_used.length) ? d.days_used : null;
       rawAlerts=(ad&&ad.alerts)||[];
       buildAlerts();
-      notes=load(notesKey(),[]); buildNotes();
+      notes=load(notesKey(),[]); buildNotes(); buildAtmMarkers();
       // Multi-day view: also pull each EARLIER visible day's auto-alerts so their markers
       // show across the whole range (notes already merged via mergedNotes()).
       if(_daysUsed && _daysUsed.length>1){

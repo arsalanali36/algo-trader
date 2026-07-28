@@ -708,7 +708,7 @@
         .pf-2col{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:12px;align-items:start}
         .pf-col{display:flex;flex-direction:column;gap:12px;min-width:0}
         .pf-panel{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px}
-        #pfGrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(215px,1fr));gap:10px}
+        #pfGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
         .pf-navbtn{width:24px;height:28px;border-radius:6px;border:1px solid #30363d;background:#161b22;color:#e6edf3;cursor:pointer;font-size:16px;font-weight:700;line-height:1}
         .pf-navbtn:hover{background:#21262d;border-color:#1f6feb}
         #pfCards{display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:14px}
@@ -716,6 +716,7 @@
         .pf-tab:hover{color:#e6edf3;border-color:#1f6feb}
         .pf-tab-on{background:#1f6feb22;color:#58a6ff;border-color:#1f6feb80}
         @media(max-width:900px){.pf-2col{grid-template-columns:1fr}#pfCards{grid-template-columns:repeat(3,1fr)}}
+        @media(max-width:560px){#pfGrid{grid-template-columns:1fr}}
       </style>
       <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;max-width:1280px;width:100%;padding:16px">
         <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:10px;flex-wrap:wrap">
