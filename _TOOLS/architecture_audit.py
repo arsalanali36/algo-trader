@@ -96,6 +96,10 @@ RAW_ORDER_ALLOW_DIRS = {"brokers"}  # broker implementations wrap the SDK itself
 STRATEGY_DIRS = {"_TRADERS", "strategies"}
 STRATEGY_FILES = {"webhook_executor.py"}
 RISK_HOME = {"risk_gate.py", "strategy_safety.py"}
+# MARGIN-GATE: _leg_capital / kite_basket_margin are PRIVATE to risk_gate — the
+# single margin source. Everyone else uses position_margin() / margin_breakdown().
+MARGIN_HOME = {"risk_gate.py", "architecture_audit.py"}  # this file names them in its own check strings
+MARGIN_PRIVATE_RE = re.compile(r"\b(_leg_capital|kite_basket_margin)\s*\(")
 
 # Check 3: indicator-looking function names; only _CHARTING may define them
 INDICATOR_FN_RE = re.compile(
@@ -234,6 +238,28 @@ def check_inline_risk(path, src, findings):
                 "FAIL", "INLINE-RISK", rel(path), i,
                 "inline capital/concentration/drawdown comparison in a strategy file — "
                 "route through risk_gate.py / strategy_safety.gate_entry()"))
+
+
+def check_margin_gate(path, src, findings):
+    """MARGIN-GATE — _leg_capital()/kite_basket_margin() are PRIVATE to risk_gate.py.
+    Every other file must use risk_gate.position_margin() (a position/group's capital-in-use)
+    or margin_breakdown() (the naked-vs-hedged display). Scattered direct use of the
+    per-leg vs basket calc is what made RMS / display / margin-chart disagree for the
+    same positions (2026-07-28). Escape: '# margin-gate-ok: <reason>'."""
+    if os.path.basename(path) in MARGIN_HOME:
+        return
+    for i, line in enumerate(src.splitlines(), 1):
+        if "margin-gate-ok:" in line:
+            continue
+        code = line.split("#", 1)[0]
+        if "def " in code:  # a def elsewhere would be a duplicate — DUP-INDICATOR/its own smell
+            continue
+        if MARGIN_PRIVATE_RE.search(code):
+            findings.append(Finding(
+                "FAIL", "MARGIN-GATE", rel(path), i,
+                "direct _leg_capital()/kite_basket_margin() call — these are private to "
+                "risk_gate.py; use risk_gate.position_margin() for a position/group's "
+                "capital, or margin_breakdown() for the naked-vs-hedged display"))
 
 
 def check_dup_indicators(path, tree, findings):
@@ -700,6 +726,7 @@ def audit(files):
         check_raw_strategy_label(path, src, findings)
         check_raw_orders(path, tree, findings)
         check_inline_risk(path, src, findings)
+        check_margin_gate(path, src, findings)
         check_dup_indicators(path, tree, findings)
         check_state_persistence(path, src, tree, findings)
         check_singleton_guard(path, src, findings)

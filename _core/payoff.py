@@ -310,15 +310,14 @@ def basket_margin(legs, product="NRML"):
         rows = [{"sym": L["trad_sym"], "sec_id": L.get("sec_id"), "entry": L["side"],
                  "qty": L["qty"], "entry_price": L["entry"], "ltp": L.get("ltp"),
                  "segment": "NSE_FNO"} for L in legs]
-        standalone = sum(rg._leg_capital(p) for p in rows)
-        out["standalone"] = round(standalone, 2)
-        hedged = rg.kite_basket_margin(rows, product_type=product)
-        if hedged is None:
+        # The single margin gate — hedged/naked/benefit from risk_gate.margin_breakdown
+        # (which uses position_margin = the SAME basket calc RMS uses). This module
+        # never calls a broker margin API itself.
+        bd = rg.margin_breakdown(rows)
+        if not bd.get("hedged"):
             out["msg"] = "basket margin unavailable (broker call failed)"
             return out
-        out["hedged"] = round(float(hedged), 2)
-        out["benefit"] = round(standalone - float(hedged), 2)
-        out["ok"] = True
+        out.update(hedged=bd["hedged"], standalone=bd["standalone"], benefit=bd["benefit"], ok=True)
     except Exception as e:
         out["msg"] = str(e)
     return out

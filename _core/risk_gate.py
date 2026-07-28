@@ -934,6 +934,43 @@ def _group_capital(rows, rc=None):
     return min(b, per_leg)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+#  MARGIN GATE — the SINGLE source for "how much capital does this position hold".
+#
+#  Like execution_gateway (orders) and strategy_safety.gate_entry (risk), margin
+#  now has ONE public entry point too. Before this, features computed margin at
+#  three different levels — per-leg NAKED (_leg_capital summed), hedged BASKET
+#  (_group_capital), or raw kite_basket_margin — and picked inconsistently, so
+#  the RMS number, the Open-Positions display, and the Today's-Peak margin chart
+#  all disagreed for the SAME positions (2026-07-28: ₹2.8L vs ₹4.9L vs ₹21.8L).
+#
+#  RULE (enforced by architecture_audit MARGIN-GATE): _leg_capital / kite_basket_
+#  margin are PRIVATE to this module. Every other file uses position_margin() for
+#  a position/group's capital, or margin_breakdown() for the hedged-vs-naked
+#  display. A single leg is just position_margin([leg]).
+# ══════════════════════════════════════════════════════════════════════════════
+def position_margin(legs, rc=None):
+    """THE canonical capital-in-use for a position / leg-group: the broker's REAL
+    hedged basket margin for a multi-leg F&O structure, per-leg sum otherwise, and
+    NEVER more than the per-leg sum (conservative). Same value capital_in_use sums.
+    A single leg → position_margin([leg]). Use THIS everywhere, not _leg_capital
+    (per-leg naked — no hedge benefit) or kite_basket_margin (raw) directly."""
+    return _group_capital(list(legs or []), rc)
+
+
+def margin_breakdown(legs, rc=None):
+    """Display helper (payoff panel): {hedged, standalone, benefit} — hedged =
+    position_margin (real basket), standalone = per-leg NAKED sum (no hedge
+    benefit), benefit = standalone − hedged. The ONLY sanctioned way to show the
+    naked-vs-hedged split outside this module."""
+    rows = list(legs or [])
+    standalone = sum(_leg_capital(p, rc) for p in rows)
+    hedged = _group_capital(rows, rc)
+    return {"hedged": round(float(hedged or 0), 2),
+            "standalone": round(float(standalone or 0), 2),
+            "benefit": round(max(0.0, float(standalone or 0) - float(hedged or 0)), 2)}
+
+
 def broker_real_margin(sec_id, seg, qty, price, side, product_type="INTRADAY", trad_sym=None):
     """Margin estimate from the EXECUTING broker (TRAP #90's lesson: when
     orders go to broker B, capital checks must be validated against broker B's

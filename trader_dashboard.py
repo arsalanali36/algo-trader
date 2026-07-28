@@ -4277,11 +4277,7 @@ def _straddle_preview(symbol, lots, spec, quick=False, expiry="near"):
     margin = None
     if not quick:   # quick=fast path: skip the slow Kite basket-margin call
         try:
-            margin = rg.kite_basket_margin(rows)
-            if not margin or margin <= 0:
-                margin = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
-                                              "entry": r["entry"], "sec_id": r["sec_id"],
-                                              "sym": r["sym"], "segment": "NSE_FNO"}) for r in rows)
+            margin = rg.position_margin(rows)   # single margin gate (basket, per-leg fallback)
         except Exception:
             margin = None
     return {"ok": True, "spot": round(spot, 1), "atm": atm_strike, "step": step,
@@ -4333,11 +4329,7 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
                     "entry_price": _straddle_lltp(lg["sec_id"]) or 0,
                     "sym": lg["trad_sym"], "segment": "NSE_FNO"} for lg in ordered]
     try:
-        basket = rg.kite_basket_margin(basket_rows)
-        if not basket or basket <= 0:
-            basket = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
-                                          "entry": r["entry"], "sec_id": r["sec_id"],
-                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in basket_rows)
+        basket = rg.position_margin(basket_rows)   # single margin gate (basket, per-leg fallback)
         ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
         if not ok_cap:
             log(f"[STRADDLE] {symbol} flex skip — basket margin ₹{basket:,.0f} fit nahi: {cap_why}")
@@ -4557,11 +4549,7 @@ def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec
         basket_rows.append({"sec_id": h["sec"], "entry": "BUY", "qty": q,
                             "entry_price": _lltp(h["sec"]) or 0, "sym": h["tsym"], "segment": "NSE_FNO"})
     try:
-        basket = rg.kite_basket_margin(basket_rows)
-        if not basket or basket <= 0:
-            basket = sum(rg._leg_capital({"qty": r["qty"], "entry_price": r["entry_price"],
-                                          "entry": r["entry"], "sec_id": r["sec_id"],
-                                          "sym": r["sym"], "segment": "NSE_FNO"}) for r in basket_rows)
+        basket = rg.position_margin(basket_rows)   # single margin gate (basket, per-leg fallback)
         ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
         if not ok_cap:
             log(f"[STRADDLE] {symbol} skip — basket margin ₹{basket:,.0f} fit nahi hua: {cap_why}")
@@ -5356,7 +5344,7 @@ def api_margin_history():
                 g["legs"].append(r); g["s"] = min(g["s"], s_m); g["e"] = max(g["e"], e_m); g["op"] = g["op"] or is_open
         for key, g in groups.items():
             try:
-                mgn = _rg._group_capital(g["legs"])           # hedged basket (or per-leg fallback)
+                mgn = _rg.position_margin(g["legs"])          # single margin gate (hedged basket / per-leg)
             except Exception:
                 mgn = sum(float(l.get("qty") or 0) * float(l.get("entry_price") or 0) for l in g["legs"])
             # buy-only group (long premium) vs anything with a SELL leg (basket margin)
@@ -7009,7 +6997,7 @@ def api_orders():
                 # broker_real_margin (Kite order_margins / Dhan calculator); BUY →
                 # premium paid. Falls back to the multiplier only if the API fails.
                 # (Was crude qty*price*multiplier, which under-showed SELL margin.)
-                p['margin_used'] = round(_rg._leg_capital(p, _rc), 2)
+                p['margin_used'] = round(_rg.position_margin([p], _rc), 2)   # single margin gate
             except Exception:
                 p['margin_used'] = 0
             # Task 8 — current trailing/aggressive SL the monitor will fire on
@@ -7042,7 +7030,7 @@ def api_orders():
                     continue
                 _grp.setdefault(p.get('strategy') or '', []).append(p)
             data['group_margin'] = {
-                s: {"hedged": round(_rg._group_capital(rows, _rc), 2),
+                s: {"hedged": round(_rg.position_margin(rows, _rc), 2),   # single margin gate
                     "standalone": round(sum(float(r.get('margin_used') or 0) for r in rows), 2)}
                 for s, rows in _grp.items()
             }
