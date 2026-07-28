@@ -551,12 +551,15 @@ def overview(mode=None, group="day", warm=True):
 
 
 def build_all(force=False):
-    """Pre-warm: compute + store every available date (idempotent). For the EOD
-    timer's first run + manual backfill so the overview loads instantly."""
+    """Pre-warm: compute + store every available date (idempotent). The LATEST date
+    (today) is ALWAYS rebuilt fresh so the daily EOD timer captures the full day's
+    cuts even if an on-demand run stored a partial one earlier. Past dates only
+    (re)build when missing (or force)."""
+    dates = available_trade_dates()
     done = 0
-    for d in available_trade_dates():
+    for i, d in enumerate(dates):
         try:
-            _load_or_build(d, force=force)
+            _load_or_build(d, force=force or (i == len(dates) - 1))
             done += 1
         except Exception as e:
             print(f"[intervention] build_all {d} fail: {e}")
