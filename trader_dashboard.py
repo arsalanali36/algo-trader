@@ -7211,11 +7211,28 @@ def _enrich_trade_display(trades, lot_only=False):
     cache = _margin_cache_load()
     if not lot_only:
         _margin_warm_start()
+    _exp_cache = {}   # sec_id -> expiry date (memoise across rows; get_expiry_for_sec_id scans full cache)
     for t in (trades or []):
         try:
             lot = _dm.get_lot_size_by_sec_id(t.get('sec_id')) if _dm else None
             if lot:
                 t['lot_size'] = int(lot)
+        except Exception:
+            pass
+        # DTE = days-to-expiry AT ENTRY (gamma proxy for options — lower = higher gamma).
+        # expiry − entry_date; consistent for live intraday (entry_date=today) and history.
+        try:
+            sid = t.get('sec_id')
+            if _dm and sid:
+                if sid not in _exp_cache:
+                    _exp_cache[sid] = _dm.get_expiry_for_sec_id(sid)
+                exp = _exp_cache[sid]
+                if exp:
+                    ed = t.get('entry_date') or t.get('date')
+                    from datetime import datetime as _dtd
+                    base = _dtd.strptime(ed[:10], '%Y-%m-%d').date() if ed else None
+                    if base:
+                        t['dte'] = (exp - base).days
         except Exception:
             pass
         if lot_only:

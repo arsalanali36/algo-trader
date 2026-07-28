@@ -1467,6 +1467,9 @@
           case 'instrument':
             val = _instrCell(t);
             break;
+          case 'dte':
+            val = (typeof _dteBadge === 'function') ? _dteBadge(t) : (t.dte != null ? t.dte + 'd' : '—');
+            break;
           case 'strategy':
             val = _stratCell(t);
             break;

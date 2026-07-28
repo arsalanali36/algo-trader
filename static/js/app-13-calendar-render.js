@@ -1088,6 +1088,7 @@
             v = `${prefix}<b>${t.sym || t.symbol || '—'}</b>` + (isNoteColOn ? '' : dispNote);
             colorStyle = 'color:#adbac7;';
             break;
+          case 'dte': v = (typeof _dteBadge === 'function') ? _dteBadge(t) : (t.dte != null ? t.dte + 'd' : '—'); break;
           case 'tags': v = _ordTags(t); break;
           case 'manual_tags':
             const customTags = (t.tags || []).filter(tg => windowCustomTags && windowCustomTags.includes(tg));

@@ -1,10 +1,24 @@
 // Auto-extracted from templates/index.html (2026-07-16). Classic script,
 // global scope — load order in index.html IS the original code order.
+    // DTE (days-to-expiry at entry) badge — gamma proxy. Colour: near expiry = high
+    // gamma (green) → far expiry = low gamma (red). '—' for equity/index (no expiry).
+    function _dteBadge(t) {
+      const d = (t && t.dte != null && t.dte !== '') ? Number(t.dte) : null;
+      if (d == null || isNaN(d)) return '<span style="color:#8b949e">—</span>';
+      let c = '#f85149';                 // >21d = low gamma (far)
+      if (d <= 7) c = '#3fb950';         // ≤7d  = very high gamma
+      else if (d <= 14) c = '#57ab5a';   // ≤14d = high gamma (the strategy's zone)
+      else if (d <= 21) c = '#d29922';   // ≤21d = moderate
+      return `<span style="color:${c};font-weight:600" title="${d} days to expiry at entry — lower = higher gamma">${d}d</span>`;
+    }
+    window._dteBadge = _dteBadge;
+
     // ── COLUMN PREFS (localStorage) ──────────────────────────────────────────────
     const COMPLETED_COLS_DEF = [
       { id: 'date', l: 'Date', a: 'left', on: true, fixed: true },
       { id: 'symbol', l: 'Symbol', a: 'left', on: true, fixed: true },
       { id: 'instrument', l: 'Instrument', a: 'left', on: true, title: 'Underlying — NIFTY / BANKNIFTY / stock' },
+      { id: 'dte', l: 'DTE', a: 'center', on: true, title: 'Days to expiry AT ENTRY (option gamma proxy — lower = higher gamma → bigger premium swings). — for equity/index.' },
       { id: 'strategy', l: 'Strategy', a: 'left', on: true },
       { id: 'tags', l: 'Tags', a: 'left', on: true },
       { id: 'manual_tags', l: 'Manual Tags', a: 'left', on: true },
@@ -32,6 +46,7 @@
       { id: 'date', l: 'Date', a: 'left', on: true, fixed: true },
       { id: 'symbol', l: 'Symbol', a: 'left', on: true, fixed: true },
       { id: 'instrument', l: 'Instrument', a: 'left', on: true, title: 'Underlying — NIFTY / BANKNIFTY / stock' },
+      { id: 'dte', l: 'DTE', a: 'center', on: true, title: 'Days to expiry AT ENTRY (option gamma proxy — lower = higher gamma → bigger premium swings). — for equity/index.' },
       { id: 'strategy', l: 'Strategy', a: 'left', on: true },
       { id: 'tags', l: 'Tags', a: 'left', on: true },
       { id: 'manual_tags', l: 'Manual Tags', a: 'left', on: true },
@@ -54,6 +69,7 @@
     const CAL_POINTS_COLS_DEF = [
       { id: 'date', l: 'Date', a: 'left', on: true, fixed: true },
       { id: 'symbol', l: 'Symbol', a: 'left', on: true, fixed: true },
+      { id: 'dte', l: 'DTE', a: 'center', on: true, title: 'Days to expiry AT ENTRY (option gamma proxy — lower = higher gamma → bigger premium swings). — for equity/index.' },
       { id: 'tags', l: 'Tags', a: 'left', on: true },
       { id: 'manual_tags', l: 'Manual Tags', a: 'left', on: true },
       { id: 'side', l: 'Side', a: 'center', on: true },
