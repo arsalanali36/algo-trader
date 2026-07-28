@@ -4207,3 +4207,46 @@ diverge. This is the *shape* behind the condor "used ₹X here, ₹Y there" and 
   byte-identical no-op; only multi-leg groups change (the intended fix).
 - Verified: audit 0 FAIL, guard self-tested (flags both fns, honors escape, risk_gate exempt),
   md5 local==VPS ×4, PIDs 16==16. See ADR-015 + memory `project_code3b_capital_overcount_phantom_exit`.
+
+## TRAP #163 — app≠broker phantom "open": TWO reconcilers fighting one manual close, via the externally_closed status gap + the manual Sync button (2026-07-28)
+
+**Symptom (recurring, user-reported "abhi bhi ye masla ho raha hai"):** a LIVE position the
+user manually closed in Kite kept showing OPEN in the app under MANUAL (broker_reconcile tag),
+app_net +6000 vs broker flat. Clicking "🔄 Sync from Broker" made it WORSE.
+
+**Root — two reconcilers, different keys, both acting on ONE broker close (the exact thing ADR-011
+set out to end, with two residual leaks):**
+1. **reconcile_broker.app_live_rows collected known broker_order_ids ONLY from `filled`/`open` rows.**
+   Once the entry row was marked `externally_closed`, its order_id dropped out of "known" → the
+   broker's ORIGINAL entry order looked "external" → the mirror re-recorded it as a phantom
+   (KOTAKBANK id 2106, a duplicate BUY with the SAME broker_order_id as the real entry).
+2. **broker_sync._run_sync (the manual Sync button path) still recorded a MANUAL_EXIT_BROKER exit**
+   even after reconcile_broker had already mirrored the close — broker_sync keys off the fill
+   **TRADE-id**, reconcile off the **ORDER-id**, so the TRAP #60 "fill already used" guard (which
+   checks correlation_id) never matched → a second conflicting leg (id 2105).
+
+**Fixes:**
+- **A (`reconcile_broker.app_live_rows`):** collect known oids/tids from **ANY status** (net still
+  from filled/open only). A broker order the app already has — even one whose row was later
+  externally_closed/cancelled — is NEVER re-recorded as external.
+- **B (`broker_sync._run_sync`):** DEFER (no re-record, keep the manual-close veto) if a
+  `BROKER_MIRROR` leg already exists for that contract today (`_reconcile_mirrored`). ONE
+  authoritative reconciler owns the exit (ADR-011).
+- Cleanup: WAL-safe sqlite `.backup()` + guarded UPDATEs (each guarded on the row's exact expected
+  current state so a mismatch rolls back untouched): entry externally_closed→filled, the two
+  phantoms→cancelled, real exit kept → correct completed round-trip + app==broker flat.
+
+**Guards / lessons:**
+- **Order/trade IDENTITY (order_id / trade_id) is "known" regardless of the row's status.** Never
+  gate a "have we already recorded this broker order?" check on `filled`/`open` — a later status
+  change (externally_closed/cancelled) must not make a known order look external again.
+- **Two reconcilers with different keys WILL double-count** even when each has its own dedup — the
+  dedup keys don't cross-match (order-id vs trade-id here). The fix is not more dedup; it's ONE
+  authoritative owner of the exit, everyone else defers.
+- **`reconcile_broker.apply()` records missing broker orders but does NOT auto-remove app-side
+  phantoms** (deliberate, "report not auto-close"). So an app-side phantom, once created, is stuck
+  until manual cleanup — which is why the CREATE-side fixes (A+B) are what actually stop the
+  recurrence, and the invariant_guard's job is to LOUDLY flag any residual app_net≠broker_net.
+- **The user clicking "Sync from Broker" to fix a mismatch created MORE phantoms** — a self-repair
+  button that runs a second, conflicting reconciler is worse than no button. Verified: audit 0 FAIL,
+  `apply()` dry-run plans nothing post-cleanup, PIDs 16==16. Memory `project_code3b_authoritative_reconcile`.
