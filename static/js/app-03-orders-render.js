@@ -833,11 +833,15 @@
               + '</tbody></table></div></details>';
           }
 
+          // Placement-batch grouping: jo legs EK SAATH place hue wo ek group_id
+          // share karte hain (ek straddle/structure = ek group_id) → ek group. Alag
+          // time pe daale orders ka alag group_id → alag group (user: "jab order dalen
+          // wo ek saath"). Empty group_id = solo order → apna group (solo_<id>).
           let grouped = {};
           opnReal.forEach(t => {
-            let stratKey = t.strategy || t.source || 'MANUAL';
-            if (!grouped[stratKey]) grouped[stratKey] = [];
-            grouped[stratKey].push(t);
+            const key = (t.group_id && String(t.group_id).trim()) ? String(t.group_id) : ('solo_' + t.id);
+            if (!grouped[key]) grouped[key] = [];
+            grouped[key].push(t);
           });
 
           let oh = '';
@@ -850,13 +854,19 @@
               _sortData(items, window._openSortCol, window._openSortDir);
             }
 
-            let stratName = stratKey;
+            // stratKey ab group_id/solo hai — strategy/symbol/entry-time is group ke
+            // pehle leg se lo (label + color + edit ke liye).
+            const g0 = items[0] || {};
+            let stratName = g0.strategy || g0.source || 'MANUAL';   // strategy → regLabel/color/edit
             let stratDesc = '';
-            if (stratKey.includes(' | ')) {
-              let parts = stratKey.split(' | ');
+            if (String(stratName).includes(' | ')) {
+              let parts = String(stratName).split(' | ');
               stratName = parts[0];
               stratDesc = parts.slice(1).join(' | ');
             }
+            const gSym = g0.symbol || String(g0.sym || '').split('-')[0] || '';
+            const gTime = g0.entry_time || '';
+            const gLabelTxt = (String(stratName) + (gSym ? ' ' + gSym : '') + (gTime ? ' ' + gTime : '')).replace(/['\\]/g, '');
 
             const grpId = 'grp_' + stratKey.replace(/[^a-z0-9]/gi, '_');
             // stash this group's positions so the header "✕ Close all" can close them
@@ -891,10 +901,6 @@
 
             tableHtml += '</tr></thead><tbody>';
             let grpMargin = 0, grpQty = 0;
-
-            // per-group_id leg count → "🔗 Group ✕" sirf genuine multi-leg (2+) group pe dikhe
-            const _grpIdCounts = {};
-            items.forEach(t => { if (t.group_id) _grpIdCounts[t.group_id] = (_grpIdCounts[t.group_id] || 0) + 1; });
 
             items.forEach(t => {
               const entry = Number(t.entry_price || 0), qty = t.qty || 0;
@@ -1164,16 +1170,12 @@
                     const _cOn = !!(window._carryHas && window._carryHas(t.group_id, t.id));
                     const _cPill = `<span onclick="event.stopPropagation();togglePosCarry('${argEsc(t.group_id)}',${t.id})" title="MIS = 3:15 auto square-off · NRML = carry overnight (poora group). Click to toggle."
                       style="cursor:pointer;padding:3px 8px;border-radius:20px;font-size:9.5px;font-weight:700;white-space:nowrap;border:1px solid ${_cOn ? '#3fb95080' : '#30363d'};background:${_cOn ? '#3fb95020' : '#161b22'};color:${_cOn ? '#3fb950' : '#8b949e'}">${_cOn ? '🌙 NRML' : '☀️ MIS'}</span>`;
-                    // "Group ✕" sirf GENUINE multi-leg group pe (hedge/straddle, 2+ legs).
-                    // Solo/independent order (1-leg group) pe redundant tha (close ✕ hi kaafi) →
-                    // hata diya, jagah bachi (P1 ke baad har manual order apna 1-leg group hai).
-                    const _grpN = t.group_id ? (_grpIdCounts[t.group_id] || 0) : 0;
-                    const _grpBtn = (_grpN >= 2) ? `<button title="Hedge/straddle group — close all ${_grpN} legs together" onclick="closePositionGroup('${argEsc(t.group_id)}','${t.mode || 'paper'}')"
-                      style="padding:4px 8px;background:#8a2be220;border:1px solid #8a2be280;border-radius:5px;color:#c9a6ff;font-size:10px;font-weight:700;cursor:pointer">🔗 Group ✕</button>` : '';
+                    // per-row "🔗 Group ✕" HATA diya — ab poora group header ke "✕ Close all (N)"
+                    // se band hota hai (user: button header pe chala jaye, jagah bache). Row me
+                    // bas carry-pill + single close ✕.
                     val = `
                 <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
                   ${_cPill}
-                  ${_grpBtn}
                   <button id="${bId}" onclick="closePosition('${argEsc(t.sym)}','${t.entry}',${qty},'${t.mode || 'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}','${bId}')"
                     style="padding:4px 10px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer">
                     ${closeSide} ✕
@@ -1254,7 +1256,7 @@
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-            <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} positions)</span></span>
+            <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()}${gSym ? ` <span style="color:#adbac7;font-weight:normal">· ${gSym}</span>` : ''}${gTime ? ` <span style="color:#8b949e;font-size:11px;font-weight:normal">· ${gTime}</span>` : ''} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} ${items.length === 1 ? 'position' : 'positions'})</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
           </div>
           <div style="display:flex; align-items:baseline; gap:10px; margin-right:14px; white-space:nowrap;" title="Group unrealized total — ₹ / points / return %">
@@ -1263,9 +1265,9 @@
             <span class="grp-tot-pts" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
             <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
           </div>
-          ${items.length >= 2 ? `<button onclick="event.stopPropagation();event.preventDefault();closeAllInGroup('${grpId}','${String(stratName).replace(/['\\]/g, '')}',${items.length})" title="Close all ${items.length} positions in this group (confirm ke saath)" style="margin-right:10px;padding:3px 9px;font-size:11px;font-weight:700;background:#f8514920;border:1px solid #f8514980;border-radius:4px;color:#f85149;cursor:pointer;white-space:nowrap">✕ Close all (${items.length})</button>` : ''}
+          ${items.length >= 2 ? `<button onclick="event.stopPropagation();event.preventDefault();closeAllInGroup('${grpId}','${gLabelTxt}',${items.length})" title="Close all ${items.length} positions in this group (confirm ke saath)" style="margin-right:10px;padding:3px 9px;font-size:11px;font-weight:700;background:#f8514920;border:1px solid #f8514980;border-radius:4px;color:#f85149;cursor:pointer;white-space:nowrap">✕ Close all (${items.length})</button>` : ''}
           ${_payoffBtn(items, stratName)}
-          <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
+          <button onclick="editStrategyLabel(this, event)" data-strat="${String(stratName).replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
         </summary>
         <div style="border-top: 1px solid #30363d; overflow-x: auto;">
