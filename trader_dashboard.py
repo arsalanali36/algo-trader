@@ -7459,16 +7459,24 @@ def api_orders():
         # Uses the SAME cached _group_capital() the RMS capital check uses — the
         # table, the payoff panel and the risk engine must never disagree about
         # the same position.
+        # Keyed by GROUP_ID (placement batch) — the UI groups Open Positions by
+        # group_id now (legs placed together = one group), so the group TOTAL /
+        # header 💰 must be that PLACEMENT's real hedged basket margin, not a
+        # per-strategy sum. position_margin() gives the SPAN-benefit basket for the
+        # actual structure (2-leg vertical / 4-leg condor), which is far below the
+        # sum of each leg's standalone margin. Key form matches the frontend's:
+        # group_id if present, else 'solo_<id>'.
         try:
             _grp = {}
             for p in data.get('open', []):
                 if 'CAPITAL_BLOCKED' in (p.get('tags') or []):
                     continue
-                _grp.setdefault(p.get('strategy') or '', []).append(p)
+                _gk = str(p.get('group_id') or '').strip() or ('solo_' + str(p.get('id')))
+                _grp.setdefault(_gk, []).append(p)
             data['group_margin'] = {
-                s: {"hedged": round(_rg.position_margin(rows, _rc), 2),   # single margin gate
-                    "standalone": round(sum(float(r.get('margin_used') or 0) for r in rows), 2)}
-                for s, rows in _grp.items()
+                gk: {"hedged": round(_rg.position_margin(rows, _rc), 2),   # single margin gate (hedged basket)
+                     "standalone": round(sum(float(r.get('margin_used') or 0) for r in rows), 2)}
+                for gk, rows in _grp.items()
             }
         except Exception:
             data['group_margin'] = {}

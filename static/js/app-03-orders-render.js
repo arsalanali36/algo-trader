@@ -391,6 +391,23 @@
       const k = (gid && String(gid).trim()) ? String(gid) : ('id:' + id);
       return (window._carryKeys || []).indexOf(k) !== -1;
     };
+    // self-contained toast — main Orders page pe koi global `toast` nahi hai
+    // (sirf stats2 me fallback), isliye pehle "toast nahi aa raha" tha. Ye apna
+    // transient div banata hai (jis bhi toast global ho use prefer karta hai).
+    window._carryToast = function (msg) {
+      try { if (typeof toast === 'function') { toast(msg); return; } } catch (e) {}
+      if (window.toast && window.toast !== window._carryToast) { try { window.toast(msg); return; } catch (e) {} }
+      let el = document.getElementById('_carryToastBox');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = '_carryToastBox';
+        el.style.cssText = 'position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:99999;background:#161b22;border:1px solid #30363d;color:#e6edf3;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.5);transition:opacity .3s;pointer-events:none';
+        document.body.appendChild(el);
+      }
+      el.textContent = msg; el.style.opacity = '1';
+      clearTimeout(window._carryToastT);
+      window._carryToastT = setTimeout(function () { el.style.opacity = '0'; }, 2400);
+    };
     window._loadCarryKeys = async function (rerender) {
       try {
         const d = await (await fetch('/api/position-carry')).json();
@@ -405,9 +422,9 @@
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group_id: gid || '', id: id, on: !cur })
         })).json();
-        if (d && d.ok) { if (window.toast) toast(d.msg || ('carry ' + (d.on ? 'on' : 'off'))); await window._loadCarryKeys(true); }
-        else if (window.toast) toast((d && d.msg) || 'carry toggle fail');
-      } catch (e) { if (window.toast) toast('carry fail: ' + e.message); }
+        if (d && d.ok) { window._carryToast((d.on ? '🌙 ' : '☀️ ') + (d.msg || ('carry ' + (d.on ? 'ON' : 'OFF')))); await window._loadCarryKeys(true); }
+        else window._carryToast('⚠️ ' + ((d && d.msg) || 'carry toggle fail'));
+      } catch (e) { window._carryToast('⚠️ carry fail: ' + e.message); }
     };
     if (!window._carryKeysInit) { window._carryKeysInit = true; window._loadCarryKeys(false); }
 
@@ -426,7 +443,7 @@
           else { await closePosition(p.sym, p.entry, p.qty, p.mode, p.source, p.strategy, ''); }
         } catch (e) {}
       }
-      if (window.toast) toast('Close-all bheja — ' + n + ' position(s) [' + label + ']');
+      window._carryToast('Close-all bheja — ' + n + ' position(s) [' + label + ']');
     };
 
     function renderCachedOrders() {
