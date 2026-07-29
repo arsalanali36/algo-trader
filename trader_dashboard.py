@@ -3860,7 +3860,9 @@ def api_manual_order():
         # Get actual option LTP from Dhan quotes (not index price)
         import requests as _req
         import time as _time
-        option_ltp = price  # fallback: index price
+        option_ltp = 0  # NEVER fall back to the index/spot price — recording an
+                        # option fill at the NIFTY level (e.g. 24236) makes a phantom
+                        # ₹-lakh P&L (TRAP #1). If premium can't be fetched → skip below.
         try:
             q_headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
             q_resp = _req.post("https://api.dhan.co/v2/marketfeed/ltp",
@@ -3888,6 +3890,15 @@ def api_manual_order():
             option_ltp = order_price   # log the exact LIMIT price
         else:
             order_price = 0
+
+        # TRAP #1 guard: never record an option fill at ₹0 or at the index/spot level.
+        # If the option premium couldn't be fetched (rate-limit / market closed) and no
+        # valid LIMIT price was given, SKIP the order — recording at the NIFTY level
+        # (24236) creates a phantom ₹-lakh completed trade that corrupts the day's P&L.
+        if (not option_ltp) or float(option_ltp) <= 0:
+            return jsonify({'ok': False, 'msg': f'{t_sym} ka live premium nahi mila (rate-limit?) — '
+                            f'order NAHI bheja (index price pe record karke phantom P&L nahi banate). '
+                            f'Dobara try karo, ya LIMIT price daalo.'})
 
         ts = int(_time.time())
         body = {
