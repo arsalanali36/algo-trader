@@ -3457,6 +3457,43 @@ def api_position_exit_rule_set():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/api/position-carry', methods=['GET'])
+def api_position_carry_get():
+    """Currently carried-overnight (NRML) position keys — so Open Positions can show
+    each row's MIS/NRML state. Returns {ok, keys:[group_id|id:<id>, ...]}. Day-scoped
+    (agle din khaali = sab wapas MIS)."""
+    try:
+        import position_carry
+        return jsonify({"ok": True, "keys": position_carry.list_keys()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/position-carry', methods=['POST'])
+def api_position_carry_set():
+    """Toggle a position MIS <-> NRML. Body: {group_id, id, on}. on=True → NRML
+    (carry past 3:15, GROUP-WIDE via group_id), False → MIS (3:15 auto-square,
+    default). Display/EOD-behaviour only — koi order abhi place/convert nahi hota
+    (PAPER; live NRML/convert-position baad me). group_id ho to poora group carry
+    hota (straddle ke dono leg), warna us akele leg (id) pe."""
+    try:
+        import position_carry
+        d = request.get_json(force=True) or {}
+        gid = str(d.get("group_id") or "").strip()
+        pid = str(d.get("id") or "").strip()
+        on = bool(d.get("on"))
+        if not gid and not pid:
+            return jsonify({"ok": False, "msg": "group_id ya id chahiye"})
+        key, state = position_carry.set_carry(gid, pid, on)
+        if not key:
+            return jsonify({"ok": False, "msg": "carry key resolve nahi hua"})
+        return jsonify({"ok": True, "on": state, "key": key,
+                        "msg": ("NRML — carry overnight (3:15 square skip)" if state
+                                else "MIS — 3:15 auto square-off")})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/position-exit-rule', methods=['GET'])
 def api_position_exit_rule_get():
     """Currently-armed combined-MTM auto-exit rule for a group — so the payoff
@@ -3769,6 +3806,12 @@ def api_manual_order():
         if opt_type not in ('CE', 'PE'):
             opt_type = 'PE' if side == 'BUY' else 'CE'
 
+        # P1 — har manual order ka apna UNIQUE group_id. Pehle manual orders koi
+        # group_id set nahi karte the (empty '') → payoff panel un sabko EK hi
+        # combined bucket me merge kar deta tha ("sab ek me ban jaata"). Ab har
+        # order ek alag bucket/panel — payoff + Orders grouping dono me independent.
+        mgid = 'MANUAL_' + symbol + '_' + uuid.uuid4().hex[:8]
+
         _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
         _idx_id  = _idx_sec.get(symbol, "13")
@@ -3804,7 +3847,7 @@ def api_manual_order():
                     side, symbol, sec_id, 'NSE_FNO', qty_shares, t_sym, mode,
                     kite_broker_obj, log=lambda m: print(m, flush=True),
                     tag='MANUAL', source='manual', strategy='manual',
-                    instrument='options', broker_name='kite')
+                    instrument='options', broker_name='kite', group_id=mgid)
                 if not res.get('ok'):
                     return jsonify({'ok': False, 'msg': f"Kite order failed — {res.get('reason')}"})
                 mtag = 'LIVE' if mode == 'live' else 'PAPER'
@@ -3884,7 +3927,7 @@ def api_manual_order():
                     broker='dhan', symbol=symbol, instrument='options', trad_sym=t_sym,
                     sec_id=sec_id, segment='NSE_FNO', broker_order_id=oid,
                     correlation_id=f'MANUAL_{symbol}_{ts}', status=status_,
-                    product_type='NRML')  # options always NRML — CNC only applies to EQUITY
+                    product_type='NRML', group_id=mgid)  # options always NRML — CNC only applies to EQUITY; mgid = per-order bucket (P1)
             except Exception:
                 pass
 
@@ -10009,15 +10052,30 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         # these weren't in their backtests). Index options are cash-settled and the
         # overnight fleet is hedged/bounded, so holding to expiry is safe.
         _skip_eod = False
+        _skip_why = ""
         try:
             _owner = p.get("strategy") or ""
-            _skip_eod = bool(_owner) and _rg.allow_overnight(_owner)
+            if bool(_owner) and _rg.allow_overnight(_owner):
+                _skip_eod = True
+                _skip_why = f"strategy {_owner} allow_overnight=True"
         except Exception:
             _skip_eod = False
+        # Per-position MIS->NRML carry (user toggle) — GROUP-WIDE, day-scoped. Even a
+        # 'manual' position (not an allow_overnight strategy) can be held past 3:15 if
+        # the user flipped it to NRML in Open Positions. PAPER: just skips the EOD
+        # squareoff (expiry/ITM/RMS/SL guards stay active). Default (no flag) = MIS =
+        # squared here exactly as before, so any position not toggled is untouched.
+        if not _skip_eod:
+            try:
+                import position_carry
+                if position_carry.is_carried(p.get("group_id"), p.get("id")):
+                    _skip_eod = True
+                    _skip_why = "MIS->NRML carry (user toggle)"
+            except Exception:
+                pass
         if _skip_eod:
-            print(f"[pos_monitor] {p.get('sym')} held OVERNIGHT — strategy "
-                  f"{p.get('strategy')} allow_overnight=True, non-expiry day "
-                  f"(EOD 3:15 squareoff skipped; expiry/ITM/RMS guards still active)",
+            print(f"[pos_monitor] {p.get('sym')} held OVERNIGHT — {_skip_why}, non-expiry "
+                  f"day (EOD 3:15 squareoff skipped; expiry/ITM/RMS guards still active)",
                   flush=True)
         else:
             _do_squareoff(p, ltp, "EOD_315_SQUAREOFF", sec_id, seg)

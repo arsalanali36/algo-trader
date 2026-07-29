@@ -726,6 +726,7 @@
             <select id="pfGrpSel" onchange="_pfSelectGroup(this.value)" title="open / recently-closed group"
               style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:600;cursor:pointer;max-width:320px"></select>
             <button class="pf-navbtn" onclick="_pfNav(1)" title="Next group">›</button>
+            <button class="pf-navbtn" onclick="_pfGridAll()" title="Sabhi open positions ka payoff ek saath (har order alag card)">⊞ All</button>
             <span id="pfStatus" style="font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px"></span>
           </div>
           <div style="display:flex;align-items:center;gap:14px">
@@ -771,6 +772,67 @@
       sel.value = curVal;
     }
     function _pfSelectGroup(val) { if (val) _pfLoad(val); }
+
+    // P1 — "⊞ All" grid: har open position GROUP (P1 ke baad har manual order apna
+    // alag group) ka payoff ek saath, alag mini-card me. Kisi card pe click → uska
+    // full payoff (single-group view). Har group ka payoff parallel fetch; mini-SVG
+    // _pfMiniCurve se (expiry solid + hold-date dashed, spot marker).
+    async function _pfGridAll() {
+      const body = document.getElementById('pfBody'); if (!body) return;
+      const sub = document.getElementById('pfSub');
+      if (sub) sub.textContent = 'All open positions — har order/group ka apna payoff (card pe click = full view)';
+      const strip = document.getElementById('pfLegStrip');
+      if (strip) strip.innerHTML = '<span style="font-size:11px;color:#6e7681">⊞ Grid view — har independent order alag panel me</span>';
+      body.innerHTML = '<span style="color:#8b949e">⏳ loading all positions…</span>';
+      let groups = window._pfGroups;
+      if (!groups || !groups.length) {
+        try { const g = await (await fetch('/api/position-groups')).json(); groups = (g && g.groups) || []; window._pfGroups = groups; }
+        catch (e) { groups = []; }
+      }
+      if (!groups.length) { body.innerHTML = '<span style="color:#8b949e">koi open position group nahi mila</span>'; return; }
+      const _cid = gid => 'pfmini_' + String(gid).replace(/[^a-z0-9]/gi, '_');
+      const results = await Promise.all(groups.map(async gr => {
+        try { const d = await (await fetch('/api/position-payoff?group_id=' + gr.group_id)).json(); return { gr, d: (d && d.ok) ? d : null }; }
+        catch (e) { return { gr, d: null }; }
+      }));
+      body.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">'
+        + results.map(({ gr, d }) => {
+          const pop = (d && d.pop != null) ? (d.pop * 100).toFixed(0) + '%' : '—';
+          const be = (d && d.breakevens && d.breakevens[0] != null) ? _pfNf(d.breakevens[0]) : '—';
+          const spot = (d && d.spot) ? _pfNf(d.spot) : '—';
+          const nlegs = (d && d.legs) ? d.legs.length : 0;
+          return `<div onclick="_pfSelectGroup('group_id=${gr.group_id}')" title="Click → full payoff"
+            style="border:1px solid #30363d;border-radius:9px;padding:10px 11px;cursor:pointer;background:#0d1117">
+            <div style="font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${gr.label}</div>
+            <div style="font-size:10px;color:#6e7681;margin-bottom:6px">POP ${pop} · BE ${be} · spot ${spot} · ${nlegs} legs</div>
+            <svg id="${_cid(gr.group_id)}" viewBox="0 0 210 88" style="width:100%;height:72px"></svg>
+            ${d ? '' : '<div style="font-size:10px;color:#8b949e">payoff nahi bana</div>'}
+          </div>`;
+        }).join('') + '</div>';
+      results.forEach(({ gr, d }) => { if (d) _pfMiniCurve(_cid(gr.group_id), d); });
+    }
+
+    // compact payoff SVG for a grid card — expiry (green solid) + hold-date (amber
+    // dashed, if present) + zero-line + spot marker. Reuses _pfEl / _PF.C.
+    function _pfMiniCurve(id, d) {
+      const svg = document.getElementById(id);
+      if (!svg || !d || !d.curve_expiry || !d.curve_expiry.length) return;
+      const C = _PF.C, W = 210, H = 88, m = 6;
+      const ce = d.curve_expiry, cx = d.curve_target;
+      const xs = ce.map(p => p[0]);
+      let ys = ce.map(p => p[1]); if (cx) ys = ys.concat(cx.map(p => p[1]));
+      const LO = Math.min(...xs), HI = Math.max(...xs);
+      let yT = Math.max(...ys), yB = Math.min(...ys); const pad = (yT - yB) * .12 || 50; yT += pad; yB -= pad;
+      const X = s => m + (s - LO) / (HI - LO || 1) * (W - 2 * m);
+      const Y = v => m + (yT - v) / (yT - yB || 1) * (H - 2 * m);
+      svg.innerHTML = '';
+      _pfEl(svg, 'line', { x1: m, y1: Y(0), x2: W - m, y2: Y(0), stroke: C.mut, 'stroke-width': 1, 'stroke-dasharray': '2 3' });
+      const path = arr => { let dd = ''; arr.forEach((p, i) => { dd += (i ? 'L' : 'M') + X(p[0]).toFixed(1) + ' ' + Y(p[1]).toFixed(1) + ' '; }); return dd; };
+      if (cx) _pfEl(svg, 'path', { d: path(cx), fill: 'none', stroke: C.amb, 'stroke-width': 1.3, 'stroke-dasharray': '4 2' });
+      _pfEl(svg, 'path', { d: path(ce), fill: 'none', stroke: C.pos, 'stroke-width': 1.6, 'stroke-linejoin': 'round' });
+      if (d.spot && d.spot >= LO && d.spot <= HI)
+        _pfEl(svg, 'line', { x1: X(d.spot), y1: m, x2: X(d.spot), y2: H - m, stroke: C.txt, 'stroke-width': 1, 'stroke-opacity': .5 });
+    }
     // ‹ Prev / Next › — cycle the group selector without opening it (wrap-around)
     function _pfNav(dir) {
       const sel = document.getElementById('pfGrpSel');
@@ -889,6 +951,13 @@
             </div>
             <div style="overflow-x:auto"><svg id="pfChart" viewBox="0 0 940 300" style="width:100%;height:auto"></svg></div>
             <div id="pfHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
+            ${d.tte_days ? `<div style="display:flex;align-items:center;gap:9px;margin-top:9px;padding-top:8px;border-top:1px solid #21262d">
+              <span style="font-size:10px;color:#8b949e;white-space:nowrap;font-weight:600">Hold to</span>
+              <span style="font-size:10px;color:#6e7681">Today</span>
+              <input type="range" min="0" max="${d.tte_days}" value="0" step="1" id="pfHold" oninput="_pfSetHoldDays(this.value)" style="flex:1" title="Payoff at this hold-date (Sensibull-style day slider)">
+              <span style="font-size:10px;color:#6e7681">Expiry</span>
+              <span id="pfHoldLbl" style="font-size:10px;font-weight:700;color:#58a6ff;min-width:78px;text-align:right">exit day</span>
+            </div>` : ''}
           </div>
         </div>
 
@@ -917,6 +986,26 @@
     }
 
     function _pfSetView(v) { window._pfView = v; _pfRenderCards(); _pfDrawPayoff(window._pfData); }
+
+    // P2 — Sensibull-style day-hold slider: re-price the payoff at a chosen hold
+    // date (0 = today … tte_days = expiry). Backend already accepts &target_days;
+    // this just re-fetches that N and redraws the 'on-date' (target) curve. Cache
+    // (_PAYOFF_TTL) keys per target_days so re-dragging a seen day is instant.
+    async function _pfSetHoldDays(n) {
+      const qs = window._pfQS; if (!qs) return;
+      n = parseInt(n, 10) || 0;
+      const d0 = window._pfData || {};
+      const lbl = document.getElementById('pfHoldLbl');
+      if (lbl) lbl.textContent = n <= 0 ? 'today' : ((d0.tte_days && n >= d0.tte_days) ? 'expiry' : n + 'd hold');
+      try {
+        const d = await (await fetch('/api/position-payoff?' + qs + '&target_days=' + n)).json();
+        if (!d || !d.ok) return;
+        window._pfData = d;
+        window._pfView = 'target';          // day-hold curve = the 'on-date' (target) view
+        _pfRenderCards();
+        _pfDrawPayoff(d);
+      } catch (e) {}
+    }
 
     function _pfRenderCards() {
       const d = window._pfData; if (!d) return;

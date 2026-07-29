@@ -381,6 +381,36 @@
       if (m) m.style.display = 'none';
     });
 
+    // ── P3: per-position MIS ⇄ NRML (carry overnight) ──────────────────────────
+    // MIS = 3:15 auto square-off (default). NRML = carry past 3:15 (pos_monitor
+    // skips EOD squareoff for this position). GROUP-WIDE: keyed on group_id so a
+    // straddle's both legs carry with one toggle. Day-scoped server-side (agle din
+    // wapas MIS). Keys cache re-render pe fresh (renderCachedOrders poll-driven).
+    window._carryKeys = window._carryKeys || [];
+    window._carryHas = function (gid, id) {
+      const k = (gid && String(gid).trim()) ? String(gid) : ('id:' + id);
+      return (window._carryKeys || []).indexOf(k) !== -1;
+    };
+    window._loadCarryKeys = async function (rerender) {
+      try {
+        const d = await (await fetch('/api/position-carry')).json();
+        if (d && d.ok) window._carryKeys = d.keys || [];
+      } catch (e) {}
+      if (rerender) { try { renderCachedOrders(); } catch (e) {} }
+    };
+    window.togglePosCarry = async function (gid, id) {
+      const cur = window._carryHas(gid, id);
+      try {
+        const d = await (await fetch('/api/position-carry', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ group_id: gid || '', id: id, on: !cur })
+        })).json();
+        if (d && d.ok) { if (window.toast) toast(d.msg || ('carry ' + (d.on ? 'on' : 'off'))); await window._loadCarryKeys(true); }
+        else if (window.toast) toast((d && d.msg) || 'carry toggle fail');
+      } catch (e) { if (window.toast) toast('carry fail: ' + e.message); }
+    };
+    if (!window._carryKeysInit) { window._carryKeysInit = true; window._loadCarryKeys(false); }
+
     function renderCachedOrders() {
       if (!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
       const d = window._lastOrdersData || {};
@@ -1112,6 +1142,7 @@
                     <div id="dropdown-${t.id}" class="dropdown-content">
                       <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date || ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')">📈 Chart</a>
                       <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val || sl_pct}', '${tp_val || tp_pct}', '${sl_type || 'pct'}', '${tp_type || 'pct'}')">⚙️ SL/Target</a>
+                      <a href="javascript:void(0)" onclick="togglePosCarry('${argEsc(t.group_id)}', ${t.id})" title="MIS = 3:15 auto square-off · NRML = carry overnight (whole group)">${window._carryHas && window._carryHas(t.group_id, t.id) ? '☀️ Set Intraday (MIS)' : '🌙 Carry overnight (NRML)'}</a>
                       <a href="javascript:void(0)" onclick="openNoteModal(${t.id})">📝 Edit Note</a>
                       <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
                       <a href="javascript:void(0)" onclick="bookClose('${argEsc(t.sym)}','${t.entry}',${qty},${entry},'${t.mode || 'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}')" style="color:#f85149">🗑 Remove from Book</a>
