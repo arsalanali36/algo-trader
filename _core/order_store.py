@@ -242,6 +242,9 @@ _EXIT_REASON_PREFIXES = (
     "DEFAULT_TSL_TARGET", "DEFAULT_TSL_SL",
     # per-group combined-MTM auto-exit rule (2026-07-24, #02 payoff panel)
     "GROUP_TARGET", "GROUP_SL",
+    # Auto-Rolling ATM Straddle (02.09) — ROLLER_ROLL_EXIT (buy-back on roll) +
+    # ROLLER_ABORT (unwind on a failed roll/deploy). Family prefix (startswith).
+    "ROLLER",
     # option mission strategies' own TP/SL/rollback exits (family prefixes —
     # each covers _TP / _SL / _ROLLBACK). These were tagged on the exit order
     # but never recognized here, so the Exit Reason column stayed blank for

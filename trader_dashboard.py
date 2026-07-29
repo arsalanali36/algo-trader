@@ -4834,6 +4834,8 @@ def auto_straddle_loop():
         print(f"[straddle] loop deps missing: {e}", flush=True)
         return
     print("[straddle] auto-straddle loop started", flush=True)
+    _roller_bucket = None   # Auto-Rolling ATM Straddle (02.09) — fire on_candle_close
+                            # once per fresh 5-min candle bucket (loop ticks ~3s)
     while True:
         try:
             cfg = _auto_straddle_cfg()
@@ -4932,6 +4934,22 @@ def auto_straddle_loop():
                 _run_position_exit_rules(log=lambda m: print(m, flush=True))
             except Exception as _pe:
                 print(f"[exit-rule] loop err: {_pe}", flush=True)
+            # ── Auto-Rolling ATM Straddle (02.09) — hook into THIS existing cycle
+            #    (no new polling loop, ADR-004). Fire on_candle_close once per fresh
+            #    5-min candle bucket. Enabled-gated → a complete no-op when off, so
+            #    zero risk to this live loop until explicitly turned on in config. ──
+            try:
+                import atm_straddle_roller as _roller
+                _rcfg = _roller.load_config()
+                if _rcfg.get("enabled"):
+                    _bucket = f"{now.strftime('%Y-%m-%d %H')}:{now.minute // 5}"
+                    if _bucket != _roller_bucket:
+                        _roller_bucket = _bucket   # once per 5-min candle
+                        for _rsym in _rcfg.get("symbols", ["NIFTY"]):
+                            _roller.on_candle_close(str(_rsym).upper(), now=now, cfg=_rcfg,
+                                                    log=lambda m: print(m, flush=True))
+            except Exception as _re:
+                print(f"[roller] loop err: {_re}", flush=True)
         except Exception as e:
             print(f"[straddle] loop error: {e}", flush=True)
         _t.sleep(3)

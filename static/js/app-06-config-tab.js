@@ -362,6 +362,9 @@
       else if (r.startsWith('ATR_TRAILING')) { label = '📉 ATR Trailing'; color = '#f0883e'; }
       else if (r.startsWith('RSI_MIDLINE_EXIT')) { label = '↩️ RSI Midline'; color = '#58a6ff'; }
       else if (r.startsWith('ORB_OVN_NEXTDAY')) { label = '🌅 Next-Day Exit (9:20)'; color = '#58a6ff'; }
+      // Auto-Rolling ATM Straddle (02.09) — buy-back on roll / unwind on abort
+      else if (r.startsWith('ROLLER_ROLL_EXIT')) { label = '🔄 Rolled to new ATM'; color = '#58a6ff'; }
+      else if (r.startsWith('ROLLER_ABORT')) { label = '↩️ Roll Aborted (unwound)'; color = '#8b949e'; }
       // Option mission strategies' own TP/SL/rollback exits (task 71 — Straddle,
       // Debit Vertical, Ratio Backspread, Short-Vol Iron-Fly, VRP)
       // NOTE: keep this family list in sync with order_store._EXIT_REASON_PREFIXES —

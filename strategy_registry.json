@@ -316,6 +316,18 @@
    "hold": "Intraday",
    "structure": "Short straddle"
   },
+  "02.09": {
+   "name": "Auto-Rolling ATM Straddle",
+   "config_key": "atm_straddle_roller",
+   "slug": "atm_straddle_roller",
+   "live_file": "_ops/atm_straddle_roller.py",
+   "status": "paper",
+   "legs": 2,
+   "instrument": "NIFTY / BANKNIFTY",
+   "hold": "Intraday",
+   "structure": "Short straddle (auto-rolled)",
+   "desc": "ATM short straddle jo spot ~1 strike shift hone pe naye ATM pe roll hota hai — 6-rule gate (min-distance/confirmation/cooldown/premium-benefit/time-of-day/max-rolls). Self-contained: apna initial straddle khud kholta hai, phir har 5-min candle pe roll evaluate. PAPER + default OFF (backtest nahi hai — Rule 10). ADR-004 roller spec."
+  },
   "03.01": {
    "name": "Pivot-Extreme Continuation",
    "config_key": null,
