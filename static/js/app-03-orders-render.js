@@ -411,6 +411,24 @@
     };
     if (!window._carryKeysInit) { window._carryKeysInit = true; window._loadCarryKeys(false); }
 
+    // Header "✕ Close all (N)" — us strategy-group ki SAARI positions ek click me
+    // band (confirm ke saath). Dedupe by group_id: hedge/straddle group_id ek baar
+    // closePositionGroup se (siblings saath), solo legs closePosition se. Reuses the
+    // existing tested close paths (koi naya order code nahi). Group ka mode row se.
+    window.closeAllInGroup = async function (grpId, label, n) {
+      const list = (window._grpItems && window._grpItems[grpId]) || [];
+      if (!list.length) return;
+      if (!confirm('Close ALL ' + n + ' position(s) in "' + label + '"?\n(har position apne mode — paper/live — pe band hogi)')) return;
+      const doneGroups = {};
+      for (const p of list) {
+        try {
+          if (p.group_id) { if (!doneGroups[p.group_id]) { doneGroups[p.group_id] = 1; await closePositionGroup(p.group_id, p.mode); } }
+          else { await closePosition(p.sym, p.entry, p.qty, p.mode, p.source, p.strategy, ''); }
+        } catch (e) {}
+      }
+      if (window.toast) toast('Close-all bheja — ' + n + ' position(s) [' + label + ']');
+    };
+
     function renderCachedOrders() {
       if (!window._ordCompletedCols || !window._ordOpenCols) _loadOrdColPrefs();
       const d = window._lastOrdersData || {};
@@ -841,6 +859,14 @@
             }
 
             const grpId = 'grp_' + stratKey.replace(/[^a-z0-9]/gi, '_');
+            // stash this group's positions so the header "✕ Close all" can close them
+            // all in one click (closeAllInGroup dedupes by group_id — closePositionGroup
+            // once per hedge/straddle group_id, closePosition for solo legs).
+            window._grpItems = window._grpItems || {};
+            window._grpItems[grpId] = items.map(t => ({
+              sym: t.sym, entry: t.entry, qty: t.qty, mode: t.mode || 'paper',
+              source: t.source || '', strategy: t.strategy || '', group_id: t.group_id || '', id: t.id
+            }));
             let tableHtml = '<table id="' + grpId + '" style="width:100%;border-collapse:collapse;font-size:11.5px"><thead><tr style="color:#8b949e;text-align:left;border-bottom:1px solid #30363d">';
 
             activeOpenCols.forEach(c => {
@@ -1237,6 +1263,7 @@
             <span class="grp-tot-pts" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
             <span class="grp-tot-ret" data-grp="${grpId}" style="font-size:11px;font-weight:400;color:#8b949e">—</span>
           </div>
+          ${items.length >= 2 ? `<button onclick="event.stopPropagation();event.preventDefault();closeAllInGroup('${grpId}','${String(stratName).replace(/['\\]/g, '')}',${items.length})" title="Close all ${items.length} positions in this group (confirm ke saath)" style="margin-right:10px;padding:3px 9px;font-size:11px;font-weight:700;background:#f8514920;border:1px solid #f8514980;border-radius:4px;color:#f85149;cursor:pointer;white-space:nowrap">✕ Close all (${items.length})</button>` : ''}
           ${_payoffBtn(items, stratName)}
           <button onclick="editStrategyLabel(this, event)" data-strat="${stratKey.replace(/"/g, '&quot;')}" style="margin-right: 12px; padding: 3px 8px; font-size: 11px; background: #21262d; border: 1px solid #30363d; border-radius: 4px; color: #8b949e; cursor: pointer;">✏️ Edit</button>
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
