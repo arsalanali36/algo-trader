@@ -94,13 +94,58 @@ def record(side, qty, price, *, source="", strategy="", mode="paper", broker="dh
         # no price. We log LOUD rather than drop (dropping could desync a caller's
         # in-memory position) so ANY new code path that regresses is caught in the
         # logs immediately — this bug returned 4x in different files before this.
-        if float(price or 0) <= 0 and str(status or "").lower() not in (
-                "blocked", "rejected", "cancelled", "canceled", "failed", "expired"):
+        _real_fill = str(status or "").lower() not in (
+            "blocked", "rejected", "cancelled", "canceled", "failed", "expired")
+        if float(price or 0) <= 0 and _real_fill:
             # ASCII-only (no emoji) — a print that raises UnicodeEncodeError on a
             # non-UTF8 console would be caught below and SKIP the insert.
             print(f"[order_store] WARNING SUSPICIOUS 0-price {status} fill -- {side} {qty} "
                   f"{trad_sym or symbol} src={source} strat={strategy}. Premium fetch "
                   f"likely failed (DH-904). See LESSONS.md TRAP #1.", flush=True)
+        # GUARD 2 (TRAP #1 family, 2026-07-29): an OPTION recorded at ~the underlying
+        # INDEX/SPOT level (e.g. a NIFTY option at 24236) is never a real premium — a
+        # caller fell back to the index quote when the option-premium fetch failed. ONE
+        # such row (195q @ 24236) mis-paired 3 legs in netting into a phantom +15.6L and
+        # made "almost every" completed trade's exit look wrong. This is the SINGLE
+        # choke-point every order passes through, so REFUSING it here protects EVERY
+        # current AND future code path (not just the one caller that regressed). Two
+        # independent robust detections (a real option premium trips NEITHER):
+        #   (a) within 5% of the underlying's live index spot (NIFTY/BANKNIFTY), or
+        #   (b) price > 0.95 * strike  (universal — the index level always sits near the
+        #       strike range; even a very deep-ITM real premium stays well under 0.95x).
+        if _real_fill and float(price or 0) > 0:
+            _ts = str(trad_sym or "")
+            if _ts.endswith("-CE") or _ts.endswith("-PE"):
+                _bad = False
+                _px = float(price)
+                try:
+                    import shared_ltp_cache as _slc
+                    _root = _ts.split("-")[0].strip().upper()
+                    _spot = _slc.get_index(_root, max_age=86400)
+                    if _spot and _spot > 0 and abs(_px - float(_spot)) / float(_spot) < 0.05:
+                        _bad = True
+                except Exception:
+                    pass
+                if not _bad:
+                    try:
+                        _strike = float(_ts.split("-")[-2])
+                        if _strike > 0 and _px > 0.95 * _strike:
+                            _bad = True
+                    except (ValueError, IndexError):
+                        pass
+                if _bad:
+                    print(f"[order_store] REJECT index-level option fill -- {side} {qty} {_ts} "
+                          f"@ {_px} (~ underlying index level, not a real premium). Premium "
+                          f"fetch fell back to the index. NOT recorded (would poison netting "
+                          f"into a phantom P&L). See LESSONS.md TRAP #1.", flush=True)
+                    try:
+                        import notify
+                        notify.error("indexpx_" + _ts,
+                                     f"⚠️ {_ts} @ {_px:.0f} index-level price refused (premium "
+                                     f"fetch fail) — order NOT recorded", source="order_store")
+                    except Exception:
+                        pass
+                    return None
         row = {
             "ts": now, "date": now[:10], "source": source, "strategy": strategy,
             "mode": mode, "broker": broker, "symbol": symbol, "instrument": instrument,
