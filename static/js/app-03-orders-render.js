@@ -866,6 +866,10 @@
             tableHtml += '</tr></thead><tbody>';
             let grpMargin = 0, grpQty = 0;
 
+            // per-group_id leg count → "🔗 Group ✕" sirf genuine multi-leg (2+) group pe dikhe
+            const _grpIdCounts = {};
+            items.forEach(t => { if (t.group_id) _grpIdCounts[t.group_id] = (_grpIdCounts[t.group_id] || 0) + 1; });
+
             items.forEach(t => {
               const entry = Number(t.entry_price || 0), qty = t.qty || 0;
               const closeSide = t.entry === 'BUY' ? 'SELL' : 'BUY', cbc = t.entry === 'BUY' ? '#f85149' : '#3fb950';
@@ -1128,11 +1132,22 @@
                   case 'chart':
                     val = `<button onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date || ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')" title="Premium chart" style="padding:3px 9px;font-size:13px;background:#21262d;border:1px solid #30363d;border-radius:5px;color:#58a6ff;cursor:pointer">📈</button>`;
                     break;
-                  case 'actions':
+                  case 'actions': {
+                    // MIS/NRML carry as an INLINE PILL (row me dikhe, ⋮ menu me chhupa nahi).
+                    // Click = toggle (group-wide). Green NRML = carry past 3:15, gray MIS = square.
+                    const _cOn = !!(window._carryHas && window._carryHas(t.group_id, t.id));
+                    const _cPill = `<span onclick="event.stopPropagation();togglePosCarry('${argEsc(t.group_id)}',${t.id})" title="MIS = 3:15 auto square-off · NRML = carry overnight (poora group). Click to toggle."
+                      style="cursor:pointer;padding:3px 8px;border-radius:20px;font-size:9.5px;font-weight:700;white-space:nowrap;border:1px solid ${_cOn ? '#3fb95080' : '#30363d'};background:${_cOn ? '#3fb95020' : '#161b22'};color:${_cOn ? '#3fb950' : '#8b949e'}">${_cOn ? '🌙 NRML' : '☀️ MIS'}</span>`;
+                    // "Group ✕" sirf GENUINE multi-leg group pe (hedge/straddle, 2+ legs).
+                    // Solo/independent order (1-leg group) pe redundant tha (close ✕ hi kaafi) →
+                    // hata diya, jagah bachi (P1 ke baad har manual order apna 1-leg group hai).
+                    const _grpN = t.group_id ? (_grpIdCounts[t.group_id] || 0) : 0;
+                    const _grpBtn = (_grpN >= 2) ? `<button title="Hedge/straddle group — close all ${_grpN} legs together" onclick="closePositionGroup('${argEsc(t.group_id)}','${t.mode || 'paper'}')"
+                      style="padding:4px 8px;background:#8a2be220;border:1px solid #8a2be280;border-radius:5px;color:#c9a6ff;font-size:10px;font-weight:700;cursor:pointer">🔗 Group ✕</button>` : '';
                     val = `
                 <div style="display:flex; align-items:center; justify-content:center; gap:8px;">
-                  ${t.group_id ? `<button title="Hedge group — close both legs together" onclick="closePositionGroup('${argEsc(t.group_id)}','${t.mode || 'paper'}')"
-                    style="padding:4px 8px;background:#8a2be220;border:1px solid #8a2be280;border-radius:5px;color:#c9a6ff;font-size:10px;font-weight:700;cursor:pointer">🔗 Group ✕</button>` : ''}
+                  ${_cPill}
+                  ${_grpBtn}
                   <button id="${bId}" onclick="closePosition('${argEsc(t.sym)}','${t.entry}',${qty},'${t.mode || 'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}','${bId}')"
                     style="padding:4px 10px;background:${cbc}20;border:1px solid ${cbc}80;border-radius:5px;color:${cbc};font-size:11px;font-weight:700;cursor:pointer">
                     ${closeSide} ✕
@@ -1142,7 +1157,6 @@
                     <div id="dropdown-${t.id}" class="dropdown-content">
                       <a href="javascript:void(0)" onclick="openTradeChart('${argEsc(t.sym)}','${t.entry}',${entry},0,'${t.entry_time}','',${qty},'${t.entry_date || ordDate}',null,null,null,${_slArg},${_tpArg},'${argEsc(t.strategy)}')">📈 Chart</a>
                       <a href="javascript:void(0)" onclick="openSlTpModal(${t.id}, '${sl_val || sl_pct}', '${tp_val || tp_pct}', '${sl_type || 'pct'}', '${tp_type || 'pct'}')">⚙️ SL/Target</a>
-                      <a href="javascript:void(0)" onclick="togglePosCarry('${argEsc(t.group_id)}', ${t.id})" title="MIS = 3:15 auto square-off · NRML = carry overnight (whole group)">${window._carryHas && window._carryHas(t.group_id, t.id) ? '☀️ Set Intraday (MIS)' : '🌙 Carry overnight (NRML)'}</a>
                       <a href="javascript:void(0)" onclick="openNoteModal(${t.id})">📝 Edit Note</a>
                       <a href="javascript:void(0)" onclick="toggleNoteDesc(${t.id})">👁️ Toggle Note</a>
                       <a href="javascript:void(0)" onclick="bookClose('${argEsc(t.sym)}','${t.entry}',${qty},${entry},'${t.mode || 'paper'}','${argEsc(t.source)}','${argEsc(t.strategy)}')" style="color:#f85149">🗑 Remove from Book</a>
@@ -1150,6 +1164,7 @@
                   </div>
                 </div>`;
                     break;
+                  }
                 }
 
                 const isRight = ['entry_px', 'ltp', 'points', 'pnl', 'ret_pct', 'margin', 'run_up', 'run_down'].includes(c.id);

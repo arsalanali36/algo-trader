@@ -777,39 +777,56 @@
     // alag group) ka payoff ek saath, alag mini-card me. Kisi card pe click → uska
     // full payoff (single-group view). Har group ka payoff parallel fetch; mini-SVG
     // _pfMiniCurve se (expiry solid + hold-date dashed, spot marker).
-    async function _pfGridAll() {
+    async function _pfGridAll(mode) {
+      if (mode) window._pfGridMode = mode;
+      if (!window._pfGridMode) window._pfGridMode = 'order';   // default: har ORDER alag (user ask)
+      const perOrder = window._pfGridMode === 'order';
       const body = document.getElementById('pfBody'); if (!body) return;
       const sub = document.getElementById('pfSub');
-      if (sub) sub.textContent = 'All open positions — har order/group ka apna payoff (card pe click = full view)';
+      if (sub) sub.textContent = 'All open positions — ' + (perOrder ? 'har ORDER ka apna payoff' : 'har GROUP ka payoff') + ' (card click = full view)';
       const strip = document.getElementById('pfLegStrip');
-      if (strip) strip.innerHTML = '<span style="font-size:11px;color:#6e7681">⊞ Grid view — har independent order alag panel me</span>';
-      body.innerHTML = '<span style="color:#8b949e">⏳ loading all positions…</span>';
+      if (strip) strip.innerHTML = '<span style="font-size:11px;color:#6e7681">⊞ Grid — ' + (perOrder ? 'har independent order alag panel' : 'hedge/straddle group ek card') + '</span>';
+      body.innerHTML = '<span style="color:#8b949e">⏳ loading…</span>';
       let groups = window._pfGroups;
       if (!groups || !groups.length) {
         try { const g = await (await fetch('/api/position-groups')).json(); groups = (g && g.groups) || []; window._pfGroups = groups; }
         catch (e) { groups = []; }
       }
-      if (!groups.length) { body.innerHTML = '<span style="color:#8b949e">koi open position group nahi mila</span>'; return; }
-      const _cid = gid => 'pfmini_' + String(gid).replace(/[^a-z0-9]/gi, '_');
-      const results = await Promise.all(groups.map(async gr => {
-        try { const d = await (await fetch('/api/position-payoff?group_id=' + gr.group_id)).json(); return { gr, d: (d && d.ok) ? d : null }; }
-        catch (e) { return { gr, d: null }; }
+      if (!groups.length) { body.innerHTML = '<span style="color:#8b949e">koi open position nahi mili</span>'; return; }
+      // per-ORDER = har leg apna card (ids=<id>, NO stored group_id chhua — safe, basket-exit
+      // untouched); per-GROUP = poora hedge/straddle group ek card (group_id=<gid>).
+      let cells;
+      if (perOrder) {
+        cells = [];
+        groups.forEach(gr => (gr.ids || []).forEach(id => cells.push({ qs: 'ids=' + id, cid: 'pfmini_o_' + id })));
+      } else {
+        cells = groups.map(gr => ({ qs: 'group_id=' + gr.group_id, cid: 'pfmini_g_' + String(gr.group_id).replace(/[^a-z0-9]/gi, '_'), label: gr.label }));
+      }
+      const results = await Promise.all(cells.map(async it => {
+        try { const d = await (await fetch('/api/position-payoff?' + it.qs)).json(); return { it, d: (d && d.ok) ? d : null }; }
+        catch (e) { return { it, d: null }; }
       }));
-      body.innerHTML = '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">'
-        + results.map(({ gr, d }) => {
+      const segBtn = (m, txt) => `<button onclick="_pfGridAll('${m}')" style="padding:3px 10px;font-size:10px;font-weight:700;cursor:pointer;border-radius:5px;background:${(window._pfGridMode === m) ? '#1f6feb30' : '#161b22'};border:1px solid ${(window._pfGridMode === m) ? '#1f6feb80' : '#30363d'};color:${(window._pfGridMode === m) ? '#58a6ff' : '#8b949e'}">${txt}</button>`;
+      body.innerHTML = `<div style="display:flex;gap:6px;margin-bottom:10px;align-items:center">
+          <span style="font-size:10px;color:#8b949e;text-transform:uppercase;letter-spacing:.04em">Grid by</span>
+          ${segBtn('order', 'Per order')} ${segBtn('group', 'By group')}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px">`
+        + results.map(({ it, d }) => {
+          const lbl = (d && d.legs && d.legs[0]) ? d.legs[0].trad_sym : (it.label || 'position');
           const pop = (d && d.pop != null) ? (d.pop * 100).toFixed(0) + '%' : '—';
           const be = (d && d.breakevens && d.breakevens[0] != null) ? _pfNf(d.breakevens[0]) : '—';
           const spot = (d && d.spot) ? _pfNf(d.spot) : '—';
           const nlegs = (d && d.legs) ? d.legs.length : 0;
-          return `<div onclick="_pfSelectGroup('group_id=${gr.group_id}')" title="Click → full payoff"
+          return `<div onclick="_pfSelectGroup('${it.qs}')" title="Click → full payoff"
             style="border:1px solid #30363d;border-radius:9px;padding:10px 11px;cursor:pointer;background:#0d1117">
-            <div style="font-size:12px;font-weight:700;color:#e6edf3;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${gr.label}</div>
-            <div style="font-size:10px;color:#6e7681;margin-bottom:6px">POP ${pop} · BE ${be} · spot ${spot} · ${nlegs} legs</div>
-            <svg id="${_cid(gr.group_id)}" viewBox="0 0 210 88" style="width:100%;height:72px"></svg>
+            <div style="font-size:11.5px;font-weight:700;color:#e6edf3;margin-bottom:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lbl}</div>
+            <div style="font-size:10px;color:#6e7681;margin-bottom:6px">POP ${pop} · BE ${be} · spot ${spot} · ${nlegs} leg${nlegs === 1 ? '' : 's'}</div>
+            <svg id="${it.cid}" viewBox="0 0 210 88" style="width:100%;height:72px"></svg>
             ${d ? '' : '<div style="font-size:10px;color:#8b949e">payoff nahi bana</div>'}
           </div>`;
         }).join('') + '</div>';
-      results.forEach(({ gr, d }) => { if (d) _pfMiniCurve(_cid(gr.group_id), d); });
+      results.forEach(({ it, d }) => { if (d) _pfMiniCurve(it.cid, d); });
     }
 
     // compact payoff SVG for a grid card — expiry (green solid) + hold-date (amber
