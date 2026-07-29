@@ -28,6 +28,16 @@
   - 2026-06-22 — zero-leg cleanup (`_fix_zero_legs.py`, fake ~₹15,343 hata)
   - 2026-06-25 — `range_trader.place_order()` (MARUTI/TCS @0 → fake −₹4,803 → ARS_CHAIN_V1
     −5,350 → ₹5,000 breaker trip → asli legs squared off). TCS pair (DB id 159+160) delete kiya.
+  - **2026-07-29 — INDEX-LEVEL variant (not ₹0, but the SPOT price):** `api_manual_order`
+    ne `option_ltp = price` **fallback me NIFTY index last_price** (24236.7) rakha; premium
+    fetch fail hua to option SELL **@ 24236.7** record ho gaya (195q). Ek hi aisi row ne netting
+    me 3 legs ko mis-pair karke **phantom +₹15.6L** banaya + poore contract ke completed-trades
+    ke exit-prices galat dikha diye ("almost sabhi galat" — asal me ek zeher poore netting me
+    phaila, TRAP #92/#101 family). Fix: (a) caller `option_ltp=0` start, real premium na mile
+    to order REJECT; (b) **central tripwire `order_store.record()` me** — koi bhi REAL option
+    fill jiska price underlying index spot ke 5% andar HO **ya** `> 0.95*strike` ho → **refuse
+    (record hi nahi karta)** + loud log + notify. Row id=2190 delete (backup). ₹0 sirf ek shakl
+    thi — index/spot price bhi utni hi khatarnak; ab dono central se blocked.
 - **Permanent guard (ab lagaya):**
   1. **Caller:** koi bhi entry path jisko real price chahiye — agar premium na mile to
      **entry SKIP karo, ₹0 record MAT karo.** `range_trader.place_order` ab cache→direct→stale
