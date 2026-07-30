@@ -723,6 +723,9 @@ def api_gex():
     expiry = request.args.get('expiry') or None
     latest_only = (request.args.get('latest') or '') in ('1', 'true', 'yes')
     want_list = (request.args.get('list') or '') in ('1', 'true', 'yes')
+    smooth = (request.args.get('smooth') or 'med').lower()
+    if smooth not in ('off', 'low', 'med', 'high'):
+        smooth = 'med'
 
     def _out(obj):
         # compact JSON + gzip (a day's profile is ~1MB raw, ~8x smaller gzipped)
@@ -740,8 +743,8 @@ def api_gex():
             ds = gp.available_dates(u)
             return _out({"ok": bool(ds), "underlying": u, "dates": ds})   # date picker default
         if latest_only:
-            return _out(gp.latest(u, date, expiry))          # newest snapshot (live refresh)
-        return _out(gp.profile(u, date, expiry))             # full day (scrub/play)
+            return _out(gp.latest(u, date, expiry, smooth=smooth))   # newest snapshot (live refresh)
+        return _out(gp.profile(u, date, expiry, smooth=smooth))      # full day (scrub/play)
     except Exception as e:
         print("[gex] fail:", e, flush=True)
         return _out({"ok": False, "error": str(e), "expiries": [], "snaps": []})

@@ -48,6 +48,123 @@ def _f(x):
 _GEX_K = 0.01
 
 
+# ---------------------------------------------------------------- smoothing (display-only)
+# The jumpy quantities (γ-flip, abs-GEX wall, max-pain) are winner-take-all — a zero-crossing /
+# argmax / argmin over a near-flat, per-minute-recomputed landscape — so a tiny change flips the
+# "winner" to an adjacent strike and the line leaps 100-150pt. This is display noise, not new
+# information. We calm it WITHOUT lying: per-strike GEX bars get a time-EMA (α), and the scalar
+# levels get a rolling MEDIAN (spike-proof) + a confirm-window HYSTERESIS — the exact arm/gap/
+# confirm pattern the kill-floor uses (LESSONS TRAP #80-81: the fix for whipsaw is time-
+# confirmation, not granularity). A level only moves once a NEW strike persists `confirm` samples.
+_SMOOTH = {
+    "off":  None,
+    "low":  {"win": 7,  "confirm": 2, "alpha": 0.40},   # responsive — only single-tick spikes gone
+    "med":  {"win": 15, "confirm": 3, "alpha": 0.25},   # default — flicker gone, real shift ~3-4 min
+    "high": {"win": 30, "confirm": 5, "alpha": 0.15},   # calm — only big structural shifts move
+}
+_STRIKE_KEYS = ("flip", "mp", "ag", "cw", "pw")   # snap to real strike + median + hysteresis
+_EM_KEYS = ("emh", "eml")                          # continuous prices → median only
+_CONT_KEYS = ("net", "pcr", "iv", "vix")           # continuous KPIs → short trailing mean
+
+
+def _median(vals):
+    v = sorted(x for x in vals if x is not None)
+    n = len(v)
+    if not n:
+        return None
+    m = n // 2
+    return v[m] if n % 2 else (v[m - 1] + v[m]) / 2.0
+
+
+def _strike_step(snaps):
+    """Median gap between adjacent strikes (the natural hysteresis unit for this underlying)."""
+    for s in snaps:
+        ks = sorted({st["k"] for st in s.get("strikes", []) if st.get("k") is not None})
+        diffs = sorted(b - a for a, b in zip(ks, ks[1:]) if b > a)
+        if diffs:
+            return diffs[len(diffs) // 2]
+    return 50.0
+
+
+def _smooth_snaps(snaps, level="med"):
+    """Return a smoothed copy of the ordered snaps (oldest->newest). Level in _SMOOTH.
+    Display-only — never touches OI/max-pain math, just calms what gets DRAWN."""
+    cfg = _SMOOTH.get(level)
+    if not cfg or len(snaps) < 3:
+        return snaps
+    win, confirm, alpha = cfg["win"], cfg["confirm"], cfg["alpha"]
+    step = _strike_step(snaps)
+    thr = step * 0.5                       # deadband = half a strike → any real strike change needs confirm
+    n = len(snaps)
+    out = [dict(s) for s in snaps]         # shallow copy; strikes replaced below
+
+    # 1) per-strike GEX bars: time-EMA per strike k (align by k; new strikes start fresh)
+    ema = {}
+    for idx, s in enumerate(snaps):
+        rows = []
+        for st in s.get("strikes", []):
+            k = st["k"]
+            prev = ema.get(k)
+            e = st["gex"] if prev is None else alpha * st["gex"] + (1 - alpha) * prev
+            ema[k] = e
+            rows.append({"k": k, "gex": round(e), "vce": st["vce"], "vpe": st["vpe"]})
+        out[idx]["strikes"] = rows
+
+    ks_of = [sorted({st["k"] for st in s.get("strikes", []) if st.get("k") is not None}) for s in snaps]
+
+    def _snap_to_strike(val, i):
+        ks = ks_of[i]
+        if val is None or not ks:
+            return val
+        return min(ks, key=lambda k: abs(k - val))
+
+    # 2) winner-take-all strike levels: snap-to-strike -> confirm-window hysteresis.
+    # NO median here — the confirm window alone is the flicker filter: pure alternation
+    # (24450<->24600) never gets `confirm` in a row so it never commits, while a GENUINE
+    # sustained shift commits in exactly `confirm` samples (~3 min at med). A median would
+    # only add ~half-its-window of lag on real shifts for no extra flicker protection.
+    for key in _STRIKE_KEYS:
+        raw = [s.get(key) for s in snaps]
+        med = [_snap_to_strike(v, i) for i, v in enumerate(raw)]
+        disp = next((m for m in med if m is not None), None)
+        pend, ct = None, 0
+        for i in range(n):
+            m = med[i]
+            if m is None or disp is None:
+                disp = m if disp is None else disp
+            elif abs(m - disp) < thr:       # same strike / inside deadband
+                pend, ct = None, 0
+            else:                            # a genuinely different strike — must persist `confirm` samples
+                if pend is not None and abs(m - pend) < thr:
+                    ct += 1
+                else:
+                    pend, ct = m, 1
+                if ct >= confirm:
+                    disp, pend, ct = pend, None, 0
+            out[i][key] = disp
+
+    # 3) continuous ±1σ band: rolling median (moves smoothly with spot, no hysteresis needed)
+    for key in _EM_KEYS:
+        raw = [s.get(key) for s in snaps]
+        for i in range(n):
+            m = _median(raw[max(0, i - win + 1): i + 1])
+            out[i][key] = round(m, 1) if m is not None else raw[i]
+
+    # 4) continuous KPIs (net/pcr/iv/vix): short trailing mean; net kept integer for regime sign
+    cwin = max(3, win // 3)
+    for key in _CONT_KEYS:
+        raw = [s.get(key) for s in snaps]
+        for i in range(n):
+            w = [v for v in raw[max(0, i - cwin + 1): i + 1] if v is not None]
+            if not w:
+                out[i][key] = raw[i]
+            elif key == "net":
+                out[i][key] = round(sum(w) / len(w))
+            else:
+                out[i][key] = round(sum(w) / len(w), 2)
+    return out
+
+
 def _snapshot(legs):
     """One minute -> {dt, spot, vix, net, mp, ag, flip, pcr, strikes[]}.
     `legs` = all CSV rows for one (expiry, datetime). Returns None on bad data."""
@@ -238,10 +355,11 @@ def _lake_profile(u, date):
     return snaps
 
 
-def profile(u, date, expiry=None):
-    """Return {ok, underlying, date, expiry, expiries[], snaps[], source} for one day.
+def profile(u, date, expiry=None, smooth="med"):
+    """Return {ok, underlying, date, expiry, expiries[], snaps[], source, smooth} for one day.
     snaps = every captured minute (oldest -> newest). source='collector' (recent, real
-    greeks → gamma-GEX) or 'lake' (historical, real OI → Net-OI bars, no greeks)."""
+    greeks → gamma-GEX) or 'lake' (historical, real OI → Net-OI bars, no greeks).
+    `smooth` (off/low/med/high) calms the winner-take-all levels + bars — display-only."""
     _, rows = _oc._load_rows(u, date)
     if rows:
         exps = []
@@ -264,15 +382,17 @@ def profile(u, date, expiry=None):
                 snaps.append(snap)
         if snaps:
             return {"ok": True, "underlying": u, "date": date, "expiry": expiry,
-                    "expiries": exps, "snaps": snaps, "source": "collector"}
+                    "expiries": exps, "snaps": _smooth_snaps(snaps, smooth),
+                    "source": "collector", "smooth": smooth}
 
     # collector empty (older than the ~2-week live window) → historical lake, OI-based
     snaps = _lake_profile(u, date)
     if snaps:
         return {"ok": True, "underlying": u, "date": date, "expiry": "weekly",
-                "expiries": ["weekly"], "snaps": snaps, "source": "lake"}
+                "expiries": ["weekly"], "snaps": _smooth_snaps(snaps, smooth),
+                "source": "lake", "smooth": smooth}
     return {"ok": False, "underlying": u, "date": date, "expiry": expiry,
-            "expiries": [], "snaps": [], "source": None}
+            "expiries": [], "snaps": [], "source": None, "smooth": smooth}
 
 
 def available_dates(u):
@@ -295,9 +415,9 @@ def latest_date(u):
     return ds[-1] if ds else None
 
 
-def latest(u, date, expiry=None):
+def latest(u, date, expiry=None, smooth="med"):
     """Just the most recent snapshot (live auto-refresh)."""
-    p = profile(u, date, expiry)
+    p = profile(u, date, expiry, smooth=smooth)
     p_snaps = p.get("snaps") or []
     return {**{k: v for k, v in p.items() if k != "snaps"},
             "snap": p_snaps[-1] if p_snaps else None}

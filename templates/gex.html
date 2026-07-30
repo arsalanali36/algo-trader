@@ -81,6 +81,7 @@
   <div class="brand"><b>📊 GEX Profile</b><span id="subttl">gamma exposure · live chain</span></div>
   <div class="sp"></div>
   <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="line">Line</button><button data-v="engine">Trade Engine</button></div>
+  <div class="seg" id="smSeg" title="Level smoothing — Raw = live (jumpy), Smooth = 15-min median + confirm, Calm = 30-min. Levels: γ-flip / walls / max-pain / ±1σ."><button data-sm="off">Raw</button><button data-sm="med" class="on">Smooth</button><button data-sm="high">Calm</button></div>
   <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
   <select class="ctl" id="uStock" title="RSI-strategy stocks (option chain collected live)"><option value="">Stocks ▾</option><option>RELIANCE</option><option>HDFCBANK</option><option>ICICIBANK</option><option>SBIN</option><option>INFY</option></select>
   <input type="date" class="ctl" id="datePick">
@@ -130,6 +131,7 @@ let S = [], cur = 0, spd = 2, timer = null, liveTimer = null;
 let gMax = 1, vMax = 1;                       // fixed scales across the loaded day
 let U = 'NIFTY', DATE = '', EXP = '';
 let VIEW = localStorage.getItem('gex_view') || 'profile';   // 'profile' | 'engine'
+let SMOOTH = localStorage.getItem('gex_smooth') || 'med';   // 'off' | 'med' | 'high' — level smoothing
 let SRC = 'collector';   // 'collector' (recent, real gamma-GEX) | 'lake' (historical, real OI)
 let _candles = [], eT0 = 0, eT1 = 1, ePMin = 0, ePMax = 1;  // engine: candles + axis ranges
 let _eBaseMin = 0, _eBaseMax = 1, _eZoom = {f:1, c:null};   // engine price-axis zoom (wheel/drag)
@@ -561,12 +563,12 @@ const _dayCache = {};   // "U|date|expiry" -> response (past days are immutable 
 async function load(keepPos){
   const seq = ++_loadSeq;
   if(!keepPos) _eZoom = {f:1, c:null};   // fresh day/underlying/expiry → reset engine zoom
-  const key = `${U}|${DATE}|${EXP||''}`;
+  const key = `${U}|${DATE}|${EXP||''}|${SMOOTH}`;
   let d;
   if(!keepPos && _dayCache[key]){
     d = _dayCache[key];                                  // cache hit → no fetch, instant switch
   } else {
-    const url = `/api/gex?underlying=${U}&date=${DATE}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
+    const url = `/api/gex?underlying=${U}&date=${DATE}&smooth=${SMOOTH}` + (EXP?`&expiry=${encodeURIComponent(EXP)}`:'');
     try{ d = await (await fetch(url)).json(); }catch(e){ d = {ok:false}; }
     if(seq !== _loadSeq) return;   // a newer load started while we awaited — drop this stale response
     if((d.snaps||[]).length){      // cache good days only (live-refresh keeps re-fetching fresh)
@@ -606,6 +608,15 @@ $('vSeg').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b || b.dataset.v===VIEW) return;
   VIEW=b.dataset.v; localStorage.setItem('gex_view', VIEW);
   applyView(); if(S.length) show(cur);
+});
+
+// smoothing toggle (Raw / Smooth / Calm) — server-side; refetch same day, keep scrub position
+[...$('smSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.sm===SMOOTH));   // reflect persisted
+$('smSeg').addEventListener('click', e=>{
+  const b=e.target.closest('button'); if(!b || b.dataset.sm===SMOOTH) return;
+  [...$('smSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.sm===b.dataset.sm));
+  SMOOTH=b.dataset.sm; localStorage.setItem('gex_smooth', SMOOTH);
+  stop(); load(true);   // re-pull the day with new smoothing, keep scrub position
 });
 
 // underlying toggle
