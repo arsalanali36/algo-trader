@@ -48,7 +48,7 @@ import dhan_master
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
-FORCE_EXIT   = (15, 15)
+FORCE_EXIT   = (15, 10)
 INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 NIFTY_SEC_ID, NIFTY_SEG, NIFTY_INST = "13", "IDX_I", "INDEX"
 _TF_MIN = {"1m": 1, "3m": 3, "5m": 5, "15m": 15}

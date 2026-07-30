@@ -64,7 +64,7 @@ from _CHARTING.indicators import wilder_rsi as _compute_rsi
 # Market timing (IST)
 MARKET_OPEN  = (9,  16)   # 9:16 AM — market chalu
 MARKET_CLOSE = (15, 25)   # 3:25 PM — hard stop
-FORCE_EXIT   = (15, 15)   # 3:15 PM — sab positions band
+FORCE_EXIT   = (15, 10)   # 3:10 PM — sab positions band (CAS; RMS import-fail fallback)
 
 # Dhan API endpoints
 ORDERS_URL   = "https://api.dhan.co/v2/orders"

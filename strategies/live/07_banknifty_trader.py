@@ -52,7 +52,7 @@ from _CHARTING.indicators import wilder_atr as _atr   # canonical (Rule 6B/ADR-0
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
-FORCE_EXIT   = (15, 15)
+FORCE_EXIT   = (15, 10)
 INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 # BANKNIFTY spot index — sec_id 25 (NIFTY=13). Lot/strike from scrip master, not hardcoded.
 BNF_SEC_ID, BNF_SEG, BNF_INST = "25", "IDX_I", "INDEX"

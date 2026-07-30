@@ -57,7 +57,7 @@ from _CHARTING.indicators import wilder_atr as _atr   # canonical (Rule 6B/ADR-0
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
-FORCE_EXIT   = (15, 15)
+FORCE_EXIT   = (15, 10)
 INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 NIFTY_SEC_ID, NIFTY_SEG, NIFTY_INST = "13", "IDX_I", "INDEX"
 _TF_MIN = {"1m": 1, "2m": 2, "3m": 3, "5m": 5, "7m": 7, "10m": 10, "15m": 15}

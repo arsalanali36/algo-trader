@@ -139,7 +139,7 @@ _TF_MAP = {"1m": "1", "3m": "3", "5m": "5", "15m": "15", "30m": "30"}
 ORDERS_URL   = "https://api.dhan.co/v2/orders"
 MARKET_OPEN  = (9, 15)
 MARKET_CLOSE = (15, 25)
-AUTO_EXIT_AT = (15, 15)
+AUTO_EXIT_AT = (15, 10)
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 logging.basicConfig(

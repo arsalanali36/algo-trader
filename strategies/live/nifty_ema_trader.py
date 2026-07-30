@@ -76,7 +76,7 @@ DHAN_INFO = {
 # ── Market Hours IST ───────────────────────────────────────────────────────────
 MARKET_OPEN  = (9, 15)
 MARKET_CLOSE = (15, 25)
-AUTO_EXIT_AT = (15, 15)
+AUTO_EXIT_AT = (15, 10)
 
 # ── Logging ────────────────────────────────────────────────────────────────────
 logging.basicConfig(

@@ -50,7 +50,7 @@ from strategies.signals import orb as _orb            # SINGLE SOURCE — same O
 
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
-FORCE_EXIT   = (15, 15)
+FORCE_EXIT   = (15, 10)
 INTRADAY_URL = "https://api.dhan.co/v2/charts/intraday"
 
 # NIFTY spot index — well-known ids used across the project (NIFTY_SEC_ID=13).
