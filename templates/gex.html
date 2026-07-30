@@ -90,6 +90,7 @@
   <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
   <div class="live" id="liveBtn"><span class="dot"></span><span id="liveTxt">Live: off</span></div>
   <span class="ctl" id="lastUpd" title="Last option-chain snapshot time">—</span>
+  <button class="ctl" id="revealBtn" title="Reveal-as-you-play: hide everything ahead of the playhead (real playback feel — no peeking at the future)" style="display:none">▶ Reveal</button>
   <button class="ctl on" id="gexBtn" title="Per-strike GEX bars on the price axis (green = call wall, red = put wall)" style="display:none">▮ GEX</button>
   <span class="ctl" id="zoomHint" title="Trade Engine chart" style="display:none;color:var(--dim)">scroll = zoom · drag = pan</span>
   <a class="ctl" href="/whatif" title="Manual options what-if backtest">🧪 What-If</a>
@@ -136,6 +137,7 @@ let U = 'NIFTY', DATE = '', EXP = '';
 let VIEW = localStorage.getItem('gex_view') || 'profile';   // 'profile' | 'engine'
 let SMOOTH = localStorage.getItem('gex_smooth') || 'med';   // 'off' | 'med' | 'high' — level smoothing
 let GEXBARS = localStorage.getItem('gex_bars') !== '0';     // engine view: per-strike GEX histogram on the price axis (default on)
+let REVEAL = localStorage.getItem('gex_reveal') === '1';    // time views: hide everything ahead of the playhead (real-playback feel; default off)
 let SRC = 'collector';   // 'collector' (recent, real gamma-GEX) | 'lake' (historical, real OI)
 let _candles = [], eT0 = 0, eT1 = 1, ePMin = 0, ePMax = 1;  // engine: candles + axis ranges
 let _eBaseMin = 0, _eBaseMax = 1, _eZoom = {f:1, c:null};   // engine price-axis zoom (wheel/drag)
@@ -235,7 +237,8 @@ function drawEngine(i){
   // price scale can't paint candles over the axis labels / time row.
   ctx.save(); ctx.beginPath(); ctx.rect(mL, mT, pw, ph); ctx.clip();
   const bw = Math.max(3, pw/_candles.length*0.72);
-  for(const c of _candles){ const x=tx(c.t+2.5), up=c.c>=c.o;
+  for(const c of _candles){ if(REVEAL && c.t>nowT) continue;   // reveal: future candles hidden, not faded
+    const x=tx(c.t+2.5), up=c.c>=c.o;
     ctx.globalAlpha = c.t>nowT ? 0.26 : 1;
     ctx.strokeStyle=ctx.fillStyle = up?css('--green'):css('--red');
     ctx.beginPath();ctx.moveTo(x,py(c.h));ctx.lineTo(x,py(c.l));ctx.stroke();
@@ -428,6 +431,9 @@ function drawGext(i){
   const fmtNet = oi ? (v=>(v>=0?'+':'−')+fmtCount(Math.abs(v))) : fmtCr;
   const t0=_mins(S[0].dt), t1=_mins(S[S.length-1].dt);
   const tx = t => mL + (t-t0)/((t1-t0)||1)*pw;
+  // reveal mode: only draw up to the playhead (future hidden). Axis ranges still use the FULL
+  // day so the scale never jumps as you play — only the drawn portion grows.
+  const VIS = REVEAL ? S.slice(0, i+1) : S, tEnd = _mins(VIS[VIS.length-1].dt);
   let nLo=0,nHi=0, spLo=1e9,spHi=-1e9;
   for(const x of S){ nLo=Math.min(nLo,x.net); nHi=Math.max(nHi,x.net); spLo=Math.min(spLo,x.spot); spHi=Math.max(spHi,x.spot); }
   if(nHi===nLo) nHi=nLo+1;
@@ -444,19 +450,19 @@ function drawGext(i){
     ctx.fillStyle=css('--dim'); ctx.textAlign='right'; ctx.fillText(fmtNet(v), mL-6, y+3); }
   // spot overlay (secondary, faint) — behind
   ctx.strokeStyle=css('--spot'); ctx.globalAlpha=.5; ctx.lineWidth=1.2;
-  ctx.beginPath(); S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=spy(x.spot); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);}); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.beginPath(); VIS.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=spy(x.spot); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);}); ctx.stroke(); ctx.globalAlpha=1;
   ctx.fillStyle=css('--spot'); ctx.textAlign='left'; ctx.globalAlpha=.8;
   ctx.fillText(spHi.toFixed(0), mL+pw+6, spy(spHi)+3); ctx.fillText(spLo.toFixed(0), mL+pw+6, spy(spLo)+3); ctx.globalAlpha=1;
   // net GEX area: green above zero, red below (clip by side)
   function areaToZero(){ ctx.beginPath();
-    S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
-    ctx.lineTo(tx(t1),zeroY); ctx.lineTo(tx(t0),zeroY); ctx.closePath(); }
+    VIS.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+    ctx.lineTo(tx(tEnd),zeroY); ctx.lineTo(tx(t0),zeroY); ctx.closePath(); }
   ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,zeroY-mT); ctx.clip(); areaToZero(); ctx.fillStyle='rgba(63,185,80,.18)'; ctx.fill(); ctx.restore();
   ctx.save(); ctx.beginPath(); ctx.rect(mL,zeroY,pw,(mT+ph)-zeroY); ctx.clip(); areaToZero(); ctx.fillStyle='rgba(248,81,73,.18)'; ctx.fill(); ctx.restore();
   // zero baseline
   ctx.strokeStyle=css('--bd'); ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(mL,zeroY);ctx.lineTo(mL+pw,zeroY);ctx.stroke();
   // the net GEX line
-  ctx.beginPath(); S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+  ctx.beginPath(); VIS.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
   ctx.strokeStyle=css('--tx'); ctx.lineWidth=1.8; ctx.lineJoin='round'; ctx.stroke();
   // axis titles
   ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
@@ -586,6 +592,8 @@ function applyView(){
   $('zoomHint').style.display = eng ? 'inline-flex' : 'none';   // zoom/pan only on the Engine candle chart
   $('gexBtn').style.display = eng ? 'inline-flex' : 'none';     // GEX-bars toggle only on the Engine chart
   $('gexBtn').classList.toggle('on', GEXBARS);
+  $('revealBtn').style.display = (eng || VIEW==='gext') ? 'inline-flex' : 'none';   // playback-reveal on the time views
+  $('revealBtn').classList.toggle('on', REVEAL);
   updZoomHint();
 }
 
@@ -720,6 +728,13 @@ $('smSeg').addEventListener('click', e=>{
 $('gexBtn').addEventListener('click', ()=>{
   GEXBARS = !GEXBARS; localStorage.setItem('gex_bars', GEXBARS?'1':'0');
   $('gexBtn').classList.toggle('on', GEXBARS);
+  if(S.length) draw(cur);
+});
+
+// Reveal/playback toggle (time views) — hide everything ahead of the playhead; client-side redraw
+$('revealBtn').addEventListener('click', ()=>{
+  REVEAL = !REVEAL; localStorage.setItem('gex_reveal', REVEAL?'1':'0');
+  $('revealBtn').classList.toggle('on', REVEAL);
   if(S.length) draw(cur);
 });
 
