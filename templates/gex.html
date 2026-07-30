@@ -31,6 +31,8 @@
   .seg button.on{background:var(--blue);color:#fff}
   .ctl{border:1px solid var(--bd);background:var(--bd2);border-radius:7px;padding:5px 9px;color:var(--tx);font:inherit}
   .ctl small{color:var(--mut);font-weight:500;margin-right:6px;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+  .ctl.on{background:var(--blue);color:#fff;border-color:var(--blue)}
+  button.ctl{cursor:pointer;font-weight:600}
   select.ctl,input.ctl{cursor:pointer}
   input[type=date].ctl{color-scheme:dark}
   .kpis{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--bd);border-bottom:1px solid var(--bd)}
@@ -88,6 +90,7 @@
   <label class="ctl"><small>Expiry</small><select id="expSel" style="background:none;border:0;color:var(--tx);font:inherit;outline:none"></select></label>
   <div class="live" id="liveBtn"><span class="dot"></span><span id="liveTxt">Live: off</span></div>
   <span class="ctl" id="lastUpd" title="Last option-chain snapshot time">—</span>
+  <button class="ctl on" id="gexBtn" title="Per-strike GEX bars on the price axis (green = call wall, red = put wall)" style="display:none">▮ GEX</button>
   <span class="ctl" id="zoomHint" title="Trade Engine chart" style="display:none;color:var(--dim)">scroll = zoom · drag = pan</span>
   <a class="ctl" href="/whatif" title="Manual options what-if backtest">🧪 What-If</a>
   <a class="ctl" href="/curves" title="Sensibull-style curves">📈 Curves</a>
@@ -132,6 +135,7 @@ let gMax = 1, vMax = 1;                       // fixed scales across the loaded 
 let U = 'NIFTY', DATE = '', EXP = '';
 let VIEW = localStorage.getItem('gex_view') || 'profile';   // 'profile' | 'engine'
 let SMOOTH = localStorage.getItem('gex_smooth') || 'med';   // 'off' | 'med' | 'high' — level smoothing
+let GEXBARS = localStorage.getItem('gex_bars') !== '0';     // engine view: per-strike GEX histogram on the price axis (default on)
 let SRC = 'collector';   // 'collector' (recent, real gamma-GEX) | 'lake' (historical, real OI)
 let _candles = [], eT0 = 0, eT1 = 1, ePMin = 0, ePMax = 1;  // engine: candles + axis ranges
 let _eBaseMin = 0, _eBaseMax = 1, _eZoom = {f:1, c:null};   // engine price-axis zoom (wheel/drag)
@@ -239,6 +243,26 @@ function drawEngine(i){
     ctx.globalAlpha=1;
   }
   ctx.restore();
+  // GEX-by-strike histogram pinned to the right price axis (Profile bars rotated 90°):
+  // each strike's Net GEX bar sits at its own price level, anchored to the right edge and
+  // extending LEFT, translucent so candles show through. Green = positive GEX (call wall /
+  // resistance), red = negative (put wall / support). Follows the current smoothing (bars are
+  // the same EMA'd strikes). Pinned to price → stays put as you zoom/scrub, like the levels.
+  if(GEXBARS && s.strikes && s.strikes.length){
+    const xR = mL+pw, maxLen = pw*0.24, gm = Math.max(gMax,1);
+    const stepK = (s.strikes.length>1 ? Math.abs(s.strikes[1].k - s.strikes[0].k) : 50) || 50;
+    const th = Math.max(4, Math.min(15, Math.abs(py(0)-py(stepK))*0.66));   // bar thickness from strike spacing in px
+    ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,ph); ctx.clip();
+    for(const st of s.strikes){
+      const y = py(st.k); if(y < mT-2 || y > mT+ph+2) continue;
+      const len = Math.abs(st.gex)/gm*maxLen; if(len < 0.6) continue;
+      const posv = st.gex>=0, col = posv?css('--green'):css('--red');
+      ctx.fillStyle=col; ctx.globalAlpha=.40; ctx.fillRect(xR-len, y-th/2, len, th);
+      ctx.globalAlpha=.85; ctx.strokeStyle=col; ctx.lineWidth=1; ctx.strokeRect(xR-len+.5, y-th/2+.5, Math.max(0,len-1), th-1);
+      ctx.globalAlpha=1;
+    }
+    ctx.restore();
+  }
   // horizontal levels at current snapshot
   // levels: draw each line at its true price, then de-overlap the right-edge LABELS so
   // coinciding levels (e.g. put wall == γ-flip at the same strike) both stay readable.
@@ -489,6 +513,8 @@ function applyView(){
   $('legend').innerHTML = oi ? _LEGEND_OI[VIEW] : _LEGEND[VIEW];
   $('chartNote').innerHTML = oi ? _NOTE_OI[VIEW] : _NOTE[VIEW];
   $('zoomHint').style.display = eng ? 'inline-flex' : 'none';   // zoom/pan only on the Engine candle chart
+  $('gexBtn').style.display = eng ? 'inline-flex' : 'none';     // GEX-bars toggle only on the Engine chart
+  $('gexBtn').classList.toggle('on', GEXBARS);
   updZoomHint();
 }
 
@@ -617,6 +643,13 @@ $('smSeg').addEventListener('click', e=>{
   [...$('smSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.sm===b.dataset.sm));
   SMOOTH=b.dataset.sm; localStorage.setItem('gex_smooth', SMOOTH);
   stop(); load(true);   // re-pull the day with new smoothing, keep scrub position
+});
+
+// GEX-bars toggle (engine view) — client-side only (uses already-loaded strikes), no refetch
+$('gexBtn').addEventListener('click', ()=>{
+  GEXBARS = !GEXBARS; localStorage.setItem('gex_bars', GEXBARS?'1':'0');
+  $('gexBtn').classList.toggle('on', GEXBARS);
+  if(S.length) draw(cur);
 });
 
 // underlying toggle
