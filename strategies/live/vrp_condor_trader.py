@@ -53,6 +53,7 @@ import dhan_master
 MARKET_OPEN  = (9, 16)
 MARKET_CLOSE = (15, 25)
 STATE_FILE = lambda sid: BASE_DIR / "data" / f"{sid}_state.json"
+ATTEMPT_FILE = lambda sid: BASE_DIR / "data" / f"{sid}_entry_attempt.json"
 
 
 def _make_logger(strategy_id):
@@ -183,6 +184,24 @@ def load_state(sid):
     except Exception:
         return None
 
+def _attempt_date(sid):
+    """Date-string of the last ENTRY attempt (success OR fail). Fire at most once per
+    trading day: _enter_condor returns None on any gated/partial/transient failure,
+    leaving pos=None; the old loop then re-fired every ~30s until close (2026-07-27
+    storm: ~20 re-attempts leaving orphan BUY wings + empty-group rollback SELLs).
+    Mark BEFORE firing (TRAP #156) so a failed entry can't re-storm. Persisted so a
+    mid-session restart doesn't reset it. Day-scoped naturally (compared to today)."""
+    try:
+        return json.loads(ATTEMPT_FILE(sid).read_text()).get("date")
+    except Exception:
+        return None
+
+def _mark_attempt(sid, d):
+    try:
+        ATTEMPT_FILE(sid).write_text(json.dumps({"date": d}))
+    except Exception:
+        pass
+
 def _recover(sid, log):
     pos = load_state(sid)
     if not pos or not pos.get("legs"):
@@ -269,8 +288,16 @@ def run(paper_mode=True, strategy_id="vrp_condor_v1"):
                 # NOTE: no 3:15 force-exit — held overnight via allow_overnight (ADR-006).
                 # Expiry-day 2:55 squareoff + ITM guard + RMS daily-loss STILL apply (pos_monitor).
 
-            # ── ENTRY: flat + near close + not expiry day + not already entered today ──
-            if pos is None and (now.hour, now.minute) >= (eh, em) and (now.hour, now.minute) < MARKET_CLOSE:
+            # ── ENTRY: flat + near close + not expiry day + AT MOST ONE ATTEMPT/DAY ──
+            # Storm guard (2026-07-27): mark the attempt BEFORE firing so a gated/
+            # partial/failed _enter_condor (returns None → pos stays None) can NOT
+            # re-fire every ~30s loop for the rest of the session. Daily roll is
+            # preserved — on the exit day attempt_date is yesterday, so a fresh
+            # condor still opens once after the old one is squared off.
+            if (pos is None and (now.hour, now.minute) >= (eh, em)
+                    and (now.hour, now.minute) < MARKET_CLOSE
+                    and _attempt_date(strategy_id) != today):
+                _mark_attempt(strategy_id, today)
                 pos = _enter_condor(strategy_id, sym, spot, tc, mode, bname, today, log)
                 if pos is not None:
                     save_state(strategy_id, pos)
