@@ -3806,11 +3806,15 @@ def api_manual_order():
         if opt_type not in ('CE', 'PE'):
             opt_type = 'PE' if side == 'BUY' else 'CE'
 
-        # P1 — har manual order ka apna UNIQUE group_id. Pehle manual orders koi
-        # group_id set nahi karte the (empty '') → payoff panel un sabko EK hi
-        # combined bucket me merge kar deta tha ("sab ek me ban jaata"). Ab har
-        # order ek alag bucket/panel — payoff + Orders grouping dono me independent.
-        mgid = 'MANUAL_' + symbol + '_' + uuid.uuid4().hex[:8]
+        # P1 refined (2026-07-30 user rule): manual orders alag-alag BY DEFAULT, PAR
+        # SAME symbol + SAME minute pe pade orders EK hi group me (e.g. ek saath daali
+        # 2-leg strangle → ek panel, ek close-all). group_id = symbol + IST-minute
+        # bucket → deterministic: same minute ke legs apne-aap same group (koi lookup/
+        # race nahi), alag minute = alag group. (Pehle per-order uuid tha → same-time
+        # legs bhi alag dikhte the.)
+        from datetime import timedelta as _tdm
+        _mmin = (datetime.now(timezone.utc) + _tdm(hours=5, minutes=30)).strftime('%Y%m%d%H%M')
+        mgid = 'MANUAL_' + symbol + '_' + _mmin
 
         _hdrs    = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         _idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}
@@ -6036,8 +6040,15 @@ def api_close_position_group():
     if not group_id:
         return jsonify({'ok': False, 'msg': 'group_id required'})
 
-    today = (datetime.now(timezone.utc) + _td(hours=5, minutes=30)).strftime('%Y-%m-%d')
-    open_pos = order_store.trades_for(today).get('open', [])
+    _now_ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+    today = _now_ist.strftime('%Y-%m-%d')
+    # 90-day range, NOT today-scoped: a positional/overnight group entered on a prior
+    # day (VRP condor entered 07-29) has legs dated then, so trades_for(today) found
+    # NONE → "No open legs" and close-all silently no-op'd (HTTP 200 but ok:False).
+    # Same today-scoped family as the /api/orders display fix; trades_for_range nets
+    # entry+exit across dates → surfaces the carried-over still-open legs to close.
+    _lb90 = (_now_ist - _td(days=90)).strftime('%Y-%m-%d')
+    open_pos = order_store.trades_for_range(_lb90, today).get('open', [])
     legs = [p for p in open_pos if p.get('group_id') == group_id]
     if not legs:
         return jsonify({'ok': False, 'msg': f'No open legs found for group {group_id}'})

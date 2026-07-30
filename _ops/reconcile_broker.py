@@ -172,12 +172,23 @@ def apply(date, broker_name="kite", dry_run=True, log=print):
         actions.append({"type": "record", "order_id": o["order_id"], "side": o["side"],
                         "qty": o["qty"], "price": o["avg"], "trad_sym": trad_sym,
                         "sec_id": o.get("sec_id"), "strategy": strat})
+        # SAME-time manual legs → ONE group (user rule 2026-07-30): a manual strangle/
+        # pair placed together on the broker (mirrored here in the same cycle) shares a
+        # symbol + IST-minute group_id so payoff / close-all treat it as one structure.
+        # Only for 'manual' externals — strategy-attributed ones keep their own grouping.
+        _rgid = ""
+        if strat == "manual":
+            from datetime import datetime as _dtm, timezone as _tzm, timedelta as _tdm
+            _rmin = (_dtm.now(_tzm.utc) + _tdm(hours=5, minutes=30)).strftime("%Y%m%d%H%M")
+            _rgid = "MANUAL_" + str(trad_sym).split("-")[0] + "_" + _rmin
+        actions[-1]["group_id"] = _rgid
         if not dry_run:
             order_store.record(o["side"], o["qty"], o["avg"], source="broker_reconcile",
                                strategy=strat, mode="live", broker=broker_name,
                                trad_sym=trad_sym, sec_id=str(o.get("sec_id") or ""),
                                correlation_id=str(o["order_id"]), broker_order_id=str(o["order_id"]),
-                               status="filled", tags=["EXTERNALLY_RECORDED", "BROKER_MIRROR"])
+                               status="filled", tags=["EXTERNALLY_RECORDED", "BROKER_MIRROR"],
+                               group_id=_rgid)
     con.close()
     after = plan(date, broker_name, db_path)   # re-check (post-write if applied)
     return {"actions": actions, "residual_mismatch": after["mismatch"], "dry_run": dry_run}
