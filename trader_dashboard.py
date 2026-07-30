@@ -7401,7 +7401,14 @@ def api_orders():
     # are STALE (this DB has ~38) and range-netting them would resurrect ghosts.
     try:
         import risk_gate as _rg_ov
-        _lb_from = (ist - timedelta(days=7)).strftime('%Y-%m-%d')
+        # 90-day (not 7) lookback: multi-day netting must capture BOTH legs of a
+        # round-trip to pair them. A 7-day window SPLIT a closed round-trip whose
+        # ENTRY was >7d old but EXIT ≤7d (e.g. VRPC entered 07-22 / exited 07-23,
+        # viewed 07-30) → its exit legs showed as phantom "open". Wider window is
+        # strictly more correct (genuinely-open legs still remain net-open; the
+        # allow_overnight filter keeps stale intraday ghosts out) and also fixes
+        # multi-week positional-equity holds (distma) that a 7-day window dropped.
+        _lb_from = (ist - timedelta(days=90)).strftime('%Y-%m-%d')
         _rng = order_store.trades_for_range(_lb_from, date, **filt)
         _pos = set()
         for _r in (_rng.get('open') or []) + (_rng.get('details') or []):
