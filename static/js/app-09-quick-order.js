@@ -368,7 +368,7 @@
         try {
           const j = await (await fetch('/api/option-chain', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ symbol: qoSym, n: 12, expiry: qoExpiry })
+            body: JSON.stringify({ symbol: qoSym, n: (qoSym === 'BANKNIFTY' ? 35 : 25), expiry: qoExpiry })
           })).json();
           if (tok !== _qoChainTok) return;                 // stale — newer load already fired
           if (!j.ok) { box.innerHTML = `<div style="color:#8b949e;font-size:11px;text-align:center;padding:26px">${j.msg || 'chain nahi mila'}</div>`; return; }

@@ -5060,7 +5060,7 @@ def api_option_chain():
         sym = str(d.get("symbol", "NIFTY")).upper()
         if sym not in ("NIFTY", "BANKNIFTY"):
             return jsonify({"ok": False, "msg": f"{sym} supported nahi"})
-        n = max(1, min(20, int(d.get("n", 12))))
+        n = max(1, min(40, int(d.get("n", 12))))   # cap 40 → far-OTM wings (BNF ±35) reachable, matches collector window
         expiry = _norm_expiry(d.get("expiry"))
         import shared_ltp_cache as _slc
 
