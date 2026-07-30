@@ -581,7 +581,12 @@ def execute_roll(state, symbol, new_atm, new_ce, new_pe, lots, lot_size,
     q = int(lots) * int(lot_size or 1)
     ce_sec, ce_tsym = str(new_ce[0]), new_ce[1]
     pe_sec, pe_tsym = str(new_pe[0]), new_pe[1]
-    new_gid = "STRADR_" + uuid.uuid4().hex[:8]
+    # ONE session group_id for the WHOLE roller life — all rolls (exit old + enter
+    # new) share the gid deploy_initial set. So the rolled-out strikes stay in the
+    # SAME position while running, and the whole chain lands in Completed only ONCE
+    # (when fully squared off) — every rolled strike + total tax together, not one
+    # completed trade per roll (user 2026-07-30). Fallback gid only if state has none.
+    new_gid = state.group_id or ("STRADR_" + uuid.uuid4().hex[:8])
 
     log(f"[ROLLER] {symbol} ROLL start {from_atm}→{new_atm} "
         f"(lots {lots}, qty {q}, mode {mode})")
