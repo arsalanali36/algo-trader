@@ -850,13 +850,19 @@
               + '</tbody></table></div></details>';
           }
 
-          // Placement-batch grouping: jo legs EK SAATH place hue wo ek group_id
-          // share karte hain (ek straddle/structure = ek group_id) → ek group. Alag
-          // time pe daale orders ka alag group_id → alag group (user: "jab order dalen
-          // wo ek saath"). Empty group_id = solo order → apna group (solo_<id>).
+          // Grouping key (2026-07-30):
+          //  • non-empty group_id → group by it. Manual same-minute orders share
+          //    MANUAL_<sym>_<minute> (backend), hedge/straddle structures share their
+          //    own group_id → ek structure / ek same-time batch = ek box.
+          //  • empty group_id → group by STRATEGY (pre-P1 behaviour). A strategy's
+          //    multiple stock legs (e.g. Ars-chain Canary ICICIBANK + AXISBANK) stay
+          //    in ONE box. P1's solo_<id> split them per-position; user: "baaki jo
+          //    jaisa tha waise hi rahega" — sirf manual same-time hi ek group me.
           let grouped = {};
           opnReal.forEach(t => {
-            const key = (t.group_id && String(t.group_id).trim()) ? String(t.group_id) : ('solo_' + t.id);
+            const key = (t.group_id && String(t.group_id).trim())
+              ? String(t.group_id)
+              : (t.strategy || t.source || 'MANUAL');
             if (!grouped[key]) grouped[key] = [];
             grouped[key].push(t);
           });
@@ -881,8 +887,14 @@
               stratName = parts[0];
               stratDesc = parts.slice(1).join(' | ');
             }
-            const gSym = g0.symbol || String(g0.sym || '').split('-')[0] || '';
-            const gTime = g0.entry_time || '';
+            // Symbol/time in the label ONLY when the whole group shares one (a single
+            // structure or a same-symbol/same-time batch). A strategy-grouped box that
+            // spans multiple stocks/times shows just the strategy name — no misleading
+            // first-leg symbol/time.
+            const _gSyms = new Set(items.map(x => x.symbol || String(x.sym || '').split('-')[0] || ''));
+            const _gTimes = new Set(items.map(x => x.entry_time || ''));
+            const gSym = _gSyms.size === 1 ? [..._gSyms][0] : '';
+            const gTime = _gTimes.size === 1 ? [..._gTimes][0] : '';
             const gLabelTxt = (String(stratName) + (gSym ? ' ' + gSym : '') + (gTime ? ' ' + gTime : '')).replace(/['\\]/g, '');
 
             const grpId = 'grp_' + stratKey.replace(/[^a-z0-9]/gi, '_');
