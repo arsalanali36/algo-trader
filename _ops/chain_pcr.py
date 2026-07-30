@@ -36,9 +36,18 @@ def _tls_session():
         _TLS.sess = s
     return s
 
-_TD = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA"
-if not os.path.isdir(_TD):
-    _TD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "_TRADING_DATA")
+# Windows dev machine uses the D:\ lake; any non-Windows host (VPS) falls back to
+# the project-root _TRADING_DATA (same base fii_flow.py resolves — so the collector
+# and the /fii-flow reader agree). The os.name guard is REQUIRED on Linux: without
+# it, os.path.isdir() of the literal "D:\..." string is False the first run but the
+# write then CREATES a garbage "D:\..."-named dir in cwd, which makes every later
+# isdir() True → self-perpetuating wrong path (hit live 2026-07-30 on VPS).
+_WIN_TD = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA"
+if os.name == "nt" and os.path.isdir(_WIN_TD):
+    _TD = _WIN_TD
+else:
+    # _ops/chain_pcr.py -> project root -> _TRADING_DATA (dirname twice, NOT once)
+    _TD = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "_TRADING_DATA")
 OUT = os.path.join(_TD, "FII_Flow", "chain_pcr.csv")
 os.makedirs(os.path.dirname(OUT), exist_ok=True)
 

@@ -43,7 +43,9 @@ import requests
 # ---------------- paths ----------------
 _WIN_LAKE = r"D:\KHAZANA\KHAZANA\PYTHON\._TRADING DATA\FII_Flow"
 _HERE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.isdir(os.path.dirname(_WIN_LAKE)):
+# os.name guard REQUIRED on Linux — else a literal "D:\..." dir gets created and
+# self-perpetuates the wrong lake path (see chain_pcr.py note; live 2026-07-30).
+if os.name == "nt" and os.path.isdir(os.path.dirname(_WIN_LAKE)):
     LAKE = _WIN_LAKE
 else:
     LAKE = os.path.join(_HERE, "_TRADING_DATA", "FII_Flow")
