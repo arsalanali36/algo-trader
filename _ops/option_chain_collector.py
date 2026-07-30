@@ -86,9 +86,13 @@ except Exception:
 # so 1 is all GEX needs, and it keeps the optionchain 1req/3s bucket well inside the 60s
 # cycle (2 index×2 + 5 stock×1 = 9 chain calls ≈ 32s). Optionchain is a SEPARATE Dhan rate
 # bucket from LTP/orders — adding these does NOT touch the live-trading budget.
+#   "strikes": per-underlying ATM±N override (default = global --strikes). Indices need a
+#   WIDER window than the default 10 because we sell/trade far-OTM wings (e.g. BANKNIFTY
+#   55100 / 59200 with spot ~56900 = ±23 strikes). Dhan /v2/optionchain returns the FULL
+#   chain in ONE call, so a wider window costs ZERO extra Dhan calls — only more rows/snap.
 UNDERLYINGS = [
-    {"name": "NIFTY",     "scrip": 13,   "seg": "IDX_I",  "step": 50},
-    {"name": "BANKNIFTY", "scrip": 25,   "seg": "IDX_I",  "step": 100},
+    {"name": "NIFTY",     "scrip": 13,   "seg": "IDX_I",  "step": 50,  "strikes": 25},
+    {"name": "BANKNIFTY", "scrip": 25,   "seg": "IDX_I",  "step": 100, "strikes": 35},
     {"name": "RELIANCE",  "scrip": 2885, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
     {"name": "HDFCBANK",  "scrip": 1333, "seg": "NSE_EQ", "step": 5,   "expiries": 1},
     {"name": "ICICIBANK", "scrip": 4963, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
@@ -205,10 +209,11 @@ def snapshot_underlying(token, cid, u, expiry, strikes_each_side, vix, dt):
     if not oc or spot is None:
         return [], spot
 
-    # ATM = nearest step; keep ATM±N strikes.
+    # ATM = nearest step; keep ATM±N strikes (per-underlying "strikes" override wins).
+    n_each = int(u.get("strikes", strikes_each_side))
     atm = round(float(spot) / u["step"]) * u["step"]
-    lo = atm - strikes_each_side * u["step"]
-    hi = atm + strikes_each_side * u["step"]
+    lo = atm - n_each * u["step"]
+    hi = atm + n_each * u["step"]
 
     rows = []
     for k_str, node in oc.items():
