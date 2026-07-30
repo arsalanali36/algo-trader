@@ -191,6 +191,7 @@
         <select id="fxK" style="flex:1"></select>
         <button onclick="fixAddStraddle()" title="Add straddle at this strike" style="width:auto;padding:5px 8px;white-space:nowrap">＋ Straddle</button>
       </div>
+      <button onclick="fixAddAuto()" title="🤖 Auto ATM straddle — jaisa roller ~9:20 pe bechti (SELL ATM CE+PE), us din ka ATM khud pakad ke real held-premium P&L dikhata hai. Fixed manual strike nahi." style="width:100%;padding:5px 8px;margin-bottom:5px;white-space:nowrap;background:#1dd1a120;border-color:#1dd1a1">🤖 Auto ATM (9:20 roller)</button>
       <div style="display:flex;gap:4px;align-items:center;margin-bottom:5px">
         <span style="font-size:10px;color:var(--mut)">PE</span><select id="fxPE" style="flex:1"></select>
         <span style="font-size:10px;color:var(--mut)">CE</span><select id="fxCE" style="flex:1"></select>
@@ -1093,6 +1094,20 @@
   }
   function fixAddStraddle(){ var k=+document.getElementById('fxK').value; if(k) fixAdd([{strike:k,opt_type:'CE'},{strike:k,opt_type:'PE'}], k+' straddle'); }
   function fixAddStrangle(){ var pk=+document.getElementById('fxPE').value, ck=+document.getElementById('fxCE').value; if(pk&&ck) fixAdd([{strike:pk,opt_type:'PE'},{strike:ck,opt_type:'CE'}], pk+'P / '+ck+'C strangle'); }
+  // 🤖 Auto ATM straddle — jaisa roller ~9:20 pe bechti: us din ke OPEN spot (≈9:20)
+  // se ATM strike khud resolve karke SELL ATM CE+PE ko fixed-pane me daal deta hai
+  // (real held premium, /api/option-legs reuse). "auto me entry hoti to kaisa rehta".
+  function fixAddAuto(){
+    ensureStrikes(function(){
+      if(!_stkStrikes.length){ alert('Strikes abhi load nahi hue — thoda ruk ke dobara.'); return; }
+      var spot0 = (view && view.length) ? view[0].spot : null;   // din ka open spot ≈ 9:20 ATM
+      if(spot0==null){ alert('Us din ka spot data nahi mila.'); return; }
+      var atm=_stkStrikes[0], bd=Infinity;
+      for(var i=0;i<_stkStrikes.length;i++){ var dd=Math.abs(_stkStrikes[i]-spot0); if(dd<bd){bd=dd;atm=_stkStrikes[i];} }
+      if(fixedStrats.some(function(s){return s.label && s.label.indexOf('Auto ATM '+atm)>-1;})){ alert('Auto ATM '+atm+' straddle already added hai.'); return; }
+      fixAdd([{strike:atm,opt_type:'CE'},{strike:atm,opt_type:'PE'}], '🤖 Auto ATM '+atm+' (9:20)');
+    });
+  }
   function removeFix(id){ fixedStrats=fixedStrats.filter(function(s){return s.id!==id;}); delete fixedData[id]; save('oc_fixed', fixedStrats); renderFixList(); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
   function renderFixList(){
     var el=document.getElementById('fixList'); if(!el) return;
