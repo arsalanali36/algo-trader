@@ -97,6 +97,7 @@
       try{ if(typeof activeTab!=='undefined'){
         if(activeTab==='log' && document.getElementById('log-folder-card')) renderLogTab();
         else if(activeTab==='risk' && document.getElementById('risk-strategy-table')) renderRiskTab();
+        else if(activeTab==='orders' && typeof renderCachedOrders==='function') renderCachedOrders();
       } }catch(e){}
     });
 

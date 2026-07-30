@@ -895,7 +895,7 @@
             const _gTimes = new Set(items.map(x => x.entry_time || ''));
             const gSym = _gSyms.size === 1 ? [..._gSyms][0] : '';
             const gTime = _gTimes.size === 1 ? [..._gTimes][0] : '';
-            const gLabelTxt = (String(stratName) + (gSym ? ' ' + gSym : '') + (gTime ? ' ' + gTime : '')).replace(/['\\]/g, '');
+            const gLabelTxt = ((typeof regLabel === 'function' ? regLabel(stratName) : stratName) + (gSym ? ' ' + gSym : '') + (gTime ? ' ' + gTime : '')).replace(/['\\]/g, '');
 
             const grpId = 'grp_' + stratKey.replace(/[^a-z0-9]/gi, '_');
             // stash this group's positions so the header "✕ Close all" can close them
@@ -1285,7 +1285,7 @@
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
-            <span>📂 ${MISSION_NUM[String(stratName).toLowerCase()] ? regLabel(stratName) : stratName.toUpperCase()}${gSym ? ` <span style="color:#adbac7;font-weight:normal">· ${gSym}</span>` : ''}${gTime ? ` <span style="color:#8b949e;font-size:11px;font-weight:normal">· ${gTime}</span>` : ''} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} ${items.length === 1 ? 'position' : 'positions'})</span></span>
+            <span>📂 ${regLabel(stratName)}${gSym ? ` <span style="color:#adbac7;font-weight:normal">· ${gSym}</span>` : ''}${gTime ? ` <span style="color:#8b949e;font-size:11px;font-weight:normal">· ${gTime}</span>` : ''} <span style="color:#8b949e;font-size:12px;font-weight:normal;margin-left:8px;">(${items.length} ${items.length === 1 ? 'position' : 'positions'})</span></span>
             ${stratDesc ? `<span style="color:#d29922;font-size:11px;font-weight:normal;margin-left:22px;white-space:pre-wrap;line-height:1.4;margin-top:4px;max-width:90%;">📝 ${stratDesc}</span>` : ''}
           </div>
           <div style="display:flex; align-items:baseline; gap:10px; margin-right:14px; white-space:nowrap;" title="Group unrealized total — ₹ / points / return %">
