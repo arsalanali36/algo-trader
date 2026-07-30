@@ -82,7 +82,7 @@
 <div class="top">
   <div class="brand"><b>📊 GEX Profile</b><span id="subttl">gamma exposure · live chain</span></div>
   <div class="sp"></div>
-  <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="line">Line</button><button data-v="engine">Trade Engine</button></div>
+  <div class="seg" id="vSeg"><button data-v="profile" class="on">Profile</button><button data-v="line">Line</button><button data-v="gext">⏱ Net&nbsp;GEX</button><button data-v="engine">Trade Engine</button></div>
   <div class="seg" id="smSeg" title="Level smoothing — Raw = live (jumpy), Smooth = 15-min median + confirm, Calm = 30-min. Levels: γ-flip / walls / max-pain / ±1σ."><button data-sm="off">Raw</button><button data-sm="med" class="on">Smooth</button><button data-sm="high">Calm</button></div>
   <div class="seg" id="uSeg"><button data-u="NIFTY" class="on">NIFTY</button><button data-u="BANKNIFTY">BANKNIFTY</button></div>
   <select class="ctl" id="uStock" title="RSI-strategy stocks (option chain collected live)"><option value="">Stocks ▾</option><option>RELIANCE</option><option>HDFCBANK</option><option>ICICIBANK</option><option>SBIN</option><option>INFY</option></select>
@@ -177,7 +177,7 @@ function computeStrikeWindow(){
 }
 function _visStrikes(s){ return _strikeWin ? s.strikes.slice(_strikeWin.lo, _strikeWin.hi+1) : s.strikes; }
 
-function draw(i){ return VIEW==='engine' ? drawEngine(i) : VIEW==='line' ? drawLine(i) : drawProfile(i); }
+function draw(i){ return VIEW==='engine' ? drawEngine(i) : VIEW==='gext' ? drawGext(i) : VIEW==='line' ? drawLine(i) : drawProfile(i); }
 
 // ---- engine view: candles (from per-minute spot) + moving GEX levels ----
 function _mins(dt){ return (+dt.slice(11,13))*60 + (+dt.slice(14,16)); }
@@ -415,6 +415,66 @@ function drawLine(i){
   vline(s.spot, css('--spot'), 'SPOT '+s.spot.toFixed(0), true);
 }
 
+// ---- ⏱ Net-GEX-over-time view: aggregate net GEX as a time-series line (+ spot overlay) ----
+// x = intraday time (real minutes), y-left = net GEX (Cr) with a 0 baseline (green area above /
+// red below), y-right = spot (faint orange) so the GEX shape can be eyeballed against price.
+// Playhead + dot mark the current scrub minute. Follows smoothing (net is the smoothed value).
+function drawGext(i){
+  const s = S[i]; if(!s || !S.length) return;
+  const W = cv.clientWidth, H = chartH();
+  const mL=66,mR=58,mT=18,mB=42, pw=W-mL-mR, ph=H-mT-mB;
+  ctx.clearRect(0,0,W,H);
+  const oi = SRC==='lake';
+  const fmtNet = oi ? (v=>(v>=0?'+':'−')+fmtCount(Math.abs(v))) : fmtCr;
+  const t0=_mins(S[0].dt), t1=_mins(S[S.length-1].dt);
+  const tx = t => mL + (t-t0)/((t1-t0)||1)*pw;
+  let nLo=0,nHi=0, spLo=1e9,spHi=-1e9;
+  for(const x of S){ nLo=Math.min(nLo,x.net); nHi=Math.max(nHi,x.net); spLo=Math.min(spLo,x.spot); spHi=Math.max(spHi,x.spot); }
+  if(nHi===nLo) nHi=nLo+1;
+  const nPad=(nHi-nLo)*0.08;
+  const gy = v => mT + (nHi+nPad - v)/((nHi-nLo)+2*nPad)*ph;
+  const zeroY = gy(0);
+  const spPad=(spHi-spLo)*0.14||1;
+  const spy = v => mT + (spHi+spPad - v)/((spHi-spLo)+2*spPad)*ph;
+
+  // grid + left GEX axis labels
+  ctx.font='10px sans-serif';
+  for(let k=0;k<=4;k++){ const v=nLo+(nHi-nLo)*k/4, y=gy(v);
+    ctx.strokeStyle=css('--bd2'); ctx.globalAlpha=.5; ctx.beginPath();ctx.moveTo(mL,y);ctx.lineTo(mL+pw,y);ctx.stroke(); ctx.globalAlpha=1;
+    ctx.fillStyle=css('--dim'); ctx.textAlign='right'; ctx.fillText(fmtNet(v), mL-6, y+3); }
+  // spot overlay (secondary, faint) — behind
+  ctx.strokeStyle=css('--spot'); ctx.globalAlpha=.5; ctx.lineWidth=1.2;
+  ctx.beginPath(); S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=spy(x.spot); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);}); ctx.stroke(); ctx.globalAlpha=1;
+  ctx.fillStyle=css('--spot'); ctx.textAlign='left'; ctx.globalAlpha=.8;
+  ctx.fillText(spHi.toFixed(0), mL+pw+6, spy(spHi)+3); ctx.fillText(spLo.toFixed(0), mL+pw+6, spy(spLo)+3); ctx.globalAlpha=1;
+  // net GEX area: green above zero, red below (clip by side)
+  function areaToZero(){ ctx.beginPath();
+    S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+    ctx.lineTo(tx(t1),zeroY); ctx.lineTo(tx(t0),zeroY); ctx.closePath(); }
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,mT,pw,zeroY-mT); ctx.clip(); areaToZero(); ctx.fillStyle='rgba(63,185,80,.18)'; ctx.fill(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(mL,zeroY,pw,(mT+ph)-zeroY); ctx.clip(); areaToZero(); ctx.fillStyle='rgba(248,81,73,.18)'; ctx.fill(); ctx.restore();
+  // zero baseline
+  ctx.strokeStyle=css('--bd'); ctx.lineWidth=1; ctx.beginPath();ctx.moveTo(mL,zeroY);ctx.lineTo(mL+pw,zeroY);ctx.stroke();
+  // the net GEX line
+  ctx.beginPath(); S.forEach((x,idx)=>{const X=tx(_mins(x.dt)),Y=gy(x.net); idx?ctx.lineTo(X,Y):ctx.moveTo(X,Y);});
+  ctx.strokeStyle=css('--tx'); ctx.lineWidth=1.8; ctx.lineJoin='round'; ctx.stroke();
+  // axis titles
+  ctx.save(); ctx.translate(15,mT+ph/2); ctx.rotate(-Math.PI/2);
+  ctx.fillStyle=css('--dim'); ctx.textAlign='center'; ctx.fillText(oi?'NET OI':'NET GEX (Cr)',0,0); ctx.restore();
+  // time axis (hourly)
+  ctx.fillStyle=css('--dim'); ctx.textAlign='center';
+  for(let t=Math.ceil(t0/60)*60;t<=t1;t+=60){ ctx.fillText(String(t/60|0).padStart(2,'0')+':00', tx(t), H-14); }
+  // playhead + dots + current value tag
+  const xN=tx(_mins(s.dt)), yN=gy(s.net);
+  ctx.strokeStyle=css('--spot'); ctx.lineWidth=1; ctx.setLineDash([3,3]); ctx.beginPath();ctx.moveTo(xN,mT);ctx.lineTo(xN,mT+ph);ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle=css('--spot'); ctx.beginPath();ctx.arc(xN,spy(s.spot),3,0,7);ctx.fill();
+  ctx.fillStyle= s.net>=0?css('--green'):css('--red'); ctx.beginPath();ctx.arc(xN,yN,4,0,7);ctx.fill();
+  ctx.font='bold 11px sans-serif'; const tag=fmtNet(s.net), tw=ctx.measureText(tag).width+10;
+  const tgx=Math.min(xN+7, mL+pw-tw), tgy=Math.max(mT+13, yN-8);
+  ctx.fillStyle= s.net>=0?css('--green'):css('--red'); ctx.fillRect(tgx, tgy-12, tw, 15);
+  ctx.fillStyle='#0d1117'; ctx.textAlign='left'; ctx.fillText(tag, tgx+5, tgy);
+}
+
 function kpi(i){
   const s = S[i]; if(!s) return;
   const pos = s.net>=0, oi = SRC==='lake';
@@ -465,12 +525,17 @@ const _LEGEND = {
     +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put wall (support)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--amber)"></i> ±1σ expected move</span>'
-    +'<span class="lg" style="margin-left:auto;color:var(--dim)">▮ candles = NIFTY spot (5-min)</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--dim)">▮ candles = NIFTY spot (5-min)</span>',
+  gext: '<span class="lg"><i class="sw" style="background:var(--tx)"></i> Net GEX (Cr) over the day</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> +ve (call-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> −ve (put-heavy)</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot (right axis)</span>'
 };
 const _NOTE = {
   profile: 'Net GEX per strike = Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01 (real Dhan greeks). Scrub / ▶ play to watch spot, Max-Pain &amp; the γ-flip move minute-by-minute. GEX is a structural context map (walls / flip / max-pain pin), not a trading signal.',
   line: 'Same Net GEX per strike as the Profile bars, drawn as a CURVE — the shape shows where GEX flips positive↔negative and how the peaks sit around spot. Green above zero = call-heavy, red below = put-heavy. Scrub / ▶ play to watch the curve reshape minute-by-minute. Context map, not a signal.',
-  engine: 'Candles = the collector\'s per-minute spot (5-min, zero extra Dhan calls, time-synced with the levels). Scrub / ▶ play: the playhead walks the day and every level (γ-flip · max-pain · call/put wall · ±1σ EM) re-computes to that minute — watch how price interacts with the walls as they shift. Faded candles are the future. Context map, not a signal.'
+  engine: 'Candles = the collector\'s per-minute spot (5-min, zero extra Dhan calls, time-synced with the levels). Scrub / ▶ play: the playhead walks the day and every level (γ-flip · max-pain · call/put wall · ±1σ EM) re-computes to that minute — watch how price interacts with the walls as they shift. Faded candles are the future. Context map, not a signal.',
+  gext: 'Aggregate <b>Net GEX</b> (Γ<sub>CE</sub>·OI<sub>CE</sub> − Γ<sub>PE</sub>·OI<sub>PE</sub> × spot²·0.01, summed over ALL strikes) plotted across the DAY. Above the 0-line (green) = net call-heavy / vol-suppressing; below (red) = net put-heavy. Faint orange = spot (right axis) — GEX shape vs price shape. Scrub / ▶ play to walk it. <b>Context map, not a signal</b> — high net GEX = pinned / low-vol (NOT "up"); negative = amplified moves (either direction). Coincident with price (spot² term), not leading — verify before trading.'
 };
 const _LEGEND_OI = {
   profile: '<span class="lg"><i class="sw" style="background:var(--green)"></i> Call-heavy OI (call wall)</span>'
@@ -490,12 +555,18 @@ const _LEGEND_OI = {
     +'<span class="lg"><i class="sw" style="background:var(--purple)"></i> Max Pain (pin)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call wall (resistance)</span>'
     +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put wall (support)</span>'
-    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI, no ±1σ EM (no IV)</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI, no ±1σ EM (no IV)</span>',
+  gext: '<span class="lg"><i class="sw" style="background:var(--tx)"></i> Net OI over the day</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--green)"></i> Call-heavy</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--red)"></i> Put-heavy</span>'
+    +'<span class="lg"><i class="sw" style="background:var(--spot);width:3px"></i> Spot (right)</span>'
+    +'<span class="lg" style="margin-left:auto;color:var(--amber)">⚠ Historical: real OI</span>'
 };
 const _NOTE_OI = {
   profile: 'Historical date — expired-options lake (real OI + volume, ~2021→). Bars = <b>Net OI</b> (OI<sub>CE</sub> − OI<sub>PE</sub>): green = call-heavy (resistance), red = put-heavy (support). Walls / max-pain / PCR are the REAL OI ones. Lake me greeks/IV nahi → OI map hai, gamma-GEX nahi; ±1σ EM unavailable. <b>Kuch derive nahi kiya.</b>',
   line: 'Historical — <b>Net OI</b> per strike (OI<sub>CE</sub> − OI<sub>PE</sub>) drawn as a CURVE. Green above zero = call-heavy, red below = put-heavy; the shape shows where OI flips around spot/max-pain. Lake me gamma/IV nahi → OI map, GEX nahi.',
-  engine: 'Historical date — real per-minute spot candles + real OI walls / max-pain / OI-flip (expired-options lake). Lake me gamma/IV nahi → OI-based (gamma-GEX nahi), ±1σ EM band off. Scrub / ▶ play: price vs OI walls dekho.'
+  engine: 'Historical date — real per-minute spot candles + real OI walls / max-pain / OI-flip (expired-options lake). Lake me gamma/IV nahi → OI-based (gamma-GEX nahi), ±1σ EM band off. Scrub / ▶ play: price vs OI walls dekho.',
+  gext: 'Historical — aggregate <b>Net OI</b> (OI<sub>CE</sub> − OI<sub>PE</sub>, summed over strikes) across the day; green above 0 = call-heavy, red below = put-heavy. Faint orange = spot (right axis). Lake me gamma/IV nahi → OI-based (gamma-GEX nahi). Context map, not a signal.'
 };
 function applyView(){
   [...$('vSeg').children].forEach(x=>x.classList.toggle('on', x.dataset.v===VIEW));
