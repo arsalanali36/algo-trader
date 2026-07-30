@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FII / DII Flow — NSE Data</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --border:#30363d; --border2:#21262d;
+    --ink:#e6edf3; --mut:#8b949e; --grid:#22272e; --axis:#30363d;
+    --buy:#3fb950; --sell:#f85149; --accent:#1f6feb;
+    --fii:#3987e5; --dii:#d95926; --pro:#c98500; --cli:#199e70;
+    --ce:#3fb950; --pe:#f85149;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;font-size:14px}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:1180px;margin:0 auto;padding:0 16px 60px}
+  header.top{position:sticky;top:0;z-index:20;background:rgba(13,17,23,.92);
+    backdrop-filter:blur(6px);border-bottom:1px solid var(--border);padding:14px 0 10px;margin-bottom:6px}
+  .top .wrap{padding-top:0;padding-bottom:0}
+  .h-row{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  h1{font-size:18px;margin:0;font-weight:700;letter-spacing:.2px}
+  h1 .sub{color:var(--mut);font-weight:500;font-size:12px;margin-left:8px}
+  .navlnk{font-size:12px;font-weight:600;color:var(--mut);border:1px solid var(--border);
+    background:var(--card);padding:4px 10px;border-radius:6px}
+  .navlnk:hover{background:var(--border2);color:var(--ink)}
+  .rng{display:flex;gap:6px;flex-wrap:wrap;margin-top:10px;align-items:center}
+  .chip{padding:5px 11px;background:var(--card);border:1px solid var(--border);border-radius:20px;
+    color:var(--mut);font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .chip:hover{background:var(--border2);color:var(--ink)}
+  .chip.on{background:#1f6feb22;border-color:var(--accent);color:#79b8ff}
+  .span{color:var(--mut);font-size:11.5px;margin-top:8px}
+
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin:16px 0 4px}
+  .kpi{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .kpi .lab{color:var(--mut);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.4px}
+  .kpi .val{font-size:24px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums}
+  .kpi .meta{font-size:11.5px;color:var(--mut);margin-top:3px}
+  .pos{color:var(--buy)} .neg{color:var(--sell)}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px 16px 8px;margin-top:16px}
+  .card .ct{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+  .card h2{font-size:14.5px;margin:0;font-weight:700}
+  .card .cs{color:var(--mut);font-size:12px;margin-top:3px;line-height:1.45;max-width:640px}
+  .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--mut);margin-top:2px}
+  .legend b{color:var(--ink);font-weight:600}
+  .lg{display:inline-flex;align-items:center;gap:6px}
+  .sw{width:11px;height:11px;border-radius:3px;display:inline-block}
+  .swl{width:16px;height:3px;border-radius:2px;display:inline-block}
+  .tbtn{background:var(--border2);border:1px solid var(--border);color:var(--mut);border-radius:6px;
+    font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer}
+  .tbtn:hover{color:var(--ink)}
+  svg{display:block;width:100%;height:auto;overflow:visible;touch-action:none}
+  .gl{stroke:var(--grid);stroke-width:1}
+  .axl{stroke:var(--axis);stroke-width:1}
+  .tick{fill:var(--mut);font-size:10.5px;font-variant-numeric:tabular-nums}
+  .zero{stroke:#484f58;stroke-width:1}
+  .cross{stroke:#586069;stroke-width:1;stroke-dasharray:3 3}
+  .tt{position:fixed;z-index:50;pointer-events:none;background:#0d1117ee;border:1px solid var(--border);
+    border-radius:8px;padding:8px 10px;font-size:12px;min-width:150px;box-shadow:0 6px 20px #000a;display:none}
+  .tt .d{color:var(--mut);font-size:11px;margin-bottom:5px;font-weight:600}
+  .tt .r{display:flex;justify-content:space-between;gap:16px;line-height:1.55}
+  .tt .r .k{display:inline-flex;align-items:center;gap:6px;color:var(--mut)}
+  .tt .r .v{font-variant-numeric:tabular-nums;font-weight:600}
+  .tblwrap{max-height:280px;overflow:auto;margin-top:10px;border:1px solid var(--border);border-radius:8px;display:none}
+  table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums}
+  th,td{padding:5px 10px;text-align:right;border-bottom:1px solid var(--border2);white-space:nowrap}
+  th{position:sticky;top:0;background:var(--card);color:var(--mut);font-weight:600;text-align:right}
+  td:first-child,th:first-child{text-align:left}
+  .note{background:#d2992218;border:1px solid #d2992255;color:#e3b341;border-radius:10px;
+    padding:11px 14px;margin-top:14px;font-size:12.5px;line-height:1.5}
+  .foot{color:var(--mut);font-size:11.5px;margin-top:24px;text-align:center;line-height:1.6}
+  #loading{color:var(--mut);text-align:center;padding:60px 0;font-size:14px}
+</style>
+</head>
+<body>
+<header class="top"><div class="wrap">
+  <div class="h-row">
+    <h1>FII / DII Flow <span class="sub">NSE participant data · self-collected</span></h1>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="spanTop" class="span"></span>
+      <a class="navlnk" href="/">← Dashboard</a>
+    </div>
+  </div>
+  <div class="rng" id="rng"></div>
+</div></header>
+
+<div class="wrap">
+  <div id="loading">Loading FII/DII flow data…</div>
+
+  <div id="kpis" class="kpis" style="display:none"></div>
+
+  <div class="note" id="cashNote" style="display:none"></div>
+
+  <div id="charts" style="display:none">
+  <!-- FII Index Futures net position -->
+  <section class="card" data-chart="fut">
+    <div class="ct"><div>
+      <h2>FII Index Futures — Net Position</h2>
+      <div class="cs">FII ki index futures net long/short (contracts). Green = net long (bullish positioning), red = net short (bearish). Yehi FII ka sabse seedha directional bet hai.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="legend"><span class="lg"><span class="sw" style="background:var(--buy)"></span>Net Long</span>
+      <span class="lg"><span class="sw" style="background:var(--sell)"></span>Net Short</span></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- FII LSR -->
+  <section class="card" data-chart="lsr">
+    <div class="ct"><div>
+      <h2>FII Long-Short Ratio (Index Futures)</h2>
+      <div class="cs">Long positions ÷ short positions. Upar = FII zyada long-heavy (bullish tilt), neeche = short-heavy. 50 (balanced) reference line par hai.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- Participant futures -->
+  <section class="card" data-chart="part">
+    <div class="ct"><div>
+      <h2>Who's On Which Side — Index Futures Net</h2>
+      <div class="cs">Char players ka net futures position ek saath. FII vs DII vs Pro vs Client — kaun long, kaun short. Client aksar FII ka ulta hota hai.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="legend">
+      <span class="lg"><span class="swl" style="background:var(--fii)"></span><b>FII</b></span>
+      <span class="lg"><span class="swl" style="background:var(--dii)"></span><b>DII</b></span>
+      <span class="lg"><span class="swl" style="background:var(--pro)"></span><b>Pro</b></span>
+      <span class="lg"><span class="swl" style="background:var(--cli)"></span><b>Client</b></span></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- FII options CE/PE -->
+  <section class="card" data-chart="opt">
+    <div class="ct"><div>
+      <h2>FII Index Options — Call vs Put Net</h2>
+      <div class="cs">FII ka net CE aur PE position. Dono ka rukh mila kar options-side sentiment banta hai (Sensibull ka "Call OI Chg / Put OI Chg" isi ka cousin hai).</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="legend">
+      <span class="lg"><span class="swl" style="background:var(--ce)"></span><b>Call (CE) net</b></span>
+      <span class="lg"><span class="swl" style="background:var(--pe)"></span><b>Put (PE) net</b></span></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- PCR -->
+  <section class="card" data-chart="pcr">
+    <div class="ct"><div>
+      <h2>NIFTY Put-Call Ratio (near expiry)</h2>
+      <div class="cs">PCR &gt; 1 = puts zyada (support/oversold zone), &lt; 1 = calls zyada. 1.0 reference line par. Data 2020 se.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- Spot + max pain -->
+  <section class="card" data-chart="spot">
+    <div class="ct"><div>
+      <h2>NIFTY Spot vs Max-Pain</h2>
+      <div class="cs">Spot close aur option max-pain strike. Spot max-pain ke upar/neeche kahan hai — expiry pull ka andaza.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="legend">
+      <span class="lg"><span class="swl" style="background:var(--accent)"></span><b>Spot</b></span>
+      <span class="lg"><span class="swl" style="background:var(--pro)"></span><b>Max-Pain</b></span></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <!-- Cash -->
+  <section class="card" data-chart="cash">
+    <div class="ct"><div>
+      <h2>FII vs DII Cash Flow (₹ Cr)</h2>
+      <div class="cs">Roz ka cash-market net buy/sell. Yeh data abhi naya hai (23 Jul se) — collector roz ise badha raha hai, aage rich ho jayega.</div>
+    </div><button class="tbtn" data-t>Table</button></div>
+    <div class="legend">
+      <span class="lg"><span class="sw" style="background:var(--fii)"></span><b>FII cash</b></span>
+      <span class="lg"><span class="sw" style="background:var(--dii)"></span><b>DII cash</b></span></div>
+    <div class="host"></div><div class="tblwrap"></div>
+  </section>
+
+  <div class="foot">Source: NSE participant-wise OI + FO bhavcopy reports (free) · self-collected via CODE3B <code>fii_flow.py</code> + <code>chain_pcr.py</code><br>
+  Display-only context map — <b>not</b> a directional signal (next-day direction backtest failed; data = context/regime/vol only).</div>
+  </div>
+</div>
+
+<div class="tt" id="tt"></div>
+
+<script>
+let DATA=null, C={}, R=[], N=0;
+
+// ---- formatters
+const fmtInt = v => v==null?'—':Math.round(v).toLocaleString('en-IN');
+const fmtCr  = v => v==null?'—':(v>=0?'+':'')+Math.round(v).toLocaleString('en-IN')+' Cr';
+const fmt2   = (v,d=2) => v==null?'—':v.toFixed(d);
+const short  = v => { if(v==null) return '—'; const a=Math.abs(v);
+  if(a>=1e7) return (v/1e7).toFixed(1)+'Cr'; if(a>=1e5) return (v/1e5).toFixed(1)+'L';
+  if(a>=1e3) return (v/1e3).toFixed(0)+'k'; return ''+Math.round(v); };
+const MON=['','Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const dlabel = d => { const [y,m,da]=d.split('-'); return da+' '+MON[+m]; };
+const dfull  = d => { const [y,m,da]=d.split('-'); return da+' '+MON[+m]+' '+y; };
+
+const val = (r,k)=> r[C[k]];
+const dateOf = r=>r[C.date];
+
+// ---- range state
+let startIdx = 0;
+let RANGES = [];
+function setRange(n){ startIdx = Math.max(0, N-n); renderAll();
+  document.querySelectorAll('#rng .chip').forEach(c=>c.classList.toggle('on', +c.dataset.n===n)); }
+function slice(){ return R.slice(startIdx); }
+
+// ---- KPI
+function kpiVal(k){ for(let i=N-1;i>=0;i--){ const v=val(R[i],k); if(v!=null) return [v,dateOf(R[i])]; } return [null,null]; }
+function renderKPI(){
+  const [fut,fd]=kpiVal('fii_fut'), [lsr]=kpiVal('fii_lsr'),
+        [fc]=kpiVal('fii_cash'), [dc]=kpiVal('dii_cash'), [pcr]=kpiVal('pcr'), [spot]=kpiVal('spot');
+  const cards=[
+    ['FII Fut Net', fmtInt(fut), (fut>=0?'Net LONG':'Net SHORT'), fut>=0?'pos':'neg', fd?('as of '+dlabel(fd)):''],
+    ['FII Long-Short', fmt2(lsr)+'%', lsr>=50?'long-heavy':'short-heavy', lsr>=50?'pos':'neg',''],
+    ['NIFTY Spot', spot?Math.round(spot).toLocaleString('en-IN'):'—', '', '', pcr?('PCR '+fmt2(pcr,2)):''],
+    ['FII Cash', fmtCr(fc), fc>=0?'buying':'selling', fc>=0?'pos':'neg','₹ crore'],
+    ['DII Cash', fmtCr(dc), dc>=0?'buying':'selling', dc>=0?'pos':'neg','₹ crore'],
+  ];
+  document.getElementById('kpis').innerHTML = cards.map(([l,v,m,cl,mt])=>
+    `<div class="kpi"><div class="lab">${l}</div><div class="val ${cl}">${v}</div><div class="meta">${m}${m&&mt?' · ':''}${mt}</div></div>`).join('');
+  const cn=R.filter(r=>val(r,'fii_cash')!=null);
+  document.getElementById('cashNote').innerHTML =
+    `⚠️ <b>Cash-flow data abhi ${cn.length} din ka hai</b> (collector ${cn.length?dfull(dateOf(cn[0])):''} se chalu). Har trading day ye apne aap badhega. Deep history sirf futures/options/PCR par hai.`;
+}
+
+// ==== generic chart engine (SVG) ====
+const W=1100, H=250, PL=54, PR=16, PT=14, PB=24;
+const IW=W-PL-PR, IH=H-PT-PB;
+function niceTicks(min,max,n=5){
+  if(min===max){min-=1;max+=1;} const span=max-min, step0=span/n, mag=Math.pow(10,Math.floor(Math.log10(step0)));
+  const norm=step0/mag, step=(norm<1.5?1:norm<3?2:norm<7?5:10)*mag;
+  const lo=Math.floor(min/step)*step, hi=Math.ceil(max/step)*step, out=[];
+  for(let v=lo;v<=hi+step*0.5;v+=step) out.push(v); return out;
+}
+function svgEl(){ const s=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  s.setAttribute('viewBox',`0 0 ${W} ${H}`); s.setAttribute('preserveAspectRatio','none'); return s; }
+function E(t,a){ const e=document.createElementNS('http://www.w3.org/2000/svg',t); for(const k in a)e.setAttribute(k,a[k]); return e; }
+
+function frame(svg, rows, ymin, ymax, fmtY, zeroLine){
+  const ticks=niceTicks(ymin,ymax,5); const lo=ticks[0], hi=ticks[ticks.length-1];
+  const y=v=>PT+IH-(v-lo)/(hi-lo)*IH;
+  const x=i=> rows.length<=1? PL+IW/2 : PL + i/(rows.length-1)*IW;
+  ticks.forEach(t=>{ svg.appendChild(E('line',{x1:PL,x2:W-PR,y1:y(t),y2:y(t),class:'gl'}));
+    const tx=E('text',{x:PL-8,y:y(t)+3,class:'tick','text-anchor':'end'}); tx.textContent=fmtY(t); svg.appendChild(tx); });
+  if(zeroLine && lo<0 && hi>0) svg.appendChild(E('line',{x1:PL,x2:W-PR,y1:y(0),y2:y(0),class:'zero'}));
+  const step=Math.max(1,Math.floor(rows.length/6));
+  for(let i=0;i<rows.length;i+=step){ const tx=E('text',{x:x(i),y:H-6,class:'tick','text-anchor':'middle'});
+    tx.textContent=dlabel(dateOf(rows[i])); svg.appendChild(tx); }
+  return {y,x,lo,hi};
+}
+
+function barChart(host, key, opt){
+  const rows=slice().filter(r=>val(r,key)!=null); host.innerHTML='';
+  if(!rows.length){ host.innerHTML='<div class="cs" style="padding:20px 0">No data in range.</div>'; return; }
+  const svg=svgEl();
+  const vals=rows.map(r=>val(r,key)); let ymin=Math.min(0,...vals), ymax=Math.max(0,...vals);
+  const f=frame(svg,rows,ymin,ymax,opt.fmtY||short,true);
+  const bw=Math.min(22, IW/rows.length*0.7);
+  rows.forEach((r,i)=>{ const v=val(r,key); const yv=f.y(v), y0=f.y(0);
+    svg.appendChild(E('rect',{x:f.x(i)-bw/2, y:Math.min(yv,y0), width:bw, height:Math.max(1,Math.abs(yv-y0)),
+      rx:3, fill: v>=0?'var(--buy)':'var(--sell)'})); });
+  host.appendChild(svg);
+  attachHover(svg, host, rows, f, xi=>{ const r=rows[xi]; return [[key, opt.leg||'Net', val(r,key), opt.tf||fmtInt]]; });
+}
+
+function groupBar(host, keys, colors, labels, opt){
+  const rows=slice().filter(r=> keys.some(k=>val(r,k)!=null)); host.innerHTML='';
+  if(!rows.length){ host.innerHTML='<div class="cs" style="padding:20px 0">No data in range.</div>'; return; }
+  const svg=svgEl(); let ymin=0,ymax=0;
+  rows.forEach(r=>keys.forEach(k=>{const v=val(r,k); if(v!=null){ymin=Math.min(ymin,v);ymax=Math.max(ymax,v);}}));
+  const f=frame(svg,rows,ymin,ymax,opt.fmtY||short,true);
+  const gw=Math.min(26, IW/rows.length*0.72), bw=gw/keys.length;
+  rows.forEach((r,i)=>{ keys.forEach((k,j)=>{ const v=val(r,k); if(v==null)return;
+    const yv=f.y(v),y0=f.y(0); const bx=f.x(i)-gw/2 + j*bw;
+    svg.appendChild(E('rect',{x:bx+1,y:Math.min(yv,y0),width:Math.max(1,bw-2),height:Math.max(1,Math.abs(yv-y0)),rx:2,fill:colors[j]})); }); });
+  host.appendChild(svg);
+  attachHover(svg,host,rows,f, xi=>keys.map((k,j)=>[k,labels[j],val(rows[xi],k),opt.tf||fmtCr,colors[j]]));
+}
+
+function lineChart(host, keys, colors, labels, opt){
+  const rows=slice(); host.innerHTML='';
+  const has=rows.filter(r=>keys.some(k=>val(r,k)!=null));
+  if(!has.length){ host.innerHTML='<div class="cs" style="padding:20px 0">No data in range.</div>'; return; }
+  const svg=svgEl(); let ymin=Infinity,ymax=-Infinity;
+  rows.forEach(r=>keys.forEach(k=>{const v=val(r,k); if(v!=null){ymin=Math.min(ymin,v);ymax=Math.max(ymax,v);}}));
+  if(opt.incZero){ ymin=Math.min(0,ymin); ymax=Math.max(0,ymax); }
+  if(opt.pad){ const p=(ymax-ymin)*0.08; ymin-=p; ymax+=p; }
+  const f=frame(svg,rows,ymin,ymax,opt.fmtY||short, opt.zero!==false);
+  if(opt.ref!=null && opt.ref>f.lo && opt.ref<f.hi){
+    svg.appendChild(E('line',{x1:PL,x2:W-PR,y1:f.y(opt.ref),y2:f.y(opt.ref),class:'zero'}));
+    const t=E('text',{x:W-PR,y:f.y(opt.ref)-4,class:'tick','text-anchor':'end'}); t.textContent=opt.refLab||''; svg.appendChild(t);
+  }
+  keys.forEach((k,j)=>{ let d='',pen=false;
+    rows.forEach((r,i)=>{ const v=val(r,k); if(v==null){pen=false;return;} d+=(pen?'L':'M')+f.x(i).toFixed(1)+' '+f.y(v).toFixed(1)+' '; pen=true; });
+    svg.appendChild(E('path',{d,fill:'none',stroke:colors[j],'stroke-width':2,'stroke-linejoin':'round','stroke-linecap':'round'}));
+    for(let i=rows.length-1;i>=0;i--){ const v=val(rows[i],k); if(v!=null){
+      svg.appendChild(E('circle',{cx:f.x(i),cy:f.y(v),r:4,fill:colors[j],stroke:'var(--card)','stroke-width':2})); break; } }
+  });
+  host.appendChild(svg);
+  attachHover(svg,host,rows,f, xi=>keys.map((k,j)=>[k,labels[j],val(rows[xi],k),opt.tf||fmt2,colors[j]]));
+}
+
+// ---- shared hover
+const TT=document.getElementById('tt');
+function attachHover(svg, host, rows, f, rowFn){
+  const cross=E('line',{class:'cross',y1:PT,y2:PT+IH,style:'display:none'}); svg.appendChild(cross);
+  function move(ev){
+    const rect=svg.getBoundingClientRect(); const px=(ev.clientX-rect.left)/rect.width*W;
+    let i=Math.round((px-PL)/IW*(rows.length-1)); i=Math.max(0,Math.min(rows.length-1,i));
+    if(rows.length===1)i=0;
+    const xx=f.x(i); cross.setAttribute('x1',xx);cross.setAttribute('x2',xx);cross.style.display='';
+    const items=rowFn(i);
+    TT.innerHTML='<div class="d">'+dfull(dateOf(rows[i]))+'</div>'+items.map(([k,lab,v,ff,col])=>
+      `<div class="r"><span class="k">${col?'<span class="sw" style="width:9px;height:9px;background:'+col+'"></span>':''}${lab}</span><span class="v ${(v!=null&&typeof v==='number'&&col===undefined)?(v>=0?'pos':'neg'):''}">${(ff||fmtInt)(v)}</span></div>`).join('');
+    TT.style.display='block';
+    let tx=ev.clientX+16, ty=ev.clientY-10;
+    if(tx+180>innerWidth)tx=ev.clientX-190; if(ty<8)ty=8;
+    TT.style.left=tx+'px'; TT.style.top=ty+'px';
+  }
+  svg.addEventListener('mousemove',move);
+  svg.addEventListener('touchmove',e=>{move(e.touches[0]);e.preventDefault();},{passive:false});
+  svg.addEventListener('mouseleave',()=>{TT.style.display='none';cross.style.display='none';});
+}
+
+// ---- tables
+function buildTable(wrap, rows, cols){
+  const head='<tr><th>Date</th>'+cols.map(c=>'<th>'+c[1]+'</th>').join('')+'</tr>';
+  const body=rows.slice().reverse().map(r=>'<tr><td>'+dfull(dateOf(r))+'</td>'+
+    cols.map(c=>'<td>'+(c[2]||fmtInt)(val(r,c[0]))+'</td>').join('')+'</tr>').join('');
+  wrap.innerHTML='<table>'+head+body+'</table>';
+}
+
+// ---- render dispatch
+function renderAll(){
+  renderKPI();
+  const S=slice();
+  const fh=q('fut'); barChart(fh.host,'fii_fut',{leg:'FII fut net',tf:fmtInt});
+  buildTable(fh.tbl,S.filter(r=>val(r,'fii_fut')!=null),[['fii_fut','FII Fut Net',fmtInt],['fii_lsr','LSR %',v=>fmt2(v)]]);
+  const lh=q('lsr'); lineChart(lh.host,['fii_lsr'],['#79b8ff'],['LSR %'],{ref:50,refLab:'balanced 50',pad:true,tf:v=>fmt2(v)+'%',fmtY:v=>v.toFixed(0)});
+  buildTable(lh.tbl,S.filter(r=>val(r,'fii_lsr')!=null),[['fii_lsr','LSR %',v=>fmt2(v)]]);
+  const ph=q('part'); lineChart(ph.host,['fii_fut','dii_fut','pro_fut','cli_fut'],
+    ['var(--fii)','var(--dii)','var(--pro)','var(--cli)'],['FII','DII','Pro','Client'],{incZero:true,tf:fmtInt});
+  buildTable(ph.tbl,S,[['fii_fut','FII',fmtInt],['dii_fut','DII',fmtInt],['pro_fut','Pro',fmtInt],['cli_fut','Client',fmtInt]]);
+  const oh=q('opt'); lineChart(oh.host,['fii_ce','fii_pe'],['var(--ce)','var(--pe)'],['Call net','Put net'],{incZero:true,tf:fmtInt});
+  buildTable(oh.tbl,S,[['fii_ce','CE net',fmtInt],['fii_pe','PE net',fmtInt]]);
+  const ch=q('pcr'); lineChart(ch.host,['pcr'],['#d2a8ff'],['PCR'],{ref:1,refLab:'1.0',pad:true,zero:false,tf:v=>fmt2(v,3),fmtY:v=>v.toFixed(2)});
+  buildTable(ch.tbl,S.filter(r=>val(r,'pcr')!=null),[['pcr','PCR',v=>fmt2(v,3)]]);
+  const sh=q('spot'); lineChart(sh.host,['spot','maxpain'],['var(--accent)','var(--pro)'],['Spot','Max-Pain'],{pad:true,zero:false,tf:v=>v==null?'—':Math.round(v).toLocaleString('en-IN'),fmtY:v=>Math.round(v).toLocaleString('en-IN')});
+  buildTable(sh.tbl,S.filter(r=>val(r,'spot')!=null),[['spot','Spot',v=>v==null?'—':Math.round(v).toLocaleString('en-IN')],['maxpain','Max-Pain',fmtInt]]);
+  const kh=q('cash'); groupBar(kh.host,['fii_cash','dii_cash'],['var(--fii)','var(--dii)'],['FII cash','DII cash'],{tf:fmtCr});
+  buildTable(kh.tbl,S.filter(r=>val(r,'fii_cash')!=null||val(r,'dii_cash')!=null),[['fii_cash','FII Cr',fmtCr],['dii_cash','DII Cr',fmtCr]]);
+}
+function q(name){ const sec=document.querySelector(`[data-chart="${name}"]`);
+  return {host:sec.querySelector('.host'), tbl:sec.querySelector('.tblwrap')}; }
+
+// ---- init after fetch
+async function init(){
+  let obj;
+  try{
+    const r=await fetch('/api/fii-flow',{headers:{'Accept-Encoding':'gzip'}});
+    obj=await r.json();
+  }catch(e){ document.getElementById('loading').textContent='Data load failed: '+e; return; }
+  if(!obj || !obj.rows || !obj.rows.length){
+    document.getElementById('loading').textContent='No FII/DII data available yet.'; return; }
+  DATA=obj; C={}; DATA.cols.forEach((c,i)=>C[c]=i); R=DATA.rows; N=R.length;
+
+  RANGES=[['1M',22],['3M',66],['6M',132],['1Y',252],['3Y',756],['All',N]];
+  const rng=document.getElementById('rng');
+  RANGES.forEach(([lab,n])=>{ const b=document.createElement('button'); b.className='chip'; b.textContent=lab; b.dataset.n=n;
+    b.onclick=()=>setRange(n); rng.appendChild(b); });
+
+  document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{
+    const w=b.closest('.card').querySelector('.tblwrap'); const on=w.style.display==='block';
+    w.style.display=on?'none':'block'; b.textContent=on?'Table':'Hide'; });
+
+  document.getElementById('spanTop').textContent = dfull(dateOf(R[0]))+'  →  '+dfull(dateOf(R[N-1]))+'  ·  '+N+' trading days';
+
+  document.getElementById('loading').style.display='none';
+  document.getElementById('kpis').style.display='';
+  document.getElementById('cashNote').style.display='';
+  document.getElementById('charts').style.display='';
+
+  setRange(252); // default 1Y
+}
+init();
+</script>
+</body>
+</html>

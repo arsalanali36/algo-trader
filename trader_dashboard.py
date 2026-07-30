@@ -746,6 +746,31 @@ def api_gex():
         print("[gex] fail:", e, flush=True)
         return _out({"ok": False, "error": str(e), "expiries": [], "snaps": []})
 
+@app.route('/fii-flow')
+def fii_flow_page():
+    """FII/DII participant-flow dashboard — Sensibull-style but from our own free
+    NSE lakes (participant OI 2015→, PCR/spot 2020→, cash from when collection
+    started). Display-only context map — NOT a directional signal (next-day
+    direction backtest FAILED; data = context/regime/vol only)."""
+    return render_template("fii_flow.html")
+
+@app.route('/api/fii-flow')
+def api_fii_flow():
+    import fii_flow_view as ffv, json as _json, gzip as _gzip
+    try:
+        obj = ffv.series()
+    except Exception as e:
+        print("[fii-flow] fail:", e, flush=True)
+        obj = {"ok": False, "error": str(e), "cols": [], "rows": [], "meta": {}}
+    payload = _json.dumps(obj, separators=(',', ':'))
+    if 'gzip' in (request.headers.get('Accept-Encoding') or '') and len(payload) > 2000:
+        body = _gzip.compress(payload.encode('utf-8'), 6)
+        resp = app.response_class(body, mimetype='application/json')
+        resp.headers['Content-Encoding'] = 'gzip'
+        resp.headers['Vary'] = 'Accept-Encoding'
+        return resp
+    return app.response_class(payload, mimetype='application/json')
+
 @app.route('/api/option-strike')
 def api_option_strike():
     """Per-strike premium series for /curves right-click 'Load strike chart'.
