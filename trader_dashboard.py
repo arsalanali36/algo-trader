@@ -2892,6 +2892,75 @@ def _live_sl_for_open(p):
     except Exception:
         return None
 
+@app.route('/strategy-study')
+def strategy_study_page():
+    """Landscape 'study' of every trade a strategy took — one chart per trade
+    (index + RSI + premium) with a stats header, so it's clear WHEN the strategy
+    works and when it fails. Display-only; login-gated (before_request)."""
+    return render_template('strategy_study.html')
+
+
+@app.route('/api/strategy-study/trades')
+def api_strategy_study_trades():
+    """Completed trades for a strategy over a date range + aggregate. The study page
+    lists these, then fetches each trade's index+premium+RSI via the existing
+    /api/trade-chart-* endpoints. Read-only — reuses order_store + _strategy_matcher
+    + _enrich_trade_display (no new trade/P&L math path)."""
+    import order_store, datetime as _dt
+    strat = request.args.get('strategy', '').strip()
+    today = (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
+    to = request.args.get('to', '').strip() or today
+    try:
+        frm = request.args.get('from', '').strip() or \
+            (_dt.datetime.strptime(to, "%Y-%m-%d") - _dt.timedelta(days=120)).strftime("%Y-%m-%d")
+    except Exception:
+        frm = to
+    data = order_store.trades_for_range(frm, to)
+    rows = list(data.get('details') or [])
+    if strat:
+        _m = _strategy_matcher(strat)
+        rows = [r for r in rows if _m(r.get('strategy'))]
+    try:
+        _enrich_trade_display(rows)   # lot_size (for Lots) — best-effort
+    except Exception:
+        pass
+    out, wins, net, gw, gl = [], 0, 0.0, 0.0, 0.0
+    for r in rows:
+        ep = float(r.get('entry_price') or 0); xp = float(r.get('exit_price') or 0)
+        q = float(r.get('qty') or 0); side = r.get('entry')
+        pnl = float(r.get('pnl') or 0)
+        pts = (xp - ep) if side == 'BUY' else (ep - xp)
+        pct = (pts / ep * 100) if ep else 0
+        lot = float(r.get('lot_size') or 0)
+        tsym = r.get('sym') or ''
+        opt = 'CE' if tsym.endswith('-CE') else ('PE' if tsym.endswith('-PE') else '')
+        win = pnl > 0
+        wins += 1 if win else 0
+        net += pnl
+        gw += pnl if pnl >= 0 else 0
+        gl += (-pnl) if pnl < 0 else 0
+        out.append({
+            "sym": tsym, "root": tsym.split('-')[0], "opt": opt,
+            "date": r.get('entry_date') or '', "exit_date": r.get('exit_date') or r.get('entry_date') or '',
+            "side": side, "entry_price": round(ep, 2), "exit_price": round(xp, 2),
+            "entry_time": r.get('entry_time') or '', "exit_time": r.get('exit_time') or '',
+            "qty": int(q), "lot_size": int(lot) if lot else None,
+            "lots": int(round(q / lot)) if lot else None,
+            "pnl": round(pnl, 2), "points": round(pts, 2), "pct": round(pct, 2),
+            "win": win, "strategy": r.get('strategy'), "exit_reason": r.get('exit_reason') or '',
+        })
+    out.sort(key=lambda t: (t['date'], t['entry_time']), reverse=True)   # newest first
+    n = len(out); losses = n - wins
+    agg = {"trades": n, "wins": wins, "losses": losses,
+           "win_pct": round(wins / n * 100, 1) if n else 0,
+           "net": round(net, 2), "pf": round(gw / gl, 2) if gl else None,
+           "avg_win": round(gw / wins) if wins else 0,
+           "avg_loss": round(gl / losses) if losses else 0}
+    return jsonify({"ok": True, "strategy": strat,
+                    "name": request.args.get('name', '').strip() or strat or 'All strategies',
+                    "from": frm, "to": to, "trades": out, "agg": agg})
+
+
 @app.route('/api/trade-chart-data')
 def api_trade_chart_data():
     """Option premium 1-min candles for one completed trade + entry/exit marker times.

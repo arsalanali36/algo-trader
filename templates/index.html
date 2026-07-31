@@ -2018,6 +2018,9 @@
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:11px;margin-left:4px">
         <option value="">All strategies</option>
       </select>
+      <button title="Har trade ka chart ek study-page (PDF) me — kab strategy kaam karti, kab fail"
+        onclick="(function(){var s=document.getElementById('cal-strat');var v=s.value||'';var n=(s.options[s.selectedIndex]||{}).text||v;window.open('/strategy-study?strategy='+encodeURIComponent(v)+'&name='+encodeURIComponent(n),'_blank');})()"
+        style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 9px;font-size:11px;cursor:pointer;margin-left:4px">📄 Study</button>
       <!-- Backtest-only controls: Pass (Instrument/+RMS/+BS) + Period (Full/Train/OOS) -->
       <span id="cal-bt-only" style="display:none;align-items:center;gap:8px">
         <span style="font-size:11px;color:#6e7681">Pass</span>
