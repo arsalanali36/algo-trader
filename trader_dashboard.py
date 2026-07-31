@@ -2254,12 +2254,44 @@ _EQ_IDX_SEC = {
     "TRENT":      ("3537",  "NSE_EQ"),
 }
 
+def _open_sec_id_for_trad_sym(trad_sym: str):
+    """The sec_id order_store actually recorded for the most-recent trade of this
+    trad_sym — the contract we really hold. NIFTY/BANKNIFTY option trad_syms carry
+    only month+year (NO expiry day: 'NIFTY-Aug2026-24100-CE'), so
+    dhan_master.get_sec_id_for_trad_sym() resolves to the NEAREST-live expiry — which
+    is WRONG when the open position is on a later (e.g. monthly) expiry in the same
+    month. That mis-resolution shows a different contract's LTP (a near weekly's
+    premium) → a fake, inflated P&L on the Orders page (TRAP #100 family). Prefer the
+    REAL stored sec_id here. None if never traded (fresh contract → caller may guess).
+    ORDER BY id DESC = the contract most recently opened for this string = what we hold."""
+    try:
+        import order_store
+        with order_store._lock, order_store._conn() as c:
+            row = c.execute(
+                "SELECT sec_id FROM orders WHERE trad_sym=? AND sec_id IS NOT NULL "
+                "AND sec_id!='' ORDER BY id DESC LIMIT 1", (trad_sym,)).fetchone()
+            if row and row[0]:
+                return str(row[0])
+    except Exception:
+        pass
+    return None
+
+
 def _get_sec_ids(syms: list) -> dict:
     """Returns {sym: sec_id}. Handles options (via dhan_master) + equity/index (via _EQ_IDX_SEC and universe)."""
     import dhan_master
     import universe
     out = {}
     for s in syms:
+        # Options we actually HOLD: use the sec_id order_store recorded, NOT the
+        # nearest-expiry guess (TRAP #100 — wrong contract's LTP → fake P&L). Checked
+        # BEFORE the process cache so a stale cached guess can't win; not cached here
+        # because the same trad_sym string can point at a different expiry next cycle.
+        if ('-CE' in s) or ('-PE' in s):
+            _held = _open_sec_id_for_trad_sym(s)
+            if _held:
+                out[s] = _held
+                continue
         if s in _sec_id_cache:
             out[s] = _sec_id_cache[s]
             continue
