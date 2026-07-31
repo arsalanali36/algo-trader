@@ -332,6 +332,8 @@
     document.addEventListener('DOMContentLoaded', () => {
       startLtpStream();
       loadAll();
-      switchTab(activeTab);   // restore last active tab (saved in localStorage)
+      // deep-link from the shared topnav on other pages (/?tab=log) overrides the saved tab
+      var _qt = new URLSearchParams(location.search).get('tab');
+      switchTab(_qt || activeTab);   // else restore last active tab (localStorage)
     });
 

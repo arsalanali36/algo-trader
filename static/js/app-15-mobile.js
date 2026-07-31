@@ -15,7 +15,8 @@
     burger.className = 'mobile-burger';
     burger.setAttribute('aria-label', 'Menu');
     burger.innerHTML = '&#9776;';                            // ☰
-    hdr.insertBefore(burger, hdr.firstChild);
+    // right-thumb side: drop it at the end of the header (after .hdr-right)
+    hdr.appendChild(burger);
 
     var scrim = document.getElementById('mobile-scrim');
     if (!scrim) {

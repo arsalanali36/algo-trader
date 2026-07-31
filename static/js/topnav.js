@@ -1,106 +1,189 @@
-/* topnav.js — ONE shared global app-nav header for every standalone page
-   (stats2 / curves / gex / whatif / fii-flow / registry2 / reports / …).
-   index.html has its own .hdr .tabs nav (app-15-mobile.js) — this self-skips there.
+/* topnav.js — the SAME global header as index.html, cloned onto every standalone
+   page (stats2 / curves / gex / whatif / fii-flow / registry2 / reports / …).
+   index.html keeps its own live .hdr .tabs (this self-skips there), so the two match.
 
-   Injects its own CSS + a top bar with brand + inline links (desktop) that
-   collapse to a hamburger drawer on ≤760px. Zero page-markup assumptions, so it
-   drops onto any page with a single <script defer src=...> tag. Static (in-flow)
-   so it never fights a page's own sticky control bar; the drawer/scrim are fixed
-   overlays. Single source of the nav list → change once, every page updates. */
+   Faithful clone of the dashboard header: brand + env badge, the full tab row
+   (Logs / Orders & P&L / Stats 2 / Curves / FII Flow / Risk / Strategies) plus the
+   Reports ▾ and More ▾ dropdowns with all their items, and clock + avatar on the
+   right. In-page-only tabs (Logs/Orders/Risk/Stats/Watch) deep-link to the dashboard
+   via /?tab=X (index reads ?tab=). On ≤760px the tab row collapses into a right-side
+   hamburger drawer (thumb-friendly). Injects its own CSS; static (in-flow) so it never
+   fights a page's own sticky bar. */
 (function () {
   'use strict';
 
-  // canonical destinations (all real routes) — same order everywhere
-  var NAV = [
-    { href: '/',              icon: '🏠', label: 'Dashboard' },
-    { href: '/stats2',        icon: '📊', label: 'Stats' },
-    { href: '/curves',        icon: '📈', label: 'Curves' },
-    { href: '/gex',           icon: '🟢', label: 'GEX' },
-    { href: '/whatif',        icon: '🧪', label: 'What-If' },
-    { href: '/fii-flow',      icon: '🏦', label: 'FII Flow' },
-    { href: '/registry2',     icon: '🗂️', label: 'Strategies' },
-    { href: '/reports',       icon: '📋', label: 'Reports' },
-    { href: '/intervention',  icon: '🖐', label: 'Intervention' }
+  // in-page dashboard tabs → deep-link; cross-page → real routes
+  var TABS = [
+    { href: '/?tab=log',     label: 'Logs' },
+    { href: '/?tab=orders',  label: '📒 Orders & P&L' },
+    { href: '/stats2',       label: '📊 Stats 2' },
+    { href: '/curves',       label: '📈 Curves' },
+    { href: '/fii-flow',     label: '🏦 FII Flow' },
+    { href: '/?tab=risk',    label: '⚠️ Risk' },
+    { href: '/registry2',    label: '🗂️ Strategies' }
+  ];
+  var REPORTS = [
+    { href: '/reports',       label: '📋 EOD Reports' },
+    { href: '/intervention',  label: '🖐 Intervention' },
+    { href: '/presentations', label: '🎬 YT Presentations' },
+    { href: '/sl-map',        label: '🛡️ SL Map' }
+  ];
+  var MORE = [
+    { href: '/gex',            label: '🟢 GEX Profile' },
+    { href: '/whatif',         label: '🧪 Options What-If' },
+    { href: '/registry',       label: '🗂️ Strategies (classic)' },
+    { href: '/?tab=calendar',  label: '📊 Stats (calendar)' },
+    { href: '/script3',        label: '📜 Script 3' },
+    { href: '/strategy-equity',label: '📈 Strategy Equity' },
+    { href: '/mtm-charts',     label: '📈 MTM Analyzer' },
+    { href: '/spec-builder',   label: '🧭 Spec Builder' },
+    { href: '/backtest-chart', label: '📊 Results' }
+  ];
+  var AVATAR = [
+    { href: '/?tab=config', label: '⚙ Settings' },
+    { href: '/logout',      label: '🚪 Logout', danger: true }
   ];
 
   var CSS = [
-    '#gnav{display:flex;align-items:center;gap:10px;padding:8px 14px;',
-      'background:linear-gradient(180deg,#11161d,#0d1117);border-bottom:1px solid #30363d;',
-      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;position:relative;z-index:60}',
+    '#gnav{display:flex;align-items:center;gap:12px;height:52px;padding:0 16px;',
+      'background:#161b22;border-bottom:1px solid #30363d;position:relative;z-index:70;',
+      'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif}',
+    '#gnav .gn-dot{width:8px;height:8px;border-radius:50%;background:#3fb950;flex:0 0 auto}',
+    '#gnav h1{font-size:15px;font-weight:700;color:#fff;white-space:nowrap;margin:0}',
+    '#gnav .gn-env{font-size:11px;font-weight:700;padding:2px 9px;border-radius:12px;border:1px solid #30363d;color:#8b949e;white-space:nowrap}',
+    '#gnav .gn-tabs{display:flex;align-items:stretch;height:100%;gap:0}',
+    '#gnav .gn-tab{display:flex;align-items:center;height:100%;padding:0 13px;color:#8b949e;font-size:13px;',
+      'font-weight:600;white-space:nowrap;text-decoration:none;border-bottom:3px solid transparent;cursor:pointer;transition:all .15s}',
+    '#gnav .gn-tab:hover{color:#e6edf3;background:rgba(255,255,255,.03)}',
+    '#gnav .gn-tab.on{color:#58a6ff;border-bottom-color:#1f6feb;background:rgba(31,111,235,.05)}',
+    '#gnav .gn-dd{position:relative;display:flex;align-items:center;height:100%}',
+    '#gnav .gn-menu{display:none;position:absolute;top:100%;left:0;background:#161b22;border:1px solid #30363d;',
+      'border-radius:6px;box-shadow:0 4px 12px rgba(0,0,0,.5);padding:4px 0;min-width:180px;z-index:10001;margin-top:2px}',
+    '#gnav .gn-menu.gn-r{left:auto;right:0}',
+    '#gnav .gn-menu.show{display:block}',
+    '#gnav .gn-menu a{display:block;padding:8px 13px;font-size:12px;color:#c9d1d9;text-decoration:none;white-space:nowrap}',
+    '#gnav .gn-menu a:hover{background:#21262d}',
+    '#gnav .gn-menu a.danger{color:#f85149}',
+    '#gnav .gn-right{margin-left:auto;display:flex;align-items:center;gap:14px}',
+    '#gnav .gn-icon{font-size:15px;color:#8b949e;text-decoration:none;cursor:pointer}',
+    '#gnav .gn-clock{display:flex;flex-direction:column;align-items:flex-end;line-height:1.2}',
+    '#gnav .gn-clock .d{font-size:11px;color:#8b949e;font-weight:600}',
+    '#gnav .gn-clock .t{font-size:13px;color:#e6edf3;font-family:monospace;font-weight:700}',
+    '#gnav .gn-avatar{width:28px;height:28px;border-radius:50%;background:#1f6feb;color:#fff;display:flex;',
+      'align-items:center;justify-content:center;font-size:13px;font-weight:700;cursor:pointer}',
     '#gnav .gn-burger{display:none;align-items:center;justify-content:center;width:36px;height:36px;flex:0 0 auto;',
       'background:#21262d;border:1px solid #30363d;border-radius:8px;color:#e6edf3;font-size:19px;line-height:1;cursor:pointer}',
-    '#gnav .gn-brand{display:flex;align-items:center;gap:7px;color:#e6edf3;font-weight:800;font-size:15px;',
-      'text-decoration:none;white-space:nowrap}',
-    '#gnav .gn-sp{flex:1}',
-    '#gnav .gn-links{display:flex;align-items:center;gap:5px;flex-wrap:wrap}',
-    '#gnav .gn-links a{display:inline-flex;align-items:center;gap:5px;color:#adbac7;text-decoration:none;font-size:12.5px;',
-      'font-weight:600;padding:5px 10px;border-radius:7px;border:1px solid transparent;white-space:nowrap}',
-    '#gnav .gn-links a:hover{background:#21262d;color:#e6edf3}',
-    '#gnav .gn-links a.on{background:rgba(31,111,235,.16);color:#58a6ff;border-color:rgba(31,111,235,.45)}',
-    // drawer + scrim (fixed overlays)
+    '#gnav .gn-drawer-extra{display:none}',
+    // scrim
     '#gn-scrim{position:fixed;inset:0;background:#000a;z-index:99998;opacity:0;pointer-events:none;transition:opacity .22s}',
     '#gn-scrim.open{opacity:1;pointer-events:auto}',
-    '#gn-drawer{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:300px;background:#161b22;',
-      'border-right:1px solid #30363d;box-shadow:2px 0 18px #0008;z-index:99999;overflow-y:auto;',
-      'transform:translateX(-106%);transition:transform .22s ease}',
-    '#gn-drawer.open{transform:translateX(0)}',
-    '#gn-drawer .gn-dh{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid #30363d;',
-      'font-weight:800;color:#e6edf3;font-size:15px;position:sticky;top:0;background:#161b22}',
-    '#gn-drawer .gn-dh .x{margin-left:auto;background:none;border:0;color:#8b949e;font-size:20px;cursor:pointer;line-height:1}',
-    '#gn-drawer a{display:flex;align-items:center;gap:11px;padding:12px 18px;color:#e6edf3;text-decoration:none;',
-      'font-size:14px;font-weight:600;border-bottom:1px solid #21262d}',
-    '#gn-drawer a:hover{background:#21262d}',
-    '#gn-drawer a.on{color:#58a6ff;background:rgba(31,111,235,.12);box-shadow:inset 3px 0 #1f6feb}',
-    '#gn-drawer a .gi{width:20px;text-align:center;flex:0 0 auto}',
+    // ── mobile ≤760: tab row → right-side drawer, hamburger on the right (thumb) ──
     '@media(max-width:760px){',
-      '#gnav{position:sticky;top:0;z-index:9000;padding:7px 12px;gap:9px}',
+      '#gnav{position:sticky;top:0;z-index:9000;padding:0 12px;gap:9px}',
+      '#gnav h1{font-size:14px}',
+      '#gnav .gn-right{gap:10px}',
+      '#gnav .gn-right .gn-icon,#gnav .gn-right .gn-clock,#gnav .gn-right .gn-avatar-wrap{display:none}',
       '#gnav .gn-burger{display:inline-flex}',
-      '#gnav .gn-links{display:none}',
-      '#gnav .gn-brand{font-size:14px}',
+      '#gnav .gn-tabs{position:fixed;top:0;right:0;bottom:0;width:82%;max-width:300px;height:auto;',
+        'flex-direction:column;align-items:stretch;gap:0;background:#161b22;border-left:1px solid #30363d;',
+        'box-shadow:-2px 0 18px #0008;z-index:99999;overflow-y:auto;padding:4px 0;',
+        'transform:translateX(106%);transition:transform .22s ease}',
+      '#gnav .gn-tabs.open{transform:translateX(0)}',
+      '#gnav .gn-tab{height:auto;padding:12px 16px;border-bottom:1px solid #21262d;border-left:3px solid transparent;border-bottom-width:1px}',
+      '#gnav .gn-tab.on{border-bottom-color:#21262d;border-left-color:#1f6feb}',
+      '#gnav .gn-dd{flex-direction:column;align-items:stretch;height:auto}',
+      '#gnav .gn-menu{display:block;position:static;border:0;box-shadow:none;margin:0;padding:0;min-width:0;background:#0d1117}',
+      '#gnav .gn-menu a{padding-left:34px}',
+      '#gnav .gn-drawer-extra{display:block;border-top:1px solid #30363d;margin-top:4px}',
     '}'
   ].join('');
 
   function norm(p) { return (p !== '/' && p.slice(-1) === '/') ? p.slice(0, -1) : p; }
 
+  function tabHTML(t, here) {
+    var path = t.href.split('?')[0];
+    var on = path !== '/' && here === path;
+    return '<a class="gn-tab' + (on ? ' on' : '') + '" href="' + t.href + '">' + t.label + '</a>';
+  }
+  function menuHTML(items, id, right) {
+    return '<div class="gn-menu' + (right ? ' gn-r' : '') + '" id="' + id + '">' +
+      items.map(function (m) {
+        return '<a href="' + m.href + '"' + (m.danger ? ' class="danger"' : '') + '>' + m.label + '</a>';
+      }).join('') + '</div>';
+  }
+
   function init() {
-    // index.html already has full nav; never double up
-    if (document.querySelector('.hdr .tabs') || document.getElementById('gnav')) return;
+    if (document.querySelector('.hdr .tabs') || document.getElementById('gnav')) return;   // index has its own
     if (document.body.getAttribute('data-no-topnav') != null) return;
 
     var here = norm(location.pathname);
-
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
 
-    var links = NAV.map(function (n) {
-      var on = (n.href === '/') ? (here === '/') : (here === norm(n.href));
-      return '<a href="' + n.href + '"' + (on ? ' class="on"' : '') +
-             '><span class="gi">' + n.icon + '</span>' + n.label + '</a>';
-    }).join('');
+    var tabsHTML = TABS.map(function (t) { return tabHTML(t, here); }).join('') +
+      '<div class="gn-dd"><span class="gn-tab" data-dd="rep">📋 Reports ▾</span>' + menuHTML(REPORTS, 'gn-rep') + '</div>' +
+      '<div class="gn-dd"><span class="gn-tab" data-dd="more">More ▾</span>' + menuHTML(MORE, 'gn-more') + '</div>' +
+      '<div class="gn-drawer-extra">' + AVATAR.map(function (m) {
+        return '<a class="gn-tab" href="' + m.href + '"' + (m.danger ? ' style="color:#f85149"' : '') + '>' + m.label + '</a>';
+      }).join('') + '</div>';
 
     var bar = document.createElement('header');
     bar.id = 'gnav';
     bar.innerHTML =
-      '<button class="gn-burger" type="button" aria-label="Menu">&#9776;</button>' +
-      '<a class="gn-brand" href="/">⚡ Algo Trader</a>' +
-      '<div class="gn-sp"></div>' +
-      '<nav class="gn-links">' + links + '</nav>';
+      '<span class="gn-dot"></span><h1>Algo Trader</h1><span class="gn-env" id="gn-env">—</span>' +
+      '<nav class="gn-tabs" id="gn-tabs">' + tabsHTML + '</nav>' +
+      '<div class="gn-right">' +
+        '<a class="gn-icon" href="/?tab=orders" title="Notifications (dashboard)">🔔</a>' +
+        '<div class="gn-clock"><span class="d" id="gn-date">—</span><span class="t" id="gn-time">—</span></div>' +
+        '<div class="gn-dd gn-avatar-wrap"><div class="gn-avatar" data-dd="av">A</div>' + menuHTML(AVATAR, 'gn-av', true) + '</div>' +
+        '<button class="gn-burger" type="button" aria-label="Menu">&#9776;</button>' +
+      '</div>';
     document.body.insertBefore(bar, document.body.firstChild);
 
-    var scrim = document.createElement('div'); scrim.id = 'gn-scrim';
-    var drawer = document.createElement('nav'); drawer.id = 'gn-drawer';
-    drawer.innerHTML =
-      '<div class="gn-dh">⚡ Algo Trader<button class="x" type="button" aria-label="Close">&times;</button></div>' +
-      links;
-    document.body.appendChild(scrim);
-    document.body.appendChild(drawer);
+    var scrim = document.createElement('div'); scrim.id = 'gn-scrim'; document.body.appendChild(scrim);
+    var tabs = document.getElementById('gn-tabs');
 
-    function close() { drawer.classList.remove('open'); scrim.classList.remove('open'); }
-    function open() { drawer.classList.add('open'); scrim.classList.add('open'); }
+    // env badge (same rule as env-badge.js: private/loopback host = LOCAL, else VPS)
+    (function () {
+      var h = location.hostname, local = /^(127\.|192\.168\.|10\.|localhost$)/.test(h);
+      var e = document.getElementById('gn-env');
+      e.textContent = local ? '💻 LOCAL' : '☁ VPS';
+      e.style.color = local ? '#d29922' : '#3fb950';
+      e.style.borderColor = local ? '#d29922' : '#238636';
+    })();
 
-    bar.querySelector('.gn-burger').addEventListener('click', open);
-    drawer.querySelector('.gn-dh .x').addEventListener('click', close);
+    // clock (IST)
+    function tick() {
+      var n = new Date();
+      var ist = new Date(n.getTime() + (330 + n.getTimezoneOffset()) * 60000);
+      var wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][ist.getDay()];
+      var mo = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][ist.getMonth()];
+      var hh = ist.getHours(), ap = hh >= 12 ? 'pm' : 'am', h12 = ((hh + 11) % 12) + 1;
+      function p(x) { return (x < 10 ? '0' : '') + x; }
+      var de = document.getElementById('gn-date'), te = document.getElementById('gn-time');
+      if (de) de.textContent = mo + ' ' + ist.getDate() + ', ' + wd;
+      if (te) te.textContent = p(h12) + ':' + p(ist.getMinutes()) + ':' + p(ist.getSeconds()) + ' ' + ap;
+    }
+    tick(); setInterval(tick, 1000);
+
+    // dropdowns (desktop click-toggle)
+    function closeMenus() { [].forEach.call(document.querySelectorAll('#gnav .gn-menu.show'), function (m) { m.classList.remove('show'); }); }
+    bar.addEventListener('click', function (e) {
+      var trg = e.target.closest('[data-dd]');
+      if (trg) {
+        var map = { rep: 'gn-rep', more: 'gn-more', av: 'gn-av' };
+        var m = document.getElementById(map[trg.getAttribute('data-dd')]);
+        var wasOpen = m.classList.contains('show');
+        closeMenus(); if (!wasOpen) m.classList.add('show');
+        e.stopPropagation();
+      }
+    });
+    document.addEventListener('click', closeMenus);
+
+    // mobile drawer (right side)
+    function close() { tabs.classList.remove('open'); scrim.classList.remove('open'); }
+    function open() { tabs.classList.add('open'); scrim.classList.add('open'); }
+    bar.querySelector('.gn-burger').addEventListener('click', function (e) { e.stopPropagation(); open(); });
     scrim.addEventListener('click', close);
-    // drawer links are real hrefs → let them navigate (also closes via unload)
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);

@@ -13,10 +13,10 @@
 
 @media (max-width: 760px) {
 
-  /* ── Header: reveal hamburger, tighten ── */
+  /* ── Header: reveal hamburger (right-thumb side), tighten ── */
   .mobile-burger {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px; flex: 0 0 auto; margin-right: 2px;
+    width: 34px; height: 34px; flex: 0 0 auto; margin-left: 4px;
     background: #21262d; border: 1px solid #30363d; border-radius: 8px;
     color: #e6edf3; font-size: 18px; line-height: 1; cursor: pointer;
   }
@@ -25,17 +25,17 @@
   .hdr { padding: 0 10px; gap: 8px; z-index: 10000 !important; }
   .hdr h1 { font-size: 15px; }
 
-  /* ── Main tab bar → slide-in left drawer ── */
+  /* ── Main tab bar → slide-in RIGHT drawer (button is on the right / thumb side) ── */
   .hdr .tabs {
-    position: fixed; top: 52px; left: 0; bottom: 0;
+    position: fixed; top: 52px; right: 0; left: auto; bottom: 0;
     width: 80%; max-width: 320px;
     flex-direction: column; align-items: stretch;
     justify-content: flex-start; gap: 0;      /* items pack tight from top, no spread-out gaps */
-    background: #161b22; border-right: 1px solid #30363d;
+    background: #161b22; border-left: 1px solid #30363d;
     overflow-y: auto; overflow-x: hidden;
     z-index: 9999; padding: 4px 0;
-    transform: translateX(-106%); transition: transform .22s ease;
-    box-shadow: 2px 0 18px #0007;
+    transform: translateX(106%); transition: transform .22s ease;
+    box-shadow: -2px 0 18px #0007;
   }
   .hdr .tabs.m-open { transform: translateX(0); }
   .hdr .tabs .tab,
