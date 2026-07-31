@@ -637,6 +637,23 @@ def run(paper_mode=True, strategy_id="rsi_v1"):
                 opt_type = "CE" if signal == "BUY" else "PE"
                 log.info(f"  ★ {signal} on {sym} → BUY {opt_type}")
 
+                # ── Per-symbol PE-ONLY / no-long rule (user discretionary) ──
+                # Some names (weak IT/AI-hit like TCS/INFY) should only be played on
+                # the DOWNSIDE — never CE-buy (bullish/long). config `pe_only_symbols`
+                # (list or comma-string) → the RSI-oversold→CE entry is skipped for
+                # those; the RSI-overbought→PE entry passes normally. Config-driven so
+                # the list grows without a code change. NOTE: discretionary overlay, NOT
+                # in the backtest (Rule 10) — it only REMOVES long entries on these
+                # names, so it's a side/universe restriction (more conservative).
+                _pe_only = tc.get("pe_only_symbols", [])
+                if isinstance(_pe_only, str):
+                    _pe_only = [s.strip().upper() for s in _pe_only.split(",") if s.strip()]
+                else:
+                    _pe_only = [str(s).strip().upper() for s in _pe_only]
+                if opt_type == "CE" and sym.upper() in _pe_only:
+                    log.info(f"  [SKIP] {sym} CE-buy blocked — PE-only rule (no long on this name)")
+                    continue
+
                 # Option contract: sec_id + trad_sym + lot_size from Dhan CSV.
                 # Physical-settlement guard: STOCK options (index nahi) ke liye,
                 # jab near-month expiry <= switch_days trading-din door ho, to
