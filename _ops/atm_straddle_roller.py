@@ -550,6 +550,24 @@ def _enter_hedged_straddle(symbol, spot, lots, gid, sid, mode, cfg, log, price_f
             return False, f"{ot} hedge wing resolve fail — no naked straddle", [], 0, 0
         hedges.append({"opt_type": ot, "sec": str(hsec), "tsym": htsym, "lot": int(hlot or lot_size)})
 
+    # ── pre-warm all 4 legs' LTP via the EXISTING poller (one batched call/cycle),
+    #    then a short bounded wait. Without this a cold/illiquid wing → smart_order
+    #    no_price → abort (seen live on a far BANKNIFTY PE wing). Warm prices also
+    #    make the basket-margin estimate below accurate. ──
+    try:
+        import ltp_poller
+        import shared_ltp_cache as _slc
+        import time as _t
+        watch = [(str(ce_sec), "NSE_FNO"), (str(pe_sec), "NSE_FNO")]
+        watch += [(h["sec"], "NSE_FNO") for h in hedges]
+        ltp_poller.request_watch(watch)
+        for _i in range(10):   # up to ~5s for the poller to warm every leg
+            if all(_slc.get(str(_s), max_age=30) for (_s, _sg) in watch):
+                break
+            _t.sleep(0.5)
+    except Exception:
+        pass
+
     # ── gate the WHOLE structure ONCE (RMS gating + basket-margin capital) ──
     try:
         blocked, why, _hard = rg.gating_status(sid, mode=mode)
