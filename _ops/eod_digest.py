@@ -166,7 +166,11 @@ def parse_log(sid, date, logs_dir):
         da = datetime.strptime(a, "%H:%M:%S")
         db = datetime.strptime(b, "%H:%M:%S")
         gap = (db - da).total_seconds() / 60
-        if a >= "15:14":        # 15:15 no-entry ke baad flat trader by-design chup
+        # Squareoff/no-entry ke baad (CAS 15:10 se) flat trader by-design chup rehta hai
+        # aur sirf ~15:25 pe "Market closed" likhta hai — ye EOD-quiet gap benign hai.
+        # a>=15:08 (last poll just before the 15:10 squareoff) YA b>=15:20 (market-close
+        # pe resume) dono isi quiet ko pakadte hain; asli mid-day freeze dono se pehle hota.
+        if a >= "15:08" or b >= "15:20":
             continue
         if _in_open(a, b):      # position-open window me heartbeat chup = OK
             continue
