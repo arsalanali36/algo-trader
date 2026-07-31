@@ -74,20 +74,32 @@ def _greeks_bs(S, K, T, sigma, opt):
 
 
 # ---------------------------------------------------------------- collector source
-def _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=None):
+def _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=None, exit_date=None):
     """Return per-leg entry/exit dicts from the live collector CSV, or None if that
     day/those strikes aren't in the collector lake. `expiry` picks a specific stored
-    expiry (real-like simulation); default = nearest weekly."""
-    _, rows = _oc._load_rows(u, date)
-    if not rows:
+    expiry (real-like simulation); default = nearest weekly. `exit_date` (default =
+    entry `date`) lets a positional hold exit on a LATER day — entry premium comes from
+    `date`, exit premium from `exit_date`, same held expiry+strike on both."""
+    exit_date = exit_date or date
+    _, e_rows = _oc._load_rows(u, date)
+    if not e_rows:
         return None
-    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if exit_date == date:
+        x_rows = e_rows
+    else:
+        _, x_rows = _oc._load_rows(u, exit_date)
+        if not x_rows:
+            return None
+    exps = sorted({r.get("expiry") for r in e_rows if r.get("expiry")})
     if not exps:
         return None
     expiry = expiry if (expiry and expiry in exps) else exps[0]   # chosen expiry, else nearest weekly
-    day = [r for r in rows if r.get("expiry") == expiry]
+    e_day = [r for r in e_rows if r.get("expiry") == expiry]
+    x_day = [r for r in x_rows if r.get("expiry") == expiry]
+    if not e_day or not x_day:
+        return None                        # held expiry missing on a side (e.g. exit after expiry)
 
-    def at(strike, ot, hm, last=False):
+    def at(day, strike, ot, hm, last=False):
         c = sorted((r for r in day if _f(r.get("strike")) == strike and r.get("opt_type") == ot),
                    key=lambda r: r.get("datetime") or "")
         if not c:
@@ -101,8 +113,8 @@ def _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=None):
 
     out = []
     for lg in legs:
-        e = at(lg["strike"], lg["type"], entry_hm)
-        x = at(lg["strike"], lg["type"], exit_hm, last=(exit_hm >= "15:25"))
+        e = at(e_day, lg["strike"], lg["type"], entry_hm)
+        x = at(x_day, lg["strike"], lg["type"], exit_hm, last=(exit_hm >= "15:25"))
         if not e or not x or _f(e.get("ltp")) is None or _f(x.get("ltp")) is None:
             return None                    # incomplete -> let caller try the lake
         out.append({
@@ -111,6 +123,7 @@ def _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=None):
             "e_iv": _f(e.get("iv")), "x_iv": _f(x.get("iv")),
             "delta": _f(e.get("delta")), "gamma": _f(e.get("gamma")), "vega": _f(e.get("vega")),
             "e_t": (e["datetime"])[11:16], "x_t": (x["datetime"])[11:16], "src": "collector",
+            "e_dt": (e["datetime"])[:10], "x_dt": (x["datetime"])[:10],
         })
     return {"expiry": expiry, "legs": out}
 
@@ -171,10 +184,10 @@ def _ofn(ot, off):
     return f"{ot}_ATM{'p' if off > 0 else 'm'}{abs(off)}.csv"
 
 
-def _lake_leg(root, u, date, strike, ot, entry_hm, exit_hm):
-    """Held-strike reconstruction — but only read the OFFSET files near the target
-    strike (from the day's spot range), not all 21. Keeps rows whose actual
-    `strike`==target on `date`; returns entry & exit (prem, spot, ts)."""
+def _lake_series(root, u, date, strike, ot):
+    """Held-strike reconstruction for ONE day — read only the OFFSET files near the
+    target strike (from the day's spot range), not all 21. Returns (series, hms) where
+    series[hm] = (prem, spot, ts), or None if that strike isn't present that day."""
     step = STEP.get(u, 50)
     start, end = _date_range(date)
     # 1) the day's spot range from the ATM file → which offset files to read
@@ -197,23 +210,25 @@ def _lake_leg(root, u, date, strike, ot, entry_hm, exit_hm):
                 series[_hm(ts)] = (float(close), float(sp) if sp == sp else None, int(ts))
     if not series:
         return None
-    hms = sorted(series)
-
-    def pick(hm, last):
-        if last:
-            return series[hms[-1]], hms[-1]
-        for h in hms:
-            if h >= hm:
-                return series[h], h
-        return series[hms[-1]], hms[-1]
-
-    (e_prem, e_spot, e_ts), e_t = pick(entry_hm, False)
-    (x_prem, x_spot, x_ts), x_t = pick(exit_hm, exit_hm >= "15:25")
-    return {"e_prem": e_prem, "x_prem": x_prem, "e_spot": e_spot, "x_spot": x_spot,
-            "e_ts": e_ts, "x_ts": x_ts, "e_t": e_t, "x_t": x_t}
+    return series, sorted(series)
 
 
-def _lake_legs(u, date, entry_hm, exit_hm, legs):
+def _lake_point(root, u, date, strike, ot, hm, last=False):
+    """One (prem, spot, ts) snapshot for a held strike at time `hm` on `date`."""
+    r = _lake_series(root, u, date, strike, ot)
+    if not r:
+        return None
+    series, hms = r
+    if last:
+        h = hms[-1]
+    else:
+        h = next((x for x in hms if x >= hm), hms[-1])
+    prem, spot, ts = series[h]
+    return {"prem": prem, "spot": spot, "ts": ts, "t": h}
+
+
+def _lake_legs(u, date, entry_hm, exit_hm, legs, exit_date=None):
+    exit_date = exit_date or date
     root = _lake_root(u)
     if not root:
         return None
@@ -221,27 +236,30 @@ def _lake_legs(u, date, entry_hm, exit_hm, legs):
     import pandas as pd
     out = []
     for lg in legs:
-        r = _lake_leg(root, u, date, float(lg["strike"]), lg["type"], entry_hm, exit_hm)
-        if not r or r["e_prem"] is None or r["x_prem"] is None:
+        K = float(lg["strike"])
+        e = _lake_point(root, u, date, K, lg["type"], entry_hm)
+        x = _lake_point(root, u, exit_date, K, lg["type"], exit_hm, last=(exit_hm >= "15:25"))
+        if not e or not x or e["prem"] is None or x["prem"] is None:
             return None
         # BS-derive IV + greeks (lake has no stored greeks)
         d = None; e_iv = None; x_iv = None
-        if m and r["e_spot"] and r["x_spot"]:
-            T_e = m.tte_years(pd.Timestamp(r["e_ts"], unit="s", tz="Asia/Kolkata"))
-            T_x = m.tte_years(pd.Timestamp(r["x_ts"], unit="s", tz="Asia/Kolkata"))
+        if m and e["spot"] and x["spot"]:
+            T_e = m.tte_years(pd.Timestamp(e["ts"], unit="s", tz="Asia/Kolkata"))
+            T_x = m.tte_years(pd.Timestamp(x["ts"], unit="s", tz="Asia/Kolkata"))
             try:
-                se = m.implied_vol(r["e_prem"], r["e_spot"], float(lg["strike"]), T_e, _R, lg["type"])
-                sx = m.implied_vol(r["x_prem"], r["x_spot"], float(lg["strike"]), T_x, _R, lg["type"])
+                se = m.implied_vol(e["prem"], e["spot"], K, T_e, _R, lg["type"])
+                sx = m.implied_vol(x["prem"], x["spot"], K, T_x, _R, lg["type"])
                 e_iv, x_iv = se * 100.0, sx * 100.0
-                d = _greeks_bs(r["e_spot"], float(lg["strike"]), T_e, se, lg["type"])
+                d = _greeks_bs(e["spot"], K, T_e, se, lg["type"])
             except Exception:
                 pass
         out.append({
-            "e_prem": r["e_prem"], "x_prem": r["x_prem"], "e_spot": r["e_spot"], "x_spot": r["x_spot"],
+            "e_prem": e["prem"], "x_prem": x["prem"], "e_spot": e["spot"], "x_spot": x["spot"],
             "e_iv": e_iv, "x_iv": x_iv,
             "delta": d["delta"] if d else None, "gamma": d["gamma"] if d else None,
             "vega": d["vega"] if d else None,
-            "e_t": r["e_t"], "x_t": r["x_t"], "src": "lake",
+            "e_t": e["t"], "x_t": x["t"], "src": "lake",
+            "e_dt": date, "x_dt": exit_date,
         })
     return {"expiry": None, "legs": out}
 
@@ -307,15 +325,31 @@ def leg_prices_at(u, date, hm, legs, expiry=None):
     return {"legs": out, "expiry": exp}
 
 
-def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None):
+def _days_between(d1, d2):
+    try:
+        a = _dt.datetime.strptime(d1, "%Y-%m-%d").date()
+        b = _dt.datetime.strptime(d2, "%Y-%m-%d").date()
+        return (b - a).days
+    except Exception:
+        return 0
+
+
+def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. `expiry` = a specific
-    stored expiry (default nearest weekly). Returns full result."""
+    stored expiry (default nearest weekly). `exit_date` (default = entry `date`) allows a
+    POSITIONAL hold — entry premium from `date`, exit premium from `exit_date` (same held
+    expiry+strike). Returns full result."""
     u = u.upper()
+    exit_date = exit_date or date
     lot = LOT.get(u, 1) * max(1, int(lots or 1))
-    data = _collector_legs(u, date, entry_hm, exit_hm, legs, expiry=expiry) or _lake_legs(u, date, entry_hm, exit_hm, legs)
+    data = (_collector_legs(u, date, entry_hm, exit_hm, legs, expiry=expiry, exit_date=exit_date)
+            or _lake_legs(u, date, entry_hm, exit_hm, legs, exit_date=exit_date))
     if not data:
-        return {"ok": False, "error": "is date/strike ka data nahi mila (collector ya lake me).",
-                "legs": [], "date": date, "underlying": u}
+        err = "is date/strike ka data nahi mila (collector ya lake me)."
+        if exit_date != date:
+            err += " Multi-day hold ke liye held expiry dono din (aur usually expiry ke andar) honi chahiye."
+        return {"ok": False, "error": err, "legs": [], "date": date,
+                "exit_date": exit_date, "underlying": u}
 
     src = data["legs"][0]["src"] if data["legs"] else "?"
     out_legs, tot = [], 0.0
@@ -344,8 +378,11 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None):
     # net credit collected at entry (SELL premium in, BUY premium out) × lot
     credit = sum(((d["e_prem"] if lg["side"].upper() == "SELL" else -d["e_prem"]))
                  for lg, d in zip(legs, data["legs"])) * lot
+    e_dt = data["legs"][0].get("e_dt") or date
+    x_dt = data["legs"][0].get("x_dt") or exit_date
     return {
         "ok": True, "underlying": u, "date": date, "lots": int(lots or 1),
+        "entry_date": e_dt, "exit_date": x_dt, "hold_days": _days_between(e_dt, x_dt),
         "entry_hm": data["legs"][0]["e_t"], "exit_hm": data["legs"][0]["x_t"],
         "expiry": data.get("expiry"), "source": src,
         "spot_e": round(e_spot, 2) if e_spot else None, "spot_x": round(x_spot, 2) if x_spot else None,

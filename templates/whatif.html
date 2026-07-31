@@ -88,18 +88,20 @@
   <div class="form">
     <div class="fg"><label>Instrument</label>
       <div class="seg" id="inst"><button class="on" data-i="NIFTY">NIFTY</button><button data-i="BANKNIFTY">BANKNIFTY</button></div></div>
-    <div class="fg"><label>Date</label><input type="date" id="date"></div>
+    <div class="row2">
+      <div class="fg"><label>Entry date</label><input type="date" id="date"></div>
+      <div class="fg"><label>Entry time</label><input type="time" id="et" value="09:20"></div></div>
+    <div class="row2">
+      <div class="fg"><label>Exit date</label><input type="date" id="xd"></div>
+      <div class="fg"><label>Exit time</label><input type="time" id="xt" value="15:30"></div></div>
     <div class="fg"><label>Expiry</label>
       <select id="exp" style="width:100%;padding:7px 8px;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;outline:none;cursor:pointer">
         <option value="">Nearest (weekly)</option></select></div>
-    <div class="row2">
-      <div class="fg"><label>Entry</label><input type="time" id="et" value="09:20"></div>
-      <div class="fg"><label>Exit</label><input type="time" id="xt" value="15:30"></div></div>
     <div class="fg"><label>Lots</label><input type="number" id="lots" value="1" min="1"></div>
     <div class="fg"><label>Legs</label><div class="legs" id="legs"></div>
       <button class="addleg" id="addleg">＋ Add leg</button></div>
     <button class="run" id="run">▶ Run backtest</button>
-    <div class="hint">Recent din = live collector (real Dhan greeks, instant). Purane din = OptChainLake (~2021→, 1-min, real premium; greeks BS-derived, IV lake me nahi hai). Purane din ka pehla run ~15 sec (reconstruct), phir same date instant.</div>
+    <div class="hint"><b>Positional hold:</b> Exit date entry se aage rakho → position ki entry us din, exit baad wale din (aaj tak) — "agar exit na kiya hota to ab kitna" ka real-premium jawaab. Held expiry dono din honi chahiye (usually expiry ke andar).<br><br>Recent din = live collector (real Dhan greeks, instant). Purane din = OptChainLake (~2021→, 1-min, real premium; greeks BS-derived, IV lake me nahi hai). Purane din ka pehla run ~15 sec (reconstruct), phir same date instant.</div>
   </div>
 
   <div class="res">
@@ -179,9 +181,15 @@ $('date').addEventListener('change', scheduleLegLtp);
 function collectLegs(){return [...$('legs').children].map(r=>({side:r.querySelector('.s').value,strike:+r.querySelector('.k').value,type:r.querySelector('.t').value}));}
 function fmt(v){return (v>=0?'+':'−')+'₹'+Math.abs(v).toLocaleString('en-IN');}
 
+// exit date defaults to entry date; keep it ≥ entry date
+function syncExitDate(force){ const ed=$('date').value, xd=$('xd'); if(!xd)return; if(force||!xd.value||xd.value<ed) xd.value=ed; }
+$('date').addEventListener('change',()=>{ syncExitDate(false); });
+
 $('run').addEventListener('click',async ()=>{
-  const body={underlying:INST,date:$('date').value,entry:$('et').value,exit:$('xt').value,lots:+$('lots').value,legs:collectLegs(),expiry:$('exp').value||''};
-  if(!body.date){alert('Date chuno');return;}
+  const xdt=$('xd').value||$('date').value;
+  const body={underlying:INST,date:$('date').value,exit_date:xdt,entry:$('et').value,exit:$('xt').value,lots:+$('lots').value,legs:collectLegs(),expiry:$('exp').value||''};
+  if(!body.date){alert('Entry date chuno');return;}
+  if(xdt<body.date){alert('Exit date entry date se pehle nahi ho sakti');return;}
   $('empty').style.display='none'; $('out').style.display='none'; $('spin').classList.add('on'); $('run').disabled=true;
   let r; try{ r=await (await fetch('/api/whatif',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json(); }catch(e){ r={ok:false,error:'network'}; }
   $('spin').classList.remove('on'); $('run').disabled=false;
@@ -192,7 +200,11 @@ $('run').addEventListener('click',async ()=>{
 function render(r){
   $('out').style.display='block';
   const cr = r.credit||0;
-  $('rhd').innerHTML=`<b>${r.underlying}</b> · ${r.date} · entry <b>${r.entry_hm}</b> → exit <b>${r.exit_hm}</b> · <b>${r.lots} lot</b>${r.expiry?' · exp '+r.expiry:''} · entry <b style="color:${cr>=0?'var(--green)':'var(--amber)'}">${cr>=0?'credit':'debit'} ₹${Math.abs(cr).toLocaleString('en-IN')}</b>`;
+  const ed=r.entry_date||r.date, xd=r.exit_date||r.date;
+  const span = (ed===xd) ? ed
+    : `${ed} <b>${r.entry_hm}</b> → ${xd} <b>${r.exit_hm}</b> <b style="color:var(--purple)">(${r.hold_days}d hold)</b>`;
+  const times = (ed===xd) ? `entry <b>${r.entry_hm}</b> → exit <b>${r.exit_hm}</b> · ` : '';
+  $('rhd').innerHTML=`<b>${r.underlying}</b> · ${span} · ${times}<b>${r.lots} lot</b>${r.expiry?' · exp '+r.expiry:''} · entry <b style="color:${cr>=0?'var(--green)':'var(--amber)'}">${cr>=0?'credit':'debit'} ₹${Math.abs(cr).toLocaleString('en-IN')}</b>`;
   $('marginCard').innerHTML='';   // reset margin card on each new run
   const tv=$('totv'); tv.textContent=fmt(r.total); tv.style.color=r.total>=0?'var(--green)':'var(--red)';
   $('totbox').className='tot'+(r.total<0?' neg':'');
@@ -222,12 +234,13 @@ function renderJournal(){
   const tot=a.reduce((s,x)=>s+x.total,0);
   $('jcount').textContent=a.length+' run'+(a.length>1?'s':'');
   const gt=$('gtot'); gt.textContent=fmt(tot); gt.style.color=tot>=0?'var(--green)':'var(--red)';
-  $('jlist').innerHTML=a.map((x,i)=>`<div class="jrow"><div><div>${x.underlying} · ${x.date}</div><div class="m">${x.summary} · ${x.entry_hm}→${x.exit_hm} · ${x.lots}L</div></div>`
-    +`<div class="p" style="color:${x.total>=0?'var(--green)':'var(--red)'}">${fmt(x.total)}</div><button class="del" data-i="${i}">✕</button></div>`).join('');
+  $('jlist').innerHTML=a.map((x,i)=>{const dspan=(x.exit_date&&x.exit_date!==x.date)?`${x.date} → ${x.exit_date}`:x.date;
+    return `<div class="jrow"><div><div>${x.underlying} · ${dspan}</div><div class="m">${x.summary} · ${x.entry_hm}→${x.exit_hm} · ${x.lots}L</div></div>`
+    +`<div class="p" style="color:${x.total>=0?'var(--green)':'var(--red)'}">${fmt(x.total)}</div><button class="del" data-i="${i}">✕</button></div>`;}).join('');
 }
 $('save').addEventListener('click',()=>{
   if(!last)return; const a=jload();
-  a.push({underlying:last.underlying,date:last.date,entry_hm:last.entry_hm,exit_hm:last.exit_hm,lots:last.lots,total:last.total,
+  a.push({underlying:last.underlying,date:last.entry_date||last.date,exit_date:last.exit_date,entry_hm:last.entry_hm,exit_hm:last.exit_hm,lots:last.lots,total:last.total,
     summary:last.legs.map(l=>l.label).join(' + ')});
   jsave(a); renderJournal();
 });
@@ -265,6 +278,7 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
 // init
 const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
 $('date').value=now.toISOString().slice(0,10);
+syncExitDate(true);
 seedLegs(); renderJournal(); loadExpiries(); fetchLegLtp();
 </script>
 </body></html>

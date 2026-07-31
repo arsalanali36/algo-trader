@@ -593,7 +593,8 @@ def api_whatif():
     try:
         return jsonify(w.run(d.get('underlying', 'NIFTY'), d.get('date'),
                              d.get('entry', '09:20'), d.get('exit', '15:30'),
-                             d.get('lots', 1), d.get('legs', []), expiry=d.get('expiry') or None))
+                             d.get('lots', 1), d.get('legs', []), expiry=d.get('expiry') or None,
+                             exit_date=d.get('exit_date') or None))
     except Exception as e:
         print("[whatif] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "legs": []})
