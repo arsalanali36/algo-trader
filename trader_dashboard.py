@@ -2961,6 +2961,26 @@ def api_strategy_study_trades():
                     "from": frm, "to": to, "trades": out, "agg": agg})
 
 
+@app.route('/api/reconcile-csv', methods=['POST'])
+def api_reconcile_csv():
+    """Upload a Zerodha tradebook CSV → reconcile the app's LIVE ledger to it. Default is a
+    read-only PREVIEW (per-contract broker-net vs app-net); `?apply=1` writes the missing
+    deltas (idempotent). LIVE only. Login-gated (before_request)."""
+    try:
+        from _ops import reconcile_csv as _rc
+        f = request.files.get('file')
+        text = f.read().decode('utf-8', 'replace') if f else request.get_data(as_text=True)
+        if not (text or '').strip():
+            return jsonify({"ok": False, "msg": "empty file — Zerodha tradebook CSV upload karo"})
+        if request.args.get('apply') == '1':
+            return jsonify(_rc.apply(text, dry_run=False))
+        p = _rc.plan(text)
+        p.pop('_csv_px', None)          # internal price map — UI doesn't need it
+        return jsonify(p)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/trade-chart-data')
 def api_trade_chart_data():
     """Option premium 1-min candles for one completed trade + entry/exit marker times.

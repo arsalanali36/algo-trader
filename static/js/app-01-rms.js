@@ -230,6 +230,40 @@
       }
     }
 
+    async function reconcileFromCsv(input) {
+      const file = input.files && input.files[0];
+      input.value = '';                       // reset so the same file can be re-picked
+      const result = document.getElementById('reconcile-csv-result');
+      if (!file) return;
+      result.style.color = '#8b949e';
+      result.textContent = '⏳ ' + file.name + ' — checking…';
+      try {
+        const fd = new FormData(); fd.append('file', file);
+        const d = await (await fetch('/api/reconcile-csv', { method: 'POST', body: fd })).json();
+        if (!d.ok) { result.style.color = '#f85149'; result.textContent = 'Failed: ' + (d.msg || 'error'); return; }
+        const mis = (d.rows || []).filter(x => !x.match);
+        const skip = (d.unresolved && d.unresolved.length) ? ('  ·  skipped: ' + d.unresolved.join(', ')) : '';
+        if (!mis.length) {
+          result.style.color = '#3fb950';
+          result.textContent = `✅ Sab match — ${d.fills} fills (${d.date}), reconcile karne ko kuch nahi${skip}`;
+          return;
+        }
+        const lines = mis.map(x => `• ${x.trad_sym}:  broker ${x.broker_net}  vs app ${x.app_net}   (delta ${x.delta > 0 ? '+' : ''}${x.delta})`).join('\n');
+        if (!confirm(`${d.date} — ${mis.length} contract broker (CSV) se match nahi karte:\n\n${lines}\n\nApp ko broker se match kar dun? (missing legs record honge)`)) {
+          result.textContent = 'cancelled';
+          return;
+        }
+        result.textContent = '⏳ applying…';
+        const fd2 = new FormData(); fd2.append('file', file);
+        const d2 = await (await fetch('/api/reconcile-csv?apply=1', { method: 'POST', body: fd2 })).json();
+        if (!d2.ok) { result.style.color = '#f85149'; result.textContent = 'Apply failed: ' + (d2.msg || 'error'); return; }
+        result.style.color = d2.recorded > 0 ? '#d29922' : '#3fb950';
+        result.textContent = `✅ ${d2.recorded} recorded · residual mismatch: ${d2.residual_mismatch}`;
+        if (typeof loadPnl === 'function') loadPnl();
+        else if (typeof ordersRender === 'function') ordersRender();
+      } catch (e) { result.style.color = '#f85149'; result.textContent = 'error: ' + e; }
+    }
+
     async function runReconcile() {
       const el = document.getElementById('rms-reconcile-result');
       el.textContent = 'Checking…';

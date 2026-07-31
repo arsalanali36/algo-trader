@@ -1927,6 +1927,13 @@
             title="Zerodha se aaj ke SAARE fills check karo — jo trade is app ne nahi kiya (manual) use yahan tag ke saath add kar do, taaki TOTAL Zerodha se match ho">🧾
             Reconcile vs Broker</button>
           <span id="reconcile-manual-result" style="font-size:11px;color:#8b949e"></span>
+          <button id="reconcile-csv-btn" class="btn btn-gray" style="padding:2px 8px;font-size:11px"
+            onclick="document.getElementById('reconcile-csv-file').click()"
+            title="Zerodha ka tradebook CSV (trades export) upload karo — app turant broker se reconcile ho jayegi (preview → apply). Jab live-API reconcile na ho to yahan se.">📤
+            CSV Reconcile</button>
+          <input type="file" id="reconcile-csv-file" accept=".csv" style="display:none"
+            onchange="reconcileFromCsv(this)">
+          <span id="reconcile-csv-result" style="font-size:11px;color:#8b949e"></span>
           <label
             style="display:inline-flex; align-items:center; gap:5px; cursor:pointer; font-size:11px; color:#8b949e; user-select:none; margin-left:4px">
             <input id="global-notes-toggle-2" type="checkbox" onchange="toggleAllNotes(this.checked)"
