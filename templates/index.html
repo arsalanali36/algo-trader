@@ -2006,11 +2006,11 @@
       <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
       <span id="cal-mode" class="cal-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
-        <span data-v="" class="on" onclick="calSeg('cal-mode',this)" style="padding:4px 10px;cursor:pointer">All</span>
+        <span data-v="" onclick="calSeg('cal-mode',this)" style="padding:4px 10px;cursor:pointer;color:#8b949e">All</span>
         <span data-v="paper" onclick="calSeg('cal-mode',this)"
           style="padding:4px 10px;cursor:pointer;color:#8b949e">Paper</span>
-        <span data-v="live" onclick="calSeg('cal-mode',this)"
-          style="padding:4px 10px;cursor:pointer;color:#8b949e">Live</span>
+        <span data-v="live" class="on" onclick="calSeg('cal-mode',this)"
+          style="padding:4px 10px;cursor:pointer">Live</span>
       </span>
       </span><!-- /cal-live-only -->
       <select id="cal-strat" onchange="calStratChanged(this)"

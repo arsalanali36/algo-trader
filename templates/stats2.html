@@ -56,7 +56,7 @@
     <!-- Multi-select: Paper + Live (dono trade-modes) chunn sakte ho; Backtest alag data-source (solo). -->
     <span id="s2-switch" class="cal-seg" title="Paper aur Live multi-select (dono = All). Backtest alag data-source hai."
       style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">
-      <span data-m="paper" class="on" onclick="s2Mode('paper',this)" style="padding:4px 11px;cursor:pointer;background:#1f6feb;color:#fff">📝 Paper</span>
+      <span data-m="paper" onclick="s2Mode('paper',this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">📝 Paper</span>
       <span data-m="live" class="on" onclick="s2Mode('live',this)" style="padding:4px 11px;cursor:pointer;background:#1f6feb;color:#fff">🔴 Live</span>
       <span data-m="bt" onclick="s2Mode('bt',this)" style="padding:4px 11px;cursor:pointer;color:#8b949e">🧪 Backtest</span>
     </span>
@@ -78,9 +78,9 @@
           <span data-v="hedge" onclick="calSeg('cal-src',this)">Hedge</span>
         </span>
         <span id="cal-mode" class="cal-seg">
-          <span data-v="" class="on" onclick="calSeg('cal-mode',this)">All</span>
+          <span data-v="" onclick="calSeg('cal-mode',this)">All</span>
           <span data-v="paper" onclick="calSeg('cal-mode',this)">Paper</span>
-          <span data-v="live" onclick="calSeg('cal-mode',this)">Live</span>
+          <span data-v="live" class="on" onclick="calSeg('cal-mode',this)">Live</span>
         </span>
       </span>
     </span>

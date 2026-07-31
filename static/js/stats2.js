@@ -58,7 +58,7 @@
   };
 
   // Multi-select mode: Paper + Live (trade-modes, combine → All) · Backtest (separate data-source, solo).
-  window._s2sel = window._s2sel || new Set(['paper', 'live']);
+  window._s2sel = window._s2sel || new Set(['live']);   // default: LIVE only (paper/backtest chunn sakte ho)
   window.s2Mode = function (m, el) {
     var sel = window._s2sel;
     if (m === 'bt') {
