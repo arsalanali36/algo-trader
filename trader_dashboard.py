@@ -3359,7 +3359,82 @@ def _payoff_spot(legs):
 
 
 _payoff_cache = {}      # qs -> (res, ts) — LTP-attach + analyse is a few-second op;
-_PAYOFF_TTL = 30        # rapid group-switching would re-run it each time.
+_PAYOFF_TTL = 60        # rapid group-switching re-hits instantly. The warm loop below
+                        # refreshes open groups every ~20s so the FIRST open is a cache
+                        # hit too (user: panel loading slow / "mood kharab").
+
+
+def _payoff_compute(args):
+    """Payoff/zone analytics for a group — shared by the route AND the background warm
+    loop (Rule 6B), so a warmed cache entry is byte-identical to a live request. args =
+    anything with .get('ids'|'group_id'|'target_days')."""
+    import payoff
+    rows, closed = _payoff_resolve(args)
+    if not rows:
+        return {"ok": False, "msg": "no legs for this group (open or recently-closed)"}
+    if not closed:
+        rows = _payoff_attach_ltp(rows)          # live IV/today-curve only for still-open legs
+    spot = _payoff_spot(payoff.build_legs(rows))
+    try:
+        td = float(args.get('target_days')) if args.get('target_days') else None
+    except Exception:
+        td = None
+    res = payoff.analyse(rows, spot, target_days=td)
+    if isinstance(res, dict):
+        res['closed'] = bool(closed)
+    return res
+
+
+_payoff_warm_started = False
+_PAYOFF_WARM_INTERVAL = 20     # market-hours cadence; keeps every open group inside _PAYOFF_TTL
+
+
+def _payoff_warm_loop():
+    """Pre-compute payoff/zone for every OPEN position group + single leg into
+    _payoff_cache, so opening the panel is an instant cache hit instead of a cold
+    LTP-attach + Black-Scholes analyse (the slow first-open). LTP comes from the
+    poller-warmed shared cache (no extra Dhan calls in the common case); analyse is
+    CPU-only. Display-only — touches nothing but the cache."""
+    import order_store, time as _t
+    while True:
+        slept = _PAYOFF_WARM_INTERVAL
+        try:
+            mkt = True
+            try:
+                from _core import market_calendar as _mc
+                mkt = _mc.is_market_open()
+            except Exception:
+                mkt = True
+            data = order_store.trades_for(order_store.ist_now_str()[:10])
+            keys = set()
+            for o in (data.get('open') or []):
+                if 'CAPITAL_BLOCKED' in (o.get('tags') or []):
+                    continue
+                gid = o.get('group_id')
+                if gid:
+                    keys.add('group_id=' + str(gid))
+                if o.get('id') is not None:
+                    keys.add('ids=' + str(o.get('id')))
+            for k in keys:
+                try:
+                    kv = dict(p.split('=', 1) for p in k.split('&') if '=' in p)
+                    _payoff_cache[k] = (_payoff_compute(kv), _t.time())
+                except Exception:
+                    pass
+                _t.sleep(0.4)               # gentle spread across the rate-limiter
+            if not mkt:
+                slept = 90                  # off-market: positions static, warm rarely
+        except Exception:
+            pass
+        _t.sleep(slept)
+
+
+def _payoff_warm_start():
+    global _payoff_warm_started
+    if not _payoff_warm_started:
+        _payoff_warm_started = True
+        _threading.Thread(target=_payoff_warm_loop, daemon=True).start()
+
 
 @app.route('/api/position-payoff')
 def api_position_payoff():
@@ -3375,19 +3450,7 @@ def api_position_payoff():
         _hit = _payoff_cache.get(_ck)
         if _hit and (_tm.time() - _hit[1]) < _PAYOFF_TTL:
             return jsonify(_hit[0])
-        rows, closed = _payoff_resolve(request.args)
-        if not rows:
-            return jsonify({"ok": False, "msg": "no legs for this group (open or recently-closed)"})
-        if not closed:
-            rows = _payoff_attach_ltp(rows)      # live IV/today-curve only for still-open legs
-        spot = _payoff_spot(payoff.build_legs(rows))
-        try:
-            td = float(request.args.get('target_days')) if request.args.get('target_days') else None
-        except Exception:
-            td = None
-        res = payoff.analyse(rows, spot, target_days=td)
-        if isinstance(res, dict):
-            res['closed'] = bool(closed)         # #01 → panel shows "reconstructed from entry"
+        res = _payoff_compute(request.args)
         _payoff_cache[_ck] = (res, _tm.time())
         return jsonify(res)
     except Exception as e:
@@ -10441,4 +10504,6 @@ if __name__ == '__main__':
     # Har error 🔔 tak — strategy logs + mari hui strategies + gire services.
     _threading.Thread(target=_error_watch_loop, daemon=True).start()
     print("   🔔 error-watch chalu — logs/processes/services ke errors bell me aayenge\n")
+    _payoff_warm_start()   # open groups ka payoff/zone pehle se cache — panel instant khule
+    print("   📊 payoff warm-loop chalu — open positions ka payoff pre-computed\n")
     app.run(host='0.0.0.0', port=5099, debug=False)
