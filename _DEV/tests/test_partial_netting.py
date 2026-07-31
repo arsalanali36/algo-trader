@@ -75,6 +75,22 @@ rec("SELL", 75, 40.0, "backspread_v1", "T4-Aug2026-24300-CE", "9004")
 o4 = opens_for("T4-Aug2026-24300-CE")
 check(len(o4) == 2, "no-cross-net: both legs remain open (not phantom-closed)  [got %d]" % len(o4))
 
+# ── 5. externally_closed ENTRY + real exit leg → completed, NOT phantom open (TRAP #167b) ──
+print("5. externally_closed BUY + reconcile SELL (same strat) → 1 completed, 0 open")
+rec("BUY", 4500, 7.10, "rsi_v1_PAPER", "T5-Aug2026-24000-CE", "9005", status="externally_closed")
+rec("SELL", 4500, 8.15, "rsi_v1_PAPER", "T5-Aug2026-24000-CE", "9005", source="broker_reconcile")
+d5, o5 = details_for("T5-Aug2026-24000-CE"), opens_for("T5-Aug2026-24000-CE")
+check(len(o5) == 0, "extcl-pair: NO phantom open (was showing open SELL)  [got %s]" % ([o['entry']+str(o['qty']) for o in o5]))
+check(len(d5) == 1 and d5[0]["qty"] == 4500, "extcl-pair: 1 completed, qty 4500")
+check(d5 and abs(d5[0]["pnl"] - round((8.15-7.10)*4500, 2)) < 1, "extcl-pair: pnl = +₹%.0f" % ((8.15-7.10)*4500))
+
+# ── 6. externally_closed ENTRY with NO exit = genuine ghost → hidden (0 open, 0 completed) ──
+print("6. externally_closed BUY, no exit → hidden (not open, not completed)")
+rec("BUY", 100, 55.0, "orb_v1", "T6-Aug2026-24000-CE", "9006", status="externally_closed")
+d6, o6 = details_for("T6-Aug2026-24000-CE"), opens_for("T6-Aug2026-24000-CE")
+check(len(o6) == 0, "ghost: not shown as open")
+check(len(d6) == 0, "ghost: not shown as completed")
+
 print()
 if _fails:
     print("RESULT: %d FAIL" % len(_fails)); sys.exit(1)

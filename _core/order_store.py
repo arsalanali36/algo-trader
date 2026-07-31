@@ -340,9 +340,14 @@ def mark_externally_closed(row_id):
 
 
 def _dead_filtered(rows):
-    # Rejected/cancelled/failed/externally_closed orders = no real open position.
-    # Inhe netting se bahar rakho (warna phantom open positions dikhte hain).
-    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired", "externally_closed"}
+    # Truly-dead orders (never a real fill) = drop before netting.
+    # NOTE: `externally_closed` is deliberately NOT here (TRAP #167b). It marks an ENTRY
+    # whose broker position went flat — but a separate real exit leg often EXISTS (a
+    # reconcile SELL). Dropping the entry orphaned that exit → it showed as a PHANTOM OPEN
+    # (e.g. RSI, a BUY-only strategy, displaying an "open SELL"). So externally_closed rows
+    # now flow INTO _net_rows: they pair with their real exit into a completed round-trip;
+    # if genuinely unpaired (no exit found) _net_rows hides them from the open list instead.
+    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired"}
     return [r for r in rows if str(r.get("status") or "").lower() not in _DEAD]
 
 
@@ -495,6 +500,12 @@ def _net_rows(rows):
             st.append([r, rem])
     for st in stacks.values():
         for r, rem in st:
+            # An externally_closed entry that DIDN'T pair with a real exit = a genuine
+            # ghost (broker went flat, no exit recorded) → hide it, never show as open
+            # (that's what externally_closed means). One that DID pair already became a
+            # completed trade above. TRAP #167b.
+            if str(r.get("status") or "").lower() == "externally_closed":
+                continue
             opens.append(_as_open(r, qty=rem))
 
     # ── Blocked (CAPITAL_BLOCKED) rows → surface directly, never netted ──
