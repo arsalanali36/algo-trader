@@ -20,9 +20,11 @@
     background: #21262d; border: 1px solid #30363d; border-radius: 8px;
     color: #e6edf3; font-size: 18px; line-height: 1; cursor: pointer;
   }
-  /* z-index !important: index.html's inline <style> .hdr{z-index:9998} loads
-     AFTER mobile.css, so a plain rule would lose the tie — must force it above scrim */
-  .hdr { padding: 0 10px; gap: 8px; z-index: 10000 !important; }
+  /* z-index tiers — the nav drawer MUST beat the floating Quick Order panel (z 9999)
+     and its FAB, else they bleed through the open drawer (they tie at 9999 and the
+     later-appended panel wins by DOM order). header 10003 > drawer 10002 > scrim 10001
+     > everything else. !important: index.html's inline .hdr{z-index:9998} loads after. */
+  .hdr { padding: 0 10px; gap: 8px; z-index: 10003 !important; }
   .hdr h1 { font-size: 15px; }
 
   /* ── Main tab bar → slide-in RIGHT drawer (button is on the right / thumb side) ── */
@@ -33,7 +35,7 @@
     justify-content: flex-start; gap: 0;      /* items pack tight from top, no spread-out gaps */
     background: #161b22; border-left: 1px solid #30363d;
     overflow-y: auto; overflow-x: hidden;
-    z-index: 9999; padding: 4px 0;
+    z-index: 10002; padding: 4px 0;
     transform: translateX(106%); transition: transform .22s ease;
     box-shadow: -2px 0 18px #0007;
   }
@@ -60,7 +62,7 @@
   /* scrim behind the drawer — z 9998 dims the app's sticky bars (z 9997);
      header (10000) + drawer (9999) sit above it */
   #mobile-scrim {
-    position: fixed; inset: 0; background: #000a; z-index: 9998;
+    position: fixed; inset: 0; background: #000a; z-index: 10001;
     opacity: 0; pointer-events: none; transition: opacity .22s;
   }
   #mobile-scrim.m-open { opacity: 1; pointer-events: auto; }
@@ -83,12 +85,25 @@
   .mini-table { max-width: 100%; }
   img, canvas, svg, video { max-width: 100%; }
 
-  /* ── Frozen first column TRAP fix: on a narrow screen a sticky first column
-     eats the whole viewport, so horizontal-scroll never reveals the rest. Unfreeze
-     it on mobile and let the whole table scroll sideways as one unit. ── */
+  /* ── Frozen column TRAP fix: on a narrow screen a sticky column eats the whole
+     viewport, so horizontal-scroll never reveals the rest. Unfreeze ALL frozen
+     columns on mobile and let the table scroll sideways as one unit. ── */
   #risk-strategy-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   #risk-strategy-table .cfg-table th:first-child,
-  #risk-strategy-table .cfg-table td:first-child {
-    position: static; box-shadow: none;
+  #risk-strategy-table .cfg-table td:first-child { position: static; box-shadow: none; }
+
+  /* ── Quick Order floating panel → full-width sheet BELOW the header, with a
+     reachable sticky close. Was 470px (off-screen overflow) with the ✕ unreachable. ── */
+  #qo-panel {
+    top: 56px !important; left: 8px !important; right: 8px !important;
+    width: auto !important; max-width: none !important;
+    max-height: calc(100vh - 64px) !important;
   }
+  #qo-header {
+    position: sticky; top: 0; z-index: 3;
+    background: #161b22; padding-bottom: 8px; margin: -2px 0 4px;
+  }
+  #qo-close { font-size: 22px !important; padding: 2px 6px; }
+  /* watch panel + any other .qo-style floaters: keep on-screen too */
+  #qo-watch-panel { left: 8px !important; right: 8px !important; width: auto !important; max-width: none !important; }
 }

@@ -40,6 +40,12 @@
     #tbl-ppt table th:nth-child(2),#tbl-ppt table td:nth-child(2){position:sticky;left:118px}
     #tbl-ppt table td:nth-child(1),#tbl-ppt table td:nth-child(2){background:#0d1117;z-index:2}
     #tbl-ppt table th:nth-child(1),#tbl-ppt table th:nth-child(2){background:#161b22;z-index:11}
+    /* 9:16 / narrow: unfreeze the 2 pinned columns — on a phone they fill the screen
+       so horizontal-scroll never reveals the data columns; let the table scroll as one. */
+    @media(max-width:760px){
+      #tbl-ppt table th:nth-child(1),#tbl-ppt table td:nth-child(1),
+      #tbl-ppt table th:nth-child(2),#tbl-ppt table td:nth-child(2){position:static;left:auto;max-width:none}
+    }
     @keyframes s2spin{to{transform:rotate(360deg)}}
     /* fullscreen overlay */
     #s2fsov{position:fixed;inset:0;background:#000d;display:none;align-items:center;justify-content:center;z-index:500;padding:28px}

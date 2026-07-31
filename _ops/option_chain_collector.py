@@ -91,8 +91,11 @@ except Exception:
 #   55100 / 59200 with spot ~56900 = ±23 strikes). Dhan /v2/optionchain returns the FULL
 #   chain in ONE call, so a wider window costs ZERO extra Dhan calls — only more rows/snap.
 UNDERLYINGS = [
-    {"name": "NIFTY",     "scrip": 13,   "seg": "IDX_I",  "step": 50,  "strikes": 25},
-    {"name": "BANKNIFTY", "scrip": 25,   "seg": "IDX_I",  "step": 100, "strikes": 35},
+    # ATM±N is FREE to widen — Dhan /v2/optionchain returns the FULL chain in one call;
+    # we just keep more rows (no extra API cost, only CSV size). Wide enough for ±2σ moves
+    # so far-strike requests (e.g. 60000 when BNF spot ~56000) are never "missing".
+    {"name": "NIFTY",     "scrip": 13,   "seg": "IDX_I",  "step": 50,  "strikes": 50},
+    {"name": "BANKNIFTY", "scrip": 25,   "seg": "IDX_I",  "step": 100, "strikes": 60},
     {"name": "RELIANCE",  "scrip": 2885, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
     {"name": "HDFCBANK",  "scrip": 1333, "seg": "NSE_EQ", "step": 5,   "expiries": 1},
     {"name": "ICICIBANK", "scrip": 4963, "seg": "NSE_EQ", "step": 10,  "expiries": 1},
