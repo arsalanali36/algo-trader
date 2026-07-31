@@ -411,6 +411,32 @@ document.addEventListener('DOMContentLoaded', () => {
         let _sy=false;
         const link=(a,b)=>a.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(_sy||!r) return; _sy=true; try{ b.timeScale().setVisibleLogicalRange(r); }catch(e){} _sy=false; });
         link(chart, rsiChart); link(rsiChart, chart);
+        // Shared CROSSHAIR across both panes (user: "dono pe crosshair chale"). LWC v4
+        // has no native panes, so mirror the crosshair between the two chart instances:
+        // hover either pane → the other shows the crosshair at the SAME time. Each pane
+        // keeps its own price axis (candles 2300s vs RSI 0-100), so RSI stays readable
+        // instead of being crushed onto the price scale. _xh guard breaks the feedback loop.
+        const _rsiByTime = new Map((d.rsi.series || []).map(p => [p.time, p.value]));
+        const _closeByTime = new Map((d.candles || []).map(c => [c.time, c.close]));
+        let _xh = false;
+        chart.subscribeCrosshairMove(param => {
+          if (_xh) return; _xh = true;
+          try {
+            const v = param.time != null ? _rsiByTime.get(param.time) : null;
+            if (v != null) rsiChart.setCrosshairPosition(v, param.time, rsiS);
+            else rsiChart.clearCrosshairPosition();
+          } catch (e) {}
+          _xh = false;
+        });
+        rsiChart.subscribeCrosshairMove(param => {
+          if (_xh) return; _xh = true;
+          try {
+            const c = param.time != null ? _closeByTime.get(param.time) : null;
+            if (c != null) chart.setCrosshairPosition(c, param.time, s);
+            else chart.clearCrosshairPosition();
+          } catch (e) {}
+          _xh = false;
+        });
         window._leftRsiChart = rsiChart;
       } else { window._leftRsiChart = null; }
       if (d.entry_mk) s.setMarkers([{time:d.entry_mk,
