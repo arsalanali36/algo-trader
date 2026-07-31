@@ -15,7 +15,9 @@
     background: #21262d; border: 1px solid #30363d; border-radius: 8px;
     color: #e6edf3; font-size: 18px; line-height: 1; cursor: pointer;
   }
-  .hdr { padding: 0 10px; gap: 8px; }
+  /* z-index !important: index.html's inline <style> .hdr{z-index:9998} loads
+     AFTER mobile.css, so a plain rule would lose the tie — must force it above scrim */
+  .hdr { padding: 0 10px; gap: 8px; z-index: 10000 !important; }
   .hdr h1 { font-size: 15px; }
 
   /* ── Main tab bar → slide-in left drawer ── */
@@ -39,18 +41,20 @@
   .hdr .tabs .tab-dropdown-container {
     flex-direction: column; align-items: stretch; width: 100%;
   }
-  /* dropdown submenus (Reports / More) expand inline inside the drawer */
+  /* dropdown submenus (Reports / More): collapsed by default, expand INLINE in
+     the drawer when the toggle is tapped (toggleReportsDropdown sets display) */
   .hdr .tabs .dropdown-menu {
-    position: static !important; display: block !important;
+    position: static !important;
     box-shadow: none !important; border: none !important;
     background: #0d1117 !important; min-width: 0 !important;
-    margin: 0 !important; padding: 0 !important;
+    width: 100%; margin: 0 !important; padding: 0 !important;
   }
   .hdr .tabs .dropdown-item { padding-left: 34px !important; }
 
-  /* scrim behind the drawer (below header so hamburger stays tappable) */
+  /* scrim behind the drawer — z 9998 dims the app's sticky bars (z 9997);
+     header (10000) + drawer (9999) sit above it */
   #mobile-scrim {
-    position: fixed; inset: 0; background: #000a; z-index: 9997;
+    position: fixed; inset: 0; background: #000a; z-index: 9998;
     opacity: 0; pointer-events: none; transition: opacity .22s;
   }
   #mobile-scrim.m-open { opacity: 1; pointer-events: auto; }
