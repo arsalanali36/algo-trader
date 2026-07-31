@@ -951,7 +951,8 @@ def reports_list():
     items = "".join(
         f"<li><a href='/reports/{d}'>📋 {d}</a></li>" for d in dates) or \
         "<li class='dim'>abhi koi report nahi — pehla report close ke baad banega</li>"
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>EOD Reports</title>
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>EOD Reports</title>
 <style>body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;
 max-width:640px;margin:40px auto;padding:0 16px}}h1{{font-size:20px}}
 a{{color:#58a6ff;text-decoration:none;font-size:16px}}a:hover{{text-decoration:underline}}
@@ -1005,7 +1006,8 @@ def presentations_list():
     items = "".join(
         f"<li><a href='/presentations/{d}'>🎬 {d}</a></li>" for d in dates) or \
         "<li class='dim'>abhi koi presentation nahi — Claude session me din ke points do, wahi banake yahan save karega</li>"
-    return f"""<!DOCTYPE html><html><head><meta charset="utf-8"><title>YT Presentations</title>
+    return f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1"><title>YT Presentations</title>
 <style>body{{background:#0d1117;color:#e6edf3;font-family:'Segoe UI',sans-serif;
 max-width:640px;margin:40px auto;padding:0 16px}}h1{{font-size:20px}}
 a{{color:#58a6ff;text-decoration:none;font-size:16px}}a:hover{{text-decoration:underline}}

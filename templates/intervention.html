@@ -24,6 +24,15 @@
   tr+tr td{border-top:1px solid #12161d}
   .clk{cursor:pointer}
   .clk:hover{background:#161b22}
+  /* 9:16 / narrow-width (mobile demos): tighten, stack the 3-col fr-grids, and let the
+     JS-injected 6-col tables scroll (their cards use inline overflow:hidden — override). */
+  @media(max-width:760px){
+    body{padding:10px}
+    #iv-body [style*="grid-template-columns:1.5fr"],
+    #iv-body [style*="grid-template-columns:1.3fr"]{grid-template-columns:1fr!important}
+    #iv-body .card[style*="overflow:hidden"]{overflow-x:auto!important}
+    #iv-body table{min-width:460px}
+  }
 </style>
 </head>
 <body>
