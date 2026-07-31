@@ -1461,5 +1461,24 @@
   refresh(true);
 </script>
 <script defer src="/static/js/topnav.js"></script>
+<script>
+  /* 9:16 / mobile: move the top-bar controls (Panels, 1 View / 2 Split) INTO the
+     underlying sidebar drawer, above UNDERLYING — so the top bar stays clean and the
+     controls live in the same hamburger as NIFTY/BANKNIFTY. Desktop untouched. */
+  (function () {
+    if (!(window.matchMedia && window.matchMedia('(max-width:760px)').matches)) return;
+    function move() {
+      var side = document.querySelector('.side'); if (!side) return;
+      var box = document.createElement('div');
+      box.style.cssText = 'display:flex;flex-direction:column;gap:9px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid #21262d';
+      var panels = document.querySelector('.top .topbtn');
+      var cols = document.getElementById('colsSeg');
+      if (panels) box.appendChild(panels);
+      if (cols) box.appendChild(cols);
+      if (box.children.length) side.insertBefore(box, side.firstChild);
+    }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', move); else move();
+  })();
+</script>
 </body>
 </html>
