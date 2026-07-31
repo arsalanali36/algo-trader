@@ -179,6 +179,21 @@
     });
     document.addEventListener('click', closeMenus);
 
+    // ── mobile declutter: hide a page's OWN top-bar nav links that just duplicate
+    // this global nav (e.g. curves/whatif's "GEX · Curves · ← Dashboard" links). Only
+    // links whose href is one of our routes, sitting inside a header/top bar, are hidden
+    // — page tool-buttons (Panels, View, filters…) are untouched. ──
+    if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) {
+      var routes = {};
+      TABS.concat(REPORTS, MORE).forEach(function (n) { routes[n.href.split('?')[0]] = 1; });
+      routes['/'] = 1;
+      [].forEach.call(document.querySelectorAll('.top a[href], .hdr a[href], header a[href], .brand a[href]'), function (a) {
+        if (bar.contains(a)) return;                       // never our own nav
+        var h = (a.getAttribute('href') || '').split('?')[0];
+        if (routes[h]) a.style.display = 'none';
+      });
+    }
+
     // mobile drawer (right side)
     function close() { tabs.classList.remove('open'); scrim.classList.remove('open'); }
     function open() { tabs.classList.add('open'); scrim.classList.add('open'); }
