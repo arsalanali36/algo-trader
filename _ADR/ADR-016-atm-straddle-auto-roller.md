@@ -71,3 +71,17 @@ mirror (Rule 6B — wahi proven patterns):
   hai. (ADR text ne ₹40 likha tha par uska apna math 4×₹20 = ₹80 tha; ₹80 use kiya, configurable.)
 - Exit reasons `ROLLER_*` `order_store._EXIT_REASON_PREFIXES` + app-06 badge me registered
   (Rule 9 — koi exit blank nahi).
+
+## Amendment (2026-07-31): naked → HEDGED (deploy fail fix)
+
+Original spec (ADR-004) ne roller ko NAKED ATM straddle rakha tha. Live pe deploy FAIL hua —
+naked short straddle 3-lot ~₹10.6L margin maangta hai (dono leg full SPAN), ₹10L paper cap se
+zyada, aur leg-by-leg gating 2nd leg pe block kar deta tha (LESSONS TRAP #164, = TRAP #156
+class jo auto_straddle me fix ho chuka tha par roller-file me kabhi port nahi hua). User ne
+HEDGED choose kiya: sell ATM CE+PE + BUY 2 OTM wings (defined-risk iron-fly), basket-gate ONCE
+(`risk_gate.position_margin` + `check_capital_needed`), BUY-wings-first. Hedged basket =
+tens-of-k → cap me fit + BNF bhi (max-premium bypass via `gate=False`). Shared
+`_enter_hedged_straddle()` ko `deploy_initial` + `execute_roll` dono use karte hain (roll pe
+wings bhi roll hote). Naked path retired. Still Rule 10 (PAPER, backtested nahi). Cold-cache
+wing far-walk + placement no-price bhi isi me fix (deterministic min_strikes wing + 4-leg LTP
+pre-warm). Detail: memory [[project_code3b_atm_straddle_roller]], LESSONS TRAP #164.

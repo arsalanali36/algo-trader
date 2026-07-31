@@ -4260,3 +4260,25 @@ set out to end, with two residual leaks):**
 - **The user clicking "Sync from Broker" to fix a mismatch created MORE phantoms** — a self-repair
   button that runs a second, conflicting reconciler is worse than no button. Verified: audit 0 FAIL,
   `apply()` dry-run plans nothing post-cleanup, PIDs 16==16. Memory `project_code3b_authoritative_reconcile`.
+
+## TRAP #164 — a naked multi-leg SELL gated LEG-BY-LEG blows the capital cap on the 2nd leg (a TRAP #156 recurrence in a file that never got the fix) + hedge-wing cold-cache far-walk + placement no-price (2026-07-31)
+
+**Symptom:** Auto-Rolling ATM Straddle (02.09) "live nahi chal raha" — dashboard pe sirf ek CE leg dikha, 1 min baad "Roll Aborted (unwound)".
+
+**Root (logs se, guess nahi):** `atm_straddle_roller.deploy_initial` naked straddle ke dono leg ALAG-ALAG `execute_signal(gate=True)` se place karta tha. CE naked SELL ₹5.29L margin kha gaya → PE ka gate `global capital cap ₹10L hit (in-use ₹8.27L + needed ₹5.29L)` pe block → naked-leg guard ne CE unwind kiya. Ek 3-lot naked NIFTY straddle akela ~₹10.6L maangta (dono full SPAN) — ₹10L cap se zyada, to dono leg KABHI fit nahi. BNF: ATM premium ₹856 > max-premium cap ₹600 pe pehla leg block. **Yeh EXACT TRAP #156 (auto_straddle naked-orphan storm) hai** — wahan basket-gate se fix hua tha, par roller ek NAYA file tha jisme wo fix kabhi port nahi hua (PRE-MORTEM shape #4: duplicate logic, aadha fix).
+
+**Fix:** shared `_enter_hedged_straddle()` (mirrors `_fire_auto_straddle` hedge-first, Rule 6B) — sell ATM CE+PE + BUY 2 OTM wings, poori structure ek BASKET pe gate (`rg.gating_status` + `rg.position_margin` + `rg.check_capital_needed`), phir BUY wings first → SELL ATM `gate=False` (basket already vetted), unwind-safe. `deploy_initial` + `execute_roll` dono isi ko delegate. Hedged basket = per-leg naked se bahut chhota → fits; `gate=False` per-leg max-premium check bhi bypass karta (BNF ab deploy).
+
+**Second gotcha (same fix): hedge-wing cold-cache far-walk + placement no-price.** `compute_hedge_target(quote_fn=fn)` cold cache pe har candidate ka premium None → loop `max_search`(30) tak offset badhata → 33-strike-OTM (near-zero protection) wing lauta deta. Fix: `quote_fn=None` do → deterministic `min_strikes`-floor wing (tight, cold-proof). PAR placement (paper record/marketable-limit) ko phir bhi wing ka LTP chahiye — cold BNF far PE wing (56900) `smart_order no_price` pe abort. Fix: place se PEHLE saare 4 legs (ATM+wings) `ltp_poller.request_watch` + short wait se pre-warm.
+
+**Guard/lesson:** koi bhi NAYA multi-leg SELL strategy — pehle din se **basket-gate** (place-all-or-none), naked leg-by-leg gating kabhi nahi; wings deterministic resolve karo (cold-cache far-walk se bacho) + place se pehle sab legs ka LTP warm karo. Memory [[project_code3b_atm_straddle_roller]].
+
+## TRAP #165 — stale duplicate config keys surface as duplicate/misleading UI (atr_exit vs exit_atr; engine reads only one) (2026-07-31)
+
+**Symptom:** registry2 Entry/Exit view me arschain ke EXIT RULES me "ATR EXIT" DO baar + "ZONE EXIT off" aur "ZONE EXIT ON" dono + ek "FIB EXIT" jo strategy use hi nahi karti.
+
+**Root:** `range_trader.py` sirf `exit_atr`/`exit_zone` config keys padhta hai. Par config me PURANE legacy keys `atr_exit`/`zone_exit`/`fib_exit` bhi pade the (kisi purane rename ka malba). Registry ke `EXIT_KEYS`/`_FLAGS` ne DONO (legacy + real) render kar diye → duplicate chips + `fib_exit` (jise engine chhoOta bhi nahi) ka phantom "off" chip.
+
+**Fix:** registry se legacy keys (`atr_exit`/`zone_exit`/`fib_exit`) hata diye — ab sirf real `exit_atr`/`exit_zone` dikhte (jo engine sach me padhta hai).
+
+**Lesson:** jab config me ek hi cheez ke DO keys hon (rename ka malba), UI/registry sirf wo key dikhaye jo engine SACH ME padhta hai — dono nahi (double + jhootha state). Ideal: config se stale key hata do; minimum: display se. Naya exit-flag = config me EK canonical naam + registry `_FLAGS` me wahi.
