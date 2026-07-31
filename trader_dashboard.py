@@ -3364,19 +3364,24 @@ _PAYOFF_TTL = 60        # rapid group-switching re-hits instantly. The warm loop
                         # hit too (user: panel loading slow / "mood kharab").
 
 
-def _payoff_compute(args):
-    """Payoff/zone analytics for a group — shared by the route AND the background warm
-    loop (Rule 6B), so a warmed cache entry is byte-identical to a live request. args =
-    anything with .get('ids'|'group_id'|'target_days')."""
+def _pf_key(prefix, rows, extra=''):
+    """CANONICAL cache key from the RESOLVED leg ids — NOT the raw query string. The
+    panel opens the same group three ways (group_id=…, ids=<csv> from the 📊 button in
+    any leg order, ids=<single>), so a raw-qs key made the warm loop's entry un-hittable
+    for the exact form the UI used. Keying on sorted resolved ids makes every path (and
+    the warm loop) share ONE entry."""
+    return prefix + '|' + ','.join(sorted(str(r.get('id')) for r in rows)) + ('|' + str(extra) if extra else '')
+
+
+def _payoff_compute_rows(rows, closed, td=None):
+    """Payoff/zone analytics from already-resolved rows — shared by the route AND the
+    warm loop (Rule 6B), so a warmed entry is byte-identical to a live request."""
     import payoff
-    rows, closed = _payoff_resolve(args)
-    if not rows:
-        return {"ok": False, "msg": "no legs for this group (open or recently-closed)"}
     if not closed:
         rows = _payoff_attach_ltp(rows)          # live IV/today-curve only for still-open legs
     spot = _payoff_spot(payoff.build_legs(rows))
     try:
-        td = float(args.get('target_days')) if args.get('target_days') else None
+        td = float(td) if td else None
     except Exception:
         td = None
     res = payoff.analyse(rows, spot, target_days=td)
@@ -3385,19 +3390,67 @@ def _payoff_compute(args):
     return res
 
 
+def _legs_series_compute(args):
+    """Per-leg premium series + combined net-structure P&L for a group — the slow part
+    (each leg = one serial rate-limited Dhan candle call). Extracted from the route so
+    the warm loop can pre-fetch it for open multi-leg groups (Rule 6B)."""
+    import payoff
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    rows, closed = _payoff_resolve(args)
+    if not rows:
+        return {"ok": False, "msg": "no legs for this group"}
+    legs = [L for L in payoff.build_legs(rows) if L.get('sec_id')]
+    if not legs:
+        return {"ok": False, "msg": "legs have no sec_id"}
+    ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+    today = ist.strftime('%Y-%m-%d')
+    entry_dates = [r.get('entry_date') for r in rows if r.get('entry_date')]
+    frm = min(entry_dates) if entry_dates else today
+    exit_dates = [r.get('exit_date') for r in rows if r.get('exit_date')]
+    today = (max(exit_dates) if (closed and exit_dates) else today)
+    entry_epoch = 0
+    try:
+        _ed = min(entry_dates)
+        _et = min((r.get('entry_time') or '23:59') for r in rows if (r.get('entry_date') == _ed))
+        _dtm = _d.strptime(f"{_ed} {_et}", "%Y-%m-%d %H:%M")
+        entry_epoch = int((_dtm - _d(1970, 1, 1)).total_seconds()) - 19800
+    except Exception:
+        entry_epoch = 0
+    out_legs, bars = [], {}
+    for L in legs:
+        b = _leg_closes(L['sec_id'], frm, today)
+        b = {t: c for t, c in b.items() if t >= entry_epoch}
+        bars[L['trad_sym']] = (b, L)
+        out_legs.append({"trad_sym": L['trad_sym'], "side": L['side'], "opt": L['opt'],
+                         "strike": L['strike'], "qty": L['qty'], "entry": L['entry'],
+                         "series": sorted([[t, c] for t, c in b.items()])})
+    entry_net = sum((L['entry'] if L['side'] == 'SELL' else -L['entry']) for L in legs)
+    common = None
+    for b, _L in bars.values():
+        ks = set(b.keys())
+        common = ks if common is None else (common & ks)
+    combined = []
+    for ts in sorted(common or []):
+        net = sum((-b[ts] if L['side'] == 'SELL' else b[ts]) for b, L in bars.values())
+        combined.append([ts, round(net + entry_net, 2)])
+    return {"ok": True, "legs": out_legs, "combined": combined,
+            "entry_net": round(entry_net, 2), "from": frm, "to": today}
+
+
 _payoff_warm_started = False
 _PAYOFF_WARM_INTERVAL = 20     # market-hours cadence; keeps every open group inside _PAYOFF_TTL
 
 
 def _payoff_warm_loop():
-    """Pre-compute payoff/zone for every OPEN position group + single leg into
-    _payoff_cache, so opening the panel is an instant cache hit instead of a cold
-    LTP-attach + Black-Scholes analyse (the slow first-open). LTP comes from the
-    poller-warmed shared cache (no extra Dhan calls in the common case); analyse is
-    CPU-only. Display-only — touches nothing but the cache."""
+    """Pre-compute payoff/zone (every ~20s) AND the heavy legs-series combined-premium
+    chart (every ~80s — it's N serial Dhan candle calls) for every OPEN group, into
+    their caches, so the panel opens instant instead of cold-fetching. Keyed canonically
+    (_pf_key) so it matches whatever qs the UI sends. Display-only — touches only caches."""
     import order_store, time as _t
+    cycle = 0
     while True:
         slept = _PAYOFF_WARM_INTERVAL
+        cycle += 1
         try:
             mkt = True
             try:
@@ -3406,27 +3459,53 @@ def _payoff_warm_loop():
             except Exception:
                 mkt = True
             data = order_store.trades_for(order_store.ist_now_str()[:10])
-            keys = set()
+            groups = {}          # gid -> [ids]   (multi-leg structures)
+            singles = []         # [id]           (single legs)
             for o in (data.get('open') or []):
                 if 'CAPITAL_BLOCKED' in (o.get('tags') or []):
                     continue
+                oid = o.get('id')
+                if oid is None:
+                    continue
                 gid = o.get('group_id')
                 if gid:
-                    keys.add('group_id=' + str(gid))
-                if o.get('id') is not None:
-                    keys.add('ids=' + str(o.get('id')))
-            for k in keys:
-                try:
-                    kv = dict(p.split('=', 1) for p in k.split('&') if '=' in p)
-                    _payoff_cache[k] = (_payoff_compute(kv), _t.time())
-                except Exception:
-                    pass
-                _t.sleep(0.4)               # gentle spread across the rate-limiter
+                    groups.setdefault(str(gid), []).append(oid)
+                singles.append(oid)
+            # 1) payoff — cheap (batched LTP + CPU analyse): warm every cycle
+            for gid, ids in groups.items():
+                _warm_payoff({'group_id': gid})
+                _t.sleep(0.3)
+            for oid in singles:
+                _warm_payoff({'ids': str(oid)})
+                _t.sleep(0.2)
+            # 2) legs-series — heavy (N Dhan candle calls): only multi-leg groups, ~every 80s
+            if mkt and cycle % 4 == 1:
+                for gid, ids in groups.items():
+                    if len(ids) < 2:
+                        continue
+                    try:
+                        kv = {'group_id': gid}
+                        rows, _c = _payoff_resolve(kv)
+                        if rows:
+                            _legs_series_cache[_pf_key('ls', rows)] = (_legs_series_compute(kv), _t.time())
+                    except Exception:
+                        pass
+                    _t.sleep(1.0)
             if not mkt:
-                slept = 90                  # off-market: positions static, warm rarely
+                slept = 90
         except Exception:
             pass
         _t.sleep(slept)
+
+
+def _warm_payoff(kv):
+    import time as _t
+    try:
+        rows, closed = _payoff_resolve(kv)
+        if rows:
+            _payoff_cache[_pf_key('pf', rows)] = (_payoff_compute_rows(rows, closed), _t.time())
+    except Exception:
+        pass
 
 
 def _payoff_warm_start():
@@ -3444,13 +3523,15 @@ def api_position_payoff():
     instead of re-attaching LTP + re-running analyse each time. Margin is a
     separate route (5 Kite calls — slow), so the panel renders instantly."""
     try:
-        import payoff
         import time as _tm
-        _ck = request.query_string.decode()
+        rows, closed = _payoff_resolve(request.args)
+        if not rows:
+            return jsonify({"ok": False, "msg": "no legs for this group (open or recently-closed)"})
+        _ck = _pf_key('pf', rows, request.args.get('target_days') or '')
         _hit = _payoff_cache.get(_ck)
         if _hit and (_tm.time() - _hit[1]) < _PAYOFF_TTL:
             return jsonify(_hit[0])
-        res = _payoff_compute(request.args)
+        res = _payoff_compute_rows(rows, closed, request.args.get('target_days'))
         _payoff_cache[_ck] = (res, _tm.time())
         return jsonify(res)
     except Exception as e:
@@ -3496,81 +3577,25 @@ _LEGS_SERIES_TTL = 120       # rate-limited candle calls; rapid group-switching 
 
 @app.route('/api/position-legs-series')
 def api_position_legs_series():
-    """Per-leg premium series + the COMBINED (net-structure) P&L series for a
-    position group. Feeds both the 4-up per-leg grid and the combined-premium
-    chart. Spans entry-date -> today (positional legs are multi-day).
-    Query: ids=/group_id=. CACHED (_LEGS_SERIES_TTL): each call fetches every
-    leg's full-day candles serially through the ~1/sec candle rate-limiter, so
-    re-opening / switching between groups would otherwise queue a big backlog —
-    the cache makes a revisited group instant and cuts total Dhan calls."""
+    """Per-leg premium series + COMBINED net-structure P&L for a position group
+    (4-up grid + combined-premium chart). Spans entry-date -> today. Query:
+    ids=/group_id=. CACHED + background-warmed (canonical key) → instant open;
+    each cold call is N serial rate-limited Dhan candle fetches, so warming the
+    open multi-leg groups is what removes the 'loading' wait."""
     try:
         import time as _tm
-        _ck = request.query_string.decode()
-        _hit = _legs_series_cache.get(_ck)
-        if _hit and (_tm.time() - _hit[1]) < _LEGS_SERIES_TTL:
-            return jsonify(_hit[0])
-        import payoff
-        from datetime import datetime as _d, timedelta as _td, timezone as _tz
         rows, closed = _payoff_resolve(request.args)
         if not rows:
             return jsonify({"ok": False, "msg": "no legs for this group"})
-        legs = payoff.build_legs(rows)
-        legs = [L for L in legs if L.get('sec_id')]
-        if not legs:
-            return jsonify({"ok": False, "msg": "legs have no sec_id"})
-
-        ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
-        today = ist.strftime('%Y-%m-%d')
-        entry_dates = [r.get('entry_date') for r in rows if r.get('entry_date')]
-        frm = min(entry_dates) if entry_dates else today
-        # a CLOSED group's premium path ends at its exit day, not today
-        exit_dates = [r.get('exit_date') for r in rows if r.get('exit_date')]
-        today = (max(exit_dates) if (closed and exit_dates) else today)
-
-        # Clip to the actual ENTRY moment — Dhan serves the whole entry day from
-        # 09:15, but bars before the position existed carry no P&L (a 15:10 entry
-        # would otherwise show 6 hours of meaningless "P&L" ahead of itself).
-        entry_epoch = 0
-        try:
-            _ed = min(entry_dates)
-            _et = min((r.get('entry_time') or '23:59') for r in rows
-                      if (r.get('entry_date') == _ed))
-            _dtm = _d.strptime(f"{_ed} {_et}", "%Y-%m-%d %H:%M")
-            entry_epoch = int((_dtm - _d(1970, 1, 1)).total_seconds()) - 19800  # IST -> Dhan epoch
-        except Exception:
-            entry_epoch = 0
-
-        out_legs, bars = [], {}
-        for L in legs:
-            b = _leg_closes(L['sec_id'], frm, today)
-            b = {t: c for t, c in b.items() if t >= entry_epoch}
-            bars[L['trad_sym']] = (b, L)
-            out_legs.append({
-                "trad_sym": L['trad_sym'], "side": L['side'], "opt": L['opt'],
-                "strike": L['strike'], "qty": L['qty'], "entry": L['entry'],
-                "series": sorted([[t, c] for t, c in b.items()]),
-            })
-
-        # entry cash: SELL = credit (+), BUY = debit (-)
-        entry_net = sum((L['entry'] if L['side'] == 'SELL' else -L['entry']) for L in legs)
-        # combined P&L/unit at each bar both legs have a price for
-        common = None
-        for b, _L in bars.values():
-            ks = set(b.keys())
-            common = ks if common is None else (common & ks)
-        combined = []
-        for ts in sorted(common or []):
-            # value if closed now: short leg costs -ltp, long leg returns +ltp
-            net = sum((-b[ts] if L['side'] == 'SELL' else b[ts]) for b, L in bars.values())
-            combined.append([ts, round(net + entry_net, 2)])
-
-        _payload = {"ok": True, "legs": out_legs, "combined": combined,
-                    "entry_net": round(entry_net, 2), "from": frm, "to": today}
+        _ck = _pf_key('ls', rows)
+        _hit = _legs_series_cache.get(_ck)
+        if _hit and (_tm.time() - _hit[1]) < _LEGS_SERIES_TTL:
+            return jsonify(_hit[0])
+        _payload = _legs_series_compute(request.args)
         _legs_series_cache[_ck] = (_payload, _tm.time())
         return jsonify(_payload)
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
-
 
 @app.route('/api/position-groups')
 def api_position_groups():
