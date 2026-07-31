@@ -1,0 +1,88 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<script src="../static/vendor/lightweight-charts.standalone.production.js"></script>
+<style>body{background:#0d1117;color:#e6edf3;margin:0;font-family:Arial}#pane-right{position:relative}
+#exitBadge{position:absolute;top:34px;left:8px;right:8px;z-index:6;display:none;font-size:12.5px;font-weight:600;background:rgba(13,17,23,.85);border:1px solid #30363d;border-radius:8px;padding:6px 11px;line-height:1.55;pointer-events:none}
+#chart{height:340px}</style></head>
+<body>
+  <div id="pane-right"><div id="exitBadge"></div><div id="chart"></div></div>
+  <pre id="out" style="padding:10px;font-size:12px"></pre>
+<script>
+// --- exact copy of window.drawExitOverlay from trade_chart.html (under test) ---
+window._exitOv = window._exitOv || { blueS:null, orangeS:null, slPL:null, tgtPL:null };
+window.drawExitOverlay = function(d){
+  try{
+    const s = window._premSeries, chart = window._premChart;
+    if(!s || !chart) return;
+    const ov = window._exitOv;
+    const q = new URLSearchParams(location.search);
+    const qty = parseFloat(q.get('qty')||0)||0;
+    const entryPx = parseFloat(q.get('entry')||0)||0;
+    const side = (q.get('side')||'').toUpperCase();
+    const _slPx = parseFloat(q.get('sl')||''), _tpPx = parseFloat(q.get('tp')||'');
+    const candles = (d && d.candles && d.candles.length) ? d.candles : window._premCandles;
+    const curPx = (candles && candles.length) ? candles[candles.length-1].close : null;
+    let slPx=null, tgtPx=null, aggTail=false;
+    const ss = d && d.sl_series;
+    if(ss && ss.series && ss.series.length){
+      const STEP = (LightweightCharts.LineType && LightweightCharts.LineType.WithSteps) || 1;
+      const pts = ss.series;
+      const firstAgg = pts.findIndex(p=>p.agg);
+      const bluePts = firstAgg===-1 ? pts : pts.slice(0, firstAgg+1);
+      const orangePts = firstAgg===-1 ? [] : pts.slice(firstAgg);
+      const mk = a => a.map(p=>({time:p.time, value:p.value}));
+      if(!ov.blueS) ov.blueS = chart.addLineSeries({color:'#58a6ff', lineWidth:2, lineType:STEP, crosshairMarkerVisible:false, title:'Trailing SL'});
+      ov.blueS.setData(mk(bluePts));
+      if(!ov.orangeS) ov.orangeS = chart.addLineSeries({color:'#e3a008', lineWidth:2, lineType:STEP, crosshairMarkerVisible:false, title:'Aggressive SL'});
+      ov.orangeS.setData(mk(orangePts));
+      const last = pts[pts.length-1];
+      slPx = last ? last.value : null; aggTail = !!(last && last.agg);
+      tgtPx = (isFinite(ss.target) && ss.target>0) ? ss.target : null;
+    } else { slPx = (isFinite(_slPx) && _slPx>0) ? _slPx : null; tgtPx = (isFinite(_tpPx) && _tpPx>0) ? _tpPx : null; }
+    if(ov.slPL){ try{ s.removePriceLine(ov.slPL); }catch(e){} ov.slPL=null; }
+    if(ov.tgtPL){ try{ s.removePriceLine(ov.tgtPL); }catch(e){} ov.tgtPL=null; }
+    if(slPx!=null) ov.slPL = s.createPriceLine({price:slPx, color:aggTail?'#e3a008':'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL now'});
+    if(tgtPx!=null) ov.tgtPL = s.createPriceLine({price:tgtPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
+    const badge = document.getElementById('exitBadge');
+    if(badge){
+      const mtm = p => (p==null||!qty) ? null : (side==='BUY' ? (p-entryPx)*qty : (entryPx-p)*qty);
+      const rs = v => (v<0?'−₹':'₹') + Math.abs(Math.round(v)).toLocaleString('en-IN');
+      let html = '';
+      if(slPx!=null){ const slRs=mtm(slPx); let away=''; if(curPx!=null){const ap=Math.abs(slPx-curPx); away=` <span style="color:#8b949e;font-weight:500">(abhi ${ap.toFixed(1)}pt${qty?' / ₹'+Math.round(ap*qty).toLocaleString('en-IN'):''} door)</span>`;}
+        html += `<span style="color:#f85149">🛡️ SL now ₹${slPx.toFixed(2)}${slRs!=null?` · <b>agar laga: ${rs(slRs)}</b>`:''}</span>${away}`; }
+      if(tgtPx!=null){ const tgRs=mtm(tgtPx); html += `${html?' &nbsp;·&nbsp; ':''}<span style="color:#3fb950">🎯 Target ₹${tgtPx.toFixed(2)}${tgRs!=null?` · <b>${rs(tgRs)}</b>`:''}</span>`; }
+      badge.innerHTML = html; badge.style.display = html ? 'block' : 'none';
+    }
+  }catch(e){ window._ovErr = String(e); }
+};
+// --- harness setup: real chart + mock data, then drive drawExitOverlay ---
+window.addEventListener('load', function(){
+  const chart = LightweightCharts.createChart(document.getElementById('chart'), {layout:{background:{color:'#0d1117'},textColor:'#8b949e'}});
+  const s = chart.addCandlestickSeries();
+  const candles = []; for(let i=0;i<20;i++) candles.push({time:1785470000+i*300, open:100+i, high:102+i, low:98+i, close:100+i});
+  s.setData(candles);
+  window._premSeries=s; window._premChart=chart; window._premCandles=candles;
+  window._priceLineCount = ()=>{ let n=0; try{ n = (s._priceLines? s._priceLines.length : -1); }catch(e){ n=-2; } return n; };
+  window._runTest = function(){
+    const out=[];
+    // draw #1 (load) — trailing SL series ending at 152, target 60
+    drawExitOverlay({candles, sl_series:{mode:'aggressive', series:[{time:candles[0].time,value:150,agg:false},{time:candles[10].time,value:152,agg:false}], target:60}});
+    const b1 = document.getElementById('exitBadge').innerText;
+    const slpl1 = !!window._exitOv.slPL, tgt1 = !!window._exitOv.tgtPL, blue1 = !!window._exitOv.blueS;
+    out.push('draw1 badge: '+b1);
+    // draw #2 (refresh) — SL ratcheted to 148 (moved), aggressive tail on
+    drawExitOverlay({candles, sl_series:{mode:'aggressive', series:[{time:candles[0].time,value:150,agg:false},{time:candles[15].time,value:148,agg:true}], target:60}});
+    const b2 = document.getElementById('exitBadge').innerText;
+    const sameBlue = (window._exitOv.blueS === (blue1?window._exitOv.blueS:null));  // series ref reused, not recreated
+    out.push('draw2 badge: '+b2);
+    return JSON.stringify({
+      draw1_badge:b1, draw2_badge:b2,
+      slPL_set:slpl1, tgtPL_set:tgt1, blueSeries_created:blue1,
+      badge_updated: b1!==b2,
+      series_reused: window._exitOv.blueS!=null && window._exitOv.orangeS!=null,
+      overlay_err: window._ovErr||null
+    }, null, 2);
+  };
+  document.getElementById('out').textContent = 'ready';
+});
+</script>
+</body></html>

@@ -50,8 +50,9 @@
         <div id="chart-left"><div class="empty muted" style="padding:20px;text-align:center">Loading underlying chart...</div></div>
       </div>
       <div class="splitter2" id="splitter2"></div>
-      <div class="pane" id="pane-right">
+      <div class="pane" id="pane-right" style="position:relative">
         <div class="pane-hdr"><span>Premium</span><span class="hint">Alt+Click to expand</span></div>
+        <div id="exitBadge" style="position:absolute;top:34px;left:8px;right:8px;z-index:6;display:none;font-size:12.5px;font-weight:600;background:rgba(13,17,23,.85);border:1px solid #30363d;border-radius:8px;padding:6px 11px;line-height:1.55;pointer-events:none"></div>
         <div id="chart"></div>
       </div>
     </div>
@@ -241,7 +242,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(d.candles);
-      window._premSeries = s; // ref for live auto-refresh
+      window._premSeries = s; window._premChart = chart; window._premCandles = d.candles; // refs for live refresh + exit overlay
       const mk=[];
       const isSell = side==='SELL';
       if(d.entry_mk) {
@@ -312,46 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
       // entry/exit price lines
       if(entry) s.createPriceLine({price:entry, color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Entry'});
       if(exit)  s.createPriceLine({price:exit,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'Exit'});
-      // SL / Target lines (item F) — passed as PREMIUM price levels by the
-      // caller (₹-amount SL/TP already converted to premium points so they're
-      // plottable on this premium axis). Solid so they stand out from the
-      // dashed entry/exit lines.
-      const _slPx = parseFloat(q.get('sl')||''), _tpPx = parseFloat(q.get('tp')||'');
-      // Task 8 — MOVING trailing/aggressive SL. When the server reconstructs a
-      // stepped SL path (aggressive Default-TSL or trailing-points), draw it as a
-      // live stepped line (blue = trailing, orange = aggressive-phase tail) instead
-      // of a single flat SL price-line. Static SL types still use the flat line.
-      const _slSeries = d.sl_series;
-      if(_slSeries && _slSeries.series && _slSeries.series.length){
-        const STEP = (LightweightCharts.LineType && LightweightCharts.LineType.WithSteps) || 1;
-        const pts = _slSeries.series;
-        // aggressive turns on once and stays on (peak only ratchets up) → contiguous
-        // tail. Split into a blue head + orange tail sharing the boundary point so
-        // the line stays continuous.
-        let firstAgg = pts.findIndex(p=>p.agg);
-        const bluePts = firstAgg === -1 ? pts : pts.slice(0, firstAgg+1);
-        const orangePts = firstAgg === -1 ? [] : pts.slice(firstAgg);
-        const mk = arr => arr.map(p=>({time:p.time, value:p.value}));
-        if(bluePts.length){
-          chart.addLineSeries({color:'#58a6ff', lineWidth:2, lineType:STEP,
-            crosshairMarkerVisible:false, title:'Trailing SL'}).setData(mk(bluePts));
-        }
-        if(orangePts.length){
-          chart.addLineSeries({color:'#e3a008', lineWidth:2, lineType:STEP,
-            crosshairMarkerVisible:false, title:'Aggressive SL'}).setData(mk(orangePts));
-        }
-        // current SL label at the last point
-        const last = pts[pts.length-1];
-        if(last) s.createPriceLine({price:last.value, color:last.agg?'#e3a008':'#58a6ff',
-          lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'SL now'});
-        // target line (aggressive profile only)
-        if(isFinite(_slSeries.target) && _slSeries.target>0)
-          s.createPriceLine({price:_slSeries.target, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
-      } else {
-        // No reconstructed path → keep the original flat SL/Target price-lines.
-        if(isFinite(_slPx) && _slPx>0) s.createPriceLine({price:_slPx, color:'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL'});
-        if(isFinite(_tpPx) && _tpPx>0) s.createPriceLine({price:_tpPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
-      }
+      // Exit overlay: SL / trailing-SL / Target lines + the ₹ readout badge.
+      // Drawn here AND re-drawn on every 15s auto-refresh (window.drawExitOverlay)
+      // so during an OPEN trade the SL you see is always the CURRENT ratcheting
+      // level — not a stale load-time snapshot (the old code only drew it once).
+      window.drawExitOverlay(d);
       chart.timeScale().fitContent();
       window.CVS && window.CVS.register('right', chart); // restore saved view / enable pan-zoom memory
       window.addEventListener('resize', ()=>chart.applyOptions({width:document.getElementById('chart').clientWidth}));
@@ -680,6 +646,71 @@ document.addEventListener('DOMContentLoaded', () => {
   document.querySelector('.hdr').appendChild(hint);
 })();
 
+// ── Exit overlay: SL / trailing-SL / Target lines + ₹ readout badge ─────────
+// Idempotent — safe to call at load AND on every auto-refresh. Line-series are
+// created once (then setData), price-lines removed+recreated each call, so the
+// SL/Target you see always reflects the CURRENT (ratcheting) level, live. All ₹
+// derived on the client from the URL's qty/entry/side — no backend change.
+window._exitOv = window._exitOv || { blueS:null, orangeS:null, slPL:null, tgtPL:null };
+window.drawExitOverlay = function(d){
+  try{
+    const s = window._premSeries, chart = window._premChart;
+    if(!s || !chart) return;
+    const ov = window._exitOv;
+    const q = new URLSearchParams(location.search);
+    const qty = parseFloat(q.get('qty')||0)||0;
+    const entryPx = parseFloat(q.get('entry')||0)||0;
+    const side = (q.get('side')||'').toUpperCase();
+    const _slPx = parseFloat(q.get('sl')||''), _tpPx = parseFloat(q.get('tp')||'');
+    const candles = (d && d.candles && d.candles.length) ? d.candles : window._premCandles;
+    const curPx = (candles && candles.length) ? candles[candles.length-1].close : null;
+
+    let slPx=null, tgtPx=null, aggTail=false;
+    const ss = d && d.sl_series;
+    if(ss && ss.series && ss.series.length){
+      const STEP = (LightweightCharts.LineType && LightweightCharts.LineType.WithSteps) || 1;
+      const pts = ss.series;
+      const firstAgg = pts.findIndex(p=>p.agg);
+      const bluePts = firstAgg===-1 ? pts : pts.slice(0, firstAgg+1);
+      const orangePts = firstAgg===-1 ? [] : pts.slice(firstAgg);
+      const mk = a => a.map(p=>({time:p.time, value:p.value}));
+      if(!ov.blueS) ov.blueS = chart.addLineSeries({color:'#58a6ff', lineWidth:2, lineType:STEP, crosshairMarkerVisible:false, title:'Trailing SL'});
+      ov.blueS.setData(mk(bluePts));
+      if(!ov.orangeS) ov.orangeS = chart.addLineSeries({color:'#e3a008', lineWidth:2, lineType:STEP, crosshairMarkerVisible:false, title:'Aggressive SL'});
+      ov.orangeS.setData(mk(orangePts));
+      const last = pts[pts.length-1];
+      slPx = last ? last.value : null; aggTail = !!(last && last.agg);
+      tgtPx = (isFinite(ss.target) && ss.target>0) ? ss.target : null;
+    } else {
+      slPx = (isFinite(_slPx) && _slPx>0) ? _slPx : null;
+      tgtPx = (isFinite(_tpPx) && _tpPx>0) ? _tpPx : null;
+    }
+    if(ov.slPL){ try{ s.removePriceLine(ov.slPL); }catch(e){} ov.slPL=null; }
+    if(ov.tgtPL){ try{ s.removePriceLine(ov.tgtPL); }catch(e){} ov.tgtPL=null; }
+    if(slPx!=null) ov.slPL = s.createPriceLine({price:slPx, color:aggTail?'#e3a008':'#f85149', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'SL now'});
+    if(tgtPx!=null) ov.tgtPL = s.createPriceLine({price:tgtPx, color:'#3fb950', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'Target'});
+
+    const badge = document.getElementById('exitBadge');
+    if(badge){
+      const mtm = p => (p==null||!qty) ? null : (side==='BUY' ? (p-entryPx)*qty : (entryPx-p)*qty);
+      const rs = v => (v<0?'−₹':'₹') + Math.abs(Math.round(v)).toLocaleString('en-IN');
+      let html = '';
+      if(slPx!=null){
+        const slRs = mtm(slPx);
+        let away = '';
+        if(curPx!=null){ const ap=Math.abs(slPx-curPx); away = ` <span style="color:#8b949e;font-weight:500">(abhi ${ap.toFixed(1)}pt${qty?' / ₹'+Math.round(ap*qty).toLocaleString('en-IN'):''} door)</span>`; }
+        html += `<span style="color:#f85149">🛡️ SL now ₹${slPx.toFixed(2)}${slRs!=null?` · <b>agar laga: ${rs(slRs)}</b>`:''}</span>${away}`;
+      }
+      if(tgtPx!=null){
+        const tgRs = mtm(tgtPx);
+        html += `${html?' &nbsp;·&nbsp; ':''}<span style="color:#3fb950">🎯 Target ₹${tgtPx.toFixed(2)}${tgRs!=null?` · <b>${rs(tgRs)}</b>`:''}</span>`;
+      }
+      badge.innerHTML = html;
+      badge.style.display = html ? 'block' : 'none';
+    }
+  }catch(e){ /* overlay is best-effort — never break the chart */ }
+};
+
 // ── Live auto-refresh (in-place data update, no page reload / no view jump) ──
 // Re-fetches both panes' candles every INTERVAL and setData()s them onto the
 // existing series — pan/zoom, markers, SL lines and P&L header all stay put;
@@ -707,8 +738,12 @@ document.addEventListener('DOMContentLoaded', () => {
     window.CVS && window.CVS.pauseSave(800); // don't let setData drift the saved view
     fetch('/api/trade-chart-data?' + base + (p('tf') ? ('&tf=' + p('tf')) : ''))
       .then(r => r.json()).then(d => {
-        if (d && d.ok && d.candles && d.candles.length && window._premSeries)
-          window._premSeries.setData(_dedupe(d.candles));
+        if (d && d.ok && d.candles && d.candles.length && window._premSeries){
+          const _cs = _dedupe(d.candles);
+          window._premSeries.setData(_cs);
+          window._premCandles = _cs;
+          if (window.drawExitOverlay) window.drawExitOverlay(d);   // live SL/Target refresh
+        }
       }).catch(()=>{});
     fetch('/api/trade-chart-underlying-data?' + base)
       .then(r => r.json()).then(d => {
