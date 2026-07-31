@@ -63,6 +63,10 @@ _DEFAULT_CFG = {
     "symbols": ["NIFTY"],
     "entry_time": "09:20",           # initial straddle deploy window start (IST)
     "entry_window_min": 6,           # deploy allowed for this many min after entry_time
+    # HEDGED (defined-risk): sell ATM CE+PE, BUY OTM wings this many strikes out.
+    # 2026-07-31 — naked straddle needed ~₹10.6L (3-lot NIFTY, both legs full SPAN),
+    # blew the paper cap; hedged basket is a fraction so it fits + is safer.
+    "hedge": {"wing_strikes_nifty": 3, "wing_strikes_banknifty": 3},
 }
 
 
@@ -491,6 +495,131 @@ def verify_still_open(state, log=print):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# hedged-straddle entry — shared by deploy_initial + execute_roll (Rule 6B, mirrors
+# _fire_auto_straddle's hedge-first pattern). DEFINED-RISK: sell ATM CE+PE + BUY 2
+# OTM wings; gate the WHOLE structure ONCE (RMS gating + basket-margin) then place
+# BUY wings FIRST, then SELL ATM (gate=False — basket already vetted). Unwind-safe.
+# ─────────────────────────────────────────────────────────────────────────────
+def _hedge_wing_offset(cfg, symbol):
+    """OTM wing distance in strikes for the defined-risk hedge BUY legs. Per-symbol
+    override via cfg['hedge']['wing_strikes_{nifty|banknifty}'], else shared default 3."""
+    h = (cfg or {}).get("hedge") or {}
+    sym = str(symbol).upper()
+    key = "wing_strikes_banknifty" if sym == "BANKNIFTY" else "wing_strikes_nifty"
+    try:
+        return max(1, int(h.get(key, h.get("wing_strikes", 3))))
+    except Exception:
+        return 3
+
+
+def _enter_hedged_straddle(symbol, spot, lots, gid, sid, mode, cfg, log, price_fn):
+    """Place a fresh HEDGED short straddle (used by deploy_initial + roll re-enter).
+    Returns (ok, atm_or_reason, legs, credit, lot_size). legs ordered SELL-first
+    ([SELL CE, SELL PE, BUY wing CE, BUY wing PE]) so exit/roll (which iterates
+    state.legs) closes every leg. quote_fn intentionally NOT passed to the wing
+    resolver: on a cold cache compute_hedge_target's premium-walk drifts to the far
+    end (near-zero protection) — a deterministic min_strikes-floor wing is the safe,
+    tight, cold-cache-proof choice. All orders via execution_gateway (Rule 6/6B)."""
+    import dhan_master
+    import execution_gateway as gw
+    import strategy_safety as _ss
+    import risk_gate as rg
+    ce_sec, ce_tsym, lot = dhan_master.get_option_contract(symbol, spot, "CE", 0)
+    pe_sec, pe_tsym, lot2 = dhan_master.get_option_contract(symbol, spot, "PE", 0)
+    if not ce_sec or not pe_sec:
+        return False, f"{symbol} ATM contract resolve fail", [], 0, 0
+    lot_size = int(lot or lot2 or 0)
+    if lot_size < 1:
+        return False, f"{symbol} lot size resolve nahi hua", [], 0, 0
+    atm = _strike_of(ce_tsym)
+    q = int(lots) * lot_size
+    wing_off = _hedge_wing_offset(cfg, symbol)
+
+    # ── resolve BOTH OTM wings (deterministic min_strikes-floor). fail → NO naked ──
+    hedges = []
+    for ot in ("CE", "PE"):
+        try:
+            hsec, htsym, hlot = _ss.compute_hedge_target(
+                sid, symbol, spot, ot, 0, quote_fn=None,
+                min_strikes_override=wing_off, max_premium_override=None,
+                max_search=1, log=log)
+        except Exception as he:
+            hsec = None
+            log(f"[ROLLER] {symbol} {ot} wing resolve err: {he}")
+        if not hsec:
+            return False, f"{ot} hedge wing resolve fail — no naked straddle", [], 0, 0
+        hedges.append({"opt_type": ot, "sec": str(hsec), "tsym": htsym, "lot": int(hlot or lot_size)})
+
+    # ── gate the WHOLE structure ONCE (RMS gating + basket-margin capital) ──
+    try:
+        blocked, why, _hard = rg.gating_status(sid, mode=mode)
+        if blocked:
+            return False, f"RMS blocked — {why}", [], 0, 0
+    except Exception:
+        pass
+    basket_rows = [
+        {"sec_id": str(ce_sec), "entry": "SELL", "qty": q, "entry_price": price_fn(str(ce_sec)) or 0, "sym": ce_tsym, "segment": "NSE_FNO"},
+        {"sec_id": str(pe_sec), "entry": "SELL", "qty": q, "entry_price": price_fn(str(pe_sec)) or 0, "sym": pe_tsym, "segment": "NSE_FNO"},
+    ]
+    for h in hedges:
+        basket_rows.append({"sec_id": h["sec"], "entry": "BUY", "qty": q,
+                            "entry_price": price_fn(h["sec"]) or 0, "sym": h["tsym"], "segment": "NSE_FNO"})
+    try:
+        basket = rg.position_margin(basket_rows)   # single margin gate (hedged basket)
+        ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
+        if not ok_cap:
+            return False, f"basket margin ₹{basket:,.0f} fit nahi hua — {cap_why}", [], 0, 0
+    except Exception as _ce:
+        log(f"[ROLLER] {symbol} basket capital check err: {_ce}")
+
+    # ── place: BUY wings FIRST (margin reduced), then SELL ATM. unwind-safe. ──
+    placed = []
+
+    def _unwind(reason):
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(sid, symbol, p["sec"], p["tsym"], q, entry_side=p["side"],
+                                mode=mode, group_id=gid, reason=reason,
+                                tag="STRADDLE_ROLLER", source="straddle_roller", log=log)
+            except Exception as ue:
+                log(f"[ROLLER] {symbol} unwind FAIL {p['tsym']}: {ue}")
+
+    hlegs = []
+    for h in hedges:
+        hres = gw.execute_signal(sid, symbol, "BUY", int(lots), h["lot"], h["sec"], h["tsym"],
+                                 seg="NSE_FNO", mode=mode, source="straddle_roller",
+                                 tag="STRADDLE_ROLLER_HEDGE", group_id=gid, gate=False,
+                                 extra_tags=["STRADDLE_ROLLER", "HEDGE"], log=log)
+        if not hres.get("ok"):
+            log(f"[ROLLER] {symbol} {h['opt_type']} hedge BUY fail "
+                f"({hres.get('reason') or hres.get('status')}) — unwinding, abort")
+            _unwind("ROLLER_ABORT")
+            return False, f"hedge {h['opt_type']} BUY fail — abort (no naked)", [], 0, 0
+        placed.append({"sec": h["sec"], "tsym": h["tsym"], "side": "BUY"})
+        hlegs.append({"opt_type": h["opt_type"], "side": "BUY", "sec_id": h["sec"],
+                      "trad_sym": h["tsym"], "entry_price": hres.get("price") or 0, "qty": q})
+
+    slegs = []
+    for (sec, tsym, ot) in ((str(ce_sec), ce_tsym, "CE"), (str(pe_sec), pe_tsym, "PE")):
+        res = gw.execute_signal(sid, symbol, "SELL", int(lots), lot_size, sec, tsym,
+                                seg="NSE_FNO", mode=mode, source="straddle_roller",
+                                tag="STRADDLE_ROLLER", group_id=gid, gate=False,
+                                extra_tags=["STRADDLE_ROLLER"], log=log)
+        if not res.get("ok"):
+            log(f"[ROLLER] {symbol} {ot} SELL fail "
+                f"({res.get('reason') or res.get('status')}) — unwinding, abort (no naked)")
+            _unwind("ROLLER_ABORT")
+            return False, f"{ot} SELL fail — abort (no naked)", [], 0, 0
+        placed.append({"sec": sec, "tsym": tsym, "side": "SELL"})
+        slegs.append({"opt_type": ot, "side": "SELL", "sec_id": sec, "trad_sym": tsym,
+                      "entry_price": res.get("price") or 0, "qty": q})
+
+    legs = slegs + hlegs   # SELL legs first (exit/roll iterates all)
+    credit = round(sum(l["entry_price"] for l in slegs), 2)
+    return True, atm, legs, credit, lot_size
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # deploy_initial — roller apna PEHLA ATM straddle khud kholta hai (self-contained)
 # ─────────────────────────────────────────────────────────────────────────────
 def deploy_initial(state, symbol, spot, lots, cfg=None, mode="paper", log=print):
@@ -500,62 +629,29 @@ def deploy_initial(state, symbol, spot, lots, cfg=None, mode="paper", log=print)
     Unwind-safe: doosra leg fail → pehla turant unwind (poori tarah flat, koi naked
     short nahi). NAKED ATM straddle (ADR-004 roller = plain straddle; hedge ADR me
     nahi — chaho to follow-up). PAPER default. Returns (ok, msg)."""
-    import dhan_master
-    import execution_gateway as gw
     cfg = cfg or load_config()
     mode = str(mode or "paper")
-    sid = str(cfg.get("strategy_id", "atm_straddle_roller"))
-    ce_sec, ce_tsym, lot = dhan_master.get_option_contract(symbol, spot, "CE", 0)
-    pe_sec, pe_tsym, lot2 = dhan_master.get_option_contract(symbol, spot, "PE", 0)
-    if not ce_sec or not pe_sec:
-        return False, f"{symbol} ATM contract resolve fail"
-    lot_size = int(lot or lot2 or 0)
-    if lot_size < 1:
-        return False, f"{symbol} lot size resolve nahi hua — deploy NAHI"
-    atm = _strike_of(ce_tsym)
+    sid = str(cfg.get("strategy_id") or "atm_straddle_roller")
     gid = "STRADR_" + uuid.uuid4().hex[:8]
-    lots = int(lots or 1)
-
-    placed, legs = [], []
-
-    def _unwind(reason):
-        for p in reversed(placed):
-            try:
-                gw.execute_exit(sid, symbol, p["sec"], p["tsym"], lots * lot_size,
-                                entry_side="SELL", mode=mode, group_id=gid, reason=reason,
-                                tag="STRADDLE_ROLLER", source="straddle_roller", log=log)
-            except Exception as ue:
-                log(f"[ROLLER] {symbol} deploy unwind FAIL {p['tsym']}: {ue}")
-
-    for (sec, tsym, ot) in ((str(ce_sec), ce_tsym, "CE"), (str(pe_sec), pe_tsym, "PE")):
-        res = gw.execute_signal(
-            sid, symbol, "SELL", lots, lot_size, sec, tsym, seg="NSE_FNO", mode=mode,
-            source="straddle_roller", tag="STRADDLE_ROLLER", group_id=gid, gate=True,
-            extra_tags=["STRADDLE_ROLLER", "INITIAL"], log=log)
-        if not res.get("ok"):
-            log(f"[ROLLER] {symbol} initial {ot} SELL fail "
-                f"({res.get('reason') or res.get('status')}) — unwinding, deploy aborted")
-            _unwind("ROLLER_ABORT")
-            # mark initial-attempt done anyway → no re-fire storm within the window
-            state.initial_deployed = True
-            state.save()
-            return False, f"initial {ot} leg fail — deploy aborted (no naked leg)"
-        placed.append({"sec": sec, "tsym": tsym})
-        legs.append({"opt_type": ot, "side": "SELL", "sec_id": sec, "trad_sym": tsym,
-                     "entry_price": res.get("price") or 0, "qty": lots * lot_size})
-
-    entry_credit = round(sum(l["entry_price"] for l in legs), 2)
-    state.mark_deployed(atm, legs, lots, lot_size, group_id=gid,
-                        entry_credit=entry_credit, mode=mode)
-    log(f"[ROLLER] {symbol} INITIAL straddle SELL @ credit {entry_credit:.1f} "
-        f"(ATM {atm}, {lots} lot) — now tracking for rolls")
+    ok, info, legs, credit, lot_size = _enter_hedged_straddle(
+        symbol, spot, int(lots or 1), gid, sid, mode, cfg, log, _default_price_fn)
+    if not ok:
+        # attempt done → no re-fire storm within the window (skip rest of window/day)
+        state.initial_deployed = True
+        state.save()
+        return False, f"initial deploy aborted — {info}"
+    atm = info
+    state.mark_deployed(atm, legs, int(lots or 1), lot_size, group_id=gid,
+                        entry_credit=credit, mode=mode)
+    log(f"[ROLLER] {symbol} INITIAL hedged straddle @ credit {credit:.1f} "
+        f"(ATM {atm}, {int(lots or 1)} lot, +2 wings) — now tracking for rolls")
     try:
         import notify
-        notify.push(f"🔄 {symbol} Auto-Rolling ATM straddle deployed @ credit {entry_credit:.0f} "
+        notify.push(f"🔄 {symbol} Auto-Rolling hedged straddle deployed @ credit {credit:.0f} "
                     f"(ATM {atm})", level="info", key="roller_deploy_%s" % gid, source="chain")
     except Exception:
         pass
-    return True, f"[{mode.upper()}] {symbol} roller straddle deployed @ {entry_credit:.1f} (ATM {atm})"
+    return True, f"[{mode.upper()}] {symbol} roller hedged straddle @ {credit:.1f} (ATM {atm})"
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -576,7 +672,7 @@ def execute_roll(state, symbol, new_atm, new_ce, new_pe, lots, lot_size,
     cfg = cfg or load_config()
     price_fn = price_fn or _default_price_fn
     mode = str(mode or "paper")
-    sid = str(cfg.get("strategy_id", "atm_straddle_roller"))
+    sid = str(cfg.get("strategy_id") or "atm_straddle_roller")
     from_atm = state.deployed_atm
     q = int(lots) * int(lot_size or 1)
     ce_sec, ce_tsym = str(new_ce[0]), new_ce[1]
@@ -605,41 +701,18 @@ def execute_roll(state, symbol, new_atm, new_ce, new_pe, lots, lot_size,
         except Exception as e:
             log(f"[ROLLER] {symbol} exit leg fail {leg.get('trad_sym')}: {e}")
 
-    # ── 2. ENTER new ATM CE + PE (fresh short straddle), unwind-safe ──
-    placed = []   # [{sec, tsym}]
-
-    def _unwind(reason):
-        for p in reversed(placed):
-            try:
-                gw.execute_exit(sid, symbol, p["sec"], p["tsym"], q, entry_side="SELL",
-                                mode=mode, group_id=new_gid, reason=reason,
-                                tag="STRADDLE_ROLLER", source="straddle_roller", log=log)
-            except Exception as ue:
-                log(f"[ROLLER] {symbol} unwind FAIL {p['tsym']}: {ue}")
-
-    new_legs = []
-    for (sec, tsym, ot) in ((ce_sec, ce_tsym, "CE"), (pe_sec, pe_tsym, "PE")):
-        res = gw.execute_signal(
-            sid, symbol, "SELL", int(lots), int(lot_size or 1), sec, tsym,
-            seg="NSE_FNO", mode=mode, source="straddle_roller", tag="STRADDLE_ROLLER",
-            group_id=new_gid, gate=True, extra_tags=["STRADDLE_ROLLER", "ROLLED"],
-            log=log)
-        if not res.get("ok"):
-            log(f"[ROLLER] {symbol} new {ot} SELL fail "
-                f"({res.get('reason') or res.get('status')}) — unwinding, roll aborted "
-                f"(now flat, no naked leg)")
-            _unwind("ROLLER_ABORT")
-            state.legs = []          # exited old + unwound new → genuinely flat
-            state.deployed_atm = None
-            state.save()
-            return {"ok": False, "status": "aborted",
-                    "reason": f"new {ot} leg fail — rolled to flat (no naked)"}
-        placed.append({"sec": sec, "tsym": tsym})
-        new_legs.append({"opt_type": ot, "side": "SELL", "sec_id": sec,
-                         "trad_sym": tsym, "entry_price": res.get("price") or 0, "qty": q})
+    # ── 2. ENTER new HEDGED straddle at the new ATM (basket-gated, unwind-safe) ──
+    ok, info, new_legs, entry_credit, _ls = _enter_hedged_straddle(
+        symbol, int(new_atm), int(lots), new_gid, sid, mode, cfg, log, price_fn)
+    if not ok:
+        log(f"[ROLLER] {symbol} roll re-enter fail ({info}) — flat, no naked leg")
+        state.legs = []          # exited old + nothing re-entered → genuinely flat
+        state.deployed_atm = None
+        state.save()
+        return {"ok": False, "status": "aborted",
+                "reason": f"roll re-enter fail — flat (no naked): {info}"}
 
     # ── 3. bookkeeping — cost estimate vs premium gain (ADR "log karo har roll pe") ──
-    entry_credit = round(sum(l["entry_price"] for l in new_legs), 2)
     cost_est = estimate_roll_cost(new_atm_premium or entry_credit, q, cfg)
     prem_gain_pts = None
     if new_atm_premium is not None and current_straddle_value is not None:
