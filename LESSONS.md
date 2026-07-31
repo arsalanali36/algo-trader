@@ -4306,3 +4306,17 @@ set out to end, with two residual leaks):**
 **Verified:** `_DEV/tests/test_partial_netting.py` (equal / partial 3→2 / FIFO over-close / no-cross-net) ALL PASS; existing order_store + group_id tests unchanged; **live DB 413 contracts pe order_store open == broker per-contract net, 0 mismatch**.
 
 **Lesson (recurrence guard):** position netting me **qty hamesha honi chahiye** — "opposite leg aaya = poori position band" maan lena galat hai (partial fill/manual reduction real hai). Jab bhi position-close ya flat-detection likho, `min(qty)` netting karo, whole-row pairing kabhi nahi. Aur broker pe partial reduction ke against app ka safety-net = order_store ko truth rakho (pos_monitor usi se manage karta), taaki koi bhi manual chhed-chhaad ke baad bhi remaining position unmanaged na chhoote.
+
+## TRAP #167b — externally_closed ENTRY dropped before netting → orphaned exit shows as PHANTOM OPEN (wrong completed + running trades) (2026-07-31)
+
+**Symptom (user, live):** dashboard pe completed + running trades galat. RSI (a BUY-only strategy) ne ek **open SELL** dikhaya: `NTPC-345-CE SELL 4500 @8.15` — aur uska asli +₹4,725 completed round-trip gayab tha.
+
+**Root:** entry `id2365 BUY 4500 @7.1` ka status `externally_closed` tha (broker flat detect hua), aur uska asli exit `id2375 SELL 4500 @8.15` (reconcile) ALAG row me tha. `_dead_filtered` `externally_closed` ko netting se PEHLE hi drop kar deta tha → BUY gaya → SELL orphan → phantom OPEN SELL. (`externally_closed` = "entry ka broker position flat ho gaya" — par aksar ek asli exit-leg EXISTS, TRAP #61 family. `mark_externally_closed` + separate reconcile-exit dono ho jaate hain.)
+
+**Kyun 413-contract check ne miss kiya:** wo check dono taraf (order_store open AUR raw net) se `externally_closed` exclude kar raha tha → dono galat -4500 pe match ho gaye. Asli broker net 0 tha (flat).
+
+**Fix:** `_dead_filtered` se `externally_closed` HATAYA (ab netting me aata hai). `_net_rows`: (a) externally_closed entry apne asli exit se pair → completed round-trip; (b) genuinely UNPAIRED externally_closed (koi exit nahi = asli ghost) → open list me se skip (hidden, jaisa externally_closed ka matlab hai). Truly-dead (rejected/cancelled/failed/expired) pehle jaise drop.
+
+**Verified:** live NTPC → completed +₹4,725 / open []; test_partial_netting cases 5 (extcl+exit→completed) + 6 (extcl-alone→hidden) PASS; partial-netting + group_id + order_store regressions PASS; audit 0 FAIL.
+
+**Lesson:** ghost-hiding (`externally_closed`) aur exit-pairing do alag cheezein hain — ek status-flag se dono mat karo. Entry ko netting se drop karne se pehle dekho ki uska asli opposite exit-leg to nahi (warna wo orphan phantom-open ban jaayega). Verification query me BHI wahi rows exclude karoge jo code karta hai to bug chhup jaayega — true broker reality se compare karo, apne hi filter se nahi.
