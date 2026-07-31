@@ -168,24 +168,33 @@
 
     async function _fetchPositionLtp() {
       if (window.feedPaused || document.hidden) return;   // background tab — skip positions LTP poll (load-trim)
-      const cells = document.querySelectorAll('.ltp-cell[data-sym]');
+      const cells = [...document.querySelectorAll('.ltp-cell')];
       if (!cells.length) return;
-      const syms = [...new Set([...cells].map(el => el.getAttribute('data-sym')))];
+      // Join on sec_id (the unique contract), NOT trad_sym: two open positions can share
+      // a month-only trad_sym on different expiries (weekly+monthly) → a sym key showed
+      // one leg's LTP on the other → fake P&L (TRAP #166). Cells carry data-sec.
+      const secs = [...new Set(cells.map(el => el.getAttribute('data-sec')).filter(Boolean))];
+      const syms = [...new Set(cells.filter(el => !el.getAttribute('data-sec'))
+                                    .map(el => el.getAttribute('data-sym')).filter(Boolean))];
+      if (!secs.length && !syms.length) return;
+      const qs = [];
+      if (secs.length) qs.push('secs=' + secs.map(encodeURIComponent).join(','));
+      if (syms.length) qs.push('syms=' + syms.map(encodeURIComponent).join(','));
       try {
-        const r = await fetch('/api/positions-ltp?syms=' + syms.map(encodeURIComponent).join(','));
+        const r = await fetch('/api/positions-ltp?' + qs.join('&'));
         const j = await r.json();
         if (!j.ok) return;
-        const ltpMap = j.ltp_map || {};
-        Object.entries(ltpMap).forEach(([sym, data]) => { _ltpLive[sym] = data?.ltp; });
+        const ltpMap = j.ltp_map || {};   // keyed by sec_id (+ sym for any legacy rows)
+        Object.entries(ltpMap).forEach(([k, data]) => { _ltpLive[k] = data?.ltp; });
         _patchLtpCells();
       } catch (e) { }
     }
     setInterval(() => { if (activeTab === 'orders') _fetchPositionLtp(); }, 3000);
     function _patchLtpCells() {
-      document.querySelectorAll('.ltp-cell[data-sym]').forEach(el => {
-        const sym = el.getAttribute('data-sym');
-        const raw = _ltpLive[sym];
-        // _ltpLive[sym] can be a number (from _fetchPositionLtp) or object (from SSE)
+      document.querySelectorAll('.ltp-cell').forEach(el => {
+        const key = el.getAttribute('data-sec') || el.getAttribute('data-sym');   // sec_id join (TRAP #166)
+        const raw = _ltpLive[key];
+        // _ltpLive[key] can be a number (from _fetchPositionLtp) or object (from SSE)
         const ltp = typeof raw === 'number' ? raw : raw?.ltp;
         if (ltp == null) return;
         el.textContent = ltp.toFixed(2);
@@ -215,11 +224,11 @@
       });
       // Carried-over positional legs — extend the day's Run-Up/Run-Down from the
       // live LTP feed (their frozen tags are stale; pos_monitor is today-scoped).
-      document.querySelectorAll('.runup-cell[data-sym]').forEach(el => {
+      document.querySelectorAll('.runup-cell').forEach(el => {
         const sym = el.getAttribute('data-sym');
         const ext = _carryRunExt[el.getAttribute('data-rk') || sym];
         if (!ext) return;
-        const raw = _ltpLive[sym];
+        const raw = _ltpLive[el.getAttribute('data-sec') || sym];   // sec_id join (TRAP #166)
         const ltp = typeof raw === 'number' ? raw : raw?.ltp;
         if (ltp == null) return;
         ext.maxL = Math.max(ext.maxL, ltp);
