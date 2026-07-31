@@ -315,8 +315,8 @@ const ENTRY_KEYS={win_start:'from',win_end:'to',h0:'from h',h1:'to h',entry_hm:'
 const EXIT_KEYS={atr_sl:'ATR SL',rr:'RR',tp_frac:'TP frac',sl_frac:'SL frac',rsi_exit:'RSI exit',
   exit_hm:'exit',exit_dte:'exit DTE',squareoff_at:'squareoff',no_entry_after:'no entry after',
   sl_points:'SL pts',target_points:'target pts',trail_mode:'trail',trail_value:'trail val',
-  atr_exit:'ATR exit',zone_exit:'zone exit',fib_exit:'fib exit',exit_zone:'zone exit',exit_atr:'ATR exit'};
-const _FLAGS=['atr_exit','zone_exit','fib_exit','exit_zone','exit_atr','fresh_zone_only','hawa_me_zone'];
+  exit_zone:'zone exit',exit_atr:'ATR exit'};   // range_trader reads exit_atr/exit_zone; legacy atr_exit/zone_exit/fib_exit dropped (stale dupes)
+const _FLAGS=['exit_zone','exit_atr','fresh_zone_only','hawa_me_zone'];
 function _isOn(v){return v===true||v==='true'||v===1}
 function chipsFor(cfg,keys,zone){
   const out=[];

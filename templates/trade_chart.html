@@ -45,8 +45,9 @@
   <div id="body-row" style="display:flex; height:calc(100vh - 110px); position:relative;">
     <!-- Split chart view: left = instrument/index, right = option premium -->
     <div class="split-wrap" id="split-wrap">
-      <div class="pane" id="pane-left">
+      <div class="pane" id="pane-left" style="position:relative">
         <div class="pane-hdr"><span id="left-pane-title">Instrument</span><span class="hint">Alt+Click to expand</span></div>
+        <div id="atrBadge" style="position:absolute;top:34px;left:8px;right:8px;z-index:6;display:none;font-size:12.5px;font-weight:600;background:rgba(13,17,23,.85);border:1px solid #30363d;border-radius:8px;padding:6px 11px;line-height:1.55;pointer-events:none"></div>
         <div id="chart-left"><div class="empty muted" style="padding:20px;text-align:center">Loading underlying chart...</div></div>
       </div>
       <div class="splitter2" id="splitter2"></div>
@@ -385,7 +386,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149',
         borderVisible:false, wickUpColor:'#3fb950', wickDownColor:'#f85149' });
       s.setData(uniq);
-      window._leftSeries = s; // ref for live auto-refresh
+      window._leftSeries = s; window._leftChart = chart; window._leftCandles = d.candles; // refs for live refresh + ATR trail
+      if(window.drawAtrTrail) window.drawAtrTrail(d);   // strategy's ATR trailing exit on the index pane
 
       // RSI in the SEPARATE bottom panel (2nd chart, x-axis synced with the candles) —
       // the strategy's own Wilder RSI with OB/OS entry levels + the midline (50) EXIT line.
@@ -711,6 +713,38 @@ window.drawExitOverlay = function(d){
   }catch(e){ /* overlay is best-effort — never break the chart */ }
 };
 
+// ── ATR trailing exit overlay (index / left pane) — the strategy's MAIN exit ──
+// range_trader's ATR trailing stop (reconstructed server-side, wilder_atr(14)×2),
+// drawn as a live line on the underlying pane + a badge, so you see WHERE the
+// strategy exits on the INDEX — the exit the premium pane's ₹ SL floor doesn't
+// capture. Idempotent (line created once then setData, price-line recreated).
+window._atrOv = window._atrOv || { line:null, pl:null };
+window.drawAtrTrail = function(d){
+  try{
+    const chart = window._leftChart, s = window._leftSeries;
+    if(!chart || !s) return;
+    const ov = window._atrOv;
+    const at = d && d.atr_trail;
+    const badge = document.getElementById('atrBadge');
+    if(at && at.series && at.series.length){
+      const STEP = (LightweightCharts.LineType && LightweightCharts.LineType.WithSteps) || 1;
+      if(!ov.line) ov.line = chart.addLineSeries({color:'#f0883e', lineWidth:2, lineType:STEP, crosshairMarkerVisible:false, title:'ATR trail exit'});
+      ov.line.setData(at.series.map(p=>({time:p.time, value:p.value})));
+      const last = at.series[at.series.length-1];
+      if(ov.pl){ try{ s.removePriceLine(ov.pl); }catch(e){} ov.pl=null; }
+      if(last) ov.pl = s.createPriceLine({price:last.value, color:'#f0883e', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'ATR exit'});
+      if(badge && last){
+        const cs = window._leftCandles;
+        const cur = (cs && cs.length) ? cs[cs.length-1].close : null;
+        let away = '';
+        if(cur!=null){ const ap=Math.abs(cur-last.value); away = ` <span style="color:#8b949e;font-weight:500">(spot se ${ap.toFixed(0)}pt door)</span>`; }
+        badge.innerHTML = `<span style="color:#f0883e">🔶 ATR trail exit (${at.direction}): ${(d.symbol||'index')} ${last.value.toLocaleString('en-IN')}${away}</span> <span style="color:#8b949e;font-weight:500">· strategy ka MAIN exit · approx (${at.tf})</span>`;
+        badge.style.display = 'block';
+      }
+    } else if(badge){ badge.style.display = 'none'; }
+  }catch(e){ /* best-effort — never break the chart */ }
+};
+
 // ── Live auto-refresh (in-place data update, no page reload / no view jump) ──
 // Re-fetches both panes' candles every INTERVAL and setData()s them onto the
 // existing series — pan/zoom, markers, SL lines and P&L header all stay put;
@@ -747,8 +781,12 @@ window.drawExitOverlay = function(d){
       }).catch(()=>{});
     fetch('/api/trade-chart-underlying-data?' + base)
       .then(r => r.json()).then(d => {
-        if (d && d.ok && d.candles && d.candles.length && window._leftSeries)
-          window._leftSeries.setData(_dedupe(d.candles));
+        if (d && d.ok && d.candles && d.candles.length && window._leftSeries){
+          const _lc = _dedupe(d.candles);
+          window._leftSeries.setData(_lc);
+          window._leftCandles = _lc;
+          if (window.drawAtrTrail) window.drawAtrTrail(d);   // live ATR-exit refresh
+        }
       }).catch(()=>{});
   }
   function start(){ stop(); if (isOn()) timer = setInterval(tick, INTERVAL); }

@@ -3084,8 +3084,54 @@ def api_trade_chart_underlying_data():
                     rsi = {"series": series, "ob": ob, "mid": mid, "os": oss, "period": period, "tf": f"{tf_min}m"}
         except Exception:
             rsi = None
+        # ATR trailing-stop overlay — if this trade's strategy exits on ATR (range
+        # family, exit_atr on), reconstruct the SAME trailing stop range_trader runs
+        # (wilder_atr(14) × 2 on the strategy's own TF, ratcheting from entry) for the
+        # position's index direction, so the chart shows WHERE the ATR exit sits — the
+        # strategy's MAIN exit, distinct from the premium-pane's ₹ SL floor. Same
+        # _CHARTING.indicators the live strategy uses. Best-effort; approx (live ATR is
+        # warm across days). Display-only.
+        atr_trail = None
+        try:
+            scfg = json.loads(TC_FILE.read_text()).get(strategy_id) or {}
+            _atr_on = str(scfg.get('exit_atr', scfg.get('atr_exit', ''))).lower() in ('true', '1', 'yes')
+            er = _trade_entry_row(trad_sym, date_str, entry_t=entry_t, strategy=strategy_id) if _atr_on else None
+            _side = str((er or {}).get('side') or '').upper()
+            _ot = 'CE' if trad_sym.upper().endswith('-CE') else ('PE' if trad_sym.upper().endswith('-PE') else '')
+            if _atr_on and entry_mk is not None and _side and _ot and len(candles) > 16:
+                _long = (_side == 'BUY') == (_ot == 'CE')   # SELL PE / BUY CE = index LONG
+                tf_min = int(''.join(ch for ch in str(scfg.get('timeframe') or '1m') if ch.isdigit()) or 1) or 1
+                buck = {}                                   # strategy-TF resample: bucket OHLC
+                for c in candles:
+                    b = (c['time'] // (tf_min * 60)) * (tf_min * 60)
+                    e = buck.get(b)
+                    if e is None:
+                        buck[b] = {'time': c['time'], 'high': c['high'], 'low': c['low'], 'close': c['close']}
+                    else:
+                        e['high'] = max(e['high'], c['high']); e['low'] = min(e['low'], c['low'])
+                        e['close'] = c['close']; e['time'] = c['time']
+                bts = sorted(buck)
+                import pandas as pd
+                from _CHARTING import indicators as _ind
+                av = _ind.wilder_atr(pd.DataFrame([buck[b] for b in bts]), 14)   # exact ATR range_trader uses
+                MULT, sl, series = 2.0, None, []
+                for i, b in enumerate(bts):
+                    bk = buck[b]
+                    if bk['time'] < entry_mk:
+                        continue
+                    a = float(av.iloc[i]) if (i < len(av) and av.iloc[i] == av.iloc[i]) else None
+                    if a is None:
+                        continue
+                    lvl = (bk['close'] - a * MULT) if _long else (bk['close'] + a * MULT)
+                    sl = lvl if sl is None else (max(sl, lvl) if _long else min(sl, lvl))
+                    series.append({"time": bk['time'], "value": round(sl, 2)})
+                if len(series) >= 2:
+                    atr_trail = {"direction": "LONG" if _long else "SHORT",
+                                 "series": series, "mult": MULT, "period": 14, "tf": f"{tf_min}m"}
+        except Exception:
+            atr_trail = None
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
-                        "symbol": root, "date": date_str, "zone": zone, "rsi": rsi})
+                        "symbol": root, "date": date_str, "zone": zone, "rsi": rsi, "atr_trail": atr_trail})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
 
