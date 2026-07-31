@@ -429,7 +429,41 @@
 
       // Mon index format: Mon = 0, Sun = 6
       const toMonIndex = dow => (dow === 0 ? 6 : dow - 1);
-      const startOffset = toMonIndex(firstDay);
+
+      // Narrow/mobile: drop Sat/Sun (5-col Mon–Fri) so tiles don't squeeze —
+      // UNLESS this month has weekend trading activity (e.g. a Feb budget special
+      // session), in which case keep the full 7-col grid. Desktop always 7-col.
+      const _narrow = window.matchMedia('(max-width: 760px)').matches;
+      let _wkndAct = false;
+      for (let _d = 1; _d <= daysInMonth; _d++) {
+        const _dw = new Date(calYear, calMonth, _d).getDay();
+        if (_dw === 0 || _dw === 6) {
+          const _ds = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(_d).padStart(2, '0')}`;
+          if (summary[_ds] && summary[_ds].count > 0) { _wkndAct = true; break; }
+        }
+      }
+      const hideWeekends = _narrow && !_wkndAct;
+      const _wk = document.querySelector('.cal-weekdays');
+      if (hideWeekends) {
+        grid.style.gridTemplateColumns = 'repeat(5, 1fr)';
+        if (_wk) { _wk.style.gridTemplateColumns = 'repeat(5, 1fr)'; _wk.classList.add('cal-hide-wknd'); }
+      } else {
+        grid.style.gridTemplateColumns = '';
+        if (_wk) { _wk.style.gridTemplateColumns = ''; _wk.classList.remove('cal-hide-wknd'); }
+      }
+      // In a 5-col Mon–Fri grid the first day's column = its weekday index
+      // (Mon=0..Fri=4); a month starting on a weekend begins at Monday (col 0).
+      const startOffset = hideWeekends
+        ? ((firstDay === 0 || firstDay === 6) ? 0 : firstDay - 1)
+        : toMonIndex(firstDay);
+
+      // re-render once when crossing the mobile breakpoint (rotate/resize)
+      if (!window._calWkndMQ) {
+        window._calWkndMQ = window.matchMedia('(max-width: 760px)');
+        window._calWkndMQ.addEventListener('change', function () {
+          if (typeof calendarRender === 'function') calendarRender(true);
+        });
+      }
 
       // Add empty cells for offset
       for (let i = 0; i < startOffset; i++) {
@@ -446,6 +480,7 @@
         const isToday = cellDate.toDateString() === today.toDateString();
         const dow = cellDate.getDay();
         const isWeekend = dow === 0 || dow === 6;
+        if (hideWeekends && isWeekend) continue;   // narrow: no Sat/Sun tiles
         const holidayName = CAL_MARKET_HOLIDAYS[dateStr];
 
         const cell = document.createElement('div');

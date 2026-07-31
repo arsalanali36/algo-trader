@@ -6,6 +6,11 @@
 /* hamburger button injected by app-15-mobile.js — hidden until narrow */
 .mobile-burger { display: none; }
 
+/* Stats calendar weekend-drop (narrow): app-13 toggles .cal-hide-wknd + sets the
+   grid to 5 columns; hide the Sat/Sun weekday header labels (6th onward). JS-gated,
+   so this is safe outside the media query. */
+.cal-weekdays.cal-hide-wknd > *:nth-child(n+6) { display: none; }
+
 @media (max-width: 760px) {
 
   /* ── Header: reveal hamburger, tighten ── */

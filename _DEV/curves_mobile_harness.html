@@ -1,0 +1,58 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--bd:#30363d;--tx:#e6edf3;--mut:#8b949e;--blu:#1f6feb}
+  *{box-sizing:border-box} html,body{height:100%}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,Segoe UI,Arial,sans-serif;font-size:13px;display:flex;flex-direction:column;overflow:hidden}
+  .top{display:flex;align-items:center;gap:12px;padding:8px 14px;border-bottom:1px solid var(--bd);background:var(--panel)}
+  .title{font-size:15px;font-weight:700}
+  .wrap{flex:1;display:flex;min-height:0}
+  .side{width:210px;flex-shrink:0;border-right:1px solid var(--bd);background:var(--panel);padding:12px;overflow-y:auto}
+  .side-rs{flex-shrink:0;width:5px;cursor:ew-resize;background:transparent}
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+  .main.grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px;align-content:start}
+  .pane{position:relative;min-height:120px;flex-shrink:0;background:#161b22;border:1px solid #21262d;border-radius:8px;margin:4px}
+  /* ── mobile / 9:16 (narrow) — COPY of option_curves.html media block under test ── */
+  .oc-burger{display:none}
+  @media (max-width:760px){
+    .top{flex-wrap:wrap;gap:8px;padding:8px 10px}
+    .top .title{font-size:14px}
+    .oc-burger{display:inline-flex;align-items:center;justify-content:center;
+      width:32px;height:32px;flex:0 0 auto;background:#21262d;border:1px solid var(--bd);
+      border-radius:7px;color:var(--tx);font-size:17px;line-height:1;cursor:pointer}
+    .side{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:300px;z-index:9999;
+      transform:translateX(-104%);transition:transform .22s ease;box-shadow:2px 0 18px #0007}
+    .side.m-open{transform:translateX(0)}
+    .side-rs{display:none}
+    .main.grid2{grid-template-columns:1fr}
+    #oc-scrim{position:fixed;inset:0;background:#000a;z-index:9998;opacity:0;
+      pointer-events:none;transition:opacity .22s}
+    #oc-scrim.m-open{opacity:1;pointer-events:auto}
+  }
+</style></head>
+<body>
+  <div class="top">
+    <button class="oc-burger" aria-label="Controls" onclick="ocToggleSide()">&#9776;</button>
+    <span class="title">📈 Option Curves</span>
+  </div>
+  <div class="wrap">
+    <div class="side">
+      <div>Underlying: NIFTY</div><div>Date: Today</div><div>Panels…</div>
+    </div>
+    <div class="side-rs" id="sideRs"></div>
+    <div class="main grid2" id="main">
+      <div class="pane">Straddle premium</div>
+      <div class="pane">ATM gamma</div>
+      <div class="pane">OI · CE vs PE</div>
+    </div>
+  </div>
+  <script>
+  window.ocToggleSide = function(){
+    var side=document.querySelector('.side'); if(!side) return;
+    var scrim=document.getElementById('oc-scrim');
+    if(!scrim){ scrim=document.createElement('div'); scrim.id='oc-scrim';
+      document.body.appendChild(scrim); scrim.addEventListener('click', window.ocToggleSide); }
+    var open=!side.classList.contains('m-open');
+    side.classList.toggle('m-open', open); scrim.classList.toggle('m-open', open);
+  };
+  </script>
+</body></html>

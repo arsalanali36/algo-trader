@@ -119,10 +119,28 @@
     .clg{position:absolute;top:6px;left:10px;z-index:3;display:flex;flex-wrap:wrap;gap:8px;pointer-events:none;background:rgba(13,17,23,.6);padding:2px 6px;border-radius:4px}
     .clg span{font-size:10px;font-weight:700;display:flex;align-items:center;gap:3px;color:var(--mut)}
     .clg i{width:10px;height:2px;display:inline-block;border-radius:2px}
+    /* ── mobile / 9:16 (narrow) ── sidebar becomes a slide-in drawer, panels 1-col ── */
+    .oc-burger{display:none}
+    @media (max-width:760px){
+      .top{flex-wrap:wrap;gap:8px;padding:8px 10px}
+      .top .title{font-size:14px}
+      .oc-burger{display:inline-flex;align-items:center;justify-content:center;
+        width:32px;height:32px;flex:0 0 auto;background:#21262d;border:1px solid var(--bd);
+        border-radius:7px;color:var(--tx);font-size:17px;line-height:1;cursor:pointer}
+      .side{position:fixed;top:0;left:0;bottom:0;width:82%;max-width:300px;z-index:9999;
+        transform:translateX(-104%);transition:transform .22s ease;box-shadow:2px 0 18px #0007}
+      .side.m-open{transform:translateX(0)}
+      .side-rs{display:none}
+      .main.grid2{grid-template-columns:1fr}
+      #oc-scrim{position:fixed;inset:0;background:#000a;z-index:9998;opacity:0;
+        pointer-events:none;transition:opacity .22s}
+      #oc-scrim.m-open{opacity:1;pointer-events:auto}
+    }
   </style>
 </head>
 <body>
   <div class="top">
+    <button class="oc-burger" aria-label="Controls" onclick="ocToggleSide()">&#9776;</button>
     <span class="title">📈 Option Curves<span class="sub">ATM straddle + gamma · live chain</span></span>
     <div class="spacer"></div>
     <button class="topbtn" onclick="togglePanelModal(event)" title="Panels select karo">▤ Panels</button>
@@ -1380,6 +1398,16 @@
   function schedule(){ if(_timer) clearTimeout(_timer); if(AUTO) _timer=setTimeout(function(){ refresh(false); }, 30000); }
 
   window.addEventListener('resize', relayout);
+
+  // mobile: toggle the controls sidebar as a slide-in drawer
+  window.ocToggleSide = function(){
+    var side=document.querySelector('.side'); if(!side) return;
+    var scrim=document.getElementById('oc-scrim');
+    if(!scrim){ scrim=document.createElement('div'); scrim.id='oc-scrim';
+      document.body.appendChild(scrim); scrim.addEventListener('click', window.ocToggleSide); }
+    var open=!side.classList.contains('m-open');
+    side.classList.toggle('m-open', open); scrim.classList.toggle('m-open', open);
+  };
 
   // Alt+R: Fit view → equal panel heights; Tall view → reset chart zoom only (panels untouched)
   window.addEventListener('keydown', function(e){
