@@ -972,7 +972,7 @@ async function gen(){{
   document.getElementById('st').textContent=j.msg||'done';
   if(j.ok) setTimeout(()=>location.reload(), 90000);
 }}
-</script></body></html>"""
+</script><script defer src="/static/js/topnav.js"></script></body></html>"""
 
 @app.route('/reports/<date>')
 def reports_view(date):
@@ -1017,7 +1017,7 @@ li{{margin:10px 0;list-style:none}}.dim{{color:#8b949e}}p.hint{{color:#8b949e;fo
 <p class="hint">Roz ka flow: Claude ko din ke points do → wo presentation banake yahan date-wise save karta hai.</p>
 <ul>{items}</ul>
 <p><a href='/'>← Dashboard</a> &nbsp;|&nbsp; <a href='/reports'>📋 EOD Reports</a></p>
-</body></html>"""
+<script defer src="/static/js/topnav.js"></script></body></html>"""
 
 @app.route('/presentations/<date>')
 def presentations_view(date):

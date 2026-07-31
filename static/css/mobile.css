@@ -30,17 +30,18 @@
     position: fixed; top: 52px; left: 0; bottom: 0;
     width: 80%; max-width: 320px;
     flex-direction: column; align-items: stretch;
+    justify-content: flex-start; gap: 0;      /* items pack tight from top, no spread-out gaps */
     background: #161b22; border-right: 1px solid #30363d;
     overflow-y: auto; overflow-x: hidden;
-    z-index: 9999; padding: 8px 0;
+    z-index: 9999; padding: 4px 0;
     transform: translateX(-106%); transition: transform .22s ease;
     box-shadow: 2px 0 18px #0007;
   }
   .hdr .tabs.m-open { transform: translateX(0); }
   .hdr .tabs .tab,
   .hdr .tabs a.tab {
-    width: 100%; box-sizing: border-box;
-    padding: 12px 16px; border-radius: 0; text-align: left;
+    width: 100%; box-sizing: border-box; height: auto; flex: 0 0 auto;
+    padding: 11px 16px; border-radius: 0; text-align: left; line-height: 1.2;
     border-bottom: 1px solid #21262d;
   }
   .hdr .tabs .tab-dropdown-container {
@@ -81,4 +82,13 @@
   /* ── Wide tables / media: scroll instead of blowing out the page ── */
   .mini-table { max-width: 100%; }
   img, canvas, svg, video { max-width: 100%; }
+
+  /* ── Frozen first column TRAP fix: on a narrow screen a sticky first column
+     eats the whole viewport, so horizontal-scroll never reveals the rest. Unfreeze
+     it on mobile and let the whole table scroll sideways as one unit. ── */
+  #risk-strategy-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  #risk-strategy-table .cfg-table th:first-child,
+  #risk-strategy-table .cfg-table td:first-child {
+    position: static; box-shadow: none;
+  }
 }

@@ -132,6 +132,8 @@
       .side.m-open{transform:translateX(0)}
       .side-rs{display:none}
       .main.grid2{grid-template-columns:1fr}
+      /* vertical swipe scrolls the PAGE (charts only pan horizontally) → no scroll-trap */
+      .pane{touch-action:pan-y}
       #oc-scrim{position:fixed;inset:0;background:#000a;z-index:9998;opacity:0;
         pointer-events:none;transition:opacity .22s}
       #oc-scrim.m-open{opacity:1;pointer-events:auto}
@@ -386,6 +388,9 @@
   var TALL_H = 380;                        // fixed pane height in Tall mode
   var DAYS = load('oc_days', 1);           // 1 = today only; N = last N stored days concatenated
   var COLS = load('oc_cols', 1);           // 1 = stacked | 2 = two-column grid
+  // 9:16 / mobile: force stacked + tall panes + whole-page scroll so charts are
+  // readable AND the page scrolls (Fit+Panel traps the scroll inside the charts).
+  if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) { VIEW='tall'; SCROLL='page'; COLS=1; }
   var order = load('oc_order', null);      // panel ids in display order (null = PANELS order)
   var _crossSync = false;                  // guard for cross-pane crosshair sync
 
@@ -1455,5 +1460,6 @@
 
   refresh(true);
 </script>
+<script defer src="/static/js/topnav.js"></script>
 </body>
 </html>

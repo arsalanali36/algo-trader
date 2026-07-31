@@ -771,8 +771,18 @@ document.head.insertAdjacentHTML('beforeend',`<style>
   .rz:hover,.rz.drag{background:var(--blue)}
   /* None-grouping: faint divider on the first row of each new family (visible family boundary) */
   tr.famtop>td{border-top:1px solid var(--bd)}
+  /* 9:16 / narrow: 3 pinned columns (idx+id+name) fill a phone screen so sideways-scroll
+     never shows the data columns → unfreeze them + drop the nested scroll box so the whole
+     table (and page) scrolls normally as one unit. */
+  @media(max-width:760px){
+    .scroll{max-height:none;overflow:auto}
+    th.fz,td.fz,thead th.fz,.frow th.fz{position:static;z-index:auto}
+    .fz-name{max-width:none}
+    .wrap{padding:8px 10px}
+  }
 </style>`);
 hlView();
 load();
 </script>
+<script defer src="/static/js/topnav.js"></script>
 </body></html>
