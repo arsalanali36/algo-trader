@@ -40,6 +40,64 @@ _OHLC_DIR = os.path.join(_ROOT, "data", "trade_ohlc")
 _EOD_HM = "15:15"   # intraday exit proxy (no-target-hit natural close)
 
 
+def _squareoff_hm():
+    """Intraday exit proxy = the configured squareoff time (single source, so it
+    tracks the CAS 15:10 change instead of a hardcode)."""
+    try:
+        cfg = json.load(open(os.path.join(_ROOT, "nifty_config.json"), encoding="utf-8"))
+        v = cfg.get("_risk", {}).get("global", {}).get("auto_squareoff_at")
+        if v and ":" in str(v):
+            return str(v)[:5]
+    except Exception:
+        pass
+    return "15:10"
+
+
+def _lake_replay(rec):
+    """Phase-2 fallback: jab disk bars nahi (blocked contract kabhi trade nahi hua),
+    to collector lake (opt_whatif) se REAL premium price karo — entry @ signal-minute,
+    exit @ squareoff proxy. Sirf NIFTY/BANKNIFTY index options (unhi ka collector lake).
+    opt_whatif ki apni per-minute MTM series se eod/best(MFE)/worst(MAE) nikaalte hain."""
+    trad = (rec.get("trad_sym") or "")
+    parts = trad.split("-")
+    if len(parts) < 4:
+        return None
+    u = parts[0].upper()
+    if u not in ("NIFTY", "BANKNIFTY"):      # lake index-only; stocks -> honest no_data
+        return None
+    ot = parts[-1].upper()
+    if ot not in ("CE", "PE"):
+        return None
+    try:
+        strike = float(parts[-2])
+    except Exception:
+        return None
+    et = (rec.get("ts") or "")[11:16]
+    if not et:
+        return None
+    lots = int(rec.get("intended_lots") or 1)
+    side = (rec.get("side") or "BUY").upper()
+    xt = _squareoff_hm()
+    try:
+        import opt_whatif as w
+        r = w.run(u, rec.get("date"), et, xt, lots,
+                  [{"side": side, "strike": strike, "type": ot}])
+    except Exception:
+        return None
+    if not r or not r.get("ok") or not r.get("legs"):
+        return None
+    L = r["legs"][0]
+    vals = [p["mtm"] for p in (r.get("mtm") or []) if "mtm" in p]
+    eod = r.get("total")
+    return {
+        "src": "lake", "exit_time": xt,
+        "entry_premium": L.get("entry"), "exit_eod_premium": L.get("exit"),
+        "pnl_eod": eod,
+        "pnl_best": (max(vals) if vals else eod),
+        "pnl_worst": (min(vals) if vals else eod),
+    }
+
+
 def _min_str_from_key(k):
     """trade_ohlc key -> 'HH:MM' (IST). Key epoch-seconds ya 'HH:MM' ho sakta hai."""
     ks = str(k)
@@ -108,6 +166,14 @@ def replay_one(rec):
          "reason": rec.get("block_reason"), "entry_time": et,
          "entry_premium": entry, "qty": qty, "covered": False}
     if not path or not entry or not qty:
+        lake = _lake_replay(rec)      # Phase-2: collector-lake pricing (index options)
+        if lake:
+            d.update({"covered": True, "src": "lake",
+                      "entry_premium": lake["entry_premium"],
+                      "exit_eod_premium": lake["exit_eod_premium"],
+                      "pnl_eod": lake["pnl_eod"], "pnl_best": lake["pnl_best"],
+                      "pnl_worst": lake["pnl_worst"], "exit_time": lake["exit_time"]})
+            return d
         d["note"] = "no_data" if not path else "no_entry_premium_or_qty"
         return d
     closes = [c for _, c in path]
@@ -121,7 +187,7 @@ def replay_one(rec):
     mfe = max(closes)
     mae = min(closes)
     d.update({
-        "covered": True,
+        "covered": True, "src": "disk",
         "exit_eod_premium": round(eod, 2),
         "mfe_premium": round(mfe, 2), "mae_premium": round(mae, 2),
         # LONG option what-if (₹): natural EOD hold, plus best/worst-case bounds
@@ -138,24 +204,27 @@ def run(date_from, date_to, strategy=None):
     covered = [r for r in results if r["covered"]]
     nodata = [r for r in results if not r["covered"]]
 
+    disk = [r for r in covered if r.get("src") == "disk"]
+    lake = [r for r in covered if r.get("src") == "lake"]
     print("Skipped-signal replay  %s -> %s%s" %
           (date_from, date_to, ("  strategy=%s" % strategy) if strategy else ""))
     print("  total blocked signals : %d" % len(results))
-    print("  covered (disk bars)   : %d" % len(covered))
+    print("  covered               : %d  (disk bars %d + collector lake %d)"
+          % (len(covered), len(disk), len(lake)))
     print("  no premium data       : %d" % len(nodata))
     if covered:
         tot_eod = sum(r["pnl_eod"] for r in covered)
         tot_best = sum(r["pnl_best"] for r in covered)
         tot_worst = sum(r["pnl_worst"] for r in covered)
-        print("  --- covered what-if (LONG option, GROSS, per recorded qty) ---")
-        print("  EOD-hold  total : Rs %s" % f"{tot_eod:,.0f}")
-        print("  best-case total : Rs %s" % f"{tot_best:,.0f}")
-        print("  worst-case total: Rs %s" % f"{tot_worst:,.0f}")
-        print("  %-12s %-26s %-6s %10s %10s %10s" %
-              ("date", "symbol", "side", "eod", "best", "worst"))
+        print("  --- covered what-if (side-aware, GROSS, per recorded qty; exit = squareoff/EOD proxy) ---")
+        print("  hold-to-exit total : Rs %s" % f"{tot_eod:,.0f}")
+        print("  best-case total    : Rs %s" % f"{tot_best:,.0f}")
+        print("  worst-case total   : Rs %s" % f"{tot_worst:,.0f}")
+        print("  %-11s %-26s %-4s %-5s %9s %9s %9s" %
+              ("date", "symbol", "side", "src", "exit", "best", "worst"))
         for r in covered:
-            print("  %-12s %-26s %-6s %10s %10s %10s" % (
-                r["date"], (r["trad_sym"] or r["symbol"])[:26], r["side"],
+            print("  %-11s %-26s %-4s %-5s %9s %9s %9s" % (
+                r["date"], (r["trad_sym"] or r["symbol"])[:26], r["side"], r.get("src", ""),
                 f"{r['pnl_eod']:,.0f}", f"{r['pnl_best']:,.0f}", f"{r['pnl_worst']:,.0f}"))
     if nodata:
         print("  --- no disk bars (phase-2 = expired-lake fetch) ---")
@@ -168,8 +237,13 @@ def run(date_from, date_to, strategy=None):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser()
-    ap.add_argument("--from", dest="date_from", required=True)
-    ap.add_argument("--to", dest="date_to", required=True)
+    ap.add_argument("--date", default=None, help="single day (sets --from = --to)")
+    ap.add_argument("--from", dest="date_from", default=None)
+    ap.add_argument("--to", dest="date_to", default=None)
     ap.add_argument("--strategy", default=None)
     a = ap.parse_args()
-    run(a.date_from, a.date_to, a.strategy)
+    df = a.date_from or a.date
+    dt = a.date_to or a.date
+    if not df or not dt:
+        ap.error("give --date YYYY-MM-DD  (or --from/--to)")
+    run(df, dt, a.strategy)
