@@ -322,6 +322,46 @@ def bt_live_html(bt_rows):
         "<th>Backtest P&L</th><th>Live P&L</th><th></th></tr>" + trs + "</table></div>")
 
 
+def blocked_whatif_html(date):
+    """RMS-block hui entries ka "agar li hoti to kya hota" — skipped_replay engine se
+    (index signals collector-lake se priced, traded disk-bars se). Fail-safe: koi bhi
+    dikkat pe section skip, report kabhi na tode."""
+    try:
+        import skipped_store
+        import skipped_replay as sr
+        recs = skipped_store.query(date, date)
+        if not recs:
+            return ""
+        results = [sr.replay_one(r) for r in recs]
+    except Exception as e:
+        return f"<h2>🚫 Blocked-signal what-if</h2><p class='dim'>replay error: {esc(str(e))}</p>"
+    covered = [r for r in results if r.get("covered")]
+    nd = len(results) - len(covered)
+    if not covered:
+        return ("<h2>🚫 Blocked-signal what-if <span class='dim' style='font-size:12px;font-weight:400'>"
+                f"({len(results)} entries RMS-block huin — price nahi mila (stock/no-lake))</span></h2>")
+    tot = sum(r["pnl_eod"] for r in covered)
+    tot_b = sum(r["pnl_best"] for r in covered)
+    tot_w = sum(r["pnl_worst"] for r in covered)
+    tone = "g" if tot >= 0 else "r"
+    trs = "".join(
+        f"<tr><td>{esc(_sid_lbl(r['strategy']))}</td>"
+        f"<td>{esc((r['trad_sym'] or r['symbol'])[:26])}</td><td>{esc(r['side'])}</td>"
+        f"<td class='dim'>{esc((r.get('reason') or '')[:16])}</td>"
+        f"<td class='{'g' if r['pnl_eod'] >= 0 else 'r'}'>₹{r['pnl_eod']:+,.0f}</td>"
+        f"<td class='dim'>₹{r['pnl_best']:+,.0f}</td><td class='dim'>₹{r['pnl_worst']:+,.0f}</td></tr>"
+        for r in sorted(covered, key=lambda x: x["pnl_eod"]))
+    nd_note = f" · +{nd} aur (stock/no-lake — price nahi)" if nd else ""
+    return (
+        "<h2>🚫 Blocked-signal what-if <span class='dim' style='font-size:12px;font-weight:400'>"
+        "(RMS-block hui entries — agar li hoti to. + = bacha nahi, − = nuksan bacha. exit = "
+        f"squareoff proxy; index=lake priced){nd_note}</span></h2>"
+        f"<p>Agar sab li hoti: <b class='{tone}'>₹{tot:+,.0f}</b> "
+        f"<span class='dim'>· best ₹{tot_b:+,.0f} · worst ₹{tot_w:+,.0f} · {len(covered)} priced</span></p>"
+        "<div class='overflow'><table><tr><th>Strategy</th><th>Contract</th><th>Side</th>"
+        "<th>Reason</th><th>If-taken</th><th>Best</th><th>Worst</th></tr>" + trs + "</table></div>")
+
+
 def render(data):
     rows, date = data["rows"], data["date"]
     bt_rows, bt_warn = bt_live_match(date)
@@ -460,6 +500,7 @@ def render(data):
 <th>P&L</th><th>Win%</th><th>Backtest exp</th><th>Replay #108</th><th>Issues</th></tr>
 {''.join(trs)}</table></div>
 {bt_live_html(bt_rows)}
+{blocked_whatif_html(date)}
 <h2 class='g'>✅ Positives</h2><ul>{''.join(f'<li>{esc(p)}</li>' for p in pos)}</ul>
 <h2 class='r'>❌ Negatives / dhyaan do</h2><ul>{''.join(f'<li>{esc(n)}</li>' for n in neg)}</ul>
 <h2>Per-strategy detail <span class='dim' style='font-size:12px;font-weight:400'>(sirf jo chali)</span></h2>{''.join(details)}
