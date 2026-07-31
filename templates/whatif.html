@@ -112,6 +112,7 @@
       <div class="tot" id="totbox"><div><div class="l">Net P&amp;L (gross)</div><div class="b" id="totv">—</div></div>
         <span class="badge" id="mv"></span><span class="src" id="src"></span></div>
       <table id="legtbl"><thead><tr><th>Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
+      <div id="mtmwrap" style="display:none;margin:2px 0 22px"></div>
       <div class="brkt">Profit kahan se aaya</div>
       <div class="bars" id="bars"></div>
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:6px">
@@ -213,6 +214,7 @@ function render(r){
   $('src').textContent = r.source==='lake'?'historical · BS greeks':'live collector · real greeks';
   $('legtbl').querySelector('tbody').innerHTML=r.legs.map(l=>{const c=l.pnl>=0?'pos':'neg2';
     return `<tr><td>${l.label}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—'}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
+  renderMtm(r);
   const items=[['Decay',r.decay,'var(--green)'],['Price move',r.price,'var(--blue)'],['IV crush',r.iv,'var(--amber)']];
   const MAX=Math.max(1,...items.map(i=>Math.abs(i[1])))*1.18, mid=60;
   $('bars').innerHTML='<div style="position:absolute;left:0;right:0;top:'+mid+'px;height:1px;background:var(--bd)"></div>'+
@@ -221,6 +223,62 @@ function render(r){
         <div style="position:absolute;left:0;right:0;top:${up?mid-h:mid}px;height:${h}px;width:56%;margin:0 auto;background:${c};border-radius:${up?'3px 3px 0 0':'0 0 3px 3px'}"></div>
         <div style="position:absolute;left:0;right:0;top:${up?mid-h-17:mid+h+3}px;text-align:center;font-size:12px;font-weight:700;color:${c}">${fmt(v)}</div>
         <div style="position:absolute;left:0;right:0;bottom:-22px;text-align:center;font-size:11px;color:var(--mut)">${n}</div></div>`;}).join('');
+}
+
+// ---- MTM journey line chart (SVG) — how much heat/give-back during the hold ----
+function inr(v){return Math.abs(v).toLocaleString('en-IN');}
+function sgn(v){return (v<0?'−':'+')+'₹'+inr(v);}
+function renderMtm(r){
+  const w=$('mtmwrap'); const pts=(r.mtm)||[];
+  if(pts.length<2){ w.style.display='none'; return; }
+  w.style.display='block';
+  const n=pts.length, vals=pts.map(p=>p.mtm);
+  let lo=Math.min(0,...vals), hi=Math.max(0,...vals);
+  const span=(hi-lo)||1; lo-=span*0.12; hi+=span*0.12;
+  const W=1000,H=250,padL=6,padR=6,padT=16,padB=26, plotW=W-padL-padR, plotH=H-padT-padB;
+  const X=i=> padL+(n>1? i/(n-1)*plotW : 0);
+  const Y=v=> padT+(hi-v)/(hi-lo)*plotH;
+  const zeroY=Y(0), zf=Math.max(0,Math.min(1,(zeroY-padT)/plotH));
+  // peak / trough / give-back
+  let maxV=-Infinity,minV=Infinity,mi=0,ni=0,peak=-Infinity,dd=0;
+  vals.forEach((v,i)=>{ if(v>maxV){maxV=v;mi=i;} if(v<minV){minV=v;ni=i;} peak=Math.max(peak,v); dd=Math.max(dd,peak-v); });
+  const finalV=vals[n-1], finalC=finalV>=0?'var(--green)':'var(--red)';
+  let line='',area='M'+X(0).toFixed(1)+' '+zeroY.toFixed(1)+' ';
+  pts.forEach((p,i)=>{ const x=X(i).toFixed(1),y=Y(p.mtm).toFixed(1); line+=(i?'L':'M')+x+' '+y+' '; area+='L'+x+' '+y+' '; });
+  area+='L'+X(n-1).toFixed(1)+' '+zeroY.toFixed(1)+' Z';
+  // day separators + labels
+  let seps='',dayMid=[],segStart=0;
+  for(let i=1;i<=n;i++){ if(i===n||pts[i].d!==pts[i-1].d){ dayMid.push([(segStart+i-1)/2,pts[segStart].d]);
+    if(i<n){const xx=X(i).toFixed(1); seps+=`<line x1="${xx}" y1="${padT}" x2="${xx}" y2="${padT+plotH}" stroke="var(--bd)" stroke-dasharray="3 3"/>`;} segStart=i; } }
+  const labels=dayMid.map(([m,d])=>`<text x="${X(m).toFixed(1)}" y="${H-8}" text-anchor="middle" font-size="11" fill="var(--mut)">${d.slice(5)}</text>`).join('');
+  const mk=(i,color,txt,above)=>{const x=X(i).toFixed(1),y=Y(pts[i].mtm); return `<circle cx="${x}" cy="${y.toFixed(1)}" r="3.6" fill="${color}"/><text x="${x}" y="${(above?y-7:y+15).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${color}">${txt}</text>`;};
+  const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:250px;display:block">
+    <defs><linearGradient id="mtmg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="var(--green)" stop-opacity="0.24"/><stop offset="${zf.toFixed(3)}" stop-color="var(--green)" stop-opacity="0.04"/>
+      <stop offset="${zf.toFixed(3)}" stop-color="var(--red)" stop-opacity="0.04"/><stop offset="1" stop-color="var(--red)" stop-opacity="0.24"/></linearGradient></defs>
+    <path d="${area}" fill="url(#mtmg)"/>
+    <line x1="${padL}" y1="${zeroY.toFixed(1)}" x2="${W-padR}" y2="${zeroY.toFixed(1)}" stroke="var(--dim)" stroke-dasharray="4 4"/>
+    ${seps}<path d="${line}" fill="none" stroke="${finalC}" stroke-width="2"/>
+    ${mk(mi,'var(--green)','Peak '+sgn(maxV),true)}${mk(ni,'var(--red)','Low '+sgn(minV),false)}${labels}</svg>`;
+  const head=`<div style="display:flex;gap:16px;flex-wrap:wrap;align-items:baseline;margin-bottom:8px">
+     <div class="brkt" style="margin:0">📉 MTM journey <span style="color:var(--dim);text-transform:none;letter-spacing:0">— hold ke dauraan kitna jhelna pada</span></div><div style="flex:1"></div>
+     <div style="font-size:12px"><span style="color:var(--mut)">Peak</span> <b style="color:var(--green)">${sgn(maxV)}</b></div>
+     <div style="font-size:12px"><span style="color:var(--mut)">Sabse neeche</span> <b style="color:var(--red)">${sgn(minV)}</b></div>
+     <div style="font-size:12px"><span style="color:var(--mut)">Max give-back</span> <b style="color:var(--amber)">₹${inr(dd)}</b></div>
+     <div style="font-size:12px"><span style="color:var(--mut)">Final</span> <b style="color:${finalC}">${sgn(finalV)}</b></div></div>`;
+  w.innerHTML=head+`<div id="mtmchart" style="position:relative;border:1px solid var(--bd);border-radius:10px;background:var(--panel);overflow:hidden">${svg}
+    <div id="mtmcross" style="position:absolute;top:0;bottom:0;width:1px;background:var(--dim);display:none;pointer-events:none"></div>
+    <div id="mtmtip" style="position:absolute;display:none;pointer-events:none;background:#0d1117;border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:11px;white-space:nowrap;z-index:5"></div></div>`;
+  const chart=$('mtmchart'),el=chart.querySelector('svg'),tip=$('mtmtip'),cross=$('mtmcross');
+  el.addEventListener('mousemove',e=>{
+    const rc=el.getBoundingClientRect(); const vbx=(e.clientX-rc.left)/rc.width*W;
+    let i=Math.round((vbx-padL)/plotW*(n-1)); i=Math.max(0,Math.min(n-1,i)); const p=pts[i];
+    const px=X(i)/W*rc.width, py=Y(p.mtm)/H*rc.height;
+    cross.style.display='block'; cross.style.left=px+'px';
+    tip.style.display='block'; tip.innerHTML=`<b>${p.d.slice(5)} ${p.t}</b> · <b style="color:${p.mtm>=0?'var(--green)':'var(--red)'}">${sgn(p.mtm)}</b>`;
+    let tx=px+10; if(tx>rc.width-130) tx=px-130; tip.style.left=Math.max(2,tx)+'px'; tip.style.top=Math.max(2,py-30)+'px';
+  });
+  el.addEventListener('mouseleave',()=>{tip.style.display='none';cross.style.display='none';});
 }
 
 // ---- journal (localStorage): save runs + combined total across dates ----

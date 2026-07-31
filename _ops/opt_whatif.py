@@ -334,6 +334,98 @@ def _days_between(d1, d2):
         return 0
 
 
+def _day_span(d1, d2, cap=90):
+    """All calendar dates d1..d2 (inclusive), capped — non-trading days just yield no data."""
+    out = []
+    try:
+        a = _dt.datetime.strptime(d1, "%Y-%m-%d").date()
+        b = _dt.datetime.strptime(d2, "%Y-%m-%d").date()
+    except Exception:
+        return [d1]
+    while a <= b and len(out) <= cap:
+        out.append(a.isoformat())
+        a += _dt.timedelta(days=1)
+    return out
+
+
+def _leg_series_day(u, date, expiry, strike, ot):
+    """[(hm, prem)] sorted for ONE leg on ONE day. Collector (strict on the held `expiry`)
+    first; only fall back to the lake when no expiry is pinned (lake-origin hold), so a
+    held weekly is never silently re-read as a different nearest weekly."""
+    try:
+        _, rows = _oc._load_rows(u, date)
+    except Exception:
+        rows = None
+    if rows:
+        if expiry:
+            c = [r for r in rows if r.get("expiry") == expiry
+                 and _f(r.get("strike")) == strike and r.get("opt_type") == ot]
+        else:
+            exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+            exp = exps[0] if exps else None
+            c = ([r for r in rows if r.get("expiry") == exp and _f(r.get("strike")) == strike
+                  and r.get("opt_type") == ot] if exp else [])
+        c = sorted(c, key=lambda r: r.get("datetime") or "")
+        out = [((r["datetime"])[11:16], _f(r.get("ltp"))) for r in c if _f(r.get("ltp")) is not None]
+        if out:
+            return out
+        if expiry:            # collector-known held expiry missing this day → no wrong-expiry lake fallback
+            return []
+    if not expiry:            # lake-origin hold only
+        root = _lake_root(u)
+        if root:
+            r = _lake_series(root, u, date, strike, ot)
+            if r:
+                series, hms = r
+                return [(h, series[h][0]) for h in hms]
+    return []
+
+
+def _downsample(pts, cap=1500):
+    if len(pts) <= cap:
+        return pts
+    vals = [p["mtm"] for p in pts]
+    keep = {0, len(pts) - 1, vals.index(max(vals)), vals.index(min(vals))}
+    step = len(pts) / float(cap)
+    i = 0.0
+    while i < len(pts):
+        keep.add(int(i)); i += step
+    return [pts[k] for k in sorted(keep)]
+
+
+def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, entry_prems, total, e_t, x_t):
+    """Combined position MTM (₹) at every stored minute across the whole hold. SELL leg
+    MTM = (entry_prem − prem)·lot ; BUY = (prem − entry_prem)·lot ; forward-filled per leg,
+    summed. Endpoints anchored to the run's own entry(₹0)/exit(total). Display-only."""
+    if any(p is None for p in entry_prems):
+        return []
+    days = _day_span(entry_date, exit_date)
+    pts = []
+    for d in days:
+        lo = entry_hm if d == entry_date else "09:15"
+        hi = exit_hm if d == exit_date else "15:30"
+        leg_maps = [dict(_leg_series_day(u, d, expiry, float(lg["strike"]), lg["type"])) for lg in legs]
+        mins = sorted({m for lm in leg_maps for m in lm if lo <= m <= hi})
+        last = [None] * len(legs)
+        for m in mins:
+            mtm = 0.0; ok = True
+            for i, lg in enumerate(legs):
+                if m in leg_maps[i]:
+                    last[i] = leg_maps[i][m]
+                p = last[i]
+                if p is None:
+                    ok = False; break
+                sell = lg["side"].upper() == "SELL"
+                mtm += (entry_prems[i] - p if sell else p - entry_prems[i]) * lot
+            if ok:
+                pts.append({"d": d, "t": m, "mtm": round(mtm)})
+    if not pts:
+        return []
+    # anchor both ends to the run's exact entry/exit numbers (start at 0, end at total)
+    pts = ([{"d": entry_date, "t": e_t, "mtm": 0}] + pts + [{"d": exit_date, "t": x_t, "mtm": round(total)}])
+    return _downsample(pts)
+
+
 def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. `expiry` = a specific
     stored expiry (default nearest weekly). `exit_date` (default = entry `date`) allows a
@@ -380,7 +472,16 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
                  for lg, d in zip(legs, data["legs"])) * lot
     e_dt = data["legs"][0].get("e_dt") or date
     x_dt = data["legs"][0].get("x_dt") or exit_date
+    e_t = data["legs"][0]["e_t"]; x_t = data["legs"][0]["x_t"]
+    try:
+        mtm = _build_mtm(u, e_dt, x_dt, entry_hm, exit_hm, lot, legs,
+                         data.get("expiry"), [d["e_prem"] for d in data["legs"]],
+                         tot, e_t, x_t)
+    except Exception as _e:
+        print("[whatif] mtm build fail:", _e, flush=True)
+        mtm = []
     return {
+        "mtm": mtm,
         "ok": True, "underlying": u, "date": date, "lots": int(lots or 1),
         "entry_date": e_dt, "exit_date": x_dt, "hold_days": _days_between(e_dt, x_dt),
         "entry_hm": data["legs"][0]["e_t"], "exit_hm": data["legs"][0]["x_t"],
