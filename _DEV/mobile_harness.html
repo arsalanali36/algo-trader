@@ -1,0 +1,71 @@
+<!DOCTYPE html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- REAL shared mobile layer under test -->
+<link rel="stylesheet" href="../static/css/mobile.css">
+<style>
+  /* --- minimal faithful copy of index.html base (desktop) styles --- */
+  body{margin:0;background:#0d1117;color:#e6edf3;font-family:-apple-system,Segoe UI,Arial,sans-serif}
+  .hdr{position:fixed;top:0;left:0;right:0;z-index:9998;background:#161b22;border-bottom:1px solid #30363d;padding:0 20px;height:52px;display:flex;align-items:center;gap:12px}
+  .hdr h1{font-size:18px;margin:0}
+  .dot{width:9px;height:9px;border-radius:50%;background:#3fb950}
+  .tabs{display:flex;align-items:center;gap:2px;padding:0 20px;overflow-x:auto;margin-left:8px}
+  .tab{padding:8px 12px;font-size:13px;color:#8b949e;cursor:pointer;white-space:nowrap;border-radius:6px}
+  .tab.active{color:#e6edf3;background:#21262d}
+  .tab-dropdown-container{position:relative;display:flex;align-items:center}
+  .dropdown-menu{position:absolute;top:100%;left:0;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:4px 0;min-width:170px;z-index:10000}
+  .dropdown-item{padding:8px 12px;font-size:12px;color:#c9d1d9;cursor:pointer;white-space:nowrap}
+  .tab-body{margin-top:52px;padding:16px 18px}
+  .folder-card{display:flex;min-height:420px;background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
+  .folder-sidebar{width:220px;flex-shrink:0;background:#0d1117;border-right:1px solid #30363d;padding:8px;display:flex;flex-direction:column;gap:4px}
+  .folder-sidebar .item{padding:9px 11px;font-size:12.5px;color:#c9d1d9;border-radius:6px;cursor:pointer}
+  .folder-sidebar .item.on{background:#1f6feb22;color:#58a6ff}
+  .folder-content{flex:1;padding:14px}
+  table{border-collapse:collapse;font-size:12px;white-space:nowrap}
+  td,th{padding:6px 12px;border-bottom:1px solid #21262d;color:#c9d1d9}
+</style></head>
+<body>
+  <div class="hdr">
+    <span class="dot"></span>
+    <h1>Algo Trader</h1>
+    <span style="font-size:12px;font-weight:700;padding:3px 10px;border-radius:12px;border:1px solid #30363d">LIVE</span>
+    <div class="tabs">
+      <div class="tab" onclick="alert('Logs')">Logs</div>
+      <div class="tab active" onclick="alert('Orders')">📒 Orders &amp; P&amp;L</div>
+      <a href="#" class="tab">📊 Stats 2</a>
+      <a href="#" class="tab">📈 Curves</a>
+      <div class="tab" onclick="alert('Risk')">⚠️ Risk</div>
+      <a href="#" class="tab">🗂️ Strategies</a>
+      <div class="tab-dropdown-container">
+        <div class="tab" onclick="var m=document.getElementById('rd');m.style.display=m.style.display==='none'?'block':'none'">📋 Reports ▾</div>
+        <div class="dropdown-menu" id="rd" style="display:none">
+          <div class="dropdown-item">📋 EOD Reports</div>
+          <div class="dropdown-item">🎬 YT Presentations</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tab-body">
+    <div class="folder-card">
+      <div class="folder-sidebar">
+        <div class="item">Max Loss</div>
+        <div class="item">Capital Allocation</div>
+        <div class="item on">Per-Strategy Override</div>
+        <div class="item">Broker Balances</div>
+        <div class="item">RMS Live Summary</div>
+        <div class="item">Reasons for Exit</div>
+      </div>
+      <div class="folder-content">
+        <table>
+          <tr><th>Strategy</th><th>Mode</th><th>Day Cap</th><th>Per-Trade SL</th><th>Capital ₹</th><th>Margin</th><th>Shadow</th></tr>
+          <tr><td>range_v1</td><td>live</td><td>5</td><td>2,500</td><td>1,00,000</td><td>1,92,006</td><td>off</td></tr>
+          <tr><td>orb_v1</td><td>paper</td><td>2</td><td>own</td><td>—</td><td>—</td><td>off</td></tr>
+          <tr><td>chainzone_v1</td><td>paper</td><td>2</td><td>own</td><td>—</td><td>—</td><td>off</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- REAL shell glue under test -->
+  <script src="../static/js/app-15-mobile.js"></script>
+</body></html>
