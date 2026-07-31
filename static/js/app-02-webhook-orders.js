@@ -1927,20 +1927,20 @@
             break;
           case 'ltp':
             {
-              const rawA = _ltpLive[a.sym];
+              const rawA = _ltpLive[a.sec_id || a.sym];
               valA = typeof rawA === 'number' ? rawA : (rawA?.ltp || a.entry_price || 0);
-              const rawB = _ltpLive[b.sym];
+              const rawB = _ltpLive[b.sec_id || b.sym];
               valB = typeof rawB === 'number' ? rawB : (rawB?.ltp || b.entry_price || 0);
             }
             break;
           case 'pnl':
             {
-              const rawA = _ltpLive[a.sym];
+              const rawA = _ltpLive[a.sec_id || a.sym];
               const ltpA = typeof rawA === 'number' ? rawA : (rawA?.ltp || a.entry_price || 0);
               const ptsA = a.entry === 'BUY' ? ltpA - a.entry_price : a.entry_price - ltpA;
               valA = ptsA * (a.qty || 0);
 
-              const rawB = _ltpLive[b.sym];
+              const rawB = _ltpLive[b.sec_id || b.sym];
               const ltpB = typeof rawB === 'number' ? rawB : (rawB?.ltp || b.entry_price || 0);
               const ptsB = b.entry === 'BUY' ? ltpB - b.entry_price : b.entry_price - ltpB;
               valB = ptsB * (b.qty || 0);

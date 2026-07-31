@@ -2254,44 +2254,17 @@ _EQ_IDX_SEC = {
     "TRENT":      ("3537",  "NSE_EQ"),
 }
 
-def _open_sec_id_for_trad_sym(trad_sym: str):
-    """The sec_id order_store actually recorded for the most-recent trade of this
-    trad_sym — the contract we really hold. NIFTY/BANKNIFTY option trad_syms carry
-    only month+year (NO expiry day: 'NIFTY-Aug2026-24100-CE'), so
-    dhan_master.get_sec_id_for_trad_sym() resolves to the NEAREST-live expiry — which
-    is WRONG when the open position is on a later (e.g. monthly) expiry in the same
-    month. That mis-resolution shows a different contract's LTP (a near weekly's
-    premium) → a fake, inflated P&L on the Orders page (TRAP #100 family). Prefer the
-    REAL stored sec_id here. None if never traded (fresh contract → caller may guess).
-    ORDER BY id DESC = the contract most recently opened for this string = what we hold."""
-    try:
-        import order_store
-        with order_store._lock, order_store._conn() as c:
-            row = c.execute(
-                "SELECT sec_id FROM orders WHERE trad_sym=? AND sec_id IS NOT NULL "
-                "AND sec_id!='' ORDER BY id DESC LIMIT 1", (trad_sym,)).fetchone()
-            if row and row[0]:
-                return str(row[0])
-    except Exception:
-        pass
-    return None
-
-
 def _get_sec_ids(syms: list) -> dict:
-    """Returns {sym: sec_id}. Handles options (via dhan_master) + equity/index (via _EQ_IDX_SEC and universe)."""
+    """Returns {sym: sec_id}. Handles options (via dhan_master nearest-expiry resolver)
+    + equity/index (via _EQ_IDX_SEC and universe). NOTE: for an OPEN position the
+    nearest-expiry guess can be the WRONG contract when a month-only trad_sym aliases
+    two expiries — so the positions-LTP / P&L path joins on the row's own sec_id
+    (see api_positions_ltp `secs`), NOT this. This stays for FRESH-contract callers
+    (watchlist / quick-order) where nearest-live IS the right contract (TRAP #166)."""
     import dhan_master
     import universe
     out = {}
     for s in syms:
-        # Options we actually HOLD: use the sec_id order_store recorded, NOT the
-        # nearest-expiry guess (TRAP #100 — wrong contract's LTP → fake P&L). Checked
-        # BEFORE the process cache so a stale cached guess can't win; not cached here
-        # because the same trad_sym string can point at a different expiry next cycle.
-        if ('-CE' in s) or ('-PE' in s):
-            _held = _open_sec_id_for_trad_sym(s)
-            if _held:
-                out[s] = _held
-                continue
         if s in _sec_id_cache:
             out[s] = _sec_id_cache[s]
             continue
@@ -2322,114 +2295,125 @@ def _get_seg(sym: str) -> str:
     return "NSE_FNO"   # options default
 
 
+def _seg_for_sec(sid) -> str:
+    """Segment for a bare sec_id — reverse of _EQ_IDX_SEC (equity/index), else NSE_FNO
+    (options = the overwhelming majority of open positions). Used by the sec_id-keyed
+    positions-LTP path so two same-trad_sym expiries each resolve their own contract."""
+    s = str(sid)
+    for _sym, (_sid, _seg) in _EQ_IDX_SEC.items():
+        if str(_sid) == s:
+            return _seg
+    return "NSE_FNO"
+
+
 _pos_ltp_cache = {}
 _POS_CACHE_TTL = 15
 
 @app.route('/api/positions-ltp')
 def api_positions_ltp():
-    """Fetch live LTP for open positions — uses dhan_feed WebSocket if running, else REST fallback."""
-    syms_raw = request.args.get('syms', '')
-    syms = [s.strip() for s in syms_raw.split(',') if s.strip()]
-    if not syms:
+    """Live LTP for open positions — joined on sec_id (the ONLY unique contract key),
+    NOT trad_sym. Client sends `secs` (comma sec_ids); ltp_map is keyed by sec_id.
+    Legacy `syms` still works (keyed by sym) for any trad_sym caller. dhan_feed WS
+    first, then shared cache, then Dhan REST. TRAP #166: month-only NIFTY/BNF trad_syms
+    alias two expiries (weekly+monthly) onto one key → a sym-keyed map showed one
+    position's LTP on the other → fake P&L. sec_id can't alias."""
+    secs = [s.strip() for s in request.args.get('secs', '').split(',') if s.strip()]
+    syms = [s.strip() for s in request.args.get('syms', '').split(',') if s.strip()]
+    if not secs and not syms:
         return jsonify({"ok": True, "ltp_map": {}})
 
     _ensure_feed_started()
-    ltp_map = {}
+    # Unified work list of (key, sec_id, seg). key = sec_id for `secs`, sym for `syms`.
+    items = []
+    for sid in secs:
+        items.append((str(sid), str(sid), _seg_for_sec(sid)))
+    if syms:
+        sym_sec = _get_sec_ids(syms)
+        for sym in syms:
+            sid = sym_sec.get(sym)
+            if sid:
+                items.append((sym, str(sid), _get_seg(sym)))
+    if not items:
+        return jsonify({"ok": True, "ltp_map": {}})
 
-    # Try WebSocket feed first (instant, no REST call)
-    missing_syms = []
+    ltp_map = {}
+    try:
+        _feed_subscribe([(seg, sid) for _k, sid, seg in items])
+    except Exception:
+        pass
+
+    # 1) WS feed (instant, free)
+    missing = []
     try:
         import dhan_feed
-        sec_id_map = _get_sec_ids(syms)
-        pairs = [(_get_seg(s), v) for s, v in sec_id_map.items() if v]
-        _feed_subscribe(pairs)
-        id_to_sym = {v: k for k, v in sec_id_map.items()}
-        _sec_to_sym.update(id_to_sym)   # keep global map for SSE
-        for sec_id, sym in id_to_sym.items():
-            q = dhan_feed.get_quote(sec_id)
+        for key, sid, seg in items:
+            q = dhan_feed.get_quote(sid)
             if q and q.get("ltp"):
-                ltp_map[sym] = {"ltp": q["ltp"], "qty": None}
+                ltp_map[key] = {"ltp": q["ltp"], "qty": None}
             else:
-                missing_syms.append(sym)
+                missing.append((key, sid, seg))
     except Exception:
-        missing_syms = syms
+        missing = list(items)
 
-    # If all found in WS, return early
-    if not missing_syms:
+    if not missing:
         return jsonify({"ok": True, "ltp_map": ltp_map, "src": "ws"})
 
-    # Fallback: Dhan REST API only for missing symbols
+    # 2) shared_ltp_cache (ltp_poller warms open positions every ~1.5s) + process cache
     try:
-        import range_trader, requests as _req
-        import time as _t
-        token, cid = _creds()
-        headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-        missing_sec_id_map = _get_sec_ids(missing_syms)
-        
-        # Check pos cache to avoid hitting Dhan REST too frequently
+        import requests as _req, time as _t
         now = _t.time()
-        still_missing = {}
         try:
             import shared_ltp_cache as _slc_pos
         except Exception:
             _slc_pos = None
-        for s, sid in missing_sec_id_map.items():
-            c = _pos_ltp_cache.get(s)
+        still = []
+        for key, sid, seg in missing:
+            c = _pos_ltp_cache.get(sid)
             if c and (now - c['ts']) < _POS_CACHE_TTL:
-                ltp_map[s] = {"ltp": c['ltp'], "qty": None}
+                ltp_map[key] = {"ltp": c['ltp'], "qty": None}
                 continue
-            # ltp_poller keeps every open position warm in shared_ltp_cache
-            # (1.5s cycle) — this route previously only checked its own
-            # process-local cache and REST-called Dhan on every miss
             shared = _slc_pos.get(str(sid), max_age=6) if (_slc_pos and sid) else None
             if shared:
-                ltp_map[s] = {"ltp": shared, "qty": None}
-                _pos_ltp_cache[s] = {'ltp': shared, 'ts': now}
+                ltp_map[key] = {"ltp": shared, "qty": None}
+                _pos_ltp_cache[sid] = {'ltp': shared, 'ts': now}
             else:
-                still_missing[s] = sid
-                
-        missing_sec_id_map = still_missing
+                still.append((key, sid, seg))
+        missing = still
 
-        if missing_sec_id_map:
-            # ask the batched poller to keep these warm — after this one REST
-            # touch, every subsequent poll is a shared_ltp_cache hit (watchlist
-            # symbols and quick-order contracts ride the poller's single call)
+        # 3) Dhan REST for whatever's still missing
+        if missing:
             try:
                 import ltp_poller as _lp
-                _lp.request_watch([(sid, _get_seg(s)) for s, sid in missing_sec_id_map.items()])
+                _lp.request_watch([(sid, seg) for _k, sid, seg in missing])
             except Exception:
                 pass
             _rl.set_context("Dashboard:PosLTP")
             if not _rl.acquire("ltp"):
-                # gate busy — poller will have these warm within ~1.5s; frontend
-                # re-polls every 3s, so just return what we have this cycle
+                # gate busy — poller warms these within ~1.5s; frontend re-polls 3s
                 return jsonify({"ok": True, "ltp_map": ltp_map, "src": "cache-pending"})
-            
-            # Group by segment for REST call
+            token, cid = _creds()
+            headers = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
             seg_groups = {}
-            for s, sid in missing_sec_id_map.items():
-                seg = _get_seg(s)
-                seg_groups.setdefault(seg, []).append((s, sid))
-            body = {}
-            for seg, pairs in seg_groups.items():
+            sid_to_keys = {}
+            for key, sid, seg in missing:
                 dhan_seg = {"NSE_EQ": "NSE_EQ", "IDX_I": "IDX_I", "NSE_FNO": "NSE_FNO"}.get(seg, "NSE_FNO")
-                body[dhan_seg] = [int(sid) for _, sid in pairs]
-            
+                seg_groups.setdefault(dhan_seg, set()).add(int(sid))
+                sid_to_keys.setdefault(str(sid), []).append(key)
+            body = {seg: list(sids) for seg, sids in seg_groups.items()}
             r = _req.post("https://api.dhan.co/v2/marketfeed/ltp", json=body, headers=headers, timeout=5)
             if r.status_code == 429:
                 _rl.note_429()
-                
             if r.status_code == 200:
-                id_to_sym = {v: k for k, v in missing_sec_id_map.items()}
-                for seg_key, quotes in (r.json().get("data", {}) or {}).items():
+                for _seg_key, quotes in (r.json().get("data", {}) or {}).items():
                     if not isinstance(quotes, dict): continue
                     for sec_id_str, q in quotes.items():
-                        sym = id_to_sym.get(str(sec_id_str)) or id_to_sym.get(str(sec_id_str).lstrip('0'))
-                        if not sym: continue
+                        keys = (sid_to_keys.get(str(sec_id_str))
+                                or sid_to_keys.get(str(sec_id_str).lstrip('0')) or [])
                         ltp = float(q.get("last_price") or q.get("ltp") or 0)
-                        if ltp: 
-                            ltp_map[sym] = {"ltp": ltp, "qty": None}
-                            _pos_ltp_cache[sym] = {'ltp': ltp, 'ts': now}
+                        if ltp:
+                            for key in keys:
+                                ltp_map[key] = {"ltp": ltp, "qty": None}
+                            _pos_ltp_cache[str(sec_id_str)] = {'ltp': ltp, 'ts': now}
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e), "ltp_map": ltp_map})
 
@@ -2445,13 +2429,15 @@ def api_ltp_stream():
         import dhan_feed
         while True:
             try:
-                # Send sym->ltp map so frontend can update cells directly by symbol name
-                sym_ltp = {}
+                # sec_id(str) -> ltp. Keyed by sec_id, NOT trad_sym: two open positions
+                # can share a month-only trad_sym on different expiries, so a sym-keyed
+                # stream collapsed them onto ONE ltp → fake P&L (TRAP #166). The client
+                # joins each cell on its own data-sec (the contract it actually holds).
+                sec_ltp = {}
                 for sec_id, q in dhan_feed.LIVE.items():
-                    sym = _sec_to_sym.get(str(sec_id))
-                    if sym and q.get("ltp"):
-                        sym_ltp[sym] = round(q["ltp"], 2)
-                yield f"data: {json.dumps(sym_ltp)}\n\n"
+                    if q.get("ltp"):
+                        sec_ltp[str(sec_id)] = round(q["ltp"], 2)
+                yield f"data: {json.dumps(sec_ltp)}\n\n"
             except Exception:
                 yield "data: {}\n\n"
             _time.sleep(0.5)

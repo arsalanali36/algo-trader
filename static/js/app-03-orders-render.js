@@ -502,7 +502,7 @@
         let s = String(t.source || 'STRATEGY').toUpperCase();
         if (s !== 'MANUAL' && s !== 'WEBHOOK') s = 'STRATEGY';
         srcTotals[s].opn++;
-        srcTotals[s].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
+        srcTotals[s].orows.push({ sym: t.sym, sec: t.sec_id || '', entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
       });
 
       // ── CONSOLIDATED SUMMARY (task 66) — now clickable per strategy (task 73) ──
@@ -537,7 +537,7 @@
           const sName = t.strategy || 'STRATEGY';
           if (!stratTotals[sName]) stratTotals[sName] = _z();
           stratTotals[sName].opn++;
-          stratTotals[sName].orows.push({ sym: t.sym, entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
+          stratTotals[sName].orows.push({ sym: t.sym, sec: t.sec_id || '', entry: Number(t.entry_price || 0), side: t.entry, qty: Number(t.qty || 0) });
         }
       });
 
@@ -1158,7 +1158,7 @@
                     colorStyle = 'color:#8b949e;';
                     break;
                   case 'ltp':
-                    val = `<span class="ltp-cell" style="color:#e6edf3" data-sym="${t.sym}" data-entry="${entry}" data-side="${t.entry}" data-qty="${qty}">⏳</span>`;
+                    val = `<span class="ltp-cell" style="color:#e6edf3" data-sym="${t.sym}" data-sec="${t.sec_id || ''}" data-entry="${entry}" data-side="${t.entry}" data-qty="${qty}">⏳</span>`;
                     break;
                   case 'entry_time':
                     val = (t.entry_time || '') + sltp_disp + live_sl_disp;
@@ -1178,10 +1178,10 @@
                     colorStyle = 'color:#8b949e;';
                     break;
                   case 'run_up':
-                    val = _runupLive ? `<span class="runup-cell" data-sym="${t.sym}" data-rk="${_runKey}">${runup}</span>` : runup;
+                    val = _runupLive ? `<span class="runup-cell" data-sym="${t.sym}" data-sec="${t.sec_id || ''}" data-rk="${_runKey}">${runup}</span>` : runup;
                     break;
                   case 'run_down':
-                    val = _runupLive ? `<span class="rundown-cell" data-sym="${t.sym}" data-rk="${_runKey}">${rundown}</span>` : rundown;
+                    val = _runupLive ? `<span class="rundown-cell" data-sym="${t.sym}" data-sec="${t.sec_id || ''}" data-rk="${_runKey}">${rundown}</span>` : rundown;
                     break;
                   case 'qty':
                     val = qty;

@@ -397,6 +397,10 @@ def _net_rows(rows):
         o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
              "entry_price": r["price"], "entry_time": r["ts"][11:16],
              "entry_date": r["ts"][:10],
+             # sec_id = the ONLY unique contract key. trad_sym carries just month+year
+             # (no expiry day) so two open positions can share it on different expiries
+             # (weekly + monthly) → LTP/P&L must join on sec_id, never trad_sym (TRAP #166).
+             "sec_id": r["sec_id"],
              "exit_price": None, "exit_time": "—", "pnl": None}
         o.update(_meta(r))
         return o

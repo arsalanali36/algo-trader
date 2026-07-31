@@ -172,7 +172,7 @@
         if (!rows.length) { el.textContent = '—'; el.style.color = '#6e7681'; return; }
         let tot = 0, any = false;
         rows.forEach(o => {
-          const raw = _ltpLive[o.sym];
+          const raw = _ltpLive[o.sec || o.sym];   // sec_id join (TRAP #166)
           const ltp = typeof raw === 'number' ? raw : (raw && raw.ltp);
           if (ltp == null || !o.entry) return;
           any = true;
