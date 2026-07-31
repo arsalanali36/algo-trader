@@ -365,8 +365,15 @@ def _net_rows(rows):
                 "sec_id": r["sec_id"], "segment": r["segment"],
                 "product_type": r["product_type"] or "NRML", "group_id": r["group_id"] or ""}
 
-    def _complete(entry_r, exit_r):
-        ep, xp, q = entry_r["price"], exit_r["price"], entry_r["qty"]
+    def _complete(entry_r, exit_r, q=None):
+        # q = matched (closed) quantity. QUANTITY-AWARE: a partial exit (e.g. a manual
+        # 2-lot close of a 3-lot position) closes only `q`, NOT the whole entry row —
+        # the remainder stays OPEN so pos_monitor/RMS keep managing it and the app never
+        # thinks a partially-reduced position is flat (TRAP #167). q=None → full entry qty
+        # (equal-qty round-trip = byte-identical to the old behaviour).
+        ep, xp = entry_r["price"], exit_r["price"]
+        if q is None:
+            q = entry_r["qty"]
         pnl = (xp - ep) * q if entry_r["side"] == "BUY" else (ep - xp) * q
         d = {"sym": entry_r["trad_sym"], "entry": entry_r["side"], "qty": q,
              "entry_price": ep, "entry_time": entry_r["ts"][11:16],
@@ -393,8 +400,11 @@ def _net_rows(rows):
     closed_rows  = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST
                     and str(r.get("status") or "").lower() not in _BLOCKED_ST]
 
-    def _as_open(r):
-        o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"],
+    def _as_open(r, qty=None):
+        # qty override = the REMAINING open quantity after a partial close (TRAP #167).
+        # None → the row's full qty (unchanged for a never-partially-closed position).
+        o = {"sym": r["trad_sym"], "entry": r["side"],
+             "qty": r["qty"] if qty is None else qty,
              "entry_price": r["price"], "entry_time": r["ts"][11:16],
              "entry_date": r["ts"][:10],
              # sec_id = the ONLY unique contract key. trad_sym carries just month+year
@@ -405,24 +415,40 @@ def _net_rows(rows):
         o.update(_meta(r))
         return o
 
-    # ── Pass 1: exact (source, strategy, trad_sym) round-trips (closed only) ──
-    open_pos = {}     # key -> currently-open entry row
-    leftover = []     # legs not paired in pass 1
+    def _q(r):
+        try:
+            return abs(int(r["qty"] or 0))
+        except Exception:
+            return 0
+
+    # ── Pass 1: exact (source, strategy, trad_sym) round-trips, QUANTITY-AWARE ──
+    # FIFO of still-open legs per key, each carrying its remaining qty [row, rem].
+    # A partial exit closes only min(exit_rem, entry_rem) — the rest stays open, so a
+    # manually-reduced position (3 lots → sell 2) is NEVER seen as flat (TRAP #167).
+    open_fifo = {}    # key -> [[row, rem], ...] (chronological)
     for r in closed_rows:
         key = (r["source"], r["strategy"], r["trad_sym"])
-        prev = open_pos.get(key)
-        if prev and prev["side"] != r["side"]:
-            details.append(_complete(prev, r))
-            open_pos.pop(key, None)
-        elif prev:                       # same side again (pyramid/dup) — bump prev
-            leftover.append(prev)
-            open_pos[key] = r
-        else:
-            open_pos[key] = r
-    leftover.extend(open_pos.values())
-    leftover.sort(key=lambda r: r["ts"])  # chronological for FIFO
+        rem = _q(r)
+        fifo = open_fifo.setdefault(key, [])
+        # net r against the OLDEST opposite-side legs first
+        while rem > 0 and fifo and fifo[0][0]["side"] != r["side"]:
+            entry_r, erem = fifo[0]
+            m = min(rem, erem)
+            details.append(_complete(entry_r, r, m))
+            rem -= m
+            erem -= m
+            if erem <= 0:
+                fifo.pop(0)
+            else:
+                fifo[0][1] = erem
+        if rem > 0:                       # same-side (pyramid) or nothing to net → stays open
+            fifo.append([r, rem])
+    leftover = []     # [row, rem] legs still open after pass 1
+    for fifo in open_fifo.values():
+        leftover.extend(fifo)
+    leftover.sort(key=lambda x: x[0]["ts"])  # chronological for FIFO
 
-    # ── Pass 2: net leftover opposite legs by (mode, trad_sym), FIFO ──
+    # ── Pass 2: net leftover opposite legs by (mode, trad_sym), FIFO, QUANTITY-AWARE ──
     # Cross-STRATEGY netting here is intentional ONLY for a genuine manual close
     # (Quick Order / reconcile, source='manual') that closes some strategy's leg
     # on the same contract+account. Two INDEPENDENT positions that merely SHARE a
@@ -435,31 +461,41 @@ def _net_rows(rows):
     # same-strategy — only a human/reconcile 'manual' leg ever crosses that line.
     _MANUAL_CLOSERS = {"manual"}
     stacks, opens = {}, []
-    for r in leftover:
+    for r, rem in leftover:
         k2 = (r["mode"], r["trad_sym"])
-        st = stacks.setdefault(k2, [])
-        # Oldest opposite-side leg we're ALLOWED to net against: prefer a
-        # same-strategy match, else fall back to a manual cross-close. Scan the
-        # whole stack (not just st[0]) so a same-strategy pair still nets even
-        # when a foreign leg happens to sit in front of it.
-        same_idx = manual_idx = None
-        for i, e in enumerate(st):
-            if e["side"] == r["side"]:
-                continue
-            if e["strategy"] == r["strategy"]:
-                same_idx = i
+        st = stacks.setdefault(k2, [])   # [[row, rem], ...]
+        while rem > 0:
+            # Oldest opposite-side leg we're ALLOWED to net against: prefer a
+            # same-strategy match, else fall back to a manual cross-close. Scan the
+            # whole stack (not just st[0]) so a same-strategy pair still nets even
+            # when a foreign leg happens to sit in front of it.
+            same_idx = manual_idx = None
+            for i, (e, _er) in enumerate(st):
+                if e["side"] == r["side"]:
+                    continue
+                if e["strategy"] == r["strategy"]:
+                    same_idx = i
+                    break
+                if manual_idx is None and (e["source"] in _MANUAL_CLOSERS
+                                           or r["source"] in _MANUAL_CLOSERS):
+                    manual_idx = i
+            idx = same_idx if same_idx is not None else manual_idx
+            if idx is None:
                 break
-            if manual_idx is None and (e["source"] in _MANUAL_CLOSERS
-                                       or r["source"] in _MANUAL_CLOSERS):
-                manual_idx = i
-        idx = same_idx if same_idx is not None else manual_idx
-        if idx is not None:
-            details.append(_complete(st.pop(idx), r))   # popped leg = entry (older)
-        else:
-            st.append(r)
+            e, erem = st[idx]
+            m = min(rem, erem)
+            details.append(_complete(e, r, m))   # e = entry (older)
+            rem -= m
+            erem -= m
+            if erem <= 0:
+                st.pop(idx)
+            else:
+                st[idx][1] = erem
+        if rem > 0:
+            st.append([r, rem])
     for st in stacks.values():
-        for r in st:
-            opens.append(_as_open(r))
+        for r, rem in st:
+            opens.append(_as_open(r, qty=rem))
 
     # ── Blocked (CAPITAL_BLOCKED) rows → surface directly, never netted ──
     # (kept separate above so they can't FIFO-pair into a phantom completed trade)
