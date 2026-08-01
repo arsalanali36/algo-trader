@@ -163,8 +163,9 @@ def _collect(date_from, date_to, mode=None, source=None, broker=None, strategy=N
         d["dur"] = _fmt_dur(d["dur_min"])
         d["wl"] = "W" if d["net"] > 0 else "L"
         out.append(d)
-    # chronological by exit time (stable, for equity/journey)
-    out.sort(key=lambda r: (r.get("exit_date") or "", r.get("exit_time") or ""))
+    # chronological by ENTRY time → T1/T2/... numbering follows the order trades were
+    # taken (user request), and the equity journey walks in that same order
+    out.sort(key=lambda r: (r.get("entry_date") or "", r.get("entry_time") or ""))
     return out
 
 

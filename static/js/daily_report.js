@@ -9,7 +9,7 @@
 
   // ---- state ----
   var S = { date: null, mode: "", range: "day", data: null, notes: [],
-            noteFilter: "", metricS: "amt", metricT: "amt",
+            noteFilter: "", metricS: "amt", metricT: "amt", ptcStrat: "",
             curAnchor: "—", popColor: "b", popImgs: [], lastXY: { x: 200, y: 200 } };
 
   // LOCAL today (toISOString would give UTC → wrong day in IST evenings)
@@ -70,7 +70,7 @@
   // ================= RENDER =================
   function renderAll() {
     if (!S.data) { $("kpis").innerHTML = '<div class="empty">No data</div>'; ["target-wrap", "stat-wrap", "brk-strategy", "brk-trades", "chart-strategy", "chart-trade", "journey", "ptc-grid"].forEach(function (id) { $(id).innerHTML = ""; }); renderNotes(); return; }
-    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderPerTradeCharts(); renderNotes();
+    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderPtcStratOptions(); renderPerTradeCharts(); renderNotes();
   }
 
   function renderKpis() {
@@ -166,14 +166,29 @@
     }, { rootMargin: "150px" });
     $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(function (ph) { _io.observe(ph); });
   }
+  function renderPtcStratOptions() {
+    var sel = $("ptc-strat"); if (!sel) return;
+    var by = (S.data && S.data.by_strategy) || [];
+    // reset selection if that strategy is gone from this date
+    if (S.ptcStrat && !by.some(function (s) { return s.strategy === S.ptcStrat; })) S.ptcStrat = "";
+    sel.innerHTML = '<option value="">All strategies</option>' + by.map(function (s) {
+      return '<option value="' + esc(s.strategy) + '"' + (s.strategy === S.ptcStrat ? " selected" : "") +
+        ">" + esc(s.label) + " (" + (s.wins + s.losses) + ")</option>";
+    }).join("");
+  }
+  DR.setPtcStrat = function (v) { S.ptcStrat = v; renderPerTradeCharts(); };
+
   function renderPerTradeCharts() {
-    var tr = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });
-    $("ptc-count").textContent = tr.length ? "(" + tr.length + " charts — scroll pe auto-load)" : "";
-    if (!tr.length) { $("ptc-grid").innerHTML = '<div class="empty">No option trades</div>'; return; }
+    var all = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });
+    var tr = S.ptcStrat ? all.filter(function (t) { return t.strategy === S.ptcStrat; }) : all;
+    $("ptc-count").textContent = tr.length ? "(" + tr.length + " charts" + (S.ptcStrat ? " · filtered" : "") + " — scroll pe auto-load)" : "";
+    if (!tr.length) { $("ptc-grid").innerHTML = '<div class="empty">Is strategy ka koi option-trade chart nahi</div>'; return; }
     $("ptc-grid").innerHTML = tr.map(function (t) {
       var url = tcUrl(t), nm = t.label.replace(/^\d+\.\d+\s*-\s*/, "");
-      return '<div class="ptc-card" id="ptc-' + t.id + '"><div class="h" title="' + esc(nm + " " + t.sym) + '">🕯 T' + t.n + " · " + esc(nm) + " · " + esc(t.sym) +
-        ' <span class="' + cls(t.net) + '">' + sgn(t.net) + " (" + t.wl + ')</span><span class="o" title="Full tab" onclick="window.open(\'' + url + '\',\'_blank\')">⤢</span></div>' +
+      return '<div class="ptc-card" id="ptc-' + t.id + '"><div class="h">' +
+        '<div class="hmeta"><div class="hl1" title="' + esc(nm + " " + t.sym) + '">🕯 T' + t.n + " · " + esc(nm) + " · " + esc(t.sym) + '</div>' +
+        '<div class="hl2 ' + cls(t.net) + '">' + sgn(t.net) + " (" + t.wl + ')</div></div>' +
+        '<span class="o" title="Full tab" onclick="window.open(\'' + url + '\',\'_blank\')">⤢</span></div>' +
         '<div class="ph" data-src="' + esc(url) + '">⏳ chart load ho raha…</div></div>';
     }).join("");
     observeCharts();
@@ -223,29 +238,47 @@
   }
 
   function renderJourney() {
-    var tr = S.data.trades;
+    var tr = (S.data && S.data.trades) || [];
     if (!tr.length) { $("journey").innerHTML = '<div class="empty">No trades</div>'; return; }
-    var W = 900, H = 170, pad = 10, cum = 0, pts = [];
+    var W = 900, H = 170, pad = 10, cum = 0;
     var series = [0]; tr.forEach(function (t) { cum += t.net; series.push(cum); });
-    var mn = Math.min.apply(null, series), mx = Math.max.apply(null, series);
-    var rng = (mx - mn) || 1;
-    series.forEach(function (v, i) {
-      var x = i / (series.length - 1) * W;
-      var y = H - pad - (v - mn) / rng * (H - 2 * pad);
-      pts.push([x, y]);
+    var mn = Math.min.apply(null, series), mx = Math.max.apply(null, series), rng = (mx - mn) || 1;
+    var pts = series.map(function (v, i) {
+      return [i / (series.length - 1) * W, H - pad - (v - mn) / rng * (H - 2 * pad)];
     });
     var line = pts.map(function (p, i) { return (i ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ");
-    var zeroY = H - pad - (0 - mn) / rng * (H - 2 * pad);
+    var zeroY = (H - pad - (0 - mn) / rng * (H - 2 * pad)).toFixed(1);
     var last = pts[pts.length - 1], end = cum >= 0 ? "#3fb950" : "#f85149";
-    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" style="height:150px">';
-    svg += '<defs><linearGradient id="jg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + end + '55"/><stop offset="1" stop-color="' + end + '00"/></linearGradient></defs>';
-    svg += '<line x1="0" y1="' + zeroY.toFixed(1) + '" x2="' + W + '" y2="' + zeroY.toFixed(1) + '" stroke="#30363d" stroke-dasharray="4 4"/>';
-    svg += '<path d="' + line + " L" + W + " " + zeroY.toFixed(1) + " L0 " + zeroY.toFixed(1) + ' Z" fill="url(#jg)"/>';
-    svg += '<path d="' + line + '" fill="none" stroke="' + end + '" stroke-width="2"/>';
-    svg += '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="4" fill="' + end + '"/>';
-    svg += "</svg>";
-    svg += '<div class="mut" style="font-size:11px;margin-top:4px">Cumulative net across ' + tr.length + " trades · end " + inr(cum) + "</div>";
-    $("journey").innerHTML = svg;
+    var svg = '<svg viewBox="0 0 ' + W + " " + H + '" preserveAspectRatio="none" style="height:150px;display:block">' +
+      '<defs><linearGradient id="jg" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="' + end + '55"/><stop offset="1" stop-color="' + end + '00"/></linearGradient></defs>' +
+      '<line x1="0" y1="' + zeroY + '" x2="' + W + '" y2="' + zeroY + '" stroke="#30363d" stroke-dasharray="4 4"/>' +
+      '<path d="' + line + " L" + W + " " + zeroY + " L0 " + zeroY + ' Z" fill="url(#jg)"/>' +
+      '<path d="' + line + '" fill="none" stroke="' + end + '" stroke-width="2"/>' +
+      '<circle cx="' + last[0].toFixed(1) + '" cy="' + last[1].toFixed(1) + '" r="4" fill="' + end + '"/>' +
+      '<line id="jvl" x1="0" y1="0" x2="0" y2="' + H + '" stroke="#8b949e" stroke-dasharray="3 3" style="display:none"/>' +
+      "</svg>" +
+      '<div id="jtip"></div>' +
+      '<div class="mut" style="font-size:11px;margin-top:4px">Cumulative net across ' + tr.length + " trades · end " + inr(cum) + " · hover for detail</div>";
+    var box = $("journey"); box.style.position = "relative"; box.innerHTML = svg;
+    var svgEl = box.querySelector("svg"), vl = $("jvl"), tip = $("jtip");
+    function onMove(clientX) {
+      var r = svgEl.getBoundingClientRect();
+      var frac = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+      var idx = Math.round(frac * (series.length - 1));
+      vl.setAttribute("x1", pts[idx][0]); vl.setAttribute("x2", pts[idx][0]); vl.style.display = "";
+      var px = frac * r.width;
+      tip.style.display = "block"; tip.style.top = "2px";
+      tip.style.left = Math.min(Math.max(px - 45, 2), r.width - 96) + "px";
+      if (idx === 0) { tip.innerHTML = "Start · <b>₹0</b>"; }
+      else {
+        var t = tr[idx - 1];
+        tip.innerHTML = "<b>T" + t.n + "</b> · " + esc(t.sym || "") + "<br>cum <b class='" + cls(series[idx]) +
+          "'>" + inr(series[idx]) + "</b> · this " + sgn(t.net);
+      }
+    }
+    svgEl.addEventListener("mousemove", function (e) { onMove(e.clientX); });
+    svgEl.addEventListener("touchmove", function (e) { if (e.touches[0]) onMove(e.touches[0].clientX); }, { passive: true });
+    box.addEventListener("mouseleave", function () { vl.style.display = "none"; tip.style.display = "none"; });
   }
 
   // ================= NOTES =================

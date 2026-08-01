@@ -122,6 +122,8 @@
   .hint kbd{background:var(--bd2);border:1px solid var(--bd);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:10px}
   .sectitle{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--mut);margin:16px 2px 8px;font-weight:700}
   .empty{color:var(--mut);font-size:12px;padding:14px;text-align:center}
+  #journey svg{cursor:crosshair}
+  #jtip{position:absolute;display:none;background:#1c2230;border:1px solid var(--bd);border-radius:7px;padding:5px 8px;font-size:11px;line-height:1.4;pointer-events:none;z-index:5;white-space:nowrap;box-shadow:0 4px 14px #0009}
   #loading{position:fixed;top:10px;right:12px;z-index:90;background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--mut);display:none}
 
   .modal-bg{position:fixed;inset:0;background:#000a;z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto}
@@ -150,8 +152,11 @@
      into index + premium panes, so a 2-column grid made them too small */
   .ptc-grid{display:grid;grid-template-columns:1fr;gap:12px}
   .ptc-card{background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
-  .ptc-card .h{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid var(--bd2);background:var(--card2);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .ptc-card .h .o{margin-left:auto;color:var(--mut);cursor:pointer;flex:none}
+  .ptc-card .h{display:flex;align-items:flex-start;gap:8px;padding:8px 11px;border-bottom:1px solid var(--bd2);background:var(--card2)}
+  .ptc-card .h .hmeta{flex:1;min-width:0}
+  .ptc-card .h .hl1{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ptc-card .h .hl2{font-size:12px;font-weight:700;margin-top:1px}
+  .ptc-card .h .o{color:var(--mut);cursor:pointer;flex:none;font-size:14px}
   .ptc-card iframe{width:100%;height:440px;border:0;background:var(--bg);display:block}
   .ptc-card .ph{height:440px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px}
 
@@ -282,8 +287,9 @@
   <div class="sectitle">Journey (Equity)</div>
   <div class="card"><div class="bd"><div id="journey"></div></div></div>
 
-  <div class="sectitle" style="display:flex;align-items:center;gap:10px">Per-Trade Charts <span class="mut" id="ptc-count" style="text-transform:none;letter-spacing:0"></span>
-    <button class="hdr-btn" style="margin-left:auto" onclick="DR.loadAllCharts()" title="Sab charts load karo (PDF/print ke liye zaroori)">⤓ Load all (PDF)</button></div>
+  <div class="sectitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Per-Trade Charts <span class="mut" id="ptc-count" style="text-transform:none;letter-spacing:0"></span>
+    <select id="ptc-strat" style="margin-left:auto;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px;max-width:220px" onchange="DR.setPtcStrat(this.value)"><option value="">All strategies</option></select>
+    <button class="hdr-btn" onclick="DR.loadAllCharts()" title="Sab charts load karo (PDF/print ke liye zaroori)">⤓ Load all (PDF)</button></div>
   <div id="ptc-grid" class="ptc-grid"></div>
 </div>
 
