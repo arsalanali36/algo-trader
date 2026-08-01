@@ -453,15 +453,25 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         window._leftRsiChart = rsiChart;
       } else { window._leftRsiChart = null; }
-      // All entry markers (>1 when same-contract trades are merged) — each crossunder
-      // on this pane's RSI now maps to its own visible Entry arrow.
+      // Entry AND exit markers (>1 each when same-contract trades are merged) — each
+      // crossunder on this pane's RSI now maps to its own Entry arrow, and each exit is
+      // shown too (opposite orientation) so you can see where every trade closed.
       var uEMks = (d.entry_mks && d.entry_mks.length) ? d.entry_mks : (d.entry_mk ? [d.entry_mk] : []);
-      var uMulti = uEMks.length > 1;
-      if (uEMks.length) s.setMarkers(uEMks.map(function(tm,i){ return {time:tm,
+      var uXMks = (d.exit_mks  && d.exit_mks.length)  ? d.exit_mks  : (d.exit_mk  ? [d.exit_mk]  : []);
+      var uMulti = (uEMks.length + uXMks.length) > 2;
+      var uMk = [];
+      uEMks.forEach(function(tm,i){ uMk.push({time:tm,
         position: tradeDir==='SHORT' ? 'aboveBar' : 'belowBar',
         color: tradeDir==='SHORT' ? '#f85149' : (tradeDir==='LONG' ? '#3fb950' : '#58a6ff'),
         shape: tradeDir==='SHORT' ? 'arrowDown' : (tradeDir==='LONG' ? 'arrowUp' : 'circle'),
-        text: 'Entry' + (uMulti?(' '+(i+1)):'') + (tradeDir ? (' · '+tradeDir) : '')}; }));
+        text: 'Entry' + (uMulti?(' '+(i+1)):'') + (tradeDir ? (' · '+tradeDir) : '')}); });
+      uXMks.forEach(function(tm,i){ uMk.push({time:tm,
+        position: tradeDir==='SHORT' ? 'belowBar' : 'aboveBar',
+        color: tradeDir==='SHORT' ? '#3fb950' : (tradeDir==='LONG' ? '#f85149' : '#58a6ff'),
+        shape: tradeDir==='SHORT' ? 'arrowUp' : (tradeDir==='LONG' ? 'arrowDown' : 'circle'),
+        text: 'Exit' + (uMulti?(' '+(i+1)):'')}); });
+      uMk.sort(function(a,b){ return a.time-b.time; });
+      if (uMk.length) s.setMarkers(uMk);
 
       // Zone shown as two horizontal price lines (not a filled box) — this
       // pane covers the FULL trading day, so price legitimately trades both
