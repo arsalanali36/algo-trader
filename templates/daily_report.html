@@ -35,6 +35,7 @@
   .ovmenu.on{display:flex}
   .ovmenu a,.ovmenu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--tx);font:inherit;font-size:13px;padding:9px 11px;border-radius:6px;cursor:pointer;text-decoration:none}
   .ovmenu a:hover,.ovmenu button:hover{background:var(--bd2)}
+  .ovsep{height:1px;background:var(--bd2);margin:4px 6px}
   .barrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%}
   .seg{display:inline-flex;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;overflow:hidden}
   .seg button{border:0;background:transparent;color:var(--mut);font:inherit;font-weight:600;font-size:12px;padding:6px 12px;cursor:pointer}
@@ -156,6 +157,9 @@
 
   /* ===== mobile: compact + sticky top controls, buttons → ⋯ menu, more chart room ===== */
   @media(max-width:760px){
+    /* hide the app header (topnav #gnav) on mobile — it's ALSO sticky top:0 (z9000)
+       and was covering our frozen topbar; nav moves into the ⋯ menu. One header line. */
+    #gnav{display:none!important}
     .topbar{padding:5px 8px;gap:5px}
     .deskbtn{display:none}
     .mobbtn{display:inline-block;order:3}
@@ -209,7 +213,13 @@
     </div>
   </div>
   <div class="ovmenu" id="ovmenu">
-    <a href="/">← Dashboard</a>
+    <a href="/">🏠 Dashboard</a>
+    <a href="/?tab=orders">📒 Orders &amp; P&amp;L</a>
+    <a href="/stats2">📊 Stats 2</a>
+    <a href="/curves">📈 Curves</a>
+    <a href="/?tab=risk">⚠️ Risk</a>
+    <a href="/registry2">🗂️ Strategies</a>
+    <div class="ovsep"></div>
     <button onclick="DR.closeMenu();DR.openSettings()">⚙ Settings</button>
     <button onclick="DR.closeMenu();window.print()">🖨 PDF</button>
     <button onclick="DR.closeMenu();DR.loadAllCharts()">⤓ Load all charts</button>
