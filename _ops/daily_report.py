@@ -271,7 +271,10 @@ def _trade_rows(trades):
             "n": i,
             "id": t.get("id"),
             "label": t["label"],
+            "strategy": t.get("strategy"),
             "sym": t.get("sym"),
+            "side": t.get("entry"),          # BUY/SELL — for trade-chart param
+            "qty": t.get("qty"),
             "points": t["points"],
             "net": t["net"],
             "gross": t["gross"],
@@ -280,12 +283,46 @@ def _trade_rows(trades):
             "dur": t["dur"],
             "entry_time": t.get("entry_time"),
             "exit_time": t.get("exit_time"),
+            "entry_date": t.get("entry_date"),
+            "exit_date": t.get("exit_date"),
             "entry_price": t.get("entry_price"),
             "exit_price": t.get("exit_price"),
             "sec_id": t.get("sec_id"),
             "exit_reason": t.get("exit_reason"),
         })
     return rows
+
+
+def _write_json(path, obj):
+    import json
+    os = __import__("os")
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(obj, f, ensure_ascii=False, indent=2)
+    os.replace(tmp, path)
+
+
+def get_settings():
+    """Report settings for the ⚙ modal — capital (for net %) + per-strategy
+    Expected ₹ (Target table)."""
+    return {
+        "capital": _read_json(_CFG_PATH, {}).get("capital"),
+        "targets": _read_json(_TGT_PATH, {}),
+    }
+
+
+def save_settings(capital=None, targets=None):
+    if capital is not None:
+        cfg = _read_json(_CFG_PATH, {})
+        cfg["capital"] = capital if capital != "" else None
+        _write_json(_CFG_PATH, cfg)
+    if targets is not None:
+        # drop blank/None entries so unset strategies fall back to "set"
+        clean = {k: v for k, v in (targets or {}).items()
+                 if v not in (None, "", 0)}
+        _write_json(_TGT_PATH, clean)
+    return get_settings()
 
 
 # ------------------------------------------------------------------ build ----

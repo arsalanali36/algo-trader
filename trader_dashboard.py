@@ -628,6 +628,23 @@ def api_daily_report():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route('/api/report-settings', methods=['GET', 'POST'])
+def api_report_settings():
+    import daily_report as dr
+    if request.method == 'GET':
+        try:
+            return jsonify({"ok": True, **dr.get_settings()})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e), "capital": None, "targets": {}})
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        return jsonify({"ok": True, **dr.save_settings(
+            capital=d.get('capital'), targets=d.get('targets'))})
+    except Exception as e:
+        print("[report-settings] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route('/api/report-notes', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def api_report_notes():
     import report_notes as rn

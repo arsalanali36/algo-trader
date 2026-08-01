@@ -113,6 +113,23 @@
   .empty{color:var(--mut);font-size:12px;padding:14px;text-align:center}
   #loading{position:fixed;top:10px;right:12px;z-index:90;background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--mut);display:none}
 
+  .modal-bg{position:fixed;inset:0;background:#000a;z-index:100;display:none;align-items:flex-start;justify-content:center;padding:40px 12px;overflow-y:auto}
+  .modal-bg.on{display:flex}
+  .modal{background:var(--card);border:1px solid var(--bd);border-radius:12px;width:min(460px,96vw);box-shadow:0 20px 60px #000c}
+  .modal-hd{display:flex;align-items:center;padding:12px 14px;border-bottom:1px solid var(--bd2)}
+  .modal-hd h3{margin:0;font-size:14px}
+  .modal-hd .mx{margin-left:auto;cursor:pointer;color:var(--mut);font-size:15px}
+  .modal-hd .mx:hover{color:var(--tx)}
+  .modal-bd{padding:14px;max-height:60vh;overflow-y:auto}
+  .modal-ft{display:flex;gap:8px;justify-content:flex-end;padding:12px 14px;border-top:1px solid var(--bd2)}
+  .fld{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+  .fld span{font-size:11px;color:var(--mut)}
+  .fld input,.trow input{background:var(--bg);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;padding:7px 9px;font-size:12px}
+  .fld-t{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);font-weight:700;margin:6px 0 8px}
+  .trow{display:flex;align-items:center;gap:8px;margin-bottom:7px}
+  .trow label{flex:1;font-size:12px}
+  .trow input{width:120px}
+
   @media(min-width:760px){ .charts2{grid-template-columns:1fr 1fr} .kpis{grid-template-columns:repeat(3,1fr)} .stats{grid-template-columns:1fr 1fr;gap:0 22px} }
   @media(min-width:920px){ .brk{grid-template-columns:1fr 1fr} }
   @media(min-width:1080px){ .grid2{grid-template-columns:1fr 340px} .kpis{grid-template-columns:repeat(5,1fr)} .notes-rail{position:sticky;top:66px} }
@@ -130,13 +147,15 @@
 <div class="topbar">
   <div class="brand"><b>📆 DAILY REPORT</b><small id="subDate">—</small></div>
   <a href="/" class="hdr-btn">← Dashboard</a>
+  <button class="hdr-btn" onclick="DR.openSettings()" title="Settings — Expected targets, capital">⚙ Settings</button>
   <button class="hdr-btn accent" onclick="window.print()">🖨 PDF</button>
   <div class="barrow">
     <div class="seg warn" id="segMode"><button class="on" data-v="">All</button><button data-v="live">Real</button><button data-v="paper">Paper</button></div>
     <div class="seg" id="segRange"><button class="on" data-v="day">Daily</button><button data-v="week">Weekly</button><button data-v="month">Monthly</button></div>
     <div class="datenav">
       <button title="Prev (←)" onclick="DR.step(-1)">◄</button>
-      <input class="d num" id="dnav" type="date">
+      <input class="d num" id="dnav" type="date" onclick="DR.openPicker()" title="Click / D = calendar">
+      <button title="Calendar (D)" onclick="DR.openPicker()">🗓</button>
       <button title="Next (→)" onclick="DR.step(1)">►</button>
     </div>
   </div>
@@ -195,6 +214,30 @@
 
   <div class="sectitle">Journey (Equity)</div>
   <div class="card"><div class="bd"><div id="journey"></div></div></div>
+
+  <div class="sectitle">Per-Trade Chart</div>
+  <div class="card">
+    <div class="hd"><h3 id="ptc-title">🕯 Per-Trade Chart</h3><span class="mut" id="ptc-sub">Individual Trades me kisi trade pe click karo</span>
+      <span class="gear" id="ptc-open" style="display:none" title="Open in full tab">⤢</span></div>
+    <div class="bd" style="padding:0">
+      <div id="ptc-empty" class="empty">Koi trade select nahi — Individual Trades table me row pe click karo (OHLC/Line, entry/exit markers, SL/target levels, zoom us chart me hain)</div>
+      <iframe id="ptc-frame" style="display:none;width:100%;height:520px;border:0;background:var(--bg)"></iframe>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="settingsBg">
+  <div class="modal">
+    <div class="modal-hd"><h3>⚙ Report Settings</h3><span class="mx" onclick="DR.closeSettings()">✕</span></div>
+    <div class="modal-bd">
+      <label class="fld"><span>Capital (₹) — Net % ke liye</span>
+        <input id="set-capital" type="number" placeholder="e.g. 1000000"></label>
+      <div class="fld-t">🎯 Expected (₹) per strategy — Target table</div>
+      <div id="set-targets"></div>
+      <div class="mut" style="font-size:11px;margin-top:8px">Blank = "set" (koi target nahi). List current date ki strategies + pehle se set targets.</div>
+    </div>
+    <div class="modal-ft"><button class="btn ghost" onclick="DR.closeSettings()">Cancel</button><button class="btn" onclick="DR.saveSettings()">Save</button></div>
+  </div>
 </div>
 
 <div class="ctx" id="ctx"><div class="an" id="ctxAn"></div>

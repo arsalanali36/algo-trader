@@ -12,7 +12,10 @@
             noteFilter: "", metricS: "amt", metricT: "amt",
             curAnchor: "—", popColor: "b", popImgs: [], lastXY: { x: 200, y: 200 } };
 
-  function todayISO() { var d = new Date(); return d.toISOString().slice(0, 10); }
+  // LOCAL today (toISOString would give UTC → wrong day in IST evenings)
+  function todayISO() { var d = new Date(); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  // TZ-safe date arithmetic — all in UTC so no +5:30 drift (was an off-by-one bug)
+  function addDays(iso, n) { var p = iso.split("-"); var dt = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2])); dt.setUTCDate(dt.getUTCDate() + n); return dt.toISOString().slice(0, 10); }
   function $(id) { return document.getElementById(id); }
   function el(tag, cls, html) { var e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
 
@@ -29,7 +32,7 @@
   // ---- range math ----
   function rangeFor() {
     var d = S.date, to = d, from = d;
-    if (S.range === "week") { var dt = new Date(d + "T00:00"); dt.setDate(dt.getDate() - 6); from = dt.toISOString().slice(0, 10); }
+    if (S.range === "week") { from = addDays(d, -6); }
     else if (S.range === "month") { from = d.slice(0, 8) + "01"; }
     return { from: from, to: to };
   }
@@ -128,15 +131,33 @@
       return "<tr data-tid='" + t.id + "' data-sym='" + esc(t.sym) + "'><td>T" + t.n + " · " + esc(t.label.replace(/^\d+\.\d+\s*-\s*/, "")) + "</td><td class='num " + cls(t.points) + "'>" + sgn(t.points) + "</td><td class='num " + cls(t.net) + "'>" + sgn(t.net) + "</td><td class='num mut'>" + sgn(-t.tax) + "</td><td>" + wl + "</td><td class='num mut'>" + t.dur + "</td></tr>";
     }).join("");
     $("brk-trades").innerHTML = "<table><thead><tr><th>Trade</th><th>Point</th><th>Amt</th><th>Tax</th><th>W/L</th><th>Dur</th></tr></thead><tbody>" + tbody + "</tbody></table>";
-    // row click → existing per-trade premium chart
+    // row click → load per-trade chart panel (embeds existing /trade-chart)
     $("brk-trades").querySelectorAll("tr[data-tid]").forEach(function (row) {
       row.addEventListener("click", function (e) {
         if (e.button === 2) return;
-        var sym = row.getAttribute("data-sym");
-        if (sym && sym !== "null") window.open("/trade-chart?sym=" + encodeURIComponent(sym) + "&date=" + S.date, "_blank");
+        var tid = +row.getAttribute("data-tid");
+        var t = (S.data.trades || []).filter(function (x) { return x.id === tid; })[0];
+        if (t) DR.showTradeChart(t);
       });
     });
   }
+
+  DR.showTradeChart = function (t) {
+    if (!t.sym || t.sym === "null") { return; }
+    var d = t.exit_date || t.entry_date || S.date;
+    var qs = "sym=" + encodeURIComponent(t.sym) + "&side=" + (t.side || "") +
+      "&entry=" + (t.entry_price || 0) + "&exit=" + (t.exit_price || 0) +
+      "&et=" + (t.entry_time || "") + "&xt=" + (t.exit_time || "") +
+      "&qty=" + (t.qty || 0) + "&date=" + d +
+      (t.strategy ? "&strategy=" + encodeURIComponent(t.strategy) : "");
+    var url = "/trade-chart?" + qs;
+    $("ptc-empty").style.display = "none";
+    var f = $("ptc-frame"); f.style.display = "block"; f.src = url;
+    $("ptc-title").textContent = "🕯 T" + t.n + " · " + t.label.replace(/^\d+\.\d+\s*-\s*/, "") + " — " + t.sym;
+    $("ptc-sub").textContent = (t.side || "") + " · " + t.dur + " · " + sgn(t.net) + " (" + t.wl + ")";
+    var op = $("ptc-open"); op.style.display = "inline"; op.onclick = function () { window.open(url, "_blank"); };
+    $("ptc-title").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // ---- SVG bar chart ----
   function barChart(rows, metric, labelFn) {
@@ -265,8 +286,38 @@
 
   // ================= EVENTS =================
   DR.step = function (d) {
-    var dt = new Date(S.date + "T00:00"); dt.setDate(dt.getDate() + d);
-    S.date = dt.toISOString().slice(0, 10); $("dnav").value = S.date; load();
+    S.date = addDays(S.date, d); $("dnav").value = S.date; load();
+  };
+
+  DR.openPicker = function () {
+    var i = $("dnav");
+    try { i.showPicker(); } catch (e) { i.focus(); i.click(); }
+  };
+
+  // ---- settings modal (Expected targets + capital) ----
+  DR.openSettings = function () {
+    fetch("/api/report-settings").then(function (x) { return x.json(); }).then(function (s) {
+      $("set-capital").value = s.capital == null ? "" : s.capital;
+      var seen = {};
+      (S.data ? S.data.by_strategy : []).forEach(function (bs) { seen[bs.strategy] = bs.label; });
+      Object.keys(s.targets || {}).forEach(function (k) { if (!(k in seen)) seen[k] = k; });
+      var keys = Object.keys(seen);
+      $("set-targets").innerHTML = keys.length ? keys.map(function (k) {
+        var v = (s.targets && s.targets[k] != null) ? s.targets[k] : "";
+        return '<div class="trow"><label>' + esc(seen[k]) + '</label><input type="number" data-strat="' + esc(k) + '" placeholder="set" value="' + v + '"></div>';
+      }).join("") : '<div class="mut" style="font-size:11px">Koi strategy nahi — pehle date load karo.</div>';
+      $("settingsBg").classList.add("on");
+    });
+  };
+  DR.closeSettings = function () { $("settingsBg").classList.remove("on"); };
+  DR.saveSettings = function () {
+    var cap = $("set-capital").value;
+    var targets = {};
+    $("set-targets").querySelectorAll("input[data-strat]").forEach(function (i) {
+      if (i.value !== "") targets[i.getAttribute("data-strat")] = parseFloat(i.value);
+    });
+    fetch("/api/report-settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ capital: cap === "" ? "" : parseFloat(cap), targets: targets }) })
+      .then(function (x) { return x.json(); }).then(function () { DR.closeSettings(); load(); });
   };
 
   function initSeg(id, key, cb) {
@@ -293,8 +344,13 @@
     $("popImg").addEventListener("change", function () { uploadImgs(this.files); });
 
     document.addEventListener("keydown", function (e) {
-      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA") return;
-      if (e.key === "ArrowLeft") DR.step(-1); if (e.key === "ArrowRight") DR.step(1);
+      if (e.target.tagName === "TEXTAREA") return;
+      // allow arrows even when the date input is focused (step instead of native segment edit)
+      var typingText = e.target.tagName === "INPUT" && e.target.type !== "date";
+      if (typingText) return;
+      if (e.key === "ArrowLeft") { e.preventDefault(); DR.step(-1); }
+      else if (e.key === "ArrowRight") { e.preventDefault(); DR.step(1); }
+      else if (e.key === "d" || e.key === "D") { e.preventDefault(); DR.openPicker(); }
     });
 
     // desktop right-click
