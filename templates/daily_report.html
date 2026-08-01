@@ -157,9 +157,10 @@
 
   /* ===== mobile: compact + sticky top controls, buttons → ⋯ menu, more chart room ===== */
   @media(max-width:760px){
-    /* hide the app header (topnav #gnav) on mobile — it's ALSO sticky top:0 (z9000)
-       and was covering our frozen topbar; nav moves into the ⋯ menu. One header line. */
-    #gnav{display:none!important}
+    /* keep the app header (topnav #gnav) visible, but make it NON-sticky on mobile so
+       it scrolls away — else its sticky top:0 (z9000) covers our frozen report topbar.
+       On scroll: gnav scrolls off, the compact report .topbar freezes at top alone. */
+    #gnav{position:static!important}
     .topbar{padding:5px 8px;gap:5px}
     .deskbtn{display:none}
     .mobbtn{display:inline-block;order:3}

@@ -149,7 +149,7 @@
     return "/trade-chart?sym=" + encodeURIComponent(t.sym) + "&side=" + (t.side || "") +
       "&entry=" + (t.entry_price || 0) + "&exit=" + (t.exit_price || 0) +
       "&et=" + (t.entry_time || "") + "&xt=" + (t.exit_time || "") +
-      "&qty=" + (t.qty || 0) + "&date=" + d + "&auto=0" +
+      "&qty=" + (t.qty || 0) + "&date=" + d + "&auto=0&embed=1" +
       (t.strategy ? "&strategy=" + encodeURIComponent(t.strategy) : "");
   }
   var _io = null;
