@@ -144,13 +144,18 @@
   }
 
   // ---- per-trade charts grid (all trades, auto lazy-loaded on scroll) ----
-  function tcUrl(t) {
-    var d = t.exit_date || t.entry_date || S.date;
-    return "/trade-chart?sym=" + encodeURIComponent(t.sym) + "&side=" + (t.side || "") +
-      "&entry=" + (t.entry_price || 0) + "&exit=" + (t.exit_price || 0) +
-      "&et=" + (t.entry_time || "") + "&xt=" + (t.exit_time || "") +
-      "&qty=" + (t.qty || 0) + "&date=" + d + "&auto=0&embed=1" +
-      (t.strategy ? "&strategy=" + encodeURIComponent(t.strategy) : "");
+  function tcUrl(g) {
+    // g = array of trades on the SAME contract (same-symbol trades merged into one
+    // chart). Entry/exit times joined as comma-lists → server returns all markers.
+    var t0 = g[0];
+    var d = t0.exit_date || t0.entry_date || S.date;
+    var ets = g.map(function (t) { return t.entry_time || ""; }).filter(Boolean).join(",");
+    var xts = g.map(function (t) { return t.exit_time || ""; }).filter(Boolean).join(",");
+    return "/trade-chart?sym=" + encodeURIComponent(t0.sym) + "&side=" + (t0.side || "") +
+      "&entry=" + (t0.entry_price || 0) + "&exit=" + (t0.exit_price || 0) +
+      "&et=" + encodeURIComponent(ets) + "&xt=" + encodeURIComponent(xts) +
+      "&qty=" + (t0.qty || 0) + "&date=" + d + "&auto=0&embed=1" +
+      (t0.strategy ? "&strategy=" + encodeURIComponent(t0.strategy) : "");
   }
   var _io = null;
   function loadCard(ph) {
@@ -181,13 +186,26 @@
   function renderPerTradeCharts() {
     var all = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });
     var tr = S.ptcStrat ? all.filter(function (t) { return t.strategy === S.ptcStrat; }) : all;
-    $("ptc-count").textContent = tr.length ? "(" + tr.length + " charts" + (S.ptcStrat ? " · filtered" : "") + " — scroll pe auto-load)" : "";
-    if (!tr.length) { $("ptc-grid").innerHTML = '<div class="empty">Is strategy ka koi option-trade chart nahi</div>'; return; }
-    $("ptc-grid").innerHTML = tr.map(function (t) {
-      var url = tcUrl(t), nm = t.label.replace(/^\d+\.\d+\s*-\s*/, "");
-      return '<div class="ptc-card" id="ptc-' + t.id + '"><div class="h">' +
-        '<div class="hmeta"><div class="hl1" title="' + esc(nm + " " + t.sym) + '">🕯 T' + t.n + " · " + esc(nm) + " · " + esc(t.sym) + '</div>' +
-        '<div class="hl2 ' + cls(t.net) + '">' + sgn(t.net) + " (" + t.wl + ')</div></div>' +
+    // Group same-contract (+strategy) trades into ONE card so multiple same-symbol
+    // trades don't each get a card showing the others' RSI crossunders (confusion fix).
+    var groups = [], gmap = {};
+    tr.forEach(function (t) {
+      var k = t.sym + "|" + (t.strategy || "");
+      if (!(k in gmap)) { gmap[k] = groups.length; groups.push([t]); }
+      else groups[gmap[k]].push(t);
+    });
+    $("ptc-count").textContent = groups.length ? "(" + groups.length + " charts" + (S.ptcStrat ? " · filtered" : "") + " — scroll pe auto-load)" : "";
+    if (!groups.length) { $("ptc-grid").innerHTML = '<div class="empty">Is strategy ka koi option-trade chart nahi</div>'; return; }
+    $("ptc-grid").innerHTML = groups.map(function (g) {
+      var t0 = g[0], url = tcUrl(g), nm = t0.label.replace(/^\d+\.\d+\s*-\s*/, "");
+      var multi = g.length > 1;
+      var net = g.reduce(function (a, t) { return a + (t.net || 0); }, 0);
+      var tlabel = "T" + g.map(function (t) { return t.n; }).join(multi ? "," : "");
+      var wl = multi ? (g.filter(function (t) { return (t.net || 0) >= 0; }).length + "W/" +
+                        g.filter(function (t) { return (t.net || 0) < 0; }).length + "L") : t0.wl;
+      return '<div class="ptc-card" id="ptc-' + t0.id + '"><div class="h">' +
+        '<div class="hmeta"><div class="hl1" title="' + esc(nm + " " + t0.sym) + '">🕯 ' + tlabel + " · " + esc(nm) + " · " + esc(t0.sym) + (multi ? (' · ' + g.length + ' trades') : '') + '</div>' +
+        '<div class="hl2 ' + cls(net) + '">' + sgn(net) + " (" + wl + ')</div></div>' +
         '<span class="o" title="Full tab" onclick="window.open(\'' + url + '\',\'_blank\')">⤢</span></div>' +
         '<div class="ph" data-src="' + esc(url) + '">⏳ chart load ho raha…</div></div>';
     }).join("");

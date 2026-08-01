@@ -3088,8 +3088,12 @@ def api_trade_chart_data():
     trad_sym = request.args.get('trad_sym', '').strip()
     date_str = request.args.get('date', '').strip() or \
         (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
-    entry_t  = request.args.get('et', '').strip()   # HH:MM IST
+    entry_t  = request.args.get('et', '').strip()   # HH:MM IST (comma-list when >1 trade on same contract merged into one chart)
     exit_t   = request.args.get('xt', '').strip()
+    entry_times = [x.strip() for x in entry_t.split(',') if x.strip()]
+    exit_times  = [x.strip() for x in exit_t.split(',') if x.strip()]
+    entry_t_first = entry_times[0] if entry_times else ''   # single-consumer helpers (SL series / disk) take one time
+    exit_t_first  = exit_times[0] if exit_times else ''
     tf       = request.args.get('tf', '').strip()
     strategy = request.args.get('strategy', '').strip()   # Task 8 — disambiguate opening leg
 
@@ -3165,14 +3169,18 @@ def api_trade_chart_data():
             # Dhan won't serve this contract (expired / non-trading day) — fall
             # back to the on-disk copy (daemon-captured or a prior write-through)
             # so old/expired premium charts still render (#5).
-            disk = _load_premium_ohlc_candles(sec_id, date_str, entry_t, exit_t)
+            disk = _load_premium_ohlc_candles(sec_id, date_str, entry_t_first, exit_t_first)
             if disk:
                 return jsonify({"ok": True, "candles": disk["candles"],
                                 "entry_mk": disk["entry_mk"], "exit_mk": disk["exit_mk"],
-                                "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, disk["candles"], disk["entry_mk"], entry_t=entry_t, strategy=strategy),
+                                "entry_mks": [disk["entry_mk"]] if disk["entry_mk"] else [],
+                                "exit_mks": [disk["exit_mk"]] if disk["exit_mk"] else [],
+                                "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, disk["candles"], disk["entry_mk"], entry_t=entry_t_first, strategy=strategy),
                                 "trad_sym": trad_sym, "date": date_str, "source": "disk"})
             return jsonify({"ok": False, "msg": f"{date_str} ka intraday data nahi (non-trading day / expired contract)"})
         candles, entry_mk, exit_mk = [], None, None
+        entry_mks, exit_mks = [], []   # ALL entry/exit marker epochs (>1 when same-contract trades merged into one chart)
+        _seen_e, _seen_x = set(), set()
         _bars_by_epoch = {}
         for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
             t_ist = int(ts) + 19800   # +5:30 → chart shows IST (treated as UTC by lightweight-charts)
@@ -3180,15 +3188,20 @@ def api_trade_chart_data():
             candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
                             "low": round(float(l), 2), "close": round(float(c), 2)})
             _bars_by_epoch[str(int(ts))] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
-            if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
-            if exit_t  and hhmm == exit_t:  exit_mk = t_ist
+            if hhmm in entry_times and hhmm not in _seen_e:
+                _seen_e.add(hhmm); entry_mks.append(t_ist)
+                if entry_mk is None: entry_mk = t_ist
+            if hhmm in exit_times and hhmm not in _seen_x:
+                _seen_x.add(hhmm); exit_mks.append(t_ist)
+                if exit_mk is None: exit_mk = t_ist
         # Write-through: persist so this contract's chart survives its expiry (#5).
         # Only for a single-day fetch — a multi-day (positional) span would write
         # today's bars into date_str's file (keyed per date) and corrupt it.
         if seg == "NSE_FNO" and _bars_by_epoch and to_date == date_str:
             _save_premium_ohlc(sec_id, date_str, _bars_by_epoch)
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
-                        "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=entry_t, strategy=strategy),
+                        "entry_mks": entry_mks, "exit_mks": exit_mks,
+                        "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=entry_t_first, strategy=strategy),
                         "trad_sym": trad_sym, "date": date_str})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})
@@ -3203,8 +3216,10 @@ def api_trade_chart_underlying_data():
     trad_sym = request.args.get('trad_sym', '').strip()
     date_str = request.args.get('date', '').strip() or \
         (_dt.datetime.now(timezone.utc) + _dt.timedelta(hours=5, minutes=30)).strftime("%Y-%m-%d")
-    entry_t = request.args.get('et', '').strip()
+    entry_t = request.args.get('et', '').strip()      # comma-list when >1 same-contract trade merged
     exit_t = request.args.get('xt', '').strip()
+    entry_times = [x.strip() for x in entry_t.split(',') if x.strip()]
+    exit_times = [x.strip() for x in exit_t.split(',') if x.strip()]
     strategy_id = request.args.get('strategy', '').strip()
     root = trad_sym.split('-')[0].strip().upper()
     if not root:
@@ -3259,13 +3274,19 @@ def api_trade_chart_underlying_data():
         if not d.get("open"):
             return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
         candles, entry_mk, exit_mk = [], None, None
+        entry_mks, exit_mks = [], []   # ALL markers (>1 when same-contract trades merged into one chart)
+        _seen_e, _seen_x = set(), set()
         for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
             t_ist = int(ts) + 19800
             hhmm = _dt.datetime.utcfromtimestamp(int(ts) + 19800).strftime("%H:%M")
             candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
                             "low": round(float(l), 2), "close": round(float(c), 2)})
-            if entry_t and hhmm == entry_t and entry_mk is None: entry_mk = t_ist
-            if exit_t and hhmm == exit_t: exit_mk = t_ist
+            if hhmm in entry_times and hhmm not in _seen_e:
+                _seen_e.add(hhmm); entry_mks.append(t_ist)
+                if entry_mk is None: entry_mk = t_ist
+            if hhmm in exit_times and hhmm not in _seen_x:
+                _seen_x.add(hhmm); exit_mks.append(t_ist)
+                if exit_mk is None: exit_mk = t_ist
         # RSI overlay — if this trade's strategy trades on RSI, compute the SAME Wilder
         # RSI it uses (its own timeframe from config) so the OB/OS entry levels + the
         # midline (50) EXIT line are visible on the chart. Uses _CHARTING.indicators.
@@ -3371,6 +3392,7 @@ def api_trade_chart_underlying_data():
         except Exception:
             atr_trail = None
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
+                        "entry_mks": entry_mks, "exit_mks": exit_mks,
                         "symbol": root, "date": date_str, "zone": zone, "rsi": rsi, "atr_trail": atr_trail})
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)})

@@ -260,24 +260,20 @@ document.addEventListener('DOMContentLoaded', () => {
       window._premSeries = s; window._premChart = chart; window._premCandles = d.candles; // refs for live refresh + exit overlay
       const mk=[];
       const isSell = side==='SELL';
-      if(d.entry_mk) {
-        mk.push({
-          time: d.entry_mk,
-          position: isSell?'aboveBar':'belowBar',
-          color: isSell?'#f85149':'#3fb950',
-          shape: isSell?'arrowDown':'arrowUp',
-          text: 'Entry '+side+(tradeDir?(' · '+tradeDir):'')+' ₹'+entry.toFixed(2)
-        });
-      }
-      if(d.exit_mk) {
-        mk.push({
-          time: d.exit_mk,
-          position: isSell?'belowBar':'aboveBar',
-          color: isSell?'#3fb950':'#f85149',
-          shape: isSell?'arrowUp':'arrowDown',
-          text: 'Exit '+(isSell?'BUY':'SELL')+' ₹'+exit.toFixed(2)
-        });
-      }
+      // entry_mks / exit_mks are arrays (>1 when several trades of the SAME contract
+      // are merged into one chart — so each entry/exit shows its own arrow instead of
+      // living on a separate card). Falls back to the single entry_mk/exit_mk.
+      const eMks = (d.entry_mks && d.entry_mks.length) ? d.entry_mks : (d.entry_mk ? [d.entry_mk] : []);
+      const xMks = (d.exit_mks  && d.exit_mks.length)  ? d.exit_mks  : (d.exit_mk  ? [d.exit_mk]  : []);
+      const _multi = (eMks.length + xMks.length) > 2;
+      eMks.forEach(function(tm,i){ mk.push({
+        time: tm, position: isSell?'aboveBar':'belowBar',
+        color: isSell?'#f85149':'#3fb950', shape: isSell?'arrowDown':'arrowUp',
+        text: 'Entry'+(_multi?(' '+(i+1)):'')+' '+side+(tradeDir?(' · '+tradeDir):'')+((!_multi&&entry)?(' ₹'+entry.toFixed(2)):'') }); });
+      xMks.forEach(function(tm,i){ mk.push({
+        time: tm, position: isSell?'belowBar':'aboveBar',
+        color: isSell?'#3fb950':'#f85149', shape: isSell?'arrowUp':'arrowDown',
+        text: 'Exit'+(_multi?(' '+(i+1)):'')+' '+(isSell?'BUY':'SELL')+((!_multi&&exit)?(' ₹'+exit.toFixed(2)):'') }); });
       mk.sort((a,b)=>a.time-b.time);
       if(mk.length) s.setMarkers(mk);
       
@@ -457,11 +453,15 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         window._leftRsiChart = rsiChart;
       } else { window._leftRsiChart = null; }
-      if (d.entry_mk) s.setMarkers([{time:d.entry_mk,
+      // All entry markers (>1 when same-contract trades are merged) — each crossunder
+      // on this pane's RSI now maps to its own visible Entry arrow.
+      var uEMks = (d.entry_mks && d.entry_mks.length) ? d.entry_mks : (d.entry_mk ? [d.entry_mk] : []);
+      var uMulti = uEMks.length > 1;
+      if (uEMks.length) s.setMarkers(uEMks.map(function(tm,i){ return {time:tm,
         position: tradeDir==='SHORT' ? 'aboveBar' : 'belowBar',
         color: tradeDir==='SHORT' ? '#f85149' : (tradeDir==='LONG' ? '#3fb950' : '#58a6ff'),
         shape: tradeDir==='SHORT' ? 'arrowDown' : (tradeDir==='LONG' ? 'arrowUp' : 'circle'),
-        text: 'Entry' + (tradeDir ? (' · '+tradeDir) : '')}]);
+        text: 'Entry' + (uMulti?(' '+(i+1)):'') + (tradeDir ? (' · '+tradeDir) : '')}; }));
 
       // Zone shown as two horizontal price lines (not a filled box) — this
       // pane covers the FULL trading day, so price legitimately trades both
