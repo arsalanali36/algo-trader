@@ -781,8 +781,10 @@ window.drawAtrTrail = function(d){
   if (!btn) return;
   const LS = 'tradeChartAutoRefresh', INTERVAL = 15000;
   let timer = null;
-  const isOn = () => localStorage.getItem(LS) !== '0'; // unset = ON by default
   const q = new URLSearchParams(location.search);
+  // ?auto=0 (embedded historical charts, e.g. Daily Report grid) → force OFF,
+  // so N embedded charts don't each poll Dhan every 15s. Else localStorage (default ON).
+  const isOn = () => (q.get('auto') === '0' ? false : localStorage.getItem(LS) !== '0');
   const p = k => q.get(k) || '';
   const base = 'trad_sym=' + encodeURIComponent(p('sym')) + '&et=' + p('et') + '&xt=' + p('xt')
     + (p('date') ? ('&date=' + p('date')) : '')

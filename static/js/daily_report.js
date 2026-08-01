@@ -52,6 +52,7 @@
     var r = rangeFor();
     var qs = "from=" + r.from + "&to=" + r.to + (S.mode ? "&mode=" + S.mode : "");
     $("subDate").textContent = subLabel();
+    $("printHead").innerHTML = "<b>📆 Daily Report</b> &nbsp; <span>" + esc(subLabel()) + (S.mode ? " · " + (S.mode === "live" ? "Real" : "Paper") : "") + "</span>";
     Promise.all([
       fetch("/api/daily-report?" + qs).then(function (x) { return x.json(); }),
       fetch("/api/report-notes?date=" + S.date).then(function (x) { return x.json(); }).catch(function () { return { notes: [] }; })
@@ -68,8 +69,8 @@
 
   // ================= RENDER =================
   function renderAll() {
-    if (!S.data) { $("kpis").innerHTML = '<div class="empty">No data</div>'; ["target-wrap", "stat-wrap", "brk-strategy", "brk-trades", "chart-strategy", "chart-trade", "journey"].forEach(function (id) { $(id).innerHTML = ""; }); renderNotes(); return; }
-    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderNotes();
+    if (!S.data) { $("kpis").innerHTML = '<div class="empty">No data</div>'; ["target-wrap", "stat-wrap", "brk-strategy", "brk-trades", "chart-strategy", "chart-trade", "journey", "ptc-grid"].forEach(function (id) { $(id).innerHTML = ""; }); renderNotes(); return; }
+    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderPerTradeCharts(); renderNotes();
   }
 
   function renderKpis() {
@@ -142,21 +143,53 @@
     });
   }
 
-  DR.showTradeChart = function (t) {
-    if (!t.sym || t.sym === "null") { return; }
+  // ---- per-trade charts grid (all trades, auto lazy-loaded on scroll) ----
+  function tcUrl(t) {
     var d = t.exit_date || t.entry_date || S.date;
-    var qs = "sym=" + encodeURIComponent(t.sym) + "&side=" + (t.side || "") +
+    return "/trade-chart?sym=" + encodeURIComponent(t.sym) + "&side=" + (t.side || "") +
       "&entry=" + (t.entry_price || 0) + "&exit=" + (t.exit_price || 0) +
       "&et=" + (t.entry_time || "") + "&xt=" + (t.exit_time || "") +
-      "&qty=" + (t.qty || 0) + "&date=" + d +
+      "&qty=" + (t.qty || 0) + "&date=" + d + "&auto=0" +
       (t.strategy ? "&strategy=" + encodeURIComponent(t.strategy) : "");
-    var url = "/trade-chart?" + qs;
-    $("ptc-empty").style.display = "none";
-    var f = $("ptc-frame"); f.style.display = "block"; f.src = url;
-    $("ptc-title").textContent = "🕯 T" + t.n + " · " + t.label.replace(/^\d+\.\d+\s*-\s*/, "") + " — " + t.sym;
-    $("ptc-sub").textContent = (t.side || "") + " · " + t.dur + " · " + sgn(t.net) + " (" + t.wl + ")";
-    var op = $("ptc-open"); op.style.display = "inline"; op.onclick = function () { window.open(url, "_blank"); };
-    $("ptc-title").scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+  var _io = null;
+  function loadCard(ph) {
+    var url = ph.getAttribute("data-src"); if (!url) return;
+    var f = document.createElement("iframe"); f.src = url; f.loading = "lazy";
+    ph.replaceWith(f);
+  }
+  function observeCharts() {
+    if (_io) _io.disconnect();
+    if (!("IntersectionObserver" in window)) { $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(loadCard); return; }
+    _io = new IntersectionObserver(function (ents) {
+      ents.forEach(function (e) { if (e.isIntersecting) { loadCard(e.target); _io.unobserve(e.target); } });
+    }, { rootMargin: "400px" });
+    $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(function (ph) { _io.observe(ph); });
+  }
+  function renderPerTradeCharts() {
+    var tr = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });
+    $("ptc-count").textContent = tr.length ? "(" + tr.length + " charts — scroll pe auto-load)" : "";
+    if (!tr.length) { $("ptc-grid").innerHTML = '<div class="empty">No option trades</div>'; return; }
+    $("ptc-grid").innerHTML = tr.map(function (t) {
+      var url = tcUrl(t), nm = t.label.replace(/^\d+\.\d+\s*-\s*/, "");
+      return '<div class="ptc-card" id="ptc-' + t.id + '"><div class="h" title="' + esc(nm + " " + t.sym) + '">🕯 T' + t.n + " · " + esc(nm) + " · " + esc(t.sym) +
+        ' <span class="' + cls(t.net) + '">' + sgn(t.net) + " (" + t.wl + ')</span><span class="o" title="Full tab" onclick="window.open(\'' + url + '\',\'_blank\')">⤢</span></div>' +
+        '<div class="ph" data-src="' + esc(url) + '">⏳ chart load ho raha…</div></div>';
+    }).join("");
+    observeCharts();
+    // eager-load first few so charts are visibly open on load even if the
+    // IntersectionObserver is unsupported; rest lazy-load on scroll
+    var phs = $("ptc-grid").querySelectorAll(".ph[data-src]");
+    for (var k = 0; k < Math.min(3, phs.length); k++) loadCard(phs[k]);
+  }
+  DR.loadAllCharts = function () {
+    $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(loadCard);
+  };
+  // row-click → scroll to that trade's chart card (+ force-load it)
+  DR.showTradeChart = function (t) {
+    var card = $("ptc-" + t.id); if (!card) return;
+    var ph = card.querySelector(".ph[data-src]"); if (ph) loadCard(ph);
+    card.scrollIntoView({ behavior: "smooth", block: "start" });
   };
 
   // ---- SVG bar chart ----

@@ -23,6 +23,7 @@
     { href: '/registry2',    label: '🗂️ Strategies' }
   ];
   var REPORTS = [
+    { href: '/report',        label: '📆 Daily Report' },
     { href: '/reports',       label: '📋 EOD Reports' },
     { href: '/intervention',  label: '🖐 Intervention' },
     { href: '/presentations', label: '🎬 YT Presentations' },
