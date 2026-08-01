@@ -17,7 +17,6 @@
     { href: '/?tab=log',     label: 'Logs' },
     { href: '/?tab=orders',  label: '📒 Orders & P&L' },
     { href: '/stats2',       label: '📊 Stats 2' },
-    { href: '/curves',       label: '📈 Curves' },
     { href: '/fii-flow',     label: '🏦 FII Flow' },
     { href: '/?tab=risk',    label: '⚠️ Risk' },
     { href: '/registry2',    label: '🗂️ Strategies' }
@@ -29,9 +28,12 @@
     { href: '/presentations', label: '🎬 YT Presentations' },
     { href: '/sl-map',        label: '🛡️ SL Map' }
   ];
+  var CURVES = [
+    { href: '/curves',  label: '📈 Curves' },
+    { href: '/gex',     label: '🟢 GEX Profile' },
+    { href: '/whatif',  label: '🧪 Options What-If' }
+  ];
   var MORE = [
-    { href: '/gex',            label: '🟢 GEX Profile' },
-    { href: '/whatif',         label: '🧪 Options What-If' },
     { href: '/registry',       label: '🗂️ Strategies (classic)' },
     { href: '/?tab=calendar',  label: '📊 Stats (calendar)' },
     { href: '/script3',        label: '📜 Script 3' },
@@ -120,7 +122,11 @@
     var here = norm(location.pathname);
     var st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
 
-    var tabsHTML = TABS.map(function (t) { return tabHTML(t, here); }).join('') +
+    var curvesOn = ['/curves', '/gex', '/whatif'].indexOf(here) >= 0;
+    var curvesDD = '<div class="gn-dd"><span class="gn-tab' + (curvesOn ? ' on' : '') + '" data-dd="cur">📈 Curves ▾</span>' + menuHTML(CURVES, 'gn-cur') + '</div>';
+    var tabsArr = TABS.map(function (t) { return tabHTML(t, here); });
+    tabsArr.splice(3, 0, curvesDD);   // Curves ▾ right after Stats 2
+    var tabsHTML = tabsArr.join('') +
       '<div class="gn-dd"><span class="gn-tab" data-dd="rep">📋 Reports ▾</span>' + menuHTML(REPORTS, 'gn-rep') + '</div>' +
       '<div class="gn-dd"><span class="gn-tab" data-dd="more">More ▾</span>' + menuHTML(MORE, 'gn-more') + '</div>' +
       '<div class="gn-drawer-extra">' + AVATAR.map(function (m) {
@@ -171,7 +177,7 @@
     bar.addEventListener('click', function (e) {
       var trg = e.target.closest('[data-dd]');
       if (trg) {
-        var map = { rep: 'gn-rep', more: 'gn-more', av: 'gn-av' };
+        var map = { cur: 'gn-cur', rep: 'gn-rep', more: 'gn-more', av: 'gn-av' };
         var m = document.getElementById(map[trg.getAttribute('data-dd')]);
         var wasOpen = m.classList.contains('show');
         closeMenus(); if (!wasOpen) m.classList.add('show');
@@ -186,7 +192,7 @@
     // — page tool-buttons (Panels, View, filters…) are untouched. ──
     if (window.matchMedia && window.matchMedia('(max-width:760px)').matches) {
       var routes = {};
-      TABS.concat(REPORTS, MORE).forEach(function (n) { routes[n.href.split('?')[0]] = 1; });
+      TABS.concat(CURVES, REPORTS, MORE).forEach(function (n) { routes[n.href.split('?')[0]] = 1; });
       routes['/'] = 1;
       [].forEach.call(document.querySelectorAll('.top a[href], .hdr a[href], header a[href], .brand a[href]'), function (a) {
         if (bar.contains(a)) return;                       // never our own nav

@@ -86,6 +86,7 @@
       event.stopPropagation();
       window.closeAvatarDropdown();
       window.closeReportsDropdown();
+      window.closeCurvesDropdown && window.closeCurvesDropdown();
       const dropdown = document.getElementById('more-dropdown');
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -98,6 +99,7 @@
       event.stopPropagation();
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
+      window.closeCurvesDropdown && window.closeCurvesDropdown();
       const dropdown = document.getElementById('reports-dropdown');
       if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -105,11 +107,25 @@
       const dropdown = document.getElementById('reports-dropdown');
       if (dropdown) dropdown.style.display = 'none';
     };
+    // 📈 Curves dropdown (Curves + GEX + What-If)
+    window.toggleCurvesDropdown = (event) => {
+      event.stopPropagation();
+      window.closeAvatarDropdown();
+      window.closeMoreDropdown();
+      window.closeReportsDropdown();
+      const dropdown = document.getElementById('curves-dropdown');
+      if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+    window.closeCurvesDropdown = () => {
+      const dropdown = document.getElementById('curves-dropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    };
 
     document.addEventListener('click', () => {
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeReportsDropdown();
+      window.closeCurvesDropdown && window.closeCurvesDropdown();
     });
 
     setInterval(() => {

@@ -1388,7 +1388,27 @@
       <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
       <a href="/stats2" class="tab" style="text-decoration: none;">📊 Stats 2</a>
       <a href="/report" target="_blank" class="tab" style="text-decoration: none;">📆 Daily Report</a>
-      <a href="/curves" class="tab" style="text-decoration: none;">📈 Curves</a>
+      <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
+        <div class="tab" onclick="window.toggleCurvesDropdown&&toggleCurvesDropdown(event)" style="display: flex; align-items: center; gap: 4px;">📈 Curves ▾</div>
+        <div class="dropdown-menu" id="curves-dropdown"
+          style="display: none; position: absolute; top: 100%; left: 0; background: #161b22; border: 1px solid #30363d; border-radius: 6px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); padding: 4px 0; min-width: 170px; z-index: 10000; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; margin-top: 2px;">
+          <a href="/curves" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              📈 Curves</div>
+          </a>
+          <a href="/gex" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🟢 GEX Profile</div>
+          </a>
+          <a href="/whatif" style="text-decoration: none;">
+            <div class="dropdown-item"
+              style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s; display: flex; align-items: center; gap: 6px;">
+              🧪 Options What-If</div>
+          </a>
+        </div>
+      </div>
       <a href="/fii-flow" class="tab" style="text-decoration: none;">🏦 FII Flow</a>
       <div class="tab" onclick="switchTab('risk')">⚠️ Risk</div>
       <a href="/registry2" target="_blank" class="tab" style="text-decoration: none;">🗂️ Strategies</a>
