@@ -3276,34 +3276,52 @@ def api_trade_chart_underlying_data():
             scfg = json.loads(TC_FILE.read_text()).get(strategy_id) or {}
             if (scfg.get('rsi_period') or scfg.get('rsi_exit') or 'rsi' in strategy_id.lower()) and len(candles) > 20:
                 period = int(scfg.get('rsi_period') or 14)
-                tf_min = int(''.join(ch for ch in str(scfg.get('timeframe') or '2m') if ch.isdigit()) or 2) or 2
+                # EFFECTIVE timeframe = exactly what 01_rsi_v1.py runs: TF_MAP.get(cfg, 5).
+                # A config label not in this map (e.g. "2m") silently falls back to 5m in
+                # the live strategy, so the chart MUST mirror that or it draws a different-TF
+                # RSI than the strategy acted on (the "entry @ RSI 52 vs strategy's 71" bug —
+                # config said 2m, strategy ran 5m). 2026-08-01.
+                _RSI_TFMAP = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
+                tf_min = _RSI_TFMAP.get(str(scfg.get('timeframe') or '5m').strip(), 5)
                 ob = float(scfg.get('overbought') or 70)
                 oss = float(scfg.get('oversold') or 30)
                 mid = float(scfg.get('rsi_exit') or 50)
-                buck = {}                                    # strategy-TF resample: bucket's last (time, close)
-                for c in candles:
-                    b = (c['time'] // (tf_min * 60)) * (tf_min * 60)
-                    buck[b] = (c['time'], c['close'])
-                bts = sorted(buck)
                 import pandas as pd
                 from _CHARTING import indicators as _ind
-                rv = _ind.wilder_rsi(pd.Series([buck[b][1] for b in bts]), period)
-                # Forward-fill the strategy-TF RSI onto EVERY 1-min candle timestamp so the
-                # RSI series shares the candles' exact times + bar-count. The two chart
-                # panes then stay time-aligned under logical(bar-index) range sync — a
-                # coarser TF series (fewer bars) drifts out of sync with the 1-min candles.
-                # value where the RSI is computed; whitespace ({time} only) during warmup so
-                # the bar still exists and index alignment is preserved. Step line (RSI held
-                # within its bucket) — TF-accurate.
-                bucket_rsi = {bts[i]: rv.iloc[i] for i in range(len(bts)) if rv.iloc[i] == rv.iloc[i]}
-                series = []
-                for c in candles:
-                    b = (c['time'] // (tf_min * 60)) * (tf_min * 60)
-                    val = bucket_rsi.get(b)
-                    series.append({"time": c['time'], "value": round(float(val), 2)}
-                                  if val is not None else {"time": c['time']})
-                if any('value' in p for p in series):
-                    rsi = {"series": series, "ob": ob, "mid": mid, "os": oss, "period": period, "tf": f"{tf_min}m"}
+                import bisect as _bisect
+                # Compute RSI on the strategy's OWN native-TF candles (Dhan interval=tf_min,
+                # single day = date_str) EXACTLY as 01_rsi_v1.fetch_candles does — NOT by
+                # epoch-floor re-bucketing the 1-min pane. Re-bucketing 1-min bars
+                # (time//120*120) lands on different boundaries than Dhan's native 2m
+                # aggregation, shifting every 2m close by ~1 min → a recursively-divergent
+                # Wilder RSI (chart showed ~52 where the live strategy computed ~71 → looked
+                # like the SHORT fired wrongly when it hadn't). 2026-08-01 fix.
+                if tf_min > 1:
+                    nrr = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
+                        "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
+                        "interval": str(tf_min), "fromDate": date_str, "toDate": date_str}, timeout=12)
+                    nrd = nrr.json()
+                    nat = [(int(ts) + 19800, float(cl))
+                           for ts, cl in zip(nrd.get("timestamp", []), nrd.get("close", []))]
+                else:
+                    nat = [(c['time'], c['close']) for c in candles]
+                nat.sort()
+                if len(nat) > period + 2:
+                    rv = _ind.wilder_rsi(pd.Series([x[1] for x in nat]), period)
+                    starts = [x[0] for x in nat]
+                    nat_rsi = {starts[i]: rv.iloc[i] for i in range(len(starts)) if rv.iloc[i] == rv.iloc[i]}
+                    # Forward-fill each native-TF RSI onto every 1-min display candle in its
+                    # window (largest native-bar-start <= candle time) so the RSI series
+                    # shares the candles' exact times + bar-count → the two panes stay
+                    # time-aligned under logical(bar-index) range sync. Step line, TF-accurate.
+                    series = []
+                    for c in candles:
+                        j = _bisect.bisect_right(starts, c['time']) - 1
+                        val = nat_rsi.get(starts[j]) if j >= 0 else None
+                        series.append({"time": c['time'], "value": round(float(val), 2)}
+                                      if val is not None else {"time": c['time']})
+                    if any('value' in p for p in series):
+                        rsi = {"series": series, "ob": ob, "mid": mid, "os": oss, "period": period, "tf": f"{tf_min}m"}
         except Exception:
             rsi = None
         # ATR trailing-stop overlay — if this trade's strategy exits on ATR (range
