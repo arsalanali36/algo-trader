@@ -135,13 +135,14 @@
   @media(min-width:1080px){ .grid2{grid-template-columns:1fr 340px} .kpis{grid-template-columns:repeat(5,1fr)} .notes-rail{position:sticky;top:66px} }
 
   .print-header{display:none}
+  /* one chart PER ROW (full width) — each trade_chart is already internally split
+     into index + premium panes, so a 2-column grid made them too small */
   .ptc-grid{display:grid;grid-template-columns:1fr;gap:12px}
-  @media(min-width:900px){.ptc-grid{grid-template-columns:1fr 1fr}}
   .ptc-card{background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
   .ptc-card .h{display:flex;align-items:center;gap:8px;padding:8px 11px;border-bottom:1px solid var(--bd2);background:var(--card2);font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .ptc-card .h .o{margin-left:auto;color:var(--mut);cursor:pointer;flex:none}
-  .ptc-card iframe{width:100%;height:360px;border:0;background:var(--bg);display:block}
-  .ptc-card .ph{height:360px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px}
+  .ptc-card iframe{width:100%;height:440px;border:0;background:var(--bg);display:block}
+  .ptc-card .ph{height:440px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px}
 
   @media print{
     .topbar,.hint,.gear,.datenav,#loading,.hdr-btn,#gnav{display:none!important}

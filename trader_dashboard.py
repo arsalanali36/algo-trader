@@ -3247,9 +3247,14 @@ def api_trade_chart_underlying_data():
 
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
+        # Dhan intraday for INDEX/EQUITY underlyings needs "interval" (not
+        # "expiryCode" — that's the OPTION shape). Same payload as the proven
+        # live strategy fetch (range_trader.fetch_1m: interval "1"). expiryCode:0
+        # here returned empty candles for IDX_I → "underlying data nahi" (the
+        # premium pane works because options DO take expiryCode). 2026-08-01 fix.
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
             "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
-            "expiryCode": 0, "fromDate": date_str, "toDate": to_date}, timeout=12)
+            "interval": "1", "fromDate": date_str, "toDate": to_date}, timeout=12)
         d = r.json()
         if not d.get("open"):
             return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
