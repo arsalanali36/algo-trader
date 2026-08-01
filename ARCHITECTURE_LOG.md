@@ -16,7 +16,7 @@
 ---
 
 ## 2026-08-01 — 📋 Daily Report page (Reports ▾) — one-scroll EOD report
-**Status:** DONE (local build + verified; VPS deploy pending)
+**Status:** DONE + VPS-LIVE (`8b35769`; algo-dashboard restart, monitor+supervisor PIDs intact, /report→302 /api→401, builder runs on VPS live DB)
 **Kya:** Reports dropdown me naya `/report` page — poore din ka EOD snapshot ek scroll me (KPIs, Target table, Stat table, strategy+trade breakdowns, distribution charts, month journey, per-trade chart) + right-click/long-press notes har cell/bar pe (server-side per-date).
 **Layer:** ui + data (display-only)
 **Files:** `_ops/daily_report.py` (NEW display-only builder), `_ops/report_notes.py` (NEW config CRUD notes), `templates/daily_report.html` (NEW), `static/js/daily_report.js` (NEW), routes in `trader_dashboard.py`, dropdown link in `templates/index.html`
