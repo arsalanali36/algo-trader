@@ -163,7 +163,7 @@
     if (!("IntersectionObserver" in window)) { $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(loadCard); return; }
     _io = new IntersectionObserver(function (ents) {
       ents.forEach(function (e) { if (e.isIntersecting) { loadCard(e.target); _io.unobserve(e.target); } });
-    }, { rootMargin: "400px" });
+    }, { rootMargin: "150px" });
     $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(function (ph) { _io.observe(ph); });
   }
   function renderPerTradeCharts() {
@@ -177,10 +177,10 @@
         '<div class="ph" data-src="' + esc(url) + '">⏳ chart load ho raha…</div></div>';
     }).join("");
     observeCharts();
-    // eager-load first few so charts are visibly open on load even if the
-    // IntersectionObserver is unsupported; rest lazy-load on scroll
+    // eager-load only the FIRST so the feature is visible; rest lazy on scroll
+    // (loading all/many at once caused ERR_CONNECTION_RESET on slow mobile networks)
     var phs = $("ptc-grid").querySelectorAll(".ph[data-src]");
-    for (var k = 0; k < Math.min(3, phs.length); k++) loadCard(phs[k]);
+    for (var k = 0; k < Math.min(1, phs.length); k++) loadCard(phs[k]);
   }
   DR.loadAllCharts = function () {
     $("ptc-grid").querySelectorAll(".ph[data-src]").forEach(loadCard);
@@ -326,6 +326,8 @@
     var i = $("dnav");
     try { i.showPicker(); } catch (e) { i.focus(); i.click(); }
   };
+  DR.toggleMenu = function (e) { if (e) e.stopPropagation(); $("ovmenu").classList.toggle("on"); };
+  DR.closeMenu = function () { $("ovmenu").classList.remove("on"); };
 
   // ---- settings modal (Expected targets + capital) ----
   DR.openSettings = function () {
@@ -403,7 +405,11 @@
       lp = setTimeout(function () { S.curAnchor = an; S.lastXY = { x: tp.clientX, y: tp.clientY }; showPop(); }, 480);
     }, { passive: true });
     ["touchend", "touchmove", "touchcancel"].forEach(function (ev) { document.addEventListener(ev, function () { clearTimeout(lp); }, { passive: true }); });
-    document.addEventListener("click", function (e) { if (!$("ctx").contains(e.target)) $("ctx").style.display = "none"; });
+    document.addEventListener("click", function (e) {
+      if (!$("ctx").contains(e.target)) $("ctx").style.display = "none";
+      var m = $("ovmenu");
+      if (m && !m.contains(e.target) && !(e.target.closest && e.target.closest(".mobbtn"))) m.classList.remove("on");
+    });
 
     load();
   }

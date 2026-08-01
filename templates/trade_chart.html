@@ -18,6 +18,14 @@
   #pane-right{flex:1 1 55%}
   .splitter2{flex:0 0 6px;background:#161b22;border-left:1px solid #30363d;border-right:1px solid #30363d;cursor:col-resize}
   .splitter2:hover{background:#1f6feb}
+  /* Mobile (≤760px): stack the two panes VERTICALLY (index on top, premium below)
+     so each is full-width instead of two cramped side-by-side columns. */
+  @media(max-width:760px){
+    .split-wrap{flex-direction:column}
+    #pane-left,#pane-right{flex:1 1 50% !important;width:100% !important}
+    .splitter2{flex:0 0 6px;cursor:row-resize;border-left:none;border-right:none;border-top:1px solid #30363d;border-bottom:1px solid #30363d}
+    #watchlist{display:none}
+  }
   .pane-hdr{display:flex;align-items:center;justify-content:space-between;padding:6px 10px;border-bottom:1px solid #21262d;font-size:11px;color:#8b949e;flex-shrink:0;text-transform:uppercase;letter-spacing:.4px}
   .pane-hdr .hint{color:#484f58;text-transform:none;letter-spacing:0}
   #chart-left{flex:1;width:100%;min-height:0}

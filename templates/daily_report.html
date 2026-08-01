@@ -28,6 +28,11 @@
     font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none}
   .hdr-btn:hover{background:#30363d}
   .hdr-btn.accent{background:#1f6feb22;border-color:#1f6feb66;color:#79b8ff}
+  .mobbtn{display:none}
+  .ovmenu{display:none;position:absolute;top:100%;right:8px;margin-top:4px;background:#1c2230;border:1px solid var(--bd);border-radius:10px;box-shadow:0 10px 30px #000b;padding:6px;min-width:190px;z-index:60;flex-direction:column}
+  .ovmenu.on{display:flex}
+  .ovmenu a,.ovmenu button{display:block;width:100%;text-align:left;background:transparent;border:0;color:var(--tx);font:inherit;font-size:13px;padding:9px 11px;border-radius:6px;cursor:pointer;text-decoration:none}
+  .ovmenu a:hover,.ovmenu button:hover{background:var(--bd2)}
   .barrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%}
   .seg{display:inline-flex;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;overflow:hidden}
   .seg button{border:0;background:transparent;color:var(--mut);font:inherit;font-weight:600;font-size:12px;padding:6px 12px;cursor:pointer}
@@ -144,8 +149,29 @@
   .ptc-card iframe{width:100%;height:440px;border:0;background:var(--bg);display:block}
   .ptc-card .ph{height:440px;display:flex;align-items:center;justify-content:center;color:var(--mut);font-size:12px}
 
+  /* ===== mobile: compact + sticky top controls, buttons → ⋯ menu, more chart room ===== */
+  @media(max-width:760px){
+    .topbar{padding:6px 10px;gap:6px}
+    .deskbtn{display:none}
+    .mobbtn{display:inline-block;margin-left:auto}
+    .hint{display:none}
+    .brand .dlong{display:none}
+    .brand b{font-size:13px}
+    .brand small{font-size:9.5px}
+    .barrow{gap:6px}
+    .seg button{padding:5px 8px;font-size:11px}
+    .datenav{margin-left:auto;padding:1px}
+    .datenav .d{width:92px;font-size:11px}
+    .datenav button{padding:4px 8px;font-size:13px}
+    /* KPIs → one horizontal-scroll row (saves vertical space) */
+    .kpis{display:flex;overflow-x:auto;gap:8px;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+    .kpis .kpi{flex:0 0 auto;min-width:132px}
+    /* taller per-trade chart so stacked index+premium panes get room */
+    .ptc-card iframe,.ptc-card .ph{height:600px}
+  }
+
   @media print{
-    .topbar,.hint,.gear,.datenav,#loading,.hdr-btn,#gnav{display:none!important}
+    .topbar,.hint,.gear,.datenav,#loading,.hdr-btn,#gnav,.mobbtn,.ovmenu{display:none!important}
     body{background:#fff;color:#000}
     .card,.kpi,.ptc-card{border-color:#ccc;break-inside:avoid}
     .note{break-inside:avoid}
@@ -157,10 +183,11 @@
 <body>
 <div id="loading">⏳ loading…</div>
 <div class="topbar">
-  <div class="brand"><b>📆 DAILY REPORT</b><small id="subDate">—</small></div>
-  <a href="/" class="hdr-btn">← Dashboard</a>
-  <button class="hdr-btn" onclick="DR.openSettings()" title="Settings — Expected targets, capital">⚙ Settings</button>
-  <button class="hdr-btn accent" onclick="window.print()">🖨 PDF</button>
+  <div class="brand"><b>📆 <span class="dlong">DAILY </span>REPORT</b><small id="subDate">—</small></div>
+  <a href="/" class="hdr-btn deskbtn">← Dashboard</a>
+  <button class="hdr-btn deskbtn" onclick="DR.openSettings()" title="Settings — Expected targets, capital">⚙ Settings</button>
+  <button class="hdr-btn accent deskbtn" onclick="window.print()">🖨 PDF</button>
+  <button class="hdr-btn mobbtn" onclick="DR.toggleMenu(event)" title="Menu">⋯</button>
   <div class="barrow">
     <div class="seg warn" id="segMode"><button class="on" data-v="">All</button><button data-v="live">Real</button><button data-v="paper">Paper</button></div>
     <div class="seg" id="segRange"><button class="on" data-v="day">Daily</button><button data-v="week">Weekly</button><button data-v="month">Monthly</button></div>
@@ -170,6 +197,12 @@
       <button title="Calendar (D)" onclick="DR.openPicker()">🗓</button>
       <button title="Next (→)" onclick="DR.step(1)">►</button>
     </div>
+  </div>
+  <div class="ovmenu" id="ovmenu">
+    <a href="/">← Dashboard</a>
+    <button onclick="DR.closeMenu();DR.openSettings()">⚙ Settings</button>
+    <button onclick="DR.closeMenu();window.print()">🖨 PDF</button>
+    <button onclick="DR.closeMenu();DR.loadAllCharts()">⤓ Load all charts</button>
   </div>
 </div>
 
