@@ -288,7 +288,8 @@
   <div class="card"><div class="bd"><div id="journey"></div></div></div>
 
   <div class="sectitle" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">Per-Trade Charts <span class="mut" id="ptc-count" style="text-transform:none;letter-spacing:0"></span>
-    <select id="ptc-strat" style="margin-left:auto;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px;max-width:220px" onchange="DR.setPtcStrat(this.value)"><option value="">All strategies</option></select>
+    <select id="ptc-panes" style="margin-left:auto;background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px" onchange="DR.setPtcPanes(this.value)" title="Chart me kaunse pane dikhein"><option value="both">Both panes</option><option value="index">Only index</option><option value="premium">Only premium</option></select>
+    <select id="ptc-strat" style="background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px;max-width:220px" onchange="DR.setPtcStrat(this.value)"><option value="">All strategies</option></select>
     <button class="hdr-btn" onclick="DR.loadAllCharts()" title="Sab charts load karo (PDF/print ke liye zaroori)">⤓ Load all (PDF)</button></div>
   <div id="ptc-grid" class="ptc-grid"></div>
 </div>

@@ -155,6 +155,7 @@
       "&entry=" + (t0.entry_price || 0) + "&exit=" + (t0.exit_price || 0) +
       "&et=" + encodeURIComponent(ets) + "&xt=" + encodeURIComponent(xts) +
       "&qty=" + (t0.qty || 0) + "&date=" + d + "&auto=0&embed=1" +
+      ((S.ptcPanes && S.ptcPanes !== "both") ? ("&panes=" + S.ptcPanes) : "") +
       (t0.strategy ? "&strategy=" + encodeURIComponent(t0.strategy) : "");
   }
   var _io = null;
@@ -182,6 +183,7 @@
     }).join("");
   }
   DR.setPtcStrat = function (v) { S.ptcStrat = v; renderPerTradeCharts(); };
+  DR.setPtcPanes = function (v) { S.ptcPanes = v; renderPerTradeCharts(); };
 
   function renderPerTradeCharts() {
     var all = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });

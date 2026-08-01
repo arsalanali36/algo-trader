@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html><head>
-<script>try{if(new URLSearchParams(location.search).get('embed')==='1')document.documentElement.classList.add('embed');}catch(e){}</script>
+<script>try{var _sp=new URLSearchParams(location.search);if(_sp.get('embed')==='1')document.documentElement.classList.add('embed');var _pn=_sp.get('panes');if(_pn==='index'||_pn==='premium')document.documentElement.classList.add('only-'+_pn);}catch(e){}</script>
 <meta charset="utf-8"><title>Trade Chart</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
@@ -12,6 +12,9 @@
      header). body-row then takes the full iframe height. */
   .embed .hdr,.embed #watchlist,.embed #wl-toggle{display:none!important}
   .embed #body-row{height:100vh!important}
+  /* ?panes=index|premium (Daily Report pane-selector): show only one pane, full width. */
+  .only-index #pane-right,.only-index #splitter2{display:none!important}
+  .only-premium #pane-left,.only-premium #splitter2{display:none!important}
   .hdr h1{font-size:16px;margin:0;font-weight:600}
   .pill{font-size:12px;padding:3px 10px;border-radius:12px;border:1px solid #30363d;background:#161b22}
   .muted{color:#8b949e;font-size:12px}
@@ -232,6 +235,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   
   const strategy = q.get('strategy')||'';   // Task 8 — disambiguate the opening leg when 2 strategies traded the same contract same-day
+  const _panes = q.get('panes')||'both';    // pane-selector: skip this pane's Dhan fetch entirely when hidden
+  if(_panes!=='index')
   fetch('/api/trade-chart-data?trad_sym='+encodeURIComponent(sym)+'&et='+et+'&xt='+xt+(dt?('&date='+dt):'')+(tf?('&tf='+tf):'')+(strategy?('&strategy='+encodeURIComponent(strategy)):''))
     .then(r=>r.json()).then(d=>{
       document.getElementById('date').textContent = d.date||'';
@@ -346,6 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const _ot = /-CE$/i.test(sym) ? 'CE' : (/-PE$/i.test(sym) ? 'PE' : '');
   const tradeDir = _ot ? (((side==='BUY') === (_ot==='CE')) ? 'LONG' : 'SHORT') : '';
   if (!sym) return;
+  if ((q.get('panes')||'both')==='premium') return;   // index pane hidden — skip its Dhan fetch
   const root = sym.split('-')[0];
   document.getElementById('left-pane-title').textContent = root || 'Instrument';
 
