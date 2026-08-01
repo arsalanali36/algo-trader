@@ -3288,9 +3288,21 @@ def api_trade_chart_underlying_data():
                 import pandas as pd
                 from _CHARTING import indicators as _ind
                 rv = _ind.wilder_rsi(pd.Series([buck[b][1] for b in bts]), period)
-                series = [{"time": buck[bts[i]][0], "value": round(float(rv.iloc[i]), 2)}
-                          for i in range(len(bts)) if rv.iloc[i] == rv.iloc[i]]
-                if series:
+                # Forward-fill the strategy-TF RSI onto EVERY 1-min candle timestamp so the
+                # RSI series shares the candles' exact times + bar-count. The two chart
+                # panes then stay time-aligned under logical(bar-index) range sync — a
+                # coarser TF series (fewer bars) drifts out of sync with the 1-min candles.
+                # value where the RSI is computed; whitespace ({time} only) during warmup so
+                # the bar still exists and index alignment is preserved. Step line (RSI held
+                # within its bucket) — TF-accurate.
+                bucket_rsi = {bts[i]: rv.iloc[i] for i in range(len(bts)) if rv.iloc[i] == rv.iloc[i]}
+                series = []
+                for c in candles:
+                    b = (c['time'] // (tf_min * 60)) * (tf_min * 60)
+                    val = bucket_rsi.get(b)
+                    series.append({"time": c['time'], "value": round(float(val), 2)}
+                                  if val is not None else {"time": c['time']})
+                if any('value' in p for p in series):
                     rsi = {"series": series, "ob": ob, "mid": mid, "os": oss, "period": period, "tf": f"{tf_min}m"}
         except Exception:
             rsi = None

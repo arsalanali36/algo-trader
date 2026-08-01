@@ -421,7 +421,11 @@ document.addEventListener('DOMContentLoaded', () => {
         rsiS.createPriceLine({ price:d.rsi.mid, color:'#e3a008', lineWidth:2, lineStyle:0, axisLabelVisible:true, title:'exit '+d.rsi.mid });
         rsiS.createPriceLine({ price:d.rsi.ob,  color:'#f85149', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'OB '+d.rsi.ob });
         rsiS.createPriceLine({ price:d.rsi.os,  color:'#3fb950', lineWidth:1, lineStyle:2, axisLabelVisible:true, title:'OS '+d.rsi.os });
-        // share the x-axis: sync visible range both ways (TradingView-style sub-pane)
+        // share the x-axis via LOGICAL(bar-index) range — this is EXACT only because the
+        // server emits the RSI at the SAME 1-min timestamps as the candles (value where
+        // computed, whitespace during warmup), so both series have identical bars. (An
+        // earlier build resampled RSI to the strategy TF = fewer bars, so index i mapped
+        // to a different time on each chart and the RSI drifted; per-candle emit fixes it.)
         let _sy=false;
         const link=(a,b)=>a.timeScale().subscribeVisibleLogicalRangeChange(r=>{ if(_sy||!r) return; _sy=true; try{ b.timeScale().setVisibleLogicalRange(r); }catch(e){} _sy=false; });
         link(chart, rsiChart); link(rsiChart, chart);
