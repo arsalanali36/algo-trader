@@ -600,6 +600,84 @@ def api_whatif():
         return jsonify({"ok": False, "error": str(e), "legs": []})
 
 
+# ------------------- 📋 Daily Report (one-scroll EOD report) -----------------
+@app.route('/report')
+def daily_report_page():
+    """One-scroll EOD Daily Report — KPIs, target/stat tables, per-strategy +
+    per-trade breakdowns, distribution charts, per-date observation notes.
+    Reuses order_store range-net + charges + registry. Display-only."""
+    return render_template("daily_report.html")
+
+
+@app.route('/api/daily-report')
+def api_daily_report():
+    import daily_report as dr
+    date_from = request.args.get('from') or request.args.get('date')
+    date_to = request.args.get('to') or date_from
+    mode = request.args.get('mode') or None
+    source = request.args.get('source') or None
+    broker = request.args.get('broker') or None
+    strategy = request.args.get('strategy') or None
+    if not date_from:
+        return jsonify({"ok": False, "error": "date required"})
+    try:
+        return jsonify(dr.build(date_from, date_to, mode=mode, source=source,
+                                broker=broker, strategy=strategy))
+    except Exception as e:
+        print("[daily-report] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/report-notes', methods=['GET', 'POST', 'PUT', 'DELETE'])
+def api_report_notes():
+    import report_notes as rn
+    if request.method == 'GET':
+        date = request.args.get('date')
+        try:
+            return jsonify({"ok": True, "notes": rn.list_notes(date)})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e), "notes": []})
+    d = request.get_json(force=True, silent=True) or {}
+    date = d.get('date')
+    try:
+        if request.method == 'POST':
+            n = rn.add_note(date, d.get('anchor'), d.get('text'),
+                            d.get('color', 'b'), d.get('images'))
+            return jsonify({"ok": True, "note": n})
+        if request.method == 'PUT':
+            n = rn.update_note(date, d.get('id'), text=d.get('text'),
+                               color=d.get('color'), images=d.get('images'))
+            return jsonify({"ok": bool(n), "note": n})
+        if request.method == 'DELETE':
+            return jsonify({"ok": rn.delete_note(date, d.get('id'))})
+    except Exception as e:
+        print("[report-notes] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+    return jsonify({"ok": False, "error": "bad method"})
+
+
+@app.route('/api/report-notes/image', methods=['POST'])
+def api_report_note_image():
+    import report_notes as rn
+    date = request.form.get('date')
+    f = request.files.get('image')
+    if not date or not f:
+        return jsonify({"ok": False, "error": "date + image required"})
+    try:
+        import time as _t
+        safe = _t.strftime('%H%M%S') + '_' + os.path.basename(f.filename or 'img')
+        f.save(os.path.join(rn.image_dir(date), safe))
+        return jsonify({"ok": True, "filename": safe})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/report-note-image/<date>/<path:fname>')
+def serve_report_note_image(date, fname):
+    import report_notes as rn
+    return send_from_directory(rn.image_dir(date), fname)
+
+
 @app.route('/api/whatif-legprice', methods=['POST'])
 def api_whatif_legprice():
     """Per-leg REAL premium AT the entry time on the selected date (backtest price, not

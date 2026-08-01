@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-08-01 — 📋 Daily Report page (Reports ▾) — one-scroll EOD report
+**Status:** DONE (local build + verified; VPS deploy pending)
+**Kya:** Reports dropdown me naya `/report` page — poore din ka EOD snapshot ek scroll me (KPIs, Target table, Stat table, strategy+trade breakdowns, distribution charts, month journey, per-trade chart) + right-click/long-press notes har cell/bar pe (server-side per-date).
+**Layer:** ui + data (display-only)
+**Files:** `_ops/daily_report.py` (NEW display-only builder), `_ops/report_notes.py` (NEW config CRUD notes), `templates/daily_report.html` (NEW), `static/js/daily_report.js` (NEW), routes in `trader_dashboard.py`, dropdown link in `templates/index.html`
+**Kyun:** user ko roz manual report banana padta; ek page se poore din ka human-readable summary + observations (PDF-able)
+**Reuse (Rule 6B):** `order_store.trades_for_range` (range-net + exit-date bucket, TRAP #141) + `charges.option_charges` (date-aware single source) + `strategy_registry.label` + `registry.js`; koi order/risk/Dhan path nahi. Notes pattern = `_ops/stat_views.py` config CRUD.
+**Design:** mobile-first 9:16 (memory `project_code3b_mobile_916`); browser print-to-PDF; notes server-side `data/report_notes/<date>.json`.
+**Depends on:** nothing (all data sources exist)
+
 ## 2026-07-22 — Multi-leg atomicity: persist group_id + group-aware profit-lock exits (TRAP #146)
 **Status:** DONE (commit `606c39f`, rebased onto origin/master TRAP #145 netting fix)
 **Kya:** Latent bug — `order_store._COLS` (INSERT column list) me `"group_id"` chhoot gaya tha,

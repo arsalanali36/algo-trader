@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Daily Report</title>
+<style>
+  :root{
+    --bg:#0d1117; --card:#161b22; --card2:#0f141a; --bd:#30363d; --bd2:#21262d;
+    --tx:#e6edf3; --mut:#8b949e; --grn:#3fb950; --red:#f85149; --blu:#1f6feb;
+    --yel:#d29922; --pur:#a371f7;
+    --mono:"SF Mono",ui-monospace,"Cascadia Code","Roboto Mono",Menlo,Consolas,monospace;
+    --ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{max-width:100%;overflow-x:hidden}
+  body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--ui);font-size:13px;line-height:1.45}
+  .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+  .pos{color:var(--grn)} .neg{color:var(--red)} .mut{color:var(--mut)}
+  a{color:var(--blu);text-decoration:none}
+
+  .topbar{position:sticky;top:0;z-index:40;background:#0d1117f2;backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--bd);padding:8px 12px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .brand{display:flex;flex-direction:column;line-height:1.1;margin-right:auto}
+  .brand b{font-size:15px;letter-spacing:.3px}
+  .brand small{color:var(--mut);font-size:11px}
+  .hdr-btn{padding:6px 10px;background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--tx);
+    font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap;text-decoration:none}
+  .hdr-btn:hover{background:#30363d}
+  .hdr-btn.accent{background:#1f6feb22;border-color:#1f6feb66;color:#79b8ff}
+  .barrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap;width:100%}
+  .seg{display:inline-flex;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .seg button{border:0;background:transparent;color:var(--mut);font:inherit;font-weight:600;font-size:12px;padding:6px 12px;cursor:pointer}
+  .seg button.on{background:var(--blu);color:#fff}
+  .seg.warn button.on{background:var(--yel);color:#1a1300}
+  .datenav{display:inline-flex;align-items:center;gap:2px;background:var(--card);border:1px solid var(--bd);border-radius:7px;padding:2px;margin-left:auto}
+  .datenav button{border:0;background:transparent;color:var(--tx);cursor:pointer;font-size:15px;padding:4px 11px;border-radius:5px}
+  .datenav button:hover{background:var(--bd2)}
+  .datenav .d{font-family:var(--mono);font-weight:600;padding:0 6px;font-size:12.5px;border:0;background:transparent;color:var(--tx);width:118px}
+
+  .wrap{padding:12px 12px 70px;max-width:1500px;margin:0 auto}
+  .kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:9px;margin-bottom:14px}
+  .kpi{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px}
+  .kpi .l{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--mut);margin-bottom:4px}
+  .kpi .v{font-size:20px;font-weight:700}
+  .kpi .s{font-size:11px;margin-top:2px}
+  .grid2,.charts2,.brk{display:grid;grid-template-columns:1fr;gap:12px;align-items:start}
+  .colstack{display:flex;flex-direction:column;gap:12px}
+  /* grid/flex children default to min-width:auto (min-content of a wide table),
+     which defeats the .ovscroll overflow — force them to be shrinkable */
+  .card,.colstack,.grid2>*,.brk>*,.charts2>*{min-width:0}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;overflow:hidden}
+  .card>.hd{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid var(--bd2);background:var(--card2);flex-wrap:wrap}
+  .card>.hd h3{margin:0;font-size:12.5px;font-weight:700;letter-spacing:.3px}
+  .card>.hd .mut{font-size:11px}
+  .card>.bd{padding:10px 12px}
+  .gear{margin-left:auto;color:var(--mut);cursor:pointer;font-size:13px}
+  .gear:hover{color:var(--tx)}
+  .ovscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  table{border-collapse:collapse;width:100%;min-width:360px}
+  th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--bd2);white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
+  thead th{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;cursor:pointer;user-select:none}
+  thead th:first-child{background:var(--card2)}
+  thead th:hover{color:var(--tx)}
+  tbody td{cursor:context-menu}
+  tbody tr:hover{background:#ffffff06}
+  tbody tr:last-child td{border-bottom:0}
+  td.noteable:hover{outline:1px dashed #1f6feb88;outline-offset:-2px}
+  .badge{display:inline-block;padding:1px 7px;border-radius:20px;font-size:10.5px;font-weight:700}
+  .b-w{background:#23863622;color:var(--grn)} .b-l{background:#f8514922;color:var(--red)}
+  .tfoot td{border-top:2px solid var(--bd);font-weight:700;color:var(--tx)}
+  .stats{display:grid;grid-template-columns:1fr;gap:0}
+  .stat{display:flex;justify-content:space-between;padding:7px 2px;border-bottom:1px solid var(--bd2);cursor:context-menu}
+  .stat:hover{background:#ffffff06} .stat .k{color:var(--mut)} .stat .v{font-family:var(--mono);font-weight:600}
+
+  .note{border:1px solid var(--bd);border-left-width:3px;border-radius:7px;padding:8px 10px;margin-bottom:8px;background:var(--card2)}
+  .note.r{border-left-color:var(--red)} .note.g{border-left-color:var(--grn)}
+  .note.b{border-left-color:var(--blu)} .note.y{border-left-color:var(--yel)}
+  .note .top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+  .note .anchor{font-size:10px;background:var(--bd2);border:1px solid var(--bd);border-radius:5px;padding:1px 6px;color:var(--mut)}
+  .note .tm{margin-left:auto;font-size:10px;color:var(--mut)}
+  .note .del{cursor:pointer;color:var(--mut);font-size:11px;padding:0 2px}
+  .note .del:hover{color:var(--red)}
+  .note p{margin:2px 0 6px;font-size:12px;white-space:pre-wrap}
+  .note .imgs{display:flex;gap:5px;flex-wrap:wrap}
+  .note .imgs img{width:46px;height:34px;object-fit:cover;border-radius:4px;border:1px solid var(--bd);cursor:pointer}
+  .notefilter button{font-size:10.5px;padding:3px 9px;border-radius:20px;border:1px solid var(--bd);background:transparent;color:var(--mut);cursor:pointer}
+  .notefilter button.on{color:var(--tx);border-color:var(--mut)}
+
+  svg{display:block;width:100%;height:auto}
+  .bar{cursor:context-menu;transition:opacity .12s}
+  .bar:hover{opacity:.72}
+  .legend{display:flex;gap:14px;font-size:11px;color:var(--mut);margin-top:6px;flex-wrap:wrap}
+  .legend i{width:9px;height:9px;border-radius:2px;display:inline-block;margin-right:4px}
+
+  .ctx{position:fixed;z-index:80;background:#1c2230;border:1px solid var(--bd);border-radius:8px;box-shadow:0 8px 26px #000a;padding:5px;min-width:180px;display:none}
+  .ctx .an{font-size:10px;color:var(--mut);padding:4px 9px 6px;border-bottom:1px solid var(--bd2);margin-bottom:4px;max-width:220px;white-space:normal}
+  .ctx button{display:flex;width:100%;gap:8px;align-items:center;background:transparent;border:0;color:var(--tx);font:inherit;font-size:12px;padding:8px 9px;border-radius:6px;cursor:pointer;text-align:left}
+  .ctx button:hover{background:var(--bd2)}
+  .pop{position:fixed;z-index:81;background:#1c2230;border:1px solid var(--bd);border-radius:10px;box-shadow:0 10px 30px #000b;padding:11px;width:min(300px,92vw);display:none}
+  .pop textarea{width:100%;height:64px;resize:vertical;background:var(--bg);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;padding:7px;font-size:12px}
+  .pop .colors{display:flex;gap:9px;margin:9px 0}
+  .pop .colors span{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent}
+  .pop .colors span.sel{border-color:#fff}
+  .pop .row{display:flex;gap:7px;align-items:center;justify-content:space-between;margin-top:4px}
+  .pop .row .sm{font-size:11px;color:var(--mut);cursor:pointer}
+  .btn{background:var(--blu);border:0;color:#fff;font:inherit;font-weight:600;font-size:12px;padding:7px 13px;border-radius:6px;cursor:pointer}
+  .btn.ghost{background:var(--bd2);color:var(--tx)}
+  .hint{font-size:11px;color:var(--mut);display:flex;align-items:center;gap:6px;margin:2px 0 12px;flex-wrap:wrap}
+  .hint kbd{background:var(--bd2);border:1px solid var(--bd);border-bottom-width:2px;border-radius:4px;padding:0 5px;font-family:var(--mono);font-size:10px}
+  .sectitle{font-size:11px;text-transform:uppercase;letter-spacing:.8px;color:var(--mut);margin:16px 2px 8px;font-weight:700}
+  .empty{color:var(--mut);font-size:12px;padding:14px;text-align:center}
+  #loading{position:fixed;top:10px;right:12px;z-index:90;background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:4px 12px;font-size:11px;color:var(--mut);display:none}
+
+  @media(min-width:760px){ .charts2{grid-template-columns:1fr 1fr} .kpis{grid-template-columns:repeat(3,1fr)} .stats{grid-template-columns:1fr 1fr;gap:0 22px} }
+  @media(min-width:920px){ .brk{grid-template-columns:1fr 1fr} }
+  @media(min-width:1080px){ .grid2{grid-template-columns:1fr 340px} .kpis{grid-template-columns:repeat(5,1fr)} .notes-rail{position:sticky;top:66px} }
+
+  @media print{
+    .topbar,.hint,.gear,.datenav,#loading,.hdr-btn{display:none!important}
+    body{background:#fff;color:#000}
+    .card,.kpi{border-color:#ccc;break-inside:avoid}
+    .note{break-inside:avoid}
+  }
+</style>
+</head>
+<body>
+<div id="loading">⏳ loading…</div>
+<div class="topbar">
+  <div class="brand"><b>📆 DAILY REPORT</b><small id="subDate">—</small></div>
+  <a href="/" class="hdr-btn">← Dashboard</a>
+  <button class="hdr-btn accent" onclick="window.print()">🖨 PDF</button>
+  <div class="barrow">
+    <div class="seg warn" id="segMode"><button class="on" data-v="">All</button><button data-v="live">Real</button><button data-v="paper">Paper</button></div>
+    <div class="seg" id="segRange"><button class="on" data-v="day">Daily</button><button data-v="week">Weekly</button><button data-v="month">Monthly</button></div>
+    <div class="datenav">
+      <button title="Prev (←)" onclick="DR.step(-1)">◄</button>
+      <input class="d num" id="dnav" type="date">
+      <button title="Next (→)" onclick="DR.step(1)">►</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap">
+  <div class="hint">💡 Desktop: <b>right-click</b> · Mobile: <b>long-press</b> kisi bhi cell / stat / chart-bar pe → <b>Add note</b>. Server-side save, PDF me neeche. <kbd>←</kbd><kbd>→</kbd> date</div>
+
+  <div class="kpis" id="kpis"></div>
+
+  <div class="grid2">
+    <div class="colstack">
+      <div class="card">
+        <div class="hd"><h3>🎯 Target Table</h3><span class="mut">expected vs real</span></div>
+        <div class="bd ovscroll" id="target-wrap"></div>
+      </div>
+      <div class="card">
+        <div class="hd"><h3>📊 Stat Table</h3><span class="mut">aggregates</span></div>
+        <div class="bd"><div class="stats" id="stat-wrap"></div></div>
+      </div>
+    </div>
+    <div class="card notes-rail">
+      <div class="hd"><h3>📝 Notes / Observations</h3><span class="badge b-w" id="note-count" style="margin-left:auto">0</span></div>
+      <div class="bd">
+        <div class="notefilter" id="note-filter" style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px">
+          <button class="on" data-c="">All</button><button data-c="r">🔴</button><button data-c="g">🟢</button><button data-c="b">🔵</button><button data-c="y">🟡</button>
+        </div>
+        <div id="notes-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="sectitle">Breakdown</div>
+  <div class="brk">
+    <div class="card">
+      <div class="hd"><h3>🧩 Strategy-wise</h3><span class="mut">Point · Amt · Tax · W/L</span></div>
+      <div class="bd ovscroll" id="brk-strategy"></div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>📄 Individual Trades</h3><span class="mut">click row → chart</span></div>
+      <div class="bd ovscroll" id="brk-trades"></div>
+    </div>
+  </div>
+
+  <div class="sectitle">Distribution</div>
+  <div class="charts2">
+    <div class="card">
+      <div class="hd"><h3>📊 By Strategy</h3><div class="seg" id="segMetricS" style="margin-left:auto"><button class="on" data-v="amt">Amt</button><button data-v="point">Point</button><button data-v="tax">Tax</button></div></div>
+      <div class="bd"><div id="chart-strategy"></div><div class="legend"><span><i style="background:#3fb950"></i>Profit</span><span><i style="background:#f85149"></i>Loss</span></div></div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>📊 By Trade</h3><div class="seg" id="segMetricT" style="margin-left:auto"><button class="on" data-v="amt">Amt</button><button data-v="point">Point</button><button data-v="tax">Tax</button></div></div>
+      <div class="bd"><div id="chart-trade"></div><div class="legend"><span><i style="background:#3fb950"></i>Win</span><span><i style="background:#f85149"></i>Loss</span> · bar pe right-click → note</div></div>
+    </div>
+  </div>
+
+  <div class="sectitle">Journey (Equity)</div>
+  <div class="card"><div class="bd"><div id="journey"></div></div></div>
+</div>
+
+<div class="ctx" id="ctx"><div class="an" id="ctxAn"></div>
+  <button onclick="DR.openNoteFromCtx()">📝 Add note here</button>
+</div>
+<div class="pop" id="pop">
+  <div style="font-size:11px;color:var(--mut);margin-bottom:5px" id="popAnchor">Note on: —</div>
+  <textarea id="popText" placeholder="Observation likho..."></textarea>
+  <div class="colors" id="popColors">
+    <span style="background:#f85149" data-c="r" onclick="DR.pickCol(this)"></span>
+    <span style="background:#3fb950" data-c="g" onclick="DR.pickCol(this)"></span>
+    <span style="background:#1f6feb" data-c="b" class="sel" onclick="DR.pickCol(this)"></span>
+    <span style="background:#d29922" data-c="y" onclick="DR.pickCol(this)"></span>
+  </div>
+  <div class="row"><label class="sm">🖼 <input id="popImg" type="file" accept="image/*" multiple style="display:none"><span onclick="document.getElementById('popImg').click()">Attach image(s)</span> <span id="popImgN"></span></label>
+    <div><button class="btn ghost" onclick="DR.hidePop()">Cancel</button> <button class="btn" onclick="DR.saveNote()">Save</button></div>
+  </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/registry.js') }}"></script>
+<script src="{{ url_for('static', filename='js/daily_report.js') }}"></script>
+</body>
+</html>
