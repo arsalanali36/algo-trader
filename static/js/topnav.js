@@ -90,8 +90,12 @@
       '#gnav .gn-tabs{position:fixed;top:0;right:0;bottom:0;width:82%;max-width:300px;height:auto;',
         'flex-direction:column;align-items:stretch;gap:0;background:#161b22;border-left:1px solid #30363d;',
         'box-shadow:-2px 0 18px #0008;z-index:99999;overflow-y:auto;padding:4px 0;',
-        'transform:translateX(106%);transition:transform .22s ease}',
-      '#gnav .gn-tabs.open{transform:translateX(0)}',
+        // hide via display:none (NOT transform/right — on this specific nav element the
+        // browser was ignoring both, leaving the drawer stuck VISIBLE at right:0 covering
+        // + BLOCKING the right side of every page). display can't get stuck. No slide, but
+        // the scrim still fades; reliability > animation here.
+        'display:none}',
+      '#gnav .gn-tabs.open{display:flex}',
       '#gnav .gn-tab{height:auto;padding:12px 16px;border-bottom:1px solid #21262d;border-left:3px solid transparent;border-bottom-width:1px}',
       '#gnav .gn-tab.on{border-bottom-color:#21262d;border-left-color:#1f6feb}',
       '#gnav .gn-dd{flex-direction:column;align-items:stretch;height:auto}',
