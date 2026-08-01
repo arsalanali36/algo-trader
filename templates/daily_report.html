@@ -13,7 +13,9 @@
     --ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box}
-  html,body{max-width:100%;overflow-x:hidden}
+  /* overflow-x:clip (NOT hidden) — hidden makes html a scroll container and breaks
+     position:sticky on the topbar; clip still hides sideways overflow (gnav drawer) */
+  html,body{max-width:100%;overflow-x:clip}
   body{margin:0;background:var(--bg);color:var(--tx);font-family:var(--ui);font-size:13px;line-height:1.45}
   .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
   .pos{color:var(--grn)} .neg{color:var(--red)} .mut{color:var(--mut)}
@@ -65,8 +67,11 @@
   table{border-collapse:collapse;width:100%;min-width:360px}
   th,td{padding:7px 10px;text-align:right;border-bottom:1px solid var(--bd2);white-space:nowrap}
   th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--card)}
-  thead th{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;cursor:pointer;user-select:none}
-  thead th:first-child{background:var(--card2)}
+  thead th{color:var(--mut);font-size:10px;text-transform:uppercase;letter-spacing:.5px;font-weight:600;cursor:pointer;user-select:none;position:sticky;top:0;z-index:2;background:var(--card)}
+  thead th:first-child{background:var(--card2);z-index:3}
+  /* long trade/strategy tables: cap at ~11 rows, scroll WITHIN (not infinite page) */
+  #brk-strategy,#brk-trades{max-height:452px;overflow-y:auto}
+  .seg .sm{display:none}
   thead th:hover{color:var(--tx)}
   tbody td{cursor:context-menu}
   tbody tr:hover{background:#ffffff06}
@@ -151,21 +156,26 @@
 
   /* ===== mobile: compact + sticky top controls, buttons → ⋯ menu, more chart room ===== */
   @media(max-width:760px){
-    .topbar{padding:6px 10px;gap:6px}
+    .topbar{padding:5px 8px;gap:5px}
     .deskbtn{display:none}
-    .mobbtn{display:inline-block;margin-left:auto}
+    .mobbtn{display:inline-block;order:3}
     .hint{display:none}
-    .brand .dlong{display:none}
-    .brand b{font-size:13px}
-    .brand small{font-size:9.5px}
-    .barrow{gap:6px}
-    .seg button{padding:5px 8px;font-size:11px}
-    .datenav{margin-left:auto;padding:1px}
-    .datenav .d{width:92px;font-size:11px}
-    .datenav button{padding:4px 8px;font-size:13px}
-    /* KPIs → one horizontal-scroll row (saves vertical space) */
-    .kpis{display:flex;overflow-x:auto;gap:8px;-webkit-overflow-scrolling:touch;padding-bottom:2px}
-    .kpis .kpi{flex:0 0 auto;min-width:132px}
+    /* brand hidden (gnav above shows the app; date input shows the date) so ALL
+       controls fit ONE line → max chart space */
+    .brand{display:none}
+    .barrow{width:auto;flex:1;gap:5px;flex-wrap:nowrap;order:2;overflow-x:auto}
+    .seg .lg{display:none} .seg .sm{display:inline}
+    .seg button{padding:5px 7px;font-size:11px}
+    .datenav{padding:1px}
+    .datenav .d{width:84px;font-size:10.5px}
+    .datenav button{padding:3px 6px;font-size:12px}
+    .datenav button:nth-of-type(2){display:none}   /* hide 🗓 — tap date opens picker */
+    /* KPIs: one horizontal scroll row, NEVER wrap */
+    .kpis{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+    .kpis .kpi{flex:0 0 auto;min-width:130px}
+    /* un-freeze the wide first column so numbers show on right-scroll; truncate names */
+    td:first-child{position:static;max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    thead th:first-child{left:auto}
     /* taller per-trade chart so stacked index+premium panes get room */
     .ptc-card iframe,.ptc-card .ph{height:600px}
   }
@@ -183,14 +193,14 @@
 <body>
 <div id="loading">⏳ loading…</div>
 <div class="topbar">
-  <div class="brand"><b>📆 <span class="dlong">DAILY </span>REPORT</b><small id="subDate">—</small></div>
+  <div class="brand"><b>📆 <span class="dlong">DAILY </span><span class="dshort">REPORT</span></b><small id="subDate">—</small></div>
   <a href="/" class="hdr-btn deskbtn">← Dashboard</a>
   <button class="hdr-btn deskbtn" onclick="DR.openSettings()" title="Settings — Expected targets, capital">⚙ Settings</button>
   <button class="hdr-btn accent deskbtn" onclick="window.print()">🖨 PDF</button>
   <button class="hdr-btn mobbtn" onclick="DR.toggleMenu(event)" title="Menu">⋯</button>
   <div class="barrow">
     <div class="seg warn" id="segMode"><button class="on" data-v="">All</button><button data-v="live">Real</button><button data-v="paper">Paper</button></div>
-    <div class="seg" id="segRange"><button class="on" data-v="day">Daily</button><button data-v="week">Weekly</button><button data-v="month">Monthly</button></div>
+    <div class="seg" id="segRange"><button class="on" data-v="day"><span class="lg">Daily</span><span class="sm">D</span></button><button data-v="week"><span class="lg">Weekly</span><span class="sm">W</span></button><button data-v="month"><span class="lg">Monthly</span><span class="sm">M</span></button></div>
     <div class="datenav">
       <button title="Prev (←)" onclick="DR.step(-1)">◄</button>
       <input class="d num" id="dnav" type="date" onclick="DR.openPicker()" title="Click / D = calendar">
