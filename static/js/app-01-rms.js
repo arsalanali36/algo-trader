@@ -341,8 +341,20 @@
       if (!g || !t) return;
       const d = _blData && _blData[_blTab];
       if (!d) { g.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">No data</div>'; t.innerHTML = ''; if (src) src.textContent = ''; return; }
-      if (src) src.textContent = d.has_ledger ? ('CSV ledger · ' + (d.series || []).length + ' days')
+      if (src) src.textContent = d.has_ledger ? ('CSV/XLSX ledger · ' + (d.series || []).length + ' days')
         : (d.snapshot_days ? ('auto snapshot · ' + d.snapshot_days + ' days') : 'no history yet — roz snapshot banega');
+      // "Now" strip — live snapshot Cash / Collateral / Total for this broker
+      // (collateral ledger CSV me nahi hota — ye live balance se aata hai).
+      const now = document.getElementById('bl-now'), l = d.latest;
+      if (now) {
+        if (l && (l.cash != null || l.collateral != null || l.total_margin != null || l.available != null)) {
+          now.style.display = 'flex';
+          now.innerHTML = '<span style="font-weight:600;color:#e6edf3">Abhi:</span>'
+            + '<span>Cash <b style="color:#e6edf3">' + _blInr(l.cash != null ? l.cash : l.available) + '</b></span>'
+            + '<span>Collateral <b style="color:#d29922">' + _blInr(l.collateral) + '</b></span>'
+            + '<span>Total Margin <b style="color:#3fb950">' + _blInr(l.total_margin) + '</b></span>';
+        } else { now.style.display = 'none'; now.innerHTML = ''; }
+      }
       blDrawGraph(g, d);
       blRenderTable(t, d);
     }
@@ -350,12 +362,12 @@
     function blDrawGraph(container, d) {
       const series = d.series || [];
       if (series.length < 2) {
-        container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Balance history 2+ din baad graph banega — roz auto-snapshot hoga, ya broker ledger CSV upload karo.</div>';
+        container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Balance history 2+ din baad graph banega — roz auto-snapshot hoga, ya broker ledger CSV/XLSX upload karo.</div>';
         return;
       }
       const color = _BL_COL[_blTab] || '#1f6feb';
-      const W = container.clientWidth || 700, H = 200;
-      const PAD = { t: 14, r: 78, b: 34, l: 68 }, gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+      const W = container.clientWidth || 700, H = 210;
+      const PAD = { t: 16, r: 80, b: 34, l: 70 }, gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
       const vals = series.map(p => p.balance);
       const minV = Math.min(...vals, 0), maxV = Math.max(...vals), range = (maxV - minV) || 1;
       const px = i => PAD.l + (i / (series.length - 1)) * gW;
@@ -363,27 +375,58 @@
       const line = series.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p.balance).toFixed(1)}`).join(' ');
       const area = `M${px(0).toFixed(1)},${py(minV).toFixed(1)} ` + series.map((p, i) => `L${px(i).toFixed(1)},${py(p.balance).toFixed(1)}`).join(' ') + ` L${px(series.length - 1).toFixed(1)},${py(minV).toFixed(1)} Z`;
       const idxByDate = {}; series.forEach((p, i) => { idxByDate[p.date] = i; });
+      const fundByDate = {}; (d.funds || []).forEach(f => { (fundByDate[f.date] = fundByDate[f.date] || []).push(f); });
       let funds = '';
-      (d.funds || []).forEach(f => {
-        const i = idxByDate[f.date]; if (i == null) return;
-        const x = px(i), y = py(series[i].balance), up = f.type !== 'out', c = up ? '#3fb950' : '#f85149', tw = 6;
+      Object.keys(fundByDate).forEach(dt => {
+        const i = idxByDate[dt]; if (i == null) return;
+        const net = fundByDate[dt].reduce((a, f) => a + f.amount, 0), up = net >= 0;
+        const x = px(i), y = py(series[i].balance), c = up ? '#3fb950' : '#f85149', tw = 6;
         const pts = up ? `${x},${(y - tw - 2).toFixed(1)} ${(x - tw).toFixed(1)},${(y - 2).toFixed(1)} ${(x + tw).toFixed(1)},${(y - 2).toFixed(1)}`
           : `${x},${(y + tw + 2).toFixed(1)} ${(x - tw).toFixed(1)},${(y + 2).toFixed(1)} ${(x + tw).toFixed(1)},${(y + 2).toFixed(1)}`;
-        funds += `<polygon points="${pts}" fill="${c}" opacity="0.9"><title>${f.date} · ${up ? 'Fund IN' : 'Fund OUT'} ${_blInr(f.amount)}${f.note ? ' · ' + f.note.replace(/"/g, '') : ''}</title></polygon>`;
+        funds += `<polygon points="${pts}" fill="${c}" opacity="0.9"/>`;
       });
       let yl = '';
       for (let s = 0; s <= 4; s++) { const v = minV + range * s / 4, y = py(v); yl += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22"/><text x="${PAD.l - 5}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="9" fill="#6e7681">${_blInr(v)}</text>`; }
       let xl = ''; const step = Math.max(1, Math.floor(series.length / 6));
       for (let i = 0; i < series.length; i += step) { xl += `<text x="${px(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#6e7681">${series[i].date.slice(5)}</text>`; }
       const last = series[series.length - 1];
+      container.style.position = 'relative';
       container.innerHTML = `<svg width="${W}" height="${H}" style="display:block;overflow:visible">
         ${yl}${xl}
         <path d="${area}" fill="${color}22"/>
         <path d="${line}" fill="none" stroke="${color}" stroke-width="2"/>
         ${funds}
+        <line id="bl-cross" x1="0" x2="0" y1="${PAD.t}" y2="${(PAD.t + gH).toFixed(1)}" stroke="#8b949e" stroke-dasharray="3 3" style="display:none"/>
+        <circle id="bl-hd" r="4" fill="${color}" stroke="#0d1117" stroke-width="1.5" style="display:none"/>
         <circle cx="${px(series.length - 1).toFixed(1)}" cy="${py(last.balance).toFixed(1)}" r="3.5" fill="${color}"/>
         <text x="${(W - PAD.r + 6).toFixed(1)}" y="${(py(last.balance) + 4).toFixed(1)}" font-size="11" fill="${color}" font-weight="700">${_blInr(last.balance)}</text>
-      </svg>`;
+        <rect id="bl-hit" x="${PAD.l}" y="${PAD.t}" width="${gW.toFixed(1)}" height="${gH.toFixed(1)}" fill="transparent" style="cursor:crosshair"/>
+      </svg><div id="bl-tip" style="position:absolute;display:none;pointer-events:none;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 9px;font-size:11px;color:#e6edf3;z-index:5;white-space:nowrap;box-shadow:0 2px 8px #0008"></div>`;
+      const svgEl = container.querySelector('svg'), cross = container.querySelector('#bl-cross'),
+        hd = container.querySelector('#bl-hd'), tip = container.querySelector('#bl-tip'), hit = container.querySelector('#bl-hit');
+      const balLabel = d.has_ledger ? 'Balance' : 'Cumulative funds';
+      function onMove(clientX) {
+        const r = svgEl.getBoundingClientRect();
+        const xpix = (clientX - r.left) * (W / (r.width || W));
+        let i = Math.round(((xpix - PAD.l) / gW) * (series.length - 1));
+        i = Math.max(0, Math.min(series.length - 1, i));
+        const p = series[i], X = px(i), Y = py(p.balance);
+        cross.setAttribute('x1', X); cross.setAttribute('x2', X); cross.style.display = '';
+        hd.setAttribute('cx', X); hd.setAttribute('cy', Y); hd.style.display = '';
+        let html = '<b>' + p.date + '</b><br>' + balLabel + ': <b>' + _blInr(p.balance) + '</b>';
+        (fundByDate[p.date] || []).forEach(f => {
+          const up = f.amount >= 0;
+          html += '<br><span style="color:' + (up ? '#3fb950' : '#f85149') + '">' + (up ? '▲ Fund IN ' : '▼ Fund OUT ')
+            + _blInr(Math.abs(f.amount)) + '</span>' + (f.note ? ' <span style="color:#8b949e">' + f.note.slice(0, 40).replace(/[<>]/g, '') + '</span>' : '');
+        });
+        tip.innerHTML = html; tip.style.display = 'block';
+        const disp = X * ((r.width || W) / W);
+        tip.style.left = Math.min(Math.max(disp - 45, 2), (r.width || W) - 190) + 'px';
+        tip.style.top = '2px';
+      }
+      hit.addEventListener('mousemove', e => onMove(e.clientX));
+      hit.addEventListener('touchmove', e => { if (e.touches[0]) onMove(e.touches[0].clientX); }, { passive: true });
+      svgEl.addEventListener('mouseleave', () => { cross.style.display = 'none'; hd.style.display = 'none'; tip.style.display = 'none'; });
     }
 
     function blRenderTable(container, d) {
