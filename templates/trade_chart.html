@@ -816,9 +816,13 @@ window.drawAtrTrail = function(d){
   const LS = 'tradeChartAutoRefresh', INTERVAL = 15000;
   let timer = null;
   const q = new URLSearchParams(location.search);
+  // A strictly-PAST day's bars are immutable — never auto-refresh them (it would
+  // re-hit Dhan every 15s and defeat the disk quick-load cache). 2026-08-03.
+  const _todayIST = () => new Date(Date.now() + 19800000).toISOString().slice(0, 10);
+  const _isPast = () => { const dt = q.get('date'); return !!dt && dt < _todayIST(); };
   // ?auto=0 (embedded historical charts, e.g. Daily Report grid) → force OFF,
   // so N embedded charts don't each poll Dhan every 15s. Else localStorage (default ON).
-  const isOn = () => (q.get('auto') === '0' ? false : localStorage.getItem(LS) !== '0');
+  const isOn = () => (q.get('auto') === '0' || _isPast() ? false : localStorage.getItem(LS) !== '0');
   const p = k => q.get(k) || '';
   const base = 'trad_sym=' + encodeURIComponent(p('sym')) + '&et=' + p('et') + '&xt=' + p('xt')
     + (p('date') ? ('&date=' + p('date')) : '')

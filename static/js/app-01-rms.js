@@ -310,6 +310,125 @@
       }
     }
 
+    // ── 📈 Broker ledger / fund-history graph (2026-08-03) ──
+    // One chart, two tabs (Dhan / Zerodha): balance-over-time line + fund add/
+    // withdraw markers + table. Source = uploaded ledger CSV (real history) or
+    // auto daily snapshots. Display-only. Mirrors loadPeakGraph()'s SVG style.
+    let _blData = null, _blTab = 'dhan';
+    const _BL_COL = { dhan: '#1f6feb', kite: '#a371f7' };
+
+    function _blInr(n) { return (n == null || isNaN(n)) ? '—' : (n < 0 ? '−₹' : '₹') + Math.abs(Math.round(n)).toLocaleString('en-IN'); }
+
+    async function renderBrokerLedger() {
+      try { const r = await fetch('/api/broker-ledger'); _blData = await r.json(); }
+      catch (e) { _blData = null; }
+      blRender();
+    }
+
+    function blSetTab(b) {
+      _blTab = b;
+      document.querySelectorAll('#bl-tabs .bl-tab').forEach(btn => {
+        const bb = btn.getAttribute('data-b'), on = bb === b, c = _BL_COL[bb];
+        btn.style.borderColor = on ? c : '#30363d';
+        btn.style.background = on ? c + '22' : '#161b22';
+        btn.style.color = on ? c : '#8b949e';
+      });
+      blRender();
+    }
+
+    function blRender() {
+      const g = document.getElementById('bl-graph'), t = document.getElementById('bl-table'), src = document.getElementById('bl-src');
+      if (!g || !t) return;
+      const d = _blData && _blData[_blTab];
+      if (!d) { g.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">No data</div>'; t.innerHTML = ''; if (src) src.textContent = ''; return; }
+      if (src) src.textContent = d.has_ledger ? ('CSV ledger · ' + (d.series || []).length + ' days')
+        : (d.snapshot_days ? ('auto snapshot · ' + d.snapshot_days + ' days') : 'no history yet — roz snapshot banega');
+      blDrawGraph(g, d);
+      blRenderTable(t, d);
+    }
+
+    function blDrawGraph(container, d) {
+      const series = d.series || [];
+      if (series.length < 2) {
+        container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:20px">Balance history 2+ din baad graph banega — roz auto-snapshot hoga, ya broker ledger CSV upload karo.</div>';
+        return;
+      }
+      const color = _BL_COL[_blTab] || '#1f6feb';
+      const W = container.clientWidth || 700, H = 200;
+      const PAD = { t: 14, r: 78, b: 34, l: 68 }, gW = W - PAD.l - PAD.r, gH = H - PAD.t - PAD.b;
+      const vals = series.map(p => p.balance);
+      const minV = Math.min(...vals, 0), maxV = Math.max(...vals), range = (maxV - minV) || 1;
+      const px = i => PAD.l + (i / (series.length - 1)) * gW;
+      const py = v => PAD.t + gH - ((v - minV) / range) * gH;
+      const line = series.map((p, i) => `${i ? 'L' : 'M'}${px(i).toFixed(1)},${py(p.balance).toFixed(1)}`).join(' ');
+      const area = `M${px(0).toFixed(1)},${py(minV).toFixed(1)} ` + series.map((p, i) => `L${px(i).toFixed(1)},${py(p.balance).toFixed(1)}`).join(' ') + ` L${px(series.length - 1).toFixed(1)},${py(minV).toFixed(1)} Z`;
+      const idxByDate = {}; series.forEach((p, i) => { idxByDate[p.date] = i; });
+      let funds = '';
+      (d.funds || []).forEach(f => {
+        const i = idxByDate[f.date]; if (i == null) return;
+        const x = px(i), y = py(series[i].balance), up = f.type !== 'out', c = up ? '#3fb950' : '#f85149', tw = 6;
+        const pts = up ? `${x},${(y - tw - 2).toFixed(1)} ${(x - tw).toFixed(1)},${(y - 2).toFixed(1)} ${(x + tw).toFixed(1)},${(y - 2).toFixed(1)}`
+          : `${x},${(y + tw + 2).toFixed(1)} ${(x - tw).toFixed(1)},${(y + 2).toFixed(1)} ${(x + tw).toFixed(1)},${(y + 2).toFixed(1)}`;
+        funds += `<polygon points="${pts}" fill="${c}" opacity="0.9"><title>${f.date} · ${up ? 'Fund IN' : 'Fund OUT'} ${_blInr(f.amount)}${f.note ? ' · ' + f.note.replace(/"/g, '') : ''}</title></polygon>`;
+      });
+      let yl = '';
+      for (let s = 0; s <= 4; s++) { const v = minV + range * s / 4, y = py(v); yl += `<line x1="${PAD.l}" y1="${y.toFixed(1)}" x2="${W - PAD.r}" y2="${y.toFixed(1)}" stroke="#161b22"/><text x="${PAD.l - 5}" y="${(y + 4).toFixed(1)}" text-anchor="end" font-size="9" fill="#6e7681">${_blInr(v)}</text>`; }
+      let xl = ''; const step = Math.max(1, Math.floor(series.length / 6));
+      for (let i = 0; i < series.length; i += step) { xl += `<text x="${px(i).toFixed(1)}" y="${H - 6}" text-anchor="middle" font-size="9" fill="#6e7681">${series[i].date.slice(5)}</text>`; }
+      const last = series[series.length - 1];
+      container.innerHTML = `<svg width="${W}" height="${H}" style="display:block;overflow:visible">
+        ${yl}${xl}
+        <path d="${area}" fill="${color}22"/>
+        <path d="${line}" fill="none" stroke="${color}" stroke-width="2"/>
+        ${funds}
+        <circle cx="${px(series.length - 1).toFixed(1)}" cy="${py(last.balance).toFixed(1)}" r="3.5" fill="${color}"/>
+        <text x="${(W - PAD.r + 6).toFixed(1)}" y="${(py(last.balance) + 4).toFixed(1)}" font-size="11" fill="${color}" font-weight="700">${_blInr(last.balance)}</text>
+      </svg>`;
+    }
+
+    function blRenderTable(container, d) {
+      const rows = d.table || [];
+      if (!rows.length) { container.innerHTML = '<div style="color:#8b949e;font-size:12px;padding:8px">Koi row nahi.</div>'; return; }
+      const th = (t, l) => `<th style="padding:4px 6px;position:sticky;top:0;background:#0d1117;${l ? 'text-align:left' : 'text-align:right'}">${t}</th>`;
+      const esc = s => String(s == null ? '' : s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      let h = '<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="color:#8b949e">';
+      if (d.has_ledger) {
+        h += th('Date', 1) + th('Particulars', 1) + th('Debit') + th('Credit') + th('Balance') + '</tr></thead><tbody>';
+        rows.forEach(r => {
+          h += `<tr style="border-top:1px solid #21262d${r.fund ? ';background:#3fb95011' : ''}">
+            <td style="padding:4px 6px;color:#8b949e;white-space:nowrap">${r.date}</td>
+            <td style="padding:4px 6px;color:#e6edf3">${r.fund ? '💰 ' : ''}${esc(r.particulars)}</td>
+            <td style="padding:4px 6px;text-align:right;color:#f85149">${r.debit ? _blInr(-r.debit) : ''}</td>
+            <td style="padding:4px 6px;text-align:right;color:#3fb950">${r.credit ? _blInr(r.credit) : ''}</td>
+            <td style="padding:4px 6px;text-align:right;color:#e6edf3">${r.balance == null ? '—' : _blInr(r.balance)}</td></tr>`;
+        });
+      } else {
+        h += th('Date', 1) + th('Cash') + th('Collateral') + th('Available') + th('Total') + '</tr></thead><tbody>';
+        rows.forEach(r => {
+          h += `<tr style="border-top:1px solid #21262d">
+            <td style="padding:4px 6px;color:#8b949e;white-space:nowrap">${r.date}</td>
+            <td style="padding:4px 6px;text-align:right;color:#e6edf3">${_blInr(r.cash)}</td>
+            <td style="padding:4px 6px;text-align:right;color:#e6edf3">${_blInr(r.collateral)}</td>
+            <td style="padding:4px 6px;text-align:right;color:#e6edf3">${_blInr(r.available)}</td>
+            <td style="padding:4px 6px;text-align:right;color:#3fb950;font-weight:600">${_blInr(r.balance)}</td></tr>`;
+        });
+      }
+      container.innerHTML = h + '</tbody></table>';
+    }
+
+    async function blUploadCsv(input) {
+      const f = input.files && input.files[0]; if (!f) return;
+      const fd = new FormData(); fd.append('broker', _blTab); fd.append('file', f);
+      const src = document.getElementById('bl-src'); if (src) src.textContent = 'uploading…';
+      try {
+        const r = await fetch('/api/broker-ledger/upload', { method: 'POST', body: fd });
+        const j = await r.json(); input.value = '';
+        if (!j.ok) { alert('Upload failed: ' + (j.error || '?')); blRender(); return; }
+        alert(`${_blTab.toUpperCase()} ledger: ${j.added} new rows (total ${j.total})` + (j.warn ? '\n' + j.warn : ''));
+        renderBrokerLedger();
+      } catch (e) { alert('Upload error: ' + e); }
+    }
+
     function _rlFmtAge(ts) {
       const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
       if (s < 60) return s + 's ago';
@@ -380,6 +499,7 @@
     async function renderRiskTab() {
       renderRmsSummary();
       renderBrokerBalances();
+      renderBrokerLedger();
       try { const r = await fetch('/api/risk-config'); RISK_CFG = await r.json(); } catch (e) { }
       document.getElementById('default-broker-select').value = RISK_CFG.global.default_broker || 'dhan';
       document.getElementById('risk-global-pct').value = RISK_CFG.global.max_loss_pct ?? '';

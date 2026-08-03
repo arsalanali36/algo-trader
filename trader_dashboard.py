@@ -628,6 +628,25 @@ def api_daily_report():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route('/api/daily-report/dates')
+def api_daily_report_dates():
+    """Dates that actually have trade data (same mode/source/broker/strategy
+    filters + exit-date bucketing as the report) — for the date arrows to skip
+    empty days and jump only to days the report can render. Display-only."""
+    import daily_report as dr
+    mode = request.args.get('mode') or None
+    source = request.args.get('source') or None
+    broker = request.args.get('broker') or None
+    strategy = request.args.get('strategy') or None
+    try:
+        return jsonify({"ok": True,
+                        "dates": dr.available_dates(mode=mode, source=source,
+                                                    broker=broker, strategy=strategy)})
+    except Exception as e:
+        print("[daily-report dates] fail:", e, flush=True)
+        return jsonify({"ok": False, "dates": [], "error": str(e)})
+
+
 @app.route('/api/report-settings', methods=['GET', 'POST'])
 def api_report_settings():
     import daily_report as dr
@@ -2132,7 +2151,50 @@ def api_broker_balances():
     out = {}
     for name in ("dhan", "kite"):
         out[name] = risk_gate.get_broker_balance(name)
+    # opportunistically record today's balance snapshot (once/day) so the ledger
+    # graph accumulates even without a dedicated cron — the RMS tab is opened
+    # daily. Best-effort, display-only. (broker_ledger, 2026-08-03)
+    try:
+        import broker_ledger
+        broker_ledger.snapshot_if_due()
+    except Exception:
+        pass
     return jsonify(out)
+
+
+@app.route('/api/broker-ledger')
+def api_broker_ledger():
+    """Balance-over-time (ledger) for the RMS Broker Balances panel — per broker:
+    balance line + fund add/withdraw markers + table. Display-only; snapshots +
+    uploaded CSV ledgers only, no order path. (2026-08-03)"""
+    import broker_ledger
+    try:
+        broker_ledger.snapshot_if_due()   # keep the series fresh on open
+    except Exception:
+        pass
+    try:
+        return jsonify(broker_ledger.view())
+    except Exception as e:
+        print("[broker-ledger] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/broker-ledger/upload', methods=['POST'])
+def api_broker_ledger_upload():
+    """Upload a broker's own ledger/statement CSV (Zerodha Console → Funds →
+    Statement, or Dhan ledger) → real historical closing balance + fund events.
+    Tolerant of column naming. Idempotent (re-upload = no-op)."""
+    import broker_ledger
+    broker = (request.form.get('broker') or '').lower()
+    f = request.files.get('file')
+    if not f:
+        return jsonify({"ok": False, "error": "no file"})
+    try:
+        text = f.read().decode('utf-8', errors='replace')
+        return jsonify(broker_ledger.import_ledger(broker, text))
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)})
+
 
 @app.route('/api/rate-limit-events')
 def api_rate_limit_events():
@@ -2689,13 +2751,19 @@ def _sec_id_from_order_store(trad_sym, date_str):
     return None
 
 
-def _save_premium_ohlc(sec_id, date_str, bars_by_epoch):
+def _save_premium_ohlc(sec_id, date_str, bars_by_epoch, complete=False):
     """Persist option-premium 1-min bars keyed by RAW Dhan epoch (str) → [o,h,l,c],
     so an expired contract's premium chart still renders after Dhan stops serving
     it (#5). Epoch keys are timezone-unambiguous (the +19800 IST-display shift is
     applied only at read time, exactly like the live path) — avoids the double-
     shift class of bug (TRAP #29). Merges with any existing (daemon-written)
-    file. Best-effort."""
+    file. Best-effort.
+
+    complete=True marks the file as a FULL past day's bars (quick-load, feature
+    2026-08-03): a fetch for a date strictly before today returns the whole day,
+    so it can be served straight from disk on every future open (this session /
+    next session / next day) with zero Dhan round-trip. Stored as a non-digit,
+    non-colon '_complete' key which the candle reader skips."""
     try:
         p = _premium_ohlc_path(sec_id, date_str)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -2706,9 +2774,24 @@ def _save_premium_ohlc(sec_id, date_str, bars_by_epoch):
             except Exception:
                 existing = {}
         existing.update(bars_by_epoch)
+        if complete:
+            existing["_complete"] = 1
         p.write_text(json.dumps(existing))
     except Exception:
         pass
+
+
+def _premium_ohlc_is_complete(sec_id, date_str):
+    """True if a FULL past-day cache exists for this contract (quick-load) — i.e.
+    a prior fetch of a strictly-past date already stored the whole day. Only such
+    files are served disk-first (partial/daemon HH:MM captures still go to Dhan)."""
+    try:
+        p = _premium_ohlc_path(sec_id, date_str)
+        if not p.exists():
+            return False
+        return bool(json.loads(p.read_text()).get("_complete"))
+    except Exception:
+        return False
 
 
 def _load_premium_ohlc_candles(sec_id, date_str, entry_t="", exit_t=""):
@@ -3159,6 +3242,22 @@ def api_trade_chart_data():
         if not request.args.get('to') and not exit_t and date_str and date_str < _today_str:
             to_date = _today_str
 
+        # QUICK-LOAD (2026-08-03): a completed trade on a PAST day has immutable
+        # bars — once fetched, serve straight from disk on every future open (this
+        # session / next session / next day) with zero Dhan round-trip. Only a
+        # single-day request whose full-day cache was already stored (_complete)
+        # qualifies; today / positional multi-day spans still go live.
+        if (seg == "NSE_FNO" and to_date == date_str and date_str < _today_str
+                and _premium_ohlc_is_complete(sec_id, date_str)):
+            disk = _load_premium_ohlc_candles(sec_id, date_str, entry_t_first, exit_t_first)
+            if disk and disk.get("candles"):
+                return jsonify({"ok": True, "candles": disk["candles"],
+                                "entry_mk": disk["entry_mk"], "exit_mk": disk["exit_mk"],
+                                "entry_mks": [disk["entry_mk"]] if disk["entry_mk"] else [],
+                                "exit_mks": [disk["exit_mk"]] if disk["exit_mk"] else [],
+                                "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, disk["candles"], disk["entry_mk"], entry_t=entry_t_first, strategy=strategy),
+                                "trad_sym": trad_sym, "date": date_str, "source": "cache"})
+
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
         r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
@@ -3197,8 +3296,10 @@ def api_trade_chart_data():
         # Write-through: persist so this contract's chart survives its expiry (#5).
         # Only for a single-day fetch — a multi-day (positional) span would write
         # today's bars into date_str's file (keyed per date) and corrupt it.
+        # complete=True for a strictly-past date (full immutable day) → future
+        # opens serve disk-first (quick-load).
         if seg == "NSE_FNO" and _bars_by_epoch and to_date == date_str:
-            _save_premium_ohlc(sec_id, date_str, _bars_by_epoch)
+            _save_premium_ohlc(sec_id, date_str, _bars_by_epoch, complete=(date_str < _today_str))
         return jsonify({"ok": True, "candles": candles, "entry_mk": entry_mk, "exit_mk": exit_mk,
                         "entry_mks": entry_mks, "exit_mks": exit_mks,
                         "sl_series": _reconstruct_sl_series(trad_sym, date_str, sec_id, candles, entry_mk, entry_t=entry_t_first, strategy=strategy),
@@ -3262,25 +3363,52 @@ def api_trade_chart_underlying_data():
 
         token, cid = _creds()
         hdrs = {"access-token": token, "client-id": cid, "Content-Type": "application/json"}
-        # Dhan intraday for INDEX/EQUITY underlyings needs "interval" (not
-        # "expiryCode" — that's the OPTION shape). Same payload as the proven
-        # live strategy fetch (range_trader.fetch_1m: interval "1"). expiryCode:0
-        # here returned empty candles for IDX_I → "underlying data nahi" (the
-        # premium pane works because options DO take expiryCode). 2026-08-01 fix.
-        r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
-            "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
-            "interval": "1", "fromDate": date_str, "toDate": to_date}, timeout=12)
-        d = r.json()
-        if not d.get("open"):
-            return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
-        candles, entry_mk, exit_mk = [], None, None
+
+        # QUICK-LOAD (2026-08-03): the underlying/index pane is the DEFAULT view in
+        # the Daily Report (Only-Index panes) — its 1-min candles for a completed
+        # PAST day are immutable, so serve them disk-first (this session / next
+        # session / next day) with zero Dhan round-trip. Today / positional
+        # multi-day spans still fetch live. Overlays (markers/RSI/ATR) recompute
+        # from whichever candle source. sec_id here is the underlying's — no
+        # collision with the option pane's file (different sec_id).
+        candles = None
+        if (to_date == date_str and date_str < _today_str
+                and _premium_ohlc_is_complete(sec_id, date_str)):
+            _disk = _load_premium_ohlc_candles(sec_id, date_str)
+            if _disk and _disk.get("candles"):
+                candles = _disk["candles"]
+
+        if candles is None:
+            # Dhan intraday for INDEX/EQUITY underlyings needs "interval" (not
+            # "expiryCode" — that's the OPTION shape). Same payload as the proven
+            # live strategy fetch (range_trader.fetch_1m: interval "1"). expiryCode:0
+            # here returned empty candles for IDX_I → "underlying data nahi" (the
+            # premium pane works because options DO take expiryCode). 2026-08-01 fix.
+            r = _req.post("https://api.dhan.co/v2/charts/intraday", headers=hdrs, json={
+                "securityId": str(sec_id), "exchangeSegment": seg, "instrument": inst,
+                "interval": "1", "fromDate": date_str, "toDate": to_date}, timeout=12)
+            d = r.json()
+            if not d.get("open"):
+                return jsonify({"ok": False, "msg": f"{date_str} ka underlying intraday data nahi"})
+            candles = []
+            _u_bars = {}
+            for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
+                t_ist = int(ts) + 19800
+                candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
+                                "low": round(float(l), 2), "close": round(float(c), 2)})
+                _u_bars[str(int(ts))] = [round(float(o), 2), round(float(h), 2), round(float(l), 2), round(float(c), 2)]
+            # write-through: strictly-past single day = full immutable → cache it
+            if _u_bars and to_date == date_str and date_str < _today_str:
+                _save_premium_ohlc(sec_id, date_str, _u_bars, complete=True)
+
+        # markers from candles (works for disk OR live source). candle 'time' is
+        # already IST-shifted (+19800), so utcfromtimestamp(time) == IST wall-clock.
+        entry_mk, exit_mk = None, None
         entry_mks, exit_mks = [], []   # ALL markers (>1 when same-contract trades merged into one chart)
         _seen_e, _seen_x = set(), set()
-        for ts, o, h, l, c in zip(d["timestamp"], d["open"], d["high"], d["low"], d["close"]):
-            t_ist = int(ts) + 19800
-            hhmm = _dt.datetime.utcfromtimestamp(int(ts) + 19800).strftime("%H:%M")
-            candles.append({"time": t_ist, "open": round(float(o), 2), "high": round(float(h), 2),
-                            "low": round(float(l), 2), "close": round(float(c), 2)})
+        for _c in candles:
+            t_ist = _c["time"]
+            hhmm = _dt.datetime.utcfromtimestamp(int(t_ist)).strftime("%H:%M")
             if hhmm in entry_times and hhmm not in _seen_e:
                 _seen_e.add(hhmm); entry_mks.append(t_ist)
                 if entry_mk is None: entry_mk = t_ist

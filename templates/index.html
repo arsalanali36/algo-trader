@@ -3075,6 +3075,34 @@
             "Global Max Loss %" cap calculate hota hai (⚠️ Max Loss Protection tab dekho).
           </div>
           <div id="broker-balances-content" class="balance-grid"></div>
+
+          <!-- 📈 Ledger / fund-history graph (balance over time) — 2026-08-03 -->
+          <div id="broker-ledger-panel" style="margin-top:18px;border:1px solid #30363d;border-radius:10px;padding:14px 16px;background:#0d1117">
+            <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
+              <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <span style="font-size:13px;font-weight:700;color:#e6edf3">📈 Ledger / Fund History</span>
+                <div id="bl-tabs" style="display:flex;gap:6px">
+                  <button class="bl-tab" data-b="dhan" onclick="blSetTab('dhan')"
+                    style="padding:5px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;border:1px solid #1f6feb;background:#1f6feb22;color:#1f6feb">DHAN</button>
+                  <button class="bl-tab" data-b="kite" onclick="blSetTab('kite')"
+                    style="padding:5px 12px;font-size:12px;font-weight:600;border-radius:6px;cursor:pointer;border:1px solid #30363d;background:#161b22;color:#8b949e">ZERODHA</button>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px">
+                <span id="bl-src" style="font-size:11px;color:#8b949e"></span>
+                <label style="font-size:11px;color:#8b949e;cursor:pointer;padding:5px 10px;border:1px solid #30363d;border-radius:6px;background:#161b22">
+                  ⬆ Upload ledger CSV
+                  <input id="bl-csv" type="file" accept=".csv" style="display:none" onchange="blUploadCsv(this)">
+                </label>
+              </div>
+            </div>
+            <div style="font-size:10.5px;color:#6e7681;margin-top:6px">
+              Line = balance over time · ▲/▼ = fund add/withdraw. Auto-snapshot roz balance capture karta hai;
+              purani fund-history ke liye broker ki ledger CSV upload karo (Zerodha: Console → Funds → Statement · Dhan: Ledger).
+            </div>
+            <div id="bl-graph" style="margin-top:10px;min-height:150px"></div>
+            <div id="bl-table" style="margin-top:10px;max-height:280px;overflow:auto"></div>
+          </div>
         </div>
 
         <!-- RMS Live Summary -->

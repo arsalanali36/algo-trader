@@ -326,6 +326,40 @@ def save_settings(capital=None, targets=None):
     return get_settings()
 
 
+# ------------------------------------------------------- available dates ----
+def available_dates(mode=None, source=None, broker=None, strategy=None, lookback_days=730):
+    """Sorted list of dates (YYYY-MM-DD) that actually have completed-trade data,
+    bucketed the SAME way build() does (by EXIT date, same mode/source/broker/
+    strategy filters, same 400-day positional netting). The date arrows use this
+    to skip empty days — landing only on days the report will actually render.
+
+    lookback_days = how far back to scan for dates-with-data (default 2y)."""
+    from datetime import datetime as _dtn
+    today = _dtn.now().strftime("%Y-%m-%d")
+    date_from = _minus_days(today, lookback_days)
+    filt = {}
+    if mode:
+        filt["mode"] = mode
+    if source:
+        filt["source"] = source
+    if broker:
+        filt["broker"] = broker
+    if strategy:
+        filt["strategy"] = strategy
+    net_lo = _minus_days(date_from, 400)
+    dates = set()
+    try:
+        rng = order_store.trades_for_range(net_lo, today, **filt)
+    except Exception as e:
+        print("[daily_report] available_dates fail:", e, flush=True)
+        return []
+    for t in (rng.get("details") or []):
+        xd = t.get("exit_date")
+        if xd and (date_from <= xd <= today):
+            dates.add(xd)
+    return sorted(dates)
+
+
 # ------------------------------------------------------------------ build ----
 def build(date_from, date_to=None, mode=None, source=None, broker=None, strategy=None):
     date_to = date_to or date_from

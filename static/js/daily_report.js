@@ -8,8 +8,11 @@
   window.DR = DR;
 
   // ---- state ----
+  // ptcPanes default = "index" (Only index) — single pane loads faster; persisted.
   var S = { date: null, mode: "", range: "day", data: null, notes: [],
             noteFilter: "", metricS: "amt", metricT: "amt", ptcStrat: "",
+            ptcPanes: (function () { try { return localStorage.getItem("dr_ptc_panes") || "index"; } catch (e) { return "index"; } })(),
+            availDates: null,   // sorted [YYYY-MM-DD] with trade data (for arrow skip-empty)
             curAnchor: "—", popColor: "b", popImgs: [], lastXY: { x: 200, y: 200 } };
 
   // LOCAL today (toISOString would give UTC → wrong day in IST evenings)
@@ -183,7 +186,7 @@
     }).join("");
   }
   DR.setPtcStrat = function (v) { S.ptcStrat = v; renderPerTradeCharts(); };
-  DR.setPtcPanes = function (v) { S.ptcPanes = v; renderPerTradeCharts(); };
+  DR.setPtcPanes = function (v) { S.ptcPanes = v; try { localStorage.setItem("dr_ptc_panes", v); } catch (e) { } renderPerTradeCharts(); };
 
   function renderPerTradeCharts() {
     var all = ((S.data && S.data.trades) || []).filter(function (t) { return t.sym && t.sym !== "null"; });
@@ -371,7 +374,38 @@
   }
 
   // ================= EVENTS =================
+  // Available-dates (dates that actually have trade data, respecting the current
+  // mode filter) — arrows jump to the nearest such day instead of walking onto
+  // empty ones. Fetched once per mode, cached in S.availDates.
+  function loadAvailDates() {
+    S.availDates = null;   // mark loading (arrows fall back to ±1 day until ready)
+    var qs = S.mode ? ("?mode=" + S.mode) : "";
+    fetch("/api/daily-report/dates" + qs).then(function (x) { return x.json(); })
+      .then(function (r) { S.availDates = (r && r.dates) || []; })
+      .catch(function () { S.availDates = []; });
+  }
+  // nearest date WITH data in direction dir (+1 fwd / -1 back) from the current
+  // date; null if none exists that way. Handles landing on a data-day or a gap.
+  function nextDataDate(dir) {
+    var ds = S.availDates;
+    if (!ds || !ds.length) return null;
+    var cur = S.date;
+    if (dir > 0) {
+      for (var i = 0; i < ds.length; i++) { if (ds[i] > cur) return ds[i]; }
+      return null;
+    }
+    for (var j = ds.length - 1; j >= 0; j--) { if (ds[j] < cur) return ds[j]; }
+    return null;
+  }
+
   DR.step = function (d) {
+    // Day mode + dates loaded → skip empty days (jump to nearest day with data).
+    // Week/Month mode (or dates not yet loaded) → plain ±1 day as before.
+    if (S.range === "day" && Array.isArray(S.availDates)) {
+      var nd = nextDataDate(d);
+      if (nd) { S.date = nd; $("dnav").value = S.date; load(); return; }
+      return;   // no more data-days that way — stay put (don't wander into empty)
+    }
     S.date = addDays(S.date, d); $("dnav").value = S.date; load();
   };
 
@@ -419,8 +453,11 @@
   function init() {
     S.date = todayISO();
     $("dnav").value = S.date;
+    // reflect the persisted "Only index" (default) panes choice in the selector
+    var _pp = $("ptc-panes"); if (_pp) _pp.value = S.ptcPanes;
     $("dnav").addEventListener("change", function () { S.date = $("dnav").value; load(); });
-    initSeg("segMode", "mode", load);
+    // mode filter changes which days have data → refresh the skip-empty date list
+    initSeg("segMode", "mode", function () { loadAvailDates(); load(); });
     initSeg("segRange", "range", load);
     initSeg("segMetricS", "metricS", renderCharts);
     initSeg("segMetricT", "metricT", renderCharts);
@@ -464,6 +501,7 @@
       if (m && !m.contains(e.target) && !(e.target.closest && e.target.closest(".mobbtn"))) m.classList.remove("on");
     });
 
+    loadAvailDates();   // date arrows skip empty days once this resolves
     load();
   }
 

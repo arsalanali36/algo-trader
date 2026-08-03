@@ -15,6 +15,19 @@
 
 ---
 
+## 2026-08-03 — 4-feature batch: Report jump + chart quick-load + Only-Index default + Broker ledger graph
+**Status:** IN-PROGRESS
+**Kya:**
+  1. **Report jump** — `/report` back/forward date arrows sirf un dino pe jump karein jinme trade-data hai (empty din skip).
+  2. **Chart quick-load** — completed/past-day option+underlying OHLC ek baar Dhan se aane ke baad disk cache se serve ho (next time/session instant, no 12s Dhan wait).
+  3. **RMS Default Only-Index** — Daily Report per-trade chart panes default = "Only index" (persisted), single-pane = faster load.
+  4. **Broker ledger graph** — RMS Broker Balances me ledger balance-over-time graph (kab fund add kiya) + table, Dhan/Zerodha 2 tabs, ek chart. Auto daily snapshot + broker ledger CSV upload (past history).
+**Layer:** ui + data (display-only) + config
+**Files:** `_ops/daily_report.py` (available_dates), `static/js/daily_report.js` (DR.step jump + only-index default), `templates/daily_report.html` (panes default), `trader_dashboard.py` (chart disk-first-for-past-day, broker-ledger routes, available-dates route), `_ops/broker_ledger.py` (NEW snapshot+CSV), `static/js/app-01-rms.js` + `templates/index.html` (ledger panel)
+**Kyun:** user requests — empty-day arrows waste karti hain; chart har baar re-download hota hai; only-index default chahiye; fund-add history dikhe
+**Reuse (Rule 6B):** `order_store.trades_for_range` (dates), existing `_save/_load_premium_ohlc` disk cache, `risk_gate.get_broker_balance` (snapshot), `loadPeakGraph` SVG style (ledger chart). Koi order/risk/Dhan-order path nahi — display/config only.
+**Depends on:** nothing (all sources exist)
+
 ## 2026-08-01 — 📋 Daily Report page (Reports ▾) — one-scroll EOD report
 **Status:** DONE + VPS-LIVE (`8b35769`→`2be728e`, 8 iterations, backup tag/branch `daily-report-2026-08-01`; each deploy monitor+supervisor PIDs intact, audit 0 FAIL, LESSONS #168). Final: page + ⚙ settings + server-side notes + per-trade chart auto-grid (`/trade-chart?embed=1`) + full mobile pass (sticky 1-line topbar, gnav static, KPI scroll, vertical-stacked panes). OPEN: "Expected" col source (editable `report_targets.json`).
 **Kya:** Reports dropdown me naya `/report` page — poore din ka EOD snapshot ek scroll me (KPIs, Target table, Stat table, strategy+trade breakdowns, distribution charts, month journey, per-trade chart) + right-click/long-press notes har cell/bar pe (server-side per-date).

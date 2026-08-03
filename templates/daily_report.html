@@ -217,7 +217,7 @@
       <button title="Calendar (D)" onclick="DR.openPicker()">🗓</button>
       <button title="Next (→)" onclick="DR.step(1)">►</button>
     </div>
-    <select id="ptc-panes" style="background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px" onchange="DR.setPtcPanes(this.value)" title="Per-trade chart: kaunse pane dikhein"><option value="both">Both panes</option><option value="index">Only index</option><option value="premium">Only premium</option></select>
+    <select id="ptc-panes" style="background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px" onchange="DR.setPtcPanes(this.value)" title="Per-trade chart: kaunse pane dikhein"><option value="both">Both panes</option><option value="index" selected>Only index</option><option value="premium">Only premium</option></select>
     <select id="ptc-strat" style="background:var(--card);color:var(--tx);border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:12px;max-width:200px" onchange="DR.setPtcStrat(this.value)" title="Per-trade chart: strategy filter"><option value="">All strategies</option></select>
   </div>
   <div class="ovmenu" id="ovmenu">
