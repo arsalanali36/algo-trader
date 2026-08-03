@@ -14,6 +14,7 @@
 
   // in-page dashboard tabs → deep-link; cross-page → real routes
   var TABS = [
+    { href: '/brief',        label: '☀️ Brief' },
     { href: '/?tab=log',     label: 'Logs' },
     { href: '/?tab=orders',  label: '📒 Orders & P&L' },
     { href: '/stats2',       label: '📊 Stats 2' },

@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Morning Brief</title>
+<style>
+  :root{
+    --bg:#0d1117;--card:#161b22;--card2:#1c2230;--bd:#30363d;--bd2:#21262d;
+    --tx:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--blu:#1f6feb;
+    --yel:#d29922;--pur:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px}
+  a{color:inherit;text-decoration:none}
+  .wrap{padding:14px;max-width:1400px;margin:0 auto}
+
+  .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+  .topbar h1{font-size:19px;font-weight:800;letter-spacing:.3px}
+  .topbar .sub{color:var(--mut);font-size:11.5px}
+  .spacer{margin-left:auto}
+  .hbtn{padding:5px 11px;background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-size:11.5px;font-weight:600;cursor:pointer}
+  .hbtn:hover{background:#30363d}
+  .stale{color:var(--yel);font-size:10.5px}
+
+  .bias{background:linear-gradient(90deg,#161b22,#1a2233);border:1px solid var(--bd);border-left:3px solid var(--yel);
+    border-radius:8px;padding:11px 14px;margin-bottom:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+  .bias.pos{border-left-color:var(--grn)} .bias.neg{border-left-color:var(--red)}
+  .bias .tag{background:#2d2410;color:var(--yel);border:1px solid #5c4a1c;padding:3px 10px;border-radius:6px;font-weight:700;font-size:11.5px;white-space:nowrap}
+  .bias.pos .tag{background:#0e2a17;color:var(--grn);border-color:#1c5c33}
+  .bias.neg .tag{background:#2d1213;color:var(--red);border-color:#5c2224}
+  .bias .txt{font-size:12.5px;line-height:1.5}
+
+  .grid{display:grid;grid-template-columns:repeat(12,1fr);gap:12px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:12px 13px;min-height:60px}
+  .card h3{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--mut);margin-bottom:10px;display:flex;align-items:center;gap:6px;font-weight:700}
+  .card h3 .r{margin-left:auto;font-weight:600;color:var(--mut);text-transform:none;letter-spacing:0;font-size:10.5px}
+  .span3{grid-column:span 3}.span4{grid-column:span 4}.span5{grid-column:span 5}
+  .span6{grid-column:span 6}.span7{grid-column:span 7}.span8{grid-column:span 8}.span12{grid-column:span 12}
+
+  .tiles{display:grid;gap:8px}.t2{grid-template-columns:repeat(2,1fr)}.t3{grid-template-columns:repeat(3,1fr)}.t4{grid-template-columns:repeat(4,1fr)}
+  .tile{background:var(--card2);border:1px solid var(--bd2);border-radius:8px;padding:9px 10px}
+  .tile .nm{font-size:11px;color:var(--mut);font-weight:600;margin-bottom:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .tile .val{font-size:15px;font-weight:800;font-family:var(--mono)}
+  .tile .chg{font-size:11px;font-weight:700;margin-top:2px;font-family:var(--mono)}
+  .up{color:var(--grn)}.dn{color:var(--red)}.fl{color:var(--mut)}
+  .tile.up{border-left:3px solid var(--grn)}.tile.dn{border-left:3px solid var(--red)}
+
+  .row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--bd2)}
+  .row:last-child{border-bottom:none}
+  .row .l{color:var(--mut);font-size:12px}.row .r{font-weight:700;font-size:13px;font-family:var(--mono)}
+  .pill{font-size:10px;padding:2px 7px;border-radius:20px;font-weight:700;margin-left:6px}
+  .pill.buy{background:#0e2a17;color:var(--grn)}.pill.sell{background:#2d1213;color:var(--red)}
+
+  .ev{display:flex;align-items:center;gap:9px;padding:7px 0;border-bottom:1px solid var(--bd2)}
+  .ev:last-child{border-bottom:none}
+  .ev .when{font-size:10px;background:#21262d;border:1px solid var(--bd);border-radius:5px;padding:3px 7px;min-width:60px;text-align:center;font-weight:700;white-space:nowrap}
+  .ev.today .when{background:#2d2410;color:var(--yel);border-color:#5c4a1c}
+  .ev .what{font-size:12px;flex:1}
+  .ev .imp{font-size:9px;padding:1px 6px;border-radius:4px;font-weight:700}
+  .imp.hi{background:#2d1213;color:var(--red)}.imp.md{background:#2d2410;color:var(--yel)}.imp.lo{background:#21262d;color:var(--mut)}
+
+  .ni{display:flex;gap:9px;padding:7px 0;border-bottom:1px solid var(--bd2);align-items:flex-start}
+  .ni:last-child{border-bottom:none}
+  .ni .src{font-size:9px;color:var(--blu);font-weight:700;min-width:80px;padding-top:1px}
+  .ni .hl{font-size:12px;line-height:1.4;flex:1}
+  .ni:hover .hl{color:#fff}
+  .ni .tm{font-size:9px;color:var(--mut);white-space:nowrap;padding-top:1px}
+
+  .rd{display:flex;gap:8px;padding:6px 0;border-bottom:1px solid var(--bd2);align-items:flex-start}
+  .rd:last-child{border-bottom:none}
+  .rd .sc{font-size:10px;color:var(--yel);font-weight:700;min-width:38px;text-align:right;font-family:var(--mono)}
+  .rd .tt{font-size:12px;line-height:1.4;flex:1}
+
+  .empty{color:var(--mut);font-size:11.5px;padding:10px 4px;text-align:center;font-style:italic}
+  .empty .why{display:block;font-size:10px;margin-top:3px;opacity:.7}
+  @media(max-width:900px){.grid>*{grid-column:span 12!important}.t4{grid-template-columns:repeat(2,1fr)}.t3{grid-template-columns:repeat(3,1fr)}}
+  @media(max-width:520px){.t3{grid-template-columns:repeat(2,1fr)}.wrap{padding:10px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <h1>☀️ Morning Brief</h1>
+    <div>
+      <div style="font-weight:700" id="tb-day">—</div>
+      <div class="sub" id="tb-gen">loading…</div>
+    </div>
+    <div class="spacer"></div>
+    <span class="stale" id="tb-stale"></span>
+    <button class="hbtn" onclick="MB.load(true)">🔄 Refresh</button>
+  </div>
+
+  <div class="bias" id="bias" style="display:none">
+    <span class="tag" id="bias-tag">—</span>
+    <span class="txt" id="bias-txt"></span>
+  </div>
+
+  <div class="grid">
+    <div class="card span7">
+      <h3>🇮🇳 India Indices <span class="r" id="india-when"></span></h3>
+      <div id="india"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="card span5">
+      <h3>💰 Flows &amp; Derivatives <span class="r" id="flows-when"></span></h3>
+      <div id="flows"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="card span4">
+      <h3>₿ Crypto</h3>
+      <div id="crypto"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="card span4">
+      <h3>📅 Upcoming Events</h3>
+      <div id="events"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="card span4">
+      <h3>🗣️ Market Buzz <span class="r" id="reddit-when"></span></h3>
+      <div id="reddit"><div class="empty">loading…</div></div>
+    </div>
+
+    <div class="card span12">
+      <h3>📰 Top Headlines <span class="r" id="news-when"></span></h3>
+      <div id="news"><div class="empty">loading…</div></div>
+    </div>
+  </div>
+
+  <div class="sub" style="text-align:center;margin-top:14px;color:var(--mut);font-size:10.5px" id="foot"></div>
+</div>
+
+<script>
+const MB = (function(){
+  const $ = id => document.getElementById(id);
+  const money = n => (n==null?'—':(n<0?'−':'')+'₹'+Math.abs(n).toLocaleString('en-IN'));
+  const cls = v => v==null?'fl':(v>0?'up':(v<0?'dn':'fl'));
+  const sign = v => (v>0?'+':'') + v;
+
+  function tile(nm, val, chg, pct){
+    const c = cls(pct!=null?pct:chg);
+    const chgs = (chg==null && pct==null) ? '' :
+      `<div class="chg ${c}">${chg!=null?sign(chg):''}${pct!=null?' ('+sign(pct)+'%)':''}</div>`;
+    return `<div class="tile ${c}"><div class="nm">${nm}</div>
+      <div class="val">${val==null?'—':(typeof val==='number'?val.toLocaleString('en-IN'):val)}</div>${chgs}</div>`;
+  }
+  function emptyBox(msg, why){ return `<div class="empty">${msg}${why?`<span class="why">${why}</span>`:''}</div>`; }
+
+  function renderIndia(d){
+    $('india-when').textContent = d.ok && d.items[0] ? d.items[0].date : '';
+    if(!d.ok || !d.items.length){
+      $('india').innerHTML = emptyBox('India data VPS pe live hoga',
+        'option-chain collector lake wahin chalta (local pe nahi)'); return;
+    }
+    let t = '<div class="tiles t4">';
+    d.items.forEach(it => t += tile(it.name, it.value, it.chg, it.chg_pct));
+    if(d.vix!=null) t += tile('INDIA VIX', d.vix, null, null);
+    t += '</div>';
+    $('india').innerHTML = t;
+  }
+
+  function renderFlows(d){
+    $('flows-when').textContent = d.ok ? d.date : '';
+    if(!d.ok){ $('flows').innerHTML = emptyBox('Flows unavailable', d.err||''); return; }
+    const buysell = v => v==null?'':`<span class="pill ${v>=0?'buy':'sell'}">${v>=0?'BUY':'SELL'}</span>`;
+    let h = '';
+    h += `<div class="row"><span class="l">FII Cash</span><span class="r ${cls(d.fii_cash)}">${money(d.fii_cash)} cr${buysell(d.fii_cash)}</span></div>`;
+    h += `<div class="row"><span class="l">DII Cash</span><span class="r ${cls(d.dii_cash)}">${money(d.dii_cash)} cr${buysell(d.dii_cash)}</span></div>`;
+    if(d.fii_fut!=null) h += `<div class="row"><span class="l">FII Index Fut (net)</span><span class="r ${cls(d.fii_fut)}">${d.fii_fut.toLocaleString('en-IN')}</span></div>`;
+    if(d.pcr!=null){ const b = d.pcr>1?'bullish':'bearish'; h += `<div class="row"><span class="l">NIFTY PCR</span><span class="r">${d.pcr} <span style="color:var(--mut);font-weight:400;font-family:inherit">(${b})</span></span></div>`; }
+    if(d.max_pain!=null) h += `<div class="row"><span class="l">Max Pain</span><span class="r">${d.max_pain}</span></div>`;
+    $('flows').innerHTML = h;
+  }
+
+  function renderCrypto(d){
+    if(!d.ok || !d.items.length){ $('crypto').innerHTML = emptyBox('Crypto unavailable', d.err||''); return; }
+    let t = '<div class="tiles t2" style="grid-template-columns:1fr">';
+    d.items.forEach(it => t += tile(it.name, '$'+it.price.toLocaleString('en-US'), null, it.chg_pct));
+    t += '</div>';
+    $('crypto').innerHTML = t;
+  }
+
+  function renderEvents(d){
+    if(!d.ok || !d.items.length){ $('events').innerHTML = emptyBox('No upcoming events'); return; }
+    let h = '';
+    d.items.slice(0,7).forEach(e => {
+      const dt = new Date(e.date+'T00:00:00');
+      const w = e.is_today ? 'TODAY' : dt.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit'});
+      h += `<div class="ev ${e.is_today?'today':''}"><span class="when">${w}</span>
+        <span class="what">${e.what}</span><span class="imp ${e.imp||'lo'}">${(e.imp||'lo').toUpperCase()}</span></div>`;
+    });
+    $('events').innerHTML = h;
+  }
+
+  function renderReddit(d){
+    if(!d.ok || !d.items.length){
+      $('reddit').innerHTML = emptyBox(d.err==='reddit-not-configured'?'Reddit setup baaki':'Buzz unavailable',
+        d.err==='reddit-not-configured'?'client_id + secret config me daalte hi ON':(d.err||'')); return;
+    }
+    $('reddit-when').textContent = 'r/'+(d.sub||'');
+    let h = '';
+    d.items.forEach(p => h += `<div class="rd"><span class="sc">▲${p.score}</span>
+      <a class="tt" href="${p.link}" target="_blank" rel="noopener">${p.title}</a></div>`);
+    $('reddit').innerHTML = h;
+  }
+
+  function renderNews(d){
+    $('news-when').textContent = d.ok ? `${d.total_fetched||0} scanned` : '';
+    if(!d.ok || !d.items.length){ $('news').innerHTML = emptyBox('News unavailable', d.err||''); return; }
+    let h = '';
+    d.items.slice(0,8).forEach(n => h += `<div class="ni"><span class="src">${n.src}</span>
+      <a class="hl" href="${n.link}" target="_blank" rel="noopener">${n.title}</a></div>`);
+    $('news').innerHTML = h;
+  }
+
+  function renderBias(b){
+    if(!b){ return; }
+    const el = $('bias'); el.style.display='flex';
+    el.className = 'bias ' + (b.tone==='positive'?'pos':(b.tone==='negative'?'neg':''));
+    $('bias-tag').textContent = b.label; $('bias-txt').textContent = b.text;
+  }
+
+  async function load(force){
+    try{
+      const r = await fetch('/api/morning-brief'+(force?'?fresh=1':''), {cache:'no-store'});
+      const b = await r.json();
+      $('tb-day').textContent = (b.weekday||'') ;
+      $('tb-gen').textContent = 'Snapshot: ' + (b.generated_at||'—');
+      renderBias(b.bias);
+      renderIndia(b.india||{}); renderFlows(b.flows||{}); renderCrypto(b.crypto||{});
+      renderEvents(b.events||{}); renderReddit(b.reddit||{}); renderNews(b.news||{});
+      const okc = [b.india,b.flows,b.crypto,b.news,b.events,b.reddit].filter(x=>x&&x.ok).length;
+      $('foot').textContent = `${okc}/6 sections live · free sources: CoinGecko · RSS × 5 · NSE FII lake · option-chain lake`;
+    }catch(e){
+      $('tb-gen').textContent = 'Load failed: '+e;
+    }
+  }
+  return { load };
+})();
+MB.load();
+</script>
+<script src="{{ url_for('static', filename='js/topnav.js') }}"></script>
+</body>
+</html>

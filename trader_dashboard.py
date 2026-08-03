@@ -600,6 +600,27 @@ def api_whatif():
         return jsonify({"ok": False, "error": str(e), "legs": []})
 
 
+# ------------------- ☀️ Morning Brief (subha ek-nazar market snapshot) -------
+@app.route('/brief')
+def morning_brief_page():
+    """One-glance morning snapshot — India indices/VIX + FII-DII flows + PCR +
+    crypto + top news + upcoming events + Reddit buzz + auto bias line. All FREE
+    sources (option-chain lake + NSE FII lake + CoinGecko + RSS). Display-only."""
+    return render_template("morning_brief.html")
+
+
+@app.route('/api/morning-brief')
+def api_morning_brief():
+    import morning_brief as mb
+    try:
+        if request.args.get('fresh'):
+            mb._CACHE.clear()
+        return jsonify(mb.build_brief())
+    except Exception as e:
+        print("[morning-brief] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
 # ------------------- 📋 Daily Report (one-scroll EOD report) -----------------
 @app.route('/report')
 def daily_report_page():
