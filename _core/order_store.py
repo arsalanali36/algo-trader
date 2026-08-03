@@ -302,16 +302,28 @@ _EXIT_REASON_PREFIXES = (
 def _exit_reason(row):
     """Best human-ish exit reason from an exit leg's tags. '' if none recorded
     (e.g. a plain manual/webhook close that didn't tag a reason)."""
-    for t in _tags(row):
+    tags = _tags(row)
+    for t in tags:
         for p in _EXIT_REASON_PREFIXES:
             if str(t).startswith(p):
                 return t
+    src = str(row.get("source") or "").lower()
     # A reconcile-inserted broker trade (source=manual / MANUAL_TRADE tag) acting
     # as the exit leg = the position was closed by hand at the broker. Surface it
     # as MANUAL_CLOSE instead of blank (Critical Rule 9 — no exit should read
     # blank; matches TRAP #92's source=manual -> MANUAL_CLOSE backfill convention).
-    if str(row.get("source") or "").lower() == "manual" or "MANUAL_TRADE" in _tags(row):
+    if src == "manual" or "MANUAL_TRADE" in tags:
         return "MANUAL_CLOSE"
+    # An authoritative broker-MIRROR leg (source=broker_reconcile, tags
+    # EXTERNALLY_RECORDED / BROKER_MIRROR — ADR-011). The app never placed this
+    # exit; the position was closed at the broker OUTSIDE the app's own exit path
+    # (a manual close on Zerodha, broker SL, etc.) and mirrored in. There is no
+    # strategy reason to know, so surface the honest "closed at broker" instead
+    # of a blank column (Critical Rule 9 — no guessing a specific reason). Reuses
+    # the existing EXTERNALLY_CLOSED badge everywhere; read-time derivation, so
+    # every past + future broker-mirror exit is covered with no DB backfill.
+    if src == "broker_reconcile" or "BROKER_MIRROR" in tags or "EXTERNALLY_RECORDED" in tags:
+        return "EXTERNALLY_CLOSED"
     return ""
 
 
