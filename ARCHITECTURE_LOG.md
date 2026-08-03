@@ -25,7 +25,8 @@
 **Verify:** local harness (real data 4/6) + VPS module-run (India NIFTY 24,575.9 +0.88% / BANKNIFTY +0.93% / VIX 11.83 / FII+DII/PCR real / crypto+news+events ok). GIFT + Reddit = follow-on.
 **Depends on:** option_chain_collector lake (VPS), fii_flow lake, internet (external free APIs).
 **Design decision:** global cues ke liye US/Asia individual indices NAHI (user call) — sirf GIFT Nifty (Dhan-only rule consistent; GIFT global overnight move already price karta). Free-source probe ne pehle Reddit(403 OAuth-needed)/Stooq(404)/BusinessStd(403) reject kiye — reliable set: CoinGecko+RSS+lakes.
-**PENDING:** (1) GIFT Nifty Dhan wire (VPS) — Dhan GIFT instrument availability check karni. (2) Reddit creds → 1 config block.
+**GIFT follow-on (2026-08-03, VPS-live `a2b967d`):** Dhan GIFT (sec_id 5024) LTP **STALE** (stuck 24387 vs NIFTY spot 24589 live — Dhan NSE-IX live nahi streamm karta). Switched to **Moneycontrol free feed** (`priceapi.moneycontrol.com/.../in%3BNSX` — MC ka apna GIFT page yehi reads; no key, local+VPS, fresh 10:56 timestamp, realistic GIFT≈spot+basis). gap/pct = GIFT ki apni change. User ne "non-Dhan free source" chuna (GIFT ke liye Dhan-only rule ka apvaad). Probe: Yahoo pe GIFT nahi, investing 403, Groww fragile — MC ekmatra fresh free GIFT.
+**PENDING:** (1) Reddit creds → 1 config block (user Reddit app-create reCAPTCHA pe atka). (2) GIFT `in;NSX`=GIFT ka final proof pre-open behaviour se.
 
 ## 2026-08-03 — 4-feature batch: Report jump + chart quick-load + Only-Index default + Broker ledger graph
 **Status:** DONE + VPS-LIVE (`c40c1ca`; audit 0 FAIL, algo-dashboard restart clean, routes 401/302 gated, first balance snapshot seeded — matches RMS card exactly: Kite total ₹14,84,287). Display/config only, no order path.
