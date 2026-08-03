@@ -464,7 +464,20 @@ def _net_rows(rows):
     # automated exit (SL/TP/EOD/lock/TSL + broker_sync ghost-close) records under
     # the position's OWN source+strategy, so a legit round-trip is ALWAYS
     # same-strategy — only a human/reconcile 'manual' leg ever crosses that line.
-    _MANUAL_CLOSERS = {"manual"}
+    #
+    # 'broker_reconcile' (2026-08-03, TRAP #170): the AUTHORITATIVE mirror
+    # (reconcile_broker.apply, ADR-011) records a real broker close/open the app
+    # never had as ONE leg keyed by the broker's own order_id — attributed to the
+    # contract's single open live strategy, or 'manual' if ambiguous. That leg IS
+    # broker truth, so it must be allowed to close whatever strategy leg it
+    # corresponds to on the same contract+account — exactly like a human manual
+    # close. Without this it could NEVER pair (source='broker_reconcile' != the
+    # strategy leg's source='strategy'), so the mirror recorded the real close but
+    # netting still showed a phantom short forever (BAJFINANCE 2026-08-03: rsi BUY
+    # + mirror-recorded SELL, both real, never paired → stuck -2250 ghost the Sync
+    # button couldn't clear). This does NOT reopen strategy-vs-strategy netting
+    # (TRAP #145) — a broker_reconcile leg is not a second strategy's position.
+    _MANUAL_CLOSERS = {"manual", "broker_reconcile"}
     stacks, opens = {}, []
     for r, rem in leftover:
         k2 = (r["mode"], r["trad_sym"])

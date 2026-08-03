@@ -1898,24 +1898,46 @@ def api_rms_summary():
 
 @app.route('/api/sync-positions', methods=['POST'])
 def api_sync_positions():
-    """Force-reconcile DB open positions against actual broker positions.
-    Marks ghost positions (flat at broker, OPEN in DB) as externally_closed.
-    Use this after manually closing positions at the broker directly (TRAP #44)."""
-    from datetime import timedelta as _td2
-    import order_store as _os3
-    import broker_sync as _bsync2
-    today = (datetime.now(timezone.utc) + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
-    open_pos = _os3.trades_for(today).get('open', [])
-    # Exclude CAPITAL_BLOCKED rows before handing to broker_sync — see the
-    # matching fix + comment in pos_monitor_loop (TRAP #92).
-    open_pos = [p for p in open_pos if "CAPITAL_BLOCKED" not in (p.get("tags") or [])]
+    """Force-reconcile the app's LIVE ledger against the broker's trade book,
+    AUTHORITATIVELY (ADR-011 mirror). Records any real broker order the app never
+    had, keyed by the broker's own order_id (idempotent) — then order_store
+    netting pairs it against the strategy leg it closes (broker_reconcile is an
+    allowed cross-strategy closer, TRAP #170).
+
+    Replaces the old heuristic broker_sync.force_sync, which guessed exits by
+    fill-signature and could wrongly mark a strategy's OWN open leg
+    externally_closed while the closing fill was recorded separately by the
+    mirror — orphaning the two halves of one real round-trip into a permanent
+    phantom short the button then falsely reported as 'cleared' (BAJFINANCE
+    2026-08-03, TRAP #170). ONE reconciler now, no guessing. LIVE/kite only —
+    paper is a separate simulated ledger, never reconciled against the broker."""
+    from datetime import datetime as _dt2, timezone as _tz2, timedelta as _td2
+    date = (_dt2.now(_tz2.utc) + _td2(hours=5, minutes=30)).strftime('%Y-%m-%d')
     try:
-        closed_ids = _bsync2.force_sync(open_pos, log=print)
+        import reconcile_broker as _rb
+        r = _rb.apply(date, "kite", dry_run=False, log=print)
+        recorded = [a for a in (r.get("actions") or []) if a.get("type") == "record"]
+        skipped  = [a for a in (r.get("actions") or []) if a.get("type") == "skip"]
+        residual = r.get("residual_mismatch") or []
+        n = len(recorded)
+        parts = []
+        if n:
+            parts.append(f"✅ {n} broker order(s) mirrored into the app")
+        if residual:
+            parts.append(f"⚠️ {len(residual)} contract(s) still don't match "
+                         "(broker aur app ka net alag) — "
+                         + ", ".join(str(m.get("contract")) for m in residual[:4])
+                         + " — manual dekho")
+        if skipped:
+            parts.append(f"⚠️ {len(skipped)} broker order(s) skipped (symbol resolve nahi hua)")
+        if not parts:
+            parts.append("✅ App already mirrors the broker — nothing to reconcile")
         return jsonify({
             "ok": True,
-            "ghosts_cleared": len(closed_ids),
-            "msg": f"✅ {len(closed_ids)} ghost position(s) cleared" if closed_ids
-                   else "✅ No ghost positions found — all DB positions match broker"
+            "recorded": n,
+            "residual": len(residual),
+            "ghosts_cleared": n,   # compat: front-end refreshes the P&L table when > 0
+            "msg": "  ·  ".join(parts),
         })
     except Exception as e:
         return jsonify({"ok": False, "msg": str(e)}), 500

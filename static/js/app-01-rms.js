@@ -192,9 +192,10 @@
       try {
         const r = await fetch('/api/sync-positions', { method: 'POST' });
         const d = await r.json();
-        result.style.color = d.ghosts_cleared > 0 ? '#f85149' : '#3fb950';
+        // amber if something still needs manual attention, else green
+        result.style.color = (d.residual > 0) ? '#d29922' : '#3fb950';
         result.textContent = d.msg;
-        if (d.ghosts_cleared > 0 && typeof ordersRender === 'function') ordersRender();  // refresh P&L table
+        if (d.recorded > 0 && typeof ordersRender === 'function') ordersRender();  // refresh P&L table
       } catch (e) {
         result.style.color = '#f85149';
         result.textContent = 'Sync failed: ' + e;
