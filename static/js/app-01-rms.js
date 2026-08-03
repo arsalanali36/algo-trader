@@ -194,7 +194,7 @@
         const d = await r.json();
         result.style.color = d.ghosts_cleared > 0 ? '#f85149' : '#3fb950';
         result.textContent = d.msg;
-        if (d.ghosts_cleared > 0) loadPnl();  // refresh P&L table
+        if (d.ghosts_cleared > 0 && typeof ordersRender === 'function') ordersRender();  // refresh P&L table
       } catch (e) {
         result.style.color = '#f85149';
         result.textContent = 'Sync failed: ' + e;
@@ -220,7 +220,7 @@
         }
         result.style.color = (d.manual_inserted > 0) ? '#d29922' : '#3fb950';
         result.textContent = d.msg;
-        if (d.manual_inserted > 0) loadPnl();  // refresh P&L table
+        if (d.manual_inserted > 0 && typeof ordersRender === 'function') ordersRender();  // refresh P&L table
       } catch (e) {
         result.style.color = '#f85149';
         result.textContent = 'Reconcile failed: ' + e;
