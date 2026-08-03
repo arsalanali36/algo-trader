@@ -16,7 +16,7 @@
 ---
 
 ## 2026-08-03 — 4-feature batch: Report jump + chart quick-load + Only-Index default + Broker ledger graph
-**Status:** IN-PROGRESS
+**Status:** DONE + VPS-LIVE (`c40c1ca`; audit 0 FAIL, algo-dashboard restart clean, routes 401/302 gated, first balance snapshot seeded — matches RMS card exactly: Kite total ₹14,84,287). Display/config only, no order path.
 **Kya:**
   1. **Report jump** — `/report` back/forward date arrows sirf un dino pe jump karein jinme trade-data hai (empty din skip).
   2. **Chart quick-load** — completed/past-day option+underlying OHLC ek baar Dhan se aane ke baad disk cache se serve ho (next time/session instant, no 12s Dhan wait).
