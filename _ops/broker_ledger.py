@@ -359,6 +359,7 @@ def view():
         if not isinstance(led, list):
             led = []
         snaps = hist.get(b) or []
+        has_balance = bool(led) and any(r.get("balance") is not None for r in led)
         if led:
             series, funds = _series_from_ledger(led)
             source = "ledger"
@@ -379,6 +380,7 @@ def view():
             "table": table,
             "latest": (snaps[-1] if snaps else None),
             "has_ledger": bool(led),
+            "has_balance": has_balance,   # real running-balance col (Zerodha) vs cumulative fund-flow (Dhan pay-in/out)
             "snapshot_days": len(snaps),
         }
     return out

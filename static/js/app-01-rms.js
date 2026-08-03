@@ -404,7 +404,7 @@
       </svg><div id="bl-tip" style="position:absolute;display:none;pointer-events:none;background:#161b22;border:1px solid #30363d;border-radius:6px;padding:6px 9px;font-size:11px;color:#e6edf3;z-index:5;white-space:nowrap;box-shadow:0 2px 8px #0008"></div>`;
       const svgEl = container.querySelector('svg'), cross = container.querySelector('#bl-cross'),
         hd = container.querySelector('#bl-hd'), tip = container.querySelector('#bl-tip'), hit = container.querySelector('#bl-hit');
-      const balLabel = d.has_ledger ? 'Balance' : 'Cumulative funds';
+      const balLabel = d.has_balance ? 'Balance' : 'Net fund flow';
       function onMove(clientX) {
         const r = svgEl.getBoundingClientRect();
         const xpix = (clientX - r.left) * (W / (r.width || W));
