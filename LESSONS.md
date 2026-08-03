@@ -4342,3 +4342,25 @@ Broker-ledger feature (`_ops/broker_ledger.py`) banate waqt do gotchas — dono 
 2. **Ledger dedupe key `(date, particulars, debit, credit)` genuinely-identical repeat transactions ko collapse kar deta hai.** User ne ek hi din ek hi minute (06-Jul 08:05) do ALAG ₹50k UPI adds kiye — same date/particulars/debit/credit → dedupe ek ko kha jaata (total ₹50k kam). Zerodha xlsx me particulars me ref/detail hone se bach gaya (137→136 me sirf 1 non-fund collapse), par Dhan (screenshot-transcribed, koi ref nahi) me pair collapse ho jaata. **Fix jab source me natural uniqueness na ho:** rows ko **direct JSON write** karo (dedupe-merge bypass) ya particulars me time/seq daalo. Idempotency (re-import no-op) tabhi chahiye jab user dobara upload kare — one-time manual load pe direct-write theek. **Reusable: dedupe key tabhi safe jab source rows me built-in unique field (ref/txn-id) ho; warna genuinely-identical rows silently kho jaate.**
 
 **Feature note:** ledger graph = display-only (koi order/risk path nahi). Auto snapshot `risk_gate.get_broker_balance()` reuse (RMS cap ka same cached source). `has_balance` flag zaroori — Zerodha ledger me real "Net Balance" col (real balance line), Dhan pay-in/out me nahi (cumulative net-fund-flow, "balance" mat likho warna jhoot). Collateral ledger CSV me kabhi nahi hota → live snapshot se dikhao.
+
+## TRAP #170 — authoritative mirror's broker close could NEVER net against the strategy leg it closed → permanent phantom the "Sync from Broker" button couldn't clear (2026-08-03)
+
+**Symptom (user-escalated):** ek band position (Kite pe flat, qty 0, +₹4,462.50 booked) dashboard pe **open SELL** dikhti rahi. "Sync from Broker" → "Sync failed: loadPnl is not defined"; "CSV Reconcile" → "already in sync — nothing to add". Do-teen baar try kiya, hilti nahi.
+
+**Do bug, ek phantom ki jad:**
+
+1. **UI crash (chhota):** `app-01-rms.js` sync/reconcile ke baad `loadPnl()` call karta tha jo function **exist hi nahi karta** → `ReferenceError`. Aur wo error `if (d.ghosts_cleared > 0) loadPnl()` ke ANDAR thi → backend ne kuch clear kiya to hi crash hota → catch ne "Sync failed" dikhaya (jhoothi) + table refresh nahi hua. Fix: `ordersRender()` (jo neeche pehle se guarded use hota tha).
+
+2. **Asli root (do compounding):**
+   - **order_store netting sirf `source='manual'` ko cross-strategy net karne deta tha** (`_MANUAL_CLOSERS`, TRAP #145 guard). Par authoritative mirror (`reconcile_broker.apply`, ADR-011) real broker close ko `source='broker_reconcile'` se record karta hai. To mirror ne asli SELL to record kar li, par wo kabhi strategy ki BUY leg (source='strategy') ke saath **pair hi nahi ho sakti thi** → ek round-trip ke do real halves alag → permanent phantom short.
+   - **"Sync from Broker" button abhi bhi purana heuristic `broker_sync.force_sync`/`_run_sync` chalata tha** — wahi guesser jise ADR-011 ne har jagah se DISABLE kiya tha (auto-scans off, sirf button pe zinda). Ye strategy ki apni open BUY ko "broker flat" dekh ke **`externally_closed` mark kar deta** (jabki closing SELL alag row me mirror ne record kar rakhi thi) → BUY drop, SELL orphan. Aur BROKER_MIRROR tag pe **defer + `ghosts_cleared++` (jhoothi success)** — button "cleared" bolta par kuch karta nahi.
+
+**Ground truth:** rsi_v1_PAPER ne BAJFINANCE 1160 CE **BUY 2250 @ 26.52** (order 678476), phir **SELL 2250 @ 28.50** (order 734858) = +₹4,462.50 (Zerodha exact). App me BUY row (2427) `externally_closed`, SELL row (2435) `broker_reconcile`/`manual` filled → net −2250 phantom.
+
+**Permanent fix (do, dono deployed + tested):**
+- **Fix A (root):** `_MANUAL_CLOSERS = {"manual", "broker_reconcile"}` in `order_store._net_rows`. Mirror leg = authoritative broker truth → jo strategy leg wo band karti hai usse cross-net kar sakti hai, bilkul manual close jaisa. Strategy-vs-strategy netting (TRAP #145) NAHI khulta (broker_reconcile leg dusri strategy ki position nahi). Test `_DEV/tests/test_broker_reconcile_netting.py` (BAJFINANCE case pairs + do independent strategy legs still don't net).
+- **Fix B:** `/api/sync-positions` ab `reconcile_broker.apply` (ONE authoritative reconciler, idempotent by broker order_id) chalata hai, `force_sync` nahi. Koi guessing nahi, koi galat `externally_closed` nahi, honest residual reporting.
+
+Dono milke phantom ka poora forming-path band: mirror close ab net ho jaati (A), aur guesser jo BUY ko externally_closed marta tha wo button se hata (B; auto pehle se off). One-time cleanup: BAJFINANCE ke do real legs ko unke completed round-trip me joda (DB backup ke saath).
+
+**Reusable:** jab do reconciler/writer ek hi ledger pe likhein — unka `source`/attribution netting ke pairing-rule ke saath **consistent** hona chahiye. Ek writer authoritative-truth leg likhe (`broker_reconcile`) aur netting use pair na kar paye = wo record bekaar + phantom. Aur koi bhi user-facing "sync/reconcile" button jo defer kare, use kaam-hone-ka-count report NAHI karna chahiye — warna button jhooth bolta hai aur user baar-baar click karta hai.
