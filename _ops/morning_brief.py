@@ -10,7 +10,7 @@ brief partial data pe bhi ban jata hai; subha reliability > completeness):
              reader reuse) — ZERO Dhan call, wahi lake jo /curves + /gex padhte.
   flows   -> FII/DII cash + index-fut net + daily PCR + max-pain
              SOURCE: `fii_flow_view.series()` (free NSE lake).
-  gift    -> GIFT Nifty vs prev NIFTY close (Dhan/NSE) — VPS pe wire; abhi optional.
+  gift    -> GIFT Nifty value + change (Moneycontrol free feed; Dhan GIFT stale).
   crypto  -> BTC / ETH (CoinGecko, no key).
   news    -> top headlines, multi-RSS merge+dedup (ET/Livemint/MC/NDTV/Hindu BL).
   events  -> curated recurring calendar (RBI/Fed/CPI) + auto weekly-expiry flag.
@@ -293,66 +293,43 @@ def get_flows():
                 "spot": col(last, "spot")}
     return _cached("flows", 300, _build)
 
-# =================================================================== GIFT (Dhan LTP)
-# GIFT Nifty = NSE index instrument in Dhan scrip master: sec_id 5024, seg IDX_I.
-# Trades ~21h (NSE-IX) so it's live in Indian pre-market — best gap predictor.
-_GIFT_SEC_ID = "5024"
+# =================================================================== GIFT (Moneycontrol, free)
+# Dhan carries GIFT Nifty (sec_id 5024) but its LTP is STALE (not live NSE-IX feed) —
+# unusable. Free non-Dhan source instead: Moneycontrol's price feed for `in;NSX`, which
+# is exactly what MC's own GIFT Nifty page reads (SGX→GIFT rebrand, "NIFTY 50" label is
+# generic). No key, works local+VPS. gap/pct = GIFT's OWN change (standard "GIFT +205"
+# display), not a spot-derived number.
+_MC_GIFT_URL = ("https://priceapi.moneycontrol.com/pricefeed/"
+                "notapplicable/inidicesindia/in%3BNSX")
 
-def _dhan_index_ltp(sec_id, seg="IDX_I"):
-    """One-off rate-limited Dhan /v2/marketfeed/ltp for an index sec_id.
-    VPS-only (needs data/config.json jwt/client). DATA call = NOT IP-gated
-    (dashboard process ka IPv4-force waise bhi inherit hota hai). None on any fail."""
-    cfgp = os.path.join(ROOT, "data", "config.json")
-    with open(cfgp, encoding="utf-8") as f:
-        cfg = json.load(f)
-    tok, cid = cfg.get("jwt_token"), cfg.get("client_id")
-    if not tok or not cid:
-        return None
+def _fnum(x):
     try:
-        import dhan_rate_limiter as _rl
-        _rl.set_context("MorningBrief:GIFT")
-        if not _rl.acquire("ltp"):
-            return None
-    except Exception:
-        pass  # limiter absent (local) → best-effort direct call
-    try:
-        import requests
-        r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
-                          json={seg: [int(sec_id)]},
-                          headers={"access-token": tok, "client-id": cid,
-                                   "Content-Type": "application/json"}, timeout=6)
-        if r.status_code == 429:
-            try:
-                import dhan_rate_limiter as _rl
-                _rl.note_429()
-            except Exception:
-                pass
-            return None
-        if r.status_code != 200:
-            return None
-        node = (r.json().get("data", {}) or {}).get(seg, {}) or {}
-        v = node.get(sec_id) or node.get(str(sec_id)) or {}
-        ltp = v.get("last_price") or v.get("ltp")
-        return float(ltp) if ltp else None
-    except Exception:
+        return float(str(x).replace(",", "").strip())
+    except (TypeError, ValueError):
         return None
 
 def get_gift(prev_nifty_close=None):
-    """GIFT Nifty LTP + indicative gap vs prev NIFTY close.
-    gap = GIFT - prev_close (chhota futures basis include karta = indicative gap,
-    exact spot-gap nahi). Config/Dhan na mile (local) -> graceful skip."""
+    """GIFT Nifty value + change (Moneycontrol). gap = GIFT's own change; falls back to
+    (value - prev_nifty_close) only if MC's change is missing. Fail-safe."""
     def _build():
         try:
-            ltp = _dhan_index_ltp(_GIFT_SEC_ID, "IDX_I")
+            j = json.loads(_get(_MC_GIFT_URL, timeout=10))
+            data = j.get("data") or {}
+            val = _fnum(data.get("pricecurrent"))
+            if val is None:
+                return {"ok": False, "err": "gift-no-value", "value": None, "gap": None}
+            chg = _fnum(data.get("pricechange"))
+            pct = _fnum(data.get("pricepercentchange"))
+            if chg is None and prev_nifty_close:   # fallback: gap vs prev NIFTY close
+                chg = round(val - prev_nifty_close, 2)
+                pct = round(chg / prev_nifty_close * 100, 2) if prev_nifty_close else None
+            return {"ok": True, "value": round(val, 2),
+                    "gap": round(chg, 2) if chg is not None else None,
+                    "gap_pct": round(pct, 2) if pct is not None else None,
+                    "updated": data.get("lastupd"), "src": "moneycontrol"}
         except Exception as e:
-            return {"ok": False, "err": f"gift-fetch-fail:{e}"[:100], "value": None, "gap": None}
-        if not ltp:
-            return {"ok": False, "err": "gift-no-ltp", "value": None, "gap": None}
-        gap = round(ltp - prev_nifty_close, 2) if prev_nifty_close else None
-        gap_pct = round(gap / prev_nifty_close * 100, 2) if (gap is not None and prev_nifty_close) else None
-        return {"ok": True, "value": round(ltp, 2), "gap": gap, "gap_pct": gap_pct,
-                "prev_close": prev_nifty_close}
-    return _cached(f"gift:{prev_nifty_close}", 120, _build)
+            return {"ok": False, "err": str(e)[:100], "value": None, "gap": None}
+    return _cached("gift", 120, _build)
 
 # =================================================================== BIAS (auto 1-line)
 def _bias(india, flows, crypto, gift, events):
