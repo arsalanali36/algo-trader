@@ -261,7 +261,14 @@
   }
 
   function renderJourney() {
-    var tr = (S.data && S.data.trades) || [];
+    // equity curve = REALIZED P&L timeline → order trades by EXIT (not entry).
+    // copy so other renders keep the backend's entry-order; fall back to entry
+    // date/time when a trade has no exit stamp.
+    var tr = (((S.data && S.data.trades) || []).slice()).sort(function (a, b) {
+      var ka = (a.exit_date || a.entry_date || "") + " " + (a.exit_time || a.entry_time || "");
+      var kb = (b.exit_date || b.entry_date || "") + " " + (b.exit_time || b.entry_time || "");
+      return ka < kb ? -1 : ka > kb ? 1 : 0;
+    });
     if (!tr.length) { $("journey").innerHTML = '<div class="empty">No trades</div>'; return; }
     var W = 900, H = 170, pad = 10, cum = 0;
     var series = [0]; tr.forEach(function (t) { cum += t.net; series.push(cum); });
@@ -281,7 +288,7 @@
       '<line id="jvl" x1="0" y1="0" x2="0" y2="' + H + '" stroke="#8b949e" stroke-dasharray="3 3" style="display:none"/>' +
       "</svg>" +
       '<div id="jtip"></div>' +
-      '<div class="mut" style="font-size:11px;margin-top:4px">Cumulative net across ' + tr.length + " trades · end " + inr(cum) + " · hover for detail</div>";
+      '<div class="mut" style="font-size:11px;margin-top:4px">Cumulative net across ' + tr.length + " trades · by exit time · end " + inr(cum) + " · hover for detail</div>";
     var box = $("journey"); box.style.position = "relative"; box.innerHTML = svg;
     var svgEl = box.querySelector("svg"), vl = $("jvl"), tip = $("jtip");
     function onMove(clientX) {
