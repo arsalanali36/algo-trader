@@ -1534,7 +1534,7 @@
         axisLabels = ['Start'].concat(bucketKeys.map(k => _calPeriodLabel(k, mode)));
         sids.forEach(sid => {
           const perB = {};
-          byS[sid].forEach(t => { const k = _calGroupKey(t, mode); if (k !== '—') perB[k] = (perB[k] || 0) + (t.pnl || 0); });
+          byS[sid].forEach(t => { const k = _calGroupKey(t, mode); if (k !== '—') perB[k] = (perB[k] || 0) + _eqValOf(t); });
           let cum = 0; const arr = [0];
           bucketKeys.forEach(k => { cum += (perB[k] || 0); arr.push(cum); });
           series[sid] = arr;
@@ -1551,7 +1551,7 @@
         const cum = {}; sids.forEach(s => { cum[s] = 0; series[s] = [0]; });
         all.forEach(t => {
           const owner = t.strategy || t.strat || 'unknown';
-          cum[owner] = (cum[owner] || 0) + (t.pnl || 0);
+          cum[owner] = (cum[owner] || 0) + _eqValOf(t);
           sids.forEach(s => series[s].push(cum[s]));
         });
       }
@@ -1646,6 +1646,45 @@
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', sync); else sync();
     })();
 
+    // ---- Equity chart display options (⚙ gear popup) ---------------------------
+    // value: gross|net|tax (which P&L basis to plot); bars/markers/labels: overlays.
+    window._eqOpts = (function () {
+      const d = { value: 'gross', bars: false, markers: false, labels: false };
+      try { return Object.assign(d, JSON.parse(localStorage.getItem('eq_chart_opts') || '{}')); } catch (e) { return d; }
+    })();
+    function _eqOptsSave() { try { localStorage.setItem('eq_chart_opts', JSON.stringify(window._eqOpts)); } catch (e) {} }
+    // pick the selected value basis off a trade's pre-computed _gross/_net/_tax (set in calendarRender)
+    function _eqValOf(t) { const v = t['_' + ((window._eqOpts && window._eqOpts.value) || 'gross')]; return (v != null) ? v : (t.pnl || 0); }
+    function _eqRedraw() {
+      const all = window.currentCalendarTrades || [];
+      const tr = window.calSelectedDateFilter ? all.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter) : all;
+      drawEquityCurveChart('cal-equity-curve-container', tr);
+    }
+    window.eqSetValue = function (v) {
+      window._eqOpts.value = v; _eqOptsSave();
+      document.querySelectorAll('.eq-val-seg').forEach(s => s.classList.toggle('on', s.getAttribute('data-v') === v));
+      _eqRedraw();
+    };
+    window.eqToggleOpt = function (k, el) { window._eqOpts[k] = !!(el && el.checked); _eqOptsSave(); _eqRedraw(); };
+    function _eqGearSync(pop) {
+      const o = window._eqOpts;
+      pop.querySelectorAll('.eq-val-seg').forEach(s => s.classList.toggle('on', s.getAttribute('data-v') === o.value));
+      ['bars', 'markers', 'labels'].forEach(k => { const cb = pop.querySelector('[data-k="' + k + '"]'); if (cb) cb.checked = !!o[k]; });
+    }
+    window.eqGearToggle = function (ev) {
+      if (ev) ev.stopPropagation();
+      document.querySelectorAll('.eq-gear-pop').forEach(p => {
+        const open = p.style.display === 'block';
+        p.style.display = open ? 'none' : 'block';
+        if (!open) _eqGearSync(p);
+      });
+    };
+    document.addEventListener('click', function (e) {
+      document.querySelectorAll('.eq-gear-pop').forEach(p => {
+        if (p.style.display === 'block' && !p.contains(e.target) && !(e.target.closest && e.target.closest('.eq-gear-btn'))) p.style.display = 'none';
+      });
+    });
+
     function drawEquityCurveChart(containerId, trades) {
       const container = document.getElementById(containerId);
       if (!container) return;
@@ -1668,7 +1707,7 @@
       const _eqCmp = (typeof window.bsCompareActive === 'function') && window.bsCompareActive();
       const _rbOf = (t) => (_eqCmp && window.bsTradeRealBs)
         ? window.bsTradeRealBs(t, 'net')
-        : { real: (t.pnl || 0), bs: 0, ok: false };
+        : { real: _eqValOf(t), bs: 0, ok: false };
       const _eqTrades = _eqCmp ? trades.filter(t => _rbOf(t).ok) : trades;
 
       let cumPnL = 0, cumBs = 0;
@@ -1816,6 +1855,26 @@
       // Draw the area fill
       svg += `<path d="${areaPath}" fill="${fillGrad}" />`;
 
+      // Daily / per-bucket P&L bars (⚙ option) — each point's OWN value behind the
+      // cumulative line, on its own scale (per-bucket ≪ cumulative), anchored at ₹0.
+      if (window._eqOpts && window._eqOpts.bars) {
+        let maxBar = 0;
+        for (let i = 1; i < data.length; i++) maxBar = Math.max(maxBar, Math.abs(data[i].pnl || 0));
+        if (maxBar > 0) {
+          const zeroY = getY(0);
+          const barMax = chartHeight * 0.32;
+          const bw = Math.max(2, Math.min(16, (chartWidth / Math.max(1, data.length - 1)) * 0.5));
+          for (let i = 1; i < data.length; i++) {
+            const v = data[i].pnl || 0; if (!v) continue;
+            const h = (Math.abs(v) / maxBar) * barMax;
+            const x = getX(i) - bw / 2;
+            const y = v >= 0 ? zeroY - h : zeroY;
+            const col = v >= 0 ? '#3fb95055' : '#f8514955';
+            svg += `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" fill="${col}" rx="1"/>`;
+          }
+        }
+      }
+
       // Draw the stroke line
       svg += `<path d="${linePath}" fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
 
@@ -1846,6 +1905,20 @@
           const x = getX(idx);
           const label = data[idx].xLabel === 'Start' ? 'Start' : `T#${data[idx].xLabel}`;
           svg += `<text x="${x}" y="${paddingTop + chartHeight + 16}" fill="#8b949e" font-size="9" text-anchor="middle">${label}</text>`;
+        }
+      }
+
+      // Point markers + value labels (⚙ options) — markers on every point; labels
+      // show cumulative value, thinned when many points so they don't overlap.
+      if (window._eqOpts && (window._eqOpts.markers || window._eqOpts.labels)) {
+        const every = data.length > 16 ? Math.ceil((data.length - 1) / 14) : 1;
+        for (let i = 1; i < data.length; i++) {
+          const x = getX(i), y = getY(data[i].cumulative);
+          if (window._eqOpts.markers) svg += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.6" fill="${strokeColor}"/>`;
+          if (window._eqOpts.labels && (i % every === 0 || i === data.length - 1)) {
+            const cv = data[i].cumulative;
+            svg += `<text x="${x.toFixed(1)}" y="${(y - 6).toFixed(1)}" fill="#8b949e" font-size="8.5" text-anchor="middle">${(cv < 0 ? '-' : '') + '₹' + Math.round(Math.abs(cv)).toLocaleString('en-IN')}</text>`;
+          }
         }
       }
 

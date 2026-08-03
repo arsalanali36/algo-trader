@@ -114,6 +114,8 @@
       if (gl) gl.style.display = (pane === 'chart-gl') ? 'flex' : 'none';
       var eqs = document.getElementById('s2-eqseg');
       if (eqs) { eqs.style.display = (pane === 'chart-eq') ? 'flex' : 'none'; eqs.classList.toggle('on', !!window._eqPerStrategy); }
+      var eqg = document.getElementById('s2-eqgearwrap');
+      if (eqg) eqg.style.display = (pane === 'chart-eq') ? 'inline-block' : 'none';
       if (pane === 'chart-gl' && typeof window.renderPnlGraph === 'function') window.renderPnlGraph();
       if (pane === 'chart-dist') _s2Dist();
     }

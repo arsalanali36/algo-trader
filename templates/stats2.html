@@ -26,6 +26,15 @@
     #chart-eq.on,#chart-gl.on,#chart-dist.on{display:flex;flex-direction:column;flex:1;min-height:0}
     #cal-equity-curve-container{flex:1;min-height:230px}
     .eq-ps-btn.on{background:#1f6feb!important;border-color:#1f6feb!important;color:#fff!important}
+    .eq-gear-btn{background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:12px;padding:4px 8px;cursor:pointer;outline:none}
+    .eq-gear-btn:hover{background:#161b22;color:#e6edf3}
+    .eq-gear-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:400;width:210px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.55);text-align:left}
+    .eq-gear-lbl{font-size:10.5px;color:#6e7681;margin:2px 0 5px}
+    .eq-val-wrap{display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;margin-bottom:10px}
+    .eq-val-seg{flex:1;text-align:center;padding:4px 0;font-size:11px;color:#8b949e;cursor:pointer}
+    .eq-val-seg.on{background:#1f6feb;color:#fff;font-weight:600}
+    .eq-opt-row{display:flex;align-items:center;gap:7px;font-size:12px;color:#e6edf3;padding:4px 0;cursor:pointer}
+    .eq-opt-row input{accent-color:#1f6feb}
     .s2flexb{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px}
     .s2fs{padding:3px 8px;font-size:13px;border:1px solid #30363d;border-radius:6px;background:#21262d;color:#8b949e;cursor:pointer}
     /* compact calendar cells for the narrower left column */
@@ -238,6 +247,21 @@
               </select>
             </div>
             <button id="s2-eqseg" class="eq-ps-btn" onclick="toggleEqPerStrategy()" title="Har strategy ki alag equity line (contribution) — All-strategies view me, aur day-tile select pe us din ka per-strategy" style="display:flex;align-items:center;gap:5px;background:#0d1117;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer;outline:none">⑃ Per-strategy</button>
+            <span id="s2-eqgearwrap" style="display:inline-block;position:relative">
+              <button class="eq-gear-btn" onclick="eqGearToggle(event)" title="Equity chart options">⚙️</button>
+              <div class="eq-gear-pop" style="display:none">
+                <div class="eq-gear-lbl">Value</div>
+                <div class="eq-val-wrap">
+                  <span class="eq-val-seg" data-v="gross" onclick="eqSetValue('gross')">Gross</span>
+                  <span class="eq-val-seg" data-v="net" onclick="eqSetValue('net')">Net</span>
+                  <span class="eq-val-seg" data-v="tax" onclick="eqSetValue('tax')">Tax</span>
+                </div>
+                <div class="eq-gear-lbl">Show on chart</div>
+                <label class="eq-opt-row"><input type="checkbox" data-k="bars" onchange="eqToggleOpt('bars',this)"> Daily P&amp;L bars</label>
+                <label class="eq-opt-row"><input type="checkbox" data-k="markers" onchange="eqToggleOpt('markers',this)"> Point markers</label>
+                <label class="eq-opt-row"><input type="checkbox" data-k="labels" onchange="eqToggleOpt('labels',this)"> Value labels (₹)</label>
+              </div>
+            </span>
             <span class="s2fs" title="Full screen" onclick="s2Fs()">⛶</span>
           </div>
         </div>

@@ -2261,12 +2261,33 @@
 
     <!-- Equity Curve Card -->
     <div class="card" style="margin-top:16px; padding:16px 18px;">
-      <style>.eq-ps-btn{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer;outline:none}.eq-ps-btn.on{background:#1f6feb;border-color:#1f6feb;color:#fff}</style>
+      <style>.eq-ps-btn{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:11px;font-weight:600;padding:4px 9px;cursor:pointer;outline:none}.eq-ps-btn.on{background:#1f6feb;border-color:#1f6feb;color:#fff}
+      .eq-gear-btn{background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:12px;padding:4px 8px;cursor:pointer;outline:none}.eq-gear-btn:hover{background:#21262d;color:#e6edf3}
+      .eq-gear-pop{position:absolute;right:0;top:calc(100% + 6px);z-index:400;width:210px;background:#161b22;border:1px solid #30363d;border-radius:8px;padding:10px 12px;box-shadow:0 6px 20px rgba(0,0,0,.55);text-align:left;font-weight:400}
+      .eq-gear-lbl{font-size:10.5px;color:#6e7681;margin:2px 0 5px}
+      .eq-val-wrap{display:flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;margin-bottom:10px}
+      .eq-val-seg{flex:1;text-align:center;padding:4px 0;font-size:11px;color:#8b949e;cursor:pointer}.eq-val-seg.on{background:#1f6feb;color:#fff;font-weight:600}
+      .eq-opt-row{display:flex;align-items:center;gap:7px;font-size:12px;color:#e6edf3;padding:4px 0;cursor:pointer}.eq-opt-row input{accent-color:#1f6feb}</style>
       <h3
         style="color:#e6edf3; font-size:13px; font-weight:600; margin-bottom:12px; display:flex; align-items:center; gap:6px;">
         📈 Equity Curve (Cumulative P&amp;L)
         <span style="flex:1"></span>
         <button class="eq-ps-btn" onclick="toggleEqPerStrategy()" title="Har strategy ki alag equity line (contribution) — All-strategies view me, aur day-tile select pe us din ka per-strategy">⑃ Per-strategy</button>
+        <span style="position:relative">
+          <button class="eq-gear-btn" onclick="eqGearToggle(event)" title="Equity chart options">⚙️</button>
+          <div class="eq-gear-pop" style="display:none">
+            <div class="eq-gear-lbl">Value</div>
+            <div class="eq-val-wrap">
+              <span class="eq-val-seg" data-v="gross" onclick="eqSetValue('gross')">Gross</span>
+              <span class="eq-val-seg" data-v="net" onclick="eqSetValue('net')">Net</span>
+              <span class="eq-val-seg" data-v="tax" onclick="eqSetValue('tax')">Tax</span>
+            </div>
+            <div class="eq-gear-lbl">Show on chart</div>
+            <label class="eq-opt-row"><input type="checkbox" data-k="bars" onchange="eqToggleOpt('bars',this)"> Daily P&amp;L bars</label>
+            <label class="eq-opt-row"><input type="checkbox" data-k="markers" onchange="eqToggleOpt('markers',this)"> Point markers</label>
+            <label class="eq-opt-row"><input type="checkbox" data-k="labels" onchange="eqToggleOpt('labels',this)"> Value labels (₹)</label>
+          </div>
+        </span>
       </h3>
       <div id="cal-equity-curve-container" style="position:relative; width:100%; height:260px;">
         <!-- SVG Equity Curve will be drawn here -->
