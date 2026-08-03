@@ -148,15 +148,17 @@ const MB = (function(){
   }
   function emptyBox(msg, why){ return `<div class="empty">${msg}${why?`<span class="why">${why}</span>`:''}</div>`; }
 
-  function renderIndia(d){
+  function renderIndia(d, gift){
     $('india-when').textContent = d.ok && d.items[0] ? d.items[0].date : '';
-    if(!d.ok || !d.items.length){
+    const hasGift = gift && gift.ok && gift.value!=null;
+    if((!d.ok || !d.items.length) && !hasGift){
       $('india').innerHTML = emptyBox('India data VPS pe live hoga',
         'option-chain collector lake wahin chalta (local pe nahi)'); return;
     }
     let t = '<div class="tiles t4">';
-    d.items.forEach(it => t += tile(it.name, it.value, it.chg, it.chg_pct));
+    (d.items||[]).forEach(it => t += tile(it.name, it.value, it.chg, it.chg_pct));
     if(d.vix!=null) t += tile('INDIA VIX', d.vix, null, null);
+    if(hasGift) t += tile('GIFT NIFTY ⚡', gift.value, gift.gap, gift.gap_pct);
     t += '</div>';
     $('india').innerHTML = t;
   }
@@ -229,7 +231,7 @@ const MB = (function(){
       $('tb-day').textContent = (b.weekday||'') ;
       $('tb-gen').textContent = 'Snapshot: ' + (b.generated_at||'—');
       renderBias(b.bias);
-      renderIndia(b.india||{}); renderFlows(b.flows||{}); renderCrypto(b.crypto||{});
+      renderIndia(b.india||{}, b.gift||{}); renderFlows(b.flows||{}); renderCrypto(b.crypto||{});
       renderEvents(b.events||{}); renderReddit(b.reddit||{}); renderNews(b.news||{});
       const okc = [b.india,b.flows,b.crypto,b.news,b.events,b.reddit].filter(x=>x&&x.ok).length;
       $('foot').textContent = `${okc}/6 sections live · free sources: CoinGecko · RSS × 5 · NSE FII lake · option-chain lake`;

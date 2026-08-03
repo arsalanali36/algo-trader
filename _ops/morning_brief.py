@@ -44,6 +44,7 @@ except Exception:
 IST = timezone(timedelta(hours=5, minutes=30))
 _UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
        "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 # ------------------------------------------------------------------ tiny cache
 # per-section TTL cache — brief din me 2-3 baar khulta, har baar live fetch bekaar.
@@ -292,11 +293,66 @@ def get_flows():
                 "spot": col(last, "spot")}
     return _cached("flows", 300, _build)
 
-# =================================================================== GIFT (VPS/Dhan wire)
+# =================================================================== GIFT (Dhan LTP)
+# GIFT Nifty = NSE index instrument in Dhan scrip master: sec_id 5024, seg IDX_I.
+# Trades ~21h (NSE-IX) so it's live in Indian pre-market — best gap predictor.
+_GIFT_SEC_ID = "5024"
+
+def _dhan_index_ltp(sec_id, seg="IDX_I"):
+    """One-off rate-limited Dhan /v2/marketfeed/ltp for an index sec_id.
+    VPS-only (needs data/config.json jwt/client). DATA call = NOT IP-gated
+    (dashboard process ka IPv4-force waise bhi inherit hota hai). None on any fail."""
+    cfgp = os.path.join(ROOT, "data", "config.json")
+    with open(cfgp, encoding="utf-8") as f:
+        cfg = json.load(f)
+    tok, cid = cfg.get("jwt_token"), cfg.get("client_id")
+    if not tok or not cid:
+        return None
+    try:
+        import dhan_rate_limiter as _rl
+        _rl.set_context("MorningBrief:GIFT")
+        if not _rl.acquire("ltp"):
+            return None
+    except Exception:
+        pass  # limiter absent (local) → best-effort direct call
+    try:
+        import requests
+        r = requests.post("https://api.dhan.co/v2/marketfeed/ltp",
+                          json={seg: [int(sec_id)]},
+                          headers={"access-token": tok, "client-id": cid,
+                                   "Content-Type": "application/json"}, timeout=6)
+        if r.status_code == 429:
+            try:
+                import dhan_rate_limiter as _rl
+                _rl.note_429()
+            except Exception:
+                pass
+            return None
+        if r.status_code != 200:
+            return None
+        node = (r.json().get("data", {}) or {}).get(seg, {}) or {}
+        v = node.get(sec_id) or node.get(str(sec_id)) or {}
+        ltp = v.get("last_price") or v.get("ltp")
+        return float(ltp) if ltp else None
+    except Exception:
+        return None
+
 def get_gift(prev_nifty_close=None):
-    """GIFT Nifty vs prev NIFTY close. Dhan/NSE-IX — VPS pe wire hoga.
-    Abhi optional: creds/feed na ho to graceful skip."""
-    return {"ok": False, "err": "gift-wire-on-vps", "value": None, "gap": None}
+    """GIFT Nifty LTP + indicative gap vs prev NIFTY close.
+    gap = GIFT - prev_close (chhota futures basis include karta = indicative gap,
+    exact spot-gap nahi). Config/Dhan na mile (local) -> graceful skip."""
+    def _build():
+        try:
+            ltp = _dhan_index_ltp(_GIFT_SEC_ID, "IDX_I")
+        except Exception as e:
+            return {"ok": False, "err": f"gift-fetch-fail:{e}"[:100], "value": None, "gap": None}
+        if not ltp:
+            return {"ok": False, "err": "gift-no-ltp", "value": None, "gap": None}
+        gap = round(ltp - prev_nifty_close, 2) if prev_nifty_close else None
+        gap_pct = round(gap / prev_nifty_close * 100, 2) if (gap is not None and prev_nifty_close) else None
+        return {"ok": True, "value": round(ltp, 2), "gap": gap, "gap_pct": gap_pct,
+                "prev_close": prev_nifty_close}
+    return _cached(f"gift:{prev_nifty_close}", 120, _build)
 
 # =================================================================== BIAS (auto 1-line)
 def _bias(india, flows, crypto, gift, events):
@@ -349,7 +405,10 @@ def build_brief():
     crypto = get_crypto()
     news = get_news()
     events = get_events()
-    gift = get_gift()
+    # GIFT gap needs prev NIFTY close — pull it from the india section
+    _nifty = next((it.get("value") for it in india.get("items", [])
+                   if it.get("name") == "NIFTY 50"), None)
+    gift = get_gift(_nifty)
     cid, sec = _reddit_creds()
     reddit = get_reddit_buzz(cid, sec)
     bias = _bias(india, flows, crypto, gift, events)
