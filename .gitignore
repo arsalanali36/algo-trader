@@ -29,6 +29,10 @@ data/downloader_alert.json
 data/notifications.jsonl
 data/alert_ingest_seen.json
 data/error_watch_offsets.json
+# Broker balance snapshots + uploaded ledger CSVs/XLSX — REAL financial data.
+# algo-trader repo is PUBLIC → these must NEVER be committed (2026-08-03).
+data/broker_balance_history.json
+data/broker_ledger_*.json
 
 # Runtime data — local/VPS only, code nahi (large, har run badalta)
 _TRADING_DATA/
