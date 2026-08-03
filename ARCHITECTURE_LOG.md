@@ -15,6 +15,18 @@
 
 ---
 
+## 2026-08-03 — ☀️ Morning Brief page (`/brief`) — subha ek-nazar market snapshot
+**Status:** DONE + VPS-LIVE (`d2cc1b1`; audit 0 FAIL, algo-dashboard restart clean, `/brief`→302 `/api/morning-brief`→401 gated, zero log errors). Display-only (Rule 10), koi order/risk/live path nahi.
+**Layer:** ui + data (display)
+**Kya:** Subha aate hi ek scroll me poora market haal — India indices+VIX + FII/DII flows + PCR + crypto + top news + upcoming events + Reddit buzz + auto 1-line bias. Intent: ek nazar me "kya ho raha hai" samajh aaye.
+**Files:** `_ops/morning_brief.py` (naya, fail-safe aggregator + per-section TTL cache) · `templates/morning_brief.html` (naya, dark + mobile-ready, `/api/morning-brief` se render) · `trader_dashboard.py` (+2 routes, additive) · `static/js/topnav.js` (+"☀️ Brief" tab).
+**Sources (sab FREE):** india = option-chain collector lake (**Rule 6B** — `option_curves` reader reuse, ZERO Dhan call, wahi lake jo /curves+/gex) · flows = `fii_flow_view.series()` (free NSE FII/DII+PCR) · crypto = CoinGecko (no key) · news = 5× RSS merge+dedup (ET/Livemint/MC/NDTV/Hindu BL) · events = curated JSON (`data/brief_events.json`) + auto weekly-expiry · reddit = app-only OAuth (**plug-ready** — `nifty_config._morning_brief.reddit` client_id+secret daalte hi ON) · gift = Dhan/NSE stub (PENDING wire).
+**Kyun:** User ko roz subha manually 8-10 jagah (indices/FII/crypto/news/events) dekhni padti thi — ek page pe consolidate.
+**Verify:** local harness (real data 4/6) + VPS module-run (India NIFTY 24,575.9 +0.88% / BANKNIFTY +0.93% / VIX 11.83 / FII+DII/PCR real / crypto+news+events ok). GIFT + Reddit = follow-on.
+**Depends on:** option_chain_collector lake (VPS), fii_flow lake, internet (external free APIs).
+**Design decision:** global cues ke liye US/Asia individual indices NAHI (user call) — sirf GIFT Nifty (Dhan-only rule consistent; GIFT global overnight move already price karta). Free-source probe ne pehle Reddit(403 OAuth-needed)/Stooq(404)/BusinessStd(403) reject kiye — reliable set: CoinGecko+RSS+lakes.
+**PENDING:** (1) GIFT Nifty Dhan wire (VPS) — Dhan GIFT instrument availability check karni. (2) Reddit creds → 1 config block.
+
 ## 2026-08-03 — 4-feature batch: Report jump + chart quick-load + Only-Index default + Broker ledger graph
 **Status:** DONE + VPS-LIVE (`c40c1ca`; audit 0 FAIL, algo-dashboard restart clean, routes 401/302 gated, first balance snapshot seeded — matches RMS card exactly: Kite total ₹14,84,287). Display/config only, no order path.
 **Follow-ons (same day, all VPS-live):** `69629d3` XLSX ledger upload (Zerodha native download = .xlsx; shared `_rows_to_ledger` fed by CSV+XLSX via openpyxl) → user's real Zerodha ledger loaded (VH2762, 136 rows Feb→Aug, 13 fund events, 117-day real balance line). `0374d51` **gitignore `data/broker_balance_history.json` + `broker_ledger_*.json`** — REAL financial data, algo-trader repo is PUBLIC (local+VPS verified). `78a3355` chart **interactive hover** (crosshair+dot+tooltip: date+balance+that-day's fund add/withdraw) + **live Cash/Collateral/Total "Abhi" strip** per broker (collateral not in ledger CSV → from live snapshot; Zerodha ₹10.82L). `3d591b6` `has_balance` flag — Zerodha = real running balance, Dhan pay-in/out = cumulative net-fund-flow (no running-bal col, labeled honestly). **Dhan history** loaded from Money→Pay-Ins/Pay-Outs screenshots (no file/API; transcribed 21 tx, totals exact ₹4,32,952 in / ₹4,74,983.97 out; direct JSON write to preserve identical 06-Jul 08:05 ₹50k pair — dedupe would collapse). LESSONS: financial-data gitignore guard + identical-ledger-row dedupe caveat.
