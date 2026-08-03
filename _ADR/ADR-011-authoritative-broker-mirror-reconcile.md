@@ -62,3 +62,38 @@ alerts on ANY app-net ≠ broker-net.
 
 Related: LESSONS.md (2026-07-23 broker-mirror), ADR-009 (manual-exit robustness — the
 heuristic era this supersedes).
+
+## Addendum (2026-08-03, TRAP #170) — the last heuristic hole + the netting mismatch
+
+The original decision left the manual `/api/sync-positions` button on the retired
+`force_sync` heuristic ("stays for on-demand use", above). That was the last place the
+guesser survived, and it bit exactly as the class always did: a strategy's own open BUY
+was flat at the broker (its closing SELL had already been recorded separately by the
+authoritative mirror as a `broker_reconcile` leg) → `force_sync` marked the BUY
+`externally_closed` and, on the mirror-tagged SELL, `defer`-ed while still counting it as
+"cleared" — leaving one real round-trip split into a permanent phantom short the button
+falsely reported as fixed (BAJFINANCE 2026-08-03).
+
+Two compounding causes, two fixes:
+
+1. **Netting could not use the mirror's own records.** `order_store._net_rows` allowed a
+   cross-strategy close ONLY for `source='manual'` (the TRAP #145 guard). But the mirror
+   records an external close as `source='broker_reconcile'` — so it could never pair with
+   the strategy leg it closed. The authoritative record existed but was inert. **Fix:**
+   `_MANUAL_CLOSERS = {"manual", "broker_reconcile"}` — a mirror leg is broker truth and
+   may cross-net exactly like a manual close. This does NOT reopen strategy-vs-strategy
+   netting (a `broker_reconcile` leg is not a second strategy's position). Test:
+   `_DEV/tests/test_broker_reconcile_netting.py`.
+
+2. **The button still guessed.** **Fix:** `/api/sync-positions` now calls
+   `reconcile_broker.apply(dry_run=False)` — the SAME authoritative mirror the auto-loop
+   uses — not `force_sync`. It records confident external orders (idempotent by order_id)
+   and reports residual mismatches honestly; it never marks a strategy leg
+   `externally_closed` and never reports a "cleared" count for a no-op.
+
+Revised position: the retired heuristics (`force_sync`/`_run_sync`, `untracked_scan`,
+`reconcile_if_due`) are now off the AUTO path **and** the user-facing button. `force_sync`
+survives only as dead code + the `is_flat`/`is_flat_fresh` cache readers (which do their
+own fetch); it should not be re-wired to any UI. ONE reconciler, everywhere.
+
+Related: LESSONS.md TRAP #170, memory `project_code3b_broker_reconcile_netting`.
