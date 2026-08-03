@@ -190,68 +190,90 @@ def _find_col(norm_headers, *needles):
     return None
 
 
-def parse_ledger_csv(csv_text):
-    """Tolerant broker-ledger CSV parser (Zerodha statement / Dhan ledger — column
-    naming differs). Returns (rows, warning). rows sorted by date:
+def _rows_to_ledger(all_rows):
+    """Shared 2D-rows → ledger parser (fed by BOTH the CSV and the XLSX path).
+    Tolerant of Zerodha statement / Dhan ledger column naming + a preamble before
+    the header (Zerodha xlsx has Client-ID / 'Ledger for…' rows first) + a leading
+    empty column. Returns (rows, warning). rows sorted by date:
       {date, particulars, debit, credit, amount(=credit-debit), balance, fund}
     fund=True when the row is a deposit/withdrawal (not a trade settlement)."""
+    all_rows = [r for r in all_rows if any(str(c if c is not None else "").strip() for c in r)]
+    if not all_rows:
+        return [], "empty file"
+    # header = first row containing a date-ish AND a debit/credit/balance-ish col
+    # (scan generously — Zerodha xlsx preamble pushes it a few rows down)
+    hidx = 0
+    for i, r in enumerate(all_rows[:15]):
+        nk = [_norm_key(c) for c in r]
+        has_date = any("date" in k or "particular" in k or "narration" in k for k in nk)
+        has_amt = any(("debit" in k or "credit" in k or "balance" in k or k == "dr" or k == "cr") for k in nk)
+        if has_date and has_amt:
+            hidx = i
+            break
+    headers = list(all_rows[hidx])
+    norm_headers = [(_norm_key(h), h) for h in headers]
+    date_c = _find_col(norm_headers, "postingdate", "valuedate", "txndate", "date")
+    bal_c = _find_col(norm_headers, "netbalance", "runningbalance", "closingbalance", "balance")
+    deb_c = _find_col(norm_headers, "debit", "withdrawal", "dr")
+    cred_c = _find_col(norm_headers, "credit", "deposit", "cr")
+    desc_c = _find_col(norm_headers, "particular", "narration", "description", "remark", "voucher", "detail")
+    if not date_c:
+        return [], "no date column found — is this a ledger file (Zerodha statement / Dhan ledger)?"
+    out = []
+    for row in all_rows[hidx + 1:]:
+        r = dict(zip(headers, row))
+        d = _parse_date(r.get(date_c))
+        if not d:
+            continue                      # rows without a date (Opening Balance, totals) skipped
+        deb = _to_float(r.get(deb_c)) if deb_c else 0.0
+        cred = _to_float(r.get(cred_c)) if cred_c else 0.0
+        desc = str(r.get(desc_c) if r.get(desc_c) is not None else "").strip() if desc_c else ""
+        _bv = r.get(bal_c)
+        bal = _to_float(_bv) if (bal_c and str(_bv if _bv is not None else "").strip()) else None
+        amt = round(cred - deb, 2)
+        out.append({
+            "date": d, "particulars": desc[:120],
+            "debit": round(deb, 2), "credit": round(cred, 2),
+            "amount": amt, "balance": bal,
+            "fund": bool(_FUND_RX.search(desc)) if desc else False,
+        })
+    out.sort(key=lambda x: (x["date"], ))
+    warn = "" if out else "0 rows parsed — check the file format"
+    return out, warn
+
+
+def parse_ledger_csv(csv_text):
+    """Tolerant broker-ledger CSV parser → _rows_to_ledger."""
     try:
-        # sniff: some exports have a preamble line before the header
-        text = csv_text.lstrip("﻿")
-        rdr = _csv.reader(_io.StringIO(text))
-        all_rows = [r for r in rdr if any((c or "").strip() for c in r)]
-        if not all_rows:
-            return [], "empty file"
-        # header = first row containing a date-ish AND a debit/credit/balance-ish col
-        hidx = 0
-        for i, r in enumerate(all_rows[:8]):
-            nk = [_norm_key(c) for c in r]
-            has_date = any("date" in k or "particular" in k or "narration" in k for k in nk)
-            has_amt = any(("debit" in k or "credit" in k or "balance" in k or k == "dr" or k == "cr") for k in nk)
-            if has_date and has_amt:
-                hidx = i
-                break
-        headers = all_rows[hidx]
-        norm_headers = [(_norm_key(h), h) for h in headers]
-        date_c = _find_col(norm_headers, "postingdate", "valuedate", "txndate", "date")
-        bal_c = _find_col(norm_headers, "netbalance", "runningbalance", "closingbalance", "balance")
-        deb_c = _find_col(norm_headers, "debit", "withdrawal", "dr")
-        cred_c = _find_col(norm_headers, "credit", "deposit", "cr")
-        desc_c = _find_col(norm_headers, "particular", "narration", "description", "remark", "voucher", "detail")
-        if not date_c:
-            return [], "no date column found — is this a ledger CSV?"
-        out = []
-        for row in all_rows[hidx + 1:]:
-            r = dict(zip(headers, row))
-            d = _parse_date(r.get(date_c))
-            if not d:
-                continue
-            deb = _to_float(r.get(deb_c)) if deb_c else 0.0
-            cred = _to_float(r.get(cred_c)) if cred_c else 0.0
-            desc = str(r.get(desc_c) or "").strip() if desc_c else ""
-            bal = _to_float(r.get(bal_c)) if (bal_c and str(r.get(bal_c) or "").strip()) else None
-            amt = round(cred - deb, 2)
-            out.append({
-                "date": d, "particulars": desc[:120],
-                "debit": round(deb, 2), "credit": round(cred, 2),
-                "amount": amt, "balance": bal,
-                "fund": bool(_FUND_RX.search(desc)) if desc else False,
-            })
-        out.sort(key=lambda x: (x["date"], ))
-        warn = "" if out else "0 rows parsed — check the CSV format"
-        return out, warn
+        rdr = _csv.reader(_io.StringIO(csv_text.lstrip("﻿")))
+        return _rows_to_ledger(list(rdr))
     except Exception as e:
         return [], f"parse error: {e}"
 
 
-def import_ledger(broker, csv_text):
-    """Parse + merge a ledger CSV into data/broker_ledger_<broker>.json.
-    Idempotent: dedupe by (date, particulars, debit, credit) so re-uploading the
-    same statement is a no-op; a superset (more history) just adds the new rows."""
+def parse_ledger_xlsx(file_bytes):
+    """Zerodha/Dhan ledger XLSX (the native download format) → _rows_to_ledger.
+    Picks the first sheet with data; cells (datetime/float) stringify cleanly for
+    _parse_date/_to_float."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(_io.BytesIO(file_bytes), data_only=True)
+        for ws in wb.worksheets:
+            rows = [list(r) for r in ws.iter_rows(values_only=True)]
+            if any(any(str(c if c is not None else "").strip() for c in r) for r in rows):
+                return _rows_to_ledger(rows)
+        return [], "empty workbook"
+    except Exception as e:
+        return [], f"xlsx parse error: {e}"
+
+
+def _merge_ledger(broker, rows, warn):
+    """Merge parsed ledger rows into data/broker_ledger_<broker>.json. Idempotent:
+    dedupe by (date, particulars, debit, credit) so re-uploading the same statement
+    is a no-op; a superset (more history) just adds the new rows."""
     broker = (broker or "").lower()
     if broker not in _BROKERS:
         return {"ok": False, "error": f"unknown broker {broker}"}
-    rows, warn = parse_ledger_csv(csv_text)
     if not rows:
         return {"ok": False, "error": warn or "no rows"}
     path = _LEDGER_PATH.format(broker)
@@ -271,6 +293,18 @@ def import_ledger(broker, csv_text):
         existing.sort(key=lambda x: x["date"])
         _write_json(path, existing)
     return {"ok": True, "added": added, "total": len(existing), "warn": warn}
+
+
+def import_ledger(broker, csv_text):
+    """Public: import a CSV ledger."""
+    rows, warn = parse_ledger_csv(csv_text)
+    return _merge_ledger(broker, rows, warn)
+
+
+def import_ledger_xlsx(broker, file_bytes):
+    """Public: import an XLSX ledger (Zerodha/Dhan native download)."""
+    rows, warn = parse_ledger_xlsx(file_bytes)
+    return _merge_ledger(broker, rows, warn)
 
 
 # ------------------------------------------------------------------ view ----
@@ -356,6 +390,7 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser()
     ap.add_argument("--snapshot", action="store_true")
     ap.add_argument("--import-csv", dest="imp", nargs=2, metavar=("BROKER", "PATH"))
+    ap.add_argument("--import-xlsx", dest="impx", nargs=2, metavar=("BROKER", "PATH"))
     ap.add_argument("--view", action="store_true")
     a = ap.parse_args()
     if a.snapshot:
@@ -363,6 +398,9 @@ if __name__ == "__main__":
     elif a.imp:
         with open(a.imp[1], "r", encoding="utf-8", errors="replace") as f:
             print(import_ledger(a.imp[0], f.read()))
+    elif a.impx:
+        with open(a.impx[1], "rb") as f:
+            print(import_ledger_xlsx(a.impx[0], f.read()))
     elif a.view:
         print(_json.dumps(view(), indent=2, default=str))
     else:

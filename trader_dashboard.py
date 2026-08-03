@@ -2190,8 +2190,11 @@ def api_broker_ledger_upload():
     if not f:
         return jsonify({"ok": False, "error": "no file"})
     try:
-        text = f.read().decode('utf-8', errors='replace')
-        return jsonify(broker_ledger.import_ledger(broker, text))
+        name = (f.filename or '').lower()
+        raw = f.read()
+        if name.endswith('.xlsx') or name.endswith('.xls'):
+            return jsonify(broker_ledger.import_ledger_xlsx(broker, raw))
+        return jsonify(broker_ledger.import_ledger(broker, raw.decode('utf-8', errors='replace')))
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)})
 
