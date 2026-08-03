@@ -170,11 +170,15 @@
     .deskbtn{display:none}
     .mobbtn{display:inline-block;order:3}
     .hint{display:none}
-    /* brand hidden (gnav above shows the app; date input shows the date) so ALL
-       controls fit ONE line → max chart space */
-    .brand{display:none}
-    .barrow{width:auto;flex:1;gap:5px;flex-wrap:nowrap;order:2;overflow-x:auto}
-    .seg .lg{display:none} .seg .sm{display:inline}
+    /* header (📆 DAILY REPORT) + All/Real/Paper + Daily/Weekly/Monthly switch
+       stay VISIBLE on mobile; barrow WRAPS to its own line so the segments never
+       get buried in a side-scroll (the old max-chart one-liner hid them) */
+    .brand{display:flex}
+    .brand b{font-size:13px}
+    .brand small{font-size:10px}
+    .barrow{width:100%;gap:6px;flex-wrap:wrap;order:4}
+    .barrow .datenav{margin-left:0}
+    .seg .lg{display:inline} .seg .sm{display:none}
     .seg button{padding:5px 7px;font-size:11px}
     .datenav{padding:1px}
     .datenav .d{width:84px;font-size:10.5px}
