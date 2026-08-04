@@ -14,11 +14,9 @@
 
   // in-page dashboard tabs → deep-link; cross-page → real routes
   var TABS = [
-    { href: '/brief',        label: '☀️ Brief' },
     { href: '/?tab=log',     label: 'Logs' },
     { href: '/?tab=orders',  label: '📒 Orders & P&L' },
     { href: '/stats2',       label: '📊 Stats 2' },
-    { href: '/fii-flow',     label: '🏦 FII Flow' },
     { href: '/?tab=risk',    label: '⚠️ Risk' },
     { href: '/registry2',    label: '🗂️ Strategies' }
   ];
@@ -26,6 +24,8 @@
     { href: '/report',        label: '📆 Daily Report' },
     { href: '/reports',       label: '📋 EOD Reports' },
     { href: '/intervention',  label: '🖐 Intervention' },
+    { href: '/brief',         label: '☀️ Brief' },
+    { href: '/fii-flow',      label: '🏦 FII Flow' },
     { href: '/presentations', label: '🎬 YT Presentations' },
     { href: '/sl-map',        label: '🛡️ SL Map' }
   ];
