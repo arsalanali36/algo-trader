@@ -70,6 +70,7 @@ TRADER_SCRIPTS = {
     "orb_overnight": TRADERS_DIR / "orb_overnight_trader.py",    # 00.08 overnight ORB (positional, next-day 09:20)
     "straddle":   TRADERS_DIR / "straddle_trader.py",            # 01 straddle_v1
     "strangle":   TRADERS_DIR / "strangle_trader.py",            # 00.07 strangle_v1 (fwd-paper, failed-sig)
+    "bnf_strangle": TRADERS_DIR / "bnf_strangle_trader.py",      # 02.10 bnf_strangle_v1 (fwd-paper, naked short-vol)
     "dvert":      TRADERS_DIR / "02_debit_vertical_trader.py",   # 02 dvert_v1
     "orbst":      TRADERS_DIR / "03_orbst_trader.py",            # 03 orbst_v1
     "chainzone":  TRADERS_DIR / "04_chainzone_trader.py",        # 04 chainzone_v1

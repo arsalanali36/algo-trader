@@ -328,6 +328,18 @@
    "structure": "Short straddle (auto-rolled)",
    "desc": "ATM short straddle jo spot ~1 strike shift hone pe naye ATM pe roll hota hai — 6-rule gate (min-distance/confirmation/cooldown/premium-benefit/time-of-day/max-rolls). Self-contained: apna initial straddle khud kholta hai, phir har 5-min candle pe roll evaluate. PAPER + default OFF (backtest nahi hai — Rule 10). ADR-004 roller spec."
   },
+  "02.10": {
+   "name": "BNF 9:20 Short Strangle",
+   "config_key": "bnf_strangle_v1",
+   "slug": "bnf_920_strangle",
+   "live_file": "strategies/live/bnf_strangle_trader.py",
+   "status": "paper",
+   "legs": 2,
+   "instrument": "BANKNIFTY",
+   "hold": "Intraday",
+   "structure": "Short strangle (naked)",
+   "desc": "BankNifty 09:20 SHORT strangle — 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 real premium: Sharpe 3.05, +Rs8.5L (lot 35), worst din -Rs7,298; har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi → paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
+  },
   "03.01": {
    "name": "Pivot-Extreme Continuation",
    "config_key": null,

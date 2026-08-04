@@ -290,6 +290,7 @@ STRATEGIES = {
     # 00.07 = Long Strangle @ ORB (OTM CE+PE buy, off=2, win 11-13). FORWARD-PAPER only —
     # failed sig p=0.072 + loses on real premium (bs_vs_reallake). Watch-only.
     "strangle": {"script": str(TRADERS_DIR / "strangle_trader.py"), "log": BASE_DIR / "logs/strangle_v1.log", "cfg": TC_FILE, "grep": "strangle_trader"},
+    "bnf_strangle": {"script": str(TRADERS_DIR / "bnf_strangle_trader.py"), "log": BASE_DIR / "logs/bnf_strangle_v1.log", "cfg": TC_FILE, "grep": "bnf_strangle_trader"},
     # mission numbering (user 2026-07-10): 01=straddle (above), 02=debit vertical, 03=ORB+Supertrend
     "dvert":    {"script": str(TRADERS_DIR / "02_debit_vertical_trader.py"), "log": BASE_DIR / "logs/dvert_v1.log", "cfg": TC_FILE, "grep": "02_debit_vertical_trader"},
     "orbst":    {"script": str(TRADERS_DIR / "03_orbst_trader.py"), "log": BASE_DIR / "logs/orbst_v1.log", "cfg": TC_FILE, "grep": "03_orbst_trader"},
