@@ -109,6 +109,7 @@
     <div class="spin" id="spin"><div class="dot"></div><div>Reconstructing from lake… (~15 sec pehli baar)</div></div>
     <div id="out" style="display:none">
       <div class="rhd" id="rhd"></div>
+      <div id="warns"></div>
       <div class="tot" id="totbox"><div><div class="l">Net P&amp;L (gross)</div><div class="b" id="totv">—</div></div>
         <span class="badge" id="mv"></span><span class="src" id="src"></span></div>
       <table id="legtbl"><thead><tr><th>Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
@@ -212,8 +213,18 @@ function render(r){
   const up=(r.move||0)>=0, mv=$('mv');
   if(r.spot_e!=null){ mv.className='badge '+(up?'up':'dn'); mv.textContent=`Spot ${r.spot_e.toLocaleString('en-IN')} → ${r.spot_x.toLocaleString('en-IN')} (${up?'+':'−'}${Math.abs(r.move)})`; } else mv.textContent='';
   $('src').textContent = r.source==='lake'?'historical · BS greeks':'live collector · real greeks';
+  // Leg(s) whose requested entry/exit time couldn't be honored (strike out of the
+  // collector's captured band at that time) — show it loud, don't pretend it opened on time.
+  const ws=(r.warnings||[]);
+  $('warns').innerHTML = ws.length ? `<div style="border:1px solid var(--amber);background:rgba(210,153,34,.10);border-radius:8px;padding:9px 11px;margin:8px 0 4px;font-size:12px;line-height:1.5">
+      <b style="color:var(--amber)">⚠️ Entry/exit time honor nahi hua</b> — collector har minute sirf ~ATM±10 strikes store karta hai:
+      <ul style="margin:6px 0 0;padding-left:18px">${ws.map(w=>`<li style="margin:2px 0">${w}</li>`).join('')}</ul>
+      <div style="color:var(--dim);margin-top:6px">Fix: strike ATM ke paas rakho, ya entry time aisa chuno jab spot us strike ke kareeb ho.</div>
+    </div>` : '';
   $('legtbl').querySelector('tbody').innerHTML=r.legs.map(l=>{const c=l.pnl>=0?'pos':'neg2';
-    return `<tr><td>${l.label}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—'}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
+    const eb=l.entry_off?` <span title="requested ${r.req_entry_hm}, actual ${l.e_t}" style="color:var(--amber);font-size:10px">⚠${l.e_t}</span>`:'';
+    const xb=l.exit_off?` <span title="requested ${r.req_exit_hm}, actual ${l.x_t}" style="color:var(--amber);font-size:10px">⚠${l.x_t}</span>`:'';
+    return `<tr><td>${l.label}${eb}${xb}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—'}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
   renderMtm(r);
   const items=[['Decay',r.decay,'var(--green)'],['Price move',r.price,'var(--blue)'],['IV crush',r.iv,'var(--amber)']];
   const MAX=Math.max(1,...items.map(i=>Math.abs(i[1])))*1.18, mid=60;

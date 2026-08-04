@@ -39,6 +39,23 @@ def _f(x):
     return _oc._f(x)
 
 
+def _hm2m(hm):
+    """'HH:MM' -> minutes since midnight, or None if unparseable."""
+    try:
+        h, m = str(hm)[:5].split(":")
+        return int(h) * 60 + int(m)
+    except Exception:
+        return None
+
+
+# How far (minutes) a leg's ACTUAL entry/exit snapshot may drift from the requested
+# time before we flag it. The collector only stores ~ATM±10 strikes per minute, so a
+# strike that's far OTM at the requested time simply isn't in the chain yet and its
+# first available snapshot lands much later (or an earlier last-known on exit). We warn
+# instead of silently pretending the trade opened/closed at the asked time.
+_TIME_TOL_MIN = 5
+
+
 # ---------------------------------------------------------------- Black-Scholes
 _bs = None
 
@@ -447,6 +464,8 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     out_legs, tot = [], 0.0
     tot_price = tot_iv = 0.0
     e_spot = data["legs"][0]["e_spot"]; x_spot = data["legs"][0]["x_spot"]
+    req_e = _hm2m(entry_hm); req_x = _hm2m(exit_hm)   # requested entry/exit (minutes)
+    warnings = []
     for lg, d in zip(legs, data["legs"]):
         sell = lg["side"].upper() == "SELL"
         dP = (d["x_prem"] - d["e_prem"])           # premium change (per unit)
@@ -459,12 +478,29 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
         pnl_price = s * price_dP * lot
         pnl_iv = s * iv_dP * lot
         tot += pnl; tot_price += pnl_price; tot_iv += pnl_iv
+        label = f"{lg['side'].title()} {int(lg['strike'])} {lg['type']}"
+        # Did this leg actually open/close at the requested time? The collector stores only
+        # ~ATM±10 strikes/minute, so a far-OTM strike isn't in the chain until spot moves
+        # into range — its first snapshot lands late (entry) or its last leaves early (exit).
+        act_e = _hm2m(d.get("e_t")); act_x = _hm2m(d.get("x_t"))
+        entry_off = (req_e is not None and act_e is not None and act_e - req_e > _TIME_TOL_MIN)
+        exit_off = (req_x is not None and act_x is not None and req_x - act_x > _TIME_TOL_MIN)
+        if entry_off:
+            warnings.append(f"{label}: entry {entry_hm} pe chain me nahi tha — pehla real data "
+                            f"{d.get('e_t')} ka (strike us waqt captured band se bahar). "
+                            f"Entry price is leg ke liye {d.get('e_t')} ka hai, {entry_hm} ka nahi.")
+        if exit_off:
+            warnings.append(f"{label}: exit {exit_hm} tak data nahi — aakhri available snapshot "
+                            f"{d.get('x_t')} ka (strike tab tak band se nikal gaya). "
+                            f"Exit price {d.get('x_t')} ka hai, {exit_hm} ka nahi.")
         out_legs.append({
-            "label": f"{lg['side'].title()} {int(lg['strike'])} {lg['type']}",
+            "label": label,
             "side": lg["side"].upper(), "strike": lg["strike"], "type": lg["type"],
             "entry": round(d["e_prem"], 1), "exit": round(d["x_prem"], 1), "pnl": round(pnl),
             "e_iv": round(d["e_iv"], 1) if d["e_iv"] is not None else None,
             "x_iv": round(d["x_iv"], 1) if d["x_iv"] is not None else None,
+            "e_t": d.get("e_t"), "x_t": d.get("x_t"),   # this leg's ACTUAL entry/exit time
+            "entry_off": entry_off, "exit_off": exit_off,
         })
     decay = tot - tot_price - tot_iv       # residual = theta + higher-order → three sum to total
     # net credit collected at entry (SELL premium in, BUY premium out) × lot
@@ -490,4 +526,5 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
         "move": round((x_spot - e_spot)) if (e_spot and x_spot) else None,
         "legs": out_legs, "total": round(tot), "credit": round(credit),
         "decay": round(decay), "price": round(tot_price), "iv": round(tot_iv),
+        "warnings": warnings, "req_entry_hm": entry_hm, "req_exit_hm": exit_hm,
     }
