@@ -74,13 +74,15 @@ def collect_trades(g):
         slip = M.bs.slip_cost_leg(pce, xce, lot) + M.bs.slip_cost_leg(ppe, xpe, lot)
         net = gross - fee - slip
         di = day_idx[d]
+        et, xt = pd.Timestamp(DT[e]), pd.Timestamp(DT[xb])   # REAL entry/exit timestamps (intraday)
         trades.append(dict(
             side="short-vol", struct="short-strangle", atm=int(atmk),
-            entry_dt=str(pd.Timestamp(d)), exit_dt=str(pd.Timestamp(d)),
+            entry_dt=str(et), exit_dt=str(xt),
             entry=round(credit, 2), exit=round(debit, 2),
             entry_prem=round(credit, 2), exit_prem=round(debit, 2),
             spot_in=round(float(SPOT[e]), 1), spot_out=round(float(SPOT[xb]), 1),
-            points=round(credit - debit, 2), qty=lot, bars=int(xb - e),
+            points=round(credit - debit, 2), qty=lot,
+            bars=int(round((xt - et).total_seconds() / 60)),   # minutes held (tf=1m → durStr correct)
             fee=round(fee + slip, 0), pnl_net=round(net, 1), pnl_gross=round(gross, 1),
             entry_i=di, exit_i=di, reason={"target": "TP 50pt", "SL": "SL 50pt",
                                            "3:15/2:55": "EOD 14:55"}[reason]))
@@ -157,7 +159,7 @@ def main():
         "window": [str(daily["day"].iloc[0]), str(daily["day"].iloc[-1])],
         "days": int(daily["day"].nunique()), "start_cap": engine.START_CAP,
         "design": "02.10 BankNifty 9:20 SHORT strangle — 6-strike OTM, 50/50pt (REAL premium lake)",
-        "design_key": "bnf_strangle", "slug": SLUG, "tf": "intraday",
+        "design_key": "bnf_strangle", "slug": SLUG, "tf": "1m",
         "instrument": "BANKNIFTY options", "lot_size": 30, "lots": 1,
         "dna": dna, "passes": ["instrument", "rms", "bs"],
         "periods": [p for p in ("full", "train", "oos") if f"bs|{p}" in combos],
@@ -178,7 +180,7 @@ def main():
 
     bs_m = combos["bs|full"]["metrics"]
     meta = {"slug": SLUG, "design": "bnf_strangle", "title": "02.10 - BNF 9:20 Short Strangle",
-            "tf": "intraday", "params": {"off": N, "tp_pt": TGT, "sl_pt": SL}, "exit": "tp50/sl50pt",
+            "tf": "1m", "params": {"off": N, "tp_pt": TGT, "sl_pt": SL}, "exit": "tp50/sl50pt",
             "instrument": "BANKNIFTY options", "lot_size": 30,
             "window": out["meta"]["window"], "days": out["meta"]["days"],
             "significant": True,

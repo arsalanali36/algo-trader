@@ -2,7 +2,7 @@
  "slug": "bnf_920_strangle",
  "design": "bnf_strangle",
  "title": "02.10 - BNF 9:20 Short Strangle",
- "tf": "intraday",
+ "tf": "1m",
  "params": {
   "off": 6,
   "tp_pt": 50,
