@@ -13,11 +13,19 @@
     const STRADDLE_SOURCES = ['straddle_920', 'straddle_alert', 'straddle_manual'];
     const STRADDLE_ROLLER = 'atm_straddle_roller';
     const STRADDLE_LOTS_IDS = new Set([...STRADDLE_SOURCES, STRADDLE_ROLLER]);
+    // Generic single-lot-scalable strategies: a plain config_key with a lot field
+    // (NOT the shared _auto_straddle.lots). Add a config_key -> lot-field here to give
+    // any strategy a "🔢 Lots ⚙" control. BNF strangle scales cleanly 1→N (edge is
+    // lot-independent; only absolute ₹ + margin scale). Its lot field is `qty`.
+    const LOTS_GENERIC = { bnf_strangle_v1: 'qty' };
+    function _genLotsField(id) { return LOTS_GENERIC[String(id).toLowerCase()] || LOTS_GENERIC[id]; }
     function _isStraddleSource(id) { return STRADDLE_SOURCES.includes(String(id).toLowerCase()); }
     function _straddleCurLots(id) {
       const c = (typeof GLOBAL_CONFIG === 'object' && GLOBAL_CONFIG) || {};
-      const node = _isStraddleSource(id) ? (c._auto_straddle || {}) : (c[STRADDLE_ROLLER] || {});
-      const v = parseInt(node.lots, 10);
+      const gf = _genLotsField(id);
+      let v;
+      if (gf) v = parseInt((c[id] || {})[gf], 10);
+      else { const node = _isStraddleSource(id) ? (c._auto_straddle || {}) : (c[STRADDLE_ROLLER] || {}); v = parseInt(node.lots, 10); }
       return (v && v >= 1) ? v : 1;
     }
     function _straddleLotsBtn(id) {
@@ -27,11 +35,14 @@
     }
     function openStraddleLots(id) {
       const isSrc = _isStraddleSource(id);
+      const gf = _genLotsField(id);
       const cur = _straddleCurLots(id);
       const label = (typeof regLabel === 'function' && regLabel(id)) || id;
-      const note = isSrc
-        ? '⚠️ Ye lots <b>teeno auto-straddle sources</b> (9:20 / alert / manual) ke liye SHARED hai — inka ek hi config value hai (<code>_auto_straddle.lots</code>). Paper-locked.'
-        : 'Auto-rolling ATM straddle ke apne lots (<code>atm_straddle_roller.lots</code>). Paper-locked.';
+      const note = gf
+        ? ('Is strategy ke apne lots (<code>' + id + '.' + gf + '</code>). Edge <b>lot-independent</b> hai — 1→N wahi Sharpe/win% (sirf ₹ aur margin scale hote). ⚠️ Naked seller — risk bhi utna hi guna badhta (worst din N×), aur bade lots pe RMS capital gate size-down/block kar sakta. Paper.')
+        : isSrc
+          ? '⚠️ Ye lots <b>teeno auto-straddle sources</b> (9:20 / alert / manual) ke liye SHARED hai — inka ek hi config value hai (<code>_auto_straddle.lots</code>). Paper-locked.'
+          : 'Auto-rolling ATM straddle ke apne lots (<code>atm_straddle_roller.lots</code>). Paper-locked.';
       let m = document.getElementById('straddle-lots-modal');
       if (!m) { m = document.createElement('div'); m.id = 'straddle-lots-modal'; document.body.appendChild(m); }
       m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10002;display:flex;align-items:center;justify-content:center';
@@ -58,7 +69,16 @@
       if (!v || v < 1) { if (msg) { msg.style.color = '#f85149'; msg.textContent = 'Lots >= 1 hona chahiye'; } return; }
       if (msg) { msg.style.color = '#6e7681'; msg.textContent = 'Saving…'; }
       try {
-        if (_isStraddleSource(id)) {
+        const gf = _genLotsField(id);
+        if (gf) {
+          // generic strategy (e.g. bnf_strangle_v1.qty): whole-file RMW via /api/config,
+          // set ONLY <id>.<field>, keep everything else verbatim (incl. mode/active).
+          const r = await fetch('/api/config'); const cfg = await r.json();
+          if (!cfg || !cfg[id]) throw new Error('config for ' + id + ' missing');
+          cfg[id][gf] = v;
+          const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+          if (!res.ok) throw new Error('config save failed');
+        } else if (_isStraddleSource(id)) {
           // dedicated server-side RMW endpoint; keeps mode paper-locked server-side
           const res = await fetch('/api/auto-straddle/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lots: v }) });
           const j = await res.json();
@@ -833,7 +853,7 @@
             <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
           </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
             title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps + Aggressive graph preview) — blank = global fallback"
-            style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button>${_rlc(id) === STRADDLE_ROLLER ? ' ' + _straddleLotsBtn(id) : ''}</div></td>
+            style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button>${(_rlc(id) === STRADDLE_ROLLER || _genLotsField(id)) ? ' ' + _straddleLotsBtn(id) : ''}</div></td>
       <td class="psadv"><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-rs-${id}" type="number" step="1" placeholder="global"
