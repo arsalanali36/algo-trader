@@ -338,7 +338,7 @@
    "instrument": "BANKNIFTY",
    "hold": "Intraday",
    "structure": "Short strangle (naked)",
-   "desc": "BankNifty 09:20 SHORT strangle — 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 real premium: Sharpe 3.05, +Rs8.5L (lot 35), worst din -Rs7,298; har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi → paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
+   "desc": "BankNifty 09:20 SHORT strangle — 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 REAL premium lake (no BS) + real Zerodha charges + DOM slip + date-aware lot (25/15/30): Sharpe 2.8, +Rs5.76L, worst din -Rs3,182 (~-Rs6k at current lot 30); har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi → paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
   },
   "03.01": {
    "name": "Pivot-Extreme Continuation",

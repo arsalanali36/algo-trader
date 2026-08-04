@@ -10,7 +10,7 @@
  },
  "exit": "tp50/sl50pt",
  "instrument": "BANKNIFTY options",
- "lot_size": 35,
+ "lot_size": 30,
  "window": [
   "2021-08-04",
   "2026-07-15"
@@ -18,15 +18,15 @@
  "days": 1221,
  "significant": true,
  "bs_full": {
-  "sharpe": 2.976,
-  "net_pct": 85.159,
-  "maxdd": -2.712,
-  "win_rate": 61.612,
+  "sharpe": 2.8,
+  "net_pct": 57.626,
+  "maxdd": -1.964,
+  "win_rate": 61.352,
   "trades": 1154,
-  "profit_factor": 1.978
+  "profit_factor": 1.958
  },
- "instrument_full_sharpe": 3.941,
- "rms_full_sharpe": 3.941,
+ "instrument_full_sharpe": 3.929,
+ "rms_full_sharpe": 3.929,
  "p_value": 0.003,
  "created": "2026-08-04 19:00",
  "deploy_key": "bnf_strangle_v1",

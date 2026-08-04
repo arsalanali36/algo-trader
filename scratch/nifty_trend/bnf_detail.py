@@ -12,7 +12,7 @@ import bs_option as bs
 import montecarlo as mc
 import engine
 
-N, TGT, SL, LOT = 6, 50, 50, M.LOT
+N, TGT, SL, LOT = 6, 50, 50, 30   # display const; run_ts uses date-aware lot_for internally
 rng = np.random.default_rng(7)
 
 

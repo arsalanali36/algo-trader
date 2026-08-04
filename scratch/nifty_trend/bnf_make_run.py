@@ -15,8 +15,9 @@ from run_hunt import _combo_from_res
 HERE = os.path.dirname(os.path.abspath(__file__))
 RUNS = os.path.join(HERE, "runs")
 SLUG = "bnf_920_strangle"
-N, TGT, SL, LOT = 6, 50, 50, M.LOT
+N, TGT, SL = 6, 50, 50
 STEP = M.STEP
+lot_for = M.lot_for               # date-aware BNF lot (25/15/30)
 
 
 def collect_trades(g):
@@ -65,11 +66,12 @@ def collect_trades(g):
                 xb, reason = i, "target"; break
         xce, xpe = M._px(g, xb, "CE", kc), M._px(g, xb, "PE", kp)
         debit = xce + xpe
-        gross = (credit - debit) * LOT
+        lot = lot_for(d)                    # date-aware BNF lot (25/15/30)
+        gross = (credit - debit) * lot
         when = pd.Timestamp(DT[e])
-        fee = (M.bs.calc_charges(pce, xce, LOT, entry_side="SELL", when=when) +
-               M.bs.calc_charges(ppe, xpe, LOT, entry_side="SELL", when=when))
-        slip = M.bs.slip_cost_leg(pce, xce, LOT) + M.bs.slip_cost_leg(ppe, xpe, LOT)
+        fee = (M.bs.calc_charges(pce, xce, lot, entry_side="SELL", when=when) +
+               M.bs.calc_charges(ppe, xpe, lot, entry_side="SELL", when=when))
+        slip = M.bs.slip_cost_leg(pce, xce, lot) + M.bs.slip_cost_leg(ppe, xpe, lot)
         net = gross - fee - slip
         di = day_idx[d]
         trades.append(dict(
@@ -78,7 +80,7 @@ def collect_trades(g):
             entry=round(credit, 2), exit=round(debit, 2),
             entry_prem=round(credit, 2), exit_prem=round(debit, 2),
             spot_in=round(float(SPOT[e]), 1), spot_out=round(float(SPOT[xb]), 1),
-            points=round(credit - debit, 2), qty=LOT, bars=int(xb - e),
+            points=round(credit - debit, 2), qty=lot, bars=int(xb - e),
             fee=round(fee + slip, 0), pnl_net=round(net, 1), pnl_gross=round(gross, 1),
             entry_i=di, exit_i=di, reason={"target": "TP 50pt", "SL": "SL 50pt",
                                            "3:15/2:55": "EOD 14:55"}[reason]))
@@ -125,7 +127,7 @@ def main():
     periods = {"full": trades,
                "train": [t for t in trades if yr(t) <= 2024],
                "oos":   [t for t in trades if yr(t) >= 2025]}
-    sig = dict(real_sharpe=3.05, p_value=0.003, null_p95=0.0, null_mean=0.0,
+    sig = dict(real_sharpe=2.80, p_value=0.003, null_p95=0.0, null_mean=0.0,
                n_perm=3000, significant=True,
                note="random-entry-time null (09:20 beats random time); block-bootstrap P(net<=0)=0.000")
 
@@ -156,7 +158,7 @@ def main():
         "days": int(daily["day"].nunique()), "start_cap": engine.START_CAP,
         "design": "02.10 BankNifty 9:20 SHORT strangle — 6-strike OTM, 50/50pt (REAL premium lake)",
         "design_key": "bnf_strangle", "slug": SLUG, "tf": "intraday",
-        "instrument": "BANKNIFTY options", "lot_size": LOT, "lots": 1,
+        "instrument": "BANKNIFTY options", "lot_size": 30, "lots": 1,
         "dna": dna, "passes": ["instrument", "rms", "bs"],
         "periods": [p for p in ("full", "train", "oos") if f"bs|{p}" in combos],
         "sig_p": 0.003, "candles": candles,
@@ -177,7 +179,7 @@ def main():
     bs_m = combos["bs|full"]["metrics"]
     meta = {"slug": SLUG, "design": "bnf_strangle", "title": "02.10 - BNF 9:20 Short Strangle",
             "tf": "intraday", "params": {"off": N, "tp_pt": TGT, "sl_pt": SL}, "exit": "tp50/sl50pt",
-            "instrument": "BANKNIFTY options", "lot_size": LOT,
+            "instrument": "BANKNIFTY options", "lot_size": 30,
             "window": out["meta"]["window"], "days": out["meta"]["days"],
             "significant": True,
             "bs_full": {k: bs_m.get(k) for k in ("sharpe", "net_pct", "maxdd", "win_rate", "trades", "profit_factor")},

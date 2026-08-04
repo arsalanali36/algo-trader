@@ -21,9 +21,19 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 LAKE = os.path.abspath(os.path.join(HERE, "..", "..", "_TRADING_DATA",
                                     "OptChainLake_1m", "BANKNIFTY", "MONTH"))
 STEP = 100
-LOT  = 35                      # current BNF lot; points/%/Sharpe are lot-independent
 ENTRY_T = dt.time(9, 20)
 EXIT_T  = dt.time(14, 55)
+
+
+def lot_for(d):
+    """Date-aware BANKNIFTY lot (NSE circulars, approx to the change month):
+    25 (pre-2023-07) -> 15 (2023-07..2024-11) -> 30 (2024-11-20 -> today, live-verified
+    scrip master). Real ₹/charges scale with this; points/%/Sharpe do NOT (per-trade lot)."""
+    if d < dt.date(2023, 7, 1):
+        return 25
+    if d < dt.date(2024, 11, 20):
+        return 15
+    return 30
 
 
 def _bnf_monthly_expiry(d):
@@ -131,16 +141,17 @@ def run(g, mode, skip_expiry=True):
         if pce <= 0 or ppe <= 0:
             continue
         xce, xpe = _px(g, x, "CE", kc), _px(g, x, "PE", kp)
+        lot = lot_for(d)
         credit = (pce + ppe)
         debit  = (xce + xpe)
-        gross  = (credit - debit) * LOT
+        gross  = (credit - debit) * lot
         when = pd.Timestamp(DT[e])
-        fee = (bs.calc_charges(pce, xce, LOT, entry_side="SELL", when=when) +
-               bs.calc_charges(ppe, xpe, LOT, entry_side="SELL", when=when))
-        slip = bs.slip_cost_leg(pce, xce, LOT) + bs.slip_cost_leg(ppe, xpe, LOT)
+        fee = (bs.calc_charges(pce, xce, lot, entry_side="SELL", when=when) +
+               bs.calc_charges(ppe, xpe, lot, entry_side="SELL", when=when))
+        slip = bs.slip_cost_leg(pce, xce, lot) + bs.slip_cost_leg(ppe, xpe, lot)
         net = gross - fee - slip
         s_out = SPOT[x]
-        rows.append(dict(day=d, off=off, dte=dte, credit=credit * LOT,
+        rows.append(dict(day=d, off=off, dte=dte, credit=credit * lot,
                          gross=gross, fee=fee, slip=slip, net=net,
                          breach=bool(s_out > kc or s_out < kp),
                          pts=(credit - debit)))
@@ -185,11 +196,12 @@ def run_ts(g, N, tgt_pts, sl_pts, skip_expiry=True, entry_t=ENTRY_T, slip_mult=1
             if mtm >= tgt_pts:
                 x, reason = i, "target"; break
         xce, xpe = _px(g, x, "CE", kc), _px(g, x, "PE", kp)
-        gross = (entry_credit - (xce + xpe)) * LOT
+        lot = lot_for(d)
+        gross = (entry_credit - (xce + xpe)) * lot
         when = pd.Timestamp(DT[e])
-        fee = (bs.calc_charges(pce, xce, LOT, entry_side="SELL", when=when) +
-               bs.calc_charges(ppe, xpe, LOT, entry_side="SELL", when=when))
-        slip = bs.slip_cost_leg(pce, xce, LOT) + bs.slip_cost_leg(ppe, xpe, LOT)
+        fee = (bs.calc_charges(pce, xce, lot, entry_side="SELL", when=when) +
+               bs.calc_charges(ppe, xpe, lot, entry_side="SELL", when=when))
+        slip = bs.slip_cost_leg(pce, xce, lot) + bs.slip_cost_leg(ppe, xpe, lot)
         rows.append(dict(day=d, net=gross - fee - slip, gross=gross, reason=reason))
     return pd.DataFrame(rows)
 
@@ -225,7 +237,8 @@ if __name__ == "__main__":
     print("Loading BANKNIFTY MONTH lake (real 1-min premium, +-10 held-strike grid)...", flush=True)
     g = load_grid()
     days = len(set(g["DAY"]))
-    print(f"  bars={len(g['DT'])}  days={days}  span {g['DT'][0]} -> {g['DT'][-1]}  lot={LOT}\n", flush=True)
+    print(f"  bars={len(g['DT'])}  days={days}  span {g['DT'][0]} -> {g['DT'][-1]}  "
+          f"lot=date-aware(25/15/30)\n", flush=True)
 
     print("== BANKNIFTY short strangle: SELL CE+PE @09:20, BUY back @14:55 (real premium, excl monthly-expiry-day) ==")
     print("   [primary] 1-sigma = straddle-implied daily move (0.8*straddle/sqrt(DTE)):")
