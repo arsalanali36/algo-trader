@@ -56,7 +56,7 @@ def _live_base(since_date):
     /curves//gex//whatif dashboards use (`option_curves._load_rows`, Rule 6B) so the
     backtest window auto-extends to yesterday as the collector keeps running.
     Returns None (fall back to bulk-only) if the live lake / reader isn't available."""
-    import glob
+    import glob, sys
     root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
     for p in (os.path.join(root, "_ops"), root):
         if p not in sys.path:
