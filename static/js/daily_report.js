@@ -103,7 +103,7 @@
           var li = (items || []).map(function (t) { return '<li style="font-size:12px;line-height:1.55;padding:3px 0 3px 18px;position:relative;color:#c9d1d9"><span style="position:absolute;left:0;color:' + symcol + '">' + sym + '</span>' + esc(t) + '</li>'; }).join("");
           return '<div><h4 style="margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:' + symcol + '">' + title + '</h4><ul style="margin:0;padding:0;list-style:none">' + (li || '<li style="color:var(--mut);font-size:12px">—</li>') + '</ul></div>';
         }
-        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">'
+        h += '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:14px">'
           + col("✅ Positives", r.positives, "var(--grn)", "✓")
           + col("❌ Negatives / dhyaan do", r.negatives, "var(--red)", "✗") + '</div>';
         $("health-body").innerHTML = h;
@@ -130,7 +130,7 @@
           + '<span style="padding:4px 11px;font-size:11px;border-radius:20px;background:#12341f30;border:1px solid #1a7f37;color:var(--grn)">✓ Helped ' + R.helped_n + ' (' + inr(R.helped_sum) + ')</span>'
           + '<span style="padding:4px 11px;font-size:11px;border-radius:20px;background:#3d151830;border:1px solid #5c1a1f;color:var(--red)">✗ Hurt ' + R.hurt_n + ' (' + inr(R.hurt_sum) + ')</span></div>';
         var th = function (t, a) { return '<th style="text-align:' + a + ';font-size:9px;color:var(--mut);text-transform:uppercase;padding:7px 8px;border-bottom:1px solid var(--bd2)">' + t + '</th>'; };
-        h += '<table style="width:100%;border-collapse:collapse"><thead><tr>' + th("Position · strategy", "left") + th("Aap ne cut", "right") + th("Strategy karti", "right") + th("Impact", "right") + '</tr></thead><tbody>';
+        h += '<div style="overflow-x:auto;-webkit-overflow-scrolling:touch"><table style="width:100%;min-width:520px;border-collapse:collapse"><thead><tr>' + th("Position · strategy", "left") + th("Aap ne cut", "right") + th("Strategy karti", "right") + th("Impact", "right") + '</tr></thead><tbody>';
         var td = function (inner, col, extra) { return '<td style="text-align:right;padding:8px;border-top:1px solid #12161d;color:' + col + ';' + (extra || '') + '">' + inner + '</td>'; };
         (R.cuts || []).forEach(function (c, ci) {
           var imp = c.impact, nod = (imp == null), icol = nod ? "var(--mut)" : (imp > 0 ? "var(--grn)" : "var(--red)");
@@ -141,7 +141,7 @@
             + td(chip + ' ' + (nod ? '' : inr(imp)), icol, "font-weight:600") + '</tr>';
         });
         if (!(R.cuts || []).length) h += '<tr><td colspan="4" style="text-align:center;color:var(--mut);padding:16px">is din koi manual cut nahi</td></tr>';
-        h += '</tbody></table>';
+        h += '</tbody></table></div>';
         $("iv-body").innerHTML = h;
       }).catch(function () { $("iv-body").innerHTML = '<div style="color:var(--red)">load fail</div>'; });
   }
