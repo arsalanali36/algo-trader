@@ -49,8 +49,72 @@ def _tag(off):
     return "ATM" if off == 0 else (f"ATMp{off}" if off > 0 else f"ATMm{abs(off)}")
 
 
-def load_grid():
-    """per-bar CE/PE premium grid across offsets -10..10 + ATMK/SPOT/DT/DAY/TT."""
+def _live_base(since_date):
+    """SEAMLESS extension: build a bulk-lake-shaped base DataFrame from the LIVE
+    collector (`_TRADING_DATA/OptionChain/BANKNIFTY/BANKNIFTY_<date>.csv`) for every
+    trading day AFTER `since_date` (the bulk lake's end). Reuses the same reader the
+    /curves//gex//whatif dashboards use (`option_curves._load_rows`, Rule 6B) so the
+    backtest window auto-extends to yesterday as the collector keeps running.
+    Returns None (fall back to bulk-only) if the live lake / reader isn't available."""
+    import glob
+    root = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
+    for p in (os.path.join(root, "_ops"), root):
+        if p not in sys.path:
+            sys.path.insert(0, p)
+    try:
+        import option_curves as oc
+    except Exception as e:
+        print(f"[live] option_curves import failed ({e}) — bulk-only", flush=True)
+        return None
+    dirs = [os.path.join(root, "_TRADING_DATA", "OptionChain", "BANKNIFTY"),
+            os.path.join(os.path.dirname(root), "._TRADING DATA", "OptionChain", "BANKNIFTY")]
+    files = []
+    for dd in dirs:
+        files += glob.glob(os.path.join(dd, "BANKNIFTY_*.csv"))
+    dates = sorted({os.path.basename(f)[len("BANKNIFTY_"):-4] for f in files})
+    dates = [d for d in dates if d > str(since_date)]
+    if not dates:
+        return None
+    recs = []
+    for date in dates:
+        _, rows = oc._load_rows("BANKNIFTY", date)
+        if not rows:
+            continue
+        exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+        fut = [e for e in exps if e >= date]
+        near = fut[0] if fut else (exps[-1] if exps else None)   # front-month (matches MONTH lake)
+        by_min = {}
+        for r in rows:
+            if r.get("expiry") != near:
+                continue
+            try:
+                sp = float(r["spot"]); k = int(round(float(r["strike"]))); lt = float(r["ltp"] or 0)
+            except (TypeError, ValueError):
+                continue
+            m = by_min.setdefault(r["datetime"][:16], {"spot": sp, "ce": {}, "pe": {}})
+            m["spot"] = sp
+            (m["ce"] if r["opt_type"] == "CE" else m["pe"])[k] = lt
+        for dts, m in by_min.items():
+            if not m["spot"] or m["spot"] <= 0:
+                continue
+            atm = int(round(m["spot"] / STEP) * STEP)
+            row = {"Datetime": pd.Timestamp(dts), "ATMK": float(atm), "SPOT": float(m["spot"])}
+            for o in range(-10, 11):
+                k = atm + o * STEP
+                row[f"CE{_tag(o)}"] = m["ce"].get(k, np.nan)
+                row[f"PE{_tag(o)}"] = m["pe"].get(k, np.nan)
+            recs.append(row)
+    if not recs:
+        return None
+    print(f"[live] extended backtest with {len(dates)} live day(s): {dates[0]} -> {dates[-1]} "
+          f"({len(recs)} bars)", flush=True)
+    return pd.DataFrame(recs)
+
+
+def load_grid(include_live=True):
+    """per-bar CE/PE premium grid across offsets -10..10 + ATMK/SPOT/DT/DAY/TT.
+    include_live=True seamlessly appends the live collector's recent days (past the
+    bulk lake) so the backtest reaches ~yesterday. Set False for bulk-only reproducibility."""
     offs = list(range(-10, 11))
     base = None
     for side in ("CE", "PE"):
@@ -66,6 +130,16 @@ def load_grid():
                     columns={"close": col, "strike": "ATMK", "spot": "SPOT"})
             base = keep if base is None else base.merge(keep, on="Datetime", how="outer")
     base = base.sort_values("Datetime").drop_duplicates("Datetime").reset_index(drop=True)
+    # SEAMLESS: append the live collector's days after the bulk lake ends → window
+    # auto-extends to ~yesterday (never breaks the bulk backtest if live is absent).
+    if include_live:
+        try:
+            lb = _live_base(base.Datetime.max().date())
+            if lb is not None and len(lb):
+                base = (pd.concat([base, lb], ignore_index=True)
+                        .sort_values("Datetime").drop_duplicates("Datetime").reset_index(drop=True))
+        except Exception as e:
+            print(f"[load_grid] live extension skipped: {e}", flush=True)
     tt = base.Datetime.dt.time
     base = base[(tt >= dt.time(9, 15)) & (tt <= dt.time(15, 29))].reset_index(drop=True)
     # SPOT/ATMK carried by CE-ATM col; ffill/bfill within-day to cover minute gaps
