@@ -1,0 +1,38 @@
+{
+ "slug": "bnf_920_strangle",
+ "design": "bnf_strangle",
+ "title": "02.10 - BNF 9:20 Short Strangle",
+ "tf": "intraday",
+ "params": {
+  "off": 6,
+  "tp_pt": 50,
+  "sl_pt": 50
+ },
+ "exit": "tp50/sl50pt",
+ "instrument": "BANKNIFTY options",
+ "lot_size": 35,
+ "window": [
+  "2021-08-04",
+  "2026-07-15"
+ ],
+ "days": 1221,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 2.976,
+  "net_pct": 85.159,
+  "maxdd": -2.712,
+  "win_rate": 61.612,
+  "trades": 1154,
+  "profit_factor": 1.978
+ },
+ "instrument_full_sharpe": 3.941,
+ "rms_full_sharpe": 3.941,
+ "p_value": 0.003,
+ "created": "2026-08-04 19:00",
+ "deploy_key": "bnf_strangle_v1",
+ "deployed": "bnf_strangle_v1",
+ "real_cost": {
+  "method": "REAL premium lake (held-strike) + Zerodha charges + DOM slip",
+  "note": "not BS-modeled — actual OptChainLake_1m/BANKNIFTY premium"
+ }
+}
