@@ -1025,20 +1025,20 @@
   "lot_size": 30,
   "window": [
    "2021-08-04",
-   "2026-07-15"
+   "2026-08-04"
   ],
-  "days": 1221,
+  "days": 1235,
   "significant": true,
   "bs_full": {
-   "sharpe": 2.8,
-   "net_pct": 57.626,
+   "sharpe": 2.793,
+   "net_pct": 57.929,
    "maxdd": -1.964,
-   "win_rate": 61.352,
-   "trades": 1154,
-   "profit_factor": 1.958
+   "win_rate": 61.44,
+   "trades": 1167,
+   "profit_factor": 1.951
   },
-  "instrument_full_sharpe": 3.929,
-  "rms_full_sharpe": 3.929,
+  "instrument_full_sharpe": 3.925,
+  "rms_full_sharpe": 3.925,
   "p_value": 0.003,
   "created": "2026-08-04 19:00",
   "deploy_key": "bnf_strangle_v1",
