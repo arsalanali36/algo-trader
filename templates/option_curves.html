@@ -379,7 +379,19 @@
   var gexOv    = load('oc_gex_ov', false), _gexLevels = null, _gexLvlKey = '';   // GEX walls/flip/±1σ overlay (left/NIFTY-price axis)
   var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line' });
   var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null, _strikeFetching = false;
-  var fixedStrats = load('oc_fixed', []), fixedData = {}, _fixKey = '';   // Fixed straddle/strangle (held strikes)
+  // Fixed straddle/strangle (held strikes) — stored PER UNDERLYING so NIFTY & BANKNIFTY
+  // keep their own saved lists. Switching instrument shows only that instrument's straddles.
+  function _loadFixedAll(){
+    var v = load('oc_fixed', null);
+    if(v == null) return {};
+    if(Array.isArray(v)){ var m={}; m['NIFTY']=v; return m; }   // migrate old flat format → NIFTY
+    return v;
+  }
+  var _fixedAll = _loadFixedAll();
+  var fixedStrats = [], fixedData = {}, _fixKey = '';
+  function _syncFixedRef(){ if(!Array.isArray(_fixedAll[U])) _fixedAll[U]=[]; fixedStrats=_fixedAll[U]; }
+  function saveFixed(){ _fixedAll[U]=fixedStrats; save('oc_fixed', _fixedAll); }
+  _syncFixedRef();   // U='NIFTY' default here; re-synced after initDate finalizes U
   var FIXCOL = ['#1dd1a1','#a371f7','#58a6ff','#f778ba','#e3b341'];
   var fixTheo = load('oc_fixtheo', true);   // show theoretical-decay (frozen entry-IV) dotted line
   function notesKey(){ return 'oc_notes_'+U+'_'+document.getElementById('date').value; }
@@ -405,6 +417,7 @@
     // notification/deep-link: ?underlying=NIFTY wins over the saved default
     var uq=(q.get('underlying')||'').toUpperCase();
     U = (uq==='NIFTY'||uq==='BANKNIFTY') ? uq : load('oc_u', 'NIFTY');
+    _syncFixedRef();   // point fixedStrats at the finalized underlying's list
     document.querySelectorAll('#uSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.u===U); });
     _ocTitle();
     renderPicker();
@@ -472,7 +485,7 @@
     var e=panes.find(function(x){return x.id===id;}); if(e&&e.extra) e.extra.applyOptions({visible:!!show});
   }
 
-  function setU(u, btn){ U=u; save('oc_u',u); _ocTitle(); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
+  function setU(u, btn){ U=u; save('oc_u',u); _syncFixedRef(); _ocTitle(); document.querySelectorAll('#uSeg button').forEach(function(b){b.classList.toggle('on',b===btn);}); onStructChange(); }
   function toggleAuto(){ AUTO=!AUTO; var b=document.getElementById('autoBtn'); b.textContent='🔄 '+(AUTO?'ON':'OFF'); b.classList.toggle('on',AUTO); schedule(); }
 
   // Resample 1-min snapshots to the chosen TF: VALUE = last snapshot in each bucket,
@@ -1050,11 +1063,11 @@
   }
   function shChartIt(){
     if(!_shLegs.length) return;
-    if(fixedStrats.length>=5){ document.getElementById('shStatus').textContent='max 5 chart strategies — koi hatao'; return; }
+    if(fixedStrats.length>=5){ document.getElementById('shStatus').textContent='max 5 (per instrument) — koi hatao'; return; }
     var label=_shLegs.map(function(l){return (l.side==='SELL'?'-':'+')+l.strike+l.type[0];}).join(' ');
     var strat={id:'fx'+(Date.now()), color:FIXCOL[fixedStrats.length%FIXCOL.length], label:label,
       legs:_shLegs.map(function(l){ return {strike:l.strike, opt_type:l.type, sign:(l.side==='SELL'?1:-1)}; })};
-    fixedStrats.push(strat); save('oc_fixed', fixedStrats);
+    fixedStrats.push(strat); saveFixed();
     if(!enabled['fixed']){ enabled['fixed']=true; save('oc_panels', enabled); }
     fetchFixed(strat, function(){ renderPicker(); buildPanes(); renderFixList(); });
     document.getElementById('shStatus').textContent='✓ Fixed pane me add ho gaya (net premium line)';
@@ -1095,7 +1108,9 @@
         a: entry.chart.addLineSeries({ color:s.color, lineWidth:2, priceLineVisible:false, lastValueVisible:true, title:s.label }),
         th: entry.chart.addLineSeries({ color:s.color, lineWidth:1, lineStyle:2, priceLineVisible:false, lastValueVisible:false })  // dotted = theoretical decay (frozen entry-IV)
       };
-      var h=have[s.id]; h.th.applyOptions({ visible: fixTheo });
+      var h=have[s.id], vis=!s.hidden;   // eye toggle: hide/show this series without removing it
+      h.a.applyOptions({ visible: vis });
+      h.th.applyOptions({ visible: fixTheo && vis });
       if(fixedData[s.id]==null){ h.a.setData([]); h.th.setData([]); fetchFixed(s, function(){ var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }); return; }
       // Resample to the current TF + align to the MAIN `view` timeline (whitespace for
       // gaps) so this pane's bar-set == the other panes' → the shared logical-range zoom
@@ -1109,9 +1124,9 @@
   }
   function toggleFixTheo(on){ fixTheo=on; save('oc_fixtheo', fixTheo); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
   function fixAdd(legs, label){
-    if(fixedStrats.length>=5){ alert('Max 5 strategies'); return; }
+    if(fixedStrats.length>=5){ alert('Max 5 (per instrument) — koi hatao'); return; }
     var s={ id:'fx'+(Date.now()), legs:legs, label:label, color:FIXCOL[fixedStrats.length%FIXCOL.length] };
-    fixedStrats.push(s); save('oc_fixed', fixedStrats);
+    fixedStrats.push(s); saveFixed();
     if(!enabled['fixed']){ enabled['fixed']=true; save('oc_panels', enabled); }
     fetchFixed(s, function(){ renderPicker(); buildPanes(); renderFixList(); });
   }
@@ -1131,14 +1146,23 @@
       fixAdd([{strike:atm,opt_type:'CE'},{strike:atm,opt_type:'PE'}], '🤖 Auto ATM '+atm+' (9:20)');
     });
   }
-  function removeFix(id){ fixedStrats=fixedStrats.filter(function(s){return s.id!==id;}); delete fixedData[id]; save('oc_fixed', fixedStrats); renderFixList(); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
+  function removeFix(id){ fixedStrats=fixedStrats.filter(function(s){return s.id!==id;}); delete fixedData[id]; saveFixed(); renderFixList(); var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e); }
+  // 👁 eye toggle — hide/show this straddle's line on the chart without deleting it
+  function toggleFixVis(id){
+    var s=fixedStrats.find(function(x){return x.id===id;}); if(!s) return;
+    s.hidden=!s.hidden; saveFixed(); renderFixList();
+    var e=panes.find(function(p){return p.kind==='fixed';}); if(e) renderFixed(e);
+    var sp=panes.find(function(p){return p.kind==='split';}); if(sp) renderSplit();
+  }
   function renderFixList(){
     var el=document.getElementById('fixList'); if(!el) return;
     if(!fixedStrats.length){ el.innerHTML='<div style="font-size:10px;color:var(--mut)">none — pick strikes above</div>'; return; }
     el.innerHTML=fixedStrats.map(function(s){
-      return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0">'
-        +'<span style="width:9px;height:9px;border-radius:2px;background:'+s.color+'"></span>'
-        +'<span style="color:var(--tx)">'+s.label+'</span>'
+      var off=!!s.hidden;
+      return '<div style="display:flex;align-items:center;gap:6px;font-size:11px;padding:2px 0'+(off?';opacity:.5':'')+'">'
+        +'<span onclick="toggleFixVis(\''+s.id+'\')" title="'+(off?'Show':'Hide')+'" style="cursor:pointer;font-size:13px;line-height:1;user-select:none">'+(off?'🙈':'👁')+'</span>'
+        +'<span style="width:9px;height:9px;border-radius:2px;background:'+s.color+(off?';filter:grayscale(1)':'')+'"></span>'
+        +'<span style="color:var(--tx)'+(off?';text-decoration:line-through':'')+'">'+s.label+'</span>'
         +'<span onclick="removeFix(\''+s.id+'\')" title="Remove" style="margin-left:auto;cursor:pointer;color:var(--mut);font-weight:700">✕</span></div>';
     }).join('');
   }
@@ -1240,7 +1264,7 @@
     function msg(m){ e.host.innerHTML='<div style="color:#8b949e;text-align:center;margin-top:'+Math.max(0,H/2-10)+'px">'+m+'</div>'; }
     if(!fixedStrats.length){ return msg('Left picker se fixed straddle/strangle add karo'); }
     var rows=[], mx=1;
-    fixedStrats.forEach(function(s){ var d=_splitFor(s, t===undefined?_splitT:t); if(d){ rows.push({s:s,d:d}); mx=Math.max(mx, d.prem); } });
+    fixedStrats.forEach(function(s){ if(s.hidden) return; var d=_splitFor(s, t===undefined?_splitT:t); if(d){ rows.push({s:s,d:d}); mx=Math.max(mx, d.prem); } });
     if(!rows.length){ return msg('data…'); }
     var padT=32,padB=22,padL=8,padR=8, n=rows.length, base=H-padB;
     var slot=(W-padL-padR)/n, bw=Math.min(64, slot*0.6);
