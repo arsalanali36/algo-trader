@@ -244,6 +244,8 @@
 
   <div class="kpis" id="kpis"></div>
 
+  <div class="card" id="health-card" style="display:none;margin-bottom:14px"></div>
+
   <div class="grid2">
     <div class="colstack">
       <div class="card">
@@ -277,6 +279,8 @@
       <div class="bd ovscroll" id="brk-trades"></div>
     </div>
   </div>
+
+  <div class="card" id="iv-card" style="display:none;margin-bottom:14px"></div>
 
   <div class="sectitle">Distribution</div>
   <div class="charts2">
@@ -329,6 +333,9 @@
   </div>
 </div>
 
+<div id="ivchart-ov" onclick="if(event.target.id=='ivchart-ov')DR.closeIvChart()" style="position:fixed;inset:0;background:rgba(1,4,9,.8);z-index:999;display:none;align-items:center;justify-content:center;padding:14px"></div>
+
+<script src="{{ url_for('static', filename='vendor/lightweight-charts.standalone.production.js') }}"></script>
 <script src="{{ url_for('static', filename='js/env-badge.js') }}"></script>
 <script src="{{ url_for('static', filename='js/topnav.js') }}"></script>
 <script src="{{ url_for('static', filename='js/registry.js') }}"></script>

@@ -668,6 +668,43 @@ def api_daily_report_dates():
         return jsonify({"ok": False, "dates": [], "error": str(e)})
 
 
+@app.route('/api/daily-report/health')
+def api_daily_report_health():
+    """EOD system-health for the Daily Report page — the same ✅ Positives / ❌
+    Negatives + banner as the /reports page, merged in so everything's one place.
+    Fast by default (do_replay=False → no per-strategy candle refetch); ?replay=1
+    adds the signal-replay-drift (TRAP #108) check. Display-only."""
+    try:
+        import eod_report as er
+        date = request.args.get('date') or er.ist_today()
+        replay = request.args.get('replay') == '1'
+        data = er.collect(date, do_replay=replay)
+        pos, neg = er.pos_neg(data)
+        try:
+            bt_rows, bt_warn = er.bt_live_match(date)
+            bt_reds = sum(1 for r in bt_rows if r.get('verdict') == 'RED')
+        except Exception:
+            bt_warn, bt_reds = [], 0
+        neg = list(neg) + list(bt_warn)
+        rows = data['rows']
+        reds = sum(1 for r in rows if r['colour'] == 'RED')
+        yels = sum(1 for r in rows if r['colour'] == 'YELLOW')
+        greys = sum(1 for r in rows if r['colour'] == 'GREY')
+        if reds or bt_reds:
+            lvl = 'red'
+            txt = f"🔴 {reds} strategy RED" + (f" · 🎯 {bt_reds} backtest se DIVERGE" if bt_reds else "") + " — neeche Negatives dekho"
+        elif yels:
+            lvl, txt = 'yellow', f"🟡 sab critical clear, {yels} yellow (minor) — ek nazar maar lo"
+        else:
+            lvl, txt = 'green', "🟢 ALL CLEAR — jo strategies chali sab healthy"
+        if greys:
+            txt += f" · {greys} chali nahi (ignore)"
+        return jsonify({"ok": True, "date": date, "banner_level": lvl, "banner_text": txt,
+                        "positives": pos, "negatives": neg, "replay": replay})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 @app.route('/api/report-settings', methods=['GET', 'POST'])
 def api_report_settings():
     import daily_report as dr

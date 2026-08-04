@@ -73,8 +73,110 @@
   // ================= RENDER =================
   function renderAll() {
     if (!S.data) { $("kpis").innerHTML = '<div class="empty">No data</div>'; ["target-wrap", "stat-wrap", "brk-strategy", "brk-trades", "chart-strategy", "chart-trade", "journey", "ptc-grid"].forEach(function (id) { $(id).innerHTML = ""; }); renderNotes(); return; }
-    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderPtcStratOptions(); renderPerTradeCharts(); renderNotes();
+    renderKpis(); renderTarget(); renderStat(); renderBreakdowns(); renderCharts(); renderJourney(); renderPtcStratOptions(); renderPerTradeCharts(); renderNotes(); renderHealthIv();
   }
+
+  // ===== SYSTEM HEALTH + MANUAL INTERVENTION (merged in, Daily mode only) =====
+  function renderHealthIv() {
+    var daily = (S.range === "day");
+    var hc = $("health-card"), ic = $("iv-card");
+    if (!hc || !ic) return;
+    if (!daily) { hc.style.display = "none"; ic.style.display = "none"; return; }
+    hc.style.display = ""; ic.style.display = "";
+    renderHealth(false); renderIntervention();
+  }
+
+  function renderHealth(replay) {
+    var hc = $("health-card");
+    hc.innerHTML = '<div class="hd"><h3>⚙ SYSTEM HEALTH</h3><span class="mut">positives / negatives</span>'
+      + '<span class="mut" id="health-status" style="margin-left:auto">⏳ health check…</span></div>'
+      + '<div class="bd" id="health-body"></div>';
+    fetch("/api/daily-report/health?date=" + S.date + (replay ? "&replay=1" : ""))
+      .then(function (x) { return x.json(); }).then(function (r) {
+        var st = $("health-status");
+        if (!r || r.ok === false) { if (st) st.innerHTML = '<span style="color:var(--red)">health load fail</span>'; return; }
+        if (st) st.innerHTML = r.replay ? '<span style="color:var(--grn)">🔬 replay checked</span>'
+          : '<button class="hdr-btn" onclick="DR.healthDeep()" title="Signal-replay drift (TRAP #108) bhi check karo — thoda slow">🔬 Deep check</button>';
+        var bc = { green: ["#12341f30", "#1a7f37", "var(--grn)"], yellow: ["#3a2b0a30", "#7a5c12", "var(--yel)"], red: ["#3d151830", "#5c1a1f", "var(--red)"] }[r.banner_level] || ["#161b22", "var(--bd)", "var(--mut)"];
+        var h = '<div style="padding:7px 12px;border-radius:8px;font-size:12px;font-weight:600;margin-bottom:11px;background:' + bc[0] + ';border:1px solid ' + bc[1] + ';color:' + bc[2] + '">' + esc(r.banner_text) + '</div>';
+        function col(title, items, symcol, sym) {
+          var li = (items || []).map(function (t) { return '<li style="font-size:12px;line-height:1.55;padding:3px 0 3px 18px;position:relative;color:#c9d1d9"><span style="position:absolute;left:0;color:' + symcol + '">' + sym + '</span>' + esc(t) + '</li>'; }).join("");
+          return '<div><h4 style="margin:0 0 7px;font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:' + symcol + '">' + title + '</h4><ul style="margin:0;padding:0;list-style:none">' + (li || '<li style="color:var(--mut);font-size:12px">—</li>') + '</ul></div>';
+        }
+        h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:14px">'
+          + col("✅ Positives", r.positives, "var(--grn)", "✓")
+          + col("❌ Negatives / dhyaan do", r.negatives, "var(--red)", "✗") + '</div>';
+        $("health-body").innerHTML = h;
+      }).catch(function () { var st = $("health-status"); if (st) st.innerHTML = '<span style="color:var(--red)">health load fail</span>'; });
+  }
+  DR.healthDeep = function () { renderHealth(true); };
+
+  function renderIntervention() {
+    var ic = $("iv-card");
+    ic.innerHTML = '<div class="hd"><h3>🖐 MANUAL INTERVENTION</h3><span class="mut">haath se cut na karte to kya hota</span>'
+      + '<span class="mut" id="iv-status" style="margin-left:auto">⏳ …</span></div><div class="bd" id="iv-body"></div>';
+    fetch("/api/intervention?date=" + S.date + (S.mode ? "&mode=" + S.mode : ""))
+      .then(function (x) { return x.json(); }).then(function (R) {
+        var st = $("iv-status"); if (st) st.textContent = "";
+        if (!R || R.ok === false) { $("iv-body").innerHTML = '<div style="color:var(--red)">load fail</div>'; return; }
+        window._drIvCuts = R.cuts || []; window._drIvDate = R.date || S.date;
+        var net = R.net_impact || 0, nc = net > 0 ? "var(--grn)" : (net < 0 ? "var(--red)" : "var(--mut)");
+        var box = function (l, v, vc) { return '<div style="background:var(--card2);border:1px solid var(--bd);border-radius:9px;padding:11px 13px"><div style="font-size:10px;text-transform:uppercase;color:var(--mut)">' + l + '</div><div style="font-size:20px;font-weight:700;color:' + vc + '">' + v + '</div></div>'; };
+        var h = '<div style="display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:11px;margin-bottom:12px">'
+          + '<div style="background:var(--card2);border:1px solid ' + (net > 0 ? '#1a7f37' : (net < 0 ? '#5c1a1f' : 'var(--bd)')) + ';border-radius:9px;padding:11px 13px"><div style="font-size:10px;text-transform:uppercase;color:var(--mut)">Intervention impact</div><div style="font-size:22px;font-weight:700;color:' + nc + '">' + inr(net) + '</div><div style="font-size:11px;color:var(--mut)">' + R.n_cut + ' cuts</div></div>'
+          + box("Actual din", inr(R.day_actual), R.day_actual < 0 ? "var(--red)" : "var(--grn)")
+          + box("Kuch cut na karte", inr(R.if_never_cut), "var(--yel)") + '</div>';
+        h += '<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:10px">'
+          + '<span style="padding:4px 11px;font-size:11px;border-radius:20px;background:#12341f30;border:1px solid #1a7f37;color:var(--grn)">✓ Helped ' + R.helped_n + ' (' + inr(R.helped_sum) + ')</span>'
+          + '<span style="padding:4px 11px;font-size:11px;border-radius:20px;background:#3d151830;border:1px solid #5c1a1f;color:var(--red)">✗ Hurt ' + R.hurt_n + ' (' + inr(R.hurt_sum) + ')</span></div>';
+        var th = function (t, a) { return '<th style="text-align:' + a + ';font-size:9px;color:var(--mut);text-transform:uppercase;padding:7px 8px;border-bottom:1px solid var(--bd2)">' + t + '</th>'; };
+        h += '<table style="width:100%;border-collapse:collapse"><thead><tr>' + th("Position · strategy", "left") + th("Aap ne cut", "right") + th("Strategy karti", "right") + th("Impact", "right") + '</tr></thead><tbody>';
+        var td = function (inner, col, extra) { return '<td style="text-align:right;padding:8px;border-top:1px solid #12161d;color:' + col + ';' + (extra || '') + '">' + inner + '</td>'; };
+        (R.cuts || []).forEach(function (c, ci) {
+          var imp = c.impact, nod = (imp == null), icol = nod ? "var(--mut)" : (imp > 0 ? "var(--grn)" : "var(--red)");
+          var chip = nod ? "—" : (imp > 0 ? "✓" : "✗");
+          h += '<tr><td style="text-align:left;padding:8px;border-top:1px solid #12161d"><div>' + esc(c.symbol || c.instrument) + '<span onclick="DR.ivChart(' + ci + ')" title="Chart kholo" style="cursor:pointer;opacity:.72;margin-left:6px">📈</span></div><div style="font-size:9px;color:var(--mut)">' + esc(c.strategy_label || c.strategy) + ' · ' + esc(c.exit_reason || '') + '</div></td>'
+            + td(inr(c.actual_pnl) + ' <span style="color:var(--mut);font-size:9px">' + esc(c.exit_hm) + '</span>', c.actual_pnl >= 0 ? "var(--grn)" : "var(--red)")
+            + td((c.cf_pnl == null ? '<span style="color:var(--mut)">no data</span>' : inr(c.cf_pnl)) + ' <span style="color:var(--mut);font-size:9px">' + esc(c.cf_method || '') + (c.cf_exit_hm ? (' ' + esc(c.cf_exit_hm)) : '') + '</span>', "#adb6c0")
+            + td(chip + ' ' + (nod ? '' : inr(imp)), icol, "font-weight:600") + '</tr>';
+        });
+        if (!(R.cuts || []).length) h += '<tr><td colspan="4" style="text-align:center;color:var(--mut);padding:16px">is din koi manual cut nahi</td></tr>';
+        h += '</tbody></table>';
+        $("iv-body").innerHTML = h;
+      }).catch(function () { $("iv-body").innerHTML = '<div style="color:var(--red)">load fail</div>'; });
+  }
+
+  function drHmEp(date, hm) { if (!date || !hm) return null; var t = Date.parse(date + "T" + hm + ":00Z"); return isNaN(t) ? null : Math.floor(t / 1000); }
+  DR.ivChart = function (ci) {
+    var c = (window._drIvCuts || [])[ci]; if (!c) return;
+    var date = window._drIvDate, ov = $("ivchart-ov");
+    var cuts = (c.exit_legs || []).map(function (l) { return l.hm + " @" + l.price + (l.qty ? (" ×" + l.qty) : ""); }).join(", ");
+    var sub = "Entry " + esc(c.entry_hm) + " @" + c.entry_price + "  ·  Tumhara cut: " + esc(cuts || "—") + "  ·  Strategy: " + esc(c.cf_method || "—") + (c.cf_exit_hm ? (" @" + esc(c.cf_exit_hm)) : "") + (c.cf_price != null ? (" (" + c.cf_price + ")") : "");
+    ov.style.display = "flex";
+    ov.innerHTML = '<div style="background:var(--card);border:1px solid var(--bd);border-radius:12px;width:min(940px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column" onclick="event.stopPropagation()">'
+      + '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--bd2)"><div><div style="font-weight:700">' + esc(c.instrument || c.symbol) + ' <span style="color:var(--mut);font-weight:400">· ' + esc(date) + '</span></div><div style="font-size:11px;color:var(--mut);margin-top:3px;line-height:1.5">' + sub + '</div></div><button onclick="DR.closeIvChart()" style="background:var(--card2);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-size:13px;padding:4px 9px;cursor:pointer">✕</button></div>'
+      + '<div style="display:flex;gap:16px;padding:7px 16px;font-size:11px;flex-wrap:wrap;border-bottom:1px solid var(--bd2)"><span style="color:#58a6ff">▲ Entry</span><span style="color:var(--red)">✕ Tumhara cut</span><span style="color:var(--yel)">◆ Strategy exit</span></div>'
+      + '<div id="drivc" style="flex:1;min-height:390px;padding:6px 10px 12px"></div></div>';
+    var host = $("drivc");
+    fetch("/api/intervention/chart?sec_id=" + encodeURIComponent(c.sec_id || "") + "&date=" + encodeURIComponent(date || "") + "&symbol=" + encodeURIComponent(c.symbol || "") + "&trad_sym=" + encodeURIComponent(c.instrument || ""))
+      .then(function (r) { return r.json(); }).then(function (d) {
+        var bars = (d && d.bars) || []; host.innerHTML = "";
+        if (!bars.length) { host.innerHTML = '<div style="padding:44px;text-align:center;color:var(--mut)">is option ke premium bars capture nahi hue</div>'; return; }
+        if (typeof LightweightCharts === "undefined") { host.innerHTML = '<div style="padding:44px;text-align:center;color:var(--red)">chart lib load nahi hui</div>'; return; }
+        var ch = LightweightCharts.createChart(host, { width: host.clientWidth || 880, height: 390, layout: { background: { color: "transparent" }, textColor: "#8b949e" }, grid: { vertLines: { color: "#161b22" }, horzLines: { color: "#161b22" } }, timeScale: { timeVisible: true, secondsVisible: false, borderColor: "#30363d" }, rightPriceScale: { borderColor: "#30363d" } });
+        var s = ch.addCandlestickSeries({ upColor: "#3fb950", downColor: "#f85149", wickUpColor: "#3fb950", wickDownColor: "#f85149", borderVisible: false });
+        s.setData(bars.map(function (b) { return { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c }; }));
+        var mk = [], e = drHmEp(date, c.entry_hm);
+        if (e) mk.push({ time: e, position: "belowBar", color: "#58a6ff", shape: "arrowUp", text: "Entry " + c.entry_price });
+        (c.exit_legs || []).forEach(function (l) { var t = drHmEp(date, l.hm); if (t) mk.push({ time: t, position: "aboveBar", color: "#f85149", shape: "arrowDown", text: "Cut " + l.price }); });
+        if (c.cf_exit_ep) mk.push({ time: c.cf_exit_ep, position: "aboveBar", color: "#d29922", shape: "circle", text: "Strategy " + (c.cf_price != null ? c.cf_price : "") });
+        mk.sort(function (a, b) { return a.time - b.time; }); s.setMarkers(mk);
+        if (c.entry_price) s.createPriceLine({ price: c.entry_price, color: "#58a6ff", lineWidth: 1, lineStyle: 2, title: "entry" });
+        if (c.cf_price != null) s.createPriceLine({ price: c.cf_price, color: "#d29922", lineWidth: 1, lineStyle: 2, title: "strat exit" });
+        ch.timeScale().fitContent(); window._drIvCh = ch;
+      }).catch(function () { host.innerHTML = '<div style="padding:44px;text-align:center;color:var(--red)">chart load fail</div>'; });
+  };
+  DR.closeIvChart = function () { var ov = $("ivchart-ov"); if (ov) ov.style.display = "none"; if (window._drIvCh) { try { window._drIvCh.remove(); } catch (e) { } } window._drIvCh = null; };
 
   function renderKpis() {
     var k = S.data.kpis, h = "";
