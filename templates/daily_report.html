@@ -185,8 +185,8 @@
     .datenav button{padding:3px 6px;font-size:12px}
     .datenav button:nth-of-type(2){display:none}   /* hide 🗓 — tap date opens picker */
     /* KPIs: one horizontal scroll row, NEVER wrap */
-    .kpis{display:flex;flex-wrap:nowrap;overflow-x:auto;gap:8px;-webkit-overflow-scrolling:touch;padding-bottom:2px}
-    .kpis .kpi{flex:0 0 auto;min-width:130px}
+    .kpis{display:grid;grid-auto-flow:column;grid-template-rows:1fr 1fr;grid-auto-columns:calc((100% - 16px)/3);gap:8px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:4px}
+    .kpis .kpi{min-width:0}
     /* un-freeze the wide first column so numbers show on right-scroll; truncate names */
     td:first-child{position:static;max-width:118px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
     thead th:first-child{left:auto}
