@@ -132,13 +132,46 @@ def _pairs(rows):
         # entry = first leg that looks like an opening leg; else first leg
         opens = [l for l in legs if _is_entry(l)]
         entry = opens[0] if opens else legs[0]
-        # exit = first opposite-side leg after the entry
-        ex = next((l for l in legs if l["id"] > entry["id"] and l["side"] != entry["side"]), None)
-        if ex is None:
+        # ALL opposite-side legs after the entry, FIFO-capped at entry qty — a
+        # position can be closed in parts (INFY 2026-08-03: 1200 entry, 800 cut at
+        # 12:41 + 400 at 13:32). Using only the first leg with the ENTRY qty (the
+        # old bug) mis-priced the P&L and dropped the later leg entirely.
+        opp = [l for l in legs if l["id"] > entry["id"] and l["side"] != entry["side"]]
+        if not opp:
             continue
-        pairs.append({"entry": entry, "exit": ex, "strategy": strat,
+        eq = int(entry.get("qty") or 0)
+        exits, used = [], 0
+        for l in opp:
+            if eq and used >= eq:
+                break
+            exits.append(l)
+            used += int(l.get("qty") or 0)
+        pairs.append({"entry": entry, "exit": exits[0], "exits": exits, "strategy": strat,
                       "sec_id": sid, "symbol": entry.get("symbol")})
     return pairs
+
+
+def _exit_summary(pair):
+    """(avg_exit_px, total_closed_qty, first_exit_hm, legs) — qty-weighted across
+    all exit legs, FIFO-capped at entry qty. legs = [{hm, price, qty}] (for the
+    chart's multiple manual-cut markers)."""
+    e = pair["entry"]
+    eq = int(e.get("qty") or 0)
+    legs = pair.get("exits") or [pair["exit"]]
+    tot_q, wsum, out = 0, 0.0, []
+    for x in legs:
+        lq = int(x.get("qty") or 0)
+        if eq:
+            lq = min(lq, eq - tot_q)
+            if lq <= 0:
+                break
+        px = _f(x["price"]) or 0.0
+        wsum += px * lq
+        tot_q += lq
+        out.append({"hm": (x.get("ts") or "")[11:16], "price": round(px, 2), "qty": lq})
+    avg = round(wsum / tot_q, 2) if tot_q else None
+    first_hm = out[0]["hm"] if out else ((pair["exit"].get("ts") or "")[11:16])
+    return avg, tot_q, first_hm, out
 
 
 # All epochs are normalised to IST-as-UTC (utcfromtimestamp → IST wall-clock), the
@@ -204,17 +237,41 @@ def _lot(sec_id):
         return 0
 
 
+# TF_MAP mirrors strategies/live/01_rsi_v1.py — the live RSI trader resolves its
+# candle interval through EXACTLY this map. config "2m" has NO entry here, so it
+# FALLS BACK to 5 (runs 5-min), a known mislabel. The intervention report used to
+# hardcode a 2-min resample → it replayed a timeframe the live 5m strategy never
+# computes (INFY 2026-08-03: 2m RSI dipped to 49 for one candle at 11:50 = noise
+# → fake "+460 exit"; 5m RSI stayed 64-79 all day → the strategy's RSI-exit never
+# fired). Replay MUST use the strategy's real runtime interval.
+_TF_MAP = {"1m": 1, "3m": 3, "5m": 5, "15m": 15, "30m": 30}
+
+
+def _strat_runtime(strategy):
+    """(interval_min, rsi_period, rsi_exit) — the strategy's ACTUAL runtime RSI
+    params (same TF_MAP fallback the live trader uses). Default 5m/14/50."""
+    try:
+        cfg = json.load(open(os.path.join(PROJECT, "nifty_config.json")))
+        s = cfg.get(str(strategy)) or {}
+        return (_TF_MAP.get(s.get("timeframe", "5m"), 5),
+                int(s.get("rsi_period", 14)), float(s.get("rsi_exit", 50)))
+    except Exception:
+        return 5, 14, 50
+
+
 def _hm(ep):
     return datetime.datetime.utcfromtimestamp(ep).strftime("%H:%M")
 
 
 # ── RSI-midline exit (underlying) ────────────────────────────────────────────
-def _equity_candles_2m(symbol, date):
-    """Underlying 2-min close series (list of (dt_naive_IST, close)). Lake first
-    (post-close, no Dhan call); falls back to a single Dhan intraday fetch (display
-    engine, rate-limited, best-effort) so the RSI-midline replay works for an
-    on-demand run before the lake is filled. None if both fail."""
+def _equity_candles(symbol, date, interval_min=5):
+    """Underlying close series resampled to the strategy's runtime interval (list of
+    (dt_naive_IST, close)). Lake first (post-close, no Dhan call); falls back to a
+    single Dhan intraday fetch (display engine, rate-limited, best-effort) so the
+    RSI-midline replay works for an on-demand run before the lake is filled. None
+    if both fail."""
     import pandas as pd
+    rule = f"{int(interval_min)}min"
     for base in (os.path.join(os.path.dirname(PROJECT), "._TRADING DATA", "Equity", symbol),
                  os.path.join(PROJECT, "_TRADING_DATA", "Equity", symbol)):
         p = os.path.join(base, f"{symbol}_{date}.csv")
@@ -225,17 +282,18 @@ def _equity_candles_2m(symbol, date):
                 ccol = next((c for c in df.columns if c.lower() == "close"), None)
                 if tcol and ccol:
                     df["dt"] = pd.to_datetime(df[tcol])
-                    s = df.set_index("dt")[ccol].resample("2min").last().dropna()
+                    s = df.set_index("dt")[ccol].resample(rule).last().dropna()
                     if len(s):
                         return list(s.items())
             except Exception:
                 pass
-    return _fetch_equity_2m(symbol, date)
+    return _fetch_equity(symbol, date, interval_min)
 
 
-def _fetch_equity_2m(symbol, date):
-    """One Dhan intraday call → 2-min close series (IST index). Best-effort fallback
-    for _equity_candles_2m. Display-only, rate-limited. None on any failure."""
+def _fetch_equity(symbol, date, interval_min=5):
+    """One Dhan intraday call → close series resampled to interval_min (IST index).
+    Best-effort fallback for _equity_candles. Display-only, rate-limited. None on
+    any failure."""
     try:
         import pandas as pd, requests, dhan_master as dm
         cfgp = os.path.join(PROJECT, "data", "config.json")
@@ -261,17 +319,17 @@ def _fetch_equity_2m(symbol, date):
             return None
         df = pd.DataFrame({"t": d["timestamp"], "c": d["close"]})
         df["dt"] = pd.to_datetime(df["t"], unit="s") + pd.Timedelta(hours=5, minutes=30)
-        s = df.set_index("dt")["c"].resample("2min").last().dropna()
+        s = df.set_index("dt")["c"].resample(f"{int(interval_min)}min").last().dropna()
         return list(s.items()) if len(s) else None
     except Exception:
         return None
 
 
-def _midline_exit_time(symbol, entry_ts, pos, date, exit_level=50, period=14):
-    """First 2m bar AFTER entry where RSI crosses the exit level (pos +1 long CE:
-    RSI>=50; pos -1 short PE: RSI<=50). Returns (exit_dt_epoch, 'RSI50') or None
-    if candles unavailable / no cross."""
-    ser = _equity_candles_2m(symbol, date)
+def _midline_exit_time(symbol, entry_ts, pos, date, interval_min=5, exit_level=50, period=14):
+    """First candle (at the strategy's runtime interval) AFTER entry where RSI
+    crosses the exit level (pos +1 long CE: RSI>=exit; pos -1 short PE: RSI<=exit).
+    Returns (exit_dt_epoch, 'RSI50') or None if candles unavailable / no cross."""
+    ser = _equity_candles(symbol, date, interval_min)
     if not ser:
         return None
     try:
@@ -323,7 +381,10 @@ def _counterfactual(pair, date):
     e, x = pair["entry"], pair["exit"]
     side = e["side"]                          # BUY-open (long) or SELL-open (short)
     entry = _f(e["price"]) or 0.0
-    qty = int(e["qty"] or 0)
+    # counterfactual on the CLOSED qty (so actual vs cf are apples-to-apples for a
+    # partially-cut position); falls back to entry qty if summary is empty.
+    _, _cq, _, _ = _exit_summary(pair)
+    qty = _cq or int(e["qty"] or 0)
     sid = pair["sec_id"]
     strat = str(pair["strategy"] or "")
     bars = _bars(sid, date) or _lake_bars(pair.get("symbol"), e.get("trad_sym"), date)
@@ -337,11 +398,14 @@ def _counterfactual(pair, date):
         return {"method": "no-data"}
     sl_pts, tp_pts = _sl_tp_from_tags(e, lot)
 
-    # RSI-midline (rsi strategies) — the strategy's PRIMARY exit
+    # RSI-midline (rsi strategies) — the strategy's PRIMARY exit, replayed on the
+    # strategy's ACTUAL runtime interval (NOT hardcoded 2m — see _strat_runtime).
     rsi_exit = None
     if strat.lower().startswith("rsi") and pair.get("symbol"):
         pos = 1 if str(e["trad_sym"]).endswith("CE") else -1
-        rsi_exit = _midline_exit_time(pair["symbol"], e["ts"], pos, date)
+        _iv, _per, _lvl = _strat_runtime(strat)
+        rsi_exit = _midline_exit_time(pair["symbol"], e["ts"], pos, date,
+                                      interval_min=_iv, exit_level=_lvl, period=_per)
 
     exit_ep = exit_px = None
     method = ""
@@ -368,15 +432,17 @@ def _counterfactual(pair, date):
             method = "EOD (RSI candles pending)"
     pnl = (exit_px - entry) * qty if side == "BUY" else (entry - exit_px) * qty
     return {"cf_price": round(exit_px, 2), "cf_pnl": round(pnl),
-            "method": method, "exit_hm": _hm(exit_ep)}
+            "method": method, "exit_hm": _hm(exit_ep), "exit_ep": exit_ep}
 
 
 def _actual_pnl(pair):
-    e, x = pair["entry"], pair["exit"]
+    e = pair["entry"]
     entry = _f(e["price"]) or 0.0
-    ex = _f(x["price"]) or 0.0
-    qty = int(e["qty"] or 0)
-    return round((ex - entry) * qty if e["side"] == "BUY" else (entry - ex) * qty)
+    _, _, _, legs = _exit_summary(pair)   # qty-weighted, all exit legs
+    pnl = 0.0
+    for lg in legs:
+        pnl += (lg["price"] - entry) * lg["qty"] if e["side"] == "BUY" else (entry - lg["price"]) * lg["qty"]
+    return round(pnl)
 
 
 # ── main analysis ────────────────────────────────────────────────────────────
@@ -391,20 +457,24 @@ def analyze(date=None, mode=None):
         act = _actual_pnl(p)
         day_actual += act
         kind, reason = _classify_exit(p["exit"], p["entry"])
+        avg_ex, ex_q, ex_hm, ex_legs = _exit_summary(p)
         base = {
             "strategy": p["strategy"], "strategy_label": _slabel(p["strategy"]),
             "symbol": p["symbol"],
             "instrument": str(p["entry"].get("trad_sym") or ""),
+            "sec_id": p.get("sec_id"),
             "mode": p["entry"].get("mode"),
             "entry_price": _f(p["entry"]["price"]), "entry_hm": (p["entry"]["ts"] or "")[11:16],
-            "exit_price": _f(p["exit"]["price"]), "exit_hm": (p["exit"]["ts"] or "")[11:16],
+            "exit_price": avg_ex, "exit_hm": ex_hm,
+            "exit_qty": ex_q, "exit_legs": ex_legs,   # all cut legs (chart markers)
             "qty": int(p["entry"].get("qty") or 0), "side": p["entry"].get("side"),
             "actual_pnl": act, "exit_reason": reason,
         }
         if kind == "cut":
             cf = _counterfactual(p, date)
             base.update({"cf_pnl": cf.get("cf_pnl"), "cf_price": cf.get("cf_price"),
-                         "cf_method": cf.get("method"), "cf_exit_hm": cf.get("exit_hm")})
+                         "cf_method": cf.get("method"), "cf_exit_hm": cf.get("exit_hm"),
+                         "cf_exit_ep": cf.get("exit_ep")})
             base["impact"] = (act - cf["cf_pnl"]) if cf.get("cf_pnl") is not None else None
             cuts.append(base)
         elif kind == "strategy":
