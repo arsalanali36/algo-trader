@@ -779,7 +779,11 @@ function setLive(on){
 }
 $('liveBtn').addEventListener('click', ()=> setLive(!$('liveBtn').classList.contains('on')));
 // keep TODAY's chart auto-live during market hours (09:15–15:30 IST, Mon–Fri)
-function _istNow(){ return new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000); }
+// IST wall-clock exposed via getUTC*/toISOString (browser-TZ independent). Date.now()
+// is an absolute UTC epoch, so +5:30 alone = IST; adding getTimezoneOffset() was a bug
+// that cancelled the shift on an IST browser → marketOpen() read UTC hours → returned
+// false during real market hours → live auto-turned-OFF on every load (had to re-enable).
+function _istNow(){ return new Date(Date.now()+330*60000); }
 function marketOpen(){ const n=_istNow(), d=n.getUTCDay(); if(d===0||d===6) return false; const hm=n.getUTCHours()*60+n.getUTCMinutes(); return hm>=9*60+15 && hm<=15*60+30; }
 function isToday(){ return DATE === _istNow().toISOString().slice(0,10); }
 function autoLiveOrOff(){ setLive(isToday() && marketOpen()); }
@@ -803,7 +807,7 @@ applyView();   // set labels/legend/note for the persisted view before first pai
 (async function initDate(){
   let latest = null;
   try{ const r = await (await fetch(`/api/gex?list=1&underlying=${U}`)).json(); const ds = r.dates||[]; latest = ds.length ? ds[ds.length-1] : null; }catch(e){}
-  const now = new Date(Date.now()+ (330+new Date().getTimezoneOffset())*60000);
+  const now = _istNow();
   DATE = latest || now.toISOString().slice(0,10);
   $('datePick').value = DATE;
   await load(false);
