@@ -2,6 +2,85 @@
 // global scope — load order in index.html IS the original code order.
     // ── RISK TAB (global + per-strategy max-loss) ──
     let RISK_CFG = { global: {}, per_strategy: {} };
+
+    // ── Auto-straddle family lot-size control (2026-08-04) ────────────────────
+    // The 3 straddle SOURCES (9:20 / alert / manual) share ONE lots value in
+    // nifty_config._auto_straddle.lots — they're fired dynamically, they have NO
+    // top-level config key, so they never appear as normal RMS rows. We inject
+    // them as VIRTUAL rows below + a dedicated ⚙ Lots gear. The roller HAS its own
+    // config key (atm_straddle_roller.lots) and renders as a normal row; it just
+    // gets a Lots button appended. Non-straddle strategies never see a Lots field.
+    const STRADDLE_SOURCES = ['straddle_920', 'straddle_alert', 'straddle_manual'];
+    const STRADDLE_ROLLER = 'atm_straddle_roller';
+    const STRADDLE_LOTS_IDS = new Set([...STRADDLE_SOURCES, STRADDLE_ROLLER]);
+    function _isStraddleSource(id) { return STRADDLE_SOURCES.includes(String(id).toLowerCase()); }
+    function _straddleCurLots(id) {
+      const c = (typeof GLOBAL_CONFIG === 'object' && GLOBAL_CONFIG) || {};
+      const node = _isStraddleSource(id) ? (c._auto_straddle || {}) : (c[STRADDLE_ROLLER] || {});
+      const v = parseInt(node.lots, 10);
+      return (v && v >= 1) ? v : 1;
+    }
+    function _straddleLotsBtn(id) {
+      const lots = _straddleCurLots(id);
+      return `<button onclick="openStraddleLots('${id}')" title="Lot size set karo (paper)"
+        style="padding:4px 9px;background:#0d1117;color:#e0a325;border:1px solid #d29922;border-radius:5px;cursor:pointer;font-weight:600;white-space:nowrap">🔢 Lots: ${lots} ⚙</button>`;
+    }
+    function openStraddleLots(id) {
+      const isSrc = _isStraddleSource(id);
+      const cur = _straddleCurLots(id);
+      const label = (typeof regLabel === 'function' && regLabel(id)) || id;
+      const note = isSrc
+        ? '⚠️ Ye lots <b>teeno auto-straddle sources</b> (9:20 / alert / manual) ke liye SHARED hai — inka ek hi config value hai (<code>_auto_straddle.lots</code>). Paper-locked.'
+        : 'Auto-rolling ATM straddle ke apne lots (<code>atm_straddle_roller.lots</code>). Paper-locked.';
+      let m = document.getElementById('straddle-lots-modal');
+      if (!m) { m = document.createElement('div'); m.id = 'straddle-lots-modal'; document.body.appendChild(m); }
+      m.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:10002;display:flex;align-items:center;justify-content:center';
+      m.innerHTML = `<div style="background:#161b22;border:1px solid #d29922;border-radius:10px;padding:20px 22px;min-width:340px;max-width:440px" onclick="event.stopPropagation()">
+        <div style="font-weight:700;font-size:14px;margin-bottom:6px;color:#e6edf3">🩳 ${label} — Lot size</div>
+        <div style="color:#8b949e;font-size:11.5px;margin-bottom:12px;line-height:1.5">${note}</div>
+        <label style="display:block;color:#8b949e;font-size:12px;margin-bottom:4px">Lots</label>
+        <input id="straddle-lots-input" type="number" min="1" step="1" value="${cur}"
+          style="width:120px;background:#0d1117;color:#e6edf3;padding:7px 9px;border:1px solid #d29922;border-radius:6px;font-size:14px"/>
+        <div id="straddle-lots-msg" style="color:#6e7681;font-size:11px;margin-top:8px;min-height:14px"></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:14px">
+          <button onclick="closeStraddleLots()" style="padding:6px 12px;background:#21262d;color:#8b949e;border:1px solid #30363d;border-radius:6px;cursor:pointer">Cancel</button>
+          <button onclick="saveStraddleLots('${id}')" style="padding:6px 14px;background:#d29922;color:#0d1117;border:0;border-radius:6px;cursor:pointer;font-weight:700">Save</button>
+        </div>
+      </div>`;
+      m.onclick = closeStraddleLots;
+      setTimeout(() => { const i = document.getElementById('straddle-lots-input'); if (i) { i.focus(); i.select(); } }, 30);
+    }
+    function closeStraddleLots() { const m = document.getElementById('straddle-lots-modal'); if (m) m.remove(); }
+    async function saveStraddleLots(id) {
+      const inp = document.getElementById('straddle-lots-input');
+      const msg = document.getElementById('straddle-lots-msg');
+      const v = parseInt(inp && inp.value, 10);
+      if (!v || v < 1) { if (msg) { msg.style.color = '#f85149'; msg.textContent = 'Lots >= 1 hona chahiye'; } return; }
+      if (msg) { msg.style.color = '#6e7681'; msg.textContent = 'Saving…'; }
+      try {
+        if (_isStraddleSource(id)) {
+          // dedicated server-side RMW endpoint; keeps mode paper-locked server-side
+          const res = await fetch('/api/auto-straddle/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lots: v }) });
+          const j = await res.json();
+          if (!j || j.ok === false) throw new Error((j && j.msg) || 'save failed');
+        } else {
+          // roller: whole-file RMW via /api/config (Config-tab pattern). Fetch fresh,
+          // set only lots, keep everything else (incl. mode) verbatim.
+          const r = await fetch('/api/config'); const cfg = await r.json();
+          if (!cfg || !cfg[STRADDLE_ROLLER]) throw new Error('roller config missing');
+          cfg[STRADDLE_ROLLER].lots = v;
+          const res = await fetch('/api/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(cfg) });
+          if (!res.ok) throw new Error('config save failed');
+        }
+        // refresh GLOBAL_CONFIG so the row/button reflect the new value
+        try { const r2 = await fetch('/api/config'); GLOBAL_CONFIG = await r2.json(); } catch (e) { }
+        if (typeof toast === 'function') toast(`✅ ${(typeof regLabel === 'function' && regLabel(id)) || id} lots = ${v}`);
+        closeStraddleLots();
+        if (typeof renderRiskTab === 'function') renderRiskTab();
+      } catch (e) {
+        if (msg) { msg.style.color = '#f85149'; msg.textContent = 'Fail: ' + (e.message || e); }
+      }
+    }
     async function renderRmsSummary() {
       const el = document.getElementById('rms-summary-content');
       let d = {};
@@ -638,6 +717,11 @@
       // Webhook strategies (cfg.webhooks) bhi merged table me — Run Controls + overrides
       // (2026-07-14: RMS Live Summary table is table me merge hui)
       Object.keys(cfg.webhooks || {}).forEach(w => { if (!stratIds.includes(w) && !regHidden(w)) stratIds.push(w); });
+      // Auto-straddle SOURCES (920/alert/manual) have no config key (fired
+      // dynamically via _auto_straddle) — inject as virtual rows so their shared
+      // lots is settable from RMS. RENDER-only: saveRiskConfig derives its own
+      // stratIds from /api/config, so these never touch the per_strategy save.
+      STRADDLE_SOURCES.forEach(s => { if (!stratIds.includes(s) && !regHidden(s)) stratIds.push(s); });
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -713,6 +797,24 @@
         const _num = MISSION_NUM[_rlc(id)];
         const _numBadge = _num ? `<span style="display:inline-block;min-width:16px;padding:0 4px;margin-right:6px;border-radius:4px;background:rgba(88,166,255,.18);color:#58a6ff;font-size:10px;font-weight:700;text-align:center">${_num}</span>` : '';
         const dispName = _numBadge + (MISSION_NAME[_rlc(id)] || fmtStratName(id));
+        // Auto-straddle SOURCE = virtual row. Simplified (no generic per_strategy
+        // inputs — meaningless for a paper, dynamically-fired straddle): just a
+        // dedicated ⚙ Lots gear (writes the shared _auto_straddle.lots).
+        if (_isStraddleSource(id)) {
+          const _as = (typeof GLOBAL_CONFIG === 'object' && GLOBAL_CONFIG && GLOBAL_CONFIG._auto_straddle) || {};
+          const _lid = _rlc(id);
+          const _enTxt = _lid === 'straddle_manual'
+            ? '<span style="color:#8b949e">on-demand</span>'
+            : ((_lid === 'straddle_920' ? _as.enabled_920 : _as.enabled_alert)
+              ? '<span style="color:#3fb950">enabled</span>' : '<span style="color:#8b949e">off</span>');
+          html += `<tr><td title="${id}">${dispName}</td>
+            <td style="font-size:11px;color:#6e7681;white-space:nowrap">🩳 auto-fired</td>
+            <td style="font-size:11px">${_enTxt} <span style="color:#6e7681">· paper</span></td>
+            <td style="color:#8b949e">—</td>
+            <td colspan="2" style="white-space:nowrap">${_straddleLotsBtn(id)} <span style="color:#6e7681;font-size:10px">shared</span></td>`
+            + '<td class="psadv"></td>'.repeat(12) + '</tr>';
+          return;
+        }
         const curMode = ov.capital_mode || '';
         const curShadow = ov.shadow_live === true ? 'true' : (ov.shadow_live === false ? 'false' : '');
         html += `<tr><td title="${id}">${dispName}</td>
@@ -731,7 +833,7 @@
             <option value="aggressive" ${ov.default_sl_mode === 'aggressive' ? 'selected' : ''}>Aggressive — Per-lot trail</option>
           </select><button id="risk-dslvals-btn-${id}" onclick="openDslValModal('${id}')"
             title="Is strategy ke apne SL/Target VALUES (Target/SL ₹, type, trail steps + Aggressive graph preview) — blank = global fallback"
-            style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button></div></td>
+            style="flex:0 0 auto;padding:4px 7px;background:${window._dslVals && window._dslVals[id] ? '#3a2b0a' : '#0d1117'};color:${window._dslVals && window._dslVals[id] ? '#e0a325' : '#8b949e'};border:1px solid #d29922;border-radius:4px;cursor:pointer">⚙</button>${_rlc(id) === STRADDLE_ROLLER ? ' ' + _straddleLotsBtn(id) : ''}</div></td>
       <td class="psadv"><input id="risk-pct-${id}" type="number" step="0.1" placeholder="global"
             value="${ov.max_loss_pct ?? ''}" style="width:100px;background:#0d1117;color:#e6edf3;padding:5px;border:1px solid #30363d;border-radius:4px"/></td>
       <td class="psadv"><input id="risk-rs-${id}" type="number" step="1" placeholder="global"
