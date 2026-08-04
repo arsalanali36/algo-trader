@@ -82,8 +82,13 @@ def main(items=None):
     # copy karne se woh chhut jaate. Checkpoint(TRUNCATE) -wal ko main .db me
     # merge kar deta (safe, non-destructive, live dashboard ko disturb nahi karta).
     if "data/trades.db" in items:
-        ckpt = (f"cd '{REMOTE_DIR}' && python3 -c \""
-                "import sqlite3; c=sqlite3.connect('data/trades.db'); "
+        # FAIL-FAST (2026-08-05): agar db live-writes se locked ho, 5s se zyada
+        # intezaar mat karo (busy_timeout) + hard 8s backstop (shell `timeout`).
+        # check=False → locked case me sync aage badh jaye; jo frames -wal me
+        # reh gaye wo agle sync (auto 10m) me aa jaate. Purana 180s-hang khatam.
+        ckpt = (f"cd '{REMOTE_DIR}' && timeout 8 python3 -c \""
+                "import sqlite3; c=sqlite3.connect('data/trades.db', timeout=5); "
+                "c.execute('PRAGMA busy_timeout=5000'); "
                 "c.execute('PRAGMA wal_checkpoint(TRUNCATE)'); c.commit(); c.close(); "
                 "print('wal checkpoint ok')\"")
         run_cmd(SSH + [HOST, ckpt], check=False)
