@@ -229,12 +229,33 @@ def _lake_bars(symbol, trad_sym, date):
         return []
 
 
+_LOT_CACHE = {}
+
+
 def _lot(sec_id):
+    """Lot size for a sec_id (memoised). CRITICAL: in a standalone/timer run (the
+    EOD `--all`) dhan_master's scrip cache isn't warm → get_lot_size_by_sec_id
+    returns 0 → _sl_tp_from_tags yields no SL/TP → the counterfactual silently
+    skips the strategy's SL (INFY 2026-08-03: with a warm cache lot=400 → cf RMS-SL
+    @ -7500; without it, cf wrongly ran to 3:15). So warm the cache and retry once
+    on a 0 before giving up."""
+    sid = str(sec_id)
+    if sid in _LOT_CACHE:
+        return _LOT_CACHE[sid]
+    v = 0
     try:
         import dhan_master as dm
-        return int(float(dm.get_lot_size_by_sec_id(str(sec_id)) or 0))
+        v = int(float(dm.get_lot_size_by_sec_id(sid) or 0))
+        if not v:
+            try:
+                dm.build_cache()
+                v = int(float(dm.get_lot_size_by_sec_id(sid) or 0))
+            except Exception:
+                pass
     except Exception:
-        return 0
+        v = 0
+    _LOT_CACHE[sid] = v
+    return v
 
 
 # TF_MAP mirrors strategies/live/01_rsi_v1.py — the live RSI trader resolves its
