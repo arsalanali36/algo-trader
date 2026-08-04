@@ -44,6 +44,26 @@ and gross/fee/pnl on the premium). `instrument|*` and `rms|*` are spot-notional
 (gross = points × qty, rough fee) — the same strategy, one layer less realistic each.
 `run_hunt.py` is the reference producer; the cleanest reuse is just to run it.
 
+## ✅ REALISM CHECKLIST — har option backtest ka number pesh karne se PEHLE 4 tick karo (user rule 2026-08-04)
+
+Ek bhi skip = ₹/edge **jhooth**. Output me batao kaunsa-kaunsa factor kiya (jaise BNF strangle:
+"real lake · date-aware charges+lot · monthly-series · skip expiry-day"). Memory:
+`feedback_backtest_realism_checklist`.
+
+1. **REAL lake > BS.** Real premium lake ho (`_TRADING_DATA/OptChainLake_1m/<UND>`) to usi ke asli
+   premium pe reprice — BS-modeled Sharpe ko jawaab mat banao (BS buyer ko flatter karta, TRAP #136,
+   0/7 winners real pe bache). BS number = research figure only → `bs_vs_reallake.py <slug>` chalao.
+   SELLER + real fill = trust-worthy.
+2. **REAL date-aware charges + slip.** `bs.calc_charges(..., when=entry_date)` (STT regime 2024-10 +
+   2026-04) + `bs.slip_cost_leg` (DOM). Zero-cost / flat-old-rate kabhi nahi.
+3. **Expiry realism.** Sahi contract series (BankNifty weekly Nov-2024 me band → monthly-only; NIFTY
+   weekly) + expiry-day handle/skip + weekday migration `expiry_calendar` se (hardcode nahi).
+4. **DATE-AWARE lot.** Flat current lot poore span pe mat lagao — `lot_for(date)` map. BankNifty
+   25→15→30, NIFTY 75→65. Flat-lot = ₹ inflated (BNF strangle +₹8.5L flat-35 → asli +₹5.76L). Sharpe/
+   win%/points lot-independent SIRF jab lot uniform ho.
+
+---
+
 ## 🔴 Every Sharpe/net here is BS-MODELED premium — NOT real. Reprice before you trust it (TRAP #136)
 
 The `bs|full` pass (what the registry/hub display) prices option legs with **Black-Scholes +
