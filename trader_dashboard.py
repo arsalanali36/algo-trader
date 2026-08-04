@@ -5854,6 +5854,20 @@ def api_intervention_rerun():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/api/intervention/chart')
+def api_intervention_chart():
+    """Premium OHLC bars for a cut's option (intervention chart popup). The entry /
+    manual-cut / strategy-would-exit markers are drawn client-side from the cut row
+    the /api/intervention response already carries. Display-only."""
+    try:
+        import intervention_report as ir
+        bars = ir.chart_bars(request.args.get('sec_id'), request.args.get('date'),
+                             request.args.get('symbol'), request.args.get('trad_sym'))
+        return jsonify({"ok": True, "bars": bars})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "bars": []})
+
+
 @app.route('/api/intervention/overview')
 def api_intervention_overview():
     """All-dates intervention aggregate (live/paper/both, day/week/month) — one

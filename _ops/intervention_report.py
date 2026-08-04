@@ -241,6 +241,36 @@ def _lake_bars(symbol, trad_sym, date):
 _LOT_CACHE = {}
 
 
+def chart_bars(sec_id, date, symbol=None, trad_sym=None):
+    """Full-OHLC premium bars for the intervention chart popup: [{t,o,h,l,c}] with
+    t = IST-as-UTC epoch (same convention as entry/cut/cf marker times). trade_ohlc
+    (captured 1-min) first, then the OptionChain lake (index options, ltp-as-flat)."""
+    p = os.path.join(PROJECT, "data", "trade_ohlc", f"{sec_id}_{date}.json")
+    out = []
+    if os.path.exists(p):
+        try:
+            d = json.load(open(p))
+            for k in sorted(d.keys(), key=lambda x: int(x)):
+                v = d[k]
+                if isinstance(v, list):
+                    vals = (list(v) + [None, None, None, None])[:4]
+                    o, h, l, cl = vals
+                else:
+                    o, h, l, cl = v.get("open"), v.get("high"), v.get("low"), v.get("close")
+                try:
+                    out.append({"t": int(k) + _IST, "o": float(o), "h": float(h),
+                                "l": float(l), "c": float(cl)})
+                except (TypeError, ValueError):
+                    continue
+        except Exception:
+            pass
+    if out:
+        return out
+    for (ep, h, l, cl) in _lake_bars(symbol, trad_sym, date):   # index-option ltp fallback
+        out.append({"t": ep, "o": cl, "h": h, "l": l, "c": cl})
+    return out
+
+
 def _lot(sec_id):
     """Lot size for a sec_id (memoised). CRITICAL: in a standalone/timer run (the
     EOD `--all`) dhan_master's scrip cache isn't warm → get_lot_size_by_sec_id

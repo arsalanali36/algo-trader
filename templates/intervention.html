@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <title>Intervention Report · Algo Trader</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/static/vendor/lightweight-charts.standalone.production.js"></script>
 <style>
   :root{--bg:#0d1117;--pan:#161b22;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;--dim:#565f6a;--g:#3fb950;--r:#f85149;--b:#58a6ff;--y:#e3b341}
   *{box-sizing:border-box}
@@ -24,6 +25,9 @@
   tr+tr td{border-top:1px solid #12161d}
   .clk{cursor:pointer}
   .clk:hover{background:#161b22}
+  .ivchart{cursor:pointer;font-size:13px;opacity:.7;margin-left:5px;vertical-align:middle}
+  .ivchart:hover{opacity:1}
+  #ivchart-ov{position:fixed;inset:0;background:rgba(1,4,9,.78);z-index:9999;display:none;align-items:center;justify-content:center;padding:14px}
   /* 9:16 / narrow-width (mobile demos): tighten, stack the 3-col fr-grids, and let the
      JS-injected 6-col tables scroll (their cards use inline overflow:hidden — override). */
   @media(max-width:760px){
@@ -53,7 +57,7 @@
     <div id="iv-body"><div style="padding:40px;text-align:center;color:var(--mut)">loading&hellip;</div></div>
 
     <div style="margin-top:14px;font-size:10px;color:var(--dim);line-height:1.7">
-      <b style="color:var(--mut)">Counterfactual:</b> har manual cut ki jagah strategy ka apna exit replay &mdash; RSI-50 midline (2m candles) / RMS SL/target / 3:15 EOD / expiry &mdash; jo pehle fire kare, usi option ke asli premium bars pe priced. <b style="color:var(--mut)">impact = actual &minus; counterfactual</b> (+ = cut ne madad ki, &minus; = nuksan). RSI-midline time &plusmn;kuch min naazuk; ek din nahi, TREND dekho. Sab gross (charges alag). Bars/rows click karo &rarr; wo din khulega.
+      <b style="color:var(--mut)">Counterfactual:</b> har manual cut ki jagah strategy ka apna exit replay &mdash; RSI-50 midline (strategy ke ASLI runtime timeframe pe, RSI = 5m) / RMS SL/target / 3:15 EOD / expiry &mdash; jo pehle fire kare, usi option ke asli premium bars pe priced. Har row me &#128200; &rarr; chart (entry vs tumhara cut vs strategy exit). <b style="color:var(--mut)">impact = actual &minus; counterfactual</b> (+ = cut ne madad ki, &minus; = nuksan). RSI-midline time &plusmn;kuch min naazuk; ek din nahi, TREND dekho. Sab gross (charges alag). Bars/rows click karo &rarr; wo din khulega.
     </div>
   </div>
 
@@ -144,6 +148,7 @@ function ivLoadDay(){
 function renderDay(R){
   if(!R||R.ok===false){document.getElementById('iv-body').innerHTML='<div style="padding:30px;text-align:center;color:var(--r)">'+esc(R&&R.msg||'error')+'</div>';return;}
   if(!document.getElementById('iv-date').value && R.date) document.getElementById('iv-date').value=R.date;
+  window._ivCuts=R.cuts||[]; window._ivDate=R.date;   // for the chart popup
   var net=R.net_impact||0, netC=net>0?'var(--g)':(net<0?'var(--r)':'var(--mut)');
   var verdict=net>0?R.n_cut+' cuts ne strategy se '+inrp(net).replace('₹','₹')+' <b>zyada</b> diya':net<0?R.n_cut+' cuts ne '+inrp(-net).replace('₹','₹')+' <b>kam</b> diya':'intervention ~neutral';
   var h='';
@@ -157,10 +162,10 @@ function renderDay(R){
     +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#12341f30;border:1px solid #1a7f37;color:var(--g)">&#10003; Helped '+R.helped_n+' (+'+inrp(R.helped_sum).slice(1)+')</span>'
     +'<span style="padding:5px 12px;font-size:12px;border-radius:20px;background:#3d151830;border:1px solid #5c1a1f;color:var(--r)">&#10007; Hurt '+R.hurt_n+' ('+inrp(R.hurt_sum)+')</span></div>';
   h+='<div class="card" style="overflow:hidden;margin-bottom:14px"><table><thead><tr><th>Position · strategy</th><th>Aap ne cut</th><th>Strategy karti</th><th>Impact</th></tr></thead><tbody>';
-  (R.cuts||[]).forEach(function(c){
+  (R.cuts||[]).forEach(function(c,ci){
     var imp=c.impact, help=imp>0, nod=(imp==null), ic=nod?'var(--mut)':(help?'var(--g)':'var(--r)');
     var chip=nod?'&mdash;':(help?'&#10003;':'&#10007;');
-    h+='<tr><td><div style="color:var(--tx)">'+esc(c.symbol||c.instrument)+'</div><div style="font-size:9px;color:var(--dim)">'+esc(c.strategy_label||c.strategy)+' &middot; '+esc(c.exit_reason||'')+'</div></td>'
+    h+='<tr><td><div style="color:var(--tx)">'+esc(c.symbol||c.instrument)+'<span class="ivchart" onclick="ivChart('+ci+')" title="Chart kholo — entry, tumhara cut, aur strategy kahan exit karti">&#128200;</span></div><div style="font-size:9px;color:var(--dim)">'+esc(c.strategy_label||c.strategy)+' &middot; '+esc(c.exit_reason||'')+'</div></td>'
       +'<td class="mono" style="color:'+(c.actual_pnl>=0?'var(--g)':'var(--r)')+'">'+inrp(c.actual_pnl)+' <span style="color:var(--dim);font-size:9px">'+esc(c.exit_hm)+'</span></td>'
       +'<td class="mono" style="color:#adb6c0">'+(c.cf_pnl==null?'<span style="color:var(--dim)">no data</span>':inrp(c.cf_pnl))+' <span style="color:var(--dim);font-size:9px">'+esc(c.cf_method||'')+(c.cf_exit_hm?(' '+esc(c.cf_exit_hm)):'')+'</span></td>'
       +'<td class="mono" style="color:'+ic+';font-weight:600">'+chip+' '+(nod?'':inr(imp))+'</td></tr>';
@@ -197,8 +202,44 @@ document.querySelectorAll('#iv-view span').forEach(function(s){s.onclick=functio
 document.querySelectorAll('#iv-mode span').forEach(function(s){s.onclick=function(){document.querySelectorAll('#iv-mode span').forEach(function(x){x.classList.toggle('on',x===s);});IVMODE=s.dataset.v;ivLoad();};});
 document.querySelectorAll('#iv-group span').forEach(function(s){s.onclick=function(){document.querySelectorAll('#iv-group span').forEach(function(x){x.classList.toggle('on',x===s);});IVGROUP=s.dataset.v;if(IVVIEW==='overview')ivLoad();};});
 document.getElementById('iv-date').addEventListener('change',function(){if(IVVIEW==='day')ivLoad();});
+// ── chart popup: entry ▲ vs your cut(s) ✕ vs where the strategy would exit ◆ ──
+function ivHmEp(date,hm){ if(!date||!hm) return null; var t=Date.parse(date+'T'+hm+':00Z'); return isNaN(t)?null:Math.floor(t/1000); }  // IST-as-UTC epoch (matches bars)
+function ivChart(ci){
+  var c=(window._ivCuts||[])[ci]; if(!c) return;
+  var date=window._ivDate, ov=document.getElementById('ivchart-ov');
+  var cuts=(c.exit_legs||[]).map(function(l){return l.hm+' @'+l.price+(l.qty?(' ×'+l.qty):'');}).join(', ');
+  var sub='Entry '+esc(c.entry_hm)+' @'+c.entry_price+'  ·  Tumhara cut: '+esc(cuts||('—'))+'  ·  Strategy: '+esc(c.cf_method||'—')+(c.cf_exit_hm?(' @'+esc(c.cf_exit_hm)):'')+(c.cf_price!=null?(' ('+c.cf_price+')'):'');
+  ov.style.display='flex';
+  ov.innerHTML='<div style="background:var(--pan);border:1px solid var(--bd);border-radius:12px;width:min(940px,96vw);max-height:92vh;overflow:hidden;display:flex;flex-direction:column" onclick="event.stopPropagation()">'
+    +'<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:12px 16px;border-bottom:1px solid var(--bd2)">'
+    +'<div><div style="font-weight:700;color:var(--tx)">'+esc(c.instrument||c.symbol)+' <span style="color:var(--dim);font-weight:400">· '+esc(date)+'</span></div>'
+    +'<div style="font-size:11px;color:var(--mut);margin-top:3px;line-height:1.5">'+sub+'</div></div>'
+    +'<button class="btn" onclick="ivCloseChart()">&#10005;</button></div>'
+    +'<div style="display:flex;gap:16px;padding:7px 16px;font-size:11px;flex-wrap:wrap;border-bottom:1px solid var(--bd2)"><span style="color:var(--b)">&#9650; Entry</span><span style="color:var(--r)">&#10007; Tumhara cut</span><span style="color:var(--y)">&#9670; Strategy exit (jahan karti)</span></div>'
+    +'<div id="ivchart-c" style="flex:1;min-height:390px;padding:6px 10px 12px"></div></div>';
+  var host=document.getElementById('ivchart-c');
+  fetch('/api/intervention/chart?sec_id='+encodeURIComponent(c.sec_id||'')+'&date='+encodeURIComponent(date||'')+'&symbol='+encodeURIComponent(c.symbol||'')+'&trad_sym='+encodeURIComponent(c.instrument||''))
+    .then(function(r){return r.json();}).then(function(d){
+      var bars=(d&&d.bars)||[]; host.innerHTML='';
+      if(!bars.length){host.innerHTML='<div style="padding:44px;text-align:center;color:var(--dim)">is option ke premium bars capture nahi hue (purana/expired contract)</div>';return;}
+      if(typeof LightweightCharts==='undefined'){host.innerHTML='<div style="padding:44px;text-align:center;color:var(--r)">chart lib load nahi hui</div>';return;}
+      var ch=LightweightCharts.createChart(host,{width:host.clientWidth||880,height:390,layout:{background:{color:'transparent'},textColor:'#8b949e'},grid:{vertLines:{color:'#161b22'},horzLines:{color:'#161b22'}},timeScale:{timeVisible:true,secondsVisible:false,borderColor:'#30363d'},rightPriceScale:{borderColor:'#30363d'}});
+      var s=ch.addCandlestickSeries({upColor:'#3fb950',downColor:'#f85149',wickUpColor:'#3fb950',wickDownColor:'#f85149',borderVisible:false});
+      s.setData(bars.map(function(b){return {time:b.t,open:b.o,high:b.h,low:b.l,close:b.c};}));
+      var mk=[], e=ivHmEp(date,c.entry_hm);
+      if(e) mk.push({time:e,position:'belowBar',color:'#58a6ff',shape:'arrowUp',text:'Entry '+c.entry_price});
+      (c.exit_legs||[]).forEach(function(l){var t=ivHmEp(date,l.hm); if(t) mk.push({time:t,position:'aboveBar',color:'#f85149',shape:'arrowDown',text:'Cut '+l.price});});
+      if(c.cf_exit_ep) mk.push({time:c.cf_exit_ep,position:'aboveBar',color:'#e3b341',shape:'circle',text:'Strategy '+(c.cf_price!=null?c.cf_price:'')});
+      mk.sort(function(a,b){return a.time-b.time;}); s.setMarkers(mk);
+      if(c.entry_price) s.createPriceLine({price:c.entry_price,color:'#58a6ff',lineWidth:1,lineStyle:2,title:'entry'});
+      if(c.cf_price!=null) s.createPriceLine({price:c.cf_price,color:'#e3b341',lineWidth:1,lineStyle:2,title:'strat exit'});
+      ch.timeScale().fitContent(); window._ivCh=ch;
+    }).catch(function(){host.innerHTML='<div style="padding:44px;text-align:center;color:var(--r)">chart load fail</div>';});
+}
+function ivCloseChart(){ var ov=document.getElementById('ivchart-ov'); if(ov) ov.style.display='none'; if(window._ivCh){try{window._ivCh.remove();}catch(_){}} window._ivCh=null; }
 setView('overview'); ivLoad();
 </script>
+<div id="ivchart-ov" onclick="ivCloseChart()"></div>
 <script defer src="/static/js/topnav.js"></script>
 </body>
 </html>
