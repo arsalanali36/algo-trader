@@ -34,6 +34,15 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 if PROJECT not in sys.path:
     sys.path.insert(0, PROJECT)
+# Standalone/EOD-timer runs (python _ops/intervention_report.py --all) only have
+# _ops + PROJECT on the path — but dhan_master lives in _data/. Without this, the
+# _lot() lookup's `import dhan_master` silently fails → lot 0 → the SL is dropped
+# from the counterfactual (INFY 2026-08-03: cf ran to 3:15 -6860 instead of the
+# real RMS-SL -7500). _paths (root) puts every project folder on sys.path.
+try:
+    import _paths  # noqa: F401
+except Exception:
+    pass
 
 STORE_DIR = os.path.join(PROJECT, "data", "intervention")
 
