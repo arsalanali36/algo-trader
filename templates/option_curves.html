@@ -309,6 +309,7 @@
       <button data-l="CE" onclick="setStkLeg('CE',this)">CE</button>
       <button data-l="PE" onclick="setStkLeg('PE',this)">PE</button>
     </div>
+    <label class="pk" style="margin-top:8px;display:flex;align-items:center;gap:6px;font-size:11px;cursor:pointer" title="Is strike ki apni IV% curve (purple dashed) — real broker IV, sirf collector din pe. Premium overlay ke saath dikhti hai (apni scale)."><input type="checkbox" id="spIv" onchange="setStkIv(this.checked)"> 🌡 IV curve (real)</label>
     <div class="res" id="spRes">—</div>
   </div>
 
@@ -377,7 +378,7 @@
   // OVERLAYS (all panes): index (Off/Line/OHLC) + one selected strike (Off/Line/OHLC via right-click)
   var idxOv    = load('oc_index_ov', 'line');          // 'off' | 'line' | 'ohlc'
   var gexOv    = load('oc_gex_ov', false), _gexLevels = null, _gexLvlKey = '';   // GEX walls/flip/±1σ overlay (left/NIFTY-price axis)
-  var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line' });
+  var strikeOv = load('oc_strike_ov', { on:false, offset:0, leg:'CE', mode:'line', showIv:false });
   var _strikePts = [], _stkStrikes = [], _stkStrikesKey = '', _strikeResolved = null, _strikeFetching = false;
   // Fixed straddle/strangle (held strikes) — stored PER UNDERLYING so NIFTY & BANKNIFTY
   // keep their own saved lists. Switching instrument shows only that instrument's straddles.
@@ -696,6 +697,10 @@
           entry.stkCandle=chart.addCandlestickSeries({ upColor:'#3fb950', downColor:'#f85149', wickUpColor:'#3fb950', wickDownColor:'#f85149',
             borderVisible:false, priceScaleId:'ocstrike', visible:strikeOv.on&&strikeOv.mode==='ohlc' });
           chart.priceScale('ocstrike').applyOptions({ visible:false, scaleMargins:{top:0.15,bottom:0.15} });
+          // STRIKE IV overlay — chosen strike's own IV% (real collector IV) on its own scale.
+          entry.stkIv=chart.addLineSeries({ color:'#d2a8ff', lineWidth:2, lineStyle:2, priceScaleId:'ocstrikeiv',
+            priceLineVisible:false, lastValueVisible:false, visible:strikeOv.on&&strikeOv.showIv });
+          chart.priceScale('ocstrikeiv').applyOptions({ visible:false, scaleMargins:{top:0.15,bottom:0.15} });
         }
         panes.push(entry);
         chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ syncRange(entry); });
@@ -936,19 +941,23 @@
     var cur = strikeOv.on ? strikeOv.mode : 'off';
     document.querySelectorAll('#spForm button').forEach(function(b){ b.classList.toggle('on', b.dataset.f===cur); });
     document.querySelectorAll('#spLeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.l===strikeOv.leg); });
+    var ivc=document.getElementById('spIv'); if(ivc) ivc.checked=!!strikeOv.showIv;
     var html=''; for(var o=-3;o<=3;o++){ html+='<button class="'+(o===strikeOv.offset?'on':'')+'" onclick="setStkOffset('+o+',this)">'+(o===0?'ATM':(o>0?('+'+o):o))+'</button>'; }
     document.getElementById('spOffs').innerHTML=html;
     var el=document.getElementById('spRes');
     if(!strikeOv.on){ el.textContent='Overlay off'; el.style.color='var(--mut)'; }
     else {
-      var last=_strikePts.length?_strikePts[_strikePts.length-1].ltp:null;
-      el.textContent=(_strikeResolved!=null ? (_strikeResolved+' '+strikeOv.leg+(last!=null?(' · ₹'+fmt(last,2)):'')) : 'Resolving…');
+      var lp=_strikePts.length?_strikePts[_strikePts.length-1]:null;
+      var last=lp?lp.ltp:null, liv=(lp&&lp.iv!=null)?lp.iv:null;
+      var ivTxt=(strikeOv.showIv&&liv!=null)?(' · IV '+fmt(liv,2)+'%'):'';
+      el.textContent=(_strikeResolved!=null ? (_strikeResolved+' '+strikeOv.leg+(last!=null?(' · ₹'+fmt(last,2)):'')+ivTxt) : 'Resolving…');
       el.style.color=strikeOv.leg==='CE'?'var(--cyn)':'var(--org)';
     }
   }
   function setStkForm(v, btn){ if(v==='off'){ strikeOv.on=false; } else { strikeOv.on=true; strikeOv.mode=v; } save('oc_strike_ov', strikeOv); renderStrikePop(); applyStrikeOv(); }
   function setStkOffset(o, btn){ strikeOv.offset=o; save('oc_strike_ov', strikeOv); renderStrikePop(); if(strikeOv.on) applyStrikeOv(); }
   function setStkLeg(l, btn){ strikeOv.leg=l; save('oc_strike_ov', strikeOv); panes.forEach(applyStrikeColor); renderStrikePop(); if(strikeOv.on) applyStrikeOv(); }
+  function setStkIv(on){ strikeOv.showIv=!!on; save('oc_strike_ov', strikeOv); _pushStrike(); }
 
   function ensureStrikes(cb){
     var date=document.getElementById('date').value, ex=document.getElementById('expiry').value;
@@ -1187,10 +1196,12 @@
     if(e.stkLine) e.stkLine.applyOptions({ color: strikeOv.leg==='CE' ? '#39c5cf' : '#f0883e' });
   }
   function strikeSeriesData(tf){
-    if(!(strikeOv.on && _strikePts.length)) return { line:[], candle:[] };
+    if(!(strikeOv.on && _strikePts.length)) return { line:[], candle:[], iv:[] };
     return {
       line: resample(_strikePts, tf).map(function(p){return {time:p.t, value:p.ltp};}).filter(function(x){return x.value!=null&&!isNaN(x.value);}),
-      candle: ohlcFrom(_strikePts, tf, function(p){return p.ltp;})
+      candle: ohlcFrom(_strikePts, tf, function(p){return p.ltp;}),
+      // real IV per minute (collector) — null on any point without a real iv, never faked
+      iv: resample(_strikePts, tf).map(function(p){return {time:p.t, value:p.iv};}).filter(function(x){return x.value!=null&&!isNaN(x.value);})
     };
   }
   function setStrikeSeriesFrom(e, sd){
@@ -1200,13 +1211,20 @@
     try{ e.stkCandle.setData(on?sd.candle:[]); }catch(x){}
     e.stkLine.applyOptions({ visible: on && strikeOv.mode==='line' });
     e.stkCandle.applyOptions({ visible: on && strikeOv.mode==='ohlc' });
+    if(e.stkIv){
+      var ivOn = on && strikeOv.showIv && (sd.iv||[]).length>0;
+      try{ e.stkIv.setData(ivOn?sd.iv:[]); }catch(x){}
+      e.stkIv.applyOptions({ visible: ivOn });
+    }
   }
   function setStrikeSeries(e){ setStrikeSeriesFrom(e, strikeSeriesData(+document.getElementById('tf').value)); }
   function updateStrikeReadout(){
     var el=document.getElementById('v-ovstk'); if(!el) return;
     if(!strikeOv.on || _strikeResolved==null){ el.textContent='—'; return; }
-    var last=_strikePts.length?_strikePts[_strikePts.length-1].ltp:null;
-    el.textContent=_strikeResolved+' '+strikeOv.leg+(last!=null?(' ₹'+fmt(last,2)):'');
+    var lp=_strikePts.length?_strikePts[_strikePts.length-1]:null;
+    var last=lp?lp.ltp:null, liv=(lp&&lp.iv!=null)?lp.iv:null;
+    var ivTxt=(strikeOv.showIv&&liv!=null)?(' · IV '+fmt(liv,2)+'%'):'';
+    el.textContent=_strikeResolved+' '+strikeOv.leg+(last!=null?(' ₹'+fmt(last,2)):'')+ivTxt;
   }
   function _pushStrike(){ var sd=strikeSeriesData(+document.getElementById('tf').value); panes.forEach(function(e){ applyStrikeColor(e); setStrikeSeriesFrom(e, sd); }); updateStrikeReadout(); renderStrikePop(); }
   function applyStrikeOv(){
