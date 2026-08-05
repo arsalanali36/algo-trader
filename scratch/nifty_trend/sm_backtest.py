@@ -190,6 +190,88 @@ def _all_trades(days):
 _entry_hm = "09:22"; _exit_hm = "15:15"
 
 
+def _render_report_html(title, cfg, days, m):
+    """Self-contained rich report: KPI strip + monthly breakup grid + equity SVG + trade log."""
+    def inr(v):
+        v = round(v or 0); return ("-" if v < 0 else "") + "₹" + format(abs(v), ",")
+    MON = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
+    grid = {}
+    for d in days:
+        y = int(d["date"][:4]); mo = int(d["date"][5:7])
+        grid.setdefault(y, [None] * 12)
+        grid[y][mo - 1] = (grid[y][mo - 1] or 0) + d["net"]
+    gtot = [0.0] * 12
+    rows = ""
+    for y in sorted(grid):
+        tds = ""
+        for i, v in enumerate(grid[y]):
+            if v is None:
+                tds += '<td class=z></td>'
+            else:
+                gtot[i] += v
+                tds += '<td class="%s">%s</td>' % ("pos" if v >= 0 else "neg", format(round(v), ","))
+        yt = sum(v for v in grid[y] if v is not None)
+        rows += '<tr><td class=yr>%d</td>%s<td class="tot %s">%s</td></tr>' % (y, tds, "pos" if yt >= 0 else "neg", format(round(yt), ","))
+    net = m.get("net_abs", 0)
+    rows += '<tr class=grand><td>Total</td>%s<td class="tot %s">%s</td></tr>' % (
+        "".join('<td class="%s">%s</td>' % ("pos" if v >= 0 else "neg", format(round(v), ",")) for v in gtot),
+        "pos" if net >= 0 else "neg", format(round(net), ","))
+    # equity SVG
+    eq = []; c = 0.0
+    for d in days:
+        c += d["net"]; eq.append(c)
+    W, H, pad = 900, 220, 4
+    if eq:
+        mx, mn = max(eq + [0]), min(eq + [0]); sp = (mx - mn) or 1
+        pts = " ".join("%.1f,%.1f" % (pad + i / max(1, len(eq) - 1) * (W - 2 * pad), H - 10 - (v - mn) / sp * (H - 20)) for i, v in enumerate(eq))
+        zeroY = H - 10 - (0 - mn) / sp * (H - 20)
+        svg = ('<svg viewBox="0 0 %d %d" style="width:100%%;height:auto">'
+               '<line x1="0" y1="%.1f" x2="%d" y2="%.1f" stroke="#30363d" stroke-dasharray="3 3"/>'
+               '<polyline points="%s" fill="none" stroke="#3fb950" stroke-width="1.6"/></svg>' % (W, H, zeroY, W, zeroY, pts))
+    else:
+        svg = ""
+    K = lambda k, v, c="": '<div class="kpi %s"><div class=k>%s</div><div class=v>%s</div></div>' % (c, k, v)
+    kpis = "".join([
+        K("Net Profit", inr(net), "g" if net >= 0 else "r"),
+        K("Expiries", m.get("trades", len(days))),
+        K("Win %", "%s%%" % m.get("win_rate"), "g"),
+        K("Sharpe", m.get("sharpe")),
+        K("Max DD", inr(-abs(m.get("maxdd_abs", 0))), "r"),  # display label only — this is a pure premium-P&L backtest, no risk simulation
+        K("Profit Factor", m.get("profit_factor")),
+        K("Avg / expiry", inr(m.get("expectancy", 0))),
+        K("Avg Win", inr(m.get("avg_win", 0)), "g"),
+        K("Avg Loss", inr(m.get("avg_loss", 0)), "r"),
+        K("Return / MDD", ("%.2f" % (net / abs(m.get("maxdd_abs", 1)))) if m.get("maxdd_abs") else "—"),
+    ])
+    log = ""
+    for d in reversed(days):
+        lg = " · ".join("%s%d %s→%s%s" % (l["opt"], l["lots"], l["entry"], l["exit"], " ⛔" if l["reason"] == "SL" else "") for l in d["legs"])
+        log += '<tr><td>%s</td><td>%d</td><td class="%s">%s</td><td class=dim>%s</td></tr>' % (
+            d["date"], d["atm"], "pos" if d["net"] >= 0 else "neg", inr(d["net"]), lg)
+    return """<!doctype html><meta charset=utf-8><title>{T}</title>
+<style>body{{background:#0d1117;color:#e6edf3;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;margin:0;padding:20px;font-size:13px}}
+h1{{font-size:19px;margin:0 0 3px}}.sub{{color:#8b949e;font-size:12px;margin-bottom:16px}}
+.card{{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px;margin-bottom:16px}}
+.h{{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:#8b949e;margin-bottom:10px}}
+.kpis{{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}}
+.kpi{{background:#1c2128;border:1px solid #30363d;border-radius:9px;padding:9px 11px}}
+.kpi.g{{border-top:2px solid #3fb950}}.kpi.r{{border-top:2px solid #f85149}}
+.kpi .k{{font-size:9px;text-transform:uppercase;color:#8b949e}}.kpi .v{{font-size:17px;font-weight:800;margin-top:2px}}
+table{{width:100%;border-collapse:collapse;font-size:12px}}th,td{{padding:6px 8px;text-align:center;border:1px solid #21262d}}
+th{{background:#1c2128;color:#8b949e;font-size:10px;text-transform:uppercase}}
+td.yr,td.dim{{color:#8b949e}}td.dim{{text-align:left;font-size:10px}}.pos{{color:#3fb950}}.neg{{color:#f85149}}.tot{{font-weight:800}}.z{{background:#0d1117}}
+tr.grand td{{font-weight:800;background:#1c2128}}.log{{max-height:420px;overflow:auto}}
+@media(max-width:800px){{.kpis{{grid-template-columns:repeat(2,1fr)}}}}</style>
+<h1>{T}</h1><div class=sub>{DESC} · <b>hamare data {W0} → {W1}</b> · {N} expiries · StockMock-parity (open-entry · held-strike · high-SL · 0.5% slip · Zerodha charges)</div>
+<div class=card><div class=h>Result (our data)</div><div class=kpis>{KPIS}</div></div>
+<div class=card><div class=h>Equity curve (cumulative net ₹)</div>{SVG}</div>
+<div class=card><div class=h>Monthly breakup (₹)</div><table><tr><th>Year</th>{MHEAD}<th>Total</th></tr>{ROWS}</table></div>
+<div class=card><div class=h>Per-expiry log ({N} days, latest first)</div><div class=log><table><tr><th>Date</th><th>ATM</th><th>Net</th><th>Legs (entry→exit, ⛔=SL)</th></tr>{LOG}</table></div></div>
+<div class=sub style="margin-top:8px">Full day-wise calendar + filters: Stats tab → 🧪 Backtest toggle → is run ko chuno.</div>
+""".format(T=title, DESC=smr.describe(cfg), W0=days[0]["date"] if days else "", W1=days[-1]["date"] if days else "",
+           N=len(days), KPIS=kpis, SVG=svg, MHEAD="".join("<th>%s</th>" % x for x in MON), ROWS=rows, LOG=log)
+
+
 def emit_run(slug, title, cfg, days, start_cap=331000):
     """Write runs/<slug>/{results.js,meta.json,index.html} + append runs/index.json."""
     global _entry_hm, _exit_hm
@@ -222,14 +304,12 @@ def emit_run(slug, title, cfg, days, start_cap=331000):
     mfull = combos.get("bs|full", {}).get("metrics", {})
     with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, ensure_ascii=False, indent=1)
+    # index.html = a self-contained rich report (KPIs + monthly breakup + equity curve +
+    # trade log). NOT the run_hunt dashboard_intraday template — that needs a richer results.js
+    # (meta.passes/dna/benchmark/…) and renders empty on our minimal schema. The full day-wise
+    # calendar lives in the Stats "Backtest" toggle (backtest_calendar reads the same combos).
     with open(os.path.join(d, "index.html"), "w", encoding="utf-8") as f:
-        f.write('<!doctype html><meta charset=utf-8><title>%s</title>'
-                '<body style="background:#0d1117;color:#e6edf3;font-family:system-ui;padding:20px">'
-                '<h2>%s</h2><p>Net ₹%s · Sharpe %s · Win %s%% · MaxDD ₹%s · %d expiries</p>'
-                '<p style="color:#8b949e">StockMock-parity backtest — see Lab hub / Stats "Backtest" toggle for the full calendar.</p>'
-                '<script src="results.js"></script></body>'
-                % (title, title, format(mfull.get("net_abs", 0), ","), mfull.get("sharpe"),
-                   mfull.get("win_rate"), format(-mfull.get("maxdd_abs", 0), ","), meta["days"]))
+        f.write(_render_report_html(title, cfg, days, combos.get("bs|full", {}).get("metrics", {})))
     # append/update runs/index.json
     idx_path = os.path.join(runs, "index.json")
     try:

@@ -68,6 +68,16 @@ scratch/                ← .gitignore me hai, PAR do alag cheezein ek naam ke n
 > default-arg `.keys()` crash, dashboard `STRATEGIES` grep-mismatch, restart-orphan). Critical
 > Rule 6/8 ka full practical version — ek galti do baar na ho.
 >
+> **📋 StockMock-jaisi option strategy (leg-basket: ATM±N sell/buy + SL% + entry/exit time +
+> expiry/day filter) add/backtest/paper karni hai? PEHLE PADHO: `STOCKMOCK_PIPELINE.md` (root).**
+> Poora system already generic hai — ek `_sm` config (nifty_config) + ek registry row + ek command
+> (`python scratch/nifty_trend/sm_backtest.py <key>`) = backtest (our data, StockMock cross-check)
+> + Lab report + live-paper firing. **Koi naya Python nahi** likhna standard strategy ke liye. Doc
+> me: config schema, dono halves (live `_ops/sm_runner.py`+`_fire_sm_strategy`+`sm_runner_loop`;
+> backtest `scratch/nifty_trend/sm_backtest.py`), exits pos_monitor `SL_TYPE:pct` tags se, add-a-
+> strategy 5-step, validation findings (entry=OPEN, held-strike, high-SL), gotchas, file-map. Ye doc
+> isliye hai ki har session poora system dobara reverse-engineer na kare. Memory `project_code3b_stockmock_parity`.
+>
 > **📊 Koi strategy ka BACKTEST banao / uska RESULT dikhao? PEHLE YE 2 PADHO (MANDATORY):**
 > `scratch/nifty_trend/RESULTS_SCHEMA.md` + `scratch/nifty_trend/BS_OPTION_SIM.md`.
 > User chahta hai ki HAR strategy ka result **ek hi reusable dashboard** (`scratch/nifty_trend/
