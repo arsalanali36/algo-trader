@@ -359,14 +359,27 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
     if not exps:
         return {"ok": False, "reason": "no-expiry", "underlying": u, "date": date, "strikes": []}
     exp = expiry if (expiry and expiry in exps) else exps[0]
-    day = [r for r in rows if r.get("expiry") == exp]
-    strikes = sorted({_f(r.get("strike")) for r in day if _f(r.get("strike")) is not None})
-    if not strikes:
+    # Index the day's rows ONCE by (strike, opt_type), each list time-sorted. This turns the
+    # old per-strike full-scan (O(strikes × rows) ≈ millions of _f() calls on a live-date
+    # file — the REAL builder-latency root, ~3-5s) into one O(rows) pass + O(1) lookups.
+    from collections import defaultdict as _dd
+    day_idx = _dd(list)
+    for r in rows:
+        if r.get("expiry") != exp:
+            continue
+        k = _f(r.get("strike"))
+        ot = r.get("opt_type")
+        if k is None or ot not in ("CE", "PE"):
+            continue
+        day_idx[(int(k), ot)].append(r)
+    if not day_idx:
         return {"ok": False, "reason": "no-strikes", "underlying": u, "date": date, "strikes": []}
+    for lst in day_idx.values():
+        lst.sort(key=lambda r: r.get("datetime") or "")
+    strikes = sorted({k for (k, _o) in day_idx})   # ints
 
     def at(strike, ot):
-        c = sorted((r for r in day if _f(r.get("strike")) == strike and r.get("opt_type") == ot),
-                   key=lambda r: r.get("datetime") or "")
+        c = day_idx.get((int(strike), ot))
         if not c:
             return None
         for r in c:
@@ -383,15 +396,14 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
                 "delta": round(dl, 2) if dl is not None else None,
                 "oi": round(oi) if oi is not None else None}
 
-    # spot at (or after) hm from any leg's snapshot
+    # spot at (or after) hm — first indexed strike's snapshot at hm carries the instrument spot
     spot = None
-    for r in sorted(day, key=lambda r: r.get("datetime") or ""):
-        if (r.get("datetime") or "")[11:16] >= hm:
-            spot = _f(r.get("spot"))
-            if spot:
-                break
-    if spot is None:
-        spot = _f(day[-1].get("spot"))
+    for (_k, _o), lst in day_idx.items():
+        r = next((rr for rr in lst if (rr.get("datetime") or "")[11:16] >= hm), lst[-1])
+        sp = _f(r.get("spot"))
+        if sp:
+            spot = sp
+            break
     step = STEP.get(u, 50)
     if len(strikes) >= 2:
         diffs = sorted(strikes[i + 1] - strikes[i] for i in range(len(strikes) - 1))
