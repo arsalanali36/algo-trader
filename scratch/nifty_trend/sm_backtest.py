@@ -133,8 +133,8 @@ def simulate(cfg, from_date, to_date):
         legs_out = []
         ok = True
         for lc in legs_cfg:
-            if lc.get("strike_mode") == "cp_pct_sp":
-                target = lc["sp_pct"] / 100.0 * straddle
+            if lc.get("strike_mode") in ("cp_pct_sp", "cp_rs"):
+                target = (lc["sp_pct"] / 100.0 * straddle) if lc["strike_mode"] == "cp_pct_sp" else lc["cp_rs"]
                 pick = pick_by_prem(day[lc["opt"]], atm, target, otm_above=(lc["opt"] == "CE"))
                 if not pick:
                     ok = False; break

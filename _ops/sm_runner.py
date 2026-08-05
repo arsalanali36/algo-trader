@@ -51,16 +51,20 @@ def parse_cfg(strategy_id, raw):
     legs = []
     for lg in (sm.get("legs") or []):
         try:
-            # strike selection: `sp_pct` (premium = sp_pct% of the ATM straddle premium, i.e.
-            # StockMock's "CP as X% SP" — an OTM premium-picked strike) takes precedence; else
-            # `off` (int strike-offset from ATM, 0=ATM).
+            # strike selection (priority): `sp_pct` (premium = X% of ATM straddle, StockMock
+            # "CP as X% SP") > `cp_rs` (OTM strike whose premium ≈ ₹X, StockMock "Closest
+            # Premium CP") > `off` (int strike-offset from ATM, 0=ATM). All premium-picks are
+            # OTM-restricted (CE≥ATM, PE≤ATM).
             sp_pct = (float(lg["sp_pct"]) if lg.get("sp_pct") not in (None, "", 0, "0") else None)
+            cp_rs = (float(lg["cp_rs"]) if lg.get("cp_rs") not in (None, "", 0, "0") else None)
+            mode = "cp_pct_sp" if sp_pct else ("cp_rs" if cp_rs else "atm")
             legs.append({
                 "opt": str(lg.get("opt", "CE")).upper(),
                 "side": str(lg.get("side", "SELL")).upper(),
                 "off": int(lg.get("off", 0)),
                 "sp_pct": sp_pct,
-                "strike_mode": "cp_pct_sp" if sp_pct else "atm",
+                "cp_rs": cp_rs,
+                "strike_mode": mode,
                 "lots": max(1, int(lg.get("lots") or 1)),
                 "sl_pct": (float(lg["sl_pct"]) if lg.get("sl_pct") not in (None, "", 0, "0") else None),
                 "tp_pct": (float(lg["tp_pct"]) if lg.get("tp_pct") not in (None, "", 0, "0") else None),
@@ -141,6 +145,8 @@ def describe(cfg):
     def _strike(lg):
         if lg.get("strike_mode") == "cp_pct_sp":
             return "CP@%g%%SP" % lg["sp_pct"]
+        if lg.get("strike_mode") == "cp_rs":
+            return "CP@₹%g" % lg["cp_rs"]
         return "ATM" if lg["off"] == 0 else "ATM%+d" % lg["off"]
     legs = " + ".join("%s %s %s%s" % (
         lg["side"][0], lg["opt"], _strike(lg),
