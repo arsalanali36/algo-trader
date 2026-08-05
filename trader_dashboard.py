@@ -908,9 +908,17 @@ def api_whatif_margin():
         if d.get("ltp_only"):   # inline per-leg live LTP only — skip the heavy basket-margin Kite call
             return jsonify({"ok": True, "underlying": u, "spot": round(spot, 2), "legs": out_legs, "ltp_only": True})
         m = payoff.basket_margin(rows)
+        bal = None
+        try:
+            import risk_gate as _rg
+            _b = _rg.get_broker_balance(_rg.default_broker())
+            if _b and _b.get("ok"):
+                bal = _b.get("total_margin")
+        except Exception:
+            pass
         return jsonify({"ok": True, "underlying": u, "lots": lots, "spot": round(spot, 2),
                         "legs": out_legs, "hedged": m.get("hedged"), "standalone": m.get("standalone"),
-                        "benefit": m.get("benefit"), "msg": m.get("msg") or ""})
+                        "benefit": m.get("benefit"), "balance": bal, "msg": m.get("msg") or ""})
     except Exception as e:
         print("[whatif-margin] fail:", e, flush=True)
         return jsonify({"ok": False, "msg": str(e)})

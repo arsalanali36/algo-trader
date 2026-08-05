@@ -115,7 +115,7 @@
       <div style="display:grid;grid-template-columns:20px 30px 1.15fr 36px 52px 52px 18px;gap:4px;font-size:8px;color:var(--mut);text-transform:uppercase;padding:0 2px 3px"><span></span><span>B/S</span><span>Strike</span><span>Typ</span><span>Qty</span><span style="text-align:right">₹</span><span></span></div>
       <div id="legs"></div>
       <div id="net" style="margin-top:6px;font-size:11px;color:var(--mut)"></div>
-      <div class="hint">💡 <b>S/B</b> click=toggle · strike <b>▴▾</b> · <b>CE/PE</b> convert · Qty = per-leg lots (× multiplier)</div>
+      <div class="hint">💡 <b>S/B</b> click=toggle · strike <b>▴▾</b> · <b>CE/PE</b> convert · Qty = <b>effective lots</b> (per-leg × multiplier)</div>
       <button class="run" id="run">▶ Run backtest</button>
       <div style="display:flex;gap:8px;margin-top:8px"><button class="msave" id="marginBtn" style="flex:1">💰 Margin & live LTP</button></div>
     </div>
@@ -209,7 +209,7 @@ function renderLegs(){
     <button class="bs ${l.side}" data-i="${i}" title="Buy/Sell">${l.side[0]}</button>
     <span style="display:inline-flex;align-items:center;gap:4px"><span style="font-weight:600;${l.hidden?'text-decoration:line-through':''}">${l.strike}</span><span class="karr"><span class="ku" data-i="${i}">▴</span><span class="kd" data-i="${i}">▾</span></span></span>
     <button class="tt" data-i="${i}" title="CE/PE convert">${l.type}</button>
-    <input class="qin" data-i="${i}" type="number" min="1" value="${l.qty}">
+    <input class="qin" data-i="${i}" type="number" min="1" value="${l.qty*mult}" title="effective lots = per-leg × multiplier(${mult})">
     <span style="text-align:right;color:var(--mut)" id="lp${i}">—</span>
     <span class="del rmv" data-i="${i}">✕</span></div>`).join('');
   $('legs').querySelectorAll('.hb').forEach(e=>e.onclick=()=>{legs[+e.dataset.i].hidden=!legs[+e.dataset.i].hidden;renderLegs();schedulePayoff();});
@@ -217,14 +217,15 @@ function renderLegs(){
   $('legs').querySelectorAll('.tt').forEach(e=>e.onclick=()=>{const l=legs[+e.dataset.i];l.type=l.type==='CE'?'PE':'CE';renderLegs();schedulePayoff();});
   $('legs').querySelectorAll('.ku').forEach(e=>e.onclick=()=>{const l=legs[+e.dataset.i];l.strike+=stepOf(INST);renderLegs();schedulePayoff();});
   $('legs').querySelectorAll('.kd').forEach(e=>e.onclick=()=>{const l=legs[+e.dataset.i];l.strike=Math.max(stepOf(INST),l.strike-stepOf(INST));renderLegs();schedulePayoff();});
-  $('legs').querySelectorAll('.qin').forEach(e=>e.onchange=()=>{legs[+e.dataset.i].qty=Math.max(1,parseInt(e.value)||1);renderLegs();schedulePayoff();});
+  $('legs').querySelectorAll('.qin').forEach(e=>e.onchange=()=>{legs[+e.dataset.i].qty=Math.max(1,Math.round((parseInt(e.value)||mult)/mult));renderLegs();schedulePayoff();});
   $('legs').querySelectorAll('.rmv').forEach(e=>e.onclick=()=>{legs.splice(+e.dataset.i,1);renderLegs();schedulePayoff();});
 }
 function collectActive(){return act().map(l=>({side:l.side,strike:l.strike,type:l.type,qty:l.qty}));}
 
 // ---------- payoff + KPI ----------
-let _pfT=null;
-function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);}
+let _pfT=null,_mgT=null;
+function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);scheduleMargin();}
+function scheduleMargin(){clearTimeout(_mgT);_mgT=setTimeout(loadMargin,1700);}   // margin = live Dhan call → longer debounce, auto (no button needed)
 async function loadPayoff(){
   const A=collectActive();
   if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';return;}

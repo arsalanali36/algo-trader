@@ -29,6 +29,32 @@ PROJECT = os.path.dirname(HERE)
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
 import option_curves as _oc   # reuse the collector CSV loader + float parse (Rule 6B)
+import time as _time
+
+# Collector rows for the LIVE (today) date get a new mtime every minute (the collector
+# keeps appending) → _oc._load_rows re-parses the WHOLE growing day-file on almost every
+# request, which makes the interactive builder (chain + payoff on every leg tweak) crawl.
+# A backtest snapshot at a FIXED entry time is immutable-in-the-past, so serving rows from
+# a short TTL cache (bypassing the per-minute mtime churn) is safe and ~instant on repeat.
+_ROWS_TTL_CACHE = {}   # (u,date) -> (fetched_at, rows)
+_ROWS_TTL = 30.0
+
+
+def _rows_cached(u, date, ttl=_ROWS_TTL):
+    key = (u, date)
+    now = _time.time()
+    c = _ROWS_TTL_CACHE.get(key)
+    if c and (now - c[0]) < ttl:
+        return c[1]
+    try:
+        _, rows = _oc._load_rows(u, date)   # mtime-cached inside; only re-parses if mtime moved
+    except Exception:
+        rows = None
+    if len(_ROWS_TTL_CACHE) > 12:
+        _ROWS_TTL_CACHE.clear()
+    _ROWS_TTL_CACHE[key] = (now, rows)
+    return rows
+
 
 STEP = {"NIFTY": 50, "BANKNIFTY": 100}
 LOT = {"NIFTY": 65, "BANKNIFTY": 30}    # SEM_LOT_UNITS from the Dhan scrip master (verified)
@@ -326,10 +352,7 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
     strangle's far legs still appear + highlight), and any selected strike the collector never
     captured that minute is returned as an empty (ltp/iv=None) row so it's still visible."""
     u = u.upper()
-    try:
-        _, rows = _oc._load_rows(u, date)
-    except Exception:
-        rows = None
+    rows = _rows_cached(u, date)   # TTL-cached (live-date re-parse guard) — Rule 6B loader underneath
     if not rows:
         return {"ok": False, "reason": "no-collector", "underlying": u, "date": date, "strikes": []}
     exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
