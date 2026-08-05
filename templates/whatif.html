@@ -193,14 +193,16 @@ async function loadCoverage(){
 // ---- chain-grid picker (option-chain style): CE|IV|strike|IV|PE, click premium = add leg ----
 // Real premium + REAL IV per strike (collector days). Historical days → grid hidden, typed
 // strike fallback (no BS-guessed IV in the grid — IV real ho to hi dikhao).
-let CHMODE='SELL', _chT=null, _chData=null;
+let CHMODE='SELL', _chT=null, _chData=null, _chSeq=0;
 $('chMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CHMODE=b.dataset.m;[...$('chMode').children].forEach(x=>x.classList.toggle('on',x.dataset.m===CHMODE));if(_chData&&_chData.ok)$('chNote').innerHTML=$('chNote').innerHTML.replace(/(SELL|BUY) leg$/,CHMODE+' leg');});
 function scheduleChain(keep){ clearTimeout(_chT); _chT=setTimeout(()=>loadChain(keep),350); }
 async function loadChain(keep){
   const d=$('date').value, t=$('et').value; const note=$('chNote'); if(!d){note.textContent='';return;}
+  const myseq=++_chSeq;                                                 // latest-wins guard (instrument/date switch race)
   note.textContent='Chain le raha…';
   const sel=collectLegs().map(l=>l.strike).filter(Boolean).join(',');   // widen grid to cover selected legs
   let r; try{ r=await (await fetch(`/api/whatif-chain?underlying=${INST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent($('exp').value||'')}&legs=${sel}`)).json(); }catch(e){ r=null; }
+  if(myseq!==_chSeq) return;                                            // a newer loadChain superseded this → drop stale response
   _chData=r;
   if(!r||!r.ok){ $('chWrap').style.display='none';
     note.innerHTML=`<span style="color:var(--amber)">Is date pe chain nahi</span> (real IV nahi — purana din) → neeche <b>strike type karke</b> add karo.`; return; }
