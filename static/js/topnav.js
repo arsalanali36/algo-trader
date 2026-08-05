@@ -32,7 +32,8 @@
   var CURVES = [
     { href: '/curves',  label: '📈 Curves' },
     { href: '/gex',     label: '🟢 GEX Profile' },
-    { href: '/whatif',  label: '🧪 Options What-If' }
+    { href: '/whatif',  label: '🧪 Options What-If' },
+    { href: '/whatif2', label: '📐 Strategy Builder' }
   ];
   var MORE = [
     { href: '/registry',       label: '🗂️ Strategies (classic)' },
