@@ -121,8 +121,12 @@
     </div>
     <div class="card">
       <div style="display:flex;gap:10px;font-size:9.5px;margin-bottom:5px"><span style="color:var(--green)">▬ Expiry</span><span style="color:var(--blue)">▬ Exit-day</span><span style="flex:1"></span><span id="be" style="color:var(--amber)"></span></div>
-      <svg id="pf" viewBox="0 0 340 190" style="width:100%;height:auto;display:block"></svg>
-      <div style="text-align:center;font-size:9px;color:var(--dim);margin-top:2px" id="pfnote">payoff · orange = spot</div>
+      <div id="pfwrap" style="position:relative">
+        <svg id="pf" viewBox="0 0 340 190" style="width:100%;height:auto;display:block"></svg>
+        <div id="pfcross" style="position:absolute;top:0;bottom:0;width:1px;background:var(--dim);display:none;pointer-events:none"></div>
+        <div id="pftip" style="position:absolute;display:none;pointer-events:none;background:#0d1117;border:1px solid var(--bd);border-radius:7px;padding:6px 9px;font-size:11px;white-space:nowrap;z-index:6;line-height:1.5"></div>
+      </div>
+      <div style="text-align:center;font-size:9px;color:var(--dim);margin-top:2px" id="pfnote">payoff · orange = spot · <b>hover</b> pe price + P&amp;L</div>
     </div>
   </div>
 
@@ -168,7 +172,7 @@ const $=id=>document.getElementById(id);
 const CFG={NIFTY:{lot:65,step:50},BANKNIFTY:{lot:30,step:100}};
 let INST='NIFTY', MINST='NIFTY', mult=1, exp=null;
 let legs=[];   // {side,type,strike,qty,hidden}
-let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false, _lastPrem={};
+let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false, _lastPrem={}, _pfGeo=null, _pfHoverInit=false;
 
 function inr(v){return Math.round(Math.abs(v)).toLocaleString('en-IN');}
 function sgn(v){return (v<0?'−₹':'+₹')+inr(v);}
@@ -266,6 +270,25 @@ function drawPayoff(r){
   if(l2)s+='<path d="'+l2+'" fill="none" stroke="var(--blue)" stroke-width="1.5" stroke-dasharray="4 3"/>';
   s+='<path d="'+l1+'" fill="none" stroke="var(--green)" stroke-width="2"/>';
   $('pf').innerHTML=s;
+  _pfGeo={lo,hi,spot:r.spot,W,pad,ce,cx};
+  setupPfHover();
+}
+function _interp(curve,price){if(!curve||!curve.length)return null;if(price<=curve[0][0])return curve[0][1];const last=curve[curve.length-1];if(price>=last[0])return last[1];for(let i=1;i<curve.length;i++){if(curve[i][0]>=price){const a=curve[i-1],b=curve[i],f=(price-a[0])/((b[0]-a[0])||1);return a[1]+f*(b[1]-a[1]);}}return last[1];}
+function setupPfHover(){
+  if(_pfHoverInit)return;_pfHoverInit=true;const el=$('pf');
+  el.addEventListener('mousemove',e=>{const g=_pfGeo;if(!g)return;const rc=el.getBoundingClientRect();
+    const vbx=(e.clientX-rc.left)/rc.width*g.W;let price=g.lo+(vbx-g.pad)/(g.W-2*g.pad)*(g.hi-g.lo);price=Math.max(g.lo,Math.min(g.hi,price));
+    const pe=_interp(g.ce,price),px=g.cx?_interp(g.cx,price):null;
+    const pxPix=(g.pad+(price-g.lo)/(g.hi-g.lo)*(g.W-2*g.pad))/g.W*rc.width;
+    const cross=$('pfcross'),tip=$('pftip');cross.style.display='block';cross.style.left=pxPix+'px';
+    const pct=g.spot?((price-g.spot)/g.spot*100):0;
+    tip.style.display='block';
+    tip.innerHTML='<div><span style="color:var(--mut);font-size:9px">PRICE</span> <b>'+Math.round(price).toLocaleString('en-IN')+'</b> <span style="color:'+(pct>=0?'var(--green)':'var(--red)')+';font-size:10px">'+(pct>=0?'+':'')+pct.toFixed(2)+'%</span></div>'
+      +(px!=null?'<div><span style="color:var(--mut)">Exit-day</span> <b style="color:'+(px>=0?'var(--green)':'var(--red)')+'">'+sgn(px)+'</b></div>':'')
+      +'<div><span style="color:var(--mut)">Expiry</span> <b style="color:'+(pe>=0?'var(--green)':'var(--red)')+'">'+sgn(pe)+'</b></div>';
+    let tx=pxPix+12;if(tx>rc.width-130)tx=pxPix-130;tip.style.left=Math.max(2,tx)+'px';tip.style.top='6px';
+  });
+  el.addEventListener('mouseleave',()=>{$('pfcross').style.display='none';$('pftip').style.display='none';});
 }
 
 // ---------- margin (Funds & Margins) ----------
@@ -393,7 +416,14 @@ function renderMtm(r){
   const finalC=vals[n-1]>=0?'var(--green)':'var(--red)';
   const mk=(i,c,t,ab)=>{const x=X(i).toFixed(1),y=Y(pts[i].mtm);return `<circle cx="${x}" cy="${y.toFixed(1)}" r="3.4" fill="${c}"/><text x="${x}" y="${(ab?y-6:y+14).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${c}">${t}</text>`;};
   const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:220px;display:block"><defs><linearGradient id="mg2" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--green)" stop-opacity=".24"/><stop offset="${zf.toFixed(3)}" stop-color="var(--green)" stop-opacity=".03"/><stop offset="${zf.toFixed(3)}" stop-color="var(--red)" stop-opacity=".03"/><stop offset="1" stop-color="var(--red)" stop-opacity=".24"/></linearGradient></defs><path d="${area}" fill="url(#mg2)"/><line x1="${pl}" y1="${zy.toFixed(1)}" x2="${W-pr}" y2="${zy.toFixed(1)}" stroke="var(--dim)" stroke-dasharray="4 4"/><path d="${line}" fill="none" stroke="${finalC}" stroke-width="2"/>${mk(mi,'var(--green)','Peak '+sgn(mx),true)}${mk(ni,'var(--red)','Low '+sgn(mn),false)}</svg>`;
-  w.innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px"><div class="brkt" style="margin:0">📉 MTM journey <span style="color:var(--dim);text-transform:none">— hold ke dauraan kitna jhelna pada</span></div><div style="flex:1"></div><div style="font-size:12px"><span style="color:var(--mut)">Peak</span> <b style="color:var(--green)">${sgn(mx)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Low</span> <b style="color:var(--red)">${sgn(mn)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Give-back</span> <b style="color:var(--amber)">₹${inr(dd)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Final</span> <b style="color:${finalC}">${sgn(vals[n-1])}</b></div></div><div style="border:1px solid var(--bd);border-radius:10px;background:var(--panel);overflow:hidden">${svg}</div>`;
+  w.innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px"><div class="brkt" style="margin:0">📉 MTM journey <span style="color:var(--dim);text-transform:none">— hold ke dauraan kitna jhelna pada · hover pe time + P&amp;L</span></div><div style="flex:1"></div><div style="font-size:12px"><span style="color:var(--mut)">Peak</span> <b style="color:var(--green)">${sgn(mx)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Low</span> <b style="color:var(--red)">${sgn(mn)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Give-back</span> <b style="color:var(--amber)">₹${inr(dd)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Final</span> <b style="color:${finalC}">${sgn(vals[n-1])}</b></div></div><div id="mtmchart" style="position:relative;border:1px solid var(--bd);border-radius:10px;background:var(--panel);overflow:hidden">${svg}<div id="mtmcross" style="position:absolute;top:0;bottom:0;width:1px;background:var(--dim);display:none;pointer-events:none"></div><div id="mtmtip" style="position:absolute;display:none;pointer-events:none;background:#0d1117;border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:11px;white-space:nowrap;z-index:5"></div></div>`;
+  const chart=$('mtmchart'),el=chart.querySelector('svg'),tip=$('mtmtip'),cross=$('mtmcross');
+  el.addEventListener('mousemove',e=>{const rc=el.getBoundingClientRect();const vbx=(e.clientX-rc.left)/rc.width*W;let i=Math.round((vbx-pl)/pw*(n-1));i=Math.max(0,Math.min(n-1,i));const p=pts[i];
+    const px=X(i)/W*rc.width,py=Y(p.mtm)/H*rc.height;
+    cross.style.display='block';cross.style.left=px+'px';
+    tip.style.display='block';tip.innerHTML='<b>'+(p.d?p.d.slice(5):'')+' '+(p.t||'')+'</b> · <b style="color:'+(p.mtm>=0?'var(--green)':'var(--red)')+'">'+sgn(p.mtm)+'</b>';
+    let tx=px+10;if(tx>rc.width-140)tx=px-140;tip.style.left=Math.max(2,tx)+'px';tip.style.top=Math.max(2,py-30)+'px';});
+  el.addEventListener('mouseleave',()=>{tip.style.display='none';cross.style.display='none';});
 }
 
 // ---------- journal ----------
