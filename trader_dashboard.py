@@ -10960,4 +10960,6 @@ if __name__ == '__main__':
     print("   🔔 error-watch chalu — logs/processes/services ke errors bell me aayenge\n")
     _payoff_warm_start()   # open groups ka payoff/zone pehle se cache — panel instant khule
     print("   📊 payoff warm-loop chalu — open positions ka payoff pre-computed\n")
-    app.run(host='0.0.0.0', port=5099, debug=False)
+    # threaded=True: one slow request (e.g. a cold option-chain CSV parse) must NOT block
+    # the whole dashboard — single-threaded froze every other request/page for 20s+ (2026-08-05).
+    app.run(host='0.0.0.0', port=5099, debug=False, threaded=True)

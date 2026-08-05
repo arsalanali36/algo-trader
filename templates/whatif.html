@@ -157,8 +157,8 @@ function legRow(side,strike,type){
 }
 function seedLegs(){ $('legs').innerHTML=''; $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?57000:24000,'CE')); $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56000:23600,'PE')); }
 $('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();loadCoverage();scheduleChain();scheduleLegLtp();});
-$('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();markChain();scheduleChain(true);});
-$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();markChain();scheduleChain(true);}});
+$('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();markChain();maybeWidenChain();});
+$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();markChain();maybeWidenChain();}});
 
 // expiry dropdown: stored expiries for the date (recent/collector); historical lake = weekly-only → just "Nearest"
 async function loadExpiries(){
@@ -229,13 +229,21 @@ function renderChain(r, keep){
 function _legIdx(k,t){ return [...$('legs').children].findIndex(el=>+el.querySelector('.k').value===k && el.querySelector('.t').value===t); }
 function toggleChainLeg(k,t){ const i=_legIdx(k,t);
   if(i>=0){ $('legs').children[i].remove(); } else { $('legs').appendChild(legRow(CHMODE,k,t)); }
-  scheduleLegLtp(); markChain(); scheduleChain(true); }
+  scheduleLegLtp(); markChain(); maybeWidenChain(); }
 function markChain(){ const grid=$('chain'); if(!grid) return;
   const sel=new Set([...$('legs').children].map(el=>(+el.querySelector('.k').value)+'-'+el.querySelector('.t').value));
   grid.querySelectorAll('.chcell').forEach(el=>{ const on=sel.has((+el.dataset.k)+'-'+el.dataset.t);
     el.style.fontWeight=on?'700':'400';
     el.style.background=on?(el.dataset.t==='CE'?'rgba(57,197,207,.16)':'rgba(240,136,62,.16)'):'';
     el.style.borderRadius=on?'4px':''; }); }
+// only RE-FETCH the chain if a selected leg fell OUTSIDE the current grid range (widen).
+// legs already in range → markChain() highlight is enough (no server call → no cold-parse spam).
+function maybeWidenChain(){
+  if(!_chData||!_chData.ok||!(_chData.strikes||[]).length){ scheduleChain(true); return; }
+  const ks=_chData.strikes.map(s=>s.strike), lo=Math.min(...ks), hi=Math.max(...ks);
+  const sel=[...$('legs').children].map(el=>+el.querySelector('.k').value).filter(Boolean);
+  if(sel.some(s=>s<lo||s>hi)) scheduleChain(true);
+}
 
 // inline per-leg price = the REAL premium AT the entry time on the selected date (the
 // BACKTEST price at that moment, NOT the current live LTP) — this IS a backtest tool.
@@ -251,8 +259,8 @@ async function fetchLegLtp(){
   rows.forEach((el,i)=>{ const s=el.querySelector('.ltp'); if(!s) return;
     const lp=ok?(ls[i]&&ls[i].ltp):null; s.textContent = lp!=null ? '₹'+lp : '—'; s.style.color = lp!=null?'var(--tx)':'var(--mut)'; });
 }
-$('legs').addEventListener('input', ()=>{scheduleLegLtp();markChain();scheduleChain(true);});
-$('legs').addEventListener('change', ()=>{scheduleLegLtp();markChain();scheduleChain(true);});
+$('legs').addEventListener('input', ()=>{scheduleLegLtp();markChain();maybeWidenChain();});
+$('legs').addEventListener('change', ()=>{scheduleLegLtp();markChain();maybeWidenChain();});
 $('et').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});   // entry-time → refetch price + chain
 $('date').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});
 $('exp').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});   // expiry change → reload chain
