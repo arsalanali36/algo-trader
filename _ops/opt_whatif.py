@@ -512,16 +512,29 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
         net_intr += g * intr * l["qty"]
         net_tv += g * (l["entry"] - intr) * l["qty"]
 
-    # LOCAL margin estimate — NO broker call (this is a backtest, all data is on disk). A
-    # SPAN-style price-scan: worst structure loss over spot ±10% + a small exposure add on the
-    # short notional. Nets a strangle/condor naturally (only one side is deep ITM at a time),
-    # bounds a spread to its max loss, and ≈0 for a pure debit long. The live "exact margin"
-    # button still gives the broker's real SPAN when the user wants it (that's the slow call).
+    # LOCAL margin estimate — NO broker call (this is a backtest, all data is on disk). SPAN-style
+    # price-scan on the payoff. A short leg is HEDGED when there's a same-type BUY on the protective
+    # side (CE: higher strike, PE: lower strike). Fully-hedged (defined-risk: condor/spread) → margin
+    # ≈ its max loss over a wide scan (that's roughly what the exchange blocks). Any UNHEDGED short
+    # (naked strangle/straddle) → worst loss over ±10% + an exposure add on the naked notional only.
+    # Pure long/debit → 0 (you pay the premium, post no margin). Live "exact margin" button = real
+    # broker SPAN when wanted (the slow call). This is an ESTIMATE — labelled 'est' in the UI.
+    def _naked(l):
+        if l["side"] != "SELL":
+            return False
+        if l["opt"] == "CE":
+            return not any(h["side"] == "BUY" and h["opt"] == "CE" and h["strike"] > l["strike"] for h in plegs)
+        return not any(h["side"] == "BUY" and h["opt"] == "PE" and h["strike"] < l["strike"] for h in plegs)
+
     margin_est = None
     if spot and any(l["side"] == "SELL" for l in plegs):
-        worst = min(pf.payoff_expiry(plegs, spot * (0.90 + 0.20 * i / 20.0)) for i in range(21))
-        short_notional = sum(spot * l["qty"] for l in plegs if l["side"] == "SELL")
-        margin_est = round(max(-worst, 0.0) + short_notional * 0.02)
+        naked_notional = sum(spot * l["qty"] for l in plegs if _naked(l))
+        if naked_notional > 0:
+            worst = min(pf.payoff_expiry(plegs, spot * (0.90 + 0.20 * i / 20.0)) for i in range(21))
+            margin_est = round(max(-worst, 0.0) + naked_notional * 0.02)
+        else:   # fully defined-risk → ≈ max loss over a wide (±30%) scan
+            worst = min([pf.payoff_expiry(plegs, spot * (0.70 + 0.60 * i / 40.0)) for i in range(41)] + [min(ys)])
+            margin_est = round(max(-worst, 0.0))
     elif plegs:
         margin_est = 0   # pure long / debit → no margin posted (you pay the premium)
 
