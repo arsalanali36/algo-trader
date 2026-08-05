@@ -12,6 +12,16 @@ does the actual gated firing via execution_gateway; per-leg SL + EOD exits are e
 the existing pos_monitor (each leg carries a `SL_TYPE:pct` tag → SELL stop at entry×(1+sl%)).
 """
 import datetime as _dt
+import os as _os
+import sys as _sys
+
+# expiry_calendar lives in scratch/nifty_trend/, which _paths does NOT put on sys.path
+# (only _core/_data/_ops/etc). Add it explicitly or expiry-day detection silently breaks
+# (is_expiry_day → always False → an expiry-only strategy would NEVER fire). Same pattern
+# as opt_whatif / backtest_lab. (Caught by VPS dry-check before a missed expiry, 2026-08-05.)
+_ntd = _os.path.join(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))), "scratch", "nifty_trend")
+if _os.path.isdir(_ntd) and _ntd not in _sys.path:
+    _sys.path.insert(0, _ntd)
 
 try:
     import expiry_calendar as _ec       # scratch/nifty_trend — weekly_expiry_weekday
