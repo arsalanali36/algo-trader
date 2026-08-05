@@ -590,6 +590,16 @@ def whatif_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'   # inline JS changes often → never serve stale HTML
     return resp
 
+@app.route('/whatif2')
+def whatif2_page():
+    """Sensibull-style Strategy Builder (backtest) — leg builder + Add/Edit chain modal +
+    payoff/KPI panel + Run-backtest results. SEPARATE from /whatif (which stays as-is);
+    reuses the same backend (chain_at / payoff_at / opt_whatif.run / whatif-margin)."""
+    from flask import make_response
+    resp = make_response(render_template("whatif2.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
+
 @app.route('/api/whatif', methods=['POST'])
 def api_whatif():
     import opt_whatif as w
@@ -816,6 +826,22 @@ def api_whatif_chain():
         return jsonify(w.chain_at(u, date, hm, expiry, sel=sel))
     except Exception as e:
         return jsonify({"ok": False, "reason": str(e), "strikes": []})
+
+@app.route('/api/whatif2-payoff', methods=['POST'])
+def api_whatif2_payoff():
+    """Payoff curve (expiry + exit-day) + KPI (max P/L, breakevens, POP, net-credit,
+    time-value, intrinsic) for the whatif2 builder legs at a backtest date/time. Reuses
+    opt_whatif.payoff_at → payoff.py pure fns. Display-only."""
+    try:
+        import opt_whatif as w
+        b = request.get_json(force=True) or {}
+        return jsonify(w.payoff_at(
+            str(b.get('underlying', 'NIFTY')).upper(), b.get('date'),
+            str(b.get('entry') or '09:20')[:5], b.get('legs') or [],
+            expiry=b.get('expiry') or None, exit_date=b.get('exit_date') or None,
+            exit_hm=str(b.get('exit') or '')[:5] or None, mult=int(b.get('mult') or 1)))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)})
 
 @app.route('/api/whatif-coverage')
 def api_whatif_coverage():

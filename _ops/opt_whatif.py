@@ -353,10 +353,12 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
 
     def side(r):
         if not r:
-            return {"ltp": None, "iv": None}
-        lt, iv = _f(r.get("ltp")), _f(r.get("iv"))
+            return {"ltp": None, "iv": None, "delta": None, "oi": None}
+        lt, iv, dl, oi = _f(r.get("ltp")), _f(r.get("iv")), _f(r.get("delta")), _f(r.get("oi"))
         return {"ltp": round(lt, 1) if lt is not None else None,
-                "iv": round(iv, 2) if iv is not None else None}
+                "iv": round(iv, 2) if iv is not None else None,
+                "delta": round(dl, 2) if dl is not None else None,
+                "oi": round(oi) if oi is not None else None}
 
     # spot at (or after) hm from any leg's snapshot
     spot = None
@@ -393,6 +395,95 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
     return {"ok": True, "underlying": u, "date": date, "expiry": exp, "expiries": exps,
             "hm": hm, "spot": round(spot, 2) if spot else None,
             "atm": int(atm) if atm else None, "step": step, "strikes": out}
+
+
+def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult=1):
+    """Payoff + KPI for the whatif2 Strategy Builder — legs priced at their ENTRY
+    date/time REAL premium + REAL IV (collector). Reuses payoff.py's pure functions
+    (Rule 6B — no second payoff engine): payoff at EXPIRY (intrinsic) + at EXIT-day
+    (Black-Scholes, sticky entry-IV), max P/L, breakevens, POP (lognormal), plus
+    net-credit / time-value / intrinsic. Collector days only (real IV). Display-only.
+
+    legs = [{side:'SELL'|'BUY', strike, type:'CE'|'PE', qty?}]. Effective units per leg
+    = lot_size × `mult` (global multiplier) × leg `qty` (per-leg lots, default 1)."""
+    u = u.upper()
+    try:
+        import payoff as pf
+    except Exception as e:
+        return {"ok": False, "reason": "payoff module unavailable: %s" % e}
+    sel = [l.get("strike") for l in (legs or [])]
+    snap = chain_at(u, date, hm, expiry, n=10, sel=sel)
+    if not snap.get("ok"):
+        return {"ok": False, "reason": snap.get("reason", "no-collector")}
+    spot = snap.get("spot")
+    exp = snap.get("expiry")
+    by_k = {int(r["strike"]): r for r in snap.get("strikes", [])}
+    lot = LOT.get(u, 1) * max(1, int(mult or 1))
+    plegs = []
+    for l in (legs or []):
+        k = _f(l.get("strike"))
+        ot = str(l.get("type") or "").upper()
+        sd = str(l.get("side") or "").upper()
+        if k is None or ot not in ("CE", "PE") or sd not in ("SELL", "BUY"):
+            continue
+        row = by_k.get(int(k))
+        cell = (row.get("ce") if ot == "CE" else row.get("pe")) if row else None
+        prem = cell.get("ltp") if cell else None
+        ivp = cell.get("iv") if cell else None
+        if prem is None:
+            return {"ok": False, "reason": "%d %s ka premium is date/time pe nahi mila (captured band se bahar)" % (int(k), ot)}
+        plegs.append({"strike": float(int(k)), "opt": ot, "side": sd,
+                      "qty": lot * max(1, int(l.get("qty") or 1)),
+                      "entry": float(prem), "ltp": float(prem),
+                      "iv": (ivp / 100.0) if ivp else None})
+    if not plegs:
+        return {"ok": False, "reason": "koi valid leg nahi"}
+
+    # T to expiry from entry moment, and from exit moment (for the exit-day curve)
+    T_e = T_x = None
+    if exp:
+        try:
+            ed = _dt.datetime.strptime(exp, "%Y-%m-%d").date()
+            e_dt = _dt.datetime.strptime("%s %s" % (date, hm[:5]), "%Y-%m-%d %H:%M")
+            T_e = pf.tte_years(ed, e_dt)
+            x_dt = _dt.datetime.strptime("%s %s" % (exit_date or date, (exit_hm or hm)[:5]), "%Y-%m-%d %H:%M")
+            T_x = pf.tte_years(ed, x_dt)
+        except Exception:
+            pass
+
+    base = spot or plegs[0]["strike"]
+    lo, hi = pf._grid(plegs, base)
+    step = max((hi - lo) / 400.0, 0.5)
+    curve_e, S = [], lo
+    while S <= hi:
+        curve_e.append([round(S, 2), round(pf.payoff_expiry(plegs, S), 2)])
+        S += step
+    curve_x = None
+    if T_x and T_x > 0 and all(l.get("iv") for l in plegs):
+        cx = [[p[0], pf.payoff_today(plegs, p[0], T_x)] for p in curve_e]
+        if not any(v is None for _, v in cx):
+            curve_x = [[a, round(b, 2)] for a, b in cx]
+    zones = pf.profit_zones(plegs, lo, hi, step)
+    ys = [p[1] for p in curve_e]
+    ivs = [l["iv"] for l in plegs if l.get("iv")]
+    avg_iv = (sum(ivs) / len(ivs)) if ivs else None
+    pop = pf.prob_of_profit(zones, spot, T_e, avg_iv, lo, hi) if (avg_iv and T_e) else None
+
+    net_cr = net_intr = net_tv = 0.0
+    for l in plegs:
+        intr = max(spot - l["strike"], 0.0) if l["opt"] == "CE" else max(l["strike"] - spot, 0.0)
+        g = 1 if l["side"] == "SELL" else -1
+        net_cr += g * l["entry"] * l["qty"]
+        net_intr += g * intr * l["qty"]
+        net_tv += g * (l["entry"] - intr) * l["qty"]
+    return {"ok": True, "underlying": u, "spot": spot, "expiry": exp,
+            "curve_expiry": curve_e, "curve_exit": curve_x,
+            "max_profit": round(max(ys), 2), "max_loss": round(min(ys), 2),
+            "breakevens": sorted({round(x, 1) for z in zones for x in z if lo < x < hi}),
+            "pop": round(pop, 4) if pop is not None else None,
+            "net_credit": round(net_cr), "time_value": round(net_tv), "intrinsic": round(net_intr),
+            "tte_days": round(T_e * 365, 2) if T_e else None,
+            "scan": [round(lo, 1), round(hi, 1)]}
 
 
 def list_expiries(u, date):
@@ -540,7 +631,8 @@ def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, e
                 if p is None:
                     ok = False; break
                 sell = lg["side"].upper() == "SELL"
-                mtm += (entry_prems[i] - p if sell else p - entry_prems[i]) * lot
+                lq = lot * max(1, int(lg.get("qty") or 1))   # per-leg qty (default 1)
+                mtm += (entry_prems[i] - p if sell else p - entry_prems[i]) * lq
             if ok:
                 pts.append({"d": d, "t": m, "mtm": round(mtm)})
     if not pts:
@@ -575,15 +667,16 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     warnings = []
     for lg, d in zip(legs, data["legs"]):
         sell = lg["side"].upper() == "SELL"
+        lq = lot * max(1, int(lg.get("qty") or 1))   # per-leg qty (ratio spreads); default 1 = uniform
         dP = (d["x_prem"] - d["e_prem"])           # premium change (per unit)
-        pnl = (-dP if sell else dP) * lot
+        pnl = (-dP if sell else dP) * lq
         dS = (d["x_spot"] - d["e_spot"]) if (d["x_spot"] and d["e_spot"]) else 0.0
         dIV = ((d["x_iv"] - d["e_iv"]) if (d["e_iv"] is not None and d["x_iv"] is not None) else 0.0)
         price_dP = ((d["delta"] or 0) * dS + 0.5 * (d["gamma"] or 0) * dS * dS)
         iv_dP = ((d["vega"] or 0) * dIV)
         s = -1 if sell else 1
-        pnl_price = s * price_dP * lot
-        pnl_iv = s * iv_dP * lot
+        pnl_price = s * price_dP * lq
+        pnl_iv = s * iv_dP * lq
         tot += pnl; tot_price += pnl_price; tot_iv += pnl_iv
         label = f"{lg['side'].title()} {int(lg['strike'])} {lg['type']}"
         # Did this leg actually open/close at the requested time? The collector stores only
@@ -611,7 +704,7 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
         })
     decay = tot - tot_price - tot_iv       # residual = theta + higher-order → three sum to total
     # net credit collected at entry (SELL premium in, BUY premium out) × lot
-    credit = sum(((d["e_prem"] if lg["side"].upper() == "SELL" else -d["e_prem"]))
+    credit = sum(((d["e_prem"] if lg["side"].upper() == "SELL" else -d["e_prem"]) * max(1, int(lg.get("qty") or 1)))
                  for lg, d in zip(legs, data["legs"])) * lot
     e_dt = data["legs"][0].get("e_dt") or date
     x_dt = data["legs"][0].get("x_dt") or exit_date
