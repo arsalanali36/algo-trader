@@ -102,6 +102,7 @@
       <button class="addleg" id="addleg">＋ Add leg</button></div>
     <button class="run" id="run">▶ Run backtest</button>
     <div class="hint"><b>Positional hold:</b> Exit date entry se aage rakho → position ki entry us din, exit baad wale din (aaj tak) — "agar exit na kiya hota to ab kitna" ka real-premium jawaab. Held expiry dono din honi chahiye (usually expiry ke andar).<br><br>Recent din = live collector (real Dhan greeks, instant). Purane din = OptChainLake (~2021→, 1-min, real premium; greeks BS-derived, IV lake me nahi hai). Purane din ka pehla run ~15 sec (reconstruct), phir same date instant.</div>
+    <div id="ivcov" style="margin-top:12px;font-size:11px;line-height:1.6;border:1px solid var(--bd);border-radius:8px;padding:9px 11px;background:var(--panel)"></div>
   </div>
 
   <div class="res">
@@ -146,7 +147,7 @@ function legRow(side,strike,type){
   return d;
 }
 function seedLegs(){ $('legs').innerHTML=''; $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?57000:24000,'CE')); $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56000:23600,'PE')); }
-$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();scheduleLegLtp();});
+$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();loadCoverage();scheduleLegLtp();});
 $('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();});
 $('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();}});
 
@@ -160,6 +161,25 @@ async function loadExpiries(){
   sel.value = exps.some(x=>x.date===cur) ? cur : '';   // keep pick if still valid, else Nearest
 }
 $('date').addEventListener('change', loadExpiries);
+
+// IV coverage — kab se REAL IV hai. IV model-sensitive hoti hai, isliye sirf broker ki
+// apni reported IV (collector window) hi bharosemand hai — purane din ka premium/P&L real
+// hai par IV real NAHI (BS guess nahi dikhate).
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _fd(d){ if(!d||d.length<10) return d||'—'; return (+d.slice(8,10))+' '+_MON[+d.slice(5,7)-1]+' '+d.slice(0,4); }
+async function loadCoverage(){
+  const el=$('ivcov'); if(!el) return;
+  let r; try{ r=await (await fetch('/api/whatif-coverage?underlying='+INST)).json(); }catch(e){ r=null; }
+  if(!r||!r.ok){ el.innerHTML='<span style="color:var(--dim)">IV coverage load nahi hua.</span>'; return; }
+  const real=r.real;
+  const realLine = real
+    ? `<span style="color:var(--green)">●</span> <b>Real IV</b> (broker ki apni): <b>${_fd(real.from)} → ${_fd(real.to)}</b> · ${real.days} din — <span style="color:var(--dim)">sirf isi window me asli IV hai</span>`
+    : `<span style="color:var(--red)">●</span> <b>Real IV</b>: abhi koi collector din nahi`;
+  const premLine = r.premium_from
+    ? `<span style="color:var(--amber)">●</span> Purane din (<b>${_fd(r.premium_from)} → ab</b>): premium & P&amp;L real, par <b style="color:var(--amber)">IV real nahi</b> — isliye IV dikhate hi nahi (BS-guess se bacho)`
+    : '';
+  el.innerHTML = `<div style="color:var(--mut);text-transform:uppercase;font-size:9px;letter-spacing:.6px;margin-bottom:5px">📅 IV data — ${r.underlying}</div>${realLine}${premLine?'<br>'+premLine:''}`;
+}
 
 // inline per-leg price = the REAL premium AT the entry time on the selected date (the
 // BACKTEST price at that moment, NOT the current live LTP) — this IS a backtest tool.
@@ -224,7 +244,12 @@ function render(r){
   $('legtbl').querySelector('tbody').innerHTML=r.legs.map(l=>{const c=l.pnl>=0?'pos':'neg2';
     const eb=l.entry_off?` <span title="requested ${r.req_entry_hm}, actual ${l.e_t}" style="color:var(--amber);font-size:10px">⚠${l.e_t}</span>`:'';
     const xb=l.exit_off?` <span title="requested ${r.req_exit_hm}, actual ${l.x_t}" style="color:var(--amber);font-size:10px">⚠${l.x_t}</span>`:'';
-    return `<tr><td>${l.label}${eb}${xb}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—'}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
+    // IV sirf real-collector din pe dikhao. lake (historical) pe IV BS-inverted hoti hai
+    // = model-sensitive/bharosemand nahi → number ke bajaye "—" (dhoka na ho).
+    const ivCell = (r.source==='lake')
+      ? `<span title="Historical din — real IV nahi (lake me IV stored nahi)">—</span>`
+      : (l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—');
+    return `<tr><td>${l.label}${eb}${xb}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${ivCell}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
   renderMtm(r);
   const items=[['Decay',r.decay,'var(--green)'],['Price move',r.price,'var(--blue)'],['IV crush',r.iv,'var(--amber)']];
   const MAX=Math.max(1,...items.map(i=>Math.abs(i[1])))*1.18, mid=60;
@@ -348,7 +373,7 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
 const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
 $('date').value=now.toISOString().slice(0,10);
 syncExitDate(true);
-seedLegs(); renderJournal(); loadExpiries(); fetchLegLtp();
+seedLegs(); renderJournal(); loadExpiries(); loadCoverage(); fetchLegLtp();
 </script>
 <script defer src="/static/js/topnav.js"></script>
 </body></html>

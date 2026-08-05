@@ -798,6 +798,17 @@ def api_whatif_expiries():
     except Exception as e:
         return jsonify({"ok": False, "expiries": [], "msg": str(e)})
 
+@app.route('/api/whatif-coverage')
+def api_whatif_coverage():
+    """Since-when REAL IV is available (broker's own reported IV = live collector window)
+    + how far back real premium/P&L goes (lake, where IV is NOT real). Display-only."""
+    try:
+        import opt_whatif as w
+        u = str(request.args.get('underlying', 'NIFTY')).upper()
+        return jsonify(w.iv_coverage(u))
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
 @app.route('/api/whatif-margin', methods=['POST'])
 def api_whatif_margin():
     """LIVE margin + current LTP for the entered legs (current market — resolves

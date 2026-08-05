@@ -288,6 +288,33 @@ def available_dates(u):
     return sorted(ds, reverse=True)
 
 
+def iv_coverage(u):
+    """Since-when REAL IV is available. IV is model-sensitive, so ONLY the broker's own
+    reported IV (the live collector window) is trustworthy — we deliberately do NOT
+    surface a Black-Scholes-inverted guess as if it were IV. Older lake days still have
+    REAL premium/P&L (back to ~2021), just no real IV. Returns:
+      real       = {from, to, days}  collector window with broker's own IV (or None)
+      premium_from = earliest lake date (real premium/P&L, but NO real IV)."""
+    u = u.upper()
+    cds = sorted(__import__("gex_profile").available_dates(u))   # collector days (real IV)
+    real = {"from": cds[0], "to": cds[-1], "days": len(cds)} if cds else None
+    premium_from = None
+    root = _lake_root(u)
+    if root:
+        done = os.path.join(os.path.dirname(root), "_done.json")
+        try:
+            import json
+            with open(done, encoding="utf-8") as fh:
+                keys = json.load(fh)
+            ds = sorted(k.split("|")[-1] for k in keys
+                        if "|" in k and len(k.split("|")[-1]) == 10 and k.split("|")[-1][4] == "-")
+            if ds:
+                premium_from = ds[0]
+        except Exception:
+            pass
+    return {"ok": True, "underlying": u, "real": real, "premium_from": premium_from}
+
+
 def list_expiries(u, date):
     """Expiries with STORED backtest data for this date, each {date, monthly}. What-If is
     a backtest so it can only offer expiries it has real chain data for — the collector
