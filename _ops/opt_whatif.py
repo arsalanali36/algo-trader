@@ -315,12 +315,16 @@ def iv_coverage(u):
     return {"ok": True, "underlying": u, "real": real, "premium_from": premium_from}
 
 
-def chain_at(u, date, hm, expiry=None, n=10):
+def chain_at(u, date, hm, expiry=None, n=10, sel=None):
     """Option-chain snapshot AT a backtest date+time — for the What-If chain-GRID picker.
     Per strike (ATM±n): REAL premium + REAL IV from the live collector. Collector-only by
     design — historical lake has no real IV, so on those days this returns ok:False and the
     UI falls back to typed strikes (never a BS-guessed IV in the grid). Each leg's snapshot
-    is the first minute >= `hm` (else that leg's last known)."""
+    is the first minute >= `hm` (else that leg's last known).
+
+    `sel` = already-selected leg strikes: the window is WIDENED to include them (so a wide
+    strangle's far legs still appear + highlight), and any selected strike the collector never
+    captured that minute is returned as an empty (ltp/iv=None) row so it's still visible."""
     u = u.upper()
     try:
         _, rows = _oc._load_rows(u, date)
@@ -369,8 +373,23 @@ def chain_at(u, date, hm, expiry=None, n=10):
         step = diffs[len(diffs) // 2] or step
     atm = min(strikes, key=lambda x: abs(x - spot)) if spot else strikes[len(strikes) // 2]
     lo, hi = atm - n * step, atm + n * step
-    out = [{"strike": int(k), "ce": side(at(k, "CE")), "pe": side(at(k, "PE"))}
-           for k in strikes if lo <= k <= hi]
+    # widen the window to include any selected leg strikes (sane cap = ATM ± 40 steps so a
+    # typo can't produce a 1000-row grid). Collector may not have far strikes → empty rows.
+    sel_ok = []
+    if sel:
+        cap = 40 * step
+        for s in sel:
+            s = _f(s)
+            if s is not None and abs(s - atm) <= cap:
+                sel_ok.append(int(s))
+                lo, hi = min(lo, s), max(hi, s)
+    ks = [k for k in strikes if lo <= k <= hi]
+    have = set(int(k) for k in ks)
+    out = [{"strike": int(k), "ce": side(at(k, "CE")), "pe": side(at(k, "PE"))} for k in ks]
+    # ensure every selected strike has a row even if the collector never captured it that minute
+    for s in sorted(set(sel_ok) - have):
+        out.append({"strike": s, "ce": {"ltp": None, "iv": None}, "pe": {"ltp": None, "iv": None}})
+    out.sort(key=lambda r: r["strike"])
     return {"ok": True, "underlying": u, "date": date, "expiry": exp, "expiries": exps,
             "hm": hm, "spot": round(spot, 2) if spot else None,
             "atm": int(atm) if atm else None, "step": step, "strikes": out}
