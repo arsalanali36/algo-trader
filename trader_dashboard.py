@@ -823,7 +823,11 @@ def api_whatif_chain():
         hm = str(request.args.get('time') or '09:20')[:5]
         expiry = request.args.get('expiry') or None
         sel = [s for s in (request.args.get('legs') or '').split(',') if s.strip()]
-        return jsonify(w.chain_at(u, date, hm, expiry, sel=sel))
+        try:
+            n = max(6, min(30, int(request.args.get('n') or 10)))   # window ATM±n (builder wants wider)
+        except Exception:
+            n = 10
+        return jsonify(w.chain_at(u, date, hm, expiry, n=n, sel=sel))
     except Exception as e:
         return jsonify({"ok": False, "reason": str(e), "strikes": []})
 

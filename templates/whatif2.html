@@ -168,7 +168,7 @@ const $=id=>document.getElementById(id);
 const CFG={NIFTY:{lot:65,step:50},BANKNIFTY:{lot:30,step:100}};
 let INST='NIFTY', MINST='NIFTY', mult=1, exp=null;
 let legs=[];   // {side,type,strike,qty,hidden}
-let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0;
+let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false;
 
 function inr(v){return Math.round(Math.abs(v)).toLocaleString('en-IN');}
 function sgn(v){return (v<0?'−₹':'+₹')+inr(v);}
@@ -223,9 +223,11 @@ function renderLegs(){
 function collectActive(){return act().map(l=>({side:l.side,strike:l.strike,type:l.type,qty:l.qty}));}
 
 // ---------- payoff + KPI ----------
-let _pfT=null,_mgT=null;
-function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);scheduleMargin();}
-function scheduleMargin(){clearTimeout(_mgT);_mgT=setTimeout(loadMargin,1700);}   // margin = live Dhan call → longer debounce, auto (no button needed)
+let _pfT=null,_mgLoading=false,_mgLoaded=false;
+function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);
+  // margin is a ~15s live Dhan+Kite call → do NOT auto-fire on every tweak (that made the page
+  // feel stuck). Mark it stale; user clicks 💰 to refresh (or it's fetched once on load).
+  if(_mgLoaded&&!_mgLoading){$('mg').innerHTML='<span style="color:var(--dim);cursor:pointer" title="structure badla — refresh" onclick="loadMargin()">↻ stale</span>';}}
 async function loadPayoff(){
   const A=collectActive();
   if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';return;}
@@ -270,13 +272,16 @@ function drawPayoff(r){
 // ---------- margin (Funds & Margins) ----------
 $('marginBtn').addEventListener('click',loadMargin);
 async function loadMargin(){
-  const A=collectActive();if(!A.length)return;
-  $('mg').textContent='…';$('mav').textContent='…';
+  const A=collectActive();if(!A.length||_mgLoading)return;
+  _mgLoading=true;
+  $('mg').innerHTML='<span style="color:var(--amber)">⏳ live ~15s…</span>';
   let r;try{r=await(await fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:INST,lots:mult,legs:A})})).json();}catch(e){r=null;}
-  if(!r||!r.ok){$('mg').textContent='—';$('mav').textContent='—';return;}
+  _mgLoading=false;_mgLoaded=true;
+  if(!r||!r.ok){$('mg').innerHTML='<span style="color:var(--dim);cursor:pointer" title="'+((r&&r.msg)||'market band?')+'" onclick="loadMargin()">— ↻</span>';return;}
   $('mg').textContent=r.hedged!=null?'~₹'+inr(r.hedged):(r.standalone!=null?'~₹'+inr(r.standalone):'—');
   if(r.balance!=null)$('mav').textContent='₹'+inr(r.balance);
 }
+window.loadMargin=loadMargin;
 
 // ---------- Add/Edit modal ----------
 $('ae').onclick=()=>{$('ovl').classList.add('on');MINST=INST;syncMinst();loadChain();};
@@ -293,11 +298,12 @@ async function loadChain(){
   const d=$('date').value,t=$('et').value;if(!d)return;
   const myseq=++_chSeq;$('chain').innerHTML='<div style="padding:14px;color:var(--mut);font-size:11px">Chain le raha…</div>';
   const sel=legs.map(l=>l.strike).join(',');
-  let r;try{r=await(await fetch(`/api/whatif-chain?underlying=${MINST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent(MINST===INST?($('exp').value||''):'')}&legs=${sel}`)).json();}catch(e){r=null;}
+  let r;try{r=await(await fetch(`/api/whatif-chain?underlying=${MINST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent(MINST===INST?($('exp').value||''):'')}&n=22&legs=${sel}`)).json();}catch(e){r=null;}
   if(myseq!==_chSeq)return;
   _chData=r;
   if(!r||!r.ok){$('chain').innerHTML='<div style="padding:14px;color:var(--amber);font-size:11px">Is date pe chain nahi (real IV nahi — purana din). Leg table me strike ▴▾ se banao.</div>';$('mspot').textContent='';return;}
   $('mspot').textContent=MINST+' '+(r.spot||'').toLocaleString('en-IN')+' · ATM '+r.atm;
+  _chScroll=true;   // scroll to ATM only on a fresh load, not on every in-modal edit
   renderChain();
 }
 function legIdx(k,t){return legs.findIndex(l=>l.strike===k&&l.type===t);}
@@ -306,10 +312,17 @@ function renderChain(){
   const atm=_chData.atm;
   $('chain').innerHTML=_chData.strikes.map(s=>{
     const cd=s.ce,pd=s.pe,isatm=s.strike===atm;
-    function cell(side){const t=side.toUpperCase(),d=side==='ce'?cd:pd,sel=legIdx(s.strike,t)>=0,exp=_chExpand&&_chExpand.k===s.strike&&_chExpand.t===t;
-      if(exp)return '<span style="display:inline-flex;gap:4px;justify-content:'+(side==='pe'?'flex-end':'flex-start')+'"><button class="ba" data-k="'+s.strike+'" data-t="'+t+'" data-a="BUY" style="background:rgba(63,185,80,.16);border-color:var(--green);color:var(--green)">B</button><button class="ba" data-k="'+s.strike+'" data-t="'+t+'" data-a="SELL" style="background:rgba(248,81,73,.16);border-color:var(--red);color:var(--red)">S</button></span>';
-      const v=d.ltp!=null?'₹'+d.ltp:'—';
-      return '<span class="pc" data-k="'+s.strike+'" data-t="'+t+'" style="text-align:'+(side==='pe'?'right':'left')+';color:'+(sel?'var(--tx)':(t==='CE'?'var(--cyn)':'var(--spot)'))+';font-weight:'+(sel?'700':'400')+';background:'+(sel?(t==='CE'?'rgba(57,197,207,.16)':'rgba(240,136,62,.16)'):'')+'">'+v+'</span>';}
+    function cell(side){const t=side.toUpperCase(),d=side==='ce'?cd:pd,li=legIdx(s.strike,t),expd=_chExpand&&_chExpand.k===s.strike&&_chExpand.t===t;
+      const jc=side==='pe'?'flex-end':'flex-start';
+      if(li>=0){const lg=legs[li],sc=lg.side==='SELL'?'var(--red)':'var(--green)';   // SELECTED — B/S badge (toggle) + premium + ✕, stays visible
+        const badge='<button class="sbadge" data-i="'+li+'" title="Buy/Sell toggle" style="border:1px solid '+sc+';background:'+(lg.side==='SELL'?'rgba(248,81,73,.18)':'rgba(63,185,80,.18)')+';color:'+sc+';font-weight:800;font-size:10px;border-radius:3px;padding:0 5px;cursor:pointer">'+lg.side[0]+'</button>';
+        const px='<span style="color:var(--tx);font-weight:700">₹'+(d.ltp!=null?d.ltp:'—')+'</span>';
+        const rm='<span class="pcx" data-i="'+li+'" title="remove leg" style="cursor:pointer;color:var(--dim);font-size:11px">✕</span>';
+        const inner=side==='pe'?(rm+px+badge):(badge+px+rm);
+        return '<span style="display:inline-flex;gap:4px;align-items:center;justify-content:'+jc+';background:'+(t==='CE'?'rgba(57,197,207,.13)':'rgba(240,136,62,.13)')+';border-radius:4px;padding:1px 4px">'+inner+'</span>';}
+      if(expd)return '<span style="display:inline-flex;gap:4px;justify-content:'+jc+'"><button class="ba" data-k="'+s.strike+'" data-t="'+t+'" data-a="BUY" style="background:rgba(63,185,80,.16);border-color:var(--green);color:var(--green)">B</button><button class="ba" data-k="'+s.strike+'" data-t="'+t+'" data-a="SELL" style="background:rgba(248,81,73,.16);border-color:var(--red);color:var(--red)">S</button></span>';
+      const v=d.ltp!=null?'₹'+d.ltp:'<span style="color:var(--dim)">—</span>';
+      return '<span class="pc" data-k="'+s.strike+'" data-t="'+t+'" style="text-align:'+(side==='pe'?'right':'left')+';color:'+(t==='CE'?'var(--cyn)':'var(--spot)')+';cursor:pointer">'+v+'</span>';}
     return '<div class="chrow" data-k="'+s.strike+'"'+(isatm?' style="background:rgba(31,111,235,.08)"':'')+'>'
       +'<span style="color:var(--dim);font-size:9.5px">'+(cd.delta!=null?cd.delta:'')+'</span>'+cell('ce')
       +'<span style="color:var(--dim);font-size:9px">'+(cd.oi!=null?(cd.oi/100000).toFixed(1)+'L':'')+'</span>'
@@ -317,11 +330,13 @@ function renderChain(){
       +'<span style="font-size:9.5px;color:var(--mut)">'+(cd.iv!=null?cd.iv:'')+'</span>'+cell('pe')
       +'<span style="color:var(--dim);font-size:9.5px;text-align:right">'+(pd.delta!=null?pd.delta:'')+'</span></div>';
   }).join('');
-  $('chain').querySelectorAll('.pc').forEach(e=>e.onclick=()=>{const k=+e.dataset.k,t=e.dataset.t,i=legIdx(k,t);if(i>=0){legs.splice(i,1);_chExpand=null;}else{_chExpand={k:k,t:t};}afterModalEdit();});
+  $('chain').querySelectorAll('.pc').forEach(e=>e.onclick=()=>{_chExpand={k:+e.dataset.k,t:e.dataset.t};afterModalEdit();});   // unselected → expand B/S
   $('chain').querySelectorAll('.ba').forEach(e=>e.onclick=()=>{legs.push({side:e.dataset.a,type:e.dataset.t,strike:+e.dataset.k,qty:1,hidden:false});_chExpand=null;afterModalEdit();});
+  $('chain').querySelectorAll('.sbadge').forEach(e=>e.onclick=()=>{const lg=legs[+e.dataset.i];lg.side=lg.side==='SELL'?'BUY':'SELL';afterModalEdit();});   // selected → change B/S in-place
+  $('chain').querySelectorAll('.pcx').forEach(e=>e.onclick=()=>{legs.splice(+e.dataset.i,1);_chExpand=null;afterModalEdit();});   // remove leg from chain
   updMcount();
   // auto-scroll ATM
-  const ar=$('chain').querySelector('.chrow[data-k="'+atm+'"]');if(ar&&!_chExpand)ar.scrollIntoView({block:'center'});
+  if(_chScroll){const ar=$('chain').querySelector('.chrow[data-k="'+atm+'"]');if(ar)ar.scrollIntoView({block:'center'});_chScroll=false;}
 }
 function afterModalEdit(){renderChain();renderLegs();schedulePayoff();}
 function updMcount(){$('mcount').textContent=legs.length+' legs selected';}
@@ -401,6 +416,7 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
   const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
   $('date').value=now.toISOString().slice(0,10);$('xd').value=$('date').value;
   legs=seed('NIFTY');renderLegs();renderJournal();loadExpiries();loadCoverage();schedulePayoff();
+  setTimeout(loadMargin,3200);   // one lazy live-margin fetch on open (button 💰 to refresh after)
 })();
 </script>
 <script defer src="/static/js/topnav.js"></script>
