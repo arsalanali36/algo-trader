@@ -64,7 +64,7 @@ def _csv_path(u, date):
     return None
 
 
-_CACHE = {}  # (u, date) -> (mtime, rows)
+_CACHE = {}  # (u, date) -> (mtime, rows, byte_offset, fieldnames)
 
 # the collector's fixed schema (option_chain_collector.CSV_COLS) — applied when a
 # day's file is missing its header row (a collector restart occasionally wrote one
@@ -74,28 +74,70 @@ _COLS = ["datetime", "underlying", "spot", "vix", "expiry", "strike", "opt_type"
          "delta", "theta", "gamma", "vega"]
 
 
+def _parse_lines(lines, fieldnames):
+    """Parse CSV lines → (rows, fieldnames). fieldnames=None → first line IS the header
+    (DictReader derives them, returned so the growing-tail read can reuse them)."""
+    if fieldnames is None:
+        rd = csv.DictReader(lines)
+        return list(rd), rd.fieldnames
+    rd = csv.DictReader(lines, fieldnames=fieldnames)
+    return list(rd), fieldnames
+
+
 def _load_rows(u, date):
+    """Collector rows for (u, date). mtime-cached; for the LIVE (still-growing) day-file it
+    parses only the newly-APPENDED tail (tracked by byte offset) instead of re-reading the
+    whole 15-20 MB file every minute. That full re-parse was ~2-3 s and GIL-bound, so it
+    periodically FROZE the entire single-process dashboard (every consumer's request queued
+    behind it). A trailing partial line (collector mid-write) is left for the next call."""
     p = _csv_path(u, date)
     if not p:
         return None, []
-    mt = os.path.getmtime(p)
+    try:
+        mt = os.path.getmtime(p)
+    except OSError:
+        return p, []
     key = (u, date)
     hit = _CACHE.get(key)
     if hit and hit[0] == mt:
         return p, hit[1]
-    rows = []
+    # incremental: same file grew → read ONLY the bytes appended past the cached offset
+    if hit and len(hit) == 4 and hit[3] is not None:
+        try:
+            rows, off, fns = hit[1], hit[2], hit[3]
+            with open(p, "rb") as f:
+                f.seek(0, 2)
+                size = f.tell()
+                if size >= off:
+                    f.seek(off)
+                    data = f.read()
+                    nl = data.rfind(b"\n")
+                    if nl >= 0:
+                        lines = data[:nl + 1].decode("utf-8", "replace").splitlines()
+                        new_rows, _ = _parse_lines(lines, fns)
+                        rows.extend(new_rows)
+                        off += nl + 1
+                    _CACHE[key] = (mt, rows, off, fns)
+                    return p, rows
+        except Exception:
+            pass   # fall through to a clean full parse
+    # full parse (new file / shrank / no prior offset)
     try:
-        with open(p, newline="", encoding="utf-8") as f:
-            first = f.readline()
-            f.seek(0)
-            rd = csv.DictReader(f) if first.startswith("datetime,") else csv.DictReader(f, fieldnames=_COLS)
-            for r in rd:
-                rows.append(r)
+        with open(p, "rb") as f:
+            data = f.read()
     except Exception:
         return p, []
+    nl = data.rfind(b"\n")
+    off = (nl + 1) if nl >= 0 else len(data)
+    lines = data[:off].decode("utf-8", "replace").splitlines()
+    if not lines:
+        _CACHE[key] = (mt, [], off, None)
+        return p, []
+    has_header = lines[0].startswith("datetime,")
+    rows, fns = _parse_lines(lines, None if has_header else _COLS)
     if len(_CACHE) > 8:
         _CACHE.clear()
-    _CACHE[key] = (mt, rows)
+    _CACHE[key] = (mt, rows, off, fns)
     return p, rows
 
 
