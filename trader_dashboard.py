@@ -798,6 +798,21 @@ def api_whatif_expiries():
     except Exception as e:
         return jsonify({"ok": False, "expiries": [], "msg": str(e)})
 
+@app.route('/api/whatif-chain')
+def api_whatif_chain():
+    """Option-chain snapshot AT a backtest date+time for the What-If chain-grid picker —
+    real premium + real IV per strike (collector days only; historical → ok:False, UI falls
+    back to typed strikes). Display-only."""
+    try:
+        import opt_whatif as w
+        u = str(request.args.get('underlying', 'NIFTY')).upper()
+        date = request.args.get('date')
+        hm = str(request.args.get('time') or '09:20')[:5]
+        expiry = request.args.get('expiry') or None
+        return jsonify(w.chain_at(u, date, hm, expiry))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e), "strikes": []})
+
 @app.route('/api/whatif-coverage')
 def api_whatif_coverage():
     """Since-when REAL IV is available (broker's own reported IV = live collector window)

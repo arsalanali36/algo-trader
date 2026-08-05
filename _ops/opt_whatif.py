@@ -315,6 +315,67 @@ def iv_coverage(u):
     return {"ok": True, "underlying": u, "real": real, "premium_from": premium_from}
 
 
+def chain_at(u, date, hm, expiry=None, n=10):
+    """Option-chain snapshot AT a backtest date+time — for the What-If chain-GRID picker.
+    Per strike (ATM±n): REAL premium + REAL IV from the live collector. Collector-only by
+    design — historical lake has no real IV, so on those days this returns ok:False and the
+    UI falls back to typed strikes (never a BS-guessed IV in the grid). Each leg's snapshot
+    is the first minute >= `hm` (else that leg's last known)."""
+    u = u.upper()
+    try:
+        _, rows = _oc._load_rows(u, date)
+    except Exception:
+        rows = None
+    if not rows:
+        return {"ok": False, "reason": "no-collector", "underlying": u, "date": date, "strikes": []}
+    exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+    if not exps:
+        return {"ok": False, "reason": "no-expiry", "underlying": u, "date": date, "strikes": []}
+    exp = expiry if (expiry and expiry in exps) else exps[0]
+    day = [r for r in rows if r.get("expiry") == exp]
+    strikes = sorted({_f(r.get("strike")) for r in day if _f(r.get("strike")) is not None})
+    if not strikes:
+        return {"ok": False, "reason": "no-strikes", "underlying": u, "date": date, "strikes": []}
+
+    def at(strike, ot):
+        c = sorted((r for r in day if _f(r.get("strike")) == strike and r.get("opt_type") == ot),
+                   key=lambda r: r.get("datetime") or "")
+        if not c:
+            return None
+        for r in c:
+            if (r.get("datetime") or "")[11:16] >= hm:
+                return r
+        return c[-1]
+
+    def side(r):
+        if not r:
+            return {"ltp": None, "iv": None}
+        lt, iv = _f(r.get("ltp")), _f(r.get("iv"))
+        return {"ltp": round(lt, 1) if lt is not None else None,
+                "iv": round(iv, 2) if iv is not None else None}
+
+    # spot at (or after) hm from any leg's snapshot
+    spot = None
+    for r in sorted(day, key=lambda r: r.get("datetime") or ""):
+        if (r.get("datetime") or "")[11:16] >= hm:
+            spot = _f(r.get("spot"))
+            if spot:
+                break
+    if spot is None:
+        spot = _f(day[-1].get("spot"))
+    step = STEP.get(u, 50)
+    if len(strikes) >= 2:
+        diffs = sorted(strikes[i + 1] - strikes[i] for i in range(len(strikes) - 1))
+        step = diffs[len(diffs) // 2] or step
+    atm = min(strikes, key=lambda x: abs(x - spot)) if spot else strikes[len(strikes) // 2]
+    lo, hi = atm - n * step, atm + n * step
+    out = [{"strike": int(k), "ce": side(at(k, "CE")), "pe": side(at(k, "PE"))}
+           for k in strikes if lo <= k <= hi]
+    return {"ok": True, "underlying": u, "date": date, "expiry": exp, "expiries": exps,
+            "hm": hm, "spot": round(spot, 2) if spot else None,
+            "atm": int(atm) if atm else None, "step": step, "strikes": out}
+
+
 def list_expiries(u, date):
     """Expiries with STORED backtest data for this date, each {date, monthly}. What-If is
     a backtest so it can only offer expiries it has real chain data for — the collector

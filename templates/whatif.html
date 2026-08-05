@@ -98,8 +98,17 @@
       <select id="exp" style="width:100%;padding:7px 8px;background:var(--bd2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;outline:none;cursor:pointer">
         <option value="">Nearest (weekly)</option></select></div>
     <div class="fg"><label>Lots</label><input type="number" id="lots" value="1" min="1"></div>
-    <div class="fg"><label>Legs</label><div class="legs" id="legs"></div>
-      <button class="addleg" id="addleg">＋ Add leg</button></div>
+    <div class="fg"><label>Chain — click premium to add leg</label>
+      <div class="seg" id="chMode" style="margin-bottom:6px">
+        <button class="on" data-m="SELL">SELL</button><button data-m="BUY">BUY</button></div>
+      <div id="chWrap" style="border:1px solid var(--bd);border-radius:8px;overflow:hidden;display:none">
+        <div style="display:grid;grid-template-columns:1fr 38px 62px 38px 1fr;font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.3px;padding:5px 7px;border-bottom:1px solid var(--bd2);background:var(--panel)">
+          <span>CE ₹</span><span>IV</span><span style="text-align:center">Strike</span><span style="text-align:right">IV</span><span style="text-align:right">PE ₹</span></div>
+        <div id="chain" style="max-height:300px;overflow-y:auto;font-variant-numeric:tabular-nums"></div></div>
+      <div id="chNote" style="font-size:10px;color:var(--dim);margin-top:5px"></div>
+    </div>
+    <div class="fg"><label>Selected legs</label><div class="legs" id="legs"></div>
+      <button class="addleg" id="addleg">＋ Add leg manually</button></div>
     <button class="run" id="run">▶ Run backtest</button>
     <div class="hint"><b>Positional hold:</b> Exit date entry se aage rakho → position ki entry us din, exit baad wale din (aaj tak) — "agar exit na kiya hota to ab kitna" ka real-premium jawaab. Held expiry dono din honi chahiye (usually expiry ke andar).<br><br>Recent din = live collector (real Dhan greeks, instant). Purane din = OptChainLake (~2021→, 1-min, real premium; greeks BS-derived, IV lake me nahi hai). Purane din ka pehla run ~15 sec (reconstruct), phir same date instant.</div>
     <div id="ivcov" style="margin-top:12px;font-size:11px;line-height:1.6;border:1px solid var(--bd);border-radius:8px;padding:9px 11px;background:var(--panel)"></div>
@@ -147,9 +156,9 @@ function legRow(side,strike,type){
   return d;
 }
 function seedLegs(){ $('legs').innerHTML=''; $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?57000:24000,'CE')); $('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56000:23600,'PE')); }
-$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();loadCoverage();scheduleLegLtp();});
-$('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();});
-$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();}});
+$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;[...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;seedLegs();loadExpiries();loadCoverage();scheduleChain();scheduleLegLtp();});
+$('addleg').addEventListener('click',()=>{$('legs').appendChild(legRow('SELL',INST==='BANKNIFTY'?56500:23800,'CE'));scheduleLegLtp();markChain();});
+$('legs').addEventListener('click',e=>{if(e.target.classList.contains('del')&&$('legs').children.length>1){e.target.closest('.leg').remove();scheduleLegLtp();markChain();}});
 
 // expiry dropdown: stored expiries for the date (recent/collector); historical lake = weekly-only → just "Nearest"
 async function loadExpiries(){
@@ -181,6 +190,48 @@ async function loadCoverage(){
   el.innerHTML = `<div style="color:var(--mut);text-transform:uppercase;font-size:9px;letter-spacing:.6px;margin-bottom:5px">📅 IV data — ${r.underlying}</div>${realLine}${premLine?'<br>'+premLine:''}`;
 }
 
+// ---- chain-grid picker (option-chain style): CE|IV|strike|IV|PE, click premium = add leg ----
+// Real premium + REAL IV per strike (collector days). Historical days → grid hidden, typed
+// strike fallback (no BS-guessed IV in the grid — IV real ho to hi dikhao).
+let CHMODE='SELL', _chT=null, _chData=null;
+$('chMode').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;CHMODE=b.dataset.m;[...$('chMode').children].forEach(x=>x.classList.toggle('on',x.dataset.m===CHMODE));if(_chData&&_chData.ok)$('chNote').innerHTML=$('chNote').innerHTML.replace(/(SELL|BUY) leg$/,CHMODE+' leg');});
+function scheduleChain(){ clearTimeout(_chT); _chT=setTimeout(loadChain,350); }
+async function loadChain(){
+  const d=$('date').value, t=$('et').value; const note=$('chNote'); if(!d){note.textContent='';return;}
+  note.textContent='Chain le raha…';
+  let r; try{ r=await (await fetch(`/api/whatif-chain?underlying=${INST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent($('exp').value||'')}`)).json(); }catch(e){ r=null; }
+  _chData=r;
+  if(!r||!r.ok){ $('chWrap').style.display='none';
+    note.innerHTML=`<span style="color:var(--amber)">Is date pe chain nahi</span> (real IV nahi — purana din) → neeche <b>strike type karke</b> add karo.`; return; }
+  renderChain(r); markChain();
+  note.innerHTML=`ATM <b>${r.atm}</b> · spot ${r.spot} · exp ${r.expiry} · <span style="color:var(--green)">real IV</span> — cell click = ${CHMODE} leg`;
+}
+function _chCell(v){ return v==null?'<span style="color:var(--dim)">—</span>':'₹'+v; }
+function _chIv(v){ return v==null?'—':(+v).toFixed(1); }
+function renderChain(r){
+  const grid=$('chain'); $('chWrap').style.display='block';
+  grid.innerHTML=r.strikes.map(s=>{const atm=s.strike===r.atm, bg=atm?'background:rgba(31,111,235,.10);':'';
+    return `<div class="chrow" data-k="${s.strike}" style="display:grid;grid-template-columns:1fr 38px 62px 38px 1fr;align-items:center;padding:5px 7px;border-bottom:1px solid #161b22;${bg}">`
+      +`<span class="chcell" data-k="${s.strike}" data-t="CE" style="cursor:pointer;color:#39c5cf;padding:1px 3px">${_chCell(s.ce.ltp)}</span>`
+      +`<span style="font-size:10px;color:var(--mut)">${_chIv(s.ce.iv)}</span>`
+      +`<span style="text-align:center;font-weight:700;${atm?'color:var(--acc)':''}">${s.strike}${atm?'<div style="font-size:8px;color:var(--acc);line-height:1">ATM</div>':''}</span>`
+      +`<span style="font-size:10px;color:var(--mut);text-align:right">${_chIv(s.pe.iv)}</span>`
+      +`<span class="chcell" data-k="${s.strike}" data-t="PE" style="cursor:pointer;text-align:right;color:var(--spot);padding:1px 3px">${_chCell(s.pe.ltp)}</span></div>`;
+  }).join('');
+  grid.querySelectorAll('.chcell').forEach(el=>el.addEventListener('click',()=>toggleChainLeg(+el.dataset.k, el.dataset.t)));
+  const ar=grid.querySelector(`.chrow[data-k="${r.atm}"]`); if(ar) grid.scrollTop=ar.offsetTop-grid.clientHeight/2+ar.clientHeight/2;
+}
+function _legIdx(k,t){ return [...$('legs').children].findIndex(el=>+el.querySelector('.k').value===k && el.querySelector('.t').value===t); }
+function toggleChainLeg(k,t){ const i=_legIdx(k,t);
+  if(i>=0){ $('legs').children[i].remove(); } else { $('legs').appendChild(legRow(CHMODE,k,t)); }
+  scheduleLegLtp(); markChain(); }
+function markChain(){ const grid=$('chain'); if(!grid) return;
+  const sel=new Set([...$('legs').children].map(el=>(+el.querySelector('.k').value)+'-'+el.querySelector('.t').value));
+  grid.querySelectorAll('.chcell').forEach(el=>{ const on=sel.has((+el.dataset.k)+'-'+el.dataset.t);
+    el.style.fontWeight=on?'700':'400';
+    el.style.background=on?(el.dataset.t==='CE'?'rgba(57,197,207,.16)':'rgba(240,136,62,.16)'):'';
+    el.style.borderRadius=on?'4px':''; }); }
+
 // inline per-leg price = the REAL premium AT the entry time on the selected date (the
 // BACKTEST price at that moment, NOT the current live LTP) — this IS a backtest tool.
 // Recent/collector dates only; historical → "—" (Run gives it). Debounced.
@@ -195,10 +246,11 @@ async function fetchLegLtp(){
   rows.forEach((el,i)=>{ const s=el.querySelector('.ltp'); if(!s) return;
     const lp=ok?(ls[i]&&ls[i].ltp):null; s.textContent = lp!=null ? '₹'+lp : '—'; s.style.color = lp!=null?'var(--tx)':'var(--mut)'; });
 }
-$('legs').addEventListener('input', scheduleLegLtp);
-$('legs').addEventListener('change', scheduleLegLtp);
-$('et').addEventListener('change', scheduleLegLtp);    // entry-time price → refetch on entry-time / date change
-$('date').addEventListener('change', scheduleLegLtp);
+$('legs').addEventListener('input', ()=>{scheduleLegLtp();markChain();});
+$('legs').addEventListener('change', ()=>{scheduleLegLtp();markChain();});
+$('et').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});   // entry-time → refetch price + chain
+$('date').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});
+$('exp').addEventListener('change', ()=>{scheduleLegLtp();scheduleChain();});   // expiry change → reload chain
 
 function collectLegs(){return [...$('legs').children].map(r=>({side:r.querySelector('.s').value,strike:+r.querySelector('.k').value,type:r.querySelector('.t').value}));}
 function fmt(v){return (v>=0?'+':'−')+'₹'+Math.abs(v).toLocaleString('en-IN');}
@@ -373,7 +425,7 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
 const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
 $('date').value=now.toISOString().slice(0,10);
 syncExitDate(true);
-seedLegs(); renderJournal(); loadExpiries(); loadCoverage(); fetchLegLtp();
+seedLegs(); renderJournal(); loadExpiries(); loadCoverage(); loadChain(); fetchLegLtp();
 </script>
 <script defer src="/static/js/topnav.js"></script>
 </body></html>
