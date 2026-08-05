@@ -50,6 +50,11 @@ if __name__ == '__main__':
     # process as the poller that keeps both legs' LTP warm). All PAPER.
     threading.Thread(target=td.auto_straddle_loop, daemon=True).start()
 
+    # StockMock-style (_sm) config strategies — generic scheduled leg-basket runner.
+    # On a qualifying day at entry time, fires the configured legs once; exits are the
+    # existing pos_monitor's job (per-leg SL% tag + EOD). PAPER. See _ops/sm_runner.py.
+    threading.Thread(target=td.sm_runner_loop, daemon=True).start()
+
     # P7: one batched Dhan LTP call per cycle covers all open positions +
     # index spot, fanned out via shared_ltp_cache (pos_monitor / webhook /
     # risk_gate / _rest_ltp_fallback all read that cache first). This process

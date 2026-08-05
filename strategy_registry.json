@@ -588,6 +588,18 @@
    "instrument": "Stocks",
    "hold": "Positional",
    "structure": "Cash Equity"
+  },
+  "02.11": {
+   "name": "Expiry-Day Straddle (StockMock)",
+   "config_key": "sm_nifty_expiry_v1",
+   "slug": "sm_nifty_expiry_v1",
+   "live_file": "_ops/sm_runner.py",
+   "status": "paper",
+   "legs": 2,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Short straddle (expiry-day 0DTE, 25% SL)",
+   "desc": "StockMock '42% NIFTY EXPIRY DAY' — SELL 6-lot ATM PE + 5-lot ATM CE @09:22, 25% per-leg SL, square-off-one, exit 15:15, weekly expiry-day only. Generic _sm runner (config-driven, backtest+paper same config)."
   }
  }
 }

@@ -5355,6 +5355,151 @@ def _fire_flex_straddle(symbol, spot, lots, tp_pt, sl_pt, source, legs_spec, log
     return True, f"[PAPER] {symbol} {len(out_legs)}-leg placed @ net {entry_net:.0f} ({_kind})"
 
 
+# ════════════════════════════════════════════════════════════════════════════════
+# StockMock-style config strategies (_sm) — generic scheduled leg-basket runner.
+# One nifty_config[<id>]["_sm"] config drives BOTH the backtest (StockMock-parity engine)
+# AND this live-paper firer → the two can't silently diverge (Rule 10). Entry fires the
+# configured legs with a per-leg SL% tag; ALL exits (per-leg SL + EOD squareoff) are the
+# existing pos_monitor's job — square-off-one is natural since each leg is monitored on its
+# own SL. PAPER-locked. Loop-driven (not a process) — auto_scheduler skips it (id not in
+# STRATEGIES, like webhook/straddle). See _ops/sm_runner.py (pure logic) + memory
+# project_code3b_stockmock_parity.
+# ════════════════════════════════════════════════════════════════════════════════
+def _fire_sm_strategy(strategy_id, cfg, log=print):
+    """Fire a StockMock-style leg basket (PAPER). Resolve ALL legs → gate the WHOLE basket
+    ONCE (RMS gating + basket-margin capital, so naked sells don't partial/naked-orphan —
+    TRAP #156) → place each leg via execution_gateway with a per-leg SL% tag (pos_monitor
+    enforces the SELL entry×(1+sl%) stop + EOD). All-or-nothing: any leg fails → unwind the
+    placed legs. Per-leg lots (asymmetric OK). cfg = sm_runner.parse_cfg(...). Returns (ok, msg)."""
+    import dhan_master
+    import execution_gateway as gw
+    import risk_gate as rg
+    symbol = cfg["instrument"]
+    mode = "paper"   # _sm strategies are hard paper-locked
+    try:
+        _sq, no_entry = rg.exit_time_config()
+        now = _ast_ist_now()
+        if (now.hour, now.minute) >= (no_entry[0], no_entry[1]):
+            return False, f"no-entry window ke baad ({no_entry[0]:02d}:{no_entry[1]:02d}) — nahi khola"
+    except Exception:
+        pass
+    spot = _trigger_spot_now(symbol)
+    if not spot or spot <= 0:
+        return False, f"{symbol} spot abhi nahi mila (rate-limit?) — order NAHI bheja"
+    # resolve ALL legs up front (get_option_contract handles the PE-offset inversion, TRAP #140)
+    resolved = []
+    for lg in cfg["legs"]:
+        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, lg["opt"], lg["off"])
+        if not sec or not lot:
+            return False, f"{symbol} {lg['opt']} ATM{lg['off']:+d} contract resolve fail"
+        resolved.append({**lg, "sec": sec, "tsym": tsym, "lot": int(lot)})
+    gid = "SM_" + uuid.uuid4().hex[:8]
+    # gate the WHOLE basket ONCE — RMS gating + basket-margin capital
+    try:
+        blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
+        if blocked:
+            return False, f"RMS blocked — {why}"
+    except Exception:
+        pass
+    try:
+        _prewarm_option_ltps([r["sec"] for r in resolved], log=log)
+    except Exception:
+        pass
+    try:
+        basket_rows = [{"sec_id": r["sec"], "entry": r["side"], "qty": r["lots"] * r["lot"],
+                        "entry_price": _straddle_lltp(r["sec"]) or 0, "sym": r["tsym"],
+                        "segment": "NSE_FNO"} for r in resolved]
+        basket = rg.position_margin(basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(strategy_id, basket, mode=mode)
+        if not ok_cap:
+            log(f"[SM] {strategy_id} skip — basket margin ₹{basket:,.0f} fit nahi: {cap_why}")
+            return False, f"capital — {cap_why}"
+    except Exception as ce:
+        log(f"[SM] {strategy_id} basket capital err: {ce}")
+    # place (BUY legs first → margin reduced, then SELL), unwind-safe
+    ordered = sorted(resolved, key=lambda r: 0 if r["side"] == "BUY" else 1)
+    placed = []
+    def _unwind_all(reason):
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(strategy_id, symbol, p["sec"], p["tsym"], p["qty"],
+                                entry_side=p["side"], mode=mode, group_id=gid, reason=reason,
+                                tag="SM", source="sm", log=log)
+            except Exception as ue:
+                log(f"[SM] {strategy_id} unwind FAIL {p['tsym']}: {ue}")
+    for r in ordered:
+        xtra = ["SM", f"SM_ID:{strategy_id}"]
+        if r.get("sl_pct"):
+            xtra += ["SL_TYPE:pct", "SL_VAL:%g" % r["sl_pct"]]
+        if r.get("tp_pct"):
+            xtra += ["TP_TYPE:pct", "TP_VAL:%g" % r["tp_pct"]]
+        res = gw.execute_signal(strategy_id, symbol, r["side"], r["lots"], r["lot"],
+                                r["sec"], r["tsym"], seg="NSE_FNO", mode=mode, source="sm",
+                                tag="SM", group_id=gid, gate=False, extra_tags=xtra, log=log)
+        if not res.get("ok"):
+            log(f"[SM] {strategy_id} {r['side']} {r['opt']} fail "
+                f"({res.get('reason') or res.get('status')}) — unwinding, abort")
+            _unwind_all("SM_ABORT")
+            return False, f"{r['side']} {r['opt']} leg fail — sab unwound"
+        placed.append({"sec": r["sec"], "tsym": r["tsym"], "side": r["side"], "qty": r["lots"] * r["lot"]})
+    log(f"[SM] {strategy_id} fired {len(placed)} legs @ spot {spot:.0f} (gid {gid})")
+    try:
+        import ltp_poller
+        ltp_poller.request_watch([(p["sec"], "NSE_FNO") for p in placed])
+    except Exception:
+        pass
+    try:
+        import notify
+        notify.push(f"📋 {len(placed)}-leg placed @ {symbol} {spot:.0f} (paper)",
+                    level="info", key="sm_open_%s" % gid, source=strategy_id)
+    except Exception:
+        pass
+    return True, f"[PAPER] {strategy_id} {len(placed)}-leg placed @ spot {spot:.0f}"
+
+
+def sm_runner_loop():
+    """Daemon (monitor_daemon thread) that drives every active _sm config strategy: on a
+    qualifying day (day-filter) at/after entry time, fire the leg basket ONCE — order_store
+    'entries today' (durable) is the already-fired guard, so a restart never double-fires.
+    Exits are 100% pos_monitor's job (per-leg SL% tag + EOD). PAPER only."""
+    import time
+    import sm_runner as smr
+    import risk_gate as rg
+    while True:
+        try:
+            now = _ast_ist_now()
+            if (9, 15) <= (now.hour, now.minute) < (15, 30):
+                today = now.date().isoformat()
+                now_hm = "%02d:%02d" % (now.hour, now.minute)
+                try:
+                    cfg_all = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                except Exception:
+                    cfg_all = {}
+                for key, raw in cfg_all.items():
+                    try:
+                        if not smr.is_sm(raw) or not (isinstance(raw, dict) and raw.get("active", False)):
+                            continue
+                        c = smr.parse_cfg(key, raw)
+                        if not c or not c["valid"]:
+                            continue
+                        if not smr.should_fire_today(today, c):
+                            continue
+                        if not smr.hm_ge(now_hm, c["entry_hm"]):
+                            continue
+                        try:
+                            if rg.entries_today(key) > 0:
+                                continue   # already fired today (durable)
+                        except Exception:
+                            continue        # can't confirm → don't risk a double-fire
+                        ok, msg = _fire_sm_strategy(key, c, log=lambda m: print(f"[SM-LOOP] {m}", flush=True))
+                        print(f"[SM-LOOP] {key} fire → {ok}: {msg}", flush=True)
+                    except Exception as _e:
+                        print(f"[SM-LOOP] {key} error: {_e}", flush=True)
+        except Exception as e:
+            print("sm_runner_loop error:", e, flush=True)
+        time.sleep(20)
+
+
 def _fire_auto_straddle(symbol, lots, tp_pt, sl_pt, source, log=print, legs_spec=None, expiry="near"):
     """HEDGE-FIRST short straddle. Order of operations (the fix for the 2026-07-24
     naked-orphan storm):
