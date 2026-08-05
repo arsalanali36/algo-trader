@@ -264,12 +264,17 @@ let _pfT=null,_mgLoading=false;
 function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);}   // margin est comes WITH payoff (local, instant)
 async function loadPayoff(){
   const A=collectActive();
-  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';return;}
+  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';_pfLast=null;$('pfsliders').style.display='none';return;}
   const myseq=++_pfSeq;
   const body={underlying:INST,date:$('date').value,entry:$('et').value,exit_date:$('xd').value||$('date').value,exit:$('xt').value,expiry:$('exp').value||'',mult:mult,legs:A};
+  // show a loading hint only if it's actually slow (>350ms) — no flash on cached/fast loads
+  const _lt=setTimeout(()=>{if(myseq===_pfSeq)$('net').innerHTML='<span style="color:var(--dim)">⏳ payoff nikal raha hoon… (aaj ka bada din / server load pe der lag sakti hai)</span>';},350);
   let r;try{r=await(await fetch('/api/whatif2-payoff',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}catch(e){r=null;}
+  clearTimeout(_lt);
   if(myseq!==_pfSeq)return;
-  if(!r||!r.ok){$('net').innerHTML='<span style="color:var(--amber)">payoff nahi: '+((r&&r.reason)||'data')+'</span>';$('pfsliders').style.display='none';return;}
+  // Transient fail (slow/timeout/out-of-band leg): keep the LAST good curve+sliders on screen,
+  // only surface the reason. Blank the sliders only when we never had a good payoff.
+  if(!r||!r.ok){$('net').innerHTML='<span style="color:var(--amber)">payoff nahi: '+((r&&r.reason)||'data')+(_pfLast?' <span style="color:var(--dim)">(pichla chart dikha raha hoon)</span>':'')+'</span>';if(!_pfLast)$('pfsliders').style.display='none';return;}
   _pfLast=r;
   _pfInitTargetForResult(r);
   drawPayoff(r);
@@ -409,7 +414,10 @@ $('ae').onclick=()=>{$('ovl').classList.add('on');MINST=INST;syncMinst();loadCha
 $('mclose').onclick=$('mdone').onclick=()=>{$('ovl').classList.remove('on');};
 $('ovl').addEventListener('click',e=>{if(e.target===$('ovl'))$('ovl').classList.remove('on');});
 $('mclear').onclick=()=>{legs=[];renderLegs();schedulePayoff();renderChain();updMcount();};
-$('minst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;MINST=b.dataset.i;syncMinst();loadChain();});
+// Modal instrument = WHOLE-builder instrument (one strategy = one instrument, Sensibull-style).
+// Picking BANKNIFTY here switches INST + reseeds legs so you can never mix BNF strikes into a
+// NIFTY strategy (that mismatch made payoff fail → sliders vanish).
+$('minst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b||b.dataset.i===INST)return;setInst(b.dataset.i);MINST=INST;syncMinst();loadChain();});
 function syncMinst(){[...$('minst').children].forEach(x=>x.classList.toggle('on',x.dataset.i===MINST));}
 $('msearch').addEventListener('input',()=>{const q=$('msearch').value.trim();if(!q||!_chData)return;const row=[...$('chain').children].find(el=>el.dataset.k===q);if(row)row.scrollIntoView({block:'center'});});
 
