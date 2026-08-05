@@ -600,6 +600,82 @@ def whatif2_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'
     return resp
 
+@app.route('/backtest-lab')
+def backtest_lab_page():
+    """StockMock-style multi-day options backtest — build a leg strategy (ATM±N, per-leg
+    SL/Target/Trail + strategy SL/Target), run it day-by-day over a date range on OUR data
+    (lake 2021→ + collector recent), and get all the stats/breakups/charts/trade-log +
+    per-day intraday PnL. Display-only research; no order path. Reuses backtest_lab.py."""
+    from flask import make_response
+    resp = make_response(render_template("backtest_lab.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
+
+
+def _btlab_legs(raw):
+    """Normalise the frontend legs → engine legs [{side,opt,off,lots,sl_rs?,tp_rs?,trail_*}]."""
+    out = []
+    for lg in (raw or []):
+        try:
+            out.append({
+                "side": str(lg.get("side", "SELL")).upper(),
+                "opt": str(lg.get("opt", "CE")).upper(),
+                "off": int(lg.get("off", 0)),
+                "lots": max(1, int(lg.get("lots") or 1)),
+                "sl_rs": (float(lg["sl_rs"]) if lg.get("sl_rs") not in (None, "", 0, "0") else None),
+                "tp_rs": (float(lg["tp_rs"]) if lg.get("tp_rs") not in (None, "", 0, "0") else None),
+                "trail_arm": (float(lg["trail_arm"]) if lg.get("trail_arm") not in (None, "", 0, "0") else None),
+                "trail_gap": (float(lg["trail_gap"]) if lg.get("trail_gap") not in (None, "", 0, "0") else None),
+            })
+        except Exception:
+            continue
+    return out
+
+
+@app.route('/api/backtest-lab', methods=['POST'])
+def api_backtest_lab():
+    """Run a multi-day options backtest. Returns summary + monthly/day-wise breakup +
+    equity curve + per-day trade log. Display-only (backtest_lab.py, disk data)."""
+    try:
+        import backtest_lab as bl
+        b = request.get_json(force=True) or {}
+        legs = _btlab_legs(b.get('legs'))
+        if not legs:
+            return jsonify({"ok": False, "reason": "koi valid leg nahi"})
+        wd = b.get('weekdays')
+        weekdays = set(int(x) for x in wd) if wd else None
+        out = bl.run(
+            str(b.get('underlying', 'BANKNIFTY')).upper(), legs,
+            str(b.get('entry') or '09:20')[:5], str(b.get('exit') or '15:15')[:5],
+            str(b.get('from')), str(b.get('to')),
+            strat_sl=(float(b['strat_sl']) if b.get('strat_sl') not in (None, "", 0, "0") else None),
+            strat_tp=(float(b['strat_tp']) if b.get('strat_tp') not in (None, "", 0, "0") else None),
+            sqoff=str(b.get('sqoff') or 'all'), weekdays=weekdays)
+        return jsonify(out)
+    except Exception as e:
+        import traceback; traceback.print_exc()
+        return jsonify({"ok": False, "reason": str(e)})
+
+
+@app.route('/api/backtest-lab/intraday', methods=['POST'])
+def api_backtest_lab_intraday():
+    """One day's minute-by-minute combined MTM + spot (per-day PnL modal)."""
+    try:
+        import backtest_lab as bl
+        b = request.get_json(force=True) or {}
+        legs = _btlab_legs(b.get('legs'))
+        if not legs:
+            return jsonify({"ok": False, "reason": "koi leg nahi"})
+        return jsonify(bl.intraday(
+            str(b.get('underlying', 'BANKNIFTY')).upper(), legs,
+            str(b.get('entry') or '09:20')[:5], str(b.get('exit') or '15:15')[:5],
+            str(b.get('date')),
+            strat_sl=(float(b['strat_sl']) if b.get('strat_sl') not in (None, "", 0, "0") else None),
+            strat_tp=(float(b['strat_tp']) if b.get('strat_tp') not in (None, "", 0, "0") else None),
+            sqoff=str(b.get('sqoff') or 'all')))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)})
+
 @app.route('/api/whatif', methods=['POST'])
 def api_whatif():
     import opt_whatif as w

@@ -33,7 +33,8 @@
     { href: '/curves',  label: '📈 Curves' },
     { href: '/gex',     label: '🟢 GEX Profile' },
     { href: '/whatif',  label: '🧪 Options What-If' },
-    { href: '/whatif2', label: '📐 Strategy Builder' }
+    { href: '/whatif2', label: '📐 Strategy Builder' },
+    { href: '/backtest-lab', label: '🧪 Backtest Lab' }
   ];
   var MORE = [
     { href: '/registry',       label: '🗂️ Strategies (classic)' },
