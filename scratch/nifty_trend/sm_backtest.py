@@ -140,7 +140,10 @@ def simulate(cfg, from_date, to_date):
                     ok = False; break
                 strike, entry, ser, ser_hi = pick
             else:
-                strike = int(atm + lc["off"] * step)
+                if lc.get("strike_mode") == "atm_pct":
+                    strike = int(round(spot * (1 + lc["atm_pct"] / 100.0) / step) * step)
+                else:
+                    strike = int(atm + lc["off"] * step)
                 entry, ser, ser_hi = leg_series(day[lc["opt"]], strike)
             if entry is None or not ser:
                 ok = False; break
