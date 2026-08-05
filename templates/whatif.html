@@ -200,6 +200,7 @@ async function loadChain(keep){
   const d=$('date').value, t=$('et').value; const note=$('chNote'); if(!d){note.textContent='';return;}
   const myseq=++_chSeq;                                                 // latest-wins guard (instrument/date switch race)
   note.textContent='Chain le raha…';
+  if(!keep) $('chain').innerHTML='';                                    // fresh load (inst/date change) → clear stale strikes while loading (no wrong-underlying flash)
   const sel=collectLegs().map(l=>l.strike).filter(Boolean).join(',');   // widen grid to cover selected legs
   let r; try{ r=await (await fetch(`/api/whatif-chain?underlying=${INST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent($('exp').value||'')}&legs=${sel}`)).json(); }catch(e){ r=null; }
   if(myseq!==_chSeq) return;                                            // a newer loadChain superseded this → drop stale response
