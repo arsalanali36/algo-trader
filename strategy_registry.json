@@ -600,6 +600,18 @@
    "hold": "Intraday",
    "structure": "Short straddle (expiry-day 0DTE, 25% SL)",
    "desc": "StockMock '42% NIFTY EXPIRY DAY' — SELL 6-lot ATM PE + 5-lot ATM CE @09:22, 25% per-leg SL, square-off-one, exit 15:15, weekly expiry-day only. Generic _sm runner (config-driven, backtest+paper same config)."
+  },
+  "02.12": {
+   "name": "Short Strangle ATM±100 (StockMock)",
+   "config_key": "sm_nifty_strangle_v1",
+   "slug": "sm_nifty_strangle_v1",
+   "live_file": "_ops/sm_runner.py",
+   "status": "paper",
+   "legs": 2,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Short strangle (naked, ATM±100, 25% SL)",
+   "desc": "StockMock '89% NIFTY strangle' — SELL 5-lot PE @ATM-100 + 5-lot CE @ATM+100, 25% per-leg SL, square-off-one, 09:22→15:15, NIFTY weekly, every day. Backtest NET +₹2.89L (2021-07→) after charges. NAKED tail-risk, R/MDD ~1, 2026 bleeding — PAPER forward-watch."
   }
  }
 }

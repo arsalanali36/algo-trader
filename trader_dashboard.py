@@ -5386,10 +5386,17 @@ def _fire_sm_strategy(strategy_id, cfg, log=print):
     spot = _trigger_spot_now(symbol)
     if not spot or spot <= 0:
         return False, f"{symbol} spot abhi nahi mila (rate-limit?) — order NAHI bheja"
-    # resolve ALL legs up front (get_option_contract handles the PE-offset inversion, TRAP #140)
+    # resolve ALL legs up front. Config `off` is a LITERAL signed strike offset from ATM
+    # (StockMock display: PE "ATM-100" → off=-2, CE "ATM+100" → off=+2). get_option_contract
+    # takes an OTM-magnitude offset and INVERTS it for PE internally (positive = OTM = below
+    # spot, TRAP #140). So convert: CE passes off as-is; PE passes -off (a literal -2 OTM-below
+    # → +2 to get_option_contract → correct OTM put). cp_pct_sp legs resolve by premium instead.
     resolved = []
     for lg in cfg["legs"]:
-        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, lg["opt"], lg["off"])
+        if lg.get("strike_mode") == "cp_pct_sp":
+            return False, f"{symbol} sm live: cp_pct_sp (premium-picked) strike abhi live me support nahi — backtest-only"
+        gc_off = lg["off"] if lg["opt"] == "CE" else -lg["off"]
+        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, lg["opt"], gc_off)
         if not sec or not lot:
             return False, f"{symbol} {lg['opt']} ATM{lg['off']:+d} contract resolve fail"
         resolved.append({**lg, "sec": sec, "tsym": tsym, "lot": int(lot)})
