@@ -5391,14 +5391,26 @@ def _fire_sm_strategy(strategy_id, cfg, log=print):
     # takes an OTM-magnitude offset and INVERTS it for PE internally (positive = OTM = below
     # spot, TRAP #140). So convert: CE passes off as-is; PE passes -off (a literal -2 OTM-below
     # → +2 to get_option_contract → correct OTM put). cp_pct_sp legs resolve by premium instead.
+    _SM_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
+    step = _SM_STEP.get(symbol, 50)
+    atm = round(spot / step) * step
     resolved = []
     for lg in cfg["legs"]:
-        if lg.get("strike_mode") == "cp_pct_sp":
-            return False, f"{symbol} sm live: cp_pct_sp (premium-picked) strike abhi live me support nahi — backtest-only"
-        gc_off = lg["off"] if lg["opt"] == "CE" else -lg["off"]
+        mode = lg.get("strike_mode")
+        # premium-picked strikes (cp_pct_sp/cp_rs) need a live premium-walk resolver — not built,
+        # backtest-only for now. off / atm_pct are deterministic → resolved here.
+        if mode in ("cp_pct_sp", "cp_rs"):
+            return False, f"{symbol} sm live: {mode} (premium-picked) strike abhi live me support nahi — backtest-only"
+        if mode == "atm_pct":
+            target = round(spot * (1 + lg["atm_pct"] / 100.0) / step) * step
+            soff = int(round((target - atm) / step))
+        else:
+            soff = lg["off"]
+        # get_option_contract takes OTM-magnitude + inverts PE (TRAP #140): CE passes soff, PE -soff
+        gc_off = soff if lg["opt"] == "CE" else -soff
         sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, lg["opt"], gc_off)
         if not sec or not lot:
-            return False, f"{symbol} {lg['opt']} ATM{lg['off']:+d} contract resolve fail"
+            return False, f"{symbol} {lg['opt']} {mode} soff{soff:+d} contract resolve fail"
         resolved.append({**lg, "sec": sec, "tsym": tsym, "lot": int(lot)})
     gid = "SM_" + uuid.uuid4().hex[:8]
     # gate the WHOLE basket ONCE — RMS gating + basket-margin capital
