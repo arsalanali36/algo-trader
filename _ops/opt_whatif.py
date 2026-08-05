@@ -685,13 +685,16 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
         net_intr += g * intr * l["qty"]
         net_tv += g * (l["entry"] - intr) * l["qty"]
 
-    # LOCAL margin estimate — NO broker call (this is a backtest, all data is on disk). SPAN-style
-    # price-scan on the payoff. A short leg is HEDGED when there's a same-type BUY on the protective
-    # side (CE: higher strike, PE: lower strike). Fully-hedged (defined-risk: condor/spread) → margin
-    # ≈ its max loss over a wide scan (that's roughly what the exchange blocks). Any UNHEDGED short
-    # (naked strangle/straddle) → worst loss over ±10% + an exposure add on the naked notional only.
-    # Pure long/debit → 0 (you pay the premium, post no margin). Live "exact margin" button = real
-    # broker SPAN when wanted (the slow call). This is an ESTIMATE — labelled 'est' in the UI.
+    # LOCAL margin estimate — NO broker call (backtest, all on disk). Calibrated to the NSE
+    # SPAN+Exposure ballpark so it lands NEAR Sensibull/broker (verified 2026-08-05, NIFTY 5-lot:
+    # naked 24600 CE → est 8.0L vs broker 7.83L; bear-call-spread → est ~2.7L vs broker 2.45L):
+    #   • naked / undefined-risk short  → ~10% of the short NOTIONAL (index SPAN+expo, VIX-scaled —
+    #     so this drifts with VIX; the EXACT number is the broker's '💰 Exact live margin' button).
+    #   • defined-risk (every short has a protective BUY: spread/condor) → max loss + ~2% exposure on
+    #     the short notional (the long caps SPAN, but exposure on the short leg still stands).
+    #   • pure long / debit → 0 (you pay the premium, post no margin).
+    # A short leg is HEDGED when there's a same-type BUY on the protective side (CE: higher strike,
+    # PE: lower). This is an ESTIMATE — labelled 'est'; broker button = exact.
     def _naked(l):
         if l["side"] != "SELL":
             return False
@@ -700,14 +703,13 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
         return not any(h["side"] == "BUY" and h["opt"] == "PE" and h["strike"] < l["strike"] for h in plegs)
 
     margin_est = None
-    if spot and any(l["side"] == "SELL" for l in plegs):
-        naked_notional = sum(spot * l["qty"] for l in plegs if _naked(l))
-        if naked_notional > 0:
-            worst = min(pf.payoff_expiry(plegs, spot * (0.90 + 0.20 * i / 20.0)) for i in range(21))
-            margin_est = round(max(-worst, 0.0) + naked_notional * 0.02)
-        else:   # fully defined-risk → ≈ max loss over a wide (±30%) scan
-            worst = min([pf.payoff_expiry(plegs, spot * (0.70 + 0.60 * i / 40.0)) for i in range(41)] + [min(ys)])
-            margin_est = round(max(-worst, 0.0))
+    shorts = [l for l in plegs if l["side"] == "SELL"]
+    short_notional = sum(spot * l["qty"] for l in shorts) if spot else 0.0
+    if spot and shorts:
+        if any(_naked(l) for l in shorts):
+            margin_est = round(short_notional * 0.10)                 # naked / undefined-risk short
+        else:
+            margin_est = round(max(-min(ys), 0.0) + short_notional * 0.02)   # defined-risk: max loss + exposure
     elif plegs:
         margin_est = 0   # pure long / debit → no margin posted (you pay the premium)
 
