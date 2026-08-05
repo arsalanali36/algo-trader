@@ -34,8 +34,12 @@ Lives in `nifty_config.json` (VPS runtime, gitignored) under the strategy's key:
 }
 ```
 
-Per-leg fields: `opt` (CE/PE), `side` (SELL/BUY), `off` (int strike-offset, 0=ATM), `lots`,
-`sl_pct` (% of entry premium), `tp_pct` (optional).
+Per-leg fields: `opt` (CE/PE), `side` (SELL/BUY), `lots`, `sl_pct` (% of entry premium),
+`tp_pct` (optional), and ONE strike selector:
+- `off` — int strike-offset from ATM (0=ATM, +N OTM). Default mode.
+- `sp_pct` — StockMock's **"CP as X% SP"**: sell the OTM strike whose entry premium ≈ X% of
+  the ATM straddle premium (CE picks a strike ≥ ATM, PE ≤ ATM). Overrides `off` when present.
+  `"legs":[{"opt":"CE","side":"SELL","sp_pct":25,...},{"opt":"PE","side":"SELL","sp_pct":25,...}]`
 
 ---
 
@@ -105,6 +109,23 @@ Per-leg fields: `opt` (CE/PE), `side` (SELL/BUY), `off` (int strike-offset, 0=AT
 That's it. No new Python for a standard leg-basket strategy.
 
 ---
+
+## 🔴 CRITICAL — StockMock's headline P&L is GROSS (pre-charges)
+
+StockMock's "Profit" / "Overall Profit" includes only its **0.5% slippage** — NOT Zerodha
+brokerage / STT / exchange txn / GST / stamp. Our engine subtracts **real date-aware Zerodha
+charges** on top of the 0.5% slippage, so our NET is the actual deployable number.
+
+**Proven** (69% NIFTY Short-CP-25%-SP, 42 within-lake days, 2026-08-06): strikes matched
+36/42, and **our GROSS +₹4,252 ≈ StockMock +₹4,436** (−₹4/day) — but **our NET −₹119** after
+~₹104/day charges. That strategy's gross edge (~₹104/day) is ~entirely eaten by charges → a
+"cost-kills-the-edge" reject, even though StockMock shows +₹3.5L. NIFTY 2-leg charges ≈
+₹100-150/day; a StockMock strategy must clear that by a wide margin to be worth deploying.
+
+**So when reconciling a new strategy:** cross-check **GROSS vs StockMock** to validate the
+engine (should match ~1%), then look at **NET** (after charges) to decide deployment. A thin-
+premium strategy (far-OTM sells, scalps) that looks great on StockMock can be net-negative for
+real. `days[i]["gross"]` vs `["net"]` (and `metrics.net_abs` is net) make this explicit.
 
 ## Validation reality (why our number ≠ StockMock exactly)
 

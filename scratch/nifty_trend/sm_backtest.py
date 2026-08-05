@@ -66,17 +66,24 @@ def simulate(cfg, from_date, to_date):
     grid = list(range(m_e, m_x + 1))
     step = bl.STEP.get(u, 50)
 
+    opts = set(lg["opt"] for lg in legs_cfg)
+    if any(lg.get("strike_mode") == "cp_pct_sp" for lg in legs_cfg):
+        opts |= {"CE", "PE"}          # ATM straddle premium needs both sides
     DF = {}
-    for ot in sorted({lg["opt"] for lg in legs_cfg}):
+    for ot in sorted(opts):
         DF[ot] = _wide(u, ot)
         if DF[ot] is None:
             return []
-    ref = DF[legs_cfg[0]["opt"]]
-    all_dates = sorted(bl._di_to_date(d) for d in ref["di"].unique().tolist())
+    # Pre-group each opt's wide frame by di ONCE → O(1) small day-subset per day (not an
+    # O(all-rows) filter per strike/day; the cp_pct_sp scan made that a timeout otherwise).
+    DFG = {ot: {int(di): g for di, g in df.groupby("di")} for ot, df in DF.items()}
+    ref_g = DFG[legs_cfg[0]["opt"]]
+    all_dates = sorted(bl._di_to_date(d) for d in ref_g.keys())
     dates = [d for d in all_dates if from_date <= d <= to_date and smr.should_fire_today(d, cfg)]
 
-    def leg_series(df, di, strike):
-        g = df[(df["di"] == di) & (df["strike"] == strike) & (df["mod"] >= m_e) & (df["mod"] <= m_x)].sort_values("mod")
+    def leg_series(day_df, strike):
+        """(entry_open, close_ser, high_ser) for `strike` from an already-di-filtered day frame."""
+        g = day_df[(day_df["strike"] == strike) & (day_df["mod"] >= m_e) & (day_df["mod"] <= m_x)].sort_values("mod")
         if len(g) == 0:
             return None, None, None
         entry_open = float(g.iloc[0]["open"])
@@ -85,20 +92,56 @@ def simulate(cfg, from_date, to_date):
             cmap.setdefault(int(mo), float(cl)); hmap.setdefault(int(mo), float(hi))
         return entry_open, bl._ffill(cmap, grid), bl._ffill(hmap, grid)
 
+    need_sp = any(lc.get("strike_mode") == "cp_pct_sp" for lc in legs_cfg)
+
+    def pick_by_prem(day_df, atm, target, otm_above):
+        """Strike whose entry-OPEN premium is closest to `target`, on the OTM side
+        (CE: strike>=ATM ; PE: strike<=ATM). One pass over the day frame's entry-minute rows."""
+        e0 = day_df[(day_df["mod"] >= m_e) & (day_df["mod"] < m_e + 3)].sort_values("mod")
+        prem = {}
+        for s, o in zip(e0["strike"].values.tolist(), e0["open"].values.tolist()):
+            prem.setdefault(int(s), float(o))
+        cand = [s for s in prem if (s >= atm if otm_above else s <= atm)]
+        if not cand:
+            return None
+        best = min(cand, key=lambda s: abs(prem[s] - target))
+        e, ser, ser_hi = leg_series(day_df, best)
+        return (best, e, ser, ser_hi) if e is not None else None
+
     out = []
     for date in dates:
         di = bl._date_to_di(date)
-        g = ref[(ref["di"] == di) & (ref["mod"] >= m_e)].sort_values("mod")
+        day = {ot: DFG[ot].get(di) for ot in DFG}
+        rd = day[legs_cfg[0]["opt"]]
+        if rd is None:
+            continue
+        g = rd[rd["mod"] >= m_e].sort_values("mod")
         if len(g) == 0:
             continue
         spot = float(g.iloc[0]["spot"])
         atm = round(spot / step) * step
         lot = bl.lot_for(u, date)
+        # ATM straddle premium (for cp_pct_sp legs) = ATM CE + ATM PE entry-OPEN
+        straddle = None
+        if need_sp:
+            if day.get("CE") is None or day.get("PE") is None:
+                continue
+            ce_atm = leg_series(day["CE"], atm); pe_atm = leg_series(day["PE"], atm)
+            if ce_atm[0] is None or pe_atm[0] is None:
+                continue
+            straddle = ce_atm[0] + pe_atm[0]
         legs_out = []
         ok = True
         for lc in legs_cfg:
-            strike = int(atm + lc["off"] * step)
-            entry, ser, ser_hi = leg_series(DF[lc["opt"]], di, strike)
+            if lc.get("strike_mode") == "cp_pct_sp":
+                target = lc["sp_pct"] / 100.0 * straddle
+                pick = pick_by_prem(day[lc["opt"]], atm, target, otm_above=(lc["opt"] == "CE"))
+                if not pick:
+                    ok = False; break
+                strike, entry, ser, ser_hi = pick
+            else:
+                strike = int(atm + lc["off"] * step)
+                entry, ser, ser_hi = leg_series(day[lc["opt"]], strike)
             if entry is None or not ser:
                 ok = False; break
             qty = lot * lc["lots"]

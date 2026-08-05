@@ -51,10 +51,16 @@ def parse_cfg(strategy_id, raw):
     legs = []
     for lg in (sm.get("legs") or []):
         try:
+            # strike selection: `sp_pct` (premium = sp_pct% of the ATM straddle premium, i.e.
+            # StockMock's "CP as X% SP" — an OTM premium-picked strike) takes precedence; else
+            # `off` (int strike-offset from ATM, 0=ATM).
+            sp_pct = (float(lg["sp_pct"]) if lg.get("sp_pct") not in (None, "", 0, "0") else None)
             legs.append({
                 "opt": str(lg.get("opt", "CE")).upper(),
                 "side": str(lg.get("side", "SELL")).upper(),
                 "off": int(lg.get("off", 0)),
+                "sp_pct": sp_pct,
+                "strike_mode": "cp_pct_sp" if sp_pct else "atm",
                 "lots": max(1, int(lg.get("lots") or 1)),
                 "sl_pct": (float(lg["sl_pct"]) if lg.get("sl_pct") not in (None, "", 0, "0") else None),
                 "tp_pct": (float(lg["tp_pct"]) if lg.get("tp_pct") not in (None, "", 0, "0") else None),
@@ -132,8 +138,12 @@ def hm_ge(now_hm, target_hm):
 
 def describe(cfg):
     """One-line human summary for logs/registry."""
+    def _strike(lg):
+        if lg.get("strike_mode") == "cp_pct_sp":
+            return "CP@%g%%SP" % lg["sp_pct"]
+        return "ATM" if lg["off"] == 0 else "ATM%+d" % lg["off"]
     legs = " + ".join("%s %s %s%s" % (
-        lg["side"][0], lg["opt"], ("ATM" if lg["off"] == 0 else "ATM%+d" % lg["off"]),
+        lg["side"][0], lg["opt"], _strike(lg),
         ("×%d" % lg["lots"] if lg["lots"] > 1 else "")) for lg in cfg["legs"])
     sl = next((lg["sl_pct"] for lg in cfg["legs"] if lg.get("sl_pct")), None)
     return "%s · %s · %s→%s · %s%s" % (
