@@ -624,6 +624,18 @@
    "hold": "Intraday",
    "structure": "Short strangle (naked, ATM±1%, 25% SL, 5 lot)",
    "desc": "StockMock '55% ShortATM±1%' — SELL 5-lot CE @ATM+1% + 5-lot PE @ATM-1%, 25% SL, square-off-one, 09:22→15:15, NIFTY weekly, daily. Backtest NET +₹3.88L (2021-07→, 5 lot) — flat brokerage amortizes at 5 lots (1-lot was net-neg). Win 62.6% (≈StockMock 63%), R/MDD 2.51. 2026 bleeding (−₹117k). PAPER forward-watch."
+  },
+  "02.14": {
+   "name": "Straddle-Width Strangle ±1×SP (StockMock)",
+   "config_key": "sm_nifty_swidth_v1",
+   "slug": "sm_nifty_swidth_v1",
+   "live_file": "_ops/sm_runner.py",
+   "status": "paper",
+   "legs": 2,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Short strangle (naked, ATM±1×straddle-premium, 25% SL, 5 lot)",
+   "desc": "StockMock '58% StraddleWidth±1%' — SELL 5-lot CE @ATM+1×SP + 5-lot PE @ATM-1×SP (SP=ATM straddle premium pts), 25% SL, square-off-one, 09:22→15:15, NIFTY weekly, daily. Backtest NET +₹3.09L (2021-07→,5lot), Sharpe 1.07, R/MDD 1.99, win 57.4%. 2026 bleeding −₹135k. PAPER forward-watch."
   }
  }
 }

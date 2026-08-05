@@ -67,7 +67,7 @@ def simulate(cfg, from_date, to_date):
     step = bl.STEP.get(u, 50)
 
     opts = set(lg["opt"] for lg in legs_cfg)
-    if any(lg.get("strike_mode") == "cp_pct_sp" for lg in legs_cfg):
+    if any(lg.get("strike_mode") in ("cp_pct_sp", "sw_mult") for lg in legs_cfg):
         opts |= {"CE", "PE"}          # ATM straddle premium needs both sides
     DF = {}
     for ot in sorted(opts):
@@ -92,7 +92,7 @@ def simulate(cfg, from_date, to_date):
             cmap.setdefault(int(mo), float(cl)); hmap.setdefault(int(mo), float(hi))
         return entry_open, bl._ffill(cmap, grid), bl._ffill(hmap, grid)
 
-    need_sp = any(lc.get("strike_mode") == "cp_pct_sp" for lc in legs_cfg)
+    need_sp = any(lc.get("strike_mode") in ("cp_pct_sp", "sw_mult") for lc in legs_cfg)
 
     def pick_by_prem(day_df, atm, target, otm_above):
         """Strike whose entry-OPEN premium is closest to `target`, on the OTM side
@@ -142,6 +142,8 @@ def simulate(cfg, from_date, to_date):
             else:
                 if lc.get("strike_mode") == "atm_pct":
                     strike = int(round(spot * (1 + lc["atm_pct"] / 100.0) / step) * step)
+                elif lc.get("strike_mode") == "sw_mult":
+                    strike = int(round((atm + lc["sw_mult"] * straddle) / step) * step)
                 else:
                     strike = int(atm + lc["off"] * step)
                 entry, ser, ser_hi = leg_series(day[lc["opt"]], strike)

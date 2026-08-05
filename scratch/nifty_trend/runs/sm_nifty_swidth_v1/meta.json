@@ -1,0 +1,57 @@
+{
+ "window": [
+  "2021-07-01",
+  "2026-07-15"
+ ],
+ "days": 1236,
+ "start_cap": 1620000,
+ "design": "02.14 - Straddle-Width Strangle ±1×SP (StockMock)",
+ "tf": "1m",
+ "instrument": "NIFTY options",
+ "lot_size": 65,
+ "lots": 1,
+ "intraday": true,
+ "periods": [
+  "full",
+  "train",
+  "oos"
+ ],
+ "sm_config": {
+  "id": "sm_nifty_swidth_v1",
+  "instrument": "NIFTY",
+  "entry_hm": "09:22",
+  "exit_hm": "15:15",
+  "day_filter": "all",
+  "squareoff": "one",
+  "legs": [
+   {
+    "opt": "CE",
+    "side": "SELL",
+    "off": 0,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": null,
+    "sw_mult": 1.0,
+    "strike_mode": "sw_mult",
+    "lots": 5,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   },
+   {
+    "opt": "PE",
+    "side": "SELL",
+    "off": 0,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": null,
+    "sw_mult": -1.0,
+    "strike_mode": "sw_mult",
+    "lots": 5,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   }
+  ],
+  "mode": "paper",
+  "valid": true
+ }
+}

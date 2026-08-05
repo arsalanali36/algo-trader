@@ -5394,15 +5394,31 @@ def _fire_sm_strategy(strategy_id, cfg, log=print):
     _SM_STEP = {"NIFTY": 50, "BANKNIFTY": 100}
     step = _SM_STEP.get(symbol, 50)
     atm = round(spot / step) * step
+    # sw_mult (Straddle Width) legs need the LIVE ATM straddle premium (ATM CE + ATM PE LTP)
+    _sm_straddle = None
+    if any(lg.get("strike_mode") == "sw_mult" for lg in cfg["legs"]):
+        _ace, _t_ace, _al = dhan_master.get_option_contract(symbol, spot, "CE", 0)
+        _ape, _t_ape, _ = dhan_master.get_option_contract(symbol, spot, "PE", 0)
+        if _ace and _ape:
+            try:
+                _prewarm_option_ltps([_ace, _ape], log=log)
+            except Exception:
+                pass
+            _sm_straddle = (_straddle_lltp(_ace) or 0) + (_straddle_lltp(_ape) or 0)
+        if not _sm_straddle or _sm_straddle <= 0:
+            return False, f"{symbol} ATM straddle LTP nahi mila — sw_mult strike resolve fail"
     resolved = []
     for lg in cfg["legs"]:
         mode = lg.get("strike_mode")
         # premium-picked strikes (cp_pct_sp/cp_rs) need a live premium-walk resolver — not built,
-        # backtest-only for now. off / atm_pct are deterministic → resolved here.
+        # backtest-only for now. off / atm_pct / sw_mult are deterministic → resolved here.
         if mode in ("cp_pct_sp", "cp_rs"):
             return False, f"{symbol} sm live: {mode} (premium-picked) strike abhi live me support nahi — backtest-only"
         if mode == "atm_pct":
             target = round(spot * (1 + lg["atm_pct"] / 100.0) / step) * step
+            soff = int(round((target - atm) / step))
+        elif mode == "sw_mult":
+            target = round((atm + lg["sw_mult"] * _sm_straddle) / step) * step
             soff = int(round((target - atm) / step))
         else:
             soff = lg["off"]

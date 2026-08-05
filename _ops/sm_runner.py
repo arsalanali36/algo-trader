@@ -60,7 +60,12 @@ def parse_cfg(strategy_id, raw):
             # atm_pct = signed % of spot offset (StockMock "ATM Percent": CE "ATM+1%"→+1,
             # PE "ATM-1%"→-1). Deterministic strike = round(spot*(1+atm_pct/100)/step)*step.
             atm_pct = (float(lg["atm_pct"]) if lg.get("atm_pct") not in (None, "", 0, "0") else None)
-            mode = ("cp_pct_sp" if sp_pct else "cp_rs" if cp_rs else "atm_pct" if atm_pct is not None else "atm")
+            # sw_mult = signed multiple of the ATM straddle premium (points), StockMock
+            # "Straddle Width": CE "ATM+1*SP"→+1, PE "ATM-1*SP"→-1. strike = round((atm +
+            # sw_mult*straddle)/step)*step.
+            sw_mult = (float(lg["sw_mult"]) if lg.get("sw_mult") not in (None, "", 0, "0") else None)
+            mode = ("cp_pct_sp" if sp_pct else "cp_rs" if cp_rs else "sw_mult" if sw_mult is not None
+                    else "atm_pct" if atm_pct is not None else "atm")
             legs.append({
                 "opt": str(lg.get("opt", "CE")).upper(),
                 "side": str(lg.get("side", "SELL")).upper(),
@@ -68,6 +73,7 @@ def parse_cfg(strategy_id, raw):
                 "sp_pct": sp_pct,
                 "cp_rs": cp_rs,
                 "atm_pct": atm_pct,
+                "sw_mult": sw_mult,
                 "strike_mode": mode,
                 "lots": max(1, int(lg.get("lots") or 1)),
                 "sl_pct": (float(lg["sl_pct"]) if lg.get("sl_pct") not in (None, "", 0, "0") else None),
@@ -153,6 +159,8 @@ def describe(cfg):
             return "CP@₹%g" % lg["cp_rs"]
         if lg.get("strike_mode") == "atm_pct":
             return "ATM%+g%%" % lg["atm_pct"]
+        if lg.get("strike_mode") == "sw_mult":
+            return "ATM%+g×SP" % lg["sw_mult"]
         return "ATM" if lg["off"] == 0 else "ATM%+d" % lg["off"]
     legs = " + ".join("%s %s %s%s" % (
         lg["side"][0], lg["opt"], _strike(lg),
