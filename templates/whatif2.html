@@ -205,6 +205,7 @@ const CFG={NIFTY:{lot:65,step:50},BANKNIFTY:{lot:30,step:100}};
 let INST='NIFTY', MINST='NIFTY', mult=1, exp=null;
 let legs=[];   // {side,type,strike,qty,hidden}
 let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false, _lastPrem={}, _pfGeo=null, _pfHoverInit=false;
+let _chCache={};   // underlying|date|time|expiry -> loaded chain grid (so a loaded grid stays loaded on modal reopen — no repeat "Load")
 let _pfLast=null, _pfTarget=null, _pfTteDays=0, _pfDayInit=null, _pfDayT=null;
 
 function inr(v){return Math.round(Math.abs(v)).toLocaleString('en-IN');}
@@ -426,12 +427,19 @@ $('msearch').addEventListener('input',()=>{const q=$('msearch').value.trim();if(
 
 let _chT=null;
 function scheduleChain(){clearTimeout(_chT);_chT=setTimeout(loadChain,300);}
+function _chKey(){return MINST+'|'+$('date').value+'|'+$('et').value+'|'+(MINST===INST?($('exp').value||''):'');}
+function _chMspot(r){$('mspot').innerHTML=MINST+' '+(r.spot||'').toLocaleString('en-IN')+' · ATM '+r.atm
+  +(r.src==='lake'?' <span style="color:var(--amber)">· 📼 historical (premium real, IV —)</span>':'');}
 async function loadChain(force){
   const d=$('date').value,t=$('et').value;if(!d)return;
-  // Historical (lake) grid = big files on disk → ~10-20s first load. Don't auto-fire it on
-  // modal-open; let the user opt in. Payoff still works from typed / ▴▾ strikes without the grid.
+  const key=_chKey();
+  // Already loaded THIS chain (same instrument/date/time/expiry)? Render from cache — no refetch,
+  // no "Load" button again. A loaded historical grid stays loaded across modal reopens.
+  if(_chCache[key] && _chCache[key].ok){_chData=_chCache[key];_chMspot(_chData);_chScroll=true;renderChain();return;}
+  // Historical (lake) grid = big files on disk → ~10-20s FIRST load. Don't auto-fire on modal-open;
+  // let the user opt in ONCE (then it's cached above). Payoff works from typed / ▴▾ strikes anyway.
   if(!force && _isHistorical(d)){
-    $('chain').innerHTML='<div style="padding:16px;font-size:11px;color:var(--mut);line-height:1.7">📼 <b>Purana din</b> (historical lake) — chain grid bada data hai, pehli baar <b>~10-20s</b> lagega.'
+    $('chain').innerHTML='<div style="padding:16px;font-size:11px;color:var(--mut);line-height:1.7">📼 <b>Purana din</b> (historical lake) — chain grid bada data hai, pehli baar <b>~10-20s</b> (phir yaad rahega).'
       +'<br><button class="aebtn" onclick="loadChain(true)" style="margin-top:8px;padding:5px 14px">⬇ Load chain grid</button>'
       +'<br><span style="color:var(--dim)">…ya seedhe leg table me strike <b>▴▾</b> / type karke banao — payoff waise bhi chal jayega.</span></div>';
     $('mspot').innerHTML=MINST+' · <span style="color:var(--amber)">📼 historical</span>';
@@ -443,8 +451,8 @@ async function loadChain(force){
   if(myseq!==_chSeq)return;
   _chData=r;
   if(!r||!r.ok){$('chain').innerHTML='<div style="padding:14px;color:var(--amber);font-size:11px">Is date pe koi data nahi (collector window ya lake me is din ki chain nahi). Leg table me strike ▴▾ se banao.</div>';$('mspot').textContent='';return;}
-  $('mspot').innerHTML=MINST+' '+(r.spot||'').toLocaleString('en-IN')+' · ATM '+r.atm
-    +(r.src==='lake'?' <span style="color:var(--amber)">· 📼 historical (premium real, IV —)</span>':'');
+  _chCache[key]=r;   // remember — reopen renders instantly, no repeat load
+  _chMspot(r);
   _chScroll=true;   // scroll to ATM only on a fresh load, not on every in-modal edit
   renderChain();
 }
