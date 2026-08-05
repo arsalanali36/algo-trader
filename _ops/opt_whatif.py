@@ -545,6 +545,7 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
             "pop": round(pop, 4) if pop is not None else None,
             "net_credit": round(net_cr), "time_value": round(net_tv), "intrinsic": round(net_intr),
             "margin_est": margin_est,
+            "prem": {"%d-%s" % (int(l["strike"]), l["opt"]): round(l["entry"], 1) for l in plegs},
             "tte_days": round(T_e * 365, 2) if T_e else None,
             "scan": [round(lo, 1), round(hi, 1)]}
 
@@ -772,6 +773,20 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     e_dt = data["legs"][0].get("e_dt") or date
     x_dt = data["legs"][0].get("x_dt") or exit_date
     e_t = data["legs"][0]["e_t"]; x_t = data["legs"][0]["x_t"]
+    # Zerodha round-trip charges for the whole structure (date-aware STT/txn) → net after tax.
+    charges = None
+    try:
+        if _bsmod():   # ensures scratch/nifty_trend is on sys.path
+            import charges as _chmod
+            ctot = 0.0
+            for lg, d in zip(legs, data["legs"]):
+                units = lot * max(1, int(lg.get("qty") or 1))
+                ctot += _chmod.option_charges(d["e_prem"], d["x_prem"], units,
+                                              entry_side=lg["side"].upper(), when=e_dt)
+            charges = round(ctot)
+    except Exception as _ce:
+        print("[whatif] charges fail:", _ce, flush=True)
+        charges = None
     try:
         mtm = _build_mtm(u, e_dt, x_dt, entry_hm, exit_hm, lot, legs,
                          data.get("expiry"), [d["e_prem"] for d in data["legs"]],
@@ -788,6 +803,7 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
         "spot_e": round(e_spot, 2) if e_spot else None, "spot_x": round(x_spot, 2) if x_spot else None,
         "move": round((x_spot - e_spot)) if (e_spot and x_spot) else None,
         "legs": out_legs, "total": round(tot), "credit": round(credit),
+        "charges": charges, "net": (round(tot - charges) if charges is not None else None),
         "decay": round(decay), "price": round(tot_price), "iv": round(tot_iv),
         "warnings": warnings, "req_entry_hm": entry_hm, "req_exit_hm": exit_hm,
     }

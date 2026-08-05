@@ -132,7 +132,7 @@
   <div class="res" id="res" style="display:none">
     <div id="warns"></div>
     <div class="rhd" id="rhd" style="color:var(--mut);font-size:12px;margin-bottom:10px"></div>
-    <div class="tot" id="totbox"><div><div class="l">Net P&amp;L (gross)</div><div class="b" id="totv">—</div></div><span class="badge" id="mv"></span><span class="src" id="src"></span></div>
+    <div class="tot" id="totbox"><div><div class="l">Net P&amp;L (after tax)</div><div class="b" id="totv">—</div><div id="totsub" style="font-size:11px;color:var(--mut);margin-top:2px"></div></div><span class="badge" id="mv"></span><span class="src" id="src"></span></div>
     <table class="rt" id="legtbl"><thead><tr><th class="l">Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
     <div id="mtmwrap" style="margin:2px 0 20px;display:none"></div>
     <div class="brkt">Profit kahan se aaya</div>
@@ -168,7 +168,7 @@ const $=id=>document.getElementById(id);
 const CFG={NIFTY:{lot:65,step:50},BANKNIFTY:{lot:30,step:100}};
 let INST='NIFTY', MINST='NIFTY', mult=1, exp=null;
 let legs=[];   // {side,type,strike,qty,hidden}
-let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false;
+let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false, _lastPrem={};
 
 function inr(v){return Math.round(Math.abs(v)).toLocaleString('en-IN');}
 function sgn(v){return (v<0?'−₹':'+₹')+inr(v);}
@@ -210,7 +210,7 @@ function renderLegs(){
     <span style="display:inline-flex;align-items:center;gap:4px"><span style="font-weight:600;${l.hidden?'text-decoration:line-through':''}">${l.strike}</span><span class="karr"><span class="ku" data-i="${i}">▴</span><span class="kd" data-i="${i}">▾</span></span></span>
     <button class="tt" data-i="${i}" title="CE/PE convert">${l.type}</button>
     <input class="qin" data-i="${i}" type="number" min="1" value="${l.qty*mult}" title="effective lots = per-leg × multiplier(${mult})">
-    <span style="text-align:right;color:var(--mut)" id="lp${i}">—</span>
+    <span style="text-align:right;color:var(--mut)" id="lp${i}">${_lastPrem[l.strike+'-'+l.type]!=null?'₹'+_lastPrem[l.strike+'-'+l.type]:'—'}</span>
     <span class="del rmv" data-i="${i}">✕</span></div>`).join('');
   $('legs').querySelectorAll('.hb').forEach(e=>e.onclick=()=>{legs[+e.dataset.i].hidden=!legs[+e.dataset.i].hidden;renderLegs();schedulePayoff();});
   $('legs').querySelectorAll('.bs').forEach(e=>e.onclick=()=>{const l=legs[+e.dataset.i];l.side=l.side==='SELL'?'BUY':'SELL';renderLegs();schedulePayoff();});
@@ -242,8 +242,9 @@ async function loadPayoff(){
   if(!_mgLoading)$('mg').innerHTML=(r.margin_est!=null)?('~₹'+inr(r.margin_est)+' <span style="color:var(--dim);font-size:9px">est</span>'):'—';   // LOCAL estimate, instant
   $('net').innerHTML='Net entry: <b style="color:'+(r.net_credit>=0?'var(--green)':'var(--amber)')+'">'+(r.net_credit>=0?'credit':'debit')+' ₹'+inr(r.net_credit)+'</b>'+(r.tte_days!=null?' · '+r.tte_days+'d to expiry':'');
   $('be').textContent=(r.breakevens&&r.breakevens.length)?('BE '+r.breakevens.join(' · ')):'';
-  // per-leg entry premium into rows (match by order of active legs)
-  const ai=[];legs.forEach((l,i)=>{if(!l.hidden)ai.push(i);});
+  // per-leg entry premium (₹) into the leg-table rows
+  _lastPrem=r.prem||{};
+  legs.forEach((l,i)=>{const el=$('lp'+i);if(el){const p=_lastPrem[l.strike+'-'+l.type];el.textContent=(p!=null)?'₹'+p:'—';}});
 }
 function drawPayoff(r){
   const W=340,H=190,pad=6,ce=r.curve_expiry||[],cx=r.curve_exit;
@@ -359,8 +360,10 @@ function renderResult(r){
   const span=(ed===xd)?ed:`${ed} <b>${r.entry_hm}</b> → ${xd} <b>${r.exit_hm}</b> <b style="color:var(--purple)">(${r.hold_days}d)</b>`;
   const cr=r.credit||0;
   $('rhd').innerHTML=`<b>${r.underlying}</b> · ${span} · entry <b>${r.entry_hm}</b>→<b>${r.exit_hm}</b> · <b>${r.lots}× mult</b>${r.expiry?' · exp '+r.expiry:''} · entry <b style="color:${cr>=0?'var(--green)':'var(--amber)'}">${cr>=0?'credit':'debit'} ₹${inr(cr)}</b>`;
-  const tv=$('totv');tv.textContent=fmt(r.total);tv.style.color=r.total>=0?'var(--green)':'var(--red)';
-  $('totbox').className='tot'+(r.total<0?' neg':'');
+  const net=(r.net!=null)?r.net:r.total;
+  const tv=$('totv');tv.textContent=fmt(net);tv.style.color=net>=0?'var(--green)':'var(--red)';
+  $('totbox').className='tot'+(net<0?' neg':'');
+  $('totsub').innerHTML=(r.charges!=null)?('Gross '+fmt(r.total)+' − Tax ₹'+inr(r.charges)):'';
   const up=(r.move||0)>=0;$('mv').className='badge '+(up?'up':'dn');
   $('mv').textContent=r.spot_e!=null?`Spot ${r.spot_e.toLocaleString('en-IN')} → ${r.spot_x.toLocaleString('en-IN')} (${up?'+':'−'}${Math.abs(r.move)})`:'';
   $('src').textContent=r.source==='lake'?'historical · BS greeks':'live collector · real greeks';
@@ -406,7 +409,7 @@ function renderJournal(){
   $('jlist').querySelectorAll('.jdel').forEach(e=>e.onclick=()=>{const a=jload();a.splice(+e.dataset.i,1);jsave(a);renderJournal();});
 }
 $('save').addEventListener('click',()=>{const r=window._last;if(!r)return;const a=jload();
-  a.push({underlying:r.underlying,date:r.entry_date||r.date,exit_date:r.exit_date,entry_hm:r.entry_hm,exit_hm:r.exit_hm,lots:r.lots,total:r.total,summary:r.legs.map(l=>l.label).join(' + ')});
+  a.push({underlying:r.underlying,date:r.entry_date||r.date,exit_date:r.exit_date,entry_hm:r.entry_hm,exit_hm:r.exit_hm,lots:r.lots,total:(r.net!=null?r.net:r.total),summary:r.legs.map(l=>l.label).join(' + ')});
   jsave(a);renderJournal();});
 $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?')){jsave([]);renderJournal();}});
 
