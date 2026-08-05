@@ -585,7 +585,10 @@ def whatif_page():
     """Manual options what-if backtest — pick instrument/date/entry-exit time/legs,
     see real-premium P&L split into price-move / IV-crush / decay. Collector data for
     recent days (real greeks), OptChainLake for historical (BS-derived). Display-only."""
-    return render_template("whatif.html")
+    from flask import make_response
+    resp = make_response(render_template("whatif.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'   # inline JS changes often → never serve stale HTML
+    return resp
 
 @app.route('/api/whatif', methods=['POST'])
 def api_whatif():
