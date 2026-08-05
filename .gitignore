@@ -147,4 +147,4 @@ _config_backups/
 # gzip sidecars generated at runtime by the static-gzip routes (trader_dashboard.py)
 static/js/*.gz
 static/vendor/*.gz
-scratch/nifty_trend/runs/*/results.js.gz
+scratch/nifty_trend/runs/*/*.gz

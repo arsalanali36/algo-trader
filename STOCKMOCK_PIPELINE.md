@@ -35,11 +35,22 @@ Lives in `nifty_config.json` (VPS runtime, gitignored) under the strategy's key:
 ```
 
 Per-leg fields: `opt` (CE/PE), `side` (SELL/BUY), `lots`, `sl_pct` (% of entry premium),
-`tp_pct` (optional), and ONE strike selector:
-- `off` — int strike-offset from ATM (0=ATM, +N OTM). Default mode.
-- `sp_pct` — StockMock's **"CP as X% SP"**: sell the OTM strike whose entry premium ≈ X% of
-  the ATM straddle premium (CE picks a strike ≥ ATM, PE ≤ ATM). Overrides `off` when present.
-  `"legs":[{"opt":"CE","side":"SELL","sp_pct":25,...},{"opt":"PE","side":"SELL","sp_pct":25,...}]`
+`tp_pct` (optional), and ONE strike selector (maps to a StockMock strike mode):
+
+| Config field | StockMock mode | Meaning | Live? |
+|---|---|---|---|
+| `off` (int, signed) | ATM Point | strike = ATM + off·step (CE "ATM+100"→+2, PE "ATM-100"→-2, 0=ATM) | ✅ |
+| `atm_pct` (signed %) | ATM Percent | strike = round(spot·(1+atm_pct/100)/step)·step (CE "ATM+1%"→+1, PE "ATM-1%"→-1) | ✅ |
+| `sw_mult` (signed) | Straddle Width | strike = round((ATM + sw_mult·straddle_prem)/step)·step (CE "ATM+1·SP"→+1) | ✅ |
+| `sp_pct` (%) | CP as % SP | OTM strike whose entry premium ≈ sp_pct% of the ATM straddle premium | backtest-only |
+| `cp_rs` (₹) | Closest Premium | OTM strike whose entry premium ≈ ₹cp_rs | backtest-only |
+
+**Deterministic modes (off / atm_pct / sw_mult)** resolve live (`_fire_sm_strategy`) and
+backtest identically. **Premium-picked modes (sp_pct / cp_rs)** are backtest-only for now (a
+live premium-walk resolver isn't built). Live PE-offset convention: config `off`/soff is a
+literal signed offset; `get_option_contract` inverts PE, so CE passes soff, PE passes -soff
+(TRAP #140-safe). Example strangle:
+`"legs":[{"opt":"CE","side":"SELL","atm_pct":1,...},{"opt":"PE","side":"SELL","atm_pct":-1,...}]`
 
 ---
 
@@ -126,6 +137,41 @@ charges** on top of the 0.5% slippage, so our NET is the actual deployable numbe
 engine (should match ~1%), then look at **NET** (after charges) to decide deployment. A thin-
 premium strategy (far-OTM sells, scalps) that looks great on StockMock can be net-negative for
 real. `days[i]["gross"]` vs `["net"]` (and `metrics.net_abs` is net) make this explicit.
+
+**🔴 CHARGES DON'T SCALE LINEARLY WITH LOTS — always test at the actual lot count.** Zerodha
+brokerage is **flat ₹20/order** (NOT per-lot); only STT/txn/GST scale with qty. So a 2-leg
+strategy's fixed ~₹80/day brokerage (4 orders) is a huge drag at 1 lot but amortizes to nothing
+at 5+ lots. Real result (55% ShortATM±1%): **1 lot → NET −₹16k** (₹101/day charges eat the
+₹88/day gross); **5 lots → NET +₹388k** (charges only ₹101→₹128/day, gross goes 5×), win rises
+53.8%→62.6%. **A "cost-kills-the-edge" verdict at 1 lot can be dead wrong at 5 lots.** Never
+reject a StockMock strategy on a 1-lot backtest — run it at the lot count you'd actually trade
+(and note the margin scales too).
+
+## Reconciliation scorecard (which StockMock strategies validate on our data)
+
+| Strike mode | Reconciles GROSS? | Note |
+|---|---|---|
+| Offset (`off` / `atm_pct` / `sw_mult`) | ✅ clean (2022-24 near-exact) | deterministic strike |
+| `sp_pct` (target well below ATM prem) | ✅ | 25%-SP: 62.5% vs 61% win |
+| `cp_rs` (fixed ₹, target ≈/> ATM prem) | ❌ ambiguous | ₹100-boundary flips on small premium diffs; needs StockMock Excel |
+
+**⚠️ 2025-2026 divergence:** offset strategies' gross tracks StockMock cleanly 2022-2024 but
+**2025 runs lower and 2026 is more negative** than StockMock, across every strategy tested. Lot
+schedule matches; the likely cause is the **NIFTY weekly-expiry weekday change (Thu→Tue, Sep
+2025)** — our WEEK lake vs StockMock handle the transition slightly differently. So a deployed
+strategy's 2026 backtest number is not fully trustworthy — that's exactly why these run as
+forward PAPER.
+
+## Deployed (registry family 02, all PAPER, StockMock-sourced)
+| id | config_key | what | fires | backtest net (2021→) |
+|---|---|---|---|---|
+| 02.11 | sm_nifty_expiry_v1 | expiry-day ATM straddle (6PE+5CE, 25% SL) | expiry days | +₹4.66L |
+| 02.12 | sm_nifty_strangle_v1 | ATM±100 strangle ×5 | daily | +₹2.89L (Sharpe 0.54) |
+| 02.13 | sm_nifty_atm1pct_v1 | ATM±1% strangle ×5 | daily | +₹3.88L (Sharpe 1.07) |
+| 02.14 | sm_nifty_swidth_v1 | ATM±1×straddle-width strangle ×5 | daily | +₹3.09L (Sharpe 1.07) |
+
+Rejected: 69% CP-25%SP (thin→charges at 1 lot), BNF 88% strangle (BNF weekly discontinued
+Nov-2024 → can't trade live), 95% CP-100 (cp_rs strike mismatch — needs Excel).
 
 ## Validation reality (why our number ≠ StockMock exactly)
 
