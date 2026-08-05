@@ -117,7 +117,7 @@
       <div id="net" style="margin-top:6px;font-size:11px;color:var(--mut)"></div>
       <div class="hint">💡 <b>S/B</b> click=toggle · strike <b>▴▾</b> · <b>CE/PE</b> convert · Qty = <b>effective lots</b> (per-leg × multiplier)</div>
       <button class="run" id="run">▶ Run backtest</button>
-      <div style="display:flex;gap:8px;margin-top:8px"><button class="msave" id="marginBtn" style="flex:1">💰 Margin & live LTP</button></div>
+      <div style="display:flex;gap:8px;margin-top:8px"><button class="msave" id="marginBtn" style="flex:1" title="Broker ki asli SPAN margin + funds (live ~15s call). Warna KPI me 'est' = instant local estimate.">💰 Exact live margin (~15s)</button></div>
     </div>
     <div class="card">
       <div style="display:flex;gap:10px;font-size:9.5px;margin-bottom:5px"><span style="color:var(--green)">▬ Expiry</span><span style="color:var(--blue)">▬ Exit-day</span><span style="flex:1"></span><span id="be" style="color:var(--amber)"></span></div>
@@ -223,11 +223,8 @@ function renderLegs(){
 function collectActive(){return act().map(l=>({side:l.side,strike:l.strike,type:l.type,qty:l.qty}));}
 
 // ---------- payoff + KPI ----------
-let _pfT=null,_mgLoading=false,_mgLoaded=false;
-function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);
-  // margin is a ~15s live Dhan+Kite call → do NOT auto-fire on every tweak (that made the page
-  // feel stuck). Mark it stale; user clicks 💰 to refresh (or it's fetched once on load).
-  if(_mgLoaded&&!_mgLoading){$('mg').innerHTML='<span style="color:var(--dim);cursor:pointer" title="structure badla — refresh" onclick="loadMargin()">↻ stale</span>';}}
+let _pfT=null,_mgLoading=false;
+function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);}   // margin est comes WITH payoff (local, instant)
 async function loadPayoff(){
   const A=collectActive();
   if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';return;}
@@ -242,6 +239,7 @@ async function loadPayoff(){
   $('rr').textContent=naked?'—':(Math.abs(mx)/Math.max(1,Math.abs(mn))).toFixed(2)+'x';
   $('pop').textContent=r.pop!=null?Math.round(r.pop*100)+'%':'—';
   $('tv').textContent=sgn(r.time_value);$('iv2').textContent='₹'+inr(r.intrinsic);
+  if(!_mgLoading)$('mg').innerHTML=(r.margin_est!=null)?('~₹'+inr(r.margin_est)+' <span style="color:var(--dim);font-size:9px">est</span>'):'—';   // LOCAL estimate, instant
   $('net').innerHTML='Net entry: <b style="color:'+(r.net_credit>=0?'var(--green)':'var(--amber)')+'">'+(r.net_credit>=0?'credit':'debit')+' ₹'+inr(r.net_credit)+'</b>'+(r.tte_days!=null?' · '+r.tte_days+'d to expiry':'');
   $('be').textContent=(r.breakevens&&r.breakevens.length)?('BE '+r.breakevens.join(' · ')):'';
   // per-leg entry premium into rows (match by order of active legs)
@@ -276,9 +274,10 @@ async function loadMargin(){
   _mgLoading=true;
   $('mg').innerHTML='<span style="color:var(--amber)">⏳ live ~15s…</span>';
   let r;try{r=await(await fetch('/api/whatif-margin',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({underlying:INST,lots:mult,legs:A})})).json();}catch(e){r=null;}
-  _mgLoading=false;_mgLoaded=true;
-  if(!r||!r.ok){$('mg').innerHTML='<span style="color:var(--dim);cursor:pointer" title="'+((r&&r.msg)||'market band?')+'" onclick="loadMargin()">— ↻</span>';return;}
-  $('mg').textContent=r.hedged!=null?'~₹'+inr(r.hedged):(r.standalone!=null?'~₹'+inr(r.standalone):'—');
+  _mgLoading=false;
+  if(!r||!r.ok){$('mg').innerHTML='<span style="color:var(--dim);cursor:pointer" title="'+((r&&r.msg)||'market band? est KPI me hai')+'" onclick="loadMargin()">est only ↻</span>';return;}
+  const mv=r.hedged!=null?r.hedged:r.standalone;
+  $('mg').innerHTML=mv!=null?('₹'+inr(mv)+' <span style="color:var(--green);font-size:9px">live</span>'):'—';
   if(r.balance!=null)$('mav').textContent='₹'+inr(r.balance);
 }
 window.loadMargin=loadMargin;
@@ -416,7 +415,6 @@ $('clearj').addEventListener('click',()=>{if(confirm('Saare saved runs hata den?
   const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
   $('date').value=now.toISOString().slice(0,10);$('xd').value=$('date').value;
   legs=seed('NIFTY');renderLegs();renderJournal();loadExpiries();loadCoverage();schedulePayoff();
-  setTimeout(loadMargin,3200);   // one lazy live-margin fetch on open (button 💰 to refresh after)
 })();
 </script>
 <script defer src="/static/js/topnav.js"></script>

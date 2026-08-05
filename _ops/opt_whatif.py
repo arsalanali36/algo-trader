@@ -511,12 +511,27 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
         net_cr += g * l["entry"] * l["qty"]
         net_intr += g * intr * l["qty"]
         net_tv += g * (l["entry"] - intr) * l["qty"]
+
+    # LOCAL margin estimate — NO broker call (this is a backtest, all data is on disk). A
+    # SPAN-style price-scan: worst structure loss over spot ±10% + a small exposure add on the
+    # short notional. Nets a strangle/condor naturally (only one side is deep ITM at a time),
+    # bounds a spread to its max loss, and ≈0 for a pure debit long. The live "exact margin"
+    # button still gives the broker's real SPAN when the user wants it (that's the slow call).
+    margin_est = None
+    if spot and any(l["side"] == "SELL" for l in plegs):
+        worst = min(pf.payoff_expiry(plegs, spot * (0.90 + 0.20 * i / 20.0)) for i in range(21))
+        short_notional = sum(spot * l["qty"] for l in plegs if l["side"] == "SELL")
+        margin_est = round(max(-worst, 0.0) + short_notional * 0.02)
+    elif plegs:
+        margin_est = 0   # pure long / debit → no margin posted (you pay the premium)
+
     return {"ok": True, "underlying": u, "spot": spot, "expiry": exp,
             "curve_expiry": curve_e, "curve_exit": curve_x,
             "max_profit": round(max(ys), 2), "max_loss": round(min(ys), 2),
             "breakevens": sorted({round(x, 1) for z in zones for x in z if lo < x < hi}),
             "pop": round(pop, 4) if pop is not None else None,
             "net_credit": round(net_cr), "time_value": round(net_tv), "intrinsic": round(net_intr),
+            "margin_est": margin_est,
             "tte_days": round(T_e * 365, 2) if T_e else None,
             "scan": [round(lo, 1), round(hi, 1)]}
 
