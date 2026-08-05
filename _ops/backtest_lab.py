@@ -82,9 +82,12 @@ def _lake_frame(u, ot, off_lo, off_hi):
         p = os.path.join(root, _w._ofn(ot, off))
         if os.path.exists(p):
             try:
-                frames.append(pd.read_csv(p, usecols=["timestamp", "close", "strike", "spot"]))
+                frames.append(pd.read_csv(p, usecols=["timestamp", "open", "close", "strike", "spot"]))
             except Exception:
-                pass
+                try:
+                    frames.append(pd.read_csv(p, usecols=["timestamp", "close", "strike", "spot"]))
+                except Exception:
+                    pass
     if not frames:
         return None
     df = pd.concat(frames, ignore_index=True).dropna(subset=["close", "strike"])
@@ -184,7 +187,15 @@ def _sim_day(u, dd, date, legs, m_entry, m_exit, strat_sl, strat_tp, sqoff, lot,
         if not smap:
             return None
         ser = _ffill(smap, grid)
-        entry = next((v for v in ser if v is not None), None)
+        # ENTRY = the entry-minute's OPEN (fill convention that matches StockMock). On a fast
+        # 0-DTE open the minute's close (=next minute's price) shifts the CE/PE split enough to
+        # flip per-leg SL outcomes, so use open when the lake has it; else first mark.
+        entry = None
+        if use_lake and "open" in g.columns and len(g):
+            gg = g.sort_values("mod")
+            entry = float(gg.iloc[0]["open"])
+        if entry is None:
+            entry = next((v for v in ser if v is not None), None)
         if entry is None:
             return None
         L.append({**lg, "strike": strike, "ot": ot, "entry": float(entry), "ser": ser,
