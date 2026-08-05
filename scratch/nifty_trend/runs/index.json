@@ -1047,5 +1047,58 @@
    "method": "REAL premium lake (held-strike) + Zerodha charges + DOM slip",
    "note": "not BS-modeled — actual OptChainLake_1m/BANKNIFTY premium"
   }
+ },
+ {
+  "slug": "sm_nifty_expiry_v1",
+  "design": "sm_expiry",
+  "title": "02.11 - Expiry-Day Straddle (StockMock)",
+  "tf": "1m",
+  "params": {
+   "legs": [
+    {
+     "opt": "PE",
+     "side": "SELL",
+     "off": 0,
+     "lots": 6,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    },
+    {
+     "opt": "CE",
+     "side": "SELL",
+     "off": 0,
+     "lots": 5,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    }
+   ],
+   "entry": "09:22",
+   "exit": "15:15",
+   "day_filter": "expiry"
+  },
+  "exit": "per-leg SL% + 15:15 EOD",
+  "instrument": "NIFTY options",
+  "lot_size": 65,
+  "window": [
+   "2021-07-01",
+   "2026-07-14"
+  ],
+  "days": 255,
+  "significant": false,
+  "bs_full": {
+   "sharpe": 1.305,
+   "net_pct": 140.92,
+   "maxdd": -22.818,
+   "win_rate": 52.5,
+   "trades": 255,
+   "profit_factor": 1.55
+  },
+  "p_value": null,
+  "deploy_key": "sm_nifty_expiry_v1",
+  "deployed": "sm_nifty_expiry_v1",
+  "real_cost": {
+   "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
+  }
  }
 ]

@@ -1,0 +1,47 @@
+{
+ "window": [
+  "2021-07-01",
+  "2026-07-14"
+ ],
+ "days": 255,
+ "start_cap": 331000,
+ "design": "02.11 - Expiry-Day Straddle (StockMock)",
+ "tf": "1m",
+ "instrument": "NIFTY options",
+ "lot_size": 65,
+ "lots": 1,
+ "intraday": true,
+ "periods": [
+  "full",
+  "train",
+  "oos"
+ ],
+ "sm_config": {
+  "id": "sm_nifty_expiry_v1",
+  "instrument": "NIFTY",
+  "entry_hm": "09:22",
+  "exit_hm": "15:15",
+  "day_filter": "expiry",
+  "squareoff": "one",
+  "legs": [
+   {
+    "opt": "PE",
+    "side": "SELL",
+    "off": 0,
+    "lots": 6,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   },
+   {
+    "opt": "CE",
+    "side": "SELL",
+    "off": 0,
+    "lots": 5,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   }
+  ],
+  "mode": "paper",
+  "valid": true
+ }
+}
