@@ -814,8 +814,8 @@ def api_whatif_expiries():
 @app.route('/api/whatif-chain')
 def api_whatif_chain():
     """Option-chain snapshot AT a backtest date+time for the What-If chain-grid picker —
-    real premium + real IV per strike (collector days only; historical → ok:False, UI falls
-    back to typed strikes). Display-only."""
+    real premium + real IV per strike on collector days; historical days fall back to the
+    OptChainLake (real premium, IV '—' — no BS-guess in the grid). Display-only."""
     try:
         import opt_whatif as w
         u = str(request.args.get('underlying', 'NIFTY')).upper()

@@ -232,11 +232,14 @@ async function loadExpiries(){
   $('exp').innerHTML='<option value="">Nearest (weekly)</option>'+exps.map(x=>`<option value="${x.date}">${x.date} · ${x.monthly?'monthly':'weekly'}</option>`).join('');
   $('exp').value=exps.some(x=>x.date===cur)?cur:'';
 }
+let _covFrom=null;   // collector real-IV window start; date < this = historical lake (premium real, IV —)
 async function loadCoverage(){
   try{const r=await(await fetch('/api/whatif-coverage?underlying='+INST)).json();
-    if(r&&r.ok&&r.real)$('ivcov').innerHTML=`📅 Real IV: <b style="color:var(--green)">${r.real.from} → ${r.real.to}</b> (${r.real.days} din) · purane din premium real par IV nahi`;
+    _covFrom=(r&&r.real&&r.real.from)||null;
+    if(r&&r.ok&&r.real)$('ivcov').innerHTML=`📅 Real IV: <b style="color:var(--green)">${r.real.from} → ${r.real.to}</b> (${r.real.days} din)${r.premium_from?` · <b>${r.premium_from}</b> se purana premium (lake) — IV real nahi`:` · purane din premium real par IV nahi`}`;
     else $('ivcov').textContent='';}catch(e){}
 }
+function _isHistorical(d){return !!(_covFrom && d && d < _covFrom);}
 
 // ---------- leg table ----------
 function renderLegs(){
@@ -423,15 +426,25 @@ $('msearch').addEventListener('input',()=>{const q=$('msearch').value.trim();if(
 
 let _chT=null;
 function scheduleChain(){clearTimeout(_chT);_chT=setTimeout(loadChain,300);}
-async function loadChain(){
+async function loadChain(force){
   const d=$('date').value,t=$('et').value;if(!d)return;
-  const myseq=++_chSeq;$('chain').innerHTML='<div style="padding:14px;color:var(--mut);font-size:11px">Chain le raha…</div>';
+  // Historical (lake) grid = big files on disk → ~10-20s first load. Don't auto-fire it on
+  // modal-open; let the user opt in. Payoff still works from typed / ▴▾ strikes without the grid.
+  if(!force && _isHistorical(d)){
+    $('chain').innerHTML='<div style="padding:16px;font-size:11px;color:var(--mut);line-height:1.7">📼 <b>Purana din</b> (historical lake) — chain grid bada data hai, pehli baar <b>~10-20s</b> lagega.'
+      +'<br><button class="aebtn" onclick="loadChain(true)" style="margin-top:8px;padding:5px 14px">⬇ Load chain grid</button>'
+      +'<br><span style="color:var(--dim)">…ya seedhe leg table me strike <b>▴▾</b> / type karke banao — payoff waise bhi chal jayega.</span></div>';
+    $('mspot').innerHTML=MINST+' · <span style="color:var(--amber)">📼 historical</span>';
+    return;
+  }
+  const myseq=++_chSeq;$('chain').innerHTML='<div style="padding:14px;color:var(--mut);font-size:11px">Chain le raha… '+(_isHistorical(d)?'(purana din — bade files, thoda ruko)':'')+'</div>';
   const sel=legs.map(l=>l.strike).join(',');
   let r;try{r=await(await fetch(`/api/whatif-chain?underlying=${MINST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent(MINST===INST?($('exp').value||''):'')}&n=22&legs=${sel}`)).json();}catch(e){r=null;}
   if(myseq!==_chSeq)return;
   _chData=r;
-  if(!r||!r.ok){$('chain').innerHTML='<div style="padding:14px;color:var(--amber);font-size:11px">Is date pe chain nahi (real IV nahi — purana din). Leg table me strike ▴▾ se banao.</div>';$('mspot').textContent='';return;}
-  $('mspot').textContent=MINST+' '+(r.spot||'').toLocaleString('en-IN')+' · ATM '+r.atm;
+  if(!r||!r.ok){$('chain').innerHTML='<div style="padding:14px;color:var(--amber);font-size:11px">Is date pe koi data nahi (collector window ya lake me is din ki chain nahi). Leg table me strike ▴▾ se banao.</div>';$('mspot').textContent='';return;}
+  $('mspot').innerHTML=MINST+' '+(r.spot||'').toLocaleString('en-IN')+' · ATM '+r.atm
+    +(r.src==='lake'?' <span style="color:var(--amber)">· 📼 historical (premium real, IV —)</span>':'');
   _chScroll=true;   // scroll to ATM only on a fresh load, not on every in-modal edit
   renderChain();
 }

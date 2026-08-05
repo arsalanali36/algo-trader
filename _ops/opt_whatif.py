@@ -307,6 +307,77 @@ def _lake_legs(u, date, entry_hm, exit_hm, legs, exit_date=None):
     return {"expiry": None, "legs": out}
 
 
+def _ts_ist(date, hm):
+    """epoch for date + HH:MM in IST (naive-safe)."""
+    return int(_dt.datetime.strptime("%s %s" % (date, str(hm)[:5]), "%Y-%m-%d %H:%M")
+               .replace(tzinfo=_IST).timestamp())
+
+
+def _lake_chain(u, date, hm, n=10, sel=None):
+    """Historical chain-GRID from the expired-options lake (OptChainLake_1m, ~2021→) for the
+    What-If picker on dates OLDER than the live-collector window. Real 1-min premium per strike
+    (ATM±n at time `hm`), but the lake stores NO greeks → iv/delta/oi = None (grid shows '—',
+    never a BS-guess dressed up as real IV — the user's rule). Returns None if the lake has no
+    data for this day. `src='lake'` tells payoff_at to price legs from the lake + invert IV for
+    its (modeled, dashed) exit-day curve only. Reuses _scan_date/_ofn/_lake_root (Rule 6B)."""
+    root = _lake_root(u)
+    if not root:
+        return None
+    n = min(int(n or 10), 6)    # each strike = one big full-history file to read cold; ATM±6 grid
+                                # keeps the (opt-in) historical load bounded (~26 files, not 42)
+    step = STEP.get(u, 50)
+    start, end = _date_range(date)
+    tgt = _ts_ist(date, hm)
+    by_strike = {}   # strike -> {'ce':prem, 'pe':prem}
+    spot = None
+    for ot in ("CE", "PE"):
+        for off in range(-n, n + 1):
+            d = _scan_date(os.path.join(root, _ofn(ot, off)), start, end)
+            if d is None or d.empty:
+                continue
+            dd = d.dropna(subset=["close"])
+            if dd.empty:
+                continue
+            after = dd[dd["timestamp"] >= tgt]
+            r = after.iloc[0] if not after.empty else dd.iloc[-1]
+            try:
+                k = int(round(float(r["strike"]) / step) * step)
+            except Exception:
+                continue
+            by_strike.setdefault(k, {})[ot.lower()] = round(float(r["close"]), 1)
+            sp = float(r["spot"]) if r["spot"] == r["spot"] else None
+            if sp and spot is None:
+                spot = sp
+    if not by_strike:
+        return None
+    strikes = sorted(by_strike)
+    atm = min(strikes, key=lambda x: abs(x - spot)) if spot else strikes[len(strikes) // 2]
+    have = set(strikes)
+    sel_int = [int(_f(s)) for s in (sel or []) if _f(s) is not None]
+
+    def cell(k, sd):
+        p = by_strike.get(k, {}).get(sd)
+        return {"ltp": p, "iv": None, "delta": None, "oi": None}
+
+    out = [{"strike": k, "ce": cell(k, "ce"), "pe": cell(k, "pe")} for k in strikes]
+    for s in sorted(set(sel_int) - have):   # keep selected legs visible even if lake lacks that far strike
+        out.append({"strike": s, "ce": {"ltp": None, "iv": None}, "pe": {"ltp": None, "iv": None}})
+    out.sort(key=lambda r: r["strike"])
+    exp_label = None                          # nearest weekly (display-only), bs_option = single source
+    m = _bsmod()
+    if m:
+        try:
+            import pandas as pd
+            ed = m._next_weekly_expiry(pd.Timestamp(tgt, unit="s", tz="Asia/Kolkata"))
+            exp_label = ed.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    return {"ok": True, "underlying": u, "date": date, "expiry": exp_label,
+            "expiries": [exp_label] if exp_label else [], "hm": hm,
+            "spot": round(spot, 2) if spot else None, "atm": int(atm) if atm else None,
+            "step": step, "strikes": out, "src": "lake"}
+
+
 # ---------------------------------------------------------------- public
 def available_dates(u):
     """Dates offering data — collector (recent) ∪ lake (historical), newest first."""
@@ -354,6 +425,9 @@ def chain_at(u, date, hm, expiry=None, n=10, sel=None):
     u = u.upper()
     rows = _rows_cached(u, date)   # TTL-cached (live-date re-parse guard) — Rule 6B loader underneath
     if not rows:
+        lk = _lake_chain(u, date, hm, n, sel)   # historical (OptChainLake, ~2021→): real premium, IV "—"
+        if lk:
+            return lk
         return {"ok": False, "reason": "no-collector", "underlying": u, "date": date, "strikes": []}
     exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
     if not exps:
@@ -450,31 +524,72 @@ def payoff_at(u, date, hm, legs, expiry=None, exit_date=None, exit_hm=None, mult
     snap = chain_at(u, date, hm, expiry, n=10, sel=sel)
     if not snap.get("ok"):
         return {"ok": False, "reason": snap.get("reason", "no-collector")}
+    src = snap.get("src")            # "lake" (historical) or None (collector, real IV)
     spot = snap.get("spot")
     exp = snap.get("expiry")
-    by_k = {int(r["strike"]): r for r in snap.get("strikes", [])}
     lot = LOT.get(u, 1) * max(1, int(mult or 1))
     plegs = []
-    for l in (legs or []):
-        k = _f(l.get("strike"))
-        ot = str(l.get("type") or "").upper()
-        sd = str(l.get("side") or "").upper()
-        if k is None or ot not in ("CE", "PE") or sd not in ("SELL", "BUY"):
-            continue
-        row = by_k.get(int(k))
-        cell = (row.get("ce") if ot == "CE" else row.get("pe")) if row else None
-        prem = cell.get("ltp") if cell else None
-        ivp = cell.get("iv") if cell else None
-        if prem is None:
-            return {"ok": False, "reason": "%d %s ka premium is date/time pe nahi mila (captured band se bahar)" % (int(k), ot)}
-        plegs.append({"strike": float(int(k)), "opt": ot, "side": sd,
-                      "qty": lot * max(1, int(l.get("qty") or 1)),
-                      "entry": float(prem), "ltp": float(prem),
-                      "iv": (ivp / 100.0) if ivp else None})
+
+    if src == "lake":
+        # Historical: price each leg EXACTLY from the lake (any strike, not the ATM±n grid),
+        # and INVERT the IV from the REAL premium so the (modeled, dashed) exit-day curve + POP
+        # still work. The grid keeps showing iv "—" — we never present this inverted vol AS a
+        # real chain IV, we only use it to draw the theta line (same as /whatif's run()).
+        root = _lake_root(u)
+        m = _bsmod()
+        ed = e_dt = None
+        try:
+            import pandas as _pd
+            e_dt = _dt.datetime.strptime("%s %s" % (date, hm[:5]), "%Y-%m-%d %H:%M")
+            if m:
+                ed = m._next_weekly_expiry(_pd.Timestamp(_ts_ist(date, hm), unit="s", tz="Asia/Kolkata")).date()
+                exp = ed.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+        T_e_entry = pf.tte_years(ed, e_dt) if (ed and e_dt) else None
+        for l in (legs or []):
+            k = _f(l.get("strike"))
+            ot = str(l.get("type") or "").upper()
+            sd = str(l.get("side") or "").upper()
+            if k is None or ot not in ("CE", "PE") or sd not in ("SELL", "BUY"):
+                continue
+            pt = _lake_point(root, u, date, float(int(k)), ot, hm) if root else None
+            if not pt or pt.get("prem") is None:
+                return {"ok": False, "reason": "%d %s ka premium is date pe lake me nahi mila (ATM±10 se door / us din data nahi)" % (int(k), ot)}
+            if spot is None and pt.get("spot"):
+                spot = pt["spot"]
+            iv = None
+            if m and pt.get("spot") and T_e_entry and T_e_entry > 0:
+                try:
+                    iv = m.implied_vol(pt["prem"], pt["spot"], float(int(k)), T_e_entry, _R, ot)
+                except Exception:
+                    pass
+            plegs.append({"strike": float(int(k)), "opt": ot, "side": sd,
+                          "qty": lot * max(1, int(l.get("qty") or 1)),
+                          "entry": float(pt["prem"]), "ltp": float(pt["prem"]), "iv": iv})
+    else:
+        by_k = {int(r["strike"]): r for r in snap.get("strikes", [])}
+        for l in (legs or []):
+            k = _f(l.get("strike"))
+            ot = str(l.get("type") or "").upper()
+            sd = str(l.get("side") or "").upper()
+            if k is None or ot not in ("CE", "PE") or sd not in ("SELL", "BUY"):
+                continue
+            row = by_k.get(int(k))
+            cell = (row.get("ce") if ot == "CE" else row.get("pe")) if row else None
+            prem = cell.get("ltp") if cell else None
+            ivp = cell.get("iv") if cell else None
+            if prem is None:
+                return {"ok": False, "reason": "%d %s ka premium is date/time pe nahi mila (captured band se bahar)" % (int(k), ot)}
+            plegs.append({"strike": float(int(k)), "opt": ot, "side": sd,
+                          "qty": lot * max(1, int(l.get("qty") or 1)),
+                          "entry": float(prem), "ltp": float(prem),
+                          "iv": (ivp / 100.0) if ivp else None})
     if not plegs:
         return {"ok": False, "reason": "koi valid leg nahi"}
 
-    # T to expiry from entry moment, and from exit moment (for the exit-day curve)
+    # T to expiry from entry moment, and from exit moment (for the exit-day curve). `exp` is the
+    # collector's stored held-expiry (recent) or the lake's nearest-weekly (historical, set above).
     T_e = T_x = None
     if exp:
         try:
