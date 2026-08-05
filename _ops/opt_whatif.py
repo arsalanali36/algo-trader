@@ -210,11 +210,31 @@ def _scan_date(path, start, end):
     c = _DAY_CACHE.get(key)
     if c and c[0] == mt:
         return c[1]
+    # disk slice-cache (survives process/dashboard restarts — the daily 15:45 stop otherwise
+    # wipes every historical speed-up). One tiny pickle per (offset-file, day), keyed by the
+    # source mtime so a re-backfilled file invalidates itself. Fully fail-safe: any error just
+    # falls through to the full CSV read, so /whatif's run() path is never at risk.
+    dcache = os.path.join(os.path.dirname(path), ".daycache")
+    cf = os.path.join(dcache, "%s__%d__%d.pkl" % (os.path.basename(path), start, int(mt)))
+    if os.path.exists(cf):
+        try:
+            sub = pd.read_pickle(cf)
+            if len(_DAY_CACHE) > 400:
+                _DAY_CACHE.clear()
+            _DAY_CACHE[key] = (mt, sub)
+            return sub
+        except Exception:
+            pass
     try:
         df = pd.read_csv(path, usecols=["timestamp", "close", "strike", "spot"])
         sub = df[(df["timestamp"] >= start) & (df["timestamp"] < end)].copy()
     except Exception:
         return None
+    try:
+        os.makedirs(dcache, exist_ok=True)
+        sub.to_pickle(cf)
+    except Exception:
+        pass
     if len(_DAY_CACHE) > 400:
         _DAY_CACHE.clear()
     _DAY_CACHE[key] = (mt, sub)
@@ -256,9 +276,47 @@ def _lake_series(root, u, date, strike, ot):
     return series, sorted(series)
 
 
+def _lake_point_fast(root, u, date, strike, ot, hm, last=False):
+    """FAST single-minute snapshot: at ONE minute a held strike sits at ONE offset, so read
+    only the offset file(s) holding it — not every offset the strike passes through all day
+    (what _lake_series does). ~2-3 file reads vs 6+. Returns None → caller falls back to the
+    full-series path (so correctness is never traded for speed)."""
+    step = STEP.get(u, 50)
+    start, end = _date_range(date)
+    tgt = _ts_ist(date, hm)
+    atm = _scan_date(os.path.join(root, _ofn(ot, 0)), start, end)   # spot at hm (ATM file, cached)
+    if atm is None or atm.empty:
+        return None
+    aa = atm.dropna(subset=["spot"])
+    if aa.empty:
+        return None
+    after0 = aa[aa["timestamp"] >= tgt]
+    arow = aa.iloc[-1] if (last or after0.empty) else after0.iloc[0]
+    sp0 = float(arow["spot"]) if arow["spot"] == arow["spot"] else None
+    if not sp0:
+        return None
+    o0 = int(round((strike - sp0) / step))
+    for off in (o0, o0 - 1, o0 + 1, o0 - 2, o0 + 2):   # first hit wins; usually o0 itself
+        d = _scan_date(os.path.join(root, _ofn(ot, off)), start, end)
+        if d is None or d.empty:
+            continue
+        hit = d[(d["strike"] == strike) & (d["close"] == d["close"])]
+        if hit.empty:
+            continue
+        aft = hit[hit["timestamp"] >= tgt]
+        r = hit.iloc[-1] if (last or aft.empty) else aft.iloc[0]
+        return {"prem": float(r["close"]),
+                "spot": float(r["spot"]) if r["spot"] == r["spot"] else None,
+                "ts": int(r["timestamp"]), "t": _hm(int(r["timestamp"]))}
+    return None
+
+
 def _lake_point(root, u, date, strike, ot, hm, last=False):
     """One (prem, spot, ts) snapshot for a held strike at time `hm` on `date`."""
-    r = _lake_series(root, u, date, strike, ot)
+    fast = _lake_point_fast(root, u, date, strike, ot, hm, last)
+    if fast is not None:
+        return fast
+    r = _lake_series(root, u, date, strike, ot)   # fallback: full-day series (any edge case)
     if not r:
         return None
     series, hms = r
