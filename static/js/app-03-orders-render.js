@@ -674,6 +674,11 @@
         ch += '</tr></thead><tbody>';
 
         const _grpMode = window._completedGroupMode || 'none';
+        if (_grpMode === 'basket') {
+          // Pehle basket-keys bhar do (grouping isi map ko padhti hai) + notes ensure.
+          window._basketKeyMap = _buildBasketKeys(sortedCompleted);
+          _ensureBasketNotes();
+        }
         if (_grpMode !== 'none') {
           // ── Grouped (Zerodha Day's History style) — key/label by _grpMode ──
           // (none/symbol/strategy/pnl/hedge/exit/instrument). Preserves
@@ -714,6 +719,12 @@
               switch (c.id) {
                 case 'symbol':
                   val = `<span style="display:inline-block;width:14px;color:#8b949e">${expanded ? '▼' : '▶'}</span><b>${grp.label}</b> <span style="color:#6e7681;font-weight:400">(${grp.trades.length})</span>`;
+                  if (_grpMode === 'basket') {
+                    const _bn = (window._basketNotes || {})[grp.key];
+                    if (_bn && _bn.text) val += ' <span title="note hai" style="color:#d29922">📝</span>';
+                    else val += ' <span style="color:#6e7681;font-weight:400;font-size:10px">＋note</span>';
+                    val += `<div style="font-size:10px;color:#8b949e;font-weight:400;margin-top:2px">${_basketLegSummary(grp.trades)}</div>`;
+                  }
                   colorStyle = 'color:#adbac7;font-weight:600;';
                   break;
                 case 'qty': val = grp.qty; break;
@@ -735,6 +746,21 @@
               grp.trades.forEach(({ t, idx }) => {
                 ch += _completedRowHtml(t, idx, activeCols, ordDate, true).html;
               });
+              // Basket mode: expand ke andar user ka apna comment box (server-side save)
+              if (_grpMode === 'basket') {
+                const _nk = grp.key;
+                const _bn = (window._basketNotes || {})[_nk];
+                const _txt = (_bn && _bn.text) || '';
+                const _esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const _nkSafe = String(_nk).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+                const _bnId = 'bn_' + String(_nk).replace(/[^a-z0-9]/gi, '_');
+                ch += `<tr style="background:#0d1117"><td colspan="${activeCols.length}" style="padding:8px 14px 12px 26px">`
+                  + `<div style="font-size:10.5px;color:#6e7681;margin-bottom:4px">📝 Mera comment (is basket pe)${_bn && _bn.ts ? ` <span style="color:#484f58">· ${_bn.ts}</span>` : ''}</div>`
+                  + `<div style="display:flex;gap:8px;align-items:flex-start">`
+                  + `<textarea id="${_bnId}" placeholder="is basket pe apni note likho… (kyun liya, kya galti, kya seekha)" style="flex:1;min-height:48px;resize:vertical;background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:6px 8px;font-size:12px;font-family:inherit">${_esc(_txt)}</textarea>`
+                  + `<button onclick="saveBasketNote('${_nkSafe}')" style="padding:7px 12px;font-size:12px;background:#1f6feb;border:1px solid #1f6feb;border-radius:6px;color:#fff;cursor:pointer;white-space:nowrap">✓ Save</button>`
+                  + `</div></td></tr>`;
+              }
             }
           });
         } else {

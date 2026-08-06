@@ -661,10 +661,82 @@
         case 'hedge':    { const h = (t.tags || []).includes('HEDGE') || /hedge/i.test(String(t.exit_reason || '')); return { key: h ? 'h' : 'm', label: h ? '🛡️ Hedge legs' : '🎯 Main legs' }; }
         case 'exit':     { const f = _exitFamily(t.exit_reason); return { key: 'E:' + f.key, label: f.label }; }
         case 'instrument': { const r = _instrOf(t); return { key: 'I:' + r, label: r }; }
+        case 'basket': {
+          // Auto pair/basket: pehle shared group_id (jaise 10:02 hedge ke dono leg),
+          // warna entry-time cluster (_buildBasketKeys se, jo grouping se pehle bhara
+          // jaata hai). Key stable rehti hai (note isi pe attach hoti hai).
+          const m = window._basketKeyMap || {};
+          const key = m[t.id] || ('G:' + ((t.group_id || '').trim()) )
+            || ('T:' + _instrOf(t) + ':' + (t.entry_time || '?'));
+          return { key: key, label: '🔗 ' + _instrOf(t) + ' · ' + (t.entry_time || '') };
+        }
         case 'symbol':
         default:         return { key: t.sym || '—', label: t.sym || '—' };
       }
     }
+    // Basket auto-pairing: har completed trade ko ek basket-key do. group_id ho to
+    // 'G:<gid>' (asli basket); warna instrument ke andar entry-time cluster (±window
+    // minute) → 'T:<instr>:<pehli-leg-time>' (stable). group-render se pehle bhara jaata.
+    function _basketMinutes(hhmm) {
+      const m = String(hhmm || '').match(/(\d{1,2}):(\d{2})/);
+      return m ? (parseInt(m[1], 10) * 60 + parseInt(m[2], 10)) : -1;
+    }
+    function _buildBasketKeys(trades) {
+      const map = {};
+      const noGid = [];
+      (trades || []).forEach(t => {
+        const g = (t.group_id || '').trim();
+        if (g) map[t.id] = 'G:' + g; else noGid.push(t);
+      });
+      const WIN = 2;   // minute — isi window ke andar aayi legs = ek basket
+      const byInstr = {};
+      noGid.forEach(t => { const r = _instrOf(t); (byInstr[r] = byInstr[r] || []).push(t); });
+      Object.keys(byInstr).forEach(r => {
+        const arr = byInstr[r].slice().sort((a, b) => _basketMinutes(a.entry_time) - _basketMinutes(b.entry_time));
+        let clusterKey = null, last = null;
+        arr.forEach(t => {
+          const mn = _basketMinutes(t.entry_time);
+          if (clusterKey === null || last === null || (mn - last) > WIN) clusterKey = 'T:' + r + ':' + (t.entry_time || '?');
+          last = mn;
+          map[t.id] = clusterKey;
+        });
+      });
+      return map;
+    }
+    // Basket ke legs ka chhota summary: "S 24600-CE · B 24750-CE" (group header ke liye)
+    function _basketLegSummary(trades) {
+      return (trades || []).map(x => {
+        const t = x.t || x;
+        const p = String(t.sym || '').split('-');
+        const strike = p.length >= 2 ? (p[p.length - 2] + '-' + (p[p.length - 1] || '')) : (t.sym || '');
+        return (t.entry === 'BUY' ? 'B ' : 'S ') + strike;
+      }).join(' · ');
+    }
+    // Basket notes (user ka apna comment per basket) — ek baar fetch, save pe local update.
+    window._basketNotes = window._basketNotes || null;
+    function _ensureBasketNotes() {
+      if (window._basketNotes !== null) return;   // pehle se in-flight / loaded
+      window._basketNotes = {};
+      apiFetch('/api/basket-note').then(r => r.json()).then(j => {
+        window._basketNotes = (j && j.notes) || {};
+        try { renderCachedOrders(); } catch (e) { }
+      }).catch(() => { window._basketNotes = {}; });
+    }
+    window.saveBasketNote = function (nk) {
+      const bnId = 'bn_' + String(nk).replace(/[^a-z0-9]/gi, '_');
+      const ta = document.getElementById(bnId);
+      if (!ta) return;
+      const text = ta.value;
+      apiFetch('/api/basket-note', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: nk, text: text })
+      }).then(r => r.json()).then(j => {
+        window._basketNotes = window._basketNotes || {};
+        if (text && text.trim()) window._basketNotes[nk] = (j && j.note) || { text: text };
+        else delete window._basketNotes[nk];
+        if (typeof toast === 'function') toast('Note saved');
+      }).catch(() => { if (typeof toast === 'function') toast('Note save failed'); });
+    };
     function setCompletedGroupMode(mode) {
       window._completedGroupMode = mode || 'none';
       window._completedGroupBy = (window._completedGroupMode !== 'none');   // back-compat alias

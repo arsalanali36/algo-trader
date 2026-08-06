@@ -8822,6 +8822,28 @@ def api_stat_views_delete(view_id):
         return jsonify({'ok': False, 'error': str(e)}), 400
 
 
+@app.route('/api/basket-note', methods=['GET', 'POST'])
+def api_basket_note():
+    """User's own comment on an option BASKET (pair) in the Completed Trades
+    'Pair / Basket' view. Keyed by the basket's stable key (group_id or entry-time
+    cluster). Display/notes only — no order/risk path."""
+    import basket_notes
+    if request.method == 'GET':
+        try:
+            return jsonify({'ok': True, 'notes': basket_notes.all_notes()})
+        except Exception as e:
+            print("[basket-note list] fail:", e, flush=True)
+            return jsonify({'ok': False, 'notes': {}, 'error': str(e)})
+    body = request.get_json(silent=True) or {}
+    try:
+        from datetime import datetime as _dt, timezone as _tz, timedelta as _tdd
+        ts = (_dt.now(_tz.utc) + _tdd(hours=5, minutes=30)).strftime('%Y-%m-%d %H:%M')
+        note = basket_notes.set_note(body.get('key'), body.get('text'), ts=ts)
+        return jsonify({'ok': True, 'note': note})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 400
+
+
 @app.route('/api/orders/optimized-pnl')
 def api_orders_optimized_pnl():
     """Per-trade "what-if" P&L under the two OPTIMISED SL/Target profiles
