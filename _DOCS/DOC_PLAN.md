@@ -48,25 +48,31 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — load-order (script-src = code order) + shared/global (registry/notify/topnav) + app-00..15 ownership table + standalone pages + render pipeline + TRAP #125/#132 | ✅ |
 | **P4** | Strategy layer | ARCHITECTURE.md §9 — signals/live folder split (ADR-010) + concrete `orb_trader` lifecycle walk (signal→gate→execute→record→monitor→exit→recovery) + 4-point Rule-8 + honest signal-share boundary | ✅ |
 | **P5** | Research/backtest | `_DOCS/BACKTEST.md` — 3-pass pipeline + run_hunt reference producer + build_* family + engine files (bs_option/intraday_engine/option_structures/charges/dom_*/honest_sizing) + runs/<slug>→Lab wiring + deploy gate; RESULTS_SCHEMA/BS_OPTION_SIM linked | ✅ |
-| **P6** | Ops/observability | ARCHITECTURE.md → `_ops/*` (52) grouped: reconcile · reports (eod_report/digest/signal_replay/daily_report) · display-pages (option_curves/gex_profile/backtest_lab/whatif) · data-lakes | ☐ |
+| **P6** | Ops/observability | ARCHITECTURE.md §10 — `_ops/*` (52) grouped 6-way: reconcile+integrity · reports · display-pages (Rule 10) · data-lakes/collectors · order-adjacent ops · config/sync/utility | ✅ |
 
 ---
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P6 (LAST) — Ops/observability. `ARCHITECTURE.md` me ek section: `_ops/*` (~52 files)
-> grouped — reconcile (reconcile_broker/reconcile_csv) · reports (eod_report/eod_digest/
-> signal_replay/daily_report/intervention) · display-pages (option_curves/gex_profile/backtest_lab/
-> opt_whatif/fii_flow_view/morning_brief) · data-lakes (option_chain_collector/fii_flow/chain_pcr/
-> auto_data_downloader/download_equity_history) · misc (sm_runner/atm_straddle_roller/price_triggers/
-> position_carry/broker_ledger/backtest_calendar/stat_views). `ls _ops/*.py` se list, MODULES.md
-> se docstrings, GROUP-wise ek-ek line (per-file essay nahi). Ye aakhri piece — P6 ke baad DOC_PLAN
-> ki table poori ✅, memory pointer "docs complete".
+> ✅ **DOCS EFFORT COMPLETE (P0→P6 sab done).** Poora doc-set:
+> - `_DOCS/MODULES.md` (auto-gen, pre-commit hook se current) — per-module API index
+> - `_DOCS/ARCHITECTURE.md` — §1 process model · §2 order money-path · §3 monitor/exit · §4 netting ·
+>   §5 reconcile · §6 margin · §7 data/broker plumbing · §8 control plane · §9 strategy layer · §10 _ops
+> - `_DOCS/FRONTEND.md` — static/js map + render pipeline
+> - `_DOCS/BACKTEST.md` — research engine (`scratch/nifty_trend`) + 3-pass pipeline
 >
-> (Har piece done hone pe is section ko update karo + upar table me status badlo +
-> git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
+> **Maintenance (aage kya):** naya module → module-docstring + public-fn 1-liner (generator baaki karega,
+> hook auto-refresh). Asli ARCHITECTURE badle (naya process/layer/order-path) → relevant § update — rare.
+> Docstring-per-file jo bata de wo MODULES.md me apne aap; ARCHITECTURE sirf WIRING (kaise judte hain).
+> Ye plan-file ab reference; koi pending piece nahi.
 
 ### Done-log
+- **P6 ✅** — `ARCHITECTURE.md` §10 (`_ops/*` ~52 files): 6 group — 10.1 reconcile+integrity
+  (reconcile_broker/csv, invariant_guard) · 10.2 reports (eod_report/digest/signal_replay/daily_report/
+  intervention/backtest_live_recon/param_stability/bs_shadow) · 10.3 display-pages Rule-10
+  (curves/gex/backtest_lab/whatif/fii/brief/broker_ledger/backtest_calendar) · 10.4 data-lakes
+  (option_chain_collector/fii_flow/chain_pcr/downloaders) · 10.5 order-adjacent (auto_straddle/roller/
+  triggers/carry/exit_rules/sm_runner — gateway se) · 10.6 config/sync/utility. Commit `<next>`.
 - **P5 ✅** — naya `_DOCS/BACKTEST.md`: 3-pass pipeline (instrument→RMS→BS), run_hunt reference
   producer + build_* family, engine files (intraday_engine/option_structures/bs_option/charges/
   dom_*/ml_*/honest_sizing), runs/<slug>→Lab hub + Stats backtest wiring (backtest_calendar),

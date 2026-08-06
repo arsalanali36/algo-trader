@@ -352,6 +352,54 @@ seed); positional/overnight → `risk_gate._ALWAYS_OVERNIGHT` (code-set, config 
 
 ---
 
+## 10. Ops / observability (`_ops/*` — ~52 files)
+
+Standalone scripts + display-page backends + collectors + reconciler. Per-module API
+[`MODULES.md`](MODULES.md); yahan sirf GROUP + kaun money-path chhoota hai (baaki display-only,
+Rule 10). Entrypoints (`strategy_supervisor`, timers) §1/§8 me already.
+
+### 10.1 Reconcile + integrity (money-truth)
+- **`reconcile_broker`** — authoritative broker-mirror (ADR-011, §5): broker ko order_id se mirror,
+  external order → aggregated row. LIVE only. **`reconcile_csv`** — Zerodha tradebook CSV upload se
+  self-reconcile (idempotent net-mirror). **`invariant_guard`** — watchdog (~120s): app-net==broker-net
+  + no-blank/₹0/dup. **`config_drift_check`** · **`error_watch`** — drift + error log tripwires.
+
+### 10.2 Reports (post-mortem — timers §1)
+- **`eod_report`** — ek-link EOD HTML (`/reports`, 15:45 timer). **`eod_digest`** — per-strategy din-bhar
+  digest (auto-discover; heartbeat/₹0/mode checks). **`signal_replay`** — TRAP #108: live trader ne wahi
+  kiya jo signal-code kehta? (offline bar-by-bar). **`daily_report`** (`/report`) + **`report_notes`** —
+  one-scroll EOD + server-side notes. **`intervention_report`** (`/intervention`) — manual-cut counterfactual.
+  **`backtest_live_recon`** — deployed backtest vs live match% (EOD alert). **`param_stability`** — din-se
+  core-params unchanged (rms_audit_log se). **`bs_shadow`** — Real vs BS per-trade reprice (15:50 timer).
+
+### 10.3 Display pages (Rule 10 — koi order/risk path nahi; page routes §8.3)
+- **`option_curves`** + **`option_alerts`** (`/curves`) — ATM straddle premium/gamma/OI/VIX/PCR + bell.
+  **`gex_profile`** (`/gex`) — gamma-exposure profile. **`backtest_lab`** (`/backtest-lab`) — StockMock-style
+  multi-day options backtest. **`opt_whatif`** (`/whatif`) — manual options backtest (price/IV/decay split).
+  **`opt_pnl`** — Stats what-if columns. **`fii_flow_view`** (`/fii-flow`) · **`morning_brief`** (`/brief`)
+  · **`broker_ledger`** (RMS ledger graph) · **`backtest_calendar`** (Stats Live⟷Backtest, §BACKTEST).
+
+### 10.4 Data lakes + collectors (systemd/Task)
+- **`option_chain_collector`** (`algo-optionchain`, §1) — NIFTY/BNF+5-stock per-minute chain → `OptionChain/`.
+  **`fii_flow`** + **`chain_pcr`** — free NSE participant/cash + PCR/max-pain lakes (daily Task).
+  **`auto_data_downloader`** — polls orders → OHLC bars + gap alert. **`download_equity_history`** /
+  **`download_nifty50`** — F&O universe 1-min backfill (`algo-equity-daily`, 16:10). **`backfill_trade_ohlc`**
+  · **`dist_ma_daily_update`** — per-trade premium + dist-MA fills.
+
+### 10.5 Order-adjacent ops (money-path — gateway se jaate, §2)
+- **`auto_straddle`** + **`atm_straddle_roller`** — auto ATM straddle (sell CE+PE, basket-exit) + auto-roll.
+  **`price_triggers`** — spot-level cross → ATM auto-fire. **`position_carry`** — MIS⇄NRML overnight carry.
+  **`position_exit_rules`** — group combined-MTM SL/Target auto-exit. **`sm_runner`** — StockMock config-driven
+  live-paper firing. (Sab PURE state+decision; orders `execution_gateway` se — koi raw REST nahi.)
+
+### 10.6 Config/state + sync/utility
+- **`stat_views`** (Saved Views) · **`basket_notes`** · **`skipped_replay`** (RMS-blocked what-if) ·
+  **`capture_vrp_condor`** — config/state stores. **`deploy_vps`** (fallback scp) · **`sync_pine`** /
+  **`sync_data`** / **`sync_optionchain`** / **`sync_vps_to_local`** / **`lake_pull_to_pc`** — sync helpers ·
+  **`export_trade_log`** · **`rate_limit_verify`** · **`pine2python_drift`** — utilities.
+
+---
+
 ## Cross-reference
 - Per-module detail (auto): [`_DOCS/MODULES.md`](MODULES.md)
 - Decisions (kyun): [`_ADR/`](../_ADR/) — 001 gateway · 010 signal-single-source · 011 reconcile · 015 margin
