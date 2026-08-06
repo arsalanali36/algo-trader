@@ -301,7 +301,7 @@
       // Persist the Mode choice so it survives reloads ('all' sentinel for the
       // empty-value All span, else getItem's '' would fall back to 'live').
       if (segId === 'ord-mode') localStorage.setItem('ord_mode_filter', el.dataset.v || 'all');
-      ordersRender();
+      ordersRender(true);   // view switch → past-date cache OK
     }
     function _ordSegVal(segId) {
       const on = document.querySelector('#' + segId + ' span.on'); return on ? on.dataset.v : '';
@@ -480,15 +480,33 @@
       let m = Math.abs(d); const h = Math.floor(m / 60); m = m % 60;
       return (d < 0 ? '-' : '') + (h ? (h + 'h ' + m + 'm') : (m + 'm'));
     }
-    async function ordersRender() {
+    // Client-side cache for /api/orders — a PAST date's data is immutable, so
+    // switching dates back-and-forth shouldn't re-hit the backend (which also runs
+    // a 90-day positional netting query every call). Only view-switch handlers
+    // (date/strat/broker onchange) pass useCache=true; every action/SSE caller keeps
+    // the default false = always fresh AND refreshes the cache. Today is never cached
+    // (live data), so `date < todayIST` gates it.
+    window._ordCache = window._ordCache || {};
+    function _ordTodayIST() {
+      const n = new Date(Date.now() + 5.5 * 3600 * 1000);
+      return n.toISOString().slice(0, 10);
+    }
+    async function ordersRender(useCache) {
       const date = (document.getElementById('ord-date') || {}).value;
       if (!date) return;
       const q = new URLSearchParams({ date });
       const mode = _ordSegVal('ord-mode'); if (mode) q.set('mode', mode);
       const strat = document.getElementById('ord-strat').value; if (strat) q.set('strategy', strat);
       const broker = document.getElementById('ord-broker').value; if (broker) q.set('broker', broker);
+      const isPast = date < _ordTodayIST();
+      const ck = q.toString();
       let d = {};
-      try { const r = await fetch('/api/orders?' + q.toString()); d = await r.json(); } catch (e) { return; }
+      if (useCache && isPast && window._ordCache[ck]) {
+        d = window._ordCache[ck];   // immutable past date — instant, no round-trip
+      } else {
+        try { const r = await fetch('/api/orders?' + ck); d = await r.json(); } catch (e) { return; }
+        if (isPast) window._ordCache[ck] = d;   // refresh cache on every fresh fetch
+      }
       // per-strategy REAL hedged basket margin (backend: risk_gate._group_capital)
       // — the Open Positions group TOTAL shows this instead of summing each
       // leg's standalone margin, which overstates a hedged structure badly.
@@ -717,7 +735,7 @@
     function _ensureBasketNotes() {
       if (window._basketNotes !== null) return;   // pehle se in-flight / loaded
       window._basketNotes = {};
-      apiFetch('/api/basket-note').then(r => r.json()).then(j => {
+      fetch('/api/basket-note').then(r => r.json()).then(j => {
         window._basketNotes = (j && j.notes) || {};
         try { renderCachedOrders(); } catch (e) { }
       }).catch(() => { window._basketNotes = {}; });
@@ -727,7 +745,7 @@
       const ta = document.getElementById(bnId);
       if (!ta) return;
       const text = ta.value;
-      apiFetch('/api/basket-note', {
+      fetch('/api/basket-note', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key: nk, text: text })
       }).then(r => r.json()).then(j => {
