@@ -68,7 +68,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 - **P3 ✅** — naya `_DOCS/FRONTEND.md`: load-order (script-src = code order, TRAP #125 hoisting/
   DOMContentLoaded), shared/global (registry.js single-labeller TRAP #132, notify/topnav/env-badge/
   mobile-tools), app-00..15 ownership table (tab/concern per file), standalone pages, render
-  pipeline mental-model, mobile layer (mobile.css + app-15). Commit `<next>`.
+  pipeline mental-model, mobile layer (mobile.css + app-15). Commit `48a6628`.
 - **P2 ✅** — `ARCHITECTURE.md` §8 (control plane): 8.1 start/stop → supervisor desired-state
   (fork-after-warm, COW, fail-safe legacy Popen) + auto_scheduler internal-token (TRAP #120) +
   get_pid setproctitle; 8.2 health_check preflight (CONFIG→SCRIPT→HEARTBEAT→TOKEN→DATA→CONTRACT);
