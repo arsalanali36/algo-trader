@@ -711,6 +711,123 @@ def api_morning_brief():
         return jsonify({"ok": False, "error": str(e)})
 
 
+# ------------------- 💡 Idea Vault (quick strategy/idea clip gallery) ---------
+@app.route('/ideas')
+def idea_vault_page():
+    """Quick idea/strategy/bug video capture — drag-drop a clip, tag it, it
+    shows up instantly in a gallery. Display-only, zero order/Dhan path."""
+    return render_template("idea_vault.html")
+
+
+@app.route('/api/ideas')
+def api_ideas_list():
+    import idea_vault as iv
+    tag = request.args.get('tag') or None
+    q = request.args.get('q') or None
+    try:
+        return jsonify({"ok": True, "ideas": iv.list_ideas(tag=tag, q=q),
+                        "tags": list(iv.VALID_TAGS)})
+    except Exception as e:
+        print("[ideas] list fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e), "ideas": []})
+
+
+@app.route('/api/ideas/upload', methods=['POST'])
+def api_ideas_upload():
+    import idea_vault as iv
+    f = request.files.get('file')
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no file"}), 400
+    title = request.form.get('title', '')
+    note = request.form.get('note', '')
+    tag = request.form.get('tag', 'idea')
+    try:
+        entry = iv.add(f, title=title, note=note, tag=tag)
+        return jsonify({"ok": True, "idea": entry})
+    except Exception as e:
+        print("[ideas] upload fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route('/api/ideas/update', methods=['POST'])
+def api_ideas_update():
+    import idea_vault as iv
+    body = request.get_json(force=True) or {}
+    vid = body.get('id')
+    if not vid:
+        return jsonify({"ok": False, "error": "id required"}), 400
+    try:
+        item = iv.update(vid, body)
+        if not item:
+            return jsonify({"ok": False, "error": "not found"}), 404
+        return jsonify({"ok": True, "idea": item})
+    except Exception as e:
+        print("[ideas] update fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route('/api/ideas/delete', methods=['POST'])
+def api_ideas_delete():
+    import idea_vault as iv
+    body = request.get_json(force=True) or {}
+    vid = body.get('id')
+    if not vid:
+        return jsonify({"ok": False, "error": "id required"}), 400
+    try:
+        ok = iv.delete(vid)
+        return jsonify({"ok": ok})
+    except Exception as e:
+        print("[ideas] delete fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route('/idea-video/<vid>')
+def idea_video_stream(vid):
+    """HTTP Range streaming for an idea clip (ported from CODE7 stream_video)."""
+    import idea_vault as iv
+    path = iv.clip_path(vid)
+    if not path:
+        return Response('not found', status=404)
+
+    file_size = os.path.getsize(path)
+    mime = iv.video_mime(path)
+    range_header = request.headers.get('Range')
+
+    if range_header:
+        m = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if not m:
+            return Response(status=416)
+        start = int(m.group(1))
+        end = int(m.group(2)) if m.group(2) else file_size - 1
+        end = min(end, file_size - 1)
+        length = end - start + 1
+
+        def generate():
+            with open(path, 'rb') as fh:
+                fh.seek(start)
+                remaining = length
+                while remaining > 0:
+                    chunk = fh.read(min(512 * 1024, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+
+        resp = Response(generate(), status=206, mimetype=mime,
+                        direct_passthrough=True)
+        resp.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(length)
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+
+    resp = Response(open(path, 'rb').read(), status=200, mimetype=mime)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Content-Length'] = str(file_size)
+    resp.headers['Cache-Control'] = 'no-cache'
+    return resp
+
+
 # ------------------- 📋 Daily Report (one-scroll EOD report) -----------------
 @app.route('/report')
 def daily_report_page():

@@ -43,7 +43,8 @@
     { href: '/strategy-equity',label: '📈 Strategy Equity' },
     { href: '/mtm-charts',     label: '📈 MTM Analyzer' },
     { href: '/spec-builder',   label: '🧭 Spec Builder' },
-    { href: '/backtest-chart', label: '📊 Results' }
+    { href: '/backtest-chart', label: '📊 Results' },
+    { href: '/ideas',          label: '💡 Idea Vault' }
   ];
   var AVATAR = [
     { href: '/?tab=config', label: '⚙ Settings' },

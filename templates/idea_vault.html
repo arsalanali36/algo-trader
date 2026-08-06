@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea Vault</title>
+<style>
+  :root{
+    --bg:#0d1117;--card:#161b22;--card2:#1c2230;--bd:#30363d;--bd2:#21262d;
+    --tx:#e6edf3;--mut:#8b949e;--grn:#3fb950;--red:#f85149;--blu:#1f6feb;
+    --yel:#d29922;--pur:#a371f7;--mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;font-size:13px}
+  a{color:inherit;text-decoration:none}
+  .wrap{padding:14px;max-width:1500px;margin:0 auto}
+
+  .topbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+  .topbar h1{font-size:19px;font-weight:800;letter-spacing:.3px}
+  .topbar .sub{color:var(--mut);font-size:11.5px}
+  .spacer{margin-left:auto}
+  .hbtn{padding:6px 12px;background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-size:11.5px;font-weight:600;cursor:pointer}
+  .hbtn:hover{background:#30363d}
+  .hbtn.pri{background:var(--blu);border-color:var(--blu)}
+
+  .dropzone{border:1.5px dashed var(--bd);border-radius:12px;padding:22px;display:flex;align-items:center;justify-content:center;gap:14px;cursor:pointer;color:var(--mut);background:var(--card);transition:all .15s;margin-bottom:16px}
+  .dropzone:hover,.dropzone.drag{border-color:var(--blu);color:var(--blu);background:rgba(31,111,235,.06)}
+  .dropzone .big{font-size:26px}
+  .dz-txt b{color:var(--tx);font-size:13px;display:block}
+  .dz-txt span{font-size:11px;font-family:var(--mono)}
+
+  .gbar{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+  .gbar h2{font-size:15px;font-weight:700}
+  .count{font-size:11px;font-family:var(--mono);color:var(--mut);background:#21262d;padding:2px 8px;border-radius:10px}
+  .filters{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .chip{font-size:11px;font-family:var(--mono);padding:4px 10px;border-radius:14px;border:1px solid var(--bd);background:transparent;color:var(--mut);cursor:pointer}
+  .chip.on{background:#21262d;color:var(--tx)}
+  .chip.on.idea{color:var(--yel);border-color:rgba(210,153,34,.5);background:rgba(210,153,34,.1)}
+  .chip.on.strategy{color:var(--blu);border-color:rgba(31,111,235,.5);background:rgba(31,111,235,.1)}
+  .chip.on.bug{color:var(--red);border-color:rgba(248,81,73,.5);background:rgba(248,81,73,.1)}
+  .search{height:30px;background:var(--card);border:1px solid var(--bd);border-radius:6px;color:var(--tx);font-size:12px;padding:0 10px;width:180px;font-family:var(--mono)}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px}
+  .card{background:var(--card);border:1px solid var(--bd);border-radius:12px;overflow:hidden;transition:all .15s;position:relative}
+  .card:hover{border-color:#3d444d;transform:translateY(-2px)}
+  .thumb{position:relative;aspect-ratio:16/10;background:#0d1117;display:flex;align-items:center;justify-content:center;overflow:hidden;cursor:pointer}
+  .thumb video{width:100%;height:100%;object-fit:cover;background:#000}
+  .thumb .glyph{font-size:38px;opacity:.25}
+  .play{position:absolute;width:44px;height:44px;border-radius:50%;background:rgba(31,111,235,.9);display:flex;align-items:center;justify-content:center;color:#fff;font-size:15px;opacity:0;transition:opacity .15s;pointer-events:none}
+  .thumb:hover .play{opacity:1}
+  .tag{position:absolute;top:6px;left:6px;font-size:9px;font-family:var(--mono);font-weight:700;padding:2px 7px;border-radius:10px;letter-spacing:.5px}
+  .tag.idea{background:rgba(210,153,34,.92);color:#3a2600}
+  .tag.strategy{background:rgba(31,111,235,.92);color:#04122b}
+  .tag.bug{background:rgba(248,81,73,.92);color:#2b0404}
+  .cbody{padding:9px 11px 11px}
+  .ctitle{font-size:13px;font-weight:600;margin-bottom:4px;line-height:1.3;outline:none;border-radius:4px}
+  .ctitle:focus{background:#21262d;box-shadow:0 0 0 1px var(--blu)}
+  .cnote{font-size:11px;color:var(--mut);line-height:1.4;margin-bottom:8px;min-height:28px;outline:none;border-radius:4px;white-space:pre-wrap}
+  .cnote:focus{background:#21262d;box-shadow:0 0 0 1px var(--blu);color:var(--tx)}
+  .cnote:empty::before{content:'note…';opacity:.5}
+  .cmeta{display:flex;align-items:center;justify-content:space-between;font-size:10px;font-family:var(--mono);color:var(--mut)}
+  .cmeta .l{display:flex;gap:6px;align-items:center}
+  .tagsel{font-size:9px;font-family:var(--mono);background:#21262d;border:1px solid var(--bd);color:var(--mut);border-radius:6px;padding:1px 4px;cursor:pointer}
+  .del{color:var(--mut);cursor:pointer;opacity:.5;font-size:12px}
+  .del:hover{color:var(--red);opacity:1}
+  .card.up .thumb{background:var(--card2)}
+  .bar{position:absolute;bottom:0;left:0;height:3px;background:var(--blu);transition:width .2s}
+  .upl{font-size:11px;font-family:var(--mono);color:var(--blu)}
+  .day-label{font-size:11px;font-family:var(--mono);color:var(--mut);margin:20px 0 10px;text-transform:uppercase;letter-spacing:1px}
+  .empty{text-align:center;color:var(--mut);padding:50px 20px;font-family:var(--mono);font-size:12px}
+
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.85);display:none;align-items:center;justify-content:center;z-index:9999;padding:24px}
+  .modal.show{display:flex}
+  .modal video{max-width:92vw;max-height:88vh;border-radius:8px;background:#000}
+  .modal .x{position:absolute;top:16px;right:20px;font-size:26px;color:#fff;cursor:pointer;opacity:.7}
+  .modal .x:hover{opacity:1}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <h1>💡 Idea Vault</h1>
+    <div class="sub">screen recordings of ideas, strategies &amp; bugs — quick capture</div>
+    <div class="spacer"></div>
+    <button class="hbtn pri" onclick="document.getElementById('fileInput').click()">⬆ Upload clip</button>
+  </div>
+
+  <div class="dropzone" id="dropzone" onclick="document.getElementById('fileInput').click()">
+    <span class="big">⬆</span>
+    <div class="dz-txt">
+      <b>Drop a clip here — ya click karke upload karo</b>
+      <span>MP4 / MKV / WebM / MOV — turant card ban jayega</span>
+    </div>
+  </div>
+  <input type="file" id="fileInput" accept="video/*" multiple style="display:none">
+
+  <div class="gbar">
+    <h2>Clips</h2>
+    <span class="count" id="count">—</span>
+    <div class="filters">
+      <button class="chip on" data-tag="" onclick="IV.filter('')">All</button>
+      <button class="chip on idea" data-tag="idea" onclick="IV.filter('idea')">💡 Idea</button>
+      <button class="chip on strategy" data-tag="strategy" onclick="IV.filter('strategy')">📈 Strategy</button>
+      <button class="chip on bug" data-tag="bug" onclick="IV.filter('bug')">🐛 Bug</button>
+      <input class="search" id="search" placeholder="search notes…" oninput="IV.search(this.value)">
+    </div>
+  </div>
+
+  <div id="body"></div>
+</div>
+
+<div class="modal" id="playerModal" onclick="if(event.target===this)IV.closePlayer()">
+  <span class="x" onclick="IV.closePlayer()">✕</span>
+  <video id="modalVideo" controls></video>
+</div>
+
+<script>
+const IV = (function(){
+  let ALL = [], TAG = '', Q = '';
+  const TAGS = ['idea','strategy','bug'];
+  const esc = s => (s||'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  function dayLabel(ts){
+    const d = new Date(ts*1000), now = new Date();
+    const day = new Date(d.getFullYear(),d.getMonth(),d.getDate());
+    const today = new Date(now.getFullYear(),now.getMonth(),now.getDate());
+    const diff = Math.round((today-day)/86400000);
+    if(diff===0) return 'Today · '+d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+    if(diff===1) return 'Yesterday · '+d.toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+    return d.toLocaleDateString('en-IN',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+  }
+  function timeAgo(ts){
+    const s = Math.floor(Date.now()/1000 - ts);
+    if(s<90) return 'just now';
+    if(s<3600) return Math.floor(s/60)+' min ago';
+    if(s<86400) return Math.floor(s/3600)+' hr ago';
+    return new Date(ts*1000).toLocaleDateString('en-IN',{day:'numeric',month:'short'});
+  }
+  function fmtSize(b){ return b>1e6 ? (b/1e6).toFixed(1)+' MB' : Math.round(b/1e3)+' KB'; }
+
+  function view(){
+    let list = ALL.slice();
+    if(TAG) list = list.filter(i=>i.tag===TAG);
+    if(Q){ const q=Q.toLowerCase(); list = list.filter(i=>((i.title||'')+' '+(i.note||'')).toLowerCase().includes(q)); }
+    return list;
+  }
+
+  function cardHtml(i){
+    const tsel = TAGS.map(t=>`<option value="${t}" ${i.tag===t?'selected':''}>${t}</option>`).join('');
+    return `<div class="card" data-id="${i.id}">
+      <div class="thumb" onclick="IV.play('${i.id}')">
+        <span class="glyph">🎬</span>
+        <span class="tag ${i.tag}">${i.tag.toUpperCase()}</span>
+        <span class="play">▶</span>
+      </div>
+      <div class="cbody">
+        <div class="ctitle" contenteditable data-f="title" data-id="${i.id}"
+             onblur="IV.saveField(this)">${esc(i.title)}</div>
+        <div class="cnote" contenteditable data-f="note" data-id="${i.id}"
+             onblur="IV.saveField(this)">${esc(i.note)}</div>
+        <div class="cmeta">
+          <span class="l">
+            <select class="tagsel" onchange="IV.setTag('${i.id}',this.value)">${tsel}</select>
+            <span>${fmtSize(i.size)}</span>
+          </span>
+          <span class="l">
+            <span>${timeAgo(i.ctime)}</span>
+            <span class="del" title="Delete" onclick="IV.del('${i.id}')">🗑</span>
+          </span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function render(){
+    const list = view();
+    document.getElementById('count').textContent = list.length+' clip'+(list.length===1?'':'s');
+    const body = document.getElementById('body');
+    if(!list.length){
+      body.innerHTML = '<div class="empty">Koi clip nahi'+(TAG||Q?' (is filter me)':'')+'. Upar drop karo. ⬆</div>';
+      return;
+    }
+    // group by day
+    const groups = [];
+    let cur = null;
+    list.forEach(i=>{
+      const lbl = dayLabel(i.ctime);
+      if(!cur || cur.lbl!==lbl){ cur = {lbl, items:[]}; groups.push(cur); }
+      cur.items.push(i);
+    });
+    body.innerHTML = groups.map(g=>
+      `<div class="day-label">${g.lbl}</div><div class="grid">${g.items.map(cardHtml).join('')}</div>`
+    ).join('');
+  }
+
+  async function load(){
+    try{
+      const r = await fetch('/api/ideas');
+      const d = await r.json();
+      ALL = d.ideas || [];
+      render();
+    }catch(e){ document.getElementById('body').innerHTML='<div class="empty">Load fail: '+esc(''+e)+'</div>'; }
+  }
+
+  function filter(tag){
+    TAG = (TAG===tag) ? '' : tag;   // click active tag again = back to All
+    document.querySelectorAll('.chip').forEach(c=>{
+      const t=c.dataset.tag;
+      c.classList.toggle('on', TAG==='' ? true : t===TAG);
+    });
+    render();
+  }
+  function search(v){ Q=v.trim(); render(); }
+
+  let upTimer;
+  function upload(files){
+    [...files].forEach(f=>{
+      if(!f.type.startsWith('video/') && !/\.(mp4|mkv|webm|mov|m4v)$/i.test(f.name)){
+        alert('Not a video: '+f.name); return;
+      }
+      const tmpId = 'up_'+Math.random().toString(36).slice(2);
+      addUploadingCard(tmpId, f);
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('tag', TAG || 'idea');
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST','/api/ideas/upload');
+      xhr.upload.onprogress = e=>{
+        if(e.lengthComputable){
+          const pct = Math.round(e.loaded/e.total*100);
+          const bar = document.querySelector(`[data-tmp="${tmpId}"] .bar`);
+          const lbl = document.querySelector(`[data-tmp="${tmpId}"] .upl`);
+          if(bar) bar.style.width = pct+'%';
+          if(lbl) lbl.textContent = 'Uploading… '+pct+'%';
+        }
+      };
+      xhr.onload = ()=>{
+        try{
+          const d = JSON.parse(xhr.responseText);
+          if(d.ok){ ALL.unshift(d.idea); }
+          else alert('Upload fail: '+(d.error||''));
+        }catch(e){ alert('Upload error'); }
+        load();
+      };
+      xhr.onerror = ()=>{ alert('Upload network error'); load(); };
+      xhr.send(fd);
+    });
+  }
+  function addUploadingCard(tmpId, f){
+    const body = document.getElementById('body');
+    let grid = body.querySelector('.grid');
+    if(!grid){ render(); grid = body.querySelector('.grid'); }
+    if(!grid){ body.insertAdjacentHTML('afterbegin','<div class="day-label">Today</div><div class="grid"></div>'); grid=body.querySelector('.grid'); }
+    grid.insertAdjacentHTML('afterbegin',
+      `<div class="card up" data-tmp="${tmpId}">
+        <div class="thumb"><span class="upl">Uploading… 0%</span><div class="bar" style="width:0"></div></div>
+        <div class="cbody"><div class="ctitle">${esc(f.name)}</div>
+        <div class="cnote">upload ho raha hai…</div>
+        <div class="cmeta"><span>${fmtSize(f.size)}</span><span>now</span></div></div>
+      </div>`);
+  }
+
+  async function saveField(el){
+    const id=el.dataset.id, f=el.dataset.f, val=el.textContent;
+    const it=ALL.find(x=>x.id===id); if(it && it[f]===val) return;
+    if(it) it[f]=val;
+    await fetch('/api/ideas/update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id, [f]:val})});
+  }
+  async function setTag(id,tag){
+    const it=ALL.find(x=>x.id===id); if(it) it.tag=tag;
+    await fetch('/api/ideas/update',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id, tag})});
+    render();
+  }
+  async function del(id){
+    if(!confirm('Ye clip delete karein? File bhi hat jayegi.')) return;
+    await fetch('/api/ideas/delete',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({id})});
+    ALL = ALL.filter(x=>x.id!==id); render();
+  }
+
+  function play(id){
+    const v=document.getElementById('modalVideo');
+    v.src='/idea-video/'+id;
+    document.getElementById('playerModal').classList.add('show');
+    v.play().catch(()=>{});
+  }
+  function closePlayer(){
+    const v=document.getElementById('modalVideo');
+    v.pause(); v.src='';
+    document.getElementById('playerModal').classList.remove('show');
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>{
+    document.getElementById('fileInput').addEventListener('change', e=>{ upload(e.target.files); e.target.value=''; });
+    const dz=document.getElementById('dropzone');
+    ['dragenter','dragover'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.add('drag');}));
+    ['dragleave','drop'].forEach(ev=>dz.addEventListener(ev,e=>{e.preventDefault();dz.classList.remove('drag');}));
+    dz.addEventListener('drop', e=>{ if(e.dataTransfer.files.length) upload(e.dataTransfer.files); });
+    // page-wide drop too
+    window.addEventListener('dragover',e=>e.preventDefault());
+    window.addEventListener('drop',e=>{ e.preventDefault(); });
+    document.addEventListener('keydown',e=>{ if(e.key==='Escape') closePlayer(); });
+    load();
+  });
+
+  return { filter, search, saveField, setTag, del, play, closePlayer };
+})();
+</script>
+<script src="{{ url_for('static', filename='js/topnav.js') }}"></script>
+</body>
+</html>

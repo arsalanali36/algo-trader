@@ -37,6 +37,10 @@ data/broker_ledger_*.json
 # Runtime data — local/VPS only, code nahi (large, har run badalta)
 _TRADING_DATA/
 data/note_images/
+# Idea Vault — user-uploaded idea/strategy clips + their index (large video files,
+# per-user; algo-trader repo is PUBLIC so these must never be committed).
+data/idea_clips/
+data/idea_vault.json
 data/shared_ltp_cache.json
 data/backtest.db
 data/dhan_rate_limiter.db
