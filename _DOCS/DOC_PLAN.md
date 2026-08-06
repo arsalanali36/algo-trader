@@ -70,7 +70,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
   (fork-after-warm, COW, fail-safe legacy Popen) + auto_scheduler internal-token (TRAP #120) +
   get_pid setproctitle; 8.2 health_check preflight (CONFIG→SCRIPT→HEARTBEAT→TOKEN→DATA→CONTRACT);
   8.3 `trader_dashboard.py` route-map ~200 routes GROUP-wise (money-path flagged: sirf process-
-  control + orders&positions + webhook chhoote hain, baaki display Rule-10). Commit `<next>`.
+  control + orders&positions + webhook chhoote hain, baaki display Rule-10). Commit `4179cb7`.
 - **P1 ✅** — `ARCHITECTURE.md` §7 full expand: 7.1 do foundational baatein (account-wide
   Dhan limit + sec_id≠trad_sym identity), 7.2 read-path 4-layer fallback (dhan_rate_limiter →
   dhan_feed → ltp_poller → shared_ltp_cache; + shared_candle_cache; feed-vs-poller kab kaun),
