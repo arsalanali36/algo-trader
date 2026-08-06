@@ -1815,8 +1815,12 @@
     <div data-mtools="Filters"
       style="display:flex;align-items:center;gap:8px;flex-wrap:wrap; position:sticky; top:calc(52px + var(--alertH, 0px)); z-index:9997; background:#0d1117; margin:-16px -18px 14px -18px; padding:16px 18px 14px 18px; border-bottom:1px solid #21262d;">
       <span style="font-size:11px;color:#6e7681">Date</span>
+      <button class="btn btn-gray" title="Previous trade day" onclick="ordStepDate(-1)"
+        style="padding:4px 8px;font-size:12px;line-height:1">◀</button>
       <input type="date" id="ord-date" onchange="ordersRender(true); loadPeakGraph();"
         style="background:#161b22;color:#e6edf3;border:1px solid #30363d;border-radius:6px;padding:4px 8px;font-size:12px">
+      <button class="btn btn-gray" title="Next trade day" onclick="ordStepDate(1)"
+        style="padding:4px 8px;font-size:12px;line-height:1">▶</button>
       <span style="font-size:11px;color:#6e7681;margin-left:4px">Mode</span>
       <span id="ord-mode" class="ord-seg"
         style="display:inline-flex;border:1px solid #30363d;border-radius:6px;overflow:hidden;font-size:11px">

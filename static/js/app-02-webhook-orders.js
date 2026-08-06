@@ -534,6 +534,46 @@
       renderOrderTriggers();
     }
 
+    // ── Date arrows: jump only to days that actually have trades ──────────────
+    // The native date picker lands on empty days too. These ◀ ▶ jump to the
+    // nearest PREVIOUS / NEXT date that has completed-trade data (same mode/strat/
+    // broker filter as the current view), skipping blank days. Reuses the existing
+    // /api/daily-report/dates endpoint (Rule 6B — order_store.trades_for_range,
+    // exit-date bucketed) — no new backend. Dates cached per-filter for the session.
+    window._ordDatesCache = window._ordDatesCache || {};
+    function _ordDatesKey() {
+      return [_ordSegVal('ord-mode'),
+              (document.getElementById('ord-strat') || {}).value || '',
+              (document.getElementById('ord-broker') || {}).value || ''].join('|');
+    }
+    function _ordTradeDates(cb) {
+      const key = _ordDatesKey();
+      if (window._ordDatesCache[key]) { cb(window._ordDatesCache[key]); return; }
+      const q = new URLSearchParams();
+      const mode = _ordSegVal('ord-mode'); if (mode) q.set('mode', mode);
+      const strat = (document.getElementById('ord-strat') || {}).value; if (strat) q.set('strategy', strat);
+      const broker = (document.getElementById('ord-broker') || {}).value; if (broker) q.set('broker', broker);
+      fetch('/api/daily-report/dates?' + q.toString()).then(r => r.json()).then(j => {
+        const ds = (j && j.dates) || [];       // sorted ascending YYYY-MM-DD
+        window._ordDatesCache[key] = ds;
+        cb(ds);
+      }).catch(() => cb([]));
+    }
+    window.ordStepDate = function (dir) {   // dir = -1 prev, +1 next (trade days only)
+      const el = document.getElementById('ord-date'); if (!el || !el.value) return;
+      const cur = el.value;
+      _ordTradeDates(function (dates) {
+        if (!dates.length) { if (typeof toast === 'function') toast('No trade dates'); return; }
+        let target = null;
+        if (dir < 0) { for (let i = dates.length - 1; i >= 0; i--) { if (dates[i] < cur) { target = dates[i]; break; } } }
+        else { for (let i = 0; i < dates.length; i++) { if (dates[i] > cur) { target = dates[i]; break; } } }
+        if (!target) { if (typeof toast === 'function') toast(dir < 0 ? 'Oldest trade day' : 'Latest trade day'); return; }
+        el.value = target;
+        ordersRender(true);
+        if (typeof loadPeakGraph === 'function') loadPeakGraph();
+      });
+    };
+
     // ── 🎯 Price Triggers panel (Orders tab) ─────────────────────────────────
     // Armed price-triggers (Quick Order → Trigger tab) are otherwise only visible
     // inside the floating panel — easy to forget what you armed. Surface them here
