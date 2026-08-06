@@ -72,7 +72,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
   intervention/backtest_live_recon/param_stability/bs_shadow) · 10.3 display-pages Rule-10
   (curves/gex/backtest_lab/whatif/fii/brief/broker_ledger/backtest_calendar) · 10.4 data-lakes
   (option_chain_collector/fii_flow/chain_pcr/downloaders) · 10.5 order-adjacent (auto_straddle/roller/
-  triggers/carry/exit_rules/sm_runner — gateway se) · 10.6 config/sync/utility. Commit `<next>`.
+  triggers/carry/exit_rules/sm_runner — gateway se) · 10.6 config/sync/utility. Commit `61e639b`.
 - **P5 ✅** — naya `_DOCS/BACKTEST.md`: 3-pass pipeline (instrument→RMS→BS), run_hunt reference
   producer + build_* family, engine files (intraday_engine/option_structures/bs_option/charges/
   dom_*/ml_*/honest_sizing), runs/<slug>→Lab hub + Stats backtest wiring (backtest_calendar),
