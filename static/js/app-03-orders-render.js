@@ -7,10 +7,17 @@
     function _grpCollapsed() {
       try { return JSON.parse(localStorage.getItem('ord_grp_collapsed') || '{}'); } catch (_) { return {}; }
     }
-    function _grpOpenAttr(key) { return _grpCollapsed()[key] ? '' : 'open'; }
+    // Default = COLLAPSED (summary + margin line dikhta hai, "zabardasti khula" nahi).
+    // Jab tak user ne khud kholna/band karna na chuna ho — naya position-group bhi
+    // band hi khulta hai. Explicit choice yaad rehti hai: 0 = khud khola, 1 = khud band.
+    function _grpOpenAttr(key) {
+      const m = _grpCollapsed();
+      if (key in m) return m[key] ? '' : 'open';   // user ka apna faisla honor karo
+      return '';                                     // naya group → default band
+    }
     window._grpToggleSave = function (key, isOpen) {
       const m = _grpCollapsed();
-      if (isOpen) delete m[key]; else m[key] = 1;
+      m[key] = isOpen ? 0 : 1;                        // explicit: open=0 / collapsed=1
       try { localStorage.setItem('ord_grp_collapsed', JSON.stringify(m)); } catch (_) { }
     };
 
