@@ -1,3 +1,12 @@
+"""dhan_master.py — daily Dhan scrip-master download + option/equity contract resolver.
+
+Roz ka `api-scrip-master.csv` (28MB) download/cache karta hai aur usse har symbol ka
+sec_id / trad_sym / lot-size / expiry resolve karta hai — poore app ka single source for
+"is contract ka sec_id kya hai". Option resolver PE offset ko KHUD invert karta hai
+(positive offset = OTM/neeche) — isi liye PE pe negative offset kabhi mat do (TRAP #140,
+audit PE-OFFSET-SIGN guard). Open position ka contract hamesha order_store ke stored sec_id
+se lo — `get_sec_id_for_trad_sym()` sirf fresh/nearest-expiry quoting ke liye (TRAP #100/#166).
+"""
 import csv
 import logging
 import os
