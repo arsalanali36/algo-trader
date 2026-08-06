@@ -106,6 +106,15 @@
     var r = _rec(key);
     return r ? (r.id + ' · ' + r.name) : regLabel(key);
   }
+  // Strategy ka Lab/backtest run slug (hub `/lab/runs/<slug>/`). Resolve id+config_key
+  // +slug+aliases (regLabel jaisa), phir uski registry entry ka `slug`. Mila to string,
+  // warna null. Report-link banane ke liye (Today's Peak panel).
+  function regSlug(key) {
+    var r = _rec(key);
+    if (!r) return null;
+    var s = (REG.strategies || {})[r.id] || {};
+    return s.slug || null;
+  }
   // Registry ke _meta.hidden se: mare hue config, non-strategy block (`global`),
   // aur order_store me likha kachra (`''`, `unknown`) — list/picker se bahar.
   // Ye DELETE nahi hai aur P&L se exclude bhi NAHI — har row apni jagah hai.
@@ -130,6 +139,7 @@
   window.regLabel = regLabel;
   window.regId = regId;
   window.regFull = regFull;
+  window.regSlug = regSlug;
   window.regHidden = regHidden;
   window.regReady = regReady;
   window.regOnLoad = regOnLoad;

@@ -57,9 +57,39 @@
       if (mode === 'stopped') return `<span style="background:#30363d;color:#8b949e;${base}">Stopped</span>`;
       return '<span style="color:#6e7681;font-size:10px">—</span>';
     }
+    // Lab/backtest report slugs — jo strategies ka `/lab/runs/<slug>/` report ban\a hai.
+    // Ek baar fetch (runs/index.json), phir summary re-render (report button dikhane ko).
+    // `null` = abhi tak fetch nahi hui; `{}` = fetch ho gayi (empty ya fail).
+    window._peakRunSlugs = (window._peakRunSlugs === undefined) ? null : window._peakRunSlugs;
+    function _peakEnsureRuns() {
+      if (window._peakRunSlugs !== null) return;   // pehle se in-flight / ho chuki
+      window._peakRunSlugs = {};                   // in-flight marker (concurrent fetch rok)
+      fetch('/lab/runs/index.json', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(list => {
+          const set = {};
+          if (Array.isArray(list)) list.forEach(x => { if (x && x.slug) set[String(x.slug).toLowerCase()] = 1; });
+          window._peakRunSlugs = set;
+          if (window._peakSummaryRowsAll) renderStratSummaryTable(window._peakSummaryRowsAll);
+        })
+        .catch(() => { window._peakRunSlugs = {}; });
+    }
+    // Ek strategy row ka Lab-report link (📊 Report) — sirf tab jab registry me uska
+    // slug ho AUR uska run report maujood ho. isSource (MANUAL/WEBHOOK) rows pe kuch nahi.
+    function _peakReportBtn(r) {
+      if (r.isSource || typeof regSlug !== 'function') return '';
+      const slug = regSlug(r.key);
+      if (!slug) return '';
+      const runs = window._peakRunSlugs;
+      if (!runs || !runs[String(slug).toLowerCase()]) return '';
+      return `<a href="/lab/runs/${slug}/index.html" target="_blank" rel="noopener"`
+        + ` onclick="event.stopPropagation()" title="Is strategy ka Lab / backtest report kholo"`
+        + ` style="margin-left:7px;font-size:11px;text-decoration:none;color:#58a6ff;white-space:nowrap">📊 Report</a>`;
+    }
     function renderStratSummaryTable(rows) {
       const el = document.getElementById('peak-summary-body');
       if (!el) return;
+      _peakEnsureRuns();
       if (!rows || !rows.length) {
         el.innerHTML = '<div style="color:#6e7681;font-size:12px;padding:16px">Is din koi trade nahi</div>';
         return;
@@ -117,7 +147,7 @@
         h += `<tr style="${rowStyle}" onclick="peakPickStrat('${r.key}', ${r.isSource ? 'true' : 'false'})"
             onmouseover="if('${r.key}'!=='${sel}')this.style.background='#1c2230'" onmouseout="if('${r.key}'!=='${sel}')this.style.background=''"
             title="Click → is strategy ka MTM graph + Completed Trades filter">
-          <td style="padding:7px 8px">${codeHtml}<span style="color:#adbac7">${r.name}</span></td>
+          <td style="padding:7px 8px">${codeHtml}<span style="color:#adbac7">${r.name}</span>${_peakReportBtn(r)}</td>
           <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
           <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
           <td style="padding:7px 8px;text-align:right">${runCell(r.key)}</td>

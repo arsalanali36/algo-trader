@@ -269,6 +269,32 @@
       _ordRestoreMode();
       ordersRender();
     }
+    // Orders & P&L date ko ek din aage/peeche shift karo (Daily Report jaisa).
+    // UTC-only date-math — local parse + toISOString IST me ek din drift kar deta hai.
+    function _ordShiftDate(delta) {
+      const di = document.getElementById('ord-date');
+      if (!di) return;
+      const v = di.value || new Date().toISOString().slice(0, 10);
+      const p = v.split('-').map(Number);
+      if (p.length !== 3 || p.some(isNaN)) return;
+      const d = new Date(Date.UTC(p[0], p[1] - 1, p[2]));
+      d.setUTCDate(d.getUTCDate() + delta);
+      di.value = d.toISOString().slice(0, 10);
+      ordersRender();
+      if (typeof loadPeakGraph === 'function') loadPeakGraph();
+    }
+    // Left/Right arrow → date badlo, sirf jab Orders tab active ho. Typing (text input /
+    // textarea / contenteditable) aur SELECT ke arrow-nav ko chhedte nahi (date input pe
+    // arrow ka native segment-edit override karke step karte hain — Daily Report pattern).
+    document.addEventListener('keydown', function (e) {
+      if (typeof activeTab !== 'undefined' && activeTab !== 'orders') return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      const t = e.target || {};
+      if (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable) return;
+      if (t.tagName === 'INPUT' && t.type !== 'date') return;
+      e.preventDefault();
+      _ordShiftDate(e.key === 'ArrowLeft' ? -1 : 1);
+    });
     function ordSeg(segId, el) {
       document.querySelectorAll('#' + segId + ' span').forEach(s => { s.classList.remove('on'); s.style.color = '#8b949e'; });
       el.classList.add('on'); el.style.color = '#fff';
