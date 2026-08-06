@@ -292,6 +292,66 @@ read-only (Rule 10). Login-gate: sab band except `/login` `/logout` `/static/*` 
 
 ---
 
+## 9. Strategy layer — ek order ka poora lifecycle
+
+§2/§3 ne money-path GENERIC bataya; ye ek asli strategy ka concrete walk hai. Poora point:
+**strategy file sirf signal + ATR-stop/sizing likhti hai — baaki sab shared layer.**
+
+### 9.1 Do folder
+
+- **`strategies/signals/*.py`** = signal ki EKMATRA implementation (`orb.py`, `chain_zone.py`).
+  Backtest **aur** har live trader dono isko call karte → by-construction match (ADR-010,
+  TRAP #153). Live trader me signal ki inline copy KABHI nahi.
+- **`strategies/live/*.py`** = live trader LOOP (~20 files: `orb_trader`, `range_trader`,
+  `01_rsi_v1`, `04_chainzone_trader`, `vrp_*`, `straddle_trader`, `bnf_*`, …). Har ek: candle
+  fetch → signal (shared se) → ATR-stop/sizing → gate → execute → record → recovery. Ye
+  supervisor ke forked children ke roop me chalti hain (§8.1).
+
+### 9.2 Concrete walk — `orb_trader.py` (single-leg pilot, sabse saaf)
+
+```
+ main() loop (forked child, ~per-bar)
+   │  df = candle fetch (shared_candle_cache → Dhan intraday, §7.2)
+   ▼
+ compute_signal(df, cfg)
+   │  return orb.orb_signal_last(df, sig_params)   ← SHARED signal (strategies/signals/orb.py)
+   │  · wahi validated tod_orb jo backtest chalata (OR-boundary/ATR bit-identical)
+   │  · trader me sirf: kaun sa ATM CE/PE (LONG→CE, SHORT→PE), lots, ATR stop/target
+   ▼
+ gw.execute_signal(strategy_id, sym, "BUY", lots, lot_size, sec_id, trad_sym, ...)
+   │  = execution_gateway (§2): gate_entry (RMS fail-closed) → ₹0-skip → SL/target tags
+   │    → naked SELL pe hedge-first → smart_order.execute → order_store.record
+   ▼
+ position OPEN → order_store me row → RMS ab isko dekhta (Rule 6)
+   │
+   ├─ EXIT (signal ya ATR-stop): gw.execute_exit(strategy_id, sym, sec_id, trad_sym, qty, ...)
+   │       fresh strategy-aware flat-check + is_exit chase + extra_tags=[reason] (Rule 9)
+   └─ EXIT (SL/TP/EOD/RMS): pos_monitor_loop se (§3) — strategy ko nahi pata, isliye ⤵
+ restart-recovery: _recover_state_from_order_store() (startup + per-cycle re-validate)
+   │  order_store se today's open legs rebuild → in-memory _state seed (last_day=today, TRAP #76)
+   │  warna restart pe strategy "flat" maan ke duplicate/orphan (TRAP #28/#84/#119)
+```
+
+### 9.3 Naya strategy — 4 cheezein har baar (Rule 8, checklist se dohraana nahi)
+
+Full copy-paste-ready templates + har wo galti jo bite kar chuki:
+[`strategies/live/NEW_STRATEGY_CHECKLIST.md`](../strategies/live/NEW_STRATEGY_CHECKLIST.md).
+
+1. Order = `execution_gateway.execute_signal`/`execute_exit` (raw REST nahi) → rate-limit +
+   async-confirm + order_store auto.
+2. Entry se pehle `strategy_safety.gate_entry(...)` (ek call = gating + drawdown + liquidity +
+   concentration + capital-sizedown + funds); `ok=False` → skip, `qty` sized-down use karo.
+3. Naked SELL → `strategy_safety.compute_hedge_target(...)` → hedge BUY pehle.
+4. `order_store.record` (smart_order se auto) — warna RMS-blind.
+Plus: signal `strategies/signals/*` se (inline nahi); restart-recovery (`_recover_*` + last_day
+seed); positional/overnight → `risk_gate._ALWAYS_OVERNIGHT` (code-set, config nahi — TRAP #119).
+
+**Honest boundary (ADR-010):** sirf spot-candle-series signal literally share hota hai. VRP
+(IV-rank, live-premium vs lake), BankNifty (alag store), RSI/EMA (alag design), ARS_CHAIN
+(Pine 90.2% validated) — alag data-domain, inpe zabardasti "100% match" nahi.
+
+---
+
 ## Cross-reference
 - Per-module detail (auto): [`_DOCS/MODULES.md`](MODULES.md)
 - Decisions (kyun): [`_ADR/`](../_ADR/) — 001 gateway · 010 signal-single-source · 011 reconcile · 015 margin

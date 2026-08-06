@@ -46,7 +46,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 | **P1** | Data/broker plumbing | ARCHITECTURE.md §7 full — read-path 4-layer (rate_limiter→feed→poller→cache) + resolver layer + broker abstraction; `_data/*` + `brokers/*` docstrings verified (no gaps) | ✅ |
 | **P2** | Process model + dashboard | ARCHITECTURE.md §8 — control plane: start/stop→supervisor desired-state (fork-after-warm) + auto_scheduler internal-token + health_check preflight + `trader_dashboard.py` route-map (group-wise, money-path flagged) | ✅ |
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — load-order (script-src = code order) + shared/global (registry/notify/topnav) + app-00..15 ownership table + standalone pages + render pipeline + TRAP #125/#132 | ✅ |
-| **P4** | Strategy layer | ARCHITECTURE.md → ek strategy order kaise fire karti (entry→gate→execute→record→monitor→exit); `strategies/live/*` + `strategies/signals/*` (checklist already hai, link) | ☐ |
+| **P4** | Strategy layer | ARCHITECTURE.md §9 — signals/live folder split (ADR-010) + concrete `orb_trader` lifecycle walk (signal→gate→execute→record→monitor→exit→recovery) + 4-point Rule-8 + honest signal-share boundary | ✅ |
 | **P5** | Research/backtest | `_DOCS/BACKTEST.md` — `scratch/nifty_trend` key files (run_hunt · bs_option · intraday_engine · option_structures · charges · dom_*); RESULTS_SCHEMA/BS_OPTION_SIM link | ☐ |
 | **P6** | Ops/observability | ARCHITECTURE.md → `_ops/*` (52) grouped: reconcile · reports (eod_report/digest/signal_replay/daily_report) · display-pages (option_curves/gex_profile/backtest_lab/whatif) · data-lakes | ☐ |
 
@@ -54,17 +54,23 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P4 — Strategy layer. `ARCHITECTURE.md` me ek section: ek strategy order kaise fire
-> karti — entry→gate→execute→record→monitor→exit ka concrete walk (§2/§3 already generic hai;
-> yahan `strategies/live/*` + `strategies/signals/*` ki wiring: signal-single-source ADR-010, kaun
-> sa live trader kaun se signal fn ko call karta, ATR-stop/sizing sirf trader me). NEW_STRATEGY_
-> CHECKLIST already hai — link karo, dohraana nahi. `strategies/live/` + `strategies/signals/`
-> list karke, ek representative trader (jaise orb_trader → orb.orb_signal_last) ka flow trace karo.
+> **Next:** P5 — Research/backtest. Naya `_DOCS/BACKTEST.md` — `scratch/nifty_trend` ke key files:
+> run_hunt (3-pass producer) · bs_option (BS pricing+charges+σ+lot) · intraday_engine (signal
+> designs, `tod_orb` etc.) · option_structures (multi-leg) · charges (date-aware single source) ·
+> dom_* (real-slip from brother's DOM). Already-existing docs LINK karo (RESULTS_SCHEMA.md +
+> BS_OPTION_SIM.md = permanent contract), dohraana nahi — yahan sirf "kaun sa file kya + 3-pass
+> pipeline flow + runs/<slug>/ output → Lab hub". `ls scratch/nifty_trend/*.py` se key files
+> pehchaano; RESULTS_SCHEMA.md + BS_OPTION_SIM.md padho (contract), phir wiring likho.
 >
 > (Har piece done hone pe is section ko update karo + upar table me status badlo +
 > git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
 
 ### Done-log
+- **P4 ✅** — `ARCHITECTURE.md` §9 (strategy layer): 9.1 signals/live folder split (ADR-010 —
+  signal ki ekmatra impl `strategies/signals/*`, backtest+live dono call), 9.2 concrete
+  `orb_trader` lifecycle walk (candle→`orb.orb_signal_last` shared→execute_signal gate→record→
+  pos_monitor exit→`_recover_state_from_order_store`), 9.3 4-point Rule-8 (checklist link) +
+  positional `_ALWAYS_OVERNIGHT` + honest signal-share boundary. Commit `<next>`.
 - **P3 ✅** — naya `_DOCS/FRONTEND.md`: load-order (script-src = code order, TRAP #125 hoisting/
   DOMContentLoaded), shared/global (registry.js single-labeller TRAP #132, notify/topnav/env-badge/
   mobile-tools), app-00..15 ownership table (tab/concern per file), standalone pages, render
