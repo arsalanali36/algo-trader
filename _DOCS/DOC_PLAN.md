@@ -42,7 +42,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 | # | Area | Deliverable | Status |
 |---|------|-------------|--------|
 | **P0a** | Auto-doc machinery | `_TOOLS/gen_module_docs.py` + generated `_DOCS/MODULES.md` (131 modules) + pre-commit hook wired (auto-refresh) | ✅ |
-| **P0b** | Money-path wiring | `_DOCS/ARCHITECTURE.md` → `_core` order/execution flow (order_store · execution_gateway · smart_order · risk_gate · strategy_safety · webhook_executor · broker_sync · reconcile_broker · payoff · market_calendar) | ☐ |
+| **P0b** | Money-path wiring | `_DOCS/ARCHITECTURE.md` → process-model + order/execution flow + monitoring/exit + netting + reconcile + margin gate + data-flow (short) | ✅ |
 | **P1** | Data/broker plumbing | ARCHITECTURE.md data-flow section — `_data/*` (dhan_master · dhan_feed · ltp_poller · shared_ltp_cache · dhan_rate_limiter · kite_rate_limiter · shared_candle_cache · universe · fno_universe) + `brokers/*` | ☐ |
 | **P2** | Process model + dashboard | ARCHITECTURE.md → 3-process model (dashboard / monitor_daemon / supervisor-forked strategies) + `trader_dashboard.py` route-map + health_check + strategy_supervisor | ☐ |
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — `static/js/app-00..15` + registry.js: kaun si file kya owns, load-order, render pipeline, templates | ☐ |
@@ -54,12 +54,13 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P0b — `_DOCS/ARCHITECTURE.md` likho, money-path flow section:
-> signal → `strategy_safety.gate_entry` → `execution_gateway.execute_signal` →
-> `smart_order.execute` → `order_store.record` → `pos_monitor_loop` (SL/EOD) →
-> `broker_sync`/`reconcile_broker` (netting + broker mirror) → payoff/margin gate.
-> `_core/MODULES.md` ki summaries se utha ke wiring likho (docstrings me pieces hain,
-> unke BEECH ke taar ARCHITECTURE.md me).
+> **Next:** P1 — `ARCHITECTURE.md` ki section 7 (Data flow) ko EXPAND karo full section me:
+> `_data/*` (dhan_master · dhan_feed · ltp_poller · shared_ltp_cache · dhan_rate_limiter ·
+> kite_rate_limiter · shared_candle_cache · universe · fno_universe) + `brokers/*`
+> (base_broker · dhan_broker · kite_broker). Per-module detail MODULES.md me already hai —
+> yahan sirf "data kaise flow karta + rate-limit priority + feed-vs-poller kab kaun" wiring.
+> `_data` me jo bhi module-docstring missing ho (generator `--check`/`no module docstring`
+> se dikhega) wo bhar do.
 >
 > (Har piece done hone pe is section ko update karo + upar table me status badlo +
 > git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
@@ -68,4 +69,9 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 - **P0a ✅** — `_TOOLS/gen_module_docs.py` (ast se docstrings extract, BOM-tolerant,
   `--check` mode), generated `_DOCS/MODULES.md` (131 modules, 10 folders), pre-commit
   hook (`scripts/pre-commit-architecture-audit.sh`) me auto-refresh wired (staged `.py`
-  badle to MODULES.md regen + git add), `dhan_master.py` ka missing docstring bhara.
+  badle to MODULES.md regen + git add) + robust python-detect (Win Store-shim skip),
+  `dhan_master.py` ka missing docstring bhara. Commit `284bf87`.
+- **P0b ✅** — `_DOCS/ARCHITECTURE.md`: process-model (dashboard/monitor/supervisor/
+  optionchain/timers) · order money-path (signal→gate_entry→execute_signal→smart_order→
+  order_store) · monitoring/exit (pos_monitor_loop) · netting rules (`_net_rows`) ·
+  reconcile (ADR-011) · margin gate (ADR-015) · data-flow (short, P1 me expand).
