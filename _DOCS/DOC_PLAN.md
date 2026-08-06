@@ -44,7 +44,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 | **P0a** | Auto-doc machinery | `_TOOLS/gen_module_docs.py` + generated `_DOCS/MODULES.md` (131 modules) + pre-commit hook wired (auto-refresh) | ✅ |
 | **P0b** | Money-path wiring | `_DOCS/ARCHITECTURE.md` → process-model + order/execution flow + monitoring/exit + netting + reconcile + margin gate + data-flow (short) | ✅ |
 | **P1** | Data/broker plumbing | ARCHITECTURE.md §7 full — read-path 4-layer (rate_limiter→feed→poller→cache) + resolver layer + broker abstraction; `_data/*` + `brokers/*` docstrings verified (no gaps) | ✅ |
-| **P2** | Process model + dashboard | ARCHITECTURE.md → 3-process model (dashboard / monitor_daemon / supervisor-forked strategies) + `trader_dashboard.py` route-map + health_check + strategy_supervisor | ☐ |
+| **P2** | Process model + dashboard | ARCHITECTURE.md §8 — control plane: start/stop→supervisor desired-state (fork-after-warm) + auto_scheduler internal-token + health_check preflight + `trader_dashboard.py` route-map (group-wise, money-path flagged) | ✅ |
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — `static/js/app-00..15` + registry.js: kaun si file kya owns, load-order, render pipeline, templates | ☐ |
 | **P4** | Strategy layer | ARCHITECTURE.md → ek strategy order kaise fire karti (entry→gate→execute→record→monitor→exit); `strategies/live/*` + `strategies/signals/*` (checklist already hai, link) | ☐ |
 | **P5** | Research/backtest | `_DOCS/BACKTEST.md` — `scratch/nifty_trend` key files (run_hunt · bs_option · intraday_engine · option_structures · charges · dom_*); RESULTS_SCHEMA/BS_OPTION_SIM link | ☐ |
@@ -54,17 +54,23 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P2 — Process model + dashboard. `ARCHITECTURE.md` ki §1 (process model) ko
-> deepen karo + `trader_dashboard.py` ka route-map (kaun sa `/api/*` group kya karta) +
-> `health_check` + `_ops/strategy_supervisor` (fork-after-warm) ki wiring. Teen-process model
-> (dashboard / monitor_daemon / supervisor-forked strategies) — kaun kisse order_store/config/
-> disk-cache ke through baat karta hai. Route-map ke liye `trader_dashboard.py` me
-> `@app.route` grep karke group-wise summarize karo (per-route essay nahi — groups).
+> **Next:** P3 — Frontend map. Naya `_DOCS/FRONTEND.md` — `static/js/app-00..15` + `registry.js`:
+> kaun si file kya OWNS (render pipeline, tab), load-order (`<script src>` order = code order,
+> hoisting files ke beech nahi — DOMContentLoaded pe load-time calls, TRAP #125), templates
+> (`index.html` = markup only, JS static/js me). `static/js/` list karke + `index.html` ke
+> `<script src>` block se load-order nikaalo; har file ka top-comment/section-banner padh ke
+> ek-line role do (per-function essay nahi). Mobile layer (`mobile.css` + `app-15`) + `registry.js`
+> single-labeller (TRAP #132) note karo.
 >
 > (Har piece done hone pe is section ko update karo + upar table me status badlo +
 > git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
 
 ### Done-log
+- **P2 ✅** — `ARCHITECTURE.md` §8 (control plane): 8.1 start/stop → supervisor desired-state
+  (fork-after-warm, COW, fail-safe legacy Popen) + auto_scheduler internal-token (TRAP #120) +
+  get_pid setproctitle; 8.2 health_check preflight (CONFIG→SCRIPT→HEARTBEAT→TOKEN→DATA→CONTRACT);
+  8.3 `trader_dashboard.py` route-map ~200 routes GROUP-wise (money-path flagged: sirf process-
+  control + orders&positions + webhook chhoote hain, baaki display Rule-10). Commit `<next>`.
 - **P1 ✅** — `ARCHITECTURE.md` §7 full expand: 7.1 do foundational baatein (account-wide
   Dhan limit + sec_id≠trad_sym identity), 7.2 read-path 4-layer fallback (dhan_rate_limiter →
   dhan_feed → ltp_poller → shared_ltp_cache; + shared_candle_cache; feed-vs-poller kab kaun),

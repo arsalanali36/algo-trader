@@ -227,6 +227,71 @@ contract (order_store row banne se pehle) = rare cache-miss → direct REST (rat
 
 ---
 
+## 8. Control plane — dashboard / scheduler / supervisor / health
+
+§1 ne "kaun process" bataya; ye "kaun kise control karta" hai. Yaad rakho: process aapas me
+**shared memory se nahi, disk (order_store / config / flag-file) se** baat karte hain.
+
+### 8.1 Strategy start/stop — dashboard = single source
+
+```
+ auto_scheduler (monitor_daemon me, 9:10 start / 15:30 stop)
+   │  loopback + internal-token se dashboard ko HTTP call (TRAP #120 — login-gate ke
+   │  peeche apne hi caller lock ho gaye the; ab get_internal_token() + status-check + loud fail)
+   ▼
+ POST /api/start (dashboard)  ← strategy control ka EKMATRA entry
+   │  STRATEGIES dict = single source (id → script, mode). Config me active/mode persist.
+   │
+   ├─ supervisor_mode.flag maujood? →  data/supervisor_desired.json me {sid, mode, script} likho
+   │        ▼
+   │   algo-supervisor daemon reconcile karta (desired ⟷ running): warm-parent se os.fork()
+   │        · parent = pandas + 26MB scrip-cache EK BAAR (single-threaded; trader_dashboard KABHI
+   │          import nahi — fork+threads = deadlock trap)
+   │        · har child COW-shared par ALAG process (ek restart/kill → baaki safe; ~76% RAM kam)
+   │        · daily re-warm (naye din ki pehli fork se pehle scrip re-download — stale-expiry money-bug block)
+   │        · PARITY: crash pe auto-respawn NAHI (legacy Popen bhi nahi karta tha)
+   │
+   └─ flag nahi / daemon dead (pidfile check)? →  FAIL-SAFE legacy subprocess.Popen + loud log
+            ("supervisor mara to kal strategies start hi nahi hui" wala failure exist nahi karta)
+```
+
+- **`get_pid()`** (dashboard) child ko `supervisor_pids.json` + setproctitle (`code3b-strategy
+  --paper --id <sid>`) se pehchanta — psutil/pgrep dono match (idle `rsi_v1` ≠ live `rsi_v1_PAPER`,
+  single-token split-fix; real-money footgun tha).
+- **15:30 ke baad** sab `desired:stopped` → 0 children (normal); 9:10 pe re-fork.
+- **`monitor_daemon`** khud `trader_dashboard` ko **plain module import** karta (functions +
+  Flask `app` banata, port-bind sirf `__main__` me) → wahi loop-code zero-drift reuse.
+
+### 8.2 health_check — roz subah "order lagega ya nahi" preflight
+
+Read-only (koi order nahi). Per strategy chain verify: CONFIG (active?) → SCRIPT (compile?) →
+HEARTBEAT (log recent? TF-aware) → TOKEN (Dhan JWT valid + kab expire — sabse bada subah-killer)
+→ DATA (live LTP aata?) → CONTRACT (ATM resolve?). Webhook = dashboard-up check. `--json`
+(scheduler), `--fire-test` (PAPER, asli order-path → DB-land confirm → cleanup), `--report`
+(dashboard red-banner). systemd `algo-healthcheck.timer` Mon–Fri 09:20 IST. Exit 1 = koi active RED.
+
+### 8.3 `trader_dashboard.py` route-map (~200 routes — GROUP-wise, per-route essay nahi)
+
+| Group | Routes (sample) | Money-path? |
+|---|---|---|
+| **Auth** | `/login` `/logout` `/api/change-password` | — (gate; `/api/webhook/tv` + `/static/*` open) |
+| **Process control** | `/api/start` `/api/stop` `/api/status` `/api/config` GET/POST `/api/timer-*` | 🔴 start/stop = supervisor desired-state |
+| **Orders & positions** | `/api/orders*` `/api/manual-order` `/api/bulk-order` `/api/close-position[-group]` `/api/position-*` `/api/triggers` `/api/auto-straddle/*` `/api/chain/fire-basket` `/api/sync-positions` `/api/reconcile-*` | 🔴 real orders → execution_gateway/smart_order + reconcile-broker |
+| **RMS / risk** | `/api/risk-config` `/api/rms-*` `/api/kill-floor-status` `/api/per-instrument-lock-status` `/api/broker-balances` `/api/broker-ledger*` | ⚠️ config drives money-path (gates/caps) |
+| **Webhook** | `/api/webhook/tv` (TV→order) `/api/webhook/status` | 🔴 TV signal → webhook_executor |
+| **Broker/token** | `/api/token` `/api/kite-*` `/api/lot-sizes` | ⚠️ creds (JWT roz, Kite request_token) |
+| **Backtest/research** | `/api/backtest/*` `/api/pine/*` `/api/indicators/*` `/api/scanner/run` `/api/symbols/search` `/api/deploy-variation` `/lab/upload*` | — display/research (ADR-010; deploy-variation = paper, inactive) |
+| **Analytics/display data** | `/api/daily-report*` `/api/gex` `/api/option-*` `/api/whatif*` `/api/bs-shadow` `/api/stat-views` `/api/strategy-equity` `/api/intervention*` `/api/morning-brief` `/api/fii-flow` `/api/backtest/calendar-summary` | — read-only (Rule 10 — display-only) |
+| **LTP/chart data** | `/api/positions-ltp` `/api/ltp-stream` (SSE) `/api/option-ltp` `/api/trade-chart-data` `/api/peak-pnl-history` `/api/margin-history` | — reads (ltp_poller/feed via shared_ltp_cache) |
+| **Notify/ops** | `/api/notifications*` `/api/notify` `/api/health-report` `/api/downloader-alerts` `/api/log` `/api/rate-limit-events` | — |
+| **HTML pages** | `/` `/stats2` `/curves` `/gex` `/whatif[2]` `/backtest-lab` `/brief` `/report` `/registry[2]` `/intervention` `/trade-chart` `/strategy-study` `/lab` `/script3` `/sl-map` `/reports` `/presentations` `/fii-flow` `/strategy-equity` … | — templates |
+
+**Bulk = display.** Sirf **Process control + Orders&positions + Webhook** money-path chhoote hain;
+sab wahi shared gate se jaate (§2). RMS/token config-only (par money-path drive karte). Baaki
+read-only (Rule 10). Login-gate: sab band except `/login` `/logout` `/static/*` `/api/webhook/tv`.
+
+---
+
 ## Cross-reference
 - Per-module detail (auto): [`_DOCS/MODULES.md`](MODULES.md)
 - Decisions (kyun): [`_ADR/`](../_ADR/) — 001 gateway · 010 signal-single-source · 011 reconcile · 015 margin
