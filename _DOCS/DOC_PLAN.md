@@ -43,7 +43,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 |---|------|-------------|--------|
 | **P0a** | Auto-doc machinery | `_TOOLS/gen_module_docs.py` + generated `_DOCS/MODULES.md` (131 modules) + pre-commit hook wired (auto-refresh) | ✅ |
 | **P0b** | Money-path wiring | `_DOCS/ARCHITECTURE.md` → process-model + order/execution flow + monitoring/exit + netting + reconcile + margin gate + data-flow (short) | ✅ |
-| **P1** | Data/broker plumbing | ARCHITECTURE.md data-flow section — `_data/*` (dhan_master · dhan_feed · ltp_poller · shared_ltp_cache · dhan_rate_limiter · kite_rate_limiter · shared_candle_cache · universe · fno_universe) + `brokers/*` | ☐ |
+| **P1** | Data/broker plumbing | ARCHITECTURE.md §7 full — read-path 4-layer (rate_limiter→feed→poller→cache) + resolver layer + broker abstraction; `_data/*` + `brokers/*` docstrings verified (no gaps) | ✅ |
 | **P2** | Process model + dashboard | ARCHITECTURE.md → 3-process model (dashboard / monitor_daemon / supervisor-forked strategies) + `trader_dashboard.py` route-map + health_check + strategy_supervisor | ☐ |
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — `static/js/app-00..15` + registry.js: kaun si file kya owns, load-order, render pipeline, templates | ☐ |
 | **P4** | Strategy layer | ARCHITECTURE.md → ek strategy order kaise fire karti (entry→gate→execute→record→monitor→exit); `strategies/live/*` + `strategies/signals/*` (checklist already hai, link) | ☐ |
@@ -54,18 +54,23 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P1 — `ARCHITECTURE.md` ki section 7 (Data flow) ko EXPAND karo full section me:
-> `_data/*` (dhan_master · dhan_feed · ltp_poller · shared_ltp_cache · dhan_rate_limiter ·
-> kite_rate_limiter · shared_candle_cache · universe · fno_universe) + `brokers/*`
-> (base_broker · dhan_broker · kite_broker). Per-module detail MODULES.md me already hai —
-> yahan sirf "data kaise flow karta + rate-limit priority + feed-vs-poller kab kaun" wiring.
-> `_data` me jo bhi module-docstring missing ho (generator `--check`/`no module docstring`
-> se dikhega) wo bhar do.
+> **Next:** P2 — Process model + dashboard. `ARCHITECTURE.md` ki §1 (process model) ko
+> deepen karo + `trader_dashboard.py` ka route-map (kaun sa `/api/*` group kya karta) +
+> `health_check` + `_ops/strategy_supervisor` (fork-after-warm) ki wiring. Teen-process model
+> (dashboard / monitor_daemon / supervisor-forked strategies) — kaun kisse order_store/config/
+> disk-cache ke through baat karta hai. Route-map ke liye `trader_dashboard.py` me
+> `@app.route` grep karke group-wise summarize karo (per-route essay nahi — groups).
 >
 > (Har piece done hone pe is section ko update karo + upar table me status badlo +
 > git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
 
 ### Done-log
+- **P1 ✅** — `ARCHITECTURE.md` §7 full expand: 7.1 do foundational baatein (account-wide
+  Dhan limit + sec_id≠trad_sym identity), 7.2 read-path 4-layer fallback (dhan_rate_limiter →
+  dhan_feed → ltp_poller → shared_ltp_cache; + shared_candle_cache; feed-vs-poller kab kaun),
+  7.3 resolver layer (dhan_master/universe/fno_universe/opt_hist), 7.4 broker abstraction
+  (get_broker factory, Kite-orders/Dhan-data split, structured-field resolve, IPv4-force).
+  `_data/*` + `brokers/*` module-docstrings verify kiye — koi gap nahi (P0a ne bhar diye the).
 - **P0a ✅** — `_TOOLS/gen_module_docs.py` (ast se docstrings extract, BOM-tolerant,
   `--check` mode), generated `_DOCS/MODULES.md` (131 modules, 10 folders), pre-commit
   hook (`scripts/pre-commit-architecture-audit.sh`) me auto-refresh wired (staged `.py`

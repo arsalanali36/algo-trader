@@ -134,19 +134,96 @@ sum se zyada nahi); single-leg = uska margin. `_leg_capital`/`kite_basket_margin
 
 ---
 
-## 7. Data flow (short — poora P1 me)
+## 7. Data / broker plumbing (`_data/*` + `brokers/*`)
+
+Poore app ka price + contract-resolution + order plumbing yahin baithta hai. Per-module
+API [`MODULES.md`](MODULES.md) me hai — yahan **wiring**: data kaise flow karta, rate-limit
+priority, aur feed-vs-poller kab kaun.
+
+### 7.1 Do zaroori baatein pehle
+
+1. **Dhan limit ACCOUNT-WIDE hai (~1 req/s, burst pe DH-904), per-process nahi.** Har
+   process (dashboard, monitor, har forked strategy, webhook, collector) apna
+   `brokers.DhanBroker` banata hai — sab ek hi account quota pe. Isliye plumbing ka poora
+   design = "N process × M symbol" ko "~1 call per symbol per window" me collapse karna.
+2. **Contract identity = sec_id, trad_sym NAHI.** trad_sym unique nahi (month+year, expiry-din
+   nahi) → do open position ek string, do expiry pe. Har price/chart/payoff/margin OPEN
+   position ke liye order_store ke **stored sec_id** se; `dhan_master.get_sec_id_for_trad_sym`
+   sirf fresh/nearest-expiry quoting ke liye (TRAP #100/#166).
+
+### 7.2 Read path (price/candle) — 4 layer, upar se neeche fallback
 
 ```
- Dhan/Kite REST+WS
-   │  dhan_rate_limiter (sqlite token-bucket, priority: order>ltp>candle>account, 429 cooldown)
-   ├─ dhan_feed (WebSocket, best bid/ask/LTP/OI per sec_id; cross-process leader-election)
-   └─ ltp_poller (1 batched /marketfeed/ltp per cycle for ALL open + index spot)
-        ▼
-   shared_ltp_cache (file-backed, sec_id-keyed, short TTL — sab process ek cache share)
-        ▼
-   consumers: pos_monitor · smart_order marketable-price · dashboard LTP · strategy fetch
- dhan_master: roz scrip-master → sec_id/trad_sym/lot/expiry resolver (poore app ka)
+ Dhan REST + WebSocket
+   │
+ [1] dhan_rate_limiter  ── EVERY real Dhan call yahan se: acquire(priority) → slot → call → 429? note_429()
+   │      priority: order > ltp > candle > account
+   │      · "order" slot HAMESHA reserved — background candle/LTP kabhi order ko starve nahi karta
+   │      · per-endpoint sub-cap (ltp/candle alag rolling min-spacing — Dhan inhe alag 429 karta)
+   │      · 429 → 8s cooldown: non-order traffic band, orders phir bhi chalte (account recover kare)
+   │      · sqlite token-bucket (stdlib, Win+Linux same) — kite_rate_limiter = alag DB (alag quota)
+   │
+ [2] dhan_feed (WebSocket, Full packet)  →  in-memory LIVE dict: bid/ask/LTP/OI/volume per sec_id
+   │      · cross-process LEADER-ELECTION (sqlite): EK process feed owns, baaki chup wait
+   │        (warna 3 conn same account → 429 storm; TRAP #87/#89). range_trader + dashboard callers.
+   │      · fastest, zero-REST — jo sec_id subscribed hai uska LTP yahin milta
+   │
+ [3] ltp_poller (monitor_daemon me ek daemon thread)
+   │      · har cycle 1 BATCHED /marketfeed/ltp call = SAARE open-position sec_id + NIFTY/BNF spot
+   │        (Dhan 1000 instr/call leta hai — N alag call → 1 call)
+   │      · request_watch(sec_id) = dynamic warm-list (90s TTL) — dashboard routes "isko warm rakho" bolte
+   │      · result → shared_ltp_cache.put_many()
+   │
+ [4] shared_ltp_cache (file-backed JSON, sec_id-keyed, short TTL)
+   │      · SAB process ek file share karte — jisne fetch kiya wo sabko de deta
+   │      · get_index(sym, max_age=) = NIFTY/BNF spot cache-only (poller-warmed, ZERO extra call)
+   │      · last-writer-wins (koi distributed lock nahi — price cache ke liye theek)
+   ▼
+ consumers (sab cache-FIRST, miss pe REST fallback):
+   pos_monitor_loop · smart_order.marketable_price · dashboard LTP routes · strategy fetch
 ```
+
+**shared_candle_cache** = wahi pattern candles ke liye (`/v2/charts/intraday`): same symbol+interval
+TTL ke andar dobara maanga → cached DataFrame. **Bar-boundary-aware** — current bar khulne ke
+baad ka fetch saare closed bars deta = lossless reuse (range_trader + rsi_trader same underlying
+pe duplicate fetch band; TRAP #2/#95).
+
+**Feed vs poller — kab kaun:** feed (2) sabse fast par sirf subscribed + leader-process ko; poller
+(3) har open position ka steady-state LTP, ek batched call me, sabke liye. Consumer hamesha
+`shared_ltp_cache` (4) pehle padhta — usme feed aur poller dono likhte hain. Naye entry ka option
+contract (order_store row banne se pehle) = rare cache-miss → direct REST (rate-limited) one-off.
+
+### 7.3 Resolver layer — sec_id / trad_sym / lot / expiry
+
+- **`dhan_master`** = poore app ka single source ("is contract ka sec_id/lot/expiry kya"). Roz
+  28MB `api-scrip-master.csv` download/cache; usse har resolve. **Option resolver PE offset ko
+  KHUD invert karta** (positive = OTM/neeche) → PE pe negative offset KABHI nahi (TRAP #140, audit
+  PE-OFFSET-SIGN guard). Monthly-expiry ke liye `get_monthly_option_contract` (positional/overnight).
+- **`universe`** = NIFTY-50 constituents + equity/index/option routing (`equity_secid`,
+  `index_spot_secid`, ATM resolvers `dhan_master` se reuse).
+- **`fno_universe`** = ~200 F&O stock universe (SEBI F&O-eligible = objective liquid set),
+  scrip-master ke FUTSTK rows se derive → `data/fno_universe.json` (downloader/scanner/backtest sab isse padhte).
+- **`opt_hist`** = expired-options historical premium (Dhan paid `rollingoption` add-on) — held-strike
+  reconstruction; backtest lakes + what-if isse.
+
+### 7.4 Broker abstraction (`brokers/*`)
+
+```
+ get_broker("kite" | "dhan")   ← factory (__init__.py), creds data/config.json se
+   └─ BaseBroker (abstract): place_order · quote · funds · positions · intraday_candles
+        · order_status · get_fill · cancel_order · resolve_symbol · positions_detailed
+```
+
+- Engine kabhi broker SDK se seedha baat nahi karta — sab `BaseBroker` conventions pe
+  (seg/instrument/side/order_type + normalized quote/order-result dicts).
+- **Config-driven active broker** (`nifty_config.json → "broker"`). Aaj **orders = Kite**
+  (`default_broker=kite`), **data = Dhan hamesha** (Kite pe market-data add-on nahi — `kite.ltp`
+  → Insufficient permission; KiteBroker ka quote/candles Dhan ko delegate karte, by design).
+- **Kite symbol resolve** = structured-field match (`resolve_kite_symbol`/`resolve_symbol` —
+  `kite.instruments("NFO")` se exact), formatted string parse NAHI (TRAP #13/#79). Reverse
+  (`resolve_dhan_from_kite_symbol`) auto-adopt ke liye.
+- **IPv4-force dono pe zaroori** (VPS IPv6 outbound → Dhan DH-905 / Kite PermissionException chahe
+  IP whitelisted ho; Critical Rule 1).
 
 ---
 
