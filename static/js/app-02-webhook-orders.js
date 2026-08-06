@@ -491,6 +491,10 @@
       const n = new Date(Date.now() + 5.5 * 3600 * 1000);
       return n.toISOString().slice(0, 10);
     }
+    function _ordLoading(on) {
+      const el = document.getElementById('ord-loading');
+      if (el) el.style.display = on ? 'inline-flex' : 'none';
+    }
     async function ordersRender(useCache) {
       const date = (document.getElementById('ord-date') || {}).value;
       if (!date) return;
@@ -504,7 +508,9 @@
       if (useCache && isPast && window._ordCache[ck]) {
         d = window._ordCache[ck];   // immutable past date — instant, no round-trip
       } else {
-        try { const r = await fetch('/api/orders?' + ck); d = await r.json(); } catch (e) { return; }
+        _ordLoading(true);          // fresh fetch → show the loading indicator
+        try { const r = await fetch('/api/orders?' + ck); d = await r.json(); }
+        catch (e) { _ordLoading(false); return; }
         if (isPast) window._ordCache[ck] = d;   // refresh cache on every fresh fetch
       }
       // per-strategy REAL hedged basket margin (backend: risk_gate._group_capital)
@@ -532,6 +538,7 @@
       window._lastOrdersData = d;
       renderCachedOrders();
       renderOrderTriggers();
+      _ordLoading(false);
     }
 
     // ── Date arrows: jump only to days that actually have trades ──────────────

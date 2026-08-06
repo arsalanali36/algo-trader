@@ -1844,6 +1844,11 @@
         <option value="">All Exit Reasons</option>
       </select>
       <button class="btn btn-gray" style="padding:4px 11px;font-size:12px" onclick="ordersRender()">↻ Refresh</button>
+      <style>@keyframes ordspin{to{transform:rotate(360deg)}}</style>
+      <span id="ord-loading" style="display:none;align-items:center;gap:6px;font-size:11px;color:#d29922;font-weight:600;white-space:nowrap">
+        <span style="width:12px;height:12px;border:2px solid #d2992240;border-top-color:#d29922;border-radius:50%;display:inline-block;animation:ordspin .7s linear infinite"></span>
+        Loading…
+      </span>
       <button class="btn btn-blue" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="openBulkModal()">📝
         Bulk Order</button>
     </div>
