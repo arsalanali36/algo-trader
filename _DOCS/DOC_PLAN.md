@@ -70,7 +70,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
   signal ki ekmatra impl `strategies/signals/*`, backtest+live dono call), 9.2 concrete
   `orb_trader` lifecycle walk (candle→`orb.orb_signal_last` shared→execute_signal gate→record→
   pos_monitor exit→`_recover_state_from_order_store`), 9.3 4-point Rule-8 (checklist link) +
-  positional `_ALWAYS_OVERNIGHT` + honest signal-share boundary. Commit `<next>`.
+  positional `_ALWAYS_OVERNIGHT` + honest signal-share boundary. Commit `ed8032d`.
 - **P3 ✅** — naya `_DOCS/FRONTEND.md`: load-order (script-src = code order, TRAP #125 hoisting/
   DOMContentLoaded), shared/global (registry.js single-labeller TRAP #132, notify/topnav/env-badge/
   mobile-tools), app-00..15 ownership table (tab/concern per file), standalone pages, render
