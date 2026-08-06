@@ -71,7 +71,7 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
   producer + build_* family, engine files (intraday_engine/option_structures/bs_option/charges/
   dom_*/ml_*/honest_sizing), runs/<slug>→Lab hub + Stats backtest wiring (backtest_calendar),
   deploy gate (Sharpe≥1 + p<0.05 + min(train,oos)) + Rule 10; RESULTS_SCHEMA/BS_OPTION_SIM linked.
-  Commit `<next>`.
+  Commit `f06c9e1`.
 - **P4 ✅** — `ARCHITECTURE.md` §9 (strategy layer): 9.1 signals/live folder split (ADR-010 —
   signal ki ekmatra impl `strategies/signals/*`, backtest+live dono call), 9.2 concrete
   `orb_trader` lifecycle walk (candle→`orb.orb_signal_last` shared→execute_signal gate→record→
