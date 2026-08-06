@@ -47,25 +47,31 @@ Status: ☐ = pending · 🚧 = in-progress · ✅ = done
 | **P2** | Process model + dashboard | ARCHITECTURE.md §8 — control plane: start/stop→supervisor desired-state (fork-after-warm) + auto_scheduler internal-token + health_check preflight + `trader_dashboard.py` route-map (group-wise, money-path flagged) | ✅ |
 | **P3** | Frontend map | `_DOCS/FRONTEND.md` — load-order (script-src = code order) + shared/global (registry/notify/topnav) + app-00..15 ownership table + standalone pages + render pipeline + TRAP #125/#132 | ✅ |
 | **P4** | Strategy layer | ARCHITECTURE.md §9 — signals/live folder split (ADR-010) + concrete `orb_trader` lifecycle walk (signal→gate→execute→record→monitor→exit→recovery) + 4-point Rule-8 + honest signal-share boundary | ✅ |
-| **P5** | Research/backtest | `_DOCS/BACKTEST.md` — `scratch/nifty_trend` key files (run_hunt · bs_option · intraday_engine · option_structures · charges · dom_*); RESULTS_SCHEMA/BS_OPTION_SIM link | ☐ |
+| **P5** | Research/backtest | `_DOCS/BACKTEST.md` — 3-pass pipeline + run_hunt reference producer + build_* family + engine files (bs_option/intraday_engine/option_structures/charges/dom_*/honest_sizing) + runs/<slug>→Lab wiring + deploy gate; RESULTS_SCHEMA/BS_OPTION_SIM linked | ✅ |
 | **P6** | Ops/observability | ARCHITECTURE.md → `_ops/*` (52) grouped: reconcile · reports (eod_report/digest/signal_replay/daily_report) · display-pages (option_curves/gex_profile/backtest_lab/whatif) · data-lakes | ☐ |
 
 ---
 
 ## RESUME HERE (last session ne yahan chhoda)
 
-> **Next:** P5 — Research/backtest. Naya `_DOCS/BACKTEST.md` — `scratch/nifty_trend` ke key files:
-> run_hunt (3-pass producer) · bs_option (BS pricing+charges+σ+lot) · intraday_engine (signal
-> designs, `tod_orb` etc.) · option_structures (multi-leg) · charges (date-aware single source) ·
-> dom_* (real-slip from brother's DOM). Already-existing docs LINK karo (RESULTS_SCHEMA.md +
-> BS_OPTION_SIM.md = permanent contract), dohraana nahi — yahan sirf "kaun sa file kya + 3-pass
-> pipeline flow + runs/<slug>/ output → Lab hub". `ls scratch/nifty_trend/*.py` se key files
-> pehchaano; RESULTS_SCHEMA.md + BS_OPTION_SIM.md padho (contract), phir wiring likho.
+> **Next:** P6 (LAST) — Ops/observability. `ARCHITECTURE.md` me ek section: `_ops/*` (~52 files)
+> grouped — reconcile (reconcile_broker/reconcile_csv) · reports (eod_report/eod_digest/
+> signal_replay/daily_report/intervention) · display-pages (option_curves/gex_profile/backtest_lab/
+> opt_whatif/fii_flow_view/morning_brief) · data-lakes (option_chain_collector/fii_flow/chain_pcr/
+> auto_data_downloader/download_equity_history) · misc (sm_runner/atm_straddle_roller/price_triggers/
+> position_carry/broker_ledger/backtest_calendar/stat_views). `ls _ops/*.py` se list, MODULES.md
+> se docstrings, GROUP-wise ek-ek line (per-file essay nahi). Ye aakhri piece — P6 ke baad DOC_PLAN
+> ki table poori ✅, memory pointer "docs complete".
 >
 > (Har piece done hone pe is section ko update karo + upar table me status badlo +
 > git commit karo. Taaki agli session sirf yahan padh ke continue kar le.)
 
 ### Done-log
+- **P5 ✅** — naya `_DOCS/BACKTEST.md`: 3-pass pipeline (instrument→RMS→BS), run_hunt reference
+  producer + build_* family, engine files (intraday_engine/option_structures/bs_option/charges/
+  dom_*/ml_*/honest_sizing), runs/<slug>→Lab hub + Stats backtest wiring (backtest_calendar),
+  deploy gate (Sharpe≥1 + p<0.05 + min(train,oos)) + Rule 10; RESULTS_SCHEMA/BS_OPTION_SIM linked.
+  Commit `<next>`.
 - **P4 ✅** — `ARCHITECTURE.md` §9 (strategy layer): 9.1 signals/live folder split (ADR-010 —
   signal ki ekmatra impl `strategies/signals/*`, backtest+live dono call), 9.2 concrete
   `orb_trader` lifecycle walk (candle→`orb.orb_signal_last` shared→execute_signal gate→record→
