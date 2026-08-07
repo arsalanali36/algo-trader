@@ -135,6 +135,35 @@ def _f(v):
         return None
 
 
+def _close_feed(feed):
+    """Release a DhanFeed's WebSocket + asyncio transport before dropping it.
+
+    MEMORY-LEAK FIX (2026-08-07): the loop below creates a BRAND-NEW DhanFeed
+    on every reconnect (429 storm + every runtime `add()` that flips
+    `_pending_resub`) and used to just reassign `_feed` away — the dead
+    websocket's socket/receive-buffers stayed pinned by this thread's
+    persistent event loop and were never GC'd, growing RSS ~900MB over a
+    trading day until the VPS swap-thrashed. Worse, dhanhq==2.0.2's own
+    `disconnect()` only SENDS a RequestCode-12 message and never calls
+    `ws.close()`, so we must close the socket ourselves.
+    """
+    if feed is None:
+        return
+    # (1) tell the server we're going away (best-effort; harmless if already dead)
+    try:
+        feed.close_connection()   # sync wrapper → loop.run_until_complete(disconnect())
+    except Exception:
+        pass
+    # (2) actually close the underlying websocket — dhanhq's disconnect() doesn't
+    try:
+        ws = getattr(feed, "ws", None)
+        loop = getattr(feed, "loop", None)
+        if ws is not None and loop is not None and not loop.is_closed():
+            loop.run_until_complete(ws.close())
+    except Exception:
+        pass
+
+
 def _run_loop():
     """Background thread: one persistent connection; reconnect on drop/error.
 
@@ -173,6 +202,8 @@ def _run_loop():
                 time.sleep(_NOT_OWNER_RETRY)
                 continue
 
+            _close_feed(_feed)   # release the previous feed's socket before reconnecting (leak fix)
+            _feed = None
             _feed = DhanFeed(_creds["client_id"], _creds["jwt_token"], instruments, version="v2")
             _feed.run_forever()  # connect + subscribe (one-shot)
             _pending_resub = False
@@ -201,6 +232,8 @@ def _run_loop():
                             "ts":      time.time(),
                         }
         except Exception as e:
+            _close_feed(_feed)   # release the failed feed's socket before backing off (leak fix)
+            _feed = None
             import logging
             logging.getLogger("dhan_feed").warning(f"[dhan_feed] loop error, reconnecting in {_backoff}s: {e}")
             time.sleep(_backoff)
