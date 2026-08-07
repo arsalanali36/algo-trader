@@ -127,7 +127,8 @@
       <div style="display:flex;align-items:center;margin-bottom:6px"><span style="font-size:10px;color:var(--mut);text-transform:uppercase"><span id="lc"></span></span><span style="flex:1"></span><button class="aebtn" id="ae">＋ Add / Edit</button></div>
       <div style="display:grid;grid-template-columns:20px 30px 1.15fr 36px 52px 52px 18px;gap:4px;font-size:8px;color:var(--mut);text-transform:uppercase;padding:0 2px 3px"><span></span><span>B/S</span><span>Strike</span><span>Typ</span><span>Qty</span><span style="text-align:right">₹</span><span></span></div>
       <div id="legs"></div>
-      <div id="net" style="margin-top:6px;font-size:11px;color:var(--mut)"></div>
+      <div id="struct" style="margin-top:6px;font-size:11px"></div>
+      <div id="net" style="margin-top:5px;font-size:11px;color:var(--mut)"></div>
       <div class="sfhw" id="sfhw">
         <span class="sfhw-g" id="sfhw-shift" title="Poori strategy roll — saare legs ±1 strike"><label>Shift</label><button class="stpb" id="shDn">−</button><b id="shVal">0</b><button class="stpb" id="shUp">＋</button></span>
         <span class="sfhw-g" id="sfhw-width" title="Spread chaura/patla — legs center se door/paas (straddle→strangle)"><label>Width</label><button class="stpb" id="wdDn">−</button><b id="wdVal">-</b><button class="stpb" id="wdUp">＋</button></span>
@@ -341,12 +342,39 @@ $('shDn').onclick=()=>doShift(-1); $('shUp').onclick=()=>doShift(1);
 $('wdDn').onclick=()=>doWidth(-1); $('wdUp').onclick=()=>doWidth(1);
 $('hgDn').onclick=()=>doHedge(-1); $('hgUp').onclick=()=>doHedge(1);
 
+// ---------- structure classifier (Credit/Debit + name + SL) ----------
+function structInfo(A, netCredit){
+  const n=A.length; if(!n) return null;
+  const ces=A.filter(l=>l.type==='CE'), pes=A.filter(l=>l.type==='PE');
+  const sells=A.filter(l=>l.side==='SELL'), buys=A.filter(l=>l.side==='BUY');
+  const isCredit = netCredit>=0, cd = isCredit?'Credit':'Debit';
+  let name, width=null;
+  if(n===1){
+    const l=A[0];
+    name = (l.side==='SELL' ? 'Naked '+l.type+' Sell' : 'Long '+l.type);
+  } else if(n===2 && ces.length===2 && sells.length===1){
+    name = cd+' Spread ('+(isCredit?'Bear Call':'Bull Call')+')'; width=Math.abs(ces[0].strike-ces[1].strike);
+  } else if(n===2 && pes.length===2 && sells.length===1){
+    name = cd+' Spread ('+(isCredit?'Bull Put':'Bear Put')+')'; width=Math.abs(pes[0].strike-pes[1].strike);
+  } else if(n===2 && ces.length===1 && pes.length===1){
+    const same = ces[0].strike===pes[0].strike;
+    if(sells.length===2) name=(same?'Short Straddle':'Short Strangle');
+    else if(buys.length===2) name=(same?'Long Straddle':'Long Strangle');
+    else name=cd+' structure (synthetic)';
+  } else if(n===4){
+    name = (isCredit?'Iron Condor / Fly':'Reverse Iron')+' ('+cd+')';
+  } else {
+    name = cd+' Structure ('+n+' legs)';
+  }
+  return {name, cd, isCredit, width};
+}
+
 // ---------- payoff + KPI ----------
 let _pfT=null,_mgLoading=false;
 function schedulePayoff(){clearTimeout(_pfT);_pfT=setTimeout(loadPayoff,420);}   // margin est comes WITH payoff (local, instant)
 async function loadPayoff(){
   const A=collectActive();
-  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';_pfLast=null;$('pfsliders').style.display='none';return;}
+  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';$('struct').innerHTML='';_pfLast=null;$('pfsliders').style.display='none';return;}
   const myseq=++_pfSeq;
   const body={underlying:INST,date:$('date').value,entry:$('et').value,exit_date:$('xd').value||$('date').value,exit:$('xt').value,expiry:$('exp').value||'',mult:mult,legs:A};
   // show a loading hint only if it's actually slow (>350ms) — no flash on cached/fast loads
@@ -367,6 +395,22 @@ async function loadPayoff(){
   $('pop').textContent=r.pop!=null?Math.round(r.pop*100)+'%':'—';
   $('tv').textContent=sgn(r.time_value);$('iv2').textContent='₹'+inr(r.intrinsic);
   if(!_mgLoading)$('mg').innerHTML=(r.margin_est!=null)?('<span title="Hedged (defined-risk) margin ≈ max loss — exchange spread pe itna hi block karta hai. Ye instant LOCAL estimate hai; asli broker SPAN + naked(standalone) ke liye 💰 button dabao. NOTE: Sensibull ka Standalone/naked number isse ZYADA hota hai — wo bina-hedge ka margin hai, alag cheez.">~₹'+inr(r.margin_est)+' <span style="color:var(--dim);font-size:9px">est ⓘ</span></span>'):'—';   // LOCAL estimate ≈ max loss (defined-risk), instant
+  // structure badge + built-in SL
+  const si=structInfo(A, r.net_credit);
+  if(si){
+    const col=si.isCredit?'var(--green)':'var(--amber)';
+    const bg=si.isCredit?'rgba(63,185,80,.12)':'rgba(210,153,34,.12)';
+    let sl;
+    if(naked){
+      sl='<span style="color:var(--red)">SL: undefined — naked leg, risk unlimited</span>';
+    } else {
+      // points from strikes+P&L (structure-intrinsic, lot/mult independent)
+      const denom=Math.abs(mx)+Math.abs(mn);
+      const pts=(si.width && denom>0) ? (si.width*Math.abs(mn)/denom) : null;
+      sl='<span style="color:var(--red)">Built-in SL '+sgn(mn)+(pts!=null?' <span style="color:var(--mut)">('+pts.toFixed(1)+' pt)</span>':'')+'</span> <span style="color:var(--dim);font-size:9px">— hedged, max loss se aage nahi (alag SL ki zaroorat nahi)</span>';
+    }
+    $('struct').innerHTML='<span style="border:1px solid '+col+';color:'+col+';background:'+bg+';border-radius:5px;padding:1px 7px;font-weight:800">'+(si.isCredit?'📥 ':'📤 ')+si.name+'</span> &nbsp; '+sl;
+  } else $('struct').innerHTML='';
   $('net').innerHTML='Net entry: <b style="color:'+(r.net_credit>=0?'var(--green)':'var(--amber)')+'">'+(r.net_credit>=0?'credit':'debit')+' ₹'+inr(r.net_credit)+'</b>'+(r.tte_days!=null?' · '+r.tte_days+'d to expiry':'');
   $('be').textContent=(r.breakevens&&r.breakevens.length)?('BE '+r.breakevens.join(' · ')):'';
   // per-leg entry premium (₹) into the leg-table rows
