@@ -110,6 +110,7 @@ payoff.py — multi-leg option position payoff / zone analytics.
 - 🔧 `prob_of_profit` — P(spot at expiry lands in a profit zone), lognormal terminal distribution.
 - 🔧 `profit_zones` — Contiguous [a, b] spot intervals where P&L > 0. Handles ANY structure
 - 🔧 `structure_tax` — Total Zerodha round-trip transaction cost (brokerage+STT+txn+SEBI+stamp+GST) to
+- 🔧 `structure_tax_breakdown` — Same round-trip cost as structure_tax() but itemised (brokerage/STT/exch/GST/
 - 🔧 `tte_years` — Years to expiry (expiry 15:30 IST). <=0 once expired.
 
 ### `_core/risk_gate.py`

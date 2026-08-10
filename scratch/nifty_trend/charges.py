@@ -61,7 +61,7 @@ FUT_REGIMES = [
 ]
 
 BROKERAGE_PER_ORDER = 20.0     # flat, per executed order (2 orders per round trip)
-SEBI_FRAC = 0.0000001          # Rs 10 / crore, on total turnover
+SEBI_FRAC = 0.000001           # Rs 10 / crore = 10/1e7 = 1e-6 (was 1e-7 = Rs 1/cr, 10x low — immaterial ~Rs0.15/trade but wrong; matches Sensibull's SEBI 0.17 on 1.7L turnover)
 STAMP_OPT_BUY = 0.00003        # 0.003% on BUY-side premium (options)
 STAMP_FUT_BUY = 0.00002        # 0.002% on BUY side (futures)
 GST_FRAC = 0.18                # on brokerage + txn + SEBI
@@ -99,22 +99,49 @@ def fut_rates(when=None):
     return _regime(FUT_REGIMES, when)
 
 
-def option_charges(entry_prem, exit_prem, qty, entry_side="BUY", when=None):
-    """Full Zerodha F&O round-trip charge for ONE option leg, rates as of `when`.
-    Same formula shape as the old bs_option.calc_charges — only STT/txn are
-    regime-looked-up. when=None = TODAY (forward-looking callers)."""
+def option_charges_parts(entry_prem, exit_prem, qty, entry_side="BUY", when=None):
+    """Per-component Zerodha F&O ROUND-TRIP charge for ONE option leg (entry + exit),
+    rates as of `when`. dict: brokerage/stt/exch/sebi/stamp/gst. option_charges() sums
+    these — single source (Rule 6B), so the breakdown a panel shows can never drift
+    from the total any engine bills."""
     r = opt_rates(when)
     buy_px = entry_prem if entry_side == "BUY" else exit_prem
     sell_px = exit_prem if entry_side == "BUY" else entry_prem
     buy_turn, sell_turn = buy_px * qty, sell_px * qty
     total = buy_turn + sell_turn
     brokerage = 2.0 * BROKERAGE_PER_ORDER
-    stt = r["stt_sell"] * sell_turn
     exch = r["txn"] * total
     sebi = SEBI_FRAC * total
-    stamp = STAMP_OPT_BUY * buy_turn
-    gst = GST_FRAC * (brokerage + exch + sebi)
-    return brokerage + stt + exch + sebi + stamp + gst
+    return {"brokerage": brokerage,
+            "stt": r["stt_sell"] * sell_turn,
+            "exch": exch,
+            "sebi": sebi,
+            "stamp": STAMP_OPT_BUY * buy_turn,
+            "gst": GST_FRAC * (brokerage + exch + sebi)}
+
+
+def option_entry_parts(prem, qty, side="BUY", when=None):
+    """One-way (ENTRY only) charge parts for ONE option leg — matches the number
+    broker builders (Sensibull etc.) show for 'charges to place this trade': 1 order
+    of brokerage, STT only if this leg is SOLD at entry, stamp only if BOUGHT."""
+    r = opt_rates(when)
+    turn = prem * qty
+    brokerage = BROKERAGE_PER_ORDER
+    exch = r["txn"] * turn
+    sebi = SEBI_FRAC * turn
+    return {"brokerage": brokerage,
+            "stt": (r["stt_sell"] * turn) if side == "SELL" else 0.0,
+            "exch": exch,
+            "sebi": sebi,
+            "stamp": (STAMP_OPT_BUY * turn) if side == "BUY" else 0.0,
+            "gst": GST_FRAC * (brokerage + exch + sebi)}
+
+
+def option_charges(entry_prem, exit_prem, qty, entry_side="BUY", when=None):
+    """Full Zerodha F&O round-trip charge for ONE option leg, rates as of `when`.
+    Same formula shape as the old bs_option.calc_charges — only STT/txn are
+    regime-looked-up. when=None = TODAY (forward-looking callers)."""
+    return sum(option_charges_parts(entry_prem, exit_prem, qty, entry_side, when).values())
 
 
 def futures_charges(entry_px, exit_px, qty, entry_side="BUY", when=None):

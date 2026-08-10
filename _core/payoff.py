@@ -93,6 +93,34 @@ def structure_tax(rows):
     return round(total, 2)
 
 
+def structure_tax_breakdown(rows):
+    """Same round-trip cost as structure_tax() but itemised (brokerage/STT/exch/GST/
+    stamp/SEBI) + the ENTRY-only total. Display-only: lets the panel show WHY the
+    number is what it is (and that entry-only == what broker builders like Sensibull
+    show — ours is round-trip = entry + exit). Exit premium is forward-unknown, so the
+    exit leg is estimated at the entry premium (same as structure_tax). None if the
+    charges module is unavailable."""
+    ch = _charges()
+    if not ch:
+        return None
+    agg = {"brokerage": 0.0, "stt": 0.0, "exch": 0.0, "sebi": 0.0, "stamp": 0.0, "gst": 0.0}
+    entry_total = 0.0
+    for r in (rows or []):
+        try:
+            prem = float(r.get("entry_price") or r.get("price") or 0)
+            qty = int(float(r.get("qty") or 0))
+            side = str(r.get("entry") or r.get("side") or "BUY").upper()
+            if prem <= 0 or qty <= 0:
+                continue
+            for k, v in ch.option_charges_parts(prem, prem, qty, entry_side=side).items():
+                agg[k] += v
+            entry_total += sum(ch.option_entry_parts(prem, qty, side=side).values())
+        except Exception:
+            continue
+    parts = {k: round(v, 2) for k, v in agg.items()}
+    return {"parts": parts, "total": round(sum(agg.values()), 2), "entry_total": round(entry_total, 2)}
+
+
 def _norm_cdf(x):
     return 0.5 * (1.0 + math.erf(x / math.sqrt(2.0)))
 
@@ -416,4 +444,5 @@ def analyse(rows, spot, now_ist=None, with_margin=False, target_days=None):
     if with_margin:
         res["margin"] = basket_margin(legs)
     res["total_tax"] = structure_tax(rows)   # round-trip transaction cost for the structure
+    res["tax_breakdown"] = structure_tax_breakdown(rows)   # itemised + entry-only (panel tooltip)
     return res

@@ -1237,6 +1237,17 @@
           }).join('');
       }
 
+      // Total Tax = ROUND-TRIP (entry + exit). Broker builders (Sensibull) show ENTRY-only,
+      // so ours is ~2x theirs — not wrong, different thing. Tooltip itemises it + shows the
+      // entry-only figure so it reconciles with what the user sees on Sensibull.
+      const tb = d.tax_breakdown;
+      let taxTip = '';
+      if (tb && tb.parts) {
+        const p = tb.parts;
+        taxTip = `Round-trip (entry + exit): ₹${Math.round(tb.total)}\n`
+          + `Brokerage ₹${Math.round(p.brokerage)} · STT ₹${Math.round(p.stt)} · Exch ₹${Math.round(p.exch)} · GST ₹${Math.round(p.gst)} · Stamp ₹${Math.round(p.stamp)} · SEBI ₹${(p.sebi || 0).toFixed(2)}\n`
+          + `\nEntry-only (jaisa Sensibull dikhata): ₹${Math.round(tb.entry_total)}`;
+      }
       const cards = [
         ['Probability of Profit', pop != null ? (pop * 100).toFixed(1) + '%' : '—',
           pop != null && pop >= .5 ? _PF.C.pos : _PF.C.amb, when],
@@ -1244,10 +1255,11 @@
         ['Breakeven', be != null ? _pfNf(be) : '—', _PF.C.amb, 'safe line'],
         ['Max Loss', ml != null ? _pfRs(ml) : '—', _PF.C.neg, tgt ? 'exit-day worst' : 'capped (defined risk)'],
         ['Margin — hedged', '<span id="pfMargin" style="color:#8b949e">⏳</span>', _PF.C.blu, '<span id="pfMarginSub">basket calc…</span>'],
-        ['Total Tax', d.total_tax != null ? '−' + _pfRs(d.total_tax) : '—', _PF.C.neg, 'round-trip, ' + (d.legs ? d.legs.length : 0) + ' legs'],
+        ['Total Tax', d.total_tax != null ? '−' + _pfRs(d.total_tax) : '—', _PF.C.neg,
+          'round-trip · hover=breakdown' + (tb ? ' · entry ₹' + Math.round(tb.entry_total) : ''), taxTip],
       ];
       document.getElementById('pfCards').innerHTML = cards.map(c =>
-        `<div style="border:1px solid #30363d;border-radius:7px;padding:7px 9px;display:flex;flex-direction:column;gap:2px;text-align:left">
+        `<div title="${(c[4] || '').replace(/"/g, '&quot;')}" style="border:1px solid #30363d;border-radius:7px;padding:7px 9px;display:flex;flex-direction:column;gap:2px;text-align:left;cursor:${c[4] ? 'help' : 'default'}">
           <span style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">${c[0]}</span>
           <span style="font-size:15px;font-weight:700;color:${c[2]}">${c[1]}</span>
           <span style="font-size:9px;color:#6e7681">${c[3]}</span>
@@ -1428,7 +1440,7 @@
       combo.innerHTML = `
         <div class="pf-panel">
           <div style="font-size:11px;font-weight:600;color:#8b949e;margin:0 0 4px;text-align:left">
-            Combined Premium — net structure P&amp;L <span style="color:#6e7681;font-weight:400">(entry ${s.from} → ${s.to}, real 1-min)</span>
+            Combined Premium — net structure P&amp;L <span style="color:#6e7681;font-weight:400">(entry ${s.from} → ${s.to}, real 1-min · <b style="color:#8b949e">p</b> = structure net premium, entry <b style="color:#8b949e">p${(s.entry_net != null ? s.entry_net : 0).toFixed(1)}</b>)</span>
           </div>
           <div style="overflow-x:auto"><svg id="pfComb" viewBox="0 0 940 220" style="width:100%;height:auto"></svg></div>
           <div id="pfCombHover" style="text-align:center;font-size:11px;color:#8b949e;min-height:15px;margin-top:4px"></div>
@@ -1438,14 +1450,17 @@
                 <span style="color:#3fb950;font-size:11px;font-weight:700">₹</span>
                 <input id="pfExTgtRs" type="number" step="100" oninput="_pfExitInput('tgt','rs',this.value)" title="Target in ₹ (whole group)" style="width:62px;background:#0d1117;border:1px solid #238636;border-radius:5px;color:#3fb950;padding:3px 5px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
                 <input id="pfExTgtPt" type="number" step="1" oninput="_pfExitInput('tgt','pt',this.value)" title="Target in points" style="width:44px;background:#0d1117;border:1px solid #238636;border-radius:5px;color:#3fb950;padding:3px 4px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
-                <span style="color:#6e7681;font-size:10px">pt</span></div></div>
+                <span style="color:#6e7681;font-size:10px">pt</span>
+                <span id="pfExTgtPrem" style="font-size:10px;color:#3fb950;font-weight:700;margin-left:5px" title="Target hit hoga jab structure ka net premium yahan aayega"></span></div></div>
             <div style="min-width:150px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Stop-loss</div>
               <div style="display:flex;align-items:center;gap:3px;margin-top:3px">
                 <span style="color:#f85149;font-size:11px;font-weight:700">₹</span>
                 <input id="pfExSlRs" type="number" step="100" oninput="_pfExitInput('sl','rs',this.value)" title="Stop-loss in ₹ (negative)" style="width:62px;background:#0d1117;border:1px solid #8b2e2e;border-radius:5px;color:#f85149;padding:3px 5px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
                 <input id="pfExSlPt" type="number" step="1" oninput="_pfExitInput('sl','pt',this.value)" title="Stop-loss in points (negative)" style="width:44px;background:#0d1117;border:1px solid #8b2e2e;border-radius:5px;color:#f85149;padding:3px 4px;font-size:12px;font-weight:700;font-family:ui-monospace,monospace;text-align:right;outline:none">
-                <span style="color:#6e7681;font-size:10px">pt</span></div></div>
+                <span style="color:#6e7681;font-size:10px">pt</span>
+                <span id="pfExSlPrem" style="font-size:10px;color:#f85149;font-weight:700;margin-left:5px" title="SL hit hoga jab structure ka net premium yahan aayega"></span></div></div>
             <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:3px">—</div></div>
+            <div style="min-width:150px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em" title="Structure ka net premium abhi (aur entry pe). SELL +prem, BUY -prem = net credit.">Net premium (structure)</div><div id="pfExPrem" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:3px;color:#adbac7">—</div></div>
             <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
             <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
             <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
@@ -1478,6 +1493,11 @@
       const pw = W - mL - mR, ph = H - mT - mB;
       svg.innerHTML = '';                                    // redraw on drag
       const D = s.combined, qty = s.legs[0] ? s.legs[0].qty : 1;
+      // structure NET PREMIUM: entry_net (SELL +entry, BUY -entry = net credit) and
+      // premium(pnl_per_unit) = entry_net - pnl. So SL/Target (a P&L level) maps to the
+      // exact combined-premium level where it triggers — that's what the user asked for.
+      const enet = (s.entry_net != null) ? s.entry_net : 0;
+      const premAt = v => enet - (v / qty);                  // v = whole-₹ P&L → net premium
       const vals = D.map(p => p[1] * qty);
       let yT = Math.max(...vals), yB = Math.min(...vals);
       // #02 init the SL/Target levels (₹, whole position) so both lines sit on-chart
@@ -1489,7 +1509,7 @@
       yT = Math.max(yT, EX.tgt); yB = Math.min(yB, EX.sl);   // keep both lines visible
       const pad = (yT - yB) * .15 || 100; yT += pad; yB -= pad;
       const X = i => mL + i / Math.max(D.length - 1, 1) * pw, Y = v => mT + (yT - v) / (yT - yB) * ph;
-      window._pfCombGeo = { mT, ph, yT, yB, qty, H };         // drag pixel → ₹ value
+      window._pfCombGeo = { mT, ph, yT, yB, qty, H, enet };   // drag pixel → ₹ value (+ net-prem base)
       const y0 = Y(0);
       [yT - pad, 0, yB + pad].forEach(v => {
         _pfEl(svg, 'line', { x1: mL, y1: Y(v), x2: W - mR, y2: Y(v), stroke: C.grid, 'stroke-width': 1 });
@@ -1514,7 +1534,7 @@
       _pfEl(svg, 'path', { d: dp, fill: 'none', stroke: C.blu, 'stroke-width': 1.8, 'stroke-linejoin': 'round' });
       const lastV = vals[vals.length - 1];
       _pfEl(svg, 'circle', { cx: X(D.length - 1), cy: Y(lastV), r: 4, fill: lastV >= 0 ? C.pos : C.neg });
-      _pfEl(svg, 'text', { x: X(D.length - 1) - 6, y: Y(lastV) - 8, 'text-anchor': 'end', 'font-size': 10, 'font-weight': 700, fill: lastV >= 0 ? C.pos : C.neg }, (lastV >= 0 ? '+' : '') + _pfRs(lastV));
+      _pfEl(svg, 'text', { x: X(D.length - 1) - 6, y: Y(lastV) - 8, 'text-anchor': 'end', 'font-size': 10, 'font-weight': 700, fill: lastV >= 0 ? C.pos : C.neg }, (lastV >= 0 ? '+' : '') + _pfRs(lastV) + ' · p' + premAt(lastV).toFixed(1));
       // #02 Target + SL draggable lines
       const drawLvl = (id, val, col, lab) => {
         const y = Y(val);
@@ -1522,7 +1542,7 @@
         const band = _pfEl(svg, 'rect', { x: mL, y: y - 7, width: pw, height: 14, fill: 'transparent', style: 'cursor:ns-resize' });
         band.dataset.lv = id;
         const pt = val / qty;
-        const tag = lab + ' ' + (val >= 0 ? '+' : '') + Math.round(val / 1000) + 'k·' + (pt >= 0 ? '+' : '') + pt.toFixed(0) + 'p';
+        const tag = lab + ' ' + (val >= 0 ? '+' : '') + Math.round(val) + ' · p' + premAt(val).toFixed(1);
         const tw = 10 + tag.length * 5.3;
         _pfEl(svg, 'rect', { x: W - mR - tw, y: y - 9, width: tw, height: 18, rx: 4, fill: col });
         _pfEl(svg, 'text', { x: W - mR - tw / 2, y: y + 4, 'text-anchor': 'middle', 'font-size': 9.5, 'font-weight': 700, fill: '#0d1117', 'font-family': 'ui-monospace,monospace' }, tag);
@@ -1537,7 +1557,7 @@
         let i = Math.round((px - mL) / pw * (D.length - 1)); i = Math.max(0, Math.min(D.length - 1, i));
         hl.setAttribute('x1', X(i)); hl.setAttribute('x2', X(i)); hl.setAttribute('visibility', 'visible');
         const v = D[i][1] * qty;
-        hb.innerHTML = `<b>${_pfIST(D[i][0])}</b> · net P&L <b style="color:${v >= 0 ? C.pos : C.neg}">${v >= 0 ? '+' : ''}${_pfRs(v)} · ${(D[i][1] >= 0 ? '+' : '') + D[i][1].toFixed(1)}pt</b>`;
+        hb.innerHTML = `<b>${_pfIST(D[i][0])}</b> · net P&L <b style="color:${v >= 0 ? C.pos : C.neg}">${v >= 0 ? '+' : ''}${_pfRs(v)} · ${(D[i][1] >= 0 ? '+' : '') + D[i][1].toFixed(1)}pt</b> · net prem <b style="color:${C.txt}">p${premAt(v).toFixed(1)}</b>`;
       });
       svg.addEventListener('mouseleave', () => { hl.setAttribute('visibility', 'hidden'); hb.textContent = ''; });
       _pfUpdExitRow(lastV);
@@ -1578,11 +1598,23 @@
       setIn('pfExTgtPt', (EX.tgt / qty).toFixed(1));
       setIn('pfExSlRs', Math.round(EX.sl));
       setIn('pfExSlPt', (EX.sl / qty).toFixed(1));
+      // net-premium level where each rule triggers, + live net premium (user ask)
+      const enet = (window._pfCombGeo && window._pfCombGeo.enet != null) ? window._pfCombGeo.enet : null;
+      const setTxt = (id, t) => { const el = document.getElementById(id); if (el) el.textContent = t; };
+      if (enet != null) {
+        setTxt('pfExTgtPrem', '→ p' + (enet - EX.tgt / qty).toFixed(1));
+        setTxt('pfExSlPrem', '→ p' + (enet - EX.sl / qty).toFixed(1));
+      }
       const le = document.getElementById('pfExLive');
       if (le && liveVal != null) {
         const pt = liveVal / qty;
         le.innerHTML = (liveVal >= 0 ? '+' : '') + _pfRs(liveVal) + ' · ' + (pt >= 0 ? '+' : '') + pt.toFixed(1) + 'p';
         le.style.color = liveVal >= 0 ? _PF.C.pos : _PF.C.neg;
+      }
+      const pe = document.getElementById('pfExPrem');
+      if (pe && enet != null) {
+        pe.innerHTML = (liveVal != null ? 'p' + (enet - liveVal / qty).toFixed(1) : '—')
+          + ' <span style="color:#6e7681;font-weight:400;font-size:10px">(entry p' + enet.toFixed(1) + ')</span>';
       }
     }
 
