@@ -1051,6 +1051,30 @@
         + (window._pfClosed ? `<span style="font-size:10px;color:#d29922;border-left:1px solid #30363d;padding-left:8px;margin-left:2px">reconstructed from entry</span>` : '');
     }
 
+    // GUARD (display-only): a group that LOOKS hedged (has both a BUY and a SELL leg)
+    // but whose legs don't actually balance is net-directional — the payoff curve is
+    // then a naked/ratio curve, NOT the bounded spread the "hedged" label implies. This
+    // exact case produced a wildly wrong panel once: a manual bull-put-spread's SELL leg
+    // was transiently recorded at a PARTIAL fill qty (130) while the BUY leg was full
+    // (325), so the panel drew a net-long-put curve (max profit ₹98k) instead of the real
+    // ₹7k-capped spread. Balanced spread → net 0 → no badge. Never lies: an intentional
+    // ratio backspread legitimately shows its real net here too.
+    function _pfImbalance(legs) {
+      if (!legs || !legs.length) return '';
+      let hasBuy = false, hasSell = false; const net = { CE: 0, PE: 0 };
+      legs.forEach(l => {
+        const q = Math.abs(+l.qty || 0); const s = String(l.side || '').toUpperCase();
+        const o = String(l.opt || '').toUpperCase();
+        if (s === 'BUY') hasBuy = true; else if (s === 'SELL') hasSell = true;
+        if (o === 'CE' || o === 'PE') net[o] += (s === 'BUY' ? q : -q);
+      });
+      if (!(hasBuy && hasSell)) return '';                 // only flag a claimed-hedge
+      const parts = [];
+      ['CE', 'PE'].forEach(o => { if (net[o]) parts.push(`net ${net[o] > 0 ? 'long' : 'short'} ${Math.abs(net[o])} ${o}`); });
+      if (!parts.length) return '';
+      return `<span style="font-size:10px;font-weight:700;color:#d29922;border:1px solid #d2992255;background:#d2992215;border-radius:10px;padding:1px 7px;margin-left:8px" title="Legs balance nahi kar rahe — group hedged dikh raha par net-directional hai (partial fill / reconciling / ratio). Payoff bounded spread nahi.">⚠ unbalanced: ${parts.join(', ')}</span>`;
+    }
+
     async function _pfLoad(qs) {
       window._pfQS = qs;                       // ids=… or group_id=… — for margin/series/exit-rule
       const body = document.getElementById('pfBody');
@@ -1068,11 +1092,12 @@
           + (d.closed ? 'background:#8b949e22;color:#adbac7;border:1px solid #8b949e55' : 'background:#1f6feb22;color:#58a6ff;border:1px solid #1f6feb55');
         st.textContent = d.closed ? '● CLOSED' : '● OPEN';
       }
-      document.getElementById('pfSub').textContent =
+      document.getElementById('pfSub').innerHTML =
         `${d.legs.length} legs · spot ${d.spot ? _pfNf(d.spot) : '—'}`
         + (d.expiry ? ` · expiry ${d.expiry} (${d.tte_days}d)` : '')
         + (d.avg_iv ? ` · IV ~${(d.avg_iv * 100).toFixed(1)}%` : '')
-        + (d.closed ? ' · position closed — reconstructed from entry' : '');
+        + (d.closed ? ' · position closed — reconstructed from entry' : '')
+        + _pfImbalance(d.legs);
       _pfRenderLegStrip(d);
 
       window._pfData = d;
