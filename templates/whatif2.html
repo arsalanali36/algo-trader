@@ -115,6 +115,7 @@
     <div><div class="k">Reward / Risk</div><div class="v" id="rr">—</div></div>
     <div><div class="k">POP</div><div class="v" id="pop" style="color:var(--blue)">—</div></div>
     <div class="fm">
+      <div><span style="color:var(--mut)">DTE (days to expiry)</span><b id="dte" style="color:var(--amber)">—</b></div>
       <div><span style="color:var(--mut)">Time value</span><b id="tv">—</b></div>
       <div><span style="color:var(--mut)">Intrinsic</span><b id="iv2">—</b></div>
       <div><span style="color:var(--mut)">Hedged margin</span><b id="mg">—</b></div>
@@ -557,7 +558,7 @@ $('slon').addEventListener('change',()=>{$('smartsl').style.display=$('slon').ch
 ['slStop','slUnit','slDelta'].forEach(id=>$(id).addEventListener('input',()=>{if(_slData)drawSmartSL();}));
 async function loadPayoff(){
   const A=collectActive();
-  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';$('struct').innerHTML='';_pfLast=null;$('pfsliders').style.display='none';return;}
+  if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg','dte'].forEach(k=>$(k).textContent='—');$('net').textContent='';$('struct').innerHTML='';_pfLast=null;$('pfsliders').style.display='none';return;}
   const myseq=++_pfSeq;
   const body={underlying:INST,date:$('date').value,entry:$('et').value,exit_date:$('xd').value||$('date').value,exit:$('xt').value,expiry:$('exp').value||'',mult:mult,legs:A};
   // show a loading hint only if it's actually slow (>350ms) — no flash on cached/fast loads
@@ -577,6 +578,7 @@ async function loadPayoff(){
   $('rr').textContent=naked?'—':(Math.abs(mx)/Math.max(1,Math.abs(mn))).toFixed(2)+'x';
   $('pop').textContent=r.pop!=null?Math.round(r.pop*100)+'%':'—';
   $('tv').textContent=sgn(r.time_value);$('iv2').textContent='₹'+inr(r.intrinsic);
+  $('dte').textContent=(r.tte_days!=null)?(r.tte_days+'d'):'—';
   if(!_mgLoading)$('mg').innerHTML=(r.margin_est!=null)?('<span title="Hedged (defined-risk) margin ≈ max loss — exchange spread pe itna hi block karta hai. Ye instant LOCAL estimate hai; asli broker SPAN + naked(standalone) ke liye 💰 button dabao. NOTE: Sensibull ka Standalone/naked number isse ZYADA hota hai — wo bina-hedge ka margin hai, alag cheez.">~₹'+inr(r.margin_est)+' <span style="color:var(--dim);font-size:9px">est ⓘ</span></span>'):'—';   // LOCAL estimate ≈ max loss (defined-risk), instant
   // structure badge + built-in SL
   const si=structInfo(A, r.net_credit);
@@ -774,6 +776,7 @@ function renderChain(){
   const atm=_chData.atm;
   $('chain').innerHTML=_chData.strikes.map(s=>{
     const cd=s.ce,pd=s.pe,isatm=s.strike===atm;
+    const off=Math.round((s.strike-atm)/stepOf(MINST)), offlab=(off===0?'ATM':(off>0?'+'+off:''+off));
     function cell(side){const t=side.toUpperCase(),d=side==='ce'?cd:pd,li=legIdx(s.strike,t),expd=_chExpand&&_chExpand.k===s.strike&&_chExpand.t===t;
       const jc=side==='pe'?'flex-end':'flex-start';
       if(li>=0){const lg=legs[li],sc=lg.side==='SELL'?'var(--red)':'var(--green)';   // SELECTED — B/S badge (toggle) + premium + ✕, stays visible
@@ -788,7 +791,7 @@ function renderChain(){
     return '<div class="chrow" data-k="'+s.strike+'"'+(isatm?' style="background:rgba(31,111,235,.08)"':'')+'>'
       +'<span style="color:var(--dim);font-size:9.5px">'+(cd.delta!=null?cd.delta:'')+'</span>'+cell('ce')
       +'<span style="color:var(--dim);font-size:9px">'+(cd.oi!=null?(cd.oi/100000).toFixed(1)+'L':'')+'</span>'
-      +'<span style="text-align:center;font-weight:700;'+(isatm?'color:var(--acc)':'')+'">'+s.strike+'</span>'
+      +'<span style="text-align:center;font-weight:700;line-height:1.05;'+(isatm?'color:var(--acc)':'')+'">'+s.strike+'<span style="display:block;font-size:8px;font-weight:600;color:'+(off===0?'var(--acc)':'var(--dim)')+'">'+offlab+'</span></span>'
       +'<span style="font-size:9.5px;color:var(--mut)">'+(cd.iv!=null?cd.iv:'')+'</span>'+cell('pe')
       +'<span style="color:var(--dim);font-size:9.5px;text-align:right">'+(pd.delta!=null?pd.delta:'')+'</span></div>';
   }).join('');
