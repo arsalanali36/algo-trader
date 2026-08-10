@@ -1040,6 +1040,26 @@ def api_whatif2_payoff():
     except Exception as e:
         return jsonify({"ok": False, "reason": str(e)})
 
+@app.route('/api/whatif2-intraday', methods=['POST'])
+def api_whatif2_intraday():
+    """Per-minute combined premium (cost-to-close) + net position delta over the entry
+    date, for the Day chart's Smart-SL overlay (delta-flip + premium-stop). Recent =
+    collector real greeks; historical = lake premium + BS delta (src flags it).
+    Display-only — the 2-condition exit logic + thresholds live client-side (instant tweak)."""
+    try:
+        import opt_whatif as w
+        b = request.get_json(force=True) or {}
+        legs = b.get('legs') or []
+        date = str(b.get('date') or '').strip()
+        if not date or not legs:
+            return jsonify({"ok": False, "reason": "date/legs missing"})
+        return jsonify(w.intraday_series(
+            str(b.get('underlying', 'NIFTY')).upper(), date, legs,
+            str(b.get('entry') or '09:20')[:5], str(b.get('exit') or '15:15')[:5],
+            expiry=b.get('expiry') or None, mult=int(b.get('mult') or 1)))
+    except Exception as e:
+        return jsonify({"ok": False, "reason": str(e)})
+
 @app.route('/api/whatif-coverage')
 def api_whatif_coverage():
     """Since-when REAL IV is available (broker's own reported IV = live collector window)

@@ -881,6 +881,134 @@ def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, e
     return _downsample(pts)
 
 
+def intraday_series(u, date, legs, entry_hm, exit_hm, expiry=None, mult=1):
+    """Per-minute combined premium (cost-to-close) + net position delta over the ENTRY
+    date, for the Smart-SL analysis (delta-flip + premium-stop). Display-only, no order path.
+
+    - Recent dates  -> live collector snapshots = REAL Dhan delta + premium.
+    - Historical (lake) -> real premium; delta is Black-Scholes-derived from each leg's
+      entry-IV held constant (modeled, src='lake' so the caller can flag it).
+
+    prem  = combined COST TO CLOSE, +ve (SELL leg +ltp, BUY leg -ltp) x qty x lot. For a
+            credit structure prem ~= the credit at entry and RISES as it loses (buy-back
+            gets dearer) -> the premium-stop trips. delta = net position delta
+            (SELL -1, BUY +1) x leg_delta x qty x lot (shares-equivalent of the underlying).
+    Returns {ok, src, lot, entry:{hm,prem,spot,delta}, series:[{hm,spot,prem,delta}]}.
+    """
+    lot = LOT.get(u, 65)
+
+    def _collector():
+        _, rows = _oc._load_rows(u, date)
+        if not rows:
+            return None
+        exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
+        if not exps:
+            return None
+        exp = expiry if (expiry and expiry in exps) else exps[0]
+        day = [r for r in rows if r.get("expiry") == exp]
+        legmap = []
+        for lg in legs:
+            K = _f(lg["strike"]); mp = {}
+            for r in day:
+                if _f(r.get("strike")) == K and r.get("opt_type") == lg["type"]:
+                    hm = (r.get("datetime") or "")[11:16]
+                    if hm:
+                        mp[hm] = r
+            if not mp:
+                return None                          # a leg's strike never appears -> let lake try
+            legmap.append((lg, mp))
+        mins = None
+        for lg, mp in legmap:
+            ks = set(hm for hm in mp if entry_hm <= hm <= exit_hm)
+            mins = ks if mins is None else (mins & ks)
+        if not mins:
+            return None
+        out = []
+        for hm in sorted(mins):
+            prem = 0.0; delta = 0.0; spot = None; ok = True
+            for lg, mp in legmap:
+                r = mp[hm]; ltp = _f(r.get("ltp"))
+                if ltp is None:
+                    ok = False; break
+                q = (lg.get("qty") or 1) * mult
+                prem += (1 if lg["side"] == "SELL" else -1) * ltp * q * lot
+                dl = _f(r.get("delta"))
+                if dl is not None:
+                    delta += (-1 if lg["side"] == "SELL" else 1) * dl * q * lot
+                sp = _f(r.get("spot"))
+                if sp is not None:
+                    spot = sp
+            if not ok or spot is None:
+                continue
+            out.append({"hm": hm, "spot": round(spot, 2), "prem": round(prem, 2), "delta": round(delta, 1)})
+        return out if len(out) >= 2 else None
+
+    def _lake():
+        root = _lake_root(u)
+        if not root:
+            return None
+        m = _bsmod()
+        if not m:
+            return None
+        import pandas as _pd
+        ed = m._next_weekly_expiry(_pd.Timestamp(_ts_ist(date, entry_hm), unit="s", tz="Asia/Kolkata")).date()
+        exp_ts = int(_pd.Timestamp("%s 15:30" % ed, tz="Asia/Kolkata").timestamp())
+        _T = lambda hm: max(1e-6, (exp_ts - _ts_ist(date, hm)) / (365.0 * 86400.0))
+        legser = []
+        for lg in legs:
+            r = _lake_series(root, u, date, _f(lg["strike"]), lg["type"])
+            if not r:
+                return None
+            legser.append((lg, r[0]))                # r = (series, hms); series[hm] = (prem, spot, ts)
+        mins = None
+        for lg, ser in legser:
+            ks = set(hm for hm in ser if entry_hm <= hm <= exit_hm)
+            mins = ks if mins is None else (mins & ks)
+        if not mins:
+            return None
+        e_hm = min(mins); sig = []
+        for lg, ser in legser:                       # entry-IV per leg, held constant (modeled delta)
+            p, sp, _t = ser[e_hm]; K = _f(lg["strike"]); iv = None
+            try:
+                iv = m.implied_vol(p, sp, K, _T(e_hm), _R, lg["type"])
+            except Exception:
+                iv = None
+            sig.append(iv if (iv and iv > 0) else 0.15)
+        out = []
+        for hm in sorted(mins):
+            prem = 0.0; delta = 0.0; spot = None; ok = True; T = _T(hm)
+            for i, (lg, ser) in enumerate(legser):
+                p, sp, _t = ser[hm]
+                if p is None or sp is None:
+                    ok = False; break
+                q = (lg.get("qty") or 1) * mult; K = _f(lg["strike"])
+                prem += (1 if lg["side"] == "SELL" else -1) * p * q * lot
+                g = _greeks_bs(sp, K, T, sig[i], lg["type"]); dl = g.get("delta")
+                if dl is not None:
+                    delta += (-1 if lg["side"] == "SELL" else 1) * dl * q * lot
+                spot = sp
+            if not ok or spot is None:
+                continue
+            out.append({"hm": hm, "spot": round(spot, 2), "prem": round(prem, 2), "delta": round(delta, 1)})
+        return out if len(out) >= 2 else None
+
+    src = None; series = None
+    try:
+        series = _collector()
+        if series:
+            src = "collector"
+    except Exception:
+        series = None
+    if not series:
+        try:
+            series = _lake(); src = "lake" if series else None
+        except Exception:
+            series = None
+    if not series:
+        return {"ok": False, "reason": "intraday chain data nahi (recent = collector, purane = lake)"}
+    return {"ok": True, "src": src, "lot": lot, "entry": series[0], "series": series}
+
+
 def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     """legs = [{side:'SELL'|'BUY', strike:float, type:'CE'|'PE'}]. `expiry` = a specific
     stored expiry (default nearest weekly). `exit_date` (default = entry `date`) allows a

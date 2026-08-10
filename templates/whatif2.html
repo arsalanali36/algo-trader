@@ -144,6 +144,7 @@
           <button class="on" data-v="payoff" style="padding:4px 11px;font-size:11px">Payoff</button><button data-v="day" style="padding:4px 11px;font-size:11px">Day chart</button>
         </div>
         <select id="dctf" style="display:none;width:auto;padding:4px 7px;font-size:11px" title="Candle timeframe"><option value="5">5-min</option><option value="15" selected>15-min</option><option value="60">1-hour</option></select>
+        <label id="sllab" style="display:none;align-items:center;gap:4px;font-size:11px;color:var(--mut);cursor:pointer" title="Net Δ flip + combined-premium stop — 2-condition smart SL"><input type="checkbox" id="slon" style="width:auto;padding:0;margin:0"> 🛑 SL</label>
         <span style="flex:1"></span>
         <span id="pflegend" style="display:flex;gap:10px;font-size:9.5px"><span style="color:var(--green)">▬ Expiry</span><span style="color:var(--blue)">▬ Exit-day</span><span id="be" style="color:var(--amber)"></span></span>
       </div>
@@ -155,6 +156,18 @@
       <div style="text-align:center;font-size:9px;color:var(--dim);margin-top:2px" id="pfnote">payoff · orange = spot · <b>hover</b> pe price + P&amp;L</div>
       <div id="dcwrap" style="display:none;position:relative"><svg id="dc" viewBox="0 0 340 216" style="width:100%;height:auto;display:block"></svg></div>
       <div id="dcnote" style="display:none;text-align:center;font-size:9px;color:var(--dim);margin-top:2px"></div>
+      <div id="smartsl" style="display:none;margin-top:8px;border-top:1px solid var(--bd2);padding-top:8px">
+        <div id="slread" style="font-size:11.5px;margin-bottom:6px"></div>
+        <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:6px">
+          <span style="color:var(--mut);text-transform:uppercase;font-size:9px">① Prem stop</span>
+          <input id="slStop" type="number" step="0.1" value="1.5" style="width:52px;text-align:center;padding:3px 5px;font-size:11px">
+          <select id="slUnit" style="width:auto;padding:3px 5px;font-size:11px"><option value="x">× entry</option><option value="pct">% entry</option><option value="rs">₹ abs</option></select>
+          <span style="color:var(--mut);text-transform:uppercase;font-size:9px;margin-left:8px">② Δ against ≥</span>
+          <input id="slDelta" type="number" value="15" style="width:48px;text-align:center;padding:3px 5px;font-size:11px">
+        </div>
+        <svg id="slc" viewBox="0 0 340 150" style="width:100%;height:auto;display:block"></svg>
+        <div id="slres" style="margin-top:6px;font-size:11.5px;line-height:1.5"></div>
+      </div>
 
       <div id="pfsliders" style="margin-top:10px;border-top:1px solid var(--bd2);padding-top:9px;display:none">
         <div style="display:flex;align-items:center;gap:7px;margin-bottom:4px">
@@ -229,6 +242,7 @@ let _chData=null, _chSeq=0, _chExpand=null, _pfSeq=0, _chScroll=false, _lastPrem
 let _chCache={};   // underlying|date|time|expiry -> loaded chain grid (so a loaded grid stays loaded on modal reopen — no repeat "Load")
 let _pfLast=null, _pfTarget=null, _pfTteDays=0, _pfDayInit=null, _pfDayT=null;
 let _dcView='payoff', _dcCandles=null, _dcKey=null, _dcT=null, _pfSlPrev='none';   // Day chart (real intraday OHLC + strike lines)
+let _slData=null, _slKey=null, _slExitHM=null, _dcGeo=null;   // Smart SL (net Δ flip + combined-premium stop)
 
 function inr(v){return Math.round(Math.abs(v)).toLocaleString('en-IN');}
 function sgn(v){return (v<0?'−₹':'+₹')+inr(v);}
@@ -389,11 +403,13 @@ function setPfView(v){
   _dcView=v; [...$('pfview').children].forEach(x=>x.classList.toggle('on',x.dataset.v===v));
   const day=v==='day';
   $('dctf').style.display=day?'':'none';
+  $('sllab').style.display=day?'flex':'none';
   $('pflegend').style.display=day?'none':'flex';
   $('pfwrap').style.display=day?'none':'block';
   $('pfnote').style.display=day?'none':'block';
   $('dcwrap').style.display=day?'block':'none';
   $('dcnote').style.display=day?'block':'none';
+  $('smartsl').style.display=(day&&$('slon').checked)?'block':'none';
   if(day){_pfSlPrev=$('pfsliders').style.display;$('pfsliders').style.display='none';loadDayChart();}
   else{$('pfsliders').style.display=_pfSlPrev||'none';}
 }
@@ -410,6 +426,7 @@ async function loadDayChart(){
     _dcCandles=r.candles;
   }
   drawDayChart(+$('dctf').value);
+  if($('slon').checked)loadSmartSL();
 }
 function drawDayChart(tf){
   const cs=_dcCandles, svg=$('dc'); if(!cs||!cs.length){svg.innerHTML='';return;}
@@ -456,9 +473,88 @@ function drawDayChart(tf){
   svg.appendChild(el('circle',{cx:xc(data.length-1),cy:py(last.c),r:2,fill:'var(--blue)'}));
   svg.appendChild(tx(xc(data.length-1)-4,py(last.c)-4,Math.round(last.c).toLocaleString('en-IN'),{fill:'var(--blue)','font-size':7,'text-anchor':'end','font-weight':700}));
   $('dcnote').textContent='📈 '+INST+' · '+d0+' · '+tf+'-min OHLC · '+data.length+' candles · dashed = leg strikes (▼sell ▲buy)';
+  _dcGeo={x0,x1,y0,y1,START,tf,n:data.length};
+  _dcMarkSmart();
 }
 $('pfview').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;setPfView(b.dataset.v);});
 $('dctf').addEventListener('change',()=>{if(_dcCandles)drawDayChart(+$('dctf').value);else loadDayChart();});
+
+// ---------- Smart SL: net Δ flips against + combined premium ≥ stop → exit (like an SL) ----------
+function _slLegsSig(){return JSON.stringify(act().map(l=>[l.side,l.type,l.strike,l.qty]))+'|'+mult;}
+function _slStopRs(entry){const v=parseFloat($('slStop').value)||1.5,u=$('slUnit').value;return u==='rs'?v:(u==='pct'?entry*v/100:entry*v);}
+async function loadSmartSL(){
+  if(_dcView!=='day'||!$('slon').checked){$('smartsl').style.display='none';return;}
+  $('smartsl').style.display='block';
+  const A=act(),d=$('date').value;
+  if(!A.length||!d){$('slread').textContent='legs + date chahiye';$('slc').innerHTML='';$('slres').textContent='';return;}
+  const key=INST+'|'+d+'|'+$('et').value+'|'+$('xt').value+'|'+($('exp').value||'')+'|'+_slLegsSig();
+  if(key!==_slKey||!_slData){
+    _slKey=key;_slData=null;$('slc').innerHTML='';$('slres').textContent='';$('slread').textContent='⏳ premium + net Δ nikaal raha…';
+    let r;try{r=await(await fetch('/api/whatif2-intraday',{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({underlying:INST,date:d,entry:$('et').value,exit:$('xt').value,expiry:$('exp').value||null,mult,
+        legs:A.map(l=>({side:l.side,type:l.type,strike:l.strike,qty:l.qty}))})})).json();}catch(e){r=null;}
+    if(!r||!r.ok||!r.series||r.series.length<2){$('slread').textContent=(r&&r.reason)||'intraday chain data nahi';_slExitHM=null;_dcMarkSmart();return;}
+    _slData=r;
+  }
+  drawSmartSL();
+}
+function drawSmartSL(){
+  const R=_slData;if(!R)return;
+  const S=R.series,e0=S[0],entry=e0.prem,eSpot=e0.spot;
+  const stop=_slStopRs(entry),dThr=Math.abs(parseFloat($('slDelta').value)||15);
+  const isAgainst=s=>(s.delta*(s.spot-eSpot)<0)&&(Math.abs(s.delta)>=dThr);
+  let ex=-1;for(let i=0;i<S.length;i++){if(isAgainst(S[i])&&S[i].prem>=stop){ex=i;break;}}
+  _slExitHM=ex>=0?S[ex].hm:null;
+  const at=S[ex>=0?ex:S.length-1],ratio=at.prem/entry;
+  $('slread').innerHTML='<span style="color:var(--mut)">Net Δ</span> <b style="color:'+(isAgainst(at)?'var(--red)':'var(--purple)')+'">'+Math.round(at.delta)+'</b>&nbsp;·&nbsp;'+
+    '<span style="color:var(--mut)">Net premium</span> <b style="color:var(--cyn)">₹'+Math.round(at.prem).toLocaleString('en-IN')+'</b> <span style="color:var(--dim)">('+ratio.toFixed(2)+'× entry ₹'+Math.round(entry).toLocaleString('en-IN')+')</span>'+
+    (R.src==='lake'?' <span style="color:var(--amber);font-size:9px">Δ modeled (lake)</span>':' <span style="color:var(--green);font-size:9px">Δ real</span>');
+  const svg=$('slc');svg.innerHTML='';const NS='http://www.w3.org/2000/svg';
+  const el=(t,a)=>{const x=document.createElementNS(NS,t);for(const k in a)x.setAttribute(k,a[k]);return x;};
+  const tx=(x,y,s,a)=>{const e=el('text',Object.assign({x,y},a));e.textContent=s;return e;};
+  const W=340,L=44,Rr=46,x0=L,x1=W-Rr,pTop=10,pBot=94,dTop=108,dBot=138,n=S.length;
+  const xc=i=>x0+(n>1?i/(n-1):0.5)*(x1-x0);
+  let pMin=Math.min(...S.map(s=>s.prem)),pMax=Math.max(...S.map(s=>s.prem),stop);const ppad=Math.max(20,(pMax-pMin)*0.08);pMin-=ppad;pMax+=ppad;
+  const yP=v=>pBot-((v-pMin)/(pMax-pMin))*(pBot-pTop);
+  let dMin=Math.min(...S.map(s=>s.delta),-dThr*1.3),dMax=Math.max(...S.map(s=>s.delta),dThr*1.3);
+  const yD=v=>dBot-((v-dMin)/(dMax-dMin))*(dBot-dTop);
+  if(ex>=0)svg.appendChild(el('rect',{x:xc(ex),y:pTop,width:x1-xc(ex),height:dBot-pTop,fill:'#f8514912'}));
+  [[entry,'var(--mut)','entry'],[stop,'var(--amber)','stop']].forEach(([v,c,lab])=>{const y=yP(v);
+    svg.appendChild(el('line',{x1:x0,y1:y,x2:x1,y2:y,stroke:c,'stroke-width':1,'stroke-dasharray':'5 3',opacity:0.85}));
+    svg.appendChild(tx(x1+3,y+3,'₹'+Math.round(v).toLocaleString('en-IN'),{fill:c,'font-size':7}));
+    svg.appendChild(tx(x0+2,y-2,lab,{fill:c,'font-size':6.5}));});
+  let pd='';S.forEach((s,i)=>pd+=(i?'L':'M')+xc(i)+' '+yP(s.prem)+' ');
+  svg.appendChild(el('path',{d:pd,fill:'none',stroke:'var(--cyn)','stroke-width':1.8,'stroke-linejoin':'round'}));
+  svg.appendChild(tx(x0,pTop-2,'COMBINED PREMIUM (to close)',{fill:'var(--dim)','font-size':6.5,'font-weight':700}));
+  svg.appendChild(el('line',{x1:x0,y1:yD(0),x2:x1,y2:yD(0),stroke:'var(--bd)','stroke-width':0.6}));
+  svg.appendChild(el('line',{x1:x0,y1:yD(-dThr),x2:x1,y2:yD(-dThr),stroke:'var(--red)','stroke-width':0.7,'stroke-dasharray':'4 3',opacity:0.6}));
+  svg.appendChild(el('line',{x1:x0,y1:yD(dThr),x2:x1,y2:yD(dThr),stroke:'var(--red)','stroke-width':0.7,'stroke-dasharray':'4 3',opacity:0.6}));
+  svg.appendChild(tx(x0,dTop-1,'NET Δ (against = red)',{fill:'var(--dim)','font-size':6.5,'font-weight':700}));
+  S.forEach((s,i)=>{if(i===0)return;const a=S[i-1];
+    svg.appendChild(el('line',{x1:xc(i-1),y1:yD(a.delta),x2:xc(i),y2:yD(s.delta),stroke:isAgainst(s)?'var(--red)':'var(--purple)','stroke-width':1.6}));});
+  [0,Math.floor(n/2),n-1].forEach(i=>svg.appendChild(tx(xc(i),148,S[i].hm,{fill:'var(--dim)','font-size':6.5,'text-anchor':'middle'})));
+  if(ex>=0){const x=xc(ex);
+    svg.appendChild(el('line',{x1:x,y1:pTop,x2:x,y2:dBot,stroke:'var(--red)','stroke-width':1.4}));
+    svg.appendChild(el('circle',{cx:x,cy:yP(S[ex].prem),r:2.5,fill:'var(--red)',stroke:'var(--bg)','stroke-width':1}));
+    svg.appendChild(tx(Math.min(x+4,x1-52),pTop+8,'🛑 '+S[ex].hm,{fill:'var(--red)','font-size':8,'font-weight':700}));}
+  const exPnl=ex>=0?Math.round(entry-S[ex].prem):null,holdPnl=Math.round(entry-S[n-1].prem);
+  const money=v=>(v<0?'−₹':'+₹')+Math.abs(v).toLocaleString('en-IN'),col=v=>v<0?'var(--red)':'var(--green)';
+  $('slres').innerHTML=ex>=0
+    ? '🛑 <b>Smart SL @ '+S[ex].hm+'</b> — dono ✓ (premium ₹'+Math.round(S[ex].prem).toLocaleString('en-IN')+' ≥ stop, net Δ '+Math.round(S[ex].delta)+' against). '+
+      'Exit <b style="color:'+col(exPnl)+'">'+money(exPnl)+'</b> vs '+$('xt').value+' hold <b style="color:'+col(holdPnl)+'">'+money(holdPnl)+'</b>'+(exPnl>holdPnl?' → <b style="color:var(--green)">₹'+Math.abs(exPnl-holdPnl).toLocaleString('en-IN')+' bacha</b>':'')
+    : '<span style="color:var(--mut)">Is din dono condition ek saath nahi lagi — koi smart-SL exit nahi (normal exit '+money(holdPnl)+').</span>';
+  _dcMarkSmart();
+}
+function _dcMarkSmart(){
+  if(!_dcGeo||!_slExitHM||!$('slon').checked||_dcView!=='day')return;
+  const g=_dcGeo,p=_slExitHM.split(':'),m=(+p[0])*60+(+p[1]);
+  let bi=Math.round((m-g.START)/g.tf);bi=Math.max(0,Math.min(g.n-1,bi));
+  const x=g.x0+(g.n>1?bi/(g.n-1):0.5)*(g.x1-g.x0),NS='http://www.w3.org/2000/svg',svg=$('dc');
+  const ln=document.createElementNS(NS,'line');ln.setAttribute('x1',x);ln.setAttribute('y1',g.y0);ln.setAttribute('x2',x);ln.setAttribute('y2',g.y1);ln.setAttribute('stroke','var(--red)');ln.setAttribute('stroke-width','1.6');svg.appendChild(ln);
+  const t=document.createElementNS(NS,'text');t.setAttribute('x',x+2);t.setAttribute('y',g.y0+22);t.setAttribute('fill','var(--red)');t.setAttribute('font-size','7.5');t.setAttribute('font-weight','700');t.textContent='🛑 SL '+_slExitHM;svg.appendChild(t);
+}
+$('slon').addEventListener('change',()=>{$('smartsl').style.display=$('slon').checked?'block':'none';if($('slon').checked)loadSmartSL();else{_slExitHM=null;if(_dcCandles)drawDayChart(+$('dctf').value);}});
+['slStop','slUnit','slDelta'].forEach(id=>$(id).addEventListener('input',()=>{if(_slData)drawSmartSL();}));
 async function loadPayoff(){
   const A=collectActive();
   if(!A.length){$('pf').innerHTML='';['mp','ml','rr','pop','tv','iv2','mg'].forEach(k=>$(k).textContent='—');$('net').textContent='';$('struct').innerHTML='';_pfLast=null;$('pfsliders').style.display='none';return;}
