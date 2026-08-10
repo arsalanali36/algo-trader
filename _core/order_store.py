@@ -438,6 +438,23 @@ def _net_rows(rows):
         except Exception:
             return 0
 
+    def _sec_ok(a, b):
+        # Two legs may share a trad_sym but be DIFFERENT contracts: trad_sym carries
+        # only month+year (no expiry DAY), so a weekly and a monthly of the same
+        # strike/type collapse to one string — e.g. NIFTY-Aug2026-24650-PE is BOTH
+        # the 11-Aug weekly (sec 41019) AND the 26-Aug monthly (sec 61786). sec_id is
+        # the ONLY unique contract key; netting across two different sec_ids FIFO-pairs
+        # a ~208 monthly leg against an ~89 weekly leg into a phantom -33% "trade"
+        # (TRAP #166 family, netting side — the LTP/display path was already fixed to
+        # join on sec_id, the pairing path was not). Unknown sec_id on either leg →
+        # fall back to trad_sym grouping, i.e. current behaviour (a blank-sec_id manual
+        # close still pairs its strategy entry).
+        sa = str(a["sec_id"] or "").strip()
+        sb = str(b["sec_id"] or "").strip()
+        if sa in ("", "0") or sb in ("", "0"):
+            return True
+        return sa == sb
+
     # ── Pass 1: exact (source, strategy, trad_sym) round-trips, QUANTITY-AWARE ──
     # FIFO of still-open legs per key, each carrying its remaining qty [row, rem].
     # A partial exit closes only min(exit_rem, entry_rem) — the rest stays open, so a
@@ -447,17 +464,23 @@ def _net_rows(rows):
         key = (r["source"], r["strategy"], r["trad_sym"])
         rem = _q(r)
         fifo = open_fifo.setdefault(key, [])
-        # net r against the OLDEST opposite-side legs first
-        while rem > 0 and fifo and fifo[0][0]["side"] != r["side"]:
-            entry_r, erem = fifo[0]
+        # net r against the OLDEST opposite-side leg ON THE SAME CONTRACT (sec_id).
+        # Scan (not just fifo[0]) so a weekly leg sitting in front never blocks a
+        # monthly leg's real pair, and cross-expiry legs of one strike never net.
+        while rem > 0:
+            idx = next((i for i, (e, _er) in enumerate(fifo)
+                        if e["side"] != r["side"] and _sec_ok(e, r)), None)
+            if idx is None:
+                break
+            entry_r, erem = fifo[idx]
             m = min(rem, erem)
             details.append(_complete(entry_r, r, m))
             rem -= m
             erem -= m
             if erem <= 0:
-                fifo.pop(0)
+                fifo.pop(idx)
             else:
-                fifo[0][1] = erem
+                fifo[idx][1] = erem
         if rem > 0:                       # same-side (pyramid) or nothing to net → stays open
             fifo.append([r, rem])
     leftover = []     # [row, rem] legs still open after pass 1
@@ -501,7 +524,7 @@ def _net_rows(rows):
             # when a foreign leg happens to sit in front of it.
             same_idx = manual_idx = None
             for i, (e, _er) in enumerate(st):
-                if e["side"] == r["side"]:
+                if e["side"] == r["side"] or not _sec_ok(e, r):
                     continue
                 if e["strategy"] == r["strategy"]:
                     same_idx = i
