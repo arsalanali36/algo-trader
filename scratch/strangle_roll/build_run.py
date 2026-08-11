@@ -25,26 +25,48 @@ for ln in io.open(os.path.join(HERE, "entry_atm_iv.csv"), encoding="utf-8"):
         except: pass
 
 
+def _streaks(net):
+    win = mx = wl = ml = cw = cl = 0
+    for x in net:
+        if x > 0: cw += 1; cl = 0
+        else: cl += 1; cw = 0
+        mx = max(mx, cw); ml = max(ml, cl)
+    return mx, ml
+
+
 def _metrics(rr):
     net = np.array([r["net"] for r in rr], float)
     n = len(net); eq = np.cumsum(net)
     peak = np.maximum.accumulate(np.concatenate([[0], eq]))[1:]
     dd_abs = (eq - peak).min()
+    uw = eq < peak                                   # underwater mask (trade-count proxy)
+    uw_run = mx = 0
+    for u in uw:
+        uw_run = uw_run + 1 if u else 0; mx = max(mx, uw_run)
     gp = net[net > 0].sum(); gl = -net[net < 0].sum()
     wins = net > 0
     yrs = max(1.0, (int(rr[-1]["date"][:4]) - int(rr[0]["date"][:4])) + 1)
     sharpe = round((net.mean() / net.std()) * np.sqrt(n / yrs), 3) if net.std() else 0.0
+    downside = net[net < 0]
+    sortino = round((net.mean() / downside.std()) * np.sqrt(n / yrs), 3) if len(downside) and downside.std() else sharpe
+    ann = round(net.sum() / START_CAP * 100 / yrs, 3)
+    maxdd = round(dd_abs / START_CAP * 100, 3)
+    ws, ls = _streaks(net)
     return dict(
         trades=n, net_pct=round(net.sum() / START_CAP * 100, 3), net_abs=round(net.sum()),
         final_cap=round(START_CAP + net.sum()), start_cap=START_CAP,
-        sharpe=sharpe, maxdd=round(dd_abs / START_CAP * 100, 3), years=round(yrs, 1),
+        sharpe=sharpe, sortino=sortino, calmar=round(ann / abs(maxdd), 2) if maxdd else 0.0,
+        maxdd=maxdd, underwater_days=int(mx * (252 / max(1, n / yrs)) // 1) if n else 0, years=round(yrs, 1),
         win_rate=round(100 * wins.mean(), 3), wl_ratio=round((wins.sum() / max(1, (~wins).sum())), 2),
         profit_factor=round(gp / gl, 3) if gl else 99.0,
         expectancy=round(net.mean(), 1), avg_win=round(net[net > 0].mean() if wins.any() else 0, 1),
         avg_loss=round(net[net < 0].mean() if (~wins).any() else 0, 1),
         largest_win=round(net.max()), largest_loss=round(net.min()),
         total_wins=int(wins.sum()), total_losses=int((~wins).sum()),
-        fees=round(sum(r["charges"] for r in rr)), annual_return=round(net.sum() / START_CAP * 100 / yrs, 3),
+        win_streak=ws, loss_streak=ls, avg_bars=0,
+        win_long=0.0, win_short=round(100 * wins.mean(), 1), pct_long=0.0, pct_short=100.0,
+        fees=round(sum(r["charges"] for r in rr)), annual_return=ann,
+        trades_per_day=round(n / max(1, len({r["date"] for r in rr})), 2),
         trades_per_month=round(n / (yrs * 12), 2),
     )
 
@@ -70,14 +92,28 @@ def _all_trades(rr):
     return out
 
 
-def _equity(rr):
-    eq = [START_CAP]; s = START_CAP
-    for r in rr: s += r["net"]; eq.append(round(s))
-    # downsample to ~400
-    if len(eq) > 400:
-        idx = np.linspace(0, len(eq) - 1, 400).astype(int)
-        eq = [eq[i] for i in idx]
-    return eq
+def _curves(rr):
+    """consistent-length (≤400) equity, benchmark, underwater, labels + worst_periods."""
+    net = np.array([r["net"] for r in rr], float)
+    spot = np.array([r["spot0"] for r in rr], float)
+    eq = START_CAP + np.cumsum(net)
+    bench = START_CAP * (spot / spot[0])                      # NIFTY buy&hold
+    peak = np.maximum.accumulate(eq)
+    uw = (eq - peak) / peak * 100.0                           # drawdown % (<=0)
+    idx = np.linspace(0, len(eq) - 1, min(400, len(eq))).astype(int)
+    labels = [rr[i]["date"][2:7] for i in idx]
+    # worst 5 drawdown troughs (distinct-ish by position)
+    order = np.argsort(uw)
+    wp, seen = [], []
+    for i in order:
+        if any(abs(i - j) < len(eq) * 0.05 for j in seen):
+            continue
+        seen.append(i)
+        wp.append(dict(rank=len(wp) + 1, x=int(i), dd=round(float(uw[i]), 2), frac=round(i / max(1, len(eq) - 1), 3)))
+        if len(wp) >= 5:
+            break
+    return ([round(float(eq[i])) for i in idx], [round(float(bench[i])) for i in idx],
+            [round(float(uw[i]), 2) for i in idx], labels, wp)
 
 
 def _monthly(rr):
@@ -114,8 +150,9 @@ candles = [[r["date"], r["spot0"], r["spot0"], r["spot0"], r["spot0"]] for r in 
 
 def combo(rr):
     m = _metrics(rr)
+    eq, bench, uw, labels, wp = _curves(rr)
     return dict(dna=dict(dist=250, wing=250, trig=100, take=0.5, iv_gate=0.40, roll="threatened"),
-                metrics=m, equity=_equity(rr), labels=[r["date"][2:7] for r in (rr if len(rr) <= 400 else [rr[i] for i in np.linspace(0,len(rr)-1,400).astype(int)])],
+                metrics=m, equity=eq, benchmark=bench, underwater=uw, labels=labels, worst_periods=wp,
                 significance=dict(real_sharpe=m["sharpe"], p_value=p_full, significant=p_full < 0.05),
                 mc=_mc(rr), monthly=_monthly(rr), all_trades=_all_trades(rr), trades=_all_trades(rr[-10:]),
                 opt_table=[])
