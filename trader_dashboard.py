@@ -950,6 +950,19 @@ def api_telegram_config():
                             lbl = k
                         strategies.append({"id": k, "label": lbl,
                                            "mode": v.get('mode', 'paper')})
+                # monitor_daemon-fired families have NO top-level `active` key (config lives
+                # under _auto_strangle / _auto_straddle) — inject them like the RMS/Logs virtual
+                # rows so they're alertable too. They fire via execution_gateway, so the Telegram
+                # hook already covers their entry/exit; this just makes them selectable here.
+                for _blk, _ids in (('_auto_strangle', ('strangle_920', 'strangle_manual')),
+                                   ('_auto_straddle', ('straddle_920', 'straddle_alert', 'straddle_manual'))):
+                    if isinstance(raw.get(_blk), dict):
+                        for _sid in _ids:
+                            try:
+                                _lbl = sr.label(_sid, with_name=True)
+                            except Exception:
+                                _lbl = _sid
+                            strategies.append({"id": _sid, "label": _lbl, "mode": "paper"})
                 strategies.sort(key=lambda s: (s['mode'] != 'live', s['label']))
             except Exception as e:
                 print("[telegram] strategy list fail:", e, flush=True)
