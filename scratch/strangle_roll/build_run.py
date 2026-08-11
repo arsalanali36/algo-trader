@@ -125,18 +125,50 @@ def _monthly(rr):
     return {y: {k: round(v, 2) for k, v in mm.items()} for y, mm in m.items()}
 
 
+def _downpts(arr, k=120):
+    arr = np.asarray(arr, float)
+    if len(arr) <= k:
+        return [round(float(x)) for x in arr]
+    idx = np.linspace(0, len(arr) - 1, k).astype(int)
+    return [round(float(arr[i])) for i in idx]
+
+
 def _mc(rr, iters=1000, seed=3):
     rng = np.random.default_rng(seed); net = np.array([r["net"] for r in rr], float)
-    nets, dds, shs = [], [], []
-    for _ in range(iters):
+    nets, dds, shs, paths = [], [], [], []
+    for j in range(iters):
         s = net[rng.integers(0, len(net), len(net))]
         nets.append(s.sum() / START_CAP * 100)
         eq = np.cumsum(s); dds.append((eq - np.maximum.accumulate(np.concatenate([[0], eq]))[1:]).min() / START_CAP * 100)
         shs.append((s.mean() / s.std()) if s.std() else 0)
+        if j < 60:
+            paths.append(_downpts(START_CAP + eq))          # ₹ equity paths (chart)
     q = lambda a, p: round(float(np.percentile(a, p)), 2)
+    orig = _downpts(START_CAP + np.cumsum(net))
     return dict(table=dict(net=[round(net.sum()/START_CAP*100,2), q(nets,5), q(nets,50), q(nets,95)],
                            maxdd=[_metrics(rr)["maxdd"], q(dds,5), q(dds,50), q(dds,95)],
-                           sharpe=[_metrics(rr)["sharpe"], q(shs,5), q(shs,50), q(shs,95)]))
+                           sharpe=[_metrics(rr)["sharpe"], q(shs,5), q(shs,50), q(shs,95)]),
+                paths=paths, orig_path=orig,
+                sharpe_dist=dict(original=round(_metrics(rr)["sharpe"], 2), median=q(shs, 50),
+                                 best5=q(shs, 95), worst5=q(shs, 5)))
+
+
+def _significance(rr, iters=1000, seed=11):
+    """rotated-null Sharpe: resample DEMEANED trades (H0: no edge) -> null Sharpe dist.
+    real Sharpe beating null 95th pct = significant."""
+    rng = np.random.default_rng(seed)
+    net = np.array([r["net"] for r in rr], float)
+    real_sh = _metrics(rr)["sharpe"]
+    dem = net - net.mean()                               # zero-mean null
+    yrs = _metrics(rr)["years"]
+    nulls = []
+    for _ in range(iters):
+        s = dem[rng.integers(0, len(dem), len(dem))]
+        nulls.append((s.mean() / s.std()) * np.sqrt(len(s) / yrs) if s.std() else 0)
+    nulls = np.array(nulls)
+    p = float((nulls >= real_sh).mean())
+    return dict(real_sharpe=round(real_sh, 3), p_value=round(p, 4), null_p95=round(float(np.percentile(nulls, 95)), 3),
+                null_mean=round(float(nulls.mean()), 3), n_perm=iters, significant=p < 0.05)
 
 
 tr = [r for r in rows if r["date"] < "2025-01-01"]
@@ -153,7 +185,7 @@ def combo(rr):
     eq, bench, uw, labels, wp = _curves(rr)
     return dict(dna=dict(dist=250, wing=250, trig=100, take=0.5, iv_gate=0.40, roll="threatened"),
                 metrics=m, equity=eq, benchmark=bench, underwater=uw, labels=labels, worst_periods=wp,
-                significance=dict(real_sharpe=m["sharpe"], p_value=p_full, significant=p_full < 0.05),
+                significance=_significance(rr),
                 mc=_mc(rr), monthly=_monthly(rr), all_trades=_all_trades(rr), trades=_all_trades(rr[-10:]),
                 opt_table=[])
 
