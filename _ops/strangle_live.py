@@ -46,7 +46,8 @@ try:
 except Exception:
     notify = None
 
-TC_FILE = os.path.join(ROOT, "data", "nifty_config.json")
+TC_FILE = os.path.join(ROOT, "nifty_config.json")                 # config lives at ROOT (not data/)
+IV_HIST = os.path.join(ROOT, "data", "strangle_iv_history.json")   # {date: atm_iv%} — OWN
 SEG = "NSE_FNO"
 MODE = "paper"                          # HARD LOCK — going live needs a code change here
 IV_LOOKBACK = 60
@@ -79,6 +80,21 @@ def cfg():
 
 def _log(msg):
     print(f"[strangle] {msg}", flush=True)
+
+
+def _load_iv_hist():
+    try:
+        return dict(json.load(open(IV_HIST)))
+    except Exception:
+        return {}
+
+
+def _save_iv_hist(h):
+    os.makedirs(os.path.dirname(IV_HIST), exist_ok=True)
+    tmp = IV_HIST + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(h, f)
+    os.replace(tmp, IV_HIST)                      # atomic
 
 
 # ---------------------------------------------------------------- helpers
@@ -135,12 +151,11 @@ def _iv_gate(symbol, spot, cfg_):
     if iv is None:
         return False, None, None
     today = datetime.now().strftime("%Y-%m-%d")
-    hist = ivs.load_history()
-    prior = ivs._sorted_iv_list(hist, upto_date=today)
+    hist = _load_iv_hist()                       # strangle's OWN history (not VRP's — isolation)
+    prior = [hist[d] for d in sorted(hist) if d < today]   # strictly-prior, no lookahead
     r = ivs.iv_rank(iv, prior, lookback=IV_LOOKBACK)
-    # record today's IV for future ranks (shared with VRP; same value = benign race)
-    try:
-        ivs.save_history(ivs.record_today(today, iv, hist))
+    try:                                          # record today for future ranks
+        hist[today] = iv; _save_iv_hist(hist)
     except Exception:
         pass
     thr = float(cfg_.get("iv_gate_rank", 0.40))
@@ -408,6 +423,8 @@ if __name__ == "__main__":
                     "CE24000": 50, "PE24000": 50})
     sr.STORE = os.path.join(os.path.dirname(sr.STORE), "strangle_positions_TEST.json")
     if os.path.exists(sr.STORE): os.remove(sr.STORE)
+    IV_HIST = os.path.join(os.path.dirname(IV_HIST), "strangle_iv_history_TEST.json")
+    if os.path.exists(IV_HIST): os.remove(IV_HIST)
 
     pos = fire_strangle("NIFTY", "strangle_manual", cfg())
     assert pos and len(calls["signal"]) == 4, ("entry legs", len(calls["signal"]))
@@ -438,4 +455,5 @@ if __name__ == "__main__":
     assert any(l["sec_id"] == "CE24250" and l["status"] == "closed" for l in p["legs"])
     print("roll OK: rolls", p["rolls"], "new CE sold sec CE24500, old CE24250 closed")
     os.remove(sr.STORE)
+    if os.path.exists(IV_HIST): os.remove(IV_HIST)
     print("\nstrangle_live stubbed integration test PASS")
