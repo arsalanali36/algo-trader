@@ -132,8 +132,12 @@ os.makedirs(os.path.join(RUNS, SLUG), exist_ok=True)
 with io.open(os.path.join(RUNS, SLUG, "results.js"), "w", encoding="utf-8") as f:
     f.write("window.RESULTS = " + json.dumps(dict(meta=meta, combos=combos), default=str) + ";")
 
-# copy the shared dashboard template as index.html
-shutil.copy(os.path.join(NT, "dashboard_intraday.html"), os.path.join(RUNS, SLUG, "index.html"))
+# self-contained dashboard: copy template but point its <script> at THIS run's results.js
+# (run_hunt does the exact same replace — the template ships loading results_intraday.js)
+_dash = io.open(os.path.join(NT, "dashboard_intraday.html"), encoding="utf-8").read().replace(
+    'src="results_intraday.js"', 'src="results.js"')
+with io.open(os.path.join(RUNS, SLUG, "index.html"), "w", encoding="utf-8") as f:
+    f.write(_dash)
 
 index_entry = dict(slug=SLUG, design="strangle_roll_hedge",
                    title="02.15 - 9:20 Strangle Roll+Hedge (REAL-lake, IV-gated)", tf="positional",
