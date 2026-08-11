@@ -201,10 +201,25 @@ os.makedirs(os.path.join(RUNS, SLUG), exist_ok=True)
 with io.open(os.path.join(RUNS, SLUG, "results.js"), "w", encoding="utf-8") as f:
     f.write("window.RESULTS = " + json.dumps(dict(meta=meta, combos=combos), default=str) + ";")
 
+# --- preserve the RESEARCH JOURNEY reports inside the Lab run folder ---
+for src, dst in [("strangle_report.html", "research_1_sweep.html"),
+                 ("strangle_hedge_report.html", "research_2_hedge.html")]:
+    sp = os.path.join(HERE, src)
+    if os.path.exists(sp):
+        shutil.copy(sp, os.path.join(RUNS, SLUG, dst))
+
 # self-contained dashboard: copy template but point its <script> at THIS run's results.js
 # (run_hunt does the exact same replace — the template ships loading results_intraday.js)
 _dash = io.open(os.path.join(NT, "dashboard_intraday.html"), encoding="utf-8").read().replace(
     'src="results_intraday.js"', 'src="results.js"')
+_banner = ('<div style="background:#161b22;border-bottom:1px solid #30363d;padding:8px 16px;'
+           'font:13px -apple-system,Segoe UI,sans-serif;color:#8b949e">'
+           '🔬 <b style="color:#e6edf3">Research journey</b> — kyun is nateeje pe pahunche: '
+           '<a href="research_1_sweep.html" target="_blank" style="color:#58a6ff;margin:0 10px">'
+           '① Naked 9-variant sweep</a> · '
+           '<a href="research_2_hedge.html" target="_blank" style="color:#58a6ff">'
+           '② Hedge + significance (final)</a></div>')
+_dash = _dash.replace("<body>", "<body>\n" + _banner, 1)
 with io.open(os.path.join(RUNS, SLUG, "index.html"), "w", encoding="utf-8") as f:
     f.write(_dash)
 
