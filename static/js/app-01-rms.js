@@ -12,6 +12,12 @@
     // gets a Lots button appended. Non-straddle strategies never see a Lots field.
     const STRADDLE_SOURCES = ['straddle_920', 'straddle_alert', 'straddle_manual'];
     const STRADDLE_ROLLER = 'atm_straddle_roller';
+    // Strangle roll+hedge (02.15/02.16) — same shape as the straddle family: no top-level
+    // config key (config lives in _auto_strangle), fired inside monitor_daemon, so it never
+    // appears as a normal RMS row. Inject as VIRTUAL display rows (status + lots + IV-gate).
+    // Display-only for now (a lots-edit route needs a trader_dashboard change — deferred).
+    const STRANGLE_SOURCES = ['strangle_920', 'strangle_manual'];
+    function _isStrangleSource(id) { return STRANGLE_SOURCES.includes(String(id).toLowerCase()); }
     const STRADDLE_LOTS_IDS = new Set([...STRADDLE_SOURCES, STRADDLE_ROLLER]);
     // Generic single-lot-scalable strategies: a plain config_key with a lot field
     // (NOT the shared _auto_straddle.lots). Add a config_key -> lot-field here to give
@@ -742,6 +748,7 @@
       // lots is settable from RMS. RENDER-only: saveRiskConfig derives its own
       // stratIds from /api/config, so these never touch the per_strategy save.
       STRADDLE_SOURCES.forEach(s => { if (!stratIds.includes(s) && !regHidden(s)) stratIds.push(s); });
+      STRANGLE_SOURCES.forEach(s => { if (!stratIds.includes(s) && !regHidden(s)) stratIds.push(s); });
 
       // Reasons For Exit tab — which strategies are live right now, and whether
       // webhook-specific exit reasons apply (only webhook_executor produces
@@ -832,6 +839,24 @@
             <td style="font-size:11px">${_enTxt} <span style="color:#6e7681">· paper</span></td>
             <td style="color:#8b949e">—</td>
             <td colspan="2" style="white-space:nowrap">${_straddleLotsBtn(id)} <span style="color:#6e7681;font-size:10px">shared</span></td>`
+            + '<td class="psadv"></td>'.repeat(12) + '</tr>';
+          return;
+        }
+        // Strangle roll+hedge SOURCE = virtual DISPLAY row (config in _auto_strangle,
+        // fired in monitor_daemon). Status + lots + IV-gate, read-only (paper).
+        if (_isStrangleSource(id)) {
+          const _ax = (typeof GLOBAL_CONFIG === 'object' && GLOBAL_CONFIG && GLOBAL_CONFIG._auto_strangle) || {};
+          const _lid = _rlc(id);
+          const _enTxt = _lid === 'strangle_manual'
+            ? '<span style="color:#8b949e">on-demand</span>'
+            : (_ax.enabled_920 ? '<span style="color:#3fb950">enabled</span>' : '<span style="color:#8b949e">off</span>');
+          const _lots = (parseInt(_ax.lots, 10) || 1);
+          const _ivg = Math.round((_ax.iv_gate_rank != null ? _ax.iv_gate_rank : 0.40) * 100);
+          html += `<tr><td title="${id}">${dispName}</td>
+            <td style="font-size:11px;color:#6e7681;white-space:nowrap">🩳 positional · roll+hedge</td>
+            <td style="font-size:11px">${_enTxt} <span style="color:#6e7681">· paper</span></td>
+            <td style="color:#8b949e">—</td>
+            <td colspan="2" style="white-space:nowrap;font-size:11px;color:#8b949e">Lots ${_lots} · IV-gate ≥${_ivg}% <span style="color:#6e7681;font-size:10px">(config · Lab↗ 02.15)</span></td>`
             + '<td class="psadv"></td>'.repeat(12) + '</tr>';
           return;
         }
