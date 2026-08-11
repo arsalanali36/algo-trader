@@ -1,0 +1,48 @@
+{
+ "slug": "strangle_920",
+ "design": "strangle_roll_hedge",
+ "title": "02.15 - 9:20 Strangle Roll+Hedge (REAL-lake, IV-gated)",
+ "tf": "positional",
+ "params": {
+  "dist": 250,
+  "wing": 250,
+  "trig": 100,
+  "take_pct": 0.5,
+  "iv_gate_rank": 0.4
+ },
+ "exit": "50% credit / weekly expiry",
+ "instrument": "NIFTY 50",
+ "lot_size": 65,
+ "window": [
+  "2021-07-01",
+  "2026-07-13"
+ ],
+ "days": 370,
+ "significant": true,
+ "bs_full": {
+  "sharpe": 1.186,
+  "net_pct": 13.069,
+  "maxdd": -2.163,
+  "win_rate": 57.297,
+  "trades": 370,
+  "profit_factor": 1.664
+ },
+ "combos": {
+  "train": {
+   "sharpe": 0.849,
+   "net_pct": 5.472
+  },
+  "oos": {
+   "sharpe": 1.731,
+   "net_pct": 7.597
+  }
+ },
+ "p_value": 0.003,
+ "created": "2026-08-11 19:30",
+ "deploy_key": "strangle_920",
+ "deployed": "strangle_920",
+ "real_cost": {
+  "method": "REAL OptChainLake premium + date-aware Zerodha charges",
+  "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136"
+ }
+}
