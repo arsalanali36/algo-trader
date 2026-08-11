@@ -813,6 +813,30 @@ def _fetch_premium(sec_id, token, cid):
         return None
 
 
+def _reverse_close_leg(st, cfg, symbol, token, cid, mode, log):
+    """Opt-in (cfg 'reverse_close'): when a NEW opposite signal is about to open
+    a leg while the previous opposite leg is still open, close that OLD leg first
+    so the strategy flips cleanly instead of stacking PE+CE (accidental short
+    straddle). Default OFF -> behaviour unchanged for every strategy until the
+    flag is set. Returns True if it closed a leg."""
+    if not cfg.get('reverse_close') or st.get('position') is None:
+        return False
+    _from = st.get('position')
+    if st.get('opt_sec_id'):
+        place_order(symbol, 'BUY', st.get('opt_qty', cfg.get('qty', 1)), token, cid, mode,
+                    st.get('opt_sec_id'), 'NSE_FNO', st.get('opt_trad_sym'), is_exit=True,
+                    extra_tags=['REVERSE_CLOSE', 'REV_FROM:%s' % _from])
+    else:
+        _side = 'SELL' if _from == 'LONG' else 'BUY'
+        place_order(symbol, _side, cfg.get('qty', 1), token, cid, mode, is_exit=True,
+                    extra_tags=['REVERSE_CLOSE', 'REV_FROM:%s' % _from])
+    log.info('REVERSE %s - closed %s leg before opening opposite (reverse_close on)' % (symbol, _from))
+    st['position'] = None
+    st['opt_sec_id'] = None
+    st['opt_trad_sym'] = None
+    return True
+
+
 def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad_sym=None, price=0.0, extra_tags=None, group_id="", broker_override=None, product=None, is_exit=False):
     """Thin file-local wrapper — asli kaam ab execution_gateway mein (Task 3,
     Rule 6B / ADR-001). Entry-side gate_entry() is file mein place_order se
@@ -1379,6 +1403,8 @@ def main(strategy_id="range"):
                 offset = int(cfg.get("strike_offset", 0))
 
                 log.info(f"SIGNAL {signal} {symbol} @ {price:.2f}  reason={reason}")
+                # reversal-close (opt-in cfg 'reverse_close'): flip cleanly, no PE+CE stacking
+                _reverse_close_leg(st, cfg, symbol, token, cid, mode, log)
                 
                 if inst == "options":
                     opt_type = "PE" if signal == "BUY" else "CE"
