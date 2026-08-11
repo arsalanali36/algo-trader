@@ -130,6 +130,14 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                     entry_premium=est_price, block_reason=gate_reason, mode=mode)
             except Exception as _e:
                 log(f"[GATEWAY] skip-record failed (non-fatal): {_e}")
+            # Optional Telegram alert (default off) — "block na hota to entry aati"
+            # ka pata rahe. Fail-safe: apna hi swallow karta hai.
+            try:
+                import telegram_notify
+                telegram_notify.notify_blocked(strategy_id, trad_sym, side,
+                                               reason=gate_reason, mode=mode)
+            except Exception:
+                pass
             # price = est_price: caller ko blocked-row recording (CAPITAL_BLOCKED
             # ghost row, universe pattern) ke liye chahiye hota hai
             return _result(False, "blocked", gate_reason, price=est_price)
@@ -159,6 +167,16 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                               instrument=instrument, broker_name=bname,
                               group_id=group_id, extra_tags=tags,
                               product=product, is_exit=False)
+    # Telegram ENTRY alert — order gaya (filled/paper/pending). Config-gated
+    # (default sirf live). Fail-safe + non-blocking (background thread).
+    if res.get("ok"):
+        try:
+            import telegram_notify
+            telegram_notify.notify_entry(strategy_id, trad_sym, side, qty,
+                                         price=res.get("price"), mode=mode,
+                                         status=res.get("status") or "", tag=tag)
+        except Exception:
+            pass
     return _result(bool(res.get("ok")), res.get("status") or ("failed" if not res.get("ok") else "paper"),
                    res.get("reason", ""), res.get("order_id"), res.get("price"), qty)
 
@@ -215,6 +233,16 @@ def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
                               instrument=instrument, broker_name=bname,
                               group_id=group_id, extra_tags=tags,
                               product=product, is_exit=True)
+    # Telegram EXIT alert — asli exit order gaya. Config-gated (default live).
+    # skipped_flat yahan tak nahi aata (upar hi return ho jaata) — sirf real exit.
+    if res.get("ok"):
+        try:
+            import telegram_notify
+            telegram_notify.notify_exit(strategy_id, trad_sym, exit_side, qty,
+                                        price=res.get("price"), mode=mode,
+                                        reason=reason or "", tag=tag)
+        except Exception:
+            pass
     return _result(bool(res.get("ok")), res.get("status") or ("failed" if not res.get("ok") else "paper"),
                    res.get("reason", ""), res.get("order_id"), res.get("price"), qty)
 

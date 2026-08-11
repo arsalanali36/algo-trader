@@ -152,3 +152,5 @@ _config_backups/
 static/js/*.gz
 static/vendor/*.gz
 scratch/nifty_trend/runs/*/*.gz
+
+data/telegram_config.json

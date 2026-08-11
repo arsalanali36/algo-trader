@@ -929,6 +929,53 @@ def api_report_settings():
         return jsonify({"ok": False, "error": str(e)})
 
 
+@app.route('/api/telegram/config', methods=['GET', 'POST'])
+def api_telegram_config():
+    """Telegram alert settings — panel se read/save. Token kabhi wire pe poora
+    nahi jaata (masked). Fail-safe."""
+    import telegram_notify as tg
+    if request.method == 'GET':
+        try:
+            cfg = tg.get_config_masked()
+            # picker ke liye: active strategies (id + label + mode)
+            strategies = []
+            try:
+                import strategy_registry as sr
+                raw = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                for k, v in raw.items():
+                    if isinstance(v, dict) and v.get('active'):
+                        try:
+                            lbl = sr.label(k, with_name=True)
+                        except Exception:
+                            lbl = k
+                        strategies.append({"id": k, "label": lbl,
+                                           "mode": v.get('mode', 'paper')})
+                strategies.sort(key=lambda s: (s['mode'] != 'live', s['label']))
+            except Exception as e:
+                print("[telegram] strategy list fail:", e, flush=True)
+            return jsonify({"ok": True, "config": cfg, "strategies": strategies})
+        except Exception as e:
+            return jsonify({"ok": False, "error": str(e)})
+    d = request.get_json(force=True, silent=True) or {}
+    try:
+        return jsonify({"ok": True, "config": tg.save_config(d)})
+    except Exception as e:
+        print("[telegram] save fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
+@app.route('/api/telegram/detect-chat', methods=['POST'])
+def api_telegram_detect_chat():
+    import telegram_notify as tg
+    return jsonify(tg.detect_chat_ids())
+
+
+@app.route('/api/telegram/test', methods=['POST'])
+def api_telegram_test():
+    import telegram_notify as tg
+    return jsonify(tg.send_test())
+
+
 @app.route('/api/report-notes', methods=['GET', 'POST', 'PUT', 'DELETE'])
 def api_report_notes():
     import report_notes as rn

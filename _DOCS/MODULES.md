@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**132 modules documented** across 10 folders.
+**133 modules documented** across 10 folders.
 
 
 ## Folders
@@ -220,6 +220,19 @@ strategy_safety.py — THE shared "backoffice" layer for every strategy that sel
 - 🔧 `check_contract_liquidity` — Live market-depth liquidity gate for ONE option CONTRACT (not the
 - 🔧 `compute_hedge_target` — Resolve the auto-hedge BUY contract for a SELL leg that already went
 - 🔧 `gate_entry` — Pre-trade RMS gate for any entry (option SELL or BUY, equity, etc.) —
+
+### `_core/telegram_notify.py`
+telegram_notify.py — trade ENTRY/EXIT ka Telegram alert (screen ghoorne se aazadi).
+
+- 🔧 `detect_chat_ids` — getUpdates se chat_id(s) nikaalo (user ne bot ko message bheja ho to).
+- 🔧 `get_config_masked` — UI ke liye config — token masked (kabhi poora token wire pe nahi bhejenge).
+- 🔧 `is_enabled` — …
+- 🔧 `notify_blocked` — RMS ne entry block ki — optional alert (default off). Fail-safe.
+- 🔧 `notify_entry` — Ek entry ka Telegram alert. execution_gateway se call hota hai. Fail-safe.
+- 🔧 `notify_exit` — Ek exit ka Telegram alert. Fail-safe.
+- 🔧 `save_config` — UI se aaya patch merge karke likho. bot_token khaali/masked aaye to purana
+- 🔧 `send_raw` — Koi bhi custom text (health-check summary etc.). Dedup lagta hai.
+- 🔧 `send_test` — UI ka Test button — abhi seedha bhejo (dedup ke bina, sync so error dikhe).
 
 ### `_core/webhook_executor.py`
 webhook_executor.py — TradingView webhook → Dhan/Kite order executor (MULTI-STRATEGY).
@@ -1056,6 +1069,7 @@ opt_whatif.py — manual options "what-if" backtest from REAL chain data.
 
 - 🔧 `available_dates` — Dates offering data — collector (recent) ∪ lake (historical), newest first.
 - 🔧 `chain_at` — Option-chain snapshot AT a backtest date+time — for the What-If chain-GRID picker.
+- 🔧 `intraday_series` — Per-minute combined premium (cost-to-close) + net position delta over the ENTRY
 - 🔧 `iv_coverage` — Since-when REAL IV is available. IV is model-sensitive, so ONLY the broker's own
 - 🔧 `leg_prices_at` — Per-leg REAL premium AT time `hm` on `date` (the BACKTEST price at that moment,
 - 🔧 `list_expiries` — Expiries with STORED backtest data for this date, each {date, monthly}. What-If is
@@ -1524,6 +1538,9 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_symbols_search` — Backtest Results symbol picker — search Dhan's NSE equity scrip master
 - 🔧 `api_sync_from_vps` — LOCAL-only: pull VPS trades.db + configs + logs to this local machine so
 - 🔧 `api_sync_positions` — Force-reconcile the app's LIVE ledger against the broker's trade book,
+- 🔧 `api_telegram_config` — Telegram alert settings — panel se read/save. Token kabhi wire pe poora
+- 🔧 `api_telegram_detect_chat` — …
+- 🔧 `api_telegram_test` — …
 - 🔧 `api_timer_deploy` — …
 - 🔧 `api_timer_status` — …
 - 🔧 `api_token_check` — Control tab ka "Check" button — Dhan JWT abhi zinda hai ya nahi.
@@ -1540,6 +1557,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_webhook_status` — …
 - 🔧 `api_webhook_tv` — Receive a TradingView Pine alert (JSON) and execute via webhook_executor.
 - 🔧 `api_whatif` — …
+- 🔧 `api_whatif2_intraday` — Per-minute combined premium (cost-to-close) + net position delta over the entry
 - 🔧 `api_whatif2_payoff` — Payoff curve (expiry + exit-day) + KPI (max P/L, breakevens, POP, net-credit,
 - 🔧 `api_whatif_chain` — Option-chain snapshot AT a backtest date+time for the What-If chain-grid picker —
 - 🔧 `api_whatif_coverage` — Since-when REAL IV is available (broker's own reported IV = live collector window)

@@ -1563,6 +1563,9 @@
           <div class="dropdown-item" onclick="switchTab('config'); closeAvatarDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
             Settings</div>
+          <div class="dropdown-item" onclick="openTelegramModal(); closeAvatarDropdown();"
+            style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
+            📱 Telegram Alerts</div>
           <div class="dropdown-item" onclick="openPwModal(); closeAvatarDropdown();"
             style="padding: 8px 12px; font-size: 12px; color: #c9d1d9; cursor: pointer; white-space: nowrap; transition: background 0.12s;">
             🔑 Change Password</div>
@@ -1594,6 +1597,60 @@
           style="flex:1; padding:10px; background:#21262d; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
         <button id="pw-save" onclick="submitPwChange()"
           style="flex:1; padding:10px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- TELEGRAM ALERTS MODAL -->
+  <div id="tg-modal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:10001; align-items:center; justify-content:center;">
+    <div style="background:#161b22; border:1px solid #30363d; border-radius:12px; padding:22px; width:440px; max-width:94vw; max-height:90vh; overflow-y:auto; box-shadow:0 8px 32px rgba(0,0,0,.5);">
+      <div style="font-size:16px; font-weight:700; margin-bottom:2px;">📱 Telegram Alerts</div>
+      <div style="font-size:12px; color:#8b949e; margin-bottom:14px;">Trade entry/exit ka message seedha Telegram pe — screen ghoorne ki zarurat nahi.</div>
+      <div id="tg-msg" style="display:none; font-size:12px; border-radius:6px; padding:8px 10px; margin-bottom:12px;"></div>
+
+      <label style="display:flex; align-items:center; gap:8px; font-size:13px; color:#e6edf3; margin-bottom:14px; cursor:pointer;">
+        <input type="checkbox" id="tg-enabled" style="width:16px; height:16px; cursor:pointer;">
+        <b>Alerts ON</b> <span style="color:#8b949e; font-weight:400;">(off = koi message nahi)</span>
+      </label>
+
+      <div style="font-size:11px; color:#8b949e; margin-bottom:6px; line-height:1.5;">
+        <b style="color:#c9d1d9;">Setup (ek baar):</b> Telegram me <b>@BotFather</b> → <code>/newbot</code> → token milega. Naye bot ko koi message bhejo. Token neeche paste karke <b>Detect Chat ID</b> dabao.
+      </div>
+
+      <label style="display:block; font-size:12px; color:#8b949e; margin:12px 0 5px; font-weight:600;">Bot Token</label>
+      <input id="tg-token" type="text" placeholder="8123456789:AAH..." autocomplete="off"
+        style="width:100%; padding:9px 11px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; outline:none; box-sizing:border-box; font-family:monospace;">
+
+      <label style="display:block; font-size:12px; color:#8b949e; margin:12px 0 5px; font-weight:600;">Chat ID</label>
+      <div style="display:flex; gap:8px;">
+        <input id="tg-chat" type="text" placeholder="12345678" autocomplete="off"
+          style="flex:1; padding:9px 11px; background:#0d1117; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; outline:none; box-sizing:border-box; font-family:monospace;">
+        <button onclick="tgDetectChat()" id="tg-detect-btn"
+          style="padding:0 12px; background:#21262d; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:12px; font-weight:600; cursor:pointer; white-space:nowrap;">Detect Chat ID</button>
+      </div>
+      <div id="tg-chat-hint" style="font-size:11px; color:#8b949e; margin-top:5px;"></div>
+
+      <div style="border-top:1px solid #30363d; margin:16px 0 12px;"></div>
+
+      <div style="font-size:12px; color:#8b949e; font-weight:600; margin-bottom:8px;">Kis event pe alert?</div>
+      <div style="display:flex; gap:16px; margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#e6edf3; cursor:pointer;"><input type="checkbox" id="tg-ev-entry" checked style="cursor:pointer;"> 🟢 Entry</label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#e6edf3; cursor:pointer;"><input type="checkbox" id="tg-ev-exit" checked style="cursor:pointer;"> 🔴 Exit</label>
+        <label style="display:flex; align-items:center; gap:6px; font-size:13px; color:#e6edf3; cursor:pointer;"><input type="checkbox" id="tg-ev-blocked" style="cursor:pointer;"> ⛔ Blocked</label>
+      </div>
+
+      <div style="font-size:12px; color:#8b949e; font-weight:600; margin-bottom:8px;">Kaunse strategies? <span style="font-weight:400;">(kuch na chuno = saari active)</span></div>
+      <div id="tg-strat-list" style="max-height:180px; overflow-y:auto; background:#0d1117; border:1px solid #30363d; border-radius:6px; padding:8px 10px; margin-bottom:16px;">
+        <div style="color:#8b949e; font-size:12px;">loading…</div>
+      </div>
+
+      <div style="display:flex; gap:10px;">
+        <button onclick="closeTelegramModal()"
+          style="flex:1; padding:10px; background:#21262d; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; font-weight:600; cursor:pointer;">Cancel</button>
+        <button onclick="tgSendTest()" id="tg-test-btn"
+          style="flex:1; padding:10px; background:#21262d; border:1px solid #30363d; border-radius:6px; color:#e6edf3; font-size:13px; font-weight:600; cursor:pointer;">Test</button>
+        <button onclick="tgSaveConfig()" id="tg-save-btn"
+          style="flex:1.4; padding:10px; background:#1f6feb; border:none; border-radius:6px; color:#fff; font-size:13px; font-weight:600; cursor:pointer;">Save</button>
       </div>
     </div>
   </div>
@@ -3797,6 +3854,7 @@
   <script src="/static/js/app-13-calendar-render.js"></script>
   <script src="/static/js/app-14-bs-shadow.js"></script>
   <script src="/static/js/app-15-mobile.js"></script>
+  <script src="/static/js/app-16-telegram.js"></script>
   <script defer src="/static/js/mobile-tools.js"></script>
   <div id="edit-strat-modal"
     style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 1000; justify-content: center; align-items: center; backdrop-filter: blur(4px);">
