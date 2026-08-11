@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**133 modules documented** across 10 folders.
+**135 modules documented** across 10 folders.
 
 
 ## Folders
@@ -817,6 +817,25 @@ auto_straddle.py — Auto ATM straddle (SHORT) order state + basket-exit decisio
 - 🔧 `reconcile_open` — has_open(symbol), but SELF-HEALS a stale-open record before answering.
 - 🔧 `set_status` — …
 
+### `_ops/auto_strangle_roll.py`
+auto_strangle_roll.py — POSITIONAL hedged short-strangle with roll-away + IV-gate. PURE state + decision (no broker / order / Dhan import) — standalone-testable, mirrors auto_straddle.py. Firing legs (via execution_gateway), live LTP, live IV and weekly-expiry squareoff are the CALLER's job (trader_dashboard).
+
+- 🔧 `add` — …
+- 🔧 `apply_roll` — Close side's open legs at close_prices{leg_key:price}, append new_legs (SELL+HEDGE).
+- 🔧 `build_position` — `legs`: list of {opt_type,role,side,sec_id,trad_sym,strike,entry_price,qty}
+- 🔧 `check_exit` — (reason|None, mtm|None). Target only — loss is managed by roll+hedge cap.
+- 🔧 `entry_allowed` — True only if today's trailing IV rank clears the gate. None rank → block
+- 🔧 `entry_spec` — All 4 legs' strikes for a fresh entry. Caller resolves sec_id/trad_sym/price.
+- 🔧 `get` — …
+- 🔧 `has_open` — …
+- 🔧 `list_open` — …
+- 🔧 `position_mtm` — Running P&L in points if we flatten NOW. ltp_of(leg)->float|None.
+- 🔧 `rolls_needed` — Sides whose OPEN sold leg is within `trig` of spot (threatened). Threatened-only
+- 🔧 `set_status` — …
+- 🔧 `side_strikes` — (sold_strike, hedge_strike) for one side at `dist` from spot, hedge `wing` beyond.
+- 🔧 `sold_leg` — …
+- 🔧 `update` — mut(pos)->pos ; atomic read-modify-write.
+
 ### `_ops/backfill_trade_ohlc.py`
 _ops/backfill_trade_ohlc.py — fill missing per-trade premium OHLC from Dhan's paid Expired-Options add-on (rollingoption), so the Stats-page "Opt Fixed/Aggr/ Aggr->EOD" what-if columns stop showing '-' for old dates.
 
@@ -1230,6 +1249,13 @@ stat_views.py — saved strategy-group "Views" for the Stats tab.
 - 🔧 `list_views` — …
 - 🔧 `update_view` — …
 
+### `_ops/strangle_live.py`
+strangle_live.py — LIVE wiring for the positional hedged short-strangle + roll + IV-gate. Self-contained (keeps trader_dashboard.py thin). PAPER hard-locked, OFF by default.
+
+- 🔧 `cfg` — …
+- 🔧 `fire_strangle` — Enter one hedged strangle. source: strangle_920 | strangle_manual. Returns pos|None.
+- 🔧 `strangle_loop` — ~3s: 9:20 entry (IV-gated) + roll + 50%-credit target exit + expiry squareoff.
+
 ### `_ops/strategy_supervisor.py`
 strategy_supervisor.py — fork-based launcher for CODE3B live/paper strategies.
 
@@ -1400,6 +1426,8 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_auto_straddle_fire` — B — Quick Order 'Sell ATM Straddle'. PAPER.
 - 🔧 `api_auto_straddle_list` — Today's straddles + live combined premium + P&L points for the UI.
 - 🔧 `api_auto_straddle_preview` — Live preview for the Quick Order straddle LEG WINDOW / chain multi-leg:
+- 🔧 `api_auto_strangle_fire` — Manual fire of the positional hedged short-strangle + roll + IV-gate. PAPER
+- 🔧 `api_auto_strangle_list` — Open strangle positions (display).
 - 🔧 `api_backtest_calendar_summary` — Same {summary, trades, filters} shape as /api/orders/calendar-summary,
 - 🔧 `api_backtest_lab` — Run a multi-day options backtest. Returns summary + monthly/day-wise breakup +
 - 🔧 `api_backtest_lab_intraday` — One day's minute-by-minute combined MTM + spot (per-day PnL modal).

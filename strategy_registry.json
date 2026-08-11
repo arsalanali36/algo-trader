@@ -316,6 +316,28 @@
    "hold": "Intraday",
    "structure": "Short straddle"
   },
+  "02.10": {
+   "name": "9:20 Strangle Roll+Hedge",
+   "config_key": "strangle_920",
+   "slug": "strangle_920",
+   "live_file": "_ops/strangle_live.py",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "NIFTY",
+   "hold": "Positional",
+   "structure": "Hedged short strangle + roll (IV-gated)"
+  },
+  "02.11": {
+   "name": "Strangle Roll+Hedge (manual)",
+   "config_key": "strangle_manual",
+   "slug": "strangle_manual",
+   "live_file": "_ops/strangle_live.py",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "NIFTY",
+   "hold": "Positional",
+   "structure": "Hedged short strangle + roll (IV-gated)"
+  },
   "02.09": {
    "name": "Auto-Rolling ATM Straddle",
    "config_key": "atm_straddle_roller",

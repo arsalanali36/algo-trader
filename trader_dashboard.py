@@ -6175,6 +6175,34 @@ def api_auto_straddle_fire():
         return jsonify({"ok": False, "msg": str(e)})
 
 
+@app.route('/api/auto-strangle/fire', methods=['POST'])
+def api_auto_strangle_fire():
+    """Manual fire of the positional hedged short-strangle + roll + IV-gate. PAPER
+    hard-locked (strangle_live.MODE). Self-contained in _ops/strangle_live.py."""
+    try:
+        import strangle_live
+        d = request.get_json(force=True) or {}
+        sym = str(d.get("symbol", "NIFTY")).upper()
+        pos = strangle_live.fire_strangle(sym, "strangle_manual")
+        if pos:
+            return jsonify({"ok": True, "msg": f"Strangle entered ({sym}) credit "
+                            f"{pos['entry_net_credit']} target {pos['target_pts']} (paper)",
+                            "id": pos["id"]})
+        return jsonify({"ok": False, "msg": "not entered — IV-gate / RMS / data-gap / already open (see log)"})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
+@app.route('/api/auto-strangle/list', methods=['GET'])
+def api_auto_strangle_list():
+    """Open strangle positions (display)."""
+    try:
+        import auto_strangle_roll as sr
+        return jsonify({"ok": True, "positions": sr.list_open()})
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e), "positions": []})
+
+
 @app.route('/api/auto-straddle/preview', methods=['POST'])
 def api_auto_straddle_preview():
     """Live preview for the Quick Order straddle LEG WINDOW / chain multi-leg:

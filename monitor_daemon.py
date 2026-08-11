@@ -50,6 +50,15 @@ if __name__ == '__main__':
     # process as the poller that keeps both legs' LTP warm). All PAPER.
     threading.Thread(target=td.auto_straddle_loop, daemon=True).start()
 
+    # Positional hedged short-strangle + roll + IV-gate (~3s loop). OFF by default
+    # (config._auto_strangle.enabled_920=false), PAPER hard-locked. Self-contained in
+    # _ops/strangle_live.py — no-op unless enabled or a manual fire is open.
+    try:
+        import strangle_live
+        threading.Thread(target=strangle_live.strangle_loop, daemon=True).start()
+    except Exception as _e:
+        print(f"[monitor] strangle_live not started: {_e}", flush=True)
+
     # StockMock-style (_sm) config strategies — generic scheduled leg-basket runner.
     # On a qualifying day at entry time, fires the configured legs once; exits are the
     # existing pos_monitor's job (per-leg SL% tag + EOD). PAPER. See _ops/sm_runner.py.
