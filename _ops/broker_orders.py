@@ -178,6 +178,93 @@ def fetch(broker="kite", date=None):
     return out
 
 
+_BAD_STATUS = {"rejected", "cancelled", "canceled", "failed", "expired", "blocked"}
+
+
+def _order_bad(status, tags, price):
+    """galat / problem order? -> (bad, why). Blocked/rejected/cancelled/₹0-fill."""
+    st = (status or "").lower()
+    if st in _BAD_STATUS:
+        if st == "blocked":
+            for t in (tags or []):
+                if "CAPITAL_BLOCKED" in str(t):
+                    return True, "⛔ RMS capital block"
+            return True, "⛔ blocked (RMS)"
+        if st == "rejected":
+            return True, "⚠ broker rejected"
+        if st in ("cancelled", "canceled"):
+            return True, "✕ cancelled"
+        return True, st
+    try:
+        p = float(price or 0)
+    except Exception:
+        p = 0
+    if p == 0 and st in ("paper", "filled", "open", "complete", "traded"):
+        return True, "⚠ ₹0 price (fill fail?)"
+    return False, ""
+
+
+def fetch_app(date=None, mode=None):
+    """App ke APNE order records (order_store) — PAPER + REAL, kisi bhi date ke.
+    Har row = ek order jo fire hua (entry/exit), status ke saath. `mode`:
+    'live'/'real' | 'paper' | None(all). galat orders (rejected/cancelled/blocked/
+    ₹0-fill) flag hote hain. Returns {ok,date,mode,orders,strategies,summary,error}."""
+    date = date or _ist_today()
+    md = (mode or "").lower()
+    if md == "real":
+        md = "live"
+    out = {"ok": False, "date": date, "mode": md or "all",
+           "orders": [], "strategies": [], "summary": {}, "error": ""}
+    try:
+        import order_store
+        import json as _json
+        rows, strat = [], set()
+        for r in order_store.query(date=date, limit=20000):
+            m = (r.get("mode") or "").lower()
+            if md == "live" and m != "live":
+                continue
+            if md == "paper" and m == "live":
+                continue
+            try:
+                tags = _json.loads(r.get("tags") or "[]")
+            except Exception:
+                tags = []
+            bad, why = _order_bad(r.get("status"), tags, r.get("price"))
+            lbl = _label(r.get("strategy"))
+            if lbl:
+                strat.add(lbl)
+            rows.append({
+                "time": (r.get("ts") or "")[11:19],
+                "mode": ("Real" if m == "live" else "Paper"),
+                "raw_mode": m,
+                "side": str(r.get("side") or "").upper(),
+                "trad_sym": r.get("trad_sym") or r.get("symbol") or "",
+                "strategy": lbl,
+                "qty": r.get("qty"),
+                "price": r.get("price"),
+                "status": str(r.get("status") or "").upper(),
+                "source": r.get("source") or "",
+                "broker": r.get("broker") or "",
+                "bad": bad,
+                "why": why,
+            })
+        n_live = sum(1 for x in rows if x["raw_mode"] == "live")
+        n_bad = sum(1 for x in rows if x["bad"])
+        out["orders"] = rows
+        out["strategies"] = sorted(s for s in strat if s)
+        out["summary"] = {
+            "total": len(rows), "real": n_live, "paper": len(rows) - n_live,
+            "bad": n_bad, "good": len(rows) - n_bad,
+            "rejected": sum(1 for x in rows if x["status"] in ("REJECTED", "CANCELLED")),
+            "blocked": sum(1 for x in rows if x["status"] == "BLOCKED"),
+        }
+        out["ok"] = True
+    except Exception as e:
+        out["error"] = str(e)
+        print("[broker_orders] fetch_app fail:", e, flush=True)
+    return out
+
+
 def _net_from_fills(fills):
     """[{trad_sym,side,qty}] -> {trad_sym: {net, buys, sells, n}}"""
     agg = {}

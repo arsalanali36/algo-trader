@@ -884,6 +884,7 @@ broker_orders.py — DISPLAY-ONLY broker order/trade book (Zerodha) + CSV match.
 
 - 🔧 `csv_match` — Uploaded Zerodha tradebook CSV ko LIVE broker trades se per-contract MATCH.
 - 🔧 `fetch` — LIVE (today's) broker order book + trade book + app-blocked entries,
+- 🔧 `fetch_app` — App ke APNE order records (order_store) — PAPER + REAL, kisi bhi date ke.
 
 ### `_ops/bs_shadow.py`
 bs_shadow.py — DAILY Black-Scholes shadow of the REAL paper/live trades.
@@ -1427,6 +1428,7 @@ set_password.py — set / change the dashboard login.
 ### `trader_dashboard.py`
 trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py Open: http://72.61.173.32:5099
 
+- 🔧 `api_app_orders` — App ke apne order records (order_store) — PAPER + REAL, kisi bhi date ke,
 - 🔧 `api_auto_straddle_close` — …
 - 🔧 `api_auto_straddle_config` — Get/set nifty_config['_auto_straddle']. Live mode is NOT settable here — paper-locked.
 - 🔧 `api_auto_straddle_fire` — B — Quick Order 'Sell ATM Straddle'. PAPER.
@@ -1450,7 +1452,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_broker_balances` — Dhan + Kite cash/collateral/total_margin, for the header widget + RMS
 - 🔧 `api_broker_ledger` — Balance-over-time (ledger) for the RMS Broker Balances panel — per broker:
 - 🔧 `api_broker_ledger_upload` — Upload a broker's own ledger/statement CSV (Zerodha Console → Funds →
-- 🔧 `api_broker_orders` — Live broker order book + trade book + app-blocked entries (display-only).
+- 🔧 `api_broker_orders` — Live broker order book + trade book + app-blocked entries (display-only, today-only).
 - 🔧 `api_broker_orders_csv_match` — Uploaded Zerodha tradebook CSV vs live broker trades → exact-match report.
 - 🔧 `api_bs_shadow` — Black-Scholes shadow of the REAL trades, per day + per strategy, from the
 - 🔧 `api_bt_presets_delete` — …

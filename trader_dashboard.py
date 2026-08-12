@@ -1296,9 +1296,23 @@ def broker_orders_page():
     CSV match. Display-only — koi order/risk path nahi."""
     return render_template("broker_orders.html")
 
+@app.route('/api/app-orders')
+def api_app_orders():
+    """App ke apne order records (order_store) — PAPER + REAL, kisi bhi date ke,
+    galat orders flagged. Primary source for the Broker Orders page. Display-only."""
+    import broker_orders as bo
+    date = request.args.get('date') or None
+    mode = request.args.get('mode') or None
+    try:
+        obj = bo.fetch_app(date=date, mode=mode)
+    except Exception as e:
+        print("[app-orders] fail:", e, flush=True)
+        obj = {"ok": False, "error": str(e), "orders": [], "strategies": [], "summary": {}}
+    return jsonify(obj)
+
 @app.route('/api/broker-orders')
 def api_broker_orders():
-    """Live broker order book + trade book + app-blocked entries (display-only)."""
+    """Live broker order book + trade book + app-blocked entries (display-only, today-only)."""
     import broker_orders as bo
     broker = (request.args.get('broker') or 'kite').lower()
     date = request.args.get('date') or None
