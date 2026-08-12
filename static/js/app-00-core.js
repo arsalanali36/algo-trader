@@ -57,7 +57,12 @@
       // instead of leaving the page blank (switchTab used to just return here).
       if (!tabEl || !bodyEl) {
         id = 'orders';
-        tabEl = document.querySelector(`.tab[onclick="switchTab('orders')"]`);
+        // Orders & P&L now lives inside the "Orders ▾" dropdown, so it has no
+        // top-level .tab of its own — resolve its host container (same as the
+        // data-hosts-tab path above) so the fallback still highlights + shows it.
+        tabEl = document.querySelector(`.tab[onclick="switchTab('orders')"]`)
+          || document.querySelector(`[data-hosts-tab="orders"]`)?.closest('.tab-dropdown-container')?.querySelector('.tab')
+          || null;
         bodyEl = document.getElementById('tab-orders');
         if (!tabEl || !bodyEl) return;
       }

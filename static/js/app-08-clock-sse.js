@@ -87,6 +87,7 @@
       window.closeAvatarDropdown();
       window.closeReportsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
+      window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('more-dropdown');
       dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -100,6 +101,7 @@
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
+      window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('reports-dropdown');
       if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
@@ -113,11 +115,26 @@
       window.closeAvatarDropdown();
       window.closeMoreDropdown();
       window.closeReportsDropdown();
+      window.closeOrdersDropdown && window.closeOrdersDropdown();
       const dropdown = document.getElementById('curves-dropdown');
       if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
     };
     window.closeCurvesDropdown = () => {
       const dropdown = document.getElementById('curves-dropdown');
+      if (dropdown) dropdown.style.display = 'none';
+    };
+    // 📒 Orders dropdown (Orders & P&L + Broker Orders)
+    window.toggleOrdersDropdown = (event) => {
+      event.stopPropagation();
+      window.closeAvatarDropdown();
+      window.closeMoreDropdown();
+      window.closeReportsDropdown();
+      window.closeCurvesDropdown && window.closeCurvesDropdown();
+      const dropdown = document.getElementById('orders-dropdown');
+      if (dropdown) dropdown.style.display = dropdown.style.display === 'none' ? 'block' : 'none';
+    };
+    window.closeOrdersDropdown = () => {
+      const dropdown = document.getElementById('orders-dropdown');
       if (dropdown) dropdown.style.display = 'none';
     };
 
@@ -126,6 +143,7 @@
       window.closeMoreDropdown();
       window.closeReportsDropdown();
       window.closeCurvesDropdown && window.closeCurvesDropdown();
+      window.closeOrdersDropdown && window.closeOrdersDropdown();
     });
 
     setInterval(() => {
