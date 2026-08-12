@@ -623,6 +623,42 @@ class KiteBroker(BaseBroker):
             log.warning(f"[KITE] trades() failed: {e}")
             return []
 
+    def orders(self) -> list:
+        """Today's FULL order book (executed / rejected / cancelled / open),
+        NORMALIZED. READ-ONLY — powers the Broker Orders page (/broker-orders).
+        Kite's `status_message` carries the real rejection reason (margin,
+        product, freeze). Returns [] on any failure — never raises."""
+        import kite_rate_limiter as _krl
+        try:
+            kite = self._get_kite()
+            _krl.acquire("account")
+            raw = kite.orders() or []
+        except Exception as e:
+            log.warning(f"[KITE] orders() failed: {e}")
+            return []
+        out = []
+        for o in raw:
+            try:
+                px = float(o.get("average_price") or 0)
+                out.append({
+                    "order_id": str(o.get("order_id") or ""),
+                    "exchange_order_id": str(o.get("exchange_order_id") or ""),
+                    "time": str(o.get("order_timestamp") or ""),
+                    "tradingsymbol": o.get("tradingsymbol") or "",
+                    "exchange": o.get("exchange") or "",
+                    "side": str(o.get("transaction_type") or "").upper(),
+                    "product": o.get("product") or "",
+                    "order_type": o.get("order_type") or "",
+                    "qty": int(o.get("quantity") or 0),
+                    "filled_qty": int(o.get("filled_quantity") or 0),
+                    "price": px if px > 0 else None,
+                    "status": str(o.get("status") or "").upper(),
+                    "status_message": o.get("status_message") or "",
+                })
+            except Exception:
+                continue
+        return out
+
     def margin_for_order(self, kite_tradingsymbol, exchange, side, qty, price, product="MIS"):
         """Real Zerodha margin (SPAN+exposure) for ONE order via Kite Connect's
         order_margins API — the exact ₹ Zerodha would block for this order.

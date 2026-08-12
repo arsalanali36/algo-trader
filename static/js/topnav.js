@@ -16,6 +16,7 @@
   var TABS = [
     { href: '/?tab=log',     label: 'Logs' },
     { href: '/?tab=orders',  label: '📒 Orders & P&L' },
+    { href: '/broker-orders',label: '🧾 Broker Orders' },
     { href: '/stats2',       label: '📊 Stats 2' },
     { href: '/?tab=risk',    label: '⚠️ Risk' },
     { href: '/registry2',    label: '🗂️ Strategies' }

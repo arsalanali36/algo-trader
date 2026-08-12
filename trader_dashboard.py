@@ -1289,6 +1289,42 @@ def api_fii_flow():
         return resp
     return app.response_class(payload, mimetype='application/json')
 
+@app.route('/broker-orders')
+def broker_orders_page():
+    """Broker Orders page — Zerodha ki tarah aaj ke saare executed/rejected orders
+    + trades (fills), app ke strategy/mode se annotated + app-blocked entries +
+    CSV match. Display-only — koi order/risk path nahi."""
+    return render_template("broker_orders.html")
+
+@app.route('/api/broker-orders')
+def api_broker_orders():
+    """Live broker order book + trade book + app-blocked entries (display-only)."""
+    import broker_orders as bo
+    broker = (request.args.get('broker') or 'kite').lower()
+    date = request.args.get('date') or None
+    try:
+        obj = bo.fetch(broker=broker, date=date)
+    except Exception as e:
+        print("[broker-orders] fail:", e, flush=True)
+        obj = {"ok": False, "error": str(e), "orders": [], "trades": [],
+               "blocked": [], "summary": {}}
+    return jsonify(obj)
+
+@app.route('/api/broker-orders/csv-match', methods=['POST'])
+def api_broker_orders_csv_match():
+    """Uploaded Zerodha tradebook CSV vs live broker trades → exact-match report."""
+    import broker_orders as bo
+    broker = (request.args.get('broker') or 'kite').lower()
+    try:
+        f = request.files.get('file')
+        text = f.read().decode('utf-8', 'replace') if f else request.get_data(as_text=True)
+        obj = bo.csv_match(text, broker=broker)
+    except Exception as e:
+        print("[broker-orders csv-match] fail:", e, flush=True)
+        obj = {"ok": False, "error": str(e), "rows": [], "exact_match": False,
+               "summary": {}}
+    return jsonify(obj)
+
 @app.route('/api/option-strike')
 def api_option_strike():
     """Per-strike premium series for /curves right-click 'Load strike chart'.

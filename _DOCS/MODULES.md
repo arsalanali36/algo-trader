@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**135 modules documented** across 10 folders.
+**136 modules documented** across 10 folders.
 
 
 ## Folders
@@ -879,6 +879,12 @@ broker_ledger.py — balance-over-time (ledger) store for the RMS Broker Balance
 - 🔧 `snapshot_if_due` — Take a snapshot only if today's isn't recorded yet (once/day). Cheap guard
 - 🔧 `view` — Combined payload for the RMS ledger panel — per broker: balance-over-time
 
+### `_ops/broker_orders.py`
+broker_orders.py — DISPLAY-ONLY broker order/trade book (Zerodha) + CSV match.
+
+- 🔧 `csv_match` — Uploaded Zerodha tradebook CSV ko LIVE broker trades se per-contract MATCH.
+- 🔧 `fetch` — Live order book + trade book + app-blocked entries, strategy-annotated.
+
 ### `_ops/bs_shadow.py`
 bs_shadow.py — DAILY Black-Scholes shadow of the REAL paper/live trades.
 
@@ -1444,6 +1450,8 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_broker_balances` — Dhan + Kite cash/collateral/total_margin, for the header widget + RMS
 - 🔧 `api_broker_ledger` — Balance-over-time (ledger) for the RMS Broker Balances panel — per broker:
 - 🔧 `api_broker_ledger_upload` — Upload a broker's own ledger/statement CSV (Zerodha Console → Funds →
+- 🔧 `api_broker_orders` — Live broker order book + trade book + app-blocked entries (display-only).
+- 🔧 `api_broker_orders_csv_match` — Uploaded Zerodha tradebook CSV vs live broker trades → exact-match report.
 - 🔧 `api_bs_shadow` — Black-Scholes shadow of the REAL trades, per day + per strategy, from the
 - 🔧 `api_bt_presets_delete` — …
 - 🔧 `api_bt_presets_list` — …
@@ -1599,6 +1607,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `backtest_db_get` — …
 - 🔧 `backtest_db_set` — …
 - 🔧 `backtest_lab_page` — StockMock-style multi-day options backtest — build a leg strategy (ATM±N, per-leg
+- 🔧 `broker_orders_page` — Broker Orders page — Zerodha ki tarah aaj ke saare executed/rejected orders
 - 🔧 `change_password` — …
 - 🔧 `daily_report_page` — One-scroll EOD Daily Report — KPIs, target/stat tables, per-strategy +
 - 🔧 `fii_flow_page` — FII/DII participant-flow dashboard — Sensibull-style but from our own free
