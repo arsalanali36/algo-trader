@@ -61,10 +61,6 @@
   </div>
 
   <div class="bar">
-    <span class="seg" id="srcSeg">
-      <span data-s="app" class="on" onclick="setSource('app')">📒 App orders</span>
-      <span data-s="broker" onclick="setSource('broker')">🔴 Broker live (today)</span>
-    </span>
     <span class="seg" id="modeSeg">
       <span data-m="all" class="on" onclick="setMode('all')">All</span>
       <span data-m="paper" onclick="setMode('paper')">📝 Paper</span>
@@ -136,10 +132,6 @@ var COLS = {
   ]
 };
 
-function setSource(s){ SRC=s; document.querySelectorAll('#srcSeg span').forEach(function(x){x.classList.toggle('on',x.getAttribute('data-s')===s);});
-  document.getElementById('modeSeg').style.display = s==='app'?'':'none';
-  document.getElementById('dateNav').style.display = s==='app'?'inline-flex':'none';
-  loadData(); }
 function setMode(m){ MODE=m; document.querySelectorAll('#modeSeg span').forEach(function(x){x.classList.toggle('on',x.getAttribute('data-m')===m);}); loadData(); }
 function stepDate(d){ var el=document.getElementById('date'); var dt=new Date(el.value+'T00:00:00'); dt.setDate(dt.getDate()+d); el.value=dt.toISOString().slice(0,10); loadData(); }
 function goToday(){ var t=new Date(); var ist=new Date(t.getTime()+(330+t.getTimezoneOffset())*60000); document.getElementById('date').value=ist.toISOString().slice(0,10); loadData(); }
