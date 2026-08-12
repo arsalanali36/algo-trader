@@ -883,7 +883,7 @@ broker_ledger.py — balance-over-time (ledger) store for the RMS Broker Balance
 broker_orders.py — DISPLAY-ONLY broker order/trade book (Zerodha) + CSV match.
 
 - 🔧 `csv_match` — Uploaded Zerodha tradebook CSV ko LIVE broker trades se per-contract MATCH.
-- 🔧 `fetch` — Live order book + trade book + app-blocked entries, strategy-annotated.
+- 🔧 `fetch` — LIVE (today's) broker order book + trade book + app-blocked entries,
 
 ### `_ops/bs_shadow.py`
 bs_shadow.py — DAILY Black-Scholes shadow of the REAL paper/live trades.

@@ -32,26 +32,28 @@ def _norm_ts(instr):
 
 
 def _strategy_maps(date):
-    """order_store ke aaj ke rows se do lookup:
-       by_oid  : broker_order_id -> {strategy, mode, source}
-       by_sym  : trad_sym        -> {strategy, mode, source}  (order_id na ho to fallback)
-    """
-    by_oid, by_sym = {}, {}
+    """order_store ke aaj ke LIVE rows se broker_order_id -> {strategy, mode, source}.
+
+    SIRF exact broker_order_id link — trad_sym fallback NAHI (wo guess hai aur
+    galat attribute karta hai). LIVE-only: broker order book = real Zerodha
+    account; PAPER strategies kabhi real order nahi dete, to unhe attribute karna
+    = paper/manual mix (galat). Real order jiska app me broker_order_id nahi =
+    genuinely manual/external → 'unmatched'."""
+    by_oid = {}
     try:
         import order_store
         for r in order_store.query(date=date, limit=8000):
-            info = {"strategy": r.get("strategy") or "",
-                    "mode": r.get("mode") or "",
-                    "source": r.get("source") or ""}
+            if (r.get("mode") or "").lower() == "paper":
+                continue                       # real order != paper strategy
             oid = str(r.get("broker_order_id") or "").strip()
-            if oid:
-                by_oid.setdefault(oid, info)
-            ts = (r.get("symbol") or "").strip()
-            if ts:
-                by_sym.setdefault(ts, info)
+            if not oid:
+                continue                       # no exact link → can't attribute
+            by_oid.setdefault(oid, {"strategy": r.get("strategy") or "",
+                                    "mode": r.get("mode") or "",
+                                    "source": r.get("source") or ""})
     except Exception as e:
         print("[broker_orders] strategy_maps fail:", e, flush=True)
-    return by_oid, by_sym
+    return by_oid
 
 
 def _label(strategy_id):
@@ -62,19 +64,25 @@ def _label(strategy_id):
         return str(strategy_id or "")
 
 
-def _attach_strategy(ts, oid, by_oid, by_sym):
-    """order_id-first (exact), phir trad_sym (fallback). Returns (label, mode, matched)."""
-    info = by_oid.get(str(oid or "").strip()) or by_sym.get((ts or "").strip())
+def _attach_strategy(oid, by_oid):
+    """Exact broker_order_id match only. Returns (label, mode, matched)."""
+    info = by_oid.get(str(oid or "").strip())
     if not info:
         return "", "", False
     return _label(info["strategy"]), info["mode"], True
 
 
 def fetch(broker="kite", date=None):
-    """Live order book + trade book + app-blocked entries, strategy-annotated.
-    Returns {ok, broker, date, orders, trades, blocked, summary, error}."""
-    date = date or _ist_today()
-    out = {"ok": False, "broker": broker, "date": date,
+    """LIVE (today's) broker order book + trade book + app-blocked entries,
+    strategy-annotated. Returns {ok, broker, date, today_only, note, orders,
+    trades, blocked, summary, error}.
+
+    NOTE: Kite `orders()`/`trades()` sirf AAJ ka book dete hain (historical API
+    nahi) — `date` param ignore hota hai, hamesha aaj. Purane din ke liye CSV
+    match use karo."""
+    date = _ist_today()   # broker book today-only → strategy join bhi today
+    out = {"ok": False, "broker": broker, "date": date, "today_only": True,
+           "note": "Broker order/trade book = aaj ka (Kite historical nahi deta). Purane din ke liye niche CSV match karo.",
            "orders": [], "trades": [], "blocked": [], "summary": {}, "error": ""}
     try:
         from brokers import get_broker
@@ -83,7 +91,7 @@ def fetch(broker="kite", date=None):
         out["error"] = "broker init fail: %s" % e
         return out
 
-    by_oid, by_sym = _strategy_maps(date)
+    by_oid = _strategy_maps(date)
 
     # ── Order book (executed / rejected / cancelled / open) ──
     try:
@@ -94,7 +102,7 @@ def fetch(broker="kite", date=None):
     orders = []
     for o in raw_orders:
         ts = _norm_ts(o.get("tradingsymbol", ""))
-        lbl, mode, matched = _attach_strategy(ts, o.get("order_id"), by_oid, by_sym)
+        lbl, mode, matched = _attach_strategy(o.get("order_id"), by_oid)
         o2 = dict(o)
         o2["trad_sym"] = ts
         o2["strategy"] = lbl
@@ -111,7 +119,7 @@ def fetch(broker="kite", date=None):
     for t in raw_trades:
         try:
             ts = _norm_ts(t.get("tradingsymbol", ""))
-            lbl, mode, matched = _attach_strategy(ts, t.get("order_id"), by_oid, by_sym)
+            lbl, mode, matched = _attach_strategy(t.get("order_id"), by_oid)
             px = float(t.get("average_price") or t.get("price") or 0)
             trades.append({
                 "trade_id": str(t.get("trade_id") or ""),
