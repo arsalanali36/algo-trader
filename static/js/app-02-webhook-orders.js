@@ -2213,22 +2213,3 @@
       if (document.readyState !== 'loading') paint(); else document.addEventListener('DOMContentLoaded', paint);
       setInterval(paint, 60000);
     })();
-
-// ── 🧾 Broker Orders — embedded (Orders & P&L tab). Lazy-load the /broker-orders
-// page in an iframe on first toggle so it never fetches while hidden. ──
-window.toggleBrokerOrders = function () {
-  var box = document.getElementById('broker-orders-embed');
-  var frame = document.getElementById('broker-orders-frame');
-  var btn = document.getElementById('bo-toggle-btn');
-  if (!box) return;
-  var show = box.style.display === 'none' || box.style.display === '';
-  if (show) {
-    if (frame && frame.getAttribute('src') === 'about:blank') frame.src = frame.getAttribute('data-src');
-    box.style.display = 'block';
-    if (btn) btn.textContent = '🧾 Broker Orders ▲';
-    try { box.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); } catch (e) {}
-  } else {
-    box.style.display = 'none';
-    if (btn) btn.textContent = '🧾 Broker Orders';
-  }
-};

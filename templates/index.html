@@ -1386,6 +1386,7 @@
       <div class="tab" onclick="switchTab('log')">Logs</div>
       <div class="tab" onclick="switchTab('config')" style="display: none;">Config</div>
       <div class="tab active" onclick="switchTab('orders')">📒 Orders &amp; P&amp;L</div>
+      <a href="/broker-orders" class="tab" style="text-decoration: none;">🧾 Broker Orders</a>
       <a href="/stats2" class="tab" style="text-decoration: none;">📊 Stats 2</a>
       <a href="/report" target="_blank" class="tab" style="text-decoration: none;">📆 Daily Report</a>
       <div class="tab-dropdown-container" style="position: relative; display: flex; align-items: center;">
@@ -1906,15 +1907,8 @@
         <span style="width:12px;height:12px;border:2px solid #d2992240;border-top-color:#d29922;border-radius:50%;display:inline-block;animation:ordspin .7s linear infinite"></span>
         Loading…
       </span>
-      <button class="btn btn-gray" id="bo-toggle-btn" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="toggleBrokerOrders()">🧾 Broker Orders</button>
-      <button class="btn btn-blue" style="padding:4px 11px;font-size:12px" onclick="openBulkModal()">📝
+      <button class="btn btn-blue" style="padding:4px 11px;font-size:12px;margin-left:auto" onclick="openBulkModal()">📝
         Bulk Order</button>
-    </div>
-
-    <!-- Broker Orders (order_store: paper+real, any date, galat flag) — embedded page, lazy-loaded -->
-    <div id="broker-orders-embed" style="display:none;margin-bottom:14px">
-      <iframe id="broker-orders-frame" data-src="/broker-orders?embed=1" src="about:blank"
-        style="width:100%;height:640px;border:1px solid #30363d;border-radius:8px;background:#0d1117"></iframe>
     </div>
 
     <!-- Manual intervention summary card (agar haath se cut na karte to kya hota) -->
