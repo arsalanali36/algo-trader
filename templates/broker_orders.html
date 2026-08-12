@@ -72,7 +72,7 @@
       <button class="btn" onclick="stepDate(1)">▶</button>
       <button class="btn" onclick="goToday()">Today</button>
     </span>
-    <button class="btn" onclick="loadData()">↻</button>
+    <button class="btn" onclick="loadData(true)" title="Fresh refresh (cache bypass)">↻</button>
     <select id="fStrat" onchange="render()"><option value="">All strategies</option></select>
     <select id="fStatus" onchange="render()"><option value="">All statuses</option></select>
     <input class="btn" id="fq" placeholder="🔎 search" style="cursor:text" oninput="render()">
@@ -133,34 +133,37 @@ var COLS = {
 };
 
 function setMode(m){ MODE=m; document.querySelectorAll('#modeSeg span').forEach(function(x){x.classList.toggle('on',x.getAttribute('data-m')===m);}); loadData(); }
-function stepDate(d){ var el=document.getElementById('date'); var dt=new Date(el.value+'T00:00:00'); dt.setDate(dt.getDate()+d); el.value=dt.toISOString().slice(0,10); loadData(); }
+// UTC-only date math — local-parse + toISOString drifts a day in IST (forward-btn bug)
+function _addDays(ymd,n){ var p=(ymd||'').split('-'); if(p.length!==3) return ymd; var d=new Date(Date.UTC(+p[0],+p[1]-1,+p[2])); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); }
+function stepDate(n){ var el=document.getElementById('date'); el.value=_addDays(el.value,n); loadData(); }
 function goToday(){ var t=new Date(); var ist=new Date(t.getTime()+(330+t.getTimezoneOffset())*60000); document.getElementById('date').value=ist.toISOString().slice(0,10); loadData(); }
 
-function loadData(){
-  document.getElementById('asof').textContent='loading…';
-  if(SRC==='app'){
-    var d=document.getElementById('date').value, m=MODE;
-    fetch('/api/app-orders?date='+d+(m&&m!=='all'?('&mode='+m):''))
-      .then(function(r){return r.json();})
-      .then(function(j){
-        APP=j||{}; APP.orders=APP.orders||[]; APP.strategies=APP.strategies||[]; APP.summary=APP.summary||{};
-        document.getElementById('asof').textContent = j.ok?(d+' · '+(APP.summary.total||0)+' orders'):('⚠ '+(j.error||'load failed'));
-        document.getElementById('noteLine').textContent='App ke apne records (order_store) — jo bhi order fire hua, paper aur real dono. Galat orders (rejected/blocked/₹0) laal me flagged.';
-        fillStratFilter(APP.strategies);
-        render();
-      }).catch(function(e){ document.getElementById('asof').textContent='⚠ '+e; });
-  } else {
-    fetch('/api/broker-orders?broker=kite')
-      .then(function(r){return r.json();})
-      .then(function(j){
-        BRK=j||{}; BRK.orders=BRK.orders||[]; BRK.summary=BRK.summary||{}; BRKLOADED=true;
-        document.getElementById('asof').textContent = j.ok?((j.date||'')+' · '+(BRK.summary.orders||0)+' broker orders'):('⚠ '+(j.error||'load failed'));
-        document.getElementById('noteLine').textContent = j.note || 'Zerodha ka asli order book — sirf aaj ka.';
-        fillStratFilter([]);
-        render();
-      }).catch(function(e){ document.getElementById('asof').textContent='⚠ '+e; });
-  }
+var _cache={};   // day+mode -> data (visited din instant, no re-fetch; ↻ forces fresh)
+function loadData(force){
+  var d=document.getElementById('date').value, m=MODE, key=d+'|'+m;
+  if(!force && _cache[key]){ APP=_cache[key]; _applyApp(d); return; }
+  document.getElementById('asof').textContent = force?'refreshing…':'loading…';
+  fetch('/api/app-orders?date='+d+(m&&m!=='all'?('&mode='+m):''))
+    .then(function(r){return r.json();})
+    .then(function(j){
+      APP=j||{}; APP.orders=APP.orders||[]; APP.strategies=APP.strategies||[]; APP.summary=APP.summary||{};
+      if(APP.ok) _cache[key]=APP;
+      _applyApp(d);
+    }).catch(function(e){ document.getElementById('asof').textContent='⚠ '+e; });
 }
+function _applyApp(d){
+  document.getElementById('asof').textContent = APP.ok?(d+' · '+(APP.summary.total||0)+' orders'):('⚠ '+(APP.error||'load failed'));
+  document.getElementById('noteLine').textContent='App ke apne records (order_store) — jo bhi order fire hua, paper aur real dono. Galat orders (rejected/blocked/₹0) laal me flagged. (← → arrow keys se din badlo)';
+  fillStratFilter(APP.strategies);
+  render();
+}
+// ← / → arrow keys = prev/next day (search/select me typing ho to skip)
+document.addEventListener('keydown', function(e){
+  var tn=((e.target&&e.target.tagName)||'').toUpperCase();
+  if(tn==='INPUT'||tn==='SELECT'||tn==='TEXTAREA') return;
+  if(e.key==='ArrowLeft'){ e.preventDefault(); stepDate(-1); }
+  else if(e.key==='ArrowRight'){ e.preventDefault(); stepDate(1); }
+});
 
 function fillStratFilter(list){
   var sel=document.getElementById('fStrat'), cur=sel.value;
