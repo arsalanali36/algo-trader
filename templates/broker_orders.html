@@ -50,12 +50,16 @@
   .csvbox { border:1px dashed #30363d; border-radius:8px; padding:12px; margin-bottom:16px; background:#0f141b; }
   .match-yes { color:#3fb950; font-weight:700; } .match-no { color:#f85149; font-weight:700; }
   @media (max-width:760px){ .wrap{ padding:10px 10px 30px; } .bar{ gap:6px; } .btn,select,input[type=date]{ padding:5px 8px; } }
+  /* embedded inside Orders & P&L tab (?embed=1) — trim chrome */
+  :root[data-embed] .wrap{ padding:2px 0 8px; max-width:none; }
+  :root[data-embed] #bo-header{ display:none; }
 </style>
 </head>
 <body>
+<script>if(location.search.indexOf('embed=1')>=0){document.documentElement.setAttribute('data-embed','1');if(document.body)document.body.setAttribute('data-no-topnav','');}</script>
 <script src="/static/js/topnav.js"></script>
 <div class="wrap">
-  <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+  <div id="bo-header" style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
     <h1>🧾 Broker Orders</h1>
     <span class="sub" id="asof"></span>
   </div>
