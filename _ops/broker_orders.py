@@ -180,6 +180,40 @@ def fetch(broker="kite", date=None):
 
 _BAD_STATUS = {"rejected", "cancelled", "canceled", "failed", "expired", "blocked"}
 
+# tags jo APP ki apni RMS / auto-exit action batate hain (manual/external NAHI)
+_RMS_TAG_KEYS = (
+    "RMS_MAXLOSS", "RMS_PROFIT_TARGET", "KILL_FLOOR", "POS_MONITOR_EXIT",
+    "DEFAULT_TSL_SL", "DEFAULT_TSL_TARGET", "ATR_TRAILING", "RSI_MIDLINE_EXIT",
+    "SL_HIT", "TP_HIT", "SL_PCT", "TP_PCT", "EOD_315_SQUAREOFF", "EXPIRY_EOD",
+    "EXPIRY_ITM", "GROUP_SL", "GROUP_TARGET", "TRAILING_LOCK", "PER_INSTRUMENT_LOCK",
+)
+
+
+def _origin(strategy, source, tags):
+    """Order ka asli 'kaun/kyun' — strategy + source + tags se. Live rows aksar
+    broker-reconcile se aati hain (strategy='manual'); asli origin tags me hota
+    hai. Returns (label, kind)  kind: strategy|rms|manual."""
+    strat = (strategy or "").lower()
+    blob = " ".join(str(t) for t in (tags or [])).upper()
+    # 1) asli strategy (manual/unknown/default nahi)
+    if strat and strat not in ("manual", "unknown", "default", ""):
+        return _label(strategy), "strategy"
+    # 2) app ki RMS / auto-exit action (tags se) — reason ke saath
+    hit = None
+    for k in _RMS_TAG_KEYS:
+        if k in blob:
+            hit = k
+            break
+    if hit or "POS_MONITOR" in blob or "RMS_" in blob:
+        pretty = (hit or "RMS").replace("_", " ").title()
+        return "🤖 RMS / " + pretty, "rms"
+    # 3) external/manual (broker-mirror ya seedha manual)
+    if "EXTERNALLY_RECORDED" in blob or "BROKER_MIRROR" in blob:
+        return "✋ Manual / external", "manual"
+    if (source or "").lower() in ("manual", "manual_trigger"):
+        return "✋ Manual", "manual"
+    return "✋ Manual", "manual"
+
 
 def _order_bad(status, tags, price):
     """galat / problem order? -> (bad, why). Blocked/rejected/cancelled/₹0-fill."""
@@ -230,7 +264,7 @@ def fetch_app(date=None, mode=None):
             except Exception:
                 tags = []
             bad, why = _order_bad(r.get("status"), tags, r.get("price"))
-            lbl = _label(r.get("strategy"))
+            lbl, kind = _origin(r.get("strategy"), r.get("source"), tags)
             if lbl:
                 strat.add(lbl)
             rows.append({
@@ -240,6 +274,7 @@ def fetch_app(date=None, mode=None):
                 "side": str(r.get("side") or "").upper(),
                 "trad_sym": r.get("trad_sym") or r.get("symbol") or "",
                 "strategy": lbl,
+                "origin_kind": kind,
                 "qty": r.get("qty"),
                 "price": r.get("price"),
                 "status": str(r.get("status") or "").upper(),

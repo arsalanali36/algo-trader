@@ -113,7 +113,7 @@ var COLS = {
     {id:'mode',   t:'Mode',       g:function(o){return o.mode;}, cell:function(o){return '<span class="'+(o.raw_mode==='live'?'md-real':'md-paper')+'">'+esc(o.mode)+'</span>';}},
     {id:'side',   t:'Type',       g:function(o){return o.side;}, cell:function(o){return '<span class="'+(o.side==='BUY'?'buy':'sell')+'">'+esc(o.side)+'</span>';}},
     {id:'trad_sym',t:'Instrument',g:function(o){return o.trad_sym;}},
-    {id:'strategy',t:'Strategy',  g:function(o){return o.strategy||'zzz';}, cell:function(o){return o.strategy?'<span class="strat">'+esc(o.strategy)+'</span>':'<span class="unmatched">—</span>';}},
+    {id:'strategy',t:'By / origin', g:function(o){return o.strategy||'zzz';}, cell:function(o){var k=o.origin_kind||'manual';var cls=k==='strategy'?'strat':(k==='rms'?'st-b':'unmatched');return '<span class="'+cls+'">'+esc(o.strategy||'—')+'</span>';}},
     {id:'qty',    t:'Qty',        rt:1, g:function(o){return o.qty||0;}, cell:function(o){return num(o.qty);}},
     {id:'price',  t:'Price',      rt:1, g:function(o){return o.price||0;}, cell:function(o){return px(o.price);}},
     {id:'status', t:'Status',     g:function(o){return o.status;}, cell:function(o){var s=o.status||'';var c=(s==='FILLED'||s==='COMPLETE'||s==='PAPER'||s==='OPEN'||s==='BOOKCLOSE'||s==='EXTERNALLY_CLOSED')?'st-c':(s==='REJECTED'||s==='CANCELLED'?'st-r':s==='BLOCKED'?'st-b':'st-o');return '<span class="'+c+'">'+esc(s)+'</span>';}},
