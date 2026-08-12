@@ -358,6 +358,35 @@
 
       const summary = d.summary || {};
 
+      // ── Calendar tile value basis (Gross / Net / Tax) — day-tile ka number ab
+      // equity ⚙ "Value" toggle (window._eqOpts.value) ko follow karta hai, default
+      // NET. summary[date].pnl = authoritative NET; per-day tax d.trades se sum hota
+      // hai (wahi calcCharges formula jo Point-Per-Trade table use karti) → tiles har
+      // jagah consistent. gross = net + tax, tax = sirf charges.
+      const _calTileMode = (window._eqOpts && window._eqOpts.value) || 'net';
+      const _calDayTax = {};
+      (d.trades || []).forEach(t => {
+        const dk = t.exit_date || t.entry_date;
+        if (!dk) return;
+        let tax = 0;
+        if (btMode) {
+          const g = (t.gross != null) ? t.gross : (t.pnl || 0);
+          const n = (t.pnl != null) ? t.pnl : (g - (t.fee || 0));
+          tax = g - n;
+        } else if (typeof calcCharges === 'function') {
+          tax = calcCharges(t.entry_price || 0, t.exit_price || 0, t.qty || 0, t.entry || 'BUY') || 0;
+        }
+        _calDayTax[dk] = (_calDayTax[dk] || 0) + tax;
+      });
+      function _calTileVal(dateStr, netPnl) {
+        const tax = _calDayTax[dateStr] || 0;
+        if (_calTileMode === 'gross') return netPnl + tax;
+        if (_calTileMode === 'tax') return tax;
+        return netPnl;   // net (default)
+      }
+      // repaint-in-place ke liye cache (eqSetValue toggle → koi re-fetch nahi)
+      window._calTileCtx = { summary: summary, tax: _calDayTax };
+
       // Compute monthly stats for summary card
       let grossPnL = 0;
       let totalTrades = 0;
@@ -489,9 +518,10 @@
         if (isToday) cell.classList.add('today');
         if (holidayName) cell.classList.add('holiday');
 
-        // Color based on P&L
-        if (dayData && dayData.pnl !== 0) {
-          cell.classList.add(dayData.pnl > 0 ? 'profit-pos' : 'profit-neg');
+        // Color based on the selected value basis (net/gross/tax)
+        const _tv = dayData ? _calTileVal(dateStr, dayData.pnl || 0) : 0;
+        if (dayData && _tv !== 0) {
+          cell.classList.add(_tv > 0 ? 'profit-pos' : 'profit-neg');
         }
 
         // Cell click action
@@ -515,8 +545,8 @@
         // 3. P&L and Trade Count (Center/Bottom)
         if (dayData) {
           const pnlDiv = document.createElement('div');
-          pnlDiv.className = `cal-day-pnl ${dayData.pnl >= 0 ? 'pos' : 'neg'}`;
-          pnlDiv.textContent = `${dayData.pnl >= 0 ? '+' : ''}₹${Math.round(dayData.pnl).toLocaleString('en-IN')}`;
+          pnlDiv.className = `cal-day-pnl ${_tv >= 0 ? 'pos' : 'neg'}`;
+          pnlDiv.textContent = `${_tv >= 0 ? '+' : ''}₹${Math.round(_tv).toLocaleString('en-IN')}`;
           cell.appendChild(pnlDiv);
 
           const countDiv = document.createElement('div');
@@ -1649,7 +1679,7 @@
     // ---- Equity chart display options (⚙ gear popup) ---------------------------
     // value: gross|net|tax (which P&L basis to plot); bars/markers/labels: overlays.
     window._eqOpts = (function () {
-      const d = { value: 'gross', bars: false, markers: false, labels: false };
+      const d = { value: 'net', bars: false, markers: false, labels: false };
       try { return Object.assign(d, JSON.parse(localStorage.getItem('eq_chart_opts') || '{}')); } catch (e) { return d; }
     })();
     function _eqOptsSave() { try { localStorage.setItem('eq_chart_opts', JSON.stringify(window._eqOpts)); } catch (e) {} }
@@ -1660,9 +1690,29 @@
       const tr = window.calSelectedDateFilter ? all.filter(t => (t.exit_date || t.entry_date) === window.calSelectedDateFilter) : all;
       drawEquityCurveChart('cal-equity-curve-container', tr);
     }
+    // Repaint calendar day-tiles for the current value basis (net/gross/tax) using
+    // the cached summary + per-day tax — no API re-fetch. Called on the ⚙ toggle.
+    window._calRepaintTileValues = function () {
+      const ctx = window._calTileCtx; if (!ctx) return;
+      const mode = (window._eqOpts && window._eqOpts.value) || 'net';
+      document.querySelectorAll('.cal-day-cell[data-date]').forEach(cell => {
+        const dateStr = cell.dataset.date;
+        const sd = ctx.summary[dateStr]; if (!sd) return;
+        const net = sd.pnl || 0, tax = (ctx.tax && ctx.tax[dateStr]) || 0;
+        const v = mode === 'gross' ? net + tax : (mode === 'tax' ? tax : net);
+        const pnlDiv = cell.querySelector('.cal-day-pnl');
+        if (pnlDiv) {
+          pnlDiv.className = `cal-day-pnl ${v >= 0 ? 'pos' : 'neg'}`;
+          pnlDiv.textContent = `${v >= 0 ? '+' : ''}₹${Math.round(v).toLocaleString('en-IN')}`;
+        }
+        cell.classList.remove('profit-pos', 'profit-neg');
+        if (v !== 0) cell.classList.add(v > 0 ? 'profit-pos' : 'profit-neg');
+      });
+    };
     window.eqSetValue = function (v) {
       window._eqOpts.value = v; _eqOptsSave();
       document.querySelectorAll('.eq-val-seg').forEach(s => s.classList.toggle('on', s.getAttribute('data-v') === v));
+      window._calRepaintTileValues();   // calendar tiles bhi follow karein
       _eqRedraw();
     };
     window.eqToggleOpt = function (k, el) { window._eqOpts[k] = !!(el && el.checked); _eqOptsSave(); _eqRedraw(); };

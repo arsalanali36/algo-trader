@@ -60,13 +60,28 @@ _DEDUP_SECS = 20             # same text ka repeat is window me suppress
 _DEFAULT = {
     "enabled": False,
     "bot_token": "",
-    "chat_id": "",
+    "chat_id": "",             # single chat/DM (backward-compat)
+    "chat_ids": [],            # broadcast list — group(s) + DM(s), sab ko jaayega
     "notify_modes": ["live"],
     "notify_strategies": [],
     "notify_entries": True,
     "notify_exits": True,
     "notify_blocked": False,
 }
+
+
+def _dest_chat_ids(cfg):
+    """chat_id + chat_ids ko ek deduped destination-list me merge karo.
+    Group id (negative, e.g. -1002622203396) waise hi kaam karta hai."""
+    dests = []
+    single = str(cfg.get("chat_id") or "").strip()
+    if single:
+        dests.append(single)
+    for cid in (cfg.get("chat_ids") or []):
+        s = str(cid).strip()
+        if s and s not in dests:
+            dests.append(s)
+    return dests
 
 # mtime-cache: config file edit → agla read naya config le lega, restart nahi chahiye
 _cfg_cache = {"mtime": None, "data": None}
@@ -94,7 +109,7 @@ def _load_config():
 
 def is_enabled():
     c = _load_config()
-    return bool(c.get("enabled") and c.get("bot_token") and c.get("chat_id"))
+    return bool(c.get("enabled") and c.get("bot_token") and _dest_chat_ids(c))
 
 
 def _strat_label(strategy_id):
@@ -108,13 +123,15 @@ def _strat_label(strategy_id):
 def _should_send(strategy_id, mode, kind):
     """kind: 'entry' | 'exit' | 'blocked'. Config filter."""
     c = _load_config()
-    if not (c.get("enabled") and c.get("bot_token") and c.get("chat_id")):
+    if not (c.get("enabled") and c.get("bot_token") and _dest_chat_ids(c)):
         return False
     if kind == "entry" and not c.get("notify_entries", True):
         return False
     if kind == "exit" and not c.get("notify_exits", True):
         return False
     if kind == "blocked" and not c.get("notify_blocked", False):
+        return False
+    if not _dest_chat_ids(c):
         return False
     modes = [str(m).lower() for m in (c.get("notify_modes") or ["live"])]
     if str(mode or "").lower() not in modes:
@@ -141,16 +158,21 @@ def _post(text):
         if requests is None:
             return
         c = _load_config()
-        token, chat = c.get("bot_token"), c.get("chat_id")
-        if not (token and chat):
+        token = c.get("bot_token")
+        dests = _dest_chat_ids(c)
+        if not (token and dests):
             return
         url = _API.format(token=token, method="sendMessage")
-        requests.post(url, json={
-            "chat_id": chat,
-            "text": text,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True,
-        }, timeout=_TIMEOUT)
+        for chat in dests:   # group + DM(s) — ek destination fail ho to baaki fir bhi jaayein
+            try:
+                requests.post(url, json={
+                    "chat_id": chat,
+                    "text": text,
+                    "parse_mode": "HTML",
+                    "disable_web_page_preview": True,
+                }, timeout=_TIMEOUT)
+            except Exception:
+                continue
     except Exception:
         pass   # money-path safe — network fail order-flow ko kabhi na tode
 
@@ -314,19 +336,30 @@ def send_test():
     """UI ka Test button — abhi seedha bhejo (dedup ke bina, sync so error dikhe)."""
     try:
         c = _load_config()
-        token, chat = c.get("bot_token"), c.get("chat_id")
-        if not (token and chat):
+        token = c.get("bot_token")
+        dests = _dest_chat_ids(c)
+        if not (token and dests):
             return {"ok": False, "error": "token/chat_id missing"}
         if requests is None:
             return {"ok": False, "error": "requests missing"}
-        r = requests.post(_API.format(token=token, method="sendMessage"),
-                          json={"chat_id": chat,
-                                "text": f"✅ CODE3B Telegram alert connected — {time.strftime('%Y-%m-%d %H:%M:%S')} IST",
-                                "parse_mode": "HTML"}, timeout=_TIMEOUT)
-        j = r.json()
-        if j.get("ok"):
-            return {"ok": True}
-        return {"ok": False, "error": j.get("description") or "sendMessage fail"}
+        msg = f"✅ CODE3B Telegram alert connected — {time.strftime('%Y-%m-%d %H:%M:%S')} IST"
+        sent, errs = 0, []
+        for chat in dests:
+            try:
+                r = requests.post(_API.format(token=token, method="sendMessage"),
+                                  json={"chat_id": chat, "text": msg,
+                                        "parse_mode": "HTML"}, timeout=_TIMEOUT)
+                j = r.json()
+                if j.get("ok"):
+                    sent += 1
+                else:
+                    errs.append(f"{chat}: {j.get('description') or 'fail'}")
+            except Exception as e:
+                errs.append(f"{chat}: {e}")
+        if sent:
+            return {"ok": True, "sent": sent, "total": len(dests),
+                    "error": ("; ".join(errs) if errs else "")}
+        return {"ok": False, "error": "; ".join(errs) or "sendMessage fail"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 
