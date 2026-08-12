@@ -29,10 +29,33 @@
     // LOG TAB
     const _logPaused = {};
 
+    // Daemon-managed strategies that have a streamed log file but NO top-level
+    // config key (fired from inside monitor_daemon, so they never appear in
+    // GLOBAL_CONFIG): strangle 02.15 (config lives in _auto_strangle). They still
+    // belong in the Logs tab, so we inject them as virtual entries. Their log is
+    // logs/<key>.log, streamed via /api/log?s=<key> like any other.
+    const VIRTUAL_LOG_KEYS = ['strangle_920'];
+    function _isVirtualLogKey(k) { return VIRTUAL_LOG_KEYS.includes(String(k).toLowerCase()); }
+    // Augmented key list used by BOTH renderLogTab (sidebar) and updateLogs
+    // (log fetch loop) so they stay in sync (Rule 6B).
+    function logStrategyKeys() {
+      const base = Object.keys(GLOBAL_CONFIG).filter(key =>
+        key !== '_risk' && key !== 'webhooks' && key !== '_ui_config' && !regHidden(key));
+      const extra = VIRTUAL_LOG_KEYS.filter(k => !base.some(b => b.toLowerCase() === String(k).toLowerCase()));
+      return base.concat(extra);
+    }
+
     // Status dot for a strategy in the Logs sidebar (replaces the old file-type
     // icon): red = live, blue = paper, grey = not active (stopped). Reads the
     // SAME RUNNING_PIDS (/api/status) state the Paper/Live/Stop badge uses.
     function _logStatusDot(key) {
+      // Daemon-managed (no PID of its own) — reflect its config enabled flag.
+      if (_isVirtualLogKey(key)) {
+        const ax = (typeof GLOBAL_CONFIG === 'object' && GLOBAL_CONFIG && GLOBAL_CONFIG._auto_strangle) || {};
+        return ax.enabled_920
+          ? { color: '#3fb950', title: 'Enabled · paper (monitor_daemon)' }
+          : { color: '#8b949e', title: 'Off · paper (monitor_daemon)' };
+      }
       const pid = RUNNING_PIDS[key] || RUNNING_PIDS[key.toLowerCase()];
       const mode = RUNNING_PIDS[key + '_mode'] || RUNNING_PIDS[key.toLowerCase() + '_mode'] || 'paper';
       if (!pid) return { color: '#8b949e', title: 'Not active' };
@@ -43,7 +66,7 @@
     // Refresh every sidebar dot in place (called on the 5s status poll via
     // renderLogRunControls, so the dot tracks live status without a full rebuild).
     function updateLogStatusDots() {
-      Object.keys(GLOBAL_CONFIG).forEach(key => {
+      logStrategyKeys().forEach(key => {
         if (key === '_risk' || key === 'webhooks' || key === '_ui_config') return;
         const dot = document.getElementById(`${key}-log-statusdot`);
         if (!dot) return;
@@ -106,7 +129,7 @@
       if (!container) return;
       renderRateLimitEvents();   // Rate Limit Room lives in this tab now — first paint without waiting for the 5s interval
 
-      let keys = Object.keys(GLOBAL_CONFIG).filter(key => key !== '_risk' && key !== 'webhooks' && key !== '_ui_config' && !regHidden(key));
+      let keys = logStrategyKeys();
       if (keys.length === 0) {
         container.innerHTML = '<div style="padding:20px;color:#8b949e">No active strategies found.</div>';
         return;
@@ -194,7 +217,7 @@
             <div style="font-size:11.5px;color:#8b949e;margin-top:4px">Strategy process log streaming.</div>
           </div>
           <div style="display:flex;align-items:center;gap:10px">
-            <div id="${key}-log-runctl"><!-- run status/start/stop, synced w/ Risk tab --></div>
+            <div id="${key}-log-runctl">${_isVirtualLogKey(key) ? '<span style="font-size:11px;color:#8b949e;white-space:nowrap">🩳 positional · monitor_daemon · paper</span>' : '<!-- run status/start/stop, synced w/ Risk tab -->'}</div>
             <button id="${key}-pause-btn" onclick="toggleLogPause('${key}')"
               title="Auto-scroll freeze karta hai — log stream chalta rehta hai"
               style="padding:5px 12px;background:#21262d;border:1px solid #30363d;border-radius:6px;color:#e6edf3;font-size:12px;cursor:pointer;font-weight:500;transition:all 0.15s">

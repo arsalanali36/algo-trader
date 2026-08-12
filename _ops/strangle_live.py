@@ -78,8 +78,28 @@ def cfg():
     return out
 
 
+LOG_FILE = os.path.join(ROOT, "logs", "strangle_920.log")   # streamed by the dashboard Logs tab (02.15)
+_LOG_MAX_LINES = 3000                                        # positional = few lines/day; keep it bounded
+
+
 def _log(msg):
-    print(f"[strangle] {msg}", flush=True)
+    line = f"[strangle] {msg}"
+    print(line, flush=True)
+    # Also append to a dedicated file so the dashboard Logs tab can stream it
+    # (02.15/02.16 run inside monitor_daemon → no per-process log otherwise).
+    try:
+        ts = datetime.now().strftime("%H:%M:%S")
+        os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+        with open(LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(f"{ts} {line}\n")
+        # Cheap self-trim: only when the file grows past ~1.5x the cap.
+        if os.path.getsize(LOG_FILE) > _LOG_MAX_LINES * 180:
+            with open(LOG_FILE, "r", encoding="utf-8", errors="replace") as f:
+                tail = f.readlines()[-_LOG_MAX_LINES:]
+            with open(LOG_FILE, "w", encoding="utf-8") as f:
+                f.writelines(tail)
+    except Exception:
+        pass
 
 
 def _load_iv_hist():

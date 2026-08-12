@@ -499,7 +499,10 @@
 
     async function updateLogs() {
       if (activeTab !== 'log') return;
-      for (let key of Object.keys(GLOBAL_CONFIG)) {
+      // Include daemon-managed virtual log keys (e.g. strangle 02.15) so their
+      // log box streams too — same augmented list the Logs sidebar is built from.
+      const _logKeys = (typeof logStrategyKeys === 'function') ? logStrategyKeys() : Object.keys(GLOBAL_CONFIG);
+      for (let key of _logKeys) {
         try {
           let r = await fetch(`/api/log?s=${key}`);
           let j = await r.json();
