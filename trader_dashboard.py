@@ -2182,8 +2182,34 @@ def api_per_instrument_lock_status():
     return jsonify({"config": cfg, "positions": rows})
 
 
+# rms-summary is display-only but EXPENSIVE: it loops ~30 strategies calling
+# capital_in_use + gating_status (DB + cached broker margin) + a live broker-balance
+# read — ~8-58 s. The Risk tab re-fetches it every 30 s, so without a cache every poll
+# re-paid that cost ("constantly loading"). Cache the whole payload for a hair longer
+# than the poll interval → the poll (and any re-open within the window) is instant; only
+# the first open per window computes. No background thread = no extra Dhan-rate load.
+_RMS_SUM_CACHE = {"ts": 0.0, "payload": None}
+_RMS_SUM_TTL = 35.0
+
+
 @app.route('/api/rms-summary')
 def api_rms_summary():
+    import time as _t
+    now = _t.time()
+    c = _RMS_SUM_CACHE
+    if c["payload"] is not None and (now - c["ts"]) < _RMS_SUM_TTL:
+        return jsonify(c["payload"])
+    try:
+        p = _rms_summary_compute()
+        c["payload"], c["ts"] = p, now
+        return jsonify(p)
+    except Exception as e:
+        if c["payload"] is not None:          # serve last-good rather than error out
+            return jsonify(c["payload"])
+        return jsonify({"error": str(e), "strategies": [], "totals": {}, "webhook": []})
+
+
+def _rms_summary_compute():
     """Combined RMS view (Stage 2): per-strategy + global capital used/available,
     open unrealized P&L, and proximity to the max-loss cap — one read for the
     Risk tab's summary panel. Best-effort live LTP (dhan_feed); positions whose
@@ -2334,8 +2360,8 @@ def api_rms_summary():
     except Exception as e:
         wh_global = {"error": str(e)}
 
-    return jsonify({"strategies": rows, "totals": totals,
-                    "webhook": webhook, "webhook_global": wh_global})
+    return {"strategies": rows, "totals": totals,
+            "webhook": webhook, "webhook_global": wh_global}
 
 @app.route('/api/sync-positions', methods=['POST'])
 def api_sync_positions():
@@ -6974,20 +7000,47 @@ def api_peak_pnl_history():
                     "strat_series": {}})
 
 
+# margin-history rebuilds the day's margin timeline by calling position_margin per
+# position-group — each a (cached) executing-broker margin lookup — so a busy day is
+# ~16 s. It's polled from the Today's Peak "Margin" view. Cache per (date, mode): a PAST
+# day is immutable (long TTL); today refreshes on a short TTL just past the poll interval.
+_MARGIN_HIST_CACHE = {}   # (date, mode) -> (ts, payload)
+
+
 @app.route('/api/margin-history')
 def api_margin_history():
+    import time as _t
+    from datetime import timedelta as _td
+    _now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+    req_date = request.args.get("date") or _now.strftime("%Y-%m-%d")
+    mode = (request.args.get("mode") or "all").lower()   # all | paper | live
+    key = (req_date, mode)
+    ttl = 35.0 if req_date == _now.strftime("%Y-%m-%d") else 3600.0
+    now = _t.time()
+    hit = _MARGIN_HIST_CACHE.get(key)
+    if hit and (now - hit[0]) < ttl:
+        return jsonify(hit[1])
+    try:
+        p = _margin_history_compute(req_date, mode)
+    except Exception:
+        p = {"times": [], "buy": [], "sell": [], "peak": 0.0}
+    if len(_MARGIN_HIST_CACHE) > 32:
+        _MARGIN_HIST_CACHE.clear()
+    _MARGIN_HIST_CACHE[key] = (now, p)
+    return jsonify(p)
+
+
+def _margin_history_compute(req_date, mode):
     """Day margin-utilization timeline (task 74) — reconstructed from order_store
     entry/exit times, so it works for any date without touching the money loop.
     Each position holds ₹ margin from its entry_time until its exit_time (open
     positions → until 'now'): BUY leg = premium notional (qty×entry_price), SELL
     leg = executing-broker real margin (risk_gate._leg_capital, cached; falls back
     to the multiplier estimate for expired/failed lookups). Split buy vs sell,
-    filtered by ?mode=all|paper|live (position's own mode).
+    filtered by mode=all|paper|live (position's own mode).
     Response: {times:[HH:MM...], buy:[₹...], sell:[₹...], peak:₹}."""
     from datetime import timedelta as _td
     _now = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
-    req_date = request.args.get("date") or _now.strftime("%Y-%m-%d")
-    mode = (request.args.get("mode") or "all").lower()   # all | paper | live
     is_today = (req_date == _now.strftime("%Y-%m-%d"))
 
     def _to_min(hm):
@@ -7067,7 +7120,7 @@ def api_margin_history():
         times.append(f"{t // 60:02d}:{t % 60:02d}")
         buy.append(round(b, 2)); sell.append(round(s, 2))
         peak = max(peak, b + s)
-    return jsonify({"times": times, "buy": buy, "sell": sell, "peak": round(peak, 2)})
+    return {"times": times, "buy": buy, "sell": sell, "peak": round(peak, 2)}
 
 
 @app.route('/api/close-position', methods=['POST'])
