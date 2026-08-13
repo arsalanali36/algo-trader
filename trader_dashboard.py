@@ -1202,7 +1202,7 @@ def api_whatif_margin():
 
 @app.route('/api/option-curves')
 def api_option_curves():
-    import option_curves as oc
+    import option_curves as oc, json as _json, gzip as _gzip
     u = (request.args.get('underlying') or 'NIFTY').upper()
     date = request.args.get('date')
     if not date:
@@ -1212,10 +1212,22 @@ def api_option_curves():
         days = int(request.args.get('days') or 1)
     except Exception:
         days = 1
+
+    def _out(obj):
+        # a day's curve payload is ~130 KB raw, ~6x smaller gzipped (was sent uncompressed)
+        payload = _json.dumps(obj, separators=(',', ':'))
+        if 'gzip' in (request.headers.get('Accept-Encoding') or '') and len(payload) > 2000:
+            body = _gzip.compress(payload.encode('utf-8'), 6)
+            resp = app.response_class(body, mimetype='application/json')
+            resp.headers['Content-Encoding'] = 'gzip'
+            resp.headers['Vary'] = 'Accept-Encoding'
+            return resp
+        return app.response_class(payload, mimetype='application/json')
+
     try:
         if days > 1:
-            return jsonify(oc.curves_multi(u, date, days))   # multi-day concatenated
-        return jsonify(oc.curves(u, date, expiry))
+            return _out(oc.curves_multi(u, date, days))   # multi-day concatenated
+        return _out(oc.curves(u, date, expiry))
     except Exception as e:
         print("[option-curves] fail:", e, flush=True)
         return jsonify({"ok": False, "error": str(e), "expiries": [], "points": []})

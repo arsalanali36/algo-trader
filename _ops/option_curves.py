@@ -19,6 +19,7 @@ DISPLAY-ONLY: reads CSV, touches NO order/live path. mtime-cached.
 import os
 import sys
 import csv
+import json
 import math
 import calendar
 from datetime import datetime
@@ -191,11 +192,26 @@ def _ext_bidask(u, date):
     return out
 
 
+_CURVES_CACHE = {}   # (u,date,expiry,mtime,ivr) -> result dict (skip the ~1s recompute)
+
+
 def curves(u, date, expiry=None):
-    """Return {ok, underlying, expiry, expiries[], points[]} for one expiry's day."""
-    _, rows = _load_rows(u, date)
+    """Return {ok, underlying, expiry, expiries[], points[]} for one expiry's day.
+    mtime-cached: on re-render / 30 s auto-refresh where the day-file hasn't grown, the
+    whole per-minute computation is skipped and the prior result is returned."""
+    p, rows = _load_rows(u, date)
     if not rows:
         return {"ok": False, "underlying": u, "expiry": expiry, "expiries": [], "points": []}
+    try:
+        _mt = os.path.getmtime(p) if p else 0
+    except OSError:
+        _mt = 0
+    # IV-Rank window (disk-cached, cheap) — computed up-front so it can key the result cache
+    lo_iv, hi_iv, ndays = _iv_hist_range(u, date)
+    ck = (u, date, expiry, _mt, lo_iv, hi_iv, ndays)
+    chit = _CURVES_CACHE.get(ck)
+    if chit is not None:
+        return chit
 
     exps = []
     for r in rows:
@@ -364,15 +380,19 @@ def curves(u, date, expiry=None):
 
     # IV Rank (0-100): where today's ATM IV sits in the range of prior stored days'
     # ATM IV. Uses however many days are on disk (labelled), improves as more accrue.
-    lo_iv, hi_iv, ndays = _iv_hist_range(u, date)
+    # (lo_iv/hi_iv/ndays computed up-front for the cache key.)
     if hi_iv is not None and hi_iv > lo_iv:
-        for p in points:
-            iv = p.get("atm_iv")
+        for pt in points:
+            iv = pt.get("atm_iv")
             if iv is not None:
-                p["iv_rank"] = round(max(0.0, min(100.0, (iv - lo_iv) / (hi_iv - lo_iv) * 100.0)), 1)
+                pt["iv_rank"] = round(max(0.0, min(100.0, (iv - lo_iv) / (hi_iv - lo_iv) * 100.0)), 1)
 
-    return {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points,
-            "iv_rank_days": ndays, "next_expiry": next_expiry}
+    out = {"ok": True, "underlying": u, "expiry": expiry, "expiries": exps, "points": points,
+           "iv_rank_days": ndays, "next_expiry": next_expiry}
+    if len(_CURVES_CACHE) > 12:
+        _CURVES_CACHE.clear()
+    _CURVES_CACHE[ck] = out
+    return out
 
 
 def chain_snapshot(u, date, expiry=None):
@@ -598,19 +618,78 @@ def _day_rep_atm_iv(u, d):
     return vals[len(vals) // 2]   # median
 
 
+# Persisted per-day representative ATM IV. A completed day's median ATM IV never changes,
+# so parsing its 14 MB CSV even once (let alone on every page load) is pure waste. This
+# sidecar makes each prior day parsed AT MOST ONCE, ever — the fix for the ~20 s+ cold
+# /curves load (was: _iv_hist_range full-parsed up to 60 prior day-files per request AND
+# thrashed the 8-entry _CACHE, so the active day got evicted and re-parsed every refresh).
+_IVREP_PATH = os.path.join(PROJECT, "data", "iv_rank_days.json")
+_IVREP = None            # {u: {date: rep_atm_iv}}  (loaded lazily)
+_IVREP_DIRTY = False
+_IV_NEW_PER_CALL = 8     # cap fresh (uncached) day-parses per request → a page never blocks
+
+
+def _ivrep_load():
+    global _IVREP
+    if _IVREP is not None:
+        return _IVREP
+    try:
+        with open(_IVREP_PATH, "r") as f:
+            _IVREP = json.load(f) or {}
+    except Exception:
+        _IVREP = {}
+    return _IVREP
+
+
+def _ivrep_save():
+    global _IVREP_DIRTY
+    if not _IVREP_DIRTY:
+        return
+    try:
+        os.makedirs(os.path.dirname(_IVREP_PATH), exist_ok=True)
+        tmp = _IVREP_PATH + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(_IVREP, f)
+        os.replace(tmp, _IVREP_PATH)
+        _IVREP_DIRTY = False
+    except Exception:
+        pass
+
+
 def _iv_hist_range(u, date, lookback=60):
     """(lo, hi, ndays) of prior stored days' representative ATM IV — the IV-Rank window.
-    Uses whatever days are on disk (up to `lookback`)."""
+    Uses whatever days are on disk (up to `lookback`). Per-day rep IV is disk-cached
+    (each day parsed once, ever); at most `_IV_NEW_PER_CALL` uncached days are computed
+    per request so a cold call can never stall the page — the rest fill in on later
+    refreshes (IV-Rank is a soft display metric, self-completes)."""
+    global _IVREP_DIRTY
     key = (u, date)
     hit = _IVRANK_CACHE.get(key)
     if hit:
         return hit
+    store = _ivrep_load().setdefault(u, {})
     prior = [d for d in available_dates(u) if d < date][-int(lookback):]
-    reps = [r for r in (_day_rep_atm_iv(u, d) for d in prior) if r is not None]
+    reps, budget = [], _IV_NEW_PER_CALL
+    for d in prior:
+        if d in store:                       # cached (incl. days with no IV → stored null)
+            v = store[d]
+        elif budget > 0:                     # compute + persist (bounded per call)
+            v = _day_rep_atm_iv(u, d)
+            store[d] = v
+            _IVREP_DIRTY = True
+            budget -= 1
+        else:
+            continue                         # leave for a later refresh
+        if v is not None:
+            reps.append(v)
+    _ivrep_save()
     res = (min(reps), max(reps), len(reps)) if reps else (None, None, 0)
-    if len(_IVRANK_CACHE) > 16:
-        _IVRANK_CACHE.clear()
-    _IVRANK_CACHE[key] = res
+    # only memory-cache a COMPLETE result (all prior days computed) — a partial one must
+    # be recomputed next call so the remaining days keep filling in.
+    if not any((d not in store) for d in prior):
+        if len(_IVRANK_CACHE) > 16:
+            _IVRANK_CACHE.clear()
+        _IVRANK_CACHE[key] = res
     return res
 
 
