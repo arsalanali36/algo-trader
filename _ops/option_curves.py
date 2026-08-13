@@ -602,95 +602,106 @@ def _atm_iv_map(rows, expiry):
     return out
 
 
-_IVRANK_CACHE = {}   # (u, date) -> (lo, hi, ndays)
-
-
-def _day_rep_atm_iv(u, d):
-    """One representative ATM IV for a stored day (median of per-minute ATM IV)."""
-    _, rows = _load_rows(u, d)
+def _rep_atm_iv_uncached(u, d):
+    """One representative ATM IV for a stored day (median of per-minute ATM IV), parsed
+    DIRECTLY off disk WITHOUT touching _CACHE — so the IV-rank warmer reading 20-60 prior
+    day-files can never evict the live day from _CACHE (which would force the live path to
+    re-parse its own 14 MB file). Used only by the background warmer."""
+    p = _csv_path(u, d)
+    if not p:
+        return None
+    try:
+        with open(p, "rb") as f:
+            data = f.read()
+    except Exception:
+        return None
+    nl = data.rfind(b"\n")
+    lines = data[:(nl + 1) if nl >= 0 else len(data)].decode("utf-8", "replace").splitlines()
+    if not lines:
+        return None
+    has_header = lines[0].startswith("datetime,")
+    rows, _ = _parse_lines(lines, None if has_header else _COLS)
     if not rows:
         return None
     exps = sorted({r.get("expiry") for r in rows if r.get("expiry")})
     m = _atm_iv_map(rows, exps[0] if exps else None)
     vals = sorted(v for v in m.values() if v is not None)
-    if not vals:
-        return None
-    return vals[len(vals) // 2]   # median
+    return vals[len(vals) // 2] if vals else None   # median
 
 
 # Persisted per-day representative ATM IV. A completed day's median ATM IV never changes,
 # so parsing its 14 MB CSV even once (let alone on every page load) is pure waste. This
 # sidecar makes each prior day parsed AT MOST ONCE, ever — the fix for the ~20 s+ cold
-# /curves load (was: _iv_hist_range full-parsed up to 60 prior day-files per request AND
-# thrashed the 8-entry _CACHE, so the active day got evicted and re-parsed every refresh).
+# /curves load (was: _iv_hist_range full-parsed up to 60 prior day-files PER REQUEST, on
+# the GIL-bound single-process dashboard, AND thrashed the 8-entry _CACHE so the active
+# day got evicted and re-parsed every refresh). The request path now parses ZERO prior
+# days — a background warmer thread fills the cache; IV-Rank appears as it accrues.
+import threading as _threading
+import time as _time
 _IVREP_PATH = os.path.join(PROJECT, "data", "iv_rank_days.json")
 _IVREP = None            # {u: {date: rep_atm_iv}}  (loaded lazily)
-_IVREP_DIRTY = False
-_IV_NEW_PER_CALL = 8     # cap fresh (uncached) day-parses per request → a page never blocks
+_IVREP_LOCK = _threading.Lock()
+_IV_WARMING = set()      # underlyings a warmer thread is currently filling
 
 
 def _ivrep_load():
     global _IVREP
     if _IVREP is not None:
         return _IVREP
-    try:
-        with open(_IVREP_PATH, "r") as f:
-            _IVREP = json.load(f) or {}
-    except Exception:
-        _IVREP = {}
+    with _IVREP_LOCK:
+        if _IVREP is None:
+            try:
+                with open(_IVREP_PATH, "r") as f:
+                    _IVREP = json.load(f) or {}
+            except Exception:
+                _IVREP = {}
     return _IVREP
 
 
 def _ivrep_save():
-    global _IVREP_DIRTY
-    if not _IVREP_DIRTY:
-        return
+    with _IVREP_LOCK:
+        try:
+            os.makedirs(os.path.dirname(_IVREP_PATH), exist_ok=True)
+            tmp = _IVREP_PATH + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(_IVREP, f)
+            os.replace(tmp, _IVREP_PATH)
+        except Exception:
+            pass
+
+
+def _ivrep_warm(u, days):
+    """Background: parse each uncached prior day once, persist, gently (a sleep between
+    files so the single-process dashboard keeps breathing). Never runs in a request."""
     try:
-        os.makedirs(os.path.dirname(_IVREP_PATH), exist_ok=True)
-        tmp = _IVREP_PATH + ".tmp"
-        with open(tmp, "w") as f:
-            json.dump(_IVREP, f)
-        os.replace(tmp, _IVREP_PATH)
-        _IVREP_DIRTY = False
-    except Exception:
-        pass
+        _time.sleep(2.0)                         # let the triggering page render first
+        store = _ivrep_load().setdefault(u, {})
+        wrote = False
+        for d in days:
+            if d in store:
+                continue
+            store[d] = _rep_atm_iv_uncached(u, d)   # value or None; None = "no IV, don't retry"
+            wrote = True
+            _time.sleep(0.15)
+        if wrote:
+            _ivrep_save()
+    finally:
+        _IV_WARMING.discard(u)
 
 
 def _iv_hist_range(u, date, lookback=60):
     """(lo, hi, ndays) of prior stored days' representative ATM IV — the IV-Rank window.
-    Uses whatever days are on disk (up to `lookback`). Per-day rep IV is disk-cached
-    (each day parsed once, ever); at most `_IV_NEW_PER_CALL` uncached days are computed
-    per request so a cold call can never stall the page — the rest fill in on later
-    refreshes (IV-Rank is a soft display metric, self-completes)."""
-    global _IVREP_DIRTY
-    key = (u, date)
-    hit = _IVRANK_CACHE.get(key)
-    if hit:
-        return hit
+    Reads ONLY the already-cached (disk-persisted) per-day rep IVs — parses nothing in the
+    request path. If prior days are still uncached, kicks off a one-shot background warmer
+    and returns whatever's cached so far (IV-Rank self-completes over the next refreshes)."""
     store = _ivrep_load().setdefault(u, {})
     prior = [d for d in available_dates(u) if d < date][-int(lookback):]
-    reps, budget = [], _IV_NEW_PER_CALL
-    for d in prior:
-        if d in store:                       # cached (incl. days with no IV → stored null)
-            v = store[d]
-        elif budget > 0:                     # compute + persist (bounded per call)
-            v = _day_rep_atm_iv(u, d)
-            store[d] = v
-            _IVREP_DIRTY = True
-            budget -= 1
-        else:
-            continue                         # leave for a later refresh
-        if v is not None:
-            reps.append(v)
-    _ivrep_save()
-    res = (min(reps), max(reps), len(reps)) if reps else (None, None, 0)
-    # only memory-cache a COMPLETE result (all prior days computed) — a partial one must
-    # be recomputed next call so the remaining days keep filling in.
-    if not any((d not in store) for d in prior):
-        if len(_IVRANK_CACHE) > 16:
-            _IVRANK_CACHE.clear()
-        _IVRANK_CACHE[key] = res
-    return res
+    reps = [store[d] for d in prior if d in store and store[d] is not None]
+    missing = [d for d in prior if d not in store]
+    if missing and u not in _IV_WARMING:
+        _IV_WARMING.add(u)
+        _threading.Thread(target=_ivrep_warm, args=(u, missing), daemon=True).start()
+    return (min(reps), max(reps), len(reps)) if reps else (None, None, 0)
 
 
 def _near_strikes(legs, spot, each_side=7):
