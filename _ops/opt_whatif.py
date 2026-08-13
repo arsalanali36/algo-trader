@@ -847,18 +847,56 @@ def _downsample(pts, cap=1500):
     return [pts[k] for k in sorted(keep)]
 
 
-def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, entry_prems, total, e_t, x_t):
+def _spot_series_day(u, date, expiry):
+    """{hm: underlying spot} for ONE day. Collector option-chain rows carry `spot` on every
+    row; the lake ATM offset file carries it too. Display-only (for the MTM index overlay)."""
+    out = {}
+    try:
+        _, rows = _oc._load_rows(u, date)
+    except Exception:
+        rows = None
+    if rows:
+        for r in rows:
+            sp = _f(r.get("spot"))
+            if sp is None:
+                continue
+            hm = (r.get("datetime") or "")[11:16]
+            if hm:
+                out[hm] = sp
+        if out:
+            return out
+    root = _lake_root(u)          # lake fallback: ATM offset file (off 0) carries spot
+    if root:
+        start, end = _date_range(date)
+        for ot in ("CE", "PE"):
+            atm = _scan_date(os.path.join(root, _ofn(ot, 0)), start, end)
+            if atm is None or atm.empty:
+                continue
+            for ts, sp in zip(atm["timestamp"], atm["spot"]):
+                if sp == sp:      # not NaN
+                    out[_hm(int(ts))] = float(sp)
+            if out:
+                break
+    return out
+
+
+def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, entry_prems, total, e_t, x_t,
+               e_spot=None, x_spot=None):
     """Combined position MTM (₹) at every stored minute across the whole hold. SELL leg
     MTM = (entry_prem − prem)·lot ; BUY = (prem − entry_prem)·lot ; forward-filled per leg,
-    summed. Endpoints anchored to the run's own entry(₹0)/exit(total). Display-only."""
+    summed. Each point also carries the underlying `spot` (forward-filled) so the chart can
+    show index favour/against on hover. Endpoints anchored to the run's own
+    entry(₹0)/exit(total). Display-only."""
     if any(p is None for p in entry_prems):
         return []
     days = _day_span(entry_date, exit_date)
     pts = []
+    last_spot = None
     for d in days:
         lo = entry_hm if d == entry_date else "09:15"
         hi = exit_hm if d == exit_date else "15:30"
         leg_maps = [dict(_leg_series_day(u, d, expiry, float(lg["strike"]), lg["type"])) for lg in legs]
+        spot_map = _spot_series_day(u, d, expiry)
         mins = sorted({m for lm in leg_maps for m in lm if lo <= m <= hi})
         last = [None] * len(legs)
         for m in mins:
@@ -873,11 +911,22 @@ def _build_mtm(u, entry_date, exit_date, entry_hm, exit_hm, lot, legs, expiry, e
                 lq = lot * max(1, int(lg.get("qty") or 1))   # per-leg qty (default 1)
                 mtm += (entry_prems[i] - p if sell else p - entry_prems[i]) * lq
             if ok:
-                pts.append({"d": d, "t": m, "mtm": round(mtm)})
+                if m in spot_map:
+                    last_spot = spot_map[m]
+                pt = {"d": d, "t": m, "mtm": round(mtm)}
+                if last_spot is not None:
+                    pt["spot"] = round(last_spot, 2)
+                pts.append(pt)
     if not pts:
         return []
     # anchor both ends to the run's exact entry/exit numbers (start at 0, end at total)
-    pts = ([{"d": entry_date, "t": e_t, "mtm": 0}] + pts + [{"d": exit_date, "t": x_t, "mtm": round(total)}])
+    e_pt = {"d": entry_date, "t": e_t, "mtm": 0}
+    x_pt = {"d": exit_date, "t": x_t, "mtm": round(total)}
+    if e_spot:
+        e_pt["spot"] = round(e_spot, 2)
+    if x_spot:
+        x_pt["spot"] = round(x_spot, 2)
+    pts = ([e_pt] + pts + [x_pt])
     return _downsample(pts)
 
 
@@ -1093,7 +1142,7 @@ def run(u, date, entry_hm, exit_hm, lots, legs, expiry=None, exit_date=None):
     try:
         mtm = _build_mtm(u, e_dt, x_dt, entry_hm, exit_hm, lot, legs,
                          data.get("expiry"), [d["e_prem"] for d in data["legs"]],
-                         tot, e_t, x_t)
+                         tot, e_t, x_t, e_spot=e_spot, x_spot=x_spot)
     except Exception as _e:
         print("[whatif] mtm build fail:", _e, flush=True)
         mtm = []
