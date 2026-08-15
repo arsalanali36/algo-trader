@@ -2517,6 +2517,17 @@ def _supervisor_desired_set(sid, desired, mode=None, script=None):
 def api_start():
     s    = request.args.get('s', 'ema_v1')
     mode = request.args.get('mode', 'paper')
+    # event-driven strategies (e.g. straddle_alert_hedged) fire from a dashboard
+    # hook (on_option_alert), NOT a launchable process — and _base() would resolve
+    # them to the WRONG trader script. Refuse to Popen them (active flag alone drives
+    # the hook). Defense-in-depth alongside auto_scheduler's own event_driven skip.
+    try:
+        _c = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        if isinstance(_c.get(s), dict) and _c[s].get("event_driven"):
+            return jsonify({"msg": f"'{strat_label(s)}' event-driven hai (alert-fire) — "
+                                   f"process launch nahi hota; active flag hi kaafi hai."}), 400
+    except Exception:
+        pass
     base_s = _base(s)
     st   = STRATEGIES.get(base_s)
     if st is None:
@@ -9955,6 +9966,10 @@ def auto_scheduler():
                     try:
                         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
+                            if isinstance(cfg[key], dict) and cfg[key].get("event_driven"):
+                                continue  # fired from a dashboard hook (e.g. straddle_alert_hedged
+                                          # via on_option_alert), NOT a launchable process — its
+                                          # _base() would resolve to the WRONG trader script.
                             if _base(key) not in STRATEGIES:
                                 continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict) and cfg[key].get("active", True):
@@ -9978,6 +9993,8 @@ def auto_scheduler():
                     try:
                         cfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
                         for key in cfg.keys():
+                            if isinstance(cfg[key], dict) and cfg[key].get("event_driven"):
+                                continue  # event-driven (dashboard hook), not a process to stop
                             if _base(key) not in STRATEGIES:
                                 continue  # not a process strategy (e.g. webhook_v1, vwap)
                             if isinstance(cfg[key], dict):
