@@ -55,6 +55,7 @@ dashboard_auth.py — single-password login gate for the trader dashboard.
 ### `_core/execution_gateway.py`
 execution_gateway.py — THE single gateway every strategy calls to enter/exit. (Task 3 — see _ADR/ADR-001-execute-signal-gateway.md, CLAUDE.md Rule 6B)
 
+- 🔧 `execute_basket_exit` — ORDERED square-off of a (possibly hedged) basket. Closes the SHORT
 - 🔧 `execute_exit` — Ek EXIT leg. `reason` = exit-reason tag (e.g. "RSI_MIDLINE_EXIT",
 - 🔧 `execute_signal` — Ek ENTRY leg — RMS-gated, order_store-recorded. `lots * lot_size` = qty
 

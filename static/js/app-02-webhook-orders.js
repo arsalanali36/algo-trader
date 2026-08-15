@@ -1461,10 +1461,11 @@
                 <span id="pfExSlPrem" style="font-size:10px;color:#f85149;font-weight:700;margin-left:5px" title="SL hit hoga jab structure ka net premium yahan aayega"></span></div></div>
             <div style="min-width:96px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Live net MTM</div><div id="pfExLive" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:3px">—</div></div>
             <div style="min-width:150px"><div style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em" title="Structure ka net premium abhi (aur entry pe). SELL +prem, BUY -prem = net credit.">Net premium (structure)</div><div id="pfExPrem" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700;margin-top:3px;color:#adbac7">—</div></div>
+            <button id="pfEx1pct" onclick="_pfExitPreset(4000)" title="1% of ₹4L allocation = ±₹4,000 basket SL/Target — one click, arms turant" style="background:#161b22;color:#3fb950;border:1px solid #238636;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:700;cursor:pointer">±₹4k (1%)</button>
             <button id="pfExApply" onclick="_pfExitApply()" style="background:#1f6feb;color:#fff;border:0;border-radius:6px;padding:7px 14px;font-size:12px;font-weight:700;cursor:pointer">Apply auto-exit rule</button>
             <button id="pfExClear" onclick="_pfExitClear()" style="background:#161b22;color:#8b949e;border:1px solid #30363d;border-radius:6px;padding:7px 10px;font-size:11px;font-weight:600;cursor:pointer">Clear</button>
-            <span style="font-size:9.5px;font-weight:700;color:#d29922;border:1px solid #d29922;border-radius:4px;padding:1px 5px">PAPER</span>
-            <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:170px">Target/SL line ko drag karo <b>ya ₹/pt box me type karo</b> — jaise hi combined MTM chhue, poori group ek saath square off.</span>
+            <span title="Square-off har leg ke APNE mode me hota hai — paper leg→paper, live leg→REAL. Shorts pehle buy-to-close, phir wings (margin-safe)." style="font-size:9.5px;font-weight:700;color:#58a6ff;border:1px solid #58a6ff;border-radius:4px;padding:1px 5px">AUTO-EXIT · leg-mode</span>
+            <span id="pfExNote" style="font-size:11px;color:#8b949e;flex:1;min-width:170px">Target/SL line ko drag karo <b>ya ₹/pt box me type karo</b> — jaise hi combined MTM chhue, poori group ek saath square off (shorts pehle, phir wings).</span>
           </div>
         </div>`;
       if (legSlot) legSlot.innerHTML = `
@@ -1631,6 +1632,17 @@
       if (window._pfSeries) _pfDrawCombined(window._pfSeries); // redraw line + labels + sync other unit
     };
 
+    // One-click ±rs preset (₹4,000 = 1% of the ₹4L per-strategy allocation) — fills
+    // both boxes and arms straight away. Manual position banao → 📊 Payoff → ±₹4k.
+    window._pfExitPreset = (rs) => {
+      const EX = window._pfExit; if (!EX || window._pfClosed) return;
+      EX.tgt = Math.abs(rs); EX.sl = -Math.abs(rs);
+      const t = document.getElementById('pfExTgtRs'); if (t) t.value = EX.tgt;
+      const s = document.getElementById('pfExSlRs'); if (s) s.value = EX.sl;
+      if (window._pfSeries) _pfDrawCombined(window._pfSeries);
+      _pfExitApply();
+    };
+
     // #02 arm/clear the combined-MTM auto-exit rule for this group (PAPER; engine = trader_dashboard)
     async function _pfExitApply() {
       const EX = window._pfExit, qs = window._pfQS; if (!EX || !qs || window._pfClosed) return;
@@ -1646,7 +1658,7 @@
       } catch (e) { j = { ok: false, msg: e.message }; }
       if (btn) {
         btn.disabled = false;
-        if (j && j.ok) { btn.textContent = '✓ Auto-exit armed (paper)'; btn.style.background = '#238636'; setTimeout(() => { btn.textContent = 'Apply auto-exit rule'; btn.style.background = '#1f6feb'; }, 2400); }
+        if (j && j.ok) { btn.textContent = '✓ Auto-exit armed'; btn.style.background = '#238636'; setTimeout(() => { btn.textContent = 'Apply auto-exit rule'; btn.style.background = '#1f6feb'; }, 2400); }
         else btn.textContent = 'Apply auto-exit rule';
       }
       const note = document.getElementById('pfExNote');

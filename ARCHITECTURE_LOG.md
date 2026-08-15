@@ -1588,3 +1588,18 @@ Ek live webhook position ka DEFAULT-TSL SL FIRE hua par `_pre_exit_guard` ne "we
 **VERDICT — DIRECTION FAILS:** FII-alone (2018-26, 2092 din): fwd3d spread +0.115% p=0.225 (train 0.066), OOS FLIPS −0.124%. Confluence (2020-26, 1603 din): both-bear fwd5d **+0.36% ULTA upar**, spread wrong-sign p=0.19-0.78, OOS same. → auto directional-"%" bias engine = false confidence, mat banao.
 **DO-NOT-REDO:** EOD FII/chain data se next-day DIRECTION predict karna. Do structural killers: (1) upward drift — signals mostly BEARISH point karte (FII structurally net-short/hedge), short-side drift se haarta; (2) EOD data slow — jab bearish dikhe, move already priced. Koi FII/PCR reweighting is problem ko fix nahi karega.
 **Data still useful (untested, direction chhod ke):** dashboard context-indicator (no %), regime/sizing FILTER (fragile-tape → size down, not direction), vol/expected-move (max-pain pin, straddle sizing). Lakes + daily Task LIVE regardless.
+
+## 2026-08-15 — 3 strategies LIVE (hedged + ₹4k basket-SL) — Monday rollout
+**Status:** IN-PROGRESS
+**Kya:** User ki 2 paper strategies (02.07 Straddle@Alert, 02.10 BNF 9:20 Strangle) ko Monday se LIVE karna + 1 manual strategy monitor karna. Capital: 14L total, 4L/strategy max, 1% (₹4,000) BASKET SL+Target (leg-wise nahi). Naked → hedged (far-OTM wings) taaki gap-tail defined ho + margin gire. Dynamic sizing NAHI — parent ka jo lot hai wahi mirror (bnf_strangle_v1 qty=5 → 5 lot; straddle_alert/_auto_straddle lots=4 → 4 lot).
+**Layer:** strategy (new live members) + risk (RMS basket exit) + order-path (ordered hedged entry/exit)
+**Files:**
+  - `strategy_registry.json` — naye members 02.07.01 (straddle_alert_hedged) + 02.10.01 (bnf_strangle_hedged), parents ke neeche
+  - `nifty_config.json` — 2 naye config blocks (mode live, 4 lot, wing offset NIFTY 400/BNF 500, basket_sl_rs/target_rs 4000) + `_risk.per_strategy` overrides (capital_rs 400000, default_sl_enabled=false)
+  - `_core/execution_gateway.py` — naya `execute_basket_exit()` ORDERED (SELL/short buy-to-close PEHLE, phir BUY wings sell-to-close) — margin-spike/reject se bachne ke liye (user requirement)
+  - `strategies/live/bnf_strangle_trader.py` — bnf hedged member: BUY wings pehle + SELL, ₹4k basket exit (parent bnf_strangle_v1 UNCHANGED)
+  - `trader_dashboard.py` — `_fire_flex_straddle` live hedged member via legs_spec wings (paper hard-lock bypass sirf is member ke liye), auto_straddle_loop me ₹4k ordered basket exit
+  - manual: `_ops/position_exit_rules.py` arm ±4000 on manual group + central monitor ordered square-off
+**Kyun:** Naked seller ka ₹4k SL gap/spike pe hold nahi karta (registry khud 02.10 pe "disaster-wing before real money" likhta hai). Wings = defined risk → ₹4k SL asli + margin ~60-70% kam → 4 lot 4L me fit. A/B: paper twins (point-exit, naked) as-is chalengi taaki "limit ka faida vs table pe paisa chhoda" compare ho.
+**Depends on:** position_exit_rules (basket exit, ADR-014) + execution_gateway gate=False hedge path + atm_straddle_roller._enter_hedged_straddle (ordered entry reference) — sab pehle se maujood, reuse (Rule 6B).
+**PENDING (Monday se pehle):** standalone tests (wing builder, ordered exit, basket ₹ decision) → VPS deploy → active=true → Monday-open pehla live fire watch (wings lage, basket armed, per-leg SL off).

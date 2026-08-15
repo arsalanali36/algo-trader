@@ -247,6 +247,85 @@ def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
                    res.get("reason", ""), res.get("order_id"), res.get("price"), qty)
 
 
+def _confirm_shorts_flat(shorts, log=print, timeout_s=4.0, poll_s=0.7):
+    """Best-effort: wait (bounded) for the just-fired SHORT buy-to-close legs to
+    read flat at the broker before the wings are removed. FAIL-OPEN — a check
+    failure or timeout just proceeds (the SELL-first ORDERING is the primary
+    guard; this only tightens the window). LIVE legs only."""
+    import time as _t
+    try:
+        import broker_sync
+    except Exception:
+        return
+    deadline = _t.time() + max(0.0, float(timeout_s))
+    pending = [l for l in shorts if str(l.get("mode", "")).lower() == "live"]
+    while pending and _t.time() < deadline:
+        still = []
+        for l in pending:
+            try:
+                bname = str(l.get("broker_name") or risk_gate.default_broker() or "dhan").lower()
+                if not broker_sync.is_flat_fresh(bname, l.get("trad_sym"), str(l.get("sec_id")),
+                                                 strategy_id=l.get("strategy")):
+                    still.append(l)
+            except Exception:
+                pass          # can't verify -> don't block, drop from pending
+        pending = still
+        if pending:
+            _t.sleep(max(0.1, float(poll_s)))
+    if pending:
+        log(f"[GATEWAY] [BASKET-EXIT] {len(pending)} short leg(s) not confirmed flat "
+            f"within {timeout_s}s — removing wings anyway (ordering guard still held)")
+
+
+def execute_basket_exit(legs, reason="GROUP_EXIT", log=print, confirm_between=True):
+    """ORDERED square-off of a (possibly hedged) basket. Closes the SHORT
+    (SELL-entry) legs FIRST via buy-to-close — which only REDUCES margin — then
+    the LONG / protective-wing (BUY-entry) legs via sell-to-close.
+
+    Removing the wings before the shorts turns a defined-risk structure momentarily
+    NAKED, spiking the margin requirement, so the broker rejects the remaining
+    exit orders ("order jaate nahi hai"). SELL-first ordering never increases
+    nakedness at any intermediate step, so it can't hit that wall.
+
+    `legs`: normalized dicts, each:
+        {strategy, symbol, sec_id, trad_sym, qty, entry_side ('SELL'|'BUY'),
+         mode, group_id, source, seg, broker_name(optional)}
+    Returns [(leg, result), ...] in the order fired (shorts then wings)."""
+    shorts = [l for l in legs if str(l.get("entry_side", "")).upper() == "SELL"]
+    wings  = [l for l in legs if str(l.get("entry_side", "")).upper() == "BUY"]
+    results = []
+
+    def _fire_one(l):
+        try:
+            r = execute_exit(
+                l.get("strategy") or "manual",
+                l.get("symbol"),
+                str(l.get("sec_id")),
+                l.get("trad_sym"),
+                abs(int(float(l.get("qty") or 0))),
+                entry_side=str(l.get("entry_side") or "SELL").upper(),
+                seg=l.get("seg") or "NSE_FNO",
+                mode=str(l.get("mode") or "paper").lower(),
+                broker_name=l.get("broker_name"),
+                group_id=l.get("group_id") or "",
+                source=l.get("source") or "strategy",
+                reason=reason, log=log)
+        except Exception as e:                 # one leg's failure must not strand the rest
+            log(f"[GATEWAY] [BASKET-EXIT] leg exit FAIL {l.get('trad_sym')}: {e}")
+            r = _result(False, "failed", f"basket leg exit: {e}",
+                        qty=abs(int(float(l.get("qty") or 0))))
+        results.append((l, r))
+        return r
+
+    for l in shorts:                       # Phase 1 — shorts buy-to-close (margin drops)
+        _fire_one(l)
+    if confirm_between and wings and shorts:   # Phase 1.5 — don't strip the hedge until shorts are (best-effort) flat
+        _confirm_shorts_flat(shorts, log=log)
+    for l in wings:                        # Phase 2 — wings sell-to-close
+        _fire_one(l)
+    return results
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Backtest mode — deterministic, config-driven checks only (ADR-003)
 # ─────────────────────────────────────────────────────────────────────────────

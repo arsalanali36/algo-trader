@@ -255,8 +255,29 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
             token, cid = load_creds()
             spot = _bnf_spot(token, cid, log)
 
-            # ── manage OPEN strangle: combined-premium POINTS exit ──
-            if pos is not None:
+            # ── manage OPEN strangle ──
+            if pos is not None and pos.get("exit_mode") == "basket_rs":
+                # 02.10.01 hedged: whole-basket ₹ SL/Target, ORDERED square-off
+                reason = None
+                combined = _basket_mtm(pos, bname)
+                if combined is not None:
+                    import position_exit_rules as _per
+                    tgt = pos.get("basket_target_rs"); sl = -abs(pos.get("basket_sl_rs") or 0)
+                    log.info(f"[BNFSTRH] hedged basket MTM ₹{combined:+,.0f}  "
+                             f"(tp +₹{tgt:.0f} / sl -₹{abs(sl):.0f})")
+                    d = _per.check_exit(combined, tgt, sl)
+                    if d == "target":
+                        reason = "BNFSTRH_BASKET_TARGET"
+                    elif d == "sl":
+                        reason = "BNFSTRH_BASKET_SL"
+                if now_hm >= exit_hm:
+                    reason = "BNFSTRH_EOD"
+                if reason:
+                    log.info(f"[EXIT] hedged strangle — {reason}")
+                    _exit_hedged(strategy_id, sym, pos, mode, bname, reason, log)
+                    pos = None; save_state(strategy_id, None)
+            # ── manage OPEN strangle: combined-premium POINTS exit (naked parent) ──
+            elif pos is not None:
                 broker = _get_broker(bname)
                 ltps = [_opt_ltp(broker, l["sec_id"]) for l in pos["legs"]] if broker else [None, None]
                 reason = None
@@ -288,7 +309,10 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
                     else:
                         log.info(f"[BNFSTR] ENTRY WINDOW  spot={spot:.1f}  off={tc.get('strike_offset')} OTM  "
                                  f"trades={trades_today}")
-                        pos = _enter_strangle(strategy_id, sym, spot, tc, mode, bname, log)
+                        if (tc.get("hedge") or {}).get("enabled") or tc.get("exit_mode") == "basket_rs":
+                            pos = _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log)
+                        else:
+                            pos = _enter_strangle(strategy_id, sym, spot, tc, mode, bname, log)
                         if pos:
                             trades_today += 1; save_state(strategy_id, pos)
                 elif now_hm < entry_hm:
@@ -365,6 +389,153 @@ def _exit_strangle(strategy_id, sym, pos, mode, bname, reason, log):
                             group_id=pos.get("group_id", ""), log=log.info)
         except Exception as e:
             log.error(f"[BNFSTR] exit leg {l['trad_sym']} err: {e} (pos_monitor EOD still protects)")
+
+
+# ── 02.10.01 hedged live twin: far-OTM wings + ₹ basket exit ─────────────────
+def _px_leg(sec, bname):
+    """Warm LTP for a leg (poller cache first, REST fallback)."""
+    try:
+        import shared_ltp_cache as slc
+        v = slc.get(str(sec), max_age=30)
+        if v:
+            return float(v)
+    except Exception:
+        pass
+    return _opt_ltp(_get_broker(bname), sec) or 0.0
+
+
+def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
+    """HEDGED short strangle (02.10.01). BUY far-OTM wings FIRST (margin drops),
+    then SELL the strike_offset-OTM shorts — unwind-safe, NEVER a lone naked leg.
+    Whole structure gated ONCE (basket margin), not per-leg. Mirrors
+    atm_straddle_roller._enter_hedged_straddle (Rule 6B). Returns pos dict or None."""
+    import execution_gateway as gw
+    import strategy_safety as ss
+    import risk_gate as rg
+    lots = int(tc.get("qty", 1))
+    off = int(tc.get("strike_offset", 6))
+    wing_strikes = int((tc.get("hedge") or {}).get("wing_strikes", 5))
+    gid = f"BNFSTRH_{int(time.time())}"
+
+    # ── resolve shorts (off OTM) + wings (off + wing_strikes further OTM) ──
+    shorts, wings, lot_size = [], [], 0
+    for ot in ("CE", "PE"):
+        sec, tsym, lot = dhan_master.get_option_contract(sym, spot, ot, off)
+        if not sec:
+            log.error(f"[BNFSTRH] {ot} short contract resolve fail — abort"); return None
+        lot_size = int(lot or lot_size or 1)
+        shorts.append({"opt_type": ot, "sec_id": str(sec), "trad_sym": tsym, "lot": lot_size})
+        try:
+            hsec, htsym, hlot = ss.compute_hedge_target(
+                strategy_id, sym, spot, ot, off, quote_fn=None,
+                min_strikes_override=wing_strikes, max_premium_override=None,
+                max_search=1, log=log.info)
+        except Exception as he:
+            hsec = None; log.error(f"[BNFSTRH] {ot} wing resolve err: {he}")
+        if not hsec:
+            log.error(f"[BNFSTRH] {ot} wing resolve fail — no naked, abort"); return None
+        wings.append({"opt_type": ot, "sec_id": str(hsec), "trad_sym": htsym, "lot": int(hlot or lot_size)})
+
+    q = lots * lot_size
+
+    # ── pre-warm all 4 legs' LTP (poller batches one call) before pricing/margin ──
+    try:
+        import ltp_poller, shared_ltp_cache as slc
+        watch = [(l["sec_id"], "NSE_FNO") for l in shorts + wings]
+        ltp_poller.request_watch(watch)
+        for _ in range(10):
+            if all(slc.get(s, max_age=30) for s, _sg in watch):
+                break
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    # ── gate the WHOLE hedged structure ONCE (RMS + real basket margin) ──
+    try:
+        blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
+        if blocked:
+            log.info(f"[BNFSTRH] RMS blocked — {why}"); return None
+    except Exception:
+        pass
+    basket_rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
+                    "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in shorts] \
+                + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": q, "sym": l["trad_sym"],
+                    "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in wings]
+    try:
+        need = rg.position_margin(basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
+        if not ok_cap:
+            log.info(f"[BNFSTRH] basket margin ₹{need:,.0f} fit nahi hua — {cap_why}"); return None
+    except Exception as ce:
+        log.error(f"[BNFSTRH] basket capital check err: {ce}")
+
+    # ── place: BUY wings FIRST (margin reduced), then SELL shorts; unwind on fail ──
+    placed, legs = [], []
+
+    def _unwind(reason):
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(strategy_id, sym, p["sec_id"], p["trad_sym"], q, entry_side=p["side"],
+                                seg="NSE_FNO", mode=mode, broker_name=bname, group_id=gid,
+                                reason=reason, tag="BNFSTRH", source="strategy", instrument="options",
+                                log=log.info)
+            except Exception as ue:
+                log.error(f"[BNFSTRH] unwind FAIL {p['trad_sym']}: {ue}")
+
+    for grp, side, tag in ((wings, "BUY", "BNFSTRH_HEDGE"), (shorts, "SELL", "BNFSTRH")):
+        for l in grp:
+            try:
+                r = gw.execute_signal(strategy_id, sym, side, lots, l["lot"], l["sec_id"], l["trad_sym"],
+                                      seg="NSE_FNO", mode=mode, broker_name=bname, source="strategy",
+                                      tag=tag, group_id=gid, gate=False,
+                                      extra_tags=(["BNFSTRH", "HEDGE"] if side == "BUY" else ["BNFSTRH"]),
+                                      instrument="options", log=log.info)
+            except Exception as e:
+                r = {"ok": False, "reason": str(e)}
+            if not r.get("ok"):
+                log.info(f"[BNFSTRH] {l['opt_type']} {side} fail ({r.get('reason') or r.get('status')}) "
+                         f"— unwind, abort (no naked)")
+                _unwind("BNFSTRH_ABORT"); return None
+            placed.append({"sec_id": l["sec_id"], "trad_sym": l["trad_sym"], "side": side})
+            prem = r.get("price")
+            if not prem or prem <= 0:
+                prem = _px_leg(l["sec_id"], bname)
+            legs.append(dict(opt_type=l["opt_type"], side=side, sec_id=l["sec_id"], trad_sym=l["trad_sym"],
+                             qty=r.get("qty") or q, entry_prem=round(float(prem or 0), 2)))
+
+    net_credit = round(sum(x["entry_prem"] for x in legs if x["side"] == "SELL")
+                       - sum(x["entry_prem"] for x in legs if x["side"] == "BUY"), 2)
+    log.info(f"  ★ ENTRY HEDGED STRANGLE ({len(legs)} legs) net_credit≈{net_credit}  "
+             f"wings={wing_strikes} strikes OTM  basket ±₹{tc.get('basket_sl_rs', 4000):.0f}")
+    return dict(legs=legs, entry_credit=net_credit, group_id=gid, hedged=True, exit_mode="basket_rs",
+                basket_target_rs=float(tc.get("basket_target_rs", 4000)),
+                basket_sl_rs=float(tc.get("basket_sl_rs", 4000)),
+                entry_spot=round(spot, 1))
+
+
+def _basket_mtm(pos, bname):
+    """Live combined ₹ MTM across all legs (side-aware). None if any leg LTP
+    missing/stale → caller FREEZES (never fire on bad data, TRAP #1)."""
+    broker = _get_broker(bname)
+    total = 0.0
+    for l in pos["legs"]:
+        ltp = _opt_ltp(broker, l["sec_id"]) if broker else None
+        if ltp is None or ltp <= 0:
+            return None
+        qty = abs(float(l.get("qty") or 0)); ent = float(l.get("entry_prem") or 0)
+        total += ((ent - ltp) if str(l.get("side", "SELL")).upper() == "SELL" else (ltp - ent)) * qty
+    return total
+
+
+def _exit_hedged(strategy_id, sym, pos, mode, bname, reason, log):
+    """ORDERED basket square-off (shorts buy-to-close FIRST, then wings) via the
+    shared execution_gateway helper — never strips the hedge before the shorts."""
+    import execution_gateway as gw
+    norm = [{"strategy": strategy_id, "symbol": sym, "sec_id": l["sec_id"], "trad_sym": l["trad_sym"],
+             "qty": l["qty"], "entry_side": str(l.get("side", "SELL")).upper(), "mode": mode,
+             "broker_name": bname, "group_id": pos.get("group_id", ""), "source": "strategy",
+             "seg": "NSE_FNO"} for l in pos["legs"]]
+    gw.execute_basket_exit(norm, reason=reason, log=log.info)
 
 
 def _write_watch(sid, sym, spot, pos, tc, now):

@@ -305,6 +305,18 @@
    "hold": "Intraday",
    "structure": "Short straddle"
   },
+  "02.07.01": {
+   "name": "Straddle @ Alert — Hedged Live",
+   "config_key": "straddle_alert_hedged",
+   "slug": "straddle_alert_hedged",
+   "live_file": "",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "NIFTY / BANKNIFTY",
+   "hold": "Intraday",
+   "structure": "Short straddle + far-OTM wings (iron fly)",
+   "desc": "LIVE hedged twin of 02.07. Same alert entry, but far-OTM protective wings (defined risk) + ₹4,000 (1% of ₹4L) COMBINED-BASKET SL/Target — whole group exits together (short legs buy-to-close FIRST, then wings), NOT per-leg. 4 lots fixed. Per-leg RMS default-SL disabled; only the basket rule governs. Parent 02.07 (paper, naked, point-exit) runs UNCHANGED for A/B. Money-path: execute_basket_exit ordered square-off. See ARCHITECTURE_LOG 2026-08-15."
+  },
   "02.08": {
    "name": "Straddle (manual)",
    "config_key": "straddle_manual",
@@ -361,6 +373,18 @@
    "hold": "Intraday",
    "structure": "Short strangle (naked)",
    "desc": "BankNifty 09:20 SHORT strangle — 6-strike OTM CE+PE SELL, combined-premium 50pt target / 50pt SL, 14:55 close. Backtest 2021-26 REAL premium lake (no BS) + real Zerodha charges + DOM slip + date-aware lot (25/15/30): Sharpe 2.8, +Rs5.76L, worst din -Rs3,182 (~-Rs6k at current lot 30); har gate pass (6/6 saal +ve, OOS>train, sig p=0.003, MC not-overfit, slip x3). FORWARD-PAPER: naked seller, unmodeled >5% gap-day tail sample me nahi → paper + disaster-wing before real money (Rule 10). Memory project_code3b_bnf_920_strangle."
+  },
+  "02.10.01": {
+   "name": "BNF 9:20 Strangle — Hedged Live",
+   "config_key": "bnf_strangle_hedged",
+   "slug": "bnf_strangle_hedged",
+   "live_file": "strategies/live/bnf_strangle_trader.py",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "BANKNIFTY",
+   "hold": "Intraday",
+   "structure": "Short strangle + far-OTM wings (iron condor)",
+   "desc": "LIVE hedged twin of 02.10 — adds the 'disaster-wing before real money' the parent's note demanded. Same 09:20 6-strike-OTM SELL CE+PE, PLUS far-OTM BUY wings (+500pt beyond each sold leg → defined risk, ~60-70% less margin). Exit = ₹4,000 (1% of ₹4L) COMBINED-BASKET SL/Target — whole group together (short legs buy-to-close FIRST, then wings), NOT per-leg. 4 lots fixed. Per-leg RMS default-SL disabled. Parent 02.10 (paper, naked, 50pt-exit) runs UNCHANGED for A/B. See ARCHITECTURE_LOG 2026-08-15."
   },
   "03.01": {
    "name": "Pivot-Extreme Continuation",

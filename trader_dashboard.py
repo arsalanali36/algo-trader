@@ -2363,6 +2363,41 @@ def _rms_summary_compute():
     return {"strategies": rows, "totals": totals,
             "webhook": webhook, "webhook_global": wh_global}
 
+
+# Background warmer: keep the rms-summary cache fresh during MARKET HOURS so even the
+# FIRST Risk-tab open is instant (not a one-time ~8s compute). Runs only 09:08-15:45 IST
+# on weekdays; off-market it does nothing (data doesn't change + avoids flaky off-hours
+# broker calls) — the first evening open recomputes once, then the TTL cache serves.
+# Cadence (30s) < the cache TTL (35s) → the 30s Risk-tab poll ALWAYS hits a warm cache.
+# Marginal Dhan/Kite cost ≈ the same 1 (cached) broker-balance read the Risk poll already
+# does — so this is no heavier than a user sitting on the Risk tab, never starves trading.
+_rms_warm_started = False
+
+
+def _rms_warm_loop():
+    import time as _t
+    from datetime import timedelta as _td
+    while True:
+        mkt = False
+        try:
+            ist = datetime.now(timezone.utc) + _td(hours=5, minutes=30)
+            mins = ist.hour * 60 + ist.minute
+            mkt = (ist.weekday() < 5) and (9 * 60 + 8 <= mins <= 15 * 60 + 45)
+            if mkt:
+                p = _rms_summary_compute()
+                _RMS_SUM_CACHE["payload"], _RMS_SUM_CACHE["ts"] = p, _t.time()
+        except Exception:
+            pass   # keep last-good; never crash the daemon
+        _t.sleep(30 if mkt else 240)
+
+
+def _rms_warm_start():
+    global _rms_warm_started
+    if not _rms_warm_started:
+        _rms_warm_started = True
+        _threading.Thread(target=_rms_warm_loop, daemon=True).start()
+
+
 @app.route('/api/sync-positions', methods=['POST'])
 def api_sync_positions():
     """Force-reconcile the app's LIVE ledger against the broker's trade book,
@@ -4654,19 +4689,26 @@ def _run_position_exit_rules(log=print):
                 continue
             log(f"[exit-rule] {key} {reason.upper()} @ combined MTM ₹{combined:,.0f} — "
                 f"squaring off {len(legs)} legs ({rule.get('mode')})")
-            for r in legs:
-                try:
-                    gw.execute_exit(
-                        r.get('strategy') or 'manual',
-                        r.get('symbol') or str(r.get('sym') or '').split('-')[0],
-                        str(r.get('sec_id')), r.get('sym'),
-                        abs(int(float(r.get('qty') or 0))),
-                        entry_side=str(r.get('entry') or 'SELL').upper(),
-                        mode=str(r.get('mode') or 'paper').lower(),
-                        group_id=gid, reason="GROUP_%s" % reason.upper(),
-                        source=r.get('source') or 'manual', log=log)
-                except Exception as e:
-                    log(f"[exit-rule] leg exit FAIL {r.get('sym')}: {e}")
+            # ORDERED square-off: shorts (SELL) buy-to-close FIRST, then wings
+            # (BUY) sell-to-close — stripping the hedge first spikes margin and
+            # the broker rejects the remaining exits (user-reported). Shared
+            # helper so the trader files and this monitor can't drift.
+            norm = [{
+                "strategy": r.get('strategy') or 'manual',
+                "symbol": r.get('symbol') or str(r.get('sym') or '').split('-')[0],
+                "sec_id": str(r.get('sec_id')),
+                "trad_sym": r.get('sym'),
+                "qty": abs(int(float(r.get('qty') or 0))),
+                "entry_side": str(r.get('entry') or 'SELL').upper(),
+                "mode": str(r.get('mode') or 'paper').lower(),
+                "group_id": gid,
+                "source": r.get('source') or 'manual',
+                "seg": r.get('segment') or 'NSE_FNO',
+            } for r in legs]
+            try:
+                gw.execute_basket_exit(norm, reason="GROUP_%s" % reason.upper(), log=log)
+            except Exception as e:
+                log(f"[exit-rule] basket exit FAIL {key}: {e}")
             per.clear_rule(key)
             try:
                 import notify
@@ -6096,9 +6138,166 @@ def _close_straddle(strad, status, reason, log=print):
     ast.set_status(strad["id"], status, reason, exit_credit=exit_credit)
 
 
+def _hedged_alert_cfg():
+    """straddle_alert_hedged block (02.07.01) from nifty_config — the LIVE hedged
+    twin of the paper alert straddle. {} if absent/inactive."""
+    try:
+        raw = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+        return raw.get("straddle_alert_hedged") or {}
+    except Exception:
+        return {}
+
+
+def _hedged_alert_open(sid):
+    """True if a straddle_alert_hedged group is already open (dedup — no stacking)."""
+    try:
+        import order_store
+        opens = order_store.trades_for(_ast_ist_now().strftime("%Y-%m-%d")).get("open") or []
+        return any(str(p.get("strategy")) == sid for p in opens)
+    except Exception:
+        return False
+
+
+def _fire_hedged_alert_straddle(symbol, source, log=print):
+    """02.07.01 — LIVE hedged ATM straddle fired ALONGSIDE the paper alert straddle
+    (A/B). SELL ATM CE+PE + BUY far-OTM wings (config wing_strikes) → defined risk.
+    Whole structure gated ONCE (RMS + basket margin); wings placed FIRST then shorts
+    (margin-safe, unwind on any fail — NEVER a naked leg). On success arms a
+    position_exit_rules ±basket_rs rule on the group, so the central monitor
+    (auto_straddle_loop) does the ORDERED square-off (shorts buy-to-close first,
+    then wings). Fully separate from the paper _fire_auto_straddle subsystem, which
+    stays paper. Returns (ok, msg)."""
+    hc = _hedged_alert_cfg()
+    if not hc.get("active"):
+        return False, "straddle_alert_hedged inactive"
+    symbol = str(symbol).upper()
+    if symbol not in ("NIFTY", "BANKNIFTY"):
+        return False, f"{symbol} unsupported"
+    sid = "straddle_alert_hedged"
+    mode = str(hc.get("mode", "live")).lower()
+    lots = int(hc.get("lots", 4))
+    ws_cfg = hc.get("wing_strikes") or {}
+    wing_strikes = int(ws_cfg.get(symbol, 8 if symbol == "NIFTY" else 5))
+    if _hedged_alert_open(sid):
+        return False, f"{sid} already open — skip (no stacking)"
+    import dhan_master
+    import execution_gateway as gw
+    import strategy_safety as ss
+    import risk_gate as rg
+    try:
+        _sq, no_entry = rg.exit_time_config()
+        now = _ast_ist_now()
+        if (now.hour, now.minute) >= (no_entry[0], no_entry[1]):
+            return False, f"no-entry window (after {no_entry[0]:02d}:{no_entry[1]:02d})"
+    except Exception:
+        pass
+    spot = _trigger_spot_now(symbol)
+    if not spot or spot <= 0:
+        return False, f"{symbol} spot abhi nahi mila — order NAHI bheja"
+    gid = f"STRADH_{symbol}_{int(_time.time())}"
+
+    # ── resolve ATM shorts (off=0) + wings (wing_strikes OTM) ──
+    shorts, wings, lot_size = [], [], 0
+    for ot in ("CE", "PE"):
+        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, ot, 0)
+        if not sec:
+            return False, f"{ot} ATM resolve fail"
+        lot_size = int(lot or lot_size or 1)
+        shorts.append({"opt_type": ot, "sec_id": str(sec), "trad_sym": tsym, "lot": lot_size})
+        try:
+            hsec, htsym, hlot = ss.compute_hedge_target(sid, symbol, spot, ot, 0, quote_fn=None,
+                                                        min_strikes_override=wing_strikes,
+                                                        max_premium_override=None, max_search=1, log=log)
+        except Exception as he:
+            hsec = None; log(f"[straddle-hedged] {ot} wing resolve err: {he}")
+        if not hsec:
+            return False, f"{ot} wing resolve fail — no naked"
+        wings.append({"opt_type": ot, "sec_id": str(hsec), "trad_sym": htsym, "lot": int(hlot or lot_size)})
+
+    q = lots * lot_size
+
+    def _px(sec):
+        try:
+            import shared_ltp_cache as slc
+            return float(slc.get(str(sec), max_age=30) or 0)
+        except Exception:
+            return 0.0
+    try:
+        import ltp_poller
+        import shared_ltp_cache as slc
+        watch = [(l["sec_id"], "NSE_FNO") for l in shorts + wings]
+        ltp_poller.request_watch(watch)
+        for _ in range(10):
+            if all(slc.get(s, max_age=30) for s, _sg in watch):
+                break
+            _time.sleep(0.5)
+    except Exception:
+        pass
+
+    # ── single whole-structure gate (RMS + real basket margin) ──
+    try:
+        blocked, why, _h = rg.gating_status(sid, mode=mode)
+        if blocked:
+            return False, f"RMS blocked — {why}"
+    except Exception:
+        pass
+    basket_rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
+                    "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in shorts] \
+                + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": q, "sym": l["trad_sym"],
+                    "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in wings]
+    try:
+        need = rg.position_margin(basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(sid, need, mode=mode)
+        if not ok_cap:
+            return False, f"basket margin ₹{need:,.0f} fit nahi — {cap_why}"
+    except Exception as ce:
+        log(f"[straddle-hedged] basket capital err: {ce}")
+
+    # ── place: BUY wings FIRST (margin drops), then SELL shorts; unwind on fail ──
+    placed = []
+
+    def _unwind(reason):
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(sid, symbol, p["sec_id"], p["trad_sym"], q, entry_side=p["side"],
+                                seg="NSE_FNO", mode=mode, group_id=gid, reason=reason,
+                                tag="STRADH", source="strategy", instrument="options", log=log)
+            except Exception as ue:
+                log(f"[straddle-hedged] unwind FAIL {p['trad_sym']}: {ue}")
+
+    for grp, side, tag in ((wings, "BUY", "STRADH_HEDGE"), (shorts, "SELL", "STRADH")):
+        for l in grp:
+            try:
+                r = gw.execute_signal(sid, symbol, side, lots, l["lot"], l["sec_id"], l["trad_sym"],
+                                      seg="NSE_FNO", mode=mode, source="strategy", tag=tag,
+                                      group_id=gid, gate=False,
+                                      extra_tags=(["STRADH", "HEDGE"] if side == "BUY" else ["STRADH"]),
+                                      instrument="options", log=log)
+            except Exception as e:
+                r = {"ok": False, "reason": str(e)}
+            if not r.get("ok"):
+                _unwind("STRADH_ABORT")
+                return False, f"{l['opt_type']} {side} fail ({r.get('reason') or r.get('status')}) — abort (no naked)"
+            placed.append({"sec_id": l["sec_id"], "trad_sym": l["trad_sym"], "side": side})
+
+    # ── arm ±basket_rs rule on the group → central monitor does ORDERED exit ──
+    try:
+        import position_exit_rules as per
+        tgt = float(hc.get("basket_target_rs", 4000))
+        sl = -abs(float(hc.get("basket_sl_rs", 4000)))
+        key = per.rule_key(gid, [])
+        per.set_rule(key, gid, [], target_rs=tgt, sl_rs=sl, mode=mode)
+        log(f"[straddle-hedged] armed basket rule {key}: +₹{tgt:.0f}/-₹{abs(sl):.0f}")
+    except Exception as re:
+        log(f"[straddle-hedged] arm basket rule FAIL: {re} — EOD squareoff still protects")
+    return True, (f"{symbol} HEDGED straddle LIVE ({lots}L, wings {wing_strikes} strikes OTM, "
+                  f"basket ±₹{hc.get('basket_sl_rs', 4000):.0f})")
+
+
 def on_option_alert(alert):
     """C — option_alerts watcher callback. On a straddle-move / gamma-spike alert,
-    auto-sell that index's ATM straddle (if enabled_alert). PAPER."""
+    auto-sell that index's ATM straddle (if enabled_alert). PAPER twin + optional
+    LIVE hedged twin (02.07.01, straddle_alert_hedged)."""
     try:
         cfg = _auto_straddle_cfg()
         if not cfg.get("enabled_alert"):
@@ -6120,6 +6319,15 @@ def on_option_alert(alert):
         ok, msg = _fire_auto_straddle(u, cfg.get("lots", 1), _tp, _sl, "alert:%s" % typ,
                                       log=lambda m: print(m, flush=True))
         print(f"[straddle] alert-fire {u} ({typ}): {msg}", flush=True)
+        # 02.07.01 — LIVE hedged twin fires ALONGSIDE the paper straddle (A/B).
+        # No-op unless straddle_alert_hedged.active; fully self-guarded (dedup,
+        # RMS, no-naked). Never let its failure affect the paper fire above.
+        try:
+            _hok, _hmsg = _fire_hedged_alert_straddle(u, "alert:%s" % typ,
+                                                      log=lambda m: print(m, flush=True))
+            print(f"[straddle-hedged] alert-fire {u} ({typ}): {_hmsg}", flush=True)
+        except Exception as _he:
+            print(f"[straddle-hedged] fire err: {_he}", flush=True)
     except Exception as e:
         print(f"[straddle] on_option_alert err: {e}", flush=True)
 
@@ -11616,6 +11824,8 @@ if __name__ == '__main__':
     print("   🔔 error-watch chalu — logs/processes/services ke errors bell me aayenge\n")
     _payoff_warm_start()   # open groups ka payoff/zone pehle se cache — panel instant khule
     print("   📊 payoff warm-loop chalu — open positions ka payoff pre-computed\n")
+    _rms_warm_start()      # market-hours: rms-summary cache warm rakho — Risk tab instant khule
+    print("   ⚡ rms-summary warm-loop chalu — Risk panel pehli baar bhi instant\n")
     # threaded=True: one slow request (e.g. a cold option-chain CSV parse) must NOT block
     # the whole dashboard — single-threaded froze every other request/page for 20s+ (2026-08-05).
     app.run(host='0.0.0.0', port=5099, debug=False, threaded=True)
