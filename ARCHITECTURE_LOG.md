@@ -1590,7 +1590,7 @@ Ek live webhook position ka DEFAULT-TSL SL FIRE hua par `_pre_exit_guard` ne "we
 **Data still useful (untested, direction chhod ke):** dashboard context-indicator (no %), regime/sizing FILTER (fragile-tape → size down, not direction), vol/expected-move (max-pain pin, straddle sizing). Lakes + daily Task LIVE regardless.
 
 ## 2026-08-15 — 3 strategies LIVE (hedged + ₹4k basket-SL) — Monday rollout
-**Status:** IN-PROGRESS
+**Status:** DONE (code+config VPS-deployed active=false; commits 3070e97+34bd703; one-shot `algo-golive.timer` Mon 2026-08-17 08:45 IST flips active=true → 9:10 scheduler starts bnf, alert-straddle event-driven fires. TRAP #175 event_driven guard added. Docs: CLAUDE.md Update Log + 2 Feature Index rows, LESSONS #175, memory project_code3b_3strat_live_rollout.)
 **Kya:** User ki 2 paper strategies (02.07 Straddle@Alert, 02.10 BNF 9:20 Strangle) ko Monday se LIVE karna + 1 manual strategy monitor karna. Capital: 14L total, 4L/strategy max, 1% (₹4,000) BASKET SL+Target (leg-wise nahi). Naked → hedged (far-OTM wings) taaki gap-tail defined ho + margin gire. Dynamic sizing NAHI — parent ka jo lot hai wahi mirror (bnf_strangle_v1 qty=5 → 5 lot; straddle_alert/_auto_straddle lots=4 → 4 lot).
 **Layer:** strategy (new live members) + risk (RMS basket exit) + order-path (ordered hedged entry/exit)
 **Files:**
