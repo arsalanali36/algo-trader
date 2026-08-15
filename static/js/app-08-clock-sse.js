@@ -224,6 +224,12 @@
       } catch (e) { }
     }
     setInterval(() => { if (activeTab === 'orders') _fetchPositionLtp(); }, 3000);
+    // per-group leg-checkbox All/None → re-tick then recompute the subset total
+    window._grpLegSel = function (grpId, on) {
+      document.querySelectorAll(`.grp-leg-chk[data-grp="${grpId}"]`).forEach(c => { c.checked = on; });
+      _patchLtpCells();
+    };
+
     function _patchLtpCells() {
       document.querySelectorAll('.ltp-cell').forEach(el => {
         const key = el.getAttribute('data-sec') || el.getAttribute('data-sym');   // sec_id join (TRAP #166)
@@ -278,6 +284,7 @@
       // per-strategy-table totals — sum pts/unrl/inv across each table's own rows
       document.querySelectorAll('table[id^="grp_"]').forEach(tbl => {
         let totPts = 0, totUnrl = 0, totInv = 0, any = false;
+        let selUnrl = 0, selPts = 0, selN = 0, totN = 0;   // per-leg-checkbox subset total (user ask)
         tbl.querySelectorAll('tbody tr').forEach(tr => {
           const ltpCell = tr.querySelector('.ltp-cell');
           const unEl = tr.querySelector('.unrl-cell');
@@ -285,10 +292,15 @@
           any = true;
           const entry = parseFloat(ltpCell.getAttribute('data-entry')) || 0;
           const qty = parseFloat(ltpCell.getAttribute('data-qty')) || 0;
-          totUnrl += parseFloat(unEl.textContent.replace('+', '').replace(/,/g, '')) || 0;
+          const rowUnrl = parseFloat(unEl.textContent.replace('+', '').replace(/,/g, '')) || 0;
+          totUnrl += rowUnrl;
           totInv += entry * qty;
           const ptEl = tr.querySelector('.pts-cell');
-          if (ptEl) totPts += parseFloat(ptEl.textContent.replace('+', '')) || 0;
+          const rowPts = ptEl ? (parseFloat(ptEl.textContent.replace('+', '')) || 0) : 0;
+          totPts += rowPts;
+          totN++;
+          const chk = tr.querySelector('.grp-leg-chk');   // ticked (or no box) → in subset
+          if (!chk || chk.checked) { selUnrl += rowUnrl; selPts += rowPts; selN++; }
         });
         const id = tbl.id;
         if (!any) return;
@@ -306,6 +318,13 @@
         document.querySelectorAll(`.grp-tot-pts[data-grp="${id}"]`).forEach(el => { el.textContent = ptTxt; el.style.color = ptCol; });
         document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = unCol; });
         document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = unCol; });
+        // selected-leg subset total (all ticked → equals the group TOTAL above)
+        const selTxt = selN === 0 ? 'koi leg select nahi'
+          : `${selUnrl >= 0 ? '+' : ''}₹${Math.round(selUnrl).toLocaleString('en-IN')}`
+            + ` · ${selN}/${totN} leg · ${selPts >= 0 ? '+' : ''}${selPts.toFixed(1)}pt`;
+        document.querySelectorAll(`.grp-sel-tot[data-grp="${id}"]`).forEach(el => {
+          el.innerHTML = selTxt; el.style.color = selN === 0 ? '#6e7681' : (selUnrl >= 0 ? '#3fb950' : '#f85149');
+        });
       });
       // grand TOTAL across ALL open-position rows (item D) — feeds the TOTAL bar
       (function () {

@@ -1167,7 +1167,11 @@
                     break;
                   case 'symbol':
                     const isNoteColOn = activeOpenCols.some(x => x.id === 'note');
-                    val = `<b>${t.sym}</b>` + (isNoteColOn ? '' : dispNote);
+                    // per-leg checkbox → drives the group's "Selected legs total" bar
+                    // (tick a subset of a hedge to see just those legs' P&L together).
+                    val = `<label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer" title="Is leg ko Selected total me rakho/hatao">`
+                      + `<input type="checkbox" class="grp-leg-chk" data-grp="${grpId}" checked onchange="_patchLtpCells()" style="cursor:pointer;flex:none">`
+                      + `<b>${t.sym}</b></label>` + (isNoteColOn ? '' : dispNote);
                     colorStyle = 'color:#adbac7;';
                     break;
                   case 'instrument':
@@ -1333,6 +1337,13 @@
           <span style="font-size:12px;color:#8b949e; margin-top: 2px;">Toggle ▾</span>
         </summary>
         <div style="border-top: 1px solid #30363d; overflow-x: auto;">
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #21262d">
+            <span style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">☑ Selected legs total</span>
+            <span class="grp-sel-tot" data-grp="${grpId}" style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:#6e7681">—</span>
+            <span style="flex:1"></span>
+            <button onclick="_grpLegSel('${grpId}',true)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">All</button>
+            <button onclick="_grpLegSel('${grpId}',false)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">None</button>
+          </div>
           ${tableHtml}
         </div>
       </details>`;
