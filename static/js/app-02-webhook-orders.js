@@ -1674,19 +1674,59 @@
 
     function _pfDrawGrid(s) {
       const grid = document.getElementById('pfGrid'); if (!grid) return;
-      grid.innerHTML = s.legs.map((L, i) => {
+      window._pfSeries = s;
+      // Full-width selection bar: tick any subset of legs → sirf unka combined total.
+      const bar = `<div style="grid-column:1/-1;display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:7px 9px;border:1px solid #30363d;border-radius:7px;background:#0d1117">
+          <span style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">Selected legs total</span>
+          <span id="pfSelTot" style="font-family:ui-monospace,monospace;font-size:13px;font-weight:700">—</span>
+          <span style="flex:1"></span>
+          <button onclick="_pfSelAll(true)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">All</button>
+          <button onclick="_pfSelAll(false)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:3px 8px;cursor:pointer">None</button>
+        </div>`;
+      grid.innerHTML = bar + s.legs.map((L, i) => {
         const sideCol = L.side === 'BUY' ? '#3fb950' : '#f85149';
         return `<div style="border:1px solid #30363d;border-radius:7px;padding:8px;text-align:left">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-            <span style="font-size:11px;font-weight:700;color:#e6edf3">${L.trad_sym}</span>
-            <span style="font-size:10px;font-weight:700;color:${sideCol}">${L.side}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;gap:6px">
+            <label style="display:flex;align-items:center;gap:5px;cursor:pointer;min-width:0">
+              <input type="checkbox" id="pfLegChk${i}" checked onchange="_pfSelTotal()" style="cursor:pointer;flex:none">
+              <span style="font-size:11px;font-weight:700;color:#e6edf3;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${L.trad_sym}</span>
+            </label>
+            <span style="font-size:10px;font-weight:700;color:${sideCol};flex:none">${L.side}</span>
           </div>
           <div style="font-size:9.5px;color:#8b949e;margin-bottom:4px">entry ${L.entry.toFixed(2)} · qty ${L.qty}<span id="pfLegNow${i}"></span></div>
           <svg id="pfLeg${i}" viewBox="0 0 440 130" style="width:100%;height:auto"></svg>
         </div>`;
       }).join('');
       s.legs.forEach((L, i) => _pfDrawLeg(L, i));
+      _pfSelTotal();
     }
+
+    // Per-leg checkbox → show ONLY the ticked legs' combined LIVE total (user ask:
+    // 4-leg hedge me se 2 tick karo → sirf un 2 ka total). Same premium/qty/side
+    // math as each leg card's "now" P&L, so all-ticked == the combined Live net MTM.
+    window._pfSelTotal = () => {
+      const s = window._pfSeries; if (!s || !s.legs) return;
+      let pnl = 0, netPrem = 0, n = 0;
+      s.legs.forEach((L, i) => {
+        const chk = document.getElementById('pfLegChk' + i);
+        if (chk && !chk.checked) return;
+        if (!L.series || !L.series.length) return;
+        const last = L.series[L.series.length - 1][1];
+        pnl += (L.side === 'SELL' ? (L.entry - last) : (last - L.entry)) * L.qty;
+        netPrem += (L.side === 'SELL' ? last : -last) * L.qty;   // SELL +credit, BUY −debit
+        n++;
+      });
+      const el = document.getElementById('pfSelTot'); if (!el) return;
+      if (n === 0) { el.innerHTML = '<span style="color:#6e7681;font-size:11px">koi leg select nahi</span>'; return; }
+      const col = pnl >= 0 ? _PF.C.pos : _PF.C.neg;
+      el.innerHTML = `<span style="color:${col}">${pnl >= 0 ? '+' : ''}${_pfRs(pnl)}</span>`
+        + ` <span style="color:#6e7681;font-weight:400;font-size:10px">· ${n}/${s.legs.length} leg · net prem ${netPrem >= 0 ? '+' : ''}${_pfRs(netPrem)}</span>`;
+    };
+    window._pfSelAll = (on) => {
+      const s = window._pfSeries; if (!s || !s.legs) return;
+      s.legs.forEach((L, i) => { const c = document.getElementById('pfLegChk' + i); if (c) c.checked = on; });
+      window._pfSelTotal();
+    };
 
     function _pfDrawLeg(L, idx) {
       const svg = document.getElementById('pfLeg' + idx); if (!svg || !L.series.length) return;
