@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>4-in-1 What-If</title>
+<style>
+  :root{--bg:#0d1117;--panel:#161b22;--panel2:#0f141b;--bd:#30363d;--bd2:#21262d;--tx:#e6edf3;--mut:#8b949e;--dim:#6e7681;
+    --green:#3fb950;--red:#f85149;--blue:#58a6ff;--amber:#d29922;--spot:#f0883e;--purple:#a371f7;--acc:#1f6feb;}
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;font-size:13px;-webkit-font-smoothing:antialiased}
+  a{color:var(--blue);text-decoration:none}
+  .num{font-variant-numeric:tabular-nums}
+  .top{display:flex;align-items:center;gap:12px;padding:11px 16px;border-bottom:1px solid var(--bd);background:linear-gradient(180deg,#11161d,#0d1117);position:sticky;top:0;z-index:40}
+  .brand{display:flex;align-items:baseline;gap:9px}.brand b{font-size:15px}.brand span{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.7px}
+  .top .sp{flex:1}
+  .lnk{border:1px solid var(--bd);background:var(--bd2);border-radius:7px;padding:5px 10px;color:var(--tx);font-weight:600;font-size:12px}
+  .wrap{padding:14px 18px;max-width:1000px;margin:0 auto}
+  /* form bar */
+  .form{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;background:var(--panel2);border:1px solid var(--bd);border-radius:10px;padding:13px 14px;margin-bottom:14px}
+  .fg{display:flex;flex-direction:column;gap:5px}
+  .fg label{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  input,select{background:var(--bd2);border:1px solid var(--bd);border-radius:7px;color:var(--tx);font:inherit;padding:7px 9px;outline:none}
+  input[type=time],input[type=date]{color-scheme:dark}
+  input[type=number]{width:92px}
+  .seg{display:flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+  .seg button{background:none;border:0;color:var(--mut);font:inherit;font-weight:600;padding:7px 11px;cursor:pointer}
+  .seg button.on{background:var(--acc);color:#fff}
+  .delta-btn{background:var(--bd2);border:1px solid var(--amber);border-radius:7px;color:var(--amber);font:inherit;font-weight:600;padding:7px 10px;cursor:pointer;white-space:nowrap}
+  .delta-btn:hover{background:#2a2416}
+  .run{background:var(--acc);border:0;border-radius:8px;color:#fff;font:inherit;font-weight:700;font-size:14px;padding:10px 20px;cursor:pointer}
+  .run:hover{background:#388bfd}.run:disabled{opacity:.6;cursor:default}
+  .hint{color:var(--dim);font-size:11px;margin:2px 0 12px;line-height:1.5}
+  .ivcov{font-size:11px;line-height:1.6;border:1px solid var(--bd);border-radius:8px;padding:9px 11px;background:var(--panel);margin-bottom:14px}
+  /* compare bar */
+  .cmp{display:none;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:11px 14px;margin-bottom:14px;font-size:13px}
+  .cmp b{font-weight:700}
+  /* variant block */
+  .vblock{background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:14px 16px;margin-bottom:12px}
+  .vblock.win{border-color:rgba(63,185,80,.5)}
+  .vhead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
+  .vtitle{font-size:15px;font-weight:700}
+  .vtag{font-size:10px;font-weight:700;padding:3px 8px;border-radius:6px}
+  .vsub{font-size:11px;color:var(--mut);margin-top:2px}
+  .vnet{text-align:right}
+  .vnet-l{font-size:9px;color:var(--mut);text-transform:uppercase;letter-spacing:.6px}
+  .vnet-b{font-size:26px;font-weight:800;line-height:1.05}
+  .vnet-sub{font-size:10px;color:var(--dim)}
+  .vspot{font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;margin-top:5px;display:inline-block}
+  .up{background:rgba(63,185,80,.14);color:var(--green)}.dn{background:rgba(248,81,73,.14);color:var(--red)}
+  table.leg{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;margin:10px 0 6px}
+  table.leg th{text-align:right;font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.4px;padding:2px 0 6px;font-weight:600}table.leg th:first-child{text-align:left}
+  table.leg td{padding:6px 0;border-top:1px solid var(--bd2);text-align:right}table.leg td:first-child{text-align:left;font-weight:600}
+  .pos{color:var(--green)}.neg2{color:var(--red)}
+  .brkt{font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.5px;margin:6px 0 8px}
+  .bars{display:flex;gap:16px;align-items:flex-end;height:110px;border-bottom:1px solid var(--bd);margin-bottom:8px;position:relative}
+  .warn{border:1px solid var(--amber);background:rgba(210,153,34,.10);border-radius:8px;padding:8px 11px;margin-bottom:8px;font-size:11px}
+  .spin{display:none;text-align:center;padding:50px 20px;color:var(--mut)}
+  .spin.on{display:block}
+  .dot{display:inline-block;width:24px;height:24px;border:3px solid var(--bd);border-top-color:var(--acc);border-radius:50%;animation:sp .8s linear infinite;margin-bottom:10px}
+  @keyframes sp{to{transform:rotate(360deg)}}
+  @media(max-width:640px){.vnet-b{font-size:22px}.form{gap:9px}}
+</style></head><body>
+
+<div class="top">
+  <div class="brand"><b>🎛️ 4-in-1 What-If</b><span>ek base leg · 4 structures ek saath</span></div>
+  <div class="sp"></div>
+  <a class="lnk" href="/whatif2">📐 Builder</a>
+  <a class="lnk" href="/whatif">🧪 What-If</a>
+  <a class="lnk" href="/">← Dashboard</a>
+</div>
+
+<div class="wrap">
+  <div class="form">
+    <div class="fg"><label>Instrument</label>
+      <div class="seg" id="inst"><button class="on" data-i="NIFTY">NIFTY</button><button data-i="BANKNIFTY">BANKNIFTY</button></div></div>
+    <div class="fg"><label>Entry date</label><input type="date" id="date"></div>
+    <div class="fg"><label>Entry time</label><input type="time" id="et" value="09:20"></div>
+    <div class="fg"><label>Exit date</label><input type="date" id="xd"></div>
+    <div class="fg"><label>Exit time</label><input type="time" id="xt" value="15:15"></div>
+    <div class="fg"><label>Expiry</label>
+      <select id="exp"><option value="">Nearest (weekly)</option></select></div>
+    <div class="fg"><label>Lots</label><input type="number" id="lots" value="1" min="1" style="width:70px"></div>
+    <div class="fg"><label>Base leg — sold strike</label>
+      <div style="display:flex;gap:6px;align-items:center">
+        <input type="number" id="strike" step="50" style="width:100px">
+        <div class="seg" id="otype"><button class="on" data-t="CE">CE</button><button data-t="PE">PE</button></div>
+        <button class="delta-btn" id="dbtn" title="us date/time pe ~0.25 delta wali strike auto-pick (sirf recent/collector din)">🎯 0.25Δ</button>
+      </div></div>
+    <div class="fg"><label>Wing width (pt)</label><input type="number" id="wing" value="200" step="50" style="width:80px"></div>
+    <div class="fg"><label>&nbsp;</label><button class="run" id="run">▶ Run all 4</button></div>
+  </div>
+  <div class="hint" id="baseHint">Base leg = jo strike aap bechenge. 4 structures isse bante hain: <b>naked sell</b> (sirf bechna) · <b>naked buy</b> (mirror) · <b>credit spread</b> (sell + wing hedge = defined risk) · <b>debit spread</b> (buy + wing = directional). 🎯 0.25Δ button us waqt ki ~0.25 delta strike pakadta hai (recent din).</div>
+  <div class="ivcov" id="ivcov"></div>
+
+  <div class="cmp" id="cmp"></div>
+  <div class="spin" id="spin"><div class="dot"></div><div id="spinmsg">Chaaro chala raha… (purane din pehli baar ~15s)</div></div>
+  <div id="empty" style="color:var(--mut);text-align:center;padding:50px 20px">Base strike set karke <b>▶ Run all 4</b> dabao.</div>
+  <div id="out"></div>
+</div>
+
+<script>
+const $=id=>document.getElementById(id);
+let INST='NIFTY', OTYPE='CE';
+function inr(v){return Math.abs(Math.round(v)).toLocaleString('en-IN');}
+function sgn(v){return (v<0?'−':'+')+'₹'+inr(v);}
+function fmt(v){return (v>=0?'+':'−')+'₹'+inr(v);}
+function step(){return INST==='BANKNIFTY'?100:50;}
+
+const VARIANTS=[
+  {key:'nsell', title:'1 · Naked sell',   tag:'undefined risk', tagc:'#f85149', tagbg:'rgba(248,81,73,.14)'},
+  {key:'nbuy',  title:'2 · Naked buy',    tag:'defined risk',   tagc:'#8b949e', tagbg:'var(--bd2)'},
+  {key:'credit',title:'3 · Credit spread',tag:'hedged',         tagc:'#58a6ff', tagbg:'rgba(31,111,235,.14)'},
+  {key:'debit', title:'4 · Debit spread', tag:'directional',    tagc:'#d29922', tagbg:'rgba(210,153,34,.14)'},
+];
+
+// build the leg-set for each variant from the base strike/type + wing
+function legsFor(key, K, T, W){
+  const wingK = (T==='CE') ? (K + W) : (K - W);   // OTM wing: CE up, PE down
+  if(key==='nsell')  return [{side:'SELL', strike:K, type:T}];
+  if(key==='nbuy')   return [{side:'BUY',  strike:K, type:T}];
+  if(key==='credit') return [{side:'SELL', strike:K, type:T},{side:'BUY',  strike:wingK, type:T}];
+  if(key==='debit')  return [{side:'BUY',  strike:K, type:T},{side:'SELL', strike:wingK, type:T}];
+}
+
+// ---- instrument / type toggles ----
+$('inst').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  [...$('inst').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');INST=b.dataset.i;
+  $('strike').step=step(); $('wing').value = INST==='BANKNIFTY'?500:200;
+  loadExpiries(); loadCoverage();});
+$('otype').addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;
+  [...$('otype').children].forEach(x=>x.classList.remove('on'));b.classList.add('on');OTYPE=b.dataset.t;});
+
+// ---- expiry dropdown ----
+async function loadExpiries(){
+  const sel=$('exp'),cur=sel.value,d=$('date').value;if(!d)return;let exps=[];
+  try{const r=await(await fetch(`/api/whatif-expiries?underlying=${INST}&date=${d}`)).json();exps=(r&&r.expiries)||[];}catch(e){}
+  sel.innerHTML='<option value="">Nearest (weekly)</option>'+exps.map(x=>`<option value="${x.date}">${x.date} · ${x.monthly?'monthly':'weekly'}</option>`).join('');
+  sel.value=exps.some(x=>x.date===cur)?cur:'';
+}
+$('date').addEventListener('change',()=>{loadExpiries();syncExitDate(false);});
+
+// ---- IV coverage strip ----
+const _MON=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function _fd(d){if(!d||d.length<10)return d||'—';return (+d.slice(8,10))+' '+_MON[+d.slice(5,7)-1]+' '+d.slice(0,4);}
+async function loadCoverage(){
+  const el=$('ivcov');let r;try{r=await(await fetch('/api/whatif-coverage?underlying='+INST)).json();}catch(e){r=null;}
+  if(!r||!r.ok){el.innerHTML='<span style="color:var(--dim)">IV coverage load nahi hua.</span>';return;}
+  const real=r.real;
+  const realLine=real?`<span style="color:var(--green)">●</span> <b>Real IV</b> (broker): <b>${_fd(real.from)} → ${_fd(real.to)}</b> · ${real.days} din`
+    :`<span style="color:var(--red)">●</span> abhi koi collector din nahi`;
+  const premLine=r.premium_from?`<span style="color:var(--amber)">●</span> Purane din (<b>${_fd(r.premium_from)} → ab</b>): premium & P&L real, IV real nahi (dikhate nahi)`:'';
+  el.innerHTML=`<div style="color:var(--mut);text-transform:uppercase;font-size:9px;letter-spacing:.6px;margin-bottom:5px">📅 IV data — ${r.underlying}</div>${realLine}${premLine?'<br>'+premLine:''}`;
+}
+
+// ---- 0.25Δ picker (collector days only) ----
+$('dbtn').addEventListener('click',async()=>{
+  const d=$('date').value,t=$('et').value;if(!d){alert('Entry date chuno');return;}
+  $('dbtn').textContent='…';$('dbtn').disabled=true;
+  let r;try{r=await(await fetch(`/api/whatif-chain?underlying=${INST}&date=${d}&time=${encodeURIComponent(t)}&expiry=${encodeURIComponent($('exp').value||'')}&n=15`)).json();}catch(e){r=null;}
+  $('dbtn').textContent='🎯 0.25Δ';$('dbtn').disabled=false;
+  if(!r||!r.ok){alert('Is date pe live chain (delta) nahi — purana din. Strike manually daalo.');return;}
+  // pick strike whose |delta| closest to 0.25 for the chosen option type
+  let best=null,bd=99;
+  r.strikes.forEach(s=>{const dl=(OTYPE==='CE')?s.ce.delta:s.pe.delta;
+    if(dl==null)return;const diff=Math.abs(Math.abs(dl)-0.25);if(diff<bd){bd=diff;best=s;}});
+  if(!best){alert('Delta chain me nahi mila.');return;}
+  $('strike').value=best.strike;
+  const dl=(OTYPE==='CE')?best.ce.delta:best.pe.delta;
+  $('baseHint').innerHTML=`🎯 <b>${best.strike} ${OTYPE}</b> chuna — Δ <b style="color:var(--amber)">${Math.abs(dl).toFixed(2)}</b> (ATM ${r.atm}, spot ${r.spot}). Ab <b>▶ Run all 4</b>.`;
+});
+
+function syncExitDate(force){const ed=$('date').value,xd=$('xd');if(!xd)return;if(force||!xd.value||xd.value<ed)xd.value=ed;}
+
+// ---- run: 4 parallel /api/whatif calls ----
+$('run').addEventListener('click',async()=>{
+  const K=+$('strike').value, T=OTYPE, W=+$('wing').value||(INST==='BANKNIFTY'?500:200);
+  if(!K){alert('Base strike daalo (ya 🎯 0.25Δ dabao)');return;}
+  const d=$('date').value;if(!d){alert('Entry date chuno');return;}
+  const xdt=$('xd').value||d;
+  if(xdt<d){alert('Exit date entry se pehle nahi');return;}
+  $('empty').style.display='none';$('cmp').style.display='none';$('out').innerHTML='';
+  $('spin').classList.add('on');$('run').disabled=true;
+  const common={underlying:INST,date:d,exit_date:xdt,entry:$('et').value,exit:$('xt').value,lots:+$('lots').value,expiry:$('exp').value||''};
+
+  const results=await Promise.all(VARIANTS.map(async v=>{
+    const body=Object.assign({},common,{legs:legsFor(v.key,K,T,W)});
+    try{return await(await fetch('/api/whatif',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)})).json();}
+    catch(e){return {ok:false,error:'network'};}
+  }));
+
+  $('spin').classList.remove('on');$('run').disabled=false;
+  const wingK=(T==='CE')?(K+W):(K-W);
+  $('out').innerHTML=VARIANTS.map((v,i)=>blockHtml(v,i,K,T,wingK)).join('');
+  results.forEach((r,i)=>fillBlock(VARIANTS[i],i,r));
+  renderCompare(results);
+});
+
+// ---- per-variant block skeleton + fill ----
+function blockHtml(v,i,K,T,wingK){
+  const legDesc = (v.key==='nsell')?`SELL ${K} ${T}`
+    : (v.key==='nbuy')?`BUY ${K} ${T}`
+    : (v.key==='credit')?`SELL ${K} ${T} · BUY ${wingK} ${T}`
+    : `BUY ${K} ${T} · SELL ${wingK} ${T}`;
+  return `<div class="vblock" id="vb-${i}">
+    <div class="vhead">
+      <div>
+        <div style="display:flex;align-items:center;gap:8px"><span class="vtitle">${v.title}</span>
+          <span class="vtag" style="color:${v.tagc};background:${v.tagbg}">${v.tag}</span></div>
+        <div class="vsub">${legDesc}</div>
+        <div id="spot-${i}"></div>
+      </div>
+      <div class="vnet">
+        <div class="vnet-l">Net P&amp;L (after tax)</div>
+        <div class="vnet-b" id="net-${i}">…</div>
+        <div class="vnet-sub" id="gt-${i}"></div>
+      </div>
+    </div>
+    <div id="warn-${i}"></div>
+    <table class="leg" id="leg-${i}"><thead><tr><th>Leg</th><th>Entry ₹</th><th>Exit ₹</th><th>IV %</th><th>P&amp;L</th></tr></thead><tbody></tbody></table>
+    <div id="mtm-${i}" style="margin:2px 0 16px;display:none"></div>
+    <div class="brkt">Profit kahan se aaya</div>
+    <div class="bars" id="bars-${i}"></div>
+  </div>`;
+}
+
+function fillBlock(v,i,r){
+  if(!r||!r.ok){
+    $('net-'+i).textContent='—';$('net-'+i).style.color='var(--dim)';
+    $('warn-'+i).innerHTML=`<div class="warn">❌ ${r&&r.error?r.error:'data nahi mila'}</div>`;
+    $('leg-'+i).style.display='none';$('bars-'+i).style.display='none';
+    return;
+  }
+  const net=(r.net!=null)?r.net:r.total;
+  const nb=$('net-'+i);nb.textContent=fmt(net);nb.style.color=net>=0?'var(--green)':'var(--red)';
+  $('gt-'+i).innerHTML=(r.charges!=null)?('gross '+fmt(r.total)+' · tax ₹'+inr(r.charges)):'';
+  // spot badge
+  if(r.spot_e!=null){const up=(r.move||0)>=0;
+    $('spot-'+i).innerHTML=`<span class="vspot ${up?'up':'dn'}">Spot ${r.spot_e.toLocaleString('en-IN')} → ${r.spot_x.toLocaleString('en-IN')} (${up?'+':'−'}${Math.abs(r.move)})</span> <span style="font-size:10px;color:var(--dim)">${r.source==='lake'?'historical · BS greeks':'collector · real greeks'}</span>`;}
+  // warnings
+  const ws=(r.warnings||[]);
+  $('warn-'+i).innerHTML=ws.length?`<div class="warn"><b style="color:var(--amber)">⚠️ Entry/exit time honor nahi hua</b> — collector ~ATM±10 strikes/min<ul style="margin:5px 0 0;padding-left:16px">${ws.map(w=>`<li>${w}</li>`).join('')}</ul></div>`:'';
+  // leg table
+  $('leg-'+i).querySelector('tbody').innerHTML=r.legs.map(l=>{const c=l.pnl>=0?'pos':'neg2';
+    const ivc=(r.source==='lake')?'—':(l.e_iv!=null?l.e_iv+'→'+l.x_iv:'—');
+    return `<tr><td>${l.label}</td><td>₹${l.entry}</td><td>₹${l.exit}</td><td class="num" style="color:var(--mut)">${ivc}</td><td class="${c}">${fmt(l.pnl)}</td></tr>`;}).join('');
+  // mtm + bars
+  renderMtm(i,r);
+  const items=[['Decay',r.decay,'var(--green)'],['Price move',r.price,'var(--blue)'],['IV crush',r.iv,'var(--amber)']];
+  const MAX=Math.max(1,...items.map(x=>Math.abs(x[1])))*1.18,mid=54;
+  $('bars-'+i).innerHTML='<div style="position:absolute;left:0;right:0;top:'+mid+'px;height:1px;background:var(--bd)"></div>'+
+    items.map(([n,val,c])=>{const h=Math.abs(val)/MAX*48,up=val>=0;
+      return `<div style="flex:1;position:relative;height:100%"><div style="position:absolute;left:0;right:0;top:${up?mid-h:mid}px;height:${h}px;width:56%;margin:0 auto;background:${c};border-radius:${up?'3px 3px 0 0':'0 0 3px 3px'}"></div><div style="position:absolute;left:0;right:0;top:${up?mid-h-16:mid+h+3}px;text-align:center;font-size:12px;font-weight:700;color:${c}">${fmt(val)}</div><div style="position:absolute;left:0;right:0;bottom:-22px;text-align:center;font-size:11px;color:var(--mut)">${n}</div></div>`;}).join('');
+}
+
+// ---- MTM journey (per-variant, hover favour/against) ----
+function renderMtm(i,r){
+  const w=$('mtm-'+i),pts=(r.mtm)||[];if(pts.length<2){w.style.display='none';return;}
+  w.style.display='block';const n=pts.length,vals=pts.map(p=>p.mtm);
+  let lo=Math.min(0,...vals),hi=Math.max(0,...vals);const span=(hi-lo)||1;lo-=span*.12;hi+=span*.12;
+  const W=1000,H=210,pl=6,pr=6,pt=14,pb=22,pw=W-pl-pr,ph=H-pt-pb;
+  const X=k=>pl+(n>1?k/(n-1)*pw:0),Y=v=>pt+(hi-v)/(hi-lo)*ph,zy=Y(0),zf=Math.max(0,Math.min(1,(zy-pt)/ph));
+  let mx=-1e18,mn=1e18,mi=0,ni=0,peak=-1e18,dd=0;
+  vals.forEach((v,k)=>{if(v>mx){mx=v;mi=k;}if(v<mn){mn=v;ni=k;}peak=Math.max(peak,v);dd=Math.max(dd,peak-v);});
+  let line='',area='M'+X(0).toFixed(1)+' '+zy.toFixed(1)+' ';
+  pts.forEach((p,k)=>{const x=X(k).toFixed(1),y=Y(p.mtm).toFixed(1);line+=(k?'L':'M')+x+' '+y+' ';area+='L'+x+' '+y+' ';});
+  area+='L'+X(n-1).toFixed(1)+' '+zy.toFixed(1)+' Z';
+  const finalC=vals[n-1]>=0?'var(--green)':'var(--red)';
+  const gid='mg3-'+i;
+  const mk=(k,c,t,ab)=>{const x=X(k).toFixed(1),y=Y(pts[k].mtm);return `<circle cx="${x}" cy="${y.toFixed(1)}" r="3.4" fill="${c}"/><text x="${x}" y="${(ab?y-6:y+14).toFixed(1)}" text-anchor="middle" font-size="11" font-weight="700" fill="${c}">${t}</text>`;};
+  const svg=`<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:200px;display:block"><defs><linearGradient id="${gid}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--green)" stop-opacity=".24"/><stop offset="${zf.toFixed(3)}" stop-color="var(--green)" stop-opacity=".03"/><stop offset="${zf.toFixed(3)}" stop-color="var(--red)" stop-opacity=".03"/><stop offset="1" stop-color="var(--red)" stop-opacity=".24"/></linearGradient></defs><path d="${area}" fill="url(#${gid})"/><line x1="${pl}" y1="${zy.toFixed(1)}" x2="${W-pr}" y2="${zy.toFixed(1)}" stroke="var(--dim)" stroke-dasharray="4 4"/><path d="${line}" fill="none" stroke="${finalC}" stroke-width="2"/>${mk(mi,'var(--green)','Peak '+sgn(mx),true)}${mk(ni,'var(--red)','Low '+sgn(mn),false)}</svg>`;
+  w.innerHTML=`<div style="display:flex;gap:14px;flex-wrap:wrap;align-items:baseline;margin-bottom:6px"><div class="brkt" style="margin:0">📉 MTM journey <span style="color:var(--dim);text-transform:none">— hover pe index favour/against + P&amp;L</span></div><div style="flex:1"></div><div style="font-size:12px"><span style="color:var(--mut)">Peak</span> <b style="color:var(--green)">${sgn(mx)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Low</span> <b style="color:var(--red)">${sgn(mn)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Give-back</span> <b style="color:var(--amber)">₹${inr(dd)}</b></div><div style="font-size:12px"><span style="color:var(--mut)">Final</span> <b style="color:${finalC}">${sgn(vals[n-1])}</b></div></div><div id="mtmc-${i}" style="position:relative;border:1px solid var(--bd);border-radius:10px;background:var(--panel);overflow:hidden">${svg}<div id="mtmx-${i}" style="position:absolute;top:0;bottom:0;width:1px;background:var(--dim);display:none;pointer-events:none"></div><div id="mtmt-${i}" style="position:absolute;display:none;pointer-events:none;background:#0d1117;border:1px solid var(--bd);border-radius:6px;padding:5px 8px;font-size:11px;white-space:nowrap;z-index:5"></div></div>`;
+  const chart=$('mtmc-'+i),el=chart.querySelector('svg'),tip=$('mtmt-'+i),cross=$('mtmx-'+i);
+  let _eSpot=(r.spot_e!=null?r.spot_e:null);
+  if(_eSpot==null){const fp=pts.find(p=>p.spot!=null);_eSpot=fp?fp.spot:null;}
+  let _sp=null;const spotArr=pts.map(p=>{if(p.spot!=null)_sp=p.spot;return _sp;});
+  let corr=0;for(let k=0;k<n;k++){if(spotArr[k]!=null&&_eSpot!=null)corr+=(spotArr[k]-_eSpot)*vals[k];}
+  const favDir=corr>=0?1:-1;
+  const favMax=new Array(n).fill(0),advMax=new Array(n).fill(0);
+  {let fM=0,aM=0;for(let k=0;k<n;k++){if(spotArr[k]!=null&&_eSpot!=null){const mv=favDir*(spotArr[k]-_eSpot);if(mv>fM)fM=mv;if(-mv>aM)aM=-mv;}favMax[k]=fM;advMax[k]=aM;}}
+  el.addEventListener('mousemove',e=>{const rc=el.getBoundingClientRect();const vbx=(e.clientX-rc.left)/rc.width*W;let k=Math.round((vbx-pl)/pw*(n-1));k=Math.max(0,Math.min(n-1,k));const p=pts[k];
+    const px=X(k)/W*rc.width,py=Y(p.mtm)/H*rc.height;
+    cross.style.display='block';cross.style.left=px+'px';
+    let idx='';
+    if(spotArr[k]!=null&&_eSpot!=null){const mv=Math.round(spotArr[k]-_eSpot);
+      idx='<div style="color:var(--mut);margin-top:2px">Index <b style="color:var(--tx)">'+spotArr[k].toLocaleString('en-IN')+'</b> · '+(mv>=0?'+':'')+mv+' pt</div>'
+        +'<div style="margin-top:1px"><span style="color:var(--green)">Favour '+Math.round(favMax[k])+'</span> · <span style="color:var(--red)">Against '+Math.round(advMax[k])+'</span> pt</div>';}
+    tip.style.display='block';tip.innerHTML='<b>'+(p.d?p.d.slice(5):'')+' '+(p.t||'')+'</b>'+idx
+      +'<div style="margin-top:2px"><span style="color:var(--mut)">P&amp;L</span> <b style="color:'+(p.mtm>=0?'var(--green)':'var(--red)')+'">'+sgn(p.mtm)+'</b></div>';
+    let tx=px+12;if(tx>rc.width-170)tx=px-170;tip.style.left=Math.max(2,tx)+'px';tip.style.top=Math.max(2,py-52)+'px';});
+  el.addEventListener('mouseleave',()=>{tip.style.display='none';cross.style.display='none';});
+}
+
+// ---- compare bar (best + ranking) ----
+function renderCompare(results){
+  const ok=results.map((r,i)=>({i,r,net:(r&&r.ok)?((r.net!=null)?r.net:r.total):null})).filter(x=>x.net!=null);
+  if(!ok.length){$('cmp').style.display='none';return;}
+  ok.sort((a,b)=>b.net-a.net);
+  const best=ok[0], worst=ok[ok.length-1];
+  // mark winner block
+  document.querySelectorAll('.vblock').forEach(b=>b.classList.remove('win'));
+  $('vb-'+best.i)?.classList.add('win');
+  const chips=ok.map(x=>`<span style="margin-right:12px"><b>${VARIANTS[x.i].title.split('·')[1].trim()}</b> <b style="color:${x.net>=0?'var(--green)':'var(--red)'}">${fmt(x.net)}</b></span>`).join('');
+  $('cmp').style.display='block';
+  $('cmp').innerHTML=`<span style="color:var(--mut)">Is din best:</span> <b style="color:${best.net>=0?'var(--green)':'var(--red)'}">${VARIANTS[best.i].title.split('·')[1].trim()} ${fmt(best.net)}</b>
+    <span style="color:var(--dim);margin:0 8px">·</span> <span style="color:var(--mut)">ranking:</span> ${chips}`;
+}
+
+// ---- init ----
+const now=new Date(Date.now()+(330+new Date().getTimezoneOffset())*60000);
+$('date').value=now.toISOString().slice(0,10);
+$('strike').step=step();
+syncExitDate(true);loadExpiries();loadCoverage();
+</script>
+<script defer src="/static/js/topnav.js"></script>
+</body></html>

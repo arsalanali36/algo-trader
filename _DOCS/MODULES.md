@@ -1664,4 +1664,5 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `watch_chart_page` — …
 - 🔧 `webhook_monitor_loop` — Trails SL / target / 3:15 squareoff for open TradingView-webhook positions.
 - 🔧 `whatif2_page` — Sensibull-style Strategy Builder (backtest) — leg builder + Add/Edit chain modal +
+- 🔧 `whatif3_page` — 4-in-1 compare — ek base leg (strike + CE/PE + 0.25Δ) se 4 structures ek saath:
 - 🔧 `whatif_page` — Manual options what-if backtest — pick instrument/date/entry-exit time/legs,

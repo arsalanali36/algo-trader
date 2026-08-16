@@ -600,6 +600,17 @@ def whatif2_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'
     return resp
 
+@app.route('/whatif3')
+def whatif3_page():
+    """4-in-1 compare — ek base leg (strike + CE/PE + 0.25Δ) se 4 structures ek saath:
+    naked sell / naked buy / credit spread / debit spread. Har ek ka poora rich result
+    (NET P&L + leg table + MTM journey + profit-split), ek scroll me. Reuses /api/whatif
+    (4 calls) — koi naya compute nahi. Display-only."""
+    from flask import make_response
+    resp = make_response(render_template("whatif3.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
+
 @app.route('/backtest-lab')
 def backtest_lab_page():
     """StockMock-style multi-day options backtest — build a leg strategy (ATM±N, per-leg
