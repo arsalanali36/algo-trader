@@ -105,12 +105,24 @@ def build_cache():
         log.error(f"Error reading scrip master: {e}")
 
 def get_option_contract(symbol, spot_price, option_type, offset=0):
+    # Thin wrapper over get_option_contract_ex — same nearest-weekly ATM±offset
+    # resolution, just the 3 fields every existing caller already expects.
+    sec_id, trad_sym, lot, _strike, _exp = get_option_contract_ex(
+        symbol, spot_price, option_type, offset)
+    return sec_id, trad_sym, lot
+
+
+def get_option_contract_ex(symbol, spot_price, option_type, offset=0):
+    """Same contract resolution as get_option_contract() but ALSO returns the
+    resolved strike (float) and nearest-expiry string — needed to compute a
+    Black-Scholes delta for the leg (e.g. delta-targeted hedge-wing selection).
+    Returns (sec_id, trad_sym, lot_size, strike, expiry_str) or 5×None."""
     if not _options_cache:
         build_cache()
-        
+
     if symbol not in _options_cache:
         log.error(f"Symbol {symbol} not found in options cache")
-        return None, None, None
+        return None, None, None, None, None
 
     expiries = list(_options_cache[symbol].keys())
 
@@ -126,7 +138,7 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
 
     if not valid_expiries:
         log.error(f"No valid expiries found for {symbol}")
-        return None, None, None
+        return None, None, None, None, None
 
     valid_expiries.sort(key=lambda x: x[0])
     nearest_expiry_str = valid_expiries[0][1]
@@ -135,12 +147,12 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
     contracts = [c for c in contracts if c["type"] == option_type]
 
     if not contracts:
-        return None, None, None
+        return None, None, None, None, None
 
     strikes = sorted(list(set(c["strike"] for c in contracts)))
 
     if not strikes:
-        return None, None, None
+        return None, None, None, None, None
 
     atm_strike = min(strikes, key=lambda x: abs(x - spot_price))
     atm_idx = strikes.index(atm_strike)
@@ -156,9 +168,10 @@ def get_option_contract(symbol, spot_price, option_type, offset=0):
 
     for c in contracts:
         if c["strike"] == target_strike:
-            return c["sec_id"], c["trad_sym"], c.get("lot_size", 1)
+            return (c["sec_id"], c["trad_sym"], c.get("lot_size", 1),
+                    float(target_strike), nearest_expiry_str)
 
-    return None, None, None
+    return None, None, None, None, None
 
 
 def _near_month_monthly_expiry_str(symbol):

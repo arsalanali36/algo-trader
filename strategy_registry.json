@@ -682,6 +682,24 @@
    "hold": "Intraday",
    "structure": "Short strangle (naked, ATM±1×straddle-premium, 25% SL, 5 lot)",
    "desc": "StockMock '58% StraddleWidth±1%' — SELL 5-lot CE @ATM+1×SP + 5-lot PE @ATM-1×SP (SP=ATM straddle premium pts), 25% SL, square-off-one, 09:22→15:15, NIFTY weekly, daily. Backtest NET +₹3.09L (2021-07→,5lot), Sharpe 1.07, R/MDD 1.99, win 57.4%. 2026 bleeding −₹135k. PAPER forward-watch."
+  },
+  "04.03.01": {
+   "name": "Ars chain - Hedged vertical",
+   "config_key": "range_hedged",
+   "aliases": [
+    "range_hedged"
+   ],
+   "slug": null,
+   "live_file": "strategies/live/range_trader.py",
+   "status": "paper",
+   "role": "child",
+   "parent": "04.03",
+   "transport": "python",
+   "legs": 2,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Hedged vertical (ATM sell + ~0.25Δ wing)",
+   "desc": "04.03 (naked Pine2Python mirror) ka HEDGED twin. Ars-chain signal SELLs the directional ATM option, and a ~0.25-delta wing is BOUGHT for defined risk (credit/debit vertical). 4L capital cap, 5 lots, ₹4,000 whole-basket SL/Target (position_exit_rules, ordered shorts-first exit) PLUS the strategy's own zone/ATR exit — whichever hits first. Wings-first unwind-safe entry (never naked). PAPER, NOT backtested as a spread (Rule 10 — forward-validate). Reuses range_trader signal engine + execution_gateway + strategy_safety.wing_by_delta. Config gitignored → apply on VPS separately."
   }
  }
 }

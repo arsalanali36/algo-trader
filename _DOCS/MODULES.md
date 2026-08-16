@@ -222,6 +222,7 @@ strategy_safety.py — THE shared "backoffice" layer for every strategy that sel
 - 🔧 `check_contract_liquidity` — Live market-depth liquidity gate for ONE option CONTRACT (not the
 - 🔧 `compute_hedge_target` — Resolve the auto-hedge BUY contract for a SELL leg that already went
 - 🔧 `gate_entry` — Pre-trade RMS gate for any entry (option SELL or BUY, equity, etc.) —
+- 🔧 `wing_by_delta` — Pick the protective BUY-hedge wing whose |Black-Scholes delta| is CLOSEST
 
 ### `_core/telegram_notify.py`
 telegram_notify.py — trade ENTRY/EXIT ka Telegram alert (screen ghoorne se aazadi).
@@ -271,6 +272,7 @@ dhan_master.py — daily Dhan scrip-master download + option/equity contract res
 - 🔧 `get_monthly_option_contract` — Same ATM±offset resolution as get_option_contract, but on the NEAR-MONTH
 - 🔧 `get_next_monthly_option_contract` — Same ATM±offset resolution as get_monthly_option_contract, but on the
 - 🔧 `get_option_contract` — …
+- 🔧 `get_option_contract_ex` — Same contract resolution as get_option_contract() but ALSO returns the
 - 🔧 `get_option_contract_for_expiry` — ATM±offset contract resolution on a SPECIFIC expiry. `expiry` = a full cache
 - 🔧 `get_option_type_by_sec_id` — 'CE' / 'PE' for an OPTION contract by its sec_id, read from the scrip
 - 🔧 `get_sec_id_for_trad_sym` — Resolve sec_id for an exact trading symbol, picking the nearest NON-expired

@@ -324,3 +324,70 @@ def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offs
         log(f"[HEDGE] contract resolve failed for {symbol} {option_type} offset={offset} — hedge leg skipped")
         return None, None, None
     return sec_id, trad_sym, lot_size
+
+
+def wing_by_delta(symbol, spot, option_type, sold_offset, target_delta,
+                  atm_iv, expiry_str, min_strikes=2, max_search=15, log=print):
+    """Pick the protective BUY-hedge wing whose |Black-Scholes delta| is CLOSEST
+    to `target_delta` (e.g. 0.25), walking OTM from the sold leg. Analytic —
+    delta is computed from `atm_iv` (back-solved by the caller from the ATM
+    short's live premium) + T (from `expiry_str`), so there is ZERO extra broker
+    call per candidate strike (only in-memory scrip-cache lookups).
+
+    Delta decreases monotonically further OTM, so we stop the moment |delta|
+    crosses below the target — the closest strike is at or just before that.
+    `min_strikes` is a hard floor (the wing is never closer than N strikes OTM
+    than the sold leg, so a bad IV can't accidentally pick an at-the-money wing).
+
+    Returns (sec_id, trad_sym, lot_size, strike) or 4×None. If delta can't be
+    computed at all (bs/IV/T unavailable) it falls back to the min_strikes floor
+    contract — never returns None just because the greek math failed, only if no
+    contract resolves (so the caller can abort a naked entry, not silently skip
+    the hedge)."""
+    import dhan_master
+    try:
+        import payoff
+        bs = payoff._bs()
+    except Exception:
+        bs = None
+
+    T = None
+    if bs is not None and expiry_str:
+        try:
+            from datetime import datetime as _dt
+            exp_date = _dt.strptime(expiry_str, "%Y-%m-%d %H:%M:%S").date()
+            T = payoff.tte_years(exp_date)
+        except Exception:
+            T = None
+
+    best = None  # (abs_diff_from_target, sec_id, trad_sym, lot, strike)
+    start = sold_offset + max(int(min_strikes), 1)
+    for k in range(start, start + max(int(max_search), 1)):
+        sec, tsym, lot, strike, _exp = dhan_master.get_option_contract_ex(
+            symbol, spot, option_type, k)
+        if not sec:
+            break  # walked past the last listed strike — stop
+        d = None
+        if bs is not None and T and T > 0 and atm_iv and atm_iv > 0 and strike:
+            try:
+                d = abs(bs.bs_delta(spot, strike, T, atm_iv, opt=option_type))
+            except Exception:
+                d = None
+        if d is None:
+            # No delta score for this candidate — keep the first resolvable one
+            # (= the min_strikes floor) as a graceful fallback, keep walking in
+            # case a later candidate DOES score.
+            if best is None:
+                best = (9.99, sec, tsym, lot, strike)
+            continue
+        diff = abs(d - target_delta)
+        if best is None or diff < best[0]:
+            best = (diff, sec, tsym, lot, strike)
+        if d <= target_delta:
+            break  # crossed below target → closest is here or just before
+
+    if best is None:
+        log(f"[HEDGE-DELTA] no wing resolved for {symbol} {option_type} "
+            f"(sold_off={sold_offset}, target_delta={target_delta})")
+        return None, None, None, None
+    return best[1], best[2], best[3], best[4]

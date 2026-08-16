@@ -822,6 +822,18 @@ def _reverse_close_leg(st, cfg, symbol, token, cid, mode, log):
     if not cfg.get('reverse_close') or st.get('position') is None:
         return False
     _from = st.get('position')
+    if st.get('hedge_group'):
+        # hedged vertical (04.03.01): flip cleanly by closing the whole basket
+        _exit_hedged_vertical(st.get('__strategy_id') or _STRAT_ID, symbol, st, mode,
+                              'REVERSE_CLOSE', log)
+        st['position'] = None
+        st['opt_sec_id'] = None
+        st['opt_trad_sym'] = None
+        st['hedge_sec_id'] = None
+        st['hedge_trad_sym'] = None
+        st['hedge_group'] = None
+        log.info('REVERSE %s - closed hedged basket before opposite (reverse_close on)' % symbol)
+        return True
     if st.get('opt_sec_id'):
         place_order(symbol, 'BUY', st.get('opt_qty', cfg.get('qty', 1)), token, cid, mode,
                     st.get('opt_sec_id'), 'NSE_FNO', st.get('opt_trad_sym'), is_exit=True,
@@ -876,6 +888,189 @@ def place_order(symbol, side, qty, token, cid, mode, sec_id=None, seg=None, trad
     except Exception as e:
         log.error(f"ORDER ERR  {trad_sym}: {e}")
         return False
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# HEDGED VERTICAL (04.03.01 "Ars chain - Hedged vertical") — opt-in via cfg["hedged"]
+# The naked path above is UNTOUCHED for range_v1 (which has no "hedged" flag).
+# Ars-chain SELLs the directional ATM option; here we BUY a ~target-delta wing
+# for defined risk. Wings-first entry + shorts-first exit (execution_gateway),
+# gated ONCE as a basket, ₹-basket SL/Target via position_exit_rules. See the
+# bnf_strangle_trader._enter_hedged_strangle pattern (Rule 6B).
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
+                           token, cid, mode, st, offset, log):
+    """SELL ATM (opt_type) + BUY a ~target-delta wing = defined-risk vertical.
+    BUY wing FIRST (margin drops), then SELL short — unwind-safe, NEVER a lone
+    naked leg; whole structure gated ONCE (basket margin). On success arms a
+    ±basket_rs position_exit_rules rule (central monitor does the shorts-first
+    square-off). Returns True only if the full structure is placed."""
+    _ensure_root_path()
+    import execution_gateway as gw
+    import strategy_safety as ss
+    import risk_gate as rg
+    import dhan_master
+
+    lots = int(cfg.get("qty", 1))
+    hcfg = cfg.get("hedge") or {}
+    target_delta = float(hcfg.get("target_delta", 0.25))
+    min_strikes  = int(hcfg.get("min_strikes", 2))
+    max_search   = int(hcfg.get("max_search", 15))
+    gid = f"RANGEH_{symbol}_{int(time.time())}"
+
+    # ── SHORT leg (ATM ± strike_offset) + its live premium (to back-solve IV) ──
+    s_sec, s_tsym, lot_sz, s_strike, s_exp = dhan_master.get_option_contract_ex(
+        symbol, spot, opt_type, offset)
+    if not s_sec:
+        log.error(f"[RANGEH] {symbol} {opt_type} short resolve fail — abort"); return False
+    lot_sz = int(lot_sz or 1)
+    s_prem = _fetch_premium(str(s_sec), token, cid) or 0.0
+
+    atm_iv = None
+    try:
+        import payoff
+        bs = payoff._bs()
+        exp_date = None
+        if s_exp:
+            exp_date = datetime.strptime(s_exp, "%Y-%m-%d %H:%M:%S").date()
+        T = payoff.tte_years(exp_date) if (bs and exp_date) else None
+        if bs and s_prem and s_prem > 0 and T and T > 0 and s_strike:
+            atm_iv = bs.implied_vol(s_prem, spot, s_strike, T, opt=opt_type)
+    except Exception as e:
+        log.warning(f"[RANGEH] ATM IV solve failed ({e}) — wing falls back to min_strikes floor")
+
+    # ── ~target_delta BUY wing (analytic, ZERO extra broker calls in the walk) ──
+    try:
+        w_sec, w_tsym, w_lot, w_strike = ss.wing_by_delta(
+            symbol, spot, opt_type, offset, target_delta, atm_iv, s_exp,
+            min_strikes=min_strikes, max_search=max_search, log=log.info)
+    except Exception as e:
+        w_sec = None; log.error(f"[RANGEH] wing resolve err: {e}")
+    if not w_sec:
+        log.error(f"[RANGEH] {symbol} {opt_type} wing resolve fail — no naked, abort"); return False
+
+    q = lots * lot_sz
+
+    # ── prewarm both legs' LTP (one batched poll) before margin/pricing ──
+    try:
+        import ltp_poller, shared_ltp_cache as slc
+        watch = [(str(s_sec), "NSE_FNO"), (str(w_sec), "NSE_FNO")]
+        ltp_poller.request_watch(watch)
+        for _ in range(8):
+            if all(slc.get(sc, max_age=30) for sc, _sg in watch):
+                break
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    # ── gate the WHOLE hedged structure ONCE (RMS + real basket margin) ──
+    try:
+        blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
+        if blocked:
+            log.info(f"[RANGEH] RMS blocked — {why}"); return False
+    except Exception:
+        pass
+
+    def _px(sc):
+        try:
+            return _fetch_premium(str(sc), token, cid) or 0.0
+        except Exception:
+            return 0.0
+    basket_rows = [
+        {"sec_id": str(s_sec), "entry": "SELL", "qty": q, "sym": s_tsym,
+         "entry_price": (s_prem or _px(s_sec)), "segment": "NSE_FNO"},
+        {"sec_id": str(w_sec), "entry": "BUY",  "qty": q, "sym": w_tsym,
+         "entry_price": _px(w_sec), "segment": "NSE_FNO"},
+    ]
+    try:
+        need = rg.position_margin(basket_rows)
+        ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
+        if not ok_cap:
+            log.info(f"[RANGEH] basket margin ₹{need:,.0f} fit nahi hua — {cap_why}"); return False
+    except Exception as ce:
+        log.error(f"[RANGEH] basket capital check err: {ce}")
+
+    # ── place: BUY wing FIRST (margin reduced), then SELL short; unwind on fail ──
+    placed = []
+    def _unwind():
+        for p in reversed(placed):
+            try:
+                gw.execute_exit(strategy_id, symbol, p["sec_id"], p["trad_sym"], q,
+                                entry_side=p["side"], seg="NSE_FNO", mode=mode,
+                                group_id=gid, tag="EXIT", source="strategy",
+                                extra_tags=["RANGEH_ABORT"], reason="RANGEH_ABORT",
+                                product=("NRML" if p["side"] == "BUY" else None),
+                                log=log.info)
+            except Exception as ue:
+                log.error(f"[RANGEH] unwind FAIL {p['trad_sym']}: {ue}")
+
+    for sec, tsym, side, prod, tags in (
+        (w_sec, w_tsym, "BUY",  "NRML", ["RANGEH", "HEDGE"]),
+        (s_sec, s_tsym, "SELL", None,   ["RANGEH"]),
+    ):
+        try:
+            r = gw.execute_signal(strategy_id, symbol, side, lots, lot_sz, str(sec), tsym,
+                                  seg="NSE_FNO", mode=mode, tag="ENTRY", source="strategy",
+                                  group_id=gid, gate=False, extra_tags=tags, product=prod,
+                                  est_price=(s_prem if side == "SELL" else None), log=log.info)
+        except Exception as e:
+            r = {"ok": False, "reason": str(e)}
+        if not r.get("ok"):
+            log.info(f"[RANGEH] {side} {tsym} fail ({r.get('reason') or r.get('status')}) "
+                     f"— unwind, abort (no naked)")
+            _unwind(); return False
+        placed.append({"sec_id": str(sec), "trad_sym": tsym, "side": side})
+
+    # ── arm ±basket_rs rule on the group → central monitor ordered exit ──
+    try:
+        import position_exit_rules as per
+        tgt = float(cfg.get("basket_target_rs", 4000))
+        sl  = -abs(float(cfg.get("basket_sl_rs", 4000)))
+        key = per.rule_key(gid, [])
+        per.set_rule(key, gid, [], target_rs=tgt, sl_rs=sl, mode=mode)
+        log.info(f"[RANGEH] armed basket rule {key}: +₹{tgt:.0f}/-₹{abs(sl):.0f}")
+    except Exception as re:
+        log.warning(f"[RANGEH] arm basket rule FAIL: {re} — zone/ATR + 3:15 exit still protect")
+
+    # ── track state (short leg = the 'position'; wing carried for group exit) ──
+    st["opt_sec_id"]     = str(s_sec)
+    st["opt_trad_sym"]   = s_tsym
+    st["opt_qty"]        = q
+    st["hedge_sec_id"]   = str(w_sec)
+    st["hedge_trad_sym"] = w_tsym
+    st["hedge_group"]    = gid
+    log.info(f"  ★ ENTRY HEDGED VERTICAL {symbol} {opt_type} SELL@{s_strike} + "
+             f"BUY wing@{w_strike} (Δ~{target_delta}) basket ±₹{float(cfg.get('basket_sl_rs',4000)):.0f}")
+    return True
+
+
+def _exit_hedged_vertical(strategy_id, symbol, st, mode, reason, log):
+    """ORDERED basket square-off (short buy-to-close FIRST, then the wing) via the
+    shared execution_gateway helper — never strips the hedge before the short.
+    Clears the armed ₹-basket rule so the central monitor stops watching."""
+    _ensure_root_path()
+    import execution_gateway as gw
+    gid = st.get("hedge_group") or ""
+    q = st.get("opt_qty") or 0
+    legs = []
+    if st.get("opt_sec_id"):
+        legs.append({"strategy": strategy_id, "symbol": symbol, "sec_id": str(st["opt_sec_id"]),
+                     "trad_sym": st.get("opt_trad_sym"), "qty": q, "entry_side": "SELL",
+                     "mode": mode, "group_id": gid, "source": "strategy", "seg": "NSE_FNO"})
+    if st.get("hedge_sec_id"):
+        legs.append({"strategy": strategy_id, "symbol": symbol, "sec_id": str(st["hedge_sec_id"]),
+                     "trad_sym": st.get("hedge_trad_sym"), "qty": q, "entry_side": "BUY",
+                     "mode": mode, "group_id": gid, "source": "strategy", "seg": "NSE_FNO"})
+    try:
+        gw.execute_basket_exit(legs, reason=(reason or "GROUP_EXIT"), log=log.info)
+    finally:
+        try:
+            import position_exit_rules as per
+            if gid:
+                per.clear_rule(per.rule_key(gid, []))
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -937,6 +1132,17 @@ def _recover_state_from_order_store(strategy_id):
             st["trades_today"]  = sum(1 for q in all_today
                                        if q.get("strategy") == strategy_id and q.get("symbol") == symbol
                                        and q.get("entry") == "SELL")
+            # HEDGED VERTICAL (04.03.01): carry the group + its BUY wing so a
+            # restart can still close BOTH legs as an ordered basket, not just
+            # the short (the naked path has no group_id → these stay unset).
+            _gid = p.get("group_id") or ""
+            if _gid:
+                st["hedge_group"] = _gid
+                for w in (data.get("open") or []):
+                    if (w.get("group_id") or "") == _gid and w.get("entry") == "BUY":
+                        st["hedge_sec_id"]   = w.get("sec_id")
+                        st["hedge_trad_sym"] = w.get("sym")
+                        break
             recovered += 1
         if recovered:
             log.info(f"[RECOVER] re-attached {recovered} open position(s) from order_store — "
@@ -1408,6 +1614,17 @@ def main(strategy_id="range"):
                 
                 if inst == "options":
                     opt_type = "PE" if signal == "BUY" else "CE"
+                    # ── HEDGED VERTICAL fork (04.03.01) — opt-in via cfg["hedged"].
+                    # Handles its own gate/place/state; range_v1 (no flag) skips
+                    # this entirely and takes the naked path below, byte-identical.
+                    if cfg.get("hedged"):
+                        if _enter_hedged_vertical(strategy_id, symbol, signal, opt_type,
+                                                  price, cfg, token, cid, mode, st, offset, log):
+                            st["trades_today"] += 1
+                            st["last_signal"]   = signal
+                            st["entry_price"]   = price
+                            st["position"]      = "LONG" if signal == "BUY" else "SHORT"
+                        continue  # done with this symbol — skip the naked path + shared state-updates
                     try:
                         sec_id, t_sym, lot_sz = dhan_master.get_option_contract(symbol, price, opt_type, offset)
                     except (ValueError, TypeError) as _e:
@@ -1615,11 +1832,20 @@ def main(strategy_id="range"):
                 # ever reach the log file, never order_store. Found live
                 # 2026-07-03 (TCS-Jul2026-2100-CE exit showed no reason).
                 _exit_tags = [str(reason)] if reason else []
-                if st.get("opt_sec_id"):
+                # HEDGED VERTICAL (04.03.01): close BOTH legs as an ordered basket
+                # (short buy-to-close FIRST, then the wing) — never strip the hedge
+                # first (naked→margin spike→broker reject). Falls through to the
+                # single-leg close below only for the naked range_v1 path.
+                if st.get("hedge_group"):
+                    _exit_hedged_vertical(strategy_id, symbol, st, mode, str(reason or "ZONE_EXIT"), log)
+                    st["hedge_sec_id"]   = None
+                    st["hedge_trad_sym"] = None
+                    st["hedge_group"]    = None
+                elif st.get("opt_sec_id"):
                     place_order(symbol, "BUY", st.get("opt_qty", cfg.get("qty",1)), token, cid, mode, st["opt_sec_id"], "NSE_FNO", st["opt_trad_sym"], is_exit=True, extra_tags=_exit_tags)
                 else:
                     place_order(symbol, exit_side, cfg.get("qty", 1), token, cid, mode, is_exit=True, extra_tags=_exit_tags)
-                    
+
                 st["position"]    = None
                 st["last_signal"] = None
                 st["opt_sec_id"] = None
