@@ -108,6 +108,7 @@ payoff.py — multi-leg option position payoff / zone analytics.
 - 🔧 `parse_leg_sym` — (strike, opt_type) from a Dhan option trad_sym. Strike + CE/PE ARE
 - 🔧 `payoff_expiry` — Total ₹ P&L at expiry if the underlying settles at S.
 - 🔧 `payoff_today` — Total ₹ P&L if the underlying were at S right now (T years left), each leg
+- 🔧 `position_greeks` — Net + per-leg Delta / Vega for a position GROUP (display-only). Per-leg IV
 - 🔧 `prob_of_profit` — P(spot at expiry lands in a profit zone), lognormal terminal distribution.
 - 🔧 `profit_zones` — Contiguous [a, b] spot intervals where P&L > 0. Handles ANY structure
 - 🔧 `structure_tax` — Total Zerodha round-trip transaction cost (brokerage+STT+txn+SEBI+stamp+GST) to
@@ -1542,6 +1543,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_position_exit_rule_clear` — Clear a group's armed auto-exit rule. Query: ids=… or group_id=….
 - 🔧 `api_position_exit_rule_get` — Currently-armed combined-MTM auto-exit rule for a group — so the payoff
 - 🔧 `api_position_exit_rule_set` — Arm a combined-MTM auto-exit rule for a position GROUP (#02). When the
+- 🔧 `api_position_greeks` — Net + per-leg Delta/Vega for a position GROUP + underlying spot move since
 - 🔧 `api_position_groups` — Open + recently-closed option GROUPS (by group_id) for the payoff panel's
 - 🔧 `api_position_legs_series` — Per-leg premium series + COMBINED net-structure P&L for a position group
 - 🔧 `api_position_payoff` — Payoff / zone analytics for one position GROUP (DISPLAY-ONLY — describes

@@ -252,6 +252,52 @@ def attach_ivs(legs, spot, T):
     return (sum(ivs) / len(ivs)) if ivs else None
 
 
+def _bs_vega(S, K, T, sigma):
+    """Vega per +1 vol-POINT (i.e. per +1% IV): S·φ(d1)·√T / 100. r≈0. Same
+    convention the desk reads vega in — 'net vega N' = ₹N per 1% IV move."""
+    if T <= 0 or sigma <= 0 or S <= 0 or K <= 0:
+        return 0.0
+    d1 = (math.log(S / K) + 0.5 * sigma * sigma * T) / (sigma * math.sqrt(T))
+    phi = math.exp(-0.5 * d1 * d1) / math.sqrt(2 * math.pi)
+    return S * phi * math.sqrt(T) / 100.0
+
+
+def position_greeks(legs, spot):
+    """Net + per-leg Delta / Vega for a position GROUP (display-only). Per-leg IV
+    is back-solved from the live LTP (attach_ivs) so it reflects the ACTUAL traded
+    premium (skew included), then Black-Scholes delta + vega. Position sign is
+    baked in: BUY +, SELL − — so a short straddle nets ~0 delta, a short position
+    nets NEGATIVE vega (loses if IV rises). Per-leg dqty/vqty (already ×qty×sign)
+    let the caller sum any SUBSET (leg-checkbox selection) client-side.
+    Returns {ok, spot, net_delta, net_vega, avg_iv_pct, legs:[{sec_id,dqty,vqty}]}."""
+    bs = _bs()
+    if not legs or not bs or not spot or spot <= 0:
+        return {"ok": False}
+    T = tte_years(expiry_of(legs))
+    if not T or T <= 0:
+        return {"ok": False}
+    attach_ivs(legs, spot, T)
+    out, nd, nv, ivs = [], 0.0, 0.0, []
+    for L in legs:
+        iv = L.get("iv")
+        sign = 1 if str(L.get("side", "")).upper() == "BUY" else -1
+        if not iv:
+            out.append({"sec_id": L.get("sec_id"), "dqty": None, "vqty": None})
+            continue
+        d = bs.bs_delta(spot, L["strike"], T, iv, opt=L["opt"])
+        v = _bs_vega(spot, L["strike"], T, iv)
+        dq = sign * d * L["qty"]
+        vq = sign * v * L["qty"]
+        nd += dq
+        nv += vq
+        ivs.append(iv)
+        out.append({"sec_id": L.get("sec_id"), "dqty": round(dq, 2), "vqty": round(vq, 2)})
+    return {"ok": True, "spot": round(spot, 1), "net_delta": round(nd, 2),
+            "net_vega": round(nv, 2),
+            "avg_iv_pct": round(sum(ivs) / len(ivs) * 100, 1) if ivs else None,
+            "legs": out}
+
+
 def _grid(legs, spot):
     """Spot scan range — wide enough to cover every strike plus a margin."""
     ks = [L["strike"] for L in legs] + [spot]

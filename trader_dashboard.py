@@ -4432,6 +4432,94 @@ def _leg_closes(sec_id, from_date, to_date):
     return {int(ts): round(float(c), 2) for ts, c in zip(d["timestamp"], d["close"])}
 
 
+def _index_closes(idx_sec, from_date, to_date):
+    """1-min closes {epoch: close} for an INDEX (IDX_I) over a date range — same
+    shape as _leg_closes but the underlying, for 'spot at entry' lookups."""
+    import requests as _req
+    token, cid = _creds()
+    _rl.acquire("candle")
+    r = _req.post("https://api.dhan.co/v2/charts/intraday",
+                  headers={"access-token": token, "client-id": cid,
+                           "Content-Type": "application/json"},
+                  json={"securityId": str(idx_sec), "exchangeSegment": "IDX_I",
+                        "instrument": "INDEX", "expiryCode": 0,
+                        "fromDate": from_date, "toDate": to_date}, timeout=15)
+    d = r.json()
+    if not d.get("close"):
+        return {}
+    return {int(ts): round(float(c), 2) for ts, c in zip(d["timestamp"], d["close"])}
+
+
+def _group_underlying(rows):
+    """NIFTY / BANKNIFTY from a group's legs (BANKNIFTY checked first — it contains
+    'NIFTY')."""
+    for r in rows:
+        s = str(r.get("sym") or "").upper()
+        if s.startswith("BANKNIFTY"):
+            return "BANKNIFTY"
+        if s.startswith("NIFTY"):
+            return "NIFTY"
+    return None
+
+
+_ENTRY_SPOT_CACHE = {}       # "SYM|date|time" -> spot (entry spot never changes)
+
+
+def _entry_spot_cached(rows, sym):
+    """Underlying spot at the group's ENTRY minute (index 1-min candle nearest the
+    entry timestamp). Cached per (sym, entry date, entry time) — one Dhan call ever."""
+    try:
+        idx_sec = {"NIFTY": "13", "BANKNIFTY": "25"}.get(str(sym).upper())
+        if not idx_sec:
+            return None
+        eds = [r.get("entry_date") for r in rows if r.get("entry_date")]
+        if not eds:
+            return None
+        ed = min(eds)
+        et = min((r.get("entry_time") or "23:59") for r in rows if r.get("entry_date") == ed)
+        key = f"{sym}|{ed}|{et}"
+        if key in _ENTRY_SPOT_CACHE:
+            return _ENTRY_SPOT_CACHE[key]
+        from datetime import datetime as _d
+        target = int((_d.strptime(f"{ed} {et}", "%Y-%m-%d %H:%M") - _d(1970, 1, 1)).total_seconds()) - 19800
+        bars = _index_closes(idx_sec, ed, ed)
+        if not bars:
+            return None
+        best = min(bars.keys(), key=lambda t: abs(t - target))
+        val = bars[best]
+        _ENTRY_SPOT_CACHE[key] = val
+        return val
+    except Exception:
+        return None
+
+
+@app.route('/api/position-greeks')
+def api_position_greeks():
+    """Net + per-leg Delta/Vega for a position GROUP + underlying spot move since
+    entry (display-only). Query: ids=/group_id=. Light — no candle SERIES, just
+    live LTP → per-leg IV → BS greeks + one cached index-candle for entry spot."""
+    try:
+        import payoff
+        rows, closed = _payoff_resolve(request.args)
+        if not rows:
+            return jsonify({"ok": False, "msg": "no legs"})
+        if not closed:
+            rows = _payoff_attach_ltp(rows)
+        legs = payoff.build_legs(rows)
+        spot = _payoff_spot(legs)
+        g = payoff.position_greeks(legs, spot)
+        if g.get("ok"):
+            sym = _group_underlying(rows)
+            se = _entry_spot_cached(rows, sym) if sym else None
+            if se and spot:
+                g["spot_entry"] = round(se, 1)
+                g["spot_move"] = round(spot - se, 1)
+            g["symbol"] = sym
+        return jsonify(g)
+    except Exception as e:
+        return jsonify({"ok": False, "msg": str(e)})
+
+
 _legs_series_cache = {}      # qs -> (payload, ts) — one full-day per-leg fetch is N
 _LEGS_SERIES_TTL = 120       # rate-limited candle calls; rapid group-switching backlogs them.
 

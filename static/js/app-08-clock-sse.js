@@ -230,6 +230,39 @@
       _patchLtpCells();
     };
 
+    // Fetch net + per-leg Delta/Vega + underlying spot-move for every open group
+    // (light route: no candle series). Stores per-leg dqty/vqty by sec_id so the
+    // selected-legs bar (in _patchLtpCells) can sum any subset; paints the group
+    // spot-move span. Called after the open table renders.
+    window._grpGreeks = window._grpGreeks || {};
+    window._fetchGroupGreeks = async function () {
+      const groups = document.querySelectorAll('#ord-open details[data-greekqs]');
+      for (const el of groups) {
+        const grpId = el.getAttribute('data-grpid');
+        const qs = el.getAttribute('data-greekqs');
+        if (!grpId || !qs || qs === 'ids=') continue;
+        try {
+          const g = await (await fetch('/api/position-greeks?' + qs)).json();
+          if (!g || !g.ok) continue;
+          const legMap = {};
+          (g.legs || []).forEach(L => { if (L.sec_id != null) legMap[String(L.sec_id)] = L; });
+          window._grpGreeks[grpId] = { net_delta: g.net_delta, net_vega: g.net_vega, spot: g.spot,
+            spot_move: g.spot_move, spot_entry: g.spot_entry, symbol: g.symbol, legs: legMap };
+          const sm = document.querySelector(`.grp-spot-move[data-grp="${grpId}"]`);
+          if (sm) {
+            if (g.spot_move != null && g.spot_entry != null) {
+              const c = g.spot_move >= 0 ? '#3fb950' : '#f85149';
+              sm.innerHTML = `${g.symbol || 'spot'} <b style="color:${c}">${g.spot_move >= 0 ? '+' : ''}${g.spot_move.toFixed(1)}</b>`
+                + ` <span style="color:#6e7681;font-size:10px">(${g.spot_entry.toFixed(0)}→${(g.spot || 0).toFixed(0)})</span>`;
+            } else if (g.spot != null) {
+              sm.innerHTML = `${g.symbol || 'spot'} <b>${g.spot.toFixed(0)}</b>`;
+            }
+          }
+        } catch (e) { /* greeks are best-effort — never block the table */ }
+      }
+      _patchLtpCells();   // refresh selected Δ/V now that per-leg greeks are in
+    };
+
     function _patchLtpCells() {
       document.querySelectorAll('.ltp-cell').forEach(el => {
         const key = el.getAttribute('data-sec') || el.getAttribute('data-sym');   // sec_id join (TRAP #166)
@@ -285,6 +318,8 @@
       document.querySelectorAll('table[id^="grp_"]').forEach(tbl => {
         let totPts = 0, totUnrl = 0, totInv = 0, any = false;
         let selUnrl = 0, selPts = 0, selN = 0, totN = 0;   // per-leg-checkbox subset total (user ask)
+        let selDelta = 0, selVega = 0, gHas = false;       // Δ/V of the selected legs (if greeks loaded)
+        const gg = (window._grpGreeks || {})[tbl.id];      // this group's per-leg greeks (may be absent)
         tbl.querySelectorAll('tbody tr').forEach(tr => {
           const ltpCell = tr.querySelector('.ltp-cell');
           const unEl = tr.querySelector('.unrl-cell');
@@ -300,7 +335,13 @@
           totPts += rowPts;
           totN++;
           const chk = tr.querySelector('.grp-leg-chk');   // ticked (or no box) → in subset
-          if (!chk || chk.checked) { selUnrl += rowUnrl; selPts += rowPts; selN++; }
+          if (!chk || chk.checked) {
+            selUnrl += rowUnrl; selPts += rowPts; selN++;
+            if (gg && gg.legs) {
+              const lg = gg.legs[String(ltpCell.getAttribute('data-sec'))];
+              if (lg && lg.dqty != null) { selDelta += lg.dqty; selVega += lg.vqty; gHas = true; }
+            }
+          }
         });
         const id = tbl.id;
         if (!any) return;
@@ -319,9 +360,13 @@
         document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = unCol; });
         document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = unCol; });
         // selected-leg subset total (all ticked → equals the group TOTAL above)
-        const selTxt = selN === 0 ? 'koi leg select nahi'
+        let selTxt = selN === 0 ? 'koi leg select nahi'
           : `${selUnrl >= 0 ? '+' : ''}₹${Math.round(selUnrl).toLocaleString('en-IN')}`
             + ` · ${selN}/${totN} leg · ${selPts >= 0 ? '+' : ''}${selPts.toFixed(1)}pt`;
+        if (selN > 0 && gHas) {
+          selTxt += ` <span style="color:#8b949e;font-weight:400">· Δ <b style="color:#adbac7">${selDelta >= 0 ? '+' : ''}${selDelta.toFixed(0)}</b>`
+            + ` · V <b style="color:${selVega >= 0 ? '#3fb950' : '#f85149'}">${selVega >= 0 ? '+' : ''}${Math.round(selVega).toLocaleString('en-IN')}</b></span>`;
+        }
         document.querySelectorAll(`.grp-sel-tot[data-grp="${id}"]`).forEach(el => {
           el.innerHTML = selTxt; el.style.color = selN === 0 ? '#6e7681' : (selUnrl >= 0 ? '#3fb950' : '#f85149');
         });

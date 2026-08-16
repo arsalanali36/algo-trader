@@ -1318,7 +1318,7 @@
             const grpMarginDisp = Math.round((_gmObj && _gmObj.hedged != null ? _gmObj.hedged : grpMargin) || 0).toLocaleString('en-IN');
 
             oh += `
-      <details ${_grpOpenAttr(grpId)} ontoggle="_grpToggleSave('${grpId}', this.open)" style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
+      <details ${_grpOpenAttr(grpId)} ontoggle="_grpToggleSave('${grpId}', this.open)" data-grpid="${grpId}" data-greekqs="ids=${items.map(t => t.id).filter(Boolean).join(',')}" style="margin-bottom: 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px;">
         <style>details > summary { list-style: none; } details > summary::-webkit-details-marker { display: none; }</style>
         <summary style="padding: 10px 14px; cursor: pointer; font-weight: 600; color: #58a6ff; display: flex; justify-content: space-between; align-items: flex-start; border-radius: 6px;" onmouseover="this.style.background='#161b22'" onmouseout="this.style.background='transparent'">
           <div style="display:flex; flex-direction:column; gap:4px; flex-grow:1;">
@@ -1338,9 +1338,10 @@
         </summary>
         <div style="border-top: 1px solid #30363d; overflow-x: auto;">
           <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;padding:6px 12px;border-bottom:1px solid #21262d">
-            <span style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">☑ Selected legs total</span>
+            <span style="font-size:9.5px;color:#8b949e;text-transform:uppercase;letter-spacing:.03em">☑ Selected legs</span>
             <span class="grp-sel-tot" data-grp="${grpId}" style="font-family:ui-monospace,monospace;font-size:12px;font-weight:700;color:#6e7681">—</span>
             <span style="flex:1"></span>
+            <span class="grp-spot-move" data-grp="${grpId}" style="font-family:ui-monospace,monospace;font-size:11px;color:#8b949e" title="Underlying (spot) ka move entry se abhi tak">—</span>
             <button onclick="_grpLegSel('${grpId}',true)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">All</button>
             <button onclick="_grpLegSel('${grpId}',false)" style="background:#161b22;border:1px solid #30363d;border-radius:5px;color:#8b949e;font-size:10px;font-weight:600;padding:2px 8px;cursor:pointer">None</button>
           </div>
@@ -1352,6 +1353,7 @@
           ordOpenEl.innerHTML = blockedHtml + (oh || '<div style="color:#6e7681;font-size:12px;padding:6px">Koi open position nahi</div>');
           ordOpenEl.dataset.fp = openFp;
           _patchLtpCells(); _fetchPositionLtp();
+          if (typeof _fetchGroupGreeks === 'function') _fetchGroupGreeks();   // net Δ/V + spot-move per group
         } catch (e) {
           if (ordOpenEl) ordOpenEl.innerHTML = '<div style="color:#f85149;font-size:11px;padding:8px;background:#21262d;border-radius:4px">JS ERROR: ' + e.message + '<br><pre style="font-size:10px;white-space:pre-wrap">' + e.stack + '</pre></div>';
         }
