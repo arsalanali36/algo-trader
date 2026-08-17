@@ -215,6 +215,23 @@ def _origin(strategy, source, tags):
     return "✋ Manual", "manual"
 
 
+def _exit_reason_from_tags(tags):
+    """Exit reason ONLY from explicit exit-reason TAGS (prefix match), reusing
+    order_store's canonical `_EXIT_REASON_PREFIXES` (Rule 6B — single source).
+    Tag-only on purpose: those prefixes are stamped ONLY on exit legs, so a manual
+    ENTRY (source=manual) never gets mislabelled as a close here. '' if none."""
+    try:
+        import order_store
+        prefixes = order_store._EXIT_REASON_PREFIXES
+    except Exception:
+        return ""
+    for t in (tags or []):
+        for p in prefixes:
+            if str(t).startswith(p):
+                return str(t)
+    return ""
+
+
 def _order_bad(status, tags, price):
     """galat / problem order? -> (bad, why). Blocked/rejected/cancelled/₹0-fill."""
     st = (status or "").lower()
@@ -267,6 +284,11 @@ def fetch_app(date=None, mode=None):
             lbl, kind = _origin(r.get("strategy"), r.get("source"), tags)
             if lbl:
                 strat.add(lbl)
+            exit_reason = _exit_reason_from_tags(tags)
+            # status-level externally-closed = position closed at broker outside
+            # the app's exit path — surface it if no explicit exit tag was found.
+            if not exit_reason and str(r.get("status") or "").upper() == "EXTERNALLY_CLOSED":
+                exit_reason = "EXTERNALLY_CLOSED"
             rows.append({
                 "time": (r.get("ts") or "")[11:19],
                 "mode": ("Real" if m == "live" else "Paper"),
@@ -282,6 +304,7 @@ def fetch_app(date=None, mode=None):
                 "broker": r.get("broker") or "",
                 "bad": bad,
                 "why": why,
+                "exit_reason": exit_reason,
             })
         n_live = sum(1 for x in rows if x["raw_mode"] == "live")
         n_bad = sum(1 for x in rows if x["bad"])

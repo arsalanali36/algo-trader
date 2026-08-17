@@ -104,6 +104,25 @@ var BRKLOADED=false;
 var SORT={ app:{c:'time',d:-1}, broker:{c:'time',d:-1} };
 
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+// exit-reason tag (e.g. "DEFAULT_TSL_SL:-4000", "GROUP_SL", "ORB_SL") -> readable Note
+var _REASON_MAP = {
+  'GROUP_SL':'🛡️ Basket SL','GROUP_TARGET':'🎯 Basket Target',
+  'RMS_MAXLOSS':'🛑 RMS Max Loss','RMS_PROFIT_TARGET':'🎯 RMS Profit Target',
+  'KILL_FLOOR':'🛑 Kill-Floor','TRAILING_PROFIT_LOCK':'🔒 Trailing Lock','NO_PRICE_EMERGENCY_EXIT':'⚠️ No-price exit',
+  'SL_HIT':'🛡️ SL Hit','TP_HIT':'🎯 Target Hit',
+  'EOD_315_SQUAREOFF':'⏰ 3:15 Squareoff','SQUAREOFF_315':'⏰ 3:15 Squareoff',
+  'EXPIRY_EOD_SQUAREOFF':'⏰ Expiry EOD','EXPIRY_ITM_SQUAREOFF':'⚠️ Expiry ITM',
+  'DEFAULT_TSL_SL':'🛡️ Default SL','DEFAULT_TSL_TARGET':'🎯 Default Target',
+  'MANUAL_CLOSE':'✋ Manual close','EXTERNALLY_CLOSED':'🔌 Closed at broker','MANUAL_EXIT_BROKER':'✋ Manual (broker)',
+  'ATR_TRAILING':'📉 ATR Trailing','RSI_MIDLINE_EXIT':'RSI midline',
+  'TV_EXIT':'📡 TV Exit','TARGET':'🎯 Target','TRAIL_SL':'📉 Trail SL','IDX_TRAIL':'📉 Index Trail','REVERSAL':'🔄 Reversal','GLOBAL_CAP':'🛑 Global cap'
+};
+function reasonLabel(r){
+  if(!r) return '';
+  var parts=String(r).split(':'), key=parts[0], val=parts.length>1?parts.slice(1).join(':'):'';
+  var base=_REASON_MAP[key]||key.replace(/_/g,' ');
+  return val? base+' ('+val+')' : base;
+}
 function num(v){ return (v==null||v==='')?'':Number(v).toLocaleString('en-IN'); }
 function px(v){ return (v==null||v==='')?'—':Number(v).toFixed(2); }
 
@@ -117,7 +136,7 @@ var COLS = {
     {id:'qty',    t:'Qty',        rt:1, g:function(o){return o.qty||0;}, cell:function(o){return num(o.qty);}},
     {id:'price',  t:'Price',      rt:1, g:function(o){return o.price||0;}, cell:function(o){return px(o.price);}},
     {id:'status', t:'Status',     g:function(o){return o.status;}, cell:function(o){var s=o.status||'';var c=(s==='FILLED'||s==='COMPLETE'||s==='PAPER'||s==='OPEN'||s==='BOOKCLOSE'||s==='EXTERNALLY_CLOSED')?'st-c':(s==='REJECTED'||s==='CANCELLED'?'st-r':s==='BLOCKED'?'st-b':'st-o');return '<span class="'+c+'">'+esc(s)+'</span>';}},
-    {id:'why',    t:'Note',       g:function(o){return o.bad?('a'+o.why):'z';}, cell:function(o){return o.bad?'<span class="why">'+esc(o.why)+'</span>':'<span class="muted">—</span>';}},
+    {id:'why',    t:'Note',       g:function(o){return o.bad?('a'+(o.why||'')):(o.exit_reason?('b'+o.exit_reason):'z');}, cell:function(o){ if(o.bad) return '<span class="why">'+esc(o.why)+'</span>'; if(o.exit_reason) return '<span class="strat" title="'+esc(o.exit_reason)+'">'+esc(reasonLabel(o.exit_reason))+'</span>'; return '<span class="muted">—</span>'; }},
   ],
   broker: [
     {id:'time',   t:'Time',       g:function(o){return (o.time||'').slice(11,19)||o.time;}},
@@ -208,7 +227,7 @@ function render(){
   rows=rows.filter(function(o){
     if(fst && (o.strategy||'')!==fst) return false;
     if(fs && (o.status||'')!==fs) return false;
-    if(fq){ var blob=((o.trad_sym||'')+' '+(o.strategy||'')+' '+(o.status||'')+' '+(o.why||'')+' '+(o.mode||'')+' '+(o.side||'')).toLowerCase(); if(blob.indexOf(fq)<0) return false; }
+    if(fq){ var blob=((o.trad_sym||'')+' '+(o.strategy||'')+' '+(o.status||'')+' '+(o.why||'')+' '+(o.exit_reason||'')+' '+(o.mode||'')+' '+(o.side||'')).toLowerCase(); if(blob.indexOf(fq)<0) return false; }
     return true;
   });
   var st=SORT[SRC], col=null; cols.forEach(function(c){ if(c.id===st.c) col=c; });
