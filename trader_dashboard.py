@@ -11143,6 +11143,17 @@ def _pgc_queue(p, sec_id, reason):
     _save_pending_group_close()
 
 
+def _release_exit_claim(p, sec_id, exit_side):
+    """Free the cross-engine exit dedup claim (LESSONS #176) when a live close
+    order did NOT place, so the next 5s cycle can retry this leg instead of being
+    blocked by our own just-taken claim. No-op if exit_claim is unavailable."""
+    try:
+        import exit_claim
+        exit_claim.release(p.get("strategy"), sec_id, exit_side, p.get("mode"))
+    except Exception:
+        pass
+
+
 def _pgc_pop(p, sec_id):
     """Is position ka queued forced-close reason nikaalo (None = queued nahi).
     New-format key pehle; old bare-sec_id key fallback (pre-Task-5 persisted)."""
@@ -11586,8 +11597,55 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         # 2026-07-02) so this logic lives in exactly one place.
         if _pre_exit_guard(p, sec_id, exit_reason, _closed_ids, log=print):
             return True
-        print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
         exit_side = "SELL" if p["entry"] == "BUY" else "BUY"
+
+        # ── Cross-engine exit dedup (LESSONS #176) — auto_straddle_loop's
+        # basket-exit (GROUP_SL/TARGET) and this pos_monitor squareoff both run in
+        # this process and can each fire a close on the same (strategy, contract,
+        # side) within seconds (broker fill lags → is_flat_fresh can't catch it) →
+        # a phantom naked leg + extra flatten order + wasted tax. If another engine
+        # already claimed THIS leg, don't re-fire its order — but STILL cascade to
+        # the group siblings below (each has its own claim), so the group still
+        # closes fully.
+        _won_claim = True
+        try:
+            import exit_claim
+            _won_claim = exit_claim.claim(p.get("strategy"), sec_id, exit_side, p.get("mode"))
+        except Exception:
+            _won_claim = True
+        if not _won_claim:
+            print(f"[{exit_reason}] {p['sym']} {exit_side} exit already in-flight elsewhere — "
+                  f"not re-firing (dup guard), still checking group siblings", flush=True)
+            _closed_ids.add(p.get("id"))
+            gid = p.get("group_id")
+            if gid:
+                for sib in open_pos:
+                    sib_id = sib.get("id")
+                    if sib_id in _closed_ids or sib is p:
+                        continue
+                    if sib.get("group_id") != gid:
+                        continue
+                    sib_sec = sib.get("sec_id")
+                    if not sib_sec:
+                        continue
+                    sib_seg = "NSE_EQ" if (sib.get("instrument") or "").upper() == "EQUITY" else "NSE_FNO"
+                    _feed_subscribe([(sib_seg, sib_sec)])
+                    qsib = dhan_feed.get_quote(sib_sec, max_age=_FEED_MAX_AGE)
+                    sib_ltp = float(qsib.get("ltp") or 0) if qsib else 0.0
+                    if sib_ltp <= 0:
+                        sib_ltp = _rest_ltp_fallback(sib_sec, sib_seg) or 0.0
+                    if sib_ltp <= 0:
+                        try:
+                            import shared_ltp_cache
+                            sib_ltp = shared_ltp_cache.get_stale(sib_sec, max_age=120) or 0.0
+                        except Exception:
+                            sib_ltp = 0.0
+                    if sib_ltp > 0:
+                        _do_squareoff(sib, sib_ltp, exit_reason + "_GROUP", sib_sec, sib_seg)
+                    else:
+                        _pgc_queue(sib, sib_sec, exit_reason + "_GROUP")
+            return True
+        print(f"[{exit_reason}] {p['sym']} LTP {ltp}. Squaring off...")
 
         if p.get("mode") == "live":
             import smart_order
@@ -11609,9 +11667,11 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 # intent: never mark closed unless we know the broker round-
                 # tripped — leave it open, it retries next 5s cycle.
                 print(f"[{exit_reason}] LIVE square-off EXCEPTION for {p['sym']} — {_ex}; leaving position open, will retry")
+                _release_exit_claim(p, sec_id, exit_side)   # free claim so next cycle retries
                 return True
             if not res.get("ok"):
                 print(f"[{exit_reason}] LIVE square-off FAILED for {p['sym']} — {res.get('reason')}; leaving position open, will retry")
+                _release_exit_claim(p, sec_id, exit_side)   # free claim so next cycle retries
                 return True
             # smart_order.execute already persisted the trade — don't double-record.
         else:

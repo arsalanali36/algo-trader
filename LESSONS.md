@@ -4435,3 +4435,27 @@ Dono milke phantom ka poora forming-path band: mirror close ab net ho jaati (A),
 ## Feature note (2026-08-15) — ordered hedged-basket square-off + hedged LIVE twins (02.07.01/02.10.01)
 
 See CLAUDE.md Master Feature Index rows "Ordered hedged-basket square-off" + "Hedged LIVE straddle/strangle twins", and memory `project_code3b_3strat_live_rollout`. Key money-path invariant: closing a hedged (defined-risk) structure must close the SHORT legs FIRST (buy-to-close → margin drops), then the BUY wings — stripping the hedge first turns it momentarily naked, spikes margin, and the broker rejects the remaining exits. `execution_gateway.execute_basket_exit` enforces this ordering; entry does the mirror (wings first). The ₹-basket ±SL/Target (not points, not per-leg) is `position_exit_rules`; per-leg RMS default-SL is disabled on these members so ONLY the basket rule governs.
+
+---
+
+## TRAP #176 — TWO exit engines in one process both fire a close on the SAME short leg → phantom naked leg + extra flatten order + wasted tax (2026-08-17)
+
+**Symptom (user):** BANKNIFTY hedged straddle band hone pe "charo leg exit ho jate, fir ek khul ke exit hota — zabardasti ka tax jaa raha." Completed Trades me har iron-fly close ke saath ek extra single-leg round-trip (12:59 `B 57300-CE` tax ₹255, 15:10 `B 57600-CE` tax ₹247).
+
+**Real cause (order_store se confirmed, guess nahi):** `02.07.01 straddle_alert_hedged` (LIVE) ka hedged group ko DO independent exit-engines band karte hain, jo dono `algo-monitor` process ke daemon THREADS hain:
+1. `auto_straddle_loop` → `_run_position_exit_rules` → `execution_gateway.execute_basket_exit` → `execute_exit` (₹4k basket GROUP_SL/TARGET).
+2. `pos_monitor_loop` → `_do_squareoff` (RMS daily profit-target / EOD 3:15; group siblings ko cascade karta, `_GROUP` suffix append karke).
+
+Dono cycle-start pe order_store se "ye leg open hai" banate hain, phir dono short leg pe buy-to-close fire karte hain. Broker ka fill abhi reflect nahi hua (~8s async-confirm, TRAP #63) → broker-side `is_flat_fresh` bhi loser ko "not flat" deta → **duplicate close order land ho jaata**. Us extra buy-to-close ka koi matching short bacha nahi → phantom naked long → usko flatten karne ka ek aur order → asli extra brokerage + STT. Proof: 12:59 pe 3624 (GROUP_SL) aur 3627 (RMS_PROFIT_TARGET) dono `BUY 57300-CE`; 15:10 pe 3662 aur 3664 dono `BUY 57600-CE`. Screenshot ke extra rows ke points/gross exactly in phantom round-trips se match karte hain. Paper twin clean band hua (usme sirf ek exit engine active).
+
+**Why is_flat_fresh can't win this:** wo broker ko round-trip karta hai, jo lag karta hai. In-process do-thread race sub-second hai.
+
+**Fix — instant in-process per-close claim (`_core/exit_claim.py`):** key `(mode, strategy, sec_id, exit_side)`. Jo engine pehle claim kare wahi us close ka maalik; doosra turant skip (`skipped_dup`), bina broker round-trip. Wired at BOTH engines (dono ek hi claim store dekhte, isliye dono zaroori):
+- `execution_gateway.execute_exit` — smart_order.execute se pehle claim; placement fail → release (legit retry block na ho).
+- `_do_squareoff` — claim na mile to us leg ka order NA fire karo par group siblings ka cascade phir bhi chale (har sibling ka apna claim); live-fail pe `_release_exit_claim`.
+
+**Key granularity (important):** strategy claim key me hai — do ALAG strategy same contract same direction legit band kar sakti hain (TRAP #145 family). Ek hi strategy ka same-contract-same-side duplicate hi block hota. TTL 15s (race <5s; koi strategy 15s me same contract dobara legit close nahi karti). sec_id/side missing → fail-open (dedup guard kabhi zaroori exit ko strand na kare).
+
+**Permanent guard:** `_DEV/tests/test_exit_claim.py` — aaj ki asli 12:59 + 15:10 race replay + cross-strategy-not-blocked + release + TTL + fail-open. PRE-MORTEM shape #1 (stale-state) + #4 (duplicate logic, half-coordinated engines).
+
+**Detect fast:** ek group ke exit me legs > entry legs; exit tags me `_GROUP_GROUP_GROUP` (cascade re-close); ek short ke do buy-to-close same second; uske baad `broker_reconcile` SELL (extra long flatten).

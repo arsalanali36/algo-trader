@@ -223,6 +223,23 @@ def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
         except Exception as fe:
             log(f"[GATEWAY] [FLAT-CHECK] pre-exit check failed ({fe}) — proceeding (fail-open)")
 
+    # ── Cross-engine exit dedup (LESSONS #176) — pos_monitor's _do_squareoff and
+    # this basket-exit path both run as threads in the algo-monitor process and
+    # can each fire a close on the same (strategy, contract, side) within seconds
+    # (broker fill hasn't reflected → the flat-check above can't catch it). Win an
+    # instant in-process claim or skip, so only ONE close order lands. Released
+    # below if placement fails, so a legit retry isn't blocked.
+    _claimed = False
+    try:
+        import exit_claim
+        if not exit_claim.claim(strategy_id, sec_id, exit_side, mode):
+            log(f"[GATEWAY] [DUP-GUARD] {trad_sym} {exit_side} exit already in-flight "
+                f"for {strategy_id} — skipping duplicate close (phantom-leg guard)")
+            return _result(True, "skipped_dup", "exit already in-flight for this contract", qty=qty)
+        _claimed = True
+    except Exception:
+        _claimed = False
+
     tags = list(extra_tags or [])
     if reason and reason not in tags:
         tags.insert(0, reason)
@@ -233,6 +250,13 @@ def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
                               instrument=instrument, broker_name=bname,
                               group_id=group_id, extra_tags=tags,
                               product=product, is_exit=True)
+    if _claimed and not res.get("ok"):
+        # order didn't place — free the claim so the next cycle can retry
+        try:
+            import exit_claim
+            exit_claim.release(strategy_id, sec_id, exit_side, mode)
+        except Exception:
+            pass
     # Telegram EXIT alert — asli exit order gaya. Config-gated (default live).
     # skipped_flat yahan tak nahi aata (upar hi return ho jaata) — sirf real exit.
     if res.get("ok"):

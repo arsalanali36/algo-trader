@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**136 modules documented** across 10 folders.
+**137 modules documented** across 10 folders.
 
 
 ## Folders
@@ -58,6 +58,12 @@ execution_gateway.py — THE single gateway every strategy calls to enter/exit. 
 - 🔧 `execute_basket_exit` — ORDERED square-off of a (possibly hedged) basket. Closes the SHORT
 - 🔧 `execute_exit` — Ek EXIT leg. `reason` = exit-reason tag (e.g. "RSI_MIDLINE_EXIT",
 - 🔧 `execute_signal` — Ek ENTRY leg — RMS-gated, order_store-recorded. `lots * lot_size` = qty
+
+### `_core/exit_claim.py`
+In-process idempotency guard for EXIT orders — stops two concurrent exit engines from both firing a close on the SAME (strategy, contract, side) within a few seconds.
+
+- 🔧 `claim` — Atomically claim the right to fire an exit on (strategy, sec_id, side).
+- 🔧 `release` — Release a claim — call when the close order did NOT place / failed, so a
 
 ### `_core/market_calendar.py`
 market_calendar.py — NSE trading-day / market-open SINGLE SOURCE OF TRUTH.
