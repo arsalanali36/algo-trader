@@ -393,9 +393,30 @@ def _rollback(strategy_id, sym, legs, mode, bname, log):
 
 
 def _exit_condor(strategy_id, sym, pos, mode, bname, reason, log):
-    """Close SHORTS first (buy back) so only defined long wings ever linger."""
-    import execution_gateway as gw
-    for l in sorted(pos["legs"], key=lambda l: 0 if l["side"] == "SELL" else 1):
+    """Close SHORTS first (buy back) so only defined long wings ever linger.
+    Durable flat-check (TRAP #157): execute_exit's own flat-check is live-only, so a
+    PAPER manual-close leaves stale `pos` legs that would re-fire a phantom
+    VRPC_NEXT_CLOSE (the 2026-08 duplicate-condor artifact). Exit only legs still
+    net-open in order_store (overnight-aware via trades_for_range, same idiom as
+    _recover). Fail-open: any error → exit all legs, a real exit is never blocked."""
+    import execution_gateway as gw, order_store
+    from datetime import timedelta as _td
+    try:
+        _t = ist_now()
+        _opens = order_store.trades_for_range(
+            (_t - _td(days=7)).strftime("%Y-%m-%d"), _t.strftime("%Y-%m-%d")).get("open") or []
+        _open_secs = {str(p.get("sec_id")) for p in _opens if p.get("strategy") == strategy_id}
+        _legs = [l for l in pos["legs"] if str(l["sec_id"]) in _open_secs]
+        _skip = [l["trad_sym"] for l in pos["legs"] if str(l["sec_id"]) not in _open_secs]
+        if _skip:
+            log.info(f"[EXIT] skip already-flat legs (manual close?): {_skip}")
+        if not _legs:
+            log.info("[EXIT] all legs already flat in order_store — nothing to exit")
+            return
+    except Exception as _e:
+        log.warning(f"[EXIT] flat-check failed ({_e}) — exiting all legs (fail-open)")
+        _legs = pos["legs"]
+    for l in sorted(_legs, key=lambda l: 0 if l["side"] == "SELL" else 1):
         try:
             gw.execute_exit(strategy_id, sym, l["sec_id"], l["trad_sym"], l["qty"],
                             entry_side=l["side"], seg="NSE_FNO", mode=mode, broker_name=bname,
