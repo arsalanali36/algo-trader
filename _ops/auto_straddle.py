@@ -53,22 +53,29 @@ def _read_raw():
             return d
     except Exception:
         pass
-    return {"day": _today_ist(), "straddles": [], "fired_920": []}
+    return {"day": _today_ist(), "straddles": [], "fired_920": [], "fired_alert": []}
 
 
-def _write_raw(day, straddles, fired_920=None):
-    """Persist straddles + the day's 9:20 attempt-markers. fired_920=None means
+def _write_raw(day, straddles, fired_920=None, fired_alert=None):
+    """Persist straddles + the day's attempt-markers. A marker arg = None means
     'preserve whatever's already stored for TODAY' (so the frequent add/set_status
-    writes don't drop the marker set); on a day rollover the old markers are stale
-    so they clear to []."""
-    if fired_920 is None:
+    writes don't drop the marker sets); on a day rollover the old markers are stale
+    so they clear to []. fired_920 = 9:20 one-shot; fired_alert = alert one-shot
+    (one alert entry per symbol per day, no re-entry after exit — user rule)."""
+    if fired_920 is None or fired_alert is None:
         raw = _read_raw()
-        fired_920 = raw.get("fired_920") if raw.get("day") == day else []
-        if not isinstance(fired_920, list):
-            fired_920 = []
+        same_day = raw.get("day") == day
+        if fired_920 is None:
+            fired_920 = raw.get("fired_920") if same_day else []
+            if not isinstance(fired_920, list):
+                fired_920 = []
+        if fired_alert is None:
+            fired_alert = raw.get("fired_alert") if same_day else []
+            if not isinstance(fired_alert, list):
+                fired_alert = []
     try:
         _FILE.write_text(json.dumps({"day": day, "straddles": straddles,
-                                     "fired_920": fired_920}))
+                                     "fired_920": fired_920, "fired_alert": fired_alert}))
     except Exception:
         pass
 
@@ -80,7 +87,7 @@ def _load_today():
     raw = _read_raw()
     today = _today_ist()
     if raw.get("day") != today:
-        _write_raw(today, [], fired_920=[])
+        _write_raw(today, [], fired_920=[], fired_alert=[])
         return []
     st = raw.get("straddles")
     return st if isinstance(st, list) else []
@@ -209,6 +216,48 @@ def mark_920(symbol):
         if symbol not in fired:
             fired.append(symbol)
         _write_raw(today, straddles, fired_920=fired)
+
+
+def _load_fired_alert():
+    """Today's alert-entry marker symbol list (day-reset applied)."""
+    raw = _read_raw()
+    if raw.get("day") != _today_ist():
+        return []
+    fl = raw.get("fired_alert")
+    return fl if isinstance(fl, list) else []
+
+
+def fired_alert_today(symbol):
+    """TRUE if an alert-driven straddle already ENTERED today for this symbol —
+    the marker PERSISTS after the position exits, so a later alert can't re-enter
+    the same symbol that day (user rule: one alert entry per symbol per day, no
+    re-entry). Belt-and-suspenders: also honours a genuinely-recorded alert
+    straddle (open OR closed) so the guard holds even if mark_alert was missed."""
+    symbol = str(symbol).upper()
+    with _LOCK:
+        if symbol in _load_fired_alert():
+            return True
+        return any(str(s.get("source", "")).startswith("alert") and s.get("symbol") == symbol
+                   for s in _load_today())
+
+
+def mark_alert(symbol):
+    """Mark that an alert straddle ENTERED today for `symbol` (idempotent). Call
+    AFTER a successful entry (not before) so a fire that never took a position can
+    still retry on a later alert — only a REAL entry blocks re-entry."""
+    symbol = str(symbol).upper()
+    with _LOCK:
+        raw = _read_raw()
+        today = _today_ist()
+        straddles = raw.get("straddles") if raw.get("day") == today else []
+        if not isinstance(straddles, list):
+            straddles = []
+        fired = raw.get("fired_alert") if raw.get("day") == today else []
+        if not isinstance(fired, list):
+            fired = []
+        if symbol not in fired:
+            fired.append(symbol)
+        _write_raw(today, straddles, fired_alert=fired)
 
 
 def add(strad):

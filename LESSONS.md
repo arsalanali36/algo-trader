@@ -4459,3 +4459,15 @@ Dono cycle-start pe order_store se "ye leg open hai" banate hain, phir dono shor
 **Permanent guard:** `_DEV/tests/test_exit_claim.py` — aaj ki asli 12:59 + 15:10 race replay + cross-strategy-not-blocked + release + TTL + fail-open. PRE-MORTEM shape #1 (stale-state) + #4 (duplicate logic, half-coordinated engines).
 
 **Detect fast:** ek group ke exit me legs > entry legs; exit tags me `_GROUP_GROUP_GROUP` (cascade re-close); ek short ke do buy-to-close same second; uske baad `broker_reconcile` SELL (extra long flatten).
+
+---
+
+## Feature note (2026-08-17) — alert-straddle: one entry per symbol per day, NO re-entry
+
+**User rule:** the alert-driven ATM straddle (`on_option_alert` → paper `straddle_alert` + LIVE hedged `straddle_alert_hedged`) must take only ONE entry per symbol per day. It was re-entering: 09:40 alert → entry, 12:59 profit-target exit, 13:58 second alert → re-entered the same symbol. Not wanted.
+
+**Root:** `on_option_alert` had NO once-per-day guard (the 9:20 path already has `fired_920_today`/`mark_920`; the alert path never got the equivalent). Both twins' own dedup (`has_open` / `_hedged_alert_open`) only blocks stacking WHILE a position is open — after it exits, a fresh alert re-enters.
+
+**Fix:** new `auto_straddle.fired_alert_today(symbol)` + `mark_alert(symbol)` (parallel to `fired_920`, day-scoped, cleared on rollover). `on_option_alert` skips at the top if `fired_alert_today(u)`; marks AFTER a real entry (either twin `ok`) so a fire that took no position can still retry on a later alert. Belt-and-suspenders: a recorded `source="alert*"` straddle (open OR closed) also blocks, so the guard holds even if the mark was missed. Per-symbol (NIFTY and BANKNIFTY independent), matching the 9:20 design. Test `_DEV/tests/test_alert_once_per_day.py`.
+
+**Note:** unconditional (house rule, no config toggle). The 9:20 (A) and manual (B) straddle sources are unaffected — they have their own guards. Discretionary strategy (Rule 10, not backtested) so this is a pure risk-reducing constraint, no validated number to diverge from.

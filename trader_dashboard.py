@@ -6425,6 +6425,20 @@ def on_option_alert(alert):
                 return
         except Exception:
             pass
+        # ── One alert entry per symbol per day — NO re-entry (user rule 2026-08-17).
+        # The alert straddle is discretionary; a second alert later in the day used
+        # to re-enter this symbol after the first had already exited. Block it (the
+        # marker persists past the exit; day-reset handled in auto_straddle). Both
+        # the paper twin AND the LIVE hedged twin fire from here, so gating here caps
+        # both together.
+        try:
+            import auto_straddle as _ast_guard
+            if _ast_guard.fired_alert_today(u):
+                print(f"[straddle] alert {u} ({typ}) SKIPPED — already had an alert "
+                      f"entry today for {u} (one per symbol/day, no re-entry)", flush=True)
+                return
+        except Exception as _ge:
+            print(f"[straddle] alert once-per-day guard err ({_ge}) — proceeding", flush=True)
         _tp, _sl = _straddle_tp_sl(cfg, u)
         ok, msg = _fire_auto_straddle(u, cfg.get("lots", 1), _tp, _sl, "alert:%s" % typ,
                                       log=lambda m: print(m, flush=True))
@@ -6432,12 +6446,21 @@ def on_option_alert(alert):
         # 02.07.01 — LIVE hedged twin fires ALONGSIDE the paper straddle (A/B).
         # No-op unless straddle_alert_hedged.active; fully self-guarded (dedup,
         # RMS, no-naked). Never let its failure affect the paper fire above.
+        _hok = False
         try:
             _hok, _hmsg = _fire_hedged_alert_straddle(u, "alert:%s" % typ,
                                                       log=lambda m: print(m, flush=True))
             print(f"[straddle-hedged] alert-fire {u} ({typ}): {_hmsg}", flush=True)
         except Exception as _he:
             print(f"[straddle-hedged] fire err: {_he}", flush=True)
+        # Mark the day AFTER a real entry (either twin) → a fire that took NO
+        # position can still retry on a later alert; only a real entry blocks re-entry.
+        try:
+            if ok or _hok:
+                import auto_straddle as _ast_mark
+                _ast_mark.mark_alert(u)
+        except Exception:
+            pass
     except Exception as e:
         print(f"[straddle] on_option_alert err: {e}", flush=True)
 
