@@ -7533,6 +7533,31 @@ def api_close_position():
                                         (this_leg or {}).get('broker', '')))
 
 
+def _broker_position_product(broker, broker_name, t_sym, sec_id, fallback='NRML'):
+    """The product (MIS/NRML/CNC) the broker ACTUALLY holds for this contract.
+
+    Zerodha tracks MIS and NRML as SEPARATE positions, so a close/squareoff order in
+    the WRONG product does not net the open leg — it opens a NEW opposite position
+    (user bug 2026-08-18, TRAP #178: an NRML leg + a default-MIS close → the leg
+    stayed open and a fresh MIS leg appeared). Read the real product live from the
+    broker's own position book. The app's recorded product_type is NOT a reliable
+    fallback — `order_store.record()` defaults it to NRML regardless of the order's
+    real product — so on a read failure we return `fallback` (caller decides: the
+    manual-close path passes 'NRML' since manual F&O is usually NRML; the auto-
+    squareoff path passes None to preserve its prior default-MIS behaviour, no
+    regression for the MIS strategy positions it usually closes)."""
+    try:
+        if broker_name == 'kite' and broker is not None:
+            ksym = broker.resolve_symbol(t_sym, sec_id)   # forward-only exact match (TRAP #13)
+            if ksym:
+                for _p in (broker.positions_detailed() or []):
+                    if _p.get('kite_sym') == ksym and _p.get('product'):
+                        return str(_p.get('product')).upper()
+    except Exception as _pe:
+        print(f"[close-product] {t_sym} broker product read failed ({_pe}) — using fallback {fallback}", flush=True)
+    return fallback
+
+
 def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
                          broker_in=''):
     """Shared close-one-leg logic — used by /api/close-position and (looped per
@@ -7673,11 +7698,23 @@ def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
         import smart_order
         from brokers import get_broker
         broker = get_broker(broker_name)
+
+        # PRODUCT MATCH (user bug 2026-08-18, TRAP #178): Zerodha tracks MIS and
+        # NRML as SEPARATE positions. A close order in the WRONG product does NOT
+        # net the open leg — it opens a NEW opposite position (the open leg stays,
+        # a phantom appears). The close used to pass no product → Kite default MIS →
+        # an NRML leg never closed (a fresh MIS leg opened instead). Read the product
+        # the broker ACTUALLY holds and close with THAT (manual F&O default NRML).
+        close_product = _broker_position_product(broker, broker_name, t_sym, sec_id, fallback='NRML')
+        print(f"[close-position] {t_sym} closing with product={close_product} "
+              f"(matched to broker's open position)", flush=True)
+
         res = smart_order.execute(
             close_side, t_sym, sec_id, 'NSE_FNO', qty_shares, t_sym,
             'live', broker, log=print, tag='MANUAL-CLOSE',
             source=src_in, strategy=strat_in, instrument='options',
             broker_name=broker_name, extra_tags=['MANUAL_CLOSE'],
+            product=close_product,
             is_exit=True,
         )
         if not res.get('ok'):
@@ -11684,6 +11721,12 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             import smart_order
             from brokers import get_broker
             broker = get_broker(p.get("broker") or "dhan")
+            # PRODUCT MATCH (TRAP #178) — square off in the SAME product the broker
+            # holds, else Kite opens a new opposite position instead of netting.
+            # fallback=None → smart_order default MIS (this path usually closes MIS
+            # strategy legs; no regression when the live read can't resolve).
+            _sq_prod = _broker_position_product(broker, p.get("broker") or "dhan",
+                                                p["sym"], sec_id, fallback=None)
             try:
                 res = smart_order.execute(
                     exit_side, p["sym"], sec_id, seg, p["qty"], p["sym"],
@@ -11691,6 +11734,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     source=p["source"], strategy=p["strategy"],
                     instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
                     extra_tags=["pos_monitor_exit", exit_reason],
+                    product=_sq_prod,
                     is_exit=True,
                 )
             except Exception as _ex:
