@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-08-18 — 🚧 Leg-collision main-gate — two strategies never share an option contract (+ broker-match cleanup)
+**Status:** DONE + VPS-LIVE (`a9a4c29`; audit 0 FAIL; supervisor re-warmed → all 19 forks on new code, PIDs 19==19; test_leg_collision.py PASS). Money-path (entry gate) — carefully deployed.
+**Layer:** execution + strategy
+**Kya:** At the broker, option positions are fungible by CONTRACT not strategy. Two hedged BNF strategies (`bnf_strangle_hedged` 9:20 + `straddle_alert_hedged` alert) resolved legs to the SAME contract → broker netted them → one strategy's leg silently squared off → hedge broke (live, `BANKNIFTY-56900-PE` net 0 at Kite). Fix = a universal main-gate + per-strategy smart-shift so no two live strategies ever hold the same contract.
+**Files:** `_core/leg_collision.py` (NEW — `occupied_sec_ids(live_only)` + `clear_leg` shift/abort) · `_core/execution_gateway.py` (MAIN GATE in `execute_signal`: live+strategy entry on another live strategy's contract → `blocked:leg_collision`; block decoupled from log call) · `_core/strategy_safety.py` (`compute_hedge_target`/`wing_by_delta` +`avoid=`) · `strategies/live/bnf_strangle_trader.py` + `trader_dashboard._fire_hedged_alert_straddle` + `strategies/live/range_trader._enter_hedged_vertical` (all 3 hedged paths: short via clear_leg, wing via avoid) · `_DEV/tests/test_leg_collision.py` (NEW guard).
+**Kyun:** per-strategy flat-check (`_my_open_qty`) protects exit accounting but nothing stopped the ENTRY collision; broker-level netting silently annihilated opposite-side legs of two strategies.
+**Cleanup (one-time):** reconciled app LIVE ledger to Kite (broker = truth) — `mark_externally_closed` on 50 live phantom + 12 stale paper VRP-condor legs (broker showed only 2 real: manual NIFTY 24200/24300-CE), WAL-safe DB backups, convergence-loop (netting re-surfaces unpaired fills). NO orders sent.
+**Rule 10:** strike shifts only on collision (rare) = safety over fidelity; paper never shifts. Docs: LESSONS TRAP #177, ADR-018, memory `project_code3b_leg_collision_gate`.
+**Depends on:** ADR-011 (authoritative reconcile — only ADDS broker fills, hence phantom accumulation), TRAP #145/#176.
+
 ## 2026-08-03 — ☀️ Morning Brief page (`/brief`) — subha ek-nazar market snapshot
 **Status:** DONE + VPS-LIVE (`d2cc1b1`; audit 0 FAIL, algo-dashboard restart clean, `/brief`→302 `/api/morning-brief`→401 gated, zero log errors). Display-only (Rule 10), koi order/risk/live path nahi.
 **Layer:** ui + data (display)
