@@ -15,6 +15,16 @@
 
 ---
 
+## 2026-08-18 — 🐛 Close/squareoff matches broker product (MIS vs NRML) — TRAP #178
+**Status:** DONE + VPS-LIVE (`ca0b563`; audit 0 FAIL; dashboard+monitor restart, 19 forks intact; helper present in venv). Money-path.
+**Layer:** execution + ui
+**Kya:** User bug (LIVE NIFTY): NRML position ko "Close all" se band kiya → close order default MIS gaya → Zerodha MIS/NRML alag positions track karta → net nahi hua, **nayi position khul gayi** (purani open rahi). Live-confirmed: manual NIFTY legs NRML, strategy BNF legs MIS; close/squareoff koi product pass nahi karte the → Kite default MIS.
+**Files:** `trader_dashboard.py` — new `_broker_position_product()` (broker ka ASLI product padho: `resolve_symbol`→`positions_detailed`→`product`) + wired into `_close_position_impl` (manual close, fallback NRML) + `_do_squareoff` (auto SL/EOD/RMS, fallback None = prior MIS behaviour, no regression).
+**Kyun:** app ka `product_type` unreliable (`order_store.record` default NRML; manual route INTRADAY bhejta par NRML record karta) → BROKER hi single source of truth.
+**Flagged (not fixed):** carry-toggle live pe `convert_position` nahi karta (flag-only); manual-route product record-vs-send inconsistency; overnight strategies live pe NRML entry chahiye.
+**Docs:** LESSONS TRAP #178.
+**Depends on:** smart_order product param + KiteBroker.positions_detailed/resolve_symbol (TRAP #13).
+
 ## 2026-08-18 — 🚧 Leg-collision main-gate — two strategies never share an option contract (+ broker-match cleanup)
 **Status:** DONE + VPS-LIVE (`a9a4c29`; audit 0 FAIL; supervisor re-warmed → all 19 forks on new code, PIDs 19==19; test_leg_collision.py PASS). Money-path (entry gate) — carefully deployed.
 **Layer:** execution + strategy

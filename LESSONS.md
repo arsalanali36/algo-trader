@@ -4497,3 +4497,21 @@ The per-strategy flat-check (`_my_open_qty`, TRAP #58/#145 line) protects EXIT a
 **Permanent guard:** `_DEV/tests/test_leg_collision.py` — live-only filter (excludes self/paper/blocked/0-qty), shift/abort, wing skip, gate-block vs manual/paper pass-through. `architecture_audit` 0 FAIL. PRE-MORTEM shape #1 (stale-state) + #4 (duplicate logic — two strategies, one broker). ADR-018.
 
 **Detect fast:** two strategies with an OPEN leg on the same sec_id; a hedged strategy's recovery logs "leg(s) closed — clearing" mid-day; Kite net 0 on a contract the app shows open for two strategies (one SELL, one BUY, matching qty).
+
+---
+
+## TRAP #178 — Close order in the WRONG product (MIS vs NRML) doesn't net the position — it opens a NEW one (2026-08-18)
+
+**Symptom (user, LIVE, NIFTY):** "Close all daba kar position close ki, MIS me order gaya tha, close karne ke liye NRML kar diya — to wo position band hui nahi, dusri position aur khul gayi." An open leg + a close attempt → the leg stayed open AND a fresh opposite position appeared.
+
+**Root — product-type mismatch:** Zerodha (and Dhan) track **MIS and NRML as SEPARATE positions** on the same contract. A close order only nets the open leg if it uses the SAME product. The app's close path (`_close_position_impl` → `smart_order.execute(is_exit=True)`) passed **no product** → `KiteBroker.place_order` default **MIS**. Live-confirmed: the manual NIFTY legs were **NRML** at Kite (`positions().net[*].product == "NRML"`) while the strategy BankNifty legs were MIS. So a "Close all" on the NRML leg sent an MIS buy → Kite opened a new MIS position instead of closing the NRML one. Same gap in `_do_squareoff` (pos_monitor SL/EOD/RMS auto-squareoff — also no product).
+
+**Why the app's own record can't be trusted for this:** `order_store.record()` defaults `product_type="NRML"` regardless of the order's real product, and the manual-order route sends `productType:"INTRADAY"` (MIS) while recording NRML. So the app's `product_type` is unreliable — the BROKER is the only source of truth for what product a position is actually in.
+
+**Fix (`trader_dashboard._broker_position_product`):** read the product the broker ACTUALLY holds for the contract — `broker.resolve_symbol(t_sym, sec_id)` (forward-only exact match, TRAP #13) → `broker.positions_detailed()` → its `product` — and close with THAT. `positions_detailed()` filters flat (qty==0) rows, so it only returns a product when a real open position exists (= exactly when we close), and the pre-close flat-check already skips already-flat legs.
+- `_close_position_impl` (manual Close all): `fallback='NRML'` (manual F&O is usually NRML; default MIS was the bug).
+- `_do_squareoff` (auto SL/EOD/RMS): `fallback=None` → preserves smart_order's prior MIS default on a read-failure, so no regression for the MIS strategy legs it usually closes; the broker-read still upgrades it to match NRML positions.
+
+**Related still-open gaps (flagged, not fixed):** (1) the MIS⇄NRML carry toggle (`position_carry`) is FLAG-ONLY for live — it never `convert_position`s the real Kite position, so a "carried" live MIS leg is still auto-squared by the BROKER at 3:20 (the app just skips its own 3:15). (2) Manual-order route records product_type=NRML while sending INTRADAY — display inconsistency (the close fix makes it harmless for netting, but the record is still wrong). (3) `_ALWAYS_OVERNIGHT` strategies opened via `execute_signal` default MIS — fine while paper, but a LIVE overnight strategy would need NRML entry (else broker squares it at 3:20).
+
+**Detect fast:** after a close, Kite `positions().net` shows the same contract in TWO product buckets (one MIS, one NRML), or the app-open leg persists after a "successful" close + a new opposite leg appears. PRE-MORTEM shape #8 (hardcoded/defaulted value vs the real state) + #1 (stale-state — closing without reading the position's real product).
