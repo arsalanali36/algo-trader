@@ -412,28 +412,37 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
     import execution_gateway as gw
     import strategy_safety as ss
     import risk_gate as rg
+    import leg_collision as lc
     lots = int(tc.get("qty", 1))
     off = int(tc.get("strike_offset", 6))
     wing_strikes = int((tc.get("hedge") or {}).get("wing_strikes", 5))
     gid = f"BNFSTRH_{int(time.time())}"
 
+    # Contracts ANOTHER LIVE strategy already holds open — never share a leg with
+    # it (broker fungibility would net the two → broken structure, see leg_collision).
+    # Paper entries don't reach the broker, so no shift for them (occ stays empty).
+    occ = lc.occupied_sec_ids(strategy_id) if str(mode).lower() == "live" else set()
+
     # ── resolve shorts (off OTM) + wings (off + wing_strikes further OTM) ──
     shorts, wings, lot_size = [], [], 0
     for ot in ("CE", "PE"):
-        sec, tsym, lot = dhan_master.get_option_contract(sym, spot, ot, off)
+        sec, tsym, lot, _uoff = lc.clear_leg(sym, spot, ot, off, occ,
+                                             dhan_master.get_option_contract, log=log.info)
         if not sec:
-            log.error(f"[BNFSTRH] {ot} short contract resolve fail — abort"); return None
+            log.error(f"[BNFSTRH] {ot} short contract resolve/collision — abort"); return None
+        occ.add(str(sec))                       # my leg now occupies this contract
         lot_size = int(lot or lot_size or 1)
         shorts.append({"opt_type": ot, "sec_id": str(sec), "trad_sym": tsym, "lot": lot_size})
         try:
             hsec, htsym, hlot = ss.compute_hedge_target(
                 strategy_id, sym, spot, ot, off, quote_fn=None,
                 min_strikes_override=wing_strikes, max_premium_override=None,
-                max_search=1, log=log.info)
+                max_search=1, log=log.info, avoid=occ)
         except Exception as he:
             hsec = None; log.error(f"[BNFSTRH] {ot} wing resolve err: {he}")
         if not hsec:
-            log.error(f"[BNFSTRH] {ot} wing resolve fail — no naked, abort"); return None
+            log.error(f"[BNFSTRH] {ot} wing resolve/collision fail — no naked, abort"); return None
+        occ.add(str(hsec))
         wings.append({"opt_type": ot, "sec_id": str(hsec), "trad_sym": htsym, "lot": int(hlot or lot_size)})
 
     q = lots * lot_size

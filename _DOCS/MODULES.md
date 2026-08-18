@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**137 modules documented** across 10 folders.
+**138 modules documented** across 10 folders.
 
 
 ## Folders
@@ -64,6 +64,12 @@ In-process idempotency guard for EXIT orders — stops two concurrent exit engin
 
 - 🔧 `claim` — Atomically claim the right to fire an exit on (strategy, sec_id, side).
 - 🔧 `release` — Release a claim — call when the close order did NOT place / failed, so a
+
+### `_core/leg_collision.py`
+leg_collision.py — keep two strategies off the SAME option contract.
+
+- 🔧 `clear_leg` — Resolve an option leg at `offset` that is NOT in `avoid` (a set of sec_ids
+- 🔧 `occupied_sec_ids` — sec_ids currently OPEN at the broker for any strategy OTHER than
 
 ### `_core/market_calendar.py`
 market_calendar.py — NSE trading-day / market-open SINGLE SOURCE OF TRUTH.

@@ -269,7 +269,7 @@ def _rest_quote_fallback(sec_id, seg="NSE_FNO"):
 
 def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offset,
                           quote_fn=None, min_strikes_override=None, max_premium_override=None,
-                          max_search=15, log=print):
+                          max_search=15, log=print, avoid=None):
     """Resolve the auto-hedge BUY contract for a SELL leg that already went
     through (or is about to go through) gate_sell_entry — does NOT place
     anything, just answers "which contract, if any".
@@ -320,6 +320,21 @@ def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offs
             offset += 1
             sec_id, trad_sym, lot_size = dhan_master.get_option_contract(symbol, spot_price, option_type, offset)
 
+    # Collision-avoid: never let this wing land on a contract ANOTHER strategy
+    # already holds open — at the broker the two would net (a BUY wing on top of
+    # another strategy's SHORT silently closes that short → its hedge breaks).
+    # Step further OTM until clear. See _core/leg_collision.py.
+    if avoid:
+        _guard = 0
+        while sec_id and str(sec_id) in avoid and _guard < 8:
+            offset += 1
+            sec_id, trad_sym, lot_size = dhan_master.get_option_contract(symbol, spot_price, option_type, offset)
+            _guard += 1
+        if sec_id and str(sec_id) in avoid:
+            log(f"[HEDGE] {symbol} {option_type} wing collides with another strategy's "
+                f"open leg — no clear strike within 8 strikes, hedge leg skipped")
+            return None, None, None
+
     if not sec_id:
         log(f"[HEDGE] contract resolve failed for {symbol} {option_type} offset={offset} — hedge leg skipped")
         return None, None, None
@@ -327,7 +342,8 @@ def compute_hedge_target(strategy_id, symbol, spot_price, option_type, sell_offs
 
 
 def wing_by_delta(symbol, spot, option_type, sold_offset, target_delta,
-                  atm_iv, expiry_str, min_strikes=2, max_search=15, log=print):
+                  atm_iv, expiry_str, min_strikes=2, max_search=15, log=print,
+                  avoid=None):
     """Pick the protective BUY-hedge wing whose |Black-Scholes delta| is CLOSEST
     to `target_delta` (e.g. 0.25), walking OTM from the sold leg. Analytic —
     delta is computed from `atm_iv` (back-solved by the caller from the ATM
@@ -367,6 +383,9 @@ def wing_by_delta(symbol, spot, option_type, sold_offset, target_delta,
             symbol, spot, option_type, k)
         if not sec:
             break  # walked past the last listed strike — stop
+        if avoid and str(sec) in avoid:
+            continue  # another strategy already holds this contract — skip (broker
+                      # fungibility; see _core/leg_collision.py). Keep walking OTM.
         d = None
         if bs is not None and T and T > 0 and atm_iv and atm_iv > 0 and strike:
             try:

@@ -6294,6 +6294,7 @@ def _fire_hedged_alert_straddle(symbol, source, log=print):
     import execution_gateway as gw
     import strategy_safety as ss
     import risk_gate as rg
+    import leg_collision as lc
     try:
         _sq, no_entry = rg.exit_time_config()
         now = _ast_ist_now()
@@ -6306,22 +6307,31 @@ def _fire_hedged_alert_straddle(symbol, source, log=print):
         return False, f"{symbol} spot abhi nahi mila — order NAHI bheja"
     gid = f"STRADH_{symbol}_{int(_time.time())}"
 
+    # Contracts another LIVE strategy already holds open — never share a leg (broker
+    # fungibility nets the two → broken structure, see _core/leg_collision.py).
+    # Paper entries don't reach the broker, so no shift for them (occ stays empty).
+    occ = lc.occupied_sec_ids(sid) if str(mode).lower() == "live" else set()
+
     # ── resolve ATM shorts (off=0) + wings (wing_strikes OTM) ──
     shorts, wings, lot_size = [], [], 0
     for ot in ("CE", "PE"):
-        sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, ot, 0)
+        sec, tsym, lot, _uoff = lc.clear_leg(symbol, spot, ot, 0, occ,
+                                             dhan_master.get_option_contract, log=log)
         if not sec:
-            return False, f"{ot} ATM resolve fail"
+            return False, f"{ot} ATM resolve/collision fail"
+        occ.add(str(sec))                       # my leg now occupies this contract
         lot_size = int(lot or lot_size or 1)
         shorts.append({"opt_type": ot, "sec_id": str(sec), "trad_sym": tsym, "lot": lot_size})
         try:
             hsec, htsym, hlot = ss.compute_hedge_target(sid, symbol, spot, ot, 0, quote_fn=None,
                                                         min_strikes_override=wing_strikes,
-                                                        max_premium_override=None, max_search=1, log=log)
+                                                        max_premium_override=None, max_search=1,
+                                                        log=log, avoid=occ)
         except Exception as he:
             hsec = None; log(f"[straddle-hedged] {ot} wing resolve err: {he}")
         if not hsec:
-            return False, f"{ot} wing resolve fail — no naked"
+            return False, f"{ot} wing resolve/collision fail — no naked"
+        occ.add(str(hsec))
         wings.append({"opt_type": ot, "sec_id": str(hsec), "trad_sym": htsym, "lot": int(hlot or lot_size)})
 
     q = lots * lot_size

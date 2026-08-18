@@ -89,6 +89,38 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
     except Exception:
         pass   # calendar unavailable → fail-open (loop-gate still applies)
 
+    # DEFAULT leg-collision guard (broker fungibility) — the MAIN GATE. A LIVE
+    # strategy entry must NEVER land on a contract ANOTHER strategy already holds
+    # open at the broker: option positions are fungible by CONTRACT, not strategy,
+    # so a BUY on another strategy's SHORT (or vice-versa) silently nets/closes it
+    # → that strategy's hedged structure breaks (the "dusri strategy ka leg square
+    # off ho gaya" blunder). This is the universal safety net so EVERY current AND
+    # future strategy is protected without wiring — same pattern as the trading-day
+    # guard above. Strategies that resolve by offset SHOULD pre-shift the strike
+    # (leg_collision.clear_leg / compute_hedge_target avoid=) so they still trade a
+    # neighbouring strike; this gate is the backstop that REFUSES a colliding leg
+    # outright when they didn't. LIVE-vs-LIVE only (paper never reaches the broker);
+    # strategy-sourced entries only (a manual/trigger order is the user's own call).
+    # Same-side (SELL on an existing SELL) is refused too — technically nets fine
+    # but the shared fungible lot makes per-strategy exit/MTM accounting ambiguous.
+    if mode == "live" and source == "strategy":
+        _shared = False
+        try:
+            import leg_collision
+            _shared = str(sec_id) in leg_collision.occupied_sec_ids(strategy_id)  # live-only, excludes self
+        except Exception:
+            _shared = False   # collision module unavailable → fail-open (strategy pre-shift still applies)
+        if _shared:
+            # NOTE: the block decision is OUTSIDE the try above so a logging failure
+            # (e.g. a console that can't encode a char) can never silently disable
+            # the gate — the refuse must happen regardless of whether the log prints.
+            try:
+                log(f"[GATEWAY] [SKIP] {trad_sym} -- contract already open for another LIVE "
+                    f"strategy (broker would net the two -> broken structure); entry refused")
+            except Exception:
+                pass
+            return _result(False, "blocked", "leg_collision")
+
     try:
         bname = str(broker_name or risk_gate.default_broker() or "dhan").lower()
         broker = get_broker(bname)

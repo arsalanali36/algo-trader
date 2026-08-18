@@ -911,6 +911,7 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     import strategy_safety as ss
     import risk_gate as rg
     import dhan_master
+    import leg_collision as lc
 
     lots = int(cfg.get("qty", 1))
     hcfg = cfg.get("hedge") or {}
@@ -919,12 +920,20 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     max_search   = int(hcfg.get("max_search", 15))
     gid = f"RANGEH_{symbol}_{int(time.time())}"
 
-    # ── SHORT leg (ATM ± strike_offset) + its live premium (to back-solve IV) ──
-    s_sec, s_tsym, lot_sz, s_strike, s_exp = dhan_master.get_option_contract_ex(
-        symbol, spot, opt_type, offset)
+    # Contracts another LIVE strategy already holds — never share a leg (broker
+    # fungibility nets the two → broken structure, see _core/leg_collision.py).
+    occ = lc.occupied_sec_ids(strategy_id) if str(mode).lower() == "live" else set()
+
+    # ── SHORT leg (ATM ± strike_offset, shifted OTM on collision) + premium/IV ──
+    s_sec, s_tsym, lot_sz, s_off = lc.clear_leg(
+        symbol, spot, opt_type, offset, occ, dhan_master.get_option_contract, log=log.info)
     if not s_sec:
-        log.error(f"[RANGEH] {symbol} {opt_type} short resolve fail — abort"); return False
-    lot_sz = int(lot_sz or 1)
+        log.error(f"[RANGEH] {symbol} {opt_type} short resolve/collision fail — abort"); return False
+    occ.add(str(s_sec))
+    # strike + expiry (for the IV solve) come from the SAME possibly-shifted offset
+    _x_sec, _x_tsym, _x_lot, s_strike, s_exp = dhan_master.get_option_contract_ex(
+        symbol, spot, opt_type, s_off)
+    lot_sz = int(lot_sz or _x_lot or 1)
     s_prem = _fetch_premium(str(s_sec), token, cid) or 0.0
 
     atm_iv = None
@@ -943,12 +952,13 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     # ── ~target_delta BUY wing (analytic, ZERO extra broker calls in the walk) ──
     try:
         w_sec, w_tsym, w_lot, w_strike = ss.wing_by_delta(
-            symbol, spot, opt_type, offset, target_delta, atm_iv, s_exp,
-            min_strikes=min_strikes, max_search=max_search, log=log.info)
+            symbol, spot, opt_type, s_off, target_delta, atm_iv, s_exp,
+            min_strikes=min_strikes, max_search=max_search, log=log.info, avoid=occ)
     except Exception as e:
         w_sec = None; log.error(f"[RANGEH] wing resolve err: {e}")
     if not w_sec:
-        log.error(f"[RANGEH] {symbol} {opt_type} wing resolve fail — no naked, abort"); return False
+        log.error(f"[RANGEH] {symbol} {opt_type} wing resolve/collision fail — no naked, abort"); return False
+    occ.add(str(w_sec))
 
     q = lots * lot_sz
 
