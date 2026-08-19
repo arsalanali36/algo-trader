@@ -318,7 +318,7 @@
       document.querySelectorAll('table[id^="grp_"]').forEach(tbl => {
         let totPts = 0, totUnrl = 0, totInv = 0, any = false;
         let selUnrl = 0, selPts = 0, selN = 0, totN = 0;   // per-leg-checkbox subset total (user ask)
-        let selDelta = 0, selVega = 0, gHas = false;       // Δ/V of the selected legs (if greeks loaded)
+        let selDelta = 0, selDeltaDec = 0, selVega = 0, gHas = false;   // Δ (units + decimal) / V of the selected legs
         const gg = (window._grpGreeks || {})[tbl.id];      // this group's per-leg greeks (may be absent)
         tbl.querySelectorAll('tbody tr').forEach(tr => {
           const ltpCell = tr.querySelector('.ltp-cell');
@@ -339,7 +339,10 @@
             selUnrl += rowUnrl; selPts += rowPts; selN++;
             if (gg && gg.legs) {
               const lg = gg.legs[String(ltpCell.getAttribute('data-sec'))];
-              if (lg && lg.dqty != null) { selDelta += lg.dqty; selVega += lg.vqty; gHas = true; }
+              if (lg && lg.dqty != null) {
+                selDelta += lg.dqty; selVega += lg.vqty; gHas = true;
+                if (lg.d != null) selDeltaDec += lg.d;   // decimal per-unit net delta
+              }
             }
           }
         });
@@ -360,11 +363,20 @@
         document.querySelectorAll(`.grp-tot-unrl[data-grp="${id}"]`).forEach(el => { el.textContent = unTxt; el.style.color = unCol; });
         document.querySelectorAll(`.grp-tot-ret[data-grp="${id}"]`).forEach(el => { el.textContent = retTxt; el.style.color = unCol; });
         // selected-leg subset total (all ticked → equals the group TOTAL above)
+        // INDEX (underlying) point-move for this group — shown here instead of the
+        // combined premium points (that's already in 3 other places). spot_move
+        // comes from the group greeks fetch (underlying move since entry).
+        let idxTxt = '';
+        if (gg && gg.spot_move != null) {
+          const im = gg.spot_move, ic = im >= 0 ? '#3fb950' : '#f85149';
+          idxTxt = ` · <span style="color:#8b949e;font-weight:400">${gg.symbol || 'index'} <b style="color:${ic}">${im >= 0 ? '+' : ''}${im.toFixed(1)}pt</b></span>`;
+        }
         let selTxt = selN === 0 ? 'koi leg select nahi'
           : `${selUnrl >= 0 ? '+' : ''}₹${Math.round(selUnrl).toLocaleString('en-IN')}`
-            + ` · ${selN}/${totN} leg · ${selPts >= 0 ? '+' : ''}${selPts.toFixed(1)}pt`;
+            + ` · ${selN}/${totN} leg${idxTxt}`;
         if (selN > 0 && gHas) {
-          selTxt += ` <span style="color:#8b949e;font-weight:400">· Δ <b style="color:#adbac7">${selDelta >= 0 ? '+' : ''}${selDelta.toFixed(0)}</b>`
+          // net Δ as a DECIMAL (per-unit, e.g. +0.25) — not position delta in units
+          selTxt += ` <span style="color:#8b949e;font-weight:400">· net Δ <b style="color:#adbac7">${selDeltaDec >= 0 ? '+' : ''}${selDeltaDec.toFixed(2)}</b>`
             + ` · V <b style="color:${selVega >= 0 ? '#3fb950' : '#f85149'}">${selVega >= 0 ? '+' : ''}${Math.round(selVega).toLocaleString('en-IN')}</b></span>`;
         }
         document.querySelectorAll(`.grp-sel-tot[data-grp="${id}"]`).forEach(el => {

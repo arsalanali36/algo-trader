@@ -282,7 +282,7 @@ def position_greeks(legs, spot):
         iv = L.get("iv")
         sign = 1 if str(L.get("side", "")).upper() == "BUY" else -1
         if not iv:
-            out.append({"sec_id": L.get("sec_id"), "dqty": None, "vqty": None})
+            out.append({"sec_id": L.get("sec_id"), "dqty": None, "vqty": None, "d": None})
             continue
         d = bs.bs_delta(spot, L["strike"], T, iv, opt=L["opt"])
         v = _bs_vega(spot, L["strike"], T, iv)
@@ -291,7 +291,11 @@ def position_greeks(legs, spot):
         nd += dq
         nv += vq
         ivs.append(iv)
-        out.append({"sec_id": L.get("sec_id"), "dqty": round(dq, 2), "vqty": round(vq, 2)})
+        # d = raw per-unit signed delta (sign + opt-type baked in, NOT ×qty) so
+        # the caller can show a decimal net delta like +0.25 instead of position
+        # delta in units (dqty). Straddle CE +0.5 / PE −0.5 → net ~0.
+        out.append({"sec_id": L.get("sec_id"), "dqty": round(dq, 2), "vqty": round(vq, 2),
+                    "d": round(sign * d, 4)})
     return {"ok": True, "spot": round(spot, 1), "net_delta": round(nd, 2),
             "net_vega": round(nv, 2),
             "avg_iv_pct": round(sum(ivs) / len(ivs) * 100, 1) if ivs else None,
