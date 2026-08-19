@@ -12088,6 +12088,17 @@ if __name__ == '__main__':
     print("\n🤖 Algo Trader Dashboard")
     print("   Open: http://72.61.173.32:5099\n")
     print("   (SL/TP/webhook-monitor/scheduler ab monitor_daemon.py mein — alag se chal rahe honge)\n")
+    # Daily housekeeping: RMS-rejection LOG rows ('blocked') accumulate forever
+    # (a capped signal-heavy strategy logs 6-10/day) → prune old ones. Runs on the
+    # daily 07:00 restart. DELETE-based (blocked rows are excluded from netting →
+    # zero P&L risk); keeps 7 days for review. Display/data-only.
+    try:
+        import order_store as _os_purge
+        _npb = _os_purge.purge_old_blocked(7)
+        if _npb:
+            print(f"   🧹 purged {_npb} old blocked-log rows (>7 days)\n")
+    except Exception as _pe:
+        print("   ⚠️ blocked-log purge skipped:", _pe, "\n")
     # Har error 🔔 tak — strategy logs + mari hui strategies + gire services.
     _threading.Thread(target=_error_watch_loop, daemon=True).start()
     print("   🔔 error-watch chalu — logs/processes/services ke errors bell me aayenge\n")

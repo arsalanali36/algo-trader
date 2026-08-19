@@ -657,6 +657,36 @@ def delete_by_source(source):
         print("[order_store] delete_by_source fail:", e, flush=True)
         return 0
 
+def purge_old_blocked(keep_days=7):
+    """DELETE status='blocked' rows older than keep_days (IST date). Blocked rows
+    are RMS-rejection LOGS (CAPITAL_BLOCKED / max-trades-per-day / illiquid) — they
+    were NEVER real positions, only feed the dashboard's day-scoped 'blocked
+    entries' panel. A signal-heavy capped strategy (e.g. ARS_CHAIN_V1_PAPER: max 2
+    trades/day but scans 23 stocks) logs 6-10 of these PER DAY, so they accumulate
+    forever and bloat the DB (and inflate any all-time/range open-list count, since
+    _net_rows surfaces blocked rows via _as_open). Keep a short review window,
+    delete the rest. SAFE: only touches status='blocked' — a real fill/open is
+    never 'blocked', and blocked rows are excluded from netting so deleting them
+    can never orphan an exit or move any P&L. Returns rows deleted.
+
+    NOTE: use DELETE, never mark them 'externally_closed' — externally_closed rows
+    DO enter netting (TRAP #167b) and a price-0/index-level blocked leg would then
+    FIFO-pair with a real exit into a phantom trade (learned the hard way 2026-08-19)."""
+    try:
+        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
+        ist = _dt.now(_tz.utc) + _td(hours=5, minutes=30)
+        cutoff = (ist.date() - _td(days=int(keep_days))).isoformat()
+        with _lock, _conn() as c:
+            cur = c.execute("DELETE FROM orders WHERE status='blocked' AND date < ?", (cutoff,))
+            n = cur.rowcount
+        if n:
+            print(f"[order_store] purge_old_blocked: deleted {n} blocked-log rows older than {cutoff}", flush=True)
+        return n
+    except Exception as e:
+        print("[order_store] purge_old_blocked fail:", e, flush=True)
+        return 0
+
+
 def update_tags(order_id, tags):
     """Updates the tags JSON string for a specific order ID."""
     try:
