@@ -721,11 +721,22 @@ class KiteBroker(BaseBroker):
             available = float(eq.get("net", 0) or 0)
             # actual cash balance (can be negative when collateral covers margin)
             cash = float(avail.get("cash", avail.get("live_balance", 0)) or 0)
+            # live_balance = FREE cash RIGHT NOW (after debits) = Kite UI "Available
+            # cash". This — not the opening `cash` — is what Zerodha's cash-margin
+            # rule draws on for a NEW order. liquid_collateral (pledged liquid funds)
+            # counts as cash-equivalent; stock_collateral (pledged EQUITY) does NOT
+            # satisfy the 50%-cash-for-F&O-writing requirement.
+            live_cash = float(avail.get("live_balance", avail.get("cash", 0)) or 0)
             collateral = float(avail.get("collateral", 0) or 0)
+            liquid_collateral = float(utilised.get("liquid_collateral", 0) or 0)
+            stock_collateral = float(utilised.get("stock_collateral", 0) or 0)
             # "Used margin" = utilised.debits (matches Kite UI exactly)
             used = float(utilised.get("debits", 0) or 0)
             return {"available": available, "collateral": collateral,
-                    "cash": cash, "used_margin": used, "raw": m}
+                    "cash": cash, "live_cash": live_cash,
+                    "liquid_collateral": liquid_collateral,
+                    "stock_collateral": stock_collateral,
+                    "used_margin": used, "raw": m}
         except Exception:
             # NOTE (same contract as DhanBroker.funds()): caller must treat
             # {} as "balance unknown" and fail-closed, not "balance is fine".

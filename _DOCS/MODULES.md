@@ -138,6 +138,8 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 - 🔧 `capital_headroom` — Remaining ₹ capital for `strategy` before its own cap OR the global cap is
 - 🔧 `capital_in_use` — ₹ capital currently deployed (margin-adjusted for SELL legs — see
 - 🔧 `capital_mode` — 'reject' (default, Stage 1 behavior — block the whole entry) or
+- 🔧 `cash_headroom` — Zerodha's cash-backed F&O-writing capacity, mirrored from the live account.
+- 🔧 `cash_margin_gate_enabled` — RMS toggle for the cash-margin mirror (default ON). LIVE-only. Set
 - 🔧 `check_broker_funds` — LIVE mode only — does the broker's actual available balance cover this
 - 🔧 `check_capital` — Would adding qty@price (side BUY/SELL) to `strategy` breach its allocation
 - 🔧 `check_capital_needed` — Cap-comparison core of check_capital(): would committing `needed` ₹ of

@@ -605,7 +605,8 @@ def get_broker_balance(broker_name):
     if cached and (_t.time() - cached[0]) < _BALANCE_TTL:
         return cached[1]
     out = {"available": None, "collateral": None, "total_margin": None,
-           "used_margin": None, "cash": None, "ok": False}
+           "used_margin": None, "cash": None, "live_cash": None,
+           "liquid_collateral": None, "ok": False}
     try:
         from brokers import get_broker
         f = get_broker(broker_name).funds()
@@ -616,9 +617,14 @@ def get_broker_balance(broker_name):
             used = float(used) if used is not None else None
             cash = f.get("cash")
             cash = float(cash) if cash is not None else None
+            lc = f.get("live_cash")
+            lc = float(lc) if lc is not None else None
+            liq = f.get("liquid_collateral")
+            liq = float(liq) if liq is not None else None
             out = {"available": avail, "collateral": coll,
                    "total_margin": avail + (used or 0),
-                   "used_margin": used, "cash": cash, "ok": True}
+                   "used_margin": used, "cash": cash,
+                   "live_cash": lc, "liquid_collateral": liq, "ok": True}
     except Exception:
         pass
     _balance_cache[broker_name] = (_t.time(), out)
@@ -1088,16 +1094,23 @@ def check_capital(strategy, qty, price, side="SELL", sec_id=None, seg="NSE_FNO",
     rc = _risk_cfg()
     qty, price = float(qty or 0), float(price or 0)
     needed = qty * price
-    if str(side or "SELL").upper() == "SELL":
+    is_short = str(side or "SELL").upper() == "SELL"
+    if is_short:
         real = broker_real_margin(sec_id, seg, qty, price, "SELL") if sec_id else None
         needed = real if real is not None else needed * _margin_multiplier(strategy, rc)
-    return check_capital_needed(strategy, needed, mode=mode)
+    return check_capital_needed(strategy, needed, mode=mode, is_short=is_short)
 
 
-def check_capital_needed(strategy, needed, mode=None):
+def check_capital_needed(strategy, needed, mode=None, is_short=None):
     """Cap-comparison core of check_capital(): would committing `needed` ₹ of
-    capital to `strategy` breach its per-strategy cap, the global cap, or the
-    discretionary-pool cap (mode-pool aware)? Returns (ok, reason).
+    capital to `strategy` breach its per-strategy cap, the global cap, the
+    discretionary-pool cap, OR (live only) Zerodha's cash-backed F&O capacity?
+    Returns (ok, reason).
+
+    is_short: True = option-write/short (margin-consuming → cash rule applies),
+    False = pure BUY (premium debit, no 50%-cash rule → skip cash gate),
+    None = a hedged/multi-leg SELLING structure gated on basket margin (default
+    → cash rule applies; hedged callers pass basket margin and don't set this).
 
     check_capital() computes `needed` for ONE leg (per-leg naked margin for a
     SELL). MULTI-LEG callers (a hedged straddle/condor) should instead pass the
@@ -1150,6 +1163,28 @@ def check_capital_needed(strategy, needed, mode=None):
                                     f"needed ₹{_inr(needed)}{pool})")
         except Exception:
             pass
+
+    # ── Zerodha CASH-margin mirror (LIVE only, margin-consuming orders) ───────
+    # Available margin can be plenty (pledged stock collateral) yet Zerodha
+    # REJECTS a new option-WRITE because ≥50% of F&O margin must be cash/cash-
+    # equivalent. Mirror that so the algo never fires an order the broker would
+    # bounce for "insufficient fund" (which also churns the hedge wing). Account-
+    # level (the rule is account-wide, not per-product), so a small basket margin
+    # still blocks when the account is already over its cash-backed capacity.
+    # SKIP for pure BUYs (is_short=False → premium debit, no 50% rule). Fail-OPEN
+    # on any funds glitch — an API hiccup must never halt live trading.
+    if is_short is not False and str(mode or "").lower() == "live" and cash_margin_gate_enabled():
+        try:
+            ch = cash_headroom(default_broker())
+            if ch.get("ok") and (float(ch["used"]) + needed) > float(ch["capacity"]) + 1:
+                short = (float(ch["used"]) + needed) - float(ch["capacity"])
+                return False, (
+                    f"CASH_MARGIN_SHORT ₹{_inr(short)}: F&O cash-capacity ₹{_inr(ch['capacity'])} "
+                    f"(2× cash-equiv ₹{_inr(ch['cash_equiv'])}) — used ₹{_inr(ch['used'])} + needed "
+                    f"₹{_inr(needed)}. Zerodha reject karega (pledged equity option-sell pe nahi "
+                    f"chalta — cash add karo).")
+        except Exception:
+            pass   # fail-open — never halt live trading on a funds-fetch glitch
 
     return True, ""
 
@@ -1250,6 +1285,49 @@ def check_broker_funds(broker, needed_rs):
     if needed_rs > avail:
         return False, f"broker funds insufficient (avail ₹{_inr(avail)} < needed ₹{_inr(needed_rs)})"
     return True, ""
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Zerodha CASH-margin mirror — pledged EQUITY collateral can't fund option-writing
+# beyond 2× your cash. Total "available margin" can look plenty yet a new SELL is
+# REJECTED for insufficient fund (which also churns the hedge wing). Mirror it.
+# ─────────────────────────────────────────────────────────────────────────────
+def cash_margin_gate_enabled():
+    """RMS toggle for the cash-margin mirror (default ON). LIVE-only. Set
+    nifty_config._risk.global.cash_margin_gate_enabled=false to disable."""
+    v = (_risk_cfg().get("global", {}) or {}).get("cash_margin_gate_enabled")
+    return True if v is None else bool(v)
+
+
+def cash_headroom(broker_name=None):
+    """Zerodha's cash-backed F&O-writing capacity, mirrored from the live account.
+    Rule: ≥50% of F&O margin must be in cash / cash-equivalent (live cash + liquid-
+    fund collateral); pledged EQUITY collateral can only fund the other 50%. So
+    effective F&O capacity = 2 × cash-equivalent (never above total available
+    margin), no matter how much pledged stock you hold.
+
+    Returns {ok, cash_equiv, capacity, used, headroom, avail}. headroom = how much
+    MORE margin a new order can use before Zerodha's cash rule rejects it (can be
+    negative = already over). ok=False on any funds-fetch failure — the caller
+    must NOT block on 'unknown' (an API hiccup must never halt live trading)."""
+    bn = broker_name or default_broker()
+    b = get_broker_balance(bn)
+    live_cash = b.get("live_cash")
+    liq = b.get("liquid_collateral")
+    used = b.get("used_margin")
+    avail = b.get("available")
+    if not b.get("ok") or live_cash is None or liq is None or used is None:
+        return {"ok": False}
+    cash_equiv = float(live_cash) + float(liq)
+    capacity = 2.0 * cash_equiv
+    # never claim MORE than the broker's own total available-margin headroom
+    # (guards the odd case where cash is huge but total margin is the real limit)
+    if avail is not None:
+        capacity = min(capacity, float(used) + float(avail))
+    return {"ok": True, "cash_equiv": round(cash_equiv, 2),
+            "capacity": round(capacity, 2), "used": round(float(used), 2),
+            "headroom": round(capacity - float(used), 2),
+            "avail": (round(float(avail), 2) if avail is not None else None)}
 
 
 def _underlying(symbol_or_tradsym):
