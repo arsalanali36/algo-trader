@@ -259,6 +259,32 @@
     </div>`;
       }
 
+      // ── Zerodha CASH-margin headroom (option-SELL capacity) ──
+      // Total "available margin" looks plenty (pledged stock) but option-WRITING
+      // needs >=50% cash → real capacity = 2x cash-equiv. Show headroom BEFORE it
+      // bites, so a coming "insufficient fund" reject is never a surprise.
+      const ch = t.cash_headroom;
+      if (ch) {
+        const fmt2 = v => v != null ? '₹' + Math.round(v).toLocaleString('en-IN') : '—';
+        const hr = ch.headroom;
+        const hrCol = hr < 0 ? '#f85149' : (hr < 50000 ? '#d29922' : '#3fb950');
+        const gateB = t.cash_gate_on
+          ? '<span style="color:#3fb950;font-size:10px" title="RMS ek naya option-SELL block kar dega jo is cash-capacity se aage jaaye — Zerodha ke reject karne se PEHLE">🛡️ gate ON</span>'
+          : '<span style="color:#8b949e;font-size:10px" title="Cash-margin gate OFF — order broker ke insufficient-fund reject me ja sakta">gate off</span>';
+        const warnHtml = hr < 0
+          ? `<span style="color:#f85149;font-weight:700" title="Account already over cash-backed capacity">⚠️ ${fmt2(-hr)} OVER — naya option-SELL reject hoga; cash add karo</span>`
+          : `<span style="color:${hrCol};font-weight:700" title="Itni aur F&O-writing margin use ho sakti hai cash-rule reject se pehle">Headroom: ${fmt2(hr)}</span>`;
+        html += `<div style="margin-top:8px;padding:10px 14px;background:#161b22;border:1px solid ${hr < 0 ? '#f8514955' : '#30363d'};border-radius:6px;font-size:12px;display:flex;flex-wrap:wrap;gap:16px;align-items:center">
+      <span style="font-weight:700;color:#58a6ff">💵 Cash-margin — option-SELL capacity</span>
+      ${warnHtml}
+      <span><span style="color:#8b949e">Cash-equiv: </span><span style="font-weight:600">${fmt2(ch.cash_equiv)}</span></span>
+      <span><span style="color:#8b949e">Capacity (2×): </span><span style="font-weight:600">${fmt2(ch.capacity)}</span></span>
+      <span><span style="color:#8b949e">Used: </span><span style="font-weight:600;color:${ch.used > ch.capacity ? '#f85149' : '#e6edf3'}">${fmt2(ch.used)}</span></span>
+      ${gateB}
+      <span style="color:#6e7681;font-size:10px;flex-basis:100%">Zerodha rule: option bechne ke liye margin ka ≥50% cash/liquid chahiye — pledged equity sirf baaki 50% fund karta. Isi liye "Available margin" bada hone par bhi SELL reject ho sakti.</span>
+    </div>`;
+      }
+
       // ── Webhook max-trades-per-day status ──
       const wh = d.webhook || [];
       const whg = d.webhook_global || {};

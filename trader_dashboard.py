@@ -2341,6 +2341,17 @@ def _rms_summary_compute():
         "broker_ok": _bal.get("ok", False),
     }
 
+    # Zerodha CASH-margin headroom — how much MORE F&O-writing margin the account
+    # can use before the 50%-cash rule rejects a new SELL (see risk_gate.cash_headroom).
+    # Reuses the same cached broker balance above (no extra API call). LIVE-broker only.
+    try:
+        _ch = risk_gate.cash_headroom(_def_broker)
+        totals["cash_headroom"] = _ch if _ch.get("ok") else None
+        totals["cash_gate_on"] = risk_gate.cash_margin_gate_enabled()
+    except Exception:
+        totals["cash_headroom"] = None
+        totals["cash_gate_on"] = None
+
     # ── Webhook max-trades-per-day status ──
     # Webhook strategies run inside THIS dashboard process, so we can read their
     # live per-(strategy,symbol) trade counters directly. Surfaces "max trades
@@ -8794,8 +8805,13 @@ def _error_watch_loop():
             # Sirf wahi strategies jinka sach me process hota hai — webhook_v1
             # dashboard ke andar chalta hai, uska PID kabhi nahi milega (wahi
             # filter jo scheduler khud use karta hai).
+            # event_driven (e.g. straddle_alert_hedged) ka bhi apna process NAHI
+            # hota — wo on_option_alert hook se fire hoti hai (api_start +
+            # auto_scheduler dono ise skip karte hain). Warna error_watch har
+            # loop "config ACTIVE par process nahi" ka JHOOTHA alert baja deta.
             actives = [k for k, v in cfg.items()
-                       if isinstance(v, dict) and v.get("active") and _base(k) in STRATEGIES]
+                       if isinstance(v, dict) and v.get("active")
+                       and not v.get("event_driven") and _base(k) in STRATEGIES]
             error_watch.scan_once(get_pid=get_pid, actives=actives)
         except Exception as e:
             print(f"[error_watch] loop error: {e}", flush=True)
