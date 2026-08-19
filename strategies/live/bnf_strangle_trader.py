@@ -328,39 +328,99 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
 
 
 def _enter_strangle(strategy_id, sym, spot, tc, mode, bname, log):
-    """SELL OTM CE + OTM PE via the gateway. Both legs use +strike_offset — for a PE,
-    dhan_master.get_option_contract INVERTS the offset (positive → strike BELOW spot),
-    so +offset lands OTM on BOTH sides (never negative-PE — TRAP #140 guard). Returns
-    pos dict or None (rolls back leg-1 if leg-2 fails → never a lone naked leg)."""
+    """SELL OTM CE + OTM PE via the gateway, BALANCED — same lots on BOTH legs.
+    Both legs use +strike_offset — for a PE, dhan_master.get_option_contract INVERTS
+    the offset (positive → strike BELOW spot), so +offset lands OTM on BOTH sides
+    (never negative-PE — TRAP #140 guard).
+
+    The pair is gated + sized ONCE up front (real strangle basket margin), then both
+    legs placed at that SAME lot count with gate=False — mirrors _enter_hedged_strangle
+    (Rule 6B). Per-leg gating (the old path) let RMS size the two legs to DIFFERENT lot
+    counts under tight capital, leaving the strangle lopsided (e.g. CE 150 / PE 120) —
+    which is not the symmetric strangle the backtest measured (Rule 10). Sizing the
+    pair together keeps it symmetric AND still lets it trade a smaller (equal) size when
+    capital is tight. Returns pos dict or None (rolls back leg-1 if leg-2 fails → never
+    a lone naked leg). Exit stays the combined-premium tp_pt/sl_pt path (unchanged)."""
     import execution_gateway as gw
+    import risk_gate as rg
     lots = int(tc.get("qty", 1))
     off = int(tc.get("strike_offset", 6))
     gid = f"BNFSTR_{int(time.time())}"
-    legs = []
+
+    # ── resolve BOTH contracts first (need both to size the pair together) ──
+    resolved, lot_size = [], 0
     for opt_type in ("CE", "PE"):
         res_c = dhan_master.get_option_contract(sym, spot, opt_type, off)  # +off = OTM both sides
         if not res_c or not res_c[0]:
             log.error(f"[BNFSTR] {sym} {opt_type} contract not found — abort")
-            _rollback(strategy_id, sym, legs, mode, bname, log); return None
-        sec_id, trad_sym, lot_size = res_c
+            return None
+        sec_id, trad_sym, lot = res_c
+        lot_size = int(lot or lot_size or 1)
+        resolved.append({"opt_type": opt_type, "sec_id": str(sec_id), "trad_sym": trad_sym})
+
+    # ── pre-warm both legs' LTP (one batched poller call) for pricing/margin ──
+    try:
+        import ltp_poller, shared_ltp_cache as slc
+        watch = [(l["sec_id"], "NSE_FNO") for l in resolved]
+        ltp_poller.request_watch(watch)
+        for _ in range(10):
+            if all(slc.get(s, max_age=30) for s, _sg in watch):
+                break
+            time.sleep(0.5)
+    except Exception:
+        pass
+
+    # ── gate the WHOLE strangle ONCE + size the PAIR down together (never lopsided) ──
+    try:
+        blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
+        if blocked:
+            log.info(f"[BNFSTR] RMS blocked — {why}"); return None
+    except Exception:
+        pass
+    sized = lots
+    try:
+        for try_lots in range(lots, 0, -1):
+            q = try_lots * lot_size
+            rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
+                     "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"}
+                    for l in resolved]
+            need = rg.position_margin(rows)
+            ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
+            if ok_cap:
+                sized = try_lots
+                break
+        else:
+            log.info(f"[BNFSTR] strangle margin fit nahi hua (even 1 lot) — skip")
+            return None
+    except Exception as ce:
+        log.error(f"[BNFSTR] pair capital check err: {ce} — using full {lots} lots")
+        sized = lots
+    if sized < lots:
+        log.info(f"[BNFSTR] [SIZE-DOWN] strangle lots {lots} -> {sized} (capital) — both legs")
+
+    # ── place both legs at the SAME sized lots (gate=False; pair already gated) ──
+    legs = []
+    for l in resolved:
         try:
-            res = gw.execute_signal(strategy_id, sym, "SELL", lots, (lot_size or 1), sec_id, trad_sym,
+            res = gw.execute_signal(strategy_id, sym, "SELL", sized, lot_size, l["sec_id"], l["trad_sym"],
                                     seg="NSE_FNO", mode=mode, broker_name=bname, tag="BNFSTR",
-                                    instrument="options", group_id=gid, log=log.info)
+                                    source="strategy", instrument="options", group_id=gid,
+                                    gate=False, log=log.info)
         except Exception as e:
-            log.error(f"[BNFSTR] {opt_type} entry error: {e}")
+            log.error(f"[BNFSTR] {l['opt_type']} entry error: {e}")
             _rollback(strategy_id, sym, legs, mode, bname, log); return None
-        if not res["ok"]:
-            log.info(f"[BNFSTR] {opt_type} entry not ok — {res.get('status')}: {res.get('reason')}")
+        if not res.get("ok"):
+            log.info(f"[BNFSTR] {l['opt_type']} entry not ok — {res.get('status')}: {res.get('reason')}")
             _rollback(strategy_id, sym, legs, mode, bname, log); return None
         prem = res.get("price")
         if not prem or prem <= 0:
-            prem = _opt_ltp(_get_broker(bname), sec_id) or 0.0
-        legs.append(dict(opt_type=opt_type, sec_id=sec_id, trad_sym=trad_sym,
-                         qty=res["qty"], entry_prem=round(float(prem), 2)))
+            prem = _opt_ltp(_get_broker(bname), l["sec_id"]) or 0.0
+        legs.append(dict(opt_type=l["opt_type"], sec_id=l["sec_id"], trad_sym=l["trad_sym"],
+                         qty=res.get("qty") or (sized * lot_size), entry_prem=round(float(prem), 2)))
     credit = round(sum(l["entry_prem"] for l in legs), 2)
     log.info(f"  ★ ENTRY SHORT STRANGLE → SELL CE {legs[0]['trad_sym']} @{legs[0]['entry_prem']} + "
-             f"PE {legs[1]['trad_sym']} @{legs[1]['entry_prem']}  credit={credit}  (off={off} OTM)")
+             f"PE {legs[1]['trad_sym']} @{legs[1]['entry_prem']}  credit={credit}  "
+             f"(off={off} OTM, {sized} lot × {lot_size} = {sized * lot_size} qty each leg)")
     return dict(legs=legs, entry_credit=credit if credit > 0 else 1.0, group_id=gid,
                 tp_pt=float(tc.get("tp_pt", 50)), sl_pt=float(tc.get("sl_pt", 50)),
                 entry_spot=round(spot, 1))
