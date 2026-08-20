@@ -6372,17 +6372,71 @@ def _fire_hedged_alert_straddle(symbol, source, log=print):
             return False, f"RMS blocked — {why}"
     except Exception:
         pass
-    basket_rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
-                    "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in shorts] \
-                + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": q, "sym": l["trad_sym"],
-                    "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in wings]
-    try:
-        need = rg.position_margin(basket_rows)
-        ok_cap, cap_why = rg.check_capital_needed(sid, need, mode=mode)
-        if not ok_cap:
-            return False, f"basket margin ₹{need:,.0f} fit nahi — {cap_why}"
-    except Exception as ce:
-        log(f"[straddle-hedged] basket capital err: {ce}")
+    def _basket_at(n):
+        _q = int(n) * lot_size
+        return [{"sec_id": l["sec_id"], "entry": "SELL", "qty": _q, "sym": l["trad_sym"],
+                 "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in shorts] \
+             + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": _q, "sym": l["trad_sym"],
+                 "entry_price": _px(l["sec_id"]), "segment": "NSE_FNO"} for l in wings]
+
+    # ── SMART SIZE-DOWN (live) ────────────────────────────────────────────────
+    # All-or-nothing chhoro: config `lots` fit nahi (cash-margin short) to poori
+    # entry miss karne ki jagah utne lots fire karo jitne fit hote hain. Har cap
+    # (₹4L per-strategy capital_rs + Zerodha live cash-headroom + global) already
+    # `check_capital_needed` me hai — usi ko fit-predicate ki tarah use karke
+    # SABSE BADA lot-count (≤ config lots) chuno jo pass ho. Conservative: real
+    # basket margin verify karke hi fire (kabhi over-fire nahi). smart_size default
+    # ON; paper unbounded (original single gate). `capital_rs` = user ka "max 4L".
+    smart = hc.get("smart_size", True)
+    if smart and mode == "live":
+        # 1-lot basket margin + live cash/strategy headroom se ek estimate, phir
+        # real margin pe verify (SPAN non-linear → estimate se +1 se scan-down).
+        try:
+            _m1 = float(rg.position_margin(_basket_at(1)) or 0)
+        except Exception:
+            _m1 = 0.0
+        _budget = None
+        try:
+            _ch = rg.cash_headroom(rg.default_broker())
+            if _ch.get("ok"):
+                _budget = max(0.0, float(_ch["capacity"]) - float(_ch["used"]))
+        except Exception:
+            _budget = None
+        try:
+            _cap = (rg._risk_cfg().get("per_strategy", {}).get(sid, {}) or {}).get("capital_rs")
+            if _cap is not None:
+                _room = max(0.0, float(_cap) - float(rg.capital_in_use(sid, mode=mode)))
+                _budget = _room if _budget is None else min(_budget, _room)
+        except Exception:
+            pass
+        _start = lots
+        if _m1 > 0 and _budget is not None:
+            _start = max(0, min(lots, int(_budget // _m1) + 1))   # +1: verify catches over-shoot
+        _fire, _need, _why = 0, 0.0, "margin calc failed"
+        for _n in range(_start, 0, -1):
+            try:
+                _nd = float(rg.position_margin(_basket_at(_n)) or 0)
+                _okc, _wy = rg.check_capital_needed(sid, _nd, mode=mode)
+            except Exception as ce:
+                _okc, _wy = False, f"margin calc err: {ce}"
+            if _okc:
+                _fire, _need = _n, _nd
+                break
+            _why = _wy
+        if _fire < 1:
+            return False, f"cash/margin fit nahi even for 1 lot — {_why}"
+        if _fire < lots:
+            log(f"[straddle-hedged] smart-size {lots}→{_fire} lots — basket ₹{_need:,.0f} fits "
+                f"({lots}-lot cash-short: {_why})")
+        lots, q = _fire, _fire * lot_size
+    else:
+        try:
+            need = rg.position_margin(_basket_at(lots))
+            ok_cap, cap_why = rg.check_capital_needed(sid, need, mode=mode)
+            if not ok_cap:
+                return False, f"basket margin ₹{need:,.0f} fit nahi — {cap_why}"
+        except Exception as ce:
+            log(f"[straddle-hedged] basket capital err: {ce}")
 
     # ── place: BUY wings FIRST (margin drops), then SELL shorts; unwind on fail ──
     placed = []
