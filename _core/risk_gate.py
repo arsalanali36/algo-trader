@@ -1189,6 +1189,88 @@ def check_capital_needed(strategy, needed, mode=None, is_short=None):
     return True, ""
 
 
+def smart_size_enabled(strategy=None):
+    """Is smart lot size-down ON for this strategy? Per-strategy `smart_size`
+    override → else global `_risk.global.smart_size` → default True. One central
+    switch so ALL current + future live strategies inherit it (set global false to
+    disable everywhere; per-strategy false to opt one out)."""
+    try:
+        rc = _risk_cfg()
+        ps = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("smart_size")
+        if ps is not None:
+            return bool(ps)
+        g = (rc.get("global", {}) or {}).get("smart_size")
+        return True if g is None else bool(g)
+    except Exception:
+        return True
+
+
+def affordable_lots(strategy, max_lots, basket_fn, mode=None):
+    """SMART SIZE-DOWN — the largest lot-count in 1..max_lots whose REAL margin
+    fits EVERY cap (per-strategy capital_rs + Zerodha live cash-headroom + global,
+    all via check_capital_needed). Instead of all-or-nothing, a cash-short day
+    trades a SMALLER size rather than missing the entry.
+
+    `basket_fn(n)` → the position_margin leg-list for n lots (each caller builds
+    its own structure — straddle/strangle/condor/single, per-leg qty = n×lot_size).
+    Returns `(lots, need_rs, reason)`: lots≥1 → fire that many (`need_rs` = its real
+    basket margin); lots=0 → even 1 lot doesn't fit (`reason` = the block why).
+
+    smart OFF (smart_size_enabled false) → just verify max_lots (block-or-pass, no
+    size-down) so behaviour is unchanged when disabled. CONSERVATIVE: estimate the
+    start from the cheap 1-lot margin + readable headroom, then VERIFY the real
+    basket margin at each candidate (SPAN is non-linear) — never over-fires. The
+    single shared home for this; every hedged/multi-leg live entry calls it so the
+    logic can't drift across strategies (Rule 6B)."""
+    max_lots = int(max_lots or 0)
+    if max_lots < 1:
+        return 0, 0.0, "lots<1"
+
+    def _need(n):
+        return float(position_margin(basket_fn(n)) or 0)
+
+    if not smart_size_enabled(strategy):
+        try:
+            nd = _need(max_lots)
+            ok, why = check_capital_needed(strategy, nd, mode=mode)
+        except Exception as e:
+            return max_lots, 0.0, ""   # margin-calc glitch → don't block (fail-open, prior behaviour)
+        return (max_lots if ok else 0), nd, ("" if ok else why)
+
+    # cheap estimate: 1-lot margin + the headroom we can read without extra calls,
+    # then verify DOWN from there (start+1 so a linear estimate never under-shoots).
+    start = max_lots
+    try:
+        m1 = _need(1)
+        budget = None
+        try:
+            ch = cash_headroom(default_broker())
+            if ch.get("ok"):
+                budget = max(0.0, float(ch["capacity"]) - float(ch["used"]))
+        except Exception:
+            budget = None
+        cap = (_risk_cfg().get("per_strategy", {}).get(strategy or "", {}) or {}).get("capital_rs")
+        if cap is not None:
+            room = max(0.0, float(cap) - float(capital_in_use(strategy, mode=mode)))
+            budget = room if budget is None else min(budget, room)
+        if m1 > 0 and budget is not None:
+            start = max(0, min(max_lots, int(budget // m1) + 1))
+    except Exception:
+        start = max_lots
+
+    why = "margin calc failed"
+    for n in range(start, 0, -1):
+        try:
+            nd = _need(n)
+            ok, w = check_capital_needed(strategy, nd, mode=mode)
+        except Exception as e:
+            ok, w = False, f"margin calc err: {e}"
+        if ok:
+            return n, nd, ""
+        why = w
+    return 0, 0.0, why
+
+
 def _quick_option_ltp(sec_id, token, cid):
     """Best-effort option premium fetch (Dhan /v2/marketfeed/ltp), same call shape
     the legacy _TRADERS/*.py place_order() functions already make. Returns None on

@@ -133,6 +133,7 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 
 - 🔧 `advance_target_sl` — One monitor-tick of the Default Target/SL profile. Pure — caller owns
 - 🔧 `advance_trailing_lock` — One tick of the shared arm+gap+confirm+2-reading-peak trailing-lock
+- 🔧 `affordable_lots` — SMART SIZE-DOWN — the largest lot-count in 1..max_lots whose REAL margin
 - 🔧 `allow_overnight` — OPT-IN ONLY (default False) — whether THIS strategy's option positions may
 - 🔧 `basket_margin_enabled` — Kill-switch for the basket (hedge-benefit) capital estimate below.
 - 🔧 `broker_real_margin` — Margin estimate from the EXECUTING broker (TRAP #90's lesson: when
@@ -187,6 +188,7 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 - 🔧 `shadow_live_enabled` — Diagnostic mode — when True, a PAPER entry also fires a REAL broker order
 - 🔧 `sized_lots` — For capital_mode='size_down': how many of the requested `lots` (each
 - 🔧 `sized_lots_option` — sized_lots() but fetches the real option premium first, like
+- 🔧 `smart_size_enabled` — Is smart lot size-down ON for this strategy? Per-strategy `smart_size`
 - 🔧 `strategy_tier` — 'mission' (default — sees the full global cap) or 'discretionary' (a low-priority
 - 🔧 `target_sl_level` — Pure math: given the confirmed PEAK favourable MTM (₹, whole position)
 

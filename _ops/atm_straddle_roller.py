@@ -575,20 +575,23 @@ def _enter_hedged_straddle(symbol, spot, lots, gid, sid, mode, cfg, log, price_f
             return False, f"RMS blocked — {why}", [], 0, 0
     except Exception:
         pass
-    basket_rows = [
-        {"sec_id": str(ce_sec), "entry": "SELL", "qty": q, "entry_price": price_fn(str(ce_sec)) or 0, "sym": ce_tsym, "segment": "NSE_FNO"},
-        {"sec_id": str(pe_sec), "entry": "SELL", "qty": q, "entry_price": price_fn(str(pe_sec)) or 0, "sym": pe_tsym, "segment": "NSE_FNO"},
-    ]
-    for h in hedges:
-        basket_rows.append({"sec_id": h["sec"], "entry": "BUY", "qty": q,
-                            "entry_price": price_fn(h["sec"]) or 0, "sym": h["tsym"], "segment": "NSE_FNO"})
-    try:
-        basket = rg.position_margin(basket_rows)   # single margin gate (hedged basket)
-        ok_cap, cap_why = rg.check_capital_needed(sid, basket, mode=mode)
-        if not ok_cap:
-            return False, f"basket margin ₹{basket:,.0f} fit nahi hua — {cap_why}", [], 0, 0
-    except Exception as _ce:
-        log(f"[ROLLER] {symbol} basket capital check err: {_ce}")
+    def _basket_at(n):
+        _q = int(n) * lot_size
+        rows = [
+            {"sec_id": str(ce_sec), "entry": "SELL", "qty": _q, "entry_price": price_fn(str(ce_sec)) or 0, "sym": ce_tsym, "segment": "NSE_FNO"},
+            {"sec_id": str(pe_sec), "entry": "SELL", "qty": _q, "entry_price": price_fn(str(pe_sec)) or 0, "sym": pe_tsym, "segment": "NSE_FNO"},
+        ]
+        for h in hedges:
+            rows.append({"sec_id": h["sec"], "entry": "BUY", "qty": _q,
+                         "entry_price": price_fn(h["sec"]) or 0, "sym": h["tsym"], "segment": "NSE_FNO"})
+        return rows
+    # smart size-down (shared rg.affordable_lots — same across all hedged strategies)
+    _sz, _need, _why = rg.affordable_lots(sid, lots, _basket_at, mode=mode)
+    if _sz < 1:
+        return False, f"basket margin fit nahi even for 1 lot — {_why}", [], 0, 0
+    if _sz < lots:
+        log(f"[ROLLER] {symbol} smart-size {lots}->{_sz} lots — ₹{_need:,.0f} ({_why})")
+    lots, q = _sz, _sz * lot_size
 
     # ── place: BUY wings FIRST (margin reduced), then SELL ATM. unwind-safe. ──
     placed = []

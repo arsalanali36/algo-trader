@@ -377,26 +377,18 @@ def _enter_strangle(strategy_id, sym, spot, tc, mode, bname, log):
             log.info(f"[BNFSTR] RMS blocked — {why}"); return None
     except Exception:
         pass
-    sized = lots
-    try:
-        for try_lots in range(lots, 0, -1):
-            q = try_lots * lot_size
-            rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
-                     "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"}
-                    for l in resolved]
-            need = rg.position_margin(rows)
-            ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
-            if ok_cap:
-                sized = try_lots
-                break
-        else:
-            log.info(f"[BNFSTR] strangle margin fit nahi hua (even 1 lot) — skip")
-            return None
-    except Exception as ce:
-        log.error(f"[BNFSTR] pair capital check err: {ce} — using full {lots} lots")
-        sized = lots
+    # Size the PAIR down together (never lopsided) via the shared helper — same
+    # smart size-down every hedged strategy uses (rg.affordable_lots, Rule 6B).
+    def _basket_at(n):
+        _q = int(n) * lot_size
+        return [{"sec_id": l["sec_id"], "entry": "SELL", "qty": _q, "sym": l["trad_sym"],
+                 "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in resolved]
+    sized, _need, _why = rg.affordable_lots(strategy_id, lots, _basket_at, mode=mode)
+    if sized < 1:
+        log.info(f"[BNFSTR] strangle margin fit nahi hua (even 1 lot) — {_why} — skip")
+        return None
     if sized < lots:
-        log.info(f"[BNFSTR] [SIZE-DOWN] strangle lots {lots} -> {sized} (capital) — both legs")
+        log.info(f"[BNFSTR] [SIZE-DOWN] strangle lots {lots} -> {sized} (₹{_need:,.0f}) — both legs")
 
     # ── place both legs at the SAME sized lots (gate=False; pair already gated) ──
     legs = []
@@ -526,17 +518,18 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
             log.info(f"[BNFSTRH] RMS blocked — {why}"); return None
     except Exception:
         pass
-    basket_rows = [{"sec_id": l["sec_id"], "entry": "SELL", "qty": q, "sym": l["trad_sym"],
-                    "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in shorts] \
-                + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": q, "sym": l["trad_sym"],
-                    "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in wings]
-    try:
-        need = rg.position_margin(basket_rows)
-        ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
-        if not ok_cap:
-            log.info(f"[BNFSTRH] basket margin ₹{need:,.0f} fit nahi hua — {cap_why}"); return None
-    except Exception as ce:
-        log.error(f"[BNFSTRH] basket capital check err: {ce}")
+    def _basket_at(n):
+        _q = int(n) * lot_size
+        return [{"sec_id": l["sec_id"], "entry": "SELL", "qty": _q, "sym": l["trad_sym"],
+                 "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in shorts] \
+             + [{"sec_id": l["sec_id"], "entry": "BUY", "qty": _q, "sym": l["trad_sym"],
+                 "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in wings]
+    _sz, _need, _why = rg.affordable_lots(strategy_id, lots, _basket_at, mode=mode)
+    if _sz < 1:
+        log.info(f"[BNFSTRH] basket margin fit nahi even for 1 lot — {_why}"); return None
+    if _sz < lots:
+        log.info(f"[BNFSTRH] [SIZE-DOWN] hedged strangle {lots}->{_sz} lots — ₹{_need:,.0f} ({_why})")
+    lots, q = _sz, _sz * lot_size
 
     # ── place: BUY wings FIRST (margin reduced), then SELL shorts; unwind on fail ──
     placed, legs = [], []

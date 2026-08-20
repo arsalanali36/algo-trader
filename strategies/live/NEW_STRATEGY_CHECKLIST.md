@@ -43,6 +43,7 @@ mein deta hai: no-premium skip → RMS gate → default SL tags → smart_order.
 | 3 | **Gateway ka RETURNED `qty` state mein rakho** (size-down ho sakta hai), aur exit pe `status=="skipped_flat"` aaye to state saaf karo — order nahi gaya hota | Sized qty ignore = capital breach; skipped_flat ignore = phantom position state |
 | 4 | **Premium na mile to entry SKIP** — ₹0 kabhi record mat karo | ₹0 fill P&L corrupt karta, RMS breaker trip. TRAP #1 |
 | 5 | **Naked option SELL hai to** `strategy_safety.compute_hedge_target(...)` se hedge | Hedge config RMS Risk tab se aata, per-strategy dobara mat likho. TRAP #15 |
+| 5B | **Hedged/multi-leg basket entry pe: apna `check_capital_needed` block-loop MAT likho** — `lots, need, why = rg.affordable_lots(strategy_id, lots, basket_fn, mode=mode)` use karo (`basket_fn(n)` = n-lot ka position_margin leg-list). `lots<1` → skip, warna `lots,q` usi se set karo | **Smart size-down**: cap (₹4L capital_rs + live cash-headroom + global) me poore lots fit na ho to entry MISS karne ki jagah utne lots fire jitne fit hon. Single shared home (Rule 6B) → drift nahi; `_risk.global.smart_size:false` se off. TRAP #181-family (straddle_alert cash-short pe skip kar raha tha). |
 | 6 | **3:15 PM force-exit + 3:15 ke baad no-entry** har strategy mein | Intraday-only house rule, overnight gap risk zero. |
 | 7 | **Max 2 trades/day** (ya config se), din-reset ke saath | House rule. |
 | 8 | **`dhan_feed.start(creds, [...])` startup pe** (agar liquidity filter / live LTP chahiye) | Sirf `add()` no-op hai jab tak feed thread na chale. TRAP #65 |
