@@ -306,6 +306,45 @@ def fetch_app(date=None, mode=None):
                 "why": why,
                 "exit_reason": exit_reason,
             })
+        # ── App-side decisions jo broker tak pahunche hi NAHI: smart-size
+        # skip/size-down + RMS-blocked entries (skipped_store). Inhe usi table me
+        # surface karo taaki "entry kyun nahi lagi / kam lots pe kyun lagi" ek
+        # nazar me dikhe — poochna na pade. bad=True → Note me reason (red).
+        try:
+            import skipped_store
+            for s in skipped_store.query(date_from=date, date_to=date):
+                sm = (s.get("mode") or "").lower()
+                if md == "live" and sm != "live":
+                    continue
+                if md == "paper" and sm == "live":
+                    continue
+                reason = s.get("block_reason") or s.get("block_detail") or ""
+                rl = reason.lower()
+                status = ("SKIPPED" if "smart_size_skip" in rl
+                          else "REDUCED" if "smart_size_down" in rl else "BLOCKED")
+                lbl2, kind2 = _origin(s.get("strategy"), "", [])
+                if lbl2:
+                    strat.add(lbl2)
+                rows.append({
+                    "time": (s.get("ts") or "")[11:19],
+                    "mode": ("Real" if sm == "live" else "Paper"),
+                    "raw_mode": sm,
+                    "side": str(s.get("side") or "").upper(),
+                    "trad_sym": s.get("trad_sym") or s.get("symbol") or "",
+                    "strategy": lbl2 or _label(s.get("strategy")),
+                    "origin_kind": kind2 or "rms",
+                    "qty": s.get("intended_qty"),
+                    "price": s.get("entry_premium"),
+                    "status": status,
+                    "source": "decision",
+                    "broker": "",
+                    "bad": True,
+                    "why": reason,
+                    "exit_reason": "",
+                })
+        except Exception as _se:
+            print("[broker_orders] fetch_app skipped read fail:", _se, flush=True)
+
         n_live = sum(1 for x in rows if x["raw_mode"] == "live")
         n_bad = sum(1 for x in rows if x["bad"])
         out["orders"] = rows
@@ -315,6 +354,8 @@ def fetch_app(date=None, mode=None):
             "bad": n_bad, "good": len(rows) - n_bad,
             "rejected": sum(1 for x in rows if x["status"] in ("REJECTED", "CANCELLED")),
             "blocked": sum(1 for x in rows if x["status"] == "BLOCKED"),
+            "skipped": sum(1 for x in rows if x["status"] == "SKIPPED"),
+            "reduced": sum(1 for x in rows if x["status"] == "REDUCED"),
         }
         out["ok"] = True
     except Exception as e:

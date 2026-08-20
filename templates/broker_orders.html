@@ -201,6 +201,7 @@ function renderChips(){
     h+='<span class="chip g">✔ OK '+(s.good||0)+'</span>';
     h+='<span class="chip r">⚠ Galat '+(s.bad||0)+'</span>';
     h+='<span class="chip b">⛔ Blocked '+(s.blocked||0)+' · Rejected '+(s.rejected||0)+'</span>';
+    if((s.skipped||0)||(s.reduced||0)) h+='<span class="chip r">🩳 Skipped '+(s.skipped||0)+' · Reduced '+(s.reduced||0)+'</span>';
   } else {
     var b=BRK.summary||{};
     h+='<span class="chip g">✔ Complete '+(b.complete||0)+'</span>';
