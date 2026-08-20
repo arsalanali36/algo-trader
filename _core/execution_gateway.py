@@ -213,6 +213,31 @@ def execute_signal(strategy_id, symbol, side, lots, lot_size, sec_id, trad_sym,
                    res.get("reason", ""), res.get("order_id"), res.get("price"), qty)
 
 
+def _broker_exit_product(broker, broker_name, trad_sym, sec_id, log=print):
+    """The product (MIS/NRML) the broker ACTUALLY holds for this contract, so a
+    LIVE close nets the open leg instead of opening a fresh opposite one.
+
+    Zerodha tracks MIS and NRML as SEPARATE positions — a close order in the
+    WRONG product does NOT net the open leg, it opens a NEW position (TRAP #178:
+    an NRML leg + a default-MIS close → old leg stays open + fresh MIS leg; the
+    exact same shape hit the payoff combined SL/Target basket-exit — TRAP #181).
+    `_do_squareoff`/`_close_position_impl` (trader_dashboard) already resolve this
+    via `_broker_position_product`; this is the SAME logic for the gateway exit
+    path (basket-exit / hedged-trader exits) which passed no product. Kept here
+    (not imported) because _core must not import the UI entrypoint. Returns None
+    on any failure → smart_order's default is preserved (no MIS-leg regression)."""
+    try:
+        if str(broker_name).lower() == "kite" and broker is not None and hasattr(broker, "resolve_symbol"):
+            ksym = broker.resolve_symbol(trad_sym, sec_id)   # forward-only exact match (TRAP #13)
+            if ksym:
+                for p in (broker.positions_detailed() or []):
+                    if p.get("kite_sym") == ksym and p.get("product"):
+                        return str(p.get("product")).upper()
+    except Exception as e:
+        log(f"[GATEWAY] [EXIT-PRODUCT] {trad_sym} broker product read failed ({e}) — default")
+    return None
+
+
 def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
                  exit_side=None, seg="NSE_FNO", mode="paper", broker_name=None,
                  tag="", source="strategy", instrument=None, reason=None,
@@ -275,6 +300,14 @@ def execute_exit(strategy_id, symbol, sec_id, trad_sym, qty, entry_side=None,
     tags = list(extra_tags or [])
     if reason and reason not in tags:
         tags.insert(0, reason)
+
+    # Product-match on a LIVE close (TRAP #178/#181) — if the caller didn't pin a
+    # product (basket-exit / payoff SL-target / hedged-trader exits all pass None),
+    # read the broker's REAL product for this open leg so the exit NETS it. Without
+    # this a NRML leg gets a default-MIS close → position doesn't close, a fresh MIS
+    # position opens. None result → smart_order default unchanged (MIS legs safe).
+    if mode == "live" and not product:
+        product = _broker_exit_product(broker, bname, trad_sym, sec_id, log=log)
 
     res = smart_order.execute(exit_side, symbol, sec_id, seg, qty, trad_sym, mode, broker,
                               buffer_bps=buffer_bps, log=log, tag=tag,
