@@ -372,7 +372,7 @@
           idxTxt = ` · <span style="color:#8b949e;font-weight:400">${gg.symbol || 'index'} <b style="color:${ic}">${im >= 0 ? '+' : ''}${im.toFixed(1)}pt</b></span>`;
         }
         let selTxt = selN === 0 ? 'koi leg select nahi'
-          : `${selUnrl >= 0 ? '+' : ''}₹${Math.round(selUnrl).toLocaleString('en-IN')}`
+          : `<span class="pm-pnl">${selUnrl >= 0 ? '+' : ''}₹${Math.round(selUnrl).toLocaleString('en-IN')}</span>`
             + ` · ${selN}/${totN} leg${idxTxt}`;
         if (selN > 0 && gHas) {
           // net Δ as a DECIMAL (per-unit, e.g. +0.25) — not position delta in units

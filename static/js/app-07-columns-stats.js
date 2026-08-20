@@ -379,12 +379,12 @@
         return `<div style="background:#0d1117;border:1px solid #21262d;border-radius:8px;padding:10px 12px">
       <div style="display:flex;justify-content:space-between;margin-bottom:6px">
         <span style="color:#58a6ff;font-weight:600;font-size:12px">${day}</span>
-        <span style="font-size:12px;font-weight:700;color:${dayPnl >= 0 ? '#3fb950' : '#f85149'}">${dayPnl >= 0 ? '+' : ''}${Math.round(dayPnl).toLocaleString('en-IN')}</span>
+        <span class="pm-pnl" style="font-size:12px;font-weight:700;color:${dayPnl >= 0 ? '#3fb950' : '#f85149'}">${dayPnl >= 0 ? '+' : ''}${Math.round(dayPnl).toLocaleString('en-IN')}</span>
       </div>
       ${rows.map(t => `<div style="display:flex;gap:6px;font-size:11px;color:#adbac7;padding:2px 0">
         <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.sym || ''}</span>
         <span style="color:#8b949e">${t.entry || ''}</span>
-        <span style="min-width:50px;text-align:right;color:${(t.pnl || 0) >= 0 ? '#3fb950' : '#f85149'}">${t.pnl != null ? (t.pnl >= 0 ? '+' : '') + t.pnl : 'open'}</span>
+        <span class="pm-pnl" style="min-width:50px;text-align:right;color:${(t.pnl || 0) >= 0 ? '#3fb950' : '#f85149'}">${t.pnl != null ? (t.pnl >= 0 ? '+' : '') + t.pnl : 'open'}</span>
       </div>`).join('')}
     </div>`;
       }).join('') || '<div style="color:#8b949e;font-size:12px;padding:10px">Koi trade nahi is range mein</div>';

@@ -112,7 +112,7 @@
       }
       const tot = { net: 0, gross: 0, n: 0, w: 0, opn: 0, ru: 0, rd: 0, tax: 0 };
       disp.forEach(r => { tot.net += r.net; tot.gross += r.gross; tot.n += r.n; tot.w += r.w; tot.opn += r.opn; tot.ru += (r.ru || 0); tot.rd += (r.rd || 0); tot.tax += (r.tax || 0); });
-      const netCell = net => `<span style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
+      const netCell = net => `<span class="pm-pnl" style="color:${net >= 0 ? '#3fb950' : '#f85149'};font-weight:600">${net >= 0 ? '+' : ''}${Math.round(net).toLocaleString('en-IN')}</span>`;
       // task 80 — open positions ka LIVE unrealized (₹), _patchPeakRunCells se update hota hai
       const runCell = key => `<span class="peak-run-cell" data-pk="${key}" style="color:#6e7681;font-weight:600">—</span>`;
       const taxCell = tx => `<span style="color:#8b949e">${tx ? '-' + Math.round(tx).toLocaleString('en-IN') : '0'}</span>`;
@@ -151,7 +151,7 @@
           <td style="padding:7px 8px">${_summaryModeBadge(r.mode)}</td>
           <td style="padding:7px 8px;text-align:right">${netCell(r.net)}</td>
           <td style="padding:7px 8px;text-align:right">${runCell(r.key)}</td>
-          <td style="padding:7px 8px;text-align:right;color:#8b949e">${Math.round(r.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:7px 8px;text-align:right;color:#8b949e"><span class="pm-pnl">${Math.round(r.gross).toLocaleString('en-IN')}</span></td>
           <td style="padding:7px 8px;text-align:right">${taxCell(r.tax)}</td>
           <td style="padding:7px 8px;text-align:center;color:#adbac7">${r.n}</td>
           <td style="padding:7px 8px;text-align:center;color:#8b949e">${r.w}W ${r.n - r.w}L</td>
@@ -162,7 +162,7 @@
           <td style="padding:8px" colspan="2"><span style="color:#8b949e;font-size:11px">TOTAL</span></td>
           <td style="padding:8px;text-align:right">${netCell(tot.net)}</td>
           <td style="padding:8px;text-align:right">${runCell('__tot')}</td>
-          <td style="padding:8px;text-align:right;color:#8b949e">${Math.round(tot.gross).toLocaleString('en-IN')}</td>
+          <td style="padding:8px;text-align:right;color:#8b949e"><span class="pm-pnl">${Math.round(tot.gross).toLocaleString('en-IN')}</span></td>
           <td style="padding:8px;text-align:right">${taxCell(tot.tax)}</td>
           <td style="padding:8px;text-align:center;color:#adbac7">${tot.n}</td>
           <td style="padding:8px;text-align:center;color:#8b949e">${tot.w}W ${tot.n - tot.w}L</td>

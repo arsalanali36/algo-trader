@@ -1528,6 +1528,36 @@
     </div>
 
     <div class="hdr-right" style="gap: 12px;">
+      <!-- 🎬 Presentation Mode (presentation-mode.js) — YT recording ke liye:
+           strategy naam chhupao (sirf number) + P&L value chhupao (**). -->
+      <div style="position: relative;">
+        <div id="pm-btn" onclick="pmPopupToggle(event)" title="Presentation mode — YouTube recording"
+          style="width: 28px; height: 28px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 15px; cursor: pointer; user-select: none; color: #8b949e;">
+          🎬
+        </div>
+        <div id="pm-popup" onclick="event.stopPropagation()"
+          style="display:none; position:absolute; top:34px; right:0; width:290px; background:#161b22; border:1px solid #30363d; border-radius:8px; box-shadow:0 8px 24px rgba(0,0,0,.6); z-index:10000; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; padding:12px;">
+          <div style="display:flex; align-items:center; gap:7px; font-size:12px; font-weight:700; color:#ff5c5c; margin-bottom:10px;">
+            🎬 Presentation mode
+          </div>
+          <label style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:9px; border:1px solid #21262d; border-radius:8px; margin-bottom:8px; cursor:pointer;">
+            <span>
+              <span style="font-size:13px; color:#e6edf3; display:block;">Sirf number dikhao</span>
+              <span style="font-size:11px; color:#8b949e;">Strategy ka naam poori app me chhupega — sirf 04.03 dikhega</span>
+            </span>
+            <input type="checkbox" id="pm-tgl-num" onchange="pmToggle('num')"
+              style="width:16px; height:16px; margin-top:2px; accent-color:#f85149; flex:none;">
+          </label>
+          <label style="display:flex; align-items:flex-start; justify-content:space-between; gap:10px; padding:9px; border:1px solid #21262d; border-radius:8px; cursor:pointer;">
+            <span>
+              <span style="font-size:13px; color:#e6edf3; display:block;">P&amp;L value chhupao</span>
+              <span style="font-size:11px; color:#8b949e;">Profit/Loss ₹ pe <b>**</b> — points, %, margin sab dikhenge</span>
+            </span>
+            <input type="checkbox" id="pm-tgl-pnl" onchange="pmToggle('pnl')"
+              style="width:16px; height:16px; margin-top:2px; accent-color:#f85149; flex:none;">
+          </label>
+        </div>
+      </div>
       <!-- 🔔 Notification centre — errors ki permanent history. Banner ka ✕ purana
            behaviour tha (dismiss = hamesha ke liye gaya); yahan ✕ = sirf padh liya. -->
       <div style="position: relative;">
@@ -3856,6 +3886,7 @@
 
   <!-- registry.js sabse pehle — regLabel/regId/regHidden har baad wali file use karti hai -->
   <script src="/static/js/registry.js"></script>
+  <script src="/static/js/presentation-mode.js"></script>
     <script src="/static/js/app-00-core.js"></script>
   <script src="/static/js/app-01-rms.js"></script>
   <script src="/static/js/app-02-webhook-orders.js"></script>

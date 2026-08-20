@@ -896,7 +896,7 @@
           let align = 'left';
           if (c.a === 'center') align = 'center';
           if (c.a === 'right') align = 'right';
-          row += `<td style="padding:6px; text-align:${idx===0?'right':align}; ${colorStyle}">${val}</td>`;
+          row += `<td class="${['gross','net','opt_fixed','opt_aggr','opt_aggr_eod'].includes(c.id)?'pm-pnl':''}" style="padding:6px; text-align:${idx===0?'right':align}; ${colorStyle}">${val}</td>`;
         });
         row += '</tr>';
         return row;
@@ -955,7 +955,7 @@
           let align = 'left';
           if (c.a === 'center') align = 'center';
           if (c.a === 'right') align = 'right';
-          row += `<td style="padding:7px 6px; text-align:${idx === 0 ? 'right' : align}; ${colorStyle}">${val}</td>`;
+          row += `<td class="${['gross','net','opt_fixed','opt_aggr','opt_aggr_eod'].includes(c.id)?'pm-pnl':''}" style="padding:7px 6px; text-align:${idx === 0 ? 'right' : align}; ${colorStyle}">${val}</td>`;
         });
         row += '</tr>';
         return row;

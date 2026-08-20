@@ -88,7 +88,10 @@
   // raw ugly id leak nahi hota.
   function regLabel(key) {
     var r = _rec(key);
-    if (r) return r.name;
+    // 🎬 Presentation Mode (presentation-mode.js) — number-only: resolved
+    // strategy ka sirf permanent ID (04.03) dikhe, naam nahi. Single labeller
+    // hone ki wajah se ye poori app pe apne-aap lag jaata hai.
+    if (r) return window.__pmNumberOnly ? r.id : r.name;
     if (!LOADED) return String(key == null ? '' : key);   // load-fail: honest raw
     var low = _lc(String(key == null ? '' : key).trim());
     if (low in BUCKETS) return BUCKETS[low];
@@ -104,7 +107,8 @@
   // sirf saaf label (raw·raw nahi).
   function regFull(key) {
     var r = _rec(key);
-    return r ? (r.id + ' · ' + r.name) : regLabel(key);
+    if (r) return window.__pmNumberOnly ? r.id : (r.id + ' · ' + r.name);
+    return regLabel(key);
   }
   // Strategy ka Lab/backtest run slug (hub `/lab/runs/<slug>/`). Resolve id+config_key
   // +slug+aliases (regLabel jaisa), phir uski registry entry ka `slug`. Mila to string,

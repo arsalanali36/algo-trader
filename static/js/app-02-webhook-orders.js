@@ -1949,8 +1949,10 @@
         const isRight = ['entry_px', 'exit_px', 'points', 'gross', 'tax', 'net', 'ret_pct', 'run_up', 'run_down', 'cumulative'].includes(c.id);
         const isCenter = ['entry_time', 'exit_time', 'duration', 'actions', 'chart'].includes(c.id);
         const alignStyle = isRight ? 'text-align:right;' : (isCenter ? 'text-align:center;' : '');
+        // 🎬 Presentation Mode — sirf profit/loss ₹ (gross/net/cumulative) mask hote.
+        const pnlCls = (c.id === 'gross' || c.id === 'net' || c.id === 'cumulative') ? ' pm-pnl' : '';
 
-        rowHtml += `<td style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
+        rowHtml += `<td class="${pnlCls.trim()}" style="padding:7px 6px;vertical-align:top;${alignStyle}${colorStyle}">${val}</td>`;
       });
 
       rowHtml += '</tr>';
