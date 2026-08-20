@@ -318,10 +318,13 @@ def fetch_app(date=None, mode=None):
                     continue
                 if md == "paper" and sm == "live":
                     continue
-                reason = s.get("block_reason") or s.get("block_detail") or ""
-                rl = reason.lower()
-                status = ("SKIPPED" if "smart_size_skip" in rl
-                          else "REDUCED" if "smart_size_down" in rl else "BLOCKED")
+                # skipped_store: block_reason = CATEGORY (size_skip/size_down/…),
+                # block_detail = full human text. Note me detail dikhao, status
+                # category se.
+                cat = (s.get("block_reason") or "").lower()
+                reason = s.get("block_detail") or s.get("block_reason") or ""
+                status = ("SKIPPED" if cat == "size_skip"
+                          else "REDUCED" if cat == "size_down" else "BLOCKED")
                 lbl2, kind2 = _origin(s.get("strategy"), "", [])
                 if lbl2:
                     strat.add(lbl2)
