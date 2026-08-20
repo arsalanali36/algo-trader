@@ -36,6 +36,8 @@ _DB = os.path.join(
 
 # reason-string -> category (single source; JS/replay dono yahi padhte hain)
 _REASON_MAP = [
+    ("smart_size_skip", "size_skip"),   # cash/margin short — even 1 lot fit nahi
+    ("smart_size_down", "size_down"),   # lots reduce kiye taaki fit ho jaye
     ("profit target", "profit_target"),
     ("daily loss", "loss_cap"),
     ("loss cap", "loss_cap"),

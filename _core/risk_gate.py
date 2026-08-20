@@ -1205,6 +1205,35 @@ def smart_size_enabled(strategy=None):
         return True
 
 
+def _rec_size_decision(strategy, requested, fired, why, basket_fn, mode):
+    """Log a smart-size SKIP / SIZE-DOWN to skipped_store so it's SELF-EXPLANATORY
+    on the Broker Orders page (/broker-orders) — koi entry kyun nahi lagi ya kam
+    lots pe kyun lagi, poochna na pade. Never raises (money-path decisions must not
+    depend on logging). Symbol/side/lot come from the 1-lot basket (no extra call)."""
+    try:
+        import skipped_store
+        legs = basket_fn(1) or []
+        first = legs[0] if legs else {}
+        sym = str(first.get("sym") or "")
+        root = sym.split("-")[0] if sym else (strategy or "")
+        lot_size = int(first.get("qty") or 0) or None      # 1-lot qty == lot_size
+        if int(fired) < 1:
+            reason = f"SMART_SIZE_SKIP: cash/margin fit nahi even for 1 lot — {why}"
+        else:
+            reason = f"SMART_SIZE_DOWN: lots {requested}->{fired} (cash/margin) — {why}"
+        skipped_store.record_skip(
+            strategy=strategy, symbol=root, side=str(first.get("entry") or "SELL"),
+            trad_sym=(sym or None), sec_id=first.get("sec_id"),
+            intended_lots=requested, lot_size=lot_size,
+            entry_premium=first.get("entry_price"),
+            block_reason=reason, mode=(mode or "live"))
+    except Exception as e:
+        try:
+            print("[affordable_lots] size-decision record failed: %s" % e, flush=True)
+        except Exception:
+            pass
+
+
 def affordable_lots(strategy, max_lots, basket_fn, mode=None):
     """SMART SIZE-DOWN — the largest lot-count in 1..max_lots whose REAL margin
     fits EVERY cap (per-strategy capital_rs + Zerodha live cash-headroom + global,
@@ -1235,7 +1264,10 @@ def affordable_lots(strategy, max_lots, basket_fn, mode=None):
             ok, why = check_capital_needed(strategy, nd, mode=mode)
         except Exception as e:
             return max_lots, 0.0, ""   # margin-calc glitch → don't block (fail-open, prior behaviour)
-        return (max_lots if ok else 0), nd, ("" if ok else why)
+        if ok:
+            return max_lots, nd, ""
+        _rec_size_decision(strategy, max_lots, 0, why, basket_fn, mode)   # hard block — log it
+        return 0, nd, why
 
     # cheap estimate: 1-lot margin + the headroom we can read without extra calls,
     # then verify DOWN from there (start+1 so a linear estimate never under-shoots).
@@ -1259,6 +1291,7 @@ def affordable_lots(strategy, max_lots, basket_fn, mode=None):
         start = max_lots
 
     why = "margin calc failed"
+    fired, need = 0, 0.0
     for n in range(start, 0, -1):
         try:
             nd = _need(n)
@@ -1266,9 +1299,12 @@ def affordable_lots(strategy, max_lots, basket_fn, mode=None):
         except Exception as e:
             ok, w = False, f"margin calc err: {e}"
         if ok:
-            return n, nd, ""
+            fired, need = n, nd
+            break
         why = w
-    return 0, 0.0, why
+    if fired < 1 or fired < max_lots:      # skip OR size-down → log for Broker Orders page
+        _rec_size_decision(strategy, max_lots, fired, why, basket_fn, mode)
+    return fired, need, ("" if fired >= 1 else why)
 
 
 def _quick_option_ltp(sec_id, token, cid):

@@ -153,8 +153,20 @@
       });
     }, 5000);
 
+    // Market band hone pe kuch badalta nahi — 4s auto-refresh sirf "Loading…"
+    // flash karta rehta hai bina reason. IST weekday 09:15–15:35 me hi auto-refresh
+    // karo; uske baad tab-open / manual Refresh se hi load ho (user ki shikayat).
+    function _mktOpenNow() {
+      const n = new Date();
+      const ist = new Date(n.getTime() + n.getTimezoneOffset() * 60000 + 5.5 * 3600000);
+      const day = ist.getDay();                     // 0 Sun .. 6 Sat
+      if (day === 0 || day === 6) return false;
+      const mins = ist.getHours() * 60 + ist.getMinutes();
+      return mins >= (9 * 60 + 15) && mins <= (15 * 60 + 35);
+    }
+    window._mktOpenNow = _mktOpenNow;
     setInterval(() => {
-      if (activeTab === 'orders') ordersRender();   // P&L merged here — DB-backed, no Dhan
+      if (activeTab === 'orders' && _mktOpenNow()) ordersRender();   // P&L merged here — DB-backed, no Dhan
       if (activeTab === 'log') updateLogs();
     }, 4000);
 
