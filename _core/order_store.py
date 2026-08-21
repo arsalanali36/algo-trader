@@ -453,29 +453,6 @@ def _dead_filtered(rows):
     return [r for r in rows if str(r.get("status") or "").lower() not in _DEAD]
 
 
-# Part 2 of the 2026-08-21 naked-leg fix (TRAP #183). A manual/reconcile CROSS-close
-# (Pass-2's cross-strategy exemption) may not pair a leg from a DIFFERENT non-empty
-# group_id — that is how a prior-day externally_closed/manual leftover on a re-traded
-# MONTHLY contract (the 2026-08-17 q30 on 57600-CE) reached into TODAY's unrelated
-# hedged-straddle group and stripped its attribution. Two legs each belonging to a
-# DIFFERENT explicit placement group are different positions by construction. Scope
-# is deliberately narrow: ONLY the manual-closer branch — Pass 1, same-strategy
-# netting, and any pair where at least one group_id is blank are ALL untouched (a
-# genuine manual close via a blank-group Quick-Order/reconcile leg still nets). Kept
-# togglable so the whole-DB before/after A/B test can prove it changes nothing else.
-_GROUP_ISOLATION = True
-
-
-def _group_pair_ok(a, b):
-    """False only when BOTH legs carry non-empty group_ids that DIFFER (different
-    placement groups). Blank on either side = wildcard (still pairs)."""
-    if not _GROUP_ISOLATION:
-        return True
-    ga = str(a.get("group_id") or "").strip()
-    gb = str(b.get("group_id") or "").strip()
-    return not (ga and gb and ga != gb)
-
-
 def _net_rows(rows):
     """Two-pass netting shared by `trades_for()`/`trades_for_range()`:
       Pass 1 — exact (source, strategy, trad_sym) round-trips. Ek strategy jo
@@ -643,8 +620,7 @@ def _net_rows(rows):
                     same_idx = i
                     break
                 if manual_idx is None and (e["source"] in _MANUAL_CLOSERS
-                                           or r["source"] in _MANUAL_CLOSERS) \
-                        and _group_pair_ok(e, r):
+                                           or r["source"] in _MANUAL_CLOSERS):
                     manual_idx = i
             idx = same_idx if same_idx is not None else manual_idx
             if idx is None:

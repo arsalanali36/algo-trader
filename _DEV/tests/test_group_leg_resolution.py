@@ -73,27 +73,14 @@ check("every leg keeps group_id == GID",
 check("entry_price anchors on the ENTRY leg (301.05), not an exit price",
       abs(by_sec.get("59092", {}).get("entry_price", 0) - 301.05) < 1e-6)
 
-# ── Global netting filtered by group_id, WITH the Part-2 guard OFF: the ORIGINAL
-#    bug reproduces (the prior-day q30 cross-nets today's leg away). ────────────
-def _global_group_ce(gid):
-    _rng = os_.trades_for_range("2026-08-14", "2026-08-21")
-    o = [p for p in _rng.get("open", []) if (p.get("group_id") or "") == gid]
-    return next((p for p in o if str(p.get("sec_id")) == "59092"), None)
-
-os_._GROUP_ISOLATION = False   # simulate the pre-2026-08-21 global netting
-old_ce = _global_group_ce(GID)
-print("Global-filter path with Part-2 guard OFF — reproduces the bug:")
-check("guard OFF: global path DOES corrupt the short 57600-CE leg "
+# ── OLD path: global netting filtered by group_id — proves the contamination ──
+_rng = os_.trades_for_range("2026-08-14", "2026-08-21")
+old = [p for p in _rng.get("open", []) if (p.get("group_id") or "") == GID]
+old_ce = next((p for p in old if str(p.get("sec_id")) == "59092"), None)
+print("OLD global-filter path — documents the bug:")
+check("old path DOES corrupt the short 57600-CE leg "
       "(missing, or qty != 150)",
       old_ce is None or old_ce.get("qty") != 150)
-
-# ── Part 2: WITH the guard ON (default), the global path is ALSO clean now ────
-os_._GROUP_ISOLATION = True
-new_ce = _global_group_ce(GID)
-print("Global-filter path with Part-2 guard ON — no longer corrupts:")
-check("guard ON: global path keeps short 57600-CE as SELL 150",
-      new_ce is not None and new_ce.get("entry") == "SELL"
-      and new_ce.get("qty") == 150)
 
 # ── empty / unknown group → [] (never raises) ────────────────────────────────
 print("edge cases:")
