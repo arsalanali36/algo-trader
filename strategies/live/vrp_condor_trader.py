@@ -283,8 +283,35 @@ def run(paper_mode=True, strategy_id="vrp_condor_v1"):
                 if held_new_session and (now.hour, now.minute) >= (xh, xm):
                     log.info(f"[EXIT] one-night condor (entered {pos.get('entry_date')}) → next-session close")
                     _exit_condor(strategy_id, sym, pos, mode, bname, "VRPC_NEXT_CLOSE", log)
-                    pos = None
-                    save_state(strategy_id, pos)
+                    # VERIFY every leg actually closed before forgetting the position.
+                    # A no-price SKIP (feed+REST empty) or a failed order returns ok=False
+                    # WITHOUT recording an exit; the old code then cleared pos unconditionally
+                    # and opened a fresh condor → the unclosed leg was ORPHANED (2026-08-20
+                    # short 23900-PE, left NAKED once its long wing had closed). Now: forget
+                    # the position ONLY when order_store confirms every leg flat; else keep the
+                    # still-open legs, alert, and retry on the next loop (NO fresh condor until
+                    # clean — a transient no-price almost always clears within a cycle or two).
+                    try:
+                        _open_now = _net_open_secs(strategy_id)
+                        _still = [l for l in pos["legs"] if str(l["sec_id"]) in _open_now]
+                    except Exception as _ve:
+                        log.warning(f"[EXIT] post-exit verify failed ({_ve}) — assuming flat (fail-open)")
+                        _still = []
+                    if _still:
+                        log.warning(f"[EXIT] {len(_still)} leg(s) did NOT close "
+                                    f"{[l['trad_sym'] for l in _still]} — retry next loop, NO new condor")
+                        pos = dict(pos, legs=_still)
+                        save_state(strategy_id, pos)
+                        try:
+                            import notify as _nfy
+                            _nfy.error(f"⚠️ {strategy_id}: exit incomplete — "
+                                       f"{[l['trad_sym'] for l in _still]} still open (no-price skip), retrying",
+                                       key=f"vrpc_exit_incomplete_{strategy_id}", source=strategy_id)
+                        except Exception:
+                            pass
+                    else:
+                        pos = None
+                        save_state(strategy_id, pos)
                 # NOTE: no 3:15 force-exit — held overnight via allow_overnight (ADR-006).
                 # Expiry-day 2:55 squareoff + ITM guard + RMS daily-loss STILL apply (pos_monitor).
 
@@ -392,6 +419,19 @@ def _rollback(strategy_id, sym, legs, mode, bname, log):
             log.error(f"[VRPC] rollback failed {l['trad_sym']}: {e}")
 
 
+def _net_open_secs(strategy_id, days=7):
+    """sec_ids still NET-OPEN for this strategy in order_store (overnight-aware —
+    entry+exit paired across dates via trades_for_range). SINGLE source shared by
+    _exit_condor's pre-exit flat-check AND the post-exit verify in the loop, so
+    both always agree on exactly which legs are still live."""
+    import order_store
+    from datetime import timedelta as _td
+    _t = ist_now()
+    opens = order_store.trades_for_range(
+        (_t - _td(days=days)).strftime("%Y-%m-%d"), _t.strftime("%Y-%m-%d")).get("open") or []
+    return {str(p.get("sec_id")) for p in opens if p.get("strategy") == strategy_id}
+
+
 def _exit_condor(strategy_id, sym, pos, mode, bname, reason, log):
     """Close SHORTS first (buy back) so only defined long wings ever linger.
     Durable flat-check (TRAP #157): execute_exit's own flat-check is live-only, so a
@@ -399,13 +439,9 @@ def _exit_condor(strategy_id, sym, pos, mode, bname, reason, log):
     VRPC_NEXT_CLOSE (the 2026-08 duplicate-condor artifact). Exit only legs still
     net-open in order_store (overnight-aware via trades_for_range, same idiom as
     _recover). Fail-open: any error → exit all legs, a real exit is never blocked."""
-    import execution_gateway as gw, order_store
-    from datetime import timedelta as _td
+    import execution_gateway as gw
     try:
-        _t = ist_now()
-        _opens = order_store.trades_for_range(
-            (_t - _td(days=7)).strftime("%Y-%m-%d"), _t.strftime("%Y-%m-%d")).get("open") or []
-        _open_secs = {str(p.get("sec_id")) for p in _opens if p.get("strategy") == strategy_id}
+        _open_secs = _net_open_secs(strategy_id)
         _legs = [l for l in pos["legs"] if str(l["sec_id"]) in _open_secs]
         _skip = [l["trad_sym"] for l in pos["legs"] if str(l["sec_id"]) not in _open_secs]
         if _skip:
