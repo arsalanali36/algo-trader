@@ -1,7 +1,9 @@
 # ADR-019 — Group-close ops resolve legs from the group's OWN ledger, not by filtering global netting
 
 **Date:** 2026-08-21
-**Status:** Accepted (VPS-live `c3c2e00`) — Part 1 of 3 (Parts 2/3 pending)
+**Status:** Accepted (VPS-live `c3c2e00`). Part 1 is the complete money-path fix;
+the "seal global netting" follow-up was attempted and abandoned as infeasible
+(see Consequence).
 
 ## Context
 
@@ -62,12 +64,26 @@ filter bug) is the dangerous direction — it is what left a leg naked.
 - Trade-off accepted: the resolver can list a leg as "still open" that a manual
   broker close (without the gid) already flattened; the per-leg flat-check absorbs
   this safely (a skipped no-op close, never a wrong order).
-- Global netting's own cross-pollution (a resolved `externally_closed` leg still
-  FIFO-pairing with an unrelated future leg) is NOT fixed by this ADR — it still
-  slightly corrupts global P&L/counts, just no longer causes naked legs. That is
-  **Part 2** (seal it in `_net_rows` with a full before/after whole-DB test) +
-  **Part 3** (purge the ~110 existing leftover legs). Deferred deliberately given
-  the blast radius of the netting core.
+- Global netting's own cross-pollution (a re-traded monthly contract's prior-day
+  legs FIFO-consuming today's group leg, so a stale leg represents the open
+  position) is NOT fixed by this ADR — but it no longer causes naked legs, only
+  cosmetic display-attribution noise in the global-netting surfaces.
+- **"Seal global `_net_rows`" was attempted (2026-08-21) and abandoned.** A
+  `_group_pair_ok` guard blocking same-contract legs with different non-empty
+  group_ids: 0-diff (and inert) in Pass 2; in Pass 1 it fixed the incident but the
+  whole-DB A/B (guard OFF vs ON, range-400d + 60 daily views) regressed **507
+  records** — 84 fewer completed trades, 156 phantom opens, ₹85k P&L drift —
+  because exits routinely carry a different/blank group_id than their entry (a
+  reconcile mirror changes the source too), so "same group required to pair"
+  breaks legitimate round-trips. Reverted (`110f3a2`). **The global netting cannot
+  preserve per-group attribution without a position-id model** (a large rewrite);
+  that is the only real path to a full seal, and it is deferred as a known
+  limitation, not a naked-leg risk.
+- Purging the ~110 `externally_closed` leftover legs was judged NOT worth the risk:
+  they are cosmetic noise now (Part 1 removed the danger); the paired ones back
+  real completed trades, and deleting the unpaired ones shifts historical pairings
+  (the same 507-change class) — a display-only benefit does not justify mutating a
+  live-money DB's history.
 
 Guard: `_DEV/tests/test_group_leg_resolution.py`. See TRAP #183,
 memory `project_code3b_group_leg_resolution`.
