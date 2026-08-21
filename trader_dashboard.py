@@ -4774,7 +4774,12 @@ def _run_position_exit_rules(log=print):
             gid = rule.get("group_id") or ""
             want = set(rule.get("ids") or [])
             if gid:
-                legs = [r for r in open_rows if (r.get('group_id') or '') == gid]
+                # Group-scoped resolution (2026-08-21 naked-leg fix): resolve THIS
+                # group's open legs from its OWN ledger, NOT by filtering the global
+                # multi-day netting — that cross-nets a re-traded monthly contract
+                # across days and DROPS legs (a 4-leg basket resolved as 2 → basket-SL
+                # closed 2 → left a naked short). group_id IS the placement identity.
+                legs = order_store.open_legs_in_group(gid)
             else:
                 legs = [r for r in open_rows if str(r.get('id')) in want]
             if not legs:
@@ -7529,7 +7534,10 @@ def api_close_position():
         this_leg = next((p for p in open_pos if p.get('sym') == t_sym and p.get('entry') == entry_side), None)
         gid = (this_leg or {}).get('group_id')
         if gid:
-            siblings = [p for p in open_pos if p.get('group_id') == gid]
+            # Group-scoped (2026-08-21 naked-leg fix): resolve the hedge group's open
+            # legs from its OWN ledger, not by filtering today's global netting — that
+            # can drop/mis-net a re-traded monthly contract's legs and orphan a short.
+            siblings = order_store.open_legs_in_group(gid)
             if len(siblings) > 1:
                 results = []
                 for leg in siblings:
@@ -7767,9 +7775,12 @@ def api_close_position_group():
     # NONE → "No open legs" and close-all silently no-op'd (HTTP 200 but ok:False).
     # Same today-scoped family as the /api/orders display fix; trades_for_range nets
     # entry+exit across dates → surfaces the carried-over still-open legs to close.
-    _lb90 = (_now_ist - _td(days=90)).strftime('%Y-%m-%d')
-    open_pos = order_store.trades_for_range(_lb90, today).get('open', [])
-    legs = [p for p in open_pos if p.get('group_id') == group_id]
+    # Group-scoped resolution (2026-08-21 naked-leg fix): resolve THIS group's open
+    # legs from its OWN ledger, not by filtering the global multi-day netting — that
+    # cross-nets a re-traded monthly contract across days and drops legs, so a manual
+    # "Close all" could close only a subset and leave a naked short. group_id IS the
+    # placement identity. (Overnight/positional groups covered too — no date window.)
+    legs = order_store.open_legs_in_group(group_id)
     if not legs:
         return jsonify({'ok': False, 'msg': f'No open legs found for group {group_id}'})
 

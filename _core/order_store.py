@@ -344,6 +344,96 @@ def trades_for_range(date_from, date_to, **filters):
     return _net_rows(rows)
 
 
+def open_legs_in_group(group_id):
+    """Net-open legs of ONE placement group, resolved from the group's OWN ledger
+    rows only (entries − exits carrying this group_id), netted PER CONTRACT.
+
+    WHY (2026-08-21 naked-leg incident): group operations (basket-SL auto-exit,
+    the "Close all" button, the hedge-sibling close) used to resolve a group's
+    legs by taking the GLOBAL `trades_for_range().open` list and FILTERING it by
+    group_id. But that global netting FIFO-pairs by (mode, trad_sym) across a
+    multi-day window, and a MONTHLY option re-traded across days (+ any leftover
+    externally_closed / manual leg on the same contract) gets cross-paired — which
+    STRIPS the group_id from, and corrupts the qty of, some of TODAY's legs. A
+    4-leg hedged straddle then resolved as only 2 legs → the basket-SL closed 2 →
+    left the other short NAKED. group_id IS the placement identity, so netting
+    WITHIN it is exact and immune to any other day / strategy / manual leg on the
+    same contract.
+
+    Returns leg dicts shaped exactly like `_net_rows()`' open entries (drop-in for
+    the old group-filtered `.open` list): sym, entry(side), qty, sec_id,
+    entry_price, entry_time, entry_date, exit_price=None, exit_time, pnl=None +
+    id/source/strategy/mode/broker/instrument/symbol/tags/segment/product_type/
+    group_id.
+
+    SAFE DIRECTION — over-includes, never under-includes: a leg closed by a
+    manual/reconcile order that did NOT carry this group_id is invisible here, so
+    it stays listed as open. That produces no WRONG order — execute_exit's fresh
+    per-leg flat-check skips a leg already flat at the broker — whereas
+    UNDER-listing (the old bug) is what left a leg naked.
+    """
+    if not group_id:
+        return []
+    _DEAD = {"rejected", "cancelled", "canceled", "failed", "expired",
+             "blocked", "externally_closed"}
+    try:
+        with _lock, _conn() as c:
+            rows = [dict(r) for r in c.execute(
+                "SELECT * FROM orders WHERE group_id=? ORDER BY id ASC",
+                (group_id,)).fetchall()]
+    except Exception as e:
+        print("[order_store] open_legs_in_group fail:", e, flush=True)
+        return []
+    rows = [r for r in rows if str(r.get("status") or "").lower() not in _DEAD]
+
+    # Net signed qty per contract (BUY +, SELL −). Keep the earliest ENTRY row of
+    # the net-open side for attribution + entry_price — the exit legs carry an EXIT
+    # price, not the entry's, so the MTM/POP math must anchor on the entry leg.
+    agg = {}   # sec_id -> {"net": int, "first_buy": row, "first_sell": row}
+    order = []
+    for r in rows:
+        sid = str(r.get("sec_id") or "")
+        if not sid:
+            continue
+        try:
+            q = abs(int(r.get("qty") or 0))
+        except Exception:
+            q = 0
+        side = str(r.get("side") or "").upper()
+        if sid not in agg:
+            agg[sid] = {"net": 0, "first_buy": None, "first_sell": None}
+            order.append(sid)
+        a = agg[sid]
+        a["net"] += q if side == "BUY" else -q
+        if side == "BUY" and a["first_buy"] is None:
+            a["first_buy"] = r
+        elif side == "SELL" and a["first_sell"] is None:
+            a["first_sell"] = r
+
+    out = []
+    for sid in order:
+        a = agg[sid]
+        net = a["net"]
+        if net == 0:
+            continue
+        open_side = "BUY" if net > 0 else "SELL"
+        rep = (a["first_buy"] if net > 0 else a["first_sell"]) or a["first_buy"] or a["first_sell"]
+        if rep is None:
+            continue
+        o = {"sym": rep["trad_sym"], "entry": open_side, "qty": abs(net),
+             "entry_price": rep["price"], "entry_time": rep["ts"][11:16],
+             "entry_date": rep["ts"][:10], "exit_price": None, "exit_time": "—",
+             "pnl": None,
+             "id": rep["id"], "source": rep["source"], "strategy": rep["strategy"],
+             "mode": rep["mode"], "broker": rep["broker"],
+             "instrument": rep["instrument"], "symbol": rep["symbol"],
+             "tags": _tags(rep), "sec_id": rep["sec_id"], "segment": rep["segment"],
+             "product_type": rep["product_type"] or "NRML",
+             "group_id": rep["group_id"] or ""}
+        out.append(o)
+    return out
+
+
 def mark_externally_closed(row_id):
     """Mark a DB row as externally_closed (manually closed at broker / ghost position).
     broker_sync.py calls this when broker shows qty=0 for a DB-OPEN position (TRAP #44)."""
