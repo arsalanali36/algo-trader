@@ -5863,15 +5863,18 @@ def _fire_sm_strategy(strategy_id, cfg, log=print):
             return False, f"{symbol} ATM straddle LTP nahi mila — sw_mult strike resolve fail"
     resolved = []
     for lg in cfg["legs"]:
-        mode = lg.get("strike_mode")
+        # NOTE: use a loop-local name (smode) — do NOT rebind the outer `mode` ("paper"),
+        # else the strike-mode leaks into order_store.record() + RMS gating and every _sm
+        # (paper) trade looks LIVE in Stats/reconcile (TRAP: mode-field pollution).
+        smode = lg.get("strike_mode")
         # premium-picked strikes (cp_pct_sp/cp_rs) need a live premium-walk resolver — not built,
         # backtest-only for now. off / atm_pct / sw_mult are deterministic → resolved here.
-        if mode in ("cp_pct_sp", "cp_rs"):
-            return False, f"{symbol} sm live: {mode} (premium-picked) strike abhi live me support nahi — backtest-only"
-        if mode == "atm_pct":
+        if smode in ("cp_pct_sp", "cp_rs"):
+            return False, f"{symbol} sm live: {smode} (premium-picked) strike abhi live me support nahi — backtest-only"
+        if smode == "atm_pct":
             target = round(spot * (1 + lg["atm_pct"] / 100.0) / step) * step
             soff = int(round((target - atm) / step))
-        elif mode == "sw_mult":
+        elif smode == "sw_mult":
             target = round((atm + lg["sw_mult"] * _sm_straddle) / step) * step
             soff = int(round((target - atm) / step))
         else:
@@ -5880,7 +5883,7 @@ def _fire_sm_strategy(strategy_id, cfg, log=print):
         gc_off = soff if lg["opt"] == "CE" else -soff
         sec, tsym, lot = dhan_master.get_option_contract(symbol, spot, lg["opt"], gc_off)
         if not sec or not lot:
-            return False, f"{symbol} {lg['opt']} {mode} soff{soff:+d} contract resolve fail"
+            return False, f"{symbol} {lg['opt']} {smode} soff{soff:+d} contract resolve fail"
         resolved.append({**lg, "sec": sec, "tsym": tsym, "lot": int(lot)})
     gid = "SM_" + uuid.uuid4().hex[:8]
     # gate the WHOLE basket ONCE — RMS gating + basket-margin capital
