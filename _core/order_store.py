@@ -344,6 +344,102 @@ def trades_for_range(date_from, date_to, **filters):
     return _net_rows(rows)
 
 
+def trades_for_range_chrono(date_from, date_to, **filters):
+    """Like trades_for_range() but nets each contract CHRONOLOGICALLY across ALL
+    sources/strategies (broker reality) — for the ALL-strategies calendar so the
+    daily total matches the Zerodha tradebook on multi-day positional positions.
+    Does NOT touch _net_rows (per-strategy views keep strategy-aware attribution)."""
+    rows = _dead_filtered(query(date_from=date_from, date_to=date_to, limit=200000, **filters))
+    return _net_rows_chrono(rows)
+
+
+def _net_rows_chrono(rows):
+    """Single-pass CHRONOLOGICAL per-(mode, contract) netting — DISPLAY-ONLY, used by the
+    all-strategies calendar. Every fill on a contract nets in time order regardless of
+    source/strategy, exactly how the broker (Zerodha) realizes P&L — so a strategy's own
+    leg and a broker_reconcile mirror leg (or two legs the strategy recorded across an
+    external close) pair chronologically instead of by (source, strategy) group, which
+    mis-attributed multi-day positional P&L across days (a hedged straddle's Aug-19 entry
+    got paired with its Aug-21 close, dumping +₹33k/−₹23k phantom onto one day). Nets across
+    strategies on purpose: the broker account is per-contract fungible, so the ALL-strategies
+    daily total = the broker's. NOT for per-strategy views — those use _net_rows (strategy-
+    aware, TRAP #145). Same qty-aware + sec_id-match guards as _net_rows. Never touches it."""
+    details = []
+
+    def _meta(r):
+        return {"id": r["id"], "source": r["source"], "strategy": r["strategy"], "mode": r["mode"],
+                "broker": r["broker"], "instrument": r["instrument"], "symbol": r["symbol"],
+                "tags": _tags(r), "sec_id": r["sec_id"], "segment": r["segment"],
+                "product_type": r["product_type"] or "NRML", "group_id": r["group_id"] or ""}
+
+    def _complete(entry_r, exit_r, q):
+        ep, xp = entry_r["price"], exit_r["price"]
+        pnl = (xp - ep) * q if entry_r["side"] == "BUY" else (ep - xp) * q
+        d = {"sym": entry_r["trad_sym"], "entry": entry_r["side"], "qty": q,
+             "entry_price": ep, "entry_time": entry_r["ts"][11:16], "entry_date": entry_r["ts"][:10],
+             "exit_date": exit_r["ts"][:10], "exit_price": xp, "exit_time": exit_r["ts"][11:16],
+             "pnl": round(pnl, 2)}
+        d.update(_meta(entry_r))            # attribution from the (older) entry leg
+        d["exit_reason"] = _exit_reason(exit_r)
+        return d
+
+    def _as_open(r, qty=None):
+        o = {"sym": r["trad_sym"], "entry": r["side"], "qty": r["qty"] if qty is None else qty,
+             "entry_price": r["price"], "entry_time": r["ts"][11:16], "entry_date": r["ts"][:10],
+             "sec_id": r["sec_id"], "exit_price": None, "exit_time": "—", "pnl": None}
+        o.update(_meta(r))
+        return o
+
+    def _q(r):
+        try:
+            return abs(int(r["qty"] or 0))
+        except Exception:
+            return 0
+
+    def _sec_ok(a, b):
+        sa = str(a["sec_id"] or "").strip(); sb = str(b["sec_id"] or "").strip()
+        if sa in ("", "0") or sb in ("", "0"):
+            return True
+        return sa == sb
+
+    _OPEN_ST = {"open"}
+    _BLOCKED_ST = {"blocked"}
+    blocked_rows = [r for r in rows if str(r.get("status") or "").lower() in _BLOCKED_ST]
+    closed_rows  = [r for r in rows if str(r.get("status") or "").lower() not in _OPEN_ST
+                    and str(r.get("status") or "").lower() not in _BLOCKED_ST]
+    live_rows    = [r for r in rows if str(r.get("status") or "").lower() in _OPEN_ST]
+    # net in strict TIME order (ts, then id as a stable tiebreak for same-ts fills)
+    closed_rows.sort(key=lambda r: (r["ts"], r["id"]))
+
+    books = {}   # (mode, trad_sym) -> [[row, rem], ...] chronological
+    for r in closed_rows:
+        key = (r["mode"], r["trad_sym"])
+        rem = _q(r)
+        fifo = books.setdefault(key, [])
+        while rem > 0:
+            idx = next((i for i, (e, _er) in enumerate(fifo)
+                        if e["side"] != r["side"] and _sec_ok(e, r)), None)
+            if idx is None:
+                break
+            entry_r, erem = fifo[idx]
+            m = min(rem, erem)
+            details.append(_complete(entry_r, r, m))
+            rem -= m
+            erem -= m
+            if erem <= 0:
+                fifo.pop(idx)
+            else:
+                fifo[idx][1] = erem
+        if rem > 0:
+            fifo.append([r, rem])
+
+    opens = [_as_open(e, rem) for fifo in books.values() for e, rem in fifo]
+    opens += [_as_open(r) for r in live_rows]        # genuinely-open positions
+    opens += [_as_open(r) for r in blocked_rows]     # blocked panel
+    details.sort(key=lambda d: (d["exit_date"], d["exit_time"]))
+    return {"details": details, "open": opens, "count": len(details)}
+
+
 def open_legs_in_group(group_id):
     """Net-open legs of ONE placement group, resolved from the group's OWN ledger
     rows only (entries − exits carrying this group_id), netted PER CONTRACT.

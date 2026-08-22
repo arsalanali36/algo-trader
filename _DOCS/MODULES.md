@@ -106,6 +106,7 @@ order_store.py — persistent trade database (SQLite) for CODE3B.
 - 🔧 `stats_summary` — Aggregate Profit Factor / Expectancy / Sharpe over closed trades in a
 - 🔧 `trades_for` — Net entry/exit legs into completed trades + open positions for a date.
 - 🔧 `trades_for_range` — Same as `trades_for()` but over an inclusive date range (for multi-day
+- 🔧 `trades_for_range_chrono` — Like trades_for_range() but nets each contract CHRONOLOGICALLY across ALL
 - 🔧 `update_fill` — Update a previously-recorded row's price/status/tags in place.
 - 🔧 `update_tag_fields` — Atomically MERGE tag changes into an order's CURRENT DB tags (read-modify-
 - 🔧 `update_tags` — Updates the tags JSON string for a specific order ID.

@@ -9342,7 +9342,16 @@ def api_orders_calendar_summary():
     summary = {}
     all_trades = []
     try:
-        rng = order_store.trades_for_range(net_lo, net_hi, **filt)
+        # ALL-strategies view (no strategy filter) → CHRONOLOGICAL per-contract netting so
+        # the daily total matches the broker (Zerodha) tradebook on multi-day positional
+        # positions (a strategy leg + its broker_reconcile mirror pair in time order, not by
+        # source-group which dumped a hedged straddle's whole round-trip onto its exit day →
+        # phantom +₹12k on one cell). Single-strategy filter → strategy-aware _net_rows
+        # (attribution + TRAP #145 cross-strategy protection). _net_rows itself is untouched.
+        if _sm is None:
+            rng = order_store.trades_for_range_chrono(net_lo, net_hi, **filt)
+        else:
+            rng = order_store.trades_for_range(net_lo, net_hi, **filt)
         for t in (rng.get('details') or []):
             if _sm and not _sm(t.get('strategy')):
                 continue   # resolve-aware single-strategy narrow (see _strategy_matcher)
