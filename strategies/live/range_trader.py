@@ -974,6 +974,18 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     except Exception:
         pass
 
+    # ── ₹0-GUARD (TRAP #1): never place/record a ₹0 SHORT leg (same phantom class
+    # as the naked path). Re-read the now-prewarmed short premium; abort the whole
+    # hedged entry if unavailable — a ₹0 leg corrupts P&L (netting phantom) + RMS. ──
+    try:
+        _sp = _fetch_premium(str(s_sec), token, cid) or s_prem or 0.0
+    except Exception:
+        _sp = s_prem or 0.0
+    if not _sp or _sp <= 0:
+        log.info(f"[RANGEH] {symbol} {opt_type} short premium unavailable (₹0/None) — abort, no phantom leg")
+        return False
+    s_prem = _sp
+
     # ── gate the WHOLE hedged structure ONCE (RMS + real basket margin) ──
     try:
         blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
@@ -1679,7 +1691,16 @@ def main(strategy_id="range"):
                         import strategy_safety
                         from brokers import get_broker
                         opt_prem_ltp = risk_gate._quick_option_ltp(sec_id, token, cid)  # real premium, or None/0 if fetch failed
-                        opt_prem = opt_prem_ltp or price  # gate check only: conservative fallback to spot
+                        # ₹0-GUARD (TRAP #1): premium fetch fail (DH-904/rate-limit) → SKIP the
+                        # entry entirely. NEVER place/record a ₹0 SELL leg — it corrupts P&L
+                        # (netting pairs the ₹0 entry against a real close → phantom loss; Aug-2026
+                        # had two such range_v1 rows = −₹42k of fake loss on Stats) and can trip RMS.
+                        # A missed trade is recoverable; the loop retries on the next signal.
+                        if not opt_prem_ltp or opt_prem_ltp <= 0:
+                            log.info(f"ENTRY skipped {symbol} {opt_type} @off{offset} — option premium "
+                                     f"unavailable (₹0/None), no phantom leg recorded; retry next signal")
+                            continue
+                        opt_prem = opt_prem_ltp  # guaranteed > 0 by the guard above
                         _entry_broker_name = risk_gate.default_broker()
                         try:
                             _entry_broker = get_broker(_entry_broker_name)
