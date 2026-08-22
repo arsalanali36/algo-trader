@@ -436,8 +436,24 @@ def open_legs_in_group(group_id):
 
 def mark_externally_closed(row_id):
     """Mark a DB row as externally_closed (manually closed at broker / ghost position).
-    broker_sync.py calls this when broker shows qty=0 for a DB-OPEN position (TRAP #44)."""
+    broker_sync.py calls this when broker shows qty=0 for a DB-OPEN position (TRAP #44).
+
+    GUARD: a CAPITAL_BLOCKED / status='blocked' row was NEVER placed at the broker
+    (RMS rejected it pre-placement) → it has no real position to be "externally
+    closed". Flipping it to externally_closed pulls it INTO netting (externally_closed
+    flows through _net_rows), where its recorded price (often the SPOT/index level, or
+    a stale premium) pairs against an unrelated real leg → a huge phantom round-trip
+    (Aug-2026: a CAPITAL_BLOCKED NIFTY-24350-CE recorded at spot 24329 → +₹15.75L
+    phantom). Blocked entries are cleaned by purge_old_blocked(), never re-statused."""
     with _lock, _conn() as c:
+        row = c.execute("SELECT status, tags FROM orders WHERE id=?", (row_id,)).fetchone()
+        if row is not None:
+            st = str(row["status"] or "").lower()
+            tags = str(row["tags"] or "")
+            if st == "blocked" or "CAPITAL_BLOCKED" in tags:
+                print(f"[order_store] REFUSED mark_externally_closed on blocked/CAPITAL_BLOCKED "
+                      f"row id={row_id} (never placed — would create a phantom)", flush=True)
+                return
         c.execute("UPDATE orders SET status='externally_closed' WHERE id=?", (row_id,))
 
 
