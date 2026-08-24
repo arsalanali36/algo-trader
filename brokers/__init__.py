@@ -25,4 +25,7 @@ def get_broker(name: str = "dhan", creds: Optional[dict] = None) -> BaseBroker:
     if name in ("kite", "zerodha"):
         from .kite_broker import KiteBroker
         return KiteBroker(creds)
+    if name == "delta":
+        from .delta_broker import DeltaBroker
+        return DeltaBroker()
     raise ValueError(f"Unknown broker: {name}")

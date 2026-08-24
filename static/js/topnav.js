@@ -38,7 +38,8 @@
     { href: '/gex',     label: '🟢 GEX Profile' },
     { href: '/whatif',  label: '🧪 Options What-If' },
     { href: '/whatif2', label: '📐 Strategy Builder' },
-    { href: '/backtest-lab', label: '🧪 Backtest Lab' }
+    { href: '/backtest-lab', label: '🧪 Backtest Lab' },
+    { href: '/crypto',  label: '🪙 Crypto (Delta)' }
   ];
   var MORE = [
     { href: '/registry',       label: '🗂️ Strategies (classic)' },

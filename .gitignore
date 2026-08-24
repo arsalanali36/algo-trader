@@ -154,3 +154,6 @@ static/vendor/*.gz
 scratch/nifty_trend/runs/*/*.gz
 
 data/telegram_config.json
+
+# Delta credentials — never commit
+.env

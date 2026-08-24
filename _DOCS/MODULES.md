@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**140 modules documented** across 10 folders.
+**142 modules documented** across 10 folders.
 
 
 ## Folders
@@ -370,6 +370,11 @@ universe.py — symbol universe + security-id / option routing resolvers.
 base_broker.py — abstract broker interface.
 
 - 📦 `BaseBroker` — …
+
+### `brokers/delta_broker.py`
+delta_broker.py — Delta Exchange India broker plugin (crypto options/futures).
+
+- 📦 `DeltaBroker` — Delta Exchange India broker. Mirrors BaseBroker (duck-typed).
 
 ### `brokers/dhan_broker.py`
 dhan_broker.py — Dhan implementation of BaseBroker.
@@ -949,6 +954,14 @@ daily_report.py — one-scroll EOD "Daily Report" data builder. DISPLAY-ONLY.
 - 🔧 `get_settings` — Report settings for the ⚙ modal — capital (for net %) + per-strategy
 - 🔧 `save_settings` — …
 
+### `_ops/delta_feed.py`
+delta_feed.py — Delta Exchange India crypto data feed for the /crypto page.
+
+- 🔧 `chain` — Option chain for one expiry: ATM +/- n strikes, CE & PE with live data.
+- 🔧 `expiries` — Distinct expiry dates (from live option symbols), soonest first.
+- 🔧 `ironfly_setup` — Validated daily Iron-Fly: SELL ATM CE+PE, BUY OTM wings (defined risk).
+- 🔧 `spot` — Live underlying spot (perpetual mark).
+
 ### `_ops/deploy_vps.py`
 deploy_vps.py — CODE3B ko VPS pe push karo (tarball via SCP, ek command me)
 
@@ -1517,6 +1530,8 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_daily_report_dates` — Dates that actually have trade data (same mode/source/broker/strategy
 - 🔧 `api_daily_report_health` — EOD system-health for the Daily Report page — the same ✅ Positives / ❌
 - 🔧 `api_delete_optimization` — …
+- 🔧 `api_delta_chain` — Live BTC/ETH option chain (one Delta /v2/tickers call). Display-only.
+- 🔧 `api_delta_ironfly` — Validated daily Iron-Fly setup with live premiums (display-only context).
 - 🔧 `api_deploy_variation` — Saved Result "🚀 Deploy" → create a NEW named strategy variation the
 - 🔧 `api_downloader_alerts` — …
 - 🔧 `api_fii_flow` — …
@@ -1661,6 +1676,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `backtest_lab_page` — StockMock-style multi-day options backtest — build a leg strategy (ATM±N, per-leg
 - 🔧 `broker_orders_page` — Broker Orders page — Zerodha ki tarah aaj ke saare executed/rejected orders
 - 🔧 `change_password` — …
+- 🔧 `crypto_page` — Delta Exchange India crypto (BTC) — live spot + option chain + validated
 - 🔧 `daily_report_page` — One-scroll EOD Daily Report — KPIs, target/stat tables, per-strategy +
 - 🔧 `fii_flow_page` — FII/DII participant-flow dashboard — Sensibull-style but from our own free
 - 🔧 `get_mode` — …

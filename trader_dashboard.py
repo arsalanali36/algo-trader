@@ -590,6 +590,46 @@ def whatif_page():
     resp.headers['Cache-Control'] = 'no-store, must-revalidate'   # inline JS changes often → never serve stale HTML
     return resp
 
+@app.route('/crypto')
+def crypto_page():
+    """Delta Exchange India crypto (BTC) — live spot + option chain + validated
+    daily Iron-Fly setup. Display-only, credential-free (public Delta API).
+    Phase-1 of the Delta integration (see project_delta_crypto_options)."""
+    from flask import make_response
+    resp = make_response(render_template("crypto.html"))
+    resp.headers['Cache-Control'] = 'no-store, must-revalidate'
+    return resp
+
+@app.route('/api/delta-chain')
+def api_delta_chain():
+    """Live BTC/ETH option chain (one Delta /v2/tickers call). Display-only."""
+    try:
+        from _ops import delta_feed
+    except Exception:
+        import delta_feed
+    u = (request.args.get('underlying') or 'BTC').upper()
+    exp = request.args.get('expiry') or None
+    try:
+        n = int(request.args.get('n', 8))
+    except (TypeError, ValueError):
+        n = 8
+    data = delta_feed.chain(u, exp, n)
+    return jsonify(data or {"error": "no data"})
+
+@app.route('/api/delta-ironfly')
+def api_delta_ironfly():
+    """Validated daily Iron-Fly setup with live premiums (display-only context)."""
+    try:
+        from _ops import delta_feed
+    except Exception:
+        import delta_feed
+    u = (request.args.get('underlying') or 'BTC').upper()
+    exp = request.args.get('expiry') or None
+    wing = request.args.get('wing')
+    wing = int(wing) if (wing and wing.isdigit()) else None
+    data = delta_feed.ironfly_setup(u, exp, wing)
+    return jsonify(data or {"error": "no data"})
+
 @app.route('/whatif2')
 def whatif2_page():
     """Sensibull-style Strategy Builder (backtest) — leg builder + Add/Edit chain modal +
