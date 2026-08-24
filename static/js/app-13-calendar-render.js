@@ -378,11 +378,21 @@
         }
         _calDayTax[dk] = (_calDayTax[dk] || 0) + tax;
       });
-      function _calTileVal(dateStr, netPnl) {
+      function _calTileVal(dateStr, pnl) {
+        // pnl = summary[date].pnl. SEMANTICS DIFFER BY MODE:
+        //  • Backtest (bs pass): pnl is already NET → gross = net + tax.
+        //  • Live/Paper: pnl is GROSS (order_store _net_rows / _net_rows_chrono emit
+        //    raw (exit-entry)*qty, no charges) → net = gross - tax. (Was treating live
+        //    pnl as net too, so "Net" tile showed gross and "Gross" tile showed gross+tax.)
         const tax = _calDayTax[dateStr] || 0;
-        if (_calTileMode === 'gross') return netPnl + tax;
+        if (btMode) {
+          if (_calTileMode === 'gross') return pnl + tax;
+          if (_calTileMode === 'tax') return tax;
+          return pnl;                       // net (bt pnl already net)
+        }
+        if (_calTileMode === 'gross') return pnl;       // live pnl IS gross
         if (_calTileMode === 'tax') return tax;
-        return netPnl;   // net (default)
+        return pnl - tax;                   // net = gross - charges
       }
       // repaint-in-place ke liye cache (eqSetValue toggle → koi re-fetch nahi)
       window._calTileCtx = { summary: summary, tax: _calDayTax };
