@@ -33,7 +33,19 @@ try:
 except ImportError:  # pragma: no cover
     pd = None
 
-BASE = "https://api.india.delta.exchange"
+MAINNET_BASE = "https://api.india.delta.exchange"
+TESTNET_BASE = "https://cdn-ind.testnet.deltaex.org"   # Delta India testnet (paper, real matching)
+
+
+def _is_testnet():
+    return os.getenv("DELTA_TESTNET", "").lower() in ("1", "true", "yes")
+
+
+def _base_url():
+    return TESTNET_BASE if _is_testnet() else MAINNET_BASE
+
+
+BASE = MAINNET_BASE   # module default (public display); broker instance uses self.base
 
 
 def _load_env_file():
@@ -60,9 +72,11 @@ _load_env_file()
 class DeltaBroker:
     """Delta Exchange India broker. Mirrors BaseBroker (duck-typed)."""
 
-    def __init__(self, api_key=None, api_secret=None):
+    def __init__(self, api_key=None, api_secret=None, testnet=None):
         self.api_key = api_key or os.getenv("DELTA_API_KEY", "")
         self.api_secret = api_secret or os.getenv("DELTA_API_SECRET", "")
+        self.testnet = _is_testnet() if testnet is None else testnet
+        self.base = TESTNET_BASE if self.testnet else MAINNET_BASE
         self._sess = requests.Session()
         self._sess.headers.update({"Accept": "application/json",
                                    "User-Agent": "khazana-delta/1.0"})
@@ -91,7 +105,7 @@ class DeltaBroker:
         headers = {"api-key": self.api_key, "timestamp": ts, "signature": sig,
                    "Content-Type": "application/json"}
         try:
-            r = self._sess.request(method, BASE + path + query, data=payload or None,
+            r = self._sess.request(method, self.base + path + query, data=payload or None,
                                    headers=headers, timeout=20)
             return r.json()
         except Exception as e:
@@ -99,7 +113,7 @@ class DeltaBroker:
 
     def _public(self, path, params=None):
         try:
-            r = self._sess.get(BASE + path, params=params, timeout=20)
+            r = self._sess.get(self.base + path, params=params, timeout=20)
             if r.status_code == 200:
                 return r.json()
         except Exception:

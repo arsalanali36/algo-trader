@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**143 modules documented** across 10 folders.
+**144 modules documented** across 10 folders.
 
 
 ## Folders
@@ -972,6 +972,11 @@ delta_ironfly_trader.py — Delta Exchange India daily BTC Iron-Fly (PAPER, forw
 - 🔧 `settle_value` — Cash-settlement intrinsic per-BTC for one leg.
 - 🔧 `should_enter` — True if it's the entry window, feature on, and no open position today.
 - 🔧 `tick` — …
+
+### `_ops/delta_testnet_check.py`
+delta_testnet_check.py — validate Delta India TESTNET auth + order plumbing.
+
+- 🔧 `main` — …
 
 ### `_ops/deploy_vps.py`
 deploy_vps.py — CODE3B ko VPS pe push karo (tarball via SCP, ek command me)

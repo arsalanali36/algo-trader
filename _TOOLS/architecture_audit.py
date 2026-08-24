@@ -89,7 +89,10 @@ EXCLUDE_PATTERNS = [
 ]
 
 # Check 1 allowlist: the ONLY files allowed to call broker .place_order/.cancel_order
-RAW_ORDER_ALLOW = {"smart_order.py"}
+RAW_ORDER_ALLOW = {"smart_order.py",
+                   # Delta crypto (separate exchange, not the NSE smart_order/RMS path):
+                   "delta_testnet_check.py",   # standalone testnet plumbing validator
+                   "delta_ironfly_trader.py"}  # crypto trader — Delta broker path, own store
 RAW_ORDER_ALLOW_DIRS = {"brokers"}  # broker implementations wrap the SDK itself
 
 # Check 2 scope: strategy files only (signal layer — must not contain risk logic)
