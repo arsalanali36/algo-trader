@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**142 modules documented** across 10 folders.
+**143 modules documented** across 10 folders.
 
 
 ## Folders
@@ -962,6 +962,17 @@ delta_feed.py — Delta Exchange India crypto data feed for the /crypto page.
 - 🔧 `ironfly_setup` — Validated daily Iron-Fly: SELL ATM CE+PE, BUY OTM wings (defined risk).
 - 🔧 `spot` — Live underlying spot (perpetual mark).
 
+### `_ops/delta_ironfly_trader.py`
+delta_ironfly_trader.py — Delta Exchange India daily BTC Iron-Fly (PAPER, forward-test).
+
+- 🔧 `enter` — …
+- 🔧 `maybe_exit` — …
+- 🔧 `position_pnl` — Net P&L in points (per-BTC) at given spot (settlement or live).
+- 🔧 `run_loop` — …
+- 🔧 `settle_value` — Cash-settlement intrinsic per-BTC for one leg.
+- 🔧 `should_enter` — True if it's the entry window, feature on, and no open position today.
+- 🔧 `tick` — …
+
 ### `_ops/deploy_vps.py`
 deploy_vps.py — CODE3B ko VPS pe push karo (tarball via SCP, ek command me)
 
@@ -1532,6 +1543,7 @@ trader_dashboard.py — Web UI for Algo Trader Run: python trader_dashboard.py O
 - 🔧 `api_delete_optimization` — …
 - 🔧 `api_delta_chain` — Live BTC/ETH option chain (one Delta /v2/tickers call). Display-only.
 - 🔧 `api_delta_ironfly` — Validated daily Iron-Fly setup with live premiums (display-only context).
+- 🔧 `api_delta_paper` — Delta paper Iron-Fly state (open + completed + config). Display-only, PAPER.
 - 🔧 `api_deploy_variation` — Saved Result "🚀 Deploy" → create a NEW named strategy variation the
 - 🔧 `api_downloader_alerts` — …
 - 🔧 `api_fii_flow` — …

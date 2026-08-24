@@ -84,6 +84,15 @@
     <div class="note" id="flyNote"></div>
   </div>
 
+  <div class="card" id="paperCard" style="margin-bottom:12px;border-left:3px solid var(--blu)">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <b>📝 Paper Iron-Fly <span class="tag" id="paperStatus">…</span></b>
+      <span class="muted" id="paperTotal"></span>
+    </div>
+    <div id="paperOpen" style="margin-top:8px"></div>
+    <div id="paperDone" style="margin-top:8px"></div>
+  </div>
+
   <div class="card">
     <b>Option chain</b>
     <div class="chainbox" style="margin-top:8px">
@@ -167,7 +176,43 @@ async function loadFly(){
   $('flyNote').textContent = d.note || '';
 }
 
-function reload(){ loadChain(); loadFly(); }
+async function loadPaper(){
+  let d;
+  try{ d = await (await fetch('/api/delta-paper')).json(); }catch(e){ return; }
+  if(!d){ return; }
+  const cfg = d.config||{};
+  const on = cfg.enabled;
+  $('paperStatus').textContent = on ? 'ARMED (paper)' : 'OFF';
+  $('paperStatus').style.color = on ? 'var(--grn)' : 'var(--mut)';
+  const tp = d.total_pnl_pts||0, tu = d.total_pnl_usd||0;
+  $('paperTotal').innerHTML = `${d.n||0} settled · total <b class="${tp>=0?'grn':'red'}">${f2(tp)} pts</b> (~$${f2(tu)})`;
+
+  const op = d.open;
+  if(op){
+    const legs = (op.legs||[]).map(l=>
+      `${l.side==='SELL'?'S':'B'} ${l.strike}${l.cp} @${f2(l.entry_premium)}`).join(' · ');
+    $('paperOpen').innerHTML =
+      `<div class="leg buy" style="min-width:auto"><div class="t">OPEN · ATM ${op.atm} · exp ${op.expiry} · ${op.lots} lot · credit ${f2(op.net_credit_pts)} pts</div>
+       <div class="muted">${legs}</div></div>`;
+  } else {
+    $('paperOpen').innerHTML = `<span class="muted">No open paper position${on?' — will enter ~00:00 UTC (05:30 IST)':''}.</span>`;
+  }
+  const done = (d.completed||[]).slice().reverse();
+  if(done.length){
+    $('paperDone').innerHTML =
+      '<table style="margin-top:4px"><thead><tr><th style="text-align:left">Exit</th><th>Exp</th><th>Settle spot</th><th>P&L pts</th><th>~$</th></tr></thead><tbody>'+
+      done.map(c=>{
+        const p=c.pnl_pts||0;
+        return `<tr><td style="text-align:left" class="muted">${(c.exit_time||'').slice(0,16).replace('T',' ')}</td>
+          <td>${c.expiry||''}</td><td>${f2(c.settle_spot)}</td>
+          <td class="${p>=0?'grn':'red'}">${f2(p)}</td><td class="${p>=0?'grn':'red'}">${f2(c.pnl_usd)}</td></tr>`;
+      }).join('')+'</tbody></table>';
+  } else {
+    $('paperDone').innerHTML = '';
+  }
+}
+
+function reload(){ loadChain(); loadFly(); loadPaper(); }
 
 $('uSeg').addEventListener('click', e=>{
   const b=e.target.closest('button'); if(!b) return;

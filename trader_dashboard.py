@@ -630,6 +630,21 @@ def api_delta_ironfly():
     data = delta_feed.ironfly_setup(u, exp, wing)
     return jsonify(data or {"error": "no data"})
 
+@app.route('/api/delta-paper')
+def api_delta_paper():
+    """Delta paper Iron-Fly state (open + completed + config). Display-only, PAPER."""
+    try:
+        from _ops import delta_ironfly_trader as dft
+    except Exception:
+        import delta_ironfly_trader as dft
+    st = dft._load()
+    comp = st.get("completed") or []
+    tot_pts = sum((c.get("pnl_pts") or 0) for c in comp)
+    tot_usd = sum((c.get("pnl_usd") or 0) for c in comp)
+    return jsonify({"open": st.get("open"), "completed": comp[-30:],
+                    "n": len(comp), "total_pnl_pts": tot_pts,
+                    "total_pnl_usd": tot_usd, "config": dft._config()})
+
 @app.route('/whatif2')
 def whatif2_page():
     """Sensibull-style Strategy Builder (backtest) — leg builder + Add/Edit chain modal +
