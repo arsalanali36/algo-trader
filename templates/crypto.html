@@ -182,7 +182,8 @@ async function loadPaper(){
   if(!d){ return; }
   const cfg = d.config||{};
   const on = cfg.enabled;
-  $('paperStatus').textContent = on ? 'ARMED (paper)' : 'OFF';
+  const exec = (cfg.execution||'sim')==='testnet' ? 'testnet' : 'paper';
+  $('paperStatus').textContent = on ? ('ARMED ('+exec+')') : 'OFF';
   $('paperStatus').style.color = on ? 'var(--grn)' : 'var(--mut)';
   const tp = d.total_pnl_pts||0, tu = d.total_pnl_usd||0;
   $('paperTotal').innerHTML = `${d.n||0} settled · total <b class="${tp>=0?'grn':'red'}">${f2(tp)} pts</b> (~$${f2(tu)})`;
@@ -190,9 +191,11 @@ async function loadPaper(){
   const op = d.open;
   if(op){
     const legs = (op.legs||[]).map(l=>
-      `${l.side==='SELL'?'S':'B'} ${l.strike}${l.cp} @${f2(l.entry_premium)}`).join(' · ');
+      `${l.side==='SELL'?'S':'B'} ${l.strike}${l.cp} @${f2(l.entry_fill!=null?l.entry_fill:l.entry_premium)}`).join(' · ');
+    const rec = op.reconcile ? ` · reconcile: <b class="${op.reconcile==='match'?'grn':'red'}">${op.reconcile}</b>` : '';
+    const md = op.mode==='testnet' ? ' <span class="tag">testnet</span>' : '';
     $('paperOpen').innerHTML =
-      `<div class="leg buy" style="min-width:auto"><div class="t">OPEN · ATM ${op.atm} · exp ${op.expiry} · ${op.lots} lot · credit ${f2(op.net_credit_pts)} pts</div>
+      `<div class="leg buy" style="min-width:auto"><div class="t">OPEN${md} · ATM ${op.atm} · exp ${op.expiry} · ${op.lots} lot · credit ${f2(op.net_credit_pts)} pts${rec}</div>
        <div class="muted">${legs}</div></div>`;
   } else {
     $('paperOpen').innerHTML = `<span class="muted">No open paper position${on?' — will enter ~00:00 UTC (05:30 IST)':''}.</span>`;
