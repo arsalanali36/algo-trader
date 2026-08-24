@@ -46,7 +46,9 @@ except Exception:
 
 TC_FILE = os.path.join(ROOT, "nifty_config.json")     # config lives at ROOT (not data/)
 SEG = "NSE_FNO"
-MODE = "paper"                    # HARD LOCK — going live needs a code change here
+# mode is CONFIG-DRIVEN (paper default): _weekly_ironfly.mode = "paper" | "live".
+# Positional/overnight → entries fire NRML (never MIS, else broker squares off at 3:20).
+PRODUCT = "NRML"
 STRAT_ID = "weekly_ironfly_v1"
 SRC = "weekly_ironfly"
 
@@ -72,7 +74,8 @@ def cfg():
     except Exception:
         c = {}
     out = {**DEFAULT_CFG, **(c or {})}
-    out["mode"] = "paper"         # never trust config for mode
+    if out.get("mode") not in ("paper", "live"):
+        out["mode"] = "paper"     # anything unexpected → paper (fail-safe)
     return out
 
 
@@ -141,17 +144,17 @@ def _no_entry_now():
 
 
 # ---------------------------------------------------------------- fire entry
-def _fire_leg(symbol, side, lots, lot_size, sec_id, trad_sym, tag, gid, xtags):
+def _fire_leg(symbol, side, lots, lot_size, sec_id, trad_sym, tag, gid, xtags, mode):
     return gw.execute_signal(STRAT_ID, symbol, side, lots, lot_size, sec_id, trad_sym,
-                             seg=SEG, mode=MODE, source=SRC, tag=tag,
+                             seg=SEG, mode=mode, source=SRC, tag=tag, product=PRODUCT,
                              group_id=gid, gate=False, extra_tags=xtags, log=_log)
 
 
-def _unwind(placed, symbol, gid):
+def _unwind(placed, symbol, gid, mode):
     for p in placed:
         try:
             gw.execute_exit(STRAT_ID, symbol, p["sec_id"], p["trad_sym"], p["qty"],
-                            entry_side=p["side"], seg=SEG, mode=MODE, group_id=gid,
+                            entry_side=p["side"], seg=SEG, mode=mode, group_id=gid,
                             reason="IRONFLY_UNWIND", tag="IRONFLY", source=SRC, log=_log)
         except Exception:
             pass
@@ -160,6 +163,7 @@ def _unwind(placed, symbol, gid):
 def fire_ironfly(symbol, source, front_expiry=None, c=None):
     """Enter one weekly iron-fly. Returns pos|None. HEDGE legs first (never naked)."""
     c = c or cfg()
+    mode = c.get("mode", "paper")
     if wf.has_open(symbol):
         _log(f"{symbol}: already open — skip"); return None
     if mc is not None and not mc.is_trading_day():
@@ -173,7 +177,7 @@ def fire_ironfly(symbol, source, front_expiry=None, c=None):
     if front_expiry is None:
         front_expiry = _front_expiry(symbol, spot)
 
-    blocked, reason, hard = rg.gating_status(STRAT_ID, mode=MODE)
+    blocked, reason, hard = rg.gating_status(STRAT_ID, mode=mode)
     if blocked and hard:
         _log(f"{symbol}: RMS hard-block ({reason}) — skip"); return None
 
@@ -191,24 +195,24 @@ def fire_ironfly(symbol, source, front_expiry=None, c=None):
         con = _resolve(symbol, spot, ot, off)
         if not con:
             _log(f"{symbol}: {ot} {role} resolve fail — unwind+abort")
-            _unwind(placed, symbol, gid); return None
+            _unwind(placed, symbol, gid, mode); return None
         sec_id, tsym, lot = con
         xtags = ["IRONFLY", role, f"IRONFLY_SRC:{source}"]
-        res = _fire_leg(symbol, oside, lots, lot, sec_id, tsym, tag, gid, xtags)
+        res = _fire_leg(symbol, oside, lots, lot, sec_id, tsym, tag, gid, xtags, mode)
         if not res or not res.get("ok"):
             _log(f"{symbol}: {ot} {role} fire fail ({res}) — unwind+abort")
-            _unwind(placed, symbol, gid); return None
+            _unwind(placed, symbol, gid, mode); return None
         px = float(res.get("price") or 0)
         qty = int(res.get("qty") or lots * lot)
         placed.append(dict(sec_id=sec_id, trad_sym=tsym, side=oside, qty=qty))
         legs.append(dict(opt_type=ot, role=role, side=oside, sec_id=sec_id, trad_sym=tsym,
                          strike=_strike_of(tsym), entry_price=px, qty=qty, status="open"))
 
-    pos = wf.build_position(gid, symbol, lots, legs[0]["qty"] // max(lots, 1), MODE, source, gid,
+    pos = wf.build_position(gid, symbol, lots, legs[0]["qty"] // max(lots, 1), mode, source, gid,
                             datetime.now().strftime("%Y-%m-%d"), front_expiry, spot, legs,
                             cfg={"wing": c["wing"], "take_pct": c["take_pct"]})
     if not pos:
-        _log(f"{symbol}: build_position rejected (credit<=0) — unwind"); _unwind(placed, symbol, gid); return None
+        _log(f"{symbol}: build_position rejected (credit<=0) — unwind"); _unwind(placed, symbol, gid, mode); return None
     wf.add(pos)
     ltp_poller.request_watch([(l["sec_id"], SEG) for l in legs])
     _log(f"{symbol}: ENTER iron-fly credit={pos['entry_net_credit']} target={pos['target_pts']} "
@@ -232,7 +236,8 @@ def _close_all(pos, reason):
             continue
         try:
             gw.execute_exit(STRAT_ID, pos["symbol"], l["sec_id"], l["trad_sym"], l["qty"],
-                            entry_side=l["side"], seg=SEG, mode=MODE, group_id=pos["group_id"],
+                            entry_side=l["side"], seg=SEG, mode=pos.get("mode", "paper"),
+                            group_id=pos["group_id"],
                             reason=reason, tag="IRONFLY", source=SRC, log=_log)
         except Exception as e:
             _log(f"close leg fail: {e}")
