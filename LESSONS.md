@@ -4573,3 +4573,15 @@ The per-strategy flat-check (`_my_open_qty`, TRAP #58/#145 line) protects EXIT a
 - **Part 3 (clean the ~110 `externally_closed` leftovers) = NOT worth the risk.** With Part 1 in place they no longer cause naked legs — they're only cosmetic display-attribution noise in the global-netting surfaces. The paired ones back real completed trades (deleting orphans their exit); deleting the unpaired ones shifts historical pairings (same 507-change class). A display-only benefit does not justify mutating historical records on a live-money DB.
 
 **Net:** the naked-leg BOMB is fully defused by Part 1 alone. The deeper "global netting per-group attribution" is a documented KNOWN LIMITATION, not a money-path risk. The A/B catching the 507-change regression before deploy is the lesson: NEVER touch `_net_rows` (feeds ~30 consumers incl. capital) without a whole-DB before/after that shows only intended diffs. Memory `project_code3b_group_leg_resolution`, ADR-019.
+
+---
+
+## TRAP #184 — Credit-structure backtest: running MTM must baseline at 0, not at the full credit (target trips on the entry bar) (2026-08-24, research)
+
+**Symptom (weekly iron-fly backtest, `scratch/weekly_ironfly/bt.py`):** a "take profit at 50% of credit" exit fired on the FIRST bar of every trade — 251/251 trades "target hit" yet the book showed a small NET LOSS each (~−₹500, just the 4-leg round-trip charges). Both the 50% and 75% variants printed byte-identical results (both trip instantly, so the % never matters).
+
+**Root pattern:** the running-P&L helper seeded its accumulator with the collected credit (`tot = cash` where `cash = entry_credit`) and then ADDED the mark-to-market delta of each leg on top. At entry the legs are at their entry price → delta 0 → `running == entry_credit` → which is `>= 0.5 × entry_credit` on the entry bar. A short structure's *running P&L* is **0 at entry** and rises toward the credit as premium decays — the credit is what you'd keep at max profit, NOT your P&L the moment you open. Seeding from the credit double-counts it.
+
+**Fix:** `running()` starts from `tot = 0.0` and sums per-leg `(entry_price − ltp)` for SELL legs + `(ltp − entry_price)` for BUY legs = 0 at entry, → `entry_credit` at max profit. (The REALISED P&L at exit was always computed correctly from the closed-leg deltas — that's why the "hold to expiry" variant, which ignores the target, gave sane numbers and masked the bug.)
+
+**Detect / rule:** any short-premium (credit) backtest whose profit target is a fraction of the credit — sanity-check that `running_pnl(entry_bar) ≈ 0`, not `≈ credit`. A red flag: 100% "target hit" on entry, or two different target %s producing identical output. This is the mirror of the classic "iron-fly max profit = net credit" definition — the credit is the CEILING of P&L, not its starting value. (Note: `auto_strangle_roll.position_mtm` — the LIVE path — already does this correctly, `_cum_cash` + flatten deltas; the bug was only in the standalone research engine.)

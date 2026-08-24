@@ -1329,5 +1329,53 @@
    "method": "REAL OptChainLake premium + date-aware Zerodha charges",
    "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136"
   }
+ },
+ {
+  "slug": "weekly_ironfly",
+  "design": "weekly_ironfly",
+  "title": "02.17 - Weekly Iron-Fly (day-after-expiry, REAL-lake, 5 lots)",
+  "tf": "positional",
+  "params": {
+   "dist": 0,
+   "wing": 250,
+   "take_pct": 0.5,
+   "structure": "iron_fly",
+   "lots": 5
+  },
+  "exit": "50% credit / weekly expiry",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+   "2021-07-02",
+   "2026-07-15"
+  ],
+  "days": 251,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 1.933,
+   "net_pct": 213.359,
+   "maxdd": -18.597,
+   "win_rate": 57.769,
+   "trades": 251,
+   "profit_factor": 1.96
+  },
+  "combos": {
+   "train": {
+    "sharpe": 1.355,
+    "net_pct": 101.495
+   },
+   "oos": {
+    "sharpe": 3.271,
+    "net_pct": 111.863
+   }
+  },
+  "p_value": 0.0,
+  "created": "2026-08-24 12:00",
+  "deploy_key": "weekly_ironfly",
+  "deployed": "weekly_ironfly",
+  "real_cost": {
+   "method": "REAL OptChainLake premium + date-aware Zerodha charges, 5 lots",
+   "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136. No SL: wings = defined-risk cap."
+  }
  }
 ]

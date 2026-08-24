@@ -59,6 +59,15 @@ if __name__ == '__main__':
     except Exception as _e:
         print(f"[monitor] strangle_live not started: {_e}", flush=True)
 
+    # Weekly positional iron-fly (02.17, ~3s loop). OFF by default
+    # (config._weekly_ironfly.enabled=false), PAPER hard-locked. Self-contained in
+    # _ops/weekly_ironfly_live.py — no-op unless enabled or a manual fire is open.
+    try:
+        import weekly_ironfly_live
+        threading.Thread(target=weekly_ironfly_live.ironfly_loop, daemon=True).start()
+    except Exception as _e:
+        print(f"[monitor] weekly_ironfly_live not started: {_e}", flush=True)
+
     # StockMock-style (_sm) config strategies — generic scheduled leg-basket runner.
     # On a qualifying day at entry time, fires the configured legs once; exits are the
     # existing pos_monitor's job (per-leg SL% tag + EOD). PAPER. See _ops/sm_runner.py.
