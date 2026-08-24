@@ -1,5 +1,46 @@
 [
  {
+  "slug": "delta_ironfly_btc",
+  "design": "delta_ironfly",
+  "title": "11 - Delta BTC Iron-Fly (real premium)",
+  "tf": "daily-expiry",
+  "instrument": "BTC (Delta India)",
+  "lot_size": 1,
+  "window": [
+   "2026-02-27",
+   "2026-08-19"
+  ],
+  "days": 57,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 5.035,
+   "net_pct": 11.38,
+   "maxdd": -1.9,
+   "win_rate": 70.18,
+   "trades": 57,
+   "profit_factor": 3.025
+  },
+  "p_value": 0.0,
+  "created": "2026-08-24 22:24",
+  "deploy_key": "delta_ironfly",
+  "deployed": "delta_ironfly",
+  "real_cost": {
+   "method": "REAL Delta premium + half-cross slippage (seller, trustworthy)",
+   "date": "2026-08-24"
+  },
+  "train_sharpe": 4.92,
+  "oos_sharpe": 6.96,
+  "params": {
+   "structure": "iron_fly",
+   "wing": 2000,
+   "entry_h_before": 12,
+   "exit": "cash_settle_1200utc"
+  },
+  "exit": "cash_settle",
+  "instrument_full_sharpe": 5.035,
+  "rms_full_sharpe": 5.035
+ },
+ {
   "slug": "mid_orb_nifty",
   "design": "tod_orb",
   "title": "00 - Mid-Day ORB (reference, live)",
