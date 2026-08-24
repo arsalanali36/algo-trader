@@ -228,6 +228,31 @@ class DeltaBroker:
             return {"status": "rejected", "order_id": None, "fill_price": None,
                     "reason": (j or {}).get("error", "order failed"), "raw": j}
         r = j.get("result", {})
+        fill = None
+        try:
+            fp = r.get("average_fill_price")
+            fill = float(fp) if fp not in (None, "", "0") else None
+        except (TypeError, ValueError):
+            fill = None
         return {"status": r.get("state", "pending"),
                 "order_id": str(r.get("id")),
-                "fill_price": None, "reason": "", "raw": j}
+                "fill_price": fill, "reason": "", "raw": j}
+
+    def positions_detailed(self):
+        """Richer per-position detail: [{symbol, size, entry_price, realized_pnl,
+        unrealized_pnl}]. Used for reconcile + real entry-fill capture."""
+        j = self._signed("GET", "/v2/positions/margined")
+        out = []
+        if j and "result" in j:
+            for p in j["result"]:
+                sym = (p.get("product") or {}).get("symbol") or str(p.get("product_id"))
+                def _f(v):
+                    try:
+                        return float(v)
+                    except (TypeError, ValueError):
+                        return None
+                out.append({"symbol": sym, "size": _f(p.get("size")),
+                            "entry_price": _f(p.get("entry_price")),
+                            "realized_pnl": _f(p.get("realized_pnl")),
+                            "unrealized_pnl": _f(p.get("unrealized_pnl"))})
+        return out

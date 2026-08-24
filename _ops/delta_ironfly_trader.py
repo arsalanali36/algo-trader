@@ -36,6 +36,8 @@ DEFAULTS = {
     "wing": 2000,           # points OTM for defined-risk wings (BTC)
     "entry_hour_utc": 0,    # 00:00 UTC = 05:30 IST (~12h before 12:00 UTC expiry)
     "entry_window_min": 15, # fire within this many minutes of entry_hour
+    "execution": "sim",     # "sim" = internal simulation | "testnet" = real Delta testnet orders
+    "exit_min_before": 5,   # testnet: close legs N min before 12:00 UTC settlement
 }
 
 
@@ -187,13 +189,182 @@ def maybe_exit(cfg, st, now_utc, log=print):
     return st
 
 
+# ============ TESTNET execution (real Delta testnet orders + reconcile) ========
+def _code_date(code):
+    return dt.datetime.strptime(code, "%d%m%y").date()
+
+
+def _testnet_broker():
+    """DeltaBroker in testnet mode, or None if not testnet/no-creds (SAFETY:
+    never place real MAINNET orders from here)."""
+    try:
+        from brokers.delta_broker import DeltaBroker
+    except Exception:
+        import sys as _s
+        _s.path.insert(0, os.path.join(_ROOT, "brokers"))
+        from delta_broker import DeltaBroker
+    b = DeltaBroker()
+    if not b.testnet or not b.has_creds():
+        return None
+    return b
+
+
+def _testnet_ironfly(broker, underlying, wing):
+    """Resolve the daily iron-fly legs from TESTNET-listed strikes for the
+    nearest dte>=0 expiry. Returns dict or None. Wings BUY first (defined-risk)."""
+    prods = broker._products()
+    pre = (f"C-{underlying}-", f"P-{underlying}-")
+    opts = [s for s, p in prods.items()
+            if s.startswith(pre) and p.get("state") == "live"]
+    if not opts:
+        return None
+    today = dt.date.today()
+    codes = sorted({s.split("-")[3] for s in opts}, key=_code_date)
+    code = next((c for c in codes if (_code_date(c) - today).days >= 0), None)
+    if not code:
+        return None
+    spot = broker.quote(f"{underlying}USD").get("ltp")
+    strikes = sorted({int(s.split("-")[2]) for s in opts if s.endswith("-" + code)})
+    if not spot or not strikes:
+        return None
+    atm = min(strikes, key=lambda x: abs(x - spot))
+    up = min(strikes, key=lambda x: abs(x - (atm + wing)))
+    dn = min(strikes, key=lambda x: abs(x - (atm - wing)))
+    U = underlying
+    legs = [("BUY", f"C-{U}-{up}-{code}", "C", up),     # wings FIRST (defined-risk)
+            ("BUY", f"P-{U}-{dn}-{code}", "P", dn),
+            ("SELL", f"C-{U}-{atm}-{code}", "C", atm),
+            ("SELL", f"P-{U}-{atm}-{code}", "P", atm)]
+    return {"code": code, "atm": atm, "spot": spot, "wing_up": up, "wing_dn": dn,
+            "legs": legs}
+
+
+def _unwind_testnet(broker, placed, lots, log):
+    """Close whatever legs were already filled (opposite market orders)."""
+    for lg in placed:
+        opp = "SELL" if lg["side"] == "BUY" else "BUY"
+        try:
+            broker.place_order(opp, lg["symbol"], qty=lots, order_type="MARKET")
+            log(f"[delta-fly] unwound {lg['symbol']}")
+        except Exception as e:
+            log(f"[delta-fly] unwind FAIL {lg['symbol']}: {e}")
+
+
+def _reconcile_testnet(broker, pos, log):
+    """Compare our recorded legs to actual testnet positions. Returns status str."""
+    live = {p["symbol"]: p for p in broker.positions_detailed()}
+    lots = pos["lots"]
+    ok, notes = True, []
+    for lg in pos["legs"]:
+        want = lots if lg["side"] == "BUY" else -lots
+        got = live.get(lg["symbol"], {}).get("size")
+        if got != want:
+            ok = False
+            notes.append(f"{lg['symbol']}: want {want} got {got}")
+    status = "match" if ok else "MISMATCH: " + "; ".join(notes)
+    log(f"[delta-fly] testnet reconcile: {status}")
+    return status
+
+
+def enter_testnet(cfg, st, now_utc, log=print):
+    b = _testnet_broker()
+    if b is None:
+        log("[delta-fly] execution=testnet but broker not testnet/no-creds — SKIP "
+            "(never places mainnet real orders)")
+        return st
+    setup = _testnet_ironfly(b, cfg["underlying"], cfg["wing"])
+    if not setup:
+        log("[delta-fly] testnet iron-fly resolve failed — skip")
+        return st
+    lots = cfg["lots"]
+    placed = []
+    for side, sym, cp, strike in setup["legs"]:
+        r = b.place_order(side, sym, qty=lots, order_type="MARKET")
+        if r.get("status") == "rejected":
+            log(f"[delta-fly] leg REJECTED {side} {sym}: {r.get('reason')} — unwinding")
+            _unwind_testnet(b, placed, lots, log)
+            return st
+        placed.append({"cp": cp, "strike": strike, "side": side, "symbol": sym,
+                       "entry_fill": r.get("fill_price"), "order_id": r.get("order_id")})
+    cv = CONTRACT_VALUE.get(cfg["underlying"], 0.001)
+    credit = sum((l["entry_fill"] or 0) for l in placed if l["side"] == "SELL") \
+        - sum((l["entry_fill"] or 0) for l in placed if l["side"] == "BUY")
+    pos = {"underlying": cfg["underlying"], "expiry": setup["code"],
+           "atm": setup["atm"], "wing": cfg["wing"], "lots": lots,
+           "contract_value": cv, "legs": placed, "entry_spot": setup["spot"],
+           "net_credit_pts": credit, "entry_time": now_utc.isoformat(),
+           "mode": "testnet"}
+    pos["reconcile"] = _reconcile_testnet(b, pos, log)
+    st["open"] = pos
+    st["last_entry_day"] = now_utc.date().isoformat()
+    _save(st)
+    log(f"[delta-fly] TESTNET ENTER iron-fly ATM {setup['atm']} exp {setup['code']} "
+        f"credit {credit:.1f}pts lots {lots} | reconcile: {pos['reconcile']}")
+    _tg(f"🦋 <b>Delta BTC Iron-Fly — TESTNET ENTRY</b>\n"
+        f"ATM {setup['atm']} · exp {setup['code']} · {lots} lot\n"
+        f"legs: " + " · ".join(f"{l['side'][0]} {l['strike']}{l['cp']}@{l['entry_fill']}"
+                               for l in placed) + "\n"
+        f"net credit {credit:.1f} pts · reconcile: {pos['reconcile']}\n"
+        f"(paper testnet — visible on Delta testnet platform)")
+    return st
+
+
+def maybe_exit_testnet(cfg, st, now_utc, log=print):
+    pos = st.get("open")
+    if not pos or pos.get("mode") != "testnet":
+        return st
+    try:
+        exp_d = _code_date(pos["expiry"])
+    except ValueError:
+        return st
+    exp_ts = dt.datetime(exp_d.year, exp_d.month, exp_d.day, 12, 0, tzinfo=dt.timezone.utc)
+    close_at = exp_ts - dt.timedelta(minutes=int(cfg.get("exit_min_before", 5)))
+    if now_utc < close_at:
+        return st
+    b = _testnet_broker()
+    if b is None:
+        log("[delta-fly] testnet exit: broker unavailable — retry next tick")
+        return st
+    live = b.positions()
+    cv, lots = pos["contract_value"], pos["lots"]
+    net_pts = 0.0
+    for lg in pos["legs"]:
+        held = abs(live.get(lg["symbol"], 0) or 0)
+        exit_fill = None
+        if held > 0:
+            opp = "SELL" if lg["side"] == "BUY" else "BUY"
+            r = b.place_order(opp, lg["symbol"], qty=held, order_type="MARKET")
+            exit_fill = r.get("fill_price")
+        ef = exit_fill if exit_fill is not None else 0.0
+        sign = 1 if lg["side"] == "SELL" else -1
+        net_pts += sign * ((lg["entry_fill"] or 0) - ef)
+        lg["exit_fill"] = ef
+    pnl_usd = net_pts * cv * lots
+    rec = dict(pos)
+    rec.update({"exit_time": now_utc.isoformat(), "pnl_pts": net_pts, "pnl_usd": pnl_usd})
+    st["completed"] = (st.get("completed") or []) + [rec]
+    st["open"] = None
+    _save(st)
+    log(f"[delta-fly] TESTNET EXIT exp {pos['expiry']} P&L {net_pts:+.1f}pts "
+        f"(~${pnl_usd:+.2f})")
+    _tg(f"🦋 <b>Delta BTC Iron-Fly — TESTNET EXIT</b>\n"
+        f"exp {pos['expiry']} · P&L <b>{net_pts:+.1f} pts</b> (~${pnl_usd:+.2f}) · {lots} lot")
+    return st
+
+
 def tick(now_utc=None, log=print):
     cfg = _config()
     st = _load()
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc)
-    st = maybe_exit(cfg, st, now_utc, log)
-    if should_enter(cfg, st, now_utc):
-        st = enter(cfg, st, now_utc, log)
+    testnet = str(cfg.get("execution", "sim")).lower() == "testnet"
+    if testnet:
+        st = maybe_exit_testnet(cfg, st, now_utc, log)
+        if should_enter(cfg, st, now_utc):
+            st = enter_testnet(cfg, st, now_utc, log)
+    else:
+        st = maybe_exit(cfg, st, now_utc, log)
+        if should_enter(cfg, st, now_utc):
+            st = enter(cfg, st, now_utc, log)
     return st
 
 
