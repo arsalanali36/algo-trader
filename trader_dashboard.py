@@ -9317,6 +9317,14 @@ def api_orders():
         for p in data.get('open', []):
             if (p.get('tags') or []) and 'CAPITAL_BLOCKED' in p['tags']:
                 continue
+            # Crypto (Delta): NEVER route through position_margin — it calls Kite/Dhan
+            # SPAN on a Delta symbol that resolves to nothing and retries/times out
+            # (measured ~3.3s PER LEG → 13s+ page stall). Cheap margin instead; the
+            # per-group Delta margin (real, ~portfolio) is handled below.
+            if p.get('broker') == 'delta' or p.get('segment') == 'crypto':
+                ep = float(p.get('entry_price') or 0); q = float(p.get('qty') or 0)
+                p['margin_used'] = round(ep * q, 2) if str(p.get('entry')).upper() == 'BUY' else 0
+                continue
             try:
                 # Real executing-broker margin: SELL → actual SPAN+exposure via
                 # broker_real_margin (Kite order_margins / Dhan calculator); BUY →
@@ -9362,11 +9370,17 @@ def api_orders():
                     continue
                 _gk = str(p.get('group_id') or '').strip() or ('solo_' + str(p.get('id')))
                 _grp.setdefault(_gk, []).append(p)
-            data['group_margin'] = {
-                gk: {"hedged": round(_rg.position_margin(rows, _rc), 2),   # single margin gate (hedged basket)
-                     "standalone": round(sum(float(r.get('margin_used') or 0) for r in rows), 2)}
-                for gk, rows in _grp.items()
-            }
+            data['group_margin'] = {}
+            for gk, rows in _grp.items():
+                _stand = round(sum(float(r.get('margin_used') or 0) for r in rows), 2)
+                # crypto groups: skip position_margin (Kite/Dhan SPAN on Delta syms =
+                # ~13s stall) — use the cheap standalone sum (Portfolio margin ≈ that).
+                if any(r.get('broker') == 'delta' or r.get('segment') == 'crypto' for r in rows):
+                    data['group_margin'][gk] = {"hedged": _stand, "standalone": _stand}
+                else:
+                    data['group_margin'][gk] = {
+                        "hedged": round(_rg.position_margin(rows, _rc), 2),
+                        "standalone": _stand}
         except Exception:
             data['group_margin'] = {}
     except Exception as _e:
