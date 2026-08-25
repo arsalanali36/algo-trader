@@ -56,6 +56,39 @@ visible on Delta's own platform + reconciled app↔testnet) → live (Step-3).
 - **Credential discipline:** Claude never entered/transcribed the API key; user delivered
   it themselves (Notepad→scp), Claude only stripped stray `<>` server-side without viewing.
 
+## Update (2026-08-25) — UNIFIED INFRA: crypto IN order_store, in INR (supersedes the "Delta does NOT get order_store netting" trade-off above)
+
+User's architecture call, LOCKED IN: **do NOT fork infra per asset class.** One
+balance / order_store / RMS / reconcile system for NSE + crypto (+ future
+commodity/futures), everything in INR — so all NSE hardening (netting, reconcile,
+safety guards) carries over for free. Isolation, if ever needed, is a `segment`
+filter later, not a separate system. This reverses this ADR's original "keep crypto
+out of order_store" stance.
+
+**Implemented:** every Delta fill mirrors into `order_store.record(...)` with
+`broker="delta"`, `segment="crypto"`, `mode="paper"`, price = `premium_usd ×
+contract_value × usd_inr(85)` (INR **per lot**, qty=lots → existing `(exit−entry)×qty`
+gross math = correct INR P&L). Crypto now shows in Broker Orders app-list, Open
+Positions (4-leg grouped, live MTM), Completed, Stats; broker dropdown auto-gains
+"delta". Live MTM via a crypto branch in `/api/positions-ltp` (delta_feed marks →
+INR-per-lot). Reconcile stays broker-scoped (kite/dhan) → ignores delta. Commission
+(INR, ~0.03% notional) in `calcCharges`/`_zerodha_charges`; auto-liquidation recording
+(`reconcile_liquidations`); Run-Up/Down (`_update_runup_tags`, match by group_id).
+
+**MANDATORY RULE for any asset class sharing the NSE infra** (crypto/commodity/futures):
+it inherits netting/reconcile/RMS for free, **but every Dhan/Kite-specific resolver
+MUST have an early `broker=='delta'`/`segment=='<asset>'` skip** — scrip-master lookups
+(`get_expiry_for_sec_id`/`get_lot_size_by_sec_id` = full 26MB O(n) scan on no-match),
+`risk_gate.position_margin` (Kite `order_margins`/Dhan SPAN network call), the Dhan LTP
+feed, and SL computation. Without the skip each does a full-scan/timeout PER RENDER —
+measured 13.4s stall on `/api/orders` from `position_margin` alone (LESSONS #187).
+
+**Liquidation reality (LESSONS #186):** on Delta **Isolated margin** an iron-fly is NOT
+margin-defined-risk — a short leg going ITM is auto-liquidated ALONE at a bad price
+(wings don't net it). Fix = **Portfolio Margin** (account setting; nets the hedge →
+50-lot fly margin ~$0, no liquidation). Interim on isolated = small lots.
+
 ## Related
-LESSONS TRAP #185 (Windows CMD heredoc + testnet dailies string-sort + credential-safe
-delivery + RESULTS_SCHEMA required fields). Memory `project_delta_crypto_options`.
+LESSONS TRAP #185 (Windows CMD heredoc + testnet dailies + credential-safe delivery),
+#186 (isolated-margin leg liquidation → Portfolio Margin), #187 (crypto-legs-skip-NSE-
+broker-calls perf trap). Memory `project_delta_crypto_options`.
