@@ -263,12 +263,21 @@ def _testnet_ironfly(broker, underlying, wing):
     if not code:
         return None
     spot = broker.quote(f"{underlying}USD").get("ltp")
-    strikes = sorted({int(s.split("-")[2]) for s in opts if s.endswith("-" + code)})
-    if not spot or not strikes:
+    # CALL and PUT strikes differ near the tails — snap each leg to a strike that
+    # ACTUALLY exists for its own option type (merging them picks e.g. an 82800
+    # that lists only as a PUT → C-BTC-82800 "unknown product" reject). TRAP: fly
+    # legs = up-wing CALL, dn-wing PUT, ATM needs BOTH.
+    cpre, ppre = f"C-{underlying}-", f"P-{underlying}-"
+    call_strk = sorted({int(s.split("-")[2]) for s in opts
+                        if s.startswith(cpre) and s.endswith("-" + code)})
+    put_strk = sorted({int(s.split("-")[2]) for s in opts
+                       if s.startswith(ppre) and s.endswith("-" + code)})
+    both = sorted(set(call_strk) & set(put_strk))
+    if not spot or not both or not call_strk or not put_strk:
         return None
-    atm = min(strikes, key=lambda x: abs(x - spot))
-    up = min(strikes, key=lambda x: abs(x - (atm + wing)))
-    dn = min(strikes, key=lambda x: abs(x - (atm - wing)))
+    atm = min(both, key=lambda x: abs(x - spot))
+    up = min(call_strk, key=lambda x: abs(x - (atm + wing)))
+    dn = min(put_strk, key=lambda x: abs(x - (atm - wing)))
     U = underlying
     legs = [("BUY", f"C-{U}-{up}-{code}", "C", up),     # wings FIRST (defined-risk)
             ("BUY", f"P-{U}-{dn}-{code}", "P", dn),
