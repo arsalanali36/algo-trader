@@ -3164,8 +3164,10 @@ def api_positions_ltp():
             except Exception:
                 _rate = 85.0
             _cv = {"BTC": 0.001, "ETH": 0.01}
+            _unds = {("BTC" if "-BTC-" in str(sid) else "ETH")
+                     for _k, sid, _s in crypto_items}
             try:
-                for _und in ("BTC", "ETH"):
+                for _und in _unds:
                     marks = {t.get("symbol"): _df._f(t.get("mark_price"))
                              for t in _df._all_option_tickers(_und)}
                     cvv = _cv.get(_und, 0.001)
@@ -9168,6 +9170,23 @@ def _enrich_trade_display(trades, lot_only=False):
         _margin_warm_start()
     _exp_cache = {}   # sec_id -> expiry date (memoise across rows; get_expiry_for_sec_id scans full cache)
     for t in (trades or []):
+        # Crypto (Delta) legs: NOT in the Dhan scrip-master — skip lot_size/expiry
+        # lookups (each is a full 26MB-cache O(n) SCAN that finds nothing = ~0.25s
+        # per leg → 2s+ page stall) and the NSE SPAN-margin queue. Cheap fields only.
+        _sid0 = str(t.get('sec_id') or '')
+        if (t.get('broker') == 'delta' or t.get('segment') == 'crypto'
+                or (('-BTC-' in _sid0 or '-ETH-' in _sid0) and _sid0[:2] in ('C-', 'P-'))):
+            t['lot_size'] = 1   # crypto = per-lot (0.001 BTC); qty already in lots
+            if not lot_only:
+                try:
+                    ep = float(t.get('entry_price') or 0); q = float(t.get('qty') or 0)
+                    if ep > 0 and q > 0:
+                        # BUY = premium debit; SELL ≈ portfolio-margin (~0 under Portfolio)
+                        t['margin'] = round(ep * q, 2) if str(t.get('entry')).upper() == 'BUY' else 0
+                        t['margin_est'] = True
+                except Exception:
+                    pass
+            continue
         try:
             lot = _dm.get_lot_size_by_sec_id(t.get('sec_id')) if _dm else None
             if lot:
