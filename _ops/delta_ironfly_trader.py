@@ -38,6 +38,7 @@ DEFAULTS = {
     "entry_window_min": 15, # fire within this many minutes of entry_hour
     "execution": "sim",     # "sim" = internal simulation | "testnet" = real Delta testnet orders
     "exit_min_before": 5,   # testnet: close legs N min before 12:00 UTC settlement
+    "usd_inr": 85.0,        # crypto P&L shown in INR (unified infra) — Delta India rate
 }
 
 
@@ -154,6 +155,48 @@ def _tg(text):
             tg.send_raw(text)
     except Exception:
         pass
+
+
+def _usd_inr():
+    try:
+        return float(_config().get("usd_inr") or 85.0)
+    except Exception:
+        return 85.0
+
+
+def _record_leg(leg, *, cv, lots, group_id, action, mode="paper",
+                strategy="delta_ironfly_btc", ts=None, log=print):
+    """Mirror ONE Delta fill into the shared order_store in INR — so crypto shows
+    up in the SAME infra (Broker Orders / Open Positions / Completed / Stats) as
+    NSE, and inherits all its netting/reconcile hardening. broker='delta' +
+    segment='crypto' keep it cleanly filterable/isolatable later. Best-effort:
+    a failure here never breaks the actual trade. INR price = premium(USD-pts) x
+    contract_value(BTC) x USD/INR = rupee value PER LOT (qty=lots) → the existing
+    (exit-entry)*qty gross math yields correct INR P&L."""
+    try:
+        import order_store
+    except Exception as e:
+        log(f"[delta-fly] order_store import fail (mirror skipped): {e}")
+        return
+    fill = leg.get("entry_fill") if action == "entry" else leg.get("exit_fill")
+    if fill is None:
+        return
+    price_inr = round(float(fill) * cv * _usd_inr(), 2)
+    if price_inr <= 0:
+        return
+    # entry keeps the leg's own side; exit is the closing (opposite) side
+    side = leg["side"] if action == "entry" else ("BUY" if leg["side"] == "SELL" else "SELL")
+    sym = leg["symbol"]
+    try:
+        order_store.record(side, int(lots), price_inr, source="delta_ironfly",
+                           strategy=strategy, mode=mode, broker="delta",
+                           segment="crypto", symbol=sym, instrument="BTC",
+                           trad_sym=sym, sec_id=sym,
+                           broker_order_id=str(leg.get("order_id") or ""),
+                           status="filled", group_id=group_id,
+                           product_type="NRML", ts=ts)
+    except Exception as e:
+        log(f"[delta-fly] order_store.record fail ({action} {sym}): {e}")
 
 
 def enter(cfg, st, now_utc, log=print):
@@ -337,15 +380,19 @@ def enter_testnet(cfg, st, now_utc, log=print):
     cv = CONTRACT_VALUE.get(cfg["underlying"], 0.001)
     credit = sum((l["entry_fill"] or 0) for l in placed if l["side"] == "SELL") \
         - sum((l["entry_fill"] or 0) for l in placed if l["side"] == "BUY")
+    group_id = "deltafly_" + now_utc.strftime("%Y%m%d_%H%M%S")
     pos = {"underlying": cfg["underlying"], "expiry": setup["code"],
            "atm": setup["atm"], "wing": cfg["wing"], "lots": lots,
            "contract_value": cv, "legs": placed, "entry_spot": setup["spot"],
            "net_credit_pts": credit, "entry_time": now_utc.isoformat(),
-           "mode": "testnet"}
+           "mode": "testnet", "group_id": group_id}
     pos["reconcile"] = _reconcile_testnet(b, pos, log)
     st["open"] = pos
     st["last_entry_day"] = now_utc.date().isoformat()
     _save(st)
+    # mirror into shared order_store (INR) — unified infra
+    for lg in placed:
+        _record_leg(lg, cv=cv, lots=lots, group_id=group_id, action="entry", log=log)
     log(f"[delta-fly] TESTNET ENTER iron-fly ATM {setup['atm']} exp {setup['code']} "
         f"credit {credit:.1f}pts lots {lots} | reconcile: {pos['reconcile']}")
     _tg(f"🦋 <b>Delta BTC Iron-Fly — TESTNET ENTRY</b>\n"
@@ -375,6 +422,7 @@ def maybe_exit_testnet(cfg, st, now_utc, log=print):
         return st
     live = b.positions()
     cv, lots = pos["contract_value"], pos["lots"]
+    gid = pos.get("group_id") or ("deltafly_" + str(pos.get("entry_time", ""))[:19])
     net_pts = 0.0
     for lg in pos["legs"]:
         held = abs(live.get(lg["symbol"], 0) or 0)
@@ -387,6 +435,8 @@ def maybe_exit_testnet(cfg, st, now_utc, log=print):
         sign = 1 if lg["side"] == "SELL" else -1
         net_pts += sign * ((lg["entry_fill"] or 0) - ef)
         lg["exit_fill"] = ef
+        if held > 0:   # only mirror legs we actually closed (skip already-gone)
+            _record_leg(lg, cv=cv, lots=lots, group_id=gid, action="exit", log=log)
     pnl_usd = net_pts * cv * lots
     rec = dict(pos)
     rec.update({"exit_time": now_utc.isoformat(), "pnl_pts": net_pts, "pnl_usd": pnl_usd})

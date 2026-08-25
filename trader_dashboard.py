@@ -3138,6 +3138,46 @@ def api_positions_ltp():
         return jsonify({"ok": True, "ltp_map": {}})
 
     ltp_map = {}
+
+    # ── Crypto (Delta) legs: sec_id is a Delta symbol (e.g. C-BTC-80800-250826),
+    # NOT an NSE sec_id — resolve LTP from delta_feed marks and convert to the
+    # SAME INR-per-lot units order_store stored (mark x contract_value x USD/INR),
+    # so the Open Positions P&L math (which is INR) stays consistent. Pull these
+    # out so the NSE Dhan feed below never sees them. ──
+    def _is_delta(sid):
+        s = str(sid)
+        return ("-BTC-" in s or "-ETH-" in s) and (s[:2] in ("C-", "P-"))
+    crypto_items = [it for it in items if _is_delta(it[1])]
+    if crypto_items:
+        items = [it for it in items if not _is_delta(it[1])]
+        try:
+            from _ops import delta_feed as _df
+        except Exception:
+            try:
+                import delta_feed as _df
+            except Exception:
+                _df = None
+        if _df is not None:
+            try:
+                _dcfg = json.loads(TC_FILE.read_text()) if TC_FILE.exists() else {}
+                _rate = float((_dcfg.get("_delta_ironfly") or {}).get("usd_inr") or 85.0)
+            except Exception:
+                _rate = 85.0
+            _cv = {"BTC": 0.001, "ETH": 0.01}
+            try:
+                for _und in ("BTC", "ETH"):
+                    marks = {t.get("symbol"): _df._f(t.get("mark_price"))
+                             for t in _df._all_option_tickers(_und)}
+                    cvv = _cv.get(_und, 0.001)
+                    for key, sid, _seg in crypto_items:
+                        m = marks.get(str(sid))
+                        if m is not None:
+                            ltp_map[key] = {"ltp": round(m * cvv * _rate, 2), "qty": None}
+            except Exception:
+                pass
+    if not items:
+        return jsonify({"ok": True, "ltp_map": ltp_map, "src": "delta"})
+
     try:
         _feed_subscribe([(seg, sid) for _k, sid, seg in items])
     except Exception:
