@@ -1,0 +1,83 @@
+{
+ "window": [
+  "2021-07-01",
+  "2026-07-15"
+ ],
+ "days": 1245,
+ "start_cap": 331000,
+ "design": "02.13.01 - Short Strangle ATM±1% + ±10 Hedge",
+ "tf": "1m",
+ "instrument": "NIFTY options",
+ "lot_size": 65,
+ "lots": 1,
+ "intraday": true,
+ "periods": [
+  "full",
+  "train",
+  "oos"
+ ],
+ "sm_config": {
+  "id": "sm_nifty_atm1pct_hedged_v1",
+  "instrument": "NIFTY",
+  "entry_hm": "09:22",
+  "exit_hm": "15:15",
+  "day_filter": "all",
+  "squareoff": "one",
+  "legs": [
+   {
+    "opt": "CE",
+    "side": "BUY",
+    "off": 10,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": null,
+    "sw_mult": null,
+    "strike_mode": "atm",
+    "lots": 5,
+    "sl_pct": null,
+    "tp_pct": null
+   },
+   {
+    "opt": "PE",
+    "side": "BUY",
+    "off": -10,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": null,
+    "sw_mult": null,
+    "strike_mode": "atm",
+    "lots": 5,
+    "sl_pct": null,
+    "tp_pct": null
+   },
+   {
+    "opt": "CE",
+    "side": "SELL",
+    "off": 0,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": 1.0,
+    "sw_mult": null,
+    "strike_mode": "atm_pct",
+    "lots": 5,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   },
+   {
+    "opt": "PE",
+    "side": "SELL",
+    "off": 0,
+    "sp_pct": null,
+    "cp_rs": null,
+    "atm_pct": -1.0,
+    "sw_mult": null,
+    "strike_mode": "atm_pct",
+    "lots": 5,
+    "sl_pct": 25.0,
+    "tp_pct": null
+   }
+  ],
+  "mode": "paper",
+  "valid": true
+ }
+}

@@ -675,6 +675,18 @@
    "structure": "Short strangle (naked, ATMÂ±1%, 25% SL, 5 lot)",
    "desc": "StockMock '55% ShortATMÂ±1%' â€” SELL 5-lot CE @ATM+1% + 5-lot PE @ATM-1%, 25% SL, square-off-one, 09:22â†’15:15, NIFTY weekly, daily. Backtest NET +â‚¹3.88L (2021-07â†’, 5 lot) â€” flat brokerage amortizes at 5 lots (1-lot was net-neg). Win 62.6% (â‰ˆStockMock 63%), R/MDD 2.51. 2026 bleeding (âˆ’â‚¹117k). PAPER forward-watch."
   },
+  "02.13.01": {
+   "name": "Short Strangle ATM±1% + ±10 Hedge",
+   "config_key": "sm_nifty_atm1pct_hedged_v1",
+   "slug": "sm_nifty_atm1pct_hedged_v1",
+   "live_file": "_ops/sm_runner.py",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Iron condor (ATM±1% short + ±10 wing, 25% SL short, 5 lot)",
+   "desc": "HEDGED twin of 02.13 — same ATM±1% short strangle + BUY ±10 wings (defined risk). Backtest NET +₹372,421 (2021-07→,5lot) vs naked ₹3.88L (only −4%!), Sharpe 0.745, win 52.0%, maxDD ₹141,348. **Margin ~₹55k vs naked ~₹9.8L (18× less) → RoC 40%→675%.** Wings held to EOD (no SL). PAPER forward-validation. Rule 10: significance untested. Memory project_code3b_hedged_strangle_family."
+  },
   "02.14": {
    "name": "Straddle-Width Strangle Â±1Ã—SP (StockMock)",
    "config_key": "sm_nifty_swidth_v1",
@@ -686,6 +698,18 @@
    "hold": "Intraday",
    "structure": "Short strangle (naked, ATMÂ±1Ã—straddle-premium, 25% SL, 5 lot)",
    "desc": "StockMock '58% StraddleWidthÂ±1%' â€” SELL 5-lot CE @ATM+1Ã—SP + 5-lot PE @ATM-1Ã—SP (SP=ATM straddle premium pts), 25% SL, square-off-one, 09:22â†’15:15, NIFTY weekly, daily. Backtest NET +â‚¹3.09L (2021-07â†’,5lot), Sharpe 1.07, R/MDD 1.99, win 57.4%. 2026 bleeding âˆ’â‚¹135k. PAPER forward-watch."
+  },
+  "02.14.01": {
+   "name": "Straddle-Width Strangle + ±10 Hedge",
+   "config_key": "sm_nifty_swidth_hedged_v1",
+   "slug": "sm_nifty_swidth_hedged_v1",
+   "live_file": "_ops/sm_runner.py",
+   "status": "paper",
+   "legs": 4,
+   "instrument": "NIFTY",
+   "hold": "Intraday",
+   "structure": "Iron condor (ATM±1×SP short + ±10 wing, 25% SL short, 5 lot)",
+   "desc": "HEDGED twin of 02.14 — same straddle-width short strangle + BUY ±10 wings. Backtest NET +₹188,801 (2021-07→,5lot) vs naked ₹3.09L, Sharpe 0.481, win 52.7%, maxDD ₹113,861. Margin ~₹54k vs naked ~₹9.8L (18× less) → RoC 32%→351%. Wings held to EOD. PAPER forward-validation. Rule 10: significance untested."
   },
   "04.03.01": {
    "name": "Ars chain - Hedged vertical",

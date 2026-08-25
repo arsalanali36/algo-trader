@@ -215,7 +215,7 @@
  {
   "slug": "long_strangle_orb",
   "design": "long_strangle/orb_break",
-  "title": "\u274c Long Strangle @ ORB (failed sig p=0.07)",
+  "title": "❌ Long Strangle @ ORB (failed sig p=0.07)",
   "tf": "5m",
   "params": {
    "tp_frac": 0.75,
@@ -327,7 +327,7 @@
  {
   "slug": "chain_zone_longatm",
   "design": "chain_zone",
-  "title": "04 - Auto Rev-Chain \u2014 Zone Breakout (ATM long option)",
+  "title": "04 - Auto Rev-Chain — Zone Breakout (ATM long option)",
   "tf": "5m",
   "params": {
    "touch_tol": 5.0,
@@ -385,7 +385,7 @@
  {
   "slug": "chain_zone_naked",
   "design": "chain_zone",
-  "title": "04-N - Auto Rev-Chain (NAKED sell variant \u26a0\ufe0f rejected)",
+  "title": "04-N - Auto Rev-Chain (NAKED sell variant ⚠️ rejected)",
   "tf": "5m",
   "params": {
    "touch_tol": 5.0,
@@ -441,7 +441,7 @@
  {
   "slug": "chain_zone_credit",
   "design": "chain_zone",
-  "title": "04-C - Auto Rev-Chain (credit-spread variant \u274c rejected)",
+  "title": "04-C - Auto Rev-Chain (credit-spread variant ❌ rejected)",
   "tf": "5m",
   "params": {
    "touch_tol": 5.0,
@@ -612,7 +612,7 @@
  {
   "slug": "gamma_scalp",
   "design": "gamma_scalp",
-  "title": "\u274c Gamma Scalping (REJECTED \u2014 VRP loser)",
+  "title": "❌ Gamma Scalping (REJECTED — VRP loser)",
   "tf": "5m",
   "params": {
    "structure": "long straddle + delta-hedge",
@@ -665,10 +665,10 @@
  {
   "slug": "shortvol_ironfly",
   "design": "iron_fly/held",
-  "title": "06 - Short-Vol Iron-Fly \u274c CORRECTED-REJECTED (TRAP #109)",
+  "title": "06 - Short-Vol Iron-Fly ❌ CORRECTED-REJECTED (TRAP #109)",
   "tf": "5m",
   "params": {
-   "structure": "iron_fly \u00b18 (HELD-strike)",
+   "structure": "iron_fly ±8 (HELD-strike)",
    "entry": "10:00",
    "tp": 0.5,
    "sl": 1.0,
@@ -779,7 +779,7 @@
  {
   "slug": "pivot_continuation",
   "design": "pivot_break",
-  "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 \u2014 user pass, NOT deployed)",
+  "title": "08 - Pivot-Extreme Continuation (borderline Sharpe 0.97 — user pass, NOT deployed)",
   "tf": "3m",
   "params": {
    "tol": 5.0,
@@ -838,7 +838,7 @@
  {
   "slug": "vrp_overnight_condor",
   "design": "vrp_condor",
-  "title": "10 - VRP Overnight Condor \u26a0\ufe0f FORWARD-PAPER candidate (real VRP edge, defined risk)",
+  "title": "10 - VRP Overnight Condor ⚠️ FORWARD-PAPER candidate (real VRP edge, defined risk)",
   "tf": "overnight",
   "params": {
    "body": 3,
@@ -880,7 +880,7 @@
   "slug": "range_strangle_intraday",
   "design": "range_strangle_intraday",
   "verdict": "in-sample edge, borderline (DSR 0.62<0.95)",
-  "title": "Range-Extreme Short Strangle \u2014 INTRADAY \u26a0\ufe0f in-sample edge, borderline (DSR 0.62<0.95)",
+  "title": "Range-Extreme Short Strangle — INTRADAY ⚠️ in-sample edge, borderline (DSR 0.62<0.95)",
   "tf": "intraday",
   "params": {
    "lb": 10,
@@ -918,13 +918,13 @@
    "n_trials": 30,
    "sr_star_annual": 3.233
   },
-  "caveat": "9:20 entry, same-day exit, NO overnight \u2014 SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train\u2248OOS). Forward-paper first.",
+  "caveat": "9:20 entry, same-day exit, NO overnight — SL caps the tail (bounded). Real lake premium + charges + DOM slip. Modest but consistent (train≈OOS). Forward-paper first.",
   "created": "2026-07-17"
  },
  {
   "slug": "vrp_condor_weekly",
   "design": "vrp_condor_weekly",
-  "title": "02.05 - VRP Weekly Condor (mild-IV) \u26a0\ufe0f FORWARD-PAPER (fails DSR)",
+  "title": "02.05 - VRP Weekly Condor (mild-IV) ⚠️ FORWARD-PAPER (fails DSR)",
   "tf": "weekly",
   "instrument": "NIFTY 50",
   "lot_size": 65,
@@ -949,7 +949,7 @@
    "n_trials": 24,
    "sr_star_annual": 5.737
   },
-  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS \u2014 but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
+  "caveat": "Best honest combo from Task-6 follow-up. In-sample PF 2.10/Sharpe 2.14/p=0.032, survives raw OOS — but FAILS deflated-Sharpe (multi-combo search + n=38/OOS n=10). Forward-paper only; re-run DSR on fresh forward samples before any live money.",
   "created": "2026-07-20"
  },
  {
@@ -1086,7 +1086,7 @@
   "deployed": "bnf_strangle_v1",
   "real_cost": {
    "method": "REAL premium lake (held-strike) + Zerodha charges + DOM slip",
-   "note": "not BS-modeled \u2014 actual OptChainLake_1m/BANKNIFTY premium"
+   "note": "not BS-modeled — actual OptChainLake_1m/BANKNIFTY premium"
   }
  },
  {
@@ -1139,13 +1139,13 @@
   "deployed": "sm_nifty_expiry_v1",
   "real_cost": {
    "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
-   "note": "StockMock-parity \u2014 validated vs StockMock PDF (win 56%, loss-days ~1%)"
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
   }
  },
  {
   "slug": "sm_nifty_strangle_v1",
   "design": "sm_expiry",
-  "title": "02.12 - Short Strangle ATM\u00b1100 (StockMock)",
+  "title": "02.12 - Short Strangle ATM±100 (StockMock)",
   "tf": "1m",
   "params": {
    "legs": [
@@ -1196,13 +1196,13 @@
   "deployed": "sm_nifty_strangle_v1",
   "real_cost": {
    "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
-   "note": "StockMock-parity \u2014 validated vs StockMock PDF (win 56%, loss-days ~1%)"
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
   }
  },
  {
   "slug": "sm_nifty_atm1pct_v1",
   "design": "sm_expiry",
-  "title": "02.13 - Short Strangle ATM\u00b11% (StockMock)",
+  "title": "02.13 - Short Strangle ATM±1% (StockMock)",
   "tf": "1m",
   "params": {
    "legs": [
@@ -1257,13 +1257,13 @@
   "deployed": "sm_nifty_atm1pct_v1",
   "real_cost": {
    "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
-   "note": "StockMock-parity \u2014 validated vs StockMock PDF (win 56%, loss-days ~1%)"
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
   }
  },
  {
   "slug": "sm_nifty_swidth_v1",
   "design": "sm_expiry",
-  "title": "02.14 - Straddle-Width Strangle \u00b11\u00d7SP (StockMock)",
+  "title": "02.14 - Straddle-Width Strangle ±1×SP (StockMock)",
   "tf": "1m",
   "params": {
    "legs": [
@@ -1320,7 +1320,7 @@
   "deployed": "sm_nifty_swidth_v1",
   "real_cost": {
    "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
-   "note": "StockMock-parity \u2014 validated vs StockMock PDF (win 56%, loss-days ~1%)"
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
   }
  },
  {
@@ -1368,7 +1368,7 @@
   "deployed": "strangle_920",
   "real_cost": {
    "method": "REAL OptChainLake premium + date-aware Zerodha charges",
-   "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136"
+   "note": "real premium (not BS) — seller, trustworthy per TRAP #136"
   }
  },
  {
@@ -1416,7 +1416,185 @@
   "deployed": "weekly_ironfly",
   "real_cost": {
    "method": "REAL OptChainLake premium + date-aware Zerodha charges, 5 lots",
-   "note": "real premium (not BS) \u2014 seller, trustworthy per TRAP #136. No SL: wings = defined-risk cap."
+   "note": "real premium (not BS) — seller, trustworthy per TRAP #136. No SL: wings = defined-risk cap."
+  }
+ },
+ {
+  "slug": "sm_nifty_atm1pct_hedged_v1",
+  "design": "sm_expiry",
+  "title": "02.13.01 - Short Strangle ATM±1% + ±10 Hedge",
+  "tf": "1m",
+  "params": {
+   "legs": [
+    {
+     "opt": "CE",
+     "side": "BUY",
+     "off": 10,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": null,
+     "strike_mode": "atm",
+     "lots": 5,
+     "sl_pct": null,
+     "tp_pct": null
+    },
+    {
+     "opt": "PE",
+     "side": "BUY",
+     "off": -10,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": null,
+     "strike_mode": "atm",
+     "lots": 5,
+     "sl_pct": null,
+     "tp_pct": null
+    },
+    {
+     "opt": "CE",
+     "side": "SELL",
+     "off": 0,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": 1.0,
+     "sw_mult": null,
+     "strike_mode": "atm_pct",
+     "lots": 5,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    },
+    {
+     "opt": "PE",
+     "side": "SELL",
+     "off": 0,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": -1.0,
+     "sw_mult": null,
+     "strike_mode": "atm_pct",
+     "lots": 5,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    }
+   ],
+   "entry": "09:22",
+   "exit": "15:15",
+   "day_filter": "all"
+  },
+  "exit": "per-leg SL% + 15:15 EOD",
+  "instrument": "NIFTY options",
+  "lot_size": 65,
+  "window": [
+   "2021-07-01",
+   "2026-07-15"
+  ],
+  "days": 1245,
+  "significant": false,
+  "bs_full": {
+   "sharpe": 0.745,
+   "net_pct": 112.51,
+   "maxdd": -42.703,
+   "win_rate": 52.0,
+   "trades": 1245,
+   "profit_factor": 1.184
+  },
+  "p_value": null,
+  "deploy_key": "sm_nifty_atm1pct_hedged_v1",
+  "deployed": "sm_nifty_atm1pct_hedged_v1",
+  "real_cost": {
+   "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
+  }
+ },
+ {
+  "slug": "sm_nifty_swidth_hedged_v1",
+  "design": "sm_expiry",
+  "title": "02.14.01 - Straddle-Width Strangle + ±10 Hedge",
+  "tf": "1m",
+  "params": {
+   "legs": [
+    {
+     "opt": "CE",
+     "side": "BUY",
+     "off": 10,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": null,
+     "strike_mode": "atm",
+     "lots": 5,
+     "sl_pct": null,
+     "tp_pct": null
+    },
+    {
+     "opt": "PE",
+     "side": "BUY",
+     "off": -10,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": null,
+     "strike_mode": "atm",
+     "lots": 5,
+     "sl_pct": null,
+     "tp_pct": null
+    },
+    {
+     "opt": "CE",
+     "side": "SELL",
+     "off": 0,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": 1.0,
+     "strike_mode": "sw_mult",
+     "lots": 5,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    },
+    {
+     "opt": "PE",
+     "side": "SELL",
+     "off": 0,
+     "sp_pct": null,
+     "cp_rs": null,
+     "atm_pct": null,
+     "sw_mult": -1.0,
+     "strike_mode": "sw_mult",
+     "lots": 5,
+     "sl_pct": 25.0,
+     "tp_pct": null
+    }
+   ],
+   "entry": "09:22",
+   "exit": "15:15",
+   "day_filter": "all"
+  },
+  "exit": "per-leg SL% + 15:15 EOD",
+  "instrument": "NIFTY options",
+  "lot_size": 65,
+  "window": [
+   "2021-07-01",
+   "2026-07-15"
+  ],
+  "days": 1236,
+  "significant": false,
+  "bs_full": {
+   "sharpe": 0.481,
+   "net_pct": 57.04,
+   "maxdd": -34.399,
+   "win_rate": 52.7,
+   "trades": 1236,
+   "profit_factor": 1.095
+  },
+  "p_value": null,
+  "deploy_key": "sm_nifty_swidth_hedged_v1",
+  "deployed": "sm_nifty_swidth_hedged_v1",
+  "real_cost": {
+   "method": "REAL OptChainLake_1m premium (held-strike, open-entry, high-SL) + 0.5% slip + Zerodha charges",
+   "note": "StockMock-parity — validated vs StockMock PDF (win 56%, loss-days ~1%)"
   }
  }
 ]
