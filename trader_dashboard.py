@@ -12280,6 +12280,17 @@ if __name__ == '__main__':
     print("   📊 payoff warm-loop chalu — open positions ka payoff pre-computed\n")
     _rms_warm_start()      # market-hours: rms-summary cache warm rakho — Risk tab instant khule
     print("   ⚡ rms-summary warm-loop chalu — Risk panel pehli baar bhi instant\n")
+    # Warm the Dhan scrip-master cache (build_cache) at startup in the background so
+    # the FIRST /api/orders doesn't pay ~2s to build the expiry index lazily (the
+    # post-restart "pehli load slow" — also helps the daily 07:00 restart). Best-effort.
+    def _warm_dhan_cache():
+        try:
+            import dhan_master as _dm
+            _dm.build_cache()
+            print("   🗂️ dhan scrip-master cache warmed — first orders load instant", flush=True)
+        except Exception as _we:
+            print("   ⚠️ dhan cache warm skipped:", _we, flush=True)
+    _threading.Thread(target=_warm_dhan_cache, daemon=True).start()
     # threaded=True: one slow request (e.g. a cold option-chain CSV parse) must NOT block
     # the whole dashboard — single-threaded froze every other request/page for 20s+ (2026-08-05).
     app.run(host='0.0.0.0', port=5099, debug=False, threaded=True)

@@ -410,6 +410,58 @@ def enter_testnet(cfg, st, now_utc, log=print):
     return st
 
 
+def _update_runup_tags(st, log=print):
+    """Track per-leg MAX_LTP/MIN_LTP (in INR-per-lot, same units order_store stored)
+    for the open crypto fly so the Open Positions Run-Up/Run-Down columns populate —
+    the NSE pos_monitor only tracks Dhan-fed legs, never crypto. Self-contained here
+    (delta trader already ticks + has delta_feed). Best-effort."""
+    pos = st.get("open")
+    if not pos or pos.get("mode") != "testnet":
+        return
+    try:
+        import order_store
+    except Exception:
+        try:
+            _core = os.path.join(_ROOT, "_core")
+            if _core not in sys.path:
+                sys.path.insert(0, _core)
+            import order_store
+        except Exception:
+            return
+    und = pos.get("underlying", "BTC")
+    try:
+        marks = {t.get("symbol"): delta_feed._f(t.get("mark_price"))
+                 for t in delta_feed._all_option_tickers(und)}
+        rows = order_store.query(date=order_store.ist_now_str()[:10], limit=9000)
+    except Exception:
+        return
+    open_row = {}
+    for r in rows:
+        if r.get("broker") == "delta" and str(r.get("status") or "") == "filled":
+            open_row.setdefault(r.get("trad_sym"), r)
+    cv, rate = pos["contract_value"], _usd_inr()
+    changed = False
+    for lg in pos["legs"]:
+        if lg.get("exit_fill") is not None:
+            continue
+        m = marks.get(lg["symbol"])
+        if m is None:
+            continue
+        px = round(m * cv * rate, 2)
+        lg["max_ltp"] = round(max(lg.get("max_ltp") or px, px), 2)
+        lg["min_ltp"] = round(min(lg.get("min_ltp") or px, px), 2)
+        row = open_row.get(lg["symbol"])
+        if row and row.get("id"):
+            try:
+                order_store.update_tag_fields(row["id"], {
+                    "MAX_LTP": str(lg["max_ltp"]), "MIN_LTP": str(lg["min_ltp"])})
+            except Exception:
+                pass
+        changed = True
+    if changed:
+        _save(st)
+
+
 def _last_fill_price(b, symbol, opp_side):
     """Most-recent fill price for `symbol` on the closing side (opp_side) — used to
     capture the REAL price a leg was liquidated/closed at. opp_side in buy/sell."""
@@ -542,6 +594,7 @@ def tick(now_utc=None, log=print):
     testnet = str(cfg.get("execution", "sim")).lower() == "testnet"
     if testnet:
         st = reconcile_liquidations(cfg, st, now_utc, log)   # catch mid-day liquidations
+        _update_runup_tags(st, log)                          # Run-Up/Run-Down for crypto legs
         st = maybe_exit_testnet(cfg, st, now_utc, log)
         # robustness: a leftover non-testnet (sim/paper) open would otherwise never
         # settle in testnet mode and block ALL future entries forever — settle it via
