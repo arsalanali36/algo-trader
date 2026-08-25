@@ -107,6 +107,45 @@ def position_pnl(pos, spot):
     return pnl
 
 
+def live_mtm(pos):
+    """Live mark-to-market P&L of the open iron-fly using CURRENT option marks
+    (not settlement intrinsic) — mirrors the Orders-page live MTM. Display-only.
+    Returns {pnl_pts, pnl_usd, pct_of_credit, spot, complete, legs:[...]} or None."""
+    if not pos or not pos.get("legs"):
+        return None
+    und = pos.get("underlying", "BTC")
+    try:
+        by = {t.get("symbol"): t for t in delta_feed._all_option_tickers(und)}
+    except Exception:
+        by = {}
+    cv = pos.get("contract_value") or CONTRACT_VALUE.get(und, 0.001)
+    lots = pos.get("lots") or 1
+    pts = 0.0
+    complete = True
+    legs_out = []
+    for l in pos["legs"]:
+        entry = l.get("entry_fill")
+        if entry is None:
+            entry = l.get("entry_premium")
+        t = by.get(l.get("symbol")) or {}
+        ltp = delta_feed._f(t.get("mark_price"))
+        sign = 1 if l.get("side") == "SELL" else -1
+        leg_pts = None
+        if ltp is None:
+            complete = False
+        else:
+            leg_pts = sign * ((entry or 0) - ltp)
+            pts += leg_pts
+        legs_out.append({"symbol": l.get("symbol"), "side": l.get("side"),
+                         "strike": l.get("strike"), "cp": l.get("cp"),
+                         "entry": entry, "ltp": ltp, "pnl_pts": leg_pts})
+    usd = pts * cv * lots
+    credit = pos.get("net_credit_pts") or 0
+    pct = (pts / credit * 100.0) if credit else None
+    return {"pnl_pts": pts, "pnl_usd": usd, "pct_of_credit": pct,
+            "spot": delta_feed.spot(und), "complete": complete, "legs": legs_out}
+
+
 # ---------- orchestration -----------------------------------------------------
 def _tg(text):
     try:
@@ -359,6 +398,12 @@ def tick(now_utc=None, log=print):
     testnet = str(cfg.get("execution", "sim")).lower() == "testnet"
     if testnet:
         st = maybe_exit_testnet(cfg, st, now_utc, log)
+        # robustness: a leftover non-testnet (sim/paper) open would otherwise never
+        # settle in testnet mode and block ALL future entries forever — settle it via
+        # sim at its own expiry so the slot frees up (fixes the silent-miss class).
+        op = st.get("open")
+        if op and op.get("mode") != "testnet":
+            st = maybe_exit(cfg, st, now_utc, log)
         if should_enter(cfg, st, now_utc):
             st = enter_testnet(cfg, st, now_utc, log)
     else:

@@ -641,7 +641,14 @@ def api_delta_paper():
     comp = st.get("completed") or []
     tot_pts = sum((c.get("pnl_pts") or 0) for c in comp)
     tot_usd = sum((c.get("pnl_usd") or 0) for c in comp)
-    return jsonify({"open": st.get("open"), "completed": comp[-30:],
+    op = st.get("open")
+    mtm = None
+    if op:
+        try:
+            mtm = dft.live_mtm(op)
+        except Exception:
+            mtm = None
+    return jsonify({"open": op, "open_mtm": mtm, "completed": comp[-30:],
                     "n": len(comp), "total_pnl_pts": tot_pts,
                     "total_pnl_usd": tot_usd, "config": dft._config()})
 
