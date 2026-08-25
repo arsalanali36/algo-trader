@@ -6533,6 +6533,13 @@ def _fire_hedged_alert_straddle(symbol, source, log=print):
     symbol = str(symbol).upper()
     if symbol not in ("NIFTY", "BANKNIFTY"):
         return False, f"{symbol} unsupported"
+    # Per-symbol allow-list for the LIVE hedged twin (config `symbols`). Absent/empty
+    # = both (backward-compat). Set ["NIFTY"] to PAUSE BankNifty live entries — the
+    # 5yr real-lake backtest (reconstructed greeks) had BNF a net loser every year,
+    # NIFTY marginal. Paper twin (_fire_auto_straddle) is unaffected. Reversible.
+    _allow = hc.get("symbols")
+    if _allow and symbol not in [str(x).upper() for x in _allow]:
+        return False, f"{symbol} paused (not in straddle_alert_hedged.symbols allow-list)"
     sid = "straddle_alert_hedged"
     mode = str(hc.get("mode", "live")).lower()
     lots = int(hc.get("lots", 4))
