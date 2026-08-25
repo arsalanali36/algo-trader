@@ -20,6 +20,8 @@ import sys
 import json
 import time
 import uuid
+import shutil
+import subprocess
 import threading
 import calendar
 import datetime as dt
@@ -238,11 +240,77 @@ def add_media(file_storage, trade_key, note=""):
              "note": (note or "").strip(), "orig": orig,
              "size": os.path.getsize(os.path.join(MEDIA_DIR, fname)),
              "ctime": time.time()}
+    if kind == "video":
+        entry["compressing"] = True   # background thread will compress + replace
     with _lock:
         d = _load_media()
         d.setdefault(trade_key, []).append(entry)
         _save(MEDIA_STORE, d)
+    if kind == "video":
+        threading.Thread(target=_compress_worker, args=(mid,), daemon=True).start()
     return entry
+
+
+# ── auto-compress uploaded videos (H.264 CRF 30 "smallest", CPU/libx264 on VPS) ─
+def _update_media_entry(mid, **fields):
+    with _lock:
+        d = _load_media()
+        for lst in d.values():
+            for it in lst:
+                if it.get("id") == mid:
+                    it.update(fields)
+                    _save(MEDIA_STORE, d)
+                    return True
+    return False
+
+
+def _compress_worker(mid):
+    """Re-encode an uploaded video in place to H.264 CRF 30 (smallest) and replace
+    the original — same target as the CODE10 compressor's best preset, but libx264
+    (CPU) since the VPS has no NVIDIA GPU. On any failure the original is kept."""
+    try:
+        ff = shutil.which("ffmpeg")
+        cur = None
+        for lst in _load_media().values():
+            for it in lst:
+                if it.get("id") == mid:
+                    cur = it
+        if not cur:
+            return
+        src = os.path.join(MEDIA_DIR, cur["filename"])
+        if not ff or not os.path.isfile(src):
+            _update_media_entry(mid, compressing=False)
+            return
+        orig_size = os.path.getsize(src)
+        newfname = f"{mid}.mp4"
+        tmp = os.path.join(MEDIA_DIR, f"{mid}.tmp.mp4")
+        cmd = [ff, "-i", src, "-c:v", "libx264", "-crf", "30", "-preset", "medium",
+               "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", tmp]
+        r = subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        if r.returncode != 0 or not os.path.isfile(tmp) or os.path.getsize(tmp) == 0:
+            if os.path.exists(tmp):
+                os.remove(tmp)
+            _update_media_entry(mid, compressing=False)
+            return
+        new_size = os.path.getsize(tmp)
+        # only keep the compressed version if it actually saved space
+        if new_size >= orig_size * 0.97:
+            os.remove(tmp)
+            _update_media_entry(mid, compressing=False)  # already small enough
+            return
+        newpath = os.path.join(MEDIA_DIR, newfname)
+        os.replace(tmp, newpath)
+        if cur["filename"] != newfname and os.path.isfile(src):
+            try:
+                os.remove(src)
+            except OSError:
+                pass
+        saved_pct = round((orig_size - new_size) / orig_size * 100) if orig_size else 0
+        _update_media_entry(mid, filename=newfname, size=new_size, orig_size=orig_size,
+                            compressed=True, compressing=False, saved_pct=saved_pct)
+    except Exception as e:
+        print("[journal] compress fail:", mid, e, flush=True)
+        _update_media_entry(mid, compressing=False)
 
 
 def update_media_note(mid, note):

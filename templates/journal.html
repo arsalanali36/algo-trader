@@ -240,19 +240,26 @@ function openDetail(iso,sid){
 }
 
 // ── media ──
+let _mpoll={};
 async function loadMedia(tk){
   const grid=document.querySelector('[data-grid="'+CSS.escape(tk)+'"]');if(!grid)return;
   try{const r=await fetch('/jnl-api/media/list?tk='+encodeURIComponent(tk));const j=await r.json();
-    grid.innerHTML=(j.media||[]).map(m=>mediaItem(m)).join('');
+    const media=j.media||[];
+    grid.innerHTML=media.map(m=>mediaItem(m)).join('');
     grid.querySelectorAll('.del').forEach(d=>d.onclick=()=>delMedia(d.dataset.id,tk));
     grid.querySelectorAll('.mn').forEach(n=>n.addEventListener('input',()=>{ fetch('/jnl-api/media/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:n.dataset.id,note:n.value})}); }));
+    clearTimeout(_mpoll[tk]);
+    if(media.some(m=>m.compressing)) _mpoll[tk]=setTimeout(()=>loadMedia(tk),6000);  // wait for background compress
   }catch(e){}
 }
 function mediaItem(m){
-  const src='/jnl-media/'+m.id;const dt=new Date(m.ctime*1000).toLocaleString();
+  const src='/jnl-media/'+m.id+'?v='+(m.size||0);const dt=new Date(m.ctime*1000).toLocaleString();
   const body=m.kind==='video'?'<video controls preload="metadata" src="'+src+'"></video>':'<img src="'+src+'">';
+  let tag='';
+  if(m.compressing)tag='<span style="color:#d29922">⏳ compressing…</span>';
+  else if(m.compressed)tag='<span style="color:var(--green)" title="auto-compressed to H.264 CRF30">🗜 compressed'+(m.saved_pct?' −'+m.saved_pct+'%':'')+'</span>';
   return '<div class="mitem">'+body+'<input class="mn" data-id="'+m.id+'" value="'+esc(m.note||'')+'" placeholder="note…">'+
-    '<div class="mfoot"><span>'+(m.kind==='video'?'📹':'🖼')+' '+dt+'</span><button class="del" data-id="'+m.id+'">🗑 delete</button></div></div>';
+    '<div class="mfoot"><span>'+(m.kind==='video'?'📹':'🖼')+' '+dt+(tag?' · '+tag:'')+'</span><button class="del" data-id="'+m.id+'">🗑 delete</button></div></div>';
 }
 async function uploadFile(tk,file){
   if(!file)return;const fd=new FormData();fd.append('file',file);fd.append('tk',tk);
