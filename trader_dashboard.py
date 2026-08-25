@@ -950,6 +950,12 @@ def api_journal_media_list():
     return jsonify({"ok": True, "media": pj.list_media(tk)})
 
 
+@app.route('/jnl-api/media/keys')
+def api_journal_media_keys():
+    import pnl_journal as pj
+    return jsonify({"ok": True, "keys": pj.media_keys()})
+
+
 @app.route('/jnl-api/media/upload', methods=['POST'])
 def api_journal_media_upload():
     import pnl_journal as pj

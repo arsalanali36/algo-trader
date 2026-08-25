@@ -223,6 +223,11 @@ def all_media():
     return _load_media()
 
 
+def media_keys():
+    """Trade/day keys that have at least one media item — for grid attachment dots."""
+    return [k for k, v in _load_media().items() if v]
+
+
 def add_media(file_storage, trade_key, note=""):
     os.makedirs(MEDIA_DIR, exist_ok=True)
     orig = file_storage.filename or "clip.webm"

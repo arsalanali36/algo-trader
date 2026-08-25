@@ -39,7 +39,8 @@ thead th .hnm{font-size:11px;max-width:120px;white-space:normal;line-height:1.2}
 td.day,td.dow{position:sticky;background:var(--panel);font-weight:700;z-index:5}
 td.day{left:0;width:34px;color:var(--muted);font-size:14px}
 td.dow{left:34px;width:34px;font-size:12px}
-.cell{padding:2px 6px;min-width:74px}
+.cell{padding:2px 6px;min-width:74px;position:relative}
+.attach{position:absolute;top:3px;right:4px;width:6px;height:6px;border-radius:50%;background:#58a6ff;box-shadow:0 0 0 1.5px var(--bg);pointer-events:none}
 .cell .g{font-size:11px;color:#c9d1d9}.cell .t{font-size:10px;color:var(--muted)}.cell .empty{color:#30363d}
 .one{font-weight:700;font-size:12px;padding:3px}.tax{color:var(--muted);font-weight:600}.cnt{color:#c9d1d9;font-weight:700}
 .net{font-weight:700;font-size:12px;border-radius:4px;padding:1px 3px;margin-top:1px}
@@ -130,6 +131,26 @@ function inr(v){v=Math.round(v);const neg=v<0;let x=String(Math.abs(v));
 function ncls(v){return v>0.5?'pos':(v<-0.5?'neg':'zero');}
 function esc(s){return(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
 
+// ── attachment dots (cells/days that have a comment or media) ──
+let _mediaKeys=new Set(), _attachCell=new Set(), _attachDay=new Set();
+function rebuildAttach(){
+  _attachCell=new Set(); _attachDay=new Set();
+  const add=k=>{
+    if(k.startsWith('T|')){const p=k.split('|');if(p.length>=3)_attachCell.add(p[1]+'|'+p[2]);}
+    else if(k.startsWith('D|'))_attachDay.add(k.slice(2));
+    else if(k.endsWith('|__day'))_attachDay.add(k.slice(0,-6));
+    else if(k.split('|').length===2)_attachCell.add(k);
+  };
+  Object.keys(NOTES).forEach(k=>{ if((NOTES[k]||'').trim())add(k); });
+  _mediaKeys.forEach(add);
+}
+async function refreshAttach(){
+  try{const r=await fetch('/jnl-api/media/keys');const j=await r.json();_mediaKeys=new Set(j.keys||[]);}catch(e){}
+  rebuildAttach();
+}
+function cellAttach(iso,sid){ return _attachCell.has(iso+'|'+sid); }
+function dayAttach(iso){ return _attachDay.has(iso); }
+
 // ── server notes ──
 async function loadNotes(){ try{const r=await fetch('/jnl-api/notes');const j=await r.json(); NOTES=j.notes||{};}catch(e){NOTES={};} }
 let _nq={};
@@ -160,7 +181,8 @@ function comp(c){return metric==='gross'?c[0]:metric==='tax'?c[1]:metric==='trad
 function cellHtml(c,iso,sid){
   if(metric==='comment'){const k=iso+'|'+sid;
     return '<td class="cell"><div class="note" contenteditable="true" data-nk="'+k+'">'+esc(NOTES[k]||'')+'</div></td>';}
-  if(!c)return '<td class="cell"><div class="empty">—</div></td>';
+  const dot=cellAttach(iso,sid)?'<span class="attach" title="attachment"></span>':'';
+  if(!c)return '<td class="cell">'+dot+'<div class="empty">—</div></td>';
   let inner;
   if(metric==='all'){const tx=c[1];
     inner='<div class="g">'+inr(c[0])+'</div><div class="t">'+(tx>0?'-':'')+inr(tx)+'</div><div class="net '+ncls(c[2])+'">'+inr(c[2])+'</div><div class="trbadge">'+c[3]+' tr ▸</div>';}
@@ -169,7 +191,7 @@ function cellHtml(c,iso,sid){
     else if(metric==='trades')inner='<div class="one cnt">'+(v||'')+'</div>';
     else inner='<div class="net '+ncls(v)+'" style="margin:0">'+inr(v)+'</div>';
     if(c[3]>0)inner+='<div class="trbadge">'+c[3]+' tr ▸</div>';}
-  return '<td class="cell clk" data-iso="'+iso+'" data-sid="'+sid+'" title="'+c[3]+' trade(s) — click for details">'+inner+'</td>';
+  return '<td class="cell clk" data-iso="'+iso+'" data-sid="'+sid+'" title="'+c[3]+' trade(s) — click for details">'+inner+dot+'</td>';
 }
 function totCell(v,big){
   if(metric==='trades')return '<td class="netcell'+(big?' big':'')+'"><div class="one cnt">'+(v||'')+'</div></td>';
@@ -198,7 +220,7 @@ function render(){
         if(c&&!isC){const v=comp(c);rTot+=v;wc[s.id]+=v;colTot[s.id]+=v;}});
       wTot+=rTot;gTot+=rTot;
       if(isC){const k=day.iso+'|__day';row+='<td class="netcell"><div class="note" contenteditable="true" data-nk="'+k+'">'+esc(NOTES[k]||'')+'</div></td>';}
-      else row+='<td class="netcell clk-day" data-day="'+day.iso+'" title="Day notes / general media (📎)"><div class="net '+ncls(rTot)+'">'+(Math.abs(rTot)>=0.5?inr(rTot):'')+'</div><div class="trbadge">📎 day ▸</div></td>';
+      else row+='<td class="netcell clk-day" data-day="'+day.iso+'" title="Day notes / general media (📎)">'+(dayAttach(day.iso)?'<span class="attach" title="attachment"></span>':'')+'<div class="net '+ncls(rTot)+'">'+(Math.abs(rTot)>=0.5?inr(rTot):'')+'</div><div class="trbadge">📎 day ▸</div></td>';
       row+='</tr>';h+=row;
     });
     let sub='<tr class="subtotal"><td class="day"></td><td class="dow">Σ</td>';
@@ -227,7 +249,7 @@ function buildPanel(){
 function stratName(sid){const s=DATA.strats.find(x=>x.id===sid);return s?(s.idp+' '+s.name):sid;}
 function tradesFor(iso,sid){let out=[];const ms=mode==='all'?['live','paper']:[mode];
   ms.forEach(m=>{const l=DATA.trades[iso+'|'+sid+'|'+m];if(l)l.forEach(b=>out.push(Object.assign({mode:m},b)));});return out;}
-function closeDetail(){document.getElementById('modal').classList.remove('open');document.getElementById('ovl').classList.remove('open');stopRec(true);}
+function closeDetail(){document.getElementById('modal').classList.remove('open');document.getElementById('ovl').classList.remove('open');stopRec(true);refreshAttach().then(()=>{if(DATA)render();});}
 function openDetail(iso,sid){
   const list=tradesFor(iso,sid);if(!list.length)return;
   const net=list.reduce((a,b)=>a+b.n,0);
@@ -385,5 +407,5 @@ document.getElementById('todayM').onclick=()=>{const d=new Date();Y=d.getFullYea
 document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.m===mode));
 document.querySelectorAll('#metricSeg button').forEach(x=>x.classList.toggle('on',x.dataset.x===metric));
 if(!(window.isSecureContext)){document.getElementById('secwarn').textContent='⚠ Screen-record ke liye HTTPS pe kholo (algo.72-61-173-32.nip.io).';}
-(async function(){ await loadNotes(); await loadMonth(); })();
+(async function(){ await loadNotes(); await refreshAttach(); await loadMonth(); })();
 </script></body></html>
