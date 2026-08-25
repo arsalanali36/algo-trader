@@ -53,6 +53,7 @@ tr.grand td{background:#161b22;font-weight:800;font-size:13px;padding:8px 4px;bo
 tr.grand td.gt-l{text-align:left;padding-left:10px;position:sticky;left:0;background:#161b22;z-index:5}
 .legend{color:var(--muted);font-size:11px;margin-top:10px;line-height:1.7}
 .cell.clk{cursor:pointer}.cell.clk:hover{background:#1c2431}
+.netcell.clk-day{cursor:pointer}.netcell.clk-day:hover{background:#1c2431}
 .trbadge{display:inline-block;margin-top:2px;font-size:9px;color:var(--blue)}
 .ovl{position:fixed;inset:0;background:#000a;z-index:80;display:none}.ovl.open{display:block}
 .modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:81;width:min(760px,95vw);max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px;box-shadow:0 20px 60px #000c;display:none}
@@ -110,6 +111,7 @@ tr.grand td.gt-l{text-align:left;padding-left:10px;position:sticky;left:0;backgr
 <div class="legend">
 Live order_store se — per-day netting (dashboard-exact), basket trade-count (hedge = 1 trade). <b>Kisi bhi cell pe click</b> →
 us din us strategy ke saare trades (leg-wise details) + per-trade <b>comment</b> + <b>📹 screen-record video note</b> + <b>🖼 image</b> upload.
+Har din ki <b>Net cell (📎 day)</b> pe click → us din ka day-level note + general image/video/screen-record (kisi ek trade se nahi).
 Comments &amp; media server pe save (cross-device). Columns/metric/mode browser me. <span id="secwarn" class="warn"></span>
 </div>
 </div>
@@ -196,7 +198,7 @@ function render(){
         if(c&&!isC){const v=comp(c);rTot+=v;wc[s.id]+=v;colTot[s.id]+=v;}});
       wTot+=rTot;gTot+=rTot;
       if(isC){const k=day.iso+'|__day';row+='<td class="netcell"><div class="note" contenteditable="true" data-nk="'+k+'">'+esc(NOTES[k]||'')+'</div></td>';}
-      else row+=totCell(rTot,false);
+      else row+='<td class="netcell clk-day" data-day="'+day.iso+'" title="Day notes / general media (📎)"><div class="net '+ncls(rTot)+'">'+(Math.abs(rTot)>=0.5?inr(rTot):'')+'</div><div class="trbadge">📎 day ▸</div></td>';
       row+='</tr>';h+=row;
     });
     let sub='<tr class="subtotal"><td class="day"></td><td class="dow">Σ</td>';
@@ -237,20 +239,46 @@ function openDetail(iso,sid){
     b.legs.forEach(l=>{const ln=Math.round(l.g-l.tx);
       h+='<tr><td>'+esc(l.sy)+'</td><td class="side-'+(l.sd==='BUY'?'b':'s')+'">'+l.sd+'</td><td>'+l.q+'</td><td>'+l.ep+'</td><td>'+l.xp+'</td><td>'+l.pt+'</td><td style="color:'+(ln>0?'var(--green)':ln<0?'var(--red)':'var(--muted)')+'">'+inr(ln)+'</td><td>'+(l.et||'')+'→'+(l.xt||'')+'</td><td>'+esc(l.rs)+'</td></tr>';});
     h+='</table><textarea class="cnote" data-tk="'+tk+'" placeholder="Is trade me kya hua… (auto-save)">'+esc(NOTES[tk]||'')+'</textarea>'+
-       '<div class="media" data-tk="'+tk+'"><div class="mrow"><button class="mbtn rec" data-rec="'+tk+'">🔴 Record screen</button>'+
-       '<label class="mbtn">🖼 Upload image(s)<input type="file" accept="image/*" multiple data-img="'+tk+'" style="display:none"></label>'+
-       '<label class="mbtn">📹 Upload video(s)<input type="file" accept="video/*" multiple data-vid="'+tk+'" style="display:none"></label>'+
-       '<span class="hint" data-recinfo="'+tk+'"></span></div><div class="mgrid" data-grid="'+tk+'"></div></div></div>';});
+       mediaSection(tk)+'</div>';});
   const md=document.getElementById('modal');md.innerHTML=h;md.classList.add('open');document.getElementById('ovl').classList.add('open');
   document.getElementById('mx').onclick=closeDetail;
-  md.querySelectorAll('.cnote').forEach(t=>t.addEventListener('input',()=>saveNote(t.dataset.tk,t.value)));
-  md.querySelectorAll('[data-rec]').forEach(btn=>btn.onclick=()=>toggleRec(btn.dataset.rec,btn));
-  md.querySelectorAll('[data-img]').forEach(inp=>inp.onchange=()=>uploadFiles(inp.dataset.img,inp.files));
-  md.querySelectorAll('[data-vid]').forEach(inp=>inp.onchange=()=>uploadFiles(inp.dataset.vid,inp.files));
+  wireMedia(md);
   list.forEach((b,idx)=>{const tk='T|'+iso+'|'+sid+'|'+b.mode+'|'+b.id;loadMedia(tk);});
 }
 
-// ── media ──
+// ── day detail modal (day-level notes + general media for the whole day) ──
+function dayNet(iso){
+  const S=activeStrats(); let net=0; const per=[];
+  S.forEach(s=>{const c=cval(iso,s.id); if(c){net+=c[2]; per.push({name:s.idp+' '+s.name, n:c[2]});}});
+  return {net, per};
+}
+function openDayDetail(iso){
+  const {net,per}=dayNet(iso); const dtk='D|'+iso; const nk=iso+'|__day';
+  let h='<div class="mh"><div><h2>📅 '+iso+' — Day</h2><div class="sm">net '+inr(net)+' · '+per.length+' strategy(s) traded</div></div><button class="x" id="mx">✕</button></div>';
+  h+='<div class="tcard">';
+  if(per.length) h+='<table><tr><th>Strategy</th><th>Net</th></tr>'+per.map(p=>'<tr><td>'+esc(p.name)+'</td><td style="color:'+(p.n>0?'var(--green)':p.n<0?'var(--red)':'var(--muted)')+'">'+inr(p.n)+'</td></tr>').join('')+'<tr><td><b>Total</b></td><td style="color:'+(net>0?'var(--green)':net<0?'var(--red)':'var(--muted)')+'"><b>'+inr(net)+'</b></td></tr></table>';
+  h+='<textarea class="cnote" data-tk="'+nk+'" placeholder="Aaj din bhar kya hua… (general note, auto-save)">'+esc(NOTES[nk]||'')+'</textarea>'+
+     '<div style="color:var(--muted);font-size:11px;margin-top:8px">📎 Din ki general images / videos / screen-record (kisi ek trade se nahi):</div>'+
+     mediaSection(dtk)+'</div>';
+  const md=document.getElementById('modal');md.innerHTML=h;md.classList.add('open');document.getElementById('ovl').classList.add('open');
+  document.getElementById('mx').onclick=closeDetail;
+  wireMedia(md); loadMedia(dtk);
+}
+
+// ── media (shared by trade cards + day card) ──
+function mediaSection(tk){
+  return '<div class="media" data-tk="'+tk+'"><div class="mrow">'+
+    '<button class="mbtn rec" data-rec="'+tk+'">🔴 Record screen</button>'+
+    '<label class="mbtn">🖼 Upload image(s)<input type="file" accept="image/*" multiple data-img="'+tk+'" style="display:none"></label>'+
+    '<label class="mbtn">📹 Upload video(s)<input type="file" accept="video/*" multiple data-vid="'+tk+'" style="display:none"></label>'+
+    '<span class="hint" data-recinfo="'+tk+'"></span></div><div class="mgrid" data-grid="'+tk+'"></div></div>';
+}
+function wireMedia(scope){
+  scope.querySelectorAll('.cnote').forEach(t=>t.addEventListener('input',()=>saveNote(t.dataset.tk,t.value)));
+  scope.querySelectorAll('[data-rec]').forEach(btn=>btn.onclick=()=>toggleRec(btn.dataset.rec,btn));
+  scope.querySelectorAll('[data-img]').forEach(inp=>inp.onchange=()=>uploadFiles(inp.dataset.img,inp.files));
+  scope.querySelectorAll('[data-vid]').forEach(inp=>inp.onchange=()=>uploadFiles(inp.dataset.vid,inp.files));
+}
 let _mpoll={}, _mlist={};
 async function loadMedia(tk){
   const grid=document.querySelector('[data-grid="'+CSS.escape(tk)+'"]');if(!grid)return;
@@ -333,7 +361,9 @@ async function delMedia(id,tk){ if(!confirm('Delete this media?'))return;
   await fetch('/jnl-api/media/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadMedia(tk); }
 
 // ── wiring ──
-document.getElementById('tbl').addEventListener('click',e=>{const td=e.target.closest('td.clk');if(td)openDetail(td.dataset.iso,td.dataset.sid);});
+document.getElementById('tbl').addEventListener('click',e=>{
+  const day=e.target.closest('td.clk-day'); if(day){openDayDetail(day.dataset.day);return;}
+  const td=e.target.closest('td.clk'); if(td)openDetail(td.dataset.iso,td.dataset.sid);});
 document.getElementById('ovl').addEventListener('click',closeDetail);
 document.getElementById('lb').addEventListener('click',closeLightbox);   // click backdrop closes
 document.addEventListener('keydown',e=>{
