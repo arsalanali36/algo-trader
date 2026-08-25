@@ -929,7 +929,7 @@
       const ep = t.entry_price || 0, qty = t.qty || 0, side = t.entry || 'BUY';
       if (!ep || !qty || grossOpt == null) return grossOpt;
       const xp = side === 'SELL' ? ep - grossOpt / qty : ep + grossOpt / qty;
-      const tax = (typeof calcCharges === 'function') ? (calcCharges(ep, xp, qty, side) || 0) : 0;
+      const tax = (typeof calcCharges === 'function') ? (calcCharges(ep, xp, qty, side, t.sym || t.trad_sym) || 0) : 0;
       return grossOpt - tax;
     }
 

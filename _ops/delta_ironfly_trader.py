@@ -404,6 +404,85 @@ def enter_testnet(cfg, st, now_utc, log=print):
     return st
 
 
+def _last_fill_price(b, symbol, opp_side):
+    """Most-recent fill price for `symbol` on the closing side (opp_side) — used to
+    capture the REAL price a leg was liquidated/closed at. opp_side in buy/sell."""
+    try:
+        r = b._signed("GET", "/v2/fills",
+                      params={"contract_types": "call_options,put_options",
+                              "page_size": 200})
+        res = (r or {}).get("result", []) if isinstance(r, dict) else []
+        rows = [x for x in res if x.get("product_symbol") == symbol
+                and str(x.get("side", "")).lower() == opp_side]
+        rows.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+        if rows:
+            return float(rows[0].get("price"))
+    except Exception:
+        pass
+    return None
+
+
+def reconcile_liquidations(cfg, st, now_utc, log=print):
+    """Detect legs Delta auto-liquidated (in our store, GONE from the broker) and
+    record the close into order_store + the local store — so the app reflects a
+    mid-day liquidation immediately instead of only at settlement. Loud alert on a
+    BROKEN structure (some legs gone → possible naked risk)."""
+    pos = st.get("open")
+    if not pos or pos.get("mode") != "testnet":
+        return st
+    b = _testnet_broker()
+    if b is None:
+        return st
+    try:
+        live = b.positions()
+    except Exception:
+        return st
+    cv, lots = pos["contract_value"], pos["lots"]
+    gid = pos.get("group_id") or ("deltafly_" + str(pos.get("entry_time", ""))[:19])
+    gone = []
+    for lg in pos["legs"]:
+        if lg.get("exit_fill") is not None:
+            continue   # already closed/recorded
+        held = abs(live.get(lg["symbol"], 0) or 0)
+        if held == 0:
+            opp = "buy" if lg["side"] == "SELL" else "sell"
+            ef = _last_fill_price(b, lg["symbol"], opp)
+            if ef is None:
+                log(f"[delta-fly] LIQUIDATED {lg['symbol']} but no fill price — retry next tick")
+                continue
+            lg["exit_fill"] = ef
+            lg["liquidated"] = True
+            _record_leg(lg, cv=cv, lots=lots, group_id=gid, action="exit", log=log)
+            gone.append(lg)
+    if not gone:
+        return st
+    remaining = [l for l in pos["legs"] if l.get("exit_fill") is None]
+    _save(st)
+    if remaining:
+        # broken hedge — some legs closed, others still open → possible naked risk
+        log(f"[delta-fly] ⚠️ BROKEN STRUCTURE: {len(gone)} leg(s) liquidated, "
+            f"{len(remaining)} still open — possible naked exposure")
+        _tg(f"⚠️ <b>Delta Iron-Fly — LEG LIQUIDATED</b>\n"
+            f"{len(gone)} leg(s) auto-closed by Delta (isolated-margin), "
+            f"{len(remaining)} still open → structure broken, check exposure.\n"
+            f"liquidated: " + ", ".join(f"{l['side'][0]} {l['strike']}{l['cp']}@{l['exit_fill']}"
+                                        for l in gone))
+    else:
+        # all legs gone → settle the position out
+        net_pts = sum((1 if l["side"] == "SELL" else -1)
+                      * ((l["entry_fill"] or 0) - (l.get("exit_fill") or 0))
+                      for l in pos["legs"])
+        rec = dict(pos)
+        rec.update({"exit_time": now_utc.isoformat(), "pnl_pts": net_pts,
+                    "pnl_usd": net_pts * cv * lots, "exit_reason": "liquidated"})
+        st["completed"] = (st.get("completed") or []) + [rec]
+        st["open"] = None
+        _save(st)
+        log(f"[delta-fly] all legs liquidated/closed → position settled "
+            f"P&L {net_pts:+.1f}pts")
+    return st
+
+
 def maybe_exit_testnet(cfg, st, now_utc, log=print):
     pos = st.get("open")
     if not pos or pos.get("mode") != "testnet":
@@ -456,6 +535,7 @@ def tick(now_utc=None, log=print):
     now_utc = now_utc or dt.datetime.now(dt.timezone.utc)
     testnet = str(cfg.get("execution", "sim")).lower() == "testnet"
     if testnet:
+        st = reconcile_liquidations(cfg, st, now_utc, log)   # catch mid-day liquidations
         st = maybe_exit_testnet(cfg, st, now_utc, log)
         # robustness: a leftover non-testnet (sim/paper) open would otherwise never
         # settle in testnet mode and block ALL future entries forever — settle it via

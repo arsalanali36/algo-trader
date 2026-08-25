@@ -9813,7 +9813,30 @@ def _charges_mod():
     return _charges_cache or None
 
 
-def _zerodha_charges(entry_px, exit_px, qty, entry_side, when=None):
+def _delta_charges(qty, sym):
+    """₹ round-trip Delta (crypto) commission for one option leg — taker ≈ 0.03%
+    of NOTIONAL per side, in INR (NOT Zerodha STT/brokerage). Notional from the
+    strike in the Delta symbol. Mirrors the client-side calcCharges crypto branch."""
+    try:
+        parts = str(sym).split("-")
+        K = float(parts[2])
+        cv = 0.001 if "-BTC-" in sym else 0.01
+        return 0.0003 * (K * cv) * 85.0 * float(qty) * 2.0
+    except Exception:
+        return 0.0
+
+
+def _zerodha_charges(entry_px, exit_px, qty, entry_side, when=None, sym=None):
+    """₹ round-trip charges for one option leg, at the rates in force on `when`
+    (the trade's ENTRY date). Crypto (Delta) legs → Delta commission model."""
+    if sym and ("-BTC-" in str(sym) or "-ETH-" in str(sym)) and str(sym)[:2] in ("C-", "P-"):
+        return _delta_charges(qty, sym)
+    if not entry_px or not exit_px or not qty:
+        return 0.0
+    return _zerodha_charges_nse(entry_px, exit_px, qty, entry_side, when=when)
+
+
+def _zerodha_charges_nse(entry_px, exit_px, qty, entry_side, when=None):
     """₹ round-trip charges for one option leg, at the rates in force on `when`
     (the trade's ENTRY date).
 
@@ -9905,7 +9928,7 @@ def api_strategy_equity():
         # range reaching before 2026-04-01 must use that era's STT, not today's.
         tax = _zerodha_charges(t.get('entry_price'), t.get('exit_price'),
                                t.get('qty'), t.get('entry'),
-                               when=t.get('entry_date'))
+                               when=t.get('entry_date'), sym=t.get('sym'))
         rec = {'t': exit_dt, 'gross': round(gross, 2), 'tax': round(tax, 2),
                'net': round(gross - tax, 2), 'sym': t.get('sym', ''),
                'reason': t.get('exit_reason', '')}

@@ -589,7 +589,7 @@
         } else {
           const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
           t._gross = ep && xp && qt ? (t.entry === 'BUY' ? xp - ep : ep - xp) * qt : (t.pnl || 0);
-          t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry) || 0) : 0;
+          t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry, t.sym || t.trad_sym) || 0) : 0;
           t._net = t._gross - t._tax;
         }
       });
@@ -633,7 +633,7 @@
         // Calculate charges
         let tax = 0;
         if (typeof calcCharges === 'function') {
-          tax = calcCharges(ep, xp, qty, entrySide) || 0;
+          tax = calcCharges(ep, xp, qty, entrySide, t.sym || t.trad_sym) || 0;
         }
 
         const net = gross - tax;

@@ -531,7 +531,7 @@
       det.forEach(t => {
         const ep = t.entry_price || 0, xp = t.exit_price || 0, qt = t.qty || 0;
         t._gross = ep && xp && qt ? (t.entry === 'BUY' ? xp - ep : ep - xp) * qt : (t.pnl || 0);
-        t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry) || 0) : 0;
+        t._tax = ep && xp && qt ? (calcCharges(ep, xp, qt, t.entry, t.sym || t.trad_sym) || 0) : 0;
         t._net = t._gross - t._tax;
       });
 

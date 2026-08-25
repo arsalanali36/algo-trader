@@ -270,8 +270,18 @@
     // trade in the DB today), OVERSTATED for anything older. If you ever render
     // pre-April-2026 trades here, fix this first — a dashboard-vs-EOD-report tax
     // mismatch is exactly what TRAP #118 cost a session to chase down.
-    function calcCharges(entryPx, exitPx, qty, entrySide) {
+    function calcCharges(entryPx, exitPx, qty, entrySide, sym) {
       if (!entryPx || !exitPx || !qty) return null;
+      // Crypto (Delta) — NOT Zerodha STT/brokerage. Delta taker commission ≈ 0.03%
+      // of NOTIONAL per side (observed effective rate ~0.00027 on notional), in INR.
+      // Prices here are INR-per-lot; notional comes from the strike in the symbol.
+      if (sym && /-(BTC|ETH)-/.test(sym) && /^[CP]-/.test(sym)) {
+        const parts = String(sym).split('-');
+        const K = parseFloat(parts[2]) || 0;
+        const cv = sym.indexOf('-BTC-') >= 0 ? 0.001 : 0.01;
+        const usdinr = 85, rate = 0.0003;
+        return rate * (K * cv) * usdinr * qty * 2;   // entry + exit legs
+      }
       const buySide = entrySide === 'BUY' ? entryPx : exitPx;
       const sellSide = entrySide === 'SELL' ? entryPx : exitPx;
       const buyTurn = buySide * qty;
