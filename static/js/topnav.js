@@ -15,9 +15,13 @@
   // in-page dashboard tabs → deep-link; cross-page → real routes
   var TABS = [
     { href: '/?tab=log',     label: 'Logs' },
-    { href: '/stats2',       label: '📊 Stats 2' },
     { href: '/?tab=risk',    label: '⚠️ Risk' },
     { href: '/registry2',    label: '🗂️ Strategies' }
+  ];
+  // 📊 Stats ▾ dropdown (Stats 2 page + P&L Journal)
+  var STATS = [
+    { href: '/stats2',  label: '📊 Stats 2' },
+    { href: '/journal', label: '📓 P&L Journal' }
   ];
   // 📒 Orders ▾ dropdown (Orders & P&L in-page tab + standalone Broker Orders page)
   var ORDERS = [
@@ -137,11 +141,14 @@
 
     var ordersOn = here === '/broker-orders';
     var ordersDD = '<div class="gn-dd"><span class="gn-tab' + (ordersOn ? ' on' : '') + '" data-dd="ord">📒 Orders & P&L ▾</span>' + menuHTML(ORDERS, 'gn-ord') + '</div>';
+    var statsOn = ['/stats2', '/journal'].indexOf(here) >= 0;
+    var statsDD = '<div class="gn-dd"><span class="gn-tab' + (statsOn ? ' on' : '') + '" data-dd="sta">📊 Stats ▾</span>' + menuHTML(STATS, 'gn-sta') + '</div>';
     var curvesOn = ['/curves', '/gex', '/whatif'].indexOf(here) >= 0;
     var curvesDD = '<div class="gn-dd"><span class="gn-tab' + (curvesOn ? ' on' : '') + '" data-dd="cur">📈 Curves ▾</span>' + menuHTML(CURVES, 'gn-cur') + '</div>';
     var tabsArr = TABS.map(function (t) { return tabHTML(t, here); });
     tabsArr.splice(1, 0, ordersDD);   // Orders ▾ right after Logs
-    tabsArr.splice(3, 0, curvesDD);   // Curves ▾ right after Stats 2
+    tabsArr.splice(2, 0, statsDD);    // Stats ▾ after Orders
+    tabsArr.splice(3, 0, curvesDD);   // Curves ▾ after Stats
     var tabsHTML = tabsArr.join('') +
       '<div class="gn-dd"><span class="gn-tab" data-dd="rep">📋 Reports ▾</span>' + menuHTML(REPORTS, 'gn-rep') + '</div>' +
       '<div class="gn-dd"><span class="gn-tab" data-dd="more">More ▾</span>' + menuHTML(MORE, 'gn-more') + '</div>' +
@@ -193,7 +200,7 @@
     bar.addEventListener('click', function (e) {
       var trg = e.target.closest('[data-dd]');
       if (trg) {
-        var map = { ord: 'gn-ord', cur: 'gn-cur', rep: 'gn-rep', more: 'gn-more', av: 'gn-av' };
+        var map = { ord: 'gn-ord', sta: 'gn-sta', cur: 'gn-cur', rep: 'gn-rep', more: 'gn-more', av: 'gn-av' };
         var m = document.getElementById(map[trg.getAttribute('data-dd')]);
         var wasOpen = m.classList.contains('show');
         closeMenus(); if (!wasOpen) m.classList.add('show');

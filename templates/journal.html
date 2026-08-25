@@ -1,0 +1,303 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P&L Journal</title>
+<style>
+:root{--bg:#0d1117;--panel:#161b22;--bd:#30363d;--bd2:#21262d;--txt:#e6edf3;--muted:#8b949e;
+--green:#3fb950;--red:#f85149;--greenbg:#12351f;--redbg:#3a1416;--blue:#1f6feb;--wk:#0f1620;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,Segoe UI,Roboto,sans-serif;font-size:12px}
+.wrap{padding:12px 12px 60px}
+.top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:10px}
+h1{font-size:17px;margin:0;font-weight:700}
+h1 span{color:var(--muted);font-weight:500;font-size:12px}
+.ctrls{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seg{display:flex;border:1px solid var(--bd);border-radius:7px;overflow:hidden}
+.seg button{background:#21262d;border:none;color:var(--muted);font:inherit;font-size:12px;font-weight:600;padding:5px 11px;cursor:pointer}
+.seg button+button{border-left:1px solid var(--bd)}
+.seg button.on{background:var(--blue);color:#fff}
+.seg.metric button.on{background:#2ea043}
+.mnav{display:flex;align-items:center;gap:6px}
+.mnav button{background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--txt);font-size:13px;padding:4px 9px;cursor:pointer;font-weight:600}
+.mnav .lbl{min-width:120px;text-align:center;font-weight:700}
+.gear{position:relative}
+.gbtn{background:#21262d;border:1px solid var(--bd);border-radius:7px;color:var(--txt);font-size:13px;padding:5px 11px;cursor:pointer;font-weight:600}
+.gbtn:hover{background:#30363d}
+.panel{position:absolute;right:0;top:38px;z-index:50;background:var(--panel);border:1px solid var(--bd);border-radius:10px;padding:10px;width:290px;max-height:70vh;overflow:auto;box-shadow:0 8px 30px #000a;display:none}
+.panel.open{display:block}
+.panel .ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.panel .mini{font-size:11px;color:var(--blue);cursor:pointer;background:none;border:none;padding:0 4px}
+.panel label{display:flex;align-items:center;gap:8px;padding:4px 3px;font-size:12px;cursor:pointer;border-radius:5px}
+.panel label:hover{background:#21262d}
+.panel label .nm{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tblwrap{overflow:auto;border:1px solid var(--bd);border-radius:10px;max-height:calc(100vh - 170px)}
+table{border-collapse:separate;border-spacing:0;white-space:nowrap}
+th,td{border-right:1px solid var(--bd2);border-bottom:1px solid var(--bd2);padding:0;text-align:center;vertical-align:middle}
+thead th{background:var(--panel);padding:7px 8px;font-size:11px;font-weight:700;position:sticky;top:0;z-index:6}
+thead th .hid{font-size:10px;color:var(--muted)}
+thead th .hnm{font-size:11px;max-width:120px;white-space:normal;line-height:1.2}
+.colDay{position:sticky;left:0;z-index:8}.colDow{position:sticky;left:34px;z-index:8}.colNet{position:sticky;right:0;z-index:8}
+td.day,td.dow{position:sticky;background:var(--panel);font-weight:700;z-index:5}
+td.day{left:0;width:34px;color:var(--muted);font-size:14px}
+td.dow{left:34px;width:34px;font-size:12px}
+.cell{padding:2px 6px;min-width:74px}
+.cell .g{font-size:11px;color:#c9d1d9}.cell .t{font-size:10px;color:var(--muted)}.cell .empty{color:#30363d}
+.one{font-weight:700;font-size:12px;padding:3px}.tax{color:var(--muted);font-weight:600}.cnt{color:#c9d1d9;font-weight:700}
+.net{font-weight:700;font-size:12px;border-radius:4px;padding:1px 3px;margin-top:1px}
+.net.pos{background:var(--greenbg);color:var(--green)}.net.neg{background:var(--redbg);color:var(--red)}.net.zero{color:var(--muted)}
+.note{width:100%;min-width:120px;min-height:30px;background:#0d1117;border:1px solid var(--bd2);border-radius:5px;color:var(--txt);font:inherit;font-size:11px;text-align:left;padding:3px 5px;white-space:normal;outline:none}
+.note:focus{border-color:var(--blue)}.note:empty:before{content:'note…';color:#30363d}
+td.netcell{background:var(--wk);min-width:70px;position:sticky;right:0;z-index:5}.netcell.big .net{font-size:15px}
+tr.wh td{background:var(--wk);color:var(--blue);font-weight:700;text-align:left;padding:5px 10px;border-top:2px solid var(--bd);position:sticky;left:0;z-index:4}
+tr.subtotal td{background:#12161d;font-weight:700;color:var(--muted)}tr.subtotal td.day,tr.subtotal td.dow{background:#12161d}
+tr.grand td{background:#161b22;font-weight:800;font-size:13px;padding:8px 4px;border-top:2px solid var(--bd)}
+tr.grand td.gt-l{text-align:left;padding-left:10px;position:sticky;left:0;background:#161b22;z-index:5}
+.legend{color:var(--muted);font-size:11px;margin-top:10px;line-height:1.7}
+.cell.clk{cursor:pointer}.cell.clk:hover{background:#1c2431}
+.trbadge{display:inline-block;margin-top:2px;font-size:9px;color:var(--blue)}
+.ovl{position:fixed;inset:0;background:#000a;z-index:80;display:none}.ovl.open{display:block}
+.modal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:81;width:min(760px,95vw);max-height:90vh;overflow:auto;background:var(--panel);border:1px solid var(--bd);border-radius:12px;padding:16px;box-shadow:0 20px 60px #000c;display:none}
+.modal.open{display:block}
+.modal .mh{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:12px}
+.modal .mh h2{font-size:15px;margin:0}.modal .mh .sm{color:var(--muted);font-size:12px;margin-top:3px}
+.modal .x{background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--txt);font-size:14px;cursor:pointer;padding:3px 9px}
+.tcard{border:1px solid var(--bd);border-radius:9px;padding:10px;margin-bottom:11px;background:#0d1117}
+.tcard .ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;flex-wrap:wrap;gap:6px}
+.tcard .ch b{font-size:13px}.tcard .ch .kv{font-size:11px;color:var(--muted)}
+.tcard table{width:100%;border-collapse:collapse;font-size:11px;white-space:nowrap}
+.tcard th,.tcard td{border-bottom:1px solid var(--bd2);padding:3px 6px;text-align:right}
+.tcard th{color:var(--muted);font-weight:600;text-align:right}.tcard th:first-child,.tcard td:first-child{text-align:left}
+.tcard .side-b{color:var(--green)}.tcard .side-s{color:var(--red)}
+.tcard .cnote{width:100%;margin-top:8px;background:#161b22;border:1px solid var(--bd2);border-radius:6px;color:var(--txt);font:inherit;font-size:12px;padding:6px 8px;min-height:46px;resize:vertical;outline:none}
+.tcard .cnote:focus{border-color:var(--blue)}
+.media{margin-top:10px;border-top:1px dashed var(--bd);padding-top:9px}
+.media .mrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px}
+.mbtn{background:#21262d;border:1px solid var(--bd);border-radius:6px;color:var(--txt);font-size:12px;font-weight:600;padding:5px 10px;cursor:pointer}
+.mbtn:hover{background:#30363d}.mbtn.rec{border-color:var(--red);color:#ff8b84}.mbtn.recording{background:#3a1416;color:#ff8b84}
+.mgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:9px}
+.mitem{border:1px solid var(--bd2);border-radius:8px;padding:6px;background:#161b22}
+.mitem video,.mitem img{width:100%;border-radius:5px;background:#000;display:block;max-height:150px;object-fit:contain}
+.mitem .mn{width:100%;margin-top:5px;background:#0d1117;border:1px solid var(--bd2);border-radius:5px;color:var(--txt);font:inherit;font-size:11px;padding:4px 6px;outline:none}
+.mitem .mfoot{display:flex;justify-content:space-between;align-items:center;margin-top:4px;font-size:10px;color:var(--muted)}
+.mitem .del{background:none;border:none;color:var(--red);cursor:pointer;font-size:11px}
+.hint{color:var(--muted);font-size:11px}.warn{color:#d29922;font-size:11px}
+</style></head><body>
+<div class="wrap">
+<div class="top">
+  <h1>P&amp;L JOURNAL <span id="sub"></span></h1>
+  <div class="ctrls">
+    <div class="mnav"><button id="prevM">◀</button><span class="lbl" id="mlbl">—</span><button id="nextM">▶</button><button id="todayM">Today</button></div>
+    <div class="seg metric" id="metricSeg">
+      <button data-x="all" class="on">All</button><button data-x="gross">Gross</button><button data-x="tax">Tax</button>
+      <button data-x="net">Net</button><button data-x="trades">Trades</button><button data-x="comment">💬 Comment</button>
+    </div>
+    <div class="seg" id="modeSeg"><button data-m="all" class="on">All</button><button data-m="live">Live</button><button data-m="paper">Paper</button></div>
+    <div class="gear"><button class="gbtn" id="gbtn">Columns</button><div class="panel" id="panel"></div></div>
+  </div>
+</div>
+<div class="tblwrap"><table id="tbl"></table></div>
+<div class="ovl" id="ovl"></div><div class="modal" id="modal"></div>
+<div class="legend">
+Live order_store se — per-day netting (dashboard-exact), basket trade-count (hedge = 1 trade). <b>Kisi bhi cell pe click</b> →
+us din us strategy ke saare trades (leg-wise details) + per-trade <b>comment</b> + <b>📹 screen-record video note</b> + <b>🖼 image</b> upload.
+Comments &amp; media server pe save (cross-device). Columns/metric/mode browser me. <span id="secwarn" class="warn"></span>
+</div>
+</div>
+<script src="/static/js/topnav.js"></script>
+<script>
+const LSV='jnl_vis_v1', LSM='jnl_mode_v1', LSX='jnl_metric_v1';
+const DOT_L='🟢', DOT_P='⚪';
+let DATA=null, NOTES={};
+let mode=localStorage.getItem(LSM)||'all', metric=localStorage.getItem(LSX)||'all';
+let vis={}; try{vis=JSON.parse(localStorage.getItem(LSV)||'{}');}catch(e){vis={};}
+const now=new Date(); let Y=now.getFullYear(), M=now.getMonth()+1;
+(function(){const u=new URLSearchParams(location.search); if(u.get('y'))Y=+u.get('y'); if(u.get('m'))M=+u.get('m');})();
+
+function inr(v){v=Math.round(v);const neg=v<0;let x=String(Math.abs(v));
+  if(x.length>3){let h=x.slice(0,-3),p=[];while(h.length>2){p.unshift(h.slice(-2));h=h.slice(0,-2);}if(h)p.unshift(h);x=p.join(',')+','+x.slice(-3);}return(neg?'-':'')+x;}
+function ncls(v){return v>0.5?'pos':(v<-0.5?'neg':'zero');}
+function esc(s){return(s||'').replace(/[&<>]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;'}[c]));}
+
+// ── server notes ──
+async function loadNotes(){ try{const r=await fetch('/jnl-api/notes');const j=await r.json(); NOTES=j.notes||{};}catch(e){NOTES={};} }
+let _nq={};
+function saveNote(key,text){ NOTES[key]=text; clearTimeout(_nq[key]);
+  _nq[key]=setTimeout(()=>{ fetch('/jnl-api/notes',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key,text})}); },500); }
+
+// ── month load ──
+async function loadMonth(){
+  document.getElementById('mlbl').textContent='loading…';
+  const r=await fetch('/jnl-api/data?y='+Y+'&m='+M); const j=await r.json();
+  if(!j.ok){ document.getElementById('mlbl').textContent='error'; return; }
+  DATA=j.data;
+  DATA.strats.forEach(s=>{ if(!(s.id in vis)) vis[s.id]=true; });
+  document.getElementById('mlbl').textContent=DATA.label;
+  history.replaceState(null,'','?y='+Y+'&m='+M);
+  buildPanel(); render();
+}
+function shiftMonth(d){ M+=d; if(M<1){M=12;Y--;} if(M>12){M=1;Y++;} loadMonth(); }
+
+function stratsForMode(){ return DATA.strats.filter(s=> mode==='all'?true:s.modes.includes(mode)); }
+function activeStrats(){ return stratsForMode().filter(s=>vis[s.id]); }
+function cval(iso,sid){
+  if(mode==='all'){const a=DATA.cells[iso+'|'+sid+'|live'],b=DATA.cells[iso+'|'+sid+'|paper'];
+    if(!a&&!b)return null;return[(a?a[0]:0)+(b?b[0]:0),(a?a[1]:0)+(b?b[1]:0),(a?a[2]:0)+(b?b[2]:0),(a?a[3]:0)+(b?b[3]:0)];}
+  return DATA.cells[iso+'|'+sid+'|'+mode]||null;
+}
+function comp(c){return metric==='gross'?c[0]:metric==='tax'?c[1]:metric==='trades'?c[3]:c[2];}
+function cellHtml(c,iso,sid){
+  if(metric==='comment'){const k=iso+'|'+sid;
+    return '<td class="cell"><div class="note" contenteditable="true" data-nk="'+k+'">'+esc(NOTES[k]||'')+'</div></td>';}
+  if(!c)return '<td class="cell"><div class="empty">—</div></td>';
+  let inner;
+  if(metric==='all'){const tx=c[1];
+    inner='<div class="g">'+inr(c[0])+'</div><div class="t">'+(tx>0?'-':'')+inr(tx)+'</div><div class="net '+ncls(c[2])+'">'+inr(c[2])+'</div><div class="trbadge">'+c[3]+' tr ▸</div>';}
+  else{const v=comp(c);
+    if(metric==='tax')inner='<div class="one tax">'+(v>0?'-':'')+inr(v)+'</div>';
+    else if(metric==='trades')inner='<div class="one cnt">'+(v||'')+'</div>';
+    else inner='<div class="net '+ncls(v)+'" style="margin:0">'+inr(v)+'</div>';
+    if(c[3]>0)inner+='<div class="trbadge">'+c[3]+' tr ▸</div>';}
+  return '<td class="cell clk" data-iso="'+iso+'" data-sid="'+sid+'" title="'+c[3]+' trade(s) — click for details">'+inner+'</td>';
+}
+function totCell(v,big){
+  if(metric==='trades')return '<td class="netcell'+(big?' big':'')+'"><div class="one cnt">'+(v||'')+'</div></td>';
+  if(metric==='tax')return '<td class="netcell'+(big?' big':'')+'"><div class="one tax">'+(v?'-':'')+inr(v)+'</div></td>';
+  return '<td class="netcell'+(big?' big':'')+'"><div class="net '+ncls(v)+'">'+(Math.abs(v)>=0.5?inr(v):'')+'</div></td>';
+}
+function subCell(v){
+  if(metric==='trades')return '<td><div class="one cnt">'+(v||'')+'</div></td>';
+  if(metric==='tax')return '<td><div class="one tax">'+(v?'-':'')+inr(v)+'</div></td>';
+  return '<td><div class="net '+ncls(v)+'">'+(Math.abs(v)>=0.5?inr(v):'')+'</div></td>';
+}
+function render(){
+  const S=activeStrats();const span=S.length+3;
+  const netlabel={all:'Net',net:'Net',gross:'Gross',tax:'Tax',trades:'Trades',comment:'Note'}[metric];
+  let h='<thead><tr><th class="colDay">Day</th><th class="colDow"></th>';
+  S.forEach(s=>{const dot=s.modes.includes('live')?DOT_L:DOT_P;
+    h+='<th title="'+s.idp+' - '+esc(s.name)+'"><div class="hid">'+dot+' '+s.idp+'</div><div class="hnm">'+esc(s.name)+'</div></th>';});
+  h+='<th class="colNet">'+netlabel+'</th></tr></thead><tbody>';
+  const isC=metric==='comment';const colTot={};S.forEach(s=>colTot[s.id]=0);let gTot=0;
+  DATA.weeks.forEach((w,wi)=>{
+    h+='<tr class="wh"><td colspan="'+span+'">W'+(wi+1)+' · '+w.wk+'</td></tr>';
+    const wc={};S.forEach(s=>wc[s.id]=0);let wTot=0;
+    w.days.forEach(day=>{
+      let row='<tr><td class="day">'+day.d+'</td><td class="dow">'+day.dow+'</td>';let rTot=0;
+      S.forEach(s=>{const c=cval(day.iso,s.id);row+=cellHtml(c,day.iso,s.id);
+        if(c&&!isC){const v=comp(c);rTot+=v;wc[s.id]+=v;colTot[s.id]+=v;}});
+      wTot+=rTot;gTot+=rTot;
+      if(isC){const k=day.iso+'|__day';row+='<td class="netcell"><div class="note" contenteditable="true" data-nk="'+k+'">'+esc(NOTES[k]||'')+'</div></td>';}
+      else row+=totCell(rTot,false);
+      row+='</tr>';h+=row;
+    });
+    let sub='<tr class="subtotal"><td class="day"></td><td class="dow">Σ</td>';
+    S.forEach(s=>{sub+=isC?'<td></td>':subCell(wc[s.id]);});
+    sub+=isC?'<td class="netcell"></td>':totCell(wTot,false);sub+='</tr>';h+=sub;
+  });
+  let g='<tr class="grand"><td class="gt-l" colspan="2">'+(isC?'TOTAL':netlabel.toUpperCase()+' TOTAL')+'</td>';
+  S.forEach(s=>{g+=isC?'<td></td>':subCell(colTot[s.id]);});
+  g+=isC?'<td class="netcell"></td>':totCell(gTot,true);g+='</tr>';h+=g+'</tbody>';
+  document.getElementById('tbl').innerHTML=h;
+  if(isC)document.querySelectorAll('#tbl .note').forEach(n=>n.addEventListener('input',()=>saveNote(n.dataset.nk,n.textContent)));
+  document.getElementById('sub').textContent=(mode==='all'?'All':mode==='live'?'Live':'Paper')+' · '+netlabel+(isC?'':' total '+(metric==='trades'?gTot:inr(gTot)));
+}
+function buildPanel(){
+  const p=document.getElementById('panel');const avail=stratsForMode();
+  let h='<div class="ph"><b>Columns ('+avail.length+')</b><div><button class="mini" id="allBtn">All</button><button class="mini" id="noneBtn">None</button></div></div>';
+  avail.forEach(s=>{const dot=s.modes.includes('live')?DOT_L:DOT_P;
+    h+='<label><input type="checkbox" data-id="'+s.id+'" '+(vis[s.id]?'checked':'')+'><span>'+dot+'</span><span class="nm">'+s.idp+' '+esc(s.name)+'</span></label>';});
+  p.innerHTML=h;
+  p.querySelectorAll('input').forEach(cb=>cb.onchange=()=>{vis[cb.dataset.id]=cb.checked;localStorage.setItem(LSV,JSON.stringify(vis));render();});
+  allBtn.onclick=()=>{avail.forEach(s=>vis[s.id]=true);localStorage.setItem(LSV,JSON.stringify(vis));buildPanel();render();};
+  noneBtn.onclick=()=>{avail.forEach(s=>vis[s.id]=false);localStorage.setItem(LSV,JSON.stringify(vis));buildPanel();render();};
+}
+
+// ── trade detail modal ──
+function stratName(sid){const s=DATA.strats.find(x=>x.id===sid);return s?(s.idp+' '+s.name):sid;}
+function tradesFor(iso,sid){let out=[];const ms=mode==='all'?['live','paper']:[mode];
+  ms.forEach(m=>{const l=DATA.trades[iso+'|'+sid+'|'+m];if(l)l.forEach(b=>out.push(Object.assign({mode:m},b)));});return out;}
+function closeDetail(){document.getElementById('modal').classList.remove('open');document.getElementById('ovl').classList.remove('open');stopRec(true);}
+function openDetail(iso,sid){
+  const list=tradesFor(iso,sid);if(!list.length)return;
+  const net=list.reduce((a,b)=>a+b.n,0);
+  let h='<div class="mh"><div><h2>'+esc(stratName(sid))+'</h2><div class="sm">'+iso+' · '+list.length+' trade(s) · net '+inr(net)+'</div></div><button class="x" id="mx">✕</button></div>';
+  list.forEach((b,idx)=>{const tk='T|'+iso+'|'+sid+'|'+b.mode+'|'+b.id;
+    h+='<div class="tcard"><div class="ch"><b>Trade '+(idx+1)+(b.mode==='live'?' '+DOT_L:' '+DOT_P)+'</b>'+
+      '<span class="kv">net <span class="net '+ncls(b.n)+'" style="padding:1px 5px">'+inr(b.n)+'</span> · gross '+inr(b.g)+' · tax -'+inr(b.tx)+' · '+b.legs.length+' leg</span></div>'+
+      '<table><tr><th>Symbol</th><th>Side</th><th>Qty</th><th>Entry</th><th>Exit</th><th>Pts</th><th>Net</th><th>Time</th><th>Exit reason</th></tr>';
+    b.legs.forEach(l=>{const ln=Math.round(l.g-l.tx);
+      h+='<tr><td>'+esc(l.sy)+'</td><td class="side-'+(l.sd==='BUY'?'b':'s')+'">'+l.sd+'</td><td>'+l.q+'</td><td>'+l.ep+'</td><td>'+l.xp+'</td><td>'+l.pt+'</td><td style="color:'+(ln>0?'var(--green)':ln<0?'var(--red)':'var(--muted)')+'">'+inr(ln)+'</td><td>'+(l.et||'')+'→'+(l.xt||'')+'</td><td>'+esc(l.rs)+'</td></tr>';});
+    h+='</table><textarea class="cnote" data-tk="'+tk+'" placeholder="Is trade me kya hua… (auto-save)">'+esc(NOTES[tk]||'')+'</textarea>'+
+       '<div class="media" data-tk="'+tk+'"><div class="mrow"><button class="mbtn rec" data-rec="'+tk+'">🔴 Record screen</button>'+
+       '<label class="mbtn">🖼 Upload image<input type="file" accept="image/*" data-img="'+tk+'" style="display:none"></label>'+
+       '<label class="mbtn">📹 Upload video<input type="file" accept="video/*" data-vid="'+tk+'" style="display:none"></label>'+
+       '<span class="hint" data-recinfo="'+tk+'"></span></div><div class="mgrid" data-grid="'+tk+'"></div></div></div>';});
+  const md=document.getElementById('modal');md.innerHTML=h;md.classList.add('open');document.getElementById('ovl').classList.add('open');
+  document.getElementById('mx').onclick=closeDetail;
+  md.querySelectorAll('.cnote').forEach(t=>t.addEventListener('input',()=>saveNote(t.dataset.tk,t.value)));
+  md.querySelectorAll('[data-rec]').forEach(btn=>btn.onclick=()=>toggleRec(btn.dataset.rec,btn));
+  md.querySelectorAll('[data-img]').forEach(inp=>inp.onchange=()=>uploadFile(inp.dataset.img,inp.files[0]));
+  md.querySelectorAll('[data-vid]').forEach(inp=>inp.onchange=()=>uploadFile(inp.dataset.vid,inp.files[0]));
+  list.forEach((b,idx)=>{const tk='T|'+iso+'|'+sid+'|'+b.mode+'|'+b.id;loadMedia(tk);});
+}
+
+// ── media ──
+async function loadMedia(tk){
+  const grid=document.querySelector('[data-grid="'+CSS.escape(tk)+'"]');if(!grid)return;
+  try{const r=await fetch('/jnl-api/media/list?tk='+encodeURIComponent(tk));const j=await r.json();
+    grid.innerHTML=(j.media||[]).map(m=>mediaItem(m)).join('');
+    grid.querySelectorAll('.del').forEach(d=>d.onclick=()=>delMedia(d.dataset.id,tk));
+    grid.querySelectorAll('.mn').forEach(n=>n.addEventListener('input',()=>{ fetch('/jnl-api/media/note',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:n.dataset.id,note:n.value})}); }));
+  }catch(e){}
+}
+function mediaItem(m){
+  const src='/jnl-media/'+m.id;const dt=new Date(m.ctime*1000).toLocaleString();
+  const body=m.kind==='video'?'<video controls preload="metadata" src="'+src+'"></video>':'<img src="'+src+'">';
+  return '<div class="mitem">'+body+'<input class="mn" data-id="'+m.id+'" value="'+esc(m.note||'')+'" placeholder="note…">'+
+    '<div class="mfoot"><span>'+(m.kind==='video'?'📹':'🖼')+' '+dt+'</span><button class="del" data-id="'+m.id+'">🗑 delete</button></div></div>';
+}
+async function uploadFile(tk,file){
+  if(!file)return;const fd=new FormData();fd.append('file',file);fd.append('tk',tk);
+  const info=document.querySelector('[data-recinfo="'+CSS.escape(tk)+'"]');if(info)info.textContent='uploading…';
+  try{const r=await fetch('/jnl-api/media/upload',{method:'POST',body:fd});const j=await r.json();
+    if(info)info.textContent=j.ok?'':('upload failed: '+(j.error||''));loadMedia(tk);}catch(e){if(info)info.textContent='upload failed';}
+}
+// screen recording
+let _rec=null,_recChunks=[],_recStream=null,_recTk=null,_recBtn=null;
+function toggleRec(tk,btn){ if(_rec&&_rec.state==='recording'){stopRec();return;} startRec(tk,btn); }
+async function startRec(tk,btn){
+  if(!navigator.mediaDevices||!navigator.mediaDevices.getDisplayMedia){alert('Screen capture is not available here. Open the dashboard over HTTPS (algo.72-61-173-32.nip.io).');return;}
+  try{ _recStream=await navigator.mediaDevices.getDisplayMedia({video:true,audio:true}); }
+  catch(e){ return; }
+  const mt=['video/webm;codecs=vp9,opus','video/webm;codecs=vp8,opus','video/webm'].find(t=>MediaRecorder.isTypeSupported(t))||'video/webm';
+  _rec=new MediaRecorder(_recStream,{mimeType:mt});_recChunks=[];_recTk=tk;_recBtn=btn;
+  _rec.ondataavailable=e=>{if(e.data.size)_recChunks.push(e.data);};
+  _rec.onstop=()=>{const blob=new Blob(_recChunks,{type:'video/webm'});
+    const f=new File([blob],'screen-'+Date.now()+'.webm',{type:'video/webm'});
+    uploadFile(_recTk,f); (_recStream.getTracks()||[]).forEach(t=>t.stop());
+    if(_recBtn){_recBtn.classList.remove('recording');_recBtn.textContent='🔴 Record screen';}
+    _rec=null;_recStream=null;};
+  _recStream.getVideoTracks()[0].onended=()=>{ if(_rec&&_rec.state==='recording')_rec.stop(); };
+  _rec.start();btn.classList.add('recording');btn.textContent='⏹ Stop recording';
+  const info=document.querySelector('[data-recinfo="'+CSS.escape(tk)+'"]');if(info)info.textContent='recording… (stop sharing to finish)';
+}
+function stopRec(silent){ if(_rec&&_rec.state==='recording'){_rec.stop();} else if(silent&&_recStream){(_recStream.getTracks()||[]).forEach(t=>t.stop());_recStream=null;} }
+async function delMedia(id,tk){ if(!confirm('Delete this media?'))return;
+  await fetch('/jnl-api/media/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id})});loadMedia(tk); }
+
+// ── wiring ──
+document.getElementById('tbl').addEventListener('click',e=>{const td=e.target.closest('td.clk');if(td)openDetail(td.dataset.iso,td.dataset.sid);});
+document.getElementById('ovl').addEventListener('click',closeDetail);
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeDetail();});
+gbtn.onclick=e=>{e.stopPropagation();panel.classList.toggle('open');};
+document.addEventListener('click',e=>{if(!panel.contains(e.target)&&e.target.id!=='gbtn')panel.classList.remove('open');});
+document.querySelectorAll('#modeSeg button').forEach(b=>b.onclick=()=>{mode=b.dataset.m;localStorage.setItem(LSM,mode);
+  document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.m===mode));buildPanel();render();});
+document.querySelectorAll('#metricSeg button').forEach(b=>b.onclick=()=>{metric=b.dataset.x;localStorage.setItem(LSX,metric);
+  document.querySelectorAll('#metricSeg button').forEach(x=>x.classList.toggle('on',x.dataset.x===metric));render();});
+document.getElementById('prevM').onclick=()=>shiftMonth(-1);
+document.getElementById('nextM').onclick=()=>shiftMonth(1);
+document.getElementById('todayM').onclick=()=>{const d=new Date();Y=d.getFullYear();M=d.getMonth()+1;loadMonth();};
+document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.toggle('on',x.dataset.m===mode));
+document.querySelectorAll('#metricSeg button').forEach(x=>x.classList.toggle('on',x.dataset.x===metric));
+if(!(window.isSecureContext)){document.getElementById('secwarn').textContent='⚠ Screen-record ke liye HTTPS pe kholo (algo.72-61-173-32.nip.io).';}
+(async function(){ await loadNotes(); await loadMonth(); })();
+</script></body></html>

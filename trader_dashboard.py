@@ -901,6 +901,126 @@ def idea_video_stream(vid):
     return resp
 
 
+# ------------------- 📓 P&L Journal (monthly grid + per-trade comments/media) --
+@app.route('/journal')
+def pnl_journal_page():
+    """Monthly P&L journal grid (day-rows x strategy-cols), per-trade drill-down
+    with comments + screen-capture video notes + images. Display-only, zero
+    order/Dhan path. Reuses order_store + charges + registry + idea_vault mime."""
+    return render_template("journal.html")
+
+
+@app.route('/jnl-api/data')
+def api_journal_data():
+    import pnl_journal as pj
+    try:
+        import datetime as _d
+        today = _d.date.today()
+        y = int(request.args.get('y') or today.year)
+        m = int(request.args.get('m') or today.month)
+        return jsonify({"ok": True, "data": pj.build_month(y, m)})
+    except Exception as e:
+        print("[journal] data fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route('/jnl-api/notes')
+def api_journal_notes():
+    import pnl_journal as pj
+    return jsonify({"ok": True, "notes": pj.get_notes()})
+
+
+@app.route('/jnl-api/notes', methods=['POST'])
+def api_journal_set_note():
+    import pnl_journal as pj
+    b = request.get_json(force=True) or {}
+    key = b.get('key')
+    if not key:
+        return jsonify({"ok": False, "error": "key required"}), 400
+    pj.set_note(key, b.get('text') or "")
+    return jsonify({"ok": True})
+
+
+@app.route('/jnl-api/media/list')
+def api_journal_media_list():
+    import pnl_journal as pj
+    tk = request.args.get('tk')
+    if not tk:
+        return jsonify({"ok": False, "error": "tk required"}), 400
+    return jsonify({"ok": True, "media": pj.list_media(tk)})
+
+
+@app.route('/jnl-api/media/upload', methods=['POST'])
+def api_journal_media_upload():
+    import pnl_journal as pj
+    f = request.files.get('file')
+    tk = request.form.get('tk')
+    if not f or not f.filename:
+        return jsonify({"ok": False, "error": "no file"}), 400
+    if not tk:
+        return jsonify({"ok": False, "error": "tk required"}), 400
+    try:
+        return jsonify({"ok": True, "item": pj.add_media(f, tk, note=request.form.get('note', ''))})
+    except Exception as e:
+        print("[journal] media upload fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+
+@app.route('/jnl-api/media/note', methods=['POST'])
+def api_journal_media_note():
+    import pnl_journal as pj
+    b = request.get_json(force=True) or {}
+    if not b.get('id'):
+        return jsonify({"ok": False, "error": "id required"}), 400
+    return jsonify({"ok": pj.update_media_note(b['id'], b.get('note') or "")})
+
+
+@app.route('/jnl-api/media/delete', methods=['POST'])
+def api_journal_media_delete():
+    import pnl_journal as pj
+    b = request.get_json(force=True) or {}
+    if not b.get('id'):
+        return jsonify({"ok": False, "error": "id required"}), 400
+    return jsonify({"ok": pj.delete_media(b['id'])})
+
+
+@app.route('/jnl-media/<mid>')
+def journal_media_stream(mid):
+    """Serve a journal media file — Range streaming for video, direct for image."""
+    import pnl_journal as pj
+    path = pj.media_path(mid)
+    if not path:
+        return Response('not found', status=404)
+    file_size = os.path.getsize(path)
+    mime = pj.media_mime(path)
+    range_header = request.headers.get('Range')
+    if range_header and mime.startswith('video'):
+        m = re.match(r'bytes=(\d+)-(\d*)', range_header)
+        if not m:
+            return Response(status=416)
+        start = int(m.group(1)); end = int(m.group(2)) if m.group(2) else file_size - 1
+        end = min(end, file_size - 1); length = end - start + 1
+
+        def generate():
+            with open(path, 'rb') as fh:
+                fh.seek(start); remaining = length
+                while remaining > 0:
+                    chunk = fh.read(min(512 * 1024, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk); yield chunk
+        resp = Response(generate(), status=206, mimetype=mime, direct_passthrough=True)
+        resp.headers['Content-Range'] = f'bytes {start}-{end}/{file_size}'
+        resp.headers['Accept-Ranges'] = 'bytes'
+        resp.headers['Content-Length'] = str(length)
+        resp.headers['Cache-Control'] = 'no-cache'
+        return resp
+    resp = Response(open(path, 'rb').read(), status=200, mimetype=mime)
+    resp.headers['Accept-Ranges'] = 'bytes'
+    resp.headers['Content-Length'] = str(file_size)
+    return resp
+
+
 # ------------------- 📋 Daily Report (one-scroll EOD report) -----------------
 @app.route('/report')
 def daily_report_page():
