@@ -175,9 +175,15 @@ def _record_leg(leg, *, cv, lots, group_id, action, mode="paper",
     (exit-entry)*qty gross math yields correct INR P&L."""
     try:
         import order_store
-    except Exception as e:
-        log(f"[delta-fly] order_store import fail (mirror skipped): {e}")
-        return
+    except Exception:
+        try:
+            _core = os.path.join(_ROOT, "_core")
+            if _core not in sys.path:
+                sys.path.insert(0, _core)
+            import order_store
+        except Exception as e:
+            log(f"[delta-fly] order_store import fail (mirror skipped): {e}")
+            return
     fill = leg.get("entry_fill") if action == "entry" else leg.get("exit_fill")
     if fill is None:
         return
