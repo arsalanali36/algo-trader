@@ -435,9 +435,13 @@ def _update_runup_tags(st, log=print):
         rows = order_store.query(date=order_store.ist_now_str()[:10], limit=9000)
     except Exception:
         return
+    # match by THIS position's group_id — a trad_sym repeats across the day's flies
+    # (same strike reused), so trad_sym alone would tag a stale closed row.
+    gid = pos.get("group_id")
     open_row = {}
     for r in rows:
-        if r.get("broker") == "delta" and str(r.get("status") or "") == "filled":
+        if (r.get("broker") == "delta" and str(r.get("status") or "") == "filled"
+                and (not gid or r.get("group_id") == gid)):
             open_row.setdefault(r.get("trad_sym"), r)
     cv, rate = pos["contract_value"], _usd_inr()
     changed = False
