@@ -81,6 +81,9 @@ h1,h2,h3{font-family:"Bricolage Grotesque",system-ui,sans-serif;margin:0;letter-
 .foot{margin-top:22px;font-size:.82rem;color:var(--faint);line-height:1.6}
 .foot b{color:var(--muted)}
 .err{background:var(--down-soft);color:var(--down);border-radius:12px;padding:16px;font-weight:600}
+.cav{background:var(--gold-bg);border:1px solid var(--gold-soft);border-left:3px solid var(--gold);
+  border-radius:12px;padding:12px 15px;margin-bottom:16px;font-size:.88rem;color:var(--ink)}
+.cav b{color:var(--gold)}
 
 @media (max-width:820px){ .strip{grid-template-columns:repeat(3,1fr)} .acts{grid-template-columns:1fr} }
 @media (max-width:520px){ .strip{grid-template-columns:repeat(2,1fr)} }
@@ -154,6 +157,7 @@ function render(d){
       ${actLine}
     </div>
   </div>
+  ${d.meta.caveat?`<div class="cav">⚠️ <b>Backtest caveat:</b> ${d.meta.caveat}</div>`:''}
 
   <div class="strip">
     <div class="st"><div class="v">${fmtR(s.equity)}</div><div class="l">Equity</div></div>
@@ -199,7 +203,7 @@ function render(d){
   drawChart(d);
   fillTable(d);
 
-  document.getElementById('foot').innerHTML = `<b>Kaise:</b> ${d.meta.n||251} real trades ka Monte-Carlo corridor (Sharpe ${d.meta.sharpe}, p=${d.meta.p_value}) · aapki asli equity order_store se (net = gross − real charges). Track: <b>${cf.risk_pct}% ${cf.risk_pct==12?'Aggressive':'Reasonable'}${cf.sip_per_month>0?' + SIP':''}</b> · margin ₹${(cf.margin_per_lot||0).toLocaleString('en-IN')}/lot (real SPAN) · +1 lot per ₹${Math.round(d.lot_step).toLocaleString('en-IN')} equity. Median = optimistic-if-edge-holds, promise nahi — plan p5 pe. Display-only.`;
+  document.getElementById('foot').innerHTML = `<b>Kaise:</b> ${d.meta.n||251} real trades ka Monte-Carlo corridor (Sharpe ${d.meta.sharpe}${d.meta.oos_sharpe!=null?', OOS '+d.meta.oos_sharpe:''}${d.meta.p_value!=null?', p='+d.meta.p_value:''}) · aapki asli equity order_store se (net = gross − real charges). Track: <b>${cf.risk_pct}% ${cf.risk_pct==12?'Aggressive':'Reasonable'}${cf.sip_per_month>0?' + SIP':''}</b> · margin ₹${(cf.margin_per_lot||0).toLocaleString('en-IN')}/lot (real SPAN) · +1 lot per ₹${Math.round(d.lot_step).toLocaleString('en-IN')} equity. Median = optimistic-if-edge-holds, promise nahi — plan p5 pe. Display-only.`;
 }
 
 function drawChart(d){

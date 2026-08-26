@@ -11,5 +11,18 @@
   "capacity_lots": 40,
   "sip_per_month": 0,
   "corridor": "weekly_ironfly_v1"
+ },
+ "bnf_strangle_hedged": {
+  "label": "02.10.01 BNF Hedged Strangle",
+  "start_date": "2026-08-26",
+  "book": 500000,
+  "start_lots": 5,
+  "risk_pct": 8,
+  "util_pct": 30,
+  "margin_per_lot": 58423,
+  "worst_per_lot": 694,
+  "capacity_lots": 40,
+  "sip_per_month": 0,
+  "corridor": "bnf_strangle_hedged"
  }
 }
