@@ -16,7 +16,8 @@
   var TABS = [
     { href: '/?tab=log',     label: 'Logs' },
     { href: '/?tab=risk',    label: '⚠️ Risk' },
-    { href: '/registry2',    label: '🗂️ Strategies' }
+    { href: '/registry2',    label: '🗂️ Strategies' },
+    { href: '/roadmap',      label: '🚀 Roadmap' }
   ];
   // 📊 Stats ▾ dropdown (Stats 2 page + P&L Journal)
   var STATS = [

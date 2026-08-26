@@ -1,0 +1,15 @@
+{
+ "weekly_ironfly_v1": {
+  "label": "02.17 Weekly Iron-Fly",
+  "start_date": "2026-08-26",
+  "book": 1400000,
+  "start_lots": 5,
+  "risk_pct": 8,
+  "util_pct": 30,
+  "margin_per_lot": 64400,
+  "worst_per_lot": 7129,
+  "capacity_lots": 40,
+  "sip_per_month": 0,
+  "corridor": "weekly_ironfly_v1"
+ }
+}

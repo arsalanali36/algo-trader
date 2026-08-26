@@ -1036,6 +1036,28 @@ def daily_report_page():
     return render_template("daily_report.html")
 
 
+@app.route('/roadmap')
+def roadmap_page():
+    """Live per-strategy growth tracker — actual equity vs Monte-Carlo corridor,
+    auto on-track status + next-action (lot/capital). Display-only, no order path."""
+    return render_template("roadmap.html")
+
+
+@app.route('/api/roadmap')
+def api_roadmap():
+    import roadmap as _rm
+    sid = request.args.get('strategy') or None
+    try:
+        strategies = _rm.list_strategies()
+        if not sid and strategies:
+            sid = strategies[0]["id"]
+        data = _rm.build(sid) if sid else None
+        return jsonify({"ok": True, "strategies": strategies, "data": data})
+    except Exception as e:
+        print("[roadmap] fail:", e, flush=True)
+        return jsonify({"ok": False, "error": str(e)})
+
+
 @app.route('/api/daily-report')
 def api_daily_report():
     import daily_report as dr
