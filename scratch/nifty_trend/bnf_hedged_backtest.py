@@ -34,8 +34,10 @@ def _bs_wing(S, K, T, sigma, ot):
 
 
 def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
-               skip_expiry=True, slip_mult=1.0):
-    """Real-premium shorts + BS wings; exit on Rs-basket SL/target (date-aware qty) or 14:55."""
+               skip_expiry=True, slip_mult=1.0, exit_mode="basket", pt=50.0):
+    """Real-premium shorts + BS wings.
+    exit_mode='basket': exit on Rs-basket SL/target (date-aware qty) — the LIVE 02.10.01 rule.
+    exit_mode='pts'   : exit on COMBINED-premium points +-pt (naked-style, lot-independent)."""
     bs.SLIP_MULT = slip_mult
     DAY, TT, DT, SPOT = g["DAY"], g["TT"], g["DT"], g["SPOT"]
     n = len(DT)
@@ -82,11 +84,18 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
             sc = base._px(g, i, "CE", kc_s); sp = base._px(g, i, "PE", kp_s)
             wc = _bs_wing(Si, kc_w, T, sigma, "CE"); wp = _bs_wing(Si, kp_w, T, sigma, "PE")
             net_val = (sc + sp) - (wc + wp)
-            basket = (entry_credit - net_val) * qty     # +ve = profit (Rs, whole structure)
-            if basket <= -abs(basket_sl):
-                x, reason = i, "SL"; break
-            if basket >= abs(basket_tgt):
-                x, reason = i, "target"; break
+            if exit_mode == "pts":
+                mtm = entry_credit - net_val            # combined-premium points
+                if mtm <= -abs(pt):
+                    x, reason = i, "SL"; break
+                if mtm >= abs(pt):
+                    x, reason = i, "target"; break
+            else:
+                basket = (entry_credit - net_val) * qty     # +ve = profit (Rs, whole structure)
+                if basket <= -abs(basket_sl):
+                    x, reason = i, "SL"; break
+                if basket >= abs(basket_tgt):
+                    x, reason = i, "target"; break
 
         Sx = SPOT[x]
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
@@ -103,6 +112,83 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
         net = gross - fee - slip
         rows.append(dict(day=d, net=net, gross=gross, fee=fee, slip=slip,
                          reason=reason, off=off, dte=(exp - d).days))
+    return pd.DataFrame(rows)
+
+
+def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5,
+                   max_hold_days=3, exp_squareoff_days=2, slip_mult=1.0):
+    """HEDGED strangle held ACROSS days (positional). Enter first bar>=09:20; hold
+    forward across trading days until basket target/SL, OR (expiry-exp_squareoff_days)
+    squareoff, OR max_hold_days. Wings BS-priced with per-bar T (days decay). Downside
+    is wing-capped every leg. No re-entry while a position is open."""
+    bs.SLIP_MULT = slip_mult
+    DAY, TT, DT, SPOT = g["DAY"], g["TT"], g["DT"], g["SPOT"]
+    n = len(DT)
+    day_first920, last_bar = {}, {}
+    order_days = []
+    for i in range(n):
+        d = DAY[i]
+        if d not in day_first920 and TT[i] >= ENTRY_T:
+            day_first920[d] = i
+            order_days.append(d)
+        last_bar[d] = i
+    rows = []
+    hold_until_day = None
+    for d0 in order_days:
+        if hold_until_day is not None and d0 <= hold_until_day:
+            continue                                 # still holding a position
+        e = day_first920[d0]
+        exp = base._bnf_monthly_expiry(d0)
+        if (exp - d0).days <= exp_squareoff_days:
+            continue                                 # too close to expiry to open
+        atmk = round(SPOT[e] / STEP) * STEP
+        kc_s, kp_s = atmk + off * STEP, atmk - off * STEP
+        kc_w, kp_w = atmk + (off + wing) * STEP, atmk - (off + wing) * STEP
+        sce, spe = base._px(g, e, "CE", kc_s), base._px(g, e, "PE", kp_s)
+        if sce <= 0 or spe <= 0:
+            continue
+        T0 = max((exp - d0).days, 1) / 365.0
+        S0 = SPOT[e]
+        strad = base._px(g, e, "CE", atmk) + base._px(g, e, "PE", atmk)
+        sigma = strad / (0.8 * S0 * math.sqrt(T0)) if (strad > 0 and S0 > 0) else 0.0
+        wce = _bs_wing(S0, kc_w, T0, sigma, "CE"); wpe = _bs_wing(S0, kp_w, T0, sigma, "PE")
+        entry_credit = (sce + spe) - (wce + wpe)
+        lot = base.lot_for(d0); qty = lots * lot
+        # deadline day = min(expiry-squareoff, entry + max_hold_days trading days)
+        fut = [dd for dd in order_days if dd >= d0]
+        dl_idx = min(max_hold_days, len(fut) - 1)
+        deadline_day = fut[dl_idx]
+        # cap at expiry-squareoff
+        for dd in fut:
+            if (exp - dd).days <= exp_squareoff_days:
+                deadline_day = min(deadline_day, dd); break
+        x, reason = None, "deadline"
+        for i in range(e + 1, last_bar[deadline_day] + 1):
+            di = DAY[i]
+            Ti = max((exp - di).days, 1) / 365.0
+            Si = SPOT[i]
+            sc = base._px(g, i, "CE", kc_s); sp = base._px(g, i, "PE", kp_s)
+            wc = _bs_wing(Si, kc_w, Ti, sigma, "CE"); wp = _bs_wing(Si, kp_w, Ti, sigma, "PE")
+            net_val = (sc + sp) - (wc + wp)
+            basket = (entry_credit - net_val) * qty
+            if basket <= -abs(basket_sl):
+                x, reason = i, "SL"; break
+            if basket >= abs(basket_tgt):
+                x, reason = i, "target"; break
+        if x is None:
+            x = last_bar[deadline_day]
+        Sx = SPOT[x]; Tx = max((exp - DAY[x]).days, 1) / 365.0
+        xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
+        xwce = _bs_wing(Sx, kc_w, Tx, sigma, "CE"); xwpe = _bs_wing(Sx, kp_w, Tx, sigma, "PE")
+        when = pd.Timestamp(DT[e])
+        gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * lot
+        fee = (bs.calc_charges(sce, xsce, lot, "SELL", when) + bs.calc_charges(spe, xspe, lot, "SELL", when) +
+               bs.calc_charges(wce, xwce, lot, "BUY", when) + bs.calc_charges(wpe, xwpe, lot, "BUY", when))
+        slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
+                bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
+        rows.append(dict(day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
+                         net=gross - fee - slip, gross=gross, reason=reason))
+        hold_until_day = DAY[x]
     return pd.DataFrame(rows)
 
 

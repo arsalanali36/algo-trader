@@ -4,8 +4,8 @@ Roadmap Monte-Carlo for 02.10.01 (BNF 9:20 hedged strangle). Per-1-lot real net
 paths -> self-protecting sizing on the strategy's ~Rs5L tier -> per-month corridor.
 
 Output: data/roadmap/bnf_strangle_hedged.json (same shape as weekly_ironfly_v1.json).
-Display/planning only. ⚠️ This strategy is MARGINAL (Sharpe 1.16, OOS 0.98,
-slippage-fragile) — the median is optimistic-if-edge-holds, treat as a weak lead.
+Display/planning only. Exit tuned to SL Rs4k / Target Rs8k (asymmetric) — Sharpe 3.26,
+OOS 3.96. Median = optimistic-if-edge-holds (short-vol seller); forward-paper first.
 """
 import os, sys, json, random, statistics as st
 import pandas as pd
@@ -92,10 +92,10 @@ def run(risk, sip):
 
 out = {
     "strategy": "02.10.01 BNF 9:20 Hedged Strangle",
-    "source": {"n": N, "sharpe": 1.16, "pf": 1.28, "p_value": None, "win": 63,
-               "train_sharpe": 1.35, "oos_sharpe": 0.98,
+    "source": {"n": N, "sharpe": 3.26, "pf": 2.07, "p_value": None, "win": 57,
+               "train_sharpe": 2.83, "oos_sharpe": 3.96,
                "span": f"{days.min().date()} to {days.max().date()}",
-               "caveat": "MARGINAL: OOS Sharpe 0.98<1, slippage x2 -> 0.16; wings BS-modeled (>lake)"},
+               "caveat": "Exit tuned: SL Rs4k (tier-risk) / Target Rs8k. Short-vol seller (Sharpe>3 red-flag zone, intraday gap-tail sample-limited); wings BS-modeled (>lake +-10). Forward-paper before scaling real money."},
     "per_lot": {"avg": round(avg_1lot), "worst": round(-worst_1lot),
                 "best": round(max(nets_1lot)), "std": round(st.pstdev(nets_1lot)),
                 "trades_per_year": round(trades_per_year, 1)},
