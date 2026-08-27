@@ -2113,7 +2113,32 @@ def liquidity_filter_enabled(strategy):
 # what the config currently holds. Config can still turn it ON for other strategies.
 # Add a new positional strategy's id here when you build one.
 _ALWAYS_OVERNIGHT = {"vrp_condor_v1", "vrp_v1", "distma_v1", "vrpw_v1", "orb_overnight_v1",
-                     "strangle_920", "strangle_manual", "weekly_ironfly_v1"}
+                     "strangle_920", "strangle_manual", "weekly_ironfly_v1",
+                     "bnf_strangle_hedged"}
+
+# Positional strategies with a bounded MAX HOLD (trading days). Unlike the
+# hold-to-expiry set above, these carry overnight but are FORCE-squared-off once
+# `max_hold_days` trading days have ELAPSED since entry (backtest-validated cap).
+# max_hold_days=1 = enter day D, hold ONE overnight, square off at EOD of D+1.
+# Code-level durable baseline (config rewrites can't drop it); config
+# per_strategy[<sid>]["max_hold_days"] overrides. None = hold to expiry (default).
+_MAX_HOLD_DAYS = {"bnf_strangle_hedged": 1}
+
+
+def max_hold_days(strategy):
+    """Bounded positional hold in trading days for `strategy`, or None (= no cap,
+    hold to expiry). Code-level `_MAX_HOLD_DAYS` is the durable baseline; a config
+    per_strategy[<sid>]["max_hold_days"] value (int >=1) overrides it. Only meaningful
+    for allow_overnight strategies — intraday strategies never reach the overnight path."""
+    try:
+        rc = _risk_cfg()
+        v = (rc.get("per_strategy", {}).get(strategy or "", {}) or {}).get("max_hold_days")
+        if v is not None:
+            iv = int(v)
+            return iv if iv >= 1 else None
+    except Exception:
+        pass
+    return _MAX_HOLD_DAYS.get(strategy or "")
 
 
 def allow_overnight(strategy):

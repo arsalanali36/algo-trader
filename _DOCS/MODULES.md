@@ -78,6 +78,7 @@ market_calendar.py — NSE trading-day / market-open SINGLE SOURCE OF TRUTH.
 - 🔧 `is_market_open` — True when `now` (naive IST datetime; default = ist_now()) is a trading day
 - 🔧 `is_trading_day` — True only on a normal NSE trading day: Mon–Fri AND not a listed holiday.
 - 🔧 `ist_now` — Naive IST datetime (UTC+5:30). Same convention traders use.
+- 🔧 `trading_days_between` — Count NSE trading days STRICTLY AFTER d0, up to and including d1 (default
 
 ### `_core/notify.py`
 notify.py — CODE3B ka notification centre (single source for "kuch galat hua").
@@ -181,6 +182,7 @@ risk_gate.py — capital allocation gate (RMS Stage 1).
 - 🔧 `margin_breakdown` — Display helper (payoff panel): {hedged, standalone, benefit} — hedged =
 - 🔧 `mark_kill_floor_fired` — Raise today's account-level entry block. Returns True if written.
 - 🔧 `mark_manual_closed` — Record that the user closed (strategy, symbol) today → block re-entry.
+- 🔧 `max_hold_days` — Bounded positional hold in trading days for `strategy`, or None (= no cap,
 - 🔧 `max_premium_cap_for` — Resolve the applicable per-index premium cap (₹) for an underlying root
 - 🔧 `max_premium_config` — Per-index max option-premium entry cap (₹), user-requested 2026-07-07.
 - 🔧 `option_is_itm` — True if a SHORT option position (SELL) is currently In-The-Money.

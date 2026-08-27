@@ -176,28 +176,47 @@ def save_state(sid, pos):
     except Exception:
         pass
 
+def _is_positional(sid):
+    try:
+        import risk_gate as _rg
+        return _rg.max_hold_days(sid) is not None
+    except Exception:
+        return False
+
 def load_state(sid):
     try:
         d = json.loads(STATE_FILE(sid).read_text())
-        if d.get("date") == str(ist_now().date()):
-            return d.get("pos")
+        pos = d.get("pos")
+        if not pos:
+            return None
+        # Positional (max_hold set): state SURVIVES across days — the carried leg is
+        # re-validated against order_store in _recover. Intraday: only today's state.
+        if _is_positional(sid) or d.get("date") == str(ist_now().date()):
+            return pos
     except Exception:
         pass
     return None
 
 def _recover(sid, log):
-    """Restore today's open strangle from disk, but ONLY if order_store still shows
-    BOTH legs open (TRAP #28 — restart must not orphan/duplicate)."""
+    """Restore an open strangle from disk, but ONLY if order_store still shows ALL
+    legs open (TRAP #28 — restart must not orphan/duplicate). Positional strategies
+    look back across days (trades_for_range); intraday only today (TRAP #119)."""
     pos = load_state(sid)
     if not pos or not pos.get("legs"):
         return None
     try:
         import order_store
-        opens = order_store.trades_for(ist_now().strftime("%Y-%m-%d")).get("open") or []
+        if _is_positional(sid):
+            import datetime as _d
+            t = ist_now().date(); f = (t - _d.timedelta(days=400)).isoformat()
+            opens = order_store.trades_for_range(f, t.isoformat()).get("open") or []
+        else:
+            opens = order_store.trades_for(ist_now().strftime("%Y-%m-%d")).get("open") or []
         open_secs = {str(p.get("sec_id")) for p in opens if p.get("strategy") == sid}
         want = {str(l["sec_id"]) for l in pos["legs"]}
         if want.issubset(open_secs):
-            log.info(f"[RECOVER] re-attached open strangle {[l['trad_sym'] for l in pos['legs']]}")
+            log.info(f"[RECOVER] re-attached open strangle {[l['trad_sym'] for l in pos['legs']]} "
+                     f"(entry {pos.get('entry_date','?')})")
             return pos
         log.info("[RECOVER] disk had a strangle but order_store shows leg(s) closed — clearing.")
     except Exception as e:
@@ -244,8 +263,14 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
             now_hm = (now.hour, now.minute)
 
             if last_date != now.date():
-                last_date = now.date(); pos = None; trades_today = 0
-                save_state(strategy_id, None); log.info(f"── New day: {last_date} ──")
+                last_date = now.date(); trades_today = 0
+                if pos is not None and _is_positional(strategy_id):
+                    # positional carry: re-validate the held leg against order_store
+                    # (don't blindly trust in-memory across the overnight boundary)
+                    pos = _recover(strategy_id, log)
+                    log.info(f"── New day: {last_date} — positional carry, pos={'OPEN' if pos else 'flat'} ──")
+                else:
+                    pos = None; save_state(strategy_id, None); log.info(f"── New day: {last_date} ──")
 
             if not tc.get("active", False):
                 log.info("[BNFSTR] Paused — active=false"); time.sleep(60); continue
@@ -254,6 +279,18 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
 
             token, cid = load_creds()
             spot = _bnf_spot(token, cid, log)
+
+            # ── positional max-hold: EOD exit fires only once max_hold trading days
+            # have elapsed since entry (intraday = always due at exit_time) ──
+            _mh = _rg_cnt.max_hold_days(strategy_id)
+            _eod_due = True
+            if _mh is not None and pos is not None:
+                try:
+                    import market_calendar as _mc
+                    _held = _mc.trading_days_between(pos.get("entry_date"))
+                    _eod_due = _held >= _mh
+                except Exception:
+                    _eod_due = True    # calendar fail -> conservative: allow EOD exit
 
             # ── manage OPEN strangle ──
             if pos is not None and pos.get("exit_mode") == "basket_rs":
@@ -270,7 +307,7 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
                         reason = "BNFSTRH_BASKET_TARGET"
                     elif d == "sl":
                         reason = "BNFSTRH_BASKET_SL"
-                if now_hm >= exit_hm:
+                if now_hm >= exit_hm and _eod_due:
                     reason = "BNFSTRH_EOD"
                 if reason:
                     log.info(f"[EXIT] hedged strangle — {reason}")
@@ -291,7 +328,7 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
                         reason = "BNF_STRANGLE_TP"
                     elif mtm_pt <= -sl_pt:
                         reason = "BNF_STRANGLE_SL"
-                if now_hm >= exit_hm:
+                if now_hm >= exit_hm and _eod_due:
                     reason = "BNF_STRANGLE_EOD"
                 if reason:
                     log.info(f"[EXIT] strangle — {reason}")
@@ -300,9 +337,23 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
 
             # ── ENTRY: SELL 6-strike OTM CE + PE, only in the 09:20 window ──
             in_entry_window = (now_hm >= entry_hm) and (now.hour * 60 + now.minute) < (entry_hm[0] * 60 + entry_hm[1] + win_min)
+            # positional: don't open within exp_squareoff_days trading days of expiry
+            # (a 1-overnight hold would otherwise carry into expiry-week gamma) —
+            # matches backtest run_positional exp_squareoff_days=2.
+            _near_expiry = False
+            if _mh is not None and pos is None:
+                try:
+                    import expiry_calendar as _xc, market_calendar as _mc3
+                    _buf = int(tc.get("exp_squareoff_days", 2))
+                    _nx = _xc.banknifty_next_expiry(now.date())
+                    if _nx is not None and _mc3.trading_days_between(now.date(), _nx) <= _buf:
+                        _near_expiry = True
+                except Exception:
+                    _near_expiry = False
             if pos is None and trades_today < int(tc.get("max_trades_per_day", 1)) and now_hm < exit_hm:
-                if _is_expiry_day():
-                    log.info("[BNFSTR] BankNifty expiry day — no entry (matches backtest skip_expiry)")
+                if _is_expiry_day() or _near_expiry:
+                    log.info("[BNFSTR] expiry / within exp-buffer — no entry "
+                             "(matches backtest skip_expiry / exp_squareoff_days)")
                 elif in_entry_window:
                     if spot is None or spot <= 0:
                         log.warning("[BNFSTR] no spot at entry window — retrying")
@@ -572,6 +623,7 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
     return dict(legs=legs, entry_credit=net_credit, group_id=gid, hedged=True, exit_mode="basket_rs",
                 basket_target_rs=float(tc.get("basket_target_rs", 4000)),
                 basket_sl_rs=float(tc.get("basket_sl_rs", 4000)),
+                entry_date=str(ist_now().date()),
                 entry_spot=round(spot, 1))
 
 

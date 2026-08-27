@@ -91,11 +91,11 @@ def run(risk, sip):
     return corr
 
 out = {
-    "strategy": "02.10.01 BNF 9:20 Hedged Strangle",
-    "source": {"n": N, "sharpe": 3.26, "pf": 2.07, "p_value": None, "win": 57,
-               "train_sharpe": 2.83, "oos_sharpe": 3.96,
+    "strategy": "02.10.01 BNF 9:20 Hedged Strangle (POSITIONAL, 1-night hold)",
+    "source": {"n": N, "sharpe": 4.56, "pf": 2.60, "p_value": None, "win": 55,
+               "train_sharpe": 4.57, "oos_sharpe": 4.55,
                "span": f"{days.min().date()} to {days.max().date()}",
-               "caveat": "Exit tuned: SL Rs4k (tier-risk) / Target Rs8k. Short-vol seller (Sharpe>3 red-flag zone, intraday gap-tail sample-limited); wings BS-modeled (>lake +-10). Forward-paper before scaling real money."},
+               "caveat": "POSITIONAL: SL Rs4k / Target Rs8k, hold max 1 overnight (enter 09:20, most exit same day on target/SL, else next-day). vs intraday: +44% net, ~Rs17k/yr less tax. Overnight-gap tail = Rs4k SL bypassed ~3x in 5yr (worst -Rs10.4k, wing-BOUNDED not capped at 10k). Sharpe>4 red-flag zone, wings BS-modeled (>lake +-10). Forward-paper vs live."},
     "per_lot": {"avg": round(avg_1lot), "worst": round(-worst_1lot),
                 "best": round(max(nets_1lot)), "std": round(st.pstdev(nets_1lot)),
                 "trades_per_year": round(trades_per_year, 1)},

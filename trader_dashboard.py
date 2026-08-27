@@ -12251,6 +12251,21 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             if bool(_owner) and _rg.allow_overnight(_owner):
                 _skip_eod = True
                 _skip_why = f"strategy {_owner} allow_overnight=True"
+                # Bounded positional: hold only up to max_hold_days trading days,
+                # then let the EOD squareoff fire (backstop to the trader's own
+                # deadline exit). Enter day D, elapsed==max_hold -> square off.
+                _mh = _rg.max_hold_days(_owner)
+                if _mh is not None:
+                    try:
+                        import market_calendar as _mc
+                        _elapsed = _mc.trading_days_between(p.get("entry_date"))
+                        if _elapsed >= _mh:
+                            _skip_eod = False
+                            _skip_why = f"strategy {_owner} max_hold {_mh}d reached (elapsed {_elapsed}) — EOD squareoff"
+                        else:
+                            _skip_why = f"strategy {_owner} positional (held {_elapsed}/{_mh}d)"
+                    except Exception:
+                        pass    # on any calendar error, keep skipping (trader owns the deadline)
         except Exception:
             _skip_eod = False
         # Per-position MIS->NRML carry (user toggle) — GROUP-WIDE, day-scoped. Even a

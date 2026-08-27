@@ -78,6 +78,23 @@ def is_trading_day(d=None):
     return _to_str(dd) not in MARKET_HOLIDAYS
 
 
+def trading_days_between(d0, d1=None):
+    """Count NSE trading days STRICTLY AFTER d0, up to and including d1 (default
+    today IST). i.e. how many trading days have ELAPSED since d0. Same-day = 0,
+    next trading day = 1 (weekends/holidays skipped). Used for positional
+    max-hold enforcement (enter day D, elapsed==max_hold_days -> square off)."""
+    a = _to_date(d0)
+    b = _to_date(d1) if d1 is not None else ist_now().date()
+    if b <= a:
+        return 0
+    n, cur = 0, a + _td(days=1)
+    while cur <= b:
+        if is_trading_day(cur):
+            n += 1
+        cur += _td(days=1)
+    return n
+
+
 def is_market_open(now=None, open_hm=(9, 15), close_hm=(15, 30)):
     """True when `now` (naive IST datetime; default = ist_now()) is a trading day
     AND its time is within [open_hm, close_hm). Callers pass their own window so

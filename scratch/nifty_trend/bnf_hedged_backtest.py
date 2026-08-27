@@ -110,8 +110,10 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
         slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
                 bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
         net = gross - fee - slip
+        cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
         rows.append(dict(day=d, net=net, gross=gross, fee=fee, slip=slip,
-                         reason=reason, off=off, dte=(exp - d).days))
+                         reason=reason, off=off, dte=(exp - d).days,
+                         entry_credit=entry_credit, qty=qty, maxloss_cap=cap))
     return pd.DataFrame(rows)
 
 
@@ -186,8 +188,10 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
                bs.calc_charges(wce, xwce, lot, "BUY", when) + bs.calc_charges(wpe, xwpe, lot, "BUY", when))
         slip = (bs.slip_cost_leg(sce, xsce, lot) + bs.slip_cost_leg(spe, xspe, lot) +
                 bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
+        cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
         rows.append(dict(day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
-                         net=gross - fee - slip, gross=gross, reason=reason))
+                         net=gross - fee - slip, gross=gross, reason=reason,
+                         entry_credit=entry_credit, qty=qty, maxloss_cap=cap))
         hold_until_day = DAY[x]
     return pd.DataFrame(rows)
 
