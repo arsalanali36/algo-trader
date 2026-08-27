@@ -190,8 +190,9 @@ def run_positional(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=8000.0, lots=5
                 bs.slip_cost_leg(wce, xwce, lot) + bs.slip_cost_leg(wpe, xwpe, lot))
         cap = (wing * STEP - entry_credit) * qty       # structural max loss (wing-defined)
         rows.append(dict(day=d0, exit_day=DAY[x], hold=(pd.Timestamp(DT[x]) - when).days,
-                         net=gross - fee - slip, gross=gross, reason=reason,
-                         entry_credit=entry_credit, qty=qty, maxloss_cap=cap))
+                         net=gross - fee - slip, gross=gross, fee=fee, slip=slip, reason=reason,
+                         entry_credit=entry_credit, qty=qty, maxloss_cap=cap,
+                         spot0=float(S0), atm=float(atmk)))
         hold_until_day = DAY[x]
     return pd.DataFrame(rows)
 

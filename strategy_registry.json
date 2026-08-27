@@ -386,9 +386,9 @@
    "status": "paper",
    "legs": 4,
    "instrument": "BANKNIFTY",
-   "hold": "Intraday",
+   "hold": "Positional (1-night)",
    "structure": "Short strangle + far-OTM wings (iron condor)",
-   "desc": "LIVE hedged twin of 02.10 â€” adds the 'disaster-wing before real money' the parent's note demanded. Same 09:20 6-strike-OTM SELL CE+PE, PLUS far-OTM BUY wings (+500pt beyond each sold leg â†’ defined risk, ~60-70% less margin). Exit = â‚¹4,000 (1% of â‚¹4L) COMBINED-BASKET SL/Target â€” whole group together (short legs buy-to-close FIRST, then wings), NOT per-leg. 4 lots fixed. Per-leg RMS default-SL disabled. Parent 02.10 (paper, naked, 50pt-exit) runs UNCHANGED for A/B. See ARCHITECTURE_LOG 2026-08-15."
+   "desc": "POSITIONAL hedged twin of 02.10 (max_hold=1). Same 09:20 SELL ATM+-6 CE+PE + BUY +-11 far-OTM wings (defined risk); enter 09:20, most exit same-day on +-Rs4k/Rs8k COMBINED-BASKET (ordered: shorts buy-to-close FIRST then wings), else hold ONE overnight -> force-exit next trading day. 5 lots. Real-lake backtest vs intraday: net +44%/yr, ~Rs17k/yr less tax (fewer round-trips), Sharpe up (train~OOS, no decay). Cost: Rs4k SL bypassed by overnight gap ~3x in 5yr (worst -Rs10.4k, wing-BOUNDED not 10k-capped). Per-leg RMS default-SL off. Code-level positional: risk_gate._ALWAYS_OVERNIGHT + max_hold_days=1. Forward-paper vs live (Rule 10). See ARCHITECTURE_LOG 2026-08-27, memory project_code3b_bnf_positional."
   },
   "03.01": {
    "name": "Pivot-Extreme Continuation",
