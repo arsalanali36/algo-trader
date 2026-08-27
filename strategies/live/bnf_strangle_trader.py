@@ -268,6 +268,11 @@ def run(paper_mode=True, strategy_id="bnf_strangle_v1"):
                     # positional carry: re-validate the held leg against order_store
                     # (don't blindly trust in-memory across the overnight boundary)
                     pos = _recover(strategy_id, log)
+                    if pos is not None:
+                        # a carried position means this day already "has" a trade — no
+                        # fresh 09:20 entry even if it exits mid-window (matches backtest
+                        # run_positional: next entry only AFTER the exit day).
+                        trades_today = int(tc.get("max_trades_per_day", 1))
                     log.info(f"── New day: {last_date} — positional carry, pos={'OPEN' if pos else 'flat'} ──")
                 else:
                     pos = None; save_state(strategy_id, None); log.info(f"── New day: {last_date} ──")
