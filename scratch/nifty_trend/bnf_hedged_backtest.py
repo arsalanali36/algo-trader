@@ -34,7 +34,7 @@ def _bs_wing(S, K, T, sigma, ot):
 
 
 def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
-               skip_expiry=True, slip_mult=1.0, exit_mode="basket", pt=50.0):
+               skip_expiry=True, slip_mult=1.0, exit_mode="basket", pt=50.0, wing_mult=1.0):
     """Real-premium shorts + BS wings.
     exit_mode='basket': exit on Rs-basket SL/target (date-aware qty) — the LIVE 02.10.01 rule.
     exit_mode='pts'   : exit on COMBINED-premium points +-pt (naked-style, lot-independent)."""
@@ -72,8 +72,8 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
         strad = base._px(g, e, "CE", atmk) + base._px(g, e, "PE", atmk)
         S0 = SPOT[e]
         sigma = strad / (0.8 * S0 * math.sqrt(T)) if (strad > 0 and S0 > 0) else 0.0
-        wce = _bs_wing(S0, kc_w, T, sigma, "CE")
-        wpe = _bs_wing(S0, kp_w, T, sigma, "PE")
+        wce = _bs_wing(S0, kc_w, T, sigma, "CE") * wing_mult
+        wpe = _bs_wing(S0, kp_w, T, sigma, "PE") * wing_mult
         entry_credit = (sce + spe) - (wce + wpe)      # net credit (per lot, points)
         lot = base.lot_for(d)
         qty = lots * lot
@@ -82,7 +82,7 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
         for i in range(e + 1, xend + 1):
             Si = SPOT[i]
             sc = base._px(g, i, "CE", kc_s); sp = base._px(g, i, "PE", kp_s)
-            wc = _bs_wing(Si, kc_w, T, sigma, "CE"); wp = _bs_wing(Si, kp_w, T, sigma, "PE")
+            wc = _bs_wing(Si, kc_w, T, sigma, "CE") * wing_mult; wp = _bs_wing(Si, kp_w, T, sigma, "PE") * wing_mult
             net_val = (sc + sp) - (wc + wp)
             if exit_mode == "pts":
                 mtm = entry_credit - net_val            # combined-premium points
@@ -99,7 +99,7 @@ def run_hedged(g, off=6, wing=5, basket_sl=4000.0, basket_tgt=4000.0, lots=5,
 
         Sx = SPOT[x]
         xsce, xspe = base._px(g, x, "CE", kc_s), base._px(g, x, "PE", kp_s)
-        xwce = _bs_wing(Sx, kc_w, T, sigma, "CE"); xwpe = _bs_wing(Sx, kp_w, T, sigma, "PE")
+        xwce = _bs_wing(Sx, kc_w, T, sigma, "CE") * wing_mult; xwpe = _bs_wing(Sx, kp_w, T, sigma, "PE") * wing_mult
         when = pd.Timestamp(DT[e])
         # gross = short credit captured − wing debit paid (all × lot)
         gross = ((sce - xsce) + (spe - xspe) + (xwce - wce) + (xwpe - wpe)) * lot
