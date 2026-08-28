@@ -5037,6 +5037,30 @@ def _run_position_exit_rules(log=print):
             if not legs:
                 per.clear_rule(key)          # group flat → rule fulfilled/stale
                 continue
+            # ── ZOMBIE-RULE GUARD (2026-08-28, preemptive defense) ───────────────
+            # An intraday group's rule that outlived its own EOD square-off (the
+            # root bug this session fixed) must NEVER fire on a LATER trading day —
+            # doing so churns a position that no longer exists at the broker (today's
+            # incident: a prior-day hedged straddle's ±4k rule re-fired, re-opening
+            # closed legs, one rejected → orphan). If EVERY resolved leg's entry is
+            # from before today AND the owning strategy is not allow_overnight, the
+            # group is a zombie → clear the rule, never fire. Overnight strategies
+            # (weekly_ironfly / vrp_* etc.) legitimately hold across days and are
+            # exempt — their rules keep monitoring as intended.
+            try:
+                import risk_gate as _rg_zg
+                _today = ist.strftime('%Y-%m-%d')
+                _all_prior = all((str(l.get('entry_date') or _today) < _today) for l in legs)
+                if _all_prior:
+                    _strat0 = str(legs[0].get('strategy') or '')
+                    if not _rg_zg.allow_overnight(_strat0):
+                        log(f"[exit-rule] {key} STALE — all legs from a prior day & "
+                            f"'{_strat0}' is intraday (not overnight); clearing zombie "
+                            f"rule without firing (would churn a closed position)")
+                        per.clear_rule(key)
+                        continue
+            except Exception as _zge:
+                log(f"[exit-rule] zombie-guard check skipped ({_zge})")
             # Same stale-LTP guard as the straddle auto-exit: a 20s warm-up grace
             # after the rule was ARMED + only act on a tick timestamped AFTER arm
             # (get_after) — a pre-arm/stale cache value can't drive a phantom
@@ -12073,7 +12097,8 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
             _closed_ids.add(p.get("id"))
             gid = p.get("group_id")
             if gid:
-                for sib in open_pos:
+                # shorts-first (see the matching cascade in the normal-close branch)
+                for sib in sorted(open_pos, key=lambda s: 0 if str(s.get("entry", "")).upper() == "SELL" else 1):
                     sib_id = sib.get("id")
                     if sib_id in _closed_ids or sib is p:
                         continue
@@ -12117,6 +12142,14 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                     p["mode"], broker, log=print, tag="POSMON",
                     source=p["source"], strategy=p["strategy"],
                     instrument=p["instrument"], broker_name=p.get("broker") or "dhan",
+                    # ROOT FIX (2026-08-28, TRAP zombie-rule): stamp the exit with its
+                    # OWN group_id. Without this the EOD/SL squareoff recorded exits with
+                    # a BLANK group_id → invisible to order_store.open_legs_in_group() →
+                    # the group stayed "net-open" in that view even though the broker was
+                    # flat → the group's ±basket position_exit_rule never auto-cleared,
+                    # survived overnight, and RE-FIRED next day, churning a closed
+                    # position with real orders (some rejected → orphan legs).
+                    group_id=p.get("group_id") or "",
                     extra_tags=["pos_monitor_exit", exit_reason],
                     product=_sq_prod,
                     is_exit=True,
@@ -12141,6 +12174,7 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 strategy=p["strategy"], mode=p["mode"], broker=p["broker"],
                 symbol=p["sym"], instrument=p["instrument"], trad_sym=p["sym"],
                 sec_id=sec_id, segment=seg, status=p.get("status", "paper"),
+                group_id=p.get("group_id") or "",   # ROOT FIX (2026-08-28) — see live branch above
                 tags=["pos_monitor_exit", exit_reason]
             )
 
@@ -12151,7 +12185,12 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
         _closed_ids.add(p.get("id"))
         gid = p.get("group_id")
         if gid:
-            for sib in open_pos:
+            # ORDERED (2026-08-28): close SHORT siblings (SELL-entry → buy-to-close)
+            # BEFORE BUY-entry wings. Stripping a hedge wing first spikes the naked
+            # margin → the broker rejects the remaining exits (user-reported "pehle
+            # sell nikalo, fir buy"). Same shorts-first ordering execute_basket_exit
+            # already enforces; this brings the pos_monitor EOD/SL group-close in line.
+            for sib in sorted(open_pos, key=lambda s: 0 if str(s.get("entry", "")).upper() == "SELL" else 1):
                 sib_id = sib.get("id")
                 if sib_id in _closed_ids or sib is p: continue
                 if sib.get("group_id") != gid: continue
