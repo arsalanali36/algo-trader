@@ -5124,6 +5124,78 @@ def _run_position_exit_rules(log=print):
             log(f"[exit-rule] rule err ({rule.get('key')}): {e}")
 
 
+def _sweep_zombie_state(log=print):
+    """DAILY zombie guard (2026-08-28) — runs once at pos_monitor startup and on
+    every trading-day rollover. Guarantees no intraday leg/rule silently outlives
+    its own day:
+      • CLEAR any position_exit_rule whose group is FLAT (ledger net-zero) or whose
+        legs are ALL from a prior day for a non-allow_overnight (intraday) strategy —
+        a zombie left by an EOD square-off that didn't clear it (today's incident).
+      • ALERT (bell + log) on any intraday-strategy position still OPEN from a prior
+        day (a carried-over leg the EOD 3:15 square-off should have closed). Today's
+        3:15 EOD still closes it; this surfaces it immediately so nothing rots silent.
+    NEVER fires an order — firing on stale state is exactly what caused the churn.
+    Returns (rules_cleared, stale_positions_flagged)."""
+    try:
+        import position_exit_rules as per
+        import order_store
+    except Exception as e:
+        log(f"[zombie-sweep] import fail: {e}")
+        return 0, 0
+    from datetime import datetime as _d, timedelta as _td, timezone as _tz
+    ist = _d.now(_tz.utc).replace(tzinfo=None) + _td(hours=5, minutes=30)
+    today = ist.strftime('%Y-%m-%d')
+    try:
+        import risk_gate as _rg
+    except Exception:
+        _rg = None
+
+    cleared = 0
+    for rule in per.list_rules():
+        try:
+            key = rule.get("key")
+            gid = rule.get("group_id") or ""
+            legs = order_store.open_legs_in_group(gid) if gid else []
+            if not legs:
+                per.clear_rule(key); cleared += 1
+                log(f"[zombie-sweep] cleared FLAT rule {key}")
+                continue
+            all_prior = all((str(l.get('entry_date') or today) < today) for l in legs)
+            strat0 = str(legs[0].get('strategy') or '')
+            overnight = bool(_rg and _rg.allow_overnight(strat0))
+            if all_prior and not overnight:
+                per.clear_rule(key); cleared += 1
+                log(f"[zombie-sweep] cleared PRIOR-DAY intraday rule {key} ({strat0})")
+        except Exception as e:
+            log(f"[zombie-sweep] rule check err: {e}")
+
+    stale = []
+    try:
+        lb = (ist - _td(days=7)).strftime('%Y-%m-%d')
+        for p in order_store.trades_for_range(lb, today).get('open', []):
+            if 'CAPITAL_BLOCKED' in (p.get('tags') or []):
+                continue
+            ed = str(p.get('entry_date') or today)
+            strat = str(p.get('strategy') or '')
+            if ed < today and not (_rg and _rg.allow_overnight(strat)):
+                stale.append(p)
+    except Exception as e:
+        log(f"[zombie-sweep] open-scan err: {e}")
+    if stale:
+        msg = (f"⚠️ {len(stale)} intraday leg(s) from a prior day STILL OPEN "
+               f"(EOD squareoff should have closed them) — "
+               + ", ".join(f"{p.get('strategy')}·{p.get('sym')}" for p in stale[:6]))
+        log("[zombie-sweep] " + msg)
+        try:
+            import notify
+            notify.warn(msg, key="zombie_stale_positions", source="zombie-sweep")
+        except Exception:
+            pass
+    log(f"[zombie-sweep] {today}: {cleared} stale rule(s) cleared, "
+        f"{len(stale)} prior-day intraday leg(s) flagged")
+    return cleared, len(stale)
+
+
 def _dhan_live_fate(resp, token, cid):
     """Live order ka asli anjaam pata karo. Dhan ka 200 = 'accepted', 'filled' NAHI.
     Price-band/freeze pe order accept hoke turant REJECT ho jaata (async). Return
@@ -10838,6 +10910,13 @@ def pos_monitor_loop():
     from datetime import timedelta
     global _trailing_peak_pnl, _daily_peak_ever, _peak_pnl_history, _peak_ltp_cache, _peak_day_str, _pos_lock_state, _kf_state, _tsl_state
 
+    # Startup zombie guard — a restart on a new day won't hit the rollover branch
+    # (it's seeded to today), so sweep once here too (TRAP #188).
+    try:
+        _sweep_zombie_state(log=lambda m: print(m, flush=True))
+    except Exception as _ze:
+        print(f"[zombie-sweep] startup sweep err: {_ze}", flush=True)
+
     while True:
         try:
             _ensure_feed_started()
@@ -11085,6 +11164,13 @@ def pos_monitor_loop():
                                       "prev_mtm": None})
                     _save_kf_state()
                     print(f"[TRAILING-LOCK] New trading day ({_today_str}) — peak/DD/floor + kill-floor reset.", flush=True)
+                    # DAILY zombie guard — clear any stale exit-rule + flag any
+                    # intraday leg carried from a prior day (TRAP #188). Runs on the
+                    # first cycle of every new trading day.
+                    try:
+                        _sweep_zombie_state(log=lambda m: print(m, flush=True))
+                    except Exception as _ze:
+                        print(f"[zombie-sweep] rollover sweep err: {_ze}", flush=True)
 
                 # Update high watermark + record history for Stats graph (always)
                 if _total_pnl > _trailing_peak_pnl:
