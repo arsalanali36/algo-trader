@@ -49,6 +49,8 @@ _REASON_MAP = [
     ("premium", "max_premium"),      # "premium X > max cap"
     ("liquid", "liquidity"),
     ("funds", "funds"),
+    ("cash_margin", "capital"),   # CASH_MARGIN_SHORT — option-sell needs >=50% cash
+    ("cash-capacity", "capital"),
     ("capital", "capital"),
     ("market_closed", "market_closed"),
     ("market band", "market_closed"),

@@ -990,7 +990,19 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
     try:
         blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
         if blocked:
-            log.info(f"[RANGEH] RMS blocked — {why}"); return False
+            log.info(f"[RANGEH] RMS blocked — {why}")
+            # Record the blocked hedged entry so it surfaces on the Broker Orders page
+            # (Blocked bucket) + can be replayed ("block na hote to kya hota"). Hedged
+            # entries gate the whole basket here, BEFORE execute_signal (where single-leg
+            # blocks already record) — so without this the block was invisible. Fail-safe.
+            try:
+                import skipped_store
+                skipped_store.record_skip(strategy=strategy_id, symbol=symbol, side="SELL",
+                    trad_sym=s_tsym, sec_id=str(s_sec), intended_lots=lots, lot_size=lot_sz,
+                    entry_premium=s_prem, block_reason=why, mode=mode)
+            except Exception:
+                pass
+            return False
     except Exception:
         pass
 
@@ -1009,7 +1021,15 @@ def _enter_hedged_vertical(strategy_id, symbol, signal, opt_type, spot, cfg,
         need = rg.position_margin(basket_rows)
         ok_cap, cap_why = rg.check_capital_needed(strategy_id, need, mode=mode)
         if not ok_cap:
-            log.info(f"[RANGEH] basket margin ₹{need:,.0f} fit nahi hua — {cap_why}"); return False
+            log.info(f"[RANGEH] basket margin ₹{need:,.0f} fit nahi hua — {cap_why}")
+            try:
+                import skipped_store
+                skipped_store.record_skip(strategy=strategy_id, symbol=symbol, side="SELL",
+                    trad_sym=s_tsym, sec_id=str(s_sec), intended_lots=lots, lot_size=lot_sz,
+                    entry_premium=s_prem, block_reason=cap_why, mode=mode)
+            except Exception:
+                pass
+            return False
     except Exception as ce:
         log.error(f"[RANGEH] basket capital check err: {ce}")
 

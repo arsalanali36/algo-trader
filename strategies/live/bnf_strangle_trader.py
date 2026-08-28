@@ -571,7 +571,17 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
     try:
         blocked, why, _hard = rg.gating_status(strategy_id, mode=mode)
         if blocked:
-            log.info(f"[BNFSTRH] RMS blocked — {why}"); return None
+            log.info(f"[BNFSTRH] RMS blocked — {why}")
+            # Record the blocked hedged entry → Broker Orders page (Blocked bucket) +
+            # replayable. Basket gated here, before execute_signal. Fail-safe.
+            try:
+                import skipped_store
+                skipped_store.record_skip(strategy=strategy_id, symbol=sym, side="SELL",
+                    trad_sym=shorts[0]["trad_sym"], sec_id=shorts[0]["sec_id"],
+                    intended_lots=lots, lot_size=lot_size, block_reason=why, mode=mode)
+            except Exception:
+                pass
+            return None
     except Exception:
         pass
     def _basket_at(n):
@@ -582,7 +592,15 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
                  "entry_price": _px_leg(l["sec_id"], bname), "segment": "NSE_FNO"} for l in wings]
     _sz, _need, _why = rg.affordable_lots(strategy_id, lots, _basket_at, mode=mode)
     if _sz < 1:
-        log.info(f"[BNFSTRH] basket margin fit nahi even for 1 lot — {_why}"); return None
+        log.info(f"[BNFSTRH] basket margin fit nahi even for 1 lot — {_why}")
+        try:
+            import skipped_store
+            skipped_store.record_skip(strategy=strategy_id, symbol=sym, side="SELL",
+                trad_sym=shorts[0]["trad_sym"], sec_id=shorts[0]["sec_id"],
+                intended_lots=lots, lot_size=lot_size, block_reason=_why, mode=mode)
+        except Exception:
+            pass
+        return None
     if _sz < lots:
         log.info(f"[BNFSTRH] [SIZE-DOWN] hedged strangle {lots}->{_sz} lots — ₹{_need:,.0f} ({_why})")
     lots, q = _sz, _sz * lot_size
