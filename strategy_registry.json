@@ -740,6 +740,18 @@
    "hold": "Positional",
    "structure": "Hedged short ATM straddle + wings (iron-fly), 50% credit target"
   },
+  "02.18": {
+   "name": "IV-pop M-rollover Iron-Fly",
+   "config_key": "m_pattern_ironfly_v1",
+   "slug": "m_pattern_ironfly",
+   "live_file": null,
+   "status": "research",
+   "legs": 4,
+   "instrument": "NIFTY",
+   "hold": "Intraday-signal / ~1-day",
+   "structure": "Short ATM straddle + ±250 wings (iron-fly) entered on an ATM combined-premium double-top (IV-pop) rollover, 50% credit target",
+   "note": "Forward-paper candidate: entry-timing permutation p=0.009 REAL, but Sharpe 0.64<1 and config from a 9-cell search -> PAPER before real money (Rule 10). Backtest artifact only; live paper-firing loop not yet built."
+  },
   "11.01": {
    "name": "Delta BTC Iron-Fly (daily, real premium)",
    "config_key": "delta_ironfly",

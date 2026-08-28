@@ -1646,5 +1646,55 @@
    "method": "REAL OptChainLake premium (shorts) + BS wings + date-aware Zerodha charges + DOM slip, 5 lots",
    "note": "Positional max_hold=1 vs intraday: +44% net, less tax. Rs4k SL overnight-gap breach ~3x/5yr (worst -Rs10.4k, wing-BOUNDED). Sharpe>4 = seller red-flag; forward-paper."
   }
+ },
+ {
+  "slug": "m_pattern_ironfly",
+  "design": "m_pattern_ironfly",
+  "title": "02.18 - IV-pop M-rollover Iron-Fly (REAL-lake, 5 lots)",
+  "tf": "intraday-signal / ~1-day hold",
+  "params": {
+   "dist": 0,
+   "wing": 250,
+   "take_pct": 0.5,
+   "structure": "iron_fly",
+   "lots": 5,
+   "m_strictness": "medium",
+   "hold_days": 1
+  },
+  "exit": "50% credit / +1 trading day",
+  "instrument": "NIFTY 50",
+  "lot_size": 65,
+  "window": [
+   "2021-07-08",
+   "2026-07-08"
+  ],
+  "days": 193,
+  "significant": true,
+  "bs_full": {
+   "sharpe": 0.638,
+   "net_pct": 35.979,
+   "maxdd": -20.161,
+   "win_rate": 65.285,
+   "trades": 193,
+   "profit_factor": 1.342
+  },
+  "combos": {
+   "train": {
+    "sharpe": 0.601,
+    "net_pct": 21.12
+   },
+   "oos": {
+    "sharpe": 0.706,
+    "net_pct": 14.858
+   }
+  },
+  "p_value": 0.009,
+  "created": "2026-08-28 12:00",
+  "deploy_key": "m_pattern_ironfly",
+  "deployed": "m_pattern_ironfly",
+  "real_cost": {
+   "method": "REAL OptChainLake_1m premium + date-aware Zerodha charges, 5 lots",
+   "note": "Entry-time permutation p=0.009 (real +Rs 3.6L vs random-entry null mean -Rs 3k, z=2.34) -> M-timing edge REAL. Bootstrap p=0.057. BUT Sharpe 0.64 < 1 and config picked from a 9-cell search -> FORWARD-PAPER candidate, NOT real money (Rule 10). Hardening (basket SL / stricter spike) both HURT -> base config is best. No SL: wings = defined-risk cap."
+  }
  }
 ]
