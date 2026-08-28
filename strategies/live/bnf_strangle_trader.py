@@ -600,12 +600,15 @@ def _enter_hedged_strangle(strategy_id, sym, spot, tc, mode, bname, log):
             except Exception as ue:
                 log.error(f"[BNFSTRH] unwind FAIL {p['trad_sym']}: {ue}")
 
+    # POSITIONAL (max_hold set) must carry overnight → NRML; intraday twin stays MIS
+    # (default). MIS would be broker-auto-squared ~15:20, defeating the overnight hold.
+    _prod = "NRML" if _is_positional(strategy_id) else None
     for grp, side, tag in ((wings, "BUY", "BNFSTRH_HEDGE"), (shorts, "SELL", "BNFSTRH")):
         for l in grp:
             try:
                 r = gw.execute_signal(strategy_id, sym, side, lots, l["lot"], l["sec_id"], l["trad_sym"],
                                       seg="NSE_FNO", mode=mode, broker_name=bname, source="strategy",
-                                      tag=tag, group_id=gid, gate=False,
+                                      tag=tag, group_id=gid, gate=False, product=_prod,
                                       extra_tags=(["BNFSTRH", "HEDGE"] if side == "BUY" else ["BNFSTRH"]),
                                       instrument="options", log=log.info)
             except Exception as e:
