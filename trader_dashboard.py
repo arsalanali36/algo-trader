@@ -5175,6 +5175,11 @@ def _sweep_zombie_state(log=print):
         for p in order_store.trades_for_range(lb, today).get('open', []):
             if 'CAPITAL_BLOCKED' in (p.get('tags') or []):
                 continue
+            # LIVE (real money) only — paper strategies leave lots of stale ledger
+            # junk that isn't a real broker position; flagging those would be pure
+            # noise. A real-money intraday leg carried past its day is the concern.
+            if str(p.get('mode') or '').lower() != 'live':
+                continue
             ed = str(p.get('entry_date') or today)
             strat = str(p.get('strategy') or '')
             if ed < today and not (_rg and _rg.allow_overnight(strat)):
