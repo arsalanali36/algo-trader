@@ -7846,6 +7846,31 @@ def _broker_position_product(broker, broker_name, t_sym, sec_id, fallback='NRML'
     return fallback
 
 
+_nrml_syms_cache = {"ts": 0.0, "syms": set()}
+
+def _broker_nrml_syms(broker, broker_name):
+    """Set of Kite tradingsymbols the broker currently holds as NRML (overnight).
+    Lets the EOD loop RESPECT a manual MIS->NRML conversion the user did directly
+    on Zerodha — if a leg is NRML at the broker, the user chose to carry it, so the
+    blanket 3:15 EOD squareoff must NOT close it (else the app fights the user's
+    deliberate carry). Cached ~10s so per-leg checks don't re-hit positions_detailed.
+    Kite-only (Dhan positions return nothing here); read failure keeps the last-good
+    set (fail-safe: no spurious 'NRML' that would wrongly skip a squareoff)."""
+    import time as _t
+    if broker_name != 'kite' or broker is None:
+        return set()
+    now = _t.time()
+    if now - _nrml_syms_cache["ts"] < 10:
+        return _nrml_syms_cache["syms"]
+    try:
+        syms = {str(_p.get('kite_sym')) for _p in (broker.positions_detailed() or [])
+                if str(_p.get('product') or '').upper() == 'NRML' and _p.get('kite_sym')}
+        _nrml_syms_cache.update(ts=now, syms=syms)
+        return syms
+    except Exception:
+        return _nrml_syms_cache["syms"]
+
+
 def _close_position_impl(t_sym, entry_side, qty_shares, mode, src_in, strat_in,
                          broker_in=''):
     """Shared close-one-leg logic — used by /api/close-position and (looped per
@@ -12279,6 +12304,22 @@ def _pos_monitor_check_one(p, sec_id, tags, ist_now, open_pos, _closed_ids):
                 if position_carry.is_carried(p.get("group_id"), p.get("id")):
                     _skip_eod = True
                     _skip_why = "MIS->NRML carry (user toggle)"
+            except Exception:
+                pass
+        # Respect a manual MIS->NRML conversion done DIRECTLY on Zerodha (no app
+        # toggle): if the broker holds this leg as NRML, the user chose to carry it
+        # overnight → don't force-square it at 3:15. LIVE only. NOT for allow_overnight
+        # strategies — their max_hold logic above is authoritative (a positional leg
+        # is NRML by design and must still exit at max_hold, not be held forever here).
+        if (not _skip_eod) and p.get("mode") == "live" and (p.get("broker") == "kite") \
+                and not (bool(p.get("strategy")) and _rg.allow_overnight(p.get("strategy"))):
+            try:
+                from brokers import get_broker
+                _bk = get_broker("kite")
+                _ksym = _bk.resolve_symbol(p["sym"], sec_id)
+                if _ksym and _ksym in _broker_nrml_syms(_bk, "kite"):
+                    _skip_eod = True
+                    _skip_why = "broker product = NRML (manual carry on Zerodha)"
             except Exception:
                 pass
         if _skip_eod:
