@@ -24,6 +24,23 @@
 **Bootstrap + soft-fallback:** cap tabhi binding jab basket `ceil(1/cap)` lots se bada ho (warna pehla lot hi cap tod deta). Cap ke andar kuch add na ho paye to **cap tod ke aage badhta hai AUR `cap_relaxed` flag deta** — chupchaap bekaar 1-lot plan nahi.
 **Funding (Zerodha rule, `risk_gate.cash_headroom` reuse):** short/margin legs ko margin ka **≥50% CASH**, option BUY ko **100% cash** → `cash = 0.5×margin + premium`, `total ≤ 2×cash-equiv`. Live: plan ₹9,81,949 (margin ₹9,65,794 + premium ₹16,155) → cash chahiye ₹4,99,052 vs ₹4,63,390 = **₹35,662 kam**, capacity se ₹55,170 upar. **Ilaaj cash hai, pledge nahi** — ₹6,17,988 pledged equity bekaar pada hai kyunki binding limit `2 × cash-equivalent` hai (yehi TRAP #179). Teen raaste diye: cash daalo · sabse bade per-lot member ke N lot kam (aisa member chuna jo lots dene ke baad ZINDA bache) · pledged equity ka hissa liquid-fund me (liquid = cash-equivalent).
 **Do aankde alag dikhte hain, dono sach:** plan mojooda positions ki JAGAH le (capacity ₹9,26,779) vs unke UPAR (headroom ₹4,63,797) — page dono batata hai.
+**Follow-up (usi din, `a846765` VPS-live):** teen cheezein user-feedback se —
+**(a) "Max kiya phir bhi 2 lot kyun"** ka asli jawab: solver **goal pe rukta hai, lots pe nahi**
+(p_hit 60.5% ≥ target 60% → `stop=goal-reached`). Weights sirf ye decide karte hain ki **chadhte
+waqt KAUN chuna jaye**, kitne lot lagenge wo target/DD-budget decide karta hai. Ye page pe kahin
+likha nahi tha → naya `stop_note` hero ke neeche ("13 lots pe RUK gaya kyunki goal-hit 62% mil gaya…").
+**(b) `cap_note`** — cap satisfy na ho paye to ab saaf bolta hai ("cap 30% is basket me possible NAHI,
+sabse bada hissa 77% tak hi aa paya"); **sirf tab jab FINAL top-share cap se upar ho** — `cap_relaxed`
+beech me ek baar break hone pe set ho jaata hai par basket aage cap ke andar aa sakta hai (cap-40 case:
+relaxed=True par final top 39.6% → koi shor nahi).
+**(c) Already-live positions funding me ginte hain** (user: "meri position already live hai, usko factor me le"):
+`funding_check` ab plan-members ke config_key pe order_store ki **LIVE khuli legs** nikalta hai aur unka
+margin **`risk_gate.position_margin`** se (canonical gate ADR-015 — apna margin math NAHI) →
+`already_live_margin`, `incremental_total/cash/gap`, `fits_incremental`. Card me "Isme se ABHI live hai −₹X"
++ "Naya lagana padega ₹Y", aur on-top line bhi incremental pe. VPS real-data verify: plan ₹10,57,021 →
+already-live ₹1,20,242 (`weekly_ironfly_v1` 4 legs) → **incremental ₹9,36,779**. Fail-safe: scan/margin
+error pe `live_margin=0` (plan poora maangta = conservative), kabhi funding-check tod ke plan block nahi karta.
+
 **Verify:** solver output mockup se bit-match (18 lots / ₹9,81,949 / +₹66,055 / top 60%); funding hand-calc se exact; browser me sliders+cap+funding card render (0 console error); audit 0 FAIL; VPS pe live funds se cash_headroom reproduce.
 
 ## 2026-08-29 — 🤖 Auto-pick basket (deploy-gate har strategy pe) + 04.03.02 Ars-chain BUY → LIVE
