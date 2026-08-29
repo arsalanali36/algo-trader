@@ -4,7 +4,7 @@
 > module-docstrings. Regenerate: `python _TOOLS/gen_module_docs.py` (pre-commit hook
 > har commit pe chalta hai). Wiring/flow (pieces kaise judte) = `_DOCS/ARCHITECTURE.md`.
 > Research/backtest engine (`scratch/nifty_trend`) = `_DOCS/BACKTEST.md` (yahan nahi).
-**154 modules documented** across 10 folders.
+**155 modules documented** across 10 folders.
 
 
 ## Folders
@@ -1460,6 +1460,17 @@ sync_vps_to_local.py - Download all data, configs, database, logs, and trading f
 
 - 🔧 `main` — …
 - 🔧 `run_cmd` — …
+
+### `_ops/token_refresh.py`
+Token auto-refresh — roz ka manual token kaam khatam (Dhan), aur Kite ke liye loud pre-market reminder.
+
+- 🔧 `check` — Ek poora cycle. Wapas: dict (scheduler/health ke liye).
+- 🔧 `dhan_hours_left` — …
+- 🔧 `jwt_expiry` — JWT ka exp -> naive local datetime. Parse na ho to None.
+- 🔧 `kite_login_url` — …
+- 🔧 `kite_status` — (alive: bool|None, msg). None = check hi nahi ho paya (fail-safe).
+- 🔧 `main` — …
+- 🔧 `renew_dhan` — Dhan token renew. Wapas: (ok: bool, msg: str, hours_left: float|None).
 
 ### `_ops/weekly_ironfly.py`
 weekly_ironfly.py — PURE state + decision for the WEEKLY POSITIONAL IRON-FLY. No broker / order / Dhan import → standalone-testable. Firing legs (via execution_gateway), live LTP, front-weekly-expiry and squareoff are the CALLER's job (weekly_ironfly_live).

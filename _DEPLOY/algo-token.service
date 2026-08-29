@@ -1,0 +1,13 @@
+[Unit]
+Description=CODE3B token auto-refresh (Dhan rolling renew + Kite expiry alert)
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
+Environment=PYTHONUNBUFFERED=1
+# python path me space hai -> quote zaroori (systemd 203/EXEC warna)
+ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 _ops/token_refresh.py
+# Kite token dead hone pe script exit 1 deta hai (alert nikal chuka hota hai)
+# -> systemd ise failure na samjhe, warna timer ka state jhootha RED dikhata hai
+SuccessExitStatus=0 1

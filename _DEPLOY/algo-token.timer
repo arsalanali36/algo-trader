@@ -1,0 +1,15 @@
+[Unit]
+Description=CODE3B token refresh — har 6 ghante + pre-market
+
+[Timer]
+# Dhan token 24h ka hota hai aur renew tabhi ho sakta hai jab wo ABHI ZINDA ho.
+# Har 6 ghante = din me 4 mauke: ek-do check network/API glitch se fail bhi ho
+# jayein to chain phir bhi nahi tootti (renew 12h bache pe fire hota hai).
+OnCalendar=*-*-* 00,06,12,18:20:00
+# Pre-market ek extra run — Kite ka alert market khulne se pehle phone pe pahunche
+OnCalendar=Mon..Fri 08:20:00
+# Box band tha / reboot hua to missed run turant chalao — chain isi pe tikti hai
+Persistent=true
+
+[Install]
+WantedBy=timers.target
