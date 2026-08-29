@@ -41,6 +41,10 @@ _HEDGE_KEYWORDS = ("fly", "condor", "iron", "spread", "hedge", "wing")
 _SHORT_WORDS = ("short", "sell", "credit")        # explicit net-seller
 _LONG_WORDS = ("long", "buy", "debit")            # explicit net-buyer
 _CRYPTO_KEYWORDS = ("btc", "eth", "delta", "crypto")
+# Delta (crypto) INR conversion — mirrors delta_ironfly_trader: rupee = pts x cv x usd_inr.
+_CRYPTO_CV = {"btc": 0.001, "eth": 0.01}          # contract value (BTC/ETH per lot)
+_USD_INR = 85.0                                   # Delta India rate (config default)
+_DELTA_WING_DEFAULT = 2000.0                       # iron-fly wing (pts) if run omits it
 
 _ECON_CACHE = {}   # slug -> (mtime, econ dict|None)
 _REG_CACHE = {"mt": None, "idx": {}}   # slug -> registry entry (structure/legs/instrument)
@@ -193,9 +197,19 @@ def _one_run(slug, reg=None):
     basis = _classify(structure, legs, instrument, run_net_short)
     cap, kind = None, "n/a"
     if basis == "crypto":
-        # Delta uses PORTFOLIO margin (a defined-risk fly blocks ~$0) — our NSE SPAN model
-        # does not apply and the run's USD premiums aren't INR-comparable. Honest "—".
-        cap, kind = None, "CRYPTO"
+        # Delta defined-risk iron-fly: real capital/margin ~= MAX LOSS (portfolio margin
+        # can't lose more than that). max_loss_pts = wing - net_credit; INR = pts x cv x
+        # usd_inr (same convention as delta_ironfly_trader). gross is ALREADY INR.
+        wing = float((combo.get("dna") or {}).get("wing") or _DELTA_WING_DEFAULT)
+        ci = str(instrument or "").lower()
+        cv = next((v for k, v in _CRYPTO_CV.items() if k in ci), 0.001)
+        mls = [max(wing - float(t.get("entry_prem") or 0), 1.0)
+               for t in trades if float(t.get("entry_prem") or 0) > 0]
+        if mls:
+            cap = (sum(mls) / len(mls)) * cv * _USD_INR / lots_in_run
+            kind = "CRYPTO~"
+        else:
+            cap, kind = None, "CRYPTO"
     elif basis == "hedged" and sell_notional:
         cap = (sum(sell_notional) / ns) * _SPAN_PCT * _HEDGE_MARGIN_FACTOR / lots_in_run
         kind = "HEDGED~"
