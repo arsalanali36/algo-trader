@@ -55,7 +55,14 @@ CLI
     python -X utf8 _ops/token_refresh.py --status   # kuch mat karo, sirf batao
 """
 
-import _paths  # noqa: F401  (sys.path bootstrap — sabse pehle)
+import sys as _sys
+from pathlib import Path as _Path
+
+# Ye file _ops/ me hai aur seedha chalti hai (systemd timer) — us soorat me
+# sys.path[0] = _ops/ hota hai, project root nahi. Isliye root pehle daalo,
+# TAB _paths import karo (CLAUDE.md: "subfolder me: pehle root ko sys.path pe").
+_sys.path.insert(0, str(_Path(__file__).resolve().parent.parent))
+import _paths  # noqa: E402,F401  (baaki folders sys.path pe)
 
 import base64
 import datetime
@@ -320,8 +327,11 @@ def main(argv):
     res = check(do_notify=True, force=force)
     if as_json:
         print(json.dumps(res))
-    # exit 1 = kuch aisa hai jise insaan ko dekhna chahiye
-    return 0 if (res.get("dhan_ok") and res.get("kite_alive") is not False) else 1
+    # 0 = sab theek | 3 = chala, par insaan ko dekhna chahiye
+    # (3 isliye, 1 nahi: crash bhi 1 deta hai — dono ko alag rakhna zaroori hai,
+    #  warna systemd ek CRASHED refresher ko bhi "Finished successfully" dikhata
+    #  hai aur ye guard chup-chaap mar jaata hai)
+    return 0 if (res.get("dhan_ok") and res.get("kite_alive") is not False) else 3
 
 
 if __name__ == "__main__":

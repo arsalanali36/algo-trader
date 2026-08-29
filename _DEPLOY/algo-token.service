@@ -8,6 +8,7 @@ WorkingDirectory=/root/CODE3B- TV BACKTEST ENGINE
 Environment=PYTHONUNBUFFERED=1
 # python path me space hai -> quote zaroori (systemd 203/EXEC warna)
 ExecStart="/root/CODE3B- TV BACKTEST ENGINE/venv/bin/python" -X utf8 _ops/token_refresh.py
-# Kite token dead hone pe script exit 1 deta hai (alert nikal chuka hota hai)
-# -> systemd ise failure na samjhe, warna timer ka state jhootha RED dikhata hai
-SuccessExitStatus=0 1
+# 3 = "chala, par dhyan do" (Kite token dead — alert nikal chuka hai): success.
+# 1 = CRASH: ise failure hi rehne do. Dono ko ek saath success maan lena matlab
+# ek mara hua refresher bhi "Finished successfully" dikhega (ye deploy pe hua tha).
+SuccessExitStatus=0 3
