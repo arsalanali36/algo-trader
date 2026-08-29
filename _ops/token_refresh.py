@@ -246,10 +246,14 @@ def kite_status():
     if not cfg.get("kite_api_key") or not cfg.get("kite_access_token"):
         return False, "kite_api_key / kite_access_token config me nahi hai"
     try:
-        import kite_broker
-        kite = kite_broker.get_kite()
-        prof = kite.profile()
-        return True, f"zinda ({prof.get('user_id', '')})"
+        # `brokers` ek PACKAGE hai (root sys.path pe) — `kite_broker` top-level
+        # module ke roop me import NAHI hota. Canonical entry = get_broker()
+        # (Rule 6B: broker class se jao, uske internals se nahi).
+        from brokers import get_broker
+        f = get_broker("kite").funds() or {}
+        if not f:
+            return None, "funds() khaali laut aaya — token ka pata nahi chala"
+        return True, "zinda (funds read OK)"
     except Exception as e:
         s = str(e)
         if "Token" in s or "token" in s or "expired" in s.lower() or "Incorrect" in s:
